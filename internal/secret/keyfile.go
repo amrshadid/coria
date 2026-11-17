@@ -1,19 +1,21 @@
 package secret
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/amrshadid/magnetar/internal/fault"
 )
@@ -30,42 +32,103 @@ const keySize = 32
 // and reading it whole would let a mistaken path exhaust memory.
 const maxKeyFileSize = 64 << 10
 
+// About wiping key bytes: this package clears every buffer it owns that held
+// a key or a key file's text once it is done with it, and never copies one
+// into a string, which could not be cleared. Go cannot promise that this
+// wipes the memory: the garbage collector may have moved or copied a buffer
+// before it was cleared, and the AES cipher keeps its own expanded copy of
+// each key for as long as the Keys holding it lives. Clearing narrows the
+// window in which a memory dump finds a key; it does not close it.
+
 // Keys is a loaded key file: every key version it holds, ready to open, and
-// the highest version, which seals. Its zero value holds no key and seals and
-// opens nothing.
+// the highest version, which seals. Its zero value, and a nil *Keys, hold no
+// key and seal and open nothing.
 //
-// Keys prints as a fixed text whatever verb formats it, so a log line or an
-// error that includes it by mistake cannot carry the keys.
+// The keys are held behind a pointer to an unexported type, so whatever
+// prints a Keys finds no key material in it: formatted directly, or as an
+// exported field of another value, it prints a fixed text (Format); as an
+// unexported field, where fmt cannot call its methods and reads its fields
+// instead, it prints a pointer address. Without the pointer, fmt reached the
+// cipher's expanded key through an unexported field and printed it in
+// decimal under verbs such as %s and %q.
 type Keys struct {
+	r *keyring
+}
+
+// keyring is what Keys points to.
+type keyring struct {
 	aeads       map[uint32]cipher.AEAD
 	sealVersion uint32
 }
 
-// Format writes a fixed text in place of the keys, for every verb, including
-// %#v and %+v, which would otherwise print the cipher's unexported fields.
+// ring returns k's keyring, or nil for a nil or zero Keys.
+func (k *Keys) ring() *keyring {
+	if k == nil {
+		return nil
+	}
+	return k.r
+}
+
+// text is the fixed text Keys prints as.
+func (k Keys) text() string {
+	n := 0
+	if k.r != nil {
+		n = len(k.r.aeads)
+	}
+	return "secret.Keys{" + strconv.Itoa(n) + " versions}"
+}
+
+// Format writes a fixed text in place of the keys, for every verb.
 func (k Keys) Format(f fmt.State, _ rune) {
-	_, _ = io.WriteString(f, "secret.Keys{"+strconv.Itoa(len(k.aeads))+" versions}")
+	_, _ = io.WriteString(f, k.text())
+}
+
+// LogValue gives log/slog the same fixed text, so a handler never walks into
+// the value.
+func (k Keys) LogValue() slog.Value {
+	return slog.StringValue(k.text())
 }
 
 // Versions returns how many key versions k holds.
 func (k *Keys) Versions() int {
-	return len(k.aeads)
+	if r := k.ring(); r != nil {
+		return len(r.aeads)
+	}
+	return 0
 }
 
-// SealVersion returns the key version Seal uses: the highest in the file.
+// SealVersion returns the key version Seal uses: the highest in the file, or
+// 0 when k holds no key.
 func (k *Keys) SealVersion() uint32 {
-	return k.sealVersion
+	if r := k.ring(); r != nil {
+		return r.sealVersion
+	}
+	return 0
 }
+
+// beforeLink runs in CreateKeyFile between writing the temporary file and
+// linking it to its name. Tests set it to make a file appear at exactly that
+// moment; it does nothing otherwise.
+var beforeLink = func() {}
+
+// syncDirFunc is syncDir, replaceable by a test that needs the sync to fail.
+var syncDirFunc = syncDir
 
 // CreateKeyFile writes a new key file at path holding one random key, version
 // 1. It never replaces a file that exists: losing the key that sealed the
-// secrets loses the secrets, so an existing file is a Conflict.
+// secrets loses the secrets, so an existing file is a Conflict. On Linux and
+// macOS it refuses a directory that is not private to its owner (see
+// checkDir in perm_unix.go).
 //
 // The file is written in full to a temporary file in the same directory,
 // created with the narrowest permission the system has (see perm_unix.go and
 // perm_windows.go), and only then given its name, so a crash leaves either
 // no key file or a whole one, never a short one that would be loaded later.
 func CreateKeyFile(path string) error {
+	dir := filepath.Dir(path)
+	if err := checkDir(dir, path); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(path); err == nil {
 		return existsError(path)
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -77,14 +140,16 @@ func CreateKeyFile(path string) error {
 	if _, err := rand.Read(key); err != nil {
 		return fault.Wrap(fault.Internal, err, "secret: no random key could be made")
 	}
-	line := []byte(keyLinePrefix + " 1 " + base64.StdEncoding.EncodeToString(key) + "\n")
+	line := make([]byte, 0, len(keyLinePrefix)+3+base64.StdEncoding.EncodedLen(keySize)+1)
+	line = append(line, keyLinePrefix+" 1 "...)
+	line = base64.StdEncoding.AppendEncode(line, key)
+	line = append(line, '\n')
 	defer clear(line)
 
 	suffix := make([]byte, 8)
 	if _, err := rand.Read(suffix); err != nil {
 		return fault.Wrap(fault.Internal, err, "secret: no random name could be made")
 	}
-	dir := filepath.Dir(path)
 	tmp := filepath.Join(dir, "."+filepath.Base(path)+".tmp-"+hex.EncodeToString(suffix))
 
 	f, err := createPrivate(tmp)
@@ -107,6 +172,7 @@ func CreateKeyFile(path string) error {
 		return fault.Wrap(fault.Internal, err, "secret: the key file "+path+" cannot be written")
 	}
 
+	beforeLink()
 	// A hard link is a rename that refuses to replace: os.Rename replaces an
 	// existing file on every system, so a file made at path since the check
 	// above would be lost. Link fails with fs.ErrExist instead, on Linux,
@@ -118,8 +184,17 @@ func CreateKeyFile(path string) error {
 		}
 		return fault.Wrap(fault.Internal, err, "secret: the key file "+path+" cannot be created")
 	}
-	if err := syncDir(dir); err != nil {
-		return fault.Wrap(fault.Internal, err, "secret: the directory of the key file "+path+" cannot be synced")
+
+	// From here the key file exists, whole, under its name: removing it would
+	// be worse than keeping it, and saying "cannot be created" would be
+	// false. A failed directory sync means only that the name may not survive
+	// a power loss. The kind is Internal: the caller did nothing wrong
+	// (not Invalid), and trying again would not help (not Unavailable), since
+	// the file now exists and a second call is a Conflict. The message says
+	// what is true.
+	if err := syncDirFunc(dir); err != nil {
+		return fault.Wrap(fault.Internal, err, "secret: the key file "+path+
+			" was created, but its directory could not be synced, so the file may not survive a crash; check the disk and back the file up")
 	}
 	return nil
 }
@@ -129,15 +204,20 @@ func existsError(path string) error {
 	return fault.New(fault.Conflict, "secret: the key file "+path+" exists, and a key file is never replaced")
 }
 
-// LoadKeyFile reads the key file at path. It refuses a file that other users
-// may open (with the command that fixes it in the message), a file over
-// 64 KiB, and any line that does not follow the format in the package
-// documentation.
+// LoadKeyFile reads the key file at path. It refuses a file that is not a
+// regular file, that other users may open (with the command that fixes it in
+// the message), that is over 64 KiB, or with any line that does not follow
+// the format in the package documentation. What counts as "other users may
+// open" on each system is in the package documentation.
 //
-// The permission is checked on the open file, not on the path, so the file
-// checked is the file read.
+// The file is opened without blocking, so a FIFO or a device at the path is
+// refused rather than waited on, and its permission is checked on the open
+// file, not on the path, so the file checked is the file read.
 func LoadKeyFile(path string) (*Keys, error) {
-	f, err := os.Open(path) //nolint:gosec // G304: the path is the operator's own configuration, read on purpose.
+	if err := checkDir(filepath.Dir(path), path); err != nil {
+		return nil, err
+	}
+	f, err := openKeyFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fault.Wrap(fault.NotFound, err, "secret: there is no key file at "+path)
@@ -149,15 +229,18 @@ func LoadKeyFile(path string) (*Keys, error) {
 	if err := checkPrivate(f, path); err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(io.LimitReader(f, maxKeyFileSize+1))
-	defer clear(data)
+	// One buffer of fixed size, read into directly, so no growing copy of the
+	// file's text is left behind uncleared.
+	buf := make([]byte, maxKeyFileSize+1)
+	defer clear(buf)
+	n, err := readFull(f, buf)
 	if err != nil {
 		return nil, fault.Wrap(fault.Internal, err, "secret: the key file "+path+" cannot be read")
 	}
-	if len(data) > maxKeyFileSize {
+	if n > maxKeyFileSize {
 		return nil, fault.New(fault.Invalid, "secret: "+path+" is larger than any key file ("+strconv.Itoa(maxKeyFileSize)+" bytes at most)")
 	}
-	keys, err := parseKeyFile(data)
+	keys, err := parseKeyFile(buf[:n])
 	if err != nil {
 		// The parser's message already says which line and why; wrapping
 		// the same error as the cause would only repeat it in the log.
@@ -166,62 +249,99 @@ func LoadKeyFile(path string) (*Keys, error) {
 	return keys, nil
 }
 
-// parseKeyFile reads the text of a key file. Its errors name the line and the
+// readFull reads r into buf until buf is full or r ends, and returns how many
+// bytes it read.
+func readFull(r io.Reader, buf []byte) (int, error) {
+	n := 0
+	for n < len(buf) {
+		m, err := r.Read(buf[n:])
+		n += m
+		if errors.Is(err, io.EOF) {
+			return n, nil
+		}
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// parseKeyFile reads the text of a key file. It works on the bytes it is
+// given, without copying them into strings. Its errors name the line and the
 // field at fault, and never quote a line, since a line holds a key.
 func parseKeyFile(data []byte) (*Keys, error) {
-	text := string(data)
-	if text == "" {
+	if len(data) == 0 {
 		return nil, fault.New(fault.Invalid, "it is empty")
 	}
-	lines := strings.Split(text, "\n")
+	lines := bytes.Split(data, []byte("\n"))
 	// A final line feed ends the last line; it does not start an empty one.
-	if lines[len(lines)-1] == "" {
+	if len(lines[len(lines)-1]) == 0 {
 		lines = lines[:len(lines)-1]
 	}
-	keys := &Keys{aeads: make(map[uint32]cipher.AEAD, len(lines))}
+	ring := &keyring{aeads: make(map[uint32]cipher.AEAD, len(lines))}
+	var key [keySize]byte
+	defer clear(key[:])
 	for i, line := range lines {
-		version, key, err := parseKeyLine(strings.TrimSuffix(line, "\r"))
+		version, err := parseKeyLine(bytes.TrimSuffix(line, []byte("\r")), &key)
 		if err != nil {
 			return nil, fault.New(fault.Invalid, "line "+strconv.Itoa(i+1)+": "+fault.Message(err))
 		}
-		if _, ok := keys.aeads[version]; ok {
-			clear(key)
+		if _, ok := ring.aeads[version]; ok {
 			return nil, fault.New(fault.Invalid, "line "+strconv.Itoa(i+1)+": version "+strconv.FormatUint(uint64(version), 10)+" appears twice")
 		}
-		aead, err := newAEAD(key)
-		clear(key)
+		aead, err := newAEAD(key[:])
+		clear(key[:])
 		if err != nil {
 			return nil, fault.Wrap(fault.Internal, err, "line "+strconv.Itoa(i+1)+": the key cannot be used")
 		}
-		keys.aeads[version] = aead
-		keys.sealVersion = max(keys.sealVersion, version)
+		ring.aeads[version] = aead
+		ring.sealVersion = max(ring.sealVersion, version)
 	}
-	return keys, nil
+	return &Keys{r: ring}, nil
 }
 
-// parseKeyLine reads one line: the prefix, the version and the key, each
-// written in exactly one way. Every field is compared with its canonical
-// spelling, because base64 decoding skips line breaks and integer parsing
-// accepts leading zeros, and a file read two ways by two programs is a file
-// whose meaning is not fixed.
-func parseKeyLine(line string) (uint32, []byte, error) {
-	fields := strings.Split(line, " ")
+// encodedKeySize is the length of a key in standard base64 with padding.
+var encodedKeySize = base64.StdEncoding.EncodedLen(keySize)
+
+// parseKeyLine reads one line, the prefix, the version and the key, and puts
+// the key in *key. Every field must be written in exactly one way: base64
+// decoding skips line breaks and integer parsing accepts leading zeros, and a
+// file read two ways by two programs is a file whose meaning is not fixed.
+// So the version is compared with its decimal spelling, and the key with its
+// own encoding, in constant time since it is secret.
+func parseKeyLine(line []byte, key *[keySize]byte) (uint32, error) {
+	fields := bytes.Split(line, []byte(" "))
 	if len(fields) != 3 {
-		return 0, nil, fault.New(fault.Invalid, "a line must be \""+keyLinePrefix+" <version> <key>\", with one space between fields")
+		return 0, fault.New(fault.Invalid, "a line must be \""+keyLinePrefix+" <version> <key>\", with one space between fields")
 	}
-	if fields[0] != keyLinePrefix {
-		return 0, nil, fault.New(fault.Invalid, "a line must start with \""+keyLinePrefix+"\"")
+	if !bytes.Equal(fields[0], []byte(keyLinePrefix)) {
+		return 0, fault.New(fault.Invalid, "a line must start with \""+keyLinePrefix+"\"")
 	}
-	v, err := strconv.ParseUint(fields[1], 10, 32)
-	if err != nil || v == 0 || strconv.FormatUint(v, 10) != fields[1] {
-		return 0, nil, fault.New(fault.Invalid, "the version must be a whole number from 1 to 4294967295, without leading zeros")
+	// The version is not secret, so a string copy of it is harmless.
+	version := string(fields[1])
+	v, err := strconv.ParseUint(version, 10, 32)
+	if err != nil || v == 0 || strconv.FormatUint(v, 10) != version {
+		return 0, fault.New(fault.Invalid, "the version must be a whole number from 1 to 4294967295, without leading zeros")
 	}
-	key, err := base64.StdEncoding.Strict().DecodeString(fields[2])
-	if err != nil || len(key) != keySize || base64.StdEncoding.EncodeToString(key) != fields[2] {
-		clear(key)
-		return 0, nil, fault.New(fault.Invalid, "the key must be "+strconv.Itoa(keySize)+" bytes in standard base64 with padding")
+	badKey := fault.New(fault.Invalid, "the key must be "+strconv.Itoa(keySize)+" bytes in standard base64 with padding")
+	field := fields[2]
+	if len(field) != encodedKeySize {
+		return 0, badKey
 	}
-	return uint32(v), key, nil
+	decoded := make([]byte, base64.StdEncoding.DecodedLen(len(field)))
+	defer clear(decoded)
+	n, err := base64.StdEncoding.Strict().Decode(decoded, field)
+	if err != nil || n != keySize {
+		return 0, badKey
+	}
+	reencoded := make([]byte, encodedKeySize)
+	defer clear(reencoded)
+	base64.StdEncoding.Encode(reencoded, decoded[:keySize])
+	if subtle.ConstantTimeCompare(reencoded, field) != 1 {
+		return 0, badKey
+	}
+	copy(key[:], decoded[:keySize])
+	return uint32(v), nil
 }
 
 // newAEAD returns AES-256-GCM under key, with a random 96-bit nonce made by

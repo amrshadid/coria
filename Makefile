@@ -71,10 +71,15 @@ vet:
 	$(GO) vet ./...
 	GOOS=linux GOARCH=386 $(GO) vet ./...
 
+# Linted once per system, because a file built only for one system
+# (perm_windows.go, acl_darwin.go) is invisible to a run for another; CI runs
+# this on Linux, so without the GOOS runs those files would never be linted.
 lint: $(filter $(TOOLS)/%,$(GOLANGCI_LINT))
 	$(GOLANGCI_LINT) version
 	$(GOLANGCI_LINT) config verify
 	$(GOLANGCI_LINT) run ./...
+	GOOS=windows $(GOLANGCI_LINT) run ./...
+	GOOS=darwin $(GOLANGCI_LINT) run ./...
 
 vuln: $(filter $(TOOLS)/%,$(GOVULNCHECK))
 	$(GOVULNCHECK) -version
@@ -106,11 +111,13 @@ size:
 
 # The outside check of internal/secret: scripts/check-seal.py opens what Go
 # sealed and seals what Go then opens. -count=1 so a cached pass is never
-# reported for a Python that changed. The test skips without the variable,
-# which this target always sets, so here it either runs or fails.
-PYTHON ?= python3
-
+# reported for a Python that changed. The test skips only when the variable is
+# unset; this target always sets it, so here the check runs or fails, and an
+# empty PYTHON or an interpreter that is not there fails before the test.
+# PYTHON is the same variable proto-python uses, defined with it below.
 check-seal:
+	@test -n "$(PYTHON)" || { echo "check-seal: PYTHON is empty; name an interpreter that has the cryptography package" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-seal: no interpreter $(PYTHON)" >&2; exit 1; }
 	MAGNETAR_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
 
 # Every fuzz target, as package:function. go test fuzzes one target at a

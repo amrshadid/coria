@@ -3,6 +3,7 @@ package secret
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -192,5 +193,28 @@ func TestSealRefuses(t *testing.T) {
 	}
 	if _, err := zero.Open(testContext, make([]byte, 40)); err == nil {
 		t.Error("the zero Keys opened")
+	}
+}
+
+// TestNilKeys guards that a nil *Keys, as a caller holds after a failed
+// load, refuses to seal and open with the same errors the zero Keys gives,
+// and reports no versions, instead of panicking.
+func TestNilKeys(t *testing.T) {
+	var keys *Keys
+	var zero Keys
+	sealed := mustSeal(t, mustKeys(t, keyLine(1, 1)), testContext, []byte(testPlaintext))
+
+	_, nilErr := keys.Seal(testContext, []byte("x"))
+	_, zeroErr := zero.Seal(testContext, []byte("x"))
+	if nilErr == nil || nilErr.Error() != zeroErr.Error() || fault.KindOf(nilErr) != fault.KindOf(zeroErr) {
+		t.Errorf("nil Seal: %v, zero Seal: %v; want the same refusal", nilErr, zeroErr)
+	}
+	opened, err := keys.Open(testContext, sealed)
+	requireNotOpened(t, "nil Keys", opened, err)
+	if keys.Versions() != 0 || keys.SealVersion() != 0 {
+		t.Error("a nil Keys reports versions")
+	}
+	if got := fmt.Sprint(keys); got != "<nil>" {
+		t.Errorf("Sprint(nil *Keys) = %q", got)
 	}
 }

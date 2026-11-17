@@ -3,6 +3,9 @@ package secret
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -46,7 +49,7 @@ func writePrivate(t *testing.T, path string, data []byte) {
 // loadText writes text as a private key file in a new directory and loads it.
 func loadText(t *testing.T, text string) (*Keys, error) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "magnetar.key")
+	path := filepath.Join(privateDir(t), "magnetar.key")
 	writePrivate(t, path, []byte(text))
 	return LoadKeyFile(path)
 }
@@ -69,6 +72,39 @@ func mustSeal(t *testing.T, keys *Keys, context string, plaintext []byte) []byte
 		t.Fatalf("Seal: %v", err)
 	}
 	return sealed
+}
+
+// keyForms returns the forms in which a key could leak into printed text:
+// its raw bytes, base64 (standard, unpadded and URL), hex, and each of its
+// eight 32-bit words in decimal, read in both byte orders, which is how fmt
+// prints the uint32 words of an AES key schedule.
+func keyForms(key []byte) [][]byte {
+	forms := [][]byte{
+		key,
+		[]byte(base64.StdEncoding.EncodeToString(key)),
+		[]byte(base64.RawStdEncoding.EncodeToString(key)),
+		[]byte(base64.URLEncoding.EncodeToString(key)),
+		[]byte(hex.EncodeToString(key)),
+	}
+	for i := 0; i+4 <= len(key); i += 4 {
+		forms = append(forms,
+			[]byte(strconv.FormatUint(uint64(binary.BigEndian.Uint32(key[i:])), 10)),
+			[]byte(strconv.FormatUint(uint64(binary.LittleEndian.Uint32(key[i:])), 10)))
+	}
+	return forms
+}
+
+// privateDir returns a new directory that only the current user may change,
+// as LoadKeyFile and CreateKeyFile require on Linux and macOS. t.TempDir
+// already makes one with mode 0700; the chmod says so instead of relying on
+// it.
+func privateDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a directory needs its execute bit to be entered.
+		t.Fatal(err)
+	}
+	return dir
 }
 
 // containsAny reports whether s contains any of the needles, ignoring empty

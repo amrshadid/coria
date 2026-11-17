@@ -158,3 +158,26 @@ func TestWrapNil(t *testing.T) {
 		t.Errorf("Error() = %q, want the message alone", got)
 	}
 }
+
+// TestTypedNil guards that a nil *Error stored in an error, which is not a
+// nil error, reads as an internal failure with the fixed message instead of
+// panicking in KindOf, Message or a log line.
+func TestTypedNil(t *testing.T) {
+	var e *Error
+	var err error = e
+	wrapped := fmt.Errorf("outer: %w", err)
+	for _, err := range []error{err, wrapped} {
+		if got := KindOf(err); got != Internal {
+			t.Errorf("KindOf = %v, want Internal", got)
+		}
+		if got := Message(err); got != "internal error" {
+			t.Errorf("Message = %q, want %q", got, "internal error")
+		}
+	}
+	if got := err.Error(); got != "internal error" {
+		t.Errorf("Error() = %q", got)
+	}
+	if e.Kind() != Internal || e.Message() != "internal error" || e.Unwrap() != nil {
+		t.Error("a nil *Error's methods do not read as an internal failure")
+	}
+}

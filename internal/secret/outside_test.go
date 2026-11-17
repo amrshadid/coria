@@ -24,16 +24,23 @@ const pythonEnv = "MAGNETAR_CHECK_SEAL_PYTHON"
 // context. It runs only when MAGNETAR_CHECK_SEAL_PYTHON names an interpreter,
 // as make check-seal and CI do, because the other tests must not need Python.
 func TestSealOpensInPython(t *testing.T) {
-	python := os.Getenv(pythonEnv)
-	if python == "" {
+	// Unset means the outside check was not asked for, so the test skips.
+	// Set, even to nothing, means it was, and then a missing interpreter is a
+	// failure: a check that was asked for and quietly did not run would be
+	// reported as passed.
+	python, asked := os.LookupEnv(pythonEnv)
+	if !asked {
 		t.Skip(pythonEnv + " is not set; run make check-seal")
+	}
+	if python == "" {
+		t.Fatal(pythonEnv + " is set but empty: name a Python interpreter that has the cryptography package")
 	}
 	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "check-seal.py"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	keyFile := filepath.Join(t.TempDir(), "magnetar.key")
+	keyFile := filepath.Join(privateDir(t), "magnetar.key")
 	writePrivate(t, keyFile, []byte(keyLine(1, 1)+keyLine(2, 2)))
 	keys, err := LoadKeyFile(keyFile)
 	if err != nil {

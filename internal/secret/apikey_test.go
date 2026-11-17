@@ -22,9 +22,9 @@ func TestMakeAPIKeyShape(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		m := apiKeyPattern.FindStringSubmatch(k.Key)
+		m := apiKeyPattern.FindStringSubmatch(k.Key())
 		if m == nil {
-			t.Fatalf("a made key of %d characters does not have the documented shape", len(k.Key))
+			t.Fatalf("a made key of %d characters does not have the documented shape", len(k.Key()))
 		}
 		if m[1] != k.ID {
 			t.Errorf("the key's id is %q, but %q was returned", m[1], k.ID)
@@ -42,7 +42,7 @@ func TestAPIKeyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, secret, err := ParseAPIKey(k.Key)
+	id, secret, err := ParseAPIKey(k.Key())
 	if err != nil {
 		t.Fatalf("ParseAPIKey of a made key: %v", err)
 	}
@@ -75,17 +75,17 @@ func TestAPIKeyOneCharacterChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := map[string][]byte{k.ID: k.Hash[:]}
-	if !authenticate(stored, k.Key) {
+	if !authenticate(stored, k.Key()) {
 		t.Fatal("the unchanged key does not authenticate")
 	}
 	replacements := base58 + "0OIl_-+/= \x00é"
-	for i := range len(k.Key) {
+	for i := range len(k.Key()) {
 		for _, r := range replacements {
 			s := string(r)
-			if k.Key[i:i+1] == s {
+			if k.Key()[i:i+1] == s {
 				continue
 			}
-			changed := k.Key[:i] + s + k.Key[i+1:]
+			changed := k.Key()[:i] + s + k.Key()[i+1:]
 			if authenticate(stored, changed) {
 				t.Fatalf("the key with character %d changed authenticates", i)
 			}
@@ -100,7 +100,7 @@ func TestParseAPIKeyRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, secret := k.ID, k.Key[len(k.Key)-secretLength:]
+	id, secret := k.ID, k.Key()[len(k.Key())-secretLength:]
 	tests := map[string]string{
 		"empty":              "",
 		"prefix only":        "mgt_",
@@ -120,9 +120,9 @@ func TestParseAPIKeyRefuses(t *testing.T) {
 		"newline":            "mgt_" + id + "_" + secret[:43] + "\n",
 		"leading space":      " mgt_" + id + "_" + secret[:43],
 		"multibyte":          "mgt_" + id + "_" + secret[:42] + "é",
-		"bearer word":        "Bearer " + k.Key,
+		"bearer word":        "Bearer " + k.Key(),
 		"underscore in id":   "mgt_" + id[:11] + "__" + secret[:43],
-		"key twice":          k.Key + k.Key,
+		"key twice":          k.Key() + k.Key(),
 		"very long":          strings.Repeat("a", 1<<20),
 		"nul in secret":      "mgt_" + id + "_" + secret[:43] + "\x00",
 		"separator replaced": "mgt_" + id + "1" + secret,
@@ -153,7 +153,7 @@ func TestVerifyAPISecretRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, secret, err := ParseAPIKey(k.Key)
+	_, secret, err := ParseAPIKey(k.Key())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,8 +203,8 @@ func TestAPIKeysUniqueAndUniform(t *testing.T) {
 			t.Fatal("two made keys share a secret")
 		}
 		secrets[k.Hash] = struct{}{}
-		for i := len(k.Key) - secretLength; i < len(k.Key); i++ {
-			counts[k.Key[i]]++
+		for i := len(k.Key()) - secretLength; i < len(k.Key()); i++ {
+			counts[k.Key()[i]]++
 		}
 	}
 	// Each character is expected n*44/58 times, with a binomial standard

@@ -24,17 +24,22 @@ func TestErrorsCarryNoSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	apiSecret := k.Key[len(k.Key)-secretLength:]
+	apiSecret := k.Key()[len(k.Key())-secretLength:]
 	plaintext := []byte(testPlaintext)
 
 	var needles [][]byte
-	for _, s := range [][]byte{key1, key2, bytes.Repeat([]byte{0xff}, keySize), plaintext, []byte(apiSecret), []byte(k.Key)} {
+	for _, s := range [][]byte{key1, key2, bytes.Repeat([]byte{0xff}, keySize), plaintext, []byte(apiSecret), []byte(k.Key())} {
 		needles = append(needles, s,
 			[]byte(base64.StdEncoding.EncodeToString(s)),
 			[]byte(base64.RawStdEncoding.EncodeToString(s)),
 			[]byte(base64.URLEncoding.EncodeToString(s)),
 			[]byte(hex.EncodeToString(s)))
 	}
+	// The keys' 32-bit words in decimal too, as fmt would print a key
+	// schedule. Not for the all-ones key: its word, 4294967295, is also the
+	// highest version number, which a refusal names on purpose.
+	needles = append(needles, keyForms(key1)...)
+	needles = append(needles, keyForms(key2)...)
 	// A truncated key in a refused line must not be quoted either.
 	needles = append(needles, []byte(base64.StdEncoding.EncodeToString(key1)[:20]))
 
@@ -47,10 +52,10 @@ func TestErrorsCarryNoSecret(t *testing.T) {
 	}
 	_, err = loadText(t, string(bytes.Repeat([]byte(keyLine(1, 1)), maxKeyFileSize/63+1)))
 	errs = append(errs, err)
-	_, err = LoadKeyFile(filepath.Join(t.TempDir(), "absent.key"))
+	_, err = LoadKeyFile(filepath.Join(privateDir(t), "absent.key"))
 	errs = append(errs, err)
 
-	existing := filepath.Join(t.TempDir(), "magnetar.key")
+	existing := filepath.Join(privateDir(t), "magnetar.key")
 	if err := os.WriteFile(existing, []byte(keyLine(1, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +82,7 @@ func TestErrorsCarryNoSecret(t *testing.T) {
 	errs = append(errs, err)
 
 	for _, presented := range []string{
-		k.Key + "x", k.Key[:len(k.Key)-1], "MGT_" + k.Key[4:], k.Key[:len(k.Key)-1] + "0", " " + k.Key,
+		k.Key() + "x", k.Key()[:len(k.Key())-1], "MGT_" + k.Key()[4:], k.Key()[:len(k.Key())-1] + "0", " " + k.Key(),
 	} {
 		_, _, err := ParseAPIKey(presented)
 		errs = append(errs, err)

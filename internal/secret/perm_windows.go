@@ -35,6 +35,7 @@ var (
 const (
 	sddlRevision1             = 1
 	seFileObject              = 1 // SE_OBJECT_TYPE: a file or a directory
+	ownerSecurityInformation  = 0x1
 	daclSecurityInformation   = 0x4
 	accessAllowedACEType      = 0x0
 	accessDeniedACEType       = 0x1
@@ -123,34 +124,40 @@ func createPrivate(path string) (*os.File, error) {
 	return os.NewFile(uintptr(h), path), nil
 }
 
-// fileAccess returns the SID of every entry in f's access list that grants
-// access and applies to the file itself, in string form. A null DACL, which
-// grants everyone everything, and a granting entry of any type other than
-// ACCESS_ALLOWED_ACE (an object or callback entry, which a file does not
-// normally carry), are returned as errors, since neither can be shown to name
-// only one user.
-func fileAccess(f *os.File) ([]string, error) {
+// fileSecurity returns f's owner and the SID of every entry in its access
+// list that grants access and applies to the file itself, in string form. A
+// null DACL, which grants everyone everything, and a granting entry of any
+// type other than ACCESS_ALLOWED_ACE (an object or callback entry, which a
+// file does not normally carry), are returned as an accessError, since
+// neither can be shown to name only one user.
+func fileSecurity(f *os.File) (owner string, sids []string, err error) {
+	var ownerSID *syscall.SID
 	var dacl *acl
 	var sd uintptr
 	// GetSecurityInfo returns its error code rather than setting the last
 	// error. The handle came from os.Open, whose GENERIC_READ includes the
 	// READ_CONTROL right this call needs.
-	r, _, _ := procGetSecurityInfo.Call(f.Fd(), seFileObject, daclSecurityInformation,
-		0, 0, uintptr(unsafe.Pointer(&dacl)), 0, uintptr(unsafe.Pointer(&sd)))
+	r, _, _ := procGetSecurityInfo.Call(f.Fd(), seFileObject, ownerSecurityInformation|daclSecurityInformation,
+		uintptr(unsafe.Pointer(&ownerSID)), 0, uintptr(unsafe.Pointer(&dacl)), 0, uintptr(unsafe.Pointer(&sd)))
 	if r != 0 {
-		return nil, syscall.Errno(r)
+		return "", nil, syscall.Errno(r)
 	}
 	defer func() { _, _ = syscall.LocalFree(syscall.Handle(sd)) }()
+	if ownerSID == nil {
+		return "", nil, accessError("the file has no owner")
+	}
+	if owner, err = ownerSID.String(); err != nil {
+		return "", nil, err
+	}
 	if dacl == nil {
-		return nil, accessError("the file has no access list, which gives every user full access")
+		return owner, nil, accessError("the file has no access list, which gives every user full access")
 	}
 
-	var sids []string
 	for i := range uint32(dacl.AceCount) {
 		var ace *aceHeader
 		r, _, callErr := procGetAce.Call(uintptr(unsafe.Pointer(dacl)), uintptr(i), uintptr(unsafe.Pointer(&ace)))
 		if r == 0 {
-			return nil, callErr
+			return owner, nil, callErr
 		}
 		if ace.AceFlags&inheritOnlyACE != 0 {
 			// An inherit-only entry is passed on to children and grants
@@ -162,44 +169,69 @@ func fileAccess(f *os.File) ([]string, error) {
 			sid := (*syscall.SID)(unsafe.Add(unsafe.Pointer(ace), allowedACESIDOffset))
 			s, err := sid.String()
 			if err != nil {
-				return nil, err
+				return owner, nil, err
 			}
 			sids = append(sids, s)
 		case accessDeniedACEType, accessDeniedObjectACEType, systemAuditACEType, systemAlarmACEType, systemMandatoryLabelType:
 			// These grant nothing.
 		default:
-			return nil, accessError("the access list has an entry of type " + strconv.Itoa(int(ace.AceType)) + ", which may grant access")
+			return owner, nil, accessError("the access list has an entry of type " + strconv.Itoa(int(ace.AceType)) + ", which may grant access")
 		}
 	}
-	return sids, nil
+	return owner, sids, nil
 }
 
-// accessError is an access list that fileAccess cannot reduce to a list of
+// accessError is an access list that fileSecurity cannot reduce to a list of
 // users, as opposed to a failure to read the list at all.
 type accessError string
 
 // Error returns the reason the access list is not acceptable.
 func (e accessError) Error() string { return string(e) }
 
-// checkPrivate refuses a key file whose access list grants access to anyone
-// but the current user: another account, a group such as Administrators or
-// Users, or SYSTEM. It is the Windows counterpart of mode 0600.
+// openKeyFile opens path for reading. Windows has no FIFO in the file
+// system (a named pipe lives in the pipe namespace, not at a file path), so
+// a plain open does not block on one here. checkPrivate still refuses
+// anything that is not a regular file.
+func openKeyFile(path string) (*os.File, error) {
+	return os.Open(path) //nolint:gosec // G304: the path is the operator's own configuration, read on purpose.
+}
+
+// checkDir does not check the directory on Windows, in this version: the
+// directory's access list is not read. The key file's own owner and access
+// list are checked by checkPrivate.
+func checkDir(string, string) error {
+	return nil
+}
+
+// checkPrivate refuses a key file that is not a regular file, whose owner is
+// not the current user, or whose access list grants access to anyone but the
+// current user: another account, a group such as Administrators or Users, or
+// SYSTEM. It is the Windows counterpart of owner-only mode 0600. The owner
+// counts because an owner may always rewrite the access list, whatever it
+// says now.
 //
-// The refusal names every other SID the list grants and gives the icacls
-// commands that remove exactly those, because an entry may be explicit rather
-// than inherited (a file made by os.WriteFile in the temporary directory
-// carries explicit SYSTEM and Administrators entries), and /inheritance:r
-// alone leaves explicit entries in place.
+// The refusal names the wrong owner and every other SID the list grants, and
+// gives the icacls commands that fix exactly those, because an entry may be
+// explicit rather than inherited (a file made by os.WriteFile in the
+// temporary directory carries explicit SYSTEM and Administrators entries),
+// and /inheritance:r alone leaves explicit entries in place.
 func checkPrivate(f *os.File, path string) error {
+	info, err := f.Stat()
+	if err != nil {
+		return fault.Wrap(fault.Internal, err, "secret: the key file "+path+" cannot be checked")
+	}
+	if !info.Mode().IsRegular() {
+		return fault.New(fault.Invalid, "secret: the key file "+path+" is not a regular file")
+	}
 	user, err := currentUserSID()
 	if err != nil {
 		return fault.Wrap(fault.Internal, err, "secret: the current user cannot be found to check the key file "+path)
 	}
-	sids, err := fileAccess(f)
+	owner, sids, err := fileSecurity(f)
 	var ae accessError
 	if errors.As(err, &ae) {
 		return fault.New(fault.Invalid, "secret: the key file "+path+" may be opened by other users ("+string(ae)+
-			"); make it private to you with: "+renderCommands(fixCommands(path, user, nil))+
+			"); make it private to you with: "+renderCommands(fixCommands(path, user, owner != user, nil))+
 			", then remove the entry icacls shows for anyone else")
 	}
 	if err != nil {
@@ -211,22 +243,33 @@ func checkPrivate(f *os.File, path string) error {
 			others = append(others, s)
 		}
 	}
+	var problems []string
+	if owner != user {
+		problems = append(problems, "is owned by "+owner+", not by the current user "+user)
+	}
 	if len(others) > 0 {
-		return fault.New(fault.Invalid, "secret: the key file "+path+" may be opened by "+strings.Join(others, ", ")+
-			", not only by the current user; make it private to you with: "+renderCommands(fixCommands(path, user, others)))
+		problems = append(problems, "may be opened by "+strings.Join(others, ", ")+", not only by the current user")
 	}
 	if len(sids) == 0 {
-		return fault.New(fault.Invalid, "secret: the key file "+path+" grants access to nobody, not even the current user; fix it with: "+
-			renderCommands(fixCommands(path, user, nil)))
+		problems = append(problems, "grants access to nobody, not even the current user")
+	}
+	if len(problems) > 0 {
+		return fault.New(fault.Invalid, "secret: the key file "+path+" "+strings.Join(problems, ", and ")+
+			"; make it private to you with: "+renderCommands(fixCommands(path, user, owner != user, others)))
 	}
 	return nil
 }
 
 // fixCommands returns the arguments of the icacls commands that make path
-// private to user: drop inherited entries and give user full control, then
-// remove each SID in others. icacls takes a SID written as *S-1-....
-func fixCommands(path, user string, others []string) [][]string {
-	cmds := [][]string{{path, "/inheritance:r", "/grant:r", "*" + user + ":F"}}
+// private to user: make user the owner when setOwner is true, drop inherited
+// entries and give user full control, then remove each SID in others. icacls
+// takes a SID written as *S-1-....
+func fixCommands(path, user string, setOwner bool, others []string) [][]string {
+	var cmds [][]string
+	if setOwner {
+		cmds = append(cmds, []string{path, "/setowner", "*" + user})
+	}
+	cmds = append(cmds, []string{path, "/inheritance:r", "/grant:r", "*" + user + ":F"})
 	if len(others) > 0 {
 		remove := []string{path, "/remove"}
 		for _, s := range others {
@@ -242,7 +285,7 @@ func fixCommands(path, user string, others []string) [][]string {
 func renderCommands(cmds [][]string) string {
 	var parts []string
 	for _, args := range cmds {
-		parts = append(parts, "icacls \""+args[0]+"\" "+strings.Join(args[1:], " "))
+		parts = append(parts, `icacls "`+args[0]+`" `+strings.Join(args[1:], " "))
 	}
 	return strings.Join(parts, ", then ")
 }

@@ -34,30 +34,48 @@ func currentAccount(t *testing.T) (sid, account string) {
 	return sid, domain + `\` + name
 }
 
-// TestCreatedKeyFileACL guards that a new key file's access list names the
-// current user and nobody else. It reads the list twice: through the
-// package's own fileAccess, compared with the current user's SID, and
-// through icacls, the system's own tool, compared with the account name of
-// that SID, so a mistake in how the package reads a DACL cannot hide one in
-// how it writes one.
+// readSecurity returns the owner and the granting SIDs of the file at path,
+// read through the package's own fileSecurity.
+func readSecurity(t *testing.T, path string) (owner string, sids []string) {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	owner, sids, err = fileSecurity(f)
+	if err != nil {
+		t.Fatalf("fileSecurity: %v", err)
+	}
+	return owner, sids
+}
+
+// TestCreatedKeyFileACL guards that a new key file is owned by the current
+// user and that its access list names the current user and nobody else. It
+// reads the list twice: through the package's own fileSecurity, compared
+// with the current user's SID, and through icacls, the system's own tool,
+// compared with the account name of that SID, so a mistake in how the
+// package reads a DACL cannot hide one in how it writes one.
 func TestCreatedKeyFileACL(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "magnetar.key")
+	path := filepath.Join(privateDir(t), "magnetar.key")
 	if err := CreateKeyFile(path); err != nil {
 		t.Fatal(err)
 	}
 	user, account := currentAccount(t)
 
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sids, err := fileAccess(f)
-	_ = f.Close()
-	if err != nil {
-		t.Fatalf("fileAccess: %v", err)
+	owner, sids := readSecurity(t, path)
+	if owner != user {
+		t.Errorf("the key file is owned by %s, want the current user %s", owner, user)
 	}
 	if len(sids) != 1 || sids[0] != user {
 		t.Errorf("the access list grants %v, want only the current user %s", sids, user)
+	}
+	// The owner seen by the system's own tool as well.
+	getACL := exec.Command("powershell", "-NoProfile", "-Command", "(Get-Acl -LiteralPath '"+path+"').Owner") //nolint:gosec // G204: the test's own file.
+	if out, err := getACL.CombinedOutput(); err != nil {
+		t.Errorf("Get-Acl: %v\n%s", err, out)
+	} else if got := strings.TrimSpace(string(out)); !strings.EqualFold(got, account) {
+		t.Errorf("Get-Acl reports the owner %q, want %s", got, account)
 	}
 
 	out, err := icacls(path)
@@ -109,7 +127,7 @@ func icaclsEntries(out, name string) []string {
 // directory is granted to SYSTEM and the Administrators group as well as the
 // user.
 func TestLoadRefusesWideACL(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "magnetar.key")
+	path := filepath.Join(privateDir(t), "magnetar.key")
 	if err := os.WriteFile(path, []byte(keyLine(1, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -133,31 +151,24 @@ func TestLoadRefusesWideACL(t *testing.T) {
 // make the file load: an instruction that does not work is worse than none.
 // It runs exactly the commands the message is built from.
 func TestLoadAfterSuggestedFix(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "magnetar.key")
+	path := filepath.Join(privateDir(t), "magnetar.key")
 	if err := os.WriteFile(path, []byte(keyLine(1, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	user, _ := currentAccount(t)
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sids, err := fileAccess(f)
-	_ = f.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner, sids := readSecurity(t, path)
+	t.Logf("before the fix: owner %s, granted to %v", owner, sids)
 	var others []string
 	for _, s := range sids {
 		if s != user {
 			others = append(others, s)
 		}
 	}
-	if len(others) == 0 {
-		t.Fatalf("the file grants only the current user (%v), so there is nothing to fix", sids)
+	if len(others) == 0 && owner == user {
+		t.Fatalf("the file is already private (owner %s, %v), so there is nothing to fix", owner, sids)
 	}
 	_, loadErr := LoadKeyFile(path)
-	cmds := fixCommands(path, user, others)
+	cmds := fixCommands(path, user, owner != user, others)
 	if !strings.Contains(fault.Message(loadErr), renderCommands(cmds)) {
 		t.Fatalf("the refusal %q does not suggest %q", fault.Message(loadErr), renderCommands(cmds))
 	}
@@ -171,4 +182,29 @@ func TestLoadAfterSuggestedFix(t *testing.T) {
 	if _, err := LoadKeyFile(path); err != nil {
 		t.Fatalf("LoadKeyFile after the suggested commands: %v", err)
 	}
+}
+
+// TestLoadRefusesOtherOwner guards that a key file whose access list names
+// only the current user, but whose owner is someone else, is refused: an
+// owner may always rewrite the access list. The test gives the file to the
+// Administrators group with icacls, which needs an elevated process; it
+// skips, saying so, when the process is not elevated.
+func TestLoadRefusesOtherOwner(t *testing.T) {
+	path := filepath.Join(privateDir(t), "magnetar.key")
+	writePrivate(t, path, []byte(keyLine(1, 1)))
+	const administrators = "S-1-5-32-544"
+	if out, err := icacls(path, "/setowner", "*"+administrators); err != nil {
+		t.Skipf("icacls /setowner needs an elevated process: %v\n%s", err, out)
+	}
+	owner, sids := readSecurity(t, path)
+	t.Logf("owner %s, granted to %v", owner, sids)
+	if owner != administrators {
+		t.Fatalf("the owner is %s after /setowner, want %s", owner, administrators)
+	}
+	_, err := LoadKeyFile(path)
+	if fault.KindOf(err) != fault.Invalid || !strings.Contains(fault.Message(err), "is owned by "+administrators) ||
+		!strings.Contains(fault.Message(err), "/setowner") {
+		t.Fatalf("a key file owned by Administrators: %v, want Invalid naming the owner and the fix", err)
+	}
+	t.Logf("refusal: %s", fault.Message(err))
 }

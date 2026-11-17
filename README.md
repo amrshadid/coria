@@ -35,7 +35,7 @@ locally passes there for the same reason.
 |---|---|
 | `make fmt` | `gofmt -s`: fails on any file it would change or cannot parse |
 | `make vet` | `go vet` on 64 bits and on 32 bits (linux/386) |
-| `make lint` | golangci-lint with `.golangci.yml`, including the rule that `internal/core` imports only the standard library and itself, and from the standard library no database, network, file or system package |
+| `make lint` | golangci-lint with `.golangci.yml`, run for Linux, Windows and macOS so that files built for one system only are linted too, including the rule that `internal/core` imports only the standard library and itself, and from the standard library no database, network, file or system package |
 | `make vuln` | govulncheck: no known vulnerability reachable from the code |
 | `make test` | `go test -race ./...` |
 | `make build` | static binaries for linux/amd64, linux/386, linux/arm64, darwin/arm64 and windows/amd64, in `bin/` |
@@ -56,7 +56,7 @@ them as steps of their own on Linux:
 
 | Command | What it checks |
 |---|---|
-| `make check-seal PYTHON=python3` | the format of a sealed secret against another implementation: `scripts/check-seal.py`, with Python's `cryptography` package, opens a value Go sealed, and Go opens a value Python sealed. `PYTHON` names an interpreter that has the package |
+| `make check-seal PYTHON=python3` | the format of a sealed secret against another implementation: `scripts/check-seal.py`, with Python's `cryptography` package, opens a value Go sealed, and Go opens a value Python sealed. `PYTHON` names an interpreter that has the package; `pip install --require-hashes -r scripts/requirements-check-seal.txt` installs it at the versions CI uses. An empty `PYTHON` or a missing interpreter fails |
 | `make fuzz` | each fuzz target for `FUZZTIME` (10 seconds unless given) |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck

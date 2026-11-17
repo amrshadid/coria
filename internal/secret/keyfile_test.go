@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -95,7 +94,7 @@ func TestCreateRefusesExisting(t *testing.T) {
 // only if nothing is at its path, so a file or link planted there in advance
 // is never opened and written through.
 func TestCreatePrivateRefusesExisting(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "planted")
+	path := filepath.Join(privateDir(t), "planted")
 	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +111,7 @@ func TestCreatePrivateRefusesExisting(t *testing.T) {
 // TestCreateInMissingDirectory guards that a key file in a directory that
 // does not exist fails with an error rather than being written elsewhere.
 func TestCreateInMissingDirectory(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "no-such-dir", "magnetar.key")
+	path := filepath.Join(privateDir(t), "no-such-dir", "magnetar.key")
 	if err := CreateKeyFile(path); err == nil {
 		t.Fatal("CreateKeyFile succeeded in a directory that does not exist")
 	}
@@ -121,7 +120,7 @@ func TestCreateInMissingDirectory(t *testing.T) {
 // TestLoadMissing guards that a missing key file is NotFound and names the
 // path, so the operator knows which file to restore.
 func TestLoadMissing(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "absent.key")
+	path := filepath.Join(privateDir(t), "absent.key")
 	_, err := LoadKeyFile(path)
 	if fault.KindOf(err) != fault.NotFound {
 		t.Fatalf("LoadKeyFile of a missing file: kind %v, want NotFound", fault.KindOf(err))
@@ -237,24 +236,6 @@ func TestParseKeyFileNamesLine(t *testing.T) {
 	}
 }
 
-// TestKeysPrintNoKey guards that formatting Keys with any verb prints a
-// fixed text, so a log line that includes Keys by mistake carries no key.
-func TestKeysPrintNoKey(t *testing.T) {
-	keys := mustKeys(t, keyLine(1, 1)+keyLine(2, 2))
-	key1, key2 := testKey(1), testKey(2)
-	for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%x", "%X", "%q", "%d"} {
-		for _, v := range []any{keys, *keys} {
-			out := fmt.Sprintf(verb, v)
-			if out != "secret.Keys{2 versions}" {
-				t.Errorf("Sprintf(%q) = %q, want the fixed text", verb, out)
-			}
-			if found, ok := containsAny(out, key1, key2); ok {
-				t.Errorf("Sprintf(%q) contains key bytes %x", verb, found)
-			}
-		}
-	}
-}
-
 // FuzzParseKeyFile guards the key file parser against any input: it never
 // panics, and whatever it accepts holds at least one key, every key usable,
 // and seals with the highest version.
@@ -276,7 +257,7 @@ func FuzzParseKeyFile(f *testing.F) {
 		if keys.Versions() == 0 {
 			t.Fatal("accepted a file with no key")
 		}
-		for v := range keys.aeads {
+		for v := range keys.r.aeads {
 			if v == 0 || v > keys.SealVersion() {
 				t.Fatalf("version %d with seal version %d", v, keys.SealVersion())
 			}
@@ -289,4 +270,62 @@ func FuzzParseKeyFile(f *testing.F) {
 			t.Fatalf("an accepted file cannot open its own seal: %v", err)
 		}
 	})
+}
+
+// TestCreateRefusesFileMadeBeforeLink guards the last moment of
+// CreateKeyFile: a file that appears at the key file's path after the
+// existence check, just before the new file is given its name, is left
+// untouched and the call fails with Conflict. Replacing os.Link with
+// os.Rename, which replaces an existing file, fails this test.
+func TestCreateRefusesFileMadeBeforeLink(t *testing.T) {
+	dir := privateDir(t)
+	path := filepath.Join(dir, "magnetar.key")
+	const other = "a key file someone else made at the same moment\n"
+	beforeLink = func() {
+		if err := os.WriteFile(path, []byte(other), 0o600); err != nil {
+			t.Error(err)
+		}
+	}
+	t.Cleanup(func() { beforeLink = func() {} })
+
+	err := CreateKeyFile(path)
+	if fault.KindOf(err) != fault.Conflict {
+		t.Fatalf("CreateKeyFile with a file made before the link: %v (kind %v), want Conflict", err, fault.KindOf(err))
+	}
+	got, readErr := os.ReadFile(path)
+	if readErr != nil || string(got) != other {
+		t.Errorf("the file made before the link was changed or removed (%d bytes, %v)", len(got), readErr)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("the directory holds %d entries, want the other file alone", len(entries))
+	}
+}
+
+// TestCreateSyncFailureSaysCreated guards the error when the directory
+// cannot be synced after the key file was linked: the file exists, whole and
+// loadable, so the error must say it was created and may not survive a
+// crash, never that nothing was created.
+func TestCreateSyncFailureSaysCreated(t *testing.T) {
+	path := filepath.Join(privateDir(t), "magnetar.key")
+	syncDirFunc = func(string) error { return errors.New("synthetic sync failure") }
+	t.Cleanup(func() { syncDirFunc = syncDir })
+
+	err := CreateKeyFile(path)
+	if err == nil {
+		t.Fatal("CreateKeyFile succeeded although the directory sync failed")
+	}
+	msg := fault.Message(err)
+	if !strings.Contains(msg, "was created") || !strings.Contains(msg, "may not survive a crash") {
+		t.Errorf("message %q does not say the file was created but may not survive a crash", msg)
+	}
+	if strings.Contains(msg, "cannot be created") {
+		t.Errorf("message %q reads as if nothing was created", msg)
+	}
+	if fault.KindOf(err) != fault.Internal {
+		t.Errorf("kind %v, want Internal", fault.KindOf(err))
+	}
+	if _, err := LoadKeyFile(path); err != nil {
+		t.Errorf("the created file does not load: %v", err)
+	}
 }

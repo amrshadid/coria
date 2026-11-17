@@ -4,6 +4,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -41,17 +45,48 @@ const base58Limit = 256 - 256%len(base58)
 // told the key is no good, not which part, so a guess cannot be refined.
 const invalidAPIKey = "the key is not valid" //nolint:gosec // G101: a message for the caller, not a credential.
 
-// NewAPIKey is a key just made: the whole key, to be shown once to the person
-// it was made for and never stored, its public id, and the hash of its
-// secret, which is what the catalog stores.
+// NewAPIKey is a key just made: its public id, the hash of its secret, which
+// is what the catalog stores, and the whole key, which is shown once to the
+// person it was made for and never stored. The whole key is read only through
+// the Key method, so that showing it is a call someone wrote on purpose.
+//
+// Printed in any way (fmt with any verb, log/slog, encoding/json), a
+// NewAPIKey shows only its id. The whole key is held behind a pointer, so
+// even as an unexported field of another value, where fmt reads fields
+// instead of calling methods, it prints as an address.
 type NewAPIKey struct {
-	// Key is the whole key, mgt_<id>_<secret>.
-	Key string
 	// ID is the public id, which finds the key's row and names the key in
 	// listings, logs and audit entries.
 	ID string
 	// Hash is the SHA-256 of the secret part, as HashAPISecret computes it.
 	Hash [sha256.Size]byte
+
+	full *string
+}
+
+// Key returns the whole key, mgt_<id>_<secret>, to be shown once.
+func (k NewAPIKey) Key() string {
+	if k.full == nil {
+		return ""
+	}
+	return *k.full
+}
+
+// Format prints the key's id only, for every verb.
+func (k NewAPIKey) Format(f fmt.State, _ rune) {
+	_, _ = io.WriteString(f, "secret.NewAPIKey{ID: "+k.ID+"}")
+}
+
+// LogValue gives log/slog the key's id only.
+func (k NewAPIKey) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("id", k.ID))
+}
+
+// MarshalJSON writes the key's id only, as {"id":"..."}.
+func (k NewAPIKey) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		ID string `json:"id"`
+	}{k.ID})
 }
 
 // MakeAPIKey makes a new API key from the system's random source.
@@ -64,10 +99,11 @@ func MakeAPIKey() (NewAPIKey, error) {
 	if err != nil {
 		return NewAPIKey{}, err
 	}
+	full := apiKeyPrefix + id + "_" + secret
 	return NewAPIKey{
-		Key:  apiKeyPrefix + id + "_" + secret,
 		ID:   id,
 		Hash: HashAPISecret(secret),
+		full: &full,
 	}, nil
 }
 

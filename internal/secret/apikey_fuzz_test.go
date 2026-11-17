@@ -16,7 +16,7 @@ func FuzzParseAPIKey(f *testing.F) {
 		if err != nil {
 			f.Fatal(err)
 		}
-		f.Add(k.Key)
+		f.Add(k.Key())
 	}
 	f.Add("")
 	f.Add("mgt_")

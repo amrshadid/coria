@@ -50,13 +50,19 @@ func (k *Keys) Seal(context string, plaintext []byte) ([]byte, error) {
 	if len(plaintext) > maxPlaintext {
 		return nil, fault.New(fault.Invalid, "secret: a secret is at most 64 KiB")
 	}
-	aead, ok := k.aeads[k.sealVersion]
+	// A nil *Keys and the zero Keys hold no key; both are refused here,
+	// rather than panicking, like any Keys without the version it needs.
+	r := k.ring()
+	if r == nil {
+		return nil, fault.New(fault.Internal, "secret: no key is loaded")
+	}
+	aead, ok := r.aeads[r.sealVersion]
 	if !ok {
 		return nil, fault.New(fault.Internal, "secret: no key is loaded")
 	}
 	sealed := make([]byte, headerSize, headerSize+overhead+len(plaintext))
 	sealed[0] = formatV1
-	binary.BigEndian.PutUint32(sealed[1:headerSize], k.sealVersion)
+	binary.BigEndian.PutUint32(sealed[1:headerSize], r.sealVersion)
 	// The nonce argument is nil because the AEAD from
 	// cipher.NewGCMWithRandomNonce draws its own random nonce and writes it
 	// in front of the ciphertext; it panics if given one.
@@ -73,7 +79,11 @@ func (k *Keys) Open(context string, sealed []byte) ([]byte, error) {
 	if sealed[0] != formatV1 {
 		return nil, errNotOpened
 	}
-	aead, ok := k.aeads[binary.BigEndian.Uint32(sealed[1:headerSize])]
+	r := k.ring()
+	if r == nil {
+		return nil, errNotOpened
+	}
+	aead, ok := r.aeads[binary.BigEndian.Uint32(sealed[1:headerSize])]
 	if !ok {
 		return nil, errNotOpened
 	}

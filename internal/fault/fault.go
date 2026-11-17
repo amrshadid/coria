@@ -98,7 +98,14 @@ func Wrap(kind Kind, cause error, message string) error {
 
 // Error returns the message followed by the wrapped error's text, for the log.
 // It is not for the caller: use Message for that.
+//
+// A nil *Error reads as an unclassified internal failure, here and in every
+// other method, so a typed nil stored in an error variable cannot panic in a
+// log line.
 func (e *Error) Error() string {
+	if e == nil {
+		return internalMessage
+	}
 	if e.cause == nil {
 		return e.message
 	}
@@ -108,27 +115,37 @@ func (e *Error) Error() string {
 // Unwrap returns the wrapped error, so errors.Is and errors.As see through an
 // Error to its cause.
 func (e *Error) Unwrap() error {
+	if e == nil {
+		return nil
+	}
 	return e.cause
 }
 
 // Kind returns the error's kind.
 func (e *Error) Kind() Kind {
+	if e == nil {
+		return Internal
+	}
 	return e.kind
 }
 
 // Message returns the message that is safe to show the caller, without the
 // wrapped error.
 func (e *Error) Message() string {
+	if e == nil {
+		return internalMessage
+	}
 	return e.message
 }
 
 // KindOf returns the kind of the first Error in err's chain, and Internal
-// when there is none or err is nil. The first is the outermost, so a layer
-// that wraps a lower one with a new kind decides what the caller sees.
+// when there is none, err is nil, or the Error found is a nil pointer. The
+// first is the outermost, so a layer that wraps a lower one with a new kind
+// decides what the caller sees.
 func KindOf(err error) Kind {
 	var e *Error
 	if errors.As(err, &e) {
-		return e.kind
+		return e.Kind()
 	}
 	return Internal
 }
@@ -140,14 +157,15 @@ const internalMessage = "internal error"
 
 // Message returns the text that is safe to show the caller for err: the
 // message of the first Error in its chain, or "internal error" when there is
-// none. It returns the empty string for a nil error.
+// none or the Error found is a nil pointer. It returns the empty string for
+// a nil error.
 func Message(err error) string {
 	if err == nil {
 		return ""
 	}
 	var e *Error
 	if errors.As(err, &e) {
-		return e.message
+		return e.Message()
 	}
 	return internalMessage
 }
