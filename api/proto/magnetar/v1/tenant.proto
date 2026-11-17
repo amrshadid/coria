@@ -1,0 +1,184 @@
+syntax = "proto3";
+
+// Package magnetar.v1: what holds for the whole package (callers, roles, error
+// kinds, paging, secrets) is said on the package in access.proto.
+package magnetar.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// TenantService creates, reads, lists and removes tenants: the independent
+// archives of an installation, each with its own database.
+service TenantService {
+  // CreateTenant registers a tenant and makes its tables in its database.
+  // Magnetar is given a database, never asked to make one: for Postgres the
+  // database and its login exist before this call. A tenant is created
+  // whole or not at all; when its database cannot be reached or its tables
+  // cannot be made, nothing is registered and the answer is UNAVAILABLE.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the tenant's name and
+  // database type; never its database address.
+  // Errors: invalid, unauthenticated, permission denied, conflict (a tenant
+  // with that name exists), unavailable.
+  rpc CreateTenant(CreateTenantRequest) returns (CreateTenantResponse);
+
+  // GetTenant answers one tenant.
+  //
+  // Role: reader on that tenant, or reader on the installation.
+  // Audit: one entry in the installation's log, with the tenant's name.
+  // Errors: invalid, unauthenticated, permission denied (also when the tenant
+  // does not exist), unavailable.
+  rpc GetTenant(GetTenantRequest) returns (GetTenantResponse);
+
+  // ListTenants answers the tenants the caller may see, ordered by name: every
+  // tenant for a reader on the installation, otherwise only the tenants on
+  // which the caller's key holds a grant. A key with no grant gets an empty
+  // list, not an error.
+  //
+  // Role: none beyond an authenticated caller; the role decides what is
+  // listed.
+  // Audit: one entry in the installation's log.
+  // Errors: invalid, unauthenticated, unavailable.
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+
+  // RemoveTenant removes a tenant's registration and the tables Magnetar made
+  // in its database. It never removes a database Magnetar did not create.
+  // The tenant's name is sent twice, and the server refuses the request as
+  // invalid when the two differ, so a mistyped or misbound name cannot remove
+  // the wrong tenant.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the tenant's name, kept
+  // after the tenant and its own log are gone.
+  // Errors: invalid, unauthenticated, permission denied (also when the tenant
+  // does not exist), unavailable.
+  rpc RemoveTenant(RemoveTenantRequest) returns (RemoveTenantResponse);
+}
+
+// TenantState is whether a tenant can serve requests. The server checks each
+// tenant when it starts and again on a timer. A tenant that is not ready is
+// refused on its own, as UNAVAILABLE; the other tenants keep working.
+enum TenantState {
+  // Never answered by the server. A client that reads it was built against an
+  // older contract than the server's.
+  TENANT_STATE_UNSPECIFIED = 0;
+
+  // The tenant's database answers and its tables are current.
+  TENANT_STATE_READY = 1;
+
+  // The tenant's database does not answer. The server tries again on its
+  // timer, and the tenant returns to ready when the database does.
+  TENANT_STATE_UNREACHABLE = 2;
+
+  // The server is upgrading the tenant's tables to the binary's version.
+  TENANT_STATE_UPGRADING = 3;
+
+  // An upgrade or a check failed in a way a retry does not mend; a person
+  // must act. The tenant's state_reason says why.
+  TENANT_STATE_FAILED = 4;
+}
+
+// DatabaseType is the kind of database a tenant's data lives in.
+enum DatabaseType {
+  // No type. Refused as invalid by CreateTenant.
+  DATABASE_TYPE_UNSPECIFIED = 0;
+
+  // A SQLite file that the server makes in its data directory.
+  DATABASE_TYPE_SQLITE = 1;
+
+  // A Postgres database that exists before the tenant is created, reached by
+  // the address given to CreateTenant.
+  DATABASE_TYPE_POSTGRES = 2;
+}
+
+// Tenant is an independent archive of the installation. It never carries its
+// database's address: that is a secret, sent in once by CreateTenant and kept
+// sealed by the server.
+message Tenant {
+  // The tenant's name, unique in the installation, and its id in this API.
+  // It does not change.
+  string name = 1;
+
+  // The kind of database the tenant's data lives in.
+  DatabaseType database_type = 2;
+
+  // Whether the tenant can serve requests now.
+  TenantState state = 3;
+
+  // Why the tenant is in its state, in words for a person, when the state is
+  // not ready. Empty when it is ready. It never holds the database's address
+  // or password.
+  string state_reason = 4;
+
+  // When the tenant was created.
+  google.protobuf.Timestamp create_time = 5;
+}
+
+// CreateTenantRequest is the tenant to create.
+message CreateTenantRequest {
+  // The tenant's name. Required: 1 to 63 characters, lowercase ASCII letters,
+  // digits and hyphens, starting with a letter. The name is used in paths on
+  // the server, so nothing else is accepted.
+  string name = 1;
+
+  // The kind of database the tenant's data will live in. Required.
+  DatabaseType database_type = 2;
+
+  // SECRET. The address of the tenant's Postgres database, with its login and
+  // password, as a Postgres connection URI or keyword/value string. This is
+  // one of the two fields through which a secret crosses the API, and it only
+  // comes in: the server seals it with the installation key and no answer, log
+  // or audit entry ever holds it. Required for DATABASE_TYPE_POSTGRES; must be
+  // empty for DATABASE_TYPE_SQLITE.
+  string database_address = 3 [debug_redact = true];
+}
+
+// CreateTenantResponse is the tenant created.
+message CreateTenantResponse {
+  // The tenant, in its state after creation.
+  Tenant tenant = 1;
+}
+
+// GetTenantRequest names a tenant.
+message GetTenantRequest {
+  // The tenant's name. Required.
+  string name = 1;
+}
+
+// GetTenantResponse is the tenant named.
+message GetTenantResponse {
+  // The tenant.
+  Tenant tenant = 1;
+}
+
+// ListTenantsRequest asks for a page of tenants.
+message ListTenantsRequest {
+  // The most tenants to answer. Zero means the server's default; a value above
+  // the server's maximum is lowered to it; a negative value is invalid.
+  int32 page_size = 1;
+
+  // The next_page_token of the previous page, or empty for the first page.
+  string page_token = 2;
+}
+
+// ListTenantsResponse is a page of tenants.
+message ListTenantsResponse {
+  // The tenants of this page.
+  repeated Tenant tenants = 1;
+
+  // The page_token that asks for the next page. Empty on the last page.
+  string next_page_token = 2;
+}
+
+// RemoveTenantRequest names the tenant to remove, twice.
+message RemoveTenantRequest {
+  // The tenant's name. Required.
+  string name = 1;
+
+  // The tenant's name again. Required; the request is refused as invalid
+  // unless it equals name exactly.
+  string confirm_name = 2;
+}
+
+// RemoveTenantResponse is empty: the tenant is gone.
+message RemoveTenantResponse {}

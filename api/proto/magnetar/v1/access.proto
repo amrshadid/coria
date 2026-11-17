@@ -1,0 +1,382 @@
+syntax = "proto3";
+
+// Package magnetar.v1 is the API of a Magnetar installation: the contract that
+// other systems build on. It is served by ConnectRPC on one TLS port, so a
+// stock gRPC client, a Connect client and a plain HTTP client posting JSON all
+// reach the same methods.
+//
+// Who is calling. A request over the network carries a key in the
+// Authorization header as a bearer token (RFC 6750): "Authorization: Bearer
+// mgt_<id>_<secret>". A request on the installation's local socket carries no
+// key: its caller is the operating system user that runs the server, the
+// local operator, who is the installation's admin.
+//
+// What a caller may do. A key holds grants; a grant gives a role (Role) on one
+// tenant or on the installation. Each method's comment names the role it
+// needs and on what.
+//
+// Every method's comment also says what it writes to the audit log and which
+// error kinds it can answer. The kinds and the codes that carry them:
+//
+//   - invalid: INVALID_ARGUMENT (HTTP 400). The request is malformed or
+//     breaks a rule stated on its fields. Sending it again unchanged fails
+//     again.
+//   - unauthenticated: UNAUTHENTICATED (HTTP 401). No key, a key the server
+//     does not know, a wrong secret, an expired key and a revoked key all get
+//     this one answer, with the same message, so a caller cannot tell them
+//     apart.
+//   - permission denied: PERMISSION_DENIED (HTTP 403). The key is good but
+//     holds no grant with the role the method needs.
+//   - not found: NOT_FOUND (HTTP 404). The thing named does not exist, and
+//     the caller may see the place where it would be.
+//   - conflict: ALREADY_EXISTS (HTTP 409). The change would collide with what
+//     exists, such as a second tenant with the same name.
+//   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs
+//     cannot be reached, or a tenant is not ready. Sending it again later may
+//     succeed.
+//
+// Any method can also answer INTERNAL (HTTP 500) for a fault of the server; its
+// message says nothing about the cause, which is in the server's log under the
+// request's id.
+//
+// "No grant" and "no such tenant" get the same answer. A request that names a
+// tenant is answered PERMISSION_DENIED, with the same message, both when the
+// caller holds no grant on that tenant and when no tenant has that name. This
+// holds for every caller, an installation admin included, so the answer never
+// depends on whether the tenant exists, and a key cannot learn the names of
+// tenants it was not given. NOT_FOUND is answered only for things inside a
+// scope the caller may see: a key, a grant, a setting.
+//
+// Rules of the whole package: a list method takes page_size and page_token and
+// answers next_page_token, never an offset; times are UTC; ids are opaque
+// strings, to be compared whole and never parsed. Secrets cross the API in two
+// fields only, CreateTenantRequest.database_address (in) and
+// CreateKeyResponse.secret (out, once); both are marked debug_redact so
+// generated code does not print them.
+package magnetar.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+// AccessService manages keys and the grants that give them roles, and tells a
+// caller who it is. In this version only an installation admin makes, reads,
+// revokes and grants keys.
+service AccessService {
+  // CreateKey makes a key and answers its secret, once. The server keeps only
+  // the SHA-256 of the secret, so it can never show the secret again.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the new key's id; never
+  // its secret.
+  // Errors: invalid, unauthenticated, permission denied, unavailable.
+  rpc CreateKey(CreateKeyRequest) returns (CreateKeyResponse);
+
+  // GetKey answers one key, revoked and expired keys included.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the key's id.
+  // Errors: invalid, unauthenticated, permission denied, not found,
+  // unavailable.
+  rpc GetKey(GetKeyRequest) returns (GetKeyResponse);
+
+  // ListKeys answers every key of the installation, revoked and expired keys
+  // included, oldest first.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log.
+  // Errors: invalid, unauthenticated, permission denied, unavailable.
+  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse);
+
+  // RevokeKey ends a key for good: from this call on, a request with it is
+  // answered UNAUTHENTICATED. Its grants stay listed, so the record shows what
+  // the key could do, but they give nothing. Revoking a revoked key changes
+  // nothing and answers the key with its first revoke time.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the key's id.
+  // Errors: invalid, unauthenticated, permission denied, not found,
+  // unavailable.
+  rpc RevokeKey(RevokeKeyRequest) returns (RevokeKeyResponse);
+
+  // AddGrant gives a key a role on one tenant or on the installation. A key
+  // holds at most one grant per scope; a role includes the roles below it
+  // (Role), so one is enough. To change a role, remove the grant and add the
+  // new one.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the key's id, the scope
+  // and the role.
+  // Errors: invalid, unauthenticated, permission denied (also when the tenant
+  // does not exist), not found (the key), conflict (the key already holds a
+  // grant on that scope, or is revoked), unavailable.
+  rpc AddGrant(AddGrantRequest) returns (AddGrantResponse);
+
+  // ListGrants answers grants, filtered by key, by tenant, or both, ordered by
+  // key id and then scope.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the filters.
+  // Errors: invalid, unauthenticated, permission denied (also when the tenant
+  // in the filter does not exist), unavailable.
+  rpc ListGrants(ListGrantsRequest) returns (ListGrantsResponse);
+
+  // RemoveGrant takes back a key's grant on one scope.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the key's id and the
+  // scope.
+  // Errors: invalid, unauthenticated, permission denied (also when the tenant
+  // does not exist), not found (the key, or its grant on that scope),
+  // unavailable.
+  rpc RemoveGrant(RemoveGrantRequest) returns (RemoveGrantResponse);
+
+  // WhoAmI answers the caller: the key the request carried with that key's
+  // grants, or the local operator.
+  //
+  // Role: none; any caller the server authenticates.
+  // Audit: one entry in the installation's log.
+  // Errors: unauthenticated, unavailable.
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+}
+
+// Role is what a grant allows. Each role includes every role listed before it.
+// On a tenant, a role acts on that tenant only; on the installation, it acts
+// on the installation's own objects (tenants, keys, grants, its settings and
+// its audit log), not on what is inside a tenant.
+enum Role {
+  // No role. Refused as invalid wherever a role is required.
+  ROLE_UNSPECIFIED = 0;
+
+  // On a tenant: read its data and its status. On the installation: list the
+  // tenants and read their states, and read the installation's settings.
+  ROLE_READER = 1;
+
+  // On a tenant: a reader that may also send data in. Not given on the
+  // installation: AddGrant refuses it there as invalid.
+  ROLE_WRITER = 2;
+
+  // On a tenant: a writer that may also run jobs and review quarantined
+  // files. On the installation: a reader that may also see every tenant's
+  // status.
+  ROLE_OPERATOR = 3;
+
+  // On a tenant: an operator that may also change the tenant's configuration,
+  // its settings among it, and read its audit log. On the installation: may
+  // also create and remove tenants, make and revoke keys, add and remove
+  // grants, change the installation's settings and read its audit log.
+  ROLE_ADMIN = 4;
+}
+
+// Key is a credential held by a person or a system. It never carries its
+// secret: the server keeps only the secret's SHA-256, and the secret is
+// answered once, by CreateKey.
+message Key {
+  // The key's public id, the <id> part of mgt_<id>_<secret>. It names the key
+  // in grants, in the audit log and in this API; it is not a secret.
+  string id = 1;
+
+  // The name of the person or system that holds the key, as given to
+  // CreateKey.
+  string holder = 2;
+
+  // When the key was made.
+  google.protobuf.Timestamp create_time = 3;
+
+  // When the key stops working. Absent when the key was made never to expire.
+  google.protobuf.Timestamp expire_time = 4;
+
+  // When a request last carried the key. Absent when it has never been used.
+  // It is written at most once a minute per key, so it can be up to a minute
+  // behind.
+  google.protobuf.Timestamp last_use_time = 5;
+
+  // When the key was revoked. Absent while it is not revoked.
+  google.protobuf.Timestamp revoke_time = 6;
+}
+
+// Grant gives one key one role on one scope: a tenant, or the installation.
+message Grant {
+  // The id of the key that holds the grant.
+  string key_id = 1;
+
+  // What the grant acts on. Exactly one is set.
+  oneof scope {
+    // The name of the tenant the grant acts on.
+    string tenant = 2;
+
+    // The grant acts on the installation. Must be true when set; false is
+    // refused as invalid.
+    bool installation = 3;
+  }
+
+  // The role the grant gives. Required. ROLE_WRITER is refused on the
+  // installation.
+  Role role = 4;
+}
+
+// Principal is who a request was made by.
+message Principal {
+  // The caller. Exactly one is set.
+  oneof caller {
+    // The key the request carried, without its secret.
+    Key key = 1;
+
+    // The local operator, on the installation's local socket.
+    LocalOperator local_operator = 2;
+  }
+
+  // The grants of the key, in the order ListGrants answers them. Empty for
+  // the local operator, who holds no grant: it is the installation's admin by
+  // being the user that runs the server.
+  repeated Grant grants = 3;
+}
+
+// LocalOperator is the operating system user that runs the server, calling on
+// the installation's local socket.
+message LocalOperator {
+  // The operating system's id of the user: a numeric uid on Linux and macOS,
+  // a security identifier (SID) on Windows.
+  string user_id = 1;
+}
+
+// CreateKeyRequest asks for a new key.
+message CreateKeyRequest {
+  // The name of the person or system that will hold the key. Required; at
+  // most 256 bytes of UTF-8.
+  string holder = 1;
+
+  // When the key stops working. When neither field is set, the key expires
+  // after the server's default period, 90 days.
+  oneof expiry {
+    // The key expires this long after it is made. Must be positive.
+    google.protobuf.Duration expire_after = 2;
+
+    // The key never expires. Must be true when set; false is refused as
+    // invalid, so a key without an expiry is always asked for in so many
+    // words.
+    bool never_expire = 3;
+  }
+}
+
+// CreateKeyResponse is the new key and, once, its secret.
+message CreateKeyResponse {
+  // The new key.
+  Key key = 1;
+
+  // SECRET. The whole key, mgt_<id>_<secret>, as a client sends it in the
+  // Authorization header. This is one of the two fields through which a
+  // secret crosses the API, and the only time this one is answered: the
+  // server keeps only its SHA-256 and cannot answer it again. A client shows
+  // it to its user once and does not log it.
+  string secret = 2 [debug_redact = true];
+}
+
+// GetKeyRequest names a key.
+message GetKeyRequest {
+  // The key's id. Required.
+  string id = 1;
+}
+
+// GetKeyResponse is the key named.
+message GetKeyResponse {
+  // The key.
+  Key key = 1;
+}
+
+// ListKeysRequest asks for a page of keys.
+message ListKeysRequest {
+  // The most keys to answer. Zero means the server's default; a value above
+  // the server's maximum is lowered to it; a negative value is invalid.
+  int32 page_size = 1;
+
+  // The next_page_token of the previous page, or empty for the first page.
+  string page_token = 2;
+}
+
+// ListKeysResponse is a page of keys.
+message ListKeysResponse {
+  // The keys of this page.
+  repeated Key keys = 1;
+
+  // The page_token that asks for the next page. Empty on the last page.
+  string next_page_token = 2;
+}
+
+// RevokeKeyRequest names the key to revoke.
+message RevokeKeyRequest {
+  // The key's id. Required.
+  string id = 1;
+}
+
+// RevokeKeyResponse is the revoked key.
+message RevokeKeyResponse {
+  // The key, with its revoke time.
+  Key key = 1;
+}
+
+// AddGrantRequest is the grant to add.
+message AddGrantRequest {
+  // The grant. Its key id, scope and role are required.
+  Grant grant = 1;
+}
+
+// AddGrantResponse is the grant added.
+message AddGrantResponse {
+  // The grant, as stored.
+  Grant grant = 1;
+}
+
+// ListGrantsRequest asks for a page of grants. Filters that are set must all
+// match.
+message ListGrantsRequest {
+  // Only the grants of this key. Empty for every key.
+  string key_id = 1;
+
+  // Only the grants on this tenant. Empty for every scope.
+  string tenant = 2;
+
+  // The most grants to answer. Zero means the server's default; a value above
+  // the server's maximum is lowered to it; a negative value is invalid.
+  int32 page_size = 3;
+
+  // The next_page_token of the previous page, or empty for the first page.
+  // A token is refused as invalid with filters other than those it was made
+  // with.
+  string page_token = 4;
+}
+
+// ListGrantsResponse is a page of grants.
+message ListGrantsResponse {
+  // The grants of this page.
+  repeated Grant grants = 1;
+
+  // The page_token that asks for the next page. Empty on the last page.
+  string next_page_token = 2;
+}
+
+// RemoveGrantRequest names a grant by its key and its scope.
+message RemoveGrantRequest {
+  // The id of the key that holds the grant. Required.
+  string key_id = 1;
+
+  // The scope of the grant. Exactly one is set.
+  oneof scope {
+    // The name of the tenant the grant acts on.
+    string tenant = 2;
+
+    // The grant acts on the installation. Must be true when set.
+    bool installation = 3;
+  }
+}
+
+// RemoveGrantResponse is empty: the grant is gone.
+message RemoveGrantResponse {}
+
+// WhoAmIRequest has no fields: the caller is read from the request itself.
+message WhoAmIRequest {}
+
+// WhoAmIResponse is the caller.
+message WhoAmIResponse {
+  // Who made the request, with what it may do.
+  Principal principal = 1;
+}

@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+// Package magnetar.v1: what holds for the whole package (callers, roles, error
+// kinds, paging, secrets) is said on the package in access.proto.
+package magnetar.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// AuditService reads the audit logs. Every request to the API writes one entry,
+// refused requests included. What concerns the installation is written to the
+// installation's log; what concerns a tenant, to that tenant's log. A request
+// refused because a tenant's database is down, or because the tenant does not
+// exist, is written to the installation's log. No entry holds a key's secret or
+// a database's address.
+service AuditService {
+  // ListAuditEntries answers the entries of the installation's log or of one
+  // tenant's log, newest first.
+  //
+  // Role: admin on the scope asked for (that tenant, or the installation).
+  // Audit: one entry in the log of the scope asked for; the listing records
+  // itself, so reading the log is in the log.
+  // Errors: invalid, unauthenticated, permission denied (also when the tenant
+  // does not exist), unavailable.
+  rpc ListAuditEntries(ListAuditEntriesRequest) returns (ListAuditEntriesResponse);
+}
+
+// AuditOutcome is how a request ended.
+enum AuditOutcome {
+  // Never answered by the server. A client that reads it was built against an
+  // older contract than the server's.
+  AUDIT_OUTCOME_UNSPECIFIED = 0;
+
+  // The request did what it asked.
+  AUDIT_OUTCOME_DONE = 1;
+
+  // The request was refused before it did anything: unauthenticated,
+  // permission denied or invalid.
+  AUDIT_OUTCOME_REFUSED = 2;
+
+  // The request was allowed and failed: not found, conflict, unavailable or a
+  // fault of the server.
+  AUDIT_OUTCOME_FAILED = 3;
+}
+
+// AuditEntry records one request: when, who, from where, what, and how it
+// ended.
+message AuditEntry {
+  // The entry's id, unique within its log.
+  string id = 1;
+
+  // When the request was received.
+  google.protobuf.Timestamp time = 2;
+
+  // The id of the key the request carried, read from the key even when the
+  // key was refused. Empty when the request carried no key or none could be
+  // read, and for the local operator.
+  string key_id = 3;
+
+  // The operating system's id of the local operator, for a request on the
+  // local socket. Empty for a request over the network.
+  string local_user_id = 4;
+
+  // The network address and port the request came from. Empty for a request
+  // on the local socket.
+  string client_address = 5;
+
+  // The full name of the method called, such as
+  // "/magnetar.v1.TenantService/CreateTenant".
+  string method = 6;
+
+  // The name of the tenant the request named. Empty when it named none.
+  string tenant = 7;
+
+  // What the request acted on, such as a key's id or a setting's name. Empty
+  // when it acted on no one thing.
+  string object = 8;
+
+  // How the request ended.
+  AuditOutcome outcome = 9;
+
+  // The id of the request, the same as in the server's log, so an entry and
+  // the log lines of its request can be found from each other.
+  string request_id = 10;
+}
+
+// ListAuditEntriesRequest asks for a page of one log.
+message ListAuditEntriesRequest {
+  // The log to read. Exactly one is set.
+  oneof scope {
+    // Read this tenant's log.
+    string tenant = 1;
+
+    // Read the installation's log. Must be true when set.
+    bool installation = 2;
+  }
+
+  // The most entries to answer. Zero means the server's default; a value
+  // above the server's maximum is lowered to it; a negative value is invalid.
+  int32 page_size = 3;
+
+  // The next_page_token of the previous page, or empty for the first page.
+  // A token is refused as invalid with a scope other than the one it was made
+  // with.
+  string page_token = 4;
+}
+
+// ListAuditEntriesResponse is a page of entries.
+message ListAuditEntriesResponse {
+  // The entries of this page, newest first.
+  repeated AuditEntry entries = 1;
+
+  // The page_token that asks for the next page. Empty on the last page.
+  string next_page_token = 2;
+}
