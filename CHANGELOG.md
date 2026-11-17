@@ -116,5 +116,24 @@ All notable changes to Magnetar are written here. The form is
   The program grew from 1.6 to 10.2 MiB (linux/amd64: 1.57 to 10.67 MiB), most
   of it the Connect and protobuf client and `net/http`; cobra and its flag
   library account for about 0.9 MiB of it.
+- Nothing decided who a caller is or what it may do. `internal/access` now
+  has one check that every request will go through: it reads the key by its
+  id, compares its secret in constant time, refuses a revoked or expired one,
+  reads its roles, and compares them with what the request needs, in the
+  order the API contract states. Every bad credential gets one answer
+  (unauthenticated), and a missing grant and a missing tenant get one answer
+  (permission denied) after the same reads, so a key cannot learn which
+  tenants exist; a caller who may list every tenant is told "not found"
+  instead. Nothing is cached, so a revoked key is refused on its next
+  request. A change is audited in its own transaction, as before; a refusal
+  or a read hands its entry to a bounded audit writer that appends in
+  batches, so it costs no synced commit on the request's path, and an entry
+  dropped because the server is overwhelmed is counted and reported in the
+  log. A key's last use is recorded at most once a minute, by a bounded
+  background worker that drops marks rather than delay a request. Making,
+  listing and revoking keys and setting, listing and removing grants need
+  the installation admin and are each audited in the same transaction; a
+  new key expires after 90 days unless another period (at most 10 years) or
+  "never" is asked for. The binary does not use it yet.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop
