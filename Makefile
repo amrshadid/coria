@@ -10,6 +10,13 @@
 #   make build   static binaries for every target in bin/
 #   make size    the size of each binary make build left in bin/, as a
 #                Markdown table
+#
+# Two more checks, which CI runs as steps of their own and make check does
+# not, because each needs more than Go:
+#
+#   make check-seal  the sealed-secret format against Python's cryptography
+#                    package (PYTHON=... names an interpreter that has it)
+#   make fuzz        each fuzz target for FUZZTIME (10s unless given)
 
 GO      ?= go
 BIN     := bin
@@ -43,7 +50,7 @@ VERSION ?=
 LDFLAGS := -s -w $(if $(VERSION),-X $(MODULE)/internal/version.Version=$(VERSION))
 
 .DEFAULT_GOAL := check
-.PHONY: check fmt vet lint vuln test build size
+.PHONY: check fmt vet lint vuln test build size check-seal fuzz
 
 check: fmt vet lint vuln test build size
 
@@ -64,10 +71,15 @@ vet:
 	$(GO) vet ./...
 	GOOS=linux GOARCH=386 $(GO) vet ./...
 
+# Linted once per system, because a file built only for one system
+# (perm_windows.go, acl_darwin.go) is invisible to a run for another; CI runs
+# this on Linux, so without the GOOS runs those files would never be linted.
 lint: $(filter $(TOOLS)/%,$(GOLANGCI_LINT))
 	$(GOLANGCI_LINT) version
 	$(GOLANGCI_LINT) config verify
 	$(GOLANGCI_LINT) run ./...
+	GOOS=windows $(GOLANGCI_LINT) run ./...
+	GOOS=darwin $(GOLANGCI_LINT) run ./...
 
 vuln: $(filter $(TOOLS)/%,$(GOVULNCHECK))
 	$(GOVULNCHECK) -version
@@ -95,6 +107,32 @@ size:
 	@for f in $(BIN)/magnetar-*; do \
 		bytes=$$(wc -c < "$$f" | tr -d ' '); \
 		echo "| $${f#$(BIN)/} | $$bytes | $$(awk "BEGIN { printf \"%.2f\", $$bytes / 1048576 }") |"; \
+	done
+
+# The outside check of internal/secret: scripts/check-seal.py opens what Go
+# sealed and seals what Go then opens. -count=1 so a cached pass is never
+# reported for a Python that changed. The test skips only when the variable is
+# unset; this target always sets it, so here the check runs or fails, and an
+# empty PYTHON or an interpreter that is not there fails before the test.
+# PYTHON is the same variable proto-python uses, defined with it below.
+check-seal:
+	@test -n "$(PYTHON)" || { echo "check-seal: PYTHON is empty; name an interpreter that has the cryptography package" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-seal: no interpreter $(PYTHON)" >&2; exit 1; }
+	MAGNETAR_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
+
+# Every fuzz target, as package:function. go test fuzzes one target at a
+# time, so each is a run of its own; -run '^$$' keeps the other tests out.
+FUZZTIME     ?= 10s
+FUZZ_TARGETS := \
+	internal/secret:FuzzOpen \
+	internal/secret:FuzzParseAPIKey \
+	internal/secret:FuzzParseKeyFile
+
+fuzz:
+	@set -e; for target in $(FUZZ_TARGETS); do \
+		pkg=$${target%%:*}; fn=$${target#*:}; \
+		echo "$(GO) test -run '^$$' -fuzz ^$$fn\$$ -fuzztime $(FUZZTIME) ./$$pkg"; \
+		$(GO) test -run '^$$' -fuzz "^$$fn\$$" -fuzztime $(FUZZTIME) ./$$pkg; \
 	done
 
 # govulncheck needs a newer Go to build than this module needs, so the installs

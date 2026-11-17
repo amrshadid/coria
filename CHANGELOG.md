@@ -40,5 +40,31 @@ All notable changes to Magnetar are written here. The form is
   lint`, a breaking-change check against the base branch, and a check that the
   committed Go code in `gen/` is current run in CI, with Python's grpcio-tools
   compiling the same files as a second toolchain. No server serves it yet.
+- An error had no way to say what sort of failure it was, so the API and the
+  command line would each have had to guess a code from its text. Package
+  `internal/fault` gives an error a kind (invalid, unauthenticated, denied, not
+  found, conflict, unavailable, internal) and the exit code of each kind, and
+  keeps the message a caller may see apart from the cause, which is for the
+  log only. An error with no kind is internal.
+- There was nowhere to keep a secret such as a tenant database's password
+  except in plain text, and no way to make an API key. Package `internal/secret`
+  adds the installation key file (one `magnetar-key-v1 <version> <key>` line
+  per key version, created only where no file exists). The file must be private
+  to the user magnetar runs as, or it is refused with the command that fixes
+  it: on Linux and macOS a regular file owned by that user with mode 0600 or
+  narrower, with no macOS access list entry granting anything, in a directory
+  owned by that user that nobody else can write; on Windows a regular file
+  owned by the current user whose access list names nobody else. A FIFO at the
+  path is refused at once instead of hanging the start. It seals a secret with
+  AES-256-GCM under a random nonce, bound to the context it is stored for, so a
+  sealed value moved to another row does not open, and opening fails the same
+  way whatever is wrong. `scripts/check-seal.py` checks the format against
+  Python's `cryptography` package in both directions, installed in CI from
+  hashed requirements. API keys look like `mgt_<id>_<secret>`, with 256 random
+  bits in the secret, of which only the SHA-256 is to be stored, compared in
+  constant time. Printing the loaded keys or a new API key, by any `fmt` verb,
+  `log/slog` or `encoding/json`, shows no key material.
+- `make lint` also lints for Windows and macOS, so files built for one system
+  only are linted in CI.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop
