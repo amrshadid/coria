@@ -29,14 +29,29 @@ linters:
         # import from here outward would undo that, and nothing else in a
         # review would show it. The rule is written before the package exists
         # so the first file in it is already held to it.
+        #
+        # Strict: an import is refused unless the allow list names it, so a
+        # third-party package in the core needs a change here, reviewed like
+        # any other. An import on both lists passes only when its allow entry
+        # is the longer, which is how net/netip and net/url pass while the
+        # rest of net is refused.
         core:
-          list-mode: lax
+          list-mode: strict
           files:
             - "**/internal/core/**"
+            # Non-test files only. A core test may read its testdata with os
+            # and path/filepath; the core itself, which the binary runs, may
+            # not.
+            - "!$test"
           allow:
-            # The core's own subpackages are the core. Longer than the deny
-            # entry for the module, so it wins in lax mode.
+            - $gostd
+            # The core's root package and its subpackages are the core.
+            - github.com/amrshadid/magnetar/internal/core$
             - github.com/amrshadid/magnetar/internal/core/
+            # Pure value types with parsers and no I/O: an address in a
+            # receiver's list of callers, a storage location written as a URL.
+            - net/netip$
+            - net/url$
           deny:
             - pkg: github.com/amrshadid/magnetar
               desc: the core imports nothing of Magnetar's; state the need as an interface in the core
@@ -47,7 +62,8 @@ linters:
               desc: the core does not reach a database; the catalog package does
             - pkg: github.com/jackc/pgx
               desc: the core does not reach a database; the catalog package does
-            # Networks: net covers net/http and every other package under it.
+            # Networks: net covers net/http and every other package under it
+            # except the two allowed above.
             - pkg: net
               desc: the core does not reach the network; the receive, send and api packages do
             - pkg: crypto/tls
@@ -67,12 +83,31 @@ linters:
               desc: the core does not touch files or processes
             - pkg: io/ioutil
               desc: the core does not touch files; the blob package does
+            - pkg: io/fs
+              desc: the core does not touch files; the blob package does
             - pkg: path/filepath
               desc: the core does not touch files; the blob package does
+            - pkg: embed
+              desc: the core carries no files; what it needs is passed in
             - pkg: github.com/aws
               desc: the core does not reach a storage; the blob package does
             - pkg: github.com/minio
               desc: the core does not reach a storage; the blob package does
+            # The system itself, under the standard library's safe surface.
+            - pkg: syscall
+              desc: the core makes no system calls
+            - pkg: unsafe
+              desc: the core does not step outside Go's memory safety
+            - pkg: runtime/cgo
+              desc: Magnetar is pure Go, and the core most of all
+            - pkg: plugin
+              desc: the core loads no code at run time
+            # Effects that make the core's result depend on more than its
+            # input, so a test could not pin it down.
+            - pkg: log
+              desc: the core returns errors and events; its callers log them
+            - pkg: crypto/rand
+              desc: the core draws no randomness; a caller passes in what it needs
 
     misspell:
       locale: US

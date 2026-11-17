@@ -26,8 +26,13 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
 		if _, err := fmt.Fprintln(stdout, version.Get()); err != nil {
-			// A closed pipe is a failure the caller should see in the exit
-			// code; the message may not reach anyone, which is all right.
+			// Standard output could not take the line: a full disk or a
+			// device that refuses writes (on Linux, > /dev/full), or on
+			// Windows a closed pipe. On Unix a closed pipe never gets here,
+			// because Go lets SIGPIPE end the process on a write to standard
+			// output.
+			// A script must see the failure in the exit code, not success
+			// with nothing printed.
 			_, _ = fmt.Fprintf(stderr, "magnetar: writing the version: %v\n", err)
 			return exitFailed
 		}

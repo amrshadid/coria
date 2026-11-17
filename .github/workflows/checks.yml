@@ -18,6 +18,14 @@ concurrency:
   group: checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# bash named explicitly, on every system, so GitHub runs each script with
+# "bash -eo pipefail": a command that fails inside a pipe, such as make size
+# piped to tee below, then fails its step instead of being hidden by the last
+# command of the pipe. Without it the default shell runs without pipefail.
+defaults:
+  run:
+    shell: bash
+
 # Each step runs a Makefile target, the same command a person runs locally, so
 # CI and a laptop cannot disagree about what a gate is.
 #
@@ -27,10 +35,13 @@ jobs:
   linux:
     name: Linux - Go ${{ matrix.go }}
     runs-on: ubuntu-latest
+    # A run that hangs is stopped long before GitHub's six hours: these jobs
+    # take about two minutes, and every minute counts against the allowance.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        go: ['1.25', '1.26']
+        go: ['1.26', '1.27']
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -78,7 +89,8 @@ jobs:
         run: make build
 
       # The size is written to the job summary so a pull request that makes the
-      # binary much larger shows it without anyone opening the log.
+      # binary much larger shows it without anyone opening the log. pipefail
+      # (see defaults) makes a failing make size fail this step despite tee.
       - name: Binary sizes
         run: |
           {
@@ -90,9 +102,11 @@ jobs:
       # Each binary was built with CGO_ENABLED=0; this shows the Linux one is
       # in fact static, so a change that brings in C cannot pass unseen.
       - name: The linux/amd64 binary is static
+        # grep without -q: it reads all its input, so the command before it is
+        # never cut off by a closed pipe, which pipefail would report as a
+        # failure.
         run: |
-          file bin/magnetar-linux-amd64
-          file bin/magnetar-linux-amd64 | grep -q 'statically linked'
+          file bin/magnetar-linux-amd64 | grep 'statically linked'
           go version -m bin/magnetar-linux-amd64 | grep -x $'\tbuild\tCGO_ENABLED=0'
           ./bin/magnetar-linux-amd64 version
 
@@ -100,8 +114,9 @@ jobs:
   # there on every pull request. The newest Go only: Windows minutes count
   # double against a private repository, and the older Go is tested on Linux.
   windows:
-    name: Windows - Go 1.26
+    name: Windows - Go 1.27
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -111,7 +126,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version: '1.27'
           check-latest: true
           cache: false
 
@@ -128,9 +143,10 @@ jobs:
   # repository, and the work is done on macOS, where the tests run before every
   # pull request. When the repository is public this joins the pull requests.
   macos:
-    name: macOS - Go 1.26
+    name: macOS - Go 1.27
     if: github.event_name == 'push'
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -140,7 +156,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version: '1.27'
           check-latest: true
           cache: false
 

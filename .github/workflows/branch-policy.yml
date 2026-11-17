@@ -4,8 +4,12 @@ name: Branch policy
 # everything in a release has already been merged and checked on develop.
 #
 # GitHub's branch rules can require a pull request and passing checks, but not
-# the branch a pull request comes from. This check is how that is enforced; the
-# rule on main then requires it.
+# the branch a pull request comes from, so the rule is stated as this check.
+# While the repository is private on the free plan, GitHub refuses branch
+# protection on it (the API answers 403), so this check cannot be made required:
+# it advises. A red result tells whoever merges not to, but GitHub still allows
+# the merge. When the repository is public, a protection rule on main makes it
+# required.
 #
 # It also runs on pull requests into develop, where it always passes. A check
 # belongs to a commit, not to a pull request: a pull request refused here and
@@ -23,6 +27,8 @@ jobs:
   source-branch:
     name: Pull request source branch
     runs-on: ubuntu-latest
+    # It compares two strings; anything near this limit is a hung runner.
+    timeout-minutes: 5
     steps:
       - name: A pull request into main comes from develop
         env:

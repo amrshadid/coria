@@ -64,21 +64,21 @@ func TestAnythingElseIsAUsageError(t *testing.T) {
 	}
 }
 
-// failingWriter is a standard output that cannot be written, as a closed pipe.
+// failingWriter is a standard output that cannot be written, as a full disk.
 type failingWriter struct{}
 
 // Write fails every time.
-func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
 
 // TestVersionFailsWhenOutputFails guards the exit code when the version cannot
-// be written: a script piping the output must see a failure, not success with
-// nothing printed.
+// be written: a script reading the output must see a failure, not success
+// with nothing printed.
 func TestVersionFailsWhenOutputFails(t *testing.T) {
 	var stderr bytes.Buffer
 	if code := run([]string{"version"}, failingWriter{}, &stderr); code != exitFailed {
 		t.Errorf("exit code %d, want %d", code, exitFailed)
 	}
-	if !strings.Contains(stderr.String(), "broken pipe") {
+	if !strings.Contains(stderr.String(), "no space left on device") {
 		t.Errorf("standard error %q, want the write error", stderr.String())
 	}
 }

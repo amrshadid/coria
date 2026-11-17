@@ -47,8 +47,11 @@ LDFLAGS := -s -w $(if $(VERSION),-X $(MODULE)/internal/version.Version=$(VERSION
 
 check: fmt vet lint vuln test build size
 
+# gofmt's exit status is checked as well as its list: a file that does not
+# parse is reported on standard error with status 2 and is not in the list, so
+# looking at the list alone would pass it.
 fmt:
-	@files="$$(gofmt -s -l $(GOFILES))"; \
+	@files="$$(gofmt -s -l $(GOFILES))" || { echo "gofmt -s failed: a file above does not parse"; exit 1; }; \
 	if [ -n "$$files" ]; then \
 		echo "gofmt -s would change these files:"; echo "$$files"; \
 		gofmt -s -d $$files; exit 1; \
