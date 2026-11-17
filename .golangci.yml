@@ -109,6 +109,37 @@ linters:
             - pkg: crypto/rand
               desc: the core draws no randomness; a caller passes in what it needs
 
+        # The master database's port (internal/master) and its contract
+        # suite (internal/master/mastertest) are stated as operations, so a
+        # database with no SQL at all can implement them, and the suite
+        # cannot be bent to one driver by knowing which one it runs on
+        # (decision D12). An import of SQL or of a driver here would undo
+        # both without anything else in a review showing it.
+        master:
+          files:
+            - "**/internal/master/**"
+          deny:
+            - pkg: database/sql
+              desc: the master port is operations, not SQL; a driver package implements it
+            - pkg: modernc.org/sqlite
+              desc: the master port knows no database; internal/driver/sqlite does
+            - pkg: github.com/jackc/pgx
+              desc: the master port knows no database; the Postgres driver does
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the port and its suite never import a driver; drivers import them
+            - pkg: github.com/amrshadid/magnetar/internal/sqlkit
+              desc: sqlkit is for SQL drivers; the port must not assume SQL
+
+        # Only the SQLite driver reaches the SQLite library, so nothing else
+        # in the binary can come to depend on which database it runs on.
+        sqlite-library:
+          files:
+            - $all
+            - "!**/internal/driver/sqlite/**"
+          deny:
+            - pkg: modernc.org/sqlite
+              desc: only internal/driver/sqlite uses the SQLite library; ask for a master.Store from internal/driver
+
     misspell:
       locale: US
 

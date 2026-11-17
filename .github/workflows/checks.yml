@@ -98,6 +98,22 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -c 'import cryptography; print("cryptography", cryptography.__version__)'
           make check-seal PYTHON="$RUNNER_TEMP/venv/bin/python"
 
+      # The tests as 32-bit binaries, which an x86-64 Linux runs natively:
+      # int is 32 bits there and the SQLite library is translated for it.
+      # One Go only, to spend fewer minutes.
+      - name: go test, linux/386
+        if: matrix.go == '1.27'
+        run: make test-386
+
+      # The SQLite master database read back by SQLite's own command line
+      # tool: tables, rows, integrity and foreign key checks, and a dump
+      # searched for the sample key's secret (absent) and hash (present).
+      - name: Outside check, the SQLite master read by sqlite3
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --yes --no-install-recommends sqlite3 > /dev/null
+          make check-master-sqlite
+
       # Each fuzz target for ten seconds, on one Go only: the inputs it finds
       # do not depend on the Go release, and the minutes are limited.
       - name: Fuzzing, 10 seconds a target

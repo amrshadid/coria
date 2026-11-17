@@ -66,5 +66,21 @@ All notable changes to Magnetar are written here. The form is
   `log/slog` or `encoding/json`, shows no key material.
 - `make lint` also lints for Windows and macOS, so files built for one system
   only are linted in CI.
+- There was nowhere to keep tenants, keys, grants, settings or the audit log.
+  The master database is now reached through a port stated as operations
+  (`internal/master`), not SQL, with a contract suite every database driver
+  must pass (`internal/master/mastertest`) and a SQLite driver that passes it
+  (`internal/driver/sqlite`, on `modernc.org/sqlite`, pure Go, so the binary
+  stays static on every target). Every change takes its audit entry and
+  writes both or neither; setting a grant replaces its role in one step and
+  returns the old one; lists are paged by cursor, never by offset; times keep
+  their microseconds in UTC. SQLite runs in write-ahead mode with one writing
+  connection (`BEGIN IMMEDIATE`), a read-only pool, foreign keys on, full
+  sync (with `F_FULLFSYNC` on macOS) and a busy timeout. Migrations are
+  embedded SQL files, checksummed and applied under a lock that holds across
+  processes; a changed applied file, or a database a newer binary upgraded,
+  is refused. `scripts/check-master-sqlite.sh` reads what the driver wrote
+  with the `sqlite3` tool and finds a key's hash but never its secret. The
+  binary does not use the master database yet.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop
