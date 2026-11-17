@@ -1,0 +1,133 @@
+# golangci-lint v2 configuration. The version that reads it is pinned in the
+# Makefile and in .github/workflows/checks.yml; a v1 binary refuses this file.
+version: "2"
+
+linters:
+  # The standard set (errcheck, govet, ineffassign, staticcheck, unused) and
+  # the linters below.
+  default: standard
+  enable:
+    # The architecture rule: imports point inward, toward internal/core.
+    - depguard
+    # errors.Is and errors.As, not == and type assertions, so a wrapped error
+    # with its context still matches.
+    - errorlint
+    # Security mistakes in code that handles patient data and secrets.
+    - gosec
+    - misspell
+    # Every exported identifier has a doc comment.
+    - revive
+    - unconvert
+
+  settings:
+    depguard:
+      rules:
+        # The core holds the domain: types, the reception state machine, naming
+        # and routing. It states what it needs as interfaces that the other
+        # packages implement, so it is tested without a database, a network or
+        # a storage, and a new database or storage type never changes it. An
+        # import from here outward would undo that, and nothing else in a
+        # review would show it. The rule is written before the package exists
+        # so the first file in it is already held to it.
+        #
+        # Strict: an import is refused unless the allow list names it, so a
+        # third-party package in the core needs a change here, reviewed like
+        # any other. An import on both lists passes only when its allow entry
+        # is the longer, which is how net/netip and net/url pass while the
+        # rest of net is refused.
+        core:
+          list-mode: strict
+          files:
+            - "**/internal/core/**"
+            # Non-test files only. A core test may read its testdata with os
+            # and path/filepath; the core itself, which the binary runs, may
+            # not.
+            - "!$test"
+          allow:
+            - $gostd
+            # The core's root package and its subpackages are the core.
+            - github.com/amrshadid/magnetar/internal/core$
+            - github.com/amrshadid/magnetar/internal/core/
+            # Pure value types with parsers and no I/O: an address in a
+            # receiver's list of callers, a storage location written as a URL.
+            - net/netip$
+            - net/url$
+          deny:
+            - pkg: github.com/amrshadid/magnetar
+              desc: the core imports nothing of Magnetar's; state the need as an interface in the core
+            # Databases.
+            - pkg: database/sql
+              desc: the core does not reach a database; the catalog package does
+            - pkg: modernc.org/sqlite
+              desc: the core does not reach a database; the catalog package does
+            - pkg: github.com/jackc/pgx
+              desc: the core does not reach a database; the catalog package does
+            # Networks: net covers net/http and every other package under it
+            # except the two allowed above.
+            - pkg: net
+              desc: the core does not reach the network; the receive, send and api packages do
+            - pkg: crypto/tls
+              desc: the core does not reach the network; the receive, send and api packages do
+            - pkg: connectrpc.com
+              desc: the core does not reach the network; the api package does
+            - pkg: google.golang.org/grpc
+              desc: the core does not reach the network; the api package does
+            - pkg: github.com/amrshadid/go-dicom/network
+              desc: the core does not reach the network; the receive and send packages do
+            - pkg: github.com/amrshadid/go-dicom/dicomweb
+              desc: the core does not reach the network; the dicomweb package does
+            # Storages: files and buckets.
+            - pkg: os$
+              desc: the core does not touch files; the blob package does
+            - pkg: os/
+              desc: the core does not touch files or processes
+            - pkg: io/ioutil
+              desc: the core does not touch files; the blob package does
+            - pkg: io/fs
+              desc: the core does not touch files; the blob package does
+            - pkg: path/filepath
+              desc: the core does not touch files; the blob package does
+            - pkg: embed
+              desc: the core carries no files; what it needs is passed in
+            - pkg: github.com/aws
+              desc: the core does not reach a storage; the blob package does
+            - pkg: github.com/minio
+              desc: the core does not reach a storage; the blob package does
+            # The system itself, under the standard library's safe surface.
+            - pkg: syscall
+              desc: the core makes no system calls
+            - pkg: unsafe
+              desc: the core does not step outside Go's memory safety
+            - pkg: runtime/cgo
+              desc: Magnetar is pure Go, and the core most of all
+            - pkg: plugin
+              desc: the core loads no code at run time
+            # Effects that make the core's result depend on more than its
+            # input, so a test could not pin it down.
+            - pkg: log
+              desc: the core returns errors and events; its callers log them
+            - pkg: crypto/rand
+              desc: the core draws no randomness; a caller passes in what it needs
+
+    misspell:
+      locale: US
+
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+
+  exclusions:
+    generated: lax
+    # Not the "comments" preset: it would silence the missing doc comment
+    # warnings that the revive rules above are here to give.
+    presets:
+      - common-false-positives
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true
