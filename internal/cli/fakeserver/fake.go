@@ -180,7 +180,10 @@ func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 			select {
 			case <-time.After(s.Delay):
 			case <-ctx.Done():
-				return codes.ToConnect(fault.New(fault.Unavailable, "the call was abandoned"))
+				// The contract: a call whose deadline passes is answered
+				// DEADLINE_EXCEEDED, which has no fault kind, so it is not
+				// made by ToConnect.
+				return connect.NewError(connect.CodeDeadlineExceeded, "the deadline passed")
 			}
 		}
 

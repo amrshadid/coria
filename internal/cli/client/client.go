@@ -191,7 +191,7 @@ func Call[T any](ctx context.Context, c *Client, what string, fn func(context.Co
 	return nil, &CallError{
 		What:      what,
 		RequestID: info.ResponseHeader().Get(RequestIDHeader),
-		err:       c.classify(err),
+		err:       c.classify(ctx, err),
 	}
 }
 
@@ -199,8 +199,16 @@ func Call[T any](ctx context.Context, c *Client, what string, fn func(context.Co
 // through the codes table. Anything else never reached an answer: a refused
 // connection, a certificate the system does not trust, a deadline. Each is
 // said in words, with the target but never with a key or a header.
-func (c *Client) classify(err error) error {
+//
+// A deadline is told before anything else. The server learns the deadline from
+// the request and may answer first, with a message of its own about an
+// abandoned call; the person's own --timeout is what ran out, so that is what
+// the line says, whichever side noticed first.
+func (c *Client) classify(ctx context.Context, err error) error {
 	var ce *connect.Error
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || (errors.As(err, &ce) && ce.Code() == connect.CodeDeadlineExceeded) {
+		return fault.Wrap(fault.Unavailable, err, "no answer from "+c.target+" within "+c.timeout.String()+" (see --timeout)")
+	}
 	if errors.As(err, &ce) && ce.IsRemote() {
 		return codes.FromConnect(ce)
 	}
@@ -213,8 +221,6 @@ func (c *Client) classify(err error) error {
 	switch {
 	case errors.As(err, &unknown), errors.As(err, &invalid), errors.As(err, &host):
 		return fault.Wrap(fault.Unavailable, err, "refusing to connect to "+c.target+": its certificate is not trusted by this system ("+tlsReason(err)+")")
-	case errors.Is(err, context.DeadlineExceeded):
-		return fault.Wrap(fault.Unavailable, err, "no answer from "+c.target+" within "+c.timeout.String()+" (see --timeout)")
 	case errors.As(err, &op):
 		return fault.Wrap(fault.Unavailable, err, "cannot reach the server at "+c.target+": "+op.Err.Error())
 	}

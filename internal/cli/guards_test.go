@@ -49,7 +49,6 @@ func TestEveryErrorKindHasItsExitCode(t *testing.T) {
 		{connect.CodeUnavailable, 1},
 		{connect.CodeInternal, 1},
 		{connect.CodeResourceExhausted, 2},
-		{connect.CodeDeadlineExceeded, 1},
 	}
 	for _, c := range cases {
 		for _, extra := range [][]string{nil, {"--json"}} {
@@ -59,6 +58,19 @@ func TestEveryErrorKindHasItsExitCode(t *testing.T) {
 			want := "magnetar: tenant show: what the server said (request id req-000001)\n"
 			expect(t, res, c.exit, "", want)
 		}
+	}
+}
+
+// TestDeadlineExceededIsAFailureWithTheTimeout guards the one code the
+// contract has any method answer outside its list of kinds: a server that
+// says DEADLINE_EXCEEDED gives exit 1 and a line that names the --timeout
+// that ran out, with the request id, rather than the server's own words.
+func TestDeadlineExceededIsAFailureWithTheTimeout(t *testing.T) {
+	r := newRig(t)
+	r.fake.FailWith(magnetarv1connect.TenantServiceGetTenantProcedure, connect.CodeDeadlineExceeded, "the deadline passed")
+	res := r.run("tenant", "show", "lab1")
+	if res.code != 1 || res.stdout != "" || !strings.HasSuffix(res.stderr, " within 30s (see --timeout) (request id req-000001)\n") || strings.Count(res.stderr, "\n") != 1 {
+		t.Errorf("%+v", res)
 	}
 }
 
