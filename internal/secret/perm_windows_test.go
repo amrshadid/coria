@@ -7,27 +7,46 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
+// currentAccount returns the current user as DOMAIN\name, the form icacls
+// prints, looked up from the process token's SID. whoami is not used: on a
+// system with Git installed, PATH may find Git's whoami, which prints the
+// name without its domain.
+func currentAccount(t *testing.T) (sid, account string) {
+	t.Helper()
+	sid, err := currentUserSID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := syscall.StringToSid(sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, domain, _, err := s.LookupAccount("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sid, domain + `\` + name
+}
+
 // TestCreatedKeyFileACL guards that a new key file's access list names the
 // current user and nobody else. It reads the list twice: through the
 // package's own fileAccess, compared with the current user's SID, and
-// through icacls, the system's own tool, compared with the account name
-// whoami reports, so a mistake in how the package reads a DACL cannot hide
-// one in how it writes one.
+// through icacls, the system's own tool, compared with the account name of
+// that SID, so a mistake in how the package reads a DACL cannot hide one in
+// how it writes one.
 func TestCreatedKeyFileACL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "magnetar.key")
 	if err := CreateKeyFile(path); err != nil {
 		t.Fatal(err)
 	}
+	user, account := currentAccount(t)
 
-	user, err := currentUserSID()
-	if err != nil {
-		t.Fatal(err)
-	}
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -41,11 +60,6 @@ func TestCreatedKeyFileACL(t *testing.T) {
 		t.Errorf("the access list grants %v, want only the current user %s", sids, user)
 	}
 
-	who, err := exec.Command("whoami").Output()
-	if err != nil {
-		t.Fatalf("whoami: %v", err)
-	}
-	account := strings.TrimSpace(string(who))
 	out, err := icacls(path)
 	if err != nil {
 		t.Fatalf("icacls: %v\n%s", err, out)
@@ -72,16 +86,16 @@ func icacls(path string, args ...string) (string, error) {
 }
 
 // icaclsEntries returns the access entries in icacls output: the first line
-// starts with the path, each further entry is on its own indented line, and
-// the output ends with a summary line after a blank one.
-func icaclsEntries(out, path string) []string {
+// starts with the file name, each further entry is on its own indented line,
+// and the output ends with a summary line after a blank one.
+func icaclsEntries(out, name string) []string {
 	var entries []string
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			break
 		}
-		line = strings.TrimSpace(strings.TrimPrefix(line, path))
+		line = strings.TrimSpace(strings.TrimPrefix(line, name))
 		if line != "" {
 			entries = append(entries, line)
 		}
@@ -89,12 +103,12 @@ func icaclsEntries(out, path string) []string {
 	return entries
 }
 
-// TestLoadRefusesInheritedACL guards that a key file whose access list
-// grants anyone besides the current user is refused, with the icacls command
-// that fixes it. A file made by os.WriteFile inherits the access list of the
-// temporary directory, which on Windows grants SYSTEM and the Administrators
-// group as well as the user.
-func TestLoadRefusesInheritedACL(t *testing.T) {
+// TestLoadRefusesWideACL guards that a key file whose access list grants
+// anyone besides the current user is refused, naming them and giving the
+// icacls commands that fix it. A file made by os.WriteFile in the temporary
+// directory is granted to SYSTEM and the Administrators group as well as the
+// user.
+func TestLoadRefusesWideACL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "magnetar.key")
 	if err := os.WriteFile(path, []byte(keyLine(1, 1)), 0o600); err != nil {
 		t.Fatal(err)
@@ -109,28 +123,52 @@ func TestLoadRefusesInheritedACL(t *testing.T) {
 	if fault.KindOf(err) != fault.Invalid {
 		t.Errorf("kind %v, want Invalid: %v", fault.KindOf(err), err)
 	}
-	if msg := fault.Message(err); !strings.Contains(msg, "icacls") {
+	if msg := fault.Message(err); !strings.Contains(msg, "icacls \""+path+"\" /inheritance:r") {
 		t.Errorf("message %q does not say how to fix it", msg)
 	}
 	t.Logf("refusal: %s", fault.Message(err))
 }
 
-// TestLoadAfterIcaclsFix guards that the command the refusal suggests does
+// TestLoadAfterSuggestedFix guards that the commands the refusal suggests do
 // make the file load: an instruction that does not work is worse than none.
-func TestLoadAfterIcaclsFix(t *testing.T) {
+// It runs exactly the commands the message is built from.
+func TestLoadAfterSuggestedFix(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "magnetar.key")
 	if err := os.WriteFile(path, []byte(keyLine(1, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	who, err := exec.Command("whoami").Output()
+	user, _ := currentAccount(t)
+	f, err := os.Open(path)
 	if err != nil {
-		t.Fatalf("whoami: %v", err)
+		t.Fatal(err)
 	}
-	account := strings.TrimSpace(string(who))
-	if out, err := icacls(path, "/inheritance:r", "/grant:r", account+":F"); err != nil {
-		t.Fatalf("icacls: %v\n%s", err, out)
+	sids, err := fileAccess(f)
+	_ = f.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
+	var others []string
+	for _, s := range sids {
+		if s != user {
+			others = append(others, s)
+		}
+	}
+	if len(others) == 0 {
+		t.Fatalf("the file grants only the current user (%v), so there is nothing to fix", sids)
+	}
+	_, loadErr := LoadKeyFile(path)
+	cmds := fixCommands(path, user, others)
+	if !strings.Contains(fault.Message(loadErr), renderCommands(cmds)) {
+		t.Fatalf("the refusal %q does not suggest %q", fault.Message(loadErr), renderCommands(cmds))
+	}
+	for _, args := range cmds {
+		if out, err := exec.Command("icacls", args...).CombinedOutput(); err != nil { //nolint:gosec // G204: the test's own file.
+			t.Fatalf("icacls %v: %v\n%s", args, err, out)
+		}
+	}
+	out, _ := icacls(path)
+	t.Logf("icacls %s after the fix:\n%s", filepath.Base(path), out)
 	if _, err := LoadKeyFile(path); err != nil {
-		t.Fatalf("LoadKeyFile after the suggested icacls: %v", err)
+		t.Fatalf("LoadKeyFile after the suggested commands: %v", err)
 	}
 }

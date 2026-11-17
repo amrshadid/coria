@@ -29,7 +29,10 @@ func TestSealOpen(t *testing.T) {
 		if sealed[0] != 0x01 || binary.BigEndian.Uint32(sealed[1:5]) != 258 {
 			t.Errorf("header %x, want 01 00000102", sealed[:5])
 		}
-		if len(plaintext) > 0 && bytes.Contains(sealed, []byte(plaintext)) {
+		// Only plaintexts long enough that random bytes do not contain them
+		// by chance: a one-byte plaintext appears in 33 random bytes about
+		// one time in eight.
+		if len(plaintext) >= 8 && bytes.Contains(sealed, []byte(plaintext)) {
 			t.Error("the sealed value contains the plaintext")
 		}
 		opened, err := keys.Open(testContext, sealed)

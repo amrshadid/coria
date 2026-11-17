@@ -5,7 +5,9 @@ package secret
 import (
 	"errors"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -182,9 +184,13 @@ func (e accessError) Error() string { return string(e) }
 // checkPrivate refuses a key file whose access list grants access to anyone
 // but the current user: another account, a group such as Administrators or
 // Users, or SYSTEM. It is the Windows counterpart of mode 0600.
+//
+// The refusal names every other SID the list grants and gives the icacls
+// commands that remove exactly those, because an entry may be explicit rather
+// than inherited (a file made by os.WriteFile in the temporary directory
+// carries explicit SYSTEM and Administrators entries), and /inheritance:r
+// alone leaves explicit entries in place.
 func checkPrivate(f *os.File, path string) error {
-	fixHint := "; make it private to you with: icacls \"" + path + "\" /inheritance:r /grant:r \"%USERNAME%\":F, " +
-		"then remove with icacls /remove any other name it lists"
 	user, err := currentUserSID()
 	if err != nil {
 		return fault.Wrap(fault.Internal, err, "secret: the current user cannot be found to check the key file "+path)
@@ -192,20 +198,53 @@ func checkPrivate(f *os.File, path string) error {
 	sids, err := fileAccess(f)
 	var ae accessError
 	if errors.As(err, &ae) {
-		return fault.New(fault.Invalid, "secret: the key file "+path+" may be opened by other users ("+string(ae)+")"+fixHint)
+		return fault.New(fault.Invalid, "secret: the key file "+path+" may be opened by other users ("+string(ae)+
+			"); make it private to you with: "+renderCommands(fixCommands(path, user, nil))+
+			", then remove the entry icacls shows for anyone else")
 	}
 	if err != nil {
 		return fault.Wrap(fault.Internal, err, "secret: the access list of the key file "+path+" cannot be read")
 	}
+	var others []string
 	for _, s := range sids {
-		if s != user {
-			return fault.New(fault.Invalid, "secret: the key file "+path+" may be opened by "+s+", not only by the current user"+fixHint)
+		if s != user && !slices.Contains(others, s) {
+			others = append(others, s)
 		}
 	}
+	if len(others) > 0 {
+		return fault.New(fault.Invalid, "secret: the key file "+path+" may be opened by "+strings.Join(others, ", ")+
+			", not only by the current user; make it private to you with: "+renderCommands(fixCommands(path, user, others)))
+	}
 	if len(sids) == 0 {
-		return fault.New(fault.Invalid, "secret: the key file "+path+" grants access to nobody, not even the current user"+fixHint)
+		return fault.New(fault.Invalid, "secret: the key file "+path+" grants access to nobody, not even the current user; fix it with: "+
+			renderCommands(fixCommands(path, user, nil)))
 	}
 	return nil
+}
+
+// fixCommands returns the arguments of the icacls commands that make path
+// private to user: drop inherited entries and give user full control, then
+// remove each SID in others. icacls takes a SID written as *S-1-....
+func fixCommands(path, user string, others []string) [][]string {
+	cmds := [][]string{{path, "/inheritance:r", "/grant:r", "*" + user + ":F"}}
+	if len(others) > 0 {
+		remove := []string{path, "/remove"}
+		for _, s := range others {
+			remove = append(remove, "*"+s)
+		}
+		cmds = append(cmds, remove)
+	}
+	return cmds
+}
+
+// renderCommands writes icacls commands as a person would type them, with the
+// path quoted, joined by "then".
+func renderCommands(cmds [][]string) string {
+	var parts []string
+	for _, args := range cmds {
+		parts = append(parts, "icacls \""+args[0]+"\" "+strings.Join(args[1:], " "))
+	}
+	return strings.Join(parts, ", then ")
 }
 
 // syncDir does nothing on Windows: a directory cannot be opened for
