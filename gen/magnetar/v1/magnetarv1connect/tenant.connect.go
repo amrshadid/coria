@@ -3,7 +3,7 @@
 // Source: magnetar/v1/tenant.proto
 
 // Package magnetar.v1: what holds for the whole package (callers, roles, error
-// kinds, paging, secrets) is said on the package in access.proto.
+// kinds, limits, paging, secrets) is said on the package in access.proto.
 package magnetarv1connect
 
 import (
@@ -46,23 +46,26 @@ var (
 	})
 	tenantServiceGetTenantSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("GetTenant"),
-			Procedure:  TenantServiceGetTenantProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("GetTenant"),
+			Procedure:        TenantServiceGetTenantProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 	tenantServiceListTenantsSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ListTenants"),
-			Procedure:  TenantServiceListTenantsProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ListTenants"),
+			Procedure:        TenantServiceListTenantsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 	tenantServiceRemoveTenantSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("RemoveTenant"),
-			Procedure:  TenantServiceRemoveTenantProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("RemoveTenant"),
+			Procedure:        TenantServiceRemoveTenantProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
 		}
 	})
 )
@@ -72,43 +75,52 @@ type TenantServiceClient interface {
 	// CreateTenant registers a tenant and makes its tables in its database.
 	// Magnetar is given a database, never asked to make one: for Postgres the
 	// database and its login exist before this call. A tenant is created
-	// whole or not at all; when its database cannot be reached or its tables
+	// whole or not at all; when its database does not answer or its tables
 	// cannot be made, nothing is registered and the answer is UNAVAILABLE.
 	//
 	// Role: admin on the installation.
 	// Audit: one entry in the installation's log, with the tenant's name and
-	// database type; never its database address.
-	// Errors: invalid, unauthenticated, permission denied, conflict (a tenant
-	// with that name exists), unavailable.
+	// its database type in details; never its database address.
+	// Errors: unauthenticated, permission denied, invalid, conflict (a tenant
+	// with that name exists), unavailable (the master database or the tenant's
+	// database does not answer).
 	CreateTenant(context.Context, *v1.CreateTenantRequest) (*v1.CreateTenantResponse, error)
-	// GetTenant answers one tenant.
+	// GetTenant answers one tenant, from the master, whatever its state.
 	//
 	// Role: reader on that tenant, or reader on the installation.
 	// Audit: one entry in the installation's log, with the tenant's name.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), unavailable.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), unavailable (the master database does not answer).
 	GetTenant(context.Context, *v1.GetTenantRequest) (*v1.GetTenantResponse, error)
-	// ListTenants answers the tenants the caller may see, ordered by name: every
-	// tenant for a reader on the installation, otherwise only the tenants on
-	// which the caller's key holds a grant. A key with no grant gets an empty
-	// list, not an error.
+	// ListTenants answers the tenants the caller may see, from the master,
+	// ordered by name: every tenant for a reader or more on the installation
+	// and for the local operator, otherwise only the tenants on which the
+	// caller's key holds a grant. A key with no grant gets an empty list, not
+	// an error.
 	//
-	// Role: none beyond an authenticated caller; the role decides what is
-	// listed.
+	// Role: none beyond an authenticated caller; the caller's grants decide
+	// what is listed.
 	// Audit: one entry in the installation's log.
-	// Errors: invalid, unauthenticated, unavailable.
+	// Errors: unauthenticated, invalid, unavailable (the master database does
+	// not answer).
 	ListTenants(context.Context, *v1.ListTenantsRequest) (*v1.ListTenantsResponse, error)
-	// RemoveTenant removes a tenant's registration and the tables Magnetar made
-	// in its database. It never removes a database Magnetar did not create.
-	// The tenant's name is sent twice, and the server refuses the request as
-	// invalid when the two differ, so a mistyped or misbound name cannot remove
-	// the wrong tenant.
+	// RemoveTenant unregisters a tenant. It touches nothing in the tenant's
+	// database: the SQLite file or the Postgres tables stay where they are,
+	// and the answer says where. It works whatever the tenant's state, also
+	// when its database is gone. The tenant's name is sent twice, and the
+	// request is refused as invalid when the two differ, so a mistyped or
+	// misbound name cannot remove the wrong tenant. A repeated call finds no
+	// tenant and is answered NOT_FOUND; it removes nothing more.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the tenant's name, kept
-	// after the tenant and its own log are gone.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), unavailable.
+	// Audit: one entry in the installation's log, with the tenant's name, and
+	// its database type and data location in details; kept after the tenant is
+	// gone.
+	// Errors: unauthenticated, permission denied, invalid, not found (no tenant
+	// has that name: a caller who passes the role check may list every tenant,
+	// so it is told), unavailable (the master database does not answer).
 	RemoveTenant(context.Context, *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error)
 }
 
@@ -123,43 +135,52 @@ type TenantServiceHandler interface {
 	// CreateTenant registers a tenant and makes its tables in its database.
 	// Magnetar is given a database, never asked to make one: for Postgres the
 	// database and its login exist before this call. A tenant is created
-	// whole or not at all; when its database cannot be reached or its tables
+	// whole or not at all; when its database does not answer or its tables
 	// cannot be made, nothing is registered and the answer is UNAVAILABLE.
 	//
 	// Role: admin on the installation.
 	// Audit: one entry in the installation's log, with the tenant's name and
-	// database type; never its database address.
-	// Errors: invalid, unauthenticated, permission denied, conflict (a tenant
-	// with that name exists), unavailable.
+	// its database type in details; never its database address.
+	// Errors: unauthenticated, permission denied, invalid, conflict (a tenant
+	// with that name exists), unavailable (the master database or the tenant's
+	// database does not answer).
 	CreateTenant(context.Context, *v1.CreateTenantRequest) (*v1.CreateTenantResponse, error)
-	// GetTenant answers one tenant.
+	// GetTenant answers one tenant, from the master, whatever its state.
 	//
 	// Role: reader on that tenant, or reader on the installation.
 	// Audit: one entry in the installation's log, with the tenant's name.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), unavailable.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), unavailable (the master database does not answer).
 	GetTenant(context.Context, *v1.GetTenantRequest) (*v1.GetTenantResponse, error)
-	// ListTenants answers the tenants the caller may see, ordered by name: every
-	// tenant for a reader on the installation, otherwise only the tenants on
-	// which the caller's key holds a grant. A key with no grant gets an empty
-	// list, not an error.
+	// ListTenants answers the tenants the caller may see, from the master,
+	// ordered by name: every tenant for a reader or more on the installation
+	// and for the local operator, otherwise only the tenants on which the
+	// caller's key holds a grant. A key with no grant gets an empty list, not
+	// an error.
 	//
-	// Role: none beyond an authenticated caller; the role decides what is
-	// listed.
+	// Role: none beyond an authenticated caller; the caller's grants decide
+	// what is listed.
 	// Audit: one entry in the installation's log.
-	// Errors: invalid, unauthenticated, unavailable.
+	// Errors: unauthenticated, invalid, unavailable (the master database does
+	// not answer).
 	ListTenants(context.Context, *v1.ListTenantsRequest) (*v1.ListTenantsResponse, error)
-	// RemoveTenant removes a tenant's registration and the tables Magnetar made
-	// in its database. It never removes a database Magnetar did not create.
-	// The tenant's name is sent twice, and the server refuses the request as
-	// invalid when the two differ, so a mistyped or misbound name cannot remove
-	// the wrong tenant.
+	// RemoveTenant unregisters a tenant. It touches nothing in the tenant's
+	// database: the SQLite file or the Postgres tables stay where they are,
+	// and the answer says where. It works whatever the tenant's state, also
+	// when its database is gone. The tenant's name is sent twice, and the
+	// request is refused as invalid when the two differ, so a mistyped or
+	// misbound name cannot remove the wrong tenant. A repeated call finds no
+	// tenant and is answered NOT_FOUND; it removes nothing more.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the tenant's name, kept
-	// after the tenant and its own log are gone.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), unavailable.
+	// Audit: one entry in the installation's log, with the tenant's name, and
+	// its database type and data location in details; kept after the tenant is
+	// gone.
+	// Errors: unauthenticated, permission denied, invalid, not found (no tenant
+	// has that name: a caller who passes the role check may list every tenant,
+	// so it is told), unavailable (the master database does not answer).
 	RemoveTenant(context.Context, *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error)
 }
 

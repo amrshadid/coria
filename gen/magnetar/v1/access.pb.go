@@ -13,18 +13,27 @@
 // Authorization header as a bearer token (RFC 6750): "Authorization: Bearer
 // mgt_<id>_<secret>". A request on the installation's local socket carries no
 // key: its caller is the operating system user that runs the server, the
-// local operator, who is the installation's admin.
+// local operator.
 //
-// What a caller may do. A key holds grants; a grant gives a role (Role) on one
-// tenant or on the installation. Each method's comment names the role it
-// needs and on what.
+// What a caller may do. A key holds grants; a grant gives a role (Role) on a
+// scope (Scope): one tenant, or the installation. The local operator holds no
+// grant and is admin on the installation and on every tenant. Each method's
+// comment names the role it needs and on what.
+//
+// The order of checks. Every request is checked in this order, and the first
+// check that fails gives the answer: (1) the caller is authenticated, or the
+// answer is UNAUTHENTICATED; (2) the caller holds the role the method needs,
+// or the answer is PERMISSION_DENIED (or NOT_FOUND for a missing tenant, as
+// below); (3) the request is valid, or the answer is INVALID_ARGUMENT. So a
+// caller who may not call a method learns nothing about what a valid request
+// to it looks like.
 //
 // Every method's comment also says what it writes to the audit log and which
 // error kinds it can answer. The kinds and the codes that carry them:
 //
-//   - invalid: INVALID_ARGUMENT (HTTP 400). The request is malformed or
-//     breaks a rule stated on its fields. Sending it again unchanged fails
-//     again.
+//   - invalid: INVALID_ARGUMENT (HTTP 400). The request is malformed, breaks a
+//     rule stated on its fields, or exceeds a limit below. Sending it again
+//     unchanged fails again.
 //   - unauthenticated: UNAUTHENTICATED (HTTP 401). No key, a key the server
 //     does not know, a wrong secret, an expired key and a revoked key all get
 //     this one answer, with the same message, so a caller cannot tell them
@@ -32,31 +41,55 @@
 //   - permission denied: PERMISSION_DENIED (HTTP 403). The key is good but
 //     holds no grant with the role the method needs.
 //   - not found: NOT_FOUND (HTTP 404). The thing named does not exist, and
-//     the caller may see the place where it would be.
+//     the caller may know that it does not.
 //   - conflict: ALREADY_EXISTS (HTTP 409). The change would collide with what
 //     exists, such as a second tenant with the same name.
-//   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs
-//     cannot be reached, or a tenant is not ready. Sending it again later may
+//   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs does
+//     not answer, or a tenant is not ready. Sending it again later may
 //     succeed.
 //
-// Any method can also answer INTERNAL (HTTP 500) for a fault of the server; its
-// message says nothing about the cause, which is in the server's log under the
-// request's id.
+// Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
+// RESOURCE_EXHAUSTED for a message over the size limit, and DEADLINE_EXCEEDED
+// when its deadline passes. The message of an INTERNAL answer says nothing
+// about the cause; the cause is in the server's log and the audit entry,
+// under the request's id.
 //
-// "No grant" and "no such tenant" get the same answer. A request that names a
-// tenant is answered PERMISSION_DENIED, with the same message, both when the
-// caller holds no grant on that tenant and when no tenant has that name. This
-// holds for every caller, an installation admin included, so the answer never
-// depends on whether the tenant exists, and a key cannot learn the names of
-// tenants it was not given. NOT_FOUND is answered only for things inside a
-// scope the caller may see: a key, a grant, a setting.
+// A tenant that does not exist. A request that names a tenant with no such
+// tenant is answered NOT_FOUND when the caller may list every tenant: a key
+// with reader or more on the installation, or the local operator. Every other
+// caller is answered PERMISSION_DENIED, with the same message as when it holds
+// no grant on an existing tenant, so a key cannot learn the names of tenants
+// it was not given. An operator who mistypes a name is told so; a caller with
+// no right to know learns nothing.
 //
-// Rules of the whole package: a list method takes page_size and page_token and
-// answers next_page_token, never an offset; times are UTC; ids are opaque
-// strings, to be compared whole and never parsed. Secrets cross the API in two
-// fields only, CreateTenantRequest.database_address (in) and
-// CreateKeyResponse.secret (out, once); both are marked debug_redact so
-// generated code does not print them.
+// The request id. The server makes an id for every request and returns it in
+// the response header "Magnetar-Request-Id", on success and on error alike. A
+// client cannot set it: a request header of that name is ignored. The same id
+// is in the server's log and in the request's audit entry.
+//
+// Reads and retries. Every Get and List method and WhoAmI is marked
+// NO_SIDE_EFFECTS, and the changes that may be repeated safely are marked
+// IDEMPOTENT. A read still writes an audit entry: that entry is the server's
+// record of the call, not a change to anything a read answers, and repeating
+// the read answers the same. CreateTenant and CreateKey are neither, as each
+// call makes a new thing.
+//
+// Limits. A message over 4 MB is refused. Every call has a deadline; when the
+// client sends none, the server applies 30 seconds. A list answers 100 items
+// unless page_size asks for another number, and at most 1000; a larger
+// page_size is invalid.
+//
+// Rules of the whole package. A list method takes page_size and page_token and
+// answers next_page_token, never an offset; a page token is opaque, at most
+// 1 KiB, and valid only with the request it came from. Times are UTC. Ids are
+// opaque strings, compared whole and never parsed.
+//
+// Secrets cross the API in two fields only, CreateTenantRequest.database_address
+// (in) and CreateKeyResponse.secret (out, once). Both are marked debug_redact.
+// The mark is metadata, not protection: the protobuf library prints such a
+// field like any other (checked with protobuf-go v1.36.12, in every text form).
+// The server's own redactor reads the mark and removes the two fields before
+// anything is logged.
 
 package magnetarv1
 
@@ -79,18 +112,21 @@ const (
 
 // Role is what a grant allows. Each role includes every role listed before it.
 // On a tenant, a role acts on that tenant only; on the installation, it acts
-// on the installation's own objects (tenants, keys, grants, its settings and
-// its audit log), not on what is inside a tenant.
+// on the installation's own objects, not on what is inside a tenant. The local
+// operator holds no grant and is admin on the installation and on every
+// tenant.
 type Role int32
 
 const (
-	// No role. Refused as invalid wherever a role is required.
+	// No role. Refused as invalid wherever a role is required; in an answer, it
+	// means there was none.
 	Role_ROLE_UNSPECIFIED Role = 0
-	// On a tenant: read its data and its status. On the installation: list the
-	// tenants and read their states, and read the installation's settings.
+	// On a tenant: read its data, its status and its settings. On the
+	// installation: list every tenant and read their states, and read the
+	// installation's settings.
 	Role_ROLE_READER Role = 1
 	// On a tenant: a reader that may also send data in. Not given on the
-	// installation: AddGrant refuses it there as invalid.
+	// installation: SetGrant refuses it there as invalid.
 	Role_ROLE_WRITER Role = 2
 	// On a tenant: a writer that may also run jobs and review quarantined
 	// files. On the installation: a reader that may also see every tenant's
@@ -98,7 +134,7 @@ const (
 	Role_ROLE_OPERATOR Role = 3
 	// On a tenant: an operator that may also change the tenant's configuration,
 	// its settings among it, and read its audit log. On the installation: may
-	// also create and remove tenants, make and revoke keys, add and remove
+	// also create and remove tenants, make and revoke keys, set and remove
 	// grants, change the installation's settings and read its audit log.
 	Role_ROLE_ADMIN Role = 4
 )
@@ -245,21 +281,15 @@ func (x *Key) GetRevokeTime() *timestamppb.Timestamp {
 	return nil
 }
 
-// Grant gives one key one role on one scope: a tenant, or the installation.
+// Grant gives one key one role on one scope.
 type Grant struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The id of the key that holds the grant.
 	KeyId string `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
-	// What the grant acts on. Exactly one is set.
-	//
-	// Types that are valid to be assigned to Scope:
-	//
-	//	*Grant_Tenant
-	//	*Grant_Installation
-	Scope isGrant_Scope `protobuf_oneof:"scope"`
-	// The role the grant gives. Required. ROLE_WRITER is refused on the
-	// installation.
-	Role          Role `protobuf:"varint,4,opt,name=role,proto3,enum=magnetar.v1.Role" json:"role,omitempty"`
+	// What the grant acts on: one tenant, or the installation.
+	Scope *Scope `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
+	// The role the grant gives.
+	Role          Role `protobuf:"varint,3,opt,name=role,proto3,enum=magnetar.v1.Role" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -301,29 +331,11 @@ func (x *Grant) GetKeyId() string {
 	return ""
 }
 
-func (x *Grant) GetScope() isGrant_Scope {
+func (x *Grant) GetScope() *Scope {
 	if x != nil {
 		return x.Scope
 	}
 	return nil
-}
-
-func (x *Grant) GetTenant() string {
-	if x != nil {
-		if x, ok := x.Scope.(*Grant_Tenant); ok {
-			return x.Tenant
-		}
-	}
-	return ""
-}
-
-func (x *Grant) GetInstallation() bool {
-	if x != nil {
-		if x, ok := x.Scope.(*Grant_Installation); ok {
-			return x.Installation
-		}
-	}
-	return false
 }
 
 func (x *Grant) GetRole() Role {
@@ -332,25 +344,6 @@ func (x *Grant) GetRole() Role {
 	}
 	return Role_ROLE_UNSPECIFIED
 }
-
-type isGrant_Scope interface {
-	isGrant_Scope()
-}
-
-type Grant_Tenant struct {
-	// The name of the tenant the grant acts on.
-	Tenant string `protobuf:"bytes,2,opt,name=tenant,proto3,oneof"`
-}
-
-type Grant_Installation struct {
-	// The grant acts on the installation. Must be true when set; false is
-	// refused as invalid.
-	Installation bool `protobuf:"varint,3,opt,name=installation,proto3,oneof"`
-}
-
-func (*Grant_Tenant) isGrant_Scope() {}
-
-func (*Grant_Installation) isGrant_Scope() {}
 
 // Principal is who a request was made by.
 type Principal struct {
@@ -363,8 +356,8 @@ type Principal struct {
 	//	*Principal_LocalOperator
 	Caller isPrincipal_Caller `protobuf_oneof:"caller"`
 	// The grants of the key, in the order ListGrants answers them. Empty for
-	// the local operator, who holds no grant: it is the installation's admin by
-	// being the user that runs the server.
+	// the local operator, who holds no grant: it is admin on the installation
+	// and on every tenant by being the user that runs the server.
 	Grants        []*Grant `protobuf:"bytes,3,rep,name=grants,proto3" json:"grants,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -583,7 +576,8 @@ type isCreateKeyRequest_Expiry interface {
 }
 
 type CreateKeyRequest_ExpireAfter struct {
-	// The key expires this long after it is made. Must be positive.
+	// The key expires this long after it is made. Must be positive and at
+	// most 10 years (3650 days).
 	ExpireAfter *durationpb.Duration `protobuf:"bytes,2,opt,name=expire_after,json=expireAfter,proto3,oneof"`
 }
 
@@ -607,7 +601,8 @@ type CreateKeyResponse struct {
 	// Authorization header. This is one of the two fields through which a
 	// secret crosses the API, and the only time this one is answered: the
 	// server keeps only its SHA-256 and cannot answer it again. A client shows
-	// it to its user once and does not log it.
+	// it to its user once and does not log it. The debug_redact mark is read by
+	// the server's redactor; the protobuf library itself still prints the field.
 	Secret        string `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -752,10 +747,11 @@ func (x *GetKeyResponse) GetKey() *Key {
 // ListKeysRequest asks for a page of keys.
 type ListKeysRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The most keys to answer. Zero means the server's default; a value above
-	// the server's maximum is lowered to it; a negative value is invalid.
+	// The most keys to answer: zero means 100; at most 1000. A larger or
+	// negative value is invalid.
 	PageSize int32 `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// The next_page_token of the previous page, or empty for the first page.
+	// Opaque; at most 1 KiB.
 	PageToken     string `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -952,29 +948,33 @@ func (x *RevokeKeyResponse) GetKey() *Key {
 	return nil
 }
 
-// AddGrantRequest is the grant to add.
-type AddGrantRequest struct {
+// SetGrantRequest is the role to set for a key on a scope.
+type SetGrantRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The grant. Its key id, scope and role are required.
-	Grant         *Grant `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	// The id of the key. Required.
+	KeyId string `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	// The scope the role acts on. Required.
+	Scope *Scope `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
+	// The role to set. Required; ROLE_WRITER is refused on the installation.
+	Role          Role `protobuf:"varint,3,opt,name=role,proto3,enum=magnetar.v1.Role" json:"role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AddGrantRequest) Reset() {
-	*x = AddGrantRequest{}
+func (x *SetGrantRequest) Reset() {
+	*x = SetGrantRequest{}
 	mi := &file_magnetar_v1_access_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AddGrantRequest) String() string {
+func (x *SetGrantRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AddGrantRequest) ProtoMessage() {}
+func (*SetGrantRequest) ProtoMessage() {}
 
-func (x *AddGrantRequest) ProtoReflect() protoreflect.Message {
+func (x *SetGrantRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_magnetar_v1_access_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -986,41 +986,58 @@ func (x *AddGrantRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AddGrantRequest.ProtoReflect.Descriptor instead.
-func (*AddGrantRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use SetGrantRequest.ProtoReflect.Descriptor instead.
+func (*SetGrantRequest) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_access_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *AddGrantRequest) GetGrant() *Grant {
+func (x *SetGrantRequest) GetKeyId() string {
 	if x != nil {
-		return x.Grant
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *SetGrantRequest) GetScope() *Scope {
+	if x != nil {
+		return x.Scope
 	}
 	return nil
 }
 
-// AddGrantResponse is the grant added.
-type AddGrantResponse struct {
+func (x *SetGrantRequest) GetRole() Role {
+	if x != nil {
+		return x.Role
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+// SetGrantResponse is the grant as it now stands, and what it replaced.
+type SetGrantResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The grant, as stored.
-	Grant         *Grant `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	Grant *Grant `protobuf:"bytes,1,opt,name=grant,proto3" json:"grant,omitempty"`
+	// The role the key held on the scope before this call. ROLE_UNSPECIFIED
+	// when it held none.
+	PreviousRole  Role `protobuf:"varint,2,opt,name=previous_role,json=previousRole,proto3,enum=magnetar.v1.Role" json:"previous_role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AddGrantResponse) Reset() {
-	*x = AddGrantResponse{}
+func (x *SetGrantResponse) Reset() {
+	*x = SetGrantResponse{}
 	mi := &file_magnetar_v1_access_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AddGrantResponse) String() string {
+func (x *SetGrantResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AddGrantResponse) ProtoMessage() {}
+func (*SetGrantResponse) ProtoMessage() {}
 
-func (x *AddGrantResponse) ProtoReflect() protoreflect.Message {
+func (x *SetGrantResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_magnetar_v1_access_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1032,32 +1049,41 @@ func (x *AddGrantResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AddGrantResponse.ProtoReflect.Descriptor instead.
-func (*AddGrantResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use SetGrantResponse.ProtoReflect.Descriptor instead.
+func (*SetGrantResponse) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_access_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *AddGrantResponse) GetGrant() *Grant {
+func (x *SetGrantResponse) GetGrant() *Grant {
 	if x != nil {
 		return x.Grant
 	}
 	return nil
 }
 
-// ListGrantsRequest asks for a page of grants. Filters that are set must all
-// match.
+func (x *SetGrantResponse) GetPreviousRole() Role {
+	if x != nil {
+		return x.PreviousRole
+	}
+	return Role_ROLE_UNSPECIFIED
+}
+
+// ListGrantsRequest asks for a page of the grants of one key or on one scope.
 type ListGrantsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Only the grants of this key. Empty for every key.
-	KeyId string `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
-	// Only the grants on this tenant. Empty for every scope.
-	Tenant string `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The most grants to answer. Zero means the server's default; a value above
-	// the server's maximum is lowered to it; a negative value is invalid.
+	// Which grants to list. Exactly one is required.
+	//
+	// Types that are valid to be assigned to Filter:
+	//
+	//	*ListGrantsRequest_KeyId
+	//	*ListGrantsRequest_Scope
+	Filter isListGrantsRequest_Filter `protobuf_oneof:"filter"`
+	// The most grants to answer: zero means 100; at most 1000. A larger or
+	// negative value is invalid.
 	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// The next_page_token of the previous page, or empty for the first page.
-	// A token is refused as invalid with filters other than those it was made
-	// with.
+	// Opaque; at most 1 KiB; refused as invalid with a filter other than the
+	// one it was made with.
 	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1093,18 +1119,29 @@ func (*ListGrantsRequest) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_access_proto_rawDescGZIP(), []int{14}
 }
 
+func (x *ListGrantsRequest) GetFilter() isListGrantsRequest_Filter {
+	if x != nil {
+		return x.Filter
+	}
+	return nil
+}
+
 func (x *ListGrantsRequest) GetKeyId() string {
 	if x != nil {
-		return x.KeyId
+		if x, ok := x.Filter.(*ListGrantsRequest_KeyId); ok {
+			return x.KeyId
+		}
 	}
 	return ""
 }
 
-func (x *ListGrantsRequest) GetTenant() string {
+func (x *ListGrantsRequest) GetScope() *Scope {
 	if x != nil {
-		return x.Tenant
+		if x, ok := x.Filter.(*ListGrantsRequest_Scope); ok {
+			return x.Scope
+		}
 	}
-	return ""
+	return nil
 }
 
 func (x *ListGrantsRequest) GetPageSize() int32 {
@@ -1120,6 +1157,24 @@ func (x *ListGrantsRequest) GetPageToken() string {
 	}
 	return ""
 }
+
+type isListGrantsRequest_Filter interface {
+	isListGrantsRequest_Filter()
+}
+
+type ListGrantsRequest_KeyId struct {
+	// The grants of this key, on every scope.
+	KeyId string `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3,oneof"`
+}
+
+type ListGrantsRequest_Scope struct {
+	// The grants on this scope, of every key.
+	Scope *Scope `protobuf:"bytes,2,opt,name=scope,proto3,oneof"`
+}
+
+func (*ListGrantsRequest_KeyId) isListGrantsRequest_Filter() {}
+
+func (*ListGrantsRequest_Scope) isListGrantsRequest_Filter() {}
 
 // ListGrantsResponse is a page of grants.
 type ListGrantsResponse struct {
@@ -1181,13 +1236,8 @@ type RemoveGrantRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The id of the key that holds the grant. Required.
 	KeyId string `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
-	// The scope of the grant. Exactly one is set.
-	//
-	// Types that are valid to be assigned to Scope:
-	//
-	//	*RemoveGrantRequest_Tenant
-	//	*RemoveGrantRequest_Installation
-	Scope         isRemoveGrantRequest_Scope `protobuf_oneof:"scope"`
+	// The scope of the grant. Required.
+	Scope         *Scope `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1229,52 +1279,19 @@ func (x *RemoveGrantRequest) GetKeyId() string {
 	return ""
 }
 
-func (x *RemoveGrantRequest) GetScope() isRemoveGrantRequest_Scope {
+func (x *RemoveGrantRequest) GetScope() *Scope {
 	if x != nil {
 		return x.Scope
 	}
 	return nil
 }
 
-func (x *RemoveGrantRequest) GetTenant() string {
-	if x != nil {
-		if x, ok := x.Scope.(*RemoveGrantRequest_Tenant); ok {
-			return x.Tenant
-		}
-	}
-	return ""
-}
-
-func (x *RemoveGrantRequest) GetInstallation() bool {
-	if x != nil {
-		if x, ok := x.Scope.(*RemoveGrantRequest_Installation); ok {
-			return x.Installation
-		}
-	}
-	return false
-}
-
-type isRemoveGrantRequest_Scope interface {
-	isRemoveGrantRequest_Scope()
-}
-
-type RemoveGrantRequest_Tenant struct {
-	// The name of the tenant the grant acts on.
-	Tenant string `protobuf:"bytes,2,opt,name=tenant,proto3,oneof"`
-}
-
-type RemoveGrantRequest_Installation struct {
-	// The grant acts on the installation. Must be true when set.
-	Installation bool `protobuf:"varint,3,opt,name=installation,proto3,oneof"`
-}
-
-func (*RemoveGrantRequest_Tenant) isRemoveGrantRequest_Scope() {}
-
-func (*RemoveGrantRequest_Installation) isRemoveGrantRequest_Scope() {}
-
-// RemoveGrantResponse is empty: the grant is gone.
+// RemoveGrantResponse is what was removed.
 type RemoveGrantResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The role the key held on the scope before this call. ROLE_UNSPECIFIED
+	// when it held none and nothing was removed.
+	PreviousRole  Role `protobuf:"varint,1,opt,name=previous_role,json=previousRole,proto3,enum=magnetar.v1.Role" json:"previous_role,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1307,6 +1324,13 @@ func (x *RemoveGrantResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RemoveGrantResponse.ProtoReflect.Descriptor instead.
 func (*RemoveGrantResponse) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_access_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RemoveGrantResponse) GetPreviousRole() Role {
+	if x != nil {
+		return x.PreviousRole
+	}
+	return Role_ROLE_UNSPECIFIED
 }
 
 // WhoAmIRequest has no fields: the caller is read from the request itself.
@@ -1396,7 +1420,7 @@ var File_magnetar_v1_access_proto protoreflect.FileDescriptor
 
 const file_magnetar_v1_access_proto_rawDesc = "" +
 	"\n" +
-	"\x18magnetar/v1/access.proto\x12\vmagnetar.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa4\x02\n" +
+	"\x18magnetar/v1/access.proto\x12\vmagnetar.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x17magnetar/v1/scope.proto\"\xa4\x02\n" +
 	"\x03Key\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12;\n" +
@@ -1406,13 +1430,11 @@ const file_magnetar_v1_access_proto_rawDesc = "" +
 	"expireTime\x12>\n" +
 	"\rlast_use_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vlastUseTime\x12;\n" +
 	"\vrevoke_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"revokeTime\"\x8e\x01\n" +
+	"revokeTime\"o\n" +
 	"\x05Grant\x12\x15\n" +
-	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x18\n" +
-	"\x06tenant\x18\x02 \x01(\tH\x00R\x06tenant\x12$\n" +
-	"\finstallation\x18\x03 \x01(\bH\x00R\finstallation\x12%\n" +
-	"\x04role\x18\x04 \x01(\x0e2\x11.magnetar.v1.RoleR\x04roleB\a\n" +
-	"\x05scope\"\xac\x01\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12(\n" +
+	"\x05scope\x18\x02 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\x12%\n" +
+	"\x04role\x18\x03 \x01(\x0e2\x11.magnetar.v1.RoleR\x04role\"\xac\x01\n" +
 	"\tPrincipal\x12$\n" +
 	"\x03key\x18\x01 \x01(\v2\x10.magnetar.v1.KeyH\x00R\x03key\x12C\n" +
 	"\x0elocal_operator\x18\x02 \x01(\v2\x1a.magnetar.v1.LocalOperatorH\x00R\rlocalOperator\x12*\n" +
@@ -1442,26 +1464,29 @@ const file_magnetar_v1_access_proto_rawDesc = "" +
 	"\x10RevokeKeyRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"7\n" +
 	"\x11RevokeKeyResponse\x12\"\n" +
-	"\x03key\x18\x01 \x01(\v2\x10.magnetar.v1.KeyR\x03key\";\n" +
-	"\x0fAddGrantRequest\x12(\n" +
-	"\x05grant\x18\x01 \x01(\v2\x12.magnetar.v1.GrantR\x05grant\"<\n" +
-	"\x10AddGrantResponse\x12(\n" +
-	"\x05grant\x18\x01 \x01(\v2\x12.magnetar.v1.GrantR\x05grant\"~\n" +
-	"\x11ListGrantsRequest\x12\x15\n" +
-	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x16\n" +
-	"\x06tenant\x18\x02 \x01(\tR\x06tenant\x12\x1b\n" +
+	"\x03key\x18\x01 \x01(\v2\x10.magnetar.v1.KeyR\x03key\"y\n" +
+	"\x0fSetGrantRequest\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12(\n" +
+	"\x05scope\x18\x02 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\x12%\n" +
+	"\x04role\x18\x03 \x01(\x0e2\x11.magnetar.v1.RoleR\x04role\"t\n" +
+	"\x10SetGrantResponse\x12(\n" +
+	"\x05grant\x18\x01 \x01(\v2\x12.magnetar.v1.GrantR\x05grant\x126\n" +
+	"\rprevious_role\x18\x02 \x01(\x0e2\x11.magnetar.v1.RoleR\fpreviousRole\"\x9e\x01\n" +
+	"\x11ListGrantsRequest\x12\x17\n" +
+	"\x06key_id\x18\x01 \x01(\tH\x00R\x05keyId\x12*\n" +
+	"\x05scope\x18\x02 \x01(\v2\x12.magnetar.v1.ScopeH\x00R\x05scope\x12\x1b\n" +
 	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\"h\n" +
+	"page_token\x18\x04 \x01(\tR\tpageTokenB\b\n" +
+	"\x06filter\"h\n" +
 	"\x12ListGrantsResponse\x12*\n" +
 	"\x06grants\x18\x01 \x03(\v2\x12.magnetar.v1.GrantR\x06grants\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"t\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"U\n" +
 	"\x12RemoveGrantRequest\x12\x15\n" +
-	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12\x18\n" +
-	"\x06tenant\x18\x02 \x01(\tH\x00R\x06tenant\x12$\n" +
-	"\finstallation\x18\x03 \x01(\bH\x00R\finstallationB\a\n" +
-	"\x05scope\"\x15\n" +
-	"\x13RemoveGrantResponse\"\x0f\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12(\n" +
+	"\x05scope\x18\x02 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\"M\n" +
+	"\x13RemoveGrantResponse\x126\n" +
+	"\rprevious_role\x18\x01 \x01(\x0e2\x11.magnetar.v1.RoleR\fpreviousRole\"\x0f\n" +
 	"\rWhoAmIRequest\"F\n" +
 	"\x0eWhoAmIResponse\x124\n" +
 	"\tprincipal\x18\x01 \x01(\v2\x16.magnetar.v1.PrincipalR\tprincipal*a\n" +
@@ -1471,17 +1496,17 @@ const file_magnetar_v1_access_proto_rawDesc = "" +
 	"\vROLE_WRITER\x10\x02\x12\x11\n" +
 	"\rROLE_OPERATOR\x10\x03\x12\x0e\n" +
 	"\n" +
-	"ROLE_ADMIN\x10\x042\xe0\x04\n" +
+	"ROLE_ADMIN\x10\x042\x83\x05\n" +
 	"\rAccessService\x12J\n" +
-	"\tCreateKey\x12\x1d.magnetar.v1.CreateKeyRequest\x1a\x1e.magnetar.v1.CreateKeyResponse\x12A\n" +
-	"\x06GetKey\x12\x1a.magnetar.v1.GetKeyRequest\x1a\x1b.magnetar.v1.GetKeyResponse\x12G\n" +
-	"\bListKeys\x12\x1c.magnetar.v1.ListKeysRequest\x1a\x1d.magnetar.v1.ListKeysResponse\x12J\n" +
-	"\tRevokeKey\x12\x1d.magnetar.v1.RevokeKeyRequest\x1a\x1e.magnetar.v1.RevokeKeyResponse\x12G\n" +
-	"\bAddGrant\x12\x1c.magnetar.v1.AddGrantRequest\x1a\x1d.magnetar.v1.AddGrantResponse\x12M\n" +
+	"\tCreateKey\x12\x1d.magnetar.v1.CreateKeyRequest\x1a\x1e.magnetar.v1.CreateKeyResponse\x12F\n" +
+	"\x06GetKey\x12\x1a.magnetar.v1.GetKeyRequest\x1a\x1b.magnetar.v1.GetKeyResponse\"\x03\x90\x02\x01\x12L\n" +
+	"\bListKeys\x12\x1c.magnetar.v1.ListKeysRequest\x1a\x1d.magnetar.v1.ListKeysResponse\"\x03\x90\x02\x01\x12O\n" +
+	"\tRevokeKey\x12\x1d.magnetar.v1.RevokeKeyRequest\x1a\x1e.magnetar.v1.RevokeKeyResponse\"\x03\x90\x02\x02\x12L\n" +
+	"\bSetGrant\x12\x1c.magnetar.v1.SetGrantRequest\x1a\x1d.magnetar.v1.SetGrantResponse\"\x03\x90\x02\x02\x12R\n" +
 	"\n" +
-	"ListGrants\x12\x1e.magnetar.v1.ListGrantsRequest\x1a\x1f.magnetar.v1.ListGrantsResponse\x12P\n" +
-	"\vRemoveGrant\x12\x1f.magnetar.v1.RemoveGrantRequest\x1a .magnetar.v1.RemoveGrantResponse\x12A\n" +
-	"\x06WhoAmI\x12\x1a.magnetar.v1.WhoAmIRequest\x1a\x1b.magnetar.v1.WhoAmIResponseB\xa5\x01\n" +
+	"ListGrants\x12\x1e.magnetar.v1.ListGrantsRequest\x1a\x1f.magnetar.v1.ListGrantsResponse\"\x03\x90\x02\x01\x12U\n" +
+	"\vRemoveGrant\x12\x1f.magnetar.v1.RemoveGrantRequest\x1a .magnetar.v1.RemoveGrantResponse\"\x03\x90\x02\x02\x12F\n" +
+	"\x06WhoAmI\x12\x1a.magnetar.v1.WhoAmIRequest\x1a\x1b.magnetar.v1.WhoAmIResponse\"\x03\x90\x02\x01B\xa5\x01\n" +
 	"\x0fcom.magnetar.v1B\vAccessProtoP\x01Z8github.com/amrshadid/magnetar/gen/magnetar/v1;magnetarv1\xa2\x02\x03MXX\xaa\x02\vMagnetar.V1\xca\x02\vMagnetar\\V1\xe2\x02\x17Magnetar\\V1\\GPBMetadata\xea\x02\fMagnetar::V1b\x06proto3"
 
 var (
@@ -1512,8 +1537,8 @@ var file_magnetar_v1_access_proto_goTypes = []any{
 	(*ListKeysResponse)(nil),      // 10: magnetar.v1.ListKeysResponse
 	(*RevokeKeyRequest)(nil),      // 11: magnetar.v1.RevokeKeyRequest
 	(*RevokeKeyResponse)(nil),     // 12: magnetar.v1.RevokeKeyResponse
-	(*AddGrantRequest)(nil),       // 13: magnetar.v1.AddGrantRequest
-	(*AddGrantResponse)(nil),      // 14: magnetar.v1.AddGrantResponse
+	(*SetGrantRequest)(nil),       // 13: magnetar.v1.SetGrantRequest
+	(*SetGrantResponse)(nil),      // 14: magnetar.v1.SetGrantResponse
 	(*ListGrantsRequest)(nil),     // 15: magnetar.v1.ListGrantsRequest
 	(*ListGrantsResponse)(nil),    // 16: magnetar.v1.ListGrantsResponse
 	(*RemoveGrantRequest)(nil),    // 17: magnetar.v1.RemoveGrantRequest
@@ -1521,47 +1546,54 @@ var file_magnetar_v1_access_proto_goTypes = []any{
 	(*WhoAmIRequest)(nil),         // 19: magnetar.v1.WhoAmIRequest
 	(*WhoAmIResponse)(nil),        // 20: magnetar.v1.WhoAmIResponse
 	(*timestamppb.Timestamp)(nil), // 21: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 22: google.protobuf.Duration
+	(*Scope)(nil),                 // 22: magnetar.v1.Scope
+	(*durationpb.Duration)(nil),   // 23: google.protobuf.Duration
 }
 var file_magnetar_v1_access_proto_depIdxs = []int32{
 	21, // 0: magnetar.v1.Key.create_time:type_name -> google.protobuf.Timestamp
 	21, // 1: magnetar.v1.Key.expire_time:type_name -> google.protobuf.Timestamp
 	21, // 2: magnetar.v1.Key.last_use_time:type_name -> google.protobuf.Timestamp
 	21, // 3: magnetar.v1.Key.revoke_time:type_name -> google.protobuf.Timestamp
-	0,  // 4: magnetar.v1.Grant.role:type_name -> magnetar.v1.Role
-	1,  // 5: magnetar.v1.Principal.key:type_name -> magnetar.v1.Key
-	4,  // 6: magnetar.v1.Principal.local_operator:type_name -> magnetar.v1.LocalOperator
-	2,  // 7: magnetar.v1.Principal.grants:type_name -> magnetar.v1.Grant
-	22, // 8: magnetar.v1.CreateKeyRequest.expire_after:type_name -> google.protobuf.Duration
-	1,  // 9: magnetar.v1.CreateKeyResponse.key:type_name -> magnetar.v1.Key
-	1,  // 10: magnetar.v1.GetKeyResponse.key:type_name -> magnetar.v1.Key
-	1,  // 11: magnetar.v1.ListKeysResponse.keys:type_name -> magnetar.v1.Key
-	1,  // 12: magnetar.v1.RevokeKeyResponse.key:type_name -> magnetar.v1.Key
-	2,  // 13: magnetar.v1.AddGrantRequest.grant:type_name -> magnetar.v1.Grant
-	2,  // 14: magnetar.v1.AddGrantResponse.grant:type_name -> magnetar.v1.Grant
-	2,  // 15: magnetar.v1.ListGrantsResponse.grants:type_name -> magnetar.v1.Grant
-	3,  // 16: magnetar.v1.WhoAmIResponse.principal:type_name -> magnetar.v1.Principal
-	5,  // 17: magnetar.v1.AccessService.CreateKey:input_type -> magnetar.v1.CreateKeyRequest
-	7,  // 18: magnetar.v1.AccessService.GetKey:input_type -> magnetar.v1.GetKeyRequest
-	9,  // 19: magnetar.v1.AccessService.ListKeys:input_type -> magnetar.v1.ListKeysRequest
-	11, // 20: magnetar.v1.AccessService.RevokeKey:input_type -> magnetar.v1.RevokeKeyRequest
-	13, // 21: magnetar.v1.AccessService.AddGrant:input_type -> magnetar.v1.AddGrantRequest
-	15, // 22: magnetar.v1.AccessService.ListGrants:input_type -> magnetar.v1.ListGrantsRequest
-	17, // 23: magnetar.v1.AccessService.RemoveGrant:input_type -> magnetar.v1.RemoveGrantRequest
-	19, // 24: magnetar.v1.AccessService.WhoAmI:input_type -> magnetar.v1.WhoAmIRequest
-	6,  // 25: magnetar.v1.AccessService.CreateKey:output_type -> magnetar.v1.CreateKeyResponse
-	8,  // 26: magnetar.v1.AccessService.GetKey:output_type -> magnetar.v1.GetKeyResponse
-	10, // 27: magnetar.v1.AccessService.ListKeys:output_type -> magnetar.v1.ListKeysResponse
-	12, // 28: magnetar.v1.AccessService.RevokeKey:output_type -> magnetar.v1.RevokeKeyResponse
-	14, // 29: magnetar.v1.AccessService.AddGrant:output_type -> magnetar.v1.AddGrantResponse
-	16, // 30: magnetar.v1.AccessService.ListGrants:output_type -> magnetar.v1.ListGrantsResponse
-	18, // 31: magnetar.v1.AccessService.RemoveGrant:output_type -> magnetar.v1.RemoveGrantResponse
-	20, // 32: magnetar.v1.AccessService.WhoAmI:output_type -> magnetar.v1.WhoAmIResponse
-	25, // [25:33] is the sub-list for method output_type
-	17, // [17:25] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	22, // 4: magnetar.v1.Grant.scope:type_name -> magnetar.v1.Scope
+	0,  // 5: magnetar.v1.Grant.role:type_name -> magnetar.v1.Role
+	1,  // 6: magnetar.v1.Principal.key:type_name -> magnetar.v1.Key
+	4,  // 7: magnetar.v1.Principal.local_operator:type_name -> magnetar.v1.LocalOperator
+	2,  // 8: magnetar.v1.Principal.grants:type_name -> magnetar.v1.Grant
+	23, // 9: magnetar.v1.CreateKeyRequest.expire_after:type_name -> google.protobuf.Duration
+	1,  // 10: magnetar.v1.CreateKeyResponse.key:type_name -> magnetar.v1.Key
+	1,  // 11: magnetar.v1.GetKeyResponse.key:type_name -> magnetar.v1.Key
+	1,  // 12: magnetar.v1.ListKeysResponse.keys:type_name -> magnetar.v1.Key
+	1,  // 13: magnetar.v1.RevokeKeyResponse.key:type_name -> magnetar.v1.Key
+	22, // 14: magnetar.v1.SetGrantRequest.scope:type_name -> magnetar.v1.Scope
+	0,  // 15: magnetar.v1.SetGrantRequest.role:type_name -> magnetar.v1.Role
+	2,  // 16: magnetar.v1.SetGrantResponse.grant:type_name -> magnetar.v1.Grant
+	0,  // 17: magnetar.v1.SetGrantResponse.previous_role:type_name -> magnetar.v1.Role
+	22, // 18: magnetar.v1.ListGrantsRequest.scope:type_name -> magnetar.v1.Scope
+	2,  // 19: magnetar.v1.ListGrantsResponse.grants:type_name -> magnetar.v1.Grant
+	22, // 20: magnetar.v1.RemoveGrantRequest.scope:type_name -> magnetar.v1.Scope
+	0,  // 21: magnetar.v1.RemoveGrantResponse.previous_role:type_name -> magnetar.v1.Role
+	3,  // 22: magnetar.v1.WhoAmIResponse.principal:type_name -> magnetar.v1.Principal
+	5,  // 23: magnetar.v1.AccessService.CreateKey:input_type -> magnetar.v1.CreateKeyRequest
+	7,  // 24: magnetar.v1.AccessService.GetKey:input_type -> magnetar.v1.GetKeyRequest
+	9,  // 25: magnetar.v1.AccessService.ListKeys:input_type -> magnetar.v1.ListKeysRequest
+	11, // 26: magnetar.v1.AccessService.RevokeKey:input_type -> magnetar.v1.RevokeKeyRequest
+	13, // 27: magnetar.v1.AccessService.SetGrant:input_type -> magnetar.v1.SetGrantRequest
+	15, // 28: magnetar.v1.AccessService.ListGrants:input_type -> magnetar.v1.ListGrantsRequest
+	17, // 29: magnetar.v1.AccessService.RemoveGrant:input_type -> magnetar.v1.RemoveGrantRequest
+	19, // 30: magnetar.v1.AccessService.WhoAmI:input_type -> magnetar.v1.WhoAmIRequest
+	6,  // 31: magnetar.v1.AccessService.CreateKey:output_type -> magnetar.v1.CreateKeyResponse
+	8,  // 32: magnetar.v1.AccessService.GetKey:output_type -> magnetar.v1.GetKeyResponse
+	10, // 33: magnetar.v1.AccessService.ListKeys:output_type -> magnetar.v1.ListKeysResponse
+	12, // 34: magnetar.v1.AccessService.RevokeKey:output_type -> magnetar.v1.RevokeKeyResponse
+	14, // 35: magnetar.v1.AccessService.SetGrant:output_type -> magnetar.v1.SetGrantResponse
+	16, // 36: magnetar.v1.AccessService.ListGrants:output_type -> magnetar.v1.ListGrantsResponse
+	18, // 37: magnetar.v1.AccessService.RemoveGrant:output_type -> magnetar.v1.RemoveGrantResponse
+	20, // 38: magnetar.v1.AccessService.WhoAmI:output_type -> magnetar.v1.WhoAmIResponse
+	31, // [31:39] is the sub-list for method output_type
+	23, // [23:31] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_access_proto_init() }
@@ -1569,10 +1601,7 @@ func file_magnetar_v1_access_proto_init() {
 	if File_magnetar_v1_access_proto != nil {
 		return
 	}
-	file_magnetar_v1_access_proto_msgTypes[1].OneofWrappers = []any{
-		(*Grant_Tenant)(nil),
-		(*Grant_Installation)(nil),
-	}
+	file_magnetar_v1_scope_proto_init()
 	file_magnetar_v1_access_proto_msgTypes[2].OneofWrappers = []any{
 		(*Principal_Key)(nil),
 		(*Principal_LocalOperator)(nil),
@@ -1581,9 +1610,9 @@ func file_magnetar_v1_access_proto_init() {
 		(*CreateKeyRequest_ExpireAfter)(nil),
 		(*CreateKeyRequest_NeverExpire)(nil),
 	}
-	file_magnetar_v1_access_proto_msgTypes[16].OneofWrappers = []any{
-		(*RemoveGrantRequest_Tenant)(nil),
-		(*RemoveGrantRequest_Installation)(nil),
+	file_magnetar_v1_access_proto_msgTypes[14].OneofWrappers = []any{
+		(*ListGrantsRequest_KeyId)(nil),
+		(*ListGrantsRequest_Scope)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

@@ -5,7 +5,7 @@
 // source: magnetar/v1/audit.proto
 
 // Package magnetar.v1: what holds for the whole package (callers, roles, error
-// kinds, paging, secrets) is said on the package in access.proto.
+// kinds, limits, paging, secrets) is said on the package in access.proto.
 
 package magnetarv1
 
@@ -29,16 +29,17 @@ const (
 type AuditOutcome int32
 
 const (
-	// Never answered by the server. A client that reads it was built against an
-	// older contract than the server's.
+	// Never written by the server. As a filter, it means every outcome.
 	AuditOutcome_AUDIT_OUTCOME_UNSPECIFIED AuditOutcome = 0
 	// The request did what it asked.
 	AuditOutcome_AUDIT_OUTCOME_DONE AuditOutcome = 1
-	// The request was refused before it did anything: unauthenticated,
-	// permission denied or invalid.
+	// The caller may not do this: the request was answered UNAUTHENTICATED or
+	// PERMISSION_DENIED, and did nothing.
 	AuditOutcome_AUDIT_OUTCOME_REFUSED AuditOutcome = 2
-	// The request was allowed and failed: not found, conflict, unavailable or a
-	// fault of the server.
+	// The caller was allowed and the request did not complete: it was invalid,
+	// named something that does not exist, collided with what exists, found a
+	// tenant's database or the master database not answering, ran out of time,
+	// or met a fault of the server. The entry's reason says which.
 	AuditOutcome_AUDIT_OUTCOME_FAILED AuditOutcome = 3
 )
 
@@ -106,16 +107,30 @@ type AuditEntry struct {
 	// The full name of the method called, such as
 	// "/magnetar.v1.TenantService/CreateTenant".
 	Method string `protobuf:"bytes,6,opt,name=method,proto3" json:"method,omitempty"`
-	// The name of the tenant the request named. Empty when it named none.
+	// The name of the tenant as the request gave it. Kept after the tenant is
+	// removed, and present also when no tenant had that name. Empty when the
+	// request named none.
 	Tenant string `protobuf:"bytes,7,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	// What the request acted on, such as a key's id or a setting's name. Empty
 	// when it acted on no one thing.
 	Object string `protobuf:"bytes,8,opt,name=object,proto3" json:"object,omitempty"`
 	// How the request ended.
 	Outcome AuditOutcome `protobuf:"varint,9,opt,name=outcome,proto3,enum=magnetar.v1.AuditOutcome" json:"outcome,omitempty"`
-	// The id of the request, the same as in the server's log, so an entry and
-	// the log lines of its request can be found from each other.
-	RequestId     string `protobuf:"bytes,10,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// The id the server made for the request: the same as in the response
+	// header Magnetar-Request-Id and in the server's log, so an entry, the
+	// answer and the log lines of one request can be found from each other.
+	RequestId string `protobuf:"bytes,10,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	// What each method's comment says it records, beside the object: a
+	// database type, a scope, a previous and a new role, the filters of a
+	// listing. Keys are short lowercase words. Values are never a secret and
+	// never a setting's value: a setting's value is not recorded.
+	Details map[string]string `protobuf:"bytes,11,rep,name=details,proto3" json:"details,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// The real cause of a refusal or a failure, in words for the admin who
+	// reads the log, such as "key expired" or "tenant database does not
+	// answer". It is never shown to the caller that was refused, whose answer
+	// stays the same whatever the cause. Empty when the outcome is done. Never
+	// holds a secret.
+	Reason        string `protobuf:"bytes,12,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -220,23 +235,43 @@ func (x *AuditEntry) GetRequestId() string {
 	return ""
 }
 
+func (x *AuditEntry) GetDetails() map[string]string {
+	if x != nil {
+		return x.Details
+	}
+	return nil
+}
+
+func (x *AuditEntry) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 // ListAuditEntriesRequest asks for a page of one log.
 type ListAuditEntriesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The log to read. Exactly one is set.
-	//
-	// Types that are valid to be assigned to Scope:
-	//
-	//	*ListAuditEntriesRequest_Tenant
-	//	*ListAuditEntriesRequest_Installation
-	Scope isListAuditEntriesRequest_Scope `protobuf_oneof:"scope"`
-	// The most entries to answer. Zero means the server's default; a value
-	// above the server's maximum is lowered to it; a negative value is invalid.
-	PageSize int32 `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// The log to read: one tenant's, or the installation's. Required.
+	Scope *Scope `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	// Only the entries of requests that carried this key. Empty for every
+	// caller.
+	KeyId string `protobuf:"bytes,2,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	// Only the entries with this outcome. AUDIT_OUTCOME_UNSPECIFIED for every
+	// outcome.
+	Outcome AuditOutcome `protobuf:"varint,3,opt,name=outcome,proto3,enum=magnetar.v1.AuditOutcome" json:"outcome,omitempty"`
+	// Only the entries at or after this time. Absent for no lower bound.
+	StartTime *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	// Only the entries before this time. Absent for no upper bound. Must be
+	// after start_time when both are set.
+	EndTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	// The most entries to answer: zero means 100; at most 1000. A larger or
+	// negative value is invalid.
+	PageSize int32 `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// The next_page_token of the previous page, or empty for the first page.
-	// A token is refused as invalid with a scope other than the one it was made
-	// with.
-	PageToken     string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Opaque; at most 1 KiB; refused as invalid with a scope or filters other
+	// than those it was made with.
+	PageToken     string `protobuf:"bytes,7,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -271,29 +306,39 @@ func (*ListAuditEntriesRequest) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_audit_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ListAuditEntriesRequest) GetScope() isListAuditEntriesRequest_Scope {
+func (x *ListAuditEntriesRequest) GetScope() *Scope {
 	if x != nil {
 		return x.Scope
 	}
 	return nil
 }
 
-func (x *ListAuditEntriesRequest) GetTenant() string {
+func (x *ListAuditEntriesRequest) GetKeyId() string {
 	if x != nil {
-		if x, ok := x.Scope.(*ListAuditEntriesRequest_Tenant); ok {
-			return x.Tenant
-		}
+		return x.KeyId
 	}
 	return ""
 }
 
-func (x *ListAuditEntriesRequest) GetInstallation() bool {
+func (x *ListAuditEntriesRequest) GetOutcome() AuditOutcome {
 	if x != nil {
-		if x, ok := x.Scope.(*ListAuditEntriesRequest_Installation); ok {
-			return x.Installation
-		}
+		return x.Outcome
 	}
-	return false
+	return AuditOutcome_AUDIT_OUTCOME_UNSPECIFIED
+}
+
+func (x *ListAuditEntriesRequest) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
+func (x *ListAuditEntriesRequest) GetEndTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndTime
+	}
+	return nil
 }
 
 func (x *ListAuditEntriesRequest) GetPageSize() int32 {
@@ -309,24 +354,6 @@ func (x *ListAuditEntriesRequest) GetPageToken() string {
 	}
 	return ""
 }
-
-type isListAuditEntriesRequest_Scope interface {
-	isListAuditEntriesRequest_Scope()
-}
-
-type ListAuditEntriesRequest_Tenant struct {
-	// Read this tenant's log.
-	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3,oneof"`
-}
-
-type ListAuditEntriesRequest_Installation struct {
-	// Read the installation's log. Must be true when set.
-	Installation bool `protobuf:"varint,2,opt,name=installation,proto3,oneof"`
-}
-
-func (*ListAuditEntriesRequest_Tenant) isListAuditEntriesRequest_Scope() {}
-
-func (*ListAuditEntriesRequest_Installation) isListAuditEntriesRequest_Scope() {}
 
 // ListAuditEntriesResponse is a page of entries.
 type ListAuditEntriesResponse struct {
@@ -387,7 +414,7 @@ var File_magnetar_v1_audit_proto protoreflect.FileDescriptor
 
 const file_magnetar_v1_audit_proto_rawDesc = "" +
 	"\n" +
-	"\x17magnetar/v1/audit.proto\x12\vmagnetar.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xca\x02\n" +
+	"\x17magnetar/v1/audit.proto\x12\vmagnetar.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x17magnetar/v1/scope.proto\"\xde\x03\n" +
 	"\n" +
 	"AuditEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12.\n" +
@@ -401,14 +428,22 @@ const file_magnetar_v1_audit_proto_rawDesc = "" +
 	"\aoutcome\x18\t \x01(\x0e2\x19.magnetar.v1.AuditOutcomeR\aoutcome\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\n" +
-	" \x01(\tR\trequestId\"\x9e\x01\n" +
-	"\x17ListAuditEntriesRequest\x12\x18\n" +
-	"\x06tenant\x18\x01 \x01(\tH\x00R\x06tenant\x12$\n" +
-	"\finstallation\x18\x02 \x01(\bH\x00R\finstallation\x12\x1b\n" +
-	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
+	" \x01(\tR\trequestId\x12>\n" +
+	"\adetails\x18\v \x03(\v2$.magnetar.v1.AuditEntry.DetailsEntryR\adetails\x12\x16\n" +
+	"\x06reason\x18\f \x01(\tR\x06reason\x1a:\n" +
+	"\fDetailsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xbd\x02\n" +
+	"\x17ListAuditEntriesRequest\x12(\n" +
+	"\x05scope\x18\x01 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\x12\x15\n" +
+	"\x06key_id\x18\x02 \x01(\tR\x05keyId\x123\n" +
+	"\aoutcome\x18\x03 \x01(\x0e2\x19.magnetar.v1.AuditOutcomeR\aoutcome\x129\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageTokenB\a\n" +
-	"\x05scope\"u\n" +
+	"start_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x125\n" +
+	"\bend_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12\x1b\n" +
+	"\tpage_size\x18\x06 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\a \x01(\tR\tpageToken\"u\n" +
 	"\x18ListAuditEntriesResponse\x121\n" +
 	"\aentries\x18\x01 \x03(\v2\x17.magnetar.v1.AuditEntryR\aentries\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*z\n" +
@@ -416,9 +451,9 @@ const file_magnetar_v1_audit_proto_rawDesc = "" +
 	"\x19AUDIT_OUTCOME_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12AUDIT_OUTCOME_DONE\x10\x01\x12\x19\n" +
 	"\x15AUDIT_OUTCOME_REFUSED\x10\x02\x12\x18\n" +
-	"\x14AUDIT_OUTCOME_FAILED\x10\x032o\n" +
-	"\fAuditService\x12_\n" +
-	"\x10ListAuditEntries\x12$.magnetar.v1.ListAuditEntriesRequest\x1a%.magnetar.v1.ListAuditEntriesResponseB\xa4\x01\n" +
+	"\x14AUDIT_OUTCOME_FAILED\x10\x032t\n" +
+	"\fAuditService\x12d\n" +
+	"\x10ListAuditEntries\x12$.magnetar.v1.ListAuditEntriesRequest\x1a%.magnetar.v1.ListAuditEntriesResponse\"\x03\x90\x02\x01B\xa4\x01\n" +
 	"\x0fcom.magnetar.v1B\n" +
 	"AuditProtoP\x01Z8github.com/amrshadid/magnetar/gen/magnetar/v1;magnetarv1\xa2\x02\x03MXX\xaa\x02\vMagnetar.V1\xca\x02\vMagnetar\\V1\xe2\x02\x17Magnetar\\V1\\GPBMetadata\xea\x02\fMagnetar::V1b\x06proto3"
 
@@ -435,25 +470,32 @@ func file_magnetar_v1_audit_proto_rawDescGZIP() []byte {
 }
 
 var file_magnetar_v1_audit_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_magnetar_v1_audit_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_magnetar_v1_audit_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_magnetar_v1_audit_proto_goTypes = []any{
 	(AuditOutcome)(0),                // 0: magnetar.v1.AuditOutcome
 	(*AuditEntry)(nil),               // 1: magnetar.v1.AuditEntry
 	(*ListAuditEntriesRequest)(nil),  // 2: magnetar.v1.ListAuditEntriesRequest
 	(*ListAuditEntriesResponse)(nil), // 3: magnetar.v1.ListAuditEntriesResponse
-	(*timestamppb.Timestamp)(nil),    // 4: google.protobuf.Timestamp
+	nil,                              // 4: magnetar.v1.AuditEntry.DetailsEntry
+	(*timestamppb.Timestamp)(nil),    // 5: google.protobuf.Timestamp
+	(*Scope)(nil),                    // 6: magnetar.v1.Scope
 }
 var file_magnetar_v1_audit_proto_depIdxs = []int32{
-	4, // 0: magnetar.v1.AuditEntry.time:type_name -> google.protobuf.Timestamp
+	5, // 0: magnetar.v1.AuditEntry.time:type_name -> google.protobuf.Timestamp
 	0, // 1: magnetar.v1.AuditEntry.outcome:type_name -> magnetar.v1.AuditOutcome
-	1, // 2: magnetar.v1.ListAuditEntriesResponse.entries:type_name -> magnetar.v1.AuditEntry
-	2, // 3: magnetar.v1.AuditService.ListAuditEntries:input_type -> magnetar.v1.ListAuditEntriesRequest
-	3, // 4: magnetar.v1.AuditService.ListAuditEntries:output_type -> magnetar.v1.ListAuditEntriesResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 2: magnetar.v1.AuditEntry.details:type_name -> magnetar.v1.AuditEntry.DetailsEntry
+	6, // 3: magnetar.v1.ListAuditEntriesRequest.scope:type_name -> magnetar.v1.Scope
+	0, // 4: magnetar.v1.ListAuditEntriesRequest.outcome:type_name -> magnetar.v1.AuditOutcome
+	5, // 5: magnetar.v1.ListAuditEntriesRequest.start_time:type_name -> google.protobuf.Timestamp
+	5, // 6: magnetar.v1.ListAuditEntriesRequest.end_time:type_name -> google.protobuf.Timestamp
+	1, // 7: magnetar.v1.ListAuditEntriesResponse.entries:type_name -> magnetar.v1.AuditEntry
+	2, // 8: magnetar.v1.AuditService.ListAuditEntries:input_type -> magnetar.v1.ListAuditEntriesRequest
+	3, // 9: magnetar.v1.AuditService.ListAuditEntries:output_type -> magnetar.v1.ListAuditEntriesResponse
+	9, // [9:10] is the sub-list for method output_type
+	8, // [8:9] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_audit_proto_init() }
@@ -461,17 +503,14 @@ func file_magnetar_v1_audit_proto_init() {
 	if File_magnetar_v1_audit_proto != nil {
 		return
 	}
-	file_magnetar_v1_audit_proto_msgTypes[1].OneofWrappers = []any{
-		(*ListAuditEntriesRequest_Tenant)(nil),
-		(*ListAuditEntriesRequest_Installation)(nil),
-	}
+	file_magnetar_v1_scope_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_magnetar_v1_audit_proto_rawDesc), len(file_magnetar_v1_audit_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

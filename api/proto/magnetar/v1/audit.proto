@@ -1,44 +1,51 @@
 syntax = "proto3";
 
 // Package magnetar.v1: what holds for the whole package (callers, roles, error
-// kinds, paging, secrets) is said on the package in access.proto.
+// kinds, limits, paging, secrets) is said on the package in access.proto.
 package magnetar.v1;
 
 import "google/protobuf/timestamp.proto";
+import "magnetar/v1/scope.proto";
 
 // AuditService reads the audit logs. Every request to the API writes one entry,
 // refused requests included. What concerns the installation is written to the
 // installation's log; what concerns a tenant, to that tenant's log. A request
-// refused because a tenant's database is down, or because the tenant does not
-// exist, is written to the installation's log. No entry holds a key's secret or
-// a database's address.
+// that names a tenant that does not exist or whose database does not answer is
+// written to the installation's log. No entry holds a key's secret, a
+// database's address or a setting's value.
 service AuditService {
   // ListAuditEntries answers the entries of the installation's log or of one
-  // tenant's log, newest first.
+  // tenant's log, newest first, filtered by key, by outcome and by time.
   //
-  // Role: admin on the scope asked for (that tenant, or the installation).
-  // Audit: one entry in the log of the scope asked for; the listing records
-  // itself, so reading the log is in the log.
-  // Errors: invalid, unauthenticated, permission denied (also when the tenant
-  // does not exist), unavailable.
-  rpc ListAuditEntries(ListAuditEntriesRequest) returns (ListAuditEntriesResponse);
+  // Role: admin on the scope asked for.
+  // Audit: one entry in the log of the scope asked for, with the filters in
+  // details; the listing records itself, so reading the log is in the log.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant that
+  // does not exist, for a caller who may not list every tenant), invalid,
+  // not found (a tenant that does not exist, for a caller who may list every
+  // tenant), unavailable (the database of the scope does not answer, or the
+  // tenant is not ready).
+  rpc ListAuditEntries(ListAuditEntriesRequest) returns (ListAuditEntriesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
 }
 
 // AuditOutcome is how a request ended.
 enum AuditOutcome {
-  // Never answered by the server. A client that reads it was built against an
-  // older contract than the server's.
+  // Never written by the server. As a filter, it means every outcome.
   AUDIT_OUTCOME_UNSPECIFIED = 0;
 
   // The request did what it asked.
   AUDIT_OUTCOME_DONE = 1;
 
-  // The request was refused before it did anything: unauthenticated,
-  // permission denied or invalid.
+  // The caller may not do this: the request was answered UNAUTHENTICATED or
+  // PERMISSION_DENIED, and did nothing.
   AUDIT_OUTCOME_REFUSED = 2;
 
-  // The request was allowed and failed: not found, conflict, unavailable or a
-  // fault of the server.
+  // The caller was allowed and the request did not complete: it was invalid,
+  // named something that does not exist, collided with what exists, found a
+  // tenant's database or the master database not answering, ran out of time,
+  // or met a fault of the server. The entry's reason says which.
   AUDIT_OUTCOME_FAILED = 3;
 }
 
@@ -68,7 +75,9 @@ message AuditEntry {
   // "/magnetar.v1.TenantService/CreateTenant".
   string method = 6;
 
-  // The name of the tenant the request named. Empty when it named none.
+  // The name of the tenant as the request gave it. Kept after the tenant is
+  // removed, and present also when no tenant had that name. Empty when the
+  // request named none.
   string tenant = 7;
 
   // What the request acted on, such as a key's id or a setting's name. Empty
@@ -78,30 +87,53 @@ message AuditEntry {
   // How the request ended.
   AuditOutcome outcome = 9;
 
-  // The id of the request, the same as in the server's log, so an entry and
-  // the log lines of its request can be found from each other.
+  // The id the server made for the request: the same as in the response
+  // header Magnetar-Request-Id and in the server's log, so an entry, the
+  // answer and the log lines of one request can be found from each other.
   string request_id = 10;
+
+  // What each method's comment says it records, beside the object: a
+  // database type, a scope, a previous and a new role, the filters of a
+  // listing. Keys are short lowercase words. Values are never a secret and
+  // never a setting's value: a setting's value is not recorded.
+  map<string, string> details = 11;
+
+  // The real cause of a refusal or a failure, in words for the admin who
+  // reads the log, such as "key expired" or "tenant database does not
+  // answer". It is never shown to the caller that was refused, whose answer
+  // stays the same whatever the cause. Empty when the outcome is done. Never
+  // holds a secret.
+  string reason = 12;
 }
 
 // ListAuditEntriesRequest asks for a page of one log.
 message ListAuditEntriesRequest {
-  // The log to read. Exactly one is set.
-  oneof scope {
-    // Read this tenant's log.
-    string tenant = 1;
+  // The log to read: one tenant's, or the installation's. Required.
+  Scope scope = 1;
 
-    // Read the installation's log. Must be true when set.
-    bool installation = 2;
-  }
+  // Only the entries of requests that carried this key. Empty for every
+  // caller.
+  string key_id = 2;
 
-  // The most entries to answer. Zero means the server's default; a value
-  // above the server's maximum is lowered to it; a negative value is invalid.
-  int32 page_size = 3;
+  // Only the entries with this outcome. AUDIT_OUTCOME_UNSPECIFIED for every
+  // outcome.
+  AuditOutcome outcome = 3;
+
+  // Only the entries at or after this time. Absent for no lower bound.
+  google.protobuf.Timestamp start_time = 4;
+
+  // Only the entries before this time. Absent for no upper bound. Must be
+  // after start_time when both are set.
+  google.protobuf.Timestamp end_time = 5;
+
+  // The most entries to answer: zero means 100; at most 1000. A larger or
+  // negative value is invalid.
+  int32 page_size = 6;
 
   // The next_page_token of the previous page, or empty for the first page.
-  // A token is refused as invalid with a scope other than the one it was made
-  // with.
-  string page_token = 4;
+  // Opaque; at most 1 KiB; refused as invalid with a scope or filters other
+  // than those it was made with.
+  string page_token = 7;
 }
 
 // ListAuditEntriesResponse is a page of entries.

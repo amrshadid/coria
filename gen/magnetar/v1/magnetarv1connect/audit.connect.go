@@ -3,7 +3,7 @@
 // Source: magnetar/v1/audit.proto
 
 // Package magnetar.v1: what holds for the whole package (callers, roles, error
-// kinds, paging, secrets) is said on the package in access.proto.
+// kinds, limits, paging, secrets) is said on the package in access.proto.
 package magnetarv1connect
 
 import (
@@ -34,9 +34,10 @@ const (
 var (
 	auditServiceListAuditEntriesSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_audit_proto.Services().ByName("AuditService").Methods().ByName("ListAuditEntries"),
-			Procedure:  AuditServiceListAuditEntriesProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_audit_proto.Services().ByName("AuditService").Methods().ByName("ListAuditEntries"),
+			Procedure:        AuditServiceListAuditEntriesProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 )
@@ -44,13 +45,16 @@ var (
 // AuditServiceClient is a client for the magnetar.v1.AuditService service.
 type AuditServiceClient interface {
 	// ListAuditEntries answers the entries of the installation's log or of one
-	// tenant's log, newest first.
+	// tenant's log, newest first, filtered by key, by outcome and by time.
 	//
-	// Role: admin on the scope asked for (that tenant, or the installation).
-	// Audit: one entry in the log of the scope asked for; the listing records
-	// itself, so reading the log is in the log.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), unavailable.
+	// Role: admin on the scope asked for.
+	// Audit: one entry in the log of the scope asked for, with the filters in
+	// details; the listing records itself, so reading the log is in the log.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), unavailable (the database of the scope does not answer, or the
+	// tenant is not ready).
 	ListAuditEntries(context.Context, *v1.ListAuditEntriesRequest) (*v1.ListAuditEntriesResponse, error)
 }
 
@@ -63,13 +67,16 @@ func NewAuditServiceClient(client *connect.Client) AuditServiceClient {
 // AuditServiceHandler is an implementation of the magnetar.v1.AuditService service.
 type AuditServiceHandler interface {
 	// ListAuditEntries answers the entries of the installation's log or of one
-	// tenant's log, newest first.
+	// tenant's log, newest first, filtered by key, by outcome and by time.
 	//
-	// Role: admin on the scope asked for (that tenant, or the installation).
-	// Audit: one entry in the log of the scope asked for; the listing records
-	// itself, so reading the log is in the log.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), unavailable.
+	// Role: admin on the scope asked for.
+	// Audit: one entry in the log of the scope asked for, with the filters in
+	// details; the listing records itself, so reading the log is in the log.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), unavailable (the database of the scope does not answer, or the
+	// tenant is not ready).
 	ListAuditEntries(context.Context, *v1.ListAuditEntriesRequest) (*v1.ListAuditEntriesResponse, error)
 }
 

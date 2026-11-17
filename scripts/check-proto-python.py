@@ -5,9 +5,10 @@ buf and protoc-gen-go are one toolchain; a contract that only they accept may
 be shaped by them. This script compiles the same proto files with the protoc
 that grpcio-tools bundles, imports the generated Python modules, and prints
 every service and method they define. It fails when a file does not compile,
-when no service is found, or when a method's comment lacks the three parts the
-contract requires of it: the role it needs ("Role:"), what it writes to the
-audit log ("Audit:") and the error kinds it can answer ("Errors:").
+when no service is found, or when a method's comment lacks one of the three
+parts the contract requires of it, each a line that starts with its label and
+has text after it: the role it needs ("Role:"), what it writes to the audit
+log ("Audit:") and the error kinds it can answer ("Errors:").
 
 Usage: check-proto-python.py [proto root, default api/proto]
 
@@ -17,14 +18,19 @@ The pinned grpcio-tools version is in scripts/requirements-proto.txt.
 import importlib
 import importlib.resources
 import pathlib
+import re
 import sys
 import tempfile
 
 from google.protobuf import descriptor_pb2
 from grpc_tools import protoc
 
-# The parts every method's comment must have.
-REQUIRED_PARTS = ("Role:", "Audit:", "Errors:")
+# The parts every method's comment must have: a line that starts with the
+# label, followed by text, so an empty "Role:" does not pass.
+REQUIRED_PARTS = {
+    label: re.compile(r"^\s*" + re.escape(label) + r"[ \t]*\S", re.MULTILINE)
+    for label in ("Role:", "Audit:", "Errors:")
+}
 
 # Field numbers in descriptor.proto, used to read comments from the source
 # information: FileDescriptorProto.service is 6, ServiceDescriptorProto.method
@@ -93,6 +99,7 @@ def list_services(protos):
                 raise SystemExit(f"{module_name}_pb2_grpc has no {service.name}Stub")
             methods = [
                 f"{m.name}({m.input_type.name}) returns ({m.output_type.name})"
+                f" [{idempotency(m)}]"
                 for m in service.methods
             ]
             services.append((service.full_name, methods))
@@ -110,13 +117,19 @@ def check_method_comments(descriptor_set):
         for si, service in enumerate(file.service):
             for mi, method in enumerate(service.method):
                 text = comments.get((FILE_SERVICE, si, SERVICE_METHOD, mi), "")
-                for part in REQUIRED_PARTS:
-                    if part not in text:
+                for label, pattern in REQUIRED_PARTS.items():
+                    if not pattern.search(text):
                         problems.append(
                             f"{file.package}.{service.name}.{method.name}: "
-                            f"its comment does not say {part!r}"
+                            f"its comment has no {label!r} line with text after it"
                         )
     return problems
+
+
+def idempotency(method):
+    """Answer the method's idempotency level by name, as the proto file sets it."""
+    level = method.GetOptions().idempotency_level
+    return descriptor_pb2.MethodOptions.IdempotencyLevel.Name(level)
 
 
 if __name__ == "__main__":

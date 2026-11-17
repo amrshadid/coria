@@ -3,7 +3,7 @@
 // Source: magnetar/v1/settings.proto
 
 // Package magnetar.v1: what holds for the whole package (callers, roles, error
-// kinds, paging, secrets) is said on the package in access.proto.
+// kinds, limits, paging, secrets) is said on the package in access.proto.
 package magnetarv1connect
 
 import (
@@ -30,6 +30,9 @@ const (
 	SettingsServiceGetSettingProcedure = "/magnetar.v1.SettingsService/GetSetting"
 	// SettingsServiceSetSettingProcedure is the procedure name of the SettingsService's SetSetting RPC.
 	SettingsServiceSetSettingProcedure = "/magnetar.v1.SettingsService/SetSetting"
+	// SettingsServiceUnsetSettingProcedure is the procedure name of the SettingsService's UnsetSetting
+	// RPC.
+	SettingsServiceUnsetSettingProcedure = "/magnetar.v1.SettingsService/UnsetSetting"
 	// SettingsServiceListSettingsProcedure is the procedure name of the SettingsService's ListSettings
 	// RPC.
 	SettingsServiceListSettingsProcedure = "/magnetar.v1.SettingsService/ListSettings"
@@ -38,23 +41,34 @@ const (
 var (
 	settingsServiceGetSettingSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_settings_proto.Services().ByName("SettingsService").Methods().ByName("GetSetting"),
-			Procedure:  SettingsServiceGetSettingProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_settings_proto.Services().ByName("SettingsService").Methods().ByName("GetSetting"),
+			Procedure:        SettingsServiceGetSettingProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 	settingsServiceSetSettingSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_settings_proto.Services().ByName("SettingsService").Methods().ByName("SetSetting"),
-			Procedure:  SettingsServiceSetSettingProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_settings_proto.Services().ByName("SettingsService").Methods().ByName("SetSetting"),
+			Procedure:        SettingsServiceSetSettingProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
+		}
+	})
+	settingsServiceUnsetSettingSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_settings_proto.Services().ByName("SettingsService").Methods().ByName("UnsetSetting"),
+			Procedure:        SettingsServiceUnsetSettingProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
 		}
 	})
 	settingsServiceListSettingsSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_settings_proto.Services().ByName("SettingsService").Methods().ByName("ListSettings"),
-			Procedure:  SettingsServiceListSettingsProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_settings_proto.Services().ByName("SettingsService").Methods().ByName("ListSettings"),
+			Procedure:        SettingsServiceListSettingsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 )
@@ -66,31 +80,54 @@ type SettingsServiceClient interface {
 	// override when it has one, else the installation's default. The answer's
 	// scope says which of the two the value came from.
 	//
-	// Role: reader on the scope asked for (that tenant, or the installation).
+	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for, with the setting's
-	// name.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), not found (no setting has that name), unavailable.
+	// name as its object.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (no setting has that name; a tenant that does not exist, for a
+	// caller who may list every tenant), unavailable (the database of the
+	// scope does not answer, or the tenant is not ready).
 	GetSetting(context.Context, *v1.GetSettingRequest) (*v1.GetSettingResponse, error)
 	// SetSetting sets the installation's default of a setting, or a tenant's
 	// override of it. The change and its audit entry are written together or
 	// not at all.
 	//
-	// Role: admin on the scope set (that tenant, or the installation).
-	// Audit: one entry in the log of the scope set, with the setting's name
-	// and its new value.
-	// Errors: invalid (also a value the setting does not accept), unauthenticated,
-	// permission denied (also when the tenant does not exist), not found (no
-	// setting has that name), unavailable.
+	// Role: admin on the scope set.
+	// Audit: one entry in the log of the scope set, with the setting's name as
+	// its object; the value is not recorded.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a value the setting does not accept), not found (no setting has
+	// that name; a tenant that does not exist, for a caller who may list every
+	// tenant), unavailable (the database of the scope does not answer, or the
+	// tenant is not ready).
 	SetSetting(context.Context, *v1.SetSettingRequest) (*v1.SetSettingResponse, error)
+	// UnsetSetting removes a tenant's override of a setting, so the
+	// installation's default applies to the tenant again. Removing an override
+	// the tenant does not have changes nothing and succeeds. The installation's
+	// default cannot be removed: an installation scope is refused as invalid.
+	//
+	// Role: admin on the scope.
+	// Audit: one entry in the tenant's log, with the setting's name as its
+	// object.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (no setting has that name; a tenant that does not exist, for a
+	// caller who may list every tenant), unavailable (the tenant's database
+	// does not answer, or the tenant is not ready).
+	UnsetSetting(context.Context, *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error)
 	// ListSettings answers the settings set on one scope, ordered by name: on
 	// the installation, every setting's default; on a tenant, only that
 	// tenant's overrides.
 	//
-	// Role: reader on the scope asked for (that tenant, or the installation).
+	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), unavailable.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), unavailable (the database of the scope does not answer, or the
+	// tenant is not ready).
 	ListSettings(context.Context, *v1.ListSettingsRequest) (*v1.ListSettingsResponse, error)
 }
 
@@ -107,31 +144,54 @@ type SettingsServiceHandler interface {
 	// override when it has one, else the installation's default. The answer's
 	// scope says which of the two the value came from.
 	//
-	// Role: reader on the scope asked for (that tenant, or the installation).
+	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for, with the setting's
-	// name.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), not found (no setting has that name), unavailable.
+	// name as its object.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (no setting has that name; a tenant that does not exist, for a
+	// caller who may list every tenant), unavailable (the database of the
+	// scope does not answer, or the tenant is not ready).
 	GetSetting(context.Context, *v1.GetSettingRequest) (*v1.GetSettingResponse, error)
 	// SetSetting sets the installation's default of a setting, or a tenant's
 	// override of it. The change and its audit entry are written together or
 	// not at all.
 	//
-	// Role: admin on the scope set (that tenant, or the installation).
-	// Audit: one entry in the log of the scope set, with the setting's name
-	// and its new value.
-	// Errors: invalid (also a value the setting does not accept), unauthenticated,
-	// permission denied (also when the tenant does not exist), not found (no
-	// setting has that name), unavailable.
+	// Role: admin on the scope set.
+	// Audit: one entry in the log of the scope set, with the setting's name as
+	// its object; the value is not recorded.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a value the setting does not accept), not found (no setting has
+	// that name; a tenant that does not exist, for a caller who may list every
+	// tenant), unavailable (the database of the scope does not answer, or the
+	// tenant is not ready).
 	SetSetting(context.Context, *v1.SetSettingRequest) (*v1.SetSettingResponse, error)
+	// UnsetSetting removes a tenant's override of a setting, so the
+	// installation's default applies to the tenant again. Removing an override
+	// the tenant does not have changes nothing and succeeds. The installation's
+	// default cannot be removed: an installation scope is refused as invalid.
+	//
+	// Role: admin on the scope.
+	// Audit: one entry in the tenant's log, with the setting's name as its
+	// object.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (no setting has that name; a tenant that does not exist, for a
+	// caller who may list every tenant), unavailable (the tenant's database
+	// does not answer, or the tenant is not ready).
+	UnsetSetting(context.Context, *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error)
 	// ListSettings answers the settings set on one scope, ordered by name: on
 	// the installation, every setting's default; on a tenant, only that
 	// tenant's overrides.
 	//
-	// Role: reader on the scope asked for (that tenant, or the installation).
+	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), unavailable.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), unavailable (the database of the scope does not answer, or the
+	// tenant is not ready).
 	ListSettings(context.Context, *v1.ListSettingsRequest) (*v1.ListSettingsResponse, error)
 }
 
@@ -142,6 +202,7 @@ func RegisterSettingsServiceHandler(server *connect.Server, svc SettingsServiceH
 	server.Register(
 		connect.Method{Spec: settingsServiceGetSettingSpec(), Handler: adapter.getSetting},
 		connect.Method{Spec: settingsServiceSetSettingSpec(), Handler: adapter.setSetting},
+		connect.Method{Spec: settingsServiceUnsetSettingSpec(), Handler: adapter.unsetSetting},
 		connect.Method{Spec: settingsServiceListSettingsSpec(), Handler: adapter.listSettings},
 	)
 }
@@ -155,6 +216,10 @@ func (UnimplementedSettingsServiceHandler) GetSetting(context.Context, *v1.GetSe
 
 func (UnimplementedSettingsServiceHandler) SetSetting(context.Context, *v1.SetSettingRequest) (*v1.SetSettingResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "magnetar.v1.SettingsService.SetSetting is not implemented")
+}
+
+func (UnimplementedSettingsServiceHandler) UnsetSetting(context.Context, *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "magnetar.v1.SettingsService.UnsetSetting is not implemented")
 }
 
 func (UnimplementedSettingsServiceHandler) ListSettings(context.Context, *v1.ListSettingsRequest) (*v1.ListSettingsResponse, error) {
@@ -176,6 +241,14 @@ func (c *settingsServiceClient) GetSetting(ctx context.Context, req *v1.GetSetti
 func (c *settingsServiceClient) SetSetting(ctx context.Context, req *v1.SetSettingRequest) (*v1.SetSettingResponse, error) {
 	var res v1.SetSettingResponse
 	if err := c.client.CallUnary(ctx, settingsServiceSetSettingSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *settingsServiceClient) UnsetSetting(ctx context.Context, req *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error) {
+	var res v1.UnsetSettingResponse
+	if err := c.client.CallUnary(ctx, settingsServiceUnsetSettingSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -209,6 +282,18 @@ func (h settingsServiceHandler) setSetting(ctx context.Context, _ connect.Spec, 
 		return err
 	}
 	res, err := h.svc.SetSetting(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h settingsServiceHandler) unsetSetting(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.UnsetSettingRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.UnsetSetting(ctx, &req)
 	if err != nil {
 		return err
 	}

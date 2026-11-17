@@ -184,8 +184,9 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      # buf needs a newer Go than the module; the Makefile installs it with
-      # GOTOOLCHAIN=auto, as it does golangci-lint and govulncheck.
+      # Go builds the two protoc plugins and runs nothing else here. buf is
+      # not built: make downloads its release binary and checks it against
+      # the SHA-256 in scripts/buf.sha256 (scripts/install-buf.sh).
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -197,8 +198,10 @@ jobs:
         run: make proto-lint
 
       # The base is the pull request's target branch, or the commit a push
-      # replaced. A push that made a branch has no commit before it and is not
-      # compared.
+      # replaced. After a force push that commit may be in no branch and so
+      # not in the clone; the check then compares with the pushed commit's
+      # parent and says so. A push that made a branch has no commit before it
+      # and is not compared.
       - name: buf breaking
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -207,7 +210,12 @@ jobs:
           if [ -n "$BASE_REF" ]; then
             make proto-breaking PROTO_BASE="origin/$BASE_REF"
           elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
-            make proto-breaking PROTO_BASE="$BEFORE"
+            if git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+              make proto-breaking PROTO_BASE="$BEFORE"
+            else
+              echo "proto-breaking: $BEFORE, the commit before this push, is not in the clone (a force push?); comparing with HEAD^ instead"
+              make proto-breaking PROTO_BASE=HEAD^
+            fi
           else
             echo "proto-breaking: skipped, this push has no commit before it to compare with"
           fi

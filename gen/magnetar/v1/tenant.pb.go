@@ -5,7 +5,7 @@
 // source: magnetar/v1/tenant.proto
 
 // Package magnetar.v1: what holds for the whole package (callers, roles, error
-// kinds, paging, secrets) is said on the package in access.proto.
+// kinds, limits, paging, secrets) is said on the package in access.proto.
 
 package magnetarv1
 
@@ -26,8 +26,8 @@ const (
 )
 
 // TenantState is whether a tenant can serve requests. The server checks each
-// tenant when it starts and again on a timer. A tenant that is not ready is
-// refused on its own, as UNAVAILABLE; the other tenants keep working.
+// tenant when it starts and again on a timer. A request into a tenant that is
+// not ready is answered UNAVAILABLE; the other tenants keep working.
 type TenantState int32
 
 const (
@@ -242,11 +242,13 @@ type CreateTenantRequest struct {
 	// The kind of database the tenant's data will live in. Required.
 	DatabaseType DatabaseType `protobuf:"varint,2,opt,name=database_type,json=databaseType,proto3,enum=magnetar.v1.DatabaseType" json:"database_type,omitempty"`
 	// SECRET. The address of the tenant's Postgres database, with its login and
-	// password, as a Postgres connection URI or keyword/value string. This is
-	// one of the two fields through which a secret crosses the API, and it only
-	// comes in: the server seals it with the installation key and no answer, log
-	// or audit entry ever holds it. Required for DATABASE_TYPE_POSTGRES; must be
-	// empty for DATABASE_TYPE_SQLITE.
+	// password, as a Postgres connection URI or keyword/value string; at most
+	// 4 KiB. This is one of the two fields through which a secret crosses the
+	// API, and it only comes in: the server seals it with the installation key
+	// and no answer, log or audit entry ever holds it. Required for
+	// DATABASE_TYPE_POSTGRES; must be empty for DATABASE_TYPE_SQLITE. The
+	// debug_redact mark is read by the server's redactor; the protobuf library
+	// itself still prints the field.
 	DatabaseAddress string `protobuf:"bytes,3,opt,name=database_address,json=databaseAddress,proto3" json:"database_address,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -444,10 +446,11 @@ func (x *GetTenantResponse) GetTenant() *Tenant {
 // ListTenantsRequest asks for a page of tenants.
 type ListTenantsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The most tenants to answer. Zero means the server's default; a value above
-	// the server's maximum is lowered to it; a negative value is invalid.
+	// The most tenants to answer: zero means 100; at most 1000. A larger or
+	// negative value is invalid.
 	PageSize int32 `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	// The next_page_token of the previous page, or empty for the first page.
+	// Opaque; at most 1 KiB.
 	PageToken     string `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -608,9 +611,15 @@ func (x *RemoveTenantRequest) GetConfirmName() string {
 	return ""
 }
 
-// RemoveTenantResponse is empty: the tenant is gone.
+// RemoveTenantResponse says where the removed tenant's data was left, so a
+// person can keep it, move it or delete it by hand.
 type RemoveTenantResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The kind of database the data is in.
+	DatabaseType DatabaseType `protobuf:"varint,1,opt,name=database_type,json=databaseType,proto3,enum=magnetar.v1.DatabaseType" json:"database_type,omitempty"`
+	// Where the data is. For SQLite, the path of the file on the server. For
+	// Postgres, host:port/database, with no user and no password. Not a secret.
+	DataLocation  string `protobuf:"bytes,2,opt,name=data_location,json=dataLocation,proto3" json:"data_location,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -645,6 +654,20 @@ func (*RemoveTenantResponse) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_tenant_proto_rawDescGZIP(), []int{8}
 }
 
+func (x *RemoveTenantResponse) GetDatabaseType() DatabaseType {
+	if x != nil {
+		return x.DatabaseType
+	}
+	return DatabaseType_DATABASE_TYPE_UNSPECIFIED
+}
+
+func (x *RemoveTenantResponse) GetDataLocation() string {
+	if x != nil {
+		return x.DataLocation
+	}
+	return ""
+}
+
 var File_magnetar_v1_tenant_proto protoreflect.FileDescriptor
 
 const file_magnetar_v1_tenant_proto_rawDesc = "" +
@@ -676,8 +699,10 @@ const file_magnetar_v1_tenant_proto_rawDesc = "" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"L\n" +
 	"\x13RemoveTenantRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
-	"\fconfirm_name\x18\x02 \x01(\tR\vconfirmName\"\x16\n" +
-	"\x14RemoveTenantResponse*\x96\x01\n" +
+	"\fconfirm_name\x18\x02 \x01(\tR\vconfirmName\"{\n" +
+	"\x14RemoveTenantResponse\x12>\n" +
+	"\rdatabase_type\x18\x01 \x01(\x0e2\x19.magnetar.v1.DatabaseTypeR\fdatabaseType\x12#\n" +
+	"\rdata_location\x18\x02 \x01(\tR\fdataLocation*\x96\x01\n" +
 	"\vTenantState\x12\x1c\n" +
 	"\x18TENANT_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12TENANT_STATE_READY\x10\x01\x12\x1c\n" +
@@ -687,12 +712,12 @@ const file_magnetar_v1_tenant_proto_rawDesc = "" +
 	"\fDatabaseType\x12\x1d\n" +
 	"\x19DATABASE_TYPE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14DATABASE_TYPE_SQLITE\x10\x01\x12\x1a\n" +
-	"\x16DATABASE_TYPE_POSTGRES\x10\x022\xd7\x02\n" +
+	"\x16DATABASE_TYPE_POSTGRES\x10\x022\xe6\x02\n" +
 	"\rTenantService\x12S\n" +
-	"\fCreateTenant\x12 .magnetar.v1.CreateTenantRequest\x1a!.magnetar.v1.CreateTenantResponse\x12J\n" +
-	"\tGetTenant\x12\x1d.magnetar.v1.GetTenantRequest\x1a\x1e.magnetar.v1.GetTenantResponse\x12P\n" +
-	"\vListTenants\x12\x1f.magnetar.v1.ListTenantsRequest\x1a .magnetar.v1.ListTenantsResponse\x12S\n" +
-	"\fRemoveTenant\x12 .magnetar.v1.RemoveTenantRequest\x1a!.magnetar.v1.RemoveTenantResponseB\xa5\x01\n" +
+	"\fCreateTenant\x12 .magnetar.v1.CreateTenantRequest\x1a!.magnetar.v1.CreateTenantResponse\x12O\n" +
+	"\tGetTenant\x12\x1d.magnetar.v1.GetTenantRequest\x1a\x1e.magnetar.v1.GetTenantResponse\"\x03\x90\x02\x01\x12U\n" +
+	"\vListTenants\x12\x1f.magnetar.v1.ListTenantsRequest\x1a .magnetar.v1.ListTenantsResponse\"\x03\x90\x02\x01\x12X\n" +
+	"\fRemoveTenant\x12 .magnetar.v1.RemoveTenantRequest\x1a!.magnetar.v1.RemoveTenantResponse\"\x03\x90\x02\x02B\xa5\x01\n" +
 	"\x0fcom.magnetar.v1B\vTenantProtoP\x01Z8github.com/amrshadid/magnetar/gen/magnetar/v1;magnetarv1\xa2\x02\x03MXX\xaa\x02\vMagnetar.V1\xca\x02\vMagnetar\\V1\xe2\x02\x17Magnetar\\V1\\GPBMetadata\xea\x02\fMagnetar::V1b\x06proto3"
 
 var (
@@ -731,19 +756,20 @@ var file_magnetar_v1_tenant_proto_depIdxs = []int32{
 	2,  // 4: magnetar.v1.CreateTenantResponse.tenant:type_name -> magnetar.v1.Tenant
 	2,  // 5: magnetar.v1.GetTenantResponse.tenant:type_name -> magnetar.v1.Tenant
 	2,  // 6: magnetar.v1.ListTenantsResponse.tenants:type_name -> magnetar.v1.Tenant
-	3,  // 7: magnetar.v1.TenantService.CreateTenant:input_type -> magnetar.v1.CreateTenantRequest
-	5,  // 8: magnetar.v1.TenantService.GetTenant:input_type -> magnetar.v1.GetTenantRequest
-	7,  // 9: magnetar.v1.TenantService.ListTenants:input_type -> magnetar.v1.ListTenantsRequest
-	9,  // 10: magnetar.v1.TenantService.RemoveTenant:input_type -> magnetar.v1.RemoveTenantRequest
-	4,  // 11: magnetar.v1.TenantService.CreateTenant:output_type -> magnetar.v1.CreateTenantResponse
-	6,  // 12: magnetar.v1.TenantService.GetTenant:output_type -> magnetar.v1.GetTenantResponse
-	8,  // 13: magnetar.v1.TenantService.ListTenants:output_type -> magnetar.v1.ListTenantsResponse
-	10, // 14: magnetar.v1.TenantService.RemoveTenant:output_type -> magnetar.v1.RemoveTenantResponse
-	11, // [11:15] is the sub-list for method output_type
-	7,  // [7:11] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	1,  // 7: magnetar.v1.RemoveTenantResponse.database_type:type_name -> magnetar.v1.DatabaseType
+	3,  // 8: magnetar.v1.TenantService.CreateTenant:input_type -> magnetar.v1.CreateTenantRequest
+	5,  // 9: magnetar.v1.TenantService.GetTenant:input_type -> magnetar.v1.GetTenantRequest
+	7,  // 10: magnetar.v1.TenantService.ListTenants:input_type -> magnetar.v1.ListTenantsRequest
+	9,  // 11: magnetar.v1.TenantService.RemoveTenant:input_type -> magnetar.v1.RemoveTenantRequest
+	4,  // 12: magnetar.v1.TenantService.CreateTenant:output_type -> magnetar.v1.CreateTenantResponse
+	6,  // 13: magnetar.v1.TenantService.GetTenant:output_type -> magnetar.v1.GetTenantResponse
+	8,  // 14: magnetar.v1.TenantService.ListTenants:output_type -> magnetar.v1.ListTenantsResponse
+	10, // 15: magnetar.v1.TenantService.RemoveTenant:output_type -> magnetar.v1.RemoveTenantResponse
+	12, // [12:16] is the sub-list for method output_type
+	8,  // [8:12] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_tenant_proto_init() }

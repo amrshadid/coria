@@ -11,18 +11,27 @@
 // Authorization header as a bearer token (RFC 6750): "Authorization: Bearer
 // mgt_<id>_<secret>". A request on the installation's local socket carries no
 // key: its caller is the operating system user that runs the server, the
-// local operator, who is the installation's admin.
+// local operator.
 //
-// What a caller may do. A key holds grants; a grant gives a role (Role) on one
-// tenant or on the installation. Each method's comment names the role it
-// needs and on what.
+// What a caller may do. A key holds grants; a grant gives a role (Role) on a
+// scope (Scope): one tenant, or the installation. The local operator holds no
+// grant and is admin on the installation and on every tenant. Each method's
+// comment names the role it needs and on what.
+//
+// The order of checks. Every request is checked in this order, and the first
+// check that fails gives the answer: (1) the caller is authenticated, or the
+// answer is UNAUTHENTICATED; (2) the caller holds the role the method needs,
+// or the answer is PERMISSION_DENIED (or NOT_FOUND for a missing tenant, as
+// below); (3) the request is valid, or the answer is INVALID_ARGUMENT. So a
+// caller who may not call a method learns nothing about what a valid request
+// to it looks like.
 //
 // Every method's comment also says what it writes to the audit log and which
 // error kinds it can answer. The kinds and the codes that carry them:
 //
-//   - invalid: INVALID_ARGUMENT (HTTP 400). The request is malformed or
-//     breaks a rule stated on its fields. Sending it again unchanged fails
-//     again.
+//   - invalid: INVALID_ARGUMENT (HTTP 400). The request is malformed, breaks a
+//     rule stated on its fields, or exceeds a limit below. Sending it again
+//     unchanged fails again.
 //   - unauthenticated: UNAUTHENTICATED (HTTP 401). No key, a key the server
 //     does not know, a wrong secret, an expired key and a revoked key all get
 //     this one answer, with the same message, so a caller cannot tell them
@@ -30,31 +39,55 @@
 //   - permission denied: PERMISSION_DENIED (HTTP 403). The key is good but
 //     holds no grant with the role the method needs.
 //   - not found: NOT_FOUND (HTTP 404). The thing named does not exist, and
-//     the caller may see the place where it would be.
+//     the caller may know that it does not.
 //   - conflict: ALREADY_EXISTS (HTTP 409). The change would collide with what
 //     exists, such as a second tenant with the same name.
-//   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs
-//     cannot be reached, or a tenant is not ready. Sending it again later may
+//   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs does
+//     not answer, or a tenant is not ready. Sending it again later may
 //     succeed.
 //
-// Any method can also answer INTERNAL (HTTP 500) for a fault of the server; its
-// message says nothing about the cause, which is in the server's log under the
-// request's id.
+// Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
+// RESOURCE_EXHAUSTED for a message over the size limit, and DEADLINE_EXCEEDED
+// when its deadline passes. The message of an INTERNAL answer says nothing
+// about the cause; the cause is in the server's log and the audit entry,
+// under the request's id.
 //
-// "No grant" and "no such tenant" get the same answer. A request that names a
-// tenant is answered PERMISSION_DENIED, with the same message, both when the
-// caller holds no grant on that tenant and when no tenant has that name. This
-// holds for every caller, an installation admin included, so the answer never
-// depends on whether the tenant exists, and a key cannot learn the names of
-// tenants it was not given. NOT_FOUND is answered only for things inside a
-// scope the caller may see: a key, a grant, a setting.
+// A tenant that does not exist. A request that names a tenant with no such
+// tenant is answered NOT_FOUND when the caller may list every tenant: a key
+// with reader or more on the installation, or the local operator. Every other
+// caller is answered PERMISSION_DENIED, with the same message as when it holds
+// no grant on an existing tenant, so a key cannot learn the names of tenants
+// it was not given. An operator who mistypes a name is told so; a caller with
+// no right to know learns nothing.
 //
-// Rules of the whole package: a list method takes page_size and page_token and
-// answers next_page_token, never an offset; times are UTC; ids are opaque
-// strings, to be compared whole and never parsed. Secrets cross the API in two
-// fields only, CreateTenantRequest.database_address (in) and
-// CreateKeyResponse.secret (out, once); both are marked debug_redact so
-// generated code does not print them.
+// The request id. The server makes an id for every request and returns it in
+// the response header "Magnetar-Request-Id", on success and on error alike. A
+// client cannot set it: a request header of that name is ignored. The same id
+// is in the server's log and in the request's audit entry.
+//
+// Reads and retries. Every Get and List method and WhoAmI is marked
+// NO_SIDE_EFFECTS, and the changes that may be repeated safely are marked
+// IDEMPOTENT. A read still writes an audit entry: that entry is the server's
+// record of the call, not a change to anything a read answers, and repeating
+// the read answers the same. CreateTenant and CreateKey are neither, as each
+// call makes a new thing.
+//
+// Limits. A message over 4 MB is refused. Every call has a deadline; when the
+// client sends none, the server applies 30 seconds. A list answers 100 items
+// unless page_size asks for another number, and at most 1000; a larger
+// page_size is invalid.
+//
+// Rules of the whole package. A list method takes page_size and page_token and
+// answers next_page_token, never an offset; a page token is opaque, at most
+// 1 KiB, and valid only with the request it came from. Times are UTC. Ids are
+// opaque strings, compared whole and never parsed.
+//
+// Secrets cross the API in two fields only, CreateTenantRequest.database_address
+// (in) and CreateKeyResponse.secret (out, once). Both are marked debug_redact.
+// The mark is metadata, not protection: the protobuf library prints such a
+// field like any other (checked with protobuf-go v1.36.12, in every text form).
+// The server's own redactor reads the mark and removes the two fields before
+// anything is logged.
 package magnetarv1connect
 
 import (
@@ -85,8 +118,8 @@ const (
 	AccessServiceListKeysProcedure = "/magnetar.v1.AccessService/ListKeys"
 	// AccessServiceRevokeKeyProcedure is the procedure name of the AccessService's RevokeKey RPC.
 	AccessServiceRevokeKeyProcedure = "/magnetar.v1.AccessService/RevokeKey"
-	// AccessServiceAddGrantProcedure is the procedure name of the AccessService's AddGrant RPC.
-	AccessServiceAddGrantProcedure = "/magnetar.v1.AccessService/AddGrant"
+	// AccessServiceSetGrantProcedure is the procedure name of the AccessService's SetGrant RPC.
+	AccessServiceSetGrantProcedure = "/magnetar.v1.AccessService/SetGrant"
 	// AccessServiceListGrantsProcedure is the procedure name of the AccessService's ListGrants RPC.
 	AccessServiceListGrantsProcedure = "/magnetar.v1.AccessService/ListGrants"
 	// AccessServiceRemoveGrantProcedure is the procedure name of the AccessService's RemoveGrant RPC.
@@ -105,51 +138,58 @@ var (
 	})
 	accessServiceGetKeySpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("GetKey"),
-			Procedure:  AccessServiceGetKeyProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("GetKey"),
+			Procedure:        AccessServiceGetKeyProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 	accessServiceListKeysSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("ListKeys"),
-			Procedure:  AccessServiceListKeysProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("ListKeys"),
+			Procedure:        AccessServiceListKeysProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 	accessServiceRevokeKeySpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("RevokeKey"),
-			Procedure:  AccessServiceRevokeKeyProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("RevokeKey"),
+			Procedure:        AccessServiceRevokeKeyProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
 		}
 	})
-	accessServiceAddGrantSpec = sync.OnceValue(func() connect.Spec {
+	accessServiceSetGrantSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("AddGrant"),
-			Procedure:  AccessServiceAddGrantProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("SetGrant"),
+			Procedure:        AccessServiceSetGrantProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
 		}
 	})
 	accessServiceListGrantsSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("ListGrants"),
-			Procedure:  AccessServiceListGrantsProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("ListGrants"),
+			Procedure:        AccessServiceListGrantsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 	accessServiceRemoveGrantSpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("RemoveGrant"),
-			Procedure:  AccessServiceRemoveGrantProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("RemoveGrant"),
+			Procedure:        AccessServiceRemoveGrantProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
 		}
 	})
 	accessServiceWhoAmISpec = sync.OnceValue(func() connect.Spec {
 		return connect.Spec{
-			StreamType: connect.StreamTypeUnary,
-			Schema:     v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("WhoAmI"),
-			Procedure:  AccessServiceWhoAmIProcedure,
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_access_proto.Services().ByName("AccessService").Methods().ByName("WhoAmI"),
+			Procedure:        AccessServiceWhoAmIProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
 )
@@ -160,23 +200,26 @@ type AccessServiceClient interface {
 	// the SHA-256 of the secret, so it can never show the secret again.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the new key's id; never
-	// its secret.
-	// Errors: invalid, unauthenticated, permission denied, unavailable.
+	// Audit: one entry in the installation's log, with the new key's id as its
+	// object and its holder in details; never its secret.
+	// Errors: unauthenticated, permission denied, invalid, unavailable (the
+	// master database does not answer).
 	CreateKey(context.Context, *v1.CreateKeyRequest) (*v1.CreateKeyResponse, error)
 	// GetKey answers one key, revoked and expired keys included.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the key's id.
-	// Errors: invalid, unauthenticated, permission denied, not found,
-	// unavailable.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id), unavailable (the master database does not answer).
 	GetKey(context.Context, *v1.GetKeyRequest) (*v1.GetKeyResponse, error)
 	// ListKeys answers every key of the installation, revoked and expired keys
 	// included, oldest first.
 	//
 	// Role: admin on the installation.
 	// Audit: one entry in the installation's log.
-	// Errors: invalid, unauthenticated, permission denied, unavailable.
+	// Errors: unauthenticated, permission denied, invalid, unavailable (the
+	// master database does not answer).
 	ListKeys(context.Context, *v1.ListKeysRequest) (*v1.ListKeysResponse, error)
 	// RevokeKey ends a key for good: from this call on, a request with it is
 	// answered UNAUTHENTICATED. Its grants stay listed, so the record shows what
@@ -184,45 +227,56 @@ type AccessServiceClient interface {
 	// nothing and answers the key with its first revoke time.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the key's id.
-	// Errors: invalid, unauthenticated, permission denied, not found,
-	// unavailable.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id), unavailable (the master database does not answer).
 	RevokeKey(context.Context, *v1.RevokeKeyRequest) (*v1.RevokeKeyResponse, error)
-	// AddGrant gives a key a role on one tenant or on the installation. A key
-	// holds at most one grant per scope; a role includes the roles below it
-	// (Role), so one is enough. To change a role, remove the grant and add the
-	// new one.
+	// SetGrant sets the role of a key on a scope. A key holds at most one grant
+	// per scope; when it already holds one there, its role is replaced in the
+	// same step, so a role is changed without a moment of no access. A role
+	// includes the roles below it (Role), so one per scope is enough.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the key's id, the scope
-	// and the role.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), not found (the key), conflict (the key already holds a
-	// grant on that scope, or is revoked), unavailable.
-	AddGrant(context.Context, *v1.AddGrantRequest) (*v1.AddGrantResponse, error)
-	// ListGrants answers grants, filtered by key, by tenant, or both, ordered by
-	// key id and then scope.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object, and the scope, the previous role (when there was one) and the new
+	// role in details.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id, or no tenant has the scope's name: a caller who passes the
+	// role check may list every tenant, so it is told), conflict (the key is
+	// revoked), unavailable (the master database does not answer).
+	SetGrant(context.Context, *v1.SetGrantRequest) (*v1.SetGrantResponse, error)
+	// ListGrants answers the grants of one key, or the grants on one scope,
+	// ordered by key id and then scope. Exactly one of the two filters is
+	// required: there is no listing of every grant at once.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the filters.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// in the filter does not exist), unavailable.
+	// Audit: one entry in the installation's log, with the filter in details.
+	// Errors: unauthenticated, permission denied, invalid, not found (no tenant
+	// has the scope's name: a caller who passes the role check may list every
+	// tenant, so it is told), unavailable (the master database does not
+	// answer).
 	ListGrants(context.Context, *v1.ListGrantsRequest) (*v1.ListGrantsResponse, error)
-	// RemoveGrant takes back a key's grant on one scope.
+	// RemoveGrant takes back a key's grant on one scope. Removing a grant the
+	// key does not hold changes nothing and succeeds, so a repeated call does
+	// not fail.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the key's id and the
-	// scope.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), not found (the key, or its grant on that scope),
-	// unavailable.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object, and the scope and the role removed (when there was one) in
+	// details.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id, or no tenant has the scope's name: a caller who passes the
+	// role check may list every tenant, so it is told), unavailable (the master
+	// database does not answer).
 	RemoveGrant(context.Context, *v1.RemoveGrantRequest) (*v1.RemoveGrantResponse, error)
 	// WhoAmI answers the caller: the key the request carried with that key's
 	// grants, or the local operator.
 	//
 	// Role: none; any caller the server authenticates.
 	// Audit: one entry in the installation's log.
-	// Errors: unauthenticated, unavailable.
+	// Errors: unauthenticated, unavailable (the master database does not
+	// answer).
 	WhoAmI(context.Context, *v1.WhoAmIRequest) (*v1.WhoAmIResponse, error)
 }
 
@@ -238,23 +292,26 @@ type AccessServiceHandler interface {
 	// the SHA-256 of the secret, so it can never show the secret again.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the new key's id; never
-	// its secret.
-	// Errors: invalid, unauthenticated, permission denied, unavailable.
+	// Audit: one entry in the installation's log, with the new key's id as its
+	// object and its holder in details; never its secret.
+	// Errors: unauthenticated, permission denied, invalid, unavailable (the
+	// master database does not answer).
 	CreateKey(context.Context, *v1.CreateKeyRequest) (*v1.CreateKeyResponse, error)
 	// GetKey answers one key, revoked and expired keys included.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the key's id.
-	// Errors: invalid, unauthenticated, permission denied, not found,
-	// unavailable.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id), unavailable (the master database does not answer).
 	GetKey(context.Context, *v1.GetKeyRequest) (*v1.GetKeyResponse, error)
 	// ListKeys answers every key of the installation, revoked and expired keys
 	// included, oldest first.
 	//
 	// Role: admin on the installation.
 	// Audit: one entry in the installation's log.
-	// Errors: invalid, unauthenticated, permission denied, unavailable.
+	// Errors: unauthenticated, permission denied, invalid, unavailable (the
+	// master database does not answer).
 	ListKeys(context.Context, *v1.ListKeysRequest) (*v1.ListKeysResponse, error)
 	// RevokeKey ends a key for good: from this call on, a request with it is
 	// answered UNAUTHENTICATED. Its grants stay listed, so the record shows what
@@ -262,45 +319,56 @@ type AccessServiceHandler interface {
 	// nothing and answers the key with its first revoke time.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the key's id.
-	// Errors: invalid, unauthenticated, permission denied, not found,
-	// unavailable.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id), unavailable (the master database does not answer).
 	RevokeKey(context.Context, *v1.RevokeKeyRequest) (*v1.RevokeKeyResponse, error)
-	// AddGrant gives a key a role on one tenant or on the installation. A key
-	// holds at most one grant per scope; a role includes the roles below it
-	// (Role), so one is enough. To change a role, remove the grant and add the
-	// new one.
+	// SetGrant sets the role of a key on a scope. A key holds at most one grant
+	// per scope; when it already holds one there, its role is replaced in the
+	// same step, so a role is changed without a moment of no access. A role
+	// includes the roles below it (Role), so one per scope is enough.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the key's id, the scope
-	// and the role.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), not found (the key), conflict (the key already holds a
-	// grant on that scope, or is revoked), unavailable.
-	AddGrant(context.Context, *v1.AddGrantRequest) (*v1.AddGrantResponse, error)
-	// ListGrants answers grants, filtered by key, by tenant, or both, ordered by
-	// key id and then scope.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object, and the scope, the previous role (when there was one) and the new
+	// role in details.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id, or no tenant has the scope's name: a caller who passes the
+	// role check may list every tenant, so it is told), conflict (the key is
+	// revoked), unavailable (the master database does not answer).
+	SetGrant(context.Context, *v1.SetGrantRequest) (*v1.SetGrantResponse, error)
+	// ListGrants answers the grants of one key, or the grants on one scope,
+	// ordered by key id and then scope. Exactly one of the two filters is
+	// required: there is no listing of every grant at once.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the filters.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// in the filter does not exist), unavailable.
+	// Audit: one entry in the installation's log, with the filter in details.
+	// Errors: unauthenticated, permission denied, invalid, not found (no tenant
+	// has the scope's name: a caller who passes the role check may list every
+	// tenant, so it is told), unavailable (the master database does not
+	// answer).
 	ListGrants(context.Context, *v1.ListGrantsRequest) (*v1.ListGrantsResponse, error)
-	// RemoveGrant takes back a key's grant on one scope.
+	// RemoveGrant takes back a key's grant on one scope. Removing a grant the
+	// key does not hold changes nothing and succeeds, so a repeated call does
+	// not fail.
 	//
 	// Role: admin on the installation.
-	// Audit: one entry in the installation's log, with the key's id and the
-	// scope.
-	// Errors: invalid, unauthenticated, permission denied (also when the tenant
-	// does not exist), not found (the key, or its grant on that scope),
-	// unavailable.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object, and the scope and the role removed (when there was one) in
+	// details.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id, or no tenant has the scope's name: a caller who passes the
+	// role check may list every tenant, so it is told), unavailable (the master
+	// database does not answer).
 	RemoveGrant(context.Context, *v1.RemoveGrantRequest) (*v1.RemoveGrantResponse, error)
 	// WhoAmI answers the caller: the key the request carried with that key's
 	// grants, or the local operator.
 	//
 	// Role: none; any caller the server authenticates.
 	// Audit: one entry in the installation's log.
-	// Errors: unauthenticated, unavailable.
+	// Errors: unauthenticated, unavailable (the master database does not
+	// answer).
 	WhoAmI(context.Context, *v1.WhoAmIRequest) (*v1.WhoAmIResponse, error)
 }
 
@@ -313,7 +381,7 @@ func RegisterAccessServiceHandler(server *connect.Server, svc AccessServiceHandl
 		connect.Method{Spec: accessServiceGetKeySpec(), Handler: adapter.getKey},
 		connect.Method{Spec: accessServiceListKeysSpec(), Handler: adapter.listKeys},
 		connect.Method{Spec: accessServiceRevokeKeySpec(), Handler: adapter.revokeKey},
-		connect.Method{Spec: accessServiceAddGrantSpec(), Handler: adapter.addGrant},
+		connect.Method{Spec: accessServiceSetGrantSpec(), Handler: adapter.setGrant},
 		connect.Method{Spec: accessServiceListGrantsSpec(), Handler: adapter.listGrants},
 		connect.Method{Spec: accessServiceRemoveGrantSpec(), Handler: adapter.removeGrant},
 		connect.Method{Spec: accessServiceWhoAmISpec(), Handler: adapter.whoAmI},
@@ -339,8 +407,8 @@ func (UnimplementedAccessServiceHandler) RevokeKey(context.Context, *v1.RevokeKe
 	return nil, connect.NewError(connect.CodeUnimplemented, "magnetar.v1.AccessService.RevokeKey is not implemented")
 }
 
-func (UnimplementedAccessServiceHandler) AddGrant(context.Context, *v1.AddGrantRequest) (*v1.AddGrantResponse, error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, "magnetar.v1.AccessService.AddGrant is not implemented")
+func (UnimplementedAccessServiceHandler) SetGrant(context.Context, *v1.SetGrantRequest) (*v1.SetGrantResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "magnetar.v1.AccessService.SetGrant is not implemented")
 }
 
 func (UnimplementedAccessServiceHandler) ListGrants(context.Context, *v1.ListGrantsRequest) (*v1.ListGrantsResponse, error) {
@@ -391,9 +459,9 @@ func (c *accessServiceClient) RevokeKey(ctx context.Context, req *v1.RevokeKeyRe
 	return &res, nil
 }
 
-func (c *accessServiceClient) AddGrant(ctx context.Context, req *v1.AddGrantRequest) (*v1.AddGrantResponse, error) {
-	var res v1.AddGrantResponse
-	if err := c.client.CallUnary(ctx, accessServiceAddGrantSpec(), req, &res); err != nil {
+func (c *accessServiceClient) SetGrant(ctx context.Context, req *v1.SetGrantRequest) (*v1.SetGrantResponse, error) {
+	var res v1.SetGrantResponse
+	if err := c.client.CallUnary(ctx, accessServiceSetGrantSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -473,12 +541,12 @@ func (h accessServiceHandler) revokeKey(ctx context.Context, _ connect.Spec, str
 	return stream.Send(res)
 }
 
-func (h accessServiceHandler) addGrant(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
-	var req v1.AddGrantRequest
+func (h accessServiceHandler) setGrant(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetGrantRequest
 	if err := stream.Receive(&req); err != nil {
 		return err
 	}
-	res, err := h.svc.AddGrant(ctx, &req)
+	res, err := h.svc.SetGrant(ctx, &req)
 	if err != nil {
 		return err
 	}

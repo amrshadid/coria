@@ -25,5 +25,7 @@ breaking:
   use:
     # The strictest category: besides what breaks the wire, it refuses what
     # breaks generated code and JSON, such as a renamed field, a moved type or
-    # a deleted method. A breaking change is magnetar.v2 beside magnetar.v1.
+    # a deleted method. Under it a field is never removed from magnetar.v1,
+    # even with its number reserved: it is marked deprecated and stays. A
+    # breaking change is magnetar.v2 beside magnetar.v1.
     - FILE

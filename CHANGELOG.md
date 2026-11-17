@@ -29,12 +29,16 @@ All notable changes to Magnetar are written here. The form is
   `magnetar.v1` in `api/proto`: `TenantService`, `AccessService` (keys,
   grants, `WhoAmI`), `SettingsService` and `AuditService`. Each method's
   comment states the role it needs, what it writes to the audit log and the
-  errors it can answer. Secrets cross it in two fields only, the database
-  address of a new tenant and a new key's secret, both kept out of printed
-  messages; a test reads the descriptors and fails if any other field looks
-  like a secret. `buf lint`, a breaking-change check against the base branch,
-  and a check that the committed Go code in `gen/` is current run in CI, with
-  Python's grpcio-tools compiling the same files as a second toolchain. No
-  server serves it yet.
+  errors it can answer, and each read or repeatable change is marked as such.
+  The contract also states its limits, the order in which a request is
+  checked, the request id the server returns, and when a missing tenant is
+  "not found" and when it is "permission denied". Removing a tenant only
+  unregisters it and says where its data was left. Secrets cross the API in
+  two fields only, the database address of a new tenant and a new key's
+  secret; they are marked for the server's redactor, and a test fails on any
+  text field of the contract that has not been listed as reviewed. `buf
+  lint`, a breaking-change check against the base branch, and a check that the
+  committed Go code in `gen/` is current run in CI, with Python's grpcio-tools
+  compiling the same files as a second toolchain. No server serves it yet.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop
