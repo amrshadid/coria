@@ -51,8 +51,8 @@ jobs:
       # check-latest takes the newest patch release rather than whatever the
       # runner image has cached: govulncheck reports the standard library of
       # the Go that runs it, so an old patch would fail it for nothing here.
-      # No module cache: there are no dependencies yet, and with no go.sum the
-      # cache step only warns.
+      # No module cache: the module has two small dependencies, which
+      # download in seconds.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -165,3 +165,67 @@ jobs:
 
       - name: go test
         run: go test -v ./...
+
+  # The API contract in api/proto: buf lint, the breaking-change check against
+  # the base, the check that the committed gen/ is what the proto files
+  # generate, and a second toolchain (Python's grpcio-tools) compiling the same
+  # files. Linux only: none of it depends on the system.
+  contract:
+    name: API contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # The whole history, so the breaking check can read its base. The
+      # checkout keeps no credentials, so a later git fetch of the private
+      # repository would be refused; the checkout's own fetch is the only one.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Go builds the two protoc plugins and runs nothing else here. buf is
+      # not built: make downloads its release binary and checks it against
+      # the SHA-256 in scripts/buf.sha256 (scripts/install-buf.sh).
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27'
+          check-latest: true
+          cache: false
+
+      - name: buf lint
+        run: make proto-lint
+
+      # The base is the pull request's target branch, or the commit a push
+      # replaced. After a force push that commit may be in no branch and so
+      # not in the clone; the check then compares with the pushed commit's
+      # parent and says so. A push that made a branch has no commit before it
+      # and is not compared.
+      - name: buf breaking
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$BASE_REF" ]; then
+            make proto-breaking PROTO_BASE="origin/$BASE_REF"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            if git cat-file -e "$BEFORE^{commit}" 2> /dev/null; then
+              make proto-breaking PROTO_BASE="$BEFORE"
+            else
+              echo "proto-breaking: $BEFORE, the commit before this push, is not in the clone (a force push?); comparing with HEAD^ instead"
+              make proto-breaking PROTO_BASE=HEAD^
+            fi
+          else
+            echo "proto-breaking: skipped, this push has no commit before it to compare with"
+          fi
+
+      - name: gen/ is current
+        run: make proto-check
+
+      - name: Python grpcio-tools compiles the contract
+        run: |
+          python3 --version
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check -r scripts/requirements-proto.txt
+          make proto-python PYTHON="$RUNNER_TEMP/venv/bin/python"

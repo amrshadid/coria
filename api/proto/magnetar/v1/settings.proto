@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+// Package magnetar.v1: what holds for the whole package (callers, roles, error
+// kinds, limits, paging, secrets) is said on the package in access.proto.
+package magnetar.v1;
+
+import "magnetar/v1/scope.proto";
+
+// SettingsService reads and changes settings. The installation holds a default
+// for every setting; a tenant may override some of them. A setting is
+// resolved as the tenant's override when it has one, else the installation's
+// default. A setting never holds a secret.
+service SettingsService {
+  // GetSetting answers the value of one setting as it applies to the scope
+  // asked for: on the installation, its default; on a tenant, the tenant's
+  // override when it has one, else the installation's default. The answer's
+  // scope says which of the two the value came from.
+  //
+  // Role: reader on the scope asked for.
+  // Audit: one entry in the log of the scope asked for, with the setting's
+  // name as its object.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant that
+  // does not exist, for a caller who may not list every tenant), invalid,
+  // not found (no setting has that name; a tenant that does not exist, for a
+  // caller who may list every tenant), unavailable (the database of the
+  // scope does not answer, or the tenant is not ready).
+  rpc GetSetting(GetSettingRequest) returns (GetSettingResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // SetSetting sets the installation's default of a setting, or a tenant's
+  // override of it. The change and its audit entry are written together or
+  // not at all.
+  //
+  // Role: admin on the scope set.
+  // Audit: one entry in the log of the scope set, with the setting's name as
+  // its object; the value is not recorded.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant that
+  // does not exist, for a caller who may not list every tenant), invalid
+  // (also a value the setting does not accept), not found (no setting has
+  // that name; a tenant that does not exist, for a caller who may list every
+  // tenant), unavailable (the database of the scope does not answer, or the
+  // tenant is not ready).
+  rpc SetSetting(SetSettingRequest) returns (SetSettingResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+
+  // UnsetSetting removes a tenant's override of a setting, so the
+  // installation's default applies to the tenant again. Removing an override
+  // the tenant does not have changes nothing and succeeds. The installation's
+  // default cannot be removed: an installation scope is refused as invalid.
+  //
+  // Role: admin on the scope.
+  // Audit: one entry in the tenant's log, with the setting's name as its
+  // object.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant that
+  // does not exist, for a caller who may not list every tenant), invalid,
+  // not found (no setting has that name; a tenant that does not exist, for a
+  // caller who may list every tenant), unavailable (the tenant's database
+  // does not answer, or the tenant is not ready).
+  rpc UnsetSetting(UnsetSettingRequest) returns (UnsetSettingResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
+
+  // ListSettings answers the settings set on one scope, ordered by name: on
+  // the installation, every setting's default; on a tenant, only that
+  // tenant's overrides.
+  //
+  // Role: reader on the scope asked for.
+  // Audit: one entry in the log of the scope asked for.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant that
+  // does not exist, for a caller who may not list every tenant), invalid,
+  // not found (a tenant that does not exist, for a caller who may list every
+  // tenant), unavailable (the database of the scope does not answer, or the
+  // tenant is not ready).
+  rpc ListSettings(ListSettingsRequest) returns (ListSettingsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// Setting is one named value, set on the installation or on a tenant.
+message Setting {
+  // The setting's name, from the fixed list of settings the server knows:
+  // 1 to 128 characters of lowercase ASCII letters, digits, ".", "_" and "-".
+  string name = 1;
+
+  // Where the value is set: the installation's default, or a tenant's
+  // override.
+  Scope scope = 2;
+
+  // The value, in the text form the setting defines, such as "90d" for a
+  // period; at most 64 KiB. The server refuses a value that form does not
+  // accept.
+  string value = 3;
+}
+
+// GetSettingRequest names a setting and the scope to resolve it on.
+message GetSettingRequest {
+  // The setting's name. Required; 1 to 128 characters of lowercase ASCII
+  // letters, digits, ".", "_" and "-".
+  string name = 1;
+
+  // The scope the value is resolved on: a tenant (its override, else the
+  // installation's default) or the installation (its default). Required.
+  Scope scope = 2;
+}
+
+// GetSettingResponse is the setting's value on the scope asked for.
+message GetSettingResponse {
+  // The setting; its scope is where its value came from.
+  Setting setting = 1;
+}
+
+// SetSettingRequest is the value to set.
+message SetSettingRequest {
+  // The setting. Its name, scope and value are required.
+  Setting setting = 1;
+}
+
+// SetSettingResponse is the setting as stored.
+message SetSettingResponse {
+  // The setting, as stored.
+  Setting setting = 1;
+}
+
+// UnsetSettingRequest names a tenant's override to remove.
+message UnsetSettingRequest {
+  // The setting's name. Required; 1 to 128 characters of lowercase ASCII
+  // letters, digits, ".", "_" and "-".
+  string name = 1;
+
+  // The tenant whose override is removed. Required; must be a tenant.
+  Scope scope = 2;
+}
+
+// UnsetSettingResponse is the setting as it now applies to the tenant.
+message UnsetSettingResponse {
+  // The installation's default, which applies to the tenant again.
+  Setting setting = 1;
+}
+
+// ListSettingsRequest asks for a page of the settings set on one scope.
+message ListSettingsRequest {
+  // The scope to list: a tenant's overrides, or the installation's defaults.
+  // Required.
+  Scope scope = 1;
+
+  // The most settings to answer: zero means 100; at most 1000. A larger or
+  // negative value is invalid.
+  int32 page_size = 2;
+
+  // The next_page_token of the previous page, or empty for the first page.
+  // Opaque; at most 1 KiB; refused as invalid with a scope other than the one
+  // it was made with.
+  string page_token = 3;
+}
+
+// ListSettingsResponse is a page of settings.
+message ListSettingsResponse {
+  // The settings of this page.
+  repeated Setting settings = 1;
+
+  // The page_token that asks for the next page. Empty on the last page.
+  string next_page_token = 2;
+}

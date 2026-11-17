@@ -24,5 +24,21 @@ All notable changes to Magnetar are written here. The form is
   build information, so a report can name the build that wrote the data. Any
   other command is a usage error: one line on standard error and exit code 2.
 - A pull request into `main` is refused unless it comes from `develop`.
+- The API had no written contract, so handlers, the command line and outside
+  clients had nothing fixed to agree on. It is now protobuf, package
+  `magnetar.v1` in `api/proto`: `TenantService`, `AccessService` (keys,
+  grants, `WhoAmI`), `SettingsService` and `AuditService`. Each method's
+  comment states the role it needs, what it writes to the audit log and the
+  errors it can answer, and each read or repeatable change is marked as such.
+  The contract also states its limits, the order in which a request is
+  checked, the request id the server returns, and when a missing tenant is
+  "not found" and when it is "permission denied". Removing a tenant only
+  unregisters it and says where its data was left. Secrets cross the API in
+  two fields only, the database address of a new tenant and a new key's
+  secret; they are marked for the server's redactor, and a test fails on any
+  text field of the contract that has not been listed as reviewed. `buf
+  lint`, a breaking-change check against the base branch, and a check that the
+  committed Go code in `gen/` is current run in CI, with Python's grpcio-tools
+  compiling the same files as a second toolchain. No server serves it yet.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop

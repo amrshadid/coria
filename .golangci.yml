@@ -119,6 +119,10 @@ linters:
 
   exclusions:
     generated: lax
+    # The code buf generates from api/proto: never edited, so nothing a
+    # linter says about it can be acted on. The proto files are linted by buf.
+    paths:
+      - ^gen/
     # Not the "comments" preset: it would silence the missing doc comment
     # warnings that the revive rules above are here to give.
     presets:

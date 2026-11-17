@@ -105,3 +105,102 @@ $(TOOLS)/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint:
 
 $(TOOLS)/govulncheck-$(GOVULNCHECK_VERSION)/govulncheck:
 	GOBIN=$(@D) GOTOOLCHAIN=auto $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+
+# ---------------------------------------------------------------------------
+# The API contract: the protobuf files in api/proto and the Go code generated
+# from them into gen/.
+#
+#   make proto           regenerate gen/ from api/proto
+#   make proto-lint      buf lint with the rules in buf.yaml
+#   make proto-breaking  buf breaking against the commit where HEAD and
+#                        PROTO_BASE (a git revision) meet
+#   make proto-check     regenerate into a scratch directory and fail on any
+#                        difference from the committed gen/
+#   make proto-python    compile the proto files with Python's grpcio-tools,
+#                        a second toolchain, and list the services; needs a
+#                        PYTHON with scripts/requirements-proto.txt installed,
+#                        so it is not part of make check
+#
+# buf and both plugins are pinned and installed into bin/tools like the tools
+# above. buf is the release binary, checked against the SHA-256 committed in
+# scripts/buf.sha256 (building it from source took minutes in CI); the
+# plugins are small and built with go install. buf runs with local plugins
+# only: no Buf Schema Registry account, no remote plugin, no network at
+# generation time.
+BUF_VERSION                   := v1.75.0
+PROTOC_GEN_GO_VERSION         := v1.36.12
+PROTOC_GEN_CONNECT_GO_VERSION := v2.0.2
+
+BUF                   := $(TOOLS)/buf-$(BUF_VERSION)/buf
+PROTOC_GEN_GO         := $(TOOLS)/protoc-gen-go-$(PROTOC_GEN_GO_VERSION)/protoc-gen-go
+PROTOC_GEN_CONNECT_GO := $(TOOLS)/protoc-gen-connect-go-$(PROTOC_GEN_CONNECT_GO_VERSION)/protoc-gen-connect-go
+
+# buf.gen.yaml names the plugins without a path; the pinned ones are put first
+# on PATH, so a plugin of another version installed elsewhere is never used.
+PROTO_PATH := $(dir $(PROTOC_GEN_GO)):$(dir $(PROTOC_GEN_CONNECT_GO)):$(PATH)
+
+# The branch the contract is compared with. The check compares with the commit
+# where HEAD and this branch meet, not with its tip, so a branch that is behind
+# does not see what was added since as deleted. CI passes the pull request's
+# base branch, or the commit before a push.
+PROTO_BASE ?= origin/develop
+
+# Scratch space for the base's files and for regenerated code. Its name starts
+# with "_", so the go command ignores it: regenerated Go code left here would
+# otherwise be a package of the module, built and tested by ./... It is
+# removed after each use.
+PROTO_TMP := $(BIN)/_proto
+
+PYTHON ?= python3
+
+.PHONY: proto proto-lint proto-breaking proto-check proto-python
+
+check: proto-lint proto-breaking proto-check
+
+proto-python:
+	$(PYTHON) scripts/check-proto-python.py api/proto
+
+proto: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO)
+	@echo "buf generate (protoc-gen-go $(PROTOC_GEN_GO_VERSION), protoc-gen-connect-go $(PROTOC_GEN_CONNECT_GO_VERSION))"
+	@PATH="$(PROTO_PATH)" $(BUF) generate
+
+proto-lint: $(BUF)
+	$(BUF) --version
+	$(BUF) lint
+
+# A base with no proto files has no contract to break; the check says so and
+# passes rather than comparing against nothing. The base is read with git
+# archive, so the check works the same in a clone, a worktree and CI.
+proto-breaking: $(BUF)
+	@set -e; base="$(PROTO_BASE)"; \
+	git rev-parse --verify --quiet "$$base^{commit}" > /dev/null || { echo "proto-breaking: $$base is not a known revision; fetch it first" >&2; exit 1; }; \
+	mb="$$(git merge-base HEAD "$$base")" || { echo "proto-breaking: HEAD and $$base have no commit in common" >&2; exit 1; }; \
+	echo "proto-breaking: comparing with $$mb, where HEAD and $$base meet"; \
+	if ! git ls-tree -r --name-only "$$mb" -- api/proto | grep '\.proto$$' > /dev/null; then \
+		echo "proto-breaking: skipped, $$mb has no proto files under api/proto"; exit 0; \
+	fi; \
+	rm -rf $(PROTO_TMP); mkdir -p $(PROTO_TMP)/base; \
+	git archive "$$mb" -- buf.yaml api/proto | tar -x -C $(PROTO_TMP)/base; \
+	status=0; $(BUF) breaking --against $(PROTO_TMP)/base || status=$$?; \
+	rm -rf $(PROTO_TMP); \
+	if [ $$status -ne 0 ]; then echo "proto-breaking: the contract breaks what $$mb published" >&2; exit $$status; fi; \
+	echo "proto-breaking: no breaking change"
+
+proto-check: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO)
+	@set -e; rm -rf $(PROTO_TMP); mkdir -p $(PROTO_TMP); \
+	PATH="$(PROTO_PATH)" $(BUF) generate -o $(PROTO_TMP); \
+	status=0; diff -r gen $(PROTO_TMP)/gen || status=$$?; \
+	rm -rf $(PROTO_TMP); \
+	if [ $$status -ne 0 ]; then \
+		echo "proto-check: gen/ is not what the proto files generate; run make proto and commit the result" >&2; exit 1; \
+	fi; \
+	echo "proto-check: gen/ matches the proto files"
+
+$(BUF):
+	scripts/install-buf.sh $(BUF_VERSION) $@
+
+$(PROTOC_GEN_GO):
+	GOBIN=$(@D) GOTOOLCHAIN=auto $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
+
+$(PROTOC_GEN_CONNECT_GO):
+	GOBIN=$(@D) GOTOOLCHAIN=auto $(GO) install connectrpc.com/connect/v2/cmd/protoc-gen-connect-go@$(PROTOC_GEN_CONNECT_GO_VERSION)

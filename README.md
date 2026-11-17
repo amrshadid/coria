@@ -40,10 +40,22 @@ locally passes there for the same reason.
 | `make test` | `go test -race ./...` |
 | `make build` | static binaries for linux/amd64, linux/386, linux/arm64, darwin/arm64 and windows/amd64, in `bin/` |
 | `make size` | the size of each binary `make build` left, as a table |
+| `make proto-lint` | `buf lint` on the API contract in `api/proto` |
+| `make proto-breaking` | `buf breaking` against the commit where `HEAD` and `PROTO_BASE` (default `origin/develop`) meet; skipped, saying so, when that commit has no proto files |
+| `make proto-check` | regenerates the Go code and fails if it differs from the committed `gen/` |
 | `make check` | all of the above, in that order |
 
+The API contract is protobuf, package `magnetar.v1`, in `api/proto`; `make
+proto` regenerates the Go code in `gen/`, which is committed and never edited
+by hand. `make proto-python` compiles the same files with Python's
+grpcio-tools as a second toolchain (it needs a `PYTHON` with
+`scripts/requirements-proto.txt` installed, so it is not in `make check`).
+
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
-into `bin/tools/` the first time; nothing is installed outside the checkout.
+into `bin/tools/` the first time, and the proto targets do the same for buf,
+protoc-gen-go and protoc-gen-connect-go; nothing is installed outside the
+checkout. buf is the release binary for Linux or macOS (x86-64 or ARM),
+installed only if its SHA-256 matches the one in `scripts/buf.sha256`.
 `make` needs a Unix shell; on Windows run `go vet ./...` and `go test ./...`
 directly.
 
