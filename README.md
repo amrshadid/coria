@@ -4,8 +4,9 @@ A research imaging archive in one Go binary. It receives DICOM, de-identifies it
 routes it to a storage, catalogs it as subject / session / scan, and serves it to
 other systems through a gRPC API with keys.
 
-**State: early development. Nothing here is usable yet.** The binary only says
-which build it is.
+**State: early development. Nothing here is usable yet.** The binary says
+which build it is and has the commands that operate an installation through its
+API (see below); there is no server for them to talk to yet.
 
 ## Build
 
@@ -24,6 +25,39 @@ not record reads `unknown`. A release stamps its version with:
 ```sh
 make build VERSION=v0.1.0
 ```
+
+## The commands
+
+`magnetar <noun> <verb> [name] [flags]`; `magnetar --help` lists them and
+`magnetar completion bash` writes the shell completion.
+
+```
+magnetar version | whoami
+magnetar tenant   create <name> [--db-env VAR | --db-file PATH] | list | show <name> | remove <name> --yes
+magnetar key      create --holder TEXT [--expires 90d | --no-expiry] | list | show <id> | revoke <id>
+magnetar grant    set <key-id> --role ROLE (--tenant NAME | --installation) | list (--key ID | --tenant NAME | --installation) | remove <key-id> (--tenant NAME | --installation)
+magnetar setting  get <name> [--tenant NAME] | set <name> <value> [--tenant NAME] | unset <name> --tenant NAME | list [--tenant NAME]
+magnetar audit    list [--tenant NAME] [--key ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]
+```
+
+- **Where it connects.** By default the local socket `run/magnetar.sock` in the
+  data directory (`--data-dir` or `MAGNETAR_DATA_DIR`), as the user that runs the
+  server, with no key. With `--server https://host:port` (or `MAGNETAR_SERVER`)
+  it connects over TLS with the key from `MAGNETAR_KEY` or the file named by
+  `--key-file`. `http://` is accepted only for `localhost`, `127.0.0.0/8` and
+  `::1`.
+- **A secret is never an argument.** No flag takes a key, a password or a
+  database address; a tenant's Postgres address is read from the variable named
+  by `--db-env` or the file named by `--db-file`. (`--key` on `grant list` and
+  `audit list` takes a key's public id, and a whole key given there is refused.)
+- **Output.** A table, or with `--json` one document that starts with
+  `"schemaVersion": 1`. Times are shown in the local zone with their offset;
+  there is no color when `NO_COLOR` is set or the output is not a terminal.
+- **Errors** are one line on standard error with the server's message and its
+  request id. Exit codes: 0 done, 1 failed, 2 wrong usage, 3 refused
+  (unauthenticated or denied), 4 not found.
+- **Lists** fetch up to `--limit` (100) items and say when more exist; `--all`
+  fetches every item.
 
 ## The quality gates
 
@@ -58,6 +92,8 @@ them as steps of their own on Linux:
 |---|---|
 | `make check-seal PYTHON=python3` | the format of a sealed secret against another implementation: `scripts/check-seal.py`, with Python's `cryptography` package, opens a value Go sealed, and Go opens a value Python sealed. `PYTHON` names an interpreter that has the package; `pip install --require-hashes -r scripts/requirements-check-seal.txt` installs it at the versions CI uses. An empty `PYTHON` or a missing interpreter fails |
 | `make fuzz` | each fuzz target for `FUZZTIME` (10 seconds unless given) |
+| `make check-json` | every command with `--json` against the in-process server, each output parsed by Python's `json` module (`scripts/check-json.py`, standard library only) and checked for `schemaVersion` |
+| `make check-completion` | the bash completion script the binary writes, parsed by `bash -n` |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
 into `bin/tools/` the first time, and the proto targets do the same for buf,

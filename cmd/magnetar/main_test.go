@@ -11,6 +11,13 @@ import (
 	"testing"
 )
 
+// Exit codes of the command line, as the documentation fixes them.
+const (
+	exitOK     = 0
+	exitFailed = 1
+	exitUsage  = 2
+)
+
 // versionLine is the shape of what the version command prints: the version,
 // the commit and the Go release, on one line.
 var versionLine = regexp.MustCompile(`^magnetar \S+ \(commit \S+, \S*go1\S*\)\n$`)
@@ -21,7 +28,7 @@ var versionLine = regexp.MustCompile(`^magnetar \S+ \(commit \S+, \S*go1\S*\)\n$
 func TestVersionPrintsOneLine(t *testing.T) {
 	for _, arg := range []string{"version", "--version"} {
 		var stdout, stderr bytes.Buffer
-		code := run([]string{arg}, &stdout, &stderr)
+		code := run(t.Context(), []string{arg}, &stdout, &stderr)
 		if code != exitOK {
 			t.Errorf("%s: exit code %d, want %d", arg, code, exitOK)
 		}
@@ -36,22 +43,21 @@ func TestVersionPrintsOneLine(t *testing.T) {
 
 // TestAnythingElseIsAUsageError guards the usage error: an unknown word, no
 // word, or extra words print one line to standard error naming what was wrong,
-// nothing to standard output, and exit 2, so a script can tell a mistake in its
-// arguments from a failure.
+// nothing to standard output, and exit 2, so a script can tell a mistake in
+// its arguments from a failure.
 func TestAnythingElseIsAUsageError(t *testing.T) {
 	cases := map[string]struct {
 		args []string
 		want string
 	}{
-		"unknown word":   {[]string{"nope"}, `magnetar: unknown command "nope"; the only command so far is "magnetar version"` + "\n"},
-		"no word":        {nil, `magnetar: no command; the only command so far is "magnetar version"` + "\n"},
-		"extra words":    {[]string{"version", "now"}, `magnetar: unknown command "version now"; the only command so far is "magnetar version"` + "\n"},
-		"single dash":    {[]string{"-version"}, `magnetar: unknown command "-version"; the only command so far is "magnetar version"` + "\n"},
-		"terminal codes": {[]string{"\x1b[2J"}, `magnetar: unknown command "\x1b[2J"; the only command so far is "magnetar version"` + "\n"},
+		"unknown word":   {[]string{"nope"}, `magnetar: unknown command "nope" for "magnetar"; try "magnetar --help"` + "\n"},
+		"no word":        {nil, `magnetar: no command (usage: magnetar <noun> <verb> [flags], for example magnetar tenant list); try "magnetar --help"` + "\n"},
+		"extra words":    {[]string{"version", "now"}, `magnetar: unknown command "now" for "magnetar version"; try "magnetar version --help"` + "\n"},
+		"terminal codes": {[]string{"\x1b[2J"}, `magnetar: unknown command "\x1b[2J" for "magnetar"; try "magnetar --help"` + "\n"},
 	}
 	for name, c := range cases {
 		var stdout, stderr bytes.Buffer
-		code := run(c.args, &stdout, &stderr)
+		code := run(t.Context(), c.args, &stdout, &stderr)
 		if code != exitUsage {
 			t.Errorf("%s: exit code %d, want %d", name, code, exitUsage)
 		}
@@ -75,7 +81,7 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("no space
 // with nothing printed.
 func TestVersionFailsWhenOutputFails(t *testing.T) {
 	var stderr bytes.Buffer
-	if code := run([]string{"version"}, failingWriter{}, &stderr); code != exitFailed {
+	if code := run(t.Context(), []string{"version"}, failingWriter{}, &stderr); code != exitFailed {
 		t.Errorf("exit code %d, want %d", code, exitFailed)
 	}
 	if !strings.Contains(stderr.String(), "no space left on device") {
@@ -113,20 +119,31 @@ func TestBuiltBinary(t *testing.T) {
 		t.Errorf("magnetar version printed %q, want %q", got, want)
 	}
 
-	stdout.Reset()
-	stderr.Reset()
-	cmd = exec.Command(bin, "nope")
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != exitUsage {
-		t.Fatalf("magnetar nope: %v, want exit code %d", err, exitUsage)
-	}
-	wantErr := `magnetar: unknown command "nope"; the only command so far is "magnetar version"`
-	if got := strings.TrimRight(stderr.String(), "\r\n"); got != wantErr || strings.Count(stderr.String(), "\n") != 1 {
-		t.Errorf("magnetar nope wrote %q to standard error, want the one line %q", stderr.String(), wantErr)
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("magnetar nope wrote %q to standard output, want nothing", stdout.String())
+	// An unknown command exits 2 with one line, and a command that cannot
+	// reach a server exits 1 with one line: the codes cross the process
+	// boundary as the table says.
+	for name, c := range map[string]struct {
+		args []string
+		exit int
+		line string
+	}{
+		"usage":  {[]string{"nope"}, exitUsage, `magnetar: unknown command "nope" for "magnetar"; try "magnetar --help"`},
+		"failed": {[]string{"--data-dir", t.TempDir(), "whoami"}, exitFailed, "magnetar: whoami: cannot reach the server at "},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		cmd = exec.Command(bin, c.args...)
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != c.exit {
+			t.Fatalf("%s: %v, want exit code %d", name, err, c.exit)
+		}
+		if got := strings.TrimRight(stderr.String(), "\r\n"); !strings.HasPrefix(got, c.line) || strings.Count(stderr.String(), "\n") != 1 {
+			t.Errorf("%s wrote %q to standard error, want one line starting %q", name, stderr.String(), c.line)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("%s wrote %q to standard output, want nothing", name, stdout.String())
+		}
 	}
 }
