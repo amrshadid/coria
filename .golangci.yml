@@ -1,0 +1,98 @@
+# golangci-lint v2 configuration. The version that reads it is pinned in the
+# Makefile and in .github/workflows/checks.yml; a v1 binary refuses this file.
+version: "2"
+
+linters:
+  # The standard set (errcheck, govet, ineffassign, staticcheck, unused) and
+  # the linters below.
+  default: standard
+  enable:
+    # The architecture rule: imports point inward, toward internal/core.
+    - depguard
+    # errors.Is and errors.As, not == and type assertions, so a wrapped error
+    # with its context still matches.
+    - errorlint
+    # Security mistakes in code that handles patient data and secrets.
+    - gosec
+    - misspell
+    # Every exported identifier has a doc comment.
+    - revive
+    - unconvert
+
+  settings:
+    depguard:
+      rules:
+        # The core holds the domain: types, the reception state machine, naming
+        # and routing. It states what it needs as interfaces that the other
+        # packages implement, so it is tested without a database, a network or
+        # a storage, and a new database or storage type never changes it. An
+        # import from here outward would undo that, and nothing else in a
+        # review would show it. The rule is written before the package exists
+        # so the first file in it is already held to it.
+        core:
+          list-mode: lax
+          files:
+            - "**/internal/core/**"
+          allow:
+            # The core's own subpackages are the core. Longer than the deny
+            # entry for the module, so it wins in lax mode.
+            - github.com/amrshadid/magnetar/internal/core/
+          deny:
+            - pkg: github.com/amrshadid/magnetar
+              desc: the core imports nothing of Magnetar's; state the need as an interface in the core
+            # Databases.
+            - pkg: database/sql
+              desc: the core does not reach a database; the catalog package does
+            - pkg: modernc.org/sqlite
+              desc: the core does not reach a database; the catalog package does
+            - pkg: github.com/jackc/pgx
+              desc: the core does not reach a database; the catalog package does
+            # Networks: net covers net/http and every other package under it.
+            - pkg: net
+              desc: the core does not reach the network; the receive, send and api packages do
+            - pkg: crypto/tls
+              desc: the core does not reach the network; the receive, send and api packages do
+            - pkg: connectrpc.com
+              desc: the core does not reach the network; the api package does
+            - pkg: google.golang.org/grpc
+              desc: the core does not reach the network; the api package does
+            - pkg: github.com/amrshadid/go-dicom/network
+              desc: the core does not reach the network; the receive and send packages do
+            - pkg: github.com/amrshadid/go-dicom/dicomweb
+              desc: the core does not reach the network; the dicomweb package does
+            # Storages: files and buckets.
+            - pkg: os$
+              desc: the core does not touch files; the blob package does
+            - pkg: os/
+              desc: the core does not touch files or processes
+            - pkg: io/ioutil
+              desc: the core does not touch files; the blob package does
+            - pkg: path/filepath
+              desc: the core does not touch files; the blob package does
+            - pkg: github.com/aws
+              desc: the core does not reach a storage; the blob package does
+            - pkg: github.com/minio
+              desc: the core does not reach a storage; the blob package does
+
+    misspell:
+      locale: US
+
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+
+  exclusions:
+    generated: lax
+    # Not the "comments" preset: it would silence the missing doc comment
+    # warnings that the revive rules above are here to give.
+    presets:
+      - common-false-positives
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true

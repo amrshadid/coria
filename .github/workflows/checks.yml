@@ -1,0 +1,151 @@
+name: Checks
+
+# Every pull request, whatever branch it targets, and every push to the two
+# branches that keep history. A feature branch is checked by its pull request,
+# so a push to one does not run this twice.
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+# A new push to a pull request makes the run for the previous one worthless;
+# cancel it rather than spend the private repository's minutes finishing it.
+# Pushes to develop and main are never cancelled, so each merge is checked.
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Each step runs a Makefile target, the same command a person runs locally, so
+# CI and a laptop cannot disagree about what a gate is.
+#
+# Actions are pinned to a commit, with the release in the comment: a tag can be
+# moved to other code, a commit cannot.
+jobs:
+  linux:
+    name: Linux - Go ${{ matrix.go }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.25', '1.26']
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # check-latest takes the newest patch release rather than whatever the
+      # runner image has cached: govulncheck reports the standard library of
+      # the Go that runs it, so an old patch would fail it for nothing here.
+      # No module cache: there are no dependencies yet, and with no go.sum the
+      # cache step only warns.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+          cache: false
+
+      - name: Go version
+        run: go version
+
+      - name: gofmt -s
+        run: make fmt
+
+      - name: go vet, amd64 and 386
+        run: make vet
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # Keep in step with GOLANGCI_LINT_VERSION in the Makefile.
+          version: v2.15.0
+          install-only: true
+
+      - name: golangci-lint
+        run: make lint GOLANGCI_LINT=golangci-lint
+
+      - name: govulncheck
+        run: make vuln
+
+      - name: go test -race
+        run: make test
+
+      - name: Static builds
+        run: make build
+
+      # The size is written to the job summary so a pull request that makes the
+      # binary much larger shows it without anyone opening the log.
+      - name: Binary sizes
+        run: |
+          {
+            echo "### Binary sizes, Go ${{ matrix.go }}"
+            echo
+            make --no-print-directory size
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Each binary was built with CGO_ENABLED=0; this shows the Linux one is
+      # in fact static, so a change that brings in C cannot pass unseen.
+      - name: The linux/amd64 binary is static
+        run: |
+          file bin/magnetar-linux-amd64
+          file bin/magnetar-linux-amd64 | grep -q 'statically linked'
+          go version -m bin/magnetar-linux-amd64 | grep -x $'\tbuild\tCGO_ENABLED=0'
+          ./bin/magnetar-linux-amd64 version
+
+  # Windows has its own paths, line endings and executables, so the tests run
+  # there on every pull request. The newest Go only: Windows minutes count
+  # double against a private repository, and the older Go is tested on Linux.
+  windows:
+    name: Windows - Go 1.26
+    runs-on: windows-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26'
+          check-latest: true
+          cache: false
+
+      - name: Go version
+        run: go version
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -v ./...
+
+  # macOS only after a merge: a macOS minute counts as ten against a private
+  # repository, and the work is done on macOS, where the tests run before every
+  # pull request. When the repository is public this joins the pull requests.
+  macos:
+    name: macOS - Go 1.26
+    if: github.event_name == 'push'
+    runs-on: macos-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26'
+          check-latest: true
+          cache: false
+
+      - name: Go version
+        run: go version
+
+      - name: go test
+        run: go test -v ./...
