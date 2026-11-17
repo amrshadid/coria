@@ -8,7 +8,8 @@
 #   make vuln    govulncheck
 #   make test    go test -race
 #   make build   static binaries for every target in bin/
-#   make size    the size of each binary in bin/, as a Markdown table
+#   make size    the size of each binary make build left in bin/, as a
+#                Markdown table
 
 GO      ?= go
 BIN     := bin
@@ -81,7 +82,11 @@ build:
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $$out ./cmd/magnetar; \
 	done
 
-size: build
+# size reads what build made and does not depend on it: CI writes this target's
+# output to the job summary, and a rebuild here would put build commands there
+# in front of the table.
+size:
+	@ls $(BIN)/magnetar-* > /dev/null 2>&1 || { echo "no binaries in $(BIN)/; run make build first" >&2; exit 1; }
 	@echo "| Binary | Bytes | MiB |"
 	@echo "|---|---:|---:|"
 	@for f in $(BIN)/magnetar-*; do \
