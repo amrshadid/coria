@@ -85,6 +85,22 @@ jobs:
       - name: go test -race
         run: make test
 
+      # The sealed-secret format checked against another implementation:
+      # Python's cryptography package, pinned, in a virtual environment
+      # because the runner's system Python refuses pip installs (PEP 668).
+      - name: Outside check, sealing against Python cryptography
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet cryptography==46.0.3
+          "$RUNNER_TEMP/venv/bin/python" -c 'import cryptography; print("cryptography", cryptography.__version__)'
+          make check-seal PYTHON="$RUNNER_TEMP/venv/bin/python"
+
+      # Each fuzz target for ten seconds, on one Go only: the inputs it finds
+      # do not depend on the Go release, and the minutes are limited.
+      - name: Fuzzing, 10 seconds a target
+        if: matrix.go == '1.27'
+        run: make fuzz FUZZTIME=10s
+
       - name: Static builds
         run: make build
 

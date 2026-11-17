@@ -10,6 +10,13 @@
 #   make build   static binaries for every target in bin/
 #   make size    the size of each binary make build left in bin/, as a
 #                Markdown table
+#
+# Two more checks, which CI runs as steps of their own and make check does
+# not, because each needs more than Go:
+#
+#   make check-seal  the sealed-secret format against Python's cryptography
+#                    package (PYTHON=... names an interpreter that has it)
+#   make fuzz        each fuzz target for FUZZTIME (10s unless given)
 
 GO      ?= go
 BIN     := bin
@@ -43,7 +50,7 @@ VERSION ?=
 LDFLAGS := -s -w $(if $(VERSION),-X $(MODULE)/internal/version.Version=$(VERSION))
 
 .DEFAULT_GOAL := check
-.PHONY: check fmt vet lint vuln test build size
+.PHONY: check fmt vet lint vuln test build size check-seal fuzz
 
 check: fmt vet lint vuln test build size
 
@@ -95,6 +102,30 @@ size:
 	@for f in $(BIN)/magnetar-*; do \
 		bytes=$$(wc -c < "$$f" | tr -d ' '); \
 		echo "| $${f#$(BIN)/} | $$bytes | $$(awk "BEGIN { printf \"%.2f\", $$bytes / 1048576 }") |"; \
+	done
+
+# The outside check of internal/secret: scripts/check-seal.py opens what Go
+# sealed and seals what Go then opens. -count=1 so a cached pass is never
+# reported for a Python that changed. The test skips without the variable,
+# which this target always sets, so here it either runs or fails.
+PYTHON ?= python3
+
+check-seal:
+	MAGNETAR_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
+
+# Every fuzz target, as package:function. go test fuzzes one target at a
+# time, so each is a run of its own; -run '^$$' keeps the other tests out.
+FUZZTIME     ?= 10s
+FUZZ_TARGETS := \
+	internal/secret:FuzzOpen \
+	internal/secret:FuzzParseAPIKey \
+	internal/secret:FuzzParseKeyFile
+
+fuzz:
+	@set -e; for target in $(FUZZ_TARGETS); do \
+		pkg=$${target%%:*}; fn=$${target#*:}; \
+		echo "$(GO) test -run '^$$' -fuzz ^$$fn\$$ -fuzztime $(FUZZTIME) ./$$pkg"; \
+		$(GO) test -run '^$$' -fuzz "^$$fn\$$" -fuzztime $(FUZZTIME) ./$$pkg; \
 	done
 
 # govulncheck needs a newer Go to build than this module needs, so the installs

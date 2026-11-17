@@ -51,6 +51,14 @@ by hand. `make proto-python` compiles the same files with Python's
 grpcio-tools as a second toolchain (it needs a `PYTHON` with
 `scripts/requirements-proto.txt` installed, so it is not in `make check`).
 
+Two more checks need more than Go, so `make check` leaves them out and CI runs
+them as steps of their own on Linux:
+
+| Command | What it checks |
+|---|---|
+| `make check-seal PYTHON=python3` | the format of a sealed secret against another implementation: `scripts/check-seal.py`, with Python's `cryptography` package, opens a value Go sealed, and Go opens a value Python sealed. `PYTHON` names an interpreter that has the package |
+| `make fuzz` | each fuzz target for `FUZZTIME` (10 seconds unless given) |
+
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
 into `bin/tools/` the first time, and the proto targets do the same for buf,
 protoc-gen-go and protoc-gen-connect-go; nothing is installed outside the
