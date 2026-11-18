@@ -142,6 +142,7 @@ func TestTenantFailingFiles(t *testing.T) {
 func TestShippedTenantMigrationsUnchanged(t *testing.T) {
 	want := []string{
 		"0001_init.sql " + shippedTenantInit,
+		"0002_pipeline.sql " + shippedTenantPipeline,
 	}
 	if tenantMigrationsErr != nil {
 		t.Fatal(tenantMigrationsErr)
@@ -160,6 +161,10 @@ func TestShippedTenantMigrationsUnchanged(t *testing.T) {
 // shippedTenantInit is the SHA-256 of migrations/tenant/0001_init.sql as
 // this change ships it.
 const shippedTenantInit = "72f52dbc4393307b684dd2f48a301e2d36d20cfcca5844e0710795fc630847b9"
+
+// shippedTenantPipeline is the SHA-256 of migrations/tenant/0002_pipeline.sql
+// as this change ships it.
+const shippedTenantPipeline = "028d0781b23582783e0770479ab6bdb410eaffcaa3c8928ed5a415954e0e28d6"
 
 // TestTenantNotMigrated guards that a tenant store used before Migrate
 // fails as Unavailable with a message that says so, instead of a SQL error,

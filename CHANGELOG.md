@@ -406,6 +406,23 @@ All notable changes to Magnetar are written here. The form is
   connection, so a name that resolves to a private address is refused; it
   follows no redirect; and its errors carry neither the server's words nor the
   endpoint. It adds the AWS SDK for Go's S3 client, about 4.6 MB of the binary.
+- A tenant's database held settings and an audit log, and nothing the reception
+  of a study needs. It now keeps, on SQLite, so that a restart loses nothing:
+  storages and receivers, with partial changes and the contract's rules on
+  names, overlap and what is in use, an S3 secret stored sealed and never read
+  back; receptions, opened or found per receiver and study, numbered by arrival,
+  stepped by compare-and-set through the core's state table in one transaction
+  with whatever reports the step, retried or discarded when failed; received
+  files, recorded in batches that change nothing when written twice, and a
+  check of each file against what the tenant holds (the same file, a different
+  file under its UID, its UID under another study or series); quarantine, with
+  release, reject and running totals that always equal a count of the rows; and
+  leased units of work, claimed, renewed, completed or failed with every write
+  fenced by the attempt number, so a worker that lost its lease changes
+  nothing. The store reads no clock: the caller passes the time. Every list,
+  claim and lookup is answered from an index, which a test reads from the query
+  plan. These are a second interface, `tenant.Pipeline`, until the Postgres
+  driver passes the same suite.
 
 ### Changed
 

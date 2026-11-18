@@ -103,11 +103,12 @@ func (t *Tenant) Close() error {
 	})
 }
 
-// tenantStatements are a tenant's prepared statements: for now only the ones
-// it shares with the master.
+// tenantStatements are a tenant's prepared statements: the ones it shares
+// with the master, and the pipeline's (pipeline.go).
 type tenantStatements struct {
 	all []*sql.Stmt
 	sharedStatements
+	pipelineStatements
 }
 
 // ready returns the prepared statements, preparing them on first use.
@@ -124,7 +125,7 @@ func (t *Tenant) ready(ctx context.Context) (*tenantStatements, error) {
 		return s, nil
 	}
 	s := &tenantStatements{}
-	all, err := prepareAll(ctx, sharedEntries(&s.sharedStatements, t.p))
+	all, err := prepareAll(ctx, append(sharedEntries(&s.sharedStatements, t.p), pipelineEntries(&s.pipelineStatements, t.p)...))
 	if err != nil {
 		return nil, t.notReady(ctx, err)
 	}
