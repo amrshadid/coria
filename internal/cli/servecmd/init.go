@@ -141,12 +141,14 @@ The data directory is --data-dir, or MAGNETAR_DATA_DIR.`,
 // holds an installation, or the remains of one.
 var installationMarks = []string{KeyFileName, server.IDFileName, MasterFileName, TenantsDirName, "run"}
 
-// writeIdentity gives the new installation its id (decision D52): a random
-// id written into the master's settings store, under the reserved name,
-// with a system audit entry, and into the id file in the data directory, so
-// serve can refuse a master that is not this installation's. A master that
-// already holds an id belongs to another installation and is refused.
-func writeIdentity(ctx context.Context, m master.Store, dir string) error {
+// writeIdentity gives the new installation its id and its key check: a
+// random id, and the id sealed with the installation's key file, each
+// written into the master's settings store under a reserved name with a
+// system audit entry; then the id into the id file in the data directory.
+// serve refuses a master that is not this installation's, and a key file
+// that is not. A master that already holds an id belongs to another
+// installation and is refused.
+func writeIdentity(ctx context.Context, m master.Store, dir string, keys *secret.Keys) error {
 	if _, err := m.Setting(ctx, server.InstallationIDSetting); err == nil {
 		return fault.New(fault.Conflict, "the master database already belongs to an installation; init makes a new installation and needs an empty database")
 	} else if fault.KindOf(err) != fault.NotFound {
@@ -158,6 +160,17 @@ func writeIdentity(ctx context.Context, m master.Store, dir string) error {
 		Outcome: master.OutcomeDone, Reason: "the installation's identity, which serve checks against the data directory",
 	}
 	if err := m.SetSetting(ctx, server.InstallationIDSetting, id, audit); err != nil {
+		return err
+	}
+	check, err := server.SealKeyCheck(keys, id)
+	if err != nil {
+		return err
+	}
+	audit = master.AuditEntry{
+		ID: server.NewID(), Time: time.Now().UTC(), Method: "magnetar init", Object: server.KeyCheckSetting,
+		Outcome: master.OutcomeDone, Reason: "the key check, which serve opens with its key file before it starts",
+	}
+	if err := m.SetSetting(ctx, server.KeyCheckSetting, check, audit); err != nil {
 		return err
 	}
 	return server.WriteInstallationID(dir, id)
@@ -211,7 +224,12 @@ func runInit(ctx context.Context, opts Options, dir, masterEnv string) (err erro
 		_ = m.Close()
 		return err
 	}
-	if err := writeIdentity(ctx, m, dir); err != nil {
+	keys, err := secret.LoadKeyFile(keyPath)
+	if err != nil {
+		_ = m.Close()
+		return err
+	}
+	if err := writeIdentity(ctx, m, dir, keys); err != nil {
 		_ = m.Close()
 		return err
 	}
@@ -226,6 +244,16 @@ func runInit(ctx context.Context, opts Options, dir, masterEnv string) (err erro
 			return err
 		}
 		made = append(made, p)
+	}
+	// The lock file exists from init on, empty: serve takes it and empties
+	// it again when it stops, so a start that is refused leaves the data
+	// directory exactly as it found it.
+	lock, err := server.TakeLock(dir)
+	if err != nil {
+		return err
+	}
+	if err := lock.Release(); err != nil {
+		return fault.Wrap(fault.Internal, err, "cannot make the lock file in "+server.RunDir(dir))
 	}
 
 	_, err = fmt.Fprintf(opts.Stdout, `Made a new installation in %s.

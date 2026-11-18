@@ -34,6 +34,10 @@ import (
 // signal and kill a real server.
 const childArgsEnv = "MAGNETAR_SERVECMD_CHILD_ARGS"
 
+// childRealEnv, when set, makes the child serve the real handlers and tenant
+// registry instead of the stand-ins.
+const childRealEnv = "MAGNETAR_SERVECMD_CHILD_REAL"
+
 // TestMain runs the tests, or the commands as a child process.
 func TestMain(m *testing.M) {
 	if raw := os.Getenv(childArgsEnv); raw != "" {
@@ -56,6 +60,10 @@ func runChild(args []string) int {
 		Services: func(d servecmd.Deps) (servecmd.Built, error) {
 			return servecmd.Built{Register: (&servertest.Standins{Access: d.Access, Delay: delay}).Register, Methods: servertest.Contract()}, nil
 		},
+	}
+	if os.Getenv(childRealEnv) != "" {
+		// The real handlers and tenant registry, as the binary serves them.
+		opts.Services = servecmd.APIServices
 	}
 	root := newRoot(opts)
 	root.SetArgs(args)
@@ -205,9 +213,15 @@ type child struct {
 // startChild starts this binary as "magnetar <args>".
 func startChild(t *testing.T, args ...string) *child {
 	t.Helper()
+	return startChildEnv(t, nil, args...)
+}
+
+// startChildEnv is startChild with more environment for the child.
+func startChildEnv(t *testing.T, env []string, args ...string) *child {
+	t.Helper()
 	raw, _ := json.Marshal(args)
 	cmd := exec.Command(os.Args[0]) //nolint:gosec // G204: this test's own binary.
-	cmd.Env = append(os.Environ(), childArgsEnv+"="+string(raw))
+	cmd.Env = append(append(os.Environ(), env...), childArgsEnv+"="+string(raw))
 	var stderr bytes.Buffer
 	cmd.Stderr = &lockedWriter{w: &stderr}
 	if err := cmd.Start(); err != nil {
