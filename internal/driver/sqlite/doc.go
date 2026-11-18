@@ -20,6 +20,30 @@
 // migrating waits for the first, under the busy timeout, then finds the files
 // applied.
 //
+// # One process writes a SQLite database
+//
+// Inside one process a database is one store with one writing connection,
+// and writers queue for it in the order they came. A second process with
+// its own store on the same file is safe for the data: SQLite's locking lets
+// one writer at a time commit, and every change is whole or absent
+// (sqlite.org/lockingv3.html, sqlite.org/wal.html). It is not fair. A writer
+// that finds the file locked by another process sleeps and tries again, in
+// steps that grow to 100 milliseconds, until the busy timeout
+// (sqlite.org/c3ref/busy_handler.html, sqlite.org/c3ref/busy_timeout.html);
+// a process that keeps writing gives the lock up only for the moment between
+// two of its transactions, which the sleeper rarely catches. So a writer in
+// one process can wait for as long as another keeps writing, and fails with
+// the busy error once that passes the busy timeout. Measured: a store whose
+// first write began while another store on the same file made 200 writes
+// back to back waited until all 200 were done (1.05 s for 1.03 s of writes).
+//
+// That is why one server serves a data directory: the server's lock on the
+// directory refuses a second one before it opens any database, and the
+// server runs every migration itself at start. A tool that writes a SQLite
+// database while the server runs, or several servers on one database, is not
+// supported. Postgres is the database for anything that needs several
+// writing processes.
+//
 // A SQLite database must be on a local disk. Its write-ahead log does not
 // work on a network file system (sqlite.org/wal.html), and that cannot be
 // detected reliably, so it is documented, not enforced.

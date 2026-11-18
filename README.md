@@ -26,6 +26,15 @@ not record reads `unknown`. A release stamps its version with:
 make build VERSION=v0.1.0
 ```
 
+## Databases
+
+The master database and each tenant's live in SQLite files in the data
+directory or in Postgres. One process writes a SQLite database: the server's
+lock on its data directory keeps a second server away, a second process on the
+same file would be safe for the data but could wait for as long as the first
+keeps writing and then fail as busy, and Postgres is the database for anything
+that needs several writing processes.
+
 ## The commands
 
 `magnetar <noun> <verb> [name] [flags]`; `magnetar --help` lists them and

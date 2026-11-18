@@ -564,30 +564,70 @@ func testWritesSeenShared(e *env, other tenant.Store) {
 }
 
 // testConcurrentShared guards that changes made at once through two
-// instances, as two processes would, are each written with their entry,
-// none lost to a lock error.
+// instances, as two processes would make them, are each written with their
+// audit entry or not at all: none lost, none half written, every failure
+// leaving nothing behind. In each round the two instances write a short burst
+// of changes at the same moment, the last change of each burst with an audit
+// id already taken, which must fail and leave no setting; at the end the
+// settings and the audit entries are counted exactly.
+//
+// It pins correctness across instances, not fairness, which the port does
+// not promise: on SQLite a writer in one process waits for as long as
+// another keeps writing (package sqlite's documentation), so a test of two
+// sustained writers would measure how SQLite's busy wait happens to
+// interleave them on the machine at hand. The bursts are short, so neither
+// instance waits for more than a few of the other's commits, and they are
+// concurrent, so a store that is not atomic across instances still fails.
 func testConcurrentShared(e *env, other tenant.Store) {
-	const each = 40
-	var wg sync.WaitGroup
-	errs := make(chan error, 2*each)
-	for i, s := range []tenant.Store{e.s, other} {
-		wg.Go(func() {
-			for j := range each {
-				errs <- s.SetSetting(e.ctx, fmt.Sprintf("i%d.%02d", i, j), "v", e.audit())
+	const rounds, burst = 15, 3
+	taken := e.audit()
+	e.ok("AppendAudit", e.s.AppendAudit(e.ctx, taken))
+	stores := []tenant.Store{e.s, other}
+	for round := range rounds {
+		errs := make([][]error, len(stores))
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, s := range stores {
+			errs[i] = make([]error, burst+1)
+			wg.Go(func() {
+				<-start
+				for j := range burst + 1 {
+					a := e.audit()
+					if j == burst {
+						a.ID = taken.ID
+					}
+					errs[i][j] = s.SetSetting(e.ctx, fmt.Sprintf("r%02d.i%d.c%d", round, i, j), "v", a)
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
+		for i := range stores {
+			for j, err := range errs[i] {
+				switch {
+				case j < burst && err != nil:
+					e.Errorf("round %d, instance %d, change %d: %v", round, i, j, err)
+				case j == burst:
+					e.wantDuplicateAudit(fmt.Sprintf("round %d, instance %d, a change with a taken audit id", round, i), err)
+				}
 			}
-		})
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			e.Errorf("a change across two instances: %v", err)
 		}
 	}
-	all, _, err := other.ListSettings(e.ctx, master.Page{Limit: master.MaxPageLimit})
+	all, next, err := other.ListSettings(e.ctx, master.Page{Limit: master.MaxPageLimit})
 	e.ok("ListSettings", err)
-	if len(all) != 2*each || len(e.auditIDs()) != 2*each {
-		e.Errorf("%d settings and %d entries after %d changes across two instances", len(all), len(e.auditIDs()), 2*each)
+	if next != "" {
+		e.Fatal("more settings than one page holds")
+	}
+	for _, s := range all {
+		if strings.HasSuffix(s.Name, fmt.Sprintf(".c%d", burst)) {
+			e.Errorf("the setting %s of a change whose audit entry failed was written", s.Name)
+		}
+	}
+	if want := rounds * len(stores) * burst; len(all) != want {
+		e.Errorf("%d settings after %d changes that succeeded across two instances", len(all), want)
+	}
+	if want := 1 + rounds*len(stores)*burst; len(e.auditIDs()) != want {
+		e.Errorf("%d audit entries, want %d: one for each change that succeeded, and the taken one", len(e.auditIDs()), want)
 	}
 }
 

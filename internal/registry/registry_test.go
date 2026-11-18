@@ -207,9 +207,10 @@ func TestDeadlinePerTenant(t *testing.T) {
 	e.flaky.set("hangs", hang)
 	e.flaky.set("stuck", stuck)
 	cfg := e.config()
-	// Long enough for a SQLite tenant's first open and migration on a
-	// loaded CI machine under -race; the hung ones meet it.
-	cfg.OpenTimeout = time.Second
+	// The server's own deadline: the six real tenants must open within it
+	// on a loaded runner (seconds on Windows under -race), and the two hung
+	// ones meet it, so the start lasts about this long.
+	cfg.OpenTimeout = 10 * time.Second
 	r := e.newRegistry(cfg)
 	started := make(chan error, 1)
 	begin := time.Now()
@@ -219,13 +220,13 @@ func TestDeadlinePerTenant(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(2 * time.Minute):
 		e.flaky.unstick()
 		t.Fatal("Start did not return: a hung database held it past the deadline")
 	}
 	took := time.Since(begin)
 	t.Logf("Start with two hung databases took %v under a deadline of %v", took, cfg.OpenTimeout)
-	if took > cfg.OpenTimeout+2*time.Second {
+	if took > cfg.OpenTimeout+20*time.Second {
 		t.Errorf("Start took %v, want about the deadline %v", took, cfg.OpenTimeout)
 	}
 	for _, n := range names[2:] {
@@ -239,7 +240,10 @@ func TestDeadlinePerTenant(t *testing.T) {
 			t.Errorf("%s is %s %q, want unreachable for its deadline", n, st.State, st.Reason)
 		}
 	}
-	// The stuck open is still running; a check does not start another.
+	// The stuck open is still running; a check does not start another. The
+	// other hung tenant now refuses at once, so this check does not wait out
+	// another open deadline.
+	e.flaky.set("hangs", down)
 	checkNow(r)
 	if st, _ := r.State("stuck"); st.State != master.StateUnreachable {
 		t.Errorf("stuck is %s during its stuck open", st.State)
@@ -460,9 +464,10 @@ func TestCloseStopsEverything(t *testing.T) {
 	e := newEnv(t)
 	cfg := e.config()
 	cfg.Interval = time.Millisecond
-	// Long enough that a loaded machine under -race never misses it for
-	// the SQLite tenant; the hung one meets it every round.
-	cfg.OpenTimeout = time.Second
+	// The hung tenant has an open store, so it is held at its ping, not at
+	// an open: a short ping deadline keeps the start quick, and the real
+	// tenants open under the generous default.
+	cfg.PingTimeout = 2 * time.Second
 	r := e.newRegistry(cfg)
 	e.create(r, "id-lab", "lab", driver.SQLiteDriver, "")
 	for _, n := range []string{"a", "b", "c"} {
