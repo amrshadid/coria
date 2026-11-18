@@ -9,7 +9,6 @@ import (
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/driver"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 )
@@ -203,12 +202,12 @@ func grantMessage(g access.Grant) *v1.Grant {
 }
 
 // databaseType returns the contract's type for the database type a tenant's
-// row records (master.Tenant.Driver), named by package driver.
+// row records (master.Tenant.Driver).
 func databaseType(name string) v1.DatabaseType {
 	switch name {
-	case driver.SQLiteDriver:
+	case master.SQLiteDriver:
 		return v1.DatabaseType_DATABASE_TYPE_SQLITE
-	case driver.PostgresDriver:
+	case master.PostgresDriver:
 		return v1.DatabaseType_DATABASE_TYPE_POSTGRES
 	}
 	return v1.DatabaseType_DATABASE_TYPE_UNSPECIFIED

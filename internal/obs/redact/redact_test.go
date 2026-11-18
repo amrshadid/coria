@@ -15,7 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/server/redact"
+	"github.com/amrshadid/magnetar/internal/obs/redact"
 )
 
 // The secrets the tests plant and then search for.

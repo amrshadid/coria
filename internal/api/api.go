@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"io"
 	"log/slog"
 
 	connect "connectrpc.com/connect/v2"
@@ -74,7 +73,7 @@ func New(cfg Config) (Handlers, error) {
 	}
 	log := cfg.Log
 	if log == nil {
-		log = slog.New(slog.NewTextHandler(io.Discard, nil))
+		log = slog.New(slog.DiscardHandler)
 	}
 	known := cfg.Settings
 	if known == nil {

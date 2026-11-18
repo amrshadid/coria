@@ -15,13 +15,15 @@ import (
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
-// SQLiteDriver is the name of the SQLite database type, as a tenant's row in
-// the master records it (master.Tenant.Driver).
-const SQLiteDriver = "sqlite"
+// SQLiteDriver is master.SQLiteDriver, the name of the SQLite database type,
+// kept here for the callers that already import this package to open a
+// tenant's database.
+const SQLiteDriver = master.SQLiteDriver
 
-// PostgresDriver is the name of the Postgres database type, as a tenant's row
-// in the master records it (master.Tenant.Driver).
-const PostgresDriver = "postgres"
+// PostgresDriver is master.PostgresDriver, the name of the Postgres database
+// type, kept here for the callers that already import this package to open a
+// tenant's database.
+const PostgresDriver = master.PostgresDriver
 
 // TenantsDir is the directory, inside the data directory, that holds the
 // database file of every tenant on SQLite.

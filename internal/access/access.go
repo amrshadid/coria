@@ -2,7 +2,6 @@ package access
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -223,7 +222,7 @@ func New(cfg Config) (*Access, error) {
 	}
 	log := cfg.Log
 	if log == nil {
-		log = slog.New(slog.NewTextHandler(io.Discard, nil))
+		log = slog.New(slog.DiscardHandler)
 	}
 	retries := orDefault(cfg.AuditRetries, DefaultAuditRetries)
 	if retries < 0 {

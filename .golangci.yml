@@ -232,6 +232,40 @@ linters:
             - pkg: github.com/amrshadid/magnetar/internal/cli
               desc: the handlers are a library of the server; the command line imports them, not the other way
 
+        # The handlers name a database type (master.SQLiteDriver) and are
+        # given their tenants by the registry; they never open a database. An
+        # import of the drivers would link pgx and the SQLite library into the
+        # handlers' package for two names, and let a handler open a database
+        # past the registry. Non-test files only: the handlers' tests give the
+        # registry real SQLite tenants through the drivers.
+        api-driver:
+          files:
+            - "**/internal/api/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the handlers name a database type with master.SQLiteDriver and reach a tenant through the registry
+
+        # Package driver is the one door to the database drivers: it opens a
+        # master or a tenant by the type and address it is given, so nothing
+        # outside it comes to depend on which database it runs on, and a
+        # third database type changes driver alone. The excepted tests open a
+        # real SQLite master (sqlite.OpenMaster) to run their package against
+        # the database the binary uses.
+        database-drivers:
+          files:
+            - $all
+            - "!**/internal/driver/**"
+            - "!**/internal/access/*_test.go"
+            - "!**/internal/cli/servecmd/*_test.go"
+            - "!**/internal/server/*_test.go"
+            - "!**/internal/server/servertest/*_test.go"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlite
+              desc: only internal/driver opens the SQLite driver; ask it for a master.Store or a tenant.Store
+            - pkg: github.com/amrshadid/magnetar/internal/driver/postgres
+              desc: only internal/driver opens the Postgres driver; ask it for a master.Store or a tenant.Store
+
         # Only the SQLite driver reaches the SQLite library, so nothing else
         # in the binary can come to depend on which database it runs on.
         sqlite-library:

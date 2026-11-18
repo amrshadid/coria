@@ -8,7 +8,6 @@ import (
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/driver"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/registry"
@@ -51,7 +50,7 @@ func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantReq
 		if address != "" {
 			return nil, c.failWith(d, nil, facts, invalid("database_address", "is empty for a SQLite tenant: its file is made in the data directory"))
 		}
-		drv = driver.SQLiteDriver
+		drv = master.SQLiteDriver
 	case v1.DatabaseType_DATABASE_TYPE_POSTGRES:
 		if address == "" {
 			return nil, c.failWith(d, nil, facts, invalid("database_address", "is required for a Postgres tenant"))
@@ -59,7 +58,7 @@ func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantReq
 		if len(address) > MaxDatabaseAddressLength {
 			return nil, c.failWith(d, nil, facts, invalid("database_address", "is at most 4 KiB"))
 		}
-		drv = driver.PostgresDriver
+		drv = master.PostgresDriver
 	default:
 		return nil, c.failWith(d, nil, facts, invalid("database_type", "is required: sqlite or postgres"))
 	}
@@ -273,9 +272,9 @@ func (c *core) tenantView(t master.Tenant) *v1.Tenant {
 func driverOf(t v1.DatabaseType) string {
 	switch t {
 	case v1.DatabaseType_DATABASE_TYPE_SQLITE:
-		return driver.SQLiteDriver
+		return master.SQLiteDriver
 	case v1.DatabaseType_DATABASE_TYPE_POSTGRES:
-		return driver.PostgresDriver
+		return master.PostgresDriver
 	}
 	return "unspecified"
 }

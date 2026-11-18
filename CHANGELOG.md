@@ -467,6 +467,14 @@ All notable changes to Magnetar are written here. The form is
 
 ### Changed
 
+- The API's handlers imported the database drivers for the names of the two
+  database types, which linked both database libraries into them. The names are
+  now `master.SQLiteDriver` and `master.PostgresDriver`, beside the tenant's
+  field they are values of, and a lint rule keeps the handlers from importing a
+  driver. Another lint rule lets only `internal/driver` import the SQLite and
+  Postgres drivers, which their documentation had claimed and nothing held. The
+  redactor moved from `internal/server/redact` to `internal/obs/redact`, beside
+  the logger that uses it.
 - Each change through the SQLite drivers, the master's and a tenant's, was a
   transaction of its own with a sync of its own, so a SQLite-backed server
   made at most a few hundred changes a second however many callers waited,

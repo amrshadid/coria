@@ -197,6 +197,20 @@ type Tenant struct {
 	Created time.Time
 }
 
+// The database types a tenant's row may name (Tenant.Driver). They are here,
+// beside the field they are values of, so a package that only names a type
+// (the API's handlers) does not import the drivers and the database libraries
+// behind them.
+const (
+	// SQLiteDriver is the name of the SQLite database type, as a tenant's
+	// row in the master records it (Tenant.Driver).
+	SQLiteDriver = "sqlite"
+
+	// PostgresDriver is the name of the Postgres database type, as a
+	// tenant's row in the master records it (Tenant.Driver).
+	PostgresDriver = "postgres"
+)
+
 // Validate returns an Invalid error when t cannot be stored.
 func (t Tenant) Validate() error {
 	if err := ValidateID("tenant id", t.ID); err != nil {

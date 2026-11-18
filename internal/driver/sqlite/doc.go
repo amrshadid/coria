@@ -87,8 +87,8 @@
 //
 // # What this package must never do
 //
-// It must never be imported by anything but package driver and its own
-// tests: nothing else may know that a database is SQLite (a lint rule holds
-// it). It never puts the file's path in an error, a log line or an audit
+// It must never be imported by anything but package driver, its own tests,
+// and the tests of the few packages that open a real SQLite master: nothing
+// else may know that a database is SQLite (a lint rule holds it). It never puts the file's path in an error, a log line or an audit
 // entry.
 package sqlite
