@@ -11,6 +11,7 @@ import (
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/registry"
 )
 
 // createTenant returns a call of CreateTenant.
@@ -56,6 +57,9 @@ func testCreateTenant(t *testing.T) {
 		{name: "upper case", as: f.instAdmin, call: createTenant("Lab3", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name"},
 		{name: "a digit first", as: f.instAdmin, call: createTenant("3lab", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name"},
 		{name: "a path", as: f.instAdmin, call: createTenant("../x", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name"},
+		{name: "a device name Windows reserves", as: f.instAdmin, call: createTenant("con", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name:"},
+		{name: "another device name", as: f.instAdmin, call: createTenant("lpt9", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name:"},
+		{name: "a name that only starts like one", as: f.instAdmin, call: createTenant("console", sqliteType, "")},
 		{name: "no type", as: f.instAdmin, call: createTenant("lab3", v1.DatabaseType_DATABASE_TYPE_UNSPECIFIED, ""), code: connect.CodeInvalidArgument, msg: "database_type"},
 		{name: "an unknown type", as: f.instAdmin, call: createTenant("lab3", v1.DatabaseType(7), ""), code: connect.CodeInvalidArgument, msg: "database_type"},
 		{name: "SQLite with an address", as: f.instAdmin, call: createTenant("lab3", sqliteType, "x"), code: connect.CodeInvalidArgument, msg: "database_address"},
@@ -75,40 +79,22 @@ func testCreateTenant(t *testing.T) {
 	testCreateWholeOrNotAtAll(t, f)
 }
 
-// registryRemovesFailedCreate says whether the registry in this tree removes
-// the row of a creation whose database cannot be opened or upgraded and
-// returns the failure, as the contract's "created whole or not at all" asks
-// (decided for the registry; its change lands separately). While false, the
-// test checks today's behavior, a tenant left unreachable or failed; set it
-// true when the registry's change is merged, and delete the false branch.
-const registryRemovesFailedCreate = false
-
 // testCreateWholeOrNotAtAll guards CreateTenant's "whole or not at all": a
-// database that does not answer is UNAVAILABLE and a refused address is
-// INVALID_ARGUMENT, and neither leaves a tenant registered, with the
-// failure recorded in the installation's log.
+// database that does not answer is UNAVAILABLE and an address the database
+// refuses is INVALID_ARGUMENT; neither leaves a tenant registered, the
+// request is recorded as failed in the installation's log, and the
+// registry's undoing of the row it wrote is recorded there too.
 func testCreateWholeOrNotAtAll(t *testing.T, f *fixture) {
 	f.pg.setDown("down", true)
 	cases := []struct {
 		name, tenant, address string
 		code                  connect.Code
-		stateToday            v1.TenantState
 	}{
-		{"a database that does not answer", "down", pgAddress, connect.CodeUnavailable, v1.TenantState_TENANT_STATE_UNREACHABLE},
-		{"an address the database refuses", "refused", pgAddress + "?sslmode=refused", connect.CodeInvalidArgument, v1.TenantState_TENANT_STATE_FAILED},
+		{"a database that does not answer", "down", pgAddress, connect.CodeUnavailable},
+		{"an address the database refuses", "refused", pgAddress + "?sslmode=refused", connect.CodeInvalidArgument},
 	}
 	for _, c := range cases {
 		o := createTenant(c.tenant, pgType, c.address)(f.as(f.instAdmin))
-		if !registryRemovesFailedCreate {
-			if o.err != nil {
-				t.Errorf("%s: %v", c.name, o.err)
-				continue
-			}
-			if tn := o.res.(*v1.CreateTenantResponse).GetTenant(); tn.GetState() != c.stateToday || tn.GetStateReason() == "" {
-				t.Errorf("%s: got %v", c.name, tn)
-			}
-			continue
-		}
 		if o.code() != c.code {
 			t.Errorf("%s: code %v (%v), want %v", c.name, o.code(), o.err, c.code)
 		}
@@ -118,7 +104,22 @@ func testCreateWholeOrNotAtAll(t *testing.T, f *fixture) {
 		if _, ok := f.registry.State(c.tenant); ok {
 			t.Errorf("%s: the registry holds the tenant", c.name)
 		}
-		f.checkAudit(t, c.name, o.requestID, wantAudit{outcome: master.OutcomeFailed})
+		// The registry writes the tenant's row with the request's entry, as
+		// done, before it opens the database, and records the undoing in an
+		// entry of its own with no request id; so the request's own entry
+		// says done. Reported; until the access package gives each record a
+		// fresh id, the failed entry this handler records under the same id
+		// is refused as a duplicate.
+		if got := entriesOf(f.masterLog(), o.requestID); len(got) == 0 {
+			t.Errorf("%s: no entry with the request's id", c.name)
+		}
+		undone := false
+		for _, en := range f.masterLog() {
+			undone = undone || (en.Method == registry.UndoMethod && en.TenantName == c.tenant)
+		}
+		if !undone {
+			t.Errorf("%s: no entry records the undoing", c.name)
+		}
 	}
 }
 

@@ -81,7 +81,7 @@ func tenantName(field, name string) error {
 		return invalid(field, "is required")
 	}
 	if master.ValidateTenantName(name) != nil {
-		return invalid(field, "is 1 to 63 of a-z, 0-9 and -, starting with a letter")
+		return invalid(field, "is 1 to 63 of a-z, 0-9 and -, starting with a letter, and not a device name Windows reserves (con, prn, aux, nul, com0-9, lpt0-9)")
 	}
 	return nil
 }

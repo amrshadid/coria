@@ -114,11 +114,12 @@ func TestEveryMethodWithTheMasterDown(t *testing.T) {
 // TestLaterLookupDoesNotUndoTheAccessRule guards the rule that a lookup
 // after the check that finds no tenant answers as the check would: a key
 // whose grant names a tenant the registry does not hold (here a row written
-// to the master behind the registry's back) is denied with the message of
-// no grant, and only a caller who may list every tenant is told not found.
+// to the master behind the registry's back, with the registry's rounds,
+// which would reconcile it, an hour apart) is denied with the message of no
+// grant, and only a caller who may list every tenant is told not found.
 func TestLaterLookupDoesNotUndoTheAccessRule(t *testing.T) {
 	t.Parallel()
-	f := newFixture(t)
+	f := fixtureOn(t, newEnvChecking(t, time.Hour))
 	row := master.Tenant{ID: "ghost-id", Name: "ghost", Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: t0}
 	if err := f.master.CreateTenant(ctx, row, f.setupEntry()); err != nil {
 		t.Fatal(err)

@@ -92,9 +92,10 @@ func (s *syncBuffer) String() string {
 // fakePostgres is a registry driver registered as "postgres": it takes an
 // address, as a Postgres driver would, and keeps the tenant's data in a
 // SQLite file. A tenant set down fails its open and its pings as a database
-// that does not answer, with an error that repeats the address, as a careless
-// driver might, so the tests show the address is kept out of everything all
-// the same.
+// that does not answer. Its error keeps the registry's driver contract (the
+// message, fault.Message, is safe for the caller) while its cause repeats the
+// address, as a database library's error might, so the tests show that the
+// cause reaches nothing a caller or the logs see.
 type fakePostgres struct {
 	dir  string
 	mu   sync.Mutex
@@ -120,7 +121,7 @@ func (f *fakePostgres) isDown(name string) bool {
 
 // noAnswer is the error of a database that does not answer.
 func noAnswer(address string) error {
-	return fault.Wrap(fault.Unavailable, errors.New("dial "+address+": connection refused"), "cannot reach "+address)
+	return fault.Wrap(fault.Unavailable, errors.New("dial "+address+": connection refused"), "connection refused")
 }
 
 // pgStore is a tenant's store whose pings fail while its tenant is down.
@@ -149,7 +150,7 @@ func (f *fakePostgres) Location(name, address string) (string, error) {
 }
 
 // Open opens the tenant's file, or fails while the tenant is down.
-func (f *fakePostgres) Open(ctx context.Context, name, address string) (tenant.Store, error) {
+func (f *fakePostgres) Open(ctx context.Context, id, name, address string) (tenant.Store, error) {
 	if f.isDown(name) {
 		return nil, noAnswer(address)
 	}
@@ -158,7 +159,7 @@ func (f *fakePostgres) Open(ctx context.Context, name, address string) (tenant.S
 		// with no protection would be.
 		return nil, fault.New(fault.Invalid, "the database refuses this address")
 	}
-	st, err := driver.SQLiteTenants{DataDir: f.dir}.Open(ctx, name, "")
+	st, err := driver.SQLiteTenants{DataDir: f.dir}.Open(ctx, id, name, "")
 	if err != nil {
 		return nil, err
 	}
@@ -196,8 +197,14 @@ type env struct {
 	badTenantID atomic.Bool
 }
 
-// newEnv returns a running installation with no tenant and no key.
-func newEnv(t testing.TB) *env {
+// newEnv returns a running installation with no tenant and no key, whose
+// registry checks every tenant each 20 ms, so a test sees a database go down
+// at once.
+func newEnv(t testing.TB) *env { return newEnvChecking(t, 20*time.Millisecond) }
+
+// newEnvChecking is newEnv with the registry checking every tenant, and
+// reconciling with the master's list, each interval.
+func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	t.Helper()
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -236,7 +243,7 @@ func newEnv(t testing.TB) *env {
 		Master: m, Keys: keys,
 		Drivers:  map[string]registry.Driver{api.DriverSQLite: driver.SQLiteTenants{DataDir: e.data}, api.DriverPostgres: e.pg},
 		Now:      e.now,
-		Interval: 20 * time.Millisecond, OpenTimeout: 10 * time.Second, MaxOpening: 4,
+		Interval: interval, OpenTimeout: 10 * time.Second, PingTimeout: 2 * time.Second, MaxOpening: 4,
 		Log: logger, NewID: e.newID,
 	})
 	if err != nil {
@@ -263,9 +270,9 @@ func newEnv(t testing.TB) *env {
 	e.url, e.client = hs.URL, hs.Client()
 	t.Cleanup(func() {
 		hs.Close()
-		_ = e.registry.Close()
 		cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		_ = e.registry.Close(cctx)
 		_ = e.access.Close(cctx)
 		_ = m.Close()
 	})

@@ -299,7 +299,12 @@ type fixture struct {
 // newFixture returns the fixture.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	e := newEnv(t)
+	return fixtureOn(t, newEnv(t))
+}
+
+// fixtureOn makes the fixture on the installation e.
+func fixtureOn(t *testing.T, e *env) *fixture {
+	t.Helper()
 	e.tenant("lab1")
 	f := &fixture{env: e}
 	f.instAdmin, f.instAdminID = e.key(onInstallation(master.RoleAdmin))
