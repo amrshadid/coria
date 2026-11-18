@@ -32,6 +32,36 @@
 #   make check-tenant-postgres  a tenant on Postgres, created by the registry,
 #                    read back by psql and pg_dump (same variables)
 #   make test-386    the tests as linux/386 binaries, on a Linux x86-64 host
+#
+# And everything CI runs, on one machine (the last section of this file):
+#
+#   make ci          every job of .github/workflows/checks.yml in one run, in
+#                    an order that fails fast, ending with make prove. Needs
+#                    docker (Postgres, S3, the proof), sqlite3, curl, openssl
+#                    and python3; the pinned Go tools, grpcurl and the Python
+#                    packages are installed into bin/ on first use. It runs on
+#                    Linux and macOS, removes every container it started
+#                    however it ends, and lists at the end what it could not
+#                    run on this machine (on a Mac: the 32-bit tests, which
+#                    are built and vetted instead, and the second-user test)
+#   make outside     every outside check that needs a tool that is not Go;
+#                    the two Postgres ones when a Postgres is up
+#   make tools-python  the Python environment the outside checks need, in
+#                    bin/python, from the hashed requirement files; once it
+#                    exists, PYTHON defaults to its interpreter
+#   make pg-up / pg-down  a throwaway Postgres in docker (PG_VERSION, on
+#                    127.0.0.1:PG_PORT); pg-up prints MAGNETAR_TEST_POSTGRES
+#   make s3-up / s3-down  the two S3 servers CI tests against, in docker;
+#                    s3-up prints each one's MAGNETAR_TEST_S3
+#   make test-postgres  the database drivers' tests against that Postgres (or
+#                    MAGNETAR_TEST_POSTGRES), failing if there is none
+#   make test-s3     the S3 driver's tests against each S3 server, failing if
+#                    one is not up
+#   make check-static  bin/magnetar-linux-amd64 is a static binary built with
+#                    CGO_ENABLED=0
+#
+# A target that needs docker fails with exit status 2, saying so, when the
+# docker command does not answer.
 
 GO      ?= go
 BIN     := bin
@@ -302,7 +332,10 @@ PROTO_BASE ?= origin/develop
 # removed after each use.
 PROTO_TMP := $(BIN)/_proto
 
-PYTHON ?= python3
+# The interpreter of the outside checks: the one make tools-python made, once
+# it has, so a check never runs with packages other than the pinned ones;
+# otherwise python3 from PATH, as before that environment existed.
+PYTHON ?= $(if $(wildcard $(PYTHON_STAMP)),$(PYTHON_ENV_PYTHON),python3)
 
 .PHONY: proto proto-lint proto-breaking proto-check proto-python
 
@@ -412,3 +445,330 @@ check-tui:
 	CGO_ENABLED=0 $(GO) build -o "$$dir/ptyserve" ./internal/tui/ptyserve; \
 	status=0; $(PYTHON) scripts/check-tui.py --binary "$$dir/magnetar" --helper "$$dir/ptyserve" || status=$$?; \
 	rm -f "$$dir/magnetar" "$$dir/ptyserve"; rmdir "$$dir"; exit $$status
+
+# ---------------------------------------------------------------------------
+# Everything CI runs, on one machine: the Python tools, the services in
+# docker, and make ci, which runs each job of .github/workflows/checks.yml in
+# turn. The targets are listed at the top of this file.
+
+# The Python environment of the outside checks: a virtual environment (the
+# system's Python may refuse pip installs, PEP 668) with every package of the
+# requirement files at its pinned version and hash, so a file on the package
+# index that changed is refused. Wheels only, as CI installs them. Made once:
+# the stamp is named for the list of files and is older than none of them, so
+# changing a file or the list makes it again. PYTHON3 is the interpreter that
+# makes it.
+PYTHON3             ?= python3
+PYTHON_ENV          ?= $(BIN)/python
+PYTHON_REQUIREMENTS ?= scripts/requirements-check-seal.txt scripts/requirements-check-server.txt scripts/requirements-proto.txt
+PYTHON_ENV_PYTHON   := $(abspath $(PYTHON_ENV))/bin/python
+PYTHON_STAMP        := $(PYTHON_ENV)/.installed-$(shell printf '%s' '$(PYTHON_REQUIREMENTS)' | cksum | cut -d ' ' -f 1)
+
+.PHONY: tools-python
+tools-python: $(PYTHON_STAMP)
+
+$(PYTHON_STAMP): $(PYTHON_REQUIREMENTS)
+	@test -n "$(PYTHON_ENV)" || { echo "tools-python: PYTHON_ENV is empty" >&2; exit 2; }
+	@command -v "$(PYTHON3)" > /dev/null || { echo "tools-python: no interpreter $(PYTHON3); PYTHON3=... names one" >&2; exit 2; }
+	rm -rf "$(PYTHON_ENV)"
+	"$(PYTHON3)" -m venv "$(PYTHON_ENV)"
+	"$(PYTHON_ENV)/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: $(addprefix -r ,$(PYTHON_REQUIREMENTS))
+	@"$(PYTHON_ENV)/bin/python" --version
+	@touch "$@"
+
+# grpcurl from its release, checked against scripts/grpcurl.sha256, for the
+# outside checks of the server when GRPCURL is not given. Keep in step with
+# the version checks.yml installs.
+GRPCURL_VERSION := v1.9.4
+GRPCURL_TOOL    := $(TOOLS)/grpcurl-$(GRPCURL_VERSION)/grpcurl
+
+$(GRPCURL_TOOL):
+	bash scripts/install-grpcurl.sh $(GRPCURL_VERSION) $@
+
+# What the outside checks run with: what was given on the command line or in
+# the environment, or else the pinned tools above, which are then installed
+# first.
+CHECK_PYTHON  = $(if $(filter file,$(origin PYTHON)),$(PYTHON_ENV_PYTHON),$(PYTHON))
+CHECK_GRPCURL = $(if $(filter file,$(origin GRPCURL)),$(GRPCURL_TOOL),$(GRPCURL))
+CHECK_TOOLS   = $(if $(filter file,$(origin PYTHON)),$(PYTHON_STAMP)) $(if $(filter file,$(origin GRPCURL)),$(GRPCURL_TOOL))
+
+# Whatever docker the environment gives: the docker command on PATH (DOCKER
+# names another) with its own DOCKER_HOST or context. Nothing here assumes
+# where its socket is. A target that needs it checks that it answers first.
+DOCKER ?= docker
+docker-answers = $(DOCKER) info > /dev/null 2>&1 || { echo "$@: docker does not answer: start it, or point DOCKER_HOST or the docker context at it" >&2; exit 2; }
+
+# A throwaway Postgres, as CI's Postgres jobs have: the server's own image,
+# on a port of its own on loopback so it never meets a Postgres the machine
+# already runs. Its password is a fixed throwaway, as in CI: the container
+# holds nothing and listens on 127.0.0.1 only.
+PG_VERSION   ?= 18
+PG_PORT      ?= 55432
+PG_CONTAINER ?= magnetar-test-postgres
+PG_PASSWORD  := throwaway-password
+PG_URL        = postgres://postgres:$(PG_PASSWORD)@127.0.0.1:$(PG_PORT)/magnetar_test?sslmode=disable
+# The same database as psql and pg_dump inside the container see it, where
+# the server's port is the container's own.
+PG_INNER_URL  = postgres://postgres:$(PG_PASSWORD)@127.0.0.1:5432/magnetar_test?sslmode=disable
+pg-running    = [ -n "$$($(DOCKER) ps -q --filter 'name=^/$(PG_CONTAINER)$$' 2> /dev/null)" ]
+
+.PHONY: pg-up pg-down test-postgres outside-postgres
+
+# Ready means answering on TCP: during its first start the image runs a
+# server on its Unix socket only, then restarts it, so pg_isready on the
+# socket would answer too early.
+pg-up:
+	@$(docker-answers)
+	@if $(pg-running); then \
+		echo "pg-up: $(PG_CONTAINER) is already running"; \
+	else \
+		$(DOCKER) rm -f $(PG_CONTAINER) > /dev/null 2>&1 || true; \
+		echo "pg-up: starting postgres:$(PG_VERSION) as $(PG_CONTAINER) on 127.0.0.1:$(PG_PORT)"; \
+		$(DOCKER) run -d --name $(PG_CONTAINER) -p 127.0.0.1:$(PG_PORT):5432 \
+			-e POSTGRES_PASSWORD=$(PG_PASSWORD) -e POSTGRES_DB=magnetar_test \
+			postgres:$(PG_VERSION) > /dev/null; \
+	fi
+	@i=0; until $(DOCKER) exec $(PG_CONTAINER) pg_isready -q -h 127.0.0.1 -U postgres -d magnetar_test; do \
+		i=$$((i + 1)); \
+		if [ $$i -ge 60 ]; then $(DOCKER) logs $(PG_CONTAINER) 2>&1 | tail -20; echo "pg-up: Postgres did not answer within 60 s" >&2; exit 1; fi; \
+		sleep 1; \
+	done
+	@echo "MAGNETAR_TEST_POSTGRES='$(PG_URL)'"
+
+pg-down:
+	@$(docker-answers)
+	@$(DOCKER) rm -f $(PG_CONTAINER) > /dev/null 2>&1 || true
+	@echo "pg-down: $(PG_CONTAINER) removed"
+
+# The database drivers' tests and the contract suites against a real
+# Postgres, as CI's Postgres job runs them: MAGNETAR_TEST_POSTGRES when it is
+# set (CI's service container), or else the container of pg-up.
+# MAGNETAR_REQUIRE_POSTGRES turns a missing database into a failure, so the
+# Postgres tests cannot pass by skipping.
+test-postgres:
+	@set -e; url="$${MAGNETAR_TEST_POSTGRES:-}"; \
+	if [ -z "$$url" ]; then \
+		$(docker-answers); \
+		$(pg-running) || { echo "test-postgres: no Postgres: run make pg-up, or set MAGNETAR_TEST_POSTGRES" >&2; exit 2; }; \
+		url='$(PG_URL)'; \
+	fi; \
+	echo "MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/..."; \
+	MAGNETAR_TEST_POSTGRES="$$url" MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/...
+
+# The two outside checks of Postgres against the same database. With pg-up's
+# container, psql and pg_dump are the ones inside it, so their version is the
+# server's (pg_dump refuses a newer server); with MAGNETAR_TEST_POSTGRES, the
+# PSQL and PG_DUMP given.
+outside-postgres:
+	@set -e; \
+	if [ -n "$${MAGNETAR_TEST_POSTGRES:-}" ]; then \
+		$(MAKE) --no-print-directory check-master-postgres; \
+		$(MAKE) --no-print-directory check-tenant-postgres; \
+	else \
+		$(docker-answers); \
+		$(pg-running) || { echo "outside-postgres: no Postgres: run make pg-up, or set MAGNETAR_TEST_POSTGRES" >&2; exit 2; }; \
+		export MAGNETAR_TEST_POSTGRES='$(PG_URL)' PSQL_URL='$(PG_INNER_URL)'; \
+		$(MAKE) --no-print-directory check-master-postgres PSQL="$(DOCKER) exec -i $(PG_CONTAINER) psql" PG_DUMP="$(DOCKER) exec -i $(PG_CONTAINER) pg_dump"; \
+		$(MAKE) --no-print-directory check-tenant-postgres PSQL="$(DOCKER) exec -i $(PG_CONTAINER) psql" PG_DUMP="$(DOCKER) exec -i $(PG_CONTAINER) pg_dump"; \
+	fi
+
+# The two S3 servers of CI's S3 job, at the images it pins by digest: Silo,
+# the maintained fork of MinIO, and RustFS, a separate implementation, since
+# one server's behavior is not the protocol's. S3_SERVERS picks some; each
+# has a port of its own on loopback. Keep the digests in step with
+# checks.yml's (it starts the servers with these targets).
+S3_SERVERS     ?= silo rustfs
+S3_SILO_PORT   ?= 59000
+S3_RUSTFS_PORT ?= 59001
+S3_KEY         := throwaway-key
+S3_SECRET      := throwaway-secret
+S3_SILO_IMAGE   := pgsty/silo@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329
+S3_RUSTFS_IMAGE := rustfs/rustfs@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
+
+# A shell function for the recipes below: the port of the server named by
+# its argument, or a refusal of a name that is not one of the two.
+s3-port = s3port() { case "$$1" in silo) echo $(S3_SILO_PORT) ;; rustfs) echo $(S3_RUSTFS_PORT) ;; *) echo "$@: no S3 server named $$1 (silo or rustfs)" >&2; return 2 ;; esac; }
+
+.PHONY: s3-up s3-wait s3-down test-s3
+
+s3-up:
+	@$(docker-answers)
+	@set -e; $(s3-port); for s in $(S3_SERVERS); do \
+		port=$$(s3port $$s); name=magnetar-test-$$s; \
+		if [ -n "$$($(DOCKER) ps -q --filter "name=^/$$name\$$")" ]; then echo "s3-up: $$name is already running"; continue; fi; \
+		$(DOCKER) rm -f $$name > /dev/null 2>&1 || true; \
+		echo "s3-up: starting $$s as $$name on 127.0.0.1:$$port"; \
+		case $$s in \
+		silo) $(DOCKER) run -d --name $$name -p 127.0.0.1:$$port:9000 \
+			-e MINIO_ROOT_USER=$(S3_KEY) -e MINIO_ROOT_PASSWORD=$(S3_SECRET) \
+			$(S3_SILO_IMAGE) server /data > /dev/null ;; \
+		rustfs) $(DOCKER) run -d --name $$name -p 127.0.0.1:$$port:9000 \
+			-e RUSTFS_ACCESS_KEY=$(S3_KEY) -e RUSTFS_SECRET_KEY=$(S3_SECRET) \
+			-e RUSTFS_ADDRESS=0.0.0.0:9000 \
+			$(S3_RUSTFS_IMAGE) /data > /dev/null ;; \
+		esac; \
+	done
+	@$(MAKE) --no-print-directory s3-wait
+
+# Either server answers its port before it can serve; the tests create their
+# bucket, so a listing that is answered at all is enough.
+s3-wait:
+	@set -e; $(s3-port); for s in $(S3_SERVERS); do \
+		port=$$(s3port $$s); i=0; \
+		until curl -sS -o /dev/null http://127.0.0.1:$$port/ 2> /dev/null; do \
+			i=$$((i + 1)); \
+			if [ $$i -ge 60 ]; then $(DOCKER) logs magnetar-test-$$s 2>&1 | tail -20; echo "s3-wait: $$s did not answer within 60 s" >&2; exit 1; fi; \
+			sleep 1; \
+		done; \
+		echo "MAGNETAR_TEST_S3='http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:'$$port'/magnetar-test'   # $$s"; \
+	done
+
+s3-down:
+	@$(docker-answers)
+	@for s in $(S3_SERVERS); do $(DOCKER) rm -f magnetar-test-$$s > /dev/null 2>&1 || true; echo "s3-down: magnetar-test-$$s removed"; done
+
+# The S3 driver's tests against each server s3-up started.
+# MAGNETAR_REQUIRE_S3 turns a server that is not there into a failure, so a
+# pass means the suite ran.
+test-s3:
+	@$(docker-answers)
+	@set -e; $(s3-port); for s in $(S3_SERVERS); do \
+		port=$$(s3port $$s); \
+		[ -n "$$($(DOCKER) ps -q --filter "name=^/magnetar-test-$$s\$$")" ] || { echo "test-s3: $$s is not running; run make s3-up" >&2; exit 2; }; \
+		echo "test-s3: $$s on 127.0.0.1:$$port: $(GO) test -race -count=1 -v ./internal/blob/s3/..."; \
+		MAGNETAR_TEST_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$$port/magnetar-test" MAGNETAR_REQUIRE_S3=1 \
+			$(GO) test -race -count=1 -v ./internal/blob/s3/...; \
+	done
+
+# Each binary was built with CGO_ENABLED=0; this shows the Linux one is in
+# fact static, so a change that brings in C cannot pass unseen. grep without
+# -q: it reads all its input, so the command before it is never cut off by a
+# closed pipe. The binary is run only where it can be.
+.PHONY: check-static
+check-static:
+	@test -f $(BIN)/magnetar-linux-amd64 || { echo "check-static: no $(BIN)/magnetar-linux-amd64; run make build first" >&2; exit 1; }
+	file $(BIN)/magnetar-linux-amd64 | grep 'statically linked'
+	$(GO) version -m $(BIN)/magnetar-linux-amd64 | grep -x "$$(printf '\tbuild\tCGO_ENABLED=0')"
+	@if [ "$$(uname -s)/$$(uname -m)" = Linux/x86_64 ]; then \
+		echo "./$(BIN)/magnetar-linux-amd64 version"; ./$(BIN)/magnetar-linux-amd64 version; \
+	else \
+		echo "check-static: $(BIN)/magnetar-linux-amd64 is not run on $$(uname -s)/$$(uname -m)"; \
+	fi
+
+# Every outside check that needs a tool that is not Go: Python, sqlite3,
+# bash, grpcurl, curl, a pseudo-terminal, and psql and pg_dump when a Postgres
+# is up (MAGNETAR_TEST_POSTGRES, or pg-up's container). OUTSIDE_POSTGRES=no
+# leaves the two Postgres checks out, for a caller that runs them itself.
+OUTSIDE_POSTGRES ?= auto
+
+.PHONY: outside
+outside: $(CHECK_TOOLS)
+	@set -e; m() { echo; echo "==> make $$*"; $(MAKE) --no-print-directory "$$@"; }; \
+	m check-seal PYTHON="$(CHECK_PYTHON)"; \
+	m check-master-sqlite; \
+	m check-tenant-sqlite; \
+	m check-json PYTHON="$(CHECK_PYTHON)"; \
+	m check-completion; \
+	m check-tui PYTHON="$(CHECK_PYTHON)"; \
+	m check-server PYTHON="$(CHECK_PYTHON)" GRPCURL="$(CHECK_GRPCURL)"; \
+	if [ "$(OUTSIDE_POSTGRES)" = no ]; then \
+		echo "outside: check-master-postgres and check-tenant-postgres left out (OUTSIDE_POSTGRES=no)"; \
+	elif [ -n "$${MAGNETAR_TEST_POSTGRES:-}" ] || { $(DOCKER) info > /dev/null 2>&1 && $(pg-running); }; then \
+		m outside-postgres; \
+	else \
+		echo "outside: skipped check-master-postgres and check-tenant-postgres: no Postgres (make pg-up, or set MAGNETAR_TEST_POSTGRES)"; \
+	fi
+
+# make ci: every job of checks.yml, one after another, cheapest first so a
+# mistake fails in seconds, not after the tests: the comments, formatting,
+# vet, lint and the contract; then the tests, the builds, the outside checks,
+# the server's checks, Postgres at each version CI tests, both S3 servers,
+# and the proof last, as CI's proof job runs it (strict on Linux, where every
+# check can run). Docker is checked first, since half of it needs docker.
+#
+# What CI runs that cannot run here is said, and listed again at the end:
+# the 32-bit tests need a Linux x86-64 machine (elsewhere their binaries are
+# built and vetted, not run); the local socket refused to a second user needs
+# that user (MAGNETAR_TEST_OTHER_USER names one, as CI makes one with sudo);
+# the Windows and macOS jobs need those systems (lint and vet run for
+# Windows here, and the tests run on whichever system this is); and the
+# Linux job's second Go release is CI's alone.
+#
+# It tests the containers it starts, not a database or server the
+# environment names. Every container is removed when the run ends, by
+# success, failure or an interrupt (the trap), including the Postgres the
+# proof stops and starts; a pg-up container of the same name is replaced.
+CI_PG_VERSIONS ?= 16 18
+
+.PHONY: ci
+ci:
+	@set -e; \
+	start=$$(date +%s); os=$$(uname -s); arch=$$(uname -m); skipped=""; \
+	skip() { skipped="$$skipped|$$*"; echo "ci: not run here: $$*"; }; \
+	step() { echo; echo "==> make $$*"; $(MAKE) --no-print-directory "$$@"; }; \
+	$(DOCKER) info > /dev/null 2>&1 || { echo "ci: docker does not answer: Postgres, S3 and the proof need it; start it, or point DOCKER_HOST or the docker context at it" >&2; exit 2; }; \
+	trap '$(MAKE) --no-print-directory pg-down s3-down > /dev/null 2>&1 || true' EXIT; \
+	trap 'exit 130' INT TERM; \
+	unset MAGNETAR_TEST_POSTGRES PSQL_URL MAGNETAR_TEST_S3; \
+	echo "ci: $$($(GO) version) on $$os/$$arch"; \
+	step check-comments; \
+	step fmt; \
+	step vet; \
+	step lint; \
+	echo; echo "==> GOOS=windows $(GO) vet ./..."; \
+	GOOS=windows $(GO) vet ./...; \
+	step proto-lint; \
+	step proto-breaking; \
+	step proto-check; \
+	step tools-python; \
+	py="$(CHECK_PYTHON)"; \
+	step proto-python PYTHON="$$py"; \
+	step vuln; \
+	step test; \
+	step test-scale; \
+	if [ "$$os/$$arch" = Linux/x86_64 ]; then \
+		step test-386; \
+	else \
+		echo; echo "==> the linux/386 test binaries, built and not run"; \
+		GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test -count=1 -exec true ./... > /dev/null; \
+		skip "make test-386: 32-bit Linux binaries do not run on $$os/$$arch (built and vetted instead)"; \
+	fi; \
+	step fuzz FUZZTIME=10s; \
+	step build; \
+	step size; \
+	step check-static; \
+	step outside PYTHON="$$py" OUTSIDE_POSTGRES=no; \
+	if [ -n "$${MAGNETAR_TEST_OTHER_USER:-}" ]; then \
+		echo; echo "==> the local socket refused to $$MAGNETAR_TEST_OTHER_USER"; \
+		$(GO) test -count=1 -v -run '^TestSocketRefusesOtherUser$$' ./internal/server; \
+	else \
+		skip "TestSocketRefusesOtherUser: needs a second operating system user, named by MAGNETAR_TEST_OTHER_USER (CI makes one with sudo)"; \
+	fi; \
+	step check-e2e; \
+	for v in $(CI_PG_VERSIONS); do \
+		step pg-down; \
+		step pg-up PG_VERSION=$$v; \
+		step test-postgres; \
+		if [ "$$os/$$arch" = Linux/x86_64 ] && [ "$$v" = 18 ]; then \
+			echo; echo "==> the Postgres driver as linux/386"; \
+			MAGNETAR_TEST_POSTGRES='$(PG_URL)' MAGNETAR_REQUIRE_POSTGRES=1 GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test -count=1 ./internal/driver/postgres; \
+		elif [ "$$v" = 18 ]; then \
+			skip "the Postgres driver as linux/386: 32-bit Linux binaries do not run on $$os/$$arch"; \
+		fi; \
+		echo; echo "==> query plans at millions of rows, Postgres $$v"; \
+		MAGNETAR_TEST_POSTGRES='$(PG_URL)' MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres; \
+		step outside-postgres; \
+	done; \
+	step pg-down; \
+	step s3-up; \
+	step test-s3; \
+	step s3-down; \
+	step pg-up PG_VERSION=18; \
+	strict=0; [ "$$os" = Linux ] && strict=1; \
+	[ "$$strict" = 1 ] || skip "MAGNETAR_PROVE_STRICT=1: on $$os a check of the proof may be skipped (the second user needs sudo on Linux); the proof says which"; \
+	echo; echo "==> make prove (MAGNETAR_PROVE_STRICT=$$strict)"; \
+	MAGNETAR_PROVE_PG_CONTAINER=$(PG_CONTAINER) MAGNETAR_PROVE_PG_PORT=$(PG_PORT) MAGNETAR_PROVE_STRICT=$$strict \
+		$(MAKE) --no-print-directory prove PYTHON="$$py" GRPCURL="$(CHECK_GRPCURL)"; \
+	skip "the Windows and macOS jobs and Go releases other than this one run in CI only (lint and vet for Windows ran here)"; \
+	echo; echo "ci: passed in $$(( $$(date +%s) - start )) s on $$os/$$arch. Not run here:"; \
+	printf '%s\n' "$$skipped" | tr '|' '\n' | sed -n 's/^./  - &/p'

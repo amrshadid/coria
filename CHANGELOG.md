@@ -467,6 +467,18 @@ All notable changes to Magnetar are written here. The form is
 
 ### Changed
 
+- Running what CI runs meant reading the workflow and assembling it by hand:
+  the Python packages, Postgres, two S3 servers, the proof. `make ci` now runs
+  every job of the workflow in one go, cheapest first, ending with the proof.
+  It removes every container it started however it ends, and lists what it
+  could not run on the machine it ran on (on a Mac, the 32-bit tests, which it
+  builds and vets instead). `make tools-python`, `pg-up`/`pg-down`,
+  `s3-up`/`s3-down`, `test-postgres`, `test-s3`, `outside` and `check-static`
+  are its parts, and CI's Postgres, S3 and build jobs call them. Go and the
+  Python tools are set up by one composite action each instead of being
+  repeated in nine jobs. The contract's Python toolchain
+  (`scripts/requirements-proto.txt`) is now pinned with hashes and installed
+  with `--require-hashes` like the others.
 - The API's handlers imported the database drivers for the names of the two
   database types, which linked both database libraries into them. The names are
   now `master.SQLiteDriver` and `master.PostgresDriver`, beside the tenant's

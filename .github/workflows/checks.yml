@@ -52,11 +52,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # check-latest takes the newest patch release rather than whatever the
-      # runner image has cached: govulncheck reports the standard library of
-      # the Go that runs it, so an old patch would fail it for nothing here.
-      # The module and build caches are kept, keyed on go.sum (and, by
-      # setup-go, on the Go version and the system): most of a job's time
+      # The newest patch release (see .github/actions/setup-go). The module
+      # and build caches are kept, keyed on go.sum (and, by setup-go, on the
+      # Go version and the system): most of a job's time
       # was compiling modernc.org/sqlite's translation of SQLite, once for
       # each of vet, vet on 386, lint, the race build, the 386 tests and the
       # five static builds, and that output does not change until go.sum
@@ -66,11 +64,9 @@ jobs:
       # good); the key also changes when the targets do, which is when the
       # cached output stops matching them.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go }}
-          check-latest: true
-          cache: true
           cache-dependency-path: |
             go.sum
             Makefile
@@ -108,16 +104,20 @@ jobs:
 
       # The sealed-secret format checked against another implementation:
       # Python's cryptography package and what it pulls in, at exact versions
-      # with their hashes, so a changed file on the package index is refused.
-      # In a virtual environment because the runner's system Python refuses
-      # pip installs (PEP 668).
+      # with their hashes, so a changed file on the package index is refused
+      # (.github/actions/python-tools).
+      - name: Python tools
+        id: python
+        uses: ./.github/actions/python-tools
+        with:
+          requirements: scripts/requirements-check-seal.txt
+
       - name: Outside check, sealing against Python cryptography
+        env:
+          VENV_PYTHON: ${{ steps.python.outputs.python }}
         run: |
-          python3 --version
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes -r scripts/requirements-check-seal.txt
-          "$RUNNER_TEMP/venv/bin/python" -c 'import cryptography; print("cryptography", cryptography.__version__)'
-          make check-seal PYTHON="$RUNNER_TEMP/venv/bin/python"
+          "$VENV_PYTHON" -c 'import cryptography; print("cryptography", cryptography.__version__)'
+          make check-seal PYTHON="$VENV_PYTHON"
 
       # The tests as 32-bit binaries, which an x86-64 Linux runs natively:
       # int is 32 bits there and the SQLite library is translated for it.
@@ -185,12 +185,9 @@ jobs:
 
       # The module and build caches, keyed on go.sum, as in the Linux job.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go }}
-          check-latest: true
-          cache: true
-          cache-dependency-path: go.sum
 
       - name: Go version
         run: go version
@@ -212,13 +209,7 @@ jobs:
       # Each binary was built with CGO_ENABLED=0; this shows the Linux one is
       # in fact static, so a change that brings in C cannot pass unseen.
       - name: The linux/amd64 binary is static
-        # grep without -q: it reads all its input, so the command before it is
-        # never cut off by a closed pipe, which pipefail would report as a
-        # failure.
-        run: |
-          file bin/magnetar-linux-amd64 | grep 'statically linked'
-          go version -m bin/magnetar-linux-amd64 | grep -x $'\tbuild\tCGO_ENABLED=0'
-          ./bin/magnetar-linux-amd64 version
+        run: make check-static
 
   # The Postgres master database against real servers, versions 16 and 18.
   # The Postgres tests make a schema of their own in the service's database
@@ -268,11 +259,9 @@ jobs:
       # (12 minutes of its 15 on one run). A second file named here makes
       # the key differ; it changes rarely.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: '1.27'
-          check-latest: true
-          cache: true
           cache-dependency-path: |
             go.sum
             internal/driver/postgres/doc.go
@@ -282,7 +271,7 @@ jobs:
 
       # -v so each test's result, a skip included, is in the log.
       - name: go test -race, the Postgres driver and the contract suite
-        run: go test -race -count=1 -v ./internal/driver/...
+        run: make test-postgres
 
       # The same tests as 32-bit binaries, which an x86-64 Linux runs
       # natively. One server version only, to spend fewer minutes.
@@ -326,12 +315,9 @@ jobs:
           persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: '1.27'
-          check-latest: true
-          cache: true
-          cache-dependency-path: go.sum
 
       # A second user with no home and no shell. The test runs this test
       # binary as that user with sudo: once with run/ as the server keeps it
@@ -343,16 +329,22 @@ jobs:
           sudo useradd --no-create-home --shell /usr/sbin/nologin magnetar-other
           MAGNETAR_TEST_OTHER_USER=magnetar-other go test -count=1 -v -run '^TestSocketRefusesOtherUser$' ./internal/server
 
-      # grpcurl from its release, checked against the SHA-256 committed in
-      # scripts/grpcurl.sha256; the Python packages at exact versions with
-      # their hashes, in a virtual environment (the runner's Python refuses
-      # pip installs, PEP 668).
+      # The Python packages at exact versions with their hashes
+      # (.github/actions/python-tools); grpcurl from its release, checked
+      # against the SHA-256 committed in scripts/grpcurl.sha256 (keep its
+      # version in step with GRPCURL_VERSION in the Makefile).
+      - name: Python tools
+        id: python
+        uses: ./.github/actions/python-tools
+        with:
+          requirements: scripts/requirements-check-server.txt
+
       - name: Outside check, curl, grpcurl and Python grpcio against the server
+        env:
+          VENV_PYTHON: ${{ steps.python.outputs.python }}
         run: |
           bash scripts/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/requirements-check-server.txt
-          make check-server PYTHON="$RUNNER_TEMP/venv/bin/python" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl"
+          make check-server PYTHON="$VENV_PYTHON" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl"
 
       # The real program end to end: init, serve with the local socket and
       # TLS, the real commands as processes over both, a second serve
@@ -393,33 +385,34 @@ jobs:
       # The same cache key as the Builds job on Go 1.27: this job compiles
       # the same five static builds.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: '1.27'
-          check-latest: true
-          cache: true
-          cache-dependency-path: go.sum
 
-      # sqlite3 from the distribution; grpcurl from its release, checked
-      # against scripts/grpcurl.sha256; the Python packages at exact
-      # versions with their hashes, in a virtual environment (the runner's
-      # Python refuses pip installs, PEP 668).
+      # The Python packages at exact versions with their hashes
+      # (.github/actions/python-tools); sqlite3 from the distribution;
+      # grpcurl from its release, checked against scripts/grpcurl.sha256.
+      - name: Python tools
+        id: python
+        uses: ./.github/actions/python-tools
+        with:
+          requirements: scripts/requirements-check-server.txt
+
       - name: Tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install --yes --no-install-recommends sqlite3 > /dev/null
           sqlite3 --version
           bash scripts/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/requirements-check-server.txt
 
       - name: The proof
         env:
           MAGNETAR_PROVE_PG_CONTAINER: ${{ job.services.postgres.id }}
           MAGNETAR_PROVE_PG_PORT: '5432'
           MAGNETAR_PROVE_STRICT: '1'
+          VENV_PYTHON: ${{ steps.python.outputs.python }}
         run: |
-          make prove PYTHON="$RUNNER_TEMP/venv/bin/python" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl" | tee "$RUNNER_TEMP/proof.log"
+          make prove PYTHON="$VENV_PYTHON" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl" | tee "$RUNNER_TEMP/proof.log"
 
       # The table of every check and what it measured, on the run's page,
       # also when a check failed.
@@ -447,12 +440,9 @@ jobs:
 
       # The module and build caches, keyed on go.sum, as in the Linux job.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: '1.27'
-          check-latest: true
-          cache: true
-          cache-dependency-path: go.sum
 
       - name: Go version
         run: go version
@@ -479,12 +469,9 @@ jobs:
 
       # The module and build caches, keyed on go.sum, as in the Linux job.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: '1.27'
-          check-latest: true
-          cache: true
-          cache-dependency-path: go.sum
 
       - name: Go version
         run: go version
@@ -494,10 +481,12 @@ jobs:
 
   # The S3 storage driver against two real servers: Silo, the maintained fork
   # of MinIO, and RustFS, a separate implementation, since one server's
-  # behavior is not the protocol's. Each is started with docker run, because a
+  # behavior is not the protocol's. Each is started with docker run, by make
+  # s3-up (the images are pinned by digest in the Makefile), because a
   # service container cannot be given the server's command. The tests skip
-  # when MAGNETAR_TEST_S3 is not set; MAGNETAR_REQUIRE_S3 turns a server that
-  # did not start into a failure, so a green job means the suite ran.
+  # when MAGNETAR_TEST_S3 is not set; make test-s3 sets it with
+  # MAGNETAR_REQUIRE_S3, which turns a server that did not start into a
+  # failure, so a green job means the suite ran.
   s3:
     name: S3 (${{ matrix.server }})
     runs-on: ubuntu-latest
@@ -506,9 +495,6 @@ jobs:
       fail-fast: false
       matrix:
         server: [silo, rustfs]
-    env:
-      MAGNETAR_TEST_S3: http://ci-throwaway-key:ci-throwaway-secret@127.0.0.1:9000/magnetar-test
-      MAGNETAR_REQUIRE_S3: '1'
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -517,47 +503,30 @@ jobs:
 
       - name: Start Silo
         if: matrix.server == 'silo'
-        run: >-
-          docker run -d --name s3 -p 127.0.0.1:9000:9000
-          -e MINIO_ROOT_USER=ci-throwaway-key -e MINIO_ROOT_PASSWORD=ci-throwaway-secret
-          pgsty/silo@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329
-          server /data
+        run: make s3-up S3_SERVERS=silo
 
       - name: Start RustFS
         if: matrix.server == 'rustfs'
-        run: >-
-          docker run -d --name s3 -p 127.0.0.1:9000:9000
-          -e RUSTFS_ACCESS_KEY=ci-throwaway-key -e RUSTFS_SECRET_KEY=ci-throwaway-secret
-          -e RUSTFS_ADDRESS=0.0.0.0:9000
-          rustfs/rustfs@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
-          /data
+        run: make s3-up S3_SERVERS=rustfs
 
       # Either server answers its port before it can serve; the tests create
-      # their bucket, so a listing that is answered at all is enough.
+      # their bucket, so a listing that is answered at all is enough. s3-up
+      # has waited already; this says so in a step of its own, with the
+      # server's log if it never answered.
       - name: Wait for the server
-        run: |
-          set -eu
-          for i in $(seq 1 60); do
-            if curl -sS -o /dev/null http://127.0.0.1:9000/; then exit 0; fi
-            sleep 1
-          done
-          docker logs s3
-          exit 1
+        run: make s3-wait S3_SERVERS=${{ matrix.server }}
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: '1.27'
-          check-latest: true
-          cache: true
-          cache-dependency-path: go.sum
 
       - name: go test -race, the S3 driver
-        run: go test -race -count=1 -v ./internal/blob/s3/...
+        run: make test-s3 S3_SERVERS=${{ matrix.server }}
 
       - name: Server log on failure
         if: failure()
-        run: docker logs s3 | tail -100
+        run: docker logs magnetar-test-${{ matrix.server }} | tail -100
 
   # The API contract in api/proto: buf lint, the breaking-change check against
   # the base, the check that the committed gen/ is what the proto files
@@ -581,11 +550,10 @@ jobs:
       # not built: make downloads its release binary and checks it against
       # the SHA-256 in scripts/buf.sha256 (scripts/install-buf.sh).
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: ./.github/actions/setup-go
         with:
           go-version: '1.27'
-          check-latest: true
-          cache: false
+          cache: 'false'
 
       # Cheap and system-independent, so it rides with the contract's checks:
       # no comment, document or script refers to a note outside the repository.
@@ -621,9 +589,15 @@ jobs:
       - name: gen/ is current
         run: make proto-check
 
+      # grpcio-tools and what it pulls in, at exact versions with their
+      # hashes (.github/actions/python-tools).
+      - name: Python tools
+        id: python
+        uses: ./.github/actions/python-tools
+        with:
+          requirements: scripts/requirements-proto.txt
+
       - name: Python grpcio-tools compiles the contract
-        run: |
-          python3 --version
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check -r scripts/requirements-proto.txt
-          make proto-python PYTHON="$RUNNER_TEMP/venv/bin/python"
+        env:
+          VENV_PYTHON: ${{ steps.python.outputs.python }}
+        run: make proto-python PYTHON="$VENV_PYTHON"

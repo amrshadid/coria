@@ -1,25 +1,9 @@
 #!/bin/bash
-# Prints the files and SHA-256 hashes behind scripts/requirements-check-seal.txt.
-# It downloads, with pip, the wheel pip would choose for each package on each
-# platform the outside check runs on (Linux x86_64 with CPython 3.12 to 3.14,
-# as CI may have, and this machine), then hashes each file with "pip hash".
-# Copy the hashes into the requirements file under their package.
+# Prints the hashed requirements behind scripts/requirements-check-seal.txt. The
+# packages are the "name==version" lines of that file; to change a version,
+# change it there and run this again. It is "scripts/requirements.sh check-seal",
+# kept under this name for whoever runs it so.
 #
 #   scripts/requirements-check-seal.sh [python]
 set -euo pipefail
-py="${1:-python3}"
-packages=(cryptography==46.0.3 cffi==2.1.1 pycparser==3.12)
-dir="$(mktemp -d)"
-trap 'rm -rf "$dir"' EXIT
-
-for version in 3.12 3.13 3.14; do
-	"$py" -m pip download --quiet --no-deps --only-binary=:all: \
-		--platform manylinux_2_34_x86_64 --platform manylinux_2_28_x86_64 \
-		--platform manylinux_2_17_x86_64 --platform manylinux2014_x86_64 \
-		--python-version "$version" --implementation cp -d "$dir" "${packages[@]}"
-done
-"$py" -m pip download --quiet --no-deps --only-binary=:all: -d "$dir" "${packages[@]}"
-
-for file in "$dir"/*; do
-	echo "$(basename "$file") $("$py" -m pip hash "$file" | tail -1)"
-done
+exec bash "$(dirname "$0")/requirements.sh" check-seal "$@"
