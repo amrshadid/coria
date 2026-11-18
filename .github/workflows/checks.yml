@@ -290,6 +290,13 @@ jobs:
         if: matrix.postgres == '18'
         run: GOOS=linux GOARCH=386 CGO_ENABLED=0 go test -count=1 ./internal/driver/postgres
 
+      # Every list, claim and lookup of the reception pipeline against a few
+      # million rows, read from the query plan. The test leaves itself out
+      # under the race detector and on 32 bits, where it would measure them,
+      # so it has a run of its own.
+      - name: Query plans at millions of rows
+        run: go test -count=1 -v -run '^TestPipelinePlansAtScale$' ./internal/driver/postgres
+
       - name: Outside check, the Postgres master read by psql and pg_dump
         run: |
           make check-master-postgres \

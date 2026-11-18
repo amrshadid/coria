@@ -67,7 +67,7 @@ func TestTenantContractShared(t *testing.T) {
 // database that applied it refuse to start (sqlkit.ErrChecksum). A new file
 // is added to the list; a listed checksum is never changed.
 func TestShippedTenantMigrationsUnchanged(t *testing.T) {
-	want := []string{"0001_init.sql " + shippedTenantInit}
+	want := []string{"0001_init.sql " + shippedTenantInit, "0002_pipeline.sql " + shippedTenantPipeline}
 	if tenantMigrationsErr != nil {
 		t.Fatal(tenantMigrationsErr)
 	}
@@ -85,6 +85,10 @@ func TestShippedTenantMigrationsUnchanged(t *testing.T) {
 // shippedTenantInit is the SHA-256 of migrations/tenant/0001_init.sql as this
 // change ships it.
 const shippedTenantInit = "c8f7a87846954df3589281ee46a4a0a288261f57c3ebb07f3cdaba713ded1a2d"
+
+// shippedTenantPipeline is the SHA-256 of
+// migrations/tenant/0002_pipeline.sql as this change ships it.
+const shippedTenantPipeline = "243bc62ba80845ae699c432d2c861f014a9f3fe49742865cf9059b6555e2884e"
 
 // TestTenantNotMigrated guards that a tenant store used before Migrate fails
 // as Unavailable with a message that says so, instead of a SQL error, and

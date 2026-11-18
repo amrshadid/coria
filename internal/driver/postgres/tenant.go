@@ -51,6 +51,9 @@ type Tenant struct {
 	base
 	lists lists
 	id    string
+	// retried counts the pipeline's changes run again (Tenant.pipe), by
+	// why, so a test can show a change that must never deadlock did not.
+	retried retryCounts
 }
 
 var _ tenant.Store = (*Tenant)(nil)

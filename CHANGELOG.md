@@ -450,6 +450,20 @@ All notable changes to Magnetar are written here. The form is
   cursor and a one-slot wake, so a client that stops reading costs no memory
   and loses nothing until its cursor expires. On SQLite; the Postgres driver
   follows.
+- A study could not be received into a tenant on Postgres: only SQLite kept
+  what a reception needs. The Postgres driver now has the same operations
+  (storages and receivers, receptions and their received files, the catalog
+  with claimed and held instances, quarantine, leased work) and passes the
+  same contract suite unchanged, on Postgres 16 and 18. With several writers
+  each operation keeps its rules at the default isolation: rows are locked in
+  one stated order and never upgraded, so claims of shared instances taken in
+  opposite orders do not deadlock; two opens of one study make one reception;
+  commits made at once share one subject and one session; two workers never
+  take one unit of work, and neither waits for the other; a storage cannot be
+  removed under a commit. A deadlock or serialization failure that still
+  occurs is retried inside the driver and never reaches a caller as an
+  unknown error. Every list, claim and lookup is answered from an index at
+  millions of rows, checked from the query plan in CI.
 
 ### Changed
 

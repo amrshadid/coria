@@ -72,7 +72,7 @@ t="\"$schema\""
 m="\"$mschema\""
 echo
 echo "== the tenant's tables"
-want "tables" "audit schema_migrations settings tenant_identity" \
+want "tables" "audit catalog_totals instances quarantine quarantine_totals received_files receivers reception_associations receptions scans schema_migrations sessions settings storages subjects tenant_identity work" \
 	"$(q "SELECT string_agg(table_name, ' ' ORDER BY table_name COLLATE \"C\") FROM information_schema.tables WHERE table_schema = '$schema'")"
 
 show schema_migrations "SELECT version, name, encode(checksum, 'hex') AS checksum, applied FROM $t.schema_migrations"
@@ -81,7 +81,7 @@ show settings "SELECT * FROM $t.settings ORDER BY name"
 show audit "SELECT id, at, key_id, remote_addr, method, tenant_name, object, outcome, reason, details FROM $t.audit ORDER BY at, id"
 echo
 
-want "schema_migrations rows" 1 "$(q "SELECT count(*) FROM $t.schema_migrations")"
+want "schema_migrations rows" 2 "$(q "SELECT count(*) FROM $t.schema_migrations")"
 want "the schema records the tenant's id" sample-tenant "$(q "SELECT id FROM $t.tenant_identity")"
 want "settings rows" 2 "$(q "SELECT count(*) FROM $t.settings")"
 want "audit rows" 5 "$(q "SELECT count(*) FROM $t.audit")"
@@ -89,10 +89,29 @@ want "constraints that are not valid" 0 \
 	"$(q "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = '$schema' AND NOT c.convalidated")"
 want "the audit indexes" "audit_by_key audit_by_outcome audit_by_tenant audit_by_time audit_pkey" \
 	"$(q "SELECT string_agg(indexname, ' ' ORDER BY indexname COLLATE \"C\") FROM pg_indexes WHERE schemaname = '$schema' AND tablename = 'audit'")"
-want "columns with the C collation" 5 \
+want "columns with the C collation" 72 \
 	"$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema = '$schema' AND collation_name = 'C'")"
 want "at is timestamptz and details jsonb" "timestamp with time zone jsonb" \
 	"$(q "SELECT (SELECT data_type FROM information_schema.columns WHERE table_schema = '$schema' AND table_name = 'audit' AND column_name = 'at') || ' ' || (SELECT data_type FROM information_schema.columns WHERE table_schema = '$schema' AND table_name = 'audit' AND column_name = 'details')")"
+# The reception pipeline's tables (migrations/tenant/0002_pipeline.sql):
+# their constraints and indexes as Postgres lists them, the running totals'
+# one row each, and the rules the code relies on held by the database.
+show "the pipeline's constraints" "SELECT c.conrelid::regclass AS table_name, c.conname, pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = '$schema' AND c.conrelid::regclass::text NOT IN ('audit', 'settings', 'tenant_identity', 'schema_migrations') ORDER BY 1, 2"
+show "the pipeline's indexes" "SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = '$schema' AND tablename NOT IN ('audit', 'settings', 'tenant_identity', 'schema_migrations') ORDER BY 1, 2"
+want "the pipeline's indexes" 53 \
+	"$(q "SELECT count(*) FROM pg_indexes WHERE schemaname = '$schema' AND tablename NOT IN ('audit', 'settings', 'tenant_identity', 'schema_migrations')")"
+want "the instances' indexes" "instances_claimed instances_held_by instances_on_storage instances_pkey" \
+	"$(q "SELECT string_agg(indexname, ' ' ORDER BY indexname COLLATE \"C\") FROM pg_indexes WHERE schemaname = '$schema' AND tablename = 'instances'")"
+want "one open reception per receiver and study, and one arrival number per study" "receptions_arrival receptions_open" \
+	"$(q "SELECT string_agg(indexname, ' ' ORDER BY indexname COLLATE \"C\") FROM pg_indexes WHERE schemaname = '$schema' AND tablename = 'receptions' AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexname <> 'receptions_pkey'")"
+want "the work claim's index leaves out finished units" "WHERE (state = ANY (ARRAY['queued'::text, 'leased'::text]))" \
+	"$(q "SELECT substring(indexdef from 'WHERE .*') FROM pg_indexes WHERE schemaname = '$schema' AND indexname = 'work_claimable'")"
+want "checksums are 32 bytes" "CHECK ((octet_length(sha256) = 32))" \
+	"$(q "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'instances_sha256_check' AND connamespace = '$schema'::regnamespace")"
+want "the catalog's totals, one row" "1 0 0 0 0" "$(q "SELECT count(*) || ' ' || max(subjects) || ' ' || max(sessions) || ' ' || max(scans) || ' ' || max(instances) FROM $t.catalog_totals")"
+want "the quarantine's totals, one row" "1 0 0" "$(q "SELECT count(*) || ' ' || max(files) || ' ' || max(bytes) FROM $t.quarantine_totals")"
+want "a held instance without its place on a storage is refused by the database" "refused" \
+	"$(q "DO \$\$ BEGIN INSERT INTO $t.instances VALUES ('2.25.1', '2.25.2', '2.25.3', 'held', decode(repeat('00', 32), 'hex'), 'r', NULL, '', '', 0, 0, 0, NULL, now(), NULL); RAISE NOTICE 'kept'; EXCEPTION WHEN check_violation THEN NULL; END \$\$; SELECT CASE WHEN count(*) = 0 THEN 'refused' ELSE 'kept' END FROM $t.instances")"
 want "the override set twice keeps the second value" 90 "$(q "SELECT value FROM $t.settings WHERE name = 'reception.quiet_seconds'")"
 want "a Unicode value, as UTF-8" "Zoë-山田" "$(q "SELECT value FROM $t.settings WHERE name = 'label.prefix'")"
 want "every audit entry's details are a JSON object" 5 "$(q "SELECT count(*) FROM $t.audit WHERE jsonb_typeof(details) = 'object'")"

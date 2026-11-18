@@ -1,5 +1,6 @@
 // Package postgres is the Postgres database type: it implements master.Store
-// and tenant.Store on a Postgres database through github.com/jackc/pgx/v5 and its pool, pure
+// and tenant.Store, with the reception pipeline's operations (tenant.Pipeline),
+// on a Postgres database through github.com/jackc/pgx/v5 and its pool, pure
 // Go, so the binary stays static (CGO_ENABLED=0) on every target it ships
 // for.
 //
@@ -78,6 +79,101 @@
 // table) does not do. Taken in one order, these
 // locks cannot wait on each other in a cycle, which Postgres would break by
 // failing one of the changes as a deadlock.
+//
+// # The reception pipeline's locks
+//
+// A tenant's pipeline (tenant.Pipeline, pipeline_*.go) runs at read
+// committed, where each statement sees what was committed when it began and
+// an UPDATE or a locking SELECT that waited for a row reads it again as the
+// other transaction left it and tests its condition again (Postgres manual,
+// "Transaction Isolation", 13.2.1). So every condition a change depends on is
+// either in the statement that makes the change, with the rows it changed
+// counted, or on a row the change locked before it read it; an insert that
+// may meet a row another transaction is making is ON CONFLICT DO NOTHING,
+// and what it met is read by a later statement, since a read inside the same
+// statement would not see a row committed while it waited.
+//
+// Rows are locked in one order, so no two changes wait for each other in a
+// cycle:
+//
+//  1. the tenant's configuration lock (an advisory lock for the
+//     transaction), taken only by changes of storages and receivers;
+//  2. a unit of work's row, the fence of a worker's write;
+//  3. a quarantine record's row;
+//  4. receptions' rows, several in order of id;
+//  5. a storage's row;
+//  6. the catalog's subject, session and scan, in that order, as their
+//     inserts meet them;
+//  7. instance rows, several in order of SOP Instance UID;
+//  8. received files and associations, new rows of a reception held;
+//  9. the running totals, last.
+//
+// Each lock is the weakest that is enough, and a row is locked the first time
+// a change touches it with the strongest lock that change will take on it
+// (FOR NO KEY UPDATE where it updates the row later), so no change asks for a
+// stronger lock on a row it holds. The statements that lock, by operation:
+//
+//	operation              statement and lock                                 why
+//	---------------------  -------------------------------------------------  ------------------------------------------
+//	Add/Set/Remove a       pg_advisory_xact_lock, per schema                  the rules across rows (names, overlaps,
+//	storage or receiver                                                       ports) see no other change in flight
+//	SetStorage             SELECT storage FOR NO KEY UPDATE, then reads       waits for commits and identifies holding
+//	                       of what holds it                                   it FOR SHARE; later ones see the change
+//	RemoveStorage          SELECT storage FOR UPDATE (its DELETE's lock)      as SetStorage
+//	SetReceiver            SELECT receiver FOR NO KEY UPDATE                  the row read is the row changed
+//	OpenReception          INSERT reception ON CONFLICT DO NOTHING, then a    receptions_open and receptions_arrival
+//	                       read of the open one and of the next arrival       make one reception and unique arrivals
+//	StepReception          UPDATE work (fence), SELECT reception FOR NO KEY   the state and last file compared cannot
+//	                       UPDATE, identify: SELECT storage FOR SHARE,        change until the commit; a storage is not
+//	                       UPDATE reception WHERE state = from, an end:       removed or moved under an identify; claims
+//	                       DELETE its claims                                  go with the step that ends the reception
+//	AddReceivedFiles       SELECT receptions WHERE receiving FOR NO KEY       a step and a batch are ordered; files and
+//	                       UPDATE, in order of id; INSERT files and           counts are written on the row held
+//	                       associations ON CONFLICT DO NOTHING (sets);
+//	                       UPDATE reception, adding
+//	ClaimInstances         UPDATE work (fence), SELECT reception FOR SHARE    claims of one reception run side by side
+//	                       (identified, not ended); INSERT claims ON          and wait for a step that ends it; two
+//	                       CONFLICT DO NOTHING, sorted by UID, one set;       batches wait for each other in UID order;
+//	                       the UIDs that met a row read again                 the claim that won is read, never a 23505
+//	CommitScan             UPDATE work (fence), SELECT reception FOR NO KEY   ends and claims of the reception wait for
+//	                       UPDATE, SELECT storage FOR SHARE, subject,         it; the catalog's rows are found or made
+//	                       session, scan INSERT ON CONFLICT DO NOTHING        once whoever commits at once; counts are
+//	                       then read; UPDATE the reception's claims WHERE     added on rows held; the totals row is
+//	                       claimed by it (one set); UPDATE scan, reception    locked last, for the shortest time
+//	                       and catalog totals, adding
+//	HoldFiles              SELECT receptions FOR NO KEY UPDATE, in order of   a file counted received here and a batch
+//	                       id; INSERT records ON CONFLICT (id) DO NOTHING;    of it are ordered
+//	                       UPDATE receptions and totals, adding
+//	Release/Reject         SELECT record FOR NO KEY UPDATE; a release: the    a decision made meanwhile is seen; a file
+//	                       reception it joins, SELECT ... WHERE receiving     never joins a reception closed meanwhile
+//	                       FOR NO KEY UPDATE; totals last
+//	Retry/Discard          UPDATE reception WHERE failed and not retried or   two of them at once make one
+//	                       discarded (the mark is the compare)
+//	EnqueueWork            INSERT ON CONFLICT DO NOTHING, then a read under   a key queues its work once
+//	                       the unique key
+//	ClaimWork              SELECT the earliest due FOR NO KEY UPDATE SKIP     two claims take different units and
+//	                       LOCKED, LIMIT 1; UPDATE it; a unit given up        neither waits; a round that gives up a
+//	                       fails its reception (SELECT FOR NO KEY UPDATE)     unit commits alone, so no transaction
+//	                       in a transaction of its own                        holds two receptions
+//	Renew/Complete/Fail    UPDATE work WHERE id, attempt, leased (the         a takeover skips the unit while it is
+//	                       fence), then the change                            held, and a write after it changes nothing
+//
+// Batches are one statement each, whatever their size: received files,
+// claims, confirmations and quarantine records go as one array per column
+// (unnest), so the largest statement, a batch of quarantine records, takes
+// twenty parameters, far below Postgres's limit of 65535.
+//
+// A deadlock (SQLSTATE 40P01) or a serialization failure (40001) that
+// Postgres reports anyway, and a unique violation (23505) no statement met
+// with ON CONFLICT, end the transaction with nothing committed; the change
+// is then run again in a new transaction, a few times with a short wait
+// that grows, and never reaches the caller as an unknown error: after the
+// last attempt it is Unavailable, to be tried again. The tests show the
+// order makes the retry unneeded where the port promises it (claims in
+// opposite orders, commits at once): no deadlock happens there at all.
+//
+// The clock is the caller's: every time written is a "now" the caller gave,
+// never the database's own.
 //
 // # Ordering
 //
