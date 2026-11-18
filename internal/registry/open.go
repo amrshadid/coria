@@ -317,7 +317,7 @@ func (r *Registry) settle(e *entry, state master.TenantState, reason string) {
 		r.log.Info("tenant state", "tenant", e.name, "state", string(state), "reason", reason)
 	}
 	e.view.Store(&view{state: state, reason: reason, since: since, store: s})
-	if e.removed || (state == e.written && reason == e.writtenReason) {
+	if e.removed || e.holdWrite || (state == e.written && reason == e.writtenReason) {
 		return
 	}
 	limited := flapping(e.written, state) || state == e.written
@@ -340,6 +340,14 @@ func (r *Registry) settle(e *entry, state master.TenantState, reason string) {
 	}
 	ctx, cancel := context.WithTimeout(r.ctx, r.cfg.OpenTimeout)
 	defer cancel()
+	if e.written == master.StateUpgrading && state == master.StateReady {
+		// This finishes a creation a crash interrupted: the entry names the
+		// request that began it, so the request's id leads to the end of it.
+		if id := r.creationRequest(ctx, e); id != "" {
+			audit.RequestID = id
+			audit.Details[DetailCreationRequest] = id
+		}
+	}
 	err := r.cfg.Master.SetTenantState(ctx, e.id, state, reason, audit)
 	switch {
 	case err == nil:
@@ -356,6 +364,22 @@ func (r *Registry) settle(e *entry, state master.TenantState, reason string) {
 		r.log.Warn("tenant state not recorded", "tenant", e.name, "state", string(state),
 			"kind", fault.KindOf(err).String(), "message", fault.Message(err))
 	}
+}
+
+// creationRequest returns the request id of the creation that wrote the
+// tenant's row, from the latest StartMethod entry for the tenant in the
+// master's log, or "" when none is found among the tenant's latest entries.
+func (r *Registry) creationRequest(ctx context.Context, e *entry) string {
+	entries, _, err := r.cfg.Master.ListAudit(ctx, master.AuditFilter{TenantName: e.name}, master.Page{Limit: 100})
+	if err != nil {
+		return ""
+	}
+	for _, a := range entries {
+		if a.Method == StartMethod {
+			return a.RequestID
+		}
+	}
+	return ""
 }
 
 // flapping reports whether a change from one state to another is between

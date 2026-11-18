@@ -35,9 +35,13 @@ jobs:
   linux:
     name: Linux - Go ${{ matrix.go }}
     runs-on: ubuntu-latest
-    # A run that hangs is stopped long before GitHub's six hours: these jobs
-    # take about two minutes, and every minute counts against the allowance.
-    timeout-minutes: 15
+    # A run that hangs is stopped long before GitHub's six hours. With its
+    # cache restored this job takes about five minutes; with no cache (a new
+    # key, or the first run on a branch whose base has none) it compiles
+    # everything and takes about fifteen. The limit must leave room for
+    # that: a cold run that is stopped saves no cache, so the next run is
+    # cold too and is stopped again, for good.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -56,14 +60,20 @@ jobs:
       # was compiling modernc.org/sqlite's translation of SQLite, once for
       # each of vet, vet on 386, lint, the race build, the 386 tests and the
       # five static builds, and that output does not change until go.sum
-      # does.
+      # does. The Makefile is named too, which gives this job a key apart
+      # from the thin cache the Postgres jobs once saved under go.sum alone
+      # (a key is never overwritten, so that one would be restored for
+      # good); the key also changes when the targets do, which is when the
+      # cached output stops matching them.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            Makefile
 
       - name: Go version
         run: go version
@@ -89,6 +99,12 @@ jobs:
 
       - name: go test -race
         run: make test
+
+      # The registry at 1,000 tenants, once per run, without the race
+      # detector (the race and 32-bit steps skip it).
+      - name: The registry at 1,000 tenants
+        if: matrix.go == '1.27'
+        run: make test-scale
 
       # The sealed-secret format checked against another implementation:
       # Python's cryptography package and what it pulls in, at exact versions
@@ -243,14 +259,23 @@ jobs:
         with:
           persist-credentials: false
 
-      # The module and build caches, keyed on go.sum, as in the Linux job.
+      # The module and build caches, under a key of their own. With go.sum
+      # alone the key was the Linux job's on Go 1.27 (setup-go keys on the
+      # system, the Go version and the files named here), and caches are
+      # never overwritten: these jobs, which build only internal/driver and
+      # finish first, saved a thin cache that the Linux job then restored,
+      # recompiling everything else in each of vet, lint and the builds
+      # (12 minutes of its 15 on one run). A second file named here makes
+      # the key differ; it changes rarely.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
           check-latest: true
           cache: true
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            internal/driver/postgres/doc.go
 
       - name: Go version
         run: go version
@@ -268,6 +293,12 @@ jobs:
       - name: Outside check, the Postgres master read by psql and pg_dump
         run: |
           make check-master-postgres \
+            PSQL="docker run --rm -i --network host postgres:${{ matrix.postgres }} psql" \
+            PG_DUMP="docker run --rm -i --network host postgres:${{ matrix.postgres }} pg_dump"
+
+      - name: Outside check, a Postgres tenant read by psql and pg_dump
+        run: |
+          make check-tenant-postgres \
             PSQL="docker run --rm -i --network host postgres:${{ matrix.postgres }} psql" \
             PG_DUMP="docker run --rm -i --network host postgres:${{ matrix.postgres }} pg_dump"
 
