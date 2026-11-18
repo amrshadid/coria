@@ -407,6 +407,18 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A request for a method the server does not serve took another path through the
+  server than a served one, and it showed. A caller with no key got the same code
+  and message, but other headers (in gRPC a `content-length` and a `trailer` header
+  whose names came in a changing order, and no `grpc-accept-encoding`), so it could
+  tell which of the contract's services the server serves. The audit log recorded
+  such a request's refusal under `/` and an allowed one not at all. Such a call is
+  now handed to the RPC library's own handler for unknown procedures and checked
+  like any other, so a refusal is the very answer a served method gives, in every
+  protocol. Every such request writes one entry in the installation's log, refused
+  or failed with the detail `served=false`, under the method asked for when it has
+  the shape of a protobuf method name within 256 bytes, and under `/` otherwise. An
+  authenticated caller is told UNIMPLEMENTED, "no such method".
 - `serve` started with a key file other than the installation's ran: every
   tenant then failed with "the database address did not open with this key
   file", SQLite tenants included, and a tenant created in that state would

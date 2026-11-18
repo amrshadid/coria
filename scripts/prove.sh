@@ -429,7 +429,8 @@ else
 	fail "2.2 the first key, made and granted on the local socket" "key create exit $CLI_STATUS or the key is not mgt_<id>_<secret>" "$(cat "$work/cli.err")"
 	exit 1
 fi
-"$PYTHON" "$helper" --work "$work" refusals --mode walk --proto "$root/api/proto" --addr "127.0.0.1:$port" --ca "$work/cert.pem" --grpcurl "$GRPCURL" || true
+"$PYTHON" "$helper" --work "$work" refusals --mode walk --proto "$root/api/proto" --not-served "$root/api/not-served.txt" \
+	--addr "127.0.0.1:$port" --ca "$work/cert.pem" --grpcurl "$GRPCURL" || true
 
 # ===========================================================================
 section "3. tenants on both databases"
@@ -558,8 +559,9 @@ if [ "$revoke_status" = 0 ] && [ "$life" = 1.000 ]; then
 else
 	fail "4.0 the keys of the refusals" "revoke exit $revoke_status, expired key lifetime $life s" "$(cat "$work/cli.err")"
 fi
-"$PYTHON" "$helper" --work "$work" refusals --mode matrix --proto "$root/api/proto" --addr "127.0.0.1:$port" --ca "$work/cert.pem" \
-	--grpcurl "$GRPCURL" --pg-tenant pg --missing-tenant nosuch || true
+"$PYTHON" "$helper" --work "$work" refusals --mode matrix --proto "$root/api/proto" --not-served "$root/api/not-served.txt" \
+	--addr "127.0.0.1:$port" --ca "$work/cert.pem" --grpcurl "$GRPCURL" --pg-tenant pg --missing-tenant nosuch \
+	--data-dir "$data" --lite-tenant lite || true
 
 # ===========================================================================
 section "5. sealed: the server with another key file"

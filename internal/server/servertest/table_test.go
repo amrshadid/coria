@@ -30,24 +30,37 @@ import (
 	"github.com/amrshadid/magnetar/internal/server/servertest"
 )
 
-// notServed lists the services the contract defines and the stand-in table
-// does not serve. A contract is merged and reviewed as a contract before its
-// handlers are written, so for a while a service is in the proto files with
-// nothing behind it, and until a handler exists the server answers each of
-// its methods UNIMPLEMENTED, as it answers any procedure it does not know.
-// TestTableMatchesRoleLines skips these services' rpcs, and
-// TestNotServedServices holds the list to the truth: no method of a listed
-// service is in the table, a call to each over a real server is answered
-// UNIMPLEMENTED, and a listed service that no proto file defines fails, so
-// a service leaves the list in the change that serves it. Package
-// internal/api keeps the same list for its own table, in role_test.go
-// there; the two change together.
-var notServed = []string{
-	"magnetar.v1.StorageService",
-	"magnetar.v1.ReceiverService",
-	"magnetar.v1.ReceptionService",
-	"magnetar.v1.QuarantineService",
-	"magnetar.v1.MonitorService",
+// notServedFile is the list of the services the contract defines and the
+// server does not serve yet (its header says why such a list exists and
+// when a line leaves it). It is one file, read here, by the tests of internal/api, and
+// by scripts/prove.py, so the three cannot disagree.
+var notServedFile = filepath.Join("..", "..", "..", "api", "not-served.txt")
+
+// notServedName is the form of a line of notServedFile: a full service
+// name.
+var notServedName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*$`)
+
+// readNotServed returns the services notServedFile names, in its order. A
+// line that is not a full service name, or a name given twice, fails the
+// test.
+func readNotServed(t testing.TB) []string {
+	t.Helper()
+	b, err := os.ReadFile(notServedFile)
+	if err != nil {
+		t.Fatalf("the list of services not served: %v", err)
+	}
+	var out []string
+	for i, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !notServedName.MatchString(line) || slices.Contains(out, line) {
+			t.Fatalf("%s:%d: %q is not a full service name given once", notServedFile, i+1, line)
+		}
+		out = append(out, line)
+	}
+	return out
 }
 
 // inServices reports whether proc, a full procedure name, is a method of
@@ -114,13 +127,12 @@ func notServedProblems(services, rpcs, procs []string) []string {
 // cannot hide a method that is served: every listed service is in the proto
 // files and the generated descriptors, none of its methods is in the
 // table, and a call to each of its methods over a real server, as the
-// local operator, is answered UNIMPLEMENTED. Its message is "no such
-// service": no handler of the service is registered, so the request is
-// answered by the server's route for every path nothing serves, after the
-// caller is authenticated, as a gRPC server answers a service it does not
-// have. It also shows the check itself reports a served service put on
+// local operator, is answered UNIMPLEMENTED with "no such method", the
+// answer to any procedure no handler serves, after the caller is
+// authenticated. It also shows the check itself reports a served service put on
 // the list and a listed service no file defines.
 func TestNotServedServices(t *testing.T) {
+	notServed := readNotServed(t)
 	rpcs, procs := fileRPCs(t), tableProcs()
 	for _, p := range notServedProblems(notServed, rpcs, procs) {
 		t.Error(p)
@@ -160,8 +172,8 @@ func TestNotServedServices(t *testing.T) {
 			}
 			cancel()
 			var ce *connect.Error
-			if connect.CodeOf(err) != connect.CodeUnimplemented || !errors.As(err, &ce) || ce.Message() != "no such service" {
-				t.Errorf("%s: %v, want UNIMPLEMENTED, no such service", proc, err)
+			if connect.CodeOf(err) != connect.CodeUnimplemented || !errors.As(err, &ce) || ce.Message() != "no such method" {
+				t.Errorf("%s: %v, want UNIMPLEMENTED, no such method", proc, err)
 			}
 		}
 	}
@@ -322,6 +334,7 @@ func TestTableMatchesRoleLines(t *testing.T) {
 		t.Fatalf("no proto files: %v", err)
 	}
 	methods := contractMethods()
+	notServed := readNotServed(t)
 	seen := map[string]bool{}
 	for _, file := range files {
 		b, err := os.ReadFile(file) //nolint:gosec // G304: the repository's own proto files.

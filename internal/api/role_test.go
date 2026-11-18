@@ -23,24 +23,37 @@ import (
 	"github.com/amrshadid/magnetar/internal/master"
 )
 
-// notServed lists the services the contract defines and this package does
-// not serve yet. A contract is merged and reviewed as a contract before its
-// handlers are written, so for a while a service is in the proto files with
-// nothing behind it, and until a handler exists the server answers each of
-// its methods UNIMPLEMENTED, as it answers any procedure it does not know.
-// The tests that read every rpc of the proto files skip these services'
-// rpcs, and TestNotServedServices holds the list to the truth: no method of
-// a listed service is in api.Methods, a call to each is answered
-// UNIMPLEMENTED, and a listed service that no proto file defines fails, so
-// a service leaves the list in the change that serves it. The server's
-// stand-in table keeps the same list for its own tests, in
-// internal/server/servertest/table_test.go; the two change together.
-var notServed = []string{
-	"magnetar.v1.StorageService",
-	"magnetar.v1.ReceiverService",
-	"magnetar.v1.ReceptionService",
-	"magnetar.v1.QuarantineService",
-	"magnetar.v1.MonitorService",
+// notServedFile is the list of the services the contract defines and the
+// server does not serve yet (its header says why such a list exists and
+// when a line leaves it). It is one file, read here, by the tests of internal/server/servertest, and
+// by scripts/prove.py, so the three cannot disagree.
+var notServedFile = filepath.Join("..", "..", "api", "not-served.txt")
+
+// notServedName is the form of a line of notServedFile: a full service
+// name.
+var notServedName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*$`)
+
+// readNotServed returns the services notServedFile names, in its order. A
+// line that is not a full service name, or a name given twice, fails the
+// test.
+func readNotServed(t testing.TB) []string {
+	t.Helper()
+	b, err := os.ReadFile(notServedFile)
+	if err != nil {
+		t.Fatalf("the list of services not served: %v", err)
+	}
+	var out []string
+	for i, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !notServedName.MatchString(line) || slices.Contains(out, line) {
+			t.Fatalf("%s:%d: %q is not a full service name given once", notServedFile, i+1, line)
+		}
+		out = append(out, line)
+	}
+	return out
 }
 
 // inServices reports whether proc, a full procedure name, is a method of
@@ -82,6 +95,7 @@ func notServedProblems(services []string, lines map[string]string, known func(st
 // itself reports a served service put on the list and a listed service no
 // file defines.
 func TestNotServedServices(t *testing.T) {
+	notServed := readNotServed(t)
 	lines := roleLines(t)
 	var m api.Methods
 	known := func(proc string) bool { _, ok := m.RequestFor(proc); return ok }
@@ -266,6 +280,7 @@ func withScope(t *testing.T, msg proto.Message, s *v1.Scope) proto.Message {
 func TestRequirementsFollowTheRoleLines(t *testing.T) {
 	lines := roleLines(t)
 	// The services not served yet are held by TestNotServedServices.
+	notServed := readNotServed(t)
 	for proc := range lines {
 		if inServices(notServed, proc) {
 			delete(lines, proc)

@@ -20,7 +20,11 @@ Subcommands:
   refusals  the refusal matrix of sections 2 and 4: every method of the
             contract, read from the proto files, with no key and with each kind
             of bad key, through grpcurl, Python's grpcio and curl over TLS; the
-            answers compared byte for byte within each client
+            answers compared byte for byte within each client. The services
+            api/not-served.txt names are checked for what the server promises
+            of a service it does not serve yet: the same refusal as any method
+            to a caller without a valid key, UNIMPLEMENTED to one with a key,
+            nothing done, and each request audited
   audit     section 8: the audit logs read through the API and reconciled
             against the ledger in both directions
   tui       section 10: the interactive program under a pseudo-terminal, with
@@ -47,6 +51,9 @@ import sys
 UNAUTH_MESSAGE = "the request carries no valid key"
 DENIED_MESSAGE = "the key may not do this"
 NOT_FOUND_MESSAGE = "no tenant has this name"
+# What the server answers an authenticated caller for a procedure no handler
+# serves (internal/server).
+NO_SERVICE_MESSAGE = "no such method"
 
 BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -134,6 +141,58 @@ def contract_methods(proto_dir):
                 i += 1
             for rpc in re.finditer(r"\brpc\s+(\w+)\s*\(", text[svc.end():i]):
                 out.append(("magnetar.v1." + svc.group(1), rpc.group(1), "magnetar/v1/" + name))
+    return out
+
+
+def not_served(path, methods):
+    """The services the list at path names, and the problems with it: a line
+    that is not a full service name, a name given twice, a name no proto file
+    defines."""
+    names, problems = [], []
+    defined = {svc for svc, _, _ in methods}
+    with open(path) as f:
+        for n, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not re.fullmatch(r"[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*", line) or line in names:
+                problems.append("line %d: %r is not a full service name given once" % (n, line))
+                continue
+            names.append(line)
+            if line not in defined:
+                problems.append("%s is listed as not served, and no proto file defines it" % line)
+    return names, problems
+
+
+def ns_body(svc, tenant):
+    """A request to a method of a service not served yet that names a tenant,
+    as JSON and as protobuf: field 1 is the tenant's name in the requests of
+    every such service, or the Scope that names it in MonitorService's."""
+    if svc == "magnetar.v1.MonitorService":
+        return {"scope": {"tenant": tenant}}, pb_string(1, pb_string(1, tenant))
+    return {"tenant": tenant}, pb_string(1, tenant)
+
+
+def db_state(data_dir, tenant):
+    """What a change could alter in the master and in a SQLite tenant's
+    database: every row of every table, except the master's audit log and
+    keys (a refusal's entry and a key's last use are written by any request)
+    and the tenant's audit log. Read only."""
+    import sqlite3
+
+    out = {}
+    for label, path, skip in (("master", os.path.join(data_dir, "master.db"), ("audit", "api_keys")),
+                              (tenant, os.path.join(data_dir, "tenants", tenant + ".db"), ("audit",))):
+        con = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
+        try:
+            tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+            for t in tables:
+                if t in skip:
+                    continue
+                rows = con.execute('SELECT * FROM "%s"' % t.replace('"', '""')).fetchall()
+                out["%s.%s" % (label, t)] = hashlib.sha256(repr(sorted(map(repr, rows))).encode()).hexdigest()
+        finally:
+            con.close()
     return out
 
 
@@ -295,23 +354,32 @@ def bad_keys(keys):
 
 
 def cmd_refusals(work, args):
-    methods = contract_methods(args.proto)
+    every = contract_methods(args.proto)
+    names, problems = not_served(args.not_served, every)
+    methods = [x for x in every if x[0] not in names]
+    unserved = [x for x in every if x[0] in names]
     cl = Clients(work, args)
     try:
         if args.mode == "walk":
-            walk(work, cl, methods)
+            work.result("2.5 the services not served yet: named in api/not-served.txt, each defined by a proto file",
+                        not problems and bool(unserved) == bool(names),
+                        "%d methods in the proto files: %d served, %d not served, of %d service(s): %s"
+                        % (len(every), len(methods), len(unserved), len(names), ", ".join(n.split(".")[-1] for n in names) or "none"),
+                        problems)
+            walk(work, cl, methods, unserved)
         else:
             with open(os.path.join(work.path, "keys.json")) as f:
                 keys = json.load(f)
-            matrix(work, cl, methods, keys, args)
+            matrix(work, cl, methods, unserved, keys, args)
     finally:
         cl.close()
     return 1 if work.failed else 0
 
 
-def walk(work, cl, methods):
-    """Section 2: every method of the contract with no key, by grpcurl, and
-    /metrics by curl: all refused, with one answer."""
+def walk(work, cl, methods, unserved):
+    """Section 2: every served method of the contract with no key, by
+    grpcurl, and /metrics by curl: all refused, with one answer; then every
+    method not served yet, which must get that very answer."""
     answers, evidence = {}, []
     for svc, m, proto in methods:
         code, msg, norm, rid = cl.grpcurl(svc, m, proto, {}, None)
@@ -324,17 +392,36 @@ def walk(work, cl, methods):
     if len(answers) > 1:
         evidence += ["answer %d, for %s:\n%s" % (i, ",".join(v), k[2]) for i, (k, v) in enumerate(answers.items())]
     work.result("2.3 no key over TLS: every method refused, one answer (grpcurl)", ok,
-                "%d methods read from the proto files, %d distinct answer(s), %d not Unauthenticated %r"
-                % (len(methods), len(answers), not_refused, UNAUTH_MESSAGE),
+                "%d served methods read from the proto files (%d more not served, 2.6), %d distinct answer(s), %d not Unauthenticated %r"
+                % (len(methods), len(unserved), len(answers), not_refused, UNAUTH_MESSAGE),
                 evidence)
+    # A caller without a key must not learn which services exist: a method
+    # not served yet is refused with the answer of a served one, byte for
+    # byte, and audited as a refusal under the method it asked for.
+    served_answers = set(k[2] for k in answers)
+    ns, ev = {}, []
+    for svc, m, proto in unserved:
+        code, msg, norm, rid = cl.grpcurl(svc, m, proto, {}, None)
+        work.ledger(rid, "/%s/%s" % (svc, m), "", outcome_of(code), "*", "grpcurl walk not served")
+        ns.setdefault(norm, []).append(m)
+        if code != "Unauthenticated" or msg != UNAUTH_MESSAGE or not rid:
+            ev.append("%s/%s: %s %r request-id=%r" % (svc, m, code, msg, rid))
+    same = set(ns) == served_answers and len(served_answers) == 1
+    if not same:
+        ev += ["not served, answer %d, for %s:\n%s" % (i, ",".join(v), k) for i, (k, v) in enumerate(ns.items())]
+    work.result("2.6 no key over TLS: a method not served yet gets the refusal of a served one, byte for byte (grpcurl)",
+                same and not ev,
+                "%d methods not served: %d distinct answer(s), %s the served methods' answer"
+                % (len(unserved), len(ns), "the same as" if same else "not the same as"), ev)
     code, msg, norm, rid = cl.curl("/metrics", None, None)
     work.ledger(rid, "GET /metrics", "", outcome_of(code), "*", "curl walk")
     work.result("2.4 no key over TLS: /metrics refused (curl)", code == "unauthenticated" and msg == UNAUTH_MESSAGE and bool(rid),
                 "%s %r" % (code, msg), [norm])
 
 
-def matrix(work, cl, methods, keys, args):
-    """Section 4: each kind of refusal by each client, compared."""
+def matrix(work, cl, methods, unserved, keys, args):
+    """Section 4: each kind of refusal by each client, compared; then the
+    methods not served yet, with no or a bad key and with a valid one."""
     bad = bad_keys(keys)
     nogrant_key, nogrant_id = key_of(keys, "nogrant")
     reader_key, reader_id = key_of(keys, "reader")
@@ -384,10 +471,27 @@ def matrix(work, cl, methods, keys, args):
         svc, m, proto, jbody, raw = tenant_requests(args.missing_tenant)[0]
         send(client, svc, m, proto, jbody, raw, "Bearer " + admin_key, admin_id, "not-found", args.missing_tenant)
 
+    # The methods not served yet. With no key or a bad one, the refusal of a
+    # served method, audited as refused. With a valid key, UNIMPLEMENTED and
+    # nothing done, audited as failed, with the detail that the method is not
+    # served. Both in the installation's log, under the method asked for.
+    before = db_state(args.data_dir, args.lite_tenant)
+    for client in clients:
+        for svc, m, proto in unserved:
+            for label, auth, key_id in bad:
+                send(client, svc, m, proto, {}, b"", auth, key_id, "ns-unauthenticated")
+            jbody, raw = ns_body(svc, args.lite_tenant)
+            for name in ("admin", "nogrant"):
+                k, kid = key_of(keys, name)
+                send(client, svc, m, proto, jbody, raw, "Bearer " + k, kid, "ns-unimplemented")
+    after = db_state(args.data_dir, args.lite_tenant)
+
     want = {"unauthenticated": UNAUTH_MESSAGE, "permission denied": DENIED_MESSAGE, "tenant-denied": DENIED_MESSAGE,
-            "not-found": NOT_FOUND_MESSAGE, "whoami-nogrant": "", "list-nogrant": ""}
+            "not-found": NOT_FOUND_MESSAGE, "whoami-nogrant": "", "list-nogrant": "",
+            "ns-unauthenticated": UNAUTH_MESSAGE, "ns-unimplemented": NO_SERVICE_MESSAGE}
     want_code = {"unauthenticated": "unauthenticated", "permission denied": "permissiondenied", "tenant-denied": "permissiondenied",
-                 "not-found": "notfound", "whoami-nogrant": "ok", "list-nogrant": "ok"}
+                 "not-found": "notfound", "whoami-nogrant": "ok", "list-nogrant": "ok",
+                 "ns-unauthenticated": "unauthenticated", "ns-unimplemented": "unimplemented"}
     n_methods = len(methods)
     names = {"grpcurl": "4.1", "python": "4.2", "curl": "4.3"}
     for client in clients:
@@ -395,7 +499,7 @@ def matrix(work, cl, methods, keys, args):
         u = kinds.get("unauthenticated", {})
         codes = agree["unauthenticated"][client]
         ok = len(u) == 1 and codes == {(want_code["unauthenticated"], UNAUTH_MESSAGE)}
-        detail = "%d methods x %d kinds (%s): %d distinct answer(s)" % (n_methods, len(bad), ", ".join(b[0] for b in bad), len(u))
+        detail = "%d served methods x %d kinds (%s): %d distinct answer(s)" % (n_methods, len(bad), ", ".join(b[0] for b in bad), len(u))
         if client == "curl":
             mt = kinds.get("metrics", {})
             ok = ok and len(mt) == 1
@@ -415,7 +519,7 @@ def matrix(work, cl, methods, keys, args):
         work.result(name, ok, detail, evidence)
 
     kind_check("4.4 a key with no grant: one permission-denied answer", "permission denied",
-               "%d methods x 3 clients, one answer per client: PermissionDenied %r" % (n_methods - 2, DENIED_MESSAGE))
+               "%d served methods x 3 clients, one answer per client: PermissionDenied %r" % (n_methods - 2, DENIED_MESSAGE))
     kind_check("4.5 a key with no grant may still ask who it is", "whoami-nogrant", "WhoAmI answered OK to the key with no grant, 3 clients")
     # The list must hold no tenant: an empty message, whatever the client.
     empty = {"grpcurl": "Response contents:\n{}\n", "python": "|body=b''", "curl": "\n{}"}
@@ -443,6 +547,29 @@ def matrix(work, cl, methods, keys, args):
     work.result("4.8 the tenant denial is the no-grant answer itself", same, "GetTenant compared within each client", ev)
     kind_check("4.9 a caller who may list tenants is told not found", "not-found",
                "admin of the installation asks for %s: NotFound %r, 3 clients" % (args.missing_tenant, NOT_FOUND_MESSAGE))
+    # The methods not served yet, each client against its own answers to the
+    # served methods: a caller without a valid key gets the same bytes.
+    ev = []
+    for client in clients:
+        a = set(seen[client].get("ns-unauthenticated", {}))
+        b = set(seen[client].get("unauthenticated", {}))
+        if a != b or len(b) != 1:
+            ev.append("%s: %d answer(s) to the methods not served, %d to the served ones, %s"
+                      % (client, len(a), len(b), "the same" if a == b else "different"))
+            ev += ["  not served %r: %s" % (k, ", ".join(v[:4])) for k, v in seen[client].get("ns-unauthenticated", {}).items() if k not in b]
+    work.result("4.11 no or a bad key: a method not served yet gets the refusal of a served one, byte for byte", not ev,
+                "%d methods not served x %d kinds x 3 clients, compared with each client's answer to the %d served methods"
+                % (len(unserved), len(bad), n_methods), ev)
+    # With a valid key: UNIMPLEMENTED, one answer byte for byte within each
+    # client, whatever the method and the key.
+    kind_check("4.12 a valid key: a method not served yet is UNIMPLEMENTED, one answer", "ns-unimplemented",
+               "%d methods not served x 2 keys (admin of the installation, no grant) x 3 clients, one answer per client: Unimplemented %r"
+               % (len(unserved), NO_SERVICE_MESSAGE), extra_ok=bool(unserved))
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    work.result("4.13 a method not served yet does nothing", not changed,
+                "every row of the master and of tenant %s, read before and after the %d requests with a valid key naming it: %s"
+                % (args.lite_tenant, len(unserved) * 2 * 3, "unchanged" if not changed else "changed: " + ", ".join(changed)),
+                changed)
     # Across clients: one code and one message for each kind of refusal.
     ev = []
     for kind, per in agree.items():
@@ -527,7 +654,7 @@ def cmd_audit(work, args):
         if not system(e) and e.get("requestId"):
             by_rid.setdefault(e["requestId"], []).append(e)
     used = set()
-    missing, wrong, misplaced, unaudited_ok = [], [], [], 0
+    missing, wrong, misplaced, unaudited_ok, not_served = [], [], [], 0, 0
     no_rid = []
     found = found_rid = 0
     for row in ledger:
@@ -566,6 +693,15 @@ def cmd_audit(work, args):
         # refused must not be able to cause a write in a tenant's database.
         if outcome == "refused" and e["log"] != "installation":
             misplaced.append("%s %s %s refused, in the log of %s" % (source, method, rid, e["log"]))
+        # A request to a method not served yet concerns no tenant it could
+        # be recorded in: the installation's log, and, when it was allowed,
+        # the detail that the method is not served.
+        if " ns-" in source or "not served" in source:
+            not_served += 1
+            if e["log"] != "installation":
+                misplaced.append("%s %s %s, in the log of %s" % (source, method, rid, e["log"]))
+            if outcome == "failed" and e.get("details", {}).get("served") != "false":
+                wrong.append("%s %s %s: details %r, want served=false" % (source, method, rid, e.get("details")))
     # The commands of the command line show a request id only on an error:
     # their requests are matched by what they were and when (to the second,
     # with a second's margin), never with an entry of the interactive
@@ -596,8 +732,9 @@ def cmd_audit(work, args):
     expected = len([r for r in ledger if r[3] != "none"])
     work.result("8.1 every request the proof made is in the audit log, with its outcome",
                 not missing and not wrong and not misplaced,
-                "%d of %d found (%d by request id, %d command line requests by what they were); %d health checks not audited, as the contract says"
-                % (found, expected, found_rid, found - found_rid, unaudited_ok),
+                "%d of %d found (%d by request id, %d command line requests by what they were; %d to methods not served yet, refused or failed, "
+                "in the installation's log); %d health checks not audited, as the contract says"
+                % (found, expected, found_rid, found - found_rid, not_served, unaudited_ok),
                 missing[:8] + wrong[:8] + misplaced[:8])
 
     # The other direction: nothing in the logs that the proof did not do.
@@ -739,6 +876,9 @@ def main():
     r.add_argument("--grpcurl", required=True)
     r.add_argument("--pg-tenant", default="")
     r.add_argument("--missing-tenant", default="")
+    r.add_argument("--not-served", required=True, help="the list of services not served yet, api/not-served.txt")
+    r.add_argument("--data-dir", default="", help="the main server's data directory, read by 4.13")
+    r.add_argument("--lite-tenant", default="", help="a tenant on SQLite, named by the requests of 4.13")
     a = sub.add_parser("audit")
     a.add_argument("--sock", required=True)
     a.add_argument("--cutoff", type=float, required=True)

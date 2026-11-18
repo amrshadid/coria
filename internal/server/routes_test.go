@@ -106,8 +106,8 @@ func TestUnknownMethodIsChecked(t *testing.T) {
 	if code, _ := codeOf(err); code != connect.CodeUnimplemented {
 		t.Fatalf("an unknown method for the local operator: %v", err)
 	}
-	// An unknown service falls to the catch-all route: refused without a
-	// key, in the gRPC protocol a gRPC client can read.
+	// A call to an unknown service is handed by the catch-all route to the
+	// RPC library, so it is checked and answered as any other call.
 	err = e.network("").raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: "/no.such.Service/Call"}, &emptyMsg{}, &emptyMsg{})
 	if code, _ := codeOf(err); code != connect.CodeUnauthenticated {
 		t.Fatalf("an unknown service without a key: %v", err)

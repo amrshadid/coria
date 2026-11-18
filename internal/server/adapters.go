@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/server/redact"
 )
 
@@ -21,6 +23,15 @@ import (
 // check: a method nobody registered, or one registered on the connect.Server
 // after New, which the table never saw and so must never be served.
 var errNoSuchMethod = connect.NewError(connect.CodeUnimplemented, "no such method")
+
+// notServedReason and notServedDetails are what the audit entry of an allowed
+// request to a procedure no handler serves says. The contract has every
+// request write one entry; this one is failed, as a request that did not do
+// what it asked.
+const notServedReason = "no handler serves this method"
+
+// notServedDetail is the detail key of that entry, with the value "false".
+const notServedDetail = "served"
 
 // interceptor is the Connect server interceptor: every RPC the server's
 // connect.Server dispatches, unary and streaming, registered method or
@@ -43,12 +54,20 @@ func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 		} else {
 			// The caller must still be authenticated before it is told the
 			// method does not exist. The procedure comes from the request, so
-			// it is cut for the log and the audit entry, and counted under one
-			// label.
+			// it is recorded only when it has the shape of one (methodName),
+			// and counted under one label.
 			x.rule = on(access.Authenticated())
-			x.method = cut(spec.Procedure, maxLoggedPath)
+			x.method = methodName(spec.Procedure)
 			x.metric = "unknown"
-			handler = func(context.Context, connect.ServerStream) error { return errNoSuchMethod }
+			handler = func(ctx context.Context, _ connect.ServerStream) error {
+				// An allowed request writes its entry too: through the
+				// bounded queue of reads, which never blocks or fails it.
+				if call, ok := CallFrom(ctx); ok {
+					s.access.Record(call.Decision, master.OutcomeFailed, notServedReason,
+						access.Facts{Details: map[string]string{notServedDetail: "false"}})
+				}
+				return errNoSuchMethod
+			}
 		}
 		replay := &replayStream{ServerStream: stream, s: s, ctx: ctx, method: x.method}
 		if info != nil {
@@ -273,4 +292,62 @@ func remoteOf(ctx context.Context, addr string) string {
 		return ""
 	}
 	return addr
+}
+
+// maxMethodName is the longest procedure an audit entry and the log record
+// as asked: room for any method of the contract, and far less than a path
+// may be.
+const maxMethodName = 256
+
+// unnamedMethod is what is recorded for a path that is not the name of a
+// procedure: the catch-all route's own pattern, the route such a path falls
+// to.
+const unnamedMethod = "/"
+
+// methodName returns the procedure a request named, as an audit entry and
+// the log record it: p itself when it has the shape of a protobuf method's
+// full name, "/package.Service/Method", each part an identifier of ASCII
+// letters, digits and "_" not starting with a digit, and is at most
+// maxMethodName bytes; unnamedMethod for anything else. The path is
+// whatever a stranger sent, so nothing else of it is kept: no control
+// character, no unbounded length.
+func methodName(p string) string {
+	if len(p) > maxMethodName || len(p) < 4 || p[0] != '/' {
+		return unnamedMethod
+	}
+	slash := strings.LastIndexByte(p, '/')
+	if slash == 0 || !fullName(p[1:slash]) || !identifier(p[slash+1:]) {
+		return unnamedMethod
+	}
+	return p
+}
+
+// fullName reports whether s is a protobuf full name: identifiers joined by
+// ".".
+func fullName(s string) bool {
+	for part := range strings.SplitSeq(s, ".") {
+		if !identifier(part) {
+			return false
+		}
+	}
+	return true
+}
+
+// identifier reports whether s is a protobuf identifier: ASCII letters,
+// digits and "_", not starting with a digit, and not empty.
+func identifier(s string) bool {
+	if s == "" || (s[0] >= '0' && s[0] <= '9') {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !identByte(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// identByte reports whether c may be in a protobuf identifier.
+func identByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }

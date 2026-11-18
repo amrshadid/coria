@@ -185,6 +185,11 @@ type Server struct {
 	cert         *tls.Certificate
 	mux          *routeMux
 	handler      http.Handler
+	// unknownRPC is the RPC library's handler for a call to a procedure no
+	// handler serves, taken from connecthttp.Mount (captureUnknown): it
+	// answers through the same machinery, and so with the same headers and
+	// trailers, as a served method's handler, after the interceptor's check.
+	unknownRPC http.Handler
 
 	stopMu    sync.RWMutex
 	stopping  bool
@@ -315,18 +320,33 @@ func (s *Server) buildRoutes() error {
 	}
 
 	s.mux = newRouteMux()
-	connecthttp.Mount(s.mux, rpc,
+	// Mounted through captureUnknown, which keeps the library's handler of
+	// unknown procedures, built with these same options, so a call to a
+	// service no handler serves meets the same limits as a served one.
+	mounted := &captureUnknown{routeMux: s.mux}
+	connecthttp.Mount(mounted, rpc,
 		connecthttp.WithReadMaxBytes(MaxMessageBytes),
 		connecthttp.WithSendMaxBytes(MaxMessageBytes),
 	)
+	if mounted.unknown == nil {
+		return fault.New(fault.Internal, "server: the RPC library mounted no handler for unknown procedures")
+	}
+	s.unknownRPC = mounted.unknown
 	routes := append([]HTTPRoute{{Pattern: MetricsPattern, Need: access.OnInstallation(master.RoleReader), Handler: s.serveMetrics}}, s.cfg.HTTPRoutes...)
-	// Every other path still passes the request path, so even a request
-	// for nothing is checked before it is told there is nothing.
-	routes = append(routes, HTTPRoute{Pattern: "/", Need: access.Authenticated(), Handler: notFound})
 	for _, r := range routes {
 		if err := s.handleHTTP(r); err != nil {
 			return err
 		}
+	}
+	// Every other path still passes the request path, so even a request
+	// for nothing is checked before it is told there is nothing. A call to
+	// a service no handler serves is handed to the RPC library, so it is
+	// checked by the interceptor and answered exactly as a served method
+	// is: a caller without a key must not be able to tell from the answer
+	// which services this server has.
+	catchAll := HTTPRoute{Pattern: "/", Need: access.Authenticated(), Handler: notFound}
+	if err := s.handleHTTPWith(catchAll, s.callsToRPC); err != nil {
+		return err
 	}
 	s.handler = s.envelope(s.mux)
 	return nil
@@ -334,7 +354,11 @@ func (s *Server) buildRoutes() error {
 
 // handleHTTP adds a plain HTTP route, wrapped in the request path. It is
 // the only way a plain route reaches the mux.
-func (s *Server) handleHTTP(r HTTPRoute) (err error) {
+func (s *Server) handleHTTP(r HTTPRoute) error { return s.handleHTTPWith(r, nil) }
+
+// handleHTTPWith is handleHTTP with wrap, when not nil, put around the
+// route's handler in the request path.
+func (s *Server) handleHTTPWith(r HTTPRoute, wrap func(http.Handler) http.Handler) (err error) {
 	if r.Handler == nil || r.Pattern == "" {
 		return fault.New(fault.Internal, "server: a route needs a pattern and a handler")
 	}
@@ -345,13 +369,54 @@ func (s *Server) handleHTTP(r HTTPRoute) (err error) {
 			err = fault.New(fault.Internal, "server: the route "+r.Pattern+" cannot be registered")
 		}
 	}()
-	s.mux.Handle(r.Pattern, s.middleware(r))
+	h := s.middleware(r)
+	if wrap != nil {
+		h = wrap(h)
+	}
+	s.mux.Handle(r.Pattern, h)
 	return nil
 }
 
-// notFound answers a path that no route serves: UNIMPLEMENTED to an RPC
-// client, as a gRPC server answers a service it does not have, and
-// NOT_FOUND to a plain HTTP request.
+// callsToRPC sends a request that is a call, a POST in one of the RPC
+// protocols, to the RPC library's handler of unknown procedures, and every
+// other request to plain. A Connect GET is not a call here: the library
+// does not dispatch one to an unknown procedure, whose idempotency it
+// cannot know.
+func (s *Server) callsToRPC(plain http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && errorWriter.IsSupported(r) {
+			s.unknownRPC.ServeHTTP(w, r)
+			return
+		}
+		plain.ServeHTTP(w, r)
+	})
+}
+
+// captureUnknown is the mux connecthttp.Mount registers on. It passes every
+// pattern to the routeMux and keeps the handler Mount registers for a
+// service's subtree ("/package.Service/"), which is the library's handler
+// of unknown procedures: the same for every service, built from the
+// connect.Server and Mount's options. The library does not export it, and
+// it is the one way to answer an unknown service's call with the code a
+// served method's call goes through.
+type captureUnknown struct {
+	*routeMux
+	unknown http.Handler
+}
+
+// Handle registers h for pattern, and keeps h when pattern is a service's
+// subtree.
+func (c *captureUnknown) Handle(pattern string, h http.Handler) {
+	if c.unknown == nil && len(pattern) > 1 && pattern[0] == '/' && pattern[len(pattern)-1] == '/' {
+		c.unknown = h
+	}
+	c.routeMux.Handle(pattern, h)
+}
+
+// notFound answers a path that no route serves and that is not a call
+// (callsToRPC hands calls to the RPC library): UNIMPLEMENTED to a request in
+// an RPC protocol that is not a call, such as a Connect GET, and NOT_FOUND
+// to a plain HTTP request.
 func notFound(_ context.Context, _ http.ResponseWriter, r *http.Request) error {
 	if errorWriter.IsSupported(r) {
 		return connect.NewError(connect.CodeUnimplemented, "no such service")
