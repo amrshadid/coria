@@ -77,10 +77,10 @@ func TestRepeatWithTheSameAuditEntry(t *testing.T) {
 	r := e.newRegistry(e.config())
 	audit := e.audit("CreateTenant")
 	nt := NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}
-	if _, err := r.Create(ctx, nt, audit); err != nil {
+	if _, _, err := r.Create(ctx, nt, audit, master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
-	tn, err := r.Create(ctx, nt, audit)
+	tn, _, err := r.Create(ctx, nt, audit, master.LocalOperator())
 	if err != nil || tn.State != master.StateReady {
 		t.Errorf("the same creation again = %s, %v; want ready", tn.State, err)
 	}

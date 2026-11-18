@@ -253,26 +253,12 @@ func (p Principal) CanListTenants() bool {
 	return atLeast(p.Role(master.Installation), master.RoleReader)
 }
 
-// rank orders the roles: each includes the ones before it.
-func rank(r master.Role) int {
-	switch r {
-	case master.RoleReader:
-		return 1
-	case master.RoleWriter:
-		return 2
-	case master.RoleOperator:
-		return 3
-	case master.RoleAdmin:
-		return 4
-	}
-	return 0
-}
-
-// atLeast reports whether have includes need. No role includes an unknown
-// one, and the empty role includes nothing.
+// atLeast reports whether have includes need, by the one order of roles
+// the master states (master.Role.Includes), the order every change's own
+// check of its actor uses too. No role includes an unknown one, and the
+// empty role includes nothing.
 func atLeast(have, need master.Role) bool {
-	n := rank(need)
-	return n > 0 && rank(have) >= n
+	return have.Includes(need)
 }
 
 // TenantRef names the tenant a requirement named: its id and its name, as
@@ -292,15 +278,36 @@ type TenantRef struct {
 // skipped the check can neither call a function of this package that takes
 // a Decision nor make an audit entry the master takes.
 //
-// A Decision is for one request. It is not a session: every function that
-// takes one and acts for a key reads the key again, so a key revoked since
-// the check is refused even with a Decision in hand.
+// A Decision is for one request. It is not a session: every change made
+// for a key carries the key as its Actor, and the master checks it again in
+// the change's transaction; every read this package makes for a key checks
+// it again first. So a key revoked since the check is refused even with a
+// Decision in hand.
 type Decision struct {
 	principal Principal
 	tenant    TenantRef
 	hasTenant bool
 	entry     master.AuditEntry
 	newID     func() string
+	clock     func() time.Time
+}
+
+// Actor returns who makes a change for d, as the master's changes take it
+// (master.Actor), needing role on scope: the caller's key, with the time of
+// this call as the time its expiry is judged at, or the local operator, whom
+// no store refuses. The zero Decision gives the zero Actor, which every
+// change refuses as Invalid, so a Decision that did not come from Check
+// opens nothing here either. A grant on the installation is not a role on a
+// tenant: scope is the scope the change needs, as the requirement Check
+// allowed named it.
+func (d Decision) Actor(scope master.Scope, role master.Role) master.Actor {
+	switch {
+	case !d.checked() || d.clock == nil:
+		return master.Actor{}
+	case d.principal.isLoc:
+		return master.LocalOperator()
+	}
+	return master.ActingKey(d.principal.key.ID, scope, role, d.clock())
 }
 
 // Principal returns who made the request.
@@ -394,7 +401,7 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 		return Decision{}, fault.New(fault.Unauthenticated, MessageUnauthenticated)
 	}
 
-	d := Decision{newID: a.newID}
+	d := Decision{newID: a.newID, clock: a.clock}
 	var tenantMissing bool
 	switch {
 	case p.isKey:

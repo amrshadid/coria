@@ -154,14 +154,25 @@ func (t *Tenant) Setting(ctx context.Context, name string) (string, error) {
 	return getSetting(ctx, &t.base, t.lists, name)
 }
 
-// SetSetting implements tenant.Store.
-func (t *Tenant) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry) error {
-	return setSetting(ctx, &t.base, name, value, audit)
+// SetSetting implements tenant.Store. The guard runs last in the
+// transaction, before the commit.
+func (t *Tenant) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry, guard tenant.Guard) error {
+	return setSetting(ctx, &t.base, name, value, audit, guarded(guard))
 }
 
-// UnsetSetting implements tenant.Store.
-func (t *Tenant) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry) (bool, error) {
-	return unsetSetting(ctx, &t.base, name, audit)
+// UnsetSetting implements tenant.Store. The guard runs last in the
+// transaction, before the commit.
+func (t *Tenant) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry, guard tenant.Guard) (bool, error) {
+	return unsetSetting(ctx, &t.base, name, audit, guarded(guard))
+}
+
+// guarded returns a change's Guard as the last step of its transaction, or
+// nil for none.
+func guarded(guard tenant.Guard) func(context.Context, pgx.Tx) error {
+	if guard == nil {
+		return nil
+	}
+	return func(ctx context.Context, _ pgx.Tx) error { return guard(ctx) }
 }
 
 // ListSettings implements tenant.Store.

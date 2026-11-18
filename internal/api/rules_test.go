@@ -26,14 +26,14 @@ func TestRecreatedTenantIsNotTheCheckedOne(t *testing.T) {
 	e.tenant("lab1")
 	admin, _ := e.key(e.onTenant("lab1", master.RoleAdmin))
 	recreate := func() {
-		if _, err := e.registry.Remove(ctx, "lab1", e.setupEntry()); err != nil {
+		if _, err := e.registry.Remove(ctx, "lab1", e.setupEntry(), master.LocalOperator()); err != nil {
 			t.Error(err)
 			return
 		}
 		nt := registry.NewTenant{ID: e.newID(), Name: "lab1", Driver: "sqlite"}
 		entry := e.setupEntry()
 		entry.TenantName = "lab1"
-		if _, err := e.registry.Create(ctx, nt, entry); err != nil {
+		if _, _, err := e.registry.Create(ctx, nt, entry, master.LocalOperator()); err != nil {
 			t.Error(err)
 		}
 	}
@@ -93,7 +93,7 @@ func TestReadyTenantHasNoReason(t *testing.T) {
 	e := newEnvChecking(t, time.Hour)
 	row := master.Tenant{ID: "old-id", Name: "old", Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady,
 		StateReason: "the database does not answer", Created: t0}
-	if err := e.master.CreateTenant(ctx, row, e.setupEntry()); err != nil {
+	if err := e.master.CreateTenant(ctx, row, e.setupEntry(), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	o := call(e.as(local).tenants.GetTenant, &v1.GetTenantRequest{Name: "old"})
@@ -148,10 +148,10 @@ func TestReservedSettingsDoNotExist(t *testing.T) {
 	}
 	names := []string{settings.ReservedPrefix + "installation-id", settings.ReservedPrefix + "key-check"}
 	for _, name := range names {
-		if err := f.master.SetSetting(ctx, name, "01-not-for-callers", f.setupEntry()); err != nil {
+		if err := f.master.SetSetting(ctx, name, "01-not-for-callers", f.setupEntry(), master.LocalOperator()); err != nil {
 			t.Fatal(err)
 		}
-		if err := st.SetSetting(ctx, name, "01-not-for-callers", f.setupEntry()); err != nil {
+		if err := st.SetSetting(ctx, name, "01-not-for-callers", f.setupEntry(), nil); err != nil {
 			t.Fatal(err)
 		}
 	}

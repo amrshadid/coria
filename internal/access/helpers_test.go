@@ -180,7 +180,12 @@ func (c *counting) AppendAudit(ctx context.Context, entries ...master.AuditEntry
 	return c.Store.AppendAudit(ctx, entries...)
 }
 
-func (c *counting) CreateKey(ctx context.Context, k master.Key, e master.AuditEntry) error {
+func (c *counting) CheckActor(ctx context.Context, by master.Actor) error {
+	c.note("CheckActor")
+	return c.Store.CheckActor(ctx, by)
+}
+
+func (c *counting) CreateKey(ctx context.Context, k master.Key, e master.AuditEntry, by master.Actor) error {
 	c.note("CreateKey")
 	c.mu.Lock()
 	c.attempted = e
@@ -189,14 +194,14 @@ func (c *counting) CreateKey(ctx context.Context, k master.Key, e master.AuditEn
 	if fail != nil {
 		return fail
 	}
-	err := c.Store.CreateKey(ctx, k, e)
+	err := c.Store.CreateKey(ctx, k, e, by)
 	c.written(e, err)
 	return err
 }
 
-func (c *counting) RevokeKey(ctx context.Context, id string, at time.Time, e master.AuditEntry) (time.Time, error) {
+func (c *counting) RevokeKey(ctx context.Context, id string, at time.Time, e master.AuditEntry, by master.Actor) (time.Time, error) {
 	c.note("RevokeKey")
-	out, err := c.Store.RevokeKey(ctx, id, at, e)
+	out, err := c.Store.RevokeKey(ctx, id, at, e, by)
 	c.written(e, err)
 	if err == nil {
 		c.revoked.Store(true)
@@ -204,16 +209,16 @@ func (c *counting) RevokeKey(ctx context.Context, id string, at time.Time, e mas
 	return out, err
 }
 
-func (c *counting) SetGrant(ctx context.Context, g master.Grant, e master.AuditEntry) (master.Role, error) {
+func (c *counting) SetGrant(ctx context.Context, g master.Grant, e master.AuditEntry, by master.Actor) (master.Role, error) {
 	c.note("SetGrant")
-	out, err := c.Store.SetGrant(ctx, g, e)
+	out, err := c.Store.SetGrant(ctx, g, e, by)
 	c.written(e, err)
 	return out, err
 }
 
-func (c *counting) RemoveGrant(ctx context.Context, keyID string, s master.Scope, e master.AuditEntry) (master.Role, error) {
+func (c *counting) RemoveGrant(ctx context.Context, keyID string, s master.Scope, e master.AuditEntry, by master.Actor) (master.Role, error) {
 	c.note("RemoveGrant")
-	out, err := c.Store.RemoveGrant(ctx, keyID, s, e)
+	out, err := c.Store.RemoveGrant(ctx, keyID, s, e, by)
 	c.written(e, err)
 	return out, err
 }
@@ -319,7 +324,7 @@ func (e *env) setupEntry() master.AuditEntry {
 func (e *env) tenant(id, name string) master.Tenant {
 	e.t.Helper()
 	tn := master.Tenant{ID: id, Name: name, Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: t0}
-	if err := e.master.CreateTenant(e.ctx, tn, e.setupEntry()); err != nil {
+	if err := e.master.CreateTenant(e.ctx, tn, e.setupEntry(), master.LocalOperator()); err != nil {
 		e.t.Fatal(err)
 	}
 	return tn
@@ -341,12 +346,12 @@ func (e *env) key(expires time.Time, grants ...master.Grant) testKey {
 		e.t.Fatal(err)
 	}
 	k := master.Key{ID: made.ID, Hash: made.Hash[:], Holder: "test", Created: t0.Add(-48 * time.Hour), Expires: expires}
-	if err := e.master.CreateKey(e.ctx, k, e.setupEntry()); err != nil {
+	if err := e.master.CreateKey(e.ctx, k, e.setupEntry(), master.LocalOperator()); err != nil {
 		e.t.Fatal(err)
 	}
 	for _, g := range grants {
 		g.KeyID = made.ID
-		if _, err := e.master.SetGrant(e.ctx, g, e.setupEntry()); err != nil {
+		if _, err := e.master.SetGrant(e.ctx, g, e.setupEntry(), master.LocalOperator()); err != nil {
 			e.t.Fatal(err)
 		}
 	}

@@ -37,7 +37,7 @@ func TestCreateWholeOrNothing(t *testing.T) {
 			e := newEnv(t)
 			r := e.newRegistry(e.config())
 			e.flaky.set(c.name, c.mode)
-			_, err := r.Create(ctx, NewTenant{ID: "id-" + c.name, Name: c.name, Driver: flakyDriver, Address: flakyAddress(c.name)}, e.audit("CreateTenant"))
+			_, _, err := r.Create(ctx, NewTenant{ID: "id-" + c.name, Name: c.name, Driver: flakyDriver, Address: flakyAddress(c.name)}, e.audit("CreateTenant"), master.LocalOperator())
 			e.wantNothingLeft(r, c.name, err, c.kind)
 		})
 	}
@@ -76,7 +76,7 @@ func TestCreateSQLiteRefusedFile(t *testing.T) {
 				}
 			}
 			r := e.newRegistry(e.config())
-			_, err = r.Create(ctx, NewTenant{ID: "id-" + plant, Name: plant, Driver: driver.SQLiteDriver}, e.audit("CreateTenant"))
+			_, _, err = r.Create(ctx, NewTenant{ID: "id-" + plant, Name: plant, Driver: driver.SQLiteDriver}, e.audit("CreateTenant"), master.LocalOperator())
 			e.wantNothingLeft(r, plant, err, fault.Invalid)
 		})
 	}
@@ -134,7 +134,7 @@ func TestCreateRepeatComparesAddresses(t *testing.T) {
 	e.create(r, "id-lab", "lab", flakyDriver, flakyAddress("lab"))
 	e.create(r, "id-lab", "lab", flakyDriver, flakyAddress("lab"))
 	other := "flaky://admin:other@" + flakyHost + ":5432/lab"
-	_, err := r.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: flakyDriver, Address: other}, e.audit("CreateTenant"))
+	_, _, err := r.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: flakyDriver, Address: other}, e.audit("CreateTenant"), master.LocalOperator())
 	if fault.KindOf(err) != fault.Conflict {
 		t.Errorf("a repeat with another address = %v, want Conflict", err)
 	}
@@ -147,7 +147,7 @@ func TestCreateRepeatComparesAddresses(t *testing.T) {
 	// cannot be told from another tenant: Internal, nothing changed.
 	e.keys = newKeys(t)
 	r2 := e.newRegistry(e.config())
-	_, err = r2.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: flakyDriver, Address: flakyAddress("lab")}, e.audit("CreateTenant"))
+	_, _, err = r2.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: flakyDriver, Address: flakyAddress("lab")}, e.audit("CreateTenant"), master.LocalOperator())
 	if fault.KindOf(err) != fault.Internal || !strings.Contains(fault.Message(err), "does not open with this key file") {
 		t.Errorf("a repeat under another key file = %v, want Internal saying the address does not open", err)
 	}
@@ -165,7 +165,7 @@ func TestCreateWhoseRowCommittedThenFailed(t *testing.T) {
 	cfg := e.config()
 	cfg.Master = tricky
 	r := e.newRegistry(cfg)
-	tn, err := r.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"))
+	tn, _, err := r.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"), master.LocalOperator())
 	if err != nil || tn.State != master.StateReady {
 		t.Fatalf("Create after a lost answer = %s, %v; want ready", tn.State, err)
 	}
@@ -192,12 +192,12 @@ func TestRemoveWhoseCommitWasLost(t *testing.T) {
 			r := e.newRegistry(cfg)
 			e.create(r, "id-lab", "lab", flakyDriver, flakyAddress("lab"))
 			tricky.removeCommitsThenFails.Store(true)
-			if _, err := r.Remove(ctx, "lab", e.audit("RemoveTenant")); err == nil {
+			if _, err := r.Remove(ctx, "lab", e.audit("RemoveTenant"), master.LocalOperator()); err == nil {
 				t.Fatal("the lost answer was not reported")
 			}
 			switch fix {
 			case "retry":
-				_, err := r.Remove(ctx, "lab", e.audit("RemoveTenant"))
+				_, err := r.Remove(ctx, "lab", e.audit("RemoveTenant"), master.LocalOperator())
 				if fault.KindOf(err) != fault.NotFound {
 					t.Errorf("the retry = %v, want NotFound", err)
 				}
@@ -225,14 +225,14 @@ func TestReconcileWithMaster(t *testing.T) {
 	// The registry under test starts without "added", which another process
 	// then adds back.
 	added := e.masterTenant("added")
-	e.ok(e.master.RemoveTenant(ctx, added.ID, e.audit("RemoveTenant")))
+	e.ok(e.master.RemoveTenant(ctx, added.ID, e.audit("RemoveTenant"), master.LocalOperator()))
 	r := e.newRegistry(e.config())
 	if err := r.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 	added.State = master.StateReady
-	e.ok(e.master.CreateTenant(ctx, added, e.audit("CreateTenant")))
-	e.ok(e.master.RemoveTenant(ctx, e.masterTenant("removed").ID, e.audit("RemoveTenant")))
+	e.ok(e.master.CreateTenant(ctx, added, e.audit("CreateTenant"), master.LocalOperator()))
+	e.ok(e.master.RemoveTenant(ctx, e.masterTenant("removed").ID, e.audit("RemoveTenant"), master.LocalOperator()))
 	r.reconcile()
 	waitFor(t, "the added tenant to be served", func() bool { _, err := r.Store("added"); return err == nil })
 	if _, err := r.Store("removed"); fault.KindOf(err) != fault.NotFound {
@@ -240,7 +240,7 @@ func TestReconcileWithMaster(t *testing.T) {
 	}
 
 	// A state write that finds no row retires the tenant at once.
-	e.ok(e.master.RemoveTenant(ctx, e.masterTenant("gone-on-write").ID, e.audit("RemoveTenant")))
+	e.ok(e.master.RemoveTenant(ctx, e.masterTenant("gone-on-write").ID, e.audit("RemoveTenant"), master.LocalOperator()))
 	e.flaky.set("gone-on-write", down)
 	checkNow(r)
 	if _, err := r.Store("gone-on-write"); fault.KindOf(err) != fault.NotFound {
@@ -259,5 +259,89 @@ func (e *env) ok(err error) {
 	e.t.Helper()
 	if err != nil {
 		e.t.Fatal(err)
+	}
+}
+
+// TestCreateReportsItsEntry guards what Create says about the request's
+// entry, which its caller uses to record the request exactly once: true when
+// the creation settled and wrote it (done, or failed with the undoing), false
+// when Create refused before writing anything, and false when the master
+// refused the acting key at the row's write, which then wrote nothing at all:
+// no row, no entry, nothing registered. Remove by such a key removes nothing.
+func TestCreateReportsItsEntry(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	r := e.newRegistry(e.config())
+	hasEntry := func(name, id string) bool {
+		entries, _, err := e.master.ListAudit(ctx, master.AuditFilter{TenantName: name}, master.Page{Limit: master.MaxPageLimit})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range entries {
+			if a.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+
+	e.flaky.set("down", down)
+	for _, c := range []struct {
+		name, drv, address string
+		ok, recorded       bool
+	}{
+		{"made", driver.SQLiteDriver, "", true, true},
+		{"down", flakyDriver, flakyAddress("down"), false, true},
+		{"nodriver", "oracle", "", false, false},
+	} {
+		audit := e.audit("CreateTenant")
+		_, recorded, err := r.Create(ctx, NewTenant{ID: "id-" + c.name, Name: c.name, Driver: c.drv, Address: c.address}, audit, master.LocalOperator())
+		if (err == nil) != c.ok || recorded != c.recorded {
+			t.Errorf("%s: err %v, recorded %v; want ok %v, recorded %v", c.name, err, recorded, c.ok, c.recorded)
+		}
+		if got := hasEntry(c.name, audit.ID); got != recorded {
+			t.Errorf("%s: Create reported recorded %v, the log holds the entry: %v", c.name, recorded, got)
+		}
+	}
+
+	hash := make([]byte, master.KeyHashLength)
+	k := master.Key{ID: "revoked-admin", Hash: hash, Holder: "a test", Created: e.clock.Now()}
+	if err := e.master.CreateKey(ctx, k, e.audit("Setup"), master.LocalOperator()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.master.SetGrant(ctx, master.Grant{KeyID: k.ID, Scope: master.Installation, Role: master.RoleAdmin}, e.audit("Setup"), master.LocalOperator()); err != nil {
+		t.Fatal(err)
+	}
+	by := master.ActingKey(k.ID, master.Installation, master.RoleAdmin, e.clock.Now())
+	if _, err := e.master.RevokeKey(ctx, k.ID, e.clock.Now(), e.audit("Setup"), master.LocalOperator()); err != nil {
+		t.Fatal(err)
+	}
+	audit := e.audit("CreateTenant")
+	_, recorded, err := r.Create(ctx, NewTenant{ID: "id-refused", Name: "refused", Driver: driver.SQLiteDriver}, audit, by)
+	if fault.KindOf(err) != fault.Unauthenticated || recorded {
+		t.Errorf("Create by a revoked key: %v, recorded %v; want Unauthenticated, not recorded", err, recorded)
+	}
+	if _, ok := master.RefusalOf(err); !ok {
+		t.Errorf("Create by a revoked key: %v, want the master's refusal in the chain", err)
+	}
+	if _, err := e.master.TenantByName(ctx, "refused"); fault.KindOf(err) != fault.NotFound {
+		t.Errorf("Create by a revoked key left a row: %v", err)
+	}
+	if entries, _, _ := e.master.ListAudit(ctx, master.AuditFilter{TenantName: "refused"}, master.Page{Limit: 10}); len(entries) != 0 {
+		t.Errorf("Create by a revoked key wrote entries: %+v", entries)
+	}
+	if _, ok := r.State("refused"); ok {
+		t.Error("Create by a revoked key registered the tenant")
+	}
+
+	_, err = r.Remove(ctx, "made", e.audit("RemoveTenant"), by)
+	if fault.KindOf(err) != fault.Unauthenticated {
+		t.Errorf("Remove by a revoked key: %v, want Unauthenticated", err)
+	}
+	if _, err := e.master.TenantByName(ctx, "made"); err != nil {
+		t.Errorf("Remove by a revoked key removed the tenant: %v", err)
+	}
+	if _, ok := r.State("made"); !ok {
+		t.Error("Remove by a revoked key unregistered the tenant")
 	}
 }

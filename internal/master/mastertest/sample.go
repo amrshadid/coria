@@ -46,29 +46,29 @@ func WriteSample(tb testing.TB, s master.Store) {
 	}
 	lab := master.Tenant{ID: "sample-tenant-lab", Name: "lab", Driver: "sqlite", SealedAddress: []byte{0x01, 0, 0, 0, 1, 0xde, 0xad}, State: master.StateReady, Created: T0}
 	clinic := master.Tenant{ID: "sample-tenant-clinic", Name: "clinic", Driver: "postgres", SealedAddress: []byte{0x01, 0, 0, 0, 1, 0xbe, 0xef}, State: master.StateUnreachable, StateReason: "connection refused", Created: T0}
-	must(s.CreateTenant(ctx, lab, audit("CreateTenant", master.OutcomeDone, map[string]string{"driver": "sqlite"})))
-	must(s.CreateTenant(ctx, clinic, audit("CreateTenant", master.OutcomeDone, map[string]string{"driver": "postgres"})))
+	must(s.CreateTenant(ctx, lab, audit("CreateTenant", master.OutcomeDone, map[string]string{"driver": "sqlite"}), master.LocalOperator()))
+	must(s.CreateTenant(ctx, clinic, audit("CreateTenant", master.OutcomeDone, map[string]string{"driver": "postgres"}), master.LocalOperator()))
 
 	admin := master.Key{ID: "SampleKey001", Hash: SampleHash(), Holder: "sample admin", Created: T0, Expires: T0.Add(90 * 24 * time.Hour)}
 	reader := master.Key{ID: "SampleKey002", Hash: make([]byte, 32), Holder: "Zoë 山田 🧠", Created: T0}
 	gone := master.Key{ID: "SampleKey003", Hash: append(make([]byte, 31), 1), Holder: "former", Created: T0}
 	for _, k := range []master.Key{admin, reader, gone} {
-		must(s.CreateKey(ctx, k, audit("CreateKey", master.OutcomeDone, nil)))
+		must(s.CreateKey(ctx, k, audit("CreateKey", master.OutcomeDone, nil), master.LocalOperator()))
 	}
-	_, err := s.RevokeKey(ctx, gone.ID, T0.Add(time.Hour), audit("RevokeKey", master.OutcomeDone, nil))
+	_, err := s.RevokeKey(ctx, gone.ID, T0.Add(time.Hour), audit("RevokeKey", master.OutcomeDone, nil), master.LocalOperator())
 	must(err)
 	_, err = s.MarkKeyUsed(ctx, admin.ID, T0.Add(2*time.Hour))
 	must(err)
 
-	_, err = s.SetGrant(ctx, master.Grant{KeyID: admin.ID, Scope: master.Installation, Role: master.RoleAdmin}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "installation"}))
+	_, err = s.SetGrant(ctx, master.Grant{KeyID: admin.ID, Scope: master.Installation, Role: master.RoleAdmin}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "installation"}), master.LocalOperator())
 	must(err)
-	_, err = s.SetGrant(ctx, master.Grant{KeyID: reader.ID, Scope: master.TenantScope(lab.ID), Role: master.RoleReader}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "tenant/" + lab.ID}))
+	_, err = s.SetGrant(ctx, master.Grant{KeyID: reader.ID, Scope: master.TenantScope(lab.ID), Role: master.RoleReader}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "tenant/" + lab.ID}), master.LocalOperator())
 	must(err)
-	_, err = s.SetGrant(ctx, master.Grant{KeyID: reader.ID, Scope: master.TenantScope(lab.ID), Role: master.RoleWriter}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "tenant/" + lab.ID}))
+	_, err = s.SetGrant(ctx, master.Grant{KeyID: reader.ID, Scope: master.TenantScope(lab.ID), Role: master.RoleWriter}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "tenant/" + lab.ID}), master.LocalOperator())
 	must(err)
 
-	must(s.SetSetting(ctx, "api.max_message_bytes", "4194304", audit("SetSetting", master.OutcomeDone, map[string]string{"name": "api.max_message_bytes"})))
-	must(s.SetSetting(ctx, "retention.audit_days", "365", audit("SetSetting", master.OutcomeDone, map[string]string{"name": "retention.audit_days"})))
+	must(s.SetSetting(ctx, "api.max_message_bytes", "4194304", audit("SetSetting", master.OutcomeDone, map[string]string{"name": "api.max_message_bytes"}), master.LocalOperator()))
+	must(s.SetSetting(ctx, "retention.audit_days", "365", audit("SetSetting", master.OutcomeDone, map[string]string{"name": "retention.audit_days"}), master.LocalOperator()))
 
 	refused := audit("GetTenant", master.OutcomeRefused, nil)
 	refused.LocalUser, refused.KeyID, refused.TenantName, refused.Reason = "", reader.ID, "never-existed", "no grant on this tenant"

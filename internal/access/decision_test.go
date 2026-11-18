@@ -110,7 +110,7 @@ func TestHandlerFacts(t *testing.T) {
 	hf := access.Facts{Object: "obj\nx", TenantName: "lab", Details: map[string]string{"driver": "sqlite"}}
 
 	change := d.Entry(master.OutcomeDone, "", hf)
-	if err := e.master.SetSetting(e.ctx, "audit.test", "v", change); err != nil {
+	if err := e.master.SetSetting(e.ctx, "audit.test", "v", change, master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	e.access.Record(d, master.OutcomeFailed, "the tenant's database does not answer", hf)
@@ -288,5 +288,38 @@ func TestLocalOperatorOnlyFromServer(t *testing.T) {
 	}
 	if files < 20 {
 		t.Fatalf("only %d Go files walked: the walk did not see the repository", files)
+	}
+}
+
+// TestChangeCarriesItsKey guards the one check a management call makes of a
+// key for its change: a change reads nothing about the key before it (no
+// Key, no RolesFor), and hands the key to the master's change, which checks
+// it in its transaction; a read asks the master once, by the same check
+// (CheckActor), before it reads. So there is one implementation of the
+// check, and no moment between it and the change.
+func TestChangeCarriesItsKey(t *testing.T) {
+	e := newEnv(t)
+	admin := e.key(time.Time{}, on(master.Installation, master.RoleAdmin))
+	want := map[string][]string{
+		"CreateKey":   {"CreateKey"},
+		"RevokeKey":   {"Key", "RevokeKey"},
+		"SetGrant":    {"SetGrant"},
+		"RemoveGrant": {"RemoveGrant"},
+		"GetKey":      {"CheckActor", "Key"},
+		"ListKeys":    {"CheckActor"},
+		"ListGrants":  {"CheckActor", "GrantsByKey"},
+		"WhoAmI":      {"CheckActor", "GrantsByKey"},
+	}
+	for name := range want {
+		call := managementCalls(e, e.key(time.Time{}).id)[name]
+		d := e.decide(access.APIKey(admin.full), access.OnInstallation(master.RoleAdmin), name)
+		e.reset()
+		if err := call(d); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		calls, _ := e.recorded()
+		if strings.Join(calls, ",") != strings.Join(want[name], ",") {
+			t.Errorf("%s made the store calls %v, want %v", name, calls, want[name])
+		}
 	}
 }

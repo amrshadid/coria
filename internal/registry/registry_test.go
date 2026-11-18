@@ -64,7 +64,7 @@ func TestStartServesReadyRefusesOthers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Store(%s): %v", name, err)
 		}
-		if err := s.SetSetting(ctx, "x", "y", e.audit("SetSetting")); err != nil {
+		if err := s.SetSetting(ctx, "x", "y", e.audit("SetSetting"), nil); err != nil {
 			t.Errorf("%s: SetSetting: %v", name, err)
 		}
 	}
@@ -303,7 +303,7 @@ func TestCrashBetweenRowAndUpgrade(t *testing.T) {
 			e := newEnv(t)
 			crashed := e.newRegistry(e.config())
 			crashed.afterRow = func() error { return errors.New("crash") }
-			_, err := crashed.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"))
+			_, _, err := crashed.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"), master.LocalOperator())
 			if err == nil {
 				t.Fatal("the crash did not stop Create")
 			}
@@ -325,7 +325,7 @@ func TestCrashBetweenRowAndUpgrade(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "repeat":
-				tn, err := r.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"))
+				tn, _, err := r.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"), master.LocalOperator())
 				if err != nil || tn.State != master.StateReady {
 					t.Fatalf("repeated Create = %s, %v; want ready", tn.State, err)
 				}
@@ -355,18 +355,18 @@ func TestCreateRules(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	r := e.newRegistry(e.config())
-	_, err := r.Create(ctx, NewTenant{ID: "id-x", Name: "x", Driver: driver.SQLiteDriver, Address: "sqlite:/elsewhere.db"}, e.audit("CreateTenant"))
+	_, _, err := r.Create(ctx, NewTenant{ID: "id-x", Name: "x", Driver: driver.SQLiteDriver, Address: "sqlite:/elsewhere.db"}, e.audit("CreateTenant"), master.LocalOperator())
 	if fault.KindOf(err) != fault.Invalid {
 		t.Errorf("a SQLite tenant with an address: %v, want Invalid", err)
 	}
 	if _, err := e.master.TenantByName(ctx, "x"); fault.KindOf(err) != fault.NotFound {
 		t.Errorf("a refused creation left a row: %v", err)
 	}
-	_, err = r.Create(ctx, NewTenant{ID: "id-y", Name: "y", Driver: "oracle"}, e.audit("CreateTenant"))
+	_, _, err = r.Create(ctx, NewTenant{ID: "id-y", Name: "y", Driver: "oracle"}, e.audit("CreateTenant"), master.LocalOperator())
 	if fault.KindOf(err) != fault.Invalid {
 		t.Errorf("an unknown database type: %v, want Invalid", err)
 	}
-	_, err = r.Create(ctx, NewTenant{ID: "id-z", Name: "../z", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"))
+	_, _, err = r.Create(ctx, NewTenant{ID: "id-z", Name: "../z", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"), master.LocalOperator())
 	if fault.KindOf(err) != fault.Invalid {
 		t.Errorf("a bad name: %v, want Invalid", err)
 	}
@@ -376,7 +376,7 @@ func TestCreateRules(t *testing.T) {
 	if first.ID != again.ID || again.State != master.StateReady {
 		t.Errorf("the repeat returned %+v, want the same ready tenant", again)
 	}
-	_, err = r.Create(ctx, NewTenant{ID: "id-other", Name: "lab", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"))
+	_, _, err = r.Create(ctx, NewTenant{ID: "id-other", Name: "lab", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"), master.LocalOperator())
 	if fault.KindOf(err) != fault.Conflict {
 		t.Errorf("another tenant named lab: %v, want Conflict", err)
 	}
@@ -416,11 +416,11 @@ func TestRemoveLeavesData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetSetting(ctx, "kept", "yes", e.audit("SetSetting")); err != nil {
+	if err := s.SetSetting(ctx, "kept", "yes", e.audit("SetSetting"), nil); err != nil {
 		t.Fatal(err)
 	}
 	audit := e.audit("RemoveTenant")
-	removed, err := r.Remove(ctx, "lab", audit)
+	removed, err := r.Remove(ctx, "lab", audit, master.LocalOperator())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +442,7 @@ func TestRemoveLeavesData(t *testing.T) {
 		entries[0].Details[DetailLocation] != path || entries[0].Details[DetailDatabaseType] != "sqlite" {
 		t.Errorf("the removal's audit entry = %+v, %v; want its location and type", entries, err)
 	}
-	if _, err := r.Remove(ctx, "lab", e.audit("RemoveTenant")); fault.KindOf(err) != fault.NotFound {
+	if _, err := r.Remove(ctx, "lab", e.audit("RemoveTenant"), master.LocalOperator()); fault.KindOf(err) != fault.NotFound {
 		t.Errorf("a second Remove = %v, want NotFound", err)
 	}
 	// The data is where it was: opened again by itself, the setting is there.
@@ -497,7 +497,7 @@ func TestCloseStopsEverything(t *testing.T) {
 	if _, err := r.Store("a"); fault.KindOf(err) != fault.Unavailable {
 		t.Errorf("Store after Close = %v, want Unavailable", err)
 	}
-	if _, err := r.Create(ctx, NewTenant{ID: "id-d", Name: "d", Driver: flakyDriver, Address: flakyAddress("d")}, e.audit("CreateTenant")); fault.KindOf(err) != fault.Unavailable {
+	if _, _, err := r.Create(ctx, NewTenant{ID: "id-d", Name: "d", Driver: flakyDriver, Address: flakyAddress("d")}, e.audit("CreateTenant"), master.LocalOperator()); fault.KindOf(err) != fault.Unavailable {
 		t.Errorf("Create after Close = %v, want Unavailable", err)
 	}
 	if err := r.Start(ctx); fault.KindOf(err) != fault.Unavailable {
@@ -528,11 +528,11 @@ func TestCreateRemoveTimerTogether(t *testing.T) {
 		errs := make(chan error, 8)
 		for range 2 {
 			wg.Go(func() {
-				_, err := r.Create(ctx, NewTenant{ID: id, Name: "race", Driver: flakyDriver, Address: flakyAddress("race")}, e.audit("CreateTenant"))
+				_, _, err := r.Create(ctx, NewTenant{ID: id, Name: "race", Driver: flakyDriver, Address: flakyAddress("race")}, e.audit("CreateTenant"), master.LocalOperator())
 				errs <- err
 			})
 			wg.Go(func() {
-				_, err := r.Remove(ctx, "race", e.audit("RemoveTenant"))
+				_, err := r.Remove(ctx, "race", e.audit("RemoveTenant"), master.LocalOperator())
 				errs <- err
 			})
 			wg.Go(func() { checkNow(r) })

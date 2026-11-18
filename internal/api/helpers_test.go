@@ -215,20 +215,20 @@ type faultyMaster struct {
 
 // SetSetting fails as a master that does not answer while failSetSetting is
 // set.
-func (m *faultyMaster) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry) error {
+func (m *faultyMaster) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry, by master.Actor) error {
 	if m.failSetSetting.Load() {
 		return fault.New(fault.Unavailable, "the master does not answer (a test)")
 	}
-	return m.Store.SetSetting(ctx, name, value, audit)
+	return m.Store.SetSetting(ctx, name, value, audit, by)
 }
 
 // RemoveTenant fails as a master that does not answer while
 // failRemoveTenant is set.
-func (m *faultyMaster) RemoveTenant(ctx context.Context, id string, audit master.AuditEntry) error {
+func (m *faultyMaster) RemoveTenant(ctx context.Context, id string, audit master.AuditEntry, by master.Actor) error {
 	if m.failRemoveTenant.Load() {
 		return fault.New(fault.Unavailable, "the master does not answer (a test)")
 	}
-	return m.Store.RemoveTenant(ctx, id, audit)
+	return m.Store.RemoveTenant(ctx, id, audit, by)
 }
 
 // env is one test's installation: a SQLite master and SQLite tenants in a
@@ -581,12 +581,12 @@ func (e *env) key(grants ...master.Grant) (caller, string) {
 		e.t.Fatal(err)
 	}
 	k := master.Key{ID: made.ID, Hash: made.Hash[:], Holder: "test", Created: t0}
-	if err := e.master.CreateKey(ctx, k, e.setupEntry()); err != nil {
+	if err := e.master.CreateKey(ctx, k, e.setupEntry(), master.LocalOperator()); err != nil {
 		e.t.Fatal(err)
 	}
 	for _, g := range grants {
 		g.KeyID = k.ID
-		if _, err := e.master.SetGrant(ctx, g, e.setupEntry()); err != nil {
+		if _, err := e.master.SetGrant(ctx, g, e.setupEntry(), master.LocalOperator()); err != nil {
 			e.t.Fatal(err)
 		}
 	}

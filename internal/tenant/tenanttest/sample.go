@@ -33,10 +33,10 @@ func WriteSample(tb testing.TB, s tenant.Store) {
 			tb.Fatal(err)
 		}
 	}
-	must(s.SetSetting(ctx, "reception.quiet_seconds", "60", audit("SetSetting", "reception.quiet_seconds", master.OutcomeDone)))
-	must(s.SetSetting(ctx, "reception.quiet_seconds", "90", audit("SetSetting", "reception.quiet_seconds", master.OutcomeDone)))
-	must(s.SetSetting(ctx, "label.prefix", "Zoë-山田", audit("SetSetting", "label.prefix", master.OutcomeDone)))
-	_, err := s.UnsetSetting(ctx, "never.set", audit("UnsetSetting", "never.set", master.OutcomeDone))
+	must(s.SetSetting(ctx, "reception.quiet_seconds", "60", audit("SetSetting", "reception.quiet_seconds", master.OutcomeDone), nil))
+	must(s.SetSetting(ctx, "reception.quiet_seconds", "90", audit("SetSetting", "reception.quiet_seconds", master.OutcomeDone), nil))
+	must(s.SetSetting(ctx, "label.prefix", "Zoë-山田", audit("SetSetting", "label.prefix", master.OutcomeDone), nil))
+	_, err := s.UnsetSetting(ctx, "never.set", audit("UnsetSetting", "never.set", master.OutcomeDone), nil)
 	must(err)
 	must(s.AppendAudit(ctx, audit("SetSetting", "Bad Name", master.OutcomeRefused)))
 }

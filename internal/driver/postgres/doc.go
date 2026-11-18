@@ -58,6 +58,20 @@
 // confirmed the connection is closed, which ends the session and with it the
 // lock. The pool therefore needs two connections.
 //
+// # Row locks
+//
+// A change of the master locks the rows it depends on, under read committed,
+// in one order: keys' rows first, several in the order of their ids
+// (lockKeys), then tenants' rows, then the row it changes. The one exception
+// is a setting's change, which checks its actor last, after it locked the
+// setting's row; no change locks a key's row and then a setting's, so that
+// order closes no cycle. The check of a change's actor holds its key's row
+// for share, and the tenant's row for key share when its role is on a tenant
+// (checkActor), so a revocation, a change of its grants or a removal of the
+// tenant waits for the change or is waited for. Taken in one order, these
+// locks cannot wait on each other in a cycle, which Postgres would break by
+// failing one of the changes as a deadlock.
+//
 // # Ordering
 //
 // Text that is compared or ordered is COLLATE "C" in the schema, so names

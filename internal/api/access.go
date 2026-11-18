@@ -10,8 +10,9 @@ import (
 )
 
 // accessService is AccessService. Every change and read goes through package
-// access, which checks the Decision's caller again, writes a change with its
-// audit entry in one transaction, records a read through its audit writer,
+// access, which has the master check the Decision's key again (in the
+// change's transaction, or before a read), writes a change with its audit
+// entry in one transaction, records a read through its audit writer,
 // and records every failure itself; so an error from it is answered as it
 // is, never recorded twice. What this file records is a request it refuses
 // as invalid before calling access.

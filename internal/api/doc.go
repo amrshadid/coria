@@ -37,10 +37,24 @@
 // outcome failed and its real cause, in the tenant's log when its store was
 // already in hand and in the installation's log otherwise; a creation of a
 // tenant is the exception: the registry writes its entry itself, with the
-// change that settles the creation, except for a creation it refuses before
-// writing anything, which the handler records. A method whose requirement is
-// fixed learns what its request names only after the check, and adds it to
-// its entries as access.Facts.
+// change that settles the creation, and says whether it did; a creation it
+// refused before writing anything is recorded by the handler. A method whose
+// requirement is fixed learns what its request names only after the check,
+// and adds it to its entries as access.Facts.
+//
+// # The key at the change
+//
+// Every change carries the caller's key as its actor, with the role the
+// method needs on its scope (access.Decision.Actor): into the master's change
+// for keys, grants, tenants and the installation's settings, which checks it
+// in its own transaction; and for a tenant's settings, as a tenant.Guard that
+// asks the master (master.Store.CheckActor), which the tenant's store runs
+// last in its transaction. So a key revoked, expired or stripped of its grant
+// after the check makes no change. Such a change is answered as the check
+// answers such a key, UNAUTHENTICATED or PERMISSION_DENIED with the same
+// message, and recorded as refused in the installation's log, never in the
+// tenant's (access.RefusedAtChange). The window a tenant's change leaves is
+// package tenant's to state.
 //
 // # Errors
 //

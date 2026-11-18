@@ -94,8 +94,13 @@ func getSetting(ctx context.Context, h sharedHost, l lists, name string) (string
 	return value, h.b().notFound(ctx, err, l.missing, "the setting cannot be read")
 }
 
-// setSetting implements SetSetting.
-func setSetting(ctx context.Context, h sharedHost, name, value string, audit master.AuditEntry) error {
+// setSetting implements SetSetting. last, when not nil, runs in the write
+// transaction after the change and its entry are written and before the
+// commit, and an error from it undoes both: the master checks the change's
+// actor there, and a tenant's store runs its Guard there, as late as either
+// can be. A setting's change meets no NotFound or Conflict that a refused
+// caller could learn from, so checking last costs nothing in what it tells.
+func setSetting(ctx context.Context, h sharedHost, name, value string, audit master.AuditEntry, last func(context.Context, *sql.Tx) error) error {
 	if err := master.ValidateSettingName(name); err != nil {
 		return err
 	}
@@ -109,12 +114,23 @@ func setSetting(ctx context.Context, h sharedHost, name, value string, audit mas
 		if _, err := tx.StmtContext(ctx, s.upsertSetting).ExecContext(ctx, name, value); err != nil {
 			return err
 		}
-		return execAudit(ctx, tx.StmtContext(ctx, s.insertAudit), audit)
+		if err := execAudit(ctx, tx.StmtContext(ctx, s.insertAudit), audit); err != nil {
+			return err
+		}
+		return runLast(ctx, tx, last)
 	})
 }
 
-// unsetSetting implements UnsetSetting.
-func unsetSetting(ctx context.Context, h sharedHost, name string, audit master.AuditEntry) (bool, error) {
+// runLast runs a change's last check, when there is one.
+func runLast(ctx context.Context, tx *sql.Tx, last func(context.Context, *sql.Tx) error) error {
+	if last == nil {
+		return nil
+	}
+	return last(ctx, tx)
+}
+
+// unsetSetting implements UnsetSetting. last is as setSetting's.
+func unsetSetting(ctx context.Context, h sharedHost, name string, audit master.AuditEntry, last func(context.Context, *sql.Tx) error) (bool, error) {
 	if err := master.ValidateSettingName(name); err != nil {
 		return false, err
 	}
@@ -132,7 +148,10 @@ func unsetSetting(ctx context.Context, h sharedHost, name string, audit master.A
 			return err
 		}
 		removed = n == 1
-		return execAudit(ctx, tx.StmtContext(ctx, s.insertAudit), audit)
+		if err := execAudit(ctx, tx.StmtContext(ctx, s.insertAudit), audit); err != nil {
+			return err
+		}
+		return runLast(ctx, tx, last)
 	})
 	if err != nil {
 		return false, err

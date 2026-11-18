@@ -285,9 +285,9 @@ func (in *pgInstallation) address(database string) string {
 // the id of the request, which leads to the entries of the creation.
 func (in *pgInstallation) create(name, database string) (master.Tenant, string, error) {
 	audit := in.audit("CreateTenant")
-	tn, err := in.r.Create(context.Background(), registry.NewTenant{
+	tn, _, err := in.r.Create(context.Background(), registry.NewTenant{
 		ID: "id-" + name, Name: name, Driver: driver.PostgresDriver, Address: in.address(database),
-	}, audit)
+	}, audit, master.LocalOperator())
 	return tn, audit.RequestID, err
 }
 
@@ -365,7 +365,7 @@ func TestRegistryServesPostgresTenants(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := a.SetSetting(ctx, "kept", "through the outage", in.audit("SetSetting")); err != nil {
+	if err := a.SetSetting(ctx, "kept", "through the outage", in.audit("SetSetting"), nil); err != nil {
 		t.Fatal(err)
 	}
 	// Stop pga's database.
@@ -380,7 +380,7 @@ func TestRegistryServesPostgresTenants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Store(pgb) while pga is stopped: %v", err)
 	}
-	if err := b.SetSetting(ctx, "alive", "yes", in.audit("SetSetting")); err != nil {
+	if err := b.SetSetting(ctx, "alive", "yes", in.audit("SetSetting"), nil); err != nil {
 		t.Errorf("pgb does not take a write while pga is stopped: %v", err)
 	}
 	if _, err := in.r.Store("pga"); fault.KindOf(err) != fault.Unavailable {
@@ -415,7 +415,7 @@ func TestRegistryServesPostgresTenants(t *testing.T) {
 		"nodb":   in.address("no_such_database_" + dbB),
 	} {
 		audit := in.audit("CreateTenant")
-		_, err := in.r.Create(ctx, registry.NewTenant{ID: "id-" + name, Name: name, Driver: driver.PostgresDriver, Address: address}, audit)
+		_, _, err := in.r.Create(ctx, registry.NewTenant{ID: "id-" + name, Name: name, Driver: driver.PostgresDriver, Address: address}, audit, master.LocalOperator())
 		in.wantCreationTrail(audit.RequestID, false)
 		if fault.KindOf(err) != fault.Unavailable {
 			t.Errorf("creating %s against a database that does not answer = %v, want Unavailable", name, err)
@@ -543,7 +543,7 @@ func TestWriteTenantSample(t *testing.T) {
 		t.Fatal(err)
 	}
 	audit := master.AuditEntry{ID: "sample-create", Time: clock.Now(), LocalUser: "501", Method: "/magnetar.v1.TenantService/CreateTenant", TenantName: "sample", Outcome: master.OutcomeDone, RequestID: "sample-request"}
-	tn, err := r.Create(ctx, registry.NewTenant{ID: "sample-tenant", Name: "sample", Driver: driver.PostgresDriver, Address: withSchema(t, base, schema)}, audit)
+	tn, _, err := r.Create(ctx, registry.NewTenant{ID: "sample-tenant", Name: "sample", Driver: driver.PostgresDriver, Address: withSchema(t, base, schema)}, audit, master.LocalOperator())
 	if err != nil {
 		t.Fatal(err)
 	}

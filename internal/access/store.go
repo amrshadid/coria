@@ -31,19 +31,23 @@ type Store interface {
 	MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool, error)
 	// AppendAudit writes audit entries, all or none.
 	AppendAudit(ctx context.Context, entries ...master.AuditEntry) error
-	// CreateKey adds a key with its audit entry.
-	CreateKey(ctx context.Context, k master.Key, audit master.AuditEntry) error
+	// CheckActor makes the check of an actor that every change makes in
+	// its transaction, on its own: nil, or the error with a
+	// master.Refusal a change by it would return now.
+	CheckActor(ctx context.Context, by master.Actor) error
+	// CreateKey adds a key with its audit entry, if by is still allowed to.
+	CreateKey(ctx context.Context, k master.Key, audit master.AuditEntry, by master.Actor) error
 	// ListKeys returns a page of keys.
 	ListKeys(ctx context.Context, page master.Page) ([]master.Key, string, error)
-	// RevokeKey revokes a key with its audit entry and returns its revoke
-	// time.
-	RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry) (time.Time, error)
-	// SetGrant sets a key's role on a scope with its audit entry and returns
-	// the role it replaced.
-	SetGrant(ctx context.Context, g master.Grant, audit master.AuditEntry) (master.Role, error)
-	// RemoveGrant removes a key's grant on a scope with its audit entry and
-	// returns the role it had.
-	RemoveGrant(ctx context.Context, keyID string, scope master.Scope, audit master.AuditEntry) (master.Role, error)
+	// RevokeKey revokes a key with its audit entry, if by is still allowed
+	// to, and returns its revoke time.
+	RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry, by master.Actor) (time.Time, error)
+	// SetGrant sets a key's role on a scope with its audit entry, if by is
+	// still allowed to, and returns the role it replaced.
+	SetGrant(ctx context.Context, g master.Grant, audit master.AuditEntry, by master.Actor) (master.Role, error)
+	// RemoveGrant removes a key's grant on a scope with its audit entry, if
+	// by is still allowed to, and returns the role it had.
+	RemoveGrant(ctx context.Context, keyID string, scope master.Scope, audit master.AuditEntry, by master.Actor) (master.Role, error)
 }
 
 // The master port must keep satisfying Store; if it changes, the build fails

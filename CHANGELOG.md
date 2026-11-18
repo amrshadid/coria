@@ -346,6 +346,26 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A key revoked, expired, or stripped of its grant after its request was
+  checked could still make that request's change: the management calls read
+  the key again just before the change, in a step of their own, and the
+  handlers of tenants and settings did not read it again at all. Every
+  change of the master now takes who makes it and checks the key inside its
+  own transaction, in each database driver, so a key that may no longer act
+  writes nothing, neither the change nor its audit entry. The answer is the
+  one the access check gives such a key, `UNAUTHENTICATED` or
+  `PERMISSION_DENIED` with the same message, and the request is recorded as
+  refused in the installation's log with the real cause ("key revoked since
+  the check"). A change in a tenant's own database, which holds no keys,
+  asks the master for the same check from inside the tenant's transaction,
+  just before its commit; a revocation that commits in that one commit's
+  time is not seen by that change. Reads check the key once before they
+  read. On Postgres a change of keys or grants by a key locks the rows of
+  both keys in the order of their ids, so two keys changing each other's
+  grants at once are ordered rather than deadlocked. Creating a tenant no
+  longer reads the audit log to learn whether its request was recorded: the
+  registry says so.
+
 - `serve` started with a key file other than the installation's ran: every
   tenant then failed with "the database address did not open with this key
   file", SQLite tenants included, and a tenant created in that state would

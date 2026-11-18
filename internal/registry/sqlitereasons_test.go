@@ -84,7 +84,7 @@ func TestSQLiteReasonsHideThePath(t *testing.T) {
 				t.Fatal("the damaged tenant is ready")
 			}
 			_, serr := r.Store("lab")
-			_, cerr := r.Create(ctx, NewTenant{ID: "id-lab2", Name: "lab2", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"))
+			_, _, cerr := r.Create(ctx, NewTenant{ID: "id-lab2", Name: "lab2", Driver: driver.SQLiteDriver}, e.audit("CreateTenant"), master.LocalOperator())
 			texts := []string{st.Reason, e.masterTenant("lab").StateReason, serr.Error(), e.logBuf.String()}
 			if cerr != nil {
 				texts = append(texts, cerr.Error())

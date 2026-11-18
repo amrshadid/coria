@@ -216,8 +216,16 @@ func (c *core) failIn(d access.Decision, st tenant.Store, err error) error {
 
 // failWith records a request that did not complete, in the log record
 // chooses for st, with the facts the handler learned, and returns its API
-// error.
+// error. A change the master refused because the caller's key may no longer
+// act is answered as the check answers such a key (access.RefusedAtChange)
+// and recorded as refused in the installation's log, whatever st is, as the
+// check's own refusals are: a refused caller causes no write in a tenant's
+// database.
 func (c *core) failWith(d access.Decision, st tenant.Store, facts access.Facts, err error) error {
+	if reason, refusal := access.RefusedAtChange(err); refusal != nil {
+		c.record(d, nil, master.OutcomeRefused, reason, facts)
+		return c.toAPI(d, refusal)
+	}
 	outcome, reason := outcomeOf(err)
 	c.record(d, st, outcome, reason, facts)
 	return c.toAPI(d, err)

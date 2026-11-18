@@ -48,7 +48,7 @@ func TestWriteTenantSample(t *testing.T) {
 		t.Fatal(err)
 	}
 	audit := master.AuditEntry{ID: "sample-create", Time: t0, LocalUser: "501", Method: "/magnetar.v1.TenantService/CreateTenant", TenantName: "sample", Outcome: master.OutcomeDone, RequestID: "sample-request"}
-	tn, err := r.Create(ctx, NewTenant{ID: "sample-tenant", Name: "sample", Driver: driver.SQLiteDriver}, audit)
+	tn, _, err := r.Create(ctx, NewTenant{ID: "sample-tenant", Name: "sample", Driver: driver.SQLiteDriver}, audit, master.LocalOperator())
 	if err != nil {
 		t.Fatal(err)
 	}

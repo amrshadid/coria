@@ -348,7 +348,7 @@ func (r *Registry) settle(e *entry, state master.TenantState, reason string) {
 			audit.Details[DetailCreationRequest] = id
 		}
 	}
-	err := r.cfg.Master.SetTenantState(ctx, e.id, state, reason, audit)
+	err := r.cfg.Master.SetTenantState(ctx, e.id, state, reason, audit, master.Server())
 	switch {
 	case err == nil:
 		e.written, e.writtenReason, e.lastWrite = state, reason, now
