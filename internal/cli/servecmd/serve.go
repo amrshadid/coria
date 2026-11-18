@@ -121,12 +121,20 @@ func runServe(ctx context.Context, opts Options, f serveFlags) error {
 	if f.logFormat != string(obs.JSON) && f.logFormat != string(obs.Text) {
 		return fault.New(fault.Invalid, "--log-format is json or text")
 	}
+	// Zero would otherwise read as "the default" further down, which is not
+	// what a person who typed --drain 0 asked for.
+	if f.drain <= 0 {
+		return fault.New(fault.Invalid, "--drain is a positive duration, such as 15s")
+	}
+	if f.deadline <= 0 {
+		return fault.New(fault.Invalid, "--default-deadline is a positive duration, such as 30s")
+	}
 	log := obs.NewLogger(opts.Stderr, obs.LogOptions{Format: obs.Format(f.logFormat), Level: level})
 
 	dir := f.dataDir
 	keyPath := filepath.Join(dir, KeyFileName)
-	if _, err := os.Lstat(keyPath); errors.Is(err, fs.ErrNotExist) {
-		return fault.New(fault.NotFound, "no installation in "+dir+" (it has no key file); make one with: magnetar init --data-dir "+dir)
+	if err := checkMade(dir, f.masterEnv); err != nil {
+		return err
 	}
 	// The lock first: a second server is refused before it opens the
 	// master database, so two servers never migrate it at once.
@@ -142,6 +150,67 @@ func runServe(ctx context.Context, opts Options, f serveFlags) error {
 	return serveUntilStopped(srv, opts, log)
 }
 
+// exists reports whether path exists.
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
+// checkMade refuses a data directory that is not a whole installation, and
+// says what is wrong in plain words: no installation at all, or one whose
+// init was interrupted, with what to remove before running init again. A
+// master in another database (--master-env) is checked by checkIdentity
+// once it is open.
+func checkMade(dir, masterEnv string) error {
+	key := exists(filepath.Join(dir, KeyFileName))
+	id := exists(filepath.Join(dir, server.IDFileName))
+	db := filepath.Join(dir, MasterFileName)
+	sqlite := exists(db)
+	switch {
+	case !key && !id && !sqlite:
+		return fault.New(fault.NotFound, "no installation in "+dir+"; make one with: magnetar init --data-dir "+dir)
+	case !key:
+		return fault.New(fault.Invalid, "the data directory "+dir+" has no key file but holds part of an installation: init was interrupted before it wrote the key file, or the key file was lost "+
+			"(and with it every secret). If init was interrupted, remove "+filepath.Join(dir, server.IDFileName)+" and "+db+"* and run init again")
+	case !id:
+		return fault.New(fault.Invalid, "the data directory "+dir+" has a key file but no installation id: init was interrupted. Remove "+
+			filepath.Join(dir, KeyFileName)+" and "+db+"* (or empty the database --master-env names) and run init again")
+	case masterEnv == "" && !sqlite:
+		return fault.New(fault.NotFound, "no master database at "+db+": if the installation was made with --master-env, give the same flag; "+
+			"if init was interrupted, remove "+filepath.Join(dir, KeyFileName)+" and "+filepath.Join(dir, server.IDFileName)+" and run init again")
+	}
+	return nil
+}
+
+// checkIdentity refuses a master database that is not the one this
+// installation was made with (decision D52): one with no tables, one with
+// no installation id, or one with another installation's id. It runs before
+// any migration, so a wrong master is never changed.
+func checkIdentity(ctx context.Context, m master.Store, dir string) error {
+	want, err := server.ReadInstallationID(dir)
+	if err != nil {
+		return err
+	}
+	notOurs := "the master database is not the one this installation was made with"
+	v, err := m.Version(ctx)
+	if err != nil {
+		return err
+	}
+	if v == 0 {
+		return fault.New(fault.Invalid, notOurs+": it is empty. Check the address (--master-env) or the data directory; serve never fills a master it did not make")
+	}
+	got, err := m.Setting(ctx, server.InstallationIDSetting)
+	switch {
+	case fault.KindOf(err) == fault.NotFound:
+		return fault.New(fault.Invalid, notOurs+": it holds no installation id. Check the address (--master-env); if init was interrupted, run it again on an empty database")
+	case err != nil:
+		return err
+	case got != want:
+		return fault.New(fault.Invalid, notOurs+": it belongs to another installation. Check the address (--master-env) and the data directory")
+	}
+	return nil
+}
+
 // open loads the key file, opens and migrates the master database, starts
 // the access package and builds the server. On failure it closes what it
 // opened, except the lock, which its caller releases.
@@ -149,15 +218,6 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 	keys, err := secret.LoadKeyFile(keyPath)
 	if err != nil {
 		return nil, err
-	}
-	if f.masterEnv == "" {
-		// Without --master-env the master is the SQLite file init made. A
-		// missing file means the installation was made with --master-env,
-		// and opening the path would make an empty master silently.
-		if _, err := os.Lstat(filepath.Join(dir, MasterFileName)); errors.Is(err, fs.ErrNotExist) {
-			return nil, fault.New(fault.NotFound, "no master database at "+filepath.Join(dir, MasterFileName)+
-				"; if the installation was made with --master-env, give the same flag")
-		}
 	}
 	address, _, err := masterAddress(dir, f.masterEnv, opts.Getenv)
 	if err != nil {
@@ -176,6 +236,11 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 			_ = m.Close()
 		}
 	}()
+	// The identity before any migration: a master that is not this
+	// installation's must not be upgraded, let alone served.
+	if err := checkIdentity(ctx, m, dir); err != nil {
+		return nil, err
+	}
 	if err := m.Migrate(ctx); err != nil {
 		return nil, err
 	}

@@ -24,12 +24,12 @@ import (
 // user cannot open the socket to connect. The documentation of the package
 // says so plainly.
 func peerUser(net.Conn) (string, error) {
-	return selfUser(), nil
+	return systemUser(), nil
 }
 
 // selfUser returns the security identifier (SID) of the user the server
 // runs as, which access.LocalOperator records in the audit log.
-func selfUser() string {
+func systemUser() string {
 	sid, err := currentSID()
 	if err != nil {
 		return ""

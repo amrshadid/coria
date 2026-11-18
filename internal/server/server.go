@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect/v2"
@@ -35,14 +37,36 @@ const (
 	// so no call holds a handler, a connection and a database slot
 	// forever.
 	DefaultDeadline = 30 * time.Second
+	// MaxDeadline is the longest any call may run, whatever deadline its
+	// client asks for: 5 minutes in M0, which has no long call (no download,
+	// no stream). Without it, a client that sends a long deadline, or a
+	// handler that waits, holds a connection, a goroutine and a file
+	// descriptor as long as it likes. A client's shorter deadline is kept.
+	MaxDeadline = 5 * time.Minute
+	// BodyReadTimeout bounds the time to read a request's body until the
+	// check has allowed the request: 10 seconds, ample for a message of at
+	// most 4 MiB on any working link. A method whose requirement depends on
+	// the request reads its first message before the check, and without
+	// this a caller with no key could trickle a body and hold the request
+	// unchecked; when it runs out the caller is refused (unauthenticated,
+	// denied) or told its request was invalid, in the usual order.
+	BodyReadTimeout = 10 * time.Second
 	// DefaultDrain is how long Stop waits for requests in flight before it
 	// cancels them: longer than one call under the default deadline is
-	// likely to need, short of what an orchestrator waits before a kill
-	// (Kubernetes: 30 seconds).
-	DefaultDrain = 20 * time.Second
-	// DefaultClose is how long Stop gives the access package to write the
-	// audit entries it holds, and the registry to close, after the drain.
-	DefaultClose = 5 * time.Second
+	// likely to need, and with the grace and the closes below it keeps the
+	// whole stop under the 30 seconds an orchestrator waits before a kill
+	// (Kubernetes' default grace period).
+	DefaultDrain = 15 * time.Second
+	// StopGrace is how long Stop waits, after canceling the requests still
+	// running at the drain's end, for their handlers to return. A handler
+	// that ignores its context is then given up on, and the close sequence
+	// goes on without it.
+	StopGrace = 2 * time.Second
+	// DefaultClose is how long Stop gives each of the access package (to
+	// write the audit entries it holds), the registry and the master to
+	// close. The worst case of a whole stop is DefaultDrain + StopGrace +
+	// 3 x DefaultClose = 15 + 2 + 12 = 29 seconds.
+	DefaultClose = 4 * time.Second
 
 	// maxHeaderBytes bounds a request's headers (HTTP/1 and HTTP/2): 64
 	// KiB. A request needs a few hundred bytes (a key is 61 characters);
@@ -136,12 +160,12 @@ type Config struct {
 	// request path.
 	HTTPRoutes []HTTPRoute
 
-	// DefaultDeadline replaces the 30-second default deadline; zero keeps
-	// it. Tests shorten it.
-	DefaultDeadline time.Duration
-	// Drain and Close replace DefaultDrain and DefaultClose; zero keeps
-	// them.
-	Drain, Close time.Duration
+	// DefaultDeadline, MaxDeadline and BodyReadTimeout replace the
+	// constants of the same names; zero keeps them. Tests shorten them.
+	DefaultDeadline, MaxDeadline, BodyReadTimeout time.Duration
+	// Drain, Grace and Close replace DefaultDrain, StopGrace and
+	// DefaultClose; zero keeps them.
+	Drain, Grace, Close time.Duration
 }
 
 // Server serves the API on the local socket and, when asked, on the
@@ -153,17 +177,19 @@ type Server struct {
 	log          *slog.Logger
 	metrics      *obs.Metrics
 	deadline     time.Duration
+	maxDeadline  time.Duration
+	bodyRead     time.Duration
 	methods      Methods
 	withDecision WithDecision
-	registered   map[string]bool
 	health       *grpchealth.StaticChecker
 	cert         *tls.Certificate
 	mux          *routeMux
 	handler      http.Handler
 
-	stopMu   sync.RWMutex
-	stopping bool
-	inFlight sync.WaitGroup
+	stopMu    sync.RWMutex
+	stopping  bool
+	inFlight  sync.WaitGroup
+	inFlightN atomic.Int64
 
 	// baseCtx is the context of every request; Stop cancels it when the
 	// drain's deadline passes, so a handler still running sees its context
@@ -205,10 +231,11 @@ func New(cfg Config) (*Server, error) {
 		cfg:          cfg,
 		access:       cfg.Access,
 		log:          cfg.Log,
-		deadline:     cfg.DefaultDeadline,
+		deadline:     orDefault(cfg.DefaultDeadline, DefaultDeadline),
+		maxDeadline:  orDefault(cfg.MaxDeadline, MaxDeadline),
+		bodyRead:     orDefault(cfg.BodyReadTimeout, BodyReadTimeout),
 		methods:      cfg.Methods,
 		withDecision: cfg.WithDecision,
-		registered:   map[string]bool{},
 		health:       grpchealth.NewStaticChecker(),
 		serveErrs:    make(chan error, 2),
 		socketUser:   selfUser(),
@@ -218,9 +245,6 @@ func New(cfg Config) (*Server, error) {
 	}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
-	}
-	if s.deadline <= 0 {
-		s.deadline = DefaultDeadline
 	}
 	if cfg.TLSCert != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
@@ -267,7 +291,11 @@ func (s *Server) counters() []obs.Counter {
 // path.
 func (s *Server) buildRoutes() error {
 	rpc := connect.NewServer(s.interceptor)
-	grpchealth.Register(rpc, s.health)
+	// Check only: grpchealth serves Watch when its checker is also a
+	// Watcher, and the wrapper hides that, so Watch answers UNIMPLEMENTED.
+	// Watch is a stream that never ends, and it is public: any caller could
+	// hold as many open as the system's file limit allows.
+	grpchealth.Register(rpc, checkOnly{s.health})
 	s.cfg.Register(rpc)
 	// A method nobody registered still passes the request path: an
 	// unauthenticated caller is refused before it is told the method does
@@ -277,7 +305,6 @@ func (s *Server) buildRoutes() error {
 	})
 	var missing []string
 	for spec := range rpc.Specs() {
-		s.registered[spec.Procedure] = true
 		if _, ok := s.ruleFor(spec.Procedure); !ok {
 			missing = append(missing, spec.Procedure)
 		}
@@ -332,16 +359,22 @@ func notFound(_ context.Context, _ http.ResponseWriter, r *http.Request) error {
 	return fault.New(fault.NotFound, "no such route")
 }
 
-// serveMetrics writes the metrics, and records the read in the audit log
-// like any other allowed read.
-func (s *Server) serveMetrics(ctx context.Context, w http.ResponseWriter, _ *http.Request) error {
-	call, _ := CallFrom(ctx)
+// serveMetrics writes the metrics. An allowed scrape writes no audit entry:
+// the metrics are counts with no tenant's content, and a scraper reads them
+// every few seconds. A refused scrape is audited by the check, like any
+// refusal.
+func (s *Server) serveMetrics(_ context.Context, w http.ResponseWriter, _ *http.Request) error {
 	w.Header().Set("Content-Type", obs.ContentType)
-	err := s.metrics.WriteText(w)
-	if call != nil {
-		s.access.Record(call.Decision, master.OutcomeDone, "", access.Facts{})
-	}
-	return err
+	return s.metrics.WriteText(w)
+}
+
+// checkOnly is a health checker that is not a grpchealth.Watcher, so the
+// health service serves Check and answers Watch UNIMPLEMENTED.
+type checkOnly struct{ c grpchealth.Checker }
+
+// Check answers the health of the server, or of a service by name.
+func (h checkOnly) Check(ctx context.Context, req *grpchealth.CheckRequest) (*grpchealth.CheckResponse, error) {
+	return h.c.Check(ctx, req)
 }
 
 // Handler returns the handler every listener serves: the envelope around
@@ -385,8 +418,9 @@ func (s *Server) Start() error {
 		ln, err := net.Listen("tcp", s.cfg.Listen)
 		if err != nil {
 			closeAll()
-			return fault.Wrap(fault.Unavailable, err, "server: cannot listen on "+s.cfg.Listen)
+			return fault.Wrap(fault.Unavailable, err, "server: cannot listen on "+s.cfg.Listen+": "+err.Error())
 		}
+		ln = newLimitListener(ln, maxNetworkConns())
 		srv := s.newHTTPServer(s.cert != nil)
 		if s.cert != nil {
 			// ServeTLS adds the ALPN protocols that srv.Protocols allows (h2,
@@ -395,7 +429,7 @@ func (s *Server) Start() error {
 		}
 		all = append(all, opened{ln: ln, srv: srv, tlsOn: s.cert != nil})
 		s.netAddr = ln.Addr()
-		s.log.Info("server: listening on the network", "address", ln.Addr().String(), "tls", s.cert != nil)
+		s.log.Info("server: listening on the network", "address", ln.Addr().String(), "tls", s.cert != nil, "max_connections", maxNetworkConns())
 	}
 	for _, o := range all {
 		s.servers = append(s.servers, o.srv)
@@ -457,18 +491,23 @@ func (s *Server) Errors() <-chan error { return s.serveErrs }
 
 // Stop stops the server and closes what it was given, in order:
 //
-//  1. new requests are refused with UNAVAILABLE and the health service
-//     answers NOT_SERVING;
+//  1. new requests are refused with UNAVAILABLE, and the health service's
+//     Check, still answered, says NOT_SERVING;
 //  2. the listeners close and the requests in flight have until the drain
 //     deadline to finish; then their contexts are canceled and their
-//     connections closed;
-//  3. the access package is closed, which writes the audit entries it
-//     holds;
-//  4. the tenant registry, then the master database, are closed;
+//     connections closed, and their handlers have the grace to return;
+//  3. a handler still running then (one that ignores its context) is given
+//     up on: Stop goes on and its error says how many were abandoned;
+//  4. the access package is closed, which writes the audit entries it
+//     holds; then the tenant registry, then the master database, each
+//     within its own close deadline, enforced even if it ignores its
+//     context;
 //  5. the lock on the data directory is released.
 //
-// Every step runs even when one before it failed; the errors are joined.
-// Stop may be called more than once; later calls return the first result.
+// The whole of Stop is bounded: drain + grace + 3 x close, 29 seconds with
+// the defaults. Every step runs even when one before it failed; the errors
+// are joined. Stop may be called more than once; later calls return the
+// first result.
 func (s *Server) Stop() error {
 	s.stopOnce.Do(func() { s.stopErr = s.stop() })
 	return s.stopErr
@@ -482,10 +521,12 @@ func (s *Server) stop() error {
 	s.health.SetStatus("", grpchealth.StatusNotServing)
 
 	drain := orDefault(s.cfg.Drain, DefaultDrain)
+	grace := orDefault(s.cfg.Grace, StopGrace)
 	closeWithin := orDefault(s.cfg.Close, DefaultClose)
 	var errs []error
 
-	ctx, cancel := context.WithTimeout(context.Background(), drain)
+	drainEnd := time.Now().Add(drain)
+	ctx, cancel := context.WithDeadline(context.Background(), drainEnd)
 	var wg sync.WaitGroup
 	for _, srv := range s.servers {
 		wg.Go(func() {
@@ -505,22 +546,39 @@ func (s *Server) stop() error {
 	}()
 	select {
 	case <-drained:
-	case <-time.After(drain):
-		s.baseCancel()
-		errs = append(errs, fault.New(fault.Internal, "server: requests still running after the drain deadline"))
-		<-drained
+	case <-time.After(time.Until(drainEnd)):
 	}
 	s.baseCancel()
+	select {
+	case <-drained:
+	case <-time.After(grace):
+		// A handler that ignores its context would hold Stop, and with it
+		// the audit writer, the registry, the master and the lock, for ever.
+		// It is given up on; its goroutine stays until the process ends.
+		n := s.inFlightN.Load()
+		s.log.Error("server: requests did not end after the drain and the grace and were abandoned", "abandoned", n)
+		errs = append(errs, fault.New(fault.Internal, fmt.Sprintf("server: %d requests did not end after the drain and the grace and were abandoned", n)))
+	}
 	s.serving.Wait()
 
 	// Each part gets its own close deadline, so one that uses all of its
 	// time does not take the next one's: the access package first (its
 	// audit writer may still write to a tenant's log through the
-	// registry), then the registry, then the master both of them use.
+	// registry), then the registry, then the master both of them use. A
+	// close that does not return within its deadline, context or not, is
+	// given up on in the same way.
 	closeEach := func(what string, close func(context.Context) error) {
 		ctx, cancel := context.WithTimeout(context.Background(), closeWithin)
 		defer cancel()
-		if err := close(ctx); err != nil {
+		done := make(chan error, 1)
+		go func() { done <- close(ctx) }()
+		var err error
+		select {
+		case err = <-done:
+		case <-time.After(closeWithin + closeWithin/4):
+			err = fault.New(fault.Internal, "it did not return within its close deadline and was abandoned")
+		}
+		if err != nil {
 			s.log.Error("server: closing "+what+" failed", "error", err)
 			errs = append(errs, fault.Wrap(fault.Internal, err, "server: closing "+what))
 		}

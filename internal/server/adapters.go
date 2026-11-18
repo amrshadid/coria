@@ -10,17 +10,25 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/server/redact"
 )
 
+// errNoSuchMethod answers a procedure the table does not know, after the
+// check: a method nobody registered, or one registered on the connect.Server
+// after New, which the table never saw and so must never be served.
+var errNoSuchMethod = connect.NewError(connect.CodeUnimplemented, "no such method")
+
 // interceptor is the Connect server interceptor: every RPC the server's
 // connect.Server dispatches, unary and streaming, registered method or
 // unknown one, goes through it and so through pass. It is installed when
-// the connect.Server is made (newRPC), so a method registered on it cannot
-// skip it.
+// the connect.Server is made (buildRoutes), so a method registered on it
+// cannot skip it. A procedure the table does not know is checked as any
+// authenticated caller's and then answered UNIMPLEMENTED: its handler, if
+// one was registered late, is never called.
 func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 	return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
 		info, _ := connect.CallInfoForServerContext(ctx)
@@ -29,33 +37,36 @@ func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 			x.authorization = info.RequestHeader().Get("Authorization")
 			x.remote = remoteOf(ctx, info.PeerAddr)
 		}
-		r, known := s.ruleFor(spec.Procedure)
-		switch {
-		case known:
+		handler := func(ctx context.Context, st connect.ServerStream) error { return next(ctx, spec, st) }
+		if r, known := s.ruleFor(spec.Procedure); known {
 			x.rule = r
-		case s.registered[spec.Procedure]:
-			// Registered but missing from the table: New refuses this, so it
-			// cannot happen; if it did, the zero Requirement fails closed.
-			x.rule = on(access.Requirement{})
-		default:
-			// A method nobody registered: the caller must still be
-			// authenticated before it is told the method does not exist.
+		} else {
+			// The caller must still be authenticated before it is told the
+			// method does not exist. The procedure comes from the request, so
+			// it is cut for the log and the audit entry, and counted under one
+			// label.
 			x.rule = on(access.Authenticated())
+			x.method = cut(spec.Procedure, maxLoggedPath)
 			x.metric = "unknown"
+			handler = func(context.Context, connect.ServerStream) error { return errNoSuchMethod }
 		}
-		replay := &replayStream{ServerStream: stream, s: s, ctx: ctx, method: spec.Procedure}
+		replay := &replayStream{ServerStream: stream, s: s, ctx: ctx, method: x.method}
+		if info != nil {
+			replay.codec = info.Codec
+		}
 		x.readMessage = func() (proto.Message, error) {
 			m := x.rule.newMsg()
 			if err := stream.Receive(m); err != nil {
 				return nil, err
 			}
+			// Kept for the handler, and not logged: nothing from a request
+			// is logged before the check has allowed it.
 			replay.peeked = m
-			replay.logMessage("message received", m)
 			return m, nil
 		}
 		err := s.pass(ctx, x, func(ctx context.Context) error {
 			replay.ctx = ctx
-			return next(ctx, spec, replay)
+			return handler(ctx, replay)
 		})
 		if err == nil {
 			return nil
@@ -70,13 +81,16 @@ func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 }
 
 // replayStream hands the handler the message the check already read, as
-// its first Receive, so a message is read from the wire once; and it logs
-// each message at debug level, redacted.
+// its first Receive, so a message is read from the wire once; it logs each
+// message at debug level, redacted, once the check has allowed the request;
+// and it refuses to send an answer over the size limit in the request's
+// encoding.
 type replayStream struct {
 	connect.ServerStream
 	s      *Server
 	ctx    context.Context
 	method string
+	codec  string
 	peeked proto.Message
 }
 
@@ -91,6 +105,7 @@ func (r *replayStream) Receive(msg any) error {
 		proto.Reset(dst)
 		proto.Merge(dst, r.peeked)
 		r.peeked = nil
+		r.logMessage("message received", dst)
 		return nil
 	}
 	if err := r.ServerStream.Receive(msg); err != nil {
@@ -100,21 +115,36 @@ func (r *replayStream) Receive(msg any) error {
 	return nil
 }
 
-// Send logs the message, redacted, and sends it, unless it is over the
-// limit before compression. The RPC library's own send limit counts the
-// compressed bytes, so a large answer that compresses well would pass it
-// and then be refused by a stock gRPC client, whose limit counts the bytes
-// after decompression.
+// jsonCodec is the name of the RPC library's JSON codec.
+const jsonCodec = "json"
+
+// Send logs the message, redacted, and sends it, unless its encoding is
+// over the limit. The RPC library's own send limit counts the compressed
+// bytes, so a large answer that compresses well would pass it and then be
+// refused by a stock gRPC client, whose limit counts the bytes after
+// decompression. The size is the encoding's: the binary size for protobuf,
+// and for JSON the JSON form's, which can be several times larger (a byte of
+// a string may be written as six); the JSON form is measured only when the
+// binary size is within that factor of the limit.
 func (r *replayStream) Send(msg any) error {
-	if m, ok := msg.(proto.Message); ok && proto.Size(m) > MaxMessageBytes {
-		return connect.NewError(connect.CodeResourceExhausted, "the answer is larger than the 4 MiB limit")
+	if m, ok := msg.(proto.Message); ok {
+		size := proto.Size(m)
+		if r.codec == jsonCodec && size > MaxMessageBytes/8 {
+			if b, err := protojson.Marshal(m); err == nil {
+				size = len(b)
+			}
+		}
+		if size > MaxMessageBytes {
+			return connect.NewError(connect.CodeResourceExhausted, "the answer is larger than the 4 MiB limit")
+		}
 	}
 	r.logMessage("message sent", msg)
 	return r.ServerStream.Send(msg)
 }
 
 // logMessage writes a message at debug level, through the redactor. It is
-// the only place the server logs a request's or a response's content.
+// the only place the server logs a request's or a response's content, and
+// it runs only once the check has allowed the request.
 func (r *replayStream) logMessage(what string, msg any) {
 	m, ok := msg.(proto.Message)
 	if !ok || !r.s.log.Enabled(r.ctx, slog.LevelDebug) {
@@ -221,8 +251,12 @@ func (s *Server) writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
 var errorWriter = connecthttp.NewErrorWriter()
 
 // writeAnyError answers r with ce in its own protocol, or as JSON for a
-// request that is not an RPC.
+// request that is not an RPC. A 401 names the Bearer scheme (RFC 9110
+// 15.5.2) in either form.
 func (s *Server) writeAnyError(w http.ResponseWriter, r *http.Request, ce *connect.Error) {
+	if ce.Code() == connect.CodeUnauthenticated {
+		w.Header().Set("Www-Authenticate", "Bearer")
+	}
 	if errorWriter.IsSupported(r) {
 		if err := errorWriter.Write(w, r, ce); err != nil && !errors.Is(err, context.Canceled) {
 			s.log.Debug("an error answer could not be written", "error", err)

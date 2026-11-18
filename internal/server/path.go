@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
+	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -112,9 +112,20 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 				// first, against the rule's fallback, so an unauthenticated or
 				// unentitled caller is refused before it learns anything
 				// about its message.
+				// A read that ran out of time has canceled the request's
+				// context (net/http does on a failed body read), so the check
+				// runs on a context of its own, bounded, or a good key would
+				// read as a canceled request instead of being told its
+				// message was late.
 				req, facts := x.rule.fallback()
-				if _, cerr := s.access.Check(ctx, call.Credential, req, withFacts(call.Facts, facts)); cerr != nil {
+				cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fallbackCheckTimeout)
+				_, cerr := s.access.Check(cctx, call.Credential, req, withFacts(call.Facts, facts))
+				cancel()
+				if cerr != nil {
 					return cerr
+				}
+				if errors.Is(rerr, os.ErrDeadlineExceeded) || readBoundPassed(ctx) {
+					return errBodyTooSlow
 				}
 				return rerr
 			}
@@ -130,11 +141,24 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 		if s.withDecision != nil {
 			ctx = s.withDecision(ctx, d)
 		}
+		// The check allowed the request: its body may now take as long as the
+		// request's deadline allows, and its connection may be kept.
+		liftReadBound(ctx)
+		markAuthenticated(ctx)
 	}
 
 	ctx = context.WithValue(ctx, callKey{}, call)
 	return s.run(ctx, call, next)
 }
+
+// fallbackCheckTimeout bounds the check made after a request's message could
+// not be read: two indexed reads of the master, done in milliseconds.
+const fallbackCheckTimeout = 5 * time.Second
+
+// errBodyTooSlow answers a request whose message did not arrive within the
+// read bound, once its caller has passed the check (a caller who has not is
+// refused first): the request was not a well-formed call in time.
+var errBodyTooSlow = connect.NewError(connect.CodeInvalidArgument, "the request's message did not arrive in time")
 
 // withFacts adds the audit facts the table gave for a request (its object
 // and details) to the facts the server knows (method, remote address,
@@ -156,11 +180,12 @@ func (s *Server) run(ctx context.Context, call *Call, next func(context.Context)
 				// net/http, which closes the connection quietly.
 				panic(p)
 			}
-			s.log.LogAttrs(ctx, slog.LevelError, "panic in a handler",
+			attrs := append([]slog.Attr{
 				slog.String("request_id", call.RequestID),
 				slog.String("method", call.Method),
-				slog.String("panic", fmt.Sprint(p)),
-				slog.String("stack", string(debug.Stack())))
+				slog.String("stack", string(debug.Stack())),
+			}, panicAttrs(p)...)
+			s.log.LogAttrs(ctx, slog.LevelError, "panic in a handler", attrs...)
 			err = errPanic
 		}
 	}()
@@ -173,6 +198,7 @@ var errPanic = fault.New(fault.Internal, "internal error")
 
 // finish logs the request's line and counts it in the metrics.
 func (s *Server) finish(ctx context.Context, x exchange, call *Call, start time.Time, err error) {
+	markPath(ctx)
 	took := time.Since(start)
 	code := codeName(s.code(err))
 	s.metrics.Observe(x.metric, code, took)

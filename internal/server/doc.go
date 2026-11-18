@@ -41,8 +41,9 @@
 // Magnetar-Request-Id header, makes the request's id and sets it on the
 // response (so every answer carries it: success, refusal, error, panic, and
 // the RPC library's own errors); refuses new requests once Stop has begun;
-// counts requests in flight for the drain; and applies the 30-second
-// default deadline when the client sent none.
+// counts requests in flight for the drain; applies the deadlines and the
+// body's read bound; and logs and counts every answer the request path did
+// not, so each request id on the wire is in the log.
 //
 // # Listeners
 //
@@ -60,20 +61,42 @@
 // is looked up and so does not reliably name the caller. The guard on
 // Windows is the directory alone: <data-dir>\run is given, at every start, a
 // protected access list that grants the server's user and nobody else, and
-// the socket inherits it. Any process of that user can use the socket.
+// the socket inherits it. Any process of that user can use the socket. Also
+// on Windows: the directory's owner is not checked (the access list is set,
+// not read); the lock is an exclusive open of the lock file, so another
+// program that holds the file open (an antivirus, a backup) can make a
+// start look like a second server; and closing the console gives a process
+// about five seconds, which may cut the drain short.
 //
 // The network listener exists only when Config.Listen is given. With a
 // certificate it speaks TLS 1.2 or later with HTTP/2 and HTTP/1.1. Without
 // one, only a loopback address written as an address is accepted, and it
-// speaks h2c and HTTP/1.1.
+// speaks h2c and HTTP/1.1. The certificate is read once, at New: a renewed
+// certificate takes effect when the server is restarted.
 //
 // # Limits
 //
-// A message over 4 MiB is refused, read or sent (RESOURCE_EXHAUSTED); a
-// call without a deadline gets 30 seconds; headers are bounded to 64 KiB,
-// HTTP/2 streams to 100 per connection, the time to send headers to 10
-// seconds, an idle connection to 2 minutes. Each number has its reason at
-// its constant in server.go.
+// A message over 4 MiB is refused, read or sent (RESOURCE_EXHAUSTED), sent
+// counted in the request's encoding; a call without a deadline gets 30
+// seconds, and no call runs longer than 5 minutes, whatever its client
+// asks; the body of a request whose requirement reads it must arrive within
+// 10 seconds, before the check; headers are bounded to 64 KiB, HTTP/2
+// streams to 100 per connection, the time to send headers to 10 seconds, an
+// idle connection to 2 minutes. The health service serves Check only:
+// Watch, a public stream that never ends, answers UNIMPLEMENTED. Each number
+// has its reason at its constant in server.go. An HTTP/1.1 connection whose
+// request was never authenticated is closed after its answer, and the
+// network listener holds at most the process's file limit less a reserve
+// of 64 connections at once (connlimit.go), so the local socket and the
+// databases always have file descriptors left. So a caller without a key
+// can hold a request for at most the body's 10 seconds, nothing past the
+// 5-minute maximum, and never the local operator's way in.
+//
+// Known and accepted for M0: a flood of requests with bad keys is answered
+// and audited at about 16,000 refusals a second, and makes the master's
+// audit log grow by about 6 MB a second (both measured in the review of
+// pull request #25), until the audit writer's bounded queue drops
+// entries, which it counts. A limit per remote address is later work.
 //
 // # One server per data directory
 //
@@ -83,18 +106,31 @@
 // when the process ends however it ends, so a kill with signal 9 leaves
 // nothing stale.
 //
+// # The installation's identity
+//
+// Init writes a random id into the data directory (IDFileName) and into the
+// master's settings store (InstallationIDSetting), and serve refuses a
+// master that does not hold the same id, before migrating anything
+// (decision D52). The settings service must neither list nor change a
+// setting under ReservedSettingPrefix.
+//
 // # Stopping
 //
-// Stop refuses new requests, lets those in flight finish within the drain
-// deadline (then cancels them), and closes in order: the access package
-// (which writes the audit entries it holds), the tenant registry, the
-// master database, and the lock.
+// Stop refuses new requests (the health service's Check still answers,
+// NOT_SERVING), lets those in flight finish within the drain deadline, then
+// cancels them and gives their handlers a grace period; a handler still
+// running after that is abandoned and counted in Stop's error. Then it
+// closes, each within its own deadline, the access package (which writes
+// the audit entries it holds), the tenant registry and the master database,
+// and releases the lock. The worst case of a whole Stop is drain + grace +
+// 3 x close, 29 seconds with the defaults.
 //
 // # What it must never do
 //
 // It must never serve a route outside the request path, log anything
 // derived from a request or a response that has not passed through package
-// redact, log the Authorization header at any level, show a caller the
-// cause of an internal fault, or leave a goroutine running after Stop
-// returns.
+// redact (nor anything from a request before the check has allowed it), log
+// the Authorization header at any level, show a caller the cause of an
+// internal fault, or leave a goroutine running after Stop returns, except a
+// handler that ignored its context and was abandoned.
 package server

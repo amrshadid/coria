@@ -33,7 +33,24 @@ type Standins struct {
 	// Ran counts every handler call, so a test can show a refused request
 	// never ran one.
 	Ran atomic.Int64
+	// Release ends the requests of the token "stuck", which ignore their
+	// context and wait for it alone; a test closes it when it is done.
+	Release chan struct{}
 }
+
+// PanicSecret is the database address the "panic-secret", "panic-proto" and
+// "panic-struct" behaviors panic with, which a test searches the log for.
+const PanicSecret = "postgres://owner:pw-in-a-panic@db.example/lab" //nolint:gosec // G101: a planted test secret.
+
+// panicHolder is a value of no special type that holds a secret, as a
+// careless handler's panic might.
+type panicHolder struct{ Address string }
+
+// JSONHeavySize is the length of the state reason ListTenants answers for the
+// token "huge-json": a control character each, which protobuf writes as one
+// byte and JSON as six, so the answer is under 4 MiB in protobuf and over it
+// in JSON.
+const JSONHeavySize = 1 << 20
 
 // Register registers the four stand-in services on s.
 func (h *Standins) Register(s *connect.Server) {
@@ -154,6 +171,17 @@ func (s *tenantService) ListTenants(ctx context.Context, req *magnetarv1.ListTen
 	switch req.GetPageToken() {
 	case "panic":
 		panic("a stand-in handler panics on purpose")
+	case "panic-secret":
+		panic("cannot open " + PanicSecret)
+	case "panic-proto":
+		panic(&magnetarv1.CreateTenantRequest{Name: "lab", DatabaseAddress: PanicSecret})
+	case "panic-struct":
+		panic(panicHolder{Address: PanicSecret})
+	case "stuck":
+		// Ignores its context, as a handler with a bug would.
+		<-s.h.Release
+	case "huge-json":
+		return &magnetarv1.ListTenantsResponse{Tenants: []*magnetarv1.Tenant{{Name: "big", StateReason: strings.Repeat("\x01", JSONHeavySize)}}}, nil
 	case "wait":
 		t := time.NewTimer(s.h.Delay)
 		defer t.Stop()

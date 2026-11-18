@@ -61,8 +61,13 @@ type options struct {
 	format    obs.Format
 	level     slog.Level
 	deadline  time.Duration
+	maxDL     time.Duration
+	bodyRead  time.Duration
 	drain     time.Duration
+	grace     time.Duration
+	closeT    time.Duration
 	delay     time.Duration
+	auditWait time.Duration
 	register  func(*connect.Server)
 	methods   servertest.Table
 	noNetwork bool
@@ -83,6 +88,9 @@ type env struct {
 	roots    *x509.CertPool
 	netURL   string
 	clients  []*http.Client
+	// stopErrOK is set by a test whose stop is meant to fail.
+	stopErrOK   bool
+	releaseOnce sync.Once
 }
 
 // shortTempDir returns a new private directory under the system's
@@ -118,12 +126,16 @@ func newEnv(tb testing.TB, o options) *env {
 		o.format = obs.JSON
 	}
 	log := obs.NewLogger(e.log, obs.LogOptions{Format: o.format, Level: o.level})
-	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log})
+	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log, AuditInterval: o.auditWait})
 	if err != nil {
 		tb.Fatal(err)
 	}
 	e.access = a
-	e.standins = &servertest.Standins{Access: a, Delay: o.delay}
+	e.standins = &servertest.Standins{Access: a, Delay: o.delay, Release: make(chan struct{})}
+	// Registered before the server's stop, so it runs after it: a "stuck"
+	// handler the stop gave up on returns once released, before the leak
+	// check.
+	tb.Cleanup(e.release)
 	register := e.standins.Register
 	if o.register != nil {
 		register = func(s *connect.Server) {
@@ -142,6 +154,7 @@ func newEnv(tb testing.TB, o options) *env {
 	cfg := server.Config{
 		DataDir: e.dir, Lock: lock, Access: a, Master: m, Log: log,
 		Register: register, DefaultDeadline: o.deadline, Drain: o.drain,
+		MaxDeadline: o.maxDL, BodyReadTimeout: o.bodyRead, Grace: o.grace, Close: o.closeT,
 		Methods: methods, WithDecision: withDecision,
 	}
 	if !o.noNetwork {
@@ -167,7 +180,7 @@ func newEnv(tb testing.TB, o options) *env {
 		for _, c := range e.clients {
 			c.CloseIdleConnections()
 		}
-		if err := srv.Stop(); err != nil {
+		if err := srv.Stop(); err != nil && !e.stopErrOK {
 			tb.Errorf("stop: %v", err)
 		}
 	})
@@ -356,6 +369,9 @@ func decisionFrom(ctx context.Context) (access.Decision, bool) {
 	d, ok := ctx.Value(decisionKey{}).(access.Decision)
 	return d, ok
 }
+
+// release ends the stand-ins' "stuck" requests, once.
+func (e *env) release() { e.releaseOnce.Do(func() { close(e.standins.Release) }) }
 
 // contains reports whether s holds sub; a short name for log searches.
 func contains(s, sub string) bool { return strings.Contains(s, sub) }

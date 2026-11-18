@@ -22,7 +22,10 @@ syntax = "proto3";
 // or the answer is PERMISSION_DENIED (or NOT_FOUND for a missing tenant, as
 // below); (3) the request is valid, or the answer is INVALID_ARGUMENT. So a
 // caller who may not call a method learns nothing about what a valid request
-// to it looks like.
+// to it looks like. A request that is not a well-formed call at the
+// transport level (its content type, HTTP method, compression or timeout
+// header) is answered by the protocol itself, before authentication, and
+// that answer reveals nothing about the method, the caller or the archive.
 //
 // Every method's comment also says what it writes to the audit log and which
 // error kinds it can answer. Which log an entry goes to is said once, on

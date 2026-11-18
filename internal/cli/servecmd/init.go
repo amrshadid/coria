@@ -8,11 +8,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/amrshadid/magnetar/internal/driver"
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/secret"
 	"github.com/amrshadid/magnetar/internal/server"
 )
@@ -137,7 +139,29 @@ The data directory is --data-dir, or MAGNETAR_DATA_DIR.`,
 
 // installationMarks are the names whose presence means a directory already
 // holds an installation, or the remains of one.
-var installationMarks = []string{KeyFileName, MasterFileName, TenantsDirName, "run"}
+var installationMarks = []string{KeyFileName, server.IDFileName, MasterFileName, TenantsDirName, "run"}
+
+// writeIdentity gives the new installation its id (decision D52): a random
+// id written into the master's settings store, under the reserved name,
+// with a system audit entry, and into the id file in the data directory, so
+// serve can refuse a master that is not this installation's. A master that
+// already holds an id belongs to another installation and is refused.
+func writeIdentity(ctx context.Context, m master.Store, dir string) error {
+	if _, err := m.Setting(ctx, server.InstallationIDSetting); err == nil {
+		return fault.New(fault.Conflict, "the master database already belongs to an installation; init makes a new installation and needs an empty database")
+	} else if fault.KindOf(err) != fault.NotFound {
+		return err
+	}
+	id := server.NewID()
+	audit := master.AuditEntry{
+		ID: server.NewID(), Time: time.Now().UTC(), Method: "magnetar init", Object: server.InstallationIDSetting,
+		Outcome: master.OutcomeDone, Reason: "the installation's identity, which serve checks against the data directory",
+	}
+	if err := m.SetSetting(ctx, server.InstallationIDSetting, id, audit); err != nil {
+		return err
+	}
+	return server.WriteInstallationID(dir, id)
+}
 
 // runInit makes the installation in dir. When a step fails, what this run
 // made is removed again, so a failed init can be run again; what existed
@@ -187,6 +211,11 @@ func runInit(ctx context.Context, opts Options, dir, masterEnv string) (err erro
 		_ = m.Close()
 		return err
 	}
+	if err := writeIdentity(ctx, m, dir); err != nil {
+		_ = m.Close()
+		return err
+	}
+	made = append(made, filepath.Join(dir, server.IDFileName))
 	if err := m.Close(); err != nil {
 		return fault.Wrap(fault.Internal, err, "the master database did not close cleanly")
 	}

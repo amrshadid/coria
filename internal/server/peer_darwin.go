@@ -70,7 +70,7 @@ func peerUser(c net.Conn) (string, error) {
 
 // selfUser returns the server's own effective user id, which a local
 // socket peer must have.
-func selfUser() string { return strconv.Itoa(os.Geteuid()) }
+func systemUser() string { return strconv.Itoa(os.Geteuid()) }
 
 // peerCheck says, for the documentation and the log, how the local socket's
 // caller is checked on this system.

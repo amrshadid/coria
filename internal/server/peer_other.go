@@ -17,7 +17,7 @@ func peerUser(net.Conn) (string, error) {
 }
 
 // selfUser returns the server's own effective user id.
-func selfUser() string { return strconv.Itoa(os.Geteuid()) }
+func systemUser() string { return strconv.Itoa(os.Geteuid()) }
 
 // peerCheck says how the local socket's caller is checked on this system.
 const peerCheck = "unsupported: every connection is refused"

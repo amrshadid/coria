@@ -386,18 +386,21 @@ func TestHealth(t *testing.T) {
 	if resp.StatusCode != http.StatusOK || string(b) != `{"status":"SERVING"}` {
 		t.Fatalf("health without a key: %d %s", resp.StatusCode, b)
 	}
-	// Watch is a server stream: the interceptor's streaming path.
+	// Watch is not served: a public stream that never ends would let any
+	// caller hold connections without a key. It answers UNIMPLEMENTED at
+	// once, and holds nothing.
 	ctx, cancel := context.WithTimeout(e.ctx, 2*time.Second)
 	defer cancel()
 	cl := newClients(e.tlsClient(true), e.netURL, true, "")
+	start := time.Now()
 	stream, err := cl.raw.CallServerStream(ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: server.HealthWatchProcedure}, &magnetarv1.WhoAmIRequest{})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		defer func() { _ = stream.Close() }()
+		var first healthStatus
+		err = stream.Receive(&first)
 	}
-	defer func() { _ = stream.Close() }()
-	var first healthStatus
-	if err := stream.Receive(&first); err != nil {
-		t.Fatalf("watch: %v", err)
+	if code, _ := codeOf(err); code != connect.CodeUnimplemented || time.Since(start) > time.Second {
+		t.Fatalf("watch answered %v after %v, want UNIMPLEMENTED at once", err, time.Since(start))
 	}
 }
 
@@ -812,15 +815,17 @@ func TestStopCancelsAfterDrain(t *testing.T) {
 	}
 }
 
-// TestTLSMinimum guards TLS 1.2 as the floor: a client that offers at most
-// TLS 1.1 is refused, and one that offers 1.2 is served.
+// TestTLSMinimum guards TLS 1.2 as the floor, decided by the server: a
+// ClientHello that offers at most TLS 1.1, written byte by byte (Go's own
+// client refuses to offer it at all, so it would never reach the server),
+// gets the server's protocol_version alert, not a ServerHello; and a client
+// that offers 1.2 is served.
 func TestTLSMinimum(t *testing.T) {
 	e := newEnv(t, options{})
 	addr := strings.TrimPrefix(e.netURL, "https://")
-	old, err := tls.Dial("tcp", addr, &tls.Config{RootCAs: e.roots, MaxVersion: tls.VersionTLS11}) //nolint:gosec // G402: the old version is the point of the test.
-	if err == nil {
-		_ = old.Close()
-		t.Fatal("a TLS 1.1 client was accepted")
+	typ, alert := sendOldHello(t, addr)
+	if typ != 0x15 || alert != 70 {
+		t.Fatalf("a TLS 1.1 ClientHello got record type %#x (alert %d), want an alert, protocol_version (70)", typ, alert)
 	}
 	ok, err := tls.Dial("tcp", addr, &tls.Config{RootCAs: e.roots, MinVersion: tls.VersionTLS12, MaxVersion: tls.VersionTLS12}) //nolint:gosec // G402: TLS 1.2 exactly is the point of the test.
 	if err != nil {

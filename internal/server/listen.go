@@ -35,6 +35,13 @@ const maxSocketPath = 103
 // server that answers does so at once on the same machine.
 const staleDialTimeout = time.Second
 
+// selfUser returns the user a local socket peer must be: the server's own,
+// from the system (peer_*.go). It is a variable so a test in this package
+// can name another user, and show that a peer check reading the kernel's
+// answer refuses the test's own connection, where one that returned the
+// server's user without asking the kernel would let it through.
+var selfUser = systemUser
+
 // localPeer is the operating system user a local socket connection came
 // from, once the peer check has shown it is the server's own user.
 type localPeer struct {
@@ -118,7 +125,7 @@ func listenSocket(dataDir string) (net.Listener, error) {
 	}
 	ln, err := net.Listen("unix", path)
 	if err != nil {
-		return nil, fault.Wrap(fault.Unavailable, err, "server: cannot listen on the local socket "+path)
+		return nil, fault.Wrap(fault.Unavailable, err, "server: cannot listen on the local socket "+path+": "+err.Error())
 	}
 	if err := restrictSocket(path); err != nil {
 		_ = ln.Close()
