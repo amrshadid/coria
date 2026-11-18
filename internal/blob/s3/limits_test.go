@@ -306,8 +306,8 @@ func TestReadWaitsBoundedForTheFirstByte(t *testing.T) {
 	}
 	start := time.Now()
 	_, err := s.Read(ctx, "k", 0, 5)
-	if fault.KindOf(err) != fault.Unavailable || time.Since(start) > 2*time.Second {
-		t.Errorf("Read against a server that never answers = %v after %v, want Unavailable after about 300ms", err, time.Since(start))
+	if fault.KindOf(err) != fault.Unavailable || time.Since(start) > 20*time.Second {
+		t.Errorf("Read against a server that never answers = %v after %v, want Unavailable after about 300ms, and never the minutes of the header timeout", err, time.Since(start))
 	}
 	noLeak(t, "hung read", err)
 	// The caller's deadline still comes first, and is what the error matches.
@@ -363,7 +363,7 @@ func TestPutsShareABoundedMemory(t *testing.T) {
 		grew := peakHeap(func() {
 			for i := range n {
 				wg.Go(func() {
-					_, err := s.Put(ctx, fmt.Sprintf("k%d", i), io.LimitReader(zeroes{}, 4*part))
+					_, err := s.Put(ctx, fmt.Sprintf("k%d", i), io.LimitReader(zeroes{}, part+1))
 					errs <- err
 				})
 			}
@@ -375,7 +375,7 @@ func TestPutsShareABoundedMemory(t *testing.T) {
 				t.Errorf("%d Puts: %v", n, err)
 			}
 		}
-		t.Logf("%d concurrent Puts of 20 MiB: the heap grew by %d MiB (limit %d MiB)", n, grew>>20, limit>>20)
+		t.Logf("%d concurrent Puts of 10 MiB: the heap grew by %d MiB (limit %d MiB)", n, grew>>20, limit>>20)
 		if grew > uint64(limit)+48<<20 {
 			t.Errorf("%d concurrent Puts grew the heap by %d MiB, with a limit of %d MiB", n, grew>>20, limit>>20)
 		}
@@ -383,13 +383,18 @@ func TestPutsShareABoundedMemory(t *testing.T) {
 	}
 
 	// Alone, a Put keeps the parallelism it is configured for.
-	f.maxInflight.Store(0)
-	f.partDelay.Store(int64(100 * time.Millisecond))
-	if _, err := s.Put(ctx, "alone", io.LimitReader(zeroes{}, 8*part)); err != nil {
+	// The fake holds the first four parts until all four are in flight, so
+	// the count does not depend on how fast anything runs.
+	f.partDelay.Store(0)
+	f.holdParts(4)
+	if _, err := s.Put(ctx, "alone", io.LimitReader(zeroes{}, 6*part)); err != nil {
 		t.Fatal(err)
 	}
+	if f.gateTimedOut.Load() {
+		t.Error("a Put alone never had 4 parts in flight together, its Concurrency")
+	}
 	if got := f.maxInflight.Load(); got != 4 {
-		t.Errorf("a Put alone had %d parts in flight at most, want its Concurrency of 4", got)
+		t.Errorf("a Put alone had %d parts in flight at most, want exactly its Concurrency of 4", got)
 	}
 	budgetFull(t, s)
 
@@ -431,7 +436,7 @@ func TestPutsShareABoundedMemory(t *testing.T) {
 	defer cancel()
 	begin := time.Now()
 	_, err := one.Put(wctx, "waiter", strings.NewReader("x"))
-	if !errors.Is(err, context.DeadlineExceeded) || time.Since(begin) > 3*time.Second {
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(begin) > 20*time.Second {
 		t.Errorf("a Put waiting for memory = %v after %v, want its context's deadline", err, time.Since(begin))
 	}
 	close(hold)

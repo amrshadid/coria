@@ -69,10 +69,19 @@ type fakeS3 struct {
 	// test of the client's memory does not measure the fake's. Every part
 	// then waits partDelay before it is answered; inflight and maxInflight
 	// count the parts being uploaded together.
-	discard     atomic.Bool
-	partDelay   atomic.Int64 // nanoseconds
-	inflight    atomic.Int64
-	maxInflight atomic.Int64
+	discard   atomic.Bool
+	partDelay atomic.Int64 // nanoseconds
+	// gate, set by holdParts, holds the first gateWant parts to arrive until
+	// all of them are in flight together, or for a deadline, and says so in
+	// gateTimedOut: a test of how many parts a Put sends at once then waits
+	// for that event and not for a delay.
+	gateMu       sync.Mutex
+	gateWant     int64
+	gateArrived  int64
+	gateOpen     chan struct{}
+	gateTimedOut atomic.Bool
+	inflight     atomic.Int64
+	maxInflight  atomic.Int64
 
 	// stale is the list of unfinished uploads a listing answers with, in key
 	// order, when set; abortedIDs are the ids aborted, and listMode says how
@@ -169,6 +178,7 @@ func (f *fakeS3) serve(w http.ResponseWriter, r *http.Request) {
 			f.dig[r.URL.Query().Get("uploadId")][num] = d
 			f.mu.Unlock()
 		}
+		f.passGate()
 		time.Sleep(time.Duration(f.partDelay.Load()))
 		f.inflight.Add(-1)
 		w.Header().Set("ETag", `"part"`)
@@ -295,6 +305,40 @@ func (f *fakeS3) serve(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(obj)
 	default:
 		xmlError(w, http.StatusNotImplemented, "NotImplemented", "not implemented")
+	}
+}
+
+// holdParts makes the fake hold each of the next n discarded parts until n are
+// in flight at once.
+func (f *fakeS3) holdParts(n int) {
+	f.gateMu.Lock()
+	f.gateWant, f.gateArrived, f.gateOpen = int64(n), 0, make(chan struct{})
+	f.gateMu.Unlock()
+	f.gateTimedOut.Store(false)
+	f.maxInflight.Store(0)
+}
+
+// passGate holds a part at the gate, if one is set and the part is among the
+// first to arrive, until the gate opens or a generous deadline passes.
+func (f *fakeS3) passGate() {
+	f.gateMu.Lock()
+	if f.gateWant == 0 {
+		f.gateMu.Unlock()
+		return
+	}
+	f.gateArrived++
+	arrived, open := f.gateArrived, f.gateOpen
+	if arrived == f.gateWant {
+		close(open)
+	}
+	f.gateMu.Unlock()
+	if arrived > f.gateWant {
+		return
+	}
+	select {
+	case <-open:
+	case <-time.After(2 * time.Minute):
+		f.gateTimedOut.Store(true)
 	}
 }
 

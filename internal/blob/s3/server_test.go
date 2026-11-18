@@ -439,7 +439,8 @@ func TestMemoryBounded(t *testing.T) {
 // until Put returns, then all of them.
 func TestPutStreamsWholeOrNothing(t *testing.T) {
 	cfg := serverConfig(t)
-	s := openThrough(t, newProxy(t, cfg), cfg, nil)
+	px := newProxy(t, cfg)
+	s := openThrough(t, px, cfg, nil)
 	ctx := context.Background()
 	gate := make(chan struct{})
 	started := make(chan struct{})
@@ -448,7 +449,15 @@ func TestPutStreamsWholeOrNothing(t *testing.T) {
 	var perr error
 	wg.Go(func() { _, perr = s.Put(ctx, "k", src) })
 	<-started
-	time.Sleep(300 * time.Millisecond) // Let the first parts reach the server.
+	// Wait until the first part has reached the server, which is the event the
+	// checks below are about. (Only the first can be sent: the reader is stalled
+	// while the second is being filled.)
+	for deadline := time.Now().Add(2 * time.Minute); px.count("PUT", "partNumber") < 1; {
+		if time.Now().After(deadline) {
+			t.Fatal("no part reached the server")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if _, err := s.Stat(ctx, "k"); fault.KindOf(err) != fault.NotFound {
 		t.Errorf("Stat during a Put = %v, want NotFound: nothing is visible until the Put returns", err)
 	}
