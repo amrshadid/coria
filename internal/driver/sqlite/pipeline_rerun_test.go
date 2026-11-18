@@ -132,7 +132,9 @@ func TestStepHookRunsAgainWithItsBatch(t *testing.T) {
 // receptions. Afterwards each reception's counts equal a count over its
 // rows, the quarantine's and the catalog's totals equal a count over theirs,
 // arrivals are unique and without gaps, no two receptions of one receiver
-// and study are open, and no instance is held and claimed by two receptions.
+// and study are open, no instance is held and claimed by two receptions,
+// the receptions per step equal a count of them, and each open, hold and
+// decision wrote its event once.
 func TestPipelineRandomizedAcrossInstances(t *testing.T) {
 	ctx := context.Background()
 	a0, b0 := openTenantPair(t, tenanttest.SuiteTenant)
@@ -265,6 +267,19 @@ func TestPipelineRandomizedAcrossInstances(t *testing.T) {
 	check("arrivals without gaps", `SELECT count(*) FROM (SELECT study_uid FROM receptions GROUP BY 1 HAVING max(arrival) <> count(*))`)
 	check("one open reception per receiver and study", `SELECT count(*) FROM (SELECT receiver, study_uid FROM receptions
 		WHERE state = 'receiving' GROUP BY 1, 2 HAVING count(*) > 1)`)
+	check("the receptions per step equal a count of them", `SELECT count(*) FROM (SELECT state, count(*) AS n FROM receptions GROUP BY state) AS c
+		LEFT JOIN reception_steps AS s USING (state) WHERE s.receptions IS NOT c.n`)
+	check("no step counts receptions it does not have", `SELECT count(*) FROM reception_steps AS s
+		WHERE s.receptions <> (SELECT count(*) FROM receptions WHERE state = s.state)`)
+	// Every reception opened once, every record held once, every decision
+	// made once: each wrote its event once, whatever the batches it was
+	// grouped into.
+	check("one receiving event per reception", `SELECT abs((SELECT count(*) FROM receptions)
+		- (SELECT count(*) FROM events WHERE type = 'reception_step' AND json_extract(payload, '$.step') = 'receiving'))`)
+	check("one event per quarantine record", `SELECT abs((SELECT count(*) FROM quarantine)
+		- (SELECT count(*) FROM events WHERE type = 'file_quarantined'))`)
+	check("one event per quarantine decision", `SELECT abs((SELECT count(*) FROM quarantine WHERE state <> 'held')
+		- (SELECT count(*) FROM events WHERE type = 'quarantine_decided'))`)
 	var receptions, held, instances int64
 	_ = db.QueryRow(`SELECT count(*) FROM receptions`).Scan(&receptions)
 	_ = db.QueryRow(`SELECT count(*) FROM quarantine`).Scan(&held)

@@ -65,7 +65,7 @@ VERSION ?=
 LDFLAGS := -s -w $(if $(VERSION),-X $(MODULE)/internal/version.Version=$(VERSION))
 
 .DEFAULT_GOAL := check
-.PHONY: check check-comments fmt vet lint vuln test test-scale build size check-seal fuzz
+.PHONY: check check-comments fmt vet lint vuln test test-scale bench-events build size check-seal fuzz
 
 check: check-comments fmt vet lint vuln test test-scale build size
 
@@ -122,6 +122,13 @@ test:
 test-scale:
 	$(GO) test -count=1 -v -run '^TestThousandTenants$$' ./internal/registry
 	$(GO) test -count=1 -v -run '^(TestListFiltersAtScale|TestPipelineModelAllSeeds)$$' ./internal/driver/sqlite
+
+# The event feed's speed: a step with its event, a page read from a feed of
+# ten million events (built once, about a minute), and what waking the
+# watches costs. Not part of `check`: it takes minutes.
+bench-events:
+	$(GO) test -count=1 -run '^$$' -bench '^(BenchmarkReadEventsPage|BenchmarkReceptionStepEvent)$$' -benchtime 2s -timeout 30m ./internal/driver/sqlite
+	$(GO) test -count=1 -run '^$$' -bench '^BenchmarkWake$$' ./internal/events
 
 build:
 	@set -e; for platform in $(PLATFORMS); do \

@@ -435,6 +435,21 @@ All notable changes to Magnetar are written here. The form is
   an index, also every combination of list filters at millions of rows. These
   are a second interface, `tenant.Pipeline`, until the Postgres driver passes
   the same suite.
+- Nothing told a system outside what was happening: a reception moved through
+  its steps and the only way to know was to ask again. A tenant's events are now
+  recorded with the change they report, in the same transaction: each step a
+  reception reaches, with its counts and arrival number, each file quarantined
+  and each decision on one, and what the server reports (failed associations,
+  receivers up or down, storages nearly full). An event carries the archive's
+  labels, ids and counts and never a UID or a value from a file. The feed is
+  read in commit order from a cursor that resumes exactly; a cursor older than
+  what is kept is refused, not skipped; old events are removed in batches; and
+  a status is read in one snapshot with the cursor of its moment, so that what
+  comes after the cursor is not in its counts. `internal/events` follows
+  tenants' feeds live without holding events for any client: a watch is a
+  cursor and a one-slot wake, so a client that stops reading costs no memory
+  and loses nothing until its cursor expires. On SQLite; the Postgres driver
+  follows.
 
 ### Changed
 

@@ -70,6 +70,12 @@ func (t *Tenant) HoldFiles(ctx context.Context, files []tenant.QuarantinedFile) 
 	err := t.write(ctx, "the quarantined files cannot be recorded", func(tx *sql.Tx, _ *tenantStatements) error {
 		n := 0
 		var heldFiles, heldBytes int64
+		// The totals before the batch, so each record's event carries the
+		// totals with it and those before it in the batch.
+		startFiles, startBytes, err := quarantineTotalsInTx(ctx, tx)
+		if err != nil {
+			return err
+		}
 		type delta struct{ files, bytes, receivedFiles, receivedBytes int64 }
 		var order []string
 		perReception := map[string]delta{}
@@ -119,6 +125,13 @@ func (t *Tenant) HoldFiles(ctx context.Context, files []tenant.QuarantinedFile) 
 			n++
 			heldFiles++
 			heldBytes += q.HeldBytes()
+			e, err := tenant.FileQuarantinedEvent(q, startFiles+heldFiles, startBytes+heldBytes)
+			if err != nil {
+				return err
+			}
+			if _, err := writeEvent(ctx, tx, e, nil); err != nil {
+				return err
+			}
 			if q.ReceptionID != "" {
 				d := perReception[q.ReceptionID]
 				d.files, d.bytes = d.files+1, d.bytes+q.Size
@@ -318,6 +331,9 @@ func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.
 		if out, err = quarantinedInTx(ctx, tx, id); err != nil {
 			return err
 		}
+		if err := writeDecisionEvent(ctx, tx, out); err != nil {
+			return err
+		}
 		return audited(ctx, tx, st, audit, guard)
 	})
 	if err != nil {
@@ -370,6 +386,9 @@ func (t *Tenant) RejectQuarantined(ctx context.Context, id, reason string, now t
 				return err
 			}
 			if q, err = quarantinedInTx(ctx, tx, id); err != nil {
+				return err
+			}
+			if err := writeDecisionEvent(ctx, tx, q); err != nil {
 				return err
 			}
 		}

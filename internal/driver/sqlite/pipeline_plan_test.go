@@ -59,6 +59,9 @@ func fillPipeline(tb testing.TB, path string) {
 		 INSERT INTO work SELECT 'w' || i, 'reception', 'rc' || i, 'rc' || i, NULL, 'done', i, 1, 10, '', '', 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100)
 		 INSERT INTO work SELECT 'live' || i, 'reception', 'rc' || i, 'rc' || i, 'key' || i, 'queued', i, 0, 10, '', '', 0, 0 FROM n`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		 INSERT INTO events (type, at, payload, key) SELECT CASE i % 10 WHEN 0 THEN 'receiver_health' ELSE 'reception_step' END,
+		   i, '{}', NULL FROM n`,
 		`ANALYZE`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
@@ -91,7 +94,8 @@ func queryPlan(tb testing.TB, db *sql.DB, query string, args ...any) []string {
 }
 
 // TestPipelinePlans guards that every list, claim and lookup of the
-// pipeline is answered from an index, never by reading a whole table: it
+// pipeline, and every read of the event feed with its pruning, is answered
+// from an index, never by reading a whole table: it
 // fills every table, runs ANALYZE, and checks SQLite's plan of the very
 // statement the driver runs for a step that reads no table without an
 // index, and that the index named for it is the one used.
@@ -114,6 +118,7 @@ func TestPipelinePlans(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	after := []any{int64(5000000), "rc5"}
+	severalTypes, severalArgs := eventsQuery([]tenant.EventType{tenant.EventReceiverHealth, tenant.EventStorageSpace}, 5000, 1000)
 	rq := func(f tenant.ReceptionFilter) (string, []any) { return receptionsQuery(f, after, 101) }
 	qq := func(f tenant.QuarantineFilter) (string, []any) { return quarantineQuery(f, after, 101) }
 	cases := []struct {
@@ -147,6 +152,13 @@ func TestPipelinePlans(t *testing.T) {
 		{"a discard's count", "quarantine_kept", discardCountSQL, []any{"rc5"}},
 		{"ClaimWork", "work_claimable", claimNextSQL, []any{"reception", int64(50), claimCandidates}},
 		{"a unit by its key", "work_by_key", workByKeySQL, []any{"key5"}},
+		// The event feed (pipeline_events.go).
+		{"a read of events after a cursor", "INTEGER PRIMARY KEY", eventsAfterSQL, []any{5000, 1000}},
+		{"a read of events of one type", "events_by_type", eventsOfTypeSQL, []any{"receiver_health", 5000, 1000}},
+		{"a read of events of several types", "events_by_type", severalTypes, severalArgs},
+		{"the feed's place", "event_marks", eventHighSQL, nil},
+		{"the pruning", "INTEGER PRIMARY KEY", pruneSQL, []any{100}},
+		{"the incoming bytes", "receptions_holding", incomingBytesSQL, nil},
 	}
 	for _, c := range []struct {
 		name, index string
@@ -207,7 +219,9 @@ func TestPipelinePlans(t *testing.T) {
 // TestPipelineSchemaWithSQLite guards the pipeline's schema as SQLite's own
 // command line tool, not this package, reads it from a migrated tenant
 // database: every table is there, STRICT, with the indexes the listings and
-// claims rely on, and the file passes SQLite's integrity check. It is
+// claims rely on, and the file passes SQLite's integrity check; the
+// triggers keep the receptions per step as the tool writes, and the feed's
+// ids never go back. It is
 // skipped without the tool (SQLITE3 names one, or it is looked up on PATH),
 // unless MAGNETAR_SQLITE3_REQUIRED is set.
 func TestPipelineSchemaWithSQLite(t *testing.T) {
@@ -248,7 +262,8 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 	}
 	tables := run(`SELECT name || ' ' || strict FROM pragma_table_list WHERE schema = 'main' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
 	for _, want := range []string{"storages 1", "receivers 1", "receptions 1", "reception_associations 1", "received_files 1",
-		"quarantine 1", "quarantine_totals 1", "work 1", "subjects 1", "sessions 1", "scans 1", "instances 1", "catalog_totals 1"} {
+		"quarantine 1", "quarantine_totals 1", "work 1", "subjects 1", "sessions 1", "scans 1", "instances 1", "catalog_totals 1",
+		"reception_steps 1", "events 1", "event_marks 1"} {
 		if !strings.Contains("\n"+tables+"\n", "\n"+want+"\n") {
 			t.Errorf("sqlite3 shows no STRICT table %q among:\n%s", want, tables)
 		}
@@ -262,7 +277,8 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 		"receptions_receiver_in_progress", "receptions_by_receiver_state", "receptions_by_study_state",
 		"quarantine_by_state_reason", "quarantine_by_state_receiver", "quarantine_by_receiver_reason",
 		"quarantine_by_state_receiver_reason", "quarantine_kept", "instances_claimed", "instances_on_storage",
-		"instances_held_by", "scans_by_session", "sessions_by_storage", "work_by_reception"} {
+		"instances_held_by", "scans_by_session", "sessions_by_storage", "work_by_reception", "receptions_holding",
+		"events_by_type", "events_by_key"} {
 		if !strings.Contains("\n"+indexes+"\n", "\n"+want+"\n") {
 			t.Errorf("sqlite3 shows no index %s", want)
 		}
@@ -293,6 +309,32 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 		if err == nil || !strings.Contains(string(out), "CHECK constraint failed") {
 			t.Errorf("sqlite3 let %q through: %v %s", bad, err, out)
 		}
+	}
+	// The receptions per step, kept by the schema's triggers as the tool
+	// itself writes: an insert counts its state, a change of state moves
+	// the count, a delete removes it.
+	run(`INSERT INTO receptions VALUES ('rc1', 'r', '2.25.1.1', 1, 'receiving', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '',
+		0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL)`)
+	run(`INSERT INTO receptions VALUES ('rc2', 'r', '2.25.1.2', 1, 'receiving', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '',
+		0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL)`)
+	run(`UPDATE receptions SET state = 'complete' WHERE id = 'rc1'`)
+	steps := `SELECT group_concat(state || ' ' || receptions, ', ') FROM (SELECT * FROM reception_steps ORDER BY state)`
+	if got := run(steps); got != "complete 1, receiving 1" {
+		t.Errorf("after two opens and a step the steps read %q", got)
+	}
+	run(`DELETE FROM receptions WHERE id = 'rc2'`)
+	if got := run(steps); got != "complete 1, receiving 0" {
+		t.Errorf("after a delete the steps read %q", got)
+	}
+	// The feed's ids only grow: emptied, it goes on after the last id.
+	run(`INSERT INTO events (type, at, payload) VALUES ('receiver_health', 1, '{}'), ('receiver_health', 2, '{}')`)
+	run(`DELETE FROM events`)
+	run(`INSERT INTO events (type, at, payload) VALUES ('receiver_health', 3, '{}')`)
+	if got := run(`SELECT id FROM events`); got != "3" {
+		t.Errorf("an event written after the feed was emptied has id %s, want 3", got)
+	}
+	if got := run(`SELECT pruned_through FROM event_marks`); got != "0" {
+		t.Errorf("the pruning's mark starts at %q, want 0", got)
 	}
 	plan := run(`EXPLAIN QUERY PLAN ` + strings.ReplaceAll(strings.ReplaceAll(claimNextSQL, "?", "1"), "kind = 1", "kind = 'reception'"))
 	if !strings.Contains(plan, "work_claimable") {

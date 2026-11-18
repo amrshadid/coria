@@ -1,9 +1,9 @@
 -- What the reception pipeline keeps in a tenant's database: the tenant's
 -- storages and receivers, its receptions and the files they received, its
 -- catalog (subjects, sessions, scans and the instances held or claimed), its
--- quarantine with running totals, and the leased units of work that carry a
--- reception through its steps. Everything the pipeline must not lose in a
--- restart is a row here.
+-- quarantine with running totals, the leased units of work that carry a
+-- reception through its steps, and the tenant's event feed. Everything the
+-- pipeline must not lose in a restart is a row here.
 --
 -- The rules of 0001_init.sql hold: every table is STRICT; times are INTEGER
 -- microseconds since 1970 in UTC; text a caller did not give is '' rather
@@ -347,3 +347,69 @@ CREATE INDEX work_claimable ON work (kind, due, id) WHERE state IN ('queued', 'l
 -- The receptions with a live unit, for the search at start of those left
 -- without one.
 CREATE INDEX work_by_reception ON work (reception_id) WHERE state IN ('queued', 'leased');
+
+-- The receptions in each step, a running total kept by triggers, so a
+-- status reads one row per step rather than counting receptions, and no
+-- change that moves a reception (a step, a unit of work giving up, a retry,
+-- an open) can forget it: the trigger runs in the transaction of the
+-- statement that wrote the reception's state.
+CREATE TABLE reception_steps (
+    state      TEXT    NOT NULL PRIMARY KEY,
+    receptions INTEGER NOT NULL CHECK (receptions >= 0)
+) STRICT, WITHOUT ROWID;
+
+CREATE TRIGGER reception_steps_insert AFTER INSERT ON receptions BEGIN
+    INSERT INTO reception_steps (state, receptions) VALUES (NEW.state, 1)
+        ON CONFLICT (state) DO UPDATE SET receptions = receptions + 1;
+END;
+
+CREATE TRIGGER reception_steps_update AFTER UPDATE OF state ON receptions WHEN OLD.state <> NEW.state BEGIN
+    UPDATE reception_steps SET receptions = receptions - 1 WHERE state = OLD.state;
+    INSERT INTO reception_steps (state, receptions) VALUES (NEW.state, 1)
+        ON CONFLICT (state) DO UPDATE SET receptions = receptions + 1;
+END;
+
+CREATE TRIGGER reception_steps_delete AFTER DELETE ON receptions BEGIN
+    UPDATE reception_steps SET receptions = receptions - 1 WHERE state = OLD.state;
+END;
+
+-- The receptions whose files are in the incoming area: those that have not
+-- ended, and those that failed and were neither retried nor discarded. The
+-- status sums their bytes from this index alone; its rows are only those
+-- receptions, however many have ended. The condition is written the same in
+-- incomingBytesSQL, which is what lets SQLite's planner use it.
+CREATE INDEX receptions_holding ON receptions (bytes_received, bytes_quarantined)
+    WHERE ended = 0 OR (state = 'failed' AND retry_reception = '' AND discard_reason = '');
+
+-- The event feed: one row per thing that happened, written in the
+-- transaction of the change it reports. id orders the feed: the one writer
+-- runs one transaction at a time, so the order of ids is the order of
+-- commits. AUTOINCREMENT makes ids only grow, even after every row has been
+-- pruned, so a cursor never comes to name a newer event
+-- (sqlite.org/autoinc.html). type is the contract's word and has no CHECK, as
+-- a later version adds types. payload is JSON, stored and returned whole and
+-- never searched inside. key is the caller's key of an event the server
+-- appended, NULL for one the store wrote with its change.
+CREATE TABLE events (
+    id      INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    type    TEXT    NOT NULL,
+    at      INTEGER NOT NULL,
+    payload TEXT    NOT NULL,
+    key     TEXT
+) STRICT;
+
+-- A filtered read walks the events of each type it names after the cursor;
+-- an unfiltered read and the pruning walk the ids themselves.
+CREATE INDEX events_by_type ON events (type, id);
+-- An appended event is written once per key.
+CREATE UNIQUE INDEX events_by_key ON events (key) WHERE key IS NOT NULL;
+
+-- What pruning removed: every event whose id is at or below pruned_through
+-- is gone, and every event above it is kept. It moves in the pruning's
+-- transaction, so a reader whose cursor is below it is told its cursor
+-- expired, never answered from past a gap.
+CREATE TABLE event_marks (
+    one            INTEGER NOT NULL PRIMARY KEY CHECK (one = 1),
+    pruned_through INTEGER NOT NULL CHECK (pruned_through >= 0)
+) STRICT;
+INSERT INTO event_marks (one, pruned_through) VALUES (1, 0);

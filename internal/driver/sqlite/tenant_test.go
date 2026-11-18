@@ -164,7 +164,7 @@ const shippedTenantInit = "72f52dbc4393307b684dd2f48a301e2d36d20cfcca5844e071079
 
 // shippedTenantPipeline is the SHA-256 of migrations/tenant/0002_pipeline.sql
 // as this change ships it.
-const shippedTenantPipeline = "55f5579b13acdd66e3cfcc381e87b77046e2e58e9da496928571cd396fc34a71"
+const shippedTenantPipeline = "f8c81ca376d4c87c070ba4e674751f40911737af2c58c65b21a348a9e53a643a"
 
 // TestTenantNotMigrated guards that a tenant store used before Migrate
 // fails as Unavailable with a message that says so, instead of a SQL error,

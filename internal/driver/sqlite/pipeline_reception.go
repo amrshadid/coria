@@ -87,6 +87,11 @@ func openReceptionInTx(ctx context.Context, tx *sql.Tx, receiver, studyUID, id s
 			return r, false, err
 		}
 		if inserted {
+			// The reception reaching receiving is its first event, written
+			// with the row that opens it.
+			if err := writeStepEvent(ctx, tx, id); err != nil {
+				return r, false, err
+			}
 			r, err = receptionInTx(ctx, tx, id)
 			return r, true, err
 		}
@@ -330,7 +335,10 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 			return err
 		}
 		if hook != nil {
-			if err := hook(ctx, before, after); err != nil {
+			// The hook writes the step's event, when the caller asked for
+			// one (tenant.StepEventHook), through this transaction's writer,
+			// so the two commit together or not at all.
+			if err := hook(tenant.WithEventWriter(ctx, txEvents{tx: tx}), before, after); err != nil {
 				return err
 			}
 		}
@@ -446,6 +454,15 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 		if retry, err = receptionInTx(ctx, tx, newID); err != nil {
 			return err
 		}
+		// The new reception reaching complete, with the reception it runs
+		// again, is its first event.
+		e, err := tenant.ReceptionStepEvent(retry)
+		if err != nil {
+			return err
+		}
+		if _, err := writeEvent(ctx, tx, e, nil); err != nil {
+			return err
+		}
 		a, err := addDetails(audit, tenant.DetailRetryReception, newID)
 		if err != nil {
 			return err
@@ -519,8 +536,8 @@ func (t *Tenant) DiscardReception(ctx context.Context, id, reason string, now ti
 
 // giveUp takes a reception whose unit of work was held as failed through
 // the Fail step, in the transaction that held the unit, with
-// tenant.FailureWorkGaveUp, and releases its claims, so no claim outlives
-// every worker that could end its reception. A reception that has ended, or
+// tenant.FailureWorkGaveUp, releases its claims, so no claim outlives every
+// worker that could end its reception, and writes the step's event. A reception that has ended, or
 // is not there, is left as it is. The step is the core's (reception.Step),
 // compared and set like any other.
 func giveUp(ctx context.Context, tx *sql.Tx, receptionID string, now time.Time) error {
@@ -544,7 +561,10 @@ func giveUp(ctx context.Context, tx *sql.Tx, receptionID string, now time.Time) 
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return err
 	}
-	return releaseClaims(ctx, tx, receptionID)
+	if err := releaseClaims(ctx, tx, receptionID); err != nil {
+		return err
+	}
+	return writeStepEvent(ctx, tx, receptionID)
 }
 
 // ReceptionsWithoutWork implements tenant.Pipeline.

@@ -22,6 +22,25 @@ linters:
   settings:
     depguard:
       rules:
+        # The live feed is handed readers (tenant.Events through
+        # events.Reader, the tenants through events.Tenants); it never opens a
+        # database or a connection itself, so it is tested with fakes and
+        # serves any database type.
+        events:
+          files:
+            - "**/internal/events/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the live feed reads through tenant.Events and never knows the database type
+            - pkg: github.com/amrshadid/magnetar/internal/registry
+              desc: the live feed is handed its tenants (events.Tenants); it does not open them
+            - pkg: database/sql
+              desc: the live feed reads through tenant.Events
+            - pkg: net$
+              desc: the live feed opens no connection; the API's handler carries its messages
+            - pkg: net/http
+              desc: the live feed opens no connection; the API's handler carries its messages
+
         # A storage uses only the credentials it is given. The SDK's config
         # package reads the environment, shared files and instance metadata,
         # which the S3 driver must never do.

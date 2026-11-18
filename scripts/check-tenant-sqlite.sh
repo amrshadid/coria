@@ -58,7 +58,7 @@ q() {
 echo
 echo "== tables"
 "$SQLITE3" -batch "$db" '.tables'
-want "tables" "audit catalog_totals instances quarantine quarantine_totals received_files receivers reception_associations receptions scans schema_migrations sessions settings storages subjects work" \
+want "tables" "audit catalog_totals event_marks events instances quarantine quarantine_totals received_files receivers reception_associations reception_steps receptions scans schema_migrations sessions settings sqlite_sequence storages subjects work" \
 	"$(q "SELECT group_concat(name, ' ') FROM (SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name)")"
 
 show() {
