@@ -46,6 +46,10 @@ type Options struct {
 	Width, Height int
 	// NoRefresh turns off the timer that refreshes the list of tenants.
 	NoRefresh bool
+
+	// noInput runs the program without reading any input, for a test whose
+	// program ends by itself.
+	noInput bool
 }
 
 // IsTerminal reports whether r is a terminal: a file the operating system says
@@ -92,14 +96,18 @@ func newModel(ctxt context.Context, o Options) model {
 // shown whichever way it ends, a panic included: Bubble Tea restores the
 // terminal before it reports one, and Run turns that into an error.
 func Run(ctx context.Context, o Options) error {
-	return runModel(newModel(ctx, o), o)
+	m := newModel(ctx, o)
+	return runProgram(m, m.c, o)
 }
 
-// runModel runs a model on the terminal in o. It is Run with the model made, so
-// a test can run one that holds a screen of its own.
-func runModel(m model, o Options) error {
+// runProgram runs a model on the terminal in o and cancels c's calls when it
+// ends. It is Run with the model made, so a test can run one wrapped in a model
+// of its own.
+func runProgram(m tea.Model, c *ctx, o Options) error {
 	opts := []tea.ProgramOption{}
-	if o.Input != nil {
+	if o.noInput {
+		opts = append(opts, tea.WithInput(nil))
+	} else if o.Input != nil {
 		opts = append(opts, tea.WithInput(o.Input))
 	}
 	if o.Output != nil {
@@ -110,7 +118,7 @@ func runModel(m model, o Options) error {
 	}
 	_, err := tea.NewProgram(m, opts...).Run()
 	// Whatever ended the program, no call is left running behind it.
-	m.c.cancelAll()
+	c.cancelAll()
 	switch {
 	case err == nil:
 		return nil

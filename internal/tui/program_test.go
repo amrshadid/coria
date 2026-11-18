@@ -52,15 +52,32 @@ func (s *syncBuffer) String() string {
 	return s.b.String()
 }
 
-// panicScreen is a screen whose update panics on a key, to show that the
-// terminal is restored when the program dies.
-type panicScreen struct{ base }
+// bomb is the root model with a timer that panics inside Update a moment after
+// the program has drawn, to show that the terminal is restored when the program
+// dies. The panic is in the program's own update loop, where a screen's would
+// be.
+type bomb struct{ model }
 
-func (p panicScreen) title(*ctx) string                      { return "panic" }
-func (p panicScreen) view(*ctx) []string                     { return []string{"about to panic"} }
-func (p panicScreen) keys() []keyHelp                        { return nil }
-func (p panicScreen) editing() bool                          { return false }
-func (p panicScreen) update(*ctx, tea.Msg) (screen, tea.Cmd) { panic("a screen failed") }
+// boomMsg is what the timer sends.
+type boomMsg struct{}
+
+// Init starts the model and the timer.
+func (b bomb) Init() tea.Cmd {
+	return tea.Batch(b.model.Init(), tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg { return boomMsg{} }))
+}
+
+// Update panics on the timer's message and otherwise is the model.
+func (b bomb) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(boomMsg); ok {
+		panic("a screen failed")
+	}
+	next, cmd := b.model.Update(msg)
+	b.model = next.(model)
+	return b, cmd
+}
+
+// View is the model's.
+func (b bomb) View() tea.View { return b.model.View() }
 
 // programRig runs a real Bubble Tea program on a pipe, with a fake server
 // behind it, and reads what it writes to its output.
@@ -74,7 +91,7 @@ type programRig struct {
 
 // startProgram runs the program on pipes at 80 by 24 and returns when it has
 // drawn the first frame.
-func startProgram(t *testing.T, mutate func(*model)) *programRig {
+func startProgram(t *testing.T, panics bool) *programRig {
 	t.Helper()
 	if runtime.GOOS == "windows" {
 		// Bubble Tea reads a Windows console, not a pipe, in the ways this
@@ -98,11 +115,17 @@ func startProgram(t *testing.T, mutate func(*model)) *programRig {
 	p := &programRig{t: t, out: &syncBuffer{}, in: pw, done: make(chan error, 1)}
 	p.opts = Options{Client: cl, Where: client.SocketPath(dir), Input: pr, Output: p.out, Width: 80, Height: 24,
 		Now: func() time.Time { return fixedNow }, Location: zone}
-	m := newModel(context.Background(), p.opts)
-	if mutate != nil {
-		mutate(&m)
+	if panics {
+		// A program that ends by itself needs no input, and with none there
+		// is no input reader to be closed while it is still reading.
+		p.opts.noInput = true
 	}
-	go func() { p.done <- runModel(m, p.opts) }()
+	m := newModel(context.Background(), p.opts)
+	var run tea.Model = m
+	if panics {
+		run = bomb{m}
+	}
+	go func() { p.done <- runProgram(run, m.c, p.opts) }()
 	p.waitFor("local operator")
 	return p
 }
@@ -160,7 +183,7 @@ func (p *programRig) restored() {
 // program, on a pipe, draws the menu, opens a list on a key, quits on q, and
 // has told the terminal to leave the alternate screen and show the cursor.
 func TestProgramQuitsAndRestoresTheTerminal(t *testing.T) {
-	p := startProgram(t, nil)
+	p := startProgram(t, false)
 	p.press("1")
 	p.waitFor("t002")
 	p.press("q")
@@ -170,16 +193,12 @@ func TestProgramQuitsAndRestoresTheTerminal(t *testing.T) {
 	p.restored()
 }
 
-// TestProgramRestoresTheTerminalOnAPanic guards leaving on a panic: a screen
-// that panics ends the program with an error, and the terminal has been
+// TestProgramRestoresTheTerminalOnAPanic guards leaving on a panic: a panic in
+// the update loop ends the program with an error, and the terminal has been
 // restored by then, so the person's shell is not left in the alternate screen
 // with no cursor.
 func TestProgramRestoresTheTerminalOnAPanic(t *testing.T) {
-	p := startProgram(t, func(m *model) {
-		m.stack = append(m.stack, panicScreen{base{m.c.newID()}})
-		*m = m.setTop()
-	})
-	p.press("x")
+	p := startProgram(t, true)
 	err := p.finish()
 	if err == nil || fault.KindOf(err) != fault.Internal || !strings.Contains(err.Error(), "internal error; the terminal was restored") {
 		t.Errorf("Run returned %v after a panic, want an internal error", err)
@@ -191,7 +210,7 @@ func TestProgramRestoresTheTerminalOnAPanic(t *testing.T) {
 // raw mode arrives as a key; a signal sent to the process is shown by the
 // pseudo-terminal check.
 func TestProgramQuitsOnCtrlC(t *testing.T) {
-	p := startProgram(t, nil)
+	p := startProgram(t, false)
 	// ctrl+c in the program's raw mode is a key, and quits.
 	p.press("\x03")
 	if err := p.finish(); err != nil {
