@@ -335,6 +335,24 @@ All notable changes to Magnetar are written here. The form is
 
 ### Changed
 
+- Each change through the SQLite drivers, the master's and a tenant's, was a
+  transaction of its own with a sync of its own, so a SQLite-backed server
+  made at most a few hundred changes a second however many callers waited,
+  and they queued one behind another (about 185 a second with 1, 8, 64 or
+  256 callers, each change a setting with its audit entry). Changes waiting at
+  the same moment are now written in one transaction and one sync, each in a
+  savepoint of its own, up to 256 at a time, with no timer: about 700 a second
+  with 8 callers, 4,300 with 64 and 14,500 with 256 on the same disk, while a
+  caller alone waits as long as before (about 5.4 ms). Each caller still gets
+  its own result: a change that fails (a taken name, a taken audit id) or
+  panics fails alone and undoes nothing of the others; a caller is answered
+  only after the commit that holds its change; a caller whose context ends
+  while its change is queued is answered at once and the change is never
+  written, and one whose change has started learns whether it was written,
+  which is whole or not at all. A new test kills a
+  process making changes with SIGKILL and has the sqlite3 tool check the file:
+  integrity, every answered change there with its audit entry, none half
+  there. The ports do not change.
 - About 130 comment lines, a test file's name, a test failure's message and the
   comments of the shipped SQL migrations pointed at notes that are not in the
   repository, so a reader could not tell why the code was the way it was.
