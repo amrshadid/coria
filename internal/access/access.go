@@ -111,6 +111,11 @@ type Access struct {
 	// cancels it when its own deadline passes.
 	workCtx    context.Context
 	workCancel context.CancelFunc
+	// afterCancel, when set, runs in Close right after the workers' writes
+	// are canceled at its deadline. It is nil except in a test, which uses
+	// it to let a worker finish what the cancel cut short before Close
+	// counts anything, the order in which a miscount would show.
+	afterCancel func()
 
 	marks     chan mark
 	marksDone chan struct{}
@@ -281,12 +286,20 @@ func (a *Access) Close(ctx context.Context) error {
 		a.workCancel()
 		return nil
 	}
-	a.workCancel()
+	// The workers are given up on before their writes are canceled: what
+	// they hold is then counted as dropped, and a write the cancel cuts
+	// short changes no count when it returns. Canceled first, a worker
+	// could count such a write as failed before Close counted it as
+	// dropped, so the same mark fell in one count or the other by timing.
 	marks := a.markAcct.abandon(markDropped)
+	entries := a.auditAcct.abandon(auditDroppedWrites)
+	a.workCancel()
+	if a.afterCancel != nil {
+		a.afterCancel()
+	}
 	queuedMarks := drainCount(a.marks)
 	a.markAcct.add(markDropped, queuedMarks)
 	marks += queuedMarks
-	entries := a.auditAcct.abandon(auditDroppedWrites)
 	queued := drainCount(a.refusals) + drainCount(a.records)
 	a.auditAcct.add(auditDroppedWrites, queued)
 	a.log.Error("access: Close's deadline passed before the workers finished; what they held is dropped",

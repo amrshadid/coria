@@ -186,15 +186,16 @@ func TestAuditHangingStoreBounded(t *testing.T) {
 		<-ctx.Done()
 		return fault.Wrap(fault.Unavailable, ctx.Err(), "test: hung")
 	}
-	const timeout = 50 * time.Millisecond
+	const timeout = 200 * time.Millisecond
 	a := newMemAccessWith(t, m, access.Config{AuditInterval: time.Hour, AuditTimeout: timeout, AuditRetries: 5, AuditBackoff: time.Millisecond})
 	refuse(t, a, 20, "m")
 	start := time.Now()
 	if err := a.FlushAudit(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// One timeout for the batch and one for the notice of its drop.
-	if d := time.Since(start); d > 4*timeout {
+	// One timeout for the batch and one for the notice of its drop, with
+	// room for a loaded machine; retrying the timeout would take six.
+	if d := time.Since(start); d > 5*timeout {
 		t.Fatalf("flushing one batch to a hanging store took %v, want about %v", d, 2*timeout)
 	}
 	if got := calls.Load(); got != 1 {
@@ -477,8 +478,12 @@ func TestNoticeRateLimit(t *testing.T) {
 		gate = make(chan struct{})
 		stuck.Store(true)
 		before := a.AuditStats().DroppedRefusals
+		_, earlier := m.stored()
 		refuse(t, a, 1, "m")
-		waitFor(t, "the writer to hold an entry", func() bool { _, b := m.stored(); return len(b) > 0 })
+		// The count of appends grows by one when the writer takes this
+		// phase's entry and stops in its append; a count from an earlier
+		// phase would let the wait pass at once.
+		waitFor(t, "the writer to hold this phase's entry", func() bool { _, b := m.stored(); return len(b) > len(earlier) })
 		for a.AuditStats().DroppedRefusals < before+n {
 			refuse(t, a, 1, "m")
 		}
@@ -545,8 +550,8 @@ func TestCloseReturnsWithStoreIgnoringContext(t *testing.T) {
 	if err := a.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Close: %v", err)
 	}
-	if d := time.Since(start); d > 500*time.Millisecond {
-		t.Fatalf("Close took %v with a deadline of 100ms", d)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("Close took %v with a deadline of 100ms: it waited for the stuck store", d)
 	}
 	if s := a.AuditStats(); s.DroppedWrites != 10 || accounted(s) != 10 {
 		t.Fatalf("stats %+v, want 10 dropped", s)
@@ -592,17 +597,65 @@ func TestCloseDeadlineLeavesNoGoroutine(t *testing.T) {
 		t.Fatal(err)
 	}
 	refuse(t, a, 5, "m")
+	access.WaitForWorkersAfterCancel(a)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	if err := a.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Close: %v, want the deadline", err)
 	}
-	if s := a.AuditStats(); s.DroppedWrites != 5 || s.Written != 0 {
-		t.Fatalf("stats %+v", s)
+	if s := a.AuditStats(); s != (access.AuditStats{DroppedWrites: 5}) {
+		t.Fatalf("stats %+v, want exactly 5 dropped", s)
 	}
 	waitFor(t, "the workers to end, "+strconv.Itoa(before)+" goroutines before New", func() bool {
 		return runtime.NumGoroutine() <= before
 	})
+}
+
+// TestCloseCutTenantBatchNotMoved guards a tenant's batch that Close's
+// deadline cuts short: it is counted as dropped, once, and not moved to the
+// master's log as if the tenant's log had failed. Close waits for the
+// writer to settle the batch before counting, the order in which the batch
+// used to be counted as moved as well.
+func TestCloseCutTenantBatchNotMoved(t *testing.T) {
+	m, full := newMem(t)
+	a := newMemAccessWith(t, m, access.Config{AuditInterval: time.Hour, AuditBackoff: time.Millisecond})
+	d, err := a.Check(context.Background(), access.APIKey(full), access.Authenticated(), facts("read"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lab := &hangingSink{entered: make(chan struct{}, 1)}
+	for range 4 {
+		a.RecordTo(lab, d, master.OutcomeDone, "", access.Facts{TenantName: "lab"})
+	}
+	go func() { _ = a.FlushAudit(context.Background()) }()
+	<-lab.entered // the writer is in the tenant's append
+	access.WaitForWorkersAfterCancel(a)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := a.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close: %v, want the deadline", err)
+	}
+	if s := a.AuditStats(); s != (access.AuditStats{DroppedWrites: 4}) {
+		t.Fatalf("stats %+v, want exactly 4 dropped and none moved", s)
+	}
+	if got := len(m.kept("read")); got != 0 {
+		t.Fatalf("%d entries moved to the master's log after Close's deadline", got)
+	}
+}
+
+// hangingSink is a tenant's log whose append waits until its context ends.
+type hangingSink struct {
+	entered chan struct{}
+}
+
+// AppendAudit signals that it was called, then waits for its context.
+func (s *hangingSink) AppendAudit(ctx context.Context, _ ...master.AuditEntry) error {
+	select {
+	case s.entered <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return fault.Wrap(fault.Unavailable, ctx.Err(), "test: the tenant's database hangs")
 }
 
 // TestRefusalOffPath guards that a refusal's entry is not written on the

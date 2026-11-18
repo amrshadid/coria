@@ -428,6 +428,12 @@ func (w *batchWriter) oneByOne(sink Sink, entries []master.AuditEntry) {
 // counted and logged once.
 func (w *batchWriter) giveUp(sink Sink, entries []master.AuditEntry, err error) {
 	a := w.a
+	if a.workCtx.Err() != nil {
+		// Close's deadline cut the batch short: it is dropped, not moved
+		// to the master's log, which Close no longer waits for either.
+		a.auditAcct.resolve(auditDroppedWrites, len(entries))
+		return
+	}
 	if !w.isMaster(sink) {
 		moved := make([]master.AuditEntry, len(entries))
 		for i, e := range entries {
