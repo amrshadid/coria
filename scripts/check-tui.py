@@ -7,6 +7,10 @@ the in-process fake server (internal/tui/ptyserve), presses keys, reads what the
 program draws, quits, and asserts what the terminal was left in. It uses only
 the standard library, so it runs wherever python3 does.
 
+The screen is read through a small terminal emulator in this file (class
+Screen): Bubble Tea redraws by differences, so a word that changed can be split
+by cursor movements in the raw bytes and is whole only on the screen.
+
 It shows, on the built binary and not on a test double:
 
   * the program opens on a terminal with no arguments and draws its screens;
@@ -48,6 +52,152 @@ ANSI = re.compile(rb"\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b
 failures = []
 
 
+class Screen:
+    """A small terminal emulator: what the program drew, as a person sees it.
+
+    Bubble Tea redraws by differences (it moves the cursor, writes only the
+    cells that changed, and may use insert mode), so the stream of bytes does
+    not hold a frame's text in one piece. This applies the sequences the
+    renderer uses to a grid of cells, so a check can read the screen. It
+    handles what the program emits (cursor movement, erase, insert and delete,
+    repeat, insert mode, carriage return and line feed) and ignores colors,
+    modes and anything else.
+    """
+
+    def __init__(self, cols, rows):
+        self.resize(cols, rows)
+        self.pending = b""
+
+    def resize(self, cols, rows):
+        """Clear the screen for a new size; the program redraws on a resize."""
+        self.cols, self.rows = cols, rows
+        self.grid = [[" "] * cols for _ in range(rows)]
+        self.r = self.c = 0
+        self.insert = False
+        self.last = " "
+
+    def text(self):
+        """The screen's rows, without trailing spaces, one per line."""
+        return "\n".join("".join(row).rstrip() for row in self.grid)
+
+    def put(self, ch):
+        row = self.grid[self.r]
+        if self.insert:
+            row.insert(self.c, ch)
+            del row[self.cols:]
+        else:
+            row[self.c] = ch
+        self.last = ch
+        self.c = min(self.c + 1, self.cols - 1)
+
+    def feed(self, data):
+        """Apply bytes the program wrote."""
+        data = self.pending + data
+        self.pending = b""
+        text = data.decode("utf-8", "ignore")
+        # An escape sequence or a character cut at the end waits for more.
+        cut = text.rfind("\x1b")
+        if cut >= 0 and not re.match(r"\x1b(\[[0-9;?<>=]*[ -/]*[@-~]|\][^\x07\x1b]*(\x07|\x1b\\)|[^\[\]])", text[cut:]):
+            self.pending = text[cut:].encode()
+            text = text[:cut]
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            if ch == "\x1b":
+                m = re.match(r"\x1b\[([0-9;?<>=]*)([ -/]*)([@-~])", text[i:])
+                if m:
+                    self.csi(m.group(1), m.group(2), m.group(3))
+                    i += m.end()
+                    continue
+                m = re.match(r"\x1b\][^\x07\x1b]*(\x07|\x1b\\)", text[i:])
+                if m:
+                    i += m.end()
+                    continue
+                i += 2  # ESC and one more character: a charset or a keypad mode
+                continue
+            i += 1
+            if ch == "\r":
+                self.c = 0
+            elif ch == "\n":
+                self.r = min(self.r + 1, self.rows - 1)
+            elif ch == "\b":
+                self.c = max(self.c - 1, 0)
+            elif ch == "\t":
+                self.c = min((self.c // 8 + 1) * 8, self.cols - 1)
+            elif ch >= " ":
+                self.put(ch)
+
+    def csi(self, params, _inter, final):
+        """Apply one control sequence."""
+        if params and params[0] in "?<>=":
+            return
+        nums = [int(x) if x else 0 for x in params.split(";")] if params else []
+        n = nums[0] if nums and nums[0] else 1
+        row = self.grid[self.r]
+        if final in "Hf":
+            r = (nums[0] if nums and nums[0] else 1) - 1
+            c = (nums[1] if len(nums) > 1 and nums[1] else 1) - 1
+            self.r, self.c = min(r, self.rows - 1), min(c, self.cols - 1)
+        elif final == "A":
+            self.r = max(self.r - n, 0)
+        elif final in "Be":
+            self.r = min(self.r + n, self.rows - 1)
+        elif final in "Ca":
+            self.c = min(self.c + n, self.cols - 1)
+        elif final == "D":
+            self.c = max(self.c - n, 0)
+        elif final == "E":
+            self.r, self.c = min(self.r + n, self.rows - 1), 0
+        elif final == "F":
+            self.r, self.c = max(self.r - n, 0), 0
+        elif final in "G`":
+            self.c = min(n - 1, self.cols - 1)
+        elif final == "d":
+            self.r = min(n - 1, self.rows - 1)
+        elif final == "J":
+            mode = nums[0] if nums else 0
+            if mode == 0:
+                row[self.c:] = [" "] * (self.cols - self.c)
+                for k in range(self.r + 1, self.rows):
+                    self.grid[k] = [" "] * self.cols
+            elif mode == 1:
+                row[: self.c + 1] = [" "] * (self.c + 1)
+                for k in range(self.r):
+                    self.grid[k] = [" "] * self.cols
+            else:
+                self.grid = [[" "] * self.cols for _ in range(self.rows)]
+        elif final == "K":
+            mode = nums[0] if nums else 0
+            if mode == 0:
+                row[self.c:] = [" "] * (self.cols - self.c)
+            elif mode == 1:
+                row[: self.c + 1] = [" "] * (self.c + 1)
+            else:
+                self.grid[self.r] = [" "] * self.cols
+        elif final == "@":
+            row[self.c:self.c] = [" "] * n
+            del row[self.cols:]
+        elif final == "P":
+            del row[self.c:self.c + n]
+            row.extend([" "] * (self.cols - len(row)))
+        elif final == "X":
+            for k in range(self.c, min(self.c + n, self.cols)):
+                row[k] = " "
+        elif final == "L":
+            for _ in range(n):
+                self.grid.insert(self.r, [" "] * self.cols)
+                del self.grid[self.rows:]
+        elif final == "M":
+            for _ in range(n):
+                del self.grid[self.r]
+                self.grid.append([" "] * self.cols)
+        elif final == "b":
+            for _ in range(n):
+                self.put(self.last)
+        elif final in "hl" and params == "4":
+            self.insert = final == "h"
+
+
 def check(ok, what):
     """Record one assertion and print its result."""
     print(("ok    " if ok else "FAIL  ") + what)
@@ -78,6 +228,7 @@ class Session:
         os.close(slave)
         self.master = master
         self.raw = b""
+        self.screen = Screen(cols, rows)
 
     def read(self, timeout=0.2):
         """Read what is available for up to timeout seconds."""
@@ -93,18 +244,25 @@ class Session:
             if not chunk:
                 break
             self.raw += chunk
+            self.screen.feed(chunk)
 
     def wait_for(self, text, timeout=20.0):
-        """Read until the drawn text holds text; False when it never does."""
+        """Read until the screen shows text; False when it never does."""
         end = time.time() + timeout
         while time.time() < end:
             self.read(0.1)
-            if text in text_of(self.raw):
+            if text in self.screen.text():
                 return True
             if self.proc.poll() is not None:
                 self.read(0.2)
-                return text in text_of(self.raw)
+                return text in self.screen.text()
         return False
+
+    def resize(self, cols, rows):
+        """Resize the terminal and tell the program."""
+        fcntl.ioctl(self.master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        self.screen.resize(cols, rows)
+        os.kill(self.proc.pid, signal.SIGWINCH)
 
     def press(self, keys):
         """Type keys, as bytes, into the terminal."""
@@ -164,9 +322,10 @@ def scenario_quit(binary, helper_path):
         s = Session(binary, datadir)
         check(s.wait_for("local operator"), "the header says who is connected")
         check(s.wait_for("Audit log"), "the menu is drawn")
+        check(s.wait_for("magnetar | local operator (user 501) | "), "the header line reads whole on the screen")
         s.press("1")
         check(s.wait_for("t000"), "the tenant list is drawn after a key")
-        check("connection refused" in text_of(s.raw), "a tenant that is not ready shows its reason")
+        check("connection refused" in s.screen.text(), "a tenant that is not ready shows its reason")
         s.press("q")
         code = s.finish()
         check(code == 0, "q ends the program with status 0 (got %r)" % code)
@@ -199,7 +358,7 @@ def scenario_paging(binary, helper_path):
         s = Session(binary, datadir)
         check(s.wait_for("local operator"), "the program is up")
         s.press("1")
-        check(s.wait_for("100+ rows"), "the list says 100+ rows after the first page")
+        check(s.wait_for("[100+ rows]"), "the list says 100+ rows after the first page")
         check(helper_stats(helper).get("ListTenants") == 1, "one page was fetched when the list opened")
         for _ in range(60):
             s.press("j")
@@ -216,6 +375,7 @@ def scenario_paging(binary, helper_path):
             time.sleep(0.05)
             calls = helper_stats(helper).get("ListTenants", 0)
         check(calls == 2, "near the end of the first page the second is fetched (%d calls)" % calls)
+        check(s.wait_for("[200+ rows]"), "the screen then says 200+ rows")
         s.read(0.3)
         check(helper_stats(helper).get("ListTenants") == 2, "exactly two pages fetched, not the third")
         s.press("q")
@@ -230,11 +390,9 @@ def scenario_small_and_resize(binary, helper_path):
     try:
         s = Session(binary, datadir, cols=80, rows=24)
         check(s.wait_for("local operator"), "the program is up at 80 by 24")
-        fcntl.ioctl(s.master, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 30, 0, 0))
-        os.kill(s.proc.pid, signal.SIGWINCH)
+        s.resize(30, 30)
         check(s.wait_for("terminal too small"), "a terminal too small says so after a resize")
-        fcntl.ioctl(s.master, termios.TIOCSWINSZ, struct.pack("HHHH", 50, 200, 0, 0))
-        os.kill(s.proc.pid, signal.SIGWINCH)
+        s.resize(200, 50)
         s.press("2")
         check(s.wait_for("nightly export"), "after resizing back the screens draw again")
         s.press("q")

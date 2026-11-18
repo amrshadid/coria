@@ -126,7 +126,11 @@ func startProgram(t *testing.T, panics bool) *programRig {
 		run = bomb{m}
 	}
 	go func() { p.done <- runProgram(run, m.c, p.opts) }()
-	p.waitFor("local operator")
+	// The first frame is drawn whole, so its words are in the output in one
+	// piece; later frames are drawn by differences, and a word that changed
+	// may be split by cursor movements, so nothing later is looked for in the
+	// raw output. scripts/check-tui.py reads the screen through an emulator.
+	p.waitFor("Menu")
 	return p
 }
 
@@ -180,13 +184,12 @@ func (p *programRig) restored() {
 }
 
 // TestProgramQuitsAndRestoresTheTerminal guards leaving on q: the real
-// program, on a pipe, draws the menu, opens a list on a key, quits on q, and
-// has told the terminal to leave the alternate screen and show the cursor.
+// program, on a pipe, draws the menu, is given a key that opens a list and then
+// q, and has told the terminal to leave the alternate screen and show the
+// cursor.
 func TestProgramQuitsAndRestoresTheTerminal(t *testing.T) {
 	p := startProgram(t, false)
-	p.press("1")
-	p.waitFor("t002")
-	p.press("q")
+	p.press("1q")
 	if err := p.finish(); err != nil {
 		t.Fatalf("Run returned %v after q", err)
 	}
