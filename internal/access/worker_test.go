@@ -143,13 +143,18 @@ func TestMarkNeverBlocks(t *testing.T) {
 	if got := a.MarkStats().Dropped; got != 49 {
 		t.Fatalf("%d marks dropped, want 49", got)
 	}
+	// Close waits, after canceling, for the worker to settle the mark the
+	// cancel cut short before it counts anything: the order in which that
+	// mark used to be counted as failed instead of dropped. Without the
+	// wait, which order happened was left to the scheduler.
+	access.WaitForWorkersAfterCancel(a)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	if err := a.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Close: %v, want the deadline", err)
 	}
 	// The mark stuck in the store when the deadline passed is counted as
-	// dropped by Close, and its later failure changes nothing: 49 dropped
+	// dropped, and its return from the store changes nothing: 49 dropped
 	// from the full queue, the one queued, and the one in flight.
 	s := a.MarkStats()
 	if s.Failed != 0 || s.Dropped != 51 || s.Written != 0 {

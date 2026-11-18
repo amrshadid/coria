@@ -117,7 +117,7 @@ func TestNoSecretAnywhere(t *testing.T) {
 	if strings.Contains(logText, sec) {
 		t.Fatal("the log holds the secret")
 	}
-	if !strings.Contains(logText, "could not be written") || !strings.Contains(logText, "last use was not recorded") {
+	if !strings.Contains(logText, "did not take a batch") || !strings.Contains(logText, "last use was not recorded") {
 		t.Fatalf("the log has not the lines this test meant to search:\n%s", logText)
 	}
 	t.Logf("searched %d audit entries, %d error texts and %d bytes of log for the secret: not found", len(entries), len(errs), len(logText))
