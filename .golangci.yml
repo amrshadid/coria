@@ -22,6 +22,20 @@ linters:
   settings:
     depguard:
       rules:
+        # A storage uses only the credentials it is given. The SDK's config
+        # package reads the environment, shared files and instance metadata,
+        # which the S3 driver must never do.
+        s3-static-credentials:
+          files:
+            - "**/internal/**"
+          deny:
+            - pkg: github.com/aws/aws-sdk-go-v2/config
+              desc: reads credentials from the environment and files; the S3 driver uses only what it is given
+            - pkg: github.com/aws/aws-sdk-go-v2/feature/ec2/imds
+              desc: reads instance metadata; the S3 driver uses only what it is given
+            - pkg: github.com/aws/aws-sdk-go-v2/credentials
+              desc: not needed for static credentials, and pulls in the single sign-on and token-service clients
+
         # The storage port (internal/blob) and its contract suite
         # (internal/blob/blobtest) are stated as operations, so a bucket
         # implements them as well as a disk, and the suite cannot be bent to

@@ -393,6 +393,19 @@ All notable changes to Magnetar are written here. The form is
   directory of 200,000 files in under a second. At start it reads only its
   temporary directory. A child process killed in the middle of its Puts leaves
   every key whole or absent, and the files written match `shasum` and `cmp`.
+- A tenant could keep its files only in a directory. The S3 driver,
+  `internal/blob/s3`, is a storage on Amazon S3 or an S3-compatible server,
+  under an optional prefix of a bucket, and passes the storage contract suite
+  unchanged against two different servers. An object of up to 8 MiB is one
+  request; a larger one is a multipart upload in bounded memory, aborted on any
+  failure, also after the caller gave up. Each upload carries its SHA-256, and
+  the server's echo of it is compared. Uploads a crash left unfinished are
+  aborted when the storage opens. The driver uses only the credentials it is
+  given, never the server's environment, files or instance metadata; it asks a
+  function of the caller's whether each address may be connected to, at every
+  connection, so a name that resolves to a private address is refused; it
+  follows no redirect; and its errors carry neither the server's words nor the
+  endpoint. It adds the AWS SDK for Go's S3 client, about 4.6 MB of the binary.
 
 ### Changed
 

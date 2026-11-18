@@ -485,6 +485,73 @@ jobs:
       - name: go test
         run: go test -count=1 -v ./...
 
+  # The S3 storage driver against two real servers: Silo, the maintained fork
+  # of MinIO, and RustFS, a separate implementation, since one server's
+  # behavior is not the protocol's. Each is started with docker run, because a
+  # service container cannot be given the server's command. The tests skip
+  # when MAGNETAR_TEST_S3 is not set; MAGNETAR_REQUIRE_S3 turns a server that
+  # did not start into a failure, so a green job means the suite ran.
+  s3:
+    name: S3 (${{ matrix.server }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [silo, rustfs]
+    env:
+      MAGNETAR_TEST_S3: http://ci-throwaway-key:ci-throwaway-secret@127.0.0.1:9000/magnetar-test
+      MAGNETAR_REQUIRE_S3: '1'
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Start Silo
+        if: matrix.server == 'silo'
+        run: >-
+          docker run -d --name s3 -p 127.0.0.1:9000:9000
+          -e MINIO_ROOT_USER=ci-throwaway-key -e MINIO_ROOT_PASSWORD=ci-throwaway-secret
+          pgsty/silo@sha256:c20d112390b9a9ce8c11b8af95ad35bcaa62f4759663c09c936cd8d2b511f329
+          server /data
+
+      - name: Start RustFS
+        if: matrix.server == 'rustfs'
+        run: >-
+          docker run -d --name s3 -p 127.0.0.1:9000:9000
+          -e RUSTFS_ACCESS_KEY=ci-throwaway-key -e RUSTFS_SECRET_KEY=ci-throwaway-secret
+          -e RUSTFS_ADDRESS=0.0.0.0:9000
+          rustfs/rustfs@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
+          /data
+
+      # Either server answers its port before it can serve; the tests create
+      # their bucket, so a listing that is answered at all is enough.
+      - name: Wait for the server
+        run: |
+          set -eu
+          for i in $(seq 1 60); do
+            if curl -sS -o /dev/null http://127.0.0.1:9000/; then exit 0; fi
+            sleep 1
+          done
+          docker logs s3
+          exit 1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27'
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: go test -race, the S3 driver
+        run: go test -race -count=1 -v ./internal/blob/s3/...
+
+      - name: Server log on failure
+        if: failure()
+        run: docker logs s3 | tail -100
+
   # The API contract in api/proto: buf lint, the breaking-change check against
   # the base, the check that the committed gen/ is what the proto files
   # generate, and a second toolchain (Python's grpcio-tools) compiling the same
