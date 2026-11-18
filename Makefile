@@ -132,6 +132,16 @@ SQLITE3 ?= sqlite3
 check-master-sqlite:
 	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-master-sqlite.sh
 
+# The outside check of the server: curl, grpcurl (GRPCURL=... names one) and
+# Python's grpcio (PYTHON=... names an interpreter with
+# scripts/requirements-check-server.txt) against a real server process with
+# the stand-in handlers, over TLS on loopback and over the local socket.
+GRPCURL ?= grpcurl
+
+.PHONY: check-server
+check-server:
+	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" bash scripts/check-server.sh
+
 # The tests on 32 bits, where int is 32 bits and the SQLite library is a
 # different translation of SQLite's C. Without -race, which 386 lacks. It runs
 # natively on a Linux x86-64 machine (CI); macOS cannot run 386 binaries.

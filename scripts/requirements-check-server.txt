@@ -1,0 +1,9 @@
+# The Python side of the outside check of the server (scripts/check-server.sh
+# and scripts/check-server.py): grpcio as a gRPC client that is not Go,
+# grpcio-tools to compile the contract for it, and the Prometheus client's
+# text parser for /metrics. Pinned, so the check does not change under a pull
+# request that changed nothing.
+grpcio==1.85.1
+grpcio-tools==1.85.1
+protobuf==7.36.2
+prometheus-client==0.26.0
