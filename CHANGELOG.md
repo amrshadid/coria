@@ -467,6 +467,19 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A key revoked or expired while a request's body was still arriving was
+  still honored by methods whose requirement reads the request (GetTenant,
+  the settings methods, ListAuditEntries), for as long as the body took, up to
+  its 10-second bound: the key judged when the headers arrived was not judged
+  again. Such a method's check now reads the key again once the message has
+  arrived, and every check judges a key's expiry at the moment it decides.
+  Every request that the check allows now writes exactly one audit entry
+  however it ends (an unreadable message, a handler's failure or panic, a
+  deadline, a cancel, the server stopping); a request canceled by its caller
+  during the check is recorded as having ended, not as a failure of the
+  master database; a refused HTTP/1.1 connection is closed as soon as the
+  refusal is written instead of after the body's read bound; and while the
+  server stops, only the health check's exact path is still answered.
 - A caller with no key, or a bad one, could tell from the server's answer which
   methods it serves, and some of its requests were held or went unaudited. Who
   the caller was got decided after the router and the RPC library had looked at

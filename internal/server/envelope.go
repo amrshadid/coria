@@ -105,7 +105,9 @@ func (s *Server) envelope(next http.Handler) http.Handler {
 		id := newRequestID()
 		w.Header().Set(RequestIDHeader, id)
 		mark := &pathMark{}
-		sw := &statusWriter{ResponseWriter: w, mark: mark, http1: r.ProtoMajor == 1}
+		// "PRI * HTTP/2.0" sent on an HTTP/1 connection (the HTTP/2 preface
+		// where none is spoken) names HTTP/2 but is answered over HTTP/1.
+		sw := &statusWriter{ResponseWriter: w, mark: mark, http1: r.ProtoMajor == 1 || r.Method == "PRI"}
 		defer s.logTransport(r, sw, mark, id, start)
 
 		if !s.admit(r) {
@@ -186,6 +188,18 @@ func readBoundPassed(ctx context.Context) bool {
 type pathMark struct {
 	done atomic.Bool
 	keep atomic.Bool
+	// audited records that the request's one audit entry was written, or
+	// that the request is one deliberately not audited, so the front step
+	// writes none of its own.
+	audited atomic.Bool
+}
+
+// markAudited records, for the front step, that the request's audit entry
+// is accounted for.
+func markAudited(ctx context.Context) {
+	if m, ok := ctx.Value(pathMarkKey{}).(*pathMark); ok {
+		m.audited.Store(true)
+	}
 }
 
 // pathMarkKey is the context key of a request's pathMark.
@@ -307,7 +321,7 @@ func (w *statusWriter) Status() int {
 func (s *Server) admit(r *http.Request) bool {
 	s.stopMu.RLock()
 	defer s.stopMu.RUnlock()
-	if s.stopping && r.URL.Path != HealthCheckProcedure {
+	if s.stopping && !isPath(r, HealthCheckProcedure) {
 		return false
 	}
 	s.inFlight.Add(1)

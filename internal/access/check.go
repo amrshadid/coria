@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"maps"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -44,6 +45,7 @@ const (
 	reasonNoTenant     = "no such tenant"
 	reasonBadCheck     = "server error: the check was called without a valid requirement or method"
 	reasonStoreFailure = "the master database failed during the check"
+	reasonGone         = "the request ended before the check finished: canceled by the caller or past its deadline"
 )
 
 // maxGrantPages bounds how many pages of a key's grants WhoAmI reads: a
@@ -68,6 +70,8 @@ type Credential struct {
 	// that has not been through it. Only Authenticate sets it, so no other
 	// package can make a credential that skips the reading of its key.
 	accepted *Principal
+	// reread makes Check read an accepted key again (Reread).
+	reread bool
 }
 
 // APIKey is a credential of a presented key, mgt_<id>_<secret>. The server
@@ -106,6 +110,20 @@ func (c Credential) String() string {
 		return "access.Credential(none)"
 	}
 	return "access.Credential(key)"
+}
+
+// Reread returns c marked so that Check, given it, reads the key again and
+// refuses it if it has been revoked or removed since Authenticate accepted
+// it. The server marks a credential so when time it does not bound has
+// passed between the two, such as the reading of the request's message,
+// which may take as long as the body's read bound: the decision to allow
+// is made on the key as it is then. A credential Authenticate did not
+// accept is returned unchanged; its key is read by Check anyway.
+func (c Credential) Reread() Credential {
+	if c.accepted != nil {
+		c.reread = true
+	}
+	return c
 }
 
 // GoString is String, for the %#v verb.
@@ -305,7 +323,20 @@ type Decision struct {
 	// of the handler, so a change need not ask the master a second time
 	// before its own transaction checks the key again.
 	confirmed bool
+	// entered records that an entry of the request was made from this
+	// Decision (Entry, which Record, RecordTo and every change call), shared
+	// by every copy, so the server can tell a request that ended without
+	// one (Entered).
+	entered *atomic.Bool
 }
+
+// Entered reports whether an audit entry of the request was made from d or
+// a copy of it: by Entry, so by Record, RecordTo or a change. A request whose
+// check allowed it and that ends without one (its message could not be read,
+// its handler failed or panicked before recording, it was canceled) has no
+// record of what it did; the server records one for it. The zero Decision
+// reports false.
+func (d Decision) Entered() bool { return d.entered != nil && d.entered.Load() }
 
 // Actor returns who makes a change for d, as the master's changes take it
 // (master.Actor), needing role on scope: the caller's key, with the server's
@@ -354,6 +385,9 @@ func (d Decision) Entry(outcome master.Outcome, reason string, facts Facts) mast
 	e := d.entry
 	if d.newID != nil {
 		e.ID = d.newID()
+	}
+	if d.entered != nil {
+		d.entered.Store(true)
 	}
 	e.Details = maps.Clone(d.entry.Details)
 	e.Outcome = outcome
@@ -411,14 +445,14 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 
 	p, reason, err := a.authenticate(ctx, cred, &entry)
 	if err != nil {
-		return Decision{}, a.fail(entry, err)
+		return Decision{}, a.fail(ctx, entry, err)
 	}
 	if reason != "" {
 		a.record(entry, master.OutcomeRefused, reason)
 		return Decision{}, fault.New(fault.Unauthenticated, MessageUnauthenticated)
 	}
 
-	d := Decision{newID: a.newID, clock: a.clock}
+	d := Decision{newID: a.newID, clock: a.clock, entered: new(atomic.Bool)}
 	var tenantMissing bool
 	switch {
 	case p.isKey:
@@ -432,7 +466,7 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 		}
 		r, err := a.store.RolesFor(ctx, p.key.ID, name)
 		if err != nil {
-			return Decision{}, a.fail(entry, err)
+			return Decision{}, a.fail(ctx, entry, err)
 		}
 		p.instRole = r.Installation
 		if req.namesTenant() {
@@ -452,7 +486,7 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 		case kind == fault.NotFound || kind == fault.Invalid:
 			tenantMissing = true
 		default:
-			return Decision{}, a.fail(entry, err)
+			return Decision{}, a.fail(ctx, entry, err)
 		}
 	}
 	d.principal = p
@@ -504,7 +538,7 @@ func (a *Access) Authenticate(ctx context.Context, cred Credential, facts Reques
 	}
 	p, reason, err := a.authenticate(ctx, cred, &entry)
 	if err != nil {
-		return Credential{}, a.fail(entry, err)
+		return Credential{}, a.fail(ctx, entry, err)
 	}
 	if reason != "" {
 		a.record(entry, master.OutcomeRefused, reason)
@@ -564,12 +598,29 @@ func allows(p Principal, req Requirement, tenantID string) bool {
 // (audit.proto, AuditEntry.key_id).
 func (a *Access) authenticate(ctx context.Context, cred Credential, entry *master.AuditEntry) (Principal, string, error) {
 	if p := cred.accepted; p != nil {
-		// Authenticate read and judged this key moments ago, for this same
-		// request; it is not read again.
+		// Authenticate read and judged this key earlier in this same request.
+		// Its expiry is judged again now, from the key as read, at no cost;
+		// a revocation or a removal since is seen only by reading the key
+		// again, which a credential marked by Reread asks for.
 		if p.isLoc {
 			entry.LocalUser = auditText(p.local, master.MaxAuditFieldLength)
-		} else {
-			entry.KeyID = p.key.ID
+			return *p, "", nil
+		}
+		entry.KeyID = p.key.ID
+		if reason := keyState(p.key, entry.Time); reason != "" {
+			return Principal{}, reason, nil
+		}
+		if cred.reread {
+			k, err := a.store.Key(ctx, p.key.ID)
+			if fault.KindOf(err) == fault.NotFound {
+				return Principal{}, reasonUnknownKey, nil
+			}
+			if err != nil {
+				return Principal{}, "", err
+			}
+			if reason := keyState(k, entry.Time); reason != "" {
+				return Principal{}, reason, nil
+			}
 		}
 		return *p, "", nil
 	}
@@ -675,7 +726,17 @@ func (a *Access) record(e master.AuditEntry, outcome master.Outcome, reason stri
 // records it. A master that does not answer is Unavailable, as the contract
 // says ("a database that does not answer is a failure, not a refusal"); any
 // other failure is Internal, whose message says nothing of the cause.
-func (a *Access) fail(e master.AuditEntry, err error) error {
+//
+// A store read that failed because the request's own context ended (the
+// caller canceled, or its deadline passed) is not a failure of the store:
+// it is recorded as failed with reasonGone, never as the master failing, and
+// the caller's error is the context's own, which the server answers as
+// CANCELED or DEADLINE_EXCEEDED and logs as such.
+func (a *Access) fail(ctx context.Context, e master.AuditEntry, err error) error {
+	if cerr := ctx.Err(); cerr != nil {
+		a.record(e, master.OutcomeFailed, reasonGone)
+		return cerr
+	}
 	a.record(e, master.OutcomeFailed, reasonStoreFailure+": "+fault.KindOf(err).String())
 	return storeError(err)
 }

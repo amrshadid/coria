@@ -1,7 +1,10 @@
 package access_test
 
 import (
+	"context"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,5 +103,76 @@ func TestRecordUnchecked(t *testing.T) {
 	}
 	if s := e.access.AuditStats(); s.Failed != 1 {
 		t.Fatalf("the credential not accepted was not counted as failed: %+v", s)
+	}
+}
+
+// TestReread guards the check of an accepted key at the moment of the
+// decision: Check given an accepted credential reads no key, and still
+// refuses one whose expiry has passed since; given the same credential
+// marked by Reread it reads the key once more and refuses one revoked
+// since, with the real reason.
+func TestReread(t *testing.T) {
+	e := newEnv(t)
+	k := e.key(t0.Add(time.Hour), on(master.Installation, master.RoleAdmin))
+	cred, err := e.access.Authenticate(e.ctx, access.APIKey(k.full), facts("/m"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.reset()
+	e.decide(cred, access.OnInstallation(master.RoleAdmin), "/m")
+	e.decide(cred.Reread(), access.OnInstallation(master.RoleAdmin), "/m")
+	if calls, _ := e.recorded(); !slices.Equal(calls, []string{"RolesFor", "Key", "RolesFor"}) {
+		t.Fatalf("calls %v: the key was not read again only when asked", calls)
+	}
+	if _, err := e.master.RevokeKey(e.ctx, k.id, t0, e.setupEntry(), master.LocalOperator()); err != nil {
+		t.Fatal(err)
+	}
+	e.reset()
+	_, err = e.access.Check(e.ctx, cred.Reread(), access.OnInstallation(master.RoleAdmin), facts("/m"))
+	wantErr(t, "revoked since", err, fault.Unauthenticated, access.MessageUnauthenticated)
+	if _, entries := e.recorded(); len(entries) != 1 || entries[0].Reason != "key revoked" || entries[0].KeyID != k.id {
+		t.Fatalf("entries %+v", entries)
+	}
+	e.clock.Set(t0.Add(2 * time.Hour))
+	e.reset()
+	_, err = e.access.Check(e.ctx, cred, access.OnInstallation(master.RoleAdmin), facts("/m"))
+	wantErr(t, "expired since", err, fault.Unauthenticated, access.MessageUnauthenticated)
+	if calls, entries := e.recorded(); len(calls) != 0 || len(entries) != 1 || entries[0].Reason != "key expired" {
+		t.Fatalf("calls %v, entries %+v", calls, entries)
+	}
+}
+
+// TestEntered guards the mark the server reads to know an allowed request
+// has its entry: false after the check, true once an entry was made from
+// the Decision or any copy of it, false for the zero Decision.
+func TestEntered(t *testing.T) {
+	e := newEnv(t)
+	d := e.admin("/m")
+	if d.Entered() || (access.Decision{}).Entered() {
+		t.Fatal("a Decision with no entry reports one")
+	}
+	c := d
+	e.access.Record(c, master.OutcomeDone, "", access.Facts{})
+	if !d.Entered() {
+		t.Fatal("an entry made from a copy was not seen")
+	}
+}
+
+// TestCanceledCheck guards that a store read failing because the request's
+// context ended is recorded as the request ending, not as the master
+// failing, and that the caller gets the context's error.
+func TestCanceledCheck(t *testing.T) {
+	e := newEnv(t)
+	k := e.key(time.Time{})
+	ctx, cancel := context.WithCancel(e.ctx)
+	cancel()
+	e.reset()
+	_, err := e.access.Authenticate(ctx, access.APIKey(k.full), facts("/m"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("a canceled check: %v", err)
+	}
+	if _, entries := e.recorded(); len(entries) != 1 || entries[0].Outcome != master.OutcomeFailed ||
+		strings.Contains(entries[0].Reason, "master database") {
+		t.Fatalf("entries %+v", entries)
 	}
 }

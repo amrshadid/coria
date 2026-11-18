@@ -173,6 +173,14 @@ func matrixPaths(t *testing.T) []matrixPath {
 		{"double slash", "/" + servedProcedure, "/"},
 		{"trailing slash", servedProcedure + "/", "/"},
 		{"percent-encoded health check", "/grpc.health.v1.Health%2FCheck", "/"},
+		{"health check, upper case", "/GRPC.HEALTH.V1.HEALTH/CHECK", "/GRPC.HEALTH.V1.HEALTH/CHECK"},
+		{"health check, method's case", "/grpc.health.v1.Health/check", "/grpc.health.v1.Health/check"},
+		{"health, another method", "/grpc.health.v1.Health/Nope", "/grpc.health.v1.Health/Nope"},
+		{"health check, trailing slash", "/grpc.health.v1.Health/Check/", "/"},
+		{"health check, a prefix", "/grpc.health.v1.Health/Chec", "/grpc.health.v1.Health/Chec"},
+		{"health check, a suffix", "/grpc.health.v1.Health/CheckX", "/grpc.health.v1.Health/CheckX"},
+		{"health check, inside", "/x/grpc.health.v1.Health/Check", "/"},
+		{"health service", "/grpc.health.v1.Health/", "/"},
 	}
 }
 
@@ -763,7 +771,8 @@ func (k *keyReads) Key(ctx context.Context, id string) (master.Key, error) {
 // TestKeyReadOncePerRequest guards that judging the caller before routing
 // does not cost a second read of the key: a request with a key reads it
 // once, whether it is allowed (an RPC, the metrics), denied, or refused
-// before it is routed.
+// before it is routed; only a method whose requirement reads the request
+// reads it again, at its check, once the message has arrived.
 func TestKeyReadOncePerRequest(t *testing.T) {
 	reads := &keyReads{}
 	e := newEnv(t, options{store: func(s access.Store) access.Store { reads.Store = s; return reads }})
@@ -795,6 +804,19 @@ func TestKeyReadOncePerRequest(t *testing.T) {
 	}
 	if got := reads.n.Load(); got != 4*n {
 		t.Fatalf("%d requests read a key %d times, want once each", 4*n, got)
+	}
+	// A method whose requirement reads the request reads the key a second
+	// time, at its check, after the message: the key may have been revoked
+	// while the message arrived.
+	reads.n.Store(0)
+	for range n {
+		_, err := e.network("Bearer "+admin).settings.GetSetting(e.ctx, &magnetarv1.GetSettingRequest{Name: "x", Scope: installation()})
+		if connect.CodeOf(err) != connect.CodeUnimplemented {
+			t.Fatal(err)
+		}
+	}
+	if got := reads.n.Load(); got != 2*n {
+		t.Fatalf("%d calls of a method that reads its request read a key %d times, want twice each", n, got)
 	}
 }
 

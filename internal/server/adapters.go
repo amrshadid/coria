@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -112,6 +113,11 @@ func (r *replayStream) Receive(msg any) error {
 		return nil
 	}
 	if err := r.ServerStream.Receive(msg); err != nil {
+		if !errors.Is(err, io.EOF) {
+			if c, ok := CallFrom(r.ctx); ok {
+				c.unreadable.Store(true)
+			}
+		}
 		return err
 	}
 	r.logMessage("message received", msg)
@@ -189,6 +195,7 @@ func (s *Server) middleware(route HTTPRoute) http.Handler {
 			authorization: r.Header.Get("Authorization"),
 			remote:        remoteOf(r.Context(), r.RemoteAddr),
 			rule:          on(route.Need),
+			unaudited:     route.Pattern == MetricsPattern,
 		}
 		err := s.pass(r.Context(), x, func(ctx context.Context) error {
 			return route.Handler(ctx, w, r.WithContext(ctx))

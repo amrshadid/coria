@@ -398,8 +398,10 @@ func TestAuditWrittenAtStop(t *testing.T) {
 }
 
 // TestRequestDuringStop guards what a request meets while Stop drains: any
-// request is UNAVAILABLE, except the health service's Check, which answers
-// NOT_SERVING; and when Stop is done the lock is released.
+// request is UNAVAILABLE, except the health service's Check at its exact
+// path (not percent-encoded, not in another case, not with a trailing
+// slash), which answers NOT_SERVING; and when Stop is done the lock is
+// released.
 func TestRequestDuringStop(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, delay: 800 * time.Millisecond, drain: 5 * time.Second})
 	cl := e.local()
@@ -423,6 +425,13 @@ func TestRequestDuringStop(t *testing.T) {
 	}
 	if h := call(server.HealthCheckProcedure); h.Code != http.StatusOK || !strings.Contains(h.Body.String(), "NOT_SERVING") {
 		t.Fatalf("health during stop: %d %s", h.Code, h.Body.String())
+	}
+	// Only the health check's exact path is let in: not another spelling of
+	// it, which the server does not serve as the health check.
+	for _, p := range []string{"/grpc.health.v1.Health%2FCheck", "/GRPC.HEALTH.V1.HEALTH/CHECK", "/grpc.health.v1.Health/Check/", server.HealthWatchProcedure} {
+		if h := call(p); h.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s during stop: %d %s, want the stopping refusal", p, h.Code, h.Body.String())
+		}
 	}
 	if err := <-stopped; err != nil {
 		t.Fatal(err)

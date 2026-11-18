@@ -52,10 +52,17 @@ func identityFrom(ctx context.Context) (access.Credential, bool) {
 }
 
 // public reports whether r asks for one of the paths anyone may call
-// without a key: the health service's Check and Watch, matched exactly,
-// with no percent-encoding in the path. Nothing else is public.
+// without a key: the health service's Check and Watch, matched exactly
+// (isPath). Nothing else is public.
 func public(r *http.Request) bool {
-	return r.URL.RawPath == "" && (r.URL.Path == HealthCheckProcedure || r.URL.Path == HealthWatchProcedure)
+	return isPath(r, HealthCheckProcedure) || isPath(r, HealthWatchProcedure)
+}
+
+// isPath reports whether r's path is exactly p, as sent: byte for byte, case
+// included, with no percent-encoding (an empty raw path). It is the one
+// match by which the server names a path as public or as the health check.
+func isPath(r *http.Request, p string) bool {
+	return r.URL.RawPath == "" && r.URL.Path == p
 }
 
 // front is the step every request takes before any route is chosen, inside
@@ -69,15 +76,27 @@ func public(r *http.Request) bool {
 //  3. A caller who is not authenticated is answered at once, by
 //     writeWireError, with a refusal chosen by the request's protocol
 //     family alone (wireOf): not by the path, the HTTP method, whether
-//     anything serves the path, or the body, which is never read. Its audit
-//     entry was written by Authenticate, under the name nameOf gives.
+//     anything serves the path, or the body, which is never read.
 //  4. Only an authenticated caller reaches the router (route), with the
-//     accepted credential in its context, which the request path then uses
-//     instead of reading the key again.
-//  5. If no check ran for that request (pass never ran: nothing serves the
-//     path is handled in route; the RPC library refused the call's form),
-//     one failed entry is written for it here, so every request but those
-//     to a public path writes exactly one entry.
+//     accepted credential in its context, which the request path then uses.
+//
+// Each request writes exactly one audit entry, but for those deliberately
+// not audited: a request to a public path (the health service), a request
+// refused because the server is stopping (answered by the envelope before
+// this step), and an allowed scrape of the metrics. The one entry is
+// written by:
+//
+//   - Authenticate, for a caller who is not authenticated (refused), or
+//     whose check could not finish (failed);
+//   - notServed, for a path nothing serves (failed, served=false);
+//   - the check, for a caller it refuses;
+//   - the handler, for a request the check allowed; or pass, when such a
+//     request ends without one (its message could not be read or came too
+//     late, the handler failed, panicked, was canceled or ran past its
+//     deadline, or succeeded without recording);
+//   - this step, when the request was answered and pass never took it up
+//     (the RPC library refused the call's form before the check): failed,
+//     with the HTTP status.
 func (s *Server) front(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if public(r) {
@@ -95,12 +114,21 @@ func (s *Server) front(next http.Handler) http.Handler {
 		if err != nil {
 			ce := s.answer(err)
 			writeWireError(w, wireOf(r), ce.Code(), ce.Message())
+			if r.ProtoMajor == 1 {
+				// The answer says Connection: close, but net/http reads what
+				// is left of a body (up to 256 KiB) looking for its end
+				// before it closes, which a body that never ends stretches
+				// to the read bound. Nothing of this request is read: the
+				// read deadline is moved to now, so the connection closes as
+				// soon as the refusal is written.
+				_ = http.NewResponseController(w).SetReadDeadline(time.Now())
+			}
 			s.finish(ctx, x, &Call{RequestID: id, Method: method}, start, err)
 			return
 		}
 		ctx = context.WithValue(ctx, identityKey{}, accepted)
 		defer func() {
-			if m, ok := ctx.Value(pathMarkKey{}).(*pathMark); ok && m.done.Load() {
+			if m, ok := ctx.Value(pathMarkKey{}).(*pathMark); ok && m.audited.Load() {
 				return
 			}
 			f := facts
@@ -200,6 +228,7 @@ func (s *Server) notServed(w http.ResponseWriter, r *http.Request) {
 		// connection may be kept.
 		markAuthenticated(ctx)
 	}
+	markAudited(ctx)
 	writeWireError(w, p, ce.Code(), ce.Message())
 	s.finish(ctx, x, &Call{RequestID: id, Method: method}, start, ce)
 }

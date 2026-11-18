@@ -36,14 +36,25 @@
 //     of checks is the contract's: the role, then the handler validates the
 //     request.
 //
-// Every request but those to a public path writes exactly one audit entry:
-// a refusal by the front step; the check's or the handler's; the router's
-// for a path nothing serves; and, for a call the RPC library answered before
-// the check (a wrong HTTP method, content type, codec, compression or
-// timeout header), one failed entry the front step writes when no check ran.
-// An allowed scrape of /metrics writes none, as before; a refused one is
-// audited under its pattern. A request refused because the server is
-// stopping writes none.
+// Every request writes exactly one audit entry, but for those deliberately
+// not audited: a request to a public path (the health service), a request
+// refused because the server is stopping, and an allowed scrape of
+// /metrics. The entry is the front step's refusal; the router's for a path
+// nothing serves; the check's refusal; the handler's for an allowed request,
+// or, when an allowed request ends without one (its message could not be
+// read or came too late, the handler failed, panicked, was canceled or ran
+// past its deadline, or succeeded without recording), the one pass writes
+// with a fixed reason; and, for a call the RPC library answered before the
+// check (a wrong HTTP method, content type, codec, compression or timeout
+// header), a failed one the front step writes. A refused scrape of /metrics
+// is audited under its pattern. A caller who goes away during the check is
+// recorded as having ended its request, never as a failure of the master.
+//
+// For a method whose requirement reads the request, the check that follows
+// the message reads the key again: the message may take as long as the
+// body's read bound to arrive, and the decision to allow is made on the key
+// as it is then, revoked, expired or removed. Every other request reads its
+// key once.
 //
 // The requirement of each method comes from one table, keyed by the full
 // procedure name, which package internal/api owns and tests against the

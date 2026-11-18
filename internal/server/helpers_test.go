@@ -73,7 +73,10 @@ type options struct {
 	refusalQueue int
 	// store wraps the master as the access package sees it, for a test
 	// that counts what the check reads.
-	store     func(access.Store) access.Store
+	store func(access.Store) access.Store
+	// clock replaces the access package's clock, for a test that moves
+	// time past a key's expiry.
+	clock     func() time.Time
 	register  func(*connect.Server)
 	methods   servertest.Table
 	noNetwork bool
@@ -139,7 +142,11 @@ func newEnv(tb testing.TB, o options) *env {
 	if o.store != nil {
 		st = o.store(m)
 	}
-	a, err := access.New(access.Config{Store: st, Clock: time.Now, NewID: server.NewID, Log: log, AuditInterval: o.auditWait, RefusalQueue: o.refusalQueue})
+	clock := time.Now
+	if o.clock != nil {
+		clock = o.clock
+	}
+	a, err := access.New(access.Config{Store: st, Clock: clock, NewID: server.NewID, Log: log, AuditInterval: o.auditWait, RefusalQueue: o.refusalQueue})
 	if err != nil {
 		tb.Fatal(err)
 	}
