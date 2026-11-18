@@ -148,6 +148,37 @@ jobs:
         if: matrix.go == '1.27'
         run: make fuzz FUZZTIME=10s
 
+  # The static builds, their sizes and the check that the Linux binary is
+  # static, in a job of their own beside the Linux job, for each Go. Since
+  # serve links the SQLite driver, each of the five targets compiles
+  # modernc.org/sqlite's translation of SQLite, which took the Linux job past
+  # its 15 minutes when the builds were its last steps.
+  builds:
+    name: Builds - Go ${{ matrix.go }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.26', '1.27']
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The module and build caches, keyed on go.sum, as in the Linux job.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Go version
+        run: go version
+
       - name: Static builds
         run: make build
 

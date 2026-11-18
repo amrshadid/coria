@@ -287,12 +287,9 @@ func waitServing(t *testing.T, dir string, c *child) {
 
 // TestOneServerPerDirectory guards acceptance 4 with real processes: a
 // second serve on the same directory is refused with a clear line naming
-// the first one's process; after the first is killed with signal 9, a new
-// one starts.
+// the first one's process; after the first is killed (signal 9 on Unix,
+// TerminateProcess on Windows), a new one starts.
 func TestOneServerPerDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("signal 9 is a Unix test; on Windows the lock is the exclusive open, tested in package server")
-	}
 	dir := shortDir(t)
 	if _, err := run(t, nil, "init", "--data-dir", dir); err != nil {
 		t.Fatal(err)
@@ -316,7 +313,10 @@ func TestOneServerPerDirectory(t *testing.T) {
 		t.Fatal("the second serve did not exit")
 	}
 
-	if err := first.cmd.Process.Signal(syscall.SIGKILL); err != nil {
+	// Kill is signal 9 on Unix and TerminateProcess on Windows: the process
+	// ends without running any of its own code, so the lock is dropped by the
+	// system alone.
+	if err := first.cmd.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-first.done; err == nil {
