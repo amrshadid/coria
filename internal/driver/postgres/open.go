@@ -85,6 +85,11 @@ func newRedactor(address string, cfg *pgx.ConnConfig) *redactor {
 			return
 		}
 		all = append(all, s, url.QueryEscape(s), url.PathEscape(s))
+		// A socket directory is printed with the system's separators; on
+		// Windows pgx joins it with backslashes.
+		if strings.Contains(s, "/") {
+			all = append(all, strings.ReplaceAll(s, "/", `\`))
+		}
 	}
 	add(address)
 	if cfg != nil {

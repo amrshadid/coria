@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -117,6 +118,13 @@ func TestRedactor(t *testing.T) {
 	}
 	if r.text("nothing here") != "nothing here" {
 		t.Error("text without secrets was changed")
+	}
+	// A socket directory as Windows prints it, with backslashes.
+	sock := newRedactor("postgres://u@%2Fvar%2Frun%2Fpg/db", &pgx.ConnConfig{Config: pgconn.Config{Host: "/var/run/pg"}})
+	for _, shown := range []string{"/var/run/pg/.s.PGSQL.5432", `\var\run\pg\.s.PGSQL.5432`} {
+		if text := sock.text("dial unix " + shown); strings.Contains(text, "run") {
+			t.Errorf("the socket directory is in %q", text)
+		}
 	}
 }
 
