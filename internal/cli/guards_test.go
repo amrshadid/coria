@@ -160,12 +160,27 @@ func TestKeyFile(t *testing.T) {
 	}
 }
 
+// TestTenantListShowsGrantedTenants guards the fake against the real
+// server on what tenant list shows: a key with no grant on the installation
+// sees only the tenants it holds a grant on.
+func TestTenantListShowsGrantedTenants(t *testing.T) {
+	n := newNetworkRigAs(t, false)
+	for _, name := range []string{"lab1", "lab2", "lab3"} {
+		n.fake.AddTenant(&v1.Tenant{Name: name, DatabaseType: v1.DatabaseType_DATABASE_TYPE_SQLITE, State: v1.TenantState_TENANT_STATE_READY})
+	}
+	n.fake.AddGrant("k00000000001", &v1.Scope{Kind: &v1.Scope_Tenant{Tenant: "lab2"}}, v1.Role_ROLE_READER)
+	res := n.run("tenant", "list")
+	if res.code != 0 || !strings.Contains(res.stdout, "lab2") || strings.Contains(res.stdout, "lab1") || strings.Contains(res.stdout, "lab3") {
+		t.Errorf("tenant list by a reader of lab2: %+v", res)
+	}
+}
+
 // TestNetworkOverTLS guards the network path end to end: TLS with a
 // certificate made in the test, the key from the environment, the table.
 func TestNetworkOverTLS(t *testing.T) {
 	n := newNetworkRig(t)
 	expect(t, n.run("tenant", "create", "lab1"), 0,
-		"Name:     lab1\nDatabase: sqlite\nState:    ready\nCreated:  2026-11-17 15:00:00 +03:00\n", "")
+		"Name:     lab1\nDatabase: sqlite\nState:    ready\nSince:    2026-11-17 15:00:00 +03:00\nCreated:  2026-11-17 15:00:00 +03:00\n", "")
 	doc := document(t, n.run("tenant", "list", "--json"))
 	if len(doc["tenants"].([]any)) != 1 {
 		t.Errorf("list: %v", doc)

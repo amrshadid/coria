@@ -137,7 +137,7 @@ func settingsPage(c *ctx, owner, gen int, token string, scope *v1.Scope) tea.Cmd
 		return answer(res, err, func(r *v1.ListSettingsResponse) tea.Msg {
 			rows := make([]row, 0, len(r.GetSettings()))
 			for _, s := range r.GetSettings() {
-				rows = append(rows, row{cells: []string{s.GetName(), s.GetValue()}, ref: s})
+				rows = append(rows, row{cells: []string{s.GetName(), s.GetValue(), output.SettingFrom(s)}, ref: s})
 			}
 			return pageMsg{gen: gen, rows: rows, next: r.GetNextPageToken()}
 		})

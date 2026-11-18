@@ -40,6 +40,7 @@ func TestKeyTravelsOnlyInTheAuthorizationHeader(t *testing.T) {
 		key    = "mgt_" + keyID + "_" + secret
 	)
 	fake := fakeserver.New()
+	fake.Settings = testSettings()
 	fake.Now = func() time.Time { return fixedNow }
 	fake.RequireKey = key
 	fake.CallerKeyID = keyID
@@ -57,8 +58,8 @@ func TestKeyTravelsOnlyInTheAuthorizationHeader(t *testing.T) {
 		{"grant", "set", keyID, "--role", "reader", "--tenant", "lab1"},
 		{"grant", "list", "--key-id", keyID}, {"grant", "remove", keyID, "--tenant", "lab1"},
 		{"key", "revoke", keyID},
-		{"setting", "get", "audit.retention"}, {"setting", "set", "audit.retention", "90d", "--tenant", "lab1"},
-		{"setting", "list", "--tenant", "lab1"}, {"setting", "unset", "audit.retention", "--tenant", "lab1"},
+		{"setting", "get", "test.retention"}, {"setting", "set", "test.retention", "90d", "--tenant", "lab1"},
+		{"setting", "list", "--tenant", "lab1"}, {"setting", "unset", "test.retention", "--tenant", "lab1"},
 		{"audit", "list"}, {"tenant", "remove", "lab1", "--yes"},
 		// Commands that fail, so the error paths are covered too.
 		{"tenant", "show", "nope"}, {"tenant", "create", "Bad Name"}, {"grant", "set", "knosuchkey01", "--role", "reader", "--installation"},

@@ -64,6 +64,24 @@ func Scope(sc *v1.Scope) string {
 	return "unknown"
 }
 
+// SettingFrom says where a setting's value comes from, in words: "built-in
+// default", "installation", or "tenant <name> (override)". A server that
+// does not say (an older one) is read from the setting's scope.
+func SettingFrom(st *v1.Setting) string {
+	switch st.GetSource() {
+	case v1.SettingSource_SETTING_SOURCE_BUILT_IN:
+		return "built-in default"
+	case v1.SettingSource_SETTING_SOURCE_INSTALLATION:
+		return "installation"
+	case v1.SettingSource_SETTING_SOURCE_TENANT:
+		return Scope(st.GetScope()) + " (override)"
+	}
+	if st.GetScope().GetTenant() != "" {
+		return Scope(st.GetScope()) + " (override)"
+	}
+	return "installation"
+}
+
 // KeyLabel is a key's id with its holder, for a sentence.
 func KeyLabel(k *v1.Key) string {
 	if k.GetHolder() == "" {

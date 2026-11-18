@@ -105,7 +105,7 @@ the key included, is written to standard output.`,
 		}),
 	}
 	cmd.Flags().StringVar(&holder, "holder", "", "who holds the key: a person or a system, at most 256 bytes (required)")
-	cmd.Flags().StringVar(&expires, "expires", "", "how long the key works: a number and s, m, h, d or w, such as 90d (default: the server's, 90 days)")
+	cmd.Flags().StringVar(&expires, "expires", "", "how long the key works: a number and s, m, h, d or w, such as 90d (default: the installation's setting key.default-lifetime, 90 days unless set)")
 	cmd.Flags().BoolVar(&noExpiry, "no-expiry", false, "make a key that never expires")
 	_ = cmd.MarkFlagRequired("holder")
 	cmd.MarkFlagsMutuallyExclusive("expires", "no-expiry")

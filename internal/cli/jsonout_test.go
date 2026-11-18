@@ -45,10 +45,10 @@ func TestWriteJSONOutputs(t *testing.T) {
 		{"grant-list", []string{"grant", "list", "--key-id", "k00000000001"}},
 		{"grant-remove", []string{"grant", "remove", "k00000000001", "--tenant", "lab1"}},
 		{"key-revoke", []string{"key", "revoke", "k00000000001"}},
-		{"setting-get", []string{"setting", "get", "audit.retention"}},
-		{"setting-set", []string{"setting", "set", "audit.retention", "90d", "--tenant", "lab1"}},
+		{"setting-get", []string{"setting", "get", "test.retention"}},
+		{"setting-set", []string{"setting", "set", "test.retention", "90d", "--tenant", "lab1"}},
 		{"setting-list", []string{"setting", "list", "--tenant", "lab1"}},
-		{"setting-unset", []string{"setting", "unset", "audit.retention", "--tenant", "lab1"}},
+		{"setting-unset", []string{"setting", "unset", "test.retention", "--tenant", "lab1"}},
 		{"audit-list", []string{"audit", "list"}},
 		{"tenant-remove", []string{"tenant", "remove", "lab1", "--yes"}},
 	}
