@@ -42,7 +42,7 @@ func TestSQLiteTenantPath(t *testing.T) {
 		}
 	}
 	// Windows reserves device names: a file named con.db is the console,
-	// not a file. filepath.IsLocal refuses it there.
+	// not a file, before Windows 11; Path refuses those names there.
 	_, err = d.Path("con")
 	if runtime.GOOS == "windows" && err == nil {
 		t.Error("Path(con) on Windows made a device name")

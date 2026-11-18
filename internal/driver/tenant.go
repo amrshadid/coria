@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/amrshadid/magnetar/internal/driver/sqlite"
@@ -44,7 +45,7 @@ func (d SQLiteTenants) Path(name string) (string, error) {
 		return "", err
 	}
 	file := name + ".db"
-	if !filepath.IsLocal(file) || strings.ContainsAny(file, `/\:`) {
+	if !filepath.IsLocal(file) || strings.ContainsAny(file, `/\:`) || windowsDevice(name) {
 		return "", fault.New(fault.Invalid, "a tenant's name cannot be used as a file name")
 	}
 	dir, err := filepath.Abs(filepath.Join(d.DataDir, TenantsDir))
@@ -90,4 +91,22 @@ func (d SQLiteTenants) Open(ctx context.Context, name, address string) (tenant.S
 		return nil, err
 	}
 	return s, nil
+}
+
+// windowsDevice reports, on Windows, whether name is one of the device names
+// Windows reserves (CON, PRN, AUX, NUL, COM0 to COM9, LPT0 to LPT9). Before
+// Windows 11 such a name opened the device even with an extension, so
+// "con.db" was the console, not a file; filepath.IsLocal no longer refuses
+// it since Go 1.23, which follows Windows 11 (seen in CI). A tenant's name
+// is lowercase, so the comparison is too.
+func windowsDevice(name string) bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	switch name {
+	case "con", "prn", "aux", "nul":
+		return true
+	}
+	return len(name) == 4 && (strings.HasPrefix(name, "com") || strings.HasPrefix(name, "lpt")) &&
+		name[3] >= '0' && name[3] <= '9'
 }
