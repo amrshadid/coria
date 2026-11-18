@@ -482,6 +482,21 @@ All notable changes to Magnetar are written here. The form is
   functions that are fuzzed in CI. The command line maps three more answers
   to exit codes: 5 a state that forbids the change, 6 a position that can
   no longer be answered, 7 a bound of the server reached.
+- Nothing turned received files into an archive. Package `receive` now does:
+  a file lands in a local incoming area with its SHA-256, its header is read
+  (never its pixel data), it is named subject, session and scan by the
+  tenant's rules, and a reception ends after its quiet period. Each scan is
+  then archived in order: its instances are claimed, each file is written to
+  the storage and read back and compared before its catalog row is
+  committed, then the scan's sidecar and manifest. A file that reads back
+  different is held in quarantine with its incoming copy kept, and is never
+  counted archived. Before the incoming copies are removed the reception is
+  checked whole: every instance at its key with its size, every manifest
+  agreeing with the catalog, no claim left. Every step is leased work
+  recorded in the tenant's database, so a server killed before or after any durable effect of any step
+  (tested with signal 9) resumes without losing a file or archiving one
+  twice. A header is bounded at 64 MiB before pixel data, so a file that
+  declares a huge value is refused without the memory being allocated.
 
 ### Changed
 

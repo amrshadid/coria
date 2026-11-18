@@ -246,6 +246,27 @@ linters:
             - pkg: github.com/amrshadid/magnetar/internal/driver
               desc: the handlers name a database type with master.SQLiteDriver and reach a tenant through the registry
 
+        # The reception pipeline is written against the ports: a tenant's
+        # database through tenant.Pipeline and bytes through blob.Store. If it
+        # named a driver, a reception would work on one database or one kind
+        # of storage and the contract suites would no longer cover it.
+        # Non-test files only: its tests run it on the real drivers.
+        receive:
+          files:
+            - "**/internal/receive/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the reception pipeline reaches a database through the tenant port
+            - pkg: github.com/amrshadid/magnetar/internal/blob/dir
+              desc: the reception pipeline reaches a storage through blob.Store
+            - pkg: github.com/amrshadid/magnetar/internal/blob/s3
+              desc: the reception pipeline reaches a storage through blob.Store
+            - pkg: database/sql
+              desc: the reception pipeline reaches a database through the tenant port
+            - pkg: github.com/amrshadid/magnetar/internal/registry
+              desc: the reception pipeline is handed its tenant, it does not look one up
+
         # Package driver is the one door to the database drivers: it opens a
         # master or a tenant by the type and address it is given, so nothing
         # outside it comes to depend on which database it runs on, and a

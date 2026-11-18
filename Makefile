@@ -153,6 +153,7 @@ test-scale:
 	$(GO) test -count=1 -v -run '^TestThousandTenants$$' ./internal/registry
 	$(GO) test -count=1 -v -run '^(TestListFiltersAtScale|TestPipelineModelAllSeeds)$$' ./internal/driver/sqlite
 	$(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres
+	MAGNETAR_TEST_SCALE=1 $(GO) test -count=1 -v -timeout 30m -run '^TestScale' ./internal/receive
 
 # The event feed's speed: a step with its event, a page read from a feed of
 # ten million events (built once, about a minute), and what waking the
