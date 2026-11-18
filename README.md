@@ -101,6 +101,7 @@ them as steps of their own on Linux:
 | `make check-json` | every command with `--json` against the in-process server, each output parsed by Python's `json` module (`scripts/check-json.py`, standard library only) and checked for `schemaVersion` |
 | `make check-completion` | the bash completion script the binary writes, parsed by `bash -n` |
 | `make check-tenant-sqlite SQLITE3=sqlite3` | a tenant's SQLite database against the `sqlite3` tool: `scripts/check-tenant-sqlite.sh` has the tenant registry create a tenant on SQLite in a fresh data directory and write a sample into it, then checks that its file is `<data-dir>/tenants/<name>.db` and private, lists its tables and rows, runs `PRAGMA integrity_check`, and reads the tenant's row and its state change from the master |
+| `make check-master-postgres` | the Postgres master database against `psql` and `pg_dump`: `scripts/check-master-postgres.sh` has the driver write a sample installation into a schema of the database `MAGNETAR_TEST_POSTGRES` names (a `postgres://` URL), then lists its tables and rows, checks every constraint and foreign key, reads times and audit details with Postgres's functions, and searches a `pg_dump` for the sample key's secret (absent) and its hash (present). `PSQL=` and `PG_DUMP=` name the commands, which may run in a container. The Postgres tests of `go test` use the same variable and skip without it; `MAGNETAR_REQUIRE_POSTGRES=1` makes a missing address a failure, as CI sets it |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
 into `bin/tools/` the first time, and the proto targets do the same for buf,
@@ -112,7 +113,10 @@ directly.
 
 CI runs the gates on Linux with Go 1.26 and 1.27, and `go vet` and the tests on
 Windows with Go 1.27, for every pull request. The tests run on macOS with Go
-1.27 after each merge into `develop` or `main`.
+1.27 after each merge into `develop` or `main`. A separate Linux job runs the
+Postgres driver against Postgres 16 and 18 service containers and fails if the
+server is missing; on Windows and macOS, which have none, the Postgres tests
+skip and say so in the log.
 
 ## Branches
 

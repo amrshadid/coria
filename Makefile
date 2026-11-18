@@ -21,6 +21,9 @@
 #                    sqlite3 tool (SQLITE3=... names one)
 #   make check-tenant-sqlite  a tenant's SQLite database, created by the
 #                    registry, read back by the sqlite3 tool
+#   make check-master-postgres  the Postgres master database read back by
+#                    psql and pg_dump (PSQL=... PG_DUMP=... name them; needs
+#                    MAGNETAR_TEST_POSTGRES, the URL of a scratch database)
 #   make test-386    the tests as linux/386 binaries, on a Linux x86-64 host
 
 GO      ?= go
@@ -143,6 +146,17 @@ check-master-sqlite:
 .PHONY: check-tenant-sqlite
 check-tenant-sqlite:
 	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-tenant-sqlite.sh
+
+# The outside check of the Postgres master database: the driver writes the
+# contract suite's sample into a schema of the database MAGNETAR_TEST_POSTGRES
+# names, and psql and pg_dump (the commands in PSQL and PG_DUMP, which may run
+# in a container so their version equals the server's) read it back.
+PSQL    ?= psql
+PG_DUMP ?= pg_dump
+
+.PHONY: check-master-postgres
+check-master-postgres:
+	PSQL="$(PSQL)" PG_DUMP="$(PG_DUMP)" GO="$(GO)" bash scripts/check-master-postgres.sh
 
 # The tests on 32 bits, where int is 32 bits and the SQLite library is a
 # different translation of SQLite's C. Without -race, which 386 lacks. It runs

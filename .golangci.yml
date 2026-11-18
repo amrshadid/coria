@@ -172,6 +172,15 @@ linters:
             - pkg: modernc.org/sqlite
               desc: only internal/driver/sqlite uses the SQLite library; ask for a master.Store from internal/driver
 
+        # The same for Postgres: only its driver reaches pgx.
+        postgres-library:
+          files:
+            - $all
+            - "!**/internal/driver/postgres/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: only internal/driver/postgres uses pgx; ask for a master.Store from internal/driver
+
     misspell:
       locale: US
 
