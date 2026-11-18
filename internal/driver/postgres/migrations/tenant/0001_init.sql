@@ -1,6 +1,6 @@
--- A tenant database's first schema, on Postgres: the tenant's overrides of the
--- installation's settings, and the tenant's audit log. The catalog,
--- receptions, events and jobs come with the milestones that need them, each
+-- A tenant database's first schema, on Postgres: the tenant's overrides of
+-- the installation's settings, and the tenant's audit log. The catalog,
+-- receptions, events and jobs are added when the code that uses them is, each
 -- as a new file.
 --
 -- The rules are the master's (migrations/master/0001_init.sql) and the SQLite

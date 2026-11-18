@@ -854,8 +854,9 @@ func nullText(s string) any {
 
 // encodeDetails writes an audit entry's details as a JSON object. JSON is
 // stored and returned whole and never searched inside, so it is the same in
-// every SQL database (research R6). encoding/json sorts the keys, so an
-// entry's text does not depend on the map's order.
+// every SQL database, with no dialect's JSON functions to keep correct.
+// encoding/json sorts the keys, so an entry's text does not depend on the
+// map's order.
 func encodeDetails(d map[string]string) (string, error) {
 	if len(d) == 0 {
 		return "{}", nil

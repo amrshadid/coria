@@ -34,9 +34,10 @@ func logEverything(format Format) string {
 	return buf.String()
 }
 
-// TestLoggerRedacts guards D39 for both slog handlers: the two secret fields
-// and an authorization value, logged at debug level, are absent from the
-// output, and the lines are there with their other fields.
+// TestLoggerRedacts guards the redaction of secrets for both slog handlers,
+// since the protobuf library itself prints a debug_redact field: the two
+// secret fields and an authorization value, logged at debug level, are absent
+// from the output, and the lines are there with their other fields.
 func TestLoggerRedacts(t *testing.T) {
 	for _, f := range []Format{JSON, Text} {
 		out := logEverything(f)

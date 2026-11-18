@@ -72,13 +72,13 @@ type Store interface {
 	// ListKeys returns a page of keys in order of creation, then id.
 	ListKeys(ctx context.Context, page Page) ([]Key, string, error)
 	// MarkKeyUsed sets a key's last-used time to at, only when the time it
-	// holds is unset or more than a minute before at, so a busy key costs
-	// one write a minute, not one a request (M0 design note, part 4). The
-	// stored time never moves backward: an at older than it writes nothing.
-	// It reports whether it wrote. It is one statement with no read first,
-	// and takes no audit entry: the request that used the key writes its
-	// own. An unknown key writes nothing and is not an error, since the
-	// caller has just read the key.
+	// holds is unset or more than a minute before at, so a busy key costs one
+	// write a minute, not one a request. The stored time never moves
+	// backward: an at older than it writes nothing. It reports whether it
+	// wrote. It is one statement with no read first, and takes no audit
+	// entry: the request that used the key writes its own. An unknown key
+	// writes nothing and is not an error, since the caller has just read the
+	// key.
 	//
 	// A caller that has just read the key may skip the call when the key's
 	// LastUsed is within the minute before at, which saves the statement on
@@ -95,14 +95,14 @@ type Store interface {
 
 	// SetGrant gives a key a role on a scope. When the key already has a
 	// grant on that scope, its role is replaced in one step, so a role is
-	// changed with no moment of no access (D37). It returns the role the
-	// grant had before, or the empty Role when there was none, and the
-	// audit entry it writes has the old and new role in its details
-	// (AuditEntry.WithRoleChange), both taken inside the change, so two
-	// concurrent sets each see what the other left. An unknown key or
-	// tenant is NotFound. A revoked key is Conflict, decided in the same
-	// transaction as the write, so no grant is ever written after the key's
-	// revocation (the API contract).
+	// changed with no moment of no access, which removing and adding the
+	// grant would leave. It returns the role the grant had before, or the
+	// empty Role when there was none, and the audit entry it writes has the
+	// old and new role in its details (AuditEntry.WithRoleChange), both taken
+	// inside the change, so two concurrent sets each see what the other left.
+	// An unknown key or tenant is NotFound. A revoked key is Conflict,
+	// decided in the same transaction as the write, so no grant is ever
+	// written after the key's revocation (the API contract).
 	SetGrant(ctx context.Context, g Grant, audit AuditEntry) (Role, error)
 	// GrantsByKey returns a page of a key's grants, the installation first,
 	// then by tenant id, each with its tenant's name at the time of the

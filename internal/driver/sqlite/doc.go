@@ -9,11 +9,12 @@
 // Two pools of connections to one file. The write pool has exactly one
 // connection, and its transactions begin with BEGIN IMMEDIATE: inside the
 // process, writers queue for that connection instead of failing with
-// SQLITE_BUSY, and across processes the write lock is taken at the start of
-// a transaction, where the busy timeout applies, rather than on its first
-// write, where SQLite fails at once (research R6, databases.md section 1).
-// The read pool has a few connections that cannot write (query_only), and
-// in write-ahead mode they read a snapshot while the writer works.
+// SQLITE_BUSY, and across processes the write lock is taken at the start of a
+// transaction, where the busy timeout applies, rather than on its first
+// write, where SQLite fails at once without waiting
+// (sqlite.org/lang_transaction.html). The read pool has a few connections
+// that cannot write (query_only), and in write-ahead mode they read a
+// snapshot while the writer works.
 //
 // The migration lock is BEGIN IMMEDIATE too: a second process that starts
 // migrating waits for the first, under the busy timeout, then finds the files

@@ -13,12 +13,14 @@ import (
 	"github.com/amrshadid/magnetar/internal/server"
 )
 
-// TestServeRefusesAnotherMaster guards point 5 of the review (D52): serve
-// pointed at a master that is not the one init made refuses to start, and
-// changes nothing in it. An empty database, one with the tables and no
-// installation id, and another installation's master are each refused with
-// a message saying the master is not this installation's; the right master
-// is accepted (as far as the identity goes) in every other test.
+// TestServeRefusesAnotherMaster guards that serve pointed at a master that is
+// not the one init made refuses to start, and changes nothing in it. Without
+// it, serve given another address would silently serve an empty or foreign
+// master, with none of this installation's tenants, keys or grants. An empty
+// database, one with the tables and no installation id, and another
+// installation's master are each refused with a message saying the master is
+// not this installation's; the right master is accepted (as far as the
+// identity goes) in every other test.
 func TestServeRefusesAnotherMaster(t *testing.T) {
 	dir := shortDir(t)
 	parent := filepath.Dir(dir)

@@ -67,7 +67,8 @@ func listError(err error, token string) error {
 }
 
 // tenantName returns an Invalid error naming field unless name is a valid
-// tenant name (D37).
+// tenant name (master.ValidateTenantName; tenant.proto,
+// CreateTenantRequest.name).
 func tenantName(field, name string) error {
 	if name == "" {
 		return invalid(field, "is required")

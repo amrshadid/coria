@@ -338,7 +338,7 @@ func failed(reason string) *wantAudit {
 func refused() *wantAudit { return &wantAudit{outcome: master.OutcomeRefused} }
 
 // inTenant is the audit entry of an allowed request on a tenant's scope, in
-// that tenant's log, whatever its outcome (D53).
+// that tenant's log, whatever its outcome.
 func inTenant(name string, outcome master.Outcome) *wantAudit {
 	return &wantAudit{log: name, outcome: outcome, tenant: name}
 }

@@ -279,10 +279,10 @@ func TestStateIsTheRegistrys(t *testing.T) {
 	}
 }
 
-// TestTenantLifecycle is acceptance point 4: a tenant created over the API
-// is ready and has its database file; a tenant setting is set, read, unset
-// and found in that tenant's audit log; after removal the registration is
-// gone and the file is still there.
+// TestTenantLifecycle guards a tenant's life end to end: a tenant created
+// over the API is ready and has its database file; a tenant setting is set,
+// read, unset and found in that tenant's audit log; after removal the
+// registration is gone and the file is still there.
 func TestTenantLifecycle(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
@@ -333,9 +333,9 @@ func TestTenantLifecycle(t *testing.T) {
 	}
 }
 
-// TestDatabaseAddressIsFoundNowhere is acceptance point 5: a database
-// address given to CreateTenant, with a password, user and host that are
-// each searched for, is in no response, no audit entry of either log, no
+// TestDatabaseAddressIsFoundNowhere guards that a secret stays sealed: a
+// database address given to CreateTenant, with a password, user and host that
+// are each searched for, is in no response, no audit entry of either log, no
 // log line, no error, and in the master's files only sealed. The test's
 // driver repeats the address in its own error when the database is down, so
 // the path where a driver is careless is covered too.

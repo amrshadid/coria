@@ -6,17 +6,18 @@
 // The master database is reached only through Store, an interface stated as
 // operations ("create this tenant", "list this key's grants"), never as SQL.
 // A database type is one driver package that implements Store and passes the
-// contract suite in package mastertest; nothing outside the driver knows which
-// database it is (decision D12).
+// contract suite in package mastertest; nothing outside the driver knows
+// which database it is, so each database can do its best behind the same
+// operations and another one is added without touching the rest.
 //
 // # Rules every driver keeps
 //
 // Every operation that changes the master takes the audit entry for that
 // change and writes both or neither, so there is no way through this port to
-// change the master without leaving a record (M0 design note, part 6). The
-// one exception is MarkKeyUsed, which records that a key was used: the request
-// that used it writes its own audit entry, and a second one for the same
-// request would double the cost of every call.
+// change the master without leaving a record. The one exception is
+// MarkKeyUsed, which records that a key was used: the request that used it
+// writes its own audit entry, and a second one for the same request would
+// double the cost of every call.
 //
 // Ids and times are given by the caller, never made by the store, so a test
 // knows exactly what it will read back. A time is kept in UTC to the

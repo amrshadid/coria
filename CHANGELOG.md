@@ -333,6 +333,17 @@ All notable changes to Magnetar are written here. The form is
   of each binary. It does not show Windows, a loss of power on real hardware,
   or any speed.
 
+### Changed
+
+- About 130 comment lines, a test file's name, a test failure's message and the
+  comments of the shipped SQL migrations pointed at notes that are not in the
+  repository, so a reader could not tell why the code was the way it was.
+  Each now says its reason itself, or cites a published rule or the API
+  contract. `make check-comments` (part of `make check`, and run in CI's API
+  contract job) fails on such a reference, naming the file and line. The
+  migrations' statements are unchanged but their checksums are not: a
+  development database made before this change must be made again.
+
 ### Fixed
 
 - `serve` started with a key file other than the installation's ran: every

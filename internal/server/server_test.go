@@ -34,11 +34,11 @@ import (
 // unknownKey is a key of the right shape that no installation holds.
 const unknownKey = "mgt_111111111111_1111111111111111111111111111111111111111111"
 
-// TestRefusalsAreTheSame guards acceptance 1 and the order of checks: no
-// key, a malformed key, an unknown key and a key with no grant get the
-// fixed message and code, the same over gRPC and over Connect JSON; the
-// handler never runs for any of them; the local operator and a key with the
-// grant succeed. Each refusal carries a request id.
+// TestRefusalsAreTheSame guards that refusals tell a caller nothing, and the
+// order of checks: no key, a malformed key, an unknown key and a key with no
+// grant get the fixed message and code, the same over gRPC and over Connect
+// JSON; the handler never runs for any of them; the local operator and a key
+// with the grant succeed. Each refusal carries a request id.
 func TestRefusalsAreTheSame(t *testing.T) {
 	e := newEnv(t, options{})
 	noGrant := e.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
@@ -197,10 +197,10 @@ func TestRequestID(t *testing.T) {
 	t.Fatal("a client's request id reached the log")
 }
 
-// TestMessageLimit guards acceptance 6, the size limit: a message of 4 MiB
-// and one byte is refused with RESOURCE_EXHAUSTED, a message of exactly
-// 4 MiB is read (and then refused by the handler as invalid, which shows it
-// got through), and an answer over the limit is not sent.
+// TestMessageLimit guards the size limit: a message of 4 MiB and one byte is
+// refused with RESOURCE_EXHAUSTED, a message of exactly 4 MiB is read (and
+// then refused by the handler as invalid, which shows it got through), and an
+// answer over the limit is not sent.
 func TestMessageLimit(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	cl := e.local()
@@ -225,9 +225,9 @@ func TestMessageLimit(t *testing.T) {
 	}
 }
 
-// TestDefaultDeadline guards acceptance 6, the deadline: a call with no
-// deadline is cut at the default (shortened here), and a deadline the
-// client sends is kept.
+// TestDefaultDeadline guards the default deadline: a call with no deadline is
+// cut at the default (shortened here), and a deadline the client sends is
+// kept.
 func TestDefaultDeadline(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, deadline: 300 * time.Millisecond})
 	cl := e.local()
@@ -261,9 +261,9 @@ func TestDefaultDeadline(t *testing.T) {
 	}
 }
 
-// TestPanicRecovered guards acceptance 6, the panic: the caller gets
-// INTERNAL with no detail, the log has the request id and a stack, and the
-// server goes on serving.
+// TestPanicRecovered guards recovery from a panic: the caller gets INTERNAL
+// with no detail, the log has the request id and a stack, and the server goes
+// on serving.
 func TestPanicRecovered(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	cl := e.local()
@@ -286,10 +286,11 @@ func TestPanicRecovered(t *testing.T) {
 	}
 }
 
-// TestRedactedLogs guards D39 end to end: with the server's log at debug
-// level, in JSON and in text, the database address sent to CreateTenant and
-// the secret answered by CreateKey, and the Authorization header, are not
-// in the log, while the requests are.
+// TestRedactedLogs guards the redaction of secrets end to end, since the
+// protobuf library itself prints a debug_redact field: with the server's log
+// at debug level, in JSON and in text, the database address sent to
+// CreateTenant and the secret answered by CreateKey, and the Authorization
+// header, are not in the log, while the requests are.
 func TestRedactedLogs(t *testing.T) {
 	const address = "postgres://owner:Pa55-in-the-log@db.example/lab" //nolint:gosec // G101: a planted test secret, searched for in the log.
 	for _, format := range []obs.Format{obs.JSON, obs.Text} {
@@ -324,9 +325,9 @@ func TestRedactedLogs(t *testing.T) {
 	}
 }
 
-// TestMetrics guards /metrics: the local operator reads it; over the
-// network it needs a key with reader on the installation; and its text has
-// the families the guide lists.
+// TestMetrics guards /metrics: the local operator reads it; over the network
+// it needs a key with reader on the installation; and its text has every
+// family the server exports, each listed below.
 func TestMetrics(t *testing.T) {
 	e := newEnv(t, options{})
 	get := func(hc *http.Client, base, auth string) (int, string) {
@@ -525,10 +526,10 @@ func TestListenRules(t *testing.T) {
 	}
 }
 
-// TestLock guards acceptance 4 within one process: a second lock on a data
-// directory is refused, naming the holder's process, and once released the
-// directory can be locked again. (The process-level test with signal 9 is
-// in package servecmd.)
+// TestLock guards one server per data directory within one process: a second
+// lock on a data directory is refused, naming the holder's process, and once
+// released the directory can be locked again. (The process-level test with
+// signal 9 is in package servecmd.)
 func TestLock(t *testing.T) {
 	dir := shortTempDir(t)
 	l, err := server.TakeLock(dir)
@@ -710,10 +711,10 @@ func build(t *testing.T, dir string) (*server.Server, *access.Access, error) {
 	return srv, a, err
 }
 
-// TestStopDrains guards acceptance 7 in process: with requests in flight
-// and refusals queued for the audit writer, Stop lets every request in
-// flight finish, refuses new ones, writes every audit entry queued, and
-// returns without error within the drain deadline.
+// TestStopDrains guards a graceful stop in process: with requests in flight
+// and refusals queued for the audit writer, Stop lets every request in flight
+// finish, refuses new ones, writes every audit entry queued, and returns
+// without error within the drain deadline.
 func TestStopDrains(t *testing.T) {
 	const inFlight, refusals = 40, 200
 	e := newEnv(t, options{noNetwork: true, delay: 500 * time.Millisecond, drain: 10 * time.Second})

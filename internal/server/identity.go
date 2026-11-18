@@ -13,12 +13,12 @@ import (
 	"github.com/amrshadid/magnetar/internal/secret"
 )
 
-// The identity of an installation (decision D52): a random id that init
-// writes in two places, the data directory and the master database, so that
-// serve can tell that the master it was pointed at is the one this
-// installation was made with. Without it, serve given another master's
-// address (a typo in --master-env, an empty database) would migrate it and
-// serve an installation with no keys and no tenants, silently.
+// The identity of an installation: a random id that init writes in two
+// places, the data directory and the master database, so that serve can tell
+// that the master it was pointed at is the one this installation was made
+// with. Without it, serve given another master's address (a typo in
+// --master-env, an empty database) would migrate it and serve an installation
+// with no keys and no tenants, silently.
 const (
 	// IDFileName is the file in the data directory that holds the id,
 	// beside the key file, private to the user.
