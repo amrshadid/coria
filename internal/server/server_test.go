@@ -669,9 +669,7 @@ func startedIn(t *testing.T, dir string) *env {
 	t.Cleanup(func() { _ = srv.Stop() })
 	e := &env{t: t, ctx: context.Background(), dir: dir, srv: srv, access: a, log: &syncBuffer{}}
 	t.Cleanup(func() {
-		for _, c := range e.clients {
-			c.CloseIdleConnections()
-		}
+		e.closeClients()
 	})
 	return e
 }
