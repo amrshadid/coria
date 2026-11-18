@@ -75,7 +75,7 @@ locally passes there for the same reason.
 | `make vet` | `go vet` on 64 bits and on 32 bits (linux/386) |
 | `make lint` | golangci-lint with `.golangci.yml`, run for Linux, Windows and macOS so that files built for one system only are linted too, including the rule that `internal/core` imports only the standard library and itself, and from the standard library no database, network, file or system package |
 | `make vuln` | govulncheck: no known vulnerability reachable from the code |
-| `make test` | `go test -race ./...` |
+| `make test` | `go test -race -count=1 ./...`: always run, never a cached result |
 | `make build` | static binaries for linux/amd64, linux/386, linux/arm64, darwin/arm64 and windows/amd64, in `bin/` |
 | `make size` | the size of each binary `make build` left, as a table |
 | `make proto-lint` | `buf lint` on the API contract in `api/proto` |
@@ -89,13 +89,15 @@ by hand. `make proto-python` compiles the same files with Python's
 grpcio-tools as a second toolchain (it needs a `PYTHON` with
 `scripts/requirements-proto.txt` installed, so it is not in `make check`).
 
-Two more checks need more than Go, so `make check` leaves them out and CI runs
+These checks need more than Go, so `make check` leaves them out and CI runs
 them as steps of their own on Linux:
 
 | Command | What it checks |
 |---|---|
 | `make check-seal PYTHON=python3` | the format of a sealed secret against another implementation: `scripts/check-seal.py`, with Python's `cryptography` package, opens a value Go sealed, and Go opens a value Python sealed. `PYTHON` names an interpreter that has the package; `pip install --require-hashes -r scripts/requirements-check-seal.txt` installs it at the versions CI uses. An empty `PYTHON` or a missing interpreter fails |
 | `make fuzz` | each fuzz target for `FUZZTIME` (10 seconds unless given) |
+| `make test-386` | the tests as linux/386 binaries, which a Linux x86-64 machine runs natively (macOS cannot) |
+| `make check-master-sqlite SQLITE3=sqlite3` | the SQLite master database against SQLite's own `sqlite3` tool: `scripts/check-master-sqlite.sh` has the driver write a sample installation, then lists its tables and rows, runs `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, reads times and audit details with SQLite's functions, and searches a dump for the sample key's secret (absent) and its hash (present). The master's tables are `STRICT`, so the `sqlite3` tool must be 3.37 or later to open the database at all |
 | `make check-json` | every command with `--json` against the in-process server, each output parsed by Python's `json` module (`scripts/check-json.py`, standard library only) and checked for `schemaVersion` |
 | `make check-completion` | the bash completion script the binary writes, parsed by `bash -n` |
 

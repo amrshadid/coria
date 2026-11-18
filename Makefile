@@ -17,6 +17,9 @@
 #   make check-seal  the sealed-secret format against Python's cryptography
 #                    package (PYTHON=... names an interpreter that has it)
 #   make fuzz        each fuzz target for FUZZTIME (10s unless given)
+#   make check-master-sqlite  the SQLite master database read back by the
+#                    sqlite3 tool (SQLITE3=... names one)
+#   make test-386    the tests as linux/386 binaries, on a Linux x86-64 host
 
 GO      ?= go
 BIN     := bin
@@ -85,8 +88,12 @@ vuln: $(filter $(TOOLS)/%,$(GOVULNCHECK))
 	$(GOVULNCHECK) -version
 	$(GOVULNCHECK) ./...
 
+# -count=1: the tests always run. CI restores Go's build cache, which also
+# holds test results, and without it every package whose code did not change
+# reports "(cached)": a race or a timing fault in it would never be looked
+# for again. Compiled code still comes from the cache.
 test:
-	$(GO) test -race ./...
+	$(GO) test -race -count=1 ./...
 
 build:
 	@set -e; for platform in $(PLATFORMS); do \
@@ -119,6 +126,21 @@ check-seal:
 	@test -n "$(PYTHON)" || { echo "check-seal: PYTHON is empty; name an interpreter that has the cryptography package" >&2; exit 1; }
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-seal: no interpreter $(PYTHON)" >&2; exit 1; }
 	MAGNETAR_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
+
+# The outside check of the SQLite master database: the driver writes the
+# contract suite's sample, and the sqlite3 tool (SQLITE3=... names one) reads
+# it back, checks it, and searches it for the sample key's secret.
+SQLITE3 ?= sqlite3
+
+.PHONY: check-master-sqlite test-386
+check-master-sqlite:
+	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-master-sqlite.sh
+
+# The tests on 32 bits, where int is 32 bits and the SQLite library is a
+# different translation of SQLite's C. Without -race, which 386 lacks. It runs
+# natively on a Linux x86-64 machine (CI); macOS cannot run 386 binaries.
+test-386:
+	GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test -count=1 ./...
 
 # Every fuzz target, as package:function. go test fuzzes one target at a
 # time, so each is a run of its own; -run '^$$' keeps the other tests out.
