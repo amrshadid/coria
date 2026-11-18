@@ -102,13 +102,18 @@ want "an audit time, with its microseconds, in UTC" "2026-11-18 09:30:05.123456"
 
 # The master: the tenant's row is ready, its address is sealed (the plaintext
 # is a URL with a password, and neither is in the row), and the system
-# recorded the change from upgrading to ready.
+# recorded the creation, and the request's own entry has the change from
+# upgrading to ready.
 echo
 echo "== the master's row and state change"
 show tenants "SELECT id, name, driver, length(address) AS sealed_bytes, state, state_reason FROM $m.tenants"
 want "the tenant's state in the master" "sample postgres ready" "$(q "SELECT name || ' ' || driver || ' ' || state FROM $m.tenants")"
-want "the state change, by the system" "system upgrading -> ready" \
-	"$(q "SELECT details ->> 'actor' || ' ' || (details ->> 'old_state') || ' -> ' || (details ->> 'new_state') FROM $m.audit WHERE method = 'magnetar.registry/SetTenantState'")"
+want "entries of the creation's request" 2 "$(q "SELECT count(*) FROM $m.audit WHERE request_id = 'sample-request'")"
+want "the creation started, by the system" "done system sample-create postgres" \
+	"$(q "SELECT outcome || ' ' || (details ->> 'actor') || ' ' || (details ->> 'request_entry') || ' ' || (details ->> 'database_type') FROM $m.audit WHERE request_id = 'sample-request' AND method = 'magnetar.registry/CreateTenantStarted'")"
+want "the request's own entry, with the change to ready" "sample-create done upgrading -> ready" \
+	"$(q "SELECT id || ' ' || outcome || ' ' || (details ->> 'old_state') || ' -> ' || (details ->> 'new_state') FROM $m.audit WHERE request_id = 'sample-request' AND method = '/magnetar.v1.TenantService/CreateTenant'")"
+want "no other state change was written" 0 "$(q "SELECT count(*) FROM $m.audit WHERE method = 'magnetar.registry/SetTenantState'")"
 
 # The login's password is in neither dump, nor in the master's rows.
 pw="$(printf '%s' "$MAGNETAR_TEST_POSTGRES" | sed -n 's|^[a-zA-Z]*://[^:@/]*:\([^@]*\)@.*|\1|p')"

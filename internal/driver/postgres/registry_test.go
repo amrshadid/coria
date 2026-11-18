@@ -540,7 +540,7 @@ func TestWriteTenantSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	audit := master.AuditEntry{ID: "sample-create", Time: clock.Now(), LocalUser: "501", Method: "/magnetar.v1.TenantService/CreateTenant", TenantName: "sample", Outcome: master.OutcomeDone}
+	audit := master.AuditEntry{ID: "sample-create", Time: clock.Now(), LocalUser: "501", Method: "/magnetar.v1.TenantService/CreateTenant", TenantName: "sample", Outcome: master.OutcomeDone, RequestID: "sample-request"}
 	tn, err := r.Create(ctx, registry.NewTenant{ID: "sample-tenant", Name: "sample", Driver: driver.PostgresDriver, Address: withSchema(t, base, schema)}, audit)
 	if err != nil {
 		t.Fatal(err)
