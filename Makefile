@@ -19,6 +19,8 @@
 #   make fuzz        each fuzz target for FUZZTIME (10s unless given)
 #   make check-master-sqlite  the SQLite master database read back by the
 #                    sqlite3 tool (SQLITE3=... names one)
+#   make check-tenant-sqlite  a tenant's SQLite database, created by the
+#                    registry, read back by the sqlite3 tool
 #   make test-386    the tests as linux/386 binaries, on a Linux x86-64 host
 
 GO      ?= go
@@ -135,6 +137,12 @@ SQLITE3 ?= sqlite3
 .PHONY: check-master-sqlite test-386
 check-master-sqlite:
 	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-master-sqlite.sh
+
+# The outside check of a tenant's SQLite database: the registry creates a
+# tenant on SQLite, and the sqlite3 tool reads its file and the master's row.
+.PHONY: check-tenant-sqlite
+check-tenant-sqlite:
+	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-tenant-sqlite.sh
 
 # The tests on 32 bits, where int is 32 bits and the SQLite library is a
 # different translation of SQLite's C. Without -race, which 386 lacks. It runs

@@ -367,7 +367,7 @@ func testMarkKeyUsedEdges(e *env) {
 	}
 	got, err := e.s.Key(e.ctx, k.ID)
 	e.ok("Key", err)
-	if !sameTime(got.LastUsed, T0.Add(time.Minute+time.Microsecond)) {
+	if !SameTime(got.LastUsed, T0.Add(time.Minute+time.Microsecond)) {
 		e.Errorf("last used = %v, want the newest use", got.LastUsed)
 	}
 }
@@ -603,7 +603,7 @@ func testTimeEdges(e *env) {
 	e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit()))
 	got, err := e.s.Key(e.ctx, k.ID)
 	e.ok("Key", err)
-	if !sameTime(got.Created, first) || !sameTime(got.Expires, last) {
+	if !SameTime(got.Created, first) || !SameTime(got.Expires, last) {
 		e.Errorf("created %v and expires %v, want %v and %v", got.Created, got.Expires, first, last)
 	}
 	w, err := e.s.MarkKeyUsed(e.ctx, k.ID, last)
@@ -619,7 +619,7 @@ func testTimeEdges(e *env) {
 	a1.Time, a2.Time = first, last
 	e.ok("AppendAudit", e.s.AppendAudit(e.ctx, a1, a2))
 	all := e.allAudit(master.AuditFilter{})
-	if !sameTime(all[0].Time, last) || !sameTime(all[len(all)-1].Time, first) {
+	if !SameTime(all[0].Time, last) || !SameTime(all[len(all)-1].Time, first) {
 		e.Errorf("audit newest %v and oldest %v, want %v and %v", all[0].Time, all[len(all)-1].Time, last, first)
 	}
 	since := e.allAudit(master.AuditFilter{Since: last})
@@ -1012,7 +1012,7 @@ func testSizeBounds(e *env) {
 	a.Reason = strings.Repeat("x", master.MaxAuditReasonLength)
 	e.ok("AppendAudit at every bound", e.s.AppendAudit(e.ctx, a))
 	all := e.allAudit(master.AuditFilter{TenantName: a.TenantName})
-	if len(all) != 1 || diffAudit(all[0], a) != "" {
+	if len(all) != 1 || DiffAudit(all[0], a) != "" {
 		e.Errorf("audit entry at every bound did not read back exactly")
 	}
 	fields := map[string]func(*master.AuditEntry){

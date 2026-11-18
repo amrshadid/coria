@@ -135,5 +135,39 @@ All notable changes to Magnetar are written here. The form is
   the installation admin and are each audited in the same transaction; a
   new key expires after 90 days unless another period (at most 10 years) or
   "never" is asked for. The binary does not use it yet.
+- A tenant had a row in the master and nowhere to keep its own data, and
+  nothing opened, upgraded or watched a tenant's database. Each tenant now
+  has a database reached through a port stated as operations
+  (`internal/tenant`): its overrides of the installation's settings and its
+  own audit log, with the master's bounds, the master's entry type and the
+  master's rules: each change written with its audit entry or not at all, a
+  duplicate audit id told apart from a conflict, cursors bound to their list
+  and filter, and the same error kinds. A contract suite every driver must
+  pass (`internal/tenant/tenanttest`) runs on SQLite, where the master and
+  the tenants now share one implementation of settings and of the audit log,
+  and a tenant without an address gets the file
+  `<data-dir>/tenants/<name>.db`, private to its owner, built so that no name
+  can put it elsewhere; a tenant file someone made readable by others is
+  refused, and the tenant is `failed` with the fix in its reason. Errors from
+  the SQLite driver now name the database they are about, master or tenant. The
+  tenant registry (`internal/registry`) holds one open store per tenant and
+  is the only way to get one: getting a ready tenant's store takes no lock
+  and makes no call to the master (12 ns, no allocation, among 1,000
+  tenants). It opens every tenant in parallel, a bounded number at once,
+  each under its own deadline, so one dead database delays neither the
+  start nor the others; a tenant whose database does not answer is
+  `unreachable` and refused while the others are served, and returns to
+  `ready` on its own; one whose address does not open with the key file, or
+  whose schema cannot be upgraded, is `failed` with its reason. Each state is
+  written to the master with an audit entry whose actor is the system, a
+  flapping database at most once a minute, and no reason, error or log line
+  holds the database's address, host, user or password. Creating a tenant
+  writes its row as `upgrading` first, so a crash before its database is
+  ready is finished by the next start or by the same creation repeated.
+  Removing a tenant unregisters it and leaves its data in place, and says
+  where. Closing the registry stops its timer, waits for opens in progress
+  and closes every store. `scripts/check-tenant-sqlite.sh` reads a tenant
+  the registry created with the `sqlite3` tool. The server does not use the
+  registry yet.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop

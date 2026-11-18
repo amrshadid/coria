@@ -100,6 +100,7 @@ them as steps of their own on Linux:
 | `make check-master-sqlite SQLITE3=sqlite3` | the SQLite master database against SQLite's own `sqlite3` tool: `scripts/check-master-sqlite.sh` has the driver write a sample installation, then lists its tables and rows, runs `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, reads times and audit details with SQLite's functions, and searches a dump for the sample key's secret (absent) and its hash (present). The master's tables are `STRICT`, so the `sqlite3` tool must be 3.37 or later to open the database at all |
 | `make check-json` | every command with `--json` against the in-process server, each output parsed by Python's `json` module (`scripts/check-json.py`, standard library only) and checked for `schemaVersion` |
 | `make check-completion` | the bash completion script the binary writes, parsed by `bash -n` |
+| `make check-tenant-sqlite SQLITE3=sqlite3` | a tenant's SQLite database against the `sqlite3` tool: `scripts/check-tenant-sqlite.sh` has the tenant registry create a tenant on SQLite in a fresh data directory and write a sample into it, then checks that its file is `<data-dir>/tenants/<name>.db` and private, lists its tables and rows, runs `PRAGMA integrity_check`, and reads the tenant's row and its state change from the master |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
 into `bin/tools/` the first time, and the proto targets do the same for buf,
