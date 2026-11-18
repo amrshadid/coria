@@ -27,7 +27,11 @@
 // to it looks like.
 //
 // Every method's comment also says what it writes to the audit log and which
-// error kinds it can answer. The kinds and the codes that carry them:
+// error kinds it can answer. Which log an entry goes to is said once, on
+// AuditService in audit.proto: a refused request is always written to the
+// installation's log, with the tenant's name when it named one; an allowed
+// request, to the log of the tenant or the installation it concerns. The
+// kinds and the codes that carry them:
 //
 //   - invalid: INVALID_ARGUMENT (HTTP 400). The request is malformed, breaks a
 //     rule stated on its fields, or exceeds a limit below. Sending it again
@@ -246,9 +250,11 @@ type AccessServiceClient interface {
 	// role check may list every tenant, so it is told), conflict (the key is
 	// revoked), unavailable (the master database does not answer).
 	SetGrant(context.Context, *v1.SetGrantRequest) (*v1.SetGrantResponse, error)
-	// ListGrants answers the grants of one key, or the grants on one scope,
-	// ordered by key id and then scope. Exactly one of the two filters is
-	// required: there is no listing of every grant at once.
+	// ListGrants answers the grants of one key, or the grants on one scope.
+	// The grants of one key come with the installation first, then tenants in
+	// a stable order that is not otherwise specified; the grants on one scope
+	// come in order of key id. Exactly one of the two filters is required:
+	// there is no listing of every grant at once.
 	//
 	// Role: admin on the installation.
 	// Audit: one entry in the installation's log, with the filter in details.
@@ -338,9 +344,11 @@ type AccessServiceHandler interface {
 	// role check may list every tenant, so it is told), conflict (the key is
 	// revoked), unavailable (the master database does not answer).
 	SetGrant(context.Context, *v1.SetGrantRequest) (*v1.SetGrantResponse, error)
-	// ListGrants answers the grants of one key, or the grants on one scope,
-	// ordered by key id and then scope. Exactly one of the two filters is
-	// required: there is no listing of every grant at once.
+	// ListGrants answers the grants of one key, or the grants on one scope.
+	// The grants of one key come with the installation first, then tenants in
+	// a stable order that is not otherwise specified; the grants on one scope
+	// come in order of key id. Exactly one of the two filters is required:
+	// there is no listing of every grant at once.
 	//
 	// Role: admin on the installation.
 	// Audit: one entry in the installation's log, with the filter in details.

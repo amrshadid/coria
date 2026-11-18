@@ -168,8 +168,10 @@ func TestManagementNeedsDecision(t *testing.T) {
 				continue
 			}
 			wantErr(t, name+" for "+who, err, fault.Denied, access.MessageDenied)
-			if len(entries) != 1 || entries[0].Outcome != master.OutcomeRefused {
-				t.Fatalf("%s for %s: entries %+v, want one refusal", name, who, entries)
+			// Refused from the Decision itself, before the key is read again.
+			if len(entries) != 1 || entries[0].Outcome != master.OutcomeRefused ||
+				entries[0].Reason != "the decision does not carry admin on the installation" {
+				t.Fatalf("%s for %s: entries %+v, want one refusal for the Decision", name, who, entries)
 			}
 		}
 	}
@@ -343,5 +345,23 @@ func TestCreatedKeyPrintsNoSecret(t *testing.T) {
 		if out := sprintf(form, made); strings.Contains(out, sec) {
 			t.Fatalf("%s prints the secret", form)
 		}
+	}
+}
+
+// TestRevokeAnswersWhatItDid guards the answer of a revocation that
+// happened: when the master stops answering just after the revocation, the
+// call still succeeds, with the key as read before and the revoke time the
+// revocation returned, and is not reported as a failure.
+func TestRevokeAnswersWhatItDid(t *testing.T) {
+	e := newEnv(t)
+	k := e.key(time.Time{})
+	d := e.admin("RevokeKey")
+	e.store.keyDownAfterRevoke.Store(true)
+	got, err := e.access.RevokeKey(e.ctx, d, k.id)
+	if err != nil {
+		t.Fatalf("a revocation that happened was answered %v", err)
+	}
+	if got.ID != k.id || got.Holder != "test" || !got.Revoked.Equal(t0) || got.Hash != nil {
+		t.Fatalf("answer %+v", got)
 	}
 }

@@ -169,6 +169,7 @@ test-386:
 FUZZTIME     ?= 10s
 FUZZ_TARGETS := \
 	internal/access:FuzzCheck \
+	internal/access:FuzzCheckSQLite \
 	internal/secret:FuzzOpen \
 	internal/secret:FuzzParseAPIKey \
 	internal/secret:FuzzParseKeyFile

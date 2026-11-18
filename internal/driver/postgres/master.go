@@ -688,48 +688,52 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 	return out, sqlkit.EncodeCursor(listGrantsByScope, scopeBinding(scope), last.KeyID), nil
 }
 
-// RolesFor implements master.Store with one statement of two exact lookups of
-// the grants' primary key, at (key, the empty scope) and at (key, the tenant's
-// id), the id found through the tenants' unique index on name inside the same
-// statement. A tenant that does not exist, or no tenant name, leaves only the
-// first. Each lookup is exact however many grants the key has: an IN list over
-// the scope would, on Postgres 16, read all of the key's grants and filter.
-func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (installation, tenant master.Role, err error) {
+// RolesFor implements master.Store with one statement (rolesForSQL). A name
+// that is not a valid tenant name is asked as the empty name, which no
+// tenant has, so the statement runs all the same and finds no tenant; it is
+// never sent as it was, since Postgres refuses text that is not UTF-8 or
+// holds a NUL.
+func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (master.Roles, error) {
 	if err := master.ValidateID("key id", keyID); err != nil {
-		return "", "", err
+		return master.Roles{}, err
 	}
-	if tenantName != "" {
-		if err := master.ValidateTenantName(tenantName); err != nil {
-			return "", "", err
-		}
+	if master.ValidateTenantName(tenantName) != nil {
+		tenantName = ""
 	}
 	if err := m.open(); err != nil {
-		return "", "", err
+		return master.Roles{}, err
 	}
-	rows, err := m.pool.Query(ctx, rolesForSQL, keyID, tenantName)
-	type scopeRole struct{ scope, role string }
-	found, err := collect(rows, err, func(row scanner) (scopeRole, error) {
-		var r scopeRole
-		err := row.Scan(&r.scope, &r.role)
-		return r, err
-	})
+	var tenantID, inst, ten *string
+	err := m.pool.QueryRow(ctx, rolesForSQL, keyID, tenantName).Scan(&tenantID, &inst, &ten)
 	if err != nil {
-		return "", "", m.fail(ctx, err, "the key's roles cannot be read")
+		return master.Roles{}, m.fail(ctx, err, "the key's roles cannot be read")
 	}
-	for _, r := range found {
-		if r.scope == "" {
-			installation = master.Role(r.role)
-		} else {
-			tenant = master.Role(r.role)
-		}
+	var r master.Roles
+	if tenantID != nil {
+		r.TenantID, r.TenantFound = *tenantID, true
 	}
-	return installation, tenant, nil
+	if inst != nil {
+		r.Installation = master.Role(*inst)
+	}
+	if ten != nil {
+		r.Tenant = master.Role(*ten)
+	}
+	return r, nil
 }
 
-// rolesForSQL is RolesFor's statement.
-const rolesForSQL = `SELECT scope, role FROM grants WHERE key_id = $1 AND scope = ''
-	UNION ALL
-	SELECT scope, role FROM grants WHERE key_id = $1 AND scope = (SELECT id FROM tenants WHERE name = $2)`
+// rolesForSQL is RolesFor's statement, which always returns exactly one
+// row: the tenant's id, NULL when no tenant has the name (the LEFT JOIN of a
+// one-row table keeps the row), then the key's role on the installation and
+// on that tenant, each NULL when there is no grant. The second grant
+// lookup runs whether or not a tenant was found: without one it looks for
+// the scope '*', which no id can be, so a missing tenant costs the same
+// lookups as a tenant without a grant. Each is an exact lookup:
+// the tenants' unique index on name, and the grants' primary key at (key,
+// the empty scope) and at (key, the tenant's id), however many grants the key has.
+const rolesForSQL = `SELECT t.id,
+	(SELECT role FROM grants WHERE key_id = $1 AND scope = ''),
+	(SELECT role FROM grants WHERE key_id = $1 AND scope = coalesce(t.id, '*'))
+	FROM (SELECT 1) AS one LEFT JOIN tenants AS t ON t.name = $2`
 
 // RemoveGrant implements master.Store. The key's row is locked as SetGrant
 // does, so the role it reports is the one the grant had when it was removed;

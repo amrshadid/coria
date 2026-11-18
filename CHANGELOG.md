@@ -119,22 +119,37 @@ All notable changes to Magnetar are written here. The form is
 - Nothing decided who a caller is or what it may do. `internal/access` now
   has one check that every request will go through: it reads the key by its
   id, compares its secret in constant time, refuses a revoked or expired one,
-  reads its roles, and compares them with what the request needs, in the
-  order the API contract states. Every bad credential gets one answer
+  then reads the key's roles and the tenant the request named in one
+  statement, and compares them with what the request needs, in the order the
+  API contract states. Every bad credential gets one answer
   (unauthenticated), and a missing grant and a missing tenant get one answer
-  (permission denied) after the same reads, so a key cannot learn which
+  (permission denied) after the same two reads, so a key cannot learn which
   tenants exist; a caller who may list every tenant is told "not found"
   instead. Nothing is cached, so a revoked key is refused on its next
-  request. A change is audited in its own transaction, as before; a refusal
-  or a read hands its entry to a bounded audit writer that appends in
-  batches, so it costs no synced commit on the request's path, and an entry
-  dropped because the server is overwhelmed is counted and reported in the
-  log. A key's last use is recorded at most once a minute, by a bounded
-  background worker that drops marks rather than delay a request. Making,
+  request, and a check's decision is for one request: the operations on keys
+  and grants read the caller's key again and refuse it once it is revoked,
+  expired or no longer admin. A refusal is written to the installation's
+  log, an allowed request to the log of the tenant or the installation it
+  concerns, and to the installation's when a tenant's log does not answer. A
+  change is audited in its own transaction; a refusal or a read goes to a
+  bounded audit writer, with a queue for each so a flood of bad keys cannot
+  push out reads, that appends in batches, retries a log that does not
+  answer a bounded number of times, and counts every entry exactly once as
+  written, failed or dropped, reporting drops in the log. Text a caller
+  controls is escaped before it reaches an entry. A key's last use is
+  recorded at most once a minute, by a bounded background worker. Making,
   listing and revoking keys and setting, listing and removing grants need
-  the installation admin and are each audited in the same transaction; a
-  new key expires after 90 days unless another period (at most 10 years) or
-  "never" is asked for. The binary does not use it yet.
+  the installation admin; a new key expires after 90 days unless another
+  period (at most 10 years) or "never" is asked for. The binary does not use
+  it yet.
+- The master port's `RolesFor` now also reports whether the named tenant
+  exists and its id, in one statement on SQLite and Postgres, and a name that
+  is not a valid tenant name finds no tenant instead of failing, so the
+  access check reads the tenant and the roles at once.
+- The contract's comments now say which log each entry goes to (a refusal
+  always to the installation's), that the entries of refusals and reads are
+  written in batches and can be dropped by an overwhelmed server, which says
+  how many, and no longer promise an order of a key's grants by tenant name.
 - A tenant had a row in the master and nowhere to keep its own data, and
   nothing opened, upgraded or watched a tenant's database. Each tenant now
   has a database reached through a port stated as operations

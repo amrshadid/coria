@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"maps"
 	"strconv"
-	"unicode/utf8"
+	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
@@ -38,7 +38,7 @@ const (
 	reasonWrongSecret  = "wrong secret"
 	reasonRevoked      = "key revoked"
 	reasonExpired      = "key expired"
-	reasonNoLocalUser  = "local caller without a user id"
+	reasonNoLocalUser  = "local caller without a usable user id"
 	reasonNoGrant      = "no sufficient grant"
 	reasonNoTenant     = "no such tenant"
 	reasonBadCheck     = "server error: the check was called without a valid requirement or method"
@@ -65,18 +65,24 @@ type Credential struct {
 	local     bool
 }
 
-// APIKey is a credential of a presented key, mgt_<id>_<secret>, as it came
-// in the request. The empty string is a request with no key.
+// APIKey is a credential of a presented key, mgt_<id>_<secret>. The server
+// takes it from the Authorization header, strips the "Bearer" scheme and the
+// space after it (the scheme compared case-insensitively, RFC 6750 2.1), and
+// passes only the key: anything else, such as the scheme left in, is a
+// malformed key. The empty string is a request with no key.
 func APIKey(presented string) Credential {
 	return Credential{key: presented}
 }
 
 // LocalOperator is the credential of a request on the installation's local
 // socket, made by the operating system user with this id (a uid, or a SID on
-// Windows). The server calls it only after the socket has shown the caller
-// is the user that runs the server (M0 design note, part 5); this package
-// trusts that and holds the local operator to be admin everywhere. An empty
-// user id is refused as unauthenticated.
+// Windows). It makes its holder admin on the installation and on every
+// tenant, so only the server may call it, in package internal/server, and
+// only after the socket has shown the caller is the user that runs the
+// server (M0 design note, part 5): whoever that user is can read the
+// installation's files anyway. A test of this package fails if any other
+// package calls it. An empty user id, or one holding a control character or
+// longer than an audit field, is refused as unauthenticated.
 func LocalOperator(userID string) Credential {
 	return Credential{localUser: userID, local: true}
 }
@@ -86,7 +92,7 @@ func LocalOperator(userID string) Credential {
 func (c Credential) String() string {
 	switch {
 	case c.local:
-		return "access.LocalOperator(" + strconv.Quote(c.localUser) + ")"
+		return "access.LocalOperator(" + strconv.QuoteToASCII(c.localUser) + ")"
 	case c.key == "":
 		return "access.Credential(none)"
 	}
@@ -163,7 +169,8 @@ func (r Requirement) valid() bool {
 
 // Request is what the check needs to know of the request for its audit
 // entry. The server fills it from the request; none of it is trusted, so each
-// text is cut to what an audit entry holds (see clip). Method is required.
+// text is escaped and cut to what an audit entry holds (see auditText).
+// Method is required.
 type Request struct {
 	// Method is the API method or command, such as
 	// "/magnetar.v1.AccessService/CreateKey".
@@ -177,13 +184,15 @@ type Request struct {
 	Object string
 	// Details are what else the entry needs, never a secret. At most
 	// MaxRequestDetails pairs, so the master can still add a grant's old and
-	// new role.
+	// new role, and the audit writer a note that a tenant's log did not
+	// answer.
 	Details map[string]string
 }
 
 // MaxRequestDetails bounds Request.Details: the master's bound less the two
-// details a change of grant adds (master.AuditEntry.WithRoleChange).
-const MaxRequestDetails = master.MaxAuditDetails - 2
+// details a change of grant adds (master.AuditEntry.WithRoleChange) and the
+// one the audit writer adds to an entry it moves to the master's log.
+const MaxRequestDetails = master.MaxAuditDetails - 3
 
 // Principal is who made a request, with the roles the check read. Only
 // Access.Check makes one; the zero Principal is nobody and holds nothing. A
@@ -206,8 +215,8 @@ func (p Principal) IsLocalOperator() bool { return p.isLoc }
 // LocalUser returns the local operator's operating system user id, or "".
 func (p Principal) LocalUser() string { return p.local }
 
-// Key returns the caller's key, without its hash, and whether the caller is
-// a key.
+// Key returns the caller's key, without its hash, as the check read it, and
+// whether the caller is a key.
 func (p Principal) Key() (master.Key, bool) {
 	k := p.key
 	k.Hash = nil
@@ -263,87 +272,110 @@ func atLeast(have, need master.Role) bool {
 	return n > 0 && rank(have) >= n
 }
 
+// TenantRef names the tenant a requirement named: its id and its name, as
+// the check read them, and nothing else. A handler that needs the tenant's
+// state, database or any other field reads the tenant itself.
+type TenantRef struct {
+	// ID is the tenant's id at the time of the check.
+	ID string
+	// Name is the tenant's name, as the request gave it.
+	Name string
+}
+
 // Decision is what Check allowed: the caller, the tenant the requirement
-// named, and the audit entry of the request for the caller to write. Only
-// Check makes one; the zero Decision carries no principal and an entry the
-// master refuses, so a handler that skipped the check cannot record a change.
+// named, and the facts of the request for its audit entries. Only Check
+// makes one, and no other package can make or alter one: the fields are
+// unexported and the zero Decision carries no caller, so a handler that
+// skipped the check can neither call a function of this package that takes
+// a Decision nor make an audit entry the master takes.
+//
+// A Decision is for one request. It is not a session: every function that
+// takes one and acts for a key reads the key again, so a key revoked since
+// the check is refused even with a Decision in hand.
 type Decision struct {
 	principal Principal
-	tenant    master.Tenant
+	tenant    TenantRef
 	hasTenant bool
 	entry     master.AuditEntry
+	newID     func() string
 }
 
 // Principal returns who made the request.
 func (d Decision) Principal() Principal { return d.principal }
 
 // checked reports whether d is a Decision Check made: one with a caller and
-// an audit entry. The zero Decision, all another package can make, is not.
+// an id source. The zero Decision, all another package can make, is not.
 func (d Decision) checked() bool {
-	return d.entry.ID != "" && (d.principal.isKey || d.principal.isLoc)
+	return d.newID != nil && (d.principal.isKey || d.principal.isLoc)
 }
 
-// Tenant returns the tenant the requirement named, as the master holds it,
-// and whether there was one. Its state is not checked here: whether a tenant
-// that is not ready can serve a request is the handler's to decide.
-func (d Decision) Tenant() (master.Tenant, bool) { return d.tenant, d.hasTenant }
+// Tenant returns the tenant the requirement named, its id and name only, and
+// whether there was one. Its state is not checked here: whether a tenant
+// that is not ready can serve a request is the handler's to decide, from the
+// tenant it reads.
+func (d Decision) Tenant() (TenantRef, bool) { return d.tenant, d.hasTenant }
 
-// Entry returns the request's audit entry with its outcome and reason, for
-// the caller to write with its change (a change and its entry are one
-// transaction) or to append after a read. Each call returns a copy with its
-// own details map, so adding details to it changes nothing else. The entry
-// has one id, so write it once.
-func (d Decision) Entry(outcome master.Outcome, reason string) master.AuditEntry {
+// Entry returns an audit entry of the request with its outcome and reason,
+// for the caller to write with its change (a change and its entry are one
+// transaction), in the log the change concerns: the tenant's for a change
+// inside a tenant, the master's for the installation (D53). facts adds what
+// the handler learned after the check (Facts); the identity of the request
+// is the check's. Each call makes a new entry with its own fresh id and its
+// own details map, so a handler that reads and then changes writes two
+// entries and loses neither; all of a request's entries share its request
+// id. A read's entry goes to Record or RecordTo instead.
+func (d Decision) Entry(outcome master.Outcome, reason string, facts Facts) master.AuditEntry {
 	e := d.entry
+	if d.newID != nil {
+		e.ID = d.newID()
+	}
 	e.Details = maps.Clone(d.entry.Details)
 	e.Outcome = outcome
-	e.Reason = clip(reason, master.MaxAuditReasonLength)
-	return e
+	e.Reason = auditText(reason, master.MaxAuditReasonLength)
+	return facts.apply(e)
 }
 
 // Check decides whether the caller cred may make a request that needs req,
-// and is the only way to get a Principal. Its steps, in the order of the API
-// contract:
+// and is the only way to get a Decision. The server calls it once for every
+// request. Its steps, in the order of the API contract:
 //
 //  1. The credential: the key is parsed, read by its id, its secret compared
 //     in constant time, and refused when revoked or expired; or it is the
 //     local operator. Any failure is Unauthenticated with
 //     MessageUnauthenticated.
-//  2. When req names a tenant, it is read by name: the Decision carries it,
-//     and only this read tells a tenant that does not exist from one the key
-//     has no grant on (RolesFor answers both with no role).
-//  3. The key's roles on the installation and on that tenant are read with
-//     one RolesFor, by the name as the request gave it, every time: there is
-//     no cache, so a grant removed is gone on the next request.
-//  4. A missing tenant is NotFound with MessageNoTenant for a caller who may
+//  2. For a key, one RolesFor reads its role on the installation and, when
+//     req names a tenant, whether that tenant exists, its id, and the key's
+//     role there, by the name as the request gave it, every time: there is
+//     no cache, so a grant removed is gone on the next request. The local
+//     operator, who has no grants, reads the tenant by name instead.
+//  3. A missing tenant is NotFound with MessageNoTenant for a caller who may
 //     list every tenant, and otherwise Denied with MessageDenied, exactly as
-//     for an existing tenant without a grant: both make the calls Key,
-//     TenantByName, RolesFor, in that order, and queue one audit entry.
-//  5. The role is compared with req; too little is Denied.
+//     for an existing tenant without a grant: both make the same two calls,
+//     Key then RolesFor, and queue one audit entry.
+//  4. The role is compared with req; too little is Denied.
 //
-// A refusal's audit entry is handed to the audit writer with its real
-// cause; it is not written on the request's path. When the request is
-// allowed, the entry is in the Decision: the caller writes it with its
-// change, or hands it to Record after a read. A key that passes step 1 and
-// was not marked used within the minute has its last use marked, off the
-// request's path. A store that fails is Unavailable or Internal, never a
-// refusal.
+// A refusal's audit entry is handed to the audit writer for the master's log
+// (D53), with its real cause and the tenant's name as given; it is not
+// written on the request's path. When the request is allowed, the Decision
+// makes its entries. A key that passes step 1 and was not marked used
+// within the minute has its last use marked, off the request's path. A store
+// that fails is Unavailable or Internal, never a refusal.
 func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, facts Request) (Decision, error) {
 	entry := a.newEntry(facts)
-
-	if entry.ID == "" || entry.Method == "" || !req.valid() || len(facts.Details) > MaxRequestDetails {
-		// A server bug, not the caller's doing: it fails, and is recorded if
-		// the entry can be. The audit id may itself be the bug, so an entry
-		// without one is not attempted.
-		err := fault.New(fault.Internal, "internal error")
-		if entry.ID != "" {
-			if entry.Method == "" {
-				entry.Method = "unknown"
-			}
-			entry.Details = nil
-			a.record(entry, master.OutcomeFailed, reasonBadCheck)
+	entry.ID = a.newID()
+	if master.ValidateID("audit entry id", entry.ID) != nil {
+		// The id source is broken: no entry could be recorded, so the
+		// request fails rather than go unrecorded.
+		return Decision{}, fault.New(fault.Internal, "internal error")
+	}
+	if entry.Method == "" || !req.valid() || len(facts.Details) > MaxRequestDetails {
+		// A server bug, not the caller's doing: it fails, and is recorded.
+		if entry.Method == "" {
+			entry.Method = "unknown"
 		}
-		return Decision{}, err
+		entry.Details = nil
+		a.record(entry, master.OutcomeFailed, reasonBadCheck)
+		return Decision{}, fault.New(fault.Internal, "internal error")
 	}
 	if req.namesTenant() {
 		entry.TenantName = clipTenantName(req.tenant)
@@ -358,44 +390,44 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 		return Decision{}, fault.New(fault.Unauthenticated, MessageUnauthenticated)
 	}
 
-	d := Decision{principal: p}
+	d := Decision{newID: a.newID}
 	var tenantMissing bool
-	if req.namesTenant() {
+	switch {
+	case p.isKey:
+		name := ""
+		if req.namesTenant() {
+			// The name as the request gave it, whether or not a tenant has
+			// it: a missing tenant and a missing grant make the same call
+			// with the same kind of argument, and the store runs the same
+			// statement for both, a name that is not valid included.
+			name = req.tenant
+		}
+		r, err := a.store.RolesFor(ctx, p.key.ID, name)
+		if err != nil {
+			return Decision{}, a.fail(entry, err)
+		}
+		p.instRole = r.Installation
+		if req.namesTenant() {
+			if r.TenantFound {
+				p.tenantID, p.tenantRole = r.TenantID, r.Tenant
+				d.tenant, d.hasTenant = TenantRef{ID: r.TenantID, Name: req.tenant}, true
+			} else {
+				tenantMissing = true
+			}
+		}
+	case req.namesTenant():
+		// The local operator holds no grant; only the tenant is read.
 		t, err := a.store.TenantByName(ctx, req.tenant)
 		switch kind := fault.KindOf(err); {
 		case err == nil:
-			d.tenant, d.hasTenant = t, true
+			d.tenant, d.hasTenant = TenantRef{ID: t.ID, Name: req.tenant}, true
 		case kind == fault.NotFound || kind == fault.Invalid:
-			// A name the master refuses as invalid names no tenant either:
-			// it is answered as missing, after the same one call, so a
-			// caller cannot use the shape of names to learn anything.
 			tenantMissing = true
 		default:
 			return Decision{}, a.fail(entry, err)
 		}
 	}
-	if p.isKey {
-		// RolesFor is asked by the name the request gave, whether or not a
-		// tenant has it, so a missing tenant and a missing grant make the
-		// same call with an argument of the same shape. A name that could
-		// not be a tenant's is refused by the store as Invalid; for it the
-		// installation alone is asked, which the NotFound exception still
-		// needs. That tells only whether the name was well formed, which
-		// the contract's rules for names already say.
-		name := ""
-		if req.namesTenant() && master.ValidateTenantName(req.tenant) == nil {
-			name = req.tenant
-		}
-		inst, ten, err := a.store.RolesFor(ctx, p.key.ID, name)
-		if err != nil {
-			return Decision{}, a.fail(entry, err)
-		}
-		p.instRole = inst
-		if d.hasTenant {
-			p.tenantID, p.tenantRole = d.tenant.ID, ten
-		}
-		d.principal = p
-	}
+	d.principal = p
 
 	switch {
 	case tenantMissing && p.CanListTenants():
@@ -404,26 +436,27 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 	case tenantMissing:
 		a.record(entry, master.OutcomeRefused, reasonNoTenant)
 		return Decision{}, fault.New(fault.Denied, MessageDenied)
-	case !allows(p, req, d.tenant):
+	case !allows(p, req, d.tenant.ID):
 		a.record(entry, master.OutcomeRefused, reasonNoGrant)
 		return Decision{}, fault.New(fault.Denied, MessageDenied)
 	}
+	entry.ID = ""
 	d.entry = entry
 	return d, nil
 }
 
-// allows reports whether p meets req, given the tenant req named (read by
-// Check, and existing).
-func allows(p Principal, req Requirement, t master.Tenant) bool {
+// allows reports whether p meets req, given the id of the tenant req named
+// (found by Check).
+func allows(p Principal, req Requirement, tenantID string) bool {
 	switch req.kind {
 	case needAuthenticated:
 		return p.isKey || p.isLoc
 	case needInstallation:
 		return atLeast(p.Role(master.Installation), req.role)
 	case needTenant:
-		return atLeast(p.Role(master.TenantScope(t.ID)), req.role)
+		return atLeast(p.Role(master.TenantScope(tenantID)), req.role)
 	case needTenantRegistration:
-		return atLeast(p.Role(master.TenantScope(t.ID)), master.RoleReader) || p.CanListTenants()
+		return atLeast(p.Role(master.TenantScope(tenantID)), master.RoleReader) || p.CanListTenants()
 	}
 	return false
 }
@@ -435,7 +468,9 @@ func allows(p Principal, req Requirement, t master.Tenant) bool {
 // (audit.proto, AuditEntry.key_id).
 func (a *Access) authenticate(ctx context.Context, cred Credential, entry *master.AuditEntry) (Principal, string, error) {
 	if cred.local {
-		entry.LocalUser = clip(cred.localUser, master.MaxAuditFieldLength)
+		entry.LocalUser = auditText(cred.localUser, master.MaxAuditFieldLength)
+		// A user id the entry could not hold as it is (too long, or with a
+		// character that had to be escaped) is not one the socket reported.
 		if cred.localUser == "" || entry.LocalUser != cred.localUser {
 			return Principal{}, reasonNoLocalUser, nil
 		}
@@ -451,26 +486,28 @@ func (a *Access) authenticate(ctx context.Context, cred Credential, entry *maste
 	entry.KeyID = id
 	k, err := a.store.Key(ctx, id)
 	if fault.KindOf(err) == fault.NotFound {
-		secret.VerifyAPISecret(sec, unknownKeyHash[:])
+		a.verify(sec, unknownKeyHash[:])
 		return Principal{}, reasonUnknownKey, nil
 	}
 	if err != nil {
 		return Principal{}, "", err
 	}
-	// The secret first: a caller who does not hold it learns nothing more,
-	// and the log does not record "revoked" for a guess.
-	if !secret.VerifyAPISecret(sec, k.Hash) {
-		return Principal{}, reasonWrongSecret, nil
-	}
-	if !k.Revoked.IsZero() {
-		return Principal{}, reasonRevoked, nil
-	}
-	if !k.Expires.IsZero() && !entry.Time.Before(k.Expires) {
-		return Principal{}, reasonExpired, nil
+	if reason := a.keyRefusal(k, sec, entry.Time); reason != "" {
+		return Principal{}, reason, nil
 	}
 	a.queueMark(k, entry.Time)
 	k.Hash = nil
 	return Principal{key: k, isKey: true}, "", nil
+}
+
+// keyRefusal returns why a key read from the master is refused at now, or
+// "". The secret is compared first: a caller who does not hold it learns
+// nothing more, and the log does not record "revoked" for a guess.
+func (a *Access) keyRefusal(k master.Key, sec string, now time.Time) string {
+	if !a.verify(sec, k.Hash) {
+		return reasonWrongSecret
+	}
+	return keyState(k, now)
 }
 
 // allGrants reads every grant of a key, page by page.
@@ -491,46 +528,41 @@ func (a *Access) allGrants(ctx context.Context, keyID string) ([]master.Grant, e
 	return nil, fault.New(fault.Internal, "access: a key's grants did not end after "+strconv.Itoa(maxGrantPages)+" pages")
 }
 
-// newEntry starts a request's audit entry from its facts, with a fresh id
-// and the time of the check. Every text is clipped to the master's bounds:
-// the facts come from the request, and an entry the master refuses would be
-// a refusal without a record. An id the id source gets wrong is left empty,
-// which Check fails as Internal.
+// newEntry starts a request's audit entry from its facts, at the time of the
+// check, without an id. Every text is escaped and cut to the master's
+// bounds: the facts come from the request, and an entry the master refuses
+// would be a refusal without a record, while a control character in the log
+// could forge a line of it.
 func (a *Access) newEntry(facts Request) master.AuditEntry {
-	id := a.newID()
-	if master.ValidateID("audit entry id", id) != nil {
-		id = ""
-	}
 	e := master.AuditEntry{
-		ID:            id,
 		Time:          a.clock(),
-		RemoteAddress: clip(facts.RemoteAddress, master.MaxAuditFieldLength),
-		Method:        clip(facts.Method, master.MaxAuditFieldLength),
-		Object:        clip(facts.Object, master.MaxAuditFieldLength),
-		RequestID:     clip(facts.RequestID, master.MaxAuditFieldLength),
+		RemoteAddress: auditText(facts.RemoteAddress, master.MaxAuditFieldLength),
+		Method:        auditText(facts.Method, master.MaxAuditFieldLength),
+		Object:        auditText(facts.Object, master.MaxAuditFieldLength),
+		RequestID:     auditText(facts.RequestID, master.MaxAuditFieldLength),
 	}
 	if len(facts.Details) > 0 {
 		e.Details = make(map[string]string, len(facts.Details))
 		for k, v := range facts.Details {
-			k = clip(k, master.MaxAuditDetailKeyLength)
+			k = auditText(k, master.MaxAuditDetailKeyLength)
 			if k == "" {
 				continue
 			}
-			e.Details[k] = clip(v, master.MaxAuditDetailValueLength)
+			e.Details[k] = auditText(v, master.MaxAuditDetailValueLength)
 		}
 	}
 	return e
 }
 
-// record hands a refusal's or a failure's audit entry to the audit writer.
-// The request already has its answer, and the answer to a refused caller
-// must not depend on whether the log took it, nor wait for a synced commit:
-// a flood of bad keys would otherwise hold the master's one writer for
-// everyone.
+// record hands a refusal's, or a failed check's, audit entry to the audit
+// writer, for the master's log (D53): a refused caller must cause no write
+// in a tenant's database. The request already has its answer, and the
+// answer to a refused caller must not depend on whether the log took it, nor
+// wait for a synced commit.
 func (a *Access) record(e master.AuditEntry, outcome master.Outcome, reason string) {
 	e.Outcome = outcome
-	e.Reason = clip(reason, master.MaxAuditReasonLength)
-	a.enqueueAudit(e)
+	e.Reason = auditText(reason, master.MaxAuditReasonLength)
+	a.enqueueRefusal(e)
 }
 
 // fail turns a store's failure during a check into the caller's error, and
@@ -539,46 +571,30 @@ func (a *Access) record(e master.AuditEntry, outcome master.Outcome, reason stri
 // other failure is Internal, whose message says nothing of the cause.
 func (a *Access) fail(e master.AuditEntry, err error) error {
 	a.record(e, master.OutcomeFailed, reasonStoreFailure+": "+fault.KindOf(err).String())
+	return storeError(err)
+}
+
+// storeError returns the caller's error for a store's failure.
+func storeError(err error) error {
 	if fault.KindOf(err) == fault.Unavailable {
 		return fault.Wrap(fault.Unavailable, err, "the master database does not answer")
 	}
 	return fault.Wrap(fault.Internal, err, "internal error")
 }
 
-// clip returns s as an audit entry can hold it: valid UTF-8 with no NUL
-// byte, of at most max bytes, cut at a character's boundary. A field of an
-// audit entry that broke the master's bounds would make the whole entry
-// refused, and the request unrecorded.
-func clip(s string, max int) string {
-	ok := len(s) <= max && utf8.ValidString(s)
-	for i := 0; ok && i < len(s); i++ {
-		ok = s[i] != 0
-	}
-	if ok {
-		return s
-	}
-	b := make([]byte, 0, min(len(s), max))
-	for _, r := range s {
-		if r == 0 {
-			continue
-		}
-		// An invalid byte reads as utf8.RuneError and is written as its
-		// three-byte replacement character.
-		if len(b)+utf8.RuneLen(r) > max {
-			break
-		}
-		b = utf8.AppendRune(b, r)
-	}
-	return string(b)
-}
-
 // clipTenantName returns a tenant's name as the request gave it, for the
 // audit entry (audit.proto: kept as given, also when no tenant has it). A
-// name that could not be a tenant's is quoted in ASCII, so it cannot pass
-// for one in the log, and clipped.
+// name that could not be a tenant's is quoted in ASCII (strconv.QuoteToASCII,
+// which escapes every control and non-ASCII character as auditText would),
+// so it cannot pass for one in the log, and cut to an audit field. It is not
+// passed through auditText as well, which would escape its escapes again.
 func clipTenantName(name string) string {
 	if master.ValidateTenantName(name) == nil {
 		return name
 	}
-	return clip(strconv.QuoteToASCII(name), master.MaxAuditFieldLength)
+	q := strconv.QuoteToASCII(name)
+	if len(q) > master.MaxAuditFieldLength {
+		q = q[:master.MaxAuditFieldLength]
+	}
+	return q
 }
