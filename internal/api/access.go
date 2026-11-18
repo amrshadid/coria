@@ -26,23 +26,26 @@ func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) 
 	if err != nil {
 		return nil, err
 	}
+	// The requirement is fixed, so the check's entry has no object; a
+	// request refused here names it in its entry.
+	facts := access.Facts{Details: map[string]string{"holder": req.GetHolder()}}
 	if err := text("holder", req.GetHolder(), 1, MaxHolderLength); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	var exp access.Expiry
 	switch e := req.GetExpiry().(type) {
 	case *v1.CreateKeyRequest_ExpireAfter:
 		if e.ExpireAfter.CheckValid() != nil {
-			return nil, c.fail(d, invalid("expire_after", "is not a valid duration"))
+			return nil, c.failWith(d, nil, facts, invalid("expire_after", "is not a valid duration"))
 		}
 		after := e.ExpireAfter.AsDuration()
 		if after <= 0 || after > MaxKeyLifetime {
-			return nil, c.fail(d, invalid("expire_after", "is positive and at most 10 years (3650 days)"))
+			return nil, c.failWith(d, nil, facts, invalid("expire_after", "is positive and at most 10 years (3650 days)"))
 		}
 		exp = access.ExpireAfter(after)
 	case *v1.CreateKeyRequest_NeverExpire:
 		if !e.NeverExpire {
-			return nil, c.fail(d, invalid("never_expire", "is true when set; leave expiry unset for the default of 90 days"))
+			return nil, c.failWith(d, nil, facts, invalid("never_expire", "is true when set; leave expiry unset for the default of 90 days"))
 		}
 		exp = access.NeverExpire()
 	default:
@@ -51,7 +54,7 @@ func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) 
 		// CreateKeyRequest.expiry).
 		lifetime, known, err := c.keyLifetime(ctx)
 		if err != nil {
-			return nil, c.fail(d, err)
+			return nil, c.failWith(d, nil, facts, err)
 		}
 		if known {
 			exp = access.ExpireAfter(lifetime)
@@ -71,8 +74,11 @@ func (s accessService) GetKey(ctx context.Context, req *v1.GetKeyRequest) (*v1.G
 	if err != nil {
 		return nil, err
 	}
+	// The requirement is fixed, so the check's entry has no object; a
+	// request refused here names it in its entry.
+	facts := access.Facts{Object: req.GetId()}
 	if err := keyID("id", req.GetId()); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	k, err := c.access.GetKey(ctx, d, req.GetId())
 	if err != nil {
@@ -111,8 +117,11 @@ func (s accessService) RevokeKey(ctx context.Context, req *v1.RevokeKeyRequest) 
 	if err != nil {
 		return nil, err
 	}
+	// The requirement is fixed, so the check's entry has no object; a
+	// request refused here names it in its entry.
+	facts := access.Facts{Object: req.GetId()}
 	if err := keyID("id", req.GetId()); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	k, err := c.access.RevokeKey(ctx, d, req.GetId())
 	if err != nil {
@@ -129,19 +138,22 @@ func (s accessService) SetGrant(ctx context.Context, req *v1.SetGrantRequest) (*
 	if err != nil {
 		return nil, err
 	}
+	// The requirement is fixed, so the check's entry has no object; a
+	// request refused here names it in its entry.
+	facts := access.Facts{Object: req.GetKeyId(), Details: map[string]string{detailScope: scopeDetail(req.GetScope())}}
 	if err := keyID("key_id", req.GetKeyId()); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	scope, err := scopeOf("scope", req.GetScope())
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	role, ok := masterRole(req.GetRole())
 	if !ok {
-		return nil, c.fail(d, invalid("role", "is required: reader, writer, operator or admin"))
+		return nil, c.failWith(d, nil, facts, invalid("role", "is required: reader, writer, operator or admin"))
 	}
 	if role == master.RoleWriter && scope.IsInstallation() {
-		return nil, c.fail(d, invalid("role", "writer is not a role on the installation"))
+		return nil, c.failWith(d, nil, facts, invalid("role", "writer is not a role on the installation"))
 	}
 	g, previous, err := c.access.SetGrant(ctx, d, req.GetKeyId(), scope, role)
 	if err != nil {
@@ -157,25 +169,28 @@ func (s accessService) ListGrants(ctx context.Context, req *v1.ListGrantsRequest
 	if err != nil {
 		return nil, err
 	}
+	// The requirement is fixed, so the check's entry has no object; a
+	// request refused here names it in its entry.
+	facts := access.Facts{Details: map[string]string{"filter": grantFilterDetail(req)}}
 	var filter access.GrantFilter
 	switch f := req.GetFilter().(type) {
 	case *v1.ListGrantsRequest_KeyId:
 		if err := keyID("key_id", f.KeyId); err != nil {
-			return nil, c.fail(d, err)
+			return nil, c.failWith(d, nil, facts, err)
 		}
 		filter = access.GrantsOfKey(f.KeyId)
 	case *v1.ListGrantsRequest_Scope:
 		scope, err := scopeOf("scope", f.Scope)
 		if err != nil {
-			return nil, c.fail(d, err)
+			return nil, c.failWith(d, nil, facts, err)
 		}
 		filter = access.GrantsOnScope(scope)
 	default:
-		return nil, c.fail(d, invalid("filter", "exactly one of key_id and scope is required"))
+		return nil, c.failWith(d, nil, facts, invalid("filter", "exactly one of key_id and scope is required"))
 	}
 	page, err := pageOf(req.GetPageSize(), req.GetPageToken())
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	grants, next, err := c.access.ListGrants(ctx, d, filter, page)
 	if err != nil {
@@ -196,12 +211,15 @@ func (s accessService) RemoveGrant(ctx context.Context, req *v1.RemoveGrantReque
 	if err != nil {
 		return nil, err
 	}
+	// The requirement is fixed, so the check's entry has no object; a
+	// request refused here names it in its entry.
+	facts := access.Facts{Object: req.GetKeyId(), Details: map[string]string{detailScope: scopeDetail(req.GetScope())}}
 	if err := keyID("key_id", req.GetKeyId()); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	scope, err := scopeOf("scope", req.GetScope())
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	previous, err := c.access.RemoveGrant(ctx, d, req.GetKeyId(), scope)
 	if err != nil {
@@ -232,4 +250,16 @@ func (s accessService) WhoAmI(ctx context.Context, _ *v1.WhoAmIRequest) (*v1.Who
 		out.Grants = append(out.Grants, grantMessage(g))
 	}
 	return &v1.WhoAmIResponse{Principal: out}, nil
+}
+
+// grantFilterDetail returns the filter of a ListGrants request as its audit
+// entry's details write it.
+func grantFilterDetail(r *v1.ListGrantsRequest) string {
+	switch f := r.GetFilter().(type) {
+	case *v1.ListGrantsRequest_KeyId:
+		return "key/" + f.KeyId
+	case *v1.ListGrantsRequest_Scope:
+		return scopeDetail(f.Scope)
+	}
+	return "none"
 }

@@ -7,6 +7,7 @@ import (
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
+	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/registry"
@@ -33,41 +34,49 @@ func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantReq
 		return nil, err
 	}
 	name, address := req.GetName(), req.GetDatabaseAddress()
+	// The requirement is fixed, so the check's entry names no tenant; these
+	// are the facts the handler learns from the request, never its address.
+	facts := access.Facts{
+		Object:     tenantObject(name),
+		TenantName: name,
+		Details:    map[string]string{registry.DetailDatabaseType: driverOf(req.GetDatabaseType())},
+	}
 	if err := tenantName("name", name); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	var drv string
 	switch req.GetDatabaseType() {
 	case v1.DatabaseType_DATABASE_TYPE_SQLITE:
 		if address != "" {
-			return nil, c.fail(d, invalid("database_address", "is empty for a SQLite tenant: its file is made in the data directory"))
+			return nil, c.failWith(d, nil, facts, invalid("database_address", "is empty for a SQLite tenant: its file is made in the data directory"))
 		}
 		drv = DriverSQLite
 	case v1.DatabaseType_DATABASE_TYPE_POSTGRES:
 		if address == "" {
-			return nil, c.fail(d, invalid("database_address", "is required for a Postgres tenant"))
+			return nil, c.failWith(d, nil, facts, invalid("database_address", "is required for a Postgres tenant"))
 		}
 		if len(address) > MaxDatabaseAddressLength {
-			return nil, c.fail(d, invalid("database_address", "is at most 4 KiB"))
+			return nil, c.failWith(d, nil, facts, invalid("database_address", "is at most 4 KiB"))
 		}
 		drv = DriverPostgres
 	default:
-		return nil, c.fail(d, invalid("database_type", "is required: sqlite or postgres"))
+		return nil, c.failWith(d, nil, facts, invalid("database_type", "is required: sqlite or postgres"))
 	}
 	id := c.newID()
 	if master.ValidateID("tenant id", id) != nil {
 		// The id source is the server's, so a bad id is the server's fault,
 		// not the caller's: it must not come back as INVALID_ARGUMENT.
-		return nil, c.fail(d, fault.New(fault.Internal, "api: the id source made a tenant id that is not valid"))
+		return nil, c.failWith(d, nil, facts, fault.New(fault.Internal, "api: the id source made a tenant id that is not valid"))
 	}
 	// The registry seals the address under "tenant/<id>/database" before it
-	// writes the row, and adds the database type to the entry's details; the
-	// address is in nothing the registry returns, logs or records.
-	entry := d.Entry(master.OutcomeDone, "")
-	entry.TenantName, entry.Object = name, tenantObject(name)
-	row, err := c.reg.Create(ctx, registry.NewTenant{ID: id, Name: name, Driver: drv, Address: address}, entry)
+	// writes the row; the address is in nothing the registry returns, logs or
+	// records. The request's entry is handed to the registry, which writes
+	// it with the creation, or with its undoing when the creation fails; so
+	// a failure the registry answers is not recorded again here.
+	row, err := c.reg.Create(ctx, registry.NewTenant{ID: id, Name: name, Driver: drv, Address: address},
+		d.Entry(master.OutcomeDone, "", facts))
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.toAPI(d, err)
 	}
 	return &v1.CreateTenantResponse{Tenant: c.tenantView(row)}, nil
 }
@@ -94,7 +103,7 @@ func (s tenantService) GetTenant(ctx context.Context, req *v1.GetTenantRequest) 
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
-	c.done(ctx, d, nil)
+	c.done(d, nil)
 	return &v1.GetTenantResponse{Tenant: c.tenantView(t)}, nil
 }
 
@@ -122,7 +131,7 @@ func (s tenantService) ListTenants(ctx context.Context, req *v1.ListTenantsReque
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
-	c.done(ctx, d, nil)
+	c.done(d, nil)
 	out := &v1.ListTenantsResponse{Tenants: make([]*v1.Tenant, 0, len(rows)), NextPageToken: next}
 	for _, t := range rows {
 		out.Tenants = append(out.Tenants, c.tenantView(t))
@@ -207,20 +216,21 @@ func (s tenantService) RemoveTenant(ctx context.Context, req *v1.RemoveTenantReq
 		return nil, err
 	}
 	name := req.GetName()
+	facts := access.Facts{Object: tenantObject(name), TenantName: name}
 	if err := tenantName("name", name); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	if req.GetConfirmName() != name {
-		return nil, c.fail(d, invalid("confirm_name", "must equal name exactly"))
+		return nil, c.failWith(d, nil, facts, invalid("confirm_name", "must equal name exactly"))
 	}
-	entry := d.Entry(master.OutcomeDone, "")
-	entry.TenantName, entry.Object = name, tenantObject(name)
-	removed, err := c.reg.Remove(ctx, name, entry)
+	removed, err := c.reg.Remove(ctx, name, d.Entry(master.OutcomeDone, "", facts))
 	if fault.KindOf(err) == fault.NotFound {
 		err = noTenant(d)
 	}
 	if err != nil {
-		return nil, c.fail(d, err)
+		// The removal and its entry are written together or not at all, so
+		// a failure left the entry unwritten and it is recorded here.
+		return nil, c.failWith(d, nil, facts, err)
 	}
 	return &v1.RemoveTenantResponse{DatabaseType: databaseType(removed.Driver), DataLocation: removed.Location}, nil
 }
@@ -240,4 +250,16 @@ func (c *core) tenantView(t master.Tenant) *v1.Tenant {
 	m := tenantMessage(t)
 	m.StateTime = timestamp(st.Since)
 	return m
+}
+
+// driverOf returns the driver of a database type a request names, for an
+// audit entry, and "unspecified" for a type the contract does not define.
+func driverOf(t v1.DatabaseType) string {
+	switch t {
+	case v1.DatabaseType_DATABASE_TYPE_SQLITE:
+		return DriverSQLite
+	case v1.DatabaseType_DATABASE_TYPE_POSTGRES:
+		return DriverPostgres
+	}
+	return "unspecified"
 }

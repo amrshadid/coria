@@ -109,8 +109,8 @@ func WithDecision(ctx context.Context, d access.Decision) context.Context {
 }
 
 // DecisionFrom returns the Decision WithDecision put in ctx, and whether
-// there is one that carries a caller and an audit entry. A zero Decision is
-// reported as none: only access.Check makes one that carries rights.
+// there is one that carries a caller. A zero Decision is reported as none:
+// only access.Check makes one that carries rights.
 func DecisionFrom(ctx context.Context) (access.Decision, bool) {
 	d, ok := ctx.Value(decisionKey{}).(access.Decision)
 	if !ok {
@@ -118,9 +118,6 @@ func DecisionFrom(ctx context.Context) (access.Decision, bool) {
 	}
 	p := d.Principal()
 	if _, isKey := p.Key(); !isKey && !p.IsLocalOperator() {
-		return access.Decision{}, false
-	}
-	if d.Entry(master.OutcomeDone, "").ID == "" {
 		return access.Decision{}, false
 	}
 	return d, true
@@ -161,11 +158,11 @@ func (c *core) decision(ctx context.Context, procedure string) (access.Decision,
 func (c *core) toAPI(d access.Decision, err error) error {
 	switch fault.KindOf(err) {
 	case fault.Internal:
-		e := d.Entry(master.OutcomeFailed, "")
+		e := d.Entry(master.OutcomeFailed, "", access.Facts{})
 		c.log.Error("api: internal error", "request_id", e.RequestID, "method", e.Method, "error", err.Error())
 		return connect.NewError(connect.CodeInternal, internalMessage)
 	case fault.Unavailable:
-		e := d.Entry(master.OutcomeFailed, "")
+		e := d.Entry(master.OutcomeFailed, "", access.Facts{})
 		c.log.Warn("api: unavailable", "request_id", e.RequestID, "method", e.Method, "error", err.Error())
 	}
 	return codes.ToConnect(err)
@@ -186,45 +183,50 @@ func outcomeOf(err error) (master.Outcome, string) {
 	return master.OutcomeFailed, fault.Message(err)
 }
 
-// record writes the audit entry of a request that ended with outcome, in the
-// one place that chooses its log: the tenant's log when st, the store of the
-// tenant the request concerns, is in hand (the contract: "one entry in the
-// log of the scope asked for"), and the installation's log otherwise,
-// through the access package's audit writer, which never blocks or fails. An
-// entry the tenant's log does not take goes to the installation's log, with
-// a line in the server's log, so recording never fails the request.
-func (c *core) record(ctx context.Context, d access.Decision, st tenant.Store, outcome master.Outcome, reason string) {
+// record hands the audit entry of a request that changed nothing (a read,
+// or a request that did not complete) to the access package's audit writer,
+// in the one place that chooses its log: the tenant's log when st, the store
+// of the tenant the request concerns, is in hand (D53; the contract: "one
+// entry in the log of the scope asked for"), and the installation's log
+// otherwise. It never blocks and never fails the request: an entry the
+// tenant's log does not take is written to the installation's log with
+// access.DetailRerouted, and one that cannot be queued is counted. facts is
+// what the handler learned after the check.
+func (c *core) record(d access.Decision, st tenant.Store, outcome master.Outcome, reason string, facts access.Facts) {
 	if st != nil {
-		e := d.Entry(outcome, reason)
-		err := st.AppendAudit(ctx, e)
-		if err == nil {
-			return
-		}
-		c.log.Warn("api: an audit entry was not written to the tenant's log; it goes to the installation's log",
-			"request_id", e.RequestID, "method", e.Method, "kind", fault.KindOf(err).String())
+		c.access.RecordTo(st, d, outcome, reason, facts)
+		return
 	}
-	c.access.Record(d, outcome, reason)
+	c.access.Record(d, outcome, reason, facts)
 }
 
 // fail records a request that did not complete in the installation's log,
 // and returns its API error. It is for an error no package below has
-// recorded, met before any tenant's store was in hand.
+// recorded, met before any tenant's store was in hand, in a request whose
+// facts the check already has.
 func (c *core) fail(d access.Decision, err error) error {
-	return c.failIn(context.Background(), d, nil, err)
+	return c.failWith(d, nil, access.Facts{}, err)
 }
 
-// failIn records a request that did not complete in the log record chooses
-// for st, and returns its API error.
-func (c *core) failIn(ctx context.Context, d access.Decision, st tenant.Store, err error) error {
+// failIn is fail for a request into a tenant whose store is in hand: its
+// entry goes to the tenant's log.
+func (c *core) failIn(d access.Decision, st tenant.Store, err error) error {
+	return c.failWith(d, st, access.Facts{}, err)
+}
+
+// failWith records a request that did not complete, in the log record
+// chooses for st, with the facts the handler learned, and returns its API
+// error.
+func (c *core) failWith(d access.Decision, st tenant.Store, facts access.Facts, err error) error {
 	outcome, reason := outcomeOf(err)
-	c.record(ctx, d, st, outcome, reason)
+	c.record(d, st, outcome, reason, facts)
 	return c.toAPI(d, err)
 }
 
 // done records a read that answered, in the log record chooses for st, after
 // the read.
-func (c *core) done(ctx context.Context, d access.Decision, st tenant.Store) {
-	c.record(ctx, d, st, master.OutcomeDone, "")
+func (c *core) done(d access.Decision, st tenant.Store) {
+	c.record(d, st, master.OutcomeDone, "", access.Facts{})
 }
 
 // noTenant is the answer for a tenant a lookup after the check did not find

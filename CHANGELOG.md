@@ -251,10 +251,11 @@ All notable changes to Magnetar are written here. The form is
   all of them, and the master's files, for the address, its password, user
   and host. A tenant's state is the one the registry sees now, not the
   master's row, which can lag a minute behind, with the time that state was
-  reached (`Tenant.state_time`, a new field). A read of the installation
-  costs 26 µs through the check and the handler without the network; a
-  change, one synced commit of the master (5 ms on a laptop). The server does
-  not serve them yet.
+  reached (`Tenant.state_time`, a new field). A read costs 16 µs (a tenant)
+  to 24 µs (a tenant's setting) through the check and the handler without
+  the network, its audit entry batched into the log of the scope it read; a
+  change, one synced commit (5 ms on a laptop). The server does not serve
+  them yet.
 - Settings were any name anyone wrote, with no default and no rule for their
   values, so the contract's "not found" and "a value the setting does not
   accept" could not happen. The server now knows a fixed list

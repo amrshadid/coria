@@ -77,9 +77,9 @@ func BenchmarkSetSetting(b *testing.B) {
 }
 
 // BenchmarkGetTenantSetting measures a read on a tenant's scope, whose audit
-// entry is written to the tenant's log on the request's path (the tenant
-// store has no batching writer), so its cost is a synced commit of the
-// tenant's database, unlike a read of the installation.
+// entry goes to the tenant's log through the access package's batching
+// writer, so no synced commit is on the request's path: it should cost about
+// what a read of the installation does.
 func BenchmarkGetTenantSetting(b *testing.B) {
 	e := newEnv(b)
 	e.tenant("lab1")

@@ -100,6 +100,27 @@ type fakePostgres struct {
 	dir  string
 	mu   sync.Mutex
 	down map[string]bool
+	// logDown names the tenants whose audit log refuses entries while the
+	// rest of their database answers.
+	logDown map[string]bool
+}
+
+// setLogDown makes the tenant named name's audit log refuse entries or not.
+func (f *fakePostgres) setLogDown(name string, down bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.logDown == nil {
+		f.logDown = map[string]bool{}
+	}
+	f.logDown[name] = down
+}
+
+// isLogDown reports whether the tenant named name's audit log refuses
+// entries.
+func (f *fakePostgres) isLogDown(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.logDown[name]
 }
 
 // setDown makes the tenant named name's database answer or not.
@@ -130,6 +151,15 @@ type pgStore struct {
 	f       *fakePostgres
 	name    string
 	address string
+}
+
+// AppendAudit fails as a database that does not answer while the tenant's
+// log is set down.
+func (s pgStore) AppendAudit(ctx context.Context, entries ...master.AuditEntry) error {
+	if s.f.isLogDown(s.name) {
+		return noAnswer(s.address)
+	}
+	return s.Store.AppendAudit(ctx, entries...)
 }
 
 // Ping fails while the tenant is down.
@@ -234,7 +264,7 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	}
 	e.master = m
 	logger := slog.New(slog.NewTextHandler(e.log, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	e.access, err = access.New(access.Config{Store: m, Clock: e.now, NewID: e.newID, AuditInterval: 5 * time.Millisecond, Log: logger})
+	e.access, err = access.New(access.Config{Store: m, Clock: e.now, NewID: e.newID, AuditInterval: 5 * time.Millisecond, AuditBackoff: time.Millisecond, Log: logger})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,9 +609,11 @@ func (e *env) masterLog() []master.AuditEntry {
 	}
 }
 
-// tenantLog returns every entry of a tenant's log.
+// tenantLog returns every entry of a tenant's log, after a flush of the
+// audit writer.
 func (e *env) tenantLog(name string) []master.AuditEntry {
 	e.t.Helper()
+	e.flush()
 	st, err := e.registry.Store(name)
 	if err != nil {
 		e.t.Fatal(err)

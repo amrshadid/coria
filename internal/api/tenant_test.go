@@ -49,7 +49,10 @@ func testCreateTenant(t *testing.T) {
 					t.Errorf("the tenant's file: %v", err)
 				}
 			}},
-		{name: "a name taken", as: f.instAdmin, call: createTenant("lab2", sqliteType, ""), code: connect.CodeAlreadyExists, audit: failed("exists")},
+		{name: "a name taken", as: f.instAdmin, call: createTenant("lab2", sqliteType, ""), code: connect.CodeAlreadyExists},
+		// A creation the registry refuses before writing anything has no entry
+		// until the registry records a failed creation itself (its fix,
+		// fix/registry-create-audit); this handler must not record it twice.
 		{name: "a name taken, as another type", as: f.instAdmin, call: createTenant("lab2", pgType, address), code: connect.CodeAlreadyExists},
 		{name: "name at 63", as: f.instAdmin, call: createTenant("a"+strings.Repeat("b", 62), sqliteType, "")},
 		{name: "name at 64", as: f.instAdmin, call: createTenant("a"+strings.Repeat("b", 63), sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name", audit: failed("name")},

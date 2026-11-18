@@ -28,14 +28,17 @@
 // grants through package access, tenants through package registry, the
 // installation's settings through the master, and a tenant's settings
 // through the tenant's store, which only the registry hands out. A read
-// answers, then records its entry: in the installation's log through
-// access.Record, which never blocks or fails, or in the tenant's own log
-// when the scope asked for is a tenant (the contract: "one entry in the log
-// of the scope asked for"); a read never fails because its entry could not be
-// written, and an entry the tenant's log refuses goes to the installation's
-// log instead. A request that did not complete is recorded with outcome
-// failed and its real cause, in the tenant's log when its store was already in
-// hand and in the installation's log otherwise.
+// answers, then hands its entry to the access package's audit writer, which
+// never blocks or fails: access.Record for the installation's log, or
+// access.RecordTo with the tenant's store when the scope asked for is a
+// tenant (D53; the contract: "one entry in the log of the scope asked for").
+// An entry the tenant's log does not take is written to the installation's
+// log, marked access.DetailRerouted. A request that did not complete is
+// recorded with outcome failed and its real cause, in the tenant's log when
+// its store was already in hand and in the installation's log otherwise; a
+// creation of a tenant is the exception, as the registry writes its entry
+// itself. A method whose requirement is fixed learns what its request names
+// only after the check, and adds it to its entries as access.Facts.
 //
 // # Errors
 //

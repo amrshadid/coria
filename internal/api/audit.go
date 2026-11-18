@@ -75,7 +75,7 @@ func (s auditService) ListAuditEntries(ctx context.Context, req *v1.ListAuditEnt
 		if err != nil {
 			return nil, c.fail(d, listError(err, page.Cursor))
 		}
-		c.done(ctx, d, nil)
+		c.done(d, nil)
 	} else {
 		st, err := c.tenantStore(d, scope.Tenant)
 		if err != nil {
@@ -83,9 +83,9 @@ func (s auditService) ListAuditEntries(ctx context.Context, req *v1.ListAuditEnt
 		}
 		entries, next, err = st.ListAudit(ctx, filter, page)
 		if err != nil {
-			return nil, c.failIn(ctx, d, st, listError(err, page.Cursor))
+			return nil, c.failIn(d, st, listError(err, page.Cursor))
 		}
-		c.done(ctx, d, st)
+		c.done(d, st)
 	}
 	out := &v1.ListAuditEntriesResponse{Entries: make([]*v1.AuditEntry, 0, len(entries)), NextPageToken: next}
 	for _, e := range entries {

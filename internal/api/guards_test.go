@@ -175,8 +175,44 @@ func TestReadsDoNotFailForTheirEntry(t *testing.T) {
 			t.Errorf("%s with the audit writer closed: %v", name, o.err)
 		}
 	}
-	if f.access.AuditStats().Dropped == 0 {
+	if f.access.AuditStats().Dropped() == 0 {
 		t.Error("no entry was dropped, so the test showed nothing")
+	}
+}
+
+// TestTenantLogFallsBackToTheMaster guards the one choice of log for a
+// read: a read on a tenant's scope is recorded in the tenant's log, and when
+// that log does not take the entry, the entry is written to the
+// installation's log with access.DetailRerouted and the tenant's name, and
+// the read still answers.
+func TestTenantLogFallsBackToTheMaster(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	if o := createTenant("pg", pgType, pgAddress)(e.as(local)); o.err != nil {
+		t.Fatal(o.err)
+	}
+	read := func() outcome {
+		return call(e.as(local).settings.GetSetting, &v1.GetSettingRequest{Name: testRetention, Scope: tenantScope("pg")})
+	}
+	ok := read()
+	if ok.err != nil || len(entriesOf(e.tenantLog("pg"), ok.requestID)) != 1 {
+		t.Fatalf("a read with the tenant's log up: %v, not in the tenant's log", ok.err)
+	}
+	e.pg.setLogDown("pg", true)
+	o := read()
+	if o.err != nil {
+		t.Fatalf("a read with the tenant's log down failed: %v", o.err)
+	}
+	got := entriesOf(e.masterLog(), o.requestID)
+	if len(got) != 1 || got[0].Details[access.DetailRerouted] == "" || got[0].TenantName != "pg" || got[0].Outcome != master.OutcomeDone {
+		t.Errorf("the master's log holds %+v for the read, want one entry marked rerouted", got)
+	}
+	e.pg.setLogDown("pg", false)
+	if n := len(entriesOf(e.tenantLog("pg"), o.requestID)); n != 0 {
+		t.Errorf("the tenant's log holds the rerouted entry too (%d)", n)
+	}
+	if e.access.AuditStats().Rerouted == 0 {
+		t.Error("the audit writer counted no rerouted entry")
 	}
 }
 

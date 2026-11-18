@@ -118,18 +118,18 @@ func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingReque
 			v, err := st.Setting(ctx, name)
 			switch {
 			case err == nil:
-				c.done(ctx, d, st)
+				c.done(d, st)
 				return &v1.GetSettingResponse{Setting: settingMessage(name, scope, v, v1.SettingSource_SETTING_SOURCE_TENANT)}, nil
 			case fault.KindOf(err) != fault.NotFound:
-				return nil, c.failIn(ctx, d, st, err)
+				return nil, c.failIn(d, st, err)
 			}
 		}
 	}
 	v, source, err := c.onInstallation(ctx, def)
 	if err != nil {
-		return nil, c.failIn(ctx, d, st, err)
+		return nil, c.failIn(d, st, err)
 	}
-	c.done(ctx, d, st)
+	c.done(d, st)
 	return &v1.GetSettingResponse{Setting: settingMessage(name, access.InstallationScope, v, source)}, nil
 }
 
@@ -168,7 +168,7 @@ func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingReque
 		return nil, c.fail(d, invalid("setting.value", err.Error()))
 	}
 	if scope.IsInstallation() {
-		if err := c.master.SetSetting(ctx, name, value, d.Entry(master.OutcomeDone, "")); err != nil {
+		if err := c.master.SetSetting(ctx, name, value, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
 			return nil, c.fail(d, err)
 		}
 		return &v1.SetSettingResponse{Setting: settingMessage(name, scope, value, v1.SettingSource_SETTING_SOURCE_INSTALLATION)}, nil
@@ -177,8 +177,8 @@ func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingReque
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
-	if err := st.SetSetting(ctx, name, value, d.Entry(master.OutcomeDone, "")); err != nil {
-		return nil, c.failIn(ctx, d, st, err)
+	if err := st.SetSetting(ctx, name, value, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
+		return nil, c.failIn(d, st, err)
 	}
 	return &v1.SetSettingResponse{Setting: settingMessage(name, scope, value, v1.SettingSource_SETTING_SOURCE_TENANT)}, nil
 }
@@ -209,7 +209,7 @@ func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingR
 		return nil, c.fail(d, err)
 	}
 	if scope.IsInstallation() {
-		if _, err := c.master.UnsetSetting(ctx, name, d.Entry(master.OutcomeDone, "")); err != nil {
+		if _, err := c.master.UnsetSetting(ctx, name, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
 			return nil, c.fail(d, err)
 		}
 		return &v1.UnsetSettingResponse{Setting: settingMessage(name, scope, def.Default, v1.SettingSource_SETTING_SOURCE_BUILT_IN)}, nil
@@ -218,8 +218,8 @@ func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingR
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
-	if _, err := st.UnsetSetting(ctx, name, d.Entry(master.OutcomeDone, "")); err != nil {
-		return nil, c.failIn(ctx, d, st, err)
+	if _, err := st.UnsetSetting(ctx, name, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
+		return nil, c.failIn(d, st, err)
 	}
 	// The override is gone and its entry written; what applies now is read
 	// for the answer. If that read fails the caller is told so, and may
@@ -253,7 +253,7 @@ func (s settingsService) ListSettings(ctx context.Context, req *v1.ListSettingsR
 		if err != nil {
 			return nil, c.fail(d, err)
 		}
-		c.done(ctx, d, nil)
+		c.done(d, nil)
 		return out, nil
 	}
 	st, err := c.tenantStore(d, scope.Tenant)
@@ -262,9 +262,9 @@ func (s settingsService) ListSettings(ctx context.Context, req *v1.ListSettingsR
 	}
 	overrides, next, err := st.ListSettings(ctx, page)
 	if err != nil {
-		return nil, c.failIn(ctx, d, st, listError(err, page.Cursor))
+		return nil, c.failIn(d, st, listError(err, page.Cursor))
 	}
-	c.done(ctx, d, st)
+	c.done(d, st)
 	out := &v1.ListSettingsResponse{Settings: make([]*v1.Setting, 0, len(overrides)), NextPageToken: next}
 	for _, o := range overrides {
 		out.Settings = append(out.Settings, settingMessage(o.Name, scope, o.Value, v1.SettingSource_SETTING_SOURCE_TENANT))
