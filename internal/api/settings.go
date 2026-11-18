@@ -144,7 +144,7 @@ func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingReque
 // master from inside the tenant's transaction (adminGuard).
 func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingRequest) (*v1.SetSettingResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.SettingsServiceSetSettingProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.SettingsServiceSetSettingProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingReque
 // succeeds.
 func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.SettingsServiceUnsetSettingProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.SettingsServiceUnsetSettingProcedure)
 	if err != nil {
 		return nil, err
 	}

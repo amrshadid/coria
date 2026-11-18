@@ -23,7 +23,7 @@ type Actor struct {
 	keyID string
 	scope Scope
 	role  Role
-	at    time.Time
+	clock func() time.Time
 }
 
 // actorKind says which of the three callers an Actor is.
@@ -37,13 +37,19 @@ const (
 	actorServer
 )
 
-// ActingKey is the key keyID acting at the time at, which must still hold
-// role or more on scope when the change is written. A grant on the
-// installation is not a role on a tenant, so scope is the exact scope the
-// change needs. The empty role asks only that the key be valid: it exists, is
-// not revoked, and has not expired at at.
-func ActingKey(keyID string, scope Scope, role Role, at time.Time) Actor {
-	return Actor{kind: actorKey, keyID: keyID, scope: scope, role: role, at: at}
+// ActingKey is the key keyID, which must still hold role or more on scope
+// when the change is written. A grant on the installation is not a role on a
+// tenant, so scope is the exact scope the change needs. The empty role asks
+// only that the key be valid: it exists, is not revoked, and has not expired.
+//
+// clock is the server's clock, the one its audit entries' times come from.
+// The store reads it once, inside the change's transaction, after it holds
+// what it locks and after it read the key, and judges the key's expiry at
+// that time (Judge): a change that waited for a lock past the key's expiry is
+// refused. It is not the database's clock, so the expiry and the audit log
+// are judged by one clock, and a test that sets the clock decides the answer.
+func ActingKey(keyID string, scope Scope, role Role, clock func() time.Time) Actor {
+	return Actor{kind: actorKey, keyID: keyID, scope: scope, role: role, clock: clock}
 }
 
 // LocalOperator is the caller on the machine's local socket: it holds no key,
@@ -68,9 +74,6 @@ func (a Actor) Scope() Scope { return a.scope }
 // validity is asked.
 func (a Actor) Role() Role { return a.role }
 
-// At returns the time a key's expiry is compared with.
-func (a Actor) At() time.Time { return a.at }
-
 // String names the actor for a log line: "local operator", "server", or
 // "key <id>". It never holds a secret.
 func (a Actor) String() string {
@@ -86,7 +89,7 @@ func (a Actor) String() string {
 }
 
 // Validate returns an Invalid error when a cannot act: the zero Actor, or a
-// key with an id, scope, role or time that is not valid.
+// key with an id, scope or role that is not valid, or no clock.
 func (a Actor) Validate() error {
 	switch a.kind {
 	case actorLocal, actorServer:
@@ -104,7 +107,10 @@ func (a Actor) Validate() error {
 	if a.role != "" && !a.role.Valid() {
 		return invalid("a role is reader, writer, operator or admin")
 	}
-	return ValidateTime("time of the change", a.at)
+	if a.clock == nil {
+		return invalid("an acting key has a clock to judge its expiry by")
+	}
+	return nil
 }
 
 // The reasons a change is refused for its actor, as Refusal.Reason gives
@@ -157,7 +163,9 @@ const (
 // (the empty Role for none). It returns nil for an actor that is not a key,
 // and otherwise nil or an error with a Refusal in its chain. It is the one
 // statement of the rule every driver applies, so the drivers differ only in
-// how they read.
+// how they read. It reads a key's clock once, when the driver calls it,
+// which is after the driver holds its locks and has read the key, so the
+// expiry is judged at the moment the change is decided.
 func (a Actor) Judge(found bool, revoked, expires time.Time, role Role) error {
 	if a.kind != actorKey {
 		return nil
@@ -168,7 +176,7 @@ func (a Actor) Judge(found bool, revoked, expires time.Time, role Role) error {
 		reason = RefusedUnknownKey
 	case !revoked.IsZero():
 		reason = RefusedRevoked
-	case !expires.IsZero() && !a.at.Before(expires):
+	case !expires.IsZero() && !a.clock().Before(expires):
 		reason = RefusedExpired
 	case a.role != "" && !role.Includes(a.role):
 		return fault.Wrap(fault.Denied, &Refusal{Reason: RefusedNoRole}, messageNoRole)

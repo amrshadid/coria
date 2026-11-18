@@ -34,11 +34,12 @@ import (
 // another tenant's store, or altered or cut short, is Invalid.
 //
 // Every method that changes the database also takes a Guard: the check of
-// who makes the change, which the store runs inside the change's
-// transaction, after it holds what it needs to write and before it writes
-// anything. A Guard that returns an error stops the change: nothing is
-// written, neither the change nor its entry, and the call returns that error
-// as it is (its kind and chain kept). A nil Guard is a change no key makes,
+// who makes the change, which the store runs last in the change's
+// transaction, after the change and its audit entry are written and before
+// the commit. A Guard that returns an error undoes the change: nothing is
+// committed, neither the change nor its entry, and the call returns that
+// error as it is (its kind and chain kept). A change that fails before the
+// Guard's turn (its entry's id taken, say) does not run it. A nil Guard is a change no key makes,
 // the server's own. The package documentation says why a tenant's change
 // takes a Guard and not the key itself, and what that leaves open.
 //
@@ -92,11 +93,11 @@ type Store interface {
 	ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error)
 }
 
-// Guard is the check a change makes of who makes it, run by the store inside
-// the change's transaction before anything is written (Store). Keys and
-// grants live only in the master, so a tenant's store cannot read them in
-// its own transaction; the caller hands it this check instead, which asks
-// the master (master.Store.CheckActor), and the store runs it at the last
-// moment it can: once it holds the write lock or the rows the change needs,
-// so no wait for them falls between the check and the change.
+// Guard is the check a change makes of who makes it, run by the store last
+// in the change's transaction: after the change and its audit entry are
+// written, so after any wait for the write lock or for the rows the change
+// needs, and just before the commit (Store). Keys and grants live only in
+// the master, so a tenant's store cannot read them in its own transaction;
+// the caller hands it this check instead, which asks the master
+// (master.Store.CheckActor).
 type Guard func(ctx context.Context) error

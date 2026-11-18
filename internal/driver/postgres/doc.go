@@ -66,9 +66,16 @@
 // is a setting's change, which checks its actor last, after it locked the
 // setting's row; no change locks a key's row and then a setting's, so that
 // order closes no cycle. The check of a change's actor holds its key's row
-// for share, and the tenant's row for key share when its role is on a tenant
-// (checkActor), so a revocation, a change of its grants or a removal of the
-// tenant waits for the change or is waited for. Taken in one order, these
+// for share, and the tenant's row when its role is on a tenant, for key
+// share or for the stronger lock the change itself will take on that row, so
+// no transaction asks for a stronger lock on a row it already holds; a
+// revocation, a change of its grants or a removal of the tenant waits for the
+// change or is waited for. The check takes its locks first and reads the key
+// and its grant after, in a statement of its own: under read committed a
+// statement sees what was committed when it began, and a locking statement
+// that waited re-reads only the row it locked, and only if that row changed,
+// which a change of grants (it locks the key's row and changes another
+// table) does not do. Taken in one order, these
 // locks cannot wait on each other in a cycle, which Postgres would break by
 // failing one of the changes as a deadlock.
 //

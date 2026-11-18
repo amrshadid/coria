@@ -30,7 +30,7 @@ var _ magnetarv1connect.TenantServiceHandler = tenantService{}
 // CreateTenant registers a tenant and makes its tables in its database.
 func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantRequest) (*v1.CreateTenantResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.TenantServiceCreateTenantProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.TenantServiceCreateTenantProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +226,7 @@ func (c *core) grantedTenants(ctx context.Context, keyID string, page master.Pag
 // tenant's name is sent twice; the two must be equal.
 func (s tenantService) RemoveTenant(ctx context.Context, req *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.TenantServiceRemoveTenantProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.TenantServiceRemoveTenantProcedure)
 	if err != nil {
 		return nil, err
 	}

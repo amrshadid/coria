@@ -44,7 +44,11 @@
 //
 // # The key at the change
 //
-// Every change carries the caller's key as its actor, with the role the
+// A handler that changes something has the access package check the
+// caller's key again first (access.Confirm), before it validates the request
+// or reads what it names: a key that lapsed since the check is answered
+// UNAUTHENTICATED or PERMISSION_DENIED whatever it asked, never "not found",
+// "already exists" or a field that is wrong. Every change then carries the caller's key as its actor, with the role the
 // method needs on its scope (access.Decision.Actor): into the master's change
 // for keys, grants, tenants and the installation's settings, which checks it
 // in its own transaction; and for a tenant's settings, as a tenant.Guard that

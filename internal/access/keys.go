@@ -163,9 +163,54 @@ func (a *Access) actFor(d Decision, needAdmin bool, object string, details map[s
 }
 
 // change is actFor for an operation that changes the master: the actor goes
-// into the change, whose transaction checks it.
-func (a *Access) change(d Decision, object string, details map[string]string) (master.AuditEntry, master.Actor, error) {
-	return a.actFor(d, true, object, details)
+// into the change, whose transaction checks it. Before anything else reads
+// what the request names (the key to revoke, the tenant of a scope) or
+// validates it, the key is checked as a read checks it, unless Confirm
+// already did for this request: so a key that may no longer act is told so,
+// and is not told whether what it names exists or whether its request is
+// valid.
+func (a *Access) change(ctx context.Context, d Decision, object string, details map[string]string) (master.AuditEntry, master.Actor, error) {
+	e, by, err := a.actFor(d, true, object, details)
+	if err != nil || d.confirmed {
+		return e, by, err
+	}
+	if err := a.store.CheckActor(ctx, by); err != nil {
+		return master.AuditEntry{}, master.Actor{}, a.failAfter(e, err)
+	}
+	return e, by, nil
+}
+
+// Confirm checks d's key again against the requirement Check allowed, by the
+// check every change makes in its own transaction (master.Store.CheckActor),
+// and returns d marked as confirmed. A handler that changes something calls
+// it first, before it validates the request or reads what the request
+// names, so the order of the API contract (the credential, then the role,
+// then whether what is named exists, then whether the request is valid) holds
+// for a key that may have lapsed since the check: such a key is refused
+// whatever it asked, and the request is recorded as refused, in the
+// installation's log, as the check records its own refusals. A store's
+// failure is recorded and answered as Unavailable or Internal. The local
+// operator needs no check. The change itself still checks the key in its
+// transaction; the mark only spares this package's operations a second read
+// before it.
+func (a *Access) Confirm(ctx context.Context, d Decision) (Decision, error) {
+	if !d.checked() {
+		return d, fault.New(fault.Denied, MessageDenied)
+	}
+	var by master.Actor
+	switch d.req.kind {
+	case needInstallation:
+		by = d.Actor(master.Installation, d.req.role)
+	case needTenant:
+		by = d.Actor(master.TenantScope(d.tenant.ID), d.req.role)
+	default:
+		by = d.Actor(master.Installation, "")
+	}
+	if err := a.store.CheckActor(ctx, by); err != nil {
+		return d, a.failAfter(d.Entry(master.OutcomeDone, "", Facts{}), err)
+	}
+	d.confirmed = true
+	return d, nil
 }
 
 // read is actFor for an operation that only reads, which has no transaction
@@ -272,7 +317,7 @@ func publicKey(k master.Key) master.Key {
 // its secret, are written in one transaction. The whole key is in the
 // result's Secret, once: only its hash is stored.
 func (a *Access) CreateKey(ctx context.Context, d Decision, holder string, exp Expiry) (CreatedKey, error) {
-	entry, by, err := a.change(d, "", map[string]string{detailHolder: auditText(holder, master.MaxAuditDetailValueLength)})
+	entry, by, err := a.change(ctx, d, "", map[string]string{detailHolder: auditText(holder, master.MaxAuditDetailValueLength)})
 	if err != nil {
 		return CreatedKey{}, err
 	}
@@ -353,7 +398,7 @@ func (a *Access) ListKeys(ctx context.Context, d Decision, p master.Page) ([]mas
 // read with the revoke time the revocation returned: a revocation that
 // happened is never answered as a failure.
 func (a *Access) RevokeKey(ctx context.Context, d Decision, id string) (master.Key, error) {
-	entry, by, err := a.change(d, auditText(id, master.MaxAuditFieldLength), nil)
+	entry, by, err := a.change(ctx, d, auditText(id, master.MaxAuditFieldLength), nil)
 	if err != nil {
 		return master.Key{}, err
 	}
@@ -401,7 +446,7 @@ func (a *Access) resolve(ctx context.Context, s Scope) (master.Scope, error) {
 // NotFound; a revoked key is Conflict. The audit entry has the scope and,
 // from the master, the old and the new role.
 func (a *Access) SetGrant(ctx context.Context, d Decision, keyID string, scope Scope, role master.Role) (Grant, master.Role, error) {
-	entry, by, err := a.change(d, auditText(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
+	entry, by, err := a.change(ctx, d, auditText(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
 	if err != nil {
 		return Grant{}, "", err
 	}
@@ -435,7 +480,7 @@ func (a *Access) SetGrant(ctx context.Context, d Decision, keyID string, scope S
 // and succeeds. It needs the installation's admin. An unknown key or tenant
 // is NotFound.
 func (a *Access) RemoveGrant(ctx context.Context, d Decision, keyID string, scope Scope) (master.Role, error) {
-	entry, by, err := a.change(d, auditText(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
+	entry, by, err := a.change(ctx, d, auditText(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
 	if err != nil {
 		return "", err
 	}

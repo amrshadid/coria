@@ -19,18 +19,20 @@ import (
 // ErrDuplicateAuditID in the chain, of kind Internal.
 //
 // Every method that changes the master, except MarkKeyUsed, also takes who
-// makes the change, an Actor, and checks it inside the change's transaction
-// before anything else: a key must exist, not be revoked, not have expired
-// at the actor's time, and hold the actor's role or more on the actor's
-// scope. When it does not, nothing is written, neither the change nor its
-// entry, and the call fails with a Refusal in the chain, of kind
-// Unauthenticated (the key is no good) or Denied (it lacks the role), before
-// any NotFound or Conflict the change would have met: a refused caller
-// learns nothing about what it named. The check holds against every change
-// that would undo it until the transaction ends, so a revocation, an expiry
-// or a grant removed or lowered is ordered before the change, which is then
-// refused, or after it, never in between. The local operator and the server
-// are never refused. A zero Actor is Invalid.
+// makes the change, an Actor, and checks it inside the change's transaction:
+// a key must exist, not be revoked, not have expired at the time its clock
+// gives inside the transaction, and hold the actor's role or more on the
+// actor's scope. When it does not, nothing is written, neither the change
+// nor its entry, and the call fails with a Refusal in the chain, of kind
+// Unauthenticated (the key is no good) or Denied (it lacks the role). A
+// change that could meet NotFound or Conflict checks its actor before it
+// reads or writes anything else, so a refused caller learns nothing about
+// what it named; SetSetting and UnsetSetting, which meet neither, check it
+// last, after their writes and before the commit. The check holds against
+// every change that would undo it until the transaction ends, so a
+// revocation, an expiry or a grant removed or lowered is ordered before the
+// change, which is then refused, or after it, never in between. The local
+// operator and the server are never refused. A zero Actor is Invalid.
 //
 // A call that returns an error has committed nothing. A context that ends
 // during a call, a call on a closed store, a database that is read-only, and

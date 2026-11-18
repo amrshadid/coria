@@ -359,12 +359,19 @@ All notable changes to Magnetar are written here. The form is
   the check"). A change in a tenant's own database, which holds no keys,
   asks the master for the same check from inside the tenant's transaction,
   just before its commit; a revocation that commits in that one commit's
-  time is not seen by that change. Reads check the key once before they
-  read. On Postgres a change of keys or grants by a key locks the rows of
-  both keys in the order of their ids, so two keys changing each other's
-  grants at once are ordered rather than deadlocked. Creating a tenant no
-  longer reads the audit log to learn whether its request was recorded: the
-  registry says so.
+  time is not seen by that change. The key's expiry is judged at the time
+  the server's clock gives inside the transaction, after its locks are held,
+  so a change that waited for a lock past the expiry is refused. A handler
+  that changes something checks the key first, before it validates the
+  request or reads what it names, so such a key is never told whether a key
+  or a tenant exists, a name is taken, or an argument is wrong. Reads check
+  the key once before they read. On Postgres the check locks the key's row,
+  and a tenant's row with the lock the change itself needs, and reads the key
+  and its grant after, in a statement of its own, so a grant removed while
+  the change waited for its lock is seen; a change of keys or grants by a key
+  locks both keys' rows in the order of their ids, so two such changes are
+  ordered rather than deadlocked. Creating a tenant no longer reads the audit
+  log to learn whether its request was recorded: the registry says so.
 
 - `serve` started with a key file other than the installation's ran: every
   tenant then failed with "the database address did not open with this key

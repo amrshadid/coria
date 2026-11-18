@@ -23,7 +23,7 @@ var _ magnetarv1connect.AccessServiceHandler = accessService{}
 // CreateKey makes a key and answers its secret, once.
 func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) (*v1.CreateKeyResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AccessServiceCreateKeyProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.AccessServiceCreateKeyProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (s accessService) ListKeys(ctx context.Context, req *v1.ListKeysRequest) (*
 // time.
 func (s accessService) RevokeKey(ctx context.Context, req *v1.RevokeKeyRequest) (*v1.RevokeKeyResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AccessServiceRevokeKeyProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.AccessServiceRevokeKeyProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (s accessService) RevokeKey(ctx context.Context, req *v1.RevokeKeyRequest) 
 // in one step.
 func (s accessService) SetGrant(ctx context.Context, req *v1.SetGrantRequest) (*v1.SetGrantResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AccessServiceSetGrantProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.AccessServiceSetGrantProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (s accessService) ListGrants(ctx context.Context, req *v1.ListGrantsRequest
 // hold succeeds.
 func (s accessService) RemoveGrant(ctx context.Context, req *v1.RemoveGrantRequest) (*v1.RemoveGrantResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AccessServiceRemoveGrantProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.AccessServiceRemoveGrantProcedure)
 	if err != nil {
 		return nil, err
 	}

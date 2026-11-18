@@ -150,6 +150,25 @@ func (c *core) decision(ctx context.Context, procedure string) (access.Decision,
 	return access.Decision{}, connect.NewError(connect.CodeInternal, internalMessage)
 }
 
+// changing returns the Decision of a request that changes something, after
+// the access package has checked the caller's key again (access.Confirm),
+// before the handler validates the request or reads anything it names. So a
+// key that lapsed since the check is answered UNAUTHENTICATED or
+// PERMISSION_DENIED whatever it asked, as the contract's order of checks
+// says, and never told whether what it named exists or whether its request
+// was valid. The change itself checks the key again in its transaction. A
+// refusal is recorded by the access package.
+func (c *core) changing(ctx context.Context, procedure string) (access.Decision, error) {
+	d, err := c.decision(ctx, procedure)
+	if err != nil {
+		return d, err
+	}
+	if d, err = c.access.Confirm(ctx, d); err != nil {
+		return d, c.toAPI(d, err)
+	}
+	return d, nil
+}
+
 // toAPI returns the API error for err, an error a package below already
 // recorded in the audit log or one that needs no entry. An internal fault's
 // cause is logged with the request's id and replaced by the fixed message; an

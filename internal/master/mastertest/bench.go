@@ -144,7 +144,7 @@ func BenchSetSettingByKey(b *testing.B, open Open) {
 		master.AuditEntry{ID: "bench-admin", Time: T0, Method: "Setup", Outcome: master.OutcomeDone}, master.LocalOperator()); err != nil {
 		b.Fatal(err)
 	}
-	benchSetSetting(b, s, master.ActingKey(id, master.Installation, master.RoleAdmin, T0))
+	benchSetSetting(b, s, master.ActingKey(id, master.Installation, master.RoleAdmin, at(T0)))
 }
 
 // BenchSetSettingByLocalOperator is BenchSetSettingByKey by the local

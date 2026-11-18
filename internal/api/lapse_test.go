@@ -250,3 +250,89 @@ func TestChangeByKeyThatLapsedAfterCheck(t *testing.T) {
 		}
 	}
 }
+
+// TestKeyLapsedAfterCheckIsRefusedFirst guards the contract's order of checks
+// for a key revoked between the check and the handler: the credential comes
+// first, so every managing method answers such a key UNAUTHENTICATED with the
+// fixed message, whether what it names exists or not and whether its request
+// is valid or not; it is never told "no such key", "already exists" or which
+// argument is wrong. Each request is recorded once, as refused, in the
+// installation's log.
+func TestKeyLapsedAfterCheckIsRefusedFirst(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	e.tenant("lab")
+	e.tenant("taken")
+	_, existingKey := e.key()
+	cases := []struct {
+		name string
+		do   func(clients) outcome
+	}{
+		{"RevokeKey of a key that exists", func(c clients) outcome { return call(c.access.RevokeKey, &v1.RevokeKeyRequest{Id: existingKey}) }},
+		{"RevokeKey of no such key", func(c clients) outcome { return call(c.access.RevokeKey, &v1.RevokeKeyRequest{Id: "nosuchkey123"}) }},
+		{"RevokeKey of a malformed id", func(c clients) outcome { return call(c.access.RevokeKey, &v1.RevokeKeyRequest{Id: "a.b"}) }},
+		{"CreateKey with no holder", func(c clients) outcome { return call(c.access.CreateKey, &v1.CreateKeyRequest{}) }},
+		{"CreateKey", func(c clients) outcome { return call(c.access.CreateKey, &v1.CreateKeyRequest{Holder: "h"}) }},
+		{"SetGrant on a tenant that exists", func(c clients) outcome {
+			return call(c.access.SetGrant, &v1.SetGrantRequest{KeyId: existingKey, Scope: tenantScope("lab"), Role: v1.Role_ROLE_READER})
+		}},
+		{"SetGrant on no such tenant", func(c clients) outcome {
+			return call(c.access.SetGrant, &v1.SetGrantRequest{KeyId: existingKey, Scope: tenantScope("nosuch"), Role: v1.Role_ROLE_READER})
+		}},
+		{"SetGrant for no such key", func(c clients) outcome {
+			return call(c.access.SetGrant, &v1.SetGrantRequest{KeyId: "nosuchkey123", Scope: installation(), Role: v1.Role_ROLE_READER})
+		}},
+		{"SetGrant of writer on the installation", func(c clients) outcome {
+			return call(c.access.SetGrant, &v1.SetGrantRequest{KeyId: existingKey, Scope: installation(), Role: v1.Role_ROLE_WRITER})
+		}},
+		{"SetGrant with no role", func(c clients) outcome {
+			return call(c.access.SetGrant, &v1.SetGrantRequest{KeyId: existingKey, Scope: installation()})
+		}},
+		{"RemoveGrant on no such tenant", func(c clients) outcome {
+			return call(c.access.RemoveGrant, &v1.RemoveGrantRequest{KeyId: existingKey, Scope: tenantScope("nosuch")})
+		}},
+		{"RemoveGrant with no scope", func(c clients) outcome {
+			return call(c.access.RemoveGrant, &v1.RemoveGrantRequest{KeyId: existingKey})
+		}},
+		{"RemoveTenant of a tenant that exists", func(c clients) outcome {
+			return call(c.tenants.RemoveTenant, &v1.RemoveTenantRequest{Name: "lab", ConfirmName: "lab"})
+		}},
+		{"RemoveTenant of no such tenant", func(c clients) outcome {
+			return call(c.tenants.RemoveTenant, &v1.RemoveTenantRequest{Name: "nosuch", ConfirmName: "nosuch"})
+		}},
+		{"RemoveTenant with another confirmation", func(c clients) outcome {
+			return call(c.tenants.RemoveTenant, &v1.RemoveTenantRequest{Name: "lab", ConfirmName: "lab2"})
+		}},
+		{"CreateTenant of a fresh name", func(c clients) outcome {
+			return call(c.tenants.CreateTenant, &v1.CreateTenantRequest{Name: "fresh", DatabaseType: v1.DatabaseType_DATABASE_TYPE_SQLITE})
+		}},
+		{"CreateTenant of a name taken", func(c clients) outcome {
+			return call(c.tenants.CreateTenant, &v1.CreateTenantRequest{Name: "taken", DatabaseType: v1.DatabaseType_DATABASE_TYPE_SQLITE})
+		}},
+		{"CreateTenant with no type", func(c clients) outcome {
+			return call(c.tenants.CreateTenant, &v1.CreateTenantRequest{Name: "fresh2"})
+		}},
+		{"SetSetting of no such setting", setSetting("no.such", installation(), "v")},
+		{"SetSetting with a bad value", setSetting(testRetention, installation(), "soon")},
+		{"SetSetting on a tenant, a bad value", setSetting(testRetention, tenantScope("lab"), "soon")},
+		{"UnsetSetting of no such setting", unsetSetting("no.such", installation())},
+		{"UnsetSetting on a tenant", unsetSetting(testRetention, tenantScope("lab"))},
+	}
+	for _, cs := range cases {
+		c, id := e.key(onInstallation(master.RoleAdmin), e.onTenant("lab", master.RoleAdmin))
+		lapse := func() {
+			if _, err := e.master.RevokeKey(ctx, id, e.now(), e.setupEntry(), master.LocalOperator()); err != nil {
+				t.Error(err)
+			}
+		}
+		e.afterCheck.Store(&lapse)
+		o := cs.do(e.as(c))
+		if o.code() != connect.CodeUnauthenticated || o.message() != access.MessageUnauthenticated {
+			t.Errorf("%s by a key revoked after the check: %v %q, want unauthenticated %q", cs.name, o.code(), o.message(), access.MessageUnauthenticated)
+		}
+		got := entriesOf(e.masterLog(), o.requestID)
+		if len(got) != 1 || got[0].Outcome != master.OutcomeRefused || got[0].Reason != "key revoked since the check" {
+			t.Errorf("%s: the installation's log has %+v, want one entry, refused", cs.name, got)
+		}
+	}
+}

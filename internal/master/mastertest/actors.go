@@ -115,13 +115,17 @@ func changes() []change {
 	}
 }
 
+// at returns a clock that always reads t, for an actor judged at a known
+// time.
+func at(t time.Time) func() time.Time { return func() time.Time { return t } }
+
 // adminKey creates a key with admin on the installation and returns it with
 // its actor at T0, which may act.
 func (e *env) adminKey() (master.Key, master.Actor) {
 	e.Helper()
 	k := e.mustKey()
 	e.mustGrant(k.ID, master.Installation, master.RoleAdmin)
-	return k, master.ActingKey(k.ID, master.Installation, master.RoleAdmin, T0)
+	return k, master.ActingKey(k.ID, master.Installation, master.RoleAdmin, at(T0))
 }
 
 // lapse is one way a key that could act when its request was checked can no
@@ -146,7 +150,7 @@ func lapses() []lapse {
 		{"expired", fault.Unauthenticated, master.RefusedExpired, func(_ *env, k master.Key, by master.Actor) master.Actor {
 			// The change is written at the key's expiry: an expiry is the
 			// first moment the key no longer works.
-			return master.ActingKey(k.ID, by.Scope(), by.Role(), k.Expires)
+			return master.ActingKey(k.ID, by.Scope(), by.Role(), at(k.Expires))
 		}},
 		{"whose grant was removed", fault.Denied, master.RefusedNoRole, func(e *env, k master.Key, by master.Actor) master.Actor {
 			_, err := e.s.RemoveGrant(e.ctx, k.ID, master.Installation, e.audit(), master.LocalOperator())
@@ -161,7 +165,7 @@ func lapses() []lapse {
 		{"gone", fault.Unauthenticated, master.RefusedUnknownKey, func(_ *env, _ master.Key, by master.Actor) master.Actor {
 			// A key the master never had: what an id left in a Decision
 			// whose key is no longer there looks like to the store.
-			return master.ActingKey("never-made", by.Scope(), by.Role(), by.At())
+			return master.ActingKey("never-made", by.Scope(), by.Role(), at(T0))
 		}},
 	}
 }
@@ -244,7 +248,9 @@ func testActorOnTenant(e *env) {
 	k := e.mustKey()
 	e.mustGrant(k.ID, master.TenantScope(t.ID), master.RoleOperator)
 	e.mustGrant(k.ID, master.Installation, master.RoleAdmin)
-	on := func(role master.Role) master.Actor { return master.ActingKey(k.ID, master.TenantScope(t.ID), role, T0) }
+	on := func(role master.Role) master.Actor {
+		return master.ActingKey(k.ID, master.TenantScope(t.ID), role, at(T0))
+	}
 
 	e.ok("SetSetting by the tenant's operator", e.s.SetSetting(e.ctx, e.id("s"), "v", e.audit(), on(master.RoleOperator)))
 	e.ok("SetSetting needing writer, by the tenant's operator", e.s.SetSetting(e.ctx, e.id("s"), "v", e.audit(), on(master.RoleWriter)))
@@ -286,18 +292,18 @@ func testCheckActor(e *env) {
 	}{
 		{"the local operator", master.LocalOperator(), fault.Internal, ""},
 		{"the server", master.Server(), fault.Internal, ""},
-		{"admin on the installation", master.ActingKey(admin.ID, inst, master.RoleAdmin, T0), fault.Internal, ""},
-		{"a valid key, no role asked", master.ActingKey(admin.ID, inst, "", T0), fault.Internal, ""},
-		{"a microsecond before the expiry", master.ActingKey(admin.ID, inst, master.RoleAdmin, admin.Expires.Add(-time.Microsecond)), fault.Internal, ""},
-		{"at the expiry", master.ActingKey(admin.ID, inst, master.RoleAdmin, admin.Expires), fault.Unauthenticated, master.RefusedExpired},
-		{"admin on the installation, asked on a tenant", master.ActingKey(admin.ID, ten, master.RoleReader, T0), fault.Denied, master.RefusedNoRole},
-		{"operator on the tenant", master.ActingKey(op.ID, ten, master.RoleOperator, T0), fault.Internal, ""},
-		{"operator on the tenant, asked for writer", master.ActingKey(op.ID, ten, master.RoleWriter, T0), fault.Internal, ""},
-		{"operator on the tenant, asked for admin", master.ActingKey(op.ID, ten, master.RoleAdmin, T0), fault.Denied, master.RefusedNoRole},
-		{"operator on the tenant, asked on the installation", master.ActingKey(op.ID, inst, master.RoleReader, T0), fault.Denied, master.RefusedNoRole},
-		{"revoked", master.ActingKey(revoked.ID, inst, master.RoleAdmin, T0), fault.Unauthenticated, master.RefusedRevoked},
-		{"revoked, no role asked", master.ActingKey(revoked.ID, inst, "", T0), fault.Unauthenticated, master.RefusedRevoked},
-		{"unknown", master.ActingKey("never-made", inst, master.RoleReader, T0), fault.Unauthenticated, master.RefusedUnknownKey},
+		{"admin on the installation", master.ActingKey(admin.ID, inst, master.RoleAdmin, at(T0)), fault.Internal, ""},
+		{"a valid key, no role asked", master.ActingKey(admin.ID, inst, "", at(T0)), fault.Internal, ""},
+		{"a microsecond before the expiry", master.ActingKey(admin.ID, inst, master.RoleAdmin, at(admin.Expires.Add(-time.Microsecond))), fault.Internal, ""},
+		{"at the expiry", master.ActingKey(admin.ID, inst, master.RoleAdmin, at(admin.Expires)), fault.Unauthenticated, master.RefusedExpired},
+		{"admin on the installation, asked on a tenant", master.ActingKey(admin.ID, ten, master.RoleReader, at(T0)), fault.Denied, master.RefusedNoRole},
+		{"operator on the tenant", master.ActingKey(op.ID, ten, master.RoleOperator, at(T0)), fault.Internal, ""},
+		{"operator on the tenant, asked for writer", master.ActingKey(op.ID, ten, master.RoleWriter, at(T0)), fault.Internal, ""},
+		{"operator on the tenant, asked for admin", master.ActingKey(op.ID, ten, master.RoleAdmin, at(T0)), fault.Denied, master.RefusedNoRole},
+		{"operator on the tenant, asked on the installation", master.ActingKey(op.ID, inst, master.RoleReader, at(T0)), fault.Denied, master.RefusedNoRole},
+		{"revoked", master.ActingKey(revoked.ID, inst, master.RoleAdmin, at(T0)), fault.Unauthenticated, master.RefusedRevoked},
+		{"revoked, no role asked", master.ActingKey(revoked.ID, inst, "", at(T0)), fault.Unauthenticated, master.RefusedRevoked},
+		{"unknown", master.ActingKey("never-made", inst, master.RoleReader, at(T0)), fault.Unauthenticated, master.RefusedUnknownKey},
 	} {
 		err := e.s.CheckActor(e.ctx, c.by)
 		if c.kind == fault.Internal {
@@ -312,11 +318,11 @@ func testCheckActor(e *env) {
 		}
 	}
 	for name, by := range map[string]master.Actor{
-		"the zero Actor":    {},
-		"a key with no id":  master.ActingKey("", inst, master.RoleAdmin, T0),
-		"a key's bad role":  master.ActingKey(admin.ID, inst, "owner", T0),
-		"a key's bad scope": master.ActingKey(admin.ID, master.TenantScope("not an id"), master.RoleAdmin, T0),
-		"a key at no time":  master.ActingKey(admin.ID, inst, master.RoleAdmin, time.Time{}),
+		"the zero Actor":      {},
+		"a key with no id":    master.ActingKey("", inst, master.RoleAdmin, at(T0)),
+		"a key's bad role":    master.ActingKey(admin.ID, inst, "owner", at(T0)),
+		"a key's bad scope":   master.ActingKey(admin.ID, master.TenantScope("not an id"), master.RoleAdmin, at(T0)),
+		"a key with no clock": master.ActingKey(admin.ID, inst, master.RoleAdmin, nil),
 	} {
 		e.wantKind("CheckActor of "+name, e.s.CheckActor(e.ctx, by), fault.Invalid)
 	}
@@ -371,7 +377,7 @@ func actorRevokeRace(e *env, s1, s2 master.Store, rounds int) {
 				<-revoked
 			}
 			change.Time = now()
-			cerr = s1.SetSetting(e.ctx, name, "v", change, master.ActingKey(k.ID, master.Installation, master.RoleAdmin, change.Time))
+			cerr = s1.SetSetting(e.ctx, name, "v", change, master.ActingKey(k.ID, master.Installation, master.RoleAdmin, at(change.Time)))
 		})
 		e.ok("RevokeKey", rerr)
 		what := fmt.Sprintf("round %d", round)

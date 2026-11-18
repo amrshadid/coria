@@ -20,7 +20,7 @@ import (
 // exact moment of an expiry, and the actors that are never refused.
 func TestJudge(t *testing.T) {
 	exp := t0.Add(time.Hour)
-	key := func(role Role, at time.Time) Actor { return ActingKey("k1", Installation, role, at) }
+	key := func(role Role, when time.Time) Actor { return ActingKey("k1", Installation, role, at(when)) }
 	// none stands for no error: no kind is negative.
 	none := fault.Kind(-1)
 	for _, c := range []struct {
@@ -78,20 +78,23 @@ func TestActorValidate(t *testing.T) {
 		{"the zero Actor", Actor{}, &invalid},
 		{"the local operator", LocalOperator(), nil},
 		{"the server", Server(), nil},
-		{"a key", ActingKey("k1", TenantScope("t1"), RoleWriter, t0), nil},
-		{"a key, no role", ActingKey("k1", Installation, "", t0), nil},
-		{"a key with no id", ActingKey("", Installation, RoleAdmin, t0), &invalid},
-		{"a key with a bad id", ActingKey("k/1", Installation, RoleAdmin, t0), &invalid},
-		{"a key with a bad role", ActingKey("k1", Installation, "owner", t0), &invalid},
-		{"a key with a bad scope", ActingKey("k1", TenantScope("t 1"), RoleAdmin, t0), &invalid},
-		{"a key at no time", ActingKey("k1", Installation, RoleAdmin, time.Time{}), &invalid},
+		{"a key", ActingKey("k1", TenantScope("t1"), RoleWriter, at(t0)), nil},
+		{"a key, no role", ActingKey("k1", Installation, "", at(t0)), nil},
+		{"a key with no id", ActingKey("", Installation, RoleAdmin, at(t0)), &invalid},
+		{"a key with a bad id", ActingKey("k/1", Installation, RoleAdmin, at(t0)), &invalid},
+		{"a key with a bad role", ActingKey("k1", Installation, "owner", at(t0)), &invalid},
+		{"a key with a bad scope", ActingKey("k1", TenantScope("t 1"), RoleAdmin, at(t0)), &invalid},
+		{"a key with no clock", ActingKey("k1", Installation, RoleAdmin, nil), &invalid},
 	} {
 		wantKind(t, c.name, c.by.Validate(), c.want)
 	}
-	if LocalOperator().IsKey() || Server().IsKey() || (Actor{}).IsKey() || !ActingKey("k1", Installation, "", t0).IsKey() {
+	if LocalOperator().IsKey() || Server().IsKey() || (Actor{}).IsKey() || !ActingKey("k1", Installation, "", at(t0)).IsKey() {
 		t.Error("IsKey is true for a key only")
 	}
 }
+
+// at returns a clock that always reads t.
+func at(t time.Time) func() time.Time { return func() time.Time { return t } }
 
 // TestRoleIncludes guards the one order of roles: each includes the ones
 // before it, no role includes an unknown one, and none includes nothing.
@@ -109,14 +112,15 @@ func TestRoleIncludes(t *testing.T) {
 	}
 }
 
-// TestUncheckedActorsNamedOnlyWhereReviewed guards the two actors no store
+// TestUncheckedActorsNamedOnlyByTheirPackages guards the two actors no store
 // refuses: outside tests and the contract suites, only internal/access, which
 // gives a Decision of the local operator its actor, names LocalOperator, and
 // only internal/registry and internal/cli/servecmd, which change the master
 // for the server itself, name Server. Any other package that names either
-// makes changes no key is checked for, and is reviewed as a change to who may
-// change the installation.
-func TestUncheckedActorsNamedOnlyWhereReviewed(t *testing.T) {
+// makes changes no key is checked for: adding one changes who may change the
+// installation, and has to be added here on purpose.
+func TestUncheckedActorsNamedOnlyByTheirPackages(t *testing.T) {
+	const masterPath = "github.com/amrshadid/magnetar/internal/master"
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
@@ -149,6 +153,25 @@ func TestUncheckedActorsNamedOnlyWhereReviewed(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		// The name this file gives the package, whatever it is: an alias
+		// would otherwise hide a call from the check.
+		local := ""
+		for _, imp := range f.Imports {
+			if strings.Trim(imp.Path.Value, `"`) != masterPath {
+				continue
+			}
+			local = "master"
+			if imp.Name != nil {
+				local = imp.Name.Name
+			}
+		}
+		switch local {
+		case "":
+			return nil
+		case ".":
+			t.Errorf("%s imports the master package into its own names, which hides what it calls", rel)
+			return nil
+		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			sel, ok := n.(*ast.SelectorExpr)
 			if !ok {
@@ -156,7 +179,7 @@ func TestUncheckedActorsNamedOnlyWhereReviewed(t *testing.T) {
 			}
 			x, ok := sel.X.(*ast.Ident)
 			places, named := allowed[sel.Sel.Name]
-			if !ok || x.Name != "master" || !named {
+			if !ok || x.Name != local || !named {
 				return true
 			}
 			for _, p := range places {

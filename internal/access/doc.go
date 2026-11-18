@@ -51,9 +51,13 @@
 // makes no read of its own for it: the one implementation of the check of a
 // key after Check is the master's, in each driver.
 //
-// A read (GetKey, ListKeys, ListGrants, WhoAmI) has no transaction to check
-// in, so it asks the master for the same check on its own first
-// (master.Store.CheckActor). A change in a tenant's own database cannot
+// Before anything else, a change (and the handler that makes it, through
+// Confirm) asks the master for the same check on its own
+// (master.Store.CheckActor), so the contract's order of checks holds for a
+// key that lapsed after Check: it is refused before it is told whether what
+// it names exists, or whether its request is valid, and the request is
+// recorded as refused. A read (GetKey, ListKeys, ListGrants, WhoAmI) has no
+// transaction to check in, so that first check is its only one. A change in a tenant's own database cannot
 // check the key in its transaction either, since the tenant's database holds
 // no keys: the API hands the tenant's store a Guard that asks the master, and
 // the store runs it last in its transaction, just before its commit (package

@@ -290,11 +290,19 @@ type Decision struct {
 	entry     master.AuditEntry
 	newID     func() string
 	clock     func() time.Time
+	// req is the requirement Check allowed, which Confirm checks the key
+	// against again.
+	req Requirement
+	// confirmed records that Confirm found the key still good at the start
+	// of the handler, so a change need not ask the master a second time
+	// before its own transaction checks the key again.
+	confirmed bool
 }
 
 // Actor returns who makes a change for d, as the master's changes take it
-// (master.Actor), needing role on scope: the caller's key, with the time of
-// this call as the time its expiry is judged at, or the local operator, whom
+// (master.Actor), needing role on scope: the caller's key, with the server's
+// clock, which the store reads inside the change's transaction to judge the
+// key's expiry, or the local operator, whom
 // no store refuses. The zero Decision gives the zero Actor, which every
 // change refuses as Invalid, so a Decision that did not come from Check
 // opens nothing here either. A grant on the installation is not a role on a
@@ -307,7 +315,7 @@ func (d Decision) Actor(scope master.Scope, role master.Role) master.Actor {
 	case d.principal.isLoc:
 		return master.LocalOperator()
 	}
-	return master.ActingKey(d.principal.key.ID, scope, role, d.clock())
+	return master.ActingKey(d.principal.key.ID, scope, role, d.clock)
 }
 
 // Principal returns who made the request.
@@ -453,6 +461,7 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 	}
 	entry.ID = ""
 	d.entry = entry
+	d.req = req
 	return d, nil
 }
 

@@ -312,7 +312,7 @@ func TestCreateReportsItsEntry(t *testing.T) {
 	if _, err := e.master.SetGrant(ctx, master.Grant{KeyID: k.ID, Scope: master.Installation, Role: master.RoleAdmin}, e.audit("Setup"), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
-	by := master.ActingKey(k.ID, master.Installation, master.RoleAdmin, e.clock.Now())
+	by := master.ActingKey(k.ID, master.Installation, master.RoleAdmin, e.clock.Now)
 	if _, err := e.master.RevokeKey(ctx, k.ID, e.clock.Now(), e.audit("Setup"), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}

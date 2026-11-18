@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync/atomic"
+	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
@@ -110,5 +111,68 @@ func testGuards(e *env) {
 		if !o.seen() || !e.auditIDs()[audit.ID] {
 			e.Errorf("%s with no Guard: the change or its entry is missing", o.name)
 		}
+	}
+}
+
+// testGuardRunsLast guards where a Guard runs in its change: last, after the
+// change and its audit entry are written and before the commit. A change
+// whose entry cannot be written (its id taken) fails before the Guard's
+// turn, so the Guard never runs. And a second change of the same setting,
+// made while the first one's Guard is running, cannot run its own Guard
+// until the first has committed: its write waits for the first one's write
+// lock or row, and its Guard comes after its write. A Guard run before the
+// writes would run at once.
+func testGuardRunsLast(e *env) {
+	name := e.id("s")
+	taken := e.audit()
+	e.ok("SetSetting", e.s.SetSetting(e.ctx, name, "first", taken, nil))
+	var ran atomic.Bool
+	err := e.s.SetSetting(e.ctx, name, "second", taken, func(context.Context) error {
+		ran.Store(true)
+		return nil
+	})
+	e.wantDuplicateAudit("SetSetting with an entry id taken", err)
+	if ran.Load() {
+		e.Error("a change whose audit entry could not be written ran its Guard: the Guard ran before the entry was written")
+	}
+	ran.Store(false)
+	_, err = e.s.UnsetSetting(e.ctx, name, taken, func(context.Context) error {
+		ran.Store(true)
+		return nil
+	})
+	e.wantDuplicateAudit("UnsetSetting with an entry id taken", err)
+	if ran.Load() {
+		e.Error("an unset whose audit entry could not be written ran its Guard")
+	}
+
+	inFirst, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		first <- e.s.SetSetting(e.ctx, name, "a", e.audit(), func(context.Context) error {
+			close(inFirst)
+			<-release
+			return nil
+		})
+	}()
+	<-inFirst
+	var secondRan atomic.Bool
+	second := make(chan error, 1)
+	audit := e.audit()
+	go func() {
+		second <- e.s.SetSetting(e.ctx, name, "b", audit, func(context.Context) error {
+			secondRan.Store(true)
+			return nil
+		})
+	}()
+	time.Sleep(200 * time.Millisecond)
+	early := secondRan.Load()
+	close(release)
+	e.ok("the first SetSetting", <-first)
+	e.ok("the second SetSetting", <-second)
+	if early {
+		e.Error("a change's Guard ran while another change of the same setting was not yet committed: the Guard ran before the change's write")
+	}
+	if v, err := e.s.Setting(e.ctx, name); err != nil || v != "b" {
+		e.Errorf("after the two changes the setting is %q (%v), want the second's", v, err)
 	}
 }

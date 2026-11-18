@@ -291,35 +291,48 @@ func TestLocalOperatorOnlyFromServer(t *testing.T) {
 	}
 }
 
-// TestChangeCarriesItsKey guards the one check a management call makes of a
-// key for its change: a change reads nothing about the key before it (no
-// Key, no RolesFor), and hands the key to the master's change, which checks
-// it in its transaction; a read asks the master once, by the same check
-// (CheckActor), before it reads. So there is one implementation of the
-// check, and no moment between it and the change.
+// TestChangeCarriesItsKey guards how a management call checks a key after
+// Check: every call asks the master first, by the check every change makes
+// (CheckActor), before it reads anything the request names, and a change
+// then hands the key to the master's change, which checks it again in its
+// transaction; the key itself is never read again (no Key of the caller, no
+// RolesFor). A Decision that Confirm already checked spares a change the
+// first CheckActor, but not a read, whose CheckActor is its only check.
 func TestChangeCarriesItsKey(t *testing.T) {
 	e := newEnv(t)
 	admin := e.key(time.Time{}, on(master.Installation, master.RoleAdmin))
 	want := map[string][]string{
-		"CreateKey":   {"CreateKey"},
-		"RevokeKey":   {"Key", "RevokeKey"},
-		"SetGrant":    {"SetGrant"},
-		"RemoveGrant": {"RemoveGrant"},
+		"CreateKey":   {"CheckActor", "CreateKey"},
+		"RevokeKey":   {"CheckActor", "Key", "RevokeKey"},
+		"SetGrant":    {"CheckActor", "SetGrant"},
+		"RemoveGrant": {"CheckActor", "RemoveGrant"},
 		"GetKey":      {"CheckActor", "Key"},
 		"ListKeys":    {"CheckActor"},
 		"ListGrants":  {"CheckActor", "GrantsByKey"},
 		"WhoAmI":      {"CheckActor", "GrantsByKey"},
 	}
-	for name := range want {
-		call := managementCalls(e, e.key(time.Time{}).id)[name]
-		d := e.decide(access.APIKey(admin.full), access.OnInstallation(master.RoleAdmin), name)
-		e.reset()
-		if err := call(d); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		calls, _ := e.recorded()
-		if strings.Join(calls, ",") != strings.Join(want[name], ",") {
-			t.Errorf("%s made the store calls %v, want %v", name, calls, want[name])
+	for _, confirmed := range []bool{false, true} {
+		for name := range want {
+			call := managementCalls(e, e.key(time.Time{}).id)[name]
+			d := e.decide(access.APIKey(admin.full), access.OnInstallation(master.RoleAdmin), name)
+			if confirmed {
+				var err error
+				if d, err = e.access.Confirm(e.ctx, d); err != nil {
+					t.Fatal(err)
+				}
+			}
+			e.reset()
+			if err := call(d); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			calls, _ := e.recorded()
+			expect := want[name]
+			if confirmed && name != "GetKey" && name != "ListKeys" && name != "ListGrants" && name != "WhoAmI" {
+				expect = expect[1:]
+			}
+			if strings.Join(calls, ",") != strings.Join(expect, ",") {
+				t.Errorf("%s (confirmed %v) made the store calls %v, want %v", name, confirmed, calls, expect)
+			}
 		}
 	}
 }

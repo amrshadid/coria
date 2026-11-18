@@ -61,6 +61,7 @@ func Run(t *testing.T, open Open) {
 		{"SizeBounds", testSizeBounds},
 		{"TenantsApart", testTenantsApart},
 		{"Guards", testGuards},
+		{"GuardRunsLast", testGuardRunsLast},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
