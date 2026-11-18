@@ -305,7 +305,8 @@ jobs:
   # The server's outside checks, in a job of their own so the Linux job keeps
   # its time: the local socket refused to a second operating system user, and
   # curl, grpcurl and Python's grpcio against a real server process with the
-  # stand-in handlers (scripts/check-server.sh). Linux only: the second user
+  # stand-in handlers and against the real program (scripts/check-server.sh),
+  # and the real program end to end (make check-e2e). Linux only: the second user
   # needs sudo, which the runner has without a password.
   server:
     name: Server - outside checks
@@ -345,6 +346,13 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/requirements-check-server.txt
           make check-server PYTHON="$RUNNER_TEMP/venv/bin/python" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl"
+
+      # The real program end to end: init, serve with the local socket and
+      # TLS, the real commands as processes over both, a second serve
+      # refused, a stop by SIGTERM and a restart (TestRealServerEndToEnd).
+      # Here, not in the Linux job, whose time is kept for go test.
+      - name: The real program end to end
+        run: make check-e2e
 
   # Windows has its own paths, line endings and executables, so the tests run
   # there on every pull request. The newest Go only: Windows minutes count

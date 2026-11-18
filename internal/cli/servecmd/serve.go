@@ -53,6 +53,9 @@ type Built struct {
 	Registry server.Registry
 	// HTTPRoutes are plain HTTP routes besides /metrics.
 	HTTPRoutes []server.HTTPRoute
+	// TenantsByState counts the tenants in each state for /metrics, or nil
+	// to leave the family out.
+	TenantsByState func() map[string]int
 }
 
 // Services builds the API's handlers over an open installation.
@@ -257,6 +260,17 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 		if built.Register == nil {
 			built.Register = func(*connect.Server) {}
 		}
+		if built.Registry != nil {
+			// The server closes the registry at stop; if no server is made,
+			// it is closed here, before the master it reads.
+			defer func() {
+				if err != nil {
+					ctx, cancel := context.WithTimeout(context.Background(), server.DefaultClose)
+					defer cancel()
+					_ = built.Registry.Close(ctx)
+				}
+			}()
+		}
 	}
 	return server.New(server.Config{
 		DataDir:         dir,
@@ -266,6 +280,7 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 		TLSKey:          f.tlsKey,
 		Access:          a,
 		Registry:        built.Registry,
+		TenantsByState:  built.TenantsByState,
 		Master:          m,
 		Log:             log,
 		Register:        built.Register,

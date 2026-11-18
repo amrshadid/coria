@@ -285,8 +285,37 @@ All notable changes to Magnetar are written here. The form is
   default. The list's one setting, `key.default-lifetime` (whole hours or
   days, such as `90d`, from 1h to 3650d; 90 days by default), is the
   lifetime of a key made with no expiry.
+- `magnetar serve` served no API method: the handlers existed and nothing
+  joined them to the server, and the commands and the interactive program
+  had only run against an in-memory stand-in. `serve` now builds the tenant
+  registry, with the SQLite and Postgres tenant drivers, and the handlers,
+  and registers them on the checked path. Every tenant is opened before the
+  server listens, sixteen at a time and each within ten seconds, so a tenant
+  whose database does not answer is unreachable and answers unavailable while
+  the others are served, and is tried again every thirty seconds. `/metrics`
+  counts the tenants in each state. The server's own settings, such as the
+  installation's id, are kept under a prefix no setting may use
+  (`settings.ReservedPrefix`), so the API neither lists, reads nor changes
+  them: to a caller they do not exist. A test runs the real program end to
+  end (`make check-e2e`, in CI's server job): init, serve with the local
+  socket and TLS, the real commands as processes over both, a key with no
+  grant refused, a revoked key refused on its next request, a second serve
+  refused, a stop by signal that writes every queued audit entry, and a
+  restart that serves the same tenants, keys and log; `make check-server` now
+  also points curl, grpcurl and Python's grpcio at the real program.
 
 ### Fixed
+
+- The command line and the interactive program had been written against the
+  in-memory stand-in, which disagreed with the real server. `setting unset`
+  required `--tenant`, but the installation's value can now be removed;
+  `setting get`, `set`, `unset` and `list` said "installation (default)" for
+  a value that was the built-in default, and now say where each value comes
+  from; `tenant show` shows since when a tenant is in its state; the
+  examples named settings the server does not know. The stand-in now takes
+  the server's own list of settings and resolves them as the server does,
+  lists a key only the tenants it holds a grant on, answers an unknown key's
+  grants with an empty list and a malformed tenant name as invalid.
 
 - A failed creation of a tenant was audited as done: the request's entry
   was written with the tenant's row, before its database was opened, and

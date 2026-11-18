@@ -16,7 +16,12 @@ calls the server run by scripts/check-server.sh:
     empty HealthCheckRequest; SERVING is field 1 = 1), so no health package
     is needed;
   - the text in METRICS_FILE (a scrape of /metrics) through the Prometheus
-    Python client's parser.
+    Python client's parser;
+  - when MAGNETAR_CHECK_TENANTS is 1 (the real program, not the stand-in):
+    CreateTenant over TLS with no key and with a key with no grant, each
+    refused, then with the admin key, which must make the tenant ready, and
+    ListTenants, which must list it to the admin key and nothing to the key
+    with no grant.
 
 It prints one line per check and exits 1 on the first failure.
 """
@@ -70,6 +75,32 @@ def expect(name, got, code, message):
     print(f"ok   {name}: {status.name} {details!r} request-id={md['magnetar-request-id']}")
 
 
+def check_tenants(tls_addr, creds, no_grant, admin):
+    tenant_pb2 = importlib.import_module("magnetar.v1.tenant_pb2")
+    tenant_grpc = importlib.import_module("magnetar.v1.tenant_pb2_grpc")
+    channel = grpc.secure_channel(tls_addr, creds)
+    stub = tenant_grpc.TenantServiceStub(channel)
+    create = tenant_pb2.CreateTenantRequest(name="py1", database_type=tenant_pb2.DATABASE_TYPE_SQLITE)
+    expect("tls CreateTenant with no key", call(stub.CreateTenant, create), grpc.StatusCode.UNAUTHENTICATED, UNAUTHENTICATED)
+    expect("tls CreateTenant with a key with no grant", call(stub.CreateTenant, create, no_grant), grpc.StatusCode.PERMISSION_DENIED, DENIED)
+    try:
+        made = stub.CreateTenant(create, metadata=[("authorization", "Bearer " + admin)], timeout=10)
+    except grpc.RpcError as e:
+        fail(f"tls CreateTenant with the admin key: {e.code()} {e.details()!r}")
+    if made.tenant.state != tenant_pb2.TENANT_STATE_READY:
+        fail(f"tls CreateTenant with the admin key: {made}")
+    print("ok   tls CreateTenant with an admin key: py1 ready")
+    listed = stub.ListTenants(tenant_pb2.ListTenantsRequest(), metadata=[("authorization", "Bearer " + admin)], timeout=10)
+    if "py1" not in [t.name for t in listed.tenants]:
+        fail(f"tls ListTenants with the admin key: {listed}")
+    print(f"ok   tls ListTenants with an admin key: {[t.name for t in listed.tenants]}")
+    none = stub.ListTenants(tenant_pb2.ListTenantsRequest(), metadata=[("authorization", "Bearer " + no_grant)], timeout=10)
+    if list(none.tenants):
+        fail(f"tls ListTenants with a key with no grant: {none}")
+    print("ok   tls ListTenants with a key with no grant: none")
+    channel.close()
+
+
 def main():
     if len(sys.argv) != 8:
         fail(__doc__)
@@ -100,6 +131,9 @@ def main():
         fail(f"health: {answer!r}, want SERVING (08 01)")
     print("ok   tls health without a key: SERVING")
     tls.close()
+
+    if os.environ.get("MAGNETAR_CHECK_TENANTS") == "1":
+        check_tenants(tls_addr, creds, no_grant, admin)
 
     local = grpc.insecure_channel("unix:" + socket)
     lstub = access_grpc.AccessServiceStub(local)

@@ -20,6 +20,8 @@
 #   make fuzz        each fuzz target for FUZZTIME (10s unless given)
 #   make check-master-sqlite  the SQLite master database read back by the
 #                    sqlite3 tool (SQLITE3=... names one)
+#   make check-e2e   the real program end to end, init to restart, with the
+#                    real commands as processes
 #   make check-tenant-sqlite  a tenant's SQLite database, created by the
 #                    registry, read back by the sqlite3 tool
 #   make check-master-postgres  the Postgres master database read back by
@@ -153,12 +155,21 @@ check-master-sqlite:
 # The outside check of the server: curl, grpcurl (GRPCURL=... names one) and
 # Python's grpcio (PYTHON=... names an interpreter with
 # scripts/requirements-check-server.txt) against a real server process with
-# the stand-in handlers, over TLS on loopback and over the local socket.
+# the stand-in handlers and against the real program with the real handlers,
+# over TLS on loopback and over the local socket.
 GRPCURL ?= grpcurl
 
 .PHONY: check-server
 check-server:
 	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" bash scripts/check-server.sh
+
+# The real program end to end: init, serve with the local socket and TLS,
+# and the real commands as processes, a stop by signal and a restart
+# (TestRealServerEndToEnd). It starts some fifty processes, so it runs here
+# and in CI's server job, not in every go test.
+.PHONY: check-e2e
+check-e2e:
+	MAGNETAR_E2E=1 $(GO) test -race -count=1 -v -run '^TestRealServerEndToEnd$$' ./cmd/magnetar
 
 # The outside check of a tenant's SQLite database: the registry creates a
 # tenant on SQLite, and the sqlite3 tool reads its file and the master's row.
