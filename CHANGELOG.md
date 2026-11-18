@@ -169,5 +169,23 @@ All notable changes to Magnetar are written here. The form is
   and closes every store. `scripts/check-tenant-sqlite.sh` reads a tenant
   the registry created with the `sqlite3` tool. The server does not use the
   registry yet.
+- The API contract had generated interfaces and nothing behind them.
+  `internal/api` now implements its four services (tenants, keys and grants,
+  settings, audit), each method a short function that takes the access
+  check's decision from its context, validates the request and answers
+  `INVALID_ARGUMENT` naming the field, then acts through the package that
+  owns the change, with the audit entry in the same transaction. It also
+  holds the table of what each method needs of its caller, which the server
+  asks before every request. A handler that finds no decision answers
+  `INTERNAL` and never decides by itself; a tenant missing at a lookup after
+  the check is answered `PERMISSION_DENIED`, as for no grant, to a caller who
+  may not list every tenant; a key that may not list every tenant sees only
+  the tenants it holds a grant on, paged without reading every tenant; a
+  removal needs the name twice; a tenant's database address reaches no
+  answer, audit entry, error or log line, which a test shows by searching
+  all of them, and the master's files, for the address, its password, user
+  and host. A read of the installation costs 26 µs through the check and the
+  handler without the network; a change, one synced commit of the master
+  (5 ms on a laptop). The server does not serve them yet.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop

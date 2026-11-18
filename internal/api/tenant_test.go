@@ -1,0 +1,254 @@
+package api_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	connect "connectrpc.com/connect/v2"
+
+	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/master"
+)
+
+// createTenant returns a call of CreateTenant.
+func createTenant(name string, typ v1.DatabaseType, address string) func(clients) outcome {
+	return func(c clients) outcome {
+		return call(c.tenants.CreateTenant, &v1.CreateTenantRequest{Name: name, DatabaseType: typ, DatabaseAddress: address})
+	}
+}
+
+// sqliteType and pgType are the two database types.
+const (
+	sqliteType = v1.DatabaseType_DATABASE_TYPE_SQLITE
+	pgType     = v1.DatabaseType_DATABASE_TYPE_POSTGRES
+)
+
+// testCreateTenant guards CreateTenant: admin on the installation; a SQLite
+// tenant made ready with its file where the registry places it; the entry
+// with the tenant's name and database type; a name taken; every invalid
+// request with the limits of a name and an address; and a tenant whose
+// database does not answer.
+func testCreateTenant(t *testing.T) {
+	f := newFixture(t)
+	address := pgAddress
+	f.run(t, []tcase{
+		{name: "no key", as: nobody, call: createTenant("lab2", sqliteType, ""), code: connect.CodeUnauthenticated},
+		{name: "just below the role", as: f.instOperator, call: createTenant("lab2", sqliteType, ""), code: connect.CodePermissionDenied, audit: refused()},
+		{name: "at the role", as: f.instAdmin, call: createTenant("lab2", sqliteType, ""),
+			audit: &wantAudit{outcome: master.OutcomeDone, tenant: "lab2", object: "tenant/lab2", details: map[string]string{"database_type": "sqlite"}},
+			check: func(t *testing.T, o outcome) {
+				tn := o.res.(*v1.CreateTenantResponse).GetTenant()
+				if tn.GetName() != "lab2" || tn.GetState() != v1.TenantState_TENANT_STATE_READY || tn.GetDatabaseType() != sqliteType || tn.GetCreateTime() == nil || tn.GetStateReason() != "" {
+					t.Errorf("got %v", tn)
+				}
+				if _, err := os.Stat(filepath.Join(f.data, "tenants", "lab2.db")); err != nil {
+					t.Errorf("the tenant's file: %v", err)
+				}
+			}},
+		{name: "a name taken", as: f.instAdmin, call: createTenant("lab2", sqliteType, ""), code: connect.CodeAlreadyExists, audit: failed("exists")},
+		{name: "a name taken, as another type", as: f.instAdmin, call: createTenant("lab2", pgType, address), code: connect.CodeAlreadyExists},
+		{name: "name at 63", as: f.instAdmin, call: createTenant("a"+strings.Repeat("b", 62), sqliteType, "")},
+		{name: "name at 64", as: f.instAdmin, call: createTenant("a"+strings.Repeat("b", 63), sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name", audit: failed("name")},
+		{name: "no name", as: f.instAdmin, call: createTenant("", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name"},
+		{name: "upper case", as: f.instAdmin, call: createTenant("Lab3", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name"},
+		{name: "a digit first", as: f.instAdmin, call: createTenant("3lab", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name"},
+		{name: "a path", as: f.instAdmin, call: createTenant("../x", sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name"},
+		{name: "no type", as: f.instAdmin, call: createTenant("lab3", v1.DatabaseType_DATABASE_TYPE_UNSPECIFIED, ""), code: connect.CodeInvalidArgument, msg: "database_type"},
+		{name: "an unknown type", as: f.instAdmin, call: createTenant("lab3", v1.DatabaseType(7), ""), code: connect.CodeInvalidArgument, msg: "database_type"},
+		{name: "SQLite with an address", as: f.instAdmin, call: createTenant("lab3", sqliteType, "x"), code: connect.CodeInvalidArgument, msg: "database_address"},
+		{name: "Postgres without an address", as: f.instAdmin, call: createTenant("lab3", pgType, ""), code: connect.CodeInvalidArgument, msg: "database_address"},
+		{name: "address at 4096 bytes", as: f.instAdmin, call: createTenant("lab3", pgType, address+strings.Repeat("a", 4096-len(address))),
+			check: func(t *testing.T, o outcome) {
+				if tn := o.res.(*v1.CreateTenantResponse).GetTenant(); tn.GetDatabaseType() != pgType || tn.GetState() != v1.TenantState_TENANT_STATE_READY {
+					t.Errorf("got %v", tn)
+				}
+			}},
+		{name: "address at 4097 bytes", as: f.instAdmin, call: createTenant("lab4", pgType, address+strings.Repeat("a", 4097-len(address))), code: connect.CodeInvalidArgument, msg: "database_address"},
+	})
+	if _, err := f.master.TenantByName(ctx, "lab4"); err == nil {
+		t.Error("an invalid request made a tenant")
+	}
+
+	// A tenant whose database does not answer. The contract says nothing is
+	// registered and the answer is UNAVAILABLE; the registry creates it
+	// unreachable and answers it, and this handler answers what the
+	// registry did (a difference reported, not hidden).
+	f.pg.down.Store(true)
+	o := call(f.as(f.instAdmin).tenants.CreateTenant, &v1.CreateTenantRequest{Name: "down", DatabaseType: pgType, DatabaseAddress: address})
+	f.pg.down.Store(false)
+	if o.err != nil {
+		t.Fatalf("creating a tenant whose database is down: %v", o.err)
+	}
+	if tn := o.res.(*v1.CreateTenantResponse).GetTenant(); tn.GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE || tn.GetStateReason() == "" {
+		t.Errorf("got %v", tn)
+	}
+}
+
+// testGetTenant guards GetTenant: reader on the tenant or on the
+// installation; the same Denied for a tenant that does not exist as for no
+// grant, to a caller who may not list every tenant; NotFound and Invalid to
+// one who may; a tenant that is not ready still answered.
+func testGetTenant(t *testing.T) {
+	f := newFixture(t)
+	f.pg.down.Store(true)
+	call(f.as(local).tenants.CreateTenant, &v1.CreateTenantRequest{Name: "down", DatabaseType: pgType, DatabaseAddress: pgAddress})
+	get := func(name string) func(clients) outcome {
+		return func(c clients) outcome { return call(c.tenants.GetTenant, &v1.GetTenantRequest{Name: name}) }
+	}
+	var denied string
+	f.run(t, []tcase{
+		{name: "no key", as: nobody, call: get("lab1"), code: connect.CodeUnauthenticated},
+		{name: "just below the role", as: f.noGrant, call: get("lab1"), code: connect.CodePermissionDenied, audit: refused(),
+			check: func(t *testing.T, o outcome) { denied = o.message() }},
+		{name: "no such tenant, no right to know", as: f.noGrant, call: get("nolab"), code: connect.CodePermissionDenied,
+			check: func(t *testing.T, o outcome) {
+				if o.message() != denied {
+					t.Errorf("message %q, want the same as for no grant, %q", o.message(), denied)
+				}
+			}},
+		{name: "a malformed name, no right to know", as: f.noGrant, call: get("Lab 1"), code: connect.CodePermissionDenied},
+		{name: "a tenant reader", as: f.lab1Reader, call: get("lab1"),
+			audit: &wantAudit{outcome: master.OutcomeDone, tenant: "lab1"},
+			check: func(t *testing.T, o outcome) {
+				tn := o.res.(*v1.GetTenantResponse).GetTenant()
+				if tn.GetName() != "lab1" || tn.GetState() != v1.TenantState_TENANT_STATE_READY || tn.GetDatabaseType() != sqliteType {
+					t.Errorf("got %v", tn)
+				}
+			}},
+		{name: "a reader of another tenant", as: f.lab1Reader, call: get("down"), code: connect.CodePermissionDenied},
+		{name: "an installation reader", as: f.instReader, call: get("lab1")},
+		{name: "no such tenant, may list", as: f.instReader, call: get("nolab"), code: connect.CodeNotFound, msg: access.MessageNoTenant},
+		{name: "a malformed name, may list", as: f.instReader, call: get("Lab 1"), code: connect.CodeInvalidArgument, msg: "name", audit: failed("name")},
+		{name: "no name, may list", as: local, call: get(""), code: connect.CodeInvalidArgument, msg: "name"},
+		{name: "not ready, still answered", as: f.instReader, call: get("down"),
+			check: func(t *testing.T, o outcome) {
+				tn := o.res.(*v1.GetTenantResponse).GetTenant()
+				if tn.GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE || tn.GetStateReason() == "" {
+					t.Errorf("got %v", tn)
+				}
+			}},
+	})
+}
+
+// testListTenants guards ListTenants: any authenticated caller; every
+// tenant for one who may list them all; for a key with grants on two of
+// five, those two, paged with a token that works and is refused with
+// another key's list; an empty list for a key with no grant.
+func testListTenants(t *testing.T) {
+	f := newFixture(t)
+	for _, n := range []string{"lab2", "lab3", "lab4", "lab5"} {
+		f.tenant(n)
+	}
+	two, twoID := f.key(f.onTenant("lab2", master.RoleReader), f.onTenant("lab4", master.RoleAdmin))
+	_ = twoID
+	list := func(size int32, token string) func(clients) outcome {
+		return func(c clients) outcome {
+			return call(c.tenants.ListTenants, &v1.ListTenantsRequest{PageSize: size, PageToken: token})
+		}
+	}
+	names := func(o outcome) string {
+		var out []string
+		for _, tn := range o.res.(*v1.ListTenantsResponse).GetTenants() {
+			out = append(out, tn.GetName())
+		}
+		return strings.Join(out, ",")
+	}
+	var grantedToken, allToken string
+	f.run(t, []tcase{
+		{name: "no key", as: nobody, call: list(0, ""), code: connect.CodeUnauthenticated},
+		{name: "a key with no grant", as: f.noGrant, call: list(0, ""), audit: done(),
+			check: func(t *testing.T, o outcome) {
+				if got := names(o); got != "" {
+					t.Errorf("got %q", got)
+				}
+			}},
+		{name: "two of five", as: two, call: list(0, ""),
+			check: func(t *testing.T, o outcome) {
+				if got := names(o); got != "lab2,lab4" {
+					t.Errorf("got %q, want lab2,lab4", got)
+				}
+			}},
+		{name: "two of five, a page of 1", as: two, call: list(1, ""),
+			check: func(t *testing.T, o outcome) {
+				grantedToken = o.res.(*v1.ListTenantsResponse).GetNextPageToken()
+				if got := names(o); got != "lab2" || grantedToken == "" {
+					t.Errorf("got %q, token %q", got, grantedToken)
+				}
+			}},
+		{name: "two of five, the next page", as: two, call: func(c clients) outcome { return list(1, grantedToken)(c) },
+			check: func(t *testing.T, o outcome) {
+				if got, next := names(o), o.res.(*v1.ListTenantsResponse).GetNextPageToken(); got != "lab4" || next != "" {
+					t.Errorf("got %q, token %q", got, next)
+				}
+			}},
+		{name: "another key with that token", as: f.lab1Reader, call: func(c clients) outcome { return list(1, grantedToken)(c) },
+			code: connect.CodeInvalidArgument, msg: "page_token"},
+		{name: "an installation reader", as: f.instReader, call: list(0, ""),
+			check: func(t *testing.T, o outcome) {
+				if got := names(o); got != "lab1,lab2,lab3,lab4,lab5" {
+					t.Errorf("got %q", got)
+				}
+			}},
+		{name: "the local operator, a page of 2", as: local, call: list(2, ""),
+			check: func(t *testing.T, o outcome) {
+				allToken = o.res.(*v1.ListTenantsResponse).GetNextPageToken()
+				if got := names(o); got != "lab1,lab2" || allToken == "" {
+					t.Errorf("got %q, token %q", got, allToken)
+				}
+			}},
+		{name: "the next page of all", as: local, call: func(c clients) outcome { return list(2, allToken)(c) },
+			check: func(t *testing.T, o outcome) {
+				if got := names(o); got != "lab3,lab4" {
+					t.Errorf("got %q", got)
+				}
+			}},
+		{name: "a token of all, to a key of two", as: two, call: func(c clients) outcome { return list(2, allToken)(c) },
+			code: connect.CodeInvalidArgument, msg: "page_token"},
+		{name: "a token of two, to a reader of all", as: f.instReader, call: func(c clients) outcome { return list(1, grantedToken)(c) },
+			code: connect.CodeInvalidArgument, msg: "page_token"},
+		{name: "page_size at 1000", as: two, call: list(1000, "")},
+		{name: "page_size at 1001", as: two, call: list(1001, ""), code: connect.CodeInvalidArgument, msg: "page_size", audit: failed("page_size")},
+		{name: "page_size negative", as: f.instReader, call: list(-1, ""), code: connect.CodeInvalidArgument, msg: "page_size"},
+		{name: "page_token at 1025 bytes", as: two, call: list(0, strings.Repeat("g", 1025)), code: connect.CodeInvalidArgument, msg: "page_token"},
+	})
+}
+
+// testRemoveTenant guards RemoveTenant: admin on the installation;
+// confirm_name; the database type and the file's place in the answer and
+// the entry; the registration gone and the file left; a repeat not found.
+func testRemoveTenant(t *testing.T) {
+	f := newFixture(t)
+	f.tenant("lab2")
+	remove := func(name, confirm string) func(clients) outcome {
+		return func(c clients) outcome {
+			return call(c.tenants.RemoveTenant, &v1.RemoveTenantRequest{Name: name, ConfirmName: confirm})
+		}
+	}
+	file := filepath.Join(f.data, "tenants", "lab2.db")
+	f.run(t, []tcase{
+		{name: "no key", as: nobody, call: remove("lab2", "lab2"), code: connect.CodeUnauthenticated},
+		{name: "just below the role", as: f.instOperator, call: remove("lab2", "lab2"), code: connect.CodePermissionDenied},
+		{name: "confirm_name differs", as: f.instAdmin, call: remove("lab2", "lab1"), code: connect.CodeInvalidArgument, msg: "confirm_name", audit: failed("confirm_name")},
+		{name: "confirm_name empty", as: f.instAdmin, call: remove("lab2", ""), code: connect.CodeInvalidArgument, msg: "confirm_name"},
+		{name: "no name", as: f.instAdmin, call: remove("", ""), code: connect.CodeInvalidArgument, msg: "name"},
+		{name: "at the role", as: f.instAdmin, call: remove("lab2", "lab2"),
+			audit: &wantAudit{outcome: master.OutcomeDone, tenant: "lab2", details: map[string]string{"database_type": "sqlite", "data_location": file}},
+			check: func(t *testing.T, o outcome) {
+				r := o.res.(*v1.RemoveTenantResponse)
+				if r.GetDatabaseType() != sqliteType || r.GetDataLocation() != file {
+					t.Errorf("got %v, want the file %s", r, file)
+				}
+			}},
+		{name: "repeated", as: f.instAdmin, call: remove("lab2", "lab2"), code: connect.CodeNotFound, audit: failed("")},
+		{name: "never was", as: f.instAdmin, call: remove("nolab", "nolab"), code: connect.CodeNotFound},
+	})
+	if _, err := os.Stat(file); err != nil {
+		t.Errorf("the removed tenant's file is gone: %v", err)
+	}
+	if _, ok := f.registry.State("lab2"); ok {
+		t.Error("the registry still holds the removed tenant")
+	}
+}
