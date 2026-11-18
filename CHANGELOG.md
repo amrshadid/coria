@@ -506,6 +506,20 @@ All notable changes to Magnetar are written here. The form is
   (tested with signal 9) resumes without losing a file or archiving one
   twice. A header is bounded at 64 MiB before pixel data, so a file that
   declares a huge value is refused without the memory being allocated.
+- The stream of every tenant's events could stall or mislead in ways its
+  first form did not say. A tenant whose database does not answer a read
+  within 5 seconds is now skipped, named in each keep-alive's
+  `unanswered_tenants`, and tried again after a wait that doubles from one
+  second to a minute, so one slow tenant does not hold the others. A tenant
+  that leaves the list of tenants is paused with its cursor kept; one removed
+  and created again under the same name is followed from its first event. A
+  stream resumed with `resume` set starts an unlisted tenant from its first
+  event kept instead of from now, so no event is lost between two streams.
+  A cursor after the newest event a tenant holds, as after a restore from an
+  older backup, is answered out of range instead of waiting forever. An
+  event carries the step its reception left (`previous_step`), so a client
+  can keep the counts of receptions by step from a status and the events
+  after it. One stream follows at most 10000 tenants.
 
 ### Changed
 

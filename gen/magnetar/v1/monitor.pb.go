@@ -1013,6 +1013,12 @@ type ReceptionStepReached struct {
 	Arrival int32 `protobuf:"varint,3,opt,name=arrival,proto3" json:"arrival,omitempty"`
 	// The step it reached.
 	Step ReceptionStep `protobuf:"varint,4,opt,name=step,proto3,enum=magnetar.v1.ReceptionStep" json:"step,omitempty"`
+	// The step it left: RECEPTION_STEP_UNSPECIFIED for a reception's first
+	// step (receiving, or complete for one made by RetryReception). With it
+	// a client keeps the receptions in progress by step (TenantCounts) from a
+	// status and the events after its cursor, whatever step a reception fails
+	// from.
+	PreviousStep ReceptionStep `protobuf:"varint,9,opt,name=previous_step,json=previousStep,proto3,enum=magnetar.v1.ReceptionStep" json:"previous_step,omitempty"`
 	// Its totals when it reached the step.
 	Counts *ReceptionCounts `protobuf:"bytes,5,opt,name=counts,proto3" json:"counts,omitempty"`
 	// Its subject's label. Empty before it is identified.
@@ -1080,6 +1086,13 @@ func (x *ReceptionStepReached) GetArrival() int32 {
 func (x *ReceptionStepReached) GetStep() ReceptionStep {
 	if x != nil {
 		return x.Step
+	}
+	return ReceptionStep_RECEPTION_STEP_UNSPECIFIED
+}
+
+func (x *ReceptionStepReached) GetPreviousStep() ReceptionStep {
+	if x != nil {
+		return x.PreviousStep
 	}
 	return ReceptionStep_RECEPTION_STEP_UNSPECIFIED
 }
@@ -1638,12 +1651,19 @@ type WatchKeepAlive struct {
 	// them a second time. Empty with every tenant. Opaque; at most 1 KiB.
 	Cursor string `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	// With every tenant, the position the stream has read up to in each
-	// tenant whose database answered, by tenant name; a tenant missing here
-	// is one the stream has not read yet. Empty with one tenant. Each cursor
-	// is opaque, at most 1 KiB.
+	// tenant it follows, by tenant name, those left out of the list of tenants
+	// for now included; an empty cursor for a tenant it follows from its
+	// first event and has not read yet. A tenant it was asked to start from
+	// now and could not read yet is left out: resumed without it, the tenant
+	// starts from its first event, which loses nothing. Empty with one tenant.
+	// Each cursor is opaque, at most 1 KiB; a keep-alive names at most 10000
+	// tenants, about 200 bytes each at most, within one message.
 	TenantCursors map[string]string `protobuf:"bytes,3,rep,name=tenant_cursors,json=tenantCursors,proto3" json:"tenant_cursors,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// With every tenant, the tenants the stream is skipping for now because
+	// their database did not answer, in order of name. Empty with one tenant.
+	UnansweredTenants []string `protobuf:"bytes,4,rep,name=unanswered_tenants,json=unansweredTenants,proto3" json:"unanswered_tenants,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *WatchKeepAlive) Reset() {
@@ -1697,6 +1717,13 @@ func (x *WatchKeepAlive) GetTenantCursors() map[string]string {
 	return nil
 }
 
+func (x *WatchKeepAlive) GetUnansweredTenants() []string {
+	if x != nil {
+		return x.UnansweredTenants
+	}
+	return nil
+}
+
 // WatchRequest asks for a stream of events.
 type WatchRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1712,11 +1739,18 @@ type WatchRequest struct {
 	Types []EventType `protobuf:"varint,3,rep,packed,name=types,proto3,enum=magnetar.v1.EventType" json:"types,omitempty"`
 	// With every tenant, where to start in each tenant, by tenant name: a
 	// keep-alive's tenant_cursors, or cursors gathered from events and
-	// statuses. A tenant not listed starts from now; a listed tenant that no
-	// longer exists is left out. At most 10000 entries, each cursor at most
-	// 1 KiB, within the 4 MB limit of a message. Must be empty with one
-	// tenant.
+	// statuses; an empty cursor starts the tenant from its first event kept.
+	// A tenant not listed starts from now, or with resume from its first
+	// event kept; a listed tenant that no longer exists is left out. At most
+	// 10000 entries, each cursor at most 1 KiB, within the 4 MB limit of a
+	// message. Must be empty with one tenant.
 	TenantCursors map[string]string `protobuf:"bytes,4,rep,name=tenant_cursors,json=tenantCursors,proto3" json:"tenant_cursors,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// With every tenant, tenant_cursors are a keep-alive's: a tenant they do
+	// not name is new to the client (created after that keep-alive, or not
+	// read by that stream yet) and starts from its first event kept, so a
+	// resumed stream loses none of its events. A client that resumes sets it,
+	// even with no cursors at all. Must be false with one tenant.
+	Resume        bool `protobuf:"varint,5,opt,name=resume,proto3" json:"resume,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1777,6 +1811,13 @@ func (x *WatchRequest) GetTenantCursors() map[string]string {
 		return x.TenantCursors
 	}
 	return nil
+}
+
+func (x *WatchRequest) GetResume() bool {
+	if x != nil {
+		return x.Resume
+	}
+	return false
 }
 
 // WatchResponse is one message of the stream: an event or a keep-alive.
@@ -1933,12 +1974,13 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"\x06caller\x18\x02 \x01(\v2\x13.magnetar.v1.CallerR\x06caller\x129\n" +
 	"\afailure\x18\x03 \x01(\x0e2\x1f.magnetar.v1.AssociationFailureR\afailure\x12\x14\n" +
 	"\x05count\x18\x04 \x01(\x03R\x05count\x12\x14\n" +
-	"\x05hosts\x18\x05 \x01(\x03R\x05hosts\"\xb5\x02\n" +
+	"\x05hosts\x18\x05 \x01(\x03R\x05hosts\"\xf6\x02\n" +
 	"\x14ReceptionStepReached\x12\x1c\n" +
 	"\treception\x18\x01 \x01(\tR\treception\x12\x1a\n" +
 	"\breceiver\x18\x02 \x01(\tR\breceiver\x12\x18\n" +
 	"\aarrival\x18\x03 \x01(\x05R\aarrival\x12.\n" +
-	"\x04step\x18\x04 \x01(\x0e2\x1a.magnetar.v1.ReceptionStepR\x04step\x124\n" +
+	"\x04step\x18\x04 \x01(\x0e2\x1a.magnetar.v1.ReceptionStepR\x04step\x12?\n" +
+	"\rprevious_step\x18\t \x01(\x0e2\x1a.magnetar.v1.ReceptionStepR\fpreviousStep\x124\n" +
 	"\x06counts\x18\x05 \x01(\v2\x1c.magnetar.v1.ReceptionCountsR\x06counts\x12#\n" +
 	"\rsubject_label\x18\x06 \x01(\tR\fsubjectLabel\x12#\n" +
 	"\rsession_label\x18\a \x01(\tR\fsessionLabel\x12\x19\n" +
@@ -1986,19 +2028,21 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"\x0freceiver_health\x18\t \x01(\v2\".magnetar.v1.ReceiverHealthChangedH\x00R\x0ereceiverHealth\x12G\n" +
 	"\rstorage_space\x18\n" +
 	" \x01(\v2 .magnetar.v1.StorageSpaceChangedH\x00R\fstorageSpaceB\t\n" +
-	"\apayload\"\xf1\x01\n" +
+	"\apayload\"\xa0\x02\n" +
 	"\x0eWatchKeepAlive\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12U\n" +
-	"\x0etenant_cursors\x18\x03 \x03(\v2..magnetar.v1.WatchKeepAlive.TenantCursorsEntryR\rtenantCursors\x1a@\n" +
+	"\x0etenant_cursors\x18\x03 \x03(\v2..magnetar.v1.WatchKeepAlive.TenantCursorsEntryR\rtenantCursors\x12-\n" +
+	"\x12unanswered_tenants\x18\x04 \x03(\tR\x11unansweredTenants\x1a@\n" +
 	"\x12TenantCursorsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x95\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xad\x02\n" +
 	"\fWatchRequest\x12(\n" +
 	"\x05scope\x18\x01 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12,\n" +
 	"\x05types\x18\x03 \x03(\x0e2\x16.magnetar.v1.EventTypeR\x05types\x12S\n" +
-	"\x0etenant_cursors\x18\x04 \x03(\v2,.magnetar.v1.WatchRequest.TenantCursorsEntryR\rtenantCursors\x1a@\n" +
+	"\x0etenant_cursors\x18\x04 \x03(\v2,.magnetar.v1.WatchRequest.TenantCursorsEntryR\rtenantCursors\x12\x16\n" +
+	"\x06resume\x18\x05 \x01(\bR\x06resume\x1a@\n" +
 	"\x12TenantCursorsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x81\x01\n" +
@@ -2099,36 +2143,37 @@ var file_magnetar_v1_monitor_proto_depIdxs = []int32{
 	28, // 12: magnetar.v1.AssociationFailed.caller:type_name -> magnetar.v1.Caller
 	1,  // 13: magnetar.v1.AssociationFailed.failure:type_name -> magnetar.v1.AssociationFailure
 	23, // 14: magnetar.v1.ReceptionStepReached.step:type_name -> magnetar.v1.ReceptionStep
-	29, // 15: magnetar.v1.ReceptionStepReached.counts:type_name -> magnetar.v1.ReceptionCounts
-	30, // 16: magnetar.v1.FileQuarantined.reason:type_name -> magnetar.v1.QuarantineReason
-	31, // 17: magnetar.v1.QuarantineDecided.state:type_name -> magnetar.v1.QuarantineState
-	32, // 18: magnetar.v1.QuarantineDecided.release_mode:type_name -> magnetar.v1.ReleaseMode
-	24, // 19: magnetar.v1.ReceiverHealthChanged.health:type_name -> magnetar.v1.ReceiverHealth
-	2,  // 20: magnetar.v1.StorageSpaceChanged.state:type_name -> magnetar.v1.StorageSpaceState
-	26, // 21: magnetar.v1.Event.time:type_name -> google.protobuf.Timestamp
-	0,  // 22: magnetar.v1.Event.type:type_name -> magnetar.v1.EventType
-	11, // 23: magnetar.v1.Event.association_failed:type_name -> magnetar.v1.AssociationFailed
-	12, // 24: magnetar.v1.Event.reception_step:type_name -> magnetar.v1.ReceptionStepReached
-	13, // 25: magnetar.v1.Event.file_quarantined:type_name -> magnetar.v1.FileQuarantined
-	14, // 26: magnetar.v1.Event.quarantine_decided:type_name -> magnetar.v1.QuarantineDecided
-	15, // 27: magnetar.v1.Event.receiver_health:type_name -> magnetar.v1.ReceiverHealthChanged
-	16, // 28: magnetar.v1.Event.storage_space:type_name -> magnetar.v1.StorageSpaceChanged
-	26, // 29: magnetar.v1.WatchKeepAlive.time:type_name -> google.protobuf.Timestamp
-	21, // 30: magnetar.v1.WatchKeepAlive.tenant_cursors:type_name -> magnetar.v1.WatchKeepAlive.TenantCursorsEntry
-	27, // 31: magnetar.v1.WatchRequest.scope:type_name -> magnetar.v1.Scope
-	0,  // 32: magnetar.v1.WatchRequest.types:type_name -> magnetar.v1.EventType
-	22, // 33: magnetar.v1.WatchRequest.tenant_cursors:type_name -> magnetar.v1.WatchRequest.TenantCursorsEntry
-	17, // 34: magnetar.v1.WatchResponse.event:type_name -> magnetar.v1.Event
-	18, // 35: magnetar.v1.WatchResponse.keep_alive:type_name -> magnetar.v1.WatchKeepAlive
-	9,  // 36: magnetar.v1.MonitorService.GetStatus:input_type -> magnetar.v1.GetStatusRequest
-	19, // 37: magnetar.v1.MonitorService.Watch:input_type -> magnetar.v1.WatchRequest
-	10, // 38: magnetar.v1.MonitorService.GetStatus:output_type -> magnetar.v1.GetStatusResponse
-	20, // 39: magnetar.v1.MonitorService.Watch:output_type -> magnetar.v1.WatchResponse
-	38, // [38:40] is the sub-list for method output_type
-	36, // [36:38] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	23, // 15: magnetar.v1.ReceptionStepReached.previous_step:type_name -> magnetar.v1.ReceptionStep
+	29, // 16: magnetar.v1.ReceptionStepReached.counts:type_name -> magnetar.v1.ReceptionCounts
+	30, // 17: magnetar.v1.FileQuarantined.reason:type_name -> magnetar.v1.QuarantineReason
+	31, // 18: magnetar.v1.QuarantineDecided.state:type_name -> magnetar.v1.QuarantineState
+	32, // 19: magnetar.v1.QuarantineDecided.release_mode:type_name -> magnetar.v1.ReleaseMode
+	24, // 20: magnetar.v1.ReceiverHealthChanged.health:type_name -> magnetar.v1.ReceiverHealth
+	2,  // 21: magnetar.v1.StorageSpaceChanged.state:type_name -> magnetar.v1.StorageSpaceState
+	26, // 22: magnetar.v1.Event.time:type_name -> google.protobuf.Timestamp
+	0,  // 23: magnetar.v1.Event.type:type_name -> magnetar.v1.EventType
+	11, // 24: magnetar.v1.Event.association_failed:type_name -> magnetar.v1.AssociationFailed
+	12, // 25: magnetar.v1.Event.reception_step:type_name -> magnetar.v1.ReceptionStepReached
+	13, // 26: magnetar.v1.Event.file_quarantined:type_name -> magnetar.v1.FileQuarantined
+	14, // 27: magnetar.v1.Event.quarantine_decided:type_name -> magnetar.v1.QuarantineDecided
+	15, // 28: magnetar.v1.Event.receiver_health:type_name -> magnetar.v1.ReceiverHealthChanged
+	16, // 29: magnetar.v1.Event.storage_space:type_name -> magnetar.v1.StorageSpaceChanged
+	26, // 30: magnetar.v1.WatchKeepAlive.time:type_name -> google.protobuf.Timestamp
+	21, // 31: magnetar.v1.WatchKeepAlive.tenant_cursors:type_name -> magnetar.v1.WatchKeepAlive.TenantCursorsEntry
+	27, // 32: magnetar.v1.WatchRequest.scope:type_name -> magnetar.v1.Scope
+	0,  // 33: magnetar.v1.WatchRequest.types:type_name -> magnetar.v1.EventType
+	22, // 34: magnetar.v1.WatchRequest.tenant_cursors:type_name -> magnetar.v1.WatchRequest.TenantCursorsEntry
+	17, // 35: magnetar.v1.WatchResponse.event:type_name -> magnetar.v1.Event
+	18, // 36: magnetar.v1.WatchResponse.keep_alive:type_name -> magnetar.v1.WatchKeepAlive
+	9,  // 37: magnetar.v1.MonitorService.GetStatus:input_type -> magnetar.v1.GetStatusRequest
+	19, // 38: magnetar.v1.MonitorService.Watch:input_type -> magnetar.v1.WatchRequest
+	10, // 39: magnetar.v1.MonitorService.GetStatus:output_type -> magnetar.v1.GetStatusResponse
+	20, // 40: magnetar.v1.MonitorService.Watch:output_type -> magnetar.v1.WatchResponse
+	39, // [39:41] is the sub-list for method output_type
+	37, // [37:39] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_monitor_proto_init() }

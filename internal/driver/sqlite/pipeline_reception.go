@@ -89,7 +89,7 @@ func openReceptionInTx(ctx context.Context, tx *sql.Tx, receiver, studyUID, id s
 		if inserted {
 			// The reception reaching receiving is its first event, written
 			// with the row that opens it.
-			if err := writeStepEvent(ctx, tx, id); err != nil {
+			if err := writeStepEvent(ctx, tx, id, ""); err != nil {
 				return r, false, err
 			}
 			r, err = receptionInTx(ctx, tx, id)
@@ -334,11 +334,18 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		if err != nil {
 			return err
 		}
+		// The step's event, in the step's transaction, whatever hook the
+		// caller gave: a step is never taken without it. The hook runs
+		// after, so a hook that fails undoes both.
+		e, err := tenant.ReceptionStepEvent(before.State, after)
+		if err != nil {
+			return err
+		}
+		if _, err := writeEvent(ctx, tx, e, nil); err != nil {
+			return err
+		}
 		if hook != nil {
-			// The hook writes the step's event, when the caller asked for
-			// one (tenant.StepEventHook), through this transaction's writer,
-			// so the two commit together or not at all.
-			if err := hook(tenant.WithEventWriter(ctx, txEvents{tx: tx}), before, after); err != nil {
+			if err := hook(ctx, before, after); err != nil {
 				return err
 			}
 		}
@@ -456,7 +463,7 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 		}
 		// The new reception reaching complete, with the reception it runs
 		// again, is its first event.
-		e, err := tenant.ReceptionStepEvent(retry)
+		e, err := tenant.ReceptionStepEvent("", retry)
 		if err != nil {
 			return err
 		}
@@ -564,7 +571,7 @@ func giveUp(ctx context.Context, tx *sql.Tx, receptionID string, now time.Time) 
 	if err := releaseClaims(ctx, tx, receptionID); err != nil {
 		return err
 	}
-	return writeStepEvent(ctx, tx, receptionID)
+	return writeStepEvent(ctx, tx, receptionID, reception.State(state))
 }
 
 // ReceptionsWithoutWork implements tenant.Pipeline.

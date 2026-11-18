@@ -16,9 +16,11 @@ import (
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
-// waitLimit bounds every wait of these tests for something that should
-// happen at once.
-const waitLimit = 10 * time.Second
+// waitLimit bounds every wait of these tests for something the code is to
+// do: only a failure waits this long, so it is set for a machine many times
+// slower than any it runs on (thousands of watches under the race detector
+// on one processor), never as a guess at how long the code takes.
+const waitLimit = 2 * time.Minute
 
 // newTest returns a Broadcaster on a fake clock, closed when t ends.
 func newTest(t testing.TB, cfg Config) (*Broadcaster, *fakeClock) {
@@ -79,14 +81,74 @@ func (s *stream) next(t testing.TB) Message {
 	return Message{}
 }
 
-// none fails the test if a message comes within d.
-func (s *stream) none(t testing.TB, d time.Duration) {
+// empty fails the test if a message has come. It is called once the watch
+// is idle (Broadcaster.idle): every message it was going to send for what
+// happened before is sent by then.
+func (s *stream) empty(t testing.TB) {
 	t.Helper()
 	select {
 	case m := <-s.msgs:
 		t.Fatalf("a message came: %+v", m)
-	case <-time.After(d):
+	default:
 	}
+}
+
+// until polls cond, which reads state the code records, until it holds,
+// failing the test after waitLimit. It waits for something the code does,
+// never for a length of time.
+func until(t testing.TB, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(waitLimit)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("%s did not happen", what)
+		}
+		// A pause between looks, so that looking (which takes the
+		// Broadcaster's lock) does not slow what it waits for.
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// idleNow reports whether the tenant's watches (every-tenant streams for
+// the empty name), at least one, all wait for a wake with none pending.
+func (b *Broadcaster) idleNow(name string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	list := b.byTenant[name]
+	if name == "" {
+		list = b.all
+	}
+	for _, w := range list {
+		if !w.waiting || w.signals != w.take {
+			return false
+		}
+	}
+	return len(list) > 0
+}
+
+// idle waits until the tenant's watches are idle: each has handled every
+// wake given it, sent what that called for, and waits. Only then does a
+// test move the clock or check that nothing came, so the watch's next round
+// is certain to see what the test did next and nothing the test did is
+// missed by a round already under way.
+func (b *Broadcaster) idle(t testing.TB, name string) {
+	t.Helper()
+	until(t, "the watches of "+strconv.Quote(name)+" becoming idle", func() bool { return b.idleNow(name) })
+}
+
+// tick ticks the fake clock and waits until the Broadcaster has handled the
+// tick: every watch has been woken by it.
+func tick(t testing.TB, b *Broadcaster, clock *fakeClock) {
+	t.Helper()
+	b.mu.Lock()
+	before := b.ticks
+	b.mu.Unlock()
+	clock.Tick()
+	until(t, "the tick being handled", func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return b.ticks > before
+	})
 }
 
 // keepAlive returns the next message, failing unless it is a keep-alive.
@@ -179,7 +241,7 @@ func TestStalledWatchHoldsNoEvents(t *testing.T) {
 		feed.write(1)
 		b.Wake("lab")
 		if i%1000 == 0 {
-			clock.Tick()
+			tick(t, b, clock)
 		}
 	}
 	after := heap()
@@ -202,10 +264,11 @@ func TestStalledWatchHoldsNoEvents(t *testing.T) {
 			t.Fatalf("the watch got events up to %d of %d", want-1, n+1)
 		}
 	}
+	b.idle(t, "lab")
 	select {
 	case id := <-got:
 		t.Fatalf("the watch got event %d after the last", id)
-	case <-time.After(50 * time.Millisecond):
+	default:
 	}
 }
 
@@ -267,17 +330,23 @@ func manyWatches(t *testing.T, n int) {
 				})
 		}()
 	}
+	// Every watch is open before the writer starts, so none opens late,
+	// after the clock has moved, and needs a keep-alive interval more.
+	until(t, "every watch opening", func() bool {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		return len(b.byTenant["lab"]) == n
+	})
 	for written := total / 3; written < total; written += 20 {
 		feed.write(20)
 		b.Wake("lab")
 	}
 	// Every watch that has not seen the last event (its filter left it
-	// out) learns it reached the end from a keep-alive.
+	// out) learns it reached the end from a keep-alive: once every watch
+	// still open is idle, so none is still reading or recording when it
+	// last sent, the clock moves past the keep-alive interval and ticks.
 	finished := 0
-	deadline := time.After(2 * waitLimit)
-	for finished < n {
-		clock.Advance(DefaultKeepAlive)
-		clock.Tick()
+	collect := func() {
 		for _, w := range watches {
 			if w.done == nil {
 				continue
@@ -292,11 +361,28 @@ func manyWatches(t *testing.T, n int) {
 			default:
 			}
 		}
-		select {
-		case <-deadline:
-			t.Fatalf("%d of %d watches reached the end", finished, n)
-		case <-time.After(time.Millisecond):
+	}
+	for round := 0; finished < n; round++ {
+		if round == 3 {
+			t.Fatalf("%d of %d watches reached the end after %d keep-alive intervals", finished, n, round)
 		}
+		// A watch leaves the Broadcaster before its goroutine hands back
+		// its answer, so every watch no longer open must have answered
+		// before the rest are known to be all there is.
+		settled := func() bool {
+			collect()
+			b.mu.Lock()
+			open := len(b.byTenant["lab"])
+			b.mu.Unlock()
+			return finished == n-open && (open == 0 || b.idleNow("lab"))
+		}
+		until(t, "every watch answering or waiting", settled)
+		if finished == n {
+			break
+		}
+		clock.Advance(DefaultKeepAlive)
+		tick(t, b, clock)
+		until(t, "every watch reaching the end or waiting again", settled)
 	}
 	for i, w := range watches {
 		var want []int64
@@ -323,8 +409,9 @@ func TestTimerCoversMissedWake(t *testing.T) {
 	s := start(t, b, Watch{Tenant: "lab", Reader: feed}, nil)
 	s.keepAlive(t)
 	feed.write(1) // written by another process: no wake
-	s.none(t, 100*time.Millisecond)
-	clock.Tick()
+	b.idle(t, "lab")
+	s.empty(t)
+	tick(t, b, clock)
 	if ids := s.eventIDs(t, 1); ids[0] != 1 {
 		t.Errorf("after a tick the watch got event %d, want 1", ids[0])
 	}
@@ -344,7 +431,8 @@ func TestWakeReachesOnlyItsTenant(t *testing.T) {
 	other.write(1)
 	b.Wake("a")
 	sa.eventIDs(t, 1)
-	so.none(t, 100*time.Millisecond)
+	b.idle(t, "b")
+	so.empty(t)
 	b.Wake("b")
 	so.eventIDs(t, 1)
 }
@@ -368,11 +456,13 @@ func TestKeepAlive(t *testing.T) {
 	}
 	feed.write(2) // 9 and 10: no health event
 	b.Wake("lab")
+	b.idle(t, "lab")
 	clock.Advance(DefaultKeepAlive - time.Second)
-	clock.Tick()
-	s.none(t, 100*time.Millisecond)
+	tick(t, b, clock)
+	b.idle(t, "lab")
+	s.empty(t)
 	clock.Advance(time.Second)
-	clock.Tick()
+	tick(t, b, clock)
 	k := s.keepAlive(t)
 	if k.Cursor != "10" || !k.Time.Equal(clock.Now()) {
 		t.Errorf("the idle keep-alive = %+v, want cursor 10, past what the filter left out, at %v", k, clock.Now())
@@ -407,7 +497,7 @@ func TestCursorExpired(t *testing.T) {
 	s.keepAlive(t)
 	feed.pruned.Store(20)
 	feed.write(20)
-	clock.Tick()
+	tick(t, b, clock)
 	select {
 	case err := <-s.done:
 		if !errors.Is(err, tenant.ErrCursorExpired) {
@@ -460,7 +550,7 @@ func TestCancelLeavesNoGoroutine(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			feed := &fakeFeed{}
+			feed := &fakeFeed{blocked: make(chan struct{}, 1)}
 			ctx, cancel := context.WithCancel(context.Background())
 			reached := make(chan struct{}, 1)
 			send := func(ctx context.Context, m Message) error {
@@ -483,6 +573,10 @@ func TestCancelLeavesNoGoroutine(t *testing.T) {
 				<-reached // the opening keep-alive
 			}
 			switch point {
+			case "waiting":
+				b.idle(t, "lab")
+			case "opening":
+				<-feed.blocked
 			case "sending":
 				feed.write(1)
 				b.Wake("lab")
@@ -490,9 +584,7 @@ func TestCancelLeavesNoGoroutine(t *testing.T) {
 			case "reading":
 				feed.block.Store(true)
 				b.Wake("lab")
-				for feed.reads.Load() < 2 {
-					time.Sleep(time.Millisecond)
-				}
+				<-feed.blocked
 			}
 			cancel()
 			select {
@@ -513,27 +605,33 @@ func TestCancelLeavesNoGoroutine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		idle, blocked, stuck := &fakeFeed{}, &fakeFeed{}, &fakeFeed{}
+		// One watch waiting, one whose send blocks, one whose read blocks,
+		// and a stream of every tenant waiting: each is known to be in its
+		// state before Close.
+		idle, stuck, blocked := &fakeFeed{}, &fakeFeed{}, &fakeFeed{blocked: make(chan struct{}, 1)}
 		stuck.write(1)
+		sending := make(chan struct{}, 1)
 		var ends []chan error
 		for _, w := range []struct {
-			feed *fakeFeed
-			send Send
+			tenant string
+			feed   *fakeFeed
+			send   Send
 		}{
-			{idle, func(context.Context, Message) error { return nil }},
-			{stuck, func(ctx context.Context, m Message) error {
+			{"lab-idle", idle, func(context.Context, Message) error { return nil }},
+			{"lab-stuck", stuck, func(ctx context.Context, m Message) error {
 				if m.Event != nil {
+					sending <- struct{}{}
 					<-ctx.Done()
 					return ctx.Err()
 				}
 				return nil
 			}},
-			{blocked, func(context.Context, Message) error { blocked.block.Store(true); return nil }},
+			{"lab-blocked", blocked, func(context.Context, Message) error { blocked.block.Store(true); return nil }},
 		} {
 			done := make(chan error, 1)
 			ends = append(ends, done)
 			go func() {
-				done <- b.Watch(context.Background(), Watch{Tenant: "lab", Reader: w.feed, Cursor: "0"}, w.send)
+				done <- b.Watch(context.Background(), Watch{Tenant: w.tenant, Reader: w.feed, Cursor: "0"}, w.send)
 			}()
 		}
 		every := make(chan error, 1)
@@ -543,11 +641,12 @@ func TestCancelLeavesNoGoroutine(t *testing.T) {
 			every <- b.WatchAll(context.Background(), WatchAll{Tenants: ts}, func(context.Context, Message) error { return nil })
 		}()
 		ends = append(ends, every)
-		for b.openWatches() < 4 {
-			time.Sleep(time.Millisecond)
-		}
-		b.Wake("lab")
-		time.Sleep(20 * time.Millisecond)
+		b.idle(t, "lab-idle")
+		<-sending
+		b.idle(t, "lab-blocked")
+		b.Wake("lab-blocked")
+		<-blocked.blocked
+		b.idle(t, "")
 		if err := b.Close(); err != nil {
 			t.Fatal(err)
 		}
@@ -571,20 +670,13 @@ func TestCancelLeavesNoGoroutine(t *testing.T) {
 	})
 }
 
-// openWatches returns how many watches are open, for tests.
-func (b *Broadcaster) openWatches() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.total
-}
-
 // TestWatchAll guards the stream of every tenant: it opens with a
 // keep-alive of the tenants' cursors (from the cursor given, or from now);
 // each tenant's events come in order; a tenant whose database does not
-// answer is skipped while the others go on, and followed from where it
-// stopped when it answers; a tenant created joins from its first event; a
-// tenant removed leaves; a tenant's expired cursor ends the stream naming
-// it.
+// answer is skipped while the others go on, named in keep-alives, tried
+// again after its wait and followed from then on; a tenant created joins
+// from its first event; a tenant missing from a listing keeps its cursor; a
+// tenant's expired cursor ends the stream naming it.
 func TestWatchAll(t *testing.T) {
 	b, clock := newTest(t, Config{})
 	a, down := &fakeFeed{}, &fakeFeed{}
@@ -607,12 +699,20 @@ func TestWatchAll(t *testing.T) {
 		t.Errorf("after a wake of a: %+v", m)
 	}
 	// b did not answer when the stream opened, so "from now" is when it
-	// first answers: the stream reads its place then, and follows it.
-	down.down.Store(false)
-	clock.Tick()
-	for down.cursors.Load() == 0 {
-		time.Sleep(time.Millisecond)
+	// first answers: the stream reads its place then, and follows it. A
+	// tenant that failed is tried again once its wait (a tick, the first
+	// time) has passed, and is named in a keep-alive meanwhile.
+	b.idle(t, "")
+	clock.Advance(DefaultKeepAlive)
+	tick(t, b, clock)
+	if k := s.keepAlive(t); fmt.Sprint(k.Unanswered) != "[b]" {
+		t.Errorf("a keep-alive while b does not answer names %v as unanswered, want [b]", k.Unanswered)
 	}
+	down.down.Store(false)
+	b.idle(t, "")
+	clock.Advance(2 * DefaultTick) // its wait doubled when it failed again on the last tick
+	tick(t, b, clock)
+	b.idle(t, "")
 	down.write(2)
 	b.Wake("b")
 	got := map[string][]string{}
@@ -630,12 +730,13 @@ func TestWatchAll(t *testing.T) {
 	if ids := s.eventIDs(t, 2); fmt.Sprint(ids) != "[1 2]" {
 		t.Errorf("the tenant created gave %v, want its first events [1 2]", ids)
 	}
+	// A tenant missing from a listing is paused, its cursor kept.
+	b.idle(t, "")
 	ts.remove("a")
-	clock.Tick()
 	clock.Advance(DefaultKeepAlive)
-	clock.Tick()
-	if k := s.keepAlive(t); fmt.Sprint(k.TenantCursors) != "map[b:5 c:2]" {
-		t.Errorf("after a was removed the keep-alive = %v, want b at 5 and c at 2", k.TenantCursors)
+	tick(t, b, clock)
+	if k := s.keepAlive(t); fmt.Sprint(k.TenantCursors) != "map[a:6 b:5 c:2]" || len(k.Unanswered) != 0 {
+		t.Errorf("after a left the listing the keep-alive = %v (unanswered %v), want a still at 6, b at 5 and c at 2", k.TenantCursors, k.Unanswered)
 	}
 	created.pruned.Store(10)
 	created.write(10)

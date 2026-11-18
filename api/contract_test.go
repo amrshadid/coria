@@ -207,6 +207,7 @@ var textFields = []string{
 	"magnetar.v1.Event.tenant",
 	"magnetar.v1.WatchKeepAlive.cursor",
 	"magnetar.v1.WatchKeepAlive.tenant_cursors",
+	"magnetar.v1.WatchKeepAlive.unanswered_tenants",
 	"magnetar.v1.WatchRequest.cursor",
 	"magnetar.v1.WatchRequest.tenant_cursors",
 

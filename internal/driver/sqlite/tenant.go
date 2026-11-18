@@ -42,6 +42,12 @@ type Tenant struct {
 	// since a statement cannot be prepared against tables not yet made.
 	mu    sync.Mutex
 	stmts atomic.Pointer[tenantStatements]
+
+	// betweenReads, when a test sets it, runs inside the read transaction
+	// of ReadEvents and StatusSnapshot between their reads, so a test can
+	// commit a change there and show that the answer is of one snapshot.
+	// Nil outside tests.
+	betweenReads func()
 }
 
 var _ tenant.Store = (*Tenant)(nil)

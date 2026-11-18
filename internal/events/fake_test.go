@@ -17,6 +17,7 @@ type fakeClock struct {
 	mu      sync.Mutex
 	now     time.Time
 	tickers []*fakeTicker
+	timers  []*fakeTimer
 }
 
 // newFakeClock returns a clock at a fixed time.
@@ -40,11 +41,39 @@ func (c *fakeClock) NewTicker(time.Duration) Ticker {
 	return t
 }
 
-// Advance moves the time on by d.
+// Advance moves the time on by d, and calls, each in its own goroutine as
+// the system's clock does, every AfterFunc whose time has come.
 func (c *fakeClock) Advance(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.now = c.now.Add(d)
+	kept := c.timers[:0]
+	for _, t := range c.timers {
+		if !t.at.After(c.now) {
+			if t.stopped.CompareAndSwap(false, true) {
+				go t.f()
+			}
+			continue
+		}
+		kept = append(kept, t)
+	}
+	c.timers = kept
+}
+
+// fakeTimer is an AfterFunc of fakeClock.
+type fakeTimer struct {
+	at      time.Time
+	f       func()
+	stopped atomic.Bool
+}
+
+// AfterFunc implements Clock.
+func (c *fakeClock) AfterFunc(d time.Duration, f func()) func() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t := &fakeTimer{at: c.now.Add(d), f: f}
+	c.timers = append(c.timers, t)
+	return func() bool { return t.stopped.CompareAndSwap(false, true) }
 }
 
 // Tick ticks every ticker not stopped, as the timer would.
@@ -86,10 +115,19 @@ type fakeFeed struct {
 	written atomic.Int64
 	pruned  atomic.Int64
 	reads   atomic.Int64
-	cursors atomic.Int64 // EventCursor calls answered
-	down    atomic.Bool  // its database does not answer
-	// block, when set, makes a read wait until ctx ends.
-	block atomic.Bool
+	down    atomic.Bool // its database does not answer
+	// block, when set, makes a read wait until ctx ends; each read that
+	// waits says so on blocked.
+	block   atomic.Bool
+	blocked chan struct{}
+	// holding, when set, makes each read take its page, say so on blocked
+	// and wait for a value on hold before it answers, as a read that is slow
+	// to come back does: what is written meanwhile is not in its page.
+	holding atomic.Bool
+	hold    chan struct{}
+	// recreated, when set, makes it a tenant created again under its name:
+	// any cursor but the empty one is another tenant's.
+	recreated atomic.Bool
 }
 
 // write adds n events.
@@ -115,11 +153,20 @@ func keeps(types []tenant.EventType, t tenant.EventType) bool {
 func (f *fakeFeed) ReadEvents(ctx context.Context, after string, types []tenant.EventType, limit int) (tenant.EventPage, error) {
 	f.reads.Add(1)
 	if f.block.Load() {
+		if f.blocked != nil {
+			select {
+			case f.blocked <- struct{}{}:
+			default:
+			}
+		}
 		<-ctx.Done()
 		return tenant.EventPage{}, fault.Wrap(fault.Unavailable, ctx.Err(), "the read ended")
 	}
 	if f.down.Load() {
 		return tenant.EventPage{}, fault.New(fault.Unavailable, "the tenant database does not answer")
+	}
+	if after != "" && f.recreated.Load() {
+		return tenant.EventPage{}, tenant.ForeignCursor()
 	}
 	high, pruned := f.written.Load(), f.pruned.Load()
 	pos := pruned
@@ -145,6 +192,10 @@ func (f *fakeFeed) ReadEvents(ctx context.Context, after string, types []tenant.
 			break
 		}
 	}
+	if f.holding.Load() {
+		f.blocked <- struct{}{}
+		<-f.hold
+	}
 	return tenant.EventPage{Events: out, Cursor: strconv.FormatInt(next, 10)}, nil
 }
 
@@ -153,7 +204,6 @@ func (f *fakeFeed) EventCursor(context.Context) (string, error) {
 	if f.down.Load() {
 		return "", fault.New(fault.Unavailable, "the tenant database does not answer")
 	}
-	defer f.cursors.Add(1)
 	return strconv.FormatInt(max(f.written.Load(), f.pruned.Load()), 10), nil
 }
 

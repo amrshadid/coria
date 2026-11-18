@@ -76,12 +76,19 @@ service MonitorService {
   //
   // With every tenant, the events of each tenant come in that tenant's
   // commit order, with no order between tenants. Each event's cursor is its
-  // tenant's, and each keep-alive carries every tenant's cursor in
-  // tenant_cursors, which a new stream takes to resume tenant by tenant. A
-  // tenant whose database stops answering is skipped while the stream goes
-  // on, and its events follow from where they stopped when it answers
-  // again; a tenant created while the stream is open joins it from its
-  // first event, and a tenant removed leaves it.
+  // tenant's, and each keep-alive carries the cursor of every tenant the
+  // stream follows in tenant_cursors, which a new stream takes, with resume
+  // set, to resume tenant by tenant. A tenant whose database stops
+  // answering, or does not answer a read within 5 seconds, is skipped while
+  // the stream goes on and named in each keep-alive's unanswered_tenants;
+  // it is tried again after a wait that doubles from one second to a
+  // minute, and its events follow from where they stopped. A tenant created
+  // while the stream is open joins it from its first event. A tenant that
+  // leaves the list of tenants is paused, its cursor kept, and goes on from
+  // it if it is listed again; a tenant removed and created again under the
+  // same name is another tenant, followed from its first event. One stream
+  // follows at most 10000 tenants: an installation with more is answered
+  // resource exhausted.
   //
   // The caller's key and grant are checked again at least every 15 seconds
   // while the stream is open: a key revoked or expired, or a grant removed,
@@ -99,12 +106,15 @@ service MonitorService {
   // for, cursor with every tenant or tenant_cursors with one tenant), not
   // found (a tenant that does not exist, for a caller who may list every
   // tenant), cursor expired (a cursor points before the oldest event its
-  // tenant keeps; the message names the tenant; the client reads that
-  // tenant's status again and watches from its event_cursor), unavailable
+  // tenant keeps, or after the newest event it holds, as after its database
+  // was restored from an older backup; the message names the tenant; the
+  // client reads that tenant's status again and watches from its
+  // event_cursor), unavailable
   // (with one tenant, its database does not answer or it is not ready, when
   // the stream opens or while it is open; the client resumes later from its
   // last cursor), resource exhausted (the caller, a key or the local
-  // operator, already holds 16 open streams, or the server holds 1024).
+  // operator, already holds 16 open streams, or the server holds 1024; or,
+  // with every tenant, the installation has more than 10000 tenants).
   // Limits: no deadline is applied to the stream when the client sends
   // none; the 30-second default of other calls does not hold here.
   rpc Watch(WatchRequest) returns (stream WatchResponse) {
@@ -411,6 +421,13 @@ message ReceptionStepReached {
   // The step it reached.
   ReceptionStep step = 4;
 
+  // The step it left: RECEPTION_STEP_UNSPECIFIED for a reception's first
+  // step (receiving, or complete for one made by RetryReception). With it
+  // a client keeps the receptions in progress by step (TenantCounts) from a
+  // status and the events after its cursor, whatever step a reception fails
+  // from.
+  ReceptionStep previous_step = 9;
+
   // Its totals when it reached the step.
   ReceptionCounts counts = 5;
 
@@ -547,10 +564,18 @@ message WatchKeepAlive {
   string cursor = 2;
 
   // With every tenant, the position the stream has read up to in each
-  // tenant whose database answered, by tenant name; a tenant missing here
-  // is one the stream has not read yet. Empty with one tenant. Each cursor
-  // is opaque, at most 1 KiB.
+  // tenant it follows, by tenant name, those left out of the list of tenants
+  // for now included; an empty cursor for a tenant it follows from its
+  // first event and has not read yet. A tenant it was asked to start from
+  // now and could not read yet is left out: resumed without it, the tenant
+  // starts from its first event, which loses nothing. Empty with one tenant.
+  // Each cursor is opaque, at most 1 KiB; a keep-alive names at most 10000
+  // tenants, about 200 bytes each at most, within one message.
   map<string, string> tenant_cursors = 3;
+
+  // With every tenant, the tenants the stream is skipping for now because
+  // their database did not answer, in order of name. Empty with one tenant.
+  repeated string unanswered_tenants = 4;
 }
 
 // WatchRequest asks for a stream of events.
@@ -570,11 +595,19 @@ message WatchRequest {
 
   // With every tenant, where to start in each tenant, by tenant name: a
   // keep-alive's tenant_cursors, or cursors gathered from events and
-  // statuses. A tenant not listed starts from now; a listed tenant that no
-  // longer exists is left out. At most 10000 entries, each cursor at most
-  // 1 KiB, within the 4 MB limit of a message. Must be empty with one
-  // tenant.
+  // statuses; an empty cursor starts the tenant from its first event kept.
+  // A tenant not listed starts from now, or with resume from its first
+  // event kept; a listed tenant that no longer exists is left out. At most
+  // 10000 entries, each cursor at most 1 KiB, within the 4 MB limit of a
+  // message. Must be empty with one tenant.
   map<string, string> tenant_cursors = 4;
+
+  // With every tenant, tenant_cursors are a keep-alive's: a tenant they do
+  // not name is new to the client (created after that keep-alive, or not
+  // read by that stream yet) and starts from its first event kept, so a
+  // resumed stream loses none of its events. A client that resumes sets it,
+  // even with no cursors at all. Must be false with one tenant.
+  bool resume = 5;
 }
 
 // WatchResponse is one message of the stream: an event or a keep-alive.

@@ -3,7 +3,6 @@ package events
 import (
 	"context"
 	"errors"
-	"sort"
 	"sync"
 	"time"
 
@@ -38,6 +37,9 @@ type Clock interface {
 	Now() time.Time
 	// NewTicker returns a ticker that ticks every d until stopped.
 	NewTicker(d time.Duration) Ticker
+	// AfterFunc calls f in its own goroutine once d has passed, unless
+	// stop, which reports whether it stopped the call, is called first.
+	AfterFunc(d time.Duration, f func()) (stop func() bool)
 }
 
 // Ticker ticks until stopped.
@@ -64,6 +66,19 @@ const (
 	DefaultMaxTotal = 1024
 	// DefaultMaxPerTenant is the most watches of one tenant.
 	DefaultMaxPerTenant = 1024
+	// DefaultTenantReaders is how many tenants a stream of every tenant
+	// reads at once.
+	DefaultTenantReaders = 8
+	// DefaultTenantReadTimeout is how long a stream of every tenant waits
+	// for one tenant's read before it skips that tenant for a while.
+	DefaultTenantReadTimeout = 5 * time.Second
+	// DefaultMaxBackoff is the longest a stream of every tenant leaves a
+	// tenant that failed or did not answer before it tries again.
+	DefaultMaxBackoff = time.Minute
+	// MaxStreamTenants is the most tenants one stream of every tenant
+	// follows, the contract's bound on the cursors a request names: the
+	// keep-alive that names them all stays within one message.
+	MaxStreamTenants = 10000
 )
 
 // Config is how a Broadcaster runs. A zero field takes its default.
@@ -81,12 +96,26 @@ type Config struct {
 	// once: of one owner, of one tenant (a stream of every tenant is
 	// counted by none), and in all.
 	MaxPerOwner, MaxPerTenant, MaxTotal int
+	// TenantReaders is how many tenants a stream of every tenant reads at
+	// once.
+	TenantReaders int
+	// TenantReadTimeout bounds one read of one tenant by a stream of every
+	// tenant.
+	TenantReadTimeout time.Duration
+	// MaxBackoff is the longest a stream of every tenant leaves a tenant
+	// that failed or did not answer before it tries again.
+	MaxBackoff time.Duration
 }
 
 // ErrTooManyWatches is in the chain of a watch refused because a bound of
 // open watches is reached. Its kind is Unavailable, since a watch may be
 // opened once another ends; the API answers it as resource exhausted.
 var ErrTooManyWatches = errors.New("too many watches are open")
+
+// ErrTooManyTenants is in the chain of a stream of every tenant ended or
+// refused because the installation has more tenants than MaxStreamTenants.
+// Its kind is Unavailable.
+var ErrTooManyTenants = errors.New("too many tenants for one stream")
 
 // ErrClosed is in the chain of a watch ended or refused because its
 // Broadcaster is closed: the server is stopping. Its kind is Unavailable.
@@ -111,9 +140,18 @@ type KeepAlive struct {
 	// Cursor is, on one tenant, where the stream has read up to, past the
 	// events its filter left out.
 	Cursor string
-	// TenantCursors are, with every tenant, where the stream has read up
-	// to in each tenant it has read; a copy, the caller's to keep.
+	// TenantCursors are, with every tenant, where the stream is in each
+	// tenant it follows, those not listed for now included; the empty
+	// cursor for one it follows from its first event and has not read
+	// yet. A tenant it was told to start from now and could not read yet
+	// is left out: resumed without it, it starts from its first event,
+	// which loses nothing. A copy, the caller's to keep.
 	TenantCursors map[string]string
+	// Unanswered are, with every tenant, the tenants the stream is
+	// skipping for now because their last read failed or did not answer
+	// in time, in order of name: they are tried again after a while, and
+	// their events follow from where they stopped.
+	Unanswered []string
 }
 
 // Send delivers one message to a stream's client. It may block, which holds
@@ -142,10 +180,14 @@ type WatchAll struct {
 	Owner string
 	// Tenants lists the tenants and gives their readers.
 	Tenants Tenants
-	// Cursors are where to start in each tenant named; a tenant there at
-	// the start and not named starts from now, and a tenant created later
-	// from its first event.
+	// Cursors are where to start in each tenant named, the empty cursor
+	// for its first event kept.
 	Cursors map[string]string
+	// Resume says Cursors are a keep-alive's: a tenant not named is new to
+	// the client and starts from its first event kept. Without it a tenant
+	// there at the start and not named starts from now. A tenant created
+	// while the stream is open starts from its first event either way.
+	Resume bool
 	// Types keeps only events of these types; all when empty.
 	Types []tenant.EventType
 }
@@ -162,15 +204,56 @@ type watcher struct {
 	mu     sync.Mutex
 	dirty  map[string]struct{} // every tenant: the tenants woken
 	rescan bool                // every tenant: list the tenants again
+
+	// Guarded by the Broadcaster's mu: whether the watch is waiting for a
+	// wake, and how many wakes were put in its slot and taken from it. A
+	// watch that is waiting with as many taken as put has nothing pending:
+	// what happens next (a wake, a tick, the clock moving) is seen by its
+	// next round, which is what lets a test act only once a watch is idle
+	// rather than after a guess at how long it takes to get there.
+	waiting       bool
+	signals, take int64
 }
 
 // signal fills the watcher's slot, or finds it full: a wake folded into
-// another costs nothing and is never queued.
+// another costs nothing and is never queued. The caller holds the
+// Broadcaster's mu.
 func (w *watcher) signal() {
 	select {
 	case w.wake <- struct{}{}:
+		w.signals++
 	default:
 	}
+}
+
+// wait blocks a watch until a wake or the end of ctx, recording around it
+// that the watch waits (watcher.waiting), so that whether it is idle can be
+// told exactly.
+func (b *Broadcaster) wait(ctx context.Context, w *watcher) error {
+	b.mu.Lock()
+	w.waiting = true
+	b.mu.Unlock()
+	select {
+	case <-w.wake:
+		b.mu.Lock()
+		w.waiting = false
+		w.take++
+		b.mu.Unlock()
+		return nil
+	case <-ctx.Done():
+		b.mu.Lock()
+		w.waiting = false
+		b.mu.Unlock()
+		return ended(ctx)
+	}
+}
+
+// took records that a watch took a wake from its slot itself, outside
+// wait, as a stream of every tenant does while it reads.
+func (b *Broadcaster) took(w *watcher) {
+	b.mu.Lock()
+	w.take++
+	b.mu.Unlock()
 }
 
 // Broadcaster wakes the watches of a tenant after a commit that wrote an
@@ -184,6 +267,7 @@ type Broadcaster struct {
 
 	mu       sync.Mutex
 	closed   bool
+	ticks    int64 // the timer's ticks handled, each after its watches were woken
 	byTenant map[string][]*watcher
 	all      []*watcher
 	owners   map[string]int
@@ -205,6 +289,13 @@ func New(cfg Config) (*Broadcaster, error) {
 	fill(&cfg.MaxPerOwner, DefaultMaxPerOwner)
 	fill(&cfg.MaxPerTenant, DefaultMaxPerTenant)
 	fill(&cfg.MaxTotal, DefaultMaxTotal)
+	fill(&cfg.TenantReaders, DefaultTenantReaders)
+	if cfg.TenantReadTimeout == 0 {
+		cfg.TenantReadTimeout = DefaultTenantReadTimeout
+	}
+	if cfg.MaxBackoff == 0 {
+		cfg.MaxBackoff = DefaultMaxBackoff
+	}
 	if cfg.Tick == 0 {
 		cfg.Tick = DefaultTick
 	}
@@ -212,7 +303,8 @@ func New(cfg Config) (*Broadcaster, error) {
 		cfg.KeepAlive = DefaultKeepAlive
 	}
 	if cfg.Tick < 0 || cfg.KeepAlive < 0 || cfg.PageSize < 1 || cfg.PageSize > tenant.MaxEventPage ||
-		cfg.MaxPerOwner < 1 || cfg.MaxPerTenant < 1 || cfg.MaxTotal < 1 {
+		cfg.MaxPerOwner < 1 || cfg.MaxPerTenant < 1 || cfg.MaxTotal < 1 || cfg.TenantReaders < 1 ||
+		cfg.TenantReadTimeout < 0 || cfg.MaxBackoff < 0 {
 		return nil, fault.New(fault.Invalid, "an event feed's tick, keep-alive, page size and bounds are positive, and a page at most 1000")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -282,6 +374,7 @@ func (b *Broadcaster) wakeAll() {
 		w.mu.Unlock()
 		w.signal()
 	}
+	b.ticks++
 }
 
 // register admits a watch of the tenant named (empty for every tenant)
@@ -417,10 +510,8 @@ func (b *Broadcaster) Watch(ctx context.Context, w Watch, send Send) error {
 				}
 				lastSent = now
 			}
-			select {
-			case <-me.wake:
-			case <-ctx.Done():
-				return ended(ctx)
+			if err := b.wait(ctx, me); err != nil {
+				return err
 			}
 		}
 		// The page is dropped before the next read: at most one page of
@@ -451,203 +542,6 @@ func (b *Broadcaster) readFailed(ctx context.Context, err error) error {
 	return err
 }
 
-// pagesPerRound bounds the pages a stream of every tenant reads from one
-// tenant before it looks at the others, so a tenant that writes without a
-// pause does not keep the others waiting.
-const pagesPerRound = 10
-
-// follow is one tenant as a stream of every tenant follows it.
-type follow struct {
-	cursor  string
-	fromNow bool // start from the tenant's newest event when first read
-	known   bool // the cursor is set
-}
-
-// WatchAll streams every tenant's events to send, each tenant's in its
-// commit order, until ctx ends, Close is called, send fails, or a tenant's
-// cursor is older than what it keeps (tenant.ErrCursorExpired, with the
-// tenant named in the message). A tenant whose database does not answer is
-// skipped and tried again on the next tick; a tenant listed later joins
-// from its first event; a tenant no longer listed leaves. The first message
-// is a keep-alive with the cursors of the tenants read; a keep-alive with
-// every tenant's cursor follows whenever nothing was sent for the
-// keep-alive interval.
-func (b *Broadcaster) WatchAll(ctx context.Context, w WatchAll, send Send) error {
-	if w.Tenants == nil || send == nil {
-		return fault.New(fault.Invalid, "a watch of every tenant has a list of tenants and a send function")
-	}
-	if err := tenant.ValidateEventTypes(w.Types); err != nil {
-		return err
-	}
-	me, err := b.register("", w.Owner)
-	if err != nil {
-		return err
-	}
-	defer b.unregister(me)
-	ctx, cancel := b.watchContext(ctx)
-	defer cancel()
-
-	follows := map[string]*follow{}
-	listed := false
-	// list reads the tenants: those there at the start begin from the
-	// cursor given or from now, those listed later from their first event.
-	list := func() {
-		names, err := w.Tenants.TenantNames(ctx)
-		if err != nil {
-			return // tried again on the next tick
-		}
-		now := map[string]bool{}
-		for _, n := range names {
-			now[n] = true
-			if _, ok := follows[n]; ok {
-				continue
-			}
-			f := &follow{}
-			switch c, given := w.Cursors[n]; {
-			case !listed && given:
-				f.cursor, f.known = c, true
-			case !listed:
-				f.fromNow = true
-			default:
-				f.known = true // from its first event: the empty cursor
-			}
-			follows[n] = f
-		}
-		for n := range follows {
-			if !now[n] {
-				delete(follows, n)
-			}
-		}
-		listed = true
-	}
-	cursors := func() map[string]string {
-		out := make(map[string]string, len(follows))
-		for n, f := range follows {
-			if f.known && f.cursor != "" {
-				out[n] = f.cursor
-			}
-		}
-		return out
-	}
-	// readTenant delivers what one tenant has after its cursor, a bounded
-	// number of pages, and returns how many events it sent and whether the
-	// tenant has more.
-	readTenant := func(name string, f *follow) (int, bool, error) {
-		r, err := w.Tenants.Reader(ctx, name)
-		if err != nil {
-			return 0, false, nil // skipped; tried again on the next tick
-		}
-		if !f.known {
-			c, err := r.EventCursor(ctx)
-			if err != nil {
-				return 0, false, nil
-			}
-			f.cursor, f.known = c, true
-		}
-		sent := 0
-		for range pagesPerRound {
-			page, err := r.ReadEvents(ctx, f.cursor, w.Types, b.cfg.PageSize)
-			switch {
-			case ctx.Err() != nil:
-				return sent, false, ended(ctx)
-			case errors.Is(err, tenant.ErrCursorExpired):
-				return sent, false, fault.Wrap(fault.KindOf(err), err, fault.Message(err)+" (tenant "+name+")")
-			case err != nil:
-				return sent, false, nil // skipped; tried again on the next tick
-			}
-			for i := range page.Events {
-				if err := send(ctx, Message{Tenant: name, Event: &page.Events[i]}); err != nil {
-					return sent, false, sendFailed(ctx, err)
-				}
-				sent++
-			}
-			f.cursor = page.Cursor
-			if len(page.Events) < b.cfg.PageSize {
-				return sent, false, nil
-			}
-		}
-		return sent, true, nil
-	}
-
-	// The stream opens with a keep-alive that holds the cursor of every
-	// tenant it can read now, those starting from now included.
-	list()
-	for n, f := range follows {
-		if f.fromNow {
-			if r, err := w.Tenants.Reader(ctx, n); err == nil {
-				if c, err := r.EventCursor(ctx); err == nil {
-					f.cursor, f.known = c, true
-				}
-			}
-		}
-	}
-	if ctx.Err() != nil {
-		return ended(ctx)
-	}
-	if err := send(ctx, Message{KeepAlive: &KeepAlive{Time: b.cfg.Clock.Now(), TenantCursors: cursors()}}); err != nil {
-		return sendFailed(ctx, err)
-	}
-	lastSent := b.cfg.Clock.Now()
-	for {
-		me.mu.Lock()
-		rescan, dirty := me.rescan, me.dirty
-		me.rescan, me.dirty = false, map[string]struct{}{}
-		me.mu.Unlock()
-		if rescan {
-			list()
-		} else {
-			for n := range dirty {
-				if _, ok := follows[n]; !ok {
-					// A tenant woken that the stream does not follow may be
-					// new: list again now rather than at the next tick.
-					list()
-					rescan = true
-					break
-				}
-			}
-		}
-		names := make([]string, 0, len(follows))
-		for n := range follows {
-			if _, woken := dirty[n]; rescan || woken {
-				names = append(names, n)
-			}
-		}
-		sort.Strings(names)
-		var again []string
-		for _, n := range names {
-			sent, more, err := readTenant(n, follows[n])
-			if err != nil {
-				return err
-			}
-			if sent > 0 {
-				lastSent = b.cfg.Clock.Now()
-			}
-			if more {
-				again = append(again, n)
-			}
-		}
-		if now := b.cfg.Clock.Now(); now.Sub(lastSent) >= b.cfg.KeepAlive {
-			if err := send(ctx, Message{KeepAlive: &KeepAlive{Time: now, TenantCursors: cursors()}}); err != nil {
-				return sendFailed(ctx, err)
-			}
-			lastSent = now
-		}
-		if len(again) > 0 {
-			me.mu.Lock()
-			for _, n := range again {
-				me.dirty[n] = struct{}{}
-			}
-			me.mu.Unlock()
-			continue
-		}
-		select {
-		case <-me.wake:
-		case <-ctx.Done():
-			return ended(ctx)
-		}
-	}
-}
-
 // systemClock is the system's clock.
 type systemClock struct{}
 
@@ -656,6 +550,9 @@ func (systemClock) Now() time.Time { return time.Now() }
 
 // NewTicker implements Clock.
 func (systemClock) NewTicker(d time.Duration) Ticker { return systemTicker{time.NewTicker(d)} }
+
+// AfterFunc implements Clock.
+func (systemClock) AfterFunc(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
 
 // systemTicker is a time.Ticker as a Ticker.
 type systemTicker struct{ t *time.Ticker }

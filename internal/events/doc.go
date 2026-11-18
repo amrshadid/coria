@@ -21,11 +21,15 @@
 //     timer or the end of the context, sending a keep-alive with the cursor
 //     when nothing was sent for the keep-alive interval (15 seconds by
 //     default). No read transaction is held between reads;
-//   - the stream of every tenant (Broadcaster.WatchAll): a cursor per tenant
-//     in one loop, over an interface that lists tenants and gives each
-//     one's reader (Tenants), so a tenant whose database does not answer is
-//     skipped and tried again, a tenant created joins and a tenant removed
-//     leaves.
+//   - the stream of every tenant (Broadcaster.WatchAll): a cursor per tenant,
+//     kept for as long as the stream lives, read through a few readers the
+//     stream owns, each read bounded by a deadline, over an interface that
+//     lists tenants and gives each one's reader (Tenants). A tenant whose
+//     database fails or does not answer in time is skipped, named in the
+//     keep-alives, and tried again after a wait; a tenant created joins from
+//     its first event; a tenant that leaves the list is paused and goes on
+//     from its cursor if it comes back; a keep-alive names every tenant
+//     followed, so a stream resumed from it loses no tenant's events.
 //
 // The bounds the API contract states are kept here: a most of watches per
 // caller, per tenant and in all, refused beyond with ErrTooManyWatches.
@@ -38,7 +42,9 @@
 // holds no event in memory beyond the page a watch is delivering, keeps no
 // clock of its own (time comes through Clock), keeps no global state, and
 // starts no goroutine it does not end: the timer's goroutine belongs to the
-// Broadcaster and ends with Close, and each watch runs in its caller's
-// goroutine. Nothing about a patient reaches it: events carry the archive's
+// Broadcaster and ends with Close, each watch runs in its caller's
+// goroutine, and the readers of a stream of every tenant end before it
+// returns. A reader it is handed must return when its context ends: that is
+// how a read that does not answer is given up. Nothing about a patient reaches it: events carry the archive's
 // labels, ids and counts only.
 package events

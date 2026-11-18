@@ -203,8 +203,9 @@ type Pipeline interface {
 	// reception did not confirm, in the same transaction. hook, when not
 	// nil, runs inside the step's transaction after the reception is
 	// written and before the commit, with the reception as it was and as it
-	// is; an error from it undoes the step and is returned as it is. It is
-	// where the step's event is written. The hook may run more than once
+	// is; an error from it undoes the step and is returned as it is. A
+	// store that keeps an event feed (Events) writes the step's event itself
+	// in the same transaction, before the hook. The hook may run more than once
 	// for one step, as a Guard may (Guard): what it writes inside the
 	// transaction is undone with it, and it does nothing outside it.
 	StepReception(ctx context.Context, step ReceptionStep, hook StepHook) (Reception, error)

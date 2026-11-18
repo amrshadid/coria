@@ -51,6 +51,9 @@ const (
 	// pruneCandidatesSQL reads the oldest events, in order: the table's
 	// own key.
 	pruneCandidatesSQL = `SELECT id, at FROM events ORDER BY id LIMIT ?`
+	// pruneStepSQL reads the ids of the oldest events up to one, a step's
+	// worth: the table's own key.
+	pruneStepSQL = `SELECT id FROM events WHERE id <= ? ORDER BY id LIMIT ?`
 	// pruneSQL removes every event up to an id. NOT INDEXED keeps the
 	// planner on the table's own key, a range from its start: with the
 	// statistics of a full feed it would otherwise walk events_by_type once
@@ -79,24 +82,15 @@ func writeEvent(ctx context.Context, tx *sql.Tx, e tenant.EventRecord, key any) 
 	return n == 1, err
 }
 
-// txEvents is the event writer of one change's transaction, handed to a
-// step's hook (tenant.WithEventWriter).
-type txEvents struct{ tx *sql.Tx }
-
-// WriteEvent implements tenant.EventWriter.
-func (w txEvents) WriteEvent(ctx context.Context, e tenant.EventRecord) error {
-	_, err := writeEvent(ctx, w.tx, e, nil)
-	return err
-}
-
 // writeStepEvent writes the event of a reception as it is in tx after a
-// step the store took itself (an open, a retry, a unit giving up).
-func writeStepEvent(ctx context.Context, tx *sql.Tx, id string) error {
+// step from previous (empty for its first) that the store took itself (an
+// open, a unit giving up).
+func writeStepEvent(ctx context.Context, tx *sql.Tx, id string, previous reception.State) error {
 	r, err := receptionInTx(ctx, tx, id)
 	if err != nil {
 		return err
 	}
-	e, err := tenant.ReceptionStepEvent(r)
+	e, err := tenant.ReceptionStepEvent(previous, r)
 	if err != nil {
 		return err
 	}
@@ -126,9 +120,14 @@ func writeDecisionEvent(ctx context.Context, tx *sql.Tx, q tenant.QuarantinedFil
 	return err
 }
 
-// eventCursor returns the cursor after the event with this id.
+// eventCursor returns the cursor after the event with this id. The tenant
+// it belongs to is a field of the cursor (as a binding, a hash of its id)
+// rather than the cursor's own binding, so a cursor of another tenant's feed
+// is told apart from one altered or of another list: a stream that follows
+// tenants by name starts a tenant created again under a name from its first
+// event on exactly that answer (tenant.ErrForeignCursor).
 func (t *Tenant) eventCursor(id int64) string {
-	return sqlkit.EncodeCursor(listEvents, t.binding(), strconv.FormatInt(id, 10))
+	return sqlkit.EncodeCursor(listEvents, "", t.binding(), strconv.FormatInt(id, 10))
 }
 
 // eventPosition decodes a feed cursor into the id it is after, or -1 for
@@ -137,11 +136,14 @@ func (t *Tenant) eventPosition(cursor string) (int64, error) {
 	if cursor == "" {
 		return -1, nil
 	}
-	f, err := sqlkit.DecodeCursor(cursor, listEvents, t.binding(), 1)
+	f, err := sqlkit.DecodeCursor(cursor, listEvents, "", 2)
 	if err != nil {
 		return 0, err
 	}
-	id, err := sqlkit.DecodeCursorInt(f[0])
+	if f[0] != t.binding() {
+		return 0, tenant.ForeignCursor()
+	}
+	id, err := sqlkit.DecodeCursorInt(f[1])
 	if err != nil || id < 0 {
 		return 0, tenantBadCursor()
 	}
@@ -172,6 +174,18 @@ func (t *Tenant) AppendEvents(ctx context.Context, events []tenant.EventAppend) 
 			}
 			if fresh {
 				n++
+				continue
+			}
+			// The key is held: by the same event, written before (or
+			// earlier in this batch), which is skipped; or by another,
+			// which is refused rather than kept silently.
+			var typ, payload string
+			var at int64
+			if err := tx.QueryRowContext(ctx, `SELECT type, at, payload FROM events WHERE key = ?`, e.Key).Scan(&typ, &at, &payload); err != nil {
+				return err
+			}
+			if typ != string(e.Event.Type()) || at != micros(e.Event.Time()) || payload != e.Event.Payload() {
+				return tenant.EventKeyReused(e.Key)
 			}
 		}
 		added = n
@@ -259,24 +273,34 @@ func (t *Tenant) ReadEvents(ctx context.Context, after string, types []tenant.Ev
 		switch {
 		case pos < 0:
 			from = pruned
-		case pos < pruned:
+		case pos < pruned, pos > high:
+			// Before what was pruned, or after the newest event the feed
+			// holds: a database restored from an older backup, whose events
+			// at and before the cursor are not those the reader saw.
 			return tenant.CursorExpired()
 		}
 		query, args := eventsQuery(distinctTypes(types), from, limit)
 		rows, err := tx.QueryContext(ctx, query, args...)
 		var ids []int64
+		unreadable := 0
 		events, err := collect(rows, err, func(row interface{ Scan(...any) error }) (tenant.Event, error) {
 			var id, at int64
 			var typ, payload string
 			if err := row.Scan(&id, &typ, &at, &payload); err != nil {
 				return tenant.Event{}, err
 			}
-			p, err := tenant.DecodeEvent(tenant.EventType(typ), payload)
+			p, ok := tenant.DecodeEvent(tenant.EventType(typ), payload)
+			if !ok {
+				unreadable++
+			}
 			ids = append(ids, id)
-			return tenant.Event{Cursor: t.eventCursor(id), Type: tenant.EventType(typ), Time: fromMicros(at), Payload: p}, err
+			return tenant.Event{Cursor: t.eventCursor(id), Type: tenant.EventType(typ), Time: fromMicros(at), Payload: p}, nil
 		})
 		if err != nil {
 			return err
+		}
+		if t.betweenReads != nil {
+			t.betweenReads()
 		}
 		// A full page ends at its last event, and the events the filter
 		// left out before it are behind that. A short page has every event
@@ -287,7 +311,7 @@ func (t *Tenant) ReadEvents(ctx context.Context, after string, types []tenant.Ev
 		if len(events) == limit {
 			next = ids[len(ids)-1]
 		}
-		page = tenant.EventPage{Events: events, Cursor: t.eventCursor(next)}
+		page = tenant.EventPage{Events: events, Cursor: t.eventCursor(next), Unreadable: unreadable}
 		return nil
 	})
 	if err != nil {
@@ -318,6 +342,9 @@ func (t *Tenant) StatusSnapshot(ctx context.Context) (tenant.StatusSnapshot, err
 		var high, pruned int64
 		if err := tx.QueryRowContext(ctx, eventHighSQL).Scan(&high, &pruned); err != nil {
 			return err
+		}
+		if t.betweenReads != nil {
+			t.betweenReads()
 		}
 		c := &s.Catalog
 		if err := tx.QueryRowContext(ctx, `SELECT subjects, sessions, scans, instances FROM catalog_totals WHERE one = 1`).
@@ -359,20 +386,23 @@ func (t *Tenant) StatusSnapshot(ctx context.Context) (tenant.StatusSnapshot, err
 	return s, nil
 }
 
-// PruneEvents implements tenant.Events. The oldest events are read in order
-// of id and removed up to the first that is not older than before, so what
-// is removed is always every event up to one id, which the mark then names:
-// an event above the mark is never missing.
+// PruneEvents implements tenant.Events. The newest event old enough is
+// found among the oldest MaxPruneScan in a read, and then every event up to
+// it is removed in order, in transactions of at most PruneStep events, each
+// moving the mark with what it removes. An event at or below the one found
+// cannot be written later (ids only grow), and another pruning meanwhile
+// only leaves less to remove, so the read need not be in the transactions
+// that remove.
 func (t *Tenant) PruneEvents(ctx context.Context, before time.Time, limit int) (int, bool, error) {
 	if err := tenant.ValidatePrune(before, limit); err != nil {
 		return 0, false, err
 	}
-	var removed int
-	var more bool
 	cut := micros(before)
-	err := t.write(ctx, "the events cannot be pruned", func(tx *sql.Tx, _ *tenantStatements) error {
-		removed, more = 0, false
-		rows, err := tx.QueryContext(ctx, pruneCandidatesSQL, limit+1)
+	var target int64 = -1
+	var scanned int
+	var lastScanned int64
+	err := t.readTx(ctx, "the events cannot be pruned", func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(ctx, pruneCandidatesSQL, tenant.MaxPruneScan)
 		type candidate struct{ id, at int64 }
 		oldest, err := collect(rows, err, func(row interface{ Scan(...any) error }) (candidate, error) {
 			var c candidate
@@ -382,25 +412,62 @@ func (t *Tenant) PruneEvents(ctx context.Context, before time.Time, limit int) (
 		if err != nil {
 			return err
 		}
-		n := 0
-		for n < len(oldest) && n < limit && oldest[n].at < cut {
-			n++
+		target, scanned = -1, len(oldest)
+		for _, c := range oldest {
+			if c.at < cut {
+				target = c.id
+			}
+			lastScanned = c.id
 		}
-		if n == 0 {
-			return nil
-		}
-		through := oldest[n-1].id
-		if _, err := tx.ExecContext(ctx, pruneSQL, through); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE event_marks SET pruned_through = max(pruned_through, ?) WHERE one = 1`, through); err != nil {
-			return err
-		}
-		removed, more = n, n == limit && len(oldest) > limit && oldest[limit].at < cut
 		return nil
 	})
-	if err != nil {
+	if err != nil || target < 0 {
 		return 0, false, err
+	}
+	removed, rest := 0, true
+	for removed < limit && rest {
+		step := min(tenant.PruneStep, limit-removed)
+		var n int
+		err := t.write(ctx, "the events cannot be pruned", func(tx *sql.Tx, _ *tenantStatements) error {
+			n = 0
+			rows, err := tx.QueryContext(ctx, pruneStepSQL, target, step)
+			ids, err := collect(rows, err, func(row interface{ Scan(...any) error }) (int64, error) {
+				var id int64
+				err := row.Scan(&id)
+				return id, err
+			})
+			if err != nil || len(ids) == 0 {
+				return err
+			}
+			through := ids[len(ids)-1]
+			if _, err := tx.ExecContext(ctx, pruneSQL, through); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE event_marks SET pruned_through = max(pruned_through, ?) WHERE one = 1`, through); err != nil {
+				return err
+			}
+			n = len(ids)
+			return nil
+		})
+		if err != nil {
+			return removed, false, err
+		}
+		removed += n
+		rest = n == step
+	}
+	// More are due when events up to the one found remain (the limit
+	// stopped the call), or when the scan was full and its last event was
+	// old enough, so others old enough may follow it.
+	more := scanned == tenant.MaxPruneScan && target == lastScanned
+	if removed == limit {
+		err := t.readTx(ctx, "the events cannot be pruned", func(tx *sql.Tx) error {
+			remains, err := exists(ctx, tx, `SELECT 1 FROM events WHERE id <= ? LIMIT 1`, target)
+			more = more || remains
+			return err
+		})
+		if err != nil {
+			return removed, false, err
+		}
 	}
 	return removed, more, nil
 }

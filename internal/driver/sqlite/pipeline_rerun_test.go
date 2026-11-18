@@ -126,7 +126,8 @@ func TestStepHookRunsAgainWithItsBatch(t *testing.T) {
 }
 
 // TestPipelineRandomizedAcrossInstances guards the pipeline's identities
-// under many goroutines on two instances of one database at once: opens,
+// under many goroutines on two instances of one database at once, in short
+// bursts (see below why): opens,
 // received batches (some written twice), holds (some written twice),
 // releases, rejections, quiet steps, and claims and commits of identified
 // receptions. Afterwards each reception's counts equal a count over its
@@ -141,93 +142,67 @@ func TestPipelineRandomizedAcrossInstances(t *testing.T) {
 	a, b := a0.(*Tenant), b0.(*Tenant)
 	fixtureSetup(t, a, "a", "b")
 	stores := []*Tenant{a, b}
-	const workers, ops = 16, 150
-	var qids [workers][]string
-	errs := make(chan error, workers)
-	for w := range workers {
-		go func(w int) {
-			p := stores[w%2]
-			rng := uint64(w)*7919 + 1 //nolint:gosec // G115: w is a worker number from 0 to 15.
-			next := func(n int) int {
-				rng ^= rng << 13
-				rng ^= rng >> 7
-				rng ^= rng << 17
-				return int(rng % uint64(n)) //nolint:gosec // G115: n is a small positive count and the result is below it.
+	// Two stores on one file are two writing processes as far as SQLite's
+	// locking goes, and that locking is not fair: a writer that finds the
+	// file locked sleeps and tries again, and one that keeps writing can
+	// keep it out past the busy timeout (doc.go, "One process writes a
+	// SQLite database"). A server has one writing process, so a starved
+	// second one is not what this test guards. The workers therefore run in
+	// short bursts, every worker of both stores at once (so the stores do
+	// contend), with all of them waiting at the end of each burst, which
+	// bounds how long one store can keep the other out; and a change that
+	// still finds the file busy is tried again a few times and counted.
+	const workers, ops, burst, tries = 16, 150, 10, 5
+	var busyRetries atomic.Int64
+	retry := func(op func() error) error {
+		for n := 1; ; n++ {
+			err := op()
+			if err == nil || !isBusy(err) || n == tries {
+				return err
 			}
-			for i := range ops {
-				study := next(5)
-				recv := []string{"a", "b"}[next(2)]
-				switch next(7) {
-				case 0, 1:
-					r, _, err := p.OpenReception(ctx, recv, fmt.Sprintf("2.25.1.%d", study+1), fixtureID("rc"), fixtureAt(i))
-					if err != nil {
-						errs <- fmt.Errorf("open: %w", err)
-						return
-					}
-					var batch []tenant.ReceivedFile
-					for k := range next(5) + 1 {
-						batch = append(batch, fixtureFile(r, study, study*1000+next(20)+k))
-					}
-					for range next(2) + 1 {
-						if _, err := p.AddReceivedFiles(ctx, batch, fixtureAt(i)); err != nil && !strings.Contains(err.Error(), "no longer receiving") {
-							errs <- fmt.Errorf("received: %w", err)
-							return
-						}
-					}
-				case 2:
-					r, _, err := p.OpenReception(ctx, recv, fmt.Sprintf("2.25.1.%d", study+1), fixtureID("rc"), fixtureAt(i))
-					if err != nil {
-						errs <- err
-						return
-					}
-					id := fixtureID("q")
-					if next(3) == 0 && len(qids[w]) > 0 {
-						id = qids[w][next(len(qids[w]))]
-					}
-					q := tenant.QuarantinedFile{ID: id, Reason: tenant.QuarantineNotDICOM, Receiver: recv, ReceptionID: r.ID,
-						Size: int64(next(1000)), SHA256: fixtureSum(next(1000)), Incoming: "quarantine/" + id, ContentKept: true, Quarantined: fixtureAt(i)}
-					if _, err := p.HoldFiles(ctx, []tenant.QuarantinedFile{q}); err != nil {
-						errs <- fmt.Errorf("hold: %w", err)
-						return
-					}
-					qids[w] = append(qids[w], id)
-				case 3:
-					if len(qids[w]) > 0 {
-						_, _ = p.ReleaseQuarantined(ctx, qids[w][next(len(qids[w]))], tenant.ReleaseAsIs, "", fixtureID("rc"), fixtureAt(i), fixtureAudit(), nil)
-					}
-				case 4:
-					if len(qids[w]) > 0 {
-						_, _ = p.RejectQuarantined(ctx, qids[w][next(len(qids[w]))], "no", fixtureAt(i), fixtureAudit(), nil)
-					}
-				case 5:
-					rs, _, err := p.ListReceptions(ctx, tenant.ReceptionFilter{InProgress: true}, master.Page{Limit: 5})
-					if err != nil {
-						errs <- err
-						return
-					}
-					for _, r := range rs {
-						switch {
-						case r.State == reception.Receiving && next(2) == 0:
-							_, _ = p.StepReception(ctx, tenant.ReceptionStep{ID: r.ID, From: r.State, Event: reception.Quiet, At: fixtureAt(i + 100)}, nil)
-						case r.State == reception.Complete:
-							_, _ = p.StepReception(ctx, tenant.ReceptionStep{ID: r.ID, From: r.State, Event: reception.Identify,
-								At: fixtureAt(i + 100), SubjectLabel: "sub-01", SessionLabel: "ses-" + r.StudyUID, Storage: "store"}, nil)
-						}
-					}
-				case 6:
-					if err := claimAndCommit(ctx, p, next); err != nil {
+			busyRetries.Add(1)
+		}
+	}
+	var qids [workers][]string
+	var rngs [workers]uint64
+	for w := range workers {
+		rngs[w] = uint64(w)*7919 + 1 //nolint:gosec // G115: w is a worker number from 0 to 15.
+	}
+	both := 0 // bursts in which both stores committed: the stores did contend
+	for start := 0; start < ops; start += burst {
+		ca, cb := a.w.commits.Load(), b.w.commits.Load()
+		errs := make(chan error, workers)
+		for w := range workers {
+			go func(w int) {
+				p := stores[w%2]
+				next := func(n int) int {
+					rngs[w] ^= rngs[w] << 13
+					rngs[w] ^= rngs[w] >> 7
+					rngs[w] ^= rngs[w] << 17
+					return int(rngs[w] % uint64(n)) //nolint:gosec // G115: n is a small positive count and the result is below it.
+				}
+				for i := start; i < start+burst; i++ {
+					if err := randomChange(ctx, p, &qids[w], i, next, retry); err != nil {
 						errs <- err
 						return
 					}
 				}
-			}
-			errs <- nil
-		}(w)
-	}
-	for range workers {
-		if err := <-errs; err != nil {
-			t.Fatal(err)
+				errs <- nil
+			}(w)
 		}
+		for range workers {
+			if err := <-errs; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if a.w.commits.Load() > ca && b.w.commits.Load() > cb {
+			both++
+		}
+	}
+	t.Logf("both stores committed in %d of %d bursts (%d and %d commits); %d changes found the file busy and were tried again",
+		both, ops/burst, a.w.commits.Load(), b.w.commits.Load(), busyRetries.Load())
+	if both == 0 {
+		t.Error("the stores never wrote in the same burst, so they never contended")
 	}
 	db := a.p.read
 	check := func(what, query string) {
@@ -339,6 +314,99 @@ func claimAndCommit(ctx context.Context, p *Tenant, next func(int) int) error {
 	}
 	if _, err := p.CommitScan(ctx, c); err != nil && fault.KindOf(err) != fault.Conflict {
 		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// randomChange makes one change of TestPipelineRandomizedAcrossInstances,
+// chosen by next, on store p at step i: an open with received batches (some
+// written twice), a hold (some written twice), a release, a rejection,
+// steps of receptions in progress, or a claim and commit. Each change that
+// can find the file busy goes through retry. Refusals a change earns from
+// another worker's change meanwhile are expected and ignored.
+func randomChange(ctx context.Context, p *Tenant, qids *[]string, i int, next func(int) int, retry func(func() error) error) error {
+	study := next(5)
+	recv := []string{"a", "b"}[next(2)]
+	open := func() (tenant.Reception, error) {
+		var r tenant.Reception
+		err := retry(func() error {
+			var err error
+			r, _, err = p.OpenReception(ctx, recv, fmt.Sprintf("2.25.1.%d", study+1), fixtureID("rc"), fixtureAt(i))
+			return err
+		})
+		return r, err
+	}
+	switch next(7) {
+	case 0, 1:
+		r, err := open()
+		if err != nil {
+			return fmt.Errorf("open: %w", err)
+		}
+		var batch []tenant.ReceivedFile
+		for k := range next(5) + 1 {
+			batch = append(batch, fixtureFile(r, study, study*1000+next(20)+k))
+		}
+		for range next(2) + 1 {
+			err := retry(func() error { _, err := p.AddReceivedFiles(ctx, batch, fixtureAt(i)); return err })
+			if err != nil && !strings.Contains(err.Error(), "no longer receiving") {
+				return fmt.Errorf("received: %w", err)
+			}
+		}
+	case 2:
+		r, err := open()
+		if err != nil {
+			return fmt.Errorf("open: %w", err)
+		}
+		id := fixtureID("q")
+		if next(3) == 0 && len(*qids) > 0 {
+			id = (*qids)[next(len(*qids))]
+		}
+		q := tenant.QuarantinedFile{ID: id, Reason: tenant.QuarantineNotDICOM, Receiver: recv, ReceptionID: r.ID,
+			Size: int64(next(1000)), SHA256: fixtureSum(next(1000)), Incoming: "quarantine/" + id, ContentKept: true, Quarantined: fixtureAt(i)}
+		if err := retry(func() error { _, err := p.HoldFiles(ctx, []tenant.QuarantinedFile{q}); return err }); err != nil {
+			return fmt.Errorf("hold: %w", err)
+		}
+		*qids = append(*qids, id)
+	case 3:
+		if len(*qids) > 0 {
+			id := (*qids)[next(len(*qids))]
+			_ = retry(func() error {
+				_, err := p.ReleaseQuarantined(ctx, id, tenant.ReleaseAsIs, "", fixtureID("rc"), fixtureAt(i), fixtureAudit(), nil)
+				return err
+			})
+		}
+	case 4:
+		if len(*qids) > 0 {
+			id := (*qids)[next(len(*qids))]
+			_ = retry(func() error {
+				_, err := p.RejectQuarantined(ctx, id, "no", fixtureAt(i), fixtureAudit(), nil)
+				return err
+			})
+		}
+	case 5:
+		rs, _, err := p.ListReceptions(ctx, tenant.ReceptionFilter{InProgress: true}, master.Page{Limit: 5})
+		if err != nil {
+			return err
+		}
+		for _, r := range rs {
+			switch {
+			case r.State == reception.Receiving && next(2) == 0:
+				_ = retry(func() error {
+					_, err := p.StepReception(ctx, tenant.ReceptionStep{ID: r.ID, From: r.State, Event: reception.Quiet, At: fixtureAt(i + 100)}, nil)
+					return err
+				})
+			case r.State == reception.Complete:
+				_ = retry(func() error {
+					_, err := p.StepReception(ctx, tenant.ReceptionStep{ID: r.ID, From: r.State, Event: reception.Identify,
+						At: fixtureAt(i + 100), SubjectLabel: "sub-01", SessionLabel: "ses-" + r.StudyUID, Storage: "store"}, nil)
+					return err
+				})
+			}
+		}
+	case 6:
+		if err := retry(func() error { return claimAndCommit(ctx, p, next) }); err != nil {
+			return err
+		}
 	}
 	return nil
 }

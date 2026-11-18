@@ -48,6 +48,8 @@ func RunEvents(t *testing.T, open OpenEvents) {
 		{"StatusSnapshot", testStatusSnapshot},
 		{"EventBounds", testEventBounds},
 		{"LateCommit", func(e *eenv) { testLateCommit(e, e.ev) }},
+		{"PruneFollowsFeedOrder", testPruneFollowsFeedOrder},
+		{"SnapshotDividesTheFeed", testSnapshotDividesTheFeed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,7 +119,7 @@ func (e *eenv) now() string {
 func (e *eenv) health(receiver string, s int) tenant.EventRecord {
 	e.Helper()
 	ev, err := tenant.NewEvent(&tenant.ReceiverHealthChanged{Receiver: receiver, State: tenant.ReceiverDown,
-		DownReason: "address_in_use", Detail: "the port is taken", Since: at(s)}, at(s))
+		DownReason: "address_in_use", Detail: "the port is taken by another program", Since: at(s)}, at(s))
 	e.ok("NewEvent", err)
 	return ev
 }
@@ -135,11 +137,17 @@ func (e *eenv) space(storage string, s int) tenant.EventRecord {
 // appendAll appends events with fresh keys, failing the test on an error.
 func (e *eenv) appendAll(events ...tenant.EventRecord) {
 	e.Helper()
+	e.appendTo(e.ev, events...)
+}
+
+// appendTo appends events to store s with fresh keys.
+func (e *eenv) appendTo(s EventStore, events ...tenant.EventRecord) {
+	e.Helper()
 	batch := make([]tenant.EventAppend, len(events))
 	for i, ev := range events {
 		batch[i] = tenant.EventAppend{Key: e.id("ev"), Event: ev}
 	}
-	n, err := e.ev.AppendEvents(e.ctx, batch)
+	n, err := s.AppendEvents(e.ctx, batch)
 	e.ok("AppendEvents", err)
 	if n != len(events) {
 		e.Fatalf("AppendEvents wrote %d of %d new events", n, len(events))
@@ -168,8 +176,8 @@ func (e *eenv) stepOf(ev tenant.Event) *tenant.ReceptionStepReached {
 
 // testEventsWithTheirChanges guards that each change of the pipeline that
 // the feed reports writes its event, with what the contract's message
-// holds: an open (receiving), a step through the step's hook, a step
-// without it (no event), held files with the totals after each, a
+// holds: an open (receiving), each step with the step it left, whether the
+// caller gives a hook or not, held files with the totals after each, a
 // rejection and a release with the totals after them, a release that opens
 // a reception, a failure and its retry, and a unit of work that gives up.
 func testEventsWithTheirChanges(e *eenv) {
@@ -179,14 +187,14 @@ func testEventsWithTheirChanges(e *eenv) {
 	_, err := e.p.AddReceivedFiles(e.ctx, []tenant.ReceivedFile{file(r, 1, 1), file(r, 1, 2)}, at(11))
 	e.ok("AddReceivedFiles", err)
 	r, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Receiving, Event: reception.Quiet, At: at(70)},
-		tenant.StepEventHook())
-	e.ok("StepReception with the event hook", err)
+		func(context.Context, tenant.Reception, tenant.Reception) error { return nil })
+	e.ok("StepReception with a hook", err)
 	r, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Complete, Event: reception.Identify, At: at(80),
-		SubjectLabel: "sub-01", SessionLabel: "ses-01", Storage: "store"}, tenant.StepHooks(nil, tenant.StepEventHook()))
-	e.ok("StepReception identify", err)
+		SubjectLabel: "sub-01", SessionLabel: "ses-01", Storage: "store"}, nil)
+	e.ok("StepReception identify, without a hook", err)
 	_, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Identified, Event: reception.Fail, At: at(90),
 		Failure: "storage unreachable"}, nil)
-	e.ok("StepReception without a hook", err)
+	e.ok("StepReception fail", err)
 
 	q1, q2 := e.heldFile("a", 100, 100), e.heldFile("a", 200, 101)
 	q2.ReceptionID = r.ID
@@ -220,7 +228,7 @@ func testEventsWithTheirChanges(e *eenv) {
 
 	got, end := e.readAll(start, 3)
 	want := []tenant.EventType{
-		tenant.EventReceptionStep, tenant.EventReceptionStep, tenant.EventReceptionStep, // open, quiet, identify
+		tenant.EventReceptionStep, tenant.EventReceptionStep, tenant.EventReceptionStep, tenant.EventReceptionStep, // open, quiet, identify, fail
 		tenant.EventFileQuarantined, tenant.EventFileQuarantined, tenant.EventQuarantineDecided, // hold, hold, reject
 		tenant.EventFileQuarantined, tenant.EventReceptionStep, tenant.EventQuarantineDecided, // hold, release opens, release
 		tenant.EventReceptionStep, tenant.EventReceptionStep, // retry, gives up
@@ -231,10 +239,15 @@ func testEventsWithTheirChanges(e *eenv) {
 	if len(e.read(end, 10).Events) != 0 {
 		e.Error("a read after the last cursor answered events")
 	}
-	open, quiet, ident := e.stepOf(got[0]), e.stepOf(got[1]), e.stepOf(got[2])
+	open, quiet, ident, fail := e.stepOf(got[0]), e.stepOf(got[1]), e.stepOf(got[2]), e.stepOf(got[3])
 	if open.Reception != r.ID || open.Receiver != "a" || open.Arrival != 1 || open.Step != reception.Receiving ||
-		open.Counts != (tenant.EventCounts{}) || !got[0].Time.Equal(at(10)) {
+		open.PreviousStep != "" || open.Counts != (tenant.EventCounts{}) || !got[0].Time.Equal(at(10)) {
 		e.Errorf("the open's event = %+v at %v", open, got[0].Time)
+	}
+	if quiet.PreviousStep != reception.Receiving || ident.PreviousStep != reception.Complete || fail.PreviousStep != reception.Identified ||
+		fail.Step != reception.Failed || !got[3].Time.Equal(at(90)) {
+		e.Errorf("the steps left are %q, %q and %q, and the last reached %s: want receiving, complete, identified, then failed",
+			quiet.PreviousStep, ident.PreviousStep, fail.PreviousStep, fail.Step)
 	}
 	if quiet.Step != reception.Complete || quiet.Counts.FilesReceived != 2 || quiet.Counts.BytesReceived != 2003 ||
 		quiet.SubjectLabel != "" || !got[1].Time.Equal(at(70)) {
@@ -243,52 +256,52 @@ func testEventsWithTheirChanges(e *eenv) {
 	if ident.Step != reception.Identified || ident.SubjectLabel != "sub-01" || ident.SessionLabel != "ses-01" {
 		e.Errorf("the identify step's event = %+v", ident)
 	}
-	for i, wantFiles := range map[int]int64{3: 1, 4: 2} {
+	for i, wantFiles := range map[int]int64{4: 1, 5: 2} {
 		p, ok := got[i].Payload.(*tenant.FileQuarantined)
 		if !ok || p.HeldFiles != wantFiles {
 			e.Errorf("held file event %d = %+v, want %d files held", i, got[i].Payload, wantFiles)
 		}
 	}
-	if p := got[4].Payload.(*tenant.FileQuarantined); p.File != q2.ID || p.Reception != r.ID || p.Receiver != "a" ||
-		p.Reason != tenant.QuarantineNotDICOM || p.SizeBytes != 200 || p.HeldBytes != 300 || !got[4].Time.Equal(at(101)) {
-		e.Errorf("the second held file's event = %+v at %v", p, got[4].Time)
+	if p := got[5].Payload.(*tenant.FileQuarantined); p.File != q2.ID || p.Reception != r.ID || p.Receiver != "a" ||
+		p.Reason != tenant.QuarantineNotDICOM || p.SizeBytes != 200 || p.HeldBytes != 300 || !got[5].Time.Equal(at(101)) {
+		e.Errorf("the second held file's event = %+v at %v", p, got[5].Time)
 	}
-	if p := got[5].Payload.(*tenant.QuarantineDecided); p.File != q1.ID || p.State != tenant.QuarantineRejected ||
-		p.ReleaseMode != "" || p.HeldFiles != 1 || p.HeldBytes != 200 || !got[5].Time.Equal(at(110)) {
-		e.Errorf("the rejection's event = %+v at %v, want 1 file of 200 bytes held after it", p, got[5].Time)
+	if p := got[6].Payload.(*tenant.QuarantineDecided); p.File != q1.ID || p.State != tenant.QuarantineRejected ||
+		p.ReleaseMode != "" || p.HeldFiles != 1 || p.HeldBytes != 200 || !got[6].Time.Equal(at(110)) {
+		e.Errorf("the rejection's event = %+v at %v, want 1 file of 200 bytes held after it", p, got[6].Time)
 	}
-	if p := e.stepOf(got[7]); p.Reception != released.ReleaseReception || p.Step != reception.Receiving {
+	if p := e.stepOf(got[8]); p.Reception != released.ReleaseReception || p.Step != reception.Receiving {
 		e.Errorf("the reception the release opened has event %+v, want %s receiving", p, released.ReleaseReception)
 	}
-	if p := got[8].Payload.(*tenant.QuarantineDecided); p.File != d.ID || p.State != tenant.QuarantineReleased ||
+	if p := got[9].Payload.(*tenant.QuarantineDecided); p.File != d.ID || p.State != tenant.QuarantineReleased ||
 		p.ReleaseMode != tenant.ReleaseAsIs || p.ReleaseReception != released.ReleaseReception || p.HeldFiles != 1 || p.HeldBytes != 200 {
 		e.Errorf("the release's event = %+v", p)
 	}
 	// Arrival 3: the release opened the study's second.
-	if p := e.stepOf(got[9]); p.Reception != retry.ID || p.RetryOf != failed.ID || p.Step != reception.Complete ||
-		p.Arrival != 3 || p.Counts.FilesReceived != 2 || !got[9].Time.Equal(at(130)) {
-		e.Errorf("the retry's event = %+v at %v", p, got[9].Time)
+	if p := e.stepOf(got[10]); p.Reception != retry.ID || p.RetryOf != failed.ID || p.Step != reception.Complete ||
+		p.PreviousStep != "" || p.Arrival != 3 || p.Counts.FilesReceived != 2 || !got[10].Time.Equal(at(130)) {
+		e.Errorf("the retry's event = %+v at %v", p, got[10].Time)
 	}
-	if p := e.stepOf(got[10]); p.Reception != retry.ID || p.Step != reception.Failed || !got[10].Time.Equal(at(141)) {
-		e.Errorf("the event of the unit that gave up = %+v at %v", p, got[10].Time)
+	if p := e.stepOf(got[11]); p.Reception != retry.ID || p.Step != reception.Failed || p.PreviousStep != reception.Complete || !got[11].Time.Equal(at(141)) {
+		e.Errorf("the event of the unit that gave up = %+v at %v", p, got[11].Time)
 	}
 }
 
 // testStepEventBothOrNeither guards that a step and its event commit
-// together or not at all: a hook that fails after the event hook undoes
-// both, and a step refused writes no event.
+// together or not at all: a hook that fails, run after the store wrote the
+// event, undoes both, and a step refused writes no event.
 func testStepEventBothOrNeither(e *eenv) {
 	e.addReceiver("a", "store", 11112)
 	r := e.openReception("a", 1, at(10))
 	start := e.now()
 	refuse := errors.New("refused after the event was written")
 	_, err := e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Receiving, Event: reception.Quiet, At: at(70)},
-		tenant.StepHooks(tenant.StepEventHook(), func(context.Context, tenant.Reception, tenant.Reception) error { return refuse }))
+		func(context.Context, tenant.Reception, tenant.Reception) error { return refuse })
 	if !errors.Is(err, refuse) {
-		e.Errorf("a step whose second hook fails = %v, want that hook's error", err)
+		e.Errorf("a step whose hook fails = %v, want that hook's error", err)
 	}
 	_, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Complete, Event: reception.Identify, At: at(70),
-		SubjectLabel: "sub-01", SessionLabel: "ses-01", Storage: "store"}, tenant.StepEventHook())
+		SubjectLabel: "sub-01", SessionLabel: "ses-01", Storage: "store"}, nil)
 	e.wantIs("a step from a state the reception is not in", err, tenant.ErrStateChanged, fault.Conflict)
 	if got, _, _ := e.p.Reception(e.ctx, r.ID); got.State != reception.Receiving {
 		e.Errorf("the step whose hook failed left the reception %s", got.State)
@@ -296,8 +309,7 @@ func testStepEventBothOrNeither(e *eenv) {
 	if events, _ := e.readAll(start, 10); len(events) != 0 {
 		e.Errorf("a step undone or refused left events %v", types(events))
 	}
-	_, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Receiving, Event: reception.Quiet, At: at(71)},
-		tenant.StepEventHook())
+	_, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Receiving, Event: reception.Quiet, At: at(71)}, nil)
 	e.ok("StepReception", err)
 	if events, _ := e.readAll(start, 10); len(events) != 1 || e.stepOf(events[0]).Step != reception.Complete {
 		e.Errorf("the step taken wrote %v, want one complete event", types(events))
@@ -312,7 +324,7 @@ func testEventPayloadsHoldNoUID(e *eenv) {
 	start := e.now()
 	r, _ := e.identified("a", 1, 1, 2)
 	_, err := e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: r.State, Event: reception.Fail, At: at(200),
-		Failure: "storage unreachable"}, tenant.StepEventHook())
+		Failure: "storage unreachable"}, nil)
 	e.ok("StepReception", err)
 	q := e.differentFile("a", r.ID, 1)
 	_, err = e.p.HoldFiles(e.ctx, []tenant.QuarantinedFile{q})
@@ -400,10 +412,11 @@ func testEventFilterAdvances(e *eenv) {
 	}
 }
 
-// testEventAppendOnce guards AppendEvents: a key written again writes
-// nothing, within a batch and across batches; a pipeline type, an event not
-// made by NewEvent, a bad key and a batch over the bound are Invalid and
-// write nothing.
+// testEventAppendOnce guards AppendEvents: a key written again with the
+// same event writes nothing, within a batch and across batches; a key held
+// with another event, across batches or within one, is a Conflict naming
+// it; a pipeline type, an event not made by NewEvent, a bad key and a batch
+// over the bound are Invalid; none of these writes anything.
 func testEventAppendOnce(e *eenv) {
 	start := e.now()
 	h := e.health("a", 1)
@@ -417,6 +430,14 @@ func testEventAppendOnce(e *eenv) {
 	if n != 1 {
 		e.Errorf("a batch written again wrote %d, want 1", n)
 	}
+	other := e.health("b", 1)
+	_, err = e.ev.AppendEvents(e.ctx, []tenant.EventAppend{{Key: "k1", Event: other}})
+	e.wantIs("AppendEvents of another event under a key held", err, tenant.ErrEventKeyReused, fault.Conflict)
+	if err != nil && !strings.Contains(fault.Message(err), "k1") {
+		e.Errorf("the refusal of a key held does not name it: %q", fault.Message(err))
+	}
+	_, err = e.ev.AppendEvents(e.ctx, []tenant.EventAppend{{Key: "k9", Event: h}, {Key: "k9", Event: other}})
+	e.wantIs("AppendEvents of two events under one key in one batch", err, tenant.ErrEventKeyReused, fault.Conflict)
 	step, err := tenant.NewEvent(&tenant.ReceptionStepReached{Reception: "rc1", Receiver: "a", Arrival: 1, Step: reception.Done}, at(1))
 	e.ok("NewEvent", err)
 	_, err = e.ev.AppendEvents(e.ctx, []tenant.EventAppend{{Key: "k4", Event: h}, {Key: "k5", Event: step}})
@@ -456,9 +477,9 @@ func testEventCursors(e *eenv) {
 	oc, err := other.EventCursor(e.ctx)
 	e.ok("EventCursor of another tenant", err)
 	_, err = e.ev.ReadEvents(e.ctx, oc, nil, 10)
-	e.wantKind("ReadEvents with another tenant's cursor", err, fault.Invalid)
+	e.wantIs("ReadEvents with another tenant's cursor", err, tenant.ErrForeignCursor, fault.Invalid)
 	_, err = other.ReadEvents(e.ctx, now, nil, 10)
-	e.wantKind("ReadEvents of another tenant with this one's cursor", err, fault.Invalid)
+	e.wantIs("ReadEvents of another tenant with this one's cursor", err, tenant.ErrForeignCursor, fault.Invalid)
 	e.addReceiver("a", "store", 11112)
 	e.openReception("a", 1, at(1))
 	e.openReception("a", 2, at(2))
@@ -466,10 +487,29 @@ func testEventCursors(e *eenv) {
 	e.ok("ListReceptions", err)
 	_, err = e.ev.ReadEvents(e.ctx, list, nil, 10)
 	e.wantKind("ReadEvents with a list's cursor", err, fault.Invalid)
+	if errors.Is(err, tenant.ErrForeignCursor) {
+		e.Error("a list's cursor is answered as another tenant's feed's")
+	}
 	for _, bad := range []string{now[:len(now)-2], now + "A", "not a cursor", strings.Repeat("A", 2000)} {
 		_, err = e.ev.ReadEvents(e.ctx, bad, nil, 10)
 		e.wantKind("ReadEvents with an altered cursor", err, fault.Invalid)
+		if errors.Is(err, tenant.ErrForeignCursor) {
+			e.Error("an altered cursor is answered as another tenant's feed's")
+		}
 	}
+	// A cursor after the newest event the feed holds, as a database
+	// restored from an older backup meets: another database of the same
+	// tenant with more events makes one.
+	restored := e.openEv(e.T, SuiteTenant)
+	var batch []tenant.EventRecord
+	for i := range 10 {
+		batch = append(batch, e.health("a", 100+i))
+	}
+	e.appendTo(restored, batch...)
+	ahead, err := restored.EventCursor(e.ctx)
+	e.ok("EventCursor", err)
+	_, err = e.ev.ReadEvents(e.ctx, ahead, nil, 10)
+	e.wantIs("ReadEvents with a cursor after the newest event", err, tenant.ErrCursorExpired, fault.Invalid)
 }
 
 // testEventsExpire guards pruning: it removes the oldest events in bounded
@@ -606,7 +646,7 @@ func testStatusSnapshot(e *eenv) {
 	_, err = e.p.DiscardReception(e.ctx, failed.ID, "gone", at(6), e.audit(), nil)
 	e.ok("DiscardReception", err)
 	_, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r1.ID, From: reception.Receiving, Event: reception.Quiet, At: at(70)},
-		tenant.StepEventHook())
+		nil)
 	e.ok("StepReception", err)
 	after := e.read(s.EventCursor, 100)
 	if len(after.Events) != 1 || e.stepOf(after.Events[0]).Reception != r1.ID {
@@ -686,7 +726,7 @@ func testLateCommit(e *eenv, other EventStore) {
 	aDone := make(chan error, 1)
 	go func() {
 		_, err := e.ev.StepReception(ctx, tenant.ReceptionStep{ID: ra.ID, From: reception.Receiving, Event: reception.Quiet, At: at(70)},
-			tenant.StepHooks(tenant.StepEventHook(), hold))
+			hold)
 		aDone <- err
 	}()
 	select {
@@ -697,7 +737,7 @@ func testLateCommit(e *eenv, other EventStore) {
 	bDone := make(chan error, 1)
 	go func() {
 		_, err := other.StepReception(ctx, tenant.ReceptionStep{ID: rb.ID, From: reception.Receiving, Event: reception.Quiet, At: at(71)},
-			tenant.StepEventHook())
+			nil)
 		bDone <- err
 	}()
 	// B commits now on a database with several writers; on one with a
@@ -723,5 +763,124 @@ func testLateCommit(e *eenv, other EventStore) {
 	if got[ra.ID] != 1 || got[rb.ID] != 1 || len(got) != 2 {
 		e.Errorf("a reader between the transactions read %d events and then %d; by reception %v, want each of A and B once (B committed first: %v)",
 			len(mid.Events), len(rest), got, bFirst)
+	}
+}
+
+// testPruneFollowsFeedOrder guards that retention follows the feed's order,
+// not each event's own time: one event dated far ahead, first in the feed,
+// does not keep the old events after it; it goes with them, and the mark
+// moves past both, so a reader before it is told its cursor expired.
+func testPruneFollowsFeedOrder(e *eenv) {
+	start := e.now()
+	far, err := tenant.NewEvent(&tenant.StorageSpaceChanged{Storage: "store", State: tenant.StorageRecovered}, time.Date(9000, 1, 1, 0, 0, 0, 0, time.UTC))
+	e.ok("NewEvent", err)
+	batch := []tenant.EventRecord{far}
+	for i := range 700 {
+		batch = append(batch, e.space("store", i))
+	}
+	batch = append(batch, e.space("store", 5000))
+	e.appendAll(batch...)
+	n, more, err := e.ev.PruneEvents(e.ctx, at(1000), tenant.MaxPruneBatch)
+	e.ok("PruneEvents", err)
+	if n != 701 || more {
+		e.Errorf("a pruning behind one event dated far ahead removed %d (more %v), want 701: it and the 700 old ones", n, more)
+	}
+	if kept, _ := e.readAll("", 100); len(kept) != 1 || !kept[0].Time.Equal(at(5000)) {
+		e.Errorf("after the pruning %d events are kept, want the one newer than the bound", len(kept))
+	}
+	_, err = e.ev.ReadEvents(e.ctx, start, nil, 10)
+	e.wantIs("ReadEvents from before the pruned events", err, tenant.ErrCursorExpired, fault.Invalid)
+	n, _, err = e.ev.PruneEvents(e.ctx, at(1000), 10)
+	e.ok("PruneEvents again", err)
+	if n != 0 {
+		e.Errorf("a second pruning removed %d, want none", n)
+	}
+}
+
+// testSnapshotDividesTheFeed guards the status snapshot's promise under
+// writers working at once: the events after a snapshot's cursor, replayed
+// onto its counts, give the counts of a snapshot taken once the writers
+// stopped. Each step's event names the step left and the step reached,
+// and each quarantine event the totals after it, so both the receptions in
+// progress by step and the quarantine's totals can be replayed. A store
+// whose cursor and counts come from two moments fails it.
+func testSnapshotDividesTheFeed(e *eenv) {
+	e.addReceiver("a", "store", 11112)
+	ctx, cancel := context.WithCancel(e.ctx)
+	defer cancel()
+	done := make(chan error, 4)
+	for w := range 4 {
+		go func() {
+			for i := range 15 {
+				if ctx.Err() != nil {
+					break
+				}
+				r, _, err := e.p.OpenReception(ctx, "a", uidOf(1, 1000*w+i), e.id("rc"), at(i))
+				if err != nil {
+					done <- err
+					return
+				}
+				if i%2 == 0 {
+					if _, err := e.p.StepReception(ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Receiving, Event: reception.Quiet, At: at(i + 60)}, nil); err != nil {
+						done <- err
+						return
+					}
+				}
+				q := e.heldFile("a", int64(10+i), i)
+				if _, err := e.p.HoldFiles(ctx, []tenant.QuarantinedFile{q}); err != nil {
+					done <- err
+					return
+				}
+				if i%3 == 0 {
+					if _, err := e.p.RejectQuarantined(ctx, q.ID, "no", at(i+1), e.audit(), nil); err != nil {
+						done <- err
+						return
+					}
+				}
+			}
+			done <- nil
+		}()
+	}
+	var snaps []tenant.StatusSnapshot
+	for range 10 {
+		s, err := e.ev.StatusSnapshot(e.ctx)
+		e.ok("StatusSnapshot", err)
+		snaps = append(snaps, s)
+	}
+	for range 4 {
+		e.ok("a writer", <-done)
+	}
+	final, err := e.ev.StatusSnapshot(e.ctx)
+	e.ok("StatusSnapshot", err)
+	for k, s := range snaps {
+		steps := map[reception.State]int64{}
+		for _, c := range s.InProgress {
+			steps[c.Step] = c.Receptions
+		}
+		files, bytes := s.QuarantinedFiles, s.QuarantinedBytes
+		events, _ := e.readAll(s.EventCursor, 100)
+		for _, ev := range events {
+			switch p := ev.Payload.(type) {
+			case *tenant.ReceptionStepReached:
+				if p.PreviousStep != "" {
+					steps[p.PreviousStep]--
+				}
+				steps[p.Step]++
+			case *tenant.FileQuarantined:
+				files, bytes = p.HeldFiles, p.HeldBytes
+			case *tenant.QuarantineDecided:
+				files, bytes = p.HeldFiles, p.HeldBytes
+			}
+		}
+		var replayed []tenant.StepCount
+		for _, st := range reception.States() {
+			if n := steps[st]; n != 0 && !st.Ended() {
+				replayed = append(replayed, tenant.StepCount{Step: st, Receptions: n})
+			}
+		}
+		if fmt.Sprint(replayed) != fmt.Sprint(final.InProgress) || files != final.QuarantinedFiles || bytes != final.QuarantinedBytes {
+			e.Errorf("snapshot %d replayed with the %d events after its cursor gives steps %v and %d files of %d bytes held; the final snapshot has %v and %d of %d",
+				k, len(events), replayed, files, bytes, final.InProgress, final.QuarantinedFiles, final.QuarantinedBytes)
+		}
 	}
 }

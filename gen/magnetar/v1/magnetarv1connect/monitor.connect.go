@@ -89,12 +89,19 @@ type MonitorServiceClient interface {
 	//
 	// With every tenant, the events of each tenant come in that tenant's
 	// commit order, with no order between tenants. Each event's cursor is its
-	// tenant's, and each keep-alive carries every tenant's cursor in
-	// tenant_cursors, which a new stream takes to resume tenant by tenant. A
-	// tenant whose database stops answering is skipped while the stream goes
-	// on, and its events follow from where they stopped when it answers
-	// again; a tenant created while the stream is open joins it from its
-	// first event, and a tenant removed leaves it.
+	// tenant's, and each keep-alive carries the cursor of every tenant the
+	// stream follows in tenant_cursors, which a new stream takes, with resume
+	// set, to resume tenant by tenant. A tenant whose database stops
+	// answering, or does not answer a read within 5 seconds, is skipped while
+	// the stream goes on and named in each keep-alive's unanswered_tenants;
+	// it is tried again after a wait that doubles from one second to a
+	// minute, and its events follow from where they stopped. A tenant created
+	// while the stream is open joins it from its first event. A tenant that
+	// leaves the list of tenants is paused, its cursor kept, and goes on from
+	// it if it is listed again; a tenant removed and created again under the
+	// same name is another tenant, followed from its first event. One stream
+	// follows at most 10000 tenants: an installation with more is answered
+	// resource exhausted.
 	//
 	// The caller's key and grant are checked again at least every 15 seconds
 	// while the stream is open: a key revoked or expired, or a grant removed,
@@ -112,12 +119,15 @@ type MonitorServiceClient interface {
 	// for, cursor with every tenant or tenant_cursors with one tenant), not
 	// found (a tenant that does not exist, for a caller who may list every
 	// tenant), cursor expired (a cursor points before the oldest event its
-	// tenant keeps; the message names the tenant; the client reads that
-	// tenant's status again and watches from its event_cursor), unavailable
+	// tenant keeps, or after the newest event it holds, as after its database
+	// was restored from an older backup; the message names the tenant; the
+	// client reads that tenant's status again and watches from its
+	// event_cursor), unavailable
 	// (with one tenant, its database does not answer or it is not ready, when
 	// the stream opens or while it is open; the client resumes later from its
 	// last cursor), resource exhausted (the caller, a key or the local
-	// operator, already holds 16 open streams, or the server holds 1024).
+	// operator, already holds 16 open streams, or the server holds 1024; or,
+	// with every tenant, the installation has more than 10000 tenants).
 	// Limits: no deadline is applied to the stream when the client sends
 	// none; the 30-second default of other calls does not hold here.
 	Watch(context.Context, *v1.WatchRequest) (MonitorServiceWatchClientStream, error)
@@ -186,12 +196,19 @@ type MonitorServiceHandler interface {
 	//
 	// With every tenant, the events of each tenant come in that tenant's
 	// commit order, with no order between tenants. Each event's cursor is its
-	// tenant's, and each keep-alive carries every tenant's cursor in
-	// tenant_cursors, which a new stream takes to resume tenant by tenant. A
-	// tenant whose database stops answering is skipped while the stream goes
-	// on, and its events follow from where they stopped when it answers
-	// again; a tenant created while the stream is open joins it from its
-	// first event, and a tenant removed leaves it.
+	// tenant's, and each keep-alive carries the cursor of every tenant the
+	// stream follows in tenant_cursors, which a new stream takes, with resume
+	// set, to resume tenant by tenant. A tenant whose database stops
+	// answering, or does not answer a read within 5 seconds, is skipped while
+	// the stream goes on and named in each keep-alive's unanswered_tenants;
+	// it is tried again after a wait that doubles from one second to a
+	// minute, and its events follow from where they stopped. A tenant created
+	// while the stream is open joins it from its first event. A tenant that
+	// leaves the list of tenants is paused, its cursor kept, and goes on from
+	// it if it is listed again; a tenant removed and created again under the
+	// same name is another tenant, followed from its first event. One stream
+	// follows at most 10000 tenants: an installation with more is answered
+	// resource exhausted.
 	//
 	// The caller's key and grant are checked again at least every 15 seconds
 	// while the stream is open: a key revoked or expired, or a grant removed,
@@ -209,12 +226,15 @@ type MonitorServiceHandler interface {
 	// for, cursor with every tenant or tenant_cursors with one tenant), not
 	// found (a tenant that does not exist, for a caller who may list every
 	// tenant), cursor expired (a cursor points before the oldest event its
-	// tenant keeps; the message names the tenant; the client reads that
-	// tenant's status again and watches from its event_cursor), unavailable
+	// tenant keeps, or after the newest event it holds, as after its database
+	// was restored from an older backup; the message names the tenant; the
+	// client reads that tenant's status again and watches from its
+	// event_cursor), unavailable
 	// (with one tenant, its database does not answer or it is not ready, when
 	// the stream opens or while it is open; the client resumes later from its
 	// last cursor), resource exhausted (the caller, a key or the local
-	// operator, already holds 16 open streams, or the server holds 1024).
+	// operator, already holds 16 open streams, or the server holds 1024; or,
+	// with every tenant, the installation has more than 10000 tenants).
 	// Limits: no deadline is applied to the stream when the client sends
 	// none; the 30-second default of other calls does not hold here.
 	Watch(context.Context, *v1.WatchRequest, MonitorServiceWatchServerStream) error

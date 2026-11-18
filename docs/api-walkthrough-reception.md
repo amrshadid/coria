@@ -242,8 +242,18 @@ after that a keep-alive comes whenever 15 seconds pass without an event. The
 client stores the cursor of every message it receives. If the stream drops,
 it calls `Watch` again with the last cursor and loses nothing, as long as that
 cursor is younger than `events.retention`. An older cursor is answered
-`OUT_OF_RANGE`; the client then calls `GetStatus` again and watches from the
-new `eventCursor`.
+`OUT_OF_RANGE`, and so is a cursor after the newest event the tenant holds,
+as after its database was restored from an older backup; the client then
+calls `GetStatus` again and watches from the new `eventCursor`.
+
+A client that watches every tenant (the installation as scope) keeps the
+`tenantCursors` of the last keep-alive, which names every tenant the stream
+follows, and resumes with them and `"resume": true`: a tenant they name goes
+on from its cursor, and a tenant they do not name is one the client has not
+seen yet (created after that keep-alive) and starts from its first event, so
+nothing is lost between two streams. A keep-alive also names, in
+`unansweredTenants`, the tenants whose database is not answering; the stream
+goes on with the others and picks them up where they stopped.
 
 The stream has no deadline unless the client sets one. The server keeps no
 queue for the client: a client that reads slowly only falls behind.
@@ -256,9 +266,12 @@ event; the first event is the reception's:
 ```
 {"event": {"cursor": "c2", "type": "EVENT_TYPE_RECEPTION_STEP",
            "receptionStep": {"reception": "r-7f3a", "receiver": "scanner1",
-             "arrival": 1, "step": "RECEPTION_STEP_RECEIVING",
-             "counts": {"filesReceived": "1", "bytesReceived": "528642"}}}}
+             "arrival": 1, "step": "RECEPTION_STEP_RECEIVING", "counts": {}}}}
 ```
+
+It is written when the reception opens, before its first file is recorded,
+so its counts are all zero, and it has no `previousStep`: receiving is the
+reception's first step.
 
 The event carries the reception's id, never the Study Instance UID or another
 value the scanner sent. The client reads the reception to know which study
@@ -285,19 +298,21 @@ from `GetStatus` (the tenant's `throughput` and `receptionsInProgress`).
 
 Five minutes after the last file (the quiet period set in use 1), the
 reception moves through its steps, one event each, each with the totals so
-far:
+far and the step it left, so a client that keeps the receptions in progress
+by step from `GetStatus` moves one reception from `previousStep` to `step`
+on each event, whatever step a reception fails from:
 
 ```
 {"event": {"cursor": "c3", "receptionStep": {"reception": "r-7f3a", "arrival": 1,
-           "step": "RECEPTION_STEP_COMPLETE",
+           "step": "RECEPTION_STEP_COMPLETE", "previousStep": "RECEPTION_STEP_RECEIVING",
            "counts": {"filesReceived": "480", "bytesReceived": "253771776"}}}}
 {"event": {"cursor": "c4", "receptionStep": {"reception": "r-7f3a", "arrival": 1,
-           "step": "RECEPTION_STEP_IDENTIFIED",
+           "step": "RECEPTION_STEP_IDENTIFIED", "previousStep": "RECEPTION_STEP_COMPLETE",
            "subjectLabel": "sub-k2m7q4xwacb3ndfa", "sessionLabel": "ses-pzt2vz6yh4jr5wem", ...}}}
-{"event": {"cursor": "c5", "receptionStep": {..., "step": "RECEPTION_STEP_ARCHIVED",
+{"event": {"cursor": "c5", "receptionStep": {..., "step": "RECEPTION_STEP_ARCHIVED", "previousStep": "RECEPTION_STEP_IDENTIFIED",
            "counts": {"filesReceived": "480", "filesArchived": "480", ...}}}}
-{"event": {"cursor": "c6", "receptionStep": {..., "step": "RECEPTION_STEP_VERIFIED", ...}}}
-{"event": {"cursor": "c7", "receptionStep": {..., "step": "RECEPTION_STEP_DONE",
+{"event": {"cursor": "c6", "receptionStep": {..., "step": "RECEPTION_STEP_VERIFIED", "previousStep": "RECEPTION_STEP_ARCHIVED", ...}}}
+{"event": {"cursor": "c7", "receptionStep": {..., "step": "RECEPTION_STEP_DONE", "previousStep": "RECEPTION_STEP_VERIFIED",
            "counts": {"filesReceived": "480", "bytesReceived": "253771776",
                       "filesArchived": "480", "bytesArchived": "253771776"}}}}
 ```

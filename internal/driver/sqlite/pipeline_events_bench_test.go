@@ -12,40 +12,32 @@ import (
 )
 
 // BenchmarkReceptionStepEvent measures one step of a reception (receiving
-// to complete), one transaction each, from one caller, without an event and
-// with its event written by the step's hook in the same transaction; it
-// reports steps a second. The two differ by what writing the event costs a
-// synced commit.
+// to complete) with the event the store writes in its transaction, one
+// transaction each, from one caller; it reports steps a second. Compare
+// BenchmarkReceptionStep, the same step with a hook that does nothing:
+// both write the event now, so the cost of the event was measured against
+// the store before it wrote one (a synced commit of about 6 to 8 ms on a
+// laptop, which the event did not change measurably).
 func BenchmarkReceptionStepEvent(b *testing.B) {
-	for _, c := range []struct {
-		name string
-		hook tenant.StepHook
-	}{
-		{"without", nil},
-		{"with", tenant.StepEventHook()},
-	} {
-		b.Run(c.name, func(b *testing.B) {
-			s, _ := benchTenant(b)
-			ctx := context.Background()
-			ids := make([]string, b.N)
-			for i := range ids {
-				r, _, err := s.OpenReception(ctx, "dimse", fmt.Sprintf("2.25.1.%d", i+1), fmt.Sprintf("rc%d", i), benchTime)
-				if err != nil {
-					b.Fatal(err)
-				}
-				ids[i] = r.ID
-			}
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := range b.N {
-				if _, err := s.StepReception(ctx, tenant.ReceptionStep{ID: ids[i], From: reception.Receiving, Event: reception.Quiet,
-					At: benchTime.Add(time.Minute)}, c.hook); err != nil {
-					b.Fatal(err)
-				}
-			}
-			b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "steps/s")
-		})
+	s, _ := benchTenant(b)
+	ctx := context.Background()
+	ids := make([]string, b.N)
+	for i := range ids {
+		r, _, err := s.OpenReception(ctx, "dimse", fmt.Sprintf("2.25.1.%d", i+1), fmt.Sprintf("rc%d", i), benchTime)
+		if err != nil {
+			b.Fatal(err)
+		}
+		ids[i] = r.ID
 	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := range b.N {
+		if _, err := s.StepReception(ctx, tenant.ReceptionStep{ID: ids[i], From: reception.Receiving, Event: reception.Quiet,
+			At: benchTime.Add(time.Minute)}, nil); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "steps/s")
 }
 
 // The payloads of the rows the page benchmark writes straight through SQL,
@@ -54,7 +46,7 @@ func BenchmarkReceptionStepEvent(b *testing.B) {
 const (
 	benchQuarantinedPayload = `{"file":"q0123456789","reception":"rc0123456789","receiver":"dimse","reason":"not_dicom",` +
 		`"size_bytes":524288,"held_files":12,"held_bytes":6291456}`
-	benchHealthPayload = `{"receiver":"dimse","state":"down","down_reason":"address_in_use","detail":"the port is taken",` +
+	benchHealthPayload = `{"receiver":"dimse","state":"down","down_reason":"address_in_use","detail":"the port is taken by another program",` +
 		`"since":"2026-11-18T09:00:00Z"}`
 	benchEventPayload = `{"reception":"rc0123456789","receiver":"dimse","arrival":1,"step":"archived",` +
 		`"counts":{"files_received":3000,"bytes_received":1572864000,"files_archived":3000,"bytes_archived":1572864000,` +

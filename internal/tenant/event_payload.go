@@ -1,7 +1,6 @@
 package tenant
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/netip"
 	"slices"
@@ -131,11 +130,15 @@ func NewEvent(p EventPayload, at time.Time) (EventRecord, error) {
 	return EventRecord{typ: p.EventType(), at: at, payload: string(b)}, nil
 }
 
-// DecodeEvent reads a payload a store kept for an event of type t. A type
-// this version does not know answers nil and no error, so a reader skips it;
-// a payload that does not read back as valid is Internal, since only
-// NewEvent wrote it.
-func DecodeEvent(t EventType, payload string) (EventPayload, error) {
+// DecodeEvent reads a payload a store kept for an event of type t, ignoring
+// fields this version does not know, so a later version may add fields to a
+// type. It never fails: a type this version does not know answers nil and
+// true, and a payload of a known type that cannot be read back as valid (not
+// JSON, a value outside this version's lists, a field the type requires
+// missing) answers nil and false, which a store counts on the page
+// (EventPage.Unreadable). A reader skips both and takes their cursor, so one
+// row never stops a feed.
+func DecodeEvent(t EventType, payload string) (EventPayload, bool) {
 	var p EventPayload
 	switch t {
 	case EventAssociationFailed:
@@ -151,17 +154,12 @@ func DecodeEvent(t EventType, payload string) (EventPayload, error) {
 	case EventStorageSpace:
 		p = &StorageSpaceChanged{}
 	default:
-		return nil, nil
+		return nil, true
 	}
-	d := json.NewDecoder(bytes.NewReader([]byte(payload)))
-	d.DisallowUnknownFields()
-	if err := d.Decode(p); err != nil {
-		return nil, fault.Wrap(fault.Internal, err, "a stored event cannot be read")
+	if err := json.Unmarshal([]byte(payload), p); err != nil || p.validate() != nil {
+		return nil, false
 	}
-	if err := p.validate(); err != nil {
-		return nil, fault.Wrap(fault.Internal, err, "a stored event does not have the form it was written with")
-	}
-	return p, nil
+	return p, true
 }
 
 // ReceptionStepReached is a reception reaching a step, the contract's
@@ -175,6 +173,9 @@ type ReceptionStepReached struct {
 	Arrival int `json:"arrival"`
 	// Step is the step it reached.
 	Step reception.State `json:"step"`
+	// PreviousStep is the step it left; empty for a reception's first
+	// step (receiving, or complete for one made by RetryReception).
+	PreviousStep reception.State `json:"previous_step"`
 	// Counts are its totals when it reached the step.
 	Counts EventCounts `json:"counts"`
 	// SubjectLabel and SessionLabel are its labels, empty before it is
@@ -217,7 +218,7 @@ func (p *ReceptionStepReached) validate() error {
 	if p.Arrival < 1 {
 		return invalid("an arrival number is at least 1")
 	}
-	if !knownState(p.Step) {
+	if !knownState(p.Step) || (p.PreviousStep != "" && !knownState(p.PreviousStep)) {
 		return invalid("a step is one of " + statesText())
 	}
 	c := p.Counts
@@ -239,10 +240,11 @@ func (p *ReceptionStepReached) validate() error {
 }
 
 // ReceptionStepEvent returns the event of a reception as it is after a
-// step, at the step's time. Its study's UID is not in it.
-func ReceptionStepEvent(r Reception) (EventRecord, error) {
+// step from the state previous (empty for its first), at the step's time.
+// Its study's UID is not in it.
+func ReceptionStepEvent(previous reception.State, r Reception) (EventRecord, error) {
 	return NewEvent(&ReceptionStepReached{
-		Reception: r.ID, Receiver: r.Receiver, Arrival: r.Arrival, Step: r.State, Counts: EventCounts(r.Counts),
+		Reception: r.ID, Receiver: r.Receiver, Arrival: r.Arrival, Step: r.State, PreviousStep: previous, Counts: EventCounts(r.Counts),
 		SubjectLabel: r.SubjectLabel, SessionLabel: r.SessionLabel, RetryOf: r.RetryOf,
 	}, r.StepTime)
 }
@@ -453,12 +455,29 @@ const (
 // ReceiverDownReason in lowercase without its prefix.
 type ReceiverDownReason string
 
-// receiverDownReasons is the closed list of reasons.
-var receiverDownReasons = []ReceiverDownReason{"disabled", "address_in_use", "permission_denied", "address_not_available",
-	"tls", "nearly_full", "tenant_not_ready", "stopping", "other", "incoming_limit"}
+// healthPhrases are the reasons a receiver is down, the contract's
+// ReceiverDownReason values, each with the phrases its health's detail may
+// hold: the server's fixed set, so a detail is never an error's text, a
+// path or anything from outside. Empty is always allowed.
+var healthPhrases = map[ReceiverDownReason][]string{
+	"disabled":              {"disabled"},
+	"address_in_use":        {"the port is taken by another program"},
+	"permission_denied":     {"the port needs a privilege the server does not have"},
+	"address_not_available": {"the bind address is not an address of the server"},
+	"tls": {"certificate expired", "certificate not yet valid", "certificate and key do not match",
+		"certificate file cannot be read", "key file cannot be read"},
+	"nearly_full":      {"the incoming area is nearly full", "the storage is nearly full"},
+	"tenant_not_ready": {"the tenant's database does not answer", "the tenant is being upgraded"},
+	"stopping":         {"the server is stopping"},
+	"other":            {"the receiver could not start"},
+	"incoming_limit":   {"the tenant's incoming limit is reached"},
+}
 
-// MaxHealthDetail bounds a health's detail, the contract's 256 bytes.
-const MaxHealthDetail = 256
+// HealthPhrases returns the phrases a down receiver's health detail may
+// hold for reason, the server's fixed set; nil for a reason not known.
+func HealthPhrases(reason ReceiverDownReason) []string {
+	return slices.Clone(healthPhrases[reason])
+}
 
 // ReceiverHealthChanged is a receiver's state changing, the contract's
 // message of that name.
@@ -469,8 +488,8 @@ type ReceiverHealthChanged struct {
 	State ReceiverState `json:"state"`
 	// DownReason is why it is down; empty unless State is down.
 	DownReason ReceiverDownReason `json:"down_reason"`
-	// Detail is the server's phrase for the state, empty when up. It is
-	// one of the server's fixed phrases, never an error's text.
+	// Detail is the server's phrase for the state: empty, or for a down
+	// receiver one of HealthPhrases(DownReason).
 	Detail string `json:"detail"`
 	// Since is when it entered the state.
 	Since time.Time `json:"since"`
@@ -486,21 +505,19 @@ func (p *ReceiverHealthChanged) validate() error {
 	}
 	switch p.State {
 	case ReceiverStarting, ReceiverUp:
-		if p.DownReason != "" {
-			return invalid("a receiver that is not down has no down reason")
+		if p.DownReason != "" || p.Detail != "" {
+			return invalid("a receiver that is not down has no down reason and no detail")
 		}
 	case ReceiverDown:
-		if !slices.Contains(receiverDownReasons, p.DownReason) {
+		phrases, ok := healthPhrases[p.DownReason]
+		if !ok {
 			return invalid("a down receiver's reason is one of the contract's")
+		}
+		if p.Detail != "" && !slices.Contains(phrases, p.Detail) {
+			return invalid("a health's detail is one of the server's phrases for its reason")
 		}
 	default:
 		return invalid("a receiver's state is starting, up or down")
-	}
-	if p.State == ReceiverUp && p.Detail != "" {
-		return invalid("an up receiver's health has no detail")
-	}
-	if err := validateText("health detail", p.Detail, 0, MaxHealthDetail); err != nil {
-		return err
 	}
 	return master.ValidateTime("health time", p.Since)
 }
