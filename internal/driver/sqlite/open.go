@@ -21,10 +21,11 @@ import (
 // before it fails with SQLITE_BUSY: another magnetar starting and migrating,
 // a backup made with the sqlite3 tool, a checkpoint of the write-ahead log.
 // Inside the process writers never meet it, since they queue for the one
-// write connection. modernc.org/sqlite returns SQLITE_BUSY once this passes,
-// where the cgo driver waited longer, and Gitea raised its timeout to 20
-// seconds after switching to it (github.com/go-gitea/gitea pull request
-// 37562), so it is set well above a moment.
+// write connection. SQLite waits up to this long for the lock and then
+// returns SQLITE_BUSY (sqlite.org/pragma.html#pragma_busy_timeout); in
+// write-ahead mode a checkpoint or another writer holds it only briefly
+// (sqlite.org/wal.html). So it is set well above a moment, long enough that
+// a lock held by a short job is waited for rather than failed on.
 const busyTimeout = 10 * time.Second
 
 // readConnections is the size of the read pool. The master is small and its

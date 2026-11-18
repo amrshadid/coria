@@ -94,9 +94,9 @@
 //
 // Known and accepted in this version: a flood of requests with bad keys is
 // answered and audited at about 16,000 refusals a second, and makes the
-// master's audit log grow by about 6 MB a second (both measured against the
-// server of pull request #25), until the audit writer's bounded queue drops
-// entries, which it counts. A limit per remote address is later work.
+// master's audit log grow by about 6 MB a second, until the audit writer's
+// bounded queue drops entries, which it counts. Both numbers were measured on
+// one development laptop and are an order of magnitude, not a promise. A limit per remote address is later work.
 //
 // # One server per data directory
 //

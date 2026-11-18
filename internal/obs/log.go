@@ -16,7 +16,8 @@ type Format string
 // The formats NewLogger writes.
 const (
 	// JSON writes one JSON object per line, for a log collector. It is the
-	// default.
+	// default because a server's log is collected and searched by programs;
+	// the text form is for a person reading at a terminal.
 	JSON Format = "json"
 	// Text writes key=value pairs, for a person reading a terminal.
 	Text Format = "text"

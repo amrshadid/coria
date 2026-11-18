@@ -119,11 +119,12 @@ func BenchmarkStoreParallel(b *testing.B) {
 	})
 }
 
-// TestThousandTenants guards the registry at 1,000 tenants, a number no
-// smaller test reaches: every one is ready after Start, at most MaxOpening
-// were opened at once, getting a store costs what it costs with 10, and
-// nothing is written to the master for tenants whose state did not change. It
-// reports the time to ready, the memory in use and the open files afterward.
+// TestThousandTenants guards the registry at 1,000 tenants, a size an
+// installation can reach: every one is ready after Start, at most MaxOpening
+// were opened at once, getting one tenant's store costs the same as with 10,
+// and nothing is written to the master for tenants whose state did not
+// change. It reports the time until every tenant is ready, the memory in use
+// and the open files at that size.
 //
 // It runs once per CI run, without the race detector, as its own step (make
 // test-scale): under the detector it measured the detector, not the
