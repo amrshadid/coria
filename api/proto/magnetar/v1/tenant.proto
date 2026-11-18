@@ -136,6 +136,12 @@ message Tenant {
 
   // When the tenant was created.
   google.protobuf.Timestamp create_time = 5;
+
+  // When the server's current view of the tenant's state, with its reason,
+  // began: the check that first found the tenant in this state. Absent when
+  // the server holds no view of the tenant yet (for a moment while it starts
+  // or creates the tenant), and then state is the master's record.
+  google.protobuf.Timestamp state_time = 6;
 }
 
 // CreateTenantRequest is the tenant to create.

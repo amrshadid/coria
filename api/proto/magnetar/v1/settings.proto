@@ -6,65 +6,71 @@ package magnetar.v1;
 
 import "magnetar/v1/scope.proto";
 
-// SettingsService reads and changes settings. The installation holds a default
-// for every setting; a tenant may override some of them. A setting is
-// resolved as the tenant's override when it has one, else the installation's
-// default. A setting never holds a secret.
+// SettingsService reads and changes settings. The server knows a fixed list
+// of settings, each with a built-in default; the installation may set its own
+// value of any of them, and a tenant may override those the setting allows. A
+// setting is resolved as the tenant's override when it has one, else the
+// installation's value when it has one, else the built-in default. A setting
+// never holds a secret.
 service SettingsService {
   // GetSetting answers the value of one setting as it applies to the scope
-  // asked for: on the installation, its default; on a tenant, the tenant's
-  // override when it has one, else the installation's default. The answer's
-  // scope says which of the two the value came from.
+  // asked for: on the installation, the installation's value, else the
+  // built-in default; on a tenant, the tenant's override when it has one,
+  // else what applies on the installation. The answer's scope and source say
+  // where the value came from.
   //
   // Role: reader on the scope asked for.
   // Audit: one entry in the log of the scope asked for, with the setting's
   // name as its object.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid,
-  // not found (no setting has that name; a tenant that does not exist, for a
-  // caller who may list every tenant), unavailable (the database of the
-  // scope does not answer, or the tenant is not ready).
+  // not found (no setting the server knows has that name; a tenant that does
+  // not exist, for a caller who may list every tenant), unavailable (the
+  // database of the scope does not answer, or the tenant is not ready).
   rpc GetSetting(GetSettingRequest) returns (GetSettingResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
-  // SetSetting sets the installation's default of a setting, or a tenant's
-  // override of it. The change and its audit entry are written together or
-  // not at all.
+  // SetSetting sets the installation's value of a setting, or a tenant's
+  // override of it when the setting allows one. The change and its audit
+  // entry are written together or not at all.
   //
   // Role: admin on the scope set.
   // Audit: one entry in the log of the scope set, with the setting's name as
   // its object; the value is not recorded.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
-  // (also a value the setting does not accept), not found (no setting has
-  // that name; a tenant that does not exist, for a caller who may list every
-  // tenant), unavailable (the database of the scope does not answer, or the
-  // tenant is not ready).
+  // (also a value the setting does not accept, and a tenant scope for a
+  // setting a tenant may not override), not found (no setting the server
+  // knows has that name; a tenant that does not exist, for a caller who may
+  // list every tenant), unavailable (the database of the scope does not
+  // answer, or the tenant is not ready).
   rpc SetSetting(SetSettingRequest) returns (SetSettingResponse) {
     option idempotency_level = IDEMPOTENT;
   }
 
-  // UnsetSetting removes a tenant's override of a setting, so the
-  // installation's default applies to the tenant again. Removing an override
-  // the tenant does not have changes nothing and succeeds. The installation's
-  // default cannot be removed: an installation scope is refused as invalid.
+  // UnsetSetting removes a value set on a scope: a tenant's override, so what
+  // applies on the installation applies to the tenant again, or the
+  // installation's value, so the built-in default applies again. Removing a
+  // value that is not set changes nothing and succeeds.
   //
   // Role: admin on the scope.
-  // Audit: one entry in the tenant's log, with the setting's name as its
+  // Audit: one entry in the log of the scope, with the setting's name as its
   // object.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
-  // does not exist, for a caller who may not list every tenant), invalid,
-  // not found (no setting has that name; a tenant that does not exist, for a
-  // caller who may list every tenant), unavailable (the tenant's database
-  // does not answer, or the tenant is not ready).
+  // does not exist, for a caller who may not list every tenant), invalid
+  // (also a tenant scope for a setting a tenant may not override), not found
+  // (no setting the server knows has that name; a tenant that does not
+  // exist, for a caller who may list every tenant), unavailable (the
+  // database of the scope does not answer, or the tenant is not ready).
   rpc UnsetSetting(UnsetSettingRequest) returns (UnsetSettingResponse) {
     option idempotency_level = IDEMPOTENT;
   }
 
-  // ListSettings answers the settings set on one scope, ordered by name: on
-  // the installation, every setting's default; on a tenant, only that
-  // tenant's overrides.
+  // ListSettings answers settings of one scope, ordered by name: on the
+  // installation, every setting the server knows with the value that applies
+  // there (the installation's, else the built-in default); on a tenant, only
+  // that tenant's overrides.
   //
   // Role: reader on the scope asked for.
   // Audit: one entry in the log of the scope asked for.
@@ -78,20 +84,41 @@ service SettingsService {
   }
 }
 
+// SettingSource is where the value of a setting comes from.
+enum SettingSource {
+  // Not said. A request leaves it so; the server never answers it.
+  SETTING_SOURCE_UNSPECIFIED = 0;
+
+  // The server's built-in default: neither the installation nor the tenant
+  // has set a value.
+  SETTING_SOURCE_BUILT_IN = 1;
+
+  // The installation's value.
+  SETTING_SOURCE_INSTALLATION = 2;
+
+  // The tenant's override.
+  SETTING_SOURCE_TENANT = 3;
+}
+
 // Setting is one named value, set on the installation or on a tenant.
 message Setting {
   // The setting's name, from the fixed list of settings the server knows:
   // 1 to 128 characters of lowercase ASCII letters, digits, ".", "_" and "-".
   string name = 1;
 
-  // Where the value is set: the installation's default, or a tenant's
-  // override.
+  // Where the value is set: the installation (its value or the built-in
+  // default), or a tenant's override.
   Scope scope = 2;
 
   // The value, in the text form the setting defines, such as "90d" for a
   // period; at most 64 KiB. The server refuses a value that form does not
   // accept.
   string value = 3;
+
+  // Where the value comes from: the built-in default, the installation's
+  // value or the tenant's override. Answered by the server; ignored in a
+  // request.
+  SettingSource source = 4;
 }
 
 // GetSettingRequest names a setting and the scope to resolve it on.
@@ -107,7 +134,7 @@ message GetSettingRequest {
 
 // GetSettingResponse is the setting's value on the scope asked for.
 message GetSettingResponse {
-  // The setting; its scope is where its value came from.
+  // The setting; its scope and source are where its value came from.
   Setting setting = 1;
 }
 
@@ -123,26 +150,28 @@ message SetSettingResponse {
   Setting setting = 1;
 }
 
-// UnsetSettingRequest names a tenant's override to remove.
+// UnsetSettingRequest names a value to remove.
 message UnsetSettingRequest {
   // The setting's name. Required; 1 to 128 characters of lowercase ASCII
   // letters, digits, ".", "_" and "-".
   string name = 1;
 
-  // The tenant whose override is removed. Required; must be a tenant.
+  // The scope whose value is removed: a tenant's override, or the
+  // installation's value. Required.
   Scope scope = 2;
 }
 
-// UnsetSettingResponse is the setting as it now applies to the tenant.
+// UnsetSettingResponse is the setting as it now applies to the scope.
 message UnsetSettingResponse {
-  // The installation's default, which applies to the tenant again.
+  // What applies on the scope again: for a tenant, the installation's value
+  // or the built-in default; for the installation, the built-in default.
   Setting setting = 1;
 }
 
 // ListSettingsRequest asks for a page of the settings set on one scope.
 message ListSettingsRequest {
-  // The scope to list: a tenant's overrides, or the installation's defaults.
-  // Required.
+  // The scope to list: a tenant's overrides, or every setting as it applies
+  // on the installation. Required.
   Scope scope = 1;
 
   // The most settings to answer: zero means 100; at most 1000. A larger or

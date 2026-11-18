@@ -252,6 +252,39 @@ All notable changes to Magnetar are written here. The form is
   for SQLite, the pool's size for Postgres. `scripts/check-tenant-postgres.sh`
   reads a tenant the registry made with `psql` and `pg_dump`, and the Postgres
   CI jobs run the registry against real tenants.
+- The API contract had generated interfaces and nothing behind them.
+  `internal/api` now implements its four services (tenants, keys and grants,
+  settings, audit), each method a short function that takes the access
+  check's decision from its context, validates the request and answers
+  `INVALID_ARGUMENT` naming the field, then acts through the package that
+  owns the change, with the audit entry in the same transaction. It also
+  holds the table of what each method needs of its caller, which the server
+  asks before every request. A handler that finds no decision answers
+  `INTERNAL` and never decides by itself; a tenant missing at a lookup after
+  the check is answered `PERMISSION_DENIED`, as for no grant, to a caller who
+  may not list every tenant; a key that may not list every tenant sees only
+  the tenants it holds a grant on, paged without reading every tenant; a
+  removal needs the name twice; a tenant's database address reaches no
+  answer, audit entry, error or log line, which a test shows by searching
+  all of them, and the master's files, for the address, its password, user
+  and host. A tenant's state is the one the registry sees now, not the
+  master's row, which can lag a minute behind, with the time that state was
+  reached (`Tenant.state_time`, a new field). A read costs 16 µs (a tenant)
+  to 24 µs (a tenant's setting) through the check and the handler without
+  the network, its audit entry batched into the log of the scope it read; a
+  change, one synced commit (5 ms on a laptop). The server does not serve
+  them yet.
+- Settings were any name anyone wrote, with no default and no rule for their
+  values, so the contract's "not found" and "a value the setting does not
+  accept" could not happen. The server now knows a fixed list
+  (`internal/core/settings`), each setting with a built-in default, a rule
+  for its value and whether a tenant may override it. The value that applies
+  is the tenant's override, else the installation's value, else the built-in
+  default, and every answer says which (`Setting.source`, a new field of the
+  contract). Unsetting the installation's value returns to the built-in
+  default. The list's one setting, `key.default-lifetime` (whole hours or
+  days, such as `90d`, from 1h to 3650d; 90 days by default), is the
+  lifetime of a key made with no expiry.
 
 ### Fixed
 

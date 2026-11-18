@@ -1,0 +1,68 @@
+package settings
+
+import (
+	"errors"
+	"testing"
+	"time"
+)
+
+// TestBuiltin guards the built-in list: it is a valid table, and its one
+// setting, the key's default lifetime, is installation-only with a default
+// of 90 days.
+func TestBuiltin(t *testing.T) {
+	tab := MustBuiltin()
+	if got := tab.Names(); len(got) != 1 || got[0] != KeyDefaultLifetime {
+		t.Fatalf("names %v", got)
+	}
+	d, ok := tab.Lookup(KeyDefaultLifetime)
+	if !ok || d.TenantOverride {
+		t.Fatalf("%+v %v", d, ok)
+	}
+	if v, err := ParseDuration(d.Default); err != nil || v != 90*24*time.Hour {
+		t.Errorf("default %q is %v, %v", d.Default, v, err)
+	}
+	if _, ok := tab.Lookup("no.such"); ok {
+		t.Error("an unknown name is found")
+	}
+}
+
+// TestKeyLifetimeBounds guards the key lifetime's rule at each bound and one
+// past it, in both units.
+func TestKeyLifetimeBounds(t *testing.T) {
+	d, _ := MustBuiltin().Lookup(KeyDefaultLifetime)
+	for v, ok := range map[string]bool{
+		"1h": true, "0h": false, "3650d": true, "3651d": false, "87600h": true, "87601h": false,
+		"2160h": true, "90d": true, "": false, "90": false, "d": false, "-1d": false, "1.5d": false,
+		"090d": false, "90D": false, "1d1h": false, " 90d": false, "99999999999999999999d": false,
+	} {
+		if err := d.Validate(v); (err == nil) != ok {
+			t.Errorf("%q: accepted %v, want %v (%v)", v, err == nil, ok, err)
+		}
+	}
+}
+
+// TestNewRefusesMistakes guards New against a table it could not serve: a bad
+// or repeated name, no rule, and a default its own rule refuses.
+func TestNewRefusesMistakes(t *testing.T) {
+	ok := func(string) error { return nil }
+	no := func(string) error { return errors.New("no") }
+	for name, defs := range map[string][]Definition{
+		"bad name":    {{Name: "Bad", Validate: ok}},
+		"empty name":  {{Name: "", Validate: ok}},
+		"long name":   {{Name: string(make([]byte, 129)), Validate: ok}},
+		"twice":       {{Name: "a", Validate: ok}, {Name: "a", Validate: ok}},
+		"no rule":     {{Name: "a"}},
+		"bad default": {{Name: "a", Validate: no}},
+	} {
+		if _, err := New(defs...); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	tab, err := New(Definition{Name: "b.two", Validate: ok}, Definition{Name: "a.one", Validate: ok, TenantOverride: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := tab.Names(); len(n) != 2 || n[0] != "a.one" {
+		t.Errorf("names are not in order: %v", n)
+	}
+}

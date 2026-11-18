@@ -502,7 +502,8 @@ type CreateKeyRequest struct {
 	// most 256 bytes of UTF-8.
 	Holder string `protobuf:"bytes,1,opt,name=holder,proto3" json:"holder,omitempty"`
 	// When the key stops working. When neither field is set, the key expires
-	// after the server's default period, 90 days.
+	// after the installation's setting key.default-lifetime, whose built-in
+	// default is 90 days.
 	//
 	// Types that are valid to be assigned to Expiry:
 	//

@@ -24,19 +24,81 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// SettingSource is where the value of a setting comes from.
+type SettingSource int32
+
+const (
+	// Not said. A request leaves it so; the server never answers it.
+	SettingSource_SETTING_SOURCE_UNSPECIFIED SettingSource = 0
+	// The server's built-in default: neither the installation nor the tenant
+	// has set a value.
+	SettingSource_SETTING_SOURCE_BUILT_IN SettingSource = 1
+	// The installation's value.
+	SettingSource_SETTING_SOURCE_INSTALLATION SettingSource = 2
+	// The tenant's override.
+	SettingSource_SETTING_SOURCE_TENANT SettingSource = 3
+)
+
+// Enum value maps for SettingSource.
+var (
+	SettingSource_name = map[int32]string{
+		0: "SETTING_SOURCE_UNSPECIFIED",
+		1: "SETTING_SOURCE_BUILT_IN",
+		2: "SETTING_SOURCE_INSTALLATION",
+		3: "SETTING_SOURCE_TENANT",
+	}
+	SettingSource_value = map[string]int32{
+		"SETTING_SOURCE_UNSPECIFIED":  0,
+		"SETTING_SOURCE_BUILT_IN":     1,
+		"SETTING_SOURCE_INSTALLATION": 2,
+		"SETTING_SOURCE_TENANT":       3,
+	}
+)
+
+func (x SettingSource) Enum() *SettingSource {
+	p := new(SettingSource)
+	*p = x
+	return p
+}
+
+func (x SettingSource) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SettingSource) Descriptor() protoreflect.EnumDescriptor {
+	return file_magnetar_v1_settings_proto_enumTypes[0].Descriptor()
+}
+
+func (SettingSource) Type() protoreflect.EnumType {
+	return &file_magnetar_v1_settings_proto_enumTypes[0]
+}
+
+func (x SettingSource) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SettingSource.Descriptor instead.
+func (SettingSource) EnumDescriptor() ([]byte, []int) {
+	return file_magnetar_v1_settings_proto_rawDescGZIP(), []int{0}
+}
+
 // Setting is one named value, set on the installation or on a tenant.
 type Setting struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The setting's name, from the fixed list of settings the server knows:
 	// 1 to 128 characters of lowercase ASCII letters, digits, ".", "_" and "-".
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Where the value is set: the installation's default, or a tenant's
-	// override.
+	// Where the value is set: the installation (its value or the built-in
+	// default), or a tenant's override.
 	Scope *Scope `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
 	// The value, in the text form the setting defines, such as "90d" for a
 	// period; at most 64 KiB. The server refuses a value that form does not
 	// accept.
-	Value         string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	Value string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	// Where the value comes from: the built-in default, the installation's
+	// value or the tenant's override. Answered by the server; ignored in a
+	// request.
+	Source        SettingSource `protobuf:"varint,4,opt,name=source,proto3,enum=magnetar.v1.SettingSource" json:"source,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -90,6 +152,13 @@ func (x *Setting) GetValue() string {
 		return x.Value
 	}
 	return ""
+}
+
+func (x *Setting) GetSource() SettingSource {
+	if x != nil {
+		return x.Source
+	}
+	return SettingSource_SETTING_SOURCE_UNSPECIFIED
 }
 
 // GetSettingRequest names a setting and the scope to resolve it on.
@@ -152,7 +221,7 @@ func (x *GetSettingRequest) GetScope() *Scope {
 // GetSettingResponse is the setting's value on the scope asked for.
 type GetSettingResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The setting; its scope is where its value came from.
+	// The setting; its scope and source are where its value came from.
 	Setting       *Setting `protobuf:"bytes,1,opt,name=setting,proto3" json:"setting,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -287,13 +356,14 @@ func (x *SetSettingResponse) GetSetting() *Setting {
 	return nil
 }
 
-// UnsetSettingRequest names a tenant's override to remove.
+// UnsetSettingRequest names a value to remove.
 type UnsetSettingRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The setting's name. Required; 1 to 128 characters of lowercase ASCII
 	// letters, digits, ".", "_" and "-".
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// The tenant whose override is removed. Required; must be a tenant.
+	// The scope whose value is removed: a tenant's override, or the
+	// installation's value. Required.
 	Scope         *Scope `protobuf:"bytes,2,opt,name=scope,proto3" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -343,10 +413,11 @@ func (x *UnsetSettingRequest) GetScope() *Scope {
 	return nil
 }
 
-// UnsetSettingResponse is the setting as it now applies to the tenant.
+// UnsetSettingResponse is the setting as it now applies to the scope.
 type UnsetSettingResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The installation's default, which applies to the tenant again.
+	// What applies on the scope again: for a tenant, the installation's value
+	// or the built-in default; for the installation, the built-in default.
 	Setting       *Setting `protobuf:"bytes,1,opt,name=setting,proto3" json:"setting,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -392,8 +463,8 @@ func (x *UnsetSettingResponse) GetSetting() *Setting {
 // ListSettingsRequest asks for a page of the settings set on one scope.
 type ListSettingsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The scope to list: a tenant's overrides, or the installation's defaults.
-	// Required.
+	// The scope to list: a tenant's overrides, or every setting as it applies
+	// on the installation. Required.
 	Scope *Scope `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
 	// The most settings to answer: zero means 100; at most 1000. A larger or
 	// negative value is invalid.
@@ -516,11 +587,12 @@ var File_magnetar_v1_settings_proto protoreflect.FileDescriptor
 
 const file_magnetar_v1_settings_proto_rawDesc = "" +
 	"\n" +
-	"\x1amagnetar/v1/settings.proto\x12\vmagnetar.v1\x1a\x17magnetar/v1/scope.proto\"]\n" +
+	"\x1amagnetar/v1/settings.proto\x12\vmagnetar.v1\x1a\x17magnetar/v1/scope.proto\"\x91\x01\n" +
 	"\aSetting\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12(\n" +
 	"\x05scope\x18\x02 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"Q\n" +
+	"\x05value\x18\x03 \x01(\tR\x05value\x122\n" +
+	"\x06source\x18\x04 \x01(\x0e2\x1a.magnetar.v1.SettingSourceR\x06source\"Q\n" +
 	"\x11GetSettingRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12(\n" +
 	"\x05scope\x18\x02 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\"D\n" +
@@ -542,7 +614,12 @@ const file_magnetar_v1_settings_proto_rawDesc = "" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\"p\n" +
 	"\x14ListSettingsResponse\x120\n" +
 	"\bsettings\x18\x01 \x03(\v2\x14.magnetar.v1.SettingR\bsettings\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xed\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\x88\x01\n" +
+	"\rSettingSource\x12\x1e\n" +
+	"\x1aSETTING_SOURCE_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17SETTING_SOURCE_BUILT_IN\x10\x01\x12\x1f\n" +
+	"\x1bSETTING_SOURCE_INSTALLATION\x10\x02\x12\x19\n" +
+	"\x15SETTING_SOURCE_TENANT\x10\x032\xed\x02\n" +
 	"\x0fSettingsService\x12R\n" +
 	"\n" +
 	"GetSetting\x12\x1e.magnetar.v1.GetSettingRequest\x1a\x1f.magnetar.v1.GetSettingResponse\"\x03\x90\x02\x01\x12R\n" +
@@ -564,42 +641,45 @@ func file_magnetar_v1_settings_proto_rawDescGZIP() []byte {
 	return file_magnetar_v1_settings_proto_rawDescData
 }
 
+var file_magnetar_v1_settings_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_magnetar_v1_settings_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_magnetar_v1_settings_proto_goTypes = []any{
-	(*Setting)(nil),              // 0: magnetar.v1.Setting
-	(*GetSettingRequest)(nil),    // 1: magnetar.v1.GetSettingRequest
-	(*GetSettingResponse)(nil),   // 2: magnetar.v1.GetSettingResponse
-	(*SetSettingRequest)(nil),    // 3: magnetar.v1.SetSettingRequest
-	(*SetSettingResponse)(nil),   // 4: magnetar.v1.SetSettingResponse
-	(*UnsetSettingRequest)(nil),  // 5: magnetar.v1.UnsetSettingRequest
-	(*UnsetSettingResponse)(nil), // 6: magnetar.v1.UnsetSettingResponse
-	(*ListSettingsRequest)(nil),  // 7: magnetar.v1.ListSettingsRequest
-	(*ListSettingsResponse)(nil), // 8: magnetar.v1.ListSettingsResponse
-	(*Scope)(nil),                // 9: magnetar.v1.Scope
+	(SettingSource)(0),           // 0: magnetar.v1.SettingSource
+	(*Setting)(nil),              // 1: magnetar.v1.Setting
+	(*GetSettingRequest)(nil),    // 2: magnetar.v1.GetSettingRequest
+	(*GetSettingResponse)(nil),   // 3: magnetar.v1.GetSettingResponse
+	(*SetSettingRequest)(nil),    // 4: magnetar.v1.SetSettingRequest
+	(*SetSettingResponse)(nil),   // 5: magnetar.v1.SetSettingResponse
+	(*UnsetSettingRequest)(nil),  // 6: magnetar.v1.UnsetSettingRequest
+	(*UnsetSettingResponse)(nil), // 7: magnetar.v1.UnsetSettingResponse
+	(*ListSettingsRequest)(nil),  // 8: magnetar.v1.ListSettingsRequest
+	(*ListSettingsResponse)(nil), // 9: magnetar.v1.ListSettingsResponse
+	(*Scope)(nil),                // 10: magnetar.v1.Scope
 }
 var file_magnetar_v1_settings_proto_depIdxs = []int32{
-	9,  // 0: magnetar.v1.Setting.scope:type_name -> magnetar.v1.Scope
-	9,  // 1: magnetar.v1.GetSettingRequest.scope:type_name -> magnetar.v1.Scope
-	0,  // 2: magnetar.v1.GetSettingResponse.setting:type_name -> magnetar.v1.Setting
-	0,  // 3: magnetar.v1.SetSettingRequest.setting:type_name -> magnetar.v1.Setting
-	0,  // 4: magnetar.v1.SetSettingResponse.setting:type_name -> magnetar.v1.Setting
-	9,  // 5: magnetar.v1.UnsetSettingRequest.scope:type_name -> magnetar.v1.Scope
-	0,  // 6: magnetar.v1.UnsetSettingResponse.setting:type_name -> magnetar.v1.Setting
-	9,  // 7: magnetar.v1.ListSettingsRequest.scope:type_name -> magnetar.v1.Scope
-	0,  // 8: magnetar.v1.ListSettingsResponse.settings:type_name -> magnetar.v1.Setting
-	1,  // 9: magnetar.v1.SettingsService.GetSetting:input_type -> magnetar.v1.GetSettingRequest
-	3,  // 10: magnetar.v1.SettingsService.SetSetting:input_type -> magnetar.v1.SetSettingRequest
-	5,  // 11: magnetar.v1.SettingsService.UnsetSetting:input_type -> magnetar.v1.UnsetSettingRequest
-	7,  // 12: magnetar.v1.SettingsService.ListSettings:input_type -> magnetar.v1.ListSettingsRequest
-	2,  // 13: magnetar.v1.SettingsService.GetSetting:output_type -> magnetar.v1.GetSettingResponse
-	4,  // 14: magnetar.v1.SettingsService.SetSetting:output_type -> magnetar.v1.SetSettingResponse
-	6,  // 15: magnetar.v1.SettingsService.UnsetSetting:output_type -> magnetar.v1.UnsetSettingResponse
-	8,  // 16: magnetar.v1.SettingsService.ListSettings:output_type -> magnetar.v1.ListSettingsResponse
-	13, // [13:17] is the sub-list for method output_type
-	9,  // [9:13] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	10, // 0: magnetar.v1.Setting.scope:type_name -> magnetar.v1.Scope
+	0,  // 1: magnetar.v1.Setting.source:type_name -> magnetar.v1.SettingSource
+	10, // 2: magnetar.v1.GetSettingRequest.scope:type_name -> magnetar.v1.Scope
+	1,  // 3: magnetar.v1.GetSettingResponse.setting:type_name -> magnetar.v1.Setting
+	1,  // 4: magnetar.v1.SetSettingRequest.setting:type_name -> magnetar.v1.Setting
+	1,  // 5: magnetar.v1.SetSettingResponse.setting:type_name -> magnetar.v1.Setting
+	10, // 6: magnetar.v1.UnsetSettingRequest.scope:type_name -> magnetar.v1.Scope
+	1,  // 7: magnetar.v1.UnsetSettingResponse.setting:type_name -> magnetar.v1.Setting
+	10, // 8: magnetar.v1.ListSettingsRequest.scope:type_name -> magnetar.v1.Scope
+	1,  // 9: magnetar.v1.ListSettingsResponse.settings:type_name -> magnetar.v1.Setting
+	2,  // 10: magnetar.v1.SettingsService.GetSetting:input_type -> magnetar.v1.GetSettingRequest
+	4,  // 11: magnetar.v1.SettingsService.SetSetting:input_type -> magnetar.v1.SetSettingRequest
+	6,  // 12: magnetar.v1.SettingsService.UnsetSetting:input_type -> magnetar.v1.UnsetSettingRequest
+	8,  // 13: magnetar.v1.SettingsService.ListSettings:input_type -> magnetar.v1.ListSettingsRequest
+	3,  // 14: magnetar.v1.SettingsService.GetSetting:output_type -> magnetar.v1.GetSettingResponse
+	5,  // 15: magnetar.v1.SettingsService.SetSetting:output_type -> magnetar.v1.SetSettingResponse
+	7,  // 16: magnetar.v1.SettingsService.UnsetSetting:output_type -> magnetar.v1.UnsetSettingResponse
+	9,  // 17: magnetar.v1.SettingsService.ListSettings:output_type -> magnetar.v1.ListSettingsResponse
+	14, // [14:18] is the sub-list for method output_type
+	10, // [10:14] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_settings_proto_init() }
@@ -613,13 +693,14 @@ func file_magnetar_v1_settings_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_magnetar_v1_settings_proto_rawDesc), len(file_magnetar_v1_settings_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_magnetar_v1_settings_proto_goTypes,
 		DependencyIndexes: file_magnetar_v1_settings_proto_depIdxs,
+		EnumInfos:         file_magnetar_v1_settings_proto_enumTypes,
 		MessageInfos:      file_magnetar_v1_settings_proto_msgTypes,
 	}.Build()
 	File_magnetar_v1_settings_proto = out.File

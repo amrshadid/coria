@@ -162,7 +162,12 @@ type Tenant struct {
 	// or password.
 	StateReason string `protobuf:"bytes,4,opt,name=state_reason,json=stateReason,proto3" json:"state_reason,omitempty"`
 	// When the tenant was created.
-	CreateTime    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	CreateTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	// When the server's current view of the tenant's state, with its reason,
+	// began: the check that first found the tenant in this state. Absent when
+	// the server holds no view of the tenant yet (for a moment while it starts
+	// or creates the tenant), and then state is the master's record.
+	StateTime     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=state_time,json=stateTime,proto3" json:"state_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -228,6 +233,13 @@ func (x *Tenant) GetStateReason() string {
 func (x *Tenant) GetCreateTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CreateTime
+	}
+	return nil
+}
+
+func (x *Tenant) GetStateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StateTime
 	}
 	return nil
 }
@@ -673,14 +685,16 @@ var File_magnetar_v1_tenant_proto protoreflect.FileDescriptor
 
 const file_magnetar_v1_tenant_proto_rawDesc = "" +
 	"\n" +
-	"\x18magnetar/v1/tenant.proto\x12\vmagnetar.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xec\x01\n" +
+	"\x18magnetar/v1/tenant.proto\x12\vmagnetar.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa7\x02\n" +
 	"\x06Tenant\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12>\n" +
 	"\rdatabase_type\x18\x02 \x01(\x0e2\x19.magnetar.v1.DatabaseTypeR\fdatabaseType\x12.\n" +
 	"\x05state\x18\x03 \x01(\x0e2\x18.magnetar.v1.TenantStateR\x05state\x12!\n" +
 	"\fstate_reason\x18\x04 \x01(\tR\vstateReason\x12;\n" +
 	"\vcreate_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"createTime\"\x99\x01\n" +
+	"createTime\x129\n" +
+	"\n" +
+	"state_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstateTime\"\x99\x01\n" +
 	"\x13CreateTenantRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12>\n" +
 	"\rdatabase_type\x18\x02 \x01(\x0e2\x19.magnetar.v1.DatabaseTypeR\fdatabaseType\x12.\n" +
@@ -753,24 +767,25 @@ var file_magnetar_v1_tenant_proto_depIdxs = []int32{
 	1,  // 0: magnetar.v1.Tenant.database_type:type_name -> magnetar.v1.DatabaseType
 	0,  // 1: magnetar.v1.Tenant.state:type_name -> magnetar.v1.TenantState
 	11, // 2: magnetar.v1.Tenant.create_time:type_name -> google.protobuf.Timestamp
-	1,  // 3: magnetar.v1.CreateTenantRequest.database_type:type_name -> magnetar.v1.DatabaseType
-	2,  // 4: magnetar.v1.CreateTenantResponse.tenant:type_name -> magnetar.v1.Tenant
-	2,  // 5: magnetar.v1.GetTenantResponse.tenant:type_name -> magnetar.v1.Tenant
-	2,  // 6: magnetar.v1.ListTenantsResponse.tenants:type_name -> magnetar.v1.Tenant
-	1,  // 7: magnetar.v1.RemoveTenantResponse.database_type:type_name -> magnetar.v1.DatabaseType
-	3,  // 8: magnetar.v1.TenantService.CreateTenant:input_type -> magnetar.v1.CreateTenantRequest
-	5,  // 9: magnetar.v1.TenantService.GetTenant:input_type -> magnetar.v1.GetTenantRequest
-	7,  // 10: magnetar.v1.TenantService.ListTenants:input_type -> magnetar.v1.ListTenantsRequest
-	9,  // 11: magnetar.v1.TenantService.RemoveTenant:input_type -> magnetar.v1.RemoveTenantRequest
-	4,  // 12: magnetar.v1.TenantService.CreateTenant:output_type -> magnetar.v1.CreateTenantResponse
-	6,  // 13: magnetar.v1.TenantService.GetTenant:output_type -> magnetar.v1.GetTenantResponse
-	8,  // 14: magnetar.v1.TenantService.ListTenants:output_type -> magnetar.v1.ListTenantsResponse
-	10, // 15: magnetar.v1.TenantService.RemoveTenant:output_type -> magnetar.v1.RemoveTenantResponse
-	12, // [12:16] is the sub-list for method output_type
-	8,  // [8:12] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	11, // 3: magnetar.v1.Tenant.state_time:type_name -> google.protobuf.Timestamp
+	1,  // 4: magnetar.v1.CreateTenantRequest.database_type:type_name -> magnetar.v1.DatabaseType
+	2,  // 5: magnetar.v1.CreateTenantResponse.tenant:type_name -> magnetar.v1.Tenant
+	2,  // 6: magnetar.v1.GetTenantResponse.tenant:type_name -> magnetar.v1.Tenant
+	2,  // 7: magnetar.v1.ListTenantsResponse.tenants:type_name -> magnetar.v1.Tenant
+	1,  // 8: magnetar.v1.RemoveTenantResponse.database_type:type_name -> magnetar.v1.DatabaseType
+	3,  // 9: magnetar.v1.TenantService.CreateTenant:input_type -> magnetar.v1.CreateTenantRequest
+	5,  // 10: magnetar.v1.TenantService.GetTenant:input_type -> magnetar.v1.GetTenantRequest
+	7,  // 11: magnetar.v1.TenantService.ListTenants:input_type -> magnetar.v1.ListTenantsRequest
+	9,  // 12: magnetar.v1.TenantService.RemoveTenant:input_type -> magnetar.v1.RemoveTenantRequest
+	4,  // 13: magnetar.v1.TenantService.CreateTenant:output_type -> magnetar.v1.CreateTenantResponse
+	6,  // 14: magnetar.v1.TenantService.GetTenant:output_type -> magnetar.v1.GetTenantResponse
+	8,  // 15: magnetar.v1.TenantService.ListTenants:output_type -> magnetar.v1.ListTenantsResponse
+	10, // 16: magnetar.v1.TenantService.RemoveTenant:output_type -> magnetar.v1.RemoveTenantResponse
+	13, // [13:17] is the sub-list for method output_type
+	9,  // [9:13] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_tenant_proto_init() }
