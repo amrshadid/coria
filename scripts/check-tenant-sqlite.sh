@@ -58,7 +58,7 @@ q() {
 echo
 echo "== tables"
 "$SQLITE3" -batch "$db" '.tables'
-want "tables" "audit schema_migrations settings" \
+want "tables" "audit quarantine quarantine_totals received_files receivers reception_associations receptions schema_migrations settings storages work" \
 	"$(q "SELECT group_concat(name, ' ') FROM (SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name)")"
 
 show() {
@@ -71,13 +71,13 @@ show settings "SELECT * FROM settings"
 show audit "SELECT * FROM audit"
 echo
 
-want "schema_migrations rows" 1 "$(q 'SELECT count(*) FROM schema_migrations')"
+want "schema_migrations rows" 2 "$(q 'SELECT count(*) FROM schema_migrations')"
 want "settings rows" 2 "$(q 'SELECT count(*) FROM settings')"
 want "audit rows" 5 "$(q 'SELECT count(*) FROM audit')"
 want "integrity_check" ok "$(q 'PRAGMA integrity_check')"
 want "foreign_key_check (empty is clean)" "" "$(q 'PRAGMA foreign_key_check')"
 want "journal_mode" wal "$(q 'PRAGMA journal_mode')"
-want "every table is STRICT" 3 "$(q "SELECT count(*) FROM pragma_table_list WHERE schema = 'main' AND strict = 1 AND name NOT LIKE 'sqlite_%'")"
+want "tables that are not STRICT" 0 "$(q "SELECT count(*) FROM pragma_table_list WHERE schema = 'main' AND strict = 0 AND type = 'table' AND name NOT LIKE 'sqlite_%'")"
 want "the override set twice keeps the second value" 90 "$(q "SELECT value FROM settings WHERE name = 'reception.quiet_seconds'")"
 want "a Unicode value, as UTF-8" "Zoë-山田" "$(q "SELECT value FROM settings WHERE name = 'label.prefix'")"
 want "every audit entry's details are a JSON object" 5 "$(q "SELECT count(*) FROM audit WHERE json_valid(details) AND json_type(details) = 'object'")"

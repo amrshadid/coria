@@ -516,9 +516,12 @@ func TestSymlinks(t *testing.T) {
 // path with a drive letter. A tool that is present but fails shows its own
 // output.
 func TestOutsideTools(t *testing.T) {
-	sum := []string{"shasum", "-a", "256"}
-	if _, err := exec.LookPath("shasum"); err != nil {
-		sum = []string{"sha256sum"}
+	// sha256sum first: it is a program of its own wherever it exists, while
+	// a shasum found on Windows may be a wrapper script that cannot find the
+	// Perl program it wraps.
+	sum := []string{"sha256sum"}
+	if _, err := exec.LookPath("sha256sum"); err != nil {
+		sum = []string{"shasum", "-a", "256"}
 	}
 	if _, err := exec.LookPath(sum[0]); err != nil {
 		t.Skip("neither shasum nor sha256sum is installed")

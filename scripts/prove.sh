@@ -518,7 +518,9 @@ pg_owner=$(psql_su -d mgt_proof_main -c "select distinct tableowner from pg_tabl
 pg_identity=$(psql_su -d mgt_proof_main -c "select id from tenant_identity" 2> /dev/null || true)
 master_pg_id=$("$SQLITE3" "$data/master.db" "select id from tenants where name = 'pg'")
 want_master="api_keys audit grants schema_migrations settings tenants "
-want_lite="audit schema_migrations settings "
+# A SQLite tenant also holds what a reception needs; a Postgres tenant gains
+# the same tables when its driver does.
+want_lite="audit quarantine quarantine_totals received_files receivers reception_associations receptions schema_migrations settings storages work "
 want_pg="audit schema_migrations settings tenant_identity "
 if [ "$master_tables" = "$want_master" ] && [ "$lite_tables" = "$want_lite" ] && [ "$pg_tables" = "$want_pg" ] &&
 	[ "$pg_owner" = "mgt_proof " ] && [ -n "$pg_identity" ] && [ "$pg_identity" = "$master_pg_id" ]; then
