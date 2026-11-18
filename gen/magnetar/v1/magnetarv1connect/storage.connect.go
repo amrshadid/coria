@@ -95,24 +95,23 @@ var (
 
 // StorageServiceClient is a client for the magnetar.v1.StorageService service.
 type StorageServiceClient interface {
-	// AddStorage adds a storage to a tenant. It records the configuration and
-	// touches nothing on the storage itself: TestStorage checks that the
-	// storage can be written to, and GetStatus reports its space.
+	// AddStorage adds a storage to a tenant. For a directory storage the
+	// server makes the directory, which must be absent or empty; for an S3
+	// storage it touches nothing. TestStorage checks that the storage can be
+	// written to, and GetStatus reports its space.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the storage's name as its
-	// object and its type in details; never its secret, its endpoint's
-	// credentials or its path.
+	// object and its type in details; never its secret.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a directory outside the directories the installation allows for
-	// storages, or a plain http endpoint the installation does not allow; see
-	// DirectoryStorage and S3Storage), not found (a tenant that does not
-	// exist, for a caller who may list every tenant), conflict (the tenant has
-	// a storage with that name; or a directory that contains, or lies inside,
-	// the directory of another storage of the installation, of any tenant),
-	// unavailable (the tenant's database does not answer, or the tenant is not
-	// ready).
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), conflict (the tenant has a storage with that name),
+	// precondition (a root or an endpoint the installation does not list; a
+	// directory that is not empty, has a symbolic link in its path, or
+	// overlaps another storage of the tenant; an S3 location that overlaps
+	// another storage of the tenant), unavailable (the tenant's database does
+	// not answer, or the tenant is not ready).
 	AddStorage(context.Context, *v1.AddStorageRequest) (*v1.AddStorageResponse, error)
 	// GetStorage answers one storage of a tenant. Its secret is never
 	// answered: the answer says only whether one is set.
@@ -139,29 +138,31 @@ type StorageServiceClient interface {
 	ListStorages(context.Context, *v1.ListStoragesRequest) (*v1.ListStoragesResponse, error)
 	// SetStorage changes some fields of a storage: those its update_mask
 	// names, and no other. A secret the mask does not name is kept as it is,
-	// so a change of the endpoint does not need the secret sent again. The
+	// so a change of the capacity does not need the secret sent again. The
 	// change and its audit entry are written together or not at all.
 	//
 	// A storage's type cannot change: a mask that names the other type's
 	// configuration is invalid. Once the storage holds an archived file, the
-	// fields that say where its files are (a directory's path, an S3
-	// storage's bucket and prefix) cannot change, since the files would no
-	// longer be where the catalog says: such a change is a conflict. An S3
-	// storage's endpoint may change, for a store that moved to another
-	// address with its data.
+	// fields that say where its files are (a directory's root and path, an S3
+	// storage's endpoint, bucket and prefix) cannot change, since the files
+	// would no longer be where the catalog says. An S3 storage's access key
+	// id and secret access key change together or not at all: a mask that
+	// names one names the other, or it is invalid.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the storage's name as its
 	// object and the mask's paths in details; never a value of a secret.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also an empty mask, a path that names no field or a read-only field, a
-	// path into the other type's configuration, and every rule AddStorage
-	// checks), not found (the tenant has no storage with that name; a tenant
-	// that does not exist, for a caller who may list every tenant), conflict
-	// (a change of where the files are on a storage that holds files; a
-	// directory that overlaps another storage's), unavailable (the tenant's
-	// database does not answer, or the tenant is not ready).
+	// (also an empty mask, a path that names no field, a read-only field or a
+	// type's whole message, a path into the other type's configuration, one
+	// of the two credentials without the other, and every rule AddStorage
+	// checks on a field), not found (the tenant has no storage with that
+	// name; a tenant that does not exist, for a caller who may list every
+	// tenant), precondition (a change of where the files are on a storage
+	// that holds files, and every precondition AddStorage checks),
+	// unavailable (the tenant's database does not answer, or the tenant is
+	// not ready).
 	SetStorage(context.Context, *v1.SetStorageRequest) (*v1.SetStorageResponse, error)
 	// RemoveStorage removes a storage's configuration from a tenant. It never
 	// deletes a file: it is refused while the storage holds any archived file
@@ -175,8 +176,8 @@ type StorageServiceClient interface {
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no storage with that name; a tenant that does
-	// not exist, for a caller who may list every tenant), conflict (the
-	// storage holds archived files, or a receiver names it; the message names
+	// not exist, for a caller who may list every tenant), precondition (the
+	// storage holds archived files, or a receiver names it; the message says
 	// which), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	RemoveStorage(context.Context, *v1.RemoveStorageRequest) (*v1.RemoveStorageResponse, error)
@@ -185,9 +186,10 @@ type StorageServiceClient interface {
 	// it, and reports each step. The object's key is under a prefix no
 	// archived file uses, so the test never touches data. A storage that
 	// fails a step is a result, not an error: the method succeeds and the
-	// failed step says why. A step after a failed one is answered skipped,
-	// except the removal, which is tried whenever the write may have left an
-	// object. Repeating the test leaves the storage as it was.
+	// failed step says why, from a fixed list. A step after a failed one is
+	// answered skipped, except the removal, which is tried whenever the write
+	// may have left an object. Repeating the test leaves the storage as it
+	// was.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the storage's name as its
@@ -197,8 +199,8 @@ type StorageServiceClient interface {
 	// not found (the tenant has no storage with that name; a tenant that does
 	// not exist, for a caller who may list every tenant), unavailable (the
 	// tenant's database does not answer, or the tenant is not ready).
-	// Limits: the whole test is bounded by the call's deadline; each step
-	// that has not finished when it passes is answered failed.
+	// Limits: the whole test is bounded by the call's deadline; a step that
+	// has not finished when it passes is answered failed, unreachable.
 	TestStorage(context.Context, *v1.TestStorageRequest) (*v1.TestStorageResponse, error)
 }
 
@@ -210,24 +212,23 @@ func NewStorageServiceClient(client *connect.Client) StorageServiceClient {
 
 // StorageServiceHandler is an implementation of the magnetar.v1.StorageService service.
 type StorageServiceHandler interface {
-	// AddStorage adds a storage to a tenant. It records the configuration and
-	// touches nothing on the storage itself: TestStorage checks that the
-	// storage can be written to, and GetStatus reports its space.
+	// AddStorage adds a storage to a tenant. For a directory storage the
+	// server makes the directory, which must be absent or empty; for an S3
+	// storage it touches nothing. TestStorage checks that the storage can be
+	// written to, and GetStatus reports its space.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the storage's name as its
-	// object and its type in details; never its secret, its endpoint's
-	// credentials or its path.
+	// object and its type in details; never its secret.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a directory outside the directories the installation allows for
-	// storages, or a plain http endpoint the installation does not allow; see
-	// DirectoryStorage and S3Storage), not found (a tenant that does not
-	// exist, for a caller who may list every tenant), conflict (the tenant has
-	// a storage with that name; or a directory that contains, or lies inside,
-	// the directory of another storage of the installation, of any tenant),
-	// unavailable (the tenant's database does not answer, or the tenant is not
-	// ready).
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), conflict (the tenant has a storage with that name),
+	// precondition (a root or an endpoint the installation does not list; a
+	// directory that is not empty, has a symbolic link in its path, or
+	// overlaps another storage of the tenant; an S3 location that overlaps
+	// another storage of the tenant), unavailable (the tenant's database does
+	// not answer, or the tenant is not ready).
 	AddStorage(context.Context, *v1.AddStorageRequest) (*v1.AddStorageResponse, error)
 	// GetStorage answers one storage of a tenant. Its secret is never
 	// answered: the answer says only whether one is set.
@@ -254,29 +255,31 @@ type StorageServiceHandler interface {
 	ListStorages(context.Context, *v1.ListStoragesRequest) (*v1.ListStoragesResponse, error)
 	// SetStorage changes some fields of a storage: those its update_mask
 	// names, and no other. A secret the mask does not name is kept as it is,
-	// so a change of the endpoint does not need the secret sent again. The
+	// so a change of the capacity does not need the secret sent again. The
 	// change and its audit entry are written together or not at all.
 	//
 	// A storage's type cannot change: a mask that names the other type's
 	// configuration is invalid. Once the storage holds an archived file, the
-	// fields that say where its files are (a directory's path, an S3
-	// storage's bucket and prefix) cannot change, since the files would no
-	// longer be where the catalog says: such a change is a conflict. An S3
-	// storage's endpoint may change, for a store that moved to another
-	// address with its data.
+	// fields that say where its files are (a directory's root and path, an S3
+	// storage's endpoint, bucket and prefix) cannot change, since the files
+	// would no longer be where the catalog says. An S3 storage's access key
+	// id and secret access key change together or not at all: a mask that
+	// names one names the other, or it is invalid.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the storage's name as its
 	// object and the mask's paths in details; never a value of a secret.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also an empty mask, a path that names no field or a read-only field, a
-	// path into the other type's configuration, and every rule AddStorage
-	// checks), not found (the tenant has no storage with that name; a tenant
-	// that does not exist, for a caller who may list every tenant), conflict
-	// (a change of where the files are on a storage that holds files; a
-	// directory that overlaps another storage's), unavailable (the tenant's
-	// database does not answer, or the tenant is not ready).
+	// (also an empty mask, a path that names no field, a read-only field or a
+	// type's whole message, a path into the other type's configuration, one
+	// of the two credentials without the other, and every rule AddStorage
+	// checks on a field), not found (the tenant has no storage with that
+	// name; a tenant that does not exist, for a caller who may list every
+	// tenant), precondition (a change of where the files are on a storage
+	// that holds files, and every precondition AddStorage checks),
+	// unavailable (the tenant's database does not answer, or the tenant is
+	// not ready).
 	SetStorage(context.Context, *v1.SetStorageRequest) (*v1.SetStorageResponse, error)
 	// RemoveStorage removes a storage's configuration from a tenant. It never
 	// deletes a file: it is refused while the storage holds any archived file
@@ -290,8 +293,8 @@ type StorageServiceHandler interface {
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no storage with that name; a tenant that does
-	// not exist, for a caller who may list every tenant), conflict (the
-	// storage holds archived files, or a receiver names it; the message names
+	// not exist, for a caller who may list every tenant), precondition (the
+	// storage holds archived files, or a receiver names it; the message says
 	// which), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	RemoveStorage(context.Context, *v1.RemoveStorageRequest) (*v1.RemoveStorageResponse, error)
@@ -300,9 +303,10 @@ type StorageServiceHandler interface {
 	// it, and reports each step. The object's key is under a prefix no
 	// archived file uses, so the test never touches data. A storage that
 	// fails a step is a result, not an error: the method succeeds and the
-	// failed step says why. A step after a failed one is answered skipped,
-	// except the removal, which is tried whenever the write may have left an
-	// object. Repeating the test leaves the storage as it was.
+	// failed step says why, from a fixed list. A step after a failed one is
+	// answered skipped, except the removal, which is tried whenever the write
+	// may have left an object. Repeating the test leaves the storage as it
+	// was.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the storage's name as its
@@ -312,8 +316,8 @@ type StorageServiceHandler interface {
 	// not found (the tenant has no storage with that name; a tenant that does
 	// not exist, for a caller who may list every tenant), unavailable (the
 	// tenant's database does not answer, or the tenant is not ready).
-	// Limits: the whole test is bounded by the call's deadline; each step
-	// that has not finished when it passes is answered failed.
+	// Limits: the whole test is bounded by the call's deadline; a step that
+	// has not finished when it passes is answered failed, unreachable.
 	TestStorage(context.Context, *v1.TestStorageRequest) (*v1.TestStorageResponse, error)
 }
 

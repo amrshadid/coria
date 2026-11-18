@@ -97,7 +97,7 @@ const (
 	StorageTestOutcome_STORAGE_TEST_OUTCOME_UNSPECIFIED StorageTestOutcome = 0
 	// The step did what it should.
 	StorageTestOutcome_STORAGE_TEST_OUTCOME_PASSED StorageTestOutcome = 1
-	// The step did not; the result's message says why.
+	// The step did not; the result's failure says why.
 	StorageTestOutcome_STORAGE_TEST_OUTCOME_FAILED StorageTestOutcome = 2
 	// The step was not tried, because a step it needs failed.
 	StorageTestOutcome_STORAGE_TEST_OUTCOME_SKIPPED StorageTestOutcome = 3
@@ -146,10 +146,91 @@ func (StorageTestOutcome) EnumDescriptor() ([]byte, []int) {
 	return file_magnetar_v1_storage_proto_rawDescGZIP(), []int{1}
 }
 
-// Storage is a place a tenant's archived files are written to. Its files lie
-// under two trees of keys: data/<subject>/<session>/<scan>/ for the DICOM
-// files, one per instance, and meta/<subject>/<session>/<scan>/ for each
-// scan's manifest and metadata. It never carries a secret.
+// StorageFault is why an operation on a storage failed, from a fixed list.
+// The store's own words are never answered: a storage pointed at an address
+// that is not a store cannot be used to read what that address says. A
+// fault added in a later version is a new value.
+type StorageFault int32
+
+const (
+	// No fault. Answered for a step that did not fail.
+	StorageFault_STORAGE_FAULT_UNSPECIFIED StorageFault = 0
+	// The storage could not be reached in time: no connection, no answer, or
+	// a directory that could not be opened.
+	StorageFault_STORAGE_FAULT_UNREACHABLE StorageFault = 1
+	// The TLS handshake with the store failed, as for a certificate that does
+	// not verify.
+	StorageFault_STORAGE_FAULT_TLS_FAILED StorageFault = 2
+	// The store refused the request, as for credentials it does not accept
+	// or a permission it does not give; for a directory, the file system
+	// refused the operation.
+	StorageFault_STORAGE_FAULT_REFUSED StorageFault = 3
+	// The bucket, the directory or the object is not there.
+	StorageFault_STORAGE_FAULT_NOT_FOUND StorageFault = 4
+	// The store answered something the server did not expect, or what was
+	// read is not what was written.
+	StorageFault_STORAGE_FAULT_WRONG_ANSWER StorageFault = 5
+	// The endpoint's host name resolved to a loopback, link-local or private
+	// address its installation entry does not allow; nothing was sent.
+	StorageFault_STORAGE_FAULT_ADDRESS_NOT_ALLOWED StorageFault = 6
+)
+
+// Enum value maps for StorageFault.
+var (
+	StorageFault_name = map[int32]string{
+		0: "STORAGE_FAULT_UNSPECIFIED",
+		1: "STORAGE_FAULT_UNREACHABLE",
+		2: "STORAGE_FAULT_TLS_FAILED",
+		3: "STORAGE_FAULT_REFUSED",
+		4: "STORAGE_FAULT_NOT_FOUND",
+		5: "STORAGE_FAULT_WRONG_ANSWER",
+		6: "STORAGE_FAULT_ADDRESS_NOT_ALLOWED",
+	}
+	StorageFault_value = map[string]int32{
+		"STORAGE_FAULT_UNSPECIFIED":         0,
+		"STORAGE_FAULT_UNREACHABLE":         1,
+		"STORAGE_FAULT_TLS_FAILED":          2,
+		"STORAGE_FAULT_REFUSED":             3,
+		"STORAGE_FAULT_NOT_FOUND":           4,
+		"STORAGE_FAULT_WRONG_ANSWER":        5,
+		"STORAGE_FAULT_ADDRESS_NOT_ALLOWED": 6,
+	}
+)
+
+func (x StorageFault) Enum() *StorageFault {
+	p := new(StorageFault)
+	*p = x
+	return p
+}
+
+func (x StorageFault) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (StorageFault) Descriptor() protoreflect.EnumDescriptor {
+	return file_magnetar_v1_storage_proto_enumTypes[2].Descriptor()
+}
+
+func (StorageFault) Type() protoreflect.EnumType {
+	return &file_magnetar_v1_storage_proto_enumTypes[2]
+}
+
+func (x StorageFault) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use StorageFault.Descriptor instead.
+func (StorageFault) EnumDescriptor() ([]byte, []int) {
+	return file_magnetar_v1_storage_proto_rawDescGZIP(), []int{2}
+}
+
+// Storage is a place a tenant's archived files are written to. In this
+// version its keys form two trees, data/<subject>/<session>/<scan>/ for the
+// DICOM files, one object per instance, and meta/<subject>/<session>/<scan>/
+// for each scan's manifest and metadata. The catalog records each file's
+// place as a key, an offset and a length, so a later version may pack files
+// differently without changing what this API answers. It never carries a
+// secret.
 type Storage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The storage's name, unique in its tenant, and its id in this API. It
@@ -288,22 +369,32 @@ func (*Storage_Directory) isStorage_Type() {}
 
 func (*Storage_S3) isStorage_Type() {}
 
-// DirectoryStorage is a directory on the server's file system.
+// DirectoryStorage is a directory on the server's file system, under one of
+// the roots the installation names. The directory is <root's directory>/
+// <tenant's name>/<path>: each tenant has its own directory under a root,
+// so one tenant's storages can never reach another's. The root's own path
+// on the server is the installation's and is never answered.
+//
+// The server resolves the directory's path when the storage is added and
+// whenever it opens the directory, and refuses a path below the root that
+// passes through a symbolic link. When added, the directory must not exist
+// or must be empty, and it must not contain, lie inside or be another
+// storage of the tenant; paths are compared after resolution and with case
+// folded, so two spellings of one directory on a file system that ignores
+// case are one directory.
 type DirectoryStorage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The directory's absolute path on the server, as the server's operating
-	// system writes it; at most 4096 bytes of UTF-8, with no "." or ".."
-	// component. Required. The directory must lie inside one of the
-	// directories the installation allows for storages (the installation's
-	// setting storage.directory-roots: absolute paths separated by the
-	// operating system's path list separator, ":" on Linux and macOS and ";"
-	// on Windows; while it is empty, no directory storage can be added), must
-	// not lie inside the server's own data directory, and
-	// must not contain or lie inside another storage's directory, of any
-	// tenant. The server makes the directory when it does not exist. It is
-	// not a secret, but it is answered only to a caller with a grant on the
-	// tenant.
-	Path          string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// The name of the root, as the installation's setting
+	// storage.directory-roots names it. Required; a name the setting does not
+	// list is a precondition failure.
+	Root string `protobuf:"bytes,1,opt,name=root,proto3" json:"root,omitempty"`
+	// The directory below the tenant's directory in the root, as segments
+	// joined by "/": at most 16 segments and 1024 bytes, each segment 1 to 128
+	// characters of ASCII letters, digits, ".", "_" and "-", not starting with
+	// a dot (so neither "." nor ".." is a segment). Empty for the tenant's
+	// directory itself. Not absolute: a leading "/" is invalid. It is not a
+	// secret, and is answered to every caller who may read the storage.
+	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -338,6 +429,13 @@ func (*DirectoryStorage) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_storage_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *DirectoryStorage) GetRoot() string {
+	if x != nil {
+		return x.Root
+	}
+	return ""
+}
+
 func (x *DirectoryStorage) GetPath() string {
 	if x != nil {
 		return x.Path
@@ -346,18 +444,27 @@ func (x *DirectoryStorage) GetPath() string {
 }
 
 // S3Storage is a bucket, or a part of one under a prefix, on an object store
-// that speaks the S3 API. Its credentials are the storage's own: the server
-// never falls back to credentials of its own environment (instance roles,
-// shared credential files), which would let one tenant reach what another
-// tenant's credentials guard.
+// that speaks the S3 API, at an endpoint the installation lists. Its
+// credentials are the storage's own: the server never falls back to
+// credentials of its own environment (instance roles, shared credential
+// files), which would let one tenant reach what another tenant's
+// credentials guard.
+//
+// Every time it connects, the server checks the address the endpoint's host
+// name resolves to: a loopback, link-local or private address (RFC 1918, RFC
+// 4193, RFC 6598) is refused unless the installation's entry for the
+// endpoint allows it, so a name that later resolves elsewhere cannot carry
+// the server's requests into its own network.
 type S3Storage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The store's base URL, such as "https://s3.eu-central-1.amazonaws.com" or
-	// "https://minio.example.org:9000"; at most 2048 bytes. Empty means AWS S3
-	// in region. It must be an https URL with no user information, query or
-	// fragment; an http URL is accepted only when the installation's setting
-	// storage.allow-plain-http is "true", since over plain http the credentials'
-	// signatures and every archived file cross the network unencrypted.
+	// The store's base URL, such as "https://s3.eu-central-1.amazonaws.com".
+	// Required; at most 2048 bytes; no user information, query or fragment. It
+	// must be one of the endpoints the installation's setting
+	// storage.s3-endpoints lists, compared after the scheme and host are put
+	// in lowercase and a final "/" removed; an endpoint it does not list is a
+	// precondition failure. An http URL is accepted only when its entry allows
+	// plain http, since then every request and every archived file crosses
+	// the network unencrypted.
 	Endpoint string `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
 	// The region the bucket is in, as the store names it, such as
 	// "eu-central-1". Required, also for a store that ignores it (which
@@ -373,7 +480,9 @@ type S3Storage struct {
 	// storages can share one bucket. Empty for the whole bucket. At most 512
 	// bytes of ASCII letters, digits, ".", "_", "-" and "/", not starting with
 	// "/", ending with "/", and with no empty, "." or ".." part; so
-	// "magnetar/lab-a/" is valid and "magnetar/lab-a" is not.
+	// "magnetar/lab-a/" is valid and "magnetar/lab-a" is not. Two storages of
+	// one tenant on the same endpoint and bucket must not have prefixes of
+	// which one starts with the other: that is a precondition failure.
 	Prefix string `protobuf:"bytes,4,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	// Whether the bucket is addressed in the URL's path
 	// (https://endpoint/bucket/key) rather than in its host name
@@ -383,7 +492,8 @@ type S3Storage struct {
 	// The access key id of the credentials the server uses, as the store
 	// issued it; at most 128 bytes of printable ASCII. Required. It names the
 	// credentials and is not a secret: it is answered, so a person can tell
-	// which credentials a storage uses when they are rotated.
+	// which credentials a storage uses when they are rotated. SetStorage
+	// changes it only together with secret_access_key.
 	AccessKeyId string `protobuf:"bytes,6,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
 	// SECRET. The secret access key that goes with access_key_id; at most 128
 	// bytes of printable ASCII. Required by AddStorage. It only comes in: the
@@ -391,8 +501,9 @@ type S3Storage struct {
 	// entry ever holds it; it is always empty in an answer, and
 	// secret_access_key_set says whether one is held. SetStorage keeps the
 	// held secret unless its mask names s3.secret_access_key, and then the
-	// new one must not be empty. The debug_redact mark is read by the
-	// server's redactor; the protobuf library itself still prints the field.
+	// new one must not be empty and the mask must name s3.access_key_id too.
+	// The debug_redact mark is read by the server's redactor; the protobuf
+	// library itself still prints the field.
 	SecretAccessKey string `protobuf:"bytes,7,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
 	// Whether the server holds a secret access key for this storage. Answered
 	// by the server; ignored in a request.
@@ -496,12 +607,9 @@ type StorageTestResult struct {
 	Outcome StorageTestOutcome `protobuf:"varint,2,opt,name=outcome,proto3,enum=magnetar.v1.StorageTestOutcome" json:"outcome,omitempty"`
 	// How long it took. Absent for a skipped step.
 	Duration *durationpb.Duration `protobuf:"bytes,3,opt,name=duration,proto3" json:"duration,omitempty"`
-	// Why a failed step failed, in words for a person, such as "access
-	// denied" or "no such bucket"; empty for another outcome. It never holds
-	// a secret, a signature, or the body of the store's answer, so a storage
-	// pointed at an address that is not a store cannot be used to read what
-	// that address answers.
-	Message       string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	// Why a failed step failed. STORAGE_FAULT_UNSPECIFIED for another
+	// outcome.
+	Fault         StorageFault `protobuf:"varint,4,opt,name=fault,proto3,enum=magnetar.v1.StorageFault" json:"fault,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -557,11 +665,11 @@ func (x *StorageTestResult) GetDuration() *durationpb.Duration {
 	return nil
 }
 
-func (x *StorageTestResult) GetMessage() string {
+func (x *StorageTestResult) GetFault() StorageFault {
 	if x != nil {
-		return x.Message
+		return x.Fault
 	}
-	return ""
+	return StorageFault_STORAGE_FAULT_UNSPECIFIED
 }
 
 // AddStorageRequest is the storage to add.
@@ -900,10 +1008,11 @@ type SetStorageRequest struct {
 	// changed. Fields the mask does not name are ignored.
 	Storage *Storage `protobuf:"bytes,2,opt,name=storage,proto3" json:"storage,omitempty"`
 	// The fields to change, as paths of Storage: "capacity_bytes", or a field
-	// of the storage's type joined to it by a dot, such as "s3.endpoint",
-	// "s3.secret_access_key" or "directory.path". A path that names a type's
-	// whole message ("s3", "directory") is refused: its fields are named one
-	// by one, so a secret is never replaced by leaving it out. Required and
+	// of the storage's type joined to it by a dot, such as "s3.endpoint" or
+	// "directory.path". A path that names a type's whole message ("s3",
+	// "directory") is refused: its fields are named one by one, so a secret
+	// is never replaced by leaving it out. "s3.access_key_id" and
+	// "s3.secret_access_key" are named together or not at all. Required and
 	// not empty; "*" is refused, so every field a call changes is named. A
 	// named field is set to the value given, its zero value included, except
 	// a secret, which must not be empty.
@@ -1235,9 +1344,10 @@ const file_magnetar_v1_storage_proto_rawDesc = "" +
 	"createTime\x12;\n" +
 	"\vupdate_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"updateTimeB\x06\n" +
-	"\x04type\"&\n" +
+	"\x04type\":\n" +
 	"\x10DirectoryStorage\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"\x96\x02\n" +
+	"\x04root\x18\x01 \x01(\tR\x04root\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"\x96\x02\n" +
 	"\tS3Storage\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12\x16\n" +
@@ -1247,12 +1357,12 @@ const file_magnetar_v1_storage_proto_rawDesc = "" +
 	"path_style\x18\x05 \x01(\bR\tpathStyle\x12\"\n" +
 	"\raccess_key_id\x18\x06 \x01(\tR\vaccessKeyId\x12/\n" +
 	"\x11secret_access_key\x18\a \x01(\tB\x03\x80\x01\x01R\x0fsecretAccessKey\x121\n" +
-	"\x15secret_access_key_set\x18\b \x01(\bR\x12secretAccessKeySet\"\xd1\x01\n" +
+	"\x15secret_access_key_set\x18\b \x01(\bR\x12secretAccessKeySet\"\xe8\x01\n" +
 	"\x11StorageTestResult\x120\n" +
 	"\x04step\x18\x01 \x01(\x0e2\x1c.magnetar.v1.StorageTestStepR\x04step\x129\n" +
 	"\aoutcome\x18\x02 \x01(\x0e2\x1f.magnetar.v1.StorageTestOutcomeR\aoutcome\x125\n" +
-	"\bduration\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\bduration\x12\x18\n" +
-	"\amessage\x18\x04 \x01(\tR\amessage\"[\n" +
+	"\bduration\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\bduration\x12/\n" +
+	"\x05fault\x18\x04 \x01(\x0e2\x19.magnetar.v1.StorageFaultR\x05fault\"[\n" +
 	"\x11AddStorageRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12.\n" +
 	"\astorage\x18\x02 \x01(\v2\x14.magnetar.v1.StorageR\astorage\"D\n" +
@@ -1299,7 +1409,15 @@ const file_magnetar_v1_storage_proto_rawDesc = "" +
 	" STORAGE_TEST_OUTCOME_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bSTORAGE_TEST_OUTCOME_PASSED\x10\x01\x12\x1f\n" +
 	"\x1bSTORAGE_TEST_OUTCOME_FAILED\x10\x02\x12 \n" +
-	"\x1cSTORAGE_TEST_OUTCOME_SKIPPED\x10\x032\x95\x04\n" +
+	"\x1cSTORAGE_TEST_OUTCOME_SKIPPED\x10\x03*\xe9\x01\n" +
+	"\fStorageFault\x12\x1d\n" +
+	"\x19STORAGE_FAULT_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19STORAGE_FAULT_UNREACHABLE\x10\x01\x12\x1c\n" +
+	"\x18STORAGE_FAULT_TLS_FAILED\x10\x02\x12\x19\n" +
+	"\x15STORAGE_FAULT_REFUSED\x10\x03\x12\x1b\n" +
+	"\x17STORAGE_FAULT_NOT_FOUND\x10\x04\x12\x1e\n" +
+	"\x1aSTORAGE_FAULT_WRONG_ANSWER\x10\x05\x12%\n" +
+	"!STORAGE_FAULT_ADDRESS_NOT_ALLOWED\x10\x062\x95\x04\n" +
 	"\x0eStorageService\x12M\n" +
 	"\n" +
 	"AddStorage\x12\x1e.magnetar.v1.AddStorageRequest\x1a\x1f.magnetar.v1.AddStorageResponse\x12R\n" +
@@ -1324,65 +1442,67 @@ func file_magnetar_v1_storage_proto_rawDescGZIP() []byte {
 	return file_magnetar_v1_storage_proto_rawDescData
 }
 
-var file_magnetar_v1_storage_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_magnetar_v1_storage_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_magnetar_v1_storage_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_magnetar_v1_storage_proto_goTypes = []any{
 	(StorageTestStep)(0),          // 0: magnetar.v1.StorageTestStep
 	(StorageTestOutcome)(0),       // 1: magnetar.v1.StorageTestOutcome
-	(*Storage)(nil),               // 2: magnetar.v1.Storage
-	(*DirectoryStorage)(nil),      // 3: magnetar.v1.DirectoryStorage
-	(*S3Storage)(nil),             // 4: magnetar.v1.S3Storage
-	(*StorageTestResult)(nil),     // 5: magnetar.v1.StorageTestResult
-	(*AddStorageRequest)(nil),     // 6: magnetar.v1.AddStorageRequest
-	(*AddStorageResponse)(nil),    // 7: magnetar.v1.AddStorageResponse
-	(*GetStorageRequest)(nil),     // 8: magnetar.v1.GetStorageRequest
-	(*GetStorageResponse)(nil),    // 9: magnetar.v1.GetStorageResponse
-	(*ListStoragesRequest)(nil),   // 10: magnetar.v1.ListStoragesRequest
-	(*ListStoragesResponse)(nil),  // 11: magnetar.v1.ListStoragesResponse
-	(*SetStorageRequest)(nil),     // 12: magnetar.v1.SetStorageRequest
-	(*SetStorageResponse)(nil),    // 13: magnetar.v1.SetStorageResponse
-	(*RemoveStorageRequest)(nil),  // 14: magnetar.v1.RemoveStorageRequest
-	(*RemoveStorageResponse)(nil), // 15: magnetar.v1.RemoveStorageResponse
-	(*TestStorageRequest)(nil),    // 16: magnetar.v1.TestStorageRequest
-	(*TestStorageResponse)(nil),   // 17: magnetar.v1.TestStorageResponse
-	(*timestamppb.Timestamp)(nil), // 18: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),   // 19: google.protobuf.Duration
-	(*fieldmaskpb.FieldMask)(nil), // 20: google.protobuf.FieldMask
+	(StorageFault)(0),             // 2: magnetar.v1.StorageFault
+	(*Storage)(nil),               // 3: magnetar.v1.Storage
+	(*DirectoryStorage)(nil),      // 4: magnetar.v1.DirectoryStorage
+	(*S3Storage)(nil),             // 5: magnetar.v1.S3Storage
+	(*StorageTestResult)(nil),     // 6: magnetar.v1.StorageTestResult
+	(*AddStorageRequest)(nil),     // 7: magnetar.v1.AddStorageRequest
+	(*AddStorageResponse)(nil),    // 8: magnetar.v1.AddStorageResponse
+	(*GetStorageRequest)(nil),     // 9: magnetar.v1.GetStorageRequest
+	(*GetStorageResponse)(nil),    // 10: magnetar.v1.GetStorageResponse
+	(*ListStoragesRequest)(nil),   // 11: magnetar.v1.ListStoragesRequest
+	(*ListStoragesResponse)(nil),  // 12: magnetar.v1.ListStoragesResponse
+	(*SetStorageRequest)(nil),     // 13: magnetar.v1.SetStorageRequest
+	(*SetStorageResponse)(nil),    // 14: magnetar.v1.SetStorageResponse
+	(*RemoveStorageRequest)(nil),  // 15: magnetar.v1.RemoveStorageRequest
+	(*RemoveStorageResponse)(nil), // 16: magnetar.v1.RemoveStorageResponse
+	(*TestStorageRequest)(nil),    // 17: magnetar.v1.TestStorageRequest
+	(*TestStorageResponse)(nil),   // 18: magnetar.v1.TestStorageResponse
+	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),   // 20: google.protobuf.Duration
+	(*fieldmaskpb.FieldMask)(nil), // 21: google.protobuf.FieldMask
 }
 var file_magnetar_v1_storage_proto_depIdxs = []int32{
-	3,  // 0: magnetar.v1.Storage.directory:type_name -> magnetar.v1.DirectoryStorage
-	4,  // 1: magnetar.v1.Storage.s3:type_name -> magnetar.v1.S3Storage
-	18, // 2: magnetar.v1.Storage.create_time:type_name -> google.protobuf.Timestamp
-	18, // 3: magnetar.v1.Storage.update_time:type_name -> google.protobuf.Timestamp
+	4,  // 0: magnetar.v1.Storage.directory:type_name -> magnetar.v1.DirectoryStorage
+	5,  // 1: magnetar.v1.Storage.s3:type_name -> magnetar.v1.S3Storage
+	19, // 2: magnetar.v1.Storage.create_time:type_name -> google.protobuf.Timestamp
+	19, // 3: magnetar.v1.Storage.update_time:type_name -> google.protobuf.Timestamp
 	0,  // 4: magnetar.v1.StorageTestResult.step:type_name -> magnetar.v1.StorageTestStep
 	1,  // 5: magnetar.v1.StorageTestResult.outcome:type_name -> magnetar.v1.StorageTestOutcome
-	19, // 6: magnetar.v1.StorageTestResult.duration:type_name -> google.protobuf.Duration
-	2,  // 7: magnetar.v1.AddStorageRequest.storage:type_name -> magnetar.v1.Storage
-	2,  // 8: magnetar.v1.AddStorageResponse.storage:type_name -> magnetar.v1.Storage
-	2,  // 9: magnetar.v1.GetStorageResponse.storage:type_name -> magnetar.v1.Storage
-	2,  // 10: magnetar.v1.ListStoragesResponse.storages:type_name -> magnetar.v1.Storage
-	2,  // 11: magnetar.v1.SetStorageRequest.storage:type_name -> magnetar.v1.Storage
-	20, // 12: magnetar.v1.SetStorageRequest.update_mask:type_name -> google.protobuf.FieldMask
-	2,  // 13: magnetar.v1.SetStorageResponse.storage:type_name -> magnetar.v1.Storage
-	2,  // 14: magnetar.v1.RemoveStorageResponse.storage:type_name -> magnetar.v1.Storage
-	5,  // 15: magnetar.v1.TestStorageResponse.results:type_name -> magnetar.v1.StorageTestResult
-	6,  // 16: magnetar.v1.StorageService.AddStorage:input_type -> magnetar.v1.AddStorageRequest
-	8,  // 17: magnetar.v1.StorageService.GetStorage:input_type -> magnetar.v1.GetStorageRequest
-	10, // 18: magnetar.v1.StorageService.ListStorages:input_type -> magnetar.v1.ListStoragesRequest
-	12, // 19: magnetar.v1.StorageService.SetStorage:input_type -> magnetar.v1.SetStorageRequest
-	14, // 20: magnetar.v1.StorageService.RemoveStorage:input_type -> magnetar.v1.RemoveStorageRequest
-	16, // 21: magnetar.v1.StorageService.TestStorage:input_type -> magnetar.v1.TestStorageRequest
-	7,  // 22: magnetar.v1.StorageService.AddStorage:output_type -> magnetar.v1.AddStorageResponse
-	9,  // 23: magnetar.v1.StorageService.GetStorage:output_type -> magnetar.v1.GetStorageResponse
-	11, // 24: magnetar.v1.StorageService.ListStorages:output_type -> magnetar.v1.ListStoragesResponse
-	13, // 25: magnetar.v1.StorageService.SetStorage:output_type -> magnetar.v1.SetStorageResponse
-	15, // 26: magnetar.v1.StorageService.RemoveStorage:output_type -> magnetar.v1.RemoveStorageResponse
-	17, // 27: magnetar.v1.StorageService.TestStorage:output_type -> magnetar.v1.TestStorageResponse
-	22, // [22:28] is the sub-list for method output_type
-	16, // [16:22] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	20, // 6: magnetar.v1.StorageTestResult.duration:type_name -> google.protobuf.Duration
+	2,  // 7: magnetar.v1.StorageTestResult.fault:type_name -> magnetar.v1.StorageFault
+	3,  // 8: magnetar.v1.AddStorageRequest.storage:type_name -> magnetar.v1.Storage
+	3,  // 9: magnetar.v1.AddStorageResponse.storage:type_name -> magnetar.v1.Storage
+	3,  // 10: magnetar.v1.GetStorageResponse.storage:type_name -> magnetar.v1.Storage
+	3,  // 11: magnetar.v1.ListStoragesResponse.storages:type_name -> magnetar.v1.Storage
+	3,  // 12: magnetar.v1.SetStorageRequest.storage:type_name -> magnetar.v1.Storage
+	21, // 13: magnetar.v1.SetStorageRequest.update_mask:type_name -> google.protobuf.FieldMask
+	3,  // 14: magnetar.v1.SetStorageResponse.storage:type_name -> magnetar.v1.Storage
+	3,  // 15: magnetar.v1.RemoveStorageResponse.storage:type_name -> magnetar.v1.Storage
+	6,  // 16: magnetar.v1.TestStorageResponse.results:type_name -> magnetar.v1.StorageTestResult
+	7,  // 17: magnetar.v1.StorageService.AddStorage:input_type -> magnetar.v1.AddStorageRequest
+	9,  // 18: magnetar.v1.StorageService.GetStorage:input_type -> magnetar.v1.GetStorageRequest
+	11, // 19: magnetar.v1.StorageService.ListStorages:input_type -> magnetar.v1.ListStoragesRequest
+	13, // 20: magnetar.v1.StorageService.SetStorage:input_type -> magnetar.v1.SetStorageRequest
+	15, // 21: magnetar.v1.StorageService.RemoveStorage:input_type -> magnetar.v1.RemoveStorageRequest
+	17, // 22: magnetar.v1.StorageService.TestStorage:input_type -> magnetar.v1.TestStorageRequest
+	8,  // 23: magnetar.v1.StorageService.AddStorage:output_type -> magnetar.v1.AddStorageResponse
+	10, // 24: magnetar.v1.StorageService.GetStorage:output_type -> magnetar.v1.GetStorageResponse
+	12, // 25: magnetar.v1.StorageService.ListStorages:output_type -> magnetar.v1.ListStoragesResponse
+	14, // 26: magnetar.v1.StorageService.SetStorage:output_type -> magnetar.v1.SetStorageResponse
+	16, // 27: magnetar.v1.StorageService.RemoveStorage:output_type -> magnetar.v1.RemoveStorageResponse
+	18, // 28: magnetar.v1.StorageService.TestStorage:output_type -> magnetar.v1.TestStorageResponse
+	23, // [23:29] is the sub-list for method output_type
+	17, // [17:23] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_storage_proto_init() }
@@ -1399,7 +1519,7 @@ func file_magnetar_v1_storage_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_magnetar_v1_storage_proto_rawDesc), len(file_magnetar_v1_storage_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,

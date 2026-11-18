@@ -335,15 +335,21 @@ All notable changes to Magnetar are written here. The form is
 - The API could create tenants and keys but had no way to give a tenant a place to
   keep data or a way for data to arrive. The contract now has five more services in
   `magnetar.v1`, as protobuf with nothing behind them yet: `StorageService` (a
-  directory or an S3 bucket, whose secret access key goes in and never comes back,
-  and a test that writes, reads back and removes one object), `ReceiverService` (a
-  DICOM listener that admits nobody until its callers are listed, with "any caller"
-  its own explicit value), `ReceptionService` (one study's arrival at a receiver and
-  the steps it went through), `QuarantineService` (why a file was held, released to
-  run again, or rejected with a reason) and `MonitorService` (a tenant's numbers
-  now, and a stream of its events that can be resumed from a cursor). A change to a
-  storage or a receiver names the fields it changes in a field mask. Secrets now
-  cross the API in three fields. A walk-through in
+  directory under a root the installation names, or an S3 bucket at an endpoint the
+  installation lists, whose secret access key goes in and never comes back),
+  `ReceiverService` (a receiver, in this version a DICOM listener on a port the
+  installation allotted to the tenant, that admits nobody until its callers are
+  listed), `ReceptionService` (one study's arrival at a receiver and its steps,
+  with a retry or a discard for one that failed), `QuarantineService` (why a file
+  was held, released to run again or rejected with a reason) and `MonitorService`
+  (a tenant's numbers and a stream of its events, read from one snapshot so a
+  client misses nothing). By default a label is a keyed hash, so no label or event
+  carries an identifier the sender gave; a site's own naming rule makes labels
+  exactly as identifying as the rule. A change to a storage or a receiver names its
+  fields in a field mask; a state that forbids a change is answered
+  FAILED_PRECONDITION. Secrets cross the API in three fields. Until a service has
+  its handlers the server answers it as unimplemented, and a test holds the list
+  of such services to exactly that. A walk-through in
   `docs/api-walkthrough-reception.md` follows three uses call by call with only the
   contract in hand.
 - The server had no rules for where a received file goes or what state its

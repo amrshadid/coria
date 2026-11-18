@@ -15,27 +15,51 @@ import "google/protobuf/timestamp.proto";
 // configuration lives in that tenant's database. A storage's used and free
 // space are answered by MonitorService.GetStatus, not here.
 //
+// Where a storage may be is the installation's to decide, not the tenant's:
+// a directory storage lies under a root the installation names, inside that
+// root's directory for the tenant, and an S3 storage uses an endpoint the
+// installation lists. So no tenant can point a storage at another tenant's
+// files, at the server's own files, or at an address inside the server's
+// network that the installation did not list. Two installation-only
+// settings (SettingsService), each empty by default so that no storage of
+// its type can be added until the installation's admin fills it, hold this:
+//
+//   - storage.directory-roots: the roots of directory storages, one per
+//     line, each "name=path": a name under the rule of a tenant's name, and
+//     an absolute path on the server, such as "fast=/srv/archive". A
+//     tenant's directories lie in <path>/<tenant>/ under a root.
+//   - storage.s3-endpoints: the endpoints S3 storages may use, one per line:
+//     the base URL, then, separated by spaces, "plain-http" when an http URL
+//     is allowed and "private-address" when the host may resolve to a
+//     loopback, link-local or private address, such as
+//     "https://s3.eu-central-1.amazonaws.com" or
+//     "http://minio.lab.example:9000 plain-http private-address".
+//
+// A rule that depends on what the installation allows is answered
+// "precondition" when it fails: the same request may succeed once the
+// installation allows it.
+//
 // Every method acts inside one tenant, named by the request's tenant field,
-// so a request into a tenant that is not ready is answered UNAVAILABLE.
+// so a request into a tenant that is not ready is answered UNAVAILABLE. No
+// answer of this service speaks of another tenant.
 service StorageService {
-  // AddStorage adds a storage to a tenant. It records the configuration and
-  // touches nothing on the storage itself: TestStorage checks that the
-  // storage can be written to, and GetStatus reports its space.
+  // AddStorage adds a storage to a tenant. For a directory storage the
+  // server makes the directory, which must be absent or empty; for an S3
+  // storage it touches nothing. TestStorage checks that the storage can be
+  // written to, and GetStatus reports its space.
   //
   // Role: admin on the tenant.
   // Audit: one entry in the tenant's log, with the storage's name as its
-  // object and its type in details; never its secret, its endpoint's
-  // credentials or its path.
+  // object and its type in details; never its secret.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
-  // does not exist, for a caller who may not list every tenant), invalid
-  // (also a directory outside the directories the installation allows for
-  // storages, or a plain http endpoint the installation does not allow; see
-  // DirectoryStorage and S3Storage), not found (a tenant that does not
-  // exist, for a caller who may list every tenant), conflict (the tenant has
-  // a storage with that name; or a directory that contains, or lies inside,
-  // the directory of another storage of the installation, of any tenant),
-  // unavailable (the tenant's database does not answer, or the tenant is not
-  // ready).
+  // does not exist, for a caller who may not list every tenant), invalid,
+  // not found (a tenant that does not exist, for a caller who may list every
+  // tenant), conflict (the tenant has a storage with that name),
+  // precondition (a root or an endpoint the installation does not list; a
+  // directory that is not empty, has a symbolic link in its path, or
+  // overlaps another storage of the tenant; an S3 location that overlaps
+  // another storage of the tenant), unavailable (the tenant's database does
+  // not answer, or the tenant is not ready).
   rpc AddStorage(AddStorageRequest) returns (AddStorageResponse);
 
   // GetStorage answers one storage of a tenant. Its secret is never
@@ -69,29 +93,31 @@ service StorageService {
 
   // SetStorage changes some fields of a storage: those its update_mask
   // names, and no other. A secret the mask does not name is kept as it is,
-  // so a change of the endpoint does not need the secret sent again. The
+  // so a change of the capacity does not need the secret sent again. The
   // change and its audit entry are written together or not at all.
   //
   // A storage's type cannot change: a mask that names the other type's
   // configuration is invalid. Once the storage holds an archived file, the
-  // fields that say where its files are (a directory's path, an S3
-  // storage's bucket and prefix) cannot change, since the files would no
-  // longer be where the catalog says: such a change is a conflict. An S3
-  // storage's endpoint may change, for a store that moved to another
-  // address with its data.
+  // fields that say where its files are (a directory's root and path, an S3
+  // storage's endpoint, bucket and prefix) cannot change, since the files
+  // would no longer be where the catalog says. An S3 storage's access key
+  // id and secret access key change together or not at all: a mask that
+  // names one names the other, or it is invalid.
   //
   // Role: admin on the tenant.
   // Audit: one entry in the tenant's log, with the storage's name as its
   // object and the mask's paths in details; never a value of a secret.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
-  // (also an empty mask, a path that names no field or a read-only field, a
-  // path into the other type's configuration, and every rule AddStorage
-  // checks), not found (the tenant has no storage with that name; a tenant
-  // that does not exist, for a caller who may list every tenant), conflict
-  // (a change of where the files are on a storage that holds files; a
-  // directory that overlaps another storage's), unavailable (the tenant's
-  // database does not answer, or the tenant is not ready).
+  // (also an empty mask, a path that names no field, a read-only field or a
+  // type's whole message, a path into the other type's configuration, one
+  // of the two credentials without the other, and every rule AddStorage
+  // checks on a field), not found (the tenant has no storage with that
+  // name; a tenant that does not exist, for a caller who may list every
+  // tenant), precondition (a change of where the files are on a storage
+  // that holds files, and every precondition AddStorage checks),
+  // unavailable (the tenant's database does not answer, or the tenant is
+  // not ready).
   rpc SetStorage(SetStorageRequest) returns (SetStorageResponse) {
     option idempotency_level = IDEMPOTENT;
   }
@@ -108,8 +134,8 @@ service StorageService {
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid,
   // not found (the tenant has no storage with that name; a tenant that does
-  // not exist, for a caller who may list every tenant), conflict (the
-  // storage holds archived files, or a receiver names it; the message names
+  // not exist, for a caller who may list every tenant), precondition (the
+  // storage holds archived files, or a receiver names it; the message says
   // which), unavailable (the tenant's database does not answer, or the
   // tenant is not ready).
   rpc RemoveStorage(RemoveStorageRequest) returns (RemoveStorageResponse) {
@@ -121,9 +147,10 @@ service StorageService {
   // it, and reports each step. The object's key is under a prefix no
   // archived file uses, so the test never touches data. A storage that
   // fails a step is a result, not an error: the method succeeds and the
-  // failed step says why. A step after a failed one is answered skipped,
-  // except the removal, which is tried whenever the write may have left an
-  // object. Repeating the test leaves the storage as it was.
+  // failed step says why, from a fixed list. A step after a failed one is
+  // answered skipped, except the removal, which is tried whenever the write
+  // may have left an object. Repeating the test leaves the storage as it
+  // was.
   //
   // Role: admin on the tenant.
   // Audit: one entry in the tenant's log, with the storage's name as its
@@ -133,17 +160,20 @@ service StorageService {
   // not found (the tenant has no storage with that name; a tenant that does
   // not exist, for a caller who may list every tenant), unavailable (the
   // tenant's database does not answer, or the tenant is not ready).
-  // Limits: the whole test is bounded by the call's deadline; each step
-  // that has not finished when it passes is answered failed.
+  // Limits: the whole test is bounded by the call's deadline; a step that
+  // has not finished when it passes is answered failed, unreachable.
   rpc TestStorage(TestStorageRequest) returns (TestStorageResponse) {
     option idempotency_level = IDEMPOTENT;
   }
 }
 
-// Storage is a place a tenant's archived files are written to. Its files lie
-// under two trees of keys: data/<subject>/<session>/<scan>/ for the DICOM
-// files, one per instance, and meta/<subject>/<session>/<scan>/ for each
-// scan's manifest and metadata. It never carries a secret.
+// Storage is a place a tenant's archived files are written to. In this
+// version its keys form two trees, data/<subject>/<session>/<scan>/ for the
+// DICOM files, one object per instance, and meta/<subject>/<session>/<scan>/
+// for each scan's manifest and metadata. The catalog records each file's
+// place as a key, an offset and a length, so a later version may pack files
+// differently without changing what this API answers. It never carries a
+// secret.
 message Storage {
   // The storage's name, unique in its tenant, and its id in this API. It
   // does not change. 1 to 63 characters, lowercase ASCII letters, digits and
@@ -183,35 +213,55 @@ message Storage {
   google.protobuf.Timestamp update_time = 6;
 }
 
-// DirectoryStorage is a directory on the server's file system.
+// DirectoryStorage is a directory on the server's file system, under one of
+// the roots the installation names. The directory is <root's directory>/
+// <tenant's name>/<path>: each tenant has its own directory under a root,
+// so one tenant's storages can never reach another's. The root's own path
+// on the server is the installation's and is never answered.
+//
+// The server resolves the directory's path when the storage is added and
+// whenever it opens the directory, and refuses a path below the root that
+// passes through a symbolic link. When added, the directory must not exist
+// or must be empty, and it must not contain, lie inside or be another
+// storage of the tenant; paths are compared after resolution and with case
+// folded, so two spellings of one directory on a file system that ignores
+// case are one directory.
 message DirectoryStorage {
-  // The directory's absolute path on the server, as the server's operating
-  // system writes it; at most 4096 bytes of UTF-8, with no "." or ".."
-  // component. Required. The directory must lie inside one of the
-  // directories the installation allows for storages (the installation's
-  // setting storage.directory-roots: absolute paths separated by the
-  // operating system's path list separator, ":" on Linux and macOS and ";"
-  // on Windows; while it is empty, no directory storage can be added), must
-  // not lie inside the server's own data directory, and
-  // must not contain or lie inside another storage's directory, of any
-  // tenant. The server makes the directory when it does not exist. It is
-  // not a secret, but it is answered only to a caller with a grant on the
-  // tenant.
-  string path = 1;
+  // The name of the root, as the installation's setting
+  // storage.directory-roots names it. Required; a name the setting does not
+  // list is a precondition failure.
+  string root = 1;
+
+  // The directory below the tenant's directory in the root, as segments
+  // joined by "/": at most 16 segments and 1024 bytes, each segment 1 to 128
+  // characters of ASCII letters, digits, ".", "_" and "-", not starting with
+  // a dot (so neither "." nor ".." is a segment). Empty for the tenant's
+  // directory itself. Not absolute: a leading "/" is invalid. It is not a
+  // secret, and is answered to every caller who may read the storage.
+  string path = 2;
 }
 
 // S3Storage is a bucket, or a part of one under a prefix, on an object store
-// that speaks the S3 API. Its credentials are the storage's own: the server
-// never falls back to credentials of its own environment (instance roles,
-// shared credential files), which would let one tenant reach what another
-// tenant's credentials guard.
+// that speaks the S3 API, at an endpoint the installation lists. Its
+// credentials are the storage's own: the server never falls back to
+// credentials of its own environment (instance roles, shared credential
+// files), which would let one tenant reach what another tenant's
+// credentials guard.
+//
+// Every time it connects, the server checks the address the endpoint's host
+// name resolves to: a loopback, link-local or private address (RFC 1918, RFC
+// 4193, RFC 6598) is refused unless the installation's entry for the
+// endpoint allows it, so a name that later resolves elsewhere cannot carry
+// the server's requests into its own network.
 message S3Storage {
-  // The store's base URL, such as "https://s3.eu-central-1.amazonaws.com" or
-  // "https://minio.example.org:9000"; at most 2048 bytes. Empty means AWS S3
-  // in region. It must be an https URL with no user information, query or
-  // fragment; an http URL is accepted only when the installation's setting
-  // storage.allow-plain-http is "true", since over plain http the credentials'
-  // signatures and every archived file cross the network unencrypted.
+  // The store's base URL, such as "https://s3.eu-central-1.amazonaws.com".
+  // Required; at most 2048 bytes; no user information, query or fragment. It
+  // must be one of the endpoints the installation's setting
+  // storage.s3-endpoints lists, compared after the scheme and host are put
+  // in lowercase and a final "/" removed; an endpoint it does not list is a
+  // precondition failure. An http URL is accepted only when its entry allows
+  // plain http, since then every request and every archived file crosses
+  // the network unencrypted.
   string endpoint = 1;
 
   // The region the bucket is in, as the store names it, such as
@@ -230,7 +280,9 @@ message S3Storage {
   // storages can share one bucket. Empty for the whole bucket. At most 512
   // bytes of ASCII letters, digits, ".", "_", "-" and "/", not starting with
   // "/", ending with "/", and with no empty, "." or ".." part; so
-  // "magnetar/lab-a/" is valid and "magnetar/lab-a" is not.
+  // "magnetar/lab-a/" is valid and "magnetar/lab-a" is not. Two storages of
+  // one tenant on the same endpoint and bucket must not have prefixes of
+  // which one starts with the other: that is a precondition failure.
   string prefix = 4;
 
   // Whether the bucket is addressed in the URL's path
@@ -242,7 +294,8 @@ message S3Storage {
   // The access key id of the credentials the server uses, as the store
   // issued it; at most 128 bytes of printable ASCII. Required. It names the
   // credentials and is not a secret: it is answered, so a person can tell
-  // which credentials a storage uses when they are rotated.
+  // which credentials a storage uses when they are rotated. SetStorage
+  // changes it only together with secret_access_key.
   string access_key_id = 6;
 
   // SECRET. The secret access key that goes with access_key_id; at most 128
@@ -251,8 +304,9 @@ message S3Storage {
   // entry ever holds it; it is always empty in an answer, and
   // secret_access_key_set says whether one is held. SetStorage keeps the
   // held secret unless its mask names s3.secret_access_key, and then the
-  // new one must not be empty. The debug_redact mark is read by the
-  // server's redactor; the protobuf library itself still prints the field.
+  // new one must not be empty and the mask must name s3.access_key_id too.
+  // The debug_redact mark is read by the server's redactor; the protobuf
+  // library itself still prints the field.
   string secret_access_key = 7 [debug_redact = true];
 
   // Whether the server holds a secret access key for this storage. Answered
@@ -286,11 +340,44 @@ enum StorageTestOutcome {
   // The step did what it should.
   STORAGE_TEST_OUTCOME_PASSED = 1;
 
-  // The step did not; the result's message says why.
+  // The step did not; the result's failure says why.
   STORAGE_TEST_OUTCOME_FAILED = 2;
 
   // The step was not tried, because a step it needs failed.
   STORAGE_TEST_OUTCOME_SKIPPED = 3;
+}
+
+// StorageFault is why an operation on a storage failed, from a fixed list.
+// The store's own words are never answered: a storage pointed at an address
+// that is not a store cannot be used to read what that address says. A
+// fault added in a later version is a new value.
+enum StorageFault {
+  // No fault. Answered for a step that did not fail.
+  STORAGE_FAULT_UNSPECIFIED = 0;
+
+  // The storage could not be reached in time: no connection, no answer, or
+  // a directory that could not be opened.
+  STORAGE_FAULT_UNREACHABLE = 1;
+
+  // The TLS handshake with the store failed, as for a certificate that does
+  // not verify.
+  STORAGE_FAULT_TLS_FAILED = 2;
+
+  // The store refused the request, as for credentials it does not accept
+  // or a permission it does not give; for a directory, the file system
+  // refused the operation.
+  STORAGE_FAULT_REFUSED = 3;
+
+  // The bucket, the directory or the object is not there.
+  STORAGE_FAULT_NOT_FOUND = 4;
+
+  // The store answered something the server did not expect, or what was
+  // read is not what was written.
+  STORAGE_FAULT_WRONG_ANSWER = 5;
+
+  // The endpoint's host name resolved to a loopback, link-local or private
+  // address its installation entry does not allow; nothing was sent.
+  STORAGE_FAULT_ADDRESS_NOT_ALLOWED = 6;
 }
 
 // StorageTestResult is the outcome of one step of TestStorage.
@@ -304,12 +391,9 @@ message StorageTestResult {
   // How long it took. Absent for a skipped step.
   google.protobuf.Duration duration = 3;
 
-  // Why a failed step failed, in words for a person, such as "access
-  // denied" or "no such bucket"; empty for another outcome. It never holds
-  // a secret, a signature, or the body of the store's answer, so a storage
-  // pointed at an address that is not a store cannot be used to read what
-  // that address answers.
-  string message = 4;
+  // Why a failed step failed. STORAGE_FAULT_UNSPECIFIED for another
+  // outcome.
+  StorageFault fault = 4;
 }
 
 // AddStorageRequest is the storage to add.
@@ -379,10 +463,11 @@ message SetStorageRequest {
   Storage storage = 2;
 
   // The fields to change, as paths of Storage: "capacity_bytes", or a field
-  // of the storage's type joined to it by a dot, such as "s3.endpoint",
-  // "s3.secret_access_key" or "directory.path". A path that names a type's
-  // whole message ("s3", "directory") is refused: its fields are named one
-  // by one, so a secret is never replaced by leaving it out. Required and
+  // of the storage's type joined to it by a dot, such as "s3.endpoint" or
+  // "directory.path". A path that names a type's whole message ("s3",
+  // "directory") is refused: its fields are named one by one, so a secret
+  // is never replaced by leaving it out. "s3.access_key_id" and
+  // "s3.secret_access_key" are named together or not at all. Required and
   // not empty; "*" is refused, so every field a call changes is named. A
   // named field is set to the value given, its zero value included, except
   // a secret, which must not be empty.

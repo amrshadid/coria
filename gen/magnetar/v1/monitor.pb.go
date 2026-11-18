@@ -34,14 +34,14 @@ type EventType int32
 const (
 	// Never answered by the server; refused as invalid in a filter.
 	EventType_EVENT_TYPE_UNSPECIFIED EventType = 0
-	// A receiver accepted an association.
-	EventType_EVENT_TYPE_ASSOCIATION_ACCEPTED EventType = 1
-	// A receiver refused an association.
-	EventType_EVENT_TYPE_ASSOCIATION_REFUSED EventType = 2
+	// A receiver turned callers away.
+	EventType_EVENT_TYPE_ASSOCIATION_FAILED EventType = 1
 	// A reception reached a step.
-	EventType_EVENT_TYPE_RECEPTION_STEP EventType = 3
+	EventType_EVENT_TYPE_RECEPTION_STEP EventType = 2
 	// A file was quarantined.
-	EventType_EVENT_TYPE_FILE_QUARANTINED EventType = 4
+	EventType_EVENT_TYPE_FILE_QUARANTINED EventType = 3
+	// A quarantined file was released or rejected.
+	EventType_EVENT_TYPE_QUARANTINE_DECIDED EventType = 4
 	// A receiver went up or down, or down for another reason.
 	EventType_EVENT_TYPE_RECEIVER_HEALTH EventType = 5
 	// A storage became nearly full, or recovered.
@@ -52,21 +52,21 @@ const (
 var (
 	EventType_name = map[int32]string{
 		0: "EVENT_TYPE_UNSPECIFIED",
-		1: "EVENT_TYPE_ASSOCIATION_ACCEPTED",
-		2: "EVENT_TYPE_ASSOCIATION_REFUSED",
-		3: "EVENT_TYPE_RECEPTION_STEP",
-		4: "EVENT_TYPE_FILE_QUARANTINED",
+		1: "EVENT_TYPE_ASSOCIATION_FAILED",
+		2: "EVENT_TYPE_RECEPTION_STEP",
+		3: "EVENT_TYPE_FILE_QUARANTINED",
+		4: "EVENT_TYPE_QUARANTINE_DECIDED",
 		5: "EVENT_TYPE_RECEIVER_HEALTH",
 		6: "EVENT_TYPE_STORAGE_SPACE",
 	}
 	EventType_value = map[string]int32{
-		"EVENT_TYPE_UNSPECIFIED":          0,
-		"EVENT_TYPE_ASSOCIATION_ACCEPTED": 1,
-		"EVENT_TYPE_ASSOCIATION_REFUSED":  2,
-		"EVENT_TYPE_RECEPTION_STEP":       3,
-		"EVENT_TYPE_FILE_QUARANTINED":     4,
-		"EVENT_TYPE_RECEIVER_HEALTH":      5,
-		"EVENT_TYPE_STORAGE_SPACE":        6,
+		"EVENT_TYPE_UNSPECIFIED":        0,
+		"EVENT_TYPE_ASSOCIATION_FAILED": 1,
+		"EVENT_TYPE_RECEPTION_STEP":     2,
+		"EVENT_TYPE_FILE_QUARANTINED":   3,
+		"EVENT_TYPE_QUARANTINE_DECIDED": 4,
+		"EVENT_TYPE_RECEIVER_HEALTH":    5,
+		"EVENT_TYPE_STORAGE_SPACE":      6,
 	}
 )
 
@@ -97,82 +97,98 @@ func (EventType) EnumDescriptor() ([]byte, []int) {
 	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{0}
 }
 
-// AssociationRefusal is why a receiver refused an association. A reason
-// added in a later version is a new value.
-type AssociationRefusal int32
+// AssociationFailure is why a DIMSE receiver turned a caller away. Each
+// value says which mechanism of PS3.8 the caller saw. A value added in a
+// later version is a new value.
+type AssociationFailure int32
 
 const (
 	// Never answered by the server.
-	AssociationRefusal_ASSOCIATION_REFUSAL_UNSPECIFIED AssociationRefusal = 0
-	// The caller matches none of the receiver's allowed callers (PS3.8 9.3.4,
-	// "calling AE title not recognized").
-	AssociationRefusal_ASSOCIATION_REFUSAL_CALLER_NOT_ALLOWED AssociationRefusal = 1
-	// The caller called an AE title that is not the receiver's (PS3.8 9.3.4,
-	// "called AE title not recognized").
-	AssociationRefusal_ASSOCIATION_REFUSAL_CALLED_AE_TITLE_NOT_RECOGNIZED AssociationRefusal = 2
-	// None of the presentation contexts proposed has a SOP class and transfer
-	// syntax the receiver accepts (PS3.8 9.3.3.2).
-	AssociationRefusal_ASSOCIATION_REFUSAL_NO_ACCEPTABLE_CONTEXT AssociationRefusal = 3
-	// The incoming area or the receiver's storage is nearly full; refused as
-	// a temporary failure (PS3.8 9.3.4, "transient").
-	AssociationRefusal_ASSOCIATION_REFUSAL_NEARLY_FULL AssociationRefusal = 4
-	// The tenant is not ready; refused as a temporary failure.
-	AssociationRefusal_ASSOCIATION_REFUSAL_TENANT_NOT_READY AssociationRefusal = 5
-	// The TLS handshake failed, before any association was asked for; the
-	// caller's AE titles are then unknown.
-	AssociationRefusal_ASSOCIATION_REFUSAL_TLS_FAILED AssociationRefusal = 6
-	// The caller broke the upper layer protocol (PS3.8 Section 9).
-	AssociationRefusal_ASSOCIATION_REFUSAL_PROTOCOL_ERROR AssociationRefusal = 7
+	AssociationFailure_ASSOCIATION_FAILURE_UNSPECIFIED AssociationFailure = 0
+	// Rejected (A-ASSOCIATE-RJ, rejected-permanent, PS3.8 9.3.4,
+	// "calling-AE-title-not-recognized"): the caller matches none of the
+	// receiver's allowed callers.
+	AssociationFailure_ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED AssociationFailure = 1
+	// Rejected (A-ASSOCIATE-RJ, rejected-permanent,
+	// "called-AE-title-not-recognized"): the caller called an AE title that
+	// is not the receiver's.
+	AssociationFailure_ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED AssociationFailure = 2
+	// Accepted with every presentation context rejected (A-ASSOCIATE-AC,
+	// PS3.8 9.3.3.2, "abstract-syntax-not-supported" or
+	// "transfer-syntaxes-not-supported"): the association exists, but no
+	// proposed SOP class and transfer syntax is one the receiver accepts, so
+	// nothing can be sent on it. This event is the only one it makes.
+	AssociationFailure_ASSOCIATION_FAILURE_NO_ACCEPTABLE_CONTEXT AssociationFailure = 3
+	// Rejected (A-ASSOCIATE-RJ, rejected-transient): the incoming area or the
+	// receiver's storage has less free space than its reserve
+	// (storage.reserve).
+	AssociationFailure_ASSOCIATION_FAILURE_NEARLY_FULL AssociationFailure = 4
+	// Rejected (A-ASSOCIATE-RJ, rejected-transient): the tenant is not ready.
+	AssociationFailure_ASSOCIATION_FAILURE_TENANT_NOT_READY AssociationFailure = 5
+	// The TLS handshake failed and the connection was closed before any
+	// association was asked for; the caller's AE titles are unknown.
+	AssociationFailure_ASSOCIATION_FAILURE_TLS_FAILED AssociationFailure = 6
+	// Aborted by the receiver (A-ABORT, PS3.8 9.3.8) because the caller broke
+	// the upper layer protocol (PS3.8 Section 9), before or after the
+	// association was accepted. Files the association had already stored
+	// stay received; a store it cut short is not kept. This event is the
+	// only one it makes.
+	AssociationFailure_ASSOCIATION_FAILURE_PROTOCOL_ERROR AssociationFailure = 7
+	// Rejected (A-ASSOCIATE-RJ, rejected-transient): the tenant holds as many
+	// bytes in the incoming area as its setting incoming.limit allows.
+	AssociationFailure_ASSOCIATION_FAILURE_INCOMING_LIMIT AssociationFailure = 8
 )
 
-// Enum value maps for AssociationRefusal.
+// Enum value maps for AssociationFailure.
 var (
-	AssociationRefusal_name = map[int32]string{
-		0: "ASSOCIATION_REFUSAL_UNSPECIFIED",
-		1: "ASSOCIATION_REFUSAL_CALLER_NOT_ALLOWED",
-		2: "ASSOCIATION_REFUSAL_CALLED_AE_TITLE_NOT_RECOGNIZED",
-		3: "ASSOCIATION_REFUSAL_NO_ACCEPTABLE_CONTEXT",
-		4: "ASSOCIATION_REFUSAL_NEARLY_FULL",
-		5: "ASSOCIATION_REFUSAL_TENANT_NOT_READY",
-		6: "ASSOCIATION_REFUSAL_TLS_FAILED",
-		7: "ASSOCIATION_REFUSAL_PROTOCOL_ERROR",
+	AssociationFailure_name = map[int32]string{
+		0: "ASSOCIATION_FAILURE_UNSPECIFIED",
+		1: "ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED",
+		2: "ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED",
+		3: "ASSOCIATION_FAILURE_NO_ACCEPTABLE_CONTEXT",
+		4: "ASSOCIATION_FAILURE_NEARLY_FULL",
+		5: "ASSOCIATION_FAILURE_TENANT_NOT_READY",
+		6: "ASSOCIATION_FAILURE_TLS_FAILED",
+		7: "ASSOCIATION_FAILURE_PROTOCOL_ERROR",
+		8: "ASSOCIATION_FAILURE_INCOMING_LIMIT",
 	}
-	AssociationRefusal_value = map[string]int32{
-		"ASSOCIATION_REFUSAL_UNSPECIFIED":                    0,
-		"ASSOCIATION_REFUSAL_CALLER_NOT_ALLOWED":             1,
-		"ASSOCIATION_REFUSAL_CALLED_AE_TITLE_NOT_RECOGNIZED": 2,
-		"ASSOCIATION_REFUSAL_NO_ACCEPTABLE_CONTEXT":          3,
-		"ASSOCIATION_REFUSAL_NEARLY_FULL":                    4,
-		"ASSOCIATION_REFUSAL_TENANT_NOT_READY":               5,
-		"ASSOCIATION_REFUSAL_TLS_FAILED":                     6,
-		"ASSOCIATION_REFUSAL_PROTOCOL_ERROR":                 7,
+	AssociationFailure_value = map[string]int32{
+		"ASSOCIATION_FAILURE_UNSPECIFIED":                    0,
+		"ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED":             1,
+		"ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED": 2,
+		"ASSOCIATION_FAILURE_NO_ACCEPTABLE_CONTEXT":          3,
+		"ASSOCIATION_FAILURE_NEARLY_FULL":                    4,
+		"ASSOCIATION_FAILURE_TENANT_NOT_READY":               5,
+		"ASSOCIATION_FAILURE_TLS_FAILED":                     6,
+		"ASSOCIATION_FAILURE_PROTOCOL_ERROR":                 7,
+		"ASSOCIATION_FAILURE_INCOMING_LIMIT":                 8,
 	}
 )
 
-func (x AssociationRefusal) Enum() *AssociationRefusal {
-	p := new(AssociationRefusal)
+func (x AssociationFailure) Enum() *AssociationFailure {
+	p := new(AssociationFailure)
 	*p = x
 	return p
 }
 
-func (x AssociationRefusal) String() string {
+func (x AssociationFailure) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (AssociationRefusal) Descriptor() protoreflect.EnumDescriptor {
+func (AssociationFailure) Descriptor() protoreflect.EnumDescriptor {
 	return file_magnetar_v1_monitor_proto_enumTypes[1].Descriptor()
 }
 
-func (AssociationRefusal) Type() protoreflect.EnumType {
+func (AssociationFailure) Type() protoreflect.EnumType {
 	return &file_magnetar_v1_monitor_proto_enumTypes[1]
 }
 
-func (x AssociationRefusal) Number() protoreflect.EnumNumber {
+func (x AssociationFailure) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use AssociationRefusal.Descriptor instead.
-func (AssociationRefusal) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use AssociationFailure.Descriptor instead.
+func (AssociationFailure) EnumDescriptor() ([]byte, []int) {
 	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{1}
 }
 
@@ -182,9 +198,10 @@ type StorageSpaceState int32
 const (
 	// Never answered by the server.
 	StorageSpaceState_STORAGE_SPACE_STATE_UNSPECIFIED StorageSpaceState = 0
-	// Its free space fell below the installation's threshold.
+	// Its free space fell below its reserve (the installation's setting
+	// storage.reserve).
 	StorageSpaceState_STORAGE_SPACE_STATE_NEARLY_FULL StorageSpaceState = 1
-	// Its free space is above the threshold again.
+	// Its free space is above its reserve again.
 	StorageSpaceState_STORAGE_SPACE_STATE_RECOVERED StorageSpaceState = 2
 )
 
@@ -299,14 +316,19 @@ type TenantCounts struct {
 	Instances int64 `protobuf:"varint,4,opt,name=instances,proto3" json:"instances,omitempty"`
 	// Quarantined files held now: not released or rejected.
 	QuarantinedFiles int64 `protobuf:"varint,5,opt,name=quarantined_files,json=quarantinedFiles,proto3" json:"quarantined_files,omitempty"`
-	// Bytes of the quarantined files held now.
+	// Bytes the server holds for the quarantined files held now; a record
+	// whose bytes were never kept counts none.
 	QuarantinedBytes int64 `protobuf:"varint,6,opt,name=quarantined_bytes,json=quarantinedBytes,proto3" json:"quarantined_bytes,omitempty"`
 	// The receptions in progress, one entry per step that has any, in the
 	// order of the steps. A step with none is left out. The ended steps
 	// (done, quarantined, failed) are never listed.
 	ReceptionsInProgress []*ReceptionStepCount `protobuf:"bytes,7,rep,name=receptions_in_progress,json=receptionsInProgress,proto3" json:"receptions_in_progress,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// Bytes the tenant holds in the server's incoming area: files received
+	// and not yet archived, files of failed receptions not yet retried or
+	// discarded, and quarantined files held.
+	IncomingBytes int64 `protobuf:"varint,8,opt,name=incoming_bytes,json=incomingBytes,proto3" json:"incoming_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TenantCounts) Reset() {
@@ -388,9 +410,16 @@ func (x *TenantCounts) GetReceptionsInProgress() []*ReceptionStepCount {
 	return nil
 }
 
+func (x *TenantCounts) GetIncomingBytes() int64 {
+	if x != nil {
+		return x.IncomingBytes
+	}
+	return 0
+}
+
 // Throughput is how fast files move through a tenant now, measured by the
-// server over the last 10 seconds. It is held in memory: after a restart it
-// starts again from zero.
+// server over the last 10 seconds. It is held in memory, not in the
+// database snapshot: after a restart it starts again from zero.
 type Throughput struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Files received per second, into every receiver of the tenant.
@@ -469,16 +498,17 @@ type StorageStatus struct {
 	// The storage's name.
 	Storage string `protobuf:"bytes,1,opt,name=storage,proto3" json:"storage,omitempty"`
 	// Bytes the tenant holds on it: its archived files, manifests and
-	// metadata, as the catalog records them.
+	// metadata, as the catalog records them in the status's snapshot.
 	UsedBytes int64 `protobuf:"varint,2,opt,name=used_bytes,json=usedBytes,proto3" json:"used_bytes,omitempty"`
 	// Bytes it can still take: the smaller of what its file system reports
-	// free and what is left under its capacity_bytes. Absent when unknown: an
-	// S3 storage with no capacity_bytes, or a file system that did not
-	// answer.
+	// free and what is left under its capacity_bytes, read when the status is
+	// made. Absent when unknown: an S3 storage with no capacity_bytes, or a
+	// file system that did not answer.
 	FreeBytes *int64 `protobuf:"varint,3,opt,name=free_bytes,json=freeBytes,proto3,oneof" json:"free_bytes,omitempty"`
 	// Its capacity_bytes; zero for none.
 	CapacityBytes int64 `protobuf:"varint,4,opt,name=capacity_bytes,json=capacityBytes,proto3" json:"capacity_bytes,omitempty"`
-	// Whether its free space is below the installation's threshold, so its
+	// Whether its free space is below its reserve (the installation's setting
+	// storage.reserve, ReceiverService), so its
 	// receivers refuse new associations until space returns. False when its
 	// free space is unknown.
 	NearlyFull    bool `protobuf:"varint,5,opt,name=nearly_full,json=nearlyFull,proto3" json:"nearly_full,omitempty"`
@@ -556,7 +586,7 @@ type ReceiverStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The receiver's name.
 	Receiver string `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	// Whether it accepts associations, and why not.
+	// Whether it accepts data, and why not.
 	Health *ReceiverHealth `protobuf:"bytes,2,opt,name=health,proto3" json:"health,omitempty"`
 	// Whether it admits any caller, so a status shows a receiver open to
 	// everyone.
@@ -626,12 +656,10 @@ type TenantStatus struct {
 	DatabaseState TenantState `protobuf:"varint,2,opt,name=database_state,json=databaseState,proto3,enum=magnetar.v1.TenantState" json:"database_state,omitempty"`
 	// When the tenant entered that state.
 	DatabaseStateTime *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=database_state_time,json=databaseStateTime,proto3" json:"database_state_time,omitempty"`
-	// The position of the tenant's event feed, read before the counts: a
-	// Watch of this tenant from this cursor answers every event that came
-	// after it. An event at the boundary may already be reflected in the
-	// counts; since a reception's events carry totals, not changes, applying
-	// it again changes nothing. Empty when the tenant's database did not
-	// answer. Opaque; at most 1 KiB.
+	// The position of the tenant's event feed in the same snapshot as the
+	// counts: a Watch of this tenant from this cursor answers exactly the
+	// events whose changes the counts do not hold. Empty when the tenant's
+	// database did not answer. Opaque; at most 1 KiB.
 	EventCursor string `protobuf:"bytes,4,opt,name=event_cursor,json=eventCursor,proto3" json:"event_cursor,omitempty"`
 	// The tenant's counts. Absent when its database did not answer.
 	Counts *TenantCounts `protobuf:"bytes,5,opt,name=counts,proto3" json:"counts,omitempty"`
@@ -643,9 +671,13 @@ type TenantStatus struct {
 	Storages []*StorageStatus `protobuf:"bytes,7,rep,name=storages,proto3" json:"storages,omitempty"`
 	// Each of its receivers, ordered by name, from the server's memory, so
 	// they are answered also when its database does not answer.
-	Receivers     []*ReceiverStatus `protobuf:"bytes,8,rep,name=receivers,proto3" json:"receivers,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Receivers []*ReceiverStatus `protobuf:"bytes,8,rep,name=receivers,proto3" json:"receivers,omitempty"`
+	// The tenant's setting incoming.limit in bytes: the most it may hold in
+	// the server's incoming area before its receivers refuse new
+	// associations. Zero for no limit of its own.
+	IncomingLimitBytes int64 `protobuf:"varint,9,opt,name=incoming_limit_bytes,json=incomingLimitBytes,proto3" json:"incoming_limit_bytes,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *TenantStatus) Reset() {
@@ -732,6 +764,13 @@ func (x *TenantStatus) GetReceivers() []*ReceiverStatus {
 		return x.Receivers
 	}
 	return nil
+}
+
+func (x *TenantStatus) GetIncomingLimitBytes() int64 {
+	if x != nil {
+		return x.IncomingLimitBytes
+	}
+	return 0
 }
 
 // GetStatusRequest asks for the status of one tenant or of every tenant.
@@ -869,33 +908,48 @@ func (x *GetStatusResponse) GetTime() *timestamppb.Timestamp {
 	return nil
 }
 
-// AssociationAccepted is a receiver accepting an association.
-type AssociationAccepted struct {
+// AssociationFailed is a receiver turning callers away. Failures are grouped
+// by receiver, failure and the caller's host address (without its port):
+// the first failure of a group makes an event at once, and further ones in
+// the minute after it are counted and make one event at the end of that
+// minute. When more than 64 distinct hosts fail at one receiver within a
+// minute, the failures of the hosts beyond those 64 are folded into one
+// event at the end of the minute, with caller empty. So a caller trying
+// again and again, or many callers at once, cannot flood the feed.
+type AssociationFailed struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The receiver's name.
 	Receiver string `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	// Who called.
+	// Who called, as far as it is known: the host's address without its port,
+	// and the AE titles when they were read. Absent for the event that folds
+	// the failures of many hosts together.
 	Caller *Caller `protobuf:"bytes,2,opt,name=caller,proto3" json:"caller,omitempty"`
-	// Whether the association is over TLS.
-	Tls           bool `protobuf:"varint,3,opt,name=tls,proto3" json:"tls,omitempty"`
+	// Why the caller was turned away.
+	Failure AssociationFailure `protobuf:"varint,3,opt,name=failure,proto3,enum=magnetar.v1.AssociationFailure" json:"failure,omitempty"`
+	// How many failures the event stands for: 1 for the first of a group,
+	// more for an event at the end of a minute.
+	Count int64 `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	// How many distinct hosts the event stands for: 1, or more for the event
+	// that folds many hosts together.
+	Hosts         int64 `protobuf:"varint,5,opt,name=hosts,proto3" json:"hosts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AssociationAccepted) Reset() {
-	*x = AssociationAccepted{}
+func (x *AssociationFailed) Reset() {
+	*x = AssociationFailed{}
 	mi := &file_magnetar_v1_monitor_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AssociationAccepted) String() string {
+func (x *AssociationFailed) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AssociationAccepted) ProtoMessage() {}
+func (*AssociationFailed) ProtoMessage() {}
 
-func (x *AssociationAccepted) ProtoReflect() protoreflect.Message {
+func (x *AssociationFailed) ProtoReflect() protoreflect.Message {
 	mi := &file_magnetar_v1_monitor_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -907,107 +961,42 @@ func (x *AssociationAccepted) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AssociationAccepted.ProtoReflect.Descriptor instead.
-func (*AssociationAccepted) Descriptor() ([]byte, []int) {
+// Deprecated: Use AssociationFailed.ProtoReflect.Descriptor instead.
+func (*AssociationFailed) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *AssociationAccepted) GetReceiver() string {
+func (x *AssociationFailed) GetReceiver() string {
 	if x != nil {
 		return x.Receiver
 	}
 	return ""
 }
 
-func (x *AssociationAccepted) GetCaller() *Caller {
+func (x *AssociationFailed) GetCaller() *Caller {
 	if x != nil {
 		return x.Caller
 	}
 	return nil
 }
 
-func (x *AssociationAccepted) GetTls() bool {
+func (x *AssociationFailed) GetFailure() AssociationFailure {
 	if x != nil {
-		return x.Tls
+		return x.Failure
 	}
-	return false
+	return AssociationFailure_ASSOCIATION_FAILURE_UNSPECIFIED
 }
 
-// AssociationRefused is a receiver refusing associations. The first refusal
-// for one receiver, caller address and reason makes an event at once;
-// further ones in the minute after it are counted and make one event at the
-// end of that minute, so a caller trying again and again cannot flood the
-// feed.
-type AssociationRefused struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The receiver's name.
-	Receiver string `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	// Who called, as far as it is known: the AE titles are empty when the
-	// refusal came before they were read.
-	Caller *Caller `protobuf:"bytes,2,opt,name=caller,proto3" json:"caller,omitempty"`
-	// Why it was refused.
-	Reason AssociationRefusal `protobuf:"varint,3,opt,name=reason,proto3,enum=magnetar.v1.AssociationRefusal" json:"reason,omitempty"`
-	// How many refusals the event stands for: 1, or more for the event at the
-	// end of a minute.
-	Count         int64 `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AssociationRefused) Reset() {
-	*x = AssociationRefused{}
-	mi := &file_magnetar_v1_monitor_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AssociationRefused) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AssociationRefused) ProtoMessage() {}
-
-func (x *AssociationRefused) ProtoReflect() protoreflect.Message {
-	mi := &file_magnetar_v1_monitor_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AssociationRefused.ProtoReflect.Descriptor instead.
-func (*AssociationRefused) Descriptor() ([]byte, []int) {
-	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *AssociationRefused) GetReceiver() string {
-	if x != nil {
-		return x.Receiver
-	}
-	return ""
-}
-
-func (x *AssociationRefused) GetCaller() *Caller {
-	if x != nil {
-		return x.Caller
-	}
-	return nil
-}
-
-func (x *AssociationRefused) GetReason() AssociationRefusal {
-	if x != nil {
-		return x.Reason
-	}
-	return AssociationRefusal_ASSOCIATION_REFUSAL_UNSPECIFIED
-}
-
-func (x *AssociationRefused) GetCount() int64 {
+func (x *AssociationFailed) GetCount() int64 {
 	if x != nil {
 		return x.Count
+	}
+	return 0
+}
+
+func (x *AssociationFailed) GetHosts() int64 {
+	if x != nil {
+		return x.Hosts
 	}
 	return 0
 }
@@ -1029,14 +1018,17 @@ type ReceptionStepReached struct {
 	// Its subject's label. Empty before it is identified.
 	SubjectLabel string `protobuf:"bytes,6,opt,name=subject_label,json=subjectLabel,proto3" json:"subject_label,omitempty"`
 	// Its session's label. Empty before it is identified.
-	SessionLabel  string `protobuf:"bytes,7,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
+	SessionLabel string `protobuf:"bytes,7,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
+	// The id of the failed reception it runs again. Empty unless it was made
+	// by RetryReception.
+	RetryOf       string `protobuf:"bytes,8,opt,name=retry_of,json=retryOf,proto3" json:"retry_of,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ReceptionStepReached) Reset() {
 	*x = ReceptionStepReached{}
-	mi := &file_magnetar_v1_monitor_proto_msgTypes[10]
+	mi := &file_magnetar_v1_monitor_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1048,7 +1040,7 @@ func (x *ReceptionStepReached) String() string {
 func (*ReceptionStepReached) ProtoMessage() {}
 
 func (x *ReceptionStepReached) ProtoReflect() protoreflect.Message {
-	mi := &file_magnetar_v1_monitor_proto_msgTypes[10]
+	mi := &file_magnetar_v1_monitor_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1061,7 +1053,7 @@ func (x *ReceptionStepReached) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceptionStepReached.ProtoReflect.Descriptor instead.
 func (*ReceptionStepReached) Descriptor() ([]byte, []int) {
-	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{10}
+	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ReceptionStepReached) GetReception() string {
@@ -1113,6 +1105,13 @@ func (x *ReceptionStepReached) GetSessionLabel() string {
 	return ""
 }
 
+func (x *ReceptionStepReached) GetRetryOf() string {
+	if x != nil {
+		return x.RetryOf
+	}
+	return ""
+}
+
 // FileQuarantined is one file quarantined.
 type FileQuarantined struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1125,14 +1124,19 @@ type FileQuarantined struct {
 	// Why it was quarantined.
 	Reason QuarantineReason `protobuf:"varint,4,opt,name=reason,proto3,enum=magnetar.v1.QuarantineReason" json:"reason,omitempty"`
 	// Its size in bytes.
-	SizeBytes     int64 `protobuf:"varint,5,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	SizeBytes int64 `protobuf:"varint,5,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// The tenant's quarantined files held, this one included.
+	HeldFiles int64 `protobuf:"varint,6,opt,name=held_files,json=heldFiles,proto3" json:"held_files,omitempty"`
+	// The bytes the server holds for the tenant's quarantined files held, as
+	// TenantCounts.quarantined_bytes counts them.
+	HeldBytes     int64 `protobuf:"varint,7,opt,name=held_bytes,json=heldBytes,proto3" json:"held_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FileQuarantined) Reset() {
 	*x = FileQuarantined{}
-	mi := &file_magnetar_v1_monitor_proto_msgTypes[11]
+	mi := &file_magnetar_v1_monitor_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1144,7 +1148,7 @@ func (x *FileQuarantined) String() string {
 func (*FileQuarantined) ProtoMessage() {}
 
 func (x *FileQuarantined) ProtoReflect() protoreflect.Message {
-	mi := &file_magnetar_v1_monitor_proto_msgTypes[11]
+	mi := &file_magnetar_v1_monitor_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1157,7 +1161,7 @@ func (x *FileQuarantined) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileQuarantined.ProtoReflect.Descriptor instead.
 func (*FileQuarantined) Descriptor() ([]byte, []int) {
-	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{11}
+	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *FileQuarantined) GetFile() string {
@@ -1191,6 +1195,112 @@ func (x *FileQuarantined) GetReason() QuarantineReason {
 func (x *FileQuarantined) GetSizeBytes() int64 {
 	if x != nil {
 		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *FileQuarantined) GetHeldFiles() int64 {
+	if x != nil {
+		return x.HeldFiles
+	}
+	return 0
+}
+
+func (x *FileQuarantined) GetHeldBytes() int64 {
+	if x != nil {
+		return x.HeldBytes
+	}
+	return 0
+}
+
+// QuarantineDecided is a quarantined file released or rejected.
+type QuarantineDecided struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The quarantined file's record id.
+	File string `protobuf:"bytes,1,opt,name=file,proto3" json:"file,omitempty"`
+	// What was decided: released or rejected.
+	State QuarantineState `protobuf:"varint,2,opt,name=state,proto3,enum=magnetar.v1.QuarantineState" json:"state,omitempty"`
+	// How it was released. RELEASE_MODE_UNSPECIFIED for a rejection.
+	ReleaseMode ReleaseMode `protobuf:"varint,3,opt,name=release_mode,json=releaseMode,proto3,enum=magnetar.v1.ReleaseMode" json:"release_mode,omitempty"`
+	// The id of the reception its release joined. Empty for a rejection.
+	ReleaseReception string `protobuf:"bytes,4,opt,name=release_reception,json=releaseReception,proto3" json:"release_reception,omitempty"`
+	// The tenant's quarantined files held after the decision.
+	HeldFiles int64 `protobuf:"varint,5,opt,name=held_files,json=heldFiles,proto3" json:"held_files,omitempty"`
+	// The bytes the server holds for the tenant's quarantined files held
+	// after the decision, as TenantCounts.quarantined_bytes counts them.
+	HeldBytes     int64 `protobuf:"varint,6,opt,name=held_bytes,json=heldBytes,proto3" json:"held_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QuarantineDecided) Reset() {
+	*x = QuarantineDecided{}
+	mi := &file_magnetar_v1_monitor_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QuarantineDecided) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QuarantineDecided) ProtoMessage() {}
+
+func (x *QuarantineDecided) ProtoReflect() protoreflect.Message {
+	mi := &file_magnetar_v1_monitor_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QuarantineDecided.ProtoReflect.Descriptor instead.
+func (*QuarantineDecided) Descriptor() ([]byte, []int) {
+	return file_magnetar_v1_monitor_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *QuarantineDecided) GetFile() string {
+	if x != nil {
+		return x.File
+	}
+	return ""
+}
+
+func (x *QuarantineDecided) GetState() QuarantineState {
+	if x != nil {
+		return x.State
+	}
+	return QuarantineState_QUARANTINE_STATE_UNSPECIFIED
+}
+
+func (x *QuarantineDecided) GetReleaseMode() ReleaseMode {
+	if x != nil {
+		return x.ReleaseMode
+	}
+	return ReleaseMode_RELEASE_MODE_UNSPECIFIED
+}
+
+func (x *QuarantineDecided) GetReleaseReception() string {
+	if x != nil {
+		return x.ReleaseReception
+	}
+	return ""
+}
+
+func (x *QuarantineDecided) GetHeldFiles() int64 {
+	if x != nil {
+		return x.HeldFiles
+	}
+	return 0
+}
+
+func (x *QuarantineDecided) GetHeldBytes() int64 {
+	if x != nil {
+		return x.HeldBytes
 	}
 	return 0
 }
@@ -1341,10 +1451,10 @@ type Event struct {
 	//
 	// Types that are valid to be assigned to Payload:
 	//
-	//	*Event_AssociationAccepted
-	//	*Event_AssociationRefused
+	//	*Event_AssociationFailed
 	//	*Event_ReceptionStep
 	//	*Event_FileQuarantined
+	//	*Event_QuarantineDecided
 	//	*Event_ReceiverHealth
 	//	*Event_StorageSpace
 	Payload       isEvent_Payload `protobuf_oneof:"payload"`
@@ -1417,19 +1527,10 @@ func (x *Event) GetPayload() isEvent_Payload {
 	return nil
 }
 
-func (x *Event) GetAssociationAccepted() *AssociationAccepted {
+func (x *Event) GetAssociationFailed() *AssociationFailed {
 	if x != nil {
-		if x, ok := x.Payload.(*Event_AssociationAccepted); ok {
-			return x.AssociationAccepted
-		}
-	}
-	return nil
-}
-
-func (x *Event) GetAssociationRefused() *AssociationRefused {
-	if x != nil {
-		if x, ok := x.Payload.(*Event_AssociationRefused); ok {
-			return x.AssociationRefused
+		if x, ok := x.Payload.(*Event_AssociationFailed); ok {
+			return x.AssociationFailed
 		}
 	}
 	return nil
@@ -1448,6 +1549,15 @@ func (x *Event) GetFileQuarantined() *FileQuarantined {
 	if x != nil {
 		if x, ok := x.Payload.(*Event_FileQuarantined); ok {
 			return x.FileQuarantined
+		}
+	}
+	return nil
+}
+
+func (x *Event) GetQuarantineDecided() *QuarantineDecided {
+	if x != nil {
+		if x, ok := x.Payload.(*Event_QuarantineDecided); ok {
+			return x.QuarantineDecided
 		}
 	}
 	return nil
@@ -1475,24 +1585,24 @@ type isEvent_Payload interface {
 	isEvent_Payload()
 }
 
-type Event_AssociationAccepted struct {
-	// A receiver accepted an association.
-	AssociationAccepted *AssociationAccepted `protobuf:"bytes,5,opt,name=association_accepted,json=associationAccepted,proto3,oneof"`
-}
-
-type Event_AssociationRefused struct {
-	// A receiver refused associations.
-	AssociationRefused *AssociationRefused `protobuf:"bytes,6,opt,name=association_refused,json=associationRefused,proto3,oneof"`
+type Event_AssociationFailed struct {
+	// A receiver turned callers away.
+	AssociationFailed *AssociationFailed `protobuf:"bytes,5,opt,name=association_failed,json=associationFailed,proto3,oneof"`
 }
 
 type Event_ReceptionStep struct {
 	// A reception reached a step.
-	ReceptionStep *ReceptionStepReached `protobuf:"bytes,7,opt,name=reception_step,json=receptionStep,proto3,oneof"`
+	ReceptionStep *ReceptionStepReached `protobuf:"bytes,6,opt,name=reception_step,json=receptionStep,proto3,oneof"`
 }
 
 type Event_FileQuarantined struct {
 	// A file was quarantined.
-	FileQuarantined *FileQuarantined `protobuf:"bytes,8,opt,name=file_quarantined,json=fileQuarantined,proto3,oneof"`
+	FileQuarantined *FileQuarantined `protobuf:"bytes,7,opt,name=file_quarantined,json=fileQuarantined,proto3,oneof"`
+}
+
+type Event_QuarantineDecided struct {
+	// A quarantined file was released or rejected.
+	QuarantineDecided *QuarantineDecided `protobuf:"bytes,8,opt,name=quarantine_decided,json=quarantineDecided,proto3,oneof"`
 }
 
 type Event_ReceiverHealth struct {
@@ -1505,13 +1615,13 @@ type Event_StorageSpace struct {
 	StorageSpace *StorageSpaceChanged `protobuf:"bytes,10,opt,name=storage_space,json=storageSpace,proto3,oneof"`
 }
 
-func (*Event_AssociationAccepted) isEvent_Payload() {}
-
-func (*Event_AssociationRefused) isEvent_Payload() {}
+func (*Event_AssociationFailed) isEvent_Payload() {}
 
 func (*Event_ReceptionStep) isEvent_Payload() {}
 
 func (*Event_FileQuarantined) isEvent_Payload() {}
+
+func (*Event_QuarantineDecided) isEvent_Payload() {}
 
 func (*Event_ReceiverHealth) isEvent_Payload() {}
 
@@ -1523,10 +1633,15 @@ type WatchKeepAlive struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// When it was sent.
 	Time *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`
-	// On a tenant, the position the stream has read up to, past events the
+	// On one tenant, the position the stream has read up to, past events the
 	// filter left out: resuming from it skips them again rather than reading
 	// them a second time. Empty with every tenant. Opaque; at most 1 KiB.
-	Cursor        string `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Cursor string `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	// With every tenant, the position the stream has read up to in each
+	// tenant whose database answered, by tenant name; a tenant missing here
+	// is one the stream has not read yet. Empty with one tenant. Each cursor
+	// is opaque, at most 1 KiB.
+	TenantCursors map[string]string `protobuf:"bytes,3,rep,name=tenant_cursors,json=tenantCursors,proto3" json:"tenant_cursors,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1575,19 +1690,33 @@ func (x *WatchKeepAlive) GetCursor() string {
 	return ""
 }
 
+func (x *WatchKeepAlive) GetTenantCursors() map[string]string {
+	if x != nil {
+		return x.TenantCursors
+	}
+	return nil
+}
+
 // WatchRequest asks for a stream of events.
 type WatchRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// A tenant, for its events; or the installation, for every tenant's.
 	// Required.
 	Scope *Scope `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
-	// Start after this cursor: an event's cursor, a keep-alive's, or a
-	// status's event_cursor, of the same tenant. Empty to start from now.
-	// Opaque; at most 1 KiB. Must be empty with the installation.
+	// With one tenant, start after this cursor: an event's cursor, a
+	// keep-alive's, or a status's event_cursor, of the same tenant. Empty to
+	// start from now. Opaque; at most 1 KiB. Must be empty with every tenant.
 	Cursor string `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	// Only events of these types. Empty for every type; at most 16 values,
 	// none of them EVENT_TYPE_UNSPECIFIED.
-	Types         []EventType `protobuf:"varint,3,rep,packed,name=types,proto3,enum=magnetar.v1.EventType" json:"types,omitempty"`
+	Types []EventType `protobuf:"varint,3,rep,packed,name=types,proto3,enum=magnetar.v1.EventType" json:"types,omitempty"`
+	// With every tenant, where to start in each tenant, by tenant name: a
+	// keep-alive's tenant_cursors, or cursors gathered from events and
+	// statuses. A tenant not listed starts from now; a listed tenant that no
+	// longer exists is left out. At most 10000 entries, each cursor at most
+	// 1 KiB, within the 4 MB limit of a message. Must be empty with one
+	// tenant.
+	TenantCursors map[string]string `protobuf:"bytes,4,rep,name=tenant_cursors,json=tenantCursors,proto3" json:"tenant_cursors,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1639,6 +1768,13 @@ func (x *WatchRequest) GetCursor() string {
 func (x *WatchRequest) GetTypes() []EventType {
 	if x != nil {
 		return x.Types
+	}
+	return nil
+}
+
+func (x *WatchRequest) GetTenantCursors() map[string]string {
+	if x != nil {
+		return x.TenantCursors
 	}
 	return nil
 }
@@ -1740,7 +1876,7 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"\x04step\x18\x01 \x01(\x0e2\x1a.magnetar.v1.ReceptionStepR\x04step\x12\x1e\n" +
 	"\n" +
 	"receptions\x18\x02 \x01(\x03R\n" +
-	"receptions\"\xab\x02\n" +
+	"receptions\"\xd2\x02\n" +
 	"\fTenantCounts\x12\x1a\n" +
 	"\bsubjects\x18\x01 \x01(\x03R\bsubjects\x12\x1a\n" +
 	"\bsessions\x18\x02 \x01(\x03R\bsessions\x12\x14\n" +
@@ -1748,7 +1884,8 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"\tinstances\x18\x04 \x01(\x03R\tinstances\x12+\n" +
 	"\x11quarantined_files\x18\x05 \x01(\x03R\x10quarantinedFiles\x12+\n" +
 	"\x11quarantined_bytes\x18\x06 \x01(\x03R\x10quarantinedBytes\x12U\n" +
-	"\x16receptions_in_progress\x18\a \x03(\v2\x1f.magnetar.v1.ReceptionStepCountR\x14receptionsInProgress\"\xf8\x01\n" +
+	"\x16receptions_in_progress\x18\a \x03(\v2\x1f.magnetar.v1.ReceptionStepCountR\x14receptionsInProgress\x12%\n" +
+	"\x0eincoming_bytes\x18\b \x01(\x03R\rincomingBytes\"\xf8\x01\n" +
 	"\n" +
 	"Throughput\x129\n" +
 	"\x19files_received_per_second\x18\x01 \x01(\x01R\x16filesReceivedPerSecond\x129\n" +
@@ -1769,7 +1906,7 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"\breceiver\x18\x01 \x01(\tR\breceiver\x123\n" +
 	"\x06health\x18\x02 \x01(\v2\x1b.magnetar.v1.ReceiverHealthR\x06health\x12\x1d\n" +
 	"\n" +
-	"any_caller\x18\x03 \x01(\bR\tanyCaller\"\xb5\x03\n" +
+	"any_caller\x18\x03 \x01(\bR\tanyCaller\"\xe7\x03\n" +
 	"\fTenantStatus\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12?\n" +
 	"\x0edatabase_state\x18\x02 \x01(\x0e2\x18.magnetar.v1.TenantStateR\rdatabaseState\x12J\n" +
@@ -1780,7 +1917,8 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"throughput\x18\x06 \x01(\v2\x17.magnetar.v1.ThroughputR\n" +
 	"throughput\x126\n" +
 	"\bstorages\x18\a \x03(\v2\x1a.magnetar.v1.StorageStatusR\bstorages\x129\n" +
-	"\treceivers\x18\b \x03(\v2\x1b.magnetar.v1.ReceiverStatusR\treceivers\"x\n" +
+	"\treceivers\x18\b \x03(\v2\x1b.magnetar.v1.ReceiverStatusR\treceivers\x120\n" +
+	"\x14incoming_limit_bytes\x18\t \x01(\x03R\x12incomingLimitBytes\"x\n" +
 	"\x10GetStatusRequest\x12(\n" +
 	"\x05scope\x18\x01 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
@@ -1789,16 +1927,13 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"\x11GetStatusResponse\x123\n" +
 	"\atenants\x18\x01 \x03(\v2\x19.magnetar.v1.TenantStatusR\atenants\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12.\n" +
-	"\x04time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\"p\n" +
-	"\x13AssociationAccepted\x12\x1a\n" +
+	"\x04time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\"\xc3\x01\n" +
+	"\x11AssociationFailed\x12\x1a\n" +
 	"\breceiver\x18\x01 \x01(\tR\breceiver\x12+\n" +
-	"\x06caller\x18\x02 \x01(\v2\x13.magnetar.v1.CallerR\x06caller\x12\x10\n" +
-	"\x03tls\x18\x03 \x01(\bR\x03tls\"\xac\x01\n" +
-	"\x12AssociationRefused\x12\x1a\n" +
-	"\breceiver\x18\x01 \x01(\tR\breceiver\x12+\n" +
-	"\x06caller\x18\x02 \x01(\v2\x13.magnetar.v1.CallerR\x06caller\x127\n" +
-	"\x06reason\x18\x03 \x01(\x0e2\x1f.magnetar.v1.AssociationRefusalR\x06reason\x12\x14\n" +
-	"\x05count\x18\x04 \x01(\x03R\x05count\"\x9a\x02\n" +
+	"\x06caller\x18\x02 \x01(\v2\x13.magnetar.v1.CallerR\x06caller\x129\n" +
+	"\afailure\x18\x03 \x01(\x0e2\x1f.magnetar.v1.AssociationFailureR\afailure\x12\x14\n" +
+	"\x05count\x18\x04 \x01(\x03R\x05count\x12\x14\n" +
+	"\x05hosts\x18\x05 \x01(\x03R\x05hosts\"\xb5\x02\n" +
 	"\x14ReceptionStepReached\x12\x1c\n" +
 	"\treception\x18\x01 \x01(\tR\treception\x12\x1a\n" +
 	"\breceiver\x18\x02 \x01(\tR\breceiver\x12\x18\n" +
@@ -1806,14 +1941,28 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"\x04step\x18\x04 \x01(\x0e2\x1a.magnetar.v1.ReceptionStepR\x04step\x124\n" +
 	"\x06counts\x18\x05 \x01(\v2\x1c.magnetar.v1.ReceptionCountsR\x06counts\x12#\n" +
 	"\rsubject_label\x18\x06 \x01(\tR\fsubjectLabel\x12#\n" +
-	"\rsession_label\x18\a \x01(\tR\fsessionLabel\"\xb5\x01\n" +
+	"\rsession_label\x18\a \x01(\tR\fsessionLabel\x12\x19\n" +
+	"\bretry_of\x18\b \x01(\tR\aretryOf\"\xf3\x01\n" +
 	"\x0fFileQuarantined\x12\x12\n" +
 	"\x04file\x18\x01 \x01(\tR\x04file\x12\x1c\n" +
 	"\treception\x18\x02 \x01(\tR\treception\x12\x1a\n" +
 	"\breceiver\x18\x03 \x01(\tR\breceiver\x125\n" +
 	"\x06reason\x18\x04 \x01(\x0e2\x1d.magnetar.v1.QuarantineReasonR\x06reason\x12\x1d\n" +
 	"\n" +
-	"size_bytes\x18\x05 \x01(\x03R\tsizeBytes\"h\n" +
+	"size_bytes\x18\x05 \x01(\x03R\tsizeBytes\x12\x1d\n" +
+	"\n" +
+	"held_files\x18\x06 \x01(\x03R\theldFiles\x12\x1d\n" +
+	"\n" +
+	"held_bytes\x18\a \x01(\x03R\theldBytes\"\x83\x02\n" +
+	"\x11QuarantineDecided\x12\x12\n" +
+	"\x04file\x18\x01 \x01(\tR\x04file\x122\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x1c.magnetar.v1.QuarantineStateR\x05state\x12;\n" +
+	"\frelease_mode\x18\x03 \x01(\x0e2\x18.magnetar.v1.ReleaseModeR\vreleaseMode\x12+\n" +
+	"\x11release_reception\x18\x04 \x01(\tR\x10releaseReception\x12\x1d\n" +
+	"\n" +
+	"held_files\x18\x05 \x01(\x03R\theldFiles\x12\x1d\n" +
+	"\n" +
+	"held_bytes\x18\x06 \x01(\x03R\theldBytes\"h\n" +
 	"\x15ReceiverHealthChanged\x12\x1a\n" +
 	"\breceiver\x18\x01 \x01(\tR\breceiver\x123\n" +
 	"\x06health\x18\x02 \x01(\v2\x1b.magnetar.v1.ReceiverHealthR\x06health\"\xb7\x01\n" +
@@ -1824,49 +1973,58 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"used_bytes\x18\x03 \x01(\x03R\tusedBytes\x12\"\n" +
 	"\n" +
 	"free_bytes\x18\x04 \x01(\x03H\x00R\tfreeBytes\x88\x01\x01B\r\n" +
-	"\v_free_bytes\"\xf8\x04\n" +
+	"\v_free_bytes\"\xef\x04\n" +
 	"\x05Event\x12\x16\n" +
 	"\x06cursor\x18\x01 \x01(\tR\x06cursor\x12.\n" +
 	"\x04time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
 	"\x06tenant\x18\x03 \x01(\tR\x06tenant\x12*\n" +
-	"\x04type\x18\x04 \x01(\x0e2\x16.magnetar.v1.EventTypeR\x04type\x12U\n" +
-	"\x14association_accepted\x18\x05 \x01(\v2 .magnetar.v1.AssociationAcceptedH\x00R\x13associationAccepted\x12R\n" +
-	"\x13association_refused\x18\x06 \x01(\v2\x1f.magnetar.v1.AssociationRefusedH\x00R\x12associationRefused\x12J\n" +
-	"\x0ereception_step\x18\a \x01(\v2!.magnetar.v1.ReceptionStepReachedH\x00R\rreceptionStep\x12I\n" +
-	"\x10file_quarantined\x18\b \x01(\v2\x1c.magnetar.v1.FileQuarantinedH\x00R\x0ffileQuarantined\x12M\n" +
+	"\x04type\x18\x04 \x01(\x0e2\x16.magnetar.v1.EventTypeR\x04type\x12O\n" +
+	"\x12association_failed\x18\x05 \x01(\v2\x1e.magnetar.v1.AssociationFailedH\x00R\x11associationFailed\x12J\n" +
+	"\x0ereception_step\x18\x06 \x01(\v2!.magnetar.v1.ReceptionStepReachedH\x00R\rreceptionStep\x12I\n" +
+	"\x10file_quarantined\x18\a \x01(\v2\x1c.magnetar.v1.FileQuarantinedH\x00R\x0ffileQuarantined\x12O\n" +
+	"\x12quarantine_decided\x18\b \x01(\v2\x1e.magnetar.v1.QuarantineDecidedH\x00R\x11quarantineDecided\x12M\n" +
 	"\x0freceiver_health\x18\t \x01(\v2\".magnetar.v1.ReceiverHealthChangedH\x00R\x0ereceiverHealth\x12G\n" +
 	"\rstorage_space\x18\n" +
 	" \x01(\v2 .magnetar.v1.StorageSpaceChangedH\x00R\fstorageSpaceB\t\n" +
-	"\apayload\"X\n" +
+	"\apayload\"\xf1\x01\n" +
 	"\x0eWatchKeepAlive\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
-	"\x06cursor\x18\x02 \x01(\tR\x06cursor\"~\n" +
+	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12U\n" +
+	"\x0etenant_cursors\x18\x03 \x03(\v2..magnetar.v1.WatchKeepAlive.TenantCursorsEntryR\rtenantCursors\x1a@\n" +
+	"\x12TenantCursorsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x95\x02\n" +
 	"\fWatchRequest\x12(\n" +
 	"\x05scope\x18\x01 \x01(\v2\x12.magnetar.v1.ScopeR\x05scope\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12,\n" +
-	"\x05types\x18\x03 \x03(\x0e2\x16.magnetar.v1.EventTypeR\x05types\"\x81\x01\n" +
+	"\x05types\x18\x03 \x03(\x0e2\x16.magnetar.v1.EventTypeR\x05types\x12S\n" +
+	"\x0etenant_cursors\x18\x04 \x03(\v2,.magnetar.v1.WatchRequest.TenantCursorsEntryR\rtenantCursors\x1a@\n" +
+	"\x12TenantCursorsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x81\x01\n" +
 	"\rWatchResponse\x12*\n" +
 	"\x05event\x18\x01 \x01(\v2\x12.magnetar.v1.EventH\x00R\x05event\x12<\n" +
 	"\n" +
 	"keep_alive\x18\x02 \x01(\v2\x1b.magnetar.v1.WatchKeepAliveH\x00R\tkeepAliveB\x06\n" +
-	"\x04kind*\xee\x01\n" +
+	"\x04kind*\xeb\x01\n" +
 	"\tEventType\x12\x1a\n" +
-	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12#\n" +
-	"\x1fEVENT_TYPE_ASSOCIATION_ACCEPTED\x10\x01\x12\"\n" +
-	"\x1eEVENT_TYPE_ASSOCIATION_REFUSED\x10\x02\x12\x1d\n" +
-	"\x19EVENT_TYPE_RECEPTION_STEP\x10\x03\x12\x1f\n" +
-	"\x1bEVENT_TYPE_FILE_QUARANTINED\x10\x04\x12\x1e\n" +
+	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12!\n" +
+	"\x1dEVENT_TYPE_ASSOCIATION_FAILED\x10\x01\x12\x1d\n" +
+	"\x19EVENT_TYPE_RECEPTION_STEP\x10\x02\x12\x1f\n" +
+	"\x1bEVENT_TYPE_FILE_QUARANTINED\x10\x03\x12!\n" +
+	"\x1dEVENT_TYPE_QUARANTINE_DECIDED\x10\x04\x12\x1e\n" +
 	"\x1aEVENT_TYPE_RECEIVER_HEALTH\x10\x05\x12\x1c\n" +
-	"\x18EVENT_TYPE_STORAGE_SPACE\x10\x06*\xe7\x02\n" +
-	"\x12AssociationRefusal\x12#\n" +
-	"\x1fASSOCIATION_REFUSAL_UNSPECIFIED\x10\x00\x12*\n" +
-	"&ASSOCIATION_REFUSAL_CALLER_NOT_ALLOWED\x10\x01\x126\n" +
-	"2ASSOCIATION_REFUSAL_CALLED_AE_TITLE_NOT_RECOGNIZED\x10\x02\x12-\n" +
-	")ASSOCIATION_REFUSAL_NO_ACCEPTABLE_CONTEXT\x10\x03\x12#\n" +
-	"\x1fASSOCIATION_REFUSAL_NEARLY_FULL\x10\x04\x12(\n" +
-	"$ASSOCIATION_REFUSAL_TENANT_NOT_READY\x10\x05\x12\"\n" +
-	"\x1eASSOCIATION_REFUSAL_TLS_FAILED\x10\x06\x12&\n" +
-	"\"ASSOCIATION_REFUSAL_PROTOCOL_ERROR\x10\a*\x80\x01\n" +
+	"\x18EVENT_TYPE_STORAGE_SPACE\x10\x06*\x8f\x03\n" +
+	"\x12AssociationFailure\x12#\n" +
+	"\x1fASSOCIATION_FAILURE_UNSPECIFIED\x10\x00\x12*\n" +
+	"&ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED\x10\x01\x126\n" +
+	"2ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED\x10\x02\x12-\n" +
+	")ASSOCIATION_FAILURE_NO_ACCEPTABLE_CONTEXT\x10\x03\x12#\n" +
+	"\x1fASSOCIATION_FAILURE_NEARLY_FULL\x10\x04\x12(\n" +
+	"$ASSOCIATION_FAILURE_TENANT_NOT_READY\x10\x05\x12\"\n" +
+	"\x1eASSOCIATION_FAILURE_TLS_FAILED\x10\x06\x12&\n" +
+	"\"ASSOCIATION_FAILURE_PROTOCOL_ERROR\x10\a\x12&\n" +
+	"\"ASSOCIATION_FAILURE_INCOMING_LIMIT\x10\b*\x80\x01\n" +
 	"\x11StorageSpaceState\x12#\n" +
 	"\x1fSTORAGE_SPACE_STATE_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fSTORAGE_SPACE_STATE_NEARLY_FULL\x10\x01\x12!\n" +
@@ -1889,10 +2047,10 @@ func file_magnetar_v1_monitor_proto_rawDescGZIP() []byte {
 }
 
 var file_magnetar_v1_monitor_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_magnetar_v1_monitor_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_magnetar_v1_monitor_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_magnetar_v1_monitor_proto_goTypes = []any{
 	(EventType)(0),                // 0: magnetar.v1.EventType
-	(AssociationRefusal)(0),       // 1: magnetar.v1.AssociationRefusal
+	(AssociationFailure)(0),       // 1: magnetar.v1.AssociationFailure
 	(StorageSpaceState)(0),        // 2: magnetar.v1.StorageSpaceState
 	(*ReceptionStepCount)(nil),    // 3: magnetar.v1.ReceptionStepCount
 	(*TenantCounts)(nil),          // 4: magnetar.v1.TenantCounts
@@ -1902,68 +2060,75 @@ var file_magnetar_v1_monitor_proto_goTypes = []any{
 	(*TenantStatus)(nil),          // 8: magnetar.v1.TenantStatus
 	(*GetStatusRequest)(nil),      // 9: magnetar.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),     // 10: magnetar.v1.GetStatusResponse
-	(*AssociationAccepted)(nil),   // 11: magnetar.v1.AssociationAccepted
-	(*AssociationRefused)(nil),    // 12: magnetar.v1.AssociationRefused
-	(*ReceptionStepReached)(nil),  // 13: magnetar.v1.ReceptionStepReached
-	(*FileQuarantined)(nil),       // 14: magnetar.v1.FileQuarantined
+	(*AssociationFailed)(nil),     // 11: magnetar.v1.AssociationFailed
+	(*ReceptionStepReached)(nil),  // 12: magnetar.v1.ReceptionStepReached
+	(*FileQuarantined)(nil),       // 13: magnetar.v1.FileQuarantined
+	(*QuarantineDecided)(nil),     // 14: magnetar.v1.QuarantineDecided
 	(*ReceiverHealthChanged)(nil), // 15: magnetar.v1.ReceiverHealthChanged
 	(*StorageSpaceChanged)(nil),   // 16: magnetar.v1.StorageSpaceChanged
 	(*Event)(nil),                 // 17: magnetar.v1.Event
 	(*WatchKeepAlive)(nil),        // 18: magnetar.v1.WatchKeepAlive
 	(*WatchRequest)(nil),          // 19: magnetar.v1.WatchRequest
 	(*WatchResponse)(nil),         // 20: magnetar.v1.WatchResponse
-	(ReceptionStep)(0),            // 21: magnetar.v1.ReceptionStep
-	(*ReceiverHealth)(nil),        // 22: magnetar.v1.ReceiverHealth
-	(TenantState)(0),              // 23: magnetar.v1.TenantState
-	(*timestamppb.Timestamp)(nil), // 24: google.protobuf.Timestamp
-	(*Scope)(nil),                 // 25: magnetar.v1.Scope
-	(*Caller)(nil),                // 26: magnetar.v1.Caller
-	(*ReceptionCounts)(nil),       // 27: magnetar.v1.ReceptionCounts
-	(QuarantineReason)(0),         // 28: magnetar.v1.QuarantineReason
+	nil,                           // 21: magnetar.v1.WatchKeepAlive.TenantCursorsEntry
+	nil,                           // 22: magnetar.v1.WatchRequest.TenantCursorsEntry
+	(ReceptionStep)(0),            // 23: magnetar.v1.ReceptionStep
+	(*ReceiverHealth)(nil),        // 24: magnetar.v1.ReceiverHealth
+	(TenantState)(0),              // 25: magnetar.v1.TenantState
+	(*timestamppb.Timestamp)(nil), // 26: google.protobuf.Timestamp
+	(*Scope)(nil),                 // 27: magnetar.v1.Scope
+	(*Caller)(nil),                // 28: magnetar.v1.Caller
+	(*ReceptionCounts)(nil),       // 29: magnetar.v1.ReceptionCounts
+	(QuarantineReason)(0),         // 30: magnetar.v1.QuarantineReason
+	(QuarantineState)(0),          // 31: magnetar.v1.QuarantineState
+	(ReleaseMode)(0),              // 32: magnetar.v1.ReleaseMode
 }
 var file_magnetar_v1_monitor_proto_depIdxs = []int32{
-	21, // 0: magnetar.v1.ReceptionStepCount.step:type_name -> magnetar.v1.ReceptionStep
+	23, // 0: magnetar.v1.ReceptionStepCount.step:type_name -> magnetar.v1.ReceptionStep
 	3,  // 1: magnetar.v1.TenantCounts.receptions_in_progress:type_name -> magnetar.v1.ReceptionStepCount
-	22, // 2: magnetar.v1.ReceiverStatus.health:type_name -> magnetar.v1.ReceiverHealth
-	23, // 3: magnetar.v1.TenantStatus.database_state:type_name -> magnetar.v1.TenantState
-	24, // 4: magnetar.v1.TenantStatus.database_state_time:type_name -> google.protobuf.Timestamp
+	24, // 2: magnetar.v1.ReceiverStatus.health:type_name -> magnetar.v1.ReceiverHealth
+	25, // 3: magnetar.v1.TenantStatus.database_state:type_name -> magnetar.v1.TenantState
+	26, // 4: magnetar.v1.TenantStatus.database_state_time:type_name -> google.protobuf.Timestamp
 	4,  // 5: magnetar.v1.TenantStatus.counts:type_name -> magnetar.v1.TenantCounts
 	5,  // 6: magnetar.v1.TenantStatus.throughput:type_name -> magnetar.v1.Throughput
 	6,  // 7: magnetar.v1.TenantStatus.storages:type_name -> magnetar.v1.StorageStatus
 	7,  // 8: magnetar.v1.TenantStatus.receivers:type_name -> magnetar.v1.ReceiverStatus
-	25, // 9: magnetar.v1.GetStatusRequest.scope:type_name -> magnetar.v1.Scope
+	27, // 9: magnetar.v1.GetStatusRequest.scope:type_name -> magnetar.v1.Scope
 	8,  // 10: magnetar.v1.GetStatusResponse.tenants:type_name -> magnetar.v1.TenantStatus
-	24, // 11: magnetar.v1.GetStatusResponse.time:type_name -> google.protobuf.Timestamp
-	26, // 12: magnetar.v1.AssociationAccepted.caller:type_name -> magnetar.v1.Caller
-	26, // 13: magnetar.v1.AssociationRefused.caller:type_name -> magnetar.v1.Caller
-	1,  // 14: magnetar.v1.AssociationRefused.reason:type_name -> magnetar.v1.AssociationRefusal
-	21, // 15: magnetar.v1.ReceptionStepReached.step:type_name -> magnetar.v1.ReceptionStep
-	27, // 16: magnetar.v1.ReceptionStepReached.counts:type_name -> magnetar.v1.ReceptionCounts
-	28, // 17: magnetar.v1.FileQuarantined.reason:type_name -> magnetar.v1.QuarantineReason
-	22, // 18: magnetar.v1.ReceiverHealthChanged.health:type_name -> magnetar.v1.ReceiverHealth
-	2,  // 19: magnetar.v1.StorageSpaceChanged.state:type_name -> magnetar.v1.StorageSpaceState
-	24, // 20: magnetar.v1.Event.time:type_name -> google.protobuf.Timestamp
-	0,  // 21: magnetar.v1.Event.type:type_name -> magnetar.v1.EventType
-	11, // 22: magnetar.v1.Event.association_accepted:type_name -> magnetar.v1.AssociationAccepted
-	12, // 23: magnetar.v1.Event.association_refused:type_name -> magnetar.v1.AssociationRefused
-	13, // 24: magnetar.v1.Event.reception_step:type_name -> magnetar.v1.ReceptionStepReached
-	14, // 25: magnetar.v1.Event.file_quarantined:type_name -> magnetar.v1.FileQuarantined
-	15, // 26: magnetar.v1.Event.receiver_health:type_name -> magnetar.v1.ReceiverHealthChanged
-	16, // 27: magnetar.v1.Event.storage_space:type_name -> magnetar.v1.StorageSpaceChanged
-	24, // 28: magnetar.v1.WatchKeepAlive.time:type_name -> google.protobuf.Timestamp
-	25, // 29: magnetar.v1.WatchRequest.scope:type_name -> magnetar.v1.Scope
-	0,  // 30: magnetar.v1.WatchRequest.types:type_name -> magnetar.v1.EventType
-	17, // 31: magnetar.v1.WatchResponse.event:type_name -> magnetar.v1.Event
-	18, // 32: magnetar.v1.WatchResponse.keep_alive:type_name -> magnetar.v1.WatchKeepAlive
-	9,  // 33: magnetar.v1.MonitorService.GetStatus:input_type -> magnetar.v1.GetStatusRequest
-	19, // 34: magnetar.v1.MonitorService.Watch:input_type -> magnetar.v1.WatchRequest
-	10, // 35: magnetar.v1.MonitorService.GetStatus:output_type -> magnetar.v1.GetStatusResponse
-	20, // 36: magnetar.v1.MonitorService.Watch:output_type -> magnetar.v1.WatchResponse
-	35, // [35:37] is the sub-list for method output_type
-	33, // [33:35] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	26, // 11: magnetar.v1.GetStatusResponse.time:type_name -> google.protobuf.Timestamp
+	28, // 12: magnetar.v1.AssociationFailed.caller:type_name -> magnetar.v1.Caller
+	1,  // 13: magnetar.v1.AssociationFailed.failure:type_name -> magnetar.v1.AssociationFailure
+	23, // 14: magnetar.v1.ReceptionStepReached.step:type_name -> magnetar.v1.ReceptionStep
+	29, // 15: magnetar.v1.ReceptionStepReached.counts:type_name -> magnetar.v1.ReceptionCounts
+	30, // 16: magnetar.v1.FileQuarantined.reason:type_name -> magnetar.v1.QuarantineReason
+	31, // 17: magnetar.v1.QuarantineDecided.state:type_name -> magnetar.v1.QuarantineState
+	32, // 18: magnetar.v1.QuarantineDecided.release_mode:type_name -> magnetar.v1.ReleaseMode
+	24, // 19: magnetar.v1.ReceiverHealthChanged.health:type_name -> magnetar.v1.ReceiverHealth
+	2,  // 20: magnetar.v1.StorageSpaceChanged.state:type_name -> magnetar.v1.StorageSpaceState
+	26, // 21: magnetar.v1.Event.time:type_name -> google.protobuf.Timestamp
+	0,  // 22: magnetar.v1.Event.type:type_name -> magnetar.v1.EventType
+	11, // 23: magnetar.v1.Event.association_failed:type_name -> magnetar.v1.AssociationFailed
+	12, // 24: magnetar.v1.Event.reception_step:type_name -> magnetar.v1.ReceptionStepReached
+	13, // 25: magnetar.v1.Event.file_quarantined:type_name -> magnetar.v1.FileQuarantined
+	14, // 26: magnetar.v1.Event.quarantine_decided:type_name -> magnetar.v1.QuarantineDecided
+	15, // 27: magnetar.v1.Event.receiver_health:type_name -> magnetar.v1.ReceiverHealthChanged
+	16, // 28: magnetar.v1.Event.storage_space:type_name -> magnetar.v1.StorageSpaceChanged
+	26, // 29: magnetar.v1.WatchKeepAlive.time:type_name -> google.protobuf.Timestamp
+	21, // 30: magnetar.v1.WatchKeepAlive.tenant_cursors:type_name -> magnetar.v1.WatchKeepAlive.TenantCursorsEntry
+	27, // 31: magnetar.v1.WatchRequest.scope:type_name -> magnetar.v1.Scope
+	0,  // 32: magnetar.v1.WatchRequest.types:type_name -> magnetar.v1.EventType
+	22, // 33: magnetar.v1.WatchRequest.tenant_cursors:type_name -> magnetar.v1.WatchRequest.TenantCursorsEntry
+	17, // 34: magnetar.v1.WatchResponse.event:type_name -> magnetar.v1.Event
+	18, // 35: magnetar.v1.WatchResponse.keep_alive:type_name -> magnetar.v1.WatchKeepAlive
+	9,  // 36: magnetar.v1.MonitorService.GetStatus:input_type -> magnetar.v1.GetStatusRequest
+	19, // 37: magnetar.v1.MonitorService.Watch:input_type -> magnetar.v1.WatchRequest
+	10, // 38: magnetar.v1.MonitorService.GetStatus:output_type -> magnetar.v1.GetStatusResponse
+	20, // 39: magnetar.v1.MonitorService.Watch:output_type -> magnetar.v1.WatchResponse
+	38, // [38:40] is the sub-list for method output_type
+	36, // [36:38] is the sub-list for method input_type
+	36, // [36:36] is the sub-list for extension type_name
+	36, // [36:36] is the sub-list for extension extendee
+	0,  // [0:36] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_monitor_proto_init() }
@@ -1979,10 +2144,10 @@ func file_magnetar_v1_monitor_proto_init() {
 	file_magnetar_v1_monitor_proto_msgTypes[3].OneofWrappers = []any{}
 	file_magnetar_v1_monitor_proto_msgTypes[13].OneofWrappers = []any{}
 	file_magnetar_v1_monitor_proto_msgTypes[14].OneofWrappers = []any{
-		(*Event_AssociationAccepted)(nil),
-		(*Event_AssociationRefused)(nil),
+		(*Event_AssociationFailed)(nil),
 		(*Event_ReceptionStep)(nil),
 		(*Event_FileQuarantined)(nil),
+		(*Event_QuarantineDecided)(nil),
 		(*Event_ReceiverHealth)(nil),
 		(*Event_StorageSpace)(nil),
 	}
@@ -1996,7 +2161,7 @@ func file_magnetar_v1_monitor_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_magnetar_v1_monitor_proto_rawDesc), len(file_magnetar_v1_monitor_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   18,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -80,35 +80,41 @@ var (
 type QuarantineServiceClient interface {
 	// ListQuarantinedFiles answers a tenant's quarantined files, newest first
 	// by the time they were quarantined, filtered by state, reason, receiver,
-	// reception and time.
+	// reception, time, and the Study or SOP Instance UID as received.
 	//
-	// Role: reader on the tenant.
-	// Audit: one entry in the tenant's log, with the filters in details.
+	// Role: reader on the tenant; operator on the tenant to filter by a UID,
+	// since looking a file up by an identifier the caller already holds is a
+	// search for a person's data.
+	// Audit: one entry in the tenant's log, with the filters in details; a
+	// UID filter is recorded only as present.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (a tenant that does not exist, for a caller who may list every
-	// tenant), unavailable (the tenant's database does not answer, or the
-	// tenant is not ready).
+	// does not exist, for a caller who may not list every tenant; also a UID
+	// filter from a caller without operator), invalid, not found (a tenant
+	// that does not exist, for a caller who may list every tenant),
+	// unavailable (the tenant's database does not answer, or the tenant is
+	// not ready).
 	ListQuarantinedFiles(context.Context, *v1.ListQuarantinedFilesRequest) (*v1.ListQuarantinedFilesResponse, error)
 	// GetQuarantinedFile answers one quarantined file, and its DICOM header
 	// when asked for and when one could be read.
 	//
-	// Role: reader on the tenant.
+	// Role: reader on the tenant; operator on the tenant with include_header,
+	// since the header holds what the sender sent, identifying data included.
 	// Audit: one entry in the tenant's log, with the file's id as its object
 	// and whether the header was asked for in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (the tenant has no quarantined file with that id; a tenant
-	// that does not exist, for a caller who may list every tenant),
-	// unavailable (the tenant's database does not answer, or the tenant is
-	// not ready).
+	// does not exist, for a caller who may not list every tenant; also
+	// include_header from a caller without operator), invalid, not found (the
+	// tenant has no quarantined file with that id; a tenant that does not
+	// exist, for a caller who may list every tenant), unavailable (the
+	// tenant's database does not answer, or the tenant is not ready).
 	GetQuarantinedFile(context.Context, *v1.GetQuarantinedFileRequest) (*v1.GetQuarantinedFileResponse, error)
 	// ReleaseQuarantinedFile runs a held file through the pipeline again, as
-	// if it arrived now at the receiver it first came to: it joins that
-	// receiver's reception of its study that is still receiving, or starts
-	// one, and the answer names that reception. The file's record becomes
-	// released. If the file fails again, it is quarantined again under a new
-	// record with a new id; the released record stays as it is.
+	// if it arrived now at the receiver it first came to, or at the receiver
+	// the request names: it joins that receiver's reception of its study that
+	// is still receiving, or starts one, and the answer names that reception.
+	// The file's record becomes released. If the file fails again, it is
+	// quarantined again under a new record with a new id, whose released_from
+	// names this one; this record stays released.
 	//
 	// With RELEASE_MODE_OVERWRITE, a file quarantined because the tenant
 	// already holds a different file under its SOP Instance UID replaces the
@@ -121,18 +127,17 @@ type QuarantineServiceClient interface {
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the file's id as its object,
-	// and the mode and the reception it joined in details.
+	// and the mode, the receiver and the reception it joined in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also RELEASE_MODE_OVERWRITE for a file whose reason is not
 	// QUARANTINE_REASON_DIFFERENT_FILE), not found (the tenant has no
 	// quarantined file with that id; a tenant that does not exist, for a
-	// caller who may list every tenant), conflict (the file is rejected,
-	// released with another mode, or its content was never kept; or the
-	// receiver it came to has been removed, so there is no configuration to
-	// run it by),
-	// unavailable (the tenant's database does not answer, or the tenant is
-	// not ready).
+	// caller who may list every tenant), precondition (the file is rejected,
+	// released with another mode, or its content was never kept; the receiver
+	// it came to has been removed and the request names none; the receiver
+	// named does not exist), unavailable (the tenant's database does not
+	// answer, or the tenant is not ready).
 	ReleaseQuarantinedFile(context.Context, *v1.ReleaseQuarantinedFileRequest) (*v1.ReleaseQuarantinedFileResponse, error)
 	// RejectQuarantinedFile removes a held file's bytes from the server, for
 	// good, and keeps its record as rejected, with the reason given. Nothing
@@ -147,7 +152,7 @@ type QuarantineServiceClient interface {
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also a missing or too long reason), not found (the tenant has no
 	// quarantined file with that id; a tenant that does not exist, for a
-	// caller who may list every tenant), conflict (the file is released),
+	// caller who may list every tenant), precondition (the file is released),
 	// unavailable (the tenant's database does not answer, or the tenant is
 	// not ready).
 	RejectQuarantinedFile(context.Context, *v1.RejectQuarantinedFileRequest) (*v1.RejectQuarantinedFileResponse, error)
@@ -163,35 +168,41 @@ func NewQuarantineServiceClient(client *connect.Client) QuarantineServiceClient 
 type QuarantineServiceHandler interface {
 	// ListQuarantinedFiles answers a tenant's quarantined files, newest first
 	// by the time they were quarantined, filtered by state, reason, receiver,
-	// reception and time.
+	// reception, time, and the Study or SOP Instance UID as received.
 	//
-	// Role: reader on the tenant.
-	// Audit: one entry in the tenant's log, with the filters in details.
+	// Role: reader on the tenant; operator on the tenant to filter by a UID,
+	// since looking a file up by an identifier the caller already holds is a
+	// search for a person's data.
+	// Audit: one entry in the tenant's log, with the filters in details; a
+	// UID filter is recorded only as present.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (a tenant that does not exist, for a caller who may list every
-	// tenant), unavailable (the tenant's database does not answer, or the
-	// tenant is not ready).
+	// does not exist, for a caller who may not list every tenant; also a UID
+	// filter from a caller without operator), invalid, not found (a tenant
+	// that does not exist, for a caller who may list every tenant),
+	// unavailable (the tenant's database does not answer, or the tenant is
+	// not ready).
 	ListQuarantinedFiles(context.Context, *v1.ListQuarantinedFilesRequest) (*v1.ListQuarantinedFilesResponse, error)
 	// GetQuarantinedFile answers one quarantined file, and its DICOM header
 	// when asked for and when one could be read.
 	//
-	// Role: reader on the tenant.
+	// Role: reader on the tenant; operator on the tenant with include_header,
+	// since the header holds what the sender sent, identifying data included.
 	// Audit: one entry in the tenant's log, with the file's id as its object
 	// and whether the header was asked for in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (the tenant has no quarantined file with that id; a tenant
-	// that does not exist, for a caller who may list every tenant),
-	// unavailable (the tenant's database does not answer, or the tenant is
-	// not ready).
+	// does not exist, for a caller who may not list every tenant; also
+	// include_header from a caller without operator), invalid, not found (the
+	// tenant has no quarantined file with that id; a tenant that does not
+	// exist, for a caller who may list every tenant), unavailable (the
+	// tenant's database does not answer, or the tenant is not ready).
 	GetQuarantinedFile(context.Context, *v1.GetQuarantinedFileRequest) (*v1.GetQuarantinedFileResponse, error)
 	// ReleaseQuarantinedFile runs a held file through the pipeline again, as
-	// if it arrived now at the receiver it first came to: it joins that
-	// receiver's reception of its study that is still receiving, or starts
-	// one, and the answer names that reception. The file's record becomes
-	// released. If the file fails again, it is quarantined again under a new
-	// record with a new id; the released record stays as it is.
+	// if it arrived now at the receiver it first came to, or at the receiver
+	// the request names: it joins that receiver's reception of its study that
+	// is still receiving, or starts one, and the answer names that reception.
+	// The file's record becomes released. If the file fails again, it is
+	// quarantined again under a new record with a new id, whose released_from
+	// names this one; this record stays released.
 	//
 	// With RELEASE_MODE_OVERWRITE, a file quarantined because the tenant
 	// already holds a different file under its SOP Instance UID replaces the
@@ -204,18 +215,17 @@ type QuarantineServiceHandler interface {
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the file's id as its object,
-	// and the mode and the reception it joined in details.
+	// and the mode, the receiver and the reception it joined in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also RELEASE_MODE_OVERWRITE for a file whose reason is not
 	// QUARANTINE_REASON_DIFFERENT_FILE), not found (the tenant has no
 	// quarantined file with that id; a tenant that does not exist, for a
-	// caller who may list every tenant), conflict (the file is rejected,
-	// released with another mode, or its content was never kept; or the
-	// receiver it came to has been removed, so there is no configuration to
-	// run it by),
-	// unavailable (the tenant's database does not answer, or the tenant is
-	// not ready).
+	// caller who may list every tenant), precondition (the file is rejected,
+	// released with another mode, or its content was never kept; the receiver
+	// it came to has been removed and the request names none; the receiver
+	// named does not exist), unavailable (the tenant's database does not
+	// answer, or the tenant is not ready).
 	ReleaseQuarantinedFile(context.Context, *v1.ReleaseQuarantinedFileRequest) (*v1.ReleaseQuarantinedFileResponse, error)
 	// RejectQuarantinedFile removes a held file's bytes from the server, for
 	// good, and keeps its record as rejected, with the reason given. Nothing
@@ -230,7 +240,7 @@ type QuarantineServiceHandler interface {
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also a missing or too long reason), not found (the tenant has no
 	// quarantined file with that id; a tenant that does not exist, for a
-	// caller who may list every tenant), conflict (the file is released),
+	// caller who may list every tenant), precondition (the file is released),
 	// unavailable (the tenant's database does not answer, or the tenant is
 	// not ready).
 	RejectQuarantinedFile(context.Context, *v1.RejectQuarantinedFileRequest) (*v1.RejectQuarantinedFileResponse, error)

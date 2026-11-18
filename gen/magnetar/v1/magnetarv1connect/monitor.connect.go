@@ -57,8 +57,8 @@ type MonitorServiceClient interface {
 	// GetStatus answers the numbers now of one tenant, or of every tenant.
 	// It answers whatever the tenant's state: a tenant whose database does not
 	// answer is answered with its database's state and what the server holds
-	// in memory, and without the counts read from the database, rather than
-	// with an error, since that is when its status matters most.
+	// in memory, and without what is read from the database, rather than with
+	// an error, since that is when its status matters most.
 	//
 	// Role: reader on the tenant asked for; operator on the installation for
 	// every tenant.
@@ -73,47 +73,51 @@ type MonitorServiceClient interface {
 	// is paged.
 	GetStatus(context.Context, *v1.GetStatusRequest) (*v1.GetStatusResponse, error)
 	// Watch streams the events of one tenant, or of every tenant, as they are
-	// committed, starting after a cursor or, without one, from now. The
-	// first message of every stream is a keep-alive, sent at once, which says
-	// the stream is open and, on a tenant, gives the cursor it starts from.
-	// After that, when nothing is sent for 15 seconds the server sends
-	// another, so a client that hears nothing for much longer knows the
-	// stream is lost and resumes from its last cursor.
+	// committed, starting after the cursors given or, without them, from now.
+	// The first message of every stream is a keep-alive, sent at once, which
+	// says the stream is open and gives the cursors it starts from. After
+	// that, when nothing is sent for 15 seconds the server sends another, so
+	// a client that hears nothing for much longer knows the stream is lost
+	// and resumes from its last cursors.
 	//
 	// The server keeps no queue per client: it reads each client's events
-	// from the tenant's database at the pace the client reads them, so a slow
-	// client falls behind without costing the server memory, and loses
+	// from the tenants' databases at the pace the client reads them, so a
+	// slow client falls behind without costing the server memory, and loses
 	// nothing until its cursor is older than what is kept. A stream may end
 	// at any time, such as when the server stops (UNAVAILABLE); the client
-	// resumes from the cursor of the last event or keep-alive it received.
+	// resumes from the cursors of the last event or keep-alive it received.
 	//
 	// With every tenant, the events of each tenant come in that tenant's
-	// commit order, with no order between tenants, and a stream cannot be
-	// resumed: it starts from now and takes no cursor. Each event's cursor is
-	// still its tenant's, so a client can resume one tenant with a Watch on
-	// that tenant.
+	// commit order, with no order between tenants. Each event's cursor is its
+	// tenant's, and each keep-alive carries every tenant's cursor in
+	// tenant_cursors, which a new stream takes to resume tenant by tenant. A
+	// tenant whose database stops answering is skipped while the stream goes
+	// on, and its events follow from where they stopped when it answers
+	// again; a tenant created while the stream is open joins it from its
+	// first event, and a tenant removed leaves it.
 	//
 	// The caller's key and grant are checked again at least every 15 seconds
 	// while the stream is open: a key revoked or expired, or a grant removed,
-	// ends the stream with the answer a new call would get, and so does a
-	// tenant removed.
+	// ends the stream with the answer a new call would get, and so does the
+	// removal of the one tenant a stream watches.
 	//
 	// Role: reader on the tenant asked for; operator on the installation for
 	// every tenant.
 	// Audit: one entry in the log of the scope asked for when the stream
-	// opens, with the cursor's presence and the event types in details, and
+	// opens, with the cursors' presence and the event types in details, and
 	// one when it ends, with how many events it carried.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a cursor not made by a Watch of this tenant, and a cursor with
-	// every tenant), not found (a tenant that does not exist, for a caller who
-	// may list every tenant), cursor expired (the cursor points before the
-	// oldest event kept: the client reads GetStatus again and watches from its
-	// event_cursor), unavailable (the tenant's database does not answer, or
-	// the tenant is not ready, when the stream opens or while it is open; the
-	// client resumes later from its last cursor), resource exhausted (the
-	// caller, a key or the local operator, already holds 16 open streams, or
-	// the server holds 1024).
+	// (also a cursor not made by a Watch or status of the tenant it is given
+	// for, cursor with every tenant or tenant_cursors with one tenant), not
+	// found (a tenant that does not exist, for a caller who may list every
+	// tenant), cursor expired (a cursor points before the oldest event its
+	// tenant keeps; the message names the tenant; the client reads that
+	// tenant's status again and watches from its event_cursor), unavailable
+	// (with one tenant, its database does not answer or it is not ready, when
+	// the stream opens or while it is open; the client resumes later from its
+	// last cursor), resource exhausted (the caller, a key or the local
+	// operator, already holds 16 open streams, or the server holds 1024).
 	// Limits: no deadline is applied to the stream when the client sends
 	// none; the 30-second default of other calls does not hold here.
 	Watch(context.Context, *v1.WatchRequest) (MonitorServiceWatchClientStream, error)
@@ -150,8 +154,8 @@ type MonitorServiceHandler interface {
 	// GetStatus answers the numbers now of one tenant, or of every tenant.
 	// It answers whatever the tenant's state: a tenant whose database does not
 	// answer is answered with its database's state and what the server holds
-	// in memory, and without the counts read from the database, rather than
-	// with an error, since that is when its status matters most.
+	// in memory, and without what is read from the database, rather than with
+	// an error, since that is when its status matters most.
 	//
 	// Role: reader on the tenant asked for; operator on the installation for
 	// every tenant.
@@ -166,47 +170,51 @@ type MonitorServiceHandler interface {
 	// is paged.
 	GetStatus(context.Context, *v1.GetStatusRequest) (*v1.GetStatusResponse, error)
 	// Watch streams the events of one tenant, or of every tenant, as they are
-	// committed, starting after a cursor or, without one, from now. The
-	// first message of every stream is a keep-alive, sent at once, which says
-	// the stream is open and, on a tenant, gives the cursor it starts from.
-	// After that, when nothing is sent for 15 seconds the server sends
-	// another, so a client that hears nothing for much longer knows the
-	// stream is lost and resumes from its last cursor.
+	// committed, starting after the cursors given or, without them, from now.
+	// The first message of every stream is a keep-alive, sent at once, which
+	// says the stream is open and gives the cursors it starts from. After
+	// that, when nothing is sent for 15 seconds the server sends another, so
+	// a client that hears nothing for much longer knows the stream is lost
+	// and resumes from its last cursors.
 	//
 	// The server keeps no queue per client: it reads each client's events
-	// from the tenant's database at the pace the client reads them, so a slow
-	// client falls behind without costing the server memory, and loses
+	// from the tenants' databases at the pace the client reads them, so a
+	// slow client falls behind without costing the server memory, and loses
 	// nothing until its cursor is older than what is kept. A stream may end
 	// at any time, such as when the server stops (UNAVAILABLE); the client
-	// resumes from the cursor of the last event or keep-alive it received.
+	// resumes from the cursors of the last event or keep-alive it received.
 	//
 	// With every tenant, the events of each tenant come in that tenant's
-	// commit order, with no order between tenants, and a stream cannot be
-	// resumed: it starts from now and takes no cursor. Each event's cursor is
-	// still its tenant's, so a client can resume one tenant with a Watch on
-	// that tenant.
+	// commit order, with no order between tenants. Each event's cursor is its
+	// tenant's, and each keep-alive carries every tenant's cursor in
+	// tenant_cursors, which a new stream takes to resume tenant by tenant. A
+	// tenant whose database stops answering is skipped while the stream goes
+	// on, and its events follow from where they stopped when it answers
+	// again; a tenant created while the stream is open joins it from its
+	// first event, and a tenant removed leaves it.
 	//
 	// The caller's key and grant are checked again at least every 15 seconds
 	// while the stream is open: a key revoked or expired, or a grant removed,
-	// ends the stream with the answer a new call would get, and so does a
-	// tenant removed.
+	// ends the stream with the answer a new call would get, and so does the
+	// removal of the one tenant a stream watches.
 	//
 	// Role: reader on the tenant asked for; operator on the installation for
 	// every tenant.
 	// Audit: one entry in the log of the scope asked for when the stream
-	// opens, with the cursor's presence and the event types in details, and
+	// opens, with the cursors' presence and the event types in details, and
 	// one when it ends, with how many events it carried.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a cursor not made by a Watch of this tenant, and a cursor with
-	// every tenant), not found (a tenant that does not exist, for a caller who
-	// may list every tenant), cursor expired (the cursor points before the
-	// oldest event kept: the client reads GetStatus again and watches from its
-	// event_cursor), unavailable (the tenant's database does not answer, or
-	// the tenant is not ready, when the stream opens or while it is open; the
-	// client resumes later from its last cursor), resource exhausted (the
-	// caller, a key or the local operator, already holds 16 open streams, or
-	// the server holds 1024).
+	// (also a cursor not made by a Watch or status of the tenant it is given
+	// for, cursor with every tenant or tenant_cursors with one tenant), not
+	// found (a tenant that does not exist, for a caller who may list every
+	// tenant), cursor expired (a cursor points before the oldest event its
+	// tenant keeps; the message names the tenant; the client reads that
+	// tenant's status again and watches from its event_cursor), unavailable
+	// (with one tenant, its database does not answer or it is not ready, when
+	// the stream opens or while it is open; the client resumes later from its
+	// last cursor), resource exhausted (the caller, a key or the local
+	// operator, already holds 16 open streams, or the server holds 1024).
 	// Limits: no deadline is applied to the stream when the client sends
 	// none; the 30-second default of other calls does not hold here.
 	Watch(context.Context, *v1.WatchRequest, MonitorServiceWatchServerStream) error

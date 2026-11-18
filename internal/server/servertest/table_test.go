@@ -1,13 +1,21 @@
 package servertest_test
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -15,10 +23,215 @@ import (
 
 	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/driver/sqlite"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/obs"
 	"github.com/amrshadid/magnetar/internal/server"
 	"github.com/amrshadid/magnetar/internal/server/servertest"
 )
+
+// notServed lists the services the contract defines and the stand-in table
+// does not serve. A contract is merged and reviewed as a contract before its
+// handlers are written, so for a while a service is in the proto files with
+// nothing behind it, and until a handler exists the server answers each of
+// its methods UNIMPLEMENTED, as it answers any procedure it does not know.
+// TestTableMatchesRoleLines skips these services' rpcs, and
+// TestNotServedServices holds the list to the truth: no method of a listed
+// service is in the table, a call to each over a real server is answered
+// UNIMPLEMENTED, and a listed service that no proto file defines fails, so
+// a service leaves the list in the change that serves it. Package
+// internal/api keeps the same list for its own table, in role_test.go
+// there; the two change together.
+var notServed = []string{
+	"magnetar.v1.StorageService",
+	"magnetar.v1.ReceiverService",
+	"magnetar.v1.ReceptionService",
+	"magnetar.v1.QuarantineService",
+	"magnetar.v1.MonitorService",
+}
+
+// inServices reports whether proc, a full procedure name, is a method of
+// one of services.
+func inServices(services []string, proc string) bool {
+	return slices.ContainsFunc(services, func(s string) bool { return strings.HasPrefix(proc, "/"+s+"/") })
+}
+
+// fileRPCs returns the full procedure name of every rpc of the contract's
+// proto files, read from the files themselves.
+func fileRPCs(t *testing.T) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "proto", "magnetar", "v1", "*.proto"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no proto files: %v", err)
+	}
+	rpc := regexp.MustCompile(`(?m)^\s*rpc (\w+)\(`)
+	var out []string
+	for _, file := range files {
+		b, err := os.ReadFile(file) //nolint:gosec // G304: the repository's own proto files.
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(b)
+		services := servicePattern.FindAllStringSubmatchIndex(text, -1)
+		for _, m := range rpc.FindAllStringSubmatchIndex(text, -1) {
+			svc := ""
+			for _, s := range services {
+				if s[0] < m[0] {
+					svc = text[s[2]:s[3]]
+				}
+			}
+			out = append(out, "/magnetar.v1."+svc+"/"+text[m[2]:m[3]])
+		}
+	}
+	return out
+}
+
+// notServedProblems compares a list of services not served with the rpcs of
+// the proto files and the table's procedures: each listed service must have
+// at least one rpc in the files and none in the table.
+func notServedProblems(services, rpcs, procs []string) []string {
+	var problems []string
+	for _, s := range services {
+		n := 0
+		for _, p := range rpcs {
+			if !strings.HasPrefix(p, "/"+s+"/") {
+				continue
+			}
+			n++
+			if slices.Contains(procs, p) {
+				problems = append(problems, p+" is listed as not served, yet the table serves it")
+			}
+		}
+		if n == 0 {
+			problems = append(problems, s+" is listed as not served, and no proto file defines it")
+		}
+	}
+	slices.Sort(problems)
+	return problems
+}
+
+// TestNotServedServices guards the list of services not served yet, so it
+// cannot hide a method that is served: every listed service is in the proto
+// files and the generated descriptors, none of its methods is in the
+// table, and a call to each of its methods over a real server, as the
+// local operator, is answered UNIMPLEMENTED. Its message is "no such
+// service": no handler of the service is registered, so the request is
+// answered by the server's route for every path nothing serves, after the
+// caller is authenticated, as a gRPC server answers a service it does not
+// have. It also shows the check itself reports a served service put on
+// the list and a listed service no file defines.
+func TestNotServedServices(t *testing.T) {
+	rpcs, procs := fileRPCs(t), tableProcs()
+	for _, p := range notServedProblems(notServed, rpcs, procs) {
+		t.Error(p)
+	}
+	served := notServedProblems(append(slices.Clone(notServed), "magnetar.v1.AccessService"), rpcs, procs)
+	if len(served) == 0 || !strings.Contains(served[0], "AccessService") {
+		t.Errorf("a served service on the list was not reported: %v", served)
+	}
+	missing := notServedProblems(append(slices.Clone(notServed), "magnetar.v1.NoSuchService"), rpcs, procs)
+	if len(missing) != 1 || !strings.Contains(missing[0], "NoSuchService") {
+		t.Errorf("a listed service no file defines was not reported: %v", missing)
+	}
+
+	cl := localClient(t)
+	for _, s := range notServed {
+		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(s))
+		sd, ok := d.(protoreflect.ServiceDescriptor)
+		if err != nil || !ok {
+			t.Errorf("%s is not a service of the generated descriptors: %v", s, err)
+			continue
+		}
+		for i := range sd.Methods().Len() {
+			md := sd.Methods().Get(i)
+			proc := "/" + s + "/" + string(md.Name())
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			req, res := dynamicpb.NewMessage(md.Input()), dynamicpb.NewMessage(md.Output())
+			var err error
+			if md.IsStreamingServer() {
+				st, serr := cl.CallServerStream(ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: proc}, req)
+				err = serr
+				if err == nil {
+					err = st.Receive(res)
+					_ = st.Close()
+				}
+			} else {
+				err = cl.CallUnary(ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: proc}, req, res)
+			}
+			cancel()
+			var ce *connect.Error
+			if connect.CodeOf(err) != connect.CodeUnimplemented || !errors.As(err, &ce) || ce.Message() != "no such service" {
+				t.Errorf("%s: %v, want UNIMPLEMENTED, no such service", proc, err)
+			}
+		}
+	}
+}
+
+// localClient starts a real server with the stand-in handlers and table over
+// a fresh SQLite master, on its local socket only, and returns a client of
+// it that calls as the local operator. The server stops when t ends.
+func localClient(t *testing.T) *connect.Client {
+	t.Helper()
+	ctx := context.Background()
+	dir, err := os.MkdirTemp("", "mgs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a directory, private to its owner.
+		t.Fatal(err)
+	}
+	m, err := sqlite.OpenMaster(ctx, filepath.Join(dir, "master.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	if err := m.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	log := obs.NewLogger(io.Discard, obs.LogOptions{Format: obs.JSON})
+	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &servertest.Standins{Access: a, Release: make(chan struct{})}
+	t.Cleanup(func() { close(h.Release) })
+	lock, err := server.TakeLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := server.New(server.Config{
+		DataDir: dir, Lock: lock, Access: a, Master: m, Log: log,
+		Register: h.Register, Methods: servertest.Contract(),
+		WithDecision: func(ctx context.Context, _ access.Decision) context.Context { return ctx },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var p http.Protocols
+	p.SetUnencryptedHTTP2(true)
+	path := server.SocketPath(dir)
+	hc := &http.Client{Transport: &http.Transport{
+		Protocols: &p,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", path)
+		},
+	}}
+	t.Cleanup(func() {
+		hc.CloseIdleConnections()
+		if err := srv.Stop(); err != nil {
+			t.Errorf("stop: %v", err)
+		}
+		cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = a.Close(cctx)
+	})
+	return connect.NewClient(connecthttp.NewTransport(hc, "http://local", connecthttp.WithGRPC()))
+}
 
 // contractFiles are the generated descriptors of the contract's files.
 var contractFiles = []protoreflect.FileDescriptor{
@@ -127,6 +340,10 @@ func TestTableMatchesRoleLines(t *testing.T) {
 				}
 			}
 			proc := "/magnetar.v1." + svc + "/" + name
+			if inServices(notServed, proc) {
+				// Held by TestNotServedServices.
+				continue
+			}
 			md, ok := methods[proc]
 			if !ok {
 				t.Errorf("%s: a Role line for %s, which is no method", filepath.Base(file), proc)
@@ -168,6 +385,15 @@ func checkRole(t *testing.T, proc, role string, md protoreflect.MethodDescriptor
 	case "reader on the scope asked for.":
 		expectScope(t, proc, md, master.RoleReader)
 	case "admin on the scope set.", "admin on the scope.", "admin on the scope asked for.":
+		expectScope(t, proc, md, master.RoleAdmin)
+	// SetSetting and UnsetSetting name a stricter kind of setting, set on a
+	// tenant by the installation's admin only. No setting of that kind
+	// exists in the server yet, so today these lines mean what "admin on the
+	// scope" means, and the table asks exactly that. The change that adds
+	// the first setting of that kind enforces the stricter rule, and must
+	// then give these two phrases their own case here.
+	case "admin on the scope set; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.",
+		"admin on the scope; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.":
 		expectScope(t, proc, md, master.RoleAdmin)
 	default:
 		t.Errorf("%s: the Role line %q is a phrase this test does not know; add what it means", proc, role)

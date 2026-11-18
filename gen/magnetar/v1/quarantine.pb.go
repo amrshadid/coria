@@ -29,53 +29,66 @@ const (
 // QuarantineReason is why a file was quarantined. A reason added in a later
 // version is a new value; a client shows a value it does not know as a
 // reason it cannot name, with the record's details. The keys each reason
-// puts in details are listed with it.
+// puts in details are listed with it; no detail ever holds an attribute's
+// value.
 type QuarantineReason int32
 
 const (
 	// Never answered by the server. As a filter, it means every reason.
 	QuarantineReason_QUARANTINE_REASON_UNSPECIFIED QuarantineReason = 0
 	// The bytes received do not parse as a DICOM data set (PS3.5 Section 7)
-	// in the transfer syntax agreed for them. Details: "error", where parsing
-	// stopped and why.
+	// in the transfer syntax agreed for them. Details: "offset", the byte at
+	// which parsing stopped.
 	QuarantineReason_QUARANTINE_REASON_NOT_DICOM QuarantineReason = 1
-	// The file's SOP Class UID is not one the receiver accepts, though it came
-	// under a presentation context that was accepted for another (PS3.4
-	// B.2.3). Details: "sop_class_uid".
+	// The file's SOP Class UID (0008,0016) is not the Affected SOP Class UID
+	// of the C-STORE it came in, and is not a class the receiver accepts. The
+	// C-STORE was answered with status A900, "Error: Data Set Does Not Match
+	// SOP Class" (PS3.4 B.2.3, Table B.2-1), so the sender still holds it; the
+	// bytes are kept so a person can see what was sent, and a release after
+	// the receiver accepts the class archives it. Details: "sop_class_uid",
+	// the class the file holds, as received.
 	QuarantineReason_QUARANTINE_REASON_SOP_CLASS_NOT_ACCEPTED QuarantineReason = 2
 	// The file is larger than the receiver's max_file_bytes. Its bytes are not
-	// kept and its store was answered with a failure, so the sender still
-	// holds it; it cannot be released. Details: "limit", the bound in bytes.
+	// kept, and the C-STORE was answered with status A700, "Refused: Out of
+	// Resources" (PS3.4 B.2.3, Table B.2-1), so the sender still holds it; it
+	// cannot be released. A sender may try again, and each try makes a new
+	// record. Details: "limit", the bound in bytes.
 	QuarantineReason_QUARANTINE_REASON_TOO_LARGE QuarantineReason = 3
 	// A UID the server needs (SOP Instance, SOP Class, Study Instance or
 	// Series Instance UID) is missing or not a valid UID (PS3.5 9.1).
-	// Details: "attribute", the attribute's keyword, and "value", the value
-	// found, at most 64 characters.
+	// Details: "attribute", the attribute's keyword, and "fault": "missing",
+	// "empty" or "bad_uid".
 	QuarantineReason_QUARANTINE_REASON_BAD_UID QuarantineReason = 4
-	// The naming rule made a label that is not a valid label, or the
-	// pattern did not match. Details: "label" (subject, session or scan),
-	// "attribute", the keyword that gave it, and "value", what was made, at
-	// most 256 characters.
+	// The naming rule could not make a label (NamingRule). Details: "label",
+	// which one ("subject", "session" or "scan"); "attribute", the keyword or
+	// tag of the attribute (or the part of the pattern) that gave it, empty
+	// when the fault is in the label as a whole; and "fault": "missing",
+	// "empty", "too_long", "bad_character", "bad_uid", "no_match" or
+	// "bad_label".
 	QuarantineReason_QUARANTINE_REASON_BAD_LABEL QuarantineReason = 5
-	// The label made for a new session or subject is held by another one: a
-	// session label held by another study, or two subject labels made for
-	// one study. Details: "label" (subject or session) and "value".
+	// The label made for a new session or subject is held by another one.
+	// Details: "label" ("subject" or "session") and "fault":
+	// "held_by_another_session" (a session label held by another study) or
+	// "two_subjects_for_one_study" (files of one study gave two subject
+	// labels).
 	QuarantineReason_QUARANTINE_REASON_LABEL_CONFLICT QuarantineReason = 6
 	// The tenant holds a different file under the same SOP Instance UID: the
-	// same UID with another SHA-256. The archived file is kept and the sender
-	// was answered success; PS3.4 B.4.1.3 lets a sender correct attributes and
-	// keep the UID, and the same object sent in another transfer syntax lands
-	// here too. The record's kept_sha256 is the archived file's checksum.
-	// Release with RELEASE_MODE_OVERWRITE replaces it. Details: none beyond
-	// the record's own fields.
+	// same UID with another SHA-256, as when a sender corrects attributes and
+	// sends the object again under its UID, or sends the same object in
+	// another transfer syntax. The archived file is kept and the C-STORE was
+	// answered success. The record's kept_sha256 is the archived file's
+	// checksum. Release with RELEASE_MODE_OVERWRITE replaces it. Details:
+	// none beyond the record's own fields.
 	QuarantineReason_QUARANTINE_REASON_DIFFERENT_FILE QuarantineReason = 7
 	// The tenant holds the SOP Instance UID under another study or another
-	// series: an instance UID is unique in a tenant. Details: "study_instance_uid"
-	// and "series_instance_uid" of the instance the tenant holds.
+	// series: an instance UID is unique in a tenant. The C-STORE was answered
+	// success. Details: "study_instance_uid" and "series_instance_uid" of the
+	// instance the tenant holds, as received.
 	QuarantineReason_QUARANTINE_REASON_UID_ELSEWHERE QuarantineReason = 8
 	// The storage refused the file's write, or did not answer, after the
-	// server's retries. Details: "storage", its name, and "error", the
-	// storage's answer in words, never a secret.
+	// server's retries. Details: "storage", its name, and "fault", one of
+	// StorageFault's values in lowercase without its prefix, such as
+	// "unreachable"; never the storage's own words.
 	QuarantineReason_QUARANTINE_REASON_STORAGE_REFUSED QuarantineReason = 9
 	// The file read back from the storage after it was written does not have
 	// the SHA-256 computed when it was received. The copy in the incoming area
@@ -255,16 +268,18 @@ func (ReleaseMode) EnumDescriptor() ([]byte, []int) {
 	return file_magnetar_v1_quarantine_proto_rawDescGZIP(), []int{2}
 }
 
-// Caller is who sent a file.
+// Caller is who sent data to a receiver.
 type Caller struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The Calling AE Title the caller gave (PS3.8 9.3.2), with leading and
-	// trailing spaces removed.
+	// trailing spaces removed. Empty when it was not read.
 	CallingAeTitle string `protobuf:"bytes,1,opt,name=calling_ae_title,json=callingAeTitle,proto3" json:"calling_ae_title,omitempty"`
-	// The Called AE Title the caller gave: the receiver's AE title.
+	// The Called AE Title the caller gave. Empty when it was not read.
 	CalledAeTitle string `protobuf:"bytes,2,opt,name=called_ae_title,json=calledAeTitle,proto3" json:"called_ae_title,omitempty"`
-	// The network address and port the caller's connection came from, as
-	// "192.0.2.7:51234" or "[2001:db8::7]:51234".
+	// The network address the caller's connection came from: in a quarantine
+	// record, with its port, as "192.0.2.7:51234" or "[2001:db8::7]:51234";
+	// in an event that groups connections, the host's address alone, as
+	// "192.0.2.7" or "2001:db8::7".
 	Address       string `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -332,11 +347,14 @@ type QuarantinedFile struct {
 	Reason QuarantineReason `protobuf:"varint,2,opt,name=reason,proto3,enum=magnetar.v1.QuarantineReason" json:"reason,omitempty"`
 	// More about the reason, under the keys the reason lists: at most 16
 	// entries, keys of at most 32 bytes of lowercase ASCII letters and "_",
-	// values of at most 1 KiB. Never a secret.
+	// values of at most 256 bytes. Never a secret, and never an attribute's
+	// value: a UID, as received, is the only thing from the file a detail may
+	// hold.
 	Details map[string]string `protobuf:"bytes,3,rep,name=details,proto3" json:"details,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// What has been decided about it.
 	State QuarantineState `protobuf:"varint,4,opt,name=state,proto3,enum=magnetar.v1.QuarantineState" json:"state,omitempty"`
-	// The name of the receiver it arrived at.
+	// The name of the receiver it arrived at. No other receiver is given that
+	// name while a record names it.
 	Receiver string `protobuf:"bytes,5,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	// The id of the reception it belonged to. Empty when it was quarantined
 	// before its study could be known, as a file that is not DICOM or has no
@@ -355,13 +373,15 @@ type QuarantinedFile struct {
 	// UID, in lowercase hexadecimal. Set for QUARANTINE_REASON_DIFFERENT_FILE
 	// only.
 	KeptSha256 string `protobuf:"bytes,10,opt,name=kept_sha256,json=keptSha256,proto3" json:"kept_sha256,omitempty"`
-	// The SOP Class UID (0008,0016), when it could be read (PS3.3 C.12.1).
+	// The SOP Class UID (0008,0016), as received, when it could be read
+	// (PS3.3 C.12.1).
 	SopClassUid string `protobuf:"bytes,11,opt,name=sop_class_uid,json=sopClassUid,proto3" json:"sop_class_uid,omitempty"`
-	// The SOP Instance UID (0008,0018), when it could be read.
+	// The SOP Instance UID (0008,0018), as received, when it could be read.
 	SopInstanceUid string `protobuf:"bytes,12,opt,name=sop_instance_uid,json=sopInstanceUid,proto3" json:"sop_instance_uid,omitempty"`
-	// The Study Instance UID (0020,000D), when it could be read.
+	// The Study Instance UID (0020,000D), as received, when it could be read.
 	StudyInstanceUid string `protobuf:"bytes,13,opt,name=study_instance_uid,json=studyInstanceUid,proto3" json:"study_instance_uid,omitempty"`
-	// The Series Instance UID (0020,000E), when it could be read.
+	// The Series Instance UID (0020,000E), as received, when it could be
+	// read.
 	SeriesInstanceUid string `protobuf:"bytes,14,opt,name=series_instance_uid,json=seriesInstanceUid,proto3" json:"series_instance_uid,omitempty"`
 	// The Transfer Syntax UID the file was sent in (PS3.5 Section 10).
 	TransferSyntaxUid string `protobuf:"bytes,15,opt,name=transfer_syntax_uid,json=transferSyntaxUid,proto3" json:"transfer_syntax_uid,omitempty"`
@@ -381,9 +401,15 @@ type QuarantinedFile struct {
 	ReleaseReception string `protobuf:"bytes,20,opt,name=release_reception,json=releaseReception,proto3" json:"release_reception,omitempty"`
 	// Why it was rejected, as given to RejectQuarantinedFile. Empty unless it
 	// is rejected.
-	RejectReason  string `protobuf:"bytes,21,opt,name=reject_reason,json=rejectReason,proto3" json:"reject_reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	RejectReason string `protobuf:"bytes,21,opt,name=reject_reason,json=rejectReason,proto3" json:"reject_reason,omitempty"`
+	// The id of the record whose release quarantined this file again. Empty
+	// unless this record was made by a release that failed.
+	ReleasedFrom string `protobuf:"bytes,22,opt,name=released_from,json=releasedFrom,proto3" json:"released_from,omitempty"`
+	// The name of the receiver its release ran through. Empty unless it is
+	// released.
+	ReleaseReceiver string `protobuf:"bytes,23,opt,name=release_receiver,json=releaseReceiver,proto3" json:"release_receiver,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *QuarantinedFile) Reset() {
@@ -563,6 +589,20 @@ func (x *QuarantinedFile) GetRejectReason() string {
 	return ""
 }
 
+func (x *QuarantinedFile) GetReleasedFrom() string {
+	if x != nil {
+		return x.ReleasedFrom
+	}
+	return ""
+}
+
+func (x *QuarantinedFile) GetReleaseReceiver() string {
+	if x != nil {
+		return x.ReleaseReceiver
+	}
+	return ""
+}
+
 // ListQuarantinedFilesRequest asks for a page of a tenant's quarantined
 // files. Every filter given must hold for a file to be listed.
 type ListQuarantinedFilesRequest struct {
@@ -593,9 +633,15 @@ type ListQuarantinedFilesRequest struct {
 	// The next_page_token of the previous page, or empty for the first page.
 	// Opaque; at most 1 KiB; refused as invalid with a tenant or filters other
 	// than those it was made with.
-	PageToken     string `protobuf:"bytes,9,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	PageToken string `protobuf:"bytes,9,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Only the files of this Study Instance UID, as received. Empty for every
+	// study. Needs operator on the tenant.
+	StudyInstanceUid string `protobuf:"bytes,10,opt,name=study_instance_uid,json=studyInstanceUid,proto3" json:"study_instance_uid,omitempty"`
+	// Only the files of this SOP Instance UID, as received. Empty for every
+	// instance. Needs operator on the tenant.
+	SopInstanceUid string `protobuf:"bytes,11,opt,name=sop_instance_uid,json=sopInstanceUid,proto3" json:"sop_instance_uid,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ListQuarantinedFilesRequest) Reset() {
@@ -691,6 +737,20 @@ func (x *ListQuarantinedFilesRequest) GetPageToken() string {
 	return ""
 }
 
+func (x *ListQuarantinedFilesRequest) GetStudyInstanceUid() string {
+	if x != nil {
+		return x.StudyInstanceUid
+	}
+	return ""
+}
+
+func (x *ListQuarantinedFilesRequest) GetSopInstanceUid() string {
+	if x != nil {
+		return x.SopInstanceUid
+	}
+	return ""
+}
+
 // ListQuarantinedFilesResponse is a page of quarantined files.
 type ListQuarantinedFilesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -753,7 +813,8 @@ type GetQuarantinedFileRequest struct {
 	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	// The record's id. Required; at most 64 bytes.
 	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	// Whether to answer the file's DICOM header in header_json.
+	// Whether to answer the file's DICOM header in header_json. Needs
+	// operator on the tenant.
 	IncludeHeader bool `protobuf:"varint,3,opt,name=include_header,json=includeHeader,proto3" json:"include_header,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -816,16 +877,17 @@ type GetQuarantinedFileResponse struct {
 	// The record.
 	File *QuarantinedFile `protobuf:"bytes,1,opt,name=file,proto3" json:"file,omitempty"`
 	// The file's data set in the DICOM JSON model (PS3.18 Annex F), without
-	// its bulk data: Pixel Data and every value longer than 1 KiB are left
-	// out, with no BulkDataURI. Answered only when include_header was true,
-	// the file's bytes are held and its data set could be read; at most
-	// 1 MiB, cut at an attribute and with header_truncated set when longer.
-	// It holds what the sender sent, identifying data included.
+	// its bulk data: Pixel Data and every attribute with a value longer than
+	// 1 KiB are left out entirely, with no BulkDataURI and no InlineBinary.
+	// Answered only when include_header was true, the file's bytes are held,
+	// its data set could be read, and the result is at most 1 MiB; a longer
+	// one is never cut, but left out, with header_too_large set. It holds
+	// what the sender sent, identifying data included.
 	HeaderJson string `protobuf:"bytes,2,opt,name=header_json,json=headerJson,proto3" json:"header_json,omitempty"`
-	// Whether header_json was cut at 1 MiB.
-	HeaderTruncated bool `protobuf:"varint,3,opt,name=header_truncated,json=headerTruncated,proto3" json:"header_truncated,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Whether the header was left out because it is longer than 1 MiB.
+	HeaderTooLarge bool `protobuf:"varint,3,opt,name=header_too_large,json=headerTooLarge,proto3" json:"header_too_large,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetQuarantinedFileResponse) Reset() {
@@ -872,9 +934,9 @@ func (x *GetQuarantinedFileResponse) GetHeaderJson() string {
 	return ""
 }
 
-func (x *GetQuarantinedFileResponse) GetHeaderTruncated() bool {
+func (x *GetQuarantinedFileResponse) GetHeaderTooLarge() bool {
 	if x != nil {
-		return x.HeaderTruncated
+		return x.HeaderTooLarge
 	}
 	return false
 }
@@ -887,7 +949,11 @@ type ReleaseQuarantinedFileRequest struct {
 	// The record's id. Required; at most 64 bytes.
 	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	// How to run it again. Required.
-	Mode          ReleaseMode `protobuf:"varint,3,opt,name=mode,proto3,enum=magnetar.v1.ReleaseMode" json:"mode,omitempty"`
+	Mode ReleaseMode `protobuf:"varint,3,opt,name=mode,proto3,enum=magnetar.v1.ReleaseMode" json:"mode,omitempty"`
+	// The name of the receiver whose configuration (storage, naming rule) the
+	// file runs by. Empty for the receiver it first came to; required when
+	// that receiver has been removed.
+	Receiver      string `protobuf:"bytes,4,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -943,10 +1009,17 @@ func (x *ReleaseQuarantinedFileRequest) GetMode() ReleaseMode {
 	return ReleaseMode_RELEASE_MODE_UNSPECIFIED
 }
 
+func (x *ReleaseQuarantinedFileRequest) GetReceiver() string {
+	if x != nil {
+		return x.Receiver
+	}
+	return ""
+}
+
 // ReleaseQuarantinedFileResponse is the record after the release.
 type ReleaseQuarantinedFileResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The record, released, with the reception it joined.
+	// The record, released, with the receiver and the reception it joined.
 	File          *QuarantinedFile `protobuf:"bytes,1,opt,name=file,proto3" json:"file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1108,7 +1181,7 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"\x06Caller\x12(\n" +
 	"\x10calling_ae_title\x18\x01 \x01(\tR\x0ecallingAeTitle\x12&\n" +
 	"\x0fcalled_ae_title\x18\x02 \x01(\tR\rcalledAeTitle\x12\x18\n" +
-	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xdc\a\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xac\b\n" +
 	"\x0fQuarantinedFile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x125\n" +
 	"\x06reason\x18\x02 \x01(\x0e2\x1d.magnetar.v1.QuarantineReasonR\x06reason\x12C\n" +
@@ -1134,10 +1207,12 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"decideTime\x12;\n" +
 	"\frelease_mode\x18\x13 \x01(\x0e2\x18.magnetar.v1.ReleaseModeR\vreleaseMode\x12+\n" +
 	"\x11release_reception\x18\x14 \x01(\tR\x10releaseReception\x12#\n" +
-	"\rreject_reason\x18\x15 \x01(\tR\frejectReason\x1a:\n" +
+	"\rreject_reason\x18\x15 \x01(\tR\frejectReason\x12#\n" +
+	"\rreleased_from\x18\x16 \x01(\tR\freleasedFrom\x12)\n" +
+	"\x10release_receiver\x18\x17 \x01(\tR\x0freleaseReceiver\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x88\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe0\x03\n" +
 	"\x1bListQuarantinedFilesRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x122\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x1c.magnetar.v1.QuarantineStateR\x05state\x125\n" +
@@ -1149,23 +1224,27 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"\bend_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12\x1b\n" +
 	"\tpage_size\x18\b \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\t \x01(\tR\tpageToken\"z\n" +
+	"page_token\x18\t \x01(\tR\tpageToken\x12,\n" +
+	"\x12study_instance_uid\x18\n" +
+	" \x01(\tR\x10studyInstanceUid\x12(\n" +
+	"\x10sop_instance_uid\x18\v \x01(\tR\x0esopInstanceUid\"z\n" +
 	"\x1cListQuarantinedFilesResponse\x122\n" +
 	"\x05files\x18\x01 \x03(\v2\x1c.magnetar.v1.QuarantinedFileR\x05files\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"j\n" +
 	"\x19GetQuarantinedFileRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12%\n" +
-	"\x0einclude_header\x18\x03 \x01(\bR\rincludeHeader\"\x9a\x01\n" +
+	"\x0einclude_header\x18\x03 \x01(\bR\rincludeHeader\"\x99\x01\n" +
 	"\x1aGetQuarantinedFileResponse\x120\n" +
 	"\x04file\x18\x01 \x01(\v2\x1c.magnetar.v1.QuarantinedFileR\x04file\x12\x1f\n" +
 	"\vheader_json\x18\x02 \x01(\tR\n" +
-	"headerJson\x12)\n" +
-	"\x10header_truncated\x18\x03 \x01(\bR\x0fheaderTruncated\"u\n" +
+	"headerJson\x12(\n" +
+	"\x10header_too_large\x18\x03 \x01(\bR\x0eheaderTooLarge\"\x91\x01\n" +
 	"\x1dReleaseQuarantinedFileRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12,\n" +
-	"\x04mode\x18\x03 \x01(\x0e2\x18.magnetar.v1.ReleaseModeR\x04mode\"R\n" +
+	"\x04mode\x18\x03 \x01(\x0e2\x18.magnetar.v1.ReleaseModeR\x04mode\x12\x1a\n" +
+	"\breceiver\x18\x04 \x01(\tR\breceiver\"R\n" +
 	"\x1eReleaseQuarantinedFileResponse\x120\n" +
 	"\x04file\x18\x01 \x01(\v2\x1c.magnetar.v1.QuarantinedFileR\x04file\"^\n" +
 	"\x1cRejectQuarantinedFileRequest\x12\x16\n" +

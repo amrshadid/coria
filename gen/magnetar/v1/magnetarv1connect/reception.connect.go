@@ -33,6 +33,12 @@ const (
 	// ReceptionServiceGetReceptionProcedure is the procedure name of the ReceptionService's
 	// GetReception RPC.
 	ReceptionServiceGetReceptionProcedure = "/magnetar.v1.ReceptionService/GetReception"
+	// ReceptionServiceRetryReceptionProcedure is the procedure name of the ReceptionService's
+	// RetryReception RPC.
+	ReceptionServiceRetryReceptionProcedure = "/magnetar.v1.ReceptionService/RetryReception"
+	// ReceptionServiceDiscardReceptionProcedure is the procedure name of the ReceptionService's
+	// DiscardReception RPC.
+	ReceptionServiceDiscardReceptionProcedure = "/magnetar.v1.ReceptionService/DiscardReception"
 )
 
 var (
@@ -52,6 +58,22 @@ var (
 			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
+	receptionServiceRetryReceptionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_reception_proto.Services().ByName("ReceptionService").Methods().ByName("RetryReception"),
+			Procedure:        ReceptionServiceRetryReceptionProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
+		}
+	})
+	receptionServiceDiscardReceptionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_magnetar_v1_reception_proto.Services().ByName("ReceptionService").Methods().ByName("DiscardReception"),
+			Procedure:        ReceptionServiceDiscardReceptionProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
+		}
+	})
 )
 
 // ReceptionServiceClient is a client for the magnetar.v1.ReceptionService service.
@@ -59,10 +81,14 @@ type ReceptionServiceClient interface {
 	// ListReceptions answers a tenant's receptions, newest first by the time
 	// of their first file, filtered by receiver, study, step and time.
 	//
-	// Role: reader on the tenant.
-	// Audit: one entry in the tenant's log, with the filters in details.
+	// Role: reader on the tenant; operator on the tenant to filter by Study
+	// Instance UID, since looking a study up by an identifier the caller
+	// already holds is a search for a person's data.
+	// Audit: one entry in the tenant's log, with the filters in details,
+	// except a Study Instance UID, recorded only as present.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
+	// does not exist, for a caller who may not list every tenant; also a UID
+	// filter from a caller without operator), invalid,
 	// not found (a tenant that does not exist, for a caller who may list every
 	// tenant), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
@@ -79,6 +105,46 @@ type ReceptionServiceClient interface {
 	// not exist, for a caller who may list every tenant), unavailable (the
 	// tenant's database does not answer, or the tenant is not ready).
 	GetReception(context.Context, *v1.GetReceptionRequest) (*v1.GetReceptionResponse, error)
+	// RetryReception runs a failed reception's files again, once its cause is
+	// mended (a storage that answers again, say). The failed reception stays
+	// as it is, with retry_reception naming the new one: its files that were
+	// not archived start a new reception of the same study at the same
+	// receiver (or the one the request names), the next arrival, which
+	// begins at complete and runs its steps like any other. A reception
+	// already retried is answered as it stands, so a repeated call starts
+	// nothing more.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the failed reception's id as
+	// its object and the new reception's id in details.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (the tenant has no reception with that id; a tenant that does
+	// not exist, for a caller who may list every tenant), precondition (the
+	// reception has not failed, or its files were discarded; its receiver
+	// has been removed and the request names none; the receiver named does
+	// not exist), unavailable (the tenant's database does not answer,
+	// or the tenant is not ready).
+	RetryReception(context.Context, *v1.RetryReceptionRequest) (*v1.RetryReceptionResponse, error)
+	// DiscardReception removes a failed reception's files that were not
+	// archived from the server's incoming area, for good, with a reason that
+	// must be given. Nothing on a storage is touched: files it archived stay
+	// archived. The reception stays failed, with the reason and the time on
+	// its record. A reception already discarded is answered as it stands,
+	// with its first reason.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the reception's id as its
+	// object, and the count and bytes of the files removed in details; the
+	// reason given is kept on the record.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a missing or too long reason), not found (the tenant has no
+	// reception with that id; a tenant that does not exist, for a caller who
+	// may list every tenant), precondition (the reception has not failed, or
+	// it was retried), unavailable (the tenant's database does not answer, or
+	// the tenant is not ready).
+	DiscardReception(context.Context, *v1.DiscardReceptionRequest) (*v1.DiscardReceptionResponse, error)
 }
 
 // NewReceptionServiceClient constructs a client for the magnetar.v1.ReceptionService service.
@@ -92,10 +158,14 @@ type ReceptionServiceHandler interface {
 	// ListReceptions answers a tenant's receptions, newest first by the time
 	// of their first file, filtered by receiver, study, step and time.
 	//
-	// Role: reader on the tenant.
-	// Audit: one entry in the tenant's log, with the filters in details.
+	// Role: reader on the tenant; operator on the tenant to filter by Study
+	// Instance UID, since looking a study up by an identifier the caller
+	// already holds is a search for a person's data.
+	// Audit: one entry in the tenant's log, with the filters in details,
+	// except a Study Instance UID, recorded only as present.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
+	// does not exist, for a caller who may not list every tenant; also a UID
+	// filter from a caller without operator), invalid,
 	// not found (a tenant that does not exist, for a caller who may list every
 	// tenant), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
@@ -112,6 +182,46 @@ type ReceptionServiceHandler interface {
 	// not exist, for a caller who may list every tenant), unavailable (the
 	// tenant's database does not answer, or the tenant is not ready).
 	GetReception(context.Context, *v1.GetReceptionRequest) (*v1.GetReceptionResponse, error)
+	// RetryReception runs a failed reception's files again, once its cause is
+	// mended (a storage that answers again, say). The failed reception stays
+	// as it is, with retry_reception naming the new one: its files that were
+	// not archived start a new reception of the same study at the same
+	// receiver (or the one the request names), the next arrival, which
+	// begins at complete and runs its steps like any other. A reception
+	// already retried is answered as it stands, so a repeated call starts
+	// nothing more.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the failed reception's id as
+	// its object and the new reception's id in details.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (the tenant has no reception with that id; a tenant that does
+	// not exist, for a caller who may list every tenant), precondition (the
+	// reception has not failed, or its files were discarded; its receiver
+	// has been removed and the request names none; the receiver named does
+	// not exist), unavailable (the tenant's database does not answer,
+	// or the tenant is not ready).
+	RetryReception(context.Context, *v1.RetryReceptionRequest) (*v1.RetryReceptionResponse, error)
+	// DiscardReception removes a failed reception's files that were not
+	// archived from the server's incoming area, for good, with a reason that
+	// must be given. Nothing on a storage is touched: files it archived stay
+	// archived. The reception stays failed, with the reason and the time on
+	// its record. A reception already discarded is answered as it stands,
+	// with its first reason.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the reception's id as its
+	// object, and the count and bytes of the files removed in details; the
+	// reason given is kept on the record.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a missing or too long reason), not found (the tenant has no
+	// reception with that id; a tenant that does not exist, for a caller who
+	// may list every tenant), precondition (the reception has not failed, or
+	// it was retried), unavailable (the tenant's database does not answer, or
+	// the tenant is not ready).
+	DiscardReception(context.Context, *v1.DiscardReceptionRequest) (*v1.DiscardReceptionResponse, error)
 }
 
 // RegisterReceptionServiceHandler registers svc as the magnetar.v1.ReceptionService implementation
@@ -121,6 +231,8 @@ func RegisterReceptionServiceHandler(server *connect.Server, svc ReceptionServic
 	server.Register(
 		connect.Method{Spec: receptionServiceListReceptionsSpec(), Handler: adapter.listReceptions},
 		connect.Method{Spec: receptionServiceGetReceptionSpec(), Handler: adapter.getReception},
+		connect.Method{Spec: receptionServiceRetryReceptionSpec(), Handler: adapter.retryReception},
+		connect.Method{Spec: receptionServiceDiscardReceptionSpec(), Handler: adapter.discardReception},
 	)
 }
 
@@ -133,6 +245,14 @@ func (UnimplementedReceptionServiceHandler) ListReceptions(context.Context, *v1.
 
 func (UnimplementedReceptionServiceHandler) GetReception(context.Context, *v1.GetReceptionRequest) (*v1.GetReceptionResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "magnetar.v1.ReceptionService.GetReception is not implemented")
+}
+
+func (UnimplementedReceptionServiceHandler) RetryReception(context.Context, *v1.RetryReceptionRequest) (*v1.RetryReceptionResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "magnetar.v1.ReceptionService.RetryReception is not implemented")
+}
+
+func (UnimplementedReceptionServiceHandler) DiscardReception(context.Context, *v1.DiscardReceptionRequest) (*v1.DiscardReceptionResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "magnetar.v1.ReceptionService.DiscardReception is not implemented")
 }
 
 type receptionServiceClient struct {
@@ -150,6 +270,22 @@ func (c *receptionServiceClient) ListReceptions(ctx context.Context, req *v1.Lis
 func (c *receptionServiceClient) GetReception(ctx context.Context, req *v1.GetReceptionRequest) (*v1.GetReceptionResponse, error) {
 	var res v1.GetReceptionResponse
 	if err := c.client.CallUnary(ctx, receptionServiceGetReceptionSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *receptionServiceClient) RetryReception(ctx context.Context, req *v1.RetryReceptionRequest) (*v1.RetryReceptionResponse, error) {
+	var res v1.RetryReceptionResponse
+	if err := c.client.CallUnary(ctx, receptionServiceRetryReceptionSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *receptionServiceClient) DiscardReception(ctx context.Context, req *v1.DiscardReceptionRequest) (*v1.DiscardReceptionResponse, error) {
+	var res v1.DiscardReceptionResponse
+	if err := c.client.CallUnary(ctx, receptionServiceDiscardReceptionSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -175,6 +311,30 @@ func (h receptionServiceHandler) getReception(ctx context.Context, _ connect.Spe
 		return err
 	}
 	res, err := h.svc.GetReception(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h receptionServiceHandler) retryReception(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RetryReceptionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RetryReception(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h receptionServiceHandler) discardReception(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DiscardReceptionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DiscardReception(ctx, &req)
 	if err != nil {
 		return err
 	}

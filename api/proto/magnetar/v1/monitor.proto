@@ -15,8 +15,10 @@ import "magnetar/v1/tenant.proto";
 // MonitorService tells what a tenant is doing, in two forms: GetStatus, its
 // numbers now, in one answer; and Watch, a live stream of its events, from a
 // point a client can resume from. A client that follows a tenant reads its
-// status once, then watches from the status's event_cursor, so it misses no
-// event that came after the numbers it holds.
+// status once, then watches from the status's event_cursor: the counts and
+// the cursor are read in one snapshot of the tenant's database, so every
+// event after the cursor is a change the counts do not hold, and every
+// event at or before it is one they do.
 //
 // Both act on a Scope: one tenant, or the installation, which means every
 // tenant at once. Every tenant at once needs operator on the installation:
@@ -26,18 +28,21 @@ import "magnetar/v1/tenant.proto";
 // Events are written in the same transaction as the change they report, and
 // a tenant's events are answered in the order of the commits that wrote
 // them. A reception makes one event per step it reaches, with its counts,
-// never one per file; a quarantined file makes one event per file. Events
-// never carry a name or an identifier the sender gave (no patient
-// attribute, no UID): only the archive's labels, ids and counts. A client
-// that needs a reception's or a file's UIDs reads it by id. Events are kept
-// for the tenant's setting events.retention, built-in default 90 days, and
-// then pruned.
+// never one per file, and an accepted association makes none (a reception
+// counts the associations that fed it); a quarantined file makes one event
+// per file, and so does the decision on it. Events carry labels, ids and
+// counts; they never carry an attribute's value or a UID as such. A label is
+// as identifying as the naming rule that made it (NamingRule). Events are
+// kept for the setting events.retention, and then pruned: a period such as
+// "90d", from "1d" to "3650d"; an ordinary setting, whose installation value
+// the installation's admin sets and a tenant's admin may override for the
+// tenant; built-in default "90d".
 service MonitorService {
   // GetStatus answers the numbers now of one tenant, or of every tenant.
   // It answers whatever the tenant's state: a tenant whose database does not
   // answer is answered with its database's state and what the server holds
-  // in memory, and without the counts read from the database, rather than
-  // with an error, since that is when its status matters most.
+  // in memory, and without what is read from the database, rather than with
+  // an error, since that is when its status matters most.
   //
   // Role: reader on the tenant asked for; operator on the installation for
   // every tenant.
@@ -55,47 +60,51 @@ service MonitorService {
   }
 
   // Watch streams the events of one tenant, or of every tenant, as they are
-  // committed, starting after a cursor or, without one, from now. The
-  // first message of every stream is a keep-alive, sent at once, which says
-  // the stream is open and, on a tenant, gives the cursor it starts from.
-  // After that, when nothing is sent for 15 seconds the server sends
-  // another, so a client that hears nothing for much longer knows the
-  // stream is lost and resumes from its last cursor.
+  // committed, starting after the cursors given or, without them, from now.
+  // The first message of every stream is a keep-alive, sent at once, which
+  // says the stream is open and gives the cursors it starts from. After
+  // that, when nothing is sent for 15 seconds the server sends another, so
+  // a client that hears nothing for much longer knows the stream is lost
+  // and resumes from its last cursors.
   //
   // The server keeps no queue per client: it reads each client's events
-  // from the tenant's database at the pace the client reads them, so a slow
-  // client falls behind without costing the server memory, and loses
+  // from the tenants' databases at the pace the client reads them, so a
+  // slow client falls behind without costing the server memory, and loses
   // nothing until its cursor is older than what is kept. A stream may end
   // at any time, such as when the server stops (UNAVAILABLE); the client
-  // resumes from the cursor of the last event or keep-alive it received.
+  // resumes from the cursors of the last event or keep-alive it received.
   //
   // With every tenant, the events of each tenant come in that tenant's
-  // commit order, with no order between tenants, and a stream cannot be
-  // resumed: it starts from now and takes no cursor. Each event's cursor is
-  // still its tenant's, so a client can resume one tenant with a Watch on
-  // that tenant.
+  // commit order, with no order between tenants. Each event's cursor is its
+  // tenant's, and each keep-alive carries every tenant's cursor in
+  // tenant_cursors, which a new stream takes to resume tenant by tenant. A
+  // tenant whose database stops answering is skipped while the stream goes
+  // on, and its events follow from where they stopped when it answers
+  // again; a tenant created while the stream is open joins it from its
+  // first event, and a tenant removed leaves it.
   //
   // The caller's key and grant are checked again at least every 15 seconds
   // while the stream is open: a key revoked or expired, or a grant removed,
-  // ends the stream with the answer a new call would get, and so does a
-  // tenant removed.
+  // ends the stream with the answer a new call would get, and so does the
+  // removal of the one tenant a stream watches.
   //
   // Role: reader on the tenant asked for; operator on the installation for
   // every tenant.
   // Audit: one entry in the log of the scope asked for when the stream
-  // opens, with the cursor's presence and the event types in details, and
+  // opens, with the cursors' presence and the event types in details, and
   // one when it ends, with how many events it carried.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
-  // (also a cursor not made by a Watch of this tenant, and a cursor with
-  // every tenant), not found (a tenant that does not exist, for a caller who
-  // may list every tenant), cursor expired (the cursor points before the
-  // oldest event kept: the client reads GetStatus again and watches from its
-  // event_cursor), unavailable (the tenant's database does not answer, or
-  // the tenant is not ready, when the stream opens or while it is open; the
-  // client resumes later from its last cursor), resource exhausted (the
-  // caller, a key or the local operator, already holds 16 open streams, or
-  // the server holds 1024).
+  // (also a cursor not made by a Watch or status of the tenant it is given
+  // for, cursor with every tenant or tenant_cursors with one tenant), not
+  // found (a tenant that does not exist, for a caller who may list every
+  // tenant), cursor expired (a cursor points before the oldest event its
+  // tenant keeps; the message names the tenant; the client reads that
+  // tenant's status again and watches from its event_cursor), unavailable
+  // (with one tenant, its database does not answer or it is not ready, when
+  // the stream opens or while it is open; the client resumes later from its
+  // last cursor), resource exhausted (the caller, a key or the local
+  // operator, already holds 16 open streams, or the server holds 1024).
   // Limits: no deadline is applied to the stream when the client sends
   // none; the 30-second default of other calls does not hold here.
   rpc Watch(WatchRequest) returns (stream WatchResponse) {
@@ -131,18 +140,24 @@ message TenantCounts {
   // Quarantined files held now: not released or rejected.
   int64 quarantined_files = 5;
 
-  // Bytes of the quarantined files held now.
+  // Bytes the server holds for the quarantined files held now; a record
+  // whose bytes were never kept counts none.
   int64 quarantined_bytes = 6;
 
   // The receptions in progress, one entry per step that has any, in the
   // order of the steps. A step with none is left out. The ended steps
   // (done, quarantined, failed) are never listed.
   repeated ReceptionStepCount receptions_in_progress = 7;
+
+  // Bytes the tenant holds in the server's incoming area: files received
+  // and not yet archived, files of failed receptions not yet retried or
+  // discarded, and quarantined files held.
+  int64 incoming_bytes = 8;
 }
 
 // Throughput is how fast files move through a tenant now, measured by the
-// server over the last 10 seconds. It is held in memory: after a restart it
-// starts again from zero.
+// server over the last 10 seconds. It is held in memory, not in the
+// database snapshot: after a restart it starts again from zero.
 message Throughput {
   // Files received per second, into every receiver of the tenant.
   double files_received_per_second = 1;
@@ -163,19 +178,20 @@ message StorageStatus {
   string storage = 1;
 
   // Bytes the tenant holds on it: its archived files, manifests and
-  // metadata, as the catalog records them.
+  // metadata, as the catalog records them in the status's snapshot.
   int64 used_bytes = 2;
 
   // Bytes it can still take: the smaller of what its file system reports
-  // free and what is left under its capacity_bytes. Absent when unknown: an
-  // S3 storage with no capacity_bytes, or a file system that did not
-  // answer.
+  // free and what is left under its capacity_bytes, read when the status is
+  // made. Absent when unknown: an S3 storage with no capacity_bytes, or a
+  // file system that did not answer.
   optional int64 free_bytes = 3;
 
   // Its capacity_bytes; zero for none.
   int64 capacity_bytes = 4;
 
-  // Whether its free space is below the installation's threshold, so its
+  // Whether its free space is below its reserve (the installation's setting
+  // storage.reserve, ReceiverService), so its
   // receivers refuse new associations until space returns. False when its
   // free space is unknown.
   bool nearly_full = 5;
@@ -186,7 +202,7 @@ message ReceiverStatus {
   // The receiver's name.
   string receiver = 1;
 
-  // Whether it accepts associations, and why not.
+  // Whether it accepts data, and why not.
   ReceiverHealth health = 2;
 
   // Whether it admits any caller, so a status shows a receiver open to
@@ -206,12 +222,10 @@ message TenantStatus {
   // When the tenant entered that state.
   google.protobuf.Timestamp database_state_time = 3;
 
-  // The position of the tenant's event feed, read before the counts: a
-  // Watch of this tenant from this cursor answers every event that came
-  // after it. An event at the boundary may already be reflected in the
-  // counts; since a reception's events carry totals, not changes, applying
-  // it again changes nothing. Empty when the tenant's database did not
-  // answer. Opaque; at most 1 KiB.
+  // The position of the tenant's event feed in the same snapshot as the
+  // counts: a Watch of this tenant from this cursor answers exactly the
+  // events whose changes the counts do not hold. Empty when the tenant's
+  // database did not answer. Opaque; at most 1 KiB.
   string event_cursor = 4;
 
   // The tenant's counts. Absent when its database did not answer.
@@ -228,6 +242,11 @@ message TenantStatus {
   // Each of its receivers, ordered by name, from the server's memory, so
   // they are answered also when its database does not answer.
   repeated ReceiverStatus receivers = 8;
+
+  // The tenant's setting incoming.limit in bytes: the most it may hold in
+  // the server's incoming area before its receivers refuse new
+  // associations. Zero for no limit of its own.
+  int64 incoming_limit_bytes = 9;
 }
 
 // GetStatusRequest asks for the status of one tenant or of every tenant.
@@ -268,17 +287,17 @@ enum EventType {
   // Never answered by the server; refused as invalid in a filter.
   EVENT_TYPE_UNSPECIFIED = 0;
 
-  // A receiver accepted an association.
-  EVENT_TYPE_ASSOCIATION_ACCEPTED = 1;
-
-  // A receiver refused an association.
-  EVENT_TYPE_ASSOCIATION_REFUSED = 2;
+  // A receiver turned callers away.
+  EVENT_TYPE_ASSOCIATION_FAILED = 1;
 
   // A reception reached a step.
-  EVENT_TYPE_RECEPTION_STEP = 3;
+  EVENT_TYPE_RECEPTION_STEP = 2;
 
   // A file was quarantined.
-  EVENT_TYPE_FILE_QUARANTINED = 4;
+  EVENT_TYPE_FILE_QUARANTINED = 3;
+
+  // A quarantined file was released or rejected.
+  EVENT_TYPE_QUARANTINE_DECIDED = 4;
 
   // A receiver went up or down, or down for another reason.
   EVENT_TYPE_RECEIVER_HEALTH = 5;
@@ -287,37 +306,52 @@ enum EventType {
   EVENT_TYPE_STORAGE_SPACE = 6;
 }
 
-// AssociationRefusal is why a receiver refused an association. A reason
-// added in a later version is a new value.
-enum AssociationRefusal {
+// AssociationFailure is why a DIMSE receiver turned a caller away. Each
+// value says which mechanism of PS3.8 the caller saw. A value added in a
+// later version is a new value.
+enum AssociationFailure {
   // Never answered by the server.
-  ASSOCIATION_REFUSAL_UNSPECIFIED = 0;
+  ASSOCIATION_FAILURE_UNSPECIFIED = 0;
 
-  // The caller matches none of the receiver's allowed callers (PS3.8 9.3.4,
-  // "calling AE title not recognized").
-  ASSOCIATION_REFUSAL_CALLER_NOT_ALLOWED = 1;
+  // Rejected (A-ASSOCIATE-RJ, rejected-permanent, PS3.8 9.3.4,
+  // "calling-AE-title-not-recognized"): the caller matches none of the
+  // receiver's allowed callers.
+  ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED = 1;
 
-  // The caller called an AE title that is not the receiver's (PS3.8 9.3.4,
-  // "called AE title not recognized").
-  ASSOCIATION_REFUSAL_CALLED_AE_TITLE_NOT_RECOGNIZED = 2;
+  // Rejected (A-ASSOCIATE-RJ, rejected-permanent,
+  // "called-AE-title-not-recognized"): the caller called an AE title that
+  // is not the receiver's.
+  ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED = 2;
 
-  // None of the presentation contexts proposed has a SOP class and transfer
-  // syntax the receiver accepts (PS3.8 9.3.3.2).
-  ASSOCIATION_REFUSAL_NO_ACCEPTABLE_CONTEXT = 3;
+  // Accepted with every presentation context rejected (A-ASSOCIATE-AC,
+  // PS3.8 9.3.3.2, "abstract-syntax-not-supported" or
+  // "transfer-syntaxes-not-supported"): the association exists, but no
+  // proposed SOP class and transfer syntax is one the receiver accepts, so
+  // nothing can be sent on it. This event is the only one it makes.
+  ASSOCIATION_FAILURE_NO_ACCEPTABLE_CONTEXT = 3;
 
-  // The incoming area or the receiver's storage is nearly full; refused as
-  // a temporary failure (PS3.8 9.3.4, "transient").
-  ASSOCIATION_REFUSAL_NEARLY_FULL = 4;
+  // Rejected (A-ASSOCIATE-RJ, rejected-transient): the incoming area or the
+  // receiver's storage has less free space than its reserve
+  // (storage.reserve).
+  ASSOCIATION_FAILURE_NEARLY_FULL = 4;
 
-  // The tenant is not ready; refused as a temporary failure.
-  ASSOCIATION_REFUSAL_TENANT_NOT_READY = 5;
+  // Rejected (A-ASSOCIATE-RJ, rejected-transient): the tenant is not ready.
+  ASSOCIATION_FAILURE_TENANT_NOT_READY = 5;
 
-  // The TLS handshake failed, before any association was asked for; the
-  // caller's AE titles are then unknown.
-  ASSOCIATION_REFUSAL_TLS_FAILED = 6;
+  // The TLS handshake failed and the connection was closed before any
+  // association was asked for; the caller's AE titles are unknown.
+  ASSOCIATION_FAILURE_TLS_FAILED = 6;
 
-  // The caller broke the upper layer protocol (PS3.8 Section 9).
-  ASSOCIATION_REFUSAL_PROTOCOL_ERROR = 7;
+  // Aborted by the receiver (A-ABORT, PS3.8 9.3.8) because the caller broke
+  // the upper layer protocol (PS3.8 Section 9), before or after the
+  // association was accepted. Files the association had already stored
+  // stay received; a store it cut short is not kept. This event is the
+  // only one it makes.
+  ASSOCIATION_FAILURE_PROTOCOL_ERROR = 7;
+
+  // Rejected (A-ASSOCIATE-RJ, rejected-transient): the tenant holds as many
+  // bytes in the incoming area as its setting incoming.limit allows.
+  ASSOCIATION_FAILURE_INCOMING_LIMIT = 8;
 }
 
 // StorageSpaceState is whether a storage has room.
@@ -325,44 +359,41 @@ enum StorageSpaceState {
   // Never answered by the server.
   STORAGE_SPACE_STATE_UNSPECIFIED = 0;
 
-  // Its free space fell below the installation's threshold.
+  // Its free space fell below its reserve (the installation's setting
+  // storage.reserve).
   STORAGE_SPACE_STATE_NEARLY_FULL = 1;
 
-  // Its free space is above the threshold again.
+  // Its free space is above its reserve again.
   STORAGE_SPACE_STATE_RECOVERED = 2;
 }
 
-// AssociationAccepted is a receiver accepting an association.
-message AssociationAccepted {
+// AssociationFailed is a receiver turning callers away. Failures are grouped
+// by receiver, failure and the caller's host address (without its port):
+// the first failure of a group makes an event at once, and further ones in
+// the minute after it are counted and make one event at the end of that
+// minute. When more than 64 distinct hosts fail at one receiver within a
+// minute, the failures of the hosts beyond those 64 are folded into one
+// event at the end of the minute, with caller empty. So a caller trying
+// again and again, or many callers at once, cannot flood the feed.
+message AssociationFailed {
   // The receiver's name.
   string receiver = 1;
 
-  // Who called.
+  // Who called, as far as it is known: the host's address without its port,
+  // and the AE titles when they were read. Absent for the event that folds
+  // the failures of many hosts together.
   Caller caller = 2;
 
-  // Whether the association is over TLS.
-  bool tls = 3;
-}
+  // Why the caller was turned away.
+  AssociationFailure failure = 3;
 
-// AssociationRefused is a receiver refusing associations. The first refusal
-// for one receiver, caller address and reason makes an event at once;
-// further ones in the minute after it are counted and make one event at the
-// end of that minute, so a caller trying again and again cannot flood the
-// feed.
-message AssociationRefused {
-  // The receiver's name.
-  string receiver = 1;
-
-  // Who called, as far as it is known: the AE titles are empty when the
-  // refusal came before they were read.
-  Caller caller = 2;
-
-  // Why it was refused.
-  AssociationRefusal reason = 3;
-
-  // How many refusals the event stands for: 1, or more for the event at the
-  // end of a minute.
+  // How many failures the event stands for: 1 for the first of a group,
+  // more for an event at the end of a minute.
   int64 count = 4;
+
+  // How many distinct hosts the event stands for: 1, or more for the event
+  // that folds many hosts together.
+  int64 hosts = 5;
 }
 
 // ReceptionStepReached is a reception reaching a step.
@@ -388,6 +419,10 @@ message ReceptionStepReached {
 
   // Its session's label. Empty before it is identified.
   string session_label = 7;
+
+  // The id of the failed reception it runs again. Empty unless it was made
+  // by RetryReception.
+  string retry_of = 8;
 }
 
 // FileQuarantined is one file quarantined.
@@ -406,6 +441,35 @@ message FileQuarantined {
 
   // Its size in bytes.
   int64 size_bytes = 5;
+
+  // The tenant's quarantined files held, this one included.
+  int64 held_files = 6;
+
+  // The bytes the server holds for the tenant's quarantined files held, as
+  // TenantCounts.quarantined_bytes counts them.
+  int64 held_bytes = 7;
+}
+
+// QuarantineDecided is a quarantined file released or rejected.
+message QuarantineDecided {
+  // The quarantined file's record id.
+  string file = 1;
+
+  // What was decided: released or rejected.
+  QuarantineState state = 2;
+
+  // How it was released. RELEASE_MODE_UNSPECIFIED for a rejection.
+  ReleaseMode release_mode = 3;
+
+  // The id of the reception its release joined. Empty for a rejection.
+  string release_reception = 4;
+
+  // The tenant's quarantined files held after the decision.
+  int64 held_files = 5;
+
+  // The bytes the server holds for the tenant's quarantined files held
+  // after the decision, as TenantCounts.quarantined_bytes counts them.
+  int64 held_bytes = 6;
 }
 
 // ReceiverHealthChanged is a receiver's state changing.
@@ -451,17 +515,17 @@ message Event {
   // What happened. Exactly one is set, the one its type names. A client
   // that finds none it knows set is reading a type added later.
   oneof payload {
-    // A receiver accepted an association.
-    AssociationAccepted association_accepted = 5;
-
-    // A receiver refused associations.
-    AssociationRefused association_refused = 6;
+    // A receiver turned callers away.
+    AssociationFailed association_failed = 5;
 
     // A reception reached a step.
-    ReceptionStepReached reception_step = 7;
+    ReceptionStepReached reception_step = 6;
 
     // A file was quarantined.
-    FileQuarantined file_quarantined = 8;
+    FileQuarantined file_quarantined = 7;
+
+    // A quarantined file was released or rejected.
+    QuarantineDecided quarantine_decided = 8;
 
     // A receiver's state changed.
     ReceiverHealthChanged receiver_health = 9;
@@ -477,10 +541,16 @@ message WatchKeepAlive {
   // When it was sent.
   google.protobuf.Timestamp time = 1;
 
-  // On a tenant, the position the stream has read up to, past events the
+  // On one tenant, the position the stream has read up to, past events the
   // filter left out: resuming from it skips them again rather than reading
   // them a second time. Empty with every tenant. Opaque; at most 1 KiB.
   string cursor = 2;
+
+  // With every tenant, the position the stream has read up to in each
+  // tenant whose database answered, by tenant name; a tenant missing here
+  // is one the stream has not read yet. Empty with one tenant. Each cursor
+  // is opaque, at most 1 KiB.
+  map<string, string> tenant_cursors = 3;
 }
 
 // WatchRequest asks for a stream of events.
@@ -489,14 +559,22 @@ message WatchRequest {
   // Required.
   Scope scope = 1;
 
-  // Start after this cursor: an event's cursor, a keep-alive's, or a
-  // status's event_cursor, of the same tenant. Empty to start from now.
-  // Opaque; at most 1 KiB. Must be empty with the installation.
+  // With one tenant, start after this cursor: an event's cursor, a
+  // keep-alive's, or a status's event_cursor, of the same tenant. Empty to
+  // start from now. Opaque; at most 1 KiB. Must be empty with every tenant.
   string cursor = 2;
 
   // Only events of these types. Empty for every type; at most 16 values,
   // none of them EVENT_TYPE_UNSPECIFIED.
   repeated EventType types = 3;
+
+  // With every tenant, where to start in each tenant, by tenant name: a
+  // keep-alive's tenant_cursors, or cursors gathered from events and
+  // statuses. A tenant not listed starts from now; a listed tenant that no
+  // longer exists is left out. At most 10000 entries, each cursor at most
+  // 1 KiB, within the 4 MB limit of a message. Must be empty with one
+  // tenant.
+  map<string, string> tenant_cursors = 4;
 }
 
 // WatchResponse is one message of the stream: an event or a keep-alive.

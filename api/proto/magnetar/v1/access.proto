@@ -46,9 +46,13 @@ syntax = "proto3";
 //   - not found: NOT_FOUND (HTTP 404). The thing named does not exist, and
 //     the caller may know that it does not.
 //   - conflict: ALREADY_EXISTS (HTTP 409). The change would collide with what
-//     exists, such as a second tenant with the same name, or the state of
-//     what it names forbids it, such as removing a storage that holds files.
-//     The message says which.
+//     exists, such as a second tenant with the same name.
+//   - precondition: FAILED_PRECONDITION (HTTP 400). What the request names
+//     is in a state that forbids the change, such as removing a storage
+//     that holds files, releasing a file already rejected, or using a port
+//     the installation has not allotted to the tenant. The message says
+//     which. Sending it again unchanged fails again until that state
+//     changes.
 //   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs does
 //     not answer, or a tenant is not ready. Sending it again later may
 //     succeed.
@@ -59,9 +63,9 @@ syntax = "proto3";
 //
 // Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
 // RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch, for
-// too many open streams), and DEADLINE_EXCEEDED when its deadline passes. The message of an INTERNAL answer says nothing
-// about the cause; the cause is in the server's log and the audit entry,
-// under the request's id.
+// too many open streams), and DEADLINE_EXCEEDED when its deadline passes.
+// The message of an INTERNAL answer says nothing about the cause; the cause
+// is in the server's log and the audit entry, under the request's id.
 //
 // A tenant that does not exist. A request that names a tenant with no such
 // tenant is answered NOT_FOUND when the caller may list every tenant: a key
@@ -85,9 +89,9 @@ syntax = "proto3";
 //
 // Limits. A message over 4 MB is refused. Every call has a deadline; when the
 // client sends none, the server applies 30 seconds, except to the stream of
-// MonitorService.Watch, which stays open until either side ends it. A list answers 100 items
-// unless page_size asks for another number, and at most 1000; a larger
-// page_size is invalid.
+// MonitorService.Watch, which stays open until either side ends it. A list
+// answers 100 items unless page_size asks for another number, and at most
+// 1000; a larger page_size is invalid.
 //
 // Rules of the whole package. A list method takes page_size and page_token and
 // answers next_page_token, never an offset; a page token is opaque, at most

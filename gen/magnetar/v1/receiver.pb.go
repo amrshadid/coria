@@ -28,18 +28,18 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ReceiverState is whether a receiver accepts associations now.
+// ReceiverState is whether a receiver accepts data now.
 type ReceiverState int32
 
 const (
 	// Never answered by the server. A client that reads it was built against
 	// an older contract than the server's.
 	ReceiverState_RECEIVER_STATE_UNSPECIFIED ReceiverState = 0
-	// The server is starting the listener, or restarting it after a change.
+	// The server is starting the receiver, or restarting it after a change.
 	ReceiverState_RECEIVER_STATE_STARTING ReceiverState = 1
-	// It listens and admits the callers it lists.
+	// It accepts data from the callers it admits.
 	ReceiverState_RECEIVER_STATE_UP ReceiverState = 2
-	// It does not accept associations; the down reason says why.
+	// It does not accept data; the down reason says why.
 	ReceiverState_RECEIVER_STATE_DOWN ReceiverState = 3
 )
 
@@ -96,21 +96,21 @@ const (
 	ReceiverDownReason_RECEIVER_DOWN_REASON_UNSPECIFIED ReceiverDownReason = 0
 	// Its enabled field is false.
 	ReceiverDownReason_RECEIVER_DOWN_REASON_DISABLED ReceiverDownReason = 1
-	// Its port and bind address are taken by something else on the server.
+	// Its port and address are taken by another program on the server.
 	ReceiverDownReason_RECEIVER_DOWN_REASON_ADDRESS_IN_USE ReceiverDownReason = 2
 	// The operating system does not let the server bind its port, as for a
 	// port below 1024.
 	ReceiverDownReason_RECEIVER_DOWN_REASON_PERMISSION_DENIED ReceiverDownReason = 3
-	// Its bind address is not an address of the server.
+	// Its bind address is not an address of the server now.
 	ReceiverDownReason_RECEIVER_DOWN_REASON_ADDRESS_NOT_AVAILABLE ReceiverDownReason = 4
 	// Its TLS certificate or key cannot be read, or they do not form a valid
 	// pair.
 	ReceiverDownReason_RECEIVER_DOWN_REASON_TLS ReceiverDownReason = 5
 	// The server's incoming area or the receiver's storage has less free space
-	// than the installation's threshold. The port is held, and associations
-	// are refused as a temporary failure (PS3.8 9.3.4, "transient"), so a
-	// sender keeps its copy and tries again; it is up again when space
-	// returns.
+	// than its reserve (the setting storage.reserve). The port is held and new
+	// associations are rejected as a temporary failure (PS3.8 9.3.4,
+	// "rejected-transient"), so a sender keeps its copy and tries again; it
+	// is up again when space returns.
 	ReceiverDownReason_RECEIVER_DOWN_REASON_NEARLY_FULL ReceiverDownReason = 6
 	// The tenant is not ready (its database does not answer, or it is being
 	// upgraded), so nothing it received could be recorded. It is up again
@@ -120,21 +120,27 @@ const (
 	ReceiverDownReason_RECEIVER_DOWN_REASON_STOPPING ReceiverDownReason = 8
 	// A cause none of the others names; the detail says what.
 	ReceiverDownReason_RECEIVER_DOWN_REASON_OTHER ReceiverDownReason = 9
+	// The tenant's files in the incoming area (received, not yet archived,
+	// or quarantined) reach the tenant's setting incoming.limit. New
+	// associations are rejected as a temporary failure; it is up again when
+	// the tenant is under its limit.
+	ReceiverDownReason_RECEIVER_DOWN_REASON_INCOMING_LIMIT ReceiverDownReason = 10
 )
 
 // Enum value maps for ReceiverDownReason.
 var (
 	ReceiverDownReason_name = map[int32]string{
-		0: "RECEIVER_DOWN_REASON_UNSPECIFIED",
-		1: "RECEIVER_DOWN_REASON_DISABLED",
-		2: "RECEIVER_DOWN_REASON_ADDRESS_IN_USE",
-		3: "RECEIVER_DOWN_REASON_PERMISSION_DENIED",
-		4: "RECEIVER_DOWN_REASON_ADDRESS_NOT_AVAILABLE",
-		5: "RECEIVER_DOWN_REASON_TLS",
-		6: "RECEIVER_DOWN_REASON_NEARLY_FULL",
-		7: "RECEIVER_DOWN_REASON_TENANT_NOT_READY",
-		8: "RECEIVER_DOWN_REASON_STOPPING",
-		9: "RECEIVER_DOWN_REASON_OTHER",
+		0:  "RECEIVER_DOWN_REASON_UNSPECIFIED",
+		1:  "RECEIVER_DOWN_REASON_DISABLED",
+		2:  "RECEIVER_DOWN_REASON_ADDRESS_IN_USE",
+		3:  "RECEIVER_DOWN_REASON_PERMISSION_DENIED",
+		4:  "RECEIVER_DOWN_REASON_ADDRESS_NOT_AVAILABLE",
+		5:  "RECEIVER_DOWN_REASON_TLS",
+		6:  "RECEIVER_DOWN_REASON_NEARLY_FULL",
+		7:  "RECEIVER_DOWN_REASON_TENANT_NOT_READY",
+		8:  "RECEIVER_DOWN_REASON_STOPPING",
+		9:  "RECEIVER_DOWN_REASON_OTHER",
+		10: "RECEIVER_DOWN_REASON_INCOMING_LIMIT",
 	}
 	ReceiverDownReason_value = map[string]int32{
 		"RECEIVER_DOWN_REASON_UNSPECIFIED":           0,
@@ -147,6 +153,7 @@ var (
 		"RECEIVER_DOWN_REASON_TENANT_NOT_READY":      7,
 		"RECEIVER_DOWN_REASON_STOPPING":              8,
 		"RECEIVER_DOWN_REASON_OTHER":                 9,
+		"RECEIVER_DOWN_REASON_INCOMING_LIMIT":        10,
 	}
 )
 
@@ -177,7 +184,7 @@ func (ReceiverDownReason) EnumDescriptor() ([]byte, []int) {
 	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{1}
 }
 
-// Receiver is a DICOM listener of a tenant and how what it receives is
+// Receiver is a way for data to arrive at a tenant, and how what arrives is
 // handled.
 type Receiver struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -185,103 +192,65 @@ type Receiver struct {
 	// does not change. 1 to 63 characters, lowercase ASCII letters, digits and
 	// hyphens, starting with a letter, and none of the device names Windows
 	// reserves (con, prn, aux, nul, com0 to com9, lpt0 to lpt9): the rule of a
-	// tenant's name. A receiver's name can be used again after it is removed;
-	// the receptions of the removed one keep the name.
+	// tenant's name. A removed receiver's name is not given to another while
+	// a reception or a quarantined file names it.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Whether the receiver listens. False, the default, keeps it stopped, so a
-	// receiver listens only once it is enabled in so many words.
-	Enabled bool `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	// The TCP port it listens on: 1 to 65535. Required. Ports below 1024 need
-	// the server to hold the right to bind them; without it the receiver is
-	// down with RECEIVER_DOWN_REASON_PERMISSION_DENIED. Another receiver of
-	// the same tenant on the same port and bind address is a conflict; a port
-	// already taken by anything else on the server, another tenant's receiver
-	// included, is not refused, and the receiver is down with
-	// RECEIVER_DOWN_REASON_ADDRESS_IN_USE.
-	Port int32 `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
-	// The address of the server it listens on: an IPv4 address in dotted form
-	// or an IPv6 address in the form of RFC 5952, without a zone. Empty means
-	// every address of the server, IPv4 and IPv6.
-	BindAddress string `protobuf:"bytes,4,opt,name=bind_address,json=bindAddress,proto3" json:"bind_address,omitempty"`
-	// The receiver's own AE title: the Called AE Title a caller must give
-	// (PS3.8 9.3.2). Required; 1 to 16 characters of printable ASCII other
-	// than backslash, not only spaces (PS3.5 6.2, value representation AE).
-	// Leading and trailing spaces are not significant and are removed. An
-	// association that calls another title is refused (PS3.8 9.3.4, "called
-	// AE title not recognized").
-	AeTitle string `protobuf:"bytes,5,opt,name=ae_title,json=aeTitle,proto3" json:"ae_title,omitempty"`
-	// Who may open an association with the receiver. When neither field is
-	// set, nobody may: a new receiver is closed until its callers are listed.
-	// "Any caller" is its own field, never what an empty list means, so a
-	// receiver is open to everyone only when that is asked for in so many
+	// The receiver's type and the configuration of its protocol. Exactly one
+	// is set; a receiver with none is refused as invalid. A type added in a
+	// later version is a new field of this oneof: a client that finds none of
+	// the fields it knows set is reading a receiver of a type it does not
+	// know, and shows it as such.
+	//
+	// Types that are valid to be assigned to Type:
+	//
+	//	*Receiver_Dimse
+	Type isReceiver_Type `protobuf_oneof:"type"`
+	// Whether the receiver accepts data. False, the default, keeps it
+	// stopped, so a receiver receives only once it is enabled in so many
 	// words.
-	//
-	// Types that are valid to be assigned to Callers:
-	//
-	//	*Receiver_AllowedCallers
-	//	*Receiver_AnyCaller
-	Callers isReceiver_Callers `protobuf_oneof:"callers"`
-	// TLS for the receiver's associations (PS3.15 B.9, BCP 195). Absent for
-	// none: associations are then in plain TCP, which crosses the network
-	// unencrypted and is fit only for a network the site trusts.
-	Tls *ReceiverTls `protobuf:"bytes,8,opt,name=tls,proto3" json:"tls,omitempty"`
-	// The SOP classes whose instances it accepts, by SOP Class UID (PS3.4
-	// Annex B; each UID 1 to 64 characters of digits and dots, PS3.5 9.1).
-	// Empty means the server's default set: every Storage SOP Class of PS3.4
-	// Table B.5-1 that the server's version knows. At most 512. A presentation
-	// context proposed for another class is refused (PS3.8 9.3.3.2). The
-	// Verification SOP Class (PS3.4 Annex A) is answered whatever this list
-	// holds.
-	SopClasses []string `protobuf:"bytes,9,rep,name=sop_classes,json=sopClasses,proto3" json:"sop_classes,omitempty"`
-	// The transfer syntaxes it accepts, by Transfer Syntax UID (PS3.5 Section
-	// 10 and Annex A; each 1 to 64 characters of digits and dots). Empty means
-	// the server's default set: every transfer syntax of PS3.5 Annex A that
-	// the server's version knows. At most 64. A file is archived in the
-	// transfer syntax it was sent in; nothing is decoded or re-encoded.
-	// Implicit VR Little Endian (1.2.840.10008.1.2), which every DICOM
-	// application must accept (PS3.5 10.1), is accepted whatever this list
-	// holds.
-	TransferSyntaxes []string `protobuf:"bytes,10,rep,name=transfer_syntaxes,json=transferSyntaxes,proto3" json:"transfer_syntaxes,omitempty"`
+	Enabled bool `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	// The name of the tenant's storage that what it receives is archived to.
-	// Required; a storage the tenant does not have is invalid. A file of a
-	// session that already has files on another storage is archived where
-	// that session is, whatever the receiver names now, so a later arrival
-	// always lands beside the first.
-	Storage string `protobuf:"bytes,11,opt,name=storage,proto3" json:"storage,omitempty"`
+	// Required; a storage the tenant does not have is a precondition failure.
+	// A file of a session that already has files on another storage is
+	// archived where that session is, whatever the receiver names now, so a
+	// later arrival always lands beside the first.
+	Storage string `protobuf:"bytes,4,opt,name=storage,proto3" json:"storage,omitempty"`
 	// How the labels of a new subject, session and scan are made from what is
-	// received. Absent means the default templates (NamingTemplates). A
-	// session or scan that already has a label keeps it: a file is matched to
-	// its session by its Study Instance UID and to its scan by its Series
-	// Instance UID first, and the rule runs only for one that is new.
-	Naming *NamingRule `protobuf:"bytes,12,opt,name=naming,proto3" json:"naming,omitempty"`
+	// received. Absent means the default rule (NamingRule), which carries no
+	// value the sender gave. A session or scan that already has a
+	// label keeps it: a file is matched to its session by its Study Instance
+	// UID and to its scan by its Series Instance UID first, and the rule runs
+	// only for one that is new.
+	Naming *NamingRule `protobuf:"bytes,5,opt,name=naming,proto3" json:"naming,omitempty"`
 	// How long without a file for a study before its reception is complete:
 	// complete means quiet, not whole, and the end of an association means
 	// nothing. A whole number of seconds from 5 seconds to 1 hour. Absent in
 	// AddReceiver means the default, 60 seconds, which is stored as the
 	// receiver's value.
-	QuietPeriod *durationpb.Duration `protobuf:"bytes,13,opt,name=quiet_period,json=quietPeriod,proto3" json:"quiet_period,omitempty"`
+	QuietPeriod *durationpb.Duration `protobuf:"bytes,6,opt,name=quiet_period,json=quietPeriod,proto3" json:"quiet_period,omitempty"`
 	// The longest a reception stays receiving, from its first file, before it
 	// is complete even if files keep coming; what comes after belongs to the
 	// next arrival. A whole number of seconds from 1 minute to 24 hours, and
 	// not less than quiet_period. Absent in AddReceiver means the default,
 	// 1 hour, which is stored as the receiver's value.
-	MaxOpenTime *durationpb.Duration `protobuf:"bytes,14,opt,name=max_open_time,json=maxOpenTime,proto3" json:"max_open_time,omitempty"`
+	MaxOpenTime *durationpb.Duration `protobuf:"bytes,7,opt,name=max_open_time,json=maxOpenTime,proto3" json:"max_open_time,omitempty"`
 	// The largest file it accepts, in bytes, as written to the server: the
 	// DICOM file header and the data set. From 1024 to 2^38 (256 GiB). Zero in
 	// AddReceiver means the default, 2^32 (4 GiB), which is stored as the
-	// receiver's value. A larger file is not kept: its store is answered with
-	// a failure, so the sender keeps its copy, and its record is quarantined
-	// with QUARANTINE_REASON_TOO_LARGE.
-	MaxFileBytes int64 `protobuf:"varint,15,opt,name=max_file_bytes,json=maxFileBytes,proto3" json:"max_file_bytes,omitempty"`
-	// Whether the receiver listens now, and why not. Answered by the server;
-	// ignored in a request.
-	Health *ReceiverHealth `protobuf:"bytes,16,opt,name=health,proto3" json:"health,omitempty"`
+	// receiver's value. A larger file is not kept: a DIMSE receiver answers
+	// its C-STORE with status A700, "Refused: Out of Resources" (PS3.4 B.2.3,
+	// Table B.2-1), so the sender keeps its copy, and its record is
+	// quarantined with QUARANTINE_REASON_TOO_LARGE.
+	MaxFileBytes int64 `protobuf:"varint,8,opt,name=max_file_bytes,json=maxFileBytes,proto3" json:"max_file_bytes,omitempty"`
+	// Whether the receiver accepts data now, and why not. Answered by the
+	// server; ignored in a request.
+	Health *ReceiverHealth `protobuf:"bytes,9,opt,name=health,proto3" json:"health,omitempty"`
 	// When the receiver was added. Answered by the server; ignored in a
 	// request.
-	CreateTime *timestamppb.Timestamp `protobuf:"bytes,17,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
+	CreateTime *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
 	// When its configuration last changed: its create_time until the first
 	// SetReceiver. Answered by the server; ignored in a request.
-	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,18,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
+	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -323,78 +292,27 @@ func (x *Receiver) GetName() string {
 	return ""
 }
 
+func (x *Receiver) GetType() isReceiver_Type {
+	if x != nil {
+		return x.Type
+	}
+	return nil
+}
+
+func (x *Receiver) GetDimse() *DimseReceiver {
+	if x != nil {
+		if x, ok := x.Type.(*Receiver_Dimse); ok {
+			return x.Dimse
+		}
+	}
+	return nil
+}
+
 func (x *Receiver) GetEnabled() bool {
 	if x != nil {
 		return x.Enabled
 	}
 	return false
-}
-
-func (x *Receiver) GetPort() int32 {
-	if x != nil {
-		return x.Port
-	}
-	return 0
-}
-
-func (x *Receiver) GetBindAddress() string {
-	if x != nil {
-		return x.BindAddress
-	}
-	return ""
-}
-
-func (x *Receiver) GetAeTitle() string {
-	if x != nil {
-		return x.AeTitle
-	}
-	return ""
-}
-
-func (x *Receiver) GetCallers() isReceiver_Callers {
-	if x != nil {
-		return x.Callers
-	}
-	return nil
-}
-
-func (x *Receiver) GetAllowedCallers() *AllowedCallers {
-	if x != nil {
-		if x, ok := x.Callers.(*Receiver_AllowedCallers); ok {
-			return x.AllowedCallers
-		}
-	}
-	return nil
-}
-
-func (x *Receiver) GetAnyCaller() bool {
-	if x != nil {
-		if x, ok := x.Callers.(*Receiver_AnyCaller); ok {
-			return x.AnyCaller
-		}
-	}
-	return false
-}
-
-func (x *Receiver) GetTls() *ReceiverTls {
-	if x != nil {
-		return x.Tls
-	}
-	return nil
-}
-
-func (x *Receiver) GetSopClasses() []string {
-	if x != nil {
-		return x.SopClasses
-	}
-	return nil
-}
-
-func (x *Receiver) GetTransferSyntaxes() []string {
-	if x != nil {
-		return x.TransferSyntaxes
-	}
-	return nil
 }
 
 func (x *Receiver) GetStorage() string {
@@ -453,28 +371,200 @@ func (x *Receiver) GetUpdateTime() *timestamppb.Timestamp {
 	return nil
 }
 
-type isReceiver_Callers interface {
-	isReceiver_Callers()
+type isReceiver_Type interface {
+	isReceiver_Type()
 }
 
-type Receiver_AllowedCallers struct {
+type Receiver_Dimse struct {
+	// A DICOM listener that receives by C-STORE.
+	Dimse *DimseReceiver `protobuf:"bytes,2,opt,name=dimse,proto3,oneof"`
+}
+
+func (*Receiver_Dimse) isReceiver_Type() {}
+
+// DimseReceiver is a DICOM listener on one port of the server.
+type DimseReceiver struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The TCP port it listens on. Required; it must lie in the ports the
+	// installation allotted to the tenant (the tenant's setting
+	// receiver.ports), or it is a precondition failure. Two receivers of the
+	// tenant may share a port only on addresses that do not overlap; an empty
+	// bind address overlaps every address. A port the operating system does
+	// not give (taken by another program, or below 1024 without the right to
+	// bind it) is not refused here: the receiver is down, with
+	// RECEIVER_DOWN_REASON_ADDRESS_IN_USE or
+	// RECEIVER_DOWN_REASON_PERMISSION_DENIED.
+	Port int32 `protobuf:"varint,1,opt,name=port,proto3" json:"port,omitempty"`
+	// The address of the server it listens on: an IPv4 address in dotted form
+	// or an IPv6 address in the form of RFC 5952, without a zone, which must
+	// be one of the addresses the installation's setting
+	// receiver.bind-addresses lists. Empty means the installation's default:
+	// the first address that setting lists, or every address of the server
+	// when it lists none.
+	BindAddress string `protobuf:"bytes,2,opt,name=bind_address,json=bindAddress,proto3" json:"bind_address,omitempty"`
+	// The receiver's own AE title: the Called AE Title a caller must give
+	// (PS3.8 9.3.2). Required; 1 to 16 characters of printable ASCII other
+	// than backslash, not only spaces (PS3.5 6.2, value representation AE).
+	// Leading and trailing spaces are not significant and are removed. An
+	// association that calls another title is rejected (PS3.8 9.3.4,
+	// "called-AE-title-not-recognized").
+	AeTitle string `protobuf:"bytes,3,opt,name=ae_title,json=aeTitle,proto3" json:"ae_title,omitempty"`
+	// Who may open an association with the receiver. When neither field is
+	// set, nobody may: a new receiver is closed until its callers are listed.
+	// "Any caller" is its own field, never what an empty list means, so a
+	// receiver is open to everyone only when that is asked for in so many
+	// words.
+	//
+	// Types that are valid to be assigned to Callers:
+	//
+	//	*DimseReceiver_AllowedCallers
+	//	*DimseReceiver_AnyCaller
+	Callers isDimseReceiver_Callers `protobuf_oneof:"callers"`
+	// TLS for the receiver's associations (PS3.15 B.9, BCP 195). Absent for
+	// none: associations are then in plain TCP, which crosses the network
+	// unencrypted and is fit only for a network the site trusts.
+	Tls *ReceiverTls `protobuf:"bytes,6,opt,name=tls,proto3" json:"tls,omitempty"`
+	// The SOP classes whose instances it accepts, by SOP Class UID (PS3.4
+	// Annex B; each UID 1 to 64 characters of digits and dots, PS3.5 9.1).
+	// Empty means the server's default set: every Storage SOP Class of PS3.4
+	// Table B.5-1 that the server's version knows. At most 512. A presentation
+	// context proposed for another class is rejected in the association's
+	// answer (PS3.8 9.3.3.2, "abstract-syntax-not-supported"). The
+	// Verification SOP Class (PS3.4 Annex A) is answered whatever this list
+	// holds.
+	SopClasses []string `protobuf:"bytes,7,rep,name=sop_classes,json=sopClasses,proto3" json:"sop_classes,omitempty"`
+	// The transfer syntaxes it accepts, by Transfer Syntax UID (PS3.5 Section
+	// 10 and Annex A; each 1 to 64 characters of digits and dots). Empty means
+	// the server's default set: every transfer syntax of PS3.5 Annex A that
+	// the server's version knows. At most 64. A file is archived in the
+	// transfer syntax it was sent in; nothing is decoded or re-encoded.
+	// Implicit VR Little Endian (1.2.840.10008.1.2), which every DICOM
+	// application must accept (PS3.5 10.1), is accepted whatever this list
+	// holds.
+	TransferSyntaxes []string `protobuf:"bytes,8,rep,name=transfer_syntaxes,json=transferSyntaxes,proto3" json:"transfer_syntaxes,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *DimseReceiver) Reset() {
+	*x = DimseReceiver{}
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DimseReceiver) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DimseReceiver) ProtoMessage() {}
+
+func (x *DimseReceiver) ProtoReflect() protoreflect.Message {
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DimseReceiver.ProtoReflect.Descriptor instead.
+func (*DimseReceiver) Descriptor() ([]byte, []int) {
+	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *DimseReceiver) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *DimseReceiver) GetBindAddress() string {
+	if x != nil {
+		return x.BindAddress
+	}
+	return ""
+}
+
+func (x *DimseReceiver) GetAeTitle() string {
+	if x != nil {
+		return x.AeTitle
+	}
+	return ""
+}
+
+func (x *DimseReceiver) GetCallers() isDimseReceiver_Callers {
+	if x != nil {
+		return x.Callers
+	}
+	return nil
+}
+
+func (x *DimseReceiver) GetAllowedCallers() *AllowedCallers {
+	if x != nil {
+		if x, ok := x.Callers.(*DimseReceiver_AllowedCallers); ok {
+			return x.AllowedCallers
+		}
+	}
+	return nil
+}
+
+func (x *DimseReceiver) GetAnyCaller() bool {
+	if x != nil {
+		if x, ok := x.Callers.(*DimseReceiver_AnyCaller); ok {
+			return x.AnyCaller
+		}
+	}
+	return false
+}
+
+func (x *DimseReceiver) GetTls() *ReceiverTls {
+	if x != nil {
+		return x.Tls
+	}
+	return nil
+}
+
+func (x *DimseReceiver) GetSopClasses() []string {
+	if x != nil {
+		return x.SopClasses
+	}
+	return nil
+}
+
+func (x *DimseReceiver) GetTransferSyntaxes() []string {
+	if x != nil {
+		return x.TransferSyntaxes
+	}
+	return nil
+}
+
+type isDimseReceiver_Callers interface {
+	isDimseReceiver_Callers()
+}
+
+type DimseReceiver_AllowedCallers struct {
 	// The callers admitted, each by its calling AE title, its network
 	// address, or both. A caller is admitted when it matches at least one
 	// rule. An empty list admits nobody.
-	AllowedCallers *AllowedCallers `protobuf:"bytes,6,opt,name=allowed_callers,json=allowedCallers,proto3,oneof"`
+	AllowedCallers *AllowedCallers `protobuf:"bytes,4,opt,name=allowed_callers,json=allowedCallers,proto3,oneof"`
 }
 
-type Receiver_AnyCaller struct {
+type DimseReceiver_AnyCaller struct {
 	// Every caller that reaches the port is admitted, whatever its AE title
 	// and address. Must be true when set; false is refused as invalid.
-	AnyCaller bool `protobuf:"varint,7,opt,name=any_caller,json=anyCaller,proto3,oneof"`
+	AnyCaller bool `protobuf:"varint,5,opt,name=any_caller,json=anyCaller,proto3,oneof"`
 }
 
-func (*Receiver_AllowedCallers) isReceiver_Callers() {}
+func (*DimseReceiver_AllowedCallers) isDimseReceiver_Callers() {}
 
-func (*Receiver_AnyCaller) isReceiver_Callers() {}
+func (*DimseReceiver_AnyCaller) isDimseReceiver_Callers() {}
 
-// AllowedCallers is the list of callers a receiver admits.
+// AllowedCallers is the list of callers a DIMSE receiver admits.
 type AllowedCallers struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The rules, at most 256. A caller is admitted when it matches at least
@@ -486,7 +576,7 @@ type AllowedCallers struct {
 
 func (x *AllowedCallers) Reset() {
 	*x = AllowedCallers{}
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[1]
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -498,7 +588,7 @@ func (x *AllowedCallers) String() string {
 func (*AllowedCallers) ProtoMessage() {}
 
 func (x *AllowedCallers) ProtoReflect() protoreflect.Message {
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[1]
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -511,7 +601,7 @@ func (x *AllowedCallers) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AllowedCallers.ProtoReflect.Descriptor instead.
 func (*AllowedCallers) Descriptor() ([]byte, []int) {
-	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{1}
+	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *AllowedCallers) GetRules() []*CallerRule {
@@ -544,7 +634,7 @@ type CallerRule struct {
 
 func (x *CallerRule) Reset() {
 	*x = CallerRule{}
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[2]
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -556,7 +646,7 @@ func (x *CallerRule) String() string {
 func (*CallerRule) ProtoMessage() {}
 
 func (x *CallerRule) ProtoReflect() protoreflect.Message {
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[2]
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -569,7 +659,7 @@ func (x *CallerRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallerRule.ProtoReflect.Descriptor instead.
 func (*CallerRule) Descriptor() ([]byte, []int) {
-	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{2}
+	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *CallerRule) GetCallingAeTitle() string {
@@ -586,9 +676,9 @@ func (x *CallerRule) GetAddressRange() string {
 	return ""
 }
 
-// ReceiverTls is where a receiver's TLS certificate and private key are.
-// Both are files the server reads; neither file's content ever crosses the
-// API. Each is named by a file name in the tenant's TLS directory on the
+// ReceiverTls is where a DIMSE receiver's TLS certificate and private key
+// are. Both are files the server reads; neither file's content ever crosses
+// the API. Each is named by a file name in the tenant's TLS directory on the
 // server, <data directory>/tls/<tenant>/, which a person with access to the
 // server fills: 1 to 255 bytes of ASCII letters, digits, ".", "_" and "-",
 // not starting with a dot. A file that cannot be read or does not hold what
@@ -606,7 +696,7 @@ type ReceiverTls struct {
 
 func (x *ReceiverTls) Reset() {
 	*x = ReceiverTls{}
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[3]
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -618,7 +708,7 @@ func (x *ReceiverTls) String() string {
 func (*ReceiverTls) ProtoMessage() {}
 
 func (x *ReceiverTls) ProtoReflect() protoreflect.Message {
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[3]
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -631,7 +721,7 @@ func (x *ReceiverTls) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiverTls.ProtoReflect.Descriptor instead.
 func (*ReceiverTls) Descriptor() ([]byte, []int) {
-	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{3}
+	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ReceiverTls) GetCertificateFile() string {
@@ -649,35 +739,72 @@ func (x *ReceiverTls) GetPrivateKeyFile() string {
 }
 
 // NamingRule is how a receiver makes the labels of a new subject, session
-// and scan. Every label made must be 1 to 128 characters of ASCII letters,
-// digits, ".", "_" and "-", must not start with a dot, and must not be a
-// device name Windows reserves; a label that does not fit is not cleaned up:
-// the file is quarantined with QUARANTINE_REASON_BAD_LABEL, saying which
-// label it was and which attribute gave it.
+// and scan: three templates, one per label, and optionally a pattern that
+// takes named parts out of one attribute for the templates to use. A
+// receiver with no rule uses the default: subject "sub-{#PatientID}",
+// session "ses-{#StudyInstanceUID}", scan "scan-{#SeriesInstanceUID}".
 //
-// A template is text with references in braces: {Keyword} is the value of
-// the attribute with that keyword (PS3.6 Section 6, such as {PatientID},
-// {StudyDate}, {SeriesNumber}), at the top level of the data set, with
-// leading and trailing spaces removed. A template is 1 to 256 characters;
-// a keyword the server does not know, or an attribute in a sequence, is
-// refused as invalid. An attribute the file lacks gives an empty value.
+// A label is what the rule makes from the data sent, and it is exactly as
+// identifying as the rule: a rule that uses {PatientID} puts the patient's
+// identifier into labels, and so into the storage's keys, into every list
+// and status, and into every event. The default rule uses only keyed
+// hashes, which carry no value the sender gave.
+//
+// A template is literal text and references in braces. The literal text may
+// hold only the characters a label may hold, so braces need no escape.
+//
+//   - {Keyword} or {(gggg,eeee)} is the value of an attribute at the top
+//     level of the data set: by keyword (PS3.6 Section 6) from the short
+//     list of attributes a naming rule plausibly uses that the server
+//     knows, such as PatientID, StudyDate, SeriesNumber or PatientComments,
+//     or by its tag in hexadecimal for any other attribute. The value has
+//     its padding removed (PS3.5 6.2: the trailing space or NUL that makes a
+//     value's length even, and the leading and trailing spaces of a number)
+//     and nothing else: it is not trimmed further, cleaned or shortened. A
+//     keyword always starts with an uppercase letter.
+//   - {name}, with a name in lowercase, is a part the pattern took out.
+//   - {#Keyword}, {#(gggg,eeee)} or {#name} is the keyed hash of that value
+//     or part: HMAC-SHA-256 (RFC 2104) of its bytes under the tenant's
+//     naming secret, its first 80 bits written as 16 characters of
+//     lowercase base32 (RFC 4648 alphabet, no padding). The same value
+//     always gives the same label in one tenant and a different one in
+//     another tenant. The naming secret is made by the server for the
+//     tenant, sealed with the installation key, and never leaves the
+//     server; it cannot be changed, since a new secret would give a known
+//     value a new label.
+//
+// When a rule is set, a template that is empty or longer than 256 bytes, a
+// keyword the server does not know, a tag that cannot hold text (groups 0000
+// to 0007, FFFE and 7FE0, and group lengths), a part the pattern does not
+// have, or a reference that is not one of these forms is refused as
+// invalid.
+//
+// When a file arrives, a label is never cleaned up: two different values
+// cleaned into one label would mix their data. The file is quarantined with
+// QUARANTINE_REASON_BAD_LABEL, naming the label, the attribute and the
+// fault, never the value, when an attribute it needs is missing or empty
+// (also one that is only hashed), a value is too long, holds a character a
+// label may not hold, or is not a well-formed UID for a UID attribute, the
+// pattern does not match, or the label made is not a valid label: 1 to 128
+// characters of ASCII letters, digits, ".", "_" and "-", not starting or
+// ending with a dot, and not a device name Windows reserves.
 type NamingRule struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Which form of rule. Exactly one is set. A form added in a later version
-	// is a new field of this oneof.
-	//
-	// Types that are valid to be assigned to Form:
-	//
-	//	*NamingRule_Templates
-	//	*NamingRule_Pattern
-	Form          isNamingRule_Form `protobuf_oneof:"form"`
+	// The template of a new subject's label. Required.
+	Subject string `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
+	// The template of a new session's label. Required.
+	Session string `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
+	// The template of a new scan's label. Required.
+	Scan string `protobuf:"bytes,3,opt,name=scan,proto3" json:"scan,omitempty"`
+	// The pattern whose named parts the templates may use. Absent for none.
+	Pattern       *NamingPattern `protobuf:"bytes,4,opt,name=pattern,proto3" json:"pattern,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NamingRule) Reset() {
 	*x = NamingRule{}
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[4]
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -689,7 +816,7 @@ func (x *NamingRule) String() string {
 func (*NamingRule) ProtoMessage() {}
 
 func (x *NamingRule) ProtoReflect() protoreflect.Message {
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[4]
+	mi := &file_magnetar_v1_receiver_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -702,145 +829,51 @@ func (x *NamingRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamingRule.ProtoReflect.Descriptor instead.
 func (*NamingRule) Descriptor() ([]byte, []int) {
-	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *NamingRule) GetForm() isNamingRule_Form {
-	if x != nil {
-		return x.Form
-	}
-	return nil
-}
-
-func (x *NamingRule) GetTemplates() *NamingTemplates {
-	if x != nil {
-		if x, ok := x.Form.(*NamingRule_Templates); ok {
-			return x.Templates
-		}
-	}
-	return nil
-}
-
-func (x *NamingRule) GetPattern() *NamingPattern {
-	if x != nil {
-		if x, ok := x.Form.(*NamingRule_Pattern); ok {
-			return x.Pattern
-		}
-	}
-	return nil
-}
-
-type isNamingRule_Form interface {
-	isNamingRule_Form()
-}
-
-type NamingRule_Templates struct {
-	// A template per label.
-	Templates *NamingTemplates `protobuf:"bytes,1,opt,name=templates,proto3,oneof"`
-}
-
-type NamingRule_Pattern struct {
-	// Named parts taken out of one attribute by a pattern, used in the
-	// templates.
-	Pattern *NamingPattern `protobuf:"bytes,2,opt,name=pattern,proto3,oneof"`
-}
-
-func (*NamingRule_Templates) isNamingRule_Form() {}
-
-func (*NamingRule_Pattern) isNamingRule_Form() {}
-
-// NamingTemplates makes each label from its template. An empty template
-// means that label's default: subject "{PatientID}", session
-// "{StudyDate}-{StudyInstanceUID}", scan "{SeriesNumber}-{SeriesInstanceUID}".
-// The defaults are long, but never collide.
-type NamingTemplates struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// The template of a new subject's label.
-	Subject string `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
-	// The template of a new session's label.
-	Session string `protobuf:"bytes,2,opt,name=session,proto3" json:"session,omitempty"`
-	// The template of a new scan's label.
-	Scan          string `protobuf:"bytes,3,opt,name=scan,proto3" json:"scan,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *NamingTemplates) Reset() {
-	*x = NamingTemplates{}
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *NamingTemplates) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*NamingTemplates) ProtoMessage() {}
-
-func (x *NamingTemplates) ProtoReflect() protoreflect.Message {
-	mi := &file_magnetar_v1_receiver_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use NamingTemplates.ProtoReflect.Descriptor instead.
-func (*NamingTemplates) Descriptor() ([]byte, []int) {
 	return file_magnetar_v1_receiver_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *NamingTemplates) GetSubject() string {
+func (x *NamingRule) GetSubject() string {
 	if x != nil {
 		return x.Subject
 	}
 	return ""
 }
 
-func (x *NamingTemplates) GetSession() string {
+func (x *NamingRule) GetSession() string {
 	if x != nil {
 		return x.Session
 	}
 	return ""
 }
 
-func (x *NamingTemplates) GetScan() string {
+func (x *NamingRule) GetScan() string {
 	if x != nil {
 		return x.Scan
 	}
 	return ""
 }
 
+func (x *NamingRule) GetPattern() *NamingPattern {
+	if x != nil {
+		return x.Pattern
+	}
+	return nil
+}
+
 // NamingPattern takes named parts out of one attribute, such as Patient
-// Comments, where a site tells its scanner where the data goes, and makes
-// the labels from templates that may use them. In its templates, {name}
-// with a name in lowercase is the part of that name, and {Keyword} is an
-// attribute as in any template. An empty template means "{subject}",
-// "{session}" or "{scan}" when the expression has a part of that name, and
-// otherwise the default of NamingTemplates. A value the expression does not
-// match quarantines the file with QUARANTINE_REASON_BAD_LABEL.
+// Comments, where a site tells its scanner where the data goes.
 type NamingPattern struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The keyword of the attribute the pattern reads (PS3.6 Section 6), at
-	// the top level of the data set. Required.
+	// The keyword or tag of the attribute the pattern reads, as in a
+	// template: "PatientComments" or "(0010,4000)". Required.
 	Attribute string `protobuf:"bytes,1,opt,name=attribute,proto3" json:"attribute,omitempty"`
-	// A regular expression in RE2 syntax, matched against the attribute's
-	// whole value with leading and trailing spaces removed, with at least one
-	// named part, such as "^(?P<subject>[A-Za-z0-9]+)_(?P<session>[0-9]+)$".
-	// Required; at most 1024 bytes. A part's name is 1 to 32 characters of
-	// lowercase ASCII letters, digits and "_", starting with a letter.
-	Expression string `protobuf:"bytes,2,opt,name=expression,proto3" json:"expression,omitempty"`
-	// The template of a new subject's label.
-	Subject string `protobuf:"bytes,3,opt,name=subject,proto3" json:"subject,omitempty"`
-	// The template of a new session's label.
-	Session string `protobuf:"bytes,4,opt,name=session,proto3" json:"session,omitempty"`
-	// The template of a new scan's label.
-	Scan          string `protobuf:"bytes,5,opt,name=scan,proto3" json:"scan,omitempty"`
+	// A regular expression in RE2 syntax, with at least one named part, such
+	// as "(?P<project>[^^]+)\^(?P<subject>[^^]+)". It must match the
+	// attribute's whole value, with its padding removed: the server anchors
+	// it at both ends. Required; at most 1024 bytes; the value it reads is at
+	// most 64 KiB. A part's name is a lowercase ASCII letter followed by
+	// lowercase letters, digits and "_", and is used once.
+	Expression    string `protobuf:"bytes,2,opt,name=expression,proto3" json:"expression,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -889,38 +922,18 @@ func (x *NamingPattern) GetExpression() string {
 	return ""
 }
 
-func (x *NamingPattern) GetSubject() string {
-	if x != nil {
-		return x.Subject
-	}
-	return ""
-}
-
-func (x *NamingPattern) GetSession() string {
-	if x != nil {
-		return x.Session
-	}
-	return ""
-}
-
-func (x *NamingPattern) GetScan() string {
-	if x != nil {
-		return x.Scan
-	}
-	return ""
-}
-
-// ReceiverHealth is whether a receiver accepts associations now, and why
-// not.
+// ReceiverHealth is whether a receiver accepts data now, and why not.
 type ReceiverHealth struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Its state.
 	State ReceiverState `protobuf:"varint,1,opt,name=state,proto3,enum=magnetar.v1.ReceiverState" json:"state,omitempty"`
 	// Why it is down. RECEIVER_DOWN_REASON_UNSPECIFIED unless state is down.
 	DownReason ReceiverDownReason `protobuf:"varint,2,opt,name=down_reason,json=downReason,proto3,enum=magnetar.v1.ReceiverDownReason" json:"down_reason,omitempty"`
-	// More about the state, in words for a person, such as the operating
-	// system's error; at most 1 KiB. Empty when it is up. It never holds a
-	// secret or a path outside the tenant's own TLS directory.
+	// More about the state, in words for a person, from a fixed set of
+	// phrases the server has for each reason, such as "certificate expired";
+	// at most 256 bytes. Empty when it is up. It is never the operating
+	// system's or a library's own text, and never holds a secret, a path, or
+	// anything about another program or tenant.
 	Detail string `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
 	// When it entered this state with this reason.
 	Since         *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=since,proto3" json:"since,omitempty"`
@@ -991,8 +1004,9 @@ type AddReceiverRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tenant to add it to, by name. Required.
 	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// The receiver. Its name, port, AE title and storage are required; health,
-	// create_time and update_time are ignored.
+	// The receiver. Its name, type and storage are required, with what its
+	// type's message requires; health, create_time and update_time are
+	// ignored.
 	Receiver      *Receiver `protobuf:"bytes,2,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1045,7 +1059,7 @@ func (x *AddReceiverRequest) GetReceiver() *Receiver {
 // AddReceiverResponse is the receiver added.
 type AddReceiverResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The receiver, as stored, with every default filled in, and its state
+	// The receiver, as stored, with every default filled in, and its health
 	// now.
 	Receiver      *Receiver `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1147,7 +1161,7 @@ func (x *GetReceiverRequest) GetName() string {
 // GetReceiverResponse is the receiver named.
 type GetReceiverResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The receiver, with its state now.
+	// The receiver, with its health now.
 	Receiver      *Receiver `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1260,7 +1274,7 @@ func (x *ListReceiversRequest) GetPageToken() string {
 // ListReceiversResponse is a page of receivers.
 type ListReceiversResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The receivers of this page, each with its state now.
+	// The receivers of this page, each with its health now.
 	Receivers []*Receiver `protobuf:"bytes,1,rep,name=receivers,proto3" json:"receivers,omitempty"`
 	// The page_token that asks for the next page. Empty on the last page.
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
@@ -1321,16 +1335,19 @@ type SetReceiverRequest struct {
 	// name is required and names the receiver to change; it is not itself
 	// changed. Fields the mask does not name are ignored.
 	Receiver *Receiver `protobuf:"bytes,2,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	// The fields to change, as paths of Receiver, such as "port",
-	// "quiet_period" or "tls"; a field of a nested message may be named
-	// joined by a dot, such as "tls.certificate_file". Required and not
-	// empty; "*" is refused, so every field a call changes is named. A named
-	// field is set to the value given, its zero value included: "tls" with
-	// tls absent turns TLS off, "allowed_callers" with an empty list admits
-	// nobody, and a repeated field is replaced whole. Naming "allowed_callers"
-	// or "any_caller" sets that member of the callers and clears the other.
-	// A duration or size named with no value is refused as invalid; it is
-	// not reset to the default.
+	// The fields to change, as paths of Receiver, such as "quiet_period" or
+	// "naming" ("naming" with naming absent returns to the default rule), or
+	// a field of the receiver's type joined to it by a dot, such as
+	// "dimse.port" or "dimse.tls.certificate_file". A path that names a
+	// type's whole message ("dimse") is refused: its fields are named one by
+	// one. Required and not empty; "*" is refused, so every field a call
+	// changes is named. A named field is set to the value given, its zero
+	// value included: "dimse.tls" with tls absent turns TLS off,
+	// "dimse.allowed_callers" with an empty list admits nobody, and a
+	// repeated field is replaced whole. Naming "dimse.allowed_callers" or
+	// "dimse.any_caller" sets that member of the callers and clears the
+	// other. A duration or size named with no value is refused as invalid; it
+	// is not reset to the default.
 	UpdateMask    *fieldmaskpb.FieldMask `protobuf:"bytes,3,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1390,7 +1407,7 @@ func (x *SetReceiverRequest) GetUpdateMask() *fieldmaskpb.FieldMask {
 // SetReceiverResponse is the receiver as changed.
 type SetReceiverResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The receiver, as stored, and its state now.
+	// The receiver, as stored, and its health now.
 	Receiver      *Receiver `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1538,31 +1555,34 @@ var File_magnetar_v1_receiver_proto protoreflect.FileDescriptor
 
 const file_magnetar_v1_receiver_proto_rawDesc = "" +
 	"\n" +
-	"\x1amagnetar/v1/receiver.proto\x12\vmagnetar.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x95\x06\n" +
+	"\x1amagnetar/v1/receiver.proto\x12\vmagnetar.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x91\x04\n" +
 	"\bReceiver\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\aenabled\x18\x02 \x01(\bR\aenabled\x12\x12\n" +
-	"\x04port\x18\x03 \x01(\x05R\x04port\x12!\n" +
-	"\fbind_address\x18\x04 \x01(\tR\vbindAddress\x12\x19\n" +
-	"\bae_title\x18\x05 \x01(\tR\aaeTitle\x12F\n" +
-	"\x0fallowed_callers\x18\x06 \x01(\v2\x1b.magnetar.v1.AllowedCallersH\x00R\x0eallowedCallers\x12\x1f\n" +
-	"\n" +
-	"any_caller\x18\a \x01(\bH\x00R\tanyCaller\x12*\n" +
-	"\x03tls\x18\b \x01(\v2\x18.magnetar.v1.ReceiverTlsR\x03tls\x12\x1f\n" +
-	"\vsop_classes\x18\t \x03(\tR\n" +
-	"sopClasses\x12+\n" +
-	"\x11transfer_syntaxes\x18\n" +
-	" \x03(\tR\x10transferSyntaxes\x12\x18\n" +
-	"\astorage\x18\v \x01(\tR\astorage\x12/\n" +
-	"\x06naming\x18\f \x01(\v2\x17.magnetar.v1.NamingRuleR\x06naming\x12<\n" +
-	"\fquiet_period\x18\r \x01(\v2\x19.google.protobuf.DurationR\vquietPeriod\x12=\n" +
-	"\rmax_open_time\x18\x0e \x01(\v2\x19.google.protobuf.DurationR\vmaxOpenTime\x12$\n" +
-	"\x0emax_file_bytes\x18\x0f \x01(\x03R\fmaxFileBytes\x123\n" +
-	"\x06health\x18\x10 \x01(\v2\x1b.magnetar.v1.ReceiverHealthR\x06health\x12;\n" +
-	"\vcreate_time\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x122\n" +
+	"\x05dimse\x18\x02 \x01(\v2\x1a.magnetar.v1.DimseReceiverH\x00R\x05dimse\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x18\n" +
+	"\astorage\x18\x04 \x01(\tR\astorage\x12/\n" +
+	"\x06naming\x18\x05 \x01(\v2\x17.magnetar.v1.NamingRuleR\x06naming\x12<\n" +
+	"\fquiet_period\x18\x06 \x01(\v2\x19.google.protobuf.DurationR\vquietPeriod\x12=\n" +
+	"\rmax_open_time\x18\a \x01(\v2\x19.google.protobuf.DurationR\vmaxOpenTime\x12$\n" +
+	"\x0emax_file_bytes\x18\b \x01(\x03R\fmaxFileBytes\x123\n" +
+	"\x06health\x18\t \x01(\v2\x1b.magnetar.v1.ReceiverHealthR\x06health\x12;\n" +
+	"\vcreate_time\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
-	"\vupdate_time\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTimeB\t\n" +
+	"\vupdate_time\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"updateTimeB\x06\n" +
+	"\x04type\"\xcf\x02\n" +
+	"\rDimseReceiver\x12\x12\n" +
+	"\x04port\x18\x01 \x01(\x05R\x04port\x12!\n" +
+	"\fbind_address\x18\x02 \x01(\tR\vbindAddress\x12\x19\n" +
+	"\bae_title\x18\x03 \x01(\tR\aaeTitle\x12F\n" +
+	"\x0fallowed_callers\x18\x04 \x01(\v2\x1b.magnetar.v1.AllowedCallersH\x00R\x0eallowedCallers\x12\x1f\n" +
+	"\n" +
+	"any_caller\x18\x05 \x01(\bH\x00R\tanyCaller\x12*\n" +
+	"\x03tls\x18\x06 \x01(\v2\x18.magnetar.v1.ReceiverTlsR\x03tls\x12\x1f\n" +
+	"\vsop_classes\x18\a \x03(\tR\n" +
+	"sopClasses\x12+\n" +
+	"\x11transfer_syntaxes\x18\b \x03(\tR\x10transferSyntaxesB\t\n" +
 	"\acallers\"?\n" +
 	"\x0eAllowedCallers\x12-\n" +
 	"\x05rules\x18\x01 \x03(\v2\x17.magnetar.v1.CallerRuleR\x05rules\"[\n" +
@@ -1574,22 +1594,16 @@ const file_magnetar_v1_receiver_proto_rawDesc = "" +
 	"\x10certificate_file\x18\x01 \x01(\tR\x0fcertificateFile\x12(\n" +
 	"\x10private_key_file\x18\x02 \x01(\tR\x0eprivateKeyFile\"\x8a\x01\n" +
 	"\n" +
-	"NamingRule\x12<\n" +
-	"\ttemplates\x18\x01 \x01(\v2\x1c.magnetar.v1.NamingTemplatesH\x00R\ttemplates\x126\n" +
-	"\apattern\x18\x02 \x01(\v2\x1a.magnetar.v1.NamingPatternH\x00R\apatternB\x06\n" +
-	"\x04form\"Y\n" +
-	"\x0fNamingTemplates\x12\x18\n" +
+	"NamingRule\x12\x18\n" +
 	"\asubject\x18\x01 \x01(\tR\asubject\x12\x18\n" +
 	"\asession\x18\x02 \x01(\tR\asession\x12\x12\n" +
-	"\x04scan\x18\x03 \x01(\tR\x04scan\"\x95\x01\n" +
+	"\x04scan\x18\x03 \x01(\tR\x04scan\x124\n" +
+	"\apattern\x18\x04 \x01(\v2\x1a.magnetar.v1.NamingPatternR\apattern\"M\n" +
 	"\rNamingPattern\x12\x1c\n" +
 	"\tattribute\x18\x01 \x01(\tR\tattribute\x12\x1e\n" +
 	"\n" +
 	"expression\x18\x02 \x01(\tR\n" +
-	"expression\x12\x18\n" +
-	"\asubject\x18\x03 \x01(\tR\asubject\x12\x18\n" +
-	"\asession\x18\x04 \x01(\tR\asession\x12\x12\n" +
-	"\x04scan\x18\x05 \x01(\tR\x04scan\"\xce\x01\n" +
+	"expression\"\xce\x01\n" +
 	"\x0eReceiverHealth\x120\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x1a.magnetar.v1.ReceiverStateR\x05state\x12@\n" +
 	"\vdown_reason\x18\x02 \x01(\x0e2\x1f.magnetar.v1.ReceiverDownReasonR\n" +
@@ -1630,7 +1644,7 @@ const file_magnetar_v1_receiver_proto_rawDesc = "" +
 	"\x1aRECEIVER_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17RECEIVER_STATE_STARTING\x10\x01\x12\x15\n" +
 	"\x11RECEIVER_STATE_UP\x10\x02\x12\x17\n" +
-	"\x13RECEIVER_STATE_DOWN\x10\x03*\x94\x03\n" +
+	"\x13RECEIVER_STATE_DOWN\x10\x03*\xbd\x03\n" +
 	"\x12ReceiverDownReason\x12$\n" +
 	" RECEIVER_DOWN_REASON_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dRECEIVER_DOWN_REASON_DISABLED\x10\x01\x12'\n" +
@@ -1641,7 +1655,9 @@ const file_magnetar_v1_receiver_proto_rawDesc = "" +
 	" RECEIVER_DOWN_REASON_NEARLY_FULL\x10\x06\x12)\n" +
 	"%RECEIVER_DOWN_REASON_TENANT_NOT_READY\x10\a\x12!\n" +
 	"\x1dRECEIVER_DOWN_REASON_STOPPING\x10\b\x12\x1e\n" +
-	"\x1aRECEIVER_DOWN_REASON_OTHER\x10\t2\xce\x03\n" +
+	"\x1aRECEIVER_DOWN_REASON_OTHER\x10\t\x12'\n" +
+	"#RECEIVER_DOWN_REASON_INCOMING_LIMIT\x10\n" +
+	"2\xce\x03\n" +
 	"\x0fReceiverService\x12P\n" +
 	"\vAddReceiver\x12\x1f.magnetar.v1.AddReceiverRequest\x1a .magnetar.v1.AddReceiverResponse\x12U\n" +
 	"\vGetReceiver\x12\x1f.magnetar.v1.GetReceiverRequest\x1a .magnetar.v1.GetReceiverResponse\"\x03\x90\x02\x01\x12[\n" +
@@ -1668,11 +1684,11 @@ var file_magnetar_v1_receiver_proto_goTypes = []any{
 	(ReceiverState)(0),             // 0: magnetar.v1.ReceiverState
 	(ReceiverDownReason)(0),        // 1: magnetar.v1.ReceiverDownReason
 	(*Receiver)(nil),               // 2: magnetar.v1.Receiver
-	(*AllowedCallers)(nil),         // 3: magnetar.v1.AllowedCallers
-	(*CallerRule)(nil),             // 4: magnetar.v1.CallerRule
-	(*ReceiverTls)(nil),            // 5: magnetar.v1.ReceiverTls
-	(*NamingRule)(nil),             // 6: magnetar.v1.NamingRule
-	(*NamingTemplates)(nil),        // 7: magnetar.v1.NamingTemplates
+	(*DimseReceiver)(nil),          // 3: magnetar.v1.DimseReceiver
+	(*AllowedCallers)(nil),         // 4: magnetar.v1.AllowedCallers
+	(*CallerRule)(nil),             // 5: magnetar.v1.CallerRule
+	(*ReceiverTls)(nil),            // 6: magnetar.v1.ReceiverTls
+	(*NamingRule)(nil),             // 7: magnetar.v1.NamingRule
 	(*NamingPattern)(nil),          // 8: magnetar.v1.NamingPattern
 	(*ReceiverHealth)(nil),         // 9: magnetar.v1.ReceiverHealth
 	(*AddReceiverRequest)(nil),     // 10: magnetar.v1.AddReceiverRequest
@@ -1690,16 +1706,16 @@ var file_magnetar_v1_receiver_proto_goTypes = []any{
 	(*fieldmaskpb.FieldMask)(nil),  // 22: google.protobuf.FieldMask
 }
 var file_magnetar_v1_receiver_proto_depIdxs = []int32{
-	3,  // 0: magnetar.v1.Receiver.allowed_callers:type_name -> magnetar.v1.AllowedCallers
-	5,  // 1: magnetar.v1.Receiver.tls:type_name -> magnetar.v1.ReceiverTls
-	6,  // 2: magnetar.v1.Receiver.naming:type_name -> magnetar.v1.NamingRule
-	20, // 3: magnetar.v1.Receiver.quiet_period:type_name -> google.protobuf.Duration
-	20, // 4: magnetar.v1.Receiver.max_open_time:type_name -> google.protobuf.Duration
-	9,  // 5: magnetar.v1.Receiver.health:type_name -> magnetar.v1.ReceiverHealth
-	21, // 6: magnetar.v1.Receiver.create_time:type_name -> google.protobuf.Timestamp
-	21, // 7: magnetar.v1.Receiver.update_time:type_name -> google.protobuf.Timestamp
-	4,  // 8: magnetar.v1.AllowedCallers.rules:type_name -> magnetar.v1.CallerRule
-	7,  // 9: magnetar.v1.NamingRule.templates:type_name -> magnetar.v1.NamingTemplates
+	3,  // 0: magnetar.v1.Receiver.dimse:type_name -> magnetar.v1.DimseReceiver
+	7,  // 1: magnetar.v1.Receiver.naming:type_name -> magnetar.v1.NamingRule
+	20, // 2: magnetar.v1.Receiver.quiet_period:type_name -> google.protobuf.Duration
+	20, // 3: magnetar.v1.Receiver.max_open_time:type_name -> google.protobuf.Duration
+	9,  // 4: magnetar.v1.Receiver.health:type_name -> magnetar.v1.ReceiverHealth
+	21, // 5: magnetar.v1.Receiver.create_time:type_name -> google.protobuf.Timestamp
+	21, // 6: magnetar.v1.Receiver.update_time:type_name -> google.protobuf.Timestamp
+	4,  // 7: magnetar.v1.DimseReceiver.allowed_callers:type_name -> magnetar.v1.AllowedCallers
+	6,  // 8: magnetar.v1.DimseReceiver.tls:type_name -> magnetar.v1.ReceiverTls
+	5,  // 9: magnetar.v1.AllowedCallers.rules:type_name -> magnetar.v1.CallerRule
 	8,  // 10: magnetar.v1.NamingRule.pattern:type_name -> magnetar.v1.NamingPattern
 	0,  // 11: magnetar.v1.ReceiverHealth.state:type_name -> magnetar.v1.ReceiverState
 	1,  // 12: magnetar.v1.ReceiverHealth.down_reason:type_name -> magnetar.v1.ReceiverDownReason
@@ -1735,12 +1751,11 @@ func file_magnetar_v1_receiver_proto_init() {
 		return
 	}
 	file_magnetar_v1_receiver_proto_msgTypes[0].OneofWrappers = []any{
-		(*Receiver_AllowedCallers)(nil),
-		(*Receiver_AnyCaller)(nil),
+		(*Receiver_Dimse)(nil),
 	}
-	file_magnetar_v1_receiver_proto_msgTypes[4].OneofWrappers = []any{
-		(*NamingRule_Templates)(nil),
-		(*NamingRule_Pattern)(nil),
+	file_magnetar_v1_receiver_proto_msgTypes[1].OneofWrappers = []any{
+		(*DimseReceiver_AllowedCallers)(nil),
+		(*DimseReceiver_AnyCaller)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

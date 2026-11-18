@@ -89,20 +89,23 @@ var (
 // ReceiverServiceClient is a client for the magnetar.v1.ReceiverService service.
 type ReceiverServiceClient interface {
 	// AddReceiver adds a receiver to a tenant. It starts listening when it is
-	// enabled; its state says whether it could.
+	// enabled; its health says whether it could.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
-	// object, and its port, AE title and storage in details.
+	// object, and its type, port, AE title and storage in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a storage the tenant does not have), not found (a tenant that does
-	// not exist, for a caller who may list every tenant), conflict (the tenant
-	// has a receiver with that name, or one on the same port and bind
-	// address), unavailable (the tenant's database does not answer, or the
-	// tenant is not ready).
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), conflict (the tenant has a receiver with that name, or a
+	// removed receiver of that name is still named by receptions or
+	// quarantined files), precondition (a storage the tenant does not have; a
+	// port outside the tenant's allotted ports; a bind address the
+	// installation does not list; another receiver of the tenant on the same
+	// port and an overlapping address), unavailable (the tenant's database
+	// does not answer, or the tenant is not ready).
 	AddReceiver(context.Context, *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error)
-	// GetReceiver answers one receiver of a tenant, with its state now.
+	// GetReceiver answers one receiver of a tenant, with its health now.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
@@ -114,7 +117,7 @@ type ReceiverServiceClient interface {
 	// tenant's database does not answer, or the tenant is not ready).
 	GetReceiver(context.Context, *v1.GetReceiverRequest) (*v1.GetReceiverResponse, error)
 	// ListReceivers answers the receivers of a tenant, ordered by name, each
-	// with its state now.
+	// with its health now. A removed receiver is not listed.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log.
@@ -126,35 +129,38 @@ type ReceiverServiceClient interface {
 	ListReceivers(context.Context, *v1.ListReceiversRequest) (*v1.ListReceiversResponse, error)
 	// SetReceiver changes some fields of a receiver: those its update_mask
 	// names, and no other. The change and its audit entry are written
-	// together or not at all. A change of port, bind address, AE title, TLS,
-	// callers, SOP classes or transfer syntaxes restarts the listener; a
-	// change of the storage, the naming rule, the quiet period, the longest
-	// open time or the size bound applies to what arrives from then on, and
-	// the quiet period and longest open time also to receptions still
-	// receiving.
+	// together or not at all. A change of anything in the receiver's type
+	// (for a DIMSE receiver: port, bind address, AE title, TLS, callers, SOP
+	// classes, transfer syntaxes) restarts the listener; a change of the
+	// storage, the naming rule, the quiet period, the longest open time or
+	// the size bound applies to what arrives from then on, and the quiet
+	// period and longest open time also to receptions still receiving.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
 	// object and the mask's paths in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also an empty mask, a path that names no field or a read-only field,
-	// and every rule AddReceiver checks), not found (the tenant has no
+	// (also an empty mask, a path that names no field, a read-only field or a
+	// type's whole message, a path into another type's configuration, and
+	// every rule AddReceiver checks on a field), not found (the tenant has no
 	// receiver with that name; a tenant that does not exist, for a caller who
-	// may list every tenant), conflict (another receiver of the tenant is on
-	// the same port and bind address), unavailable (the tenant's database
-	// does not answer, or the tenant is not ready).
+	// may list every tenant), precondition (every precondition AddReceiver
+	// checks), unavailable (the tenant's database does not answer, or the
+	// tenant is not ready).
 	SetReceiver(context.Context, *v1.SetReceiverRequest) (*v1.SetReceiverResponse, error)
 	// RemoveReceiver stops a receiver and removes its configuration. The
 	// stores in flight are finished, within a bound, before it stops. Its
 	// receptions stay, and those in progress go on to their end: files
-	// already received are archived as if the receiver were still there. A
-	// repeated call finds no receiver and is answered NOT_FOUND; it removes
-	// nothing more.
+	// already received are archived as if the receiver were still there. Its
+	// name stays held, and cannot be given to a new receiver, while any
+	// reception or quarantined file names it, so a name in a record always
+	// means one receiver. A repeated call finds no receiver and is answered
+	// NOT_FOUND; it removes nothing more.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
-	// object, and its port and AE title in details.
+	// object, and its type, port and AE title in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no receiver with that name; a tenant that does
@@ -172,20 +178,23 @@ func NewReceiverServiceClient(client *connect.Client) ReceiverServiceClient {
 // ReceiverServiceHandler is an implementation of the magnetar.v1.ReceiverService service.
 type ReceiverServiceHandler interface {
 	// AddReceiver adds a receiver to a tenant. It starts listening when it is
-	// enabled; its state says whether it could.
+	// enabled; its health says whether it could.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
-	// object, and its port, AE title and storage in details.
+	// object, and its type, port, AE title and storage in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a storage the tenant does not have), not found (a tenant that does
-	// not exist, for a caller who may list every tenant), conflict (the tenant
-	// has a receiver with that name, or one on the same port and bind
-	// address), unavailable (the tenant's database does not answer, or the
-	// tenant is not ready).
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (a tenant that does not exist, for a caller who may list every
+	// tenant), conflict (the tenant has a receiver with that name, or a
+	// removed receiver of that name is still named by receptions or
+	// quarantined files), precondition (a storage the tenant does not have; a
+	// port outside the tenant's allotted ports; a bind address the
+	// installation does not list; another receiver of the tenant on the same
+	// port and an overlapping address), unavailable (the tenant's database
+	// does not answer, or the tenant is not ready).
 	AddReceiver(context.Context, *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error)
-	// GetReceiver answers one receiver of a tenant, with its state now.
+	// GetReceiver answers one receiver of a tenant, with its health now.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
@@ -197,7 +206,7 @@ type ReceiverServiceHandler interface {
 	// tenant's database does not answer, or the tenant is not ready).
 	GetReceiver(context.Context, *v1.GetReceiverRequest) (*v1.GetReceiverResponse, error)
 	// ListReceivers answers the receivers of a tenant, ordered by name, each
-	// with its state now.
+	// with its health now. A removed receiver is not listed.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log.
@@ -209,35 +218,38 @@ type ReceiverServiceHandler interface {
 	ListReceivers(context.Context, *v1.ListReceiversRequest) (*v1.ListReceiversResponse, error)
 	// SetReceiver changes some fields of a receiver: those its update_mask
 	// names, and no other. The change and its audit entry are written
-	// together or not at all. A change of port, bind address, AE title, TLS,
-	// callers, SOP classes or transfer syntaxes restarts the listener; a
-	// change of the storage, the naming rule, the quiet period, the longest
-	// open time or the size bound applies to what arrives from then on, and
-	// the quiet period and longest open time also to receptions still
-	// receiving.
+	// together or not at all. A change of anything in the receiver's type
+	// (for a DIMSE receiver: port, bind address, AE title, TLS, callers, SOP
+	// classes, transfer syntaxes) restarts the listener; a change of the
+	// storage, the naming rule, the quiet period, the longest open time or
+	// the size bound applies to what arrives from then on, and the quiet
+	// period and longest open time also to receptions still receiving.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
 	// object and the mask's paths in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also an empty mask, a path that names no field or a read-only field,
-	// and every rule AddReceiver checks), not found (the tenant has no
+	// (also an empty mask, a path that names no field, a read-only field or a
+	// type's whole message, a path into another type's configuration, and
+	// every rule AddReceiver checks on a field), not found (the tenant has no
 	// receiver with that name; a tenant that does not exist, for a caller who
-	// may list every tenant), conflict (another receiver of the tenant is on
-	// the same port and bind address), unavailable (the tenant's database
-	// does not answer, or the tenant is not ready).
+	// may list every tenant), precondition (every precondition AddReceiver
+	// checks), unavailable (the tenant's database does not answer, or the
+	// tenant is not ready).
 	SetReceiver(context.Context, *v1.SetReceiverRequest) (*v1.SetReceiverResponse, error)
 	// RemoveReceiver stops a receiver and removes its configuration. The
 	// stores in flight are finished, within a bound, before it stops. Its
 	// receptions stay, and those in progress go on to their end: files
-	// already received are archived as if the receiver were still there. A
-	// repeated call finds no receiver and is answered NOT_FOUND; it removes
-	// nothing more.
+	// already received are archived as if the receiver were still there. Its
+	// name stays held, and cannot be given to a new receiver, while any
+	// reception or quarantined file names it, so a name in a record always
+	// means one receiver. A repeated call finds no receiver and is answered
+	// NOT_FOUND; it removes nothing more.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
-	// object, and its port and AE title in details.
+	// object, and its type, port and AE title in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no receiver with that name; a tenant that does

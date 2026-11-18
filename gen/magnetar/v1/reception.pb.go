@@ -31,7 +31,8 @@ const (
 // that order: a later version adds steps between identified and archived (a
 // file's identifiers replaced, its storage chosen by rule), and a client
 // must accept a step it does not know as a step in progress. A reception
-// goes forward only; each step is reached in one transaction with its event.
+// goes forward only, and done, quarantined and failed are ends that nothing
+// leaves; each step is reached in one transaction with its event.
 type ReceptionStep int32
 
 const (
@@ -62,8 +63,10 @@ const (
 	ReceptionStep_RECEPTION_STEP_QUARANTINED ReceptionStep = 7
 	// Ended without finishing: a step failed and its retries ran out, such as
 	// a storage that did not answer for longer than the server retries. The
-	// files not yet archived stay in the incoming area and are not lost; the
-	// reception's failure says why.
+	// files not yet archived stay in the incoming area, counted against the
+	// tenant's incoming limit, and are not lost: RetryReception runs them
+	// again in a new reception, and DiscardReception removes them. The
+	// reception's failure says why it failed.
 	ReceptionStep_RECEPTION_STEP_FAILED ReceptionStep = 8
 )
 
@@ -122,13 +125,15 @@ func (ReceptionStep) EnumDescriptor() ([]byte, []int) {
 
 // ReceptionCounts are the files and bytes of one reception so far. Each pair
 // counts files and their bytes as written to the incoming area: the DICOM
-// file header and the data set. At the end of a reception, files_received
-// equals files_archived + files_duplicate + files_quarantined, and the same
-// for bytes. The counts are totals, never changes since the last answer, so
-// a client that sees one event twice counts nothing twice.
+// file header and the data set. A file is one instance, so a count of files
+// is a count of instances. At the end of a reception that did not fail,
+// files_received equals files_archived + files_duplicate +
+// files_quarantined, and the same for bytes. The counts are totals, never
+// changes since the last answer, so a client that sees one event twice
+// counts nothing twice.
 type ReceptionCounts struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Files received, released ones included.
+	// Files received, released and retried ones included.
 	FilesReceived int64 `protobuf:"varint,1,opt,name=files_received,json=filesReceived,proto3" json:"files_received,omitempty"`
 	// Bytes of the files received.
 	BytesReceived int64 `protobuf:"varint,2,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
@@ -253,8 +258,9 @@ type Reception struct {
 	// The reception's id, made by the server, unique in the tenant. Opaque, at
 	// most 64 bytes.
 	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// The name of the receiver it arrived at. A receiver removed since keeps
-	// its name here, and a receiver added later may have the same name.
+	// The name of the receiver it arrived at. A removed receiver keeps its
+	// name here, and no other receiver is given that name while a reception
+	// names it.
 	Receiver string `protobuf:"bytes,2,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	// The Study Instance UID (0020,000D) of its files, as received (PS3.3
 	// C.7.2.1; 1 to 64 characters of digits and dots, PS3.5 9.1).
@@ -276,8 +282,10 @@ type Reception struct {
 	// The name of the storage its files are archived to. Empty until the
 	// reception is identified.
 	Storage string `protobuf:"bytes,9,opt,name=storage,proto3" json:"storage,omitempty"`
-	// Why the reception failed, in words for a person; at most 1 KiB. Empty
-	// unless its step is failed. It never holds a secret.
+	// Why the reception failed, in words for a person, from a fixed set of
+	// phrases the server has, such as "storage unreachable"; at most 256
+	// bytes. Empty unless its step is failed. It never holds a secret or a
+	// storage's own words.
 	Failure string `protobuf:"bytes,10,opt,name=failure,proto3" json:"failure,omitempty"`
 	// When its first file arrived.
 	StartTime *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
@@ -288,7 +296,28 @@ type Reception struct {
 	StepTime *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=step_time,json=stepTime,proto3" json:"step_time,omitempty"`
 	// When it ended: reached done, quarantined or failed. Absent while it is
 	// in progress.
-	EndTime       *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	EndTime *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	// How many associations (or, for a receiver of another type, requests)
+	// brought its files. A file released or retried into it brought by none
+	// is not counted.
+	Associations int64 `protobuf:"varint,15,opt,name=associations,proto3" json:"associations,omitempty"`
+	// The Calling AE Titles (PS3.8 9.3.2) of the associations that brought
+	// its files, each once, in the order they first appeared; at most 16, and
+	// calling_ae_titles_truncated says when there were more.
+	CallingAeTitles []string `protobuf:"bytes,16,rep,name=calling_ae_titles,json=callingAeTitles,proto3" json:"calling_ae_titles,omitempty"`
+	// Whether calling_ae_titles holds only the first 16.
+	CallingAeTitlesTruncated bool `protobuf:"varint,17,opt,name=calling_ae_titles_truncated,json=callingAeTitlesTruncated,proto3" json:"calling_ae_titles_truncated,omitempty"`
+	// The id of the failed reception whose files this one runs again. Empty
+	// unless it was made by RetryReception.
+	RetryOf string `protobuf:"bytes,18,opt,name=retry_of,json=retryOf,proto3" json:"retry_of,omitempty"`
+	// The id of the reception RetryReception made from this failed one.
+	// Empty unless it was retried.
+	RetryReception string `protobuf:"bytes,19,opt,name=retry_reception,json=retryReception,proto3" json:"retry_reception,omitempty"`
+	// Why its files were discarded, as given to DiscardReception. Empty
+	// unless they were.
+	DiscardReason string `protobuf:"bytes,20,opt,name=discard_reason,json=discardReason,proto3" json:"discard_reason,omitempty"`
+	// When its files were discarded. Absent unless they were.
+	DiscardTime   *timestamppb.Timestamp `protobuf:"bytes,21,opt,name=discard_time,json=discardTime,proto3" json:"discard_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -421,16 +450,66 @@ func (x *Reception) GetEndTime() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Reception) GetAssociations() int64 {
+	if x != nil {
+		return x.Associations
+	}
+	return 0
+}
+
+func (x *Reception) GetCallingAeTitles() []string {
+	if x != nil {
+		return x.CallingAeTitles
+	}
+	return nil
+}
+
+func (x *Reception) GetCallingAeTitlesTruncated() bool {
+	if x != nil {
+		return x.CallingAeTitlesTruncated
+	}
+	return false
+}
+
+func (x *Reception) GetRetryOf() string {
+	if x != nil {
+		return x.RetryOf
+	}
+	return ""
+}
+
+func (x *Reception) GetRetryReception() string {
+	if x != nil {
+		return x.RetryReception
+	}
+	return ""
+}
+
+func (x *Reception) GetDiscardReason() string {
+	if x != nil {
+		return x.DiscardReason
+	}
+	return ""
+}
+
+func (x *Reception) GetDiscardTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DiscardTime
+	}
+	return nil
+}
+
 // ReceptionScan is one scan a reception archived files into.
 type ReceptionScan struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The scan's label.
 	Label string `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
-	// The scan's Series Instance UID (0020,000E) (PS3.3 C.7.3.1).
+	// The scan's Series Instance UID (0020,000E), as received (PS3.3
+	// C.7.3.1).
 	SeriesInstanceUid string `protobuf:"bytes,2,opt,name=series_instance_uid,json=seriesInstanceUid,proto3" json:"series_instance_uid,omitempty"`
-	// The files this reception archived into the scan. A scan that a later
-	// arrival added to holds files of each arrival; this counts this
-	// reception's.
+	// The instances this reception archived into the scan. A scan that a
+	// later arrival added to holds instances of each arrival; this counts
+	// this reception's.
 	Files int64 `protobuf:"varint,3,opt,name=files,proto3" json:"files,omitempty"`
 	// The bytes of those files.
 	Bytes         int64 `protobuf:"varint,4,opt,name=bytes,proto3" json:"bytes,omitempty"`
@@ -579,7 +658,8 @@ type ListReceptionsRequest struct {
 	// Only the receptions that arrived at the receiver of this name. Empty for
 	// every receiver.
 	Receiver string `protobuf:"bytes,2,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	// Only the receptions of this Study Instance UID. Empty for every study.
+	// Only the receptions of this Study Instance UID, as received. Empty for
+	// every study. Needs operator on the tenant.
 	StudyInstanceUid string `protobuf:"bytes,3,opt,name=study_instance_uid,json=studyInstanceUid,proto3" json:"study_instance_uid,omitempty"`
 	// Only the receptions in one of these steps. Empty for every step; at most
 	// 16 values, none of them RECEPTION_STEP_UNSPECIFIED.
@@ -822,7 +902,8 @@ type GetReceptionResponse struct {
 	ScansTruncated bool `protobuf:"varint,3,opt,name=scans_truncated,json=scansTruncated,proto3" json:"scans_truncated,omitempty"`
 	// Every reception of the same study in the tenant, this one included,
 	// in the order of their arrival number. At most the 100 latest; the
-	// others are listed by ListReceptions with study_instance_uid.
+	// others are listed by ListReceptions with study_instance_uid, which
+	// needs operator.
 	Arrivals      []*ReceptionArrival `protobuf:"bytes,4,rep,name=arrivals,proto3" json:"arrivals,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -886,6 +967,240 @@ func (x *GetReceptionResponse) GetArrivals() []*ReceptionArrival {
 	return nil
 }
 
+// RetryReceptionRequest names the failed reception to run again.
+type RetryReceptionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant, by name. Required.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The failed reception's id. Required; at most 64 bytes.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// The name of the receiver whose configuration (storage, naming rule)
+	// the new reception runs by. Empty for the failed reception's own
+	// receiver; required when that receiver has been removed.
+	Receiver      string `protobuf:"bytes,3,opt,name=receiver,proto3" json:"receiver,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetryReceptionRequest) Reset() {
+	*x = RetryReceptionRequest{}
+	mi := &file_magnetar_v1_reception_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetryReceptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetryReceptionRequest) ProtoMessage() {}
+
+func (x *RetryReceptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_magnetar_v1_reception_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetryReceptionRequest.ProtoReflect.Descriptor instead.
+func (*RetryReceptionRequest) Descriptor() ([]byte, []int) {
+	return file_magnetar_v1_reception_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RetryReceptionRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *RetryReceptionRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RetryReceptionRequest) GetReceiver() string {
+	if x != nil {
+		return x.Receiver
+	}
+	return ""
+}
+
+// RetryReceptionResponse is the failed reception and the one that runs its
+// files again.
+type RetryReceptionResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The failed reception, with retry_reception set.
+	Reception *Reception `protobuf:"bytes,1,opt,name=reception,proto3" json:"reception,omitempty"`
+	// The new reception, with retry_of set.
+	Retry         *Reception `protobuf:"bytes,2,opt,name=retry,proto3" json:"retry,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RetryReceptionResponse) Reset() {
+	*x = RetryReceptionResponse{}
+	mi := &file_magnetar_v1_reception_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RetryReceptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RetryReceptionResponse) ProtoMessage() {}
+
+func (x *RetryReceptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_magnetar_v1_reception_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RetryReceptionResponse.ProtoReflect.Descriptor instead.
+func (*RetryReceptionResponse) Descriptor() ([]byte, []int) {
+	return file_magnetar_v1_reception_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *RetryReceptionResponse) GetReception() *Reception {
+	if x != nil {
+		return x.Reception
+	}
+	return nil
+}
+
+func (x *RetryReceptionResponse) GetRetry() *Reception {
+	if x != nil {
+		return x.Retry
+	}
+	return nil
+}
+
+// DiscardReceptionRequest names the failed reception whose files to remove,
+// and why.
+type DiscardReceptionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant, by name. Required.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The failed reception's id. Required; at most 64 bytes.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// Why its files are removed, in words for whoever reads the record later.
+	// Required: 1 to 1024 bytes of UTF-8, not only spaces.
+	Reason        string `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscardReceptionRequest) Reset() {
+	*x = DiscardReceptionRequest{}
+	mi := &file_magnetar_v1_reception_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscardReceptionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscardReceptionRequest) ProtoMessage() {}
+
+func (x *DiscardReceptionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_magnetar_v1_reception_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscardReceptionRequest.ProtoReflect.Descriptor instead.
+func (*DiscardReceptionRequest) Descriptor() ([]byte, []int) {
+	return file_magnetar_v1_reception_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *DiscardReceptionRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *DiscardReceptionRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DiscardReceptionRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// DiscardReceptionResponse is the reception after its files were removed.
+type DiscardReceptionResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The reception, still failed, with its discard reason and time.
+	Reception     *Reception `protobuf:"bytes,1,opt,name=reception,proto3" json:"reception,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiscardReceptionResponse) Reset() {
+	*x = DiscardReceptionResponse{}
+	mi := &file_magnetar_v1_reception_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiscardReceptionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiscardReceptionResponse) ProtoMessage() {}
+
+func (x *DiscardReceptionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_magnetar_v1_reception_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiscardReceptionResponse.ProtoReflect.Descriptor instead.
+func (*DiscardReceptionResponse) Descriptor() ([]byte, []int) {
+	return file_magnetar_v1_reception_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *DiscardReceptionResponse) GetReception() *Reception {
+	if x != nil {
+		return x.Reception
+	}
+	return nil
+}
+
 var File_magnetar_v1_reception_proto protoreflect.FileDescriptor
 
 const file_magnetar_v1_reception_proto_rawDesc = "" +
@@ -900,7 +1215,7 @@ const file_magnetar_v1_reception_proto_rawDesc = "" +
 	"\x0fbytes_duplicate\x18\x06 \x01(\x03R\x0ebytesDuplicate\x12+\n" +
 	"\x11files_quarantined\x18\a \x01(\x03R\x10filesQuarantined\x12+\n" +
 	"\x11bytes_quarantined\x18\b \x01(\x03R\x10bytesQuarantined\x12%\n" +
-	"\x0efiles_released\x18\t \x01(\x03R\rfilesReleased\"\xd0\x04\n" +
+	"\x0efiles_released\x18\t \x01(\x03R\rfilesReleased\"\x89\a\n" +
 	"\tReception\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
 	"\breceiver\x18\x02 \x01(\tR\breceiver\x12,\n" +
@@ -917,7 +1232,14 @@ const file_magnetar_v1_reception_proto_rawDesc = "" +
 	"start_time\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x12@\n" +
 	"\x0elast_file_time\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\flastFileTime\x127\n" +
 	"\tstep_time\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\bstepTime\x125\n" +
-	"\bend_time\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\"\x81\x01\n" +
+	"\bend_time\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12\"\n" +
+	"\fassociations\x18\x0f \x01(\x03R\fassociations\x12*\n" +
+	"\x11calling_ae_titles\x18\x10 \x03(\tR\x0fcallingAeTitles\x12=\n" +
+	"\x1bcalling_ae_titles_truncated\x18\x11 \x01(\bR\x18callingAeTitlesTruncated\x12\x19\n" +
+	"\bretry_of\x18\x12 \x01(\tR\aretryOf\x12'\n" +
+	"\x0fretry_reception\x18\x13 \x01(\tR\x0eretryReception\x12%\n" +
+	"\x0ediscard_reason\x18\x14 \x01(\tR\rdiscardReason\x12=\n" +
+	"\fdiscard_time\x18\x15 \x01(\v2\x1a.google.protobuf.TimestampR\vdiscardTime\"\x81\x01\n" +
 	"\rReceptionScan\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12.\n" +
 	"\x13series_instance_uid\x18\x02 \x01(\tR\x11seriesInstanceUid\x12\x14\n" +
@@ -954,7 +1276,20 @@ const file_magnetar_v1_reception_proto_rawDesc = "" +
 	"\treception\x18\x01 \x01(\v2\x16.magnetar.v1.ReceptionR\treception\x120\n" +
 	"\x05scans\x18\x02 \x03(\v2\x1a.magnetar.v1.ReceptionScanR\x05scans\x12'\n" +
 	"\x0fscans_truncated\x18\x03 \x01(\bR\x0escansTruncated\x129\n" +
-	"\barrivals\x18\x04 \x03(\v2\x1d.magnetar.v1.ReceptionArrivalR\barrivals*\x97\x02\n" +
+	"\barrivals\x18\x04 \x03(\v2\x1d.magnetar.v1.ReceptionArrivalR\barrivals\"[\n" +
+	"\x15RetryReceptionRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x1a\n" +
+	"\breceiver\x18\x03 \x01(\tR\breceiver\"|\n" +
+	"\x16RetryReceptionResponse\x124\n" +
+	"\treception\x18\x01 \x01(\v2\x16.magnetar.v1.ReceptionR\treception\x12,\n" +
+	"\x05retry\x18\x02 \x01(\v2\x16.magnetar.v1.ReceptionR\x05retry\"Y\n" +
+	"\x17DiscardReceptionRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"P\n" +
+	"\x18DiscardReceptionResponse\x124\n" +
+	"\treception\x18\x01 \x01(\v2\x16.magnetar.v1.ReceptionR\treception*\x97\x02\n" +
 	"\rReceptionStep\x12\x1e\n" +
 	"\x1aRECEPTION_STEP_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18RECEPTION_STEP_RECEIVING\x10\x01\x12\x1b\n" +
@@ -964,10 +1299,12 @@ const file_magnetar_v1_reception_proto_rawDesc = "" +
 	"\x17RECEPTION_STEP_VERIFIED\x10\x05\x12\x17\n" +
 	"\x13RECEPTION_STEP_DONE\x10\x06\x12\x1e\n" +
 	"\x1aRECEPTION_STEP_QUARANTINED\x10\a\x12\x19\n" +
-	"\x15RECEPTION_STEP_FAILED\x10\b2\xcc\x01\n" +
+	"\x15RECEPTION_STEP_FAILED\x10\b2\x92\x03\n" +
 	"\x10ReceptionService\x12^\n" +
 	"\x0eListReceptions\x12\".magnetar.v1.ListReceptionsRequest\x1a#.magnetar.v1.ListReceptionsResponse\"\x03\x90\x02\x01\x12X\n" +
-	"\fGetReception\x12 .magnetar.v1.GetReceptionRequest\x1a!.magnetar.v1.GetReceptionResponse\"\x03\x90\x02\x01B\xa8\x01\n" +
+	"\fGetReception\x12 .magnetar.v1.GetReceptionRequest\x1a!.magnetar.v1.GetReceptionResponse\"\x03\x90\x02\x01\x12^\n" +
+	"\x0eRetryReception\x12\".magnetar.v1.RetryReceptionRequest\x1a#.magnetar.v1.RetryReceptionResponse\"\x03\x90\x02\x02\x12d\n" +
+	"\x10DiscardReception\x12$.magnetar.v1.DiscardReceptionRequest\x1a%.magnetar.v1.DiscardReceptionResponse\"\x03\x90\x02\x02B\xa8\x01\n" +
 	"\x0fcom.magnetar.v1B\x0eReceptionProtoP\x01Z8github.com/amrshadid/magnetar/gen/magnetar/v1;magnetarv1\xa2\x02\x03MXX\xaa\x02\vMagnetar.V1\xca\x02\vMagnetar\\V1\xe2\x02\x17Magnetar\\V1\\GPBMetadata\xea\x02\fMagnetar::V1b\x06proto3"
 
 var (
@@ -983,44 +1320,56 @@ func file_magnetar_v1_reception_proto_rawDescGZIP() []byte {
 }
 
 var file_magnetar_v1_reception_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_magnetar_v1_reception_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_magnetar_v1_reception_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_magnetar_v1_reception_proto_goTypes = []any{
-	(ReceptionStep)(0),             // 0: magnetar.v1.ReceptionStep
-	(*ReceptionCounts)(nil),        // 1: magnetar.v1.ReceptionCounts
-	(*Reception)(nil),              // 2: magnetar.v1.Reception
-	(*ReceptionScan)(nil),          // 3: magnetar.v1.ReceptionScan
-	(*ReceptionArrival)(nil),       // 4: magnetar.v1.ReceptionArrival
-	(*ListReceptionsRequest)(nil),  // 5: magnetar.v1.ListReceptionsRequest
-	(*ListReceptionsResponse)(nil), // 6: magnetar.v1.ListReceptionsResponse
-	(*GetReceptionRequest)(nil),    // 7: magnetar.v1.GetReceptionRequest
-	(*GetReceptionResponse)(nil),   // 8: magnetar.v1.GetReceptionResponse
-	(*timestamppb.Timestamp)(nil),  // 9: google.protobuf.Timestamp
+	(ReceptionStep)(0),               // 0: magnetar.v1.ReceptionStep
+	(*ReceptionCounts)(nil),          // 1: magnetar.v1.ReceptionCounts
+	(*Reception)(nil),                // 2: magnetar.v1.Reception
+	(*ReceptionScan)(nil),            // 3: magnetar.v1.ReceptionScan
+	(*ReceptionArrival)(nil),         // 4: magnetar.v1.ReceptionArrival
+	(*ListReceptionsRequest)(nil),    // 5: magnetar.v1.ListReceptionsRequest
+	(*ListReceptionsResponse)(nil),   // 6: magnetar.v1.ListReceptionsResponse
+	(*GetReceptionRequest)(nil),      // 7: magnetar.v1.GetReceptionRequest
+	(*GetReceptionResponse)(nil),     // 8: magnetar.v1.GetReceptionResponse
+	(*RetryReceptionRequest)(nil),    // 9: magnetar.v1.RetryReceptionRequest
+	(*RetryReceptionResponse)(nil),   // 10: magnetar.v1.RetryReceptionResponse
+	(*DiscardReceptionRequest)(nil),  // 11: magnetar.v1.DiscardReceptionRequest
+	(*DiscardReceptionResponse)(nil), // 12: magnetar.v1.DiscardReceptionResponse
+	(*timestamppb.Timestamp)(nil),    // 13: google.protobuf.Timestamp
 }
 var file_magnetar_v1_reception_proto_depIdxs = []int32{
 	0,  // 0: magnetar.v1.Reception.step:type_name -> magnetar.v1.ReceptionStep
 	1,  // 1: magnetar.v1.Reception.counts:type_name -> magnetar.v1.ReceptionCounts
-	9,  // 2: magnetar.v1.Reception.start_time:type_name -> google.protobuf.Timestamp
-	9,  // 3: magnetar.v1.Reception.last_file_time:type_name -> google.protobuf.Timestamp
-	9,  // 4: magnetar.v1.Reception.step_time:type_name -> google.protobuf.Timestamp
-	9,  // 5: magnetar.v1.Reception.end_time:type_name -> google.protobuf.Timestamp
-	0,  // 6: magnetar.v1.ReceptionArrival.step:type_name -> magnetar.v1.ReceptionStep
-	9,  // 7: magnetar.v1.ReceptionArrival.start_time:type_name -> google.protobuf.Timestamp
-	0,  // 8: magnetar.v1.ListReceptionsRequest.steps:type_name -> magnetar.v1.ReceptionStep
-	9,  // 9: magnetar.v1.ListReceptionsRequest.start_time:type_name -> google.protobuf.Timestamp
-	9,  // 10: magnetar.v1.ListReceptionsRequest.end_time:type_name -> google.protobuf.Timestamp
-	2,  // 11: magnetar.v1.ListReceptionsResponse.receptions:type_name -> magnetar.v1.Reception
-	2,  // 12: magnetar.v1.GetReceptionResponse.reception:type_name -> magnetar.v1.Reception
-	3,  // 13: magnetar.v1.GetReceptionResponse.scans:type_name -> magnetar.v1.ReceptionScan
-	4,  // 14: magnetar.v1.GetReceptionResponse.arrivals:type_name -> magnetar.v1.ReceptionArrival
-	5,  // 15: magnetar.v1.ReceptionService.ListReceptions:input_type -> magnetar.v1.ListReceptionsRequest
-	7,  // 16: magnetar.v1.ReceptionService.GetReception:input_type -> magnetar.v1.GetReceptionRequest
-	6,  // 17: magnetar.v1.ReceptionService.ListReceptions:output_type -> magnetar.v1.ListReceptionsResponse
-	8,  // 18: magnetar.v1.ReceptionService.GetReception:output_type -> magnetar.v1.GetReceptionResponse
-	17, // [17:19] is the sub-list for method output_type
-	15, // [15:17] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	13, // 2: magnetar.v1.Reception.start_time:type_name -> google.protobuf.Timestamp
+	13, // 3: magnetar.v1.Reception.last_file_time:type_name -> google.protobuf.Timestamp
+	13, // 4: magnetar.v1.Reception.step_time:type_name -> google.protobuf.Timestamp
+	13, // 5: magnetar.v1.Reception.end_time:type_name -> google.protobuf.Timestamp
+	13, // 6: magnetar.v1.Reception.discard_time:type_name -> google.protobuf.Timestamp
+	0,  // 7: magnetar.v1.ReceptionArrival.step:type_name -> magnetar.v1.ReceptionStep
+	13, // 8: magnetar.v1.ReceptionArrival.start_time:type_name -> google.protobuf.Timestamp
+	0,  // 9: magnetar.v1.ListReceptionsRequest.steps:type_name -> magnetar.v1.ReceptionStep
+	13, // 10: magnetar.v1.ListReceptionsRequest.start_time:type_name -> google.protobuf.Timestamp
+	13, // 11: magnetar.v1.ListReceptionsRequest.end_time:type_name -> google.protobuf.Timestamp
+	2,  // 12: magnetar.v1.ListReceptionsResponse.receptions:type_name -> magnetar.v1.Reception
+	2,  // 13: magnetar.v1.GetReceptionResponse.reception:type_name -> magnetar.v1.Reception
+	3,  // 14: magnetar.v1.GetReceptionResponse.scans:type_name -> magnetar.v1.ReceptionScan
+	4,  // 15: magnetar.v1.GetReceptionResponse.arrivals:type_name -> magnetar.v1.ReceptionArrival
+	2,  // 16: magnetar.v1.RetryReceptionResponse.reception:type_name -> magnetar.v1.Reception
+	2,  // 17: magnetar.v1.RetryReceptionResponse.retry:type_name -> magnetar.v1.Reception
+	2,  // 18: magnetar.v1.DiscardReceptionResponse.reception:type_name -> magnetar.v1.Reception
+	5,  // 19: magnetar.v1.ReceptionService.ListReceptions:input_type -> magnetar.v1.ListReceptionsRequest
+	7,  // 20: magnetar.v1.ReceptionService.GetReception:input_type -> magnetar.v1.GetReceptionRequest
+	9,  // 21: magnetar.v1.ReceptionService.RetryReception:input_type -> magnetar.v1.RetryReceptionRequest
+	11, // 22: magnetar.v1.ReceptionService.DiscardReception:input_type -> magnetar.v1.DiscardReceptionRequest
+	6,  // 23: magnetar.v1.ReceptionService.ListReceptions:output_type -> magnetar.v1.ListReceptionsResponse
+	8,  // 24: magnetar.v1.ReceptionService.GetReception:output_type -> magnetar.v1.GetReceptionResponse
+	10, // 25: magnetar.v1.ReceptionService.RetryReception:output_type -> magnetar.v1.RetryReceptionResponse
+	12, // 26: magnetar.v1.ReceptionService.DiscardReception:output_type -> magnetar.v1.DiscardReceptionResponse
+	23, // [23:27] is the sub-list for method output_type
+	19, // [19:23] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_magnetar_v1_reception_proto_init() }
@@ -1034,7 +1383,7 @@ func file_magnetar_v1_reception_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_magnetar_v1_reception_proto_rawDesc), len(file_magnetar_v1_reception_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   8,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
