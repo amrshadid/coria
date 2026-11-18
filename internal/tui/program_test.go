@@ -25,6 +25,12 @@ const (
 	showCursor = "\x1b[?25h"
 )
 
+// programWait is how long a test waits for the real program to draw or to end.
+// It is long because the whole suite runs under the race detector on shared CI
+// machines beside database tests, where a first call can take seconds; a
+// program that works never uses it.
+const programWait = 30 * time.Second
+
 // syncBuffer is a writer the program writes to from its own goroutines and the
 // test reads from.
 type syncBuffer struct {
@@ -104,7 +110,7 @@ func startProgram(t *testing.T, mutate func(*model)) *programRig {
 // waitFor waits until the output holds text.
 func (p *programRig) waitFor(text string) {
 	p.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(programWait)
 	for !strings.Contains(p.out.String(), text) {
 		if time.Now().After(deadline) {
 			p.t.Fatalf("the program never drew %q; it wrote %q", text, p.out.String())
@@ -127,7 +133,7 @@ func (p *programRig) finish() error {
 	select {
 	case err := <-p.done:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(programWait):
 		p.t.Fatalf("the program did not end; it wrote %q", p.out.String())
 		return nil
 	}

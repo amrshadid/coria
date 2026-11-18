@@ -94,7 +94,7 @@ class Session:
                 break
             self.raw += chunk
 
-    def wait_for(self, text, timeout=10.0):
+    def wait_for(self, text, timeout=20.0):
         """Read until the drawn text holds text; False when it never does."""
         end = time.time() + timeout
         while time.time() < end:
@@ -110,7 +110,7 @@ class Session:
         """Type keys, as bytes, into the terminal."""
         os.write(self.master, keys if isinstance(keys, bytes) else keys.encode())
 
-    def finish(self, timeout=10.0):
+    def finish(self, timeout=20.0):
         """Wait for the program to end; returns its status, or None on a hang."""
         end = time.time() + timeout
         while time.time() < end:
