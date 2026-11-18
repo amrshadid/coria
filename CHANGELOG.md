@@ -303,6 +303,35 @@ All notable changes to Magnetar are written here. The form is
   refused, a stop by signal that writes every queued audit entry, and a
   restart that serves the same tenants, keys and log; `make check-server` now
   also points curl, grpcurl and Python's grpcio at the real program.
+- Nothing showed the installed program doing, in order, what this version
+  claims: each part was checked on its own. `make prove` (`scripts/prove.sh`,
+  with `scripts/prove.py`; CI's "Proof: the installed binary, from outside"
+  job, on Linux, with a Postgres service container) builds every target as
+  `make build` does and runs the real binary against tools that are not
+  Magnetar: curl, grpcurl, openssl, sqlite3, psql and pg_dump, and Python's
+  grpcio. It shows, each as a named check with what it measured: `init` and
+  `serve` on the local socket and on TLS; no key or grant after `init`, the
+  first key made on the socket, and all 17 methods of the contract (with
+  `/metrics`) refused without a key, health answering; tenants on SQLite and
+  on Postgres, and a remote address without its sslmode refused and leaving
+  nothing; no key, a malformed, unknown, wrong, expired (`--expires 1s`) and
+  revoked key, each with all 17 methods, through the three clients, with one
+  answer per client byte for byte, "no grant" and "no such tenant" identical,
+  and a caller who may list tenants told not found; no secret in the master's
+  dump, the tenant's `pg_dump`, any file of the data directory, the logs at
+  debug level or the audit log, and each key's hash present; a copy of the
+  installation given another installation's key file refused at start,
+  listening on nothing and left byte for byte as it was, and with its own key
+  file put back serving both tenants with their data; the Postgres container
+  stopped and started under a running server, the SQLite tenant answering in
+  its usual time meanwhile; the server killed with signal 9 during tenant
+  creation 24 times, each kill classed by what the master held right after
+  it, and the master's integrity checked each time; every request it made
+  found in the audit log with its outcome, and nothing else there; a second
+  server and another operating system user refused; every list command's
+  `--json` and the interactive program under a pseudo-terminal; and the size
+  of each binary. It does not show Windows, a loss of power on real hardware,
+  or any speed.
 
 ### Changed
 
