@@ -1,0 +1,312 @@
+package servecmd
+
+import (
+	"context"
+	"errors"
+	"io/fs"
+	"log/slog"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"connectrpc.com/connect/v2"
+	"github.com/spf13/cobra"
+
+	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/driver"
+	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/obs"
+	"github.com/amrshadid/magnetar/internal/secret"
+	"github.com/amrshadid/magnetar/internal/server"
+)
+
+// Deps is what an installation's handlers are built from, once serve has
+// opened it.
+type Deps struct {
+	// Access is the check and the management of keys and grants.
+	Access *access.Access
+	// Master is the master database. The server closes it at stop.
+	Master master.Store
+	// Keys is the installation key file, which seals and opens secrets.
+	Keys *secret.Keys
+	// DataDir is the data directory.
+	DataDir string
+	// Log is the server's logger.
+	Log *slog.Logger
+}
+
+// Built is what Services returns: how to register the handlers, and the
+// parts the server must close at stop.
+type Built struct {
+	// Register registers the API's services on the server's
+	// connect.Server.
+	Register func(*connect.Server)
+	// Methods is the method-to-requirement table of the services Register
+	// registers (package internal/api's).
+	Methods server.Methods
+	// WithDecision hands each handler the check's Decision in its context.
+	WithDecision server.WithDecision
+	// Registry is the tenant registry, or nil.
+	Registry server.Registry
+	// HTTPRoutes are plain HTTP routes besides /metrics.
+	HTTPRoutes []server.HTTPRoute
+}
+
+// Services builds the API's handlers over an open installation.
+type Services func(Deps) (Built, error)
+
+// serveFlags are the flags of serve.
+type serveFlags struct {
+	dataDir                            string
+	listen, tlsCert, tlsKey, masterEnv string
+	logFormat, logLevel                string
+	drain, deadline                    time.Duration
+}
+
+// Serve returns the "serve" command.
+func Serve(opts Options) *cobra.Command {
+	opts = opts.withDefaults()
+	var f serveFlags
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Run the installation's server",
+		Long: `Run the server of the installation in the data directory.
+
+It listens on the local socket <data-dir>/run/magnetar.sock, where the caller is
+the operating system user that runs it, and on the network only when --listen
+is given: with TLS when --tls-cert and --tls-key are given, and without TLS on a
+loopback address only. One server runs per data directory.
+
+The first stop signal (Ctrl-C, SIGTERM) refuses new requests, lets those in
+flight finish, writes the audit entries held in memory and exits 0. A second
+signal exits at once.
+
+The data directory is --data-dir, or MAGNETAR_DATA_DIR.`,
+		Example: `  magnetar serve --data-dir /var/lib/magnetar
+  magnetar serve --data-dir /var/lib/magnetar --listen 0.0.0.0:8443 --tls-cert cert.pem --tls-key key.pem`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			dir, err := dataDir(cmd, opts.Getenv)
+			if err != nil {
+				return err
+			}
+			f.dataDir = dir
+			return runServe(cmd.Context(), opts, f)
+		},
+	}
+	fl := cmd.Flags()
+	fl.StringVar(&f.listen, "listen", "", "the network address to serve, HOST:PORT; none unless given")
+	fl.StringVar(&f.tlsCert, "tls-cert", "", "the PEM file of the network listener's certificate")
+	fl.StringVar(&f.tlsKey, "tls-key", "", "the PEM file of the certificate's private key")
+	fl.StringVar(&f.masterEnv, "master-env", "", "the name of an environment variable holding the master database's address, when it is not SQLite in the data directory")
+	fl.StringVar(&f.logFormat, "log-format", string(obs.JSON), "json or text")
+	fl.StringVar(&f.logLevel, "log-level", "info", "debug, info, warn or error")
+	fl.DurationVar(&f.drain, "drain", server.DefaultDrain, "how long requests in flight may run after a stop signal")
+	fl.DurationVar(&f.deadline, "default-deadline", server.DefaultDeadline, "the deadline of a call whose client sent none")
+	// The default deadline is the contract's 30 seconds; changing it is for
+	// tests of the deadline, so it is not shown in the help.
+	_ = fl.MarkHidden("default-deadline")
+	return cmd
+}
+
+// runServe opens the installation and serves until a stop signal.
+func runServe(ctx context.Context, opts Options, f serveFlags) error {
+	level, ok := obs.ParseLevel(f.logLevel)
+	if !ok {
+		return fault.New(fault.Invalid, "--log-level is debug, info, warn or error")
+	}
+	if f.logFormat != string(obs.JSON) && f.logFormat != string(obs.Text) {
+		return fault.New(fault.Invalid, "--log-format is json or text")
+	}
+	// Zero would otherwise read as "the default" further down, which is not
+	// what a person who typed --drain 0 asked for.
+	if f.drain <= 0 {
+		return fault.New(fault.Invalid, "--drain is a positive duration, such as 15s")
+	}
+	if f.deadline <= 0 {
+		return fault.New(fault.Invalid, "--default-deadline is a positive duration, such as 30s")
+	}
+	log := obs.NewLogger(opts.Stderr, obs.LogOptions{Format: obs.Format(f.logFormat), Level: level})
+
+	dir := f.dataDir
+	keyPath := filepath.Join(dir, KeyFileName)
+	if err := checkMade(dir, f.masterEnv); err != nil {
+		return err
+	}
+	// The lock first: a second server is refused before it opens the
+	// master database, so two servers never migrate it at once.
+	lock, err := server.TakeLock(dir)
+	if err != nil {
+		return err
+	}
+	srv, err := open(ctx, opts, f, dir, keyPath, lock, log)
+	if err != nil {
+		_ = lock.Release()
+		return err
+	}
+	return serveUntilStopped(srv, opts, log)
+}
+
+// exists reports whether path exists.
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return !errors.Is(err, fs.ErrNotExist)
+}
+
+// checkMade refuses a data directory that is not a whole installation, and
+// says what is wrong in plain words: no installation at all, or one whose
+// init was interrupted, with what to remove before running init again. A
+// master in another database (--master-env) is checked by checkIdentity
+// once it is open.
+func checkMade(dir, masterEnv string) error {
+	key := exists(filepath.Join(dir, KeyFileName))
+	id := exists(filepath.Join(dir, server.IDFileName))
+	db := filepath.Join(dir, MasterFileName)
+	sqlite := exists(db)
+	switch {
+	case !key && !id && !sqlite:
+		return fault.New(fault.NotFound, "no installation in "+dir+"; make one with: magnetar init --data-dir "+dir)
+	case !key:
+		return fault.New(fault.Invalid, "the data directory "+dir+" has no key file but holds part of an installation: init was interrupted before it wrote the key file, or the key file was lost "+
+			"(and with it every secret). If init was interrupted, remove "+filepath.Join(dir, server.IDFileName)+" and "+db+"* and run init again")
+	case !id:
+		return fault.New(fault.Invalid, "the data directory "+dir+" has a key file but no installation id: init was interrupted. Remove "+
+			filepath.Join(dir, KeyFileName)+" and "+db+"* (or empty the database --master-env names) and run init again")
+	case masterEnv == "" && !sqlite:
+		return fault.New(fault.NotFound, "no master database at "+db+": if the installation was made with --master-env, give the same flag; "+
+			"if init was interrupted, remove "+filepath.Join(dir, KeyFileName)+" and "+filepath.Join(dir, server.IDFileName)+" and run init again")
+	}
+	return nil
+}
+
+// checkIdentity refuses a master database that is not the one this
+// installation was made with (decision D52): one with no tables, one with
+// no installation id, or one with another installation's id. It runs before
+// any migration, so a wrong master is never changed.
+func checkIdentity(ctx context.Context, m master.Store, dir string) error {
+	want, err := server.ReadInstallationID(dir)
+	if err != nil {
+		return err
+	}
+	notOurs := "the master database is not the one this installation was made with"
+	v, err := m.Version(ctx)
+	if err != nil {
+		return err
+	}
+	if v == 0 {
+		return fault.New(fault.Invalid, notOurs+": it is empty. Check the address (--master-env) or the data directory; serve never fills a master it did not make")
+	}
+	got, err := m.Setting(ctx, server.InstallationIDSetting)
+	switch {
+	case fault.KindOf(err) == fault.NotFound:
+		return fault.New(fault.Invalid, notOurs+": it holds no installation id. Check the address (--master-env); if init was interrupted, run it again on an empty database")
+	case err != nil:
+		return err
+	case got != want:
+		return fault.New(fault.Invalid, notOurs+": it belongs to another installation. Check the address (--master-env) and the data directory")
+	}
+	return nil
+}
+
+// open loads the key file, opens and migrates the master database, starts
+// the access package and builds the server. On failure it closes what it
+// opened, except the lock, which its caller releases.
+func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, lock *server.Lock, log *slog.Logger) (srv *server.Server, err error) {
+	keys, err := secret.LoadKeyFile(keyPath)
+	if err != nil {
+		return nil, err
+	}
+	address, _, err := masterAddress(dir, f.masterEnv, opts.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	m, err := driver.OpenMaster(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+	var a *access.Access
+	defer func() {
+		if err != nil {
+			if a != nil {
+				_ = a.Close(context.Background())
+			}
+			_ = m.Close()
+		}
+	}()
+	// The identity before any migration: a master that is not this
+	// installation's must not be upgraded, let alone served.
+	if err := checkIdentity(ctx, m, dir); err != nil {
+		return nil, err
+	}
+	if err := m.Migrate(ctx); err != nil {
+		return nil, err
+	}
+	a, err = access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log})
+	if err != nil {
+		return nil, err
+	}
+	built := Built{Register: func(*connect.Server) {}}
+	if opts.Services != nil {
+		built, err = opts.Services(Deps{Access: a, Master: m, Keys: keys, DataDir: dir, Log: log})
+		if err != nil {
+			return nil, err
+		}
+		if built.Register == nil {
+			built.Register = func(*connect.Server) {}
+		}
+	}
+	return server.New(server.Config{
+		DataDir:         dir,
+		Lock:            lock,
+		Listen:          f.listen,
+		TLSCert:         f.tlsCert,
+		TLSKey:          f.tlsKey,
+		Access:          a,
+		Registry:        built.Registry,
+		Master:          m,
+		Log:             log,
+		Register:        built.Register,
+		Methods:         built.Methods,
+		WithDecision:    built.WithDecision,
+		HTTPRoutes:      built.HTTPRoutes,
+		Drain:           f.drain,
+		DefaultDeadline: f.deadline,
+	})
+}
+
+// serveUntilStopped starts the server and waits for a stop signal or a
+// listener's failure; then it stops the server and returns Stop's result,
+// so a clean stop exits 0. A second signal while stopping exits at once
+// with status 1.
+func serveUntilStopped(srv *server.Server, opts Options, log *slog.Logger) error {
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
+	if err := srv.Start(); err != nil {
+		// Nothing is served; Stop closes what open made and the lock.
+		return errors.Join(err, srv.Stop())
+	}
+	var cause error
+	select {
+	case sig := <-signals:
+		log.Info("server: stopping", "signal", sig.String(), "note", "a second signal exits at once")
+	case cause = <-srv.Errors():
+		log.Error("server: a listener failed; stopping", "error", cause)
+	}
+	done := make(chan struct{})
+	go func() {
+		select {
+		case sig := <-signals:
+			log.Warn("server: second signal; exiting at once", "signal", sig.String())
+			opts.Exit(1)
+		case <-done:
+		}
+	}()
+	err := srv.Stop()
+	close(done)
+	return errors.Join(cause, err)
+}

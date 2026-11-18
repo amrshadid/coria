@@ -14,6 +14,7 @@ import (
 
 	"github.com/amrshadid/magnetar/internal/cli/client"
 	"github.com/amrshadid/magnetar/internal/cli/output"
+	"github.com/amrshadid/magnetar/internal/cli/servecmd"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/tui"
 	"github.com/amrshadid/magnetar/internal/version"
@@ -264,8 +265,12 @@ not allowed), 4 not found.`,
 	f.DurationVar(&a.opts.timeout, "timeout", client.DefaultTimeout, "how long one call to the server may take")
 	f.BoolVar(&a.opts.json, "json", false, "write one JSON document with schemaVersion instead of a table")
 
+	// init and serve make and run an installation; they are not clients of
+	// the API. The handlers are passed in Services when they exist.
+	serveOpts := servecmd.Options{Stdout: a.env.Stdout, Stderr: a.env.Stderr, Getenv: a.env.Getenv}
 	root.AddCommand(
 		a.newVersion(),
+		a.own(servecmd.Init(serveOpts)), a.own(servecmd.Serve(serveOpts)),
 		a.newWhoami(),
 		a.newTenant(),
 		a.newKey(),
@@ -274,6 +279,20 @@ not allowed), 4 not found.`,
 		a.newAudit(),
 	)
 	return root
+}
+
+// own marks the errors of a command built outside this package as the
+// command's own, as run does for the commands here, so report gives them
+// the exit code of their kind instead of treating them as usage mistakes.
+func (a *app) own(cmd *cobra.Command) *cobra.Command {
+	inner := cmd.RunE
+	cmd.RunE = func(c *cobra.Command, args []string) error {
+		if err := inner(c, args); err != nil {
+			return &runError{err}
+		}
+		return nil
+	}
+	return cmd
 }
 
 // noArgs refuses any argument with a usage error that names it.

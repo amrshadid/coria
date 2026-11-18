@@ -370,6 +370,7 @@ func TestEveryCommandHasHelp(t *testing.T) {
 // noun more, none less.
 func TestGrammar(t *testing.T) {
 	want := map[string]bool{
+		"init": true, "serve": true,
 		"version": true, "whoami": true,
 		"tenant create": true, "tenant list": true, "tenant show": true, "tenant remove": true,
 		"key create": true, "key list": true, "key show": true, "key revoke": true,

@@ -150,6 +150,16 @@ SQLITE3 ?= sqlite3
 check-master-sqlite:
 	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-master-sqlite.sh
 
+# The outside check of the server: curl, grpcurl (GRPCURL=... names one) and
+# Python's grpcio (PYTHON=... names an interpreter with
+# scripts/requirements-check-server.txt) against a real server process with
+# the stand-in handlers, over TLS on loopback and over the local socket.
+GRPCURL ?= grpcurl
+
+.PHONY: check-server
+check-server:
+	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" bash scripts/check-server.sh
+
 # The outside check of a tenant's SQLite database: the registry creates a
 # tenant on SQLite, and the sqlite3 tool reads its file and the master's row.
 .PHONY: check-tenant-sqlite

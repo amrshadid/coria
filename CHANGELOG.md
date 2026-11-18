@@ -304,5 +304,37 @@ All notable changes to Magnetar are written here. The form is
   each step. They now have a key of their own. The 1,000-tenant test runs
   once, without the race detector, as a step of its own (`make test-scale`),
   instead of inside the race and 32-bit runs.
+- `magnetar init` and `magnetar serve`. Nothing could make an installation or
+  serve the API. `init` makes the data directory private to its user, the key
+  file, the migrated master database (SQLite unless `--master-env` names an
+  environment variable holding another address), `tenants/` and `run/`; it
+  refuses a directory that already holds an installation and says that losing
+  the key file loses every secret. `serve` takes an operating system lock on
+  the data directory (a second server is refused, naming the first; a server
+  killed with signal 9 leaves nothing stale), listens on the local socket
+  `run/magnetar.sock` (HTTP/2 without TLS; the caller must be the server's own
+  user, read from the kernel on Linux and macOS; on Windows the directory's
+  access list is the only guard), and on the network only with `--listen`
+  (TLS 1.2 or later; without a certificate, a loopback address only). Every
+  request, RPC or plain HTTP, goes through one checked path: request id in
+  `Magnetar-Request-Id`, credential, the access check with the method's
+  requirement from a table tested against the contract's `Role:` lines, then
+  the handler, with a panic answered as internal. Messages over 4 MiB are
+  refused both ways, a call without a deadline gets 30 seconds and no call
+  runs past 5 minutes, a body read before the check must arrive within 10
+  seconds, and headers, streams and idle connections are bounded. Logs are
+  `log/slog` JSON with the two secret fields redacted by reading
+  `debug_redact`, and every answer, including those the RPC library gives
+  before the check, is logged and counted; `/metrics` is Prometheus text; the
+  standard gRPC health service answers Check without a key (Watch is not
+  served). `init` gives the installation an id, kept in the data directory
+  and in the master, and `serve` refuses a master with another id or none,
+  before migrating it. A stop signal drains requests in flight, writes the
+  queued audit entries, closes everything within 29 seconds even when a
+  handler ignores its context, and exits; a second signal exits at once.
+  `make check-server` checks it with curl,
+  grpcurl and Python's grpcio. The API's handlers are not in this change, so
+  until they are, every API method passes the check and then answers that
+  the service is not there.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop
