@@ -339,6 +339,22 @@ func (s Scope) String() string {
 	return "tenant/" + s.TenantID
 }
 
+// Roles is what RolesFor reads for a key and a tenant name: the key's role
+// on the installation, the tenant the name belongs to, and the key's role on
+// it. A role is the empty Role when the key holds none.
+type Roles struct {
+	// Installation is the key's role on the installation.
+	Installation Role
+	// Tenant is the key's role on the tenant named; empty when the tenant
+	// was not found.
+	Tenant Role
+	// TenantID is the id of the tenant named, at the time of the read;
+	// empty when it was not found.
+	TenantID string
+	// TenantFound reports whether a tenant has the name asked for.
+	TenantFound bool
+}
+
 // Grant gives a key a role on one scope. A key has at most one grant per
 // scope (D37).
 type Grant struct {

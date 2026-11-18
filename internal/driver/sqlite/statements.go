@@ -49,12 +49,7 @@ func prepare(ctx context.Context, p *pools) (*statements, error) {
 		{&s.grantsByKeyFirst, r, `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = ? ORDER BY g.key_id, g.scope LIMIT ?`},
 		{&s.grantsByKeyNext, r, `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = ? AND g.scope > ? ORDER BY g.key_id, g.scope LIMIT ?`},
 		{&s.grantsByScope, r, `SELECT ` + grantColumns + grantFrom + ` WHERE g.scope = ? AND g.key_id > ? ORDER BY g.scope, g.key_id LIMIT ?`},
-		// Two point lookups of the grants' primary key, (key, '') and (key,
-		// the named tenant's id), the id found through the tenants' unique
-		// index on name. coalesce turns "no such tenant" into the
-		// installation's '' again, so it matches nothing more.
-		{&s.rolesFor, r, `SELECT scope, role FROM grants WHERE key_id = ?
-			AND scope IN ('', coalesce((SELECT id FROM tenants WHERE name = ?), ''))`},
+		{&s.rolesFor, r, rolesForSQL},
 
 		{&s.tenantNameTaken, w, `SELECT 1 FROM tenants WHERE name = ?`},
 		{&s.tenantExists, w, `SELECT 1 FROM tenants WHERE id = ?`},
@@ -110,3 +105,17 @@ func closeAll(all []*sql.Stmt) {
 		_ = stmt.Close() // Closing a statement on a closing pool has nothing to report.
 	}
 }
+
+// rolesForSQL is RolesFor's statement, which always returns exactly one
+// row: the tenant's id, NULL when no tenant has the name (the LEFT JOIN of a
+// one-row table keeps the row), then the key's role on the installation and
+// on that tenant, each NULL when there is no grant. The second grant
+// lookup runs whether or not a tenant was found: without one it looks for
+// the scope '*', which no id can be, so a missing tenant costs the same
+// lookups as a tenant without a grant. Each is a point lookup:
+// the tenants' unique index on name, and the grants' primary key at (key,
+// the empty scope) and at (key, the tenant's id).
+const rolesForSQL = `SELECT t.id,
+	(SELECT role FROM grants WHERE key_id = ?1 AND scope = ''),
+	(SELECT role FROM grants WHERE key_id = ?1 AND scope = coalesce(t.id, '*'))
+	FROM (SELECT 1) AS one LEFT JOIN tenants AS t ON t.name = ?2`

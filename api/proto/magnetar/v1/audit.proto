@@ -8,11 +8,28 @@ import "google/protobuf/timestamp.proto";
 import "magnetar/v1/scope.proto";
 
 // AuditService reads the audit logs. Every request to the API writes one entry,
-// refused requests included. What concerns the installation is written to the
-// installation's log; what concerns a tenant, to that tenant's log. A request
-// that names a tenant that does not exist or whose database does not answer is
-// written to the installation's log. No entry holds a key's secret, a
-// database's address or a setting's value.
+// refused requests included, in one of two kinds of log: the installation's,
+// or a tenant's.
+//
+// A refused request (answered UNAUTHENTICATED or PERMISSION_DENIED) is always
+// written to the installation's log, with the tenant's name when the request
+// named one: a caller who was refused causes no write in a tenant's database,
+// and keys and grants are the installation's. A request that was allowed is
+// written to the log of what it concerns: a tenant's log for a request about
+// a tenant, the installation's log for one about the installation. When the
+// tenant's database does not answer, the entry is written to the installation's
+// log instead, with the tenant's name and a detail saying the tenant's log did
+// not answer; so is the entry of a request that names a tenant that does not
+// exist. Where a method's comment names a tenant's log, it means the entry of
+// the request when it was allowed.
+//
+// The entry of a change is written together with the change, or the change is
+// not made. The entry of a refusal or of a read is written shortly after the
+// answer, in a batch: a server overwhelmed by requests drops such entries and
+// writes to the installation's log how many it dropped, and a server that is
+// killed may lose those of its last moment.
+//
+// No entry holds a key's secret, a database's address or a setting's value.
 service AuditService {
   // ListAuditEntries answers the entries of the installation's log or of one
   // tenant's log, newest first, filtered by key, by outcome and by time.

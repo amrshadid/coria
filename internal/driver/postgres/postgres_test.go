@@ -390,7 +390,8 @@ func TestRequestPathPlans(t *testing.T) {
 	cases := []planCase{
 		{"key by id", `SELECT ` + keyColumns + ` FROM api_keys WHERE id = 'Key010000'`, nil, "Index Scan using api_keys_pkey"},
 		// Both lookups give key_id and scope exactly; the planner reads whichever of the primary key and grants_by_scope it prefers.
-		{"roles for (key, tenant name)", roles, nil, "grants_pkey|grants_by_scope"},
+		{"roles for (key, tenant name): grants", roles, nil, "grants_pkey|grants_by_scope"},
+		{"roles for (key, tenant name): tenant", roles, nil, "tenants_name_key"},
 		{"tenant by name", `SELECT ` + tenantColumns + ` FROM tenants WHERE name = 'tenant1000'`, nil, "Index Scan using tenants_name_key"},
 		{"grants by key, with tenant names", `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = 'Key010000' ORDER BY g.key_id, g.scope LIMIT 1001`, nil, "grants_pkey"},
 		{"grants by tenant (foreign key check)", `SELECT 1 FROM grants WHERE tenant_id = 't1000' LIMIT 1`, nil, "grants_by_tenant"},

@@ -85,9 +85,9 @@ func BenchRolesFor(b *testing.B, open Open) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		inst, tenant, err := s.RolesFor(ctx, id, "bench017")
-		if err != nil || inst != master.RoleReader || tenant != master.RoleReader {
-			b.Fatalf("RolesFor = %q, %q, %v", inst, tenant, err)
+		r, err := s.RolesFor(ctx, id, "bench017")
+		if err != nil || r.Installation != master.RoleReader || r.Tenant != master.RoleReader || !r.TenantFound {
+			b.Fatalf("RolesFor = %+v, %v", r, err)
 		}
 	}
 }
