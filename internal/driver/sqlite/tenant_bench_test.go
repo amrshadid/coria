@@ -17,7 +17,7 @@ func BenchmarkTenantSetting(b *testing.B) {
 	ctx := context.Background()
 	for i := range 1000 {
 		a := master.AuditEntry{ID: fmt.Sprintf("setup-%05d", i), Time: mastertest.T0, Method: "Setup", Outcome: master.OutcomeDone}
-		if err := s.SetSetting(ctx, fmt.Sprintf("setting.%04d", i), "v", a); err != nil {
+		if err := s.SetSetting(ctx, fmt.Sprintf("setting.%04d", i), "v", a, nil); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -49,4 +49,13 @@ func BenchmarkTenantAppendAudit(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// BenchmarkTenantChanges measures changes to a tenant's database, each a
+// setting with its audit entry, from 1, 8, 64 and 256 concurrent callers.
+func BenchmarkTenantChanges(b *testing.B) {
+	s := openTenantTest(b, tenanttest.SuiteTenant)
+	benchChanges(b, settingChange(func(ctx context.Context, name, value string, audit master.AuditEntry) error {
+		return s.SetSetting(ctx, name, value, audit, nil)
+	}))
 }

@@ -110,7 +110,7 @@ func TestHandlerFacts(t *testing.T) {
 	hf := access.Facts{Object: "obj\nx", TenantName: "lab", Details: map[string]string{"driver": "sqlite"}}
 
 	change := d.Entry(master.OutcomeDone, "", hf)
-	if err := e.master.SetSetting(e.ctx, "audit.test", "v", change); err != nil {
+	if err := e.master.SetSetting(e.ctx, "audit.test", "v", change, master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	e.access.Record(d, master.OutcomeFailed, "the tenant's database does not answer", hf)
@@ -288,5 +288,51 @@ func TestLocalOperatorOnlyFromServer(t *testing.T) {
 	}
 	if files < 20 {
 		t.Fatalf("only %d Go files walked: the walk did not see the repository", files)
+	}
+}
+
+// TestChangeCarriesItsKey guards how a management call checks a key after
+// Check: every call asks the master first, by the check every change makes
+// (CheckActor), before it reads anything the request names, and a change
+// then hands the key to the master's change, which checks it again in its
+// transaction; the key itself is never read again (no Key of the caller, no
+// RolesFor). A Decision that Confirm already checked spares a change the
+// first CheckActor, but not a read, whose CheckActor is its only check.
+func TestChangeCarriesItsKey(t *testing.T) {
+	e := newEnv(t)
+	admin := e.key(time.Time{}, on(master.Installation, master.RoleAdmin))
+	want := map[string][]string{
+		"CreateKey":   {"CheckActor", "CreateKey"},
+		"RevokeKey":   {"CheckActor", "Key", "RevokeKey"},
+		"SetGrant":    {"CheckActor", "SetGrant"},
+		"RemoveGrant": {"CheckActor", "RemoveGrant"},
+		"GetKey":      {"CheckActor", "Key"},
+		"ListKeys":    {"CheckActor"},
+		"ListGrants":  {"CheckActor", "GrantsByKey"},
+		"WhoAmI":      {"CheckActor", "GrantsByKey"},
+	}
+	for _, confirmed := range []bool{false, true} {
+		for name := range want {
+			call := managementCalls(e, e.key(time.Time{}).id)[name]
+			d := e.decide(access.APIKey(admin.full), access.OnInstallation(master.RoleAdmin), name)
+			if confirmed {
+				var err error
+				if d, err = e.access.Confirm(e.ctx, d); err != nil {
+					t.Fatal(err)
+				}
+			}
+			e.reset()
+			if err := call(d); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			calls, _ := e.recorded()
+			expect := want[name]
+			if confirmed && name != "GetKey" && name != "ListKeys" && name != "ListGrants" && name != "WhoAmI" {
+				expect = expect[1:]
+			}
+			if strings.Join(calls, ",") != strings.Join(expect, ",") {
+				t.Errorf("%s (confirmed %v) made the store calls %v, want %v", name, confirmed, calls, expect)
+			}
+		}
 	}
 }

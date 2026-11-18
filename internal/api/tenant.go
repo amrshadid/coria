@@ -30,7 +30,7 @@ var _ magnetarv1connect.TenantServiceHandler = tenantService{}
 // CreateTenant registers a tenant and makes its tables in its database.
 func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantRequest) (*v1.CreateTenantResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.TenantServiceCreateTenantProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.TenantServiceCreateTenantProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -74,45 +74,21 @@ func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantReq
 	// records. The request's entry is handed to the registry, which writes
 	// it once with its real outcome: done with the write that makes the
 	// tenant ready, failed with the undoing of a creation whose database
-	// could not be opened. It writes nothing for a creation it refuses
-	// before writing anything (a name taken, an address its driver refuses),
-	// and its error does not say which happened, so that case is found by
-	// looking for the entry, and only then recorded here.
+	// could not be opened. It says whether it wrote it, and writes nothing
+	// for a creation it refuses before writing anything (a name taken, an
+	// address its driver refuses, a key that may no longer act, which the
+	// master checks as it writes the row): the request is then recorded
+	// here.
 	entry := d.Entry(master.OutcomeDone, "", facts)
-	row, err := c.reg.Create(ctx, registry.NewTenant{ID: id, Name: name, Driver: drv, Address: address}, entry)
+	nt := registry.NewTenant{ID: id, Name: name, Driver: drv, Address: address}
+	row, recorded, err := c.reg.Create(ctx, nt, entry, d.Actor(master.Installation, master.RoleAdmin))
 	if err != nil {
-		if !c.written(ctx, entry) {
+		if !recorded {
 			return nil, c.failWith(d, nil, facts, err)
 		}
 		return nil, c.toAPI(d, err)
 	}
 	return &v1.CreateTenantResponse{Tenant: c.tenantView(row)}, nil
-}
-
-// written reports whether the master's log holds the entry e, by its id,
-// among the entries naming its tenant from its time on: a short read, made
-// only when a creation failed. A log that cannot be read is taken as not
-// holding it, so the failure is recorded rather than lost; at worst it is
-// recorded twice, under two ids.
-func (c *core) written(ctx context.Context, e master.AuditEntry) bool {
-	page := master.Page{Limit: master.MaxPageLimit}
-	filter := master.AuditFilter{TenantName: e.TenantName, Since: e.Time}
-	for range maxGrantPages {
-		entries, next, err := c.master.ListAudit(ctx, filter, page)
-		if err != nil {
-			return false
-		}
-		for _, got := range entries {
-			if got.ID == e.ID {
-				return true
-			}
-		}
-		if next == "" {
-			return false
-		}
-		page.Cursor = next
-	}
-	return false
 }
 
 // GetTenant answers one tenant, whatever its state: its registration from
@@ -250,7 +226,7 @@ func (c *core) grantedTenants(ctx context.Context, keyID string, page master.Pag
 // tenant's name is sent twice; the two must be equal.
 func (s tenantService) RemoveTenant(ctx context.Context, req *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.TenantServiceRemoveTenantProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.TenantServiceRemoveTenantProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -262,13 +238,14 @@ func (s tenantService) RemoveTenant(ctx context.Context, req *v1.RemoveTenantReq
 	if req.GetConfirmName() != name {
 		return nil, c.failWith(d, nil, facts, invalid("confirm_name", "must equal name exactly"))
 	}
-	removed, err := c.reg.Remove(ctx, name, d.Entry(master.OutcomeDone, "", facts))
+	removed, err := c.reg.Remove(ctx, name, d.Entry(master.OutcomeDone, "", facts), d.Actor(master.Installation, master.RoleAdmin))
 	if fault.KindOf(err) == fault.NotFound {
 		err = noTenant(d)
 	}
 	if err != nil {
 		// The removal and its entry are written together or not at all, so
-		// a failure left the entry unwritten and it is recorded here.
+		// a failure, a refusal of the key included, left the entry unwritten
+		// and it is recorded here.
 		return nil, c.failWith(d, nil, facts, err)
 	}
 	return &v1.RemoveTenantResponse{DatabaseType: databaseType(removed.Driver), DataLocation: removed.Location}, nil

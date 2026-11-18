@@ -84,7 +84,7 @@ func TestTenantPanicInWriteReleasesTheWriter(t *testing.T) {
 	}()
 	deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	if err := s.SetSetting(deadline, "after", "v", master.AuditEntry{ID: "a1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}); err != nil {
+	if err := s.SetSetting(deadline, "after", "v", master.AuditEntry{ID: "a1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}, nil); err != nil {
 		t.Fatalf("a write after a panic in a change: %v", err)
 	}
 	if _, err := s.Setting(ctx, "half"); fault.KindOf(err) != fault.NotFound {
@@ -238,7 +238,7 @@ func TestTenantRefusesMasterCursors(t *testing.T) {
 	s := openTenantTest(t, "t1")
 	for _, n := range []string{"s0", "s1", "s2"} {
 		a := master.AuditEntry{ID: "a-" + n, Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}
-		if err := m.SetSetting(ctx, n, "v", a); err != nil {
+		if err := m.SetSetting(ctx, n, "v", a, master.LocalOperator()); err != nil {
 			t.Fatal(err)
 		}
 	}

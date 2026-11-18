@@ -159,7 +159,7 @@ func writeIdentity(ctx context.Context, m master.Store, dir string, keys *secret
 		ID: server.NewID(), Time: time.Now().UTC(), Method: "magnetar init", Object: server.InstallationIDSetting,
 		Outcome: master.OutcomeDone, Reason: "the installation's identity, which serve checks against the data directory",
 	}
-	if err := m.SetSetting(ctx, server.InstallationIDSetting, id, audit); err != nil {
+	if err := m.SetSetting(ctx, server.InstallationIDSetting, id, audit, master.Server()); err != nil {
 		return err
 	}
 	check, err := server.SealKeyCheck(keys, id)
@@ -170,7 +170,7 @@ func writeIdentity(ctx context.Context, m master.Store, dir string, keys *secret
 		ID: server.NewID(), Time: time.Now().UTC(), Method: "magnetar init", Object: server.KeyCheckSetting,
 		Outcome: master.OutcomeDone, Reason: "the key check, which serve opens with its key file before it starts",
 	}
-	if err := m.SetSetting(ctx, server.KeyCheckSetting, check, audit); err != nil {
+	if err := m.SetSetting(ctx, server.KeyCheckSetting, check, audit, master.Server()); err != nil {
 		return err
 	}
 	return server.WriteInstallationID(dir, id)

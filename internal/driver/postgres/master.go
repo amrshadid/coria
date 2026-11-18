@@ -76,13 +76,19 @@ func (m *Master) Setting(ctx context.Context, name string) (string, error) {
 }
 
 // SetSetting implements master.Store.
-func (m *Master) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry) error {
-	return setSetting(ctx, &m.base, name, value, audit)
+func (m *Master) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry, by master.Actor) error {
+	if err := by.Validate(); err != nil {
+		return err
+	}
+	return setSetting(ctx, &m.base, name, value, audit, actorCheck(by))
 }
 
 // UnsetSetting implements master.Store.
-func (m *Master) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry) (bool, error) {
-	return unsetSetting(ctx, &m.base, name, audit)
+func (m *Master) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry, by master.Actor) (bool, error) {
+	if err := by.Validate(); err != nil {
+		return false, err
+	}
+	return unsetSetting(ctx, &m.base, name, audit, actorCheck(by))
 }
 
 // ListSettings implements master.Store.
@@ -130,14 +136,20 @@ func scanTenant(row scanner) (master.Tenant, error) {
 }
 
 // CreateTenant implements master.Store.
-func (m *Master) CreateTenant(ctx context.Context, t master.Tenant, audit master.AuditEntry) error {
+func (m *Master) CreateTenant(ctx context.Context, t master.Tenant, audit master.AuditEntry, by master.Actor) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
 	if err := audit.Validate(); err != nil {
 		return err
 	}
+	if err := by.Validate(); err != nil {
+		return err
+	}
 	return m.write(ctx, "the tenant cannot be created", func(tx pgx.Tx) error {
+		if err := checkActor(ctx, tx, by, tenantLock{}); err != nil {
+			return err
+		}
 		// No look-up first: the unique constraints decide, so two creations
 		// racing in two processes cannot both succeed, and the constraint
 		// that failed says whether the name or the id was taken.
@@ -210,7 +222,7 @@ func (m *Master) ListTenants(ctx context.Context, page master.Page) ([]master.Te
 
 // SetTenantState implements master.Store. The old state is read under a row
 // lock and the new one written in one transaction.
-func (m *Master) SetTenantState(ctx context.Context, id string, state master.TenantState, reason string, audit master.AuditEntry) error {
+func (m *Master) SetTenantState(ctx context.Context, id string, state master.TenantState, reason string, audit master.AuditEntry, by master.Actor) error {
 	if err := master.ValidateID("tenant id", id); err != nil {
 		return err
 	}
@@ -220,12 +232,22 @@ func (m *Master) SetTenantState(ctx context.Context, id string, state master.Ten
 	if err := audit.ValidateWith(master.DetailOldState, master.DetailNewState); err != nil {
 		return err
 	}
+	if err := by.Validate(); err != nil {
+		return err
+	}
 	return m.write(ctx, "the tenant's state cannot be set", func(tx pgx.Tx) error {
+		if err := checkActor(ctx, tx, by, tenantLock{id: id, clause: lockNoKeyUpdate}); err != nil {
+			return err
+		}
 		// The row is locked as it is read, so the state in the audit entry
 		// is the one this call replaced even when another call changes the
-		// same tenant at once.
+		// same tenant at once. The state is not a key, so the lock is FOR NO
+		// KEY UPDATE, which an actor's check holding the tenant for key
+		// share (checkActor) does not wait for: two such changes of one
+		// tenant are ordered by this lock instead of each waiting for the
+		// other's share.
 		var old string
-		if err := tx.QueryRow(ctx, `SELECT state FROM tenants WHERE id = $1 FOR UPDATE`, id).Scan(&old); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT state FROM tenants WHERE id = $1 `+lockNoKeyUpdate, id).Scan(&old); err != nil {
 			return notFoundIn(err, "no such tenant")
 		}
 		tag, err := tx.Exec(ctx, `UPDATE tenants SET state = $1, state_reason = $2 WHERE id = $3`, string(state), reason, id)
@@ -237,21 +259,27 @@ func (m *Master) SetTenantState(ctx context.Context, id string, state master.Ten
 }
 
 // RemoveTenant implements master.Store.
-func (m *Master) RemoveTenant(ctx context.Context, id string, audit master.AuditEntry) error {
+func (m *Master) RemoveTenant(ctx context.Context, id string, audit master.AuditEntry, by master.Actor) error {
 	if err := master.ValidateID("tenant id", id); err != nil {
 		return err
 	}
 	if err := audit.Validate(); err != nil {
 		return err
 	}
+	if err := by.Validate(); err != nil {
+		return err
+	}
 	return m.write(ctx, "the tenant cannot be removed", func(tx pgx.Tx) error {
+		if err := checkActor(ctx, tx, by, tenantLock{id: id, clause: lockUpdate}); err != nil {
+			return err
+		}
 		// The tenant's row is locked first. A SetGrant on this tenant holds
 		// a share lock on it until it commits, so this waits for that grant
 		// to exist and then removes it with the others; one that starts
 		// after this finds no tenant. Without the lock a grant added between
 		// the two deletes would make the second fail on the foreign key.
 		var one int
-		if err := tx.QueryRow(ctx, `SELECT 1 FROM tenants WHERE id = $1 FOR UPDATE`, id).Scan(&one); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT 1 FROM tenants WHERE id = $1 `+lockUpdate, id).Scan(&one); err != nil {
 			return notFoundIn(err, "no such tenant")
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM grants WHERE scope = $1`, id); err != nil {
@@ -283,14 +311,20 @@ func scanKey(row scanner) (master.Key, error) {
 }
 
 // CreateKey implements master.Store.
-func (m *Master) CreateKey(ctx context.Context, k master.Key, audit master.AuditEntry) error {
+func (m *Master) CreateKey(ctx context.Context, k master.Key, audit master.AuditEntry, by master.Actor) error {
 	if err := k.Validate(); err != nil {
 		return err
 	}
 	if err := audit.Validate(); err != nil {
 		return err
 	}
+	if err := by.Validate(); err != nil {
+		return err
+	}
 	return m.write(ctx, "the key cannot be created", func(tx pgx.Tx) error {
+		if err := checkActor(ctx, tx, by, tenantLock{}); err != nil {
+			return err
+		}
 		_, err := tx.Exec(ctx, `INSERT INTO api_keys (id, hash, holder, created, expires) VALUES ($1, $2, $3, $4, $5)`,
 			k.ID, k.Hash, k.Holder, micros(k.Created), nullMicros(k.Expires))
 		if isUniqueViolation(err) {
@@ -377,7 +411,7 @@ func (m *Master) MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool
 // this call revoked the key or found it revoked, and a SetGrant racing this
 // call is ordered with it: it either finishes before the revocation or finds
 // the key revoked.
-func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry) (time.Time, error) {
+func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry, by master.Actor) (time.Time, error) {
 	if err := master.ValidateID("key id", id); err != nil {
 		return time.Time{}, err
 	}
@@ -387,8 +421,17 @@ func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit m
 	if err := audit.ValidateWith(master.DetailAlreadyRevoked); err != nil {
 		return time.Time{}, err
 	}
+	if err := by.Validate(); err != nil {
+		return time.Time{}, err
+	}
 	var revoked time.Time
 	err := m.write(ctx, "the key cannot be revoked", func(tx pgx.Tx) error {
+		if err := lockKeys(ctx, tx, by, id); err != nil {
+			return err
+		}
+		if err := checkActor(ctx, tx, by, tenantLock{}); err != nil {
+			return err
+		}
 		var before *time.Time
 		if err := tx.QueryRow(ctx, `SELECT revoked FROM api_keys WHERE id = $1 FOR NO KEY UPDATE`, id).Scan(&before); err != nil {
 			return notFoundIn(err, "no such key")
@@ -418,15 +461,24 @@ func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit m
 // there was and writes the new one, sees what the other left even under read
 // committed. Without the lock two sets of a grant that does not exist yet
 // would both read "none". The key's lock also answers whether it exists.
-func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.AuditEntry) (master.Role, error) {
+func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.AuditEntry, by master.Actor) (master.Role, error) {
 	if err := g.Validate(); err != nil {
 		return "", err
 	}
 	if err := audit.ValidateRoleChange(); err != nil {
 		return "", err
 	}
+	if err := by.Validate(); err != nil {
+		return "", err
+	}
 	var previous master.Role
 	err := m.write(ctx, "the grant cannot be set", func(tx pgx.Tx) error {
+		if err := lockKeys(ctx, tx, by, g.KeyID); err != nil {
+			return err
+		}
+		if err := checkActor(ctx, tx, by, tenantLock{id: g.Scope.TenantID, clause: lockKeyShare}); err != nil {
+			return err
+		}
 		revoked, err := lockGrantTargets(ctx, tx, g.KeyID, g.Scope)
 		if err != nil {
 			return err
@@ -473,7 +525,7 @@ func lockGrantTargets(ctx context.Context, tx pgx.Tx, keyID string, scope master
 	}
 	if !scope.IsInstallation() {
 		var one int
-		if err := tx.QueryRow(ctx, `SELECT 1 FROM tenants WHERE id = $1 FOR KEY SHARE`, scope.TenantID).Scan(&one); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT 1 FROM tenants WHERE id = $1 `+lockKeyShare, scope.TenantID).Scan(&one); err != nil {
 			return false, notFoundIn(err, "no such tenant")
 		}
 	}
@@ -619,7 +671,7 @@ const rolesForSQL = `SELECT t.id,
 // one DELETE ... RETURNING then removes the grant and gives that role. A
 // key or a tenant that does not exist is NotFound; a grant that does not
 // exist, on a key and a tenant that do, is success.
-func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Scope, audit master.AuditEntry) (master.Role, error) {
+func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Scope, audit master.AuditEntry, by master.Actor) (master.Role, error) {
 	if err := master.ValidateID("key id", keyID); err != nil {
 		return "", err
 	}
@@ -629,8 +681,17 @@ func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Sco
 	if err := audit.ValidateRoleChange(); err != nil {
 		return "", err
 	}
+	if err := by.Validate(); err != nil {
+		return "", err
+	}
 	var previous master.Role
 	err := m.write(ctx, "the grant cannot be removed", func(tx pgx.Tx) error {
+		if err := lockKeys(ctx, tx, by, keyID); err != nil {
+			return err
+		}
+		if err := checkActor(ctx, tx, by, tenantLock{id: scope.TenantID, clause: lockKeyShare}); err != nil {
+			return err
+		}
 		if _, err := lockGrantTargets(ctx, tx, keyID, scope); err != nil {
 			return err
 		}
@@ -646,6 +707,164 @@ func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Sco
 		return "", err
 	}
 	return previous, nil
+}
+
+// --- Actors ---
+
+// actorSQL is the check of a change's actor (master.Actor): the key's revoked
+// time and expiry, and its role on the actor's scope, NULL when it holds no
+// grant there; no row when the key does not exist. Two point lookups: the
+// keys' primary key and the grants' primary key at (key, scope).
+const actorSQL = `SELECT k.revoked, k.expires,
+	(SELECT role FROM grants WHERE key_id = $1 AND scope = $2)
+	FROM api_keys AS k WHERE k.id = $1`
+
+// CheckActor implements master.Store with actorSQL, locking nothing. An
+// actor that is not a key reads nothing.
+func (m *Master) CheckActor(ctx context.Context, by master.Actor) error {
+	if err := by.Validate(); err != nil {
+		return err
+	}
+	if err := m.open(); err != nil {
+		return err
+	}
+	if !by.IsKey() {
+		return nil
+	}
+	found, revoked, expires, role, err := readActor(ctx, m.pool, actorSQL, by)
+	if err != nil {
+		return m.fail(ctx, err, "the acting key cannot be read")
+	}
+	return by.Judge(found, revoked, expires, role)
+}
+
+// actorCheck returns checkActor for the shared settings operations to run
+// last in their transaction, before the commit. A setting's change locks no
+// tenant.
+func actorCheck(by master.Actor) func(context.Context, pgx.Tx) error {
+	return func(ctx context.Context, tx pgx.Tx) error { return checkActor(ctx, tx, by, tenantLock{}) }
+}
+
+// The row locks a change takes on a tenant's row, from the weakest. Each
+// change takes the one it needs the first time its transaction touches the
+// row, so no transaction holds a weaker lock on a row and then asks for a
+// stronger one, which two transactions doing at once would deadlock on.
+const (
+	// lockKeyShare keeps the row and its key: what a grant on the tenant,
+	// and the check of a role on it, need (RemoveTenant waits for it).
+	lockKeyShare = "FOR KEY SHARE"
+	// lockNoKeyUpdate is what a change of the row's state needs; it does not
+	// wait for key share, so it does not wait for grants being set.
+	lockNoKeyUpdate = "FOR NO KEY UPDATE"
+	// lockUpdate is what removing the row needs.
+	lockUpdate = "FOR UPDATE"
+)
+
+// tenantLock is the lock a change will take on one tenant's row: checkActor
+// takes that lock, not its own weaker one, when the actor's role is on that
+// tenant. The zero tenantLock is a change that locks no tenant.
+type tenantLock struct {
+	id     string
+	clause string
+}
+
+// checkActor checks by inside a change's transaction. A change that can meet
+// NotFound or Conflict runs it before it reads or writes anything else, so a
+// refused actor learns nothing of what it named; a setting's change, which
+// can meet neither, runs it last.
+//
+// It locks first and reads after, in a statement of its own. Under read
+// committed each statement sees what was committed when it began, and a
+// locking statement that waited re-reads only the row it locked, and only if
+// that row changed: SetGrant and RemoveGrant lock the key's row without
+// changing it, so a grant read in the statement that locked the key would be
+// the grant as it was before the change the lock waited for. Read after the
+// locks are held, the key and its grant are what was committed before them,
+// and the locks keep them so until the commit:
+//
+//   - the key's row is held for share, which RevokeKey, SetGrant and
+//     RemoveGrant (each locking it FOR NO KEY UPDATE first) wait for;
+//   - when the role is on a tenant, the tenant's row is held for key share,
+//     or for the stronger lock the change itself will take on that row
+//     (lock), which RemoveTenant, the one change that removes grants
+//     without locking their key, waits for. A tenant removed while this
+//     waited has no row, and so no grants.
+//
+// The key's expiry is judged after the read, at the time the actor's clock
+// gives then (master.Actor.Judge), so a change that waited for a lock past
+// the expiry is refused.
+func checkActor(ctx context.Context, tx pgx.Tx, by master.Actor, lock tenantLock) error {
+	if !by.IsKey() {
+		return nil
+	}
+	var one int
+	err := tx.QueryRow(ctx, `SELECT 1 FROM api_keys WHERE id = $1 FOR SHARE`, by.KeyID()).Scan(&one)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return by.Judge(false, time.Time{}, time.Time{}, "")
+	}
+	if err != nil {
+		return err
+	}
+	tenantGone := false
+	if scope := by.Scope(); !scope.IsInstallation() {
+		clause := lockKeyShare
+		if scope.TenantID == lock.id {
+			clause = lock.clause
+		}
+		err := tx.QueryRow(ctx, `SELECT 1 FROM tenants WHERE id = $1 `+clause, scope.TenantID).Scan(&one)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			tenantGone = true
+		case err != nil:
+			return err
+		}
+	}
+	found, revoked, expires, role, err := readActor(ctx, tx, actorSQL, by)
+	if err != nil {
+		return err
+	}
+	if tenantGone {
+		role = ""
+	}
+	return by.Judge(found, revoked, expires, role)
+}
+
+// rowQuerier is what a pool and a transaction share for a one-row query.
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// readActor runs query, actorSQL with or without its lock, for by's key.
+func readActor(ctx context.Context, q rowQuerier, query string, by master.Actor) (found bool, revoked, expires time.Time, role master.Role, err error) {
+	var rev, exp *time.Time
+	var r *string
+	err = q.QueryRow(ctx, query, by.KeyID(), by.Scope().TenantID).Scan(&rev, &exp, &r)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, time.Time{}, time.Time{}, "", nil
+	}
+	if err != nil {
+		return false, time.Time{}, time.Time{}, "", err
+	}
+	if r != nil {
+		role = master.Role(*r)
+	}
+	return true, fromNullMicros(rev), fromNullMicros(exp), role, nil
+}
+
+// lockKeys locks the acting key's row and the row of the key a change is
+// about, FOR NO KEY UPDATE, in the order of their ids, before checkActor and
+// the change take their own locks on them. Without it, a change by key A on
+// key B (locking A for share, then B) and one by B on A (B, then A) could each
+// hold what the other waits for; and two changes by A on A would each hold A
+// for share and wait for the other to let go of it. Locked in one order, in
+// one statement, the rows are taken one after the other by every such
+// change. An actor that is not a key locks nothing here.
+func lockKeys(ctx context.Context, tx pgx.Tx, by master.Actor, target string) error {
+	if !by.IsKey() {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `SELECT id FROM api_keys WHERE id = ANY($1) ORDER BY id FOR NO KEY UPDATE`, []string{by.KeyID(), target})
+	return err
 }
 
 // --- Settings ---

@@ -147,7 +147,8 @@ func (t *Tenant) shared(ctx context.Context) (*sharedStatements, error) {
 
 // writeShared runs fn in one write transaction (base.writeTx) with the
 // shared statements; a change and its audit entry are written both or
-// neither through here.
+// neither through here. fn may run more than once and must only assign its
+// results, as Master.write says.
 func (t *Tenant) writeShared(ctx context.Context, message string, fn func(tx *sql.Tx, s *sharedStatements) error) error {
 	s, err := t.shared(ctx)
 	if err != nil {
@@ -161,14 +162,25 @@ func (t *Tenant) Setting(ctx context.Context, name string) (string, error) {
 	return getSetting(ctx, t, t.lists, name)
 }
 
-// SetSetting implements tenant.Store.
-func (t *Tenant) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry) error {
-	return setSetting(ctx, t, name, value, audit)
+// SetSetting implements tenant.Store. The guard runs last in the
+// transaction, before the commit.
+func (t *Tenant) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry, guard tenant.Guard) error {
+	return setSetting(ctx, t, name, value, audit, guarded(guard))
 }
 
-// UnsetSetting implements tenant.Store.
-func (t *Tenant) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry) (bool, error) {
-	return unsetSetting(ctx, t, name, audit)
+// UnsetSetting implements tenant.Store. The guard runs last in the
+// transaction, before the commit.
+func (t *Tenant) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry, guard tenant.Guard) (bool, error) {
+	return unsetSetting(ctx, t, name, audit, guarded(guard))
+}
+
+// guarded returns a change's Guard as the last step of its transaction, or
+// nil for none.
+func guarded(guard tenant.Guard) func(context.Context, *sql.Tx) error {
+	if guard == nil {
+		return nil
+	}
+	return func(ctx context.Context, _ *sql.Tx) error { return guard(ctx) }
 }
 
 // ListSettings implements tenant.Store.

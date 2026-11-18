@@ -22,17 +22,11 @@
 // A Decision is for one request. The operations of this package that act
 // for a caller (CreateKey, GetKey, ListKeys, RevokeKey, SetGrant,
 // ListGrants, RemoveGrant, WhoAmI) take that Decision, not a credential, so
-// a request is checked once. Each refuses the zero Decision as Denied. For a
-// key, each reads the key again, and refuses it as Unauthenticated when it
-// was revoked or has expired since the check; each but WhoAmI also reads the
-// key's role on the installation again and refuses with Denied when it is
-// not admin. So a Decision kept past its request, or made for a lesser
-// requirement by a wrong entry in the server's table of methods, opens
-// nothing. The reads are made just before the change, not inside its
-// transaction, because the port's changes take no caller: a revocation in
-// the moment between the two is not seen by that one change. The master
-// port could close that window by taking the acting key's id in each change
-// and checking it in the transaction.
+// a request is checked once. Each refuses the zero Decision as Denied, and
+// each but WhoAmI refuses as Denied, reading nothing, a Decision whose
+// principal the check did not find admin on the installation, so one made
+// for a lesser requirement by a wrong entry in the server's table of methods
+// opens nothing.
 //
 // The checks run in the order the API contract states (access.proto, "The
 // order of checks"): the credential first, answered Unauthenticated when it
@@ -41,6 +35,33 @@
 // operator who mistypes a name is told so while a caller with no right to
 // know learns nothing. Validating the request itself comes after, in the
 // handler, or in this package for the operations it implements.
+//
+// # A key after its check
+//
+// A key revoked, expired, or stripped of its grant after its request was
+// checked makes no change, and a Decision kept past its request opens
+// nothing. Every change made for a key carries the key, with the role the
+// change needs on its scope, as the change's actor (Decision.Actor,
+// master.Actor), and the master checks it inside the change's transaction,
+// so the check and the change are one step, with no moment between them. When
+// the key may no longer act, nothing is written, and the caller is answered
+// exactly as Check answers such a key, Unauthenticated or Denied with the
+// same fixed message, and recorded as refused in the installation's log,
+// with the real cause and "since the check" (RefusedAtChange). This package
+// makes no read of its own for it: the one implementation of the check of a
+// key after Check is the master's, in each driver.
+//
+// Before anything else, a change (and the handler that makes it, through
+// Confirm) asks the master for the same check on its own
+// (master.Store.CheckActor), so the contract's order of checks holds for a
+// key that lapsed after Check: it is refused before it is told whether what
+// it names exists, or whether its request is valid, and the request is
+// recorded as refused. A read (GetKey, ListKeys, ListGrants, WhoAmI) has no
+// transaction to check in, so that first check is its only one. A change in a tenant's own database cannot
+// check the key in its transaction either, since the tenant's database holds
+// no keys: the API hands the tenant's store a Guard that asks the master, and
+// the store runs it last in its transaction, just before its commit (package
+// tenant). The window each leaves is stated under Known limits.
 //
 // # Refusals
 //
@@ -132,11 +153,14 @@
 //     0.3 microseconds sooner (about 4.5%) than one without a grant, because
 //     a tenant that exists is read from its row. A covering index on the
 //     tenants' name and id would close it, and is not worth a migration now.
-//   - A management function re-reads the caller's key and role just before
-//     the change, not inside its transaction, so a revocation in the moment
-//     between the two is not seen by that one change. Passing the acting key
-//     into the master port's changes, to check it in the transaction, is
-//     separate work for later.
+//   - A change in a tenant's own database checks its key by a read of the
+//     master made inside the tenant's transaction, just before the tenant's
+//     commit, not in a transaction the two databases share, which they do
+//     not have. A revocation that commits between that read and the
+//     tenant's commit, one commit of the tenant's database, is not seen by
+//     that one change. A change in the master has no such window.
+//   - A read checks its key once, before it reads, so a revocation that
+//     commits while the read runs is not seen by that one read.
 //   - Under a load the audit writer cannot keep up with, the entries of
 //     refusals and reads are dropped, counted and reported, not written.
 //

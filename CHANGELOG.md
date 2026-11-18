@@ -396,6 +396,27 @@ All notable changes to Magnetar are written here. The form is
 
 ### Changed
 
+- Each change through the SQLite drivers, the master's and a tenant's, was a
+  transaction of its own with a sync of its own, so a SQLite-backed server
+  made at most a few hundred changes a second however many callers waited,
+  and they queued one behind another (about 185 a second with 1, 8, 64 or
+  256 callers, each change a setting with its audit entry). Changes waiting at
+  the same moment are now written in one transaction and one sync, each in a
+  savepoint of its own, up to 256 at a time, with no timer: about 700 a second
+  with 8 callers, 4,300 with 64 and 14,500 with 256 on the same disk, while a
+  caller alone waits as long as before (about 5.4 ms). Each caller still gets
+  its own result, and every answer, success or failure, describes the
+  database as committed: a change that fails (a taken name, a taken audit
+  id) or panics fails alone and undoes nothing of the others; a caller is
+  answered only after the commit that holds its change, and so is a caller
+  refused because of a change before it in the same transaction, which runs
+  again if that transaction is undone instead; a caller whose context ends
+  while its change is queued is answered at once and the change is never
+  written, and one whose change has started learns whether it was written,
+  which is whole or not at all. A new test kills a
+  process making changes with SIGKILL and has the sqlite3 tool check the file:
+  integrity, every answered change there with its audit entry, none half
+  there. The ports do not change.
 - About 130 comment lines, a test file's name, a test failure's message and the
   comments of the shipped SQL migrations pointed at notes that are not in the
   repository, so a reader could not tell why the code was the way it was.
@@ -419,6 +440,33 @@ All notable changes to Magnetar are written here. The form is
   or failed with the detail `served=false`, under the method asked for when it has
   the shape of a protobuf method name within 256 bytes, and under `/` otherwise. An
   authenticated caller is told UNIMPLEMENTED, "no such method".
+- A key revoked, expired, or stripped of its grant after its request was
+  checked could still make that request's change: the management calls read
+  the key again just before the change, in a step of their own, and the
+  handlers of tenants and settings did not read it again at all. Every
+  change of the master now takes who makes it and checks the key inside its
+  own transaction, in each database driver, so a key that may no longer act
+  writes nothing, neither the change nor its audit entry. The answer is the
+  one the access check gives such a key, `UNAUTHENTICATED` or
+  `PERMISSION_DENIED` with the same message, and the request is recorded as
+  refused in the installation's log with the real cause ("key revoked since
+  the check"). A change in a tenant's own database, which holds no keys,
+  asks the master for the same check from inside the tenant's transaction,
+  just before its commit; a revocation that commits in that one commit's
+  time is not seen by that change. The key's expiry is judged at the time
+  the server's clock gives inside the transaction, after its locks are held,
+  so a change that waited for a lock past the expiry is refused. A handler
+  that changes something checks the key first, before it validates the
+  request or reads what it names, so such a key is never told whether a key
+  or a tenant exists, a name is taken, or an argument is wrong. Reads check
+  the key once before they read. On Postgres the check locks the key's row,
+  and a tenant's row with the lock the change itself needs, and reads the key
+  and its grant after, in a statement of its own, so a grant removed while
+  the change waited for its lock is seen; a change of keys or grants by a key
+  locks both keys' rows in the order of their ids, so two such changes are
+  ordered rather than deadlocked. Creating a tenant no longer reads the audit
+  log to learn whether its request was recorded: the registry says so.
+
 - `serve` started with a key file other than the installation's ran: every
   tenant then failed with "the database address did not open with this key
   file", SQLite tenants included, and a tenant created in that state would

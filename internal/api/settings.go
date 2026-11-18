@@ -10,6 +10,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
 // messageNoSetting answers a name that is not in the list of settings the
@@ -137,10 +138,13 @@ func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingReque
 
 // SetSetting sets the installation's value of a setting or a tenant's
 // override of it, with its audit entry in the same transaction. The entry
-// holds the setting's name and scope, never its value.
+// holds the setting's name and scope, never its value. The caller's key is
+// checked again as the change is made: in the master's transaction for the
+// installation, and for a tenant, whose database holds no keys, by the
+// master from inside the tenant's transaction (adminGuard).
 func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingRequest) (*v1.SetSettingResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.SettingsServiceSetSettingProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.SettingsServiceSetSettingProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -175,12 +179,12 @@ func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingReque
 	}
 	entry := d.Entry(master.OutcomeDone, "", access.Facts{})
 	if st == nil {
-		if err := c.master.SetSetting(ctx, name, value, entry); err != nil {
+		if err := c.master.SetSetting(ctx, name, value, entry, d.Actor(master.Installation, master.RoleAdmin)); err != nil {
 			return nil, c.fail(d, err)
 		}
 		return &v1.SetSettingResponse{Setting: settingMessage(name, scope, value, v1.SettingSource_SETTING_SOURCE_INSTALLATION)}, nil
 	}
-	if err := st.SetSetting(ctx, name, value, entry); err != nil {
+	if err := st.SetSetting(ctx, name, value, entry, c.adminGuard(d)); err != nil {
 		return nil, c.failIn(d, st, err)
 	}
 	return &v1.SetSettingResponse{Setting: settingMessage(name, scope, value, v1.SettingSource_SETTING_SOURCE_TENANT)}, nil
@@ -192,7 +196,7 @@ func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingReque
 // succeeds.
 func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.SettingsServiceUnsetSettingProcedure)
+	d, err := c.changing(ctx, magnetarv1connect.SettingsServiceUnsetSettingProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -217,12 +221,12 @@ func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingR
 	}
 	entry := d.Entry(master.OutcomeDone, "", access.Facts{})
 	if st == nil {
-		if _, err := c.master.UnsetSetting(ctx, name, entry); err != nil {
+		if _, err := c.master.UnsetSetting(ctx, name, entry, d.Actor(master.Installation, master.RoleAdmin)); err != nil {
 			return nil, c.fail(d, err)
 		}
 		return &v1.UnsetSettingResponse{Setting: settingMessage(name, scope, def.Default, v1.SettingSource_SETTING_SOURCE_BUILT_IN)}, nil
 	}
-	if _, err := st.UnsetSetting(ctx, name, entry); err != nil {
+	if _, err := st.UnsetSetting(ctx, name, entry, c.adminGuard(d)); err != nil {
 		return nil, c.failIn(d, st, err)
 	}
 	// The override is gone and its entry written; what applies now is read
@@ -233,6 +237,22 @@ func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingR
 		return nil, c.toAPI(d, err)
 	}
 	return &v1.UnsetSettingResponse{Setting: settingMessage(name, access.InstallationScope, v, source)}, nil
+}
+
+// adminGuard returns the check a change in the tenant d names makes of its
+// caller (tenant.Guard): the master's check that d's key still holds admin on
+// that tenant, the one each change of the master makes in its own
+// transaction (master.Store.CheckActor). The tenant's store runs it last in
+// its transaction, before the commit; the tenant's database holds no keys,
+// so the check reads another database, and a revocation in the moment
+// between that read and the tenant's commit is not seen by that one change
+// (package tenant's documentation). A refusal comes back from the change
+// with a master.Refusal in its chain, and failWith answers and records it as
+// the check would.
+func (c *core) adminGuard(d access.Decision) tenant.Guard {
+	ref, _ := d.Tenant()
+	by := d.Actor(master.TenantScope(ref.ID), master.RoleAdmin)
+	return func(ctx context.Context) error { return c.master.CheckActor(ctx, by) }
 }
 
 // ListSettings answers a page of settings, ordered by name: on the

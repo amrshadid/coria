@@ -75,7 +75,7 @@ func TestCreationAuditedByHowItEnded(t *testing.T) {
 			r := e.newRegistry(e.config())
 			e.flaky.set(c.name, c.mode)
 			audit := e.audit("CreateTenant")
-			_, err := r.Create(ctx, NewTenant{ID: "id-" + c.name, Name: c.name, Driver: flakyDriver, Address: flakyAddress(c.name)}, audit)
+			_, _, err := r.Create(ctx, NewTenant{ID: "id-" + c.name, Name: c.name, Driver: flakyDriver, Address: flakyAddress(c.name)}, audit, master.LocalOperator())
 			if (err == nil) != (c.mode == up) {
 				t.Fatalf("Create = %v", err)
 			}
@@ -96,7 +96,7 @@ func TestCreationAuditedByHowItEnded(t *testing.T) {
 		crashed := e.newRegistry(e.config())
 		crashed.afterRow = func() error { return errors.New("crash") }
 		audit := e.audit("CreateTenant")
-		if _, err := crashed.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}, audit); err == nil {
+		if _, _, err := crashed.Create(ctx, NewTenant{ID: "id-lab", Name: "lab", Driver: driver.SQLiteDriver}, audit, master.LocalOperator()); err == nil {
 			t.Fatal("the crash did not stop Create")
 		}
 		if err := crashed.Close(ctx); err != nil {
@@ -123,7 +123,7 @@ func TestCreationAuditedByHowItEnded(t *testing.T) {
 		first, again := e.audit("CreateTenant"), e.audit("CreateTenant")
 		nt := NewTenant{ID: "id-lab", Name: "lab", Driver: flakyDriver, Address: flakyAddress("lab")}
 		for _, a := range []master.AuditEntry{first, again} {
-			if _, err := r.Create(ctx, nt, a); err != nil {
+			if _, _, err := r.Create(ctx, nt, a, master.LocalOperator()); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -145,7 +145,7 @@ func TestFailedCreationReasonIsSafe(t *testing.T) {
 	r := e.newRegistry(e.config())
 	e.flaky.set("down", down)
 	audit := e.audit("CreateTenant")
-	if _, err := r.Create(ctx, NewTenant{ID: "id-down", Name: "down", Driver: flakyDriver, Address: flakyAddress("down")}, audit); err == nil {
+	if _, _, err := r.Create(ctx, NewTenant{ID: "id-down", Name: "down", Driver: flakyDriver, Address: flakyAddress("down")}, audit, master.LocalOperator()); err == nil {
 		t.Fatal("Create succeeded")
 	}
 	all, _, err := e.master.ListAudit(ctx, master.AuditFilter{}, master.Page{Limit: master.MaxPageLimit})

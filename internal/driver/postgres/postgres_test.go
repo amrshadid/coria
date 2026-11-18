@@ -136,7 +136,7 @@ func TestLeastPrivilege(t *testing.T) {
 	}
 	key := master.Key{ID: "LeastPriv001", Hash: make([]byte, 32), Holder: "least", Created: mastertest.T0}
 	audit := master.AuditEntry{ID: "lp-1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}
-	if err := m.CreateKey(ctx, key, audit); err != nil {
+	if err := m.CreateKey(ctx, key, audit, master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Key(ctx, key.ID); err != nil {
@@ -174,13 +174,13 @@ func TestPoolIsNotLeaked(t *testing.T) {
 	key := master.Key{ID: "LeakKey0001", Hash: make([]byte, 32), Holder: "leak", Created: mastertest.T0}
 	n := 0
 	next := func() master.AuditEntry { n++; return audit(n) }
-	if err := m.CreateKey(ctx, key, next()); err != nil {
+	if err := m.CreateKey(ctx, key, next(), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
-	_ = m.CreateKey(ctx, key, next())                                          // Conflict.
-	_, _ = m.Key(ctx, "nope")                                                  // NotFound.
-	_, _ = m.Key(ctx, "a/b")                                                   // Invalid.
-	_, _ = m.SetGrant(ctx, master.Grant{KeyID: "nope", Role: "admin"}, next()) // NotFound inside a transaction.
+	_ = m.CreateKey(ctx, key, next(), master.LocalOperator())                                          // Conflict.
+	_, _ = m.Key(ctx, "nope")                                                                          // NotFound.
+	_, _ = m.Key(ctx, "a/b")                                                                           // Invalid.
+	_, _ = m.SetGrant(ctx, master.Grant{KeyID: "nope", Role: "admin"}, next(), master.LocalOperator()) // NotFound inside a transaction.
 	_ = m.AppendAudit(ctx, next(), next())
 	_, _, _ = m.ListAudit(ctx, master.AuditFilter{}, master.Page{Limit: 1})
 	canceled, cancel := context.WithCancel(ctx)
@@ -188,7 +188,7 @@ func TestPoolIsNotLeaked(t *testing.T) {
 	if _, err := m.Key(canceled, key.ID); fault.KindOf(err) != fault.Unavailable {
 		t.Errorf("Key with a canceled context = %v, want Unavailable", err)
 	}
-	if err := m.CreateKey(canceled, master.Key{ID: "LeakKey0002", Hash: make([]byte, 32), Holder: "x", Created: mastertest.T0}, next()); fault.KindOf(err) != fault.Unavailable {
+	if err := m.CreateKey(canceled, master.Key{ID: "LeakKey0002", Hash: make([]byte, 32), Holder: "x", Created: mastertest.T0}, next(), master.LocalOperator()); fault.KindOf(err) != fault.Unavailable {
 		t.Errorf("CreateKey with a canceled context = %v, want Unavailable", err)
 	}
 	var wg sync.WaitGroup
@@ -243,7 +243,7 @@ func TestContextDeadline(t *testing.T) {
 	dctx, cancel := context.WithTimeout(ctx, 400*time.Millisecond)
 	defer cancel()
 	began := time.Now()
-	err = m.SetSetting(dctx, "api.limit", "1", audit("deadline-1"))
+	err = m.SetSetting(dctx, "api.limit", "1", audit("deadline-1"), master.LocalOperator())
 	elapsed := time.Since(began)
 	if fault.KindOf(err) != fault.Unavailable || !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("SetSetting past its deadline = %v, want Unavailable with the deadline in the chain", err)
@@ -257,7 +257,7 @@ func TestContextDeadline(t *testing.T) {
 	if err := tx.Rollback(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SetSetting(ctx, "api.limit", "1", audit("deadline-2")); err != nil {
+	if err := m.SetSetting(ctx, "api.limit", "1", audit("deadline-2"), master.LocalOperator()); err != nil {
 		t.Errorf("SetSetting after the lock was let go: %v", err)
 	}
 	// The failed attempt's audit entry was not written, nor its change.
@@ -278,7 +278,7 @@ func TestTimesAtTheEdges(t *testing.T) {
 	first := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
 	last := time.Date(9999, 12, 31, 23, 59, 59, 999999000, time.UTC)
 	k := master.Key{ID: "EdgeKey0001", Hash: make([]byte, 32), Holder: "edge", Created: first, Expires: last}
-	if err := m.CreateKey(ctx, k, master.AuditEntry{ID: "edge-1", Time: last, Method: "Test", Outcome: master.OutcomeDone}); err != nil {
+	if err := m.CreateKey(ctx, k, master.AuditEntry{ID: "edge-1", Time: last, Method: "Test", Outcome: master.OutcomeDone}, master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	got, err := m.Key(ctx, k.ID)
@@ -307,7 +307,7 @@ func TestStatementCache(t *testing.T) {
 		t.Errorf("query exec mode = %v, want cache_statement", mode)
 	}
 	k := master.Key{ID: "CacheKey001", Hash: make([]byte, 32), Holder: "cache", Created: mastertest.T0}
-	if err := m.CreateKey(ctx, k, master.AuditEntry{ID: "cache-1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}); err != nil {
+	if err := m.CreateKey(ctx, k, master.AuditEntry{ID: "cache-1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}, master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	conn, err := m.pool.Acquire(ctx)
@@ -489,21 +489,21 @@ func TestCollationDoesNotChangeOrder(t *testing.T) {
 		return master.AuditEntry{ID: fmt.Sprintf("coll-%03d", n), Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}
 	}
 	for _, name := range names {
-		if err := m.CreateTenant(ctx, master.Tenant{ID: "t-" + name, Name: name, Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: mastertest.T0}, audit()); err != nil {
+		if err := m.CreateTenant(ctx, master.Tenant{ID: "t-" + name, Name: name, Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: mastertest.T0}, audit(), master.LocalOperator()); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, id := range ids {
-		if err := m.CreateKey(ctx, master.Key{ID: id, Hash: make([]byte, 32), Holder: "c", Created: mastertest.T0}, audit()); err != nil {
+		if err := m.CreateKey(ctx, master.Key{ID: id, Hash: make([]byte, 32), Holder: "c", Created: mastertest.T0}, audit(), master.LocalOperator()); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := m.SetGrant(ctx, master.Grant{KeyID: id, Scope: master.Installation, Role: master.RoleReader}, audit()); err != nil {
+		if _, err := m.SetGrant(ctx, master.Grant{KeyID: id, Scope: master.Installation, Role: master.RoleReader}, audit(), master.LocalOperator()); err != nil {
 			t.Fatal(err)
 		}
 	}
 	settings := []string{"a.b", "a_b", "a-b", "ab", "a1", "b"}
 	for _, s := range settings {
-		if err := m.SetSetting(ctx, s, "v", audit()); err != nil {
+		if err := m.SetSetting(ctx, s, "v", audit(), master.LocalOperator()); err != nil {
 			t.Fatal(err)
 		}
 	}

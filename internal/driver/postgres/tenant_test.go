@@ -162,7 +162,7 @@ func TestTwoTenantsOnOneDatabase(t *testing.T) {
 	}
 
 	// The first tenant is as it was, and a second instance of it is let in.
-	if err := a.SetSetting(ctx, "mine", "yes", audit("a-1")); err != nil {
+	if err := a.SetSetting(ctx, "mine", "yes", audit("a-1"), nil); err != nil {
 		t.Fatal(err)
 	}
 	again := openTenantAt(t, address, "tenant-a")
@@ -270,7 +270,7 @@ func TestTenantPoolIsNotLeaked(t *testing.T) {
 		n++
 		return master.AuditEntry{ID: fmt.Sprintf("leak-%04d", n), Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}
 	}
-	if err := s.SetSetting(ctx, "a", "1", next()); err != nil {
+	if err := s.SetSetting(ctx, "a", "1", next(), nil); err != nil {
 		t.Fatal(err)
 	}
 	dup := next()
@@ -281,7 +281,7 @@ func TestTenantPoolIsNotLeaked(t *testing.T) {
 	_, _ = s.Setting(ctx, "nope")
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	if err := s.SetSetting(canceled, "b", "1", next()); fault.KindOf(err) != fault.Unavailable {
+	if err := s.SetSetting(canceled, "b", "1", next(), nil); fault.KindOf(err) != fault.Unavailable {
 		t.Errorf("SetSetting with a canceled context = %v, want Unavailable", err)
 	}
 	var wg sync.WaitGroup
@@ -366,7 +366,7 @@ func TestTenantRefusesMasterCursors(t *testing.T) {
 	s := openTenantTest(t, "t1")
 	for _, n := range []string{"s0", "s1", "s2"} {
 		a := master.AuditEntry{ID: "a-" + n, Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}
-		if err := m.SetSetting(ctx, n, "v", a); err != nil {
+		if err := m.SetSetting(ctx, n, "v", a, master.LocalOperator()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -407,7 +407,7 @@ func TestTenantLeastPrivilege(t *testing.T) {
 	u.User = url.UserPassword(role, password)
 	address := withParams(t, u.String(), map[string]string{"search_path": schema})
 	s := openTenantAt(t, address, "t1")
-	if err := s.SetSetting(ctx, "a", "1", master.AuditEntry{ID: "lp-1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}); err != nil {
+	if err := s.SetSetting(ctx, "a", "1", master.AuditEntry{ID: "lp-1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}, nil); err != nil {
 		t.Fatal(err)
 	}
 	var inPublic int
@@ -569,7 +569,7 @@ func TestTenantCollationDoesNotChangeOrder(t *testing.T) {
 	}
 	settings := []string{"a.b", "a_b", "a-b", "ab", "a1", "b", "a"}
 	for _, name := range settings {
-		if err := s.SetSetting(ctx, name, "v", audit()); err != nil {
+		if err := s.SetSetting(ctx, name, "v", audit(), nil); err != nil {
 			t.Fatal(err)
 		}
 	}

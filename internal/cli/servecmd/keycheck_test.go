@@ -202,7 +202,7 @@ func TestNoKeyCheckRefused(t *testing.T) {
 	}
 	if _, err := m.UnsetSetting(ctx, server.KeyCheckSetting, master.AuditEntry{
 		ID: server.NewID(), Time: time.Now().UTC(), Method: "test", Outcome: master.OutcomeDone,
-	}); err != nil {
+	}, master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Close(); err != nil {

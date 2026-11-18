@@ -46,6 +46,22 @@ type NewTenant struct {
 // tenant stays registered in the state the master has, the request's entry
 // is not written, and the error says so.
 //
+// by is who asks for the creation. The master checks it in the transaction
+// that writes the row (master.Store), so a key revoked, expired or stripped
+// of its role since the request was checked writes nothing, and Create
+// returns the master's refusal (master.RefusalOf finds it). Once the row is
+// written the creation is under way, and the writes that settle it (ready
+// with the request's entry, or the removal that undoes it) are the server's
+// own, as they are when a start finishes a creation a crash interrupted: a
+// revocation while the database is being opened does not leave a creation
+// half made. A repeat, which writes no row, has by checked in the state write
+// that records it ready, when there is one.
+//
+// It reports whether it wrote the request's entry, with whatever outcome, so
+// the caller records the request itself exactly when Create did not: a
+// creation refused or failing before anything was written, a refusal of by,
+// or an entry the master could not take.
+//
 // It is safe to repeat. Only a crash after the row is written leaves an
 // upgrading row and the started entry, and the next start finishes it with a
 // system entry naming the request that began it (DetailCreationRequest). A
@@ -55,27 +71,30 @@ type NewTenant struct {
 // there is nothing to write). A tenant of that name with another id, type or
 // address is Conflict. A repeat that cannot open the database records its
 // request as failed and leaves the row, which it did not write.
-func (r *Registry) Create(ctx context.Context, nt NewTenant, audit master.AuditEntry) (master.Tenant, error) {
+func (r *Registry) Create(ctx context.Context, nt NewTenant, audit master.AuditEntry, by master.Actor) (master.Tenant, bool, error) {
 	if err := r.enter(); err != nil {
-		return master.Tenant{}, err
+		return master.Tenant{}, false, err
 	}
 	defer r.wg.Done()
 	if err := master.ValidateID("tenant id", nt.ID); err != nil {
-		return master.Tenant{}, err
+		return master.Tenant{}, false, err
 	}
 	if err := master.ValidateTenantName(nt.Name); err != nil {
-		return master.Tenant{}, err
+		return master.Tenant{}, false, err
+	}
+	if err := by.Validate(); err != nil {
+		return master.Tenant{}, false, err
 	}
 	drv, ok := r.cfg.Drivers[nt.Driver]
 	if !ok {
-		return master.Tenant{}, fault.New(fault.Invalid, "this server has no driver for the database type "+nt.Driver)
+		return master.Tenant{}, false, fault.New(fault.Invalid, "this server has no driver for the database type "+nt.Driver)
 	}
 	// The address is checked by its driver before anything is written, so
 	// an address the driver refuses never leaves a row behind. The driver's
 	// error is replaced by a fixed message of its kind: whatever it says,
 	// it was handed the address.
 	if _, err := drv.Location(nt.Name, nt.Address); err != nil {
-		return master.Tenant{}, fault.New(fault.KindOf(err), "the database address is not one the database type "+nt.Driver+" takes")
+		return master.Tenant{}, false, fault.New(fault.KindOf(err), "the database address is not one the database type "+nt.Driver+" takes")
 	}
 	audit = withDetails(audit, map[string]string{DetailDatabaseType: nt.Driver})
 	audit.Outcome, audit.Reason = master.OutcomeDone, ""
@@ -86,33 +105,33 @@ func (r *Registry) Create(ctx context.Context, nt NewTenant, audit master.AuditE
 	// removal that add their details; it is checked now, at its largest, so
 	// nothing is written for an entry the master would refuse at the end.
 	if err := audit.ValidateWith(master.DetailOldState, master.DetailNewState, DetailUndone); err != nil {
-		return master.Tenant{}, err
+		return master.Tenant{}, false, err
 	}
 	r.listing.RLock()
 	defer r.listing.RUnlock()
 	defer r.names.lock(nt.Name)()
 
-	row, wrote, err := r.findOrWrite(ctx, nt, audit)
+	row, wrote, err := r.findOrWrite(ctx, nt, audit, by)
 	if err != nil {
-		return master.Tenant{}, err
+		return master.Tenant{}, false, err
 	}
 	if r.afterRow != nil {
 		if err := r.afterRow(); err != nil {
-			return master.Tenant{}, err
+			return master.Tenant{}, false, err
 		}
 	}
 
 	e := r.register(row)
 	if e == nil {
 		if r.closed.Load() {
-			return master.Tenant{}, fault.New(fault.Unavailable, "the server is shutting down")
+			return master.Tenant{}, false, fault.New(fault.Unavailable, "the server is shutting down")
 		}
-		return master.Tenant{}, fault.New(fault.Conflict, "a tenant named "+nt.Name+" is being replaced; try again")
+		return master.Tenant{}, false, fault.New(fault.Conflict, "a tenant named "+nt.Name+" is being replaced; try again")
 	}
 	e.op.Lock()
 	defer e.op.Unlock()
 	if e.removed {
-		return master.Tenant{}, fault.New(fault.NotFound, "the tenant was removed while it was being created")
+		return master.Tenant{}, false, fault.New(fault.NotFound, "the tenant was removed while it was being created")
 	}
 	// The state write that settles the creation is this call's, with the
 	// request's entry, so the open does not write one of its own.
@@ -123,15 +142,28 @@ func (r *Registry) Create(ctx context.Context, nt NewTenant, audit master.AuditE
 	e.holdWrite = false
 	v := e.view.Load()
 	if v.state == master.StateReady {
-		err := r.recordReady(ctx, e, audit)
+		// The row this call wrote was checked against by; the write that
+		// settles it is the server's. A repeat wrote no row, so its own
+		// state write is where by is checked.
+		settleBy := master.Server()
+		if !wrote {
+			settleBy = by
+		}
+		err := r.recordReady(ctx, e, audit, settleBy)
 		if err == nil {
 			row.State, row.StateReason = v.state, v.reason
-			return row, nil
+			return row, true, nil
 		}
 		if fault.KindOf(err) == fault.NotFound {
 			r.unregister(e)
 			r.retireLocked(e)
-			return master.Tenant{}, fault.New(fault.NotFound, "the tenant was removed while it was being created")
+			return master.Tenant{}, false, fault.New(fault.NotFound, "the tenant was removed while it was being created")
+		}
+		if _, refused := master.RefusalOf(err); refused {
+			// The repeat may no longer act: the request is the caller's to
+			// record. The master's state follows the view, as on any check.
+			r.settle(e, v.state, v.reason)
+			return master.Tenant{}, false, err
 		}
 		// The master did not record it ready: the creation did not settle,
 		// so it is undone as a failure.
@@ -148,17 +180,20 @@ func (r *Registry) Create(ctx context.Context, nt NewTenant, audit master.AuditE
 		// A repeat leaves the row it did not write; the master's state
 		// follows the view as on any check.
 		r.settle(e, v.state, v.reason)
+		recorded := true
 		if err := r.recordRequest(ctx, failed); err != nil {
+			recorded = false
 			r.log.Warn("a failed creation's request could not be recorded", "tenant", e.name,
 				"kind", fault.KindOf(err).String(), "message", fault.Message(err))
 		}
-		return master.Tenant{}, fault.New(kind, "the tenant's database cannot be used: "+v.reason)
+		return master.Tenant{}, recorded, fault.New(kind, "the tenant's database cannot be used: "+v.reason)
 	}
-	if err := r.undo(ctx, e, failed.WithDetails(DetailUndone, "true")); err != nil {
-		return master.Tenant{}, fault.New(kind, "the tenant was not created, and its row could not be removed ("+
+	recorded, err := r.undo(ctx, e, failed.WithDetails(DetailUndone, "true"))
+	if err != nil {
+		return master.Tenant{}, false, fault.New(kind, "the tenant was not created, and its row could not be removed ("+
 			fault.Message(err)+"); it is "+string(v.state)+": "+v.reason)
 	}
-	return master.Tenant{}, fault.New(kind, "the tenant was not created: "+v.reason)
+	return master.Tenant{}, recorded, fault.New(kind, "the tenant was not created: "+v.reason)
 }
 
 // findOrWrite returns the tenant nt names, and whether this call wrote its
@@ -168,8 +203,9 @@ func (r *Registry) Create(ctx context.Context, nt NewTenant, audit master.AuditE
 // exists with the same id, type and address is a repeat: its row is
 // returned. A row whose write returned an error but committed (the master
 // answered late) is found by reading the master again, so it is not left
-// behind unopened.
-func (r *Registry) findOrWrite(ctx context.Context, nt NewTenant, audit master.AuditEntry) (master.Tenant, bool, error) {
+// behind unopened. The row is written by by, whom the master checks in the
+// same transaction; a refusal is returned as it is.
+func (r *Registry) findOrWrite(ctx context.Context, nt NewTenant, audit master.AuditEntry, by master.Actor) (master.Tenant, bool, error) {
 	row, err := r.cfg.Master.TenantByName(ctx, nt.Name)
 	switch {
 	case err == nil:
@@ -206,9 +242,13 @@ func (r *Registry) findOrWrite(ctx context.Context, nt NewTenant, audit master.A
 			DetailRequestEntry: audit.ID,
 		},
 	}
-	werr := r.cfg.Master.CreateTenant(ctx, row, started)
+	werr := r.cfg.Master.CreateTenant(ctx, row, started, by)
 	if werr == nil {
 		return row, true, nil
+	}
+	if _, refused := master.RefusalOf(werr); refused {
+		// Refused before anything was written: there is no row to find.
+		return master.Tenant{}, false, werr
 	}
 	existing, rerr := r.cfg.Master.TenantByName(ctx, nt.Name)
 	if rerr != nil {
@@ -248,14 +288,14 @@ func (r *Registry) repeat(row master.Tenant, nt NewTenant) error {
 }
 
 // recordReady writes the tenant's state as ready with the request's entry,
-// in one master transaction, or, when the master already holds ready (a
-// repeat of a finished creation), records the request alone. The caller
+// by by, in one master transaction, or, when the master already holds ready
+// (a repeat of a finished creation), records the request alone. The caller
 // holds e.op.
-func (r *Registry) recordReady(ctx context.Context, e *entry, audit master.AuditEntry) error {
+func (r *Registry) recordReady(ctx context.Context, e *entry, audit master.AuditEntry, by master.Actor) error {
 	if e.written == master.StateReady && e.writtenReason == "" {
 		return r.recordRequest(ctx, audit)
 	}
-	if err := r.cfg.Master.SetTenantState(ctx, e.id, master.StateReady, "", audit); err != nil {
+	if err := r.cfg.Master.SetTenantState(ctx, e.id, master.StateReady, "", audit, by); err != nil {
 		return err
 	}
 	e.written, e.writtenReason, e.lastWrite = master.StateReady, "", r.cfg.Now()
@@ -275,26 +315,29 @@ func (r *Registry) recordRequest(ctx context.Context, audit master.AuditEntry) e
 
 // undo removes the row a failed creation wrote, in one master transaction
 // with the request's entry (outcome failed, the reason, the detail undone),
-// and retires the entry. A row already gone has its request recorded alone.
-// The caller holds e.op. On another error the entry stays registered, as the
+// as the server, and retires the entry. A row already gone has its request
+// recorded alone. It reports whether the request's entry was written. The
+// caller holds e.op. On another error the entry stays registered, as the
 // master still has its row.
-func (r *Registry) undo(ctx context.Context, e *entry, failed master.AuditEntry) error {
-	err := r.cfg.Master.RemoveTenant(ctx, e.id, failed)
+func (r *Registry) undo(ctx context.Context, e *entry, failed master.AuditEntry) (bool, error) {
+	recorded := true
+	err := r.cfg.Master.RemoveTenant(ctx, e.id, failed, master.Server())
 	switch {
 	case err == nil:
 	case fault.KindOf(err) == fault.NotFound:
 		if rerr := r.recordRequest(ctx, failed); rerr != nil {
+			recorded = false
 			r.log.Warn("a failed creation's request could not be recorded", "tenant", e.name,
 				"kind", fault.KindOf(rerr).String(), "message", fault.Message(rerr))
 		}
 	default:
 		r.log.Warn("a failed creation could not be undone", "tenant", e.name,
 			"kind", fault.KindOf(err).String(), "message", fault.Message(err))
-		return err
+		return false, err
 	}
 	r.unregister(e)
 	r.retireLocked(e)
-	return nil
+	return recorded, nil
 }
 
 // fitAuditReason cuts a text to the length an audit entry's reason may have.
@@ -312,13 +355,18 @@ func fitAuditReason(s string) string {
 // closed after the row is gone; a request holding it fails as Unavailable
 // from then on. When the master has no tenant of that name, which a removal
 // that committed and then failed leaves behind, any entry of that name is
-// unregistered and closed too, and the answer is NotFound.
-func (r *Registry) Remove(ctx context.Context, name string, audit master.AuditEntry) (Removed, error) {
+// unregistered and closed too, and the answer is NotFound. by is who asks for
+// the removal; the master checks it in the removal's transaction, and a
+// refusal removes nothing.
+func (r *Registry) Remove(ctx context.Context, name string, audit master.AuditEntry, by master.Actor) (Removed, error) {
 	if err := r.enter(); err != nil {
 		return Removed{}, err
 	}
 	defer r.wg.Done()
 	if err := master.ValidateTenantName(name); err != nil {
+		return Removed{}, err
+	}
+	if err := by.Validate(); err != nil {
 		return Removed{}, err
 	}
 	r.listing.RLock()
@@ -344,7 +392,7 @@ func (r *Registry) Remove(ctx context.Context, name string, audit master.AuditEn
 	if len(out.Location) <= master.MaxAuditDetailValueLength {
 		details[DetailLocation] = out.Location
 	}
-	if err := r.cfg.Master.RemoveTenant(ctx, row.ID, withDetails(audit, details)); err != nil {
+	if err := r.cfg.Master.RemoveTenant(ctx, row.ID, withDetails(audit, details), by); err != nil {
 		if fault.KindOf(err) == fault.NotFound {
 			r.retireName(name)
 		}

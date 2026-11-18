@@ -60,6 +60,8 @@ func Run(t *testing.T, open Open) {
 		{"Ties", testTies},
 		{"SizeBounds", testSizeBounds},
 		{"TenantsApart", testTenantsApart},
+		{"Guards", testGuards},
+		{"GuardRunsLast", testGuardRunsLast},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -173,12 +175,12 @@ func testSchema(e *env) {
 // instead of panicking, and that Close may be called again: the registry
 // closes a store that a request may still be holding.
 func testClosed(e *env) {
-	e.ok("SetSetting", e.s.SetSetting(e.ctx, "a", "b", e.audit()))
+	e.ok("SetSetting", e.s.SetSetting(e.ctx, "a", "b", e.audit(), nil))
 	e.ok("Close", e.s.Close())
 	e.ok("second Close", e.s.Close())
 	_, err := e.s.Setting(e.ctx, "a")
 	e.wantKind("Setting after Close", err, fault.Unavailable)
-	e.wantKind("SetSetting after Close", e.s.SetSetting(e.ctx, "a", "c", e.audit()), fault.Unavailable)
+	e.wantKind("SetSetting after Close", e.s.SetSetting(e.ctx, "a", "c", e.audit(), nil), fault.Unavailable)
 	e.wantKind("AppendAudit after Close", e.s.AppendAudit(e.ctx, e.audit()), fault.Unavailable)
 	_, _, err = e.s.ListAudit(e.ctx, master.AuditFilter{}, master.Page{Limit: 1})
 	e.wantKind("ListAudit after Close", err, fault.Unavailable)
@@ -193,7 +195,7 @@ func testSettings(e *env) {
 	_, err := e.s.Setting(e.ctx, "api.limit")
 	e.wantKind("Setting, unset", err, fault.NotFound)
 	set := e.audit()
-	e.ok("SetSetting", e.s.SetSetting(e.ctx, "api.limit", "4 MiB", set))
+	e.ok("SetSetting", e.s.SetSetting(e.ctx, "api.limit", "4 MiB", set, nil))
 	v, err := e.s.Setting(e.ctx, "api.limit")
 	if err != nil || v != "4 MiB" {
 		e.Errorf("Setting = %q, %v; want 4 MiB", v, err)
@@ -201,42 +203,42 @@ func testSettings(e *env) {
 	if !e.auditIDs()[set.ID] {
 		e.Error("SetSetting wrote no audit entry")
 	}
-	e.ok("SetSetting again", e.s.SetSetting(e.ctx, "api.limit", "", e.audit()))
+	e.ok("SetSetting again", e.s.SetSetting(e.ctx, "api.limit", "", e.audit(), nil))
 	v, err = e.s.Setting(e.ctx, "api.limit")
 	if err != nil || v != "" {
 		e.Errorf("Setting = %q, %v; want the empty value, which is a value", v, err)
 	}
 	big := strings.Repeat("v", master.MaxSettingValueLength-len("é")) + "é"
-	e.ok("SetSetting 64 KiB", e.s.SetSetting(e.ctx, "big", big, e.audit()))
+	e.ok("SetSetting 64 KiB", e.s.SetSetting(e.ctx, "big", big, e.audit(), nil))
 	v, err = e.s.Setting(e.ctx, "big")
 	if err != nil || v != big {
 		e.Errorf("a 64 KiB value read back with %d bytes, %v", len(v), err)
 	}
-	e.wantKind("SetSetting, value too big", e.s.SetSetting(e.ctx, "big", big+"x", e.audit()), fault.Invalid)
-	e.wantKind("SetSetting, value not UTF-8", e.s.SetSetting(e.ctx, "big", "\xc3", e.audit()), fault.Invalid)
-	e.wantKind("SetSetting, bad name", e.s.SetSetting(e.ctx, "API Limit", "x", e.audit()), fault.Invalid)
-	e.wantKind("SetSetting, long name", e.s.SetSetting(e.ctx, strings.Repeat("a", master.MaxSettingNameLength+1), "x", e.audit()), fault.Invalid)
+	e.wantKind("SetSetting, value too big", e.s.SetSetting(e.ctx, "big", big+"x", e.audit(), nil), fault.Invalid)
+	e.wantKind("SetSetting, value not UTF-8", e.s.SetSetting(e.ctx, "big", "\xc3", e.audit(), nil), fault.Invalid)
+	e.wantKind("SetSetting, bad name", e.s.SetSetting(e.ctx, "API Limit", "x", e.audit(), nil), fault.Invalid)
+	e.wantKind("SetSetting, long name", e.s.SetSetting(e.ctx, strings.Repeat("a", master.MaxSettingNameLength+1), "x", e.audit(), nil), fault.Invalid)
 	bad := e.audit()
 	bad.Outcome = "maybe"
-	e.wantKind("SetSetting, bad audit entry", e.s.SetSetting(e.ctx, "fine", "x", bad), fault.Invalid)
+	e.wantKind("SetSetting, bad audit entry", e.s.SetSetting(e.ctx, "fine", "x", bad, nil), fault.Invalid)
 	_, err = e.s.Setting(e.ctx, "Bad Name")
 	e.wantKind("Setting, bad name", err, fault.Invalid)
 
-	removed, err := e.s.UnsetSetting(e.ctx, "api.limit", e.audit())
+	removed, err := e.s.UnsetSetting(e.ctx, "api.limit", e.audit(), nil)
 	if err != nil || !removed {
 		e.Errorf("UnsetSetting = %v, %v; want true", removed, err)
 	}
 	_, err = e.s.Setting(e.ctx, "api.limit")
 	e.wantKind("Setting after UnsetSetting", err, fault.NotFound)
 	again := e.audit()
-	removed, err = e.s.UnsetSetting(e.ctx, "api.limit", again)
+	removed, err = e.s.UnsetSetting(e.ctx, "api.limit", again, nil)
 	if err != nil || removed {
 		e.Errorf("UnsetSetting of an unset name = %v, %v; want false and success", removed, err)
 	}
 	if !e.auditIDs()[again.ID] {
 		e.Error("unsetting an unset name wrote no audit entry; the request is still recorded")
 	}
-	_, err = e.s.UnsetSetting(e.ctx, "Bad Name", e.audit())
+	_, err = e.s.UnsetSetting(e.ctx, "Bad Name", e.audit(), nil)
 	e.wantKind("UnsetSetting, bad name", err, fault.Invalid)
 }
 
@@ -245,7 +247,7 @@ func testSettings(e *env) {
 // before the listing returned exactly once.
 func testSettingsListed(e *env) {
 	for i := range 30 {
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("m.%02d", i), "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("m.%02d", i), "v", e.audit(), nil))
 	}
 	before := map[string]bool{}
 	all, _, err := e.s.ListSettings(e.ctx, master.Page{Limit: master.MaxPageLimit})
@@ -273,8 +275,8 @@ func testSettingsListed(e *env) {
 			break
 		}
 		page.Cursor = next
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("a.%02d", n), "v", e.audit()))
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("z.%02d", n), "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("a.%02d", n), "v", e.audit(), nil))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("z.%02d", n), "v", e.audit(), nil))
 	}
 	for name := range before {
 		if seen[name] != 1 {
@@ -475,7 +477,7 @@ func testAuditPaging10000(e *env) {
 // and a cursor they did not make, as Invalid.
 func testPageLimits(e *env) {
 	for i := range 3 {
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("s%d", i), "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("s%d", i), "v", e.audit(), nil))
 	}
 	_, settingsCursor, err := e.s.ListSettings(e.ctx, master.Page{Limit: 1})
 	e.ok("ListSettings", err)
@@ -508,7 +510,7 @@ func testPageLimits(e *env) {
 func testBothOrNeither(e *env) {
 	taken := e.audit()
 	e.ok("AppendAudit", e.s.AppendAudit(e.ctx, taken))
-	e.ok("SetSetting", e.s.SetSetting(e.ctx, "kept", "old", e.audit()))
+	e.ok("SetSetting", e.s.SetSetting(e.ctx, "kept", "old", e.audit(), nil))
 	dup := func() master.AuditEntry {
 		a := e.audit()
 		a.ID = taken.ID
@@ -525,7 +527,7 @@ func testBothOrNeither(e *env) {
 			e.Errorf("%s with a failed audit entry: %d audit entries, want %d", op, n, before)
 		}
 	}
-	check("SetSetting (new)", e.s.SetSetting(e.ctx, "fresh", "v", dup()), func() string {
+	check("SetSetting (new)", e.s.SetSetting(e.ctx, "fresh", "v", dup(), nil), func() string {
 		if _, err := e.s.Setting(e.ctx, "fresh"); fault.KindOf(err) != fault.NotFound {
 			return fmt.Sprintf("the setting exists (%v)", err)
 		}
@@ -538,8 +540,8 @@ func testBothOrNeither(e *env) {
 		}
 		return ""
 	}
-	check("SetSetting (replace)", e.s.SetSetting(e.ctx, "kept", "new", dup()), kept)
-	_, err := e.s.UnsetSetting(e.ctx, "kept", dup())
+	check("SetSetting (replace)", e.s.SetSetting(e.ctx, "kept", "new", dup(), nil), kept)
+	_, err := e.s.UnsetSetting(e.ctx, "kept", dup(), nil)
 	check("UnsetSetting", err, kept)
 	first := e.audit()
 	check("AppendAudit (batch)", e.s.AppendAudit(e.ctx, first, dup()), func() string {
@@ -563,7 +565,7 @@ func testConcurrentChanges(e *env) {
 				name := fmt.Sprintf("w%d.s%02d", w, i)
 				a := e.audit()
 				a.Object = "setting/" + name
-				errs <- e.s.SetSetting(e.ctx, name, "v", a)
+				errs <- e.s.SetSetting(e.ctx, name, "v", a, nil)
 			}
 		})
 	}

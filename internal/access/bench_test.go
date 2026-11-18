@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -100,11 +101,34 @@ func BenchmarkCheckAndSyncedAudit(b *testing.B) {
 // that does nothing else, so most are dropped and counted.
 func BenchmarkCheckRefused(b *testing.B) {
 	e, k, need := benchEnv(b)
-	cred := access.APIKey("mgt_" + k.id + "_" + k.full[len("mgt_")+13:len(k.full)-1] + "1")
+	// The secret with its last character changed to another one, so the
+	// secret is wrong whatever that character was.
+	sec := k.full[len("mgt_")+13:]
+	last := "1"
+	if strings.HasSuffix(sec, last) {
+		last = "2"
+	}
+	cred := access.APIKey("mgt_" + k.id + "_" + sec[:len(sec)-1] + last)
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := e.access.Check(e.ctx, cred, need, facts("bench")); err == nil {
 			b.Fatal("a wrong secret was allowed")
+		}
+	}
+	reportAudit(b, e)
+}
+
+// BenchmarkCheckDenied measures the refusal of a good key without the role
+// the request needs (admin on lab, where it is writer): the other refusal a
+// flood can make, which reads the key and its roles before it refuses.
+func BenchmarkCheckDenied(b *testing.B) {
+	e, k, _ := benchEnv(b)
+	cred := access.APIKey(k.full)
+	need := access.OnTenant("lab", master.RoleAdmin)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := e.access.Check(e.ctx, cred, need, facts("bench")); err == nil {
+			b.Fatal("a key without the role was allowed")
 		}
 	}
 	reportAudit(b, e)

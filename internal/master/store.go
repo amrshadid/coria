@@ -18,6 +18,22 @@ import (
 // with AppendAudit. An audit entry whose id is taken fails with
 // ErrDuplicateAuditID in the chain, of kind Internal.
 //
+// Every method that changes the master, except MarkKeyUsed, also takes who
+// makes the change, an Actor, and checks it inside the change's transaction:
+// a key must exist, not be revoked, not have expired at the time its clock
+// gives inside the transaction, and hold the actor's role or more on the
+// actor's scope. When it does not, nothing is written, neither the change
+// nor its entry, and the call fails with a Refusal in the chain, of kind
+// Unauthenticated (the key is no good) or Denied (it lacks the role). A
+// change that could meet NotFound or Conflict checks its actor before it
+// reads or writes anything else, so a refused caller learns nothing about
+// what it named; SetSetting and UnsetSetting, which meet neither, check it
+// last, after their writes and before the commit. The check holds against
+// every change that would undo it until the transaction ends, so a
+// revocation, an expiry or a grant removed or lowered is ordered before the
+// change, which is then refused, or after it, never in between. The local
+// operator and the server are never refused. A zero Actor is Invalid.
+//
 // A call that returns an error has committed nothing. A context that ends
 // during a call, a call on a closed store, a database that is read-only, and
 // a file that is not a database of this type are Unavailable; the context's
@@ -48,7 +64,7 @@ type Store interface {
 	Close() error
 
 	// CreateTenant adds a tenant. A name or id already taken is Conflict.
-	CreateTenant(ctx context.Context, t Tenant, audit AuditEntry) error
+	CreateTenant(ctx context.Context, t Tenant, audit AuditEntry, by Actor) error
 	// Tenant returns the tenant with this id, or NotFound.
 	Tenant(ctx context.Context, id string) (Tenant, error)
 	// TenantByName returns the tenant with this name, or NotFound.
@@ -59,12 +75,12 @@ type Store interface {
 	// SetTenantState sets a tenant's state and its reason, or is NotFound.
 	// The audit entry's details get the state before and after, read inside
 	// the change (AuditEntry.WithStateChange).
-	SetTenantState(ctx context.Context, id string, state TenantState, reason string, audit AuditEntry) error
+	SetTenantState(ctx context.Context, id string, state TenantState, reason string, audit AuditEntry, by Actor) error
 	// RemoveTenant removes a tenant and every grant on it, or is NotFound.
-	RemoveTenant(ctx context.Context, id string, audit AuditEntry) error
+	RemoveTenant(ctx context.Context, id string, audit AuditEntry, by Actor) error
 
 	// CreateKey adds a key. An id already taken is Conflict.
-	CreateKey(ctx context.Context, k Key, audit AuditEntry) error
+	CreateKey(ctx context.Context, k Key, audit AuditEntry, by Actor) error
 	// Key returns the key with this id, revoked or expired or not, or
 	// NotFound. It is on the path of every API request: one read of the
 	// primary key.
@@ -91,7 +107,7 @@ type Store interface {
 	// the request, is still written (the API contract: revoking a revoked
 	// key succeeds with its first revoke time). The entry's details say
 	// whether the key was already revoked (AuditEntry.WithRevocation).
-	RevokeKey(ctx context.Context, id string, at time.Time, audit AuditEntry) (time.Time, error)
+	RevokeKey(ctx context.Context, id string, at time.Time, audit AuditEntry, by Actor) (time.Time, error)
 
 	// SetGrant gives a key a role on a scope. When the key already has a
 	// grant on that scope, its role is replaced in one step, so a role is
@@ -103,7 +119,7 @@ type Store interface {
 	// An unknown key or tenant is NotFound. A revoked key is Conflict,
 	// decided in the same transaction as the write, so no grant is ever
 	// written after the key's revocation (the API contract).
-	SetGrant(ctx context.Context, g Grant, audit AuditEntry) (Role, error)
+	SetGrant(ctx context.Context, g Grant, audit AuditEntry, by Actor) (Role, error)
 	// GrantsByKey returns a page of a key's grants, the installation first,
 	// then by tenant id, each with its tenant's name at the time of the
 	// read. An unknown key has none. It reads a range of the grants'
@@ -124,22 +140,32 @@ type Store interface {
 	// either. It is the access check's one read of grants and tenant on
 	// every request: one statement of point lookups.
 	RolesFor(ctx context.Context, keyID, tenantName string) (Roles, error)
+	// CheckActor makes the check every change makes of its actor (see
+	// Store), on its own, with nothing written: nil when by may act, or the
+	// error with a Refusal that a change by it would return now. It is for
+	// a caller about to change what this store does not hold (a tenant's
+	// own database, which holds no keys) and for a read that must not
+	// answer a key revoked since its request was checked: as late as it is
+	// called, a revocation can still fall between it and what follows,
+	// which a change's own check leaves no room for. A zero Actor is
+	// Invalid. It is one statement of point lookups.
+	CheckActor(ctx context.Context, by Actor) error
 	// RemoveGrant removes a key's grant on a scope and returns the role it
 	// had, or the empty Role when there was none: removing a grant the key
 	// does not hold changes nothing and succeeds (the API contract). The
 	// audit entry it writes has the old role in its details and "none" as
 	// the new. An unknown key or tenant is NotFound.
-	RemoveGrant(ctx context.Context, keyID string, scope Scope, audit AuditEntry) (Role, error)
+	RemoveGrant(ctx context.Context, keyID string, scope Scope, audit AuditEntry, by Actor) (Role, error)
 
 	// Setting returns a setting's value, or NotFound.
 	Setting(ctx context.Context, name string) (string, error)
 	// SetSetting sets a setting's value, adding the setting or replacing it.
-	SetSetting(ctx context.Context, name, value string, audit AuditEntry) error
+	SetSetting(ctx context.Context, name, value string, audit AuditEntry, by Actor) error
 	// UnsetSetting removes a setting's value and reports whether there was
 	// one: removing a value that is not set changes nothing and succeeds, as
 	// the API contract's UnsetSetting does. The audit entry is written
 	// either way.
-	UnsetSetting(ctx context.Context, name string, audit AuditEntry) (bool, error)
+	UnsetSetting(ctx context.Context, name string, audit AuditEntry, by Actor) (bool, error)
 	// ListSettings returns a page of settings in order of name.
 	ListSettings(ctx context.Context, page Page) ([]Setting, string, error)
 
