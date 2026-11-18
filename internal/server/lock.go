@@ -62,14 +62,19 @@ func TakeLock(dataDir string) (*Lock, error) {
 // Path returns the lock file's path.
 func (l *Lock) Path() string { return l.path }
 
-// Release drops the lock. It is safe to call more than once and on a nil
-// Lock.
+// Release empties the lock file and drops the lock. The process id is
+// emptied first so the file names no process once none holds it, and so a
+// start that is refused leaves the data directory as it found it. It is
+// safe to call more than once and on a nil Lock.
 func (l *Lock) Release() error {
 	if l == nil {
 		return nil
 	}
 	var err error
-	l.once.Do(func() { err = unlockFile(l.f) })
+	l.once.Do(func() {
+		_ = l.f.Truncate(0)
+		err = unlockFile(l.f)
+	})
 	return err
 }
 

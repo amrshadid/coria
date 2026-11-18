@@ -116,6 +116,16 @@
 // server's list may use, so the settings service neither lists, reads nor
 // changes it.
 //
+// Init also writes a key check beside the id (KeyCheckSetting): the id
+// sealed with the installation's key file. Serve opens it with the key file
+// it was given, after the identity and before it migrates, opens a tenant
+// or listens, and refuses to start when it does not open
+// (MessageWrongKeyFile) or is missing (MessageNoKeyCheck). A server running
+// with another key file would seal a new tenant's address with the wrong
+// key, leaving an installation that no one key file can open. The check
+// opens with any key file that still holds the version that sealed it, so
+// adding a newer version for rotation does not refuse a start.
+//
 // # Stopping
 //
 // Stop refuses new requests (the health service's Check still answers,

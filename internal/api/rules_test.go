@@ -133,36 +133,46 @@ func TestSettingsLimitsAreTheMasters(t *testing.T) {
 }
 
 // TestReservedSettingsDoNotExist guards the settings the system keeps for
-// itself under settings.ReservedPrefix, such as the installation's id: with
-// a value held in the master and in a tenant's database, every settings
-// method on every scope answers it as a name that does not exist, and no
-// listing shows it. The name is the server's InstallationIDSetting, written
-// out here because this package may not import the server.
+// itself under settings.ReservedPrefix, the installation's id and its key
+// check: with a value held in the master and in a tenant's database, every
+// settings method on every scope answers each as a name that does not exist,
+// no listing shows it, and nothing changes it. The names are the server's
+// InstallationIDSetting and KeyCheckSetting, written out here because this
+// package may not import the server.
 func TestReservedSettingsDoNotExist(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	name := settings.ReservedPrefix + "installation-id"
-	if err := f.master.SetSetting(ctx, name, "01-not-for-callers", f.setupEntry()); err != nil {
-		t.Fatal(err)
-	}
 	st, err := f.registry.Store("lab1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.SetSetting(ctx, name, "01-not-for-callers", f.setupEntry()); err != nil {
-		t.Fatal(err)
+	names := []string{settings.ReservedPrefix + "installation-id", settings.ReservedPrefix + "key-check"}
+	for _, name := range names {
+		if err := f.master.SetSetting(ctx, name, "01-not-for-callers", f.setupEntry()); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.SetSetting(ctx, name, "01-not-for-callers", f.setupEntry()); err != nil {
+			t.Fatal(err)
+		}
 	}
-	for _, scope := range []*v1.Scope{installation(), tenantScope("lab1")} {
-		for method, m := range map[string]func(clients) outcome{
-			"GetSetting":   getSetting(name, scope),
-			"SetSetting":   setSetting(name, scope, "x"),
-			"UnsetSetting": unsetSetting(name, scope),
-		} {
-			o := m(f.as(local))
-			if o.code() != connect.CodeNotFound || o.message() != "no setting has this name" {
-				t.Errorf("%s of %s on %v: %v %q, want the answer of any unknown name", method, name, scope, o.code(), o.message())
+	for _, name := range names {
+		for _, scope := range []*v1.Scope{installation(), tenantScope("lab1")} {
+			for method, m := range map[string]func(clients) outcome{
+				"GetSetting":   getSetting(name, scope),
+				"SetSetting":   setSetting(name, scope, "x"),
+				"UnsetSetting": unsetSetting(name, scope),
+			} {
+				o := m(f.as(local))
+				if o.code() != connect.CodeNotFound || o.message() != "no setting has this name" {
+					t.Errorf("%s of %s on %v: %v %q, want the answer of any unknown name", method, name, scope, o.code(), o.message())
+				}
 			}
 		}
+		if v, err := f.master.Setting(ctx, name); err != nil || v != "01-not-for-callers" {
+			t.Errorf("the master's value of %s is %q, %v: something changed it", name, v, err)
+		}
+	}
+	for _, scope := range []*v1.Scope{installation(), tenantScope("lab1")} {
 		o := call(f.as(local).settings.ListSettings, &v1.ListSettingsRequest{Scope: scope, PageSize: 1000})
 		if o.err != nil {
 			t.Fatal(o.err)
@@ -172,8 +182,5 @@ func TestReservedSettingsDoNotExist(t *testing.T) {
 				t.Errorf("ListSettings on %v shows %s", scope, s.GetName())
 			}
 		}
-	}
-	if v, err := f.master.Setting(ctx, name); err != nil || v != "01-not-for-callers" {
-		t.Errorf("the master's value is %q, %v: something changed it", v, err)
 	}
 }
