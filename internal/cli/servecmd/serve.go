@@ -214,6 +214,24 @@ func checkIdentity(ctx context.Context, m master.Store, dir string) error {
 	return nil
 }
 
+// checkKeyFile refuses a key file that is not the installation's: it opens
+// the master's key check with keys. A master with no key check (made before
+// the check existed) is refused too, since serve cannot tell then.
+func checkKeyFile(ctx context.Context, m master.Store, dir string, keys *secret.Keys) error {
+	id, err := server.ReadInstallationID(dir)
+	if err != nil {
+		return err
+	}
+	check, err := m.Setting(ctx, server.KeyCheckSetting)
+	switch {
+	case fault.KindOf(err) == fault.NotFound:
+		return fault.New(fault.Conflict, server.MessageNoKeyCheck)
+	case err != nil:
+		return err
+	}
+	return server.CheckKeyFile(keys, id, check)
+}
+
 // open loads the key file, opens and migrates the master database, starts
 // the access package and builds the server. On failure it closes what it
 // opened, except the lock, which its caller releases.
@@ -239,9 +257,16 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 			_ = m.Close()
 		}
 	}()
-	// The identity before any migration: a master that is not this
-	// installation's must not be upgraded, let alone served.
+	// The identity, then the key check, before any migration and before any
+	// tenant is opened: a master that is not this installation's must not
+	// be upgraded; and a server running with another key file would fail
+	// every tenant and seal a new tenant's address with the wrong key,
+	// leaving an installation that no one key file can open, so it must stop
+	// before it opens anything.
 	if err := checkIdentity(ctx, m, dir); err != nil {
+		return nil, err
+	}
+	if err := checkKeyFile(ctx, m, dir, keys); err != nil {
 		return nil, err
 	}
 	if err := m.Migrate(ctx); err != nil {
