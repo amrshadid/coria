@@ -51,11 +51,14 @@ func TestContractCodes(t *testing.T) {
 	}
 }
 
-// TestReceivingSideCodes guards the codes any method may answer: size and
-// deadline, and that an unknown code is Internal, never the caller's fault.
+// TestReceivingSideCodes guards the codes any method may answer: a deadline
+// and a cancellation are unavailable, and every other code, a message over the
+// size limit and a code this version has never heard of among them, is
+// Internal (exit 1), never the caller's fault.
 func TestReceivingSideCodes(t *testing.T) {
 	cases := map[connect.Code]fault.Kind{
-		connect.CodeResourceExhausted: fault.Invalid,
+		connect.CodeResourceExhausted: fault.Internal,
+		connect.Code(99):              fault.Internal,
 		connect.CodeDeadlineExceeded:  fault.Unavailable,
 		connect.CodeCanceled:          fault.Unavailable,
 		connect.CodeUnimplemented:     fault.Internal,
@@ -65,6 +68,9 @@ func TestReceivingSideCodes(t *testing.T) {
 	for c, k := range cases {
 		if got := Kind(c); got != k {
 			t.Errorf("Kind(%v) = %v, want %v", c, got, k)
+		}
+		if got := Kind(c).ExitCode(); (k == fault.Unavailable || k == fault.Internal) && got != 1 {
+			t.Errorf("Kind(%v) exits %d, want 1", c, got)
 		}
 	}
 	if got := Code(fault.Kind(99)); got != connect.CodeInternal {

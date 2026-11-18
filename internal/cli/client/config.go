@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/secret"
 )
 
 // Environment variables the command line reads. They are named here so the
@@ -21,6 +22,9 @@ const (
 	EnvDataDir = "MAGNETAR_DATA_DIR"
 	// EnvServer names the address of a server on the network.
 	EnvServer = "MAGNETAR_SERVER"
+	// EnvCAFile names a PEM file of certificate authorities to trust for the
+	// network, in place of the system's.
+	EnvCAFile = "MAGNETAR_CA_FILE"
 	// EnvKey holds the key used over the network. It is the only place a key
 	// can come from besides a file.
 	EnvKey = "MAGNETAR_KEY"
@@ -56,10 +60,11 @@ type Config struct {
 	Getenv func(string) string
 	// Timeout bounds each call; DefaultTimeout when zero.
 	Timeout time.Duration
-	// RootCAs, when set, replaces the system's certificate authorities for
-	// the network. It is for tests that serve TLS with a certificate made in
-	// the test; no flag sets it.
-	RootCAs *x509.CertPool
+	// CAFile is the path of a PEM file of certificate authorities that
+	// replaces the system's store for Server, for an institution with a
+	// private authority. It is a path, not a secret: the file holds public
+	// certificates only. It has no effect on the local socket.
+	CAFile string
 }
 
 // getenv returns the configured environment reader.
@@ -120,9 +125,17 @@ func ReadKey(keyFile string, getenv func(string) string) (string, error) {
 	var key, where string
 	if keyFile != "" {
 		where = "the key file " + keyFile
-		f, err := os.Open(keyFile) // #nosec G304 -- the path is the person's own --key-file
+		// The file must be private to the person, by the rule the
+		// installation's own key file follows, because a key others can read
+		// is a key others can use. The refusal says how to fix the file and
+		// never quotes it.
+		f, err := secret.OpenPrivate(keyFile)
 		if err != nil {
-			return "", fault.Wrap(fault.Invalid, err, "cannot read the key file "+keyFile)
+			msg := strings.TrimPrefix(fault.Message(err), "secret: ")
+			if fault.KindOf(err) == fault.NotFound {
+				msg = "cannot read the key file " + keyFile + ": it does not exist"
+			}
+			return "", fault.Wrap(fault.Invalid, err, msg)
 		}
 		defer func() { _ = f.Close() }()
 		b, err := io.ReadAll(io.LimitReader(f, maxKeyFile+1))
@@ -146,4 +159,32 @@ func ReadKey(keyFile string, getenv func(string) string) (string, error) {
 		}
 	}
 	return key, nil
+}
+
+// maxCAFile bounds a CA file read: a bundle of every public authority is
+// about 200 KiB, so a megabyte is generous and a larger file is a mistake.
+const maxCAFile = 1 << 20
+
+// LoadCAs reads a PEM file of certificate authorities into a pool that
+// replaces the system's. A file that cannot be read, that is too large, or
+// that holds no certificate is a usage error that names the file and never
+// quotes any of it.
+func LoadCAs(path string) (*x509.CertPool, error) {
+	f, err := os.Open(path) // #nosec G304 -- the path is the person's own --ca-file
+	if err != nil {
+		return nil, fault.Wrap(fault.Invalid, err, "cannot read the CA file "+path)
+	}
+	defer func() { _ = f.Close() }()
+	b, err := io.ReadAll(io.LimitReader(f, maxCAFile+1))
+	if err != nil {
+		return nil, fault.Wrap(fault.Invalid, err, "cannot read the CA file "+path)
+	}
+	if len(b) > maxCAFile {
+		return nil, fault.New(fault.Invalid, "the CA file "+path+" is larger than a file of certificates can be")
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(b) {
+		return nil, fault.New(fault.Invalid, "the CA file "+path+" holds no certificate in PEM form")
+	}
+	return pool, nil
 }

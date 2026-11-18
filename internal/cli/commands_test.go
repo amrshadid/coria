@@ -63,17 +63,17 @@ func (r *rig) must(args ...string) result {
 // tree, in the table form, and a document with the build's fields in --json.
 func TestVersion(t *testing.T) {
 	// No server is needed, so no environment is given.
-	res := runWith(nil, nil, "version")
+	res := runWith(nil, "version")
 	if res.code != 0 || res.stderr != "" || !strings.HasPrefix(res.stdout, "magnetar ") || strings.Count(res.stdout, "\n") != 1 {
 		t.Errorf("version: %+v", res)
 	}
-	doc := document(t, runWith(nil, nil, "version", "--json"))
+	doc := document(t, runWith(nil, "version", "--json"))
 	for _, k := range []string{"version", "commit", "goVersion"} {
 		if s, _ := doc[k].(string); s == "" {
 			t.Errorf("version --json has no %s: %v", k, doc)
 		}
 	}
-	if long := runWith(nil, nil, "--version"); long.stdout != res.stdout {
+	if long := runWith(nil, "--version"); long.stdout != res.stdout {
 		t.Errorf("--version printed %q, version printed %q", long.stdout, res.stdout)
 	}
 }
@@ -294,7 +294,7 @@ func TestKeyIsNotShownAnywhereElse(t *testing.T) {
 		{"key", "list"}, {"key", "list", "--json"}, {"key", "show", "k00000000001"}, {"key", "show", "k00000000001", "--json"},
 		{"key", "revoke", "k00000000001"}, {"key", "revoke", "k00000000001", "--json"},
 		{"grant", "set", "k00000000001", "--role", "reader", "--tenant", "lab1"},
-		{"grant", "list", "--key", "k00000000001", "--json"}, {"whoami"}, {"audit", "list"},
+		{"grant", "list", "--key-id", "k00000000001", "--json"}, {"whoami"}, {"audit", "list"},
 	} {
 		res := r.run(args...)
 		if strings.Contains(res.stdout+res.stderr, secret) {
@@ -313,8 +313,8 @@ func TestWholeKeyAsAnArgumentIsRefused(t *testing.T) {
 		{"key", "show", whole}, {"key", "revoke", whole},
 		{"grant", "set", whole, "--role", "reader", "--installation"},
 		{"grant", "remove", whole, "--installation"},
-		{"grant", "list", "--key", whole},
-		{"audit", "list", "--key", whole},
+		{"grant", "list", "--key-id", whole},
+		{"audit", "list", "--key-id", whole},
 	} {
 		res := r.run(args...)
 		if res.code != 2 || res.stdout != "" || strings.Contains(res.stderr, "SSSS") || !strings.Contains(res.stderr, "is a secret and is never an argument") {
@@ -341,13 +341,13 @@ func TestGrantCommands(t *testing.T) {
 		t.Errorf("set --json: %v", doc)
 	}
 
-	expect(t, r.run("grant", "list", "--key", "k00000000001"), 0,
+	expect(t, r.run("grant", "list", "--key-id", "k00000000001"), 0,
 		"KEY           SCOPE         ROLE\nk00000000001  installation  admin\nk00000000001  tenant lab1   operator\n", "")
 	expect(t, r.run("grant", "list", "--tenant", "lab1"), 0,
 		"KEY           SCOPE        ROLE\nk00000000001  tenant lab1  operator\n", "")
 	expect(t, r.run("grant", "list", "--installation"), 0,
 		"KEY           SCOPE         ROLE\nk00000000001  installation  admin\n", "")
-	if gs := document(t, r.run("grant", "list", "--key", "k00000000001", "--json"))["grants"].([]any); len(gs) != 2 {
+	if gs := document(t, r.run("grant", "list", "--key-id", "k00000000001", "--json"))["grants"].([]any); len(gs) != 2 {
 		t.Errorf("list --json: %v", gs)
 	}
 
@@ -374,7 +374,7 @@ func TestGrantCommands(t *testing.T) {
 		"no role":     {"grant", "set", "k1", "--installation"},
 		"bad role":    {"grant", "set", "k1", "--role", "god", "--installation"},
 		"list no arg": {"grant", "list"},
-		"list two":    {"grant", "list", "--key", "k1", "--installation"},
+		"list two":    {"grant", "list", "--key-id", "k1", "--installation"},
 	} {
 		if res := r.run(args...); res.code != 2 || res.stdout != "" || strings.Count(res.stderr, "\n") != 1 {
 			t.Errorf("%s: %+v, want exit 2 and one line", name, res)
@@ -451,8 +451,8 @@ func TestAuditCommands(t *testing.T) {
 		res := r.run(append([]string{"audit", "list", "--json"}, args...)...)
 		return len(document(t, res)["entries"].([]any))
 	}
-	if n := count("--key", "k1"); n != 1 {
-		t.Errorf("--key k1: %d entries, want 1", n)
+	if n := count("--key-id", "k1"); n != 1 {
+		t.Errorf("--key-id k1: %d entries, want 1", n)
 	}
 	if n := count("--outcome", "refused"); n != 1 {
 		t.Errorf("--outcome refused: %d entries, want 1", n)

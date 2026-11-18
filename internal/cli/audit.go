@@ -46,10 +46,10 @@ func (a *app) newAuditList() *cobra.Command {
 	var tenant, keyID, outcome, since, until string
 	var l listFlags
 	cmd := &cobra.Command{
-		Use:   "list [--tenant NAME] [--key ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]",
+		Use:   "list [--tenant NAME] [--key-id ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]",
 		Short: "List audit entries, newest first",
 		Long: `List the entries of the installation's audit log, or with --tenant of that
-tenant's, newest first, optionally only those of one key (--key takes the key's
+tenant's, newest first, optionally only those of one key (--key-id takes the key's
 public id), one outcome, or a span of time.
 
 A TIME is a date (2026-11-17, midnight in your zone), a time with its offset
@@ -58,14 +58,14 @@ is inclusive and --until is exclusive. Times in the table are shown in your
 zone with the offset.`,
 		Example: `  magnetar audit list --since 24h
   magnetar audit list --outcome refused --since 2026-11-01
-  magnetar audit list --tenant lab1 --key k8Zp2QvXn5Rt --json`,
+  magnetar audit list --tenant lab1 --key-id k8Zp2QvXn5Rt --json`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			if err := l.check(); err != nil {
 				return err
 			}
 			req := &v1.ListAuditEntriesRequest{Scope: optionalScope(tenant), KeyId: keyID}
-			if cmd.Flags().Changed("key") {
+			if cmd.Flags().Changed("key-id") {
 				if err := checkKeyID(keyID); err != nil {
 					return err
 				}
@@ -131,7 +131,7 @@ zone with the offset.`,
 		}),
 	}
 	cmd.Flags().StringVar(&tenant, "tenant", "", "read this tenant's log (default: the installation's log)")
-	cmd.Flags().StringVar(&keyID, "key", "", "only entries of requests that carried the key with this id (the key's public id, never the key itself)")
+	cmd.Flags().StringVar(&keyID, "key-id", "", "only entries of requests that carried the key with this id (the key's public id, never the key itself)")
 	cmd.Flags().StringVar(&outcome, "outcome", "", "only entries with this outcome: done, refused or failed")
 	cmd.Flags().StringVar(&since, "since", "", "only entries at or after this time: a date, a time with its offset, or an age such as 24h")
 	cmd.Flags().StringVar(&until, "until", "", "only entries before this time, written like --since")

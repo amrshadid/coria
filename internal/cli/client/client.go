@@ -40,6 +40,7 @@ type Client struct {
 
 	timeout time.Duration
 	target  string
+	trust   string
 	http    *http.Client
 }
 
@@ -58,6 +59,7 @@ func New(cfg Config) (*Client, error) {
 		hc       *http.Client
 		base     string
 		target   string
+		trust    string
 		interc   []connect.ClientInterceptor
 		haveData = cfg.DataDir != ""
 		haveSrv  = cfg.Server != ""
@@ -81,7 +83,15 @@ func New(cfg Config) (*Client, error) {
 			return nil, err
 		}
 		target = u.Scheme + "://" + u.Host
-		hc = networkClient(u.Scheme == "https", cfg.RootCAs)
+		var roots *x509.CertPool
+		trust = "this system"
+		if cfg.CAFile != "" {
+			trust = "the CA file " + cfg.CAFile
+			if roots, err = LoadCAs(cfg.CAFile); err != nil {
+				return nil, err
+			}
+		}
+		hc = networkClient(u.Scheme == "https", roots)
 		base = u.String()
 		interc = append(interc, bearer(key))
 	}
@@ -97,6 +107,7 @@ func New(cfg Config) (*Client, error) {
 		Audit:    magnetarv1connect.NewAuditServiceClient(c),
 		timeout:  timeout,
 		target:   target,
+		trust:    trust,
 		http:     hc,
 	}, nil
 }
@@ -135,8 +146,15 @@ func unixClient(path string) *http.Client {
 }
 
 // networkClient is an HTTP client for the network: TLS 1.2 or later with the
-// system's authorities (or roots, in a test), HTTP/2 where the server offers
-// it. useTLS is false only for a loopback http address.
+// system's authorities, or only the authorities in roots when it is given,
+// and HTTP/2 where the server offers it. useTLS is false only for a loopback
+// http address.
+//
+// The floor is TLS 1.2, not 1.3, on purpose: 1.0 and 1.1 are deprecated
+// (RFC 8996) and refused, but servers behind the proxies and appliances that
+// institutions still run often speak 1.2 and no later, and a command line
+// that cannot reach them is no safer for it. 1.2 with the AEAD suites Go
+// offers is sound; the server may raise its own floor.
 func networkClient(useTLS bool, roots *x509.CertPool) *http.Client {
 	tr := &http.Transport{
 		Proxy:             http.ProxyFromEnvironment,
@@ -220,7 +238,7 @@ func (c *Client) classify(ctx context.Context, err error) error {
 	)
 	switch {
 	case errors.As(err, &unknown), errors.As(err, &invalid), errors.As(err, &host):
-		return fault.Wrap(fault.Unavailable, err, "refusing to connect to "+c.target+": its certificate is not trusted by this system ("+tlsReason(err)+")")
+		return fault.Wrap(fault.Unavailable, err, "refusing to connect to "+c.target+": its certificate is not trusted by "+c.trust+" ("+tlsReason(err)+")")
 	case errors.As(err, &op):
 		return fault.Wrap(fault.Unavailable, err, "cannot reach the server at "+c.target+": "+op.Err.Error())
 	}

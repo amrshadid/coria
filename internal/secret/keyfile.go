@@ -204,6 +204,36 @@ func existsError(path string) error {
 	return fault.New(fault.Conflict, "secret: the key file "+path+" exists, and a key file is never replaced")
 }
 
+// OpenPrivate opens the file at path for reading and returns it only when
+// it is private to the current user, by the same checks LoadKeyFile makes on
+// a key file: a regular file, owned by the current user, that no other user
+// may open (mode and, on macOS, access list entries on Linux and macOS; owner
+// and access list on Windows). It exists for a command that reads a
+// credential from a file of the person's own, such as the command line's
+// --key-file, so that rule is written once. The refusal is a fault of kind
+// Invalid whose message says how to fix the file and never quotes its
+// content; a missing file is NotFound.
+//
+// Unlike LoadKeyFile it does not check the file's directory: this file is not
+// the installation's key, only a credential the person chose to keep, and a
+// directory such as a shared temporary one is not a reason to refuse it. The
+// caller reads the file and closes it. The file is opened without blocking
+// and checked as opened, so the file checked is the file read.
+func OpenPrivate(path string) (*os.File, error) {
+	f, err := openKeyFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fault.Wrap(fault.NotFound, err, "secret: there is no file at "+path)
+		}
+		return nil, fault.Wrap(fault.Internal, err, "secret: the file "+path+" cannot be opened")
+	}
+	if err := checkPrivate(f, path); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
 // LoadKeyFile reads the key file at path. It refuses a file that is not a
 // regular file, that other users may open (with the command that fixes it in
 // the message), that is over 64 KiB, or with any line that does not follow

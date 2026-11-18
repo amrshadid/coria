@@ -16,7 +16,8 @@
 // usage, 3 refused, 4 not found.
 //
 // This package must never take a secret as an argument or a flag value, never
-// seal, hash or store one, never print one except the new key that key create
+// seal, hash or store one (it asks internal/secret only whether a key file is
+// private), never print one except the new key that key create
 // exists to show once, never write to the terminal text it got from the
 // network without cleaning it, and never reach into a database or a storage:
 // the API is the only way in.

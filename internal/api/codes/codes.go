@@ -35,10 +35,13 @@ func Code(kind fault.Kind) connect.Code {
 }
 
 // Kind returns the fault kind of an API code. Besides the table, it maps the
-// codes any method may answer: a message over the size limit is the caller's
-// request being wrong (Invalid), and a deadline or a cancellation is a failure
-// that may pass on a later try (Unavailable). Every other code, including one
-// from a newer server, is Internal: it is not shown as the caller's mistake.
+// codes any method may answer without the contract naming a kind: a deadline
+// or a cancellation is a failure that may pass on a later try (Unavailable).
+// Every other code is Internal, a failure and exit 1: RESOURCE_EXHAUSTED (a
+// message over the size limit), UNIMPLEMENTED, UNKNOWN, DATA_LOSS and any code
+// a newer server adds. None of them is shown as the caller's mistake, because
+// the command line cannot tell a request that was too large from a server
+// that ran short, and exit 2 is for what the person typed wrong.
 func Kind(code connect.Code) fault.Kind {
 	for _, p := range pairs {
 		if p.code == code {
@@ -46,8 +49,6 @@ func Kind(code connect.Code) fault.Kind {
 		}
 	}
 	switch code {
-	case connect.CodeResourceExhausted:
-		return fault.Invalid
 	case connect.CodeDeadlineExceeded, connect.CodeCanceled:
 		return fault.Unavailable
 	}

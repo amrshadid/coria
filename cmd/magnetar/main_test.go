@@ -89,6 +89,27 @@ func TestVersionFailsWhenOutputFails(t *testing.T) {
 	}
 }
 
+// TestTestSupportIsNotLinked guards the rule that test support never reaches
+// the real binary: the fake server is an ordinary package, so nothing but this
+// check stops a non-test file from importing it. It asks the go command for
+// every package the binary is built from, tests excluded, and fails if the
+// fake server, or the testing package it brings in, is one of them.
+func TestTestSupportIsNotLinked(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", ".").Output()
+	if err != nil {
+		t.Fatalf("go list -deps: %v", err)
+	}
+	deps := strings.Fields(string(out))
+	if len(deps) < 20 {
+		t.Fatalf("go list named only %d packages; the check is not looking at the binary", len(deps))
+	}
+	for _, d := range deps {
+		if strings.HasSuffix(d, "/internal/cli/fakeserver") || d == "testing" {
+			t.Errorf("the binary is built from %s, which is test support", d)
+		}
+	}
+}
+
 // TestBuiltBinary guards what run cannot show: that main passes run's code to
 // the operating system, and that -ldflags reaches the variables under the
 // package path written in the documentation and the Makefile. It builds the

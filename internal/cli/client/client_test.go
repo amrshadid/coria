@@ -2,6 +2,7 @@ package client_test
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"os"
 	"path/filepath"
@@ -74,8 +75,9 @@ func TestLocalSocketCall(t *testing.T) {
 func TestNetworkSendsTheKeyOverTLS(t *testing.T) {
 	fake := fakeserver.New()
 	fake.RequireKey = testKey
-	addr, roots := fake.ServeTLS(t)
-	c, err := client.New(client.Config{Server: addr, RootCAs: roots, Getenv: env(map[string]string{client.EnvKey: testKey})})
+	addr := fake.ServeTLS(t)
+	ca := caFile(t, fake)
+	c, err := client.New(client.Config{Server: addr, CAFile: ca, Getenv: env(map[string]string{client.EnvKey: testKey})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +89,7 @@ func TestNetworkSendsTheKeyOverTLS(t *testing.T) {
 		t.Errorf("Authorization headers = %q", h)
 	}
 
-	bad, err := client.New(client.Config{Server: addr, RootCAs: roots, Getenv: env(map[string]string{client.EnvKey: "wrong"})})
+	bad, err := client.New(client.Config{Server: addr, CAFile: ca, Getenv: env(map[string]string{client.EnvKey: "wrong"})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +108,7 @@ func TestNetworkSendsTheKeyOverTLS(t *testing.T) {
 // and the key is not sent to it.
 func TestUntrustedCertificateIsRefused(t *testing.T) {
 	fake := fakeserver.New()
-	addr, _ := fake.ServeTLS(t)
+	addr := fake.ServeTLS(t)
 	c, err := client.New(client.Config{Server: addr, Getenv: env(map[string]string{client.EnvKey: testKey})})
 	if err != nil {
 		t.Fatal(err)
@@ -183,39 +185,45 @@ func TestServerAddressRules(t *testing.T) {
 // source and not the content.
 func TestReadKey(t *testing.T) {
 	dir := t.TempDir()
-	write := func(name, content string) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
+	write := func(_, content string) string { return fakeserver.PrivateFile(t, content) }
 	if k, err := client.ReadKey("", env(map[string]string{client.EnvKey: " " + testKey + "\n"})); err != nil || k != testKey {
 		t.Errorf("from the environment: %q, %v", k, err)
 	}
 	if k, err := client.ReadKey(write("k", testKey+"\n"), env(map[string]string{client.EnvKey: "other"})); err != nil || k != testKey {
 		t.Errorf("from the file: %q, %v", k, err)
 	}
+	widePath := filepath.Join(dir, "wide")
+	if err := os.WriteFile(widePath, []byte(testKey), 0o644); err != nil { //nolint:gosec // G306: the mode is the point of the test.
+		t.Fatal(err)
+	}
+	if err := os.Chmod(widePath, 0o644); err != nil { //nolint:gosec // G302: the mode is the point of the test.
+		t.Fatal(err)
+	}
 	cases := map[string]struct {
 		file string
 		env  string
 		want string
 	}{
-		"unset":      {"", "", "no key: set MAGNETAR_KEY or pass --key-file PATH"},
-		"empty file": {write("empty", "\n"), "", "no key"},
-		"missing":    {filepath.Join(dir, "missing"), "", "cannot read the key file"},
-		"huge":       {write("huge", strings.Repeat("secretsecret", 200)), "", "larger than a key can be"},
-		"has space":  {"", "secret value", "holds characters a key does not have"},
-		"control":    {"", "secret\x07value", "holds characters a key does not have"},
+		"unset":       {"", "", "no key: set MAGNETAR_KEY or pass --key-file PATH"},
+		"empty file":  {write("empty", "\n"), "", "no key"},
+		"missing":     {filepath.Join(dir, "missing"), "", "cannot read the key file"},
+		"huge":        {write("huge", strings.Repeat("secretsecret", 200)), "", "larger than a key can be"},
+		"others read": {widePath, "", "make it private to"},
+		"has space":   {"", "secret value", "holds characters a key does not have"},
+		"control":     {"", "secret\x07value", "holds characters a key does not have"},
 	}
 	for name, c := range cases {
 		_, err := client.ReadKey(c.file, env(map[string]string{client.EnvKey: c.env}))
-		if err == nil || !strings.Contains(err.Error(), c.want) {
+		// The message is what a person is shown; the error's own text also
+		// carries the cause, which is for the log.
+		if err == nil || !strings.Contains(fault.Message(err), c.want) {
 			t.Errorf("%s: error %v, want %q", name, err, c.want)
 			continue
 		}
-		if strings.Contains(err.Error(), "secret") && name != "unset" {
-			t.Errorf("%s: the error shows key content: %v", name, err)
+		for _, content := range []string{"secretsecret", "secret value", "abcdefghijkl", "\x07"} {
+			if strings.Contains(fault.Message(err), content) {
+				t.Errorf("%s: the message shows key content %q: %v", name, content, err)
+			}
 		}
 	}
 }
@@ -284,7 +292,7 @@ func TestForcedCodes(t *testing.T) {
 		connect.CodeAlreadyExists:     fault.Conflict,
 		connect.CodeUnavailable:       fault.Unavailable,
 		connect.CodeInternal:          fault.Internal,
-		connect.CodeResourceExhausted: fault.Invalid,
+		connect.CodeResourceExhausted: fault.Internal,
 	}
 	for code, kind := range cases {
 		fake := fakeserver.New()
@@ -299,5 +307,115 @@ func TestForcedCodes(t *testing.T) {
 		if fault.KindOf(err) != kind || !strings.Contains(err.Error(), "forced (request id req-000001)") {
 			t.Errorf("%v: kind %v, error %v; want kind %v with the request id", code, fault.KindOf(err), err, kind)
 		}
+	}
+}
+
+// caFile writes the fake's certificate as a PEM file and returns its path.
+func caFile(t *testing.T, fake *fakeserver.Server) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	if err := os.WriteFile(path, fake.CertPEM(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestCAFile guards --ca-file at the client: the server's own certificate,
+// trusted through the file, works; the system's store (no file) refuses it; a
+// file that is not certificates, or a missing one, is a usage error that names
+// the file and not its content; a file with another server's certificate is
+// refused as an untrusted one, saying which file did not trust it; and the
+// file has no effect on the local socket.
+func TestCAFile(t *testing.T) {
+	fake := fakeserver.New()
+	addr := fake.ServeTLS(t)
+	keyEnv := env(map[string]string{client.EnvKey: testKey})
+	try := func(ca string) error {
+		c, err := client.New(client.Config{Server: addr, CAFile: ca, Getenv: keyEnv})
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+		_, err = listTenants(c)
+		return err
+	}
+	if err := try(caFile(t, fake)); err != nil {
+		t.Errorf("trusted through the file: %v", err)
+	}
+	if err := try(""); err == nil || !strings.Contains(err.Error(), "not trusted by this system") {
+		t.Errorf("without the file: %v", err)
+	}
+
+	dir := t.TempDir()
+	garbage := filepath.Join(dir, "garbage.pem")
+	if err := os.WriteFile(garbage, []byte("-----BEGIN CERTIFICATE-----\nnot-a-certificate-SECRETWORD\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	huge := filepath.Join(dir, "huge.pem")
+	if err := os.WriteFile(huge, make([]byte, 2<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct{ path, want string }{
+		"no certificate": {garbage, "holds no certificate in PEM form"},
+		"missing":        {filepath.Join(dir, "none.pem"), "cannot read the CA file"},
+		"huge":           {huge, "is larger than a file of certificates can be"},
+	} {
+		err := try(c.path)
+		if fault.KindOf(err) != fault.Invalid || err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), c.path) || strings.Contains(err.Error(), "SECRETWORD") {
+			t.Errorf("%s: %v (kind %v), want invalid naming the file with %q", name, err, fault.KindOf(err), c.want)
+		}
+	}
+
+	other := fakeserver.New()
+	other.ServeTLS(t)
+	wrong := caFile(t, other)
+	if err := try(wrong); err == nil || !strings.Contains(err.Error(), "not trusted by the CA file "+wrong) {
+		t.Errorf("another server's certificate: %v", err)
+	}
+
+	// The local socket never reads the file.
+	dirLocal := fakeserver.New().ServeUnix(t)
+	c, err := client.New(client.Config{DataDir: dirLocal, CAFile: filepath.Join(dir, "none.pem")})
+	if err != nil {
+		t.Fatalf("a CA file with the local socket: %v", err)
+	}
+	defer c.Close()
+	if _, err := listTenants(c); err != nil {
+		t.Errorf("call on the local socket: %v", err)
+	}
+}
+
+// TestTLSOneOneIsRefused guards the floor of TLS 1.2: a server that offers
+// nothing newer than TLS 1.1 is refused, and no request reaches it. The server
+// states its minimum version itself, so Go's own default floor for servers
+// does not stand in for the client's.
+func TestTLSOneOneIsRefused(t *testing.T) {
+	old := fakeserver.New()
+	addr := old.ServeTLSVersions(t, tls.VersionTLS10, tls.VersionTLS11)
+	c, err := client.New(client.Config{Server: addr, CAFile: caFile(t, old), Getenv: env(map[string]string{client.EnvKey: testKey})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_, err = listTenants(c)
+	// The reason must be the handshake's: a client that allowed TLS 1.1 would
+	// finish the handshake and fail later, on HTTP/2's own rule, with another
+	// message, so the text is what tells the two apart.
+	if err == nil || fault.KindOf(err) != fault.Unavailable || !strings.Contains(err.Error(), "tls: protocol version not supported") {
+		t.Fatalf("a TLS 1.1 server was accepted, or refused for another reason: %v", err)
+	}
+	if old.Requests() != 0 {
+		t.Errorf("%d requests reached a TLS 1.1 server", old.Requests())
+	}
+	// The same client reaches a server that offers TLS 1.2 only.
+	ok := fakeserver.New()
+	addr = ok.ServeTLSVersions(t, tls.VersionTLS12, tls.VersionTLS12)
+	c2, err := client.New(client.Config{Server: addr, CAFile: caFile(t, ok), Getenv: env(map[string]string{client.EnvKey: testKey})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+	if _, err := listTenants(c2); err != nil {
+		t.Errorf("a TLS 1.2 server was refused: %v", err)
 	}
 }

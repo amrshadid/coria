@@ -66,6 +66,8 @@ type Server struct {
 	auth      []string
 	requests  int
 	nextKey   int
+	seen      []Seen
+	certPEM   []byte
 }
 
 // keyRecord is a key and the secret it was made with.

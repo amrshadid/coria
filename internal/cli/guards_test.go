@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -20,6 +19,7 @@ import (
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/cli"
 	"github.com/amrshadid/magnetar/internal/cli/client"
+	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
 )
 
 // parseRFC3339 reads a time for a test's seed data.
@@ -48,7 +48,10 @@ func TestEveryErrorKindHasItsExitCode(t *testing.T) {
 		{connect.CodeAlreadyExists, 1},
 		{connect.CodeUnavailable, 1},
 		{connect.CodeInternal, 1},
-		{connect.CodeResourceExhausted, 2},
+		{connect.CodeResourceExhausted, 1},
+		{connect.CodeUnimplemented, 1},
+		{connect.CodeUnknown, 1},
+		{connect.Code(99), 1},
 	}
 	for _, c := range cases {
 		for _, extra := range [][]string{nil, {"--json"}} {
@@ -89,29 +92,22 @@ func TestRefusedLooksTheSame(t *testing.T) {
 
 // TestNoFlagCanCarryASecret guards the rule that a secret is never an
 // argument: it walks every command of the tree and fails on any flag, local or
-// inherited, whose name is one that carries a secret. The one exception is
-// --key on "grant list" and "audit list", which takes a key's public id for a
-// filter; the test pins that list, and the commands refuse a whole key given
-// there (TestWholeKeyAsAnArgumentIsRefused).
+// inherited, whose name is one that carries a secret, with no exception. The
+// filters that take a key's public id are --key-id, which is not on the list;
+// the flags that take a path (--key-file, --db-file, --ca-file) or the name of
+// a variable (--db-env) carry no secret either: the secret is in the file or
+// the variable, and the path or the name is not. --ca-file in particular names
+// a file of public certificates. A whole key given where an id goes is refused
+// (TestWholeKeyAsAnArgumentIsRefused).
 func TestNoFlagCanCarryASecret(t *testing.T) {
 	forbidden := []string{"db", "key", "password", "secret", "token"}
-	publicIDFlags := map[string]bool{"grant list --key": true, "audit list --key": true}
-	seen := map[string]bool{}
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
 		visit := func(f *pflag.Flag) {
-			path := strings.TrimPrefix(c.CommandPath(), "magnetar ") + " --" + f.Name
 			name := strings.ToLower(f.Name)
 			carries := slices.Contains(forbidden, name) || strings.Contains(name, "password") || strings.Contains(name, "secret") || strings.Contains(name, "token")
-			switch {
-			case !carries:
-			case publicIDFlags[path]:
-				seen[path] = true
-				if !strings.Contains(f.Usage, "public id") {
-					t.Errorf("%s is allowed only as a public id, and its help does not say so: %q", path, f.Usage)
-				}
-			default:
-				t.Errorf("%s: a flag named for a secret", path)
+			if carries {
+				t.Errorf("%s --%s: a flag named for a secret", strings.TrimPrefix(c.CommandPath(), "magnetar "), f.Name)
 			}
 		}
 		c.LocalFlags().VisitAll(visit)
@@ -121,11 +117,6 @@ func TestNoFlagCanCarryASecret(t *testing.T) {
 		}
 	}
 	walk(cli.Command(cli.Env{}))
-	for path := range publicIDFlags {
-		if !seen[path] {
-			t.Errorf("%s is listed as the public-id exception but there is no such flag", path)
-		}
-	}
 }
 
 // TestKeyAndAddressAreNotFlags guards the other side of the same rule from the
@@ -136,6 +127,8 @@ func TestKeyAndAddressAreNotFlags(t *testing.T) {
 	n := newNetworkRig(t)
 	for _, args := range [][]string{
 		{"tenant", "list", "--key", testKey},
+		{"grant", "list", "--key", "k1"},
+		{"audit", "list", "--key", "k1"},
 		{"tenant", "list", "--token", "x"},
 		{"tenant", "list", "--password", "x"},
 		{"tenant", "list", "--secret", "x"},
@@ -155,10 +148,7 @@ func TestKeyAndAddressAreNotFlags(t *testing.T) {
 // receives, and the file wins over the environment.
 func TestKeyFile(t *testing.T) {
 	n := newNetworkRig(t)
-	file := t.TempDir() + "/key"
-	if err := writeFile(file, testKey+"\n"); err != nil {
-		t.Fatal(err)
-	}
+	file := fakeserver.PrivateFile(t, testKey+"\n")
 	n.env[client.EnvKey] = "ignored"
 	n.must("--key-file", file, "whoami")
 	if h := n.fake.AuthorizationHeaders(); len(h) != 1 || h[0] != "Bearer "+testKey {
@@ -193,14 +183,14 @@ func TestNetworkOverTLS(t *testing.T) {
 // loopback works.
 func TestServerAddressRules(t *testing.T) {
 	env := map[string]string{client.EnvKey: testKey}
-	res := runWith(env, nil, "--server", "http://example.com", "tenant", "list")
+	res := runWith(env, "--server", "http://example.com", "tenant", "list")
 	expect(t, res, 2, "",
 		"magnetar: tenant list: the server address http://example.com is refused: http is allowed only for a loopback host (localhost, 127.0.0.1, ::1); use https://\n")
 
-	// The certificate is the test's own, and the command is given no roots, so
-	// it is judged by the system's authorities, which do not know it.
+	// The certificate is the test's own, and the command is given no CA file,
+	// so it is judged by the system's authorities, which do not know it.
 	n := newNetworkRig(t)
-	res = runWith(n.env, nil, "tenant", "list")
+	res = runWith(without(n.env, client.EnvCAFile), "tenant", "list")
 	if res.code != 1 || res.stdout != "" || strings.Count(res.stderr, "\n") != 1 ||
 		!strings.Contains(res.stderr, "refusing to connect to https://127.0.0.1:") ||
 		!strings.Contains(res.stderr, "its certificate is not trusted by this system (signed by an unknown authority)") {
@@ -212,7 +202,7 @@ func TestServerAddressRules(t *testing.T) {
 
 	fake := newNetworkRig(t).fake
 	addr := fake.ServeHTTP(t)
-	res = runWith(map[string]string{client.EnvServer: addr, client.EnvKey: testKey}, nil, "whoami")
+	res = runWith(map[string]string{client.EnvServer: addr, client.EnvKey: testKey}, "whoami")
 	if res.code != 0 || !strings.Contains(res.stdout, "key k00000000001") {
 		t.Errorf("loopback http: %+v", res)
 	}
@@ -225,13 +215,13 @@ func TestChoosingTheServer(t *testing.T) {
 	r := newRig(t)
 	dir := r.env[client.EnvDataDir]
 	// The flag beats a server in the environment that could not be reached.
-	res := runWith(map[string]string{client.EnvServer: "https://127.0.0.1:1", client.EnvKey: testKey}, nil, "--data-dir", dir, "whoami")
+	res := runWith(map[string]string{client.EnvServer: "https://127.0.0.1:1", client.EnvKey: testKey}, "--data-dir", dir, "whoami")
 	if res.code != 0 {
 		t.Errorf("--data-dir did not beat MAGNETAR_SERVER: %+v", res)
 	}
-	res = runWith(r.env, nil, "--data-dir", dir, "--server", "https://example.org", "whoami")
+	res = runWith(r.env, "--data-dir", dir, "--server", "https://example.org", "whoami")
 	expect(t, res, 2, "", "magnetar: whoami: give --server or --data-dir, not both\n")
-	res = runWith(nil, nil, "whoami")
+	res = runWith(nil, "whoami")
 	if res.code != 2 || !strings.Contains(res.stderr, "do not know where the server is: give --data-dir") {
 		t.Errorf("nothing given: %+v", res)
 	}
@@ -316,7 +306,7 @@ func TestUsageErrors(t *testing.T) {
 		"bad timeout":    {[]string{"--timeout", "soon", "whoami"}, "magnetar: invalid argument \"soon\" for \"--timeout\" flag: time: invalid duration \"soon\"; try \"magnetar whoami --help\"\n"},
 	}
 	for name, c := range cases {
-		res := runWith(nil, nil, c.args...)
+		res := runWith(nil, c.args...)
 		// Unknown commands print the argument through %q, so the escape byte
 		// is written as text; cobra's own messages are cleaned by the
 		// command line before they are written.
@@ -419,7 +409,7 @@ func TestBashCompletionParses(t *testing.T) {
 	if err != nil {
 		t.Skipf("bash is not installed, so the completion script cannot be parsed here: %v", err)
 	}
-	res := runWith(nil, nil, "completion", "bash")
+	res := runWith(nil, "completion", "bash")
 	if res.code != 0 || res.stderr != "" || !strings.Contains(res.stdout, "_magnetar") {
 		t.Fatalf("completion bash: exit %d, stderr %q", res.code, res.stderr)
 	}
@@ -452,9 +442,4 @@ func TestColor(t *testing.T) {
 			t.Errorf("%s: %v, want %v", c.name, got, c.want)
 		}
 	}
-}
-
-// writeFile writes a file only its owner can read, as a key file should be.
-func writeFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0o600)
 }

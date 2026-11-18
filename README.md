@@ -35,9 +35,9 @@ make build VERSION=v0.1.0
 magnetar version | whoami
 magnetar tenant   create <name> [--db-env VAR | --db-file PATH] | list | show <name> | remove <name> --yes
 magnetar key      create --holder TEXT [--expires 90d | --no-expiry] | list | show <id> | revoke <id>
-magnetar grant    set <key-id> --role ROLE (--tenant NAME | --installation) | list (--key ID | --tenant NAME | --installation) | remove <key-id> (--tenant NAME | --installation)
+magnetar grant    set <key-id> --role ROLE (--tenant NAME | --installation) | list (--key-id ID | --tenant NAME | --installation) | remove <key-id> (--tenant NAME | --installation)
 magnetar setting  get <name> [--tenant NAME] | set <name> <value> [--tenant NAME] | unset <name> --tenant NAME | list [--tenant NAME]
-magnetar audit    list [--tenant NAME] [--key ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]
+magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]
 ```
 
 - **Where it connects.** By default the local socket `run/magnetar.sock` in the
@@ -48,8 +48,12 @@ magnetar audit    list [--tenant NAME] [--key ID] [--outcome done|refused|failed
   `::1`.
 - **A secret is never an argument.** No flag takes a key, a password or a
   database address; a tenant's Postgres address is read from the variable named
-  by `--db-env` or the file named by `--db-file`. (`--key` on `grant list` and
-  `audit list` takes a key's public id, and a whole key given there is refused.)
+  by `--db-env` or the file named by `--db-file`. The filters that take a key's
+  public id are `--key-id`, and a whole key given where an id goes is refused.
+  `--key-file` must name a file only you can open (`chmod 600`).
+- **TLS.** TLS 1.2 or later. `--ca-file PATH` (or `MAGNETAR_CA_FILE`) names a
+  PEM file of certificate authorities to trust for `--server` instead of the
+  system's, for a private authority.
 - **Output.** A table, or with `--json` one document that starts with
   `"schemaVersion": 1`. Times are shown in the local zone with their offset;
   there is no color when `NO_COLOR` is set or the output is not a terminal.

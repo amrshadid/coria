@@ -91,12 +91,12 @@ func (a *app) newGrantList() *cobra.Command {
 	var sc scopeFlags
 	var l listFlags
 	cmd := &cobra.Command{
-		Use:   "list (--key ID | --tenant NAME | --installation)",
+		Use:   "list (--key-id ID | --tenant NAME | --installation)",
 		Short: "List the grants of one key, or the grants on one scope",
-		Long: `List the grants of one key on every scope (--key, which takes the key's public
+		Long: `List the grants of one key on every scope (--key-id, which takes the key's public
 id and never the key itself), or the grants of every key on one scope. Exactly
 one of the three is required: there is no list of every grant at once.`,
-		Example: `  magnetar grant list --key k8Zp2QvXn5Rt
+		Example: `  magnetar grant list --key-id k8Zp2QvXn5Rt
   magnetar grant list --tenant lab1
   magnetar grant list --installation`,
 		Args: exactArgs(0),
@@ -104,7 +104,7 @@ one of the three is required: there is no list of every grant at once.`,
 			if err := l.check(); err != nil {
 				return err
 			}
-			if cmd.Flags().Changed("key") {
+			if cmd.Flags().Changed("key-id") {
 				if err := checkKeyID(keyID); err != nil {
 					return err
 				}
@@ -116,7 +116,7 @@ one of the three is required: there is no list of every grant at once.`,
 			defer closeClient()
 			grants, more, err := fetchPages(ctx, l, func(ctx context.Context, size int32, token string) ([]*v1.Grant, string, error) {
 				req := &v1.ListGrantsRequest{PageSize: size, PageToken: token}
-				if cmd.Flags().Changed("key") {
+				if cmd.Flags().Changed("key-id") {
 					req.Filter = &v1.ListGrantsRequest_KeyId{KeyId: keyID}
 				} else {
 					req.Filter = &v1.ListGrantsRequest_Scope{Scope: sc.scope()}
@@ -143,10 +143,10 @@ one of the three is required: there is no list of every grant at once.`,
 			})
 		}),
 	}
-	cmd.Flags().StringVar(&keyID, "key", "", "list the grants of the key with this id (the key's public id, never the key itself)")
+	cmd.Flags().StringVar(&keyID, "key-id", "", "list the grants of the key with this id (the key's public id, never the key itself)")
 	sc.add(cmd, "whose grants to list")
-	cmd.MarkFlagsMutuallyExclusive("key", "tenant", "installation")
-	cmd.MarkFlagsOneRequired("key", "tenant", "installation")
+	cmd.MarkFlagsMutuallyExclusive("key-id", "tenant", "installation")
+	cmd.MarkFlagsOneRequired("key-id", "tenant", "installation")
 	l.add(cmd)
 	return cmd
 }

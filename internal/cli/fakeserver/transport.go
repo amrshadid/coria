@@ -1,12 +1,14 @@
 package fakeserver
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"io"
 	"log"
@@ -22,14 +24,47 @@ import (
 	"connectrpc.com/connect/v2/connecthttp"
 )
 
+// Seen is one HTTP request as the server received it, kept whole so a test can
+// look for something that must not be in it.
+type Seen struct {
+	// URL is the request's path and query.
+	URL string
+	// Header is every header the request carried.
+	Header http.Header
+	// Body is the request's body, as sent.
+	Body []byte
+}
+
+// SeenRequests returns every HTTP request the server has received, in order.
+func (s *Server) SeenRequests() []Seen {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Seen(nil), s.seen...)
+}
+
+// CertPEM returns the certificate ServeTLS made, in PEM form, as a file of
+// authorities a client can be told to trust. It is empty before ServeTLS.
+func (s *Server) CertPEM() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.certPEM
+}
+
 // handler returns the fake as an HTTP handler, the way the real server mounts
-// its services.
+// its services, inside a recorder of what each request carried.
 func (s *Server) handler() http.Handler {
 	srv := connect.NewServer(s.interceptor)
 	s.Register(srv)
 	mux := http.NewServeMux()
 	connecthttp.Mount(mux, srv)
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		s.mu.Lock()
+		s.seen = append(s.seen, Seen{URL: r.URL.String(), Header: r.Header.Clone(), Body: body})
+		s.mu.Unlock()
+		mux.ServeHTTP(w, r)
+	})
 }
 
 // serve runs an HTTP server on a listener until the test ends, and fails the
@@ -81,22 +116,38 @@ func (s *Server) ServeUnix(tb testing.TB) (dataDir string) {
 }
 
 // ServeTLS serves the fake over TLS on the loopback address with a certificate
-// made here for it, and returns its https address and a pool that trusts that
-// certificate. A client with the system's authorities does not trust it.
-func (s *Server) ServeTLS(tb testing.TB) (addr string, roots *x509.CertPool) {
+// made here for it, and returns its https address. CertPEM is the certificate,
+// for a client told to trust it; a client with the system's authorities does
+// not.
+func (s *Server) ServeTLS(tb testing.TB) (addr string) {
 	tb.Helper()
-	cert, pool := selfSigned(tb)
+	return s.ServeTLSVersions(tb, 0, 0)
+}
+
+// ServeTLSVersions is ServeTLS with the versions of TLS the server offers: min
+// and max are tls.VersionTLS10 and so on, and zero leaves the default. It is
+// how a test shows that a client refuses a server that offers only an old
+// version.
+func (s *Server) ServeTLSVersions(tb testing.TB, minVersion, maxVersion uint16) (addr string) {
+	tb.Helper()
+	cert, certPEM := selfSigned(tb)
+	s.mu.Lock()
+	s.certPEM = certPEM
+	s.mu.Unlock()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		tb.Fatalf("listening on loopback: %v", err)
 	}
 	srv := &http.Server{
 		Handler:           s.handler(),
-		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12},
+		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12, MaxVersion: maxVersion},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	if minVersion != 0 {
+		srv.TLSConfig.MinVersion = minVersion
+	}
 	serve(tb, srv, ln, true)
-	return "https://" + ln.Addr().String(), pool
+	return "https://" + ln.Addr().String()
 }
 
 // ServeHTTP serves the fake over plain http on the loopback address, the way
@@ -112,9 +163,9 @@ func (s *Server) ServeHTTP(tb testing.TB) (addr string) {
 	return "http://" + ln.Addr().String()
 }
 
-// selfSigned makes a certificate valid for the loopback names and a pool that
-// trusts exactly it.
-func selfSigned(tb testing.TB) (tls.Certificate, *x509.CertPool) {
+// selfSigned makes a certificate valid for the loopback names, and the same
+// certificate in PEM form.
+func selfSigned(tb testing.TB) (tls.Certificate, []byte) {
 	tb.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -136,11 +187,6 @@ func selfSigned(tb testing.TB) (tls.Certificate, *x509.CertPool) {
 	if err != nil {
 		tb.Fatalf("making a certificate: %v", err)
 	}
-	leaf, err := x509.ParseCertificate(der)
-	if err != nil {
-		tb.Fatalf("parsing the certificate: %v", err)
-	}
-	pool := x509.NewCertPool()
-	pool.AddCert(leaf)
-	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, pool
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, pemBytes
 }

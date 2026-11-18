@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -32,10 +31,6 @@ type Env struct {
 	Now func() time.Time
 	// Location is the zone times are shown in; time.Local when nil.
 	Location *time.Location
-	// RootCAs replaces the system's certificate authorities for the network.
-	// It exists for tests that serve TLS with a certificate made in the test;
-	// there is no flag for it.
-	RootCAs *x509.CertPool
 }
 
 // withDefaults fills what a caller left unset.
@@ -66,6 +61,7 @@ type app struct {
 		dataDir string
 		server  string
 		keyFile string
+		caFile  string
 		timeout time.Duration
 		json    bool
 	}
@@ -181,7 +177,11 @@ func (a *app) client(cmd *cobra.Command) (*client.Client, error) {
 		KeyFile: a.opts.keyFile,
 		Getenv:  a.env.Getenv,
 		Timeout: a.opts.timeout,
-		RootCAs: a.env.RootCAs,
+	}
+	if flags.Changed("ca-file") {
+		cfg.CAFile = a.opts.caFile
+	} else {
+		cfg.CAFile = a.env.Getenv(client.EnvCAFile)
 	}
 	envServer, envData := a.env.Getenv(client.EnvServer), a.env.Getenv(client.EnvDataDir)
 	switch {
@@ -237,6 +237,7 @@ not allowed), 4 not found.`,
 	f.StringVar(&a.opts.dataDir, "data-dir", "", "the installation's data directory; the server is reached on its local socket, run/magnetar.sock (default: "+client.EnvDataDir+")")
 	f.StringVar(&a.opts.server, "server", "", "address of a server on the network, https://host:port (http:// only for a loopback host); needs a key (default: "+client.EnvServer+")")
 	f.StringVar(&a.opts.keyFile, "key-file", "", "path of a file holding the key to send with --server (default: the "+client.EnvKey+" variable); the key itself is never an argument")
+	f.StringVar(&a.opts.caFile, "ca-file", "", "path of a PEM file of certificate authorities to trust for --server, instead of the system's, for a private authority (default: "+client.EnvCAFile+"); it has no effect on the local socket")
 	f.DurationVar(&a.opts.timeout, "timeout", client.DefaultTimeout, "how long one call to the server may take")
 	f.BoolVar(&a.opts.json, "json", false, "write one JSON document with schemaVersion instead of a table")
 

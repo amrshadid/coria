@@ -42,7 +42,7 @@ func TestWriteJSONOutputs(t *testing.T) {
 		{"key-list", []string{"key", "list"}},
 		{"key-show", []string{"key", "show", "k00000000001"}},
 		{"grant-set", []string{"grant", "set", "k00000000001", "--role", "reader", "--tenant", "lab1"}},
-		{"grant-list", []string{"grant", "list", "--key", "k00000000001"}},
+		{"grant-list", []string{"grant", "list", "--key-id", "k00000000001"}},
 		{"grant-remove", []string{"grant", "remove", "k00000000001", "--tenant", "lab1"}},
 		{"key-revoke", []string{"key", "revoke", "k00000000001"}},
 		{"setting-get", []string{"setting", "get", "audit.retention"}},
