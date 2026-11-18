@@ -6,6 +6,8 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -37,6 +39,9 @@ func openPool(ctx context.Context, address string) (*pgxpool.Pool, *redactor, er
 	cfg, err := pgxpool.ParseConfig(address)
 	if err != nil {
 		return nil, nil, fault.New(fault.Invalid, "the Postgres address is not a valid postgres:// URL")
+	}
+	if err := checkTransport(address, cfg.ConnConfig); err != nil {
+		return nil, nil, err
 	}
 	red := newRedactor(address, cfg.ConnConfig)
 
@@ -96,6 +101,9 @@ func newRedactor(address string, cfg *pgx.ConnConfig) *redactor {
 	return &redactor{secrets: all}
 }
 
+// ipLiteral matches an IPv4 address or a bracketed IPv6 address.
+var ipLiteral = regexp.MustCompile(`\b[0-9]{1,3}(?:\.[0-9]{1,3}){3}\b|\[[0-9A-Fa-f:.]+\]`)
+
 // text returns s with every secret replaced.
 func (r *redactor) text(s string) string {
 	if r == nil {
@@ -104,7 +112,9 @@ func (r *redactor) text(s string) string {
 	for _, secret := range r.secrets {
 		s = strings.ReplaceAll(s, secret, "***")
 	}
-	return s
+	// A name pgx resolved is printed as the addresses it resolved to, which
+	// name the same host.
+	return ipLiteral.ReplaceAllString(s, "***")
 }
 
 // scrubbed is an error whose text has had the address taken out. It keeps the
@@ -197,4 +207,50 @@ func isUniqueViolation(err error) bool {
 func isForeignKeyViolation(err error) bool {
 	var pe *pgconn.PgError
 	return errors.As(err, &pe) && pe.Code == sqlstateForeignKey
+}
+
+// checkTransport refuses, as Invalid, an address that would send the
+// password and the archive's keys over a network with no encryption nobody
+// asked for. The driver is closed by default: a host that is not loopback and
+// not a Unix socket path needs an sslmode the person wrote down, one of
+// verify-full, verify-ca, require or disable. With none, or with prefer or
+// allow, which pgx falls back from to plain text, it is refused. Loopback and
+// socket addresses keep pgx's default. The message names no host, user or
+// password.
+func checkTransport(address string, cfg *pgx.ConnConfig) error {
+	hosts := []string{cfg.Host}
+	for _, fb := range cfg.Fallbacks {
+		hosts = append(hosts, fb.Host)
+	}
+	remote := false
+	for _, h := range hosts {
+		if !isLocalHost(h) {
+			remote = true
+		}
+	}
+	if !remote {
+		return nil
+	}
+	mode := ""
+	if u, err := url.Parse(address); err == nil {
+		mode = u.Query().Get("sslmode")
+	}
+	if mode == "" {
+		mode = os.Getenv("PGSSLMODE")
+	}
+	switch strings.ToLower(mode) {
+	case "verify-full", "verify-ca", "require", "disable":
+		return nil
+	}
+	return fault.New(fault.Invalid, "a Postgres address to another machine must say how the connection is protected: add sslmode=verify-full (with sslrootcert), or write sslmode=disable if the network is trusted")
+}
+
+// isLocalHost reports whether host is a Unix socket path, "localhost" or a
+// loopback address.
+func isLocalHost(host string) bool {
+	if host == "" || strings.HasPrefix(host, "/") || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }

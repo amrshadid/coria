@@ -119,3 +119,41 @@ func TestRedactor(t *testing.T) {
 		t.Error("text without secrets was changed")
 	}
 }
+
+// TestRemoteAddressesNeedAnExplicitSSLMode guards that the driver is closed by
+// default: an address to a host that is not loopback or a socket, with no
+// sslmode or with prefer or allow, is Invalid without a server being reached,
+// and the message names no host, user or password; verify-full, verify-ca,
+// require and disable are accepted (they get as far as failing to connect,
+// which is Unavailable), and loopback and socket addresses keep pgx's default.
+func TestRemoteAddressesNeedAnExplicitSSLMode(t *testing.T) {
+	t.Setenv("PGSSLMODE", "")
+	ctx := context.Background()
+	const remote = "postgres://needleuser:hunter2needle@needlehost.invalid/needledb"
+	for _, tt := range []struct {
+		what, address string
+		want          fault.Kind
+	}{
+		{"remote, no sslmode", remote, fault.Invalid},
+		{"remote, prefer", remote + "?sslmode=prefer", fault.Invalid},
+		{"remote, allow", remote + "?sslmode=allow", fault.Invalid},
+		{"remote, one of two hosts", "postgres://needleuser:hunter2needle@127.0.0.1,needlehost.invalid/needledb", fault.Invalid},
+		{"remote, verify-full", remote + "?sslmode=verify-full&connect_timeout=2", fault.Unavailable},
+		{"remote, verify-ca", remote + "?sslmode=verify-ca&connect_timeout=2", fault.Unavailable},
+		{"remote, require", remote + "?sslmode=require&connect_timeout=2", fault.Unavailable},
+		{"remote, disable", remote + "?sslmode=disable&connect_timeout=2", fault.Unavailable},
+		{"loopback, no sslmode", "postgres://needleuser:hunter2needle@127.0.0.1:1/needledb?connect_timeout=2", fault.Unavailable},
+		{"localhost, no sslmode", "postgres://needleuser:hunter2needle@localhost:1/needledb?connect_timeout=2", fault.Unavailable},
+		{"IPv6 loopback, no sslmode", "postgres://needleuser:hunter2needle@[::1]:1/needledb?connect_timeout=2", fault.Unavailable},
+		{"socket, no sslmode", "postgres://needleuser:hunter2needle@%2Fnonexistent%2Fdir/needledb?connect_timeout=2", fault.Unavailable},
+	} {
+		_, err := OpenMaster(ctx, tt.address)
+		if got := fault.KindOf(err); got != tt.want {
+			t.Errorf("%s: kind %v (%v), want %v", tt.what, got, err, tt.want)
+		}
+		noSecrets(t, tt.what, err, "127.0.0.1", "nonexistent")
+		if tt.want == fault.Invalid && !strings.Contains(fault.Message(err), "sslmode=verify-full") {
+			t.Errorf("%s: the message does not say what to add: %q", tt.what, fault.Message(err))
+		}
+	}
+}

@@ -12,10 +12,13 @@
 // and works with a login that owns that schema and nothing else. It is
 // tested on Postgres 16 and 18; pgx supports 14 and later.
 //
-// Whether the connection is encrypted is the URL's to say: pgx's default,
-// sslmode=prefer, encrypts when the server offers it and falls back to plain
-// text when it does not, so an address that must never go in the clear says
-// sslmode=verify-full.
+// The driver is closed by default. pgx's default, sslmode=prefer, encrypts
+// when the server offers it and falls back to plain text when it does not, so
+// an address whose host is not loopback and not a Unix socket path is refused
+// at open, as Invalid, unless a person wrote its sslmode down as verify-full,
+// verify-ca, require or disable (the error says to add sslmode=verify-full
+// with sslrootcert, or sslmode=disable if the network is trusted). Loopback
+// and socket addresses keep pgx's default.
 //
 // # How it reaches the database
 //
