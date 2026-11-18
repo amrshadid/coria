@@ -366,6 +366,22 @@ All notable changes to Magnetar are written here. The form is
   reception state machine as one table, with completion decided from the
   quiet period and the longest open time, a clock set back included. The
   template, pattern, key and manifest parsers are fuzzed.
+- Magnetar had nowhere to put a file. The storage port, `internal/blob`, now
+  states what every storage promises: Put streams bytes to a key and returns
+  their size and SHA-256 computed as they pass, and the object appears whole or
+  not at all, a replaced one included; Read gives a byte range as a stream; List
+  pages through keys in a stable order, one level at a time with a delimiter;
+  Delete of a missing key is not an error; Usage says when it cannot know the
+  free space. Keys are checked in one place, so none can name a path outside a
+  storage or a name Windows reads differently. One contract suite holds every
+  driver to this, and the first driver, a directory on a local disk or NFS,
+  passes it. It writes each object to a temporary directory at the storage's
+  root, syncs it, renames it into place and syncs both directories; it refuses
+  a storage that spans two file systems rather than copy; it follows no
+  symbolic link; and at start it reads only its temporary directory, so
+  starting costs the same whatever the archive holds. A child process killed in
+  the middle of its Puts leaves every key whole or absent, and the files
+  written match `shasum` and `cmp`.
 
 ### Changed
 
