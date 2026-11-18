@@ -33,6 +33,16 @@ import (
 // filter, and to the tenant: one used with the other list, another filter,
 // another tenant's store, or altered or cut short, is Invalid.
 //
+// Every method that changes the database also takes a Guard: the check of
+// who makes the change, which the store runs last in the change's
+// transaction, after the change and its audit entry are written and before
+// the commit. A Guard that returns an error undoes the change: nothing is
+// committed, neither the change nor its entry, and the call returns that
+// error as it is (its kind and chain kept). A change that fails before the
+// Guard's turn (its entry's id taken, say) does not run it. A nil Guard is a change no key makes,
+// the server's own. The package documentation says why a tenant's change
+// takes a Guard and not the key itself, and what that leaves open.
+//
 // Text is kept and matched byte for byte, and lists order it by its bytes.
 // No error a store returns holds its database's address or password; its
 // message (fault.Message) is written to be shown, logged and kept in a
@@ -60,12 +70,12 @@ type Store interface {
 	// replacing it. The name and value are bounded as the master's are
 	// (master.ValidateSettingName, master.ValidateSettingValue); the empty
 	// string is a value.
-	SetSetting(ctx context.Context, name, value string, audit master.AuditEntry) error
+	SetSetting(ctx context.Context, name, value string, audit master.AuditEntry, guard Guard) error
 	// UnsetSetting removes the tenant's override and reports whether there
 	// was one: removing one that is not set changes nothing and succeeds, as
 	// the API contract's UnsetSetting does. The audit entry is written
 	// either way.
-	UnsetSetting(ctx context.Context, name string, audit master.AuditEntry) (bool, error)
+	UnsetSetting(ctx context.Context, name string, audit master.AuditEntry, guard Guard) (bool, error)
 	// ListSettings returns a page of the tenant's overrides in order of
 	// name, and the cursor of the next page, empty after the last. A setting
 	// present throughout a listing is returned exactly once, whatever is set
@@ -82,3 +92,12 @@ type Store interface {
 	// is returned exactly once, whatever is appended meanwhile.
 	ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error)
 }
+
+// Guard is the check a change makes of who makes it, run by the store last
+// in the change's transaction: after the change and its audit entry are
+// written, so after any wait for the write lock or for the rows the change
+// needs, and just before the commit (Store). Keys and grants live only in
+// the master, so a tenant's store cannot read them in its own transaction;
+// the caller hands it this check instead, which asks the master
+// (master.Store.CheckActor).
+type Guard func(ctx context.Context) error

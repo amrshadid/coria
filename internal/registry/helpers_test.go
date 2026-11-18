@@ -181,7 +181,7 @@ func (e *env) audit(method string) master.AuditEntry {
 // create creates a tenant through r, failing the test on an error.
 func (e *env) create(r *Registry, id, name, drv, address string) master.Tenant {
 	e.t.Helper()
-	tn, err := r.Create(context.Background(), NewTenant{ID: id, Name: name, Driver: drv, Address: address}, e.audit("CreateTenant"))
+	tn, _, err := r.Create(context.Background(), NewTenant{ID: id, Name: name, Driver: drv, Address: address}, e.audit("CreateTenant"), master.LocalOperator())
 	if err != nil {
 		e.t.Fatalf("Create(%s): %v", name, err)
 	}
@@ -472,9 +472,9 @@ func (c *countingMaster) Version(ctx context.Context) (int, error) {
 }
 func (c *countingMaster) Ping(ctx context.Context) error { c.count(); return c.Store.Ping(ctx) }
 func (c *countingMaster) Close() error                   { c.count(); return c.Store.Close() }
-func (c *countingMaster) CreateTenant(ctx context.Context, t master.Tenant, a master.AuditEntry) error {
+func (c *countingMaster) CreateTenant(ctx context.Context, t master.Tenant, a master.AuditEntry, by master.Actor) error {
 	c.count()
-	return c.Store.CreateTenant(ctx, t, a)
+	return c.Store.CreateTenant(ctx, t, a, by)
 }
 func (c *countingMaster) Tenant(ctx context.Context, id string) (master.Tenant, error) {
 	c.count()
@@ -488,17 +488,17 @@ func (c *countingMaster) ListTenants(ctx context.Context, p master.Page) ([]mast
 	c.count()
 	return c.Store.ListTenants(ctx, p)
 }
-func (c *countingMaster) SetTenantState(ctx context.Context, id string, s master.TenantState, reason string, a master.AuditEntry) error {
+func (c *countingMaster) SetTenantState(ctx context.Context, id string, s master.TenantState, reason string, a master.AuditEntry, by master.Actor) error {
 	c.count()
-	return c.Store.SetTenantState(ctx, id, s, reason, a)
+	return c.Store.SetTenantState(ctx, id, s, reason, a, by)
 }
-func (c *countingMaster) RemoveTenant(ctx context.Context, id string, a master.AuditEntry) error {
+func (c *countingMaster) RemoveTenant(ctx context.Context, id string, a master.AuditEntry, by master.Actor) error {
 	c.count()
-	return c.Store.RemoveTenant(ctx, id, a)
+	return c.Store.RemoveTenant(ctx, id, a, by)
 }
-func (c *countingMaster) CreateKey(ctx context.Context, k master.Key, a master.AuditEntry) error {
+func (c *countingMaster) CreateKey(ctx context.Context, k master.Key, a master.AuditEntry, by master.Actor) error {
 	c.count()
-	return c.Store.CreateKey(ctx, k, a)
+	return c.Store.CreateKey(ctx, k, a, by)
 }
 func (c *countingMaster) Key(ctx context.Context, id string) (master.Key, error) {
 	c.count()
@@ -512,13 +512,13 @@ func (c *countingMaster) MarkKeyUsed(ctx context.Context, id string, at time.Tim
 	c.count()
 	return c.Store.MarkKeyUsed(ctx, id, at)
 }
-func (c *countingMaster) RevokeKey(ctx context.Context, id string, at time.Time, a master.AuditEntry) (time.Time, error) {
+func (c *countingMaster) RevokeKey(ctx context.Context, id string, at time.Time, a master.AuditEntry, by master.Actor) (time.Time, error) {
 	c.count()
-	return c.Store.RevokeKey(ctx, id, at, a)
+	return c.Store.RevokeKey(ctx, id, at, a, by)
 }
-func (c *countingMaster) SetGrant(ctx context.Context, g master.Grant, a master.AuditEntry) (master.Role, error) {
+func (c *countingMaster) SetGrant(ctx context.Context, g master.Grant, a master.AuditEntry, by master.Actor) (master.Role, error) {
 	c.count()
-	return c.Store.SetGrant(ctx, g, a)
+	return c.Store.SetGrant(ctx, g, a, by)
 }
 func (c *countingMaster) GrantsByKey(ctx context.Context, id string, p master.Page) ([]master.Grant, string, error) {
 	c.count()
@@ -528,21 +528,21 @@ func (c *countingMaster) GrantsByScope(ctx context.Context, s master.Scope, p ma
 	c.count()
 	return c.Store.GrantsByScope(ctx, s, p)
 }
-func (c *countingMaster) RemoveGrant(ctx context.Context, id string, s master.Scope, a master.AuditEntry) (master.Role, error) {
+func (c *countingMaster) RemoveGrant(ctx context.Context, id string, s master.Scope, a master.AuditEntry, by master.Actor) (master.Role, error) {
 	c.count()
-	return c.Store.RemoveGrant(ctx, id, s, a)
+	return c.Store.RemoveGrant(ctx, id, s, a, by)
 }
 func (c *countingMaster) Setting(ctx context.Context, name string) (string, error) {
 	c.count()
 	return c.Store.Setting(ctx, name)
 }
-func (c *countingMaster) SetSetting(ctx context.Context, name, value string, a master.AuditEntry) error {
+func (c *countingMaster) SetSetting(ctx context.Context, name, value string, a master.AuditEntry, by master.Actor) error {
 	c.count()
-	return c.Store.SetSetting(ctx, name, value, a)
+	return c.Store.SetSetting(ctx, name, value, a, by)
 }
-func (c *countingMaster) UnsetSetting(ctx context.Context, name string, a master.AuditEntry) (bool, error) {
+func (c *countingMaster) UnsetSetting(ctx context.Context, name string, a master.AuditEntry, by master.Actor) (bool, error) {
 	c.count()
-	return c.Store.UnsetSetting(ctx, name, a)
+	return c.Store.UnsetSetting(ctx, name, a, by)
 }
 func (c *countingMaster) ListSettings(ctx context.Context, p master.Page) ([]master.Setting, string, error) {
 	c.count()
@@ -583,7 +583,7 @@ func (m *memMaster) ListTenants(_ context.Context, _ master.Page) ([]master.Tena
 }
 
 // SetTenantState sets a tenant's state.
-func (m *memMaster) SetTenantState(_ context.Context, id string, s master.TenantState, reason string, _ master.AuditEntry) error {
+func (m *memMaster) SetTenantState(_ context.Context, id string, s master.TenantState, reason string, _ master.AuditEntry, _ master.Actor) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.writes.Add(1)
@@ -708,8 +708,8 @@ type trickyMaster struct {
 var lostAnswer = fault.New(fault.Unavailable, "the master database did not answer in time")
 
 // RemoveTenant commits, then fails when asked to.
-func (m *trickyMaster) RemoveTenant(ctx context.Context, id string, a master.AuditEntry) error {
-	err := m.Store.RemoveTenant(ctx, id, a)
+func (m *trickyMaster) RemoveTenant(ctx context.Context, id string, a master.AuditEntry, by master.Actor) error {
+	err := m.Store.RemoveTenant(ctx, id, a, by)
 	if err == nil && m.removeCommitsThenFails.CompareAndSwap(true, false) {
 		return lostAnswer
 	}
@@ -717,8 +717,8 @@ func (m *trickyMaster) RemoveTenant(ctx context.Context, id string, a master.Aud
 }
 
 // CreateTenant commits, then fails when asked to.
-func (m *trickyMaster) CreateTenant(ctx context.Context, t master.Tenant, a master.AuditEntry) error {
-	err := m.Store.CreateTenant(ctx, t, a)
+func (m *trickyMaster) CreateTenant(ctx context.Context, t master.Tenant, a master.AuditEntry, by master.Actor) error {
+	err := m.Store.CreateTenant(ctx, t, a, by)
 	if err == nil && m.createCommitsThenFails.CompareAndSwap(true, false) {
 		return lostAnswer
 	}
@@ -726,11 +726,11 @@ func (m *trickyMaster) CreateTenant(ctx context.Context, t master.Tenant, a mast
 }
 
 // SetTenantState fails without committing when asked to.
-func (m *trickyMaster) SetTenantState(ctx context.Context, id string, s master.TenantState, reason string, a master.AuditEntry) error {
+func (m *trickyMaster) SetTenantState(ctx context.Context, id string, s master.TenantState, reason string, a master.AuditEntry, by master.Actor) error {
 	if m.stateFails.Load() {
 		return lostAnswer
 	}
-	return m.Store.SetTenantState(ctx, id, s, reason, a)
+	return m.Store.SetTenantState(ctx, id, s, reason, a, by)
 }
 
 // ListTenants waits at the gate when one is set.

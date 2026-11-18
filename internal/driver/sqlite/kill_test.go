@@ -73,7 +73,7 @@ func TestKillDuringChanges(t *testing.T) {
 	if err := m.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.SetSetting(ctx, "seed", "v", entry(killDupID)); err != nil {
+	if err := m.SetSetting(ctx, "seed", "v", entry(killDupID), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	if err := m.Close(); err != nil {
@@ -215,7 +215,7 @@ func killChild(path string) {
 					id = killDupID
 				}
 				err := m.SetSetting(ctx, "kill."+strconv.FormatInt(n, 10), strconv.FormatInt(n, 10),
-					master.AuditEntry{ID: id, Time: time.Now(), Method: "Kill", Outcome: master.OutcomeDone})
+					master.AuditEntry{ID: id, Time: time.Now(), Method: "Kill", Outcome: master.OutcomeDone}, master.LocalOperator())
 				switch {
 				case err == nil:
 					say("ok", n)

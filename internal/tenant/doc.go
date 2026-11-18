@@ -29,6 +29,33 @@
 // closed, Internal for the rest, a duplicate audit id included
 // (master.ErrDuplicateAuditID). Store's documentation says each rule.
 //
+// # Who makes a change
+//
+// A change in the master takes the acting key (master.Actor) and checks it
+// inside its own transaction, so a key revoked after its request was checked
+// makes no change there. A tenant's database cannot do the same: it holds no
+// keys or grants (below), and the two databases share no transaction; they
+// may not even be of one type. A change here takes a Guard instead, the
+// check of its key that the caller builds on the master
+// (master.Store.CheckActor), and the store runs it last in the change's
+// transaction: after the change and its entry are written, so after any wait
+// for the write lock or for the rows, and just before the commit. A Guard
+// that refuses undoes both. The key the change is made by is in its audit
+// entry (master.AuditEntry.KeyID), as it is for every entry.
+//
+// What that leaves is stated, not hidden: a revocation, an expiry or a grant
+// removed or lowered that commits in the master after the Guard read it and
+// before the tenant's commit is not seen by that one change. The window is
+// one commit of the tenant's database; where a driver commits several
+// waiting changes together (the SQLite driver does), it also holds the
+// changes written after this one in the same transaction, a bounded few.
+// Closing it would need the master to hold the key's row locked while
+// another database commits, which on a SQLite master would stop every write
+// of the installation for the length of a tenant's commit, or a commit
+// protocol across two databases of different types; neither is worth a
+// window of one commit for a change an admin was allowed to make a moment
+// before.
+//
 // # What this package must never do
 //
 // It must never import a database driver, database/sql or package sqlkit: the

@@ -19,6 +19,19 @@
 // writes its own audit entry, and a second one for the same request would
 // double the cost of every call.
 //
+// Every such operation also takes who makes the change, an Actor, and checks
+// it in the same transaction: a key must still exist, not be revoked, not
+// have expired at the actor's time, and hold the role the change needs on
+// its scope, or nothing is written and the call fails with a Refusal of kind
+// Unauthenticated or Denied. What the check read holds until the commit
+// against every change that would undo it (a revocation, a grant removed or
+// lowered, the grant's tenant removed), so a change by a key is ordered
+// wholly before such a change, or refused after it. The local operator and
+// the server are never refused. Actor.Judge is the one statement of the
+// rule; a driver only reads what it judges. CheckActor makes the same check
+// on its own, for a caller about to change a database that holds no keys (a
+// tenant's) and for a read.
+//
 // Ids and times are given by the caller, never made by the store, so a test
 // knows exactly what it will read back. A time is kept in UTC to the
 // microsecond: what is finer is dropped, and a time comes back in UTC

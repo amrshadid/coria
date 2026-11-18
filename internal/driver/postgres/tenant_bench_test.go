@@ -17,7 +17,7 @@ func BenchmarkTenantSetting(b *testing.B) {
 	ctx := context.Background()
 	for i := range 1000 {
 		a := master.AuditEntry{ID: fmt.Sprintf("setup-%05d", i), Time: mastertest.T0, Method: "Setup", Outcome: master.OutcomeDone}
-		if err := s.SetSetting(ctx, fmt.Sprintf("setting.%04d", i), "v", a); err != nil {
+		if err := s.SetSetting(ctx, fmt.Sprintf("setting.%04d", i), "v", a, nil); err != nil {
 			b.Fatal(err)
 		}
 	}

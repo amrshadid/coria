@@ -24,7 +24,7 @@ func TestCheckTable(t *testing.T) {
 	instReader := e.key(time.Time{}, on(master.Installation, master.RoleReader))
 	instAdmin := e.key(time.Time{}, on(master.Installation, master.RoleAdmin))
 	revoked := e.key(time.Time{}, on(master.Installation, master.RoleAdmin))
-	if _, err := e.master.RevokeKey(e.ctx, revoked.id, t0, e.setupEntry()); err != nil {
+	if _, err := e.master.RevokeKey(e.ctx, revoked.id, t0, e.setupEntry(), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	expired := e.key(t0.Add(-time.Second), on(master.Installation, master.RoleAdmin))

@@ -30,6 +30,16 @@ func BenchmarkAppendAudit(b *testing.B) { mastertest.BenchAppendAudit(b, openTes
 // minute, which writes nothing.
 func BenchmarkMarkKeyUsedNoWrite(b *testing.B) { mastertest.BenchMarkKeyUsedNoWrite(b, openTest) }
 
+// BenchmarkSetSettingByKey measures a change by a key, checked inside the
+// change's transaction.
+func BenchmarkSetSettingByKey(b *testing.B) { mastertest.BenchSetSettingByKey(b, openTest) }
+
+// BenchmarkSetSettingByLocalOperator measures the same change by the local
+// operator, whom no store checks.
+func BenchmarkSetSettingByLocalOperator(b *testing.B) {
+	mastertest.BenchSetSettingByLocalOperator(b, openTest)
+}
+
 // benchCallers are the numbers of concurrent callers the change benchmarks
 // measure: one alone, which must not wait for company, and enough at once
 // that changes can share a commit.
@@ -92,10 +102,18 @@ func settingChange(set func(ctx context.Context, name, value string, audit maste
 	}
 }
 
+// byLocalOperator returns s's SetSetting made by the local operator, whom no
+// store checks, so these benchmarks measure the write path alone.
+func byLocalOperator(s master.Store) func(ctx context.Context, name, value string, audit master.AuditEntry) error {
+	return func(ctx context.Context, name, value string, audit master.AuditEntry) error {
+		return s.SetSetting(ctx, name, value, audit, master.LocalOperator())
+	}
+}
+
 // BenchmarkMasterChanges measures changes to the master, each a setting with
 // its audit entry, from 1, 8, 64 and 256 concurrent callers.
 func BenchmarkMasterChanges(b *testing.B) {
-	benchChanges(b, settingChange(openTest(b).SetSetting))
+	benchChanges(b, settingChange(byLocalOperator(openTest(b))))
 }
 
 // BenchmarkMasterChangesOneInEightFails measures changes to the master when
@@ -106,17 +124,17 @@ func BenchmarkMasterChanges(b *testing.B) {
 func BenchmarkMasterChangesOneInEightFails(b *testing.B) {
 	s := openTest(b)
 	ctx := context.Background()
-	if err := s.SetSetting(ctx, "taken", "v", master.AuditEntry{ID: "bench-taken", Time: mastertest.T0, Method: "Bench", Outcome: master.OutcomeDone}); err != nil {
+	if err := s.SetSetting(ctx, "taken", "v", master.AuditEntry{ID: "bench-taken", Time: mastertest.T0, Method: "Bench", Outcome: master.OutcomeDone}, master.LocalOperator()); err != nil {
 		b.Fatal(err)
 	}
-	set := settingChange(s.SetSetting)
+	set := settingChange(byLocalOperator(s))
 	var refused, refusedWait atomic.Int64
 	benchChanges(b, func(ctx context.Context, n int64) error {
 		if n%8 != 0 {
 			return set(ctx, n)
 		}
 		t := time.Now()
-		err := s.SetSetting(ctx, "refused", "v", master.AuditEntry{ID: "bench-taken", Time: mastertest.T0, Method: "Bench", Outcome: master.OutcomeDone})
+		err := s.SetSetting(ctx, "refused", "v", master.AuditEntry{ID: "bench-taken", Time: mastertest.T0, Method: "Bench", Outcome: master.OutcomeDone}, master.LocalOperator())
 		if !errors.Is(err, master.ErrDuplicateAuditID) {
 			return fmt.Errorf("a change with a taken audit id: %w", err)
 		}
@@ -137,12 +155,12 @@ func BenchmarkRefusedAlone(b *testing.B) {
 	s := openTest(b)
 	ctx := context.Background()
 	a := master.AuditEntry{ID: "bench-taken", Time: mastertest.T0, Method: "Bench", Outcome: master.OutcomeDone}
-	if err := s.SetSetting(ctx, "taken", "v", a); err != nil {
+	if err := s.SetSetting(ctx, "taken", "v", a, master.LocalOperator()); err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		if err := s.SetSetting(ctx, "refused", "v", a); !errors.Is(err, master.ErrDuplicateAuditID) {
+		if err := s.SetSetting(ctx, "refused", "v", a, master.LocalOperator()); !errors.Is(err, master.ErrDuplicateAuditID) {
 			b.Fatal(err)
 		}
 	}

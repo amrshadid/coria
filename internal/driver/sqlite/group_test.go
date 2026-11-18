@@ -158,19 +158,19 @@ func wantSetting(t *testing.T, m *Master, name, auditID string, there bool) {
 func TestFailingChangeInBatchAlone(t *testing.T) {
 	ctx := context.Background()
 	m := openReady(t)
-	if err := m.SetSetting(ctx, "first", "v", entry("taken")); err != nil {
+	if err := m.SetSetting(ctx, "first", "v", entry("taken"), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.CreateTenant(ctx, master.Tenant{ID: "t1", Name: "lab", Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: mastertest.T0}, entry("tenant")); err != nil {
+	if err := m.CreateTenant(ctx, master.Tenant{ID: "t1", Name: "lab", Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: mastertest.T0}, entry("tenant"), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	commits := m.w.commits.Load()
 
 	h := holdWriter(t, &m.base)
-	before := submit(t, &m.base, 1, func() error { return m.SetSetting(ctx, "before", "v", entry("a-before")) })
-	dupAudit := submit(t, &m.base, 2, func() error { return m.SetSetting(ctx, "dup-audit", "v", entry("taken")) })
+	before := submit(t, &m.base, 1, func() error { return m.SetSetting(ctx, "before", "v", entry("a-before"), master.LocalOperator()) })
+	dupAudit := submit(t, &m.base, 2, func() error { return m.SetSetting(ctx, "dup-audit", "v", entry("taken"), master.LocalOperator()) })
 	dupName := submit(t, &m.base, 3, func() error {
-		return m.CreateTenant(ctx, master.Tenant{ID: "t2", Name: "lab", Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: mastertest.T0}, entry("a-dup-name"))
+		return m.CreateTenant(ctx, master.Tenant{ID: "t2", Name: "lab", Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: mastertest.T0}, entry("a-dup-name"), master.LocalOperator())
 	})
 	panics := submit(t, &m.base, 4, func() error {
 		return m.write(ctx, "test", func(tx *sql.Tx, s *statements) error {
@@ -180,7 +180,7 @@ func TestFailingChangeInBatchAlone(t *testing.T) {
 			panic("inside a change")
 		})
 	})
-	after := submit(t, &m.base, 5, func() error { return m.SetSetting(ctx, "after", "v", entry("a-after")) })
+	after := submit(t, &m.base, 5, func() error { return m.SetSetting(ctx, "after", "v", entry("a-after"), master.LocalOperator()) })
 	h.letGo(t)
 
 	if r := answer(t, "the change before", before); r.err != nil || r.panicked != nil {
@@ -230,7 +230,7 @@ func TestAnsweredOnlyAfterCommit(t *testing.T) {
 	var answers []<-chan result
 	for i := range 3 {
 		answers = append(answers, submit(t, &m.base, i+1, func() error {
-			return m.SetSetting(ctx, fmt.Sprintf("s%d", i), "v", entry(fmt.Sprintf("a%d", i)))
+			return m.SetSetting(ctx, fmt.Sprintf("s%d", i), "v", entry(fmt.Sprintf("a%d", i)), master.LocalOperator())
 		}))
 	}
 	h.letGo(t)
@@ -252,10 +252,10 @@ func TestCanceledCallerAnsweredAtOnce(t *testing.T) {
 	ctx := context.Background()
 	m := openReady(t)
 	h := holdWriter(t, &m.base)
-	before := submit(t, &m.base, 1, func() error { return m.SetSetting(ctx, "before", "v", entry("a-before")) })
+	before := submit(t, &m.base, 1, func() error { return m.SetSetting(ctx, "before", "v", entry("a-before"), master.LocalOperator()) })
 	gone, cancel := context.WithCancel(ctx)
-	canceled := submit(t, &m.base, 2, func() error { return m.SetSetting(gone, "canceled", "v", entry("a-canceled")) })
-	after := submit(t, &m.base, 3, func() error { return m.SetSetting(ctx, "after", "v", entry("a-after")) })
+	canceled := submit(t, &m.base, 2, func() error { return m.SetSetting(gone, "canceled", "v", entry("a-canceled"), master.LocalOperator()) })
+	after := submit(t, &m.base, 3, func() error { return m.SetSetting(ctx, "after", "v", entry("a-after"), master.LocalOperator()) })
 	cancel()
 	// The writer is still held: an answer now is an answer at once.
 	r := answer(t, "the canceled caller", canceled)
@@ -284,7 +284,7 @@ func TestInterruptedChangeInBatch(t *testing.T) {
 	ctx := context.Background()
 	m := openReady(t)
 	h := holdWriter(t, &m.base)
-	before := submit(t, &m.base, 1, func() error { return m.SetSetting(ctx, "before", "v", entry("a-before")) })
+	before := submit(t, &m.base, 1, func() error { return m.SetSetting(ctx, "before", "v", entry("a-before"), master.LocalOperator()) })
 	stopped, cancel := context.WithCancel(ctx)
 	defer cancel()
 	interrupted := submit(t, &m.base, 2, func() error {
@@ -301,7 +301,7 @@ func TestInterruptedChangeInBatch(t *testing.T) {
 			return err
 		})
 	})
-	after := submit(t, &m.base, 3, func() error { return m.SetSetting(ctx, "after", "v", entry("a-after")) })
+	after := submit(t, &m.base, 3, func() error { return m.SetSetting(ctx, "after", "v", entry("a-after"), master.LocalOperator()) })
 	h.letGo(t)
 
 	if r := answer(t, "the interrupted change", interrupted); fault.KindOf(r.err) != fault.Unavailable {
@@ -328,7 +328,7 @@ func TestBatchBounded(t *testing.T) {
 	var answers []<-chan result
 	for i := range n {
 		answers = append(answers, submit(t, &m.base, i+1, func() error {
-			return m.SetSetting(ctx, fmt.Sprintf("s%d", i), "v", entry(fmt.Sprintf("a%d", i)))
+			return m.SetSetting(ctx, fmt.Sprintf("s%d", i), "v", entry(fmt.Sprintf("a%d", i)), master.LocalOperator())
 		}))
 	}
 	h.letGo(t)
@@ -348,13 +348,13 @@ func TestBatchBounded(t *testing.T) {
 func TestTenantChangesGrouped(t *testing.T) {
 	ctx := context.Background()
 	s := openTenantTest(t, "t1").(*Tenant)
-	if err := s.SetSetting(ctx, "first", "v", entry("taken")); err != nil {
+	if err := s.SetSetting(ctx, "first", "v", entry("taken"), nil); err != nil {
 		t.Fatal(err)
 	}
 	commits := s.w.commits.Load()
 	h := holdWriter(t, &s.base)
-	ok := submit(t, &s.base, 1, func() error { return s.SetSetting(ctx, "ok", "v", entry("a-ok")) })
-	dup := submit(t, &s.base, 2, func() error { return s.SetSetting(ctx, "dup", "v", entry("taken")) })
+	ok := submit(t, &s.base, 1, func() error { return s.SetSetting(ctx, "ok", "v", entry("a-ok"), nil) })
+	dup := submit(t, &s.base, 2, func() error { return s.SetSetting(ctx, "dup", "v", entry("taken"), nil) })
 	h.letGo(t)
 	if r := answer(t, "the good change", ok); r.err != nil {
 		t.Errorf("the good change: %+v", r)

@@ -216,7 +216,7 @@ func TestPanicInWriteReleasesTheWriter(t *testing.T) {
 	}()
 	deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	if err := m.SetSetting(deadline, "after", "v", master.AuditEntry{ID: "a1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}); err != nil {
+	if err := m.SetSetting(deadline, "after", "v", master.AuditEntry{ID: "a1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}, master.LocalOperator()); err != nil {
 		t.Fatalf("a write after a panic in a change: %v", err)
 	}
 	if _, err := m.Setting(ctx, "half"); fault.KindOf(err) != fault.NotFound {

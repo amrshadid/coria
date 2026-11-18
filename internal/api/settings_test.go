@@ -222,7 +222,7 @@ func testListSettings(t *testing.T) {
 	// the tenant's database as an older version would have left it.
 	if st, err := f.registry.Store("lab1"); err != nil {
 		t.Fatal(err)
-	} else if err := st.SetSetting(ctx, "gone.setting", "old", f.setupEntry()); err != nil {
+	} else if err := st.SetSetting(ctx, "gone.setting", "old", f.setupEntry(), nil); err != nil {
 		t.Fatal(err)
 	}
 	list := func(s *v1.Scope, size int32, token string) func(clients) outcome {

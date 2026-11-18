@@ -42,8 +42,8 @@ func TestFailureFromUndoneNeighborRunsAgain(t *testing.T) {
 	h := holdWriter(t, &m.base)
 	ctxA, cancelA := context.WithCancel(ctx)
 	defer cancelA()
-	a := submit(t, &m.base, 1, func() error { return m.CreateTenant(ctxA, labTenant("t1"), entry("a-A")) })
-	b := submit(t, &m.base, 2, func() error { return m.CreateTenant(ctx, labTenant("t2"), entry("a-B")) })
+	a := submit(t, &m.base, 1, func() error { return m.CreateTenant(ctxA, labTenant("t1"), entry("a-A"), master.LocalOperator()) })
+	b := submit(t, &m.base, 2, func() error { return m.CreateTenant(ctx, labTenant("t2"), entry("a-B"), master.LocalOperator()) })
 	stopped, cancel := context.WithCancel(ctx)
 	defer cancel()
 	c := submit(t, &m.base, 3, func() error {
@@ -81,8 +81,8 @@ func TestFailureRunsAgainWhenCommitFails(t *testing.T) {
 	ctx := context.Background()
 	m := openReady(t)
 	h := holdWriter(t, &m.base)
-	a := submit(t, &m.base, 1, func() error { return m.CreateTenant(ctx, labTenant("t1"), entry("a-A")) })
-	b := submit(t, &m.base, 2, func() error { return m.CreateTenant(ctx, labTenant("t2"), entry("a-B")) })
+	a := submit(t, &m.base, 1, func() error { return m.CreateTenant(ctx, labTenant("t1"), entry("a-A"), master.LocalOperator()) })
+	b := submit(t, &m.base, 2, func() error { return m.CreateTenant(ctx, labTenant("t2"), entry("a-B"), master.LocalOperator()) })
 	x := submit(t, &m.base, 3, func() error {
 		return m.writeTx(ctx, "test", func(tx *sql.Tx) error {
 			if _, err := tx.ExecContext(ctx, `PRAGMA defer_foreign_keys = ON`); err != nil {
@@ -124,8 +124,8 @@ func TestConflictAnsweredAfterWinnerCommits(t *testing.T) {
 		}
 	}
 	h := holdWriter(t, &m.base)
-	a := submit(t, &m.base, 1, func() error { return m.CreateTenant(ctx, labTenant("t1"), entry("a-A")) })
-	b := submit(t, &m.base, 2, func() error { return m.CreateTenant(ctx, labTenant("t2"), entry("a-B")) })
+	a := submit(t, &m.base, 1, func() error { return m.CreateTenant(ctx, labTenant("t1"), entry("a-A"), master.LocalOperator()) })
+	b := submit(t, &m.base, 2, func() error { return m.CreateTenant(ctx, labTenant("t2"), entry("a-B"), master.LocalOperator()) })
 	close(h.release)
 	var waiting []*change
 	select {
@@ -177,7 +177,7 @@ func TestConflictThenReadFindsWinner(t *testing.T) {
 				id := strconv.Itoa(i) + "x" + strconv.Itoa(j)
 				tn := labTenant("t" + id)
 				tn.Name = name
-				err := m.CreateTenant(ctx, tn, entry("a"+id))
+				err := m.CreateTenant(ctx, tn, entry("a"+id), master.LocalOperator())
 				if fault.KindOf(err) != fault.Conflict {
 					return
 				}
@@ -208,7 +208,7 @@ func TestCanceledAfterTakenToldTruth(t *testing.T) {
 	h := holdWriter(t, &m.base)
 	ctxA, cancelA := context.WithCancel(ctx)
 	defer cancelA()
-	a := submit(t, &m.base, 1, func() error { return m.SetSetting(ctxA, "a", "v", entry("a-A")) })
+	a := submit(t, &m.base, 1, func() error { return m.SetSetting(ctxA, "a", "v", entry("a-A"), master.LocalOperator()) })
 	inB, releaseB := make(chan struct{}), make(chan struct{})
 	b := submit(t, &m.base, 2, func() error {
 		return m.writeTx(ctx, "b", func(*sql.Tx) error { close(inB); <-releaseB; return nil })
@@ -242,12 +242,12 @@ func TestBatchOutlivesFirstCallersContext(t *testing.T) {
 	h := holdWriter(t, &m.base)
 	ctxA, cancelA := context.WithCancel(ctx)
 	defer cancelA()
-	a := submit(t, &m.base, 1, func() error { return m.SetSetting(ctxA, "a", "v", entry("a-A")) })
+	a := submit(t, &m.base, 1, func() error { return m.SetSetting(ctxA, "a", "v", entry("a-A"), master.LocalOperator()) })
 	inB, releaseB := make(chan struct{}), make(chan struct{})
 	b := submit(t, &m.base, 2, func() error {
 		return m.writeTx(ctx, "b", func(*sql.Tx) error { close(inB); <-releaseB; return nil })
 	})
-	c := submit(t, &m.base, 3, func() error { return m.SetSetting(ctx, "c", "v", entry("a-C")) })
+	c := submit(t, &m.base, 3, func() error { return m.SetSetting(ctx, "c", "v", entry("a-C"), master.LocalOperator()) })
 	close(h.release)
 	<-inB
 	cancelA()
@@ -307,7 +307,7 @@ func TestTwoStoresAnswersMatchFile(t *testing.T) {
 				if n%3 == 0 {
 					cctx, cancel = context.WithTimeout(ctx, time.Duration(n%7+1)*time.Millisecond)
 				}
-				err := stores[n%2].SetSetting(cctx, "n."+strconv.Itoa(n), "v", entry(id))
+				err := stores[n%2].SetSetting(cctx, "n."+strconv.Itoa(n), "v", entry(id), master.LocalOperator())
 				cancel()
 				out <- res{n, err}
 			}

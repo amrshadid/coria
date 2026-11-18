@@ -65,6 +65,11 @@ func Run(t *testing.T, open Open) {
 		{"ConcurrentSameRow", testConcurrentSameRow},
 		{"SizeBounds", testSizeBounds},
 		{"SetGrantRevokeRace", testSetGrantRevokeRace},
+		{"ActorChecked", testActorChecked},
+		{"ActorOnTenant", testActorOnTenant},
+		{"CheckActor", testCheckActor},
+		{"ActorRevokeRace", testActorRevokeRace},
+		{"CrossedKeyChanges", testCrossedKeyChanges},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -125,7 +130,7 @@ func (e *env) key() master.Key {
 func (e *env) mustTenant(name string) master.Tenant {
 	e.Helper()
 	t := e.tenant(name)
-	if err := e.s.CreateTenant(e.ctx, t, e.audit()); err != nil {
+	if err := e.s.CreateTenant(e.ctx, t, e.audit(), master.LocalOperator()); err != nil {
 		e.Fatalf("CreateTenant(%s): %v", name, err)
 	}
 	return t
@@ -135,7 +140,7 @@ func (e *env) mustTenant(name string) master.Tenant {
 func (e *env) mustKey() master.Key {
 	e.Helper()
 	k := e.key()
-	if err := e.s.CreateKey(e.ctx, k, e.audit()); err != nil {
+	if err := e.s.CreateKey(e.ctx, k, e.audit(), master.LocalOperator()); err != nil {
 		e.Fatalf("CreateKey: %v", err)
 	}
 	return k
@@ -144,7 +149,7 @@ func (e *env) mustKey() master.Key {
 // mustGrant sets a grant.
 func (e *env) mustGrant(keyID string, scope master.Scope, role master.Role) {
 	e.Helper()
-	if _, err := e.s.SetGrant(e.ctx, master.Grant{KeyID: keyID, Scope: scope, Role: role}, e.audit()); err != nil {
+	if _, err := e.s.SetGrant(e.ctx, master.Grant{KeyID: keyID, Scope: scope, Role: role}, e.audit(), master.LocalOperator()); err != nil {
 		e.Fatalf("SetGrant: %v", err)
 	}
 }
@@ -296,7 +301,7 @@ func testClosed(e *env) {
 	e.ok("second Close", e.s.Close())
 	_, err := e.s.Key(e.ctx, k.ID)
 	e.wantKind("Key after Close", err, fault.Unavailable)
-	e.wantKind("CreateKey after Close", e.s.CreateKey(e.ctx, e.key(), e.audit()), fault.Unavailable)
+	e.wantKind("CreateKey after Close", e.s.CreateKey(e.ctx, e.key(), e.audit(), master.LocalOperator()), fault.Unavailable)
 	e.wantKind("Ping after Close", e.s.Ping(e.ctx), fault.Unavailable)
 }
 
@@ -309,7 +314,7 @@ func testTimes(e *env) {
 	k := e.key()
 	k.Created = in
 	k.Expires = time.Date(2099, 12, 31, 23, 59, 59, 999999000, time.UTC)
-	e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit()))
+	e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit(), master.LocalOperator()))
 	got, err := e.s.Key(e.ctx, k.ID)
 	e.ok("Key", err)
 	want := time.Date(2026, 11, 18, 9, 30, 0, 123456000, time.UTC)
@@ -330,7 +335,7 @@ func testTimes(e *env) {
 func testTenants(e *env) {
 	t := e.tenant("lab")
 	t.StateReason = "first"
-	e.ok("CreateTenant", e.s.CreateTenant(e.ctx, t, e.audit()))
+	e.ok("CreateTenant", e.s.CreateTenant(e.ctx, t, e.audit(), master.LocalOperator()))
 	got, err := e.s.Tenant(e.ctx, t.ID)
 	e.ok("Tenant", err)
 	if d := diffTenant(got, t); d != "" {
@@ -343,18 +348,18 @@ func testTenants(e *env) {
 	}
 
 	sameName := e.tenant("lab")
-	e.wantKind("CreateTenant, name taken", e.s.CreateTenant(e.ctx, sameName, e.audit()), fault.Conflict)
+	e.wantKind("CreateTenant, name taken", e.s.CreateTenant(e.ctx, sameName, e.audit(), master.LocalOperator()), fault.Conflict)
 	sameID := e.tenant("other")
 	sameID.ID = t.ID
-	e.wantKind("CreateTenant, id taken", e.s.CreateTenant(e.ctx, sameID, e.audit()), fault.Conflict)
+	e.wantKind("CreateTenant, id taken", e.s.CreateTenant(e.ctx, sameID, e.audit(), master.LocalOperator()), fault.Conflict)
 	bad := e.tenant("Bad Name")
-	e.wantKind("CreateTenant, bad name", e.s.CreateTenant(e.ctx, bad, e.audit()), fault.Invalid)
+	e.wantKind("CreateTenant, bad name", e.s.CreateTenant(e.ctx, bad, e.audit(), master.LocalOperator()), fault.Invalid)
 	for _, device := range []string{"con", "nul", "com1", "lpt9"} {
-		e.wantKind("CreateTenant, a name Windows reserves ("+device+")", e.s.CreateTenant(e.ctx, e.tenant(device), e.audit()), fault.Invalid)
+		e.wantKind("CreateTenant, a name Windows reserves ("+device+")", e.s.CreateTenant(e.ctx, e.tenant(device), e.audit(), master.LocalOperator()), fault.Invalid)
 	}
 	badAudit := e.audit()
 	badAudit.Outcome = "maybe"
-	e.wantKind("CreateTenant, bad audit entry", e.s.CreateTenant(e.ctx, e.tenant("fine"), badAudit), fault.Invalid)
+	e.wantKind("CreateTenant, bad audit entry", e.s.CreateTenant(e.ctx, e.tenant("fine"), badAudit, master.LocalOperator()), fault.Invalid)
 
 	_, err = e.s.Tenant(e.ctx, "nope")
 	e.wantKind("Tenant, unknown", err, fault.NotFound)
@@ -365,19 +370,19 @@ func testTenants(e *env) {
 	_, err = e.s.Tenant(e.ctx, "a/b")
 	e.wantKind("Tenant, bad id", err, fault.Invalid)
 
-	e.ok("SetTenantState", e.s.SetTenantState(e.ctx, t.ID, master.StateFailed, "upgrade to 2 failed: disk full", e.audit()))
+	e.ok("SetTenantState", e.s.SetTenantState(e.ctx, t.ID, master.StateFailed, "upgrade to 2 failed: disk full", e.audit(), master.LocalOperator()))
 	got, err = e.s.Tenant(e.ctx, t.ID)
 	e.ok("Tenant", err)
 	if got.State != master.StateFailed || got.StateReason != "upgrade to 2 failed: disk full" {
 		e.Errorf("state = %s %q after SetTenantState", got.State, got.StateReason)
 	}
-	e.wantKind("SetTenantState, unknown", e.s.SetTenantState(e.ctx, "nope", master.StateReady, "", e.audit()), fault.NotFound)
-	e.wantKind("SetTenantState, bad state", e.s.SetTenantState(e.ctx, t.ID, "gone", "", e.audit()), fault.Invalid)
+	e.wantKind("SetTenantState, unknown", e.s.SetTenantState(e.ctx, "nope", master.StateReady, "", e.audit(), master.LocalOperator()), fault.NotFound)
+	e.wantKind("SetTenantState, bad state", e.s.SetTenantState(e.ctx, t.ID, "gone", "", e.audit(), master.LocalOperator()), fault.Invalid)
 
 	k := e.mustKey()
 	e.mustGrant(k.ID, master.TenantScope(t.ID), master.RoleReader)
 	e.mustGrant(k.ID, master.Installation, master.RoleReader)
-	e.ok("RemoveTenant", e.s.RemoveTenant(e.ctx, t.ID, e.audit()))
+	e.ok("RemoveTenant", e.s.RemoveTenant(e.ctx, t.ID, e.audit(), master.LocalOperator()))
 	_, err = e.s.Tenant(e.ctx, t.ID)
 	e.wantKind("Tenant after RemoveTenant", err, fault.NotFound)
 	grants, _, err := e.s.GrantsByKey(e.ctx, k.ID, master.Page{Limit: 10})
@@ -385,7 +390,7 @@ func testTenants(e *env) {
 	if len(grants) != 1 || !grants[0].Scope.IsInstallation() {
 		e.Errorf("grants after the tenant's removal = %+v, want the installation grant only", grants)
 	}
-	e.wantKind("RemoveTenant, unknown", e.s.RemoveTenant(e.ctx, t.ID, e.audit()), fault.NotFound)
+	e.wantKind("RemoveTenant, unknown", e.s.RemoveTenant(e.ctx, t.ID, e.audit(), master.LocalOperator()), fault.NotFound)
 	// The name is free again once the tenant is gone.
 	e.mustTenant("lab")
 }
@@ -394,7 +399,7 @@ func testTenants(e *env) {
 // revocation once, and each failure kind.
 func testKeys(e *env) {
 	k := e.key()
-	e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit()))
+	e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit(), master.LocalOperator()))
 	got, err := e.s.Key(e.ctx, k.ID)
 	e.ok("Key", err)
 	if d := diffKey(got, k); d != "" {
@@ -402,7 +407,7 @@ func testKeys(e *env) {
 	}
 	never := e.key()
 	never.Expires = time.Time{}
-	e.ok("CreateKey, no expiry", e.s.CreateKey(e.ctx, never, e.audit()))
+	e.ok("CreateKey, no expiry", e.s.CreateKey(e.ctx, never, e.audit(), master.LocalOperator()))
 	got, err = e.s.Key(e.ctx, never.ID)
 	e.ok("Key", err)
 	if !got.Expires.IsZero() {
@@ -411,21 +416,21 @@ func testKeys(e *env) {
 
 	dup := e.key()
 	dup.ID = k.ID
-	e.wantKind("CreateKey, id taken", e.s.CreateKey(e.ctx, dup, e.audit()), fault.Conflict)
+	e.wantKind("CreateKey, id taken", e.s.CreateKey(e.ctx, dup, e.audit(), master.LocalOperator()), fault.Conflict)
 	short := e.key()
 	short.Hash = short.Hash[:16]
-	e.wantKind("CreateKey, short hash", e.s.CreateKey(e.ctx, short, e.audit()), fault.Invalid)
+	e.wantKind("CreateKey, short hash", e.s.CreateKey(e.ctx, short, e.audit(), master.LocalOperator()), fault.Invalid)
 	_, err = e.s.Key(e.ctx, "nope")
 	e.wantKind("Key, unknown", err, fault.NotFound)
 
 	revoked := T0.Add(time.Hour)
-	at, err := e.s.RevokeKey(e.ctx, k.ID, revoked, e.audit())
+	at, err := e.s.RevokeKey(e.ctx, k.ID, revoked, e.audit(), master.LocalOperator())
 	e.ok("RevokeKey", err)
 	if !SameTime(at, revoked) {
 		e.Errorf("RevokeKey returned %v, want %v", at, revoked)
 	}
 	again := e.audit()
-	at, err = e.s.RevokeKey(e.ctx, k.ID, revoked.Add(time.Hour), again)
+	at, err = e.s.RevokeKey(e.ctx, k.ID, revoked.Add(time.Hour), again, master.LocalOperator())
 	e.ok("RevokeKey again", err)
 	if !SameTime(at, revoked) {
 		e.Errorf("RevokeKey again returned %v, want the first revocation %v", at, revoked)
@@ -438,9 +443,9 @@ func testKeys(e *env) {
 	if !SameTime(got.Revoked, revoked) {
 		e.Errorf("revoked = %v, want the first revocation %v", got.Revoked, revoked)
 	}
-	_, err = e.s.RevokeKey(e.ctx, "nope", revoked, e.audit())
+	_, err = e.s.RevokeKey(e.ctx, "nope", revoked, e.audit(), master.LocalOperator())
 	e.wantKind("RevokeKey, unknown", err, fault.NotFound)
-	_, err = e.s.RevokeKey(e.ctx, never.ID, time.Time{}, e.audit())
+	_, err = e.s.RevokeKey(e.ctx, never.ID, time.Time{}, e.audit(), master.LocalOperator())
 	e.wantKind("RevokeKey, zero time", err, fault.Invalid)
 }
 
@@ -458,7 +463,7 @@ func testKeyHolderUnicode(e *env) {
 	for _, h := range holders {
 		k := e.key()
 		k.Holder = h
-		e.ok("CreateKey "+h, e.s.CreateKey(e.ctx, k, e.audit()))
+		e.ok("CreateKey "+h, e.s.CreateKey(e.ctx, k, e.audit(), master.LocalOperator()))
 		got, err := e.s.Key(e.ctx, k.ID)
 		e.ok("Key", err)
 		if got.Holder != h {
@@ -467,10 +472,10 @@ func testKeyHolderUnicode(e *env) {
 	}
 	long := e.key()
 	long.Holder = strings.Repeat("ß", 128) + "x"
-	e.wantKind("holder of 257 bytes", e.s.CreateKey(e.ctx, long, e.audit()), fault.Invalid)
+	e.wantKind("holder of 257 bytes", e.s.CreateKey(e.ctx, long, e.audit(), master.LocalOperator()), fault.Invalid)
 	broken := e.key()
 	broken.Holder = "caf\xe9"
-	e.wantKind("holder not UTF-8", e.s.CreateKey(e.ctx, broken, e.audit()), fault.Invalid)
+	e.wantKind("holder not UTF-8", e.s.CreateKey(e.ctx, broken, e.audit(), master.LocalOperator()), fault.Invalid)
 }
 
 // testMarkKeyUsed guards the throttle: a thousand calls within one minute
@@ -557,13 +562,13 @@ func testGrants(e *env) {
 
 	first := e.audit()
 	first.Details = map[string]string{"scope": scope.String()}
-	prev, err := e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: scope, Role: master.RoleReader}, first)
+	prev, err := e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: scope, Role: master.RoleReader}, first, master.LocalOperator())
 	e.ok("SetGrant", err)
 	if prev != "" {
 		e.Errorf("SetGrant on no grant returned %q, want the empty role", prev)
 	}
 	second := e.audit()
-	prev, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: scope, Role: master.RoleAdmin}, second)
+	prev, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: scope, Role: master.RoleAdmin}, second, master.LocalOperator())
 	e.ok("SetGrant again", err)
 	if prev != master.RoleReader {
 		e.Errorf("SetGrant on a reader grant returned %q, want reader", prev)
@@ -585,15 +590,15 @@ func testGrants(e *env) {
 		e.Errorf("second set's audit details = %v, want old reader, new admin", d)
 	}
 
-	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: "nope", Scope: master.Installation, Role: master.RoleReader}, e.audit())
+	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: "nope", Scope: master.Installation, Role: master.RoleReader}, e.audit(), master.LocalOperator())
 	e.wantKind("SetGrant, unknown key", err, fault.NotFound)
-	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: master.TenantScope("nope"), Role: master.RoleReader}, e.audit())
+	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: master.TenantScope("nope"), Role: master.RoleReader}, e.audit(), master.LocalOperator())
 	e.wantKind("SetGrant, unknown tenant", err, fault.NotFound)
-	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: master.Installation, Role: "owner"}, e.audit())
+	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: master.Installation, Role: "owner"}, e.audit(), master.LocalOperator())
 	e.wantKind("SetGrant, bad role", err, fault.Invalid)
 
 	removal := e.audit()
-	prev, err = e.s.RemoveGrant(e.ctx, k.ID, scope, removal)
+	prev, err = e.s.RemoveGrant(e.ctx, k.ID, scope, removal, master.LocalOperator())
 	e.ok("RemoveGrant", err)
 	if prev != master.RoleAdmin {
 		e.Errorf("RemoveGrant returned %q, want admin", prev)
@@ -604,7 +609,7 @@ func testGrants(e *env) {
 		e.Errorf("grants after RemoveGrant = %+v, want none", grants)
 	}
 	again := e.audit()
-	prev, err = e.s.RemoveGrant(e.ctx, k.ID, scope, again)
+	prev, err = e.s.RemoveGrant(e.ctx, k.ID, scope, again, master.LocalOperator())
 	if err != nil || prev != "" {
 		e.Errorf("RemoveGrant of no grant = %q, %v; want the empty role and success", prev, err)
 	}
@@ -618,9 +623,9 @@ func testGrants(e *env) {
 	if d := byID[again.ID].Details; d["old_role"] != "none" || d["new_role"] != "none" {
 		e.Errorf("second removal's audit details = %v, want old none, new none", d)
 	}
-	_, err = e.s.RemoveGrant(e.ctx, "nope", scope, e.audit())
+	_, err = e.s.RemoveGrant(e.ctx, "nope", scope, e.audit(), master.LocalOperator())
 	e.wantKind("RemoveGrant, unknown key", err, fault.NotFound)
-	_, err = e.s.RemoveGrant(e.ctx, k.ID, master.TenantScope("nope"), e.audit())
+	_, err = e.s.RemoveGrant(e.ctx, k.ID, master.TenantScope("nope"), e.audit(), master.LocalOperator())
 	e.wantKind("RemoveGrant, unknown tenant", err, fault.NotFound)
 	grants, _, err = e.s.GrantsByKey(e.ctx, "nope", master.Page{Limit: 10})
 	if err != nil || len(grants) != 0 {
@@ -688,7 +693,7 @@ func testSetGrantRace(e *env) {
 		for i := range 2 {
 			go func() {
 				<-start
-				prev[i], errs[i] = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: scope, Role: roles[i]}, entries[i])
+				prev[i], errs[i] = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: scope, Role: roles[i]}, entries[i], master.LocalOperator())
 				done <- i
 			}()
 		}
@@ -746,7 +751,7 @@ func testTenantNameRace(e *env) {
 		for i := range racers {
 			go func() {
 				<-start
-				errs[i] = e.s.CreateTenant(e.ctx, tenants[i], entries[i])
+				errs[i] = e.s.CreateTenant(e.ctx, tenants[i], entries[i], master.LocalOperator())
 				done <- struct{}{}
 			}()
 		}
@@ -787,39 +792,39 @@ func testTenantNameRace(e *env) {
 func testSettings(e *env) {
 	_, err := e.s.Setting(e.ctx, "api.limit")
 	e.wantKind("Setting, unset", err, fault.NotFound)
-	e.ok("SetSetting", e.s.SetSetting(e.ctx, "api.limit", "4 MiB", e.audit()))
+	e.ok("SetSetting", e.s.SetSetting(e.ctx, "api.limit", "4 MiB", e.audit(), master.LocalOperator()))
 	v, err := e.s.Setting(e.ctx, "api.limit")
 	if err != nil || v != "4 MiB" {
 		e.Errorf("Setting = %q, %v; want 4 MiB", v, err)
 	}
-	e.ok("SetSetting again", e.s.SetSetting(e.ctx, "api.limit", "", e.audit()))
+	e.ok("SetSetting again", e.s.SetSetting(e.ctx, "api.limit", "", e.audit(), master.LocalOperator()))
 	v, err = e.s.Setting(e.ctx, "api.limit")
 	if err != nil || v != "" {
 		e.Errorf("Setting = %q, %v; want the empty value, which is a value", v, err)
 	}
 	big := strings.Repeat("v", master.MaxSettingValueLength-len("é")) + "é"
-	e.ok("SetSetting 64 KiB", e.s.SetSetting(e.ctx, "big", big, e.audit()))
+	e.ok("SetSetting 64 KiB", e.s.SetSetting(e.ctx, "big", big, e.audit(), master.LocalOperator()))
 	v, err = e.s.Setting(e.ctx, "big")
 	if err != nil || v != big {
 		e.Errorf("a 64 KiB value read back with %d bytes, %v", len(v), err)
 	}
-	e.wantKind("SetSetting, value too big", e.s.SetSetting(e.ctx, "big", big+"x", e.audit()), fault.Invalid)
-	e.wantKind("SetSetting, bad name", e.s.SetSetting(e.ctx, "API Limit", "x", e.audit()), fault.Invalid)
-	removed, err := e.s.UnsetSetting(e.ctx, "api.limit", e.audit())
+	e.wantKind("SetSetting, value too big", e.s.SetSetting(e.ctx, "big", big+"x", e.audit(), master.LocalOperator()), fault.Invalid)
+	e.wantKind("SetSetting, bad name", e.s.SetSetting(e.ctx, "API Limit", "x", e.audit(), master.LocalOperator()), fault.Invalid)
+	removed, err := e.s.UnsetSetting(e.ctx, "api.limit", e.audit(), master.LocalOperator())
 	if err != nil || !removed {
 		e.Errorf("UnsetSetting = %v, %v; want true", removed, err)
 	}
 	_, err = e.s.Setting(e.ctx, "api.limit")
 	e.wantKind("Setting after UnsetSetting", err, fault.NotFound)
 	again := e.audit()
-	removed, err = e.s.UnsetSetting(e.ctx, "api.limit", again)
+	removed, err = e.s.UnsetSetting(e.ctx, "api.limit", again, master.LocalOperator())
 	if err != nil || removed {
 		e.Errorf("UnsetSetting of an unset name = %v, %v; want false and success", removed, err)
 	}
 	if !e.auditIDs()[again.ID] {
 		e.Error("unsetting an unset name wrote no audit entry; the request is still recorded")
 	}
-	_, err = e.s.UnsetSetting(e.ctx, "Bad Name", e.audit())
+	_, err = e.s.UnsetSetting(e.ctx, "Bad Name", e.audit(), master.LocalOperator())
 	e.wantKind("UnsetSetting, bad name", err, fault.Invalid)
 }
 
@@ -1085,7 +1090,7 @@ func testKeysListed(e *env) {
 		k := e.key()
 		k.Created = T0.Add(time.Duration(i/4) * time.Second)
 		k.Expires = T0.Add(time.Hour)
-		e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit()))
+		e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit(), master.LocalOperator()))
 	}
 	n := 0
 	order := func(k master.Key) string {
@@ -1097,7 +1102,7 @@ func testKeysListed(e *env) {
 			k := e.key()
 			k.Created = T0.Add(time.Duration(n%10) * time.Second)
 			k.Expires = T0.Add(time.Hour)
-			e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit()))
+			e.ok("CreateKey", e.s.CreateKey(e.ctx, k, e.audit(), master.LocalOperator()))
 		},
 		40, 7)
 }
@@ -1106,15 +1111,15 @@ func testKeysListed(e *env) {
 // inserts.
 func testSettingsListed(e *env) {
 	for i := range 30 {
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("m.%02d", i), "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("m.%02d", i), "v", e.audit(), master.LocalOperator()))
 	}
 	n := 0
 	checkPaging(e, "ListSettings", func(p master.Page) ([]master.Setting, string, error) { return e.s.ListSettings(e.ctx, p) },
 		func(s master.Setting) string { return s.Name },
 		func() {
 			n++
-			e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("a.%02d", n), "v", e.audit()))
-			e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("z.%02d", n), "v", e.audit()))
+			e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("a.%02d", n), "v", e.audit(), master.LocalOperator()))
+			e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("z.%02d", n), "v", e.audit(), master.LocalOperator()))
 		},
 		30, 4)
 }
@@ -1140,7 +1145,7 @@ func testPageLimits(e *env) {
 	}
 	// A cursor some list really returned, to hand to the others.
 	for i := range 3 {
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("s%d", i), "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("s%d", i), "v", e.audit(), master.LocalOperator()))
 	}
 	_, settingsCursor, err := e.s.ListSettings(e.ctx, master.Page{Limit: 1})
 	e.ok("ListSettings", err)
@@ -1187,7 +1192,7 @@ func testBothOrNeither(e *env) {
 
 	// CreateTenant.
 	nt := e.tenant("never")
-	check("CreateTenant", e.s.CreateTenant(e.ctx, nt, dup()), func() string {
+	check("CreateTenant", e.s.CreateTenant(e.ctx, nt, dup(), master.LocalOperator()), func() string {
 		if _, err := e.s.TenantByName(e.ctx, "never"); fault.KindOf(err) != fault.NotFound {
 			return fmt.Sprintf("the tenant exists (%v)", err)
 		}
@@ -1197,11 +1202,11 @@ func testBothOrNeither(e *env) {
 	t := e.mustTenant("lab")
 	k := e.mustKey()
 	e.mustGrant(k.ID, master.TenantScope(t.ID), master.RoleReader)
-	e.ok("SetSetting", e.s.SetSetting(e.ctx, "kept", "old", e.audit()))
+	e.ok("SetSetting", e.s.SetSetting(e.ctx, "kept", "old", e.audit(), master.LocalOperator()))
 	before = len(e.auditIDs())
 
 	// SetTenantState.
-	check("SetTenantState", e.s.SetTenantState(e.ctx, t.ID, master.StateFailed, "x", dup()), func() string {
+	check("SetTenantState", e.s.SetTenantState(e.ctx, t.ID, master.StateFailed, "x", dup(), master.LocalOperator()), func() string {
 		got, err := e.s.Tenant(e.ctx, t.ID)
 		if err != nil || got.State != master.StateReady {
 			return fmt.Sprintf("state %s (%v)", got.State, err)
@@ -1209,7 +1214,7 @@ func testBothOrNeither(e *env) {
 		return ""
 	})
 	// RemoveTenant, which also removes grants.
-	check("RemoveTenant", e.s.RemoveTenant(e.ctx, t.ID, dup()), func() string {
+	check("RemoveTenant", e.s.RemoveTenant(e.ctx, t.ID, dup(), master.LocalOperator()), func() string {
 		if _, err := e.s.Tenant(e.ctx, t.ID); err != nil {
 			return fmt.Sprintf("the tenant is gone (%v)", err)
 		}
@@ -1221,14 +1226,14 @@ func testBothOrNeither(e *env) {
 	})
 	// CreateKey.
 	nk := e.key()
-	check("CreateKey", e.s.CreateKey(e.ctx, nk, dup()), func() string {
+	check("CreateKey", e.s.CreateKey(e.ctx, nk, dup(), master.LocalOperator()), func() string {
 		if _, err := e.s.Key(e.ctx, nk.ID); fault.KindOf(err) != fault.NotFound {
 			return fmt.Sprintf("the key exists (%v)", err)
 		}
 		return ""
 	})
 	// RevokeKey.
-	_, err := e.s.RevokeKey(e.ctx, k.ID, T0.Add(time.Hour), dup())
+	_, err := e.s.RevokeKey(e.ctx, k.ID, T0.Add(time.Hour), dup(), master.LocalOperator())
 	check("RevokeKey", err, func() string {
 		got, err := e.s.Key(e.ctx, k.ID)
 		if err != nil || !got.Revoked.IsZero() {
@@ -1257,15 +1262,15 @@ func testBothOrNeither(e *env) {
 			return ""
 		}
 	}
-	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: master.Installation, Role: master.RoleAdmin}, dup())
+	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: master.Installation, Role: master.RoleAdmin}, dup(), master.LocalOperator())
 	check("SetGrant (new)", err, grantIs(master.Installation, ""))
-	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: master.TenantScope(t.ID), Role: master.RoleAdmin}, dup())
+	_, err = e.s.SetGrant(e.ctx, master.Grant{KeyID: k.ID, Scope: master.TenantScope(t.ID), Role: master.RoleAdmin}, dup(), master.LocalOperator())
 	check("SetGrant (replace)", err, grantIs(master.TenantScope(t.ID), master.RoleReader))
 	// RemoveGrant.
-	_, err = e.s.RemoveGrant(e.ctx, k.ID, master.TenantScope(t.ID), dup())
+	_, err = e.s.RemoveGrant(e.ctx, k.ID, master.TenantScope(t.ID), dup(), master.LocalOperator())
 	check("RemoveGrant", err, grantIs(master.TenantScope(t.ID), master.RoleReader))
 	// SetSetting, new and replacing.
-	check("SetSetting (new)", e.s.SetSetting(e.ctx, "fresh", "v", dup()), func() string {
+	check("SetSetting (new)", e.s.SetSetting(e.ctx, "fresh", "v", dup(), master.LocalOperator()), func() string {
 		if _, err := e.s.Setting(e.ctx, "fresh"); fault.KindOf(err) != fault.NotFound {
 			return fmt.Sprintf("the setting exists (%v)", err)
 		}
@@ -1278,9 +1283,9 @@ func testBothOrNeither(e *env) {
 		}
 		return ""
 	}
-	check("SetSetting (replace)", e.s.SetSetting(e.ctx, "kept", "new", dup()), settingIs)
+	check("SetSetting (replace)", e.s.SetSetting(e.ctx, "kept", "new", dup(), master.LocalOperator()), settingIs)
 	// UnsetSetting.
-	_, err = e.s.UnsetSetting(e.ctx, "kept", dup())
+	_, err = e.s.UnsetSetting(e.ctx, "kept", dup(), master.LocalOperator())
 	check("UnsetSetting", err, settingIs)
 	// AppendAudit: a batch whose second entry fails writes neither.
 	first := e.audit()

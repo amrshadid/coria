@@ -121,7 +121,7 @@ func TestLaterLookupDoesNotUndoTheAccessRule(t *testing.T) {
 	t.Parallel()
 	f := fixtureOn(t, newEnvChecking(t, time.Hour))
 	row := master.Tenant{ID: "ghost-id", Name: "ghost", Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: t0}
-	if err := f.master.CreateTenant(ctx, row, f.setupEntry()); err != nil {
+	if err := f.master.CreateTenant(ctx, row, f.setupEntry(), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	admin, _ := f.key(master.Grant{Scope: master.TenantScope("ghost-id"), Role: master.RoleAdmin})

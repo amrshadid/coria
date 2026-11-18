@@ -60,8 +60,14 @@ func getSetting(ctx context.Context, b *base, l lists, name string) (string, err
 	return value, b.notFound(ctx, err, l.missing, "the setting cannot be read")
 }
 
-// setSetting implements SetSetting.
-func setSetting(ctx context.Context, b *base, name, value string, audit master.AuditEntry) error {
+// setSetting implements SetSetting. last, when not nil, runs in the
+// transaction after the change and its entry are written, so after the
+// setting's row is locked, and before the commit; an error from it undoes
+// both: the master checks the change's actor there, and a tenant's store runs
+// its Guard there, as late as either can be. A setting's change meets no
+// NotFound or Conflict that a refused caller could learn from, so checking
+// last costs nothing in what it tells.
+func setSetting(ctx context.Context, b *base, name, value string, audit master.AuditEntry, last func(context.Context, pgx.Tx) error) error {
 	if err := master.ValidateSettingName(name); err != nil {
 		return err
 	}
@@ -76,12 +82,23 @@ func setSetting(ctx context.Context, b *base, name, value string, audit master.A
 			ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value`, name, value); err != nil {
 			return err
 		}
-		return insertAudit(ctx, tx, b.red, audit)
+		if err := insertAudit(ctx, tx, b.red, audit); err != nil {
+			return err
+		}
+		return runLast(ctx, tx, last)
 	})
 }
 
-// unsetSetting implements UnsetSetting.
-func unsetSetting(ctx context.Context, b *base, name string, audit master.AuditEntry) (bool, error) {
+// runLast runs a change's last check, when there is one.
+func runLast(ctx context.Context, tx pgx.Tx, last func(context.Context, pgx.Tx) error) error {
+	if last == nil {
+		return nil
+	}
+	return last(ctx, tx)
+}
+
+// unsetSetting implements UnsetSetting. last is as setSetting's.
+func unsetSetting(ctx context.Context, b *base, name string, audit master.AuditEntry, last func(context.Context, pgx.Tx) error) (bool, error) {
 	if err := master.ValidateSettingName(name); err != nil {
 		return false, err
 	}
@@ -95,7 +112,10 @@ func unsetSetting(ctx context.Context, b *base, name string, audit master.AuditE
 			return err
 		}
 		removed = tag.RowsAffected() == 1
-		return insertAudit(ctx, tx, b.red, audit)
+		if err := insertAudit(ctx, tx, b.red, audit); err != nil {
+			return err
+		}
+		return runLast(ctx, tx, last)
 	})
 	if err != nil {
 		return false, err

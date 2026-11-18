@@ -39,14 +39,14 @@ func TestNoDriverTextAnywhere(t *testing.T) {
 	for _, m := range []mode{down, broken, refused, leaky, panicky} {
 		name := fmt.Sprintf("new%d", m)
 		e.flaky.set(name, m)
-		_, err := r.Create(ctx, NewTenant{ID: "id-" + name, Name: name, Driver: flakyDriver, Address: flakyAddress(name)}, e.audit("CreateTenant"))
+		_, _, err := r.Create(ctx, NewTenant{ID: "id-" + name, Name: name, Driver: flakyDriver, Address: flakyAddress(name)}, e.audit("CreateTenant"), master.LocalOperator())
 		if err == nil {
 			t.Fatalf("Create of a %d tenant succeeded", m)
 		}
 		texts = append(texts, err.Error())
 	}
 	// A Location error that repeats the address is replaced by a fixed one.
-	_, err := r.Create(ctx, NewTenant{ID: "id-other", Name: "other", Driver: flakyDriver, Address: "other://admin:" + password + "@" + flakyHost}, e.audit("CreateTenant"))
+	_, _, err := r.Create(ctx, NewTenant{ID: "id-other", Name: "other", Driver: flakyDriver, Address: "other://admin:" + password + "@" + flakyHost}, e.audit("CreateTenant"), master.LocalOperator())
 	if fault.KindOf(err) != fault.Invalid {
 		t.Errorf("an address the driver refuses = %v, want Invalid", err)
 	}
@@ -331,13 +331,13 @@ func TestCreateAndRemoveExcludeEachOther(t *testing.T) {
 	e.flaky.set("x", late)
 	created := make(chan error, 1)
 	go func() {
-		_, err := r.Create(ctx, NewTenant{ID: "id-x", Name: "x", Driver: flakyDriver, Address: flakyAddress("x")}, e.audit("CreateTenant"))
+		_, _, err := r.Create(ctx, NewTenant{ID: "id-x", Name: "x", Driver: flakyDriver, Address: flakyAddress("x")}, e.audit("CreateTenant"), master.LocalOperator())
 		created <- err
 	}()
 	waitFor(t, "the creation's open to begin", func() bool { return e.flaky.opensOf("x") == 1 })
 	removed := make(chan error, 1)
 	go func() {
-		_, err := r.Remove(ctx, "x", e.audit("RemoveTenant"))
+		_, err := r.Remove(ctx, "x", e.audit("RemoveTenant"), master.LocalOperator())
 		removed <- err
 	}()
 	select {
@@ -373,7 +373,7 @@ func TestRemoveDuringStart(t *testing.T) {
 	<-tricky.listEntered
 	removed := make(chan error, 1)
 	go func() {
-		_, err := r.Remove(ctx, "victim", e.audit("RemoveTenant"))
+		_, err := r.Remove(ctx, "victim", e.audit("RemoveTenant"), master.LocalOperator())
 		removed <- err
 	}()
 	select {
@@ -441,7 +441,7 @@ func TestRemoveCancelsAnOpen(t *testing.T) {
 	r.checkAll()
 	waitFor(t, "the hanging open to begin", func() bool { return e.flaky.opensOf("h") > n })
 	begin := time.Now()
-	if _, err := r.Remove(ctx, "h", e.audit("RemoveTenant")); err != nil {
+	if _, err := r.Remove(ctx, "h", e.audit("RemoveTenant"), master.LocalOperator()); err != nil {
 		t.Fatal(err)
 	}
 	if took := time.Since(begin); took > 30*time.Second {

@@ -51,10 +51,10 @@ func testFailuresWriteNoAudit(e *env) {
 		name string
 		run  func(a master.AuditEntry) error
 	}{
-		{"SetSetting, bad name", func(a master.AuditEntry) error { return e.s.SetSetting(e.ctx, "Bad Name", "v", a) }},
-		{"SetSetting, value too big", func(a master.AuditEntry) error { return e.s.SetSetting(e.ctx, "fine", big, a) }},
-		{"SetSetting, value not UTF-8", func(a master.AuditEntry) error { return e.s.SetSetting(e.ctx, "fine", "\xff", a) }},
-		{"UnsetSetting, bad name", func(a master.AuditEntry) error { _, err := e.s.UnsetSetting(e.ctx, "Bad Name", a); return err }},
+		{"SetSetting, bad name", func(a master.AuditEntry) error { return e.s.SetSetting(e.ctx, "Bad Name", "v", a, nil) }},
+		{"SetSetting, value too big", func(a master.AuditEntry) error { return e.s.SetSetting(e.ctx, "fine", big, a, nil) }},
+		{"SetSetting, value not UTF-8", func(a master.AuditEntry) error { return e.s.SetSetting(e.ctx, "fine", "\xff", a, nil) }},
+		{"UnsetSetting, bad name", func(a master.AuditEntry) error { _, err := e.s.UnsetSetting(e.ctx, "Bad Name", a, nil); return err }},
 		{"AppendAudit, an invalid entry in the batch", func(a master.AuditEntry) error {
 			bad := e.audit()
 			bad.Outcome = "maybe"
@@ -79,7 +79,7 @@ func testFailuresWriteNoAudit(e *env) {
 // contract's page token rule).
 func testCursorsBound(e *env) {
 	for i := range 3 {
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("s%d", i), "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("s%d", i), "v", e.audit(), nil))
 	}
 	filter := master.AuditFilter{TenantName: "lab", KeyID: "KA", Outcome: master.OutcomeDone, Since: T0, Until: T0.Add(time.Hour)}
 	for range 3 {
@@ -137,7 +137,7 @@ func testErrorKinds(e *env) {
 	canceled, cancel := context.WithCancel(e.ctx)
 	cancel()
 	a := e.audit()
-	err := e.s.SetSetting(canceled, "early", "v", a)
+	err := e.s.SetSetting(canceled, "early", "v", a, nil)
 	e.wantKind("SetSetting with a canceled context", err, fault.Unavailable)
 	if !errors.Is(err, context.Canceled) {
 		e.Errorf("SetSetting with a canceled context: %v does not keep context.Canceled", err)
@@ -179,7 +179,7 @@ func testErrorKinds(e *env) {
 		wg.Go(func() {
 			ctx, cancel := context.WithCancel(e.ctx)
 			go func() { time.Sleep(time.Duration(i%6) * 300 * time.Microsecond); cancel() }()
-			results[i].err = e.s.SetSetting(ctx, results[i].name, "v", results[i].entry)
+			results[i].err = e.s.SetSetting(ctx, results[i].name, "v", results[i].entry, nil)
 			cancel()
 		})
 	}
@@ -216,7 +216,7 @@ func testCloseInFlight(e *env) {
 				if i%2 == 0 {
 					_, _, err = e.s.ListSettings(e.ctx, master.Page{Limit: 10})
 				} else {
-					err = e.s.SetSetting(e.ctx, "busy", "v", e.audit())
+					err = e.s.SetSetting(e.ctx, "busy", "v", e.audit(), nil)
 				}
 				if err != nil {
 					errs <- err
@@ -304,7 +304,7 @@ func testIDsCaseAndOrder(e *env) {
 	// Setting names mixing ".", "-" and "_", each with a value of its own.
 	names := []string{"a.b", "a-b", "a_b", "a0", "ab", "a", "a.", "a-", "a_", ".a", "-a", "_a", "a.-_b", "a_-.b", "0a"}
 	for i, n := range names {
-		e.ok("SetSetting "+n, e.s.SetSetting(e.ctx, n, fmt.Sprintf("value-%d", i), e.audit()))
+		e.ok("SetSetting "+n, e.s.SetSetting(e.ctx, n, fmt.Sprintf("value-%d", i), e.audit(), nil))
 	}
 	for i, n := range names {
 		if v, err := e.s.Setting(e.ctx, n); err != nil || v != fmt.Sprintf("value-%d", i) {
@@ -355,7 +355,7 @@ func testExactText(e *env) {
 	}
 	for i, v := range []string{"value  ", "  value", "Zo\u00e9", "Zoe\u0301", "tab\there", "line\nbreak"} {
 		name := fmt.Sprintf("exact.%d", i)
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, name, v, e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, name, v, e.audit(), nil))
 		got, err := e.s.Setting(e.ctx, name)
 		if err != nil || got != v {
 			e.Errorf("value %q came back as %q (%v)", v, got, err)
@@ -390,14 +390,14 @@ func testPagingWithDeletes(e *env) {
 	var names []string
 	for i := range 30 {
 		n := fmt.Sprintf("m.%02d", i)
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, n, "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, n, "v", e.audit(), nil))
 		names = append(names, n)
 	}
 	deleted := map[string]bool{}
 	seen := map[string]int{}
 	var order []string
 	remove := func(n string) {
-		_, err := e.s.UnsetSetting(e.ctx, n, e.audit())
+		_, err := e.s.UnsetSetting(e.ctx, n, e.audit(), nil)
 		e.ok("UnsetSetting", err)
 		deleted[n] = true
 	}
@@ -426,7 +426,7 @@ func testPagingWithDeletes(e *env) {
 				break
 			}
 		}
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("n.%02d", round), "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("n.%02d", round), "v", e.audit(), nil))
 	}
 	for _, n := range names {
 		if !deleted[n] && seen[n] != 1 {
@@ -478,12 +478,12 @@ func testTies(e *env) {
 func testSizeBounds(e *env) {
 	name := strings.Repeat("s", master.MaxSettingNameLength)
 	value := strings.Repeat("v", master.MaxSettingValueLength)
-	e.ok("SetSetting at both bounds", e.s.SetSetting(e.ctx, name, value, e.audit()))
+	e.ok("SetSetting at both bounds", e.s.SetSetting(e.ctx, name, value, e.audit(), nil))
 	if got, err := e.s.Setting(e.ctx, name); err != nil || got != value {
 		e.Errorf("a setting at both bounds read back with %d bytes (%v)", len(got), err)
 	}
-	e.wantKind("SetSetting, name one byte over", e.s.SetSetting(e.ctx, name+"s", "v", e.audit()), fault.Invalid)
-	e.wantKind("SetSetting, value one byte over", e.s.SetSetting(e.ctx, "x", value+"v", e.audit()), fault.Invalid)
+	e.wantKind("SetSetting, name one byte over", e.s.SetSetting(e.ctx, name+"s", "v", e.audit(), nil), fault.Invalid)
+	e.wantKind("SetSetting, value one byte over", e.s.SetSetting(e.ctx, "x", value+"v", e.audit(), nil), fault.Invalid)
 
 	a := e.audit()
 	a.ID = strings.Repeat("A", master.MaxIDLength)
@@ -547,14 +547,14 @@ func RunShared(t *testing.T, open OpenPair) {
 // testWritesSeenShared guards that what one instance commits the other reads
 // at once, and that a duplicate audit id is caught across instances.
 func testWritesSeenShared(e *env, other tenant.Store) {
-	e.ok("SetSetting", e.s.SetSetting(e.ctx, "seen", "yes", e.audit()))
+	e.ok("SetSetting", e.s.SetSetting(e.ctx, "seen", "yes", e.audit(), nil))
 	if v, err := other.Setting(e.ctx, "seen"); err != nil || v != "yes" {
 		e.Errorf("the other instance reads %q, %v; want the committed value", v, err)
 	}
 	a := e.audit()
 	e.ok("AppendAudit", e.s.AppendAudit(e.ctx, a))
 	e.wantDuplicateAudit("AppendAudit of the same id on the other instance", other.AppendAudit(e.ctx, a))
-	removed, err := other.UnsetSetting(e.ctx, "seen", e.audit())
+	removed, err := other.UnsetSetting(e.ctx, "seen", e.audit(), nil)
 	if err != nil || !removed {
 		e.Errorf("UnsetSetting on the other instance = %v, %v", removed, err)
 	}
@@ -596,7 +596,7 @@ func testConcurrentShared(e *env, other tenant.Store) {
 					if j == burst {
 						a.ID = taken.ID
 					}
-					errs[i][j] = s.SetSetting(e.ctx, fmt.Sprintf("r%02d.i%d.c%d", round, i, j), "v", a)
+					errs[i][j] = s.SetSetting(e.ctx, fmt.Sprintf("r%02d.i%d.c%d", round, i, j), "v", a, nil)
 				}
 			})
 		}
@@ -639,8 +639,8 @@ func testConcurrentShared(e *env, other tenant.Store) {
 func testTenantsApart(e *env) {
 	other := e.open(e.T, OtherTenant)
 	for i := range 3 {
-		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("mine.%d", i), "v", e.audit()))
-		e.ok("SetSetting", other.SetSetting(e.ctx, fmt.Sprintf("theirs.%d", i), "v", e.audit()))
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("mine.%d", i), "v", e.audit(), nil))
+		e.ok("SetSetting", other.SetSetting(e.ctx, fmt.Sprintf("theirs.%d", i), "v", e.audit(), nil))
 	}
 	mine, _, err := e.s.ListSettings(e.ctx, master.Page{Limit: master.MaxPageLimit})
 	e.ok("ListSettings", err)

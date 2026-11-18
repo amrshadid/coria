@@ -111,7 +111,7 @@ func TestScopeRequirementReadsMessage(t *testing.T) {
 	ctx := e.ctx
 	for id, name := range map[string]string{"t1": "lab", "t2": "clinic"} {
 		if err := e.master.CreateTenant(ctx, master.Tenant{ID: id, Name: name, Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: time.Now().UTC().Truncate(time.Microsecond)},
-			master.AuditEntry{ID: server.NewID(), Time: time.Now(), Method: "test", Outcome: master.OutcomeDone}); err != nil {
+			master.AuditEntry{ID: server.NewID(), Time: time.Now(), Method: "test", Outcome: master.OutcomeDone}, master.LocalOperator()); err != nil {
 			t.Fatal(err)
 		}
 	}

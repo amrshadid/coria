@@ -165,14 +165,20 @@ func (m *Master) writeShared(ctx context.Context, message string, fn func(tx *sq
 // --- Tenants ---
 
 // CreateTenant implements master.Store.
-func (m *Master) CreateTenant(ctx context.Context, t master.Tenant, audit master.AuditEntry) error {
+func (m *Master) CreateTenant(ctx context.Context, t master.Tenant, audit master.AuditEntry, by master.Actor) error {
 	if err := t.Validate(); err != nil {
 		return err
 	}
 	if err := audit.Validate(); err != nil {
 		return err
 	}
+	if err := by.Validate(); err != nil {
+		return err
+	}
 	return m.write(ctx, "the tenant cannot be created", func(tx *sql.Tx, s *statements) error {
+		if err := checkActor(ctx, tx, s, by); err != nil {
+			return err
+		}
 		// The name is looked up first to say which of name and id is
 		// taken. Inside one transaction begun with BEGIN IMMEDIATE no other
 		// writer, in this process or another, runs between the look-up and
@@ -269,7 +275,7 @@ func (m *Master) ListTenants(ctx context.Context, page master.Page) ([]master.Te
 // SetTenantState implements master.Store. The old state is read and the new
 // one written in one write transaction, so the audit entry says what this
 // call replaced even when another call changes the same tenant at once.
-func (m *Master) SetTenantState(ctx context.Context, id string, state master.TenantState, reason string, audit master.AuditEntry) error {
+func (m *Master) SetTenantState(ctx context.Context, id string, state master.TenantState, reason string, audit master.AuditEntry, by master.Actor) error {
 	if err := master.ValidateID("tenant id", id); err != nil {
 		return err
 	}
@@ -279,7 +285,13 @@ func (m *Master) SetTenantState(ctx context.Context, id string, state master.Ten
 	if err := audit.ValidateWith(master.DetailOldState, master.DetailNewState); err != nil {
 		return err
 	}
+	if err := by.Validate(); err != nil {
+		return err
+	}
 	return m.write(ctx, "the tenant's state cannot be set", func(tx *sql.Tx, s *statements) error {
+		if err := checkActor(ctx, tx, s, by); err != nil {
+			return err
+		}
 		var old string
 		err := tx.StmtContext(ctx, s.tenantState).QueryRowContext(ctx, id).Scan(&old)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -297,14 +309,20 @@ func (m *Master) SetTenantState(ctx context.Context, id string, state master.Ten
 }
 
 // RemoveTenant implements master.Store.
-func (m *Master) RemoveTenant(ctx context.Context, id string, audit master.AuditEntry) error {
+func (m *Master) RemoveTenant(ctx context.Context, id string, audit master.AuditEntry, by master.Actor) error {
 	if err := master.ValidateID("tenant id", id); err != nil {
 		return err
 	}
 	if err := audit.Validate(); err != nil {
 		return err
 	}
+	if err := by.Validate(); err != nil {
+		return err
+	}
 	return m.write(ctx, "the tenant cannot be removed", func(tx *sql.Tx, s *statements) error {
+		if err := checkActor(ctx, tx, s, by); err != nil {
+			return err
+		}
 		// The grants go first, in the same transaction: the foreign key
 		// refuses a tenant removed under its grants, so a forgotten step
 		// fails loudly instead of leaving grants on nothing.
@@ -322,14 +340,20 @@ func (m *Master) RemoveTenant(ctx context.Context, id string, audit master.Audit
 // --- Keys ---
 
 // CreateKey implements master.Store.
-func (m *Master) CreateKey(ctx context.Context, k master.Key, audit master.AuditEntry) error {
+func (m *Master) CreateKey(ctx context.Context, k master.Key, audit master.AuditEntry, by master.Actor) error {
 	if err := k.Validate(); err != nil {
 		return err
 	}
 	if err := audit.Validate(); err != nil {
 		return err
 	}
+	if err := by.Validate(); err != nil {
+		return err
+	}
 	return m.write(ctx, "the key cannot be created", func(tx *sql.Tx, s *statements) error {
+		if err := checkActor(ctx, tx, s, by); err != nil {
+			return err
+		}
 		_, err := tx.StmtContext(ctx, s.insertKey).ExecContext(ctx,
 			k.ID, k.Hash, k.Holder, micros(k.Created), nullMicros(k.Expires))
 		if isUniqueViolation(err) {
@@ -432,7 +456,7 @@ func (m *Master) MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool
 // RevokeKey implements master.Store. The revoked time is read and, when it is
 // unset, written in one write transaction, so the audit entry says whether
 // this call revoked the key or found it revoked.
-func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry) (time.Time, error) {
+func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry, by master.Actor) (time.Time, error) {
 	if err := master.ValidateID("key id", id); err != nil {
 		return time.Time{}, err
 	}
@@ -442,8 +466,14 @@ func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit m
 	if err := audit.ValidateWith(master.DetailAlreadyRevoked); err != nil {
 		return time.Time{}, err
 	}
+	if err := by.Validate(); err != nil {
+		return time.Time{}, err
+	}
 	var revoked time.Time
 	err := m.write(ctx, "the key cannot be revoked", func(tx *sql.Tx, s *statements) error {
+		if err := checkActor(ctx, tx, s, by); err != nil {
+			return err
+		}
 		var before sql.NullInt64
 		err := tx.StmtContext(ctx, s.keyRevoked).QueryRowContext(ctx, id).Scan(&before)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -475,15 +505,21 @@ func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit m
 // writer at a time, so a set racing a revocation or another set is ordered
 // with it: no grant is written after the key is revoked, and each set reads
 // what the others left.
-func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.AuditEntry) (master.Role, error) {
+func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.AuditEntry, by master.Actor) (master.Role, error) {
 	if err := g.Validate(); err != nil {
 		return "", err
 	}
 	if err := audit.ValidateRoleChange(); err != nil {
 		return "", err
 	}
+	if err := by.Validate(); err != nil {
+		return "", err
+	}
 	var previous master.Role
 	err := m.write(ctx, "the grant cannot be set", func(tx *sql.Tx, s *statements) error {
+		if err := checkActor(ctx, tx, s, by); err != nil {
+			return err
+		}
 		revoked, err := m.grantTargetsExist(ctx, tx, s, g.KeyID, g.Scope)
 		if err != nil {
 			return err
@@ -658,7 +694,7 @@ func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (master
 // RemoveGrant implements master.Store. One DELETE ... RETURNING removes the
 // grant and gives the role it had; only when it removed nothing are the key
 // and tenant looked up, to tell "no grant" (success) from NotFound.
-func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Scope, audit master.AuditEntry) (master.Role, error) {
+func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Scope, audit master.AuditEntry, by master.Actor) (master.Role, error) {
 	if err := master.ValidateID("key id", keyID); err != nil {
 		return "", err
 	}
@@ -668,8 +704,14 @@ func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Sco
 	if err := audit.ValidateRoleChange(); err != nil {
 		return "", err
 	}
+	if err := by.Validate(); err != nil {
+		return "", err
+	}
 	var previous master.Role
 	err := m.write(ctx, "the grant cannot be removed", func(tx *sql.Tx, s *statements) error {
+		if err := checkActor(ctx, tx, s, by); err != nil {
+			return err
+		}
 		var old string
 		err := tx.StmtContext(ctx, s.deleteGrant).QueryRowContext(ctx, keyID, scope.TenantID).Scan(&old)
 		switch {
@@ -697,13 +739,80 @@ func (m *Master) Setting(ctx context.Context, name string) (string, error) {
 }
 
 // SetSetting implements master.Store.
-func (m *Master) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry) error {
-	return setSetting(ctx, m, name, value, audit)
+func (m *Master) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry, by master.Actor) error {
+	if err := by.Validate(); err != nil {
+		return err
+	}
+	return setSetting(ctx, m, name, value, audit, m.actorCheck(by))
 }
 
 // UnsetSetting implements master.Store.
-func (m *Master) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry) (bool, error) {
-	return unsetSetting(ctx, m, name, audit)
+func (m *Master) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry, by master.Actor) (bool, error) {
+	if err := by.Validate(); err != nil {
+		return false, err
+	}
+	return unsetSetting(ctx, m, name, audit, m.actorCheck(by))
+}
+
+// actorCheck returns the check of by that the shared settings operations
+// run last in their write transaction, with the master's own statement.
+func (m *Master) actorCheck(by master.Actor) func(ctx context.Context, tx *sql.Tx) error {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		s, err := m.ready(ctx)
+		if err != nil {
+			return err
+		}
+		return checkActor(ctx, tx, s, by)
+	}
+}
+
+// --- Actors ---
+
+// CheckActor implements master.Store with actorSQL on the read pool. An
+// actor that is not a key reads nothing.
+func (m *Master) CheckActor(ctx context.Context, by master.Actor) error {
+	if err := by.Validate(); err != nil {
+		return err
+	}
+	if !by.IsKey() {
+		return m.open()
+	}
+	s, err := m.ready(ctx)
+	if err != nil {
+		return err
+	}
+	return m.fail(ctx, actorMay(ctx, s.actorRead, by), "the acting key cannot be read")
+}
+
+// checkActor checks by inside a write transaction. A change that can meet
+// NotFound or Conflict runs it before it reads or writes anything else, so a
+// refused actor learns nothing of what it named; a setting's change, which
+// can meet neither, runs it last. The transaction holds the database's write
+// lock from its BEGIN IMMEDIATE, so no other writer can undo what was read
+// before the commit.
+func checkActor(ctx context.Context, tx *sql.Tx, s *statements, by master.Actor) error {
+	if !by.IsKey() {
+		return nil
+	}
+	return actorMay(ctx, tx.StmtContext(ctx, s.actorWrite), by)
+}
+
+// actorMay reads by's key and role with stmt (actorSQL) and returns
+// master.Actor.Judge's answer: nil, a refusal, or the read's own failure.
+func actorMay(ctx context.Context, stmt *sql.Stmt, by master.Actor) error {
+	if !by.IsKey() {
+		return nil
+	}
+	var revoked, expires sql.NullInt64
+	var role sql.NullString
+	err := stmt.QueryRowContext(ctx, by.KeyID(), by.Scope().TenantID).Scan(&revoked, &expires, &role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return by.Judge(false, time.Time{}, time.Time{}, "")
+	}
+	if err != nil {
+		return err
+	}
+	return by.Judge(true, fromNullMicros(revoked), fromNullMicros(expires), master.Role(role.String))
 }
 
 // ListSettings implements master.Store.

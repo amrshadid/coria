@@ -28,20 +28,20 @@ func benchStore(b *testing.B, open Open) (master.Store, string) {
 	var tenants []string
 	for i := range 50 {
 		t := master.Tenant{ID: fmt.Sprintf("bt%03d", i), Name: fmt.Sprintf("bench%03d", i), Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: T0}
-		if err := s.CreateTenant(ctx, t, audit()); err != nil {
+		if err := s.CreateTenant(ctx, t, audit(), master.LocalOperator()); err != nil {
 			b.Fatal(err)
 		}
 		tenants = append(tenants, t.ID)
 	}
 	for i := range 1000 {
 		k := master.Key{ID: fmt.Sprintf("BenchKey%04d", i), Hash: make([]byte, 32), Holder: "bench", Created: T0}
-		if err := s.CreateKey(ctx, k, audit()); err != nil {
+		if err := s.CreateKey(ctx, k, audit(), master.LocalOperator()); err != nil {
 			b.Fatal(err)
 		}
 	}
 	const id = "BenchKey0500"
 	for _, scope := range []master.Scope{master.Installation, master.TenantScope(tenants[3]), master.TenantScope(tenants[17]), master.TenantScope(tenants[42])} {
-		if _, err := s.SetGrant(ctx, master.Grant{KeyID: id, Scope: scope, Role: master.RoleReader}, audit()); err != nil {
+		if _, err := s.SetGrant(ctx, master.Grant{KeyID: id, Scope: scope, Role: master.RoleReader}, audit(), master.LocalOperator()); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -130,6 +130,43 @@ func BenchMarkKeyUsedNoWrite(b *testing.B, open Open) {
 		wrote, err := s.MarkKeyUsed(ctx, id, at)
 		if err != nil || wrote {
 			b.Fatalf("MarkKeyUsed = %v, %v; want no write", wrote, err)
+		}
+	}
+}
+
+// BenchSetSettingByKey measures one change, a setting and its audit entry in
+// one synced transaction, made by a key that is admin on the installation:
+// the store checks the key inside the transaction, so this is what a change
+// on the request's path costs.
+func BenchSetSettingByKey(b *testing.B, open Open) {
+	s, id := benchStore(b, open)
+	if _, err := s.SetGrant(context.Background(), master.Grant{KeyID: id, Scope: master.Installation, Role: master.RoleAdmin},
+		master.AuditEntry{ID: "bench-admin", Time: T0, Method: "Setup", Outcome: master.OutcomeDone}, master.LocalOperator()); err != nil {
+		b.Fatal(err)
+	}
+	benchSetSetting(b, s, master.ActingKey(id, master.Installation, master.RoleAdmin, at(T0)))
+}
+
+// BenchSetSettingByLocalOperator is BenchSetSettingByKey by the local
+// operator, whom no store checks: the difference between the two is the
+// cost of the check of a key inside a change.
+func BenchSetSettingByLocalOperator(b *testing.B, open Open) {
+	s, _ := benchStore(b, open)
+	benchSetSetting(b, s, master.LocalOperator())
+}
+
+// benchSetSetting sets one setting by by, again and again.
+func benchSetSetting(b *testing.B, s master.Store, by master.Actor) {
+	ctx := context.Background()
+	entry := master.AuditEntry{Time: T0, KeyID: by.KeyID(), Method: "/magnetar.v1.SettingsService/SetSetting", Outcome: master.OutcomeDone, RequestID: "bench"}
+	i := 0
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		i++
+		entry.ID = fmt.Sprintf("bench-%09d", i)
+		if err := s.SetSetting(ctx, "bench.setting", "v", entry, by); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

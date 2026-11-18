@@ -96,6 +96,14 @@
 // so a mistaken removal loses no data, and says where: the database type and
 // a location with no user and no password.
 //
+// Both take who asks (master.Actor), which the master checks in the
+// transaction that writes the row or removes it, so a key that may no longer
+// act changes nothing. A creation is checked when its row is written; the
+// writes that settle it are the server's own, so a revocation while the
+// database is being opened does not leave it half made. Create reports
+// whether it wrote the request's entry, so its caller records the request
+// exactly when Create did not.
+//
 // # What this package must never do
 //
 // It must never start a goroutine that nothing waits for: Close stops the
