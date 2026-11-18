@@ -30,10 +30,10 @@
 # MAGNETAR_PROVE_PG_CONTAINER (a running container, such as CI's service
 # container) and MAGNETAR_PROVE_PG_PORT (its port on 127.0.0.1) it uses that
 # one, makes its own role and databases in it, and drops them at the end. In
-# both cases the container is stopped and started again for point 6, and psql
+# both cases the container is stopped and started again for section 6, and psql
 # and pg_dump are run inside it, so their version is the server's.
 #
-# The second operating system user of point 9 is made with sudo on Linux; on a
+# The second operating system user of section 9 is made with sudo on Linux; on a
 # system where that cannot be done the check says so and is skipped there only.
 #
 #   make prove PYTHON=/path/to/venv/bin/python GRPCURL=grpcurl
@@ -144,7 +144,7 @@ redact() {
 	printf '%s' "$text"
 }
 # secret VALUE [search]: remember a secret, for redaction, and for the search
-# of point 5 when the second argument is "search".
+# of section 5 when the second argument is "search".
 secret() {
 	printf '%s\n' "$1" >> "$work/secrets"
 	if [ "${2:-}" = search ]; then printf '%s\n' "$1" >> "$work/search"; fi
@@ -178,7 +178,7 @@ summary() {
 	echo "|---|---|---|"
 	awk -F '\t' '{ gsub(/\|/, "/", $3); printf "| %s | %s | %s |\n", $1, $2, $3 }' "$work/results.tsv"
 	echo
-	if [ -s "$work/sizes.md" ]; then cat "$work/sizes.md"; echo; fi
+	if [ -s "$work/sizes.txt" ]; then cat "$work/sizes.txt"; echo; fi
 	echo "$n_ok ok, $n_fail FAIL, $n_skip skipped, in $(($(date +%s) - started_at)) s on $(uname -s) $(uname -m)"
 }
 
@@ -191,7 +191,7 @@ json_get() { "$PYTHON" -c 'import json, sys; d = json.load(sys.stdin); print(eva
 median_max() { sort -n "$1" | awk '{ v[NR] = $1 * 1000 } END { printf "%.1f %.1f", v[int((NR + 1) / 2)], v[NR] }'; }
 
 # --- The request ledger: every request made to the main server, with the
-# request id from its response header when the client shows it, so point 8
+# request id from its response header when the client shows it, so section 8
 # can find each one in the audit log, and the log can be reconciled against
 # it the other way.
 # The seventh field, for a request without an id, is the second it was sent
@@ -441,7 +441,7 @@ else
 	supw=$(openssl rand -hex 16)
 	secret "$supw"
 	# A fixed host port: a published port chosen by Docker can change when
-	# the container is started again in point 6. A port free here may still
+	# the container is started again in section 6. A port free here may still
 	# be held where Docker runs (a virtual machine, on macOS), so a refused
 	# port is tried again with another.
 	own_pg=$PG_CONTAINER
@@ -457,7 +457,7 @@ fi
 wait_pg || { fail "3.0 Postgres answers" "pg_isready never answered in $PG_CONTAINER"; exit 1; }
 pg_version=$(psql_su -c 'show server_version' | cut -d ' ' -f 1)
 # A password with the characters a URL must escape, so its escaped form
-# differs and both forms are searched for in point 5.
+# differs and both forms are searched for in section 5.
 pgpw="pr-$(openssl rand -hex 8)/@:+%$(openssl rand -hex 4)"
 pgpw_esc=$(urlescape "$pgpw")
 secret "$pgpw" search
@@ -772,9 +772,9 @@ fi
 
 # ===========================================================================
 section "7. nothing half-made after a crash"
-# A separate installation, so the kills lose nothing the audit check of point
-# 8 counts on (a killed server may lose the batched entries of its last
-# moment, as the contract says).
+# A separate installation, so the kills lose nothing the audit check of
+# section 8 counts on (a killed server may lose the batched entries of its
+# last moment, as the contract says).
 crash=$work/k
 "$bin" init --data-dir "$crash" > /dev/null
 start_server "$work/crash.log" "$crash" || { fail "7.1 after each kill the tenant is whole or absent" "the server did not start" "$(tail -20 "$work/crash.log")"; }
@@ -945,7 +945,7 @@ jsonout audit-lite /magnetar.v1.AuditService/ListAuditEntries entries lite audit
 jsonout audit-pg /magnetar.v1.AuditService/ListAuditEntries entries pg audit list --tenant pg
 # shellcheck disable=SC2086
 "$PYTHON" "$helper" --work "$work" json $docs || true
-# The interactive program's requests cannot be told by id; point 8 counts
+# The interactive program's requests cannot be told by id; section 8 counts
 # them by their time window, which these two seconds keep apart from the
 # commands above (matched to the second).
 sleep 2
@@ -1019,7 +1019,7 @@ else
 	fail "5.4 each key's SHA-256 is in the master" "missing for:$missing_hash"
 fi
 
-# The audit logs, read through the API on a restart, reconciled for point 8
+# The audit logs, read through the API on a restart, reconciled for section 8
 # and searched here.
 if start_server "$work/serve.log" "$data" --listen "127.0.0.1:$port" --tls-cert "$work/cert.pem" --tls-key "$work/key.pem" --log-level debug; then
 	main_pid=$SERVER_PID
@@ -1054,7 +1054,7 @@ else
 	{
 		echo "| Binary | Bytes | MiB |"
 		echo "|---|---:|---:|"
-	} > "$work/sizes.md"
+	} > "$work/sizes.txt"
 	for t in $targets; do
 		f=$work/bin/magnetar-${t%/*}-${t#*/}
 		[ "${t%/*}" = windows ] && f=$f.exe
@@ -1063,7 +1063,7 @@ else
 			continue
 		fi
 		bytes=$(wc -c < "$f" | tr -d ' ')
-		echo "| $(basename "$f") | $bytes | $(awk -v b="$bytes" 'BEGIN { printf "%.2f", b / 1048576 }') |" >> "$work/sizes.md"
+		echo "| $(basename "$f") | $bytes | $(awk -v b="$bytes" 'BEGIN { printf "%.2f", b / 1048576 }') |" >> "$work/sizes.txt"
 		"$GO" version -m "$f" | grep -q "CGO_ENABLED=0" || bad="$bad $t: not built with CGO_ENABLED=0;"
 		if [ "${t%/*}" = linux ] && command -v file > /dev/null; then
 			file "$f" | grep -q 'statically linked' || bad="$bad $t: not statically linked ($(file -b "$f" | cut -c 1-60));"

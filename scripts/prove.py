@@ -17,16 +17,16 @@ script's work directory:
 
 Subcommands:
 
-  refusals  the refusal matrix of points 2 and 4: every method of the
+  refusals  the refusal matrix of sections 2 and 4: every method of the
             contract, read from the proto files, with no key and with each kind
             of bad key, through grpcurl, Python's grpcio and curl over TLS; the
             answers compared byte for byte within each client
-  audit     point 8: the audit logs read through the API and reconciled
+  audit     section 8: the audit logs read through the API and reconciled
             against the ledger in both directions
-  tui       point 10: the interactive program under a pseudo-terminal, with
+  tui       section 10: the interactive program under a pseudo-terminal, with
             the terminal emulator of scripts/check-tui.py
-  json      point 10: every --json document parsed
-  metrics   point 8: /metrics parsed by the Prometheus client; no audit entry
+  json      section 10: every --json document parsed
+  metrics   section 8: /metrics parsed by the Prometheus client; no audit entry
             dropped or failed
 
 Needs grpcio and prometheus-client (scripts/requirements-check-server.txt) for
@@ -310,7 +310,7 @@ def cmd_refusals(work, args):
 
 
 def walk(work, cl, methods):
-    """Point 2: every method of the contract with no key, by grpcurl, and
+    """Section 2: every method of the contract with no key, by grpcurl, and
     /metrics by curl: all refused, with one answer."""
     answers, evidence = {}, []
     for svc, m, proto in methods:
@@ -334,7 +334,7 @@ def walk(work, cl, methods):
 
 
 def matrix(work, cl, methods, keys, args):
-    """Point 4: each kind of refusal by each client, compared."""
+    """Section 4: each kind of refusal by each client, compared."""
     bad = bad_keys(keys)
     nogrant_key, nogrant_id = key_of(keys, "nogrant")
     reader_key, reader_id = key_of(keys, "reader")
@@ -455,7 +455,7 @@ def matrix(work, cl, methods, keys, args):
 
 
 # ---------------------------------------------------------------------------
-# Point 8: the audit logs, read through the API, reconciled with the ledger.
+# Section 8: the audit logs, read through the API, reconciled with the ledger.
 
 
 def parse_time(s):
@@ -648,7 +648,7 @@ def cmd_audit(work, args):
 
 
 # ---------------------------------------------------------------------------
-# Point 10.
+# Section 10.
 
 
 def cmd_tui(work, args):
