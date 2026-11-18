@@ -306,6 +306,22 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- `serve` started with a key file other than the installation's ran: every
+  tenant then failed with "the database address did not open with this key
+  file", SQLite tenants included, and a tenant created in that state would
+  have had its address sealed with the wrong key, leaving an installation
+  that no one key file could open. `init` now writes a key check into the
+  master, beside the installation's id: the id sealed with the key file.
+  `serve` opens it after the identity check, before it migrates, opens any
+  tenant or listens, and refuses to start (exit 1) when it does not open,
+  saying the key file is not the installation's and nothing was changed. A
+  master with no key check is refused with its own line: a data directory
+  made before this change must be made again with `init`. The check opens
+  with any key file that still holds the version that sealed it, so a newer
+  key version added for rotation does not refuse a start. `init` now also
+  makes the lock file, and `serve` empties it when it lets go of it, so a
+  refused start leaves the data directory byte-identical.
+
 - The command line and the interactive program had been written against the
   in-memory stand-in, which disagreed with the real server. `setting unset`
   required `--tenant`, but the installation's value can now be removed;
