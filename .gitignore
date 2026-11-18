@@ -11,6 +11,9 @@ coverage.*
 # Local data directories made while trying the binary
 /data/
 
+# Python's compiled copies of the check scripts
+__pycache__/
+
 # Editors and systems
 .DS_Store
 .idea/

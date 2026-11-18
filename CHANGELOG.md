@@ -346,6 +346,26 @@ All notable changes to Magnetar are written here. The form is
   cross the API in three fields. A walk-through in
   `docs/api-walkthrough-reception.md` follows three uses call by call with only the
   contract in hand.
+- The server had no rules for where a received file goes or what state its
+  reception is in. `internal/core` now holds them, with no I/O, so each is
+  tested without a database, a network or a storage: labels (1 to 128 of
+  `A-Z a-z 0-9 . _ -`, never a hidden name, a trailing dot or a Windows device
+  name, so every label is a safe directory name on Linux, macOS and Windows);
+  the naming rule, a template over DICOM attributes or a pattern over one
+  attribute's value, checked when it is set, never cleaning a value up
+  silently and never putting one in an error's text, where `{#PatientID}` and
+  the like give the keyed hash of a value (HMAC-SHA-256 under the tenant's
+  key, 16 characters of base32) instead of the value; a default rule,
+  `sub-{#PatientID}`, `ses-{#StudyInstanceUID}`, `scan-{#SeriesInstanceUID}`,
+  so that by default no label carries an identifier the sender gave, and no
+  well-formed study is held for an empty date or number; the UID check of
+  PS3.5 9.1; the one place that builds and parses storage keys
+  (`data/<subject>/<session>/<scan>/<SOP Instance UID>.dcm`, and
+  `manifest.json` and `metadata.json` under `meta/`); the scan manifest,
+  versioned, written in one byte form only and read with bounds; and the
+  reception state machine as one table, with completion decided from the
+  quiet period and the longest open time, a clock set back included. The
+  template, pattern, key and manifest parsers are fuzzed.
 
 ### Changed
 
