@@ -241,13 +241,64 @@ func noTenant(d access.Decision) error {
 	return fault.New(fault.Denied, access.MessageDenied)
 }
 
-// tenantStore returns the store of the tenant named name, for this request.
-// A tenant that is not ready is Unavailable; one the registry does not hold
-// is answered as noTenant says.
-func (c *core) tenantStore(d access.Decision, name string) (tenant.Store, error) {
-	st, err := c.reg.Store(name)
-	if fault.KindOf(err) == fault.NotFound {
+// reroutedValue is the value of access.DetailRerouted on the entry of a
+// request whose tenant's log could not be had at all, so the entry was
+// written to the installation's log from the start.
+const reroutedValue = "the tenant's database is not ready; written to the installation's log"
+
+// tenantStore returns the store of the tenant named name, for this request,
+// after making sure it is the tenant the check allowed: a tenant removed and
+// created again under the same name between the check and now has another
+// id, and the grant the check read was on the old one. Such a tenant, and one
+// the registry or the master no longer holds, is answered as noTenant says;
+// to the caller, the tenant it was allowed on is gone. A tenant that is not
+// ready is Unavailable.
+//
+// The store is read before the master's row: a removal takes the row away
+// before it unregisters the store, and a creation writes the row before it
+// registers one, so a row that still has the checked id means the store read
+// before it was that tenant's too.
+func (c *core) tenantStore(ctx context.Context, d access.Decision, name string) (tenant.Store, error) {
+	st, serr := c.reg.Store(name)
+	if fault.KindOf(serr) == fault.NotFound {
 		return nil, noTenant(d)
 	}
-	return st, err
+	ref, ok := d.Tenant()
+	row, err := c.master.TenantByName(ctx, name)
+	switch {
+	case fault.KindOf(err) == fault.NotFound:
+		return nil, noTenant(d)
+	case err != nil:
+		return nil, err
+	case !ok || row.ID != ref.ID:
+		return nil, noTenant(d)
+	}
+	return st, serr
+}
+
+// sinkFor returns the log every later record of a request on scope goes to,
+// chosen once, as soon as the scope is known to be valid: nil for the
+// installation, and for a tenant its store (D53: an allowed request that
+// concerns a tenant is recorded in its log, whatever its outcome). When the
+// tenant's store cannot be had, the request is recorded here and its error
+// returned: in the installation's log, with the tenant's name and, when the
+// tenant is not ready, access.DetailRerouted. details are the request's
+// audit details, which the rerouted entry keeps.
+func (c *core) sinkFor(ctx context.Context, d access.Decision, scope access.Scope, details map[string]string) (tenant.Store, error) {
+	if scope.IsInstallation() {
+		return nil, nil
+	}
+	st, err := c.tenantStore(ctx, d, scope.Tenant)
+	if err == nil {
+		return st, nil
+	}
+	facts := access.Facts{TenantName: scope.Tenant}
+	if fault.KindOf(err) == fault.Unavailable {
+		facts.Details = make(map[string]string, len(details)+1)
+		for k, v := range details {
+			facts.Details[k] = v
+		}
+		facts.Details[access.DetailRerouted] = reroutedValue
+	}
+	return nil, c.failWith(d, nil, facts, err)
 }

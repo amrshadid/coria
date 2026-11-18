@@ -10,7 +10,6 @@ import (
 	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
 // messageNoSetting answers a name that is not in the list of settings the
@@ -86,6 +85,11 @@ func tenantScoped(field string, scope access.Scope, def settings.Definition) err
 	return nil
 }
 
+// scopeDetails returns the audit details of a request about one scope.
+func scopeDetails(scope access.Scope) map[string]string {
+	return map[string]string{detailScope: scope.String()}
+}
+
 // GetSetting answers the value of a setting that applies on a scope, and
 // where it came from.
 func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingRequest) (*v1.GetSettingResponse, error) {
@@ -94,37 +98,35 @@ func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingReque
 	if err != nil {
 		return nil, err
 	}
-	name := req.GetName()
-	if err := settingName("name", name); err != nil {
-		return nil, c.fail(d, err)
-	}
 	scope, err := scopeOf("scope", req.GetScope())
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
+	// Every record of the request from here on goes to the log of its scope.
+	st, err := c.sinkFor(ctx, d, scope, scopeDetails(scope))
+	if err != nil {
+		return nil, err
+	}
+	name := req.GetName()
+	if err := settingName("name", name); err != nil {
+		return nil, c.failIn(d, st, err)
+	}
 	def, err := c.definition(name)
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
-	var st tenant.Store
-	if !scope.IsInstallation() {
-		// The tenant's store is needed even for a setting it may not
-		// override: the read is recorded in the tenant's log, and a tenant
-		// that is not ready is not read.
-		if st, err = c.tenantStore(d, scope.Tenant); err != nil {
-			return nil, c.fail(d, err)
-		}
-		if def.TenantOverride {
-			v, err := st.Setting(ctx, name)
-			switch {
-			case err == nil:
-				c.done(d, st)
-				return &v1.GetSettingResponse{Setting: settingMessage(name, scope, v, v1.SettingSource_SETTING_SOURCE_TENANT)}, nil
-			case fault.KindOf(err) != fault.NotFound:
-				return nil, c.failIn(d, st, err)
-			}
+	if st != nil && def.TenantOverride {
+		v, err := st.Setting(ctx, name)
+		switch {
+		case err == nil:
+			c.done(d, st)
+			return &v1.GetSettingResponse{Setting: settingMessage(name, scope, v, v1.SettingSource_SETTING_SOURCE_TENANT)}, nil
+		case fault.KindOf(err) != fault.NotFound:
+			return nil, c.failIn(d, st, err)
 		}
 	}
+	// A setting a tenant may not override is answered from the installation
+	// on a tenant scope too; its read is still recorded in the tenant's log.
 	v, source, err := c.onInstallation(ctx, def)
 	if err != nil {
 		return nil, c.failIn(d, st, err)
@@ -146,38 +148,39 @@ func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingReque
 	if in == nil {
 		return nil, c.fail(d, invalid("setting", "is required"))
 	}
-	name, value := in.GetName(), in.GetValue()
-	if err := settingName("setting.name", name); err != nil {
-		return nil, c.fail(d, err)
-	}
 	scope, err := scopeOf("setting.scope", in.GetScope())
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
+	st, err := c.sinkFor(ctx, d, scope, scopeDetails(scope))
+	if err != nil {
+		return nil, err
+	}
+	name, value := in.GetName(), in.GetValue()
+	if err := settingName("setting.name", name); err != nil {
+		return nil, c.failIn(d, st, err)
+	}
 	if err := text("setting.value", value, 0, master.MaxSettingValueLength); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
 	def, err := c.definition(name)
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
 	if err := tenantScoped("setting.scope", scope, def); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
 	if err := def.Validate(value); err != nil {
-		return nil, c.fail(d, invalid("setting.value", err.Error()))
+		return nil, c.failIn(d, st, invalid("setting.value", err.Error()))
 	}
-	if scope.IsInstallation() {
-		if err := c.master.SetSetting(ctx, name, value, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
+	entry := d.Entry(master.OutcomeDone, "", access.Facts{})
+	if st == nil {
+		if err := c.master.SetSetting(ctx, name, value, entry); err != nil {
 			return nil, c.fail(d, err)
 		}
 		return &v1.SetSettingResponse{Setting: settingMessage(name, scope, value, v1.SettingSource_SETTING_SOURCE_INSTALLATION)}, nil
 	}
-	st, err := c.tenantStore(d, scope.Tenant)
-	if err != nil {
-		return nil, c.fail(d, err)
-	}
-	if err := st.SetSetting(ctx, name, value, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
+	if err := st.SetSetting(ctx, name, value, entry); err != nil {
 		return nil, c.failIn(d, st, err)
 	}
 	return &v1.SetSettingResponse{Setting: settingMessage(name, scope, value, v1.SettingSource_SETTING_SOURCE_TENANT)}, nil
@@ -193,32 +196,33 @@ func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingR
 	if err != nil {
 		return nil, err
 	}
-	name := req.GetName()
-	if err := settingName("name", name); err != nil {
-		return nil, c.fail(d, err)
-	}
 	scope, err := scopeOf("scope", req.GetScope())
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
+	st, err := c.sinkFor(ctx, d, scope, scopeDetails(scope))
+	if err != nil {
+		return nil, err
+	}
+	name := req.GetName()
+	if err := settingName("name", name); err != nil {
+		return nil, c.failIn(d, st, err)
+	}
 	def, err := c.definition(name)
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
 	if err := tenantScoped("scope", scope, def); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
-	if scope.IsInstallation() {
-		if _, err := c.master.UnsetSetting(ctx, name, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
+	entry := d.Entry(master.OutcomeDone, "", access.Facts{})
+	if st == nil {
+		if _, err := c.master.UnsetSetting(ctx, name, entry); err != nil {
 			return nil, c.fail(d, err)
 		}
 		return &v1.UnsetSettingResponse{Setting: settingMessage(name, scope, def.Default, v1.SettingSource_SETTING_SOURCE_BUILT_IN)}, nil
 	}
-	st, err := c.tenantStore(d, scope.Tenant)
-	if err != nil {
-		return nil, c.fail(d, err)
-	}
-	if _, err := st.UnsetSetting(ctx, name, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
+	if _, err := st.UnsetSetting(ctx, name, entry); err != nil {
 		return nil, c.failIn(d, st, err)
 	}
 	// The override is gone and its entry written; what applies now is read
@@ -233,7 +237,7 @@ func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingR
 
 // ListSettings answers a page of settings, ordered by name: on the
 // installation, every setting the server knows with the value that applies
-// there; on a tenant, its overrides.
+// there; on a tenant, its overrides of settings the server knows.
 func (s settingsService) ListSettings(ctx context.Context, req *v1.ListSettingsRequest) (*v1.ListSettingsResponse, error) {
 	c := s.c
 	d, err := c.decision(ctx, magnetarv1connect.SettingsServiceListSettingsProcedure)
@@ -244,21 +248,21 @@ func (s settingsService) ListSettings(ctx context.Context, req *v1.ListSettingsR
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
+	st, err := c.sinkFor(ctx, d, scope, scopeDetails(scope))
+	if err != nil {
+		return nil, err
+	}
 	page, err := pageOf(req.GetPageSize(), req.GetPageToken())
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
-	if scope.IsInstallation() {
+	if st == nil {
 		out, err := c.installationSettings(ctx, page)
 		if err != nil {
 			return nil, c.fail(d, err)
 		}
 		c.done(d, nil)
 		return out, nil
-	}
-	st, err := c.tenantStore(d, scope.Tenant)
-	if err != nil {
-		return nil, c.fail(d, err)
 	}
 	overrides, next, err := st.ListSettings(ctx, page)
 	if err != nil {
@@ -267,6 +271,15 @@ func (s settingsService) ListSettings(ctx context.Context, req *v1.ListSettingsR
 	c.done(d, st)
 	out := &v1.ListSettingsResponse{Settings: make([]*v1.Setting, 0, len(overrides)), NextPageToken: next}
 	for _, o := range overrides {
+		// An override of a name the server no longer knows (a setting a
+		// later version dropped) is kept in the tenant's database, not
+		// deleted, and not shown, as the installation's listing and
+		// GetSetting do not show it either. A page may so hold fewer than
+		// page_size items; its token still goes on from where the store
+		// stopped.
+		if _, known := c.settings.Lookup(o.Name); !known {
+			continue
+		}
 		out.Settings = append(out.Settings, settingMessage(o.Name, scope, o.Value, v1.SettingSource_SETTING_SOURCE_TENANT))
 	}
 	return out, nil

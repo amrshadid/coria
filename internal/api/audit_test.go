@@ -103,8 +103,10 @@ func testListAuditEntries(t *testing.T) {
 					t.Errorf("the newest entry is not the last listing: %v", es)
 				}
 			}},
+		{name: "tenant, page_size at 1001", as: f.lab1Admin, call: list(&v1.ListAuditEntriesRequest{Scope: tenantScope("lab1"), PageSize: 1001}),
+			code: connect.CodeInvalidArgument, msg: "page_size", audit: inTenant("lab1", master.OutcomeFailed)},
 		{name: "no such tenant, may list", as: local, call: list(&v1.ListAuditEntriesRequest{Scope: tenantScope("nolab")}), code: connect.CodeNotFound},
 		{name: "no such tenant, no right to know", as: f.lab1Admin, call: list(&v1.ListAuditEntriesRequest{Scope: tenantScope("nolab")}), code: connect.CodePermissionDenied},
-		{name: "a tenant that is not ready", as: local, call: list(&v1.ListAuditEntriesRequest{Scope: tenantScope("down")}), code: connect.CodeUnavailable},
+		{name: "a tenant that is not ready", as: local, call: list(&v1.ListAuditEntriesRequest{Scope: tenantScope("down")}), code: connect.CodeUnavailable, audit: inMasterRerouted("down")},
 	})
 }

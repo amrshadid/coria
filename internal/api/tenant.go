@@ -133,6 +133,11 @@ func (s tenantService) GetTenant(ctx context.Context, req *v1.GetTenantRequest) 
 		// Removed since the check: answered as the check would have.
 		err = noTenant(d)
 	}
+	if ref, ok := d.Tenant(); err == nil && ok && t.ID != ref.ID {
+		// Removed and created again under the same name since the check: a
+		// reader of the old tenant may not read the new one.
+		err = noTenant(d)
+	}
 	if err != nil {
 		return nil, c.fail(d, err)
 	}

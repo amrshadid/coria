@@ -176,6 +176,11 @@ func (f *fakePostgres) Location(name, address string) (string, error) {
 	if address == "" {
 		return "", fault.New(fault.Invalid, "a Postgres tenant needs an address")
 	}
+	if strings.Contains(address, "location=refused") {
+		// An address this driver does not take at all, refused before
+		// anything is written.
+		return "", fault.New(fault.Invalid, "the driver does not take this address")
+	}
 	return "pg.location.test:5432/" + name, nil
 }
 
@@ -183,6 +188,9 @@ func (f *fakePostgres) Location(name, address string) (string, error) {
 func (f *fakePostgres) Open(ctx context.Context, id, name, address string) (tenant.Store, error) {
 	if f.isDown(name) {
 		return nil, noAnswer(address)
+	}
+	if strings.Contains(address, "location=refused") {
+		return nil, fault.New(fault.Invalid, "the database refuses this address")
 	}
 	if strings.Contains(address, "sslmode=refused") {
 		// An address this database will never take, as a remote address
@@ -194,6 +202,33 @@ func (f *fakePostgres) Open(ctx context.Context, id, name, address string) (tena
 		return nil, err
 	}
 	return pgStore{Store: st, f: f, name: name, address: address}, nil
+}
+
+// faultyMaster is the master as the registry and the handlers see it, with
+// two operations that a test can make fail on their own while the rest of
+// the master, its audit log among it, keeps working.
+type faultyMaster struct {
+	master.Store
+	failSetSetting   atomic.Bool
+	failRemoveTenant atomic.Bool
+}
+
+// SetSetting fails as a master that does not answer while failSetSetting is
+// set.
+func (m *faultyMaster) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry) error {
+	if m.failSetSetting.Load() {
+		return fault.New(fault.Unavailable, "the master does not answer (a test)")
+	}
+	return m.Store.SetSetting(ctx, name, value, audit)
+}
+
+// RemoveTenant fails as a master that does not answer while
+// failRemoveTenant is set.
+func (m *faultyMaster) RemoveTenant(ctx context.Context, id string, audit master.AuditEntry) error {
+	if m.failRemoveTenant.Load() {
+		return fault.New(fault.Unavailable, "the master does not answer (a test)")
+	}
+	return m.Store.RemoveTenant(ctx, id, audit)
 }
 
 // env is one test's installation: a SQLite master and SQLite tenants in a
@@ -225,6 +260,12 @@ type env struct {
 	// badTenantID, when true, makes the handlers' id source give a tenant id
 	// the master refuses: a fault of the server.
 	badTenantID atomic.Bool
+	// faulty is the master the registry and the handlers are given.
+	faulty *faultyMaster
+	// afterCheck, when set, runs once in the stand-in after the check
+	// allowed a request and before its handler, as something else the
+	// server does meanwhile would.
+	afterCheck atomic.Pointer[func()]
 }
 
 // newEnv returns a running installation with no tenant and no key, whose
@@ -263,6 +304,7 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 		t.Fatal(err)
 	}
 	e.master = m
+	e.faulty = &faultyMaster{Store: m}
 	logger := slog.New(slog.NewTextHandler(e.log, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	e.access, err = access.New(access.Config{Store: m, Clock: e.now, NewID: e.newID, AuditInterval: 5 * time.Millisecond, AuditBackoff: time.Millisecond, Log: logger})
 	if err != nil {
@@ -270,7 +312,7 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	}
 	e.pg = &fakePostgres{dir: filepath.Join(dir, "pg")}
 	e.registry, err = registry.New(registry.Config{
-		Master: m, Keys: keys,
+		Master: e.faulty, Keys: keys,
 		Drivers:  map[string]registry.Driver{api.DriverSQLite: driver.SQLiteTenants{DataDir: e.data}, api.DriverPostgres: e.pg},
 		Now:      e.now,
 		Interval: interval, OpenTimeout: 10 * time.Second, PingTimeout: 2 * time.Second, MaxOpening: 4,
@@ -288,7 +330,7 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 		}
 		return e.newID()
 	}
-	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: m, NewID: tenantID, Log: logger, Settings: e.known})
+	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.faulty, NewID: tenantID, Log: logger, Settings: e.known})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,6 +472,9 @@ func (e *env) standIn(next connect.ServerFunc) connect.ServerFunc {
 		d, err := e.access.Check(ctx, cred, need, facts)
 		if err != nil {
 			return codes.ToConnect(err)
+		}
+		if hook := e.afterCheck.Swap(nil); hook != nil {
+			(*hook)()
 		}
 		if e.decide.Load() {
 			ctx = api.WithDecision(ctx, d)

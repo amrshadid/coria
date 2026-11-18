@@ -162,6 +162,21 @@ linters:
             - pkg: database/sql
               desc: the registry reaches a tenant's database only through tenant.Store
 
+        # The handlers are joined to the server by the command that runs it
+        # (internal/cli/servecmd), which imports both. The handlers satisfy
+        # the server's types by their shape and import neither the server
+        # nor the command line, so neither can come to depend on the other
+        # through them, and a handler cannot reach the server's credential
+        # code.
+        api:
+          files:
+            - "**/internal/api/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/server
+              desc: the handlers satisfy the server's types by their shape; internal/cli/servecmd joins the two
+            - pkg: github.com/amrshadid/magnetar/internal/cli
+              desc: the handlers are a library of the server; the command line imports them, not the other way
+
         # Only the SQLite driver reaches the SQLite library, so nothing else
         # in the binary can come to depend on which database it runs on.
         sqlite-library:

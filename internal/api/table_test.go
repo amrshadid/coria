@@ -337,6 +337,19 @@ func failed(reason string) *wantAudit {
 // refused is the audit entry of a refusal in the installation's log.
 func refused() *wantAudit { return &wantAudit{outcome: master.OutcomeRefused} }
 
+// inTenant is the audit entry of an allowed request on a tenant's scope, in
+// that tenant's log, whatever its outcome (D53).
+func inTenant(name string, outcome master.Outcome) *wantAudit {
+	return &wantAudit{log: name, outcome: outcome, tenant: name}
+}
+
+// inMasterRerouted is the audit entry of an allowed request on a tenant
+// whose database is not ready: in the installation's log, with the tenant's
+// name and the detail that says it was meant for the tenant's log.
+func inMasterRerouted(name string) *wantAudit {
+	return &wantAudit{outcome: master.OutcomeFailed, tenant: name, details: map[string]string{access.DetailRerouted: "*"}}
+}
+
 // ctx is a context for direct calls in tests.
 var ctx = context.Background()
 

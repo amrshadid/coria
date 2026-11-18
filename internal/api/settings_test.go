@@ -113,7 +113,7 @@ func testGetSetting(t *testing.T) {
 			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone},
 			check: wantSetting(lifetime, "installation", "30d", fromInst)},
 		{name: "no such setting", as: f.instReader, call: getSetting("no.such", installation()), code: connect.CodeNotFound, msg: "no setting", audit: failed("no setting")},
-		{name: "no such setting on a tenant", as: f.lab1Reader, call: getSetting("no.such", tenantScope("lab1")), code: connect.CodeNotFound},
+		{name: "no such setting on a tenant", as: f.lab1Reader, call: getSetting("no.such", tenantScope("lab1")), code: connect.CodeNotFound, audit: inTenant("lab1", master.OutcomeFailed)},
 		{name: "name at 128", as: f.instReader, call: getSetting(strings.Repeat("n", 128), installation()), code: connect.CodeNotFound},
 		{name: "name at 129", as: f.instReader, call: getSetting(strings.Repeat("n", 129), installation()), code: connect.CodeInvalidArgument, msg: "name"},
 		{name: "a malformed name", as: f.instReader, call: getSetting("Key", installation()), code: connect.CodeInvalidArgument, msg: "name", audit: failed("name")},
@@ -122,7 +122,7 @@ func testGetSetting(t *testing.T) {
 		{name: "no such tenant, no right to know", as: f.lab1Reader, call: getSetting(testRetention, tenantScope("nolab")), code: connect.CodePermissionDenied},
 		{name: "no such tenant, may list", as: local, call: getSetting(testRetention, tenantScope("nolab")), code: connect.CodeNotFound},
 		{name: "a malformed tenant, may list", as: f.instReader, call: getSetting(testRetention, tenantScope("Lab1")), code: connect.CodeInvalidArgument, msg: "scope.tenant"},
-		{name: "a tenant that is not ready", as: local, call: getSetting(testRetention, tenantScope("down")), code: connect.CodeUnavailable, msg: "unreachable", audit: failed("unreachable")},
+		{name: "a tenant that is not ready", as: local, call: getSetting(testRetention, tenantScope("down")), code: connect.CodeUnavailable, msg: "unreachable", audit: inMasterRerouted("down")},
 	})
 }
 
@@ -146,16 +146,16 @@ func testSetSetting(t *testing.T) {
 		{name: "a lifetime at 3651d", as: f.instAdmin, call: setSetting(lifetime, installation(), "3651d"), code: connect.CodeInvalidArgument, msg: "setting.value"},
 		{name: "a lifetime in minutes", as: f.instAdmin, call: setSetting(lifetime, installation(), "30m"), code: connect.CodeInvalidArgument, msg: "setting.value"},
 		{name: "an empty lifetime", as: f.instAdmin, call: setSetting(lifetime, installation(), ""), code: connect.CodeInvalidArgument, msg: "setting.value"},
-		{name: "a tenant scope for an installation setting", as: f.lab1Admin, call: setSetting(lifetime, tenantScope("lab1"), "30d"), code: connect.CodeInvalidArgument, msg: "setting.scope"},
+		{name: "a tenant scope for an installation setting", as: f.lab1Admin, call: setSetting(lifetime, tenantScope("lab1"), "30d"), code: connect.CodeInvalidArgument, msg: "setting.scope", audit: inTenant("lab1", master.OutcomeFailed)},
 		{name: "tenant, an installation admin", as: f.instAdmin, call: setSetting(testRetention, tenantScope("lab1"), "1d"), code: connect.CodePermissionDenied},
 		{name: "tenant, just below the role", as: f.lab1Operator, call: setSetting(testRetention, tenantScope("lab1"), "1d"), code: connect.CodePermissionDenied},
 		{name: "tenant, at the role", as: f.lab1Admin, call: setSetting(testText, tenantScope("lab1"), value),
 			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, tenant: "lab1", object: testText, details: map[string]string{"scope": "tenant/lab1"}},
 			check: wantSetting(testText, "lab1", value, fromTen)},
 		{name: "tenant, repeated", as: f.lab1Admin, call: setSetting(testText, tenantScope("lab1"), value), check: wantSetting(testText, "lab1", value, fromTen)},
-		{name: "tenant, a value the setting refuses", as: f.lab1Admin, call: setSetting(testRetention, tenantScope("lab1"), "soon"), code: connect.CodeInvalidArgument, msg: "setting.value"},
+		{name: "tenant, a value the setting refuses", as: f.lab1Admin, call: setSetting(testRetention, tenantScope("lab1"), "soon"), code: connect.CodeInvalidArgument, msg: "setting.value", audit: inTenant("lab1", master.OutcomeFailed)},
 		{name: "no such setting", as: f.instAdmin, call: setSetting("no.such", installation(), "1"), code: connect.CodeNotFound, msg: "no setting"},
-		{name: "no such setting on a tenant", as: f.lab1Admin, call: setSetting("no.such", tenantScope("lab1"), "1"), code: connect.CodeNotFound},
+		{name: "no such setting on a tenant", as: f.lab1Admin, call: setSetting("no.such", tenantScope("lab1"), "1"), code: connect.CodeNotFound, audit: inTenant("lab1", master.OutcomeFailed)},
 		{name: "value at 64 KiB", as: f.instAdmin, call: setSetting(testText, installation(), strings.Repeat("v", 64<<10))},
 		{name: "value at 64 KiB and one", as: f.instAdmin, call: setSetting(testText, installation(), strings.Repeat("v", 64<<10+1)), code: connect.CodeInvalidArgument, msg: "setting.value"},
 		{name: "an empty value the setting takes", as: f.instAdmin, call: setSetting(testText, installation(), ""), check: wantSetting(testText, "installation", "", fromInst)},
@@ -164,7 +164,7 @@ func testSetSetting(t *testing.T) {
 		{name: "no scope", as: f.instAdmin, call: setSetting(lifetime, nil, "1d"), code: connect.CodeInvalidArgument, msg: "setting.scope"},
 		{name: "no such tenant, may list", as: local, call: setSetting(testRetention, tenantScope("nolab"), "1d"), code: connect.CodeNotFound},
 		{name: "no such tenant, no right to know", as: f.lab1Admin, call: setSetting(testRetention, tenantScope("nolab"), "1d"), code: connect.CodePermissionDenied},
-		{name: "a tenant that is not ready", as: local, call: setSetting(testRetention, tenantScope("down"), "1d"), code: connect.CodeUnavailable},
+		{name: "a tenant that is not ready", as: local, call: setSetting(testRetention, tenantScope("down"), "1d"), code: connect.CodeUnavailable, audit: inMasterRerouted("down")},
 	})
 	// The value is in no entry of either log.
 	for _, en := range append(f.masterLog(), f.tenantLog("lab1")...) {
@@ -200,24 +200,31 @@ func testUnsetSetting(t *testing.T) {
 			check: wantSetting(testRetention, "installation", "365d", builtIn)},
 		{name: "the built-in default applies again", as: f.lab1Reader, call: getSetting(testRetention, tenantScope("lab1")), check: wantSetting(testRetention, "installation", "365d", builtIn)},
 		{name: "installation, repeated", as: f.instAdmin, call: unsetSetting(testRetention, installation()), check: wantSetting(testRetention, "installation", "365d", builtIn)},
-		{name: "a tenant scope for an installation setting", as: f.lab1Admin, call: unsetSetting(lifetime, tenantScope("lab1")), code: connect.CodeInvalidArgument, msg: "scope", audit: failed("scope")},
+		{name: "a tenant scope for an installation setting", as: f.lab1Admin, call: unsetSetting(lifetime, tenantScope("lab1")), code: connect.CodeInvalidArgument, msg: "scope", audit: inTenant("lab1", master.OutcomeFailed)},
 		{name: "no such setting", as: f.lab1Admin, call: unsetSetting("no.such", tenantScope("lab1")), code: connect.CodeNotFound},
 		{name: "a malformed name", as: f.lab1Admin, call: unsetSetting("", tenantScope("lab1")), code: connect.CodeInvalidArgument, msg: "name"},
 		{name: "no scope", as: f.instAdmin, call: unsetSetting(testRetention, nil), code: connect.CodeInvalidArgument, msg: "scope"},
 		{name: "no such tenant, no right to know", as: f.lab1Admin, call: unsetSetting(testRetention, tenantScope("nolab")), code: connect.CodePermissionDenied},
 		{name: "no such tenant, may list", as: local, call: unsetSetting(testRetention, tenantScope("nolab")), code: connect.CodeNotFound},
-		{name: "a tenant that is not ready", as: local, call: unsetSetting(testRetention, tenantScope("down")), code: connect.CodeUnavailable},
+		{name: "a tenant that is not ready", as: local, call: unsetSetting(testRetention, tenantScope("down")), code: connect.CodeUnavailable, audit: inMasterRerouted("down")},
 	})
 }
 
 // testListSettings guards ListSettings: reader on the scope; on the
 // installation every setting the server knows with its value and source, on
-// a tenant only its overrides; paging and a token refused with another
-// scope.
+// a tenant only its overrides of settings the server knows; paging and a
+// token refused with another scope.
 func testListSettings(t *testing.T) {
 	f := settingsFixture(t)
 	call(f.as(f.instAdmin).settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: testRetention, Scope: installation(), Value: "100d"}})
 	call(f.as(f.lab1Admin).settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: testText, Scope: tenantScope("lab1"), Value: "x"}})
+	// An override of a name the server no longer knows, written straight into
+	// the tenant's database as an older version would have left it.
+	if st, err := f.registry.Store("lab1"); err != nil {
+		t.Fatal(err)
+	} else if err := st.SetSetting(ctx, "gone.setting", "old", f.setupEntry()); err != nil {
+		t.Fatal(err)
+	}
 	list := func(s *v1.Scope, size int32, token string) func(clients) outcome {
 		return func(c clients) outcome {
 			return call(c.settings.ListSettings, &v1.ListSettingsRequest{Scope: s, PageSize: size, PageToken: token})
@@ -266,10 +273,11 @@ func testListSettings(t *testing.T) {
 				}
 			}},
 		{name: "page_size at 1001", as: f.instReader, call: list(installation(), 1001, ""), code: connect.CodeInvalidArgument, msg: "page_size", audit: failed("page_size")},
+		{name: "tenant, page_size at 1001", as: f.lab1Reader, call: list(tenantScope("lab1"), 1001, ""), code: connect.CodeInvalidArgument, msg: "page_size", audit: inTenant("lab1", master.OutcomeFailed)},
 		{name: "page_token at 1025 bytes", as: f.instReader, call: list(installation(), 0, strings.Repeat("s", 1025)), code: connect.CodeInvalidArgument, msg: "page_token"},
 		{name: "no scope", as: f.instReader, call: list(nil, 0, ""), code: connect.CodeInvalidArgument, msg: "scope"},
 		{name: "no such tenant, may list", as: local, call: list(tenantScope("nolab"), 0, ""), code: connect.CodeNotFound},
 		{name: "no such tenant, no right to know", as: f.lab1Reader, call: list(tenantScope("nolab"), 0, ""), code: connect.CodePermissionDenied},
-		{name: "a tenant that is not ready", as: local, call: list(tenantScope("down"), 0, ""), code: connect.CodeUnavailable},
+		{name: "a tenant that is not ready", as: local, call: list(tenantScope("down"), 0, ""), code: connect.CodeUnavailable, audit: inMasterRerouted("down")},
 	})
 }

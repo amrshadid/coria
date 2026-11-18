@@ -284,7 +284,7 @@ func testSetGrant(t *testing.T) {
 		{name: "malformed tenant", as: f.instAdmin, call: set(f.noGrantID, tenantScope("Lab1"), v1.Role_ROLE_READER), code: connect.CodeInvalidArgument, msg: "scope.tenant"},
 		{name: "no role", as: f.instAdmin, call: set(f.noGrantID, installation(), v1.Role_ROLE_UNSPECIFIED), code: connect.CodeInvalidArgument, msg: "role"},
 		{name: "unknown role", as: f.instAdmin, call: set(f.noGrantID, installation(), v1.Role(9)), code: connect.CodeInvalidArgument, msg: "role"},
-		{name: "writer on the installation", as: f.instAdmin, call: set(f.noGrantID, installation(), v1.Role_ROLE_WRITER), code: connect.CodeInvalidArgument, msg: "writer"},
+		{name: "writer on the installation", as: f.instAdmin, call: set(f.noGrantID, installation(), v1.Role_ROLE_WRITER), code: connect.CodeInvalidArgument, msg: "role: writer"},
 		{name: "no key id", as: f.instAdmin, call: set("", installation(), v1.Role_ROLE_READER), code: connect.CodeInvalidArgument, msg: "key_id"},
 	})
 }

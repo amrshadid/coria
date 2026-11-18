@@ -42,51 +42,51 @@ func (s auditService) ListAuditEntries(ctx context.Context, req *v1.ListAuditEnt
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
+	// Every record of the request from here on goes to the log of its scope.
+	st, err := c.sinkFor(ctx, d, scope, auditFilterDetails(req))
+	if err != nil {
+		return nil, err
+	}
 	var filter master.AuditFilter
 	if req.GetKeyId() != "" {
 		if err := keyID("key_id", req.GetKeyId()); err != nil {
-			return nil, c.fail(d, err)
+			return nil, c.failIn(d, st, err)
 		}
 		filter.KeyID = req.GetKeyId()
 	}
 	outcome, ok := masterOutcome(req.GetOutcome())
 	if !ok {
-		return nil, c.fail(d, invalid("outcome", "is done, refused, failed or unspecified for every outcome"))
+		return nil, c.failIn(d, st, invalid("outcome", "is done, refused, failed or unspecified for every outcome"))
 	}
 	filter.Outcome = outcome
 	if filter.Since, err = filterTime("start_time", req.GetStartTime()); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
 	if filter.Until, err = filterTime("end_time", req.GetEndTime()); err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
 	if !filter.Since.IsZero() && !filter.Until.IsZero() && !filter.Until.After(filter.Since) {
-		return nil, c.fail(d, invalid("end_time", "is after start_time"))
+		return nil, c.failIn(d, st, invalid("end_time", "is after start_time"))
 	}
 	page, err := pageOf(req.GetPageSize(), req.GetPageToken())
 	if err != nil {
-		return nil, c.fail(d, err)
+		return nil, c.failIn(d, st, err)
 	}
 
 	var entries []master.AuditEntry
 	var next string
-	if scope.IsInstallation() {
+	if st == nil {
 		entries, next, err = c.master.ListAudit(ctx, filter, page)
 		if err != nil {
 			return nil, c.fail(d, listError(err, page.Cursor))
 		}
-		c.done(d, nil)
 	} else {
-		st, err := c.tenantStore(d, scope.Tenant)
-		if err != nil {
-			return nil, c.fail(d, err)
-		}
 		entries, next, err = st.ListAudit(ctx, filter, page)
 		if err != nil {
 			return nil, c.failIn(d, st, listError(err, page.Cursor))
 		}
-		c.done(d, st)
 	}
+	c.done(d, st)
 	out := &v1.ListAuditEntriesResponse{Entries: make([]*v1.AuditEntry, 0, len(entries)), NextPageToken: next}
 	for _, e := range entries {
 		out.Entries = append(out.Entries, entryMessage(e))
