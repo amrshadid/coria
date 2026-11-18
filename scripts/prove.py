@@ -641,7 +641,7 @@ def cmd_audit(work, args):
     if tui is not None and not tui_lists:
         ev.append("no ListTenants by the interactive program in its window")
     work.result("8.2 nothing in the audit log that the proof did not do", ok,
-                "%d entries in %d log(s); beside the proof's requests: %d by init,%d creation-started, %d state changes (%s), %d by the interactive program (%d ListTenants), %d reads after the stop; %d unexpected"
+                "%d entries in %d log(s); beside the proof's requests: %d by init, %d creation-started, %d state changes (%s), %d by the interactive program (%d ListTenants), %d reads after the stop; %d unexpected"
                 % (len(entries), len(set(e["log"] for e in entries)), counts["init"], counts["started"], counts["state"],
                    ", ".join(states) or "none", counts["tui"], tui_lists, counts["after the stop"], len(unexpected)), ev)
     return 1 if work.failed else 0

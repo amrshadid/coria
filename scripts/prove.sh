@@ -437,13 +437,20 @@ if [ -n "$PG_CONTAINER" ]; then
 	[ -n "$PG_PORT" ] || { echo "prove.sh: MAGNETAR_PROVE_PG_CONTAINER needs MAGNETAR_PROVE_PG_PORT" >&2; exit 2; }
 	pg_where="the container $PG_CONTAINER"
 else
-	PG_PORT=$(free_port)
 	PG_CONTAINER=mgt-proof-$(basename "$work" | cut -d . -f 2 | tr 'A-Z' 'a-z')
 	supw=$(openssl rand -hex 16)
 	secret "$supw"
 	# A fixed host port: a published port chosen by Docker can change when
-	# the container is started again in point 6.
-	"$DOCKER" run -d --name "$PG_CONTAINER" -e POSTGRES_PASSWORD="$supw" -p "127.0.0.1:$PG_PORT:5432" "$PG_IMAGE" > /dev/null
+	# the container is started again in point 6. A port free here may still
+	# be held where Docker runs (a virtual machine, on macOS), so a refused
+	# port is tried again with another.
+	own_pg=$PG_CONTAINER
+	for attempt in 1 2 3; do
+		PG_PORT=$(free_port)
+		"$DOCKER" rm -f "$PG_CONTAINER" > /dev/null 2>&1 || true
+		"$DOCKER" run -d --name "$PG_CONTAINER" -e POSTGRES_PASSWORD="$supw" -p "127.0.0.1:$PG_PORT:5432" "$PG_IMAGE" > /dev/null 2> "$work/docker.err" && break
+		[ "$attempt" != 3 ] || { cat "$work/docker.err" >&2; exit 1; }
+	done
 	own_pg=$PG_CONTAINER
 	pg_where="its own container from $PG_IMAGE"
 fi
@@ -559,7 +566,17 @@ section "5. sealed: the server with another key file"
 # A copy of the installation, its databases copied by sqlite3's online backup
 # while the server runs, given the key file of another installation. Its run/
 # holds the empty lock file a stopped server leaves, as an installation whose
-# key file was swapped after it had been served would.
+# key file was swapped after it had been served would. Each tenant's own log
+# is given an entry first (a read of its settings, by request id), so the
+# copy can be asked for both tenants' data; the pause lets the batching
+# audit writer put both entries in their logs before the copy is taken.
+api sock "" magnetar.v1.SettingsService/ListSettings '{"scope":{"tenant":"lite"}}' lite
+rid_lite=$API_RID
+api sock "" magnetar.v1.SettingsService/ListSettings '{"scope":{"tenant":"pg"}}' pg
+rid_pg=$API_RID
+sleep 2
+cli "$data" /magnetar.v1.AccessService/ListKeys "*" --json key list
+main_keys=$(grep -c '"holder"' "$work/cli.out" || true)
 copy=$work/c
 mkdir -m 700 "$copy" "$copy/run" "$copy/tenants"
 "$SQLITE3" "$data/master.db" ".backup '$copy/master.db'"
@@ -589,17 +606,18 @@ if cmp -s "$data/key" "$copy/key"; then refused="same key file"; fi
 cpid=$!
 track "$cpid"
 for i in $(seq 1 150); do kill -0 "$cpid" 2> /dev/null || break; sleep 0.1; done
+# The port is tried before a server that did not exit is stopped, so a
+# server that listened is seen listening.
+port_status=0
+curl -sS --max-time 3 -o /dev/null --cacert "$work/cert.pem" "https://127.0.0.1:$cport/grpc.health.v1.Health/Check" 2> /dev/null || port_status=$?
+socket_made=no
+[ -e "$copy/run/magnetar.sock" ] && socket_made=yes
 if kill -0 "$cpid" 2> /dev/null; then
-	refused=running
 	kill -KILL "$cpid"
 fi
 wait "$cpid" 2> /dev/null || refused=$?
 untrack "$cpid"
-socket_made=no
-[ -e "$copy/run/magnetar.sock" ] && socket_made=yes
-port_status=0
-curl -sS --max-time 3 -o /dev/null --cacert "$work/cert.pem" "https://127.0.0.1:$cport/grpc.health.v1.Health/Check" 2> /dev/null || port_status=$?
-line=$(grep -v '^{' "$work/copy.log" | head -1)
+line=$(grep -v '^{' "$work/copy.log" | head -1 || true)
 if [ "$refused" = 1 ] && printf '%s' "$line" | grep -q 'the key file is not the one this installation was made with; nothing was changed' &&
 	[ "$socket_made" = no ] && [ "$port_status" = 7 ]; then
 	ok "5.7 serve refuses another key file before it opens anything" "exit 1: '$line'; no socket made, the TLS port refuses connections (curl exit 7)"
@@ -623,8 +641,7 @@ else
 fi
 # The installation's own key file put back: the same copy starts, and both
 # tenants are served. The Postgres tenant is the same database the main
-# server uses; it is only read here (its state and GetTenant, whose entries
-# go to the copy's own log), so the main server's tenant log is not touched.
+# server uses; it is only read here.
 cp "$data/key" "$copy/key"
 chmod 600 "$copy/key"
 if start_server "$work/copy.log" "$copy"; then
@@ -643,6 +660,22 @@ if start_server "$work/copy.log" "$copy"; then
 	else
 		fail "5.10 with its own key file put back, the same copy starts and serves both tenants" "pg $pgs / $pg_show, lite $lis, setting list exit $lite_cli" "$(cat "$work/copy-tenants.json")" "$(tail -5 "$work/copy.log")"
 	fi
+	# The data the copy was made with, read back through it: the entry made
+	# above in each tenant's own log, and every key. Reading the Postgres
+	# tenant's log is itself recorded in that log, which is the main
+	# server's too, so it is entered in the ledger like the main server's
+	# requests.
+	cli "$copy" "" "" --json audit list --tenant lite --limit 1000
+	lite_has=$(grep -c "\"requestId\": \"$rid_lite\"" "$work/cli.out" || true)
+	cli "$copy" /magnetar.v1.AuditService/ListAuditEntries pg --json audit list --tenant pg --limit 1000
+	pg_has=$(grep -c "\"requestId\": \"$rid_pg\"" "$work/cli.out" || true)
+	cli "$copy" "" "" --json key list
+	copy_keys=$(grep -c '"holder"' "$work/cli.out" || true)
+	if [ -n "$rid_lite" ] && [ -n "$rid_pg" ] && [ "$lite_has" = 1 ] && [ "$pg_has" = 1 ] && [ "$copy_keys" = "$main_keys" ] && [ "$main_keys" -ge 5 ]; then
+		ok "5.11 the copy started with its own key file keeps both tenants' data" "the entry of request $rid_lite in lite's own log and of $rid_pg in pg's, read through the copy; $copy_keys keys, as many as the installation it was copied from"
+	else
+		fail "5.11 the copy started with its own key file keeps both tenants' data" "lite's entry found $lite_has times, pg's $pg_has (want 1 each); keys $copy_keys of $main_keys" "$(cat "$work/cli.err")"
+	fi
 	stop_server "$copy_pid"
 else
 	fail "5.10 with its own key file put back, the same copy starts and serves both tenants" "the copy did not start" "$(tail -20 "$work/copy.log")"
@@ -655,15 +688,21 @@ cli "$data" /magnetar.v1.AccessService/SetGrant "*" grant set "$(cat "$work/keys
 cli "$data" /magnetar.v1.AccessService/SetGrant "*" grant set "$(cat "$work/keys/tenants.id")" --role reader --tenant pg
 lite_req='{"scope":{"tenant":"lite"}}'
 pg_req='{"scope":{"tenant":"pg"}}'
-# time_lite FILE N: N calls to the SQLite tenant over TLS, their times in FILE;
-# prints how many did not answer 200.
+# time_lite FILE N: N calls to the SQLite tenant over TLS, their times in FILE,
+# each followed by a WhoAmI, which touches no tenant, its time in FILE.ref:
+# the reference of the same moments, so a machine that is busy at that time
+# is not taken for a tenant slowed by another. Prints how many calls to the
+# tenant did not answer 200.
 time_lite() {
 	local i bad=0
 	: > "$1"
+	: > "$1.ref"
 	for i in $(seq 1 "$2"); do
 		api tls tenants magnetar.v1.SettingsService/ListSettings "$lite_req" lite
 		echo "$API_TIME" >> "$1"
 		[ "$API_STATUS" = 200 ] || bad=$((bad + 1))
+		api tls tenants magnetar.v1.AccessService/WhoAmI '{}'
+		echo "$API_TIME" >> "$1.ref"
 	done
 	echo "$bad"
 }
@@ -703,14 +742,17 @@ else
 fi
 bad_during=$(time_lite "$work/lite.during" 30)
 read -r during_med during_max <<< "$(median_max "$work/lite.during")"
+read -r ref_med ref_max <<< "$(median_max "$work/lite.during.ref")"
 # "Its usual time": the median no worse than twice the median before plus
-# 10 ms, and no call over half a second; both are far below the 30 s a call
-# would wait on a dead database.
+# 10 ms, or than twice that of the calls touching no tenant made in between
+# plus 10 ms (when the machine itself was slower then); and no call over
+# half a second. All are far below the 30 s a call would wait on a dead
+# database.
 if [ "$bad_before" = 0 ] && [ "$bad_during" = 0 ] && [ "$pg_before" = 200 ] &&
-	awk -v b="$before_med" -v d="$during_med" -v m="$during_max" 'BEGIN { exit !(d <= 2 * b + 10 && m <= 500) }'; then
-	ok "6.3 the SQLite tenant answers in its usual time while Postgres is down" "30 calls each over TLS: before median $before_med ms, max $before_max ms; during median $during_med ms, max $during_max ms"
+	awk -v b="$before_med" -v r="$ref_med" -v d="$during_med" -v m="$during_max" 'BEGIN { exit !((d <= 2 * b + 10 || d <= 2 * r + 10) && m <= 500) }'; then
+	ok "6.3 the SQLite tenant answers in its usual time while Postgres is down" "30 calls each over TLS: before median $before_med ms, max $before_max ms; during median $during_med ms, max $during_max ms (WhoAmI between them: median $ref_med ms)"
 else
-	fail "6.3 the SQLite tenant answers in its usual time while Postgres is down" "before median $before_med max $before_max ms ($bad_before not 200); during median $during_med max $during_max ms ($bad_during not 200); pg before: $pg_before"
+	fail "6.3 the SQLite tenant answers in its usual time while Postgres is down" "before median $before_med max $before_max ms ($bad_before not 200); during median $during_med max $during_max ms ($bad_during not 200); WhoAmI between them median $ref_med ms; pg before: $pg_before"
 fi
 "$DOCKER" start "$PG_CONTAINER" > /dev/null
 wait_pg || true
