@@ -128,6 +128,12 @@ jobs:
       - name: Outside check, bash completion parsed by bash -n
         run: make check-completion
 
+      # A tenant's SQLite database, created by the registry as the server
+      # will, read back by the same tool: where its file is and its mode,
+      # tables, rows, integrity, and the master's row and state change.
+      - name: Outside check, a SQLite tenant read by sqlite3
+        run: make check-tenant-sqlite
+
       # Each fuzz target for ten seconds, on one Go only: the inputs it finds
       # do not depend on the Go release, and the minutes are limited.
       - name: Fuzzing, 10 seconds a target
