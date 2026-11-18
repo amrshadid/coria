@@ -171,6 +171,17 @@ check-server:
 check-e2e:
 	MAGNETAR_E2E=1 $(GO) test -race -count=1 -v -run '^TestRealServerEndToEnd$$' ./cmd/magnetar
 
+# The proof of M0 (scripts/prove-m0.sh): the binary built as make build
+# builds it, started for real, and every claim of the milestone shown by
+# tools that are not Magnetar (curl, grpcurl, openssl, sqlite3, psql and
+# pg_dump in a Postgres container, Python's grpcio), each as a named check,
+# with a table of the results and what they measured. It needs docker for
+# Postgres and a PYTHON with scripts/requirements-check-server.txt. CI runs
+# it on Linux with MAGNETAR_PROVE_STRICT=1, where a skipped check fails.
+.PHONY: prove-m0
+prove-m0:
+	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" bash scripts/prove-m0.sh
+
 # The outside check of a tenant's SQLite database: the registry creates a
 # tenant on SQLite, and the sqlite3 tool reads its file and the master's row.
 .PHONY: check-tenant-sqlite

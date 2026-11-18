@@ -354,6 +354,77 @@ jobs:
       - name: The real program end to end
         run: make check-e2e
 
+  # The proof of M0 (scripts/prove-m0.sh): the binaries built as make build
+  # builds them, the Linux one started for real, and every claim of the
+  # milestone shown by tools that are not Magnetar. Postgres is a service
+  # container the script uses for its tenant databases, and stops and starts
+  # again to show that a tenant stops alone; the second operating system user
+  # is made with sudo. MAGNETAR_PROVE_STRICT=1: nothing may be skipped here,
+  # so a check that could not run fails the job instead of passing unseen.
+  proof:
+    name: Proof of M0
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci-throwaway-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The same cache key as the Builds job on Go 1.27: this job compiles
+      # the same five static builds.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27'
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+
+      # sqlite3 from the distribution; grpcurl from its release, checked
+      # against scripts/grpcurl.sha256; the Python packages at exact
+      # versions with their hashes, in a virtual environment (the runner's
+      # Python refuses pip installs, PEP 668).
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --yes --no-install-recommends sqlite3 > /dev/null
+          sqlite3 --version
+          bash scripts/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/requirements-check-server.txt
+
+      - name: The proof of M0
+        env:
+          MAGNETAR_PROVE_PG_CONTAINER: ${{ job.services.postgres.id }}
+          MAGNETAR_PROVE_PG_PORT: '5432'
+          MAGNETAR_PROVE_STRICT: '1'
+        run: |
+          make prove-m0 PYTHON="$RUNNER_TEMP/venv/bin/python" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl" | tee "$RUNNER_TEMP/proof.log"
+
+      # The table of every check and what it measured, on the run's page,
+      # also when a check failed.
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Proof of M0"
+            echo
+            sed -n '/^| Check |/,$p' "$RUNNER_TEMP/proof.log" 2> /dev/null || echo "no summary: the proof did not reach its end"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Windows has its own paths, line endings and executables, so the tests run
   # there on every pull request. The newest Go only: Windows minutes count
   # double against a private repository, and the older Go is tested on Linux.
