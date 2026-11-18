@@ -25,6 +25,8 @@
 #   make check-master-postgres  the Postgres master database read back by
 #                    psql and pg_dump (PSQL=... PG_DUMP=... name them; needs
 #                    MAGNETAR_TEST_POSTGRES, the URL of a scratch database)
+#   make check-tenant-postgres  a tenant on Postgres, created by the registry,
+#                    read back by psql and pg_dump (same variables)
 #   make test-386    the tests as linux/386 binaries, on a Linux x86-64 host
 
 GO      ?= go
@@ -161,9 +163,15 @@ check-tenant-sqlite:
 PSQL    ?= psql
 PG_DUMP ?= pg_dump
 
-.PHONY: check-master-postgres
+.PHONY: check-master-postgres check-tenant-postgres
 check-master-postgres:
 	PSQL="$(PSQL)" PG_DUMP="$(PG_DUMP)" GO="$(GO)" bash scripts/check-master-postgres.sh
+
+# The same for a tenant on Postgres: the registry creates it, the tenant
+# suite's sample is written, and psql and pg_dump read the tenant's schema and
+# the master's.
+check-tenant-postgres:
+	PSQL="$(PSQL)" PG_DUMP="$(PG_DUMP)" GO="$(GO)" bash scripts/check-tenant-postgres.sh
 
 # The tests on 32 bits, where int is 32 bits and the SQLite library is a
 # different translation of SQLite's C. Without -race, which 386 lacks. It runs

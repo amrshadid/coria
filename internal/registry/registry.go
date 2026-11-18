@@ -367,7 +367,7 @@ func (r *Registry) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.warnFileLimit(len(entries))
+	r.warnFileLimit(entries)
 	var wg sync.WaitGroup
 	for _, e := range entries {
 		wg.Add(1)

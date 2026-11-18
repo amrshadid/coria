@@ -260,7 +260,7 @@ func TestMigrationLockReleased(t *testing.T) {
 		if !lockAvailable(t, address) {
 			t.Errorf("the migration lock is still held after %s", path)
 		}
-		if n := settledAcquired(m); n != 0 {
+		if n := settledAcquired(&m.base); n != 0 {
 			t.Errorf("%d connections are still out of the pool after %s", n, path)
 		}
 	}

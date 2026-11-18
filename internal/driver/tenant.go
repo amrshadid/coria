@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/amrshadid/magnetar/internal/driver/postgres"
 	"github.com/amrshadid/magnetar/internal/driver/sqlite"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
@@ -17,6 +18,10 @@ import (
 // SQLiteDriver is the name of the SQLite database type, as a tenant's row in
 // the master records it (master.Tenant.Driver).
 const SQLiteDriver = "sqlite"
+
+// PostgresDriver is the name of the Postgres database type, as a tenant's row
+// in the master records it (master.Tenant.Driver).
+const PostgresDriver = "postgres"
 
 // TenantsDir is the directory, inside the data directory, that holds the
 // database file of every tenant on SQLite (M0 design note, part 1).
@@ -69,6 +74,19 @@ func (d SQLiteTenants) Location(name, address string) (string, error) {
 	return d.Path(name)
 }
 
+// SQLiteFilesPerTenant is the most files one SQLite tenant's store holds open:
+// its database file and its write-ahead log for each of its five connections
+// (one writer and four readers), and its shared-memory file, which SQLite
+// opens once per database in a process (unix VFS, os_unix.c). An idle store,
+// as measured with 1,000 tenants, holds five; this is the most, so the
+// registry's warning comes before the limit is met under load, not after.
+const SQLiteFilesPerTenant = 11
+
+// FilesPerTenant says how many files one tenant's store can hold open at
+// most. The registry reads it, as an optional method of its Driver, for its
+// warning about the process's limit on open files.
+func (SQLiteTenants) FilesPerTenant() int { return SQLiteFilesPerTenant }
+
 // Open implements registry.Driver: it opens, creating them when they do not
 // exist, the tenants directory (readable by its owner only) and the tenant's
 // file. The store is bound to the tenant id (sqlite.OpenTenant). It does not
@@ -113,3 +131,36 @@ func windowsDevice(name string) bool {
 	return len(name) == 4 && (strings.HasPrefix(name, "com") || strings.HasPrefix(name, "lpt")) &&
 		name[3] >= '0' && name[3] <= '9'
 }
+
+// PostgresTenants opens the databases of tenants on Postgres. Each tenant has
+// the address of its own database (a postgres:// URL, sealed in the master),
+// in the schema the URL's search_path names; one tenant to a database and
+// schema, which the store checks (postgres.OpenTenant). It is what package
+// registry calls a Driver.
+type PostgresTenants struct{}
+
+// Location implements registry.Driver: host:port/database, or for a Unix
+// socket unix:/directory/database, with no user and no password. An address
+// that is not a postgres:// URL, that does not parse, or that is to another
+// machine with no sslmode written down is Invalid, with a message that does
+// not repeat it.
+func (PostgresTenants) Location(_, address string) (string, error) {
+	return postgres.Location(address)
+}
+
+// Open implements registry.Driver: it opens a pool of connections to the
+// tenant's database and checks that it answers and that it was not made for
+// another tenant. It does not migrate.
+func (PostgresTenants) Open(ctx context.Context, id, _, address string) (tenant.Store, error) {
+	s, err := postgres.OpenTenant(ctx, address, id)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// FilesPerTenant says how many connections, each a socket, one tenant's store
+// holds at most with the default pool (postgres.DefaultTenantConnections). An
+// address may set pool_max_conns to more; the registry's warning is an
+// estimate from the default.
+func (PostgresTenants) FilesPerTenant() int { return postgres.DefaultTenantConnections }
