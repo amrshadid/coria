@@ -29,14 +29,14 @@ func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 			x.authorization = info.RequestHeader().Get("Authorization")
 			x.remote = remoteOf(ctx, info.PeerAddr)
 		}
-		r, known := s.rules[spec.Procedure]
+		r, known := s.ruleFor(spec.Procedure)
 		switch {
 		case known:
 			x.rule = r
 		case s.registered[spec.Procedure]:
 			// Registered but missing from the table: New refuses this, so it
 			// cannot happen; if it did, the zero Requirement fails closed.
-			x.rule = rule{}
+			x.rule = on(access.Requirement{})
 		default:
 			// A method nobody registered: the caller must still be
 			// authenticated before it is told the method does not exist.

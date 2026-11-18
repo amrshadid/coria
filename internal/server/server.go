@@ -121,15 +121,18 @@ type Config struct {
 	// magnetarv1connect.RegisterTenantServiceHandler(s, h). That
 	// connect.Server is built with the request path's interceptor, so every
 	// method registered on it is checked; it is the only connect.Server the
-	// server mounts.
+	// server mounts. Every method registered must be known to Methods.
 	Register func(s *connect.Server)
+	// Methods is the method-to-requirement table (package internal/api's).
+	// Nil knows no method: then only the health service and methods nobody
+	// registered are served, and New refuses any registered method.
+	Methods Methods
+	// WithDecision hands each handler the check's Decision in its context;
+	// nil leaves it to CallFrom.
+	WithDecision WithDecision
 	// HTTPRoutes are plain HTTP routes besides /metrics, each wrapped in the
 	// request path.
 	HTTPRoutes []HTTPRoute
-	// ToConnect turns an error with a fault kind into the API error the
-	// caller is sent: the code of its kind and its message for the caller.
-	// Nil is DefaultToConnect.
-	ToConnect func(error) *connect.Error
 
 	// DefaultDeadline replaces the 30-second default deadline; zero keeps
 	// it. Tests shorten it.
@@ -143,18 +146,18 @@ type Config struct {
 // network. It owns its goroutines: each listener's serve loop, which Stop
 // ends and waits for.
 type Server struct {
-	cfg        Config
-	access     Checker
-	log        *slog.Logger
-	metrics    *obs.Metrics
-	toConnect  func(error) *connect.Error
-	deadline   time.Duration
-	rules      map[string]rule
-	registered map[string]bool
-	health     *grpchealth.StaticChecker
-	cert       *tls.Certificate
-	mux        *routeMux
-	handler    http.Handler
+	cfg          Config
+	access       Checker
+	log          *slog.Logger
+	metrics      *obs.Metrics
+	deadline     time.Duration
+	methods      Methods
+	withDecision WithDecision
+	registered   map[string]bool
+	health       *grpchealth.StaticChecker
+	cert         *tls.Certificate
+	mux          *routeMux
+	handler      http.Handler
 
 	stopMu   sync.RWMutex
 	stopping bool
@@ -197,22 +200,22 @@ func New(cfg Config) (*Server, error) {
 		return nil, fault.New(fault.Internal, "server: the local socket needs the data directory and its lock")
 	}
 	s := &Server{
-		cfg:        cfg,
-		access:     cfg.Access,
-		log:        cfg.Log,
-		toConnect:  cfg.ToConnect,
-		deadline:   cfg.DefaultDeadline,
-		rules:      copyRules(rules),
-		registered: map[string]bool{},
-		health:     grpchealth.NewStaticChecker(),
-		serveErrs:  make(chan error, 2),
-		socketUser: selfUser(),
+		cfg:          cfg,
+		access:       cfg.Access,
+		log:          cfg.Log,
+		deadline:     cfg.DefaultDeadline,
+		methods:      cfg.Methods,
+		withDecision: cfg.WithDecision,
+		registered:   map[string]bool{},
+		health:       grpchealth.NewStaticChecker(),
+		serveErrs:    make(chan error, 2),
+		socketUser:   selfUser(),
+	}
+	if s.methods == nil {
+		s.methods = noMethods{}
 	}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
-	}
-	if s.toConnect == nil {
-		s.toConnect = DefaultToConnect
 	}
 	if s.deadline <= 0 {
 		s.deadline = DefaultDeadline
@@ -244,16 +247,6 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// copyRules copies the package's table, so a test can add to one server's
-// table without changing another's.
-func copyRules(m map[string]rule) map[string]rule {
-	out := make(map[string]rule, len(m))
-	for k, v := range m {
-		out[k] = v
-	}
-	return out
-}
-
 // tenantsByState is the metrics' source of tenant states: the registry's,
 // or none.
 func (s *Server) tenantsByState() func() map[string]int {
@@ -280,7 +273,7 @@ func (s *Server) buildRoutes() error {
 	var missing []string
 	for spec := range rpc.Specs() {
 		s.registered[spec.Procedure] = true
-		if _, ok := s.rules[spec.Procedure]; !ok {
+		if _, ok := s.ruleFor(spec.Procedure); !ok {
 			missing = append(missing, spec.Procedure)
 		}
 	}
@@ -556,30 +549,4 @@ func joinComma(names []string) string {
 		out += n
 	}
 	return out
-}
-
-// DefaultToConnect is the mapping of fault kinds to API codes the server
-// uses until package internal/api/codes is merged, when Config.ToConnect
-// becomes codes.ToConnect. It is the same table: each kind to the one code
-// access.proto names for it, and the caller sees only fault.Message, never
-// the error's cause.
-func DefaultToConnect(err error) *connect.Error {
-	var code connect.Code
-	switch fault.KindOf(err) {
-	case fault.Invalid:
-		code = connect.CodeInvalidArgument
-	case fault.Unauthenticated:
-		code = connect.CodeUnauthenticated
-	case fault.Denied:
-		code = connect.CodePermissionDenied
-	case fault.NotFound:
-		code = connect.CodeNotFound
-	case fault.Conflict:
-		code = connect.CodeAlreadyExists
-	case fault.Unavailable:
-		code = connect.CodeUnavailable
-	default:
-		code = connect.CodeInternal
-	}
-	return connect.NewError(code, fault.Message(err))
 }

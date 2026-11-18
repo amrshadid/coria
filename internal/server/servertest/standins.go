@@ -75,7 +75,7 @@ func (s *accessService) CreateKey(ctx context.Context, req *magnetarv1.CreateKey
 	case *magnetarv1.CreateKeyRequest_ExpireAfter:
 		exp = access.ExpireAfter(e.ExpireAfter.AsDuration())
 	}
-	made, err := s.h.Access.CreateKey(ctx, c.Credential, c.Facts, req.GetHolder(), exp)
+	made, err := s.h.Access.CreateKey(ctx, c.Decision, req.GetHolder(), exp)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *accessService) ListKeys(ctx context.Context, req *magnetarv1.ListKeysRe
 	if err != nil {
 		return nil, err
 	}
-	keys, next, err := s.h.Access.ListKeys(ctx, c.Credential, c.Facts, master.Page{Cursor: req.GetPageToken(), Limit: int(req.GetPageSize())})
+	keys, next, err := s.h.Access.ListKeys(ctx, c.Decision, master.Page{Cursor: req.GetPageToken(), Limit: int(req.GetPageSize())})
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (s *accessService) SetGrant(ctx context.Context, req *magnetarv1.SetGrantRe
 		scope = access.TenantNamed(t.Tenant)
 	}
 	role := roleOf(req.GetRole())
-	g, prev, err := s.h.Access.SetGrant(ctx, c.Credential, c.Facts, req.GetKeyId(), scope, role)
+	g, prev, err := s.h.Access.SetGrant(ctx, c.Decision, req.GetKeyId(), scope, role)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (s *accessService) WhoAmI(ctx context.Context, _ *magnetarv1.WhoAmIRequest)
 	if err != nil {
 		return nil, err
 	}
-	p, _, err := s.h.Access.WhoAmI(ctx, c.Credential, c.Facts)
+	p, _, err := s.h.Access.WhoAmI(ctx, c.Decision)
 	if err != nil {
 		return nil, err
 	}

@@ -13,14 +13,14 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/api/codes"
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
 // Call is what the request path tells a handler about the request it is
-// serving. A handler reads it with CallFrom and passes Credential and Facts
-// on to the access operations that act for the caller (access.CreateKey,
-// access.WhoAmI, ...), which check again and write the audit entry of the
-// change in its transaction.
+// serving. A handler normally reads only the Decision, which
+// Config.WithDecision puts in its context; CallFrom gives the rest (the
+// request id, the credential's kind) to a handler or a test that needs it.
 type Call struct {
 	// RequestID is the id the server made for the request, the one in the
 	// Magnetar-Request-Id response header, the log and the audit entry.
@@ -104,30 +104,45 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 	call.Facts = access.Request{Method: x.method, RemoteAddress: x.remote, RequestID: id}
 
 	if !x.rule.public {
-		req := x.rule.static
+		var msg proto.Message
 		if x.rule.readsMessage() && x.readMessage != nil {
-			msg, rerr := x.readMessage()
+			m, rerr := x.readMessage()
 			if rerr != nil {
 				// The message could not be read. The caller is still checked
 				// first, against the rule's fallback, so an unauthenticated or
 				// unentitled caller is refused before it learns anything
 				// about its message.
-				if _, cerr := s.access.Check(ctx, call.Credential, x.rule.fallback(), call.Facts); cerr != nil {
+				req, facts := x.rule.fallback()
+				if _, cerr := s.access.Check(ctx, call.Credential, req, withFacts(call.Facts, facts)); cerr != nil {
 					return cerr
 				}
 				return rerr
 			}
-			req = x.rule.need(msg)
+			msg = m
 		}
+		req, facts := x.rule.need(msg)
+		call.Facts = withFacts(call.Facts, facts)
 		d, cerr := s.access.Check(ctx, call.Credential, req, call.Facts)
 		if cerr != nil {
 			return cerr
 		}
 		call.Decision = d
+		if s.withDecision != nil {
+			ctx = s.withDecision(ctx, d)
+		}
 	}
 
 	ctx = context.WithValue(ctx, callKey{}, call)
 	return s.run(ctx, call, next)
+}
+
+// withFacts adds the audit facts the table gave for a request (its object
+// and details) to the facts the server knows (method, remote address,
+// request id), which the table cannot change.
+func withFacts(base, table access.Request) access.Request {
+	base.Object = table.Object
+	base.Details = table.Details
+	return base
 }
 
 // run calls the handler and recovers a panic in it: the panic is logged
@@ -227,7 +242,7 @@ func codeName(c connect.Code) string {
 // An error the RPC library made (a message over the limit, a malformed
 // message, an unknown method) keeps its code and message. A deadline or a
 // cancellation is DEADLINE_EXCEEDED or CANCELED. Any other error is mapped
-// by its fault kind through Config.ToConnect, which shows the caller only
+// by its fault kind through codes.ToConnect, which shows the caller only
 // the error's message for the caller (fault.Message) and never its cause.
 func (s *Server) answer(err error) *connect.Error {
 	var ce *connect.Error
@@ -239,7 +254,7 @@ func (s *Server) answer(err error) *connect.Error {
 	case errors.Is(err, context.Canceled):
 		return connect.NewError(connect.CodeCanceled, "the request was canceled")
 	}
-	return s.toConnect(err)
+	return codes.ToConnect(err)
 }
 
 // credential reads what a request presents. A bearer key in the

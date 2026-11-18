@@ -54,7 +54,7 @@ func runChild(args []string) int {
 	opts := servecmd.Options{
 		Stdout: os.Stdout, Stderr: os.Stderr,
 		Services: func(d servecmd.Deps) (servecmd.Built, error) {
-			return servecmd.Built{Register: (&servertest.Standins{Access: d.Access, Delay: delay}).Register}, nil
+			return servecmd.Built{Register: (&servertest.Standins{Access: d.Access, Delay: delay}).Register, Methods: servertest.Contract()}, nil
 		},
 	}
 	root := newRoot(opts)
@@ -70,6 +70,8 @@ func runChild(args []string) int {
 // one line the real tree will use.
 func newRoot(opts servecmd.Options) *cobra.Command {
 	root := &cobra.Command{Use: "magnetar", SilenceUsage: true, SilenceErrors: true}
+	// As internal/cli does: --data-dir belongs to the root, for every command.
+	root.PersistentFlags().String(servecmd.DataDirFlag, "", "the data directory")
 	root.AddCommand(servecmd.Init(opts), servecmd.Serve(opts))
 	return root
 }

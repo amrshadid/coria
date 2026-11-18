@@ -76,14 +76,15 @@ func TestAuditInterval(t *testing.T) {
 }
 
 // TestAuditFallback guards the fallback: when a batch fails, each entry is
-// appended alone, so the one the master refuses is lost, counted and logged,
-// and the others are kept.
+// appended alone, once, so the one the master refuses (here a duplicate id,
+// as the port reports it) is lost, counted and logged without a retry, and
+// the others are kept.
 func TestAuditFallback(t *testing.T) {
 	m, _ := newMem(t)
 	m.appendFn = func(_ context.Context, entries []master.AuditEntry) error {
 		for _, e := range entries {
 			if e.Method == "poison" {
-				return fault.New(fault.Invalid, "test: poison")
+				return fault.Wrap(fault.Internal, master.ErrDuplicateAuditID, "test: duplicate")
 			}
 		}
 		return nil

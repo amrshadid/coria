@@ -21,7 +21,7 @@ func sprintf(format string, a ...any) string { return fmt.Sprintf(format, a...) 
 // error's text and the whole log are searched for the secret.
 func TestNoSecretAnywhere(t *testing.T) {
 	e := newEnv(t)
-	made, err := e.access.CreateKey(e.ctx, local, facts("CreateKey"), "searched", access.NeverExpire())
+	made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "searched", access.NeverExpire())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestNoSecretAnywhere(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := e.access.SetGrant(e.ctx, local, facts("SetGrant"), id, access.TenantNamed("lab"), master.RoleReader); err != nil {
+	if _, _, err := e.access.SetGrant(e.ctx, e.admin("SetGrant"), id, access.TenantNamed("lab"), master.RoleReader); err != nil {
 		t.Fatal(err)
 	}
 	other, err := secret.MakeAPIKey()
@@ -68,7 +68,9 @@ func TestNoSecretAnywhere(t *testing.T) {
 			t.Fatal("a credential prints its secret")
 		}
 		use(c)
-		if _, _, err := e.access.WhoAmI(e.ctx, c, facts("WhoAmI")); err != nil {
+		if d, err := e.access.Check(e.ctx, c, access.Authenticated(), facts("WhoAmI")); err != nil {
+			errs = append(errs, err.Error())
+		} else if _, _, err := e.access.WhoAmI(e.ctx, d); err != nil {
 			errs = append(errs, err.Error())
 		}
 	}
@@ -82,7 +84,7 @@ func TestNoSecretAnywhere(t *testing.T) {
 	}
 	e.flush()
 	e.store.failAudit.Store(false)
-	if _, err := e.access.RevokeKey(e.ctx, local, facts("RevokeKey"), id); err != nil {
+	if _, err := e.access.RevokeKey(e.ctx, e.admin("RevokeKey"), id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.access.Check(e.ctx, access.APIKey(full), access.Authenticated(), facts("m")); err != nil {

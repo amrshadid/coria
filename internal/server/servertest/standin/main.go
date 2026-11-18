@@ -35,10 +35,12 @@ func main() {
 		Stderr: os.Stderr,
 		Services: func(d servecmd.Deps) (servecmd.Built, error) {
 			h := &servertest.Standins{Access: d.Access, Delay: delay}
-			return servecmd.Built{Register: h.Register}, nil
+			return servecmd.Built{Register: h.Register, Methods: servertest.Contract()}, nil
 		},
 	}
 	root := &cobra.Command{Use: "standin", SilenceUsage: true}
+	// As internal/cli does: --data-dir belongs to the root, for every command.
+	root.PersistentFlags().String(servecmd.DataDirFlag, "", "the data directory")
 	root.AddCommand(servecmd.Init(opts), servecmd.Serve(opts))
 	if err := root.ExecuteContext(context.Background()); err != nil {
 		os.Exit(1)

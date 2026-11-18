@@ -72,16 +72,50 @@ All notable changes to Magnetar are written here. The form is
   must pass (`internal/master/mastertest`) and a SQLite driver that passes it
   (`internal/driver/sqlite`, on `modernc.org/sqlite`, pure Go, so the binary
   stays static on every target). Every change takes its audit entry and
-  writes both or neither; setting a grant replaces its role in one step and
-  returns the old one; lists are paged by cursor, never by offset; times keep
-  their microseconds in UTC. SQLite runs in write-ahead mode with one writing
-  connection (`BEGIN IMMEDIATE`), a read-only pool, foreign keys on, full
-  sync (with `F_FULLFSYNC` on macOS) and a busy timeout. Migrations are
-  embedded SQL files, checksummed and applied under a lock that holds across
-  processes; a changed applied file, or a database a newer binary upgraded,
-  is refused. `scripts/check-master-sqlite.sh` reads what the driver wrote
+  writes both or neither; setting a grant replaces its role in one step,
+  returns the old one, and is refused on a revoked key; one lookup gives a
+  key's roles on the installation and on a named tenant for the access check;
+  lists are paged by a cursor bound to the list and its arguments, never by
+  offset; times keep their microseconds in UTC; a duplicate audit entry id is
+  told apart from a conflict without reading text. SQLite runs in write-ahead
+  mode with one writing connection (`BEGIN IMMEDIATE`), a read-only pool,
+  foreign keys on, full sync (with `F_FULLFSYNC` on macOS) and a busy
+  timeout, and refuses on Unix a database file that others can read or write.
+  Migrations are embedded SQL files, checksummed and applied under a lock that
+  holds across processes; a changed applied file, or a database a newer binary
+  upgraded, is refused. `scripts/check-master-sqlite.sh` reads what the driver wrote
   with the `sqlite3` tool and finds a key's hash but never its secret. The
   binary does not use the master database yet.
+- The binary had a version command and nothing that could use the API, so a
+  person had no way to make a tenant or a key without writing a client. It now
+  has the single commands of the command line, built with cobra and written
+  only as a client of the API: `tenant create|list|show|remove`,
+  `key create|list|show|revoke`, `grant set|list|remove`, `setting
+  get|set|unset|list`, `audit list`, `whoami` and `version`, with `--help` and
+  shell completion. They reach the server on the local socket in the data
+  directory (`--data-dir`, `MAGNETAR_DATA_DIR`) or on the network over TLS
+  (`--server`, `MAGNETAR_SERVER`) with the key read from `MAGNETAR_KEY` or
+  `--key-file`, which must name a file only its owner can open; no flag takes a
+  key, a password or a database address, the filters that take a key's public
+  id are `--key-id`, and `http://` is refused for any host that is not
+  loopback. TLS is 1.2 or later, and `--ca-file` (or `MAGNETAR_CA_FILE`) names
+  the authorities to trust for `--server` in place of the system's, for an
+  institution with a private authority. Output is a table
+  for a person, or with `--json` one document that starts with
+  `"schemaVersion": 1`, checked by Python's `json` module in CI. An error is
+  one line on standard error with the server's message and request id, and the
+  exit code is 0 done, 1 failed, 2 wrong usage, 3 refused, 4 not found, from
+  the kind of the error through one table of API codes in `internal/api/codes`;
+  a code the contract names no kind for (a message over the size limit, one a
+  newer server adds) is a failure, exit 1.
+  `tenant remove` sends nothing without `--yes`. Lists fetch up to `--limit`
+  (100) items and say when more exist, or every item with `--all`. A new key is
+  written alone on its line on standard output and never again. The commands
+  are tested against an in-memory server built from the generated handlers and
+  served over a Unix socket and over TLS, not against a mock of the client.
+  The program grew from 1.6 to 10.2 MiB (linux/amd64: 1.57 to 10.67 MiB), most
+  of it the Connect and protobuf client and `net/http`; cobra and its flag
+  library account for about 0.9 MiB of it.
 - Nothing decided who a caller is or what it may do. `internal/access` now
   has one check that every request will go through: it reads the key by its
   id, compares its secret in constant time, refuses a revoked or expired one,
@@ -97,11 +131,10 @@ All notable changes to Magnetar are written here. The form is
   dropped because the server is overwhelmed is counted and reported in the
   log. A key's last use is recorded at most once a minute, by a bounded
   background worker that drops marks rather than delay a request. Making,
-  listing and revoking keys and
-  setting, listing and removing grants need the installation admin and are
-  each audited in the same transaction; a new key expires after 90 days
-  unless another period (at most 10 years) or "never" is asked for. The
-  binary does not use it yet.
+  listing and revoking keys and setting, listing and removing grants need
+  the installation admin and are each audited in the same transaction; a
+  new key expires after 90 days unless another period (at most 10 years) or
+  "never" is asked for. The binary does not use it yet.
 - `magnetar init` and `magnetar serve`. Nothing could make an installation or
   serve the API. `init` makes the data directory private to its user, the key
   file, the migrated master database (SQLite unless `--master-env` names an
@@ -124,6 +157,8 @@ All notable changes to Magnetar are written here. The form is
   Prometheus text; the standard gRPC health service answers without a key. A
   stop signal drains requests in flight, writes the queued audit entries, and
   exits 0; a second exits at once. `make check-server` checks it with curl,
-  grpcurl and Python's grpcio.
+  grpcurl and Python's grpcio. The API's handlers are not in this change, so
+  until they are, every API method passes the check and then answers that
+  the service is not there.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop

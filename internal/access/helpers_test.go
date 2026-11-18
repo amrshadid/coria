@@ -66,41 +66,6 @@ func openSQLite(tb testing.TB) master.Store {
 	return m
 }
 
-// rolesAdapter gives a master.Store the RolesFor operation the port is
-// gaining, by listing the key's grants. It stands in for the port's one
-// indexed statement until the port has it; the tests of the check then run
-// on the real operation by deleting this adapter.
-type rolesAdapter struct {
-	master.Store
-}
-
-// RolesFor returns the key's role on the installation and on tenantID.
-func (r rolesAdapter) RolesFor(ctx context.Context, keyID, tenantID string) (master.Role, master.Role, error) {
-	var inst, ten master.Role
-	cursor := ""
-	for {
-		page, next, err := r.GrantsByKey(ctx, keyID, master.Page{Cursor: cursor, Limit: master.MaxPageLimit})
-		if err != nil {
-			return "", "", err
-		}
-		for _, g := range page {
-			switch {
-			case g.Scope.IsInstallation():
-				inst = g.Role
-			case tenantID != "" && g.Scope.TenantID == tenantID:
-				ten = g.Role
-			}
-		}
-		if next == "" {
-			return inst, ten, nil
-		}
-		cursor = next
-	}
-}
-
-// The adapted master must satisfy the package's store.
-var _ access.Store = rolesAdapter{}
-
 // counting wraps a Store and records the name of every call made on the
 // request's path, in order, so a test can show two refusals read the same
 // things in the same order, and the entries every write was given.
@@ -113,7 +78,7 @@ type counting struct {
 	entries []master.AuditEntry
 	marks   atomic.Int64
 	appends atomic.Int64
-	// tenantArgs is the tenant id of every RolesFor call.
+	// tenantArgs is the tenant name of every RolesFor call.
 	tenantArgs []string
 	// markedKeys is the key id of every MarkKeyUsed call.
 	markedKeys []string
@@ -143,17 +108,28 @@ func (c *counting) snapshot() ([]string, []master.AuditEntry) {
 	return append([]string(nil), c.calls...), append([]master.AuditEntry(nil), c.entries...)
 }
 
+// written records a change's audit entry when the change, and so its
+// entry, was written: a change that fails writes neither.
+func (c *counting) written(e master.AuditEntry, err error) {
+	if err != nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = append(c.entries, e)
+}
+
 func (c *counting) Key(ctx context.Context, id string) (master.Key, error) {
 	c.note("Key")
 	return c.Store.Key(ctx, id)
 }
 
-func (c *counting) RolesFor(ctx context.Context, keyID, tenantID string) (master.Role, master.Role, error) {
+func (c *counting) RolesFor(ctx context.Context, keyID, tenantName string) (master.Role, master.Role, error) {
 	c.mu.Lock()
 	c.calls = append(c.calls, "RolesFor")
-	c.tenantArgs = append(c.tenantArgs, tenantID)
+	c.tenantArgs = append(c.tenantArgs, tenantName)
 	c.mu.Unlock()
-	return c.Store.RolesFor(ctx, keyID, tenantID)
+	return c.Store.RolesFor(ctx, keyID, tenantName)
 }
 
 func (c *counting) GrantsByKey(ctx context.Context, keyID string, p master.Page) ([]master.Grant, string, error) {
@@ -164,11 +140,6 @@ func (c *counting) GrantsByKey(ctx context.Context, keyID string, p master.Page)
 func (c *counting) GrantsByScope(ctx context.Context, s master.Scope, p master.Page) ([]master.Grant, string, error) {
 	c.note("GrantsByScope")
 	return c.Store.GrantsByScope(ctx, s, p)
-}
-
-func (c *counting) Tenant(ctx context.Context, id string) (master.Tenant, error) {
-	c.note("Tenant")
-	return c.Store.Tenant(ctx, id)
 }
 
 func (c *counting) TenantByName(ctx context.Context, name string) (master.Tenant, error) {
@@ -199,35 +170,31 @@ func (c *counting) AppendAudit(ctx context.Context, entries ...master.AuditEntry
 }
 
 func (c *counting) CreateKey(ctx context.Context, k master.Key, e master.AuditEntry) error {
-	c.mu.Lock()
-	c.calls = append(c.calls, "CreateKey")
-	c.entries = append(c.entries, e)
-	c.mu.Unlock()
-	return c.Store.CreateKey(ctx, k, e)
+	c.note("CreateKey")
+	err := c.Store.CreateKey(ctx, k, e)
+	c.written(e, err)
+	return err
 }
 
 func (c *counting) RevokeKey(ctx context.Context, id string, at time.Time, e master.AuditEntry) (time.Time, error) {
-	c.mu.Lock()
-	c.calls = append(c.calls, "RevokeKey")
-	c.entries = append(c.entries, e)
-	c.mu.Unlock()
-	return c.Store.RevokeKey(ctx, id, at, e)
+	c.note("RevokeKey")
+	out, err := c.Store.RevokeKey(ctx, id, at, e)
+	c.written(e, err)
+	return out, err
 }
 
 func (c *counting) SetGrant(ctx context.Context, g master.Grant, e master.AuditEntry) (master.Role, error) {
-	c.mu.Lock()
-	c.calls = append(c.calls, "SetGrant")
-	c.entries = append(c.entries, e)
-	c.mu.Unlock()
-	return c.Store.SetGrant(ctx, g, e)
+	c.note("SetGrant")
+	out, err := c.Store.SetGrant(ctx, g, e)
+	c.written(e, err)
+	return out, err
 }
 
 func (c *counting) RemoveGrant(ctx context.Context, keyID string, s master.Scope, e master.AuditEntry) (master.Role, error) {
-	c.mu.Lock()
-	c.calls = append(c.calls, "RemoveGrant")
-	c.entries = append(c.entries, e)
-	c.mu.Unlock()
-	return c.Store.RemoveGrant(ctx, keyID, s, e)
+	c.note("RemoveGrant")
+	out, err := c.Store.RemoveGrant(ctx, keyID, s, e)
+	c.written(e, err)
+	return out, err
 }
 
 // env is one test's installation: a real SQLite master behind a counting
@@ -263,7 +230,7 @@ func newEnv(t testing.TB) *env {
 	t.Helper()
 	m := openSQLite(t)
 	e := &env{
-		t: t, ctx: context.Background(), master: m, store: &counting{Store: rolesAdapter{m}},
+		t: t, ctx: context.Background(), master: m, store: &counting{Store: m},
 		clock: &clock{now: t0}, log: &bytes.Buffer{}, logMu: &sync.Mutex{}, setup: ids("setup"),
 	}
 	a, err := access.New(access.Config{
@@ -301,6 +268,24 @@ func (e *env) reset() {
 func (e *env) recorded() ([]string, []master.AuditEntry) {
 	e.flush()
 	return e.store.snapshot()
+}
+
+// decide makes the Decision a server hands a handler: the check of cred for
+// req, with facts naming method. A refusal fails the test.
+func (e *env) decide(cred access.Credential, req access.Requirement, method string) access.Decision {
+	e.t.Helper()
+	d, err := e.access.Check(e.ctx, cred, req, facts(method))
+	if err != nil {
+		e.t.Fatalf("check for %s: %v", method, err)
+	}
+	return d
+}
+
+// admin is the Decision of the local operator as the installation's admin,
+// for method.
+func (e *env) admin(method string) access.Decision {
+	e.t.Helper()
+	return e.decide(local, access.OnInstallation(master.RoleAdmin), method)
 }
 
 // setupEntry is the audit entry of a change the test makes directly in the

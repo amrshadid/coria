@@ -8,8 +8,12 @@ import (
 
 // statements are the master's fixed statements, prepared once on the pool
 // that runs them, so a request does not pay for SQLite parsing and planning
-// the same text again. Every read on the per-request path (a key by id, a
-// key's grants) is one of these and reads one index.
+// the same text again. The reads on the per-request path (a key by id, a
+// key's roles) are each one of these and read point lookups of an index.
+//
+// Every ORDER BY names a total order: its last column is unique among the
+// rows it sorts, so a keyset cursor is never ambiguous, whatever order an
+// index would give.
 type statements struct {
 	all []*sql.Stmt
 
@@ -17,15 +21,15 @@ type statements struct {
 	tenantByID, tenantByName, listTenants *sql.Stmt
 	keyByID, listKeys                     *sql.Stmt
 	grantsByKeyFirst, grantsByKeyNext     *sql.Stmt
-	grantsByScope                         *sql.Stmt
+	grantsByScope, rolesFor               *sql.Stmt
 	settingByName, listSettings           *sql.Stmt
 
 	// Write pool, used inside write transactions through Tx.StmtContext,
 	// except markKeyUsed, which is one statement on its own.
 	tenantNameTaken, tenantExists, insertTenant *sql.Stmt
-	setTenantState, deleteTenantGrants          *sql.Stmt
-	deleteTenant                                *sql.Stmt
-	insertKey, keyExists, revokeKey             *sql.Stmt
+	tenantState, setTenantState                 *sql.Stmt
+	deleteTenantGrants, deleteTenant            *sql.Stmt
+	insertKey, keyRevoked, revokeKey            *sql.Stmt
 	markKeyUsed                                 *sql.Stmt
 	grantRole, upsertGrant, deleteGrant         *sql.Stmt
 	upsertSetting, deleteSetting                *sql.Stmt
@@ -47,23 +51,31 @@ func prepare(ctx context.Context, p *pools) (*statements, error) {
 		{&s.listTenants, r, `SELECT ` + tenantColumns + ` FROM tenants WHERE name > ? ORDER BY name LIMIT ?`},
 		{&s.keyByID, r, `SELECT ` + keyColumns + ` FROM api_keys WHERE id = ?`},
 		{&s.listKeys, r, `SELECT ` + keyColumns + ` FROM api_keys WHERE (created, id) > (?, ?) ORDER BY created, id LIMIT ?`},
-		{&s.grantsByKeyFirst, r, `SELECT ` + grantColumns + ` FROM grants WHERE key_id = ? ORDER BY scope LIMIT ?`},
-		{&s.grantsByKeyNext, r, `SELECT ` + grantColumns + ` FROM grants WHERE key_id = ? AND scope > ? ORDER BY scope LIMIT ?`},
-		{&s.grantsByScope, r, `SELECT ` + grantColumns + ` FROM grants WHERE scope = ? AND key_id > ? ORDER BY key_id LIMIT ?`},
+		{&s.grantsByKeyFirst, r, `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = ? ORDER BY g.key_id, g.scope LIMIT ?`},
+		{&s.grantsByKeyNext, r, `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = ? AND g.scope > ? ORDER BY g.key_id, g.scope LIMIT ?`},
+		{&s.grantsByScope, r, `SELECT ` + grantColumns + grantFrom + ` WHERE g.scope = ? AND g.key_id > ? ORDER BY g.scope, g.key_id LIMIT ?`},
+		// Two point lookups of the grants' primary key, (key, '') and (key,
+		// the named tenant's id), the id found through the tenants' unique
+		// index on name. coalesce turns "no such tenant" into the
+		// installation's '' again, so it matches nothing more.
+		{&s.rolesFor, r, `SELECT scope, role FROM grants WHERE key_id = ?
+			AND scope IN ('', coalesce((SELECT id FROM tenants WHERE name = ?), ''))`},
 		{&s.settingByName, r, `SELECT value FROM settings WHERE name = ?`},
 		{&s.listSettings, r, `SELECT name, value FROM settings WHERE name > ? ORDER BY name LIMIT ?`},
 
 		{&s.tenantNameTaken, w, `SELECT 1 FROM tenants WHERE name = ?`},
 		{&s.tenantExists, w, `SELECT 1 FROM tenants WHERE id = ?`},
 		{&s.insertTenant, w, `INSERT INTO tenants (` + tenantColumns + `) VALUES (?, ?, ?, ?, ?, ?, ?)`},
+		{&s.tenantState, w, `SELECT state FROM tenants WHERE id = ?`},
 		{&s.setTenantState, w, `UPDATE tenants SET state = ?, state_reason = ? WHERE id = ?`},
 		{&s.deleteTenantGrants, w, `DELETE FROM grants WHERE scope = ?`},
 		{&s.deleteTenant, w, `DELETE FROM tenants WHERE id = ?`},
 		{&s.insertKey, w, `INSERT INTO api_keys (id, hash, holder, created, expires) VALUES (?, ?, ?, ?, ?)`},
-		{&s.keyExists, w, `SELECT 1 FROM api_keys WHERE id = ?`},
-		{&s.revokeKey, w, `UPDATE api_keys SET revoked = coalesce(revoked, ?) WHERE id = ? RETURNING revoked`},
+		{&s.keyRevoked, w, `SELECT revoked FROM api_keys WHERE id = ?`},
+		{&s.revokeKey, w, `UPDATE api_keys SET revoked = ? WHERE id = ? AND revoked IS NULL`},
 		// The throttle is in the WHERE: a row whose last use is within the
-		// minute is not matched, so nothing is written.
+		// minute before at, or after at, is not matched, so nothing is
+		// written and the stored time never moves backward.
 		{&s.markKeyUsed, w, `UPDATE api_keys SET last_used = ? WHERE id = ? AND (last_used IS NULL OR last_used < ?)`},
 		{&s.grantRole, w, `SELECT role FROM grants WHERE key_id = ? AND scope = ?`},
 		// One statement replaces the role of an existing grant, so a key

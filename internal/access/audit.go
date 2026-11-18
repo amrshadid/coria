@@ -188,8 +188,10 @@ func (w *batchWriter) notice(n uint64, now time.Time) (master.AuditEntry, bool) 
 }
 
 // write appends entries in one call. When the call fails, each entry is
-// appended alone, so one entry the master refuses does not lose the others
-// (the port appends all or none). Once Close's deadline has canceled the
+// appended alone, once, so one entry the master refuses does not lose the
+// others (the port appends all or none). An entry refused alone is counted
+// as failed and not tried again: that covers master.ErrDuplicateAuditID, an
+// id already taken, which would be refused again whatever the retry. Once Close's deadline has canceled the
 // workers, what is left is dropped and counted without a call.
 func (w *batchWriter) write(entries []master.AuditEntry) {
 	a := w.a

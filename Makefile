@@ -88,8 +88,12 @@ vuln: $(filter $(TOOLS)/%,$(GOVULNCHECK))
 	$(GOVULNCHECK) -version
 	$(GOVULNCHECK) ./...
 
+# -count=1: the tests always run. CI restores Go's build cache, which also
+# holds test results, and without it every package whose code did not change
+# reports "(cached)": a race or a timing fault in it would never be looked
+# for again. Compiled code still comes from the cache.
 test:
-	$(GO) test -race ./...
+	$(GO) test -race -count=1 ./...
 
 build:
 	@set -e; for platform in $(PLATFORMS); do \
@@ -146,7 +150,7 @@ check-server:
 # different translation of SQLite's C. Without -race, which 386 lacks. It runs
 # natively on a Linux x86-64 machine (CI); macOS cannot run 386 binaries.
 test-386:
-	GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test ./...
+	GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test -count=1 ./...
 
 # Every fuzz target, as package:function. go test fuzzes one target at a
 # time, so each is a run of its own; -run '^$$' keeps the other tests out.
@@ -271,3 +275,36 @@ $(PROTOC_GEN_GO):
 
 $(PROTOC_GEN_CONNECT_GO):
 	GOBIN=$(@D) GOTOOLCHAIN=auto $(GO) install connectrpc.com/connect/v2/cmd/protoc-gen-connect-go@$(PROTOC_GEN_CONNECT_GO_VERSION)
+
+# ---------------------------------------------------------------------------
+# The command line (internal/cli): two checks by tools that are not Magnetar.
+#
+#   make check-json        every command with --json against the in-process
+#                          server, each output parsed by Python's json module
+#                          (scripts/check-json.py); needs python3, nothing else
+#   make check-completion  the bash completion script the binary generates,
+#                          parsed by bash -n
+#
+# Like check-seal they are steps of their own in CI, not part of make check.
+# check-json always sets the variable that makes the Go test write the
+# documents, and the script fails when one is missing, so the Go test being
+# skipped cannot pass.
+.PHONY: check-json check-completion
+
+check-json:
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-json: no interpreter $(PYTHON)" >&2; exit 1; }
+	@set -e; dir="$$(mktemp -d)"; \
+	MAGNETAR_CHECK_JSON_DIR="$$dir" $(GO) test -count=1 -run '^TestWriteJSONOutputs$$' ./internal/cli; \
+	status=0; $(PYTHON) scripts/check-json.py "$$dir" || status=$$?; \
+	rm -f "$$dir"/*.json; rmdir "$$dir"; exit $$status
+
+check-completion:
+	@command -v bash > /dev/null || { echo "check-completion: bash is not installed" >&2; exit 1; }
+	@set -e; out="$$(mktemp)"; \
+	$(GO) run ./cmd/magnetar completion bash > "$$out"; \
+	status=0; \
+	test -s "$$out" || { echo "check-completion: the script is empty" >&2; status=1; }; \
+	[ $$status -ne 0 ] || grep -q '_magnetar' "$$out" || { echo "check-completion: the script does not define _magnetar" >&2; status=1; }; \
+	[ $$status -ne 0 ] || bash -n "$$out" || status=$$?; \
+	[ $$status -ne 0 ] || echo "check-completion: bash -n accepts the completion script ($$(wc -l < "$$out" | tr -d ' ') lines)"; \
+	rm -f "$$out"; exit $$status

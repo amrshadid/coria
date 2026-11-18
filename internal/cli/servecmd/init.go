@@ -63,9 +63,19 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// dataDir returns the data directory from the flag or the environment, as
-// an absolute path.
-func dataDir(flag string, getenv func(string) string) (string, error) {
+// DataDirFlag is the flag that names the data directory. The command tree
+// defines it once, as a persistent flag of the root (internal/cli does), so
+// it means the same for every command; these commands read it from there
+// and do not define it again, which cobra would refuse.
+const DataDirFlag = "data-dir"
+
+// dataDir returns the data directory from the tree's --data-dir or the
+// environment, as an absolute path.
+func dataDir(cmd *cobra.Command, getenv func(string) string) (string, error) {
+	flag := ""
+	if f := cmd.Flag(DataDirFlag); f != nil {
+		flag = f.Value.String()
+	}
 	if flag == "" {
 		flag = getenv(EnvDataDir)
 	}
@@ -97,7 +107,7 @@ func masterAddress(dir, envName string, getenv func(string) string) (address str
 // Init returns the "init" command.
 func Init(opts Options) *cobra.Command {
 	opts = opts.withDefaults()
-	var flags struct{ dataDir, masterEnv string }
+	var masterEnv string
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Make a new installation: its data directory, key file and master database",
@@ -107,18 +117,21 @@ master database (SQLite in the directory unless --master-env names an
 environment variable holding another database's address), tenants/ and run/.
 
 A directory that already holds an installation is refused. Losing the key
-file loses every secret: back it up as soon as it is made.`,
+file loses every secret: back it up as soon as it is made.
+
+The data directory is --data-dir, or MAGNETAR_DATA_DIR.`,
+		Example: `  magnetar init --data-dir /var/lib/magnetar
+  MASTER_DB='postgres://...' magnetar init --data-dir /var/lib/magnetar --master-env MASTER_DB`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			dir, err := dataDir(flags.dataDir, opts.Getenv)
+			dir, err := dataDir(cmd, opts.Getenv)
 			if err != nil {
 				return err
 			}
-			return runInit(cmd.Context(), opts, dir, flags.masterEnv)
+			return runInit(cmd.Context(), opts, dir, masterEnv)
 		},
 	}
-	cmd.Flags().StringVar(&flags.dataDir, "data-dir", "", "the data directory to make (or set "+EnvDataDir+")")
-	cmd.Flags().StringVar(&flags.masterEnv, "master-env", "", "the name of an environment variable holding the master database's address, when it is not SQLite in the data directory")
+	cmd.Flags().StringVar(&masterEnv, "master-env", "", "the name of an environment variable holding the master database's address, when it is not SQLite in the data directory")
 	return cmd
 }
 

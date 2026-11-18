@@ -50,6 +50,21 @@ func Run(t *testing.T, open Open) {
 		{"AuditPaging10000", testAuditPaging10000},
 		{"PageLimits", testPageLimits},
 		{"BothOrNeither", testBothOrNeither},
+		{"FailuresWriteNoAudit", testFailuresWriteNoAudit},
+		{"CursorsBound", testCursorsBound},
+		{"ErrorKinds", testErrorKinds},
+		{"CloseInFlight", testCloseInFlight},
+		{"RolesFor", testRolesFor},
+		{"GrantTenantNames", testGrantTenantNames},
+		{"MarkKeyUsedEdges", testMarkKeyUsedEdges},
+		{"IDsCaseAndOrder", testIDsCaseAndOrder},
+		{"ExactText", testExactText},
+		{"TimeEdges", testTimeEdges},
+		{"PagingWithDeletes", testPagingWithDeletes},
+		{"Ties", testTies},
+		{"ConcurrentSameRow", testConcurrentSameRow},
+		{"SizeBounds", testSizeBounds},
+		{"SetGrantRevokeRace", testSetGrantRevokeRace},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -843,9 +858,9 @@ func testAudit(e *env) {
 		e.Errorf("entries for a tenant with no row = %d, want the one", len(byTenant))
 	}
 
-	e.wantKind("AppendAudit, id taken", e.s.AppendAudit(e.ctx, full), fault.Conflict)
+	e.wantDuplicateAudit("AppendAudit, id taken", e.s.AppendAudit(e.ctx, full))
 	fresh := e.audit()
-	e.wantKind("AppendAudit, batch with an id taken", e.s.AppendAudit(e.ctx, fresh, full), fault.Conflict)
+	e.wantDuplicateAudit("AppendAudit, batch with an id taken", e.s.AppendAudit(e.ctx, fresh, full))
 	if e.auditIDs()[fresh.ID] {
 		e.Error("the batch's first entry was written although the batch failed")
 	}
@@ -1143,8 +1158,9 @@ func testPageLimits(e *env) {
 // testBothOrNeither guards the rule that a change and its audit entry are
 // written both or neither. For every changing operation, the audit entry is
 // made to fail by giving it an id already taken; the operation must fail
-// with Conflict and leave the change unmade. A driver that writes the change
-// first and the entry second, outside one transaction, fails here.
+// with ErrDuplicateAuditID and leave the change unmade. A driver that writes
+// the change first and the entry second, outside one transaction, fails
+// here.
 func testBothOrNeither(e *env) {
 	taken := e.audit()
 	e.ok("AppendAudit", e.s.AppendAudit(e.ctx, taken))
@@ -1156,9 +1172,7 @@ func testBothOrNeither(e *env) {
 	before := len(e.auditIDs())
 	check := func(op string, err error, unchanged func() string) {
 		e.Helper()
-		if fault.KindOf(err) != fault.Conflict {
-			e.Errorf("%s with a taken audit id: %v, want Conflict", op, err)
-		}
+		e.wantDuplicateAudit(op+" with a taken audit id", err)
 		if d := unchanged(); d != "" {
 			e.Errorf("%s with a failed audit entry changed the master: %s", op, d)
 		}

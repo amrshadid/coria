@@ -32,7 +32,7 @@ func TestCreateKeyExpiry(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e.reset()
-			made, err := e.access.CreateKey(e.ctx, local, facts("CreateKey"), "lab robot", tc.exp)
+			made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "lab robot", tc.exp)
 			_, entries := e.recorded()
 			if len(entries) != 1 {
 				t.Fatalf("%d audit entries, want 1", len(entries))
@@ -74,7 +74,7 @@ func TestCreateKeyHolder(t *testing.T) {
 		{"Zoë 山田", true},
 		{"bad\xff", false},
 	} {
-		_, err := e.access.CreateKey(e.ctx, local, facts("CreateKey"), tc.holder, access.Expiry{})
+		_, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), tc.holder, access.Expiry{})
 		if tc.ok && err != nil {
 			t.Errorf("holder of %d bytes: %v", len(tc.holder), err)
 		}
@@ -84,48 +84,123 @@ func TestCreateKeyHolder(t *testing.T) {
 	}
 }
 
-// TestManagementOrder guards the order of checks on the operations this
-// package implements: unauthenticated first, then the role, then the
-// request's own validity, so a caller who may not call a method learns
-// nothing about what a valid request to it looks like.
-func TestManagementOrder(t *testing.T) {
-	e := newEnv(t)
-	reader := e.key(time.Time{}, on(master.Installation, master.RoleOperator))
-	_, err := e.access.CreateKey(e.ctx, access.APIKey("nonsense"), facts("CreateKey"), "", access.ExpireAfter(-1))
-	wantErr(t, "no key, bad request", err, fault.Unauthenticated, access.MessageUnauthenticated)
-	_, err = e.access.CreateKey(e.ctx, access.APIKey(reader.full), facts("CreateKey"), "", access.ExpireAfter(-1))
-	wantErr(t, "operator, bad request", err, fault.Denied, access.MessageDenied)
-	_, err = e.access.CreateKey(e.ctx, local, facts("CreateKey"), "", access.ExpireAfter(-1))
-	wantErr(t, "admin, bad request", err, fault.Invalid, "")
-
-	for name, call := range map[string]func(access.Credential) error{
-		"GetKey": func(c access.Credential) error {
-			_, err := e.access.GetKey(e.ctx, c, facts("GetKey"), reader.id)
+// managementCalls returns each management function called with d, so a
+// test can give all of them the same Decision.
+func managementCalls(e *env, keyID string) map[string]func(access.Decision) error {
+	return map[string]func(access.Decision) error{
+		"CreateKey": func(d access.Decision) error {
+			_, err := e.access.CreateKey(e.ctx, d, "h", access.Expiry{})
 			return err
 		},
-		"ListKeys": func(c access.Credential) error {
-			_, _, err := e.access.ListKeys(e.ctx, c, facts("ListKeys"), master.Page{})
+		"GetKey": func(d access.Decision) error {
+			_, err := e.access.GetKey(e.ctx, d, keyID)
 			return err
 		},
-		"RevokeKey": func(c access.Credential) error {
-			_, err := e.access.RevokeKey(e.ctx, c, facts("RevokeKey"), reader.id)
+		"ListKeys": func(d access.Decision) error {
+			_, _, err := e.access.ListKeys(e.ctx, d, master.Page{})
 			return err
 		},
-		"SetGrant": func(c access.Credential) error {
-			_, _, err := e.access.SetGrant(e.ctx, c, facts("SetGrant"), reader.id, access.InstallationScope, master.RoleAdmin)
+		"RevokeKey": func(d access.Decision) error {
+			_, err := e.access.RevokeKey(e.ctx, d, keyID)
 			return err
 		},
-		"RemoveGrant": func(c access.Credential) error {
-			_, err := e.access.RemoveGrant(e.ctx, c, facts("RemoveGrant"), reader.id, access.InstallationScope)
+		"SetGrant": func(d access.Decision) error {
+			_, _, err := e.access.SetGrant(e.ctx, d, keyID, access.InstallationScope, master.RoleAdmin)
 			return err
 		},
-		"ListGrants": func(c access.Credential) error {
-			_, _, err := e.access.ListGrants(e.ctx, c, facts("ListGrants"), access.GrantsOfKey(reader.id), master.Page{})
+		"RemoveGrant": func(d access.Decision) error {
+			_, err := e.access.RemoveGrant(e.ctx, d, keyID, access.InstallationScope)
 			return err
 		},
-	} {
-		wantErr(t, name+" by an installation operator", call(access.APIKey(reader.full)), fault.Denied, access.MessageDenied)
+		"ListGrants": func(d access.Decision) error {
+			_, _, err := e.access.ListGrants(e.ctx, d, access.GrantsOfKey(keyID), master.Page{})
+			return err
+		},
+		"WhoAmI": func(d access.Decision) error {
+			_, _, err := e.access.WhoAmI(e.ctx, d)
+			return err
+		},
 	}
+}
+
+// TestManagementNeedsDecision guards the management functions' own check of
+// the Decision they are given, which keeps a handler from skipping Check
+// and a wrong requirement in the server's table from opening them: the zero
+// Decision is Denied by every one, with no store call and no entry; a
+// Decision whose caller is not the installation's admin (an installation
+// operator, checked for operator; a tenant admin, checked only to be
+// authenticated) is Denied by every one but WhoAmI, with a refusal entry
+// and no change; and each function given the admin's Decision writes its
+// one audit entry.
+func TestManagementNeedsDecision(t *testing.T) {
+	e := newEnv(t)
+	k := e.key(time.Time{})
+	operator := e.key(time.Time{}, on(master.Installation, master.RoleOperator))
+	tenantAdmin := e.key(time.Time{}, on(master.TenantScope(e.lab.ID), master.RoleAdmin))
+	calls := managementCalls(e, k.id)
+
+	for name, call := range calls {
+		e.reset()
+		wantErr(t, name+" with the zero Decision", call(access.Decision{}), fault.Denied, access.MessageDenied)
+		if c, entries := e.recorded(); len(c) != 0 || len(entries) != 0 {
+			t.Fatalf("%s with the zero Decision: calls %v, entries %d", name, c, len(entries))
+		}
+	}
+	// Not even an attempt at an entry: the zero Decision has none to give,
+	// and one made up would be refused as invalid and counted as failed.
+	if s := e.access.AuditStats(); s.Failed != 0 {
+		t.Fatalf("the zero Decision led to %d failed audit entries", s.Failed)
+	}
+
+	lesser := map[string]access.Decision{
+		"installation operator": e.decide(access.APIKey(operator.full), access.OnInstallation(master.RoleOperator), "m"),
+		"tenant admin":          e.decide(access.APIKey(tenantAdmin.full), access.Authenticated(), "m"),
+	}
+	for who, d := range lesser {
+		for name, call := range calls {
+			e.reset()
+			err := call(d)
+			_, entries := e.recorded()
+			if name == "WhoAmI" {
+				if err != nil || len(entries) != 1 || entries[0].Outcome != master.OutcomeDone {
+					t.Fatalf("WhoAmI for %s: %v, entries %+v", who, err, entries)
+				}
+				continue
+			}
+			wantErr(t, name+" for "+who, err, fault.Denied, access.MessageDenied)
+			if len(entries) != 1 || entries[0].Outcome != master.OutcomeRefused {
+				t.Fatalf("%s for %s: entries %+v, want one refusal", name, who, entries)
+			}
+		}
+	}
+	if got, err := e.master.Key(e.ctx, k.id); err != nil || !got.Revoked.IsZero() {
+		t.Fatalf("a refused RevokeKey changed the key: %+v %v", got, err)
+	}
+
+	for _, name := range []string{"GetKey", "ListKeys", "ListGrants", "SetGrant", "RemoveGrant", "WhoAmI", "CreateKey", "RevokeKey"} {
+		e.reset()
+		if err := calls[name](e.admin(name)); err != nil {
+			t.Fatalf("%s by the admin: %v", name, err)
+		}
+		if _, entries := e.recorded(); len(entries) != 1 || entries[0].Outcome != master.OutcomeDone || entries[0].Method != name {
+			t.Fatalf("%s by the admin: entries %+v, want its one entry", name, entries)
+		}
+	}
+}
+
+// TestManagementValidatesAfterRole guards the order of checks on the
+// operations this package implements: the role is decided by Check and by
+// the function's own check of the Decision before the request is
+// validated, so a caller who may not call a method learns nothing about
+// what a valid request to it looks like.
+func TestManagementValidatesAfterRole(t *testing.T) {
+	e := newEnv(t)
+	operator := e.key(time.Time{}, on(master.Installation, master.RoleOperator))
+	d := e.decide(access.APIKey(operator.full), access.Authenticated(), "CreateKey")
+	_, err := e.access.CreateKey(e.ctx, d, "", access.ExpireAfter(-1))
+	wantErr(t, "operator, bad request", err, fault.Denied, access.MessageDenied)
+	_, err = e.access.CreateKey(e.ctx, e.admin("CreateKey"), "", access.ExpireAfter(-1))
+	wantErr(t, "admin, bad request", err, fault.Invalid, "")
 }
 
 // TestRevokeTwice guards that revoking a revoked key succeeds and keeps its
@@ -133,19 +208,19 @@ func TestManagementOrder(t *testing.T) {
 func TestRevokeTwice(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(time.Time{})
-	first, err := e.access.RevokeKey(e.ctx, local, facts("RevokeKey"), k.id)
+	first, err := e.access.RevokeKey(e.ctx, e.admin("RevokeKey"), k.id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	e.clock.Set(t0.Add(time.Hour))
-	second, err := e.access.RevokeKey(e.ctx, local, facts("RevokeKey"), k.id)
+	second, err := e.access.RevokeKey(e.ctx, e.admin("RevokeKey"), k.id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !first.Revoked.Equal(t0) || !second.Revoked.Equal(t0) || second.Hash != nil {
 		t.Fatalf("first %v, second %v", first.Revoked, second.Revoked)
 	}
-	_, err = e.access.RevokeKey(e.ctx, local, facts("RevokeKey"), "NoSuchKey123")
+	_, err = e.access.RevokeKey(e.ctx, e.admin("RevokeKey"), "NoSuchKey123")
 	wantErr(t, "unknown", err, fault.NotFound, "")
 }
 
@@ -157,7 +232,7 @@ func TestGrants(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(time.Time{})
 	set := func(scope access.Scope, role master.Role) (master.Role, error) {
-		_, prev, err := e.access.SetGrant(e.ctx, local, facts("SetGrant"), k.id, scope, role)
+		_, prev, err := e.access.SetGrant(e.ctx, e.admin("SetGrant"), k.id, scope, role)
 		return prev, err
 	}
 	if prev, err := set(access.TenantNamed("lab"), master.RoleReader); err != nil || prev != "" {
@@ -175,10 +250,10 @@ func TestGrants(t *testing.T) {
 	wantErr(t, "unknown tenant", err, fault.NotFound, access.MessageNoTenant)
 	_, err = set(access.TenantNamed("lab"), "boss")
 	wantErr(t, "unknown role", err, fault.Invalid, "")
-	_, _, err = e.access.SetGrant(e.ctx, local, facts("SetGrant"), "NoSuchKey123", access.InstallationScope, master.RoleReader)
+	_, _, err = e.access.SetGrant(e.ctx, e.admin("SetGrant"), "NoSuchKey123", access.InstallationScope, master.RoleReader)
 	wantErr(t, "unknown key", err, fault.NotFound, "")
 
-	got, next, err := e.access.ListGrants(e.ctx, local, facts("ListGrants"), access.GrantsOfKey(k.id), master.Page{})
+	got, next, err := e.access.ListGrants(e.ctx, e.admin("ListGrants"), access.GrantsOfKey(k.id), master.Page{})
 	if err != nil || next != "" {
 		t.Fatal(err)
 	}
@@ -189,25 +264,25 @@ func TestGrants(t *testing.T) {
 	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
 		t.Fatalf("grants %+v, want %+v", got, want)
 	}
-	onLab, _, err := e.access.ListGrants(e.ctx, local, facts("ListGrants"), access.GrantsOnScope(access.TenantNamed("lab")), master.Page{})
+	onLab, _, err := e.access.ListGrants(e.ctx, e.admin("ListGrants"), access.GrantsOnScope(access.TenantNamed("lab")), master.Page{})
 	if err != nil || len(onLab) != 1 || onLab[0] != want[1] {
 		t.Fatalf("on lab: %+v %v", onLab, err)
 	}
-	_, _, err = e.access.ListGrants(e.ctx, local, facts("ListGrants"), access.GrantFilter{}, master.Page{})
+	_, _, err = e.access.ListGrants(e.ctx, e.admin("ListGrants"), access.GrantFilter{}, master.Page{})
 	wantErr(t, "no filter", err, fault.Invalid, "")
-	_, _, err = e.access.ListGrants(e.ctx, local, facts("ListGrants"), access.GrantsOfKey(k.id), master.Page{Limit: 1001})
+	_, _, err = e.access.ListGrants(e.ctx, e.admin("ListGrants"), access.GrantsOfKey(k.id), master.Page{Limit: 1001})
 	wantErr(t, "page too large", err, fault.Invalid, "")
 
-	prev, err := e.access.RemoveGrant(e.ctx, local, facts("RemoveGrant"), k.id, access.TenantNamed("lab"))
+	prev, err := e.access.RemoveGrant(e.ctx, e.admin("RemoveGrant"), k.id, access.TenantNamed("lab"))
 	if err != nil || prev != master.RoleAdmin {
 		t.Fatalf("remove: %q %v", prev, err)
 	}
-	prev, err = e.access.RemoveGrant(e.ctx, local, facts("RemoveGrant"), k.id, access.TenantNamed("lab"))
+	prev, err = e.access.RemoveGrant(e.ctx, e.admin("RemoveGrant"), k.id, access.TenantNamed("lab"))
 	if err != nil || prev != "" {
 		t.Fatalf("remove again: %q %v", prev, err)
 	}
 
-	if _, err := e.access.RevokeKey(e.ctx, local, facts("RevokeKey"), k.id); err != nil {
+	if _, err := e.access.RevokeKey(e.ctx, e.admin("RevokeKey"), k.id); err != nil {
 		t.Fatal(err)
 	}
 	e.reset()
@@ -223,21 +298,21 @@ func TestGrants(t *testing.T) {
 func TestKeysListedWithoutHash(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(time.Time{}, on(master.TenantScope(e.clinic.ID), master.RoleReader))
-	keys, _, err := e.access.ListKeys(e.ctx, local, facts("ListKeys"), master.Page{})
+	keys, _, err := e.access.ListKeys(e.ctx, e.admin("ListKeys"), master.Page{})
 	if err != nil || len(keys) != 1 {
 		t.Fatalf("%d keys, %v", len(keys), err)
 	}
-	got, err := e.access.GetKey(e.ctx, local, facts("GetKey"), k.id)
+	got, err := e.access.GetKey(e.ctx, e.admin("GetKey"), k.id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if keys[0].Hash != nil || got.Hash != nil {
 		t.Fatal("a key came back with its hash")
 	}
-	_, err = e.access.GetKey(e.ctx, local, facts("GetKey"), "NoSuchKey123")
+	_, err = e.access.GetKey(e.ctx, e.admin("GetKey"), "NoSuchKey123")
 	wantErr(t, "unknown", err, fault.NotFound, "")
 
-	p, grants, err := e.access.WhoAmI(e.ctx, access.APIKey(k.full), facts("WhoAmI"))
+	p, grants, err := e.access.WhoAmI(e.ctx, e.decide(access.APIKey(k.full), access.Authenticated(), "WhoAmI"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +320,7 @@ func TestKeysListedWithoutHash(t *testing.T) {
 	if !isKey || pk.ID != k.id || pk.Hash != nil || len(grants) != 1 || grants[0].Scope != access.TenantNamed("clinic") {
 		t.Fatalf("whoami: %+v %+v", pk, grants)
 	}
-	lp, lg, err := e.access.WhoAmI(e.ctx, local, facts("WhoAmI"))
+	lp, lg, err := e.access.WhoAmI(e.ctx, e.admin("WhoAmI"))
 	if err != nil || !lp.IsLocalOperator() || lp.LocalUser() != "501" || len(lg) != 0 {
 		t.Fatalf("local whoami: %+v %v %v", lp, lg, err)
 	}
@@ -255,7 +330,7 @@ func TestKeysListedWithoutHash(t *testing.T) {
 // secret, the result of CreateKey, prints only the key's id in every form.
 func TestCreatedKeyPrintsNoSecret(t *testing.T) {
 	e := newEnv(t)
-	made, err := e.access.CreateKey(e.ctx, local, facts("CreateKey"), "h", access.Expiry{})
+	made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "h", access.Expiry{})
 	if err != nil {
 		t.Fatal(err)
 	}

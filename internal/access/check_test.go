@@ -78,6 +78,7 @@ func TestCheckTable(t *testing.T) {
 		{"installation reader, any registration", access.APIKey(instReader.full), access.TenantRegistration("clinic"), 0, true, "", "", "", instReader.id, "clinic"},
 		{"installation reader, inside a tenant", access.APIKey(instReader.full), access.OnTenant("clinic", master.RoleReader), fault.Denied, false, denied, master.OutcomeRefused, "no sufficient grant", instReader.id, "clinic"},
 		{"installation reader, no tenant", access.APIKey(instReader.full), access.OnTenant("nosuch", master.RoleReader), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, "nosuch"},
+		{"installation reader, a name no tenant can have", access.APIKey(instReader.full), access.OnTenant("Not/A Name", master.RoleReader), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, `"Not/A Name"`},
 		{"installation reader, no registration", access.APIKey(instReader.full), access.TenantRegistration("nosuch"), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, "nosuch"},
 		{"installation admin, inside a tenant", access.APIKey(instAdmin.full), access.OnTenant("lab", master.RoleReader), fault.Denied, false, denied, master.OutcomeRefused, "no sufficient grant", instAdmin.id, "lab"},
 		{"installation admin, admin", access.APIKey(instAdmin.full), access.OnInstallation(master.RoleAdmin), 0, true, "", "", "", instAdmin.id, ""},
@@ -187,13 +188,13 @@ func TestDeniedSamePath(t *testing.T) {
 		t.Fatalf("calls %v, want %v", callsNoGrant, want)
 	}
 	t.Logf("both Denied paths: %v", callsNoGrant)
-	// Both ask RolesFor about a tenant, never about the installation only,
-	// so the store runs the same statement for both.
+	// Both ask RolesFor by the name the request gave, never about the
+	// installation only, so the store runs the same statement for both.
 	e.store.mu.Lock()
 	args := append([]string(nil), e.store.tenantArgs...)
 	e.store.mu.Unlock()
-	if len(args) < 2 || args[len(args)-2] != e.lab.ID || args[len(args)-1] == "" {
-		t.Fatalf("RolesFor tenant ids %q: the missing tenant must be asked about as a tenant", args)
+	if want := []string{"lab", "nosuch"}; !reflect.DeepEqual(args, want) {
+		t.Fatalf("RolesFor tenant names %q, want %q", args, want)
 	}
 	a, b := entryNoGrant, entryNoTenant
 	a.ID, b.ID, a.TenantName, b.TenantName, a.Reason, b.Reason = "", "", "", "", "", ""
@@ -218,7 +219,7 @@ func TestRevokedRefusedNext(t *testing.T) {
 	if _, err := e.access.Check(e.ctx, access.APIKey(k.full), need, facts("m")); err != nil {
 		t.Fatalf("before: %v", err)
 	}
-	if _, err := e.access.RemoveGrant(e.ctx, local, facts("RemoveGrant"), k.id, access.TenantNamed("lab")); err != nil {
+	if _, err := e.access.RemoveGrant(e.ctx, e.admin("RemoveGrant"), k.id, access.TenantNamed("lab")); err != nil {
 		t.Fatal(err)
 	}
 	_, err := e.access.Check(e.ctx, access.APIKey(k.full), need, facts("m"))
@@ -227,7 +228,7 @@ func TestRevokedRefusedNext(t *testing.T) {
 	if _, err := e.access.Check(e.ctx, access.APIKey(k.full), access.Authenticated(), facts("m")); err != nil {
 		t.Fatalf("before revoking: %v", err)
 	}
-	if _, err := e.access.RevokeKey(e.ctx, local, facts("RevokeKey"), k.id); err != nil {
+	if _, err := e.access.RevokeKey(e.ctx, e.admin("RevokeKey"), k.id); err != nil {
 		t.Fatal(err)
 	}
 	e.reset()

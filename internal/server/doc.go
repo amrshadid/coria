@@ -15,13 +15,17 @@
 // INTERNAL. The order of checks is the contract's: unauthenticated first,
 // then the role, then the handler validates the request.
 //
-// The requirement of each method is in one table keyed by the full
-// procedure name (rules.go), taken from the "Role:" line of the method in
-// api/proto/magnetar/v1; where the requirement depends on the request (a
-// role on the tenant the request names) the table holds a function of the
-// request message, and only then is the message read before the check. A
-// test walks the generated descriptors and the proto files in both
-// directions. New refuses a method registered without an entry.
+// The requirement of each method comes from one table, keyed by the full
+// procedure name, which package internal/api owns and tests against the
+// contract; the server takes it as Config.Methods. Where the requirement
+// depends on the request (a role on the tenant the request names) the table
+// says so, and only then is the request's message read before the check. The
+// server owns one rule itself: the health service needs no key. New refuses
+// a method registered without an entry. Config.WithDecision hands each
+// handler the check's Decision; the access operations take it, so a request
+// is checked once. Package servertest holds a stand-in table (taken from the
+// "Role:" lines, tested against the descriptors both ways) and stand-in
+// handlers for tests.
 //
 // There is one way to add a route: the one connect.Server the server builds
 // with its interceptor (Config.Register is handed it), and Config.HTTPRoutes,

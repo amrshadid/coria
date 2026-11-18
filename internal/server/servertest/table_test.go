@@ -1,4 +1,4 @@
-package server_test
+package servertest_test
 
 import (
 	"os"
@@ -17,6 +17,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/magnetar/internal/server/servertest"
 )
 
 // contractFiles are the generated descriptors of the contract's files.
@@ -48,7 +49,7 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 // contract has an entry, and every entry names a method of the contract or
 // the health service.
 func TestTableCoversContract(t *testing.T) {
-	problems := tableProblems(contractMethods(), server.RuleProcedures())
+	problems := tableProblems(contractMethods(), tableProcs())
 	for _, p := range problems {
 		t.Error(p)
 	}
@@ -58,7 +59,7 @@ func TestTableCoversContract(t *testing.T) {
 // removed, and with an entry for a method that does not exist, it reports
 // each.
 func TestTableTestCatchesGaps(t *testing.T) {
-	procs := server.RuleProcedures()
+	procs := tableProcs()
 	dropped := slices.DeleteFunc(slices.Clone(procs), func(p string) bool { return strings.HasSuffix(p, "/WhoAmI") })
 	if p := tableProblems(contractMethods(), dropped); len(p) != 1 || !strings.Contains(p[0], "WhoAmI") {
 		t.Fatalf("a missing entry was not reported: %v", p)
@@ -103,7 +104,7 @@ var servicePattern = regexp.MustCompile(`(?m)^service (\w+) \{`)
 // a phrase not known here fails the test, so a new kind of role line is
 // looked at before it is served.
 func TestTableMatchesRoleLines(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "..", "api", "proto", "magnetar", "v1", "*.proto"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "proto", "magnetar", "v1", "*.proto"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no proto files: %v", err)
 	}
@@ -146,7 +147,7 @@ func TestTableMatchesRoleLines(t *testing.T) {
 // line says.
 func checkRole(t *testing.T, proc, role string, md protoreflect.MethodDescriptor) {
 	t.Helper()
-	public, got, ok := server.RuleFor(proc, nil)
+	public, got, ok := ruleFor(proc, nil)
 	if !ok || public {
 		t.Errorf("%s: no entry, or a public one", proc)
 		return
@@ -160,7 +161,7 @@ func checkRole(t *testing.T, proc, role string, md protoreflect.MethodDescriptor
 	case "reader on that tenant, or reader on the installation.":
 		msg := newRequest(md)
 		setString(msg, "name", "lab")
-		_, got, _ = server.RuleFor(proc, msg)
+		_, got, _ = ruleFor(proc, msg)
 		if got != access.TenantRegistration("lab") {
 			t.Errorf("%s: %q, but the table does not ask for the tenant's registration", proc, role)
 		}
@@ -180,7 +181,7 @@ func expectStatic(t *testing.T, proc string, got, want access.Requirement) {
 	if got != want {
 		t.Errorf("%s: the table's requirement is not the Role line's", proc)
 	}
-	if server.ReadsMessage(proc) {
+	if readsMessage(proc) {
 		t.Errorf("%s: its requirement is fixed, yet the message is read before the check", proc)
 	}
 }
@@ -205,7 +206,7 @@ func expectScope(t *testing.T, proc string, md protoreflect.MethodDescriptor, ro
 		{inst, access.OnInstallation(role)},
 		{newRequest(md), access.OnInstallation(role)},
 	} {
-		if _, got, _ := server.RuleFor(proc, c.msg); got != c.want {
+		if _, got, _ := ruleFor(proc, c.msg); got != c.want {
 			t.Errorf("%s: the requirement for %v is not %s on that scope", proc, c.msg, role)
 		}
 	}
@@ -250,4 +251,40 @@ func setScope(m protoreflect.Message, s *magnetarv1.Scope, depth int) bool {
 // protoregistryFind finds a generated message type by name.
 func protoregistryFind(name protoreflect.FullName) (protoreflect.MessageType, error) {
 	return protoregistry.GlobalTypes.FindMessageByName(name)
+}
+
+// tableProcs returns the procedures of the stand-in contract table.
+func tableProcs() []string {
+	var out []string
+	for p := range servertest.Contract() {
+		out = append(out, p)
+	}
+	return out
+}
+
+// ruleFor returns what the table says procedure needs for msg (nil for the
+// empty request). public is always false: the table holds no public method,
+// since the server owns the health service's rule.
+func ruleFor(procedure string, msg proto.Message) (public bool, req access.Requirement, ok bool) {
+	t := servertest.Contract()
+	empty, ok := t.RequestFor(procedure)
+	if !ok {
+		return false, access.Requirement{}, false
+	}
+	if msg == nil {
+		msg = empty
+	}
+	req, _ = t.Requirement(procedure, msg)
+	return false, req, true
+}
+
+// readsMessage reports whether procedure's requirement needs the request.
+func readsMessage(procedure string) bool {
+	m, _ := servertest.Contract().RequestFor(procedure)
+	return m != nil
+}
+
+// installation is the installation scope.
+func installation() *magnetarv1.Scope {
+	return &magnetarv1.Scope{Kind: &magnetarv1.Scope_Installation{Installation: &magnetarv1.Installation{}}}
 }

@@ -23,7 +23,6 @@ import (
 	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/cli/servecmd"
 	"github.com/amrshadid/magnetar/internal/driver/sqlite"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
@@ -408,13 +407,15 @@ type healthStatus = magnetarv1.WhoAmIResponse
 // server's connect.Server is refused without a key and served with one.
 func TestStreamingRequiresKey(t *testing.T) {
 	const proc = "/magnetar.test.Stream/Count"
-	defer server.WithRule(proc, access.Authenticated())()
-	ran := 0
-	e := newEnv(t, options{register: func(s *connect.Server) {
+	methods := servertest.Contract()
+	methods[proc] = servertest.Entry{Fixed: access.Authenticated()}
+	ran, withDecisionSeen := 0, false
+	e := newEnv(t, options{methods: methods, register: func(s *connect.Server) {
 		s.Register(connect.Method{
 			Spec: connect.Spec{StreamType: connect.StreamTypeServer, Procedure: proc},
-			Handler: func(_ context.Context, _ connect.Spec, st connect.ServerStream) error {
+			Handler: func(ctx context.Context, _ connect.Spec, st connect.ServerStream) error {
 				ran++
+				_, withDecisionSeen = decisionFrom(ctx)
 				var in magnetarv1.WhoAmIRequest
 				if err := st.Receive(&in); err != nil {
 					return err
@@ -457,18 +458,22 @@ func TestStreamingRequiresKey(t *testing.T) {
 	if n, err := count("Bearer " + key); err != nil || n != 3 {
 		t.Fatalf("a stream with a key: %d messages, %v", n, err)
 	}
+	if !withDecisionSeen {
+		t.Fatal("the handler's context did not carry the Decision put there by WithDecision")
+	}
 }
 
 // TestNewRefusesUncheckedMethod guards that a method registered without an
 // entry in the table is refused at New, never served.
 func TestNewRefusesUncheckedMethod(t *testing.T) {
-	defer server.WithoutRule(magnetarv1connect.AccessServiceWhoAmIProcedure)()
 	a, err := access.New(access.Config{Store: nilStore{}, Clock: time.Now, NewID: server.NewID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = a.Close(context.Background()) }()
-	_, err = server.New(server.Config{NoSocket: true, Access: a, Register: func(s *connect.Server) {
+	methods := servertest.Contract()
+	delete(methods, magnetarv1connect.AccessServiceWhoAmIProcedure)
+	_, err = server.New(server.Config{NoSocket: true, Access: a, Methods: methods, Register: func(s *connect.Server) {
 		magnetarv1connect.RegisterAccessServiceHandler(s, magnetarv1connect.UnimplementedAccessServiceHandler{})
 	}})
 	if err == nil || !contains(err.Error(), "WhoAmI") {
@@ -692,12 +697,12 @@ func build(t *testing.T, dir string) (*server.Server, *access.Access, error) {
 	if err := m.Migrate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	a, err := access.New(access.Config{Store: servecmd.AccessStore(m), Clock: time.Now, NewID: server.NewID})
+	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID})
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := &servertest.Standins{Access: a}
-	srv, err := server.New(server.Config{DataDir: dir, Lock: lock, Access: a, Master: m, Register: h.Register})
+	srv, err := server.New(server.Config{DataDir: dir, Lock: lock, Access: a, Master: m, Register: h.Register, Methods: servertest.Contract()})
 	return srv, a, err
 }
 
@@ -819,4 +824,68 @@ func TestTLSMinimum(t *testing.T) {
 		t.Fatalf("a TLS 1.2 client was refused: %v", err)
 	}
 	_ = ok.Close()
+}
+
+// factsTable is the contract's table, giving every request the audit
+// object "the-object", as internal/api's table gives each request its own.
+type factsTable struct{ servertest.Table }
+
+// Requirement adds the object to the contract table's answer.
+func (f factsTable) Requirement(procedure string, msg proto.Message) (access.Requirement, access.Request) {
+	req, facts := f.Table.Requirement(procedure, msg)
+	facts.Object = "the-object"
+	return req, facts
+}
+
+// TestTableFactsReachAudit guards that the audit facts the table returns
+// for a request reach the entry the check writes, beside the method and the
+// request id the server fills.
+func TestTableFactsReachAudit(t *testing.T) {
+	dir := shortTempDir(t)
+	lock, err := server.TakeLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := sqlite.OpenMaster(context.Background(), filepath.Join(dir, "master.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &servertest.Standins{Access: a}
+	srv, err := server.New(server.Config{DataDir: dir, Lock: lock, Access: a, Master: m, Register: h.Register, Methods: factsTable{servertest.Contract()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Stop() })
+	e2 := &env{t: t, ctx: context.Background(), dir: dir}
+	t.Cleanup(func() {
+		for _, c := range e2.clients {
+			c.CloseIdleConnections()
+		}
+	})
+	ctx, info := withInfo(context.Background())
+	_, err = newClients(e2.socketClient(true), "http://local", true, "Bearer "+unknownKey).access.ListKeys(ctx, &magnetarv1.ListKeysRequest{})
+	if code, _ := codeOf(err); code != connect.CodeUnauthenticated {
+		t.Fatalf("an unknown key: %v", err)
+	}
+	if err := a.FlushAudit(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	entries, _, err := m.ListAudit(context.Background(), master.AuditFilter{Outcome: master.OutcomeRefused}, master.Page{Limit: 10})
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("%d refusal entries, %v", len(entries), err)
+	}
+	en := entries[0]
+	if en.Object != "the-object" || en.Method != magnetarv1connect.AccessServiceListKeysProcedure || en.RequestID != info.ResponseHeader().Get(server.RequestIDHeader) {
+		t.Fatalf("the entry is %+v", en)
+	}
 }

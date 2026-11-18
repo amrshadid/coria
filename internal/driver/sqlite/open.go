@@ -44,6 +44,12 @@ func openPools(ctx context.Context, path string) (*pools, error) {
 	if err := checkPath(path); err != nil {
 		return nil, err
 	}
+	// Before the file is made or opened: an existing file others can read
+	// would stay readable, and SQLite would give its -wal and -shm files
+	// the same mode.
+	if err := checkPrivate(path); err != nil {
+		return nil, err
+	}
 	if err := createPrivate(path); err != nil {
 		return nil, err
 	}
@@ -137,12 +143,23 @@ func openPools(ctx context.Context, path string) (*pools, error) {
 // So a busy open is tried again, for as long as the busy timeout would have
 // waited.
 func journalMode(ctx context.Context, write *sql.DB) (string, error) {
-	deadline := time.Now().Add(busyTimeout)
-	for {
+	return retryBusy(ctx, busyTimeout, func() (string, error) {
 		var mode string
 		err := write.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode)
+		return mode, err
+	})
+}
+
+// retryBusy calls try until it returns anything but SQLITE_BUSY, waiting a
+// moment between calls, for at most wait. It is apart from journalMode so a
+// test can hand it a try that is busy a given number of times, since the race
+// it handles cannot be made to happen on demand.
+func retryBusy(ctx context.Context, wait time.Duration, try func() (string, error)) (string, error) {
+	deadline := time.Now().Add(wait)
+	for {
+		v, err := try()
 		if err == nil || !isBusy(err) || time.Now().After(deadline) {
-			return mode, err
+			return v, err
 		}
 		select {
 		case <-ctx.Done():
@@ -200,7 +217,7 @@ func createPrivate(path string) error {
 		// path in the command they typed.
 		var pathErr *os.PathError
 		if errors.As(err, &pathErr) {
-			return fault.New(fault.Unavailable, "the master database file cannot be opened: "+pathErr.Err.Error())
+			return fault.New(fault.Unavailable, "the master database file cannot be opened for reading and writing: "+pathErr.Err.Error())
 		}
 		return fault.New(fault.Unavailable, "the master database file cannot be opened")
 	}
@@ -244,12 +261,25 @@ func classify(err error, message string) error {
 	if errors.As(err, &fe) {
 		return err
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, sql.ErrConnDone) || errors.Is(err, sql.ErrTxDone) {
+		// A transaction or connection that database/sql ended under the
+		// call, which it does when the call's context ends.
 		return fault.Wrap(fault.Unavailable, err, message)
 	}
 	var se *sqlite.Error
 	if errors.As(err, &se) {
+		// The messages name no path: a database address never appears in
+		// an error.
 		switch se.Code() & 0xff {
+		case sqlite3.SQLITE_READONLY:
+			return fault.Wrap(fault.Unavailable, err, "the master database is read-only: its file, or the directory for its -wal and -shm files, cannot be written")
+		case sqlite3.SQLITE_NOTADB:
+			return fault.Wrap(fault.Unavailable, err, "the master database file is not a SQLite database")
+		case sqlite3.SQLITE_CORRUPT:
+			return fault.Wrap(fault.Unavailable, err, "the master database file is damaged; restore it from a backup")
+		case sqlite3.SQLITE_PERM, sqlite3.SQLITE_AUTH:
+			return fault.Wrap(fault.Unavailable, err, "the master database may not be opened by this user")
 		case sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED, sqlite3.SQLITE_IOERR,
 			sqlite3.SQLITE_CANTOPEN, sqlite3.SQLITE_FULL, sqlite3.SQLITE_INTERRUPT:
 			return fault.Wrap(fault.Unavailable, err, message)

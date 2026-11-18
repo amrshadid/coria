@@ -2,6 +2,7 @@ package access
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -119,18 +120,34 @@ func GrantsOfKey(keyID string) GrantFilter { return GrantFilter{keyID: keyID, by
 // GrantsOnScope lists the grants on one scope, of every key.
 func GrantsOnScope(s Scope) GrantFilter { return GrantFilter{scope: s, byScope: true} }
 
-// admin checks that cred is the installation's admin, as every operation on
-// keys and grants requires in this version (access.proto, AccessService),
-// and returns the request's entry with object and details set. The details
-// are this package's own, replacing those of facts.
-func (a *Access) admin(ctx context.Context, cred Credential, facts Request, object string, details map[string]string) (master.AuditEntry, error) {
-	facts.Object = object
-	facts.Details = details
-	d, err := a.Check(ctx, cred, OnInstallation(master.RoleAdmin), facts)
-	if err != nil {
-		return master.AuditEntry{}, err
+// The audit reason of a management call refused for the Decision it was
+// given.
+const (
+	// reasonNotAdmin: the caller is authenticated but not the installation's
+	// admin. A zero Decision is refused without an entry: it carries none.
+	reasonNotAdmin = "the decision does not carry admin on the installation"
+)
+
+// admin verifies that d is a Decision Check made, whose caller is the
+// installation's admin, as every operation on keys and grants requires in
+// this version (access.proto, AccessService). It does not trust the
+// requirement the server checked: a wrong entry in the server's table of
+// methods cannot open a management function. It returns the request's
+// entry with this operation's object and details, which replace those the
+// server gave Check, so that the entry stays within the master's bounds
+// once the master adds its own details.
+func (a *Access) admin(d Decision, object string, details map[string]string) (master.AuditEntry, error) {
+	if !d.checked() {
+		return master.AuditEntry{}, fault.New(fault.Denied, MessageDenied)
 	}
-	return d.Entry(master.OutcomeDone, ""), nil
+	e := d.Entry(master.OutcomeDone, "")
+	e.Object = object
+	e.Details = details
+	if !atLeast(d.principal.Role(master.Installation), master.RoleAdmin) {
+		a.record(e, master.OutcomeRefused, reasonNotAdmin)
+		return master.AuditEntry{}, fault.New(fault.Denied, MessageDenied)
+	}
+	return e, nil
 }
 
 // failAfter records why an allowed request did not complete, and returns the
@@ -140,6 +157,11 @@ func (a *Access) admin(ctx context.Context, cred Credential, facts Request, obje
 // one the failed change did not write (a change and its entry are both
 // written or neither), so its id is still free.
 func (a *Access) failAfter(e master.AuditEntry, err error) error {
+	if errors.Is(err, master.ErrDuplicateAuditID) {
+		// The id source gave an id already used, so the failure is recorded
+		// under a fresh one rather than refused again for the same reason.
+		e.ID = a.newID()
+	}
 	switch fault.KindOf(err) {
 	case fault.Invalid, fault.NotFound, fault.Conflict:
 		a.record(e, master.OutcomeFailed, fault.Message(err))
@@ -184,8 +206,8 @@ func publicKey(k master.Key) master.Key {
 // The key and its audit entry, which names the key and its holder and never
 // its secret, are written in one transaction. The whole key is in the
 // result's Secret, once: only its hash is stored.
-func (a *Access) CreateKey(ctx context.Context, cred Credential, facts Request, holder string, exp Expiry) (CreatedKey, error) {
-	entry, err := a.admin(ctx, cred, facts, "", map[string]string{detailHolder: clip(holder, master.MaxAuditDetailValueLength)})
+func (a *Access) CreateKey(ctx context.Context, d Decision, holder string, exp Expiry) (CreatedKey, error) {
+	entry, err := a.admin(d, "", map[string]string{detailHolder: clip(holder, master.MaxAuditDetailValueLength)})
 	if err != nil {
 		return CreatedKey{}, err
 	}
@@ -216,8 +238,8 @@ func (a *Access) CreateKey(ctx context.Context, cred Credential, facts Request, 
 
 // GetKey returns one key, revoked and expired keys included, without its
 // hash. It needs the installation's admin. An unknown id is NotFound.
-func (a *Access) GetKey(ctx context.Context, cred Credential, facts Request, id string) (master.Key, error) {
-	entry, err := a.admin(ctx, cred, facts, clip(id, master.MaxAuditFieldLength), nil)
+func (a *Access) GetKey(ctx context.Context, d Decision, id string) (master.Key, error) {
+	entry, err := a.admin(d, clip(id, master.MaxAuditFieldLength), nil)
 	if err != nil {
 		return master.Key{}, err
 	}
@@ -238,8 +260,8 @@ func (a *Access) GetKey(ctx context.Context, cred Credential, facts Request, id 
 // ListKeys returns a page of every key, revoked and expired keys included,
 // oldest first, without their hashes, and the token of the next page. It
 // needs the installation's admin.
-func (a *Access) ListKeys(ctx context.Context, cred Credential, facts Request, p master.Page) ([]master.Key, string, error) {
-	entry, err := a.admin(ctx, cred, facts, "", nil)
+func (a *Access) ListKeys(ctx context.Context, d Decision, p master.Page) ([]master.Key, string, error) {
+	entry, err := a.admin(d, "", nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -263,8 +285,8 @@ func (a *Access) ListKeys(ctx context.Context, cred Credential, facts Request, p
 // returns its first revoke time; the request is still recorded. An unknown
 // id is NotFound. Because every check reads the key, the key's next request
 // is refused.
-func (a *Access) RevokeKey(ctx context.Context, cred Credential, facts Request, id string) (master.Key, error) {
-	entry, err := a.admin(ctx, cred, facts, clip(id, master.MaxAuditFieldLength), nil)
+func (a *Access) RevokeKey(ctx context.Context, d Decision, id string) (master.Key, error) {
+	entry, err := a.admin(d, clip(id, master.MaxAuditFieldLength), nil)
 	if err != nil {
 		return master.Key{}, err
 	}
@@ -316,8 +338,8 @@ func (a *Access) resolve(ctx context.Context, s Scope) (master.Scope, error) {
 // role on the installation and is Invalid there; an unknown key or tenant is
 // NotFound; a revoked key is Conflict. The audit entry has the scope and,
 // from the master, the old and the new role.
-func (a *Access) SetGrant(ctx context.Context, cred Credential, facts Request, keyID string, scope Scope, role master.Role) (Grant, master.Role, error) {
-	entry, err := a.admin(ctx, cred, facts, clip(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
+func (a *Access) SetGrant(ctx context.Context, d Decision, keyID string, scope Scope, role master.Role) (Grant, master.Role, error) {
+	entry, err := a.admin(d, clip(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
 	if err != nil {
 		return Grant{}, "", err
 	}
@@ -334,22 +356,13 @@ func (a *Access) SetGrant(ctx context.Context, cred Credential, facts Request, k
 	if err != nil {
 		return Grant{}, "", a.failAfter(entry, err)
 	}
-	// The port's SetGrant does not refuse a revoked key, so it is read
-	// here first. A revocation between this read and the write below lets
-	// the grant be set on a key that can no longer use it, which gives
-	// nothing, since every check refuses a revoked key.
-	k, err := a.store.Key(ctx, keyID)
-	if fault.KindOf(err) == fault.NotFound {
-		err = fault.New(fault.NotFound, "no key has this id")
-	}
-	if err == nil && !k.Revoked.IsZero() {
-		err = fault.New(fault.Conflict, "the key is revoked")
-	}
-	if err != nil {
-		return Grant{}, "", a.failAfter(entry, err)
-	}
+	// The port refuses a revoked key as Conflict in the transaction that
+	// would write the grant, so no grant follows a revocation.
 	previous, err := a.store.SetGrant(ctx, master.Grant{KeyID: keyID, Scope: ms, Role: role}, entry)
 	if err != nil {
+		if fault.KindOf(err) == fault.NotFound {
+			err = fault.New(fault.NotFound, "no key or tenant has this id")
+		}
 		return Grant{}, "", a.failAfter(entry, err)
 	}
 	return Grant{KeyID: keyID, Scope: scope, Role: role}, previous, nil
@@ -359,8 +372,8 @@ func (a *Access) SetGrant(ctx context.Context, cred Credential, facts Request, k
 // role it had, or the empty Role when it held none, which changes nothing
 // and succeeds. It needs the installation's admin. An unknown key or tenant
 // is NotFound.
-func (a *Access) RemoveGrant(ctx context.Context, cred Credential, facts Request, keyID string, scope Scope) (master.Role, error) {
-	entry, err := a.admin(ctx, cred, facts, clip(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
+func (a *Access) RemoveGrant(ctx context.Context, d Decision, keyID string, scope Scope) (master.Role, error) {
+	entry, err := a.admin(d, clip(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
 	if err != nil {
 		return "", err
 	}
@@ -385,7 +398,7 @@ func (a *Access) RemoveGrant(ctx context.Context, cred Credential, facts Request
 // its tenant's name, and the token of the next page. It needs the
 // installation's admin. A scope's tenant that does not exist is NotFound; a
 // key that does not exist has no grants.
-func (a *Access) ListGrants(ctx context.Context, cred Credential, facts Request, filter GrantFilter, p master.Page) ([]Grant, string, error) {
+func (a *Access) ListGrants(ctx context.Context, d Decision, filter GrantFilter, p master.Page) ([]Grant, string, error) {
 	desc := "none"
 	switch {
 	case filter.byKey:
@@ -393,7 +406,7 @@ func (a *Access) ListGrants(ctx context.Context, cred Credential, facts Request,
 	case filter.byScope:
 		desc = filter.scope.String()
 	}
-	entry, err := a.admin(ctx, cred, facts, "", map[string]string{detailFilter: desc})
+	entry, err := a.admin(d, "", map[string]string{detailFilter: desc})
 	if err != nil {
 		return nil, "", err
 	}
@@ -421,59 +434,43 @@ func (a *Access) ListGrants(ctx context.Context, cred Credential, facts Request,
 	if err != nil {
 		return nil, "", a.failAfter(entry, err)
 	}
-	out, err := a.named(ctx, grants)
-	if err != nil {
-		return nil, "", a.failAfter(entry, err)
-	}
+	out := named(grants)
 	a.appendRead(entry)
 	return out, next, nil
 }
 
-// named returns grants with each tenant's id replaced by its name, reading
-// each tenant once per call. Nothing is kept between calls.
-func (a *Access) named(ctx context.Context, grants []master.Grant) ([]Grant, error) {
-	names := map[string]string{}
+// named returns grants with each scope by its tenant's name, which the
+// master's lists fill in at the time of the read.
+func named(grants []master.Grant) []Grant {
 	out := make([]Grant, 0, len(grants))
 	for _, g := range grants {
 		s := InstallationScope
 		if !g.Scope.IsInstallation() {
-			name, ok := names[g.Scope.TenantID]
-			if !ok {
-				t, err := a.store.Tenant(ctx, g.Scope.TenantID)
-				if err != nil {
-					return nil, err
-				}
-				name = t.Name
-				names[g.Scope.TenantID] = name
-			}
-			s = TenantNamed(name)
+			s = TenantNamed(g.TenantName)
 		}
 		out = append(out, Grant{KeyID: g.KeyID, Scope: s, Role: g.Role})
 	}
-	return out, nil
+	return out
 }
 
-// WhoAmI returns the caller and every grant of its key, each scope by its
-// tenant's name, and records the request. Any authenticated caller may ask.
-// The local operator has no grants: it is admin by being the user that runs
-// the server.
-func (a *Access) WhoAmI(ctx context.Context, cred Credential, facts Request) (Principal, []Grant, error) {
-	d, err := a.Check(ctx, cred, Authenticated(), facts)
-	if err != nil {
-		return Principal{}, nil, err
+// WhoAmI returns the caller of d and every grant of its key, each scope by
+// its tenant's name, and records the request. Any caller Check
+// authenticated may ask; a zero Decision is Denied. The local operator has
+// no grants: it is admin by being the user that runs the server.
+func (a *Access) WhoAmI(ctx context.Context, d Decision) (Principal, []Grant, error) {
+	if !d.checked() {
+		return Principal{}, nil, fault.New(fault.Denied, MessageDenied)
 	}
 	entry := d.Entry(master.OutcomeDone, "")
 	var all []master.Grant
+	var err error
 	if d.principal.isKey {
 		all, err = a.allGrants(ctx, d.principal.key.ID)
 		if err != nil {
 			return Principal{}, nil, a.failAfter(entry, err)
 		}
 	}
-	grants, err := a.named(ctx, all)
-	if err != nil {
-		return Principal{}, nil, a.failAfter(entry, err)
-	}
+	grants := named(all)
 	a.appendRead(entry)
 	return d.principal, grants, nil
 }

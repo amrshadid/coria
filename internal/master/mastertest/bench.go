@@ -77,6 +77,21 @@ func BenchGrantsByKey(b *testing.B, open Open) {
 	}
 }
 
+// BenchRolesFor measures the access check's read of a key's roles on the
+// installation and on one tenant, named, as every request with a key does.
+func BenchRolesFor(b *testing.B, open Open) {
+	s, id := benchStore(b, open)
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		inst, tenant, err := s.RolesFor(ctx, id, "bench017")
+		if err != nil || inst != master.RoleReader || tenant != master.RoleReader {
+			b.Fatalf("RolesFor = %q, %q, %v", inst, tenant, err)
+		}
+	}
+}
+
 // BenchAppendAudit measures writing one audit entry in its own
 // transaction, synced to disk as the driver syncs every commit, as every
 // request does last.

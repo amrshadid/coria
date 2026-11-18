@@ -28,7 +28,6 @@ import (
 	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/cli/servecmd"
 	"github.com/amrshadid/magnetar/internal/driver/sqlite"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/obs"
@@ -65,6 +64,7 @@ type options struct {
 	drain     time.Duration
 	delay     time.Duration
 	register  func(*connect.Server)
+	methods   servertest.Table
 	noNetwork bool
 	beforeRun func(*server.Server)
 	auditQ    int
@@ -119,7 +119,7 @@ func newEnv(tb testing.TB, o options) *env {
 		o.format = obs.JSON
 	}
 	log := obs.NewLogger(e.log, obs.LogOptions{Format: o.format, Level: o.level})
-	a, err := access.New(access.Config{Store: servecmd.AccessStore(m), Clock: time.Now, NewID: server.NewID, Log: log, AuditQueue: o.auditQ})
+	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log, AuditQueue: o.auditQ})
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -132,6 +132,10 @@ func newEnv(tb testing.TB, o options) *env {
 			o.register(s)
 		}
 	}
+	methods := o.methods
+	if methods == nil {
+		methods = servertest.Contract()
+	}
 	lock, err := server.TakeLock(e.dir)
 	if err != nil {
 		tb.Fatal(err)
@@ -139,6 +143,7 @@ func newEnv(tb testing.TB, o options) *env {
 	cfg := server.Config{
 		DataDir: e.dir, Lock: lock, Access: a, Master: m, Log: log,
 		Register: register, DefaultDeadline: o.deadline, Drain: o.drain,
+		Methods: methods, WithDecision: withDecision,
 	}
 	if !o.noNetwork {
 		certFile, keyFile, roots := testCert(tb, e.dir)
@@ -336,6 +341,21 @@ func codeOf(err error) (connect.Code, string) {
 // can read the response headers.
 func withInfo(ctx context.Context) (context.Context, *connect.CallInfo) {
 	return connect.NewClientContext(ctx)
+}
+
+// decisionKey is the context key withDecision uses, standing in for
+// package internal/api's accessor.
+type decisionKey struct{}
+
+// withDecision is the server.WithDecision the test servers use.
+func withDecision(ctx context.Context, d access.Decision) context.Context {
+	return context.WithValue(ctx, decisionKey{}, d)
+}
+
+// decisionFrom reads what withDecision put in ctx.
+func decisionFrom(ctx context.Context) (access.Decision, bool) {
+	d, ok := ctx.Value(decisionKey{}).(access.Decision)
+	return d, ok
 }
 
 // contains reports whether s holds sub; a short name for log searches.

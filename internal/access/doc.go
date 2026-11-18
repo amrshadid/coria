@@ -11,11 +11,20 @@
 //
 // # The one way in
 //
-// Access.Check is the only function that makes a Principal. Principal and
-// Decision have no exported fields, so no other package can build one that
-// carries rights; their zero values carry none. Every operation of this
-// package that acts for a caller (making and revoking keys, setting grants,
-// WhoAmI) calls Check itself, so a handler cannot forget it.
+// Access.Check is the only function that makes a Decision, and so a
+// Principal. The server calls it once for every request, on the one path
+// every request takes, and hands the Decision to the handler. Principal and
+// Decision have no exported fields and no exported constructor, so no other
+// package can build or alter one that carries rights; their zero values
+// carry none.
+//
+// The operations of this package that act for a caller (CreateKey, GetKey,
+// ListKeys, RevokeKey, SetGrant, ListGrants, RemoveGrant, WhoAmI) take that
+// Decision, not a credential, so a request is checked once, not twice. Each
+// refuses the zero Decision as Denied, and each but WhoAmI checks the
+// Decision's caller again for the role it needs (admin on the installation)
+// and refuses with Denied and a refusal entry if it is not there: a wrong
+// requirement in the server's table of methods cannot open them.
 //
 // The checks run in the order the API contract states (access.proto, "The
 // order of checks"): the credential first, answered Unauthenticated when it

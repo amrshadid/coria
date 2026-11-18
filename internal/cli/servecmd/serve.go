@@ -44,13 +44,15 @@ type Built struct {
 	// Register registers the API's services on the server's
 	// connect.Server.
 	Register func(*connect.Server)
+	// Methods is the method-to-requirement table of the services Register
+	// registers (package internal/api's).
+	Methods server.Methods
+	// WithDecision hands each handler the check's Decision in its context.
+	WithDecision server.WithDecision
 	// Registry is the tenant registry, or nil.
 	Registry server.Registry
 	// HTTPRoutes are plain HTTP routes besides /metrics.
 	HTTPRoutes []server.HTTPRoute
-	// ToConnect maps fault kinds to API codes; nil is
-	// server.DefaultToConnect.
-	ToConnect func(error) *connect.Error
 }
 
 // Services builds the API's handlers over an open installation.
@@ -58,10 +60,10 @@ type Services func(Deps) (Built, error)
 
 // serveFlags are the flags of serve.
 type serveFlags struct {
-	dataDir, listen, tlsCert, tlsKey, masterEnv string
-	logFormat, logLevel                         string
-	drain                                       time.Duration
-	deadline                                    time.Duration
+	dataDir                            string
+	listen, tlsCert, tlsKey, masterEnv string
+	logFormat, logLevel                string
+	drain, deadline                    time.Duration
 }
 
 // Serve returns the "serve" command.
@@ -80,14 +82,22 @@ loopback address only. One server runs per data directory.
 
 The first stop signal (Ctrl-C, SIGTERM) refuses new requests, lets those in
 flight finish, writes the audit entries held in memory and exits 0. A second
-signal exits at once.`,
+signal exits at once.
+
+The data directory is --data-dir, or MAGNETAR_DATA_DIR.`,
+		Example: `  magnetar serve --data-dir /var/lib/magnetar
+  magnetar serve --data-dir /var/lib/magnetar --listen 0.0.0.0:8443 --tls-cert cert.pem --tls-key key.pem`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			dir, err := dataDir(cmd, opts.Getenv)
+			if err != nil {
+				return err
+			}
+			f.dataDir = dir
 			return runServe(cmd.Context(), opts, f)
 		},
 	}
 	fl := cmd.Flags()
-	fl.StringVar(&f.dataDir, "data-dir", "", "the installation's data directory (or set "+EnvDataDir+")")
 	fl.StringVar(&f.listen, "listen", "", "the network address to serve, HOST:PORT; none unless given")
 	fl.StringVar(&f.tlsCert, "tls-cert", "", "the PEM file of the network listener's certificate")
 	fl.StringVar(&f.tlsKey, "tls-key", "", "the PEM file of the certificate's private key")
@@ -113,10 +123,7 @@ func runServe(ctx context.Context, opts Options, f serveFlags) error {
 	}
 	log := obs.NewLogger(opts.Stderr, obs.LogOptions{Format: obs.Format(f.logFormat), Level: level})
 
-	dir, err := dataDir(f.dataDir, opts.Getenv)
-	if err != nil {
-		return err
-	}
+	dir := f.dataDir
 	keyPath := filepath.Join(dir, KeyFileName)
 	if _, err := os.Lstat(keyPath); errors.Is(err, fs.ErrNotExist) {
 		return fault.New(fault.NotFound, "no installation in "+dir+" (it has no key file); make one with: magnetar init --data-dir "+dir)
@@ -172,7 +179,7 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 	if err := m.Migrate(ctx); err != nil {
 		return nil, err
 	}
-	a, err = access.New(access.Config{Store: AccessStore(m), Clock: time.Now, NewID: server.NewID, Log: log})
+	a, err = access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log})
 	if err != nil {
 		return nil, err
 	}
@@ -197,8 +204,9 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 		Master:          m,
 		Log:             log,
 		Register:        built.Register,
+		Methods:         built.Methods,
+		WithDecision:    built.WithDecision,
 		HTTPRoutes:      built.HTTPRoutes,
-		ToConnect:       built.ToConnect,
 		Drain:           f.drain,
 		DefaultDeadline: f.deadline,
 	})

@@ -51,15 +51,6 @@ const (
 // store, and the call fails rather than loop.
 const maxGrantPages = 100
 
-// absentTenantID is the tenant id a check asks RolesFor about when the
-// tenant the request named does not exist. Asking about some tenant, rather
-// than the installation only, makes the store run the same statement as for
-// a tenant that exists, so a missing tenant and a missing grant cost the
-// same. The role it returns is never used: the tenant is already known to
-// be missing. "-" is a valid id that the server, which makes tenant ids, does
-// not give.
-const absentTenantID = "-"
-
 // unknownKeyHash is what the secret of a key with an unknown id is compared
 // with, so that answering an unknown id costs the same hash and comparison
 // as answering a wrong secret, and the time of the answer does not tell the
@@ -286,6 +277,12 @@ type Decision struct {
 // Principal returns who made the request.
 func (d Decision) Principal() Principal { return d.principal }
 
+// checked reports whether d is a Decision Check made: one with a caller and
+// an audit entry. The zero Decision, all another package can make, is not.
+func (d Decision) checked() bool {
+	return d.entry.ID != "" && (d.principal.isKey || d.principal.isLoc)
+}
+
 // Tenant returns the tenant the requirement named, as the master holds it,
 // and whether there was one. Its state is not checked here: whether a tenant
 // that is not ready can serve a request is the handler's to decide.
@@ -312,10 +309,12 @@ func (d Decision) Entry(outcome master.Outcome, reason string) master.AuditEntry
 //     in constant time, and refused when revoked or expired; or it is the
 //     local operator. Any failure is Unauthenticated with
 //     MessageUnauthenticated.
-//  2. When req names a tenant, it is read by name.
+//  2. When req names a tenant, it is read by name: the Decision carries it,
+//     and only this read tells a tenant that does not exist from one the key
+//     has no grant on (RolesFor answers both with no role).
 //  3. The key's roles on the installation and on that tenant are read with
-//     one RolesFor, every time: there is no cache, so a grant removed is
-//     gone on the next request.
+//     one RolesFor, by the name as the request gave it, every time: there is
+//     no cache, so a grant removed is gone on the next request.
 //  4. A missing tenant is NotFound with MessageNoTenant for a caller who may
 //     list every tenant, and otherwise Denied with MessageDenied, exactly as
 //     for an existing tenant without a grant: both make the calls Key,
@@ -376,14 +375,18 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 		}
 	}
 	if p.isKey {
-		tenantID := ""
-		switch {
-		case d.hasTenant:
-			tenantID = d.tenant.ID
-		case tenantMissing:
-			tenantID = absentTenantID
+		// RolesFor is asked by the name the request gave, whether or not a
+		// tenant has it, so a missing tenant and a missing grant make the
+		// same call with an argument of the same shape. A name that could
+		// not be a tenant's is refused by the store as Invalid; for it the
+		// installation alone is asked, which the NotFound exception still
+		// needs. That tells only whether the name was well formed, which
+		// the contract's rules for names already say.
+		name := ""
+		if req.namesTenant() && master.ValidateTenantName(req.tenant) == nil {
+			name = req.tenant
 		}
-		inst, ten, err := a.store.RolesFor(ctx, p.key.ID, tenantID)
+		inst, ten, err := a.store.RolesFor(ctx, p.key.ID, name)
 		if err != nil {
 			return Decision{}, a.fail(entry, err)
 		}
