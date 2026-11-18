@@ -136,5 +136,23 @@ All notable changes to Magnetar are written here. The form is
   the fake server (`make check-tui`, a step of its own in CI, Linux and macOS
   only). The binaries grew by 1.67 to 2.09 MiB (linux/amd64: 10.78 to 12.73
   MiB).
+- The master database could only live in a SQLite file. It can now live in
+  Postgres too (`internal/driver/postgres`, on `pgx/v5` and its pool, pure
+  Go), at a `postgres://` address, and it passes the same contract suite
+  unchanged on Postgres 16 and 18. The driver makes and upgrades its
+  tables in the schema the address's `search_path` names and works with a login
+  that owns only that schema; it never makes a database or a role. Every change
+  and its audit entry are one transaction; a grant's old role is read and its new
+  one written in one statement under a lock on the key's row, so two racing sets
+  are ordered; a unique tenant name is kept by the database and its violation is
+  recognized by SQLSTATE and constraint name, never by message text. Text that is
+  compared or ordered is `COLLATE "C"`, so a database created with another
+  collation pages through the same order. Migrations take a session advisory lock
+  on one dedicated connection, released on every path, so processes that start
+  together apply each file once. No error repeats the address, the password or
+  the host. CI runs the driver against Postgres 16 and 18 and fails, instead of
+  skipping, when the server is missing; `scripts/check-master-postgres.sh` reads
+  what the driver wrote with `psql` and `pg_dump` and finds a key's hash but
+  never its secret.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop
