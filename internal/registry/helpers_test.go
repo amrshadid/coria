@@ -25,9 +25,9 @@ import (
 
 // TestMain runs the package's tests, then fails if goroutines are left
 // running that were not running before: every goroutine the registry starts
-// must have an owner that waits for it (engineering.md, "Bounded workers").
-// database/sql's own goroutines end when a pool closes, so a store left
-// open shows here too.
+// must have an owner that waits for it, or a stop could leave work running
+// against a closed store. database/sql's own goroutines end when a pool
+// closes, so a store left open shows here too.
 func TestMain(m *testing.M) {
 	before := runtime.NumGoroutine()
 	code := m.Run()
@@ -246,7 +246,7 @@ const flakyDriver = "flaky"
 
 // password is the known password in every test driver address; the tests
 // search every reason, error, log line and audit entry for it, in every form
-// the review found a scrubber missed.
+// a scrubber of a driver's text was shown to miss (passwordForms).
 const password = "Hunter2-NotARealPassword-91f3" //nolint:gosec // G101: made up, so its absence can be searched for.
 
 // flakyHost is the host in every test driver address, also kept out of

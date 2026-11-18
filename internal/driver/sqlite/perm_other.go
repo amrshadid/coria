@@ -10,10 +10,10 @@ import (
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
-// checkPrivate does not check modes where there are no Unix modes. On
-// Windows a file's access is its access list, inherited from its directory,
-// so the directory the operator chooses decides who can open the database;
-// reading and checking that list is not done in M0 (the key file does it in
+// checkPrivate does not check modes where there are no Unix modes. On Windows
+// a file's access is its access list, inherited from its directory, so the
+// directory the operator chooses decides who can open the database; reading
+// and checking that list is not done here yet (the key file does it in
 // package secret, and the same check may be shared here later).
 //
 // It does refuse anything at the database's path, or its -wal or -shm path,

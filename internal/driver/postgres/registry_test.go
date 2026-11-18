@@ -338,12 +338,13 @@ func (in *pgInstallation) everything(names ...string) string {
 }
 
 // TestRegistryServesPostgresTenants guards the registry on real Postgres
-// tenants (acceptance 2 of the issue, and D56). It creates two tenants, each
-// in a database of its own, and sees both ready. It then stops one tenant's
-// database by forbidding connections to it (ALTER DATABASE ... ALLOW_CONNECTIONS
-// false, which stops everyone, superusers too) and ending the sessions already
-// open to it, and sees that tenant unreachable alone, the other still served,
-// and the master told. When connections are allowed again it returns to ready
+// tenants: one tenant's database going down stops that tenant alone, and a
+// creation is whole or not at all. It creates two tenants, each in a database
+// of its own, and sees both ready. It then stops one tenant's database by
+// forbidding connections to it (ALTER DATABASE ... ALLOW_CONNECTIONS false,
+// which stops everyone, superusers too) and ending the sessions already open
+// to it, and sees that tenant unreachable alone, the other still served, and
+// the master told. When connections are allowed again it returns to ready
 // with no restart, and what it held is still there. A creation against a
 // database that does not answer, or does not exist, leaves no row. The
 // password is searched for in every reason, error, audit entry and log line.
@@ -402,7 +403,8 @@ func TestRegistryServesPostgresTenants(t *testing.T) {
 	}
 
 	// A creation against a database that does not answer, and one against a
-	// database that does not exist, leave no row and no entry (D56).
+	// database that does not exist, leave no row and no entry: an operator
+	// who mistypes an address gets an error, not a broken tenant to clean up.
 	refused := url.URL{}
 	if u, err := url.Parse(in.base); err == nil {
 		refused = *u

@@ -183,15 +183,15 @@ func outcomeOf(err error) (master.Outcome, string) {
 	return master.OutcomeFailed, fault.Message(err)
 }
 
-// record hands the audit entry of a request that changed nothing (a read,
-// or a request that did not complete) to the access package's audit writer,
-// in the one place that chooses its log: the tenant's log when st, the store
-// of the tenant the request concerns, is in hand (D53; the contract: "one
-// entry in the log of the scope asked for"), and the installation's log
-// otherwise. It never blocks and never fails the request: an entry the
-// tenant's log does not take is written to the installation's log with
-// access.DetailRerouted, and one that cannot be queued is counted. facts is
-// what the handler learned after the check.
+// record hands the audit entry of a request that changed nothing (a read, or
+// a request that did not complete) to the access package's audit writer, in
+// the one place that chooses its log: the tenant's log when st, the store of
+// the tenant the request concerns, is in hand (the contract: "one entry in
+// the log of the scope asked for"), and the installation's log otherwise. It
+// never blocks and never fails the request: an entry the tenant's log does
+// not take is written to the installation's log with access.DetailRerouted,
+// and one that cannot be queued is counted. facts is what the handler learned
+// after the check.
 func (c *core) record(d access.Decision, st tenant.Store, outcome master.Outcome, reason string, facts access.Facts) {
 	if st != nil {
 		c.access.RecordTo(st, d, outcome, reason, facts)
@@ -278,12 +278,12 @@ func (c *core) tenantStore(ctx context.Context, d access.Decision, name string) 
 
 // sinkFor returns the log every later record of a request on scope goes to,
 // chosen once, as soon as the scope is known to be valid: nil for the
-// installation, and for a tenant its store (D53: an allowed request that
-// concerns a tenant is recorded in its log, whatever its outcome). When the
-// tenant's store cannot be had, the request is recorded here and its error
-// returned: in the installation's log, with the tenant's name and, when the
-// tenant is not ready, access.DetailRerouted. details are the request's
-// audit details, which the rerouted entry keeps.
+// installation, and for a tenant its store (an allowed request that concerns
+// a tenant is recorded in its log, whatever its outcome). When the tenant's
+// store cannot be had, the request is recorded here and its error returned:
+// in the installation's log, with the tenant's name and, when the tenant is
+// not ready, access.DetailRerouted. details are the request's audit details,
+// which the rerouted entry keeps.
 func (c *core) sinkFor(ctx context.Context, d access.Decision, scope access.Scope, details map[string]string) (tenant.Store, error) {
 	if scope.IsInstallation() {
 		return nil, nil

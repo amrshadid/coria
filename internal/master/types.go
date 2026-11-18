@@ -16,9 +16,9 @@ const (
 	// MaxIDLength bounds an id. Ids are opaque to the store; 64 bytes holds a
 	// UUID in any of its spellings and a key id with room to spare.
 	MaxIDLength = 64
-	// MaxTenantNameLength is the longest tenant name (D37): a name appears in
-	// URLs and paths, and 63 is the longest DNS label, so a name can also be
-	// a host name.
+	// MaxTenantNameLength is the longest tenant name: a name appears in URLs
+	// and paths, and 63 is the longest DNS label, so a name can also be a
+	// host name.
 	MaxTenantNameLength = 63
 	// MaxDriverLength bounds the name of a database type, such as "sqlite".
 	MaxDriverLength = 32
@@ -30,7 +30,9 @@ const (
 	// KeyHashLength is the length of a key's hash: a SHA-256, made by package
 	// secret.
 	KeyHashLength = 32
-	// MaxHolderLength bounds the name of a key's holder, in bytes (D37).
+	// MaxHolderLength bounds the name of a key's holder, in bytes: room for a
+	// person's or a system's name, and no more text than that for a caller to
+	// store in every key's row.
 	MaxHolderLength = 256
 	// MaxSettingNameLength bounds a setting's name.
 	MaxSettingNameLength = 128
@@ -56,8 +58,8 @@ const (
 )
 
 // The keys AuditEntry.Details gets from SetGrant and RemoveGrant: the role a
-// grant had before the change and the role it has after, "none" for no
-// grant (D37).
+// grant had before the change and the role it has after, "none" for no grant,
+// so the audit log shows what a change of role replaced.
 const (
 	// DetailOldRole is the detail that holds the role a grant had before
 	// SetGrant or RemoveGrant, or NoRole.
@@ -97,7 +99,8 @@ var ErrDuplicateAuditID = errors.New("an audit entry with this id exists")
 type TenantState string
 
 // The states of a tenant. A tenant that is not ready is refused on its own;
-// the others keep working (M0 design note, part 2).
+// the others keep working, so one database that is down or failed to upgrade
+// does not take the installation with it.
 const (
 	// StateReady is a tenant whose database answers and is at the binary's
 	// schema version.
@@ -120,8 +123,8 @@ func (s TenantState) Valid() bool {
 	return false
 }
 
-// Role is what a grant allows. Each role includes the ones before it (M0
-// design note, part 4).
+// Role is what a grant allows. Each role includes the ones before it, so a
+// requirement is one comparison.
 type Role string
 
 // The roles.
@@ -178,7 +181,8 @@ func (o Outcome) Valid() bool {
 type Tenant struct {
 	// ID is the tenant's opaque id, given by the caller.
 	ID string
-	// Name is 1 to 63 of a-z, 0-9 and "-", starting with a letter (D37).
+	// Name is 1 to 63 of a-z, 0-9 and "-", starting with a letter
+	// (ValidateTenantName).
 	Name string
 	// Driver names the database type of the tenant's database.
 	Driver string
@@ -223,7 +227,7 @@ func ValidateTenantState(state TenantState, reason string) error {
 }
 
 // ValidateTenantName returns an Invalid error unless name is 1 to 63 of a-z,
-// 0-9 and "-", starting with a letter (D37), and is not a device name Windows
+// 0-9 and "-", starting with a letter, and is not a device name Windows
 // reserves. A name appears in URLs and paths, so it is checked here, once,
 // before it reaches either.
 func ValidateTenantName(name string) error {
@@ -259,7 +263,7 @@ type Key struct {
 	// Hash is the SHA-256 of the key's secret, made by package secret.
 	Hash []byte
 	// Holder names the person or system that holds the key: any UTF-8, at
-	// most 256 bytes (D37).
+	// most 256 bytes (MaxHolderLength).
 	Holder string
 	// Created is when the key was made.
 	Created time.Time
@@ -356,7 +360,8 @@ type Roles struct {
 }
 
 // Grant gives a key a role on one scope. A key has at most one grant per
-// scope (D37).
+// scope, so its role there is never ambiguous and setting a grant again
+// replaces the role.
 type Grant struct {
 	// KeyID is the id of the key the grant is for.
 	KeyID string
@@ -410,10 +415,9 @@ func ValidateSettingValue(value string) error {
 	return validateText("setting value", value, 0, MaxSettingValueLength)
 }
 
-// AuditEntry records one request, or one change, made to the installation
-// (M0 design note, part 6). It never holds a key's secret or a database
-// password; the caller that builds it is responsible for that, and the bounds
-// below keep an entry small.
+// AuditEntry records one request, or one change, made to the installation. It
+// never holds a key's secret or a database password; the caller that builds
+// it is responsible for that, and the bounds below keep an entry small.
 type AuditEntry struct {
 	// ID is the entry's opaque id, given by the caller, unique among entries.
 	ID string
@@ -502,8 +506,8 @@ func (e AuditEntry) Validate() error {
 // WithRoleChange returns a copy of e whose details also say the role a grant
 // had before a change and the role it has after, "none" for no grant. A
 // driver calls it inside the change, where the old role is known, so the
-// entry it writes is exact even when two changes race (D37). The copy has
-// its own map, so the caller's entry is not changed.
+// entry it writes is exact even when two changes race. The copy has its own
+// map, so the caller's entry is not changed.
 func (e AuditEntry) WithRoleChange(old, next Role) AuditEntry {
 	return e.WithDetails(DetailOldRole, old.detail(), DetailNewRole, next.detail())
 }

@@ -65,8 +65,9 @@ type peerConn struct {
 }
 
 // peerListener accepts local socket connections and keeps only those whose
-// peer is the server's own operating system user (M0 design note, part 5):
-// any other is closed at once, before a byte is read, and logged.
+// peer is the server's own operating system user, who can read the
+// installation's files anyway and so is made the local operator: any other is
+// closed at once, before a byte is read, and logged.
 type peerListener struct {
 	net.Listener
 	// self is the user the peer must be.

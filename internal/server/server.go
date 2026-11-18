@@ -24,9 +24,9 @@ import (
 	"github.com/amrshadid/magnetar/internal/obs"
 )
 
-// The limits of the server (decision D38, access.proto "Limits"). Each is
-// a number the RPC library or net/http would otherwise leave unbounded or
-// set for another purpose.
+// The limits of the server (access.proto, "Limits"). Each is a number the RPC
+// library or net/http would otherwise leave unbounded or set for another
+// purpose.
 const (
 	// MaxMessageBytes is the largest message read or sent: 4 MiB, which is
 	// what a stock gRPC client accepts by default (grpc-go's
@@ -38,9 +38,9 @@ const (
 	// forever.
 	DefaultDeadline = 30 * time.Second
 	// MaxDeadline is the longest any call may run, whatever deadline its
-	// client asks for: 5 minutes in M0, which has no long call (no download,
-	// no stream). Without it, a client that sends a long deadline, or a
-	// handler that waits, holds a connection, a goroutine and a file
+	// client asks for: 5 minutes, as this version has no long call (no
+	// download, no stream). Without it, a client that sends a long deadline,
+	// or a handler that waits, holds a connection, a goroutine and a file
 	// descriptor as long as it likes. A client's shorter deadline is kept.
 	MaxDeadline = 5 * time.Minute
 	// BodyReadTimeout bounds the time to read a request's body until the

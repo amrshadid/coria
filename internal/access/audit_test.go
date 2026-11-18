@@ -693,10 +693,11 @@ func (s *memSink) AppendAudit(_ context.Context, entries ...master.AuditEntry) e
 	return nil
 }
 
-// TestRecordToTenant guards where an allowed request's entry goes (D53): to
-// the tenant's log it is recorded to, not the master's; and when the
-// tenant's log does not answer, to the master's, marked as moved, with the
-// tenant's name. A refusal goes to the master's log whatever it named.
+// TestRecordToTenant guards where an allowed request's entry goes: to the
+// tenant's log it is recorded to, not the master's; and when the tenant's log
+// does not answer, to the master's, marked as moved, with the tenant's name.
+// A refusal goes to the master's log whatever it named, so a refused caller
+// can never cause a write in a tenant's database.
 func TestRecordToTenant(t *testing.T) {
 	m, full := newMem(t)
 	a := newMemAccessWith(t, m, access.Config{AuditInterval: time.Hour, AuditBackoff: time.Millisecond})

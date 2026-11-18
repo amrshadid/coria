@@ -26,20 +26,21 @@
 // A change goes through the package that owns it, with the request's audit
 // entry (access.Decision.Entry) written in the same transaction: keys and
 // grants through package access, tenants through package registry, the
-// installation's settings through the master, and a tenant's settings
-// through the tenant's store, which only the registry hands out. A read
-// answers, then hands its entry to the access package's audit writer, which
-// never blocks or fails: access.Record for the installation's log, or
-// access.RecordTo with the tenant's store when the scope asked for is a
-// tenant (D53; the contract: "one entry in the log of the scope asked for").
-// An entry the tenant's log does not take is written to the installation's
-// log, marked access.DetailRerouted. A request that did not complete is
-// recorded with outcome failed and its real cause, in the tenant's log when
-// its store was already in hand and in the installation's log otherwise; a
-// creation of a tenant is the exception: the registry writes its entry
-// itself, with the change that settles the creation, except for a creation
-// it refuses before writing anything, which the handler records. A method whose requirement is fixed learns what its request names
-// only after the check, and adds it to its entries as access.Facts.
+// installation's settings through the master, and a tenant's settings through
+// the tenant's store, which only the registry hands out. A read answers, then
+// hands its entry to the access package's audit writer, which never blocks or
+// fails: access.Record for the installation's log, or access.RecordTo with
+// the tenant's store when the scope asked for is a tenant (the contract: "one
+// entry in the log of the scope asked for"). An entry the tenant's log does
+// not take is written to the installation's log, marked
+// access.DetailRerouted. A request that did not complete is recorded with
+// outcome failed and its real cause, in the tenant's log when its store was
+// already in hand and in the installation's log otherwise; a creation of a
+// tenant is the exception: the registry writes its entry itself, with the
+// change that settles the creation, except for a creation it refuses before
+// writing anything, which the handler records. A method whose requirement is
+// fixed learns what its request names only after the check, and adds it to
+// its entries as access.Facts.
 //
 // # Errors
 //

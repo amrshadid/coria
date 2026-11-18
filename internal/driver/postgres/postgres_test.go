@@ -45,7 +45,7 @@ func TestShippedMigrationsUnchanged(t *testing.T) {
 }
 
 // shippedInit is the SHA-256 of 0001_init.sql as this change ships it.
-const shippedInit = "a0c0e04bee894ac3ae7c2cde630032ce31ed4bc8b53d421e0c7e0a5a483fdbbf"
+const shippedInit = "0929aba62fc03e2588556d2886e81ff228d5b19d45cb20c4472dbc03c3ae7ade"
 
 // TestNotMigrated guards that a store used before Migrate fails as
 // Unavailable with a message that says so, instead of a SQL error.

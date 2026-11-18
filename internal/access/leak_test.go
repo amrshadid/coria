@@ -14,11 +14,11 @@ import (
 // sprintf is fmt.Sprintf, named so the tests read as what they search.
 func sprintf(format string, a ...any) string { return fmt.Sprintf(format, a...) }
 
-// TestNoSecretAnywhere guards that a key's secret reaches no audit entry,
-// no error and no log line (acceptance 8): a key is made through the
-// package, used for allowed and refused requests, presented with a wrong
-// secret and garbled, and then every entry in the SQLite master, every
-// error's text and the whole log are searched for the secret.
+// TestNoSecretAnywhere guards that a key's secret reaches no audit entry, no
+// error and no log line: a key is made through the package, used for allowed
+// and refused requests, presented with a wrong secret and garbled, and then
+// every entry in the SQLite master, every error's text and the whole log are
+// searched for the secret.
 func TestNoSecretAnywhere(t *testing.T) {
 	e := newEnv(t)
 	made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "searched", access.NeverExpire())

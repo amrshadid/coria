@@ -25,7 +25,8 @@ const (
 	// tenant.
 	MessageDenied = "the key may not do this"
 	// MessageNoTenant answers a caller who may list every tenant and names
-	// one that does not exist (D37).
+	// one that does not exist: such a caller learns nothing new from it, and
+	// an operator who mistypes a name is told so.
 	MessageNoTenant = "no tenant has this name"
 )
 
@@ -79,10 +80,10 @@ func APIKey(presented string) Credential {
 // Windows). It makes its holder admin on the installation and on every
 // tenant, so only the server may call it, in package internal/server, and
 // only after the socket has shown the caller is the user that runs the
-// server (M0 design note, part 5): whoever that user is can read the
-// installation's files anyway. A test of this package fails if any other
-// package calls it. An empty user id, or one holding a control character or
-// longer than an audit field, is refused as unauthenticated.
+// server: whoever that user is can read the installation's files anyway. A
+// test of this package fails if any other package calls it. An empty user id,
+// or one holding a control character or longer than an audit field, is
+// refused as unauthenticated.
 func LocalOperator(userID string) Credential {
 	return Credential{localUser: userID, local: true}
 }
@@ -243,9 +244,11 @@ func (p Principal) Role(scope master.Scope) master.Role {
 	return ""
 }
 
-// CanListTenants reports whether the caller may list every tenant: the
-// local operator, or a key with reader or more on the installation (D37).
-// Such a caller is told NotFound for a tenant that does not exist.
+// CanListTenants reports whether the caller may list every tenant: the local
+// operator, or a key with reader or more on the installation. Such a caller
+// is told NotFound for a tenant that does not exist: it could list the
+// tenants anyway, so the answer reveals nothing (access.proto, "A tenant that
+// does not exist").
 func (p Principal) CanListTenants() bool {
 	return atLeast(p.Role(master.Installation), master.RoleReader)
 }
@@ -318,12 +321,12 @@ func (d Decision) Tenant() (TenantRef, bool) { return d.tenant, d.hasTenant }
 // Entry returns an audit entry of the request with its outcome and reason,
 // for the caller to write with its change (a change and its entry are one
 // transaction), in the log the change concerns: the tenant's for a change
-// inside a tenant, the master's for the installation (D53). facts adds what
-// the handler learned after the check (Facts); the identity of the request
-// is the check's. Each call makes a new entry with its own fresh id and its
-// own details map, so a handler that reads and then changes writes two
-// entries and loses neither; all of a request's entries share its request
-// id. A read's entry goes to Record or RecordTo instead.
+// inside a tenant, the master's for the installation. facts adds what the
+// handler learned after the check (Facts); the identity of the request is the
+// check's. Each call makes a new entry with its own fresh id and its own
+// details map, so a handler that reads and then changes writes two entries
+// and loses neither; all of a request's entries share its request id. A
+// read's entry goes to Record or RecordTo instead.
 func (d Decision) Entry(outcome master.Outcome, reason string, facts Facts) master.AuditEntry {
 	e := d.entry
 	if d.newID != nil {
@@ -354,12 +357,13 @@ func (d Decision) Entry(outcome master.Outcome, reason string, facts Facts) mast
 //     Key then RolesFor, and queue one audit entry.
 //  4. The role is compared with req; too little is Denied.
 //
-// A refusal's audit entry is handed to the audit writer for the master's log
-// (D53), with its real cause and the tenant's name as given; it is not
-// written on the request's path. When the request is allowed, the Decision
-// makes its entries. A key that passes step 1 and was not marked used
-// within the minute has its last use marked, off the request's path. A store
-// that fails is Unavailable or Internal, never a refusal.
+// A refusal's audit entry is handed to the audit writer for the master's log,
+// so a refused caller causes no write in a tenant's database, with its real
+// cause and the tenant's name as given; it is not written on the request's
+// path. When the request is allowed, the Decision makes its entries. A key
+// that passes step 1 and was not marked used within the minute has its last
+// use marked, off the request's path. A store that fails is Unavailable or
+// Internal, never a refusal.
 func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, facts Request) (Decision, error) {
 	entry := a.newEntry(facts)
 	entry.ID = a.newID()
@@ -555,10 +559,10 @@ func (a *Access) newEntry(facts Request) master.AuditEntry {
 }
 
 // record hands a refusal's, or a failed check's, audit entry to the audit
-// writer, for the master's log (D53): a refused caller must cause no write
-// in a tenant's database. The request already has its answer, and the
-// answer to a refused caller must not depend on whether the log took it, nor
-// wait for a synced commit.
+// writer, for the master's log: a refused caller must cause no write in a
+// tenant's database. The request already has its answer, and the answer to a
+// refused caller must not depend on whether the log took it, nor wait for a
+// synced commit.
 func (a *Access) record(e master.AuditEntry, outcome master.Outcome, reason string) {
 	e.Outcome = outcome
 	e.Reason = auditText(reason, master.MaxAuditReasonLength)

@@ -13,10 +13,9 @@ import (
 )
 
 // The tenant registry's settings in serve. They are constants, not flags:
-// none is something an operator of M0 has a reason to change, and each is
-// sized so a dead database costs seconds, not minutes, while a slow but
-// working one is not called dead. A flag can be added when a measured need
-// shows.
+// none is something an operator has a reason to change yet, and each is sized
+// so a dead database costs seconds, not minutes, while a slow but working one
+// is not called dead. A flag can be added when a measured need shows.
 const (
 	// TenantCheckInterval is how often every tenant is checked, and the
 	// registry reconciled with the master's list: 30 seconds, so a tenant
@@ -24,9 +23,9 @@ const (
 	// the cost of one ping per tenant per interval.
 	TenantCheckInterval = 30 * time.Second
 	// TenantOpenTimeout bounds one tenant's open, ping and migration: 10
-	// seconds, ample for a SQLite file or a reachable Postgres server and
-	// the migrations of M0, and the longest a dead database delays the start
-	// of serve, since the tenants are opened in parallel.
+	// seconds, ample for a SQLite file or a reachable Postgres server and the
+	// migrations this version ships, and the longest a dead database delays
+	// the start of serve, since the tenants are opened in parallel.
 	TenantOpenTimeout = 10 * time.Second
 	// TenantPingTimeout bounds one check of an open tenant: 2 seconds, so a
 	// database that stops answering is seen within one interval and a ping
