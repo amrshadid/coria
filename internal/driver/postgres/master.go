@@ -688,12 +688,12 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 	return out, sqlkit.EncodeCursor(listGrantsByScope, scopeBinding(scope), last.KeyID), nil
 }
 
-// RolesFor implements master.Store with one statement: the grants' primary key
-// is read at (key, the empty scope) and at (key, the tenant's id), the id found
-// through the tenants' unique index on name inside the same statement. A tenant
-// that does not exist, or no tenant name, leaves only the first: coalesce turns
-// "no such tenant" into the installation's ” again, which matches nothing
-// more.
+// RolesFor implements master.Store with one statement of two exact lookups of
+// the grants' primary key, at (key, the empty scope) and at (key, the tenant's
+// id), the id found through the tenants' unique index on name inside the same
+// statement. A tenant that does not exist, or no tenant name, leaves only the
+// first. Each lookup is exact however many grants the key has: an IN list over
+// the scope would, on Postgres 16, read all of the key's grants and filter.
 func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (installation, tenant master.Role, err error) {
 	if err := master.ValidateID("key id", keyID); err != nil {
 		return "", "", err
@@ -727,8 +727,9 @@ func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (instal
 }
 
 // rolesForSQL is RolesFor's statement.
-const rolesForSQL = `SELECT scope, role FROM grants WHERE key_id = $1
-	AND scope IN ('', coalesce((SELECT id FROM tenants WHERE name = $2), ''))`
+const rolesForSQL = `SELECT scope, role FROM grants WHERE key_id = $1 AND scope = ''
+	UNION ALL
+	SELECT scope, role FROM grants WHERE key_id = $1 AND scope = (SELECT id FROM tenants WHERE name = $2)`
 
 // RemoveGrant implements master.Store. The key's row is locked as SetGrant
 // does, so the role it reports is the one the grant had when it was removed;

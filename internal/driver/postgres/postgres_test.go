@@ -389,9 +389,7 @@ func TestRequestPathPlans(t *testing.T) {
 	roles := strings.NewReplacer("$1", "'Key010000'", "$2", "'tenant1000'").Replace(rolesForSQL)
 	cases := []planCase{
 		{"key by id", `SELECT ` + keyColumns + ` FROM api_keys WHERE id = 'Key010000'`, nil, "Index Scan using api_keys_pkey"},
-		// Postgres 16 reads the primary key (key_id, scope) with a filter on
-		// the scope; 18 reads the (scope, key_id) index with two exact
-		// searches. Either is point lookups.
+		// Both lookups give key_id and scope exactly; the planner reads whichever of the primary key and grants_by_scope it prefers.
 		{"roles for (key, tenant name)", roles, nil, "grants_pkey|grants_by_scope"},
 		{"tenant by name", `SELECT ` + tenantColumns + ` FROM tenants WHERE name = 'tenant1000'`, nil, "Index Scan using tenants_name_key"},
 		{"grants by key, with tenant names", `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = 'Key010000' ORDER BY g.key_id, g.scope LIMIT 1001`, nil, "grants_pkey"},
