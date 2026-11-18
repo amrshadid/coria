@@ -397,15 +397,22 @@ All notable changes to Magnetar are written here. The form is
   `internal/blob/s3`, is a storage on Amazon S3 or an S3-compatible server,
   under an optional prefix of a bucket, and passes the storage contract suite
   unchanged against two different servers. An object of up to 8 MiB is one
-  request; a larger one is a multipart upload in bounded memory, aborted on any
-  failure, also after the caller gave up. Each upload carries its SHA-256, and
-  the server's echo of it is compared. Uploads a crash left unfinished are
-  aborted when the storage opens. The driver uses only the credentials it is
-  given, never the server's environment, files or instance metadata; it asks a
-  function of the caller's whether each address may be connected to, at every
-  connection, so a name that resolves to a private address is refused; it
-  follows no redirect; and its errors carry neither the server's words nor the
-  endpoint. It adds the AWS SDK for Go's S3 client, about 4.6 MB of the binary.
+  request; a larger one is a multipart upload, aborted on any failure, in
+  memory bounded for the whole store, not only for one Put. A Put succeeds
+  only on what the server says about the bytes it was sent: the echo of the
+  checksum of each upload and part, the composite checksum of a completed
+  upload or else a HEAD of the object; a server that says nothing is refused
+  when the storage is opened. Read returns exactly the bytes asked or an
+  error. Every answer that is not an object's bytes is cut at 4 MiB. Uploads a
+  crash left unfinished are aborted when the storage opens, which never makes
+  the opening fail. The driver uses only the credentials it is given, and
+  neither they nor anything holding them can be printed; it asks a function of
+  the caller's whether each address may be connected to, and the one provided
+  passes global unicast addresses only; it follows no redirect; and its errors
+  carry neither the server's words nor the endpoint. A storage's prefix is at
+  most 128 bytes and the storage port's longest key is now 896, so every key
+  fits S3's 1024 bytes under every prefix. It adds the AWS SDK for Go's S3
+  client, about 5.6 MB of the binary when the driver is used.
 - A tenant's database held settings and an audit log, and nothing the reception
   of a study needs. It now keeps, on SQLite, everything that must not be lost:
   storages and receivers, with partial changes, normalized S3 endpoints and the

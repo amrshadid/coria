@@ -21,6 +21,7 @@ var (
 	errTimedOut       = errors.New("the storage did not answer in time")
 	errUnreachable    = errors.New("the storage could not be reached")
 	errRedirected     = errors.New("the storage answered with a redirect, which is not followed")
+	errNotConfirmed   = errors.New("the storage said nothing that confirms the object was stored")
 	errMalformed      = errors.New("the storage's answer was not what the request was for")
 )
 
@@ -65,6 +66,12 @@ func fail(ctx context.Context, err error, what string) error {
 		return err
 	case ctx.Err() != nil:
 		return canceled(ctx, what)
+	case errors.Is(err, context.Canceled):
+		// Not the caller's context: the driver ended the request itself, at
+		// the wait it allows for a first byte.
+		return fault.Wrap(fault.Unavailable, errTimedOut, what+" failed: the storage did not answer in time")
+	case errors.Is(err, errAnswerTooLarge):
+		return fault.Wrap(fault.Unavailable, errAnswerTooLarge, what+" failed: the storage's answer was longer than any answer should be")
 	case errors.Is(err, errAddressRefused):
 		return fault.Wrap(fault.Unavailable, errAddressRefused, what+" failed: the endpoint's address is not allowed")
 	}

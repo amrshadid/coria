@@ -14,6 +14,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/amrshadid/magnetar/internal/blob"
 )
@@ -59,8 +60,8 @@ func testConfig(tb testing.TB) Config {
 		Region:          region,
 		Bucket:          u.Path[1:],
 		PathStyle:       u.Query().Get("pathstyle") != "0",
-		AccessKeyID:     u.User.Username(),
-		SecretAccessKey: secret,
+		AccessKeyID:     NewSecret(u.User.Username()),
+		SecretAccessKey: NewSecret(secret),
 		AllowHTTP:       u.Scheme == "http",
 		AllowAddress:    allowAll,
 	}
@@ -103,8 +104,7 @@ func openAt(tb testing.TB, cfg Config) *Store {
 	}
 	tb.Cleanup(func() {
 		// A test may have closed s; the cleanup works through a store of its own.
-		c := &Store{set: s.set, tr: newTransport(s.set)}
-		c.client = awss3.New(clientOptions(c.set, c.tr))
+		c := newStore(s.set)
 		sweepAll(tb, c)
 		c.tr.CloseIdleConnections()
 		if err := s.Close(); err != nil {
@@ -120,6 +120,10 @@ func openTest(tb testing.TB) *Store {
 	cfg := testConfig(tb)
 	ensureBucket(tb, cfg)
 	cfg.Prefix = uniquePrefix()
+	// Opening is not what these tests are about, and a cleanup of old uploads
+	// on every one of dozens of stores in a few seconds is load for the server
+	// and not a check of anything; the cleanup has tests of its own.
+	cfg.StaleUploadAge = -1
 	return openAt(tb, cfg)
 }
 
@@ -130,8 +134,10 @@ func sweepAll(tb testing.TB, s *Store) {
 	ctx := context.Background()
 	if left := unfinished(tb, s); len(left) != 0 {
 		tb.Errorf("%d unfinished multipart uploads are left under the prefix: %v", len(left), left)
-		for _, u := range left {
-			_ = s.abort(ctx, aws.String(s.set.prefix+u), nil) // Best effort; the upload id is not kept here.
+		for _, u := range uploadsUnder(tb, s) {
+			if err := s.abort(ctx, u.Key, u.UploadId); err != nil {
+				tb.Errorf("cleanup: aborting an upload: %v", err)
+			}
 		}
 	}
 	var keys []string
@@ -166,13 +172,13 @@ func sweepAll(tb testing.TB, s *Store) {
 	wg.Wait()
 }
 
-// unfinished returns the keys of the unfinished multipart uploads under the
-// store's prefix, asking the server directly. It lists the whole bucket's
-// uploads and filters here, since MinIO's listing matches a prefix against a
-// whole key and would show nothing.
-func unfinished(tb testing.TB, s *Store) []string {
+// uploadsUnder returns the unfinished multipart uploads whose keys begin
+// with the store's prefix, asking the server directly. It lists the whole
+// bucket's uploads and filters here, since MinIO's listing matches a prefix
+// against a whole key and would show nothing.
+func uploadsUnder(tb testing.TB, s *Store) []types.MultipartUpload {
 	tb.Helper()
-	var keys []string
+	var ups []types.MultipartUpload
 	in := &awss3.ListMultipartUploadsInput{Bucket: aws.String(s.set.bucket)}
 	for {
 		out, err := s.client.ListMultipartUploads(context.Background(), in)
@@ -180,13 +186,40 @@ func unfinished(tb testing.TB, s *Store) []string {
 			tb.Fatalf("listing unfinished uploads: %v", err)
 		}
 		for _, u := range out.Uploads {
-			if k, ok := strings.CutPrefix(aws.ToString(u.Key), s.set.prefix); ok {
-				keys = append(keys, k)
+			if strings.HasPrefix(aws.ToString(u.Key), s.set.prefix) {
+				ups = append(ups, u)
 			}
 		}
 		if !aws.ToBool(out.IsTruncated) {
-			return keys
+			return ups
 		}
 		in.KeyMarker, in.UploadIdMarker = out.NextKeyMarker, out.NextUploadIdMarker
 	}
 }
+
+// unfinished returns the keys of the unfinished uploads under the store's
+// prefix, without the prefix.
+func unfinished(tb testing.TB, s *Store) []string {
+	tb.Helper()
+	var keys []string
+	for _, u := range uploadsUnder(tb, s) {
+		keys = append(keys, strings.TrimPrefix(aws.ToString(u.Key), s.set.prefix))
+	}
+	return keys
+}
+
+// keyOfLength returns a key the port accepts of exactly n bytes, made of
+// segments of 200 bytes of c; n must be at least 1 and not above the port's
+// longest key.
+func keyOfLength(n int, c byte) string {
+	var parts []string
+	for n > 201 {
+		parts = append(parts, strings.Repeat(string(c), 200))
+		n -= 201
+	}
+	parts = append(parts, strings.Repeat(string(c), n))
+	return strings.Join(parts, "/")
+}
+
+// longestPrefix is the longest storage prefix there may be, with its "/".
+func longestPrefix() string { return strings.Repeat("p", MaxPrefixLength-1) + "/" }

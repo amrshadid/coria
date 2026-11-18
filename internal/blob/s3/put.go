@@ -11,6 +11,7 @@ import (
 	"io"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,9 @@ type putJob struct {
 	key  *string
 	hash hash.Hash
 	size int64
+	// held is the bytes of the store's budget this Put holds. Only the
+	// goroutine that runs Put changes it.
+	held int64
 }
 
 // Put writes r to key whole or not at all; see blob.Store. An object of at
@@ -45,17 +49,34 @@ func (s *Store) Put(ctx context.Context, key string, r io.Reader) (blob.Written,
 	if err := blob.CheckKey(key); err != nil {
 		return blob.Written{}, err
 	}
+	if !s.fits(key) {
+		return blob.Written{}, fault.New(fault.Invalid, "storage key is too long for this storage's prefix: the name in the bucket would pass 1024 bytes")
+	}
 	j := &putJob{s: s, key: s.object(key), hash: sha256.New()}
+
+	// The Put's memory comes from the store's budget, shared by every Put:
+	// one part before a byte is read, taken by waiting, and then more only
+	// when free (see budget). A Put that waits holds nothing.
+	unit := s.set.partSize + 1
+	if err := s.budget.take(ctx, unit); err != nil {
+		return blob.Written{}, canceled(ctx, "the put")
+	}
+	j.held = unit
+	defer func() { s.budget.give(j.held) }()
 
 	// One byte more than a part is read before anything is sent: an object of
 	// exactly one part is one request, and the extra byte, when it comes,
 	// proves a second part exists before an upload is begun for it.
-	limit := int(s.set.partSize) + 1
+	limit := int(unit)
 	first, err := j.fill(ctx, r, nil, limit)
 	if err != nil {
 		return blob.Written{}, err
 	}
 	if len(first) < limit {
+		// A small object keeps only the memory it filled.
+		keep := min(int64(cap(first)), unit)
+		s.budget.give(unit - keep)
+		j.held = keep
 		if err := j.putObject(ctx, first); err != nil {
 			return blob.Written{}, err
 		}
@@ -134,7 +155,18 @@ func (j *putJob) putObject(ctx context.Context, b []byte) error {
 	if err != nil {
 		return fail(ctx, err, "the put")
 	}
-	if got := aws.ToString(out.ChecksumSHA256); got != "" && got != sum {
+	return confirmed(out.ChecksumSHA256, sum)
+}
+
+// confirmed checks a server's echo of the SHA-256 of what it was sent. The
+// echo is required: a success is believed only because the server said
+// something about these bytes, and an answer without it, like one with
+// another checksum, is a failure.
+func confirmed(echo *string, sum string) error {
+	switch got := aws.ToString(echo); {
+	case got == "":
+		return fault.Wrap(fault.Unavailable, errNotConfirmed, "the put failed: the storage did not confirm the checksum of the bytes it was sent")
+	case got != sum:
 		return fault.Wrap(fault.Unavailable, errMalformed, "the put failed: the storage kept bytes whose checksum is not the one sent")
 	}
 	return nil
@@ -182,6 +214,7 @@ func (j *putJob) multipart(ctx context.Context, r io.Reader, first []byte) (err 
 	var mu sync.Mutex
 	var firstErr error
 	var parts []types.CompletedPart
+	digests := map[int32][sha256.Size]byte{}
 	failWith := func(e error) {
 		mu.Lock()
 		if firstErr == nil {
@@ -219,7 +252,8 @@ func (j *putJob) multipart(ctx context.Context, r io.Reader, first []byte) (err 
 			defer func() { free <- part[:0] }()
 			pctx2, cancel := context.WithTimeout(pctx, s.set.dataTimeout)
 			defer cancel()
-			sum := checksum(part)
+			raw := sha256.Sum256(part)
+			sum := base64.StdEncoding.EncodeToString(raw[:])
 			out, e := s.client.UploadPart(pctx2, &awss3.UploadPartInput{
 				Bucket:            aws.String(s.set.bucket),
 				Key:               j.key,
@@ -234,11 +268,12 @@ func (j *putJob) multipart(ctx context.Context, r io.Reader, first []byte) (err 
 				failWith(fail(pctx2, e, "the put"))
 				return
 			}
-			if got := aws.ToString(out.ChecksumSHA256); got != "" && got != sum {
-				failWith(fault.Wrap(fault.Unavailable, errMalformed, "the put failed: the storage kept bytes whose checksum is not the one sent"))
+			if e := confirmed(out.ChecksumSHA256, sum); e != nil {
+				failWith(e)
 				return
 			}
 			mu.Lock()
+			digests[n] = raw
 			parts = append(parts, types.CompletedPart{PartNumber: aws.Int32(n), ETag: out.ETag, ChecksumSHA256: aws.String(sum)})
 			mu.Unlock()
 		}(n, buf)
@@ -252,8 +287,9 @@ func (j *putJob) multipart(ctx context.Context, r io.Reader, first []byte) (err 
 		select {
 		case nb = <-free:
 		default:
-			if made < s.set.concurrency {
+			if made < s.set.concurrency && s.budget.tryTake(s.set.partSize+1) {
 				made++
+				j.held += s.set.partSize + 1
 				nb = make([]byte, 0, partSize+1)
 			} else {
 				select {
@@ -291,7 +327,7 @@ func (j *putJob) multipart(ctx context.Context, r io.Reader, first []byte) (err 
 	// success is answered "no such upload", which would report a failure for
 	// an object that is in place. The port allows a failure after the object
 	// is in place; it does not allow a success that is not true.
-	_, cerr := s.client.CompleteMultipartUpload(cctx, &awss3.CompleteMultipartUploadInput{
+	done, cerr := s.client.CompleteMultipartUpload(cctx, &awss3.CompleteMultipartUploadInput{
 		Bucket:          aws.String(s.set.bucket),
 		Key:             j.key,
 		UploadId:        uploadID,
@@ -299,6 +335,52 @@ func (j *putJob) multipart(ctx context.Context, r io.Reader, first []byte) (err 
 	}, func(o *awss3.Options) { o.Retryer = aws.NopRetryer{} })
 	if cerr != nil {
 		return fail(cctx, cerr, "the put")
+	}
+	return j.confirmComplete(cctx, done, parts, digests)
+}
+
+// confirmComplete decides whether the answer to CompleteMultipartUpload
+// shows the object stored. The answer must be well formed: the object's key
+// and an ETag. When it carries the object's composite checksum it must be
+// the one computed from the parts' digests; when it does not, the object's
+// size, and its ETag where the answer gave one, are confirmed with a HEAD,
+// so that a bare 200 never counts.
+//
+// The composite checksum of a multipart upload is the SHA-256 of the parts'
+// binary SHA-256 digests joined in order, in base64, with "-" and the number
+// of parts after it
+// (docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html,
+// "Using part-level checksums for multipart uploads").
+func (j *putJob) confirmComplete(ctx context.Context, done *awss3.CompleteMultipartUploadOutput, parts []types.CompletedPart, digests map[int32][sha256.Size]byte) error {
+	bad := func(msg string) error {
+		return fault.Wrap(fault.Unavailable, errNotConfirmed, "the put failed: "+msg)
+	}
+	if aws.ToString(done.ETag) == "" || aws.ToString(done.Key) != aws.ToString(j.key) {
+		return bad("the storage's answer to completing the upload does not name the object")
+	}
+	if got := aws.ToString(done.ChecksumSHA256); got != "" {
+		h := sha256.New()
+		for _, p := range parts {
+			d := digests[aws.ToInt32(p.PartNumber)]
+			h.Write(d[:]) // A hash never returns an error.
+		}
+		if want := fmt.Sprintf("%s-%d", base64.StdEncoding.EncodeToString(h.Sum(nil)), len(parts)); got != want {
+			return fault.Wrap(fault.Unavailable, errMalformed, "the put failed: the storage kept an object whose checksum is not that of the parts sent")
+		}
+		return nil
+	}
+	head, err := j.s.client.HeadObject(ctx, &awss3.HeadObjectInput{Bucket: aws.String(j.s.set.bucket), Key: j.key})
+	if err != nil {
+		if err = fail(ctx, err, "the put"); fault.KindOf(err) == fault.NotFound {
+			return bad("the storage does not hold the object it just completed")
+		}
+		return err
+	}
+	if aws.ToInt64(head.ContentLength) != j.size {
+		return bad("the storage holds an object of another size than the one put")
+	}
+	if e := aws.ToString(head.ETag); e != "" && strings.Trim(e, `"`) != strings.Trim(aws.ToString(done.ETag), `"`) {
+		return bad("the storage holds an object other than the one completed")
 	}
 	return nil
 }

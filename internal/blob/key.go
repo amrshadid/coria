@@ -6,9 +6,12 @@ import (
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
-// The bounds of a key. MaxKeyLength is the longest key S3 accepts
-// (docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html), so a key
-// valid here is valid on every storage. MaxSegmentLength is the longest name
+// The bounds of a key. S3 accepts a key of 1024 bytes
+// (docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html), and a
+// storage in a bucket may live under a prefix of up to 128 bytes, which
+// counts toward that. MaxKeyLength is what is left, so a key valid here is
+// valid on every storage, whatever its prefix. The archive's own layout
+// builds keys of at most 460 bytes. MaxSegmentLength is the longest name
 // of one file or directory on the common local file systems (ext4, XFS, APFS
 // and NTFS all stop at 255), so a segment never fails on a disk after passing
 // here. MaxKeySegments bounds the depth of a key: a directory driver makes
@@ -16,7 +19,7 @@ import (
 // segments, still within MaxKeyLength, would cost hundreds of directories and
 // a Put taking seconds, while the archive's own layout uses five.
 const (
-	MaxKeyLength     = 1024
+	MaxKeyLength     = 896
 	MaxSegmentLength = 255
 	MaxKeySegments   = 64
 )
@@ -66,7 +69,7 @@ func CheckKey(key string) error {
 		return keyError("is empty")
 	}
 	if len(key) > MaxKeyLength {
-		return keyError("is longer than 1024 bytes")
+		return keyError("is longer than 896 bytes")
 	}
 	if strings.Count(key, "/") >= MaxKeySegments {
 		return keyError("has more than 64 segments")
@@ -89,7 +92,7 @@ func CheckPrefix(prefix string) error {
 		return nil
 	}
 	if len(prefix) > MaxKeyLength {
-		return prefixError("is longer than 1024 bytes")
+		return prefixError("is longer than 896 bytes")
 	}
 	head, tail := "", prefix
 	if i := strings.LastIndexByte(prefix, '/'); i >= 0 {

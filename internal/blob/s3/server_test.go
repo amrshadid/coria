@@ -65,6 +65,13 @@ func newProxy(t testing.TB, cfg Config) *proxy {
 	return p
 }
 
+// reset forgets the requests so far, such as those of Open.
+func (p *proxy) reset() {
+	p.mu.Lock()
+	p.reqs = nil
+	p.mu.Unlock()
+}
+
 // count returns how many requests had this method and a query containing
 // sub.
 func (p *proxy) count(method, sub string) int {
@@ -99,6 +106,7 @@ func serverConfig(t testing.TB) Config {
 	cfg := testConfig(t)
 	ensureBucket(t, cfg)
 	cfg.Prefix = uniquePrefix()
+	cfg.StaleUploadAge = -1 // See openTest.
 	return cfg
 }
 
@@ -106,7 +114,7 @@ func serverConfig(t testing.TB) Config {
 // and none of the driver's code, and returns its SHA-256.
 func serverSum(t testing.TB, s *Store, key string) ([sha256.Size]byte, int64) {
 	t.Helper()
-	out, err := s.client.GetObject(context.Background(), &awss3.GetObjectInput{Bucket: aws.String(s.set.bucket), Key: aws.String(s.set.prefix + key)})
+	out, err := s.client.GetObject(context.WithValue(context.Background(), objectStream{}, struct{}{}), &awss3.GetObjectInput{Bucket: aws.String(s.set.bucket), Key: aws.String(s.set.prefix + key)})
 	if err != nil {
 		t.Fatalf("reading %q from the server: %v", key, err)
 	}
@@ -134,6 +142,7 @@ func TestMultipartSizes(t *testing.T) {
 			cfg := serverConfig(t)
 			p := newProxy(t, cfg)
 			s := openThrough(t, p, cfg, nil)
+			p.reset()
 			ctx := context.Background()
 			data := blobtest.PatternBytes(1, n)
 			w, err := s.Put(ctx, "obj/x", bytes.NewReader(data))
@@ -297,14 +306,8 @@ func TestStaleUploads(t *testing.T) {
 	}
 	// Clean up what the test left on purpose.
 	for _, st := range []*Store{maker, bystander} {
-		all, err := st.listUploads(context.Background(), "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, u := range all {
-			if strings.HasPrefix(aws.ToString(u.Key), st.set.prefix) {
-				_ = st.abort(context.Background(), u.Key, u.UploadId)
-			}
+		for _, u := range uploadsUnder(t, st) {
+			_ = st.abort(context.Background(), u.Key, u.UploadId)
 		}
 	}
 }
@@ -489,8 +492,8 @@ func TestOpenFailures(t *testing.T) {
 		kind fault.Kind
 	}{
 		"no such bucket": {func(c *Config) { c.Bucket = "no-such-bucket-for-magnetar" }, fault.Invalid},
-		"unknown key":    {func(c *Config) { c.AccessKeyID = "unknownkeyunknownkey" }, fault.Invalid},
-		"wrong secret":   {func(c *Config) { c.SecretAccessKey = "wrong-secret-wrong-secret" }, fault.Invalid},
+		"unknown key":    {func(c *Config) { c.AccessKeyID = NewSecret("unknownkeyunknownkey") }, fault.Invalid},
+		"wrong secret":   {func(c *Config) { c.SecretAccessKey = NewSecret("wrong-secret-wrong-secret") }, fault.Invalid},
 		"nothing there":  {func(c *Config) { c.Endpoint = "http://127.0.0.1:1" }, fault.Unavailable},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -507,7 +510,7 @@ func TestOpenFailures(t *testing.T) {
 			if time.Since(start) > 20*time.Second {
 				t.Errorf("Open took %v to fail", time.Since(start))
 			}
-			forbidden := []string{good.Bucket, cfg.Bucket, good.AccessKeyID, cfg.AccessKeyID, good.SecretAccessKey, cfg.SecretAccessKey, "127.0.0.1", port}
+			forbidden := []string{good.Bucket, cfg.Bucket, good.AccessKeyID.Reveal(), cfg.AccessKeyID.Reveal(), good.SecretAccessKey.Reveal(), cfg.SecretAccessKey.Reveal(), "127.0.0.1", port}
 			for _, text := range []string{err.Error(), fault.Message(err)} {
 				for _, f := range forbidden {
 					if strings.Contains(text, f) {
@@ -516,5 +519,55 @@ func TestOpenFailures(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// rawPut puts an object under a name the port may not have, straight to the
+// server.
+func rawPut(t *testing.T, s *Store, name string) {
+	t.Helper()
+	_, err := s.client.PutObject(context.Background(), &awss3.PutObjectInput{
+		Bucket: aws.String(s.set.bucket), Key: aws.String(name), Body: strings.NewReader("x"),
+	})
+	if err != nil {
+		t.Fatalf("raw put %q: %v", name, err)
+	}
+}
+
+func deleteInput(s *Store, name string) *awss3.DeleteObjectInput {
+	return &awss3.DeleteObjectInput{Bucket: aws.String(s.set.bucket), Key: aws.String(name)}
+}
+
+func sortedCopy(in []string) []string {
+	out := slices.Clone(in)
+	slices.Sort(out)
+	return out
+}
+
+// TestEveryPortKeyFitsUnderEveryPrefixOnServers guards, on a real server,
+// the relation between the port's and S3's limits: the port's longest key
+// under the longest prefix is exactly 1,024 bytes in the bucket, and it is
+// stored, read, listed and deleted.
+func TestEveryPortKeyFitsUnderEveryPrefixOnServers(t *testing.T) {
+	cfg := serverConfig(t)
+	cfg.Prefix = longestPrefix()[:MaxPrefixLength-len("t-0123456789abcdef/")] + uniquePrefix()
+	s := openAt(t, cfg)
+	ctx := context.Background()
+	key := keyOfLength(blob.MaxKeyLength, 'c')
+	if len(s.set.prefix) != MaxPrefixLength || len(key)+len(s.set.prefix) != MaxKeyBytes || blob.CheckKey(key) != nil {
+		t.Fatalf("the test's name is %d bytes with a prefix of %d: %v", len(key)+len(s.set.prefix), len(s.set.prefix), blob.CheckKey(key))
+	}
+	if _, err := s.Put(ctx, key, strings.NewReader("edge")); err != nil {
+		t.Fatalf("Put of a key of %d bytes under a prefix of %d: %v", len(key), len(s.set.prefix), err)
+	}
+	if got := string(s.mustRead(t, key, 0, -1)); got != "edge" {
+		t.Errorf("read %q", got)
+	}
+	pg, err := s.List(ctx, blob.ListOptions{})
+	if err != nil || len(pg.Keys) != 1 || pg.Keys[0] != key {
+		t.Errorf("List = %v, %v", pg.Keys, err)
+	}
+	if err := s.Delete(ctx, key); err != nil {
+		t.Error(err)
 	}
 }

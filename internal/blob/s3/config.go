@@ -33,6 +33,21 @@ const (
 	DefaultStaleUploadAge = 24 * time.Hour
 
 	maxParts = 10000 // int32, the type of a part number.
+
+	// MaxKeyBytes is the longest object name S3 accepts, in bytes
+	// (docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html), prefix
+	// included.
+	MaxKeyBytes = 1024
+	// MaxPrefixLength is the longest storage prefix, "/" included. A key
+	// longer than MaxKeyBytes less the prefix is refused as Invalid before a
+	// request is made, since the server would refuse it. The port's longest
+	// key (blob.MaxKeyLength) is MaxKeyBytes less this, so every key the port
+	// accepts fits under every prefix, and the refusal is a second guard.
+	MaxPrefixLength = 128
+
+	// DefaultMemoryLimit is the bytes of part buffers all the Puts of a store
+	// share when Config.MemoryLimit is 0: sixteen default parts.
+	DefaultMemoryLimit = 16 * (DefaultPartSize + 1)
 )
 
 // Timeouts. A call that moves no object bytes gets callTimeout in all, its
@@ -68,8 +83,8 @@ type Config struct {
 	PathStyle bool
 	// AccessKeyID and SecretAccessKey are the only credentials the driver
 	// uses.
-	AccessKeyID     string
-	SecretAccessKey string
+	AccessKeyID     Secret
+	SecretAccessKey Secret
 
 	// AllowHTTP permits an Endpoint that is plain http. Without it an http
 	// endpoint is refused, since the signed requests and the objects would
@@ -92,6 +107,11 @@ type Config struct {
 	// Concurrency is the number of part buffers, and so of parts in flight,
 	// of one Put: 1 to MaxConcurrency, 0 for DefaultConcurrency.
 	Concurrency int
+	// MemoryLimit bounds the bytes of part buffers that all the Puts of the
+	// store hold together; a Put that cannot get its first buffer waits, and
+	// the wait ends with its context. It must hold at least one part. 0 means
+	// DefaultMemoryLimit.
+	MemoryLimit int64
 	// StaleUploadAge is the age at which Open aborts an unfinished upload
 	// under the prefix. 0 means DefaultStaleUploadAge; a negative value
 	// turns the cleanup at Open off, and a later call of AbortStaleUploads
@@ -99,8 +119,9 @@ type Config struct {
 	StaleUploadAge time.Duration
 }
 
-// String returns the configuration without its credentials, so printing one
-// in a log cannot leak them.
+// String returns the configuration without its credentials. The credentials
+// are Secrets, which withhold themselves wherever they are printed; this is
+// for readability.
 func (c Config) String() string {
 	return "s3.Config{bucket " + c.Bucket + ", prefix " + c.Prefix + ", credentials withheld}"
 }
@@ -119,14 +140,15 @@ type settings struct {
 	bucket      string
 	prefix      string // empty, or ends in "/"
 	pathStyle   bool
-	accessKey   string
-	secretKey   string
+	accessKey   Secret
+	secretKey   Secret
 	roots       *x509.CertPool
 	allow       func(netip.Addr) bool
 	resolver    *net.Resolver
 	partSize    int64
 	concurrency int
 	staleAge    time.Duration
+	memory      int64
 	// The timeouts, which are the constants above except in tests that need
 	// a server to be slow without waiting for a minute.
 	callTimeout, dataTimeout, idleTimeout time.Duration
@@ -168,7 +190,14 @@ func (c Config) check() (settings, error) {
 	if !bucketName.MatchString(c.Bucket) {
 		return bad("the bucket name is not valid")
 	}
-	if c.AccessKeyID == "" || c.SecretAccessKey == "" {
+	if strings.HasSuffix(c.Bucket, "--x-s3") {
+		// A directory bucket makes the SDK open a session and sign later
+		// requests with credentials the server returns (docs.aws.amazon.com/
+		// AmazonS3/latest/userguide/s3-express-create-session.html): a second
+		// credential path, which this driver does not have.
+		return bad("the bucket is an S3 Express directory bucket, which needs session credentials; only general purpose buckets are used")
+	}
+	if !c.AccessKeyID.IsSet() || !c.SecretAccessKey.IsSet() {
 		return bad("the access key id and the secret access key are both required")
 	}
 	if c.AllowAddress == nil {
@@ -177,6 +206,9 @@ func (c Config) check() (settings, error) {
 	if p := strings.TrimSuffix(c.Prefix, "/"); p != "" {
 		if err := blob.CheckKey(p); err != nil {
 			return bad("the prefix is not valid: " + fault.Message(err))
+		}
+		if len(p)+1 > MaxPrefixLength {
+			return bad("the prefix is longer than MaxPrefixLength")
 		}
 		s.prefix = p + "/"
 	}
@@ -193,6 +225,17 @@ func (c Config) check() (settings, error) {
 		s.concurrency = DefaultConcurrency
 	case c.Concurrency < 0 || c.Concurrency > MaxConcurrency:
 		return bad("the concurrency must be from 1 to 32")
+	}
+	switch {
+	case c.MemoryLimit == 0:
+		s.memory = DefaultMemoryLimit
+		if s.memory < s.partSize+1 {
+			s.memory = s.partSize + 1
+		}
+	case c.MemoryLimit < s.partSize+1:
+		return bad("the memory limit does not hold one part")
+	default:
+		s.memory = c.MemoryLimit
 	}
 	if c.StaleUploadAge == 0 {
 		s.staleAge = DefaultStaleUploadAge

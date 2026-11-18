@@ -26,6 +26,9 @@ type Store struct {
 	client *awss3.Client
 	tr     *http.Transport
 	closed atomic.Bool
+	budget *budget
+	notes  Notes
+	sweep  sweepState
 }
 
 var _ blob.Store = (*Store)(nil)
@@ -36,26 +39,41 @@ var _ blob.Store = (*Store)(nil)
 // or refuses the credentials, and as Unavailable when the server cannot be
 // reached or the address check refuses it.
 //
-// The cleanup of old uploads is best effort: an account that may not list
-// uploads still opens, and relies on the bucket's lifecycle rule.
+// Open also puts and deletes a small object under the prefix, to be sure the
+// server confirms uploads by their checksum (see probeUpload), and cleans up
+// old unfinished uploads. Neither fails Open for a reason of the account
+// (credentials that may not write, or may not list uploads): Notes says what
+// happened. Credentials that may not write still open the storage for
+// reading.
 func Open(ctx context.Context, cfg Config) (*Store, error) {
 	set, err := cfg.check()
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{set: set, tr: newTransport(set)}
-	s.client = awss3.New(clientOptions(set, s.tr))
+	s := newStore(set)
 	if err := s.probe(ctx); err != nil {
 		s.tr.CloseIdleConnections()
 		return nil, err
 	}
+	if err := s.probeUpload(ctx); err != nil {
+		s.tr.CloseIdleConnections()
+		return nil, err
+	}
 	if set.staleAge > 0 {
-		if _, err := s.AbortStaleUploads(ctx); err != nil && !mayNotList(err) {
-			s.tr.CloseIdleConnections()
-			return nil, err
-		}
+		s.notes.Cleanup = s.AbortStaleUploads(ctx)
+	}
+	if ctx.Err() != nil {
+		s.tr.CloseIdleConnections()
+		return nil, canceled(ctx, "opening the storage")
 	}
 	return s, nil
+}
+
+// newStore makes a store from checked settings, without connecting.
+func newStore(set settings) *Store {
+	s := &Store{set: set, tr: newTransport(set), budget: newBudget(set.memory)}
+	s.client = awss3.New(clientOptions(set, s.tr))
+	return s
 }
 
 // clientOptions builds the SDK client's options from nothing but set. It is
@@ -66,18 +84,22 @@ func clientOptions(set settings, tr *http.Transport) awss3.Options {
 	o := awss3.Options{
 		Region:       set.region,
 		UsePathStyle: set.pathStyle,
-		HTTPClient:   &http.Client{Transport: tr, CheckRedirect: noRedirect},
+		HTTPClient:   &http.Client{Transport: limitTransport{tr}, CheckRedirect: noRedirect},
 		// Static credentials, from the configuration and nowhere else.
 		Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
-			return aws.Credentials{AccessKeyID: set.accessKey, SecretAccessKey: set.secretKey, Source: "magnetar storage configuration"}, nil
+			return aws.Credentials{AccessKeyID: set.accessKey.Reveal(), SecretAccessKey: set.secretKey.Reveal(), Source: "magnetar storage configuration"}, nil
 		}),
 		// Since early 2025 the SDK adds a CRC32 checksum to every upload as an
 		// aws-chunked trailer, and validates one on every download, which
 		// several servers other than Amazon's reject or cannot produce.
 		// "When required" sends and checks one only where the API demands it;
 		// the driver sets x-amz-checksum-sha256 itself on every upload.
-		RequestChecksumCalculation: aws.RequestChecksumCalculationWhenRequired,
-		ResponseChecksumValidation: aws.ResponseChecksumValidationWhenRequired,
+		// A bucket of the S3 Express form would make the SDK create a session and
+		// sign with credentials the server returns; Open refuses such a name,
+		// and this makes the SDK unable to do it whatever a name says.
+		DisableS3ExpressSessionAuth: aws.Bool(true),
+		RequestChecksumCalculation:  aws.RequestChecksumCalculationWhenRequired,
+		ResponseChecksumValidation:  aws.ResponseChecksumValidationWhenRequired,
 		// Three attempts in all, backing off exponentially to five seconds,
 		// for what is safe to repeat: every request here is idempotent, a
 		// body is a buffer the SDK can send again, and a refused address is
@@ -90,7 +112,7 @@ func clientOptions(set settings, tr *http.Transport) awss3.Options {
 			o.MaxBackoff = 5 * time.Second
 			o.RateLimiter = ratelimit.None
 			o.Retryables = append([]retry.IsErrorRetryable{retry.IsErrorRetryableFunc(func(err error) aws.Ternary {
-				if errors.Is(err, errAddressRefused) {
+				if errors.Is(err, errAddressRefused) || errors.Is(err, errAnswerTooLarge) {
 					return aws.FalseTernary
 				}
 				return aws.UnknownTernary
@@ -146,6 +168,11 @@ func (s *Store) begin(ctx context.Context, what string) error {
 	return nil
 }
 
+// fits reports whether key, with the storage's prefix, is a name S3 accepts:
+// at most MaxKeyBytes. A port key that does not fit cannot be in this
+// storage.
+func (s *Store) fits(key string) bool { return len(s.set.prefix)+len(key) <= MaxKeyBytes }
+
 // object returns the name of key in the bucket.
 func (s *Store) object(key string) *string { return aws.String(s.set.prefix + key) }
 
@@ -176,6 +203,9 @@ func (s *Store) Stat(ctx context.Context, key string) (blob.Info, error) {
 	if err := blob.CheckKey(key); err != nil {
 		return blob.Info{}, err
 	}
+	if !s.fits(key) {
+		return blob.Info{}, fault.New(fault.NotFound, "the storage holds no object under that key")
+	}
 	ctx, cancel := context.WithTimeout(ctx, s.set.callTimeout)
 	defer cancel()
 	out, err := s.client.HeadObject(ctx, &awss3.HeadObjectInput{Bucket: aws.String(s.set.bucket), Key: s.object(key)})
@@ -194,6 +224,9 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 	if err := blob.CheckKey(key); err != nil {
 		return err
 	}
+	if !s.fits(key) {
+		return nil // Nothing of that name can be here.
+	}
 	ctx, cancel := context.WithTimeout(ctx, s.set.callTimeout)
 	defer cancel()
 	_, err := s.client.DeleteObject(ctx, &awss3.DeleteObjectInput{Bucket: aws.String(s.set.bucket), Key: s.object(key)})
@@ -206,7 +239,11 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-// Read returns a range of key with a ranged GET.
+// Read returns a range of key with a ranged GET. The caller gets exactly the
+// bytes asked for, min(length, size-offset) of them, or an error: the answer's
+// Content-Range is checked against the range asked and the size it states,
+// and the stream is counted, so a server that sends fewer or more bytes than
+// it said is an error and never a short or a long success.
 func (s *Store) Read(ctx context.Context, key string, offset, length int64) (io.ReadCloser, error) {
 	if err := s.begin(ctx, "the read"); err != nil {
 		return nil, err
@@ -216,6 +253,9 @@ func (s *Store) Read(ctx context.Context, key string, offset, length int64) (io.
 	}
 	if err := blob.CheckRange(offset, length); err != nil {
 		return nil, err
+	}
+	if !s.fits(key) {
+		return nil, fault.New(fault.NotFound, "the storage holds no object under that key")
 	}
 	if length == 0 {
 		// A range of no bytes cannot be asked of S3. The size answers whether
@@ -234,25 +274,59 @@ func (s *Store) Read(ctx context.Context, key string, offset, length int64) (io.
 		in.Range = aws.String(rangeHeader(offset, length))
 	}
 	rctx, cancel := context.WithCancel(ctx)
-	out, err := s.client.GetObject(rctx, in)
+	// The wait for the first byte, retries included, is bounded like every
+	// other call; the stream after it is cut by its idle timeout.
+	first := time.AfterFunc(s.set.callTimeout, cancel)
+	out, err := s.client.GetObject(context.WithValue(rctx, objectStream{}, struct{}{}), in)
+	timedOut := !first.Stop()
 	if err != nil {
 		cancel()
+		if timedOut && ctx.Err() == nil {
+			return nil, fault.Wrap(fault.Unavailable, errTimedOut, "the read failed: the storage did not answer in time")
+		}
 		var ae smithy.APIError
 		if errors.As(err, &ae) && ae.ErrorCode() == "InvalidRange" {
 			return s.pastEnd(ctx, key, offset)
 		}
 		return nil, fail(ctx, err, "the read")
 	}
-	if in.Range != nil {
-		// A server that ignores Range answers 200 with the whole object,
-		// which would be taken for the range asked.
-		if start, ok := rangeStart(aws.ToString(out.ContentRange)); !ok || start != offset {
-			_ = out.Body.Close() // The answer is refused whatever closing says.
-			cancel()
-			return nil, fault.Wrap(fault.Unavailable, errMalformed, "the read failed: the storage did not answer the range asked")
-		}
+	want, ok := expectedBytes(out, offset, length, in.Range != nil)
+	if !ok {
+		_ = out.Body.Close() // The answer is refused whatever closing says.
+		cancel()
+		return nil, fault.Wrap(fault.Unavailable, errMalformed, "the read failed: the storage did not answer the range asked")
 	}
-	return &body{idle: s.set.idleTimeout, caller: ctx, cancel: cancel, rc: out.Body}, nil
+	return &body{idle: s.set.idleTimeout, caller: ctx, cancel: cancel, rc: out.Body, want: want}, nil
+}
+
+// expectedBytes returns how many bytes the answer to a read must carry, and
+// whether the answer is what was asked for. For a ranged read the
+// Content-Range must start at offset, end where the range asked ends or the
+// object does, and agree with the object's size and with Content-Length; for
+// a whole object the length must be stated and no range given.
+func expectedBytes(out *awss3.GetObjectOutput, offset, length int64, ranged bool) (int64, bool) {
+	if !ranged {
+		if out.ContentRange != nil || out.ContentLength == nil || *out.ContentLength < 0 {
+			return 0, false
+		}
+		return *out.ContentLength, true
+	}
+	var start, end, total int64
+	if n, _ := fmt.Sscanf(aws.ToString(out.ContentRange), "bytes %d-%d/%d", &start, &end, &total); n != 3 {
+		return 0, false
+	}
+	wantEnd := total - 1
+	if length > 0 && length-1 < wantEnd-offset {
+		wantEnd = offset + length - 1
+	}
+	if total < 1 || start != offset || offset >= total || end != wantEnd {
+		return 0, false
+	}
+	want := end - start + 1
+	if out.ContentLength != nil && *out.ContentLength != want {
+		return 0, false
+	}
+	return want, true
 }
 
 // pastEnd handles a range S3 refused as unsatisfiable: with the offset at the
@@ -282,15 +356,6 @@ func rangeHeader(offset, length int64) string {
 	return fmt.Sprintf("bytes=%d-%d", offset, offset+length-1)
 }
 
-// rangeStart returns the first byte of a Content-Range header "bytes a-b/c".
-func rangeStart(h string) (int64, bool) {
-	var a, b, c int64
-	if n, _ := fmt.Sscanf(h, "bytes %d-%d/%d", &a, &b, &c); n == 3 {
-		return a, true
-	}
-	return 0, false
-}
-
 type eofReader struct{}
 
 func (eofReader) Read([]byte) (int, error) { return 0, io.EOF }
@@ -298,16 +363,47 @@ func (eofReader) Read([]byte) (int, error) { return 0, io.EOF }
 // body is the stream of a Read. It ends the request's context when it is
 // closed, and cuts the stream when the server stalls: a Read that moves no
 // byte for idleTimeout fails, so a hung server cannot hold a caller that has
-// no deadline of its own.
+// no deadline of its own. It counts: the stream yields exactly want bytes,
+// then ends; fewer before the server ends the stream, or more, is an error.
 type body struct {
 	idle   time.Duration
 	caller context.Context
 	cancel context.CancelFunc
 	rc     io.ReadCloser
 	once   sync.Once
+	want   int64
+	got    int64
 }
 
 func (b *body) Read(p []byte) (int, error) {
+	if remaining := b.want - b.got; remaining <= 0 {
+		// The bytes asked for are all delivered. The server must have nothing
+		// more to send.
+		var one [1]byte
+		n, err := b.read(one[:])
+		switch {
+		case n > 0:
+			return 0, fault.Wrap(fault.Unavailable, errMalformed, "the read failed: the storage sent more bytes than the range asked")
+		case errors.Is(err, io.EOF):
+			return 0, io.EOF
+		case err != nil:
+			return 0, err
+		}
+		return 0, nil
+	} else if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	n, err := b.read(p)
+	b.got += int64(n)
+	if errors.Is(err, io.EOF) && b.got < b.want {
+		return n, fault.Wrap(fault.Unavailable, errMalformed, "the read failed: the storage sent fewer bytes than the range asked")
+	}
+	return n, err
+}
+
+// read reads from the server's stream under the idle timeout, and gives an
+// error of the port's kinds.
+func (b *body) read(p []byte) (int, error) {
 	t := time.AfterFunc(b.idle, b.cancel)
 	n, err := b.rc.Read(p)
 	stalled := !t.Stop()

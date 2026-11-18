@@ -27,7 +27,8 @@ func TestCheckKeyAccepts(t *testing.T) {
 		"blob-tmp-not-reserved",
 		"x.blob-",
 		strings.Repeat("a", blob.MaxSegmentLength),
-		strings.Repeat(strings.Repeat("a", 254)+"/", 4) + strings.Repeat("b", 4),
+		// A key of exactly the longest length, in long segments.
+		strings.Repeat(strings.Repeat("a", 254)+"/", 3) + strings.Repeat("b", blob.MaxKeyLength-3*255),
 		strings.Repeat("a/", blob.MaxKeySegments-1) + "a",
 	} {
 		if len(key) > blob.MaxKeyLength {

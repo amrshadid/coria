@@ -53,7 +53,7 @@ func TestWriteForOutsideCheck(t *testing.T) {
 	}
 	manifest, err := json.MarshalIndent(map[string]any{
 		"endpoint": cfg.Endpoint, "region": cfg.Region, "bucket": cfg.Bucket, "prefix": s.set.prefix,
-		"access_key": cfg.AccessKeyID, "secret_key": cfg.SecretAccessKey, "objects": objects,
+		"access_key": cfg.AccessKeyID.Reveal(), "secret_key": cfg.SecretAccessKey.Reveal(), "objects": objects,
 	}, "", "  ")
 	if err != nil {
 		t.Fatal(err)

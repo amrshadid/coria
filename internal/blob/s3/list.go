@@ -3,14 +3,11 @@ package s3
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/amrshadid/magnetar/internal/blob"
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -20,8 +17,12 @@ import (
 // else, or one that was damaged, is refused as Invalid without a request.
 const tokenTag = "s3."
 
-// maxToken bounds the length of a token read back; a key is at most 1024
-// bytes.
+// prefixEnd, appended to a prefix, sorts after every name that begins with
+// that prefix and holds valid UTF-8 below U+10FFFF.
+const prefixEnd = "\U0010FFFF"
+
+// maxToken bounds the length of a token read back; a key is at most
+// blob.MaxKeyLength bytes.
 const maxToken = 2048
 
 // maxListCalls bounds the requests one page costs. A page costs one except
@@ -47,8 +48,10 @@ type entry struct {
 // the port's stability rule is about: a key put behind the last entry is not
 // seen and one ahead of it is, on every server, whatever a token encodes.
 // After a prefix (a group of keys folded by the delimiter) the next page
-// starts after every key the prefix could hold, which is "{", the byte after
-// "z", the largest a key may contain.
+// starts after every key the prefix could hold: prefixEnd, the largest
+// character there is, after any name that is valid UTF-8 in the folded
+// group, so a name outside the port's alphabet inside it cannot make the
+// prefix come up again.
 //
 // S3 returns keys in the byte order of their UTF-8 text, which for the
 // characters a key may hold is the port's order. An object under the prefix
@@ -70,11 +73,11 @@ func (s *Store) List(ctx context.Context, opts blob.ListOptions) (blob.Page, err
 	var entries []entry
 	cursor := floor.after()
 	more := false
+	want := s.set.prefix + opts.Prefix // Every name the server returns begins with it.
 	for calls := 0; ; calls++ {
 		if calls == maxListCalls {
-			if len(entries) == 0 {
-				return blob.Page{}, fault.Wrap(fault.Unavailable, errMalformed, "the listing failed: the storage returned no usable entries")
-			}
+			// Each call advanced (see below), so what has been collected is a
+			// true start of the listing and there is more after it.
 			more = true
 			break
 		}
@@ -82,8 +85,8 @@ func (s *Store) List(ctx context.Context, opts blob.ListOptions) (blob.Page, err
 			Bucket:  aws.String(s.set.bucket),
 			MaxKeys: aws.Int32(int32(min(limit+1-len(entries), blob.MaxListLimit))), // #nosec G115 -- from 1 to 1000.
 		}
-		if p := s.set.prefix + opts.Prefix; p != "" {
-			in.Prefix = aws.String(p)
+		if want != "" {
+			in.Prefix = aws.String(want)
 		}
 		if opts.Delimiter != "" {
 			in.Delimiter = aws.String(opts.Delimiter)
@@ -99,43 +102,22 @@ func (s *Store) List(ctx context.Context, opts blob.ListOptions) (blob.Page, err
 			return blob.Page{}, err
 		}
 		cancel()
-		var got []entry
-		for _, o := range out.Contents {
-			if k, ok := s.ours(aws.ToString(o.Key), false); ok {
-				got = append(got, entry{name: k})
-			}
+		got, last, err := s.checkListing(out, want, s.set.prefix+cursor)
+		if err != nil {
+			return blob.Page{}, err
 		}
-		for _, p := range out.CommonPrefixes {
-			if k, ok := s.ours(aws.ToString(p.Prefix), true); ok {
-				got = append(got, entry{name: k, isPrefix: true})
-			}
-		}
-		slices.SortFunc(got, func(a, b entry) int { return strings.Compare(a.name, b.name) })
-		for _, e := range got {
-			if e.name > floor.after() && (len(entries) == 0 || e.name > entries[len(entries)-1].name) {
-				entries = append(entries, e)
-			}
-		}
+		entries = append(entries, got...)
 		if !aws.ToBool(out.IsTruncated) {
 			break
 		}
-		// Truncated: go on from the last name the server named, kept or not,
-		// until there is an entry beyond the page, which proves there is
-		// more, or the server says it has no more.
+		// Truncated: go on from the last name the server named, kept or not
+		// (checkListing has seen to it that there is one beyond the point this
+		// request started after), until there is an entry beyond the page,
+		// which proves there is more, or the server says it has no more.
 		if len(entries) > limit {
 			break
 		}
-		last := lastName(out)
-		if last == "" {
-			// Truncated, yet it named nothing: take it as the end rather than
-			// ask the same question again.
-			break
-		}
-		rest, ok := strings.CutPrefix(last, s.set.prefix)
-		if !ok {
-			break
-		}
-		cursor = rest
+		cursor = strings.TrimPrefix(last, s.set.prefix)
 	}
 	if len(entries) > limit {
 		entries = entries[:limit]
@@ -155,21 +137,51 @@ func (s *Store) List(ctx context.Context, opts blob.ListOptions) (blob.Page, err
 	return page, nil
 }
 
-// lastName returns, without the storage's prefix, where the next request
-// should start after: the greatest of the keys and prefixes the server named.
-func lastName(out *awss3.ListObjectsV2Output) string {
-	last := ""
-	for _, o := range out.Contents {
-		if k := aws.ToString(o.Key); k > last {
-			last = k
+// malformedListing is the error for a listing answer that is not what was
+// asked: the driver never turns one into a shorter listing.
+func malformedListing() error {
+	return fault.Wrap(fault.Unavailable, errMalformed, "the listing failed: the storage's answer is not a listing of what was asked")
+}
+
+// checkListing validates one page of the server's answer and returns the
+// entries the port could have written, in order, and the greatest name the
+// server named (a prefix as the cursor that skips it), kept or not. An answer
+// is malformed, and the listing fails as Unavailable, when a name lies
+// outside the listing's prefix, names are out of order or repeated, a name
+// is not beyond the point the request started after, or a truncated answer
+// would not move the listing forward: ending the listing there instead
+// would hide keys with no error.
+func (s *Store) checkListing(out *awss3.ListObjectsV2Output, want, after string) (kept []entry, last string, err error) {
+	var all []entry // Keys and prefixes together, to order them.
+	prev := ""
+	for i, o := range out.Contents {
+		k := aws.ToString(o.Key)
+		if !strings.HasPrefix(k, want) || k <= after || (i > 0 && k <= prev) {
+			return nil, "", malformedListing()
 		}
-	}
-	for _, p := range out.CommonPrefixes {
-		if k := aws.ToString(p.Prefix) + "{"; k > last {
-			last = k
+		prev = k
+		if rest, ok := s.ours(k, false); ok {
+			all = append(all, entry{name: rest})
 		}
+		last = max(last, k)
 	}
-	return last
+	prev = ""
+	for i, p := range out.CommonPrefixes {
+		k := aws.ToString(p.Prefix)
+		if !strings.HasPrefix(k, want) || k <= after || (i > 0 && k <= prev) {
+			return nil, "", malformedListing()
+		}
+		prev = k
+		if rest, ok := s.ours(k, true); ok {
+			all = append(all, entry{name: rest, isPrefix: true})
+		}
+		last = max(last, k+prefixEnd)
+	}
+	slices.SortFunc(all, func(a, b entry) int { return strings.Compare(a.name, b.name) })
+	if aws.ToBool(out.IsTruncated) && last <= after {
+		return nil, "", malformedListing()
+	}
+	return all, last, nil
 }
 
 func encodeToken(e entry) string {
@@ -187,7 +199,7 @@ func (e entry) after() string {
 	case e.name == "":
 		return ""
 	case e.isPrefix:
-		return e.name + "{"
+		return e.name + prefixEnd
 	}
 	return e.name
 }
@@ -240,83 +252,4 @@ func (s *Store) ours(name string, isPrefix bool) (string, bool) {
 		return "", false
 	}
 	return rest, true
-}
-
-// maxSweep bounds the unfinished uploads one cleanup looks at, so Open takes
-// a bounded time on a bucket that holds very many.
-const maxSweep = 1000
-
-// AbortStaleUploads aborts the unfinished multipart uploads under the
-// storage's prefix that were begun more than Config.StaleUploadAge ago, and
-// returns how many it aborted. Open calls it once; a long-running server can
-// call it now and then. It looks at one batch of at most 1000 uploads and
-// touches only uploads whose key is one this storage could have written, so
-// a bucket shared with other users is left as it is.
-//
-// A server that does not list uploads, or an account that may not, gives an
-// error the caller may choose to ignore, and then depends on the bucket's
-// lifecycle rule.
-func (s *Store) AbortStaleUploads(ctx context.Context) (int, error) {
-	if err := s.begin(ctx, "the cleanup"); err != nil {
-		return 0, err
-	}
-	age := s.set.staleAge
-	if age <= 0 {
-		age = DefaultStaleUploadAge
-	}
-	out, err := s.listUploads(ctx, s.set.prefix)
-	if err == nil && len(out) == 0 && s.set.prefix != "" {
-		// Some servers (MinIO and its forks) match an upload listing's
-		// prefix against the whole key, not its start, and answer nothing
-		// for a prefix like ours. Ask for the bucket's uploads instead; the
-		// filter below keeps to the ones that are ours.
-		out, err = s.listUploads(ctx, "")
-	}
-	if err != nil {
-		return 0, err
-	}
-	n := 0
-	for _, u := range out {
-		if u.Initiated == nil || time.Since(*u.Initiated) < age {
-			continue
-		}
-		if _, ok := s.ours(aws.ToString(u.Key), false); !ok {
-			continue
-		}
-		if err := s.abort(ctx, u.Key, u.UploadId); err != nil {
-			return n, err
-		}
-		n++
-	}
-	return n, nil
-}
-
-// listUploads returns one batch of the bucket's unfinished uploads whose keys
-// begin with prefix, at most maxSweep.
-func (s *Store) listUploads(ctx context.Context, prefix string) ([]types.MultipartUpload, error) {
-	lctx, cancel := context.WithTimeout(ctx, s.set.callTimeout)
-	defer cancel()
-	in := &awss3.ListMultipartUploadsInput{Bucket: aws.String(s.set.bucket), MaxUploads: aws.Int32(maxSweep)}
-	if prefix != "" {
-		in.Prefix = aws.String(prefix)
-	}
-	out, err := s.client.ListMultipartUploads(lctx, in)
-	if err != nil {
-		return nil, fail(lctx, err, "the cleanup of unfinished uploads")
-	}
-	return out.Uploads, nil
-}
-
-// mayNotList reports whether err means the account or the server cannot list
-// uploads, which Open lives with.
-func mayNotList(err error) bool {
-	var sc serverCode
-	if !errors.As(err, &sc) {
-		return false
-	}
-	switch sc {
-	case "AccessDenied", "NotImplemented", "MethodNotAllowed", "InvalidRequest", "InvalidArgument":
-		return true
-	}
-	return false
 }

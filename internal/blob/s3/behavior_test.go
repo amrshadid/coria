@@ -46,7 +46,7 @@ func noLeak(t *testing.T, what string, err error, extra ...string) {
 // as Invalid at Open, before any connection, and that the message names the
 // field and never a value, since a value may be a secret.
 func TestConfigRefused(t *testing.T) {
-	good := Config{Endpoint: "https://s3.example.com", Region: "r", Bucket: "bucket-1", AccessKeyID: "k", SecretAccessKey: "very-secret", AllowAddress: allowAll}
+	good := Config{Endpoint: "https://s3.example.com", Region: "r", Bucket: "bucket-1", AccessKeyID: NewSecret("k"), SecretAccessKey: NewSecret("very-secret"), AllowAddress: allowAll}
 	for name, mod := range map[string]func(*Config){
 		"no endpoint scheme":  func(c *Config) { c.Endpoint = "s3.example.com" },
 		"ftp":                 func(c *Config) { c.Endpoint = "ftp://s3.example.com" },
@@ -57,8 +57,8 @@ func TestConfigRefused(t *testing.T) {
 		"no region":           func(c *Config) { c.Region = "" },
 		"bad bucket":          func(c *Config) { c.Bucket = "Bad_Bucket" },
 		"no bucket":           func(c *Config) { c.Bucket = "" },
-		"no key":              func(c *Config) { c.AccessKeyID = "" },
-		"no secret":           func(c *Config) { c.SecretAccessKey = "" },
+		"no key":              func(c *Config) { c.AccessKeyID = Secret{} },
+		"no secret":           func(c *Config) { c.SecretAccessKey = Secret{} },
 		"no address check":    func(c *Config) { c.AllowAddress = nil },
 		"bad prefix":          func(c *Config) { c.Prefix = "a b/c" },
 		"dotdot prefix":       func(c *Config) { c.Prefix = "../x" },
@@ -536,8 +536,8 @@ func checksumHeaders(t *testing.T, f *fakeS3) {
 			t.Errorf("PUT sent no body")
 		}
 	}
-	if puts != 4 {
-		t.Errorf("saw %d PUTs, want 1 for the small object and 3 parts for the big", puts)
+	if puts != 5 {
+		t.Errorf("saw %d PUTs, want the probe at Open, 1 for the small object and 3 parts for the big", puts)
 	}
 	for _, r := range f.requests() {
 		if r.method == http.MethodPost && r.query.Has("uploadId") && !bytes.Contains(r.body, []byte("<ChecksumSHA256>")) {
@@ -568,7 +568,6 @@ func TestSlowServers(t *testing.T) {
 			<-stall
 		case "stall":
 			w.Header().Set("Content-Length", "10")
-			w.Header().Set("Content-Range", "bytes 0-9/10")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("01234"))
 			w.(http.Flusher).Flush()
@@ -767,6 +766,7 @@ func TestMultipartAbortedOnFailure(t *testing.T) {
 		f.hook = func(w http.ResponseWriter, r *http.Request, _ int) bool {
 			if r.Method == http.MethodPut && r.URL.Query().Has("partNumber") {
 				w.Header().Set("ETag", `"p"`)
+				w.Header().Set("x-amz-checksum-sha256", r.Header.Get("x-amz-checksum-sha256"))
 				return true
 			}
 			return false
