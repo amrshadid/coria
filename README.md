@@ -4,8 +4,9 @@ A research imaging archive in one Go binary. It receives DICOM, de-identifies it
 routes it to a storage, catalogs it as subject / session / scan, and serves it to
 other systems through a gRPC API with keys.
 
-**State: early development. Nothing here is usable yet.** The binary only says
-which build it is.
+**State: early development. Nothing here is usable yet.** The binary says
+which build it is and has the commands that operate an installation through its
+API (see below); there is no server for them to talk to yet.
 
 ## Build
 
@@ -24,6 +25,43 @@ not record reads `unknown`. A release stamps its version with:
 ```sh
 make build VERSION=v0.1.0
 ```
+
+## The commands
+
+`magnetar <noun> <verb> [name] [flags]`; `magnetar --help` lists them and
+`magnetar completion bash` writes the shell completion.
+
+```
+magnetar version | whoami
+magnetar tenant   create <name> [--db-env VAR | --db-file PATH] | list | show <name> | remove <name> --yes
+magnetar key      create --holder TEXT [--expires 90d | --no-expiry] | list | show <id> | revoke <id>
+magnetar grant    set <key-id> --role ROLE (--tenant NAME | --installation) | list (--key-id ID | --tenant NAME | --installation) | remove <key-id> (--tenant NAME | --installation)
+magnetar setting  get <name> [--tenant NAME] | set <name> <value> [--tenant NAME] | unset <name> --tenant NAME | list [--tenant NAME]
+magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]
+```
+
+- **Where it connects.** By default the local socket `run/magnetar.sock` in the
+  data directory (`--data-dir` or `MAGNETAR_DATA_DIR`), as the user that runs the
+  server, with no key. With `--server https://host:port` (or `MAGNETAR_SERVER`)
+  it connects over TLS with the key from `MAGNETAR_KEY` or the file named by
+  `--key-file`. `http://` is accepted only for `localhost`, `127.0.0.0/8` and
+  `::1`.
+- **A secret is never an argument.** No flag takes a key, a password or a
+  database address; a tenant's Postgres address is read from the variable named
+  by `--db-env` or the file named by `--db-file`. The filters that take a key's
+  public id are `--key-id`, and a whole key given where an id goes is refused.
+  `--key-file` must name a file only you can open (`chmod 600`).
+- **TLS.** TLS 1.2 or later. `--ca-file PATH` (or `MAGNETAR_CA_FILE`) names a
+  PEM file of certificate authorities to trust for `--server` instead of the
+  system's, for a private authority.
+- **Output.** A table, or with `--json` one document that starts with
+  `"schemaVersion": 1`. Times are shown in the local zone with their offset;
+  there is no color when `NO_COLOR` is set or the output is not a terminal.
+- **Errors** are one line on standard error with the server's message and its
+  request id. Exit codes: 0 done, 1 failed, 2 wrong usage, 3 refused
+  (unauthenticated or denied), 4 not found.
+- **Lists** fetch up to `--limit` (100) items and say when more exist; `--all`
+  fetches every item.
 
 ## The quality gates
 
@@ -60,6 +98,8 @@ them as steps of their own on Linux:
 | `make fuzz` | each fuzz target for `FUZZTIME` (10 seconds unless given) |
 | `make test-386` | the tests as linux/386 binaries, which a Linux x86-64 machine runs natively (macOS cannot) |
 | `make check-master-sqlite SQLITE3=sqlite3` | the SQLite master database against SQLite's own `sqlite3` tool: `scripts/check-master-sqlite.sh` has the driver write a sample installation, then lists its tables and rows, runs `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, reads times and audit details with SQLite's functions, and searches a dump for the sample key's secret (absent) and its hash (present). The master's tables are `STRICT`, so the `sqlite3` tool must be 3.37 or later to open the database at all |
+| `make check-json` | every command with `--json` against the in-process server, each output parsed by Python's `json` module (`scripts/check-json.py`, standard library only) and checked for `schemaVersion` |
+| `make check-completion` | the bash completion script the binary writes, parsed by `bash -n` |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
 into `bin/tools/` the first time, and the proto targets do the same for buf,
