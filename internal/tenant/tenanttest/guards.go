@@ -237,6 +237,101 @@ func testCloseInFlight(e *env) {
 	}
 }
 
+// testIDsCaseAndOrder guards that the tenant port's ordered and compared text
+// is kept whole, by case, and listed in byte order: the audit entries' ids
+// (A-Z, a-z, 0-9, "_" and "-") and key ids that differ only in case or mix it
+// with "_" and "-", and the setting names ("a-z", 0-9, "." "_" and "-", which
+// the name rule allows in lowercase only) that mix those three. A database
+// that orders text by a locale's collation puts "a1" before "a-b" and "B"
+// after "a", and fails here. Every list is read whole and paged by small pages,
+// since the cursor compares text too.
+func testIDsCaseAndOrder(e *env) {
+	// Audit entry ids, all at one time, so the list orders them by id alone,
+	// newest first: the larger id first.
+	ids := []string{"a_b", "a-b", "A-b", "B", "a", "_x", "-x", "Z", "z9", "Z_", "AB", "Ab", "aB"}
+	var batch []master.AuditEntry
+	for _, id := range ids {
+		a := e.audit()
+		a.ID = id
+		batch = append(batch, a)
+	}
+	e.ok("AppendAudit", e.s.AppendAudit(e.ctx, batch...))
+	want := slices.Clone(ids)
+	slices.Sort(want) // byte order
+	slices.Reverse(want)
+	var got []string
+	for _, a := range e.allAudit(master.AuditFilter{}) {
+		got = append(got, a.ID)
+	}
+	if !slices.Equal(got, want) {
+		e.Errorf("audit ids in order %q, want descending byte order %q", got, want)
+	}
+	got = got[:0]
+	for page := (master.Page{Limit: 3}); ; {
+		entries, next, err := e.s.ListAudit(e.ctx, master.AuditFilter{}, page)
+		e.ok("ListAudit", err)
+		for _, a := range entries {
+			got = append(got, a.ID)
+		}
+		if next == "" {
+			break
+		}
+		page.Cursor = next
+	}
+	if !slices.Equal(got, want) {
+		e.Errorf("audit ids paged by 3 in order %q, want %q", got, want)
+	}
+
+	// Key ids in the entries: compared whole and by case by the key filter.
+	keys := []string{"CaseKey", "casekey", "Case_Key", "case-key", "CASEKEY"}
+	for _, k := range keys {
+		a := e.audit()
+		a.KeyID = k
+		e.ok("AppendAudit "+k, e.s.AppendAudit(e.ctx, a))
+	}
+	for _, k := range keys {
+		entries := e.allAudit(master.AuditFilter{KeyID: k})
+		if len(entries) != 1 || entries[0].KeyID != k {
+			e.Errorf("filter on key %q matched %d entries, want exactly its own", k, len(entries))
+		}
+	}
+	for _, k := range []string{"caseKey", "CaseKe", "CaseKeyX"} {
+		if n := len(e.allAudit(master.AuditFilter{KeyID: k})); n != 0 {
+			e.Errorf("filter on key %q matched %d entries; ids are compared whole and by case", k, n)
+		}
+	}
+
+	// Setting names mixing ".", "-" and "_", each with a value of its own.
+	names := []string{"a.b", "a-b", "a_b", "a0", "ab", "a", "a.", "a-", "a_", ".a", "-a", "_a", "a.-_b", "a_-.b", "0a"}
+	for i, n := range names {
+		e.ok("SetSetting "+n, e.s.SetSetting(e.ctx, n, fmt.Sprintf("value-%d", i), e.audit()))
+	}
+	for i, n := range names {
+		if v, err := e.s.Setting(e.ctx, n); err != nil || v != fmt.Sprintf("value-%d", i) {
+			e.Errorf("Setting(%q) = %q, %v; want its own value", n, v, err)
+		}
+	}
+	wantNames := slices.Clone(names)
+	slices.Sort(wantNames)
+	for _, limit := range []int{master.MaxPageLimit, 2} {
+		got = got[:0]
+		for page := (master.Page{Limit: limit}); ; {
+			list, next, err := e.s.ListSettings(e.ctx, page)
+			e.ok("ListSettings", err)
+			for _, st := range list {
+				got = append(got, st.Name)
+			}
+			if next == "" {
+				break
+			}
+			page.Cursor = next
+		}
+		if !slices.Equal(got, wantNames) {
+			e.Errorf("settings paged by %d in order %q, want byte order %q", limit, got, wantNames)
+		}
+	}
+}
+
 // testExactText guards that text is kept and matched byte for byte: the
 // audit tenant-name filter is exact (case, spaces, Unicode normal forms),
 // and a setting's value comes back exactly.

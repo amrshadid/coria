@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -31,7 +32,7 @@ const minConnections = 2
 // (Go's own url.Error holds it whole, password included, and pgx's redaction
 // does not reach inside it), so a parse failure is reported with no cause at
 // all.
-func openPool(ctx context.Context, address string) (*pgxpool.Pool, *redactor, error) {
+func openPool(ctx context.Context, address, name string, opts poolOptions) (*pgxpool.Pool, *redactor, error) {
 	lower := strings.ToLower(address)
 	if !strings.HasPrefix(lower, "postgres://") && !strings.HasPrefix(lower, "postgresql://") {
 		return nil, nil, fault.New(fault.Invalid, "a Postgres database's address is a postgres:// URL")
@@ -45,6 +46,15 @@ func openPool(ctx context.Context, address string) (*pgxpool.Pool, *redactor, er
 	}
 	red := newRedactor(address, cfg.ConnConfig)
 
+	// A default for this kind of store, used only when the address does not
+	// give the parameter itself (pool_max_conns, pool_max_conn_idle_time).
+	given := poolParams(address)
+	if opts.maxConns > 0 && !given["pool_max_conns"] {
+		cfg.MaxConns = int32(opts.maxConns) //nolint:gosec // G115: a small constant of this package.
+	}
+	if opts.idle > 0 && !given["pool_max_conn_idle_time"] {
+		cfg.MaxConnIdleTime = opts.idle
+	}
 	if cfg.MaxConns < minConnections {
 		cfg.MaxConns = minConnections
 	}
@@ -61,13 +71,33 @@ func openPool(ctx context.Context, address string) (*pgxpool.Pool, *redactor, er
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, nil, classify(red, err, "the master database cannot be opened")
+		return nil, nil, classify(red, err, "the "+name+" cannot be opened")
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, nil, classify(red, err, "the master database cannot be opened")
+		return nil, nil, classify(red, err, "the "+name+" cannot be opened")
 	}
 	return pool, red, nil
+}
+
+// poolOptions are the defaults of one kind of store's pool, for the
+// parameters its address does not give.
+type poolOptions struct {
+	// maxConns is the pool's size; 0 leaves pgx's own default.
+	maxConns int
+	// idle is how long an idle connection is kept; 0 leaves pgx's default.
+	idle time.Duration
+}
+
+// poolParams returns which parameters the address's query gives.
+func poolParams(address string) map[string]bool {
+	out := map[string]bool{}
+	if u, err := url.Parse(address); err == nil {
+		for k := range u.Query() {
+			out[k] = true
+		}
+	}
+	return out
 }
 
 // redactor removes an address and what is in it from error text.
@@ -203,6 +233,16 @@ func constraintViolation(err error, name string) bool {
 	var pe *pgconn.PgError
 	return errors.As(err, &pe) && pe.Code == sqlstateUniqueViolation && pe.ConstraintName == name
 }
+
+// isNoTable reports whether err is Postgres saying a table does not exist
+// (SQLSTATE 42P01): the schema has not been migrated yet.
+func isNoTable(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == sqlstateUndefinedTable
+}
+
+// isNoRow reports whether err is pgx's "no rows".
+func isNoRow(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 
 // isUniqueViolation reports whether err is any unique or primary key
 // constraint failing.

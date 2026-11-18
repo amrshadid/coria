@@ -54,6 +54,7 @@ func Run(t *testing.T, open Open) {
 		{"ErrorKinds", testErrorKinds},
 		{"CloseInFlight", testCloseInFlight},
 		{"ExactText", testExactText},
+		{"IDsCaseAndOrder", testIDsCaseAndOrder},
 		{"TimeEdges", testTimeEdges},
 		{"PagingWithDeletes", testPagingWithDeletes},
 		{"Ties", testTies},

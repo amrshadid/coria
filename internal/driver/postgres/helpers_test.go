@@ -156,7 +156,7 @@ func openAt(tb testing.TB, address string) *Master {
 // connection the canceled statement used and the pool drops it in the
 // background, so the count is read again, for up to two seconds, until it is
 // zero.
-func settledAcquired(m *Master) int32 {
+func settledAcquired(m *base) int32 {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		n := m.pool.Stat().AcquiredConns()

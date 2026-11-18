@@ -35,9 +35,13 @@ jobs:
   linux:
     name: Linux - Go ${{ matrix.go }}
     runs-on: ubuntu-latest
-    # A run that hangs is stopped long before GitHub's six hours: these jobs
-    # take about two minutes, and every minute counts against the allowance.
-    timeout-minutes: 15
+    # A run that hangs is stopped long before GitHub's six hours. With its
+    # cache restored this job takes about five minutes; with no cache (a new
+    # key, or the first run on a branch whose base has none) it compiles
+    # everything and takes about fifteen. The limit must leave room for
+    # that: a cold run that is stopped saves no cache, so the next run is
+    # cold too and is stopped again, for good.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -258,6 +262,12 @@ jobs:
       - name: Outside check, the Postgres master read by psql and pg_dump
         run: |
           make check-master-postgres \
+            PSQL="docker run --rm -i --network host postgres:${{ matrix.postgres }} psql" \
+            PG_DUMP="docker run --rm -i --network host postgres:${{ matrix.postgres }} pg_dump"
+
+      - name: Outside check, a Postgres tenant read by psql and pg_dump
+        run: |
+          make check-tenant-postgres \
             PSQL="docker run --rm -i --network host postgres:${{ matrix.postgres }} psql" \
             PG_DUMP="docker run --rm -i --network host postgres:${{ matrix.postgres }} pg_dump"
 

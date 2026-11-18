@@ -115,6 +115,49 @@ func TestSQLiteTenantsDirectoryCannotBeMade(t *testing.T) {
 	}
 }
 
+// TestPostgresTenantsLocation guards what the registry records of a Postgres
+// tenant: host, port and database without the user or the password, and a
+// fixed Invalid message that repeats nothing of an address that cannot be
+// used. It needs no Postgres.
+func TestPostgresTenantsLocation(t *testing.T) {
+	t.Setenv("PGSSLMODE", "")
+	d := PostgresTenants{}
+	got, err := d.Location("lab", "postgres://admin:hunter2@db.example:6543/labdb?sslmode=verify-full") //nolint:gosec // G101: a made-up password whose absence from the error is the point.
+	if err != nil || got != "db.example:6543/labdb" {
+		t.Errorf("Location = %q, %v; want db.example:6543/labdb", got, err)
+	}
+	for _, address := range []string{
+		"", "sqlite:/tmp/x.db",
+		"postgres://admin:hunter2@db.example/labdb", // another machine, no sslmode
+		"postgres://admin:hunter2@127.0.0.1:notaport/labdb",
+	} {
+		got, err := d.Location("lab", address)
+		if fault.KindOf(err) != fault.Invalid || got != "" {
+			t.Errorf("Location(%q) = %q, %v; want Invalid", address, got, err)
+		}
+		tenanttest.CheckErrorHidesSecrets(t, err, "hunter2", "db.example", "admin", "127.0.0.1")
+	}
+	_, err = d.Open(context.Background(), "t1", "lab", "postgres://admin:hunter2@127.0.0.1:1/labdb?sslmode=disable&connect_timeout=2") //nolint:gosec // G101: made up.
+	if fault.KindOf(err) != fault.Unavailable {
+		t.Errorf("Open of a database that does not answer = %v, want Unavailable", err)
+	}
+	tenanttest.CheckErrorHidesSecrets(t, err, "hunter2", "admin", "127.0.0.1")
+}
+
+// TestDriversSayHowManyFilesATenantHolds guards the optional method the
+// registry reads for its warning about open files: eleven for a SQLite tenant
+// (its files), the default pool's size for a Postgres tenant (its sockets).
+func TestDriversSayHowManyFilesATenantHolds(t *testing.T) {
+	var sqliteCounter interface{ FilesPerTenant() int } = SQLiteTenants{}
+	var postgresCounter interface{ FilesPerTenant() int } = PostgresTenants{}
+	if got := sqliteCounter.FilesPerTenant(); got != 11 {
+		t.Errorf("a SQLite tenant holds %d files, want 11", got)
+	}
+	if got := postgresCounter.FilesPerTenant(); got != 4 {
+		t.Errorf("a Postgres tenant holds %d sockets, want 4", got)
+	}
+}
+
 // secretDir is a recognizable string put in a data directory's path, so the
 // tests can show that no error the driver returns repeats the path.
 const secretDir = "SECRET-PATH-q7Zr" //nolint:gosec // G101: a marker searched for, not a credential.
