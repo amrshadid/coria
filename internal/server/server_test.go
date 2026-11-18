@@ -889,3 +889,36 @@ func TestTableFactsReachAudit(t *testing.T) {
 		t.Fatalf("the entry is %+v", en)
 	}
 }
+
+// TestHandlerConnectErrorsPassThrough guards that an error a handler builds
+// with connect.NewError reaches the caller with its own code and message,
+// for every code: only an error with a fault kind is mapped through
+// codes.ToConnect, and mapping a connect error again would turn it into
+// INTERNAL.
+func TestHandlerConnectErrorsPassThrough(t *testing.T) {
+	const proc = "/magnetar.test.Errors/Fail"
+	methods := servertest.Contract()
+	methods[proc] = servertest.Entry{Fixed: access.Authenticated()}
+	var answer connect.Code
+	e := newEnv(t, options{noNetwork: true, methods: methods, register: func(s *connect.Server) {
+		s.Register(connect.Method{
+			Spec: connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: proc},
+			Handler: func(_ context.Context, _ connect.Spec, st connect.ServerStream) error {
+				var in magnetarv1.WhoAmIRequest
+				if err := st.Receive(&in); err != nil {
+					return err
+				}
+				return connect.NewError(answer, "handler says "+answer.String())
+			},
+		})
+	}})
+	cl := e.local()
+	for c := connect.CodeCanceled; c <= connect.CodeUnauthenticated; c++ {
+		answer = c
+		err := cl.raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: proc}, &magnetarv1.WhoAmIRequest{}, &magnetarv1.WhoAmIResponse{})
+		code, msg := codeOf(err)
+		if code != c || msg != "handler says "+c.String() {
+			t.Errorf("a handler's %v reached the caller as %v %q", c, code, msg)
+		}
+	}
+}
