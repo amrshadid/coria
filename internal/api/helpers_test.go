@@ -313,9 +313,11 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	e.pg = &fakePostgres{dir: filepath.Join(dir, "pg")}
 	e.registry, err = registry.New(registry.Config{
 		Master: e.faulty, Keys: keys,
-		Drivers:  map[string]registry.Driver{driver.SQLiteDriver: driver.SQLiteTenants{DataDir: e.data}, driver.PostgresDriver: e.pg},
-		Now:      e.now,
-		Interval: interval, OpenTimeout: 10 * time.Second, PingTimeout: 2 * time.Second, MaxOpening: 4,
+		Drivers: map[string]registry.Driver{driver.SQLiteDriver: driver.SQLiteTenants{DataDir: e.data}, driver.PostgresDriver: e.pg},
+		Now:     e.now,
+		// Generous deadlines: a real SQLite open, or a ping of one, on a
+		// loaded runner can take seconds, and no test here is about them.
+		Interval: interval, OpenTimeout: 30 * time.Second, PingTimeout: 10 * time.Second, MaxOpening: 4,
 		Log: logger, NewID: e.newID,
 	})
 	if err != nil {

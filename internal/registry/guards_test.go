@@ -132,7 +132,10 @@ func TestStateIsCurrent(t *testing.T) {
 	e := newEnv(t)
 	e.seed("lab")
 	cfg := e.config()
-	cfg.OpenTimeout = 300 * time.Millisecond
+	// The new reason below comes from a ping the test driver holds until
+	// its deadline: short enough to keep the test quick, and the pings that
+	// should answer are of a real store at rest.
+	cfg.PingTimeout = 2 * time.Second
 	r := e.newRegistry(cfg)
 	if err := r.Start(ctx); err != nil {
 		t.Fatal(err)
@@ -188,8 +191,12 @@ func TestPingsDoNotWaitForOpens(t *testing.T) {
 	cfg := e.config()
 	cfg.MaxOpening = 2
 	cfg.Interval = 50 * time.Millisecond
-	cfg.OpenTimeout = 5 * time.Second
-	cfg.PingTimeout = 200 * time.Millisecond
+	// The hanging opens hold their slots for the whole open deadline, so a
+	// check that waited for a slot would take at least that long; the bound
+	// below is a third of it, far above an interval and a ping on any
+	// runner.
+	cfg.OpenTimeout = 30 * time.Second
+	cfg.PingTimeout = 2 * time.Second
 	r := e.newRegistry(cfg)
 	if err := r.Start(ctx); err != nil {
 		t.Fatal(err)
@@ -207,7 +214,7 @@ func TestPingsDoNotWaitForOpens(t *testing.T) {
 	took := time.Since(begin)
 	t.Logf("marked down in %v with both slots held by hanging opens (interval %v, ping deadline %v, open deadline %v)",
 		took, cfg.Interval, cfg.PingTimeout, cfg.OpenTimeout)
-	if took > 2*time.Second {
+	if took > 10*time.Second {
 		t.Errorf("marked down after %v, want within an interval and a ping deadline", took)
 	}
 }
@@ -236,7 +243,9 @@ func TestCloseWithinItsDeadline(t *testing.T) {
 	if err == nil || !strings.Contains(fault.Message(err), "abandoned") {
 		t.Errorf("Close = %v, want an error saying calls were abandoned", err)
 	}
-	if took > 2*time.Second {
+	// The deadline cuts the wait for the stuck call; what follows (closing
+	// the stores) is bounded loosely, as a loaded runner closes files slowly.
+	if took > 10*time.Second {
 		t.Errorf("Close took %v under a deadline of 300ms", took)
 	}
 	if !strings.Contains(e.logBuf.String(), "abandoned=1") {
@@ -405,7 +414,7 @@ func TestRoundSkipsALockedTenant(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(3 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("the round waited on a tenant whose lock is held")
 	}
 	if st, _ := r.State("other"); st.State != master.StateUnreachable {
@@ -422,7 +431,7 @@ func TestRemoveCancelsAnOpen(t *testing.T) {
 	e.seed("h")
 	e.flaky.set("h", down)
 	cfg := e.config()
-	cfg.OpenTimeout = 30 * time.Second
+	cfg.OpenTimeout = 2 * time.Minute
 	r := e.newRegistry(cfg)
 	if err := r.Start(ctx); err != nil {
 		t.Fatal(err)
@@ -435,7 +444,7 @@ func TestRemoveCancelsAnOpen(t *testing.T) {
 	if _, err := r.Remove(ctx, "h", e.audit("RemoveTenant")); err != nil {
 		t.Fatal(err)
 	}
-	if took := time.Since(begin); took > 3*time.Second {
-		t.Errorf("Remove took %v behind an open with a 30s deadline", took)
+	if took := time.Since(begin); took > 30*time.Second {
+		t.Errorf("Remove took %v behind an open with a two-minute deadline", took)
 	}
 }

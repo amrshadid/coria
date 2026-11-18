@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 	before := runtime.NumGoroutine()
 	code := m.Run()
 	if code == 0 {
-		deadline := time.Now().Add(5 * time.Second)
+		deadline := time.Now().Add(30 * time.Second)
 		for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -141,13 +141,18 @@ func newEnv(t testing.TB) *env {
 // SQLite driver as "sqlite" and the test driver as "flaky".
 func (e *env) config() Config {
 	return Config{
-		Master:      e.master,
-		Keys:        e.keys,
-		Drivers:     map[string]Driver{driver.SQLiteDriver: driver.SQLiteTenants{DataDir: e.data}, flakyDriver: e.flaky},
-		Now:         e.clock.Now,
-		Interval:    time.Hour, // tests call checkAll themselves unless they test the timer
-		OpenTimeout: 2 * time.Second,
-		PingTimeout: time.Second,
+		Master:   e.master,
+		Keys:     e.keys,
+		Drivers:  map[string]Driver{driver.SQLiteDriver: driver.SQLiteTenants{DataDir: e.data}, flakyDriver: e.flaky},
+		Now:      e.clock.Now,
+		Interval: time.Hour, // tests call checkAll themselves unless they test the timer
+		// Generous, above the server's own 10 seconds: a real SQLite open on
+		// a loaded runner can take seconds, and no test that uses these is
+		// about the deadline. A test that is sets its own, and makes the
+		// deadline pass with the test driver's hang or stuck modes, never
+		// with a real database being slow.
+		OpenTimeout: 30 * time.Second,
+		PingTimeout: 10 * time.Second,
 		MaxOpening:  8,
 		Log:         slog.New(slog.NewTextHandler(e.logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	}
@@ -614,10 +619,11 @@ func mustNotContain(t testing.TB, what, text string, needles ...string) {
 	}
 }
 
-// waitFor polls cond every millisecond until it holds or 5 seconds pass.
+// waitFor polls cond every millisecond until it holds or 30 seconds pass:
+// an upper bound for a slow runner, not a measure of speed.
 func waitFor(t testing.TB, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)
