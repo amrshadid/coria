@@ -61,6 +61,23 @@ type lists struct {
 	settings, audit string
 	// missing is the NotFound message of a setting that is not set.
 	missing string
+	// owner is what every cursor of this store is also bound to: empty for
+	// the master, the tenant's id for a tenant, so a page token from one
+	// tenant's list is refused by another tenant's.
+	owner string
+}
+
+// settingsBinding is what a settings cursor is bound to: the owner alone,
+// since the list takes no arguments. The master's stays empty, as before.
+func (l lists) settingsBinding() string { return l.owner }
+
+// auditBinding is what an audit cursor is bound to: the whole filter, and
+// for a tenant its id too. The master's is the filter's alone, as before.
+func (l lists) auditBinding(f master.AuditFilter) string {
+	if l.owner == "" {
+		return auditBinding(f)
+	}
+	return sqlkit.Binding(l.owner, auditBinding(f))
 }
 
 // getSetting implements Setting.
@@ -123,15 +140,15 @@ func unsetSetting(ctx context.Context, h sharedHost, name string, audit master.A
 	return removed, nil
 }
 
-// listSettingsPage implements ListSettings. Its cursor takes no binding: the
-// list has no arguments.
+// listSettingsPage implements ListSettings. Its cursor is bound to the store's
+// owner only: the list has no arguments.
 func listSettingsPage(ctx context.Context, h sharedHost, l lists, page master.Page) ([]master.Setting, string, error) {
 	if err := page.Validate(); err != nil {
 		return nil, "", err
 	}
 	after := ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, l.settings, "", 1)
+		f, err := sqlkit.DecodeCursor(page.Cursor, l.settings, l.settingsBinding(), 1)
 		if err != nil {
 			return nil, "", err
 		}
@@ -155,7 +172,7 @@ func listSettingsPage(ctx context.Context, h sharedHost, l lists, page master.Pa
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor(l.settings, "", last.Name), nil
+	return out, sqlkit.EncodeCursor(l.settings, l.settingsBinding(), last.Name), nil
 }
 
 // appendAudit implements AppendAudit.
@@ -191,7 +208,7 @@ func listAuditPage(ctx context.Context, h sharedHost, l lists, filter master.Aud
 	if err := page.Validate(); err != nil {
 		return nil, "", err
 	}
-	binding := auditBinding(filter)
+	binding := l.auditBinding(filter)
 	var after []any
 	if page.Cursor != "" {
 		f, err := sqlkit.DecodeCursor(page.Cursor, l.audit, binding, 2)

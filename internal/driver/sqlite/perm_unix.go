@@ -51,8 +51,18 @@ func checkPrivate(path string, name dbName) error {
 // it gives the group or others read or write access (a file) or write access
 // (a directory). A path that does not exist is fine, except a directory,
 // which must.
+//
+// A file is examined with Lstat, so a symbolic link planted where the
+// database or its -wal or -shm file belongs is refused as "not a regular
+// file" instead of being followed to a file of the planter's choosing. The
+// directory is followed: a data directory that is a link the operator made is
+// theirs to make.
 func checkOne(path string, isDir bool, what, fix string) error {
-	info, err := os.Stat(path) // #nosec G703 -- the operator's own choice of database path, only examined.
+	stat := os.Lstat
+	if isDir {
+		stat = os.Stat
+	}
+	info, err := stat(path) // #nosec G703 -- the operator's own choice of database path, only examined.
 	if errors.Is(err, fs.ErrNotExist) && !isDir {
 		return nil
 	}

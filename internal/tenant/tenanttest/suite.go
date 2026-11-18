@@ -14,10 +14,19 @@ import (
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
-// Open returns a fresh, empty, migrated store that no other test uses, and
-// closes it when tb ends (tb.Cleanup). Closing a store twice must be
-// harmless, since a test may close it itself.
-type Open func(tb testing.TB) tenant.Store
+// Open returns a fresh, empty, migrated store for the tenant whose id is
+// tenantID, in a database of its own that no other test uses, and closes it
+// when tb ends (tb.Cleanup). Closing a store twice must be harmless, since a
+// test may close it itself. The store binds its cursors to tenantID, so a
+// page token from one tenant's list is refused by another's.
+type Open func(tb testing.TB, tenantID string) tenant.Store
+
+// SuiteTenant is the tenant id the suite opens its stores for; OtherTenant
+// is a second tenant's, for the tests that need two databases.
+const (
+	SuiteTenant = "suite-tenant"
+	OtherTenant = "other-tenant"
+)
 
 // T0 is the time the suite's data starts at: a time with microseconds, so a
 // driver that drops them fails.
@@ -49,11 +58,12 @@ func Run(t *testing.T, open Open) {
 		{"PagingWithDeletes", testPagingWithDeletes},
 		{"Ties", testTies},
 		{"SizeBounds", testSizeBounds},
+		{"TenantsApart", testTenantsApart},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			tt.fn(&env{T: t, s: open(t), ctx: context.Background()})
+			tt.fn(&env{T: t, s: open(t, SuiteTenant), open: open, ctx: context.Background()})
 		})
 	}
 }
@@ -61,10 +71,11 @@ func Run(t *testing.T, open Open) {
 // env is one test's store and the helpers that make its data.
 type env struct {
 	*testing.T
-	s   tenant.Store
-	ctx context.Context
-	mu  sync.Mutex
-	seq int
+	s    tenant.Store
+	open Open // opens another tenant's database, for testTenantsApart
+	ctx  context.Context
+	mu   sync.Mutex
+	seq  int
 }
 
 // id returns a new id with the prefix, unique within the test. It is safe

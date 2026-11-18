@@ -71,8 +71,9 @@ func (d SQLiteTenants) Location(name, address string) (string, error) {
 
 // Open implements registry.Driver: it opens, creating them when they do not
 // exist, the tenants directory (readable by its owner only) and the tenant's
-// file. It does not migrate.
-func (d SQLiteTenants) Open(ctx context.Context, name, address string) (tenant.Store, error) {
+// file. The store is bound to the tenant id (sqlite.OpenTenant). It does not
+// migrate.
+func (d SQLiteTenants) Open(ctx context.Context, id, name, address string) (tenant.Store, error) {
 	path, err := d.Location(name, address)
 	if err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func (d SQLiteTenants) Open(ctx context.Context, name, address string) (tenant.S
 		}
 		return nil, fault.New(fault.Unavailable, "the tenants directory cannot be made")
 	}
-	s, err := sqlite.OpenTenant(ctx, path)
+	s, err := sqlite.OpenTenant(ctx, path, id)
 	if err != nil {
 		return nil, err
 	}
@@ -97,8 +98,10 @@ func (d SQLiteTenants) Open(ctx context.Context, name, address string) (tenant.S
 // Windows reserves (CON, PRN, AUX, NUL, COM0 to COM9, LPT0 to LPT9). Before
 // Windows 11 such a name opened the device even with an extension, so
 // "con.db" was the console, not a file; filepath.IsLocal no longer refuses
-// it since Go 1.23, which follows Windows 11 (seen in CI). A tenant's name
-// is lowercase, so the comparison is too.
+// it since Go 1.23, which follows Windows 11 (seen in CI). The tenant name
+// rule (master.ValidateTenantName) refuses these names on every system; this
+// is the second wall, so a change to that rule cannot make a device here. A
+// tenant's name is lowercase, so the comparison is too.
 func windowsDevice(name string) bool {
 	if runtime.GOOS != "windows" {
 		return false

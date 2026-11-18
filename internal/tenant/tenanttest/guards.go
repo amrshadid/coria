@@ -425,9 +425,10 @@ func testSizeBounds(e *env) {
 	}
 }
 
-// OpenPair returns two stores on one fresh, empty, migrated tenant database,
-// as two processes would each open it, and closes both when tb ends.
-type OpenPair func(tb testing.TB) (first, second tenant.Store)
+// OpenPair returns two stores for the tenant whose id is tenantID on one
+// fresh, empty, migrated database, as two processes would each open it, and
+// closes both when tb ends.
+type OpenPair func(tb testing.TB, tenantID string) (first, second tenant.Store)
 
 // RunShared runs the tests that need two instances of the store on one
 // database. A driver's tests call it as well as Run.
@@ -442,7 +443,7 @@ func RunShared(t *testing.T, open OpenPair) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			first, second := open(t)
+			first, second := open(t, SuiteTenant)
 			tt.fn(&env{T: t, s: first, ctx: context.Background()}, second)
 		})
 	}
@@ -492,5 +493,40 @@ func testConcurrentShared(e *env, other tenant.Store) {
 	e.ok("ListSettings", err)
 	if len(all) != 2*each || len(e.auditIDs()) != 2*each {
 		e.Errorf("%d settings and %d entries after %d changes across two instances", len(all), len(e.auditIDs()), 2*each)
+	}
+}
+
+// testTenantsApart guards that two tenants' databases stay apart: each reads
+// only its own settings and audit entries, and a page token from one
+// tenant's list is refused by the other's, for the settings list and for the
+// audit list with the same filter (the API contract's page token rule, with
+// the tenant as one of the list's arguments).
+func testTenantsApart(e *env) {
+	other := e.open(e.T, OtherTenant)
+	for i := range 3 {
+		e.ok("SetSetting", e.s.SetSetting(e.ctx, fmt.Sprintf("mine.%d", i), "v", e.audit()))
+		e.ok("SetSetting", other.SetSetting(e.ctx, fmt.Sprintf("theirs.%d", i), "v", e.audit()))
+	}
+	mine, _, err := e.s.ListSettings(e.ctx, master.Page{Limit: master.MaxPageLimit})
+	e.ok("ListSettings", err)
+	for _, s := range mine {
+		if !strings.HasPrefix(s.Name, "mine.") {
+			e.Errorf("a tenant reads another tenant's setting %q", s.Name)
+		}
+	}
+	_, settingsCursor, err := e.s.ListSettings(e.ctx, master.Page{Limit: 1})
+	e.ok("ListSettings", err)
+	_, _, err = other.ListSettings(e.ctx, master.Page{Limit: 1, Cursor: settingsCursor})
+	e.wantKind("another tenant's ListSettings with this tenant's cursor", err, fault.Invalid)
+
+	_, auditCursor, err := e.s.ListAudit(e.ctx, master.AuditFilter{}, master.Page{Limit: 1})
+	e.ok("ListAudit", err)
+	if auditCursor == "" {
+		e.Fatal("ListAudit returned no cursor with more to come")
+	}
+	_, _, err = other.ListAudit(e.ctx, master.AuditFilter{}, master.Page{Limit: 1, Cursor: auditCursor})
+	e.wantKind("another tenant's ListAudit with this tenant's cursor", err, fault.Invalid)
+	if _, _, err := e.s.ListAudit(e.ctx, master.AuditFilter{}, master.Page{Limit: 1, Cursor: auditCursor}); err != nil {
+		e.Errorf("the tenant refuses its own cursor: %v", err)
 	}
 }

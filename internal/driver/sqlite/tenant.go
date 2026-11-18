@@ -25,7 +25,8 @@ var tenantMigrations, tenantMigrationsErr = sqlkit.Load(tenantFiles, "migrations
 
 // tenantLists names a tenant's settings and audit lists in their cursors,
 // apart from the master's, so a cursor from the master's audit log is
-// refused by a tenant's and the other way round.
+// refused by a tenant's and the other way round. Each Tenant binds them to
+// its own id as well (lists.owner).
 var tenantLists = lists{settings: "tenant-settings", audit: "tenant-audit", missing: "the tenant has no override of this setting"}
 
 // Tenant is one tenant's database on a SQLite file. It reaches the file as
@@ -35,6 +36,7 @@ var tenantLists = lists{settings: "tenant-settings", audit: "tenant-audit", miss
 // same way (base). It is safe for concurrent use.
 type Tenant struct {
 	base
+	lists lists
 
 	// The prepared statements, made on first use after the schema exists,
 	// since a statement cannot be prepared against tables not yet made.
@@ -44,13 +46,19 @@ type Tenant struct {
 
 var _ tenant.Store = (*Tenant)(nil)
 
-// OpenTenant opens a tenant's database in the SQLite file at path, creating
+// OpenTenant opens the database of the tenant whose id is tenantID in the
+// SQLite file at path, creating
 // the file, readable by its owner only, when it does not exist. On Unix an
 // existing file, its -wal and -shm files, or its directory that someone other
 // than the owner can read or write is refused as Invalid, as the master's
-// are. It does not migrate: the caller (package registry) calls Migrate, so
-// that opening a database never changes it unasked.
-func OpenTenant(ctx context.Context, path string) (*Tenant, error) {
+// are. The id binds every cursor the store makes, so a page token from one
+// tenant is refused by another. It does not migrate: the caller (package
+// registry) calls Migrate, so that opening a database never changes it
+// unasked.
+func OpenTenant(ctx context.Context, path, tenantID string) (*Tenant, error) {
+	if err := master.ValidateID("tenant id", tenantID); err != nil {
+		return nil, err
+	}
 	if tenantMigrationsErr != nil {
 		return nil, fault.Wrap(fault.Internal, tenantMigrationsErr, "a tenant's migrations cannot be read")
 	}
@@ -58,7 +66,8 @@ func OpenTenant(ctx context.Context, path string) (*Tenant, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &Tenant{}
+	t := &Tenant{lists: tenantLists}
+	t.lists.owner = tenantID
 	t.p, t.name = p, tenantDB
 	return t, nil
 }
@@ -149,7 +158,7 @@ func (t *Tenant) writeShared(ctx context.Context, message string, fn func(tx *sq
 
 // Setting implements tenant.Store.
 func (t *Tenant) Setting(ctx context.Context, name string) (string, error) {
-	return getSetting(ctx, t, tenantLists, name)
+	return getSetting(ctx, t, t.lists, name)
 }
 
 // SetSetting implements tenant.Store.
@@ -164,7 +173,7 @@ func (t *Tenant) UnsetSetting(ctx context.Context, name string, audit master.Aud
 
 // ListSettings implements tenant.Store.
 func (t *Tenant) ListSettings(ctx context.Context, page master.Page) ([]master.Setting, string, error) {
-	return listSettingsPage(ctx, t, tenantLists, page)
+	return listSettingsPage(ctx, t, t.lists, page)
 }
 
 // AppendAudit implements tenant.Store.
@@ -174,5 +183,5 @@ func (t *Tenant) AppendAudit(ctx context.Context, entries ...master.AuditEntry) 
 
 // ListAudit implements tenant.Store. The cursor is bound to the whole filter.
 func (t *Tenant) ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error) {
-	return listAuditPage(ctx, t, tenantLists, filter, page)
+	return listAuditPage(ctx, t, t.lists, filter, page)
 }
