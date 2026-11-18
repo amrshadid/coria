@@ -63,6 +63,33 @@ magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|fai
 - **Lists** fetch up to `--limit` (100) items and say when more exist; `--all`
   fetches every item.
 
+### The interactive program
+
+`magnetar` with no arguments, when standard input and standard output are both
+a terminal, opens a program with a menu, lists that scroll and detail screens:
+tenants (with each tenant's grants, settings and audit log), keys, settings,
+and the audit log. It finds the server with the same flags and environment as
+the commands (`--data-dir`, `--server`, `--key-file`, `--ca-file`) and is a
+client of the same API, so it can do nothing a command cannot. With any
+argument, or with either end not a terminal, `magnetar` prints the usage line
+and exits 2 as before.
+
+- **Keys.** Arrows or `j`/`k`, page up and down, enter to open, esc to go back
+  (or to cancel a call that is waiting), `/` to filter the loaded rows, `?` for
+  the keys of the screen, `q` to quit. A list loads 100 rows and the next 100
+  when the cursor nears the end; the count reads `100+` until the last page is in.
+- **A new key** (`n` on the key list) is shown once, alone, with the words that
+  it will not be shown again, and leaving that screen asks once more.
+- **Nothing destructive happens on one key.** Revoking a key and removing a
+  grant, a setting override or a tenant need its id or name typed.
+- **Errors** are one line at the bottom: the server's message and the request id,
+  in the words the command prints.
+- **Terminal.** It fits 80 by 24 and redraws on resize; there is no color when
+  `NO_COLOR` is set, with `TERM=dumb`, or on Windows. The alternate screen is
+  left and the cursor shown on quit, on SIGTERM and SIGINT, and on a panic.
+- **Windows.** The screens and their tests run there; `make check-tui`, which
+  needs Python's `pty` module, does not.
+
 ## The quality gates
 
 Every pull request must pass these. Each is one `make` target, and CI
@@ -100,6 +127,7 @@ them as steps of their own on Linux:
 | `make check-master-sqlite SQLITE3=sqlite3` | the SQLite master database against SQLite's own `sqlite3` tool: `scripts/check-master-sqlite.sh` has the driver write a sample installation, then lists its tables and rows, runs `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, reads times and audit details with SQLite's functions, and searches a dump for the sample key's secret (absent) and its hash (present). The master's tables are `STRICT`, so the `sqlite3` tool must be 3.37 or later to open the database at all |
 | `make check-json` | every command with `--json` against the in-process server, each output parsed by Python's `json` module (`scripts/check-json.py`, standard library only) and checked for `schemaVersion` |
 | `make check-completion` | the bash completion script the binary writes, parsed by `bash -n` |
+| `make check-tui` | the interactive program, as built, run under a pseudo-terminal by Python's `pty` module against the in-process fake server (`scripts/check-tui.py`, standard library only): keys pressed, the screen read, quit, SIGTERM and SIGINT mid-session, and the terminal checked to be restored. Linux and macOS only |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
 into `bin/tools/` the first time, and the proto targets do the same for buf,

@@ -116,5 +116,25 @@ All notable changes to Magnetar are written here. The form is
   The program grew from 1.6 to 10.2 MiB (linux/amd64: 1.57 to 10.67 MiB), most
   of it the Connect and protobuf client and `net/http`; cobra and its flag
   library account for about 0.9 MiB of it.
+- The commands could not be browsed: finding a tenant's grants, its settings
+  and its audit entries took a command each, and making a key meant copying
+  its secret from standard output. `magnetar` with no arguments, when standard
+  input and output are both terminals, now opens an interactive program (Bubble
+  Tea 2.1.1 and Lip Gloss 2.1.1, MIT, with the modules they need) with a menu,
+  scrolling lists and detail screens for tenants, keys, grants, settings and
+  the audit log, as a client of the same API through the same client. A list
+  fetches a page of 100 and the next when the cursor nears the end, never
+  everything; a call runs beside the screen, with the commands' deadline, and
+  esc cancels it; an error is one line with the server's message and request
+  id. A new key is drawn on one screen only, with the words that it will not be
+  shown again, leaving that screen asks once, and the secret is zeroed then;
+  revoking a key and removing a grant, a setting override or a tenant need the
+  id or name typed. The alternate screen is left and the cursor shown on quit,
+  on SIGTERM and SIGINT, and on a panic. With any argument, or when either end
+  is not a terminal, the usage line and exit 2 are as before.
+  `scripts/check-tui.py` runs the built binary under a pseudo-terminal against
+  the fake server (`make check-tui`, a step of its own in CI, Linux and macOS
+  only). The binaries grew by 1.67 to 2.09 MiB (linux/amd64: 10.78 to 12.73
+  MiB).
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop
