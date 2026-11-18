@@ -13,12 +13,12 @@ import (
 )
 
 // FuzzCheck guards the check against arbitrary presented keys and tenant
-// names (acceptance 5): it never panics, never returns a principal for a
-// key that is not the stored one, always answers Unauthenticated with the
-// one fixed message, and always writes one refusal entry the master would
-// take. The store is in memory, so the fuzzer runs fast; the stored key's
-// id is a seed, so well-formed keys with a known id and a wrong secret are
-// explored too, but the stored secret is never given.
+// names: it never panics, never returns a principal for a key that is not the
+// stored one, always answers Unauthenticated with the one fixed message, and
+// always writes one refusal entry the master would take. The store is in
+// memory, so the fuzzer runs fast; the stored key's id is a seed, so
+// well-formed keys with a known id and a wrong secret are explored too, but
+// the stored secret is never given.
 func FuzzCheck(f *testing.F) {
 	m, full := newMem(f)
 	a := newMemAccess(f, m, 0)

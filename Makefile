@@ -2,6 +2,8 @@
 # targets, so a gate that passes here passes there for the same reason.
 #
 #   make check   every gate below, in the order CI runs them
+#   make check-comments  no comment, document or script refers to a note
+#                that is not in the repository (scripts/check-comments.py)
 #   make fmt     gofmt -s; fails on any file it would change
 #   make vet     go vet on 64 and on 32 bits
 #   make lint    golangci-lint with .golangci.yml
@@ -63,9 +65,18 @@ VERSION ?=
 LDFLAGS := -s -w $(if $(VERSION),-X $(MODULE)/internal/version.Version=$(VERSION))
 
 .DEFAULT_GOAL := check
-.PHONY: check fmt vet lint vuln test test-scale build size check-seal fuzz
+.PHONY: check check-comments fmt vet lint vuln test test-scale build size check-seal fuzz
 
-check: fmt vet lint vuln test test-scale build size
+check: check-comments fmt vet lint vuln test test-scale build size
+
+# Every comment, document and script message says its reason itself; one that
+# points at a note a reader of the repository cannot see explains nothing. The
+# forms such a pointer takes are listed in the script, which reads every
+# tracked file but gen/ and go.sum, with Python's standard library only.
+# PYTHON is defined with proto-python below.
+check-comments:
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-comments: no interpreter $(PYTHON)" >&2; exit 1; }
+	$(PYTHON) -I scripts/check-comments.py
 
 # gofmt's exit status is checked as well as its list: a file that does not
 # parse is reported on standard error with status 2 and is not in the list, so

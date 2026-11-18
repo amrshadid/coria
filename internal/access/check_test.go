@@ -17,7 +17,7 @@ import (
 // every sort of requirement, on the real SQLite master: the kind and exact
 // message the caller gets, and the audit entry written for a refusal (its
 // outcome, its real reason, the key id it names) or held back for the caller
-// when the request is allowed (acceptance 1 and 6).
+// when the request is allowed.
 func TestCheckTable(t *testing.T) {
 	e := newEnv(t)
 	good := e.key(t0.Add(time.Hour), on(master.TenantScope(e.lab.ID), master.RoleWriter))
@@ -152,12 +152,12 @@ func TestCheckTable(t *testing.T) {
 
 // TestDeniedSamePath guards the two Denied cases: a good key naming a tenant
 // it has no grant on, and a good key naming a tenant that does not exist,
-// give byte-identical errors, read the same things from the store in the
-// same order, and queue one entry each that differs only in id, tenant name
-// and reason (acceptance 2). The key was marked used a moment before, so
-// neither asks for a mark: the mark is decided by the key both read, not by
-// the tenant. Timing equality follows from the same calls; it is argued, not
-// measured.
+// give byte-identical errors, read the same things from the store in the same
+// order, and queue one entry each that differs only in id, tenant name and
+// reason, so a key cannot learn which tenants exist. The key was marked used
+// a moment before, so neither asks for a mark: the mark is decided by the key
+// both read, not by the tenant. Timing equality follows from the same calls;
+// it is argued, not measured.
 func TestDeniedSamePath(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(time.Time{}, on(master.TenantScope(e.clinic.ID), master.RoleAdmin))
@@ -213,7 +213,7 @@ func TestDeniedSamePath(t *testing.T) {
 
 // TestRevokedRefusedNext guards that there is no cache: a key that works is
 // refused on its very next request once revoked, and a grant removed gives
-// nothing on the next request (acceptance 3).
+// nothing on the next request.
 func TestRevokedRefusedNext(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(time.Time{}, on(master.TenantScope(e.lab.ID), master.RoleReader))
@@ -243,7 +243,7 @@ func TestRevokedRefusedNext(t *testing.T) {
 
 // TestExpiry guards the expiry: a key works until the instant before its
 // expiry and is refused at it and after, with the clock moved by the test,
-// not slept (acceptance 3).
+// not slept.
 func TestExpiry(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(t0.Add(time.Hour), on(master.Installation, master.RoleReader))
@@ -276,7 +276,7 @@ func TestExpiry(t *testing.T) {
 // held and required role, held on a tenant and on the installation, asked on
 // a tenant and on the installation. A role acts only on its own scope;
 // reading a tenant's registration is the one thing an installation role
-// (reader or more) gives inside a tenant (acceptance 4).
+// (reader or more) gives inside a tenant.
 func TestRoleOrder(t *testing.T) {
 	e := newEnv(t)
 	roles := []master.Role{master.RoleReader, master.RoleWriter, master.RoleOperator, master.RoleAdmin}
@@ -326,10 +326,11 @@ func TestRoleOrder(t *testing.T) {
 	}
 }
 
-// TestNotFoundOnlyForListers guards the one exception to Denied for a
-// missing tenant (D37): every installation role from reader up and the local
-// operator are told NotFound; a key with no installation grant, even an
-// admin of another tenant, is told Denied.
+// TestNotFoundOnlyForListers guards the one exception to Denied for a missing
+// tenant: every installation role from reader up and the local operator, who
+// may list every tenant anyway, are told NotFound; a key with no installation
+// grant, even an admin of another tenant, is told Denied, so it cannot learn
+// which tenants exist.
 func TestNotFoundOnlyForListers(t *testing.T) {
 	e := newEnv(t)
 	need := access.OnTenant("nosuch", master.RoleReader)

@@ -307,12 +307,12 @@ func fitAuditReason(s string) string {
 
 // Remove unregisters the tenant named name and removes its row and grants
 // from the master, with the caller's audit entry, to which it adds the
-// database type and the data's location. It leaves the tenant's data where
-// it is (D36) and says where. Its store is closed after the row is gone; a
-// request holding it fails as Unavailable from then on. When the master has
-// no tenant of that name, which a removal that committed and then failed
-// leaves behind, any entry of that name is unregistered and closed too, and
-// the answer is NotFound.
+// database type and the data's location. It leaves the tenant's data where it
+// is, so a mistaken removal loses no data, and says where. Its store is
+// closed after the row is gone; a request holding it fails as Unavailable
+// from then on. When the master has no tenant of that name, which a removal
+// that committed and then failed leaves behind, any entry of that name is
+// unregistered and closed too, and the answer is NotFound.
 func (r *Registry) Remove(ctx context.Context, name string, audit master.AuditEntry) (Removed, error) {
 	if err := r.enter(); err != nil {
 		return Removed{}, err

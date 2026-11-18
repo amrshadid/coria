@@ -31,11 +31,11 @@ func parseRFC3339(s string) (*timestamppb.Timestamp, error) {
 	return timestamppb.New(t), nil
 }
 
-// TestEveryErrorKindHasItsExitCode guards acceptance of the error contract:
-// each code the contract names, answered by the server for a real command over
-// the socket, gives the exit code of its kind and exactly one line on standard
-// error with the message and the request id, and nothing on standard output,
-// in the table form and with --json.
+// TestEveryErrorKindHasItsExitCode guards the error contract of the commands:
+// each code the contract names, answered by the server for a real command
+// over the socket, gives the exit code of its kind and exactly one line on
+// standard error with the message and the request id, and nothing on standard
+// output, in the table form and with --json.
 func TestEveryErrorKindHasItsExitCode(t *testing.T) {
 	cases := []struct {
 		code connect.Code
@@ -192,10 +192,10 @@ func TestNetworkOverTLS(t *testing.T) {
 	}
 }
 
-// TestServerAddressRules guards acceptance 6 through the commands: http to a
-// host that is not loopback is refused before anything is sent; https to a
-// certificate the system does not trust is refused with a clear line; http on
-// loopback works.
+// TestServerAddressRules guards the rules for --server through the commands,
+// so a key is never sent in clear over a network: http to a host that is not
+// loopback is refused before anything is sent; https to a certificate the
+// system does not trust is refused with a clear line; http on loopback works.
 func TestServerAddressRules(t *testing.T) {
 	env := map[string]string{client.EnvKey: testKey}
 	res := runWith(env, "--server", "http://example.com", "tenant", "list")
@@ -242,8 +242,8 @@ func TestChoosingTheServer(t *testing.T) {
 	}
 }
 
-// TestPaging guards acceptance 5: a list of 250 items with --limit 100 fetches
-// one page and says more exist; --all fetches all 250, in pages.
+// TestPaging guards paging: a list of 250 items with --limit 100 fetches one
+// page and says more exist; --all fetches all 250, in pages.
 func TestPaging(t *testing.T) {
 	r := newRig(t)
 	for i := range 250 {
@@ -418,8 +418,9 @@ func TestGrammar(t *testing.T) {
 	}
 }
 
-// TestBashCompletionParses guards acceptance 7: the generated bash completion
-// script is accepted by bash -n, which parses it without running it.
+// TestBashCompletionParses guards shell completion: the generated bash
+// completion script is accepted by bash -n, which parses it without running
+// it.
 func TestBashCompletionParses(t *testing.T) {
 	bash, err := exec.LookPath("bash")
 	if err != nil {

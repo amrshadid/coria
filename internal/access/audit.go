@@ -26,8 +26,9 @@ const (
 	dropNoticeMethod = "access.AuditWriter"
 	detailDropped    = "dropped"
 	// DetailRerouted is the detail an entry carries when it was meant for a
-	// tenant's log, which did not answer, and was written to the master's
-	// log instead (D53).
+	// tenant's log, which did not answer, and was written to the master's log
+	// instead, so the record of an allowed request is not lost with the
+	// tenant's database.
 	DetailRerouted = "audit_rerouted"
 	reroutedValue  = "the tenant's log did not answer; written to the installation's log"
 )
@@ -165,10 +166,10 @@ func (a *Access) Record(d Decision, outcome master.Outcome, reason string, facts
 }
 
 // RecordTo is Record for an allowed request that concerned a tenant: its
-// entry goes to that tenant's log, sink (D53). If the tenant's log does not
-// answer, the entry is written to the master's log instead, with the detail
-// DetailRerouted and the tenant's name. A sink that is not comparable is
-// refused: the entry is counted as failed and logged.
+// entry goes to that tenant's log, sink, beside the data it concerns. If the
+// tenant's log does not answer, the entry is written to the master's log
+// instead, with the detail DetailRerouted and the tenant's name. A sink that
+// is not comparable is refused: the entry is counted as failed and logged.
 func (a *Access) RecordTo(sink Sink, d Decision, outcome master.Outcome, reason string, facts Facts) {
 	e := d.Entry(outcome, reason, facts)
 	if sink == nil {
@@ -424,8 +425,8 @@ func (w *batchWriter) oneByOne(sink Sink, entries []master.AuditEntry) {
 }
 
 // giveUp ends a batch its sink did not take: a tenant's goes to the master's
-// log, each entry marked with DetailRerouted (D53); the master's is dropped,
-// counted and logged once.
+// log, each entry marked with DetailRerouted so it is not lost; the master's
+// is dropped, counted and logged once.
 func (w *batchWriter) giveUp(sink Sink, entries []master.AuditEntry, err error) {
 	a := w.a
 	if a.workCtx.Err() != nil {

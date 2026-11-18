@@ -43,9 +43,8 @@ func wantKind(t *testing.T, what string, err error, want *fault.Kind) {
 
 var invalidKind = fault.Invalid
 
-// TestTenantNameRule guards D37's rule for a tenant's name: 1 to 63 of a-z,
-// 0-9 and -, starting with a letter, because the name appears in URLs and
-// paths.
+// TestTenantNameRule guards the rule for a tenant's name: 1 to 63 of a-z, 0-9
+// and -, starting with a letter, because the name appears in URLs and paths.
 func TestTenantNameRule(t *testing.T) {
 	good := []string{"a", "lab", "nyuad-mri", "a1", "z-", strings.Repeat("a", 63), "com10", "console", "lpt", "nul-1"}
 	bad := []string{"", "1lab", "-lab", "Lab", "lab_1", "lab.1", "lab 1", "läb", strings.Repeat("a", 64), "../x",
@@ -85,8 +84,8 @@ func TestTenantValidate(t *testing.T) {
 }
 
 // TestKeyValidate guards the key rules: a 32-byte hash, a holder of 1 to 256
-// bytes of UTF-8 (D37), an expiry after creation, and a new key that is
-// neither used nor revoked.
+// bytes of UTF-8, an expiry after creation, and a new key that is neither
+// used nor revoked.
 func TestKeyValidate(t *testing.T) {
 	wantKind(t, "valid key", validKey().Validate(), nil)
 	k := validKey()

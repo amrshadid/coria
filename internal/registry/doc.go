@@ -1,8 +1,8 @@
 // Package registry holds one open store per tenant and is the only way the
-// rest of the server gets a tenant's database (M0 design note, part 2). It
-// opens each tenant's database from the address sealed in the master,
-// upgrades it, watches it, and records the tenant's state in the master, so
-// that one tenant's trouble stays its own.
+// rest of the server gets a tenant's database. It opens each tenant's
+// database from the address sealed in the master, upgrades it, watches it,
+// and records the tenant's state in the master, so that one tenant's trouble
+// stays its own.
 //
 // # Getting a store
 //
@@ -92,9 +92,9 @@
 // leaves an upgrading row, which the next start or round opens like any
 // other, recording that it finished the creation that request began; a
 // repeated Create with the same id, name, type and address finishes what the
-// first began. Remove unregisters the tenant and leaves its
-// data where it is (D36), and says where: the database type and a location
-// with no user and no password.
+// first began. Remove unregisters the tenant and leaves its data where it is,
+// so a mistaken removal loses no data, and says where: the database type and
+// a location with no user and no password.
 //
 // # What this package must never do
 //

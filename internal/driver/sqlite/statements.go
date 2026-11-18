@@ -67,7 +67,8 @@ func prepare(ctx context.Context, p *pools) (*statements, error) {
 		{&s.markKeyUsed, w, `UPDATE api_keys SET last_used = ? WHERE id = ? AND (last_used IS NULL OR last_used < ?)`},
 		{&s.grantRole, w, `SELECT role FROM grants WHERE key_id = ? AND scope = ?`},
 		// One statement replaces the role of an existing grant, so a key
-		// changing role is never without one (D37).
+		// changing role is never without one, not even for a moment between a
+		// removal and an insert.
 		{&s.upsertGrant, w, `INSERT INTO grants (key_id, scope, tenant_id, role) VALUES (?, ?, ?, ?)
 			ON CONFLICT (key_id, scope) DO UPDATE SET role = excluded.role`},
 		{&s.deleteGrant, w, `DELETE FROM grants WHERE key_id = ? AND scope = ? RETURNING role`},

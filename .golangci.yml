@@ -109,12 +109,14 @@ linters:
             - pkg: crypto/rand
               desc: the core draws no randomness; a caller passes in what it needs
 
-        # The master database's port (internal/master) and its contract
-        # suite (internal/master/mastertest) are stated as operations, so a
-        # database with no SQL at all can implement them, and the suite
-        # cannot be bent to one driver by knowing which one it runs on
-        # (decision D12). An import of SQL or of a driver here would undo
-        # both without anything else in a review showing it.
+        # The master database's port (internal/master) and its contract suite
+        # (internal/master/mastertest) are stated as operations, so a database
+        # with no SQL at all can implement them, and the suite cannot be bent
+        # to one driver by knowing which one it runs on: each database is a
+        # driver behind the port, and two real drivers passing one suite is
+        # what shows the port is not shaped by either. An import of SQL or of
+        # a driver here would undo both without anything else in a review
+        # showing it.
         master:
           files:
             - "**/internal/master/**"
@@ -130,9 +132,9 @@ linters:
             - pkg: github.com/amrshadid/magnetar/internal/sqlkit
               desc: sqlkit is for SQL drivers; the port must not assume SQL
 
-        # The tenant database's port (internal/tenant) and its contract
-        # suite (internal/tenant/tenanttest), held to the master port's
-        # rule for the same reasons (D12).
+        # The tenant database's port (internal/tenant) and its contract suite
+        # (internal/tenant/tenanttest), held to the master port's rule for the
+        # same reasons.
         tenant:
           files:
             - "**/internal/tenant/**"

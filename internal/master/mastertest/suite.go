@@ -445,7 +445,8 @@ func testKeys(e *env) {
 }
 
 // testKeyHolderUnicode guards that a holder's name is any UTF-8 up to 256
-// bytes, kept exactly, and that longer or invalid UTF-8 is refused (D37).
+// bytes, kept exactly, and that longer or invalid UTF-8 is refused
+// (master.MaxHolderLength).
 func testKeyHolderUnicode(e *env) {
 	holders := []string{
 		"Zoë Ångström-Øster",

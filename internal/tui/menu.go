@@ -20,7 +20,7 @@ type menuScreen struct {
 	cursor int
 }
 
-// newMenu makes the menu, with the screens M0 has.
+// newMenu makes the menu, with the screens this version has.
 func newMenu(c *ctx) menuScreen {
 	return menuScreen{base: base{c.newID()}, items: []menuItem{
 		{"Tenants", "the independent archives; open one for its grants, settings and audit log", func(c *ctx) tea.Cmd {

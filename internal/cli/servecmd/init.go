@@ -19,7 +19,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/server"
 )
 
-// The names inside a data directory (M0 design note, part 1).
+// The names inside a data directory.
 const (
 	// KeyFileName is the installation key file.
 	KeyFileName = "key"
