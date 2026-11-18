@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -165,10 +166,17 @@ func TestCallHasTheCommandsDeadline(t *testing.T) {
 	r.key("enter")
 	lines := r.lines()
 	status := lines[len(lines)-2]
-	if !strings.HasPrefix(status, "tenant list: no answer from ") || !strings.HasSuffix(status, " within 200ms (see --timeout)") {
+	// The request id is there when the server's answer headers arrived before
+	// the deadline and absent when they did not; which one happens depends on
+	// the system, so both are the command's own line.
+	if !deadlineLine.MatchString(status) {
 		t.Errorf("the deadline error line is %q", status)
 	}
 }
+
+// deadlineLine is the line a call that ran out of time gives: the command's
+// own words, with the request id when there is one.
+var deadlineLine = regexp.MustCompile(`^tenant list: no answer from \S+ within 200ms \(see --timeout\)( \(request id req-\d+\))?$`)
 
 // TestLeavingAScreenCancelsItsCalls guards that going back does not leave a
 // call running for a screen that is gone, and that its late answer is dropped
