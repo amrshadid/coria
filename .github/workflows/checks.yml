@@ -128,6 +128,12 @@ jobs:
       - name: Outside check, bash completion parsed by bash -n
         run: make check-completion
 
+      # A tenant's SQLite database, created by the registry as the server
+      # will, read back by the same tool: where its file is and its mode,
+      # tables, rows, integrity, and the master's row and state change.
+      - name: Outside check, a SQLite tenant read by sqlite3
+        run: make check-tenant-sqlite
+
       # The interactive program, run as built under a pseudo-terminal by
       # Python's pty module against the in-process fake server: keys pressed,
       # the screen read, quit, SIGTERM and SIGINT sent mid-session, and the

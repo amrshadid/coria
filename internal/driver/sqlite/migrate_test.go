@@ -54,7 +54,7 @@ func migrateFile(ctx context.Context, path string, ms []sqlkit.Migration) (int, 
 // migrations to it. Opening first means processes started together all call
 // Migrate at the same instant, not staggered by their start-up.
 func migrateFileAt(ctx context.Context, path string, ms []sqlkit.Migration, start time.Time) (int, error) {
-	p, err := openPools(ctx, path)
+	p, err := openPools(ctx, path, masterDB)
 	if err != nil {
 		return 0, err
 	}
@@ -66,7 +66,7 @@ func migrateFileAt(ctx context.Context, path string, ms []sqlkit.Migration, star
 // logRows returns the versions in the log table, in order.
 func logRows(t *testing.T, path string) []int {
 	t.Helper()
-	p, err := openPools(context.Background(), path)
+	p, err := openPools(context.Background(), path, masterDB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestMigrateAppliesOnce(t *testing.T) {
 	if got := fmt.Sprint(logRows(t, path)); got != "[1 2 3 5]" {
 		t.Errorf("log = %s, want [1 2 3 5]", got)
 	}
-	p, err := openPools(ctx, path)
+	p, err := openPools(ctx, path, masterDB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,12 +189,12 @@ func TestMigrateRereadsUnderLock(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "m.db")
 	ms := testMigrations(t, "")
-	mine, err := openPools(ctx, path)
+	mine, err := openPools(ctx, path, masterDB)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = mine.close() }()
-	other, err := openPools(ctx, path)
+	other, err := openPools(ctx, path, masterDB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,12 +228,12 @@ func TestMigrateRereadsUnderLock(t *testing.T) {
 func TestMigrationLockExcludes(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "m.db")
-	a, err := openPools(ctx, path)
+	a, err := openPools(ctx, path, masterDB)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = a.close() }()
-	b, err := openPools(ctx, path)
+	b, err := openPools(ctx, path, masterDB)
 	if err != nil {
 		t.Fatal(err)
 	}

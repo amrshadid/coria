@@ -236,8 +236,9 @@ func (x *Tenant) GetCreateTime() *timestamppb.Timestamp {
 type CreateTenantRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tenant's name. Required: 1 to 63 characters, lowercase ASCII letters,
-	// digits and hyphens, starting with a letter. The name is used in paths on
-	// the server, so nothing else is accepted.
+	// digits and hyphens, starting with a letter, and none of the device names
+	// Windows reserves (con, prn, aux, nul, com0 to com9, lpt0 to lpt9). The
+	// name is used in paths on the server, so nothing else is accepted.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// The kind of database the tenant's data will live in. Required.
 	DatabaseType DatabaseType `protobuf:"varint,2,opt,name=database_type,json=databaseType,proto3,enum=magnetar.v1.DatabaseType" json:"database_type,omitempty"`
