@@ -75,7 +75,7 @@ locally passes there for the same reason.
 | `make vet` | `go vet` on 64 bits and on 32 bits (linux/386) |
 | `make lint` | golangci-lint with `.golangci.yml`, run for Linux, Windows and macOS so that files built for one system only are linted too, including the rule that `internal/core` imports only the standard library and itself, and from the standard library no database, network, file or system package |
 | `make vuln` | govulncheck: no known vulnerability reachable from the code |
-| `make test` | `go test -race ./...` |
+| `make test` | `go test -race -count=1 ./...`: always run, never a cached result |
 | `make build` | static binaries for linux/amd64, linux/386, linux/arm64, darwin/arm64 and windows/amd64, in `bin/` |
 | `make size` | the size of each binary `make build` left, as a table |
 | `make proto-lint` | `buf lint` on the API contract in `api/proto` |

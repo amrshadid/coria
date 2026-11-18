@@ -188,7 +188,7 @@ jobs:
         run: go vet ./...
 
       - name: go test
-        run: go test -v ./...
+        run: go test -count=1 -v ./...
 
   # macOS only after a merge: a macOS minute counts as ten against a private
   # repository, and the work is done on macOS, where the tests run before every
@@ -217,7 +217,7 @@ jobs:
         run: go version
 
       - name: go test
-        run: go test -v ./...
+        run: go test -count=1 -v ./...
 
   # The API contract in api/proto: buf lint, the breaking-change check against
   # the base, the check that the committed gen/ is what the proto files

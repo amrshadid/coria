@@ -88,8 +88,12 @@ vuln: $(filter $(TOOLS)/%,$(GOVULNCHECK))
 	$(GOVULNCHECK) -version
 	$(GOVULNCHECK) ./...
 
+# -count=1: the tests always run. CI restores Go's build cache, which also
+# holds test results, and without it every package whose code did not change
+# reports "(cached)": a race or a timing fault in it would never be looked
+# for again. Compiled code still comes from the cache.
 test:
-	$(GO) test -race ./...
+	$(GO) test -race -count=1 ./...
 
 build:
 	@set -e; for platform in $(PLATFORMS); do \
@@ -136,7 +140,7 @@ check-master-sqlite:
 # different translation of SQLite's C. Without -race, which 386 lacks. It runs
 # natively on a Linux x86-64 machine (CI); macOS cannot run 386 binaries.
 test-386:
-	GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test ./...
+	GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test -count=1 ./...
 
 # Every fuzz target, as package:function. go test fuzzes one target at a
 # time, so each is a run of its own; -run '^$$' keeps the other tests out.
