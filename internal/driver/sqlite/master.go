@@ -621,41 +621,31 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 	return out, sqlkit.EncodeCursor(listGrantsByScope, scopeBinding(scope), last.KeyID), nil
 }
 
-// RolesFor implements master.Store with one statement: the grants' primary
-// key is read at (key, the empty scope) and at (key, the tenant's id), the id found
-// through the tenants' unique index on name inside the same statement. A
-// tenant that does not exist, or no tenant name, leaves only the first.
-func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (installation, tenant master.Role, err error) {
+// RolesFor implements master.Store with one statement (rolesForSQL). A name
+// that is not a valid tenant name is asked as the empty name, which no
+// tenant has, so the statement runs all the same and finds no tenant.
+func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (master.Roles, error) {
 	if err := master.ValidateID("key id", keyID); err != nil {
-		return "", "", err
+		return master.Roles{}, err
 	}
-	if tenantName != "" {
-		if err := master.ValidateTenantName(tenantName); err != nil {
-			return "", "", err
-		}
+	if master.ValidateTenantName(tenantName) != nil {
+		tenantName = ""
 	}
 	s, err := m.ready(ctx)
 	if err != nil {
-		return "", "", err
+		return master.Roles{}, err
 	}
-	rows, err := s.rolesFor.QueryContext(ctx, keyID, tenantName)
-	type scopeRole struct{ scope, role string }
-	found, err := collect(rows, err, func(row interface{ Scan(...any) error }) (scopeRole, error) {
-		var r scopeRole
-		err := row.Scan(&r.scope, &r.role)
-		return r, err
-	})
+	var tenantID, inst, ten sql.NullString
+	err = s.rolesFor.QueryRowContext(ctx, keyID, tenantName).Scan(&tenantID, &inst, &ten)
 	if err != nil {
-		return "", "", m.fail(ctx, err, "the key's roles cannot be read")
+		return master.Roles{}, m.fail(ctx, err, "the key's roles cannot be read")
 	}
-	for _, r := range found {
-		if r.scope == "" {
-			installation = master.Role(r.role)
-		} else {
-			tenant = master.Role(r.role)
-		}
-	}
-	return installation, tenant, nil
+	return master.Roles{
+		Installation: master.Role(inst.String),
+		Tenant:       master.Role(ten.String),
+		TenantID:     tenantID.String,
+		TenantFound:  tenantID.Valid,
+	}, nil
 }
 
 // RemoveGrant implements master.Store. One DELETE ... RETURNING removes the

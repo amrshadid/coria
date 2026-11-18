@@ -168,6 +168,8 @@ test-386:
 # time, so each is a run of its own; -run '^$$' keeps the other tests out.
 FUZZTIME     ?= 10s
 FUZZ_TARGETS := \
+	internal/access:FuzzCheck \
+	internal/access:FuzzCheckSQLite \
 	internal/secret:FuzzOpen \
 	internal/secret:FuzzParseAPIKey \
 	internal/secret:FuzzParseKeyFile

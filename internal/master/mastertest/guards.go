@@ -262,47 +262,62 @@ func (e *env) auditAt(int) master.AuditEntry {
 	return e.audit()
 }
 
-// testRolesFor guards the access check's lookup: the installation's role and
-// the named tenant's, each none when absent, for an unknown key, an unknown
-// tenant and no tenant, and after the tenant's removal.
+// testRolesFor guards the access check's lookup: the installation's role,
+// whether the tenant named exists and its id, and the key's role on it, for
+// a key with grants on both, on one, on none, and an unknown key; a tenant
+// found and not found; no name and a name that is not valid, Windows device
+// names among them (not found, not an error); and after the tenant's removal and its recreation under the
+// same name, when the old grant gives nothing and the new id is reported.
 func testRolesFor(e *env) {
-	lab, _ := e.mustTenant("lab"), e.mustTenant("clinic")
+	lab, clinic := e.mustTenant("lab"), e.mustTenant("clinic")
 	both, tenantOnly, none := e.mustKey(), e.mustKey(), e.mustKey()
 	e.mustGrant(both.ID, master.Installation, master.RoleReader)
 	e.mustGrant(both.ID, master.TenantScope(lab.ID), master.RoleWriter)
 	e.mustGrant(tenantOnly.ID, master.TenantScope(lab.ID), master.RoleAdmin)
+	found := func(t master.Tenant, inst, ten master.Role) master.Roles {
+		return master.Roles{Installation: inst, Tenant: ten, TenantID: t.ID, TenantFound: true}
+	}
 	cases := []struct {
-		key, tenant      string
-		wantInst, wantTn master.Role
+		key, tenant string
+		want        master.Roles
 	}{
-		{both.ID, "lab", master.RoleReader, master.RoleWriter},
-		{both.ID, "clinic", master.RoleReader, ""},
-		{both.ID, "", master.RoleReader, ""},
-		{both.ID, "nope", master.RoleReader, ""},
-		{tenantOnly.ID, "lab", "", master.RoleAdmin},
-		{tenantOnly.ID, "", "", ""},
-		{none.ID, "lab", "", ""},
-		{"unknown", "lab", "", ""},
+		{both.ID, "lab", found(lab, master.RoleReader, master.RoleWriter)},
+		{both.ID, "clinic", found(clinic, master.RoleReader, "")},
+		{both.ID, "", master.Roles{Installation: master.RoleReader}},
+		{both.ID, "nope", master.Roles{Installation: master.RoleReader}},
+		{both.ID, "Bad Name", master.Roles{Installation: master.RoleReader}},
+		// Windows device names are not valid tenant names on any system: no
+		// tenant has one, and asking is not an error.
+		{both.ID, "con", master.Roles{Installation: master.RoleReader}},
+		{both.ID, "nul", master.Roles{Installation: master.RoleReader}},
+		{both.ID, "com0", master.Roles{Installation: master.RoleReader}},
+		{both.ID, "lpt9", master.Roles{Installation: master.RoleReader}},
+		{both.ID, "bad\x00\xff", master.Roles{Installation: master.RoleReader}},
+		{tenantOnly.ID, "lab", found(lab, "", master.RoleAdmin)},
+		{tenantOnly.ID, "", master.Roles{}},
+		{none.ID, "lab", found(lab, "", "")},
+		{none.ID, "nope", master.Roles{}},
+		{"unknown", "lab", found(lab, "", "")},
 	}
 	for _, c := range cases {
-		inst, tn, err := e.s.RolesFor(e.ctx, c.key, c.tenant)
-		if err != nil || inst != c.wantInst || tn != c.wantTn {
-			e.Errorf("RolesFor(%s, %q) = %q, %q, %v; want %q, %q", c.key, c.tenant, inst, tn, err, c.wantInst, c.wantTn)
+		got, err := e.s.RolesFor(e.ctx, c.key, c.tenant)
+		if err != nil || got != c.want {
+			e.Errorf("RolesFor(%s, %q) = %+v, %v; want %+v", c.key, c.tenant, got, err, c.want)
 		}
 	}
-	_, _, err := e.s.RolesFor(e.ctx, both.ID, "Bad Name")
-	e.wantKind("RolesFor, bad tenant name", err, fault.Invalid)
-	_, _, err = e.s.RolesFor(e.ctx, "a b", "lab")
+	_, err := e.s.RolesFor(e.ctx, "a b", "lab")
 	e.wantKind("RolesFor, bad key id", err, fault.Invalid)
 	e.ok("RemoveTenant", e.s.RemoveTenant(e.ctx, lab.ID, e.audit()))
-	inst, tn, err := e.s.RolesFor(e.ctx, both.ID, "lab")
-	if err != nil || inst != master.RoleReader || tn != "" {
-		e.Errorf("RolesFor after the tenant's removal = %q, %q, %v; want reader and none", inst, tn, err)
+	got, err := e.s.RolesFor(e.ctx, both.ID, "lab")
+	if want := (master.Roles{Installation: master.RoleReader}); err != nil || got != want {
+		e.Errorf("RolesFor after the tenant's removal = %+v, %v; want %+v", got, err, want)
 	}
-	// A tenant made again under the name is a new tenant with no grants.
-	e.mustTenant("lab")
-	if _, tn, _ := e.s.RolesFor(e.ctx, both.ID, "lab"); tn != "" {
-		e.Errorf("a new tenant under a removed tenant's name inherited the role %q", tn)
+	// A tenant made again under the name is a new tenant, with a new id
+	// and no grants: the removed tenant's grant gives nothing.
+	again := e.mustTenant("lab")
+	got, err = e.s.RolesFor(e.ctx, both.ID, "lab")
+	if want := found(again, master.RoleReader, ""); err != nil || got != want || again.ID == lab.ID {
+		e.Errorf("RolesFor for a new tenant under a removed tenant's name = %+v, %v; want %+v (old id %s)", got, err, want, lab.ID)
 	}
 }
 
