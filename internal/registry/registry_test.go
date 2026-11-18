@@ -49,7 +49,7 @@ func TestStartServesReadyRefusesOthers(t *testing.T) {
 	e.create(first, "id-lab", "lab", driver.SQLiteDriver, "")
 	e.create(first, "id-up", "up", flakyDriver, flakyAddress("up"))
 	e.create(first, "id-down", "down", flakyDriver, flakyAddress("down"))
-	if err := first.Close(); err != nil {
+	if err := first.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -98,11 +98,13 @@ func TestStartServesReadyRefusesOthers(t *testing.T) {
 func TestUnreachableRecovers(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
+	e.seed("down", "bad")
 	e.flaky.set("down", down)
 	e.flaky.set("bad", broken)
 	r := e.newRegistry(e.config())
-	e.create(r, "id-down", "down", flakyDriver, flakyAddress("down"))
-	e.create(r, "id-bad", "bad", flakyDriver, flakyAddress("bad"))
+	if err := r.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if st, _ := r.State("down"); st.State != master.StateUnreachable {
 		t.Fatalf("down is %s, want unreachable", st.State)
 	}
@@ -113,7 +115,7 @@ func TestUnreachableRecovers(t *testing.T) {
 	e.flaky.set("down", up)
 	e.flaky.set("bad", up)
 	e.clock.Add(2 * StateChangeInterval)
-	r.checkAll()
+	checkNow(r)
 	s, err := r.Store("down")
 	if err != nil {
 		t.Fatalf("Store(down) after it came back: %v", err)
@@ -135,11 +137,11 @@ func TestUnreachableRecovers(t *testing.T) {
 func TestTimerChecks(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
+	e.seed("down")
 	e.flaky.set("down", down)
 	cfg := e.config()
 	cfg.Interval = 5 * time.Millisecond
 	r := e.newRegistry(cfg)
-	e.create(r, "id-down", "down", flakyDriver, flakyAddress("down"))
 	if err := r.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +172,7 @@ func TestFlappingWritesOncePerMinute(t *testing.T) {
 		}
 		e.flaky.set("flap", m)
 		e.clock.Add(step)
-		r.checkAll()
+		checkNow(r)
 		_, err := r.Store("flap")
 		if (err == nil) != (m == up) {
 			t.Fatalf("check %d: mode %v, Store error %v: requests must follow the database at once", i, m, err)
@@ -199,7 +201,7 @@ func TestDeadlinePerTenant(t *testing.T) {
 	for _, n := range names {
 		e.create(setup, "id-"+n, n, flakyDriver, flakyAddress(n))
 	}
-	if err := setup.Close(); err != nil {
+	if err := setup.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	e.flaky.set("hangs", hang)
@@ -238,84 +240,17 @@ func TestDeadlinePerTenant(t *testing.T) {
 		}
 	}
 	// The stuck open is still running; a check does not start another.
-	r.checkAll()
+	checkNow(r)
 	if st, _ := r.State("stuck"); st.State != master.StateUnreachable {
 		t.Errorf("stuck is %s during its stuck open", st.State)
 	}
 	// Close waits for the stuck open, which is released here.
 	time.AfterFunc(50*time.Millisecond, e.flaky.unstick)
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if o, c := e.flaky.opens.Load(), e.flaky.closes.Load(); o != c {
 		t.Errorf("%d stores opened and %d closed", o, c)
-	}
-}
-
-// TestPasswordStripped guards that a driver's error text, which holds the
-// database's address and password, reaches no reason, no error, no log line
-// and no audit entry: each is searched for the known password, the host and
-// the whole address.
-func TestPasswordStripped(t *testing.T) {
-	ctx := context.Background()
-	e := newEnv(t)
-	e.flaky.set("down", down)
-	e.flaky.set("bad", broken)
-	r := e.newRegistry(e.config())
-	e.create(r, "id-down", "down", flakyDriver, flakyAddress("down"))
-	e.create(r, "id-bad", "bad", flakyDriver, flakyAddress("bad"))
-	if err := r.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
-	needles := []string{password, flakyHost, flakyAddress("down"), flakyAddress("bad"), "admin:"}
-	var texts []string
-	for _, name := range []string{"down", "bad"} {
-		st, _ := r.State(name)
-		if st.Reason == "" || !strings.Contains(st.Reason, hidden) {
-			t.Errorf("%s: reason %q, want the driver's text with the address hidden", name, st.Reason)
-		}
-		texts = append(texts, st.Reason, e.masterTenant(name).StateReason)
-		_, err := r.Store(name)
-		texts = append(texts, err.Error(), fault.Message(err))
-		for _, a := range e.systemEntries(name) {
-			texts = append(texts, fmt.Sprint(a))
-		}
-	}
-	texts = append(texts, e.logBuf.String())
-	for _, text := range texts {
-		mustNotContain(t, "a reason, error, log or audit entry", text, needles...)
-	}
-	// The removal answers a location with no user and no password.
-	removed, err := r.Remove(ctx, "down", e.audit("RemoveTenant"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if removed.Location != flakyHost+":5432/down" {
-		t.Errorf("location = %q, want host:port/database", removed.Location)
-	}
-	mustNotContain(t, "the removal's location", removed.Location, password, "admin")
-	t.Logf("reason kept: %s", e.masterTenant("bad").StateReason)
-}
-
-// TestScrub guards the stripping of an address from a driver's text, for
-// both forms a Postgres address takes, a password quoted another way, and a
-// text cut to the length of a reason.
-func TestScrub(t *testing.T) {
-	cases := []struct{ address, text string }{
-		{"postgres://admin:" + password + "@db.example:5432/lab?sslmode=require",
-			"failed to connect to `host=db.example user=admin database=lab`: password " + password + " rejected; url postgres://admin:" + password + "@db.example:5432/lab"},
-		{"host=db.example port=5432 user=admin password='" + password + "' dbname=lab",
-			"connect host=db.example user=admin password=" + password + ": refused"},
-		{"postgres://admin:p%40ss%2F" + "word@db.example/lab", "auth failed for p@ss/word and p%40ss%2Fword"},
-		{"", "server said: password=" + password + " is wrong; see postgres://x:" + password + "@other.example/db"},
-	}
-	for _, c := range cases {
-		got := scrub(c.text, secretsOf(c.address))
-		mustNotContain(t, "scrubbed text", got, password, "db.example", "p@ss/word", "other.example")
-	}
-	long := strings.Repeat("é", master.MaxStateReasonLength)
-	if got := scrub(long, nil); len(got) > master.MaxStateReasonLength || !strings.HasPrefix(long, got) {
-		t.Errorf("a long reason was cut to %d bytes, or not on a character boundary", len(got))
 	}
 }
 
@@ -327,14 +262,14 @@ func TestWrongKeyFile(t *testing.T) {
 	e := newEnv(t)
 	old := e.newRegistry(e.config())
 	e.create(old, "id-old", "old", flakyDriver, flakyAddress("old"))
-	if err := old.Close(); err != nil {
+	if err := old.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	e.keys = newKeys(t) // another key file
 	cfg := e.config()
 	r := e.newRegistry(cfg)
 	e.create(r, "id-new", "new", flakyDriver, flakyAddress("new"))
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	r = e.newRegistry(cfg)
@@ -368,7 +303,7 @@ func TestCrashBetweenRowAndUpgrade(t *testing.T) {
 			if err == nil {
 				t.Fatal("the crash did not stop Create")
 			}
-			if err := crashed.Close(); err != nil {
+			if err := crashed.Close(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			if got := e.masterTenant("lab"); got.State != master.StateUpgrading {
@@ -493,7 +428,7 @@ func TestRemoveLeavesData(t *testing.T) {
 		t.Errorf("a second Remove = %v, want NotFound", err)
 	}
 	// The data is where it was: opened again by itself, the setting is there.
-	again, err := driver.SQLiteTenants{DataDir: e.data}.Open(ctx, "lab", "")
+	again, err := driver.SQLiteTenants{DataDir: e.data}.Open(ctx, "id-lab", "lab", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -528,10 +463,10 @@ func TestCloseStopsEverything(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Errorf("a second Close: %v", err)
 	}
 	if err := lab.Ping(ctx); fault.KindOf(err) != fault.Unavailable {
@@ -581,7 +516,7 @@ func TestCreateRemoveTimerTogether(t *testing.T) {
 				_, err := r.Remove(ctx, "race", e.audit("RemoveTenant"))
 				errs <- err
 			})
-			wg.Go(func() { r.checkAll() })
+			wg.Go(func() { checkNow(r) })
 			wg.Go(func() {
 				if s, err := r.Store("race"); err == nil {
 					_ = s.Ping(ctx) // may fail if removed meanwhile; must not race
@@ -612,7 +547,7 @@ func TestCreateRemoveTimerTogether(t *testing.T) {
 			}
 		}
 	}
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	o, c := e.flaky.opens.Load(), e.flaky.closes.Load()

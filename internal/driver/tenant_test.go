@@ -42,13 +42,12 @@ func TestSQLiteTenantPath(t *testing.T) {
 		}
 	}
 	// Windows reserves device names: a file named con.db is the console,
-	// not a file. filepath.IsLocal refuses it there.
-	_, err = d.Path("con")
-	if runtime.GOOS == "windows" && err == nil {
-		t.Error("Path(con) on Windows made a device name")
-	}
-	if runtime.GOOS != "windows" && err != nil {
-		t.Errorf("Path(con): %v", err)
+	// not a file, before Windows 11. The tenant name rule refuses them on
+	// every system, so a data directory moved to Windows keeps working.
+	for _, device := range []string{"con", "nul", "com1", "lpt9"} {
+		if _, err := d.Path(device); fault.KindOf(err) != fault.Invalid {
+			t.Errorf("Path(%s) = %v, want Invalid on %s too", device, err, runtime.GOOS)
+		}
 	}
 	if _, err := (SQLiteTenants{}).Path("lab"); fault.KindOf(err) != fault.Internal {
 		t.Errorf("no data directory: %v, want Internal", err)
@@ -62,13 +61,13 @@ func TestSQLiteTenantOpen(t *testing.T) {
 	ctx := context.Background()
 	data := t.TempDir()
 	d := SQLiteTenants{DataDir: data}
-	if _, err := d.Open(ctx, "lab", "sqlite:/elsewhere.db"); fault.KindOf(err) != fault.Invalid {
+	if _, err := d.Open(ctx, "id-lab", "lab", "sqlite:/elsewhere.db"); fault.KindOf(err) != fault.Invalid {
 		t.Errorf("an address for a tenant on SQLite: %v, want Invalid", err)
 	}
 	if _, err := d.Location("lab", "x"); fault.KindOf(err) != fault.Invalid {
 		t.Errorf("Location with an address: %v, want Invalid", err)
 	}
-	s, err := d.Open(ctx, "lab", "")
+	s, err := d.Open(ctx, "id-lab", "lab", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,5 +93,23 @@ func TestSQLiteTenantOpen(t *testing.T) {
 		if mode := info.Mode().Perm(); mode&0o077 != 0 {
 			t.Errorf("the tenants directory has mode %v, want no access for group or others", mode)
 		}
+	}
+}
+
+// TestSQLiteTenantsDirectoryCannotBeMade guards the failure to make the
+// tenants directory, here because the data directory is a file: the open is
+// Unavailable (the registry retries it), says which directory, and names no
+// path.
+func TestSQLiteTenantsDirectoryCannotBeMade(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(data, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := SQLiteTenants{DataDir: data}.Open(context.Background(), "id-lab", "lab", "")
+	if fault.KindOf(err) != fault.Unavailable || !strings.HasPrefix(fault.Message(err), "the tenants directory cannot be made") {
+		t.Errorf("Open under a file = %v, want Unavailable saying the tenants directory cannot be made", err)
+	}
+	if err != nil && strings.Contains(err.Error(), data) {
+		t.Errorf("the error names the path: %v", err)
 	}
 }

@@ -22,10 +22,12 @@
 //
 // Every operation that changes the tenant's database takes the audit entry
 // for that change and writes both or neither (M0 design note, part 6). Ids
-// and times are given by the caller. Lists are paged by an opaque cursor,
-// never by an offset. A failure is an error from package fault with the kind
-// a caller acts on: Invalid, NotFound, Conflict, Unavailable when the
-// database cannot be reached, Internal for the rest.
+// and times are given by the caller. Lists are paged by an opaque cursor
+// bound to its list, its filter and its tenant, never by an offset. A
+// failure is an error from package fault with the kind a caller acts on:
+// Invalid, NotFound, Unavailable when the database cannot be reached or the
+// store is closed, Internal for the rest, a duplicate audit id included
+// (master.ErrDuplicateAuditID). Store's documentation says each rule.
 //
 // # What this package must never do
 //

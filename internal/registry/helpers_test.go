@@ -147,6 +147,7 @@ func (e *env) config() Config {
 		Now:         e.clock.Now,
 		Interval:    time.Hour, // tests call checkAll themselves unless they test the timer
 		OpenTimeout: 2 * time.Second,
+		PingTimeout: time.Second,
 		MaxOpening:  8,
 		Log:         slog.New(slog.NewTextHandler(e.logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	}
@@ -159,7 +160,7 @@ func (e *env) newRegistry(cfg Config) *Registry {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.t.Cleanup(func() { _ = r.Close() })
+	e.t.Cleanup(func() { _ = r.Close(context.Background()) })
 	return r
 }
 
@@ -238,7 +239,8 @@ func (s *syncBuffer) String() string {
 const flakyDriver = "flaky"
 
 // password is the known password in every test driver address; the tests
-// search every reason, error, log line and audit entry for it.
+// search every reason, error, log line and audit entry for it, in every form
+// the review found a scrubber missed.
 const password = "Hunter2-NotARealPassword-91f3" //nolint:gosec // G101: made up, so its absence can be searched for.
 
 // flakyHost is the host in every test driver address, also kept out of
@@ -250,32 +252,57 @@ func flakyAddress(name string) string {
 	return "flaky://admin:" + password + "@" + flakyHost + ":5432/" + name
 }
 
+// passwordForms are the password as a driver's text may carry it: plain,
+// quoted, escaped as libpq escapes a keyword value, URL-escaped, and inside
+// a URL that does not parse.
+var passwordForms = []string{
+	password,
+	"'" + password + "'",
+	`password='Hunter2\'NotARealPassword'`,
+	"Hunter2%2DNotARealPassword%2D91f3",
+	"postgres://admin:" + password + "@[db.flaky.example",
+}
+
 // mode is how the test driver behaves for one tenant.
 type mode int
 
 const (
 	// up opens and pings normally.
 	up mode = iota
-	// down fails to open and to ping, as Unavailable, with an error text
-	// holding the whole address and the password, as a driver's may.
+	// down fails to open and to ping, as Unavailable, with a cause that
+	// holds the address and the password in every form of passwordForms, as
+	// a careless driver's might.
 	down
 	// hang blocks an open or a ping until its context ends.
 	hang
 	// stuck blocks an open or a ping until the test releases it, whatever
 	// its context does: a driver that ignores its deadline.
 	stuck
-	// broken fails to open as Internal, as a failed migration does.
+	// late opens normally, but only once the test releases it, whatever
+	// its context does: a store that arrives after its deadline.
+	late
+	// broken fails to migrate, as Internal, with the address in the cause.
 	broken
+	// refused fails to open as Invalid, as a database that refuses its
+	// address or its file does.
+	refused
+	// leaky fails to open with a plain error, not a fault, whose text holds
+	// the password.
+	leaky
+	// panicky panics in an open or a ping, with the password in the panic's
+	// value.
+	panicky
 )
 
 // flaky is the test driver. A tenant on it is a real SQLite database in its
 // own directory, wrapped so that its open and its ping can be made to fail,
-// hang and recover. It is registered only in this package's tests; the real
-// SQLite driver is not changed for them.
+// hang, panic and recover. It is registered only in this package's tests;
+// the real SQLite driver is not changed for them.
 type flaky struct {
 	sqlite  driver.SQLiteTenants
 	mu      sync.Mutex
 	modes   map[string]mode
+	byName  map[string]int // opens begun, by tenant name
 	release chan struct{}
 
 	opens, closes atomic.Int64 // stores opened and closed
@@ -285,7 +312,8 @@ type flaky struct {
 
 // newFlaky returns a test driver whose databases are under a new directory.
 func newFlaky(t testing.TB) *flaky {
-	return &flaky{sqlite: driver.SQLiteTenants{DataDir: t.TempDir()}, modes: map[string]mode{}, release: make(chan struct{})}
+	return &flaky{sqlite: driver.SQLiteTenants{DataDir: t.TempDir()}, modes: map[string]mode{},
+		byName: map[string]int{}, release: make(chan struct{})}
 }
 
 // set sets the mode of the tenant named name.
@@ -295,18 +323,25 @@ func (f *flaky) set(name string, m mode) {
 	f.modes[name] = m
 }
 
-// unstick releases every stuck open and ping, once.
+// opensOf returns how many opens of the tenant named name have begun.
+func (f *flaky) opensOf(name string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.byName[name]
+}
+
+// unstick releases every stuck or late open and ping, once.
 func (f *flaky) unstick() { close(f.release) }
 
-// behave acts out the tenant's mode for an open or a ping of address.
-func (f *flaky) behave(ctx context.Context, name, address string) error {
+// behave acts out the tenant's mode for an open (open true) or a ping.
+func (f *flaky) behave(ctx context.Context, name string, open bool) error {
 	f.mu.Lock()
 	m := f.modes[name]
 	f.mu.Unlock()
 	switch m {
 	case down:
 		return fault.Wrap(fault.Unavailable,
-			fmt.Errorf("dial %s: connection refused (user admin, password %s, host %s)", address, password, flakyHost),
+			fmt.Errorf("dial %s: connection refused (%s)", flakyAddress(name), strings.Join(passwordForms, " ")),
 			"the database does not answer")
 	case hang:
 		<-ctx.Done()
@@ -314,14 +349,24 @@ func (f *flaky) behave(ctx context.Context, name, address string) error {
 	case stuck:
 		<-f.release
 		return fault.New(fault.Unavailable, "the database does not answer")
-	case broken:
-		return fault.Wrap(fault.Internal, errors.New("migration 0002 failed at "+address), "the database cannot be migrated")
+	case late:
+		<-f.release
+	case refused:
+		if open {
+			return fault.Wrap(fault.Invalid, errors.New("bad address "+flakyAddress(name)), "the database refuses this address")
+		}
+	case leaky:
+		if open {
+			return errors.New("open " + flakyAddress(name) + ": password " + password + " rejected")
+		}
+	case panicky:
+		panic("driver bug at " + flakyAddress(name))
 	}
 	return nil
 }
 
 // Open implements Driver.
-func (f *flaky) Open(ctx context.Context, name, address string) (tenant.Store, error) {
+func (f *flaky) Open(ctx context.Context, id, name, address string) (tenant.Store, error) {
 	n := f.opening.Add(1)
 	defer f.opening.Add(-1)
 	for {
@@ -330,23 +375,27 @@ func (f *flaky) Open(ctx context.Context, name, address string) (tenant.Store, e
 			break
 		}
 	}
-	if err := f.behave(ctx, name, address); err != nil {
+	f.mu.Lock()
+	f.byName[name]++
+	f.mu.Unlock()
+	if err := f.behave(ctx, name, true); err != nil {
 		return nil, err
 	}
-	s, err := f.sqlite.Open(ctx, name, "")
+	s, err := f.sqlite.Open(context.Background(), id, name, "")
 	if err != nil {
 		return nil, err
 	}
 	f.opens.Add(1)
-	return &flakyStore{Store: s, f: f, name: name, address: address}, nil
+	return &flakyStore{Store: s, f: f, name: name}, nil
 }
 
 // Location implements Driver: host:port/database, with no user and no
-// password, as a Postgres driver answers.
+// password, as a Postgres driver answers. An address of another scheme is
+// refused with an error that, carelessly, repeats it.
 func (f *flaky) Location(name, address string) (string, error) {
 	u, err := url.Parse(address)
 	if err != nil || u.Scheme != flakyDriver {
-		return "", fault.New(fault.Invalid, "not a flaky address")
+		return "", fault.New(fault.Invalid, "not a flaky address: "+address)
 	}
 	return u.Host + u.Path, nil
 }
@@ -354,18 +403,40 @@ func (f *flaky) Location(name, address string) (string, error) {
 // flakyStore is a test driver tenant's store.
 type flakyStore struct {
 	tenant.Store
-	f       *flaky
-	name    string
-	address string
-	closed  atomic.Bool
+	f      *flaky
+	name   string
+	closed atomic.Bool
 }
 
 // Ping fails, hangs or answers as the tenant's mode says.
 func (s *flakyStore) Ping(ctx context.Context) error {
-	if err := s.f.behave(ctx, s.name, s.address); err != nil {
+	if err := s.f.behave(ctx, s.name, false); err != nil {
 		return err
 	}
-	return s.Store.Ping(ctx)
+	return s.Store.Ping(s.f.ctxFor(ctx, s.name))
+}
+
+// ctxFor returns ctx, or for a late tenant a context that never ends: a
+// driver that ignores its deadline finishes its ping and migration after it,
+// so the store it returns arrives whole, late.
+func (f *flaky) ctxFor(ctx context.Context, name string) context.Context {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.modes[name] == late {
+		return context.WithoutCancel(ctx)
+	}
+	return ctx
+}
+
+// Migrate fails as the tenant's mode says when it is broken.
+func (s *flakyStore) Migrate(ctx context.Context) error {
+	s.f.mu.Lock()
+	m := s.f.modes[s.name]
+	s.f.mu.Unlock()
+	if m == broken {
+		return fault.Wrap(fault.Internal, errors.New("migration 0002 failed at "+flakyAddress(s.name)), "the database cannot be migrated")
+	}
+	return s.Store.Migrate(s.f.ctxFor(ctx, s.name))
 }
 
 // Close closes the database once and counts it.
@@ -562,7 +633,7 @@ type countingDriver struct {
 }
 
 // Open counts the open while it runs.
-func (d *countingDriver) Open(ctx context.Context, name, address string) (tenant.Store, error) {
+func (d *countingDriver) Open(ctx context.Context, id, name, address string) (tenant.Store, error) {
 	n := d.opening.Add(1)
 	defer d.opening.Add(-1)
 	for {
@@ -571,7 +642,7 @@ func (d *countingDriver) Open(ctx context.Context, name, address string) (tenant
 			break
 		}
 	}
-	return d.Driver.Open(ctx, name, address)
+	return d.Driver.Open(ctx, id, name, address)
 }
 
 // openFiles returns how many files the process has open, read from
@@ -589,4 +660,77 @@ func openFiles() int {
 		return -1
 	}
 	return len(names) - 1 // less the descriptor reading it
+}
+
+// checkNow runs one timer round and waits for its checks.
+func checkNow(r *Registry) { r.checkAll().Wait() }
+
+// seed creates the test driver tenants named while their databases answer,
+// through a registry it then closes, so a test can make some of them fail
+// before the registry under test starts.
+func (e *env) seed(names ...string) {
+	e.t.Helper()
+	r := e.newRegistry(e.config())
+	for _, n := range names {
+		e.create(r, "id-"+n, n, flakyDriver, flakyAddress(n))
+	}
+	if err := r.Close(context.Background()); err != nil {
+		e.t.Fatal(err)
+	}
+}
+
+// trickyMaster wraps a master to fail in the ways a real one can between a
+// commit and its answer, and to hold a listing until released.
+type trickyMaster struct {
+	master.Store
+	// removeCommitsThenFails makes the next RemoveTenant commit and then
+	// return Unavailable, as a master whose answer is lost does.
+	removeCommitsThenFails atomic.Bool
+	// createCommitsThenFails does the same for the next CreateTenant.
+	createCommitsThenFails atomic.Bool
+	// stateFails makes every SetTenantState fail without committing.
+	stateFails atomic.Bool
+	// listGate, when set, holds every ListTenants until it is closed;
+	// listEntered is closed when the first one reaches it.
+	listGate    chan struct{}
+	listEntered chan struct{}
+	enterOnce   sync.Once
+}
+
+// lostAnswer is the error of a call whose commit the caller did not hear of.
+var lostAnswer = fault.New(fault.Unavailable, "the master database did not answer in time")
+
+// RemoveTenant commits, then fails when asked to.
+func (m *trickyMaster) RemoveTenant(ctx context.Context, id string, a master.AuditEntry) error {
+	err := m.Store.RemoveTenant(ctx, id, a)
+	if err == nil && m.removeCommitsThenFails.CompareAndSwap(true, false) {
+		return lostAnswer
+	}
+	return err
+}
+
+// CreateTenant commits, then fails when asked to.
+func (m *trickyMaster) CreateTenant(ctx context.Context, t master.Tenant, a master.AuditEntry) error {
+	err := m.Store.CreateTenant(ctx, t, a)
+	if err == nil && m.createCommitsThenFails.CompareAndSwap(true, false) {
+		return lostAnswer
+	}
+	return err
+}
+
+// SetTenantState fails without committing when asked to.
+func (m *trickyMaster) SetTenantState(ctx context.Context, id string, s master.TenantState, reason string, a master.AuditEntry) error {
+	if m.stateFails.Load() {
+		return lostAnswer
+	}
+	return m.Store.SetTenantState(ctx, id, s, reason, a)
+}
+
+// ListTenants waits at the gate when one is set.
+func (m *trickyMaster) ListTenants(ctx context.Context, p master.Page) ([]master.Tenant, string, error) {
+	if m.listGate != nil {
+		m.enterOnce.Do(func() { close(m.listEntered) })
+		<-m.listGate
+	}
+	return m.Store.ListTenants(ctx, p)
 }

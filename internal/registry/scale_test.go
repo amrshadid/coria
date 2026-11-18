@@ -23,8 +23,8 @@ func TestStoreDoesNotReachMaster(t *testing.T) {
 	cfg.Master = counting
 	r := e.newRegistry(cfg)
 	e.create(r, "id-lab", "lab", driver.SQLiteDriver, "")
-	e.flaky.set("down", down)
 	e.create(r, "id-down", "down", flakyDriver, flakyAddress("down"))
+	e.flaky.set("down", down)
 	if err := r.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -67,12 +67,12 @@ func startOn(tb testing.TB, m master.Store, keys *secret.Keys, drv Driver, maxOp
 	tb.Helper()
 	r, err := New(Config{
 		Master: m, Keys: keys, Drivers: map[string]Driver{driver.SQLiteDriver: drv},
-		Now: newClock().Now, Interval: time.Hour, OpenTimeout: time.Minute, MaxOpening: maxOpening,
+		Now: newClock().Now, Interval: time.Hour, OpenTimeout: time.Minute, PingTimeout: 10 * time.Second, MaxOpening: maxOpening,
 	})
 	if err != nil {
 		tb.Fatal(err)
 	}
-	tb.Cleanup(func() { _ = r.Close() })
+	tb.Cleanup(func() { _ = r.Close(context.Background()) })
 	begin := time.Now()
 	if err := r.Start(context.Background()); err != nil {
 		tb.Fatal(err)
@@ -163,7 +163,7 @@ func TestThousandTenants(t *testing.T) {
 	// A restart: every database exists and is at this schema already, which
 	// is what a server's start meets on every day but the first.
 	closeBegin := time.Now()
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	closed := time.Since(closeBegin)

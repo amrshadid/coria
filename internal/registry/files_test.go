@@ -25,7 +25,7 @@ func TestLoosenedTenantFile(t *testing.T) {
 	setup := e.newRegistry(e.config())
 	e.create(setup, "id-loose", "loose", driver.SQLiteDriver, "")
 	e.create(setup, "id-fine", "fine", driver.SQLiteDriver, "")
-	if err := setup.Close(); err != nil {
+	if err := setup.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	path, err := driver.SQLiteTenants{DataDir: e.data}.Path("loose")
@@ -51,7 +51,7 @@ func TestLoosenedTenantFile(t *testing.T) {
 		t.Errorf("the other tenant did not start: %v", err)
 	}
 	t.Logf("reason: %s", st.Reason)
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 

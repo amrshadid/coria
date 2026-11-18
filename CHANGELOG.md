@@ -141,34 +141,84 @@ All notable changes to Magnetar are written here. The form is
   (`internal/tenant`): its overrides of the installation's settings and its
   own audit log, with the master's bounds, the master's entry type and the
   master's rules: each change written with its audit entry or not at all, a
-  duplicate audit id told apart from a conflict, cursors bound to their list
-  and filter, and the same error kinds. A contract suite every driver must
-  pass (`internal/tenant/tenanttest`) runs on SQLite, where the master and
-  the tenants now share one implementation of settings and of the audit log,
-  and a tenant without an address gets the file
+  duplicate audit id told apart from a conflict, cursors bound to their list,
+  their filter and their tenant, and the same error kinds. A contract suite
+  every driver must pass (`internal/tenant/tenanttest`) runs on SQLite, where
+  the master and the tenants now share one implementation of settings and of
+  the audit log, and a tenant without an address gets the file
   `<data-dir>/tenants/<name>.db`, private to its owner, built so that no name
-  can put it elsewhere; a tenant file someone made readable by others is
-  refused, and the tenant is `failed` with the fix in its reason. Errors from
-  the SQLite driver now name the database they are about, master or tenant. The
-  tenant registry (`internal/registry`) holds one open store per tenant and
-  is the only way to get one: getting a ready tenant's store takes no lock
-  and makes no call to the master (12 ns, no allocation, among 1,000
-  tenants). It opens every tenant in parallel, a bounded number at once,
-  each under its own deadline, so one dead database delays neither the
-  start nor the others; a tenant whose database does not answer is
-  `unreachable` and refused while the others are served, and returns to
-  `ready` on its own; one whose address does not open with the key file, or
-  whose schema cannot be upgraded, is `failed` with its reason. Each state is
-  written to the master with an audit entry whose actor is the system, a
-  flapping database at most once a minute, and no reason, error or log line
-  holds the database's address, host, user or password. Creating a tenant
-  writes its row as `upgrading` first, so a crash before its database is
-  ready is finished by the next start or by the same creation repeated.
-  Removing a tenant unregisters it and leaves its data in place, and says
-  where. Closing the registry stops its timer, waits for opens in progress
-  and closes every store. `scripts/check-tenant-sqlite.sh` reads a tenant
-  the registry created with the `sqlite3` tool. The server does not use the
-  registry yet.
+  can put it elsewhere. Errors from the SQLite driver now name the database
+  they are about, master or tenant, and a symbolic link planted at a
+  database's path is refused rather than followed. A tenant may not be named
+  for a device Windows reserves (`con`, `nul`, `com1` and the like), on any
+  system, so a data directory moved to Windows keeps working. The tenant
+  registry (`internal/registry`) holds one open store per tenant and is the
+  only way to get one: getting a ready tenant's store takes no lock and makes
+  no call to the master (12 ns, no allocation, among 1,000 tenants). It opens
+  every tenant in parallel, a bounded number at once, each under its own
+  deadline, and checks an open tenant with a short ping that waits for no
+  open, so one dead database delays neither the start nor the others; a
+  tenant whose database does not answer is `unreachable` and refused while
+  the others are served, and returns to `ready` on its own; one whose address
+  does not open with the key file, whose database refuses its address or its
+  file, whose schema cannot be upgraded or whose driver panics is `failed`
+  with its reason. The registry's view of a tenant's state, with its reason
+  and the time it was reached, is current the moment a check completes; the
+  master records it, with an audit entry whose actor is the system, a
+  flapping database at most once a minute. A reason, an error, an audit
+  entry and a log line hold only the registry's own words and a driver's
+  caller-safe message, never a driver's raw error, so no form of the
+  database's address or password reaches them. Creating a tenant is whole or
+  nothing: when its database cannot be opened or upgraded, the row is removed
+  again, the undoing is audited, and the failure is answered; only a crash
+  leaves an `upgrading` row, which the next start finishes, and repeating a
+  creation with another address is a conflict. Removing a tenant unregisters
+  it and leaves its data in place, and says where. Each round also reconciles
+  the registry with the master's list of tenants, so a removal or creation
+  whose answer was lost does not leave the two apart. At start it warns when
+  the tenants could not all hold their files under the process's limit.
+  Closing the registry stops its timer, waits for opens in progress up to the
+  deadline it is given, and closes every store. `scripts/check-tenant-sqlite.sh`
+  reads a tenant the registry created with the `sqlite3` tool. The server does
+  not use the registry yet.
+- The commands could not be browsed: finding a tenant's grants, its settings
+  and its audit entries took a command each, and making a key meant copying
+  its secret from standard output. `magnetar` with no arguments, when standard
+  input and output are both terminals, now opens an interactive program (Bubble
+  Tea 2.1.1 and Lip Gloss 2.1.1, MIT, with the modules they need) with a menu,
+  scrolling lists and detail screens for tenants, keys, grants, settings and
+  the audit log, as a client of the same API through the same client. A list
+  fetches a page of 100 and the next when the cursor nears the end, never
+  everything; a call runs beside the screen, with the commands' deadline, and
+  esc cancels it; an error is one line with the server's message and request
+  id. A new key is drawn on one screen only, with the words that it will not be
+  shown again, leaving that screen asks once, and the secret is zeroed then;
+  revoking a key and removing a grant, a setting override or a tenant need the
+  id or name typed. The alternate screen is left and the cursor shown on quit,
+  on SIGTERM and SIGINT, and on a panic. With any argument, or when either end
+  is not a terminal, the usage line and exit 2 are as before.
+  `scripts/check-tui.py` runs the built binary under a pseudo-terminal against
+  the fake server (`make check-tui`, a step of its own in CI, Linux and macOS
+  only). The binaries grew by 1.67 to 2.09 MiB (linux/amd64: 10.78 to 12.73
+  MiB).
+- The master database could only live in a SQLite file. It can now live in
+  Postgres too (`internal/driver/postgres`, on `pgx/v5` and its pool, pure
+  Go), at a `postgres://` address, and it passes the same contract suite
+  unchanged on Postgres 16 and 18. The driver makes and upgrades its
+  tables in the schema the address's `search_path` names and works with a login
+  that owns only that schema; it never makes a database or a role. Every change
+  and its audit entry are one transaction; a grant's old role is read and its new
+  one written in one statement under a lock on the key's row, so two racing sets
+  are ordered; a unique tenant name is kept by the database and its violation is
+  recognized by SQLSTATE and constraint name, never by message text. Text that is
+  compared or ordered is `COLLATE "C"`, so a database created with another
+  collation pages through the same order. Migrations take a session advisory lock
+  on one dedicated connection, released on every path, so processes that start
+  together apply each file once. No error repeats the address, the password or
+  the host. CI runs the driver against Postgres 16 and 18 and fails, instead of
+  skipping, when the server is missing; `scripts/check-master-postgres.sh` reads
+  what the driver wrote with `psql` and `pg_dump` and finds a key's hash but
+  never its secret.
 - The API contract had generated interfaces and nothing behind them.
   `internal/api` now implements its four services (tenants, keys and grants,
   settings, audit), each method a short function that takes the access

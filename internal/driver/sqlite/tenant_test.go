@@ -18,12 +18,12 @@ import (
 	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
 )
 
-// openTenantTest opens a fresh, migrated tenant database in a new file under
-// tb's temporary directory, closed when tb ends.
-func openTenantTest(tb testing.TB) tenant.Store {
+// openTenantTest opens a fresh, migrated database for the tenant with this
+// id in a new file under tb's temporary directory, closed when tb ends.
+func openTenantTest(tb testing.TB, tenantID string) tenant.Store {
 	tb.Helper()
 	ctx := context.Background()
-	s, err := OpenTenant(ctx, filepath.Join(tb.TempDir(), "tenant.db"))
+	s, err := OpenTenant(ctx, filepath.Join(tb.TempDir(), "tenant.db"), tenantID)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -41,13 +41,13 @@ func TestTenantContract(t *testing.T) {
 
 // openTenantPair opens two stores on one new tenant database, as two
 // processes would, for the suite's tests across instances.
-func openTenantPair(tb testing.TB) (tenant.Store, tenant.Store) {
+func openTenantPair(tb testing.TB, tenantID string) (tenant.Store, tenant.Store) {
 	tb.Helper()
 	ctx := context.Background()
 	path := filepath.Join(tb.TempDir(), "tenant.db")
 	var out [2]tenant.Store
 	for i := range out {
-		s, err := OpenTenant(ctx, path)
+		s, err := OpenTenant(ctx, path, tenantID)
 		if err != nil {
 			tb.Fatal(err)
 		}
@@ -72,7 +72,7 @@ func TestTenantContractShared(t *testing.T) {
 // committed.
 func TestTenantPanicInWriteReleasesTheWriter(t *testing.T) {
 	ctx := context.Background()
-	s := openTenantTest(t).(*Tenant)
+	s := openTenantTest(t, "t1").(*Tenant)
 	func() {
 		defer func() { _ = recover() }()
 		_ = s.writeShared(ctx, "test", func(tx *sql.Tx, st *sharedStatements) error {
@@ -104,7 +104,7 @@ func TestTenantFailingFiles(t *testing.T) {
 	if err := os.WriteFile(notDB, []byte(strings.Repeat("this is not a database\n", 400)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := OpenTenant(ctx, notDB)
+	_, err := OpenTenant(ctx, notDB, "t1")
 	if fault.KindOf(err) != fault.Unavailable || fault.Message(err) != "the tenant database file is not a SQLite database" {
 		t.Errorf("OpenTenant on a text file = %v, want Unavailable saying the tenant database file is not one", err)
 	}
@@ -115,7 +115,7 @@ func TestTenantFailingFiles(t *testing.T) {
 		return
 	}
 	loose := filepath.Join(dir, "loose.db")
-	s, err := OpenTenant(ctx, loose)
+	s, err := OpenTenant(ctx, loose, "t1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestTenantFailingFiles(t *testing.T) {
 	if err := os.Chmod(loose, 0o644); err != nil { //nolint:gosec // G302: the loosened mode is what is tested.
 		t.Fatal(err)
 	}
-	_, err = OpenTenant(ctx, loose)
+	_, err = OpenTenant(ctx, loose, "t1")
 	if fault.KindOf(err) != fault.Invalid || !strings.Contains(fault.Message(err), "the tenant database file can be read or written by users other than its owner") ||
 		!strings.Contains(fault.Message(err), "chmod 600") {
 		t.Errorf("OpenTenant on a file others can read = %v, want Invalid naming the tenant database and the fix", err)
@@ -165,7 +165,7 @@ const shippedTenantInit = "2c738a52c02ca12974ef688b3fe0b03b162b2f15c5f8c15b9c9db
 // fails as Unavailable with a message that says so, instead of a SQL error,
 // and reads as version 0.
 func TestTenantNotMigrated(t *testing.T) {
-	s, err := OpenTenant(context.Background(), filepath.Join(t.TempDir(), "tenant.db"))
+	s, err := OpenTenant(context.Background(), filepath.Join(t.TempDir(), "tenant.db"), "t1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,12 +184,12 @@ func TestTenantNotMigrated(t *testing.T) {
 // is failed), a file that cannot be made is Unavailable (it is retried), and
 // neither error repeats the path.
 func TestTenantOpenRefuses(t *testing.T) {
-	_, err := OpenTenant(context.Background(), "file:/tmp/x.db")
+	_, err := OpenTenant(context.Background(), "file:/tmp/x.db", "t1")
 	if fault.KindOf(err) != fault.Invalid {
 		t.Errorf("a file: URI: %v, want Invalid", err)
 	}
 	missing := filepath.Join(t.TempDir(), "no", "such", "dir", "t.db")
-	_, err = OpenTenant(context.Background(), missing)
+	_, err = OpenTenant(context.Background(), missing, "t1")
 	if fault.KindOf(err) != fault.Unavailable {
 		t.Errorf("a path in no directory: %v, want Unavailable", err)
 	}
@@ -218,7 +218,7 @@ func TestTenantAndMasterMigrationsApart(t *testing.T) {
 	if err := m.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s, err := OpenTenant(ctx, path)
+	s, err := OpenTenant(ctx, path, "t1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestTenantAndMasterMigrationsApart(t *testing.T) {
 func TestTenantRefusesMasterCursors(t *testing.T) {
 	ctx := context.Background()
 	m := openTest(t)
-	s := openTenantTest(t)
+	s := openTenantTest(t, "t1")
 	for _, n := range []string{"s0", "s1", "s2"} {
 		a := master.AuditEntry{ID: "a-" + n, Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}
 		if err := m.SetSetting(ctx, n, "v", a); err != nil {
