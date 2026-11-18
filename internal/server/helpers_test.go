@@ -87,7 +87,10 @@ type env struct {
 	log      *syncBuffer
 	roots    *x509.CertPool
 	netURL   string
-	clients  []*http.Client
+	// clientsMu guards clients: a test may make clients from several
+	// goroutines at once, and each is kept here to be closed at the end.
+	clientsMu sync.Mutex
+	clients   []*http.Client
 	// stopErrOK is set by a test whose stop is meant to fail.
 	stopErrOK   bool
 	releaseOnce sync.Once
@@ -177,9 +180,7 @@ func newEnv(tb testing.TB, o options) *env {
 		e.netURL = "https://" + a.String()
 	}
 	tb.Cleanup(func() {
-		for _, c := range e.clients {
-			c.CloseIdleConnections()
-		}
+		e.closeClients()
 		if err := srv.Stop(); err != nil && !e.stopErrOK {
 			tb.Errorf("stop: %v", err)
 		}
@@ -245,8 +246,25 @@ func (e *env) socketClient(h2 bool) *http.Client {
 			return d.DialContext(ctx, "unix", path)
 		},
 	}}
-	e.clients = append(e.clients, c)
+	e.track(c)
 	return c
+}
+
+// track keeps a client to be closed when the test ends. It may be called from
+// several goroutines.
+func (e *env) track(c *http.Client) {
+	e.clientsMu.Lock()
+	defer e.clientsMu.Unlock()
+	e.clients = append(e.clients, c)
+}
+
+// closeClients closes the idle connections of every client the test made.
+func (e *env) closeClients() {
+	e.clientsMu.Lock()
+	defer e.clientsMu.Unlock()
+	for _, c := range e.clients {
+		c.CloseIdleConnections()
+	}
 }
 
 // tlsClient returns an HTTP client over the TLS listener: HTTP/2 when h2 is
@@ -262,7 +280,7 @@ func (e *env) tlsClient(h2 bool) *http.Client {
 		Protocols:       &p,
 		TLSClientConfig: &tls.Config{RootCAs: e.roots, MinVersion: tls.VersionTLS12},
 	}}
-	e.clients = append(e.clients, c)
+	e.track(c)
 	return c
 }
 
