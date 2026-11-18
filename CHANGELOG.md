@@ -499,6 +499,13 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A request its caller canceled could be recorded under another reason than the
+  cancel: when the cancel arrived while the server waited for the request's
+  message, the entry said the message could not be read; and a cancel that
+  arrived just after the check still ran the handler, whose success was then
+  recorded as done. A request whose caller has gone is now recorded as
+  canceled at whatever moment the cancel lands, and nothing further is done
+  for it, a change included.
 - A key revoked or expired while a request's body was still arriving was
   still honored by methods whose requirement reads the request (GetTenant,
   the settings methods, ListAuditEntries), for as long as the body took, up to

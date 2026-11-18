@@ -175,6 +175,7 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 			return cerr
 		}
 		call.Decision = d
+		s.at(ctx, pointChecked)
 		if s.withDecision != nil {
 			ctx = s.withDecision(ctx, d)
 		}
@@ -185,7 +186,14 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 	}
 
 	ctx = context.WithValue(ctx, callKey{}, call)
-	err = s.run(ctx, call, next)
+	if cerr := ctx.Err(); cerr != nil {
+		// The caller went away, or the request ran out of time, before its
+		// handler started: nothing is done for it.
+		err = cerr
+	} else {
+		err = s.run(ctx, call, next)
+	}
+	s.at(ctx, pointHandled)
 	if !x.rule.public && !call.Decision.Entered() && (!x.unaudited || err != nil) {
 		// The check allowed the request and nothing wrote its entry: the
 		// handler failed, panicked or was canceled before it recorded one,
@@ -193,7 +201,7 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 		// checked request has exactly one.
 		outcome, reason := master.OutcomeDone, ""
 		if err != nil {
-			outcome, reason = master.OutcomeFailed, s.unrecordedReason(call, err)
+			outcome, reason = master.OutcomeFailed, s.unrecordedReason(ctx, call, err)
 		}
 		s.access.Record(call.Decision, outcome, reason, access.Facts{})
 	}
@@ -211,17 +219,20 @@ const (
 	reasonEnded      = "the request ended before it was recorded: "
 )
 
-// unrecordedReason names why an allowed request ended without an entry.
-func (s *Server) unrecordedReason(call *Call, err error) string {
+// unrecordedReason names why an allowed request ended without an entry. A
+// request whose context has ended was canceled or ran out of time, whatever
+// error that caused on the way (a read of its message cut short reads as a
+// message that could not be read), so its context is asked first.
+func (s *Server) unrecordedReason(ctx context.Context, call *Call, err error) string {
 	switch {
-	case call.unreadable.Load():
-		return reasonUnreadable
+	case errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled):
+		return reasonCanceled
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded):
+		return reasonDeadline
 	case errors.Is(err, errPanic):
 		return reasonPanic
-	case errors.Is(err, context.DeadlineExceeded):
-		return reasonDeadline
-	case errors.Is(err, context.Canceled):
-		return reasonCanceled
+	case call.unreadable.Load():
+		return reasonUnreadable
 	}
 	return reasonEnded + codeName(s.code(err))
 }

@@ -100,7 +100,7 @@ func heldBody(t *testing.T, e *env, reads *keyReads, procedure, authorization, b
 func entriesOf(t *testing.T, e *env, id string) []master.AuditEntry {
 	t.Helper()
 	var out []master.AuditEntry
-	for _, en := range allAudit(t, e) {
+	for _, en := range allAudit(t, e, haveIDs(id)) {
 		if en.RequestID == id {
 			out = append(out, en)
 		}
@@ -166,9 +166,9 @@ func TestKeyExpiredWhileBodyArrives(t *testing.T) {
 // writes exactly one audit entry however it ends before its handler records
 // one: a message that cannot be read (on methods whose requirement reads it,
 // where the fallback check may write the entry itself, and on one whose
-// handler reads it), a handler's panic, a deadline, a cancel
-// by the caller, and a handler that succeeds without recording; each with
-// its fixed reason.
+// handler reads it), a handler's panic, a deadline, and a handler that
+// succeeds without recording; each with its fixed reason. A cancel is
+// TestCanceledAtEachMomentWritesOneEntry.
 func TestAllowedRequestWritesOneEntry(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	post := func(proc, body string, header map[string]string) string {
@@ -202,19 +202,11 @@ func TestAllowedRequestWritesOneEntry(t *testing.T) {
 		{"deadline", post(magnetarv1connect.TenantServiceListTenantsProcedure, `{"pageToken":"block"}`, map[string]string{"Connect-Timeout-Ms": "100"}), master.OutcomeFailed, "the request's deadline passed before it was recorded"},
 		{"succeeded without recording", post(magnetarv1connect.TenantServiceListTenantsProcedure, `{}`, nil), master.OutcomeDone, ""},
 	}
-	// A cancel: the caller goes away while the handler waits.
-	ctx, cancel := context.WithCancel(e.ctx)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_, _ = e.local().tenants.ListTenants(ctx, &magnetarv1.ListTenantsRequest{PageToken: "block"})
-	}()
-	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 1\n") })
-	cancel()
-	<-done
-	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 0\n") })
-
-	entries := allAudit(t, e)
+	var ids []string
+	for _, w := range wants {
+		ids = append(ids, w.id)
+	}
+	entries := allAudit(t, e, haveIDs(ids...))
 	for _, w := range wants {
 		var got []master.AuditEntry
 		for _, en := range entries {
@@ -226,14 +218,104 @@ func TestAllowedRequestWritesOneEntry(t *testing.T) {
 			t.Errorf("%s: entries %+v, want one %s %q", w.name, got, w.outcome, w.reason)
 		}
 	}
-	canceled := 0
-	for _, en := range entries {
-		if en.Reason == "the request was canceled before it was recorded" {
-			canceled++
+}
+
+// TestCanceledAtEachMomentWritesOneEntry guards that a request its caller
+// cancels writes exactly one audit entry whichever moment the cancel lands
+// at, with the reason of that moment. Each request is stopped at one point
+// by the server's test hook (or, in the handler, by a stand-in that waits),
+// the call canceled there, and the request let go once its context has
+// ended:
+//
+//   - in the front step, before the credential is judged; between the check
+//     and the handler (which then does not run); in the handler's read of a
+//     message held back (whose read fails because of the cancel, and is not
+//     recorded as a message that could not be read); in the handler: failed,
+//     canceled before it was recorded;
+//   - after the handler returned with its answer and before the entry is
+//     written: done, since the work was done.
+//
+// A cancel during the check's read of a key is
+// TestCanceledCheckIsNotAStoreFailure. The entry is read once the request
+// has left the server and the audit writer has written what it was handed,
+// so it is never read before it is written.
+func TestCanceledAtEachMomentWritesOneEntry(t *testing.T) {
+	const canceled = "the request was canceled before it was recorded"
+	for _, c := range []struct {
+		point, token string
+		outcome      master.Outcome
+		reason       string
+	}{
+		{"front", "", master.OutcomeFailed, canceled},
+		{"checked", "", master.OutcomeFailed, canceled},
+		{"", "block", master.OutcomeFailed, canceled},
+		{"receive", "", master.OutcomeFailed, canceled},
+		{"handled", "", master.OutcomeDone, ""},
+	} {
+		name := c.point
+		if name == "" {
+			name = "in the handler"
 		}
-	}
-	if canceled != 1 {
-		t.Errorf("the canceled request wrote %d entries with its reason, want 1", canceled)
+		t.Run(name, func(t *testing.T) {
+			var armed atomic.Bool
+			armed.Store(c.point != "")
+			reached := make(chan struct{})
+			var ended atomic.Bool
+			e := newEnv(t, options{noNetwork: true, beforeRun: func(s *server.Server) {
+				s.SetHook(func(ctx context.Context, point string) {
+					if point != c.point || !armed.CompareAndSwap(true, false) {
+						return
+					}
+					close(reached)
+					select {
+					case <-ctx.Done():
+						ended.Store(true)
+					case <-time.After(5 * time.Second):
+					}
+				})
+			}})
+			ctx, cancel := context.WithCancel(e.ctx)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				if c.point == "receive" {
+					// The message is held back, so the handler's read is
+					// waiting for it when the cancel lands.
+					pr, pw := io.Pipe()
+					defer func() { _ = pw.Close() }()
+					req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://local"+magnetarv1connect.TenantServiceListTenantsProcedure, pr)
+					req.Header.Set("Content-Type", "application/json")
+					if resp, err := e.socketClient(true).Do(req); err == nil {
+						_ = resp.Body.Close()
+					}
+					return
+				}
+				_, _ = e.local().tenants.ListTenants(ctx, &magnetarv1.ListTenantsRequest{PageToken: c.token})
+			}()
+			if c.point != "" {
+				<-reached
+			} else {
+				waitFor(t, func() bool { return e.standins.Ran.Load() == 1 })
+			}
+			cancel()
+			<-done
+			waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 0\n") })
+			if c.point != "" && !ended.Load() {
+				t.Fatal("the request's context did not end when its caller canceled")
+			}
+			var got []master.AuditEntry
+			isCall := func(en master.AuditEntry) bool {
+				return en.Method == magnetarv1connect.TenantServiceListTenantsProcedure
+			}
+			for _, en := range allAudit(t, e, haveEntry(isCall)) {
+				if isCall(en) {
+					got = append(got, en)
+				}
+			}
+			if len(got) != 1 || got[0].Outcome != c.outcome || got[0].Reason != c.reason || got[0].LocalUser == "" {
+				t.Fatalf("entries %+v, want one %s %q", got, c.outcome, c.reason)
+			}
+		})
 	}
 }
 
@@ -317,7 +399,7 @@ func TestCanceledCheckIsNotAStoreFailure(t *testing.T) {
 	}
 	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 0\n") })
 	var got []master.AuditEntry
-	for _, en := range allAudit(t, e) {
+	for _, en := range allAudit(t, e, haveEntry(func(en master.AuditEntry) bool { return en.KeyID == made.ID })) {
 		if en.KeyID == made.ID {
 			got = append(got, en)
 		}

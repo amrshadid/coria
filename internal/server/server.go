@@ -195,6 +195,9 @@ type Server struct {
 	procs map[string]http.Handler
 	// plain maps the path of each plain HTTP route to its pattern.
 	plain map[string]string
+	// hook, set only by tests before Start, is called at the points named
+	// by the point constants (Server.at), to stop a request there.
+	hook func(ctx context.Context, point string)
 
 	stopMu    sync.RWMutex
 	stopping  bool

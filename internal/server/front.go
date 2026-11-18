@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,6 +32,30 @@ const (
 	// answer: three digits, whatever the request sent.
 	statusDetail = "http_status"
 )
+
+// The points of a request at which a test may stop it (Server.at), to
+// show what each moment of a cancel leaves in the audit log.
+const (
+	// pointFront is the front step, before the credential is judged.
+	pointFront = "front"
+	// pointChecked is the request path, after the check allowed the
+	// request and before its handler runs.
+	pointChecked = "checked"
+	// pointReceive is the handler's read of the request's message from
+	// the wire, before it reads.
+	pointReceive = "receive"
+	// pointHandled is the request path, after the handler returned and
+	// before the entry of a request that has none is written.
+	pointHandled = "handled"
+)
+
+// at runs the server's test hook at point, if one is set; in a server
+// that is serving, it is nil and at does nothing.
+func (s *Server) at(ctx context.Context, point string) {
+	if s.hook != nil {
+		s.hook(ctx, point)
+	}
+}
 
 // noSuchMethod and noSuchRoute are the answers to an authenticated caller
 // who asks for something nothing serves: UNIMPLEMENTED in an RPC protocol,
@@ -110,6 +135,7 @@ func (s *Server) front(next http.Handler) http.Handler {
 		x := exchange{method: method, metric: metric, remote: remoteOf(ctx, r.RemoteAddr)}
 		local, isLocal := localFrom(ctx)
 		facts := access.Request{Method: method, RemoteAddress: x.remote, RequestID: id}
+		s.at(ctx, pointFront)
 		accepted, err := s.access.Authenticate(ctx, credentialFrom(r.Header, local, isLocal), facts)
 		if err != nil {
 			ce := s.answer(err)
@@ -135,7 +161,16 @@ func (s *Server) front(next http.Handler) http.Handler {
 			if sw, ok := w.(*statusWriter); ok {
 				f.Details = map[string]string{statusDetail: strconv.Itoa(sw.Status())}
 			}
-			s.access.RecordUnchecked(accepted, f, uncheckedReason)
+			reason := uncheckedReason
+			switch {
+			case errors.Is(ctx.Err(), context.Canceled):
+				// The caller went away before any check took the request
+				// up: what was answered, if anything, is not its fault.
+				reason = reasonCanceled
+			case errors.Is(ctx.Err(), context.DeadlineExceeded):
+				reason = reasonDeadline
+			}
+			s.access.RecordUnchecked(accepted, f, reason)
 		}()
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -180,13 +180,11 @@ func TestNotServedAudited(t *testing.T) {
 		a = call(t, e.tlsClient(true), e.netURL, path, grpc, "Bearer not-a-key")
 		wants = append(wants, want{a.id, "/", master.OutcomeRefused, false})
 	}
-	if err := e.access.FlushAudit(e.ctx); err != nil {
-		t.Fatal(err)
+	var ids []string
+	for _, w := range wants {
+		ids = append(ids, w.id)
 	}
-	entries, _, err := e.master.ListAudit(e.ctx, master.AuditFilter{}, master.Page{Limit: master.MaxPageLimit})
-	if err != nil {
-		t.Fatal(err)
-	}
+	entries := allAudit(t, e, haveIDs(ids...))
 	for _, w := range wants {
 		i := slices.IndexFunc(entries, func(en master.AuditEntry) bool { return en.RequestID == w.id })
 		if w.id == "" || i < 0 {

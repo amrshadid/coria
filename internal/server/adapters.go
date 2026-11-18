@@ -112,6 +112,7 @@ func (r *replayStream) Receive(msg any) error {
 		r.logMessage("message received", dst)
 		return nil
 	}
+	r.s.at(r.ctx, pointReceive)
 	if err := r.ServerStream.Receive(msg); err != nil {
 		if !errors.Is(err, io.EOF) {
 			if c, ok := CallFrom(r.ctx); ok {

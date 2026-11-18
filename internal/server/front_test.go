@@ -394,7 +394,13 @@ func TestUnauthenticatedAnswerIsTheProtocols(t *testing.T) {
 		}
 	}
 
-	entries := allAudit(t, e)
+	var ids []string
+	for _, c := range cells {
+		if c.path != "health" {
+			ids = append(ids, c.got.id)
+		}
+	}
+	entries := allAudit(t, e, haveIDs(ids...))
 	byID := map[string][]master.AuditEntry{}
 	for _, en := range entries {
 		byID[en.RequestID] = append(byID[en.RequestID], en)
@@ -418,9 +424,61 @@ func TestUnauthenticatedAnswerIsTheProtocols(t *testing.T) {
 	t.Logf("%d unauthenticated requests in %d groups, one answer each; %d health checks", len(cells)-health, len(groups), health)
 }
 
-// allAudit returns every entry of the master's audit log, once the writer
-// has written what it holds.
-func allAudit(t *testing.T, e *env) []master.AuditEntry {
+// allAudit returns every entry of the master's audit log once ready holds
+// for them, or ready is nil: it waits for the entries a test expects by
+// event, not by order. An entry is handed to the audit writer when its
+// request ends, which may be after the client has its whole answer (the
+// front step's entry for an answer the RPC library flushed, the request
+// path's entry after a handler that sent its answer), so one read right
+// after the answer can come before the write. It reads until ready holds or
+// ten seconds pass, then flushes and reads once more, so an entry written
+// late beside the expected ones is counted too.
+func allAudit(t *testing.T, e *env, ready func([]master.AuditEntry) bool) []master.AuditEntry {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		out := readAudit(t, e)
+		if ready == nil || ready(out) {
+			return readAudit(t, e)
+		}
+		if time.Now().After(deadline) {
+			return out
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// haveIDs returns a readiness test for allAudit: every one of ids has an
+// entry.
+func haveIDs(ids ...string) func([]master.AuditEntry) bool {
+	return func(es []master.AuditEntry) bool {
+		seen := make(map[string]bool, len(es))
+		for _, en := range es {
+			seen[en.RequestID] = true
+		}
+		for _, id := range ids {
+			if !seen[id] {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// haveEntry returns a readiness test for allAudit: some entry matches.
+func haveEntry(match func(master.AuditEntry) bool) func([]master.AuditEntry) bool {
+	return func(es []master.AuditEntry) bool {
+		for _, en := range es {
+			if match(en) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// readAudit flushes the audit writer and reads the whole master log.
+func readAudit(t *testing.T, e *env) []master.AuditEntry {
 	t.Helper()
 	if err := e.access.FlushAudit(e.ctx); err != nil {
 		t.Fatal(err)
@@ -637,8 +695,12 @@ func TestAuthenticatedNotServed(t *testing.T) {
 			}
 		}
 	}
+	var ids []string
+	for _, s := range all {
+		ids = append(ids, s.id)
+	}
 	byID := map[string][]master.AuditEntry{}
-	for _, en := range allAudit(t, e) {
+	for _, en := range allAudit(t, e, haveIDs(ids...)) {
 		byID[en.RequestID] = append(byID[en.RequestID], en)
 	}
 	for _, s := range all {
@@ -700,8 +762,12 @@ func TestAnsweredBeforeCheckAudited(t *testing.T) {
 		t.Fatal(err)
 	}
 	okID := info.ResponseHeader().Get(server.RequestIDHeader)
+	ids := []string{okID}
+	for _, s := range all {
+		ids = append(ids, s.id)
+	}
 	byID := map[string][]master.AuditEntry{}
-	for _, en := range allAudit(t, e) {
+	for _, en := range allAudit(t, e, haveIDs(ids...)) {
 		byID[en.RequestID] = append(byID[en.RequestID], en)
 	}
 	for _, s := range all {
