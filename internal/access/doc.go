@@ -16,15 +16,24 @@
 // every request takes, and hands the Decision to the handler. Principal and
 // Decision have no exported fields and no exported constructor, so no other
 // package can build or alter one that carries rights; their zero values
-// carry none.
+// carry none. LocalOperator, the credential that is admin everywhere, may be
+// called only by internal/server, and a test holds every other package to
+// that.
 //
-// The operations of this package that act for a caller (CreateKey, GetKey,
-// ListKeys, RevokeKey, SetGrant, ListGrants, RemoveGrant, WhoAmI) take that
-// Decision, not a credential, so a request is checked once, not twice. Each
-// refuses the zero Decision as Denied, and each but WhoAmI checks the
-// Decision's caller again for the role it needs (admin on the installation)
-// and refuses with Denied and a refusal entry if it is not there: a wrong
-// requirement in the server's table of methods cannot open them.
+// A Decision is for one request. The operations of this package that act
+// for a caller (CreateKey, GetKey, ListKeys, RevokeKey, SetGrant,
+// ListGrants, RemoveGrant, WhoAmI) take that Decision, not a credential, so
+// a request is checked once. Each refuses the zero Decision as Denied. For a
+// key, each reads the key again, and refuses it as Unauthenticated when it
+// was revoked or has expired since the check; each but WhoAmI also reads the
+// key's role on the installation again and refuses with Denied when it is
+// not admin. So a Decision kept past its request, or made for a lesser
+// requirement by a wrong entry in the server's table of methods, opens
+// nothing. The reads are made just before the change, not inside its
+// transaction, because the port's changes take no caller: a revocation in
+// the moment between the two is not seen by that one change. The master
+// port could close that window by taking the acting key's id in each change
+// and checking it in the transaction.
 //
 // The checks run in the order the API contract states (access.proto, "The
 // order of checks"): the credential first, answered Unauthenticated when it
@@ -36,46 +45,83 @@
 // # Refusals
 //
 // Every way a credential can be no good (none, malformed, unknown id, wrong
-// secret, revoked, expired) is one kind and one fixed message. A good key
-// with no sufficient grant and a good key naming a tenant that does not exist
-// are one kind and one fixed message too, and both make the same calls to
-// the store in the same order (Key, TenantByName, RolesFor), so neither the
-// answer nor the work done tells a caller which tenants exist. The audit
-// entry keeps the real cause in its reason; the caller never sees it.
+// secret, revoked, expired) is one kind and one fixed message, and an unknown
+// id costs the same comparison of secrets as a wrong secret. A good key with
+// no sufficient grant and a good key naming a tenant that does not exist are
+// one kind and one fixed message too, and both make the same two calls to the
+// store in the same order: Key, then RolesFor by the name as given, which
+// reads the roles and the tenant in one statement that runs the same lookups
+// in both cases. Neither the answer nor the calls tell a caller which tenants
+// exist. Their times were measured close but not equal (the change that
+// introduced RolesFor reports the numbers): a tenant that exists is read
+// from its row, one that does not is not. The audit entry keeps the real
+// cause in its reason; the caller never sees it.
+//
+// # Where an entry goes (D53)
+//
+// A refusal is always written to the installation's log (the master), with
+// the tenant's name when the request named one: a caller who was refused must
+// not cause a write in a tenant's database, and keys and grants are the
+// installation's. An allowed request that concerns a tenant is written to
+// that tenant's log, one that concerns the installation to the master's: a
+// change writes Decision.Entry in its own transaction in that log; a read
+// hands its entry to Record (the master) or RecordTo (a tenant's log, a
+// Sink). When a tenant's log does not answer, its entries are written to the
+// master's log instead, with the tenant's name and the detail
+// DetailRerouted. A handler that learns what a request was about only after
+// the check (an object, a tenant's name, details) passes them as Facts.
 //
 // # What is audited, and when
 //
 // A change is never unaudited. Its entry is written in the same transaction
-// as the change, through the master port: if the entry cannot be written,
-// the change is not made.
+// as the change: if the entry cannot be written, the change is not made.
 //
-// A refusal or a read is audited unless the server is overwhelmed or is
-// killed within the flush interval, and both cases are counted or bounded.
-// Its entry does not cost a synced commit on the request's path. It is
-// handed to the audit writer, one goroutine of this package with a bounded
-// queue, which appends entries in batches: when a batch is full
-// (Config.AuditBatch), or when Config.AuditInterval passes. A batch the
-// master refuses is appended again one entry at a time, so one bad entry
-// loses only itself. In detail:
+// A refusal or a read is audited unless the server is overwhelmed, a log does
+// not answer for longer than the retries, or the server is killed within the
+// flush interval; each case is counted or bounded. Its entry costs no synced
+// commit on the request's path. It is handed to the audit writer, one
+// goroutine of this package with two bounded queues, one for refusals and
+// one for allowed requests, so a flood of bad keys never pushes out the
+// entries of reads. The writer appends in batches per log, when a batch is
+// full (Config.AuditBatch) or when Config.AuditInterval passes. In detail:
 //
-//   - Overwhelmed: when the queue is full, the entry is dropped and
-//     AuditStats.Dropped counts it. The request is neither failed nor
-//     delayed. The first drop after a minute without a notice is reported at
-//     the next batch by one entry of method "access.AuditWriter" with the
-//     number of entries dropped since the last notice, so every drop reaches
-//     the log, at most a minute late, and a flood costs one entry a minute.
-//   - Killed: the entries of at most one interval (and the queue behind
-//     them) are lost. That is the window a crash can cost.
-//   - Closed: Close writes what the writer holds until its deadline; what is
-//     left then is dropped and counted.
-//   - Refused by the master: AuditStats.Failed counts it and the log names
-//     the entry and its cause.
+//   - Overwhelmed: when a queue is full, the entry is dropped and counted
+//     (AuditStats.DroppedRefusals, DroppedRecords). The request is neither
+//     failed nor delayed.
+//   - A log that does not answer: a batch the store fails as Unavailable is
+//     tried again Config.AuditRetries times, waiting Config.AuditBackoff,
+//     doubled each time; an append that runs out of Config.AuditTimeout is
+//     not tried again. A tenant's batch then goes to the master's log; the
+//     master's is dropped and counted (DroppedWrites). So a store that hangs
+//     holds the writer one timeout per batch, and one that is down costs one
+//     call and the retries per batch, never one call per entry.
+//   - One bad entry: a batch refused for one of its entries (an entry not
+//     valid, an id already taken) is appended again one entry at a time,
+//     once each, so the bad entry is Failed and only it is lost.
+//   - Killed: what is queued and the batches not yet written are lost: at
+//     most the two queues (Config.RefusalQueue and RecordQueue entries) and
+//     one interval's batches. That is the window a crash can cost.
+//   - Closed: Close writes what the writer holds and what is queued until its
+//     deadline, and returns by its deadline even if a store ignores its
+//     context; what is left is dropped and counted. Every entry handed in is
+//     counted exactly once, as written, failed or dropped, and so is every
+//     last-use mark.
+//
+// Drops are reported in the master's log by an entry of method
+// "access.AuditWriter" with the number dropped since the last report: at most
+// one a minute, and a last one when Close runs, so every drop before Close is
+// reported. The time of the last report moves only once a report is written.
 //
 // The reason for the split: on SQLite a synced commit costs milliseconds,
 // so one per refusal would cap the whole server at a few hundred requests a
 // second, and a flood of bad keys would use up the master's one writer for
 // everyone. Changes keep the strict rule, since a change nobody can see in
 // the log is the failure that matters.
+//
+// Every text of an entry that a caller controls is escaped (control
+// characters, line breaks, escape, the bidirectional controls) and bounded
+// by one function, so an entry can neither forge a line of a log nor be
+// refused by the master for its size.
 //
 // # What it must never do
 //
@@ -85,8 +131,9 @@
 // one secret.NewAPIKey that CreateKey returns, which prints only its id. It
 // must never read the wall clock for an entry's time or an expiry, nor make
 // ids itself: the clock and the id source are given to New. It must never
-// let recording a key's last use or a refusal's entry fail or delay a
-// request: both go to bounded workers that drop when they fall behind, and
-// a key marked used within the minute is not marked again. It must never
-// leave a goroutine running after Close returns.
+// let recording a key's last use or an entry fail or delay a request: both
+// go to bounded workers that drop when they fall behind, and a key marked
+// used within the minute is not marked again. It must never leave a
+// goroutine running after Close returns, unless a store ignores its context,
+// and then it counts what that goroutine held as dropped.
 package access

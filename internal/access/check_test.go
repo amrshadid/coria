@@ -62,7 +62,7 @@ func TestCheckTable(t *testing.T) {
 		{"revoked", access.APIKey(revoked.full), access.OnInstallation(master.RoleReader), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "key revoked", revoked.id, ""},
 		{"expired", access.APIKey(expired.full), access.OnInstallation(master.RoleReader), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "key expired", expired.id, ""},
 		{"unauthenticated before the tenant", access.APIKey(revoked.full), access.OnTenant("nosuch", master.RoleReader), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "key revoked", revoked.id, "nosuch"},
-		{"local without user", access.LocalOperator(""), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "local caller without a user id", "", ""},
+		{"local without user", access.LocalOperator(""), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "local caller without a usable user id", "", ""},
 
 		{"good, authenticated", access.APIKey(good.full), access.Authenticated(), 0, true, "", "", "", good.id, ""},
 		{"good, its tenant", access.APIKey(good.full), access.OnTenant("lab", master.RoleWriter), 0, true, "", "", "", good.id, "lab"},
@@ -101,7 +101,7 @@ func TestCheckTable(t *testing.T) {
 				if len(entries) != 0 {
 					t.Fatalf("an allowed check wrote %d entries; the caller writes it", len(entries))
 				}
-				got := d.Entry(master.OutcomeDone, "")
+				got := d.Entry(master.OutcomeDone, "", access.Facts{})
 				if got.ID == "" || got.Method != "/magnetar.v1.Test/Method" || got.KeyID != tc.keyID || got.TenantName != tc.tenant || got.RemoteAddress != "192.0.2.7:51000" || got.RequestID != "req-1" || !got.Time.Equal(t0) {
 					t.Fatalf("entry handed back: %+v", got)
 				}
@@ -183,7 +183,7 @@ func TestDeniedSamePath(t *testing.T) {
 	if !reflect.DeepEqual(callsNoGrant, callsNoTenant) {
 		t.Fatalf("the two paths differ:\nno grant:  %v\nno tenant: %v", callsNoGrant, callsNoTenant)
 	}
-	want := []string{"Key", "TenantByName", "RolesFor"}
+	want := []string{"Key", "RolesFor"}
 	if !reflect.DeepEqual(callsNoGrant, want) {
 		t.Fatalf("calls %v, want %v", callsNoGrant, want)
 	}
@@ -353,7 +353,7 @@ func TestPrincipalUnforgeable(t *testing.T) {
 		t.Fatal("the zero Principal holds something")
 	}
 	var d access.Decision
-	if err := d.Entry(master.OutcomeDone, "").Validate(); fault.KindOf(err) != fault.Invalid {
+	if err := d.Entry(master.OutcomeDone, "", access.Facts{}).Validate(); fault.KindOf(err) != fault.Invalid {
 		t.Fatalf("the zero Decision's entry validates: %v", err)
 	}
 }

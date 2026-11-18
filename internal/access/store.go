@@ -15,11 +15,12 @@ import (
 type Store interface {
 	// Key returns the key with this id, or NotFound.
 	Key(ctx context.Context, id string) (master.Key, error)
-	// RolesFor returns the key's role on the installation and its role on
-	// the tenant named tenantName, each the empty Role for none, in one
-	// statement; an empty tenantName asks for the installation only. It is
-	// on the path of every request made with a key.
-	RolesFor(ctx context.Context, keyID, tenantName string) (installation, tenant master.Role, err error)
+	// RolesFor returns the key's role on the installation, whether the
+	// tenant named tenantName exists and its id, and the key's role on it,
+	// in one statement; an empty tenantName asks for the installation only,
+	// and a name that is not valid finds no tenant. It is the check's one
+	// read after the key, on the path of every request made with a key.
+	RolesFor(ctx context.Context, keyID, tenantName string) (master.Roles, error)
 	// GrantsByKey returns a page of a key's grants.
 	GrantsByKey(ctx context.Context, keyID string, page master.Page) ([]master.Grant, string, error)
 	// GrantsByScope returns a page of the grants on one scope.

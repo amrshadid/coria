@@ -40,8 +40,8 @@ func (m *memStore) Key(_ context.Context, id string) (master.Key, error) {
 	return master.Key{}, fault.New(fault.NotFound, "no such key")
 }
 
-func (m *memStore) RolesFor(context.Context, string, string) (master.Role, master.Role, error) {
-	return "", "", nil
+func (m *memStore) RolesFor(context.Context, string, string) (master.Roles, error) {
+	return master.Roles{}, nil
 }
 
 func (m *memStore) GrantsByKey(context.Context, string, master.Page) ([]master.Grant, string, error) {
@@ -148,8 +148,11 @@ func TestMarkNeverBlocks(t *testing.T) {
 	if err := a.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Close: %v, want the deadline", err)
 	}
+	// The mark stuck in the store when the deadline passed is counted as
+	// dropped by Close, and its later failure changes nothing: 49 dropped
+	// from the full queue, the one queued, and the one in flight.
 	s := a.MarkStats()
-	if s.Failed != 1 || s.Dropped != 50 || s.Written != 0 {
+	if s.Failed != 0 || s.Dropped != 51 || s.Written != 0 {
 		t.Fatalf("stats after Close: %+v", s)
 	}
 	// Close is safe to call again, and checks after it still answer.
