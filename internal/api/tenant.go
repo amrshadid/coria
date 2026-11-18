@@ -2,10 +2,8 @@ package api
 
 import (
 	"context"
-	"encoding/base64"
 	"slices"
 	"strconv"
-	"strings"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
@@ -19,11 +17,6 @@ import (
 // hundred thousand grants, past any installation's tenants. A store that
 // keeps answering a cursor fails the call rather than loop.
 const maxGrantPages = 100
-
-// grantedTokenPrefix starts the page token of a filtered tenant list. The
-// master's own cursors never start with it, so a token of one list is refused
-// by the other.
-const grantedTokenPrefix = "g1."
 
 // tenantService is TenantService. A tenant's registration and state are in
 // the master; it is created and removed through the registry, which holds
@@ -79,10 +72,11 @@ func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantReq
 	return &v1.CreateTenantResponse{Tenant: tenantMessage(row)}, nil
 }
 
-// GetTenant answers one tenant from the master, whatever its state. The row
-// is read here rather than taken from the Decision, which is to carry only
-// the tenant's id and name; a row gone since the check is answered as the
-// check would have answered it.
+// GetTenant answers one tenant, whatever its state: its registration from
+// the master and its state from the registry (withState), without touching
+// the tenant's database. The row is read here rather than taken from the
+// Decision, which is to carry only the tenant's id and name; a row gone
+// since the check is answered as the check would have answered it.
 func (s tenantService) GetTenant(ctx context.Context, req *v1.GetTenantRequest) (*v1.GetTenantResponse, error) {
 	c := s.c
 	d, err := c.decision(ctx, magnetarv1connect.TenantServiceGetTenantProcedure)
@@ -101,7 +95,7 @@ func (s tenantService) GetTenant(ctx context.Context, req *v1.GetTenantRequest) 
 		return nil, c.fail(d, err)
 	}
 	c.done(ctx, d, nil)
-	return &v1.GetTenantResponse{Tenant: tenantMessage(t)}, nil
+	return &v1.GetTenantResponse{Tenant: tenantMessage(c.withState(t))}, nil
 }
 
 // ListTenants answers the tenants the caller may see, ordered by name: every
@@ -131,7 +125,7 @@ func (s tenantService) ListTenants(ctx context.Context, req *v1.ListTenantsReque
 	c.done(ctx, d, nil)
 	out := &v1.ListTenantsResponse{Tenants: make([]*v1.Tenant, 0, len(rows)), NextPageToken: next}
 	for _, t := range rows {
-		out.Tenants = append(out.Tenants, tenantMessage(t))
+		out.Tenants = append(out.Tenants, tenantMessage(c.withState(t)))
 	}
 	return out, nil
 }
@@ -147,8 +141,11 @@ func (c *core) grantedTenants(ctx context.Context, keyID string, page master.Pag
 	after := ""
 	if page.Cursor != "" {
 		var err error
-		if after, err = readGrantedToken(page.Cursor, keyID); err != nil {
+		if after, err = readAfterToken(page.Cursor, tokenGrantedTenants, keyID); err != nil {
 			return nil, "", err
+		}
+		if master.ValidateTenantName(after) != nil {
+			return nil, "", invalid("page_token", "is not one this list returned for these arguments")
 		}
 	}
 	if keyID == "" {
@@ -185,7 +182,7 @@ func (c *core) grantedTenants(ctx context.Context, keyID string, page master.Pag
 	next := ""
 	if len(names) > page.Limit {
 		names = names[:page.Limit]
-		next = grantedToken(keyID, names[len(names)-1])
+		next = afterToken(tokenGrantedTenants, keyID, names[len(names)-1])
 	}
 	rows := make([]master.Tenant, 0, len(names))
 	for _, name := range names {
@@ -199,31 +196,6 @@ func (c *core) grantedTenants(ctx context.Context, keyID string, page master.Pag
 		rows = append(rows, t)
 	}
 	return rows, next, nil
-}
-
-// grantedToken returns the page token of a filtered tenant list that goes on
-// after the tenant named last, for the key keyID.
-func grantedToken(keyID, last string) string {
-	return grantedTokenPrefix + base64.RawURLEncoding.EncodeToString([]byte(keyID+"/"+last))
-}
-
-// readGrantedToken returns the last name of a token grantedToken made for
-// keyID, or the API's Invalid for any other token.
-func readGrantedToken(token, keyID string) (string, error) {
-	bad := invalid("page_token", "is not one this list returned for these arguments")
-	raw, ok := strings.CutPrefix(token, grantedTokenPrefix)
-	if !ok {
-		return "", bad
-	}
-	b, err := base64.RawURLEncoding.DecodeString(raw)
-	if err != nil {
-		return "", bad
-	}
-	k, last, ok := strings.Cut(string(b), "/")
-	if !ok || k != keyID || master.ValidateTenantName(last) != nil {
-		return "", bad
-	}
-	return last, nil
 }
 
 // RemoveTenant unregisters a tenant and says where its data was left. The
@@ -251,4 +223,16 @@ func (s tenantService) RemoveTenant(ctx context.Context, req *v1.RemoveTenantReq
 		return nil, c.fail(d, err)
 	}
 	return &v1.RemoveTenantResponse{DatabaseType: databaseType(removed.Driver), DataLocation: removed.Location}, nil
+}
+
+// withState returns t with the state and reason the registry sees now, which
+// is what a request into the tenant meets. The master's row may lag behind
+// it: the registry writes a change between ready and unreachable at most once
+// a minute per tenant. A tenant the registry does not hold yet (for a moment
+// during start or creation) keeps the master's state. It reads no database.
+func (c *core) withState(t master.Tenant) master.Tenant {
+	if st, ok := c.reg.State(t.Name); ok {
+		t.State, t.StateReason = st.State, st.Reason
+	}
+	return t
 }

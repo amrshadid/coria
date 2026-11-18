@@ -45,6 +45,17 @@ func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) 
 			return nil, c.fail(d, invalid("never_expire", "is true when set; leave expiry unset for the default of 90 days"))
 		}
 		exp = access.NeverExpire()
+	default:
+		// No expiry asked for: the installation's key.default-lifetime
+		// applies, else its built-in default (access.proto,
+		// CreateKeyRequest.expiry).
+		lifetime, known, err := c.keyLifetime(ctx)
+		if err != nil {
+			return nil, c.fail(d, err)
+		}
+		if known {
+			exp = access.ExpireAfter(lifetime)
+		}
 	}
 	made, err := c.access.CreateKey(ctx, d, req.GetHolder(), exp)
 	if err != nil {

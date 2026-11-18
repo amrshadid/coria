@@ -97,6 +97,28 @@ func testCreateKey(t *testing.T) {
 	if o.err != nil {
 		t.Errorf("the new key is refused: %v", o.err)
 	}
+
+	// With no expiry asked for, the installation's key.default-lifetime
+	// applies, and its built-in default when it is unset again.
+	for _, c := range []struct {
+		value string
+		want  time.Duration
+	}{{"30d", 30 * day}, {"2h", 2 * time.Hour}, {"", 90 * day}} {
+		admin := f.as(f.instAdmin)
+		if c.value == "" {
+			call(admin.settings.UnsetSetting, &v1.UnsetSettingRequest{Name: "key.default-lifetime", Scope: installation()})
+		} else if o := call(admin.settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: "key.default-lifetime", Scope: installation(), Value: c.value}}); o.err != nil {
+			t.Fatal(o.err)
+		}
+		o := call(admin.access.CreateKey, &v1.CreateKeyRequest{Holder: "lifetime"})
+		if o.err != nil {
+			t.Fatal(o.err)
+		}
+		k := o.res.(*v1.CreateKeyResponse).GetKey()
+		if got := k.GetExpireTime().AsTime().Sub(k.GetCreateTime().AsTime()); got != c.want {
+			t.Errorf("with key.default-lifetime %q, a key expires %v after it is made, want %v", c.value, got, c.want)
+		}
+	}
 }
 
 // mapValues returns the values of a map.

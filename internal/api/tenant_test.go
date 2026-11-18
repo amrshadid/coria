@@ -72,18 +72,53 @@ func testCreateTenant(t *testing.T) {
 		t.Error("an invalid request made a tenant")
 	}
 
-	// A tenant whose database does not answer. The contract says nothing is
-	// registered and the answer is UNAVAILABLE; the registry creates it
-	// unreachable and answers it, and this handler answers what the
-	// registry did (a difference reported, not hidden).
-	f.pg.down.Store(true)
-	o := call(f.as(f.instAdmin).tenants.CreateTenant, &v1.CreateTenantRequest{Name: "down", DatabaseType: pgType, DatabaseAddress: address})
-	f.pg.down.Store(false)
-	if o.err != nil {
-		t.Fatalf("creating a tenant whose database is down: %v", o.err)
+	testCreateWholeOrNotAtAll(t, f)
+}
+
+// registryRemovesFailedCreate says whether the registry in this tree removes
+// the row of a creation whose database cannot be opened or upgraded and
+// returns the failure, as the contract's "created whole or not at all" asks
+// (decided for the registry; its change lands separately). While false, the
+// test checks today's behavior, a tenant left unreachable or failed; set it
+// true when the registry's change is merged, and delete the false branch.
+const registryRemovesFailedCreate = false
+
+// testCreateWholeOrNotAtAll guards CreateTenant's "whole or not at all": a
+// database that does not answer is UNAVAILABLE and a refused address is
+// INVALID_ARGUMENT, and neither leaves a tenant registered, with the
+// failure recorded in the installation's log.
+func testCreateWholeOrNotAtAll(t *testing.T, f *fixture) {
+	f.pg.setDown("down", true)
+	cases := []struct {
+		name, tenant, address string
+		code                  connect.Code
+		stateToday            v1.TenantState
+	}{
+		{"a database that does not answer", "down", pgAddress, connect.CodeUnavailable, v1.TenantState_TENANT_STATE_UNREACHABLE},
+		{"an address the database refuses", "refused", pgAddress + "?sslmode=refused", connect.CodeInvalidArgument, v1.TenantState_TENANT_STATE_FAILED},
 	}
-	if tn := o.res.(*v1.CreateTenantResponse).GetTenant(); tn.GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE || tn.GetStateReason() == "" {
-		t.Errorf("got %v", tn)
+	for _, c := range cases {
+		o := createTenant(c.tenant, pgType, c.address)(f.as(f.instAdmin))
+		if !registryRemovesFailedCreate {
+			if o.err != nil {
+				t.Errorf("%s: %v", c.name, o.err)
+				continue
+			}
+			if tn := o.res.(*v1.CreateTenantResponse).GetTenant(); tn.GetState() != c.stateToday || tn.GetStateReason() == "" {
+				t.Errorf("%s: got %v", c.name, tn)
+			}
+			continue
+		}
+		if o.code() != c.code {
+			t.Errorf("%s: code %v (%v), want %v", c.name, o.code(), o.err, c.code)
+		}
+		if _, err := f.master.TenantByName(ctx, c.tenant); err == nil {
+			t.Errorf("%s: the tenant is registered in the master", c.name)
+		}
+		if _, ok := f.registry.State(c.tenant); ok {
+			t.Errorf("%s: the registry holds the tenant", c.name)
+		}
+		f.checkAudit(t, c.name, o.requestID, wantAudit{outcome: master.OutcomeFailed})
 	}
 }
 
@@ -93,8 +128,7 @@ func testCreateTenant(t *testing.T) {
 // one who may; a tenant that is not ready still answered.
 func testGetTenant(t *testing.T) {
 	f := newFixture(t)
-	f.pg.down.Store(true)
-	call(f.as(local).tenants.CreateTenant, &v1.CreateTenantRequest{Name: "down", DatabaseType: pgType, DatabaseAddress: pgAddress})
+	f.downTenant("down")
 	get := func(name string) func(clients) outcome {
 		return func(c clients) outcome { return call(c.tenants.GetTenant, &v1.GetTenantRequest{Name: name}) }
 	}

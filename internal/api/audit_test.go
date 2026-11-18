@@ -27,7 +27,7 @@ func testListAuditEntries(t *testing.T) {
 	if err := f.master.AppendAudit(ctx, many...); err != nil {
 		t.Fatal(err)
 	}
-	call(f.as(f.lab1Admin).settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: "audit.retention", Scope: tenantScope("lab1"), Value: "30d"}})
+	call(f.as(f.lab1Admin).settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: testRetention, Scope: tenantScope("lab1"), Value: "30d"}})
 	list := func(r *v1.ListAuditEntriesRequest) func(clients) outcome {
 		return func(c clients) outcome { return call(c.audit.ListAuditEntries, r) }
 	}
@@ -92,7 +92,7 @@ func testListAuditEntries(t *testing.T) {
 			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, tenant: "lab1", details: map[string]string{"scope": "tenant/lab1"}},
 			check: func(t *testing.T, o outcome) {
 				es := o.res.(*v1.ListAuditEntriesResponse).GetEntries()
-				if len(es) == 0 || es[0].GetMethod() != "/magnetar.v1.SettingsService/SetSetting" || es[0].GetTenant() != "lab1" || es[0].GetObject() != "audit.retention" {
+				if len(es) == 0 || es[0].GetMethod() != "/magnetar.v1.SettingsService/SetSetting" || es[0].GetTenant() != "lab1" || es[0].GetObject() != testRetention {
 					t.Errorf("the tenant's log starts with %v", es)
 				}
 			}},

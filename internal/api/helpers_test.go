@@ -27,6 +27,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/api"
 	"github.com/amrshadid/magnetar/internal/api/codes"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/driver"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
@@ -90,12 +91,52 @@ func (s *syncBuffer) String() string {
 
 // fakePostgres is a registry driver registered as "postgres": it takes an
 // address, as a Postgres driver would, and keeps the tenant's data in a
-// SQLite file. When down, its open fails as a database that does not answer,
-// with an error that repeats the address, as a careless driver might, so the
-// tests show the address is kept out of everything all the same.
+// SQLite file. A tenant set down fails its open and its pings as a database
+// that does not answer, with an error that repeats the address, as a careless
+// driver might, so the tests show the address is kept out of everything all
+// the same.
 type fakePostgres struct {
 	dir  string
-	down atomic.Bool
+	mu   sync.Mutex
+	down map[string]bool
+}
+
+// setDown makes the tenant named name's database answer or not.
+func (f *fakePostgres) setDown(name string, down bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.down == nil {
+		f.down = map[string]bool{}
+	}
+	f.down[name] = down
+}
+
+// isDown reports whether the tenant named name's database does not answer.
+func (f *fakePostgres) isDown(name string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.down[name]
+}
+
+// noAnswer is the error of a database that does not answer.
+func noAnswer(address string) error {
+	return fault.Wrap(fault.Unavailable, errors.New("dial "+address+": connection refused"), "cannot reach "+address)
+}
+
+// pgStore is a tenant's store whose pings fail while its tenant is down.
+type pgStore struct {
+	tenant.Store
+	f       *fakePostgres
+	name    string
+	address string
+}
+
+// Ping fails while the tenant is down.
+func (s pgStore) Ping(ctx context.Context) error {
+	if s.f.isDown(s.name) {
+		return noAnswer(s.address)
+	}
+	return s.Store.Ping(ctx)
 }
 
 // Location returns a location with no user, password or host of the
@@ -107,12 +148,21 @@ func (f *fakePostgres) Location(name, address string) (string, error) {
 	return "pg.location.test:5432/" + name, nil
 }
 
-// Open opens the tenant's file, or fails while down.
+// Open opens the tenant's file, or fails while the tenant is down.
 func (f *fakePostgres) Open(ctx context.Context, name, address string) (tenant.Store, error) {
-	if f.down.Load() {
-		return nil, fault.Wrap(fault.Unavailable, errors.New("dial "+address+": connection refused"), "cannot reach "+address)
+	if f.isDown(name) {
+		return nil, noAnswer(address)
 	}
-	return driver.SQLiteTenants{DataDir: f.dir}.Open(ctx, name, "")
+	if strings.Contains(address, "sslmode=refused") {
+		// An address this database will never take, as a remote address
+		// with no protection would be.
+		return nil, fault.New(fault.Invalid, "the database refuses this address")
+	}
+	st, err := driver.SQLiteTenants{DataDir: f.dir}.Open(ctx, name, "")
+	if err != nil {
+		return nil, err
+	}
+	return pgStore{Store: st, f: f, name: name, address: address}, nil
 }
 
 // env is one test's installation: a SQLite master and SQLite tenants in a
@@ -133,10 +183,14 @@ type env struct {
 	client   *http.Client
 	seq      atomic.Int64
 	ticks    atomic.Int64
+	offset   atomic.Int64
 	requests atomic.Int64
 	// decide, when false, makes the stand-in skip putting the Decision in
 	// the context, as a server that forgot would.
 	decide atomic.Bool
+	// known is the list of settings the handlers are given: the server's,
+	// with the test's own added.
+	known *settings.Table
 	// badTenantID, when true, makes the handlers' id source give a tenant id
 	// the master refuses: a fault of the server.
 	badTenantID atomic.Bool
@@ -150,7 +204,7 @@ func newEnv(t testing.TB) *env {
 	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a directory needs its execute bit.
 		t.Fatal(err)
 	}
-	e := &env{t: t, dir: dir, data: filepath.Join(dir, "data"), log: &syncBuffer{}}
+	e := &env{t: t, dir: dir, data: filepath.Join(dir, "data"), log: &syncBuffer{}, known: testSettings(t)}
 	e.decide.Store(true)
 	if err := os.Mkdir(e.data, 0o700); err != nil {
 		t.Fatal(err)
@@ -182,7 +236,7 @@ func newEnv(t testing.TB) *env {
 		Master: m, Keys: keys,
 		Drivers:  map[string]registry.Driver{api.DriverSQLite: driver.SQLiteTenants{DataDir: e.data}, api.DriverPostgres: e.pg},
 		Now:      e.now,
-		Interval: time.Hour, OpenTimeout: 10 * time.Second, MaxOpening: 4,
+		Interval: 20 * time.Millisecond, OpenTimeout: 10 * time.Second, MaxOpening: 4,
 		Log: logger, NewID: e.newID,
 	})
 	if err != nil {
@@ -197,7 +251,7 @@ func newEnv(t testing.TB) *env {
 		}
 		return e.newID()
 	}
-	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: m, NewID: tenantID, Log: logger})
+	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: m, NewID: tenantID, Log: logger, Settings: e.known})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +275,63 @@ func newEnv(t testing.TB) *env {
 // now is the test clock: t0, a microsecond later at each reading, so audit
 // entries have distinct times and list in the order they were made.
 func (e *env) now() time.Time {
-	return t0.Add(time.Duration(e.ticks.Add(1)) * time.Microsecond)
+	return t0.Add(time.Duration(e.offset.Load()) + time.Duration(e.ticks.Add(1))*time.Microsecond)
+}
+
+// advance moves the test clock forward by d.
+func (e *env) advance(d time.Duration) { e.offset.Add(int64(d)) }
+
+// The settings tests register, beside the server's own: the server ships
+// none a tenant may override, and the tests need some. They are never in the
+// binary.
+const (
+	// testRetention is a period a tenant may override, 365d by default.
+	testRetention = "test.retention"
+	// testText takes any text, the empty one included, and a tenant may
+	// override it.
+	testText = "test.text"
+)
+
+// testSettings returns the server's list of settings with the test's two.
+func testSettings(t testing.TB) *settings.Table {
+	t.Helper()
+	period := func(v string) error {
+		_, err := settings.ParseDuration(v)
+		return err
+	}
+	defs := append(settings.Builtin(),
+		settings.Definition{Name: testRetention, Default: "365d", TenantOverride: true, Validate: period},
+		settings.Definition{Name: testText, Default: "", TenantOverride: true, Validate: func(string) error { return nil }},
+	)
+	tab, err := settings.New(defs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tab
+}
+
+// downTenant creates a tenant of the test's Postgres driver named name and
+// then makes its database stop answering, and waits until the registry and
+// the master both hold it unreachable. The clock is moved past the minute
+// the registry waits between writes of a state to the master.
+func (e *env) downTenant(name string) {
+	e.t.Helper()
+	o := call(e.as(local).tenants.CreateTenant, &v1.CreateTenantRequest{Name: name, DatabaseType: v1.DatabaseType_DATABASE_TYPE_POSTGRES, DatabaseAddress: pgAddress})
+	if o.err != nil {
+		e.t.Fatalf("creating %s: %v", name, o.err)
+	}
+	e.pg.setDown(name, true)
+	e.advance(2 * registry.StateChangeInterval)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		st, _ := e.registry.State(name)
+		row, err := e.master.TenantByName(context.Background(), name)
+		if st.State == master.StateUnreachable && err == nil && row.State == master.StateUnreachable {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	e.t.Fatalf("%s did not become unreachable", name)
 }
 
 // newID returns a fresh id.
@@ -429,14 +539,6 @@ func (e *env) tenant(name string) {
 	}
 	if s := o.res.(*v1.CreateTenantResponse).GetTenant().GetState(); s != v1.TenantState_TENANT_STATE_READY {
 		e.t.Fatalf("tenant %s is %v", name, s)
-	}
-}
-
-// setDefault sets an installation default directly in the master.
-func (e *env) setDefault(name, value string) {
-	e.t.Helper()
-	if err := e.master.SetSetting(context.Background(), name, value, e.setupEntry()); err != nil {
-		e.t.Fatal(err)
 	}
 }
 

@@ -18,7 +18,7 @@ import (
 // a benchmark measures the check and the handler, not HTTP.
 func (e *env) inProcess(b *testing.B, c caller) clients {
 	b.Helper()
-	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.master, NewID: e.newID})
+	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.master, NewID: e.newID, Settings: e.known})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func BenchmarkSetSetting(b *testing.B) {
 	e := newEnv(b)
 	admin, _ := e.key(onInstallation(master.RoleAdmin))
 	cl := e.inProcess(b, admin)
-	req := &v1.SetSettingRequest{Setting: &v1.Setting{Name: "audit.retention", Scope: installation(), Value: "90d"}}
+	req := &v1.SetSettingRequest{Setting: &v1.Setting{Name: testRetention, Scope: installation(), Value: "90d"}}
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := cl.settings.SetSetting(context.Background(), req); err != nil {
@@ -83,10 +83,9 @@ func BenchmarkSetSetting(b *testing.B) {
 func BenchmarkGetTenantSetting(b *testing.B) {
 	e := newEnv(b)
 	e.tenant("lab1")
-	e.setDefault("audit.retention", "365d")
 	reader, _ := e.key(e.onTenant("lab1", master.RoleReader))
 	cl := e.inProcess(b, reader)
-	req := &v1.GetSettingRequest{Name: "audit.retention", Scope: tenantScope("lab1")}
+	req := &v1.GetSettingRequest{Name: testRetention, Scope: tenantScope("lab1")}
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := cl.settings.GetSetting(context.Background(), req); err != nil {
@@ -101,10 +100,9 @@ func BenchmarkGetTenantSetting(b *testing.B) {
 func BenchmarkSetTenantSetting(b *testing.B) {
 	e := newEnv(b)
 	e.tenant("lab1")
-	e.setDefault("audit.retention", "365d")
 	admin, _ := e.key(e.onTenant("lab1", master.RoleAdmin))
 	cl := e.inProcess(b, admin)
-	req := &v1.SetSettingRequest{Setting: &v1.Setting{Name: "audit.retention", Scope: tenantScope("lab1"), Value: "90d"}}
+	req := &v1.SetSettingRequest{Setting: &v1.Setting{Name: testRetention, Scope: tenantScope("lab1"), Value: "90d"}}
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := cl.settings.SetSetting(context.Background(), req); err != nil {

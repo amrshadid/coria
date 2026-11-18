@@ -10,6 +10,7 @@ import (
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/api/codes"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/registry"
@@ -44,6 +45,11 @@ type Config struct {
 	// its cause, and for each read whose audit entry the tenant's log
 	// refused. Nil discards.
 	Log *slog.Logger
+	// Settings is the list of settings the server knows. Nil is
+	// settings.MustBuiltin(), the list the binary ships; a test passes a
+	// table with definitions of its own added, so no setting made for tests
+	// ships.
+	Settings *settings.Table
 }
 
 // Handlers is the four services of the contract, each an implementation of
@@ -70,7 +76,11 @@ func New(cfg Config) (Handlers, error) {
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	c := &core{access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log}
+	known := cfg.Settings
+	if known == nil {
+		known = settings.MustBuiltin()
+	}
+	c := &core{access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known}
 	return Handlers{
 		Tenants:  tenantService{c},
 		Access:   accessService{c},
@@ -123,6 +133,8 @@ type core struct {
 	master master.Store
 	newID  func() string
 	log    *slog.Logger
+	// settings is the list of settings the server knows.
+	settings *settings.Table
 }
 
 // decision returns the request's Decision. A request without one reached the

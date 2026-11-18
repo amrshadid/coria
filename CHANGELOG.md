@@ -184,8 +184,21 @@ All notable changes to Magnetar are written here. The form is
   removal needs the name twice; a tenant's database address reaches no
   answer, audit entry, error or log line, which a test shows by searching
   all of them, and the master's files, for the address, its password, user
-  and host. A read of the installation costs 26 µs through the check and the
-  handler without the network; a change, one synced commit of the master
-  (5 ms on a laptop). The server does not serve them yet.
+  and host. A tenant's state is the one the registry sees now, not the
+  master's row, which can lag a minute behind. A read of the installation
+  costs 26 µs through the check and the handler without the network; a
+  change, one synced commit of the master (5 ms on a laptop). The server does
+  not serve them yet.
+- Settings were any name anyone wrote, with no default and no rule for their
+  values, so the contract's "not found" and "a value the setting does not
+  accept" could not happen. The server now knows a fixed list
+  (`internal/core/settings`), each setting with a built-in default, a rule
+  for its value and whether a tenant may override it. The value that applies
+  is the tenant's override, else the installation's value, else the built-in
+  default, and every answer says which (`Setting.source`, a new field of the
+  contract). Unsetting the installation's value returns to the built-in
+  default. The list's one setting, `key.default-lifetime` (whole hours or
+  days, such as `90d`, from 1h to 3650d; 90 days by default), is the
+  lifetime of a key made with no expiry.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop

@@ -15,6 +15,7 @@ import (
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/registry"
 )
 
 // everyMethod returns one call of each method of the four services, each
@@ -41,10 +42,10 @@ func everyMethod(f *fixture) map[string]func(clients) outcome {
 		"RemoveTenant": func(c clients) outcome {
 			return call(c.tenants.RemoveTenant, &v1.RemoveTenantRequest{Name: "lab1", ConfirmName: "lab1"})
 		},
-		"GetSetting": getSetting("audit.retention", tenantScope("lab1")),
-		"SetSetting": setSetting("audit.retention", tenantScope("lab1"), "1d"),
+		"GetSetting": getSetting(testRetention, tenantScope("lab1")),
+		"SetSetting": setSetting(testRetention, tenantScope("lab1"), "1d"),
 		"UnsetSetting": func(c clients) outcome {
-			return call(c.settings.UnsetSetting, &v1.UnsetSettingRequest{Name: "audit.retention", Scope: tenantScope("lab1")})
+			return call(c.settings.UnsetSetting, &v1.UnsetSettingRequest{Name: testRetention, Scope: tenantScope("lab1")})
 		},
 		"ListSettings": func(c clients) outcome {
 			return call(c.settings.ListSettings, &v1.ListSettingsRequest{Scope: installation()})
@@ -62,7 +63,6 @@ func everyMethod(f *fixture) map[string]func(clients) outcome {
 func TestNoDecisionIsInternal(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	f.setDefault("audit.retention", "365d")
 	f.decide.Store(false)
 	methods := everyMethod(f)
 	if len(methods) != len(contractMethods()) {
@@ -97,7 +97,6 @@ func TestNoDecisionIsInternal(t *testing.T) {
 func TestEveryMethodWithTheMasterDown(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	f.setDefault("audit.retention", "365d")
 	if err := f.master.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -120,17 +119,16 @@ func TestEveryMethodWithTheMasterDown(t *testing.T) {
 func TestLaterLookupDoesNotUndoTheAccessRule(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	f.setDefault("audit.retention", "365d")
 	row := master.Tenant{ID: "ghost-id", Name: "ghost", Driver: "sqlite", SealedAddress: []byte{1}, State: master.StateReady, Created: t0}
 	if err := f.master.CreateTenant(ctx, row, f.setupEntry()); err != nil {
 		t.Fatal(err)
 	}
 	admin, _ := f.key(master.Grant{Scope: master.TenantScope("ghost-id"), Role: master.RoleAdmin})
 	calls := map[string]func(clients) outcome{
-		"GetSetting": getSetting("audit.retention", tenantScope("ghost")),
-		"SetSetting": setSetting("audit.retention", tenantScope("ghost"), "1d"),
+		"GetSetting": getSetting(testRetention, tenantScope("ghost")),
+		"SetSetting": setSetting(testRetention, tenantScope("ghost"), "1d"),
 		"UnsetSetting": func(c clients) outcome {
-			return call(c.settings.UnsetSetting, &v1.UnsetSettingRequest{Name: "audit.retention", Scope: tenantScope("ghost")})
+			return call(c.settings.UnsetSetting, &v1.UnsetSettingRequest{Name: testRetention, Scope: tenantScope("ghost")})
 		},
 		"ListSettings": func(c clients) outcome {
 			return call(c.settings.ListSettings, &v1.ListSettingsRequest{Scope: tenantScope("ghost")})
@@ -155,7 +153,6 @@ func TestLaterLookupDoesNotUndoTheAccessRule(t *testing.T) {
 func TestReadsDoNotFailForTheirEntry(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	f.setDefault("audit.retention", "365d")
 	cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := f.access.Close(cctx); err != nil {
@@ -164,7 +161,7 @@ func TestReadsDoNotFailForTheirEntry(t *testing.T) {
 	reads := map[string]func(clients) outcome{
 		"GetTenant":   func(c clients) outcome { return call(c.tenants.GetTenant, &v1.GetTenantRequest{Name: "lab1"}) },
 		"ListTenants": func(c clients) outcome { return call(c.tenants.ListTenants, &v1.ListTenantsRequest{}) },
-		"GetSetting":  getSetting("audit.retention", installation()),
+		"GetSetting":  getSetting(testRetention, installation()),
 		"ListSettings": func(c clients) outcome {
 			return call(c.settings.ListSettings, &v1.ListSettingsRequest{Scope: installation()})
 		},
@@ -205,6 +202,37 @@ func TestInternalCauseIsLoggedNotReturned(t *testing.T) {
 	}
 }
 
+// TestStateIsTheRegistrys guards the rule that GetTenant and ListTenants
+// answer the state the registry sees now, not the master's row, which the
+// registry updates at most once a minute: a tenant whose database stops
+// answering is shown unreachable at once, while its row still says ready.
+func TestStateIsTheRegistrys(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+	if o := createTenant("pg", pgType, pgAddress)(e.as(local)); o.err != nil {
+		t.Fatal(o.err)
+	}
+	e.pg.setDown("pg", true)
+	deadline := time.Now().Add(10 * time.Second)
+	for st, _ := e.registry.State("pg"); st.State != master.StateUnreachable; st, _ = e.registry.State("pg") {
+		if time.Now().After(deadline) {
+			t.Fatal("the registry did not see the tenant go down")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if row, err := e.master.TenantByName(ctx, "pg"); err != nil || row.State != master.StateReady {
+		t.Fatalf("the master's row is %v (%v); the test needs it still ready", row.State, err)
+	}
+	got := call(e.as(local).tenants.GetTenant, &v1.GetTenantRequest{Name: "pg"})
+	if tn := got.res.(*v1.GetTenantResponse).GetTenant(); tn.GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE || tn.GetStateReason() == "" {
+		t.Errorf("GetTenant: %v", tn)
+	}
+	list := call(e.as(local).tenants.ListTenants, &v1.ListTenantsRequest{})
+	if ts := list.res.(*v1.ListTenantsResponse).GetTenants(); len(ts) != 1 || ts[0].GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE {
+		t.Errorf("ListTenants: %v", ts)
+	}
+}
+
 // TestTenantLifecycle is acceptance point 4: a tenant created over the API
 // is ready and has its database file; a tenant setting is set, read, unset
 // and found in that tenant's audit log; after removal the registration is
@@ -212,7 +240,6 @@ func TestInternalCauseIsLoggedNotReturned(t *testing.T) {
 func TestTenantLifecycle(t *testing.T) {
 	t.Parallel()
 	e := newEnv(t)
-	e.setDefault("audit.retention", "365d")
 	admin := e.as(local)
 	o := call(admin.tenants.CreateTenant, &v1.CreateTenantRequest{Name: "study", DatabaseType: sqliteType})
 	if o.err != nil || o.res.(*v1.CreateTenantResponse).GetTenant().GetState() != v1.TenantState_TENANT_STATE_READY {
@@ -222,9 +249,9 @@ func TestTenantLifecycle(t *testing.T) {
 	if _, err := os.Stat(file); err != nil {
 		t.Fatalf("the tenant's file: %v", err)
 	}
-	set := call(admin.settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: "audit.retention", Scope: tenantScope("study"), Value: "30d"}})
-	get := call(admin.settings.GetSetting, &v1.GetSettingRequest{Name: "audit.retention", Scope: tenantScope("study")})
-	unset := call(admin.settings.UnsetSetting, &v1.UnsetSettingRequest{Name: "audit.retention", Scope: tenantScope("study")})
+	set := call(admin.settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: testRetention, Scope: tenantScope("study"), Value: "30d"}})
+	get := call(admin.settings.GetSetting, &v1.GetSettingRequest{Name: testRetention, Scope: tenantScope("study")})
+	unset := call(admin.settings.UnsetSetting, &v1.UnsetSettingRequest{Name: testRetention, Scope: tenantScope("study")})
 	for name, o := range map[string]outcome{"set": set, "get": get, "unset": unset} {
 		if o.err != nil {
 			t.Fatalf("%s: %v", name, o.err)
@@ -238,7 +265,7 @@ func TestTenantLifecycle(t *testing.T) {
 	}
 	log := e.tenantLog("study")
 	for name, o := range map[string]outcome{"set": set, "get": get, "unset": unset} {
-		if got := entriesOf(log, o.requestID); len(got) != 1 || got[0].Outcome != master.OutcomeDone || got[0].Object != "audit.retention" {
+		if got := entriesOf(log, o.requestID); len(got) != 1 || got[0].Outcome != master.OutcomeDone || got[0].Object != testRetention {
 			t.Errorf("%s: the tenant's log holds %+v", name, got)
 		}
 	}
@@ -303,15 +330,27 @@ func TestDatabaseAddressIsFoundNowhere(t *testing.T) {
 	record(o)
 	record(create("pg1", address, pgType))        // conflict
 	record(create("pg-bad", address, sqliteType)) // invalid
-	f.pg.down.Store(true)
-	record(create("pg2", address, pgType)) // created unreachable; the driver's error held the address
+	// A database that does not answer at creation: its driver's error holds
+	// the address.
+	f.pg.setDown("pg2", true)
+	record(create("pg2", address, pgType))
 	record(call(admin.tenants.GetTenant, &v1.GetTenantRequest{Name: "pg2"}))
+	// A database that stops answering after creation: the registry's
+	// reason is made from a driver's error that holds the address.
+	record(create("pg3", address, pgType))
+	f.pg.setDown("pg3", true)
+	f.advance(2 * registry.StateChangeInterval)
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if row, err := f.master.TenantByName(ctx, "pg3"); err == nil && row.State == master.StateUnreachable {
+			break
+		}
+	}
+	record(call(admin.tenants.GetTenant, &v1.GetTenantRequest{Name: "pg3"}))
 	record(call(admin.tenants.ListTenants, &v1.ListTenantsRequest{}))
-	record(call(f.as(local).settings.GetSetting, &v1.GetSettingRequest{Name: "x", Scope: tenantScope("pg2")}))
-	f.pg.down.Store(false)
+	record(call(f.as(local).settings.GetSetting, &v1.GetSettingRequest{Name: testText, Scope: tenantScope("pg3")}))
 	record(call(admin.tenants.GetTenant, &v1.GetTenantRequest{Name: "pg1"}))
-	record(call(f.as(local).settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: "x", Scope: installation(), Value: "1"}}))
-	record(call(f.as(local).settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: "x", Scope: tenantScope("pg1"), Value: "1"}}))
+	record(call(f.as(local).settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: testText, Scope: installation(), Value: "1"}}))
+	record(call(f.as(local).settings.SetSetting, &v1.SetSettingRequest{Setting: &v1.Setting{Name: testText, Scope: tenantScope("pg1"), Value: "1"}}))
 	record(call(f.as(local).audit.ListAuditEntries, &v1.ListAuditEntriesRequest{Scope: installation(), PageSize: 1000}))
 	record(call(f.as(local).audit.ListAuditEntries, &v1.ListAuditEntriesRequest{Scope: tenantScope("pg1"), PageSize: 1000}))
 	rm := call(admin.tenants.RemoveTenant, &v1.RemoveTenantRequest{Name: "pg1", ConfirmName: "pg1"})
