@@ -1,8 +1,7 @@
 // Package driver opens a database from its address, choosing the database
-// type by the address's scheme: "sqlite:<path>" today, "postgres://..."
-// when that driver is added. It is the one place that knows the list of
-// database types, so the rest of the binary asks for a master.Store and
-// never names one (decision D12).
+// type by the address's scheme: "sqlite:<path>" or "postgres://...". It is
+// the one place that knows the list of database types, so the rest of the
+// binary asks for a master.Store and never names one (decision D12).
 //
 // # What this package must never do
 //
