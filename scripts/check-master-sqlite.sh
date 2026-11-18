@@ -6,7 +6,8 @@
 # It shows the tables and their rows, runs SQLite's integrity and foreign key
 # checks, reads times and audit details with SQLite's own functions, and
 # searches a dump and the raw files for the sample key's secret, which must
-# be absent, and for its SHA-256, which must be present.
+# be absent, and for its SHA-256, which must be present. Last, it reads the
+# database of a process killed while making changes that share commits.
 #
 #   scripts/check-master-sqlite.sh            uses sqlite3 and go from PATH
 #   SQLITE3=/path/to/sqlite3 GO=go1.27 scripts/check-master-sqlite.sh
@@ -116,6 +117,16 @@ done
 echo "ok: the sample key's secret is not in the database's files"
 grep -qiF "X'$hash'" "$dump" || fail "the sample key's hash is not in the dump"
 want "the key row holding the hash" SampleKey001 "$(q "SELECT id FROM api_keys WHERE hex(hash) = upper('$hash')")"
+
+# A crash in the middle of changes that share commits: a process making
+# changes from many goroutines is killed, and this same sqlite3 tool checks
+# the file's integrity and that every change the process was answered for is
+# there with its audit entry and none is half there. Required here, so a
+# missing tool fails instead of skipping.
+echo
+echo "== a process killed while making changes"
+SQLITE3="$(command -v "$SQLITE3")" MAGNETAR_SQLITE3_REQUIRED=1 \
+	"$GO" test -count=1 -v -run '^TestKillDuringChanges$' ./internal/driver/sqlite
 
 echo
 echo "check-master-sqlite: all checks passed"
