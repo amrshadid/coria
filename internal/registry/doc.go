@@ -82,13 +82,17 @@
 // # Creating and removing
 //
 // Create is whole or nothing, as the API contract says: it writes the
-// tenant's row as upgrading, opens and migrates its database, and records
-// ready. When the database cannot be opened or upgraded, it removes the row
-// it wrote, in one master transaction with a system audit entry saying why,
-// and returns the failure; nothing stays registered. Only a crash between
-// the two leaves an upgrading row, which the next start or round opens like
-// any other, and a repeated Create with the same id, name, type and address
-// finishes what the first began. Remove unregisters the tenant and leaves its
+// tenant's row as upgrading with a system entry saying the creation started
+// (carrying the request's id), opens and migrates its database, and records
+// ready with the request's own entry, outcome done. When the database cannot
+// be opened or upgraded, it removes the row it wrote, in one master
+// transaction with the request's entry, outcome failed and the reason, and
+// returns the failure; nothing stays registered. So a request's id leads to
+// how it ended, and its entry is written once. Only a crash between the two
+// leaves an upgrading row, which the next start or round opens like any
+// other, recording that it finished the creation that request began; a
+// repeated Create with the same id, name, type and address finishes what the
+// first began. Remove unregisters the tenant and leaves its
 // data where it is (D36), and says where: the database type and a location
 // with no user and no password.
 //

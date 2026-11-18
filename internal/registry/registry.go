@@ -57,9 +57,10 @@ const StateChangeInterval = time.Minute
 const (
 	// SystemMethod records a change of a tenant's state.
 	SystemMethod = "magnetar.registry/SetTenantState"
-	// UndoMethod records a creation undone because the tenant's database
-	// could not be opened or upgraded.
-	UndoMethod = "magnetar.registry/UndoCreateTenant"
+	// StartMethod records a creation started: the tenant's row written as
+	// upgrading. It carries the request's id; the request's own entry is
+	// written when the creation settles.
+	StartMethod = "magnetar.registry/CreateTenantStarted"
 )
 
 // The details of the registry's audit entries.
@@ -67,6 +68,15 @@ const (
 	DetailActor        = "actor"
 	DetailDatabaseType = "database_type"
 	DetailLocation     = "data_location"
+	// DetailRequestEntry, on a StartMethod entry, is the id of the request's
+	// own entry, written when the creation settles.
+	DetailRequestEntry = "request_entry"
+	// DetailCreationRequest, on the state change that finishes a creation a
+	// crash interrupted, is the id of the request that began it.
+	DetailCreationRequest = "creation_request"
+	// DetailUndone, on a failed creation's request entry, is "true": the row
+	// the creation wrote was removed again.
+	DetailUndone = "undone"
 	// ActorSystem is the value of DetailActor on the registry's entries.
 	ActorSystem = "system"
 )
@@ -198,6 +208,9 @@ type entry struct {
 	lastWrite     time.Time          // when the registry last wrote it
 	lastKind      fault.Kind         // the kind of the last failure to open
 	removed       bool
+	// holdWrite is set by Create while it opens the tenant: the state write
+	// that settles the creation is its own, with the request's entry.
+	holdWrite bool
 }
 
 // view is a tenant's state and its store, replaced whole.
