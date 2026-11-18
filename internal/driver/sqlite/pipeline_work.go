@@ -11,7 +11,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
-const workColumns = `id, kind, subject, coalesce(unique_key, ''), state, due, attempt, max_attempts, owner, last_error, created, updated`
+const workColumns = `id, kind, subject, reception_id, coalesce(unique_key, ''), state, due, attempt, max_attempts, owner, last_error, created, updated`
 
 // claimCandidates is how many due units a claim reads at once. A unit whose
 // last attempt's lease ended is held as failed on the way, so a claim may
@@ -26,7 +26,7 @@ func scanWork(row interface{ Scan(...any) error }) (tenant.Work, error) {
 	var w tenant.Work
 	var state string
 	var due, created, updated int64
-	err := row.Scan(&w.ID, &w.Kind, &w.Subject, &w.UniqueKey, &state, &due, &w.Attempt, &w.MaxAttempts, &w.Owner,
+	err := row.Scan(&w.ID, &w.Kind, &w.Subject, &w.ReceptionID, &w.UniqueKey, &state, &due, &w.Attempt, &w.MaxAttempts, &w.Owner,
 		&w.LastError, &created, &updated)
 	w.State = tenant.WorkState(state)
 	w.Due, w.Created, w.Updated = fromMicros(due), fromMicros(created), fromMicros(updated)
@@ -55,13 +55,22 @@ func enqueueInTx(ctx context.Context, tx *sql.Tx, w tenant.Work, now time.Time) 
 			return held, false, err
 		}
 	}
+	if w.ReceptionID != "" {
+		has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = ?`, w.ReceptionID)
+		if err != nil {
+			return tenant.Work{}, false, err
+		}
+		if !has {
+			return tenant.Work{}, false, tenant.Precondition("a unit of work names a reception the tenant does not have")
+		}
+	}
 	attempts := w.MaxAttempts
 	if attempts == 0 {
 		attempts = tenant.DefaultWorkAttempts
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO work (id, kind, subject, unique_key, state, due, attempt, max_attempts,
-		owner, last_error, created, updated) VALUES (?, ?, ?, ?, 'queued', ?, 0, ?, '', '', ?, ?)`,
-		w.ID, w.Kind, w.Subject, nullText(w.UniqueKey), micros(w.Due), attempts, micros(now), micros(now))
+	_, err := tx.ExecContext(ctx, `INSERT INTO work (id, kind, subject, reception_id, unique_key, state, due, attempt, max_attempts,
+		owner, last_error, created, updated) VALUES (?, ?, ?, ?, ?, 'queued', ?, 0, ?, '', '', ?, ?)`,
+		w.ID, w.Kind, w.Subject, w.ReceptionID, nullText(w.UniqueKey), micros(w.Due), attempts, micros(now), micros(now))
 	if isUniqueViolation(err) {
 		return tenant.Work{}, false, fault.Wrap(fault.Conflict, err, "a unit of work with this id exists")
 	}
@@ -133,9 +142,19 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 			for _, w := range due {
 				if w.Attempt >= w.MaxAttempts {
 					// Its last allowed attempt's lease ended: held as failed.
-					if _, err := tx.ExecContext(ctx, `UPDATE work SET state = 'failed', owner = '',
-						last_error = 'the lease of its last attempt ended', updated = ? WHERE id = ? AND attempt = ?`,
-						micros(now), w.ID, w.Attempt); err != nil {
+					res, err := tx.ExecContext(ctx, `UPDATE work SET state = 'failed', owner = '',
+						last_error = 'the lease of its last attempt ended', updated = ? WHERE id = ? AND attempt = ?
+						AND state IN ('queued', 'leased')`, micros(now), w.ID, w.Attempt)
+					if err != nil {
+						return err
+					}
+					if n, err := res.RowsAffected(); err != nil || n != 1 {
+						if err != nil {
+							return err
+						}
+						continue
+					}
+					if err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
 						return err
 					}
 					continue
@@ -249,6 +268,11 @@ func (t *Tenant) FailWork(ctx context.Context, fence tenant.WorkFence, reason st
 		if _, err := tx.ExecContext(ctx, `UPDATE work SET state = ?, due = ?, owner = '', last_error = ?, updated = ?
 			WHERE id = ? AND attempt = ?`, string(state), micros(due), reason, micros(now), fence.ID, fence.Attempt); err != nil {
 			return err
+		}
+		if state == tenant.WorkFailed {
+			if err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
+				return err
+			}
 		}
 		out, err = workInTx(ctx, tx, fence.ID)
 		return err

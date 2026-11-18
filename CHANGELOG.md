@@ -415,19 +415,22 @@ All notable changes to Magnetar are written here. The form is
   client, about 5.6 MB of the binary when the driver is used.
 - A tenant's database held settings and an audit log, and nothing the reception
   of a study needs. It now keeps, on SQLite, everything that must not be lost:
-  storages and receivers, with partial changes, normalized S3 endpoints and the
-  contract's rules on names, overlap, ports and what is in use, an S3 secret
-  stored sealed and never read back; receptions, opened or found per receiver
-  and study, numbered by arrival, stepped by compare-and-set through the core's
-  state table, retried or discarded when failed; received files, in batches
-  that change nothing when written twice; a catalog of subjects, sessions,
-  scans and instances, in which an instance is claimed before it is written to
-  a storage and confirmed with its scan's rows, so that two receptions never
-  archive one instance and what is held does not depend on what later happened
-  to the reception that archived it; quarantine, with release, reject and
-  running totals; and leased units of work, every write fenced by the attempt
-  number. A reception's received count is of every file that arrived, so that
-  received always equals archived plus duplicates plus quarantined when it
+  storages and receivers, with partial changes, S3 endpoints kept in one
+  spelling, and the contract's rules on names, overlap, ports and what is in
+  use, an S3 secret stored sealed and never read back; receptions, opened or
+  found per receiver and study, numbered by arrival, stepped by compare-and-set
+  through the core's state table, retried or discarded when failed; received
+  files, in batches that change nothing when written twice; a catalog of
+  subjects, sessions, scans and instances, in which an instance is claimed from
+  a reception's received files before it is written to a storage and confirmed
+  with its scan's rows, so that no instance is archived twice, none is ever
+  replaced by a reception, and what is held does not depend on what later
+  happened to the reception that archived it; quarantine, with release, reject
+  and running totals, where a different file under an archived UID can only be
+  rejected; and leased units of work, every write fenced by the attempt number,
+  whose reception fails with them when they give up, so that no claim outlives
+  its workers. A reception's received count is of every file that arrived, so
+  that received always equals archived plus duplicates plus quarantined when it
   ends. The store reads no clock. Every list, claim and lookup is answered from
   an index, also every combination of list filters at millions of rows. These
   are a second interface, `tenant.Pipeline`, until the Postgres driver passes

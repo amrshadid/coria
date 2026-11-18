@@ -207,15 +207,28 @@ func (c S3Storage) validate() error {
 }
 
 // NormalizeEndpoint returns an S3 endpoint in the one spelling a store keeps
-// and compares: the scheme and host in lowercase, the scheme's default port
-// (443 for https, 80 for http) dropped, and no path. Two spellings of one
-// endpoint are one endpoint, so the overlap rule cannot be passed by a
-// trailing slash or a capital letter. An endpoint that is not an http or
-// https URL of at most 2048 bytes of printable ASCII, or that carries user
-// information, a path other than "/", a query or a fragment, is Invalid.
+// and compares, so the overlap rule cannot be passed by spelling one endpoint
+// two ways: the scheme in lowercase, the host in its one form, the port as a
+// number without leading zeros and dropped when it is the scheme's default
+// (443 for https, 80 for http), and no path. The host is one of two things:
+//
+//   - an IP literal netip.ParseAddr accepts, kept in its canonical text
+//     (IPv6 as RFC 5952 writes it, in brackets); a zone and an IPv4-mapped
+//     IPv6 address are refused, so each address has one spelling;
+//   - a DNS name of ASCII letters, digits and hyphens, in labels of 1 to 63
+//     that neither start nor end with a hyphen, at most 253 in all, in
+//     lowercase, a final dot dropped, whose last label is not all digits
+//     (so a number such as 3232235777 or 0xc0.0xa8.1.1 or 192.168.001.001
+//     is never read as a name standing for an address).
+//
+// A percent sign anywhere is refused, so no encoded byte becomes part of a
+// host. An endpoint that is not an http or https URL of at most 2048 bytes of
+// printable ASCII, or that carries user information, a path other than "/",
+// a query or a fragment, is Invalid.
 func NormalizeEndpoint(endpoint string) (string, error) {
-	const rule = "an S3 endpoint is an http or https URL of at most 2048 bytes, with no user information, path, query or fragment"
-	if endpoint == "" || len(endpoint) > MaxEndpointLength || !allBytes(endpoint, func(b byte) bool { return b > 0x20 && b < 0x7f }) {
+	const rule = "an S3 endpoint is an http or https URL of at most 2048 bytes, with a host name or an IP address, an optional port, and no user information, path, query or fragment"
+	if endpoint == "" || len(endpoint) > MaxEndpointLength || strings.Contains(endpoint, "%") ||
+		!allBytes(endpoint, func(b byte) bool { return b > 0x20 && b < 0x7f }) {
 		return "", invalid(rule)
 	}
 	u, err := url.Parse(endpoint)
@@ -227,25 +240,60 @@ func NormalizeEndpoint(endpoint string) (string, error) {
 	if scheme != "https" && scheme != "http" {
 		return "", invalid(rule)
 	}
-	host, port := strings.ToLower(u.Hostname()), u.Port()
-	if host == "" {
+	host, ok := canonicalHost(u.Host, u.Hostname())
+	if !ok {
 		return "", invalid(rule)
 	}
-	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
-		port = ""
-	}
-	if port != "" {
-		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+	if p := u.Port(); p != "" {
+		if !allBytes(p, func(b byte) bool { return b >= '0' && b <= '9' }) || len(p) > 5 {
 			return "", invalid(rule)
 		}
-	}
-	if strings.Contains(host, ":") {
-		host = "[" + host + "]"
-	}
-	if port != "" {
-		host += ":" + port
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return "", invalid(rule)
+		}
+		defaultPort := (scheme == "https" && n == 443) || (scheme == "http" && n == 80)
+		if !defaultPort {
+			host += ":" + strconv.Itoa(n)
+		}
+	} else if strings.HasSuffix(u.Host, ":") {
+		return "", invalid(rule)
 	}
 	return scheme + "://" + host, nil
+}
+
+// canonicalHost returns the host of an endpoint in its one form, or false.
+// raw is the URL's host part as written (with brackets and port), name the
+// host without them.
+func canonicalHost(raw, name string) (string, bool) {
+	if strings.HasPrefix(raw, "[") {
+		a, err := netip.ParseAddr(name)
+		if err != nil || !a.Is6() || a.Zone() != "" || a.Is4In6() {
+			return "", false
+		}
+		return "[" + a.String() + "]", true
+	}
+	if a, err := netip.ParseAddr(name); err == nil {
+		if !a.Is4() {
+			return "", false
+		}
+		return a.String(), true
+	}
+	name = strings.TrimSuffix(strings.ToLower(name), ".")
+	if name == "" || len(name) > 253 {
+		return "", false
+	}
+	labels := strings.Split(name, ".")
+	for _, l := range labels {
+		if l == "" || len(l) > 63 || l[0] == '-' || l[len(l)-1] == '-' ||
+			!allBytes(l, func(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '-' }) {
+			return "", false
+		}
+	}
+	if last := labels[len(labels)-1]; allBytes(last, func(b byte) bool { return b >= '0' && b <= '9' }) {
+		return "", false
+	}
+	return name, true
 }
 
 // Normalize returns s with its S3 endpoint in the spelling a store keeps

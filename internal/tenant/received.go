@@ -125,38 +125,47 @@ func ValidateDuplicateBatch(files []DuplicateQuery) error {
 // ClaimInstances answer for each file.
 type DuplicateKind int
 
-// The kinds. The pipeline goes on with a file claimed now or before, ignores
-// the same file, quarantines a different file and a UID elsewhere with the
-// reason of their name, and tries a file claimed by another reception again
-// later, through its leased work, until it resolves to one of the others.
+// The kinds, each with what the archive step does with the file.
 const (
 	// NotHeld is a SOP Instance UID no instance row has: nothing holds or
-	// claims it (CheckDuplicates only).
+	// claims it (CheckDuplicates only). The file goes on to its claim.
 	NotHeld DuplicateKind = iota
-	// SameFile is the UID held, in the same study and series, with the
-	// same checksum: the file is ignored as a duplicate.
+	// SameFile is the UID held by another reception, in the same study and
+	// series, with the same checksum. The file is ignored and counted
+	// duplicate.
 	SameFile
 	// DifferentFile is the UID held, in the same study and series, with
 	// another checksum; or claimed by this same reception with another
-	// checksum, when one reception received two files under one UID: the
-	// first claimed is kept and the next is different.
+	// checksum, when one reception received two files under one UID (the
+	// one claimed first is kept). The file is quarantined as a different
+	// file, with HeldSHA256 as the kept checksum. In this version it can
+	// only be rejected: replacing an archived instance deletes archived
+	// data, and is not part of reception.
 	DifferentFile
-	// UIDElsewhere is the UID held or claimed under another study or
-	// series: an instance UID is one instance in a tenant.
+	// UIDElsewhere is the UID held under another study or series, or
+	// claimed by this reception under another one: an instance UID is one
+	// instance in a tenant. The file is quarantined with that reason.
 	UIDElsewhere
 	// Claimed is the UID claimed by another reception that has not
-	// confirmed it yet. The caller tries the file again later (its step is
-	// retried through the leased work), when the claim is confirmed (one
-	// of the held answers) or released (then it can be claimed).
+	// confirmed it yet, whatever its study and series: the answer is
+	// decided against what is held, never against a claim that may be
+	// released. The caller's step is tried again later through its leased
+	// work, when the claim has been confirmed (a held answer) or released
+	// (it can then be claimed).
 	Claimed
 	// ClaimedNow is the UID claimed by this call for this reception
-	// (ClaimInstances only): the file goes on to the storage. With
-	// Overwrite, the held instance stays held until the claim is confirmed.
+	// (ClaimInstances only). The file goes on to the storage.
 	ClaimedNow
 	// ClaimedBefore is the UID claimed by this reception before, with the
-	// same checksum, as when a step runs again after a crash
-	// (ClaimInstances only): the file goes on.
+	// same checksum, and not confirmed yet, as when a step runs again after
+	// a crash (ClaimInstances only). The file goes on to the storage.
 	ClaimedBefore
+	// ArchivedBefore is the UID held, with the same checksum, by this same
+	// reception: a commit of its scan happened before a crash, and the step
+	// is running again (ClaimInstances only). The file is archived already
+	// and counted so (CommitScan counted it): it is neither written again
+	// nor counted duplicate.
+	ArchivedBefore
 )
 
 // String returns the kind's name, for messages and logs.
@@ -176,6 +185,8 @@ func (k DuplicateKind) String() string {
 		return "claimed now"
 	case ClaimedBefore:
 		return "claimed before"
+	case ArchivedBefore:
+		return "archived before by this reception"
 	}
 	return "DuplicateKind(" + strconv.Itoa(int(k)) + ")"
 }
@@ -185,16 +196,13 @@ func (k DuplicateKind) String() string {
 type Duplicate struct {
 	// Kind is how it compares.
 	Kind DuplicateKind
-	// HeldSHA256, HeldStudyUID and HeldSeriesUID are those of the instance
-	// held under the UID, or of the claim the answer is about (the first
-	// claim of a reception that received two files under one UID; another
-	// reception's claim): the kept checksum and the details of the
-	// quarantine record that follows. Zero for NotHeld, and for ClaimedNow
-	// without Overwrite.
+	// HeldSHA256, HeldStudyUID and HeldSeriesUID are those of the row the
+	// answer is about: the instance held, or the claim (this reception's
+	// first, or another reception's). Zero for NotHeld and ClaimedNow.
 	HeldSHA256                  SHA256
 	HeldStudyUID, HeldSeriesUID string
 	// HeldBy is the reception that confirmed the held instance, or that
-	// claims it for Claimed and DifferentFile of a claim.
+	// claims the UID.
 	HeldBy string
 }
 
@@ -214,41 +222,36 @@ func CompareHeld(q DuplicateQuery, held Duplicate) DuplicateKind {
 }
 
 // InstanceClaim is one file a reception claims before it writes anything to
-// a storage.
+// a storage. It must be one of the reception's received files: its UIDs and
+// checksum are those the file was received with.
 type InstanceClaim struct {
 	// SOPInstanceUID, StudyUID and SeriesUID are the file's, as received.
 	SOPInstanceUID, StudyUID, SeriesUID string
 	// SHA256 is its received checksum.
 	SHA256 SHA256
-	// Overwrite claims a UID held with another checksum, for a file
-	// released to overwrite (QuarantineDifferentFile): the held instance
-	// stays held until this claim is confirmed, and then is replaced.
-	Overwrite bool
 }
 
 // Validate returns an Invalid error unless the claim is well formed.
 func (c InstanceClaim) Validate() error {
-	return DuplicateQuery{SOPInstanceUID: c.SOPInstanceUID, StudyUID: c.StudyUID, SeriesUID: c.SeriesUID, SHA256: c.SHA256}.Validate()
+	return c.Query().Validate()
 }
 
 // Query returns the claim as the query CompareHeld takes.
 func (c InstanceClaim) Query() DuplicateQuery {
-	return DuplicateQuery{SOPInstanceUID: c.SOPInstanceUID, StudyUID: c.StudyUID, SeriesUID: c.SeriesUID, SHA256: c.SHA256}
+	return DuplicateQuery(c)
 }
 
-// InstanceRow is what a driver read of the instance row under a UID: the
-// instance held, the claim pending, or both (a claim to overwrite).
+// InstanceRow is what a driver read of the instance row under a UID: an
+// instance claimed by a reception, or held, never both.
 type InstanceRow struct {
 	// StudyUID and SeriesUID are the instance's, as received.
 	StudyUID, SeriesUID string
-	// HeldSHA256 is the held instance's checksum, zero when none is held;
-	// HeldBy the reception that confirmed it.
-	HeldSHA256 SHA256
-	HeldBy     string
-	// ClaimSHA256 is the pending claim's checksum, zero when none;
-	// ClaimedBy the reception that claims it.
-	ClaimSHA256 SHA256
-	ClaimedBy   string
+	// SHA256 is its received checksum.
+	SHA256 SHA256
+	// By is the reception that claims it, or that confirmed it.
+	By string
+	// Held says the instance is held; otherwise it is only claimed.
+	Held bool
 }
 
 // ClaimAction is what a driver writes for one file of a claim.
@@ -260,9 +263,6 @@ const (
 	ClaimNothing ClaimAction = iota
 	// ClaimInsert inserts the row, claimed by the reception.
 	ClaimInsert
-	// ClaimTakeOver sets the claim on a held row whose checksum is the
-	// answer's HeldSHA256, to overwrite it.
-	ClaimTakeOver
 )
 
 // DecideClaim returns the answer of a claim by reception receptionID for c,
@@ -270,57 +270,43 @@ const (
 // Every driver decides by it, so the claim's rules are stated once:
 //
 //   - no row: claimed now (insert);
-//   - another study or series, held or claimed: UID elsewhere;
-//   - claimed by this reception: claimed before with the same checksum,
-//     and a different file with another (the first claimed is kept);
-//   - claimed by another reception: claimed, tried again later;
-//   - held with the same checksum: the same file;
-//   - held with another: a different file, or claimed now to overwrite
-//     when the claim says so.
+//   - claimed by another reception: claimed, whatever its study and series;
+//   - claimed by this reception: another study or series is the UID
+//     elsewhere, the same checksum claimed before, another checksum a
+//     different file (the first claimed is kept);
+//   - held: another study or series is the UID elsewhere; the same
+//     checksum is archived before when this reception confirmed it and the
+//     same file otherwise; another checksum is a different file.
 func DecideClaim(receptionID string, c InstanceClaim, row *InstanceRow) (Duplicate, ClaimAction) {
 	if row == nil {
 		return Duplicate{Kind: ClaimedNow}, ClaimInsert
 	}
-	q := c.Query()
-	if row.ClaimedBy != "" {
-		pending := Duplicate{HeldSHA256: row.ClaimSHA256, HeldStudyUID: row.StudyUID, HeldSeriesUID: row.SeriesUID, HeldBy: row.ClaimedBy}
-		switch k := CompareHeld(q, pending); {
-		case k == UIDElsewhere:
-			pending.Kind = UIDElsewhere
-		case row.ClaimedBy != receptionID:
-			pending.Kind = Claimed
-		case k == SameFile:
-			pending.Kind = ClaimedBefore
-		default:
-			pending.Kind = DifferentFile
-		}
-		return pending, ClaimNothing
+	d := Duplicate{HeldSHA256: row.SHA256, HeldStudyUID: row.StudyUID, HeldSeriesUID: row.SeriesUID, HeldBy: row.By}
+	if !row.Held && row.By != receptionID {
+		d.Kind = Claimed
+		return d, ClaimNothing
 	}
-	held := Duplicate{HeldSHA256: row.HeldSHA256, HeldStudyUID: row.StudyUID, HeldSeriesUID: row.SeriesUID, HeldBy: row.HeldBy}
-	held.Kind = CompareHeld(q, held)
-	if held.Kind == DifferentFile && c.Overwrite {
-		held.Kind = ClaimedNow
-		return held, ClaimTakeOver
+	d.Kind = CompareHeld(c.Query(), d)
+	switch {
+	case d.Kind == SameFile && !row.Held:
+		d.Kind = ClaimedBefore
+	case d.Kind == SameFile && row.By == receptionID:
+		d.Kind = ArchivedBefore
 	}
-	return held, ClaimNothing
+	return d, ClaimNothing
 }
 
 // JudgeRow returns CheckDuplicates's answer for q given the row under its
-// UID (nil when none): what the tenant holds decides, a pending claim only
-// when nothing is held.
+// UID (nil when none): a claim not confirmed is Claimed, whoever holds it;
+// a held instance is compared (CompareHeld).
 func JudgeRow(q DuplicateQuery, row *InstanceRow) Duplicate {
 	if row == nil {
 		return Duplicate{}
 	}
-	if row.HeldSHA256.IsZero() {
-		d := Duplicate{HeldSHA256: row.ClaimSHA256, HeldStudyUID: row.StudyUID, HeldSeriesUID: row.SeriesUID, HeldBy: row.ClaimedBy, Kind: Claimed}
-		if CompareHeld(q, d) == UIDElsewhere {
-			d.Kind = UIDElsewhere
-		}
-		return d
+	d := Duplicate{HeldSHA256: row.SHA256, HeldStudyUID: row.StudyUID, HeldSeriesUID: row.SeriesUID, HeldBy: row.By, Kind: Claimed}
+	if row.Held {
+		d.Kind = CompareHeld(q, d)
 	}
-	d := Duplicate{HeldSHA256: row.HeldSHA256, HeldStudyUID: row.StudyUID, HeldSeriesUID: row.SeriesUID, HeldBy: row.HeldBy}
-	d.Kind = CompareHeld(q, d)
 	return d
 }
 

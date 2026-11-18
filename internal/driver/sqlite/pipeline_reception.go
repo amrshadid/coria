@@ -12,6 +12,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/core/reception"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/sqlkit"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -282,12 +283,10 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		}
 		subject, session, storage, failure := before.SubjectLabel, before.SessionLabel, before.Storage, before.Failure
 		if step.Event == reception.Identify {
-			has, err := exists(ctx, tx, `SELECT 1 FROM storages WHERE name = ?`, step.Storage)
-			if err != nil {
+			// The storage's row is held to the commit, so its removal or
+			// move cannot pass this step unseen (lockStorage).
+			if err := lockStorage(ctx, tx, step.Storage); err != nil {
 				return err
-			}
-			if !has {
-				return tenant.Precondition("the tenant has no storage named " + step.Storage)
 			}
 			subject, session, storage = step.SubjectLabel, step.SessionLabel, step.Storage
 		}
@@ -516,6 +515,66 @@ func (t *Tenant) DiscardReception(ctx context.Context, id, reason string, now ti
 		return tenant.Reception{}, err
 	}
 	return out, nil
+}
+
+// giveUp takes a reception whose unit of work was held as failed through
+// the Fail step, in the transaction that held the unit, with
+// tenant.FailureWorkGaveUp, and releases its claims, so no claim outlives
+// every worker that could end its reception. A reception that has ended, or
+// is not there, is left as it is. The step is the core's (reception.Step),
+// compared and set like any other.
+func giveUp(ctx context.Context, tx *sql.Tx, receptionID string, now time.Time) error {
+	if receptionID == "" {
+		return nil
+	}
+	var state string
+	found, err := catalogID(ctx, tx, `SELECT state FROM receptions WHERE id = ?`, []any{receptionID}, &state)
+	if err != nil || !found {
+		return err
+	}
+	next, err := reception.Step(reception.State(state), reception.Fail)
+	if err != nil {
+		return nil // ended already: nothing is held for it
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE receptions SET state = ?, ended = 1, step_at = ?, ended_at = ?, failure = ?
+		WHERE id = ? AND state = ?`, string(next), micros(now), micros(now), tenant.FailureWorkGaveUp, receptionID, state)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return err
+	}
+	return releaseClaims(ctx, tx, receptionID)
+}
+
+// ReceptionsWithoutWork implements tenant.Pipeline.
+func (t *Tenant) ReceptionsWithoutWork(ctx context.Context, page master.Page) ([]tenant.Reception, string, error) {
+	if err := page.Validate(); err != nil {
+		return nil, "", err
+	}
+	binding := t.binding()
+	after := []any{int64(-1), ""}
+	if page.Cursor != "" {
+		f, err := sqlkit.DecodeCursor(page.Cursor, listWithoutWork, binding, 2)
+		if err != nil {
+			return nil, "", err
+		}
+		at, err := sqlkit.DecodeCursorInt(f[0])
+		if err != nil {
+			return nil, "", err
+		}
+		after = []any{at, f[1]}
+	}
+	out, err := readRows(ctx, t, "the receptions without work cannot be listed", receptionsWithoutWorkSQL,
+		append(after, page.Limit+1), scanReception)
+	if err != nil {
+		return nil, "", err
+	}
+	out, last, more := cut(out, page.Limit)
+	if !more {
+		return out, "", nil
+	}
+	return out, timeCursor(listWithoutWork, binding, micros(last.Started), last.ID), nil
 }
 
 // notKept is the condition, on a received file r, that no quarantine record

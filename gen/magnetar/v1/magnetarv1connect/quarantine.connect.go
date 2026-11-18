@@ -116,28 +116,29 @@ type QuarantineServiceClient interface {
 	// quarantined again under a new record with a new id, whose released_from
 	// names this one; this record stays released.
 	//
-	// With RELEASE_MODE_OVERWRITE, a file quarantined because the tenant
-	// already holds a different file under its SOP Instance UID replaces the
-	// archived one on the storage. The replaced file's SHA-256 (the record's
-	// kept_sha256) and this call's audit entry are the record of why it was
-	// replaced; the replacing file is read back and checked like any other.
+	// A file quarantined as QUARANTINE_REASON_DIFFERENT_FILE is released only
+	// when the tenant no longer holds an instance under its SOP Instance UID,
+	// which nothing in this version causes: in this version such a file can
+	// only be rejected. A release never replaces an archived instance:
+	// replacing one deletes archived data, and will be an operation of its
+	// own, with a recorded reason and proof of the copy that replaces it.
 	//
-	// A file whose record is already released with the same mode is answered
-	// as it stands, so a repeated call releases nothing more.
+	// A file whose record is already released is answered as it stands, so a
+	// repeated call releases nothing more.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the file's id as its object,
 	// and the mode, the receiver and the reception it joined in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also RELEASE_MODE_OVERWRITE for a file whose reason is not
-	// QUARANTINE_REASON_DIFFERENT_FILE), not found (the tenant has no
-	// quarantined file with that id; a tenant that does not exist, for a
+	// (also a mode other than RELEASE_MODE_AS_IS), not found (the tenant has
+	// no quarantined file with that id; a tenant that does not exist, for a
 	// caller who may list every tenant), precondition (the file is rejected,
-	// released with another mode, or its content was never kept; the receiver
-	// it came to has been removed and the request names none; the receiver
-	// named does not exist), unavailable (the tenant's database does not
-	// answer, or the tenant is not ready).
+	// or its content was never kept; it is a different file and the tenant
+	// holds an instance under its SOP Instance UID; the receiver it came to
+	// has been removed and the request names none; the receiver named does
+	// not exist), unavailable (the tenant's database does not answer, or the
+	// tenant is not ready).
 	ReleaseQuarantinedFile(context.Context, *v1.ReleaseQuarantinedFileRequest) (*v1.ReleaseQuarantinedFileResponse, error)
 	// RejectQuarantinedFile removes a held file's bytes from the server, for
 	// good, and keeps its record as rejected, with the reason given. Nothing
@@ -204,28 +205,29 @@ type QuarantineServiceHandler interface {
 	// quarantined again under a new record with a new id, whose released_from
 	// names this one; this record stays released.
 	//
-	// With RELEASE_MODE_OVERWRITE, a file quarantined because the tenant
-	// already holds a different file under its SOP Instance UID replaces the
-	// archived one on the storage. The replaced file's SHA-256 (the record's
-	// kept_sha256) and this call's audit entry are the record of why it was
-	// replaced; the replacing file is read back and checked like any other.
+	// A file quarantined as QUARANTINE_REASON_DIFFERENT_FILE is released only
+	// when the tenant no longer holds an instance under its SOP Instance UID,
+	// which nothing in this version causes: in this version such a file can
+	// only be rejected. A release never replaces an archived instance:
+	// replacing one deletes archived data, and will be an operation of its
+	// own, with a recorded reason and proof of the copy that replaces it.
 	//
-	// A file whose record is already released with the same mode is answered
-	// as it stands, so a repeated call releases nothing more.
+	// A file whose record is already released is answered as it stands, so a
+	// repeated call releases nothing more.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the file's id as its object,
 	// and the mode, the receiver and the reception it joined in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also RELEASE_MODE_OVERWRITE for a file whose reason is not
-	// QUARANTINE_REASON_DIFFERENT_FILE), not found (the tenant has no
-	// quarantined file with that id; a tenant that does not exist, for a
+	// (also a mode other than RELEASE_MODE_AS_IS), not found (the tenant has
+	// no quarantined file with that id; a tenant that does not exist, for a
 	// caller who may list every tenant), precondition (the file is rejected,
-	// released with another mode, or its content was never kept; the receiver
-	// it came to has been removed and the request names none; the receiver
-	// named does not exist), unavailable (the tenant's database does not
-	// answer, or the tenant is not ready).
+	// or its content was never kept; it is a different file and the tenant
+	// holds an instance under its SOP Instance UID; the receiver it came to
+	// has been removed and the request names none; the receiver named does
+	// not exist), unavailable (the tenant's database does not answer, or the
+	// tenant is not ready).
 	ReleaseQuarantinedFile(context.Context, *v1.ReleaseQuarantinedFileRequest) (*v1.ReleaseQuarantinedFileResponse, error)
 	// RejectQuarantinedFile removes a held file's bytes from the server, for
 	// good, and keeps its record as rejected, with the reason given. Nothing

@@ -2,10 +2,12 @@ package tenanttest
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/core/reception"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -410,14 +412,22 @@ func testBatchShared(e *penv, other tenant.Pipeline) {
 func testInstanceClaimsShared(e *penv, other tenant.Pipeline) {
 	e.addReceiver("a", "store", 11112)
 	e.addReceiver("b", "store", 11113)
-	r1, _ := e.identified("a", 1)
-	r2, _ := e.identified("b", 1)
-	var claims []tenant.InstanceClaim
-	for n := range 50 {
-		claims = append(claims, claimOf(file(r1, 1, n)))
+	ns := make([]int, 50)
+	for n := range ns {
+		ns[n] = n
+	}
+	r1, f1 := e.identified("a", 1, ns...)
+	r2, f2 := e.identified("b", 1, ns...)
+	claimsOf := func(files []tenant.ReceivedFile) []tenant.InstanceClaim {
+		var out []tenant.InstanceClaim
+		for _, f := range files {
+			out = append(out, claimOf(f))
+		}
+		return out
 	}
 	stores := []tenant.Pipeline{e.p, other}
 	recs := []tenant.Reception{r1, r2}
+	claims := [][]tenant.InstanceClaim{claimsOf(f1), claimsOf(f2)}
 	answers := make([][]tenant.Duplicate, 2)
 	errs := make([]error, 2)
 	var wg sync.WaitGroup
@@ -425,7 +435,7 @@ func testInstanceClaimsShared(e *penv, other tenant.Pipeline) {
 	for i := range 2 {
 		wg.Go(func() {
 			<-start
-			answers[i], errs[i] = stores[i].ClaimInstances(e.ctx, recs[i].ID, claims, at(20), nil)
+			answers[i], errs[i] = stores[i].ClaimInstances(e.ctx, recs[i].ID, claims[i], at(20), nil)
 		})
 	}
 	close(start)
@@ -433,11 +443,102 @@ func testInstanceClaimsShared(e *penv, other tenant.Pipeline) {
 	for i := range 2 {
 		e.ok("ClaimInstances", errs[i])
 	}
-	for n := range claims {
+	for n := range ns {
 		a, b := answers[0][n].Kind, answers[1][n].Kind
 		oneEach := (a == tenant.ClaimedNow && b == tenant.Claimed) || (a == tenant.Claimed && b == tenant.ClaimedNow)
 		if !oneEach {
 			e.Errorf("UID %d claimed at once by two receptions: %v and %v, want one claimed now and the other told claimed", n, a, b)
 		}
+	}
+}
+
+// testWorkGivesUpItsReception guards that a reception never outlives the
+// last worker that could end it: when its unit of work is held as failed,
+// by a claim that finds the last attempt's lease ended or by a failed last
+// attempt, the reception takes the Fail step in the same transaction, with
+// tenant.FailureWorkGaveUp, and its claims are released, so another
+// reception of the same file can claim it. A unit naming a reception that
+// ended already changes nothing of it, and one naming no reception the
+// tenant has is refused.
+func testWorkGivesUpItsReception(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	r, f := e.identified("a", 1, 1)
+	_, _, err := e.p.EnqueueWork(e.ctx, tenant.Work{ID: "archive-1", Kind: "archive", ReceptionID: r.ID, Due: at(0), MaxAttempts: 1}, T0)
+	e.ok("EnqueueWork", err)
+	w, err := e.p.ClaimWork(e.ctx, "archive", "worker-1", at(0), time.Minute)
+	e.ok("ClaimWork", err)
+	if w.ReceptionID != r.ID {
+		e.Errorf("the unit reads reception %q, want %s", w.ReceptionID, r.ID)
+	}
+	fence := w.Fence()
+	_, err = e.p.ClaimInstances(e.ctx, r.ID, []tenant.InstanceClaim{claimOf(f[0])}, at(1), &fence)
+	e.ok("ClaimInstances", err)
+	// The worker dies; the next claim finds the last attempt's lease ended.
+	_, err = e.p.ClaimWork(e.ctx, "archive", "worker-2", at(3600), time.Minute)
+	e.wantKind("ClaimWork with only a unit whose last lease ended", err, fault.NotFound)
+	gave, _, err := e.p.Reception(e.ctx, r.ID)
+	e.ok("Reception", err)
+	if gave.State != reception.Failed || gave.Failure != tenant.FailureWorkGaveUp {
+		e.Errorf("the reception of a unit held as failed is %s (%q), want failed: its work gave up", gave.State, gave.Failure)
+	}
+	other, of := e.identified("a", 1, 1)
+	e.wantDup("another reception's claim of a file whose claimer's work gave up", e.claim(other, claimOf(of[0]))[0],
+		tenant.ClaimedNow, tenant.SHA256{}, "")
+
+	r2, _ := e.identified("a", 2, 2)
+	_, _, err = e.p.EnqueueWork(e.ctx, tenant.Work{ID: "archive-2", Kind: "archive", ReceptionID: r2.ID, Due: at(0), MaxAttempts: 1}, T0)
+	e.ok("EnqueueWork", err)
+	w2, err := e.p.ClaimWork(e.ctx, "archive", "worker-1", at(4000), time.Minute)
+	e.ok("ClaimWork", err)
+	_, err = e.p.FailWork(e.ctx, w2.Fence(), "storage unreachable", at(4001))
+	e.ok("FailWork, the last attempt", err)
+	if got, _, _ := e.p.Reception(e.ctx, r2.ID); got.State != reception.Failed || got.Failure != tenant.FailureWorkGaveUp {
+		e.Errorf("the reception of a unit whose last attempt failed is %s (%q)", got.State, got.Failure)
+	}
+
+	done := e.stepTo(e.openReception("a", 3, at(5000)), reception.Done, "store")
+	_, _, err = e.p.EnqueueWork(e.ctx, tenant.Work{ID: "archive-3", Kind: "archive", ReceptionID: done.ID, Due: at(0), MaxAttempts: 1}, T0)
+	e.ok("EnqueueWork", err)
+	w3, err := e.p.ClaimWork(e.ctx, "archive", "worker-1", at(6000), time.Minute)
+	e.ok("ClaimWork", err)
+	_, err = e.p.FailWork(e.ctx, w3.Fence(), "late", at(6001))
+	e.ok("FailWork", err)
+	if got, _, _ := e.p.Reception(e.ctx, done.ID); got.State != reception.Done {
+		e.Errorf("a unit held as failed changed a reception that had ended to %s", got.State)
+	}
+	_, _, err = e.p.EnqueueWork(e.ctx, tenant.Work{ID: "archive-4", Kind: "archive", ReceptionID: "missing", Due: at(0)}, T0)
+	e.wantPrecondition("EnqueueWork naming a reception the tenant does not have", err)
+}
+
+// testReceptionsWithoutWork guards the search the server runs at start for
+// a reception a crash left with no way to end: past receiving, not ended,
+// and no unit queued or leased naming it. A receiving reception, an ended
+// one and one with a live unit are not listed; one whose unit finished is.
+func testReceptionsWithoutWork(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	alone, _ := e.identified("a", 1)
+	withUnit, _ := e.identified("a", 2)
+	e.openReception("a", 3, at(1))
+	e.failReception(e.stepTo(e.openReception("a", 4, at(1)), reception.Complete, "store"))
+	_, _, err := e.p.EnqueueWork(e.ctx, tenant.Work{ID: "u1", Kind: "archive", ReceptionID: withUnit.ID, Due: at(0)}, T0)
+	e.ok("EnqueueWork", err)
+	ids := func() []string {
+		var out []string
+		for _, r := range allPages(e, 1, func(p master.Page) ([]tenant.Reception, string, error) { return e.p.ReceptionsWithoutWork(e.ctx, p) }) {
+			out = append(out, r.ID)
+		}
+		return out
+	}
+	if got := ids(); len(got) != 1 || got[0] != alone.ID {
+		e.Errorf("ReceptionsWithoutWork = %q, want only %s", got, alone.ID)
+	}
+	w, err := e.p.ClaimWork(e.ctx, "archive", "worker-1", at(0), time.Minute)
+	e.ok("ClaimWork", err)
+	if got := ids(); len(got) != 1 {
+		e.Errorf("a reception with a leased unit was listed: %q", got)
+	}
+	e.ok("CompleteWork", e.p.CompleteWork(e.ctx, w.Fence(), at(1), nil))
+	if got := ids(); len(got) != 2 || !slices.Contains(got, withUnit.ID) {
+		e.Errorf("after its unit finished with no next one, ReceptionsWithoutWork = %q, want it listed", got)
 	}
 }

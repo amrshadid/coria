@@ -48,11 +48,21 @@ func (e *penv) wantDup(what string, d tenant.Duplicate, kind tenant.DuplicateKin
 // moves it to identified, archiving to storage "store".
 func (e *penv) identified(receiver string, study int, ns ...int) (tenant.Reception, []tenant.ReceivedFile) {
 	e.Helper()
+	return e.identifiedWith(receiver, study, func(r tenant.Reception) []tenant.ReceivedFile {
+		var files []tenant.ReceivedFile
+		for _, n := range ns {
+			files = append(files, file(r, study, n))
+		}
+		return files
+	})
+}
+
+// identifiedWith opens a reception of study at receiver, records the files
+// make returns for it, and moves it to identified on storage "store".
+func (e *penv) identifiedWith(receiver string, study int, make func(tenant.Reception) []tenant.ReceivedFile) (tenant.Reception, []tenant.ReceivedFile) {
+	e.Helper()
 	r := e.openReception(receiver, study, at(10))
-	var files []tenant.ReceivedFile
-	for _, n := range ns {
-		files = append(files, file(r, study, n))
-	}
+	files := make(r)
 	if len(files) > 0 {
 		_, err := e.p.AddReceivedFiles(e.ctx, files, at(11))
 		e.ok("AddReceivedFiles", err)
@@ -60,82 +70,91 @@ func (e *penv) identified(receiver string, study int, ns ...int) (tenant.Recepti
 	return e.stepTo(r, reception.Identified, "store"), files
 }
 
+// variant returns f with another checksum (and place), or another series.
+func variant(f tenant.ReceivedFile, checksum int, series string) tenant.ReceivedFile {
+	f.SHA256, f.Incoming = sum(checksum), fmt.Sprintf("%s.v%d", f.Incoming, checksum)
+	if series != "" {
+		f.SeriesUID = series
+	}
+	return f
+}
+
 // testClaims guards every answer of the claim, each against the rule that
 // gives it: a UID no one has is claimed now; claimed again by the same
 // reception it is claimed before; another reception's claim answers
-// Claimed until it is confirmed, then the held answers (the same file, a
-// different one, the UID elsewhere, by study or by series, held or only
-// claimed); two checksums under one UID in one reception keep the first;
-// a claim to overwrite takes a held UID without unholding it. On SQLite's
-// one writer two claims are never at the same moment; a driver with
-// several writers is shown by testClaimsShared, which a Postgres run
-// exercises with true concurrency.
+// Claimed, whatever its study, until it is confirmed, then the held answers
+// (the same file, a different one, the UID elsewhere); a UID this reception
+// confirmed answers archived before when its step runs again; two checksums
+// under one UID in one reception keep the lower checksum whatever the order
+// given; a claim names only a file the reception received, as received. On
+// SQLite's one writer two claims are never at the same moment; a driver
+// with several writers is shown by testInstanceClaimsShared, which a
+// Postgres run exercises with true concurrency.
 func testClaims(e *penv) {
 	e.addReceiver("a", "store", 11112)
 	e.addReceiver("b", "store", 11113)
-	r1, f := e.identified("a", 1, 1, 2)
-	r2, _ := e.identified("b", 1)
-	c1, c2 := claimOf(f[0]), claimOf(f[1])
+	e.addReceiver("c", "store", 11114)
+	r1, f := e.identifiedWith("a", 1, func(r tenant.Reception) []tenant.ReceivedFile {
+		twin := file(r, 1, 30)
+		return []tenant.ReceivedFile{file(r, 1, 1), file(r, 1, 2), twin, variant(twin, 31, ""), file(r, 1, 600)}
+	})
+	f1, f2, twin1, twin2, late := f[0], f[1], f[2], f[3], f[4]
+	r2, g := e.identifiedWith("b", 1, func(r tenant.Reception) []tenant.ReceivedFile {
+		same := file(r, 1, 1)
+		return []tenant.ReceivedFile{same, variant(same, 77, ""), variant(same, 78, uidOf(2, 9))}
+	})
+	g1, gDifferent, gSeries := g[0], g[1], g[2]
+	r3, h := e.identifiedWith("c", 9, func(r tenant.Reception) []tenant.ReceivedFile {
+		return []tenant.ReceivedFile{file(r, 9, 2)}
+	})
 
-	got := e.claim(r1, c1, c2)
+	got := e.claim(r1, claimOf(f1), claimOf(f2))
 	e.wantDup("a new UID", got[0], tenant.ClaimedNow, tenant.SHA256{}, "")
 	e.wantDup("another new UID", got[1], tenant.ClaimedNow, tenant.SHA256{}, "")
-	got = e.claim(r1, c1, c2)
+	got = e.claim(r1, claimOf(f1), claimOf(f2))
 	e.wantDup("a claim written again", got[0], tenant.ClaimedBefore, sum(1), r1.ID)
-	e.wantDup("CheckDuplicates of a claimed UID", e.check(c1), tenant.Claimed, sum(1), r1.ID)
-	e.wantDup("another reception's claim", e.claim(r2, c1)[0], tenant.Claimed, sum(1), r1.ID)
-	elsewhere := c2
-	elsewhere.StudyUID = uidOf(1, 9)
-	e.wantDup("a UID claimed under another study", e.claim(r2, elsewhere)[0], tenant.UIDElsewhere, sum(2), r1.ID)
+	e.wantDup("CheckDuplicates of a claimed UID", e.check(claimOf(f1)), tenant.Claimed, sum(1), r1.ID)
+	e.wantDup("another reception's claim", e.claim(r2, claimOf(g1))[0], tenant.Claimed, sum(1), r1.ID)
+	e.wantDup("a UID claimed by another under another study: decided against what is held, not a claim",
+		e.claim(r3, claimOf(h[0]))[0], tenant.Claimed, sum(2), r1.ID)
 
-	e.confirm(r1, f[:1], []tenant.Duplicate{{Kind: tenant.ClaimedBefore}})
-	e.wantDup("a held UID, the same file", e.claim(r2, c1)[0], tenant.SameFile, sum(1), r1.ID)
-	other := c1
-	other.SHA256 = sum(77)
-	e.wantDup("a held UID, another checksum", e.claim(r2, other)[0], tenant.DifferentFile, sum(1), r1.ID)
-	e.wantDup("CheckDuplicates of a different file", e.check(other), tenant.DifferentFile, sum(1), r1.ID)
-	series := c1
-	series.SeriesUID = uidOf(2, 9)
-	e.wantDup("a held UID under another series", e.claim(r2, series)[0], tenant.UIDElsewhere, sum(1), r1.ID)
-	study := c1
-	study.StudyUID = uidOf(1, 9)
-	e.wantDup("CheckDuplicates of a held UID under another study", e.check(study), tenant.UIDElsewhere, sum(1), r1.ID)
+	_, err := e.p.ClaimInstances(e.ctx, r2.ID, []tenant.InstanceClaim{claimOf(file(r2, 1, 500))}, at(20), nil)
+	e.wantPrecondition("a claim of a file the reception did not receive", err)
+	moved := claimOf(g1)
+	moved.StudyUID = uidOf(1, 7)
+	_, err = e.p.ClaimInstances(e.ctx, r2.ID, []tenant.InstanceClaim{moved}, at(20), nil)
+	e.wantPrecondition("a claim of a received file under a study it was not received in", err)
+
+	e.confirm(r1, []tenant.ReceivedFile{f1}, []tenant.Duplicate{{Kind: tenant.ClaimedBefore}})
+	e.wantDup("a held UID, the same file", e.claim(r2, claimOf(g1))[0], tenant.SameFile, sum(1), r1.ID)
+	e.wantDup("a held UID, another checksum", e.claim(r2, claimOf(gDifferent))[0], tenant.DifferentFile, sum(1), r1.ID)
+	e.wantDup("CheckDuplicates of a different file", e.check(claimOf(gDifferent)), tenant.DifferentFile, sum(1), r1.ID)
+	e.wantDup("a held UID under another series", e.claim(r2, claimOf(gSeries))[0], tenant.UIDElsewhere, sum(1), r1.ID)
 	e.wantDup("CheckDuplicates of a UID no one has", e.check(claimOf(file(r2, 1, 500))), tenant.NotHeld, tenant.SHA256{}, "")
 
-	twin1, twin2 := claimOf(file(r2, 1, 30)), claimOf(file(r2, 1, 30))
-	twin2.SHA256 = sum(31)
-	got = e.claim(r2, twin1, twin2)
-	e.wantDup("one UID twice in one batch, first", got[0], tenant.ClaimedNow, tenant.SHA256{}, "")
-	e.wantDup("one UID twice in one batch, second", got[1], tenant.DifferentFile, sum(30), r2.ID)
-	got = e.claim(r2, twin2, twin1)
-	e.wantDup("the twins again, in the other order: the second is still the different one", got[0], tenant.DifferentFile, sum(30), r2.ID)
-	e.wantDup("the twins again, the first", got[1], tenant.ClaimedBefore, sum(30), r2.ID)
+	got = e.claim(r1, claimOf(f1), claimOf(f2))
+	e.wantDup("a claim written again after its scan was committed", got[0], tenant.ArchivedBefore, sum(1), r1.ID)
+	e.wantDup("a claim written again, the file not committed yet", got[1], tenant.ClaimedBefore, sum(2), r1.ID)
+	e.confirm(r1, []tenant.ReceivedFile{f2}, []tenant.Duplicate{{Kind: tenant.ClaimedBefore}})
+	e.wantDup("a UID held under another study, once confirmed", e.claim(r3, claimOf(h[0]))[0], tenant.UIDElsewhere, sum(2), r1.ID)
 
-	overwrite := other
-	overwrite.Overwrite = true
-	e.wantDup("a claim to overwrite", e.claim(r2, overwrite)[0], tenant.ClaimedNow, sum(1), r1.ID)
-	e.wantDup("the held instance while a claim to overwrite is pending", e.check(c1), tenant.SameFile, sum(1), r1.ID)
-	before, err := e.p.CatalogTotals(e.ctx)
-	e.ok("CatalogTotals", err)
-	overwritten := f[0]
-	overwritten.SHA256, overwritten.Size = sum(77), 4000
-	e.confirm(r2, []tenant.ReceivedFile{overwritten}, []tenant.Duplicate{{Kind: tenant.ClaimedNow}})
-	e.wantDup("the UID after the overwrite is confirmed", e.check(other), tenant.SameFile, sum(77), r2.ID)
-	after, err := e.p.CatalogTotals(e.ctx)
-	e.ok("CatalogTotals", err)
-	if after.Instances != before.Instances {
-		e.Errorf("an overwrite changed the instances held from %d to %d", before.Instances, after.Instances)
-	}
+	got = e.claim(r1, claimOf(twin2), claimOf(twin1))
+	e.wantDup("one UID twice in one batch, the lower checksum", got[1], tenant.ClaimedNow, tenant.SHA256{}, "")
+	e.wantDup("one UID twice in one batch, the other", got[0], tenant.DifferentFile, sum(30), r1.ID)
+	got = e.claim(r1, claimOf(twin1), claimOf(twin2))
+	e.wantDup("the twins again, in the other order, the kept one", got[0], tenant.ClaimedBefore, sum(30), r1.ID)
+	e.wantDup("the twins again, in the other order, the other", got[1], tenant.DifferentFile, sum(30), r1.ID)
 
-	_, err = e.p.ClaimInstances(e.ctx, "missing", []tenant.InstanceClaim{c1}, at(1), nil)
+	_, err = e.p.ClaimInstances(e.ctx, "missing", []tenant.InstanceClaim{claimOf(f1)}, at(1), nil)
 	e.wantKind("ClaimInstances for a reception not there", err, fault.NotFound)
 	receiving := e.openReception("a", 3, at(1))
-	_, err = e.p.ClaimInstances(e.ctx, receiving.ID, []tenant.InstanceClaim{c1}, at(1), nil)
+	_, err = e.p.ClaimInstances(e.ctx, receiving.ID, []tenant.InstanceClaim{claimOf(f1)}, at(1), nil)
 	e.wantPrecondition("ClaimInstances for a reception not identified", err)
-	ended := e.failReception(e.stepTo(e.openReception("a", 4, at(1)), reception.Identified, "store"))
-	_, err = e.p.ClaimInstances(e.ctx, ended.ID, []tenant.InstanceClaim{c1}, at(1), nil)
+	ended, endedFiles := e.identified("a", 4, 700)
+	ended = e.failReception(ended)
+	_, err = e.p.ClaimInstances(e.ctx, ended.ID, []tenant.InstanceClaim{claimOf(endedFiles[0])}, at(1), nil)
 	e.wantPrecondition("ClaimInstances for a reception that ended", err)
-	_, err = e.p.ClaimInstances(e.ctx, r1.ID, []tenant.InstanceClaim{c1, c1}, at(1), nil)
+	_, err = e.p.ClaimInstances(e.ctx, r1.ID, []tenant.InstanceClaim{claimOf(f1), claimOf(f1)}, at(1), nil)
 	e.wantKind("ClaimInstances naming one file twice", err, fault.Invalid)
 
 	_, _, err = e.p.EnqueueWork(e.ctx, tenant.Work{ID: "claim-work", Kind: "reception", Due: at(0)}, T0)
@@ -145,10 +164,9 @@ func testClaims(e *penv) {
 	_, err = e.p.ClaimWork(e.ctx, "reception", "worker-2", at(61), time.Minute)
 	e.ok("ClaimWork after the lease ended", err)
 	fence := w.Fence()
-	late := claimOf(file(r1, 1, 600))
-	_, err = e.p.ClaimInstances(e.ctx, r1.ID, []tenant.InstanceClaim{late}, at(70), &fence)
+	_, err = e.p.ClaimInstances(e.ctx, r1.ID, []tenant.InstanceClaim{claimOf(late)}, at(70), &fence)
 	e.wantIs("ClaimInstances under a lease taken over", err, tenant.ErrLeaseLost, fault.Conflict)
-	e.wantDup("a claim under a lost lease", e.check(late), tenant.NotHeld, tenant.SHA256{}, "")
+	e.wantDup("a claim under a lost lease", e.check(claimOf(late)), tenant.NotHeld, tenant.SHA256{}, "")
 }
 
 // testClaimsOutliveTheirReception guards what stays and what goes when a
@@ -156,8 +174,7 @@ func testClaims(e *penv) {
 // (failed after archiving, retried, discarded), so its retry finds them the
 // same file and archives them no second time; the claims it did not confirm
 // are released in the step's transaction, so another reception can claim
-// them; a claim to overwrite that is released leaves the held instance as
-// it was.
+// them.
 func testClaimsOutliveTheirReception(e *penv) {
 	e.addReceiver("a", "store", 11112)
 	r, f := e.identified("a", 1, 1, 2)
@@ -169,7 +186,9 @@ func testClaimsOutliveTheirReception(e *penv) {
 	_, retry, err := e.p.RetryReception(e.ctx, r.ID, "retry-1", "", at(500), e.audit(), nil)
 	e.ok("RetryReception", err)
 	retry = e.stepTo(retry, reception.Identified, "store")
-	got := e.claim(retry, claimOf(f[0]), claimOf(f[1]))
+	rf := []tenant.ReceivedFile{f[0], f[1]}
+	rf[0].ReceptionID, rf[1].ReceptionID = retry.ID, retry.ID
+	got := e.claim(retry, claimOf(rf[0]), claimOf(rf[1]))
 	e.wantDup("the retry's claim of what the failed reception archived", got[0], tenant.SameFile, sum(1), r.ID)
 	e.wantDup("the retry's claim of what it did not", got[1], tenant.ClaimedNow, tenant.SHA256{}, "")
 
@@ -180,13 +199,6 @@ func testClaimsOutliveTheirReception(e *penv) {
 	_, err = e.p.DiscardReception(e.ctx, d.ID, "not wanted", at(600), e.audit(), nil)
 	e.ok("DiscardReception", err)
 	e.wantDup("a claim of a discarded reception", e.check(pending), tenant.NotHeld, tenant.SHA256{}, "")
-
-	o, _ := e.identified("a", 1)
-	overwrite := claimOf(f[0])
-	overwrite.SHA256, overwrite.Overwrite = sum(88), true
-	e.claim(o, overwrite)
-	e.failReception(o)
-	e.wantDup("a held instance after a claim to overwrite was released", e.check(claimOf(f[0])), tenant.SameFile, sum(1), r.ID)
 }
 
 // testCommitScan guards the catalog a commit writes: the subject, session
@@ -194,13 +206,17 @@ func testClaimsOutliveTheirReception(e *penv) {
 // session's storage; a commit written again counting nothing twice; the
 // running totals equal to what was made; every label conflict, each with
 // its level and fault; labels and storage other than an existing session's
-// or scan's own refused; a series of another session refused; an instance
-// no one claims, or another reception claims, refused.
+// or scan's own refused; a series of another session refused; a commit
+// with no instance, under another study than its reception's, of an
+// instance claimed in another series, for a reception that ended, or of an
+// instance no one claims or another reception claims, refused.
 func testCommitScan(e *penv) {
 	e.addReceiver("a", "store", 11112)
 	e.addStorage("other-store")
-	r, f := e.identified("a", 1, 1, 2, 3)
-	answers := e.commit(r, f...)
+	r, f := e.identifiedWith("a", 1, func(r tenant.Reception) []tenant.ReceivedFile {
+		return []tenant.ReceivedFile{file(r, 1, 1), file(r, 1, 2), file(r, 1, 3), file(r, 1, 50), variant(file(r, 1, 40), 40, uidOf(2, 2)), file(r, 1, 51)}
+	})
+	answers := e.commit(r, f[:3]...)
 	for i, a := range answers {
 		if a.Kind != tenant.ClaimedNow {
 			e.Errorf("file %d claimed as %v", i, a.Kind)
@@ -227,19 +243,28 @@ func testCommitScan(e *penv) {
 		e.Errorf("the reception's archived counts = %d, %d; want 3, 3006", rc.Counts.FilesArchived, rc.Counts.BytesArchived)
 	}
 
-	e.confirm(r, f, []tenant.Duplicate{{Kind: tenant.ClaimedBefore}, {Kind: tenant.ClaimedBefore}, {Kind: tenant.ClaimedBefore}})
+	e.confirm(r, f[:3], []tenant.Duplicate{{Kind: tenant.ClaimedBefore}, {Kind: tenant.ClaimedBefore}, {Kind: tenant.ClaimedBefore}})
 	again, _ := e.p.CatalogTotals(e.ctx)
 	rc2, _, _ := e.p.Reception(e.ctx, r.ID)
 	if again != totals || rc2.Counts != rc.Counts {
 		e.Errorf("a commit written again changed the totals %+v -> %+v or the counts %+v -> %+v", totals, again, rc.Counts, rc2.Counts)
 	}
 
+	// withInstance gives a commit one instance whose key is its scan's, so
+	// the rules of labels and studies are reached before the instance's
+	// own; an instance no one claims is refused after them.
+	withInstance := func(c tenant.ScanCommit, uid string) tenant.ScanCommit {
+		key, err := layout.InstanceKey(labelPath(c.SubjectLabel, c.SessionLabel, c.ScanLabel), uid)
+		e.ok("InstanceKey", err)
+		c.Instances = []tenant.ConfirmedInstance{{SOPInstanceUID: uid, Key: key, Size: 1, ArchivedSHA256: sum(1)}}
+		return c
+	}
 	base := tenant.ScanCommit{ReceptionID: r.ID, StudyUID: r.StudyUID, SeriesUID: uidOf(2, 1), SubjectLabel: "sub-01",
 		SessionLabel: "ses-" + r.StudyUID, ScanLabel: "scan-" + uidOf(2, 1), Storage: "store", At: at(100)}
 	commit := func(change func(*tenant.ScanCommit)) error {
 		c := base
 		change(&c)
-		_, err := e.p.CommitScan(e.ctx, c)
+		_, err := e.p.CommitScan(e.ctx, withInstance(c, "2.25.99.1"))
 		return err
 	}
 	wantConflict := func(what string, err error, level, faultWord string) {
@@ -249,68 +274,88 @@ func testCommitScan(e *penv) {
 			e.Errorf("%s: %v, want a %s label conflict %s", what, err, level, faultWord)
 		}
 	}
+	_, err = e.p.CommitScan(e.ctx, base)
+	e.wantKind("a commit with no instance", err, fault.Invalid)
+	// claimed is an instance this reception claims in the scan's series, so
+	// a commit of it is refused only by the rule a case breaks.
+	e.claim(r, claimOf(f[5]))
+	claimed := func(change func(*tenant.ScanCommit)) error {
+		c := base
+		change(&c)
+		_, err := e.p.CommitScan(e.ctx, withInstance(c, f[5].SOPInstanceUID))
+		return err
+	}
 	wantConflict("an existing session under another subject", commit(func(c *tenant.ScanCommit) { c.SubjectLabel = "sub-02" }),
 		"subject", tenant.FaultTwoSubjectsForOneStudy)
-	e.wantPrecondition("an existing session under another label", commit(func(c *tenant.ScanCommit) { c.SessionLabel = "ses-renamed" }))
-	e.wantPrecondition("an existing session on another storage", commit(func(c *tenant.ScanCommit) { c.Storage = "other-store" }))
-	e.wantPrecondition("an existing scan under another label", commit(func(c *tenant.ScanCommit) { c.ScanLabel = "scan-renamed" }))
+	e.wantPrecondition("an existing session under another label", claimed(func(c *tenant.ScanCommit) { c.SessionLabel = "ses-renamed" }))
+	e.wantPrecondition("an existing session on another storage", claimed(func(c *tenant.ScanCommit) { c.Storage = "other-store" }))
+	e.wantPrecondition("an existing scan under another label", claimed(func(c *tenant.ScanCommit) { c.ScanLabel = "scan-renamed" }))
 	e.wantPrecondition("a storage the tenant does not have", commit(func(c *tenant.ScanCommit) { c.Storage = "nosuch" }))
+	e.wantPrecondition("a study other than its reception's", commit(func(c *tenant.ScanCommit) { c.StudyUID = uidOf(1, 99) }))
 	wantConflict("a new scan with a label its session holds", commit(func(c *tenant.ScanCommit) { c.SeriesUID = uidOf(2, 2) }),
 		"scan", tenant.FaultHeldByAnotherScan)
 	wantConflict("a new scan with a label its session holds in another case", commit(func(c *tenant.ScanCommit) {
 		c.SeriesUID, c.ScanLabel = uidOf(2, 2), "SCAN-"+uidOf(2, 1)
 	}), "scan", tenant.FaultCaseCollision)
+	e.wantPrecondition("an instance no one claims", commit(func(*tenant.ScanCommit) {}))
+
+	// An instance claimed in series 1, confirmed into the scan of series 99.
+	e.claim(r, claimOf(f[3]))
+	c := base
+	c.SeriesUID, c.ScanLabel = uidOf(2, 99), "scan-99"
+	_, err = e.p.CommitScan(e.ctx, withInstance(c, f[3].SOPInstanceUID))
+	e.wantPrecondition("an instance claimed in another series", err)
 
 	r2, f2 := e.identified("a", 2, 20)
 	other := tenant.ScanCommit{ReceptionID: r2.ID, StudyUID: r2.StudyUID, SeriesUID: uidOf(2, 2), SubjectLabel: "sub-01",
 		SessionLabel: "ses-" + r.StudyUID, ScanLabel: "scan-x", Storage: "store", At: at(100)}
-	try := func(change func(*tenant.ScanCommit)) error {
+	try := func(change func(*tenant.ScanCommit), uid string) error {
 		c := other
 		change(&c)
-		_, err := e.p.CommitScan(e.ctx, c)
+		_, err := e.p.CommitScan(e.ctx, withInstance(c, uid))
 		return err
 	}
-	wantConflict("a new session with a label its subject holds", try(func(*tenant.ScanCommit) {}), "session", tenant.FaultHeldByAnotherSession)
+	wantConflict("a new session with a label its subject holds", try(func(*tenant.ScanCommit) {}, f2[0].SOPInstanceUID),
+		"session", tenant.FaultHeldByAnotherSession)
 	wantConflict("a new session with a label its subject holds in another case", try(func(c *tenant.ScanCommit) {
 		c.SessionLabel = "SES-" + r.StudyUID
-	}), "session", tenant.FaultCaseCollision)
+	}, f2[0].SOPInstanceUID), "session", tenant.FaultCaseCollision)
 	wantConflict("a new subject with a held subject label in another case", try(func(c *tenant.ScanCommit) {
 		c.SubjectLabel, c.SessionLabel = "SUB-01", "ses-two"
-	}), "subject", tenant.FaultCaseCollision)
-	err = try(func(c *tenant.ScanCommit) { c.SessionLabel, c.SeriesUID = "ses-two", uidOf(2, 1) })
+	}, f2[0].SOPInstanceUID), "subject", tenant.FaultCaseCollision)
+	err = try(func(c *tenant.ScanCommit) { c.SessionLabel, c.SeriesUID = "ses-two", uidOf(2, 1) }, f2[0].SOPInstanceUID)
 	if !errors.Is(err, tenant.ErrSeriesElsewhere) || fault.KindOf(err) != fault.Conflict {
 		e.Errorf("a series of another session: %v, want ErrSeriesElsewhere", err)
 	}
-	key, err := layout.InstanceKey(labelPath("sub-01", "ses-two", "scan-x"), f2[0].SOPInstanceUID)
-	e.ok("InstanceKey", err)
-	unclaimed := tenant.ConfirmedInstance{SOPInstanceUID: f2[0].SOPInstanceUID, Key: key, Size: 1, ArchivedSHA256: sum(1)}
-	e.wantPrecondition("an instance the reception does not claim", try(func(c *tenant.ScanCommit) {
-		c.SessionLabel, c.Instances = "ses-two", []tenant.ConfirmedInstance{unclaimed}
-	}))
-	// An instance another reception claims: r claims it, r2 may not
-	// confirm it.
-	theirs := file(r, 1, 40)
-	theirs.SeriesUID = uidOf(2, 2)
-	e.claim(r, claimOf(theirs))
-	theirKey, err := layout.InstanceKey(labelPath("sub-01", "ses-two", "scan-x"), theirs.SOPInstanceUID)
-	e.ok("InstanceKey", err)
-	e.wantPrecondition("an instance another reception claims", try(func(c *tenant.ScanCommit) {
-		c.SessionLabel = "ses-two"
-		c.Instances = []tenant.ConfirmedInstance{{SOPInstanceUID: theirs.SOPInstanceUID, Key: theirKey, Size: 1, ArchivedSHA256: theirs.SHA256}}
-	}))
-	e.wantDup("an instance another reception tried to confirm", e.check(claimOf(theirs)), tenant.Claimed, theirs.SHA256, r.ID)
-	bad := unclaimed
-	bad.Key = "data/sub-01/ses-two/scan-y/" + f2[0].SOPInstanceUID + ".dcm"
-	e.wantKind("an instance whose key is not its scan's", try(func(c *tenant.ScanCommit) {
-		c.SessionLabel, c.Instances = "ses-two", []tenant.ConfirmedInstance{bad}
-	}), fault.Invalid)
+	// An instance another reception claims: r claims it, r2 may not confirm
+	// it.
+	e.claim(r, claimOf(f[4]))
+	e.wantPrecondition("an instance another reception claims", try(func(c *tenant.ScanCommit) { c.SessionLabel = "ses-two" }, f[4].SOPInstanceUID))
+	e.wantDup("an instance another reception tried to confirm", e.check(claimOf(f[4])), tenant.Claimed, f[4].SHA256, r.ID)
 	if final, _ := e.p.CatalogTotals(e.ctx); final != totals {
 		e.Errorf("refused commits changed the totals %+v -> %+v", totals, final)
 	}
-	e.ok("a second session of the subject", try(func(c *tenant.ScanCommit) { c.SessionLabel = "ses-two" }))
-	if final, _ := e.p.CatalogTotals(e.ctx); final != (tenant.CatalogCounts{Subjects: 1, Sessions: 2, Scans: 2, Instances: 3}) {
+	e.claim(r2, claimOf(f2[0]))
+	e.wantPrecondition("a new session on a storage the tenant does not have", try(func(c *tenant.ScanCommit) {
+		c.SessionLabel, c.Storage = "ses-two", "nosuch"
+	}, f2[0].SOPInstanceUID))
+	// Another reception of the same study may not confirm what r claims.
+	e.addReceiver("b", "store", 11113)
+	same, _ := e.identified("b", 1)
+	sameStudy := base
+	sameStudy.ReceptionID, sameStudy.SeriesUID, sameStudy.ScanLabel = same.ID, uidOf(2, 2), "scan-x2"
+	_, err = e.p.CommitScan(e.ctx, withInstance(sameStudy, f[4].SOPInstanceUID))
+	e.wantPrecondition("an instance another reception of the same study claims", err)
+	e.ok("a second session of the subject", try(func(c *tenant.ScanCommit) { c.SessionLabel = "ses-two" }, f2[0].SOPInstanceUID))
+	if final, _ := e.p.CatalogTotals(e.ctx); final != (tenant.CatalogCounts{Subjects: 1, Sessions: 2, Scans: 2, Instances: 4}) {
 		e.Errorf("totals after a second session = %+v", final)
 	}
+
+	ended := e.failReception(r)
+	c = base
+	c.ReceptionID = ended.ID
+	_, err = e.p.CommitScan(e.ctx, withInstance(c, f[3].SOPInstanceUID))
+	e.wantPrecondition("a commit of a reception that ended", err)
 }
 
 // testReleaseIntoSameReception guards a file quarantined while its
@@ -389,7 +434,10 @@ func testDiscardKeepsQuarantined(e *penv) {
 // testHoldCountsReceived guards the count identity for a file that arrived
 // and could not be recorded as a received file (too large, not DICOM): its
 // hold counts it received and quarantined, once, so at the end received
-// equals archived plus duplicate plus quarantined.
+// equals archived plus duplicate plus quarantined. A hold locks its
+// reception before it counts, as a received batch does, so a hold and a
+// batch of the same file at once are ordered; SQLite's one writer orders
+// them anyway, and a Postgres run exercises the lock.
 func testHoldCountsReceived(e *penv) {
 	e.addReceiver("a", "store", 11112)
 	r := e.openReception("a", 1, at(1))
@@ -416,9 +464,9 @@ func testHoldCountsReceived(e *penv) {
 // reception that did not fail: received = archived + duplicate +
 // quarantined, files and bytes. A seeded random run of receptions, by a
 // pipeline that holds what it does not archive or ignore, mixes every kind
-// of hold (a file with no received file, a received file), releases (each
-// mode, into the same reception and into another), rejections, retries and
-// discards, and checks the identity whenever a reception ends.
+// of hold (a file with no received file, a received file), releases (into
+// the same reception and into another), rejections, retries and discards,
+// and checks the identity whenever a reception ends.
 func testCountIdentity(e *penv) {
 	e.addReceiver("a", "store", 11112)
 	e.addReceiver("b", "store", 11113)
@@ -456,9 +504,7 @@ func testCountIdentity(e *penv) {
 			if quarantinedNow[f.SOPInstanceUID+f.SHA256.String()] {
 				continue
 			}
-			c := claimOf(f)
-			c.Overwrite = next(3) == 0
-			todo, claims = append(todo, f), append(claims, c)
+			todo, claims = append(todo, f), append(claims, claimOf(f))
 		}
 		answers, err := e.p.ClaimInstances(e.ctx, r.ID, claims, tick(), nil)
 		e.ok("ClaimInstances", err)
@@ -552,13 +598,9 @@ func testCountIdentity(e *penv) {
 				}
 				continue
 			}
-			mode := tenant.ReleaseAsIs
-			if q.Reason == tenant.QuarantineDifferentFile && next(2) == 0 {
-				mode = tenant.ReleaseOverwrite
-			}
-			rel, err := e.p.ReleaseQuarantined(e.ctx, q.ID, mode, []string{"a", "b"}[next(2)], e.id("rc"), tick(), e.audit(), nil)
+			rel, err := e.p.ReleaseQuarantined(e.ctx, q.ID, tenant.ReleaseAsIs, []string{"a", "b"}[next(2)], e.id("rc"), tick(), e.audit(), nil)
 			if fault.KindOf(err) == fault.Conflict {
-				continue // released already, or its bytes never kept
+				continue // released already, its bytes never kept, or a different file whose UID is held
 			}
 			e.ok("ReleaseQuarantined", err)
 			if rel.ReleaseReception != "" {
@@ -595,4 +637,24 @@ func testCountIdentity(e *penv) {
 // labelPath returns the three labels as a label.Path.
 func labelPath(subject, session, scan string) label.Path {
 	return label.Path{Subject: subject, Session: session, Scan: scan}
+}
+
+// testCommitSharesSubject guards that two studies of one subject, committed
+// one after the other, share one subject row, and that a third study whose
+// subject label differs only in case is refused rather than made a second
+// subject. On SQLite the commits are ordered by its one writer; with several
+// writers the find-or-make of each row (an insert that does nothing when the
+// row is there, then a read) gives the same answer for commits made at once,
+// which a Postgres run of testInstanceClaimsShared's kind would show.
+func testCommitSharesSubject(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	r1, f1 := e.identified("a", 1, 1)
+	r2, f2 := e.identified("a", 2, 2)
+	e.commit(r1, f1...)
+	e.commit(r2, f2...)
+	totals, err := e.p.CatalogTotals(e.ctx)
+	e.ok("CatalogTotals", err)
+	if totals.Subjects != 1 || totals.Sessions != 2 {
+		e.Errorf("two studies of one subject made %d subjects and %d sessions, want 1 and 2", totals.Subjects, totals.Sessions)
+	}
 }

@@ -66,19 +66,25 @@ const (
 	// "empty", "too_long", "bad_character", "bad_uid", "no_match" or
 	// "bad_label".
 	QuarantineReason_QUARANTINE_REASON_BAD_LABEL QuarantineReason = 5
-	// The label made for a new session or subject is held by another one.
-	// Details: "label" ("subject" or "session") and "fault":
-	// "held_by_another_session" (a session label held by another study) or
-	// "two_subjects_for_one_study" (files of one study gave two subject
-	// labels).
+	// The label made for a new subject, session or scan is held by another
+	// one. Details: "label" ("subject", "session" or "scan") and "fault":
+	// "held_by_another_session" (a session label held by another study of
+	// the subject), "held_by_another_scan" (a scan label held by another
+	// series of the session), "two_subjects_for_one_study" (files of one
+	// study gave two subject labels), or "case_collision" (a label that
+	// differs from one held at the same level only in the case of its
+	// letters, which a file system that ignores case would make one
+	// directory).
 	QuarantineReason_QUARANTINE_REASON_LABEL_CONFLICT QuarantineReason = 6
 	// The tenant holds a different file under the same SOP Instance UID: the
 	// same UID with another SHA-256, as when a sender corrects attributes and
 	// sends the object again under its UID, or sends the same object in
 	// another transfer syntax. The archived file is kept and the C-STORE was
 	// answered success. The record's kept_sha256 is the archived file's
-	// checksum. Release with RELEASE_MODE_OVERWRITE replaces it. Details:
-	// none beyond the record's own fields.
+	// checksum. In this version the file can only be rejected: a release
+	// would quarantine it again while the archived instance is held, and
+	// replacing an archived instance will be its own operation, with a
+	// recorded reason. Details: none beyond the record's own fields.
 	QuarantineReason_QUARANTINE_REASON_DIFFERENT_FILE QuarantineReason = 7
 	// The tenant holds the SOP Instance UID under another study or another
 	// series: an instance UID is unique in a tenant. The C-STORE was answered
@@ -222,9 +228,6 @@ const (
 	// such as a naming rule that was fixed. A file whose cause remains is
 	// quarantined again.
 	ReleaseMode_RELEASE_MODE_AS_IS ReleaseMode = 1
-	// As it is, and replacing the different file the tenant holds under the
-	// same SOP Instance UID. Only for QUARANTINE_REASON_DIFFERENT_FILE.
-	ReleaseMode_RELEASE_MODE_OVERWRITE ReleaseMode = 2
 )
 
 // Enum value maps for ReleaseMode.
@@ -232,12 +235,10 @@ var (
 	ReleaseMode_name = map[int32]string{
 		0: "RELEASE_MODE_UNSPECIFIED",
 		1: "RELEASE_MODE_AS_IS",
-		2: "RELEASE_MODE_OVERWRITE",
 	}
 	ReleaseMode_value = map[string]int32{
 		"RELEASE_MODE_UNSPECIFIED": 0,
 		"RELEASE_MODE_AS_IS":       1,
-		"RELEASE_MODE_OVERWRITE":   2,
 	}
 )
 
@@ -948,7 +949,8 @@ type ReleaseQuarantinedFileRequest struct {
 	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	// The record's id. Required; at most 64 bytes.
 	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
-	// How to run it again. Required.
+	// How to run it again: RELEASE_MODE_AS_IS, the one mode of this version.
+	// Required.
 	Mode ReleaseMode `protobuf:"varint,3,opt,name=mode,proto3,enum=magnetar.v1.ReleaseMode" json:"mode,omitempty"`
 	// The name of the receiver whose configuration (storage, naming rule) the
 	// file runs by. Empty for the receiver it first came to; required when
@@ -1270,11 +1272,10 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"\x1cQUARANTINE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15QUARANTINE_STATE_HELD\x10\x01\x12\x1d\n" +
 	"\x19QUARANTINE_STATE_RELEASED\x10\x02\x12\x1d\n" +
-	"\x19QUARANTINE_STATE_REJECTED\x10\x03*_\n" +
+	"\x19QUARANTINE_STATE_REJECTED\x10\x03*a\n" +
 	"\vReleaseMode\x12\x1c\n" +
 	"\x18RELEASE_MODE_UNSPECIFIED\x10\x00\x12\x16\n" +
-	"\x12RELEASE_MODE_AS_IS\x10\x01\x12\x1a\n" +
-	"\x16RELEASE_MODE_OVERWRITE\x10\x022\xde\x03\n" +
+	"\x12RELEASE_MODE_AS_IS\x10\x01\"\x04\b\x02\x10\x02*\x16RELEASE_MODE_OVERWRITE2\xde\x03\n" +
 	"\x11QuarantineService\x12p\n" +
 	"\x14ListQuarantinedFiles\x12(.magnetar.v1.ListQuarantinedFilesRequest\x1a).magnetar.v1.ListQuarantinedFilesResponse\"\x03\x90\x02\x01\x12j\n" +
 	"\x12GetQuarantinedFile\x12&.magnetar.v1.GetQuarantinedFileRequest\x1a'.magnetar.v1.GetQuarantinedFileResponse\"\x03\x90\x02\x01\x12v\n" +

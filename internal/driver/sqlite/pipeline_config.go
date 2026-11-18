@@ -204,15 +204,24 @@ func (t *Tenant) SetStorage(ctx context.Context, s tenant.Storage, fields []tena
 }
 
 // storageInUse says why a storage's files may not move or its
-// configuration go, or "" when nothing holds it: it holds an instance, or a
-// reception that has not ended names it (its files may be on their way to
-// it). A reception that has not ended and is not yet identified names no
+// configuration go, or "" when nothing holds it: it holds an instance, a
+// session names it, or a reception that has not ended names it (its files
+// may be on their way to it). A reception that has not ended and is not yet identified names no
 // storage; the receiver it arrived at does, and a storage a receiver names
 // is refused by RemoveStorage before this.
 func storageInUse(ctx context.Context, tx *sql.Tx, name string) (string, error) {
+	// The storage's row first, so a commit or an identify that names it is
+	// ordered with this change (lockStorage), then what holds it.
+	if err := lockStorage(ctx, tx, name); err != nil {
+		return "", err
+	}
 	holds, err := exists(ctx, tx, storageHoldsSQL, name)
 	if err != nil || holds {
 		return "it holds archived files", err
+	}
+	named, err := exists(ctx, tx, sessionsOnStorageSQL, name)
+	if err != nil || named {
+		return "a session's files are on it, where every arrival of the session is archived", err
 	}
 	used, err := exists(ctx, tx, storageUsedSQL, name)
 	if err != nil || used {

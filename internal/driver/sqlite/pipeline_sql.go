@@ -55,14 +55,22 @@ const (
 	// receptionScansSQL reads the scans a reception confirmed instances in:
 	// instances_held_by, and the scans' primary key.
 	receptionScansSQL = `SELECT s.label, s.series_uid, count(*), sum(i.size) FROM instances AS i
-		JOIN scans AS s ON s.id = i.scan_id WHERE i.held_by = ? AND i.held_sha256 IS NOT NULL
+		JOIN scans AS s ON s.id = i.scan_id WHERE i.reception_id = ? AND i.state = 'held'
 		GROUP BY s.id ORDER BY s.label LIMIT ?`
 	// storageHoldsSQL asks whether a storage holds an instance:
 	// instances_on_storage.
-	storageHoldsSQL = `SELECT 1 FROM instances WHERE storage = ? AND held_sha256 IS NOT NULL LIMIT 1`
-	// releaseClaimedSQL and releaseOverwriteSQL release a reception's
-	// claims: rows only claimed go, and a claim to overwrite a held
-	// instance is cleared. instances_claimed.
-	releaseClaimedSQL   = `DELETE FROM instances WHERE claimed_by = ? AND held_sha256 IS NULL`
-	releaseOverwriteSQL = `UPDATE instances SET claim_sha256 = NULL, claimed_by = NULL, claimed_at = NULL WHERE claimed_by = ?`
+	storageHoldsSQL = `SELECT 1 FROM instances WHERE storage = ? AND state = 'held' LIMIT 1`
+	// sessionsOnStorageSQL asks whether a session names a storage, where
+	// every later arrival of it is archived: sessions_by_storage.
+	sessionsOnStorageSQL = `SELECT 1 FROM sessions WHERE storage = ? LIMIT 1`
+	// receptionsWithoutWorkSQL pages the receptions past receiving that
+	// have not ended and have no live unit of work: receptions_in_progress,
+	// and work_by_reception for each.
+	receptionsWithoutWorkSQL = `SELECT ` + receptionColumns + ` FROM receptions AS p
+		WHERE p.ended = 0 AND p.state <> 'receiving' AND (p.started, p.id) > (?, ?)
+		AND NOT EXISTS (SELECT 1 FROM work AS w WHERE w.reception_id = p.id AND w.state IN ('queued', 'leased'))
+		ORDER BY p.started, p.id LIMIT ?`
+	// releaseClaimedSQL releases a reception's claims not confirmed:
+	// instances_claimed. A held row is never in its condition.
+	releaseClaimedSQL = `DELETE FROM instances WHERE reception_id = ? AND state = 'claimed'`
 )

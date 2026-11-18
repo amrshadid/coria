@@ -24,6 +24,11 @@ const (
 // DefaultWorkAttempts is the attempts a unit is allowed when it states none.
 const DefaultWorkAttempts = 10
 
+// FailureWorkGaveUp is the failure a reception is given when its unit of
+// work is held as failed: its attempts ran out, or the lease of its last
+// attempt ended with no worker left.
+const FailureWorkGaveUp = "its work gave up after its last attempt"
+
 // Work is a unit of work in a tenant's database.
 type Work struct {
 	// ID is the unit's id, given by the caller.
@@ -31,8 +36,13 @@ type Work struct {
 	// Kind says what sort of work it is, such as a reception's step; a
 	// claim names the kind it takes. Under the rule of a tenant's name.
 	Kind string
-	// Subject is what it works on, such as a reception's id.
+	// Subject is what it works on, for a unit that belongs to no reception.
 	Subject string
+	// ReceptionID names the reception the unit carries through its steps,
+	// empty for a unit of no reception. When the unit is held as failed,
+	// its reception takes the Fail step in the same transaction, so a
+	// reception never outlives the last worker that could end it.
+	ReceptionID string
 	// UniqueKey, when not empty, queues the unit once: no second unit with
 	// the key is queued while one is queued or leased.
 	UniqueKey string
@@ -69,6 +79,11 @@ func (w Work) Validate() error {
 	}
 	if err := validateText("work unique key", w.UniqueKey, 0, MaxWorkTextLength); err != nil {
 		return err
+	}
+	if w.ReceptionID != "" {
+		if err := master.ValidateID("reception id", w.ReceptionID); err != nil {
+			return err
+		}
 	}
 	if w.MaxAttempts < 0 || w.MaxAttempts > MaxWorkAttempts {
 		return invalid("a unit of work is allowed 1 to 100 attempts, or 0 for the default")

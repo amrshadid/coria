@@ -66,7 +66,21 @@ import (
 // retried, releases the claims it did not confirm in the transaction of
 // that step; what it confirmed stays held whatever becomes of it. So two
 // receptions in flight never both archive one instance: the second is told
-// the UID is Claimed, and tries again later, through its leased work.
+// the UID is Claimed, and tries again later, through its leased work. An
+// instance row is claimed or held, never both: a held instance is never
+// replaced by reception, since replacing an archived file deletes archived
+// data, which needs a recorded reason and proof of its replacement.
+//
+// # A reception is never left without a way to end
+//
+// A reception that has not ended is receiving (and the server's supervisor
+// completes it), or has a unit of work queued or leased that names it
+// (Work.ReceptionID). When such a unit is held as failed, its reception
+// takes the Fail step in the same transaction, releasing its claims, so no
+// claim outlives every worker that could end its reception. A crash between
+// two transactions of the caller (a step taken, its next unit not yet
+// queued) can still leave a reception without a unit: ReceptionsWithoutWork
+// finds them, and the server runs it at start.
 //
 // # Several writers
 //
@@ -89,7 +103,20 @@ import (
 //     step is refused (ErrReceptionClosed);
 //   - ClaimInstances: a claim of one UID by two receptions at once gives it
 //     to one; the other waits for that one's commit and is answered
-//     Claimed (or a held answer once confirmed);
+//     Claimed (or a held answer once confirmed). A batch claims its UIDs in
+//     sorted order, whatever order the caller gave, so two batches that
+//     share UIDs never wait for each other in a cycle;
+//   - CommitScan: its subject, session and scan are each found or made by
+//     an insert that does nothing when the row is there, then a read, so
+//     two commits at once of two studies of one subject share that subject,
+//     and a label taken meanwhile is a LabelConflict, never an unclassified
+//     failure;
+//   - a storage's row is the lock of its use: CommitScan and an Identify
+//     step update it (changing nothing) in their transaction, and removing
+//     a storage or changing where its files are updates it first and checks
+//     whether it is in use after, so neither can pass the other unseen;
+//   - HoldFiles locks each reception it names before it counts a file
+//     received, as a received batch does;
 //   - ClaimWork: two claims at once take different units (on Postgres:
 //     FOR UPDATE SKIP LOCKED);
 //   - every fenced write locks the unit's row with its attempt in the
@@ -122,15 +149,17 @@ type Pipeline interface {
 	// type cannot change, so a field of the other type's configuration is
 	// Invalid; the access key id and the secret are named together or not
 	// at all, and a secret named is not empty. A change of where its files
-	// are is a precondition failure while the storage holds an instance or
-	// a reception that has not ended names it. The rules of AddStorage
+	// are is a precondition failure while the storage is in use: it holds
+	// an instance, a session names it, or a reception that has not ended
+	// names it. The rules of AddStorage
 	// apply to the result. An S3 endpoint is kept as NormalizeEndpoint
 	// spells it.
 	SetStorage(ctx context.Context, s Storage, fields []StorageField, now time.Time, audit master.AuditEntry, guard Guard) (Storage, error)
 	// RemoveStorage removes the storage and returns it as it was. A storage
-	// a receiver names, one a reception that has not ended names, and one
-	// that holds an instance, are precondition failures whose message says
-	// which. A storage not there is NotFound.
+	// a receiver names, or that is in use (it holds an instance, a session
+	// names it, so every later arrival of the session goes to it, or a
+	// reception that has not ended names it), is a precondition failure
+	// whose message says which. A storage not there is NotFound.
 	RemoveStorage(ctx context.Context, name string, audit master.AuditEntry, guard Guard) (Storage, error)
 
 	// AddReceiver adds a receiver, with Created and Updated set to now. A
@@ -206,6 +235,12 @@ type Pipeline interface {
 	// adds the details DetailFiles and DetailBytes, the count and bytes of
 	// what DiscardedFiles lists, to the audit entry.
 	DiscardReception(ctx context.Context, id, reason string, now time.Time, audit master.AuditEntry, guard Guard) (Reception, error)
+	// ReceptionsWithoutWork returns a page of the receptions that have not
+	// ended, are past receiving, and have no unit of work queued or leased
+	// that names them, oldest first: what a crash between a step and the
+	// queuing of the next unit left behind. The server runs it at start and
+	// queues work for each, or fails it.
+	ReceptionsWithoutWork(ctx context.Context, page master.Page) ([]Reception, string, error)
 	// DiscardedFiles returns a page of the received files of a discarded
 	// reception whose bytes the caller removes: every one no quarantine
 	// record keeps at the same place, in order of SOP Instance UID, then
@@ -235,19 +270,27 @@ type Pipeline interface {
 	CheckDuplicates(ctx context.Context, files []DuplicateQuery) ([]Duplicate, error)
 
 	// ClaimInstances claims, for a reception that has been identified and
-	// not ended, the instances of up to MaxClaimBatch files before anything
-	// is written to a storage, in one transaction, and says for each file,
-	// in order, what the claim decided (DecideClaim): ClaimedNow or
-	// ClaimedBefore (the file goes on), SameFile (ignored), DifferentFile or
-	// UIDElsewhere (quarantined), or Claimed by another reception (tried
-	// again later through the leased work, when it resolves to one of the
-	// others). Two files of one batch under one UID with two checksums give
-	// ClaimedNow for the first and DifferentFile for the second. A claim
-	// written again after a crash answers ClaimedBefore and changes
-	// nothing. fence, when not nil, is the lease the claim is made under.
+	// not ended, the instances of up to MaxClaimBatch of its received files
+	// before anything is written to a storage, in one transaction, and says
+	// for each file, in the caller's order, what the claim decided
+	// (DecideClaim; DuplicateKind says what the caller does with each). A
+	// file that is not one of the reception's received files, with the
+	// UIDs and checksum it was received with, is a precondition failure.
+	// The UIDs are claimed in sorted order (of UID, then checksum), so two
+	// files of one batch under one UID with two checksums keep the lower
+	// checksum and answer DifferentFile for the other, whatever order they
+	// were given in. A claim written again after a crash answers
+	// ClaimedBefore, or ArchivedBefore for what the reception's commits
+	// confirmed meanwhile, and changes nothing. fence, when not nil, is the
+	// lease the claim is made under.
 	ClaimInstances(ctx context.Context, receptionID string, files []InstanceClaim, now time.Time, fence *WorkFence) ([]Duplicate, error)
 	// CommitScan writes one scan's catalog rows and confirms the
-	// instances given, which the reception must claim, in one transaction:
+	// instances given (at least one), which the reception must claim, in
+	// one transaction, for a reception identified and not ended. The
+	// commit's study is the reception's, and each instance's study and
+	// series are the commit's, as the claim recorded them; anything else is
+	// a precondition failure. The storage must be the tenant's, and its row
+	// is held to the commit's end (see Several writers).
 	// the subject found or made by its label, the session by its Study
 	// Instance UID, the scan by its Series Instance UID under that session,
 	// each kept with the label it was first given. A label held at the
@@ -289,19 +332,22 @@ type Pipeline interface {
 	// ListQuarantined returns a page of the records the filter keeps,
 	// newest first: by quarantine time, then by id, both descending.
 	ListQuarantined(ctx context.Context, filter QuarantineFilter, page master.Page) ([]QuarantinedFile, string, error)
-	// ReleaseQuarantined releases a held file with the mode given, through
+	// ReleaseQuarantined releases a held file as it is, through
 	// the receiver named, or the one it first came to when receiver is
 	// empty. A file with a valid study, series and instance UID and a
 	// checksum joins that receiver's reception of its study that is
 	// receiving, or a new one with receptionID opened at now, as a received
-	// file counted released; the record names that reception. Back into
+	// file counted released; the record names that reception. A different
+	// file (QuarantineDifferentFile) is released only when the tenant no
+	// longer holds an instance under its UID, which nothing in this version
+	// causes: in this version such a file can only be rejected. Back into
 	// the reception it was quarantined from, it is counted released there
 	// and no longer quarantined, and not received twice. A file
-	// already released with the same mode is returned as it stands. Mode
-	// ReleaseOverwrite for a reason other than QuarantineDifferentFile is
-	// Invalid; a rejected file, one released with the other mode, one whose
-	// bytes were never kept, a removed receiver with none named, and a
-	// receiver named that does not exist, are precondition failures.
+	// already released is returned as it stands. A mode other than
+	// ReleaseAsIs is Invalid. A different file whose UID the tenant still
+	// holds, a rejected file, one whose bytes were never kept, a removed
+	// receiver with none named, and a receiver named that does not exist,
+	// are precondition failures.
 	ReleaseQuarantined(ctx context.Context, id string, mode ReleaseMode, receiver, receptionID string, now time.Time, audit master.AuditEntry, guard Guard) (QuarantinedFile, error)
 	// RejectQuarantined rejects a held file with the reason given: its
 	// bytes are no longer kept. A file already rejected is returned as it
@@ -317,7 +363,8 @@ type Pipeline interface {
 	// EnqueueWork queues a unit of work, due at w.Due, and returns it with
 	// created true; or, when w.UniqueKey is set and a unit with that key is
 	// queued or leased, returns that one with created false and queues
-	// nothing, so the same work is queued once.
+	// nothing, so the same work is queued once. A unit naming a reception
+	// the tenant does not have is a precondition failure.
 	EnqueueWork(ctx context.Context, w Work, now time.Time) (unit Work, created bool, err error)
 	// Work returns the unit of that id, or NotFound.
 	Work(ctx context.Context, id string) (Work, error)
@@ -338,7 +385,11 @@ type Pipeline interface {
 	CompleteWork(ctx context.Context, fence WorkFence, now time.Time, next *Work) error
 	// FailWork records a failed attempt with its reason: the unit is due
 	// again after RetryDelay(attempt), or, after its last allowed attempt,
-	// held as failed. Fenced as RenewWork. It returns the unit as written.
+	// held as failed, and then its reception, when it names one that has
+	// not ended, takes the Fail step (FailureWorkGaveUp) in the same
+	// transaction, releasing its claims. ClaimWork does the same for a unit
+	// it holds as failed. Fenced as RenewWork. It returns the unit as
+	// written.
 	FailWork(ctx context.Context, fence WorkFence, reason string, now time.Time) (Work, error)
 }
 

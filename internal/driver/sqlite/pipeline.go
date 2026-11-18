@@ -37,6 +37,7 @@ const (
 	listReceivedFiles = "tenant-received-files"
 	listQuarantine    = "tenant-quarantine"
 	listDiscarded     = "tenant-discarded-files"
+	listWithoutWork   = "tenant-receptions-without-work"
 )
 
 // pipelineStatements are the pipeline's prepared statements.
@@ -44,7 +45,7 @@ type pipelineStatements struct {
 	// Write pool.
 	insertReceived, insertAssociation, receptionForBatch, addReceived *sql.Stmt
 	claimNext, leaseUnit                                              *sql.Stmt
-	instanceRow, insertClaim, takeOverClaim                           *sql.Stmt
+	instanceRow, insertClaim, receivedFile                            *sql.Stmt
 	// Read pool.
 	duplicates *sql.Stmt
 }
@@ -73,13 +74,12 @@ func pipelineEntries(s *pipelineStatements, p *pools) []stmtEntry {
 		// A new row, claimed; ON CONFLICT DO NOTHING so that a claim that
 		// meets another's row (committed meanwhile, on a database with
 		// several writers) reads that row and decides again.
-		{&s.insertClaim, w, `INSERT INTO instances (sop_instance_uid, study_uid, series_uid, held_sha256, held_by, scan_id,
-			storage, storage_key, byte_offset, byte_length, size, archived_sha256, held_at, claim_sha256, claimed_by, claimed_at)
-			VALUES (?, ?, ?, NULL, '', NULL, '', '', 0, 0, 0, NULL, NULL, ?, ?, ?) ON CONFLICT DO NOTHING`},
-		// A claim to overwrite, set only while no one claims the row and
-		// it holds the checksum the decision read.
-		{&s.takeOverClaim, w, `UPDATE instances SET claim_sha256 = ?, claimed_by = ?, claimed_at = ?
-			WHERE sop_instance_uid = ? AND claimed_by IS NULL AND held_sha256 = ?`},
+		{&s.insertClaim, w, `INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, scan_id,
+			storage, storage_key, byte_offset, byte_length, size, archived_sha256, claimed_at, held_at)
+			VALUES (?, ?, ?, 'claimed', ?, ?, NULL, '', '', 0, 0, 0, NULL, ?, NULL) ON CONFLICT DO NOTHING`},
+		// The reception's received file a claim names: the received files'
+		// primary key.
+		{&s.receivedFile, w, `SELECT study_uid, series_uid FROM received_files WHERE reception_id = ? AND sop_instance_uid = ? AND sha256 = ?`},
 	}
 }
 

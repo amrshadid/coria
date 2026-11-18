@@ -228,7 +228,10 @@ func testQuarantineDetails(e *penv) {
 // reception of its study receiving at the receiver, or a new one, as a
 // received file counted released; the record is released with its mode,
 // receiver, reception and time, its bytes no longer counted held; a repeat
-// with the same mode answers it as it stands; the contract's refusals.
+// answers it as it stands; a different file is released only while the
+// tenant holds no instance under its UID, so in this version a different
+// file whose instance is held can only be rejected; there is no mode but
+// as is; the contract's other refusals.
 func testQuarantineRelease(e *penv) {
 	e.addReceiver("a", "store", 11112)
 	e.addReceiver("b", "store", 11113)
@@ -239,9 +242,9 @@ func testQuarantineRelease(e *penv) {
 	e.ok("HoldFiles", err)
 	e.stepTo(r, reception.Complete, "store")
 
-	got, err := e.p.ReleaseQuarantined(e.ctx, diff.ID, tenant.ReleaseOverwrite, "", "released-1", at(100), e.audit(), nil)
-	e.ok("ReleaseQuarantined overwrite", err)
-	if got.State != tenant.QuarantineReleased || got.ReleaseMode != tenant.ReleaseOverwrite || got.ReleaseReceiver != "a" ||
+	got, err := e.p.ReleaseQuarantined(e.ctx, diff.ID, tenant.ReleaseAsIs, "", "released-1", at(100), e.audit(), nil)
+	e.ok("ReleaseQuarantined of a different file whose UID no instance holds", err)
+	if got.State != tenant.QuarantineReleased || got.ReleaseMode != tenant.ReleaseAsIs || got.ReleaseReceiver != "a" ||
 		got.ReleaseReception != "released-1" || got.ContentKept || !got.Decided.Equal(at(100)) {
 		e.Errorf("a released record reads %+v", got)
 	}
@@ -251,7 +254,7 @@ func testQuarantineRelease(e *penv) {
 		joined.Counts.BytesReceived != 500 {
 		e.Errorf("the reception a release opened reads %+v", joined)
 	}
-	again, err := e.p.ReleaseQuarantined(e.ctx, diff.ID, tenant.ReleaseOverwrite, "", "released-2", at(200), e.audit(), nil)
+	again, err := e.p.ReleaseQuarantined(e.ctx, diff.ID, tenant.ReleaseAsIs, "", "released-2", at(200), e.audit(), nil)
 	e.ok("ReleaseQuarantined again", err)
 	if again.ReleaseReception != "released-1" || !again.Decided.Equal(at(100)) {
 		e.Errorf("a repeated release changed the record: %+v", again)
@@ -259,11 +262,15 @@ func testQuarantineRelease(e *penv) {
 	if j, _, _ := e.p.Reception(e.ctx, "released-1"); j.Counts.FilesReceived != 1 {
 		e.Errorf("a repeated release received the file again: %d", j.Counts.FilesReceived)
 	}
-	_, err = e.p.ReleaseQuarantined(e.ctx, diff.ID, tenant.ReleaseAsIs, "", "released-3", at(200), e.audit(), nil)
-	e.wantPrecondition("ReleaseQuarantined with another mode", err)
-
-	_, err = e.p.ReleaseQuarantined(e.ctx, notDICOM.ID, tenant.ReleaseOverwrite, "", "released-4", at(200), e.audit(), nil)
-	e.wantKind("ReleaseQuarantined overwrite of a file that is not a different file", err, fault.Invalid)
+	holder, hf := e.identified("a", 1, 8)
+	e.commit(holder, hf...)
+	held := e.differentFile("a", "", 8)
+	_, err = e.p.HoldFiles(e.ctx, []tenant.QuarantinedFile{held})
+	e.ok("HoldFiles", err)
+	_, err = e.p.ReleaseQuarantined(e.ctx, held.ID, tenant.ReleaseAsIs, "", "released-3", at(200), e.audit(), nil)
+	e.wantPrecondition("ReleaseQuarantined of a different file whose UID an instance holds", err)
+	_, err = e.p.ReleaseQuarantined(e.ctx, notDICOM.ID, "overwrite", "", "released-4", at(200), e.audit(), nil)
+	e.wantKind("ReleaseQuarantined with a mode other than as is", err, fault.Invalid)
 	_, err = e.p.ReleaseQuarantined(e.ctx, notDICOM.ID, tenant.ReleaseAsIs, "nobody", "released-4", at(200), e.audit(), nil)
 	e.wantPrecondition("ReleaseQuarantined through a receiver not there", err)
 	got, err = e.p.ReleaseQuarantined(e.ctx, notDICOM.ID, tenant.ReleaseAsIs, "b", "released-4", at(200), e.audit(), nil)

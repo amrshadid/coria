@@ -51,15 +51,14 @@ func fillPipeline(tb testing.TB, path string) {
 		 INSERT INTO scans SELECT i, i % 5000 + 1, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 5, 5000, NULL, 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.' || (i % 5000 + 1), '2.25.2.' || (i % 20000 + 1),
-		   CASE WHEN i % 100 = 0 THEN NULL ELSE randomblob(32) END, CASE WHEN i % 100 = 0 THEN '' ELSE 'rc' || (i % 20000 + 1) END,
+		   CASE WHEN i % 100 = 0 THEN 'claimed' ELSE 'held' END, randomblob(32), 'rc' || (i % 10000 + 1),
 		   CASE WHEN i % 100 = 0 THEN NULL ELSE i % 20000 + 1 END, CASE WHEN i % 100 = 0 THEN '' ELSE 'store' || (i % 200 + 1) END,
-		   'k', 0, 1000, 1000, NULL, 0,
-		   CASE WHEN i % 100 = 0 THEN randomblob(32) ELSE NULL END, CASE WHEN i % 100 = 0 THEN 'rc' || (i % 20000 + 1) ELSE NULL END,
-		   NULL FROM n`,
+		   CASE WHEN i % 100 = 0 THEN '' ELSE 'k' END, 0, 1000, 1000,
+		   CASE WHEN i % 100 = 0 THEN NULL ELSE randomblob(32) END, 0, CASE WHEN i % 100 = 0 THEN NULL ELSE 0 END FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
-		 INSERT INTO work SELECT 'w' || i, 'reception', 'rc' || i, NULL, 'done', i, 1, 10, '', '', 0, 0 FROM n`,
+		 INSERT INTO work SELECT 'w' || i, 'reception', 'rc' || i, 'rc' || i, NULL, 'done', i, 1, 10, '', '', 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100)
-		 INSERT INTO work SELECT 'live' || i, 'reception', 'rc' || i, 'key' || i, 'queued', i, 0, 10, '', '', 0, 0 FROM n`,
+		 INSERT INTO work SELECT 'live' || i, 'reception', 'rc' || i, 'rc' || i, 'key' || i, 'queued', i, 0, 10, '', '', 0, 0 FROM n`,
 		`ANALYZE`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
@@ -135,9 +134,11 @@ func TestPipelinePlans(t *testing.T) {
 		{"ReceivedFiles", "PRIMARY KEY", listReceivedSQL, []any{"rc5", "", []byte{}, 101}},
 		{"CheckDuplicates", "PRIMARY KEY", duplicatesSQL, []any{`["2.25.3.5","2.25.3.6"]`}},
 		{"an instance's row, for a claim", "PRIMARY KEY", instanceRowSQL, []any{"2.25.3.5"}},
-		{"a claim confirmed", "PRIMARY KEY", confirmInstanceSQL, []any{1, "s", "k", 0, 0, 0, []byte{1}, 0, "2.25.3.5", "rc5", "2.25.2.5"}},
+		{"a claim confirmed", "PRIMARY KEY", confirmInstanceSQL, []any{1, "s", "k", 0, 0, 0, []byte{1}, 0, "2.25.3.5", "rc5", "2.25.1.5", "2.25.2.5"}},
 		{"a reception's claims released", "instances_claimed", releaseClaimedSQL, []any{"rc5"}},
-		{"a reception's claims to overwrite released", "instances_claimed", releaseOverwriteSQL, []any{"rc5"}},
+		{"a storage a session names", "sessions_by_storage", sessionsOnStorageSQL, []any{"store5"}},
+		{"ReceptionsWithoutWork", "receptions_in_progress", receptionsWithoutWorkSQL, []any{int64(-1), "", 101}},
+		{"ReceptionsWithoutWork, a reception's live unit", "work_by_reception", receptionsWithoutWorkSQL, []any{int64(-1), "", 101}},
 		{"a storage that holds data", "instances_on_storage", storageHoldsSQL, []any{"store5"}},
 		{"ReceptionScans", "instances_held_by", receptionScansSQL, []any{"rc5", 10001}},
 		{"CatalogLabels, the session", "sqlite_autoindex_sessions_1", sessionLabelsSQL, []any{"2.25.1.5"}},
@@ -261,7 +262,7 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 		"receptions_receiver_in_progress", "receptions_by_receiver_state", "receptions_by_study_state",
 		"quarantine_by_state_reason", "quarantine_by_state_receiver", "quarantine_by_receiver_reason",
 		"quarantine_by_state_receiver_reason", "quarantine_kept", "instances_claimed", "instances_on_storage",
-		"instances_held_by", "scans_by_session"} {
+		"instances_held_by", "scans_by_session", "sessions_by_storage", "work_by_reception"} {
 		if !strings.Contains("\n"+indexes+"\n", "\n"+want+"\n") {
 			t.Errorf("sqlite3 shows no index %s", want)
 		}
@@ -273,15 +274,20 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 		t.Errorf("the catalog's totals start at %q, want 0 0 0 0", got)
 	}
 	// The CHECK constraints refuse what the driver never writes: a
-	// negative count, a checksum of the wrong length, an instance neither
-	// held nor claimed.
+	// negative count, and the instance rows below.
 	for _, bad := range []string{
 		`UPDATE catalog_totals SET instances = -1`,
 		`UPDATE quarantine_totals SET files = -1`,
-		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, held_by, storage, storage_key, byte_offset, byte_length, size)
-		 VALUES ('1.2', '1.2', '1.2', '', '', '', 0, 0, 0)`,
-		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, held_by, storage, storage_key, byte_offset, byte_length, size,
-		 claim_sha256, claimed_by) VALUES ('1.2', '1.2', '1.2', '', '', '', 0, 0, 0, x'00', 'rc')`,
+		// A claim with no reception, a held row with no scan, a checksum of
+		// the wrong length, a state that is neither.
+		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, storage, storage_key,
+		 byte_offset, byte_length, size, claimed_at) VALUES ('1.2', '1.2', '1.2', 'claimed', zeroblob(32), '', '', '', 0, 0, 0, 0)`,
+		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, storage, storage_key,
+		 byte_offset, byte_length, size, claimed_at) VALUES ('1.2', '1.2', '1.2', 'held', zeroblob(32), 'rc', 's', 'k', 0, 0, 0, 0)`,
+		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, storage, storage_key,
+		 byte_offset, byte_length, size, claimed_at) VALUES ('1.2', '1.2', '1.2', 'claimed', x'00', 'rc', '', '', 0, 0, 0, 0)`,
+		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, storage, storage_key,
+		 byte_offset, byte_length, size, claimed_at) VALUES ('1.2', '1.2', '1.2', 'both', zeroblob(32), 'rc', '', '', 0, 0, 0, 0)`,
 	} {
 		out, err := exec.Command(tool, "-batch", path, bad).CombinedOutput() //nolint:gosec // G204, G702: the tool and the database are this test's own.
 		if err == nil || !strings.Contains(string(out), "CHECK constraint failed") {

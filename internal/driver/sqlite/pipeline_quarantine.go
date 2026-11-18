@@ -76,11 +76,18 @@ func (t *Tenant) HoldFiles(ctx context.Context, files []tenant.QuarantinedFile) 
 		for _, q := range files {
 			if q.ReceptionID != "" {
 				if _, seen := perReception[q.ReceptionID]; !seen {
-					has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = ?`, q.ReceptionID)
+					// The reception's row is locked first, as a received
+					// batch locks it, so a file counted received here and
+					// a batch of the same file are ordered.
+					res, err := tx.ExecContext(ctx, `UPDATE receptions SET last_file = last_file WHERE id = ?`, q.ReceptionID)
 					if err != nil {
 						return err
 					}
-					if !has {
+					locked, err := res.RowsAffected()
+					if err != nil {
+						return err
+					}
+					if locked == 0 {
 						return tenant.Precondition("a quarantined file names a reception the tenant does not have")
 					}
 					order = append(order, q.ReceptionID)
@@ -220,14 +227,20 @@ func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.
 		case tenant.QuarantineRejected:
 			return tenant.Precondition("the file was rejected")
 		case tenant.QuarantineReleased:
-			if q.ReleaseMode != mode {
-				return tenant.Precondition("the file was released with another mode")
-			}
 			out = q
 			return audited(ctx, tx, st, audit, guard)
 		}
-		if mode == tenant.ReleaseOverwrite && q.Reason != tenant.QuarantineDifferentFile {
-			return fault.New(fault.Invalid, "only a different file under a held SOP Instance UID is released to overwrite")
+		if q.Reason == tenant.QuarantineDifferentFile && q.SOPInstanceUID != "" {
+			// Released as it is, it would only be quarantined again while
+			// the tenant holds an instance under its UID; replacing that
+			// instance deletes archived data, which reception never does.
+			held, err := exists(ctx, tx, `SELECT 1 FROM instances WHERE sop_instance_uid = ? AND state = 'held'`, q.SOPInstanceUID)
+			if err != nil {
+				return err
+			}
+			if held {
+				return tenant.Precondition("the tenant holds an instance under this file's SOP Instance UID; in this version the file can only be rejected")
+			}
 		}
 		if !q.ContentKept {
 			return tenant.Precondition("the file's content was never kept")

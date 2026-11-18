@@ -19,20 +19,29 @@ func sha(b byte) SHA256 {
 	return s
 }
 
-// TestNormalizeEndpoint guards the one spelling of an S3 endpoint: scheme
-// and host in lowercase, the default port and a final slash dropped, and
-// every form that would let one endpoint be spelled two ways, or carry
-// something that is not an endpoint, refused.
+// TestNormalizeEndpoint guards the one spelling of an S3 endpoint: every
+// way of writing one endpoint gives one text, and every form that could
+// stand for an endpoint two ways, or carry something that is not one (a
+// number taken for a name, a zone, an IPv4-mapped address, an encoded byte),
+// is refused.
 func TestNormalizeEndpoint(t *testing.T) {
 	for in, want := range map[string]string{
-		"https://s3.example.org":     "https://s3.example.org",
-		"HTTPS://S3.Example.ORG/":    "https://s3.example.org",
-		"https://s3.example.org:443": "https://s3.example.org",
-		"http://minio.lab:80":        "http://minio.lab",
-		"http://minio.lab:9000":      "http://minio.lab:9000",
-		"https://[2001:DB8::1]:443/": "https://[2001:db8::1]",
-		"https://[2001:db8::1]:8443": "https://[2001:db8::1]:8443",
-		"http://192.0.2.7:9000/":     "http://192.0.2.7:9000",
+		"https://s3.example.org":        "https://s3.example.org",
+		"HTTPS://S3.Example.ORG/":       "https://s3.example.org",
+		"https://s3.example.org.":       "https://s3.example.org",
+		"https://s3.example.org:443":    "https://s3.example.org",
+		"https://s3.example.org:0443":   "https://s3.example.org",
+		"http://minio.lab:80":           "http://minio.lab",
+		"http://minio.lab:00080":        "http://minio.lab",
+		"http://minio.lab:9000":         "http://minio.lab:9000",
+		"http://minio.lab:09000":        "http://minio.lab:9000",
+		"https://xn--bcher-kva.example": "https://xn--bcher-kva.example",
+		"http://192.168.1.1":            "http://192.168.1.1",
+		"http://192.0.2.7:9000/":        "http://192.0.2.7:9000",
+		"https://[2001:DB8::1]:443/":    "https://[2001:db8::1]",
+		"http://[2001:DB8:0::1]":        "http://[2001:db8::1]",
+		"http://[2001:db8:0:0:0:0:0:1]": "http://[2001:db8::1]",
+		"https://[2001:db8::1]:8443":    "https://[2001:db8::1]:8443",
 	} {
 		got, err := NormalizeEndpoint(in)
 		if err != nil || got != want {
@@ -41,7 +50,12 @@ func TestNormalizeEndpoint(t *testing.T) {
 	}
 	for _, in := range []string{"", "s3.example.org", "ftp://s3.example.org", "https://", "https://u:p@s3.example.org",
 		"https://s3.example.org/b", "https://s3.example.org/?", "https://s3.example.org?a=1", "https://s3.example.org#f",
-		"https://s3.example.org:0", "https://s3.example.org:65536", "https://s3 .example.org", "https://" + strings.Repeat("a", MaxEndpointLength)} {
+		"https://s3.example.org:0", "https://s3.example.org:65536", "https://s3 .example.org", "https://s3.example.org:443:443",
+		"https://s3.example.org:", "https://s3%2Eexample.org", "https://b%C3%BCcher.example", "https://s3.example.org/%2F",
+		"https://s3.example.org//", "http://3232235777", "http://0xc0.0xa8.1.1", "http://192.168.001.001",
+		"http://[::ffff:192.168.1.1]", "http://[fe80::1%25en0]", "http://[192.168.1.1]", "http://-bad.example",
+		"http://bad-.example", "http://a..b", "http://" + strings.Repeat("a", 64) + ".example",
+		"http://" + strings.Repeat("a.", 127) + "com", "https://" + strings.Repeat("a", MaxEndpointLength)} {
 		if got, err := NormalizeEndpoint(in); fault.KindOf(err) != fault.Invalid {
 			t.Errorf("NormalizeEndpoint(%q) = %q, %v; want Invalid", in, got, err)
 		}
@@ -111,21 +125,17 @@ func TestReceiversClash(t *testing.T) {
 }
 
 // TestDecideClaim guards every branch of the claim's rules, the one place
-// they are stated: no row, another study or series (held or claimed), this
-// reception's claim with the same or another checksum, another's claim, a
-// held instance the same or different, and a claim to overwrite.
+// they are stated: no row; another reception's claim, whatever its study
+// and series; this reception's claim with the same checksum, another
+// checksum, or another series; a held instance the same file (by another
+// reception or by this one), a different file, or elsewhere.
 func TestDecideClaim(t *testing.T) {
 	c := InstanceClaim{SOPInstanceUID: "1.2.3", StudyUID: "1.1", SeriesUID: "1.1.1", SHA256: sha(1)}
-	held := &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", HeldSHA256: sha(1), HeldBy: "r0"}
-	claimed := func(by string, s SHA256) *InstanceRow {
-		return &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", ClaimSHA256: s, ClaimedBy: by}
+	row := func(held bool, by string, s SHA256, series string) *InstanceRow {
+		return &InstanceRow{StudyUID: "1.1", SeriesUID: series, SHA256: s, By: by, Held: held}
 	}
 	other := c
 	other.SHA256 = sha(2)
-	series := c
-	series.SeriesUID = "1.1.2"
-	overwrite := other
-	overwrite.Overwrite = true
 	for _, x := range []struct {
 		what   string
 		c      InstanceClaim
@@ -135,17 +145,16 @@ func TestDecideClaim(t *testing.T) {
 		by     string
 	}{
 		{"no row", c, nil, ClaimedNow, ClaimInsert, ""},
-		{"held, same", c, held, SameFile, ClaimNothing, "r0"},
-		{"held, different", other, held, DifferentFile, ClaimNothing, "r0"},
-		{"held, another series", series, held, UIDElsewhere, ClaimNothing, "r0"},
-		{"held, overwrite", overwrite, held, ClaimedNow, ClaimTakeOver, "r0"},
-		{"held, overwrite of the same file", InstanceClaim{SOPInstanceUID: "1.2.3", StudyUID: "1.1", SeriesUID: "1.1.1", SHA256: sha(1), Overwrite: true}, held, SameFile, ClaimNothing, "r0"},
-		{"claimed by me, same", c, claimed("me", sha(1)), ClaimedBefore, ClaimNothing, "me"},
-		{"claimed by me, different", other, claimed("me", sha(1)), DifferentFile, ClaimNothing, "me"},
-		{"claimed by another", c, claimed("r9", sha(1)), Claimed, ClaimNothing, "r9"},
-		{"claimed by another, another series", series, claimed("r9", sha(1)), UIDElsewhere, ClaimNothing, "r9"},
-		{"claimed by me, another series", series, claimed("me", sha(1)), UIDElsewhere, ClaimNothing, "me"},
-		{"held with a claim to overwrite by another", c, &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", HeldSHA256: sha(1), HeldBy: "r0", ClaimSHA256: sha(3), ClaimedBy: "r9"}, Claimed, ClaimNothing, "r9"},
+		{"held by another, same", c, row(true, "r0", sha(1), "1.1.1"), SameFile, ClaimNothing, "r0"},
+		{"held by me, same", c, row(true, "me", sha(1), "1.1.1"), ArchivedBefore, ClaimNothing, "me"},
+		{"held by me, different", other, row(true, "me", sha(1), "1.1.1"), DifferentFile, ClaimNothing, "me"},
+		{"held, different", other, row(true, "r0", sha(1), "1.1.1"), DifferentFile, ClaimNothing, "r0"},
+		{"held, another series", c, row(true, "r0", sha(1), "1.1.2"), UIDElsewhere, ClaimNothing, "r0"},
+		{"claimed by me, same", c, row(false, "me", sha(1), "1.1.1"), ClaimedBefore, ClaimNothing, "me"},
+		{"claimed by me, different", other, row(false, "me", sha(1), "1.1.1"), DifferentFile, ClaimNothing, "me"},
+		{"claimed by me, another series", c, row(false, "me", sha(1), "1.1.2"), UIDElsewhere, ClaimNothing, "me"},
+		{"claimed by another", c, row(false, "r9", sha(1), "1.1.1"), Claimed, ClaimNothing, "r9"},
+		{"claimed by another, another series", c, row(false, "r9", sha(1), "1.1.2"), Claimed, ClaimNothing, "r9"},
 	} {
 		d, a := DecideClaim("me", x.c, x.row)
 		if d.Kind != x.kind || a != x.action || d.HeldBy != x.by {
@@ -154,8 +163,9 @@ func TestDecideClaim(t *testing.T) {
 	}
 }
 
-// TestJudgeRow guards the read of the duplicate check: what is held
-// decides, a claim only when nothing is held, and no row is not held.
+// TestJudgeRow guards the read of the duplicate check: a held instance is
+// compared, a claim not confirmed is Claimed whatever its study, and no row
+// is not held.
 func TestJudgeRow(t *testing.T) {
 	q := DuplicateQuery{SOPInstanceUID: "1.2.3", StudyUID: "1.1", SeriesUID: "1.1.1", SHA256: sha(1)}
 	for _, c := range []struct {
@@ -164,11 +174,11 @@ func TestJudgeRow(t *testing.T) {
 		want DuplicateKind
 	}{
 		{"none", nil, NotHeld},
-		{"held", &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", HeldSHA256: sha(1)}, SameFile},
-		{"held, another checksum", &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", HeldSHA256: sha(2)}, DifferentFile},
-		{"held, with a claim pending", &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", HeldSHA256: sha(1), ClaimSHA256: sha(2), ClaimedBy: "r"}, SameFile},
-		{"claimed", &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", ClaimSHA256: sha(1), ClaimedBy: "r"}, Claimed},
-		{"claimed elsewhere", &InstanceRow{StudyUID: "9.9", SeriesUID: "1.1.1", ClaimSHA256: sha(1), ClaimedBy: "r"}, UIDElsewhere},
+		{"held", &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", SHA256: sha(1), Held: true}, SameFile},
+		{"held, another checksum", &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", SHA256: sha(2), Held: true}, DifferentFile},
+		{"held elsewhere", &InstanceRow{StudyUID: "9.9", SeriesUID: "1.1.1", SHA256: sha(1), Held: true}, UIDElsewhere},
+		{"claimed", &InstanceRow{StudyUID: "1.1", SeriesUID: "1.1.1", SHA256: sha(1), By: "r"}, Claimed},
+		{"claimed elsewhere", &InstanceRow{StudyUID: "9.9", SeriesUID: "1.1.1", SHA256: sha(1), By: "r"}, Claimed},
 	} {
 		if got := JudgeRow(q, c.row); got.Kind != c.want {
 			t.Errorf("%s: %v, want %v", c.what, got.Kind, c.want)

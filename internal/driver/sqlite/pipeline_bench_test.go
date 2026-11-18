@@ -110,8 +110,7 @@ func fillHeld(b *testing.B, path string) {
 		 INSERT INTO scans SELECT i, i, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 1000, 524288000, NULL, 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 999999)
 		 INSERT INTO instances SELECT '2.25.3.' || (i + 1), '2.25.1.' || (i / 1000 + 1), '2.25.2.' || (i / 1000 + 1),
-		   randomblob(32), 'held' || (i / 1000), i / 1000 + 1, 'store', 'k', 0, 524288, 524288, randomblob(32), 0,
-		   NULL, NULL, NULL FROM n`,
+		   'held', randomblob(32), 'held' || (i / 1000), i / 1000 + 1, 'store', 'k', 0, 524288, 524288, randomblob(32), 0, 0 FROM n`,
 		`UPDATE catalog_totals SET subjects = 1, sessions = 1000, scans = 1000, instances = 1000000`,
 		`INSERT INTO receptions SELECT 'claimer', 'dimse', '2.25.1.5000', 1, 'identified', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		   'sub-01', 'ses-5000', 'store', '', 0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL`,
@@ -185,6 +184,30 @@ func BenchmarkClaimInstances(b *testing.B) {
 	s, path := benchTenant(b)
 	fillHeld(b, path)
 	ctx := context.Background()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	// receive records the claims as files the claiming reception received,
+	// straight through SQL and outside the timed part: a claim names only
+	// files its reception received.
+	receive := func(claims []tenant.InstanceClaim) {
+		tx, err := db.Begin()
+		if err != nil {
+			b.Fatal(err)
+		}
+		for _, c := range claims {
+			if _, err := tx.Exec(`INSERT INTO received_files VALUES ('claimer', ?, ?, ?, ?, '1.2.840.10008.5.1.4.1.1.4',
+				'1.2.840.10008.1.2.1', 524288, 'x', '', '', '', '', 0, 0) ON CONFLICT DO NOTHING`,
+				c.SOPInstanceUID, c.SHA256[:], c.SeriesUID, c.StudyUID); err != nil {
+				b.Fatal(err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			b.Fatal(err)
+		}
+	}
 	round := 0
 	for _, size := range []int{1, 100, 1000} {
 		b.Run(fmt.Sprintf("instances=%d", size), func(b *testing.B) {
@@ -194,6 +217,7 @@ func BenchmarkClaimInstances(b *testing.B) {
 				round++
 				b.StopTimer()
 				claims := queriesOf(size, round)
+				receive(claims)
 				b.StartTimer()
 				if _, err := s.ClaimInstances(ctx, "claimer", claims, benchTime, nil); err != nil {
 					b.Fatal(err)
@@ -226,6 +250,16 @@ func BenchmarkCommitScan(b *testing.B) {
 				study, series := fmt.Sprintf("2.25.11.%d", seq), fmt.Sprintf("2.25.12.%d", seq)
 				r, _, err := s.OpenReception(ctx, "dimse", study, fmt.Sprintf("commit%d", seq), benchTime)
 				if err != nil {
+					b.Fatal(err)
+				}
+				files := make([]tenant.ReceivedFile, size)
+				for i := range files {
+					files[i] = tenant.ReceivedFile{ReceptionID: r.ID, SOPInstanceUID: fmt.Sprintf("2.25.13.%d.%d", seq, i+1),
+						SeriesUID: series, StudyUID: study, SOPClassUID: "1.2.840.10008.5.1.4.1.1.4",
+						TransferSyntaxUID: "1.2.840.10008.1.2.1", Size: 524288, SHA256: tenant.SHA256{2},
+						Incoming: fmt.Sprintf("%s/%d.dcm", r.ID, i)}
+				}
+				if _, err := s.AddReceivedFiles(ctx, files, benchTime); err != nil {
 					b.Fatal(err)
 				}
 				for _, ev := range []reception.Event{reception.Quiet, reception.Identify} {
@@ -298,11 +332,11 @@ func BenchmarkClaimWork(b *testing.B) {
 		b.Fatal(err)
 	}
 	if _, err := db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100000)
-		INSERT INTO work SELECT 'done' || i, 'reception', 'rc' || i, NULL, 'done', i, 1, 10, '', '', 0, 0 FROM n`); err != nil {
+		INSERT INTO work SELECT 'done' || i, 'reception', 'rc' || i, '', NULL, 'done', i, 1, 10, '', '', 0, 0 FROM n`); err != nil {
 		b.Fatal(err)
 	}
 	if _, err := db.Exec(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?)
-		INSERT INTO work SELECT 'q' || i, 'reception', 'rc' || i, NULL, 'queued', i, 0, 10, '', '', 0, 0 FROM n`, b.N); err != nil {
+		INSERT INTO work SELECT 'q' || i, 'reception', 'rc' || i, '', NULL, 'queued', i, 0, 10, '', '', 0, 0 FROM n`, b.N); err != nil {
 		b.Fatal(err)
 	}
 	if _, err := db.Exec(`ANALYZE`); err != nil {

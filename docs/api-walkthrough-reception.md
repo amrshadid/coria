@@ -6,8 +6,8 @@ call, with nothing but the contract in hand:
 1. setting a tenant up to receive DICOM;
 2. following one study from its first file to archived, through `Watch` and
    `GetStatus`, including a second arrival of the same study later;
-3. reviewing a quarantined file and releasing it so that it replaces the file
-   archived under the same SOP Instance UID.
+3. reviewing a quarantined file that differs from the one archived under the
+   same SOP Instance UID, and settling it.
 
 The calls are shown as the JSON a plain HTTP client posts with the Connect
 protocol: `POST https://<server>/<service>/<method>` with
@@ -369,7 +369,7 @@ POST /magnetar.v1.ReceptionService/GetReception
 Every arrival of a study can also be listed with
 `ListReceptions {"tenant": "lab", "studyInstanceUid": "2.25.1234567890123456789"}`, which needs operator on the tenant, as any search by an identifier the caller already holds does.
 
-## Use 3: reviewing a quarantined file and releasing it with overwrite
+## Use 3: reviewing a different file under an archived UID
 
 The scanner's operator corrected an attribute and sent one image again under
 the same SOP Instance UID. The archive already holds that UID with other
@@ -425,8 +425,8 @@ POST /magnetar.v1.QuarantineService/GetQuarantinedFile
  "headerTooLarge": false}
 ```
 
-The person reviewing it sees why (`reason`), what is held (`sha256`) and what
-it would replace (`keptSha256`), who sent it, and the file's header in the
+The person reviewing it sees why (`reason`), what is held (`sha256`) and the
+checksum of the archived file (`keptSha256`), who sent it, and the file's header in the
 DICOM JSON model (PS3.18 Annex F). Pixel data and every long value are left
 out entirely; a header over 1 MiB is not cut but left out, with
 `headerTooLarge` set. The UIDs are as received. The read is recorded in the
@@ -436,56 +436,49 @@ This contract has no call that reads the archived file itself, so the
 comparison with the kept file rests on what the person reviewing it knows of
 the correction and on the two checksums.
 
-### Release it with overwrite
+### Settle it
 
-```
-POST /magnetar.v1.QuarantineService/ReleaseQuarantinedFile
-{"tenant": "lab", "id": "q-19d2", "mode": "RELEASE_MODE_OVERWRITE"}
-
-{"file": {"id": "q-19d2", "state": "QUARANTINE_STATE_RELEASED",
-          "releaseMode": "RELEASE_MODE_OVERWRITE",
-          "releaseReceiver": "scanner1", "releaseReception": "r-8b02",
-          "decideTime": "...", ...}}
-```
-
-The stream shows the decision, then the reception it joined:
-
-```
-{"event": {"cursor": "c26", "type": "EVENT_TYPE_QUARANTINE_DECIDED",
-           "quarantineDecided": {"file": "q-19d2", "state": "QUARANTINE_STATE_RELEASED",
-             "releaseMode": "RELEASE_MODE_OVERWRITE", "releaseReception": "r-8b02",
-             "heldFiles": "0", "heldBytes": "0"}}}
-```
-
-The file runs through the pipeline again as if it arrived now at `scanner1`,
-in reception `r-8b02`. With overwrite, it replaces the archived file on the
-storage; the replaced file's checksum stays on the record (`keptSha256`), and
-the release is in the tenant's audit log with the caller's key, so the
-replacement has its reason and its proof. At `RECEPTION_STEP_DONE` the
-reception's counts read
-`{"filesReceived": "1", "filesArchived": "1", "filesReleased": "1"}`, and the
-replacing file was read back and checked like any other.
-
-What the contract settles about this call:
-
-- Releasing again with the same mode answers the record as it stands and
-  does nothing more, so a client may retry after a lost answer.
-- `RELEASE_MODE_OVERWRITE` is refused as invalid for any other reason: an
-  instance under another study is never moved by a release.
-- A rejected file, or one whose bytes were never kept (too large), cannot be
-  released: `FAILED_PRECONDITION`.
-- If `scanner1` had been removed, the release would name another receiver to
-  run through: `"receiver": "scanner2"`.
-- If the file fails again, it is quarantined under a new record whose
-  `releasedFrom` is `q-19d2`; this record stays released.
-
-Had the person reviewing it decided the new file was wrong, the call would
-have been a reject, which needs a reason and removes the held bytes for good:
+In this version a file quarantined as `QUARANTINE_REASON_DIFFERENT_FILE` can
+only be rejected. A release runs a file through the pipeline again, and while
+the tenant holds the archived instance under the UID, the file would be
+quarantined again; a release is refused with `FAILED_PRECONDITION` for that
+reason. Replacing an archived instance deletes archived data, so it is not a
+mode of release: it will be an operation of its own, with a recorded reason
+and proof of the copy that replaces it.
 
 ```
 POST /magnetar.v1.QuarantineService/RejectQuarantinedFile
 {"tenant": "lab", "id": "q-19d2", "reason": "re-sent by mistake; the archived file is correct"}
+
+{"file": {"id": "q-19d2", "state": "QUARANTINE_STATE_REJECTED",
+          "rejectReason": "re-sent by mistake; the archived file is correct",
+          "contentKept": false, "decideTime": "...", ...}}
 ```
+
+The stream shows the decision:
+
+```
+{"event": {"cursor": "c26", "type": "EVENT_TYPE_QUARANTINE_DECIDED",
+           "quarantineDecided": {"file": "q-19d2", "state": "QUARANTINE_STATE_REJECTED",
+             "heldFiles": "0", "heldBytes": "0"}}}
+```
+
+The held bytes are removed for good; the record stays, with its reason, its
+checksums and who sent it, and the rejection is in the tenant's audit log
+with the caller's key.
+
+What the contract settles about this call:
+
+- Rejecting again answers the record as it stands, with its first reason, so
+  a client may retry after a lost answer.
+- A released file cannot be rejected: `FAILED_PRECONDITION`.
+- The only release mode is `RELEASE_MODE_AS_IS`; any other is refused as
+  invalid. For the other reasons a release is how a file is run again once its
+  cause is mended (a naming rule fixed, say), through the receiver it came to
+  or, if that one was removed, through one the request names:
+  `"receiver": "scanner2"`.
+- A file released that fails again is quarantined under a new record whose
+  `releasedFrom` names the first; that record stays released.
 
 ## What this contract does not do
 

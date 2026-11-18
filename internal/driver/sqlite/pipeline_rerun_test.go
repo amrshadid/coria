@@ -248,18 +248,19 @@ func TestPipelineRandomizedAcrossInstances(t *testing.T) {
 		OR files_released <> (SELECT count(*) FROM received_files WHERE reception_id = p.id AND released = 1)
 		OR files_quarantined <> (SELECT count(*) FROM quarantine AS q WHERE q.reception_id = p.id
 			AND NOT (q.state = 'released' AND q.release_reception = p.id))
-		OR files_archived <> (SELECT count(*) FROM instances WHERE held_by = p.id AND held_sha256 IS NOT NULL)
+		OR files_archived <> (SELECT count(*) FROM instances WHERE reception_id = p.id AND state = 'held')
 		OR associations <> (SELECT count(*) FROM reception_associations WHERE reception_id = p.id)`)
 	check("the quarantine's totals", `SELECT count(*) FROM quarantine_totals WHERE
 		files <> (SELECT count(*) FROM quarantine WHERE state = 'held')
 		OR bytes <> (SELECT coalesce(sum(size), 0) FROM quarantine WHERE state = 'held' AND content_kept = 1)`)
 	check("the catalog's totals", `SELECT count(*) FROM catalog_totals WHERE subjects <> (SELECT count(*) FROM subjects)
 		OR sessions <> (SELECT count(*) FROM sessions) OR scans <> (SELECT count(*) FROM scans)
-		OR instances <> (SELECT count(*) FROM instances WHERE held_sha256 IS NOT NULL)`)
+		OR instances <> (SELECT count(*) FROM instances WHERE state = 'held')`)
 	check("each scan's counts", `SELECT count(*) FROM scans AS s WHERE
 		instances <> (SELECT count(*) FROM instances WHERE scan_id = s.id)
 		OR bytes <> (SELECT coalesce(sum(size), 0) FROM instances WHERE scan_id = s.id)`)
-	check("no claim outlives its reception", `SELECT count(*) FROM instances AS i JOIN receptions AS p ON p.id = i.claimed_by WHERE p.ended = 1`)
+	check("no claim outlives its reception", `SELECT count(*) FROM instances AS i JOIN receptions AS p ON p.id = i.reception_id
+		WHERE i.state = 'claimed' AND p.ended = 1`)
 	check("arrivals unique", `SELECT count(*) FROM (SELECT study_uid, arrival FROM receptions GROUP BY 1, 2 HAVING count(*) > 1)`)
 	check("arrivals without gaps", `SELECT count(*) FROM (SELECT study_uid FROM receptions GROUP BY 1 HAVING max(arrival) <> count(*))`)
 	check("one open reception per receiver and study", `SELECT count(*) FROM (SELECT receiver, study_uid FROM receptions
@@ -267,7 +268,7 @@ func TestPipelineRandomizedAcrossInstances(t *testing.T) {
 	var receptions, held, instances int64
 	_ = db.QueryRow(`SELECT count(*) FROM receptions`).Scan(&receptions)
 	_ = db.QueryRow(`SELECT count(*) FROM quarantine`).Scan(&held)
-	_ = db.QueryRow(`SELECT count(*) FROM instances WHERE held_sha256 IS NOT NULL`).Scan(&instances)
+	_ = db.QueryRow(`SELECT count(*) FROM instances WHERE state = 'held'`).Scan(&instances)
 	t.Logf("%d receptions, %d quarantine records, %d instances held", receptions, held, instances)
 	if instances == 0 {
 		t.Error("no instance was archived, so the claims and commits were not tested")
@@ -317,6 +318,9 @@ func claimAndCommit(ctx context.Context, p *Tenant, next func(int) int) error {
 			return err
 		}
 		c.Instances = append(c.Instances, tenant.ConfirmedInstance{SOPInstanceUID: f.SOPInstanceUID, Key: key, Length: f.Size, Size: f.Size, ArchivedSHA256: f.SHA256})
+	}
+	if len(c.Instances) == 0 {
+		return nil
 	}
 	if _, err := p.CommitScan(ctx, c); err != nil && fault.KindOf(err) != fault.Conflict {
 		return fmt.Errorf("commit: %w", err)

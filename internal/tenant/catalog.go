@@ -92,6 +92,9 @@ func (c ScanCommit) Validate() error {
 	if err := ValidateName("storage", c.Storage); err != nil {
 		return err
 	}
+	if len(c.Instances) == 0 {
+		return invalid("a commit confirms at least one instance: a scan is made with what it holds")
+	}
 	if len(c.Instances) > MaxScanCommit {
 		return invalid("at most " + strconv.Itoa(MaxScanCommit) + " instances are confirmed in one commit")
 	}

@@ -70,6 +70,9 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"WorkRetries", testWorkRetries},
 		{"WorkConcurrentClaims", testWorkConcurrentClaims},
 		{"WorkChain", testWorkChain},
+		{"WorkGivesUpItsReception", testWorkGivesUpItsReception},
+		{"ReceptionsWithoutWork", testReceptionsWithoutWork},
+		{"CommitSharesSubject", testCommitSharesSubject},
 		{"PipelineBounds", testPipelineBounds},
 		{"PipelineTenantsApart", testPipelineTenantsApart},
 	}

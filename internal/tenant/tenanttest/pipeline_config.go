@@ -147,7 +147,11 @@ func testStorageSetPartial(e *penv) {
 // in progress was identified to is not removed and its location does not
 // change; once that reception ended with nothing archived it may go; one
 // that holds an instance is never removed and its location never changes,
-// though its capacity may.
+// though its capacity may. With several writers a removal and a commit or
+// an identify that names the storage could each miss the other's rows; the
+// storage's row is the lock they share. On SQLite's one writer they are
+// ordered anyway, so this case passes either way here; a Postgres run
+// exercises the lock.
 func testStorageInUse(e *penv) {
 	e.addReceiver("dimse-a", "store-a", 11112)
 	_, err := e.p.RemoveStorage(e.ctx, "store-a", e.audit(), nil)

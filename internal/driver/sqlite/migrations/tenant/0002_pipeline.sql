@@ -267,17 +267,21 @@ CREATE TABLE scans (
     UNIQUE (session_id, folded)
 ) STRICT;
 
--- One row per SOP Instance UID in the tenant: the instance held (held_*,
--- confirmed by the reception held_by, in a scan, at a key of a storage),
--- the claim of a reception that has not confirmed yet (claim_*), or both,
--- for a claim to overwrite. A claim not confirmed is removed when its
--- reception ends; what is held stays.
+-- One row per SOP Instance UID in the tenant: an instance a reception
+-- claims before it writes the file to a storage, or an instance held, once
+-- the reception confirmed it with its scan's catalog rows; never both. A
+-- claim not confirmed is removed when its reception ends; what is held
+-- stays, and is never replaced by reception. sha256 is the checksum the file
+-- was received with; reception_id is the reception that claims it, then the
+-- one that confirmed it. The storage, key, place and archived checksum are
+-- set when it is held, and only then.
 CREATE TABLE instances (
     sop_instance_uid TEXT    NOT NULL PRIMARY KEY,
     study_uid        TEXT    NOT NULL,
     series_uid       TEXT    NOT NULL,
-    held_sha256      BLOB CHECK (held_sha256 IS NULL OR length(held_sha256) = 32),
-    held_by          TEXT    NOT NULL,
+    state            TEXT    NOT NULL CHECK (state IN ('claimed', 'held')),
+    sha256           BLOB    NOT NULL CHECK (length(sha256) = 32),
+    reception_id     TEXT    NOT NULL CHECK (reception_id <> ''),
     scan_id          INTEGER,
     storage          TEXT    NOT NULL,
     storage_key      TEXT    NOT NULL,
@@ -285,22 +289,22 @@ CREATE TABLE instances (
     byte_length      INTEGER NOT NULL CHECK (byte_length >= 0),
     size             INTEGER NOT NULL CHECK (size >= 0),
     archived_sha256  BLOB CHECK (archived_sha256 IS NULL OR length(archived_sha256) = 32),
+    claimed_at       INTEGER NOT NULL,
     held_at          INTEGER,
-    claim_sha256     BLOB CHECK (claim_sha256 IS NULL OR length(claim_sha256) = 32),
-    claimed_by       TEXT,
-    claimed_at       INTEGER,
-    CHECK (held_sha256 IS NOT NULL OR claimed_by IS NOT NULL),
-    CHECK ((held_sha256 IS NULL) = (scan_id IS NULL)),
-    CHECK ((claimed_by IS NULL) = (claim_sha256 IS NULL))
+    CHECK ((state = 'held') = (scan_id IS NOT NULL)),
+    CHECK ((state = 'held') = (archived_sha256 IS NOT NULL)),
+    CHECK ((state = 'held') = (held_at IS NOT NULL)),
+    CHECK ((state = 'held') = (storage <> '' AND storage_key <> ''))
 ) STRICT, WITHOUT ROWID;
 
--- A reception's claims, to confirm or release them; the instances held on a
--- storage, which make it hold data; the instances a reception confirmed, by
--- scan, for its list of scans.
-CREATE INDEX instances_claimed    ON instances (claimed_by) WHERE claimed_by IS NOT NULL;
-CREATE INDEX instances_on_storage ON instances (storage) WHERE held_sha256 IS NOT NULL;
-CREATE INDEX instances_held_by    ON instances (held_by, scan_id) WHERE held_sha256 IS NOT NULL;
+-- A reception's claims, to release them; the instances held on a storage,
+-- which make it hold data; the instances a reception confirmed, by scan, for
+-- its list of scans; the sessions on a storage, which make it in use.
+CREATE INDEX instances_claimed    ON instances (reception_id) WHERE state = 'claimed';
+CREATE INDEX instances_on_storage ON instances (storage) WHERE state = 'held';
+CREATE INDEX instances_held_by    ON instances (reception_id, scan_id) WHERE state = 'held';
 CREATE INDEX scans_by_session     ON scans (session_id);
+CREATE INDEX sessions_by_storage  ON sessions (storage);
 
 -- The catalog's running totals, changed in the transaction of every
 -- commit, so they equal a count over the catalog after each.
@@ -315,11 +319,14 @@ INSERT INTO catalog_totals (one, subjects, sessions, scans, instances) VALUES (1
 
 -- A unit of work. due is when a queued unit may be claimed, and when a
 -- leased unit's lease ends; attempt counts claims and fences every write of
--- the worker holding the lease. unique_key is NULL for none.
+-- the worker holding the lease. unique_key is NULL for none. reception_id
+-- names the reception the unit carries, '' for none: a unit held as failed
+-- fails its reception in the same transaction.
 CREATE TABLE work (
     id           TEXT    NOT NULL PRIMARY KEY,
     kind         TEXT    NOT NULL,
     subject      TEXT    NOT NULL,
+    reception_id TEXT    NOT NULL,
     unique_key   TEXT,
     state        TEXT    NOT NULL CHECK (state IN ('queued', 'leased', 'done', 'failed')),
     due          INTEGER NOT NULL,
@@ -337,3 +344,6 @@ CREATE UNIQUE INDEX work_by_key ON work (unique_key) WHERE unique_key IS NOT NUL
 -- A claim reads the earliest due of a kind among the units not finished,
 -- and only those: finished units, however many, are not in this index.
 CREATE INDEX work_claimable ON work (kind, due, id) WHERE state IN ('queued', 'leased');
+-- The receptions with a live unit, for the search at start of those left
+-- without one.
+CREATE INDEX work_by_reception ON work (reception_id) WHERE state IN ('queued', 'leased');

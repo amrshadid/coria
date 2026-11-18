@@ -131,14 +131,11 @@ const (
 // ReleaseMode is how a released file runs through the pipeline again.
 type ReleaseMode string
 
-// The modes.
-const (
-	// ReleaseAsIs runs it by the pipeline's rules now.
-	ReleaseAsIs ReleaseMode = "as_is"
-	// ReleaseOverwrite also replaces the different file the tenant holds
-	// under its SOP Instance UID; only for QuarantineDifferentFile.
-	ReleaseOverwrite ReleaseMode = "overwrite"
-)
+// ReleaseAsIs runs it by the pipeline's rules now, the one mode of this
+// version. Replacing an archived instance with a released file deletes
+// archived data, which needs a recorded reason and proof of the copy that
+// replaces it; it will be an operation of its own, not a mode of release.
+const ReleaseAsIs ReleaseMode = "as_is"
 
 // MaxQuarantineDetails bounds a record's details, the contract's.
 const MaxQuarantineDetails = 16
@@ -336,8 +333,8 @@ func ValidateRelease(id string, mode ReleaseMode, receiver, receptionID string, 
 	if err := master.ValidateID("quarantine id", id); err != nil {
 		return err
 	}
-	if mode != ReleaseAsIs && mode != ReleaseOverwrite {
-		return invalid("a release's mode is as_is or overwrite")
+	if mode != ReleaseAsIs {
+		return invalid("a release's mode is as_is")
 	}
 	if receiver != "" {
 		if err := ValidateName("receiver", receiver); err != nil {
