@@ -22,7 +22,10 @@
 //   - A key is validated here, by CheckKey, before a driver uses it, and a
 //     driver checks it again itself: a key that names nothing a storage can
 //     hold safely, or that could leave the storage's root, is refused as
-//     Invalid before anything is touched.
+//     Invalid before anything is touched. The port carries the archive's
+//     own keys, not arbitrary names: a segment is ASCII letters, digits,
+//     ".", "_" and "-" only, which is what makes one key mean one object on
+//     every storage and every file system (see CheckKey).
 //   - Errors carry a kind from package fault: NotFound for a key that holds
 //     nothing, Invalid for a key, prefix, range or page that is wrong as
 //     written, Unavailable for a storage that cannot be reached or written

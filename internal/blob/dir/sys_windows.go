@@ -59,3 +59,15 @@ const errorNotSameDevice syscall.Errno = 17
 // isCrossDevice reports whether err is a rename refused because it would
 // cross volumes.
 func isCrossDevice(err error) bool { return errors.Is(err, errorNotSameDevice) }
+
+// openNonblock is nothing on Windows, where a name in a directory cannot be
+// a FIFO that blocks its open.
+const openNonblock = 0
+
+// isUnsupported is always false on Windows, where a directory is not synced
+// at all.
+func isUnsupported(error) bool { return false }
+
+// isVanished is false on Windows, where a removed directory is reported as
+// not found.
+func isVanished(error) bool { return false }

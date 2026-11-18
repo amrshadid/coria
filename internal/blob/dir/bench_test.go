@@ -2,9 +2,13 @@ package dir
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/amrshadid/magnetar/internal/blob"
 	"github.com/amrshadid/magnetar/internal/blob/blobtest"
 )
 
@@ -89,6 +93,71 @@ func BenchmarkRead(b *testing.B) {
 				}
 				if err := r.Close(); err != nil {
 					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkPutFirstIntoDirectory measures a 256 KB Put into a new scan's
+// directory, three levels below directories that exist: it pays the syncs
+// that make the new directories durable, which the Puts that follow into
+// the same directory (BenchmarkPut) do not.
+func BenchmarkPutFirstIntoDirectory(b *testing.B) {
+	buf := blobtest.PatternBytes(1, 1<<20)
+	const size = 256 << 10
+	s := openTemp(b)
+	ctx := context.Background()
+	b.SetBytes(size)
+	i := 0
+	for b.Loop() {
+		i++
+		key := fmt.Sprintf("data/subject/session%d/scan/object.dcm", i)
+		if _, err := s.Put(ctx, key, &repeat{buf: buf, left: size}); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkListDirectory measures paging through one directory of 20,000,
+// 100,000 and 200,000 files, in pages of 1,000, as a rebuild of the
+// catalog does; it reports the time of the whole listing per operation.
+// The files are made behind the store's back before the timer starts. The
+// two larger cases are skipped under -short.
+func BenchmarkListDirectory(b *testing.B) {
+	for _, n := range []int{20000, 100000, 200000} {
+		b.Run(fmt.Sprint(n), func(b *testing.B) {
+			if testing.Short() && n > 20000 {
+				b.Skip("large directories are skipped under -short")
+			}
+			s := openTemp(b)
+			dir := filepath.Join(s.root.Name(), "big")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				b.Fatal(err)
+			}
+			for i := range n {
+				if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("k%07d", i)), nil, 0o600); err != nil {
+					b.Fatal(err)
+				}
+			}
+			ctx := context.Background()
+			for b.Loop() {
+				s.listing.invalidate("big") // each listing starts from the disk
+				got := 0
+				opts := blob.ListOptions{Prefix: "big/"}
+				for {
+					p, err := s.List(ctx, opts)
+					if err != nil {
+						b.Fatal(err)
+					}
+					got += len(p.Keys)
+					if p.Next == "" {
+						break
+					}
+					opts.Token = p.Next
+				}
+				if got != n {
+					b.Fatalf("listed %d of %d", got, n)
 				}
 			}
 		})

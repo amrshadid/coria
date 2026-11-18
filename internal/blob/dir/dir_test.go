@@ -161,9 +161,9 @@ func TestOpenCostIsFlat(t *testing.T) {
 	reads := func(root string) []string {
 		var opened []string
 		st := realSteps()
-		st.openDir = func(r *os.Root, dir string) (*os.File, error) {
+		st.open = func(r *os.Root, dir string) (*os.File, error) {
 			opened = append(opened, filepath.ToSlash(dir))
-			return r.Open(dir)
+			return r.OpenFile(dir, os.O_RDONLY|openNonblock, 0)
 		}
 		s, err := open(root, st)
 		if err != nil {
@@ -368,8 +368,8 @@ func relative(t *testing.T, s *Store, name string) string {
 }
 
 // TestPutStepFails guards that a Put whose file sync or rename fails
-// returns Unavailable and leaves no object, no temporary file and no
-// directory it made, so an unsynced object is never presented as written.
+// returns Unavailable and leaves no object and no temporary file, so an
+// unsynced object is never presented as written.
 func TestPutStepFails(t *testing.T) {
 	broken := errors.New("broken on purpose")
 	for _, step := range []string{"sync file", "rename"} {
@@ -388,15 +388,16 @@ func TestPutStepFails(t *testing.T) {
 			if _, err := s.Stat(context.Background(), "x/y"); fault.KindOf(err) != fault.NotFound {
 				t.Fatalf("Stat after the failed Put = %v, want NotFound", err)
 			}
-			entries, err := os.ReadDir(s.root.Name())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(entries) != 1 || entries[0].Name() != tempDir {
-				t.Fatalf("the root holds %d entries after the failed Put, want only the temporary directory", len(entries))
-			}
 			if left := tempFiles(t, s.root.Name()); len(left) != 0 {
 				t.Fatalf("temporary files left: %q", left)
+			}
+			// The directory made for the key stays, empty, and is not
+			// listed: removing it could race another Put into it.
+			if entries, err := os.ReadDir(filepath.Join(s.root.Name(), "x")); err != nil || len(entries) != 0 {
+				t.Fatalf("the key's directory holds %d entries, %v; want it empty", len(entries), err)
+			}
+			if p, err := s.List(context.Background(), blob.ListOptions{Delimiter: "/"}); err != nil || len(p.Keys)+len(p.Prefixes) != 0 {
+				t.Fatalf("List after the failed Put = %+v, %v; want nothing", p, err)
 			}
 		})
 	}
@@ -429,6 +430,14 @@ func TestSymlinks(t *testing.T) {
 	if err := os.Symlink(filepath.Join("..", filepath.Base(outside)), filepath.Join(root, "climb")); err != nil {
 		t.Fatal(err)
 	}
+	// Relative links that stay inside the root, which os.Root follows: only
+	// the driver's own checks refuse them.
+	if err := os.Symlink(filepath.Join("real", "obj"), filepath.Join(root, "relfile")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real", filepath.Join(root, "reldir")); err != nil {
+		t.Fatal(err)
+	}
 	s, err := Open(root)
 	if err != nil {
 		t.Fatal(err)
@@ -439,7 +448,7 @@ func TestSymlinks(t *testing.T) {
 		t.Fatal("Open cleaned a directory outside the root through a link")
 	}
 
-	for _, key := range []string{"out/secret", "outfile", "in/obj", "infile", "climb/secret"} {
+	for _, key := range []string{"out/secret", "outfile", "in/obj", "infile", "climb/secret", "relfile", "reldir/obj"} {
 		if r, err := s.Read(ctx, key, 0, -1); err == nil {
 			b, _ := io.ReadAll(r)
 			_ = r.Close()
@@ -498,6 +507,14 @@ func TestSymlinks(t *testing.T) {
 // it was given, and that the SHA-256 Put returned is the file's, by tools
 // that are not Magnetar: shasum or sha256sum, and cmp. It skips when the
 // tools are absent.
+//
+// Neither tool is given a path of this system. The checksum tool reads the
+// written file on its standard input, and cmp compares its standard input,
+// the bytes given to Put, with the written file named relative to its
+// working directory. So the test means the same on Windows, where the
+// tools that come with Git are Perl and MSYS programs that do not read a
+// path with a drive letter. A tool that is present but fails shows its own
+// output.
 func TestOutsideTools(t *testing.T) {
 	sum := []string{"shasum", "-a", "256"}
 	if _, err := exec.LookPath("shasum"); err != nil {
@@ -515,20 +532,26 @@ func TestOutsideTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	written := filepath.Join(s.root.Name(), "tool", "check", "object.dcm")
-	out, err := exec.Command(sum[0], append(sum[1:], written)...).Output() // #nosec G204 -- a fixed tool on a test's own file.
+	dir := filepath.Join(s.root.Name(), "tool", "check")
+	f, err := os.Open(filepath.Join(dir, "object.dcm"))
 	if err != nil {
-		t.Fatalf("%s: %v", sum[0], err)
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	var stderr bytes.Buffer
+	cmd := exec.Command(sum[0], sum[1:]...) // #nosec G204 -- a fixed tool reading a test's own file.
+	cmd.Stdin, cmd.Stderr = f, &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("%s: %v: %s%s", sum[0], err, out, stderr.Bytes())
 	}
 	fields := strings.Fields(string(out))
 	if len(fields) == 0 || fields[0] != hex.EncodeToString(w.SHA256[:]) {
 		t.Fatalf("%s says %q; Put returned %x", sum[0], out, w.SHA256)
 	}
-	source := filepath.Join(t.TempDir(), "source")
-	if err := os.WriteFile(source, data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if out, err := exec.Command("cmp", source, written).CombinedOutput(); err != nil { // #nosec G204 -- a fixed tool on a test's own files.
+	cmd = exec.Command("cmp", "-", "object.dcm") // #nosec G204 -- a fixed tool on a test's own files.
+	cmd.Dir, cmd.Stdin = dir, bytes.NewReader(data)
+	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cmp: %v: %s", err, out)
 	}
 	if fmtSum := sha256.Sum256(data); fmtSum != w.SHA256 {

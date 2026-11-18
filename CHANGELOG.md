@@ -375,19 +375,24 @@ All notable changes to Magnetar are written here. The form is
 - Magnetar had nowhere to put a file. The storage port, `internal/blob`, now
   states what every storage promises: Put streams bytes to a key and returns
   their size and SHA-256 computed as they pass, and the object appears whole or
-  not at all, a replaced one included; Read gives a byte range as a stream; List
-  pages through keys in a stable order, one level at a time with a delimiter;
-  Delete of a missing key is not an error; Usage says when it cannot know the
-  free space. Keys are checked in one place, so none can name a path outside a
-  storage or a name Windows reads differently. One contract suite holds every
-  driver to this, and the first driver, a directory on a local disk or NFS,
-  passes it. It writes each object to a temporary directory at the storage's
-  root, syncs it, renames it into place and syncs both directories; it refuses
-  a storage that spans two file systems rather than copy; it follows no
-  symbolic link; and at start it reads only its temporary directory, so
-  starting costs the same whatever the archive holds. A child process killed in
-  the middle of its Puts leaves every key whole or absent, and the files
-  written match `shasum` and `cmp`.
+  not at all, a replaced one included; Read gives a byte range as a stream of
+  the object as it was when the read began; List pages through keys in a stable
+  order, one level at a time with a delimiter; Delete of a missing key is not an
+  error; Usage says when it cannot know the free space. Keys are the archive's
+  own, ASCII letters, digits, ".", "_" and "-", checked in one place, so a key
+  names the same object on every storage and file system and never a path
+  outside it. One contract suite holds every driver to this, and is itself
+  checked against drivers broken on purpose. The first driver, a directory on a
+  local disk or NFS, writes each object to a temporary directory at the
+  storage's root, syncs it, renames it into place and syncs both directories,
+  and returns only when every directory on the key's path is durable. It
+  removes nothing but the object a Delete names. It refuses a storage that
+  spans two file systems, or whose file system cannot sync a directory, rather
+  than copy or pretend. It follows no symbolic link, never blocks on a file
+  swapped in under it, names no path in its errors, and pages through a
+  directory of 200,000 files in under a second. At start it reads only its
+  temporary directory. A child process killed in the middle of its Puts leaves
+  every key whole or absent, and the files written match `shasum` and `cmp`.
 
 ### Changed
 

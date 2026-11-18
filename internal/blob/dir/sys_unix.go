@@ -45,3 +45,18 @@ func sameFileSystem(a, b fs.FileInfo) (same, known bool) {
 // isCrossDevice reports whether err is a rename refused because it would
 // cross file systems (rename(2): EXDEV).
 func isCrossDevice(err error) bool { return errors.Is(err, syscall.EXDEV) }
+
+// openNonblock is added to every open for reading, so that opening a name
+// that something swapped for a FIFO or a device returns at once instead of
+// waiting for a writer (open(2): O_NONBLOCK); what was opened is then
+// checked on the descriptor. On a regular file or a directory it changes
+// nothing.
+const openNonblock = syscall.O_NONBLOCK
+
+// isUnsupported reports whether err, from a sync of a directory, says the
+// file system cannot do it (fsync(2): EINVAL, "fd is bound to a special file
+// ... which does not support synchronization"; ENOTSUP on some network file
+// systems).
+func isUnsupported(err error) bool {
+	return errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP)
+}

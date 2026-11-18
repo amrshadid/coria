@@ -24,3 +24,12 @@ func sameFileSystem(fs.FileInfo, fs.FileInfo) (same, known bool) { return false,
 // isCrossDevice is always false where the system's error for it is not
 // known; the rename still fails, with a less specific message.
 func isCrossDevice(error) bool { return false }
+
+// openNonblock is nothing where it is not known to be needed.
+const openNonblock = 0
+
+// isUnsupported is always false where directories are not synced.
+func isUnsupported(error) bool { return false }
+
+// isVanished is false where no special answer is known.
+func isVanished(error) bool { return false }

@@ -2,7 +2,6 @@ package blob
 
 import (
 	"strings"
-	"unicode/utf8"
 
 	"github.com/amrshadid/magnetar/internal/fault"
 )
@@ -32,34 +31,42 @@ const ReservedPrefix = ".blob-"
 // fault.Invalid error saying why otherwise. The message names the rule, not
 // the key.
 //
-// A key is 1 to MaxKeyLength bytes of UTF-8, in segments separated by "/".
-// The rules make a key mean the same object on every storage and keep it
-// inside the storage's root on a disk:
+// The port carries the archive's own keys, made from its labels and from
+// DICOM UIDs, not arbitrary names. That is what lets a key mean the same
+// object on every storage and every file system: a name outside a small
+// ASCII set can mean something else to a disk than to the archive. APFS
+// treats a composed and a decomposed "é" as one name, HFS+ ignores some
+// invisible code points (so a zero-width character before a name aliases
+// that name), and Windows answers to a short "ABCDEF~1" alias of a long
+// name. None of that can happen to a key made of the characters below.
 //
+// A key is 1 to MaxKeyLength bytes in segments separated by "/":
+//
+//   - A segment holds only A-Z, a-z, 0-9, ".", "_" and "-", the characters
+//     of the archive's labels and UIDs. So a key has no separator but "/",
+//     no character any file system or terminal reads specially, and no
+//     invisible or composed character.
 //   - No segment is empty, "." or "..", so a key has no leading, trailing
 //     or doubled "/" and cannot climb out of a directory or name one twice.
-//   - No backslash, which Windows reads as a separator, and none of
-//     : * ? " < > |, which Windows refuses in a name or reads as an
-//     alternate data stream (learn.microsoft.com/windows/win32/fileio/naming-a-file).
-//   - No control character (C0, DEL or C1), which no file system needs and
-//     a log or a terminal could be fooled by.
-//   - No segment ends in "." or a space, which Windows drops, so that
-//     "a." and "a" would be one file there and two objects elsewhere.
+//   - No segment ends in ".", which Windows drops, so that "a." and "a"
+//     would be one file there and two objects elsewhere
+//     (learn.microsoft.com/windows/win32/fileio/naming-a-file).
 //   - No segment is a Windows device name (CON, PRN, AUX, NUL, COM0-9,
 //     LPT0-9, with or without an extension), which opens the device
 //     instead of a file.
 //   - No segment begins with ReservedPrefix.
 //   - No segment is longer than MaxSegmentLength bytes, and there are at
 //     most MaxKeySegments segments.
+//
+// Case is kept: "A" and "a" are two keys. On a volume that ignores case
+// they are one file; the port does not refuse them, and the directory
+// driver's documentation says why.
 func CheckKey(key string) error {
 	if key == "" {
 		return keyError("is empty")
 	}
 	if len(key) > MaxKeyLength {
 		return keyError("is longer than 1024 bytes")
-	}
-	if !utf8.ValidString(key) {
-		return keyError("is not valid UTF-8")
 	}
 	if strings.Count(key, "/") >= MaxKeySegments {
 		return keyError("has more than 64 segments")
@@ -75,17 +82,14 @@ func CheckKey(key string) error {
 // CheckPrefix returns nil when prefix is one List accepts, and a
 // fault.Invalid error otherwise. A prefix is empty, or the start of a valid
 // key: every segment before its last "/" obeys CheckKey's rules, and the
-// part after it, which may be empty or partial, holds no character a key
-// cannot.
+// part after it, which may be empty or partial, holds only characters a key
+// may.
 func CheckPrefix(prefix string) error {
 	if prefix == "" {
 		return nil
 	}
 	if len(prefix) > MaxKeyLength {
 		return prefixError("is longer than 1024 bytes")
-	}
-	if !utf8.ValidString(prefix) {
-		return prefixError("is not valid UTF-8")
 	}
 	head, tail := "", prefix
 	if i := strings.LastIndexByte(prefix, '/'); i >= 0 {
@@ -162,8 +166,8 @@ func checkSegment(seg string) error {
 	if reason := badCharacter(seg); reason != "" {
 		return keyError(reason)
 	}
-	if last := seg[len(seg)-1]; last == '.' || last == ' ' {
-		return keyError(`has a segment that ends in "." or a space`)
+	if seg[len(seg)-1] == '.' {
+		return keyError(`has a segment that ends in "."`)
 	}
 	if isDeviceName(seg) {
 		return keyError("has a segment that is a Windows device name")
@@ -175,40 +179,35 @@ func checkSegment(seg string) error {
 }
 
 // badCharacter returns why s holds a character no key may hold, or "" when
-// it holds none. s holds no "/".
+// it holds none. It works on bytes: every byte of a multi-byte UTF-8
+// character is outside the set, so such a character is refused whole.
 func badCharacter(s string) string {
-	for _, r := range s {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		switch {
-		case r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f):
-			return "has a control character"
-		case r == '\\':
-			return "has a backslash"
-		case strings.ContainsRune(`:*?"<>|`, r):
-			return `has one of : * ? " < > |`
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return "has a character other than A-Z, a-z, 0-9, \".\", \"_\" and \"-\""
 		}
 	}
 	return ""
 }
 
 // isDeviceName reports whether seg names a Windows device: its part before
-// the first ".", with trailing spaces dropped as Windows drops them, is one
-// of the reserved names in any case. The superscript digits are included
-// because Windows treats COM¹ to COM³ and LPT¹ to LPT³ as devices too.
+// the first "." is one of the reserved names in any case. Only ASCII
+// reaches here, so the superscript-digit forms Windows also treats as
+// devices (COM¹) are already refused as characters.
 func isDeviceName(seg string) bool {
 	base, _, _ := strings.Cut(seg, ".")
-	base = strings.ToUpper(strings.TrimRight(base, " "))
+	base = strings.ToUpper(base)
 	switch base {
-	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
+	case "CON", "PRN", "AUX", "NUL":
 		return true
 	}
-	if len(base) < 4 || (base[:3] != "COM" && base[:3] != "LPT") {
+	if len(base) != 4 || (base[:3] != "COM" && base[:3] != "LPT") {
 		return false
 	}
-	switch base[3:] {
-	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³":
-		return true
-	}
-	return false
+	return base[3] >= '0' && base[3] <= '9'
 }
 
 func keyError(reason string) error {

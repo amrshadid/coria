@@ -6,30 +6,32 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
-	"unicode/utf8"
+	"sync"
+	"time"
 
 	"github.com/amrshadid/magnetar/internal/blob"
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
-// readDirChunk is how many directory entries are read at a time. A
-// directory is never read whole, so a directory of a million files costs
-// the same memory to list as one of ten.
+// readDirChunk is how many directory entries are read at a time.
 const readDirChunk = 256
 
 // List returns one page of keys; see blob.Store.
 //
-// A file system returns a directory's names in no useful order, and sorting
-// a whole directory would hold all of its names at once. So each step of a
-// listing reads a directory through, in chunks, keeping only the smallest
-// names after the point already reached, as many as the page still needs,
-// in a bounded heap. Memory is bounded by the page size times the depth of
-// the tree. A directory with more entries than one page is read once per
-// page, which is the price of not holding it.
+// A file system returns a directory's names in no useful order, so a page
+// needs the directory's names sorted. A directory is read whole and sorted
+// once, and its sorted names kept in a small cache (see dirCache), so that
+// paging through a directory of a hundred thousand files costs about one
+// read of it, not one per page. A directory with more names than the cache
+// may hold is read in chunks instead, keeping only the smallest names after
+// the point reached in a bounded heap, once per page: memory stays bounded
+// whatever its size, at the price of the reads.
 //
 // The token is the last key or prefix of the page before. It needs no state
 // kept between calls, and it continues correctly whatever was put or deleted
@@ -94,7 +96,7 @@ func checkToken(opts blob.ListOptions) error {
 	if t == "" {
 		return nil
 	}
-	bad := !utf8.ValidString(t) || !strings.HasPrefix(t, opts.Prefix)
+	bad := !strings.HasPrefix(t, opts.Prefix)
 	if !bad {
 		k := t
 		if opts.Delimiter != "" {
@@ -166,8 +168,8 @@ func (l *lister) dir(dirPath, keyPrefix, filter string) error {
 	return nil
 }
 
-// smallest reads dirPath through and returns, in order, up to n of its
-// entries that sort after cursor and that the page still needs, and whether
+// smallest returns, in order, up to n of the entries of the directory
+// dirPath that sort after cursor and that the page still needs, and whether
 // there may be more.
 //
 // An entry is needed when something it stands for sorts after the token: a
@@ -178,6 +180,114 @@ func (l *lister) smallest(dirPath, keyPrefix, filter, cursor string, n int) ([]e
 	if err := l.ctx.Err(); err != nil {
 		return nil, false, fault.Wrap(fault.Unavailable, err, "the listing was canceled")
 	}
+	f, info, err := l.s.openChecked(native(dirPath), true)
+	if err != nil {
+		if gone(err) {
+			return nil, false, nil // Not a directory any more: nothing to list in it.
+		}
+		return nil, false, l.s.fail(err, "the storage could not open a directory")
+	}
+	defer func() { _ = f.Close() }() // Only read.
+	names, ok := l.s.listing.lookup(dirPath, info.ModTime())
+	if !ok {
+		held := l.s.listing.begin(dirPath)
+		names, ok, err = l.s.readSorted(f)
+		if err != nil {
+			l.s.listing.abandon(dirPath, held)
+			return nil, false, l.s.fail(err, "the storage could not read a directory")
+		}
+		if !ok {
+			l.s.listing.abandon(dirPath, held)
+			return l.scanSmallest(dirPath, keyPrefix, filter, cursor, n)
+		}
+		l.s.listing.finish(dirPath, held, names, info.ModTime())
+	}
+	out, more := l.pick(names, keyPrefix, filter, cursor, n)
+	return out, more, nil
+}
+
+// gone reports whether err from openChecked means the name no longer holds
+// a directory to list: removed, replaced by something else, or a link.
+func gone(err error) bool {
+	return notFound(err) || errors.Is(err, errWrongType) || errors.Is(err, errLinked)
+}
+
+// pick returns, from a directory's sorted names, up to n entries that
+// sort after cursor, begin with filter, and are needed after the token,
+// and whether more follow. It starts with a binary search, so a page costs
+// its own size, not the directory's.
+func (l *lister) pick(names []dirName, keyPrefix, filter, cursor string, n int) ([]entry, bool) {
+	lo := strings.TrimPrefix(cursor, keyPrefix)
+	start := sort.Search(len(names), func(i int) bool {
+		return names[i].sort > lo && names[i].sort >= filter
+	})
+	// Skip what lies at or before the token: everything up to it, except,
+	// without a delimiter, the directory the token is inside, which may
+	// still hold keys after it.
+	if a, ok := strings.CutPrefix(l.after, keyPrefix); ok && l.after != "" {
+		bound := func(i int) bool { return names[i].sort > a }
+		if j := strings.IndexByte(a, '/'); j >= 0 && !l.delim {
+			dirOf := a[:j+1]
+			bound = func(i int) bool { return names[i].sort >= dirOf }
+		}
+		start = max(start, sort.Search(len(names), bound))
+	}
+	var out []entry
+	for i := start; i < len(names); i++ {
+		d := names[i]
+		if !strings.HasPrefix(d.sort, filter) {
+			break // Sorted: nothing further begins with filter.
+		}
+		e := entry{name: keyPrefix + d.sort, isDir: d.isDir}
+		needed := e.name > l.after || (e.isDir && !l.delim && strings.HasPrefix(l.after, e.name))
+		if !needed {
+			continue
+		}
+		if len(out) == n {
+			return out, true
+		}
+		out = append(out, e)
+	}
+	return out, false
+}
+
+// readSorted reads the directory f whole and returns its names that could
+// be part of a key, sorted as keys sort, with whether it held no more than
+// maxCachedNames of them. Past that it stops and returns false, and the
+// caller lists the directory in chunks instead.
+func (s *Store) readSorted(f *os.File) ([]dirName, bool, error) {
+	var names []dirName
+	for {
+		entries, err := s.readDir(f, readDirChunk)
+		for _, d := range entries {
+			if blob.CheckKey(d.Name()) != nil {
+				continue
+			}
+			switch {
+			case d.Type().IsRegular():
+				names = append(names, dirName{sort: d.Name()})
+			case d.IsDir():
+				names = append(names, dirName{sort: d.Name() + "/", isDir: true})
+			}
+			if len(names) > maxCachedNames {
+				return nil, false, nil
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	slices.SortFunc(names, func(a, b dirName) int { return strings.Compare(a.sort, b.sort) })
+	return names, true, nil
+}
+
+// scanSmallest is smallest for a directory too large to cache: it reads
+// the directory through, in chunks, keeping in a bounded heap only the n
+// smallest needed entries after cursor.
+func (l *lister) scanSmallest(dirPath, keyPrefix, filter, cursor string, n int) ([]entry, bool, error) {
 	h := &entryHeap{}
 	more := false
 	err := l.s.eachEntry(dirPath, func(d fs.DirEntry) {
@@ -212,8 +322,8 @@ func (l *lister) smallest(dirPath, keyPrefix, filter, cursor string, n int) ([]e
 		}
 	})
 	if err != nil {
-		if notFound(err) {
-			return nil, false, nil // Removed by a Delete since it was seen.
+		if gone(err) {
+			return nil, false, nil
 		}
 		return nil, false, l.s.fail(err, "the storage could not read a directory")
 	}
@@ -225,16 +335,16 @@ func (l *lister) smallest(dirPath, keyPrefix, filter, cursor string, n int) ([]e
 // eachEntry calls fn for each entry of the directory dirPath that could be
 // part of a key, reading the directory a chunk at a time. It skips a name
 // that is not valid as a key's segment, which takes in the driver's own
-// temporary files and anything another program left that no key could
+// temporary directory and anything another program left that no key could
 // name.
 func (s *Store) eachEntry(dirPath string, fn func(fs.DirEntry)) error {
-	f, err := s.openDir(s.root, native(dirPath))
+	f, _, err := s.openChecked(native(dirPath), true)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }() // Only read.
 	for {
-		entries, err := f.ReadDir(readDirChunk)
+		entries, err := s.readDir(f, readDirChunk)
 		for _, d := range entries {
 			if blob.CheckKey(d.Name()) == nil {
 				fn(d)
@@ -250,23 +360,23 @@ func (s *Store) eachEntry(dirPath string, fn func(fs.DirEntry)) error {
 }
 
 // hasObject reports whether any object lies under the directory dirPath, so
-// that a directory left empty, or holding only a Put's temporary file, is
-// not listed as a prefix: on a bucket, a prefix exists only while a key
-// under it does. It stops at the first object it finds.
+// that a directory left empty, by Deletes or by Puts that failed, is not
+// listed as a prefix: on a bucket, a prefix exists only while a key under
+// it does. It stops at the first object it finds.
 func (s *Store) hasObject(ctx context.Context, dirPath string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, fault.Wrap(fault.Unavailable, err, "the listing was canceled")
 	}
-	f, err := s.openDir(s.root, native(dirPath))
-	if notFound(err) {
-		return false, nil
-	}
+	f, _, err := s.openChecked(native(dirPath), true)
 	if err != nil {
-		return false, s.fail(err, "the storage could not read a directory")
+		if gone(err) {
+			return false, nil
+		}
+		return false, s.fail(err, "the storage could not open a directory")
 	}
 	defer func() { _ = f.Close() }() // Only read.
 	for {
-		entries, err := f.ReadDir(readDirChunk)
+		entries, err := s.readDir(f, readDirChunk)
 		for _, d := range entries {
 			if blob.CheckKey(d.Name()) != nil {
 				continue
@@ -305,6 +415,133 @@ func (h *entryHeap) Pop() any {
 	return e
 }
 
+// The bounds of the listing cache. A directory with more names than
+// maxCachedNames is never cached and is listed in chunks, a read per page;
+// the archive's directories hold one scan's files, thousands at most, and a
+// rebuild of the catalog pages through them one after another, so a few are
+// enough. The names held cost about 50 bytes each, so the bound is about
+// 20 MB.
+const (
+	maxCachedDirs  = 8
+	maxCachedNames = 400000
+)
+
+// dirName is one name of a directory as a key sorts it: a directory's name
+// ends with "/".
+type dirName struct {
+	sort  string
+	isDir bool
+}
+
+// cachedDir is the sorted names of one directory and the modification
+// time it had when they were read. A placeholder, not yet ready, marks a
+// reading in progress, so that a change made meanwhile can drop it.
+type cachedDir struct {
+	names   []dirName
+	modTime time.Time
+	ready   bool
+}
+
+// dirCache holds the sorted names of the directories most recently listed.
+//
+// A cached directory is used only while nothing says it changed. This
+// process drops a directory's entry on every change it makes in it (a Put's
+// rename, a Delete, a new subdirectory), and a reading that such a change
+// overlapped is not kept, since the change drops its placeholder. A change
+// by another process is seen by the directory's modification time, compared
+// at each page; it is missed only when it falls within the same tick of the
+// file system's clock as the reading it follows, which a second process,
+// unsupported anyway, could cause. A page continues after the token by the
+// order of the keys themselves, so even then a listing never shows a key
+// twice or skips one that was there throughout; it may miss one added by
+// the other process.
+type dirCache struct {
+	mu      sync.Mutex
+	entries map[string]*cachedDir
+	recent  []string // ready entries, least recently used first
+	held    int      // names held by ready entries
+}
+
+func (c *dirCache) init() { c.entries = map[string]*cachedDir{} }
+
+// lookup returns the cached names of dir when they are ready and were read
+// at modTime.
+func (c *dirCache) lookup(dir string, modTime time.Time) ([]dirName, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e := c.entries[dir]
+	if e == nil || !e.ready || !e.modTime.Equal(modTime) {
+		return nil, false
+	}
+	c.touch(dir)
+	return e.names, true
+}
+
+// begin puts a placeholder for dir, replacing what was cached, and returns
+// it for finish or abandon.
+func (c *dirCache) begin(dir string) *cachedDir {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.drop(dir)
+	e := &cachedDir{}
+	c.entries[dir] = e
+	return e
+}
+
+// finish keeps names as dir's, unless a change dropped the placeholder
+// meanwhile, and evicts the least recently used directories past the
+// bounds.
+func (c *dirCache) finish(dir string, e *cachedDir, names []dirName, modTime time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries[dir] != e {
+		return
+	}
+	e.names, e.modTime, e.ready = names, modTime, true
+	c.held += len(names)
+	c.recent = append(c.recent, dir)
+	for len(c.recent) > maxCachedDirs || c.held > maxCachedNames {
+		c.drop(c.recent[0])
+	}
+}
+
+// abandon removes dir's placeholder e, if it is still there.
+func (c *dirCache) abandon(dir string, e *cachedDir) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries[dir] == e {
+		delete(c.entries, dir)
+	}
+}
+
+// invalidate drops what is cached or being read for dir, because this
+// process changed it.
+func (c *dirCache) invalidate(dir string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.drop(dir)
+}
+
+// drop removes dir's entry. The caller holds mu.
+func (c *dirCache) drop(dir string) {
+	e := c.entries[dir]
+	if e == nil {
+		return
+	}
+	delete(c.entries, dir)
+	if e.ready {
+		c.held -= len(e.names)
+		c.recent = slices.DeleteFunc(c.recent, func(d string) bool { return d == dir })
+	}
+}
+
+// touch moves dir to the most recently used end. The caller holds mu.
+func (c *dirCache) touch(dir string) {
+	if i := slices.Index(c.recent, dir); i >= 0 {
+		c.recent = append(append(c.recent[:i:i], c.recent[i+1:]...), dir)
+	}
+}
+
 // cleanTemp removes every file in the temporary directory: none of them is
 // an object, and every one is a Put that a crash, a kill or a failed
 // removal left behind. It reads that one directory a chunk at a time, and
@@ -312,34 +549,30 @@ func (h *entryHeap) Pop() any {
 // system may skip names in a directory read while names are removed from
 // it. It never walks the tree, so Open costs the same for ten objects as
 // for a hundred million.
-//
-// A directory a crashed Put made for its key and never filled is not
-// removed here; it holds no object, so it is never listed as a prefix, and
-// the next Delete or failed Put in it removes it.
 func (s *Store) cleanTemp() error {
 	for {
 		removed, err := s.cleanTempOnce()
 		if err != nil {
-			return fault.Wrap(fault.Unavailable, err, "the storage could not remove what a crash left in its temporary directory")
+			return s.wrap(fault.Unavailable, err, "the storage could not remove what a crash left in its temporary directory")
 		}
 		if !removed {
 			return nil
 		}
 		if err := s.syncDir(s.root, tempDir); err != nil {
-			return fault.Wrap(fault.Unavailable, err, "the storage could not sync its temporary directory")
+			return s.wrap(fault.Unavailable, err, "the storage could not sync its temporary directory")
 		}
 	}
 }
 
 func (s *Store) cleanTempOnce() (bool, error) {
-	f, err := s.openDir(s.root, tempDir)
+	f, _, err := s.openChecked(tempDir, true)
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = f.Close() }() // Only read.
 	removed := false
 	for {
-		entries, rerr := f.ReadDir(readDirChunk)
+		entries, rerr := s.readDir(f, readDirChunk)
 		for _, d := range entries {
 			if !d.Type().IsRegular() {
 				continue // Nothing a Put makes; left for a person to look at.

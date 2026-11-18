@@ -31,7 +31,9 @@ type Driver struct {
 	// lie under it ("a" and "a/b"), as a bucket allows. A storage on a file
 	// system cannot, since one name cannot be a file and a directory at
 	// once; it must then refuse the second Put as Conflict and keep the
-	// first object. The archive's layout never makes such a pair.
+	// first object. Such a storage may also refuse a key under which keys
+	// once lay, after they were deleted, since the directory they were in
+	// can remain. The archive's layout never makes such a pair.
 	KeyAndPrefix bool
 }
 
@@ -61,6 +63,11 @@ func Run(t *testing.T, d Driver) {
 		{"ListRefused", testListRefused},
 		{"Usage", testUsage},
 		{"Closed", testClosed},
+		{"NextOnlyWhenMore", testNextOnlyWhenMore},
+		{"ReadSeesOneVersion", testReadSeesOneVersion},
+		{"PutDeleteRace", testPutDeleteRace},
+		{"SiblingsRace", testSiblingsRace},
+		{"NewParentsAtOnce", testNewParentsAtOnce},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,7 +80,7 @@ func Run(t *testing.T, d Driver) {
 // BadKeys returns keys that every store must refuse as Invalid, each
 // breaking one rule of blob.CheckKey: the forms a key takes when it tries to
 // leave a storage's root, names nothing a disk can hold, or would mean two
-// different things on two storages.
+// different things on two storages or two file systems.
 func BadKeys() []string {
 	return []string{
 		"",
@@ -82,9 +89,15 @@ func BadKeys() []string {
 		`a\b`, `..\a`, "a:b", "c:/x", "a*b", "a?b", `a"b`, "a<b", "a>b", "a|b",
 		"a\x00b", "a\nb", "a\tb", "\x1b[31m", "a\x7fb", "a\u0085b",
 		"\xff", "a/\xc3",
-		"a.", "a/b./c", "a ", "a/b /c",
+		"a.", "a/b./c", "a ", "a/b /c", " a", "a b",
 		"con", "CON", "a/nul.txt", "Aux", "prn.dcm", "com1", "LPT9.x", "com\u00b9", "con .txt",
-		".blob-tmp-0123", "a/.BLOB-x", ".blob-",
+		".blob-tmp-0123", "a/.BLOB-x", ".blob-", ".blob-tmp/obj",
+		// Names a file system reads as another name: composed and
+		// decomposed forms (one file on APFS), an invisible code point
+		// before the reserved prefix (dropped by HFS+, so the key would
+		// land in a driver's temporary directory), a Windows short name.
+		"caf\u00e9", "cafe\u0301", "\u200c.blob-tmp/obj", "a\u200db", "\ufeffa", "ABCDEF~1", "PROGRA~1/x",
+		"a+b", "a@b", "a#b", "a%2Fb", "a$", "a=b", "a,b", "a;b", "a'b", "a(b)", "a[b]", "a{b}", "a!b", "a&b", "a^b", "a`b",
 		strings.Repeat("a", blob.MaxSegmentLength+1),
 		strings.Repeat("a/", blob.MaxKeyLength/2) + "a",
 		strings.Repeat("a/", blob.MaxKeySegments) + "a",
@@ -177,6 +190,9 @@ func (e *env) listAll(opts blob.ListOptions) (keys, prefixes []string) {
 		}
 		if len(entries) == 0 && p.Next != "" {
 			e.Fatalf("List(%+v) returned an empty page that is not the last", opts)
+		}
+		if len(entries) == 0 && pages > 0 {
+			e.Fatalf("List(%+v) returned an empty page after a page whose Next promised more", opts)
 		}
 		for _, x := range entries {
 			if x <= last {
@@ -552,12 +568,14 @@ func testDelete(e *env) {
 }
 
 // listKeys is a set of keys whose byte order is easy to get wrong: "." and
-// "-" sort before "/", "0" after it, so a lister that walks directories in
-// name order without care returns them out of order.
+// "-" sort before "/", "0" after it, upper case before "_" and "_" before
+// lower case, so a lister that walks directories in name order without care
+// returns them out of order. No two differ only in case, which a volume
+// that ignores case would hold as one.
 var listKeys = []string{
 	"a-", "a.b", "a/b", "a/c/d", "a/c/e", "a/c.x", "a0/z",
 	"b/x/y/z", "data/s1/x", "data/s10/x", "data/s1-/x", "data/s2/y",
-	"z", "é", "日本/x",
+	"z", "Z_", "_u/x",
 }
 
 // putAll puts each key with its own name as its bytes.
@@ -607,7 +625,7 @@ func testListDelimiter(e *env) {
 		keys     []string
 		prefixes []string
 	}{
-		{"", []string{"a-", "a.b", "z", "é"}, []string{"a/", "a0/", "b/", "data/", "日本/"}},
+		{"", []string{"Z_", "a-", "a.b", "z"}, []string{"_u/", "a/", "a0/", "b/", "data/"}},
 		{"a/", []string{"a/b", "a/c.x"}, []string{"a/c/"}},
 		{"a/c/", []string{"a/c/d", "a/c/e"}, nil},
 		{"data/", nil, []string{"data/s1-/", "data/s1/", "data/s10/", "data/s2/"}},
@@ -789,4 +807,201 @@ func testClosed(e *env) {
 	want("Delete", s.Delete(e.ctx, "c"))
 	_, err = s.Usage(e.ctx)
 	want("Usage", err)
+}
+
+// testNextOnlyWhenMore guards that a page carries a Next only when another
+// entry follows it: a last page that is exactly full, with or without a
+// delimiter, ends the listing.
+func testNextOnlyWhenMore(e *env) {
+	e.putAll([]string{"n/a", "n/b", "n/c", "n/d/x", "n/e/y", "n/f"})
+	for _, c := range []struct {
+		delim string
+		limit int
+		pages int
+	}{
+		{"", 6, 1}, {"", 3, 2}, {"", 2, 3}, {"", 1, 6},
+		{"/", 6, 1}, {"/", 3, 2}, {"/", 2, 3}, {"/", 1, 6},
+	} {
+		opts := blob.ListOptions{Prefix: "n/", Delimiter: c.delim, Limit: c.limit}
+		for page := 1; ; page++ {
+			p, err := e.s.List(e.ctx, opts)
+			if err != nil {
+				e.Fatal(err)
+			}
+			if page == c.pages {
+				if p.Next != "" {
+					e.Fatalf("delimiter %q, limit %d: the last page, exactly full, has Next %q", c.delim, c.limit, p.Next)
+				}
+				break
+			}
+			if p.Next == "" {
+				e.Fatalf("delimiter %q, limit %d: the listing ended at page %d, want %d pages", c.delim, c.limit, page, c.pages)
+			}
+			opts.Token = p.Next
+		}
+	}
+}
+
+// testReadSeesOneVersion guards that a stream from Read gives the object as
+// it was when Read was called, even when a Put replaces it, or a Delete
+// removes it, before the stream is drained.
+func testReadSeesOneVersion(e *env) {
+	old, next := PatternBytes(1, 200000), PatternBytes(2, 200000)
+	for _, then := range []string{"put", "delete"} {
+		e.put("v/k", old)
+		r, err := e.s.Read(e.ctx, "v/k", 0, -1)
+		if err != nil {
+			e.Fatal(err)
+		}
+		head := make([]byte, 1000)
+		if _, err := io.ReadFull(r, head); err != nil {
+			e.Fatal(err)
+		}
+		if then == "put" {
+			e.put("v/k", next)
+		} else if err := e.s.Delete(e.ctx, "v/k"); err != nil {
+			e.Fatal(err)
+		}
+		rest, err := io.ReadAll(r)
+		closeOrFail(e.T, r)
+		if err != nil {
+			e.Fatal(err)
+		}
+		if got := append(head, rest...); !bytes.Equal(got, old) {
+			e.Fatalf("after a %s during the read, the stream gave %d bytes that are not the old object whole", then, len(got))
+		}
+	}
+}
+
+// testPutDeleteRace guards Puts and Deletes of one key racing each other:
+// every call succeeds, and the key ends holding nothing or one Put's object
+// whole.
+func testPutDeleteRace(e *env) {
+	const rounds = 20
+	versions := map[[sha256.Size]byte]bool{}
+	var data [][]byte
+	for i := range 4 {
+		b := PatternBytes(uint64(300+i), 1000+i*313)
+		data = append(data, b)
+		versions[sha256.Sum256(b)] = true
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 8*rounds)
+	for w := range 4 {
+		wg.Go(func() {
+			for range rounds {
+				if _, err := e.s.Put(e.ctx, "pd/k", bytes.NewReader(data[w])); err != nil {
+					errs <- fmt.Errorf("put: %w", err)
+				}
+			}
+		})
+		wg.Go(func() {
+			for range rounds {
+				if err := e.s.Delete(e.ctx, "pd/k"); err != nil {
+					errs <- fmt.Errorf("delete: %w", err)
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		e.Error(err)
+	}
+	r, err := e.s.Read(e.ctx, "pd/k", 0, -1)
+	if fault.KindOf(err) == fault.NotFound {
+		return
+	}
+	if err != nil {
+		e.Fatal(err)
+	}
+	b, err := io.ReadAll(r)
+	closeOrFail(e.T, r)
+	if err != nil || !versions[sha256.Sum256(b)] {
+		e.Fatalf("after the race the key holds %d bytes that are no Put's object (%v)", len(b), err)
+	}
+}
+
+// testSiblingsRace guards that what one key goes through never fails or
+// changes another under the same prefix: each goroutine puts, reads back,
+// and deletes its own keys, some with failing readers, while the others do
+// the same beside it. Every call that should succeed does, every
+// acknowledged object reads back as written until its own goroutine
+// deletes it, and a key that lies untouched under the prefix throughout
+// stays.
+func testSiblingsRace(e *env) {
+	const workers, rounds = 8, 15
+	keep := PatternBytes(9, 777)
+	e.put("sib/a/b/keep", keep)
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*rounds*3)
+	for w := range workers {
+		wg.Go(func() {
+			for i := range rounds {
+				key := fmt.Sprintf("sib/a/b/w%d/k%d", w, i%3)
+				if w%2 == 1 {
+					key = fmt.Sprintf("sib/a/w%d", w)
+				}
+				if i%4 == 3 {
+					if _, err := e.s.Put(e.ctx, key+"x", &failAfter{r: Pattern(1, 100), n: 10}); !errors.Is(err, errBroken) {
+						errs <- fmt.Errorf("a failing put: %w", err)
+					}
+					continue
+				}
+				data := PatternBytes(uint64(w*100+i), 500+i) // #nosec G115 -- small, non-negative test counters.
+				if _, err := e.s.Put(e.ctx, key, bytes.NewReader(data)); err != nil {
+					errs <- fmt.Errorf("put %s: %w", key, err)
+					continue
+				}
+				r, err := e.s.Read(e.ctx, key, 0, -1)
+				if err != nil {
+					errs <- fmt.Errorf("an acknowledged object is gone: read %s: %w", key, err)
+					continue
+				}
+				got, err := io.ReadAll(r)
+				_ = r.Close() // Checked through the bytes.
+				if err != nil || !bytes.Equal(got, data) {
+					errs <- fmt.Errorf("an acknowledged object changed: %s (%w)", key, err)
+				}
+				if err := e.s.Delete(e.ctx, key); err != nil {
+					errs <- fmt.Errorf("delete %s: %w", key, err)
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		e.Error(err)
+	}
+	e.wantObject("sib/a/b/keep", keep)
+}
+
+// testNewParentsAtOnce guards Puts that need the same new levels of
+// prefix, started together: all succeed and all are listed.
+func testNewParentsAtOnce(e *env) {
+	const n = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	var want []string
+	for i := range n {
+		key := fmt.Sprintf("np/a/b/c/k%d", i)
+		want = append(want, key)
+		wg.Go(func() {
+			<-start
+			if _, err := e.s.Put(e.ctx, key, bytes.NewReader([]byte(key))); err != nil {
+				errs <- err
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		e.Error(err)
+	}
+	if keys, _ := e.listAll(blob.ListOptions{Prefix: "np/"}); !slices.Equal(keys, want) {
+		e.Fatalf("List(np/) = %q, want %q", keys, want)
+	}
 }
