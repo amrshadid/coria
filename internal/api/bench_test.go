@@ -18,7 +18,7 @@ import (
 // a benchmark measures the check and the handler, not HTTP.
 func (e *env) inProcess(b *testing.B, c caller) clients {
 	b.Helper()
-	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.master, NewID: e.newID, Settings: e.known})
+	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.master, NewID: e.newID, Settings: e.known, Keys: e.keys, Now: e.now})
 	if err != nil {
 		b.Fatal(err)
 	}

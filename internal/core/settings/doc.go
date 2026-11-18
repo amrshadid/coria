@@ -10,6 +10,16 @@
 // built-in default. This package states the list and the rules; it does not
 // read or store a value.
 //
+// Who may set a setting, and where, is its Kind (settings.proto,
+// SettingsService): an ordinary setting, which a tenant's admin may override
+// when it allows; an installation-only setting, such as the directories and
+// endpoints storages may use; and a setting set on a tenant by the
+// installation's admin only, such as the ports a tenant's receivers may use.
+// The parsers of the values the reception pipeline reads (values.go) return
+// typed values, so the API's handlers and the receivers read a value one
+// way. Whether a value takes away what a tenant uses is not this package's
+// to say: it holds no tenant's storages or receivers.
+//
 // # What this package must never do
 //
 // It must never do I/O, read the clock, or import anything of Magnetar's: it

@@ -68,7 +68,10 @@ magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|fai
   there is no color when `NO_COLOR` is set or the output is not a terminal.
 - **Errors** are one line on standard error with the server's message and its
   request id. Exit codes: 0 done, 1 failed, 2 wrong usage, 3 refused
-  (unauthenticated or denied), 4 not found.
+  (unauthenticated or denied), 4 not found, 5 a state that forbids the change
+  (a storage that holds files, a port not allotted), 6 a position that can no
+  longer be answered (an event cursor too old), 7 a bound of the server
+  reached (a message too large, too many streams).
 - **Lists** fetch up to `--limit` (100) items and say when more exist; `--all`
   fetches every item.
 

@@ -81,7 +81,12 @@ func APIServices(d Deps) (Built, error) {
 		closeRegistry(reg)
 		return Built{}, err
 	}
-	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log})
+	// The receivers' health, the removal of discarded and rejected files and
+	// a quarantined file's header are left to the handlers' defaults until
+	// the part of the server that runs receivers and the reception pipeline
+	// are wired here: every receiver is answered down, not started; nothing
+	// is removed from the incoming area by a handler; no header is read.
+	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err

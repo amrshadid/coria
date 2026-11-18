@@ -11,7 +11,12 @@
 # unknown key and a key with no grant, and success for an admin key over
 # TLS and for the local operator on the socket. Every answer must carry a
 # Magnetar-Request-Id. /metrics must parse with the Prometheus Python
-# client.
+# client. Against the real program, grpcurl and Python also walk the first
+# and third uses of docs/api-walkthrough-reception.md (a tenant set up to
+# receive: its ports, a directory storage tested, a receiver added and
+# changed; and the review of quarantine, on a tenant with nothing held, with
+# every refusal it names), each on a tenant of its own, under a directory
+# root the script makes and sets as the installation's.
 #
 # Needs: go, curl, openssl, grpcurl (GRPCURL=...), and a Python (PYTHON=...)
 # with scripts/requirements-check-server.txt installed.
@@ -96,6 +101,12 @@ out=$(viasock /magnetar.v1.AccessService/WhoAmI '{}'); [ "${out%% *}" = 200 ] ||
 [ "$(viasock $lk '{}' -H "Authorization: Bearer $unknown")" = "$unauth" ] || fail "curl socket unknown key"; ok "curl socket unknown key: same refusal"
 out=$(viatls /grpc.health.v1.Health/Check '{}'); [ "$out" = '200 {"status":"SERVING"}' ] || fail "curl health: $out"; ok "curl tls health without a key: $out"
 if [ "$real" = 1 ]; then
+	# The installation's root of directory storages, which every client's
+	# tenant uses below: set by the local operator, as only the
+	# installation's admin may.
+	mkdir -p "$work/roots/fast"
+	roots=$("$PYTHON" -c 'import json,sys; print(json.dumps({"setting": {"name": "storage.directory-roots", "scope": {"installation": {}}, "value": "fast=" + sys.argv[1]}}))' "$work/roots/fast")
+	out=$(viasock /magnetar.v1.SettingsService/SetSetting "$roots"); [ "${out%% *}" = 200 ] || fail "curl socket set the roots: $out"; ok "curl socket storage.directory-roots set: fast"
 	ct=/magnetar.v1.TenantService/CreateTenant
 	lt=/magnetar.v1.TenantService/ListTenants
 	[ "$(viatls $ct '{"name":"curl1","databaseType":"DATABASE_TYPE_SQLITE"}')" = "$unauth" ] || fail "curl tls create, no key"; ok "curl tls CreateTenant with no key: $unauth"
@@ -139,10 +150,51 @@ if [ "$real" = 1 ]; then
 	echo "$r" | grep -q TENANT_STATE_READY || fail "grpcurl create, admin: $r"; ok "grpcurl tls CreateTenant with an admin key: ready"
 	r=$(gt -H "authorization: Bearer $admin" -d '{}' "127.0.0.1:$port" magnetar.v1.TenantService/ListTenants)
 	echo "$r" | grep -q '"grpc1"' || fail "grpcurl list, admin: $r"; ok "grpcurl tls ListTenants with an admin key: grpc1 listed"
+
+	# The first use of the walk-through on grpc1, with the bodies it shows,
+	# by the installation's admin and then the local operator (an admin on
+	# every tenant); and the refusals of the third, on a tenant with
+	# nothing quarantined.
+	gw() {
+		"$GRPCURL" -import-path "$root/api/proto" -proto magnetar/v1/settings.proto -proto magnetar/v1/storage.proto \
+			-proto magnetar/v1/receiver.proto -proto magnetar/v1/quarantine.proto -proto magnetar/v1/reception.proto "$@" 2>&1 || true
+	}
+	gwa() { gw -cacert "$work/cert.pem" -H "authorization: Bearer $admin" "$@"; }
+	gwl() { gw -plaintext "$@"; }
+	r=$(gwa -d '{"setting":{"name":"receiver.ports","scope":{"tenant":"grpc1"},"value":"11200,11210-11219"}}' "127.0.0.1:$port" magnetar.v1.SettingsService/SetSetting)
+	echo "$r" | grep -q '"11200,11210-11219"' || fail "grpcurl receiver.ports: $r"; ok "grpcurl tls receiver.ports set on grpc1 by the installation's admin"
+	r=$(gwa -d '{"tenant":"grpc1","storage":{"name":"main","directory":{"root":"fast","path":"mri"}}}' "127.0.0.1:$port" magnetar.v1.StorageService/AddStorage | flat)
+	[ "$r" = "$want_denied" ] || fail "grpcurl AddStorage by the installation's admin: $r"; ok "grpcurl tls AddStorage by the installation's admin, no role inside the tenant: $r"
+	r=$(gwl -d '{"tenant":"grpc1","storage":{"name":"main","directory":{"root":"fast","path":"mri"}}}' "unix://$sock" magnetar.v1.StorageService/AddStorage)
+	echo "$r" | grep -q '"root": "fast"' || fail "grpcurl AddStorage: $r"
+	[ -d "$work/roots/fast/grpc1/mri" ] || fail "grpcurl AddStorage made no directory"; ok "grpcurl socket AddStorage main: the directory made"
+	r=$(gwl -d '{"tenant":"grpc1","name":"main"}' "unix://$sock" magnetar.v1.StorageService/TestStorage)
+	echo "$r" | grep -q '"passed": true' && [ "$(echo "$r" | grep -c STORAGE_TEST_OUTCOME_PASSED)" = 4 ] || fail "grpcurl TestStorage: $r"; ok "grpcurl socket TestStorage: passed, four steps"
+	r=$(gwl -d '{"tenant":"grpc1","receiver":{"name":"scanner1","enabled":true,"storage":"main","dimse":{"port":11200,"aeTitle":"MAGNETAR","allowedCallers":{"rules":[{"callingAeTitle":"PRISMA1","addressRange":"10.20.0.0/24"}]}}}}' "unix://$sock" magnetar.v1.ReceiverService/AddReceiver)
+	echo "$r" | grep -q '"quietPeriod": "60s"' && echo "$r" | grep -q '"maxFileBytes": "4294967296"' || fail "grpcurl AddReceiver: $r"; ok "grpcurl socket AddReceiver scanner1: defaults filled in"
+	# grpcurl 1.9.4 reads a field mask only as an object of paths, not in the
+	# string form of protobuf's JSON mapping; curl sends the walk-through's
+	# own body, with the string form, which the server reads.
+	r=$(gwl -d '{"tenant":"grpc1","receiver":{"name":"scanner1","quietPeriod":"120s"},"updateMask":{"paths":["quiet_period"]}}' "unix://$sock" magnetar.v1.ReceiverService/SetReceiver)
+	echo "$r" | grep -q '"quietPeriod": "120s"' || fail "grpcurl SetReceiver: $r"; ok "grpcurl socket SetReceiver quietPeriod: 120s"
+	out=$(viasock /magnetar.v1.ReceiverService/SetReceiver '{"tenant":"grpc1","receiver":{"name":"scanner1","quietPeriod":"300s"},"updateMask":"quietPeriod"}')
+	[ "${out%% *}" = 200 ] && echo "${out#* }" | grep -q '"quietPeriod":"300s"' || fail "curl SetReceiver: $out"; ok "curl socket SetReceiver with the walk-through's body: quietPeriod 300s"
+	r=$(gwl -d '{"tenant":"grpc1","receiver":{"name":"scanner1"},"updateMask":{"paths":["dimse"]}}' "unix://$sock" magnetar.v1.ReceiverService/SetReceiver | flat)
+	echo "$r" | grep -q '^Code: InvalidArgument' || fail "grpcurl SetReceiver dimse: $r"; ok "grpcurl socket SetReceiver with the mask dimse: $r"
+	r=$(gwl -d '{"tenant":"grpc1","receiver":{"name":"scanner2","storage":"main","dimse":{"port":104,"aeTitle":"MAGNETAR"}}}' "unix://$sock" magnetar.v1.ReceiverService/AddReceiver | flat)
+	echo "$r" | grep -q '^Code: FailedPrecondition' || fail "grpcurl AddReceiver port 104: $r"; ok "grpcurl socket AddReceiver on a port not allotted: $r"
+	r=$(gwl -d '{"tenant":"grpc1","state":"QUARANTINE_STATE_HELD"}' "unix://$sock" magnetar.v1.QuarantineService/ListQuarantinedFiles | flat)
+	[ "$r" = "{}" ] || fail "grpcurl ListQuarantinedFiles: $r"; ok "grpcurl socket ListQuarantinedFiles held: none"
+	r=$(gwl -d '{"tenant":"grpc1","id":"q-19d2","reason":""}' "unix://$sock" magnetar.v1.QuarantineService/RejectQuarantinedFile | flat)
+	echo "$r" | grep -q '^Code: InvalidArgument' || fail "grpcurl Reject with no reason: $r"; ok "grpcurl socket RejectQuarantinedFile with no reason: $r"
+	r=$(gwl -d '{"tenant":"grpc1","id":"q-19d2","mode":"RELEASE_MODE_AS_IS"}' "unix://$sock" magnetar.v1.QuarantineService/ReleaseQuarantinedFile | flat)
+	echo "$r" | grep -q '^Code: NotFound' || fail "grpcurl Release of no file: $r"; ok "grpcurl socket ReleaseQuarantinedFile of no file: $r"
+	r=$(gwl -d '{"tenant":"grpc1","name":"main"}' "unix://$sock" magnetar.v1.StorageService/RemoveStorage | flat)
+	echo "$r" | grep -q '^Code: FailedPrecondition' || fail "grpcurl RemoveStorage named by a receiver: $r"; ok "grpcurl socket RemoveStorage while a receiver names it: $r"
 fi
 
 echo "== python grpcio"
-MAGNETAR_CHECK_TENANTS=$real "$PYTHON" "$root/scripts/check-server.py" "$root/api/proto" "$sock" "127.0.0.1:$port" "$work/cert.pem" "$nogrant" "$admin" "$work/metrics"
+MAGNETAR_CHECK_TENANTS=$real MAGNETAR_CHECK_ROOT=$work/roots/fast "$PYTHON" "$root/scripts/check-server.py" "$root/api/proto" "$sock" "127.0.0.1:$port" "$work/cert.pem" "$nogrant" "$admin" "$work/metrics"
 
 # No key secret in the server's log.
 for s in "$nogrant" "$admin"; do

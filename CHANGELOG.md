@@ -464,6 +464,24 @@ All notable changes to Magnetar are written here. The form is
   occurs is retried inside the driver and never reaches a caller as an
   unknown error. Every list, claim and lookup is answered from an index at
   millions of rows, checked from the query plan in CI.
+- Four services of the contract answered "not implemented": a storage, a
+  receiver, a reception and a quarantined file could be described but not
+  made or read. `StorageService`, `ReceiverService`, `ReceptionService` and
+  `QuarantineService` are now served, each method behind the same key and
+  grant check as the rest. What a tenant's administrator may point at is
+  bounded by the installation: a directory storage lives under a root the
+  installation lists, at `<root>/<tenant>/<path>`; an S3 storage's endpoint
+  must be on the installation's list; a receiver's port must be one allotted
+  to its tenant, and no two receivers of the installation share one. A
+  storage's secret is sealed when it is written and is never returned.
+  `TestStorage` writes a small object, reads it back and removes it, and
+  says which of those failed. A storage that holds files cannot be removed.
+  The settings behind these
+  (`storage.reserve`, `receiver.ports`, the directory roots, the S3
+  endpoints, the bind addresses, `events.retention`) are parsed by
+  functions that are fuzzed in CI. The command line maps three more answers
+  to exit codes: 5 a state that forbids the change, 6 a position that can
+  no longer be answered, 7 a bound of the server reached.
 
 ### Changed
 

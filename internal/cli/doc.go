@@ -13,7 +13,9 @@
 //
 // The grammar is "magnetar <noun> <verb> [name] [flags]". Exit codes come from
 // the kind of the error through fault.Kind.ExitCode: 0 done, 1 failed, 2 wrong
-// usage, 3 refused, 4 not found.
+// usage, 3 refused, 4 not found, 5 a state that forbids the change (change it
+// first), 6 a position that can no longer be answered (start over), 7 a bound
+// of the server reached (send less, or later).
 //
 // This package must never take a secret as an argument or a flag value, never
 // seal, hash or store one (it asks internal/secret only whether a key file is

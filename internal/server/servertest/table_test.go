@@ -23,6 +23,7 @@ import (
 
 	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/driver/sqlite"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/obs"
@@ -252,6 +253,10 @@ var contractFiles = []protoreflect.FileDescriptor{
 	magnetarv1.File_magnetar_v1_settings_proto,
 	magnetarv1.File_magnetar_v1_audit_proto,
 	magnetarv1.File_magnetar_v1_scope_proto,
+	magnetarv1.File_magnetar_v1_storage_proto,
+	magnetarv1.File_magnetar_v1_receiver_proto,
+	magnetarv1.File_magnetar_v1_reception_proto,
+	magnetarv1.File_magnetar_v1_quarantine_proto,
 }
 
 // contractMethods returns every method of the contract by procedure name.
@@ -399,17 +404,87 @@ func checkRole(t *testing.T, proc, role string, md protoreflect.MethodDescriptor
 		expectScope(t, proc, md, master.RoleReader)
 	case "admin on the scope set.", "admin on the scope.", "admin on the scope asked for.":
 		expectScope(t, proc, md, master.RoleAdmin)
-	// SetSetting and UnsetSetting name a stricter kind of setting, set on a
-	// tenant by the installation's admin only. No setting of that kind
-	// exists in the server yet, so today these lines mean what "admin on the
-	// scope" means, and the table asks exactly that. The change that adds
-	// the first setting of that kind enforces the stricter rule, and must
-	// then give these two phrases their own case here.
 	case "admin on the scope set; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.",
 		"admin on the scope; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.":
-		expectScope(t, proc, md, master.RoleAdmin)
+		expectSettingChange(t, proc, md)
+	case "reader on the tenant.":
+		expectTenant(t, proc, md, master.RoleReader, nil)
+	case "operator on the tenant.":
+		expectTenant(t, proc, md, master.RoleOperator, nil)
+	case "admin on the tenant.":
+		expectTenant(t, proc, md, master.RoleAdmin, nil)
+	case "reader on the tenant; operator on the tenant to filter by Study Instance UID, since looking a study up by an identifier the caller already holds is a search for a person's data.":
+		expectTenant(t, proc, md, master.RoleReader, []string{"study_instance_uid"})
+	case "reader on the tenant; operator on the tenant to filter by a UID, since looking a file up by an identifier the caller already holds is a search for a person's data.":
+		expectTenant(t, proc, md, master.RoleReader, []string{"study_instance_uid", "sop_instance_uid"})
+	case "reader on the tenant; operator on the tenant with include_header, since the header holds what the sender sent, identifying data included.":
+		expectTenant(t, proc, md, master.RoleReader, []string{"include_header"})
 	default:
 		t.Errorf("%s: the Role line %q is a phrase this test does not know; add what it means", proc, role)
+	}
+}
+
+// expectTenant checks a role on the tenant a request names by its field
+// "tenant", and on the installation when it names none; with each field of
+// operatorIf set, operator instead.
+func expectTenant(t *testing.T, proc string, md protoreflect.MethodDescriptor, role master.Role, operatorIf []string) {
+	t.Helper()
+	named := newRequest(md)
+	setString(named, "tenant", "lab")
+	if _, got, _ := ruleFor(proc, named); got != access.OnTenant("lab", role) {
+		t.Errorf("%s: the requirement on a tenant is not %s there", proc, role)
+	}
+	if _, got, _ := ruleFor(proc, newRequest(md)); got != access.OnInstallation(role) {
+		t.Errorf("%s: the requirement with no tenant is not %s on the installation", proc, role)
+	}
+	for _, f := range operatorIf {
+		m := proto.Clone(named)
+		r := m.ProtoReflect()
+		fd := r.Descriptor().Fields().ByName(protoreflect.Name(f))
+		if fd.Kind() == protoreflect.BoolKind {
+			r.Set(fd, protoreflect.ValueOfBool(true))
+		} else {
+			r.Set(fd, protoreflect.ValueOfString("2.25.1"))
+		}
+		if _, got, _ := ruleFor(proc, m); got != access.OnTenant("lab", master.RoleOperator) {
+			t.Errorf("%s with %s: the requirement is not operator on the tenant", proc, f)
+		}
+	}
+}
+
+// expectSettingChange checks the requirement of a change of a setting: admin
+// on the scope for an ordinary setting, and admin on the installation,
+// whatever the scope, for each setting the server's list says the
+// installation's admin alone sets on a tenant.
+func expectSettingChange(t *testing.T, proc string, md protoreflect.MethodDescriptor) {
+	t.Helper()
+	named := func(name string, s *magnetarv1.Scope) proto.Message {
+		m := newRequest(md)
+		r := m.ProtoReflect()
+		target := r
+		if fd := r.Descriptor().Fields().ByName("setting"); fd != nil {
+			target = r.Mutable(fd).Message()
+		}
+		target.Set(target.Descriptor().Fields().ByName("name"), protoreflect.ValueOfString(name))
+		if s != nil {
+			setScope(r, s, 2)
+		}
+		return m
+	}
+	lab := &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}}
+	if _, got, _ := ruleFor(proc, named("events.retention", lab)); got != access.OnTenant("lab", master.RoleAdmin) {
+		t.Errorf("%s: an ordinary setting on a tenant is not admin there", proc)
+	}
+	if _, got, _ := ruleFor(proc, named("events.retention", installation())); got != access.OnInstallation(master.RoleAdmin) {
+		t.Errorf("%s: an ordinary setting on the installation is not admin there", proc)
+	}
+	for _, def := range settings.Builtin() {
+		if !def.TenantSetByInstallation {
+			continue
+		}
+		if _, got, _ := ruleFor(proc, named(def.Name, lab)); got != access.OnInstallation(master.RoleAdmin) {
+			t.Errorf("%s: %s on a tenant is not admin on the installation", proc, def.Name)
+		}
 	}
 }
 

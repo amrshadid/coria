@@ -20,6 +20,7 @@ import (
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/api"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/master"
 )
 
@@ -226,6 +227,18 @@ const (
 	// scopeReader and scopeAdmin: the role on the scope the request names.
 	scopeReader
 	scopeAdmin
+	// settingChange: admin on the scope the request names, except for a
+	// setting set on a tenant by the installation's admin only, which needs
+	// admin on the installation whatever the scope.
+	settingChange
+	// tenantReader, tenantOperator and tenantAdmin: the role on the tenant
+	// the request names by its field "tenant".
+	tenantReader
+	tenantOperator
+	tenantAdmin
+	// tenantReaderOrOperator: reader on the tenant, and operator on it when
+	// the request sets one of the fields operatorWhen names for the line.
+	tenantReaderOrOperator
 )
 
 // rolePhrases is every Role line the contract has, with the shape it
@@ -240,14 +253,78 @@ var rolePhrases = map[string]roleShape{
 	"admin on the scope set.":                                                         scopeAdmin,
 	"admin on the scope.":                                                             scopeAdmin,
 	"admin on the scope asked for.":                                                   scopeAdmin,
-	// SetSetting and UnsetSetting name a stricter kind of setting, set on a
-	// tenant by the installation's admin only. No setting of that kind
-	// exists in the server yet, so today these lines mean what "admin on
-	// the scope" means, and the handlers ask exactly that. The change that
-	// adds the first setting of that kind enforces the stricter rule, and
-	// must then give these two phrases a shape of their own here.
-	"admin on the scope set; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.": scopeAdmin,
-	"admin on the scope; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.":     scopeAdmin,
+	"admin on the scope set; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.": settingChange,
+	"admin on the scope; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.":     settingChange,
+	"reader on the tenant.":   tenantReader,
+	"operator on the tenant.": tenantOperator,
+	"admin on the tenant.":    tenantAdmin,
+	"reader on the tenant; operator on the tenant to filter by Study Instance UID, since looking a study up by an identifier the caller already holds is a search for a person's data.": tenantReaderOrOperator,
+	"reader on the tenant; operator on the tenant to filter by a UID, since looking a file up by an identifier the caller already holds is a search for a person's data.":               tenantReaderOrOperator,
+	"reader on the tenant; operator on the tenant with include_header, since the header holds what the sender sent, identifying data included.":                                         tenantReaderOrOperator,
+}
+
+// operatorWhen names, for each Role line of the shape tenantReaderOrOperator,
+// the fields of the request whose presence needs operator.
+var operatorWhen = map[string][]string{
+	"reader on the tenant; operator on the tenant to filter by Study Instance UID, since looking a study up by an identifier the caller already holds is a search for a person's data.": {"study_instance_uid"},
+	"reader on the tenant; operator on the tenant to filter by a UID, since looking a file up by an identifier the caller already holds is a search for a person's data.":               {"study_instance_uid", "sop_instance_uid"},
+	"reader on the tenant; operator on the tenant with include_header, since the header holds what the sender sent, identifying data included.":                                         {"include_header"},
+}
+
+// withField returns msg with the top-level field named name set: a string
+// to a value it could hold (a UID, a name), a bool to true.
+func withField(t *testing.T, msg proto.Message, name, value string) proto.Message {
+	t.Helper()
+	m := proto.Clone(msg).ProtoReflect()
+	fd := m.Descriptor().Fields().ByName(protoreflect.Name(name))
+	if fd == nil {
+		t.Fatalf("%s has no field %s", m.Descriptor().FullName(), name)
+	}
+	switch fd.Kind() {
+	case protoreflect.BoolKind:
+		m.Set(fd, protoreflect.ValueOfBool(true))
+	case protoreflect.StringKind:
+		m.Set(fd, protoreflect.ValueOfString(value))
+	default:
+		t.Fatalf("%s.%s is neither a string nor a bool", m.Descriptor().FullName(), name)
+	}
+	return m.Interface()
+}
+
+// withSettingName returns msg with the setting's name (a field "name", or
+// "name" inside "setting") set.
+func withSettingName(t *testing.T, msg proto.Message, name string) proto.Message {
+	t.Helper()
+	m := proto.Clone(msg).ProtoReflect()
+	target := m
+	if s := m.Descriptor().Fields().ByName("setting"); s != nil {
+		target = m.Mutable(s).Message()
+	}
+	target.Set(target.Descriptor().Fields().ByName("name"), protoreflect.ValueOfString(name))
+	return m.Interface()
+}
+
+// checkTenantRole checks a requirement of role on the tenant a request
+// names by its field "tenant": on that tenant when it is valid, and on the
+// installation when it is malformed or missing.
+func checkTenantRole(t *testing.T, proc string, need func(proto.Message) access.Requirement, msg proto.Message, role master.Role) {
+	t.Helper()
+	for _, c := range []struct {
+		name, tenant string
+		want         access.Requirement
+	}{
+		{"a tenant", "lab1", access.OnTenant("lab1", role)},
+		{"a malformed tenant", "Lab 1", access.OnInstallation(role)},
+		{"no tenant", "", access.OnInstallation(role)},
+	} {
+		named := withField(t, msg, "tenant", c.tenant)
+		if c.tenant == "" {
+			named = msg
+		}
+		if got := need(named); got != c.want {
+			t.Errorf("%s with %s: %+v, want %+v", proc, c.name, got, c.want)
+		}
+	}
 }
 
 // withScope returns msg with its scope (a field "scope", or "scope" inside
@@ -356,6 +433,45 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 				if got := need(withScope(t, msg, c.scope)); got != c.want {
 					t.Errorf("%s with %s: %+v, want %+v", proc, c.name, got, c.want)
 				}
+			}
+		case settingChange:
+			if msg == nil {
+				t.Fatalf("%s: the table does not read the request", proc)
+			}
+			// An ordinary setting: admin on the scope named.
+			ordinary := withSettingName(t, msg, settings.EventsRetention)
+			for _, c := range []struct {
+				name  string
+				scope *v1.Scope
+				want  access.Requirement
+			}{
+				{"a tenant", tenantScope("lab1"), access.OnTenant("lab1", master.RoleAdmin)},
+				{"the installation", installation(), access.OnInstallation(master.RoleAdmin)},
+				{"a malformed tenant", tenantScope("Lab 1"), access.OnInstallation(master.RoleAdmin)},
+				{"no scope", nil, access.OnInstallation(master.RoleAdmin)},
+			} {
+				if got := need(withScope(t, ordinary, c.scope)); got != c.want {
+					t.Errorf("%s of an ordinary setting with %s: %+v, want %+v", proc, c.name, got, c.want)
+				}
+			}
+			// Each setting the installation's admin alone sets on a tenant:
+			// admin on the installation, whatever the scope.
+			for _, n := range []string{settings.ReceiverPorts, settings.IncomingLimit} {
+				named := withSettingName(t, msg, n)
+				for _, sc := range []*v1.Scope{tenantScope("lab1"), installation(), tenantScope("Lab 1"), nil} {
+					if got := need(withScope(t, named, sc)); got != access.OnInstallation(master.RoleAdmin) {
+						t.Errorf("%s of %s with scope %v: %+v, want admin on the installation", proc, n, sc, got)
+					}
+				}
+			}
+		case tenantReader, tenantOperator, tenantAdmin, tenantReaderOrOperator:
+			role := map[roleShape]master.Role{tenantReader: master.RoleReader, tenantOperator: master.RoleOperator, tenantAdmin: master.RoleAdmin, tenantReaderOrOperator: master.RoleReader}[shape]
+			if msg == nil {
+				t.Fatalf("%s: the table does not read the request", proc)
+			}
+			checkTenantRole(t, proc, need, msg, role)
+			for _, f := range operatorWhen[text] {
+				checkTenantRole(t, proc+" with "+f, need, withField(t, msg, f, "2.25.1"), master.RoleOperator)
 			}
 		}
 	}

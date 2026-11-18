@@ -36,7 +36,8 @@ func TestKindOf(t *testing.T) {
 }
 
 // TestExitCode guards the exit status of each kind, which scripts depend on:
-// Invalid 2, Unauthenticated and Denied 3, NotFound 4, every other kind 1.
+// Invalid 2, Unauthenticated and Denied 3, NotFound 4, Precondition 5,
+// OutOfRange 6, Exhausted 7, every other kind 1.
 func TestExitCode(t *testing.T) {
 	want := map[Kind]int{
 		Internal:        1,
@@ -46,6 +47,9 @@ func TestExitCode(t *testing.T) {
 		NotFound:        4,
 		Conflict:        1,
 		Unavailable:     1,
+		Precondition:    5,
+		OutOfRange:      6,
+		Exhausted:       7,
 		Kind(-1):        1,
 		Kind(99):        1,
 	}
@@ -67,7 +71,10 @@ func TestKindString(t *testing.T) {
 		NotFound:        "not found",
 		Conflict:        "conflict",
 		Unavailable:     "unavailable",
-		Kind(7):         "Kind(7)",
+		Precondition:    "precondition",
+		OutOfRange:      "out of range",
+		Exhausted:       "exhausted",
+		Kind(10):        "Kind(10)",
 	}
 	for kind, name := range want {
 		if got := kind.String(); got != name {

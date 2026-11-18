@@ -20,6 +20,9 @@ var pairs = [...]struct {
 	{fault.NotFound, connect.CodeNotFound},
 	{fault.Conflict, connect.CodeAlreadyExists},
 	{fault.Unavailable, connect.CodeUnavailable},
+	{fault.Precondition, connect.CodeFailedPrecondition},
+	{fault.OutOfRange, connect.CodeOutOfRange},
+	{fault.Exhausted, connect.CodeResourceExhausted},
 }
 
 // Code returns the API code that carries a fault kind. A kind the table does
@@ -37,11 +40,12 @@ func Code(kind fault.Kind) connect.Code {
 // Kind returns the fault kind of an API code. Besides the table, it maps the
 // codes any method may answer without the contract naming a kind: a deadline
 // or a cancellation is a failure that may pass on a later try (Unavailable).
-// Every other code is Internal, a failure and exit 1: RESOURCE_EXHAUSTED (a
-// message over the size limit), UNIMPLEMENTED, UNKNOWN, DATA_LOSS and any code
-// a newer server adds. None of them is shown as the caller's mistake, because
-// the command line cannot tell a request that was too large from a server
-// that ran short, and exit 2 is for what the person typed wrong.
+// Every other code is Internal, a failure and exit 1: UNIMPLEMENTED, UNKNOWN,
+// DATA_LOSS and any code a newer server adds. None of them is shown as the
+// caller's mistake, since exit 2 is for what the person typed wrong.
+// RESOURCE_EXHAUSTED is in the table as Exhausted, whether a message was over
+// the size limit or the server had too many streams open: either way the
+// request was well formed, and sending less or later is what helps.
 func Kind(code connect.Code) fault.Kind {
 	for _, p := range pairs {
 		if p.code == code {

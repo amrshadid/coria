@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"log/slog"
+	"sync"
+	"time"
 
 	connect "connectrpc.com/connect/v2"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/registry"
+	"github.com/amrshadid/magnetar/internal/secret"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -25,7 +28,8 @@ const RequestIDHeader = "Magnetar-Request-Id"
 // says it tells nothing about the cause, which is in the log.
 const internalMessage = "internal error"
 
-// Config is what New needs. Every field but Log is required.
+// Config is what New needs. Access, Registry, Master, NewID and Keys are
+// required; every other field has a default.
 type Config struct {
 	// Access is the access package: keys and grants are changed through it,
 	// and reads are recorded through its audit writer.
@@ -49,11 +53,27 @@ type Config struct {
 	// table with definitions of its own added, so no setting made for tests
 	// ships.
 	Settings *settings.Table
+	// Keys is the installation key file. An S3 storage's secret access key
+	// is sealed with it, bound to the storage, before it reaches the
+	// tenant's store, and opened with it only to test the storage.
+	Keys *secret.Keys
+	// Now is the server's clock, which the time of every change made
+	// through the tenant's store is read from. Nil is time.Now.
+	Now func() time.Time
+	// Receivers answers a receiver's health. Nil answers every receiver
+	// down, as a server that runs none (notStarted).
+	Receivers Receivers
+	// Incoming removes files from the incoming area after a discard or a
+	// rejection is recorded. Nil removes nothing and leaves them to the
+	// reception pipeline (leaveForPipeline).
+	Incoming Incoming
+	// Headers reads a quarantined file's header. Nil reads none (noHeaders).
+	Headers Headers
 }
 
-// Handlers is the four services of the contract, each an implementation of
-// the generated Connect handler interface, ready to register on a
-// connect.Server behind the server's access check.
+// Handlers is the services of the contract this package serves, each an
+// implementation of the generated Connect handler interface, ready to
+// register on a connect.Server behind the server's access check.
 type Handlers struct {
 	// Tenants is TenantService.
 	Tenants magnetarv1connect.TenantServiceHandler
@@ -63,13 +83,21 @@ type Handlers struct {
 	Settings magnetarv1connect.SettingsServiceHandler
 	// Audit is AuditService.
 	Audit magnetarv1connect.AuditServiceHandler
+	// Storages is StorageService.
+	Storages magnetarv1connect.StorageServiceHandler
+	// Receivers is ReceiverService.
+	Receivers magnetarv1connect.ReceiverServiceHandler
+	// Receptions is ReceptionService.
+	Receptions magnetarv1connect.ReceptionServiceHandler
+	// Quarantine is QuarantineService.
+	Quarantine magnetarv1connect.QuarantineServiceHandler
 }
 
-// New returns the four services over cfg. It fails as Internal when a
-// required field is missing.
+// New returns the services over cfg. It fails as Internal when a required
+// field is missing.
 func New(cfg Config) (Handlers, error) {
-	if cfg.Access == nil || cfg.Registry == nil || cfg.Master == nil || cfg.NewID == nil {
-		return Handlers{}, fault.New(fault.Internal, "api: the access package, the registry, the master and an id source are required")
+	if cfg.Access == nil || cfg.Registry == nil || cfg.Master == nil || cfg.NewID == nil || cfg.Keys == nil {
+		return Handlers{}, fault.New(fault.Internal, "api: the access package, the registry, the master, an id source and the installation key file are required")
 	}
 	log := cfg.Log
 	if log == nil {
@@ -79,21 +107,44 @@ func New(cfg Config) (Handlers, error) {
 	if known == nil {
 		known = settings.MustBuiltin()
 	}
-	c := &core{access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known}
+	c := &core{
+		access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known,
+		keys: cfg.Keys, now: cfg.Now, receivers: cfg.Receivers, incoming: cfg.Incoming, headers: cfg.Headers,
+	}
+	if c.now == nil {
+		c.now = time.Now
+	}
+	if c.receivers == nil {
+		c.receivers = notStarted{}
+	}
+	if c.incoming == nil {
+		c.incoming = leaveForPipeline{}
+	}
+	if c.headers == nil {
+		c.headers = noHeaders{}
+	}
 	return Handlers{
-		Tenants:  tenantService{c},
-		Access:   accessService{c},
-		Settings: settingsService{c},
-		Audit:    auditService{c},
+		Tenants:    tenantService{c},
+		Access:     accessService{c},
+		Settings:   settingsService{c},
+		Audit:      auditService{c},
+		Storages:   storageService{c},
+		Receivers:  receiverService{c},
+		Receptions: receptionService{c},
+		Quarantine: quarantineService{c},
 	}, nil
 }
 
-// Register registers the four services on srv.
+// Register registers the services on srv.
 func (h Handlers) Register(srv *connect.Server) {
 	magnetarv1connect.RegisterTenantServiceHandler(srv, h.Tenants)
 	magnetarv1connect.RegisterAccessServiceHandler(srv, h.Access)
 	magnetarv1connect.RegisterSettingsServiceHandler(srv, h.Settings)
 	magnetarv1connect.RegisterAuditServiceHandler(srv, h.Audit)
+	magnetarv1connect.RegisterStorageServiceHandler(srv, h.Storages)
+	magnetarv1connect.RegisterReceiverServiceHandler(srv, h.Receivers)
+	magnetarv1connect.RegisterReceptionServiceHandler(srv, h.Receptions)
+	magnetarv1connect.RegisterQuarantineServiceHandler(srv, h.Quarantine)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only
@@ -131,6 +182,24 @@ type core struct {
 	log    *slog.Logger
 	// settings is the list of settings the server knows.
 	settings *settings.Table
+	// keys seals and opens an S3 storage's secret access key.
+	keys *secret.Keys
+	// now is the server's clock.
+	now func() time.Time
+	// receivers answers a receiver's health.
+	receivers Receivers
+	// incoming removes files from the incoming area.
+	incoming Incoming
+	// headers reads a quarantined file's header.
+	headers Headers
+	// places orders the changes that depend on where the installation lets
+	// data go (its roots, endpoints, ports and bind addresses) against the
+	// changes of those settings: a storage or a receiver is checked and
+	// stored under a read lock, a setting that could take away what one
+	// uses is checked and stored under the write lock, so neither passes the
+	// other unseen. One process serves an installation (the lock on its
+	// data directory), so a lock in memory is enough.
+	places sync.RWMutex
 }
 
 // decision returns the request's Decision. A request without one reached the
@@ -284,6 +353,12 @@ const reroutedValue = "the tenant's database is not ready; written to the instal
 // before it unregisters the store, and a creation writes the row before it
 // registers one, so a row that still has the checked id means the store read
 // before it was that tenant's too.
+//
+// A request whose requirement was admin on the installation, though it names
+// a tenant (a change of a setting the installation sets on each tenant), has
+// no tenant in its Decision: its caller may act on every tenant, so the
+// tenant that holds the name now is the one it acts on, and one that holds
+// none is answered NotFound, as to any caller who may list every tenant.
 func (c *core) tenantStore(ctx context.Context, d access.Decision, name string) (tenant.Store, error) {
 	st, serr := c.reg.Store(name)
 	if fault.KindOf(serr) == fault.NotFound {
@@ -296,6 +371,8 @@ func (c *core) tenantStore(ctx context.Context, d access.Decision, name string) 
 		return nil, noTenant(d)
 	case err != nil:
 		return nil, err
+	case !ok && d.Principal().Role(master.Installation).Includes(master.RoleAdmin):
+		return st, serr
 	case !ok || row.ID != ref.ID:
 		return nil, noTenant(d)
 	}

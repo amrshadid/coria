@@ -15,8 +15,4 @@
 #
 # A line is removed in the change that serves its service; the tests fail
 # until it is.
-magnetar.v1.StorageService
-magnetar.v1.ReceiverService
-magnetar.v1.ReceptionService
-magnetar.v1.QuarantineService
 magnetar.v1.MonitorService

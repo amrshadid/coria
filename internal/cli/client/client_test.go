@@ -285,14 +285,16 @@ func TestDeadline(t *testing.T) {
 // the real transport: the kind each gets, and the request id in the message.
 func TestForcedCodes(t *testing.T) {
 	cases := map[connect.Code]fault.Kind{
-		connect.CodeInvalidArgument:   fault.Invalid,
-		connect.CodeUnauthenticated:   fault.Unauthenticated,
-		connect.CodePermissionDenied:  fault.Denied,
-		connect.CodeNotFound:          fault.NotFound,
-		connect.CodeAlreadyExists:     fault.Conflict,
-		connect.CodeUnavailable:       fault.Unavailable,
-		connect.CodeInternal:          fault.Internal,
-		connect.CodeResourceExhausted: fault.Internal,
+		connect.CodeInvalidArgument:    fault.Invalid,
+		connect.CodeUnauthenticated:    fault.Unauthenticated,
+		connect.CodePermissionDenied:   fault.Denied,
+		connect.CodeNotFound:           fault.NotFound,
+		connect.CodeAlreadyExists:      fault.Conflict,
+		connect.CodeUnavailable:        fault.Unavailable,
+		connect.CodeInternal:           fault.Internal,
+		connect.CodeResourceExhausted:  fault.Exhausted,
+		connect.CodeFailedPrecondition: fault.Precondition,
+		connect.CodeOutOfRange:         fault.OutOfRange,
 	}
 	for code, kind := range cases {
 		fake := fakeserver.New()

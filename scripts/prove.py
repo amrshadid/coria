@@ -211,6 +211,10 @@ def tenant_requests(tenant):
         ("magnetar.v1.TenantService", "GetTenant", "magnetar/v1/tenant.proto", {"name": tenant}, pb_string(1, tenant)),
         ("magnetar.v1.SettingsService", "ListSettings", "magnetar/v1/settings.proto", {"scope": {"tenant": tenant}}, scope),
         ("magnetar.v1.AuditService", "ListAuditEntries", "magnetar/v1/audit.proto", {"scope": {"tenant": tenant}}, scope),
+        ("magnetar.v1.StorageService", "ListStorages", "magnetar/v1/storage.proto", {"tenant": tenant}, pb_string(1, tenant)),
+        ("magnetar.v1.ReceiverService", "ListReceivers", "magnetar/v1/receiver.proto", {"tenant": tenant}, pb_string(1, tenant)),
+        ("magnetar.v1.ReceptionService", "ListReceptions", "magnetar/v1/reception.proto", {"tenant": tenant}, pb_string(1, tenant)),
+        ("magnetar.v1.QuarantineService", "ListQuarantinedFiles", "magnetar/v1/quarantine.proto", {"tenant": tenant}, pb_string(1, tenant)),
     ]
 
 
@@ -649,8 +653,8 @@ def matrix(work, cl, methods, unserved, keys, args):
     if listed:
         print("     | " + "\n     | ".join(listed))
     kind_check("4.7 no grant on a tenant = no such tenant, byte for byte", "tenant-denied",
-               "reader of one tenant asks for %s (exists) and %s (does not): GetTenant, ListSettings, ListAuditEntries x 3 clients, one answer per client"
-               % (args.pg_tenant, args.missing_tenant))
+               "reader of one tenant asks for %s (exists) and %s (does not): %s x 3 clients, one answer per client"
+               % (args.pg_tenant, args.missing_tenant, ", ".join(r[1] for r in tenant_requests(args.missing_tenant))))
     # The denial for a tenant must also be the very answer of "no grant" on
     # the same method (GetTenant), not merely the same code.
     same = True

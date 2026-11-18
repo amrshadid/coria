@@ -6,14 +6,13 @@ import (
 	"time"
 )
 
-// TestBuiltin guards the built-in list: it is a valid table, and its one
-// setting, the key's default lifetime, is installation-only with a default
-// of 90 days.
+// TestBuiltin guards the built-in list: it is a valid table, the key's
+// default lifetime is installation-only with a default of 90 days, and each
+// setting the reception pipeline reads has the kind, the default and the
+// scope the API contract gives it (storage.proto, receiver.proto,
+// monitor.proto, and the walk-through's table of settings).
 func TestBuiltin(t *testing.T) {
 	tab := MustBuiltin()
-	if got := tab.Names(); len(got) != 1 || got[0] != KeyDefaultLifetime {
-		t.Fatalf("names %v", got)
-	}
 	d, ok := tab.Lookup(KeyDefaultLifetime)
 	if !ok || d.TenantOverride {
 		t.Fatalf("%+v %v", d, ok)
@@ -23,6 +22,33 @@ func TestBuiltin(t *testing.T) {
 	}
 	if _, ok := tab.Lookup("no.such"); ok {
 		t.Error("an unknown name is found")
+	}
+	want := map[string]struct {
+		kind       Kind
+		def        string
+		tenantOnly bool
+	}{
+		KeyDefaultLifetime:    {InstallationOnly, "90d", false},
+		StorageDirectoryRoots: {InstallationOnly, "", false},
+		StorageS3Endpoints:    {InstallationOnly, "", false},
+		StorageReserve:        {InstallationOnly, "10%,10GiB", false},
+		ReceiverPorts:         {SetByInstallation, "", true},
+		ReceiverBindAddresses: {InstallationOnly, "", false},
+		IncomingLimit:         {SetByInstallation, "0", false},
+		EventsRetention:       {Ordinary, "90d", false},
+	}
+	if got := tab.Names(); len(got) != len(want) {
+		t.Errorf("names %v, want the %d this test knows", got, len(want))
+	}
+	for name, w := range want {
+		d, ok := tab.Lookup(name)
+		if !ok {
+			t.Errorf("%s is not built in", name)
+			continue
+		}
+		if d.Kind() != w.kind || d.Default != w.def || d.TenantOnly != w.tenantOnly {
+			t.Errorf("%s: kind %v, default %q, tenant only %v; want %v, %q, %v", name, d.Kind(), d.Default, d.TenantOnly, w.kind, w.def, w.tenantOnly)
+		}
 	}
 }
 
@@ -54,6 +80,8 @@ func TestNewRefusesMistakes(t *testing.T) {
 		"no rule":     {{Name: "a"}},
 		"bad default": {{Name: "a", Validate: no}},
 		"reserved":    {{Name: ReservedPrefix + "x", Validate: ok}},
+		"set by the installation without a tenant value": {{Name: "a", Validate: ok, TenantSetByInstallation: true}},
+		"tenant only, set by its own admin":              {{Name: "a", Validate: ok, TenantOverride: true, TenantOnly: true}},
 	} {
 		if _, err := New(defs...); err == nil {
 			t.Errorf("%s: accepted", name)

@@ -403,7 +403,16 @@ func TestSettingCommands(t *testing.T) {
 	expect(t, r.run("setting", "list", "--tenant", "lab1"), 0,
 		"NAME            VALUE  FROM\ntest.retention  90d    tenant lab1 (override)\n", "")
 	expect(t, r.run("setting", "list"), 0,
-		"NAME                  VALUE  FROM\nkey.default-lifetime  90d    built-in default\ntest.retention        400d   installation\n", "")
+		"NAME                     VALUE      FROM\n"+
+			"events.retention         90d        built-in default\n"+
+			"incoming.limit           0          built-in default\n"+
+			"key.default-lifetime     90d        built-in default\n"+
+			"receiver.bind-addresses             built-in default\n"+
+			"receiver.ports                      built-in default\n"+
+			"storage.directory-roots             built-in default\n"+
+			"storage.reserve          10%,10GiB  built-in default\n"+
+			"storage.s3-endpoints                built-in default\n"+
+			"test.retention           400d       installation\n", "")
 	expect(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1"), 0,
 		"tenant lab1 has no override of test.retention; now applies: 400d (installation)\n", "")
 	expect(t, r.run("setting", "list", "--tenant", "lab1"), 0, "NAME  VALUE  FROM\n", "")
@@ -415,7 +424,7 @@ func TestSettingCommands(t *testing.T) {
 		t.Errorf("get --json: %v", doc)
 	}
 	document(t, r.run("setting", "set", "key.default-lifetime", "30d", "--json"))
-	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 2 {
+	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 9 {
 		t.Errorf("list --json: %v", ss)
 	}
 	document(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1", "--json"))

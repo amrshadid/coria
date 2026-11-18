@@ -269,7 +269,13 @@ FUZZ_TARGETS := \
 	internal/access:FuzzCheckSQLite \
 	internal/secret:FuzzOpen \
 	internal/secret:FuzzParseAPIKey \
-	internal/secret:FuzzParseKeyFile
+	internal/secret:FuzzParseKeyFile \
+	internal/core/settings:FuzzParsePorts \
+	internal/core/settings:FuzzParseSize \
+	internal/core/settings:FuzzParseReserve \
+	internal/core/settings:FuzzParseDirectoryRoots \
+	internal/core/settings:FuzzParseS3Endpoints \
+	internal/core/settings:FuzzParseBindAddresses
 
 fuzz:
 	@set -e; for target in $(FUZZ_TARGETS); do \

@@ -18,10 +18,10 @@ import (
 	"github.com/amrshadid/magnetar/internal/registry"
 )
 
-// everyMethod returns one call of each method of the four services, each
-// with a request that would succeed for the local operator on the fixture.
+// everyMethod returns one call of each method of the services, each with a
+// request the local operator may make on the fixture.
 func everyMethod(f *fixture) map[string]func(clients) outcome {
-	return map[string]func(clients) outcome{
+	m := map[string]func(clients) outcome{
 		"CreateKey": createKey(&v1.CreateKeyRequest{Holder: "a"}),
 		"GetKey":    func(c clients) outcome { return call(c.access.GetKey, &v1.GetKeyRequest{Id: f.noGrantID}) },
 		"ListKeys":  func(c clients) outcome { return call(c.access.ListKeys, &v1.ListKeysRequest{}) },
@@ -52,6 +52,70 @@ func everyMethod(f *fixture) map[string]func(clients) outcome {
 		},
 		"ListAuditEntries": func(c clients) outcome {
 			return call(c.audit.ListAuditEntries, &v1.ListAuditEntriesRequest{Scope: installation()})
+		},
+	}
+	for name, call := range tenantMethods("lab1") {
+		m[name] = call
+	}
+	return m
+}
+
+// tenantMethods returns one call of each method of the four services that
+// act inside one tenant, into the tenant named name.
+func tenantMethods(name string) map[string]func(clients) outcome {
+	return map[string]func(clients) outcome{
+		"AddStorage": addStorage(name, dirStorage("main", "fast", "mri")),
+		"GetStorage": func(c clients) outcome {
+			return call(c.storages.GetStorage, &v1.GetStorageRequest{Tenant: name, Name: "main"})
+		},
+		"ListStorages": func(c clients) outcome {
+			return call(c.storages.ListStorages, &v1.ListStoragesRequest{Tenant: name})
+		},
+		"SetStorage": func(c clients) outcome {
+			return call(c.storages.SetStorage, &v1.SetStorageRequest{Tenant: name, Storage: &v1.Storage{Name: "main"}, UpdateMask: mask("capacity_bytes")})
+		},
+		"RemoveStorage": func(c clients) outcome {
+			return call(c.storages.RemoveStorage, &v1.RemoveStorageRequest{Tenant: name, Name: "main"})
+		},
+		"TestStorage": func(c clients) outcome {
+			return call(c.storages.TestStorage, &v1.TestStorageRequest{Tenant: name, Name: "main"})
+		},
+		"AddReceiver": addReceiver(name, dimseReceiver("scanner1", "main", 11112)),
+		"GetReceiver": func(c clients) outcome {
+			return call(c.receivers.GetReceiver, &v1.GetReceiverRequest{Tenant: name, Name: "scanner1"})
+		},
+		"ListReceivers": func(c clients) outcome {
+			return call(c.receivers.ListReceivers, &v1.ListReceiversRequest{Tenant: name})
+		},
+		"SetReceiver": func(c clients) outcome {
+			return call(c.receivers.SetReceiver, &v1.SetReceiverRequest{Tenant: name, Receiver: &v1.Receiver{Name: "scanner1", Enabled: true}, UpdateMask: mask("enabled")})
+		},
+		"RemoveReceiver": func(c clients) outcome {
+			return call(c.receivers.RemoveReceiver, &v1.RemoveReceiverRequest{Tenant: name, Name: "scanner1"})
+		},
+		"ListReceptions": func(c clients) outcome {
+			return call(c.receptions.ListReceptions, &v1.ListReceptionsRequest{Tenant: name})
+		},
+		"GetReception": func(c clients) outcome {
+			return call(c.receptions.GetReception, &v1.GetReceptionRequest{Tenant: name, Id: "r1"})
+		},
+		"RetryReception": func(c clients) outcome {
+			return call(c.receptions.RetryReception, &v1.RetryReceptionRequest{Tenant: name, Id: "r1"})
+		},
+		"DiscardReception": func(c clients) outcome {
+			return call(c.receptions.DiscardReception, &v1.DiscardReceptionRequest{Tenant: name, Id: "r1", Reason: "x"})
+		},
+		"ListQuarantinedFiles": func(c clients) outcome {
+			return call(c.quarantine.ListQuarantinedFiles, &v1.ListQuarantinedFilesRequest{Tenant: name})
+		},
+		"GetQuarantinedFile": func(c clients) outcome {
+			return call(c.quarantine.GetQuarantinedFile, &v1.GetQuarantinedFileRequest{Tenant: name, Id: "q1"})
+		},
+		"ReleaseQuarantinedFile": func(c clients) outcome {
+			return call(c.quarantine.ReleaseQuarantinedFile, &v1.ReleaseQuarantinedFileRequest{Tenant: name, Id: "q1", Mode: v1.ReleaseMode_RELEASE_MODE_AS_IS})
+		},
+		"RejectQuarantinedFile": func(c clients) outcome {
+			return call(c.quarantine.RejectQuarantinedFile, &v1.RejectQuarantinedFileRequest{Tenant: name, Id: "q1", Reason: "x"})
 		},
 	}
 }
@@ -137,6 +201,9 @@ func TestLaterLookupDoesNotUndoTheAccessRule(t *testing.T) {
 		"ListAuditEntries": func(c clients) outcome {
 			return call(c.audit.ListAuditEntries, &v1.ListAuditEntriesRequest{Scope: tenantScope("ghost")})
 		},
+	}
+	for name, m := range tenantMethods("ghost") {
+		calls[name] = m
 	}
 	for name, m := range calls {
 		if o := m(f.as(admin)); o.code() != connect.CodePermissionDenied || o.message() != access.MessageDenied {

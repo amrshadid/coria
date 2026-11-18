@@ -141,7 +141,9 @@ func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingReque
 // holds the setting's name and scope, never its value. The caller's key is
 // checked again as the change is made: in the master's transaction for the
 // installation, and for a tenant, whose database holds no keys, by the
-// master from inside the tenant's transaction (adminGuard).
+// master from inside the tenant's transaction (adminGuard). A value of a
+// setting that says where data may go is checked against what every
+// tenant's storages and receivers use (takenAway).
 func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingRequest) (*v1.SetSettingResponse, error) {
 	c := s.c
 	d, err := c.changing(ctx, magnetarv1connect.SettingsServiceSetSettingProcedure)
@@ -160,40 +162,107 @@ func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingReque
 	if err != nil {
 		return nil, err
 	}
+	facts := access.Facts{TenantName: scope.Tenant}
 	name, value := in.GetName(), in.GetValue()
-	if err := settingName("setting.name", name); err != nil {
-		return nil, c.failIn(d, st, err)
-	}
-	if err := text("setting.value", value, 0, master.MaxSettingValueLength); err != nil {
-		return nil, c.failIn(d, st, err)
-	}
-	def, err := c.definition(name)
+	def, err := c.settingToChange(d, scope, "setting", name, &value)
 	if err != nil {
-		return nil, c.failIn(d, st, err)
-	}
-	if err := tenantScoped("setting.scope", scope, def); err != nil {
-		return nil, c.failIn(d, st, err)
+		return nil, c.failWith(d, refusalSink(err, st), facts, err)
 	}
 	if err := def.Validate(value); err != nil {
-		return nil, c.failIn(d, st, invalid("setting.value", err.Error()))
+		return nil, c.failWith(d, st, facts, invalid("setting.value", err.Error()))
 	}
-	entry := d.Entry(master.OutcomeDone, "", access.Facts{})
+	if err := checkSettingValue("setting.value", name, value); err != nil {
+		return nil, c.failWith(d, st, facts, err)
+	}
+	if placeSettings[name] {
+		c.places.Lock()
+		defer c.places.Unlock()
+		if err := c.takenAway(ctx, scope, name, value); err != nil {
+			return nil, c.failWith(d, st, facts, err)
+		}
+	}
+	entry := d.Entry(master.OutcomeDone, "", facts)
 	if st == nil {
 		if err := c.master.SetSetting(ctx, name, value, entry, d.Actor(master.Installation, master.RoleAdmin)); err != nil {
 			return nil, c.fail(d, err)
 		}
 		return &v1.SetSettingResponse{Setting: settingMessage(name, scope, value, v1.SettingSource_SETTING_SOURCE_INSTALLATION)}, nil
 	}
-	if err := st.SetSetting(ctx, name, value, entry, c.adminGuard(d)); err != nil {
-		return nil, c.failIn(d, st, err)
+	if err := st.SetSetting(ctx, name, value, entry, c.settingGuard(d, def)); err != nil {
+		return nil, c.failWith(d, st, facts, err)
 	}
 	return &v1.SetSettingResponse{Setting: settingMessage(name, scope, value, v1.SettingSource_SETTING_SOURCE_TENANT)}, nil
+}
+
+// settingToChange returns the definition of the setting a change names,
+// after the checks every change of a setting makes, in the contract's
+// order: the name; a value, when value is not nil, within the bound every
+// setting has; a setting the server knows; a scope the setting takes (a
+// tenant only when it allows an override, the installation only when it
+// has a value there); and, for a setting the installation's admin alone
+// sets on a tenant, a caller who is that admin. prefix is the request's
+// field that holds the name, "" when the name is a field of its own.
+func (c *core) settingToChange(d access.Decision, scope access.Scope, prefix, name string, value *string) (settings.Definition, error) {
+	field := func(f string) string {
+		if prefix == "" {
+			return f
+		}
+		return prefix + "." + f
+	}
+	if err := settingName(field("name"), name); err != nil {
+		return settings.Definition{}, err
+	}
+	if value != nil {
+		if err := text(field("value"), *value, 0, master.MaxSettingValueLength); err != nil {
+			return settings.Definition{}, err
+		}
+	}
+	def, err := c.definition(name)
+	if err != nil {
+		return settings.Definition{}, err
+	}
+	if err := tenantScoped(field("scope"), scope, def); err != nil {
+		return settings.Definition{}, err
+	}
+	if scope.IsInstallation() && def.TenantOnly {
+		return settings.Definition{}, invalid(field("scope"), "is a tenant: "+name+" has no installation value")
+	}
+	if def.TenantSetByInstallation && !d.Principal().Role(master.Installation).Includes(master.RoleAdmin) {
+		// The table asks this of the request before the handler runs; this
+		// holds the handler to it too, should the two lists of settings
+		// ever differ.
+		return settings.Definition{}, fault.New(fault.Denied, access.MessageDenied)
+	}
+	return def, nil
+}
+
+// refusalSink returns the log a failure of a setting's change is recorded
+// in: a refusal in the installation's, as every refusal is, and anything
+// else in the log of the scope, st.
+func refusalSink(err error, st tenant.Store) tenant.Store {
+	if fault.KindOf(err) == fault.Denied {
+		return nil
+	}
+	return st
+}
+
+// settingGuard returns the check a change of a tenant's value of def makes
+// of its caller: admin on the installation for a setting only the
+// installation's admin sets on a tenant, and otherwise admin on the tenant
+// (adminGuard).
+func (c *core) settingGuard(d access.Decision, def settings.Definition) tenant.Guard {
+	if def.TenantSetByInstallation {
+		by := d.Actor(master.Installation, master.RoleAdmin)
+		return func(ctx context.Context) error { return c.master.CheckActor(ctx, by) }
+	}
+	return c.adminGuard(d)
 }
 
 // UnsetSetting removes a value set on a scope and answers what applies there
 // again: for a tenant, what applies on the installation; for the
 // installation, the built-in default. Removing a value that is not set
-// succeeds.
+// succeeds. Removing a value that a tenant's storage or receiver uses is
+// refused, as setting one that leaves it out is.
 func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error) {
 	c := s.c
 	d, err := c.changing(ctx, magnetarv1connect.SettingsServiceUnsetSettingProcedure)
@@ -208,26 +277,34 @@ func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingR
 	if err != nil {
 		return nil, err
 	}
+	facts := access.Facts{TenantName: scope.Tenant}
 	name := req.GetName()
-	if err := settingName("name", name); err != nil {
-		return nil, c.failIn(d, st, err)
-	}
-	def, err := c.definition(name)
+	def, err := c.settingToChange(d, scope, "", name, nil)
 	if err != nil {
-		return nil, c.failIn(d, st, err)
+		return nil, c.failWith(d, refusalSink(err, st), facts, err)
 	}
-	if err := tenantScoped("scope", scope, def); err != nil {
-		return nil, c.failIn(d, st, err)
+	if placeSettings[name] {
+		c.places.Lock()
+		defer c.places.Unlock()
+		after := def.Default
+		if !scope.IsInstallation() && !def.TenantOnly {
+			if after, err = c.installationValue(ctx, name); err != nil {
+				return nil, c.failWith(d, st, facts, err)
+			}
+		}
+		if err := c.takenAway(ctx, scope, name, after); err != nil {
+			return nil, c.failWith(d, st, facts, err)
+		}
 	}
-	entry := d.Entry(master.OutcomeDone, "", access.Facts{})
+	entry := d.Entry(master.OutcomeDone, "", facts)
 	if st == nil {
 		if _, err := c.master.UnsetSetting(ctx, name, entry, d.Actor(master.Installation, master.RoleAdmin)); err != nil {
 			return nil, c.fail(d, err)
 		}
 		return &v1.UnsetSettingResponse{Setting: settingMessage(name, scope, def.Default, v1.SettingSource_SETTING_SOURCE_BUILT_IN)}, nil
 	}
-	if _, err := st.UnsetSetting(ctx, name, entry, c.adminGuard(d)); err != nil {
-		return nil, c.failIn(d, st, err)
+	if _, err := st.UnsetSetting(ctx, name, entry, c.settingGuard(d, def)); err != nil {
+		return nil, c.failWith(d, st, facts, err)
 	}
 	// The override is gone and its entry written; what applies now is read
 	// for the answer. If that read fails the caller is told so, and may

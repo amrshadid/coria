@@ -39,15 +39,38 @@ var methodTests = map[string]func(t *testing.T){
 	magnetarv1connect.SettingsServiceUnsetSettingProcedure:  testUnsetSetting,
 	magnetarv1connect.SettingsServiceListSettingsProcedure:  testListSettings,
 	magnetarv1connect.AuditServiceListAuditEntriesProcedure: testListAuditEntries,
+
+	magnetarv1connect.StorageServiceAddStorageProcedure:                testAddStorage,
+	magnetarv1connect.StorageServiceGetStorageProcedure:                testGetStorage,
+	magnetarv1connect.StorageServiceListStoragesProcedure:              testListStorages,
+	magnetarv1connect.StorageServiceSetStorageProcedure:                testSetStorage,
+	magnetarv1connect.StorageServiceRemoveStorageProcedure:             testRemoveStorage,
+	magnetarv1connect.StorageServiceTestStorageProcedure:               testTestStorage,
+	magnetarv1connect.ReceiverServiceAddReceiverProcedure:              testAddReceiver,
+	magnetarv1connect.ReceiverServiceGetReceiverProcedure:              testGetReceiver,
+	magnetarv1connect.ReceiverServiceListReceiversProcedure:            testListReceivers,
+	magnetarv1connect.ReceiverServiceSetReceiverProcedure:              testSetReceiver,
+	magnetarv1connect.ReceiverServiceRemoveReceiverProcedure:           testRemoveReceiver,
+	magnetarv1connect.ReceptionServiceListReceptionsProcedure:          testListReceptions,
+	magnetarv1connect.ReceptionServiceGetReceptionProcedure:            testGetReception,
+	magnetarv1connect.ReceptionServiceRetryReceptionProcedure:          testRetryReception,
+	magnetarv1connect.ReceptionServiceDiscardReceptionProcedure:        testDiscardReception,
+	magnetarv1connect.QuarantineServiceListQuarantinedFilesProcedure:   testListQuarantinedFiles,
+	magnetarv1connect.QuarantineServiceGetQuarantinedFileProcedure:     testGetQuarantinedFile,
+	magnetarv1connect.QuarantineServiceReleaseQuarantinedFileProcedure: testReleaseQuarantinedFile,
+	magnetarv1connect.QuarantineServiceRejectQuarantinedFileProcedure:  testRejectQuarantinedFile,
 }
 
 // contractMethods returns the full procedure name and descriptor of every
-// method of the four services, read from the generated descriptors.
+// method of the services this package serves, read from the generated
+// descriptors.
 func contractMethods() map[string]protoreflect.MethodDescriptor {
 	out := map[string]protoreflect.MethodDescriptor{}
 	for _, f := range []protoreflect.FileDescriptor{
 		v1.File_magnetar_v1_access_proto, v1.File_magnetar_v1_tenant_proto,
 		v1.File_magnetar_v1_settings_proto, v1.File_magnetar_v1_audit_proto,
+		v1.File_magnetar_v1_storage_proto, v1.File_magnetar_v1_receiver_proto,
+		v1.File_magnetar_v1_reception_proto, v1.File_magnetar_v1_quarantine_proto,
 	} {
 		for i := 0; i < f.Services().Len(); i++ {
 			s := f.Services().Get(i)
@@ -61,14 +84,14 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 }
 
 // TestEveryMethod guards the link between the contract and this package:
-// every method of the four services is known to api.Methods, answers a
+// every method of the services it serves is known to api.Methods, answers a
 // requirement that is not the zero one, has the right request type when it
 // reads the request, and has a test table here, which it runs; and nothing
 // here names a method the contract does not have.
 func TestEveryMethod(t *testing.T) {
 	methods := contractMethods()
-	if len(methods) != 17 {
-		t.Errorf("the contract has %d methods; this test was written for 17, so look at what changed", len(methods))
+	if len(methods) != 36 {
+		t.Errorf("the contract has %d methods; this test was written for 36, so look at what changed", len(methods))
 	}
 	var table api.Methods
 	for proc, md := range methods {
