@@ -66,5 +66,35 @@ All notable changes to Magnetar are written here. The form is
   `log/slog` or `encoding/json`, shows no key material.
 - `make lint` also lints for Windows and macOS, so files built for one system
   only are linted in CI.
+- The binary had a version command and nothing that could use the API, so a
+  person had no way to make a tenant or a key without writing a client. It now
+  has the single commands of the command line, built with cobra and written
+  only as a client of the API: `tenant create|list|show|remove`,
+  `key create|list|show|revoke`, `grant set|list|remove`, `setting
+  get|set|unset|list`, `audit list`, `whoami` and `version`, with `--help` and
+  shell completion. They reach the server on the local socket in the data
+  directory (`--data-dir`, `MAGNETAR_DATA_DIR`) or on the network over TLS
+  (`--server`, `MAGNETAR_SERVER`) with the key read from `MAGNETAR_KEY` or
+  `--key-file`, which must name a file only its owner can open; no flag takes a
+  key, a password or a database address, the filters that take a key's public
+  id are `--key-id`, and `http://` is refused for any host that is not
+  loopback. TLS is 1.2 or later, and `--ca-file` (or `MAGNETAR_CA_FILE`) names
+  the authorities to trust for `--server` in place of the system's, for an
+  institution with a private authority. Output is a table
+  for a person, or with `--json` one document that starts with
+  `"schemaVersion": 1`, checked by Python's `json` module in CI. An error is
+  one line on standard error with the server's message and request id, and the
+  exit code is 0 done, 1 failed, 2 wrong usage, 3 refused, 4 not found, from
+  the kind of the error through one table of API codes in `internal/api/codes`;
+  a code the contract names no kind for (a message over the size limit, one a
+  newer server adds) is a failure, exit 1.
+  `tenant remove` sends nothing without `--yes`. Lists fetch up to `--limit`
+  (100) items and say when more exist, or every item with `--all`. A new key is
+  written alone on its line on standard output and never again. The commands
+  are tested against an in-memory server built from the generated handlers and
+  served over a Unix socket and over TLS, not against a mock of the client.
+  The program grew from 1.6 to 10.2 MiB (linux/amd64: 1.57 to 10.67 MiB), most
+  of it the Connect and protobuf client and `net/http`; cobra and its flag
+  library account for about 0.9 MiB of it.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop

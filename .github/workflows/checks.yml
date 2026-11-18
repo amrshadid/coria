@@ -98,6 +98,15 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -c 'import cryptography; print("cryptography", cryptography.__version__)'
           make check-seal PYTHON="$RUNNER_TEMP/venv/bin/python"
 
+      # The command line's JSON output checked by Python's json module, and
+      # its bash completion script by bash -n. Neither needs more than the
+      # runner has: the script uses only Python's standard library.
+      - name: Outside check, command line JSON parsed by Python
+        run: make check-json PYTHON=python3
+
+      - name: Outside check, bash completion parsed by bash -n
+        run: make check-completion
+
       # Each fuzz target for ten seconds, on one Go only: the inputs it finds
       # do not depend on the Go release, and the minutes are limited.
       - name: Fuzzing, 10 seconds a target
