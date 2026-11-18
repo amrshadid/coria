@@ -415,9 +415,21 @@ func TestFinalNoticeOnClose(t *testing.T) {
 	if got := m.noticed(t); got != 1 {
 		t.Fatalf("the first notice reports %d, want 1", got)
 	}
+	// The queued entry's append also signaled entered, and nobody read it.
+	// Left there, it would let the wait below return before the writer
+	// holds the next entry, so that entry would sit in the queue and all
+	// eleven refusals after it would be dropped: twelve in all, truly
+	// dropped and truly reported, but not what this test sets up.
+	select {
+	case <-entered:
+	default:
+	}
 	refuse(t, a, 1, "m")
-	<-entered
+	<-entered             // the writer holds this entry now, stuck in its append
 	refuse(t, a, 11, "m") // one queued, ten dropped: eleven in all
+	if got := a.AuditStats().DroppedRefusals; got != 11 {
+		t.Fatalf("%d refusals dropped before Close, want 11", got)
+	}
 	close(release)
 	if err := a.Close(context.Background()); err != nil {
 		t.Fatal(err)
