@@ -9,6 +9,7 @@ import (
 	connect "connectrpc.com/connect/v2"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/registry"
@@ -39,8 +40,9 @@ func testCreateTenant(t *testing.T) {
 		{name: "no key", as: nobody, call: createTenant("lab2", sqliteType, ""), code: connect.CodeUnauthenticated},
 		{name: "just below the role", as: f.instOperator, call: createTenant("lab2", sqliteType, ""), code: connect.CodePermissionDenied, audit: refused()},
 		{name: "at the role", as: f.instAdmin, call: createTenant("lab2", sqliteType, ""),
-			audit: &wantAudit{outcome: master.OutcomeDone, tenant: "lab2", object: "tenant/lab2", details: map[string]string{"database_type": "sqlite"}},
+			audit: &wantAudit{outcome: master.OutcomeDone, tenant: "lab2", object: "tenant/lab2", details: map[string]string{"database_type": "sqlite", "new_state": "ready"}},
 			check: func(t *testing.T, o outcome) {
+				checkCreationEntries(t, f, "at the role", o.requestID, master.OutcomeDone)
 				tn := o.res.(*v1.CreateTenantResponse).GetTenant()
 				if tn.GetName() != "lab2" || tn.GetState() != v1.TenantState_TENANT_STATE_READY || tn.GetDatabaseType() != sqliteType || tn.GetCreateTime() == nil || tn.GetStateReason() != "" {
 					t.Errorf("got %v", tn)
@@ -49,10 +51,9 @@ func testCreateTenant(t *testing.T) {
 					t.Errorf("the tenant's file: %v", err)
 				}
 			}},
-		{name: "a name taken", as: f.instAdmin, call: createTenant("lab2", sqliteType, ""), code: connect.CodeAlreadyExists},
-		// A creation the registry refuses before writing anything has no entry
-		// until the registry records a failed creation itself (its fix,
-		// fix/registry-create-audit); this handler must not record it twice.
+		// Refused by the registry before it writes anything, so the handler
+		// records the request itself, once.
+		{name: "a name taken", as: f.instAdmin, call: createTenant("lab2", sqliteType, ""), code: connect.CodeAlreadyExists, audit: failed("exists")},
 		{name: "a name taken, as another type", as: f.instAdmin, call: createTenant("lab2", pgType, address), code: connect.CodeAlreadyExists},
 		{name: "name at 63", as: f.instAdmin, call: createTenant("a"+strings.Repeat("b", 62), sqliteType, "")},
 		{name: "name at 64", as: f.instAdmin, call: createTenant("a"+strings.Repeat("b", 63), sqliteType, ""), code: connect.CodeInvalidArgument, msg: "name", audit: failed("name")},
@@ -107,22 +108,37 @@ func testCreateWholeOrNotAtAll(t *testing.T, f *fixture) {
 		if _, ok := f.registry.State(c.tenant); ok {
 			t.Errorf("%s: the registry holds the tenant", c.name)
 		}
-		// The registry writes the tenant's row with the request's entry, as
-		// done, before it opens the database, and records the undoing in an
-		// entry of its own with no request id; so the request's own entry
-		// says done. Reported; until the access package gives each record a
-		// fresh id, the failed entry this handler records under the same id
-		// is refused as a duplicate.
-		if got := entriesOf(f.masterLog(), o.requestID); len(got) == 0 {
-			t.Errorf("%s: no entry with the request's id", c.name)
+		checkCreationEntries(t, f, c.name, o.requestID, master.OutcomeFailed)
+	}
+}
+
+// checkCreationEntries fails unless the master's log holds, for the request
+// requestID, the request's own CreateTenant entry once, with outcome (and,
+// for a failure, the registry's detail undone), and the registry's system
+// entry for the row it wrote, which names the request's entry.
+func checkCreationEntries(t *testing.T, f *fixture, name, requestID string, outcome master.Outcome) {
+	t.Helper()
+	var own, started []master.AuditEntry
+	for _, en := range entriesOf(f.masterLog(), requestID) {
+		switch en.Method {
+		case magnetarv1connect.TenantServiceCreateTenantProcedure:
+			own = append(own, en)
+		case registry.StartMethod:
+			started = append(started, en)
 		}
-		undone := false
-		for _, en := range f.masterLog() {
-			undone = undone || (en.Method == registry.UndoMethod && en.TenantName == c.tenant)
-		}
-		if !undone {
-			t.Errorf("%s: no entry records the undoing", c.name)
-		}
+	}
+	if len(own) != 1 {
+		t.Errorf("%s: %d entries of the request, want 1", name, len(own))
+		return
+	}
+	if own[0].Outcome != outcome {
+		t.Errorf("%s: the request's entry is %q (%q), want %q", name, own[0].Outcome, own[0].Reason, outcome)
+	}
+	if outcome == master.OutcomeFailed && own[0].Details[registry.DetailUndone] == "" {
+		t.Errorf("%s: the failed request's entry does not say it was undone: %v", name, own[0].Details)
+	}
+	if len(started) != 1 || started[0].Details[registry.DetailRequestEntry] != own[0].ID {
+		t.Errorf("%s: the row's system entries %+v do not name the request's entry %s", name, started, own[0].ID)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/api"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/registry"
 )
 
 // methodTests is the table of tests of each method of the contract, by its
@@ -253,7 +254,14 @@ func (e *env) checkAudit(t *testing.T, name, requestID string, w wantAudit) {
 		e.flush()
 		log = e.tenantLog(w.log)
 	}
-	got := entriesOf(log, requestID)
+	// A system entry that names the request (the registry's record of a
+	// tenant's row being written) is not the request's own.
+	var got []master.AuditEntry
+	for _, en := range entriesOf(log, requestID) {
+		if en.Method != registry.StartMethod {
+			got = append(got, en)
+		}
+	}
 	if len(got) != 1 {
 		t.Errorf("%s: %d entries with request id %s in log %q, want 1", name, len(got), requestID, w.log)
 		return

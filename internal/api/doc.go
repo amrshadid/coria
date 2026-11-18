@@ -36,8 +36,9 @@
 // log, marked access.DetailRerouted. A request that did not complete is
 // recorded with outcome failed and its real cause, in the tenant's log when
 // its store was already in hand and in the installation's log otherwise; a
-// creation of a tenant is the exception, as the registry writes its entry
-// itself. A method whose requirement is fixed learns what its request names
+// creation of a tenant is the exception: the registry writes its entry
+// itself, with the change that settles the creation, except for a creation
+// it refuses before writing anything, which the handler records. A method whose requirement is fixed learns what its request names
 // only after the check, and adds it to its entries as access.Facts.
 //
 // # Errors

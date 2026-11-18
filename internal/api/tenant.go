@@ -71,14 +71,47 @@ func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantReq
 	// The registry seals the address under "tenant/<id>/database" before it
 	// writes the row; the address is in nothing the registry returns, logs or
 	// records. The request's entry is handed to the registry, which writes
-	// it with the creation, or with its undoing when the creation fails; so
-	// a failure the registry answers is not recorded again here.
-	row, err := c.reg.Create(ctx, registry.NewTenant{ID: id, Name: name, Driver: drv, Address: address},
-		d.Entry(master.OutcomeDone, "", facts))
+	// it once with its real outcome: done with the write that makes the
+	// tenant ready, failed with the undoing of a creation whose database
+	// could not be opened. It writes nothing for a creation it refuses
+	// before writing anything (a name taken, an address its driver refuses),
+	// and its error does not say which happened, so that case is found by
+	// looking for the entry, and only then recorded here.
+	entry := d.Entry(master.OutcomeDone, "", facts)
+	row, err := c.reg.Create(ctx, registry.NewTenant{ID: id, Name: name, Driver: drv, Address: address}, entry)
 	if err != nil {
+		if !c.written(ctx, entry) {
+			return nil, c.failWith(d, nil, facts, err)
+		}
 		return nil, c.toAPI(d, err)
 	}
 	return &v1.CreateTenantResponse{Tenant: c.tenantView(row)}, nil
+}
+
+// written reports whether the master's log holds the entry e, by its id,
+// among the entries naming its tenant from its time on: a short read, made
+// only when a creation failed. A log that cannot be read is taken as not
+// holding it, so the failure is recorded rather than lost; at worst it is
+// recorded twice, under two ids.
+func (c *core) written(ctx context.Context, e master.AuditEntry) bool {
+	page := master.Page{Limit: master.MaxPageLimit}
+	filter := master.AuditFilter{TenantName: e.TenantName, Since: e.Time}
+	for range maxGrantPages {
+		entries, next, err := c.master.ListAudit(ctx, filter, page)
+		if err != nil {
+			return false
+		}
+		for _, got := range entries {
+			if got.ID == e.ID {
+				return true
+			}
+		}
+		if next == "" {
+			return false
+		}
+		page.Cursor = next
+	}
+	return false
 }
 
 // GetTenant answers one tenant, whatever its state: its registration from
