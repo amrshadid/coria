@@ -72,6 +72,11 @@ CREATE TABLE grants (
 -- serves the list by key.
 CREATE INDEX grants_by_scope ON grants (scope, key_id);
 
+-- The foreign key's own column. Postgres does not index the referencing side
+-- of a foreign key, so without this every removal of a tenant would read
+-- every grant to check it.
+CREATE INDEX grants_by_tenant ON grants (tenant_id);
+
 CREATE TABLE settings (
     name  text COLLATE "C" NOT NULL,
     value text NOT NULL,
@@ -103,11 +108,13 @@ CREATE TABLE audit (
 );
 
 -- The listings that are indexed, newest first: everything, by time; one
--- tenant's entries, by time; one key's entries, by time. A start and an end
--- time narrow the range read from whichever of the three is used. A filter
--- on the outcome, or on a tenant and a key together (the tenant's index is
--- used), is applied to the rows the index yields, so it costs a scan of
--- that range.
-CREATE INDEX audit_by_time   ON audit (at, id);
-CREATE INDEX audit_by_tenant ON audit (tenant_name, at, id);
-CREATE INDEX audit_by_key    ON audit (key_id, at, id);
+-- tenant's entries, by time; one key's entries, by time; one outcome's
+-- entries, by time, so that a rare outcome ("failed") is found without
+-- reading every entry. A start and an end time narrow the range read from
+-- whichever index is used. Two equality filters together (a tenant and a
+-- key, or either with an outcome) use the index of one of them, chosen by
+-- the planner, and test the other on the rows that index yields.
+CREATE INDEX audit_by_time    ON audit (at, id);
+CREATE INDEX audit_by_tenant  ON audit (tenant_name, at, id);
+CREATE INDEX audit_by_key     ON audit (key_id, at, id);
+CREATE INDEX audit_by_outcome ON audit (outcome, at, id);

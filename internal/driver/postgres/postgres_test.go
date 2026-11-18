@@ -45,7 +45,7 @@ func TestShippedMigrationsUnchanged(t *testing.T) {
 }
 
 // shippedInit is the SHA-256 of 0001_init.sql as this change ships it.
-const shippedInit = "ee279b4a795203e2279e99a24ad1809d1fc5f73698672cce34f66be3ee558a3e"
+const shippedInit = "a0c0e04bee894ac3ae7c2cde630032ce31ed4bc8b53d421e0c7e0a5a483fdbbf"
 
 // TestNotMigrated guards that a store used before Migrate fails as
 // Unavailable with a message that says so, instead of a SQL error.
@@ -339,11 +339,28 @@ func TestStatementCache(t *testing.T) {
 	}
 }
 
+// explain returns the plan Postgres makes for statement with args, run for
+// real (ANALYZE) so the buffers it touched are shown.
+func explain(t *testing.T, conn *pgx.Conn, statement string, args ...any) string {
+	t.Helper()
+	rows, err := conn.Query(context.Background(), `EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF) `+statement, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // TestRequestPathPlans guards that each read on the path of every request is
-// one index lookup: the key by id, the grants by key, the tenant by name. It
-// fills the tables well past the size where a sequential scan would win, runs
-// ANALYZE, and asks Postgres for the plan of the very statements the driver
-// sends; the plans are logged for the pull request.
+// point lookups of an index: the key by id, the key's roles on the
+// installation and a named tenant (RolesFor), the tenant by name; and that
+// every combination of ListAudit's filters reads an index, never the whole
+// table. It fills the tables well past the size where a sequential scan would
+// win, runs ANALYZE, and asks Postgres for the plan of the very statements the
+// driver sends; the plans are logged for the pull request.
 func TestRequestPathPlans(t *testing.T) {
 	ctx := context.Background()
 	address := newSchema(t)
@@ -357,25 +374,64 @@ func TestRequestPathPlans(t *testing.T) {
 		`INSERT INTO tenants (id, name, driver, address, state, state_reason, created) SELECT 't' || n, 'tenant' || n, 'sqlite', '\x01', 'ready', '', now() FROM generate_series(1, 2000) n`,
 		`INSERT INTO grants (key_id, scope, tenant_id, role) SELECT 'Key' || lpad(n::text, 6, '0'), 't' || (n % 2000 + 1), 't' || (n % 2000 + 1), 'reader' FROM generate_series(1, 20000) n`,
 		`INSERT INTO grants (key_id, scope, tenant_id, role) SELECT 'Key' || lpad(n::text, 6, '0'), '', NULL, 'admin' FROM generate_series(1, 20000) n`,
+		// 100,000 audit entries over ten days: 50 tenant names, 1,000 keys,
+		// and outcomes of which "failed" is rare (0.5%) and "done" common.
+		`INSERT INTO audit (id, at, key_id, local_user, remote_addr, method, tenant_name, object, outcome, reason, details, request_id)
+		 SELECT 'a' || lpad(n::text, 7, '0'), timestamptz '2026-11-01' + n * interval '8 seconds', 'Key' || lpad((n % 1000)::text, 6, '0'), '', '', 'M', 'tenant' || (n % 50),
+		        '', CASE WHEN n % 200 = 0 THEN 'failed' WHEN n % 20 = 0 THEN 'refused' ELSE 'done' END, '', '{}', 'r' FROM generate_series(1, 100000) n`,
 		`ANALYZE`)
-	cases := []struct{ name, statement, plan string }{
-		{"key by id", `SELECT ` + keyColumns + ` FROM api_keys WHERE id = 'Key010000'`, "Index Scan using api_keys_pkey"},
-		{"grants by key", `SELECT ` + grantColumns + ` FROM grants WHERE key_id = 'Key010000' ORDER BY scope LIMIT 1001`, "grants_pkey"},
-		{"tenant by name", `SELECT ` + tenantColumns + ` FROM tenants WHERE name = 'tenant1000'`, "Index Scan using tenants_name_key"},
+
+	type planCase struct {
+		name, statement string
+		args            []any
+		want            string // strings, one of which the plan must hold, separated by |
+	}
+	roles := strings.NewReplacer("$1", "'Key010000'", "$2", "'tenant1000'").Replace(rolesForSQL)
+	cases := []planCase{
+		{"key by id", `SELECT ` + keyColumns + ` FROM api_keys WHERE id = 'Key010000'`, nil, "Index Scan using api_keys_pkey"},
+		// Postgres 16 reads the primary key (key_id, scope) with a filter on
+		// the scope; 18 reads the (scope, key_id) index with two exact
+		// searches. Either is point lookups.
+		{"roles for (key, tenant name)", roles, nil, "grants_pkey|grants_by_scope"},
+		{"tenant by name", `SELECT ` + tenantColumns + ` FROM tenants WHERE name = 'tenant1000'`, nil, "Index Scan using tenants_name_key"},
+		{"grants by key, with tenant names", `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = 'Key010000' ORDER BY g.key_id, g.scope LIMIT 1001`, nil, "grants_pkey"},
+		{"grants by tenant (foreign key check)", `SELECT 1 FROM grants WHERE tenant_id = 't1000' LIMIT 1`, nil, "grants_by_tenant"},
+	}
+	since, until := time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 3, 6, 0, 0, 0, time.UTC)
+	after := &auditPosition{at: time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC), id: "a0300000"}
+	audits := []struct {
+		name   string
+		filter master.AuditFilter
+		after  *auditPosition
+		want   string
+	}{
+		{"no filter", master.AuditFilter{}, nil, "audit_by_time"},
+		{"no filter, next page", master.AuditFilter{}, after, "audit_by_time"},
+		{"tenant", master.AuditFilter{TenantName: "tenant7"}, nil, "audit_by_tenant"},
+		{"key", master.AuditFilter{KeyID: "Key000007"}, nil, "audit_by_key"},
+		{"outcome failed", master.AuditFilter{Outcome: master.OutcomeFailed}, nil, "audit_by_outcome"},
+		{"outcome failed, next page", master.AuditFilter{Outcome: master.OutcomeFailed}, after, "audit_by_outcome"},
+		{"time range", master.AuditFilter{Since: since, Until: until}, nil, "audit_by_time"},
+		{"tenant and key", master.AuditFilter{TenantName: "tenant7", KeyID: "Key000007"}, nil, "audit_by_"},
+		{"tenant and outcome", master.AuditFilter{TenantName: "tenant7", Outcome: master.OutcomeFailed}, nil, "audit_by_"},
+		{"key and outcome", master.AuditFilter{KeyID: "Key000007", Outcome: master.OutcomeFailed}, nil, "audit_by_"},
+		{"tenant, key and outcome", master.AuditFilter{TenantName: "tenant7", KeyID: "Key000007", Outcome: master.OutcomeFailed}, nil, "audit_by_"},
+		{"outcome failed and a time range", master.AuditFilter{Outcome: master.OutcomeFailed, Since: since, Until: until}, nil, "audit_by_"},
+		{"tenant and a time range, next page", master.AuditFilter{TenantName: "tenant7", Since: since, Until: until}, after, "audit_by_"},
+	}
+	for _, a := range audits {
+		q, args := auditQuery(a.filter, a.after, 1001)
+		cases = append(cases, planCase{"audit: " + a.name, q, args, a.want})
 	}
 	for _, c := range cases {
-		rows, err := conn.Query(ctx, `EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF) `+c.statement)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			t.Fatal(err)
-		}
-		plan := strings.Join(lines, "\n")
+		plan := explain(t, conn, c.statement, c.args...)
 		t.Logf("%s:\n%s", c.name, plan)
-		if !strings.Contains(plan, c.plan) || strings.Contains(plan, "Seq Scan") {
-			t.Errorf("%s: the plan is not %q:\n%s", c.name, c.plan, plan)
+		found := false
+		for _, alt := range strings.Split(c.want, "|") {
+			found = found || strings.Contains(plan, alt)
+		}
+		if !found || strings.Contains(plan, "Seq Scan") {
+			t.Errorf("%s: the plan does not use %q, or scans the table:\n%s", c.name, c.want, plan)
 		}
 	}
 }

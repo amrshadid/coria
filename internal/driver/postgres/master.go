@@ -59,8 +59,39 @@ func OpenMaster(ctx context.Context, address string) (*Master, error) {
 	return &Master{pool: pool, mig: stdlib.OpenDBFromPool(pool), red: red}, nil
 }
 
-// fail classifies err for a caller, scrubbed of the address.
-func (m *Master) fail(err error, message string) error {
+// The names of the lists, as their cursors carry them, so a cursor from one
+// list is refused by every other.
+const (
+	listTenants       = "tenants"
+	listKeys          = "keys"
+	listGrantsByKey   = "grants-by-key"
+	listGrantsByScope = "grants-by-scope"
+	listSettings      = "settings"
+	listAudit         = "audit"
+)
+
+// fail gives err its kind. An error that already has one keeps it: a NotFound
+// or Conflict decided inside a transaction is the answer even if the context
+// then ended, since nothing was committed either way. Otherwise a context
+// that ended makes it Unavailable, keeping the context's cause and the
+// driver's scrubbed error in the chain for errors.Is; a store closed under
+// the call makes it Unavailable; and the driver's SQLSTATE decides the rest
+// (classify).
+func (m *Master) fail(ctx context.Context, err error, message string) error {
+	if err == nil {
+		return nil
+	}
+	var fe *fault.Error
+	if errors.As(err, &fe) {
+		return err
+	}
+	if ctx.Err() != nil {
+		return fault.Wrap(fault.Unavailable, errors.Join(context.Cause(ctx), m.red.scrub(err)),
+			"the request ended before the master database answered")
+	}
+	if m.closed.Load() {
+		return fault.Wrap(fault.Unavailable, m.red.scrub(err), "the master database is closed")
+	}
 	return classify(m.red, err, message)
 }
 
@@ -69,12 +100,12 @@ func (m *Master) fail(err error, message string) error {
 // connection error that names the host, so the whole chain's text is
 // scrubbed and put behind the same kind and message; errors.Is still sees
 // ErrChecksum and ErrNewerSchema through it.
-func (m *Master) runnerErr(err error, message string) error {
+func (m *Master) runnerErr(ctx context.Context, err error, message string) error {
 	var fe *fault.Error
 	if errors.As(err, &fe) {
 		return fault.Wrap(fe.Kind(), m.red.scrub(err), fe.Message())
 	}
-	return m.fail(err, message)
+	return m.fail(ctx, err, message)
 }
 
 // Migrate implements master.Store.
@@ -97,7 +128,7 @@ func (m *Master) migrate(ctx context.Context, migrations []sqlkit.Migration) (in
 		version, err = sqlkit.Migrate(ctx, m.mig, dialect, migrations)
 		return err
 	})
-	return version, m.runnerErr(err, "the master database cannot be migrated")
+	return version, m.runnerErr(ctx, err, "the master database cannot be migrated")
 }
 
 // Version implements master.Store.
@@ -106,7 +137,7 @@ func (m *Master) Version(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	v, err := sqlkit.Version(ctx, m.mig, dialect)
-	return v, m.runnerErr(err, "the master's schema version cannot be read")
+	return v, m.runnerErr(ctx, err, "the master's schema version cannot be read")
 }
 
 // Ping implements master.Store.
@@ -149,6 +180,9 @@ func (m *Master) open() error {
 // ROLLBACK.
 const rollbackTimeout = 5 * time.Second
 
+// commitTimeout bounds how long a COMMIT, once sent, waits for the server.
+const commitTimeout = 30 * time.Second
+
 // write runs fn in one transaction and commits only when fn returns nil.
 // Every changing operation and its audit entry go through here together,
 // which is what makes them both or neither. The transaction is read
@@ -160,15 +194,27 @@ func (m *Master) write(ctx context.Context, message string, fn func(tx pgx.Tx) e
 	}
 	tx, err := m.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return m.fail(err, message)
+		return m.fail(ctx, err, message)
 	}
 	if err := fn(tx); err != nil {
 		m.rollback(tx)
-		return m.fail(err, message)
+		return m.fail(ctx, err, message)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	// A context that ended before the COMMIT is sent ends the call with
+	// nothing committed. Once it is sent the COMMIT is not tied to the
+	// context: canceling it while the server answers would return an error
+	// for a transaction that committed, and a call that fails must have
+	// committed nothing. So the call returns nil exactly when the commit
+	// happened.
+	if ctx.Err() != nil {
 		m.rollback(tx)
-		return m.fail(err, message)
+		return m.fail(ctx, ctx.Err(), message)
+	}
+	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), commitTimeout)
+	defer cancel()
+	if err := tx.Commit(cctx); err != nil {
+		m.rollback(tx)
+		return m.fail(ctx, err, message)
 	}
 	return nil
 }
@@ -236,7 +282,7 @@ func (m *Master) Tenant(ctx context.Context, id string) (master.Tenant, error) {
 		return master.Tenant{}, err
 	}
 	t, err := scanTenant(m.pool.QueryRow(ctx, `SELECT `+tenantColumns+` FROM tenants WHERE id = $1`, id))
-	return t, m.notFound(err, "no such tenant", "the tenant cannot be read")
+	return t, m.notFound(ctx, err, "no such tenant", "the tenant cannot be read")
 }
 
 // TenantByName implements master.Store: one read of the name's unique index.
@@ -248,7 +294,7 @@ func (m *Master) TenantByName(ctx context.Context, name string) (master.Tenant, 
 		return master.Tenant{}, err
 	}
 	t, err := scanTenant(m.pool.QueryRow(ctx, `SELECT `+tenantColumns+` FROM tenants WHERE name = $1`, name))
-	return t, m.notFound(err, "no such tenant", "the tenant cannot be read")
+	return t, m.notFound(ctx, err, "no such tenant", "the tenant cannot be read")
 }
 
 // ListTenants implements master.Store.
@@ -258,7 +304,7 @@ func (m *Master) ListTenants(ctx context.Context, page master.Page) ([]master.Te
 	}
 	after := ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "tenants", 1)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listTenants, "", 1)
 		if err != nil {
 			return nil, "", err
 		}
@@ -271,16 +317,17 @@ func (m *Master) ListTenants(ctx context.Context, page master.Page) ([]master.Te
 	rows, err := m.pool.Query(ctx, `SELECT `+tenantColumns+` FROM tenants WHERE name > $1 ORDER BY name LIMIT $2`, after, page.Limit+1)
 	out, err := collect(rows, err, scanTenant)
 	if err != nil {
-		return nil, "", m.fail(err, "the tenants cannot be listed")
+		return nil, "", m.fail(ctx, err, "the tenants cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("tenants", last.Name), nil
+	return out, sqlkit.EncodeCursor(listTenants, "", last.Name), nil
 }
 
-// SetTenantState implements master.Store.
+// SetTenantState implements master.Store. The old state is read under a row
+// lock and the new one written in one transaction.
 func (m *Master) SetTenantState(ctx context.Context, id string, state master.TenantState, reason string, audit master.AuditEntry) error {
 	if err := master.ValidateID("tenant id", id); err != nil {
 		return err
@@ -288,15 +335,22 @@ func (m *Master) SetTenantState(ctx context.Context, id string, state master.Ten
 	if err := master.ValidateTenantState(state, reason); err != nil {
 		return err
 	}
-	if err := audit.Validate(); err != nil {
+	if err := audit.ValidateWith(master.DetailOldState, master.DetailNewState); err != nil {
 		return err
 	}
 	return m.write(ctx, "the tenant's state cannot be set", func(tx pgx.Tx) error {
+		// The row is locked as it is read, so the state in the audit entry
+		// is the one this call replaced even when another call changes the
+		// same tenant at once.
+		var old string
+		if err := tx.QueryRow(ctx, `SELECT state FROM tenants WHERE id = $1 FOR UPDATE`, id).Scan(&old); err != nil {
+			return notFoundIn(err, "no such tenant")
+		}
 		tag, err := tx.Exec(ctx, `UPDATE tenants SET state = $1, state_reason = $2 WHERE id = $3`, string(state), reason, id)
 		if err := oneRow(tag, err, "no such tenant"); err != nil {
 			return err
 		}
-		return insertAudit(ctx, tx, m.red, audit)
+		return insertAudit(ctx, tx, m.red, audit.WithStateChange(master.TenantState(old), state))
 	})
 }
 
@@ -376,7 +430,7 @@ func (m *Master) Key(ctx context.Context, id string) (master.Key, error) {
 		return master.Key{}, err
 	}
 	k, err := scanKey(m.pool.QueryRow(ctx, `SELECT `+keyColumns+` FROM api_keys WHERE id = $1`, id))
-	return k, m.notFound(err, "no such key", "the key cannot be read")
+	return k, m.notFound(ctx, err, "no such key", "the key cannot be read")
 }
 
 // ListKeys implements master.Store.
@@ -387,7 +441,7 @@ func (m *Master) ListKeys(ctx context.Context, page master.Page) ([]master.Key, 
 	// Creation times are never before 1970, so (-1, "") is before every key.
 	afterCreated, afterID := int64(-1), ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "keys", 2)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listKeys, "", 2)
 		if err != nil {
 			return nil, "", err
 		}
@@ -403,13 +457,13 @@ func (m *Master) ListKeys(ctx context.Context, page master.Page) ([]master.Key, 
 		microsTime(afterCreated), afterID, page.Limit+1)
 	out, err := collect(rows, err, scanKey)
 	if err != nil {
-		return nil, "", m.fail(err, "the keys cannot be listed")
+		return nil, "", m.fail(ctx, err, "the keys cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("keys", strconv.FormatInt(last.Created.UnixMicro(), 10), last.ID), nil
+	return out, sqlkit.EncodeCursor(listKeys, "", strconv.FormatInt(last.Created.UnixMicro(), 10), last.ID), nil
 }
 
 // MarkKeyUsed implements master.Store with one UPDATE whose WHERE holds the
@@ -431,13 +485,16 @@ func (m *Master) MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool
 	tag, err := m.pool.Exec(ctx, `UPDATE api_keys SET last_used = $1 WHERE id = $2 AND (last_used IS NULL OR last_used < $3)`,
 		micros(at), id, micros(at.Add(-time.Minute)))
 	if err != nil {
-		return false, m.fail(err, "the key's use cannot be recorded")
+		return false, m.fail(ctx, err, "the key's use cannot be recorded")
 	}
 	return tag.RowsAffected() == 1, nil
 }
 
-// RevokeKey implements master.Store with one statement that keeps a revoke
-// time already set (coalesce) and returns the one the key ends with.
+// RevokeKey implements master.Store. The key's row is locked as its revoked
+// time is read (the lock SetGrant takes too), so the audit entry says whether
+// this call revoked the key or found it revoked, and a SetGrant racing this
+// call is ordered with it: it either finishes before the revocation or finds
+// the key revoked.
 func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry) (time.Time, error) {
 	if err := master.ValidateID("key id", id); err != nil {
 		return time.Time{}, err
@@ -445,22 +502,29 @@ func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit m
 	if err := master.ValidateTime("revocation time", at); err != nil {
 		return time.Time{}, err
 	}
-	if err := audit.Validate(); err != nil {
+	if err := audit.ValidateWith(master.DetailAlreadyRevoked); err != nil {
 		return time.Time{}, err
 	}
 	var revoked time.Time
 	err := m.write(ctx, "the key cannot be revoked", func(tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, `UPDATE api_keys SET revoked = coalesce(revoked, $1) WHERE id = $2 RETURNING revoked`,
-			micros(at), id).Scan(&revoked)
-		if err != nil {
+		var before *time.Time
+		if err := tx.QueryRow(ctx, `SELECT revoked FROM api_keys WHERE id = $1 FOR NO KEY UPDATE`, id).Scan(&before); err != nil {
 			return notFoundIn(err, "no such key")
 		}
-		return insertAudit(ctx, tx, m.red, audit)
+		if before != nil {
+			revoked = before.UTC()
+			return insertAudit(ctx, tx, m.red, audit.WithRevocation(true))
+		}
+		if _, err := tx.Exec(ctx, `UPDATE api_keys SET revoked = $1 WHERE id = $2`, micros(at), id); err != nil {
+			return err
+		}
+		revoked = micros(at)
+		return insertAudit(ctx, tx, m.red, audit.WithRevocation(false))
 	})
 	if err != nil {
 		return time.Time{}, err
 	}
-	return revoked.UTC(), nil
+	return revoked, nil
 }
 
 // --- Grants ---
@@ -481,11 +545,17 @@ func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.Audi
 	}
 	var previous master.Role
 	err := m.write(ctx, "the grant cannot be set", func(tx pgx.Tx) error {
-		if err := lockGrantTargets(ctx, tx, g.KeyID, g.Scope, true); err != nil {
+		revoked, err := lockGrantTargets(ctx, tx, g.KeyID, g.Scope)
+		if err != nil {
 			return err
 		}
+		if revoked {
+			// Decided under the key's row lock, which RevokeKey also takes,
+			// so no grant is written after the key's revocation.
+			return fault.New(fault.Conflict, "the key is revoked")
+		}
 		var old *string
-		err := tx.QueryRow(ctx, `WITH previous AS (SELECT role FROM grants WHERE key_id = $1 AND scope = $2)
+		err = tx.QueryRow(ctx, `WITH previous AS (SELECT role FROM grants WHERE key_id = $1 AND scope = $2)
 			INSERT INTO grants (key_id, scope, tenant_id, role) VALUES ($1, $2, $3, $4)
 			ON CONFLICT (key_id, scope) DO UPDATE SET role = EXCLUDED.role
 			RETURNING (SELECT role FROM previous)`,
@@ -509,35 +579,36 @@ func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.Audi
 }
 
 // lockGrantTargets returns NotFound unless the key, and the tenant of a
-// tenant scope, exist, and locks them against the changes that would undo
-// that before the transaction ends. The key is locked for update so grant
-// changes on it are ordered when forUpdate is set; the tenant is locked for
-// key share, so RemoveTenant waits for the grant being made.
-func lockGrantTargets(ctx context.Context, tx pgx.Tx, keyID string, scope master.Scope, forUpdate bool) error {
-	lock := `SELECT 1 FROM api_keys WHERE id = $1`
-	if forUpdate {
-		lock += ` FOR NO KEY UPDATE`
+// tenant scope, exist, reports whether the key is revoked, and locks them
+// against the changes that would undo that before the transaction ends. The
+// key is locked FOR NO KEY UPDATE, so grant changes and a revocation on it are
+// ordered; the tenant is locked for key share, so RemoveTenant waits for the
+// grant being made.
+func lockGrantTargets(ctx context.Context, tx pgx.Tx, keyID string, scope master.Scope) (revoked bool, err error) {
+	var at *time.Time
+	if err := tx.QueryRow(ctx, `SELECT revoked FROM api_keys WHERE id = $1 FOR NO KEY UPDATE`, keyID).Scan(&at); err != nil {
+		return false, notFoundIn(err, "no such key")
 	}
-	var one int
-	if err := tx.QueryRow(ctx, lock, keyID).Scan(&one); err != nil {
-		return notFoundIn(err, "no such key")
+	if !scope.IsInstallation() {
+		var one int
+		if err := tx.QueryRow(ctx, `SELECT 1 FROM tenants WHERE id = $1 FOR KEY SHARE`, scope.TenantID).Scan(&one); err != nil {
+			return false, notFoundIn(err, "no such tenant")
+		}
 	}
-	if scope.IsInstallation() {
-		return nil
-	}
-	if err := tx.QueryRow(ctx, `SELECT 1 FROM tenants WHERE id = $1 FOR KEY SHARE`, scope.TenantID).Scan(&one); err != nil {
-		return notFoundIn(err, "no such tenant")
-	}
-	return nil
+	return at != nil, nil
 }
 
-const grantColumns = `key_id, scope, role`
+// grantColumns are a grant's columns with its tenant's name, joined.
+const grantColumns = `g.key_id, g.scope, g.role, coalesce(t.name, '')`
+
+// grantFrom joins each grant to its tenant, for the name.
+const grantFrom = ` FROM grants g LEFT JOIN tenants t ON t.id = g.tenant_id`
 
 // scanGrant reads one row of grantColumns.
 func scanGrant(row scanner) (master.Grant, error) {
 	var g master.Grant
 	var role string
-	err := row.Scan(&g.KeyID, &g.Scope.TenantID, &role)
+	err := row.Scan(&g.KeyID, &g.Scope.TenantID, &role, &g.TenantName)
 	g.Role = master.Role(role)
 	return g, err
 }
@@ -559,26 +630,32 @@ func (m *Master) GrantsByKey(ctx context.Context, keyID string, page master.Page
 	if page.Cursor == "" {
 		// The first page has its own statement: the installation's scope
 		// is the empty string, so no "scope > $2" includes it.
-		rows, err = m.pool.Query(ctx, `SELECT `+grantColumns+` FROM grants WHERE key_id = $1 ORDER BY scope LIMIT $2`, keyID, page.Limit+1)
+		rows, err = m.pool.Query(ctx, `SELECT `+grantColumns+grantFrom+` WHERE g.key_id = $1 ORDER BY g.key_id, g.scope LIMIT $2`, keyID, page.Limit+1)
 	} else {
-		f, derr := sqlkit.DecodeCursor(page.Cursor, "grants-by-key", 1)
+		f, derr := sqlkit.DecodeCursor(page.Cursor, listGrantsByKey, keyID, 1)
 		if derr != nil {
 			return nil, "", derr
 		}
-		rows, err = m.pool.Query(ctx, `SELECT `+grantColumns+` FROM grants WHERE key_id = $1 AND scope > $2 ORDER BY scope LIMIT $3`, keyID, f[0], page.Limit+1)
+		rows, err = m.pool.Query(ctx, `SELECT `+grantColumns+grantFrom+` WHERE g.key_id = $1 AND g.scope > $2 ORDER BY g.key_id, g.scope LIMIT $3`, keyID, f[0], page.Limit+1)
 	}
 	out, err := collect(rows, err, scanGrant)
 	if err != nil {
-		return nil, "", m.fail(err, "the key's grants cannot be listed")
+		return nil, "", m.fail(ctx, err, "the key's grants cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("grants-by-key", last.Scope.TenantID), nil
+	return out, sqlkit.EncodeCursor(listGrantsByKey, keyID, last.Scope.TenantID), nil
 }
 
-// GrantsByScope implements master.Store.
+// scopeBinding is what a GrantsByScope cursor is bound to. The installation
+// and a tenant can never give the same text, since a tenant id is not empty.
+func scopeBinding(scope master.Scope) string {
+	return "scope:" + scope.TenantID
+}
+
+// GrantsByScope implements master.Store. The cursor is bound to the scope.
 func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page master.Page) ([]master.Grant, string, error) {
 	if err := scope.Validate(); err != nil {
 		return nil, "", err
@@ -588,7 +665,7 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 	}
 	after := ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "grants-by-scope", 1)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listGrantsByScope, scopeBinding(scope), 1)
 		if err != nil {
 			return nil, "", err
 		}
@@ -598,18 +675,60 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 		return nil, "", err
 	}
 	// Key ids are never empty, so "after the empty id" is the first page.
-	rows, err := m.pool.Query(ctx, `SELECT `+grantColumns+` FROM grants WHERE scope = $1 AND key_id > $2 ORDER BY key_id LIMIT $3`,
+	rows, err := m.pool.Query(ctx, `SELECT `+grantColumns+grantFrom+` WHERE g.scope = $1 AND g.key_id > $2 ORDER BY g.scope, g.key_id LIMIT $3`,
 		scope.TenantID, after, page.Limit+1)
 	out, err := collect(rows, err, scanGrant)
 	if err != nil {
-		return nil, "", m.fail(err, "the grants cannot be listed")
+		return nil, "", m.fail(ctx, err, "the grants cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("grants-by-scope", last.KeyID), nil
+	return out, sqlkit.EncodeCursor(listGrantsByScope, scopeBinding(scope), last.KeyID), nil
 }
+
+// RolesFor implements master.Store with one statement: the grants' primary key
+// is read at (key, the empty scope) and at (key, the tenant's id), the id found
+// through the tenants' unique index on name inside the same statement. A tenant
+// that does not exist, or no tenant name, leaves only the first: coalesce turns
+// "no such tenant" into the installation's ” again, which matches nothing
+// more.
+func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (installation, tenant master.Role, err error) {
+	if err := master.ValidateID("key id", keyID); err != nil {
+		return "", "", err
+	}
+	if tenantName != "" {
+		if err := master.ValidateTenantName(tenantName); err != nil {
+			return "", "", err
+		}
+	}
+	if err := m.open(); err != nil {
+		return "", "", err
+	}
+	rows, err := m.pool.Query(ctx, rolesForSQL, keyID, tenantName)
+	type scopeRole struct{ scope, role string }
+	found, err := collect(rows, err, func(row scanner) (scopeRole, error) {
+		var r scopeRole
+		err := row.Scan(&r.scope, &r.role)
+		return r, err
+	})
+	if err != nil {
+		return "", "", m.fail(ctx, err, "the key's roles cannot be read")
+	}
+	for _, r := range found {
+		if r.scope == "" {
+			installation = master.Role(r.role)
+		} else {
+			tenant = master.Role(r.role)
+		}
+	}
+	return installation, tenant, nil
+}
+
+// rolesForSQL is RolesFor's statement.
+const rolesForSQL = `SELECT scope, role FROM grants WHERE key_id = $1
+	AND scope IN ('', coalesce((SELECT id FROM tenants WHERE name = $2), ''))`
 
 // RemoveGrant implements master.Store. The key's row is locked as SetGrant
 // does, so the role it reports is the one the grant had when it was removed;
@@ -628,7 +747,7 @@ func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Sco
 	}
 	var previous master.Role
 	err := m.write(ctx, "the grant cannot be removed", func(tx pgx.Tx) error {
-		if err := lockGrantTargets(ctx, tx, keyID, scope, true); err != nil {
+		if _, err := lockGrantTargets(ctx, tx, keyID, scope); err != nil {
 			return err
 		}
 		var old string
@@ -657,7 +776,7 @@ func (m *Master) Setting(ctx context.Context, name string) (string, error) {
 	}
 	var value string
 	err := m.pool.QueryRow(ctx, `SELECT value FROM settings WHERE name = $1`, name).Scan(&value)
-	return value, m.notFound(err, "no such setting", "the setting cannot be read")
+	return value, m.notFound(ctx, err, "no such setting", "the setting cannot be read")
 }
 
 // SetSetting implements master.Store.
@@ -710,7 +829,7 @@ func (m *Master) ListSettings(ctx context.Context, page master.Page) ([]master.S
 	}
 	after := ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "settings", 1)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listSettings, "", 1)
 		if err != nil {
 			return nil, "", err
 		}
@@ -726,20 +845,21 @@ func (m *Master) ListSettings(ctx context.Context, page master.Page) ([]master.S
 		return st, err
 	})
 	if err != nil {
-		return nil, "", m.fail(err, "the settings cannot be listed")
+		return nil, "", m.fail(ctx, err, "the settings cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("settings", last.Name), nil
+	return out, sqlkit.EncodeCursor(listSettings, "", last.Name), nil
 }
 
 // --- Audit ---
 
-// AppendAudit implements master.Store. It is one INSERT, which Postgres
-// makes all or nothing on its own, so a batch needs no transaction around it
-// and an entry costs one round trip.
+// AppendAudit implements master.Store. The batch is one INSERT, all or
+// nothing, in a transaction of its own like every other write: a bare INSERT
+// whose context ends while the server answers could return an error for rows
+// that were stored, and a call that fails must have stored nothing.
 func (m *Master) AppendAudit(ctx context.Context, entries ...master.AuditEntry) error {
 	if len(entries) > master.MaxAuditBatch {
 		return fault.New(fault.Invalid, "at most "+strconv.Itoa(master.MaxAuditBatch)+" audit entries are appended at once")
@@ -755,7 +875,9 @@ func (m *Master) AppendAudit(ctx context.Context, entries ...master.AuditEntry) 
 	if err := m.open(); err != nil {
 		return err
 	}
-	return m.fail(execAudit(ctx, m.pool, m.red, entries), "the audit entries cannot be written")
+	return m.write(ctx, "the audit entries cannot be written", func(tx pgx.Tx) error {
+		return execAudit(ctx, tx, m.red, entries)
+	})
 }
 
 const auditColumns = `id, at, key_id, local_user, remote_addr, method, tenant_name, object, outcome, reason, details, request_id`
@@ -807,8 +929,10 @@ func execAudit(ctx context.Context, q execer, red *redactor, entries []master.Au
 			AS t(id, at, key_id, local_user, remote_addr, method, tenant_name, object, outcome, reason, details, request_id)`,
 			ids, times, keys, users, addrs, methods, tenants, objects, outcomes, reasons, dets, reqs)
 	}
-	if isUniqueViolation(err) {
-		return fault.Wrap(fault.Conflict, red.scrub(err), "an audit entry with this id exists")
+	if constraintViolation(err, "audit_pkey") {
+		// The audit table's only unique key is the id: a duplicate id is
+		// master.ErrDuplicateAuditID, never a Conflict.
+		return fault.Wrap(fault.Internal, errors.Join(master.ErrDuplicateAuditID, red.scrub(err)), "an audit entry with this id exists")
 	}
 	return err
 }
@@ -829,19 +953,32 @@ func scanAudit(row scanner) (master.AuditEntry, error) {
 	return e, err
 }
 
-// ListAudit implements master.Store. The statement is put together from
-// fixed fragments according to which filters are set, so that each
-// combination reads the index named for it in 0001_init.sql instead of
-// testing "parameter is NULL OR column = parameter", which no index answers.
-// No value is ever written into the text; every one is a parameter, and
-// pgx's statement cache keeps one prepared statement per combination.
-func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error) {
-	if err := filter.Validate(); err != nil {
-		return nil, "", err
+// auditBinding is what a ListAudit cursor is bound to: every field of the
+// filter, so a cursor made with one filter is refused with another.
+func auditBinding(f master.AuditFilter) string {
+	t := func(x time.Time) string {
+		if x.IsZero() {
+			return ""
+		}
+		return strconv.FormatInt(x.UnixMicro(), 10)
 	}
-	if err := page.Validate(); err != nil {
-		return nil, "", err
-	}
+	return sqlkit.Binding(f.TenantName, f.KeyID, string(f.Outcome), t(f.Since), t(f.Until))
+}
+
+// auditPosition is the (at, id) of the last row of the previous page.
+type auditPosition struct {
+	at time.Time
+	id string
+}
+
+// auditQuery returns the statement and arguments of one page of ListAudit.
+// The statement is put together from fixed fragments according to which
+// filters are set, so that each combination reads the index named for it in
+// 0001_init.sql instead of testing "parameter is NULL OR column = parameter",
+// which no index answers. No value is ever written into the text; every one
+// is a parameter, and pgx's statement cache keeps one prepared statement per
+// combination.
+func auditQuery(filter master.AuditFilter, after *auditPosition, limit int) (string, []any) {
 	var where []string
 	var args []any
 	arg := func(v any) string {
@@ -863,8 +1000,37 @@ func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page 
 	if !filter.Until.IsZero() {
 		where = append(where, "at < "+arg(micros(filter.Until)))
 	}
+	if after != nil {
+		// Newest first, so the next page is what sorts before the last row.
+		where = append(where, "(at, id) < ("+arg(after.at)+", "+arg(after.id)+")")
+	}
+	query := "SELECT " + auditColumns + " FROM audit"
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ") // #nosec G202 -- every fragment is a constant above; values are parameters.
+	}
+	// The id breaks ties between entries of the same time, so the order is
+	// total and a cursor at (at, id) is unambiguous.
+	query += " ORDER BY at DESC, id DESC LIMIT " + arg(limit)
+	return query, args
+}
+
+// ListAudit implements master.Store. The cursor is bound to the whole filter. The statement is put together from
+// fixed fragments according to which filters are set, so that each
+// combination reads the index named for it in 0001_init.sql instead of
+// testing "parameter is NULL OR column = parameter", which no index answers.
+// No value is ever written into the text; every one is a parameter, and
+// pgx's statement cache keeps one prepared statement per combination.
+func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error) {
+	if err := filter.Validate(); err != nil {
+		return nil, "", err
+	}
+	if err := page.Validate(); err != nil {
+		return nil, "", err
+	}
+	binding := auditBinding(filter)
+	var after *auditPosition
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "audit", 2)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listAudit, binding, 2)
 		if err != nil {
 			return nil, "", err
 		}
@@ -872,14 +1038,9 @@ func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page 
 		if err != nil {
 			return nil, "", err
 		}
-		// Newest first, so the next page is what sorts before the last row.
-		where = append(where, "(at, id) < ("+arg(microsTime(at))+", "+arg(f[1])+")")
+		after = &auditPosition{at: microsTime(at), id: f[1]}
 	}
-	query := "SELECT " + auditColumns + " FROM audit"
-	if len(where) > 0 {
-		query += " WHERE " + strings.Join(where, " AND ") // #nosec G202 -- every fragment is a constant above; values are parameters.
-	}
-	query += " ORDER BY at DESC, id DESC LIMIT " + arg(page.Limit+1)
+	query, args := auditQuery(filter, after, page.Limit+1)
 
 	if err := m.open(); err != nil {
 		return nil, "", err
@@ -887,13 +1048,13 @@ func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page 
 	rows, err := m.pool.Query(ctx, query, args...)
 	out, err := collect(rows, err, scanAudit)
 	if err != nil {
-		return nil, "", m.fail(err, "the audit log cannot be listed")
+		return nil, "", m.fail(ctx, err, "the audit log cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("audit", strconv.FormatInt(last.Time.UnixMicro(), 10), last.ID), nil
+	return out, sqlkit.EncodeCursor(listAudit, binding, strconv.FormatInt(last.Time.UnixMicro(), 10), last.ID), nil
 }
 
 // --- Helpers ---
@@ -965,11 +1126,11 @@ func decodeDetails(s string) (map[string]string, error) {
 
 // notFound turns pgx.ErrNoRows into NotFound with what, and classifies any
 // other error with message.
-func (m *Master) notFound(err error, what, message string) error {
+func (m *Master) notFound(ctx context.Context, err error, what, message string) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return fault.New(fault.NotFound, what)
 	}
-	return m.fail(err, message)
+	return m.fail(ctx, err, message)
 }
 
 // notFoundIn turns pgx.ErrNoRows into NotFound with what and passes any

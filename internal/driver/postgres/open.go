@@ -143,6 +143,7 @@ const (
 	sqlstateUniqueViolation = "23505"
 	sqlstateForeignKey      = "23503"
 	sqlstateLockNotAvail    = "55P03"
+	sqlstateReadOnly        = "25006"
 )
 
 // unavailableClasses are the two-character SQLSTATE classes of failures that
@@ -150,6 +151,9 @@ const (
 // authorization (28), invalid catalog name (3D), insufficient resources (53),
 // transaction rollback, serialization failures and deadlocks (40), operator
 // intervention, shutdown and cancel (57) and system errors (58).
+//
+// Read-only SQL transaction (25006) is there too: a standby, or a database set
+// read-only, cannot take the write, and the same call may pass on the primary.
 var unavailableClasses = map[string]bool{"08": true, "28": true, "3D": true, "53": true, "40": true, "57": true, "58": true}
 
 // classify turns an error from pgx into a fault with a kind, from the error
@@ -173,7 +177,7 @@ func classify(red *redactor, err error, message string) error {
 		switch {
 		case pe.Code == sqlstateUndefinedTable:
 			return fault.Wrap(fault.Unavailable, cause, "the master database is not ready; has it been migrated?")
-		case pe.Code == sqlstateLockNotAvail, len(pe.Code) >= 2 && unavailableClasses[pe.Code[:2]]:
+		case pe.Code == sqlstateLockNotAvail, pe.Code == sqlstateReadOnly, len(pe.Code) >= 2 && unavailableClasses[pe.Code[:2]]:
 			return fault.Wrap(fault.Unavailable, cause, message)
 		}
 		return fault.Wrap(fault.Internal, cause, message)

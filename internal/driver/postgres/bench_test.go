@@ -12,6 +12,9 @@ func BenchmarkKeyByID(b *testing.B) { mastertest.BenchKeyByID(b, openTest) }
 // BenchmarkGrantsByKey measures the second read of every request with a key.
 func BenchmarkGrantsByKey(b *testing.B) { mastertest.BenchGrantsByKey(b, openTest) }
 
+// BenchmarkRolesFor measures the access check's read of a key's roles.
+func BenchmarkRolesFor(b *testing.B) { mastertest.BenchRolesFor(b, openTest) }
+
 // BenchmarkAppendAudit measures the audit write every request ends with.
 func BenchmarkAppendAudit(b *testing.B) { mastertest.BenchAppendAudit(b, openTest) }
 

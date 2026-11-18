@@ -198,12 +198,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # The module and build caches, keyed on go.sum, as in the Linux job.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
           check-latest: true
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Go version
         run: go version
