@@ -253,4 +253,23 @@ All notable changes to Magnetar are written here. The form is
   reads a tenant the registry made with `psql` and `pg_dump`, and the Postgres
   CI jobs run the registry against real tenants.
 
+### Fixed
+
+- A failed creation of a tenant was audited as done: the request's entry
+  was written with the tenant's row, before its database was opened, and
+  the row's removal then had a system entry of its own with no request id,
+  so the request's id led to an entry that said done for a request answered
+  unavailable or invalid. The row is now written with a system entry saying
+  the creation started, which carries the request's id; the request's own
+  entry is written once, with the change that settles the creation: with the
+  tenant's state becoming ready (done), or with the removal of its row
+  (failed, with the reason). After a crash between the two, the next start
+  records that it finished the creation that request began.
+- The Linux job on Go 1.27 took up to 12 of its 15 minutes: the Postgres
+  jobs shared its build cache key, finished first, and saved a cache that
+  held only the database driver, so the Linux job recompiled everything in
+  each step. They now have a key of their own. The 1,000-tenant test runs
+  once, without the race detector, as a step of its own (`make test-scale`),
+  instead of inside the race and 32-bit runs.
+
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop

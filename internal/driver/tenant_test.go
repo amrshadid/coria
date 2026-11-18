@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
 )
 
 // TestSQLiteTenantPath guards the file a tenant on SQLite gets: exactly
@@ -134,14 +135,13 @@ func TestPostgresTenantsLocation(t *testing.T) {
 		if fault.KindOf(err) != fault.Invalid || got != "" {
 			t.Errorf("Location(%q) = %q, %v; want Invalid", address, got, err)
 		}
-		if err != nil && (strings.Contains(err.Error(), "hunter2") || strings.Contains(err.Error(), "db.example") || strings.Contains(err.Error(), "admin")) {
-			t.Errorf("the error repeats the address: %v", err)
-		}
+		tenanttest.CheckErrorHidesSecrets(t, err, "hunter2", "db.example", "admin", "127.0.0.1")
 	}
 	_, err = d.Open(context.Background(), "t1", "lab", "postgres://admin:hunter2@127.0.0.1:1/labdb?sslmode=disable&connect_timeout=2") //nolint:gosec // G101: made up.
-	if fault.KindOf(err) != fault.Unavailable || strings.Contains(err.Error(), "hunter2") {
-		t.Errorf("Open of a database that does not answer = %v, want Unavailable without the password", err)
+	if fault.KindOf(err) != fault.Unavailable {
+		t.Errorf("Open of a database that does not answer = %v, want Unavailable", err)
 	}
+	tenanttest.CheckErrorHidesSecrets(t, err, "hunter2", "admin", "127.0.0.1")
 }
 
 // TestDriversSayHowManyFilesATenantHolds guards the optional method the
@@ -155,5 +155,87 @@ func TestDriversSayHowManyFilesATenantHolds(t *testing.T) {
 	}
 	if got := postgresCounter.FilesPerTenant(); got != 4 {
 		t.Errorf("a Postgres tenant holds %d sockets, want 4", got)
+	}
+}
+
+// secretDir is a recognizable string put in a data directory's path, so the
+// tests can show that no error the driver returns repeats the path.
+const secretDir = "SECRET-PATH-q7Zr" //nolint:gosec // G101: a marker searched for, not a credential.
+
+// sqliteFailures makes, under a data directory whose path holds secretDir,
+// every failure the SQLite tenant driver can produce for the tenant "lab",
+// one data directory each, and returns them by name with each directory.
+// On Windows the cases that need Unix modes or links are left out.
+func sqliteFailures(t *testing.T) map[string]string {
+	t.Helper()
+	cases := map[string]func(data, tenants, path string){
+		"a data directory that is a file": func(data, _, _ string) {
+			if err := os.RemoveAll(data); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(data, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a file that is not a database": func(_, _, path string) {
+			if err := os.WriteFile(path, []byte(strings.Repeat("not a database\n", 400)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a directory at the path": func(_, _, path string) {
+			if err := os.Mkdir(path, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	if runtime.GOOS != "windows" {
+		cases["a file others can read"] = func(_, _, path string) {
+			if err := os.WriteFile(path, nil, 0o644); err != nil { //nolint:gosec // G306: the loose mode is what is tested.
+				t.Fatal(err)
+			}
+		}
+		cases["a tenants directory others can write"] = func(_, tenants, _ string) {
+			if err := os.Chmod(tenants, 0o777); err != nil { //nolint:gosec // G302: the loose mode is what is tested.
+				t.Fatal(err)
+			}
+		}
+		cases["a symbolic link at the path"] = func(data, _, path string) {
+			target := filepath.Join(data, "elsewhere.db")
+			if err := os.WriteFile(target, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	out := map[string]string{}
+	for name, make := range cases {
+		data := filepath.Join(t.TempDir(), secretDir, "data")
+		tenants := filepath.Join(data, TenantsDir)
+		if err := os.MkdirAll(tenants, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		make(data, tenants, filepath.Join(tenants, "lab.db"))
+		out[name] = data
+	}
+	return out
+}
+
+// TestSQLiteFailuresHideThePath guards the rule the registry relies on: no
+// failure the SQLite tenant driver can produce carries the database's path
+// in its message or its text, so no state reason, error or log line built
+// from it does (tenanttest.CheckErrorHidesSecrets, the same check the other
+// drivers run).
+func TestSQLiteFailuresHideThePath(t *testing.T) {
+	for name, data := range sqliteFailures(t) {
+		t.Run(name, func(t *testing.T) {
+			_, err := SQLiteTenants{DataDir: data}.Open(context.Background(), "id-lab", "lab", "")
+			if err == nil {
+				t.Fatal("the failure was not produced")
+			}
+			tenanttest.CheckErrorHidesSecrets(t, err, secretDir, data, filepath.Join(data, TenantsDir, "lab.db"))
+			t.Logf("%v: %s", fault.KindOf(err), fault.Message(err))
+		})
 	}
 }

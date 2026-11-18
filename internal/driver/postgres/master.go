@@ -571,10 +571,8 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 }
 
 // RolesFor implements master.Store with one statement (rolesForSQL). A name
-// that is not a valid tenant name is asked as the empty name, which no
-// tenant has, so the statement runs all the same and finds no tenant; it is
-// never sent as it was, since Postgres refuses text that is not UTF-8 or
-// holds a NUL.
+// that is not a valid tenant name is asked as the empty name, which no tenant
+// has, so the statement runs all the same and finds no tenant.
 func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (master.Roles, error) {
 	if err := master.ValidateID("key id", keyID); err != nil {
 		return master.Roles{}, err
@@ -586,13 +584,12 @@ func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (master
 		return master.Roles{}, err
 	}
 	var tenantID, inst, ten *string
-	err := m.pool.QueryRow(ctx, rolesForSQL, keyID, tenantName).Scan(&tenantID, &inst, &ten)
-	if err != nil {
+	if err := m.pool.QueryRow(ctx, rolesForSQL, keyID, tenantName).Scan(&tenantID, &inst, &ten); err != nil {
 		return master.Roles{}, m.fail(ctx, err, "the key's roles cannot be read")
 	}
-	var r master.Roles
+	r := master.Roles{TenantFound: tenantID != nil}
 	if tenantID != nil {
-		r.TenantID, r.TenantFound = *tenantID, true
+		r.TenantID = *tenantID
 	}
 	if inst != nil {
 		r.Installation = master.Role(*inst)
@@ -603,15 +600,15 @@ func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (master
 	return r, nil
 }
 
-// rolesForSQL is RolesFor's statement, which always returns exactly one
-// row: the tenant's id, NULL when no tenant has the name (the LEFT JOIN of a
-// one-row table keeps the row), then the key's role on the installation and
-// on that tenant, each NULL when there is no grant. The second grant
-// lookup runs whether or not a tenant was found: without one it looks for
-// the scope '*', which no id can be, so a missing tenant costs the same
-// lookups as a tenant without a grant. Each is an exact lookup:
-// the tenants' unique index on name, and the grants' primary key at (key,
-// the empty scope) and at (key, the tenant's id), however many grants the key has.
+// rolesForSQL is RolesFor's statement, which always returns exactly one row:
+// the tenant's id, NULL when no tenant has the name (the LEFT JOIN of a
+// one-row table keeps the row), then the key's role on the installation and on
+// that tenant, each NULL when there is no grant. The second grant lookup runs
+// whether or not a tenant was found: without one it looks for the scope '*',
+// which no id can be, so a missing tenant costs the same lookups as a tenant
+// without a grant. Each is a point lookup: the tenants' unique index on name,
+// and the grants' primary key at (key, the empty scope) and at (key, the
+// tenant's id).
 const rolesForSQL = `SELECT t.id,
 	(SELECT role FROM grants WHERE key_id = $1 AND scope = ''),
 	(SELECT role FROM grants WHERE key_id = $1 AND scope = coalesce(t.id, '*'))

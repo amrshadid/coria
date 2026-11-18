@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -211,7 +212,54 @@ func newInstallation(t *testing.T) *pgInstallation {
 func (in *pgInstallation) audit(method string) master.AuditEntry {
 	return master.AuditEntry{
 		ID: fmt.Sprintf("req-%06d", in.seq.Add(1)), Time: in.clock.Now(), LocalUser: "501",
-		Method: method, Outcome: master.OutcomeDone, RequestID: "r",
+		Method: method, Outcome: master.OutcomeDone, RequestID: fmt.Sprintf("request-%06d", in.seq.Load()),
+	}
+}
+
+// byRequest returns, oldest first, every entry of the master's log whose
+// request id is id, each as "method outcome", with the new state when the
+// entry has one and "undone" when the entry says the creation's row was
+// removed again.
+func (in *pgInstallation) byRequest(id string) []string {
+	in.t.Helper()
+	var out []string
+	page := master.Page{Limit: master.MaxPageLimit}
+	for {
+		entries, next, err := in.master.ListAudit(context.Background(), master.AuditFilter{}, page)
+		if err != nil {
+			in.t.Fatal(err)
+		}
+		for _, a := range entries {
+			if a.RequestID != id {
+				continue
+			}
+			line := a.Method + " " + string(a.Outcome)
+			if a.Details[registry.DetailUndone] != "" {
+				line += " undone"
+			}
+			if st := a.Details[master.DetailNewState]; st != "" {
+				line += " ->" + st
+			}
+			out = append([]string{line}, out...)
+		}
+		if next == "" {
+			return out
+		}
+		page.Cursor = next
+	}
+}
+
+// wantCreationTrail fails unless the request's id leads to the entries a
+// creation leaves: a system entry when the row is written, then the request's
+// own entry, done with the change to ready or failed with the row removed.
+func (in *pgInstallation) wantCreationTrail(request string, ready bool) {
+	in.t.Helper()
+	want := []string{registry.StartMethod + " done", "CreateTenant failed undone"}
+	if ready {
+		want = []string{registry.StartMethod + " done", "CreateTenant done ->ready"}
+	}
+	if got := in.byRequest(request); !slices.Equal(got, want) {
+		in.t.Errorf("the entries of request %s are %q, want %q", request, got, want)
 	}
 }
 
@@ -233,11 +281,14 @@ func (in *pgInstallation) address(database string) string {
 	return atDatabase(in.t, in.base, database, in.role, in.pw, "")
 }
 
-// create creates a tenant on a database through the registry.
-func (in *pgInstallation) create(name, database string) (master.Tenant, error) {
-	return in.r.Create(context.Background(), registry.NewTenant{
+// create creates a tenant on a database through the registry, and returns
+// the id of the request, which leads to the entries of the creation.
+func (in *pgInstallation) create(name, database string) (master.Tenant, string, error) {
+	audit := in.audit("CreateTenant")
+	tn, err := in.r.Create(context.Background(), registry.NewTenant{
 		ID: "id-" + name, Name: name, Driver: driver.PostgresDriver, Address: in.address(database),
-	}, in.audit("CreateTenant"))
+	}, audit)
+	return tn, audit.RequestID, err
 }
 
 // waitState polls until the tenant is in state, failing after 30 seconds.
@@ -301,10 +352,12 @@ func TestRegistryServesPostgresTenants(t *testing.T) {
 	in := newInstallation(t)
 	dbA, dbB := in.database(), in.database()
 
-	if tn, err := in.create("pga", dbA); err != nil || tn.State != master.StateReady {
+	tn, request, err := in.create("pga", dbA)
+	if err != nil || tn.State != master.StateReady {
 		t.Fatalf("creating pga: %s, %v; want ready", tn.State, err)
 	}
-	if tn, err := in.create("pgb", dbB); err != nil || tn.State != master.StateReady {
+	in.wantCreationTrail(request, true)
+	if tn, _, err := in.create("pgb", dbB); err != nil || tn.State != master.StateReady {
 		t.Fatalf("creating pgb: %s, %v; want ready", tn.State, err)
 	}
 	a, err := in.r.Store("pga")
@@ -359,7 +412,9 @@ func TestRegistryServesPostgresTenants(t *testing.T) {
 		"nobody": atDatabase(t, refused.String(), dbB, in.role, in.pw, "") + "&connect_timeout=2",
 		"nodb":   in.address("no_such_database_" + dbB),
 	} {
-		_, err := in.r.Create(ctx, registry.NewTenant{ID: "id-" + name, Name: name, Driver: driver.PostgresDriver, Address: address}, in.audit("CreateTenant"))
+		audit := in.audit("CreateTenant")
+		_, err := in.r.Create(ctx, registry.NewTenant{ID: "id-" + name, Name: name, Driver: driver.PostgresDriver, Address: address}, audit)
+		in.wantCreationTrail(audit.RequestID, false)
 		if fault.KindOf(err) != fault.Unavailable {
 			t.Errorf("creating %s against a database that does not answer = %v, want Unavailable", name, err)
 		}
@@ -419,10 +474,11 @@ func TestRegistryRefusesTwoTenantsOnOneDatabase(t *testing.T) {
 	ctx := context.Background()
 	in := newInstallation(t)
 	db := in.database()
-	if tn, err := in.create("first", db); err != nil || tn.State != master.StateReady {
+	if tn, _, err := in.create("first", db); err != nil || tn.State != master.StateReady {
 		t.Fatalf("creating first: %s, %v", tn.State, err)
 	}
-	_, err := in.create("second", db)
+	_, request, err := in.create("second", db)
+	in.wantCreationTrail(request, false)
 	if fault.KindOf(err) != fault.Invalid {
 		t.Errorf("creating a second tenant on the same database = %v, want Invalid", err)
 	}

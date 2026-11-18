@@ -624,3 +624,108 @@ func TestTenantCollationDoesNotChangeOrder(t *testing.T) {
 		t.Errorf("ListAudit: %v, want %v", gotAudit, wantAudit)
 	}
 }
+
+// TestTenantFailuresHideSecrets runs every failure the Postgres tenant driver
+// can produce through the suite's check that no error, in its message or its
+// full text, holds the password, the user or the host (and the database name):
+// a wrong password, a database that does not exist, a refused connection, a
+// host that does not resolve, another tenant's database (at open and at
+// Migrate), an address that does not parse, a keyword/value string, and a
+// remote address with no sslmode. The login and password are made up so a
+// plain search finds them.
+func TestTenantFailuresHideSecrets(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("PGSSLMODE", "")
+	base := testAddress(t)
+	super := admin(t, base)
+	user, password, dbName := randomName(t, "needle_user_"), randomName(t, "Needle-Pw-"), randomName(t, "needle_db_")
+	mustExec(t, super, fmt.Sprintf(`CREATE ROLE %s LOGIN PASSWORD '%s' NOSUPERUSER NOCREATEDB NOCREATEROLE`, user, password))
+	t.Cleanup(func() {
+		c := admin(t, base)
+		mustExec(t, c, `DROP OWNED BY `+user, `DROP ROLE `+user)
+	})
+	bu, err := url.Parse(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := bu.Hostname()
+	as := func(path, pw, query string) string {
+		u := *bu
+		u.User = url.UserPassword(user, pw)
+		u.Path = path
+		u.RawQuery = query
+		return u.String()
+	}
+	secrets := []string{password, user, host, dbName, url.QueryEscape(password), "needle-host.invalid"}
+
+	// Another tenant's database: a schema the login owns, claimed by tenant-a.
+	schema := randomName(t, "mt_fs_")
+	mustExec(t, super, fmt.Sprintf(`CREATE SCHEMA %s AUTHORIZATION %s`, schema, user))
+	t.Cleanup(func() {
+		c := admin(t, base)
+		mustExec(t, c, `DROP SCHEMA `+schema+` CASCADE`)
+	})
+	owned := as(bu.Path, password, "sslmode=disable&search_path="+schema)
+	// A store for tenant-b opened before the schema was claimed, to migrate
+	// after: it is let in at open and refused at Migrate.
+	late, err := OpenTenant(ctx, owned, "tenant-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = late.Close() })
+	a, err := OpenTenant(ctx, owned, "tenant-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = a.Close() })
+	if err := a.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	type failure struct {
+		name string
+		kind fault.Kind
+		err  error
+	}
+	var failures []failure
+	add := func(name string, kind fault.Kind, err error) { failures = append(failures, failure{name, kind, err}) }
+
+	_, err = OpenTenant(ctx, as(bu.Path, "Wrong-"+password, "sslmode=disable"), "t1")
+	add("a wrong password", fault.Unavailable, err)
+	_, err = OpenTenant(ctx, as("/"+dbName, password, "sslmode=disable"), "t1")
+	add("a database that does not exist", fault.Unavailable, err)
+	refused := *bu
+	refused.Host = "127.0.0.1:1"
+	refused.User = url.UserPassword(user, password)
+	refused.Path = "/" + dbName
+	refused.RawQuery = "sslmode=disable&connect_timeout=2"
+	_, err = OpenTenant(ctx, refused.String(), "t1")
+	add("a refused connection", fault.Unavailable, err)
+	nohost := refused
+	nohost.Host = "needle-host.invalid"
+	_, err = OpenTenant(ctx, nohost.String(), "t1")
+	add("a host that does not resolve", fault.Unavailable, err)
+	_, err = OpenTenant(ctx, owned, "tenant-c")
+	add("another tenant's database, at open", fault.Invalid, err)
+	add("another tenant's database, at Migrate", fault.Invalid, late.Migrate(ctx))
+	_, err = OpenTenant(ctx, "postgres://"+user+":"+password+"@"+host+":notaport/"+dbName, "t1")
+	add("an address that does not parse", fault.Invalid, err)
+	_, err = OpenTenant(ctx, "host="+host+" user="+user+" password="+password+" dbname="+dbName, "t1")
+	add("a keyword/value string", fault.Invalid, err)
+	_, err = OpenTenant(ctx, "postgres://"+user+":"+password+"@needle-host.invalid/"+dbName, "t1")
+	add("a remote address with no sslmode", fault.Invalid, err)
+	_, err = Location("postgres://" + user + ":" + password + "@needle-host.invalid/" + dbName)
+	add("Location of a remote address with no sslmode", fault.Invalid, err)
+	_, err = Location("postgres://" + user + ":" + password + "@" + host + ":notaport/" + dbName)
+	add("Location of an address that does not parse", fault.Invalid, err)
+
+	for _, f := range failures {
+		if got := fault.KindOf(f.err); got != f.kind {
+			t.Errorf("%s: kind %v (%v), want %v", f.name, got, f.err, f.kind)
+		}
+		tenanttest.CheckErrorHidesSecrets(t, f.err, secrets...)
+		if f.err != nil {
+			t.Logf("%s: %s", f.name, fault.Message(f.err))
+		}
+	}
+}

@@ -7,6 +7,7 @@
 #   make lint    golangci-lint with .golangci.yml
 #   make vuln    govulncheck
 #   make test    go test -race
+#   make test-scale  the registry at 1,000 tenants, without the race detector
 #   make build   static binaries for every target in bin/
 #   make size    the size of each binary make build left in bin/, as a
 #                Markdown table
@@ -60,9 +61,9 @@ VERSION ?=
 LDFLAGS := -s -w $(if $(VERSION),-X $(MODULE)/internal/version.Version=$(VERSION))
 
 .DEFAULT_GOAL := check
-.PHONY: check fmt vet lint vuln test build size check-seal fuzz
+.PHONY: check fmt vet lint vuln test test-scale build size check-seal fuzz
 
-check: fmt vet lint vuln test build size
+check: fmt vet lint vuln test test-scale build size
 
 # gofmt's exit status is checked as well as its list: a file that does not
 # parse is reported on standard error with status 2 and is not in the list, so
@@ -101,6 +102,12 @@ vuln: $(filter $(TOOLS)/%,$(GOVULNCHECK))
 # for again. Compiled code still comes from the cache.
 test:
 	$(GO) test -race -count=1 ./...
+
+# The registry at 1,000 tenants (TestThousandTenants), without the race
+# detector, which the test skips: under it the test measured the detector
+# and made the race run a third longer. -v so its numbers are in the log.
+test-scale:
+	$(GO) test -count=1 -v -run '^TestThousandTenants$$' ./internal/registry
 
 build:
 	@set -e; for platform in $(PLATFORMS); do \

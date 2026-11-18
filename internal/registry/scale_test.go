@@ -124,9 +124,21 @@ func BenchmarkStoreParallel(b *testing.B) {
 // a store costs what it costs with 10, and nothing is written to the master
 // for tenants whose state did not change. It reports the time to ready, the
 // memory in use and the open files afterward.
+//
+// It runs once per CI run, without the race detector, as its own step (make
+// test-scale): under the detector it measured the detector, not the
+// registry, and made the race step a third longer; the 32-bit step leaves it
+// out for the same reason. The registry's concurrency is raced by the other
+// tests of this package.
 func TestThousandTenants(t *testing.T) {
 	if testing.Short() {
 		t.Skip("1,000 tenants: skipped under -short")
+	}
+	if raceDetector {
+		t.Skip("1,000 tenants: run without the race detector by make test-scale")
+	}
+	if runtime.GOARCH == "386" {
+		t.Skip("1,000 tenants: run on 64 bits by make test-scale")
 	}
 	if runtime.GOOS == "windows" {
 		// Nothing in the registry differs by system, a Windows minute of
