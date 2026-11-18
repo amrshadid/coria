@@ -304,6 +304,17 @@ All notable changes to Magnetar are written here. The form is
   restart that serves the same tenants, keys and log; `make check-server` now
   also points curl, grpcurl and Python's grpcio at the real program.
 
+### Changed
+
+- About 130 comment lines, a test file's name, a test failure's message and the
+  comments of the shipped SQL migrations pointed at notes that are not in the
+  repository, so a reader could not tell why the code was the way it was.
+  Each now says its reason itself, or cites a published rule or the API
+  contract. `make check-comments` (part of `make check`, and run in CI's API
+  contract job) fails on such a reference, naming the file and line. The
+  migrations' statements are unchanged but their checksums are not: a
+  development database made before this change must be made again.
+
 ### Fixed
 
 - The command line and the interactive program had been written against the

@@ -442,6 +442,11 @@ jobs:
           check-latest: true
           cache: false
 
+      # Cheap and system-independent, so it rides with the contract's checks:
+      # no comment, document or script refers to a note outside the repository.
+      - name: Comments cite nothing outside the repository
+        run: make check-comments
+
       - name: buf lint
         run: make proto-lint
 
