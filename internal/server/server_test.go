@@ -846,7 +846,10 @@ func (f factsTable) Requirement(procedure string, msg proto.Message) (access.Req
 
 // TestTableFactsReachAudit guards that the audit facts the table returns
 // for a request reach the entry the check writes, beside the method and the
-// request id the server fills.
+// request id the server fills: here the denial of a good key with no grant.
+// A key that is no good is refused before the request is routed, so its
+// entry has the method and the request id and nothing of the table, which
+// is never asked for a caller who is not authenticated.
 func TestTableFactsReachAudit(t *testing.T) {
 	dir := shortTempDir(t)
 	lock, err := server.TakeLock(dir)
@@ -879,8 +882,14 @@ func TestTableFactsReachAudit(t *testing.T) {
 			c.CloseIdleConnections()
 		}
 	})
+	noGrant := e2.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
 	ctx, info := withInfo(context.Background())
-	_, err = newClients(e2.socketClient(true), "http://local", true, "Bearer "+unknownKey).access.ListKeys(ctx, &magnetarv1.ListKeysRequest{})
+	_, err = newClients(e2.socketClient(true), "http://local", true, "Bearer "+noGrant).access.ListKeys(ctx, &magnetarv1.ListKeysRequest{})
+	if code, _ := codeOf(err); code != connect.CodePermissionDenied {
+		t.Fatalf("a key with no grant: %v", err)
+	}
+	uctx, uinfo := withInfo(context.Background())
+	_, err = newClients(e2.socketClient(true), "http://local", true, "Bearer "+unknownKey).access.ListKeys(uctx, &magnetarv1.ListKeysRequest{})
 	if code, _ := codeOf(err); code != connect.CodeUnauthenticated {
 		t.Fatalf("an unknown key: %v", err)
 	}
@@ -888,12 +897,20 @@ func TestTableFactsReachAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries, _, err := m.ListAudit(context.Background(), master.AuditFilter{Outcome: master.OutcomeRefused}, master.Page{Limit: 10})
-	if err != nil || len(entries) != 1 {
+	if err != nil || len(entries) != 2 {
 		t.Fatalf("%d refusal entries, %v", len(entries), err)
 	}
-	en := entries[0]
-	if en.Object != "the-object" || en.Method != magnetarv1connect.AccessServiceListKeysProcedure || en.RequestID != info.ResponseHeader().Get(server.RequestIDHeader) {
-		t.Fatalf("the entry is %+v", en)
+	byID := map[string]master.AuditEntry{}
+	for _, en := range entries {
+		byID[en.RequestID] = en
+	}
+	en := byID[info.ResponseHeader().Get(server.RequestIDHeader)]
+	if en.Object != "the-object" || en.Method != magnetarv1connect.AccessServiceListKeysProcedure || en.Reason != "no sufficient grant" {
+		t.Fatalf("the denial's entry is %+v", en)
+	}
+	en = byID[uinfo.ResponseHeader().Get(server.RequestIDHeader)]
+	if en.Object != "" || en.Method != magnetarv1connect.AccessServiceListKeysProcedure || en.Outcome != master.OutcomeRefused {
+		t.Fatalf("the unknown key's entry is %+v", en)
 	}
 }
 

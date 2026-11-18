@@ -525,14 +525,16 @@ func TestCatchAllNever200(t *testing.T) {
 }
 
 // TestUnknownMethodLabels guards the metrics' series: a method nobody
-// registered is counted as "unknown" and its path never becomes a label,
-// so callers cannot make series without bound; and its path is cut in the
-// log.
+// registered is counted as "unknown", whether its caller is allowed or
+// refused, and its path never becomes a label, so callers cannot make series
+// without bound; and its path is cut in the log.
 func TestUnknownMethodLabels(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	long := strings.Repeat("x", 5000)
+	refused := newClients(e.socketClient(true), "http://local", true, "Bearer "+unknownKey)
 	for _, p := range []string{"/magnetar.v1.AccessService/NoSuchOne", "/magnetar.v1.AccessService/" + long, "/no.such.Service/Call"} {
 		_ = e.local().raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: p}, &emptyMsg{}, &emptyMsg{})
+		_ = refused.raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: p}, &emptyMsg{}, &emptyMsg{})
 	}
 	text := metricsText(e)
 	if strings.Contains(text, "NoSuchOne") || strings.Contains(text, "xxxx") || strings.Contains(text, "no.such.Service") {

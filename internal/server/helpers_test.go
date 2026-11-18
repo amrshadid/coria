@@ -68,6 +68,12 @@ type options struct {
 	closeT    time.Duration
 	delay     time.Duration
 	auditWait time.Duration
+	// refusalQueue replaces the access package's queue of refusals' audit
+	// entries, for a test that sends more refusals at once than it holds.
+	refusalQueue int
+	// store wraps the master as the access package sees it, for a test
+	// that counts what the check reads.
+	store     func(access.Store) access.Store
 	register  func(*connect.Server)
 	methods   servertest.Table
 	noNetwork bool
@@ -129,7 +135,11 @@ func newEnv(tb testing.TB, o options) *env {
 		o.format = obs.JSON
 	}
 	log := obs.NewLogger(e.log, obs.LogOptions{Format: o.format, Level: o.level})
-	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log, AuditInterval: o.auditWait})
+	var st access.Store = m
+	if o.store != nil {
+		st = o.store(m)
+	}
+	a, err := access.New(access.Config{Store: st, Clock: time.Now, NewID: server.NewID, Log: log, AuditInterval: o.auditWait, RefusalQueue: o.refusalQueue})
 	if err != nil {
 		tb.Fatal(err)
 	}

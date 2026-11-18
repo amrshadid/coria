@@ -70,15 +70,19 @@ type exchange struct {
 	readMessage func() (proto.Message, error)
 }
 
-// pass is the request path, the one function every request goes through:
-// the Connect interceptor calls it for every RPC, unary and streaming, and
-// the HTTP middleware for every plain HTTP route. In order:
+// pass is the request path, the one function every routed request goes
+// through: the Connect interceptor calls it for every RPC, unary and
+// streaming, and the HTTP middleware for every plain HTTP route. The front
+// step has already authenticated the caller (or the method is public). In
+// order:
 //
 //  1. the request id: the one the envelope made for this request (it is
 //     already in the Magnetar-Request-Id response header), or a new one;
-//  2. the credential: the Authorization bearer key, else the local operator
-//     when the connection came through the local socket's peer check, else
-//     none;
+//  2. the credential: the one the front step accepted, so the key is read
+//     once per request; were pass reached without it, the credential is
+//     read from the request again (the Authorization bearer key, else the
+//     local operator when the connection came through the local socket's
+//     peer check, else none) and checked in full;
 //  3. access.Check with the method's requirement, unless the method is the
 //     public health service. For a requirement that depends on the request,
 //     the first message is read first; nothing is read for any other;
@@ -99,8 +103,14 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 	call := &Call{RequestID: id, Method: x.method}
 	defer func() { s.finish(ctx, x, call, start, err) }()
 
-	local, isLocal := localFrom(ctx)
-	call.Credential = credential(x.authorization, local, isLocal)
+	if c, ok := identityFrom(ctx); ok {
+		// The front step accepted this caller before the request was
+		// routed; its key is not read again.
+		call.Credential = c
+	} else {
+		local, isLocal := localFrom(ctx)
+		call.Credential = credential(x.authorization, local, isLocal)
+	}
 	call.Facts = access.Request{Method: x.method, RemoteAddress: x.remote, RequestID: id}
 
 	if !x.rule.public {

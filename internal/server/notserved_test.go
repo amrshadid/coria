@@ -151,8 +151,9 @@ func TestNotServedRefusedAsServed(t *testing.T) {
 // as refused under the procedure asked for; an allowed one, which the
 // contract also has write an entry, as failed, with the detail that the
 // method is not served; and a path that is not the name of a procedure
-// (control characters, 5000 bytes, not the shape of one) only under the
-// fixed name "/", and never whole in the log.
+// (control characters, 5000 bytes, an identifier that starts with a digit or
+// is empty, not the shape of one) only under the fixed name "/", and never
+// whole in the log.
 func TestNotServedAudited(t *testing.T) {
 	e := newEnv(t, options{})
 	grpc := rpcProtocols[0]
@@ -172,7 +173,8 @@ func TestNotServedAudited(t *testing.T) {
 		}
 		wants = append(wants, want{a.id, path, master.OutcomeFailed, true})
 	}
-	for _, path := range []string{"/acme.v9.Not%01thing/Do", "/acme.v9.Nothing/Do%0Aforged", long, "/just-a-path", "/acme.v9.Nothing/"} {
+	for _, path := range []string{"/acme.v9.Not%01thing/Do", "/acme.v9.Nothing/Do%0Aforged", long, "/just-a-path", "/acme.v9.Nothing/",
+		"/acme.9v.Nothing/Do", "/acme.v9.Nothing/9Do", "/acme..Nothing/Do"} {
 		a := call(t, e.socketClient(true), "http://local", path, grpc, "")
 		wants = append(wants, want{a.id, "/", master.OutcomeFailed, true})
 		a = call(t, e.tlsClient(true), e.netURL, path, grpc, "Bearer not-a-key")

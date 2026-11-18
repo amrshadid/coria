@@ -330,6 +330,68 @@ class Clients:
         return code, message, norm, rid
 
 
+    def curl_raw(self, path, method, ctype, body, key, http1):
+        """One request by curl with any HTTP method, content type and raw
+        body, over HTTP/1.1 or HTTP/2 (both over TLS), the path sent as it
+        is (--path-as-is, so a percent-encoded or doubled slash reaches the
+        server unchanged). Returns the status, the answer normalized as in
+        curl() (all headers but the date and the request id, sorted, and the
+        body), the request id, and the answer's headers."""
+        hdr = []
+        if key is not None:
+            fd = os.open(self.headers, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write("Authorization: %s\n" % key)
+            hdr = ["-H", "@" + self.headers]
+        out_body = os.path.join(self.work.path, "curl.body")
+        out_head = os.path.join(self.work.path, "curl.head")
+        in_body = os.path.join(self.work.path, "curl.in")
+        cmd = ["curl", "-sS", "--path-as-is", "--cacert", self.args.ca, "-o", out_body, "-D", out_head, "-w", "%{http_code}",
+               "--http1.1" if http1 else "--http2"] + hdr
+        if method == "HEAD":
+            cmd += ["--head"]
+        else:
+            cmd += ["-X", method]
+        if ctype:
+            cmd += ["-H", "Content-Type: " + ctype]
+        if body is not None and method != "HEAD":
+            with open(in_body, "wb") as f:
+                f.write(body)
+            cmd += ["--data-binary", "@" + in_body]
+        url = "https://%s%s" % (self.args.addr, path)
+        p = subprocess.run(cmd + [url], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        if key is not None:
+            os.unlink(self.headers)
+        status = p.stdout.decode().strip()
+        data = b""
+        if os.path.exists(out_body):
+            with open(out_body, "rb") as f:
+                data = f.read()
+            os.unlink(out_body)
+        if method == "HEAD":
+            # A HEAD answer has no body (RFC 9110 9.3.2); curl writes the
+            # headers, request id and date included, where the body would go.
+            data = b""
+        with open(out_head, "rb") as f:
+            head = f.read().decode("latin-1")
+        rid, kept, headers = "", [], {}
+        for line in head.split("\r\n")[1:]:
+            if not line:
+                continue
+            name, _, value = line.partition(":")
+            low = name.lower()
+            headers[low] = value.strip()
+            if low == "magnetar-request-id":
+                rid = value.strip()
+                continue
+            if low == "date":
+                continue
+            kept.append("%s: %s" % (low, value.strip()))
+        kept.sort()
+        norm = "%s %s\n%s\n%r" % (head.split("\r\n", 1)[0].split(" ", 1)[0], status, "\n".join(kept), data)
+        return status, norm, rid, headers
+
+
 def key_of(keys, name):
     return keys[name]["key"], keys[name]["id"]
 
@@ -417,6 +479,64 @@ def walk(work, cl, methods, unserved):
     work.ledger(rid, "GET /metrics", "", outcome_of(code), "*", "curl walk")
     work.result("2.4 no key over TLS: /metrics refused (curl)", code == "unauthenticated" and msg == UNAUTH_MESSAGE and bool(rid),
                 "%s %r" % (code, msg), [norm])
+    raw_walk(work, cl, methods, unserved)
+
+
+# The ways of asking that the raw comparisons send: each content type the
+# server's refusal is chosen by, with the body of an empty message in it.
+RAW_PROTOCOLS = [
+    ("gRPC", "application/grpc", b"\0\0\0\0\0"),
+    ("gRPC-Web", "application/grpc-web+proto", b"\0\0\0\0\0"),
+    ("Connect streaming", "application/connect+proto", b"\0\0\0\0\0"),
+    ("Connect", "application/json", b"{}"),
+    ("plain", "", None),
+]
+
+
+def raw_walk(work, cl, methods, unserved):
+    """Section 2, by curl with no key: the answer must not depend on what
+    the path names, over HTTP/1.1 as over HTTP/2, for a POST and for any
+    other HTTP method, in every protocol. For each (HTTP version, HTTP
+    method, content type) the same request goes to a served method, a
+    method not served yet, a name in no contract and a percent-encoded path
+    to the served method; all four answers must be the same bytes but the
+    date and the request id, and a refusal. Each is audited as refused, under
+    the method asked for, or "/" for a path that is not the name of one."""
+    served = "/%s/%s" % methods[0][:2]
+    paths = [(served, served), ("/acme.v9.Nothing/Do", "/acme.v9.Nothing/Do"),
+             (served.replace("/", "%2F", 2).replace("%2F", "/", 1), "/")]
+    if unserved:
+        paths.insert(1, ("/%s/%s" % unserved[0][:2], "/%s/%s" % unserved[0][:2]))
+    groups, ev, n = {}, [], 0
+    for http1 in (True, False):
+        for verb in ("POST", "GET", "PUT", "OPTIONS", "HEAD"):
+            for pname, ctype, body in RAW_PROTOCOLS:
+                if verb != "POST" and pname not in ("gRPC-Web", "Connect", "plain"):
+                    continue
+                key = ("HTTP/1.1" if http1 else "HTTP/2", verb, pname)
+                for path, audited in paths:
+                    status, norm, rid, headers = cl.curl_raw(path, verb, ctype, body, None, http1)
+                    n += 1
+                    work.ledger(rid or "-", audited, "", "refused", "*", "curl raw walk")
+                    groups.setdefault(key, {}).setdefault(norm, []).append(path)
+                    # gRPC carries the status in trailers (which curl adds to
+                    # the headers it writes), gRPC-Web in its body's trailer
+                    # frame, Connect streaming in its end-of-stream message.
+                    text = norm.lower()
+                    # A HEAD answer has no body, so gRPC-Web's carries no
+                    # status: WWW-Authenticate and the comparison stand for it.
+                    refused = status == "401" or "grpc-status: 16" in text or verb == "HEAD" or (
+                        pname == "Connect streaming" and '"code":"unauthenticated"' in text)
+                    if not rid or not refused or "bearer" not in headers.get("www-authenticate", "").lower():
+                        ev.append("%s %s %s %s: %s request-id=%r" % (key + (path, status, rid)))
+    for key, answers in groups.items():
+        if len(answers) != 1:
+            ev.append("%s %s %s: %d different answers" % (key + (len(answers),)))
+            ev += ["  %r: %s" % (k, ", ".join(v)) for k, v in answers.items()]
+    work.result("2.7 no key, HTTP/1.1 and HTTP/2, any HTTP method: served, not served and malformed paths answered alike (curl)",
+                not ev,
+                "%d requests: %d (HTTP version, method, content type) cases x %d paths (%s), one refusal per case"
+                % (n, len(groups), len(paths), ", ".join(p for p, _ in paths)), ev)
 
 
 def matrix(work, cl, methods, unserved, keys, args):
@@ -565,6 +685,25 @@ def matrix(work, cl, methods, unserved, keys, args):
     kind_check("4.12 a valid key: a method not served yet is UNIMPLEMENTED, one answer", "ns-unimplemented",
                "%d methods not served x 2 keys (admin of the installation, no grant) x 3 clients, one answer per client: Unimplemented %r"
                % (len(unserved), NO_SERVICE_MESSAGE), extra_ok=bool(unserved))
+    # With a valid key over HTTP/1.1 and HTTP/2, by curl in each protocol: a
+    # method not served yet is UNIMPLEMENTED, never an HTTP status of the
+    # transport (505), and audited as failed with served=false.
+    ev, n = [], 0
+    if unserved:
+        k, kid = key_of(keys, "nogrant")
+        path = "/%s/%s" % unserved[0][:2]
+        for http1 in (True, False):
+            for pname, ctype, body in RAW_PROTOCOLS[:4]:
+                status, norm, rid, headers = cl.curl_raw(path, "POST", ctype, body, "Bearer " + k, http1)
+                n += 1
+                work.ledger(rid or "-", path, kid, "failed", "*", "curl raw not served")
+                text = norm.lower()
+                ok = ("grpc-status: 12" in text and "grpc-message: " + NO_SERVICE_MESSAGE in text) or \
+                     ('"code":"unimplemented"' in text and NO_SERVICE_MESSAGE in text)
+                if not ok or not rid:
+                    ev.append("%s %s: %s %s" % ("HTTP/1.1" if http1 else "HTTP/2", pname, status, norm))
+    work.result("4.14 a valid key, HTTP/1.1 and HTTP/2: a method not served yet is UNIMPLEMENTED in every protocol (curl)",
+                bool(unserved) and not ev, "%d requests: gRPC, gRPC-Web, Connect streaming, Connect x 2 HTTP versions" % n, ev)
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
     work.result("4.13 a method not served yet does nothing", not changed,
                 "every row of the master and of tenant %s, read before and after the %d requests with a valid key naming it: %s"

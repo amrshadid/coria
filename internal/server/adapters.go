@@ -15,31 +15,24 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/server/redact"
 )
 
 // errNoSuchMethod answers a procedure the table does not know, after the
-// check: a method nobody registered, or one registered on the connect.Server
-// after New, which the table never saw and so must never be served.
-var errNoSuchMethod = connect.NewError(connect.CodeUnimplemented, "no such method")
-
-// notServedReason and notServedDetails are what the audit entry of an allowed
-// request to a procedure no handler serves says. The contract has every
-// request write one entry; this one is failed, as a request that did not do
-// what it asked.
-const notServedReason = "no handler serves this method"
-
-// notServedDetail is the detail key of that entry, with the value "false".
-const notServedDetail = "served"
+// check. The router dispatches only the procedures recorded at New, each of
+// which has a requirement, so this is a guard that should never be reached:
+// were a procedure to arrive here unknown (registered on the connect.Server
+// after New, say), it must never be served.
+var errNoSuchMethod = connect.NewError(connect.CodeUnimplemented, noSuchMethod)
 
 // interceptor is the Connect server interceptor: every RPC the server's
-// connect.Server dispatches, unary and streaming, registered method or
-// unknown one, goes through it and so through pass. It is installed when
-// the connect.Server is made (buildRoutes), so a method registered on it
-// cannot skip it. A procedure the table does not know is checked as any
-// authenticated caller's and then answered UNIMPLEMENTED: its handler, if
-// one was registered late, is never called.
+// connect.Server dispatches, unary and streaming, goes through it and so
+// through pass. It is installed when the connect.Server is made
+// (buildRoutes), so a method registered on it cannot skip it. The caller was
+// authenticated by the front step before the call was routed (or the method
+// is public); pass takes the credential front accepted from the context.
+// A procedure the table does not know is checked as any authenticated
+// caller's and then answered UNIMPLEMENTED: its handler is never called.
 func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 	return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
 		info, _ := connect.CallInfoForServerContext(ctx)
@@ -52,22 +45,13 @@ func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 		if r, known := s.ruleFor(spec.Procedure); known {
 			x.rule = r
 		} else {
-			// The caller must still be authenticated before it is told the
-			// method does not exist. The procedure comes from the request, so
-			// it is recorded only when it has the shape of one (methodName),
-			// and counted under one label.
+			// The procedure comes from the request, so it is recorded only
+			// when it has the shape of one (methodName), and counted under
+			// one label.
 			x.rule = on(access.Authenticated())
 			x.method = methodName(spec.Procedure)
-			x.metric = "unknown"
-			handler = func(ctx context.Context, _ connect.ServerStream) error {
-				// An allowed request writes its entry too: through the
-				// bounded queue of reads, which never blocks or fails it.
-				if call, ok := CallFrom(ctx); ok {
-					s.access.Record(call.Decision, master.OutcomeFailed, notServedReason,
-						access.Facts{Details: map[string]string{notServedDetail: "false"}})
-				}
-				return errNoSuchMethod
-			}
+			x.metric = unknownMetric
+			handler = func(context.Context, connect.ServerStream) error { return errNoSuchMethod }
 		}
 		replay := &replayStream{ServerStream: stream, s: s, ctx: ctx, method: x.method}
 		if info != nil {
@@ -194,7 +178,9 @@ type HTTPRoute struct {
 	Handler HTTPHandler
 }
 
-// middleware wraps a plain HTTP route in the request path.
+// middleware wraps a plain HTTP route in the request path: the route's
+// requirement is checked by pass, with the credential the front step
+// accepted, before its handler runs.
 func (s *Server) middleware(route HTTPRoute) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		x := exchange{
@@ -208,9 +194,6 @@ func (s *Server) middleware(route HTTPRoute) http.Handler {
 			return route.Handler(ctx, w, r.WithContext(ctx))
 		})
 		if err != nil {
-			// In the request's own protocol: the catch-all route also meets
-			// gRPC clients asking for a service that is not here (a
-			// reflection request, say), which cannot read a JSON body.
 			s.writeAnyError(w, r, s.answer(err))
 		}
 	})
@@ -239,8 +222,8 @@ var httpStatus = map[connect.Code]int{
 }
 
 // writeHTTPError writes a Connect-shaped error, {"code": ..., "message":
-// ...}, with its HTTP status.
-func (s *Server) writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
+// ...}, with its HTTP status (the Connect protocol, "Unary-Error-Response").
+func writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
 	status, ok := httpStatus[ce.Code()]
 	if !ok {
 		status = http.StatusInternalServerError
@@ -264,9 +247,11 @@ func (s *Server) writeHTTPError(w http.ResponseWriter, ce *connect.Error) {
 }
 
 // errorWriter writes an error in whichever protocol a request speaks
-// (Connect, gRPC, gRPC-Web), for answers the envelope gives before the
-// request reaches its route: a server that is stopping, a panic outside a
-// handler.
+// (Connect, gRPC, gRPC-Web), for the answers the envelope gives itself (a
+// server that is stopping, a panic outside a handler) and for a plain
+// route's error after its check. The answers of the front step and of the
+// router (a refusal of a caller not authenticated, a path nothing serves)
+// are written by writeWireError instead, whose output is fixed.
 var errorWriter = connecthttp.NewErrorWriter()
 
 // writeAnyError answers r with ce in its own protocol, or as JSON for a
@@ -282,7 +267,7 @@ func (s *Server) writeAnyError(w http.ResponseWriter, r *http.Request, ce *conne
 		}
 		return
 	}
-	s.writeHTTPError(w, ce)
+	writeHTTPError(w, ce)
 }
 
 // remoteOf returns the caller's address for the log and the audit entry:
@@ -300,8 +285,7 @@ func remoteOf(ctx context.Context, addr string) string {
 const maxMethodName = 256
 
 // unnamedMethod is what is recorded for a path that is not the name of a
-// procedure: the catch-all route's own pattern, the route such a path falls
-// to.
+// procedure: "/", one fixed name, whatever the path was.
 const unnamedMethod = "/"
 
 // methodName returns the procedure a request named, as an audit entry and

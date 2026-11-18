@@ -75,10 +75,11 @@ func NewID() string {
 }
 
 // envelope is the outermost handler of every listener: it runs for every
-// request before any route, so what it does holds for answers the RPC
-// library gives before the request path runs (an unsupported content type,
-// a method other than POST, an unknown compression, a malformed timeout
-// header, a path no route serves) as much as for any route. In order:
+// request before the front step and any route, so what it does holds for
+// the front step's refusals and for answers the RPC library gives before the
+// request path runs (an unsupported content type, a method other than POST,
+// an unknown compression, a malformed timeout header) as much as for any
+// route. In order:
 //
 //   - it deletes a client's own Magnetar-Request-Id, makes the request's id
 //     and sets it on the response, so every answer carries it, success,
@@ -93,9 +94,10 @@ func NewID() string {
 //   - it recovers a panic that escaped the request path (a handler's panic
 //     is recovered inside it, in pass), logs it with the id and a stack, and
 //     answers INTERNAL;
-//   - it logs and counts an answer the request path did not (one the RPC
-//     library gave before the path ran), so every answer that carries a
-//     request id has a log line with that id and a count in the metrics.
+//   - it logs and counts an answer neither the front step nor the request
+//     path did (one the RPC library gave before the path ran), so every
+//     answer that carries a request id has a log line with that id and a
+//     count in the metrics.
 func (s *Server) envelope(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -176,9 +178,11 @@ func readBoundPassed(ctx context.Context) bool {
 }
 
 // pathMark records what the request path learned of the request: that it
-// logged and counted it, so the envelope does not do it a second time; and
-// that its caller was authenticated, so its HTTP/1.1 connection may stay
-// open for the next request.
+// logged and counted it (the front step and the router mark it too, for the
+// answers they give), so the envelope does not do it a second time and the
+// front step knows a check, or an answer of its own, took the request up;
+// and that its caller was allowed, so its HTTP/1.1 connection may stay open
+// for the next request.
 type pathMark struct {
 	done atomic.Bool
 	keep atomic.Bool
@@ -243,8 +247,8 @@ func (s *Server) logTransport(r *http.Request, sw *statusWriter, mark *pathMark,
 // statusWriter is the response as the envelope sees it: it records the
 // status written, so an answer the request path did not handle can be
 // logged with it; and it closes an HTTP/1.1 connection after an answer to a
-// caller that was never authenticated (a refusal, the public health check,
-// an answer the RPC library gave before the check), so a caller with no key
+// caller that was never allowed by a check (a refusal, the public health
+// check, an answer the RPC library gave before the check), so a caller with no key
 // cannot keep idle connections, and the file descriptors they cost, for the
 // idle timeout. Flush and the response controller's calls pass through to
 // the connection's writer, which streams and read deadlines need.

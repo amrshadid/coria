@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -93,12 +94,15 @@ const (
 // MetricsPattern is the route of the metrics.
 const MetricsPattern = "GET /metrics"
 
-// Checker is what the server needs of the access package: the check, the
-// recording of an allowed read, the counts it reports in the metrics, and
+// Checker is what the server needs of the access package: the judgment of a
+// credential before routing, the check, the recording of an allowed read and
+// of a request no check took up, the counts it reports in the metrics, and
 // Close, which writes the audit entries it holds. *access.Access is one.
 type Checker interface {
+	Authenticate(ctx context.Context, cred access.Credential, facts access.Request) (access.Credential, error)
 	Check(ctx context.Context, cred access.Credential, req access.Requirement, facts access.Request) (access.Decision, error)
 	Record(d access.Decision, outcome master.Outcome, reason string, facts access.Facts)
+	RecordUnchecked(cred access.Credential, facts access.Request, reason string)
 	AuditStats() access.AuditStats
 	MarkStats() access.MarkStats
 	Close(ctx context.Context) error
@@ -185,11 +189,12 @@ type Server struct {
 	cert         *tls.Certificate
 	mux          *routeMux
 	handler      http.Handler
-	// unknownRPC is the RPC library's handler for a call to a procedure no
-	// handler serves, taken from connecthttp.Mount (captureUnknown): it
-	// answers through the same machinery, and so with the same headers and
-	// trailers, as a served method's handler, after the interceptor's check.
-	unknownRPC http.Handler
+	// procs maps each served procedure, "/package.Service/Method", to its
+	// handler from the one checked connect.Server; the router dispatches a
+	// call by exact match against it and against plain.
+	procs map[string]http.Handler
+	// plain maps the path of each plain HTTP route to its pattern.
+	plain map[string]string
 
 	stopMu    sync.RWMutex
 	stopping  bool
@@ -291,9 +296,11 @@ func (s *Server) counters() []obs.Counter {
 }
 
 // buildRoutes makes the one connect.Server, registers the API's services
-// and the health service on it, and mounts it with the metrics and the
-// other plain HTTP routes on the server's mux, each through the request
-// path.
+// and the health service on it, and records each of its procedures, and
+// each plain HTTP route (the metrics and Config.HTTPRoutes, each in the
+// middleware), as an exact path the router serves. The handler of every
+// listener is then the envelope, around the front step, around the router:
+// no route is chosen before the caller is known.
 func (s *Server) buildRoutes() error {
 	rpc := connect.NewServer(s.interceptor)
 	// Check only: grpchealth serves Watch when its checker is also a
@@ -302,12 +309,6 @@ func (s *Server) buildRoutes() error {
 	// hold as many open as the system's file limit allows.
 	grpchealth.Register(rpc, checkOnly{s.health})
 	s.cfg.Register(rpc)
-	// A method nobody registered still passes the request path: an
-	// unauthenticated caller is refused before it is told the method does
-	// not exist.
-	rpc.SetUnknownHandler(func(context.Context, connect.Spec, connect.ServerStream) error {
-		return connect.NewError(connect.CodeUnimplemented, "no such method")
-	})
 	var missing []string
 	for spec := range rpc.Specs() {
 		if _, ok := s.ruleFor(spec.Procedure); !ok {
@@ -320,47 +321,59 @@ func (s *Server) buildRoutes() error {
 	}
 
 	s.mux = newRouteMux()
-	// Mounted through captureUnknown, which keeps the library's handler of
-	// unknown procedures, built with these same options, so a call to a
-	// service no handler serves meets the same limits as a served one.
-	mounted := &captureUnknown{routeMux: s.mux}
-	connecthttp.Mount(mounted, rpc,
+	s.procs = make(map[string]http.Handler)
+	s.plain = make(map[string]string)
+	connecthttp.Mount(procedureMux{s}, rpc,
 		connecthttp.WithReadMaxBytes(MaxMessageBytes),
 		connecthttp.WithSendMaxBytes(MaxMessageBytes),
 	)
-	if mounted.unknown == nil {
-		return fault.New(fault.Internal, "server: the RPC library mounted no handler for unknown procedures")
-	}
-	s.unknownRPC = mounted.unknown
 	routes := append([]HTTPRoute{{Pattern: MetricsPattern, Need: access.OnInstallation(master.RoleReader), Handler: s.serveMetrics}}, s.cfg.HTTPRoutes...)
 	for _, r := range routes {
 		if err := s.handleHTTP(r); err != nil {
 			return err
 		}
 	}
-	// Every other path still passes the request path, so even a request
-	// for nothing is checked before it is told there is nothing. A call to
-	// a service no handler serves is handed to the RPC library, so it is
-	// checked by the interceptor and answered exactly as a served method
-	// is: a caller without a key must not be able to tell from the answer
-	// which services this server has.
-	catchAll := HTTPRoute{Pattern: "/", Need: access.Authenticated(), Handler: notFound}
-	if err := s.handleHTTPWith(catchAll, s.callsToRPC); err != nil {
-		return err
-	}
-	s.handler = s.envelope(s.mux)
+	s.handler = s.envelope(s.front(http.HandlerFunc(s.route)))
 	return nil
 }
 
-// handleHTTP adds a plain HTTP route, wrapped in the request path. It is
-// the only way a plain route reaches the mux.
-func (s *Server) handleHTTP(r HTTPRoute) error { return s.handleHTTPWith(r, nil) }
+// procedureMux is what connecthttp.Mount registers on. It keeps each
+// procedure's handler for the router and records its pattern, and drops the
+// handler Mount adds for each service's subtree ("/package.Service/"): that
+// is the RPC library's handler of unknown procedures, which would dispatch a
+// path that is not exactly a procedure (a percent-encoded one, say) to a
+// served handler with the request's stream shape instead of the method's,
+// and refuse calls to unknown names on HTTP/1.1 before any check. A call to
+// a procedure nothing serves is answered by the server itself (notServed).
+type procedureMux struct{ s *Server }
 
-// handleHTTPWith is handleHTTP with wrap, when not nil, put around the
-// route's handler in the request path.
-func (s *Server) handleHTTPWith(r HTTPRoute, wrap func(http.Handler) http.Handler) (err error) {
+// Handle keeps h as the handler of the procedure pattern, or drops it when
+// pattern is a subtree.
+func (m procedureMux) Handle(pattern string, h http.Handler) {
+	if strings.HasSuffix(pattern, "/") {
+		return
+	}
+	m.s.procs[pattern] = h
+	m.s.mux.Handle(pattern, h)
+}
+
+// handleHTTP adds a plain HTTP route, wrapped in the request path. It is
+// the only way a plain route is served: the router reaches the mux only for
+// a path recorded here. The pattern must be one exact path (plainPattern),
+// not a procedure's and not one already taken.
+func (s *Server) handleHTTP(r HTTPRoute) (err error) {
 	if r.Handler == nil || r.Pattern == "" {
 		return fault.New(fault.Internal, "server: a route needs a pattern and a handler")
+	}
+	path, ok := plainPattern(r.Pattern)
+	if !ok {
+		return fault.New(fault.Internal, "server: the route "+r.Pattern+" is not one exact path")
+	}
+	if _, taken := s.procs[path]; taken {
+		return fault.New(fault.Internal, "server: the route "+r.Pattern+" is a procedure's path")
+	}
+	if _, taken := s.plain[path]; taken {
+		return fault.New(fault.Internal, "server: the route "+r.Pattern+" has a path already taken")
 	}
 	defer func() {
 		// http.ServeMux panics on a pattern that is malformed or registered
@@ -369,59 +382,9 @@ func (s *Server) handleHTTPWith(r HTTPRoute, wrap func(http.Handler) http.Handle
 			err = fault.New(fault.Internal, "server: the route "+r.Pattern+" cannot be registered")
 		}
 	}()
-	h := s.middleware(r)
-	if wrap != nil {
-		h = wrap(h)
-	}
-	s.mux.Handle(r.Pattern, h)
+	s.mux.Handle(r.Pattern, s.middleware(r))
+	s.plain[path] = r.Pattern
 	return nil
-}
-
-// callsToRPC sends a request that is a call, a POST in one of the RPC
-// protocols, to the RPC library's handler of unknown procedures, and every
-// other request to plain. A Connect GET is not a call here: the library
-// does not dispatch one to an unknown procedure, whose idempotency it
-// cannot know.
-func (s *Server) callsToRPC(plain http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && errorWriter.IsSupported(r) {
-			s.unknownRPC.ServeHTTP(w, r)
-			return
-		}
-		plain.ServeHTTP(w, r)
-	})
-}
-
-// captureUnknown is the mux connecthttp.Mount registers on. It passes every
-// pattern to the routeMux and keeps the handler Mount registers for a
-// service's subtree ("/package.Service/"), which is the library's handler
-// of unknown procedures: the same for every service, built from the
-// connect.Server and Mount's options. The library does not export it, and
-// it is the one way to answer an unknown service's call with the code a
-// served method's call goes through.
-type captureUnknown struct {
-	*routeMux
-	unknown http.Handler
-}
-
-// Handle registers h for pattern, and keeps h when pattern is a service's
-// subtree.
-func (c *captureUnknown) Handle(pattern string, h http.Handler) {
-	if c.unknown == nil && len(pattern) > 1 && pattern[0] == '/' && pattern[len(pattern)-1] == '/' {
-		c.unknown = h
-	}
-	c.routeMux.Handle(pattern, h)
-}
-
-// notFound answers a path that no route serves and that is not a call
-// (callsToRPC hands calls to the RPC library): UNIMPLEMENTED to a request in
-// an RPC protocol that is not a call, such as a Connect GET, and NOT_FOUND
-// to a plain HTTP request.
-func notFound(_ context.Context, _ http.ResponseWriter, r *http.Request) error {
-	if errorWriter.IsSupported(r) {
-		return connect.NewError(connect.CodeUnimplemented, "no such service")
-	}
-	return fault.New(fault.NotFound, "no such route")
 }
 
 // serveMetrics writes the metrics. An allowed scrape writes no audit entry:
@@ -541,8 +504,11 @@ func (s *Server) newHTTPServer(tlsOn bool) *http.Server {
 			MaxConcurrentStreams: maxConcurrentStreams,
 			PingTimeout:          pingTimeout,
 		},
-		BaseContext: func(net.Listener) context.Context { return s.baseCtx },
-		ErrorLog:    slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
+		// "OPTIONS *" is passed to the handler, so it meets the front step
+		// like every other request instead of net/http's own answer.
+		DisableGeneralOptionsHandler: true,
+		BaseContext:                  func(net.Listener) context.Context { return s.baseCtx },
+		ErrorLog:                     slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
 	}
 }
 

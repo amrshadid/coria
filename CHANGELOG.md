@@ -458,18 +458,28 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
-- A request for a method the server does not serve took another path through the
-  server than a served one, and it showed. A caller with no key got the same code
-  and message, but other headers (in gRPC a `content-length` and a `trailer` header
-  whose names came in a changing order, and no `grpc-accept-encoding`), so it could
-  tell which of the contract's services the server serves. The audit log recorded
-  such a request's refusal under `/` and an allowed one not at all. Such a call is
-  now handed to the RPC library's own handler for unknown procedures and checked
-  like any other, so a refusal is the very answer a served method gives, in every
-  protocol. Every such request writes one entry in the installation's log, refused
-  or failed with the detail `served=false`, under the method asked for when it has
-  the shape of a protobuf method name within 256 bytes, and under `/` otherwise. An
-  authenticated caller is told UNIMPLEMENTED, "no such method".
+- A caller with no key, or a bad one, could tell from the server's answer which
+  methods it serves, and some of its requests were held or went unaudited. Who
+  the caller was got decided after the router and the RPC library had looked at
+  the path, the HTTP method and the content type, so the answer differed by what
+  the path named: over HTTP/1.1 a gRPC, gRPC-Web or Connect streaming call to a
+  name not served got HTTP 505 and a served one the refusal; a streaming content
+  type got 415 with a list of accepted types from a served method and a refusal
+  from one not served; a GET or a POST without an RPC content type got 405 with
+  an `Allow` header, 404 or 401 by path; a percent-encoded path reached the real
+  handler; a method that reads its request held a request whose body never ended
+  for 10 seconds; and the RPC library's own answers wrote no audit entry. The
+  server now authenticates every request before it routes it: a caller who is
+  not authenticated gets one refusal, chosen only by the protocol its
+  `Content-Type` names, written at once without reading the body, the same for
+  every path and every HTTP method, with the request id where a client reads
+  initial metadata. Only an authenticated caller reaches the router, which
+  serves exact paths only; anything else, a percent-encoded path included, is
+  answered UNIMPLEMENTED (NOT_FOUND to plain HTTP) in the caller's protocol over
+  any HTTP version. Every request but the health check writes exactly one audit
+  entry, under the method asked for when it has the shape of a protobuf method
+  name within 256 bytes and under `/` otherwise, including a call the RPC
+  library refuses before the check. The key is still read once per request.
 - A key revoked, expired, or stripped of its grant after its request was
   checked could still make that request's change: the management calls read
   the key again just before the change, in a step of their own, and the

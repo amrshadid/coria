@@ -64,6 +64,10 @@ type Credential struct {
 	key       string
 	localUser string
 	local     bool
+	// accepted is the caller Authenticate found good; nil for a credential
+	// that has not been through it. Only Authenticate sets it, so no other
+	// package can make a credential that skips the reading of its key.
+	accepted *Principal
 }
 
 // APIKey is a credential of a presented key, mgt_<id>_<secret>. The server
@@ -92,6 +96,10 @@ func LocalOperator(userID string) Credential {
 // credential that reaches a log by mistake carries no secret.
 func (c Credential) String() string {
 	switch {
+	case c.accepted != nil && c.accepted.isLoc:
+		return "access.LocalOperator(" + strconv.QuoteToASCII(c.accepted.local) + ", accepted)"
+	case c.accepted != nil:
+		return "access.Credential(key, accepted)"
 	case c.local:
 		return "access.LocalOperator(" + strconv.QuoteToASCII(c.localUser) + ")"
 	case c.key == "":
@@ -360,7 +368,8 @@ func (d Decision) Entry(outcome master.Outcome, reason string, facts Facts) mast
 //  1. The credential: the key is parsed, read by its id, its secret compared
 //     in constant time, and refused when revoked or expired; or it is the
 //     local operator. Any failure is Unauthenticated with
-//     MessageUnauthenticated.
+//     MessageUnauthenticated. A credential Authenticate returned has had
+//     this step and is taken as it was accepted.
 //  2. For a key, one RolesFor reads its role on the installation and, when
 //     req names a tenant, whether that tenant exists, its id, and the key's
 //     role there, by the name as the request gave it, every time: there is
@@ -465,6 +474,73 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 	return d, nil
 }
 
+// Authenticate is the first step of Check alone: it decides whether cred is
+// a good credential, reading the key once, and nothing about what the caller
+// may do. A server calls it before it routes a request, so that a caller who
+// is not authenticated is answered the same, whatever it asked for.
+//
+// A credential that is no good is refused exactly as Check refuses it: its
+// audit entry, with facts and the real reason, is handed to the audit writer
+// as refused, and the error is Unauthenticated with MessageUnauthenticated. A
+// store that fails is Unavailable or Internal, and recorded as failed. A good
+// credential is returned as one that carries the caller: Check given it does
+// not read the key again, so a request reads its key once whether or not it
+// went through Authenticate first. A key that passes has its last use marked
+// here, as Check would.
+func (a *Access) Authenticate(ctx context.Context, cred Credential, facts Request) (Credential, error) {
+	if cred.accepted != nil {
+		return cred, nil
+	}
+	entry := a.newEntry(facts)
+	entry.ID = a.newID()
+	if master.ValidateID("audit entry id", entry.ID) != nil {
+		return Credential{}, fault.New(fault.Internal, "internal error")
+	}
+	if entry.Method == "" {
+		entry.Method = "unknown"
+		entry.Details = nil
+		a.record(entry, master.OutcomeFailed, reasonBadCheck)
+		return Credential{}, fault.New(fault.Internal, "internal error")
+	}
+	p, reason, err := a.authenticate(ctx, cred, &entry)
+	if err != nil {
+		return Credential{}, a.fail(entry, err)
+	}
+	if reason != "" {
+		a.record(entry, master.OutcomeRefused, reason)
+		return Credential{}, fault.New(fault.Unauthenticated, MessageUnauthenticated)
+	}
+	return Credential{accepted: &p}, nil
+}
+
+// RecordUnchecked hands the audit entry of a request that never reached
+// Check to the audit writer for the master's log, as failed with reason: a
+// request whose caller Authenticate accepted and that the server answered
+// before its check (a path nothing serves, a call the RPC library refused as
+// malformed). The contract has every request write one entry; such a request
+// has no Decision to write it with. The entry names the caller cred carries
+// and the facts given. It goes through the queue of allowed requests'
+// entries, so refusals of callers with no key never push it out, and never
+// blocks or fails. A credential Authenticate did not accept records nothing:
+// its refusal is already recorded; it is counted as failed and logged.
+func (a *Access) RecordUnchecked(cred Credential, facts Request, reason string) {
+	if cred.accepted == nil {
+		a.auditAcct.add(auditFailed, 1)
+		a.log.Error("access: an unchecked request's entry was asked for a credential that was not accepted; nothing was written")
+		return
+	}
+	e := a.newEntry(facts)
+	e.ID = a.newID()
+	if p := cred.accepted; p.isLoc {
+		e.LocalUser = auditText(p.local, master.MaxAuditFieldLength)
+	} else {
+		e.KeyID = p.key.ID
+	}
+	e.Outcome = master.OutcomeFailed
+	e.Reason = auditText(reason, master.MaxAuditReasonLength)
+	a.enqueueRecord(a.store, e)
+}
+
 // allows reports whether p meets req, given the id of the tenant req named
 // (found by Check).
 func allows(p Principal, req Requirement, tenantID string) bool {
@@ -487,6 +563,16 @@ func allows(p Principal, req Requirement, tenantID string) bool {
 // refusal of a key with a known shape records which key it was
 // (audit.proto, AuditEntry.key_id).
 func (a *Access) authenticate(ctx context.Context, cred Credential, entry *master.AuditEntry) (Principal, string, error) {
+	if p := cred.accepted; p != nil {
+		// Authenticate read and judged this key moments ago, for this same
+		// request; it is not read again.
+		if p.isLoc {
+			entry.LocalUser = auditText(p.local, master.MaxAuditFieldLength)
+		} else {
+			entry.KeyID = p.key.ID
+		}
+		return *p, "", nil
+	}
 	if cred.local {
 		entry.LocalUser = auditText(cred.localUser, master.MaxAuditFieldLength)
 		// A user id the entry could not hold as it is (too long, or with a
