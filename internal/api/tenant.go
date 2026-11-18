@@ -69,11 +69,11 @@ func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantReq
 	if err != nil {
 		return nil, c.fail(d, err)
 	}
-	return &v1.CreateTenantResponse{Tenant: tenantMessage(row)}, nil
+	return &v1.CreateTenantResponse{Tenant: c.tenantView(row)}, nil
 }
 
 // GetTenant answers one tenant, whatever its state: its registration from
-// the master and its state from the registry (withState), without touching
+// the master and its state from the registry (tenantView), without touching
 // the tenant's database. The row is read here rather than taken from the
 // Decision, which is to carry only the tenant's id and name; a row gone
 // since the check is answered as the check would have answered it.
@@ -95,7 +95,7 @@ func (s tenantService) GetTenant(ctx context.Context, req *v1.GetTenantRequest) 
 		return nil, c.fail(d, err)
 	}
 	c.done(ctx, d, nil)
-	return &v1.GetTenantResponse{Tenant: tenantMessage(c.withState(t))}, nil
+	return &v1.GetTenantResponse{Tenant: c.tenantView(t)}, nil
 }
 
 // ListTenants answers the tenants the caller may see, ordered by name: every
@@ -125,7 +125,7 @@ func (s tenantService) ListTenants(ctx context.Context, req *v1.ListTenantsReque
 	c.done(ctx, d, nil)
 	out := &v1.ListTenantsResponse{Tenants: make([]*v1.Tenant, 0, len(rows)), NextPageToken: next}
 	for _, t := range rows {
-		out.Tenants = append(out.Tenants, tenantMessage(c.withState(t)))
+		out.Tenants = append(out.Tenants, c.tenantView(t))
 	}
 	return out, nil
 }
@@ -225,14 +225,19 @@ func (s tenantService) RemoveTenant(ctx context.Context, req *v1.RemoveTenantReq
 	return &v1.RemoveTenantResponse{DatabaseType: databaseType(removed.Driver), DataLocation: removed.Location}, nil
 }
 
-// withState returns t with the state and reason the registry sees now, which
-// is what a request into the tenant meets. The master's row may lag behind
-// it: the registry writes a change between ready and unreachable at most once
-// a minute per tenant. A tenant the registry does not hold yet (for a moment
-// during start or creation) keeps the master's state. It reads no database.
-func (c *core) withState(t master.Tenant) master.Tenant {
-	if st, ok := c.reg.State(t.Name); ok {
-		t.State, t.StateReason = st.State, st.Reason
+// tenantView returns t as the contract writes it, with the state, reason and
+// state time the registry sees now, which is what a request into the tenant
+// meets. The master's row may lag behind it: the registry writes a change
+// between ready and unreachable at most once a minute per tenant. A tenant
+// the registry does not hold yet (for a moment during start or creation)
+// keeps the master's state and has no state time. It reads no database.
+func (c *core) tenantView(t master.Tenant) *v1.Tenant {
+	st, ok := c.reg.State(t.Name)
+	if !ok {
+		return tenantMessage(t)
 	}
-	return t
+	t.State, t.StateReason = st.State, st.Reason
+	m := tenantMessage(t)
+	m.StateTime = timestamp(st.Since)
+	return m
 }

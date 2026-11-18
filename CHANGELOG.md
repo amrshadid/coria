@@ -235,7 +235,8 @@ All notable changes to Magnetar are written here. The form is
   answer, audit entry, error or log line, which a test shows by searching
   all of them, and the master's files, for the address, its password, user
   and host. A tenant's state is the one the registry sees now, not the
-  master's row, which can lag a minute behind. A read of the installation
+  master's row, which can lag a minute behind, with the time that state was
+  reached (`Tenant.state_time`, a new field). A read of the installation
   costs 26 µs through the check and the handler without the network; a
   change, one synced commit of the master (5 ms on a laptop). The server does
   not serve them yet.

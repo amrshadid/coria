@@ -225,11 +225,20 @@ func TestStateIsTheRegistrys(t *testing.T) {
 		t.Fatalf("the master's row is %v (%v); the test needs it still ready", row.State, err)
 	}
 	got := call(e.as(local).tenants.GetTenant, &v1.GetTenantRequest{Name: "pg"})
-	if tn := got.res.(*v1.GetTenantResponse).GetTenant(); tn.GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE || tn.GetStateReason() == "" {
+	tn := got.res.(*v1.GetTenantResponse).GetTenant()
+	if tn.GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE || tn.GetStateReason() == "" {
 		t.Errorf("GetTenant: %v", tn)
 	}
+	// The state time is when the registry's view began, not the creation.
+	st, _ := e.registry.State("pg")
+	if tn.GetStateTime() == nil || !tn.GetStateTime().AsTime().Equal(st.Since) || !tn.GetStateTime().AsTime().After(tn.GetCreateTime().AsTime()) {
+		t.Errorf("GetTenant's state time is %v; the registry's view began %v, the tenant was created %v", tn.GetStateTime(), st.Since, tn.GetCreateTime())
+	}
+	if tn.GetStateTime().AsTime().Location() != time.UTC {
+		t.Error("the state time is not UTC")
+	}
 	list := call(e.as(local).tenants.ListTenants, &v1.ListTenantsRequest{})
-	if ts := list.res.(*v1.ListTenantsResponse).GetTenants(); len(ts) != 1 || ts[0].GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE {
+	if ts := list.res.(*v1.ListTenantsResponse).GetTenants(); len(ts) != 1 || ts[0].GetState() != v1.TenantState_TENANT_STATE_UNREACHABLE || !ts[0].GetStateTime().AsTime().Equal(st.Since) {
 		t.Errorf("ListTenants: %v", ts)
 	}
 }
