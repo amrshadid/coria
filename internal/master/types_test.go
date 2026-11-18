@@ -47,8 +47,9 @@ var invalidKind = fault.Invalid
 // 0-9 and -, starting with a letter, because the name appears in URLs and
 // paths.
 func TestTenantNameRule(t *testing.T) {
-	good := []string{"a", "lab", "nyuad-mri", "a1", "z-", strings.Repeat("a", 63)}
-	bad := []string{"", "1lab", "-lab", "Lab", "lab_1", "lab.1", "lab 1", "läb", strings.Repeat("a", 64), "../x"}
+	good := []string{"a", "lab", "nyuad-mri", "a1", "z-", strings.Repeat("a", 63), "com10", "console", "lpt", "nul-1"}
+	bad := []string{"", "1lab", "-lab", "Lab", "lab_1", "lab.1", "lab 1", "läb", strings.Repeat("a", 64), "../x",
+		"con", "prn", "aux", "nul", "com0", "com9", "lpt1", "lpt9"}
 	for _, name := range good {
 		wantKind(t, "name "+strconv.Quote(name), ValidateTenantName(name), nil)
 	}

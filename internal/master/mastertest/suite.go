@@ -349,6 +349,9 @@ func testTenants(e *env) {
 	e.wantKind("CreateTenant, id taken", e.s.CreateTenant(e.ctx, sameID, e.audit()), fault.Conflict)
 	bad := e.tenant("Bad Name")
 	e.wantKind("CreateTenant, bad name", e.s.CreateTenant(e.ctx, bad, e.audit()), fault.Invalid)
+	for _, device := range []string{"con", "nul", "com1", "lpt9"} {
+		e.wantKind("CreateTenant, a name Windows reserves ("+device+")", e.s.CreateTenant(e.ctx, e.tenant(device), e.audit()), fault.Invalid)
+	}
 	badAudit := e.audit()
 	badAudit.Outcome = "maybe"
 	e.wantKind("CreateTenant, bad audit entry", e.s.CreateTenant(e.ctx, e.tenant("fine"), badAudit), fault.Invalid)
