@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""The parts of scripts/prove-m0.sh that are easier to say in Python.
+"""The parts of scripts/prove.sh that are easier to say in Python.
 
-Each subcommand is one step of the proof of M0, run by prove-m0.sh against the
+Each subcommand is one step of the proof, run by prove.sh against the
 real binary it started; none imports anything of Magnetar's. They share the
 script's work directory:
 
@@ -471,7 +471,7 @@ def socket_post(sock, path, body):
     p = subprocess.run(["curl", "-sS", "--fail-with-body", "--unix-socket", sock, "-H", "Content-Type: application/json",
                         "-D", "-", "-d", json.dumps(body), "http://local" + path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
     if p.returncode != 0:
-        raise SystemExit("prove-m0.py: %s answered %s %s" % (path, p.stdout.decode()[-400:], p.stderr.decode()))
+        raise SystemExit("prove.py: %s answered %s %s" % (path, p.stdout.decode()[-400:], p.stderr.decode()))
     head, _, data = p.stdout.decode().partition("\r\n\r\n")
     rid = ""
     for line in head.split("\r\n"):
@@ -562,7 +562,8 @@ def cmd_audit(work, args):
             problems.append("tenant %r, want %r" % (e.get("tenant", ""), tenant))
         if problems:
             wrong.append("%s %s %s: %s" % (source, method, rid, "; ".join(problems)))
-        # A refusal is always in the installation's log (decision D53).
+        # A refusal is always in the installation's log: a caller who was
+        # refused must not be able to cause a write in a tenant's database.
         if outcome == "refused" and e["log"] != "installation":
             misplaced.append("%s %s %s refused, in the log of %s" % (source, method, rid, e["log"]))
     # The commands of the command line show a request id only on an error:
@@ -607,12 +608,15 @@ def cmd_audit(work, args):
     unexpected, counts = [], {"init": 0, "started": 0, "state": 0, "tui": 0, "after the stop": 0}
     states = []
     tui_lists = 0
+    # What init writes (the installation's id, its key check) comes before
+    # the first request of all: an "init" entry after that is not init's.
+    first_request = min([parse_time(e["time"]) for e in entries if not system(e)] or [0])
     for e in entries:
         if id(e) in used:
             continue
         m = e.get("method", "")
         t = parse_time(e["time"])
-        if m == INIT_METHOD:
+        if m == INIT_METHOD and t < first_request:
             counts["init"] += 1
         elif m == STARTED_METHOD and e.get("requestId") in started:
             counts["started"] += 1
@@ -630,14 +634,14 @@ def cmd_audit(work, args):
             tui_lists += m.endswith("/ListTenants")
         else:
             unexpected.append(e)
-    ok = not unexpected and counts["init"] == 1 and (tui is None or tui_lists > 0)
+    ok = not unexpected and counts["init"] >= 1 and (tui is None or tui_lists > 0)
     ev = [json.dumps({k: v for k, v in e.items() if k != "id"}) for e in unexpected[:10]]
-    if counts["init"] != 1:
-        ev.append("%d init entries, want 1" % counts["init"])
+    if counts["init"] < 1:
+        ev.append("no entry written by init")
     if tui is not None and not tui_lists:
         ev.append("no ListTenants by the interactive program in its window")
     work.result("8.2 nothing in the audit log that the proof did not do", ok,
-                "%d entries in %d log(s); beside the proof's requests: %d init, %d creation-started, %d state changes (%s), %d by the interactive program (%d ListTenants), %d reads after the stop; %d unexpected"
+                "%d entries in %d log(s); beside the proof's requests: %d by init,%d creation-started, %d state changes (%s), %d by the interactive program (%d ListTenants), %d reads after the stop; %d unexpected"
                 % (len(entries), len(set(e["log"] for e in entries)), counts["init"], counts["started"], counts["state"],
                    ", ".join(states) or "none", counts["tui"], tui_lists, counts["after the stop"], len(unexpected)), ev)
     return 1 if work.failed else 0
@@ -667,7 +671,7 @@ def cmd_tui(work, args):
     end = datetime.datetime.now().timestamp()
     with open(os.path.join(work.path, "tui.window"), "w") as f:
         # The server and this script read the same clock, so the window is
-        # exact; prove-m0.sh leaves two seconds before it free of other
+        # exact; prove.sh leaves two seconds before it free of other
         # requests, as the command line's are matched to the second.
         f.write("%f %f\n" % (start, end))
     restored = s.restored()

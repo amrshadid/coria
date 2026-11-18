@@ -354,15 +354,15 @@ jobs:
       - name: The real program end to end
         run: make check-e2e
 
-  # The proof of M0 (scripts/prove-m0.sh): the binaries built as make build
-  # builds them, the Linux one started for real, and every claim of the
-  # milestone shown by tools that are not Magnetar. Postgres is a service
+  # The proof of this version (scripts/prove.sh): the binaries built as make
+  # build builds them, the Linux one started for real, and every claim of this
+  # version shown by tools that are not Magnetar. Postgres is a service
   # container the script uses for its tenant databases, and stops and starts
   # again to show that a tenant stops alone; the second operating system user
   # is made with sudo. MAGNETAR_PROVE_STRICT=1: nothing may be skipped here,
   # so a check that could not run fails the job instead of passing unseen.
   proof:
-    name: Proof of M0
+    name: 'Proof: the installed binary, from outside'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -406,13 +406,13 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/requirements-check-server.txt
 
-      - name: The proof of M0
+      - name: The proof
         env:
           MAGNETAR_PROVE_PG_CONTAINER: ${{ job.services.postgres.id }}
           MAGNETAR_PROVE_PG_PORT: '5432'
           MAGNETAR_PROVE_STRICT: '1'
         run: |
-          make prove-m0 PYTHON="$RUNNER_TEMP/venv/bin/python" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl" | tee "$RUNNER_TEMP/proof.log"
+          make prove PYTHON="$RUNNER_TEMP/venv/bin/python" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl" | tee "$RUNNER_TEMP/proof.log"
 
       # The table of every check and what it measured, on the run's page,
       # also when a check failed.
@@ -420,7 +420,7 @@ jobs:
         if: always()
         run: |
           {
-            echo "### Proof of M0"
+            echo "### Proof: the installed binary, from outside"
             echo
             sed -n '/^| Check |/,$p' "$RUNNER_TEMP/proof.log" 2> /dev/null || echo "no summary: the proof did not reach its end"
           } >> "$GITHUB_STEP_SUMMARY"

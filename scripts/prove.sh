@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# The proof of M0 (plans/m0.md, "The proof"): one script that builds the real
-# binary as "make build" does, starts it, and shows with tools that are not
-# Magnetar that it does what M0 says. Nothing here reaches into a Go package:
-# it drives the installed thing from outside, with the binary's own commands,
+# The proof of this version: it shows, from outside, that the installed binary
+# does what this version of Magnetar claims (an installation made and served,
+# keys, grants and tenants on SQLite and Postgres, refusals, secrets kept
+# sealed, crash safety, the audit log, the local socket, both command line
+# forms and the static builds). It builds the real binary as "make build"
+# does, starts it, and checks each claim with tools that are not Magnetar.
+# Nothing here reaches into a Go package: it drives the installed thing from outside, with the binary's own commands,
 # grpcurl, curl, openssl, sqlite3, psql, pg_dump and a Python grpcio client
-# (scripts/prove-m0.py).
+# (scripts/prove.py).
 #
 # Each claim is a named check that prints one line, ok or FAIL with its
 # evidence; a failed check does not stop the others. The run ends with a table
@@ -33,14 +36,14 @@
 # The second operating system user of point 9 is made with sudo on Linux; on a
 # system where that cannot be done the check says so and is skipped there only.
 #
-#   make prove-m0 PYTHON=/path/to/venv/bin/python GRPCURL=grpcurl
+#   make prove PYTHON=/path/to/venv/bin/python GRPCURL=grpcurl
 #
 # MAGNETAR_PROVE_BUILD=host builds only this machine's binary, for a quicker
 # run while working on the script; check 11 is then skipped.
 set -euo pipefail
 
 if [ "${BASH_VERSINFO[0]}" -lt 3 ] || { [ "${BASH_VERSINFO[0]}" -eq 3 ] && [ "${BASH_VERSINFO[1]}" -lt 2 ]; }; then
-	echo "prove-m0.sh: needs bash 3.2 or later, this is $BASH_VERSION" >&2
+	echo "prove.sh: needs bash 3.2 or later, this is $BASH_VERSION" >&2
 	exit 2
 fi
 
@@ -54,19 +57,20 @@ PG_PORT=${MAGNETAR_PROVE_PG_PORT:-}
 PG_IMAGE=${MAGNETAR_PROVE_PG_IMAGE:-postgres:18}
 STRICT=${MAGNETAR_PROVE_STRICT:-0}
 BUILD=${MAGNETAR_PROVE_BUILD:-all}
-# At least 20 kills (the guide's "many times"); more give the adaptive delays
+# At least 20 kills, so that a creation interrupted at different moments is
+# seen more than once; more give the adaptive delays
 # more chances to land inside the creation.
 CRASHES=${MAGNETAR_PROVE_CRASHES:-24}
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-helper=$root/scripts/prove-m0.py
+helper=$root/scripts/prove.py
 started_at=$(date +%s)
 
 for tool in "$GO" make curl openssl "$DOCKER" "$SQLITE3" "$GRPCURL" "$PYTHON"; do
-	command -v "$tool" > /dev/null || { echo "prove-m0.sh: $tool is not installed (see the header of this script)" >&2; exit 2; }
+	command -v "$tool" > /dev/null || { echo "prove.sh: $tool is not installed (see the header of this script)" >&2; exit 2; }
 done
 "$PYTHON" -c 'import grpc, prometheus_client' 2> /dev/null || {
-	echo "prove-m0.sh: $PYTHON lacks grpcio or prometheus-client; install scripts/requirements-check-server.txt" >&2
+	echo "prove.sh: $PYTHON lacks grpcio or prometheus-client; install scripts/requirements-check-server.txt" >&2
 	exit 2
 }
 
@@ -95,7 +99,7 @@ cleanup() {
 	sleep 0.3
 	for p in $pids; do kill -KILL "$p" 2> /dev/null; wait "$p" 2> /dev/null; done
 	if [ "$summary_done" = 0 ]; then
-		echo "prove-m0.sh: stopped before the end; the checks run so far:"
+		echo "prove.sh: stopped before the end; the checks run so far:"
 		summary
 		[ "$rc" != 0 ] || rc=1
 	fi
@@ -430,7 +434,7 @@ fi
 # ===========================================================================
 section "3. tenants on both databases"
 if [ -n "$PG_CONTAINER" ]; then
-	[ -n "$PG_PORT" ] || { echo "prove-m0.sh: MAGNETAR_PROVE_PG_CONTAINER needs MAGNETAR_PROVE_PG_PORT" >&2; exit 2; }
+	[ -n "$PG_PORT" ] || { echo "prove.sh: MAGNETAR_PROVE_PG_CONTAINER needs MAGNETAR_PROVE_PG_PORT" >&2; exit 2; }
 	pg_where="the container $PG_CONTAINER"
 else
 	PG_PORT=$(free_port)
@@ -477,7 +481,8 @@ else
 	fail "3.2 a tenant on Postgres, ready" "state $pg_state" "$(cat "$work/cli.out" "$work/cli.err")"
 fi
 
-# Decision D51: an address to another machine must say how it is protected.
+# An address to another machine must say how the connection is protected:
+# the driver's default tries encryption and silently falls back to none.
 MGT_PROOF_REMOTE="postgres://mgt_proof:$pgpw_esc@db.example.invalid:5432/mgt_proof_main"
 secret "$MGT_PROOF_REMOTE" search
 export MGT_PROOF_REMOTE
@@ -552,41 +557,95 @@ fi
 # ===========================================================================
 section "5. sealed: the server with another key file"
 # A copy of the installation, its databases copied by sqlite3's online backup
-# while the server runs, with the key file of another installation.
+# while the server runs, given the key file of another installation. Its run/
+# holds the empty lock file a stopped server leaves, as an installation whose
+# key file was swapped after it had been served would.
 copy=$work/c
 mkdir -m 700 "$copy" "$copy/run" "$copy/tenants"
 "$SQLITE3" "$data/master.db" ".backup '$copy/master.db'"
 "$SQLITE3" "$data/tenants/lite.db" ".backup '$copy/tenants/lite.db'"
 cp "$data/installation" "$copy/installation"
+: > "$copy/run/serve.lock"
 "$bin" init --data-dir "$work/o" > /dev/null
 cp "$work/o/key" "$copy/key"
-chmod 600 "$copy/key" "$copy/installation" "$copy/master.db" "$copy/tenants/lite.db"
-if cmp -s "$data/key" "$copy/key"; then fail "5.7 serve starts with another key file" "the two key files are the same"; fi
+chmod 600 "$copy/key" "$copy/installation" "$copy/master.db" "$copy/tenants/lite.db" "$copy/run/serve.lock"
+# tree_sums DIR: every entry under DIR with its type, mode and, for a file,
+# the SHA-256 of its bytes, one line each, in a fixed order.
+tree_sums() {
+	local p
+	(cd "$1" && find . | LC_ALL=C sort) | while IFS= read -r p; do
+		if [ -f "$1/$p" ]; then
+			printf '%s file %s %s\n' "$p" "$(mode_of "$1/$p")" "$(sha256hex < "$1/$p")"
+		else
+			printf '%s %s %s\n' "$p" "$(test -d "$1/$p" && echo dir || echo other)" "$(mode_of "$1/$p")"
+		fi
+	done
+}
+tree_sums "$copy" > "$work/copy.before"
+cport=$(free_port)
+refused=0
+if cmp -s "$data/key" "$copy/key"; then refused="same key file"; fi
+"$bin" serve --data-dir "$copy" --listen "127.0.0.1:$cport" --tls-cert "$work/cert.pem" --tls-key "$work/key.pem" > "$work/copy.log" 2>&1 &
+cpid=$!
+track "$cpid"
+for i in $(seq 1 150); do kill -0 "$cpid" 2> /dev/null || break; sleep 0.1; done
+if kill -0 "$cpid" 2> /dev/null; then
+	refused=running
+	kill -KILL "$cpid"
+fi
+wait "$cpid" 2> /dev/null || refused=$?
+untrack "$cpid"
+socket_made=no
+[ -e "$copy/run/magnetar.sock" ] && socket_made=yes
+port_status=0
+curl -sS --max-time 3 -o /dev/null --cacert "$work/cert.pem" "https://127.0.0.1:$cport/grpc.health.v1.Health/Check" 2> /dev/null || port_status=$?
+line=$(grep -v '^{' "$work/copy.log" | head -1)
+if [ "$refused" = 1 ] && printf '%s' "$line" | grep -q 'the key file is not the one this installation was made with; nothing was changed' &&
+	[ "$socket_made" = no ] && [ "$port_status" = 7 ]; then
+	ok "5.7 serve refuses another key file before it opens anything" "exit 1: '$line'; no socket made, the TLS port refuses connections (curl exit 7)"
+else
+	fail "5.7 serve refuses another key file before it opens anything" "exit $refused, socket made: $socket_made, curl on the port exit $port_status" "$(cat "$work/copy.log")"
+fi
+tree_sums "$copy" > "$work/copy.after"
+if cmp -s "$work/copy.before" "$work/copy.after"; then
+	ok "5.8 the refused start changed nothing in the data directory" "$(grep -c ' file ' "$work/copy.after") files and $(grep -c ' dir ' "$work/copy.after") directories: names, modes and SHA-256 of every file the same before and after"
+else
+	fail "5.8 the refused start changed nothing in the data directory" "the tree differs" "$(diff "$work/copy.before" "$work/copy.after")"
+fi
+# The installation's identity is its installation file and the master's
+# copy of it; the key file only seals. The id must not be in the key file.
+inst_id=$(tr -d '\n' < "$copy/installation")
+"$SQLITE3" "$copy/master.db" .dump > "$work/master.backup.dump"
+if [ -n "$inst_id" ] && ! grep -qF "$inst_id" "$data/key" && grep -qF "$inst_id" "$work/master.backup.dump"; then
+	ok "5.9 the installation's identity is not in its key file" "the id in the installation file (${#inst_id} bytes) is in the master and not in the key file"
+else
+	fail "5.9 the installation's identity is not in its key file" "id ${#inst_id} bytes; in the key file: $(grep -cF "$inst_id" "$data/key"); in the master: $(grep -cF "$inst_id" "$work/master.backup.dump")"
+fi
+# The installation's own key file put back: the same copy starts, and both
+# tenants are served. The Postgres tenant is the same database the main
+# server uses; it is only read here (its state and GetTenant, whose entries
+# go to the copy's own log), so the main server's tenant log is not touched.
+cp "$data/key" "$copy/key"
+chmod 600 "$copy/key"
 if start_server "$work/copy.log" "$copy"; then
 	copy_pid=$SERVER_PID
-	ok "5.7 serve starts with another key file" "the installation's identity is the installation file and the master's, not the key file: the copy serves"
 	cli "$copy" "" "" --json tenant list
 	cp "$work/cli.out" "$work/copy-tenants.json"
-	t_state() { "$PYTHON" -c 'import json, sys; t = [t for t in json.load(open(sys.argv[1]))["tenants"] if t["name"] == sys.argv[2]]; print(t[0][sys.argv[3]] if t else "absent")' "$work/copy-tenants.json" "$1" "$2"; }
-	pgs=$(t_state pg state)
-	pgr=$(t_state pg stateReason)
-	if [ "$pgs" = TENANT_STATE_FAILED ] && printf '%s' "$pgr" | grep -q 'did not open'; then
-		ok "5.8 with another key file the Postgres tenant is failed, and says why" "$pgs: '$pgr'"
-	else
-		fail "5.8 with another key file the Postgres tenant is failed, and says why" "$pgs: '$pgr'" "$(cat "$work/copy-tenants.json")"
-	fi
-	ls_state=$(t_state lite state)
-	ls_reason=$(t_state lite stateReason)
+	t_state() { "$PYTHON" -c 'import json, sys; t = [t for t in json.load(open(sys.argv[1]))["tenants"] if t["name"] == sys.argv[2]]; print(t[0]["state"] if t else "absent")' "$work/copy-tenants.json" "$1"; }
+	pgs=$(t_state pg)
+	lis=$(t_state lite)
 	cli "$copy" "" "" setting list --tenant lite
-	if [ "$ls_state" = TENANT_STATE_READY ] && [ "$CLI_STATUS" = 0 ]; then
-		ok "5.9 with another key file the SQLite tenant is served" "$ls_state; setting list --tenant lite exit 0"
+	lite_cli=$CLI_STATUS
+	cli "$copy" "" "" --json tenant show pg
+	pg_show=$(json_get '["tenant"]["state"]' < "$work/cli.out" 2> /dev/null || echo "exit $CLI_STATUS")
+	if [ "$pgs" = TENANT_STATE_READY ] && [ "$lis" = TENANT_STATE_READY ] && [ "$lite_cli" = 0 ] && [ "$pg_show" = TENANT_STATE_READY ]; then
+		ok "5.10 with its own key file put back, the same copy starts and serves both tenants" "pg $pgs (tenant show: $pg_show), lite $lis (setting list --tenant lite exit 0)"
 	else
-		fail "5.9 with another key file the SQLite tenant is served" "$ls_state: '$ls_reason'; setting list --tenant lite exit $CLI_STATUS: $(cat "$work/cli.err")" \
-			"guide point 5: with another key file the server marks the Postgres tenant failed and serves the other tenant" "$(grep '"tenant state"' "$work/copy.log")"
+		fail "5.10 with its own key file put back, the same copy starts and serves both tenants" "pg $pgs / $pg_show, lite $lis, setting list exit $lite_cli" "$(cat "$work/copy-tenants.json")" "$(tail -5 "$work/copy.log")"
 	fi
 	stop_server "$copy_pid"
 else
-	fail "5.7 serve starts with another key file" "the copy did not start" "$(tail -20 "$work/copy.log")"
+	fail "5.10 with its own key file put back, the same copy starts and serves both tenants" "the copy did not start" "$(tail -20 "$work/copy.log")"
 fi
 
 # ===========================================================================
@@ -981,6 +1040,6 @@ n_fail=$(awk -F '\t' '$2 == "FAIL"' "$work/results.tsv" | wc -l | tr -d ' ')
 n_skip=$(awk -F '\t' '$2 == "skipped"' "$work/results.tsv" | wc -l | tr -d ' ')
 if [ "$n_fail" != 0 ]; then exit 1; fi
 if [ "$STRICT" = 1 ] && [ "$n_skip" != 0 ]; then
-	echo "prove-m0.sh: MAGNETAR_PROVE_STRICT=1 and $n_skip check(s) skipped: nothing may be skipped here" >&2
+	echo "prove.sh: MAGNETAR_PROVE_STRICT=1 and $n_skip check(s) skipped: nothing may be skipped here" >&2
 	exit 1
 fi
