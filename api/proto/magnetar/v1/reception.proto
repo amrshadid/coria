@@ -1,0 +1,303 @@
+syntax = "proto3";
+
+// Package magnetar.v1: what holds for the whole package (callers, roles, error
+// kinds, limits, paging, secrets, partial updates) is said on the package in
+// access.proto.
+package magnetar.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ReceptionService reads a tenant's receptions. A reception is the files of
+// one study (one Study Instance UID) arriving at one receiver, from its first
+// file until it is complete, then carried through its steps until every file
+// is archived and verified, ignored as a duplicate, or quarantined. Files of
+// the same study that come after a reception is complete start a new
+// reception: the next arrival of the same session, with the same labels.
+// A reception is made by the server, never by a call, and its record stays
+// after it ends.
+//
+// Every method acts inside one tenant, named by the request's tenant field,
+// so a request into a tenant that is not ready is answered UNAVAILABLE.
+service ReceptionService {
+  // ListReceptions answers a tenant's receptions, newest first by the time
+  // of their first file, filtered by receiver, study, step and time.
+  //
+  // Role: reader on the tenant.
+  // Audit: one entry in the tenant's log, with the filters in details.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant that
+  // does not exist, for a caller who may not list every tenant), invalid,
+  // not found (a tenant that does not exist, for a caller who may list every
+  // tenant), unavailable (the tenant's database does not answer, or the
+  // tenant is not ready).
+  rpc ListReceptions(ListReceptionsRequest) returns (ListReceptionsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // GetReception answers one reception, with the scans it archived into and
+  // the other arrivals of its study.
+  //
+  // Role: reader on the tenant.
+  // Audit: one entry in the tenant's log, with the reception's id as its
+  // object.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant that
+  // does not exist, for a caller who may not list every tenant), invalid,
+  // not found (the tenant has no reception with that id; a tenant that does
+  // not exist, for a caller who may list every tenant), unavailable (the
+  // tenant's database does not answer, or the tenant is not ready).
+  rpc GetReception(GetReceptionRequest) returns (GetReceptionResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// ReceptionStep is where a reception is in its handling. The steps run in
+// the order of the values' descriptions below, but the numbers do not give
+// that order: a later version adds steps between identified and archived (a
+// file's identifiers replaced, its storage chosen by rule), and a client
+// must accept a step it does not know as a step in progress. A reception
+// goes forward only; each step is reached in one transaction with its event.
+enum ReceptionStep {
+  // Never answered by the server. As a filter, it is refused as invalid.
+  RECEPTION_STEP_UNSPECIFIED = 0;
+
+  // Files are arriving: each is written to the server's incoming area and
+  // checked as it lands.
+  RECEPTION_STEP_RECEIVING = 1;
+
+  // No file for the study came for the receiver's quiet period, or the
+  // receiver's longest open time was reached. Complete means quiet, not
+  // whole.
+  RECEPTION_STEP_COMPLETE = 2;
+
+  // Each file has its subject, session and scan, matched by UID or labeled
+  // by the receiver's naming rule.
+  RECEPTION_STEP_IDENTIFIED = 3;
+
+  // Every file not ignored or quarantined is written to the storage, with
+  // each scan's manifest and metadata, and cataloged.
+  RECEPTION_STEP_ARCHIVED = 4;
+
+  // Every archived file was read back from the storage and its SHA-256
+  // matched the one computed when it was received. A file that did not
+  // match is quarantined with QUARANTINE_REASON_READ_BACK_MISMATCH.
+  RECEPTION_STEP_VERIFIED = 5;
+
+  // Ended. Every file received is archived and verified, ignored as a
+  // duplicate, or quarantined, and at least one is not quarantined; its
+  // copy in the incoming area is removed, except a quarantined file's.
+  RECEPTION_STEP_DONE = 6;
+
+  // Ended. Every file received was quarantined; nothing was archived.
+  RECEPTION_STEP_QUARANTINED = 7;
+
+  // Ended without finishing: a step failed and its retries ran out, such as
+  // a storage that did not answer for longer than the server retries. The
+  // files not yet archived stay in the incoming area and are not lost; the
+  // reception's failure says why.
+  RECEPTION_STEP_FAILED = 8;
+}
+
+// ReceptionCounts are the files and bytes of one reception so far. Each pair
+// counts files and their bytes as written to the incoming area: the DICOM
+// file header and the data set. At the end of a reception, files_received
+// equals files_archived + files_duplicate + files_quarantined, and the same
+// for bytes. The counts are totals, never changes since the last answer, so
+// a client that sees one event twice counts nothing twice.
+message ReceptionCounts {
+  // Files received, released ones included.
+  int64 files_received = 1;
+
+  // Bytes of the files received.
+  int64 bytes_received = 2;
+
+  // Files archived: written to the storage and cataloged. A file that then
+  // fails verification is counted quarantined instead.
+  int64 files_archived = 3;
+
+  // Bytes of the files archived.
+  int64 bytes_archived = 4;
+
+  // Files ignored because the tenant already holds the same SOP Instance
+  // UID with the same SHA-256. The sender was answered success.
+  int64 files_duplicate = 5;
+
+  // Bytes of the files ignored as duplicates.
+  int64 bytes_duplicate = 6;
+
+  // Files quarantined, for any reason.
+  int64 files_quarantined = 7;
+
+  // Bytes of the files quarantined.
+  int64 bytes_quarantined = 8;
+
+  // Of files_received, those that came from QuarantineService's release
+  // rather than from a caller.
+  int64 files_released = 9;
+}
+
+// Reception is the files of one study arriving at one receiver, and what
+// became of them.
+message Reception {
+  // The reception's id, made by the server, unique in the tenant. Opaque, at
+  // most 64 bytes.
+  string id = 1;
+
+  // The name of the receiver it arrived at. A receiver removed since keeps
+  // its name here, and a receiver added later may have the same name.
+  string receiver = 2;
+
+  // The Study Instance UID (0020,000D) of its files, as received (PS3.3
+  // C.7.2.1; 1 to 64 characters of digits and dots, PS3.5 9.1).
+  string study_instance_uid = 3;
+
+  // Its place among the receptions of the same study in the tenant, from 1,
+  // in the order of their first file: 1 for the first, 2 for a later
+  // arrival of files of the same session, and so on.
+  int32 arrival = 4;
+
+  // Where it is in its handling.
+  ReceptionStep step = 5;
+
+  // Its files and bytes so far.
+  ReceptionCounts counts = 6;
+
+  // The label of the subject its session belongs to. Empty until the
+  // reception is identified.
+  string subject_label = 7;
+
+  // The label of its session. Empty until the reception is identified; the
+  // same for every arrival of the study.
+  string session_label = 8;
+
+  // The name of the storage its files are archived to. Empty until the
+  // reception is identified.
+  string storage = 9;
+
+  // Why the reception failed, in words for a person; at most 1 KiB. Empty
+  // unless its step is failed. It never holds a secret.
+  string failure = 10;
+
+  // When its first file arrived.
+  google.protobuf.Timestamp start_time = 11;
+
+  // When its last file arrived so far. It is written at most once a second,
+  // so it can be up to a second behind while files arrive.
+  google.protobuf.Timestamp last_file_time = 12;
+
+  // When it reached its step.
+  google.protobuf.Timestamp step_time = 13;
+
+  // When it ended: reached done, quarantined or failed. Absent while it is
+  // in progress.
+  google.protobuf.Timestamp end_time = 14;
+}
+
+// ReceptionScan is one scan a reception archived files into.
+message ReceptionScan {
+  // The scan's label.
+  string label = 1;
+
+  // The scan's Series Instance UID (0020,000E) (PS3.3 C.7.3.1).
+  string series_instance_uid = 2;
+
+  // The files this reception archived into the scan. A scan that a later
+  // arrival added to holds files of each arrival; this counts this
+  // reception's.
+  int64 files = 3;
+
+  // The bytes of those files.
+  int64 bytes = 4;
+}
+
+// ReceptionArrival is one reception of the same study, as GetReception lists
+// them.
+message ReceptionArrival {
+  // The reception's id.
+  string id = 1;
+
+  // Its arrival number.
+  int32 arrival = 2;
+
+  // Its step.
+  ReceptionStep step = 3;
+
+  // When its first file arrived.
+  google.protobuf.Timestamp start_time = 4;
+}
+
+// ListReceptionsRequest asks for a page of a tenant's receptions. Every
+// filter given must hold for a reception to be listed.
+message ListReceptionsRequest {
+  // The tenant, by name. Required.
+  string tenant = 1;
+
+  // Only the receptions that arrived at the receiver of this name. Empty for
+  // every receiver.
+  string receiver = 2;
+
+  // Only the receptions of this Study Instance UID. Empty for every study.
+  string study_instance_uid = 3;
+
+  // Only the receptions in one of these steps. Empty for every step; at most
+  // 16 values, none of them RECEPTION_STEP_UNSPECIFIED.
+  repeated ReceptionStep steps = 4;
+
+  // Only the receptions in progress: those that have not ended (not done,
+  // quarantined or failed), whatever their step, a step a later version
+  // adds included. False for every reception.
+  bool in_progress = 5;
+
+  // Only the receptions whose first file arrived at or after this time.
+  // Absent for no lower bound.
+  google.protobuf.Timestamp start_time = 6;
+
+  // Only the receptions whose first file arrived before this time. Absent
+  // for no upper bound. Must be after start_time when both are set.
+  google.protobuf.Timestamp end_time = 7;
+
+  // The most receptions to answer: zero means 100; at most 1000. A larger or
+  // negative value is invalid.
+  int32 page_size = 8;
+
+  // The next_page_token of the previous page, or empty for the first page.
+  // Opaque; at most 1 KiB; refused as invalid with a tenant or filters other
+  // than those it was made with.
+  string page_token = 9;
+}
+
+// ListReceptionsResponse is a page of receptions.
+message ListReceptionsResponse {
+  // The receptions of this page, newest first.
+  repeated Reception receptions = 1;
+
+  // The page_token that asks for the next page. Empty on the last page.
+  string next_page_token = 2;
+}
+
+// GetReceptionRequest names a reception.
+message GetReceptionRequest {
+  // The tenant, by name. Required.
+  string tenant = 1;
+
+  // The reception's id. Required; at most 64 bytes.
+  string id = 2;
+}
+
+// GetReceptionResponse is the reception named, what it archived, and the
+// other arrivals of its study.
+message GetReceptionResponse {
+  // The reception.
+  Reception reception = 1;
+
+  // The scans it archived files into, ordered by label. Empty until it is
+  // archived. At most 10000; a reception into more scans than that answers
+  // the first 10000 and sets scans_truncated.
+  repeated ReceptionScan scans = 2;
+
+  // Whether scans holds only the first 10000.
+  bool scans_truncated = 3;
+
+  // Every reception of the same study in the tenant, this one included,
+  // in the order of their arrival number. At most the 100 latest; the
+  // others are listed by ListReceptions with study_instance_uid.
+  repeated ReceptionArrival arrivals = 4;
+}

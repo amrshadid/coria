@@ -332,6 +332,20 @@ All notable changes to Magnetar are written here. The form is
   `--json` and the interactive program under a pseudo-terminal; and the size
   of each binary. It does not show Windows, a loss of power on real hardware,
   or any speed.
+- The API could create tenants and keys but had no way to give a tenant a place to
+  keep data or a way for data to arrive. The contract now has five more services in
+  `magnetar.v1`, as protobuf with nothing behind them yet: `StorageService` (a
+  directory or an S3 bucket, whose secret access key goes in and never comes back,
+  and a test that writes, reads back and removes one object), `ReceiverService` (a
+  DICOM listener that admits nobody until its callers are listed, with "any caller"
+  its own explicit value), `ReceptionService` (one study's arrival at a receiver and
+  the steps it went through), `QuarantineService` (why a file was held, released to
+  run again, or rejected with a reason) and `MonitorService` (a tenant's numbers
+  now, and a stream of its events that can be resumed from a cursor). A change to a
+  storage or a receiver names the fields it changes in a field mask. Secrets now
+  cross the API in three fields. A walk-through in
+  `docs/api-walkthrough-reception.md` follows three uses call by call with only the
+  contract in hand.
 
 ### Changed
 
