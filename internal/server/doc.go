@@ -111,8 +111,9 @@
 // Init writes a random id into the data directory (IDFileName) and into the
 // master's settings store (InstallationIDSetting), and serve refuses a
 // master that does not hold the same id, before migrating anything
-// (decision D52). The settings service must neither list nor change a
-// setting under ReservedSettingPrefix.
+// (decision D52). The id's name is under settings.ReservedPrefix, which no
+// setting of the server's list may use, so the settings service neither
+// lists, reads nor changes it.
 //
 // # Stopping
 //

@@ -53,6 +53,7 @@ func TestNewRefusesMistakes(t *testing.T) {
 		"twice":       {{Name: "a", Validate: ok}, {Name: "a", Validate: ok}},
 		"no rule":     {{Name: "a"}},
 		"bad default": {{Name: "a", Validate: no}},
+		"reserved":    {{Name: ReservedPrefix + "x", Validate: ok}},
 	} {
 		if _, err := New(defs...); err == nil {
 			t.Errorf("%s: accepted", name)
