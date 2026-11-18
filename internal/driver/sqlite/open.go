@@ -32,6 +32,18 @@ const busyTimeout = 10 * time.Second
 // concurrent requests; each one holds a page cache, so not more.
 const readConnections = 4
 
+// dbName names a database in the messages of its errors, so an operator
+// told that "the tenant database is read-only" knows which file to look at.
+// The file's path is never in a message: a database address never appears
+// in an error.
+type dbName string
+
+// The two databases this driver opens.
+const (
+	masterDB dbName = "master database"
+	tenantDB dbName = "tenant database"
+)
+
 // pools are the two pools of connections to one SQLite file.
 type pools struct {
 	write *sql.DB
@@ -39,18 +51,19 @@ type pools struct {
 }
 
 // openPools opens the write and read pools on the file at path, creating it
-// when it does not exist, and checks that it is in write-ahead mode.
-func openPools(ctx context.Context, path string) (*pools, error) {
+// when it does not exist, and checks that it is in write-ahead mode. name is
+// the database's name in the messages of its errors.
+func openPools(ctx context.Context, path string, name dbName) (*pools, error) {
 	if err := checkPath(path); err != nil {
 		return nil, err
 	}
 	// Before the file is made or opened: an existing file others can read
 	// would stay readable, and SQLite would give its -wal and -shm files
 	// the same mode.
-	if err := checkPrivate(path); err != nil {
+	if err := checkPrivate(path, name); err != nil {
 		return nil, err
 	}
-	if err := createPrivate(path); err != nil {
+	if err := createPrivate(path, name); err != nil {
 		return nil, err
 	}
 
@@ -109,11 +122,11 @@ func openPools(ctx context.Context, path string) (*pools, error) {
 	mode, err := journalMode(ctx, write)
 	if err != nil {
 		_ = write.Close() // The open failure is the one reported.
-		return nil, classify(err, "the master database cannot be opened")
+		return nil, classify(err, name, "the "+string(name)+" cannot be opened")
 	}
 	if !strings.EqualFold(mode, "wal") {
 		_ = write.Close() // The mode is the failure reported.
-		return nil, fault.New(fault.Unavailable, "the master database cannot use write-ahead mode; is it on a local disk?")
+		return nil, fault.New(fault.Unavailable, "the "+string(name)+" cannot use write-ahead mode; is it on a local disk?")
 	}
 
 	read, err := sql.Open("sqlite", path+"?"+r.Encode())
@@ -128,7 +141,7 @@ func openPools(ctx context.Context, path string) (*pools, error) {
 	if err := read.PingContext(ctx); err != nil {
 		_ = write.Close() // The ping failure is the one reported.
 		_ = read.Close()
-		return nil, classify(err, "the master database cannot be opened")
+		return nil, classify(err, name, "the "+string(name)+" cannot be opened")
 	}
 	return &pools{write: write, read: read}, nil
 }
@@ -205,11 +218,11 @@ func checkPath(path string) error {
 // createPrivate makes the database file, empty and readable by its owner
 // only, when it does not exist. SQLite would make it with the process's
 // umask, often readable by everyone, and the master holds key hashes and
-// sealed addresses. SQLite gives the -wal and -shm files it makes the mode
+// sealed addresses, a tenant's database its catalog. SQLite gives the -wal and -shm files it makes the mode
 // of the database file (os_unix.c, findCreateFileMode), so they are private
 // too. On Windows the mode is ignored and the directory's access list
 // decides.
-func createPrivate(path string) error {
+func createPrivate(path string, name dbName) error {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) // #nosec G304 G703 -- the path is the operator's own choice of database file.
 	if err != nil {
 		// The cause may name the path, so it is not wrapped: the kind
@@ -217,12 +230,12 @@ func createPrivate(path string) error {
 		// path in the command they typed.
 		var pathErr *os.PathError
 		if errors.As(err, &pathErr) {
-			return fault.New(fault.Unavailable, "the master database file cannot be opened for reading and writing: "+pathErr.Err.Error())
+			return fault.New(fault.Unavailable, "the "+string(name)+" file cannot be opened for reading and writing: "+pathErr.Err.Error())
 		}
-		return fault.New(fault.Unavailable, "the master database file cannot be opened")
+		return fault.New(fault.Unavailable, "the "+string(name)+" file cannot be opened")
 	}
 	if err := f.Close(); err != nil {
-		return fault.New(fault.Unavailable, "the master database file cannot be opened")
+		return fault.New(fault.Unavailable, "the "+string(name)+" file cannot be opened")
 	}
 	return nil
 }
@@ -252,8 +265,9 @@ var dialect = sqlkit.Dialect{
 // classify turns an error from the driver into a fault with a kind. An error
 // that already has one keeps it. message is what the caller is shown; the
 // driver's own text, which may say more about the database than a caller
-// should learn, stays in the chain for the log.
-func classify(err error, message string) error {
+// should learn, stays in the chain for the log. name is the database's name
+// in the messages that say what is wrong with its file.
+func classify(err error, name dbName, message string) error {
 	if err == nil {
 		return nil
 	}
@@ -273,13 +287,13 @@ func classify(err error, message string) error {
 		// an error.
 		switch se.Code() & 0xff {
 		case sqlite3.SQLITE_READONLY:
-			return fault.Wrap(fault.Unavailable, err, "the master database is read-only: its file, or the directory for its -wal and -shm files, cannot be written")
+			return fault.Wrap(fault.Unavailable, err, "the "+string(name)+" is read-only: its file, or the directory for its -wal and -shm files, cannot be written")
 		case sqlite3.SQLITE_NOTADB:
-			return fault.Wrap(fault.Unavailable, err, "the master database file is not a SQLite database")
+			return fault.Wrap(fault.Unavailable, err, "the "+string(name)+" file is not a SQLite database")
 		case sqlite3.SQLITE_CORRUPT:
-			return fault.Wrap(fault.Unavailable, err, "the master database file is damaged; restore it from a backup")
+			return fault.Wrap(fault.Unavailable, err, "the "+string(name)+" file is damaged; restore it from a backup")
 		case sqlite3.SQLITE_PERM, sqlite3.SQLITE_AUTH:
-			return fault.Wrap(fault.Unavailable, err, "the master database may not be opened by this user")
+			return fault.Wrap(fault.Unavailable, err, "the "+string(name)+" may not be opened by this user")
 		case sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED, sqlite3.SQLITE_IOERR,
 			sqlite3.SQLITE_CANTOPEN, sqlite3.SQLITE_FULL, sqlite3.SQLITE_INTERRUPT:
 			return fault.Wrap(fault.Unavailable, err, message)

@@ -85,7 +85,8 @@ type TenantServiceClient interface {
 	// with that name exists), unavailable (the master database or the tenant's
 	// database does not answer).
 	CreateTenant(context.Context, *v1.CreateTenantRequest) (*v1.CreateTenantResponse, error)
-	// GetTenant answers one tenant, from the master, whatever its state.
+	// GetTenant answers one tenant, whatever its state: its registration from
+	// the master, its state from the server's current view.
 	//
 	// Role: reader on that tenant, or reader on the installation.
 	// Audit: one entry in the installation's log, with the tenant's name.
@@ -94,8 +95,8 @@ type TenantServiceClient interface {
 	// not found (a tenant that does not exist, for a caller who may list every
 	// tenant), unavailable (the master database does not answer).
 	GetTenant(context.Context, *v1.GetTenantRequest) (*v1.GetTenantResponse, error)
-	// ListTenants answers the tenants the caller may see, from the master,
-	// ordered by name: every tenant for a reader or more on the installation
+	// ListTenants answers the tenants the caller may see (registrations from
+	// the master, states from the server's current view), ordered by name: every tenant for a reader or more on the installation
 	// and for the local operator, otherwise only the tenants on which the
 	// caller's key holds a grant. A key with no grant gets an empty list, not
 	// an error.
@@ -145,7 +146,8 @@ type TenantServiceHandler interface {
 	// with that name exists), unavailable (the master database or the tenant's
 	// database does not answer).
 	CreateTenant(context.Context, *v1.CreateTenantRequest) (*v1.CreateTenantResponse, error)
-	// GetTenant answers one tenant, from the master, whatever its state.
+	// GetTenant answers one tenant, whatever its state: its registration from
+	// the master, its state from the server's current view.
 	//
 	// Role: reader on that tenant, or reader on the installation.
 	// Audit: one entry in the installation's log, with the tenant's name.
@@ -154,8 +156,8 @@ type TenantServiceHandler interface {
 	// not found (a tenant that does not exist, for a caller who may list every
 	// tenant), unavailable (the master database does not answer).
 	GetTenant(context.Context, *v1.GetTenantRequest) (*v1.GetTenantResponse, error)
-	// ListTenants answers the tenants the caller may see, from the master,
-	// ordered by name: every tenant for a reader or more on the installation
+	// ListTenants answers the tenants the caller may see (registrations from
+	// the master, states from the server's current view), ordered by name: every tenant for a reader or more on the installation
 	// and for the local operator, otherwise only the tenants on which the
 	// caller's key holds a grant. A key with no grant gets an empty list, not
 	// an error.

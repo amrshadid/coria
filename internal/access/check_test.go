@@ -79,6 +79,8 @@ func TestCheckTable(t *testing.T) {
 		{"installation reader, inside a tenant", access.APIKey(instReader.full), access.OnTenant("clinic", master.RoleReader), fault.Denied, false, denied, master.OutcomeRefused, "no sufficient grant", instReader.id, "clinic"},
 		{"installation reader, no tenant", access.APIKey(instReader.full), access.OnTenant("nosuch", master.RoleReader), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, "nosuch"},
 		{"installation reader, a name no tenant can have", access.APIKey(instReader.full), access.OnTenant("Not/A Name", master.RoleReader), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, `"Not/A Name"`},
+		{"installation reader, a Windows device name", access.APIKey(instReader.full), access.OnTenant("con", master.RoleReader), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, `"con"`},
+		{"good, a Windows device name", access.APIKey(good.full), access.OnTenant("lpt1", master.RoleReader), fault.Denied, false, denied, master.OutcomeRefused, "no such tenant", good.id, `"lpt1"`},
 		{"installation reader, no registration", access.APIKey(instReader.full), access.TenantRegistration("nosuch"), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, "nosuch"},
 		{"installation admin, inside a tenant", access.APIKey(instAdmin.full), access.OnTenant("lab", master.RoleReader), fault.Denied, false, denied, master.OutcomeRefused, "no sufficient grant", instAdmin.id, "lab"},
 		{"installation admin, admin", access.APIKey(instAdmin.full), access.OnInstallation(master.RoleAdmin), 0, true, "", "", "", instAdmin.id, ""},

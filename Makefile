@@ -19,6 +19,8 @@
 #   make fuzz        each fuzz target for FUZZTIME (10s unless given)
 #   make check-master-sqlite  the SQLite master database read back by the
 #                    sqlite3 tool (SQLITE3=... names one)
+#   make check-tenant-sqlite  a tenant's SQLite database, created by the
+#                    registry, read back by the sqlite3 tool
 #   make check-master-postgres  the Postgres master database read back by
 #                    psql and pg_dump (PSQL=... PG_DUMP=... name them; needs
 #                    MAGNETAR_TEST_POSTGRES, the URL of a scratch database)
@@ -138,6 +140,12 @@ SQLITE3 ?= sqlite3
 .PHONY: check-master-sqlite test-386
 check-master-sqlite:
 	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-master-sqlite.sh
+
+# The outside check of a tenant's SQLite database: the registry creates a
+# tenant on SQLite, and the sqlite3 tool reads its file and the master's row.
+.PHONY: check-tenant-sqlite
+check-tenant-sqlite:
+	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-tenant-sqlite.sh
 
 # The outside check of the Postgres master database: the driver writes the
 # contract suite's sample into a schema of the database MAGNETAR_TEST_POSTGRES

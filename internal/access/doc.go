@@ -123,6 +123,23 @@
 // by one function, so an entry can neither forge a line of a log nor be
 // refused by the master for its size.
 //
+// # Known limits
+//
+// These are known and accepted, each by a decision, not oversights:
+//
+//   - The two Denied cases make the same calls but do not take exactly the
+//     same time: on SQLite a tenant that does not exist is answered about
+//     0.3 microseconds sooner (about 4.5%) than one without a grant, because
+//     a tenant that exists is read from its row. A covering index on the
+//     tenants' name and id would close it, and is not worth a migration now.
+//   - A management function re-reads the caller's key and role just before
+//     the change, not inside its transaction, so a revocation in the moment
+//     between the two is not seen by that one change. Passing the acting key
+//     into the master port's changes, to check it in the transaction, is
+//     separate work for later.
+//   - Under a load the audit writer cannot keep up with, the entries of
+//     refusals and reads are dropped, counted and reported, not written.
+//
 // # What it must never do
 //
 // It must never cache a key or a grant: every check reads both, so a revoked
