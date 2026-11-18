@@ -38,11 +38,14 @@ const (
 	listAudit         = "audit"
 )
 
+// masterLists names the master's settings and audit lists for the code it
+// shares with a tenant's database (shared.go).
+var masterLists = lists{settings: listSettings, audit: listAudit, missing: "no such setting"}
+
 // Master is the master database on a SQLite file. It is safe for concurrent
 // use.
 type Master struct {
-	p      *pools
-	closed atomic.Bool
+	base
 
 	// The prepared statements, made on first use after the schema exists,
 	// since a statement cannot be prepared against tables not yet made.
@@ -62,11 +65,13 @@ func OpenMaster(ctx context.Context, path string) (*Master, error) {
 	if masterMigrationsErr != nil {
 		return nil, fault.Wrap(fault.Internal, masterMigrationsErr, "the master's migrations cannot be read")
 	}
-	p, err := openPools(ctx, path)
+	p, err := openPools(ctx, path, masterDB)
 	if err != nil {
 		return nil, err
 	}
-	return &Master{p: p}, nil
+	m := &Master{}
+	m.p, m.name = p, masterDB
+	return m, nil
 }
 
 // Migrate implements master.Store.
@@ -89,71 +94,15 @@ func (m *Master) Version(ctx context.Context) (int, error) {
 
 // Ping implements master.Store. It reaches both pools, since either failing
 // fails requests.
-func (m *Master) Ping(ctx context.Context) error {
-	if err := m.open(); err != nil {
-		return err
-	}
-	if err := m.p.read.PingContext(ctx); err != nil {
-		return fault.Wrap(fault.Unavailable, err, "the master database does not answer")
-	}
-	if err := m.p.write.PingContext(ctx); err != nil {
-		return fault.Wrap(fault.Unavailable, err, "the master database does not answer")
-	}
-	return nil
-}
+func (m *Master) Ping(ctx context.Context) error { return m.ping(ctx) }
 
 // Close implements master.Store.
 func (m *Master) Close() error {
-	if m.closed.Swap(true) {
-		return nil
-	}
-	if s := m.stmts.Load(); s != nil {
-		s.close()
-	}
-	if err := m.p.close(); err != nil {
-		return fault.Wrap(fault.Internal, err, "the master database did not close cleanly")
-	}
-	return nil
-}
-
-// open fails once the store is closed, with a kind, rather than with
-// database/sql's unclassified "database is closed".
-func (m *Master) open() error {
-	if m.closed.Load() {
-		return errClosed(nil)
-	}
-	return nil
-}
-
-// errClosed is the error of a call on a closed store, or in flight when it
-// was closed.
-func errClosed(cause error) error {
-	return fault.Wrap(fault.Unavailable, cause, "the master database is closed")
-}
-
-// fail gives err its kind. An error that already has one keeps it: a
-// NotFound or Conflict decided inside a transaction is the answer even if
-// the context then ended, since nothing was committed either way. Otherwise a
-// context that ended makes it Unavailable, keeping the context's cause and
-// the driver's error in the chain for the log and for errors.Is; a store
-// closed under the call makes it Unavailable; and the driver's code decides
-// the rest (classify).
-func (m *Master) fail(ctx context.Context, err error, message string) error {
-	if err == nil {
-		return nil
-	}
-	var fe *fault.Error
-	if errors.As(err, &fe) {
-		return err
-	}
-	if ctx.Err() != nil {
-		return fault.Wrap(fault.Unavailable, errors.Join(context.Cause(ctx), err),
-			"the request ended before the master database answered")
-	}
-	if m.closed.Load() {
-		return errClosed(err)
-	}
-	return classify(err, message)
+	return m.shutdown(func() {
+		if s := m.stmts.Load(); s != nil {
+			s.close()
+		}
+	})
 }
 
 // ready returns the prepared statements, preparing them on first use.
@@ -171,46 +120,39 @@ func (m *Master) ready(ctx context.Context) (*statements, error) {
 	}
 	s, err := prepare(ctx, m.p)
 	if err != nil {
-		// A statement fails to prepare most often because the tables are
-		// not there yet; a context that ended, a closed store or a busy
-		// database keep their own message.
-		const notReady = "the master database is not ready; has it been migrated?"
-		ferr := m.fail(ctx, err, notReady)
-		if fault.KindOf(ferr) == fault.Internal {
-			ferr = fault.Wrap(fault.Unavailable, err, notReady)
-		}
-		return nil, ferr
+		return nil, m.notReady(ctx, err)
 	}
 	m.stmts.Store(s)
 	return s, nil
 }
 
-// write runs fn in one write transaction, which begins with BEGIN IMMEDIATE
-// on the one write connection, and commits only when fn returns nil. Every
-// changing operation and its audit entry go through here together, which is
-// what makes them both or neither.
-//
-// The rollback is deferred, so that it runs on every path out, a panic in fn
-// included: a transaction left open would keep the pool's only write
-// connection, and the database's write lock, for good, and every later
-// write would wait forever. After Commit it does nothing.
+// write runs fn in one write transaction (base.writeTx) with the prepared
+// statements. Every changing operation and its audit entry go through here
+// together, which is what makes them both or neither.
 func (m *Master) write(ctx context.Context, message string, fn func(tx *sql.Tx, s *statements) error) error {
 	s, err := m.ready(ctx)
 	if err != nil {
 		return err
 	}
-	tx, err := m.p.write.BeginTx(ctx, nil)
+	return m.writeTx(ctx, message, func(tx *sql.Tx) error { return fn(tx, s) })
+}
+
+// b, shared and writeShared give the operations the master shares with a
+// tenant's database (shared.go) what they need.
+func (m *Master) b() *base { return &m.base }
+
+// shared returns the master's prepared settings and audit statements.
+func (m *Master) shared(ctx context.Context) (*sharedStatements, error) {
+	s, err := m.ready(ctx)
 	if err != nil {
-		return m.fail(ctx, err, message)
+		return nil, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	if err := fn(tx, s); err != nil {
-		return m.fail(ctx, err, message)
-	}
-	if err := tx.Commit(); err != nil {
-		return m.fail(ctx, err, message)
-	}
-	return nil
+	return &s.sharedStatements, nil
+}
+
+// writeShared runs fn in a write transaction with those statements.
+func (m *Master) writeShared(ctx context.Context, message string, fn func(tx *sql.Tx, s *sharedStatements) error) error {
+	return m.write(ctx, message, func(tx *sql.Tx, s *statements) error { return fn(tx, &s.sharedStatements) })
 }
 
 // --- Tenants ---
@@ -679,41 +621,31 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 	return out, sqlkit.EncodeCursor(listGrantsByScope, scopeBinding(scope), last.KeyID), nil
 }
 
-// RolesFor implements master.Store with one statement: the grants' primary
-// key is read at (key, the empty scope) and at (key, the tenant's id), the id found
-// through the tenants' unique index on name inside the same statement. A
-// tenant that does not exist, or no tenant name, leaves only the first.
-func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (installation, tenant master.Role, err error) {
+// RolesFor implements master.Store with one statement (rolesForSQL). A name
+// that is not a valid tenant name is asked as the empty name, which no
+// tenant has, so the statement runs all the same and finds no tenant.
+func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (master.Roles, error) {
 	if err := master.ValidateID("key id", keyID); err != nil {
-		return "", "", err
+		return master.Roles{}, err
 	}
-	if tenantName != "" {
-		if err := master.ValidateTenantName(tenantName); err != nil {
-			return "", "", err
-		}
+	if master.ValidateTenantName(tenantName) != nil {
+		tenantName = ""
 	}
 	s, err := m.ready(ctx)
 	if err != nil {
-		return "", "", err
+		return master.Roles{}, err
 	}
-	rows, err := s.rolesFor.QueryContext(ctx, keyID, tenantName)
-	type scopeRole struct{ scope, role string }
-	found, err := collect(rows, err, func(row interface{ Scan(...any) error }) (scopeRole, error) {
-		var r scopeRole
-		err := row.Scan(&r.scope, &r.role)
-		return r, err
-	})
+	var tenantID, inst, ten sql.NullString
+	err = s.rolesFor.QueryRowContext(ctx, keyID, tenantName).Scan(&tenantID, &inst, &ten)
 	if err != nil {
-		return "", "", m.fail(ctx, err, "the key's roles cannot be read")
+		return master.Roles{}, m.fail(ctx, err, "the key's roles cannot be read")
 	}
-	for _, r := range found {
-		if r.scope == "" {
-			installation = master.Role(r.role)
-		} else {
-			tenant = master.Role(r.role)
-		}
-	}
-	return installation, tenant, nil
+	return master.Roles{
+		Installation: master.Role(inst.String),
+		Tenant:       master.Role(ten.String),
+		TenantID:     tenantID.String,
+		TenantFound:  tenantID.Valid,
+	}, nil
 }
 
 // RemoveGrant implements master.Store. One DELETE ... RETURNING removes the
@@ -754,121 +686,29 @@ func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Sco
 
 // Setting implements master.Store.
 func (m *Master) Setting(ctx context.Context, name string) (string, error) {
-	if err := master.ValidateSettingName(name); err != nil {
-		return "", err
-	}
-	s, err := m.ready(ctx)
-	if err != nil {
-		return "", err
-	}
-	var value string
-	err = s.settingByName.QueryRowContext(ctx, name).Scan(&value)
-	return value, m.notFound(ctx, err, "no such setting", "the setting cannot be read")
+	return getSetting(ctx, m, masterLists, name)
 }
 
 // SetSetting implements master.Store.
 func (m *Master) SetSetting(ctx context.Context, name, value string, audit master.AuditEntry) error {
-	if err := master.ValidateSettingName(name); err != nil {
-		return err
-	}
-	if err := master.ValidateSettingValue(value); err != nil {
-		return err
-	}
-	if err := audit.Validate(); err != nil {
-		return err
-	}
-	return m.write(ctx, "the setting cannot be set", func(tx *sql.Tx, s *statements) error {
-		if _, err := tx.StmtContext(ctx, s.upsertSetting).ExecContext(ctx, name, value); err != nil {
-			return err
-		}
-		return insertAudit(ctx, tx, s, audit)
-	})
+	return setSetting(ctx, m, name, value, audit)
 }
 
 // UnsetSetting implements master.Store.
 func (m *Master) UnsetSetting(ctx context.Context, name string, audit master.AuditEntry) (bool, error) {
-	if err := master.ValidateSettingName(name); err != nil {
-		return false, err
-	}
-	if err := audit.Validate(); err != nil {
-		return false, err
-	}
-	var removed bool
-	err := m.write(ctx, "the setting cannot be unset", func(tx *sql.Tx, s *statements) error {
-		res, err := tx.StmtContext(ctx, s.deleteSetting).ExecContext(ctx, name)
-		if err != nil {
-			return err
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		removed = n == 1
-		return insertAudit(ctx, tx, s, audit)
-	})
-	if err != nil {
-		return false, err
-	}
-	return removed, nil
+	return unsetSetting(ctx, m, name, audit)
 }
 
 // ListSettings implements master.Store.
 func (m *Master) ListSettings(ctx context.Context, page master.Page) ([]master.Setting, string, error) {
-	if err := page.Validate(); err != nil {
-		return nil, "", err
-	}
-	after := ""
-	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, listSettings, "", 1)
-		if err != nil {
-			return nil, "", err
-		}
-		after = f[0]
-	}
-	s, err := m.ready(ctx)
-	if err != nil {
-		return nil, "", err
-	}
-	rows, err := s.listSettings.QueryContext(ctx, after, page.Limit+1)
-	out, err := collect(rows, err, func(row interface{ Scan(...any) error }) (master.Setting, error) {
-		var st master.Setting
-		err := row.Scan(&st.Name, &st.Value)
-		return st, err
-	})
-	if err != nil {
-		return nil, "", m.fail(ctx, err, "the settings cannot be listed")
-	}
-	out, last, more := cut(out, page.Limit)
-	if !more {
-		return out, "", nil
-	}
-	return out, sqlkit.EncodeCursor(listSettings, "", last.Name), nil
+	return listSettingsPage(ctx, m, masterLists, page)
 }
 
 // --- Audit ---
 
 // AppendAudit implements master.Store.
 func (m *Master) AppendAudit(ctx context.Context, entries ...master.AuditEntry) error {
-	if len(entries) > master.MaxAuditBatch {
-		return fault.New(fault.Invalid, "at most "+strconv.Itoa(master.MaxAuditBatch)+" audit entries are appended at once")
-	}
-	for _, e := range entries {
-		if err := e.Validate(); err != nil {
-			return err
-		}
-	}
-	if len(entries) == 0 {
-		return m.open()
-	}
-	return m.write(ctx, "the audit entries cannot be written", func(tx *sql.Tx, s *statements) error {
-		stmt := tx.StmtContext(ctx, s.insertAudit)
-		for _, e := range entries {
-			if err := execAudit(ctx, stmt, e); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	return appendAudit(ctx, m, entries)
 }
 
 // insertAudit writes one audit entry inside the transaction of the change it
@@ -970,39 +810,7 @@ func auditQuery(filter master.AuditFilter, after []any, limit int) (string, []an
 
 // ListAudit implements master.Store. The cursor is bound to the whole filter.
 func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error) {
-	if err := filter.Validate(); err != nil {
-		return nil, "", err
-	}
-	if err := page.Validate(); err != nil {
-		return nil, "", err
-	}
-	binding := auditBinding(filter)
-	var after []any
-	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, listAudit, binding, 2)
-		if err != nil {
-			return nil, "", err
-		}
-		at, err := sqlkit.DecodeCursorInt(f[0])
-		if err != nil {
-			return nil, "", err
-		}
-		after = []any{at, f[1]}
-	}
-	query, args := auditQuery(filter, after, page.Limit+1)
-	if err := m.open(); err != nil {
-		return nil, "", err
-	}
-	rows, err := m.p.read.QueryContext(ctx, query, args...)
-	out, err := collect(rows, err, scanAudit)
-	if err != nil {
-		return nil, "", m.fail(ctx, err, "the audit log cannot be listed")
-	}
-	out, last, more := cut(out, page.Limit)
-	if !more {
-		return out, "", nil
-	}
-	return out, sqlkit.EncodeCursor(listAudit, binding, strconv.FormatInt(micros(last.Time), 10), last.ID), nil
+	return listAuditPage(ctx, m, masterLists, filter, page)
 }
 
 // --- Helpers ---
@@ -1069,15 +877,6 @@ func decodeDetails(s string) (map[string]string, error) {
 		return nil, nil
 	}
 	return d, nil
-}
-
-// notFound turns sql.ErrNoRows into NotFound with what, and gives any other
-// error its kind with message.
-func (m *Master) notFound(ctx context.Context, err error, what, message string) error {
-	if errors.Is(err, sql.ErrNoRows) {
-		return fault.New(fault.NotFound, what)
-	}
-	return m.fail(ctx, err, message)
 }
 
 // oneRow returns NotFound with what unless the statement changed a row.

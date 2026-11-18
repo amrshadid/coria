@@ -350,7 +350,10 @@ func TestMetrics(t *testing.T) {
 		t.Fatalf("local: %d %s", status, text)
 	}
 	for _, want := range []string{"magnetar_requests_total", "magnetar_request_duration_seconds_bucket", "magnetar_audit_entries_written_total",
-		"magnetar_audit_entries_dropped_total", "magnetar_key_last_use_marks_written_total", "magnetar_requests_in_flight 1"} {
+		"magnetar_audit_entries_failed_total", "magnetar_audit_entries_dropped_refusals_total", "magnetar_audit_entries_dropped_records_total",
+		"magnetar_audit_entries_dropped_writes_total", "magnetar_audit_entries_rerouted_total", "magnetar_audit_entries_notices_total",
+		"magnetar_key_last_use_marks_written_total", "magnetar_key_last_use_marks_dropped_total", "magnetar_key_last_use_marks_failed_total",
+		"magnetar_requests_in_flight 1"} {
 		if !contains(text, want) {
 			t.Errorf("the metrics lack %q", want)
 		}
@@ -751,7 +754,7 @@ func TestStopDrains(t *testing.T) {
 		t.Fatalf("stop took %v", took)
 	}
 	stats := e.access.AuditStats()
-	if stats.Dropped != 0 || stats.Failed != 0 {
+	if stats.Dropped() != 0 || stats.Failed != 0 {
 		t.Fatalf("audit entries lost at stop: %+v", stats)
 	}
 	if stats.Written < refusals {
@@ -920,5 +923,34 @@ func TestHandlerConnectErrorsPassThrough(t *testing.T) {
 		if code != c || msg != "handler says "+c.String() {
 			t.Errorf("a handler's %v reached the caller as %v %q", c, code, msg)
 		}
+	}
+}
+
+// TestBearerScheme guards how the key is taken from the Authorization
+// header (RFC 6750 2.1, access.APIKey's contract): the scheme is compared
+// without regard to case and the spaces around the key are dropped, so only
+// the key reaches the check; a header in any other form is passed on whole,
+// which the check refuses as a malformed key.
+func TestBearerScheme(t *testing.T) {
+	key := access.APIKey(unknownKey)
+	for _, h := range []string{
+		"Bearer " + unknownKey,
+		"bearer " + unknownKey,
+		"BEARER " + unknownKey,
+		"BeArEr " + unknownKey,
+		"Bearer    " + unknownKey,
+		"  Bearer " + unknownKey + "  ",
+	} {
+		if server.CredentialOf(h) != key {
+			t.Errorf("%q did not give the key alone", h)
+		}
+	}
+	for _, h := range []string{"Basic " + unknownKey, unknownKey, "Bearer", "Bearer "} {
+		if got := server.CredentialOf(h); got == key || got == access.APIKey("") {
+			t.Errorf("%q gave %v, not a malformed key", h, got)
+		}
+	}
+	if server.CredentialOf("") != access.APIKey("") {
+		t.Error("no header is not a request with no key")
 	}
 }

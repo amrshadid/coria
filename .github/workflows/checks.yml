@@ -128,6 +128,20 @@ jobs:
       - name: Outside check, bash completion parsed by bash -n
         run: make check-completion
 
+      # A tenant's SQLite database, created by the registry as the server
+      # will, read back by the same tool: where its file is and its mode,
+      # tables, rows, integrity, and the master's row and state change.
+      - name: Outside check, a SQLite tenant read by sqlite3
+        run: make check-tenant-sqlite
+
+      # The interactive program, run as built under a pseudo-terminal by
+      # Python's pty module against the in-process fake server: keys pressed,
+      # the screen read, quit, SIGTERM and SIGINT sent mid-session, and the
+      # terminal checked to have been restored. Standard library only; Linux
+      # and macOS, since Windows has no pty module.
+      - name: Outside check, interactive program under a pseudo-terminal
+        run: make check-tui PYTHON=python3
+
       # Each fuzz target for ten seconds, on one Go only: the inputs it finds
       # do not depend on the Go release, and the minutes are limited.
       - name: Fuzzing, 10 seconds a target
@@ -158,6 +172,117 @@ jobs:
           file bin/magnetar-linux-amd64 | grep 'statically linked'
           go version -m bin/magnetar-linux-amd64 | grep -x $'\tbuild\tCGO_ENABLED=0'
           ./bin/magnetar-linux-amd64 version
+
+  # The Postgres master database against real servers, versions 16 and 18.
+  # The Postgres tests make a schema of their own in the service's database
+  # and skip when MAGNETAR_TEST_POSTGRES is not set, as they do in the Linux
+  # job above and on Windows, which has no service containers. Here
+  # MAGNETAR_REQUIRE_POSTGRES turns a missing address into a failure, so a
+  # service that did not start fails this job instead of letting it pass by
+  # running nothing. psql and pg_dump for the outside check come from the
+  # server's own image, so their version equals the server's (pg_dump
+  # refuses a newer server).
+  postgres:
+    name: Postgres ${{ matrix.postgres }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['16', '18']
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_PASSWORD: ci-throwaway-password
+          POSTGRES_DB: magnetar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d magnetar_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MAGNETAR_TEST_POSTGRES: postgres://postgres:ci-throwaway-password@127.0.0.1:5432/magnetar_test?sslmode=disable
+      MAGNETAR_REQUIRE_POSTGRES: '1'
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The module and build caches, keyed on go.sum, as in the Linux job.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27'
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Go version
+        run: go version
+
+      # -v so each test's result, a skip included, is in the log.
+      - name: go test -race, the Postgres driver and the contract suite
+        run: go test -race -count=1 -v ./internal/driver/...
+
+      # The same tests as 32-bit binaries, which an x86-64 Linux runs
+      # natively. One server version only, to spend fewer minutes.
+      - name: go test, Postgres driver, linux/386
+        if: matrix.postgres == '18'
+        run: GOOS=linux GOARCH=386 CGO_ENABLED=0 go test -count=1 ./internal/driver/postgres
+
+      - name: Outside check, the Postgres master read by psql and pg_dump
+        run: |
+          make check-master-postgres \
+            PSQL="docker run --rm -i --network host postgres:${{ matrix.postgres }} psql" \
+            PG_DUMP="docker run --rm -i --network host postgres:${{ matrix.postgres }} pg_dump"
+
+  # The server's outside checks, in a job of their own so the Linux job keeps
+  # its time: the local socket refused to a second operating system user, and
+  # curl, grpcurl and Python's grpcio against a real server process with the
+  # stand-in handlers (scripts/check-server.sh). Linux only: the second user
+  # needs sudo, which the runner has without a password.
+  server:
+    name: Server - outside checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27'
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.sum
+
+      # A second user with no home and no shell. The test runs this test
+      # binary as that user with sudo: once with run/ as the server keeps it
+      # (the connect must be refused) and once with run/ and the socket opened
+      # to everyone, so the peer credential check is the only guard left (the
+      # server must close the connection unanswered).
+      - name: The local socket refused to another user
+        run: |
+          sudo useradd --no-create-home --shell /usr/sbin/nologin magnetar-other
+          MAGNETAR_TEST_OTHER_USER=magnetar-other go test -count=1 -v -run '^TestSocketRefusesOtherUser$' ./internal/server
+
+      # grpcurl from its release, checked against the SHA-256 committed in
+      # scripts/grpcurl.sha256; the Python packages at exact versions with
+      # their hashes, in a virtual environment (the runner's Python refuses
+      # pip installs, PEP 668).
+      - name: Outside check, curl, grpcurl and Python grpcio against the server
+        run: |
+          bash scripts/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r scripts/requirements-check-server.txt
+          make check-server PYTHON="$RUNNER_TEMP/venv/bin/python" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl"
 
   # Windows has its own paths, line endings and executables, so the tests run
   # there on every pull request. The newest Go only: Windows minutes count

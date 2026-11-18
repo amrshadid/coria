@@ -29,7 +29,11 @@
 // to it looks like.
 //
 // Every method's comment also says what it writes to the audit log and which
-// error kinds it can answer. The kinds and the codes that carry them:
+// error kinds it can answer. Which log an entry goes to is said once, on
+// AuditService in audit.proto: a refused request is always written to the
+// installation's log, with the tenant's name when it named one; an allowed
+// request, to the log of the tenant or the installation it concerns. The
+// kinds and the codes that carry them:
 //
 //   - invalid: INVALID_ARGUMENT (HTTP 400). The request is malformed, breaks a
 //     rule stated on its fields, or exceeds a limit below. Sending it again

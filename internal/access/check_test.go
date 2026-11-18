@@ -62,7 +62,7 @@ func TestCheckTable(t *testing.T) {
 		{"revoked", access.APIKey(revoked.full), access.OnInstallation(master.RoleReader), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "key revoked", revoked.id, ""},
 		{"expired", access.APIKey(expired.full), access.OnInstallation(master.RoleReader), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "key expired", expired.id, ""},
 		{"unauthenticated before the tenant", access.APIKey(revoked.full), access.OnTenant("nosuch", master.RoleReader), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "key revoked", revoked.id, "nosuch"},
-		{"local without user", access.LocalOperator(""), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "local caller without a user id", "", ""},
+		{"local without user", access.LocalOperator(""), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "local caller without a usable user id", "", ""},
 
 		{"good, authenticated", access.APIKey(good.full), access.Authenticated(), 0, true, "", "", "", good.id, ""},
 		{"good, its tenant", access.APIKey(good.full), access.OnTenant("lab", master.RoleWriter), 0, true, "", "", "", good.id, "lab"},
@@ -79,6 +79,8 @@ func TestCheckTable(t *testing.T) {
 		{"installation reader, inside a tenant", access.APIKey(instReader.full), access.OnTenant("clinic", master.RoleReader), fault.Denied, false, denied, master.OutcomeRefused, "no sufficient grant", instReader.id, "clinic"},
 		{"installation reader, no tenant", access.APIKey(instReader.full), access.OnTenant("nosuch", master.RoleReader), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, "nosuch"},
 		{"installation reader, a name no tenant can have", access.APIKey(instReader.full), access.OnTenant("Not/A Name", master.RoleReader), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, `"Not/A Name"`},
+		{"installation reader, a Windows device name", access.APIKey(instReader.full), access.OnTenant("con", master.RoleReader), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, `"con"`},
+		{"good, a Windows device name", access.APIKey(good.full), access.OnTenant("lpt1", master.RoleReader), fault.Denied, false, denied, master.OutcomeRefused, "no such tenant", good.id, `"lpt1"`},
 		{"installation reader, no registration", access.APIKey(instReader.full), access.TenantRegistration("nosuch"), fault.NotFound, false, nf, master.OutcomeFailed, "no such tenant", instReader.id, "nosuch"},
 		{"installation admin, inside a tenant", access.APIKey(instAdmin.full), access.OnTenant("lab", master.RoleReader), fault.Denied, false, denied, master.OutcomeRefused, "no sufficient grant", instAdmin.id, "lab"},
 		{"installation admin, admin", access.APIKey(instAdmin.full), access.OnInstallation(master.RoleAdmin), 0, true, "", "", "", instAdmin.id, ""},
@@ -101,7 +103,7 @@ func TestCheckTable(t *testing.T) {
 				if len(entries) != 0 {
 					t.Fatalf("an allowed check wrote %d entries; the caller writes it", len(entries))
 				}
-				got := d.Entry(master.OutcomeDone, "")
+				got := d.Entry(master.OutcomeDone, "", access.Facts{})
 				if got.ID == "" || got.Method != "/magnetar.v1.Test/Method" || got.KeyID != tc.keyID || got.TenantName != tc.tenant || got.RemoteAddress != "192.0.2.7:51000" || got.RequestID != "req-1" || !got.Time.Equal(t0) {
 					t.Fatalf("entry handed back: %+v", got)
 				}
@@ -183,7 +185,7 @@ func TestDeniedSamePath(t *testing.T) {
 	if !reflect.DeepEqual(callsNoGrant, callsNoTenant) {
 		t.Fatalf("the two paths differ:\nno grant:  %v\nno tenant: %v", callsNoGrant, callsNoTenant)
 	}
-	want := []string{"Key", "TenantByName", "RolesFor"}
+	want := []string{"Key", "RolesFor"}
 	if !reflect.DeepEqual(callsNoGrant, want) {
 		t.Fatalf("calls %v, want %v", callsNoGrant, want)
 	}
@@ -353,7 +355,7 @@ func TestPrincipalUnforgeable(t *testing.T) {
 		t.Fatal("the zero Principal holds something")
 	}
 	var d access.Decision
-	if err := d.Entry(master.OutcomeDone, "").Validate(); fault.KindOf(err) != fault.Invalid {
+	if err := d.Entry(master.OutcomeDone, "", access.Facts{}).Validate(); fault.KindOf(err) != fault.Invalid {
 		t.Fatalf("the zero Decision's entry validates: %v", err)
 	}
 }

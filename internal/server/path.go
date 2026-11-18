@@ -261,9 +261,15 @@ func (s *Server) answer(err error) *connect.Error {
 // Authorization header is the credential wherever it comes from, so a key
 // can be tried on the local socket too. Without one, a request that came
 // through the local socket's peer check is the local operator; any other is
-// a request with no key. A header that is not a bearer key is passed on as
-// it is, which the check refuses as malformed: never an error of a
-// different shape, so a caller learns nothing from the form of its header.
+// a request with no key. A header that is not a bearer key (another scheme,
+// a key without the scheme, the scheme with nothing after it) is a malformed
+// key: the check refuses it like any other bad credential, so a caller learns
+// nothing from the form of its header, and the header itself never reaches
+// the check.
+// malformedKey stands for every Authorization header that is not a bearer
+// key: not empty, so it is not "no key", and not of a key's shape.
+const malformedKey = "malformed"
+
 func credential(authorization string, local localPeer, isLocal bool) access.Credential {
 	if authorization != "" {
 		scheme, token, found := strings.Cut(strings.TrimSpace(authorization), " ")
@@ -272,7 +278,7 @@ func credential(authorization string, local localPeer, isLocal bool) access.Cred
 				return access.APIKey(t)
 			}
 		}
-		return access.APIKey(authorization)
+		return access.APIKey(malformedKey)
 	}
 	if isLocal {
 		return access.LocalOperator(local.user)

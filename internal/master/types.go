@@ -223,14 +223,32 @@ func ValidateTenantState(state TenantState, reason string) error {
 }
 
 // ValidateTenantName returns an Invalid error unless name is 1 to 63 of a-z,
-// 0-9 and "-", starting with a letter (D37). A name appears in URLs and
-// paths, so it is checked here, once, before it reaches either.
+// 0-9 and "-", starting with a letter (D37), and is not a device name Windows
+// reserves. A name appears in URLs and paths, so it is checked here, once,
+// before it reaches either.
 func ValidateTenantName(name string) error {
 	if name == "" || len(name) > MaxTenantNameLength || name[0] < 'a' || name[0] > 'z' ||
 		!allBytes(name, func(b byte) bool { return isLowerAlnum(b) || b == '-' }) {
 		return invalid("a tenant's name is 1 to 63 of a-z, 0-9 and -, starting with a letter")
 	}
+	if windowsDevice(name) {
+		return invalid("a tenant's name may not be con, prn, aux, nul, com0 to com9 or lpt0 to lpt9, which Windows reserves")
+	}
 	return nil
+}
+
+// windowsDevice reports whether name is a device name Windows reserves: con,
+// prn, aux, nul, com0 to com9, lpt0 to lpt9. A tenant on SQLite keeps its
+// database in a file named for the tenant, and on Windows before 11 a file
+// with such a name, whatever its extension, is the device; the names are
+// refused on every system so that a data directory moved to Windows still
+// works. Names are lowercase here, so the comparison is too.
+func windowsDevice(name string) bool {
+	switch name {
+	case "con", "prn", "aux", "nul":
+		return true
+	}
+	return len(name) == 4 && (name[:3] == "com" || name[:3] == "lpt") && name[3] >= '0' && name[3] <= '9'
 }
 
 // Key is an API key as the master keeps it: its id and the hash of its
@@ -319,6 +337,22 @@ func (s Scope) String() string {
 		return "installation"
 	}
 	return "tenant/" + s.TenantID
+}
+
+// Roles is what RolesFor reads for a key and a tenant name: the key's role
+// on the installation, the tenant the name belongs to, and the key's role on
+// it. A role is the empty Role when the key holds none.
+type Roles struct {
+	// Installation is the key's role on the installation.
+	Installation Role
+	// Tenant is the key's role on the tenant named; empty when the tenant
+	// was not found.
+	Tenant Role
+	// TenantID is the id of the tenant named, at the time of the read;
+	// empty when it was not found.
+	TenantID string
+	// TenantFound reports whether a tenant has the name asked for.
+	TenantFound bool
 }
 
 // Grant gives a key a role on one scope. A key has at most one grant per

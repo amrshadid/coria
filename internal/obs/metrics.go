@@ -18,10 +18,15 @@ import (
 // 30-second default deadline, roughly 2.5 times apart.
 var DurationBuckets = []float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}
 
-// Counts is a set of counters read from their owner at the moment of a
-// scrape: written, dropped and failed.
-type Counts struct {
-	Written, Dropped, Failed uint64
+// Counter is one counter read from its owner at the moment of a scrape.
+type Counter struct {
+	// Name is the metric's name, ending in _total; it comes from a fixed
+	// list in the server, never from a request.
+	Name string
+	// Help says what is counted, as a sentence.
+	Help string
+	// Value is the count.
+	Value uint64
 }
 
 // Sources are the values a scrape reads from the parts that own them. A nil
@@ -29,10 +34,9 @@ type Counts struct {
 type Sources struct {
 	// TenantsByState returns how many tenants are in each state.
 	TenantsByState func() map[string]int
-	// Audit returns what became of the audit entries of refusals and reads.
-	Audit func() Counts
-	// Marks returns what became of the keys' last-use marks.
-	Marks func() Counts
+	// Counters returns counters kept by other parts, such as the audit
+	// writer's and the last-use marks' counts.
+	Counters func() []Counter
 }
 
 // histogram is one method's duration histogram: a count per bucket (not
@@ -116,11 +120,11 @@ func (m *Metrics) WriteText(w io.Writer) error {
 			sample(b, "magnetar_tenants", []string{"state", s}, strconv.Itoa(states[s]))
 		}
 	}
-	if f := m.sources.Audit; f != nil {
-		counts(b, "magnetar_audit_entries", "audit entries of refusals and reads", f())
-	}
-	if f := m.sources.Marks; f != nil {
-		counts(b, "magnetar_key_last_use_marks", "last-use marks of keys", f())
+	if f := m.sources.Counters; f != nil {
+		for _, c := range f() {
+			header(b, c.Name, "counter", c.Help)
+			sample(b, c.Name, nil, strconv.FormatUint(c.Value, 10))
+		}
 	}
 	return b.Flush()
 }
@@ -151,22 +155,6 @@ func (m *Metrics) writeRequests(b *bufio.Writer) {
 		sample(b, "magnetar_request_duration_seconds_bucket", []string{"method", method, "le", "+Inf"}, strconv.FormatUint(h.count, 10))
 		sample(b, "magnetar_request_duration_seconds_sum", []string{"method", method}, formatFloat(h.sum))
 		sample(b, "magnetar_request_duration_seconds_count", []string{"method", method}, strconv.FormatUint(h.count, 10))
-	}
-}
-
-// counts writes the three counters of a Counts.
-func counts(b *bufio.Writer, prefix, what string, c Counts) {
-	for _, s := range []struct {
-		suffix, help string
-		v            uint64
-	}{
-		{"written", "written", c.Written},
-		{"dropped", "dropped, never tried", c.Dropped},
-		{"failed", "refused or failed by the database", c.Failed},
-	} {
-		name := prefix + "_" + s.suffix + "_total"
-		header(b, name, "counter", "Count of "+what+" "+s.help+".")
-		sample(b, name, nil, strconv.FormatUint(s.v, 10))
 	}
 }
 

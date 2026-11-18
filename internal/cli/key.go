@@ -14,25 +14,10 @@ import (
 )
 
 // keyLabel is a key's id with its holder, for a sentence.
-func keyLabel(k *v1.Key) string {
-	if k.GetHolder() == "" {
-		return k.GetId()
-	}
-	return k.GetId() + " (" + k.GetHolder() + ")"
-}
+func keyLabel(k *v1.Key) string { return output.KeyLabel(k) }
 
-// keyStatus says whether a key works now: revoked, expired, or active. It is
-// worked out here from the times the server sent, which are all the client
-// has; the server decides for itself on each request.
-func (a *app) keyStatus(k *v1.Key) string {
-	switch {
-	case k.GetRevokeTime() != nil:
-		return "revoked"
-	case k.GetExpireTime() != nil && !k.GetExpireTime().AsTime().After(a.env.Now()):
-		return "expired"
-	}
-	return "active"
-}
+// keyStatus says whether a key works now: revoked, expired, or active.
+func (a *app) keyStatus(k *v1.Key) string { return output.KeyStatus(k, a.env.Now()) }
 
 // newKey builds the key noun.
 func (a *app) newKey() *cobra.Command {

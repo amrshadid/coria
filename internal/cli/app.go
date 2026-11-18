@@ -16,6 +16,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/cli/output"
 	"github.com/amrshadid/magnetar/internal/cli/servecmd"
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/tui"
 	"github.com/amrshadid/magnetar/internal/version"
 )
 
@@ -32,6 +33,16 @@ type Env struct {
 	Now func() time.Time
 	// Location is the zone times are shown in; time.Local when nil.
 	Location *time.Location
+	// Stdin is standard input. With Stdout it decides whether "magnetar" with
+	// no arguments opens the interactive program; nil is not a terminal.
+	Stdin io.Reader
+	// Terminal says whether input and output are both terminals; when nil it
+	// asks the operating system about each. A test sets it to open the
+	// interactive program without a terminal.
+	Terminal func(in io.Reader, out io.Writer) bool
+	// Interactive runs the interactive program; tui.Run when nil. A test sets
+	// it to see that the program was, or was not, opened.
+	Interactive func(ctx context.Context, o tui.Options) error
 }
 
 // withDefaults fills what a caller left unset.
@@ -130,6 +141,12 @@ func (a *app) report(cmd *cobra.Command, err error) int {
 		return fault.Invalid.ExitCode()
 	}
 	err = re.err
+	var ee *exitError
+	if errors.As(err, &ee) {
+		// The program ended by a signal: nothing to say, the terminal has
+		// been restored, and the status is the conventional one.
+		return ee.code
+	}
 	kind := fault.KindOf(err)
 	var ce *client.CallError
 	switch {
@@ -223,7 +240,13 @@ not allowed), 4 not found.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          noArgs,
-		RunE: func(*cobra.Command, []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Only with no arguments, and only when input and output are both
+			// a terminal, does the program open; a script or a pipe gets the
+			// usage line and exit 2 as it always did.
+			if a.canOpenInteractive() {
+				return a.openInteractive(cmd)
+			}
 			// Not marked as a command's own error: it is a usage mistake, so
 			// report adds the pointer to the help.
 			return fault.New(fault.Invalid, "no command (usage: magnetar <noun> <verb> [flags], for example magnetar tenant list)")

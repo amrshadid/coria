@@ -5,6 +5,8 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+
+	"github.com/amrshadid/magnetar/internal/access"
 )
 
 // HandleUnchecked registers h on the server's mux without the request
@@ -17,6 +19,12 @@ func (s *Server) MountUnchecked(register func(*connect.Server)) {
 	rpc := connect.NewServer()
 	register(rpc)
 	connecthttp.Mount(s.mux, rpc)
+}
+
+// CredentialOf is the credential the request path reads from an
+// Authorization header on a network connection.
+func CredentialOf(authorization string) access.Credential {
+	return credential(authorization, localPeer{}, false)
 }
 
 // SetSocketUser replaces the user a local socket peer must be, so a test

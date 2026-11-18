@@ -86,6 +86,14 @@ type counting struct {
 	// test can make the package log.
 	failAudit atomic.Bool
 	failMarks atomic.Bool
+	// failCreateKey, when set, is what CreateKey returns without calling the
+	// store; attempted is the entry the last CreateKey was given.
+	failCreateKey error
+	attempted     master.AuditEntry
+	// keyDownAfterRevoke makes every Key fail as Unavailable once a
+	// RevokeKey has succeeded.
+	keyDownAfterRevoke atomic.Bool
+	revoked            atomic.Bool
 }
 
 func (c *counting) note(name string) {
@@ -121,10 +129,13 @@ func (c *counting) written(e master.AuditEntry, err error) {
 
 func (c *counting) Key(ctx context.Context, id string) (master.Key, error) {
 	c.note("Key")
+	if c.keyDownAfterRevoke.Load() && c.revoked.Load() {
+		return master.Key{}, fault.New(fault.Unavailable, "test: the master stopped answering")
+	}
 	return c.Store.Key(ctx, id)
 }
 
-func (c *counting) RolesFor(ctx context.Context, keyID, tenantName string) (master.Role, master.Role, error) {
+func (c *counting) RolesFor(ctx context.Context, keyID, tenantName string) (master.Roles, error) {
 	c.mu.Lock()
 	c.calls = append(c.calls, "RolesFor")
 	c.tenantArgs = append(c.tenantArgs, tenantName)
@@ -171,6 +182,13 @@ func (c *counting) AppendAudit(ctx context.Context, entries ...master.AuditEntry
 
 func (c *counting) CreateKey(ctx context.Context, k master.Key, e master.AuditEntry) error {
 	c.note("CreateKey")
+	c.mu.Lock()
+	c.attempted = e
+	fail := c.failCreateKey
+	c.mu.Unlock()
+	if fail != nil {
+		return fail
+	}
 	err := c.Store.CreateKey(ctx, k, e)
 	c.written(e, err)
 	return err
@@ -180,6 +198,9 @@ func (c *counting) RevokeKey(ctx context.Context, id string, at time.Time, e mas
 	c.note("RevokeKey")
 	out, err := c.Store.RevokeKey(ctx, id, at, e)
 	c.written(e, err)
+	if err == nil {
+		c.revoked.Store(true)
+	}
 	return out, err
 }
 

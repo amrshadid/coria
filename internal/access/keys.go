@@ -120,32 +120,75 @@ func GrantsOfKey(keyID string) GrantFilter { return GrantFilter{keyID: keyID, by
 // GrantsOnScope lists the grants on one scope, of every key.
 func GrantsOnScope(s Scope) GrantFilter { return GrantFilter{scope: s, byScope: true} }
 
-// The audit reason of a management call refused for the Decision it was
-// given.
+// The audit reasons of a management call refused for the Decision it was
+// given. A zero Decision is refused without an entry: it carries none.
 const (
-	// reasonNotAdmin: the caller is authenticated but not the installation's
-	// admin. A zero Decision is refused without an entry: it carries none.
-	reasonNotAdmin = "the decision does not carry admin on the installation"
+	reasonNotAdmin    = "the decision does not carry admin on the installation"
+	reasonNoLongerKey = "the key is gone since the check"
+	reasonNowAdmin    = "the key is no longer admin on the installation"
+	sinceCheck        = " since the check"
 )
 
-// admin verifies that d is a Decision Check made, whose caller is the
-// installation's admin, as every operation on keys and grants requires in
-// this version (access.proto, AccessService). It does not trust the
-// requirement the server checked: a wrong entry in the server's table of
-// methods cannot open a management function. It returns the request's
-// entry with this operation's object and details, which replace those the
-// server gave Check, so that the entry stays within the master's bounds
-// once the master adds its own details.
-func (a *Access) admin(d Decision, object string, details map[string]string) (master.AuditEntry, error) {
+// admin is actFor for the operations on keys and grants, which all need
+// the installation's admin in this version (access.proto, AccessService).
+func (a *Access) admin(ctx context.Context, d Decision, object string, details map[string]string) (master.AuditEntry, error) {
+	return a.actFor(ctx, d, true, object, details)
+}
+
+// actFor verifies that d is a Decision Check made, and that its caller may
+// still act: for a key, the key is read again, and refused as
+// Unauthenticated when it was revoked or has expired since the check, and,
+// when needAdmin, its role on the installation is read again and must be
+// admin, or the call is Denied. So a Decision kept past its request, or one
+// made for a lesser requirement by a wrong entry in the server's table of
+// methods, opens nothing. The reads are made just before the change, not in
+// its transaction: the port's changes take no caller, so a revocation in the
+// moment between the two is not seen (see the package documentation).
+//
+// It returns the request's entry, with a fresh id, and with object and
+// details in place of those the server gave Check when they are given, so
+// the entry stays within the master's bounds once the master adds its own
+// details.
+func (a *Access) actFor(ctx context.Context, d Decision, needAdmin bool, object string, details map[string]string) (master.AuditEntry, error) {
 	if !d.checked() {
 		return master.AuditEntry{}, fault.New(fault.Denied, MessageDenied)
 	}
-	e := d.Entry(master.OutcomeDone, "")
-	e.Object = object
-	e.Details = details
-	if !atLeast(d.principal.Role(master.Installation), master.RoleAdmin) {
+	e := d.Entry(master.OutcomeDone, "", Facts{})
+	if object != "" {
+		e.Object = object
+	}
+	if details != nil {
+		e.Details = details
+	}
+	if needAdmin && !atLeast(d.principal.Role(master.Installation), master.RoleAdmin) {
 		a.record(e, master.OutcomeRefused, reasonNotAdmin)
 		return master.AuditEntry{}, fault.New(fault.Denied, MessageDenied)
+	}
+	if !d.principal.isKey {
+		return e, nil
+	}
+	id := d.principal.key.ID
+	k, err := a.store.Key(ctx, id)
+	switch {
+	case fault.KindOf(err) == fault.NotFound:
+		a.record(e, master.OutcomeRefused, reasonNoLongerKey)
+		return master.AuditEntry{}, fault.New(fault.Unauthenticated, MessageUnauthenticated)
+	case err != nil:
+		return master.AuditEntry{}, a.fail(e, err)
+	}
+	if reason := keyState(k, a.clock()); reason != "" {
+		a.record(e, master.OutcomeRefused, reason+sinceCheck)
+		return master.AuditEntry{}, fault.New(fault.Unauthenticated, MessageUnauthenticated)
+	}
+	if needAdmin {
+		r, err := a.store.RolesFor(ctx, id, "")
+		if err != nil {
+			return master.AuditEntry{}, a.fail(e, err)
+		}
+		if !atLeast(r.Installation, master.RoleAdmin) {
+			a.record(e, master.OutcomeRefused, reasonNowAdmin)
+			return master.AuditEntry{}, fault.New(fault.Denied, MessageDenied)
+		}
 	}
 	return e, nil
 }
@@ -162,12 +205,16 @@ func (a *Access) failAfter(e master.AuditEntry, err error) error {
 		// under a fresh one rather than refused again for the same reason.
 		e.ID = a.newID()
 	}
+	e.Outcome = master.OutcomeFailed
 	switch fault.KindOf(err) {
 	case fault.Invalid, fault.NotFound, fault.Conflict:
-		a.record(e, master.OutcomeFailed, fault.Message(err))
+		e.Reason = auditText(fault.Message(err), master.MaxAuditReasonLength)
+		a.enqueueRecord(a.store, e)
 		return err
 	}
-	return a.fail(e, err)
+	e.Reason = auditText(reasonStoreFailure+": "+fault.KindOf(err).String(), master.MaxAuditReasonLength)
+	a.enqueueRecord(a.store, e)
+	return storeError(err)
 }
 
 // appendRead hands a read's audit entry to the audit writer. A read changes
@@ -175,7 +222,7 @@ func (a *Access) failAfter(e master.AuditEntry, err error) error {
 // path; it is written with the next batch (see the package documentation
 // for what that means when the server is overwhelmed or killed).
 func (a *Access) appendRead(e master.AuditEntry) {
-	a.enqueueAudit(e)
+	a.enqueueRecord(a.store, e)
 }
 
 // page returns a request's page with the contract's default and bounds
@@ -207,7 +254,7 @@ func publicKey(k master.Key) master.Key {
 // its secret, are written in one transaction. The whole key is in the
 // result's Secret, once: only its hash is stored.
 func (a *Access) CreateKey(ctx context.Context, d Decision, holder string, exp Expiry) (CreatedKey, error) {
-	entry, err := a.admin(d, "", map[string]string{detailHolder: clip(holder, master.MaxAuditDetailValueLength)})
+	entry, err := a.admin(ctx, d, "", map[string]string{detailHolder: auditText(holder, master.MaxAuditDetailValueLength)})
 	if err != nil {
 		return CreatedKey{}, err
 	}
@@ -218,7 +265,7 @@ func (a *Access) CreateKey(ctx context.Context, d Decision, holder string, exp E
 	}
 	made, err := secret.MakeAPIKey()
 	if err != nil {
-		return CreatedKey{}, a.fail(entry, err)
+		return CreatedKey{}, a.failAfter(entry, err)
 	}
 	k := master.Key{ID: made.ID, Hash: made.Hash[:], Holder: holder, Created: now, Expires: expires}
 	entry.Object = k.ID
@@ -239,7 +286,7 @@ func (a *Access) CreateKey(ctx context.Context, d Decision, holder string, exp E
 // GetKey returns one key, revoked and expired keys included, without its
 // hash. It needs the installation's admin. An unknown id is NotFound.
 func (a *Access) GetKey(ctx context.Context, d Decision, id string) (master.Key, error) {
-	entry, err := a.admin(d, clip(id, master.MaxAuditFieldLength), nil)
+	entry, err := a.admin(ctx, d, auditText(id, master.MaxAuditFieldLength), nil)
 	if err != nil {
 		return master.Key{}, err
 	}
@@ -261,7 +308,7 @@ func (a *Access) GetKey(ctx context.Context, d Decision, id string) (master.Key,
 // oldest first, without their hashes, and the token of the next page. It
 // needs the installation's admin.
 func (a *Access) ListKeys(ctx context.Context, d Decision, p master.Page) ([]master.Key, string, error) {
-	entry, err := a.admin(d, "", nil)
+	entry, err := a.admin(ctx, d, "", nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -284,30 +331,26 @@ func (a *Access) ListKeys(ctx context.Context, d Decision, p master.Page) ([]mas
 // needs the installation's admin. Revoking a revoked key changes nothing and
 // returns its first revoke time; the request is still recorded. An unknown
 // id is NotFound. Because every check reads the key, the key's next request
-// is refused.
+// is refused. The key is read before the revocation, and the answer is that
+// read with the revoke time the revocation returned: a revocation that
+// happened is never answered as a failure.
 func (a *Access) RevokeKey(ctx context.Context, d Decision, id string) (master.Key, error) {
-	entry, err := a.admin(d, clip(id, master.MaxAuditFieldLength), nil)
+	entry, err := a.admin(ctx, d, auditText(id, master.MaxAuditFieldLength), nil)
 	if err != nil {
 		return master.Key{}, err
 	}
 	if err := master.ValidateID("key id", id); err != nil {
 		return master.Key{}, a.failAfter(entry, err)
 	}
-	if _, err := a.store.RevokeKey(ctx, id, entry.Time, entry); err != nil {
+	k, err := a.store.Key(ctx, id)
+	if err == nil {
+		k.Revoked, err = a.store.RevokeKey(ctx, id, a.clock(), entry)
+	}
+	if err != nil {
 		if fault.KindOf(err) == fault.NotFound {
 			err = fault.New(fault.NotFound, "no key has this id")
 		}
 		return master.Key{}, a.failAfter(entry, err)
-	}
-	// The revocation and its entry are written; the key is read back for
-	// the answer. If that read fails, the caller is told so and may repeat
-	// the call, which is idempotent.
-	k, err := a.store.Key(ctx, id)
-	if err != nil {
-		if fault.KindOf(err) == fault.Unavailable {
-			return master.Key{}, fault.Wrap(fault.Unavailable, err, "the master database does not answer")
-		}
-		return master.Key{}, fault.Wrap(fault.Internal, err, "internal error")
 	}
 	return publicKey(k), nil
 }
@@ -339,7 +382,7 @@ func (a *Access) resolve(ctx context.Context, s Scope) (master.Scope, error) {
 // NotFound; a revoked key is Conflict. The audit entry has the scope and,
 // from the master, the old and the new role.
 func (a *Access) SetGrant(ctx context.Context, d Decision, keyID string, scope Scope, role master.Role) (Grant, master.Role, error) {
-	entry, err := a.admin(d, clip(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
+	entry, err := a.admin(ctx, d, auditText(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
 	if err != nil {
 		return Grant{}, "", err
 	}
@@ -373,7 +416,7 @@ func (a *Access) SetGrant(ctx context.Context, d Decision, keyID string, scope S
 // and succeeds. It needs the installation's admin. An unknown key or tenant
 // is NotFound.
 func (a *Access) RemoveGrant(ctx context.Context, d Decision, keyID string, scope Scope) (master.Role, error) {
-	entry, err := a.admin(d, clip(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
+	entry, err := a.admin(ctx, d, auditText(keyID, master.MaxAuditFieldLength), map[string]string{detailScope: scope.String()})
 	if err != nil {
 		return "", err
 	}
@@ -402,11 +445,11 @@ func (a *Access) ListGrants(ctx context.Context, d Decision, filter GrantFilter,
 	desc := "none"
 	switch {
 	case filter.byKey:
-		desc = "key/" + clip(filter.keyID, master.MaxIDLength)
+		desc = "key/" + auditText(filter.keyID, master.MaxIDLength)
 	case filter.byScope:
 		desc = filter.scope.String()
 	}
-	entry, err := a.admin(d, "", map[string]string{detailFilter: desc})
+	entry, err := a.admin(ctx, d, "", map[string]string{detailFilter: desc})
 	if err != nil {
 		return nil, "", err
 	}
@@ -455,15 +498,15 @@ func named(grants []master.Grant) []Grant {
 
 // WhoAmI returns the caller of d and every grant of its key, each scope by
 // its tenant's name, and records the request. Any caller Check
-// authenticated may ask; a zero Decision is Denied. The local operator has
+// authenticated may ask, while its key is still good; a zero Decision is
+// Denied. The local operator has
 // no grants: it is admin by being the user that runs the server.
 func (a *Access) WhoAmI(ctx context.Context, d Decision) (Principal, []Grant, error) {
-	if !d.checked() {
-		return Principal{}, nil, fault.New(fault.Denied, MessageDenied)
+	entry, err := a.actFor(ctx, d, false, "", nil)
+	if err != nil {
+		return Principal{}, nil, err
 	}
-	entry := d.Entry(master.OutcomeDone, "")
 	var all []master.Grant
-	var err error
 	if d.principal.isKey {
 		all, err = a.allGrants(ctx, d.principal.key.ID)
 		if err != nil {

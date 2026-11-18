@@ -74,17 +74,16 @@ const MetricsPattern = "GET /metrics"
 // Close, which writes the audit entries it holds. *access.Access is one.
 type Checker interface {
 	Check(ctx context.Context, cred access.Credential, req access.Requirement, facts access.Request) (access.Decision, error)
-	Record(d access.Decision, outcome master.Outcome, reason string)
+	Record(d access.Decision, outcome master.Outcome, reason string, facts access.Facts)
 	AuditStats() access.AuditStats
 	MarkStats() access.MarkStats
 	Close(ctx context.Context) error
 }
 
-// Registry is what the server needs of the tenant registry: how many
-// tenants are in each state, for the metrics, and Close, at stop. It is an
-// interface so the server does not depend on the registry's package.
+// Registry is what the server needs of the tenant registry: Close, at stop,
+// within the close deadline. *registry.Registry is one; it is an interface
+// so the server does not depend on the registry's package.
 type Registry interface {
-	TenantsByState() map[string]int
 	Close(ctx context.Context) error
 }
 
@@ -111,6 +110,9 @@ type Config struct {
 	Access Checker
 	// Registry is the tenant registry, or nil; the server closes it at stop.
 	Registry Registry
+	// TenantsByState returns how many tenants are in each state, for
+	// /metrics; nil leaves the family out.
+	TenantsByState func() map[string]int
 	// Master is closed after the registry, at stop; nil for none.
 	Master io.Closer
 	// Log receives the server's lines; nil discards them.
@@ -229,17 +231,7 @@ func New(cfg Config) (*Server, error) {
 		}
 		s.cert = &cert
 	}
-	s.metrics = obs.NewMetrics(obs.Sources{
-		TenantsByState: s.tenantsByState(),
-		Audit: func() obs.Counts {
-			a := s.access.AuditStats()
-			return obs.Counts{Written: a.Written, Dropped: a.Dropped, Failed: a.Failed}
-		},
-		Marks: func() obs.Counts {
-			m := s.access.MarkStats()
-			return obs.Counts{Written: m.Written, Dropped: m.Dropped, Failed: m.Failed}
-		},
-	})
+	s.metrics = obs.NewMetrics(obs.Sources{TenantsByState: cfg.TenantsByState, Counters: s.counters})
 	if err := s.buildRoutes(); err != nil {
 		return nil, err
 	}
@@ -247,13 +239,26 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// tenantsByState is the metrics' source of tenant states: the registry's,
-// or none.
-func (s *Server) tenantsByState() func() map[string]int {
-	if s.cfg.Registry == nil {
-		return nil
+// counters are the counts the access package keeps, as metrics: what
+// became of the audit entries of refusals and reads, and of the keys'
+// last-use marks.
+func (s *Server) counters() []obs.Counter {
+	a, m := s.access.AuditStats(), s.access.MarkStats()
+	c := func(name, help string, v uint64) obs.Counter {
+		return obs.Counter{Name: "magnetar_" + name + "_total", Help: help, Value: v}
 	}
-	return s.cfg.Registry.TenantsByState
+	return []obs.Counter{
+		c("audit_entries_written", "Audit entries of refusals and reads that a log took.", a.Written),
+		c("audit_entries_failed", "Audit entries a log refused one by one, or that were not valid.", a.Failed),
+		c("audit_entries_dropped_refusals", "Audit entries of refusals dropped because their queue was full or the server was closing.", a.DroppedRefusals),
+		c("audit_entries_dropped_records", "Audit entries of allowed requests dropped because their queue was full or the server was closing.", a.DroppedRecords),
+		c("audit_entries_dropped_writes", "Audit entries the writer gave up on: the database did not answer after the retries, or the close deadline passed.", a.DroppedWrites),
+		c("audit_entries_rerouted", "Audit entries for a tenant's log written to the master's because the tenant's did not answer.", a.Rerouted),
+		c("audit_entries_notices", "Audit entries the writer wrote to say entries were dropped.", a.Notices),
+		c("key_last_use_marks_written", "Last-use marks of keys the database took.", m.Written),
+		c("key_last_use_marks_dropped", "Last-use marks of keys dropped because their queue was full or the server was closing.", m.Dropped),
+		c("key_last_use_marks_failed", "Last-use marks of keys the database refused or failed.", m.Failed),
+	}
 }
 
 // buildRoutes makes the one connect.Server, registers the API's services
@@ -334,7 +339,7 @@ func (s *Server) serveMetrics(ctx context.Context, w http.ResponseWriter, _ *htt
 	w.Header().Set("Content-Type", obs.ContentType)
 	err := s.metrics.WriteText(w)
 	if call != nil {
-		s.access.Record(call.Decision, master.OutcomeDone, "")
+		s.access.Record(call.Decision, master.OutcomeDone, "", access.Facts{})
 	}
 	return err
 }
@@ -508,26 +513,32 @@ func (s *Server) stop() error {
 	s.baseCancel()
 	s.serving.Wait()
 
-	closeCtx, closeCancel := context.WithTimeout(context.Background(), closeWithin)
-	defer closeCancel()
-	if err := s.access.Close(closeCtx); err != nil {
-		errs = append(errs, fault.Wrap(fault.Internal, err, "server: the audit entries were not all written before the deadline"))
-	}
-	if s.cfg.Registry != nil {
-		if err := s.cfg.Registry.Close(closeCtx); err != nil {
-			errs = append(errs, fault.Wrap(fault.Internal, err, "server: closing the tenant registry"))
+	// Each part gets its own close deadline, so one that uses all of its
+	// time does not take the next one's: the access package first (its
+	// audit writer may still write to a tenant's log through the
+	// registry), then the registry, then the master both of them use.
+	closeEach := func(what string, close func(context.Context) error) {
+		ctx, cancel := context.WithTimeout(context.Background(), closeWithin)
+		defer cancel()
+		if err := close(ctx); err != nil {
+			s.log.Error("server: closing "+what+" failed", "error", err)
+			errs = append(errs, fault.Wrap(fault.Internal, err, "server: closing "+what))
 		}
+	}
+	closeEach("the access check and its audit writer", s.access.Close)
+	if s.cfg.Registry != nil {
+		closeEach("the tenant registry", s.cfg.Registry.Close)
 	}
 	if s.cfg.Master != nil {
-		if err := s.cfg.Master.Close(); err != nil {
-			errs = append(errs, fault.Wrap(fault.Internal, err, "server: closing the master database"))
-		}
+		closeEach("the master database", func(context.Context) error { return s.cfg.Master.Close() })
 	}
 	if err := s.cfg.Lock.Release(); err != nil {
 		errs = append(errs, fault.Wrap(fault.Internal, err, "server: releasing the lock"))
 	}
 	a := s.access.AuditStats()
-	s.log.Info("server: stopped", "audit_written", a.Written, "audit_dropped", a.Dropped, "audit_failed", a.Failed)
+	s.log.Info("server: stopped", "audit_written", a.Written, "audit_failed", a.Failed,
+		"audit_dropped_refusals", a.DroppedRefusals, "audit_dropped_records", a.DroppedRecords,
+		"audit_dropped_writes", a.DroppedWrites, "audit_dropped", a.Dropped())
 	return errors.Join(errs...)
 }
 

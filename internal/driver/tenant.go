@@ -1,0 +1,115 @@
+package driver
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/amrshadid/magnetar/internal/driver/sqlite"
+	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/tenant"
+)
+
+// SQLiteDriver is the name of the SQLite database type, as a tenant's row in
+// the master records it (master.Tenant.Driver).
+const SQLiteDriver = "sqlite"
+
+// TenantsDir is the directory, inside the data directory, that holds the
+// database file of every tenant on SQLite (M0 design note, part 1).
+const TenantsDir = "tenants"
+
+// SQLiteTenants opens the databases of tenants on SQLite. Each is the file
+// <DataDir>/tenants/<name>.db, so a tenant on SQLite is given no address:
+// its sealed address is empty, and its file follows the data directory if
+// that is moved. It is what package registry calls a Driver.
+type SQLiteTenants struct {
+	// DataDir is the installation's data directory.
+	DataDir string
+}
+
+// Path returns the file of the tenant named name. The name is refused unless
+// it is a valid tenant name (master.ValidateTenantName: a-z, 0-9 and "-",
+// starting with a letter), and the path built from it is checked to be a
+// file directly inside the tenants directory: the name is validated by the
+// master before it gets here, and this check means that a mistake there
+// still cannot make a database outside the data directory.
+func (d SQLiteTenants) Path(name string) (string, error) {
+	if d.DataDir == "" {
+		return "", fault.New(fault.Internal, "no data directory is set for tenants on SQLite")
+	}
+	if err := master.ValidateTenantName(name); err != nil {
+		return "", err
+	}
+	file := name + ".db"
+	if !filepath.IsLocal(file) || strings.ContainsAny(file, `/\:`) || windowsDevice(name) {
+		return "", fault.New(fault.Invalid, "a tenant's name cannot be used as a file name")
+	}
+	dir, err := filepath.Abs(filepath.Join(d.DataDir, TenantsDir))
+	if err != nil {
+		return "", fault.New(fault.Internal, "the data directory cannot be made absolute")
+	}
+	path := filepath.Join(dir, file)
+	if filepath.Dir(path) != dir {
+		return "", fault.New(fault.Invalid, "a tenant's name cannot be used as a file name")
+	}
+	return path, nil
+}
+
+// Location implements registry.Driver: the path of the tenant's file, which
+// holds no secret. A tenant on SQLite has no address; one given is Invalid,
+// as the API contract says.
+func (d SQLiteTenants) Location(name, address string) (string, error) {
+	if address != "" {
+		return "", fault.New(fault.Invalid, "a tenant on SQLite takes no database address; its file is made in the data directory")
+	}
+	return d.Path(name)
+}
+
+// Open implements registry.Driver: it opens, creating them when they do not
+// exist, the tenants directory (readable by its owner only) and the tenant's
+// file. The store is bound to the tenant id (sqlite.OpenTenant). It does not
+// migrate.
+func (d SQLiteTenants) Open(ctx context.Context, id, name, address string) (tenant.Store, error) {
+	path, err := d.Location(name, address)
+	if err != nil {
+		return nil, err
+	}
+	// 0700, as the master's file is 0600: the directory holds every
+	// tenant's catalog. MkdirAll leaves an existing directory as it is.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			return nil, fault.New(fault.Unavailable, "the tenants directory cannot be made: "+pathErr.Err.Error())
+		}
+		return nil, fault.New(fault.Unavailable, "the tenants directory cannot be made")
+	}
+	s, err := sqlite.OpenTenant(ctx, path, id)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// windowsDevice reports, on Windows, whether name is one of the device names
+// Windows reserves (CON, PRN, AUX, NUL, COM0 to COM9, LPT0 to LPT9). Before
+// Windows 11 such a name opened the device even with an extension, so
+// "con.db" was the console, not a file; filepath.IsLocal no longer refuses
+// it since Go 1.23, which follows Windows 11 (seen in CI). The tenant name
+// rule (master.ValidateTenantName) refuses these names on every system; this
+// is the second wall, so a change to that rule cannot make a device here. A
+// tenant's name is lowercase, so the comparison is too.
+func windowsDevice(name string) bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	switch name {
+	case "con", "prn", "aux", "nul":
+		return true
+	}
+	return len(name) == 4 && (strings.HasPrefix(name, "com") || strings.HasPrefix(name, "lpt")) &&
+		name[3] >= '0' && name[3] <= '9'
+}

@@ -113,15 +113,17 @@ type Store interface {
 	// GrantsByScope returns a page of the grants on one scope, by key id,
 	// each with its tenant's name at the time of the read.
 	GrantsByScope(ctx context.Context, scope Scope, page Page) ([]Grant, string, error)
-	// RolesFor returns a key's role on the installation and its role on
-	// the tenant named tenantName, each the empty Role when it has none. An
-	// empty tenantName asks for the installation only. A tenant that does
-	// not exist, and a key that does not exist, have no roles; neither is
-	// an error, so the access check cannot tell them apart by error. It is
-	// the access check's one read of grants on every request: one statement
-	// of at most two point lookups, by the tenant's name, so the caller
-	// needs no read of the tenant first.
-	RolesFor(ctx context.Context, keyID, tenantName string) (installation, tenant Role, err error)
+	// RolesFor returns a key's role on the installation, whether a tenant
+	// is named tenantName and its id, and the key's role on that tenant,
+	// each role the empty Role when the key has none (Roles). An empty
+	// tenantName asks for the installation only. A name that is not a
+	// valid tenant name is not an error: no tenant has it, so the tenant is
+	// not found, and the same statement runs as for any other name, so a
+	// missing tenant and a tenant without a grant cost the caller the same
+	// work. A key that does not exist has no roles and is not an error
+	// either. It is the access check's one read of grants and tenant on
+	// every request: one statement of point lookups.
+	RolesFor(ctx context.Context, keyID, tenantName string) (Roles, error)
 	// RemoveGrant removes a key's grant on a scope and returns the role it
 	// had, or the empty Role when there was none: removing a grant the key
 	// does not hold changes nothing and succeeds (the API contract). The

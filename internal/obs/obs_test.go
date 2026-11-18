@@ -85,8 +85,13 @@ func TestParseLevel(t *testing.T) {
 func TestMetricsText(t *testing.T) {
 	m := NewMetrics(Sources{
 		TenantsByState: func() map[string]int { return map[string]int{"ready": 2, "failed": 1} },
-		Audit:          func() Counts { return Counts{Written: 7, Dropped: 1, Failed: 2} },
-		Marks:          func() Counts { return Counts{Written: 3} },
+		Counters: func() []Counter {
+			return []Counter{
+				{Name: "magnetar_audit_entries_written_total", Help: "Written.", Value: 7},
+				{Name: "magnetar_audit_entries_dropped_refusals_total", Help: "Dropped.", Value: 1},
+				{Name: "magnetar_key_last_use_marks_written_total", Help: "Marks.", Value: 3},
+			}
+		},
 	})
 	m.Observe("/magnetar.v1.AccessService/WhoAmI", "ok", 2*time.Millisecond)
 	m.Observe("/magnetar.v1.AccessService/WhoAmI", "unauthenticated", 40*time.Second)
@@ -110,8 +115,8 @@ func TestMetricsText(t *testing.T) {
 		"magnetar_requests_in_flight 1\n",
 		`magnetar_tenants{state="failed"} 1` + "\n",
 		"magnetar_audit_entries_written_total 7\n",
-		"magnetar_audit_entries_dropped_total 1\n",
-		"magnetar_audit_entries_failed_total 2\n",
+		"# TYPE magnetar_audit_entries_dropped_refusals_total counter\n",
+		"magnetar_audit_entries_dropped_refusals_total 1\n",
 		"magnetar_key_last_use_marks_written_total 3\n",
 	} {
 		if !strings.Contains(out, want) {

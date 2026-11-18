@@ -67,7 +67,6 @@ type options struct {
 	methods   servertest.Table
 	noNetwork bool
 	beforeRun func(*server.Server)
-	auditQ    int
 }
 
 // env is one running server over a fresh SQLite master, with stand-in
@@ -119,7 +118,7 @@ func newEnv(tb testing.TB, o options) *env {
 		o.format = obs.JSON
 	}
 	log := obs.NewLogger(e.log, obs.LogOptions{Format: o.format, Level: o.level})
-	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log, AuditQueue: o.auditQ})
+	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log})
 	if err != nil {
 		tb.Fatal(err)
 	}

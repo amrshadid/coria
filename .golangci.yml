@@ -130,6 +130,38 @@ linters:
             - pkg: github.com/amrshadid/magnetar/internal/sqlkit
               desc: sqlkit is for SQL drivers; the port must not assume SQL
 
+        # The tenant database's port (internal/tenant) and its contract
+        # suite (internal/tenant/tenanttest), held to the master port's
+        # rule for the same reasons (D12).
+        tenant:
+          files:
+            - "**/internal/tenant/**"
+          deny:
+            - pkg: database/sql
+              desc: the tenant port is operations, not SQL; a driver package implements it
+            - pkg: modernc.org/sqlite
+              desc: the tenant port knows no database; internal/driver/sqlite does
+            - pkg: github.com/jackc/pgx
+              desc: the tenant port knows no database; the Postgres driver does
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the port and its suite never import a driver; drivers import them
+            - pkg: github.com/amrshadid/magnetar/internal/sqlkit
+              desc: sqlkit is for SQL drivers; the port must not assume SQL
+
+        # The tenant registry is given its drivers (registry.Config.Drivers),
+        # which is how its tests run a database that fails and hangs on
+        # demand. An import of a driver outside its tests would let it pick
+        # one itself.
+        registry:
+          files:
+            - "**/internal/registry/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the registry is given its drivers in Config; the server wires them
+            - pkg: database/sql
+              desc: the registry reaches a tenant's database only through tenant.Store
+
         # Only the SQLite driver reaches the SQLite library, so nothing else
         # in the binary can come to depend on which database it runs on.
         sqlite-library:
@@ -139,6 +171,15 @@ linters:
           deny:
             - pkg: modernc.org/sqlite
               desc: only internal/driver/sqlite uses the SQLite library; ask for a master.Store from internal/driver
+
+        # The same for Postgres: only its driver reaches pgx.
+        postgres-library:
+          files:
+            - $all
+            - "!**/internal/driver/postgres/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: only internal/driver/postgres uses pgx; ask for a master.Store from internal/driver
 
     misspell:
       locale: US

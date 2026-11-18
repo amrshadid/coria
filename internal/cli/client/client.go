@@ -112,6 +112,10 @@ func New(cfg Config) (*Client, error) {
 	}, nil
 }
 
+// Target says where the client's calls go: the path of the local socket, or the
+// scheme and host of the server. It holds no key and no header.
+func (c *Client) Target() string { return c.target }
+
 // Close releases the connections the client holds.
 func (c *Client) Close() { c.http.CloseIdleConnections() }
 

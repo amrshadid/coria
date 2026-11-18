@@ -112,7 +112,10 @@ def main():
         text = f.read()
     families = {fam.name: fam for fam in text_string_to_metric_families(text)}
     for name in ("magnetar_requests", "magnetar_request_duration_seconds", "magnetar_requests_in_flight",
-                 "magnetar_audit_entries_written", "magnetar_audit_entries_dropped", "magnetar_audit_entries_failed"):
+                 "magnetar_audit_entries_written", "magnetar_audit_entries_failed",
+                 "magnetar_audit_entries_dropped_refusals", "magnetar_audit_entries_dropped_records",
+                 "magnetar_audit_entries_dropped_writes", "magnetar_audit_entries_rerouted", "magnetar_audit_entries_notices",
+                 "magnetar_key_last_use_marks_written", "magnetar_key_last_use_marks_dropped", "magnetar_key_last_use_marks_failed"):
         if name not in families:
             fail(f"metrics: no family {name} in {sorted(families)}")
     samples = sum(len(f.samples) for f in families.values())

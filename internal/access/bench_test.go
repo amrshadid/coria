@@ -2,18 +2,21 @@ package access_test
 
 import (
 	"context"
+	"os"
+	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
 )
 
 // The benchmarks of the check on the SQLite master, with the last-use worker
 // and the audit writer running as a server runs them: the cost every later
 // API call pays before its handler runs (acceptance 7). They are reported,
-// not claimed against a target yet.
+// not claimed against a target yet. Run them without the race detector.
 
 // benchEnv returns an env with a key that holds one grant, writer on lab,
 // marked used a moment before, as a busy key is.
@@ -26,9 +29,19 @@ func benchEnv(b *testing.B) (*env, testKey, access.Requirement) {
 	return e, k, access.OnTenant("lab", master.RoleReader)
 }
 
-// BenchmarkCheck measures the check of a good key with one grant: parse,
-// read the key, compare, read the tenant, read the roles. The key was marked
-// within the minute, so no mark is asked for.
+// reportAudit reports the audit writer's entries written and dropped per
+// operation.
+func reportAudit(b *testing.B, e *env) {
+	b.StopTimer()
+	e.flush()
+	s := e.access.AuditStats()
+	b.ReportMetric(float64(s.Written)/float64(b.N), "written/op")
+	b.ReportMetric(float64(s.Dropped())/float64(b.N), "dropped/op")
+}
+
+// BenchmarkCheck measures the check alone of a good key with one grant, on a
+// tenant: parse, read the key, compare, read the roles and the tenant in one
+// statement. The key was marked within the minute, so no mark is asked for.
 func BenchmarkCheck(b *testing.B) {
 	e, k, need := benchEnv(b)
 	cred := access.APIKey(k.full)
@@ -40,24 +53,27 @@ func BenchmarkCheck(b *testing.B) {
 	}
 }
 
-// BenchmarkCheckAndRecord measures an allowed read in all: the check and its
-// audit entry handed to the audit writer, which writes it in a batch.
+// BenchmarkCheckAndRecord measures an allowed read in all, with the writer
+// keeping up: the check, its entry handed to Record, and, every 256
+// operations, a wait for the writer to write what it holds, inside the
+// timing. So every entry is written (written/op is 1) and the time per
+// operation includes its share of the batched, synced appends.
 func BenchmarkCheckAndRecord(b *testing.B) {
 	e, k, need := benchEnv(b)
 	cred := access.APIKey(k.full)
 	b.ReportAllocs()
+	i := 0
 	for b.Loop() {
 		d, err := e.access.Check(e.ctx, cred, need, facts("bench"))
 		if err != nil {
 			b.Fatal(err)
 		}
-		e.access.Record(d, master.OutcomeDone, "")
+		e.access.Record(d, master.OutcomeDone, "", access.Facts{})
+		if i++; i%256 == 0 {
+			e.flush()
+		}
 	}
-	b.StopTimer()
-	e.flush()
-	s := e.access.AuditStats()
-	b.ReportMetric(float64(s.Dropped)/float64(b.N), "dropped/op")
-	b.ReportMetric(float64(s.Written)/float64(b.N), "written/op")
+	reportAudit(b, e)
 }
 
 // BenchmarkCheckAndSyncedAudit measures the same read with its entry
@@ -72,33 +88,57 @@ func BenchmarkCheckAndSyncedAudit(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := e.master.AppendAudit(e.ctx, d.Entry(master.OutcomeDone, "")); err != nil {
+		if err := e.master.AppendAudit(e.ctx, d.Entry(master.OutcomeDone, "", access.Facts{})); err != nil {
 			b.Fatal(err)
 		}
 	}
 }
 
 // BenchmarkCheckRefused measures the refusal of a key with a known id and a
-// wrong secret, its entry going to the audit writer: the cost of a flood of
-// bad keys to the server.
+// wrong secret, alone: the cost of one bad key of a flood to the request's
+// path. Its entries go to the writer, which does not keep up with a loop
+// that does nothing else, so most are dropped and counted.
 func BenchmarkCheckRefused(b *testing.B) {
 	e, k, need := benchEnv(b)
-	other, err := secret.MakeAPIKey()
-	if err != nil {
-		b.Fatal(err)
-	}
-	cred := access.APIKey("mgt_" + k.id + "_" + other.Key()[len("mgt_")+13:])
+	cred := access.APIKey("mgt_" + k.id + "_" + k.full[len("mgt_")+13:len(k.full)-1] + "1")
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := e.access.Check(e.ctx, cred, need, facts("bench")); err == nil {
 			b.Fatal("a wrong secret was allowed")
 		}
 	}
-	b.StopTimer()
-	e.flush()
-	s := e.access.AuditStats()
-	b.ReportMetric(float64(s.Dropped)/float64(b.N), "dropped/op")
-	b.ReportMetric(float64(s.Written)/float64(b.N), "written/op")
+	reportAudit(b, e)
+}
+
+// BenchmarkCheckParallel64 measures 64 goroutines making allowed reads at
+// once, each a check and a Record, as a busy server does: checks per second
+// over the whole run, and the entries written and dropped per operation.
+func BenchmarkCheckParallel64(b *testing.B) {
+	e, k, need := benchEnv(b)
+	cred := access.APIKey(k.full)
+	var next atomic.Int64
+	total := int64(b.N)
+	var wg sync.WaitGroup
+	b.ResetTimer()
+	start := time.Now()
+	for range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for next.Add(1) <= total {
+				d, err := e.access.Check(context.Background(), cred, need, facts("bench"))
+				if err != nil {
+					b.Error(err)
+					return
+				}
+				e.access.Record(d, master.OutcomeDone, "", access.Facts{})
+			}
+		}()
+	}
+	wg.Wait()
+	elapsed := time.Since(start)
+	b.ReportMetric(float64(b.N)/elapsed.Seconds(), "checks/s")
+	reportAudit(b, e)
 }
 
 // BenchmarkCheckWithMark measures the check with its last-use mark written
@@ -122,4 +162,54 @@ func BenchmarkCheckWithMark(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// TestMeasureDeniedGap measures the two Denied cases, interleaved, 20,000
+// times each on the SQLite master: a key naming a tenant it has no grant
+// on, and the same key naming a tenant that does not exist. It is a
+// measurement, not a check, so it runs only when MAGNETAR_MEASURE is set,
+// and reports the median and the 90th percentile of each and the gap
+// between the medians. Run it without the race detector.
+func TestMeasureDeniedGap(t *testing.T) {
+	if os.Getenv("MAGNETAR_MEASURE") == "" {
+		t.Skip("a measurement; set MAGNETAR_MEASURE=1 to run it")
+	}
+	e := newEnv(t)
+	k := e.key(time.Time{}, on(master.TenantScope(e.clinic.ID), master.RoleAdmin))
+	if _, err := e.master.MarkKeyUsed(e.ctx, k.id, t0.Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	cred := access.APIKey(k.full)
+	noGrant, noTenant := access.OnTenant("lab", master.RoleReader), access.OnTenant("nosuch", master.RoleReader)
+	once := func(req access.Requirement) time.Duration {
+		start := time.Now()
+		_, err := e.access.Check(e.ctx, cred, req, facts("m"))
+		d := time.Since(start)
+		if err == nil {
+			t.Fatal("allowed")
+		}
+		return d
+	}
+	for range 2000 {
+		once(noGrant)
+		once(noTenant)
+	}
+	const n = 20000
+	a, b := make([]time.Duration, 0, n), make([]time.Duration, 0, n)
+	for i := range n {
+		if i%2 == 0 {
+			a = append(a, once(noGrant))
+			b = append(b, once(noTenant))
+		} else {
+			b = append(b, once(noTenant))
+			a = append(a, once(noGrant))
+		}
+	}
+	slices.Sort(a)
+	slices.Sort(b)
+	ma, mb := a[n/2], b[n/2]
+	gap := 100 * (float64(mb) - float64(ma)) / float64(ma)
+	t.Logf("no grant:  median %v, p90 %v", ma, a[n*9/10])
+	t.Logf("no tenant: median %v, p90 %v", mb, b[n*9/10])
+	t.Logf("gap between the medians: %+.1f%% (no tenant against no grant)", gap)
 }

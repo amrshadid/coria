@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"io"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -23,23 +22,11 @@ scope, and the reading is itself recorded.`,
 		a.newAuditList())
 }
 
-// methodText shortens a method's full name, "/magnetar.v1.TenantService/CreateTenant",
-// to "TenantService/CreateTenant".
-func methodText(m string) string {
-	return strings.TrimPrefix(m, "/magnetar.v1.")
-}
+// methodText shortens a method's full name to "TenantService/CreateTenant".
+func methodText(m string) string { return output.Method(m) }
 
-// whoText says who made a request: the key's id, the local operator's user, or
-// nothing when the request carried neither.
-func whoText(e *v1.AuditEntry) string {
-	switch {
-	case e.GetKeyId() != "":
-		return e.GetKeyId()
-	case e.GetLocalUserId() != "":
-		return "local:" + e.GetLocalUserId()
-	}
-	return "-"
-}
+// whoText says who made a request.
+func whoText(e *v1.AuditEntry) string { return output.Who(e) }
 
 // newAuditList builds "audit list".
 func (a *app) newAuditList() *cobra.Command {
