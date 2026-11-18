@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/secret"
 )
@@ -22,14 +23,12 @@ const (
 	// IDFileName is the file in the data directory that holds the id,
 	// beside the key file, private to the user.
 	IDFileName = "installation"
-	// ReservedSettingPrefix starts the names of settings the system keeps
-	// for itself in the master's settings store. They are not settings a
-	// person sets: the settings service must neither list nor change them.
-	ReservedSettingPrefix = "system."
 	// InstallationIDSetting is the master's copy of the id, kept in the
 	// settings store because it is the master's one key-value store, and
-	// under the reserved prefix so the settings service does not expose it.
-	InstallationIDSetting = ReservedSettingPrefix + "installation-id"
+	// under settings.ReservedPrefix, which no setting of the server's list
+	// may use, so the settings service does not know it and answers it as
+	// a name that does not exist.
+	InstallationIDSetting = settings.ReservedPrefix + "installation-id"
 )
 
 // maxIDFile bounds what is read of the id file: an id is 26 characters.

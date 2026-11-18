@@ -8,9 +8,11 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/cli"
 	"github.com/amrshadid/magnetar/internal/cli/client"
 	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 )
 
 // testKey is a made-up key for the network tests; it is not a real credential
@@ -32,6 +34,22 @@ type result struct {
 	code   int
 }
 
+// testSettings is the list of settings of the tests' fake: the server's own,
+// with one a tenant may override, which the server's list does not have yet.
+// It is made here, in the tests, and never ships.
+func testSettings() *settings.Table {
+	period := func(v string) error {
+		_, err := settings.ParseDuration(v)
+		return err
+	}
+	t, err := settings.New(append(settings.Builtin(),
+		settings.Definition{Name: "test.retention", Default: "365d", TenantOverride: true, Validate: period})...)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
+
 // rig is a fake server and the environment to reach it.
 type rig struct {
 	t    *testing.T
@@ -45,6 +63,7 @@ func newRig(t *testing.T) *rig {
 	t.Helper()
 	fake := fakeserver.New()
 	fake.Now = func() time.Time { return fixedNow }
+	fake.Settings = testSettings()
 	dir := fake.ServeUnix(t)
 	return &rig{t: t, fake: fake, env: map[string]string{client.EnvDataDir: dir}}
 }
@@ -53,10 +72,23 @@ func newRig(t *testing.T) *rig {
 // the commands at it through MAGNETAR_SERVER and MAGNETAR_KEY.
 func newNetworkRig(t *testing.T) *rig {
 	t.Helper()
+	return newNetworkRigAs(t, true)
+}
+
+// newNetworkRigAs is newNetworkRig with the rig's key an installation admin
+// or a key with no grant at all.
+func newNetworkRigAs(t *testing.T, admin bool) *rig {
+	t.Helper()
 	fake := fakeserver.New()
 	fake.Now = func() time.Time { return fixedNow }
+	fake.Settings = testSettings()
 	fake.RequireKey = testKey
 	fake.CallerKeyID = "k00000000001"
+	// The rig's key acts as an installation admin would, as the real
+	// server lets only such a key list every tenant.
+	if admin {
+		fake.AddGrant("k00000000001", &v1.Scope{Kind: &v1.Scope_Installation{Installation: &v1.Installation{}}}, v1.Role_ROLE_ADMIN)
+	}
 	addr := fake.ServeTLS(t)
 	return &rig{t: t, fake: fake, env: map[string]string{
 		client.EnvServer: addr, client.EnvKey: testKey,

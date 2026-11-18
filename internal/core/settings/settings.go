@@ -21,6 +21,13 @@ const (
 	MaxKeyLifetime = 3650 * 24 * time.Hour
 )
 
+// ReservedPrefix starts the names the system keeps for itself in the
+// master's settings store, such as the installation's id. No setting of a
+// table may use it, so the settings service, which knows only a table's
+// names, answers such a name as one that does not exist: it neither lists,
+// reads, sets nor unsets it.
+const ReservedPrefix = "system."
+
 // The bounds every setting's name and value are held to, the same as the
 // databases hold them (master.ValidateSettingName, master.MaxSettingValueLength),
 // restated here because the core imports nothing of Magnetar's.
@@ -81,6 +88,8 @@ func New(defs ...Definition) (*Table, error) {
 		switch {
 		case !validName(d.Name):
 			return nil, errors.New("settings: the name " + strconv.Quote(d.Name) + " is not 1 to 128 of a-z, 0-9, ., _ and -")
+		case strings.HasPrefix(d.Name, ReservedPrefix):
+			return nil, errors.New("settings: the name " + d.Name + " is under " + ReservedPrefix + ", which the system keeps for itself")
 		case d.Validate == nil:
 			return nil, errors.New("settings: " + d.Name + " has no Validate function")
 		case len(d.Default) > MaxValueLength:

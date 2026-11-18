@@ -266,8 +266,9 @@ not allowed), 4 not found.`,
 	f.BoolVar(&a.opts.json, "json", false, "write one JSON document with schemaVersion instead of a table")
 
 	// init and serve make and run an installation; they are not clients of
-	// the API. The handlers are passed in Services when they exist.
-	serveOpts := servecmd.Options{Stdout: a.env.Stdout, Stderr: a.env.Stderr, Getenv: a.env.Getenv}
+	// the API. serve serves the API's handlers, built by APIServices over
+	// the installation it opened.
+	serveOpts := servecmd.Options{Stdout: a.env.Stdout, Stderr: a.env.Stderr, Getenv: a.env.Getenv, Services: servecmd.APIServices}
 	root.AddCommand(
 		a.newVersion(),
 		a.own(servecmd.Init(serveOpts)), a.own(servecmd.Serve(serveOpts)),

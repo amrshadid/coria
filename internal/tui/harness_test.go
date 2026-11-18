@@ -13,7 +13,24 @@ import (
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/cli/client"
 	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 )
+
+// testSettings is the list of settings of the tests' fake: the server's own,
+// with one a tenant may override, which the server's list does not have yet.
+// It is made here, in the tests, and never ships.
+func testSettings() *settings.Table {
+	period := func(v string) error {
+		_, err := settings.ParseDuration(v)
+		return err
+	}
+	t, err := settings.New(append(settings.Builtin(),
+		settings.Definition{Name: "test.retention", Default: "365d", TenantOverride: true, Validate: period})...)
+	if err != nil {
+		panic(err)
+	}
+	return t
+}
 
 // fixedNow is the clock of every test, so times in a view are the same on every
 // run.
@@ -63,6 +80,7 @@ func newRigWith(t *testing.T, w, h int, o rigOptions) *rig {
 	t.Helper()
 	fake := fakeserver.New()
 	fake.Now = func() time.Time { return fixedNow }
+	fake.Settings = testSettings()
 	if o.setup != nil {
 		o.setup(fake)
 	}

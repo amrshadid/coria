@@ -205,28 +205,28 @@ func TestGrantsOfATenantSetByKeyID(t *testing.T) {
 	r.expect("Key k00000000100", "holder 0")
 }
 
-// TestSettingsSetAndUnset guards the settings screens: the installation's list,
-// a tenant's overrides, set with a name and a value, and unset with the name
-// typed.
+// TestSettingsSetAndUnset guards the settings screens: the installation's
+// list with where each value comes from, a tenant's overrides, set with a
+// name and a value, and unset with the name typed, on a tenant and on the
+// installation.
 func TestSettingsSetAndUnset(t *testing.T) {
-	r := newRig(t, 80, 24, func(f *fakeserver.Server) { addTenants(f, 1) })
+	r := newRig(t, 100, 24, func(f *fakeserver.Server) { addTenants(f, 1) })
 	r.key("3")
-	r.expect("Settings of the installation", "audit.retention", "365d", "receive.quiet-period", "5s")
-	r.refuse("u unset")
+	r.expect("Settings of the installation", "key.default-lifetime", "90d", "built-in default", "test.retention", "365d")
 	r.key("esc", "1", "enter", "s")
 	r.key("s")
-	r.typeText("audit.retention")
+	r.typeText("test.retention")
 	r.key("enter")
 	r.typeText("30d")
 	r.key("enter")
-	r.expect("audit.retention", "30d", "set audit.retention on tenant t000")
+	r.expect("test.retention", "30d", "set test.retention on tenant t000")
 	r.key("u")
-	r.expect("Unset audit.retention", "applies again")
+	r.expect("Unset test.retention", "what applies on the installation applies again")
 	r.key("enter")
-	r.expect("not done: type audit.retention exactly")
-	r.typeText("audit.retention")
+	r.expect("not done: type test.retention exactly")
+	r.typeText("test.retention")
 	r.key("enter")
-	r.expect("nothing is set here", "audit.retention unset on tenant t000")
+	r.expect("nothing is set here", "test.retention unset on tenant t000")
 }
 
 // TestAuditFilter guards the audit screens: newest first as the server answers,

@@ -45,6 +45,11 @@ func (a *app) tenantDetails(w io.Writer, t *v1.Tenant) error {
 	if t.GetStateReason() != "" {
 		pairs = append(pairs, output.Pair{Label: "Reason", Value: t.GetStateReason()})
 	}
+	if t.GetStateTime() != nil {
+		// When the server's current view of the state began; absent while
+		// the server holds no view of the tenant yet.
+		pairs = append(pairs, output.Pair{Label: "Since", Value: a.when(t.GetStateTime())})
+	}
 	pairs = append(pairs, output.Pair{Label: "Created", Value: a.when(t.GetCreateTime())})
 	return output.Details(w, a.style(), pairs)
 }

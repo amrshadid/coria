@@ -16,6 +16,7 @@ import (
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/api/codes"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
@@ -29,13 +30,6 @@ var tenantName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 // settingName is the contract's rule for a setting name.
 var settingName = regexp.MustCompile(`^[a-z0-9._-]{1,128}$`)
-
-// KnownSettings is the fixed list of settings the fake knows, with their
-// installation defaults: a setting not here is "not found".
-var KnownSettings = map[string]string{
-	"audit.retention":      "365d",
-	"receive.quiet-period": "5s",
-}
 
 // Server is the fake. Its exported fields are set before it is served; the
 // methods that read and change its state are safe to call from the test while
@@ -54,6 +48,11 @@ type Server struct {
 	// Delay is how long each call waits before it is answered, for a test of
 	// the client's deadline.
 	Delay time.Duration
+	// Settings is the list of settings the fake knows, as the real server's
+	// settings service knows package settings' list: nil is the server's own
+	// list (settings.MustBuiltin). A test that needs a setting a tenant may
+	// override builds a list with one of its own.
+	Settings *settings.Table
 
 	mu        sync.Mutex
 	tenants   map[string]*v1.Tenant
@@ -76,19 +75,24 @@ type keyRecord struct {
 	secret string
 }
 
-// New returns an empty fake with the installation defaults of KnownSettings.
+// New returns an empty fake: no tenant, no key, and no setting given a value
+// on any scope, so every setting has its built-in default.
 func New() *Server {
-	s := &Server{
+	return &Server{
 		tenants:   map[string]*v1.Tenant{},
 		addresses: map[string]string{},
 		grants:    map[string]v1.Role{},
 		settings:  map[string]map[string]string{"": {}},
 		fail:      map[string]*connect.Error{},
 	}
-	for k, v := range KnownSettings {
-		s.settings[""][k] = v
+}
+
+// known returns the list of settings the fake knows.
+func (s *Server) known() *settings.Table {
+	if s.Settings != nil {
+		return s.Settings
 	}
-	return s
+	return settings.MustBuiltin()
 }
 
 // now returns the fake's time.
@@ -120,6 +124,13 @@ func (s *Server) AddKey(k *v1.Key) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.keys = append(s.keys, &keyRecord{key: k})
+}
+
+// AddGrant gives a key a role on a scope directly, as SetGrant would.
+func (s *Server) AddGrant(keyID string, scope *v1.Scope, role v1.Role) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.grants[keyID+"|"+scopeText(scope)] = role
 }
 
 // AddAudit puts an entry in the audit log, newest first when called in that
@@ -232,13 +243,14 @@ func pageOf(n int, size int32, token string) (from, to int, next string, err err
 }
 
 // scopeOf reads a Scope into its tenant name, which is empty for the
-// installation, or an Invalid error for a scope with neither or an empty
-// tenant name.
+// installation, or an Invalid error for a scope with neither or a tenant
+// name that is not one, as the real server answers a caller who may list
+// every tenant.
 func scopeOf(sc *v1.Scope) (tenant string, installation bool, err error) {
 	switch k := sc.GetKind().(type) {
 	case *v1.Scope_Tenant:
-		if k.Tenant == "" {
-			return "", false, fault.New(fault.Invalid, "the scope names no tenant")
+		if !tenantName.MatchString(k.Tenant) {
+			return "", false, fault.New(fault.Invalid, "scope.tenant: is 1 to 63 of a-z, 0-9 and -, starting with a letter")
 		}
 		return k.Tenant, false, nil
 	case *v1.Scope_Installation:
@@ -291,11 +303,15 @@ func (h tenantHandler) CreateTenant(_ context.Context, req *v1.CreateTenantReque
 	if _, dup := s.tenants[req.GetName()]; dup {
 		return nil, fault.New(fault.Conflict, "a tenant with that name exists")
 	}
+	now := timestamppb.New(s.now())
 	t := &v1.Tenant{
 		Name:         req.GetName(),
 		DatabaseType: req.GetDatabaseType(),
 		State:        v1.TenantState_TENANT_STATE_READY,
-		CreateTime:   timestamppb.New(s.now()),
+		CreateTime:   now,
+		// The real server's view of a new tenant begins when its creation
+		// finds it ready.
+		StateTime: now,
 	}
 	s.tenants[t.GetName()] = t
 	s.addresses[t.GetName()] = req.GetDatabaseAddress()
@@ -315,13 +331,19 @@ func (h tenantHandler) GetTenant(_ context.Context, req *v1.GetTenantRequest) (*
 	return &v1.GetTenantResponse{Tenant: h.s.tenants[req.GetName()]}, nil
 }
 
-// ListTenants answers a page of tenants ordered by name.
+// ListTenants answers a page of tenants ordered by name: every tenant for
+// the local operator and for a caller key with a grant on the installation,
+// otherwise only the tenants the caller key holds a grant on, as the real
+// server answers.
 func (h tenantHandler) ListTenants(_ context.Context, req *v1.ListTenantsRequest) (*v1.ListTenantsResponse, error) {
 	h.s.mu.Lock()
 	defer h.s.mu.Unlock()
+	all := h.s.RequireKey == "" || h.s.grants[h.s.CallerKeyID+"|installation"] != v1.Role_ROLE_UNSPECIFIED
 	names := make([]string, 0, len(h.s.tenants))
 	for n := range h.s.tenants {
-		names = append(names, n)
+		if all || h.s.grants[h.s.CallerKeyID+"|tenant:"+n] != v1.Role_ROLE_UNSPECIFIED {
+			names = append(names, n)
+		}
 	}
 	sort.Strings(names)
 	from, to, next, err := pageOf(len(names), req.GetPageSize(), req.GetPageToken())
@@ -380,7 +402,19 @@ func (h accessHandler) CreateKey(_ context.Context, req *v1.CreateKeyRequest) (*
 		return nil, fault.New(fault.Invalid, "the holder is required and at most 256 bytes")
 	}
 	created := s.now()
-	expire := created.Add(90 * 24 * time.Hour)
+	// The installation's key.default-lifetime, else its built-in default,
+	// as the real server reads it for a key made with no expiry.
+	lifetime := 90 * 24 * time.Hour
+	if def, ok := s.known().Lookup(settings.KeyDefaultLifetime); ok {
+		v := def.Default
+		if set, ok := s.settings[""][def.Name]; ok {
+			v = set
+		}
+		if d, err := settings.ParseDuration(v); err == nil {
+			lifetime = d
+		}
+	}
+	expire := created.Add(lifetime)
 	switch e := req.GetExpiry().(type) {
 	case *v1.CreateKeyRequest_ExpireAfter:
 		d := e.ExpireAfter.AsDuration()
@@ -509,8 +543,10 @@ func (h accessHandler) ListGrants(_ context.Context, req *v1.ListGrantsRequest) 
 	var match func(*v1.Grant) bool
 	switch f := req.GetFilter().(type) {
 	case *v1.ListGrantsRequest_KeyId:
-		if _, err := s.findKey(f.KeyId); err != nil {
-			return nil, err
+		// A key that does not exist has no grants: the real server answers
+		// an empty list, not "not found".
+		if f.KeyId == "" {
+			return nil, fault.New(fault.Invalid, "key_id: is required")
 		}
 		match = func(g *v1.Grant) bool { return g.GetKeyId() == f.KeyId }
 	case *v1.ListGrantsRequest_Scope:
@@ -589,7 +625,10 @@ func (h accessHandler) WhoAmI(context.Context, *v1.WhoAmIRequest) (*v1.WhoAmIRes
 	return &v1.WhoAmIResponse{Principal: p}, nil
 }
 
-// settingsHandler implements SettingsService.
+// settingsHandler implements SettingsService, as the real server's: a fixed
+// list of settings (Server.Settings), each with a built-in default; the
+// value that applies is the tenant's override, else the installation's
+// value, else the built-in default, and each answer says which.
 type settingsHandler struct{ s *Server }
 
 // settingScope reads a settings scope into the key of the settings map: ""
@@ -608,24 +647,43 @@ func (s *Server) settingScope(sc *v1.Scope) (string, error) {
 	return tenant, nil
 }
 
-// checkSettingName applies the contract's rule for a name and the fixed list.
-func checkSettingName(name string) error {
+// definition applies the contract's rule for a name and the fixed list.
+func (s *Server) definition(name string) (settings.Definition, error) {
 	if !settingName.MatchString(name) {
-		return fault.New(fault.Invalid, "the setting name must be 1 to 128 of lowercase letters, digits, '.', '_' and '-'")
+		return settings.Definition{}, fault.New(fault.Invalid, "name: is 1 to 128 of a-z, 0-9, ., _ and -")
 	}
-	if _, ok := KnownSettings[name]; !ok {
-		return fault.New(fault.NotFound, "no setting has that name")
+	def, ok := s.known().Lookup(name)
+	if !ok {
+		return settings.Definition{}, fault.New(fault.NotFound, "no setting has this name")
+	}
+	return def, nil
+}
+
+// onTenantOnly refuses a tenant scope for a setting a tenant may not
+// override.
+func onTenantOnly(scopeKey string, def settings.Definition) error {
+	if scopeKey != "" && !def.TenantOverride {
+		return fault.New(fault.Invalid, "scope: is the installation: a tenant may not override "+def.Name)
 	}
 	return nil
 }
 
+// applies returns the value of def that applies on the installation and its
+// source.
+func (s *Server) applies(def settings.Definition) *v1.Setting {
+	if v, ok := s.settings[""][def.Name]; ok {
+		return settingOf(def.Name, "", v, v1.SettingSource_SETTING_SOURCE_INSTALLATION)
+	}
+	return settingOf(def.Name, "", def.Default, v1.SettingSource_SETTING_SOURCE_BUILT_IN)
+}
+
 // settingOf builds a Setting for a scope key.
-func settingOf(name, scopeKey, value string) *v1.Setting {
+func settingOf(name, scopeKey, value string, source v1.SettingSource) *v1.Setting {
 	sc := &v1.Scope{Kind: &v1.Scope_Installation{Installation: &v1.Installation{}}}
 	if scopeKey != "" {
 		sc = &v1.Scope{Kind: &v1.Scope_Tenant{Tenant: scopeKey}}
 	}
-	return &v1.Setting{Name: name, Scope: sc, Value: value}
+	return &v1.Setting{Name: name, Scope: sc, Value: value, Source: source}
 }
 
 // GetSetting answers the value that applies to a scope and where it came from.
@@ -637,58 +695,76 @@ func (h settingsHandler) GetSetting(_ context.Context, req *v1.GetSettingRequest
 	if err != nil {
 		return nil, err
 	}
-	if err := checkSettingName(req.GetName()); err != nil {
+	def, err := s.definition(req.GetName())
+	if err != nil {
 		return nil, err
 	}
-	if v, ok := s.settings[sk][req.GetName()]; ok {
-		return &v1.GetSettingResponse{Setting: settingOf(req.GetName(), sk, v)}, nil
+	if v, ok := s.settings[sk][def.Name]; ok && sk != "" && def.TenantOverride {
+		return &v1.GetSettingResponse{Setting: settingOf(def.Name, sk, v, v1.SettingSource_SETTING_SOURCE_TENANT)}, nil
 	}
-	return &v1.GetSettingResponse{Setting: settingOf(req.GetName(), "", s.settings[""][req.GetName()])}, nil
+	return &v1.GetSettingResponse{Setting: s.applies(def)}, nil
 }
 
-// SetSetting sets a default or an override.
+// SetSetting sets the installation's value or a tenant's override.
 func (h settingsHandler) SetSetting(_ context.Context, req *v1.SetSettingRequest) (*v1.SetSettingResponse, error) {
 	s := h.s
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := req.GetSetting()
+	if st == nil {
+		return nil, fault.New(fault.Invalid, "setting: is required")
+	}
 	sk, err := s.settingScope(st.GetScope())
 	if err != nil {
 		return nil, err
 	}
-	if err := checkSettingName(st.GetName()); err != nil {
+	def, err := s.definition(st.GetName())
+	if err != nil {
 		return nil, err
 	}
-	if st.GetValue() == "" || len(st.GetValue()) > 64<<10 {
-		return nil, fault.New(fault.Invalid, "the value is required and at most 64 KiB")
+	if err := onTenantOnly(sk, def); err != nil {
+		return nil, err
+	}
+	if len(st.GetValue()) > settings.MaxValueLength {
+		return nil, fault.New(fault.Invalid, "setting.value: is at most 64 KiB")
+	}
+	if err := def.Validate(st.GetValue()); err != nil {
+		return nil, fault.New(fault.Invalid, "setting.value: "+err.Error())
 	}
 	if s.settings[sk] == nil {
 		s.settings[sk] = map[string]string{}
 	}
-	s.settings[sk][st.GetName()] = st.GetValue()
-	return &v1.SetSettingResponse{Setting: settingOf(st.GetName(), sk, st.GetValue())}, nil
+	s.settings[sk][def.Name] = st.GetValue()
+	source := v1.SettingSource_SETTING_SOURCE_INSTALLATION
+	if sk != "" {
+		source = v1.SettingSource_SETTING_SOURCE_TENANT
+	}
+	return &v1.SetSettingResponse{Setting: settingOf(def.Name, sk, st.GetValue(), source)}, nil
 }
 
-// UnsetSetting removes a tenant's override; the installation's cannot be.
+// UnsetSetting removes a tenant's override or the installation's value and
+// answers what applies again.
 func (h settingsHandler) UnsetSetting(_ context.Context, req *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error) {
 	s := h.s
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, installation, _ := scopeOf(req.GetScope()); installation {
-		return nil, fault.New(fault.Invalid, "the installation's default cannot be removed")
-	}
 	sk, err := s.settingScope(req.GetScope())
 	if err != nil {
 		return nil, err
 	}
-	if err := checkSettingName(req.GetName()); err != nil {
+	def, err := s.definition(req.GetName())
+	if err != nil {
 		return nil, err
 	}
-	delete(s.settings[sk], req.GetName())
-	return &v1.UnsetSettingResponse{Setting: settingOf(req.GetName(), "", s.settings[""][req.GetName()])}, nil
+	if err := onTenantOnly(sk, def); err != nil {
+		return nil, err
+	}
+	delete(s.settings[sk], def.Name)
+	return &v1.UnsetSettingResponse{Setting: s.applies(def)}, nil
 }
 
-// ListSettings answers the settings set on a scope, ordered by name.
+// ListSettings answers, ordered by name, every setting the fake knows as it
+// applies on the installation, or a tenant's overrides of settings it knows.
 func (h settingsHandler) ListSettings(_ context.Context, req *v1.ListSettingsRequest) (*v1.ListSettingsResponse, error) {
 	s := h.s
 	s.mu.Lock()
@@ -697,20 +773,20 @@ func (h settingsHandler) ListSettings(_ context.Context, req *v1.ListSettingsReq
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, 0, len(s.settings[sk]))
-	for n := range s.settings[sk] {
-		names = append(names, n)
+	var all []*v1.Setting
+	for _, n := range s.known().Names() {
+		def, _ := s.known().Lookup(n)
+		if sk == "" {
+			all = append(all, s.applies(def))
+		} else if v, ok := s.settings[sk][n]; ok {
+			all = append(all, settingOf(n, sk, v, v1.SettingSource_SETTING_SOURCE_TENANT))
+		}
 	}
-	sort.Strings(names)
-	from, to, next, err := pageOf(len(names), req.GetPageSize(), req.GetPageToken())
+	from, to, next, err := pageOf(len(all), req.GetPageSize(), req.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
-	res := &v1.ListSettingsResponse{NextPageToken: next}
-	for _, n := range names[from:to] {
-		res.Settings = append(res.Settings, settingOf(n, sk, s.settings[sk][n]))
-	}
-	return res, nil
+	return &v1.ListSettingsResponse{Settings: all[from:to], NextPageToken: next}, nil
 }
 
 // auditHandler implements AuditService.

@@ -109,13 +109,13 @@ func TestWhoami(t *testing.T) {
 func TestTenantCommands(t *testing.T) {
 	r := newRig(t)
 	expect(t, r.run("tenant", "create", "lab1"), 0,
-		"Name:     lab1\nDatabase: sqlite\nState:    ready\nCreated:  2026-11-17 15:00:00 +03:00\n", "")
+		"Name:     lab1\nDatabase: sqlite\nState:    ready\nSince:    2026-11-17 15:00:00 +03:00\nCreated:  2026-11-17 15:00:00 +03:00\n", "")
 
 	// A Postgres address from the environment, then from a file.
 	const address = "postgres://lab2:pw-from-env@db.example.org/lab2" //nolint:gosec // a made-up address for a test
 	r.env["LAB2_DB"] = address
 	res := r.run("tenant", "create", "lab2", "--db-env", "LAB2_DB")
-	expect(t, res, 0, "Name:     lab2\nDatabase: postgres\nState:    ready\nCreated:  2026-11-17 15:00:00 +03:00\n", "")
+	expect(t, res, 0, "Name:     lab2\nDatabase: postgres\nState:    ready\nSince:    2026-11-17 15:00:00 +03:00\nCreated:  2026-11-17 15:00:00 +03:00\n", "")
 	if got := r.fake.DatabaseAddress("lab2"); got != address {
 		t.Errorf("the server received the address %q, want the one in the environment", got)
 	}
@@ -148,7 +148,7 @@ func TestTenantCommands(t *testing.T) {
 		t.Errorf("list --json: %v", list)
 	}
 	expect(t, r.run("tenant", "show", "lab2"), 0,
-		"Name:     lab2\nDatabase: postgres\nState:    ready\nCreated:  2026-11-17 15:00:00 +03:00\n", "")
+		"Name:     lab2\nDatabase: postgres\nState:    ready\nSince:    2026-11-17 15:00:00 +03:00\nCreated:  2026-11-17 15:00:00 +03:00\n", "")
 	document(t, r.run("tenant", "show", "lab2", "--json"))
 
 	// A tenant whose database is down is listed with its reason.
@@ -382,42 +382,52 @@ func TestGrantCommands(t *testing.T) {
 	}
 }
 
-// TestSettingCommands guards every setting command in both forms: the
-// installation's default, a tenant's override, and the way back.
+// TestSettingCommands guards every setting command in both forms: where a
+// value comes from (built-in default, installation, a tenant's override),
+// a tenant's override and the way back from it, the installation's value and
+// the way back to the built-in default, and a tenant scope refused for a
+// setting set on the installation only.
 func TestSettingCommands(t *testing.T) {
 	r := newRig(t)
 	r.must("tenant", "create", "lab1")
-	expect(t, r.run("setting", "get", "audit.retention"), 0,
-		"Name:   audit.retention\nValue:  365d\nSet on: installation (default)\n", "")
-	expect(t, r.run("setting", "get", "audit.retention", "--tenant", "lab1"), 0,
-		"Name:   audit.retention\nValue:  365d\nSet on: installation (default)\n", "")
-	expect(t, r.run("setting", "set", "audit.retention", "90d", "--tenant", "lab1"), 0,
-		"Name:   audit.retention\nValue:  90d\nSet on: tenant lab1 (override)\n", "")
-	expect(t, r.run("setting", "get", "audit.retention", "--tenant", "lab1"), 0,
-		"Name:   audit.retention\nValue:  90d\nSet on: tenant lab1 (override)\n", "")
-	expect(t, r.run("setting", "set", "audit.retention", "400d"), 0,
-		"Name:   audit.retention\nValue:  400d\nSet on: installation (default)\n", "")
+	expect(t, r.run("setting", "get", "test.retention"), 0,
+		"Name:  test.retention\nValue: 365d\nFrom:  built-in default\n", "")
+	expect(t, r.run("setting", "get", "test.retention", "--tenant", "lab1"), 0,
+		"Name:  test.retention\nValue: 365d\nFrom:  built-in default\n", "")
+	expect(t, r.run("setting", "set", "test.retention", "90d", "--tenant", "lab1"), 0,
+		"Name:  test.retention\nValue: 90d\nFrom:  tenant lab1 (override)\n", "")
+	expect(t, r.run("setting", "get", "test.retention", "--tenant", "lab1"), 0,
+		"Name:  test.retention\nValue: 90d\nFrom:  tenant lab1 (override)\n", "")
+	expect(t, r.run("setting", "set", "test.retention", "400d"), 0,
+		"Name:  test.retention\nValue: 400d\nFrom:  installation\n", "")
 	expect(t, r.run("setting", "list", "--tenant", "lab1"), 0,
-		"NAME             VALUE  SCOPE\naudit.retention  90d    tenant lab1\n", "")
+		"NAME            VALUE  FROM\ntest.retention  90d    tenant lab1 (override)\n", "")
 	expect(t, r.run("setting", "list"), 0,
-		"NAME                  VALUE  SCOPE\naudit.retention       400d   installation\nreceive.quiet-period  5s     installation\n", "")
-	expect(t, r.run("setting", "unset", "audit.retention", "--tenant", "lab1"), 0,
-		"tenant lab1 has no override of audit.retention; the installation's default applies: 400d\n", "")
-	expect(t, r.run("setting", "list", "--tenant", "lab1"), 0, "NAME  VALUE  SCOPE\n", "")
+		"NAME                  VALUE  FROM\nkey.default-lifetime  90d    built-in default\ntest.retention        400d   installation\n", "")
+	expect(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1"), 0,
+		"tenant lab1 has no override of test.retention; now applies: 400d (installation)\n", "")
+	expect(t, r.run("setting", "list", "--tenant", "lab1"), 0, "NAME  VALUE  FROM\n", "")
+	expect(t, r.run("setting", "unset", "test.retention"), 0,
+		"the installation has no value of test.retention; now applies: 365d (built-in default)\n", "")
 
-	doc := document(t, r.run("setting", "get", "audit.retention", "--json"))
-	if s := doc["setting"].(map[string]any); s["name"] != "audit.retention" || s["value"] != "400d" {
+	doc := document(t, r.run("setting", "get", "test.retention", "--json"))
+	if s := doc["setting"].(map[string]any); s["name"] != "test.retention" || s["value"] != "365d" || s["source"] != "SETTING_SOURCE_BUILT_IN" {
 		t.Errorf("get --json: %v", doc)
 	}
-	document(t, r.run("setting", "set", "receive.quiet-period", "10s", "--json"))
+	document(t, r.run("setting", "set", "key.default-lifetime", "30d", "--json"))
 	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 2 {
 		t.Errorf("list --json: %v", ss)
 	}
-	document(t, r.run("setting", "unset", "audit.retention", "--tenant", "lab1", "--json"))
+	document(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1", "--json"))
 
-	expect(t, r.run("setting", "get", "no.such"), 4, "", "magnetar: setting get: no setting has that name (request id req-000015)\n")
-	if res := r.run("setting", "unset", "audit.retention"); res.code != 2 || res.stdout != "" {
-		t.Errorf("unset without --tenant: %+v", res)
+	if res := r.run("setting", "get", "no.such"); res.code != 4 || !strings.Contains(res.stderr, "no setting has this name") {
+		t.Errorf("get of an unknown name: %+v", res)
+	}
+	if res := r.run("setting", "set", "key.default-lifetime", "30d", "--tenant", "lab1"); res.code != 2 || res.stdout != "" {
+		t.Errorf("set of an installation-only setting on a tenant: %+v", res)
+	}
+	if res := r.run("setting", "set", "key.default-lifetime", "30m"); res.code != 2 || !strings.Contains(res.stderr, "setting.value") {
+		t.Errorf("set of a value the setting refuses: %+v", res)
 	}
 }
 
