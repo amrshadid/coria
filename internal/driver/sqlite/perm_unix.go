@@ -16,28 +16,29 @@ import (
 // belong to someone else without being root.
 var effectiveUID = os.Geteuid
 
-// checkPrivate refuses a database the master must not use, by the same rule
+// checkPrivate refuses a database that must not be used, by the same rule
 // as the installation's key file: the database file, its -wal and -shm files
 // when they exist, and its directory must belong to the user magnetar runs
 // as; nobody else may read or write the files, and nobody else may write the
 // directory, where they could replace the file or plant a -wal file of their
 // own. The master holds key hashes and sealed database addresses, and a user
-// who can write the file can grant themselves any role. A directory others
+// who can write the file can grant themselves any role; a tenant's database
+// holds its catalog and its audit log. A directory others
 // can list is allowed, as for the key file: it shows the names, and the
 // files themselves stay closed. A file that does not exist yet is made
 // private by createPrivate.
 //
 // The message says how to fix it, without the path: a database address never
 // appears in an error, and the operator knows the path they gave.
-func checkPrivate(path string) error {
+func checkPrivate(path string, name dbName) error {
 	dir := filepath.Dir(path)
-	if err := checkOne(dir, true, "the master database's directory", "chmod go-w"); err != nil {
+	if err := checkOne(dir, true, "the "+string(name)+"'s directory", "chmod go-w"); err != nil {
 		return err
 	}
 	for _, f := range []struct{ path, what string }{
-		{path, "the master database file"},
-		{path + "-wal", "the master database's -wal file"},
-		{path + "-shm", "the master database's -shm file"},
+		{path, "the " + string(name) + " file"},
+		{path + "-wal", "the " + string(name) + "'s -wal file"},
+		{path + "-shm", "the " + string(name) + "'s -shm file"},
 	} {
 		if err := checkOne(f.path, false, f.what, "chmod 600"); err != nil {
 			return err

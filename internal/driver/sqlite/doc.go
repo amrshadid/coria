@@ -1,7 +1,8 @@
-// Package sqlite is the SQLite database type: it implements master.Store on
-// a SQLite file, through modernc.org/sqlite, which is SQLite translated to
-// Go, so the binary stays pure Go and static (CGO_ENABLED=0) on every target
-// it ships for, linux/386 and windows/amd64 included.
+// Package sqlite is the SQLite database type: it implements master.Store and
+// tenant.Store, each on a SQLite file of its own, through modernc.org/sqlite,
+// which is SQLite translated to Go, so the binary stays pure Go and static
+// (CGO_ENABLED=0) on every target it ships for, linux/386 and windows/amd64
+// included.
 //
 // # How it reaches the file
 //

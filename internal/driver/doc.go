@@ -2,7 +2,8 @@
 // type by the address's scheme: "sqlite:<path>" today, "postgres://..."
 // when that driver is added. It is the one place that knows the list of
 // database types, so the rest of the binary asks for a master.Store and
-// never names one (decision D12).
+// never names one (decision D12). For tenants it gives one opener per type
+// (SQLiteTenants), which the tenant registry is handed.
 //
 // # What this package must never do
 //

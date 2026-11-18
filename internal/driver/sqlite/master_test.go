@@ -99,7 +99,7 @@ func TestMasterContractShared(t *testing.T) {
 // held at once, so each is a different connection.
 func TestPragmas(t *testing.T) {
 	ctx := context.Background()
-	p, err := openPools(ctx, filepath.Join(t.TempDir(), "master.db"))
+	p, err := openPools(ctx, filepath.Join(t.TempDir(), "master.db"), masterDB)
 	if err != nil {
 		t.Fatal(err)
 	}

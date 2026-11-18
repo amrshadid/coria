@@ -197,9 +197,9 @@ func (e *env) ok(what string, err error) {
 	}
 }
 
-// sameTime reports whether a and b are the same instant, and a is in UTC
+// SameTime reports whether a and b are the same instant, and a is in UTC
 // unless it is the zero time.
-func sameTime(a, b time.Time) bool {
+func SameTime(a, b time.Time) bool {
 	if a.IsZero() || b.IsZero() {
 		return a.IsZero() && b.IsZero()
 	}
@@ -218,7 +218,7 @@ func diffTenant(got, want master.Tenant) string {
 	if got.State != want.State || got.StateReason != want.StateReason {
 		d = append(d, fmt.Sprintf("state %s %q, want %s %q", got.State, got.StateReason, want.State, want.StateReason))
 	}
-	if !sameTime(got.Created, want.Created) {
+	if !SameTime(got.Created, want.Created) {
 		d = append(d, fmt.Sprintf("created %v, want %v", got.Created, want.Created))
 	}
 	return strings.Join(d, "; ")
@@ -242,16 +242,16 @@ func diffKey(got, want master.Key) string {
 		{"last used", got.LastUsed, want.LastUsed},
 		{"revoked", got.Revoked, want.Revoked},
 	} {
-		if !sameTime(f.got, f.want) {
+		if !SameTime(f.got, f.want) {
 			d = append(d, fmt.Sprintf("%s %v, want %v", f.name, f.got, f.want))
 		}
 	}
 	return strings.Join(d, "; ")
 }
 
-// diffAudit describes how got differs from want, or returns "". No details
+// DiffAudit describes how got differs from want, or returns "". No details
 // and empty details are the same.
-func diffAudit(got, want master.AuditEntry) string {
+func DiffAudit(got, want master.AuditEntry) string {
 	var d []string
 	gt, wt := got.Time, want.Time
 	got.Time, want.Time = time.Time{}, time.Time{}
@@ -260,7 +260,7 @@ func diffAudit(got, want master.AuditEntry) string {
 	if !reflect.DeepEqual(got, want) {
 		d = append(d, fmt.Sprintf("%+v, want %+v", got, want))
 	}
-	if !sameTime(gt, wt) {
+	if !SameTime(gt, wt) {
 		d = append(d, fmt.Sprintf("time %v, want %v", gt, wt))
 	}
 	if len(gd) != 0 || len(wd) != 0 {
@@ -317,7 +317,7 @@ func testTimes(e *env) {
 		t := got.Created
 		e.Errorf("created = %v (%v), want %v in UTC", t, t.Location(), want)
 	}
-	if !sameTime(got.Expires, k.Expires) {
+	if !SameTime(got.Expires, k.Expires) {
 		e.Errorf("expires = %v, want %v", got.Expires, k.Expires)
 	}
 	if !got.LastUsed.IsZero() || !got.Revoked.IsZero() {
@@ -418,13 +418,13 @@ func testKeys(e *env) {
 	revoked := T0.Add(time.Hour)
 	at, err := e.s.RevokeKey(e.ctx, k.ID, revoked, e.audit())
 	e.ok("RevokeKey", err)
-	if !sameTime(at, revoked) {
+	if !SameTime(at, revoked) {
 		e.Errorf("RevokeKey returned %v, want %v", at, revoked)
 	}
 	again := e.audit()
 	at, err = e.s.RevokeKey(e.ctx, k.ID, revoked.Add(time.Hour), again)
 	e.ok("RevokeKey again", err)
-	if !sameTime(at, revoked) {
+	if !SameTime(at, revoked) {
 		e.Errorf("RevokeKey again returned %v, want the first revocation %v", at, revoked)
 	}
 	if !e.auditIDs()[again.ID] {
@@ -432,7 +432,7 @@ func testKeys(e *env) {
 	}
 	got, err = e.s.Key(e.ctx, k.ID)
 	e.ok("Key", err)
-	if !sameTime(got.Revoked, revoked) {
+	if !SameTime(got.Revoked, revoked) {
 		e.Errorf("revoked = %v, want the first revocation %v", got.Revoked, revoked)
 	}
 	_, err = e.s.RevokeKey(e.ctx, "nope", revoked, e.audit())
@@ -488,7 +488,7 @@ func testMarkKeyUsed(e *env) {
 	}
 	got, err := e.s.Key(e.ctx, k.ID)
 	e.ok("Key", err)
-	if !sameTime(got.LastUsed, T0) {
+	if !SameTime(got.LastUsed, T0) {
 		e.Errorf("last used = %v, want the first call's %v", got.LastUsed, T0)
 	}
 	wrote, err := e.s.MarkKeyUsed(e.ctx, k.ID, T0.Add(time.Minute))
@@ -504,7 +504,7 @@ func testMarkKeyUsed(e *env) {
 	}
 	got, err = e.s.Key(e.ctx, k.ID)
 	e.ok("Key", err)
-	if !sameTime(got.LastUsed, later) {
+	if !SameTime(got.LastUsed, later) {
 		e.Errorf("last used = %v, want %v", got.LastUsed, later)
 	}
 	wrote, err = e.s.MarkKeyUsed(e.ctx, "nope", T0)
@@ -847,10 +847,10 @@ func testAudit(e *env) {
 	if len(got) != 2 {
 		e.Fatalf("%d entries, want 2", len(got))
 	}
-	if d := diffAudit(got[0], full); d != "" {
+	if d := DiffAudit(got[0], full); d != "" {
 		e.Errorf("entry: %s", d)
 	}
-	if d := diffAudit(got[1], local); d != "" {
+	if d := DiffAudit(got[1], local); d != "" {
 		e.Errorf("entry: %s", d)
 	}
 	byTenant := e.allAudit(master.AuditFilter{TenantName: "never-existed"})
