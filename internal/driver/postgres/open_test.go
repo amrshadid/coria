@@ -129,7 +129,7 @@ func TestRedactor(t *testing.T) {
 func TestRemoteAddressesNeedAnExplicitSSLMode(t *testing.T) {
 	t.Setenv("PGSSLMODE", "")
 	ctx := context.Background()
-	const remote = "postgres://needleuser:hunter2needle@needlehost.invalid/needledb"
+	const remote = "postgres://needleuser:hunter2needle@needlehost.invalid/needledb" //nolint:gosec // G101: a made-up password whose absence from the error is the point.
 	for _, tt := range []struct {
 		what, address string
 		want          fault.Kind
