@@ -482,6 +482,15 @@ All notable changes to Magnetar are written here. The form is
   functions that are fuzzed in CI. The command line maps three more answers
   to exit codes: 5 a state that forbids the change, 6 a position that can
   no longer be answered, 7 a bound of the server reached.
+- The command line had no command for the archive's four services. It now has
+  `storage` (add, list, show, set, remove, test), `receiver` (add, list, show,
+  set, remove), `reception` (list, show, retry, discard) and `quarantine` (list,
+  show, release, reject), each taking the tenant first, with a table or --json,
+  the exit codes of the other commands and shell completion. An S3 storage's
+  secret access key is read from the variable named by --credential-env or the
+  private file named by --credential-file and never printed. Discarding a
+  failed reception and rejecting a quarantined file need a --reason, and ask for
+  the id to be typed again unless --yes is given.
 - Nothing turned received files into an archive. Package `receive` now does:
   a file lands in a local incoming area with its SHA-256, its header is read
   (never its pixel data), it is named subject, session and scan by the

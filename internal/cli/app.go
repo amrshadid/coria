@@ -221,7 +221,7 @@ func (a *app) client(cmd *cobra.Command) (*client.Client, error) {
 func (a *app) newRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "magnetar",
-		Short: "Operate a Magnetar installation: tenants, keys, grants, settings and the audit log",
+		Short: "Operate a Magnetar installation: tenants, keys, grants, settings, the audit log, and a tenant's storages, receivers, receptions and quarantine",
 		Long: `magnetar operates a Magnetar installation through its API.
 
 By default it reaches the server on the local socket in the data directory
@@ -278,6 +278,10 @@ not allowed), 4 not found.`,
 		a.newGrant(),
 		a.newSetting(),
 		a.newAudit(),
+		a.newStorage(),
+		a.newReceiver(),
+		a.newReception(),
+		a.newQuarantine(),
 	)
 	return root
 }

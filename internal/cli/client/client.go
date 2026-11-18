@@ -27,7 +27,7 @@ const RequestIDHeader = "Magnetar-Request-Id"
 // into memory.
 const maxMessage = 4 << 20
 
-// Client holds the four service clients of the API over one transport.
+// Client holds the service clients of the API over one transport.
 type Client struct {
 	// Tenants is the TenantService.
 	Tenants magnetarv1connect.TenantServiceClient
@@ -37,6 +37,14 @@ type Client struct {
 	Settings magnetarv1connect.SettingsServiceClient
 	// Audit is the AuditService.
 	Audit magnetarv1connect.AuditServiceClient
+	// Storages is the StorageService.
+	Storages magnetarv1connect.StorageServiceClient
+	// Receivers is the ReceiverService.
+	Receivers magnetarv1connect.ReceiverServiceClient
+	// Receptions is the ReceptionService.
+	Receptions magnetarv1connect.ReceptionServiceClient
+	// Quarantine is the QuarantineService.
+	Quarantine magnetarv1connect.QuarantineServiceClient
 
 	timeout time.Duration
 	target  string
@@ -101,14 +109,18 @@ func New(cfg Config) (*Client, error) {
 			connecthttp.WithSendMaxBytes(maxMessage)),
 		interc...)
 	return &Client{
-		Tenants:  magnetarv1connect.NewTenantServiceClient(c),
-		Access:   magnetarv1connect.NewAccessServiceClient(c),
-		Settings: magnetarv1connect.NewSettingsServiceClient(c),
-		Audit:    magnetarv1connect.NewAuditServiceClient(c),
-		timeout:  timeout,
-		target:   target,
-		trust:    trust,
-		http:     hc,
+		Tenants:    magnetarv1connect.NewTenantServiceClient(c),
+		Access:     magnetarv1connect.NewAccessServiceClient(c),
+		Settings:   magnetarv1connect.NewSettingsServiceClient(c),
+		Audit:      magnetarv1connect.NewAuditServiceClient(c),
+		Storages:   magnetarv1connect.NewStorageServiceClient(c),
+		Receivers:  magnetarv1connect.NewReceiverServiceClient(c),
+		Receptions: magnetarv1connect.NewReceptionServiceClient(c),
+		Quarantine: magnetarv1connect.NewQuarantineServiceClient(c),
+		timeout:    timeout,
+		target:     target,
+		trust:      trust,
+		http:       hc,
 	}, nil
 }
 

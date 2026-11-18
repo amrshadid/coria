@@ -7,6 +7,7 @@ import (
 	"time"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
@@ -151,3 +152,114 @@ func CheckKeyID(id string) error {
 	}
 	return nil
 }
+
+// StorageType is a storage's type as a word: "directory" or "s3", and
+// "unknown" for a type this client was not built to know, which the contract
+// says a client shows as such.
+func StorageType(st *v1.Storage) string {
+	switch st.GetType().(type) {
+	case *v1.Storage_Directory:
+		return "directory"
+	case *v1.Storage_S3:
+		return "s3"
+	}
+	return "unknown"
+}
+
+// StorageWhere says where a storage's files go, in words: a root and a path
+// for a directory, an endpoint, a bucket and a prefix for S3. It holds no
+// secret, since the server answers none.
+func StorageWhere(st *v1.Storage) string {
+	switch t := st.GetType().(type) {
+	case *v1.Storage_Directory:
+		return "root " + t.Directory.GetRoot() + ", path " + Dash(t.Directory.GetPath())
+	case *v1.Storage_S3:
+		return t.S3.GetEndpoint() + " bucket " + t.S3.GetBucket() + " prefix " + Dash(t.S3.GetPrefix())
+	}
+	return "-"
+}
+
+// StorageTestStep is a storage test step as a word.
+func StorageTestStep(s v1.StorageTestStep) string {
+	if s == v1.StorageTestStep_STORAGE_TEST_STEP_UNSPECIFIED {
+		return "unknown"
+	}
+	return enumWord(s.String(), "STORAGE_TEST_STEP_")
+}
+
+// StorageTestOutcome is a storage test outcome as a word.
+func StorageTestOutcome(o v1.StorageTestOutcome) string {
+	if o == v1.StorageTestOutcome_STORAGE_TEST_OUTCOME_UNSPECIFIED {
+		return "unknown"
+	}
+	return enumWord(o.String(), "STORAGE_TEST_OUTCOME_")
+}
+
+// StorageFault is why a storage operation failed, as words with a space
+// where the name has an underscore; "-" when there was no fault.
+func StorageFault(f v1.StorageFault) string {
+	if f == v1.StorageFault_STORAGE_FAULT_UNSPECIFIED {
+		return "-"
+	}
+	return strings.ReplaceAll(enumWord(f.String(), "STORAGE_FAULT_"), "_", " ")
+}
+
+// ReceiverHealth says whether a receiver accepts data now: "up", "starting",
+// or "down" with the reason and the server's detail. A client that finds a
+// state or reason it does not know shows it as down for a reason it cannot
+// name.
+func ReceiverHealth(h *v1.ReceiverHealth) string {
+	switch h.GetState() {
+	case v1.ReceiverState_RECEIVER_STATE_UP:
+		return "up"
+	case v1.ReceiverState_RECEIVER_STATE_STARTING:
+		return "starting"
+	case v1.ReceiverState_RECEIVER_STATE_DOWN:
+		reason := "a reason this client cannot name"
+		if _, known := v1.ReceiverDownReason_name[int32(h.GetDownReason())]; known && h.GetDownReason() != v1.ReceiverDownReason_RECEIVER_DOWN_REASON_UNSPECIFIED { // #nosec G115 -- an enum value
+			reason = strings.ReplaceAll(enumWord(h.GetDownReason().String(), "RECEIVER_DOWN_REASON_"), "_", " ")
+		}
+		if h.GetDetail() != "" {
+			reason += ": " + h.GetDetail()
+		}
+		return "down (" + reason + ")"
+	}
+	return "unknown"
+}
+
+// ReceptionStep is a reception's step as a word. A step this client does not
+// know is a step in progress, as the contract says to read it.
+func ReceptionStep(s v1.ReceptionStep) string {
+	if s == v1.ReceptionStep_RECEPTION_STEP_UNSPECIFIED {
+		return "unknown"
+	}
+	if _, ok := v1.ReceptionStep_name[int32(s)]; !ok { // #nosec G115 -- an enum value
+		return "in progress"
+	}
+	return enumWord(s.String(), "RECEPTION_STEP_")
+}
+
+// QuarantineReason is why a file was quarantined, as words; a reason this
+// client does not know is shown as one it cannot name.
+func QuarantineReason(r v1.QuarantineReason) string {
+	if r == v1.QuarantineReason_QUARANTINE_REASON_UNSPECIFIED {
+		return "unknown"
+	}
+	if _, ok := v1.QuarantineReason_name[int32(r)]; !ok { // #nosec G115 -- an enum value
+		return "a reason this client cannot name"
+	}
+	return strings.ReplaceAll(enumWord(r.String(), "QUARANTINE_REASON_"), "_", " ")
+}
+
+// QuarantineState is what has been decided about a quarantined file, as a
+// word.
+func QuarantineState(s v1.QuarantineState) string {
+	if s == v1.QuarantineState_QUARANTINE_STATE_UNSPECIFIED {
+		return "unknown"
+	}
+	return enumWord(s.String(), "QUARANTINE_STATE_")
+}
+
+// Bytes writes a count of bytes with its unit when a binary unit divides it
+// whole (200GiB) and as plain bytes otherwise, the form the settings take.
+func Bytes(n int64) string { return settings.FormatSize(n) }

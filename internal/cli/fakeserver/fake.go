@@ -67,6 +67,7 @@ type Server struct {
 	nextKey   int
 	seen      []Seen
 	certPEM   []byte
+	arch      archive
 }
 
 // keyRecord is a key and the secret it was made with.
@@ -164,13 +165,14 @@ func (s *Server) Requests() int {
 	return s.requests
 }
 
-// Register adds the four services to a Connect server, with the interceptor
+// Register adds the services to a Connect server, with the interceptor
 // that makes the request id, checks the key and turns kinds into codes.
 func (s *Server) Register(srv *connect.Server) {
 	magnetarv1connect.RegisterTenantServiceHandler(srv, tenantHandler{s})
 	magnetarv1connect.RegisterAccessServiceHandler(srv, accessHandler{s})
 	magnetarv1connect.RegisterSettingsServiceHandler(srv, settingsHandler{s})
 	magnetarv1connect.RegisterAuditServiceHandler(srv, auditHandler{s})
+	s.registerArchive(srv)
 }
 
 // interceptor is the one place every call passes: the request id first, so

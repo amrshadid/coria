@@ -27,6 +27,11 @@ import sys
 
 # The documents the test writes, and for a list the field that holds its array.
 EXPECTED = {
+    "storage-add": None, "storage-add-s3": None, "storage-list": "storages", "storage-show": None,
+    "storage-set": None, "storage-test": None, "storage-remove": None,
+    "receiver-add": None, "receiver-list": "receivers", "receiver-show": None, "receiver-set": None, "receiver-remove": None,
+    "reception-list": "receptions", "reception-show": None, "reception-retry": None, "reception-discard": None,
+    "quarantine-list": "files", "quarantine-show": None, "quarantine-release": None, "quarantine-reject": None,
     "version": None,
     "whoami": None,
     "tenant-create": None,

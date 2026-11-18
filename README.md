@@ -47,6 +47,10 @@ magnetar key      create --holder TEXT [--expires 90d | --no-expiry] | list | sh
 magnetar grant    set <key-id> --role ROLE (--tenant NAME | --installation) | list (--key-id ID | --tenant NAME | --installation) | remove <key-id> (--tenant NAME | --installation)
 magnetar setting  get <name> [--tenant NAME] | set <name> <value> [--tenant NAME] | unset <name> --tenant NAME | list [--tenant NAME]
 magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]
+magnetar storage    add <tenant> <name> --type dir --root ROOT [--path P] | --type s3 --endpoint URL --region R --bucket B --access-key-id ID (--credential-env VAR | --credential-file PATH) [--capacity SIZE] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes | test <tenant> <name>
+magnetar receiver   add <tenant> <name> --storage S --port N --aet TITLE [--allow-aet T] [--allow-from CIDR] [--allow-aet-from T@CIDR] [--any-caller] [--enabled] [--tls-certificate-file F --tls-private-key-file F] [--quiet-period 5m] [--max-open-time 1h] [--max-file-size 4GiB] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes
+magnetar reception  list <tenant> [--receiver NAME] [--step STEP]... [--in-progress] [--since TIME] [--until TIME] | show <tenant> <id> | retry <tenant> <id> [--receiver NAME] | discard <tenant> <id> --reason TEXT [--yes]
+magnetar quarantine list <tenant> [--state held|released|rejected] [--reason REASON] [--receiver NAME] [--reception ID] [--since TIME] [--until TIME] | show <tenant> <id> [--header] | release <tenant> <id> [--receiver NAME] | reject <tenant> <id> --reason TEXT [--yes]
 ```
 
 - **Where it connects.** By default the local socket `run/magnetar.sock` in the
@@ -57,7 +61,8 @@ magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|fai
   `::1`.
 - **A secret is never an argument.** No flag takes a key, a password or a
   database address; a tenant's Postgres address is read from the variable named
-  by `--db-env` or the file named by `--db-file`. The filters that take a key's
+  by `--db-env` or the file named by `--db-file`, and an S3 storage's secret
+  access key from `--credential-env` or `--credential-file`. The filters that take a key's
   public id are `--key-id`, and a whole key given where an id goes is refused.
   `--key-file` must name a file only you can open (`chmod 600`).
 - **TLS.** TLS 1.2 or later. `--ca-file PATH` (or `MAGNETAR_CA_FILE`) names a
