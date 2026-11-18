@@ -36,6 +36,7 @@ const (
 	listReceptions    = "tenant-receptions"
 	listReceivedFiles = "tenant-received-files"
 	listQuarantine    = "tenant-quarantine"
+	listDiscarded     = "tenant-discarded-files"
 )
 
 // pipelineStatements are the pipeline's prepared statements.
@@ -43,6 +44,7 @@ type pipelineStatements struct {
 	// Write pool.
 	insertReceived, insertAssociation, receptionForBatch, addReceived *sql.Stmt
 	claimNext, leaseUnit                                              *sql.Stmt
+	instanceRow, insertClaim, takeOverClaim                           *sql.Stmt
 	// Read pool.
 	duplicates *sql.Stmt
 }
@@ -54,14 +56,30 @@ func pipelineEntries(s *pipelineStatements, p *pools) []stmtEntry {
 		{&s.insertReceived, w, `INSERT INTO received_files (` + receivedColumns + `)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`},
 		{&s.insertAssociation, w, `INSERT INTO reception_associations (reception_id, association) VALUES (?, ?) ON CONFLICT DO NOTHING`},
-		{&s.receptionForBatch, w, `SELECT state, study_uid, calling_ae_titles, calling_truncated FROM receptions WHERE id = ?`},
+		// The reception's row, locked by an update whose condition is that
+		// it is receiving: on a database with several writers a step and a
+		// batch of one reception are then ordered, and what the batch read
+		// stays true until it commits.
+		{&s.receptionForBatch, w, `UPDATE receptions SET last_file = last_file WHERE id = ? AND state = 'receiving'
+			RETURNING study_uid, calling_ae_titles, calling_truncated`},
 		{&s.addReceived, w, `UPDATE receptions SET files_received = files_received + ?, bytes_received = bytes_received + ?,
 			files_released = files_released + ?, associations = associations + ?, calling_ae_titles = ?, calling_truncated = ?,
-			last_file = max(last_file, ?) WHERE id = ?`},
+			last_file = max(last_file, ?) WHERE id = ? AND state = 'receiving'`},
 		{&s.claimNext, w, claimNextSQL},
 		{&s.leaseUnit, w, `UPDATE work SET state = 'leased', attempt = attempt + 1, owner = ?, due = ?, updated = ?
 			WHERE id = ? AND attempt = ? AND state IN ('queued', 'leased')`},
 		{&s.duplicates, r, duplicatesSQL},
+		{&s.instanceRow, w, instanceRowSQL},
+		// A new row, claimed; ON CONFLICT DO NOTHING so that a claim that
+		// meets another's row (committed meanwhile, on a database with
+		// several writers) reads that row and decides again.
+		{&s.insertClaim, w, `INSERT INTO instances (sop_instance_uid, study_uid, series_uid, held_sha256, held_by, scan_id,
+			storage, storage_key, byte_offset, byte_length, size, archived_sha256, held_at, claim_sha256, claimed_by, claimed_at)
+			VALUES (?, ?, ?, NULL, '', NULL, '', '', 0, 0, 0, NULL, NULL, ?, ?, ?) ON CONFLICT DO NOTHING`},
+		// A claim to overwrite, set only while no one claims the row and
+		// it holds the checksum the decision read.
+		{&s.takeOverClaim, w, `UPDATE instances SET claim_sha256 = ?, claimed_by = ?, claimed_at = ?
+			WHERE sop_instance_uid = ? AND claimed_by IS NULL AND held_sha256 = ?`},
 	}
 }
 

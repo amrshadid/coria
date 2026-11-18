@@ -80,7 +80,8 @@ func storageArgs(s tenant.Storage, created, updated time.Time) []any {
 
 // AddStorage implements tenant.Pipeline.
 func (t *Tenant) AddStorage(ctx context.Context, s tenant.Storage, now time.Time, audit master.AuditEntry, guard tenant.Guard) (tenant.Storage, error) {
-	if err := s.Validate(); err != nil {
+	s, err := s.Normalize()
+	if err != nil {
 		return tenant.Storage{}, err
 	}
 	if err := master.ValidateTime("time", now); err != nil {
@@ -90,7 +91,7 @@ func (t *Tenant) AddStorage(ctx context.Context, s tenant.Storage, now time.Time
 		return tenant.Storage{}, err
 	}
 	var out tenant.Storage
-	err := t.write(ctx, "the storage cannot be added", func(tx *sql.Tx, st *tenantStatements) error {
+	err = t.write(ctx, "the storage cannot be added", func(tx *sql.Tx, st *tenantStatements) error {
 		taken, err := exists(ctx, tx, `SELECT 1 FROM storages WHERE name = ?`, s.Name)
 		if err != nil {
 			return err
@@ -171,12 +172,11 @@ func (t *Tenant) SetStorage(ctx context.Context, s tenant.Storage, fields []tena
 		}
 		if location && (next.Directory != stored.Directory || next.S3.Endpoint != stored.S3.Endpoint ||
 			next.S3.Bucket != stored.S3.Bucket || next.S3.Prefix != stored.S3.Prefix) {
-			used, err := exists(ctx, tx, storageUsedSQL, s.Name)
-			if err != nil {
-				return err
-			}
-			if used {
-				return tenant.Precondition("where the storage's files are cannot change once it may hold archived files")
+			if why, err := storageInUse(ctx, tx, s.Name); err != nil || why != "" {
+				if err != nil {
+					return err
+				}
+				return tenant.Precondition("where the storage's files are cannot change while " + why)
 			}
 		}
 		if err := checkStorageOverlap(ctx, tx, next); err != nil {
@@ -203,6 +203,24 @@ func (t *Tenant) SetStorage(ctx context.Context, s tenant.Storage, fields []tena
 	return out, nil
 }
 
+// storageInUse says why a storage's files may not move or its
+// configuration go, or "" when nothing holds it: it holds an instance, or a
+// reception that has not ended names it (its files may be on their way to
+// it). A reception that has not ended and is not yet identified names no
+// storage; the receiver it arrived at does, and a storage a receiver names
+// is refused by RemoveStorage before this.
+func storageInUse(ctx context.Context, tx *sql.Tx, name string) (string, error) {
+	holds, err := exists(ctx, tx, storageHoldsSQL, name)
+	if err != nil || holds {
+		return "it holds archived files", err
+	}
+	used, err := exists(ctx, tx, storageUsedSQL, name)
+	if err != nil || used {
+		return "a reception in progress archives to it", err
+	}
+	return "", nil
+}
+
 // RemoveStorage implements tenant.Pipeline.
 func (t *Tenant) RemoveStorage(ctx context.Context, name string, audit master.AuditEntry, guard tenant.Guard) (tenant.Storage, error) {
 	if err := tenant.ValidateName("storage", name); err != nil {
@@ -225,12 +243,11 @@ func (t *Tenant) RemoveStorage(ctx context.Context, name string, audit master.Au
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		used, err := exists(ctx, tx, storageUsedSQL, name)
-		if err != nil {
-			return err
-		}
-		if used {
-			return tenant.Precondition("the storage may hold archived files: receptions were archived to it")
+		if why, err := storageInUse(ctx, tx, name); err != nil || why != "" {
+			if err != nil {
+				return err
+			}
+			return tenant.Precondition("the storage cannot be removed while " + why)
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM storages WHERE name = ?`, name); err != nil {
 			return err

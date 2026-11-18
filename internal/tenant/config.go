@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"net/netip"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -182,9 +183,8 @@ func (c S3Storage) isZero() bool {
 }
 
 func (c S3Storage) validate() error {
-	if c.Endpoint == "" || len(c.Endpoint) > MaxEndpointLength ||
-		!allBytes(c.Endpoint, func(b byte) bool { return b > 0x20 && b < 0x7f }) {
-		return invalid("an S3 endpoint is a URL of 1 to 2048 bytes of printable ASCII")
+	if _, err := NormalizeEndpoint(c.Endpoint); err != nil {
+		return err
 	}
 	if c.Region == "" || len(c.Region) > MaxRegionLength ||
 		!allBytes(c.Region, func(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '-' }) {
@@ -204,6 +204,71 @@ func (c S3Storage) validate() error {
 		return invalid("a sealed secret access key is at most " + strconv.Itoa(MaxSealedSecretLength) + " bytes")
 	}
 	return nil
+}
+
+// NormalizeEndpoint returns an S3 endpoint in the one spelling a store keeps
+// and compares: the scheme and host in lowercase, the scheme's default port
+// (443 for https, 80 for http) dropped, and no path. Two spellings of one
+// endpoint are one endpoint, so the overlap rule cannot be passed by a
+// trailing slash or a capital letter. An endpoint that is not an http or
+// https URL of at most 2048 bytes of printable ASCII, or that carries user
+// information, a path other than "/", a query or a fragment, is Invalid.
+func NormalizeEndpoint(endpoint string) (string, error) {
+	const rule = "an S3 endpoint is an http or https URL of at most 2048 bytes, with no user information, path, query or fragment"
+	if endpoint == "" || len(endpoint) > MaxEndpointLength || !allBytes(endpoint, func(b byte) bool { return b > 0x20 && b < 0x7f }) {
+		return "", invalid(rule)
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Opaque != "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" ||
+		(u.Path != "" && u.Path != "/") || u.Host == "" {
+		return "", invalid(rule)
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "https" && scheme != "http" {
+		return "", invalid(rule)
+	}
+	host, port := strings.ToLower(u.Hostname()), u.Port()
+	if host == "" {
+		return "", invalid(rule)
+	}
+	if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return "", invalid(rule)
+		}
+	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	if port != "" {
+		host += ":" + port
+	}
+	return scheme + "://" + host, nil
+}
+
+// Normalize returns s with its S3 endpoint in the spelling a store keeps
+// (NormalizeEndpoint), after Validate: a driver stores and compares what it
+// returns.
+func (s Storage) Normalize() (Storage, error) {
+	if err := s.Validate(); err != nil {
+		return s, err
+	}
+	return s.normalized()
+}
+
+// normalized rewrites the endpoint of an S3 storage, for a storage already
+// checked.
+func (s Storage) normalized() (Storage, error) {
+	if s.Type == StorageS3 {
+		e, err := NormalizeEndpoint(s.S3.Endpoint)
+		if err != nil {
+			return s, err
+		}
+		s.S3.Endpoint = e
+	}
+	return s, nil
 }
 
 // validateDirectoryPath applies the contract's rule of a directory storage's
@@ -314,6 +379,10 @@ func ApplyStorage(stored, change Storage, fields []StorageField) (Storage, bool,
 		return stored, false, invalid("a secret access key that is changed is not empty")
 	}
 	if err := out.validate(); err != nil {
+		return stored, false, err
+	}
+	out, err := out.normalized()
+	if err != nil {
 		return stored, false, err
 	}
 	return out, location, nil
@@ -516,6 +585,11 @@ func (d DIMSEReceiver) validate() error {
 		if err != nil || a.Zone() != "" || a.String() != d.BindAddress {
 			return invalid("a bind address is an IPv4 address in dotted form or an IPv6 address in the form of RFC 5952, without a zone")
 		}
+		if a.Is4In6() {
+			// One address, two spellings: kept in its IPv4 form only, so
+			// the clash rule sees one address.
+			return invalid("an IPv4-mapped IPv6 address is written in its IPv4 form, such as 192.0.2.1")
+		}
 	}
 	if err := ValidateAETitle(d.AETitle); err != nil {
 		return err
@@ -661,9 +735,22 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 }
 
 // ReceiversClash reports whether two DIMSE receivers of one tenant would
-// listen on one port and address: the same port, and the same bind address
-// or either one empty, since an empty bind address overlaps every address.
+// contend for one port at the operating system: on the same port, two bind
+// addresses clash when they are equal, when either is empty (every
+// address), when either is "::" (every IPv6 address, and on a dual-stack
+// system every IPv4 address too, so the rule is the strict one), and when
+// either is "0.0.0.0" and the other is an IPv4 address (every IPv4
+// address). A specific IPv4 and a specific IPv6 address do not clash.
+// IPv4-mapped IPv6 addresses are refused by Validate, so each address has
+// one spelling here.
 func ReceiversClash(a, b Receiver) bool {
-	return a.Type == ReceiverDIMSE && b.Type == ReceiverDIMSE && a.DIMSE.Port == b.DIMSE.Port &&
-		(a.DIMSE.BindAddress == "" || b.DIMSE.BindAddress == "" || a.DIMSE.BindAddress == b.DIMSE.BindAddress)
+	if a.Type != ReceiverDIMSE || b.Type != ReceiverDIMSE || a.DIMSE.Port != b.DIMSE.Port {
+		return false
+	}
+	x, y := a.DIMSE.BindAddress, b.DIMSE.BindAddress
+	if x == "" || y == "" || x == y || x == "::" || y == "::" {
+		return true
+	}
+	ipv4 := func(s string) bool { ad, err := netip.ParseAddr(s); return err == nil && ad.Is4() }
+	return (x == "0.0.0.0" && ipv4(y)) || (y == "0.0.0.0" && ipv4(x))
 }

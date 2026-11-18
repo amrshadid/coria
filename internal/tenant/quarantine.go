@@ -1,9 +1,12 @@
 package tenant
 
 import (
+	"slices"
 	"strconv"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/core/naming"
+	"github.com/amrshadid/magnetar/internal/core/uid"
 	"github.com/amrshadid/magnetar/internal/master"
 )
 
@@ -25,60 +28,88 @@ const (
 	QuarantineReadBackMismatch    QuarantineReason = "read_back_mismatch"
 )
 
-// reasonDetails are the detail keys each reason may carry, the contract's,
-// with the shape of each key's value. A value is checked by its shape so
-// that a detail can never carry an attribute's value from the file: a UID,
-// as received, is the only thing from a file a detail may hold.
-var reasonDetails = map[QuarantineReason]map[string]detailShape{
-	QuarantineNotDICOM:            {"offset": digits},
-	QuarantineSOPClassNotAccepted: {"sop_class_uid": uidShape},
-	QuarantineTooLarge:            {"limit": digits},
-	QuarantineBadUID:              {"attribute": keyword, "fault": word},
-	QuarantineBadLabel:            {"label": levelShape, "attribute": attributeOrPart, "fault": word},
-	QuarantineLabelConflict:       {"label": levelShape, "fault": word},
-	QuarantineDifferentFile:       {},
-	QuarantineUIDElsewhere:        {"study_instance_uid": uidShape, "series_instance_uid": uidShape},
-	QuarantineStorageRefused:      {"storage": nameShape, "fault": word},
-	QuarantineReadBackMismatch:    {"storage": nameShape, "read_sha256": hexShape},
-}
-
-// detailShape is what a detail's value may look like.
-type detailShape int
-
+// The fault words a quarantine record's details carry under "fault", the API
+// contract's, each listed with the reasons that use it (the label conflict
+// faults are in catalog.go).
 const (
-	digits detailShape = iota
-	uidShape
-	keyword
-	word
-	levelShape
-	attributeOrPart
-	nameShape
-	hexShape
+	// FaultMissing, FaultEmpty and FaultBadUID: an attribute absent, empty,
+	// or not a UID (QuarantineBadUID, QuarantineBadLabel).
+	FaultMissing = "missing"
+	FaultEmpty   = "empty"
+	FaultBadUID  = "bad_uid"
+	// FaultTooLong, FaultBadCharacter, FaultNoMatch and FaultBadLabel: a
+	// value too long for a label, one with a character a label may not
+	// hold, a pattern that does not match, a label made that is not valid
+	// (QuarantineBadLabel).
+	FaultTooLong      = "too_long"
+	FaultBadCharacter = "bad_character"
+	FaultNoMatch      = "no_match"
+	FaultBadLabel     = "bad_label"
+	// The storage faults (QuarantineStorageRefused), the contract's
+	// StorageFault values in lowercase without their prefix.
+	FaultUnreachable       = "unreachable"
+	FaultTLSFailed         = "tls_failed"
+	FaultRefused           = "refused"
+	FaultNotFound          = "not_found"
+	FaultWrongAnswer       = "wrong_answer"
+	FaultAddressNotAllowed = "address_not_allowed"
 )
 
-// valid reports whether v has the shape.
-func (s detailShape) valid(v string) bool {
-	switch s {
-	case digits:
-		return v != "" && len(v) <= 20 && allBytes(v, func(b byte) bool { return b >= '0' && b <= '9' })
-	case uidShape:
-		return validateUID("UID", v) == nil
-	case keyword:
-		return v != "" && len(v) <= 64 && allBytes(v, isAlnum)
-	case word:
-		return v != "" && len(v) <= 32 && allBytes(v, func(b byte) bool { return (b >= 'a' && b <= 'z') || b == '_' })
-	case levelShape:
-		return v == "subject" || v == "session" || v == "scan"
-	case attributeOrPart:
-		// A keyword, a tag as "(gggg,eeee)", a pattern's part, or empty
-		// for a fault in the label as a whole.
-		return len(v) <= 64 && allBytes(v, func(b byte) bool { return isAlnum(b) || b == '_' || b == '(' || b == ')' || b == ',' })
-	case nameShape:
-		return ValidateName("storage", v) == nil
-	case hexShape:
-		return len(v) == 64 && allBytes(v, func(b byte) bool { return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') })
-	}
-	return false
+// reasonDetails are the detail keys each reason may carry, the contract's,
+// each with the check of its value. Every value is from a closed list, a
+// number, a UID as received, a storage's name, a checksum, or an
+// attribute's keyword or tag as the naming package parses it: nothing a
+// file's value could be written into, so a detail never carries one.
+var reasonDetails = map[QuarantineReason]map[string]func(string) bool{
+	QuarantineNotDICOM:            {"offset": isNumber},
+	QuarantineSOPClassNotAccepted: {"sop_class_uid": isUID},
+	QuarantineTooLarge:            {"limit": isNumber},
+	QuarantineBadUID: {
+		"attribute": oneOf("SOPInstanceUID", "SOPClassUID", "StudyInstanceUID", "SeriesInstanceUID"),
+		"fault":     oneOf(FaultMissing, FaultEmpty, FaultBadUID),
+	},
+	QuarantineBadLabel: {
+		"label":     oneOf("subject", "session", "scan"),
+		"attribute": func(v string) bool { return v == "" || isAttribute(v) },
+		"fault":     oneOf(FaultMissing, FaultEmpty, FaultTooLong, FaultBadCharacter, FaultBadUID, FaultNoMatch, FaultBadLabel),
+	},
+	QuarantineLabelConflict: {
+		"label": oneOf("subject", "session", "scan"),
+		"fault": oneOf(FaultHeldByAnotherSession, FaultTwoSubjectsForOneStudy, FaultHeldByAnotherScan, FaultCaseCollision),
+	},
+	QuarantineDifferentFile:    {},
+	QuarantineUIDElsewhere:     {"study_instance_uid": isUID, "series_instance_uid": isUID},
+	QuarantineStorageRefused:   {"storage": isName, "fault": oneOf(FaultUnreachable, FaultTLSFailed, FaultRefused, FaultNotFound, FaultWrongAnswer, FaultAddressNotAllowed)},
+	QuarantineReadBackMismatch: {"storage": isName, "read_sha256": isHex64},
+}
+
+// oneOf returns a check that a value is one of words.
+func oneOf(words ...string) func(string) bool {
+	return func(v string) bool { return slices.Contains(words, v) }
+}
+
+// isNumber reports whether v is a decimal count of at most 20 digits.
+func isNumber(v string) bool {
+	return v != "" && len(v) <= 20 && allBytes(v, func(b byte) bool { return b >= '0' && b <= '9' })
+}
+
+// isUID reports whether v is a UID (PS3.5 9.1).
+func isUID(v string) bool { return uid.Valid(v) }
+
+// isName reports whether v follows the tenant name rule.
+func isName(v string) bool { return ValidateName("storage", v) == nil }
+
+// isHex64 reports whether v is a SHA-256 in lowercase hexadecimal.
+func isHex64(v string) bool {
+	return len(v) == 64 && allBytes(v, func(b byte) bool { return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') })
+}
+
+// isAttribute reports whether v is an attribute a naming rule may name: a
+// keyword of the naming package's table or a tag written (gggg,eeee),
+// checked by the naming package's own parser.
+func isAttribute(v string) bool {
+	_, err := naming.ParseAttribute(v)
+	return err == nil
 }
 
 // Valid reports whether r is one of the reasons.
@@ -174,11 +205,11 @@ func (q QuarantinedFile) Validate() error {
 		return invalid("a quarantine record has at most " + strconv.Itoa(MaxQuarantineDetails) + " details")
 	}
 	for k, v := range q.Details {
-		shape, ok := allowed[k]
+		check, ok := allowed[k]
 		if !ok {
 			return invalid("the detail " + strconv.Quote(k) + " is not one the reason " + string(q.Reason) + " carries")
 		}
-		if !shape.valid(v) {
+		if !check(v) {
 			return invalid("the detail " + strconv.Quote(k) + " does not have the form its reason states")
 		}
 	}

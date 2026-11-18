@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/core/label"
+	"github.com/amrshadid/magnetar/internal/core/layout"
 	"github.com/amrshadid/magnetar/internal/core/reception"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -90,48 +92,71 @@ func BenchmarkReceivedBatch(b *testing.B) {
 	}
 }
 
-// BenchmarkCheckDuplicates measures the duplicate check of batches of 1,
-// 100 and 1000 files, half of them held, against a tenant that holds one
-// million instances (1000 archived receptions of 1000 files). The table is
-// built once, straight through SQL; skipped under -short.
-func BenchmarkCheckDuplicates(b *testing.B) {
-	if testing.Short() {
-		b.Skip("builds a table of one million rows")
-	}
-	s, path := benchTenant(b)
+// fillHeld writes a million held instances into a tenant's catalog (1000
+// sessions of one scan of 1000 instances), straight through SQL, and an
+// identified reception to claim with, and runs ANALYZE.
+func fillHeld(b *testing.B, path string) {
+	b.Helper()
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		b.Fatal(err)
 	}
+	defer func() { _ = db.Close() }()
 	for _, stmt := range []string{
-		`WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 999)
-		 INSERT INTO receptions SELECT 'held' || i, 'dimse', '2.25.1.' || (i + 1), 1, 'done', 1, 1000, 0, 1000, 0, 0, 0, 0, 0, 0,
-		   'sub', 'ses' || i, 'store', '', i, i, i, i, 1, '[]', 0, '', '', '', NULL FROM n`,
+		`INSERT INTO subjects VALUES (1, 'sub-01', 'sub-01', 0)`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000)
+		 INSERT INTO sessions SELECT i, '2.25.1.' || i, 1, 'ses-' || i, 'ses-' || i, 'store', 0 FROM n`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000)
+		 INSERT INTO scans SELECT i, i, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 1000, 524288000, NULL, 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 999999)
-		 INSERT INTO received_files SELECT 'held' || (i / 1000), '2.25.3.' || (i + 1), randomblob(32), '2.25.2.' || (i / 1000 + 1),
-		   '2.25.1.' || (i / 1000 + 1), '1.2.840.10008.5.1.4.1.1.4', '1.2.840.10008.1.2.1', 524288, 'x/' || i, '', '', '', '', 0, 0 FROM n`,
+		 INSERT INTO instances SELECT '2.25.3.' || (i + 1), '2.25.1.' || (i / 1000 + 1), '2.25.2.' || (i / 1000 + 1),
+		   randomblob(32), 'held' || (i / 1000), i / 1000 + 1, 'store', 'k', 0, 524288, 524288, randomblob(32), 0,
+		   NULL, NULL, NULL FROM n`,
+		`UPDATE catalog_totals SET subjects = 1, sessions = 1000, scans = 1000, instances = 1000000`,
+		`INSERT INTO receptions SELECT 'claimer', 'dimse', '2.25.1.5000', 1, 'identified', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		   'sub-01', 'ses-5000', 'store', '', 0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL`,
 		`ANALYZE`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			b.Fatal(err)
 		}
 	}
-	if err := db.Close(); err != nil {
-		b.Fatal(err)
+}
+
+// queriesOf returns size duplicate queries, every other one an instance
+// held (spread across the table) and the others new.
+func queriesOf(size, round int) []tenant.InstanceClaim {
+	out := make([]tenant.InstanceClaim, size)
+	for i := range out {
+		n, study := i*997%1000000, 0
+		if i%2 == 1 {
+			n = 2000000 + round*size + i
+			study = 5000 - 1
+		} else {
+			study = n / 1000
+		}
+		out[i] = tenant.InstanceClaim{SOPInstanceUID: fmt.Sprintf("2.25.3.%d", n+1),
+			StudyUID: fmt.Sprintf("2.25.1.%d", study+1), SeriesUID: fmt.Sprintf("2.25.2.%d", study+1), SHA256: tenant.SHA256{1}}
 	}
+	return out
+}
+
+// BenchmarkCheckDuplicates measures the duplicate check of batches of 1,
+// 100 and 1000 files, half of them held, against a catalog of one million
+// held instances, built once; skipped under -short.
+func BenchmarkCheckDuplicates(b *testing.B) {
+	if testing.Short() {
+		b.Skip("builds a table of one million rows")
+	}
+	s, path := benchTenant(b)
+	fillHeld(b, path)
 	ctx := context.Background()
 	for _, size := range []int{1, 100, 1000} {
 		b.Run(fmt.Sprintf("files=%d", size), func(b *testing.B) {
+			claims := queriesOf(size, 0)
 			queries := make([]tenant.DuplicateQuery, size)
-			for i := range queries {
-				// Every other file is an instance the tenant holds, spread
-				// across the table; the others are new.
-				n := i * 997 % 1000000
-				if i%2 == 1 {
-					n = 2000000 + i
-				}
-				queries[i] = tenant.DuplicateQuery{SOPInstanceUID: fmt.Sprintf("2.25.3.%d", n+1),
-					StudyUID: fmt.Sprintf("2.25.1.%d", n/1000+1), SeriesUID: fmt.Sprintf("2.25.2.%d", n/1000+1), SHA256: tenant.SHA256{1}}
+			for i, c := range claims {
+				queries[i] = c.Query()
 			}
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -141,10 +166,98 @@ func BenchmarkCheckDuplicates(b *testing.B) {
 					b.Fatal(err)
 				}
 				if got[0].Kind != tenant.DifferentFile {
-					b.Fatalf("a held instance answered %d", got[0].Kind)
+					b.Fatalf("a held instance answered %v", got[0].Kind)
 				}
 			}
 			b.ReportMetric(float64(size*b.N)/b.Elapsed().Seconds(), "files/s")
+		})
+	}
+}
+
+// BenchmarkClaimInstances measures a claim of 1, 100 and 1000 instances,
+// half of them held (answered at once) and half new (inserted, claimed),
+// one transaction each, against a catalog of one million held instances;
+// skipped under -short.
+func BenchmarkClaimInstances(b *testing.B) {
+	if testing.Short() {
+		b.Skip("builds a table of one million rows")
+	}
+	s, path := benchTenant(b)
+	fillHeld(b, path)
+	ctx := context.Background()
+	round := 0
+	for _, size := range []int{1, 100, 1000} {
+		b.Run(fmt.Sprintf("instances=%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				round++
+				b.StopTimer()
+				claims := queriesOf(size, round)
+				b.StartTimer()
+				if _, err := s.ClaimInstances(ctx, "claimer", claims, benchTime, nil); err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.ReportMetric(float64(size*b.N)/b.Elapsed().Seconds(), "instances/s")
+		})
+	}
+}
+
+// BenchmarkCommitScan measures one scan's catalog commit of 100 and 1000
+// instances (a new subject, session and scan, and the confirmation of each
+// instance), one transaction each, against a catalog of one million held
+// instances; it reports instances a second. Skipped under -short.
+func BenchmarkCommitScan(b *testing.B) {
+	if testing.Short() {
+		b.Skip("builds a table of one million rows")
+	}
+	s, path := benchTenant(b)
+	fillHeld(b, path)
+	ctx := context.Background()
+	seq := 0
+	for _, size := range []int{100, 1000} {
+		b.Run(fmt.Sprintf("instances=%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				b.StopTimer()
+				seq++
+				study, series := fmt.Sprintf("2.25.11.%d", seq), fmt.Sprintf("2.25.12.%d", seq)
+				r, _, err := s.OpenReception(ctx, "dimse", study, fmt.Sprintf("commit%d", seq), benchTime)
+				if err != nil {
+					b.Fatal(err)
+				}
+				for _, ev := range []reception.Event{reception.Quiet, reception.Identify} {
+					st := tenant.ReceptionStep{ID: r.ID, From: r.State, Event: ev, At: benchTime, SubjectLabel: "sub-01",
+						SessionLabel: fmt.Sprintf("ses-b%d", seq), Storage: "store"}
+					if r, err = s.StepReception(ctx, st, nil); err != nil {
+						b.Fatal(err)
+					}
+				}
+				claims := make([]tenant.InstanceClaim, size)
+				path := label.Path{Subject: "sub-01", Session: fmt.Sprintf("ses-b%d", seq), Scan: "scan-1"}
+				c := tenant.ScanCommit{ReceptionID: r.ID, StudyUID: study, SeriesUID: series, SubjectLabel: path.Subject,
+					SessionLabel: path.Session, ScanLabel: path.Scan, Storage: "store", ManifestSHA256: tenant.SHA256{9}, At: benchTime}
+				for i := range claims {
+					uid := fmt.Sprintf("2.25.13.%d.%d", seq, i+1)
+					claims[i] = tenant.InstanceClaim{SOPInstanceUID: uid, StudyUID: study, SeriesUID: series, SHA256: tenant.SHA256{2}}
+					key, err := layout.InstanceKey(path, uid)
+					if err != nil {
+						b.Fatal(err)
+					}
+					c.Instances = append(c.Instances, tenant.ConfirmedInstance{SOPInstanceUID: uid, Key: key, Length: 524288, Size: 524288,
+						ArchivedSHA256: tenant.SHA256{2}})
+				}
+				if _, err := s.ClaimInstances(ctx, r.ID, claims, benchTime, nil); err != nil {
+					b.Fatal(err)
+				}
+				b.StartTimer()
+				if _, err := s.CommitScan(ctx, c); err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.ReportMetric(float64(size*b.N)/b.Elapsed().Seconds(), "instances/s")
 		})
 	}
 }

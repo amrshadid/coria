@@ -54,11 +54,22 @@ type Reception struct {
 	DiscardTime time.Time
 }
 
-// ReceptionCounts are a reception's files and bytes. The received pair and
-// Released are kept by AddReceivedFiles and ReleaseQuarantined, the
-// quarantined pair by HoldFiles, and the archived and duplicate pairs by the
-// steps that decide them (ReceptionStep.Counts): each count has one writer,
-// so no step overwrites what a batch added.
+// ReceptionCounts are a reception's files and bytes. Each count has one
+// writer, so no step overwrites what another change added:
+//
+//   - the received pair, by AddReceivedFiles, by ReleaseQuarantined into
+//     another reception, and by HoldFiles for a file that arrived and could
+//     not be recorded as a received file (too large, not DICOM): a file
+//     that arrived is counted received once, whatever became of it;
+//   - Released, by ReleaseQuarantined;
+//   - the archived pair, by CommitScan, for each instance confirmed;
+//   - the duplicate pair, by the step that decides them (StepCounts);
+//   - the quarantined pair, by HoldFiles, less a file released back into
+//     the same reception, which is no longer quarantined there.
+//
+// So at the end of a reception that did not fail, received equals archived
+// plus duplicate plus quarantined, files and bytes, as the API contract
+// states, when the pipeline holds each file it does not archive or ignore.
 type ReceptionCounts struct {
 	FilesReceived, BytesReceived       int64
 	FilesArchived, BytesArchived       int64
@@ -67,9 +78,9 @@ type ReceptionCounts struct {
 	FilesReleased                      int64
 }
 
-// StepCounts are the counts a step decides: archived and duplicate.
+// StepCounts are the counts a step decides: the files ignored as the same
+// file the tenant holds.
 type StepCounts struct {
-	FilesArchived, BytesArchived   int64
 	FilesDuplicate, BytesDuplicate int64
 }
 
@@ -101,10 +112,10 @@ type ReceptionStep struct {
 	// stored: a step decided from a quiet period is refused with
 	// ErrStateChanged when a file came after the decision.
 	LastFile time.Time
-	// Counts, when not nil, are the archived and duplicate totals.
+	// Counts, when not nil, are the duplicate totals.
 	Counts *StepCounts
 	// SubjectLabel, SessionLabel and Storage are required with Identify
-	// and ignored otherwise.
+	// and ignored otherwise; the storage must be the tenant's.
 	SubjectLabel, SessionLabel, Storage string
 	// Failure is required with Fail, a phrase for a person of at most
 	// MaxFailureLength bytes, and ignored otherwise.
@@ -131,7 +142,7 @@ func (s ReceptionStep) Validate() error {
 			return err
 		}
 	}
-	if c := s.Counts; c != nil && (c.FilesArchived < 0 || c.BytesArchived < 0 || c.FilesDuplicate < 0 || c.BytesDuplicate < 0) {
+	if c := s.Counts; c != nil && (c.FilesDuplicate < 0 || c.BytesDuplicate < 0) {
 		return invalid("a reception's counts are not negative")
 	}
 	switch s.Event {

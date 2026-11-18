@@ -56,53 +56,78 @@ func receptionInTx(ctx context.Context, tx *sql.Tx, id string) (tenant.Reception
 }
 
 // openReceptionInTx finds the reception of the study receiving at the
-// receiver, or makes one with id at the next arrival of the study; the
-// literal state matches receptions_open, the partial unique index that
-// holds one open reception per receiver and study even across processes.
+// receiver, or makes one with id at the next arrival of the study. Two opens
+// at once meet at receptions_open, the partial unique index that holds one
+// open reception per receiver and study, or at receptions_arrival: the
+// insert that meets the other's row changes nothing (ON CONFLICT DO
+// NOTHING), and the loop reads again, finding the reception that won, or
+// the arrival number taken. On a database with several writers the second
+// insert waits for the first's commit, then reads what it committed.
 func openReceptionInTx(ctx context.Context, tx *sql.Tx, receiver, studyUID, id string, at time.Time) (tenant.Reception, bool, error) {
-	r, err := scanReception(tx.QueryRowContext(ctx, openReceptionSQL, receiver, studyUID))
-	if err == nil {
-		return r, false, nil
+	for try := 0; try < 8; try++ {
+		r, err := scanReception(tx.QueryRowContext(ctx, openReceptionSQL, receiver, studyUID))
+		if err == nil {
+			return r, false, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return r, false, err
+		}
+		if try == 0 {
+			has, err := exists(ctx, tx, `SELECT 1 FROM receivers WHERE name = ?`, receiver)
+			if err != nil {
+				return r, false, err
+			}
+			if !has {
+				return r, false, tenant.Precondition("the tenant has no receiver named " + receiver)
+			}
+		}
+		inserted, err := insertReception(ctx, tx, id, receiver, studyUID, reception.Receiving, "", at)
+		if err != nil {
+			return r, false, err
+		}
+		if inserted {
+			r, err = receptionInTx(ctx, tx, id)
+			return r, true, err
+		}
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return r, false, err
-	}
-	has, err := exists(ctx, tx, `SELECT 1 FROM receivers WHERE name = ?`, receiver)
-	if err != nil {
-		return r, false, err
-	}
-	if !has {
-		return r, false, tenant.Precondition("the tenant has no receiver named " + receiver)
-	}
-	if err := insertReception(ctx, tx, id, receiver, studyUID, reception.Receiving, "", at); err != nil {
-		return r, false, err
-	}
-	r, err = receptionInTx(ctx, tx, id)
-	return r, true, err
+	return tenant.Reception{}, false, fault.New(fault.Unavailable, "receptions of the study kept opening at the same moment; try again")
 }
 
 // insertReception writes a new reception in state at the next arrival of
-// its study. The next arrival is read from receptions_arrival, whose unique
-// key also refuses two receptions given one number.
-func insertReception(ctx context.Context, tx *sql.Tx, id, receiver, studyUID string, state reception.State, retryOf string, at time.Time) error {
+// its study, and reports whether it did: a row it meets under one of the
+// unique keys (its id, the open reception of its receiver and study, the
+// arrival number another took meanwhile) leaves nothing written. An id
+// taken by another reception is a Conflict, since ids are the caller's to
+// make unique.
+func insertReception(ctx context.Context, tx *sql.Tx, id, receiver, studyUID string, state reception.State, retryOf string, at time.Time) (bool, error) {
 	var arrival int
 	if err := tx.QueryRowContext(ctx, nextArrivalSQL, studyUID).Scan(&arrival); err != nil {
-		return err
+		return false, err
 	}
 	ts := micros(at)
-	_, err := tx.ExecContext(ctx, `INSERT INTO receptions (id, receiver, study_uid, arrival, state, ended,
+	res, err := tx.ExecContext(ctx, `INSERT INTO receptions (id, receiver, study_uid, arrival, state, ended,
 		files_received, bytes_received, files_archived, bytes_archived, files_duplicate, bytes_duplicate,
 		files_quarantined, bytes_quarantined, files_released, subject_label, session_label, storage, failure,
 		started, last_file, step_at, ended_at, associations, calling_ae_titles, calling_truncated,
 		retry_of, retry_reception, discard_reason, discard_at)
-		VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', ?, ?, ?, NULL, 0, '[]', 0, ?, '', '', NULL)`,
+		VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', ?, ?, ?, NULL, 0, '[]', 0, ?, '', '', NULL)
+		ON CONFLICT DO NOTHING`,
 		id, receiver, studyUID, arrival, string(state), boolInt(state.Ended()), ts, ts, ts, retryOf)
-	if isUniqueViolation(err) {
-		// The id taken, or, on a database with several writers, another
-		// reception of the study opened at the same moment.
-		return fault.Wrap(fault.Conflict, err, "a reception with this id or this arrival of the study exists")
+	if err != nil {
+		return false, err
 	}
-	return err
+	n, err := res.RowsAffected()
+	if err != nil || n == 1 {
+		return n == 1, err
+	}
+	taken, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	if taken {
+		return false, fault.New(fault.Conflict, "a reception with this id exists")
+	}
+	return false, nil
 }
 
 // OpenReception implements tenant.Pipeline.
@@ -182,6 +207,12 @@ func (t *Tenant) ListReceptions(ctx context.Context, filter tenant.ReceptionFilt
 		return nil, "", err
 	}
 	query, args := receptionsQuery(filter, after, page.Limit+1)
+	if query == "" {
+		if _, err := t.ready(ctx); err != nil {
+			return nil, "", err
+		}
+		return nil, "", nil
+	}
 	out, err := readRows(ctx, t, "the receptions cannot be listed", query, args, scanReception)
 	if err != nil {
 		return nil, "", err
@@ -195,21 +226,26 @@ func (t *Tenant) ListReceptions(ctx context.Context, filter tenant.ReceptionFilt
 
 // checkFence refuses a worker's write whose lease no longer holds: the unit
 // is not leased, or its attempt is no longer the fence's, because a claim
-// took it over.
+// took it over. The check is an update of the unit's row with the attempt
+// in its condition, so on a database with several writers the row stays
+// locked to the end of the worker's transaction: a takeover waits for it,
+// and a write after a takeover finds the condition false.
 func checkFence(ctx context.Context, tx *sql.Tx, f tenant.WorkFence) error {
-	var state string
-	var attempt int
-	err := tx.QueryRowContext(ctx, `SELECT state, attempt FROM work WHERE id = ?`, f.ID).Scan(&state, &attempt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fault.New(fault.NotFound, "the tenant has no unit of work with this id")
-	}
+	res, err := tx.ExecContext(ctx, `UPDATE work SET updated = updated WHERE id = ? AND attempt = ? AND state = 'leased'`, f.ID, f.Attempt)
 	if err != nil {
 		return err
 	}
-	if state != string(tenant.WorkLeased) || attempt != f.Attempt {
-		return tenant.LeaseLost()
+	if n, err := res.RowsAffected(); err != nil || n == 1 {
+		return err
 	}
-	return nil
+	has, err := exists(ctx, tx, `SELECT 1 FROM work WHERE id = ?`, f.ID)
+	if err != nil {
+		return err
+	}
+	if !has {
+		return fault.New(fault.NotFound, "the tenant has no unit of work with this id")
+	}
+	return tenant.LeaseLost()
 }
 
 // errStateChanged is the refusal of a step whose reception moved meanwhile.
@@ -224,32 +260,35 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 	}
 	var out tenant.Reception
 	err := t.write(ctx, "the reception's step cannot be written", func(tx *sql.Tx, _ *tenantStatements) error {
-		before, err := receptionInTx(ctx, tx, step.ID)
-		if err != nil {
-			return err
-		}
-		if before.State != step.From {
-			return errStateChanged()
-		}
-		if !step.LastFile.IsZero() && micros(before.LastFile) != micros(step.LastFile) {
-			return errStateChanged()
-		}
-		next, err := reception.Step(step.From, step.Event)
-		if err != nil {
-			return fault.Wrap(fault.Conflict, err, "the reception cannot take this step: "+err.Error())
-		}
 		if step.Fence != nil {
 			if err := checkFence(ctx, tx, *step.Fence); err != nil {
 				return err
 			}
 		}
+		before, err := receptionInTx(ctx, tx, step.ID)
+		if err != nil {
+			return err
+		}
+		next, err := reception.Step(step.From, step.Event)
+		if err != nil {
+			if before.State != step.From {
+				return errStateChanged()
+			}
+			return fault.Wrap(fault.Conflict, err, "the reception cannot take this step: "+err.Error())
+		}
 		c := before.Counts
 		if step.Counts != nil {
-			c.FilesArchived, c.BytesArchived = step.Counts.FilesArchived, step.Counts.BytesArchived
 			c.FilesDuplicate, c.BytesDuplicate = step.Counts.FilesDuplicate, step.Counts.BytesDuplicate
 		}
 		subject, session, storage, failure := before.SubjectLabel, before.SessionLabel, before.Storage, before.Failure
 		if step.Event == reception.Identify {
+			has, err := exists(ctx, tx, `SELECT 1 FROM storages WHERE name = ?`, step.Storage)
+			if err != nil {
+				return err
+			}
+			if !has {
+				return tenant.Precondition("the tenant has no storage named " + step.Storage)
+			}
 			subject, session, storage = step.SubjectLabel, step.SessionLabel, step.Storage
 		}
 		if step.Event == reception.Fail {
@@ -259,14 +298,20 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		if next.Ended() {
 			endedAt = micros(step.At)
 		}
-		// The state in the WHERE is the compare of the compare-and-set: on
-		// a database with several writers it is what holds the rule; here
-		// the one writer already does.
+		// The compare of the compare-and-set is in the statement that
+		// changes the row: the state, and the last file time when the step
+		// was decided from it. On a database with several writers that is
+		// what holds the rule against a batch or a step committed
+		// meanwhile; here the one writer holds it as well.
+		lastFile := int64(-1)
+		if !step.LastFile.IsZero() {
+			lastFile = micros(step.LastFile)
+		}
 		res, err := tx.ExecContext(ctx, `UPDATE receptions SET state = ?, ended = ?, step_at = ?, ended_at = ?,
-			files_archived = ?, bytes_archived = ?, files_duplicate = ?, bytes_duplicate = ?,
-			subject_label = ?, session_label = ?, storage = ?, failure = ? WHERE id = ? AND state = ?`,
-			string(next), boolInt(next.Ended()), micros(step.At), endedAt, c.FilesArchived, c.BytesArchived,
-			c.FilesDuplicate, c.BytesDuplicate, subject, session, storage, failure, step.ID, string(step.From))
+			files_duplicate = ?, bytes_duplicate = ?, subject_label = ?, session_label = ?, storage = ?, failure = ?
+			WHERE id = ? AND state = ? AND (? < 0 OR last_file = ?)`,
+			string(next), boolInt(next.Ended()), micros(step.At), endedAt, c.FilesDuplicate, c.BytesDuplicate,
+			subject, session, storage, failure, step.ID, string(step.From), lastFile, lastFile)
 		if err != nil {
 			return err
 		}
@@ -275,6 +320,11 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 				return err
 			}
 			return errStateChanged()
+		}
+		if next.Ended() {
+			if err := releaseClaims(ctx, tx, step.ID); err != nil {
+				return err
+			}
 		}
 		after, err := receptionInTx(ctx, tx, step.ID)
 		if err != nil {
@@ -314,27 +364,41 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 	}
 	var failed, retry tenant.Reception
 	err := t.write(ctx, "the reception cannot be retried", func(tx *sql.Tx, st *tenantStatements) error {
+		// The failed reception is marked first, in the statement that
+		// checks it may be retried, so two retries at once make one new
+		// reception: on a database with several writers the second waits
+		// for the first and then finds it retried.
+		res, err := tx.ExecContext(ctx, `UPDATE receptions SET retry_reception = ?
+			WHERE id = ? AND state = 'failed' AND retry_reception = '' AND discard_reason = ''`, newID, id)
+		if err != nil {
+			return err
+		}
+		marked, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
 		f, err := receptionInTx(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		if f.RetryReception != "" {
-			r, err := receptionInTx(ctx, tx, f.RetryReception)
-			if err != nil {
-				return err
+		if marked == 0 {
+			switch {
+			case f.RetryReception != "":
+				r, err := receptionInTx(ctx, tx, f.RetryReception)
+				if err != nil {
+					return err
+				}
+				a, err := addDetails(audit, tenant.DetailRetryReception, r.ID)
+				if err != nil {
+					return err
+				}
+				failed, retry = f, r
+				return audited(ctx, tx, st, a, guard)
+			case f.State != reception.Failed:
+				return tenant.Precondition("the reception has not failed")
+			default:
+				return tenant.Precondition("the reception's files were discarded")
 			}
-			a, err := addDetails(audit, tenant.DetailRetryReception, r.ID)
-			if err != nil {
-				return err
-			}
-			failed, retry = f, r
-			return audited(ctx, tx, st, a, guard)
-		}
-		if f.State != reception.Failed {
-			return tenant.Precondition("the reception has not failed")
-		}
-		if f.DiscardReason != "" {
-			return tenant.Precondition("the reception's files were discarded")
 		}
 		via := receiver
 		if via == "" {
@@ -350,12 +414,21 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 		if !has {
 			return tenant.Precondition("the tenant has no receiver named " + receiver)
 		}
-		if err := insertReception(ctx, tx, newID, via, f.StudyUID, reception.Complete, f.ID, now); err != nil {
+		if err := releaseClaims(ctx, tx, f.ID); err != nil {
 			return err
 		}
+		inserted := false
+		for try := 0; try < 8 && !inserted; try++ {
+			if inserted, err = insertReception(ctx, tx, newID, via, f.StudyUID, reception.Complete, f.ID, now); err != nil {
+				return err
+			}
+		}
+		if !inserted {
+			return fault.New(fault.Unavailable, "receptions of the study kept opening at the same moment; try again")
+		}
 		// The failed reception's files, as they are in the incoming area,
-		// become the new one's; a file it archived is found held by the
-		// duplicate check and ignored.
+		// become the new one's; a file it confirmed is held, and the new
+		// reception's claim answers it SameFile.
 		if _, err := tx.ExecContext(ctx, `INSERT INTO received_files (`+receivedColumns+`)
 			SELECT ?, sop_instance_uid, sha256, series_uid, study_uid, sop_class_uid, transfer_syntax_uid, size, incoming,
 				calling_ae, called_ae, remote_addr, association, released, ?
@@ -366,9 +439,6 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 			files_received = (SELECT count(*) FROM received_files WHERE reception_id = ?1),
 			bytes_received = (SELECT coalesce(sum(size), 0) FROM received_files WHERE reception_id = ?1)
 			WHERE id = ?1`, newID); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE receptions SET retry_reception = ? WHERE id = ?`, newID, f.ID); err != nil {
 			return err
 		}
 		if failed, err = receptionInTx(ctx, tx, f.ID); err != nil {
@@ -405,28 +475,36 @@ func (t *Tenant) DiscardReception(ctx context.Context, id, reason string, now ti
 	}
 	var out tenant.Reception
 	err := t.write(ctx, "the reception's files cannot be discarded", func(tx *sql.Tx, st *tenantStatements) error {
+		// Marked in the statement that checks it may be discarded, so a
+		// retry and a discard at once do not both happen.
+		res, err := tx.ExecContext(ctx, `UPDATE receptions SET discard_reason = ?, discard_at = ?
+			WHERE id = ? AND state = 'failed' AND retry_reception = '' AND discard_reason = ''`, reason, micros(now), id)
+		if err != nil {
+			return err
+		}
+		marked, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
 		r, err := receptionInTx(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		if r.State != reception.Failed {
-			return tenant.Precondition("the reception has not failed")
-		}
-		if r.RetryReception != "" {
-			return tenant.Precondition("the reception was retried; its files belong to the reception that runs them")
-		}
-		if r.DiscardReason == "" {
-			if _, err := tx.ExecContext(ctx, `UPDATE receptions SET discard_reason = ?, discard_at = ? WHERE id = ?`,
-				reason, micros(now), id); err != nil {
-				return err
-			}
-			if r, err = receptionInTx(ctx, tx, id); err != nil {
-				return err
+		if marked == 0 {
+			switch {
+			case r.State != reception.Failed:
+				return tenant.Precondition("the reception has not failed")
+			case r.RetryReception != "":
+				return tenant.Precondition("the reception was retried; its files belong to the reception that runs them")
 			}
 		}
-		c := r.Counts
-		files := max(c.FilesReceived-c.FilesArchived-c.FilesDuplicate-c.FilesQuarantined, 0)
-		bytes := max(c.BytesReceived-c.BytesArchived-c.BytesDuplicate-c.BytesQuarantined, 0)
+		if err := releaseClaims(ctx, tx, id); err != nil {
+			return err
+		}
+		var files, bytes int64
+		if err := tx.QueryRowContext(ctx, discardCountSQL, id).Scan(&files, &bytes); err != nil {
+			return err
+		}
 		a, err := addDetails(audit, tenant.DetailFiles, strconv.FormatInt(files, 10), tenant.DetailBytes, strconv.FormatInt(bytes, 10))
 		if err != nil {
 			return err
@@ -440,11 +518,41 @@ func (t *Tenant) DiscardReception(ctx context.Context, id, reason string, now ti
 	return out, nil
 }
 
+// notKept is the condition, on a received file r, that no quarantine record
+// keeps its bytes at the same place: the files a discard removes. The one
+// condition serves the count in the audit entry and the list the caller
+// removes, so the two agree. quarantine_kept answers it.
+const notKept = `NOT EXISTS (SELECT 1 FROM quarantine AS q WHERE q.incoming = r.incoming AND q.content_kept = 1)`
+
+// discardCountSQL counts the files and bytes a discard removes.
+const discardCountSQL = `SELECT count(*), coalesce(sum(r.size), 0) FROM received_files AS r WHERE r.reception_id = ? AND ` + notKept
+
+// discardedSQL pages the files a discard removes: the received files'
+// primary key.
+const discardedSQL = `SELECT ` + receivedColumns + ` FROM received_files AS r
+	WHERE r.reception_id = ? AND (r.sop_instance_uid, r.sha256) > (?, ?) AND ` + notKept + `
+	ORDER BY r.sop_instance_uid, r.sha256 LIMIT ?`
+
+// DiscardedFiles implements tenant.Pipeline.
+func (t *Tenant) DiscardedFiles(ctx context.Context, receptionID string, page master.Page) ([]tenant.ReceivedFile, string, error) {
+	if err := master.ValidateID("reception id", receptionID); err != nil {
+		return nil, "", err
+	}
+	r, _, err := t.Reception(ctx, receptionID)
+	if err != nil {
+		return nil, "", err
+	}
+	if r.DiscardReason == "" {
+		return nil, "", tenant.Precondition("the reception's files were not discarded")
+	}
+	return t.pageReceived(ctx, listDiscarded, discardedSQL, receptionID, page)
+}
+
 // receptionsQuery returns the statement and arguments of one page of
 // ListReceptions. It is put together from fixed fragments by which filters
 // are set, so each reads the index named for it in 0002_pipeline.sql; every
 // value is a parameter. after is the (started, id) of the last row
-// returned, or nil.
+// returned, or nil. The empty statement means no reception can match.
 func receptionsQuery(filter tenant.ReceptionFilter, after []any, limit int) (string, []any) {
 	var where []string
 	var args []any
@@ -454,8 +562,21 @@ func receptionsQuery(filter tenant.ReceptionFilter, after []any, limit int) (str
 	if filter.StudyUID != "" {
 		where, args = append(where, "study_uid = ?"), append(args, filter.StudyUID)
 	}
-	if filter.InProgress {
-		// The literal matches receptions_in_progress's condition.
+	var states []string
+	for _, st := range filter.States {
+		// With in progress, a step that is an end keeps nothing.
+		if !slices.Contains(states, string(st)) && (!filter.InProgress || !st.Ended()) {
+			states = append(states, string(st))
+		}
+	}
+	if filter.InProgress && len(filter.States) > 0 && len(states) == 0 {
+		// Only ended steps were asked for, with in progress: nothing can
+		// match, and no statement is run.
+		return "", nil
+	}
+	if filter.InProgress && len(states) == 0 {
+		// The literal matches receptions_in_progress's condition. With
+		// steps it is left out: the steps that remain have not ended.
 		where = append(where, "ended = 0")
 	}
 	if !filter.Since.IsZero() {
@@ -474,12 +595,6 @@ func receptionsQuery(filter tenant.ReceptionFilter, after []any, limit int) (str
 			query += " WHERE " + strings.Join(where, " AND ") // #nosec G202 -- every fragment is a constant above; values are parameters.
 		}
 		return query + order
-	}
-	var states []string
-	for _, s := range filter.States {
-		if !slices.Contains(states, string(s)) {
-			states = append(states, string(s))
-		}
 	}
 	if len(states) <= 1 {
 		if len(states) == 1 {

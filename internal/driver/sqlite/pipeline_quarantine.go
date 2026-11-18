@@ -70,7 +70,7 @@ func (t *Tenant) HoldFiles(ctx context.Context, files []tenant.QuarantinedFile) 
 	err := t.write(ctx, "the quarantined files cannot be recorded", func(tx *sql.Tx, _ *tenantStatements) error {
 		n := 0
 		var heldFiles, heldBytes int64
-		type delta struct{ files, bytes int64 }
+		type delta struct{ files, bytes, receivedFiles, receivedBytes int64 }
 		var order []string
 		perReception := map[string]delta{}
 		for _, q := range files {
@@ -114,7 +114,21 @@ func (t *Tenant) HoldFiles(ctx context.Context, files []tenant.QuarantinedFile) 
 			heldBytes += q.HeldBytes()
 			if q.ReceptionID != "" {
 				d := perReception[q.ReceptionID]
-				perReception[q.ReceptionID] = delta{d.files + 1, d.bytes + q.Size}
+				d.files, d.bytes = d.files+1, d.bytes+q.Size
+				// A file that arrived and has no received file in its
+				// reception (too large, not DICOM, no UIDs) is counted
+				// received here, once, as the record is made once.
+				recorded := false
+				if !q.SHA256.IsZero() && q.SOPInstanceUID != "" {
+					if recorded, err = exists(ctx, tx, `SELECT 1 FROM received_files
+						WHERE reception_id = ? AND sop_instance_uid = ? AND sha256 = ?`, q.ReceptionID, q.SOPInstanceUID, q.SHA256[:]); err != nil {
+						return err
+					}
+				}
+				if !recorded {
+					d.receivedFiles, d.receivedBytes = d.receivedFiles+1, d.receivedBytes+q.Size
+				}
+				perReception[q.ReceptionID] = d
 			}
 		}
 		if err := addTotals(ctx, tx, heldFiles, heldBytes); err != nil {
@@ -126,7 +140,8 @@ func (t *Tenant) HoldFiles(ctx context.Context, files []tenant.QuarantinedFile) 
 				continue
 			}
 			if _, err := tx.ExecContext(ctx, `UPDATE receptions SET files_quarantined = files_quarantined + ?,
-				bytes_quarantined = bytes_quarantined + ? WHERE id = ?`, d.files, d.bytes, id); err != nil {
+				bytes_quarantined = bytes_quarantined + ?, files_received = files_received + ?, bytes_received = bytes_received + ?
+				WHERE id = ?`, d.files, d.bytes, d.receivedFiles, d.receivedBytes, id); err != nil {
 				return err
 			}
 		}
@@ -192,6 +207,11 @@ func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.
 	}
 	var out tenant.QuarantinedFile
 	err := t.write(ctx, "the quarantined file cannot be released", func(tx *sql.Tx, st *tenantStatements) error {
+		// The record's row is locked before it is read, so on a database
+		// with several writers a decision made meanwhile is seen.
+		if _, err := tx.ExecContext(ctx, `UPDATE quarantine SET decided_at = decided_at WHERE id = ?`, id); err != nil {
+			return err
+		}
 		q, err := quarantinedInTx(ctx, tx, id)
 		if err != nil {
 			return err
@@ -232,28 +252,52 @@ func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.
 			if err != nil {
 				return err
 			}
-			s := st.pipelineStatements
-			res, err := tx.StmtContext(ctx, s.insertReceived).ExecContext(ctx, r.ID, q.SOPInstanceUID, q.SHA256[:], q.SeriesUID,
+			joined = r.ID
+			res, err := tx.StmtContext(ctx, st.insertReceived).ExecContext(ctx, r.ID, q.SOPInstanceUID, q.SHA256[:], q.SeriesUID,
 				q.StudyUID, q.SOPClassUID, q.TransferSyntaxUID, q.Size, q.Incoming, q.Caller.CallingAETitle,
 				q.Caller.CalledAETitle, q.Caller.Address, "", 1, micros(now))
 			if err != nil {
 				return err
 			}
-			if n, err := res.RowsAffected(); err != nil {
+			n, err := res.RowsAffected()
+			if err != nil {
 				return err
-			} else if n == 1 {
+			}
+			switch {
+			case r.ID == q.ReceptionID:
+				// Back into the reception it was quarantined from, which
+				// counted it received already (by its received file or by
+				// its hold): released there, and no longer quarantined.
+				if _, err := tx.ExecContext(ctx, `UPDATE received_files SET released = 1
+					WHERE reception_id = ? AND sop_instance_uid = ? AND sha256 = ?`, r.ID, q.SOPInstanceUID, q.SHA256[:]); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx, `UPDATE receptions SET files_released = files_released + 1,
+					files_quarantined = files_quarantined - 1, bytes_quarantined = bytes_quarantined - ?, last_file = max(last_file, ?)
+					WHERE id = ?`, q.Size, micros(now), r.ID); err != nil {
+					return err
+				}
+			case n == 1:
 				if _, err := tx.ExecContext(ctx, `UPDATE receptions SET files_received = files_received + 1,
 					bytes_received = bytes_received + ?, files_released = files_released + 1, last_file = max(last_file, ?)
 					WHERE id = ?`, q.Size, micros(now), r.ID); err != nil {
 					return err
 				}
 			}
-			joined = r.ID
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE quarantine SET state = 'released', content_kept = 0, decided_at = ?,
-			release_mode = ?, release_reception = ?, release_receiver = ? WHERE id = ?`,
-			micros(now), string(mode), joined, via, id); err != nil {
+		// The record's state is in the statement that changes it, so two
+		// decisions at once make one.
+		res, err := tx.ExecContext(ctx, `UPDATE quarantine SET state = 'released', content_kept = 0, decided_at = ?,
+			release_mode = ?, release_reception = ?, release_receiver = ? WHERE id = ? AND state = 'held'`,
+			micros(now), string(mode), joined, via, id)
+		if err != nil {
 			return err
+		}
+		if n, err := res.RowsAffected(); err != nil || n != 1 {
+			if err != nil {
+				return err
+			}
+			return fault.New(fault.Unavailable, "the quarantined file was decided at the same moment; try again")
 		}
 		if err := addTotals(ctx, tx, -1, -q.HeldBytes()); err != nil {
 			return err
@@ -285,6 +329,11 @@ func (t *Tenant) RejectQuarantined(ctx context.Context, id, reason string, now t
 	}
 	var out tenant.QuarantinedFile
 	err := t.write(ctx, "the quarantined file cannot be rejected", func(tx *sql.Tx, st *tenantStatements) error {
+		// The record's row is locked before it is read, so on a database
+		// with several writers a decision made meanwhile is seen.
+		if _, err := tx.ExecContext(ctx, `UPDATE quarantine SET decided_at = decided_at WHERE id = ?`, id); err != nil {
+			return err
+		}
 		q, err := quarantinedInTx(ctx, tx, id)
 		if err != nil {
 			return err
@@ -293,9 +342,16 @@ func (t *Tenant) RejectQuarantined(ctx context.Context, id, reason string, now t
 		case tenant.QuarantineReleased:
 			return tenant.Precondition("the file was released")
 		case tenant.QuarantineHeld:
-			if _, err := tx.ExecContext(ctx, `UPDATE quarantine SET state = 'rejected', content_kept = 0, decided_at = ?,
-				reject_reason = ? WHERE id = ?`, micros(now), reason, id); err != nil {
+			res, err := tx.ExecContext(ctx, `UPDATE quarantine SET state = 'rejected', content_kept = 0, decided_at = ?,
+				reject_reason = ? WHERE id = ? AND state = 'held'`, micros(now), reason, id)
+			if err != nil {
 				return err
+			}
+			if n, err := res.RowsAffected(); err != nil || n != 1 {
+				if err != nil {
+					return err
+				}
+				return fault.New(fault.Unavailable, "the quarantined file was decided at the same moment; try again")
 			}
 			if err := addTotals(ctx, tx, -1, -q.HeldBytes()); err != nil {
 				return err

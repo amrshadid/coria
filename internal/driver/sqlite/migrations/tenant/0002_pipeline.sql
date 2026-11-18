@@ -1,5 +1,6 @@
 -- What the reception pipeline keeps in a tenant's database: the tenant's
 -- storages and receivers, its receptions and the files they received, its
+-- catalog (subjects, sessions, scans and the instances held or claimed), its
 -- quarantine with running totals, and the leased units of work that carry a
 -- reception through its steps. Everything the pipeline must not lose in a
 -- restart is a row here.
@@ -9,7 +10,11 @@
 -- than NULL; a checksum is a 32-byte BLOB. There are no foreign keys: a
 -- reception and a quarantine record keep the name of a receiver removed, by
 -- the API contract's rule, and every other reference is checked by the
--- change that makes it, inside its transaction.
+-- change that makes it, inside its transaction. Counts, sizes and checksum
+-- lengths are held by CHECK constraints. The state of a reception and the
+-- reason of a quarantine record are the core's and the contract's words and
+-- have no CHECK: a later version adds to both, and SQLite cannot change a
+-- table's CHECK without rebuilding the table.
 --
 -- Each list, claim and lookup has the index named for it below; the plan
 -- tests (pipeline_plan_test.go) show SQLite's planner uses it.
@@ -77,15 +82,15 @@ CREATE TABLE receptions (
     arrival           INTEGER NOT NULL CHECK (arrival >= 1),
     state             TEXT    NOT NULL,
     ended             INTEGER NOT NULL CHECK (ended IN (0, 1)),
-    files_received    INTEGER NOT NULL,
-    bytes_received    INTEGER NOT NULL,
-    files_archived    INTEGER NOT NULL,
-    bytes_archived    INTEGER NOT NULL,
-    files_duplicate   INTEGER NOT NULL,
-    bytes_duplicate   INTEGER NOT NULL,
-    files_quarantined INTEGER NOT NULL,
-    bytes_quarantined INTEGER NOT NULL,
-    files_released    INTEGER NOT NULL,
+    files_received    INTEGER NOT NULL CHECK (files_received >= 0),
+    bytes_received    INTEGER NOT NULL CHECK (bytes_received >= 0),
+    files_archived    INTEGER NOT NULL CHECK (files_archived >= 0),
+    bytes_archived    INTEGER NOT NULL CHECK (bytes_archived >= 0),
+    files_duplicate   INTEGER NOT NULL CHECK (files_duplicate >= 0),
+    bytes_duplicate   INTEGER NOT NULL CHECK (bytes_duplicate >= 0),
+    files_quarantined INTEGER NOT NULL CHECK (files_quarantined >= 0),
+    bytes_quarantined INTEGER NOT NULL CHECK (bytes_quarantined >= 0),
+    files_released    INTEGER NOT NULL CHECK (files_released >= 0),
     subject_label     TEXT    NOT NULL,
     session_label     TEXT    NOT NULL,
     storage           TEXT    NOT NULL,
@@ -94,7 +99,7 @@ CREATE TABLE receptions (
     last_file         INTEGER NOT NULL,
     step_at           INTEGER NOT NULL,
     ended_at          INTEGER,
-    associations      INTEGER NOT NULL,
+    associations      INTEGER NOT NULL CHECK (associations >= 0),
     calling_ae_titles TEXT    NOT NULL,
     calling_truncated INTEGER NOT NULL CHECK (calling_truncated IN (0, 1)),
     retry_of          TEXT    NOT NULL,
@@ -119,8 +124,17 @@ CREATE INDEX receptions_by_receiver    ON receptions (receiver, started, id);
 CREATE INDEX receptions_by_study       ON receptions (study_uid, started, id);
 CREATE INDEX receptions_by_state       ON receptions (state, started, id);
 CREATE INDEX receptions_in_progress    ON receptions (started, id) WHERE ended = 0;
--- Removing or moving a storage asks whether a reception names it.
-CREATE INDEX receptions_by_storage     ON receptions (storage);
+-- The combinations of the list's filters that a tenant with many receptions
+-- would otherwise answer by testing each row of one index: a receiver with
+-- in progress, a receiver with steps, a study with steps. A filter with in
+-- progress and steps keeps only the steps that have not ended, and needs no
+-- index of its own.
+CREATE INDEX receptions_receiver_in_progress ON receptions (receiver, started, id) WHERE ended = 0;
+CREATE INDEX receptions_by_receiver_state    ON receptions (receiver, state, started, id);
+CREATE INDEX receptions_by_study_state       ON receptions (study_uid, state, started, id);
+-- Removing or moving a storage asks whether a reception in progress names
+-- it.
+CREATE INDEX receptions_by_storage ON receptions (storage, ended);
 
 -- The associations that brought a reception's files, each once, so a batch
 -- written again counts none twice.
@@ -168,8 +182,8 @@ CREATE TABLE quarantine (
     called_ae           TEXT    NOT NULL,
     remote_addr         TEXT    NOT NULL,
     size                INTEGER NOT NULL CHECK (size >= 0),
-    sha256              BLOB,
-    kept_sha256         BLOB,
+    sha256              BLOB CHECK (sha256 IS NULL OR length(sha256) = 32),
+    kept_sha256         BLOB CHECK (kept_sha256 IS NULL OR length(kept_sha256) = 32),
     sop_class_uid       TEXT    NOT NULL,
     sop_instance_uid    TEXT    NOT NULL,
     study_uid           TEXT    NOT NULL,
@@ -179,7 +193,7 @@ CREATE TABLE quarantine (
     content_kept        INTEGER NOT NULL CHECK (content_kept IN (0, 1)),
     at                  INTEGER NOT NULL,
     decided_at          INTEGER,
-    release_mode        TEXT    NOT NULL,
+    release_mode        TEXT    NOT NULL CHECK (release_mode IN ('', 'as_is', 'overwrite')),
     release_reception   TEXT    NOT NULL,
     release_receiver    TEXT    NOT NULL,
     reject_reason       TEXT    NOT NULL,
@@ -197,6 +211,14 @@ CREATE INDEX quarantine_by_receiver  ON quarantine (receiver, at, id);
 CREATE INDEX quarantine_by_reception ON quarantine (reception_id, at, id);
 CREATE INDEX quarantine_by_study     ON quarantine (study_uid, at, id);
 CREATE INDEX quarantine_by_instance  ON quarantine (sop_instance_uid, at, id);
+-- The combinations of the three filters that each keep many records, so a
+-- look through the held files of one receiver or one reason reads only those.
+CREATE INDEX quarantine_by_state_reason          ON quarantine (state, reason, at, id);
+CREATE INDEX quarantine_by_state_receiver        ON quarantine (state, receiver, at, id);
+CREATE INDEX quarantine_by_receiver_reason       ON quarantine (receiver, reason, at, id);
+CREATE INDEX quarantine_by_state_receiver_reason ON quarantine (state, receiver, reason, at, id);
+-- A discard leaves out the files a record keeps, found by their place.
+CREATE INDEX quarantine_kept ON quarantine (incoming) WHERE content_kept = 1;
 
 -- The quarantine's running totals: files held now and the bytes kept for
 -- them, changed in the transaction of every change of a record, so they
@@ -207,6 +229,89 @@ CREATE TABLE quarantine_totals (
     bytes INTEGER NOT NULL CHECK (bytes >= 0)
 ) STRICT;
 INSERT INTO quarantine_totals (one, files, bytes) VALUES (1, 0, 0);
+
+-- The catalog. A subject is found by its label, a session by its Study
+-- Instance UID, a scan by its Series Instance UID; each keeps the label it
+-- was first given. folded is the label as label.Fold makes it, unique at its
+-- level, so two labels that a file system ignoring case would make one
+-- directory are never both held.
+CREATE TABLE subjects (
+    id      INTEGER NOT NULL PRIMARY KEY,
+    label   TEXT    NOT NULL,
+    folded  TEXT    NOT NULL UNIQUE,
+    created INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE sessions (
+    id         INTEGER NOT NULL PRIMARY KEY,
+    study_uid  TEXT    NOT NULL UNIQUE,
+    subject_id INTEGER NOT NULL,
+    label      TEXT    NOT NULL,
+    folded     TEXT    NOT NULL,
+    storage    TEXT    NOT NULL,
+    created    INTEGER NOT NULL,
+    UNIQUE (subject_id, folded)
+) STRICT;
+
+CREATE TABLE scans (
+    id              INTEGER NOT NULL PRIMARY KEY,
+    session_id      INTEGER NOT NULL,
+    series_uid      TEXT    NOT NULL UNIQUE,
+    label           TEXT    NOT NULL,
+    folded          TEXT    NOT NULL,
+    instances       INTEGER NOT NULL CHECK (instances >= 0),
+    bytes           INTEGER NOT NULL CHECK (bytes >= 0),
+    manifest_sha256 BLOB CHECK (manifest_sha256 IS NULL OR length(manifest_sha256) = 32),
+    created         INTEGER NOT NULL,
+    updated         INTEGER NOT NULL,
+    UNIQUE (session_id, folded)
+) STRICT;
+
+-- One row per SOP Instance UID in the tenant: the instance held (held_*,
+-- confirmed by the reception held_by, in a scan, at a key of a storage),
+-- the claim of a reception that has not confirmed yet (claim_*), or both,
+-- for a claim to overwrite. A claim not confirmed is removed when its
+-- reception ends; what is held stays.
+CREATE TABLE instances (
+    sop_instance_uid TEXT    NOT NULL PRIMARY KEY,
+    study_uid        TEXT    NOT NULL,
+    series_uid       TEXT    NOT NULL,
+    held_sha256      BLOB CHECK (held_sha256 IS NULL OR length(held_sha256) = 32),
+    held_by          TEXT    NOT NULL,
+    scan_id          INTEGER,
+    storage          TEXT    NOT NULL,
+    storage_key      TEXT    NOT NULL,
+    byte_offset      INTEGER NOT NULL CHECK (byte_offset >= 0),
+    byte_length      INTEGER NOT NULL CHECK (byte_length >= 0),
+    size             INTEGER NOT NULL CHECK (size >= 0),
+    archived_sha256  BLOB CHECK (archived_sha256 IS NULL OR length(archived_sha256) = 32),
+    held_at          INTEGER,
+    claim_sha256     BLOB CHECK (claim_sha256 IS NULL OR length(claim_sha256) = 32),
+    claimed_by       TEXT,
+    claimed_at       INTEGER,
+    CHECK (held_sha256 IS NOT NULL OR claimed_by IS NOT NULL),
+    CHECK ((held_sha256 IS NULL) = (scan_id IS NULL)),
+    CHECK ((claimed_by IS NULL) = (claim_sha256 IS NULL))
+) STRICT, WITHOUT ROWID;
+
+-- A reception's claims, to confirm or release them; the instances held on a
+-- storage, which make it hold data; the instances a reception confirmed, by
+-- scan, for its list of scans.
+CREATE INDEX instances_claimed    ON instances (claimed_by) WHERE claimed_by IS NOT NULL;
+CREATE INDEX instances_on_storage ON instances (storage) WHERE held_sha256 IS NOT NULL;
+CREATE INDEX instances_held_by    ON instances (held_by, scan_id) WHERE held_sha256 IS NOT NULL;
+CREATE INDEX scans_by_session     ON scans (session_id);
+
+-- The catalog's running totals, changed in the transaction of every
+-- commit, so they equal a count over the catalog after each.
+CREATE TABLE catalog_totals (
+    one       INTEGER NOT NULL PRIMARY KEY CHECK (one = 1),
+    subjects  INTEGER NOT NULL CHECK (subjects >= 0),
+    sessions  INTEGER NOT NULL CHECK (sessions >= 0),
+    scans     INTEGER NOT NULL CHECK (scans >= 0),
+    instances INTEGER NOT NULL CHECK (instances >= 0)
+) STRICT;
+INSERT INTO catalog_totals (one, subjects, sessions, scans, instances) VALUES (1, 0, 0, 0, 0);
 
 -- A unit of work. due is when a queued unit may be claimed, and when a
 -- leased unit's lease ends; attempt counts claims and fences every write of

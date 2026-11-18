@@ -28,22 +28,35 @@ func fillPipeline(tb testing.TB, path string) {
 		 INSERT INTO storages SELECT 'store' || i, 'directory', 'fast', 'd' || i, '', '', '', '', 0, '', NULL, 0, 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 200)
 		 INSERT INTO receivers SELECT 'recv' || i, 'dimse', 1, 'store' || i, 11000 + i, '', '{}', '', 60000000, 3600000000, 4294967296, 0, 0 FROM n`,
-		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 10000)
 		 INSERT INTO receptions SELECT 'rc' || i, 'recv' || (i % 200 + 1),
 		   CASE i % 50 WHEN 0 THEN '2.25.9.' || i ELSE '2.25.1.' || (i % 5000 + 1) END, i / 5000 + 1,
 		   CASE i % 50 WHEN 0 THEN 'receiving' WHEN 1 THEN 'complete' WHEN 2 THEN 'archived' WHEN 3 THEN 'failed' ELSE 'done' END,
 		   CASE WHEN i % 50 >= 3 THEN 1 ELSE 0 END,
 		   0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', CASE WHEN i % 50 >= 2 THEN 'store' || (i % 200 + 1) ELSE '' END, '',
 		   i * 1000000, i * 1000000, i * 1000000, NULL, 0, '[]', 0, '', '', '', NULL FROM n`,
-		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100000)
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO received_files SELECT 'rc' || (i % 20000 + 1), '2.25.3.' || i, randomblob(32), '2.25.2.1', '2.25.1.1',
 		   '1.2.840.10008.5.1.4.1.1.4', '1.2.840.10008.1.2.1', 1000, 'x/' || i, '', '', '', '', 0, 0 FROM n`,
-		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 10000)
 		 INSERT INTO quarantine SELECT 'q' || i, CASE i % 3 WHEN 0 THEN 'not_dicom' WHEN 1 THEN 'bad_uid' ELSE 'different_file' END,
 		   '{}', CASE i % 4 WHEN 0 THEN 'held' WHEN 1 THEN 'released' ELSE 'rejected' END, 'recv' || (i % 200 + 1), 'rc' || i,
 		   '', '', '', 10, NULL, NULL, '', '2.25.3.' || i, '2.25.1.' || (i % 5000 + 1), '', '', '', 0, i * 1000000, NULL,
 		   '', '', '', '', '' FROM n`,
-		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100000)
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 500)
+		 INSERT INTO subjects SELECT i, 'sub-' || i, 'sub-' || i, 0 FROM n`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)
+		 INSERT INTO sessions SELECT i, '2.25.1.' || i, i % 500 + 1, 'ses-' || i, 'ses-' || i, 'store' || (i % 200 + 1), 0 FROM n`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		 INSERT INTO scans SELECT i, i % 5000 + 1, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 5, 5000, NULL, 0, 0 FROM n`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		 INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.' || (i % 5000 + 1), '2.25.2.' || (i % 20000 + 1),
+		   CASE WHEN i % 100 = 0 THEN NULL ELSE randomblob(32) END, CASE WHEN i % 100 = 0 THEN '' ELSE 'rc' || (i % 20000 + 1) END,
+		   CASE WHEN i % 100 = 0 THEN NULL ELSE i % 20000 + 1 END, CASE WHEN i % 100 = 0 THEN '' ELSE 'store' || (i % 200 + 1) END,
+		   'k', 0, 1000, 1000, NULL, 0,
+		   CASE WHEN i % 100 = 0 THEN randomblob(32) ELSE NULL END, CASE WHEN i % 100 = 0 THEN 'rc' || (i % 20000 + 1) ELSE NULL END,
+		   NULL FROM n`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO work SELECT 'w' || i, 'reception', 'rc' || i, NULL, 'done', i, 1, 10, '', '', 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100)
 		 INSERT INTO work SELECT 'live' || i, 'reception', 'rc' || i, 'key' || i, 'queued', i, 0, 10, '', '', 0, 0 FROM n`,
@@ -120,7 +133,17 @@ func TestPipelinePlans(t *testing.T) {
 		{"the next arrival", "receptions_arrival", nextArrivalSQL, []any{"2.25.1.5"}},
 		{"a study's arrivals", "receptions_arrival", arrivalsSQL, []any{"2.25.1.5", 100}},
 		{"ReceivedFiles", "PRIMARY KEY", listReceivedSQL, []any{"rc5", "", []byte{}, 101}},
-		{"CheckDuplicates", "received_by_instance", duplicatesSQL, []any{`["2.25.3.5","2.25.3.6"]`}},
+		{"CheckDuplicates", "PRIMARY KEY", duplicatesSQL, []any{`["2.25.3.5","2.25.3.6"]`}},
+		{"an instance's row, for a claim", "PRIMARY KEY", instanceRowSQL, []any{"2.25.3.5"}},
+		{"a claim confirmed", "PRIMARY KEY", confirmInstanceSQL, []any{1, "s", "k", 0, 0, 0, []byte{1}, 0, "2.25.3.5", "rc5", "2.25.2.5"}},
+		{"a reception's claims released", "instances_claimed", releaseClaimedSQL, []any{"rc5"}},
+		{"a reception's claims to overwrite released", "instances_claimed", releaseOverwriteSQL, []any{"rc5"}},
+		{"a storage that holds data", "instances_on_storage", storageHoldsSQL, []any{"store5"}},
+		{"ReceptionScans", "instances_held_by", receptionScansSQL, []any{"rc5", 10001}},
+		{"CatalogLabels, the session", "sqlite_autoindex_sessions_1", sessionLabelsSQL, []any{"2.25.1.5"}},
+		{"CatalogLabels, the scans", "sqlite_autoindex_scans_1", scanLabelsSQL, []any{`["2.25.2.5","2.25.2.6"]`}},
+		{"DiscardedFiles", "quarantine_kept", discardedSQL, []any{"rc5", "", []byte{}, 101}},
+		{"a discard's count", "quarantine_kept", discardCountSQL, []any{"rc5"}},
 		{"ClaimWork", "work_claimable", claimNextSQL, []any{"reception", int64(50), claimCandidates}},
 		{"a unit by its key", "work_by_key", workByKeySQL, []any{"key5"}},
 	}
@@ -224,7 +247,7 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 	}
 	tables := run(`SELECT name || ' ' || strict FROM pragma_table_list WHERE schema = 'main' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
 	for _, want := range []string{"storages 1", "receivers 1", "receptions 1", "reception_associations 1", "received_files 1",
-		"quarantine 1", "quarantine_totals 1", "work 1"} {
+		"quarantine 1", "quarantine_totals 1", "work 1", "subjects 1", "sessions 1", "scans 1", "instances 1", "catalog_totals 1"} {
 		if !strings.Contains("\n"+tables+"\n", "\n"+want+"\n") {
 			t.Errorf("sqlite3 shows no STRICT table %q among:\n%s", want, tables)
 		}
@@ -234,13 +257,36 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 		"receptions_arrival", "receptions_open", "receptions_by_start", "receptions_by_receiver", "receptions_by_study",
 		"receptions_by_state", "receptions_in_progress", "receptions_by_storage", "received_by_instance", "quarantine_by_time",
 		"quarantine_by_state", "quarantine_by_reason", "quarantine_by_receiver", "quarantine_by_reception",
-		"quarantine_by_study", "quarantine_by_instance", "work_by_key", "work_claimable"} {
+		"quarantine_by_study", "quarantine_by_instance", "work_by_key", "work_claimable",
+		"receptions_receiver_in_progress", "receptions_by_receiver_state", "receptions_by_study_state",
+		"quarantine_by_state_reason", "quarantine_by_state_receiver", "quarantine_by_receiver_reason",
+		"quarantine_by_state_receiver_reason", "quarantine_kept", "instances_claimed", "instances_on_storage",
+		"instances_held_by", "scans_by_session"} {
 		if !strings.Contains("\n"+indexes+"\n", "\n"+want+"\n") {
 			t.Errorf("sqlite3 shows no index %s", want)
 		}
 	}
 	if got := run(`SELECT files || ' ' || bytes FROM quarantine_totals`); got != "0 0" {
 		t.Errorf("the quarantine's totals start at %q, want 0 0", got)
+	}
+	if got := run(`SELECT subjects || ' ' || sessions || ' ' || scans || ' ' || instances FROM catalog_totals`); got != "0 0 0 0" {
+		t.Errorf("the catalog's totals start at %q, want 0 0 0 0", got)
+	}
+	// The CHECK constraints refuse what the driver never writes: a
+	// negative count, a checksum of the wrong length, an instance neither
+	// held nor claimed.
+	for _, bad := range []string{
+		`UPDATE catalog_totals SET instances = -1`,
+		`UPDATE quarantine_totals SET files = -1`,
+		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, held_by, storage, storage_key, byte_offset, byte_length, size)
+		 VALUES ('1.2', '1.2', '1.2', '', '', '', 0, 0, 0)`,
+		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, held_by, storage, storage_key, byte_offset, byte_length, size,
+		 claim_sha256, claimed_by) VALUES ('1.2', '1.2', '1.2', '', '', '', 0, 0, 0, x'00', 'rc')`,
+	} {
+		out, err := exec.Command(tool, "-batch", path, bad).CombinedOutput() //nolint:gosec // G204, G702: the tool and the database are this test's own.
+		if err == nil || !strings.Contains(string(out), "CHECK constraint failed") {
+			t.Errorf("sqlite3 let %q through: %v %s", bad, err, out)
+		}
 	}
 	plan := run(`EXPLAIN QUERY PLAN ` + strings.ReplaceAll(strings.ReplaceAll(claimNextSQL, "?", "1"), "kind = 1", "kind = 'reception'"))
 	if !strings.Contains(plan, "work_claimable") {

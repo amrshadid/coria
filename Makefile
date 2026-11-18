@@ -121,6 +121,7 @@ test:
 # and made the race run a third longer. -v so its numbers are in the log.
 test-scale:
 	$(GO) test -count=1 -v -run '^TestThousandTenants$$' ./internal/registry
+	$(GO) test -count=1 -v -run '^TestListFiltersAtScale$$' ./internal/driver/sqlite
 
 build:
 	@set -e; for platform in $(PLATFORMS); do \

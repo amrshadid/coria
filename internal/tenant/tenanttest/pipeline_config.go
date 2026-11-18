@@ -144,8 +144,10 @@ func testStorageSetPartial(e *penv) {
 
 // testStorageInUse guards the rules that keep a storage's data where the
 // catalog says: a storage a receiver names is not removed; one a reception
-// was identified to (it may hold archived files) is not removed and its
-// location does not change, though its capacity may.
+// in progress was identified to is not removed and its location does not
+// change; once that reception ended with nothing archived it may go; one
+// that holds an instance is never removed and its location never changes,
+// though its capacity may.
 func testStorageInUse(e *penv) {
 	e.addReceiver("dimse-a", "store-a", 11112)
 	_, err := e.p.RemoveStorage(e.ctx, "store-a", e.audit(), nil)
@@ -153,22 +155,110 @@ func testStorageInUse(e *penv) {
 	if err != nil && !strings.Contains(fault.Message(err), "dimse-a") {
 		e.Errorf("the refusal %q does not say which receiver", fault.Message(err))
 	}
-	r := e.openReception("dimse-a", 1, at(10))
-	e.stepTo(r, "identified", "store-a")
-	_, err = e.p.RemoveReceiver(e.ctx, "dimse-a", e.audit(), nil)
-	e.ok("RemoveReceiver", err)
-	_, err = e.p.RemoveStorage(e.ctx, "store-a", e.audit(), nil)
-	e.wantPrecondition("RemoveStorage of a storage a reception was archived to", err)
-	_, err = e.p.SetStorage(e.ctx, tenant.Storage{Name: "store-a", Directory: tenant.DirectoryStorage{Path: "moved"}},
-		[]tenant.StorageField{tenant.FieldDirectoryPath}, at(20), e.audit(), nil)
-	e.wantPrecondition("SetStorage of the path of a storage that may hold files", err)
-	_, err = e.p.SetStorage(e.ctx, tenant.Storage{Name: "store-a", CapacityBytes: 7},
-		[]tenant.StorageField{tenant.FieldCapacityBytes}, at(20), e.audit(), nil)
-	e.ok("SetStorage of the capacity of a storage that holds files", err)
 	e.addStorage("store-b")
-	_, err = e.p.SetStorage(e.ctx, tenant.Storage{Name: "store-b", Directory: tenant.DirectoryStorage{Path: "moved"}},
-		[]tenant.StorageField{tenant.FieldDirectoryPath}, at(20), e.audit(), nil)
-	e.ok("SetStorage of the path of a storage that holds nothing", err)
+	e.addStorage("store-c")
+	moved := tenant.Storage{Name: "store-b", Directory: tenant.DirectoryStorage{Path: "moved"}}
+	r := e.stepTo(e.openReception("dimse-a", 1, at(10)), "identified", "store-b")
+	_, err = e.p.RemoveStorage(e.ctx, "store-b", e.audit(), nil)
+	e.wantPrecondition("RemoveStorage of a storage a reception in progress archives to", err)
+	_, err = e.p.SetStorage(e.ctx, moved, []tenant.StorageField{tenant.FieldDirectoryPath}, at(20), e.audit(), nil)
+	e.wantPrecondition("SetStorage of the path of a storage a reception in progress archives to", err)
+	e.failReception(r)
+	_, err = e.p.SetStorage(e.ctx, moved, []tenant.StorageField{tenant.FieldDirectoryPath}, at(20), e.audit(), nil)
+	e.ok("SetStorage of the path of a storage whose reception ended with nothing archived", err)
+	_, err = e.p.RemoveStorage(e.ctx, "store-b", e.audit(), nil)
+	e.ok("RemoveStorage of a storage whose reception ended with nothing archived", err)
+
+	r = e.openReception("dimse-a", 2, at(30))
+	f := file(r, 2, 1)
+	_, err = e.p.AddReceivedFiles(e.ctx, []tenant.ReceivedFile{f}, at(31))
+	e.ok("AddReceivedFiles", err)
+	r = e.stepTo(r, "identified", "store-c")
+	e.commit(r, f)
+	e.stepTo(r, "done", "store-c")
+	_, err = e.p.RemoveStorage(e.ctx, "store-c", e.audit(), nil)
+	e.wantPrecondition("RemoveStorage of a storage that holds an instance", err)
+	_, err = e.p.SetStorage(e.ctx, tenant.Storage{Name: "store-c", Directory: tenant.DirectoryStorage{Path: "moved-c"}},
+		[]tenant.StorageField{tenant.FieldDirectoryPath}, at(40), e.audit(), nil)
+	e.wantPrecondition("SetStorage of the path of a storage that holds an instance", err)
+	_, err = e.p.SetStorage(e.ctx, tenant.Storage{Name: "store-c", CapacityBytes: 7},
+		[]tenant.StorageField{tenant.FieldCapacityBytes}, at(40), e.audit(), nil)
+	e.ok("SetStorage of the capacity of a storage that holds an instance", err)
+}
+
+// testIdentifyStorage guards that a reception is identified only to a
+// storage the tenant has, checked in the step's transaction, so the rules
+// of a storage in use cannot be passed by naming one that is not there.
+func testIdentifyStorage(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	r := e.stepTo(e.openReception("a", 1, at(1)), "complete", "store")
+	_, err := e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: r.State, Event: "identify", At: at(100),
+		SubjectLabel: "sub-01", SessionLabel: "ses-01", Storage: "nosuch"}, nil)
+	e.wantPrecondition("identify to a storage the tenant does not have", err)
+	if got, _, _ := e.p.Reception(e.ctx, r.ID); got.State != "complete" {
+		e.Errorf("a refused identify moved the reception to %s", got.State)
+	}
+}
+
+// testBindAddressClash guards the receivers that would contend for one port
+// at the operating system: 0.0.0.0 with any IPv4 address, :: with any
+// address, 0.0.0.0 with ::, and an empty address with any; and the ones
+// that do not: two IPv4 addresses, an IPv4 and a specific IPv6 address. An
+// IPv4-mapped IPv6 address is refused, so each address has one spelling.
+func testBindAddressClash(e *penv) {
+	e.addStorage("store")
+	add := func(name, addr string, port int) error {
+		r := receiverOf(name, "store", port)
+		r.DIMSE.BindAddress = addr
+		_, err := e.p.AddReceiver(e.ctx, r, T0, e.audit(), nil)
+		return err
+	}
+	for i, c := range []struct{ first, second string }{
+		{"0.0.0.0", "127.0.0.1"}, {"127.0.0.1", "0.0.0.0"}, {"0.0.0.0", "::"}, {"::", "0.0.0.0"},
+		{"::", "::1"}, {"::", "192.0.2.1"}, {"", "::1"}, {"192.0.2.1", ""}, {"2001:db8::1", "2001:db8::1"},
+	} {
+		port := 12000 + i
+		e.ok("AddReceiver "+c.first, add(fmt.Sprintf("first%d", i), c.first, port))
+		e.wantPrecondition(fmt.Sprintf("AddReceiver %q beside %q on one port", c.second, c.first), add(fmt.Sprintf("second%d", i), c.second, port))
+	}
+	for i, c := range []struct{ first, second string }{
+		{"127.0.0.1", "192.0.2.1"}, {"0.0.0.0", "::1"}, {"192.0.2.1", "2001:db8::1"},
+	} {
+		port := 13000 + i
+		e.ok("AddReceiver "+c.first, add(fmt.Sprintf("apart%d", i), c.first, port))
+		e.ok(fmt.Sprintf("AddReceiver %q beside %q on one port", c.second, c.first), add(fmt.Sprintf("beside%d", i), c.second, port))
+	}
+	e.wantKind("AddReceiver on an IPv4-mapped IPv6 address", add("mapped", "::ffff:192.0.2.9", 14000), fault.Invalid)
+}
+
+// testEndpointSpelling guards that an S3 endpoint is kept in one spelling
+// (scheme and host in lowercase, no default port, no final slash), so two
+// storages on one bucket cannot pass the overlap rule by spelling one
+// endpoint two ways, and that an endpoint with a path, a query, user
+// information or another scheme is refused.
+func testEndpointSpelling(e *penv) {
+	add := func(name, endpoint string) (tenant.Storage, error) {
+		s := s3Storage(name, "")
+		s.S3.Endpoint = endpoint
+		return e.p.AddStorage(e.ctx, s, T0, e.audit(), nil)
+	}
+	got, err := add("s1", "HTTPS://S3.Example.org:443/")
+	e.ok("AddStorage", err)
+	if got.S3.Endpoint != "https://s3.example.org" {
+		e.Errorf("an endpoint is kept as %q, want https://s3.example.org", got.S3.Endpoint)
+	}
+	for i, ep := range []string{"https://s3.example.org", "https://s3.example.org/", "https://S3.EXAMPLE.ORG", "https://s3.example.org:443"} {
+		_, err := add(fmt.Sprintf("s%d", i+2), ep)
+		e.wantPrecondition(fmt.Sprintf("AddStorage on %q beside https://s3.example.org on one bucket", ep), err)
+	}
+	if got, err := add("other-port", "https://s3.example.org:8443"); err != nil || got.S3.Endpoint != "https://s3.example.org:8443" {
+		e.Errorf("an endpoint on another port = %q, %v", got.S3.Endpoint, err)
+	}
+	for _, ep := range []string{"https://s3.example.org/bucket", "https://s3.example.org?x=1", "https://user@s3.example.org",
+		"ftp://s3.example.org", "https://s3.example.org#f", "s3.example.org", "https://s3.example.org:99999"} {
+		_, err := add("bad", ep)
+		e.wantKind("AddStorage on "+ep, err, fault.Invalid)
+	}
 }
 
 // testReceivers guards receivers: one read back exactly with every field of
@@ -299,13 +389,22 @@ func testReceiverNameHeld(e *penv) {
 	e.ok("AddReceiver with the name of a removed receiver nothing names", err)
 }
 
-// testConfigGuards guards the Guard and the audit entry of every change of
-// configuration: a Guard that refuses undoes the change and its entry, and
-// runs once, after the change is written and before the commit.
-func testConfigGuards(e *penv) {
+// testChangeGuards guards the Guard and the audit entry of every change a
+// key asks for, configuration and decisions alike: a Guard that refuses
+// undoes the change and its entry; one that allows lets the change be made
+// once, with its entry, and runs after the change is written and before the
+// commit. A Guard may be called more than once for one change (Guard), so
+// what is asserted is the effect, once, not the number of calls.
+func testChangeGuards(e *penv) {
 	refusal := fault.New(fault.Denied, "a test's refusal")
 	e.addStorage("kept")
 	e.addReceiver("kept-r", "kept", 11112)
+	e.addReceiver("decisions", "decide", 11113)
+	retried := e.failReception(e.openReception("decisions", 1, at(1)))
+	discarded := e.failReception(e.openReception("decisions", 2, at(1)))
+	released, rejected := e.heldFile("decisions", 10, 1), e.heldFile("decisions", 20, 2)
+	_, err := e.p.HoldFiles(e.ctx, []tenant.QuarantinedFile{released, rejected})
+	e.ok("HoldFiles", err)
 	type op struct {
 		name string
 		do   func(tenant.Guard, master.AuditEntry) error
@@ -338,13 +437,35 @@ func testConfigGuards(e *penv) {
 			_, err := e.p.RemoveStorage(e.ctx, "kept", a, g)
 			return err
 		}, func() bool { return !storageThere("kept") }},
+		{"RetryReception", func(g tenant.Guard, a master.AuditEntry) error {
+			_, _, err := e.p.RetryReception(e.ctx, retried.ID, "retry-made", "", T0, a, g)
+			return err
+		}, func() bool { _, _, err := e.p.Reception(e.ctx, "retry-made"); return err == nil }},
+		{"DiscardReception", func(g tenant.Guard, a master.AuditEntry) error {
+			_, err := e.p.DiscardReception(e.ctx, discarded.ID, "not wanted", T0, a, g)
+			return err
+		}, func() bool { r, _, _ := e.p.Reception(e.ctx, discarded.ID); return r.DiscardReason != "" }},
+		{"ReleaseQuarantined", func(g tenant.Guard, a master.AuditEntry) error {
+			_, err := e.p.ReleaseQuarantined(e.ctx, released.ID, tenant.ReleaseAsIs, "", "release-made", T0, a, g)
+			return err
+		}, func() bool {
+			q, _ := e.p.QuarantinedFile(e.ctx, released.ID)
+			return q.State == tenant.QuarantineReleased
+		}},
+		{"RejectQuarantined", func(g tenant.Guard, a master.AuditEntry) error {
+			_, err := e.p.RejectQuarantined(e.ctx, rejected.ID, "not wanted", T0, a, g)
+			return err
+		}, func() bool {
+			q, _ := e.p.QuarantinedFile(e.ctx, rejected.ID)
+			return q.State == tenant.QuarantineRejected
+		}},
 	}
 	for _, o := range ops {
 		var calls atomic.Int32
 		a := e.audit()
 		err := o.do(func(context.Context) error { calls.Add(1); return refusal }, a)
 		e.wantKind(o.name+" with a Guard that refuses", err, fault.Denied)
-		if o.made() || e.auditIDs()[a.ID] || calls.Load() != 1 {
+		if o.made() || e.auditIDs()[a.ID] || calls.Load() < 1 {
 			e.Errorf("%s with a Guard that refuses: made %v, entry written %v, Guard ran %d times", o.name, o.made(), e.auditIDs()[a.ID], calls.Load())
 		}
 		var seenInside bool

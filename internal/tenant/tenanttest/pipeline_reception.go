@@ -99,8 +99,9 @@ func testOpenReceptionConcurrent(e *penv) {
 
 // testReceptionSteps guards the steps along the main line: each is the
 // state the core's table gives, with its time, the labels and storage with
-// identify, the counts a step decides, and the end time at the end; the
-// received counts a step does not decide are kept.
+// identify, the duplicate counts a step decides, the archived counts a
+// scan's commit adds, and the end time at the end; the counts a step does
+// not decide are kept.
 func testReceptionSteps(e *penv) {
 	e.addReceiver("a", "store", 11112)
 	r := e.openReception("a", 1, at(1))
@@ -119,8 +120,9 @@ func testReceptionSteps(e *penv) {
 	if r.SubjectLabel != "sub-x" || r.SessionLabel != "ses-y" || r.Storage != "store" {
 		e.Errorf("identify kept no labels: %+v", r)
 	}
+	e.commit(r, file(r, 1, 1))
 	r, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Identified, Event: reception.Archive, At: at(72),
-		Counts: &tenant.StepCounts{FilesArchived: 1, BytesArchived: 1001, FilesDuplicate: 1, BytesDuplicate: 1002}}, nil)
+		Counts: &tenant.StepCounts{FilesDuplicate: 1, BytesDuplicate: 1002}}, nil)
 	e.ok("StepReception archive", err)
 	want := tenant.ReceptionCounts{FilesReceived: 2, BytesReceived: 2003, FilesArchived: 1, BytesArchived: 1001, FilesDuplicate: 1, BytesDuplicate: 1002}
 	if r.Counts != want {
@@ -277,6 +279,14 @@ func testReceptionList(e *penv) {
 		{"steps", tenant.ReceptionFilter{States: []reception.State{reception.Archived, reception.Failed}},
 			func(r tenant.Reception) bool { return r.State == reception.Archived || r.State == reception.Failed }},
 		{"in progress", tenant.ReceptionFilter{InProgress: true}, func(r tenant.Reception) bool { return !r.State.Ended() }},
+		{"in progress, ended steps only", tenant.ReceptionFilter{InProgress: true, States: []reception.State{reception.Done, reception.Failed}},
+			func(tenant.Reception) bool { return false }},
+		{"in progress with steps", tenant.ReceptionFilter{InProgress: true, States: []reception.State{reception.Archived, reception.Failed}},
+			func(r tenant.Reception) bool { return r.State == reception.Archived }},
+		{"a receiver with steps", tenant.ReceptionFilter{Receiver: "a", States: []reception.State{reception.Archived, reception.Done}},
+			func(r tenant.Reception) bool {
+				return r.Receiver == "a" && (r.State == reception.Archived || r.State == reception.Done)
+			}},
 		{"a time range", tenant.ReceptionFilter{Since: at(20), Until: at(80)},
 			func(r tenant.Reception) bool { return !r.Started.Before(at(20)) && r.Started.Before(at(80)) }},
 		{"a receiver in progress since", tenant.ReceptionFilter{Receiver: "a", InProgress: true, Since: at(30)},

@@ -100,4 +100,11 @@ type Store interface {
 // the master, so a tenant's store cannot read them in its own transaction;
 // the caller hands it this check instead, which asks the master
 // (master.Store.CheckActor).
+//
+// A Guard may be called more than once for one change: a driver that
+// commits several changes in one transaction runs a change again, Guard
+// included, when that transaction is undone by something else (as the
+// SQLite driver does). It must be safe to repeat: it reads, and decides,
+// and does nothing outside the change's transaction that a repeat would
+// do twice. The change it allows is still made once.
 type Guard func(ctx context.Context) error

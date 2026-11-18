@@ -53,7 +53,54 @@ import (
 // Every list is paged by a cursor bound to its list, its filter and the
 // tenant, and every list, claim and lookup is answered from an index.
 // Batches are bounded (MaxReceivedBatch, MaxQuarantineBatch,
-// MaxDuplicateBatch); a larger one is Invalid.
+// MaxDuplicateBatch, MaxClaimBatch, MaxScanCommit); a larger one is Invalid.
+//
+// # Instances: claimed, then confirmed
+//
+// What the tenant holds is its catalog's instance rows, one per SOP Instance
+// UID, never a reading of receptions' states. A reception that archives
+// first claims its instances (ClaimInstances), before it writes anything to
+// a storage; after the files are on the storage and read back, it confirms
+// them (CommitScan) in the transaction that writes their scan's catalog
+// rows, one scan at a time. A reception that ends, or is discarded or
+// retried, releases the claims it did not confirm in the transaction of
+// that step; what it confirmed stays held whatever becomes of it. So two
+// receptions in flight never both archive one instance: the second is told
+// the UID is Claimed, and tries again later, through its leased work.
+//
+// # Several writers
+//
+// A driver on a database with several writers (Postgres at read committed)
+// keeps each operation's rules under concurrent calls; the SQLite driver's
+// one writer keeps them by running one transaction at a time. What each
+// operation must guarantee there:
+//
+//   - every condition a change depends on (a reception's state and last
+//     file time, a unit's attempt, a record's state, a claim's owner) is in
+//     the statement that changes the row, or the row is locked by an
+//     update before it is read, so a change made meanwhile is seen, never
+//     overwritten;
+//   - OpenReception: calls at once for one receiver and study return the
+//     one reception that won, never a Conflict; arrival numbers stay
+//     unique and without gaps under concurrent opens of one study;
+//   - AddReceivedFiles: a step and a batch of one reception are ordered
+//     (the batch locks the reception's row first), so a quiet step decided
+//     before a file is refused (ErrStateChanged), and a batch after the
+//     step is refused (ErrReceptionClosed);
+//   - ClaimInstances: a claim of one UID by two receptions at once gives it
+//     to one; the other waits for that one's commit and is answered
+//     Claimed (or a held answer once confirmed);
+//   - ClaimWork: two claims at once take different units (on Postgres:
+//     FOR UPDATE SKIP LOCKED);
+//   - every fenced write locks the unit's row with its attempt in the
+//     condition, so a takeover waits for it or it fails;
+//   - changes of configuration (storages, receivers) check rules across
+//     rows (names, overlaps, ports): a driver serializes them per tenant,
+//     as with a lock taken first in each such transaction.
+//
+// The suite runs these cases on every driver; on SQLite's one writer they
+// pass by serialization, and the cases that need true concurrency say so
+// where they are.
 type Pipeline interface {
 	Store
 
@@ -74,23 +121,24 @@ type Pipeline interface {
 	// whose Name names the storage, and no other; Updated becomes now. The
 	// type cannot change, so a field of the other type's configuration is
 	// Invalid; the access key id and the secret are named together or not
-	// at all, and a secret named is not empty. Once a reception names the
-	// storage (it may hold archived files) a change of where its files are
-	// is a precondition failure. The rules of AddStorage apply to the
-	// result.
+	// at all, and a secret named is not empty. A change of where its files
+	// are is a precondition failure while the storage holds an instance or
+	// a reception that has not ended names it. The rules of AddStorage
+	// apply to the result. An S3 endpoint is kept as NormalizeEndpoint
+	// spells it.
 	SetStorage(ctx context.Context, s Storage, fields []StorageField, now time.Time, audit master.AuditEntry, guard Guard) (Storage, error)
 	// RemoveStorage removes the storage and returns it as it was. A storage
-	// a receiver names, or one a reception names (it may hold archived
-	// files), is a precondition failure whose message says which. A storage
-	// not there is NotFound.
+	// a receiver names, one a reception that has not ended names, and one
+	// that holds an instance, are precondition failures whose message says
+	// which. A storage not there is NotFound.
 	RemoveStorage(ctx context.Context, name string, audit master.AuditEntry, guard Guard) (Storage, error)
 
 	// AddReceiver adds a receiver, with Created and Updated set to now. A
 	// name taken by a receiver, or still named by a reception or a
 	// quarantined file of a receiver removed, is Conflict, so a name in a
 	// record always means one receiver. A storage the tenant does not have,
-	// and another receiver on the same port whose bind address is the same
-	// or either is empty, are precondition failures.
+	// and another receiver that would contend for the same port
+	// (ReceiversClash), are precondition failures.
 	AddReceiver(ctx context.Context, r Receiver, now time.Time, audit master.AuditEntry, guard Guard) (Receiver, error)
 	// Receiver returns the receiver of that name, or NotFound.
 	Receiver(ctx context.Context, name string) (Receiver, error)
@@ -118,13 +166,18 @@ type Pipeline interface {
 	ListReceptions(ctx context.Context, filter ReceptionFilter, page master.Page) ([]Reception, string, error)
 	// StepReception moves a reception by one step, as reception.Step allows
 	// it from step.From, comparing and setting the state: when the stored
-	// state is not step.From nothing changes and the error holds
-	// ErrStateChanged; a step the table refuses holds the
-	// *reception.Refusal (errors.As), Already among them. Both are
-	// Conflict. hook, when not nil, runs inside the step's transaction
-	// after the reception is written and before the commit, with the
-	// reception as it was and as it is; an error from it undoes the step
-	// and is returned as it is. It is where the step's event is written.
+	// state is not step.From, or its last file time not step.LastFile when
+	// that is given, nothing changes and the error holds ErrStateChanged; a
+	// step the table refuses holds the *reception.Refusal (errors.As),
+	// Already among them. Both are Conflict. Identify's storage must be the
+	// tenant's (a precondition). A step to an end releases the claims the
+	// reception did not confirm, in the same transaction. hook, when not
+	// nil, runs inside the step's transaction after the reception is
+	// written and before the commit, with the reception as it was and as it
+	// is; an error from it undoes the step and is returned as it is. It is
+	// where the step's event is written. The hook may run more than once
+	// for one step, as a Guard may (Guard): what it writes inside the
+	// transaction is undone with it, and it does nothing outside it.
 	StepReception(ctx context.Context, step ReceptionStep, hook StepHook) (Reception, error)
 	// RetryReception makes a new reception that runs the files of a failed
 	// one again: at the receiver named, or the failed one's when receiver
@@ -134,20 +187,30 @@ type Pipeline interface {
 	// as it stands with the one made then, and nothing more is made. A
 	// reception that has not failed or whose files were discarded, a
 	// failed one's receiver removed with none named, and a receiver named
-	// that does not exist, are precondition failures. The store adds the
+	// that does not exist, are precondition failures. The failed
+	// reception's claims not confirmed are released in the same
+	// transaction; its received files that are held instances are found
+	// SameFile by the new reception's claim and ignored. The store adds the
 	// detail DetailRetryReception, the id of the reception that runs the
 	// files, to the audit entry.
 	RetryReception(ctx context.Context, id, newID, receiver string, now time.Time, audit master.AuditEntry, guard Guard) (failed, retry Reception, err error)
 	// DiscardReception records that a failed reception's files left in the
-	// incoming area are removed, with the reason and now, and returns the
-	// reception; the caller then removes the bytes of its received files
-	// (ReceivedFiles), and a restart that finds a discarded reception's
-	// files still there removes them. A
-	// reception already discarded is returned as it stands with its first
-	// reason. A reception that has not failed or that was retried is a
-	// precondition failure. The store adds the details DetailFiles and
-	// DetailBytes, the files and bytes received, to the audit entry.
+	// incoming area are removed, with the reason and now, releases its
+	// claims not confirmed, and returns the reception; the caller then
+	// removes the bytes DiscardedFiles lists, and a restart that finds them
+	// still there removes them. The quarantine records of the reception
+	// stay, with their bytes, until each is released or rejected: a file a
+	// record keeps is never in the list. A reception already discarded is
+	// returned as it stands with its first reason. A reception that has
+	// not failed or that was retried is a precondition failure. The store
+	// adds the details DetailFiles and DetailBytes, the count and bytes of
+	// what DiscardedFiles lists, to the audit entry.
 	DiscardReception(ctx context.Context, id, reason string, now time.Time, audit master.AuditEntry, guard Guard) (Reception, error)
+	// DiscardedFiles returns a page of the received files of a discarded
+	// reception whose bytes the caller removes: every one no quarantine
+	// record keeps at the same place, in order of SOP Instance UID, then
+	// checksum. A reception not discarded is a precondition failure.
+	DiscardedFiles(ctx context.Context, receptionID string, page master.Page) ([]ReceivedFile, string, error)
 
 	// AddReceivedFiles records files that have landed in the incoming area,
 	// up to MaxReceivedBatch, all or none, and returns how many were new.
@@ -165,17 +228,61 @@ type Pipeline interface {
 	// of SOP Instance UID, then checksum.
 	ReceivedFiles(ctx context.Context, receptionID string, page master.Page) ([]ReceivedFile, string, error)
 	// CheckDuplicates says for each file, in order, up to
-	// MaxDuplicateBatch, whether the tenant already holds an instance with
-	// its SOP Instance UID, and how it compares (Duplicate).
+	// MaxDuplicateBatch, what the catalog holds or a reception claims under
+	// its SOP Instance UID (JudgeRow): NotHeld, SameFile, DifferentFile,
+	// UIDElsewhere or Claimed. It is a read, for the receiving step's early
+	// answer (a re-send ignored at once); the claim is the authority.
 	CheckDuplicates(ctx context.Context, files []DuplicateQuery) ([]Duplicate, error)
+
+	// ClaimInstances claims, for a reception that has been identified and
+	// not ended, the instances of up to MaxClaimBatch files before anything
+	// is written to a storage, in one transaction, and says for each file,
+	// in order, what the claim decided (DecideClaim): ClaimedNow or
+	// ClaimedBefore (the file goes on), SameFile (ignored), DifferentFile or
+	// UIDElsewhere (quarantined), or Claimed by another reception (tried
+	// again later through the leased work, when it resolves to one of the
+	// others). Two files of one batch under one UID with two checksums give
+	// ClaimedNow for the first and DifferentFile for the second. A claim
+	// written again after a crash answers ClaimedBefore and changes
+	// nothing. fence, when not nil, is the lease the claim is made under.
+	ClaimInstances(ctx context.Context, receptionID string, files []InstanceClaim, now time.Time, fence *WorkFence) ([]Duplicate, error)
+	// CommitScan writes one scan's catalog rows and confirms the
+	// instances given, which the reception must claim, in one transaction:
+	// the subject found or made by its label, the session by its Study
+	// Instance UID, the scan by its Series Instance UID under that session,
+	// each kept with the label it was first given. A label held at the
+	// same level by another (or the same but for case, label.Fold) is a
+	// LabelConflict; another subject for an existing session is one
+	// (FaultTwoSubjectsForOneStudy); a series of another session holds
+	// ErrSeriesElsewhere; labels or storage other than an existing
+	// session's or scan's own are a precondition failure. An instance
+	// confirmed again (a commit written again after a crash) is counted
+	// once. Each confirmed instance adds to the scan's counts, to the
+	// reception's archived counts, and to the catalog's totals, in the
+	// same transaction. A scan of more than MaxScanCommit instances is
+	// committed in several calls.
+	CommitScan(ctx context.Context, c ScanCommit) (Scan, error)
+	// CatalogLabels returns the labels and storage of the study's session
+	// and the labels of those of its series that have scans, as the
+	// catalog holds them.
+	CatalogLabels(ctx context.Context, studyUID string, seriesUIDs []string) (CatalogLabels, error)
+	// CatalogTotals returns the catalog's running totals.
+	CatalogTotals(ctx context.Context) (CatalogCounts, error)
+	// ReceptionScans returns the scans a reception confirmed instances in,
+	// in order of label, up to MaxReceptionScans, and whether there were
+	// more.
+	ReceptionScans(ctx context.Context, receptionID string) ([]ReceptionScan, bool, error)
 
 	// HoldFiles records files in quarantine, held, up to
 	// MaxQuarantineBatch, all or none, and returns how many were new. A
 	// record whose id is there already is skipped as it stands, so a batch
 	// written again after a crash changes nothing. Each new record adds to
 	// the quarantine's totals and, when it names a reception, to that
-	// reception's quarantined counts, in the same transaction. A reception
-	// named that is not there is a precondition failure.
+	// reception's quarantined counts, and also to its received counts when
+	// the reception has no received file of that UID and checksum (a file
+	// that arrived and could not be recorded as one), in the same
+	// transaction. A reception named that is not there is a precondition
+	// failure.
 	HoldFiles(ctx context.Context, files []QuarantinedFile) (int, error)
 	// QuarantinedFile returns the record of that id, or NotFound.
 	QuarantinedFile(ctx context.Context, id string) (QuarantinedFile, error)
@@ -187,7 +294,9 @@ type Pipeline interface {
 	// empty. A file with a valid study, series and instance UID and a
 	// checksum joins that receiver's reception of its study that is
 	// receiving, or a new one with receptionID opened at now, as a received
-	// file counted released; the record names that reception. A file
+	// file counted released; the record names that reception. Back into
+	// the reception it was quarantined from, it is counted released there
+	// and no longer quarantined, and not received twice. A file
 	// already released with the same mode is returned as it stands. Mode
 	// ReleaseOverwrite for a reason other than QuarantineDifferentFile is
 	// Invalid; a rejected file, one released with the other mode, one whose

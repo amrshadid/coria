@@ -400,3 +400,44 @@ func testBatchShared(e *penv, other tenant.Pipeline) {
 		e.Errorf("a batch written again on the other instance: %d new, %d received", n, got.Counts.FilesReceived)
 	}
 }
+
+// testInstanceClaimsShared guards that two receptions claiming the same
+// instances through two instances of the store at once, as two processes
+// would, never both claim one: each UID is claimed now by exactly one, and
+// the other is told it is Claimed by that one. On SQLite the two claims are
+// ordered by its one writer; a Postgres run shows it with the two
+// transactions truly at once, where the second insert waits for the first.
+func testInstanceClaimsShared(e *penv, other tenant.Pipeline) {
+	e.addReceiver("a", "store", 11112)
+	e.addReceiver("b", "store", 11113)
+	r1, _ := e.identified("a", 1)
+	r2, _ := e.identified("b", 1)
+	var claims []tenant.InstanceClaim
+	for n := range 50 {
+		claims = append(claims, claimOf(file(r1, 1, n)))
+	}
+	stores := []tenant.Pipeline{e.p, other}
+	recs := []tenant.Reception{r1, r2}
+	answers := make([][]tenant.Duplicate, 2)
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range 2 {
+		wg.Go(func() {
+			<-start
+			answers[i], errs[i] = stores[i].ClaimInstances(e.ctx, recs[i].ID, claims, at(20), nil)
+		})
+	}
+	close(start)
+	wg.Wait()
+	for i := range 2 {
+		e.ok("ClaimInstances", errs[i])
+	}
+	for n := range claims {
+		a, b := answers[0][n].Kind, answers[1][n].Kind
+		oneEach := (a == tenant.ClaimedNow && b == tenant.Claimed) || (a == tenant.Claimed && b == tenant.ClaimedNow)
+		if !oneEach {
+			e.Errorf("UID %d claimed at once by two receptions: %v and %v, want one claimed now and the other told claimed", n, a, b)
+		}
+	}
+}

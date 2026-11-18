@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/core/label"
+	"github.com/amrshadid/magnetar/internal/core/layout"
 	"github.com/amrshadid/magnetar/internal/core/reception"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
@@ -32,7 +34,10 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"StorageInUse", testStorageInUse},
 		{"Receivers", testReceivers},
 		{"ReceiverNameHeld", testReceiverNameHeld},
-		{"ConfigGuards", testConfigGuards},
+		{"ChangeGuards", testChangeGuards},
+		{"IdentifyStorage", testIdentifyStorage},
+		{"BindAddressClash", testBindAddressClash},
+		{"EndpointSpelling", testEndpointSpelling},
 		{"ConfigPagingWithDeletes", testConfigPagingWithDeletes},
 		{"OpenReception", testOpenReception},
 		{"OpenReceptionConcurrent", testOpenReceptionConcurrent},
@@ -46,7 +51,13 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"ReceivedFiles", testReceivedFiles},
 		{"ReceivedBatchRepeated", testReceivedBatchRepeated},
 		{"ReceivedFilesClosed", testReceivedFilesClosed},
-		{"Duplicates", testDuplicates},
+		{"Claims", testClaims},
+		{"ClaimsOutliveTheirReception", testClaimsOutliveTheirReception},
+		{"CommitScan", testCommitScan},
+		{"ReleaseIntoSameReception", testReleaseIntoSameReception},
+		{"DiscardKeepsQuarantined", testDiscardKeepsQuarantined},
+		{"HoldCountsReceived", testHoldCountsReceived},
+		{"CountIdentity", testCountIdentity},
 		{"QuarantineHold", testQuarantineHold},
 		{"QuarantineDetails", testQuarantineDetails},
 		{"QuarantineRelease", testQuarantineRelease},
@@ -81,6 +92,7 @@ func RunPipelineShared(t *testing.T, open OpenPipelinePair) {
 		{"ClaimsAcrossInstances", testClaimsShared},
 		{"OpenAcrossInstances", testOpenShared},
 		{"BatchRepeatedAcrossInstances", testBatchShared},
+		{"InstanceClaimsAcrossInstances", testInstanceClaimsShared},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -235,6 +247,72 @@ func (e *penv) failReception(r tenant.Reception) tenant.Reception {
 		At: r.LastFile.Add(time.Hour), Failure: "storage unreachable"}, nil)
 	e.ok("StepReception fail", err)
 	return r
+}
+
+// labelsOf returns the labels the suite gives a reception's study and a
+// series: the catalog's when it has them, and otherwise ones made from the
+// UIDs, as a naming rule of UIDs would.
+func (e *penv) labelsOf(studyUID, seriesUID string) label.Path {
+	e.Helper()
+	l, err := e.p.CatalogLabels(e.ctx, studyUID, []string{seriesUID})
+	e.ok("CatalogLabels", err)
+	p := label.Path{Subject: "sub-01", Session: "ses-" + studyUID, Scan: "scan-" + seriesUID}
+	if l.Session != nil {
+		p.Subject, p.Session = l.Session.SubjectLabel, l.Session.SessionLabel
+	}
+	if v, ok := l.Scans[seriesUID]; ok {
+		p.Scan = v
+	}
+	return p
+}
+
+// commit claims files of an identified reception (all of one series) and
+// commits those it claimed into their scan, as the archive step does once
+// they are on the storage; it returns the claim's answers.
+func (e *penv) commit(r tenant.Reception, files ...tenant.ReceivedFile) []tenant.Duplicate {
+	e.Helper()
+	claims := make([]tenant.InstanceClaim, len(files))
+	for i, f := range files {
+		claims[i] = tenant.InstanceClaim{SOPInstanceUID: f.SOPInstanceUID, StudyUID: f.StudyUID, SeriesUID: f.SeriesUID, SHA256: f.SHA256}
+	}
+	answers, err := e.p.ClaimInstances(e.ctx, r.ID, claims, r.StepTime, nil)
+	e.ok("ClaimInstances", err)
+	e.confirm(r, files, answers)
+	return answers
+}
+
+// confirm commits into their scans the files whose claim answered claimed
+// now or before, grouped by series, in one commit per series.
+func (e *penv) confirm(r tenant.Reception, files []tenant.ReceivedFile, answers []tenant.Duplicate) {
+	e.Helper()
+	bySeries := map[string][]tenant.ReceivedFile{}
+	var order []string
+	for i, f := range files {
+		if k := answers[i].Kind; k != tenant.ClaimedNow && k != tenant.ClaimedBefore {
+			continue
+		}
+		if _, ok := bySeries[f.SeriesUID]; !ok {
+			order = append(order, f.SeriesUID)
+		}
+		bySeries[f.SeriesUID] = append(bySeries[f.SeriesUID], f)
+	}
+	for _, series := range order {
+		p := e.labelsOf(r.StudyUID, series)
+		storage := r.Storage
+		if l, err := e.p.CatalogLabels(e.ctx, r.StudyUID, nil); err == nil && l.Session != nil {
+			storage = l.Session.Storage
+		}
+		c := tenant.ScanCommit{ReceptionID: r.ID, StudyUID: r.StudyUID, SeriesUID: series, SubjectLabel: p.Subject,
+			SessionLabel: p.Session, ScanLabel: p.Scan, Storage: storage, ManifestSHA256: sum(len(series)), At: r.StepTime}
+		for _, f := range bySeries[series] {
+			key, err := layout.InstanceKey(p, f.SOPInstanceUID)
+			e.ok("InstanceKey", err)
+			c.Instances = append(c.Instances, tenant.ConfirmedInstance{SOPInstanceUID: f.SOPInstanceUID, Key: key,
+				Length: f.Size, Size: f.Size, ArchivedSHA256: f.SHA256})
+		}
+		_, err := e.p.CommitScan(e.ctx, c)
+		e.ok("CommitScan", err)
+	}
 }
 
 // allPages calls list until it returns no cursor, and returns every item.

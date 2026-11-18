@@ -119,57 +119,6 @@ func testReceivedFilesClosed(e *penv) {
 	e.wantPrecondition("AddReceivedFiles into a complete reception", err)
 }
 
-// testDuplicates guards the duplicate check: for each file in order, a UID
-// the tenant holds with the same checksum, study and series is the same
-// file; with another checksum, a different file; under another study or
-// series, elsewhere (whatever the checksum); a UID held only by a
-// reception not yet archived, or one its reception quarantined, is not
-// held; and the held instance's checksum and UIDs come back.
-func testDuplicates(e *penv) {
-	e.addReceiver("a", "store", 11112)
-	held := e.openReception("a", 1, at(1))
-	_, err := e.p.AddReceivedFiles(e.ctx, []tenant.ReceivedFile{file(held, 1, 1), file(held, 1, 2)}, at(2))
-	e.ok("AddReceivedFiles", err)
-	quarantined := file(held, 1, 2)
-	_, err = e.p.HoldFiles(e.ctx, []tenant.QuarantinedFile{{ID: "q-read-back", Reason: tenant.QuarantineReadBackMismatch,
-		Details: map[string]string{"storage": "store", "read_sha256": strings.Repeat("ab", 32)}, Receiver: "a", ReceptionID: held.ID,
-		SOPInstanceUID: quarantined.SOPInstanceUID, StudyUID: quarantined.StudyUID, SeriesUID: quarantined.SeriesUID,
-		SHA256: quarantined.SHA256, Size: quarantined.Size, Incoming: quarantined.Incoming, ContentKept: true, Quarantined: at(3)}})
-	e.ok("HoldFiles", err)
-	e.stepTo(held, reception.Archived, "store")
-	pending := e.openReception("a", 2, at(4))
-	_, err = e.p.AddReceivedFiles(e.ctx, []tenant.ReceivedFile{file(pending, 2, 3)}, at(5))
-	e.ok("AddReceivedFiles", err)
-
-	q := func(n, study, series int, s tenant.SHA256) tenant.DuplicateQuery {
-		return tenant.DuplicateQuery{SOPInstanceUID: uidOf(3, n), StudyUID: uidOf(1, study), SeriesUID: uidOf(2, series), SHA256: s}
-	}
-	queries := []tenant.DuplicateQuery{
-		q(1, 1, 1, sum(1)), q(1, 1, 1, sum(77)), q(1, 1, 5, sum(1)), q(1, 4, 1, sum(1)), q(3, 2, 2, sum(3)), q(2, 1, 1, sum(2)), q(99, 1, 1, sum(99)),
-	}
-	got, err := e.p.CheckDuplicates(e.ctx, queries)
-	e.ok("CheckDuplicates", err)
-	wantKinds := []tenant.DuplicateKind{tenant.SameFile, tenant.DifferentFile, tenant.UIDElsewhere, tenant.UIDElsewhere, tenant.NotHeld, tenant.NotHeld, tenant.NotHeld}
-	if len(got) != len(queries) {
-		e.Fatalf("CheckDuplicates answered %d, want %d", len(got), len(queries))
-	}
-	for i, d := range got {
-		if d.Kind != wantKinds[i] {
-			e.Errorf("query %d: kind %d, want %d", i, d.Kind, wantKinds[i])
-		}
-	}
-	if d := got[1]; d.HeldSHA256 != sum(1) || d.HeldStudyUID != uidOf(1, 1) || d.HeldSeriesUID != uidOf(2, 1) {
-		e.Errorf("a different file's held instance: %+v", d)
-	}
-	if d := got[4]; d != (tenant.Duplicate{}) {
-		e.Errorf("a UID not held answered %+v, want zero", d)
-	}
-	none, err := e.p.CheckDuplicates(e.ctx, nil)
-	if err != nil || len(none) != 0 {
-		e.Errorf("CheckDuplicates of nothing = %v, %v", none, err)
-	}
-}
-
 // heldFile returns a held record of reason not DICOM, kept, of size bytes.
 func (e *penv) heldFile(receiver string, size int64, when int) tenant.QuarantinedFile {
 	id := e.id("q")
