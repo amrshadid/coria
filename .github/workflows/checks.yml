@@ -51,14 +51,19 @@ jobs:
       # check-latest takes the newest patch release rather than whatever the
       # runner image has cached: govulncheck reports the standard library of
       # the Go that runs it, so an old patch would fail it for nothing here.
-      # No module cache: the module has two small dependencies, which
-      # download in seconds.
+      # The module and build caches are kept, keyed on go.sum (and, by
+      # setup-go, on the Go version and the system): most of a job's time
+      # was compiling modernc.org/sqlite's translation of SQLite, once for
+      # each of vet, vet on 386, lint, the race build, the 386 tests and the
+      # five static builds, and that output does not change until go.sum
+      # does.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Go version
         run: go version
@@ -158,12 +163,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # The module and build caches, keyed on go.sum, as in the Linux job.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
           check-latest: true
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Go version
         run: go version
@@ -188,12 +195,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # The module and build caches, keyed on go.sum, as in the Linux job.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27'
           check-latest: true
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Go version
         run: go version

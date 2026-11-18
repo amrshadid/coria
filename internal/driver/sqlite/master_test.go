@@ -3,12 +3,17 @@ package sqlite
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
@@ -59,11 +64,39 @@ func TestShippedMigrationsUnchanged(t *testing.T) {
 }
 
 // shippedInit is the SHA-256 of 0001_init.sql as this change ships it.
-const shippedInit = "294f40182be2c97a37b4335a5de67b47ea85c10fdaa63bf0ac4985b724ba3f59"
+const shippedInit = "79fc962d444c26b99122a0f849ff133365f1b8237d22a45f72766cf6ca420688"
 
-// TestPragmas guards the settings each connection of each pool is opened
+// openPair opens two stores on one fresh, migrated file, as two processes
+// would, for the suite's tests across instances.
+func openPair(tb testing.TB) (master.Store, master.Store) {
+	tb.Helper()
+	ctx := context.Background()
+	path := filepath.Join(tb.TempDir(), "master.db")
+	var out [2]master.Store
+	for i := range out {
+		m, err := OpenMaster(ctx, path)
+		if err != nil {
+			tb.Fatal(err)
+		}
+		tb.Cleanup(func() { _ = m.Close() })
+		if err := m.Migrate(ctx); err != nil {
+			tb.Fatal(err)
+		}
+		out[i] = m
+	}
+	return out[0], out[1]
+}
+
+// TestMasterContractShared runs the suite's tests that need two instances on
+// one database.
+func TestMasterContractShared(t *testing.T) {
+	mastertest.RunShared(t, openPair)
+}
+
+// TestPragmas guards the settings every connection of each pool is opened
 // with, read back from SQLite itself, since a DSN key the driver did not
-// understand would be ignored silently.
+// understand would be ignored silently. All the read pool's connections are
+// held at once, so each is a different connection.
 func TestPragmas(t *testing.T) {
 	ctx := context.Background()
 	p, err := openPools(ctx, filepath.Join(t.TempDir(), "master.db"))
@@ -71,27 +104,168 @@ func TestPragmas(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = p.close() })
-	want := map[string]map[string]string{
-		"write": {"journal_mode": "wal", "foreign_keys": "1", "synchronous": "2", "busy_timeout": "10000", "query_only": "0", "fullfsync": "1", "checkpoint_fullfsync": "1"},
-		"read":  {"journal_mode": "wal", "foreign_keys": "1", "synchronous": "2", "busy_timeout": "10000", "query_only": "1", "fullfsync": "1", "checkpoint_fullfsync": "1"},
-	}
-	for pool, pragmas := range want {
-		db := p.write
-		if pool == "read" {
-			db = p.read
-		}
-		for pragma, value := range pragmas {
+	common := map[string]string{"journal_mode": "wal", "foreign_keys": "1", "synchronous": "2", "busy_timeout": "10000", "fullfsync": "1", "checkpoint_fullfsync": "1"}
+	check := func(name string, conn *sql.Conn, queryOnly string) {
+		t.Helper()
+		want := maps.Clone(common)
+		want["query_only"] = queryOnly
+		for pragma, value := range want {
 			var got string
-			if err := db.QueryRowContext(ctx, "PRAGMA "+pragma).Scan(&got); err != nil {
-				t.Fatalf("%s PRAGMA %s: %v", pool, pragma, err)
+			if err := conn.QueryRowContext(ctx, "PRAGMA "+pragma).Scan(&got); err != nil {
+				t.Fatalf("%s PRAGMA %s: %v", name, pragma, err)
 			}
 			if got != value {
-				t.Errorf("%s pool: PRAGMA %s = %s, want %s", pool, pragma, got, value)
+				t.Errorf("%s: PRAGMA %s = %s, want %s", name, pragma, got, value)
 			}
 		}
 	}
-	if _, err := p.read.ExecContext(ctx, "CREATE TABLE x (y INTEGER)"); err == nil {
-		t.Error("a read connection wrote")
+	w, err := p.write.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("the write connection", w, "0")
+	_ = w.Close()
+	var held []*sql.Conn
+	for i := range readConnections {
+		c, err := p.read.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, c)
+		check(fmt.Sprintf("read connection %d", i+1), c, "1")
+		if _, err := c.ExecContext(ctx, "CREATE TABLE x (y INTEGER)"); err == nil {
+			t.Errorf("read connection %d wrote", i+1)
+		}
+	}
+	if got := p.read.Stats().OpenConnections; got != readConnections {
+		t.Errorf("%d read connections open, want %d distinct ones held", got, readConnections)
+	}
+	for _, c := range held {
+		_ = c.Close()
+	}
+}
+
+// TestRetryBusy guards the retry of an open that SQLite answers with
+// SQLITE_BUSY at once, which happens when processes switch a new file to
+// write-ahead mode together and cannot be made to happen on demand. A real
+// SQLITE_BUSY error is taken from a file locked by another connection, and
+// handed back by a fake open a given number of times.
+func TestRetryBusy(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "locked.db")
+	holder, err := sql.Open("sqlite", path+"?_txlock=exclusive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = holder.Close() }()
+	tx, err := holder.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, "CREATE TABLE t (x INTEGER)"); err != nil {
+		t.Fatal(err)
+	}
+	other, err := sql.Open("sqlite", path+"?_busy_timeout=0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = other.Close() }()
+	_, busy := other.ExecContext(ctx, "CREATE TABLE u (x INTEGER)")
+	if !isBusy(busy) {
+		t.Fatalf("could not make a real SQLITE_BUSY: %v", busy)
+	}
+
+	calls := 0
+	mode, err := retryBusy(ctx, busyTimeout, func() (string, error) {
+		calls++
+		if calls <= 3 {
+			return "", busy
+		}
+		return "wal", nil
+	})
+	if err != nil || mode != "wal" || calls != 4 {
+		t.Errorf("retryBusy = %q, %v after %d calls; want wal after 4", mode, err, calls)
+	}
+	calls = 0
+	_, err = retryBusy(ctx, 50*time.Millisecond, func() (string, error) { calls++; return "", busy })
+	if !isBusy(err) || calls < 2 {
+		t.Errorf("retryBusy past its wait = %v after %d calls; want the busy error after several", err, calls)
+	}
+	calls = 0
+	other2 := errors.New("not busy")
+	if _, err := retryBusy(ctx, busyTimeout, func() (string, error) { calls++; return "", other2 }); !errors.Is(err, other2) || calls != 1 {
+		t.Errorf("retryBusy on another error = %v after %d calls; want it at once", err, calls)
+	}
+}
+
+// TestPanicInWriteReleasesTheWriter guards the deferred rollback: a panic
+// inside a change must end its transaction, or the pool's only write
+// connection would stay taken and every later write would wait forever.
+func TestPanicInWriteReleasesTheWriter(t *testing.T) {
+	ctx := context.Background()
+	m := openTest(t).(*Master)
+	func() {
+		defer func() { _ = recover() }()
+		_ = m.write(ctx, "test", func(tx *sql.Tx, s *statements) error {
+			if _, err := tx.StmtContext(ctx, s.upsertSetting).ExecContext(ctx, "half", "done"); err != nil {
+				return err
+			}
+			panic("inside a change")
+		})
+	}()
+	deadline, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := m.SetSetting(deadline, "after", "v", master.AuditEntry{ID: "a1", Time: mastertest.T0, Method: "Test", Outcome: master.OutcomeDone}); err != nil {
+		t.Fatalf("a write after a panic in a change: %v", err)
+	}
+	if _, err := m.Setting(ctx, "half"); fault.KindOf(err) != fault.NotFound {
+		t.Errorf("the panicked change was committed (%v)", err)
+	}
+}
+
+// TestFailingFiles guards the kind and message of a file the driver cannot
+// use: one that is not a SQLite database, and one that cannot be written.
+// Both are Unavailable, with a message that says what is wrong and names no
+// path.
+func TestFailingFiles(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	notDB := filepath.Join(dir, "notes.db")
+	if err := os.WriteFile(notDB, []byte(strings.Repeat("this is not a database\n", 400)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := OpenMaster(ctx, notDB)
+	if fault.KindOf(err) != fault.Unavailable || !strings.Contains(fault.Message(err), "not a SQLite database") {
+		t.Errorf("OpenMaster on a text file = %v, want Unavailable saying it is not a SQLite database", err)
+	}
+	if err != nil && strings.Contains(err.Error(), dir) {
+		t.Errorf("the error names the path: %v", err)
+	}
+
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("file modes do not stop this user writing")
+	}
+	ro := filepath.Join(dir, "ro.db")
+	m, err := OpenMaster(ctx, ro)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(ro, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	_, err = OpenMaster(ctx, ro)
+	if fault.KindOf(err) != fault.Unavailable || !strings.Contains(fault.Message(err), "cannot be opened for reading and writing") {
+		t.Errorf("OpenMaster on a read-only file = %v, want Unavailable saying it cannot be written", err)
+	}
+	if err != nil && strings.Contains(err.Error(), dir) {
+		t.Errorf("the error names the path: %v", err)
 	}
 }
 

@@ -72,11 +72,16 @@ All notable changes to Magnetar are written here. The form is
   must pass (`internal/master/mastertest`) and a SQLite driver that passes it
   (`internal/driver/sqlite`, on `modernc.org/sqlite`, pure Go, so the binary
   stays static on every target). Every change takes its audit entry and
-  writes both or neither; setting a grant replaces its role in one step and
-  returns the old one; lists are paged by cursor, never by offset; times keep
-  their microseconds in UTC. SQLite runs in write-ahead mode with one writing
-  connection (`BEGIN IMMEDIATE`), a read-only pool, foreign keys on, full
-  sync (with `F_FULLFSYNC` on macOS) and a busy timeout. Migrations are
+  writes both or neither; setting a grant replaces its role in one step,
+  returns the old one, and is refused on a revoked key; one lookup gives a
+  key's roles on the installation and on a named tenant for the access check;
+  lists are paged by a cursor bound to the list and its arguments, never by
+  offset; times keep their microseconds in UTC; a duplicate audit entry id is
+  told apart from a conflict without reading text. SQLite runs in write-ahead
+  mode with one writing connection (`BEGIN IMMEDIATE`), a read-only pool,
+  foreign keys on, full sync (with `F_FULLFSYNC` on macOS) and a busy
+  timeout, and refuses on Unix a database file that others can read or write.
+  Migrations are
   embedded SQL files, checksummed and applied under a lock that holds across
   processes; a changed applied file, or a database a newer binary upgraded,
   is refused. `scripts/check-master-sqlite.sh` reads what the driver wrote

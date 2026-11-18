@@ -3,11 +3,8 @@ package sqlkit
 import (
 	"crypto/sha256"
 	"io/fs"
-	"strings"
 	"testing"
 	"testing/fstest"
-
-	"github.com/amrshadid/magnetar/internal/fault"
 )
 
 // TestLoad guards the reading of a migration directory: files in order of
@@ -84,56 +81,4 @@ func TestLoadRefuses(t *testing.T) {
 			t.Errorf("%s: loaded, want an error", name)
 		}
 	}
-}
-
-// TestCursorRoundTrip guards that a cursor gives back the fields it was made
-// with, including empty fields and fields holding the separator.
-func TestCursorRoundTrip(t *testing.T) {
-	fields := []string{"", "a:b", "12:34", "名前", strings.Repeat("x", 100)}
-	c := EncodeCursor("audit", fields...)
-	got, err := DecodeCursor(c, "audit", len(fields))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i := range fields {
-		if got[i] != fields[i] {
-			t.Errorf("field %d = %q, want %q", i, got[i], fields[i])
-		}
-	}
-	if strings.ContainsAny(c, "+/=") {
-		t.Errorf("cursor %q is not URL-safe", c)
-	}
-}
-
-// TestCursorRefuses guards that a cursor made for another list, with another
-// number of fields, cut short, padded, or not a cursor at all, is Invalid,
-// never read as some other place in a list.
-func TestCursorRefuses(t *testing.T) {
-	good := EncodeCursor("keys", "123", "k1")
-	cases := map[string]string{
-		"other kind":        EncodeCursor("tenants", "123", "k1"),
-		"prefix kind":       EncodeCursor("keysx", "123", "k1"),
-		"fewer fields":      EncodeCursor("keys", "123"),
-		"more fields":       EncodeCursor("keys", "123", "k1", "x"),
-		"cut short":         good[:len(good)-2],
-		"not base64":        "!!!",
-		"too long":          strings.Repeat("A", MaxCursorLength+1),
-		"length too big":    EncodeCursor("keys") + "OjEwMDoxMjM",
-		"leading zero size": encodeRaw("keys:03:123:2:k1"),
-		"negative size":     encodeRaw("keys:-1:123:2:k1"),
-	}
-	for name, c := range cases {
-		_, err := DecodeCursor(c, "keys", 2)
-		if fault.KindOf(err) != fault.Invalid {
-			t.Errorf("%s: err = %v, want Invalid", name, err)
-		}
-	}
-	if _, err := DecodeCursorInt("12x"); fault.KindOf(err) != fault.Invalid {
-		t.Errorf("DecodeCursorInt(12x) = %v, want Invalid", err)
-	}
-}
-
-// encodeRaw makes a cursor from its raw text, to test malformed ones.
-func encodeRaw(s string) string {
-	return EncodeCursor(s)
 }

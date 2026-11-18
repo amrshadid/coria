@@ -27,6 +27,17 @@ var masterFiles embed.FS
 // directory is a build mistake that every test of this package shows.
 var masterMigrations, masterMigrationsErr = sqlkit.Load(masterFiles, "migrations/master")
 
+// The names of the lists, as their cursors carry them, so a cursor from one
+// list is refused by every other.
+const (
+	listTenants       = "tenants"
+	listKeys          = "keys"
+	listGrantsByKey   = "grants-by-key"
+	listGrantsByScope = "grants-by-scope"
+	listSettings      = "settings"
+	listAudit         = "audit"
+)
+
 // Master is the master database on a SQLite file. It is safe for concurrent
 // use.
 type Master struct {
@@ -42,8 +53,10 @@ type Master struct {
 var _ master.Store = (*Master)(nil)
 
 // OpenMaster opens the master database in the SQLite file at path, creating
-// the file, readable by its owner only, when it does not exist. It does not
-// migrate: the caller calls Migrate, so that opening a database never
+// the file, readable by its owner only, when it does not exist. On Unix an
+// existing file, its -wal and -shm files, or its directory that someone other
+// than the owner can read or write is refused (see checkPrivate). It does
+// not migrate: the caller calls Migrate, so that opening a database never
 // changes it unasked.
 func OpenMaster(ctx context.Context, path string) (*Master, error) {
 	if masterMigrationsErr != nil {
@@ -62,7 +75,7 @@ func (m *Master) Migrate(ctx context.Context) error {
 		return err
 	}
 	_, err := sqlkit.Migrate(ctx, m.p.write, dialect, masterMigrations)
-	return classify(err, "the master database cannot be migrated")
+	return m.fail(ctx, err, "the master database cannot be migrated")
 }
 
 // Version implements master.Store.
@@ -71,7 +84,7 @@ func (m *Master) Version(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	v, err := sqlkit.Version(ctx, m.p.read, dialect)
-	return v, classify(err, "the master's schema version cannot be read")
+	return v, m.fail(ctx, err, "the master's schema version cannot be read")
 }
 
 // Ping implements master.Store. It reaches both pools, since either failing
@@ -107,9 +120,40 @@ func (m *Master) Close() error {
 // database/sql's unclassified "database is closed".
 func (m *Master) open() error {
 	if m.closed.Load() {
-		return fault.New(fault.Unavailable, "the master database is closed")
+		return errClosed(nil)
 	}
 	return nil
+}
+
+// errClosed is the error of a call on a closed store, or in flight when it
+// was closed.
+func errClosed(cause error) error {
+	return fault.Wrap(fault.Unavailable, cause, "the master database is closed")
+}
+
+// fail gives err its kind. An error that already has one keeps it: a
+// NotFound or Conflict decided inside a transaction is the answer even if
+// the context then ended, since nothing was committed either way. Otherwise a
+// context that ended makes it Unavailable, keeping the context's cause and
+// the driver's error in the chain for the log and for errors.Is; a store
+// closed under the call makes it Unavailable; and the driver's code decides
+// the rest (classify).
+func (m *Master) fail(ctx context.Context, err error, message string) error {
+	if err == nil {
+		return nil
+	}
+	var fe *fault.Error
+	if errors.As(err, &fe) {
+		return err
+	}
+	if ctx.Err() != nil {
+		return fault.Wrap(fault.Unavailable, errors.Join(context.Cause(ctx), err),
+			"the request ended before the master database answered")
+	}
+	if m.closed.Load() {
+		return errClosed(err)
+	}
+	return classify(err, message)
 }
 
 // ready returns the prepared statements, preparing them on first use.
@@ -127,7 +171,15 @@ func (m *Master) ready(ctx context.Context) (*statements, error) {
 	}
 	s, err := prepare(ctx, m.p)
 	if err != nil {
-		return nil, fault.Wrap(fault.Unavailable, err, "the master database is not ready; has it been migrated?")
+		// A statement fails to prepare most often because the tables are
+		// not there yet; a context that ended, a closed store or a busy
+		// database keep their own message.
+		const notReady = "the master database is not ready; has it been migrated?"
+		ferr := m.fail(ctx, err, notReady)
+		if fault.KindOf(ferr) == fault.Internal {
+			ferr = fault.Wrap(fault.Unavailable, err, notReady)
+		}
+		return nil, ferr
 	}
 	m.stmts.Store(s)
 	return s, nil
@@ -137,6 +189,11 @@ func (m *Master) ready(ctx context.Context) (*statements, error) {
 // on the one write connection, and commits only when fn returns nil. Every
 // changing operation and its audit entry go through here together, which is
 // what makes them both or neither.
+//
+// The rollback is deferred, so that it runs on every path out, a panic in fn
+// included: a transaction left open would keep the pool's only write
+// connection, and the database's write lock, for good, and every later
+// write would wait forever. After Commit it does nothing.
 func (m *Master) write(ctx context.Context, message string, fn func(tx *sql.Tx, s *statements) error) error {
 	s, err := m.ready(ctx)
 	if err != nil {
@@ -144,14 +201,14 @@ func (m *Master) write(ctx context.Context, message string, fn func(tx *sql.Tx, 
 	}
 	tx, err := m.p.write.BeginTx(ctx, nil)
 	if err != nil {
-		return classify(err, message)
+		return m.fail(ctx, err, message)
 	}
+	defer func() { _ = tx.Rollback() }()
 	if err := fn(tx, s); err != nil {
-		_ = tx.Rollback() // fn's error is the one returned.
-		return classify(err, message)
+		return m.fail(ctx, err, message)
 	}
 	if err := tx.Commit(); err != nil {
-		return classify(err, message)
+		return m.fail(ctx, err, message)
 	}
 	return nil
 }
@@ -167,9 +224,10 @@ func (m *Master) CreateTenant(ctx context.Context, t master.Tenant, audit master
 		return err
 	}
 	return m.write(ctx, "the tenant cannot be created", func(tx *sql.Tx, s *statements) error {
-		// The name is looked up first only to say which of name and id is
-		// taken; the UNIQUE constraint is what keeps two racing creations
-		// from both succeeding.
+		// The name is looked up first to say which of name and id is
+		// taken. Inside one transaction begun with BEGIN IMMEDIATE no other
+		// writer, in this process or another, runs between the look-up and
+		// the insert; the UNIQUE constraint holds the rule even so.
 		var one int
 		err := tx.StmtContext(ctx, s.tenantNameTaken).QueryRowContext(ctx, t.Name).Scan(&one)
 		if err == nil {
@@ -213,7 +271,7 @@ func (m *Master) Tenant(ctx context.Context, id string) (master.Tenant, error) {
 		return master.Tenant{}, err
 	}
 	t, err := scanTenant(s.tenantByID.QueryRowContext(ctx, id))
-	return t, notFound(err, "no such tenant", "the tenant cannot be read")
+	return t, m.notFound(ctx, err, "no such tenant", "the tenant cannot be read")
 }
 
 // TenantByName implements master.Store.
@@ -226,7 +284,7 @@ func (m *Master) TenantByName(ctx context.Context, name string) (master.Tenant, 
 		return master.Tenant{}, err
 	}
 	t, err := scanTenant(s.tenantByName.QueryRowContext(ctx, name))
-	return t, notFound(err, "no such tenant", "the tenant cannot be read")
+	return t, m.notFound(ctx, err, "no such tenant", "the tenant cannot be read")
 }
 
 // ListTenants implements master.Store.
@@ -236,7 +294,7 @@ func (m *Master) ListTenants(ctx context.Context, page master.Page) ([]master.Te
 	}
 	after := ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "tenants", 1)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listTenants, "", 1)
 		if err != nil {
 			return nil, "", err
 		}
@@ -250,16 +308,18 @@ func (m *Master) ListTenants(ctx context.Context, page master.Page) ([]master.Te
 	rows, err := s.listTenants.QueryContext(ctx, after, page.Limit+1)
 	out, err := collect(rows, err, scanTenant)
 	if err != nil {
-		return nil, "", classify(err, "the tenants cannot be listed")
+		return nil, "", m.fail(ctx, err, "the tenants cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("tenants", last.Name), nil
+	return out, sqlkit.EncodeCursor(listTenants, "", last.Name), nil
 }
 
-// SetTenantState implements master.Store.
+// SetTenantState implements master.Store. The old state is read and the new
+// one written in one write transaction, so the audit entry says what this
+// call replaced even when another call changes the same tenant at once.
 func (m *Master) SetTenantState(ctx context.Context, id string, state master.TenantState, reason string, audit master.AuditEntry) error {
 	if err := master.ValidateID("tenant id", id); err != nil {
 		return err
@@ -267,15 +327,23 @@ func (m *Master) SetTenantState(ctx context.Context, id string, state master.Ten
 	if err := master.ValidateTenantState(state, reason); err != nil {
 		return err
 	}
-	if err := audit.Validate(); err != nil {
+	if err := audit.ValidateWith(master.DetailOldState, master.DetailNewState); err != nil {
 		return err
 	}
 	return m.write(ctx, "the tenant's state cannot be set", func(tx *sql.Tx, s *statements) error {
+		var old string
+		err := tx.StmtContext(ctx, s.tenantState).QueryRowContext(ctx, id).Scan(&old)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fault.New(fault.NotFound, "no such tenant")
+		}
+		if err != nil {
+			return err
+		}
 		res, err := tx.StmtContext(ctx, s.setTenantState).ExecContext(ctx, string(state), reason, id)
 		if err := oneRow(res, err, "no such tenant"); err != nil {
 			return err
 		}
-		return insertAudit(ctx, tx, s, audit)
+		return insertAudit(ctx, tx, s, audit.WithStateChange(master.TenantState(old), state))
 	})
 }
 
@@ -350,7 +418,7 @@ func (m *Master) Key(ctx context.Context, id string) (master.Key, error) {
 		return master.Key{}, err
 	}
 	k, err := scanKey(s.keyByID.QueryRowContext(ctx, id))
-	return k, notFound(err, "no such key", "the key cannot be read")
+	return k, m.notFound(ctx, err, "no such key", "the key cannot be read")
 }
 
 // ListKeys implements master.Store.
@@ -361,7 +429,7 @@ func (m *Master) ListKeys(ctx context.Context, page master.Page) ([]master.Key, 
 	// Creation times are never before 1970, so (-1, "") is before every key.
 	afterCreated, afterID := int64(-1), ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "keys", 2)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listKeys, "", 2)
 		if err != nil {
 			return nil, "", err
 		}
@@ -377,18 +445,19 @@ func (m *Master) ListKeys(ctx context.Context, page master.Page) ([]master.Key, 
 	rows, err := s.listKeys.QueryContext(ctx, afterCreated, afterID, page.Limit+1)
 	out, err := collect(rows, err, scanKey)
 	if err != nil {
-		return nil, "", classify(err, "the keys cannot be listed")
+		return nil, "", m.fail(ctx, err, "the keys cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("keys", strconv.FormatInt(micros(last.Created), 10), last.ID), nil
+	return out, sqlkit.EncodeCursor(listKeys, "", strconv.FormatInt(micros(last.Created), 10), last.ID), nil
 }
 
 // MarkKeyUsed implements master.Store with one UPDATE whose WHERE holds the
 // throttle, so a call within the minute changes no row and writes nothing
-// to the file: no read first, and no commit to sync.
+// to the file: no read first, and no commit to sync. The same condition
+// keeps the stored time from moving backward: an older at matches no row.
 func (m *Master) MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool, error) {
 	if err := master.ValidateID("key id", id); err != nil {
 		return false, err
@@ -402,17 +471,18 @@ func (m *Master) MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool
 	}
 	res, err := s.markKeyUsed.ExecContext(ctx, micros(at), id, micros(at.Add(-time.Minute)))
 	if err != nil {
-		return false, classify(err, "the key's use cannot be recorded")
+		return false, m.fail(ctx, err, "the key's use cannot be recorded")
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return false, classify(err, "the key's use cannot be recorded")
+		return false, m.fail(ctx, err, "the key's use cannot be recorded")
 	}
 	return n == 1, nil
 }
 
-// RevokeKey implements master.Store with one statement that keeps a revoke
-// time already set (coalesce) and returns the one the key ends with.
+// RevokeKey implements master.Store. The revoked time is read and, when it is
+// unset, written in one write transaction, so the audit entry says whether
+// this call revoked the key or found it revoked.
 func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry) (time.Time, error) {
 	if err := master.ValidateID("key id", id); err != nil {
 		return time.Time{}, err
@@ -420,32 +490,42 @@ func (m *Master) RevokeKey(ctx context.Context, id string, at time.Time, audit m
 	if err := master.ValidateTime("revocation time", at); err != nil {
 		return time.Time{}, err
 	}
-	if err := audit.Validate(); err != nil {
+	if err := audit.ValidateWith(master.DetailAlreadyRevoked); err != nil {
 		return time.Time{}, err
 	}
-	var revoked int64
+	var revoked time.Time
 	err := m.write(ctx, "the key cannot be revoked", func(tx *sql.Tx, s *statements) error {
-		err := tx.StmtContext(ctx, s.revokeKey).QueryRowContext(ctx, micros(at), id).Scan(&revoked)
+		var before sql.NullInt64
+		err := tx.StmtContext(ctx, s.keyRevoked).QueryRowContext(ctx, id).Scan(&before)
 		if errors.Is(err, sql.ErrNoRows) {
 			return fault.New(fault.NotFound, "no such key")
 		}
 		if err != nil {
 			return err
 		}
-		return insertAudit(ctx, tx, s, audit)
+		if before.Valid {
+			revoked = fromMicros(before.Int64)
+			return insertAudit(ctx, tx, s, audit.WithRevocation(true))
+		}
+		if _, err := tx.StmtContext(ctx, s.revokeKey).ExecContext(ctx, micros(at), id); err != nil {
+			return err
+		}
+		revoked = fromMicros(micros(at))
+		return insertAudit(ctx, tx, s, audit.WithRevocation(false))
 	})
 	if err != nil {
 		return time.Time{}, err
 	}
-	return fromMicros(revoked), nil
+	return revoked, nil
 }
 
 // --- Grants ---
 
-// SetGrant implements master.Store. The old role is read and the new one
-// written in one write transaction, and SQLite has one writer at a time, so
-// two concurrent sets on the same key and scope are ordered and each reads
-// what the other left.
+// SetGrant implements master.Store. The key's revocation and the old role are
+// read and the new role written in one write transaction, and SQLite has one
+// writer at a time, so a set racing a revocation or another set is ordered
+// with it: no grant is written after the key is revoked, and each set reads
+// what the others left.
 func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.AuditEntry) (master.Role, error) {
 	if err := g.Validate(); err != nil {
 		return "", err
@@ -455,11 +535,15 @@ func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.Audi
 	}
 	var previous master.Role
 	err := m.write(ctx, "the grant cannot be set", func(tx *sql.Tx, s *statements) error {
-		if err := m.grantTargetsExist(ctx, tx, s, g.KeyID, g.Scope); err != nil {
+		revoked, err := m.grantTargetsExist(ctx, tx, s, g.KeyID, g.Scope)
+		if err != nil {
 			return err
 		}
+		if revoked {
+			return fault.New(fault.Conflict, "the key is revoked")
+		}
 		var old string
-		err := tx.StmtContext(ctx, s.grantRole).QueryRowContext(ctx, g.KeyID, g.Scope.TenantID).Scan(&old)
+		err = tx.StmtContext(ctx, s.grantRole).QueryRowContext(ctx, g.KeyID, g.Scope.TenantID).Scan(&old)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
@@ -477,40 +561,47 @@ func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.Audi
 }
 
 // grantTargetsExist returns NotFound unless the key, and the tenant of a
-// tenant scope, exist. The foreign keys would refuse them too, but could not
-// say which one was missing.
-func (m *Master) grantTargetsExist(ctx context.Context, tx *sql.Tx, s *statements, keyID string, scope master.Scope) error {
-	var one int
-	err := tx.StmtContext(ctx, s.keyExists).QueryRowContext(ctx, keyID).Scan(&one)
+// tenant scope, exist, and reports whether the key is revoked. The foreign
+// keys would refuse a missing one too, but could not say which.
+func (m *Master) grantTargetsExist(ctx context.Context, tx *sql.Tx, s *statements, keyID string, scope master.Scope) (revoked bool, err error) {
+	var at sql.NullInt64
+	err = tx.StmtContext(ctx, s.keyRevoked).QueryRowContext(ctx, keyID).Scan(&at)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fault.New(fault.NotFound, "no such key")
+		return false, fault.New(fault.NotFound, "no such key")
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if scope.IsInstallation() {
-		return nil
+		return at.Valid, nil
 	}
+	var one int
 	err = tx.StmtContext(ctx, s.tenantExists).QueryRowContext(ctx, scope.TenantID).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fault.New(fault.NotFound, "no such tenant")
+		return false, fault.New(fault.NotFound, "no such tenant")
 	}
-	return err
+	return at.Valid, err
 }
 
-const grantColumns = `key_id, scope, role`
+// grantColumns are a grant's columns with its tenant's name, joined.
+const grantColumns = `g.key_id, g.scope, g.role, coalesce(t.name, '')`
+
+// grantFrom joins each grant to its tenant, for the name.
+const grantFrom = ` FROM grants g LEFT JOIN tenants t ON t.id = g.tenant_id`
 
 // scanGrant reads one row of grantColumns.
 func scanGrant(row interface{ Scan(...any) error }) (master.Grant, error) {
 	var g master.Grant
 	var role string
-	err := row.Scan(&g.KeyID, &g.Scope.TenantID, &role)
+	err := row.Scan(&g.KeyID, &g.Scope.TenantID, &role, &g.TenantName)
 	g.Role = master.Role(role)
 	return g, err
 }
 
-// GrantsByKey implements master.Store: one read of the primary key's index,
-// whose order (key, scope) puts the installation's empty scope first.
+// GrantsByKey implements master.Store: a range of the primary key's index,
+// whose order (key, scope) puts the installation's empty scope first, with
+// one lookup of the tenants' primary key per grant for the name. The cursor
+// is bound to the key.
 func (m *Master) GrantsByKey(ctx context.Context, keyID string, page master.Page) ([]master.Grant, string, error) {
 	if err := master.ValidateID("key id", keyID); err != nil {
 		return nil, "", err
@@ -518,34 +609,44 @@ func (m *Master) GrantsByKey(ctx context.Context, keyID string, page master.Page
 	if err := page.Validate(); err != nil {
 		return nil, "", err
 	}
+	var after []string
+	if page.Cursor != "" {
+		f, err := sqlkit.DecodeCursor(page.Cursor, listGrantsByKey, keyID, 1)
+		if err != nil {
+			return nil, "", err
+		}
+		after = f
+	}
 	s, err := m.ready(ctx)
 	if err != nil {
 		return nil, "", err
 	}
 	var rows *sql.Rows
-	if page.Cursor == "" {
+	if after == nil {
 		// The first page has its own statement: the installation's scope
 		// is the empty string, so no "scope > ?" includes it.
 		rows, err = s.grantsByKeyFirst.QueryContext(ctx, keyID, page.Limit+1)
 	} else {
-		f, derr := sqlkit.DecodeCursor(page.Cursor, "grants-by-key", 1)
-		if derr != nil {
-			return nil, "", derr
-		}
-		rows, err = s.grantsByKeyNext.QueryContext(ctx, keyID, f[0], page.Limit+1)
+		rows, err = s.grantsByKeyNext.QueryContext(ctx, keyID, after[0], page.Limit+1)
 	}
 	out, err := collect(rows, err, scanGrant)
 	if err != nil {
-		return nil, "", classify(err, "the key's grants cannot be listed")
+		return nil, "", m.fail(ctx, err, "the key's grants cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("grants-by-key", last.Scope.TenantID), nil
+	return out, sqlkit.EncodeCursor(listGrantsByKey, keyID, last.Scope.TenantID), nil
 }
 
-// GrantsByScope implements master.Store.
+// scopeBinding is what a GrantsByScope cursor is bound to. The installation
+// and a tenant can never give the same text, since a tenant id is not empty.
+func scopeBinding(scope master.Scope) string {
+	return "scope:" + scope.TenantID
+}
+
+// GrantsByScope implements master.Store. The cursor is bound to the scope.
 func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page master.Page) ([]master.Grant, string, error) {
 	if err := scope.Validate(); err != nil {
 		return nil, "", err
@@ -555,7 +656,7 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 	}
 	after := ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "grants-by-scope", 1)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listGrantsByScope, scopeBinding(scope), 1)
 		if err != nil {
 			return nil, "", err
 		}
@@ -569,13 +670,50 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 	rows, err := s.grantsByScope.QueryContext(ctx, scope.TenantID, after, page.Limit+1)
 	out, err := collect(rows, err, scanGrant)
 	if err != nil {
-		return nil, "", classify(err, "the grants cannot be listed")
+		return nil, "", m.fail(ctx, err, "the grants cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("grants-by-scope", last.KeyID), nil
+	return out, sqlkit.EncodeCursor(listGrantsByScope, scopeBinding(scope), last.KeyID), nil
+}
+
+// RolesFor implements master.Store with one statement: the grants' primary
+// key is read at (key, the empty scope) and at (key, the tenant's id), the id found
+// through the tenants' unique index on name inside the same statement. A
+// tenant that does not exist, or no tenant name, leaves only the first.
+func (m *Master) RolesFor(ctx context.Context, keyID, tenantName string) (installation, tenant master.Role, err error) {
+	if err := master.ValidateID("key id", keyID); err != nil {
+		return "", "", err
+	}
+	if tenantName != "" {
+		if err := master.ValidateTenantName(tenantName); err != nil {
+			return "", "", err
+		}
+	}
+	s, err := m.ready(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	rows, err := s.rolesFor.QueryContext(ctx, keyID, tenantName)
+	type scopeRole struct{ scope, role string }
+	found, err := collect(rows, err, func(row interface{ Scan(...any) error }) (scopeRole, error) {
+		var r scopeRole
+		err := row.Scan(&r.scope, &r.role)
+		return r, err
+	})
+	if err != nil {
+		return "", "", m.fail(ctx, err, "the key's roles cannot be read")
+	}
+	for _, r := range found {
+		if r.scope == "" {
+			installation = master.Role(r.role)
+		} else {
+			tenant = master.Role(r.role)
+		}
+	}
+	return installation, tenant, nil
 }
 
 // RemoveGrant implements master.Store. One DELETE ... RETURNING removes the
@@ -597,7 +735,7 @@ func (m *Master) RemoveGrant(ctx context.Context, keyID string, scope master.Sco
 		err := tx.StmtContext(ctx, s.deleteGrant).QueryRowContext(ctx, keyID, scope.TenantID).Scan(&old)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
-			if err := m.grantTargetsExist(ctx, tx, s, keyID, scope); err != nil {
+			if _, err := m.grantTargetsExist(ctx, tx, s, keyID, scope); err != nil {
 				return err
 			}
 		case err != nil:
@@ -625,7 +763,7 @@ func (m *Master) Setting(ctx context.Context, name string) (string, error) {
 	}
 	var value string
 	err = s.settingByName.QueryRowContext(ctx, name).Scan(&value)
-	return value, notFound(err, "no such setting", "the setting cannot be read")
+	return value, m.notFound(ctx, err, "no such setting", "the setting cannot be read")
 }
 
 // SetSetting implements master.Store.
@@ -681,7 +819,7 @@ func (m *Master) ListSettings(ctx context.Context, page master.Page) ([]master.S
 	}
 	after := ""
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "settings", 1)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listSettings, "", 1)
 		if err != nil {
 			return nil, "", err
 		}
@@ -698,13 +836,13 @@ func (m *Master) ListSettings(ctx context.Context, page master.Page) ([]master.S
 		return st, err
 	})
 	if err != nil {
-		return nil, "", classify(err, "the settings cannot be listed")
+		return nil, "", m.fail(ctx, err, "the settings cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("settings", last.Name), nil
+	return out, sqlkit.EncodeCursor(listSettings, "", last.Name), nil
 }
 
 // --- Audit ---
@@ -740,6 +878,8 @@ func insertAudit(ctx context.Context, tx *sql.Tx, s *statements, e master.AuditE
 }
 
 // execAudit writes one audit entry with the transaction's insert statement.
+// The audit table's only unique key is the id, so a unique violation here is
+// a duplicate id: master.ErrDuplicateAuditID, never a Conflict.
 func execAudit(ctx context.Context, stmt *sql.Stmt, e master.AuditEntry) error {
 	details, err := encodeDetails(e.Details)
 	if err != nil {
@@ -748,7 +888,7 @@ func execAudit(ctx context.Context, stmt *sql.Stmt, e master.AuditEntry) error {
 	_, err = stmt.ExecContext(ctx, e.ID, micros(e.Time), e.KeyID, e.LocalUser, e.RemoteAddress,
 		e.Method, e.TenantName, e.Object, string(e.Outcome), e.Reason, details, e.RequestID)
 	if isUniqueViolation(err) {
-		return fault.Wrap(fault.Conflict, err, "an audit entry with this id exists")
+		return fault.Wrap(fault.Internal, errors.Join(master.ErrDuplicateAuditID, err), "an audit entry with this id exists")
 	}
 	return err
 }
@@ -771,19 +911,26 @@ func scanAudit(row interface{ Scan(...any) error }) (master.AuditEntry, error) {
 	return e, err
 }
 
-// ListAudit implements master.Store. The statement is put together from
-// fixed fragments according to which filters are set, so that each
-// combination reads the index named for it in 0001_init.sql instead of
-// testing "parameter is empty OR column = parameter", which SQLite cannot
-// answer from an index.
-// No value is ever written into the text; every one is a parameter.
-func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error) {
-	if err := filter.Validate(); err != nil {
-		return nil, "", err
+// auditBinding is what a ListAudit cursor is bound to: every field of the
+// filter, so a cursor made with one filter is refused with another.
+func auditBinding(f master.AuditFilter) string {
+	t := func(x time.Time) string {
+		if x.IsZero() {
+			return ""
+		}
+		return strconv.FormatInt(micros(x), 10)
 	}
-	if err := page.Validate(); err != nil {
-		return nil, "", err
-	}
+	return sqlkit.Binding(f.TenantName, f.KeyID, string(f.Outcome), t(f.Since), t(f.Until))
+}
+
+// auditQuery returns the statement and arguments of one page of ListAudit.
+// The statement is put together from fixed fragments according to which
+// filters are set, so that each combination reads the index named for it in
+// 0001_init.sql instead of testing "parameter is empty OR column =
+// parameter", which SQLite cannot answer from an index. No value is ever
+// written into the text; every one is a parameter. The cursor, when there is
+// one, is the (at, id) of the last row returned.
+func auditQuery(filter master.AuditFilter, after []any, limit int) (string, []any) {
 	var where []string
 	var args []any
 	if filter.TenantName != "" {
@@ -806,8 +953,33 @@ func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page 
 		where = append(where, "at < ?")
 		args = append(args, micros(filter.Until))
 	}
+	if after != nil {
+		// Newest first, so the next page is what sorts before the last row.
+		where = append(where, "(at, id) < (?, ?)")
+		args = append(args, after...)
+	}
+	query := "SELECT " + auditColumns + " FROM audit"
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ") // #nosec G202 -- every fragment is a constant above; values are parameters.
+	}
+	// The id breaks ties between entries of the same time, so the order is
+	// total and a cursor at (at, id) is unambiguous.
+	query += " ORDER BY at DESC, id DESC LIMIT ?"
+	return query, append(args, limit)
+}
+
+// ListAudit implements master.Store. The cursor is bound to the whole filter.
+func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error) {
+	if err := filter.Validate(); err != nil {
+		return nil, "", err
+	}
+	if err := page.Validate(); err != nil {
+		return nil, "", err
+	}
+	binding := auditBinding(filter)
+	var after []any
 	if page.Cursor != "" {
-		f, err := sqlkit.DecodeCursor(page.Cursor, "audit", 2)
+		f, err := sqlkit.DecodeCursor(page.Cursor, listAudit, binding, 2)
 		if err != nil {
 			return nil, "", err
 		}
@@ -815,30 +987,22 @@ func (m *Master) ListAudit(ctx context.Context, filter master.AuditFilter, page 
 		if err != nil {
 			return nil, "", err
 		}
-		// Newest first, so the next page is what sorts before the last row.
-		where = append(where, "(at, id) < (?, ?)")
-		args = append(args, at, f[1])
+		after = []any{at, f[1]}
 	}
-	query := "SELECT " + auditColumns + " FROM audit"
-	if len(where) > 0 {
-		query += " WHERE " + strings.Join(where, " AND ") // #nosec G202 -- every fragment is a constant above; values are parameters.
-	}
-	query += " ORDER BY at DESC, id DESC LIMIT ?"
-	args = append(args, page.Limit+1)
-
+	query, args := auditQuery(filter, after, page.Limit+1)
 	if err := m.open(); err != nil {
 		return nil, "", err
 	}
 	rows, err := m.p.read.QueryContext(ctx, query, args...)
 	out, err := collect(rows, err, scanAudit)
 	if err != nil {
-		return nil, "", classify(err, "the audit log cannot be listed")
+		return nil, "", m.fail(ctx, err, "the audit log cannot be listed")
 	}
 	out, last, more := cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, sqlkit.EncodeCursor("audit", strconv.FormatInt(micros(last.Time), 10), last.ID), nil
+	return out, sqlkit.EncodeCursor(listAudit, binding, strconv.FormatInt(micros(last.Time), 10), last.ID), nil
 }
 
 // --- Helpers ---
@@ -907,13 +1071,13 @@ func decodeDetails(s string) (map[string]string, error) {
 	return d, nil
 }
 
-// notFound turns sql.ErrNoRows into NotFound with what, and classifies any
-// other error with message.
-func notFound(err error, what, message string) error {
+// notFound turns sql.ErrNoRows into NotFound with what, and gives any other
+// error its kind with message.
+func (m *Master) notFound(ctx context.Context, err error, what, message string) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		return fault.New(fault.NotFound, what)
 	}
-	return classify(err, message)
+	return m.fail(ctx, err, message)
 }
 
 // oneRow returns NotFound with what unless the statement changed a row.

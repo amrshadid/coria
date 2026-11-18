@@ -311,8 +311,11 @@ func lockedExec(ctx context.Context, db *sql.DB, d Dialect, statement string) er
 	if err != nil {
 		return err
 	}
+	// Deferred, so that a panic between Begin and Commit still ends the
+	// transaction: otherwise it would hold the database's write lock, and
+	// a pool's only write connection, for good. A no-op after Commit.
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, statement); err != nil {
-		_ = tx.Rollback() // The Exec error is the one returned.
 		return err
 	}
 	return tx.Commit()

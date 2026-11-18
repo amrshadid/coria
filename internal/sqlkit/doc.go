@@ -23,6 +23,21 @@
 // it has run, so it must be written to be run again safely. None is needed
 // in M0.
 //
+// The runner assumes two things of a database: that DDL (CREATE TABLE,
+// CREATE INDEX) runs inside a transaction and is undone with it, and that one
+// Exec may carry several statements separated by semicolons. SQLite and
+// Postgres both do. A driver for a database without them (MySQL commits DDL
+// at once; some drivers take one statement per call) must bring its own way
+// to apply a file, and must not use Migrate as it is.
+//
+// # Cursors
+//
+// EncodeCursor and DecodeCursor make the page tokens of every SQL driver's
+// lists, so all of them refuse a token the same way. A cursor names its
+// format version, its list, and a binding of the arguments the list was
+// called with (a key id, a scope, or Binding of a whole filter), and ends
+// with a check of its bytes; DecodeCursor refuses any mismatch as Invalid.
+//
 // # What this package must never do
 //
 // It must never import a database driver: a driver passes in its *sql.DB and
