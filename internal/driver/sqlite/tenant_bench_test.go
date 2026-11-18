@@ -50,3 +50,12 @@ func BenchmarkTenantAppendAudit(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkTenantChanges measures changes to a tenant's database, each a
+// setting with its audit entry, from 1, 8, 64 and 256 concurrent callers.
+func BenchmarkTenantChanges(b *testing.B) {
+	s := openTenantTest(b, tenanttest.SuiteTenant)
+	benchChanges(b, settingChange(func(ctx context.Context, name, value string, audit master.AuditEntry) error {
+		return s.SetSetting(ctx, name, value, audit, nil)
+	}))
+}

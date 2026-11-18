@@ -16,6 +16,43 @@
 // that cannot write (query_only), and in write-ahead mode they read a
 // snapshot while the writer works.
 //
+// # Several changes, one commit
+//
+// Every commit is synced to the disk (synchronous=FULL, and on macOS
+// fullfsync), and the sync, not SQLite's work, is what a change costs: one
+// commit per change would hold a store to about as many changes a second as
+// the disk takes syncs, a few hundred, however many callers wait. So
+// changes are committed in groups (group.go). A change that finds the writer
+// idle is written at once by its caller, alone, as a transaction of its own;
+// changes that arrive while a transaction is running or syncing queue, and
+// the next transaction writes them all, up to a bound, each in a savepoint of
+// its own (sqlite.org/lang_savepoint.html). There is no timer: a group forms
+// only from callers already waiting.
+//
+// Each caller keeps what a transaction of its own would give it. Its change
+// and its audit entry are written both or neither. An answer, success or
+// failure, describes the database as committed. A change that fails or
+// panics is rolled back to its savepoint, which undoes it alone, and the
+// others are committed. Since a change sees the uncommitted writes of the
+// changes before it in the transaction, a failure that came while such a
+// write was there (a name taken by a neighbor, say) is answered only after
+// the commit, like a success; a failure with no neighbor's write before it
+// saw only committed rows and is answered at once. When the transaction is
+// undone instead, because SQLite rolled it back itself, as it does after an
+// interrupted statement or an I/O error (sqlite.org/lang_transaction.html),
+// or because COMMIT failed, the changes whose answers waited for it and
+// whose failure may have come from a write now gone run again in a new
+// transaction. A caller whose context ends while its change waits in the
+// queue is answered at once, and the change is never written; once the
+// change has started, it is written whole or not at all, and the caller is
+// answered with which, so an error always means nothing was written.
+//
+// Running a change again is safe because every change function in this
+// package only reads, writes and assigns its results to variables it sets
+// afresh on each run: it never appends to, counts into or sends from
+// anything that outlives the run. A new change method must keep to that
+// (see Master.write).
+//
 // The migration lock is BEGIN IMMEDIATE too: a second process that starts
 // migrating waits for the first, under the busy timeout, then finds the files
 // applied.

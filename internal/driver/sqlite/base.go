@@ -10,13 +10,15 @@ import (
 )
 
 // base is what every store on one SQLite file has, whatever it holds: its
-// pools, whether it is closed, and its name in error messages. Master and
-// Tenant embed it, so the two classify a failure the same way, close the
-// same way, and run a write transaction the same way.
+// pools, whether it is closed, its name in error messages, and the queue of
+// changes waiting to be written (group.go). Master and Tenant embed it, so
+// the two classify a failure the same way, close the same way, and write
+// changes the same way.
 type base struct {
 	p      *pools
 	closed atomic.Bool
 	name   dbName
+	w      committer
 }
 
 // open fails once the store is closed, with a kind, rather than with
@@ -105,30 +107,6 @@ func (b *base) shutdown(closeStatements func()) error {
 	}
 	if err := b.p.close(); err != nil {
 		return fault.Wrap(fault.Internal, err, "the "+string(b.name)+" did not close cleanly")
-	}
-	return nil
-}
-
-// writeTx runs fn in one write transaction, which begins with BEGIN
-// IMMEDIATE on the one write connection, and commits only when fn returns
-// nil. Every changing operation and its audit entry go through here
-// together, which is what makes them both or neither.
-//
-// The rollback is deferred, so that it runs on every path out, a panic in fn
-// included: a transaction left open would keep the pool's only write
-// connection, and the database's write lock, for good, and every later
-// write would wait forever. After Commit it does nothing.
-func (b *base) writeTx(ctx context.Context, message string, fn func(tx *sql.Tx) error) error {
-	tx, err := b.p.write.BeginTx(ctx, nil)
-	if err != nil {
-		return b.fail(ctx, err, message)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := fn(tx); err != nil {
-		return b.fail(ctx, err, message)
-	}
-	if err := tx.Commit(); err != nil {
-		return b.fail(ctx, err, message)
 	}
 	return nil
 }

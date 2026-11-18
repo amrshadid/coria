@@ -46,12 +46,15 @@
 // What that leaves is stated, not hidden: a revocation, an expiry or a grant
 // removed or lowered that commits in the master after the Guard read it and
 // before the tenant's commit is not seen by that one change. The window is
-// one commit of the tenant's database. Closing it would need the master to
-// hold the key's row locked while another database commits, which on a
-// SQLite master would stop every write of the installation for the length of
-// a tenant's commit, or a commit protocol across two databases of different
-// types; neither is worth a window of one commit for a change an admin was
-// allowed to make a moment before.
+// one commit of the tenant's database; where a driver commits several
+// waiting changes together (the SQLite driver does), it also holds the
+// changes written after this one in the same transaction, a bounded few.
+// Closing it would need the master to hold the key's row locked while
+// another database commits, which on a SQLite master would stop every write
+// of the installation for the length of a tenant's commit, or a commit
+// protocol across two databases of different types; neither is worth a
+// window of one commit for a change an admin was allowed to make a moment
+// before.
 //
 // # What this package must never do
 //
