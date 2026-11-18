@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/driver"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 )
@@ -30,15 +31,6 @@ const (
 	MaxHolderLength = master.MaxHolderLength
 	// MaxKeyLifetime is the longest CreateKeyRequest.expire_after.
 	MaxKeyLifetime = access.MaxKeyLifetime
-)
-
-// The database types as a tenant's row names them (master.Tenant.Driver),
-// and so as the registry's drivers are keyed.
-const (
-	// DriverSQLite is DATABASE_TYPE_SQLITE.
-	DriverSQLite = "sqlite"
-	// DriverPostgres is DATABASE_TYPE_POSTGRES.
-	DriverPostgres = "postgres"
 )
 
 // invalid returns an Invalid error whose message starts with the field it is
@@ -209,12 +201,13 @@ func grantMessage(g access.Grant) *v1.Grant {
 	return &v1.Grant{KeyId: g.KeyID, Scope: scopeMessage(g.Scope), Role: roleOf(g.Role)}
 }
 
-// databaseType returns the contract's type for a driver's name.
-func databaseType(driver string) v1.DatabaseType {
-	switch driver {
-	case DriverSQLite:
+// databaseType returns the contract's type for the database type a tenant's
+// row records (master.Tenant.Driver), named by package driver.
+func databaseType(name string) v1.DatabaseType {
+	switch name {
+	case driver.SQLiteDriver:
 		return v1.DatabaseType_DATABASE_TYPE_SQLITE
-	case DriverPostgres:
+	case driver.PostgresDriver:
 		return v1.DatabaseType_DATABASE_TYPE_POSTGRES
 	}
 	return v1.DatabaseType_DATABASE_TYPE_UNSPECIFIED
