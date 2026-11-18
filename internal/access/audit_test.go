@@ -272,42 +272,49 @@ func TestAuditDropsWhenFull(t *testing.T) {
 	}
 }
 
-// TestRefusalsDoNotPushOutReads guards the separate queues: a flood of
-// malformed keys fills the refusals' queue and drops refusals, while every
-// read recorded at the same time is written.
+// TestRefusalsDoNotPushOutReads guards the separate queues: while the writer
+// is held in an append, a flood of malformed keys interleaved with reads
+// overflows the refusals' queue and drops refusals, and every read recorded
+// meanwhile is kept and written once the writer moves again. It holds the
+// writer on purpose rather than race it, so it does not depend on how a
+// system schedules goroutines or how long it sleeps.
 func TestRefusalsDoNotPushOutReads(t *testing.T) {
 	m, full := newMem(t)
-	m.appendFn = func(context.Context, []master.AuditEntry) error {
-		time.Sleep(time.Millisecond)
-		return nil
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var held atomic.Bool
+	held.Store(true)
+	m.appendFn = func(ctx context.Context, entries []master.AuditEntry) error {
+		if !held.Load() || isNotice(entries) {
+			return nil
+		}
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	a := newMemAccessWith(t, m, access.Config{RefusalQueue: 8, RecordQueue: 400, AuditBatch: 50, AuditInterval: time.Millisecond})
+	a := newMemAccessWith(t, m, access.Config{RefusalQueue: 8, RecordQueue: 400, AuditBatch: 1, AuditInterval: time.Hour})
+	_, _ = a.Check(context.Background(), access.APIKey("mgt_flood"), access.Authenticated(), facts("flood"))
+	<-entered // the writer is held with the first refusal
 	const reads = 300
-	var wg sync.WaitGroup
-	stop := make(chan struct{})
-	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-stop:
-					return
-				default:
-				}
-				_, _ = a.Check(context.Background(), access.APIKey("mgt_flood"), access.Authenticated(), facts("flood"))
-			}
-		}()
-	}
 	for range reads {
+		for range 5 {
+			_, _ = a.Check(context.Background(), access.APIKey("mgt_flood"), access.Authenticated(), facts("flood"))
+		}
 		d, err := a.Check(context.Background(), access.APIKey(full), access.Authenticated(), facts("read"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		a.Record(d, master.OutcomeDone, "", access.Facts{})
 	}
-	close(stop)
-	wg.Wait()
+	held.Store(false)
+	close(release)
 	if err := a.FlushAudit(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -315,8 +322,9 @@ func TestRefusalsDoNotPushOutReads(t *testing.T) {
 	if got := len(m.kept("read")); got != reads || s.DroppedRecords != 0 {
 		t.Fatalf("%d of %d reads written, stats %+v", got, reads, s)
 	}
-	if s.DroppedRefusals == 0 {
-		t.Fatalf("the flood dropped no refusal (stats %+v): the test did not fill the queue", s)
+	// 1 + 1,500 refusals: one held, eight queued, the rest dropped.
+	if s.DroppedRefusals != 1501-9 {
+		t.Fatalf("stats %+v, want %d refusals dropped", s, 1501-9)
 	}
 	t.Logf("flood: %+v", s)
 }
