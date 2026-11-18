@@ -95,8 +95,19 @@ mq() {
 }
 want "the tenant's state in the master" "sample sqlite ready" "$(mq "SELECT name || ' ' || driver || ' ' || state FROM tenants")"
 want "the sealed address's length (format, version, nonce, tag)" 33 "$(mq "SELECT length(address) FROM tenants")"
-want "the state change, by the system" "system upgrading -> ready" \
-	"$(mq "SELECT json_extract(details, '\$.actor') || ' ' || json_extract(details, '\$.old_state') || ' -> ' || json_extract(details, '\$.new_state') FROM audit WHERE method = 'magnetar.registry/SetTenantState'")"
+# The creation's audit trail, read by the request's id: a system entry
+# written with the row (the creation started), which names the request's
+# entry, and the request's own entry, written once with the change that made
+# the tenant ready, with the state before and after.
+echo
+echo "== the creation's audit entries, by request id"
+"$SQLITE3" -batch -header -column "$master" "SELECT id, method, outcome, request_id, details FROM audit WHERE request_id = 'sample-request' ORDER BY at, id"
+want "entries of the creation's request" 2 "$(mq "SELECT count(*) FROM audit WHERE request_id = 'sample-request'")"
+want "the creation started, by the system" "done system sample-create sqlite" \
+	"$(mq "SELECT outcome || ' ' || json_extract(details, '\$.actor') || ' ' || json_extract(details, '\$.request_entry') || ' ' || json_extract(details, '\$.database_type') FROM audit WHERE request_id = 'sample-request' AND method = 'magnetar.registry/CreateTenantStarted'")"
+want "the request's own entry, with the change to ready" "sample-create done upgrading -> ready" \
+	"$(mq "SELECT id || ' ' || outcome || ' ' || json_extract(details, '\$.old_state') || ' -> ' || json_extract(details, '\$.new_state') FROM audit WHERE request_id = 'sample-request' AND method = '/magnetar.v1.TenantService/CreateTenant'")"
+want "no other state change was written" 0 "$(mq "SELECT count(*) FROM audit WHERE method = 'magnetar.registry/SetTenantState'")"
 want "the master's integrity_check" ok "$(mq 'PRAGMA integrity_check')"
 
 echo

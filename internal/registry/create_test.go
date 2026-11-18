@@ -107,18 +107,18 @@ func (e *env) wantNothingLeft(r *Registry, name string, err error, want fault.Ki
 	if lerr != nil {
 		e.t.Fatal(lerr)
 	}
-	undone := false
+	undone := 0
 	for _, a := range entries {
-		if a.Method == UndoMethod {
-			undone = true
-			if a.Details[DetailActor] != ActorSystem || !strings.HasPrefix(a.Reason, "the creation was undone: ") {
-				e.t.Errorf("the undoing's audit entry = %+v", a)
+		if a.Details[DetailUndone] == "true" {
+			undone++
+			if a.Method != "CreateTenant" || a.Outcome != master.OutcomeFailed || a.Reason == "" {
+				e.t.Errorf("the failed request's audit entry = %+v", a)
 			}
-			mustNotContain(e.t, "the undoing's audit entry", a.Reason, append(passwordForms, flakyHost)...)
+			mustNotContain(e.t, "the failed request's audit entry", a.Reason, append(passwordForms, flakyHost)...)
 		}
 	}
-	if !undone {
-		e.t.Error("no audit entry says the creation was undone")
+	if undone != 1 {
+		e.t.Errorf("%d audit entries say the creation was undone, want 1", undone)
 	}
 }
 

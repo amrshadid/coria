@@ -380,9 +380,23 @@ func TestCreateRules(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Errorf("%d rows, %v; want one", len(rows), err)
 	}
-	created := e.systemEntries("lab")
-	if len(created) != 1 || created[0].Details[master.DetailOldState] != "upgrading" || created[0].Details[master.DetailNewState] != "ready" {
-		t.Errorf("the creation's state changes = %+v, want one, upgrading to ready", created)
+	// The change to ready is written with the first request's own entry, not
+	// a system one; the repeat records its request alone.
+	if sys := e.systemEntries("lab"); len(sys) != 0 {
+		t.Errorf("system state changes = %+v, want none", sys)
+	}
+	entries, _, err := e.master.ListAudit(ctx, master.AuditFilter{TenantName: "lab"}, master.Page{Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := 0
+	for _, a := range entries {
+		if a.Method == "CreateTenant" && a.Details[master.DetailOldState] == "upgrading" && a.Details[master.DetailNewState] == "ready" {
+			ready++
+		}
+	}
+	if ready != 1 {
+		t.Errorf("%d request entries record the change from upgrading to ready, want 1", ready)
 	}
 }
 

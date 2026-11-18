@@ -166,9 +166,10 @@ func (e *env) newRegistry(cfg Config) *Registry {
 
 // audit returns a new audit entry for a request by the local operator.
 func (e *env) audit(method string) master.AuditEntry {
+	id := fmt.Sprintf("req-%06d", e.seq.Add(1))
 	return master.AuditEntry{
-		ID: fmt.Sprintf("req-%06d", e.seq.Add(1)), Time: e.clock.Now(), LocalUser: "501",
-		Method: method, Outcome: master.OutcomeDone, RequestID: "r",
+		ID: id, Time: e.clock.Now(), LocalUser: "501",
+		Method: method, Outcome: master.OutcomeDone, RequestID: "request-" + id,
 	}
 }
 
