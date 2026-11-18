@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,54 +27,20 @@ const (
 // file is read one byte past it, so a longer one is refused, not cut.
 const maxAddressFile = 4096
 
-// enumText writes an enum value as a word for a person: its name without the
-// prefix, in lowercase, so TENANT_STATE_READY is "ready".
-func enumText(name, prefix string) string {
-	return strings.ToLower(strings.TrimPrefix(name, prefix))
-}
-
 // roleText is a role as a word; no role is "none".
-func roleText(r v1.Role) string {
-	if r == v1.Role_ROLE_UNSPECIFIED {
-		return "none"
-	}
-	return enumText(r.String(), "ROLE_")
-}
+func roleText(r v1.Role) string { return output.Role(r) }
 
 // databaseText is a database type as a word.
-func databaseText(t v1.DatabaseType) string {
-	if t == v1.DatabaseType_DATABASE_TYPE_UNSPECIFIED {
-		return "unknown"
-	}
-	return enumText(t.String(), "DATABASE_TYPE_")
-}
+func databaseText(t v1.DatabaseType) string { return output.Database(t) }
 
 // stateText is a tenant state as a word.
-func stateText(s v1.TenantState) string {
-	if s == v1.TenantState_TENANT_STATE_UNSPECIFIED {
-		return "unknown"
-	}
-	return enumText(s.String(), "TENANT_STATE_")
-}
+func stateText(s v1.TenantState) string { return output.State(s) }
 
 // outcomeText is an audit outcome as a word.
-func outcomeText(o v1.AuditOutcome) string {
-	if o == v1.AuditOutcome_AUDIT_OUTCOME_UNSPECIFIED {
-		return "unknown"
-	}
-	return enumText(o.String(), "AUDIT_OUTCOME_")
-}
+func outcomeText(o v1.AuditOutcome) string { return output.Outcome(o) }
 
 // scopeText is a scope as words: "installation" or "tenant <name>".
-func scopeText(sc *v1.Scope) string {
-	if t, ok := sc.GetKind().(*v1.Scope_Tenant); ok {
-		return "tenant " + t.Tenant
-	}
-	if _, ok := sc.GetKind().(*v1.Scope_Installation); ok {
-		return "installation"
-	}
-	return "unknown"
-}
+func scopeText(sc *v1.Scope) string { return output.Scope(sc) }
 
 // parseRole reads a role name as the person types it.
 func parseRole(s string) (v1.Role, error) {
@@ -105,22 +70,8 @@ func parseOutcome(s string) (v1.AuditOutcome, error) {
 	return 0, fault.New(fault.Invalid, fmt.Sprintf("--outcome %q is not an outcome; use done, refused or failed", output.Clean(s)))
 }
 
-// parseSpan reads a length of time written as a number and a unit: s, m, h, d
-// (24 hours) or w (7 days), such as 90d or 36h.
-func parseSpan(s string) (time.Duration, error) {
-	if len(s) < 2 {
-		return 0, fmt.Errorf("not a length of time")
-	}
-	unit := map[byte]time.Duration{
-		's': time.Second, 'm': time.Minute, 'h': time.Hour,
-		'd': 24 * time.Hour, 'w': 7 * 24 * time.Hour,
-	}[s[len(s)-1]]
-	n, err := strconv.ParseInt(s[:len(s)-1], 10, 64)
-	if unit == 0 || err != nil || n <= 0 || n > int64(time.Duration(1<<62)/unit) {
-		return 0, fmt.Errorf("not a length of time")
-	}
-	return time.Duration(n) * unit, nil
-}
+// parseSpan reads a length of time written as a number and a unit, such as 90d.
+func parseSpan(s string) (time.Duration, error) { return output.ParseSpan(s) }
 
 // parseTime reads the --since and --until forms: an age such as 24h or 7d
 // (that long before now), a date (midnight in the zone times are shown in) or
@@ -138,18 +89,8 @@ func parseTime(flag, s string, now time.Time, loc *time.Location) (time.Time, er
 	return time.Time{}, fault.New(fault.Invalid, fmt.Sprintf("--%s %q is not a time; use a date (2026-11-17), a time with its offset (2026-11-17T09:30:00+03:00) or an age (24h, 7d)", flag, output.Clean(s)))
 }
 
-// checkKeyID refuses a value that is a whole key. A key id is public; a whole
-// key is a secret, and one typed as an argument would be in the process list
-// and in shell history. The message never repeats the value.
-func checkKeyID(id string) error {
-	if id == "" {
-		return fault.New(fault.Invalid, "the key id is empty; \"magnetar key list\" shows the ids")
-	}
-	if strings.HasPrefix(id, "mgt_") {
-		return fault.New(fault.Invalid, "that is a whole key, which is a secret and is never an argument; give the key's id, which \"magnetar key list\" shows")
-	}
-	return nil
-}
+// checkKeyID refuses a value that is a whole key.
+func checkKeyID(id string) error { return output.CheckKeyID(id) }
 
 // readAddress reads a tenant's database address from the environment variable
 // named by dbEnv or from the file named by dbFile, and from nowhere else. The
