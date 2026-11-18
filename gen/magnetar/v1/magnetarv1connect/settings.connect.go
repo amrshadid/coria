@@ -76,50 +76,54 @@ var (
 // SettingsServiceClient is a client for the magnetar.v1.SettingsService service.
 type SettingsServiceClient interface {
 	// GetSetting answers the value of one setting as it applies to the scope
-	// asked for: on the installation, its default; on a tenant, the tenant's
-	// override when it has one, else the installation's default. The answer's
-	// scope says which of the two the value came from.
+	// asked for: on the installation, the installation's value, else the
+	// built-in default; on a tenant, the tenant's override when it has one,
+	// else what applies on the installation. The answer's scope and source say
+	// where the value came from.
 	//
 	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for, with the setting's
 	// name as its object.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (no setting has that name; a tenant that does not exist, for a
-	// caller who may list every tenant), unavailable (the database of the
-	// scope does not answer, or the tenant is not ready).
+	// not found (no setting the server knows has that name; a tenant that does
+	// not exist, for a caller who may list every tenant), unavailable (the
+	// database of the scope does not answer, or the tenant is not ready).
 	GetSetting(context.Context, *v1.GetSettingRequest) (*v1.GetSettingResponse, error)
-	// SetSetting sets the installation's default of a setting, or a tenant's
-	// override of it. The change and its audit entry are written together or
-	// not at all.
+	// SetSetting sets the installation's value of a setting, or a tenant's
+	// override of it when the setting allows one. The change and its audit
+	// entry are written together or not at all.
 	//
 	// Role: admin on the scope set.
 	// Audit: one entry in the log of the scope set, with the setting's name as
 	// its object; the value is not recorded.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a value the setting does not accept), not found (no setting has
-	// that name; a tenant that does not exist, for a caller who may list every
-	// tenant), unavailable (the database of the scope does not answer, or the
-	// tenant is not ready).
+	// (also a value the setting does not accept, and a tenant scope for a
+	// setting a tenant may not override), not found (no setting the server
+	// knows has that name; a tenant that does not exist, for a caller who may
+	// list every tenant), unavailable (the database of the scope does not
+	// answer, or the tenant is not ready).
 	SetSetting(context.Context, *v1.SetSettingRequest) (*v1.SetSettingResponse, error)
-	// UnsetSetting removes a tenant's override of a setting, so the
-	// installation's default applies to the tenant again. Removing an override
-	// the tenant does not have changes nothing and succeeds. The installation's
-	// default cannot be removed: an installation scope is refused as invalid.
+	// UnsetSetting removes a value set on a scope: a tenant's override, so what
+	// applies on the installation applies to the tenant again, or the
+	// installation's value, so the built-in default applies again. Removing a
+	// value that is not set changes nothing and succeeds.
 	//
 	// Role: admin on the scope.
-	// Audit: one entry in the tenant's log, with the setting's name as its
+	// Audit: one entry in the log of the scope, with the setting's name as its
 	// object.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (no setting has that name; a tenant that does not exist, for a
-	// caller who may list every tenant), unavailable (the tenant's database
-	// does not answer, or the tenant is not ready).
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a tenant scope for a setting a tenant may not override), not found
+	// (no setting the server knows has that name; a tenant that does not
+	// exist, for a caller who may list every tenant), unavailable (the
+	// database of the scope does not answer, or the tenant is not ready).
 	UnsetSetting(context.Context, *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error)
-	// ListSettings answers the settings set on one scope, ordered by name: on
-	// the installation, every setting's default; on a tenant, only that
-	// tenant's overrides.
+	// ListSettings answers settings of one scope, ordered by name: on the
+	// installation, every setting the server knows with the value that applies
+	// there (the installation's, else the built-in default); on a tenant, only
+	// that tenant's overrides.
 	//
 	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for.
@@ -140,50 +144,54 @@ func NewSettingsServiceClient(client *connect.Client) SettingsServiceClient {
 // SettingsServiceHandler is an implementation of the magnetar.v1.SettingsService service.
 type SettingsServiceHandler interface {
 	// GetSetting answers the value of one setting as it applies to the scope
-	// asked for: on the installation, its default; on a tenant, the tenant's
-	// override when it has one, else the installation's default. The answer's
-	// scope says which of the two the value came from.
+	// asked for: on the installation, the installation's value, else the
+	// built-in default; on a tenant, the tenant's override when it has one,
+	// else what applies on the installation. The answer's scope and source say
+	// where the value came from.
 	//
 	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for, with the setting's
 	// name as its object.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (no setting has that name; a tenant that does not exist, for a
-	// caller who may list every tenant), unavailable (the database of the
-	// scope does not answer, or the tenant is not ready).
+	// not found (no setting the server knows has that name; a tenant that does
+	// not exist, for a caller who may list every tenant), unavailable (the
+	// database of the scope does not answer, or the tenant is not ready).
 	GetSetting(context.Context, *v1.GetSettingRequest) (*v1.GetSettingResponse, error)
-	// SetSetting sets the installation's default of a setting, or a tenant's
-	// override of it. The change and its audit entry are written together or
-	// not at all.
+	// SetSetting sets the installation's value of a setting, or a tenant's
+	// override of it when the setting allows one. The change and its audit
+	// entry are written together or not at all.
 	//
 	// Role: admin on the scope set.
 	// Audit: one entry in the log of the scope set, with the setting's name as
 	// its object; the value is not recorded.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a value the setting does not accept), not found (no setting has
-	// that name; a tenant that does not exist, for a caller who may list every
-	// tenant), unavailable (the database of the scope does not answer, or the
-	// tenant is not ready).
+	// (also a value the setting does not accept, and a tenant scope for a
+	// setting a tenant may not override), not found (no setting the server
+	// knows has that name; a tenant that does not exist, for a caller who may
+	// list every tenant), unavailable (the database of the scope does not
+	// answer, or the tenant is not ready).
 	SetSetting(context.Context, *v1.SetSettingRequest) (*v1.SetSettingResponse, error)
-	// UnsetSetting removes a tenant's override of a setting, so the
-	// installation's default applies to the tenant again. Removing an override
-	// the tenant does not have changes nothing and succeeds. The installation's
-	// default cannot be removed: an installation scope is refused as invalid.
+	// UnsetSetting removes a value set on a scope: a tenant's override, so what
+	// applies on the installation applies to the tenant again, or the
+	// installation's value, so the built-in default applies again. Removing a
+	// value that is not set changes nothing and succeeds.
 	//
 	// Role: admin on the scope.
-	// Audit: one entry in the tenant's log, with the setting's name as its
+	// Audit: one entry in the log of the scope, with the setting's name as its
 	// object.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (no setting has that name; a tenant that does not exist, for a
-	// caller who may list every tenant), unavailable (the tenant's database
-	// does not answer, or the tenant is not ready).
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a tenant scope for a setting a tenant may not override), not found
+	// (no setting the server knows has that name; a tenant that does not
+	// exist, for a caller who may list every tenant), unavailable (the
+	// database of the scope does not answer, or the tenant is not ready).
 	UnsetSetting(context.Context, *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error)
-	// ListSettings answers the settings set on one scope, ordered by name: on
-	// the installation, every setting's default; on a tenant, only that
-	// tenant's overrides.
+	// ListSettings answers settings of one scope, ordered by name: on the
+	// installation, every setting the server knows with the value that applies
+	// there (the installation's, else the built-in default); on a tenant, only
+	// that tenant's overrides.
 	//
 	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for.
