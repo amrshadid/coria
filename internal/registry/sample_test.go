@@ -42,7 +42,7 @@ func TestWriteTenantSample(t *testing.T) {
 	}
 	r, err := New(Config{
 		Master: m, Keys: keys, Drivers: map[string]Driver{driver.SQLiteDriver: driver.SQLiteTenants{DataDir: dir}},
-		Now: func() time.Time { return t0 }, Interval: time.Hour, OpenTimeout: 10 * time.Second, MaxOpening: 4,
+		Now: func() time.Time { return t0 }, Interval: time.Hour, OpenTimeout: 10 * time.Second, PingTimeout: time.Second, MaxOpening: 4,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestWriteTenantSample(t *testing.T) {
 		t.Fatal(err)
 	}
 	tenanttest.WriteSample(t, s)
-	if err := r.Close(); err != nil {
+	if err := r.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 }

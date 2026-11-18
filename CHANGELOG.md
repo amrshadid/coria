@@ -122,34 +122,46 @@ All notable changes to Magnetar are written here. The form is
   (`internal/tenant`): its overrides of the installation's settings and its
   own audit log, with the master's bounds, the master's entry type and the
   master's rules: each change written with its audit entry or not at all, a
-  duplicate audit id told apart from a conflict, cursors bound to their list
-  and filter, and the same error kinds. A contract suite every driver must
-  pass (`internal/tenant/tenanttest`) runs on SQLite, where the master and
-  the tenants now share one implementation of settings and of the audit log,
-  and a tenant without an address gets the file
+  duplicate audit id told apart from a conflict, cursors bound to their list,
+  their filter and their tenant, and the same error kinds. A contract suite
+  every driver must pass (`internal/tenant/tenanttest`) runs on SQLite, where
+  the master and the tenants now share one implementation of settings and of
+  the audit log, and a tenant without an address gets the file
   `<data-dir>/tenants/<name>.db`, private to its owner, built so that no name
-  can put it elsewhere; a tenant file someone made readable by others is
-  refused, and the tenant is `failed` with the fix in its reason. Errors from
-  the SQLite driver now name the database they are about, master or tenant. The
-  tenant registry (`internal/registry`) holds one open store per tenant and
-  is the only way to get one: getting a ready tenant's store takes no lock
-  and makes no call to the master (12 ns, no allocation, among 1,000
-  tenants). It opens every tenant in parallel, a bounded number at once,
-  each under its own deadline, so one dead database delays neither the
-  start nor the others; a tenant whose database does not answer is
-  `unreachable` and refused while the others are served, and returns to
-  `ready` on its own; one whose address does not open with the key file, or
-  whose schema cannot be upgraded, is `failed` with its reason. Each state is
-  written to the master with an audit entry whose actor is the system, a
-  flapping database at most once a minute, and no reason, error or log line
-  holds the database's address, host, user or password. Creating a tenant
-  writes its row as `upgrading` first, so a crash before its database is
-  ready is finished by the next start or by the same creation repeated.
-  Removing a tenant unregisters it and leaves its data in place, and says
-  where. Closing the registry stops its timer, waits for opens in progress
-  and closes every store. `scripts/check-tenant-sqlite.sh` reads a tenant
-  the registry created with the `sqlite3` tool. The server does not use the
-  registry yet.
+  can put it elsewhere. Errors from the SQLite driver now name the database
+  they are about, master or tenant, and a symbolic link planted at a
+  database's path is refused rather than followed. A tenant may not be named
+  for a device Windows reserves (`con`, `nul`, `com1` and the like), on any
+  system, so a data directory moved to Windows keeps working. The tenant
+  registry (`internal/registry`) holds one open store per tenant and is the
+  only way to get one: getting a ready tenant's store takes no lock and makes
+  no call to the master (12 ns, no allocation, among 1,000 tenants). It opens
+  every tenant in parallel, a bounded number at once, each under its own
+  deadline, and checks an open tenant with a short ping that waits for no
+  open, so one dead database delays neither the start nor the others; a
+  tenant whose database does not answer is `unreachable` and refused while
+  the others are served, and returns to `ready` on its own; one whose address
+  does not open with the key file, whose database refuses its address or its
+  file, whose schema cannot be upgraded or whose driver panics is `failed`
+  with its reason. The registry's view of a tenant's state, with its reason
+  and the time it was reached, is current the moment a check completes; the
+  master records it, with an audit entry whose actor is the system, a
+  flapping database at most once a minute. A reason, an error, an audit
+  entry and a log line hold only the registry's own words and a driver's
+  caller-safe message, never a driver's raw error, so no form of the
+  database's address or password reaches them. Creating a tenant is whole or
+  nothing: when its database cannot be opened or upgraded, the row is removed
+  again, the undoing is audited, and the failure is answered; only a crash
+  leaves an `upgrading` row, which the next start finishes, and repeating a
+  creation with another address is a conflict. Removing a tenant unregisters
+  it and leaves its data in place, and says where. Each round also reconciles
+  the registry with the master's list of tenants, so a removal or creation
+  whose answer was lost does not leave the two apart. At start it warns when
+  the tenants could not all hold their files under the process's limit.
+  Closing the registry stops its timer, waits for opens in progress up to the
+  deadline it is given, and closes every store. `scripts/check-tenant-sqlite.sh`
+  reads a tenant the registry created with the `sqlite3` tool. The server does
+  not use the registry yet.
 - The master database could only live in a SQLite file. It can now live in
   Postgres too (`internal/driver/postgres`, on `pgx/v5` and its pool, pure
   Go), at a `postgres://` address, and it passes the same contract suite
