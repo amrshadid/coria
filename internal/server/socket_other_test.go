@@ -64,14 +64,15 @@ func runOtherUserHelper() int {
 	return 0
 }
 
-// TestSocketRefusesOtherUser guards acceptance 5: another operating system
-// user cannot use the local socket. It runs this test binary as that user
-// (sudo) twice: first with the directory as the server keeps it, where the
-// system refuses the connect ("denied"); then with the directory and the
-// socket opened to everyone, so the peer check is the only guard left, and
-// the server must close the connection unanswered ("closed").
-// It needs a second user and passwordless sudo, so it is skipped unless
-// MAGNETAR_TEST_OTHER_USER names the user (CI on Linux; see otherUserEnv).
+// TestSocketRefusesOtherUser guards the local socket, which makes its caller
+// the local operator: another operating system user cannot use the local
+// socket. It runs this test binary as that user (sudo) twice: first with the
+// directory as the server keeps it, where the system refuses the connect
+// ("denied"); then with the directory and the socket opened to everyone, so
+// the peer check is the only guard left, and the server must close the
+// connection unanswered ("closed"). It needs a second user and passwordless
+// sudo, so it is skipped unless MAGNETAR_TEST_OTHER_USER names the user (CI
+// on Linux; see otherUserEnv).
 func TestSocketRefusesOtherUser(t *testing.T) {
 	other := os.Getenv(otherUserEnv)
 	if other == "" {

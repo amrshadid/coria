@@ -1,6 +1,5 @@
 // Package access decides who is calling and what they may do, records each
-// request in the audit log, and manages API keys and their grants (M0 design
-// note, parts 4 to 6).
+// request in the audit log, and manages API keys and their grants.
 //
 // It knows nothing about gRPC, HTTP or the command line. A server hands it a
 // Credential (a presented key, or the local operator the socket reported), a
@@ -38,9 +37,10 @@
 // The checks run in the order the API contract states (access.proto, "The
 // order of checks"): the credential first, answered Unauthenticated when it
 // is no good for any reason; then the role, answered Denied, or NotFound for
-// a tenant that does not exist when the caller may list every tenant (D37).
-// Validating the request itself comes after, in the handler, or in this
-// package for the operations it implements.
+// a tenant that does not exist when the caller may list every tenant, so an
+// operator who mistypes a name is told so while a caller with no right to
+// know learns nothing. Validating the request itself comes after, in the
+// handler, or in this package for the operations it implements.
 //
 // # Refusals
 //
@@ -57,7 +57,7 @@
 // from its row, one that does not is not. The audit entry keeps the real
 // cause in its reason; the caller never sees it.
 //
-// # Where an entry goes (D53)
+// # Where an entry goes
 //
 // A refusal is always written to the installation's log (the master), with
 // the tenant's name when the request named one: a caller who was refused must

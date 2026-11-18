@@ -119,9 +119,9 @@ func stalledRequest(t *testing.T, c net.Conn, procedure, authorization string) *
 	return bufio.NewReader(c)
 }
 
-// TestMaxDeadline guards point 1a of the review: every call is cut at the
-// maximum, even when its client asks for a longer deadline; a client's
-// shorter deadline is kept.
+// TestMaxDeadline guards that every call is cut at the maximum, even when its
+// client asks for a longer deadline, so no client can hold a request for as
+// long as it likes; a client's shorter deadline is kept.
 func TestMaxDeadline(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, maxDL: 400 * time.Millisecond})
 	cl := e.local()
@@ -180,10 +180,11 @@ func TestClientDeadlineHeaders(t *testing.T) {
 	}
 }
 
-// TestBodyReadBound guards point 1c: a method whose requirement reads the
-// request waits for its body only as long as the read bound. A caller with
-// no key that trickles a body is refused UNAUTHENTICATED when the bound
-// runs out; a caller who passes the fallback check is told its request was
+// TestBodyReadBound guards against a caller that trickles its body to hold a
+// request open before it is checked: a method whose requirement reads the
+// request waits for its body only as long as the read bound. A caller with no
+// key that trickles a body is refused UNAUTHENTICATED when the bound runs
+// out; a caller who passes the fallback check is told its request was
 // invalid.
 func TestBodyReadBound(t *testing.T) {
 	e := newEnv(t, options{bodyRead: 300 * time.Millisecond})
@@ -212,11 +213,13 @@ func TestBodyReadBound(t *testing.T) {
 	}
 }
 
-// TestUnauthenticatedHoldsNothing guards point 1 as a whole: callers with no
-// key open many connections that try each way to stay (a stalled body on a
-// method that reads its request, Watch, a long deadline on a method that
-// does not read), and once the read bound and the maximum have passed none
-// of them holds a request in flight, while the local operator is answered.
+// TestUnauthenticatedHoldsNothing guards against callers with no key using up
+// the server's connections and files until the local operator is locked out:
+// callers with no key open many connections that try each way to stay (a
+// stalled body on a method that reads its request, Watch, a long deadline on
+// a method that does not read), and once the read bound and the maximum have
+// passed none of them holds a request in flight, while the local operator is
+// answered.
 func TestUnauthenticatedHoldsNothing(t *testing.T) {
 	e := newEnv(t, options{bodyRead: 300 * time.Millisecond, maxDL: 600 * time.Millisecond})
 	var wg sync.WaitGroup
@@ -285,9 +288,10 @@ func TestUnauthenticatedConnectionClosed(t *testing.T) {
 	}
 }
 
-// TestStopAbandonsStuck guards point 2: a handler that ignores its context
-// does not hold Stop. After the drain and the grace Stop gives up on it,
-// closes the rest, releases the lock, and says how many it abandoned.
+// TestStopAbandonsStuck guards that a handler that ignores its context does
+// not hold Stop, which would otherwise keep the server from ever stopping.
+// After the drain and the grace Stop gives up on it, closes the rest,
+// releases the lock, and says how many it abandoned.
 func TestStopAbandonsStuck(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, drain: 200 * time.Millisecond, grace: 200 * time.Millisecond, closeT: time.Second})
 	e.stopErrOK = true
@@ -318,9 +322,10 @@ func TestStopAbandonsStuck(t *testing.T) {
 	_ = l.Release()
 }
 
-// TestLateRegistrationNotServed guards point 3: a method registered on the
-// server's connect.Server after New, under a service already mounted, is
-// checked and answered UNIMPLEMENTED; its handler is never called.
+// TestLateRegistrationNotServed guards that no method reaches a handler
+// without its requirement: a method registered on the server's connect.Server
+// after New, under a service already mounted, is checked and answered
+// UNIMPLEMENTED; its handler is never called.
 func TestLateRegistrationNotServed(t *testing.T) {
 	var rpc *connect.Server
 	ran := false
@@ -339,10 +344,11 @@ func TestLateRegistrationNotServed(t *testing.T) {
 	}
 }
 
-// TestPanicValueRedacted guards point 4: a panic's value reaches the log
-// only as its type, a scrubbed short text, or a redacted message. A panic
-// with an address holding a password, with a request message holding it,
-// and with a value of another type holding it, leave no password in the log.
+// TestPanicValueRedacted guards that a panic cannot carry a secret into the
+// log: a panic's value reaches the log only as its type, a scrubbed short
+// text, or a redacted message. A panic with an address holding a password,
+// with a request message holding it, and with a value of another type holding
+// it, leave no password in the log.
 func TestPanicValueRedacted(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	cl := e.local()
@@ -540,10 +546,11 @@ func TestUnknownMethodLabels(t *testing.T) {
 	}
 }
 
-// TestTransportAnswersLogged guards point 7: answers the RPC library gives
-// before the request path (a wrong content type, a wrong HTTP method, an
-// unknown compression, a malformed timeout header) each carry a request id
-// that is in the log, and each is counted under the method "transport".
+// TestTransportAnswersLogged guards that no answer escapes the log, so an
+// operator can trace every one: answers the RPC library gives before the
+// request path (a wrong content type, a wrong HTTP method, an unknown
+// compression, a malformed timeout header) each carry a request id that is in
+// the log, and each is counted under the method "transport".
 func TestTransportAnswersLogged(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	hc := e.socketClient(false)

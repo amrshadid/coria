@@ -56,9 +56,9 @@ func TestContractSecrets(t *testing.T) {
 	}
 }
 
-// TestUnredactedPrintsSecret guards the premise of this package (D39): the
-// protobuf library itself prints a marked field. If it ever stops, this test
-// says so, and the package is still right but no longer the only guard.
+// TestUnredactedPrintsSecret guards the premise of this package: the protobuf
+// library itself prints a marked field. If it ever stops, this test says so,
+// and the package is still right but no longer the only guard.
 func TestUnredactedPrintsSecret(t *testing.T) {
 	res := &magnetarv1.CreateKeyResponse{Secret: secretKey}
 	found := false
@@ -66,7 +66,7 @@ func TestUnredactedPrintsSecret(t *testing.T) {
 		found = found || strings.Contains(form, secretKey)
 	}
 	if !found {
-		t.Fatal("the protobuf library no longer prints a debug_redact field; D39 needs a look")
+		t.Fatal("the protobuf library no longer prints a debug_redact field; whether this package is still needed needs a look")
 	}
 }
 

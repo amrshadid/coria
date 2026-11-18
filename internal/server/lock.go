@@ -17,13 +17,14 @@ const LockName = "serve.lock"
 // process id is a few bytes.
 const maxLockFile = 64
 
-// Lock is the hold one server has on a data directory (decision D47): an
-// operating system file lock, taken at start and held for the life of the
-// process. The system drops it when the process ends, however it ends,
-// including a kill with signal 9 or a panic, so it is never left stale; the
-// file itself stays, and a later start locks it again. The process id
-// written in the file only names the holder in the refusal of a second
-// server; it decides nothing.
+// Lock is the hold one server has on a data directory, so a second server is
+// refused instead of writing the same databases and making the first one's
+// calls wait on its locks: an operating system file lock, taken at start and
+// held for the life of the process. The system drops it when the process
+// ends, however it ends, including a kill with signal 9 or a panic, so it is
+// never left stale; the file itself stays, and a later start locks it again.
+// The process id written in the file only names the holder in the refusal of
+// a second server; it decides nothing.
 type Lock struct {
 	path string
 	once sync.Once

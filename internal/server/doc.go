@@ -92,10 +92,10 @@
 // can hold a request for at most the body's 10 seconds, nothing past the
 // 5-minute maximum, and never the local operator's way in.
 //
-// Known and accepted for M0: a flood of requests with bad keys is answered
-// and audited at about 16,000 refusals a second, and makes the master's
-// audit log grow by about 6 MB a second (both measured in the review of
-// pull request #25), until the audit writer's bounded queue drops
+// Known and accepted in this version: a flood of requests with bad keys is
+// answered and audited at about 16,000 refusals a second, and makes the
+// master's audit log grow by about 6 MB a second (both measured against the
+// server of pull request #25), until the audit writer's bounded queue drops
 // entries, which it counts. A limit per remote address is later work.
 //
 // # One server per data directory
@@ -109,11 +109,12 @@
 // # The installation's identity
 //
 // Init writes a random id into the data directory (IDFileName) and into the
-// master's settings store (InstallationIDSetting), and serve refuses a
-// master that does not hold the same id, before migrating anything
-// (decision D52). The id's name is under settings.ReservedPrefix, which no
-// setting of the server's list may use, so the settings service neither
-// lists, reads nor changes it.
+// master's settings store (InstallationIDSetting), and serve refuses a master
+// that does not hold the same id, before migrating anything, so a mistyped
+// master address cannot start a server on an empty or foreign master. The
+// id's name is under settings.ReservedPrefix, which no setting of the
+// server's list may use, so the settings service neither lists, reads nor
+// changes it.
 //
 // # Stopping
 //

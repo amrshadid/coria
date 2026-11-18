@@ -13,10 +13,12 @@ import (
 	"github.com/amrshadid/magnetar/internal/master"
 )
 
-// TestCreateWholeOrNothing guards D56: a creation whose database cannot be
-// opened or upgraded leaves nothing behind (no row in the master, no entry in
-// the registry, no open store) and answers the kind the API contract gives
-// each failure; a system audit entry records the undoing, with no address.
+// TestCreateWholeOrNothing guards that a creation is whole or not at all, so
+// an operator who mistypes an address gets an error and not a broken tenant
+// to clean up: a creation whose database cannot be opened or upgraded leaves
+// nothing behind (no row in the master, no entry in the registry, no open
+// store) and answers the kind the API contract gives each failure; a system
+// audit entry records the undoing, with no address.
 func TestCreateWholeOrNothing(t *testing.T) {
 	cases := []struct {
 		name string

@@ -11,7 +11,7 @@ import (
 
 // The benchmarks of the per-request path: what every API call costs the
 // master. They are the baseline each driver reports; no claim is made from
-// them yet (M0 design note, "What is weak or not known").
+// them yet, as there is no target to hold them to.
 
 // benchStore makes a store holding 1,000 keys and 50 tenants, with one key
 // granted on the installation and on three tenants, so the reads below meet

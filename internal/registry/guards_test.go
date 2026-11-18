@@ -72,10 +72,10 @@ func TestNoDriverTextAnywhere(t *testing.T) {
 	}
 }
 
-// TestOneCharacterPassword guards the failure the review found in a
-// scrubber: a password of one character mangled every reason. A reason is
-// now made only of fixed phrases and the driver's safe message, so it reads
-// whole whatever the password is.
+// TestOneCharacterPassword guards against scrubbing a password out of a
+// driver's text, which fails on a short password: a password of one character
+// mangled every reason. A reason is now made only of fixed phrases and the driver's
+// safe message, so it reads whole whatever the password is.
 func TestOneCharacterPassword(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)

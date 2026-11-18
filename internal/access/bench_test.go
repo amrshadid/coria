@@ -15,8 +15,8 @@ import (
 
 // The benchmarks of the check on the SQLite master, with the last-use worker
 // and the audit writer running as a server runs them: the cost every later
-// API call pays before its handler runs (acceptance 7). They are reported,
-// not claimed against a target yet. Run them without the race detector.
+// API call pays before its handler runs. They are reported, not claimed
+// against a target yet. Run them without the race detector.
 
 // benchEnv returns an env with a key that holds one grant, writer on lab,
 // marked used a moment before, as a busy key is.

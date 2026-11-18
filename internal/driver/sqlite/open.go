@@ -17,14 +17,14 @@ import (
 	"github.com/amrshadid/magnetar/internal/sqlkit"
 )
 
-// busyTimeout is how long a connection waits for a lock another process
-// holds before it fails with SQLITE_BUSY: another magnetar starting and
-// migrating, a backup made with the sqlite3 tool, a checkpoint of the
-// write-ahead log. Inside the process writers never meet it, since they
-// queue for the one write connection. modernc.org/sqlite returns
-// SQLITE_BUSY once this passes, where the cgo driver waited longer, and
-// Gitea raised its timeout after switching to it (research R6), so it is set
-// well above a moment.
+// busyTimeout is how long a connection waits for a lock another process holds
+// before it fails with SQLITE_BUSY: another magnetar starting and migrating,
+// a backup made with the sqlite3 tool, a checkpoint of the write-ahead log.
+// Inside the process writers never meet it, since they queue for the one
+// write connection. modernc.org/sqlite returns SQLITE_BUSY once this passes,
+// where the cgo driver waited longer, and Gitea raised its timeout to 20
+// seconds after switching to it (github.com/go-gitea/gitea pull request
+// 37562), so it is set well above a moment.
 const busyTimeout = 10 * time.Second
 
 // readConnections is the size of the read pool. The master is small and its
@@ -80,8 +80,8 @@ func openPools(ctx context.Context, path string, name dbName) (*pools, error) {
 	// synchronous=FULL: in write-ahead mode NORMAL is safe from corruption
 	// but "a transaction committed ... might roll back following a power
 	// loss" (sqlite.org/pragma.html). The master's rows are few and writes
-	// rare, and a revoked key that comes back after a power cut is a
-	// security failure, so every commit is synced (research R6).
+	// rare, and a revoked key that comes back after a power cut is a security
+	// failure, so every commit is synced.
 	common.Set("_synchronous", "FULL")
 	// fullfsync: on macOS fsync() does not reach the disk's own cache, and
 	// only fcntl(F_FULLFSYNC) does, which SQLite uses only when asked

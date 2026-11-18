@@ -20,8 +20,8 @@
 //
 // runs outside a transaction, for a statement a database refuses inside one
 // (Postgres's CREATE INDEX CONCURRENTLY). Such a file is recorded only after
-// it has run, so it must be written to be run again safely. None is needed
-// in M0.
+// it has run, so it must be written to be run again safely. No migration
+// shipped so far needs one.
 //
 // The runner assumes two things of a database: that DDL (CREATE TABLE,
 // CREATE INDEX) runs inside a transaction and is undone with it, and that one

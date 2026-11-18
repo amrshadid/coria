@@ -64,7 +64,7 @@ func TestShippedMigrationsUnchanged(t *testing.T) {
 }
 
 // shippedInit is the SHA-256 of 0001_init.sql as this change ships it.
-const shippedInit = "79fc962d444c26b99122a0f849ff133365f1b8237d22a45f72766cf6ca420688"
+const shippedInit = "855c5c3249782315f249013266c36749c608d407b4189d596901658270e5353d"
 
 // openPair opens two stores on one fresh, migrated file, as two processes
 // would, for the suite's tests across instances.

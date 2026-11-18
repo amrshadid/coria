@@ -103,7 +103,7 @@ func (t *Tenant) Close() error {
 	})
 }
 
-// tenantStatements are a tenant's prepared statements: in M0 only the ones
+// tenantStatements are a tenant's prepared statements: for now only the ones
 // it shares with the master.
 type tenantStatements struct {
 	all []*sql.Stmt

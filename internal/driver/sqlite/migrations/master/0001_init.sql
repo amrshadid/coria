@@ -36,9 +36,10 @@ CREATE TABLE api_keys (
 CREATE INDEX api_keys_by_created ON api_keys (created, id);
 
 -- scope is '' for the installation and the tenant's id otherwise, so the
--- primary key (one grant per key and scope, D37) holds for the installation
--- too: a NULL would be distinct from every other NULL. tenant_id repeats the
--- scope as NULL or the id, so the foreign key can check it.
+-- primary key (one grant per key and scope, so setting a grant again replaces
+-- its role instead of adding a second) holds for the installation too: a NULL
+-- would be distinct from every other NULL. tenant_id repeats the scope as
+-- NULL or the id, so the foreign key can check it.
 CREATE TABLE grants (
     key_id    TEXT NOT NULL REFERENCES api_keys (id),
     scope     TEXT NOT NULL,

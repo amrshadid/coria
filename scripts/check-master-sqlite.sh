@@ -90,8 +90,9 @@ want "the revoked key's revocation time" "2026-11-18 10:30:00" \
 	"$(q "SELECT datetime(revoked / 1000000, 'unixepoch') FROM api_keys WHERE id = 'SampleKey003'")"
 want "a Unicode holder, as UTF-8" "Zoë 山田 🧠" "$(q "SELECT holder FROM api_keys WHERE id = 'SampleKey002'")"
 
-# Grants: one per key and scope, and setting one again replaced its role
-# (D37); the audit entry of that change says the old and the new role.
+# Grants: one per key and scope, and setting one again replaced its role in
+# one step, never leaving the key without one; the audit entry of that change
+# says the old and the new role.
 want "the replaced grant's role" writer "$(q "SELECT role FROM grants WHERE key_id = 'SampleKey002'")"
 want "every audit entry's details are a JSON object" 12 "$(q "SELECT count(*) FROM audit WHERE json_valid(details) AND json_type(details) = 'object'")"
 want "the replacement's audit entry" "reader -> writer" \

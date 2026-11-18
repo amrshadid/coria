@@ -24,7 +24,7 @@ const SQLiteDriver = "sqlite"
 const PostgresDriver = "postgres"
 
 // TenantsDir is the directory, inside the data directory, that holds the
-// database file of every tenant on SQLite (M0 design note, part 1).
+// database file of every tenant on SQLite.
 const TenantsDir = "tenants"
 
 // SQLiteTenants opens the databases of tenants on SQLite. Each is the file

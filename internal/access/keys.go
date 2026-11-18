@@ -11,8 +11,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/secret"
 )
 
-// The limits of the keys this package makes (access.proto,
-// CreateKeyRequest; D38).
+// The limits of the keys this package makes (access.proto, CreateKeyRequest).
 const (
 	// DefaultKeyLifetime is how long a key lives when its maker names no
 	// expiry: a key nobody remembers still stops working on its own.
@@ -357,7 +356,8 @@ func (a *Access) RevokeKey(ctx context.Context, d Decision, id string) (master.K
 
 // resolve returns the master's scope for s, reading the tenant by name. A
 // tenant that does not exist is NotFound: the caller has passed the
-// installation admin's check, so it may list every tenant (D37).
+// installation admin's check, so it may list every tenant and learns nothing
+// from being told a name is unknown.
 func (a *Access) resolve(ctx context.Context, s Scope) (master.Scope, error) {
 	if s.IsInstallation() {
 		return master.Installation, nil

@@ -186,9 +186,10 @@ func checkMade(dir, masterEnv string) error {
 }
 
 // checkIdentity refuses a master database that is not the one this
-// installation was made with (decision D52): one with no tables, one with
-// no installation id, or one with another installation's id. It runs before
-// any migration, so a wrong master is never changed.
+// installation was made with: one with no tables, one with no installation
+// id, or one with another installation's id. A mistyped address would
+// otherwise start a server on an empty or foreign master as if nothing were
+// wrong. It runs before any migration, so a wrong master is never changed.
 func checkIdentity(ctx context.Context, m master.Store, dir string) error {
 	want, err := server.ReadInstallationID(dir)
 	if err != nil {

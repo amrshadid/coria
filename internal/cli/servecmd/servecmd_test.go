@@ -285,10 +285,10 @@ func waitServing(t *testing.T, dir string, c *child) {
 	t.Fatalf("the server did not answer:\n%s", c.stderr.String())
 }
 
-// TestOneServerPerDirectory guards acceptance 4 with real processes: a
-// second serve on the same directory is refused with a clear line naming
-// the first one's process; after the first is killed (signal 9 on Unix,
-// TerminateProcess on Windows), a new one starts.
+// TestOneServerPerDirectory guards the data directory's lock with real
+// processes: a second serve on the same directory is refused with a clear
+// line naming the first one's process; after the first is killed (signal 9 on
+// Unix, TerminateProcess on Windows), a new one starts.
 func TestOneServerPerDirectory(t *testing.T) {
 	dir := shortDir(t)
 	if _, err := run(t, nil, "init", "--data-dir", dir); err != nil {
@@ -327,11 +327,11 @@ func TestOneServerPerDirectory(t *testing.T) {
 	t.Log("after kill -9 of the first, a new serve started on the same directory")
 }
 
-// TestStopUnderLoad guards acceptance 7 with a real process: with requests
+// TestStopUnderLoad guards a graceful stop with a real process: with requests
 // in flight and refusals queued for the audit writer, SIGTERM lets every
 // request in flight finish, the process exits 0 within the drain deadline,
-// and every audit entry queued is in the master afterwards (counted from
-// the log's own count and from the database).
+// and every audit entry queued is in the master afterwards (counted from the
+// log's own count and from the database).
 func TestStopUnderLoad(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("SIGTERM cannot be sent to a process on Windows")

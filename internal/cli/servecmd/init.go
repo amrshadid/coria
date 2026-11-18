@@ -19,7 +19,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/server"
 )
 
-// The names inside a data directory (M0 design note, part 1).
+// The names inside a data directory.
 const (
 	// KeyFileName is the installation key file.
 	KeyFileName = "key"
@@ -141,11 +141,11 @@ The data directory is --data-dir, or MAGNETAR_DATA_DIR.`,
 // holds an installation, or the remains of one.
 var installationMarks = []string{KeyFileName, server.IDFileName, MasterFileName, TenantsDirName, "run"}
 
-// writeIdentity gives the new installation its id (decision D52): a random
-// id written into the master's settings store, under the reserved name,
-// with a system audit entry, and into the id file in the data directory, so
-// serve can refuse a master that is not this installation's. A master that
-// already holds an id belongs to another installation and is refused.
+// writeIdentity gives the new installation its id: a random id written into
+// the master's settings store, under the reserved name, with a system audit
+// entry, and into the id file in the data directory, so serve can refuse a
+// master that is not this installation's. A master that already holds an id
+// belongs to another installation and is refused.
 func writeIdentity(ctx context.Context, m master.Store, dir string) error {
 	if _, err := m.Setting(ctx, server.InstallationIDSetting); err == nil {
 		return fault.New(fault.Conflict, "the master database already belongs to an installation; init makes a new installation and needs an empty database")

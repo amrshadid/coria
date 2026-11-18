@@ -18,10 +18,11 @@ import (
 // The package whose messages are checked.
 const contractPackage = "magnetar.v1"
 
-// secretFields are the only fields through which a secret crosses the API
-// (rules/security.md: secrets never appear in an API answer, except a key's
-// secret once, when it is made). Each must be marked debug_redact, which the
-// server's redactor reads, and no other field may be.
+// secretFields are the only fields through which a secret crosses the API: a
+// secret never appears in an API answer, except a key's secret once, when it
+// is made, so that a log or a client's history cannot leak one. Each must be
+// marked debug_redact, which the server's redactor reads, and no other field
+// may be.
 var secretFields = []string{
 	"magnetar.v1.CreateKeyResponse.secret",
 	"magnetar.v1.CreateTenantRequest.database_address",
@@ -90,7 +91,7 @@ var textFields = []string{
 	"magnetar.v1.RemoveTenantResponse.data_location",
 }
 
-// TestOnlyTheNamedFieldsCarrySecrets guards acceptance point 6 of the
+// TestOnlyTheNamedFieldsCarrySecrets guards where secrets may cross the
 // contract: exactly the two named fields are marked debug_redact, and every
 // field that can carry text is on the reviewed list. A text field added
 // without being listed, a secret field that loses its mark, or another field
