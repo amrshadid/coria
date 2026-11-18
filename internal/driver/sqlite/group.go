@@ -55,6 +55,11 @@ type change struct {
 	done chan outcome
 	// ran is set by the writer, alone, once fn has run in a transaction.
 	ran bool
+	// held is the failure of a change that failed while a neighbor's
+	// uncommitted write was in the transaction, kept by the writer until the
+	// transaction's outcome is known; failed tells it from a success.
+	held   outcome
+	failed bool
 }
 
 // outcome is a change's result: its error, or the value it panicked with,
@@ -76,8 +81,9 @@ type committer struct {
 	// changes were grouped.
 	commits atomic.Uint64
 	// beforeCommit, when set by a test, runs after every change of a batch
-	// has run and before its commit, with the changes the commit holds.
-	beforeCommit func(written []*change)
+	// has run and before its commit, with the changes whose answers wait
+	// for it: those written, and those whose failure is held.
+	beforeCommit func(waiting []*change)
 }
 
 // writeTx runs fn in a write transaction, which begins with BEGIN IMMEDIATE
@@ -125,10 +131,10 @@ func (b *base) writeTx(ctx context.Context, message string, fn func(tx *sql.Tx) 
 	}
 	// A change not yet taken is given up, and its caller answered at once.
 	// One the writer has taken is in a transaction already: its caller is
-	// answered with what became of it, which is soon, since its statements
-	// fail once its context has ended, and a failed change is answered
-	// without waiting for the commit. An error must mean nothing was
-	// written, so the answer is never a guess.
+	// answered with what became of it once that is known, at the latest
+	// when the transaction ends, which is soon, since its statements fail
+	// once its context has ended. An error must mean nothing was written,
+	// so the answer is never a guess.
 	if c.state.CompareAndSwap(changeQueued, changeAbandoned) {
 		return b.fail(ctx, ctx.Err(), message)
 	}
@@ -183,7 +189,19 @@ func (b *base) drain() {
 // answer gives c its result. The failure is classified with c's own context
 // and message, as a transaction of its own would have been.
 func (b *base) answer(c *change, err error) {
-	c.done <- outcome{err: b.fail(c.ctx, err, c.message)}
+	give(c, outcome{err: b.fail(c.ctx, err, c.message)})
+}
+
+// give puts o where c's caller waits. A change has one answer; a second
+// would mean the writer lost track of which changes it answered, so it
+// stops with a message instead of blocking every write behind a full
+// channel.
+func give(c *change, o outcome) {
+	select {
+	case c.done <- o:
+	default:
+		panic("sqlite: a change was answered twice")
+	}
 }
 
 // Savepoint statements. One name serves every change, since a change's
@@ -196,28 +214,48 @@ const (
 )
 
 // commitBatch runs the changes of batch in one transaction and commits it,
-// answering every change; it returns the changes that must run again in a
-// new transaction, when SQLite undid this one before its end.
+// answering every change it can; it returns the changes that must run again
+// in a new transaction.
+//
+// Every answer, success or failure, describes the database as committed.
+// A change sees the writes of the changes before it in the transaction,
+// committed or not, so what a change saw is only true once those writes
+// are: a success is answered after the commit, and so is a failure that
+// happened while another change's write was in the transaction (a taken
+// name, a key found revoked, a row not found, each can come from a
+// neighbor's write). A failure that happened while no other change's write
+// was in the transaction saw only what was committed, and is answered at
+// once.
 //
 // Each change runs in a savepoint when there are several: one that fails or
 // panics is rolled back to its savepoint, which undoes its writes and
-// nothing else, and is answered at once, while the others go on to the
-// commit. A savepoint costs two statements and no sync; the other way to
-// isolate a failure, running the batch again without the failed change,
-// would cost every change before it a second run and the whole batch a
-// second transaction each time one fails. A change alone runs without one,
-// exactly as a transaction of its own.
+// nothing else, while the others go on to the commit. A savepoint costs two
+// statements and no sync; the other way to isolate a failure, running the
+// batch again without the failed change, would cost every change before it
+// a second run and the whole batch a second transaction each time one
+// fails. A change alone runs without one, exactly as a transaction of its
+// own.
 //
-// Some errors make SQLite roll the whole transaction back on its own: an
-// interrupted INSERT, UPDATE or DELETE, which is how the driver stops a
-// statement whose context ended, and a full disk, an I/O error or memory
-// running out (sqlite.org/lang_transaction.html, "Response To Errors Within
-// A Transaction"; sqlite.org/c3ref/interrupt.html). Then the savepoint is
-// gone with it and rolling back to it fails. The changes that ran before were
-// not answered yet, so they, and those not yet run, are returned to run
-// again in a new transaction; the change that failed is answered with its
-// failure. Each such return leaves out at least that change, so the caller's
-// loop ends.
+// When the transaction is undone instead of committed, what the changes in
+// it saw may no longer be true, so the changes that were waiting for its
+// outcome, written or failed, run again in a new transaction:
+//
+//   - Some errors make SQLite roll the whole transaction back on its own: an
+//     interrupted INSERT, UPDATE or DELETE, which is how the driver stops a
+//     statement whose context ended, and a full disk, an I/O error or memory
+//     running out (sqlite.org/lang_transaction.html, "Response To Errors
+//     Within A Transaction"; sqlite.org/c3ref/interrupt.html). Then the
+//     savepoint is gone with it and rolling back to it fails. The change
+//     whose statement did it is answered with that error, which is about its
+//     own statement or its own context, and nothing of it is written; the
+//     others, with those not yet run, are returned.
+//   - When COMMIT fails, nothing of the transaction is written. The changes
+//     written in it are answered with that error, which is true; those whose
+//     failure was held are returned, since the writes they failed on are
+//     gone.
+//
+// Each return leaves out at least one change of batch, so the caller's loop
+// ends.
 //
 // txCtx is the context the transaction begins with, on whose end
 // database/sql rolls the transaction back: the caller's own when the batch
@@ -237,12 +275,17 @@ func (b *base) commitBatch(txCtx context.Context, batch []*change) []*change {
 	defer func() { _ = tx.Rollback() }()
 
 	several := len(batch) > 1
-	var written []*change
-	// fail answers every change not yet answered with err, after the
-	// transaction is ended.
+	// waiting are the changes run in this transaction whose answers wait
+	// for its outcome, in the order they ran; written counts the successes
+	// among them.
+	var waiting []*change
+	written := 0
+	// fail ends the transaction and answers every change not yet answered
+	// with err, which is about the database itself and true of each: none
+	// is written.
 	fail := func(rest []*change, err error) []*change {
 		_ = tx.Rollback()
-		for _, c := range append(written, rest...) {
+		for _, c := range append(waiting, rest...) {
 			b.answer(c, err)
 		}
 		return nil
@@ -251,6 +294,7 @@ func (b *base) commitBatch(txCtx context.Context, batch []*change) []*change {
 		if !b.take(c) {
 			continue
 		}
+		c.failed, c.held = false, outcome{}
 		if several {
 			if _, err := tx.Exec(savepointOpen); err != nil {
 				return fail(batch[i:], err)
@@ -263,7 +307,8 @@ func (b *base) commitBatch(txCtx context.Context, batch []*change) []*change {
 					return fail(batch[i:], err)
 				}
 			}
-			written = append(written, c)
+			waiting = append(waiting, c)
+			written++
 			continue
 		}
 		if o.err != nil {
@@ -271,34 +316,46 @@ func (b *base) commitBatch(txCtx context.Context, batch []*change) []*change {
 		}
 		if !several {
 			_ = tx.Rollback()
-			c.done <- o
+			give(c, o)
 			return nil
 		}
 		if _, err := tx.Exec(savepointRollback); err != nil {
-			// The transaction is gone, with the writes of every change
-			// before this one: they run again.
+			// The transaction is gone, with every write in it.
 			_ = tx.Rollback()
-			c.done <- o
-			return append(written, batch[i+1:]...)
+			give(c, o)
+			return append(waiting, batch[i+1:]...)
 		}
 		if _, err := tx.Exec(savepointRelease); err != nil {
-			c.done <- o
+			give(c, o)
 			return fail(batch[i+1:], err)
 		}
-		c.done <- o
+		if written == 0 {
+			give(c, o)
+			continue
+		}
+		c.failed, c.held = true, o
+		waiting = append(waiting, c)
 	}
-	if len(written) == 0 {
+	if written == 0 {
 		return nil
 	}
 	if b.w.beforeCommit != nil {
-		b.w.beforeCommit(written)
+		b.w.beforeCommit(waiting)
 	}
 	if err := tx.Commit(); err != nil {
-		return fail(nil, err)
+		var again []*change
+		for _, c := range waiting {
+			if c.failed {
+				again = append(again, c)
+			} else {
+				b.answer(c, err)
+			}
+		}
+		return again
 	}
 	b.w.commits.Add(1)
-	for _, c := range written {
-		c.done <- outcome{}
+	for _, c := range waiting {
+		give(c, c.held)
 	}
 	return nil
 }

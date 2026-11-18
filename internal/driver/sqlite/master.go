@@ -129,6 +129,13 @@ func (m *Master) ready(ctx context.Context) (*statements, error) {
 // write runs fn in one write transaction (base.writeTx) with the prepared
 // statements. Every changing operation and its audit entry go through here
 // together, which is what makes them both or neither.
+//
+// fn may run more than once, each time in a new transaction after the last
+// was undone whole (base.writeTx), and fn's caller sees only the last run.
+// So fn must only read, write and assign its results to variables it sets on
+// every run; it must never append to, count into or send from anything that
+// outlives the run, or a result of an undone run would leak into the answer.
+// The same holds for a tenant's writeShared.
 func (m *Master) write(ctx context.Context, message string, fn func(tx *sql.Tx, s *statements) error) error {
 	s, err := m.ready(ctx)
 	if err != nil {

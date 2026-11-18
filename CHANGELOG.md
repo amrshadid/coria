@@ -344,9 +344,12 @@ All notable changes to Magnetar are written here. The form is
   savepoint of its own, up to 256 at a time, with no timer: about 700 a second
   with 8 callers, 4,300 with 64 and 14,500 with 256 on the same disk, while a
   caller alone waits as long as before (about 5.4 ms). Each caller still gets
-  its own result: a change that fails (a taken name, a taken audit id) or
-  panics fails alone and undoes nothing of the others; a caller is answered
-  only after the commit that holds its change; a caller whose context ends
+  its own result, and every answer, success or failure, describes the
+  database as committed: a change that fails (a taken name, a taken audit
+  id) or panics fails alone and undoes nothing of the others; a caller is
+  answered only after the commit that holds its change, and so is a caller
+  refused because of a change before it in the same transaction, which runs
+  again if that transaction is undone instead; a caller whose context ends
   while its change is queued is answered at once and the change is never
   written, and one whose change has started learns whether it was written,
   which is whole or not at all. A new test kills a
