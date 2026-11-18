@@ -240,6 +240,12 @@ jobs:
             PSQL="docker run --rm -i --network host postgres:${{ matrix.postgres }} psql" \
             PG_DUMP="docker run --rm -i --network host postgres:${{ matrix.postgres }} pg_dump"
 
+      - name: Outside check, a Postgres tenant read by psql and pg_dump
+        run: |
+          make check-tenant-postgres \
+            PSQL="docker run --rm -i --network host postgres:${{ matrix.postgres }} psql" \
+            PG_DUMP="docker run --rm -i --network host postgres:${{ matrix.postgres }} pg_dump"
+
   # Windows has its own paths, line endings and executables, so the tests run
   # there on every pull request. The newest Go only: Windows minutes count
   # double against a private repository, and the older Go is tested on Linux.

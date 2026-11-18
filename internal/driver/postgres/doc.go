@@ -1,5 +1,5 @@
 // Package postgres is the Postgres database type: it implements master.Store
-// on a Postgres database through github.com/jackc/pgx/v5 and its pool, pure
+// and tenant.Store on a Postgres database through github.com/jackc/pgx/v5 and its pool, pure
 // Go, so the binary stays static (CGO_ENABLED=0) on every target it ships
 // for.
 //
@@ -30,6 +30,24 @@
 // proxy that pools by transaction, such as PgBouncer before its prepared
 // statement support, cannot keep a prepared statement from one call to the
 // next; for it, give the URL default_query_exec_mode=exec, which pgx reads.
+//
+// # One database for each tenant
+//
+// A tenant has the address of a database of its own. When two tenants are
+// pointed at one database and schema they would share one set of settings and
+// one audit log, each seeing and changing the other's, so the driver refuses
+// it: the tenant's schema records the id of the tenant it was made for
+// (table tenant_identity, written by the first Migrate and compared by every
+// open and every Migrate), and a tenant whose id differs is refused as
+// Invalid. That also catches an address pasted for the wrong tenant. Two
+// tenants may share a database if each has a schema of its own
+// (?search_path=lab); a master and a tenant may not share a schema, and their
+// migrations differ, so that is refused as well.
+//
+// A tenant's pool is small, four connections by default with idle ones let go
+// after a minute (DefaultTenantConnections, TenantIdleTime), because a server
+// holds many tenants and each connection is a process on the database server;
+// pool_max_conns and pool_max_conn_idle_time in the address change them.
 //
 // # The migration lock
 //

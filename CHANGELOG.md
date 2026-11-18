@@ -200,5 +200,23 @@ All notable changes to Magnetar are written here. The form is
   skipping, when the server is missing; `scripts/check-master-postgres.sh` reads
   what the driver wrote with `psql` and `pg_dump` and finds a key's hash but
   never its secret.
+- A tenant's database could only be a SQLite file. It can now be a Postgres
+  database too (`internal/driver/postgres`, `OpenTenant`), and a tenant created
+  with type `postgres` and a `postgres://` address is served by the registry
+  like any other: ready when its database answers, unreachable alone when it
+  does not, and back by itself when it does again, with no restart. The tenant
+  suite passes unchanged on Postgres 16 and 18, two instances on one database
+  and two tenants apart included. The settings and audit code is now one
+  implementation shared by the master and the tenant, as on SQLite. The schema
+  records the id of the tenant it was made for and every open compares it, so
+  two tenants pointed at one database and schema, or an address pasted for the
+  wrong tenant, are refused as Invalid instead of sharing one audit log. A
+  tenant's pool is small (four connections, idle ones let go after a minute;
+  `pool_max_conns` and `pool_max_conn_idle_time` in the address change them).
+  The registry's warning about the limit on open files counts each tenant by
+  what its driver says it holds (an optional `FilesPerTenant`): eleven files
+  for SQLite, the pool's size for Postgres. `scripts/check-tenant-postgres.sh`
+  reads a tenant the registry made with `psql` and `pg_dump`, and the Postgres
+  CI jobs run the registry against real tenants.
 
 [Unreleased]: https://github.com/amrshadid/magnetar/commits/develop

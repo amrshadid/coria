@@ -202,7 +202,7 @@ func TestPoolIsNotLeaked(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if got := settledAcquired(m); got != 0 {
+	if got := settledAcquired(&m.base); got != 0 {
 		t.Errorf("%d connections are out of the pool after the calls, want 0", got)
 	}
 	if got := m.pool.Stat().MaxConns(); got != 3 {
@@ -251,7 +251,7 @@ func TestContextDeadline(t *testing.T) {
 	if elapsed < 300*time.Millisecond || elapsed > 5*time.Second {
 		t.Errorf("SetSetting returned after %v, want about 400ms", elapsed)
 	}
-	if got := settledAcquired(m); got != 0 {
+	if got := settledAcquired(&m.base); got != 0 {
 		t.Errorf("%d connections are still out of the pool after the deadline", got)
 	}
 	if err := tx.Rollback(ctx); err != nil {

@@ -58,10 +58,10 @@ var dialect = sqlkit.Dialect{
 // been granted while a canceled request was waiting for it, the connection
 // is closed, which ends the session and with it every lock it holds, instead
 // of going back to the pool with one.
-func (m *Master) withMigrationLock(ctx context.Context, fn func() error) (err error) {
-	conn, err := m.mig.Conn(ctx)
+func (b *base) withMigrationLock(ctx context.Context, fn func() error) (err error) {
+	conn, err := b.mig.Conn(ctx)
 	if err != nil {
-		return fault.Wrap(fault.Unavailable, m.red.scrub(err), "the migration lock cannot be taken")
+		return fault.Wrap(fault.Unavailable, b.red.scrub(err), "the migration lock cannot be taken")
 	}
 	// Whatever happens, the connection is either unlocked and given back, or
 	// destroyed.
@@ -79,13 +79,13 @@ func (m *Master) withMigrationLock(ctx context.Context, fn func() error) (err er
 			return
 		}
 		if cerr := conn.Close(); cerr != nil && err == nil {
-			err = fault.Wrap(fault.Internal, m.red.scrub(cerr), "the migration lock's connection did not close cleanly")
+			err = fault.Wrap(fault.Internal, b.red.scrub(cerr), "the migration lock's connection did not close cleanly")
 		}
 	}()
 	if _, lerr := conn.ExecContext(ctx, `SELECT pg_advisory_lock(`+lockName+`)`); lerr != nil {
 		// The lock may have been granted just as the request ended, with no
 		// way to see it; locked stays false so the connection is destroyed.
-		return fault.Wrap(fault.Unavailable, m.red.scrub(lerr), "the migration lock cannot be taken")
+		return fault.Wrap(fault.Unavailable, b.red.scrub(lerr), "the migration lock cannot be taken")
 	}
 	locked = true
 	return fn()
