@@ -622,6 +622,13 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- go-dicom is taken at its release v1.11.0 instead of a commit of its
+  development branch. The release holds everything the receiver uses (a stop
+  that lets the stores in progress finish, admission before negotiation, a
+  C-STORE as a stream, a logger of its own, a bound on any one value read);
+  a refusal is now logged once, and the text of a file read for its
+  attributes is decoded to the read's logger. The Linux binary grows by
+  135 KB.
 - The project is named CORIA, Core Research Imaging Archive. The module is
   `github.com/amrshadid/coria`; the command is `coria`; the API's package is
   `coria.v1` (every method's path starts `/coria.v1.`); the environment
