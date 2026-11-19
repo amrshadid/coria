@@ -76,6 +76,11 @@ type pendingCall struct {
 	owner    int
 	cancel   context.CancelFunc
 	canceled bool
+	// background marks a call the screen does not wait for, such as a
+	// stream it follows: esc leaves the screen rather than stopping it,
+	// the bottom line does not say the program is waiting, and leaving the
+	// screen stops it without a note.
+	background bool
 }
 
 // ctx is what the screens share: the client to make calls with, the size of
@@ -133,12 +138,34 @@ func (c *ctx) call(owner int, fn func(context.Context) tea.Msg) tea.Cmd {
 	}
 }
 
-// cancelOwner cancels the calls a screen is waiting for and reports whether
-// there were any.
+// follow is call for a call the screen does not wait for (pendingCall's
+// background): a stream it follows for as long as it is open.
+func (c *ctx) follow(owner int, fn func(context.Context) tea.Msg) tea.Cmd {
+	cmd := c.call(owner, fn)
+	c.pending[c.nextCall].background = true
+	return cmd
+}
+
+// cancelOwner cancels every call of a screen, those it follows included, as
+// it is left, and reports whether any was one it waited for.
 func (c *ctx) cancelOwner(owner int) bool {
 	found := false
 	for _, p := range c.pending {
 		if p.owner == owner && !p.canceled {
+			p.canceled = true
+			p.cancel()
+			found = found || !p.background
+		}
+	}
+	return found
+}
+
+// cancelWaiting cancels the calls a screen is waiting for, not those it
+// follows, and reports whether there were any: what esc stops.
+func (c *ctx) cancelWaiting(owner int) bool {
+	found := false
+	for _, p := range c.pending {
+		if p.owner == owner && !p.canceled && !p.background {
 			p.canceled = true
 			p.cancel()
 			found = true
@@ -158,7 +185,7 @@ func (c *ctx) cancelAll() {
 // waiting says whether any call that has not been canceled is in flight.
 func (c *ctx) waiting() bool {
 	for _, p := range c.pending {
-		if !p.canceled {
+		if !p.canceled && !p.background {
 			return true
 		}
 	}
@@ -253,11 +280,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // done finishes a call: it is forgotten, who-am-I goes to the header, an error
 // goes to the bottom line, and everything else to the screen that asked.
 func (m model) done(d doneMsg) (tea.Model, tea.Cmd) {
+	background := m.c.pending[d.call] != nil && m.c.pending[d.call].background
 	delete(m.c.pending, d.call)
 	switch inner := d.msg.(type) {
 	case failMsg:
 		m.err, m.note = inner.err, ""
 	case canceledMsg:
+		if background {
+			// A stream stopped as its screen was left says nothing.
+			return m, nil
+		}
 		m.err, m.note = nil, "canceled"
 	case whoamiMsg:
 		m.who = inner.principal
@@ -297,7 +329,7 @@ func (m model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	m.err, m.note = nil, ""
 	top := m.top()
 	name := k.String()
-	if name == "esc" && m.c.cancelOwner(top.sid()) {
+	if name == "esc" && m.c.cancelWaiting(top.sid()) {
 		m.note = "canceling"
 		return m, nil
 	}

@@ -140,6 +140,7 @@ func newTenantDetail(c *ctx, t *v1.Tenant, fetch bool) (screen, tea.Cmd) {
 			return push(s, cmd)
 		}},
 	}
+	d.actions = append(d.actions, tenantActions(t.GetName())...)
 	if fetch {
 		d.loading = true
 		return d, d.refetch(c, d.id, t)

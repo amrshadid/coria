@@ -25,6 +25,10 @@ type archive struct {
 	files      map[string]*v1.QuarantinedFile
 	headers    map[string]string
 	health     map[string]*v1.ReceiverHealth
+	// events are the events queued for each tenant's next streams, and
+	// counts the counts its status answers (archive_monitor.go).
+	events map[string][]*v1.Event
+	counts map[string]*v1.TenantCounts
 }
 
 // key joins a tenant and an item's name into the key of the tables above.
@@ -94,6 +98,24 @@ func (s *Server) SetReceiverHealth(tenant, name string, h *v1.ReceiverHealth) {
 	s.arch.health[key(tenant, name)] = h
 }
 
+// AddStorage puts a storage in a tenant, for a test that reads it rather
+// than adds it.
+func (s *Server) AddStorage(tenant string, st *v1.Storage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.arch.ensure()
+	s.arch.storages[key(tenant, st.GetName())] = st
+}
+
+// AddReceiver puts a receiver in a tenant, for a test that reads it rather
+// than adds it.
+func (s *Server) AddReceiver(tenant string, r *v1.Receiver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.arch.ensure()
+	s.arch.receivers[key(tenant, r.GetName())] = r
+}
+
 // AddReception puts a reception in a tenant, as the server's pipeline would.
 func (s *Server) AddReception(tenant string, r *v1.Reception) {
 	s.mu.Lock()
@@ -129,6 +151,7 @@ func (s *Server) registerArchive(srv *connect.Server) {
 	magnetarv1connect.RegisterReceiverServiceHandler(srv, receiverHandler{s})
 	magnetarv1connect.RegisterReceptionServiceHandler(srv, receptionHandler{s})
 	magnetarv1connect.RegisterQuarantineServiceHandler(srv, quarantineHandler{s})
+	magnetarv1connect.RegisterMonitorServiceHandler(srv, monitorHandler{s})
 }
 
 // begin takes the lock, makes the tables and checks the tenant: what every

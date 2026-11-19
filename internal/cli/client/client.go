@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -12,6 +13,7 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 
+	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/api/codes"
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -45,6 +47,8 @@ type Client struct {
 	Receptions magnetarv1connect.ReceptionServiceClient
 	// Quarantine is the QuarantineService.
 	Quarantine magnetarv1connect.QuarantineServiceClient
+	// Monitor is the MonitorService.
+	Monitor magnetarv1connect.MonitorServiceClient
 
 	timeout time.Duration
 	target  string
@@ -117,6 +121,7 @@ func New(cfg Config) (*Client, error) {
 		Receivers:  magnetarv1connect.NewReceiverServiceClient(c),
 		Receptions: magnetarv1connect.NewReceptionServiceClient(c),
 		Quarantine: magnetarv1connect.NewQuarantineServiceClient(c),
+		Monitor:    magnetarv1connect.NewMonitorServiceClient(c),
 		timeout:    timeout,
 		target:     target,
 		trust:      trust,
@@ -226,6 +231,38 @@ func Call[T any](ctx context.Context, c *Client, what string, fn func(context.Co
 		What:      what,
 		RequestID: info.ResponseHeader().Get(RequestIDHeader),
 		err:       c.classify(ctx, err),
+	}
+}
+
+// Watch opens a stream of events with req and calls each with every message
+// until it returns false, the stream ends or ctx does. A stream has no
+// deadline of its own: it lasts as long as ctx. Its error, if it ended with
+// one, is a *CallError as a call's is; a stream ended by each, or by ctx, is
+// nil.
+func (c *Client) Watch(ctx context.Context, req *v1.WatchRequest, each func(*v1.WatchResponse) bool) error {
+	ctx, info := connect.NewClientContext(ctx)
+	fail := func(err error) error {
+		if ctx.Err() != nil {
+			return nil
+		}
+		return &CallError{What: "watch", RequestID: info.ResponseHeader().Get(RequestIDHeader), err: c.classify(ctx, err)}
+	}
+	s, err := c.Monitor.Watch(ctx, req)
+	if err != nil {
+		return fail(err)
+	}
+	defer func() { _ = s.Close() }()
+	for {
+		m, err := s.Receive()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fail(err)
+		}
+		if !each(m) {
+			return nil
+		}
 	}
 }
 

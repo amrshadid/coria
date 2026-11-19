@@ -591,6 +591,13 @@ All notable changes to Magnetar are written here. The form is
   are committed, from a cursor or from now, with the caller's key and grant
   checked again every 15 seconds and an audit entry when the stream opens
   and when it ends, with the events it carried.
+- The interactive program has a tenant's archive: from a tenant's screen,
+  its status (`t`), which asks for itself again each time the tenant
+  commits an event, through the live stream it follows while it is open;
+  its storages (`o`), receivers with their health (`r`), receptions (`e`)
+  and quarantined files (`h`). A quarantined file is released or rejected
+  from its screen, each with a reason; the rejection, which removes its
+  bytes for good, needs the file's id typed again.
 
 ### Changed
 
