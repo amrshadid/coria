@@ -58,7 +58,7 @@ q() {
 echo
 echo "== tables"
 "$SQLITE3" -batch "$db" '.tables'
-want "tables" "audit catalog_totals event_marks events instances quarantine quarantine_totals received_files receivers reception_associations reception_steps receptions scans schema_migrations sessions settings sqlite_sequence storages subjects work" \
+want "tables" "audit catalog_totals event_marks events instances quarantine quarantine_totals received_files receivers reception_associations reception_steps receptions scans schema_migrations sessions settings sqlite_sequence storages subjects tenant_secrets work" \
 	"$(q "SELECT group_concat(name, ' ') FROM (SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name)")"
 
 show() {
@@ -71,7 +71,7 @@ show settings "SELECT * FROM settings"
 show audit "SELECT * FROM audit"
 echo
 
-want "schema_migrations rows" 4 "$(q 'SELECT count(*) FROM schema_migrations')"
+want "schema_migrations rows" 5 "$(q 'SELECT count(*) FROM schema_migrations')"
 want "settings rows" 2 "$(q 'SELECT count(*) FROM settings')"
 want "audit rows" 5 "$(q 'SELECT count(*) FROM audit')"
 want "integrity_check" ok "$(q 'PRAGMA integrity_check')"

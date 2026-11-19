@@ -23,7 +23,8 @@ var errClaimedElsewhere = fault.New(fault.Unavailable, "another reception in fli
 //
 //  1. Read the reception. One past identified took this step before a
 //     crash: its unit is completed with the unit its state needs.
-//  2. For each series, in order of UID: its scan label from the catalog, or
+//  2. Hold as lost every received file whose incoming copy is gone
+//     (dropLost), before any claim. Then for each series, in order of UID: its scan label from the catalog, or
 //     the receiver's rule over the same file identify read (the series'
 //     files are held with the label reason when it cannot be made: identify
 //     held them already, and the record's id makes the second hold
@@ -62,6 +63,9 @@ func (p *Pipeline) archive(ctx context.Context, w tenant.Work) error {
 	if err != nil {
 		return err
 	}
+	if groups, err = p.dropLost(ctx, w, r, groups); err != nil {
+		return err
+	}
 	catalog, err := p.catalogLabels(ctx, r.StudyUID, groups)
 	if err != nil {
 		return err
@@ -78,7 +82,7 @@ func (p *Pipeline) archive(ctx context.Context, w tenant.Work) error {
 	for _, g := range groups {
 		scan, ok := catalog.Scans[g.uid]
 		if !ok {
-			path, lf, err := p.labelsOf(rule, g)
+			path, lf, err := p.labelsOf(ctx, rule, g)
 			if err != nil {
 				return err
 			}
@@ -87,7 +91,7 @@ func (p *Pipeline) archive(ctx context.Context, w tenant.Work) error {
 				for _, f := range g.files {
 					records = append(records, p.holdRecord(r, f, tenant.QuarantineBadLabel, lf.details()))
 				}
-				if err := p.hold(ctx, records); err != nil {
+				if err := p.hold(ctx, w, records); err != nil {
 					return err
 				}
 				continue

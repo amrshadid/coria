@@ -56,10 +56,20 @@ type Built struct {
 	// TenantsByState counts the tenants in each state for /metrics, or nil
 	// to leave the family out.
 	TenantsByState func() map[string]int
+	// Reception runs the receivers and the reception pipeline, or nil for
+	// none. It is started once the server listens and stopped before the
+	// server stops, while the tenants' databases are still open.
+	Reception Runner
 }
 
 // Services builds the API's handlers over an open installation.
 type Services func(Deps) (Built, error)
+
+// ReceptionStopTimeout bounds the stop of the receivers and the reception
+// pipelines at a stop signal: the listeners' own drain (30 seconds) and a
+// pipeline's (30 seconds) with room to spare. A second signal exits at once
+// whatever is left.
+const ReceptionStopTimeout = 90 * time.Second
 
 // serveFlags are the flags of serve.
 type serveFlags struct {
@@ -145,12 +155,12 @@ func runServe(ctx context.Context, opts Options, f serveFlags) error {
 	if err != nil {
 		return err
 	}
-	srv, err := open(ctx, opts, f, dir, keyPath, lock, log)
+	srv, reception, err := open(ctx, opts, f, dir, keyPath, lock, log)
 	if err != nil {
 		_ = lock.Release()
 		return err
 	}
-	return serveUntilStopped(srv, opts, log)
+	return serveUntilStopped(srv, reception, opts, log)
 }
 
 // exists reports whether path exists.
@@ -236,18 +246,18 @@ func checkKeyFile(ctx context.Context, m master.Store, dir string, keys *secret.
 // open loads the key file, opens and migrates the master database, starts
 // the access package and builds the server. On failure it closes what it
 // opened, except the lock, which its caller releases.
-func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, lock *server.Lock, log *slog.Logger) (srv *server.Server, err error) {
+func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, lock *server.Lock, log *slog.Logger) (srv *server.Server, reception Runner, err error) {
 	keys, err := secret.LoadKeyFile(keyPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	address, _, err := masterAddress(dir, f.masterEnv, opts.Getenv)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	m, err := driver.OpenMaster(ctx, address)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var a *access.Access
 	defer func() {
@@ -265,23 +275,23 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 	// leaving an installation that no one key file can open, so it must stop
 	// before it opens anything.
 	if err := checkIdentity(ctx, m, dir); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := checkKeyFile(ctx, m, dir, keys); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := m.Migrate(ctx); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	a, err = access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	built := Built{Register: func(*connect.Server) {}}
 	if opts.Services != nil {
 		built, err = opts.Services(Deps{Access: a, Master: m, Keys: keys, DataDir: dir, Log: log})
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if built.Register == nil {
 			built.Register = func(*connect.Server) {}
@@ -298,7 +308,7 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 			}()
 		}
 	}
-	return server.New(server.Config{
+	srv, err = server.New(server.Config{
 		DataDir:         dir,
 		Lock:            lock,
 		Listen:          f.listen,
@@ -316,13 +326,17 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 		Drain:           f.drain,
 		DefaultDeadline: f.deadline,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return srv, built.Reception, nil
 }
 
 // serveUntilStopped starts the server and waits for a stop signal or a
 // listener's failure; then it stops the server and returns Stop's result,
 // so a clean stop exits 0. A second signal while stopping exits at once
 // with status 1.
-func serveUntilStopped(srv *server.Server, opts Options, log *slog.Logger) error {
+func serveUntilStopped(srv *server.Server, reception Runner, opts Options, log *slog.Logger) error {
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
@@ -330,6 +344,11 @@ func serveUntilStopped(srv *server.Server, opts Options, log *slog.Logger) error
 	if err := srv.Start(); err != nil {
 		// Nothing is served; Stop closes what open made and the lock.
 		return errors.Join(err, srv.Stop())
+	}
+	if reception != nil {
+		if err := reception.Start(context.Background()); err != nil {
+			return errors.Join(err, srv.Stop())
+		}
 	}
 	var cause error
 	select {
@@ -347,7 +366,16 @@ func serveUntilStopped(srv *server.Server, opts Options, log *slog.Logger) error
 		case <-done:
 		}
 	}()
+	// The receivers first, finishing the stores in flight, then the
+	// pipelines, while the tenants' databases are open; then the server,
+	// which closes them.
+	var rerr error
+	if reception != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), ReceptionStopTimeout)
+		rerr = reception.Stop(ctx)
+		cancel()
+	}
 	err := srv.Stop()
 	close(done)
-	return errors.Join(cause, err)
+	return errors.Join(cause, rerr, err)
 }

@@ -16,21 +16,23 @@ import (
 //
 //  1. Read the reception. One past complete took this step before a crash:
 //     its unit is completed with the unit its state needs.
-//  2. Read what the catalog holds for the study and its series
+//  2. Hold as lost every received file whose incoming copy is gone
+//     (dropLost); the rest go on.
+//  3. Read what the catalog holds for the study and its series
 //     (CatalogLabels): a study or series it knows keeps its labels and
 //     storage, so a later arrival lands beside the first. The rest are named
 //     by the receiver's rule over the header of a file of each, the same
 //     file every run (the first of its series by UID whose bytes are here),
 //     so a run again makes the same labels.
-//  3. Hold, with the label reason, every file of a series whose scan label
+//  4. Hold, with the label reason, every file of a series whose scan label
 //     cannot be made, or every file when the subject or session label cannot
 //     be. A record's id is made from the reception and the file, so a run
 //     again writes nothing new.
-//  4. Take the identify step with the labels and the storage (the session's
+//  5. Take the identify step with the labels and the storage (the session's
 //     own when it has one, else the receiver's), or the quarantine step when
 //     no file can go on.
-//  5. Complete the unit with the archive unit, in one transaction. A crash
-//     between 4 and 5 is taken up by 1.
+//  6. Complete the unit with the archive unit, in one transaction. A crash
+//     between 5 and 6 is taken up by 1.
 //
 // A label that collides with one the catalog holds for another study or
 // series is found by the archive step's commit, which holds those files
@@ -48,6 +50,9 @@ func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
 	}
 	groups, err := p.receivedBySeries(ctx, r.ID)
 	if err != nil {
+		return err
+	}
+	if groups, err = p.dropLost(ctx, w, r, groups); err != nil {
 		return err
 	}
 	if len(groups) == 0 {
@@ -71,7 +76,7 @@ func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
 		// held. A fault at the scan level is that series' alone, and the
 		// next series is tried.
 		for _, g := range groups {
-			path, lf, err := p.labelsOf(rule, g)
+			path, lf, err := p.labelsOf(ctx, rule, g)
 			if err != nil {
 				return err
 			}
@@ -86,7 +91,7 @@ func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
 		if subject == "" {
 			// Every series failed its scan label: hold each with its
 			// fault, and nothing is left.
-			if _, err := p.holdBadScans(ctx, r, groups, catalog, rule); err != nil {
+			if _, err := p.holdBadScans(ctx, w, r, groups, catalog, rule); err != nil {
 				return err
 			}
 			return p.quarantineAll(ctx, w, r)
@@ -100,7 +105,7 @@ func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
 		}
 		storage = rcv.Storage
 	}
-	left, err := p.holdBadScans(ctx, r, groups, catalog, rule)
+	left, err := p.holdBadScans(ctx, w, r, groups, catalog, rule)
 	if err != nil {
 		return err
 	}
@@ -119,7 +124,7 @@ func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
 
 // holdBadScans holds the files of each series whose scan label cannot be
 // made, and returns how many series can go on.
-func (p *Pipeline) holdBadScans(ctx context.Context, r tenant.Reception, groups []series, catalog tenant.CatalogLabels, rule *naming.Rule) (int, error) {
+func (p *Pipeline) holdBadScans(ctx context.Context, w tenant.Work, r tenant.Reception, groups []series, catalog tenant.CatalogLabels, rule *naming.Rule) (int, error) {
 	left := 0
 	var records []tenant.QuarantinedFile
 	for _, g := range groups {
@@ -127,7 +132,7 @@ func (p *Pipeline) holdBadScans(ctx context.Context, r tenant.Reception, groups 
 			left++
 			continue
 		}
-		_, lf, err := p.labelsOf(rule, g)
+		_, lf, err := p.labelsOf(ctx, rule, g)
 		if err != nil {
 			return 0, err
 		}
@@ -139,7 +144,7 @@ func (p *Pipeline) holdBadScans(ctx context.Context, r tenant.Reception, groups 
 		}
 		left++
 	}
-	return left, p.hold(ctx, records)
+	return left, p.hold(ctx, w, records)
 }
 
 // holdEverything holds every file of the reception with the label fault,
@@ -151,7 +156,7 @@ func (p *Pipeline) holdEverything(ctx context.Context, w tenant.Work, r tenant.R
 			records = append(records, p.holdRecord(r, f, tenant.QuarantineBadLabel, lf.details()))
 		}
 	}
-	if err := p.hold(ctx, records); err != nil {
+	if err := p.hold(ctx, w, records); err != nil {
 		return err
 	}
 	return p.quarantineAll(ctx, w, r)

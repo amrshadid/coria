@@ -49,6 +49,12 @@ const (
 	// EventsRetention is how long a tenant's events are kept
 	// (ParseRetention). Ordinary: a tenant's admin may override it.
 	EventsRetention = "events.retention"
+	// ReceiverHeaderLimit is the most bytes of a received file read as its
+	// header, everything before its pixel data (ParseHeaderLimit). A file
+	// whose header is longer is held with its bytes kept, never lost.
+	// Installation-only: it bounds the server's memory, which tenants
+	// share.
+	ReceiverHeaderLimit = "receiver.header-limit"
 )
 
 // ReservedPrefix starts the names the system keeps for itself in the
@@ -189,6 +195,15 @@ func Builtin() []Definition {
 		TenantOverride:          true,
 		TenantSetByInstallation: true,
 		Validate:                func(v string) error { _, err := ParseSize(v); return err },
+	}, {
+		// 64 MiB holds the largest honest headers known: the per-frame
+		// functional groups of an enhanced multi-frame object (PS3.3
+		// C.7.6.16) at about 4 KB a frame, 40 MiB for 10,000 frames. An
+		// installation that receives larger ones raises it without a new
+		// release.
+		Name:     ReceiverHeaderLimit,
+		Default:  "64MiB",
+		Validate: func(v string) error { _, err := ParseHeaderLimit(v); return err },
 	}, {
 		Name:           EventsRetention,
 		Default:        "90d",

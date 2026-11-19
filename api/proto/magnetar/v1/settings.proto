@@ -42,8 +42,8 @@ import "magnetar/v1/scope.proto";
 //
 // The settings a receiver, a storage or the event feed reads, with their
 // kinds, are named where they are used: receiver.ports,
-// receiver.bind-addresses, incoming.limit and storage.reserve
-// (ReceiverService), storage.directory-roots and storage.s3-endpoints
+// receiver.bind-addresses, receiver.header-limit, incoming.limit and
+// storage.reserve (ReceiverService), storage.directory-roots and storage.s3-endpoints
 // (StorageService), and events.retention (MonitorService).
 service SettingsService {
   // GetSetting answers the value of one setting as it applies to the scope

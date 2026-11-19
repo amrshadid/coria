@@ -79,6 +79,7 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"CommitSharesSubject", testCommitSharesSubject},
 		{"PipelineBounds", testPipelineBounds},
 		{"StorageSecret", testStorageSecret},
+		{"Secrets", testTenantSecrets},
 		{"ReleaseReason", testReleaseReason},
 		{"FencedFiles", testFencedFiles},
 		{"ClaimNextWork", testClaimNextWork},

@@ -89,18 +89,19 @@ func (p *Pipeline) worker(owner string) {
 			if p.workCtx.Err() != nil {
 				return
 			}
-			w, err := p.store.ClaimWork(p.workCtx, kind, owner, p.now(), p.cfg.Lease)
-			if fault.KindOf(err) == fault.NotFound {
-				continue
-			}
+			c, err := p.store.ClaimNextWork(p.workCtx, kind, owner, p.now(), p.cfg.Lease)
 			if err != nil {
 				if p.workCtx.Err() == nil {
 					p.log.Warn("work could not be claimed", "kind", kind, "reason", safe(err))
 				}
 				break
 			}
+			p.gaveUp(c.GaveUp)
+			if !c.Found {
+				continue
+			}
 			did = true
-			p.runUnit(w)
+			p.runUnit(c.Work)
 		}
 		if did {
 			continue
@@ -112,6 +113,26 @@ func (p *Pipeline) worker(owner string) {
 		case <-p.cfg.Clock.After(p.cfg.PollInterval):
 		}
 	}
+}
+
+// gaveUp reports the units a claim held as failed on the way, their last
+// attempt's lease having ended, and each reception that failed with them:
+// a failed reception keeps every incoming copy for a person's retry or
+// discard, and its fail step wrote its event, so the live feed is woken at
+// once rather than at its next timer.
+func (p *Pipeline) gaveUp(units []tenant.GaveUpWork) {
+	if len(units) == 0 {
+		return
+	}
+	for _, u := range units {
+		if u.ReceptionFailed {
+			p.log.Error("a reception failed: its work gave up after its last attempt; its files are kept for a retry or a discard",
+				"reception", u.ReceptionID, "work", u.WorkID)
+		} else {
+			p.log.Warn("a unit of work gave up after its last attempt", "work", u.WorkID)
+		}
+	}
+	p.wake()
 }
 
 // errLeaseLost is the cause a step's context is ended with when its lease

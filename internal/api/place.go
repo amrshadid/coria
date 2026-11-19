@@ -17,35 +17,19 @@ const maxWholeListPages = 100
 
 // installationPlaces answers package place the installation's settings it
 // checks a storage against, read from the master as they apply on the
-// installation.
+// installation (package settingvalue).
 type installationPlaces struct{ c *core }
 
 var _ place.Values = installationPlaces{}
 
 // DirectoryRoots returns the installation's storage.directory-roots.
 func (v installationPlaces) DirectoryRoots(ctx context.Context) (settings.DirectoryRoots, error) {
-	s, err := v.c.installationValue(ctx, settings.StorageDirectoryRoots)
-	if err != nil {
-		return nil, err
-	}
-	roots, err := settings.ParseDirectoryRoots(s)
-	if err != nil {
-		return nil, fault.New(fault.Internal, "api: the stored "+settings.StorageDirectoryRoots+" does not follow its rule")
-	}
-	return roots, nil
+	return v.c.values().DirectoryRoots(ctx)
 }
 
 // S3Endpoints returns the installation's storage.s3-endpoints.
 func (v installationPlaces) S3Endpoints(ctx context.Context) (settings.S3Endpoints, error) {
-	s, err := v.c.installationValue(ctx, settings.StorageS3Endpoints)
-	if err != nil {
-		return nil, err
-	}
-	entries, err := settings.ParseS3Endpoints(s)
-	if err != nil {
-		return nil, fault.New(fault.Internal, "api: the stored "+settings.StorageS3Endpoints+" does not follow its rule")
-	}
-	return entries, nil
+	return v.c.values().S3Endpoints(ctx)
 }
 
 // tenantReceiverValues answers package place the settings a receiver of the
@@ -59,28 +43,12 @@ var _ place.ReceiverValues = tenantReceiverValues{}
 
 // Ports returns receiver.ports as it applies on the tenant.
 func (v tenantReceiverValues) Ports(ctx context.Context) (settings.Ports, error) {
-	s, err := v.c.tenantValue(ctx, v.st, settings.ReceiverPorts)
-	if err != nil {
-		return nil, err
-	}
-	ports, err := settings.ParsePorts(s)
-	if err != nil {
-		return nil, fault.New(fault.Internal, "api: the stored "+settings.ReceiverPorts+" does not follow its rule")
-	}
-	return ports, nil
+	return v.c.values().OnTenant(v.st).Ports(ctx)
 }
 
 // BindAddresses returns the installation's receiver.bind-addresses.
 func (v tenantReceiverValues) BindAddresses(ctx context.Context) (settings.BindAddresses, error) {
-	s, err := v.c.installationValue(ctx, settings.ReceiverBindAddresses)
-	if err != nil {
-		return nil, err
-	}
-	addrs, err := settings.ParseBindAddresses(s)
-	if err != nil {
-		return nil, fault.New(fault.Internal, "api: the stored "+settings.ReceiverBindAddresses+" does not follow its rule")
-	}
-	return addrs, nil
+	return v.c.values().BindAddresses(ctx)
 }
 
 // opener returns the opener of a storage for a test: it touches nothing but
@@ -91,15 +59,8 @@ func (c *core) opener() place.Opener {
 }
 
 // placeTenant returns the tenant whose pipeline is p as package place opens
-// its storages: its sealed secrets are handed back by its store when the
-// store keeps them.
-func placeTenant(id, name string, p tenant.Pipeline) place.Tenant {
-	t := place.Tenant{ID: id, Name: name}
-	if s, ok := p.(place.Secrets); ok {
-		t.Secrets = s
-	}
-	return t
-}
+// its storages.
+func placeTenant(id, name string, p tenant.Pipeline) place.Tenant { return place.TenantOf(id, name, p) }
 
 // wholeList returns every item of a tenant's list, page after page; what
 // names the list in the error of one that does not end.

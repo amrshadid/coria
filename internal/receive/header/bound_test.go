@@ -98,6 +98,34 @@ func TestHeaderOverTheBoundIsRefusedWithoutAllocating(t *testing.T) {
 	}
 }
 
+// TestABoundRaisedReadsALargerHeader guards ReadWithin: a header of 2 MiB
+// (a text value that long before the pixel data) is refused within a bound
+// of 1 MiB, with that bound in the error, and read within one of 4 MiB.
+func TestABoundRaisedReadsALargerHeader(t *testing.T) {
+	b, ds, _ := mrSmall(t)
+	head := append([]byte{}, b[:ds]...)
+	const long = 2 << 20
+	// (0010,4000) Patient Comments, UT with a four-byte length (PS3.5
+	// 7.1.2), long spaces: a value the reader keeps in the header.
+	el := []byte{0x10, 0x00, 0x00, 0x40, 'U', 'T', 0, 0, 0, 0, 0, 0}
+	binary.LittleEndian.PutUint32(el[8:], long)
+	head = append(head, el...)
+	head = append(head, bytes.Repeat([]byte{' '}, long)...)
+	head = append(head, b[ds:]...)
+	_, err := ReadWithin(bytes.NewReader(head), int64(len(head)), 1<<20)
+	var tl *TooLargeError
+	if !errors.As(err, &tl) || tl.Limit != 1<<20 {
+		t.Fatalf("within 1 MiB: %v, want a TooLargeError of that bound", err)
+	}
+	h, err := ReadWithin(bytes.NewReader(head), int64(len(head)), 4<<20)
+	if err != nil {
+		t.Fatalf("within 4 MiB: %v", err)
+	}
+	if _, ok := h.UID(SOPInstanceUID); !ok {
+		t.Fatal("the header read within the raised bound has no SOP Instance UID")
+	}
+}
+
 // TestPixelDataPastTheBoundIsRead guards that the bound refuses only a large
 // header: a file whose pixel data runs far past MaxHeader is read, with its
 // pixel data where it is.

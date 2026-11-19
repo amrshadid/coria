@@ -534,8 +534,56 @@ All notable changes to Magnetar are written here. The form is
   released with its record, as a rejection keeps its reason; `quarantine show`
   prints it as "Release reason". The reason is optional, 1 to 1024 bytes, not
   only spaces.
+- Nothing listened for DICOM: a receiver could be made through the API, but a
+  scanner could not send to it. Each enabled receiver now has a listener on
+  its port and address, started, restarted and stopped as its row changes,
+  with no restart of the server, and started from the database after one. It
+  admits only the callers it lists (calling AE title, address range, or both;
+  an empty list admits nobody), rejecting a stranger as
+  calling-AE-title-not-recognized before anything is negotiated and a wrong
+  called title as called-AE-title-not-recognized. It negotiates only the
+  receiver's SOP classes and transfer syntaxes, and answers C-ECHO and
+  C-STORE and nothing else. A store is written as the bytes sent into the
+  incoming area in bounded memory (a 512 MiB file with a live heap under
+  11 MiB) and answered success only once it is synced there. A file past the
+  size bound, a full disk or storage, or a tenant over its incoming limit is
+  answered A700 and new associations are rejected as transient, with one
+  event when it starts and one when it ends. A receiver that cannot start
+  (port taken, TLS files unusable) shows down with its reason and is retried
+  while the others run. Stopping the server finishes the stores in flight
+  within 30 seconds.
+- A receiver in `magnetar serve` archives what it receives: the reception
+  pipeline opens a tenant's storage by the same rules the API applies when
+  the storage is added, checked again at every use, and names labels with the
+  tenant's own keyed hash. Each tenant has a naming key of 32 random bytes,
+  sealed with the installation key and bound to the tenant, kept in the
+  tenant's database; a tenant made before this version is given one when it
+  is next opened. No API answers it and no log holds it.
+- The setting `receiver.header-limit` (installation-only, default `64MiB`,
+  from `1MiB` to `4GiB`) bounds how much of a received file is read as its
+  header. A file whose header is longer is quarantined as `header_too_large`
+  with its bytes kept, so it can be released once the bound is raised; a
+  change applies within a second, without a restart.
+- `make check-reception`: the reception checked from outside with dcmtk,
+  pynetdicom, pydicom, shasum and sqlite3, including a server killed with
+  signal 9 in the middle of a study.
+- `docs/testing.md` lists how tests and checks are run, what `-short` means,
+  how a slow test is marked, and every `MAGNETAR_*` variable; the reception
+  walk-through says which changes take effect without a restart.
 
 ### Changed
+
+- A recorded file whose copy in the incoming area is gone is quarantined as
+  `incoming_lost` and the rest of its study is archived; before, the whole
+  reception failed. A scan's manifest is written from the catalog's list of
+  the scan, and verification checks that it lists every instance the catalog
+  holds in the scan, whichever reception archived it.
+- A receiver added, changed or removed through the API is started, restarted
+  or stopped at once; the supervisor's own reading of the receivers is a
+  backstop every 30 seconds. A running receiver whose TLS certificate expires
+  is stopped and shown down within 5 seconds.
+- A receiver with no bind address is refused, address in use, when another
+  program holds its port on the IPv4 wildcard address, on macOS as elsewhere.
 
 - `magnetar receiver add` and `set` refuse `--allow-aet-from` with no title or
   no range, naming the missing part; an AE title that contains `@` is read

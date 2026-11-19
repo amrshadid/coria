@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/master"
@@ -20,6 +21,52 @@ type StorageSecrets interface {
 	// that holds the installation key can. A storage not there, or not of
 	// type S3, is NotFound.
 	StorageSecret(ctx context.Context, name string) ([]byte, error)
+}
+
+// SecretName names one of a tenant's own secrets (Secrets).
+type SecretName string
+
+// The tenant's secrets.
+const (
+	// SecretNaming is the key of the keyed hash a naming rule's {#X} uses
+	// (HMAC-SHA-256, core/naming), so a label made from a sender's
+	// identifier cannot be turned back into it without the tenant's secret.
+	SecretNaming SecretName = "naming"
+)
+
+// ValidateSecretName returns an Invalid error unless n is a secret the port
+// keeps.
+func ValidateSecretName(n SecretName) error {
+	if n != SecretNaming {
+		return invalid("no tenant secret has this name")
+	}
+	return nil
+}
+
+// Secrets keeps the tenant's own secrets, each sealed by the caller
+// with the installation key before it reaches the store: the store never
+// sees, opens or logs a plaintext, and no other method answers one.
+type Secrets interface {
+	// TenantSecret returns the sealed bytes of the secret named name, as
+	// KeepTenantSecret stored them, or NotFound when it has none.
+	TenantSecret(ctx context.Context, name SecretName) ([]byte, error)
+	// KeepTenantSecret stores sealed as the secret named name unless one
+	// is stored already, and returns the sealed bytes stored, the first
+	// writer's: two callers that make a secret at once both end with the
+	// same one, and a secret once kept is never replaced, since what was
+	// made with it (labels) depends on it. sealed is 1 to
+	// MaxSealedSecretLength bytes (Invalid otherwise); at is when it was
+	// made.
+	KeepTenantSecret(ctx context.Context, name SecretName, sealed []byte, at time.Time) ([]byte, error)
+}
+
+// ValidateSealedSecret returns an Invalid error unless sealed is a sealed
+// secret's length the store keeps.
+func ValidateSealedSecret(sealed []byte) error {
+	if len(sealed) == 0 || len(sealed) > MaxSealedSecretLength {
+		return invalid("a sealed secret is 1 to " + strconv.Itoa(MaxSealedSecretLength) + " bytes")
+	}
+	return nil
 }
 
 // QuarantineReleases releases a held file with what a release records.
@@ -156,6 +203,7 @@ func ValidateSeriesUID(s string) error { return validateUID("Series Instance UID
 // embeds, so a driver implements them whole.
 type PipelineParts interface {
 	StorageSecrets
+	Secrets
 	QuarantineReleases
 	FencedFiles
 	WorkClaims

@@ -86,7 +86,9 @@ func (e *NotDICOMError) Error() string {
 	return "header: not a DICOM file: " + e.Why + " at byte " + strconv.FormatInt(e.Offset, 10)
 }
 
-// MaxHeader is the most bytes of a file read before its pixel data: every
+// MaxHeader is the default bound on the bytes of a file read before its
+// pixel data, the built-in default of the setting receiver.header-limit,
+// which an installation may raise (ReadWithin): every
 // value the header holds, and every bulk value before the pixel data, must
 // lie within it. go-dicom allocates a value whole once its declared length
 // fits in what the stream has left, so the stream it is given for the header
@@ -99,10 +101,10 @@ func (e *NotDICOMError) Error() string {
 const MaxHeader = 64 << 20
 
 // TooLargeError is a file whose elements before its pixel data do not
-// fit in MaxHeader bytes, or whose first element past the bound is not pixel
-// data: its header is not read.
+// fit in the bound it was read within, or whose first element past the
+// bound is not pixel data: its header is not read.
 type TooLargeError struct {
-	// Limit is the bound, MaxHeader.
+	// Limit is the bound in bytes.
 	Limit int64
 }
 
@@ -121,21 +123,27 @@ func (e *TooLargeError) Error() string {
 // package needs is in the errors it returns.
 var quiet sync.Once
 
-// Read reads the header of the file r holds, size bytes long. A file that is
-// not a whole DICOM file is a *NotDICOMError, one whose header does not fit
-// in MaxHeader a *TooLargeError; any other error is a failure to read
-// r.
+// Read is ReadWithin the default bound, MaxHeader.
+func Read(r io.ReaderAt, size int64) (*Header, error) { return ReadWithin(r, size, MaxHeader) }
+
+// ReadWithin reads the header of the file r holds, size bytes long, within
+// bound bytes (MaxHeader when bound is not positive). A file that is not a
+// whole DICOM file is a *NotDICOMError, one whose header does not fit in
+// bound a *TooLargeError; any other error is a failure to read r.
 //
-// The header is read first from the file's first MaxHeader bytes only. When
+// The header is read first from the file's first bound bytes only. When
 // the file is longer and its data set runs past the bound, the first element
 // past it must be pixel data (PS3.3 C.7.6.3), which go-dicom skips whatever
 // its length; the file is then read whole, every element before the pixel
 // data already shown to fit. An element after the pixel data is bounded by
 // the file's size only: in practice it is the Data Set Trailing Padding, an
 // OB that is skipped as bulk data.
-func Read(r io.ReaderAt, size int64) (*Header, error) {
+func ReadWithin(r io.ReaderAt, size, bound int64) (*Header, error) {
 	quiet.Do(func() { config.SetLogger(slog.New(slog.DiscardHandler)) })
-	limit := min(size, MaxHeader)
+	if bound <= 0 {
+		bound = MaxHeader
+	}
+	limit := min(size, bound)
 	df, err := parse(io.NewSectionReader(r, 0, limit))
 	if err != nil {
 		return nil, err
@@ -147,14 +155,14 @@ func Read(r io.ReaderAt, size int64) (*Header, error) {
 		}
 		var b [4]byte
 		if df.Deflated || !df.HasPreamble {
-			return nil, &TooLargeError{Limit: MaxHeader}
+			return nil, &TooLargeError{Limit: bound}
 		}
 		if _, err := r.ReadAt(b[:], end); err != nil {
 			return nil, fmt.Errorf("header: reading the file: %w", err)
 		}
 		t, err := tag.FromBytes(b[:], df.IsLittleEndian)
 		if err != nil || !slices.Contains(pixelTags, t) {
-			return nil, &TooLargeError{Limit: MaxHeader}
+			return nil, &TooLargeError{Limit: bound}
 		}
 		if df, err = parse(io.NewSectionReader(r, 0, size)); err != nil {
 			return nil, err

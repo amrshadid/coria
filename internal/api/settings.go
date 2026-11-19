@@ -11,6 +11,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/settingvalue"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -51,46 +52,19 @@ func (c *core) onInstallation(ctx context.Context, def settings.Definition) (str
 	return "", v1.SettingSource_SETTING_SOURCE_UNSPECIFIED, err
 }
 
+// values returns the reader of the settings that apply, over the server's
+// list and the master (package settingvalue, which the receivers read
+// through too).
+func (c *core) values() settingvalue.Reader {
+	return settingvalue.Reader{Table: c.settings, Master: c.master}
+}
+
 // installationValue returns the value of the setting named name that
 // applies on the installation. A setting the server's list does not hold, or
 // a stored value its rule refuses, is the server's fault: every value is
 // checked before it is stored.
 func (c *core) installationValue(ctx context.Context, name string) (string, error) {
-	def, ok := c.settings.Lookup(name)
-	if !ok {
-		return "", fault.New(fault.Internal, "api: the server's list of settings has no "+name)
-	}
-	v, _, err := c.onInstallation(ctx, def)
-	if err != nil {
-		return "", err
-	}
-	if def.Validate(v) != nil {
-		return "", fault.New(fault.Internal, "api: the stored "+name+" does not follow its rule")
-	}
-	return v, nil
-}
-
-// tenantValue returns the value of the setting named name that applies on
-// the tenant whose store is st: its own, else the installation's (none for a
-// setting with no installation value), else the built-in default.
-func (c *core) tenantValue(ctx context.Context, st tenant.Store, name string) (string, error) {
-	def, ok := c.settings.Lookup(name)
-	if !ok {
-		return "", fault.New(fault.Internal, "api: the server's list of settings has no "+name)
-	}
-	v, err := st.Setting(ctx, name)
-	switch {
-	case fault.KindOf(err) == fault.NotFound && def.TenantOnly:
-		v = def.Default
-	case fault.KindOf(err) == fault.NotFound:
-		return c.installationValue(ctx, name)
-	case err != nil:
-		return "", err
-	}
-	if def.Validate(v) != nil {
-		return "", fault.New(fault.Internal, "api: the tenant's stored "+name+" does not follow its rule")
-	}
-	return v, nil
+	return c.values().Installation(ctx, name)
 }
 
 // keyLifetime returns the lifetime of a key made with no expiry: the

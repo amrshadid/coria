@@ -43,17 +43,22 @@
 //
 // # One process per installation
 //
-// A scan's manifest and sidecar are merged from what the storage holds,
-// under a lock this process holds per storage and scan, since the catalog
-// offers no listing of a scan's instances to rebuild them from. That holds
-// while one process serves an installation, as the server's lock on its
-// data directory ensures; two processes writing one scan could each drop
-// the other's entry from the manifest (never from the catalog).
+// A scan's manifest is made from the catalog's list of the scan
+// (tenant.ScanContents), whichever reception confirmed each instance, and
+// the verify step checks that it lists every one; the sidecar, which holds
+// headers the catalog does not, is merged from what the storage holds. Both
+// are written, and the scan committed, under a lock this process holds per
+// storage and scan, so receptions of one process never lose each other's
+// entries. That holds while one process serves an installation, as the
+// server's lock on its data directory ensures; with two, a manifest can
+// miss an instance the other confirmed meanwhile (never the catalog), which
+// verify finds and the scan's next manifest lists.
 //
 // # What this package must never do
 //
 // It must never import a database or storage driver, parse DICOM with its
-// own code, read a setting itself, read the clock but through Clock, start a
+// own code, read a setting itself (a bound that may change, such as the
+// header limit, is handed in as a function to call), read the clock but through Clock, start a
 // goroutine that no one waits for, or keep a global. It must never put a
 // value read from a file's header in a log line, an error's text, an event
 // or a metric: labels, ids, counts and fixed phrases only. It must never

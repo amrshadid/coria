@@ -102,6 +102,9 @@ type envOptions struct {
 	// postgres, when set, is the address of an empty Postgres schema the
 	// tenant's database is made in, instead of a SQLite file.
 	postgres string
+	// headerLimit, when set, is the pipeline's reading of the header bound
+	// (Config.HeaderLimit).
+	headerLimit Limit
 }
 
 // newEnv makes a tenant, its storage and receiver, and a started pipeline.
@@ -163,7 +166,7 @@ func newEnvAt(t testing.TB, dataDir string, start time.Time, opts envOptions) *e
 		workers = 2
 	}
 	e.cfg = Config{
-		Tenant: "lab", Store: e.store, Hasher: hasher, Clock: e.clock,
+		Tenant: "lab", Store: e.store, Hasher: hasher, Clock: e.clock, HeaderLimit: opts.headerLimit,
 		OpenStorage: func(_ context.Context, name string) (blob.Store, error) {
 			if e.wrap != nil {
 				return e.wrap(e.storage), nil

@@ -141,6 +141,21 @@ func TestParseSize(t *testing.T) {
 	}
 }
 
+// TestParseHeaderLimit guards receiver.header-limit: a size, at each bound
+// and one byte past it.
+func TestParseHeaderLimit(t *testing.T) {
+	for v, want := range map[string]int64{"1MiB": 1 << 20, "64MiB": 64 << 20, "4GiB": 4 << 30, "1048576": 1 << 20} {
+		if got, err := ParseHeaderLimit(v); err != nil || got != want {
+			t.Errorf("%q: %d, %v; want %d", v, got, err, want)
+		}
+	}
+	for _, v := range []string{"", "0", "1048575", "4294967297", "5GiB", "64MB", "-1MiB"} {
+		if _, err := ParseHeaderLimit(v); err == nil {
+			t.Errorf("%q: accepted", v)
+		}
+	}
+}
+
 // TestParseReserve guards storage.reserve: one or two terms, one of each
 // kind, and that the larger applies.
 func TestParseReserve(t *testing.T) {
@@ -265,6 +280,27 @@ func FuzzParseSize(f *testing.F) {
 			t.Fatalf("%q is %d", s, n)
 		}
 		if back, err := ParseSize(FormatSize(n)); err != nil || back != n {
+			t.Fatalf("%q is %d, written %q, read back %d (%v)", s, n, FormatSize(n), back, err)
+		}
+	})
+}
+
+// FuzzParseHeaderLimit guards the header bound's parser: it never panics,
+// a bound it accepts is within its limits, and FormatSize writes it back as
+// the same bound.
+func FuzzParseHeaderLimit(f *testing.F) {
+	for _, s := range []string{"64MiB", "1MiB", "4GiB", "4294967297", "0", "1KiB"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		n, err := ParseHeaderLimit(s)
+		if err != nil {
+			return
+		}
+		if n < MinHeaderLimit || n > MaxHeaderLimit {
+			t.Fatalf("%q is %d", s, n)
+		}
+		if back, err := ParseHeaderLimit(FormatSize(n)); err != nil || back != n {
 			t.Fatalf("%q is %d, written %q, read back %d (%v)", s, n, FormatSize(n), back, err)
 		}
 	})

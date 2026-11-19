@@ -50,10 +50,9 @@ type written struct {
 //     ClaimedBefore or ArchivedBefore and changes nothing. A file claimed
 //     before that a held record of this reception keeps (a read-back
 //     mismatch of an earlier run) is not written again: it stays held.
-//  2. Hold the files the claims decided to hold. A record's id is made from
-//     the reception and the file, so a run again writes nothing new. Until
-//     HoldFiles takes a fence, that id is what keeps a worker whose lease
-//     was taken over from writing a second record.
+//  2. Hold the files the claims decided to hold, under the unit's fence. A
+//     record's id is made from the reception and the file, so a run again
+//     writes nothing new.
 //  3. Put each file to be written to its layout key. A key already holding
 //     an object (a run again) is replaced whole by the port's rule, with the
 //     same bytes, so the object is what it was.
@@ -69,9 +68,12 @@ type written struct {
 //     copy that replaces it), and a later correct file of the same instance,
 //     by a retry or a release, is put to the same key and replaces it whole.
 //  5. Put the scan's metadata sidecar, then its manifest, with the files that
-//     read back equal: each made from what the storage holds for the scan,
-//     every entry under a UID this reception claims taken out and its own
-//     put in its place, each replaced whole by the port.
+//     read back equal, each replaced whole by the port. The manifest is made
+//     from the catalog's list of the scan (ScanInstances: every instance
+//     confirmed, by any reception) with this reception's files added; the
+//     sidecar, which holds headers the catalog does not, from what the
+//     storage holds for the scan, every entry under a UID this reception
+//     claims, or that the manifest does not list, taken out.
 //  6. Commit the scan's catalog rows with the instances that read back equal
 //     (CommitScan, under the fence, at most MaxScanCommit per call).
 //
@@ -84,12 +86,14 @@ type written struct {
 // released and the objects stay unlisted until the retry of the reception
 // writes them again.
 //
-// The sidecar and manifest are read, merged and replaced under a lock held
-// by this process per storage and scan, so two receptions of one process
-// that write one scan never lose each other's entries. Two processes on one
+// The sidecar and manifest are made and replaced, and the scan committed,
+// under a lock held by this process per storage and scan, so a reception
+// writing a scan sees the commit of another of this process that wrote it
+// before, and the two never lose each other's entries. Two processes on one
 // tenant (a database with several writers) are not serialized here: the
-// catalog then holds every instance, and only the manifest can miss one
-// until the scan's next commit rewrites it.
+// catalog then holds every instance, a manifest can miss one confirmed by
+// the other process meanwhile, the verify step finds it (scanListed), and
+// the scan's next manifest, made from the catalog, lists it.
 func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Reception, store blob.Store, path label.Path, g series, kept map[string]bool) (scanResult, error) {
 	var res scanResult
 	fence := w.Fence()
@@ -139,7 +143,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 			}
 		}
 	}
-	if err := p.hold(ctx, holds); err != nil {
+	if err := p.hold(ctx, w, holds); err != nil {
 		return res, err
 	}
 	if len(toWrite) == 0 {
@@ -195,7 +199,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		}
 	}
 	p.at("archive.after-readback")
-	if err := p.hold(ctx, mismatched); err != nil {
+	if err := p.hold(ctx, w, mismatched); err != nil {
 		return res, err
 	}
 	puts = good
@@ -206,23 +210,9 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	for i, wr := range puts {
 		files[i] = manifest.File{Key: wr.key, Length: wr.f.Size, Size: wr.f.Size, SHA256: wr.f.SHA256.String(), SOPInstanceUID: wr.f.SOPInstanceUID}
 	}
-	old, err := readManifest(ctx, store, manifestKey)
+	merged, err := p.scanManifest(ctx, g.uid, files)
 	if err != nil {
-		return res, err
-	}
-	keep := old.Files[:0:0]
-	for _, mf := range old.Files {
-		// An entry under a UID this reception claims is not the catalog's:
-		// no committed instance has that UID while the claim stands. It is
-		// what a reception that failed before its commit left, and this
-		// reception's entry takes its place.
-		if !ours[mf.SOPInstanceUID] {
-			keep = append(keep, mf)
-		}
-	}
-	merged, _, err := manifest.Merge(manifest.Manifest{Files: keep}, files)
-	if err != nil {
-		return res, fault.Wrap(fault.Internal, err, "the scan's manifest cannot be merged")
+		return res, fault.Wrap(fault.KindOf(err), err, "the scan's manifest cannot be made")
 	}
 	encoded, err := manifest.Encode(merged)
 	if err != nil {
@@ -260,9 +250,9 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		var lc *tenant.LabelConflict
 		switch {
 		case errors.As(err, &lc):
-			return res, p.holdWritten(ctx, r, puts[start:], tenant.QuarantineLabelConflict, map[string]string{"label": lc.Label, "fault": lc.Fault})
+			return res, p.holdWritten(ctx, w, r, puts[start:], tenant.QuarantineLabelConflict, map[string]string{"label": lc.Label, "fault": lc.Fault})
 		case errors.Is(err, tenant.ErrSeriesElsewhere):
-			return res, p.holdWritten(ctx, r, puts[start:], tenant.QuarantineUIDElsewhere, nil)
+			return res, p.holdWritten(ctx, w, r, puts[start:], tenant.QuarantineUIDElsewhere, nil)
 		case err != nil:
 			return res, err
 		}
@@ -277,12 +267,12 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 // the storage stay, unlisted by the catalog; nothing is deleted from a
 // storage without a recorded reason, and the files keep their incoming
 // copies for a person to decide.
-func (p *Pipeline) holdWritten(ctx context.Context, r tenant.Reception, puts []written, reason tenant.QuarantineReason, details map[string]string) error {
+func (p *Pipeline) holdWritten(ctx context.Context, w tenant.Work, r tenant.Reception, puts []written, reason tenant.QuarantineReason, details map[string]string) error {
 	records := make([]tenant.QuarantinedFile, len(puts))
 	for i, wr := range puts {
 		records[i] = p.holdRecord(r, wr.f, reason, details)
 	}
-	return p.hold(ctx, records)
+	return p.hold(ctx, w, records)
 }
 
 // putIncoming puts a received file's incoming copy to key, and checks that
@@ -346,7 +336,7 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 		}
 		wr := puts[i]
 		i++
-		h, err := p.readHeader(wr.f.Incoming)
+		h, err := p.readHeader(ctx, wr.f.Incoming)
 		if err != nil {
 			return sidecar.Instance{}, false, err
 		}

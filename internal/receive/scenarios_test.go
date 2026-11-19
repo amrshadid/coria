@@ -2,9 +2,15 @@ package receive
 
 import (
 	"bytes"
+	"context"
+	"encoding/binary"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/blob"
+	"github.com/amrshadid/magnetar/internal/core/manifest"
 	"github.com/amrshadid/magnetar/internal/core/naming"
 	"github.com/amrshadid/magnetar/internal/core/reception"
 	"github.com/amrshadid/magnetar/internal/receive/header"
@@ -50,6 +56,66 @@ func TestTwoArrivalsMakeOneSession(t *testing.T) {
 		t.Fatalf("totals %+v", totals)
 	}
 	checkArchive(t, e, rs[1], sentMap(t, studyFiles[2:]...))
+}
+
+// TestVerifySeesAManifestMissingAnotherReceptionsInstance guards the whole
+// check of verify (scanListed): two arrivals of one series write one scan;
+// when the scan's manifest on the storage is left without the instance the
+// first arrival confirmed (as another process writing the scan could leave
+// it), the second arrival's verify fails rather than let its incoming
+// copies go, though every instance it confirmed itself is listed.
+func TestVerifySeesAManifestMissingAnotherReceptionsInstance(t *testing.T) {
+	const firstUID = "1.3.6.1.4.1.5962.1.1.0.0.0.1194734704.16302.0.3"
+	var e *env
+	var checks, failed atomic.Int64
+	e = newEnv(t, envOptions{hook: func(point string) {
+		switch point {
+		case "verify.before-check":
+			if checks.Add(1) < 2 {
+				return
+			}
+			page, err := e.storage.List(e.ctx, blob.ListOptions{Prefix: "meta/"})
+			if err != nil {
+				return
+			}
+			for _, k := range page.Keys {
+				if !strings.HasSuffix(k, "/manifest.json") {
+					continue
+				}
+				rc, err := e.storage.Read(e.ctx, k, 0, -1)
+				if err != nil {
+					return
+				}
+				m, err := manifest.Decode(rc)
+				_ = rc.Close()
+				if err != nil {
+					return
+				}
+				kept := m.Files[:0]
+				for _, f := range m.Files {
+					if f.SOPInstanceUID != firstUID {
+						kept = append(kept, f)
+					}
+				}
+				b, err := manifest.Encode(manifest.Manifest{Files: kept})
+				if err == nil {
+					_, _ = e.storage.Put(e.ctx, k, bytes.NewReader(b))
+				}
+			}
+		case "step.failed:" + kindVerify:
+			failed.Add(1)
+		}
+	}})
+	e.send(studyFiles[0])
+	e.settle(1)
+	e.clock.Advance(time.Minute)
+	e.send(studyFiles[1])
+	e.waitFor("the second arrival's verify to fail", time.Second, func() bool { return failed.Load() > 0 })
+	for _, r := range e.receptions() {
+		if r.Arrival == 2 && done(r) {
+			t.Fatalf("the second arrival was finished with a manifest that misses an instance of its scan: %+v", r)
+		}
+	}
 }
 
 // TestStudySentTwiceIsIgnoredTheSecondTime guards duplicates: the same study
@@ -211,4 +277,55 @@ func studyOf(t *testing.T, b []byte) string {
 	}
 	u, _ := h.UID(header.StudyUID)
 	return u
+}
+
+// bigHeader returns MR_small.dcm with a Patient Comments (0010,4000) of n
+// spaces put first in its data set: a header of about n bytes before its
+// pixel data, its UIDs and pixel data as they were.
+func bigHeader(t *testing.T, n int) []byte {
+	t.Helper()
+	b := corpus(t, "MR_small.dcm")
+	// The data set starts after the file meta information, whose length
+	// its first element gives (PS3.10 7.1).
+	ds := 144 + int(binary.LittleEndian.Uint32(b[140:144]))
+	// UT, explicit VR little endian, with a four-byte length (PS3.5 7.1.2).
+	el := []byte{0x10, 0x00, 0x00, 0x40, 'U', 'T', 0, 0, 0, 0, 0, 0}
+	binary.LittleEndian.PutUint32(el[8:], uint32(n)) // #nosec G115 -- a test's size.
+	out := append(append([]byte{}, b[:ds]...), el...)
+	out = append(out, bytes.Repeat([]byte{' '}, n)...)
+	return append(out, b[ds:]...)
+}
+
+// TestAHeaderPastTheBoundIsKeptAndReleasedOnceItIsRaised guards the header
+// bound as a setting read live: a file whose header is past the bound read
+// (1 MiB) is held as header_too_large with its bytes kept and the bound in
+// its details, nothing archived; once the bound read is raised (4 MiB), with
+// no restart, the held file is released and archived, its bytes those sent.
+func TestAHeaderPastTheBoundIsKeptAndReleasedOnceItIsRaised(t *testing.T) {
+	var limit atomic.Int64
+	limit.Store(1 << 20)
+	e := newEnv(t, envOptions{headerLimit: func(context.Context) (int64, error) { return limit.Load(), nil }})
+	file := bigHeader(t, 2<<20)
+	e.sendBytes(file, Received)
+	e.waitFor("the hold", time.Second, func() bool { return len(e.held()) == 1 && e.p.batch.idle() })
+	q := e.held()[0]
+	if q.Reason != tenant.QuarantineHeaderTooLarge || !q.ContentKept || q.Details["limit"] != "1048576" || q.Incoming == "" {
+		t.Fatalf("held %+v, want header_too_large with its bytes kept and the limit", q)
+	}
+	if ok, _ := e.p.area.Exists(q.Incoming); !ok {
+		t.Fatal("the bytes of a header too large are not kept")
+	}
+	limit.Store(4 << 20)
+	e.clock.Advance(2 * HeaderLimitInterval)
+	out, err := e.p.Release(e.ctx, q.ID, "", e.audit(), nil)
+	if err != nil {
+		t.Fatalf("release %+v %v", out, err)
+	}
+	rs := e.settle(1)
+	if !done(rs[0]) || rs[0].Counts.FilesArchived != 1 {
+		t.Fatalf("reception %+v", rs[0])
+	}
+	if n := e.incomingFiles(); n != 0 {
+		t.Fatalf("%d incoming files", n)
+	}
 }

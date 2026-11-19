@@ -105,7 +105,8 @@ const (
 	// bound the server reads a header to, so its UIDs could not be read and
 	// it cannot be placed. Unlike QUARANTINE_REASON_TOO_LARGE, its bytes are
 	// kept, so a person can release it (it is then checked again as it was
-	// received) or reject it. Details: "limit", the bound in bytes.
+	// received) or reject it. The bound is the setting receiver.header-limit.
+	// Details: "limit", the bound in bytes.
 	QuarantineReason_QUARANTINE_REASON_HEADER_TOO_LARGE QuarantineReason = 11
 	// The server recorded the file as received, and its copy in the incoming
 	// area was gone when the pipeline came to read it: removed or lost from

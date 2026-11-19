@@ -14,6 +14,7 @@ import (
 
 	"github.com/amrshadid/magnetar/internal/core/uid"
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/receive/header"
 	"github.com/amrshadid/magnetar/internal/receive/incoming"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
@@ -53,6 +54,13 @@ type Pipeline struct {
 	running          atomic.Bool
 
 	stats Stats
+
+	// limit is the header bound last read and when (headerLimit).
+	limit struct {
+		mu    sync.Mutex
+		bytes int64
+		read  time.Time
+	}
 
 	// hook, when not nil, runs at each durable effect of each step, for a
 	// test that stops the process there or watches the steps
@@ -112,6 +120,34 @@ func (p *Pipeline) Stats() *Stats { return &p.stats }
 // so a time read back compares equal to the one written.
 func (p *Pipeline) now() time.Time {
 	return p.cfg.Clock.Now().UTC().Truncate(time.Microsecond)
+}
+
+// headerLimit returns the bound a file's header is read within: the one
+// read from Config.HeaderLimit, again once HeaderLimitInterval has passed.
+// A read that fails keeps the last bound, or header.MaxHeader before any,
+// and is logged: a setting that cannot be read never stops a reception.
+func (p *Pipeline) headerLimit(ctx context.Context) int64 {
+	if p.cfg.HeaderLimit == nil {
+		return header.MaxHeader
+	}
+	now := p.cfg.Clock.Now()
+	p.limit.mu.Lock()
+	defer p.limit.mu.Unlock()
+	if p.limit.bytes > 0 && now.Sub(p.limit.read) < HeaderLimitInterval && !now.Before(p.limit.read) {
+		return p.limit.bytes
+	}
+	n, err := p.cfg.HeaderLimit(ctx)
+	switch {
+	case err != nil:
+		p.log.Warn("receive: the header limit could not be read; the last one is kept", "reason", fault.Message(err))
+	case n > 0:
+		p.limit.bytes = n
+	}
+	p.limit.read = now
+	if p.limit.bytes <= 0 {
+		return header.MaxHeader
+	}
+	return p.limit.bytes
 }
 
 // at runs the test hook at a named point.

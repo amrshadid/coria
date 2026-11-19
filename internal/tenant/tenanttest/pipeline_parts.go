@@ -49,6 +49,62 @@ func testStorageSecret(e *penv) {
 	e.wantKind("StorageSecret of a malformed name", err, fault.Invalid)
 }
 
+// testTenantSecrets guards the tenant's own secrets: none before one is
+// kept (NotFound); the sealed bytes come back exactly as kept; a second
+// keep with other bytes answers the first and changes nothing, also when
+// several keep at once; an unknown name, or sealed bytes empty or too long,
+// is Invalid and keeps nothing.
+func testTenantSecrets(e *penv) {
+	pp := e.parts()
+	_, err := pp.TenantSecret(e.ctx, tenant.SecretNaming)
+	e.wantKind("TenantSecret before one is kept", err, fault.NotFound)
+	_, err = pp.KeepTenantSecret(e.ctx, tenant.SecretNaming, nil, at(1))
+	e.wantKind("KeepTenantSecret of no bytes", err, fault.Invalid)
+	_, err = pp.KeepTenantSecret(e.ctx, tenant.SecretNaming, make([]byte, tenant.MaxSealedSecretLength+1), at(1))
+	e.wantKind("KeepTenantSecret of too many bytes", err, fault.Invalid)
+	_, err = pp.KeepTenantSecret(e.ctx, "date-shift-unknown", []byte("x"), at(1))
+	e.wantKind("KeepTenantSecret of an unknown name", err, fault.Invalid)
+	_, err = pp.TenantSecret(e.ctx, "date-shift-unknown")
+	e.wantKind("TenantSecret of an unknown name", err, fault.Invalid)
+	_, err = pp.TenantSecret(e.ctx, tenant.SecretNaming)
+	e.wantKind("TenantSecret after refused keeps", err, fault.NotFound)
+
+	// Several at once, each with its own bytes: one wins, and every caller
+	// is answered the winner's.
+	const n = 8
+	got := make([][]byte, n)
+	errs := make([]error, n)
+	done := make(chan int, n)
+	for i := range n {
+		go func() {
+			got[i], errs[i] = pp.KeepTenantSecret(e.ctx, tenant.SecretNaming, []byte{"abcdefgh"[i], 0, 0xff}, at(2))
+			done <- i
+		}()
+	}
+	for range n {
+		<-done
+	}
+	for i := range n {
+		e.ok("KeepTenantSecret at once", errs[i])
+		if string(got[i]) != string(got[0]) {
+			e.Fatalf("KeepTenantSecret at once answered %q and %q", got[0], got[i])
+		}
+	}
+	if len(got[0]) != 3 || got[0][1] != 0 || got[0][2] != 0xff {
+		e.Fatalf("the kept secret %q is not one of the bytes given", got[0])
+	}
+	again, err := pp.KeepTenantSecret(e.ctx, tenant.SecretNaming, []byte("other bytes"), at(3))
+	e.ok("KeepTenantSecret again", err)
+	if string(again) != string(got[0]) {
+		e.Errorf("KeepTenantSecret again = %q, want the first %q", again, got[0])
+	}
+	stored, err := pp.TenantSecret(e.ctx, tenant.SecretNaming)
+	e.ok("TenantSecret", err)
+	if string(stored) != string(got[0]) {
+		e.Errorf("TenantSecret = %q, want %q", stored, got[0])
+	}
+}
+
 // testReleaseReason guards a release's record: the reason the person gave
 // is kept on the record, a release again keeps the first reason, an empty
 // reason records none, a reason of spaces or too long is Invalid; and the

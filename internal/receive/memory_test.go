@@ -3,44 +3,15 @@ package receive
 import (
 	"os"
 	"runtime"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/amrshadid/magnetar/internal/testkit"
 )
 
 // scaleEnv, when set, runs the scale test of many files, which takes minutes
 // where every sync reaches the drive (F_FULLFSYNC on macOS).
 const scaleEnv = "MAGNETAR_TEST_SCALE"
-
-// heapPeak samples the live heap until stop is called and returns the
-// highest it saw.
-func heapPeak() (stop func() uint64) {
-	var peak atomic.Uint64
-	done := make(chan struct{})
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		var m runtime.MemStats
-		for {
-			runtime.ReadMemStats(&m)
-			if m.HeapAlloc > peak.Load() {
-				peak.Store(m.HeapAlloc)
-			}
-			select {
-			case <-done:
-				return
-			case <-time.After(2 * time.Millisecond):
-			}
-		}
-	}()
-	return func() uint64 {
-		close(done)
-		wg.Wait()
-		return peak.Load()
-	}
-}
 
 // TestScaleLargeFileInBoundedMemory guards that memory does not grow with a
 // file's size: a generated file of 512 MiB is landed, archived and read back
@@ -52,8 +23,8 @@ func TestScaleLargeFileInBoundedMemory(t *testing.T) {
 	g := newGenerator(t)
 	e := newEnv(t, envOptions{})
 	runtime.GC()
-	stop := heapPeak()
-	r, size := g.file(0, 512<<20)
+	stop := testkit.HeapPeak()
+	r, size := g.File(0, 512<<20)
 	start := time.Now()
 	e.sendReader(r)
 	rs := e.settle(1)
@@ -79,10 +50,10 @@ func TestScaleManyFilesKeepTheHeapFlat(t *testing.T) {
 		e := newEnv(t, envOptions{workers: 4})
 		e.deadline = 20 * time.Minute
 		runtime.GC()
-		stop := heapPeak()
+		stop := testkit.HeapPeak()
 		begin := time.Now()
 		for i := range n {
-			r, _ := g.file(i, 2048)
+			r, _ := g.File(i, 2048)
 			e.sendReader(r)
 		}
 		sent := time.Since(begin)

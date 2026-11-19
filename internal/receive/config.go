@@ -36,6 +36,10 @@ func (SystemClock) After(d time.Duration) <-chan time.Time { return time.After(d
 // hand the same store to every step.
 type OpenStorage func(ctx context.Context, name string) (blob.Store, error)
 
+// Limit reads a bound that may change while the pipeline runs, such as the
+// setting receiver.header-limit, in bytes.
+type Limit func(ctx context.Context) (int64, error)
+
 // Check says whether something holds now, for a refusal the pipeline makes
 // without reading settings itself: the tenant over its limit of incoming
 // bytes, or the disk below its reserve.
@@ -50,6 +54,10 @@ const (
 	DefaultBatchInterval = 200 * time.Millisecond
 	DefaultRetryInterval = 5 * time.Second
 )
+
+// HeaderLimitInterval is how long a header limit read is used before it
+// is read again: a setting read once a second at most, not once a file.
+const HeaderLimitInterval = time.Second
 
 // Config is what one tenant's pipeline is handed. Every port is given, none
 // is opened here.
@@ -79,6 +87,12 @@ type Config struct {
 	// LowDisk says the incoming area's disk is below its reserve; a new
 	// file is then refused as a temporary failure. Nil never refuses.
 	LowDisk Check
+	// HeaderLimit reads the most bytes of a file read as its header,
+	// everything before its pixel data (the setting
+	// receiver.header-limit); it is read again at most every
+	// HeaderLimitInterval, so a raised bound applies without a restart. Nil,
+	// or a read that fails before any has succeeded, is header.MaxHeader.
+	HeaderLimit Limit
 	// Workers is the most steps run at once; 0 is DefaultWorkers.
 	Workers int
 	// Lease is how long a worker holds a unit between renewals; 0 is

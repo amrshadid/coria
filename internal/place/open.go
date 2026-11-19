@@ -116,49 +116,90 @@ type Opener struct {
 // *ServerError; anything else is the storage's: its directory not there or
 // behind a link, its endpoint no longer listed, or the driver's own failure.
 func (o Opener) Open(ctx context.Context, t Tenant, s tenant.Storage) (blob.Store, error) {
+	at, err := o.resolve(ctx, t, s)
+	if err != nil {
+		return nil, err
+	}
+	if s.Type == tenant.StorageDirectory {
+		return dir.Open(at.dir.Path())
+	}
+	if t.Secrets == nil {
+		return nil, &ServerError{fault.Wrap(fault.Internal, errNoSecrets, "place: an S3 storage cannot be opened")}
+	}
+	sealed, err := t.Secrets.StorageSecret(ctx, s.Name)
+	if err != nil {
+		return nil, &ServerError{err}
+	}
+	plain, err := o.Keys.Open(SecretContext(t.ID, s.Name), sealed)
+	if err != nil {
+		return nil, &ServerError{fault.Wrap(fault.Internal, err, "place: an S3 storage's secret access key does not open with the installation key")}
+	}
+	ep := at.endpoint
+	return s3.Open(ctx, s3.Config{
+		Endpoint: ep.URL, Region: s.S3.Region, Bucket: s.S3.Bucket, Prefix: s.S3.Prefix, PathStyle: s.S3.PathStyle,
+		AccessKeyID: s3.NewSecret(s.S3.AccessKeyID), SecretAccessKey: s3.NewSecret(string(plain)),
+		AllowHTTP: ep.Entry.PlainHTTP, AllowAddress: ep.AllowAddress(),
+		StaleUploadAge: o.StaleUploadAge,
+	})
+}
+
+// Check applies every rule Open applies to s, without opening it or
+// reading its secret: for a user that keeps a store open across uses (the
+// reception pipeline) and must still see a storage that is no longer
+// allowed (a link planted below a root, an endpoint taken off the list) at
+// its next use, as Open would.
+func (o Opener) Check(ctx context.Context, t Tenant, s tenant.Storage) error {
+	_, err := o.resolve(ctx, t, s)
+	return err
+}
+
+// resolved is where a storage is, once its rules are applied.
+type resolved struct {
+	dir      Directory
+	endpoint Endpoint
+}
+
+// resolve applies the rules of where s may be, read from the installation's
+// settings now, and returns where it is.
+func (o Opener) resolve(ctx context.Context, t Tenant, s tenant.Storage) (resolved, error) {
 	switch s.Type {
 	case tenant.StorageDirectory:
 		roots, err := o.Values.DirectoryRoots(ctx)
 		if err != nil {
-			return nil, &ServerError{err}
+			return resolved{}, &ServerError{err}
 		}
 		d, err := Resolve(roots, t.Name, s.Directory)
 		if err != nil {
-			return nil, err
+			return resolved{}, err
 		}
 		if !d.Exists() {
-			return nil, fault.Wrap(fault.NotFound, fs.ErrNotExist, "the storage's directory is not there")
+			return resolved{}, fault.Wrap(fault.NotFound, fs.ErrNotExist, "the storage's directory is not there")
 		}
-		return dir.Open(d.Path())
+		return resolved{dir: d}, nil
 	case tenant.StorageS3:
 		entries, err := o.Values.S3Endpoints(ctx)
 		if err != nil {
-			return nil, &ServerError{err}
+			return resolved{}, &ServerError{err}
 		}
 		ep, err := AllowS3(entries, s.S3)
 		if err != nil {
 			if fault.KindOf(err) == fault.Precondition {
-				return nil, err
+				return resolved{}, err
 			}
-			return nil, &ServerError{err}
+			return resolved{}, &ServerError{err}
 		}
-		if t.Secrets == nil {
-			return nil, &ServerError{fault.Wrap(fault.Internal, errNoSecrets, "place: an S3 storage cannot be opened")}
-		}
-		sealed, err := t.Secrets.StorageSecret(ctx, s.Name)
-		if err != nil {
-			return nil, &ServerError{err}
-		}
-		plain, err := o.Keys.Open(SecretContext(t.ID, s.Name), sealed)
-		if err != nil {
-			return nil, &ServerError{fault.Wrap(fault.Internal, err, "place: an S3 storage's secret access key does not open with the installation key")}
-		}
-		return s3.Open(ctx, s3.Config{
-			Endpoint: ep.URL, Region: s.S3.Region, Bucket: s.S3.Bucket, Prefix: s.S3.Prefix, PathStyle: s.S3.PathStyle,
-			AccessKeyID: s3.NewSecret(s.S3.AccessKeyID), SecretAccessKey: s3.NewSecret(string(plain)),
-			AllowHTTP: ep.Entry.PlainHTTP, AllowAddress: ep.AllowAddress(),
-			StaleUploadAge: o.StaleUploadAge,
-		})
+		return resolved{endpoint: ep}, nil
 	}
-	return nil, &ServerError{fault.New(fault.Internal, "place: a storage of a type this server does not know")}
+	return resolved{}, &ServerError{fault.New(fault.Internal, "place: a storage of a type this server does not know")}
+}
+
+// TenantOf returns the tenant whose id is id and name is name, as Open
+// opens its storages: its sealed secrets are handed back by store when the
+// store keeps them (Secrets), and an S3 storage cannot be opened otherwise.
+func TenantOf(id, name string, store any) Tenant {
+	t := Tenant{ID: id, Name: name}
+	if s, ok := store.(Secrets); ok {
+		t.Secrets = s
+	}
+	return t
 }

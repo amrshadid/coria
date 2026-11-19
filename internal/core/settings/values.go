@@ -363,6 +363,30 @@ func ParseSize(s string) (int64, error) {
 	return n * unit, nil
 }
 
+// The bounds of receiver.header-limit.
+const (
+	// MinHeaderLimit is the smallest header bound: below it ordinary CT and
+	// MR headers, a few KiB to a few hundred, would start to be held.
+	MinHeaderLimit = 1 << 20
+	// MaxHeaderLimit is the largest: a header is held in memory while it is
+	// read, once per file in flight, so the bound is the memory a single
+	// file may take; 4 GiB is the receivers' default bound on a whole file.
+	MaxHeaderLimit = 4 << 30
+)
+
+// ParseHeaderLimit reads receiver.header-limit: a size (ParseSize) from
+// MinHeaderLimit to MaxHeaderLimit.
+func ParseHeaderLimit(v string) (int64, error) {
+	n, err := ParseSize(v)
+	if err != nil {
+		return 0, err
+	}
+	if n < MinHeaderLimit || n > MaxHeaderLimit {
+		return 0, errors.New("is a size from 1MiB to 4GiB")
+	}
+	return n, nil
+}
+
 // FormatSize writes a size in the largest unit that divides it, as
 // ParseSize reads it.
 func FormatSize(n int64) string {

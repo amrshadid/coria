@@ -132,10 +132,10 @@ func (f *labelFault) details() map[string]string {
 // labelsOf runs the rule over the header of the first file of g whose bytes
 // are in the incoming area. A file's fault is a *labelFault; anything else
 // (no file readable, a hasher missing) is an error of the server.
-func (p *Pipeline) labelsOf(rule *naming.Rule, g series) (label.Path, *labelFault, error) {
+func (p *Pipeline) labelsOf(ctx context.Context, rule *naming.Rule, g series) (label.Path, *labelFault, error) {
 	var lastErr error
 	for _, f := range g.files {
-		h, err := p.readHeader(f.Incoming)
+		h, err := p.readHeader(ctx, f.Incoming)
 		if err != nil {
 			lastErr = err
 			continue
@@ -180,14 +180,15 @@ func (p *Pipeline) labelsOf(rule *naming.Rule, g series) (label.Path, *labelFaul
 	return label.Path{}, nil, fault.Wrap(fault.KindOf(lastErr), lastErr, "no file of the series could be read to name it")
 }
 
-// readHeader reads the header of a file in the incoming area.
-func (p *Pipeline) readHeader(path string) (*header.Header, error) {
+// readHeader reads the header of a file in the incoming area, within the
+// bound the check that recorded it read it within or a raised one.
+func (p *Pipeline) readHeader(ctx context.Context, path string) (*header.Header, error) {
 	f, size, err := p.area.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	h, err := header.Read(f, size)
+	h, err := header.ReadWithin(f, size, p.headerLimit(ctx))
 	if err != nil {
 		return nil, fault.Wrap(fault.Internal, err, "a recorded file's header cannot be read")
 	}
@@ -197,10 +198,7 @@ func (p *Pipeline) readHeader(path string) (*header.Header, error) {
 // holdRecord returns the quarantine record of a received file of reception
 // r. Its id is made from the reception, the UID and the checksum, so one
 // file is held at most once by one reception, however many runs of a step
-// hold it. HoldFiles takes no fence yet, so a worker whose lease was taken
-// over can still write a record; this id is what makes that record the very
-// one the worker holding the lease writes, which the store skips, until the
-// port's HoldFiles is fenced.
+// hold it: the store skips a record it holds.
 func (p *Pipeline) holdRecord(r tenant.Reception, f tenant.ReceivedFile, reason tenant.QuarantineReason, details map[string]string) tenant.QuarantinedFile {
 	return tenant.QuarantinedFile{
 		ID: derivedID("q", "reception", r.ID, f.SOPInstanceUID, f.SHA256.String()), Reason: reason, Details: details,
@@ -210,13 +208,16 @@ func (p *Pipeline) holdRecord(r tenant.Reception, f tenant.ReceivedFile, reason 
 	}
 }
 
-// hold writes quarantine records in bounded batches. A record written before
-// (a step run again) is skipped by the store.
-func (p *Pipeline) hold(ctx context.Context, records []tenant.QuarantinedFile) error {
+// hold writes quarantine records in bounded batches, under the fence of the
+// unit w the worker holds (HoldFilesFenced): a worker whose lease was taken
+// over holds nothing and is answered that its lease is lost. A record
+// written before (a step run again) is skipped by the store.
+func (p *Pipeline) hold(ctx context.Context, w tenant.Work, records []tenant.QuarantinedFile) error {
+	fence := w.Fence()
 	for start := 0; start < len(records); start += tenant.MaxQuarantineBatch {
 		part := records[start:min(start+tenant.MaxQuarantineBatch, len(records))]
 		p.at("step.before-hold")
-		if _, err := p.store.HoldFiles(ctx, part); err != nil {
+		if _, err := p.store.HoldFilesFenced(ctx, part, &fence); err != nil {
 			return err
 		}
 		p.wake()

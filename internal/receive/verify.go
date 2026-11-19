@@ -28,8 +28,10 @@ import (
 //  2. Check (checkWhole): every instance this reception confirmed is on its
 //     storage at its key with the size it was committed with (Stat); each
 //     scan's manifest on the storage lists every instance this reception
-//     confirmed with its checksum, and every entry it lists is held by the
-//     catalog under that UID, study, series and checksum; and no claim of
+//     confirmed with its checksum, every instance the catalog holds in the
+//     scan, whichever reception confirmed it, with its place and checksum
+//     (scanListed), and every entry it lists is held by the catalog under
+//     that UID, study, series and checksum; and no claim of
 //     this reception is left but those a held record of it keeps (a file
 //     whose read-back failed, whose claim the finish step releases). A
 //     failure is an error: the step is tried again after its delay and,
@@ -173,6 +175,9 @@ func (p *Pipeline) checkWhole(ctx context.Context, r tenant.Reception) error {
 		c := &scanCheck{path: path, listed: make(map[string]manifest.File, len(m.Files)), want: sc.Instances}
 		for _, f := range m.Files {
 			c.listed[f.SOPInstanceUID] = f
+		}
+		if err := p.scanListed(ctx, sc.SeriesUID, c.listed); err != nil {
+			return err
 		}
 		bySeries[sc.SeriesUID] = c
 	}

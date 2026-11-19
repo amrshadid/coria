@@ -408,6 +408,7 @@ func TestSettingCommands(t *testing.T) {
 			"incoming.limit           0          built-in default\n"+
 			"key.default-lifetime     90d        built-in default\n"+
 			"receiver.bind-addresses             built-in default\n"+
+			"receiver.header-limit    64MiB      built-in default\n"+
 			"receiver.ports                      built-in default\n"+
 			"storage.directory-roots             built-in default\n"+
 			"storage.reserve          10%,10GiB  built-in default\n"+
@@ -424,7 +425,7 @@ func TestSettingCommands(t *testing.T) {
 		t.Errorf("get --json: %v", doc)
 	}
 	document(t, r.run("setting", "set", "key.default-lifetime", "30d", "--json"))
-	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 9 {
+	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 10 {
 		t.Errorf("list --json: %v", ss)
 	}
 	document(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1", "--json"))

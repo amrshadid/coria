@@ -51,13 +51,36 @@ tenant's. These settings are set with `SettingsService.SetSetting`:
 
 | Setting | Scope | Who sets it | Default | Form |
 |---|---|---|---|---|
-| `storage.directory-roots` | installation only | admin on the installation | empty: no directory storage | one `name=path` per line |
-| `storage.s3-endpoints` | installation only | admin on the installation | empty: no S3 storage | one URL per line, optionally followed by `plain-http` and `private-address` |
+| `storage.directory-roots` | installation only | admin on the installation | empty: no directory storage | one `name=path` per line; no two roots may lead to one directory once their symbolic links are followed; a caller who is not an admin on the installation reads the names only |
+| `storage.s3-endpoints` | installation only | admin on the installation | empty: no S3 storage | one URL per line, optionally followed by `plain-http` and `private-address`; a storage at a `private-address` endpoint must set `path_style` |
 | `receiver.ports` | each tenant, no installation value | admin on the installation only | empty: no DIMSE receiver | ports and ranges separated by commas |
 | `receiver.bind-addresses` | installation only | admin on the installation | empty: listen on every address | IP addresses separated by commas; the first is the default |
 | `storage.reserve` | installation only | admin on the installation | `10%,10GiB`: the larger of the two | one or two sizes or percentages, comma-separated |
 | `incoming.limit` | installation (the default for every tenant) and each tenant | admin on the installation only | `0`: no limit of the tenant's own | a size, such as `200GiB` |
 | `events.retention` | installation, and each tenant may override | admin on the installation; the tenant's admin for the tenant | `90d` | a period, `1d` to `3650d` |
+
+## Which changes take effect without a restart
+
+The settings listed here are read from the master database each time they are
+used, not cached by the server, so a value set through `SetSetting` applies at the next use,
+without a restart. What "next use" means differs, and the files and flags the
+server reads when it starts do not change until it is started again.
+
+| What | When a change takes effect |
+|---|---|
+| `storage.directory-roots` | At the next use of a directory storage: adding or changing a storage, and every time a storage is opened |
+| `storage.s3-endpoints` | At the next use of an S3 storage, in the same places |
+| `receiver.ports` | At the next `AddReceiver` or `SetReceiver` on the tenant; a listener that is running keeps its port, and a value that would take the port from a receiver is refused |
+| `receiver.bind-addresses` | When a receiver that names no address of its own is started or started again (the first address listed is used); a listener that is running keeps the address it has |
+| `storage.reserve` | Within five seconds, by default: the free space of the incoming area and of each storage a receiver writes to is checked on that interval |
+| `incoming.limit` | Within five seconds, by default, on the same check |
+| `key.default-lifetime` | At the next key made without an expiry; keys already made keep theirs |
+| the server's `--listen` address | Needs a restart: the address is opened once, when the server starts |
+| the server's `--tls-cert` and `--tls-key` | Need a restart: the pair is read once, when the server starts; a renewed certificate is used after the server is started again |
+| the key file | Needs a restart: it is read once, when the server starts, and the keys are held in memory |
+| the data directory (`--data-dir` or `MAGNETAR_DATA_DIR`) | Needs a restart: it is read once, when the command starts |
+| the server's `--master-env`, `--log-format`, `--log-level`, `--drain` | Need a restart: they are read once, when the command starts |
+| the certificate and private key files of a receiver's TLS | When the receiver's listener is started or started again: a change to the receiver does that, as does a retry after a failure; a listener that is running keeps the pair it loaded |
 
 ## Use 1: setting a tenant up to receive
 

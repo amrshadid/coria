@@ -7,6 +7,7 @@ import (
 
 	"github.com/amrshadid/magnetar/internal/blob"
 	"github.com/amrshadid/magnetar/internal/core/reception"
+	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -224,6 +225,49 @@ func TestFenceStopsAWorkerWhoseLeaseWasTakenOver(t *testing.T) {
 	}
 	got, _, _ := e.store.Reception(e.ctx, r.ID)
 	if got.State != reception.Archived || got.Counts.FilesArchived != 7 {
+		t.Fatalf("reception %+v", got)
+	}
+}
+
+// TestAStaleWorkerHoldsNothing guards the fence on a worker's holds
+// (HoldFilesFenced): with one received file's incoming copy gone, a worker
+// whose lease was taken over runs the archive step, whose first write is
+// that file's hold as incoming_lost, and holds nothing; the worker holding
+// the lease holds it and archives the other six.
+func TestAStaleWorkerHoldsNothing(t *testing.T) {
+	e := newEnv(t, envOptions{manual: true})
+	r := seedIdentified(t, e)
+	files, _, err := e.store.ReceivedFiles(e.ctx, r.ID, master.Page{Limit: 10})
+	if err != nil || len(files) != 7 {
+		t.Fatalf("received %d, %v", len(files), err)
+	}
+	if err := e.p.area.Remove(files[0].Incoming); err != nil {
+		t.Fatal(err)
+	}
+	first, err := e.store.ClaimWork(e.ctx, kindArchive, "first", e.p.now(), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.clock.Advance(2 * time.Minute)
+	second, err := e.store.ClaimWork(e.ctx, kindArchive, "second", e.p.now(), time.Minute)
+	if err != nil || second.Attempt != first.Attempt+1 {
+		t.Fatalf("takeover: %+v %v", second, err)
+	}
+	if err := e.p.archive(e.ctx, first); !errors.Is(err, tenant.ErrLeaseLost) {
+		t.Fatalf("the stale worker's step gave %v, want ErrLeaseLost", err)
+	}
+	if held := e.held(); len(held) != 0 {
+		t.Fatalf("the stale worker held %+v", held)
+	}
+	if err := e.p.archive(e.ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	held := e.held()
+	if len(held) != 1 || held[0].Reason != tenant.QuarantineIncomingLost || held[0].SOPInstanceUID != files[0].SOPInstanceUID {
+		t.Fatalf("held %+v, want the file whose copy is gone as incoming_lost", held)
+	}
+	got, _, _ := e.store.Reception(e.ctx, r.ID)
+	if got.State != reception.Archived || got.Counts.FilesArchived != 6 || got.Counts.FilesQuarantined != 1 {
 		t.Fatalf("reception %+v", got)
 	}
 }

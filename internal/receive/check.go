@@ -53,18 +53,18 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 	if err != nil {
 		return decision{}, err
 	}
-	h, err := header.Read(f, size)
+	h, err := header.ReadWithin(f, size, p.headerLimit(ctx))
 	_ = f.Close()
 	var nd *header.NotDICOMError
 	var big *header.TooLargeError
 	if errors.As(err, &big) {
-		// The port's reasons have none for a header too large to read;
-		// too_large with the header's bound is the nearest, and a file
-		// too large is never kept (tenant.QuarantinedFile.Validate), so
-		// its bytes go once the record is written.
-		d := p.holdAtReceive(l, tenant.QuarantineTooLarge, map[string]string{"limit": strconv.FormatInt(big.Limit, 10)}, nil)
-		d.hold.Incoming, d.hold.ContentKept = "", false
-		return d, nil
+		// A header past the bound is held with its bytes kept, never
+		// thrown away: it is often a file worth a person's look (an
+		// enhanced multi-frame object with very many frames, PS3.3
+		// C.7.6.16), released once the installation raises
+		// receiver.header-limit. The bound it was read within is in the
+		// details.
+		return p.holdAtReceive(l, tenant.QuarantineHeaderTooLarge, map[string]string{"limit": strconv.FormatInt(big.Limit, 10)}, nil), nil
 	}
 	if errors.As(err, &nd) {
 		return p.holdAtReceive(l, tenant.QuarantineNotDICOM, map[string]string{"offset": strconv.FormatInt(nd.Offset, 10)}, nil), nil

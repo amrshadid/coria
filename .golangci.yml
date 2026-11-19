@@ -246,6 +246,37 @@ linters:
             - pkg: github.com/amrshadid/magnetar/internal/driver
               desc: the handlers name a database type with master.SQLiteDriver and reach a tenant through the registry
 
+        # Only the DICOM listener speaks DICOM on the network, so a second
+        # implementation of association handling cannot grow elsewhere.
+        dicom-network:
+          files:
+            - $all
+            - "!**/internal/receive/dimse/**"
+          deny:
+            - pkg: github.com/amrshadid/go-dicom/network
+              desc: only internal/receive/dimse speaks DICOM on the network
+
+        # The supervisor is handed a way to make a listener; it never speaks
+        # DICOM itself, so it is tested with fake listeners.
+        supervise:
+          files:
+            - "**/internal/receive/supervise/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/receive/dimse
+              desc: the supervisor is handed a listener factory; servecmd joins the two
+            - pkg: github.com/amrshadid/go-dicom
+              desc: the supervisor never reads or speaks DICOM
+
+        # Test helpers are for tests: nothing the binary runs imports them.
+        testkit:
+          files:
+            - $all
+            - "!$test"
+            - "!**/internal/testkit/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/testkit
+              desc: internal/testkit is for tests and test-only programs only
+
         # The rules of where a tenant's data may be are one package that the
         # handlers and the reception pipeline both use, so a rule is never
         # applied one way when a storage is added and another when it is

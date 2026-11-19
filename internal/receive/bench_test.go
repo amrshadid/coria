@@ -19,7 +19,7 @@ func benchReception(b *testing.B, files int, pixelBytes int64) {
 		b.StartTimer()
 		start := time.Now()
 		for n := range files {
-			r, size := g.file(n, pixelBytes)
+			r, size := g.File(n, pixelBytes)
 			e.sendReader(r)
 			total += size
 		}
@@ -49,7 +49,7 @@ func BenchmarkLand(b *testing.B) {
 	e := newEnv(b, envOptions{})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		r, size := g.file(i%8000, 256<<10)
+		r, size := g.File(i%8000, 256<<10)
 		b.SetBytes(size)
 		e.sendReader(r)
 	}

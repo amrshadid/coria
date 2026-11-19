@@ -48,6 +48,13 @@ import "google/protobuf/timestamp.proto";
 //     installation's value is the default for every tenant. Built-in
 //     default "0". A tenant at its limit has its receivers refuse new
 //     associations until it is under it again.
+//   - receiver.header-limit: the most bytes of a received file read as its
+//     header, everything before its pixel data, as a size from "1MiB" to
+//     "4GiB". Installation-only, since it bounds the server's memory, which
+//     tenants share. Built-in default "64MiB". A file whose header is longer
+//     is quarantined with QUARANTINE_REASON_HEADER_TOO_LARGE, its bytes kept
+//     and the bound in its details, so it can be released once the bound is
+//     raised. A change applies within a second, with no restart.
 //   - storage.reserve: the free space kept on every disk or store data is
 //     written to (the server's incoming area, and each storage whose free
 //     space is known), below which receivers refuse new associations as a

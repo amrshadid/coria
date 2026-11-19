@@ -233,6 +233,18 @@ check-e2e:
 prove:
 	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" bash scripts/prove.sh
 
+# The reception checked from outside: init and serve the real program, a
+# tenant, a directory storage and a receiver; dcmtk's storescu and pynetdicom
+# send public studies; dcmdump, pydicom, shasum and sqlite3 check what was
+# archived, a stranger is refused, and a server killed with signal 9 mid-study
+# loses nothing and doubles nothing. Needs dcmtk (DCMTK=dir), sqlite3, and a
+# PYTHON with pydicom and pynetdicom.
+DCMTK ?=
+.PHONY: check-reception
+check-reception:
+	GO="$(GO)" PYTHON="$(PYTHON)" SQLITE3="$(SQLITE3)" DCMTK="$(DCMTK)" bash scripts/check-reception.sh
+
+
 # The outside check of a tenant's SQLite database: the registry creates a
 # tenant on SQLite, and the sqlite3 tool reads its file and the master's row.
 .PHONY: check-tenant-sqlite
@@ -276,7 +288,8 @@ FUZZ_TARGETS := \
 	internal/core/settings:FuzzParseReserve \
 	internal/core/settings:FuzzParseDirectoryRoots \
 	internal/core/settings:FuzzParseS3Endpoints \
-	internal/core/settings:FuzzParseBindAddresses
+	internal/core/settings:FuzzParseBindAddresses \
+	internal/core/settings:FuzzParseHeaderLimit
 
 fuzz:
 	@set -e; for target in $(FUZZ_TARGETS); do \

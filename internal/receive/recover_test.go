@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/core/reception"
+	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/receive/incoming"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
@@ -16,7 +17,8 @@ import (
 // is removed; a landed file the database never heard of is checked and
 // recorded; a landed file whose row exists gets its recorded name; a
 // recorded file no row keeps is removed; and a row whose file is gone is
-// counted missing, not dropped. The pipeline then archives what it found.
+// counted missing, not dropped. The pipeline then archives what it found,
+// and holds the file whose copy is gone as incoming_lost.
 func TestRecoverReconcilesEachState(t *testing.T) {
 	e := newEnv(t, envOptions{manual: true})
 	land := func(name string) incoming.File {
@@ -75,18 +77,26 @@ func TestRecoverReconcilesEachState(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(tmp, id+".tmp")); !os.IsNotExist(err) {
 		t.Error("a file being written was not removed")
 	}
-	// The reception holds the orphan, now recorded, and the file whose
-	// bytes are gone, which no step can archive: its archive step fails
-	// until its unit gives up, and the reception fails for a person to
-	// retry or discard, its other files kept.
+	// The reception holds the orphan, now recorded, the renamed file, and
+	// the file whose bytes are gone. That one is held as lost, with no
+	// bytes kept and what is known of it on its record, and the other two
+	// are archived: one lost copy does not fail the study.
 	e.waitFor("the reception to end", 10*time.Minute, e.allEnded(1))
 	r := e.receptions()[0]
-	if r.Counts.FilesReceived != 3 || r.State != reception.Failed {
+	if r.Counts.FilesReceived != 3 || r.State != reception.Done || r.Counts.FilesArchived != 2 || r.Counts.FilesQuarantined != 1 {
 		t.Fatalf("reception %+v", r)
 	}
+	qs, _, err := e.store.ListQuarantined(e.ctx, tenant.QuarantineFilter{ReceptionID: r.ID}, master.Page{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(qs) != 1 || qs[0].Reason != tenant.QuarantineIncomingLost || qs[0].ContentKept || qs[0].SHA256 != gone.SHA256 ||
+		qs[0].SOPInstanceUID != d2.received.SOPInstanceUID {
+		t.Fatalf("quarantine %+v, want the gone file held as incoming_lost with nothing kept", qs)
+	}
 	for _, f := range []incoming.File{orphan, renamed} {
-		if ok, _ := e.p.area.Exists(f.Path); !ok {
-			t.Errorf("file %s was lost", f.ID)
+		if ok, _ := e.p.area.Exists(f.Path); ok {
+			t.Errorf("file %s was archived and verified, and its incoming copy is still there", f.ID)
 		}
 	}
 }

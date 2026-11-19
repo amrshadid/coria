@@ -63,6 +63,7 @@ func (s receiverService) AddReceiver(ctx context.Context, req *v1.AddReceiverReq
 	if err != nil {
 		return nil, c.failIn(d, st, fieldOf("receiver", err))
 	}
+	c.receiversChanged(req.GetTenant())
 	return &v1.AddReceiverResponse{Receiver: s.message(req.GetTenant(), out)}, nil
 }
 
@@ -164,6 +165,7 @@ func (s receiverService) SetReceiver(ctx context.Context, req *v1.SetReceiverReq
 	if err != nil {
 		return nil, c.failIn(d, st, fieldOf("receiver", err))
 	}
+	c.receiversChanged(req.GetTenant())
 	return &v1.SetReceiverResponse{Receiver: s.message(req.GetTenant(), out)}, nil
 }
 
@@ -195,10 +197,29 @@ func (s receiverService) RemoveReceiver(ctx context.Context, req *v1.RemoveRecei
 	if err != nil {
 		return nil, c.failWith(d, st, facts, err)
 	}
+	c.receiversChanged(req.GetTenant())
 	// The receiver as it was, stopped: its configuration as stored, and a
 	// health that says it no longer runs, whatever ran it.
 	gone := Health{State: HealthDown, Reason: DownOther, Detail: detailRemoved, Since: c.now()}
 	return &v1.RemoveReceiverResponse{Receiver: receiverMessage(out, gone)}, nil
+}
+
+// ReceiverChanges is told, after a change of a tenant's receivers is
+// committed (added, changed or removed), so what runs them acts on it at
+// once instead of at its next periodic read. Config.Receivers may implement
+// it; one that does not is left to its own reading.
+type ReceiverChanges interface {
+	// ReceiversChanged says the receivers of the tenant named tenantName
+	// changed. It must not block: it is called on the request's path.
+	ReceiversChanged(tenantName string)
+}
+
+// receiversChanged tells the part of the server that runs receivers, when
+// it listens, that a tenant's receivers changed.
+func (c *core) receiversChanged(tenantName string) {
+	if rc, ok := c.receivers.(ReceiverChanges); ok {
+		rc.ReceiversChanged(tenantName)
+	}
 }
 
 // detailRemoved is the phrase of a removed receiver's health.

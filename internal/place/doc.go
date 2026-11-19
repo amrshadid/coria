@@ -7,12 +7,13 @@
 // port the installation allotted to the tenant (receiver.ports) and an
 // address it lists (receiver.bind-addresses). The API's handlers check a
 // storage or a receiver here before it is stored, and the server opens a
-// tenant's storage here every time it uses one, for a test or for the
-// reception pipeline, so a rule is never applied one way when a storage is
+// tenant's storage here for a test or for the reception pipeline, and
+// applies the rules again here (Opener.Check) at every use of a store the
+// pipeline keeps open, so a rule is never applied one way when a storage is
 // added and another way when it is written to.
 //
 // Each check that touches the file system is made again every time a
-// directory is opened, because what lies on the disk can change after a
+// directory is opened or checked, because what lies on the disk can change after a
 // storage is added: a root's path can come to pass through a new symbolic
 // link, and a link can be planted below a root. Two roots that lead to one
 // directory once their links are followed, or one inside the other, are
