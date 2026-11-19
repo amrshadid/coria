@@ -53,10 +53,12 @@ type written struct {
 //  2. Hold the files the claims decided to hold, under the unit's fence. A
 //     record's id is made from the reception and the file, so a run again
 //     writes nothing new.
-//  3. Put each file to be written to its layout key. A key already holding
+//  3. Put each file to be written to its layout key, up to archiveParallel
+//     at once, every put ended before step 4 starts. A key already holding
 //     an object (a run again) is replaced whole by the port's rule, with the
 //     same bytes, so the object is what it was.
-//  4. Read each one back from the storage as a stream through SHA-256 and
+//  4. Read each one back from the storage, up to archiveParallel at once, as
+//     a stream through SHA-256 and
 //     compare with the checksum it was received with. A mismatch, or an
 //     object that is not there, holds the file with the read-back reason; it
 //     keeps its incoming copy and goes no further. Its instance stays claimed
@@ -160,16 +162,22 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	unlock := p.scanLocks.lock(r.Storage + "\x00" + manifestKey)
 	defer unlock()
 
-	puts := make([]written, 0, len(toWrite))
-	for _, f := range toWrite {
+	puts := make([]written, len(toWrite))
+	for i, f := range toWrite {
 		key, err := layout.InstanceKey(path, f.SOPInstanceUID)
 		if err != nil {
 			return res, fault.Wrap(fault.Internal, err, "an instance makes no key")
 		}
-		if err := p.putIncoming(ctx, store, key, f); err != nil {
-			return res, err
-		}
-		puts = append(puts, written{f: f, key: key})
+		puts[i] = written{f: f, key: key}
+	}
+	// Each instance has a key of its own, so its put waits on no other's;
+	// one after another, a series of hundreds of slices took that many
+	// storage round trips in a row (two syncs each on a directory, a
+	// request each on S3). Every put still ends before any read-back.
+	if err := parallel(ctx, len(puts), func(ctx context.Context, i int) error {
+		return p.putIncoming(ctx, store, puts[i].key, puts[i].f)
+	}); err != nil {
+		return res, err
 	}
 
 	// Every UID this reception claims and writes: its entries already on
@@ -179,11 +187,22 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	for _, wr := range puts {
 		ours[wr.f.SOPInstanceUID] = true
 	}
+	sums := make([]tenant.SHA256, len(puts))
+	errs := make([]error, len(puts))
+	if err := parallel(ctx, len(puts), func(ctx context.Context, i int) error {
+		p.at("archive.before-readback")
+		sums[i], errs[i] = readSum(ctx, store, puts[i].key)
+		if errs[i] != nil && fault.KindOf(errs[i]) != fault.NotFound {
+			return errs[i]
+		}
+		return nil
+	}); err != nil {
+		return res, err
+	}
 	good := puts[:0:0]
 	var mismatched []tenant.QuarantinedFile
-	for _, wr := range puts {
-		p.at("archive.before-readback")
-		sum, err := readSum(ctx, store, wr.key)
+	for i, wr := range puts {
+		sum, err := sums[i], errs[i]
 		switch {
 		case fault.KindOf(err) == fault.NotFound:
 			mismatched = append(mismatched, p.holdRecord(r, wr.f, tenant.QuarantineReadBackMismatch, map[string]string{"storage": r.Storage}))
