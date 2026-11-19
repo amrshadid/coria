@@ -46,7 +46,8 @@
 //
 // It must never write a received byte anywhere but through the Sink, answer
 // success before the Sink does, admit a caller its rules do not match, keep
-// a global but the one that silences the library's logger, block the
+// a global, let the library log anywhere but the logger its server is
+// given (which discards), block the
 // library's goroutine on anything but the store it serves, or put an AE
 // title, an address or a UID in a log line: those go to the receiver's
 // events, which carry who called and never what was sent.

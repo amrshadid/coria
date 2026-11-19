@@ -39,7 +39,7 @@ func (l *Listener) admit(_ context.Context, req *network.AssociationRequest) *ne
 		l.cfg.Report(tenant.FailureCalledAETitleNotRecognized, caller)
 		return network.RejectCalledAE()
 	}
-	if l.isStopping() || !l.ready.Load() {
+	if l.isStopping() {
 		return network.RejectBusy()
 	}
 	if f := l.cfg.Refusal(); f != "" {

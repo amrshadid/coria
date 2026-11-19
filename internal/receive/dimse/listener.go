@@ -5,14 +5,14 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/amrshadid/go-dicom/config"
 	"github.com/amrshadid/go-dicom/network"
 
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -93,11 +93,6 @@ type Listener struct {
 	// leaf is the certificate the listener serves, nil without TLS; Check
 	// reads its validity.
 	leaf *x509.Certificate
-	// ready is set once the server negotiates only the receiver's syntaxes:
-	// the library starts accepting before they can be set, so until then
-	// every caller is turned away as transient, before any negotiation.
-	ready atomic.Bool
-
 	// mu guards stopping and stores, so Stop's wait cannot pass a store
 	// that has just begun.
 	mu       sync.Mutex
@@ -120,12 +115,12 @@ type seams struct {
 	anyPort bool
 }
 
-// quietLibrary sends the DICOM library's own log lines nowhere, once per
-// process. The library logs through one global logger, and what its network
+// discard is the logger the library's server is given. What its network
 // layer logs names AE titles, addresses and SOP Instance UIDs as received,
 // which the server's log must not hold; the listener reports what it needs
-// as events and in its own lines instead.
-var quietLibrary sync.Once
+// as events and in its own lines instead. Given to the server, it holds for
+// everything that server does and touches nothing else in the process.
+var discard = slog.New(slog.DiscardHandler)
 
 // New checks cfg and returns a listener that is not yet listening.
 func New(cfg Config) (*Listener, error) {
@@ -155,7 +150,6 @@ func New(cfg Config) (*Listener, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	quietLibrary.Do(func() { config.SetLogger(slog.New(slog.DiscardHandler)) })
 	var b [4]byte
 	_, _ = rand.Read(b[:]) // crypto/rand.Read never fails (Go 1.24 and later).
 	return &Listener{
@@ -201,7 +195,13 @@ func (l *Listener) Start(ctx context.Context) error {
 		// refusal is reported with its own reason.
 		AcceptAnyCalledAE: true,
 		Events:            events,
-		TLS:               tlsCfg,
+		// Set before the server listens, so no association is ever
+		// negotiated with the library's defaults, which include query and
+		// retrieve.
+		AbstractSyntaxes: abstractSyntaxes(r.DIMSE.SOPClasses),
+		TransferSyntaxes: transferSyntaxes(r.DIMSE.TransferSyntaxes),
+		Logger:           discard,
+		TLS:              tlsCfg,
 	}
 	if l.seams.anyPort {
 		scfg.Port = 0
@@ -216,10 +216,7 @@ func (l *Listener) Start(ctx context.Context) error {
 	if err != nil {
 		return listenError(err)
 	}
-	srv.SetSupportedAbstractSyntaxes(abstractSyntaxes(r.DIMSE.SOPClasses))
-	srv.SetSupportedTransferSyntaxes(transferSyntaxes(r.DIMSE.TransferSyntaxes))
 	l.srv = srv
-	l.ready.Store(true)
 	l.log.Info("receiver: listening", "port", r.DIMSE.Port, "tls", tlsCfg != nil)
 	return nil
 }
@@ -245,11 +242,13 @@ func (l *Listener) Addr() string {
 	return l.srv.Addr()
 }
 
-// Stop stops admitting callers, waits for the stores in flight to finish
-// within the drain bound or until ctx ends, whichever comes first, then
-// ends every association and closes the port. A store still running then
-// is cut short and not kept: its sender is told nothing and sends it again.
-// New associations that arrive while it waits are rejected as transient.
+// Stop stops admitting callers and lets the stores in flight finish, within
+// the drain bound or until ctx ends, whichever comes first, then closes the
+// port. The library's Shutdown does the waiting: it closes the port to new
+// connections, rejects as transient an association asked for on one
+// already open, lets an operation in progress send its answer, and at the
+// bound aborts what is left. A store still running then is cut short and
+// not kept: its sender is told nothing and sends it again.
 func (l *Listener) Stop(ctx context.Context) error {
 	l.mu.Lock()
 	already := l.stopping
@@ -258,26 +257,22 @@ func (l *Listener) Stop(ctx context.Context) error {
 	if already || l.srv == nil {
 		return nil
 	}
-	done := make(chan struct{})
-	go func() {
-		l.stores.Wait()
-		close(done)
-	}()
-	timer := time.NewTimer(l.cfg.Drain)
-	defer timer.Stop()
-	cut := false
-	select {
-	case <-done:
-	case <-timer.C:
-		cut = true
-	case <-ctx.Done():
-		cut = true
+	bounded, cancel := context.WithTimeout(ctx, l.cfg.Drain)
+	defer cancel()
+	err := l.srv.Shutdown(bounded)
+	var cut *network.ShutdownError
+	switch {
+	case err == nil:
+	case errors.As(err, &cut):
+	default:
+		return fmt.Errorf("receiver %s: stopping: %w", l.cfg.Receiver.Name, err)
 	}
-	// Stop cancels the associations' context: a store still reading is
-	// ended, and the library waits for every association's goroutine.
+	// Stop waits for every association's goroutine, those cut short at the
+	// bound included; the stores' own count then has nothing left to wait
+	// for but a Sink that is still writing.
 	l.srv.Stop()
-	<-done
-	l.log.Info("receiver: stopped", "stores_cut_short", cut)
+	l.stores.Wait()
+	l.log.Info("receiver: stopped", "stores_cut_short", cut != nil)
 	return nil
 }
 

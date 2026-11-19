@@ -31,15 +31,17 @@
 // of a gigabyte inside a file of a gigabyte would be allocated a gigabyte.
 // The header is therefore read from the file's first MaxHeader bytes, and
 // the rest only when the first element past them is pixel data, which is
-// skipped (Read says the order). A header that does not fit is a
+// skipped (Read says the order). Every value held is also bounded by the
+// library's own limit (MaxValueLength), so an element after the pixel data
+// is held to the same bound. A header that does not fit is a
 // *TooLargeError.
 //
 // # go-dicom's logger
 //
-// The library logs through one global logger, and what it logs about a
-// damaged file holds bytes of the file. Read sets that logger to discard,
-// once per process (the setting is global; nothing else in the binary reads
-// DICOM).
+// What the library logs about a damaged file names tags, lengths and
+// offsets of a file that may be a patient's. Each read is given a logger
+// that discards, so nothing reaches the server's log, and nothing is set
+// for the rest of the process.
 //
 // # What this package must never do
 //

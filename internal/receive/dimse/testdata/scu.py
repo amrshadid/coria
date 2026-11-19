@@ -6,6 +6,10 @@ evidence the listener speaks the standard, not only the library it uses.
   echo HOST PORT CALLING CALLED
   store HOST PORT CALLING CALLED FILE...
   propose HOST PORT CALLING CALLED SOPCLASS TRANSFERSYNTAX
+  garbage HOST PORT CALLING CALLED
+
+garbage associates, then sends a PDU of a type PS3.8 Table 9-11 does not
+define on the association's socket, and waits for the listener's answer.
 
 store sends each file from its path, which pynetdicom does without decoding
 the data set (only the file meta information is read), so the bytes on the
@@ -14,6 +18,7 @@ wire are the file's own after its meta group.
 
 import json
 import sys
+import time
 
 from pydicom import dcmread
 from pynetdicom import AE
@@ -77,6 +82,16 @@ def main(argv):
             out["accepted_contexts"] = [cx.abstract_syntax for cx in assoc.accepted_contexts]
             out["rejected_contexts"] = [cx.abstract_syntax for cx in assoc.rejected_contexts]
             assoc.release()
+    elif action == "garbage":
+        assoc = associate(host, port, calling, called, [("1.2.840.10008.1.1", "1.2.840.10008.1.2")])
+        out = outcome(assoc)
+        if assoc.is_established:
+            # Type 0x7F, length four, four bytes.
+            assoc.dul.socket.send(bytes([0x7F, 0, 0, 0, 0, 4, 0, 0, 0, 0]))
+            deadline = time.monotonic() + 20
+            while assoc.is_alive() and not assoc.is_aborted and time.monotonic() < deadline:
+                time.sleep(0.05)
+            out["after"] = "aborted" if assoc.is_aborted else ("open" if assoc.is_established else "closed")
     else:
         raise SystemExit("unknown action " + action)
     print(json.dumps(out))

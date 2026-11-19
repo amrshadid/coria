@@ -145,6 +145,30 @@ func TestPixelDataPastTheBoundIsRead(t *testing.T) {
 	}
 }
 
+// TestAValueAfterThePixelDataIsHeldToTheBound guards the elements after a
+// pixel data longer than the bound: the file is then read whole, and a text
+// value of 2 MiB after the pixel data is refused within a bound of 1 MiB, as
+// it would be before the pixel data, rather than held in memory.
+func TestAValueAfterThePixelDataIsHeldToTheBound(t *testing.T) {
+	b, _, h0 := mrSmall(t)
+	off := h0.PixelData.Offset
+	head := append([]byte{}, b[:off+12]...)
+	const pixels = 2 << 20
+	binary.LittleEndian.PutUint32(head[off+8:], pixels)
+	const long = 2 << 20
+	// (7FE1,1001), after the pixel data in tag order, written with the
+	// explicit VR UT and its four-byte length (PS3.5 7.1.2).
+	tail := []byte{0xE1, 0x7F, 0x01, 0x10, 'U', 'T', 0, 0, 0, 0, 0, 0}
+	binary.LittleEndian.PutUint32(tail[8:], long)
+	tail = append(tail, bytes.Repeat([]byte{' '}, long)...)
+	v := newVirtual(head, pixels, tail)
+	_, err := ReadWithin(v, v.size, 1<<20)
+	var tl *TooLargeError
+	if !errors.As(err, &tl) || tl.Limit != 1<<20 {
+		t.Fatalf("got %v, want a TooLargeError of 1 MiB", err)
+	}
+}
+
 // The child's environment: set, the test reads damaged files and exits.
 const quietChildEnv = "MAGNETAR_HEADER_QUIET_CHILD"
 

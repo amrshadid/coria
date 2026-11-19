@@ -351,8 +351,10 @@ type panicSink struct{}
 func (panicSink) Accept(context.Context, receive.Arrival) receive.Outcome { panic("a test's sink") }
 
 // TestStopFinishesTheStoreInFlight guards Stop: a store in flight when Stop
-// begins is let finish and answered success, a new association meanwhile
-// is rejected as transient, and Stop returns once the store is done.
+// begins is let finish and answered success, a new caller meanwhile is
+// never served (refused, rejected as transient or aborted, as the library
+// turns it away while it stops: in each case the sender keeps its file and
+// tries again), and Stop returns once the store is done.
 func TestStopFinishesTheStoreInFlight(t *testing.T) {
 	py := python(t)
 	sink := &fakeSink{}
@@ -389,9 +391,12 @@ func TestStopFinishesTheStoreInFlight(t *testing.T) {
 	}
 	stopped := make(chan error, 1)
 	go func() { stopped <- s.l.Stop(context.Background()) }()
-	waitFor(t, "a new association to be rejected while stopping", func() bool {
+	waitFor(t, "a new caller to be turned away while stopping", func() bool {
 		res, err := runSCU(py, s, "echo", "SCANNER", "ARCHIVE")
-		return err == nil && res.Assoc == "rejected" && res.RJ[0] == rjTransient
+		if err == nil && res.Assoc == "rejected" && res.RJ[0] != rjTransient {
+			t.Fatalf("while stopping a caller was rejected as permanent: %+v", res)
+		}
+		return err == nil && res.Assoc != "accepted" && len(res.Statuses) == 0
 	})
 	select {
 	case err := <-stopped:
@@ -503,4 +508,29 @@ func TestAReceiverOfEveryAddressTakesBothFamilies(t *testing.T) {
 		}
 		_ = c.Close()
 	}
+}
+
+// TestABrokenProtocolIsReportedAsAProtocolError guards how an abort is
+// reported: a caller that sends, on an association, a PDU of a type PS3.8
+// Table 9-11 does not define is aborted (PS3.8 9.3.8) and reported as
+// protocol_error with its titles and address, because the cause was the
+// caller's.
+func TestABrokenProtocolIsReportedAsAProtocolError(t *testing.T) {
+	py := python(t)
+	s := listen(t, row(), &fakeSink{}, nil)
+	res := scu(t, py, s, "garbage", "SCANNER", "ARCHIVE")
+	if res.Assoc != "accepted" || res.After != "aborted" {
+		t.Fatalf("the broken association: %+v", res)
+	}
+	waitFor(t, "the broken protocol to be reported", func() bool {
+		for _, f := range s.reports.get() {
+			if f.failure == tenant.FailureProtocolError {
+				if f.caller.Address != "127.0.0.1" || f.caller.CallingAETitle != "SCANNER" {
+					t.Fatalf("the broken protocol was reported with %+v", f.caller)
+				}
+				return true
+			}
+		}
+		return false
+	})
 }

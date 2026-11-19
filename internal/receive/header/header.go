@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
-	"github.com/amrshadid/go-dicom/config"
 	"github.com/amrshadid/go-dicom/filebase"
 	"github.com/amrshadid/go-dicom/filereader"
 	"github.com/amrshadid/go-dicom/tag"
@@ -93,7 +92,9 @@ func (e *NotDICOMError) Error() string {
 // lie within it. go-dicom allocates a value whole once its declared length
 // fits in what the stream has left, so the stream it is given for the header
 // is cut at this bound, and no single value of a hostile file can make the
-// read allocate more. The largest legitimate headers are those of enhanced
+// read allocate more; every value held is also refused past the bound
+// (filereader.ReadOptions.MaxValueLength), which bounds an element after the
+// pixel data too. The largest legitimate headers are those of enhanced
 // multi-frame images, whose per-frame functional groups (PS3.3 C.7.6.16) take
 // a few kilobytes a frame: ten thousand frames at four kilobytes is 40 MiB.
 // 64 MiB holds that with room, and a file whose header is larger is refused
@@ -113,15 +114,13 @@ func (e *TooLargeError) Error() string {
 	return "header: the elements before the pixel data are longer than " + strconv.FormatInt(e.Limit, 10) + " bytes"
 }
 
-// quiet makes go-dicom's logger discard what it is given, once per process.
-// The library logs through one global logger (config.Logger, set with
-// config.SetLogger; there is no logger per read), and what it logs while
-// reading a damaged file includes bytes of the file printed as tags and
-// lengths: before de-identification those can be a patient's data, and they
-// must not reach the server's standard error. The setting is global to the
-// process; nothing else in the binary reads DICOM, and every refusal this
-// package needs is in the errors it returns.
-var quiet sync.Once
+// discard is the logger every read is given. What go-dicom logs while
+// reading a damaged file names tags, lengths and offsets of a file that,
+// before de-identification, is a patient's; nothing of it reaches the
+// server's log, and every refusal this package needs is in the errors it
+// returns. A read given its own logger sends nothing to the library's
+// global one, so no other user of the library in the process is affected.
+var discard = slog.New(slog.DiscardHandler)
 
 // Read is ReadWithin the default bound, MaxHeader.
 func Read(r io.ReaderAt, size int64) (*Header, error) { return ReadWithin(r, size, MaxHeader) }
@@ -129,22 +128,21 @@ func Read(r io.ReaderAt, size int64) (*Header, error) { return ReadWithin(r, siz
 // ReadWithin reads the header of the file r holds, size bytes long, within
 // bound bytes (MaxHeader when bound is not positive). A file that is not a
 // whole DICOM file is a *NotDICOMError, one whose header does not fit in
-// bound a *TooLargeError; any other error is a failure to read r.
+// bound, or that holds a value longer than bound, a *TooLargeError; any
+// other error is a failure to read r.
 //
 // The header is read first from the file's first bound bytes only. When
 // the file is longer and its data set runs past the bound, the first element
 // past it must be pixel data (PS3.3 C.7.6.3), which go-dicom skips whatever
 // its length; the file is then read whole, every element before the pixel
-// data already shown to fit. An element after the pixel data is bounded by
-// the file's size only: in practice it is the Data Set Trailing Padding, an
-// OB that is skipped as bulk data.
+// data already shown to fit, and an element after it held to the bound as a
+// value.
 func ReadWithin(r io.ReaderAt, size, bound int64) (*Header, error) {
-	quiet.Do(func() { config.SetLogger(slog.New(slog.DiscardHandler)) })
 	if bound <= 0 {
 		bound = MaxHeader
 	}
 	limit := min(size, bound)
-	df, err := parse(io.NewSectionReader(r, 0, limit))
+	df, err := parse(io.NewSectionReader(r, 0, limit), bound)
 	if err != nil {
 		return nil, err
 	}
@@ -164,20 +162,26 @@ func ReadWithin(r io.ReaderAt, size, bound int64) (*Header, error) {
 		if err != nil || !slices.Contains(pixelTags, t) {
 			return nil, &TooLargeError{Limit: bound}
 		}
-		if df, err = parse(io.NewSectionReader(r, 0, size)); err != nil {
+		if df, err = parse(io.NewSectionReader(r, 0, size), bound); err != nil {
 			return nil, err
 		}
 	}
 	return build(df, size)
 }
 
-// parse reads a data set from r with bulk values left in the file.
-func parse(r io.ReadSeeker) (*filereader.DICOMFile, error) {
+// parse reads a data set from r with bulk values left in the file, holding no
+// value longer than bound.
+func parse(r io.ReadSeeker, bound int64) (*filereader.DICOMFile, error) {
 	cr := &countingReader{r: r}
 	df, err := filereader.ReadDICOMFileWithOptions(filebase.NewFileReader(cr), filereader.ReadOptions{
 		SkipBulkData: true, BulkDataThreshold: BulkThreshold,
+		MaxValueLength: valueLimit(bound),
+		Logger:         discard,
 	})
 	if err != nil {
+		if errors.Is(err, filereader.ErrValueTooLong) {
+			return nil, &TooLargeError{Limit: bound}
+		}
 		if cr.err != nil {
 			// The reader itself failed, which says nothing about the file.
 			return nil, fmt.Errorf("header: reading the file: %w", cr.err)
@@ -187,6 +191,22 @@ func parse(r io.ReadSeeker) (*filereader.DICOMFile, error) {
 		return nil, &NotDICOMError{Offset: cr.pos, Why: "its encoding could not be read"}
 	}
 	return df, nil
+}
+
+// valueLimit returns bound as the library's limit on a value held: bound
+// itself, or the most a uint32 holds when bound is larger. A bound that is
+// not positive is never passed here (ReadWithin replaces it with
+// MaxHeader); it is treated as the smallest limit there is, which refuses
+// every value, rather than as zero, which the library reads as no limit.
+func valueLimit(bound int64) uint32 {
+	switch {
+	case bound <= 0:
+		return 1
+	case bound >= math.MaxUint32:
+		return math.MaxUint32
+	default:
+		return uint32(bound) // #nosec G115 -- 0 < bound < 2^32 here.
+	}
 }
 
 // build checks a file read whole and makes its Header.

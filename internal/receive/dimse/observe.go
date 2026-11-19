@@ -9,16 +9,19 @@ import (
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
-// observe reports the two refusals the library makes after admission, which
+// observe reports the refusals the library makes outside admission, which
 // only its events show:
 //
 //   - an association accepted with every presentation context rejected
 //     (PS3.8 9.3.3.2: abstract syntax or transfer syntaxes not supported),
 //     on which nothing can be sent: no_acceptable_context;
-//   - an A-ABORT this side sent (PS3.8 9.3.8), which the library does only
-//     when the caller broke the protocol or went quiet past its timers
-//     (PS3.8 9.1.5), unless the listener is stopping, when it is the
-//     server's own doing: protocol_error.
+//   - an A-ABORT this side sent (PS3.8 9.3.8) because the caller broke the
+//     protocol or a bound, or went quiet past the timers of PS3.8 9.1.5:
+//     protocol_error. An abort for any other cause is the server's own
+//     doing and no fault of the caller's: a handler that panicked is logged
+//     as the server's failure, and one made by stopping is not reported;
+//   - a TLS handshake that failed before any association was asked for:
+//     tls_failed, with the caller's address and no AE titles.
 //
 // The library calls the handlers on the connection's goroutine; each only
 // builds the caller and hands it to Report, which does not block.
@@ -35,10 +38,19 @@ func (l *Listener) observe(events *network.EventManager) {
 		l.cfg.Report(tenant.FailureNoAcceptableContext, eventCaller(e))
 	})
 	events.On(network.EVTPDUSent, func(e *network.Event) {
-		if e.PDUType != network.PDUTypeAbort || e.Role != "SCP" || l.isStopping() {
+		if e.PDUType != network.PDUTypeAbort || e.Role != "SCP" || e.LocalAbort == nil {
 			return
 		}
-		l.cfg.Report(tenant.FailureProtocolError, eventCaller(e))
+		switch e.LocalAbort.Cause {
+		case network.AbortCauseProtocolViolation, network.AbortCauseTimeout:
+			l.cfg.Report(tenant.FailureProtocolError, eventCaller(e))
+		case network.AbortCauseHandlerPanic:
+			// The phrase only: the panic's text may hold what a file said.
+			l.log.Error("receiver: an association was aborted because the server failed while serving it")
+		}
+	})
+	events.On(network.EVTTLSHandshakeFailed, func(e *network.Event) {
+		l.cfg.Report(tenant.FailureTLSFailed, eventCaller(e))
 	})
 }
 

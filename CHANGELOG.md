@@ -656,6 +656,18 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A receiver's associations are now negotiated from its own SOP classes and
+  transfer syntaxes from the first one: they are set before the port opens,
+  where before they were set just after it, and a caller in between was
+  turned away. Stopping a receiver lets a store in progress finish through
+  the DICOM library's own graceful stop; a new caller meanwhile is turned
+  away and keeps its file. An abort is reported as a protocol error only
+  when the caller broke the protocol or went quiet; a failed TLS handshake
+  is reported as `tls_failed`. The DICOM library logs nowhere for the
+  receivers and the header reader, by a logger given to each, where before
+  its global logger was silenced for the whole process. A value after a
+  file's pixel data is held to `receiver.header-limit`, as one before it is.
+
 - Two directory roots whose paths differ in text could be one directory on
   the disk: a root whose path was a symbolic link into another root's tenant
   directory let two tenants share a storage. Every link in a root's path is

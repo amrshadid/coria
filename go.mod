@@ -7,7 +7,7 @@ require (
 	charm.land/lipgloss/v2 v2.1.1
 	connectrpc.com/connect/v2 v2.0.2
 	connectrpc.com/grpchealth/v2 v2.1.0
-	github.com/amrshadid/go-dicom v1.7.1-0.20261118224645-78108dbbea37
+	github.com/amrshadid/go-dicom v1.7.1-0.20261119101852-6080eb87f2f6
 	github.com/aws/aws-sdk-go-v2 v1.48.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.10
 	github.com/aws/smithy-go v1.28.9

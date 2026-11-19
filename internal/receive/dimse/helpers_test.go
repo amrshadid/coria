@@ -318,6 +318,9 @@ type scuResult struct {
 	Statuses []*int   `json:"statuses"`
 	Accepted []string `json:"accepted_contexts"`
 	Rejected []string `json:"rejected_contexts"`
+	// After is what became of an association after garbage was sent on it:
+	// aborted, open or closed.
+	After string `json:"after"`
 }
 
 // scu runs testdata/scu.py with py (from python, called before the test

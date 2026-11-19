@@ -63,7 +63,8 @@ func tlsRow() tenant.Receiver {
 }
 
 // TestTLSReceiverAnswersOverTLSOnly guards a receiver with TLS: dcmtk's
-// echoscu over TLS is answered, and the same over plain TCP is not.
+// echoscu over TLS is answered, and the same over plain TCP is not and is
+// reported as a failed handshake.
 func TestTLSReceiverAnswersOverTLSOnly(t *testing.T) {
 	echoscu := tool(t, "echoscu")
 	dir := t.TempDir()
@@ -75,6 +76,19 @@ func TestTLSReceiverAnswersOverTLSOnly(t *testing.T) {
 	if out, err := command(t, echoscu, "-to", "5", "-aet", "SCANNER", "-aec", "ARCHIVE", s.host, s.port).CombinedOutput(); err == nil { // #nosec G204
 		t.Fatalf("echoscu without TLS was answered:\n%s", out)
 	}
+	// The plain caller's failed handshake is reported, with its address and
+	// no AE titles, which a handshake never reaches.
+	waitFor(t, "the failed handshake to be reported", func() bool {
+		for _, f := range s.reports.get() {
+			if f.failure == tenant.FailureTLSFailed {
+				if f.caller.Address != "127.0.0.1" || f.caller.CallingAETitle != "" {
+					t.Fatalf("the failed handshake was reported with %+v", f.caller)
+				}
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // TestUnusableTLSFilesAreDownWithTheirPhrase guards Start's refusal of TLS
