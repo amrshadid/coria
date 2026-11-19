@@ -558,7 +558,10 @@ def crashes(p, port, rounds, tenant="crash", whens=("receiving", "quiet", "archi
     bad, kills = [], 0
     for r in range(rounds):
         for when in whens:
-            study, files = study_copy(p, CT, 7)
+            # A study of 40 files for the archiving round, whose archive
+            # step lasts long enough on a fast disk to be caught midway.
+            n = 40 if when == "archiving" else 7
+            study, files = study_copy(p, CT, n)
             uid = [str(dcmread(f, stop_before_pixels=True).SOPInstanceUID) for f in files]
             if when == "receiving":
                 def kill_after_three(i):
@@ -568,12 +571,19 @@ def crashes(p, port, rounds, tenant="crash", whens=("receiving", "quiet", "archi
             else:
                 statuses = p.pynetdicom_store(port, files)
                 if when == "archiving":
+                    # Identified is the state its archive step runs in.
                     deadline = time.time() + 30
-                    while time.time() < deadline and not p.query(tenant, "SELECT 1 FROM receptions WHERE study_uid = ? AND state IN "
-                                                                 "('identified', 'archived', 'verified')", study):
-                        time.sleep(0.05)
-                    if time.time() >= deadline:
-                        bad.append("round %d: archiving was never reached before the kill" % (r + 1))
+                    caught = False
+                    while time.time() < deadline:
+                        rows = p.query(tenant, "SELECT state FROM receptions WHERE study_uid = ?", study)
+                        if rows and rows[0]["state"] == "identified":
+                            caught = True
+                            break
+                        if rows and rows[0]["state"] not in ("receiving", "complete"):
+                            break
+                        time.sleep(0.005)
+                    if not caught:
+                        bad.append("round %d: the kill missed the archive step (state %s)" % (r + 1, rows[0]["state"] if rows else "none"))
             acked = [i for i, s in enumerate(statuses) if s == 0]
             p.kill()
             kills += 1
@@ -603,7 +613,7 @@ def crashes(p, port, rounds, tenant="crash", whens=("receiving", "quiet", "archi
                         unreadable.append(x["storage_key"])
                 except Exception as e:  # noqa: BLE001 - any failure to read back is the finding
                     unreadable.append("%s: %s" % (x["storage_key"], e))
-            if lost or len(held) != 7 or len(distinct) != 7 or claimed or unreadable or again != [0] * len(rest):
+            if lost or len(held) != n or len(distinct) != n or claimed or unreadable or again != [0] * len(rest):
                 bad.append("round %d, killed while %s: %d of %d acknowledged lost before any resend; then %d held (%d distinct), "
                            "%d claimed, %d not read back, the rest's statuses %s"
                            % (r + 1, when, len(lost), len(acked), len(held), len(distinct), claimed, len(unreadable), again))
