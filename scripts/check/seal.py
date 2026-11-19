@@ -16,7 +16,7 @@ and nothing of Magnetar's:
 The Go test TestSealOpensInPython (internal/secret/outside_test.go) runs it
 with `make check-seal`:
 
-    check-seal.py <key file> <context> <hex sealed by Go> <hex plaintext> <seal version>
+    seal.py <key file> <context> <hex sealed by Go> <hex plaintext> <seal version>
 
 It opens the value Go sealed and compares the plaintext, checks that the same
 value does not open under another context or with one byte changed, then seals
@@ -89,7 +89,7 @@ def seal(keys, version, context, plaintext):
 
 def main(argv):
     if len(argv) != 6:
-        fail("usage: check-seal.py <key file> <context> <hex sealed> <hex plaintext> <seal version>")
+        fail("usage: seal.py <key file> <context> <hex sealed> <hex plaintext> <seal version>")
     keys = read_keys(argv[1])
     context = argv[2]
     go_sealed = binascii.unhexlify(argv[3])

@@ -2,7 +2,7 @@
 # install-grpcurl.sh VERSION DEST
 #
 # Downloads grpcurl's release archive for this system, checks it against the
-# SHA-256 committed in scripts/grpcurl.sha256, and installs the grpcurl
+# SHA-256 committed in scripts/tools/grpcurl.sha256, and installs the grpcurl
 # binary from it at DEST, as install-buf.sh does for buf. An archive whose
 # hash does not match, or a system with no committed hash, fails. The hashes
 # were taken from the release's grpcurl_<version>_checksums.txt and checked

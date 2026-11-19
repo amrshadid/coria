@@ -55,7 +55,7 @@
 // "tenant/<id>/database". The context binds a secret to the row it belongs
 // to, so a sealed value copied into another row does not open; the header in
 // the additional data means a changed format byte or key version fails
-// authentication as well as the lookup. scripts/check-seal.py implements this
+// authentication as well as the lookup. scripts/check/seal.py implements this
 // format with Python's cryptography package, and a test runs it against this
 // package in both directions.
 //

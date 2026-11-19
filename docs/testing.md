@@ -70,7 +70,7 @@ itself reads are listed first.
 
 | Variable | What it does | Default | Read by |
 |---|---|---|---|
-| `MAGNETAR_TEST_POSTGRES` | The address of a scratch Postgres database (`postgres://...`) the tests may make schemas in; each test that makes a tenant there gets a schema of its own (`testkit.PostgresSchema`). | unset: the Postgres tests skip | `internal/driver/postgres`, `internal/receive`, `internal/cli/servecmd`; `make test-postgres`, `make outside-postgres`; `scripts/check-master-postgres.sh`, `scripts/check-tenant-postgres.sh` (required) |
+| `MAGNETAR_TEST_POSTGRES` | The address of a scratch Postgres database (`postgres://...`) the tests may make schemas in; each test that makes a tenant there gets a schema of its own (`testkit.PostgresSchema`). | unset: the Postgres tests skip | `internal/driver/postgres`, `internal/receive`, `internal/cli/servecmd`; `make test-postgres`, `make outside-postgres`; `scripts/check/master-postgres.sh`, `scripts/check/tenant-postgres.sh` (required) |
 | `MAGNETAR_REQUIRE_POSTGRES` | When set to anything, a missing Postgres address is a failure instead of a skip. | unset | `internal/driver/postgres`, `internal/receive`, `internal/cli/servecmd`; set by `make test-postgres` and by CI |
 | `MAGNETAR_TEST_S3` | How to reach a scratch S3 server, as `http://KEY:SECRET@host:port/bucket`, with `region=NAME` and `pathstyle=0` in the query when needed. | unset: the tests against a server skip | `internal/blob/s3`, `internal/receive`, `internal/cli/servecmd`; `make test-s3` sets it for each server; the bucket must exist (the S3 driver's tests make it) |
 | `MAGNETAR_REQUIRE_S3` | When set to anything, a missing S3 server is a failure instead of a skip. | unset | `internal/blob/s3`, `internal/receive`, `internal/cli/servecmd`; set by `make test-s3` and by CI |
@@ -80,7 +80,7 @@ itself reads are listed first.
 | `MAGNETAR_BLOB_SMALL_VOLUME` | A directory on a small volume (a tmpfs of a few megabytes, say) for the full-volume test of the directory storage driver. | unset: it skips | `internal/blob/dir` (`TestFullVolumeKeepsOldObject`) |
 | `MAGNETAR_E2E` | When set, runs the real program end to end (about fifty processes). | unset: it skips | `cmd/magnetar` (`TestRealServerEndToEnd`); set by `make check-e2e` |
 | `MAGNETAR_TEST_OTHER_USER` | The name of a second operating system user, for the test that the local socket refuses another user. It needs `sudo -n -u` to work without a password. | unset: it skips | `internal/server`; set by CI; `make ci` runs the test when it is set |
-| `MAGNETAR_SQLITE3_REQUIRED` | When set to anything, a missing `sqlite3` tool is a failure instead of a skip. | unset | `internal/driver/sqlite` (kill and plan tests); set by `scripts/check-master-sqlite.sh` |
+| `MAGNETAR_SQLITE3_REQUIRED` | When set to anything, a missing `sqlite3` tool is a failure instead of a skip. | unset | `internal/driver/sqlite` (kill and plan tests); set by `scripts/check/master-sqlite.sh` |
 | `MAGNETAR_PYTHON` | The Python, with pynetdicom, that the DICOM receiver's outside tests use. | `python3` on the `PATH` | `internal/receive/dimse` |
 | `MAGNETAR_DCMTK` | A directory holding dcmtk's programs, looked in before the `PATH` (another program of the same name may come first on it). | the `PATH` only; the test skips when dcmtk is not found | `internal/receive/dimse`, `internal/cli/servecmd`; set by `make test-postgres` and `make test-s3` from `DCMTK` |
 | `MAGNETAR_REQUIRE_DCMTK` | When set to anything, a missing dcmtk `storescu` is a failure instead of a skip. | unset | `internal/cli/servecmd`; set by `make test-postgres` and `make test-s3` |
@@ -90,12 +90,12 @@ itself reads are listed first.
 
 | Variable | What it does | Default | Read by |
 |---|---|---|---|
-| `MAGNETAR_CHECK_JSON_DIR` | The directory the test writes each command's `--json` output into, for `scripts/check-json.py`. | unset: the test skips | `internal/cli` (`TestWriteJSONOutputs`); set by `make check-json` |
+| `MAGNETAR_CHECK_JSON_DIR` | The directory the test writes each command's `--json` output into, for `scripts/check/cli-json.py`. | unset: the test skips | `internal/cli` (`TestWriteJSONOutputs`); set by `make check-json` |
 | `MAGNETAR_CHECK_SEAL_PYTHON` | The Python, with the cryptography package, that the sealed-format check runs. Set, even to nothing, it means the check was asked for and a missing interpreter fails. | unset: the test skips | `internal/secret` (`TestSealOpensInPython`); set by `make check-seal` |
-| `MAGNETAR_CHECK_TENANTS` | `1` when the server under check is the real program, which makes the server check go on to tenants and receptions. | unset | `scripts/check-server.sh` sets it, `scripts/check-server.py` reads it |
-| `MAGNETAR_CHECK_ROOT` | The directory root the real server was given as `fast`, for the reception calls of the server check. | none; required with `MAGNETAR_CHECK_TENANTS=1` | `scripts/check-server.sh`, `scripts/check-server.py` |
+| `MAGNETAR_CHECK_TENANTS` | `1` when the server under check is the real program, which makes the server check go on to tenants and receptions. | unset | `scripts/check/server.sh` sets it, `scripts/check/server.py` reads it |
+| `MAGNETAR_CHECK_ROOT` | The directory root the real server was given as `fast`, for the reception calls of the server check. | none; required with `MAGNETAR_CHECK_TENANTS=1` | `scripts/check/server.sh`, `scripts/check/server.py` |
 | `MAGNETAR_SAMPLE_DIR` | A directory the sample-writing test uses as its data directory, for a tool such as `sqlite3` to read back. | unset: the test skips | `internal/driver/sqlite`, `internal/driver/postgres`, `internal/registry`; set by `scripts/check-master-*.sh` and `scripts/check-tenant-*.sh` |
-| `MAGNETAR_SAMPLE_SCHEMA` | The name of a Postgres schema to make for the sample-writing test (it must not exist). | unset: the test skips | `internal/driver/postgres`; set by `scripts/check-master-postgres.sh`, `scripts/check-tenant-postgres.sh` |
+| `MAGNETAR_SAMPLE_SCHEMA` | The name of a Postgres schema to make for the sample-writing test (it must not exist). | unset: the test skips | `internal/driver/postgres`; set by `scripts/check/master-postgres.sh`, `scripts/check/tenant-postgres.sh` |
 | `MAGNETAR_S3_OUTSIDE_MANIFEST` | A file the S3 driver's test writes the keys, sizes and SHA-256 of what it put into, for an outside reader to compare. | unset: the test skips | `internal/blob/s3` (`TestWriteForOutsideCheck`) |
 | `MAGNETAR_SERVED_ANSWERS` | A file the test of refused requests writes the served method's answers into, so two builds can be compared. | unset: nothing is written | `internal/server` (`TestNotServedRefusedAsServed`) |
 
@@ -103,12 +103,12 @@ itself reads are listed first.
 
 | Variable | What it does | Default | Read by |
 |---|---|---|---|
-| `MAGNETAR_PROVE_STRICT` | `1`: a check of the proof that is skipped is a failure, as in CI. | `0` | `scripts/prove.sh`; set to `1` by `make ci` on Linux and by CI, not by `make prove` itself |
-| `MAGNETAR_PROVE_BUILD` | `host` builds only this machine's binary, for a quicker run; the check of the static build for every target is then skipped. | `all` | `scripts/prove.sh` |
-| `MAGNETAR_PROVE_CRASHES` | How many times the crash check kills the server while it creates a tenant. | `24` | `scripts/prove.sh` |
-| `MAGNETAR_PROVE_PG_IMAGE` | The Postgres image the proof starts, when it starts its own container. | `postgres:18` | `scripts/prove.sh` |
-| `MAGNETAR_PROVE_PG_CONTAINER` | A running Postgres container (such as CI's service container) the proof uses instead of starting one. Needs `MAGNETAR_PROVE_PG_PORT`. | none: the proof starts and removes its own | `scripts/prove.sh`; set by `make ci` and by CI |
-| `MAGNETAR_PROVE_PG_PORT` | The port of that container on `127.0.0.1`. | none | `scripts/prove.sh`; set by `make ci` and by CI |
+| `MAGNETAR_PROVE_STRICT` | `1`: a check of the proof that is skipped is a failure, as in CI. | `0` | `scripts/prove/run.sh`; set to `1` by `make ci` on Linux and by CI, not by `make prove` itself |
+| `MAGNETAR_PROVE_BUILD` | `host` builds only this machine's binary, for a quicker run; the check of the static build for every target is then skipped. | `all` | `scripts/prove/run.sh` |
+| `MAGNETAR_PROVE_CRASHES` | How many times the crash check kills the server while it creates a tenant. | `24` | `scripts/prove/run.sh` |
+| `MAGNETAR_PROVE_PG_IMAGE` | The Postgres image the proof starts, when it starts its own container. | `postgres:18` | `scripts/prove/run.sh` |
+| `MAGNETAR_PROVE_PG_CONTAINER` | A running Postgres container (such as CI's service container) the proof uses instead of starting one. Needs `MAGNETAR_PROVE_PG_PORT`. | none: the proof starts and removes its own | `scripts/prove/run.sh`; set by `make ci` and by CI |
+| `MAGNETAR_PROVE_PG_PORT` | The port of that container on `127.0.0.1`. | none | `scripts/prove/run.sh`; set by `make ci` and by CI |
 
 ### Set by a test for its own child process
 
@@ -128,4 +128,4 @@ nothing when it is run alone.
 | `MAGNETAR_OTHER_USER_DIAL` | The path of the socket the helper dials as the other user | `internal/server` |
 | `MAGNETAR_RECEIVE_CRASH_DIR`, `MAGNETAR_RECEIVE_CRASH_POINT`, `MAGNETAR_RECEIVE_CRASH_HIT`, `MAGNETAR_RECEIVE_CRASH_RUN`, `MAGNETAR_RECEIVE_CRASH_RESEND` | The data directory, the crash point, the hit, the run and the files to send again of the pipeline's crash child | `internal/receive` |
 | `MAGNETAR_SERVECMD_CHILD_ARGS`, `MAGNETAR_SERVECMD_CHILD_REAL` | The arguments of the command the child runs, and whether it serves the real handlers | `internal/cli/servecmd` |
-| `MAGNETAR_STANDIN_DELAY` | How long the stand-in server holds a listing whose page token is `wait`, as a Go duration (default `200ms`) | `internal/server/servertest/standin`, driven by `scripts/check-server.sh` |
+| `MAGNETAR_STANDIN_DELAY` | How long the stand-in server holds a listing whose page token is `wait`, as a Go duration (default `200ms`) | `internal/server/servertest/standin`, driven by `scripts/check/server.sh` |

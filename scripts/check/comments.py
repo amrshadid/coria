@@ -23,7 +23,7 @@ loosened to let one through.
 This file is excluded from its own scan by path (SELF below): it necessarily
 spells out every pattern it refuses.
 
-Usage: check-comments.py [root]. root defaults to the current directory, which
+Usage: comments.py [root]. root defaults to the current directory, which
 must be inside a git work tree. Standard library only.
 """
 
@@ -32,7 +32,7 @@ import re
 import subprocess
 import sys
 
-SELF = "scripts/check-comments.py"
+SELF = "scripts/check/comments.py"
 
 # Paths not scanned, by exact path or by prefix ending in "/".
 SKIPPED = ("gen/", "go.sum", SELF)
@@ -186,7 +186,7 @@ def main():
         print(h)
     if hits:
         print(f"check-comments: {len(hits)} line(s) refer to something outside the "
-              "repository; say the reason itself (see scripts/check-comments.py)",
+              "repository; say the reason itself (see scripts/check/comments.py)",
               file=sys.stderr)
         return 1
     print("check-comments: no reference to anything outside the repository")

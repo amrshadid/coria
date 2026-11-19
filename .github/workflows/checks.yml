@@ -110,7 +110,7 @@ jobs:
         id: python
         uses: ./.github/actions/python-tools
         with:
-          requirements: scripts/requirements-check-seal.txt
+          requirements: scripts/requirements/check-seal.txt
 
       - name: Outside check, sealing against Python cryptography
         env:
@@ -307,7 +307,7 @@ jobs:
   # The server's outside checks, in a job of their own so the Linux job keeps
   # its time: the local socket refused to a second operating system user, and
   # curl, grpcurl and Python's grpcio against a real server process with the
-  # stand-in handlers and against the real program (scripts/check-server.sh),
+  # stand-in handlers and against the real program (scripts/check/server.sh),
   # and the real program end to end (make check-e2e). Linux only: the second user
   # needs sudo, which the runner has without a password.
   server:
@@ -337,19 +337,19 @@ jobs:
 
       # The Python packages at exact versions with their hashes
       # (.github/actions/python-tools); grpcurl from its release, checked
-      # against the SHA-256 committed in scripts/grpcurl.sha256 (keep its
+      # against the SHA-256 committed in scripts/tools/grpcurl.sha256 (keep its
       # version in step with GRPCURL_VERSION in the Makefile).
       - name: Python tools
         id: python
         uses: ./.github/actions/python-tools
         with:
-          requirements: scripts/requirements-check-server.txt
+          requirements: scripts/requirements/check-server.txt
 
       - name: Outside check, curl, grpcurl and Python grpcio against the server
         env:
           VENV_PYTHON: ${{ steps.python.outputs.python }}
         run: |
-          bash scripts/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
+          bash scripts/tools/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
           make check-server PYTHON="$VENV_PYTHON" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl"
 
       # The real program end to end: init, serve with the local socket and
@@ -359,7 +359,7 @@ jobs:
       - name: The real program end to end
         run: make check-e2e
 
-  # The proof of this version (scripts/prove.sh): the binaries built as make
+  # The proof of this version (scripts/prove/run.sh): the binaries built as make
   # build builds them, the Linux one started for real, and every claim of this
   # version shown by tools that are not Magnetar. Postgres is a service
   # container the script uses for its tenant databases, and stops and starts
@@ -397,19 +397,19 @@ jobs:
 
       # The Python packages at exact versions with their hashes
       # (.github/actions/python-tools); sqlite3 from the distribution;
-      # grpcurl from its release, checked against scripts/grpcurl.sha256.
+      # grpcurl from its release, checked against scripts/tools/grpcurl.sha256.
       - name: Python tools
         id: python
         uses: ./.github/actions/python-tools
         with:
-          requirements: scripts/requirements-check-server.txt
+          requirements: scripts/requirements/check-server.txt
 
       - name: Tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install --yes --no-install-recommends sqlite3 > /dev/null
           sqlite3 --version
-          bash scripts/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
+          bash scripts/tools/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
 
       - name: The proof
         env:
@@ -456,7 +456,7 @@ jobs:
         id: python
         uses: ./.github/actions/python-tools
         with:
-          requirements: scripts/requirements-prove-reception.txt
+          requirements: scripts/requirements/prove-reception.txt
 
       - name: Tools
         run: |
@@ -628,7 +628,7 @@ jobs:
 
       # Go builds the two protoc plugins and runs nothing else here. buf is
       # not built: make downloads its release binary and checks it against
-      # the SHA-256 in scripts/buf.sha256 (scripts/install-buf.sh).
+      # the SHA-256 in scripts/tools/buf.sha256 (scripts/tools/install-buf.sh).
       - name: Set up Go
         uses: ./.github/actions/setup-go
         with:
@@ -675,7 +675,7 @@ jobs:
         id: python
         uses: ./.github/actions/python-tools
         with:
-          requirements: scripts/requirements-proto.txt
+          requirements: scripts/requirements/proto.txt
 
       - name: Python grpcio-tools compiles the contract
         env:

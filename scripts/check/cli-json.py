@@ -17,7 +17,7 @@ output relies on:
   * no document holds the database address the test gave "tenant create",
     which no answer may echo.
 
-Usage: check-json.py <dir>. Any disagreement exits with status 1 and a reason
+Usage: cli-json.py <dir>. Any disagreement exits with status 1 and a reason
 on standard error.
 """
 
@@ -61,7 +61,7 @@ def fail(message):
 
 def main():
     if len(sys.argv) != 2:
-        fail("usage: check-json.py <dir>")
+        fail("usage: cli-json.py <dir>")
     directory = sys.argv[1]
     present = {f[: -len(".json")] for f in os.listdir(directory) if f.endswith(".json")}
     for name in sorted(set(EXPECTED) - present):

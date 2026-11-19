@@ -27,7 +27,7 @@ import (
 // notServedFile is the list of the services the contract defines and the
 // server does not serve yet (its header says why such a list exists and
 // when a line leaves it). It is one file, read here, by the tests of internal/server/servertest, and
-// by scripts/prove.py, so the three cannot disagree.
+// by scripts/prove/steps.py, so the three cannot disagree.
 var notServedFile = filepath.Join("..", "..", "api", "not-served.txt")
 
 // notServedName is the form of a line of notServedFile: a full service

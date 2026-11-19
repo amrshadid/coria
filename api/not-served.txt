@@ -8,7 +8,7 @@
 # not have.
 #
 # Read by the Go tests of internal/api and internal/server/servertest and by
-# scripts/prove.py, which check each name the other way round: a listed
+# scripts/prove/steps.py, which check each name the other way round: a listed
 # service must be defined by a proto file, must have no method in the
 # server's table, and must answer UNIMPLEMENTED; every service not listed is
 # held to its Role lines and to every check of a served method.

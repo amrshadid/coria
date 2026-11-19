@@ -13,12 +13,12 @@ import (
 // jsonDirEnv names the directory TestWriteJSONOutputs writes into. The test
 // is the first half of the outside check of the JSON documents: it runs every
 // command with --json against the in-process server and leaves each output as
-// a file, and scripts/check-json.py, which is Python and not Magnetar, parses
+// a file, and scripts/check/cli-json.py, which is Python and not Magnetar, parses
 // them with Python's json module.
 const jsonDirEnv = "MAGNETAR_CHECK_JSON_DIR"
 
 // TestWriteJSONOutputs runs every command with --json and writes standard
-// output to <dir>/<name>.json, for scripts/check-json.py. It skips only when
+// output to <dir>/<name>.json, for scripts/check/cli-json.py. It skips only when
 // the variable is unset; "make check-json" always sets it.
 func TestWriteJSONOutputs(t *testing.T) {
 	dir := os.Getenv(jsonDirEnv)

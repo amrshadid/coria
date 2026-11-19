@@ -1,12 +1,12 @@
-# What scripts/check-seal.py needs: Python's cryptography package and what it
+# What scripts/check/seal.py needs: Python's cryptography package and what it
 # pulls in, each at an exact version, with the SHA-256 of every file pip may
 # choose for it on Linux x86_64 (CPython 3.12 to 3.14) and on macOS (arm64).
 # CI installs it with:
 #
-#   pip install --require-hashes -r scripts/requirements-check-seal.txt
+#   pip install --require-hashes -r scripts/requirements/check-seal.txt
 #
 # so a file that differs from the one hashed here is refused. The hashes were
-# made by scripts/requirements-check-seal.sh with "pip download" and
+# made by scripts/requirements/hash.sh check-seal with "pip download" and
 # "pip hash"; to change a version, edit that script and run it again.
 cryptography==46.0.3 \
     --hash=sha256:10b01676fc208c3e6feeb25a8b83d81767e8059e1fe86e1dc62d10a3018fa926 \

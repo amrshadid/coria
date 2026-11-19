@@ -19,7 +19,7 @@ URL is http://KEY:SECRET@HOST:PORT/BUCKET, as make s3-up prints it; the
 bucket is made if it is not there. Without --s3 the S3 checks are skipped.
 
 Needs: Go, dcmtk, openssl, and a Python with pydicom and pynetdicom
-(scripts/requirements-prove-reception.txt).
+(scripts/requirements/prove-reception.txt).
 """
 
 import argparse

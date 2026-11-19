@@ -11,12 +11,12 @@
 # prints each package with all its hashes in the form pip install
 # --require-hashes reads. Copy the output under the file's header comment.
 #
-#   scripts/requirements.sh <name> [python]     name: check-seal, check-server, proto
+#   scripts/requirements/hash.sh <name> [python]     name: check-seal, check-server, proto, prove-reception
 set -euo pipefail
-name="${1:?usage: scripts/requirements.sh <name> [python], name being check-seal, check-server or proto}"
+name="${1:?usage: scripts/requirements/hash.sh <name> [python], name being check-seal, check-server, proto or prove-reception}"
 py="${2:-python3}"
-file="$(dirname "$0")/requirements-$name.txt"
-[ -f "$file" ] || { echo "requirements.sh: no $file" >&2; exit 2; }
+file="$(dirname "$0")/$name.txt"
+[ -f "$file" ] || { echo "hash.sh: no $file" >&2; exit 2; }
 
 # The pins, in the file's order: the first word of every line that starts a
 # requirement (not a comment, not a continued --hash line).
@@ -24,7 +24,7 @@ packages=()
 while IFS= read -r pin; do
 	packages+=("$pin")
 done < <(sed -n 's/^\([A-Za-z0-9][A-Za-z0-9._-]*==[^ ]*\).*/\1/p' "$file")
-[ "${#packages[@]}" -gt 0 ] || { echo "requirements.sh: no name==version line in $file" >&2; exit 2; }
+[ "${#packages[@]}" -gt 0 ] || { echo "hash.sh: no name==version line in $file" >&2; exit 2; }
 
 dir="$(mktemp -d)"
 trap 'rm -rf "$dir"' EXIT
@@ -50,7 +50,7 @@ for pin in "${packages[@]}"; do
 		"$prefix"*) hashes+=("$("$py" -m pip hash "$wheel" | sed -n 's/^--hash=//p')") ;;
 		esac
 	done
-	[ "${#hashes[@]}" -gt 0 ] || { echo "requirements.sh: no file was downloaded for $pin" >&2; exit 1; }
+	[ "${#hashes[@]}" -gt 0 ] || { echo "hash.sh: no file was downloaded for $pin" >&2; exit 1; }
 	printf '%s' "$pin"
 	for h in "${hashes[@]}"; do
 		printf ' \\\n    --hash=%s' "$h"

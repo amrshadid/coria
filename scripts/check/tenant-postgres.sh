@@ -14,10 +14,10 @@
 # The driver is given MAGNETAR_TEST_POSTGRES, the URL of a scratch database
 # the login may make schemas in. PSQL and PG_DUMP are the commands that run
 # psql and pg_dump, which may be the ones in a container, as for
-# scripts/check-master-postgres.sh (which says why); PSQL_URL is the URL as
+# scripts/check/master-postgres.sh (which says why); PSQL_URL is the URL as
 # psql sees it.
 #
-#   MAGNETAR_TEST_POSTGRES=postgres://u:p@127.0.0.1:5432/db scripts/check-tenant-postgres.sh
+#   MAGNETAR_TEST_POSTGRES=postgres://u:p@127.0.0.1:5432/db scripts/check/tenant-postgres.sh
 #
 # Run from the repository's root. Exits non-zero on the first failed check.
 # Nothing here prints a URL: it holds the password.

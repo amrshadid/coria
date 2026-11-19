@@ -9,8 +9,8 @@
 # be absent, and for its SHA-256, which must be present. Last, it reads the
 # database of a process killed while making changes that share commits.
 #
-#   scripts/check-master-sqlite.sh            uses sqlite3 and go from PATH
-#   SQLITE3=/path/to/sqlite3 GO=go1.27 scripts/check-master-sqlite.sh
+#   scripts/check/master-sqlite.sh            uses sqlite3 and go from PATH
+#   SQLITE3=/path/to/sqlite3 GO=go1.27 scripts/check/master-sqlite.sh
 #
 # Run from the repository's root. Exits non-zero on the first failed check.
 set -euo pipefail

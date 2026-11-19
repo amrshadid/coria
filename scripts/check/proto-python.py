@@ -10,9 +10,9 @@ parts the contract requires of it, each a line that starts with its label and
 has text after it: the role it needs ("Role:"), what it writes to the audit
 log ("Audit:") and the error kinds it can answer ("Errors:").
 
-Usage: check-proto-python.py [proto root, default api/proto]
+Usage: proto-python.py [proto root, default api/proto]
 
-The pinned grpcio-tools version is in scripts/requirements-proto.txt.
+The pinned grpcio-tools version is in scripts/requirements/proto.txt.
 """
 
 import importlib

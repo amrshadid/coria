@@ -1,14 +1,14 @@
-# The Python side of the outside check of the server (scripts/check-server.sh
-# and scripts/check-server.py): grpcio as a gRPC client that is not Go,
+# The Python side of the outside check of the server (scripts/check/server.sh
+# and scripts/check/server.py): grpcio as a gRPC client that is not Go,
 # grpcio-tools to compile the contract for it, and the Prometheus client's
 # text parser for /metrics, with what they pull in. Each is at an exact
 # version with the SHA-256 of every file pip may choose for it on Linux
 # x86_64 (CPython 3.12 to 3.14) and on macOS. CI installs it with:
 #
-#   pip install --require-hashes -r scripts/requirements-check-server.txt
+#   pip install --require-hashes -r scripts/requirements/check-server.txt
 #
 # so a file that differs from the one hashed here is refused. The hashes were
-# made by scripts/requirements-check-server.sh with "pip download" and
+# made by scripts/requirements/hash.sh check-server with "pip download" and
 # "pip hash"; to change a version, edit that script and run it again.
 grpcio==1.85.1 \
     --hash=sha256:cfa9bf4daed57dd5bd5fac4be3276f5dc1703f41abf4df0737f4e7952705cbc6 \

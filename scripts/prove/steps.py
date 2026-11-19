@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""The parts of scripts/prove.sh that are easier to say in Python.
+"""The parts of scripts/prove/run.sh that are easier to say in Python.
 
-Each subcommand is one step of the proof, run by prove.sh against the
+Each subcommand is one step of the proof, run by scripts/prove/run.sh against the
 real binary it started; none imports anything of Magnetar's. They share the
 script's work directory:
 
@@ -28,12 +28,12 @@ Subcommands:
   audit     section 8: the audit logs read through the API and reconciled
             against the ledger in both directions
   tui       section 10: the interactive program under a pseudo-terminal, with
-            the terminal emulator of scripts/check-tui.py
+            the terminal emulator of scripts/check/tui.py
   json      section 10: every --json document parsed
   metrics   section 8: /metrics parsed by the Prometheus client; no audit entry
             dropped or failed
 
-Needs grpcio and prometheus-client (scripts/requirements-check-server.txt) for
+Needs grpcio and prometheus-client (scripts/requirements/check-server.txt) for
 refusals and metrics; the others use the standard library only.
 """
 
@@ -444,7 +444,7 @@ def bad_keys(keys):
 
 # STANDIN is the service that stands for "a method not served" once every
 # service of the contract is served: defined by a proto file outside the
-# contract (scripts/testdata/notserved), so grpcurl can call it by name, and
+# contract (scripts/prove/testdata/notserved), so grpcurl can call it by name, and
 # served by no server.
 STANDIN = ("magnetar.v1.NotServedService", "Nothing", "magnetar/v1/notserved.proto", False)
 STANDIN_PROTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testdata", "notserved")
@@ -811,7 +811,7 @@ def socket_post(sock, path, body):
     p = subprocess.run(["curl", "-sS", "--fail-with-body", "--unix-socket", sock, "-H", "Content-Type: application/json",
                         "-D", "-", "-d", json.dumps(body), "http://local" + path], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
     if p.returncode != 0:
-        raise SystemExit("prove.py: %s answered %s %s" % (path, p.stdout.decode()[-400:], p.stderr.decode()))
+        raise SystemExit("prove: %s answered %s %s" % (path, p.stdout.decode()[-400:], p.stderr.decode()))
     head, _, data = p.stdout.decode().partition("\r\n\r\n")
     rid = ""
     for line in head.split("\r\n"):
@@ -1005,7 +1005,7 @@ def cmd_tui(work, args):
     here = os.path.dirname(os.path.abspath(__file__))
     # No __pycache__ left in the checkout by the import below.
     sys.dont_write_bytecode = True
-    spec = importlib.util.spec_from_file_location("check_tui", os.path.join(here, "check-tui.py"))
+    spec = importlib.util.spec_from_file_location("check_tui", os.path.join(here, "..", "check", "tui.py"))
     tui = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tui)
     for var in ("MAGNETAR_SERVER", "MAGNETAR_KEY", "MAGNETAR_CA_FILE"):
@@ -1021,7 +1021,7 @@ def cmd_tui(work, args):
     end = datetime.datetime.now().timestamp()
     with open(os.path.join(work.path, "tui.window"), "w") as f:
         # The server and this script read the same clock, so the window is
-        # exact; prove.sh leaves two seconds before it free of other
+        # exact; run.sh leaves two seconds before it free of other
         # requests, as the command line's are matched to the second.
         f.write("%f %f\n" % (start, end))
     restored = s.restored()

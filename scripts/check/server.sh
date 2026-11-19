@@ -19,7 +19,7 @@
 # root the script makes and sets as the installation's.
 #
 # Needs: go, curl, openssl, grpcurl (GRPCURL=...), and a Python (PYTHON=...)
-# with scripts/requirements-check-server.txt installed.
+# with scripts/requirements/check-server.txt installed.
 #
 #   make check-server PYTHON=/path/to/venv/bin/python GRPCURL=grpcurl
 set -euo pipefail
@@ -27,7 +27,7 @@ set -euo pipefail
 GO=${GO:-go}
 PYTHON=${PYTHON:-python3}
 GRPCURL=${GRPCURL:-grpcurl}
-root=$(cd "$(dirname "$0")/.." && pwd)
+root=$(cd "$(dirname "$0")/../.." && pwd)
 work=$(mktemp -d /tmp/mgt-check.XXXXXX)
 server_pid=
 cleanup() {
@@ -194,7 +194,7 @@ if [ "$real" = 1 ]; then
 fi
 
 echo "== python grpcio"
-MAGNETAR_CHECK_TENANTS=$real MAGNETAR_CHECK_ROOT=$work/roots/fast "$PYTHON" "$root/scripts/check-server.py" "$root/api/proto" "$sock" "127.0.0.1:$port" "$work/cert.pem" "$nogrant" "$admin" "$work/metrics"
+MAGNETAR_CHECK_TENANTS=$real MAGNETAR_CHECK_ROOT=$work/roots/fast "$PYTHON" "$root/scripts/check/server.py" "$root/api/proto" "$sock" "127.0.0.1:$port" "$work/cert.pem" "$nogrant" "$admin" "$work/metrics"
 
 # No key secret in the server's log.
 for s in "$nogrant" "$admin"; do

@@ -1,13 +1,13 @@
 # The Python toolchain of the outside check of the API contract
-# (scripts/check-proto-python.py): grpcio-tools, a second compiler of the
+# (scripts/check/proto-python.py): grpcio-tools, a second compiler of the
 # proto files, and what it pulls in. Each is at an exact version with the
 # SHA-256 of every file pip may choose for it on Linux x86_64 (CPython 3.12
 # to 3.14) and on macOS. CI installs it with:
 #
-#   pip install --require-hashes -r scripts/requirements-proto.txt
+#   pip install --require-hashes -r scripts/requirements/proto.txt
 #
 # so a file that differs from the one hashed here is refused. The hashes were
-# made by "scripts/requirements.sh proto" with "pip download" and "pip hash";
+# made by "scripts/requirements/hash.sh proto" with "pip download" and "pip hash";
 # to change a version, change it here and run that script again.
 grpcio-tools==1.85.1 \
     --hash=sha256:dbe1f1e8c0aa1243453ad016626623372ac12ae74150605b0f7f1f588b78379b \

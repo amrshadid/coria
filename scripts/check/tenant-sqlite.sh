@@ -10,8 +10,8 @@
 # SQLite's integrity and foreign key checks, and reads the tenant's row and
 # its state change from the master.
 #
-#   scripts/check-tenant-sqlite.sh            uses sqlite3 and go from PATH
-#   SQLITE3=/path/to/sqlite3 GO=go1.27 scripts/check-tenant-sqlite.sh
+#   scripts/check/tenant-sqlite.sh            uses sqlite3 and go from PATH
+#   SQLITE3=/path/to/sqlite3 GO=go1.27 scripts/check/tenant-sqlite.sh
 #
 # Run from the repository's root. Exits non-zero on the first failed check.
 set -euo pipefail

@@ -23,7 +23,7 @@ It shows, on the built binary and not on a test double:
   * with output that is not a terminal, or with any argument, it does not open:
     the usage line and exit status 2, as before.
 
-Usage: check-tui.py --binary PATH --helper PATH
+Usage: tui.py --binary PATH --helper PATH
 Linux and macOS only: Windows has no pty module.
 """
 

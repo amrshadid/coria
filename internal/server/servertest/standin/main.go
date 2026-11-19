@@ -1,7 +1,7 @@
 // Command standin runs the real "init" and "serve" commands with the
 // stand-in handlers of package servertest, so outside clients (grpcurl,
 // Python grpcio, curl) can be pointed at a real server process before the
-// real handlers exist. scripts/check-server.sh builds and drives it. It is
+// real handlers exist. scripts/check/server.sh builds and drives it. It is
 // never part of a release: make build builds ./cmd/magnetar only.
 //
 // MAGNETAR_STANDIN_DELAY sets how long ListTenants holds a request whose

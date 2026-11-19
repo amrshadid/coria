@@ -15,9 +15,9 @@
 # container, which also keeps their version equal to the server's (pg_dump
 # refuses a server newer than itself):
 #
-#   MAGNETAR_TEST_POSTGRES=postgres://u:p@127.0.0.1:5432/db scripts/check-master-postgres.sh
+#   MAGNETAR_TEST_POSTGRES=postgres://u:p@127.0.0.1:5432/db scripts/check/master-postgres.sh
 #   PSQL="docker exec -i some-postgres psql" PG_DUMP="docker exec -i some-postgres pg_dump" \
-#     PSQL_URL=postgres://u:p@127.0.0.1:5432/db  scripts/check-master-postgres.sh
+#     PSQL_URL=postgres://u:p@127.0.0.1:5432/db  scripts/check/master-postgres.sh
 #
 # PSQL_URL is the URL as the psql command sees it (inside a container the
 # server's port is the container's own); it defaults to the one the driver

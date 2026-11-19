@@ -58,7 +58,7 @@ All notable changes to Magnetar are written here. The form is
   path is refused at once instead of hanging the start. It seals a secret with
   AES-256-GCM under a random nonce, bound to the context it is stored for, so a
   sealed value moved to another row does not open, and opening fails the same
-  way whatever is wrong. `scripts/check-seal.py` checks the format against
+  way whatever is wrong. `scripts/check/seal.py` checks the format against
   Python's `cryptography` package in both directions, installed in CI from
   hashed requirements. API keys look like `mgt_<id>_<secret>`, with 256 random
   bits in the secret, of which only the SHA-256 is to be stored, compared in
@@ -83,7 +83,7 @@ All notable changes to Magnetar are written here. The form is
   timeout, and refuses on Unix a database file that others can read or write.
   Migrations are embedded SQL files, checksummed and applied under a lock that
   holds across processes; a changed applied file, or a database a newer binary
-  upgraded, is refused. `scripts/check-master-sqlite.sh` reads what the driver wrote
+  upgraded, is refused. `scripts/check/master-sqlite.sh` reads what the driver wrote
   with the `sqlite3` tool and finds a key's hash but never its secret. The
   binary does not use the master database yet.
 - The binary had a version command and nothing that could use the API, so a
@@ -193,7 +193,7 @@ All notable changes to Magnetar are written here. The form is
   whose answer was lost does not leave the two apart. At start it warns when
   the tenants could not all hold their files under the process's limit.
   Closing the registry stops its timer, waits for opens in progress up to the
-  deadline it is given, and closes every store. `scripts/check-tenant-sqlite.sh`
+  deadline it is given, and closes every store. `scripts/check/tenant-sqlite.sh`
   reads a tenant the registry created with the `sqlite3` tool. The server does
   not use the registry yet.
 - The commands could not be browsed: finding a tenant's grants, its settings
@@ -212,7 +212,7 @@ All notable changes to Magnetar are written here. The form is
   id or name typed. The alternate screen is left and the cursor shown on quit,
   on SIGTERM and SIGINT, and on a panic. With any argument, or when either end
   is not a terminal, the usage line and exit 2 are as before.
-  `scripts/check-tui.py` runs the built binary under a pseudo-terminal against
+  `scripts/check/tui.py` runs the built binary under a pseudo-terminal against
   the fake server (`make check-tui`, a step of its own in CI, Linux and macOS
   only). The binaries grew by 1.67 to 2.09 MiB (linux/amd64: 10.78 to 12.73
   MiB).
@@ -231,7 +231,7 @@ All notable changes to Magnetar are written here. The form is
   on one dedicated connection, released on every path, so processes that start
   together apply each file once. No error repeats the address, the password or
   the host. CI runs the driver against Postgres 16 and 18 and fails, instead of
-  skipping, when the server is missing; `scripts/check-master-postgres.sh` reads
+  skipping, when the server is missing; `scripts/check/master-postgres.sh` reads
   what the driver wrote with `psql` and `pg_dump` and finds a key's hash but
   never its secret.
 - A tenant's database could only be a SQLite file. It can now be a Postgres
@@ -249,7 +249,7 @@ All notable changes to Magnetar are written here. The form is
   `pool_max_conns` and `pool_max_conn_idle_time` in the address change them).
   The registry's warning about the limit on open files counts each tenant by
   what its driver says it holds (an optional `FilesPerTenant`): eleven files
-  for SQLite, the pool's size for Postgres. `scripts/check-tenant-postgres.sh`
+  for SQLite, the pool's size for Postgres. `scripts/check/tenant-postgres.sh`
   reads a tenant the registry made with `psql` and `pg_dump`, and the Postgres
   CI jobs run the registry against real tenants.
 - The API contract had generated interfaces and nothing behind them.
@@ -304,8 +304,8 @@ All notable changes to Magnetar are written here. The form is
   restart that serves the same tenants, keys and log; `make check-server` now
   also points curl, grpcurl and Python's grpcio at the real program.
 - Nothing showed the installed program doing, in order, what this version
-  claims: each part was checked on its own. `make prove` (`scripts/prove.sh`,
-  with `scripts/prove.py`; CI's "Proof: the installed binary, from outside"
+  claims: each part was checked on its own. `make prove` (`scripts/prove/run.sh`,
+  with `scripts/prove/steps.py`; CI's "Proof: the installed binary, from outside"
   job, on Linux, with a Postgres service container) builds every target as
   `make build` does and runs the real binary against tools that are not
   Magnetar: curl, grpcurl, openssl, sqlite3, psql and pg_dump, and Python's
@@ -672,7 +672,7 @@ All notable changes to Magnetar are written here. The form is
   are its parts, and CI's Postgres, S3 and build jobs call them. Go and the
   Python tools are set up by one composite action each instead of being
   repeated in nine jobs. The contract's Python toolchain
-  (`scripts/requirements-proto.txt`) is now pinned with hashes and installed
+  (`scripts/requirements/proto.txt`) is now pinned with hashes and installed
   with `--require-hashes` like the others.
 - The API's handlers imported the database drivers for the names of the two
   database types, which linked both database libraries into them. The names are

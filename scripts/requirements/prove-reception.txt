@@ -4,10 +4,10 @@
 # choose for it on Linux x86_64 (CPython 3.12 to 3.14) and on macOS. CI
 # installs it with:
 #
-#   pip install --require-hashes -r scripts/requirements-prove-reception.txt
+#   pip install --require-hashes -r scripts/requirements/prove-reception.txt
 #
 # so a file that differs from the one hashed here is refused. The hashes were
-# made by scripts/requirements.sh prove-reception with "pip download" and
+# made by scripts/requirements/hash.sh prove-reception with "pip download" and
 # "pip hash"; to change a version, edit the line below and run it again.
 pydicom==2.4.5 \
     --hash=sha256:35a594cc8ebae8dd40b1f632cd7c9f08ecaa147cb9305a9f9fbca2c03f5ccc93

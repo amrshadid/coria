@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """The server checked by Python's grpcio, a gRPC implementation that is not Go.
 
-Usage: check-server.py PROTO_DIR SOCKET TLS_ADDRESS CA_FILE NO_GRANT_KEY ADMIN_KEY METRICS_FILE
+Usage: server.py PROTO_DIR SOCKET TLS_ADDRESS CA_FILE NO_GRANT_KEY ADMIN_KEY METRICS_FILE
 
 It compiles the contract with grpcio-tools into a scratch directory, then
-calls the server run by scripts/check-server.sh:
+calls the server run by scripts/check/server.sh:
 
   - over TLS: ListKeys with no key, a malformed key, an unknown key and a key
     with no grant, each of which must be refused with the code and message

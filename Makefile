@@ -3,7 +3,7 @@
 #
 #   make check   every gate below, in the order CI runs them
 #   make check-comments  no comment, document or script refers to a note
-#                that is not in the repository (scripts/check-comments.py)
+#                that is not in the repository (scripts/check/comments.py)
 #   make fmt     gofmt -s; fails on any file it would change
 #   make vet     go vet on 64 and on 32 bits
 #   make lint    golangci-lint with .golangci.yml
@@ -112,7 +112,7 @@ check: check-comments fmt vet lint vuln test test-scale build size
 # PYTHON is defined with proto-python below.
 check-comments:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-comments: no interpreter $(PYTHON)" >&2; exit 1; }
-	$(PYTHON) -I scripts/check-comments.py
+	$(PYTHON) -I scripts/check/comments.py
 
 # gofmt's exit status is checked as well as its list: a file that does not
 # parse is reported on standard error with status 2 and is not in the list, so
@@ -164,7 +164,7 @@ test-scale:
 # The event feed's speed: a step with its event, a page read from a feed of
 # ten million events (built once, about a minute), and what waking the
 # watches costs. Not part of `check`: it takes minutes.
-# Reception's speed held against a base commit (scripts/bench-gate.py):
+# Reception's speed held against a base commit (scripts/check/bench-gate.py):
 # files a second from landing to verified for small slices on SQLite and a
 # directory, the base's tree and this one measured in turns on the same
 # machine; it fails when this one is slower by more than BENCH_MARGIN
@@ -174,7 +174,7 @@ BENCH_MARGIN ?= 25
 BENCH_COUNT  ?= 5
 .PHONY: bench-gate
 bench-gate:
-	python3 scripts/bench-gate.py --go "$(GO)" --base "$(BENCH_BASE)" --count $(BENCH_COUNT) --margin $(BENCH_MARGIN)
+	python3 scripts/check/bench-gate.py --go "$(GO)" --base "$(BENCH_BASE)" --count $(BENCH_COUNT) --margin $(BENCH_MARGIN)
 
 bench-events:
 	$(GO) test -count=1 -run '^$$' -bench '^(BenchmarkReadEventsPage|BenchmarkReceptionStepEvent)$$' -benchtime 2s -timeout 30m ./internal/driver/sqlite
@@ -201,7 +201,7 @@ size:
 		echo "| $${f#$(BIN)/} | $$bytes | $$(awk "BEGIN { printf \"%.2f\", $$bytes / 1048576 }") |"; \
 	done
 
-# The outside check of internal/secret: scripts/check-seal.py opens what Go
+# The outside check of internal/secret: scripts/check/seal.py opens what Go
 # sealed and seals what Go then opens. -count=1 so a cached pass is never
 # reported for a Python that changed. The test skips only when the variable is
 # unset; this target always sets it, so here the check runs or fails, and an
@@ -219,18 +219,18 @@ SQLITE3 ?= sqlite3
 
 .PHONY: check-master-sqlite test-386
 check-master-sqlite:
-	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-master-sqlite.sh
+	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check/master-sqlite.sh
 
 # The outside check of the server: curl, grpcurl (GRPCURL=... names one) and
 # Python's grpcio (PYTHON=... names an interpreter with
-# scripts/requirements-check-server.txt) against a real server process with
+# scripts/requirements/check-server.txt) against a real server process with
 # the stand-in handlers and against the real program with the real handlers,
 # over TLS on loopback and over the local socket.
 GRPCURL ?= grpcurl
 
 .PHONY: check-server
 check-server:
-	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" bash scripts/check-server.sh
+	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" bash scripts/check/server.sh
 
 # The real program end to end: init, serve with the local socket and TLS,
 # and the real commands as processes, a stop by signal and a restart
@@ -240,16 +240,16 @@ check-server:
 check-e2e:
 	MAGNETAR_E2E=1 $(GO) test -race -count=1 -v -run '^TestRealServerEndToEnd$$' ./cmd/magnetar
 
-# The proof of this version (scripts/prove.sh): the binary built as make
+# The proof of this version (scripts/prove/run.sh): the binary built as make
 # build builds it, started for real, and every claim of this version shown by
 # tools that are not Magnetar (curl, grpcurl, openssl, sqlite3, psql and
 # pg_dump in a Postgres container, Python's grpcio), each as a named check,
 # with a table of the results and what they measured. It needs docker for
-# Postgres and a PYTHON with scripts/requirements-check-server.txt. CI runs
+# Postgres and a PYTHON with scripts/requirements/check-server.txt. CI runs
 # it on Linux with MAGNETAR_PROVE_STRICT=1, where a skipped check fails.
 .PHONY: prove
 prove:
-	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" bash scripts/prove.sh
+	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" bash scripts/prove/run.sh
 
 # The proof of reception (scripts/prove/reception.py): the real program
 # built, served and set up with its own commands; dcmtk's storescu and
@@ -260,7 +260,7 @@ prove:
 # archived twice; a storage nearly full, the status and the event stream over
 # HTTPS, and streams that stop reading. Needs dcmtk (DCMTK=dir, since
 # pynetdicom installs programs of the same names), openssl, and a PYTHON with
-# scripts/requirements-prove-reception.txt. PROVE_CRASH_ROUNDS kills per step.
+# scripts/requirements/prove-reception.txt. PROVE_CRASH_ROUNDS kills per step.
 # PROVE_S3, a URL as make s3-up prints it, adds a tenant on that S3 server,
 # read back by GETs the proof signs itself; without it those checks skip.
 DCMTK              ?=
@@ -275,7 +275,7 @@ prove-reception:
 # tenant on SQLite, and the sqlite3 tool reads its file and the master's row.
 .PHONY: check-tenant-sqlite
 check-tenant-sqlite:
-	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check-tenant-sqlite.sh
+	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check/tenant-sqlite.sh
 
 # The outside check of the Postgres master database: the driver writes the
 # contract suite's sample into a schema of the database MAGNETAR_TEST_POSTGRES
@@ -286,13 +286,13 @@ PG_DUMP ?= pg_dump
 
 .PHONY: check-master-postgres check-tenant-postgres
 check-master-postgres:
-	PSQL="$(PSQL)" PG_DUMP="$(PG_DUMP)" GO="$(GO)" bash scripts/check-master-postgres.sh
+	PSQL="$(PSQL)" PG_DUMP="$(PG_DUMP)" GO="$(GO)" bash scripts/check/master-postgres.sh
 
 # The same for a tenant on Postgres: the registry creates it, the tenant
 # suite's sample is written, and psql and pg_dump read the tenant's schema and
 # the master's.
 check-tenant-postgres:
-	PSQL="$(PSQL)" PG_DUMP="$(PG_DUMP)" GO="$(GO)" bash scripts/check-tenant-postgres.sh
+	PSQL="$(PSQL)" PG_DUMP="$(PG_DUMP)" GO="$(GO)" bash scripts/check/tenant-postgres.sh
 
 # The tests on 32 bits, where int is 32 bits and the SQLite library is a
 # different translation of SQLite's C. Without -race, which 386 lacks. It runs
@@ -345,12 +345,12 @@ $(TOOLS)/govulncheck-$(GOVULNCHECK_VERSION)/govulncheck:
 #                        difference from the committed gen/
 #   make proto-python    compile the proto files with Python's grpcio-tools,
 #                        a second toolchain, and list the services; needs a
-#                        PYTHON with scripts/requirements-proto.txt installed,
+#                        PYTHON with scripts/requirements/proto.txt installed,
 #                        so it is not part of make check
 #
 # buf and both plugins are pinned and installed into bin/tools like the tools
 # above. buf is the release binary, checked against the SHA-256 committed in
-# scripts/buf.sha256 (building it from source took minutes in CI); the
+# scripts/tools/buf.sha256 (building it from source took minutes in CI); the
 # plugins are small and built with go install. buf runs with local plugins
 # only: no Buf Schema Registry account, no remote plugin, no network at
 # generation time.
@@ -388,7 +388,7 @@ PYTHON ?= $(if $(wildcard $(PYTHON_STAMP)),$(PYTHON_ENV_PYTHON),python3)
 check: proto-lint proto-breaking proto-check
 
 proto-python:
-	$(PYTHON) scripts/check-proto-python.py api/proto
+	$(PYTHON) scripts/check/proto-python.py api/proto
 
 proto: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO)
 	@echo "buf generate (protoc-gen-go $(PROTOC_GEN_GO_VERSION), protoc-gen-connect-go $(PROTOC_GEN_CONNECT_GO_VERSION))"
@@ -427,7 +427,7 @@ proto-check: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO)
 	echo "proto-check: gen/ matches the proto files"
 
 $(BUF):
-	scripts/install-buf.sh $(BUF_VERSION) $@
+	scripts/tools/install-buf.sh $(BUF_VERSION) $@
 
 $(PROTOC_GEN_GO):
 	GOBIN=$(@D) GOTOOLCHAIN=auto $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
@@ -440,7 +440,7 @@ $(PROTOC_GEN_CONNECT_GO):
 #
 #   make check-json        every command with --json against the in-process
 #                          server, each output parsed by Python's json module
-#                          (scripts/check-json.py); needs python3, nothing else
+#                          (scripts/check/cli-json.py); needs python3, nothing else
 #   make check-completion  the bash completion script the binary generates,
 #                          parsed by bash -n
 #
@@ -454,7 +454,7 @@ check-json:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-json: no interpreter $(PYTHON)" >&2; exit 1; }
 	@set -e; dir="$$(mktemp -d)"; \
 	MAGNETAR_CHECK_JSON_DIR="$$dir" $(GO) test -count=1 -run '^TestWriteJSONOutputs$$' ./internal/cli; \
-	status=0; $(PYTHON) scripts/check-json.py "$$dir" || status=$$?; \
+	status=0; $(PYTHON) scripts/check/cli-json.py "$$dir" || status=$$?; \
 	rm -f "$$dir"/*.json; rmdir "$$dir"; exit $$status
 
 check-completion:
@@ -474,7 +474,7 @@ check-completion:
 #
 #   make check-tui   builds the binary and a test helper that serves the
 #                    in-process fake server on a temporary socket, then runs
-#                    the binary under a pseudo-terminal (scripts/check-tui.py):
+#                    the binary under a pseudo-terminal (scripts/check/tui.py):
 #                    keys pressed, the screen read, quit, a stop signal, and
 #                    the terminal checked to have been restored.
 #
@@ -489,7 +489,7 @@ check-tui:
 	@set -e; dir="$$(mktemp -d)"; \
 	CGO_ENABLED=0 $(GO) build -o "$$dir/magnetar" ./cmd/magnetar; \
 	CGO_ENABLED=0 $(GO) build -o "$$dir/ptyserve" ./internal/tui/ptyserve; \
-	status=0; $(PYTHON) scripts/check-tui.py --binary "$$dir/magnetar" --helper "$$dir/ptyserve" || status=$$?; \
+	status=0; $(PYTHON) scripts/check/tui.py --binary "$$dir/magnetar" --helper "$$dir/ptyserve" || status=$$?; \
 	rm -f "$$dir/magnetar" "$$dir/ptyserve"; rmdir "$$dir"; exit $$status
 
 # ---------------------------------------------------------------------------
@@ -506,7 +506,7 @@ check-tui:
 # makes it.
 PYTHON3             ?= python3
 PYTHON_ENV          ?= $(BIN)/python
-PYTHON_REQUIREMENTS ?= scripts/requirements-check-seal.txt scripts/requirements-check-server.txt scripts/requirements-proto.txt scripts/requirements-prove-reception.txt
+PYTHON_REQUIREMENTS ?= scripts/requirements/check-seal.txt scripts/requirements/check-server.txt scripts/requirements/proto.txt scripts/requirements/prove-reception.txt
 PYTHON_ENV_PYTHON   := $(abspath $(PYTHON_ENV))/bin/python
 PYTHON_STAMP        := $(PYTHON_ENV)/.installed-$(shell printf '%s' '$(PYTHON_REQUIREMENTS)' | cksum | cut -d ' ' -f 1)
 
@@ -522,14 +522,14 @@ $(PYTHON_STAMP): $(PYTHON_REQUIREMENTS)
 	@"$(PYTHON_ENV)/bin/python" --version
 	@touch "$@"
 
-# grpcurl from its release, checked against scripts/grpcurl.sha256, for the
+# grpcurl from its release, checked against scripts/tools/grpcurl.sha256, for the
 # outside checks of the server when GRPCURL is not given. Keep in step with
 # the version checks.yml installs.
 GRPCURL_VERSION := v1.9.4
 GRPCURL_TOOL    := $(TOOLS)/grpcurl-$(GRPCURL_VERSION)/grpcurl
 
 $(GRPCURL_TOOL):
-	bash scripts/install-grpcurl.sh $(GRPCURL_VERSION) $@
+	bash scripts/tools/install-grpcurl.sh $(GRPCURL_VERSION) $@
 
 # What the outside checks run with: what was given on the command line or in
 # the environment, or else the pinned tools above, which are then installed

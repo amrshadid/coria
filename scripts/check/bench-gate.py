@@ -24,7 +24,7 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PACKAGE = "./internal/receive"
 BENCH = "^BenchmarkLandToVerified$/^sqlite-dir$/^slices-256KiB$"
 LINE = re.compile(r"^BenchmarkLandToVerified/sqlite-dir/slices-256KiB\S*\s+\d+\s+.*?([\d.]+) files/s", re.M)

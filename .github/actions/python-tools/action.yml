@@ -10,7 +10,7 @@ name: Python tools
 description: A virtual environment with the hashed Python requirements of the outside checks.
 inputs:
   requirements:
-    description: The requirement files to install, separated by spaces, such as scripts/requirements-check-seal.txt.
+    description: The requirement files to install, separated by spaces, such as scripts/requirements/check-seal.txt.
     required: true
 outputs:
   python:

@@ -2,7 +2,7 @@
 # install-buf.sh VERSION DEST
 #
 # Downloads buf's release binary for this system, checks it against the SHA-256
-# committed in scripts/buf.sha256, and installs it at DEST. A binary whose hash
+# committed in scripts/tools/buf.sha256, and installs it at DEST. A binary whose hash
 # does not match, or a system with no committed hash, fails: there is no
 # fallback, so the buf that runs is always the one whose hash was reviewed.
 # The hashes were taken from the release's sha256.txt and checked against the
