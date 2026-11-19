@@ -543,6 +543,12 @@ func ValidatePrune(before time.Time, limit int) error {
 	return master.ValidateTime("pruning time", before)
 }
 
+// ValidateCheckpoint returns an Invalid error unless the time of a
+// CheckpointEvents is well formed.
+func ValidateCheckpoint(at time.Time) error {
+	return master.ValidateTime("checkpoint time", at)
+}
+
 // InProgressSteps returns, from a count of receptions per step, the entries
 // of the steps that have not ended and have any, in the order of
 // reception.States: what a status lists.

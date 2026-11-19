@@ -7,9 +7,11 @@ import (
 
 	"github.com/amrshadid/magnetar/internal/api"
 	"github.com/amrshadid/magnetar/internal/driver"
+	"github.com/amrshadid/magnetar/internal/events"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/registry"
 	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/magnetar/internal/settingvalue"
 )
 
 // The tenant registry's settings in serve. They are constants, not flags:
@@ -105,7 +107,10 @@ func APIServices(d Deps) (Built, error) {
 		WithDecision:   api.WithDecision,
 		Registry:       reg,
 		TenantsByState: counts.byState,
-		Reception:      sup,
+		Reception: runners{sup, events.NewKeeper(events.KeeperConfig{
+			Tenants: keptFeeds{tenants: registryTenants{master: d.Master, registry: reg}, registry: reg, values: settingvalue.Reader{Master: d.Master}},
+			Logger:  d.Log,
+		})},
 	}, nil
 }
 

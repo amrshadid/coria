@@ -48,6 +48,7 @@ func RunEvents(t *testing.T, open OpenEvents) {
 		{"EventBounds", testEventBounds},
 		{"LateCommit", func(e *eenv) { testLateCommit(e, e.ev) }},
 		{"PruneFollowsFeedOrder", testPruneFollowsFeedOrder},
+		{"EventCheckpoints", testEventCheckpoints},
 		{"SnapshotDividesTheFeed", testSnapshotDividesTheFeed},
 	}
 	for _, tt := range tests {

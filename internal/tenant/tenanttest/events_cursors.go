@@ -67,20 +67,33 @@ func testEventCursors(e *eenv) {
 	e.wantIs("ReadEvents with a cursor after the newest event", err, tenant.ErrCursorExpired, fault.OutOfRange)
 }
 
-// testEventsExpire guards pruning: it removes the oldest events in bounded
-// batches, in order, stopping at the first that is not old enough, says
-// whether more are old enough, and a cursor it passed is refused with
-// ErrCursorExpired while one at its mark or after reads on.
+// testEventsExpire guards pruning: it removes, in order and in bounded
+// batches, every event up to the newest checkpoint older than its bound,
+// says whether more are due, stops at the checkpoint whatever the events'
+// own times, and a cursor it passed is refused with ErrCursorExpired while
+// one at its mark or after reads on.
 func testEventsExpire(e *eenv) {
 	start := e.now()
 	var batch []tenant.EventRecord
-	for i := range 10 {
+	for i := range 6 {
 		batch = append(batch, e.health("a", i))
 	}
 	e.appendAll(batch...)
+	e.ok("CheckpointEvents after six", e.ev.CheckpointEvents(e.ctx, at(100)))
+	batch = nil
+	for i := range 4 {
+		batch = append(batch, e.health("a", 6+i))
+	}
+	e.appendAll(batch...)
+	e.ok("CheckpointEvents after ten", e.ev.CheckpointEvents(e.ctx, at(200)))
 	first := e.read(start, 3)
 	sixth := e.read(start, 6)
-	n, more, err := e.ev.PruneEvents(e.ctx, at(6), 2)
+	n, more, err := e.ev.PruneEvents(e.ctx, at(50), 100)
+	e.ok("PruneEvents before every checkpoint", err)
+	if n != 0 || more {
+		e.Errorf("a pruning before every checkpoint removed %d (more %v)", n, more)
+	}
+	n, more, err = e.ev.PruneEvents(e.ctx, at(150), 2)
 	e.ok("PruneEvents", err)
 	if n != 2 || !more {
 		e.Errorf("a pruning bounded to 2 removed %d (more %v), want 2 and more", n, more)
@@ -88,10 +101,10 @@ func testEventsExpire(e *eenv) {
 	if got := e.read(first.Cursor, 100); len(got.Events) != 7 {
 		e.Errorf("a cursor past what was pruned read %d events, want 7", len(got.Events))
 	}
-	n, more, err = e.ev.PruneEvents(e.ctx, at(6), 100)
+	n, more, err = e.ev.PruneEvents(e.ctx, at(150), 100)
 	e.ok("PruneEvents", err)
 	if n != 4 || more {
-		e.Errorf("the second pruning removed %d (more %v), want 4 and no more", n, more)
+		e.Errorf("the second pruning removed %d (more %v), want 4 and no more: up to the first checkpoint", n, more)
 	}
 	_, err = e.ev.ReadEvents(e.ctx, first.Cursor, nil, 10)
 	e.wantIs("ReadEvents from a cursor that pruning passed", err, tenant.ErrCursorExpired, fault.OutOfRange)
@@ -103,15 +116,15 @@ func testEventsExpire(e *eenv) {
 	if got, _ := e.readAll("", 100); len(got) != 4 {
 		e.Errorf("the empty cursor read %d events, want the 4 kept", len(got))
 	}
-	n, more, err = e.ev.PruneEvents(e.ctx, at(6), 100)
-	e.ok("PruneEvents with nothing old enough", err)
+	n, more, err = e.ev.PruneEvents(e.ctx, at(150), 100)
+	e.ok("PruneEvents with nothing more under the checkpoint", err)
 	if n != 0 || more {
-		e.Errorf("a pruning with nothing old enough removed %d (more %v)", n, more)
+		e.Errorf("a pruning with nothing more under its checkpoint removed %d (more %v)", n, more)
 	}
 	n, _, err = e.ev.PruneEvents(e.ctx, at(1000), 100)
-	e.ok("PruneEvents of every event", err)
+	e.ok("PruneEvents up to the last checkpoint", err)
 	if n != 4 {
-		e.Errorf("pruning every event removed %d, want 4", n)
+		e.Errorf("pruning up to the last checkpoint removed %d, want 4", n)
 	}
 	// With every event gone, the feed's place does not go back: a new
 	// event is after every cursor made before.
@@ -122,6 +135,37 @@ func testEventsExpire(e *eenv) {
 	if got := e.read(now, 10); len(got.Events) != 1 || !got.Events[0].Time.Equal(at(2000)) {
 		e.Errorf("after the feed was emptied a new event read %d events from the cursor before it", len(got.Events))
 	}
+}
+
+// testEventCheckpoints guards the checkpoints retention measures by: an
+// idle feed adds none, so an event committed after a checkpoint is never
+// pruned by it; one earlier than the newest is a precondition failure, as
+// is one at the same time with events since; and a time out of range is
+// invalid.
+func testEventCheckpoints(e *eenv) {
+	e.appendAll(e.health("a", 1))
+	e.ok("CheckpointEvents", e.ev.CheckpointEvents(e.ctx, at(100)))
+	e.ok("CheckpointEvents of an idle feed", e.ev.CheckpointEvents(e.ctx, at(300)))
+	e.appendAll(e.health("a", 2))
+	// The idle checkpoint at 300 s was not written: a pruning before 400 s
+	// removes only what the checkpoint at 100 s covers.
+	n, _, err := e.ev.PruneEvents(e.ctx, at(400), 100)
+	e.ok("PruneEvents", err)
+	if n != 1 {
+		e.Errorf("an idle feed's checkpoint let a pruning remove %d events, want 1", n)
+	}
+	err = e.ev.CheckpointEvents(e.ctx, at(50))
+	e.wantKind("CheckpointEvents earlier than the newest", err, fault.Precondition)
+	err = e.ev.CheckpointEvents(e.ctx, at(100))
+	e.wantKind("CheckpointEvents at the newest's time, events since", err, fault.Precondition)
+	e.ok("CheckpointEvents later", e.ev.CheckpointEvents(e.ctx, at(500)))
+	n, _, err = e.ev.PruneEvents(e.ctx, at(600), 100)
+	e.ok("PruneEvents", err)
+	if n != 1 {
+		e.Errorf("a pruning after the later checkpoint removed %d events, want 1", n)
+	}
+	err = e.ev.CheckpointEvents(e.ctx, time.Time{})
+	e.wantKind("CheckpointEvents with no time", err, fault.Invalid)
 }
 
 // testPruneUnderReader guards retention under a reader that pages through
@@ -135,6 +179,7 @@ func testPruneUnderReader(e *eenv) {
 		batch = append(batch, e.health("a", i))
 	}
 	e.appendAll(batch...)
+	e.ok("CheckpointEvents", e.ev.CheckpointEvents(e.ctx, at(500)))
 	cursor, seen := start, 0
 	for {
 		p, err := e.ev.ReadEvents(e.ctx, cursor, nil, 10)
@@ -161,10 +206,10 @@ func testPruneUnderReader(e *eenv) {
 	}
 }
 
-// testPruneFollowsFeedOrder guards that retention follows the feed's order,
-// not each event's own time: one event dated far ahead, first in the feed,
-// does not keep the old events after it; it goes with them, and the mark
-// moves past both, so a reader before it is told its cursor expired.
+// testPruneFollowsFeedOrder guards that retention reads no event's own
+// time: an event dated far ahead, first in the feed, and one dated long ago,
+// last, are pruned or kept by the checkpoints alone, with the events
+// around them.
 func testPruneFollowsFeedOrder(e *eenv) {
 	start := e.now()
 	far, err := tenant.NewEvent(&tenant.StorageSpaceChanged{Storage: "store", State: tenant.StorageRecovered}, time.Date(9000, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -173,19 +218,20 @@ func testPruneFollowsFeedOrder(e *eenv) {
 	for i := range 700 {
 		batch = append(batch, e.space("store", i))
 	}
-	batch = append(batch, e.space("store", 5000))
 	e.appendAll(batch...)
-	n, more, err := e.ev.PruneEvents(e.ctx, at(1000), tenant.MaxPruneBatch)
+	e.ok("CheckpointEvents", e.ev.CheckpointEvents(e.ctx, at(1000)))
+	e.appendAll(e.space("store", 1))
+	n, more, err := e.ev.PruneEvents(e.ctx, at(2000), tenant.MaxPruneBatch)
 	e.ok("PruneEvents", err)
 	if n != 701 || more {
-		e.Errorf("a pruning behind one event dated far ahead removed %d (more %v), want 701: it and the 700 old ones", n, more)
+		e.Errorf("a pruning after the checkpoint removed %d (more %v), want 701: the one dated far ahead with the rest", n, more)
 	}
-	if kept, _ := e.readAll("", 100); len(kept) != 1 || !kept[0].Time.Equal(at(5000)) {
-		e.Errorf("after the pruning %d events are kept, want the one newer than the bound", len(kept))
+	if kept, _ := e.readAll("", 100); len(kept) != 1 || !kept[0].Time.Equal(at(1)) {
+		e.Errorf("after the pruning %d events are kept, want the one dated long ago, written after the checkpoint", len(kept))
 	}
 	_, err = e.ev.ReadEvents(e.ctx, start, nil, 10)
 	e.wantIs("ReadEvents from before the pruned events", err, tenant.ErrCursorExpired, fault.OutOfRange)
-	n, _, err = e.ev.PruneEvents(e.ctx, at(1000), 10)
+	n, _, err = e.ev.PruneEvents(e.ctx, at(2000), 10)
 	e.ok("PruneEvents again", err)
 	if n != 0 {
 		e.Errorf("a second pruning removed %d, want none", n)

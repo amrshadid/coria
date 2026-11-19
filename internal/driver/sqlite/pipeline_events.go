@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -48,9 +49,17 @@ const (
 	// mark of what was pruned when every event is gone. max(id) is the end
 	// of the table's key.
 	eventHighSQL = `SELECT max(coalesce((SELECT max(id) FROM events), 0), pruned_through), pruned_through FROM event_marks WHERE one = 1`
-	// pruneCandidatesSQL reads the oldest events, in order: the table's
-	// own key.
-	pruneCandidatesSQL = `SELECT id, at FROM events ORDER BY id LIMIT ?`
+	// lastCheckpointSQL reads the newest checkpoint, if any.
+	lastCheckpointSQL = `SELECT at, through FROM event_checkpoints ORDER BY at DESC LIMIT 1`
+	// insertCheckpointSQL records one.
+	insertCheckpointSQL = `INSERT INTO event_checkpoints (at, through) VALUES (?, ?)`
+	// pruneTargetSQL reads the newest event a checkpoint older than a time
+	// says was committed by then: what retention may remove.
+	pruneTargetSQL = `SELECT coalesce(max(through), -1) FROM event_checkpoints WHERE at < ?`
+	// spentCheckpointsSQL removes the checkpoints that can prune nothing
+	// more than what was pruned, keeping the newest of them, which still
+	// says where the feed stood.
+	spentCheckpointsSQL = `DELETE FROM event_checkpoints WHERE through <= ? AND at < (SELECT max(at) FROM event_checkpoints WHERE through <= ?)`
 	// pruneStepSQL reads the ids of the oldest events up to one, a step's
 	// worth: the table's own key.
 	pruneStepSQL = `SELECT id FROM events WHERE id <= ? ORDER BY id LIMIT ?`
@@ -386,46 +395,58 @@ func (t *Tenant) StatusSnapshot(ctx context.Context) (tenant.StatusSnapshot, err
 	return s, nil
 }
 
-// PruneEvents implements tenant.Events. The newest event old enough is
-// found among the oldest MaxPruneScan in a read, and then every event up to
-// it is removed in order, in transactions of at most PruneStep events, each
-// moving the mark with what it removes. An event at or below the one found
-// cannot be written later (ids only grow), and another pruning meanwhile
-// only leaves less to remove, so the read need not be in the transactions
-// that remove.
+// CheckpointEvents implements tenant.Events. It reads the newest event and
+// the newest checkpoint and writes one in the same transaction, so two at
+// once are put in order by the one writer.
+func (t *Tenant) CheckpointEvents(ctx context.Context, at time.Time) error {
+	if err := tenant.ValidateCheckpoint(at); err != nil {
+		return err
+	}
+	when := micros(at)
+	return t.write(ctx, "the event feed's checkpoint cannot be written", func(tx *sql.Tx, _ *tenantStatements) error {
+		var high, pruned int64
+		if err := tx.QueryRowContext(ctx, eventHighSQL).Scan(&high, &pruned); err != nil {
+			return err
+		}
+		var lastAt, lastThrough int64
+		err := tx.QueryRowContext(ctx, lastCheckpointSQL).Scan(&lastAt, &lastThrough)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return err
+		case when < lastAt:
+			return tenant.Precondition("a checkpoint of the event feed is earlier than the one before it; the clock that records them went back")
+		case high == lastThrough:
+			// Nothing was committed since: the last checkpoint already
+			// says as much, and an idle feed adds no rows.
+			return nil
+		case when == lastAt:
+			return tenant.Precondition("a checkpoint of the event feed has the time of the one before it")
+		}
+		_, err = tx.ExecContext(ctx, insertCheckpointSQL, when, high)
+		return err
+	})
+}
+
+// PruneEvents implements tenant.Events. The newest checkpoint older than
+// before says up to which event to remove; every event up to it is removed
+// in order, in transactions of at most PruneStep events, each moving the
+// mark with what it removes. An event at or below that one cannot be
+// written later (ids only grow), and another pruning meanwhile only leaves
+// less to remove, so the read need not be in the transactions that remove.
 func (t *Tenant) PruneEvents(ctx context.Context, before time.Time, limit int) (int, bool, error) {
 	if err := tenant.ValidatePrune(before, limit); err != nil {
 		return 0, false, err
 	}
-	cut := micros(before)
-	var target int64 = -1
-	var scanned int
-	var lastScanned int64
+	var target int64
 	err := t.readTx(ctx, "the events cannot be pruned", func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, pruneCandidatesSQL, tenant.MaxPruneScan)
-		type candidate struct{ id, at int64 }
-		oldest, err := collect(rows, err, func(row interface{ Scan(...any) error }) (candidate, error) {
-			var c candidate
-			err := row.Scan(&c.id, &c.at)
-			return c, err
-		})
-		if err != nil {
-			return err
-		}
-		target, scanned = -1, len(oldest)
-		for _, c := range oldest {
-			if c.at < cut {
-				target = c.id
-			}
-			lastScanned = c.id
-		}
-		return nil
+		return tx.QueryRowContext(ctx, pruneTargetSQL, micros(before)).Scan(&target)
 	})
 	if err != nil || target < 0 {
 		return 0, false, err
 	}
-	removed, rest := 0, true
-	for removed < limit && rest {
+	removed, more := 0, true
+	for removed < limit && more {
 		step := min(tenant.PruneStep, limit-removed)
 		var n int
 		err := t.write(ctx, "the events cannot be pruned", func(tx *sql.Tx, _ *tenantStatements) error {
@@ -436,38 +457,45 @@ func (t *Tenant) PruneEvents(ctx context.Context, before time.Time, limit int) (
 				err := row.Scan(&id)
 				return id, err
 			})
-			if err != nil || len(ids) == 0 {
+			if err != nil {
 				return err
 			}
-			through := ids[len(ids)-1]
-			if _, err := tx.ExecContext(ctx, pruneSQL, through); err != nil {
-				return err
+			through := target
+			if len(ids) > 0 {
+				through = ids[len(ids)-1]
+				if _, err := tx.ExecContext(ctx, pruneSQL, through); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx, `UPDATE event_marks SET pruned_through = max(pruned_through, ?) WHERE one = 1`, through); err != nil {
+					return err
+				}
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE event_marks SET pruned_through = max(pruned_through, ?) WHERE one = 1`, through); err != nil {
-				return err
+			if len(ids) < step {
+				// The last step: the checkpoints at or below what is now
+				// pruned can remove nothing more.
+				_, err = tx.ExecContext(ctx, spentCheckpointsSQL, through, through)
 			}
 			n = len(ids)
-			return nil
-		})
-		if err != nil {
-			return removed, false, err
-		}
-		removed += n
-		rest = n == step
-	}
-	// More are due when events up to the one found remain (the limit
-	// stopped the call), or when the scan was full and its last event was
-	// old enough, so others old enough may follow it.
-	more := scanned == tenant.MaxPruneScan && target == lastScanned
-	if removed == limit {
-		err := t.readTx(ctx, "the events cannot be pruned", func(tx *sql.Tx) error {
-			remains, err := exists(ctx, tx, `SELECT 1 FROM events WHERE id <= ? LIMIT 1`, target)
-			more = more || remains
 			return err
 		})
 		if err != nil {
 			return removed, false, err
 		}
+		removed += n
+		more = n == step
+	}
+	if removed < limit {
+		return removed, false, nil
+	}
+	// The limit stopped the call: more are due if events up to the target
+	// remain.
+	err = t.readTx(ctx, "the events cannot be pruned", func(tx *sql.Tx) error {
+		remains, err := exists(ctx, tx, `SELECT 1 FROM events WHERE id <= ? LIMIT 1`, target)
+		more = remains
+		return err
+	})
+	if err != nil {
+		return removed, false, err
 	}
 	return removed, more, nil
 }

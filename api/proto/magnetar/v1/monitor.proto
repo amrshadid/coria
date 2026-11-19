@@ -33,7 +33,9 @@ import "magnetar/v1/tenant.proto";
 // per file, and so does the decision on it. Events carry labels, ids and
 // counts; they never carry an attribute's value or a UID as such. A label is
 // as identifying as the naming rule that made it (NamingRule). Events are
-// kept for the setting events.retention, and then pruned: a period such as
+// kept for the setting events.retention, and then pruned, the period
+// measured by the server's clock from when an event was written, to within
+// an hour, never by the time the event carries: a period such as
 // "90d", from "1d" to "3650d"; an ordinary setting, whose installation value
 // the installation's admin sets and a tenant's admin may override for the
 // tenant; built-in default "90d".

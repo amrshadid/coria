@@ -86,6 +86,9 @@ func TestScaleEventFeed(t *testing.T) {
 			longest = max(longest, time.Since(t0))
 		}
 	}()
+	if err := p.CheckpointEvents(ctx, fixtureAt(999_999)); err != nil {
+		t.Fatal(err)
+	}
 	measure("prune 10000", func() error { _, _, err := p.PruneEvents(ctx, fixtureAt(1_000_000), 10000); return err })
 	measure("prune 10000 again", func() error { _, _, err := p.PruneEvents(ctx, fixtureAt(1_000_000), 10000); return err })
 	close(stop)

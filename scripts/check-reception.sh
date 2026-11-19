@@ -269,6 +269,13 @@ claimed=$("$SQLITE3" -batch -noheader "$db" "SELECT count(*) FROM instances WHER
 [ "$claimed" = 0 ] || fail "sqlite3: $claimed instances are left claimed"
 held=$("$SQLITE3" -batch -noheader "$db" "SELECT count(*) FROM quarantine WHERE state = 'held'")
 ok "sqlite3 on tenants/crash.db: 7 instances held, 7 distinct UIDs, none left claimed, $held files in quarantine"
+# The event feed's retention is measured by checkpoints the server records
+# with its own clock, at its start and every hour, of each tenant's feed.
+checkpoints=$("$SQLITE3" -batch -noheader "$db" "SELECT count(*) || ' ' || coalesce(max(through), -1) FROM event_checkpoints")
+case "$checkpoints" in
+'0 '* | *' -1') fail "sqlite3: the tenant's event feed has no checkpoint: '$checkpoints'" ;;
+esac
+ok "sqlite3 on tenants/crash.db: the event feed has checkpoints (count, newest event they cover): $checkpoints"
 check_storage crash "${sent_ct[@]}"
 
 kill -TERM "$server_pid"

@@ -656,6 +656,14 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A tenant's events were never pruned: the setting `events.retention` was
+  read by nothing. The server now records, at its start and every hour, a
+  checkpoint of each tenant's feed with its own clock (at this time the
+  newest event was this one), and prunes every event up to the newest
+  checkpoint older than the tenant's retention. An event's own time plays
+  no part, so an event dated far ahead or a run of wrong dates no longer
+  holds back or stalls the pruning; an idle feed adds no checkpoint.
+
 - A receiver's associations are now negotiated from its own SOP classes and
   transfer syntaxes from the first one: they are set before the port opens,
   where before they were set just after it, and a caller in between was

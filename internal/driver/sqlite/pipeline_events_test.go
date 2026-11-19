@@ -323,6 +323,9 @@ func TestPruneHoldsTheWriterBriefly(t *testing.T) {
 			batch = batch[:0]
 		}
 	}
+	if err := p.CheckpointEvents(ctx, fixtureAt(50000)); err != nil {
+		t.Fatal(err)
+	}
 	before := p.w.commits.Load()
 	n, more, err := p.PruneEvents(ctx, fixtureAt(100000), tenant.MaxPruneBatch)
 	if err != nil || n != 1200 || more {

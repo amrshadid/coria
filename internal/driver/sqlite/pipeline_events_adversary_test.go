@@ -103,6 +103,13 @@ func TestEventFeedUnderAdversaries(t *testing.T) {
 		k := 0
 		for !stop.Load() {
 			k++
+			// A checkpoint at each turn, its time only growing, so the
+			// pruning, which runs half as far back, always has one to
+			// measure by.
+			if err := stores[k%2].CheckpointEvents(ctx, fixtureAt(k)); err != nil {
+				t.Errorf("checkpoint: %v", err)
+				return
+			}
 			n, _, err := stores[k%2].PruneEvents(ctx, fixtureAt(k/2), 1+k%7)
 			if err != nil {
 				t.Errorf("prune: %v", err)

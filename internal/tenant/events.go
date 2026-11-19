@@ -120,10 +120,13 @@ import (
 // an empty one included. The type filter is not part of a cursor, so a
 // reader may resume with another filter.
 //
-// Retention follows the feed's order, not each event's own time (PruneEvents):
-// times come from callers' clocks, and one event dated far ahead must not keep
-// every event after it forever. The store knows what was pruned by a mark,
-// moved in the transaction that prunes.
+// Retention reads no event's own time: times come from callers' clocks, and
+// one event dated far ahead must not keep every event after it forever, nor
+// a run of wrong dates stall the pruning. The server records checkpoints
+// with its own clock ("at this time the newest event was this one",
+// CheckpointEvents), and pruning removes every event up to the newest
+// checkpoint older than the retention period (PruneEvents). The store knows
+// what was pruned by a mark, moved in the transaction that prunes.
 type Events interface {
 	// AppendEvents writes up to MaxEventBatch events the server reports,
 	// all or none, and returns how many were new. Each has a key the
@@ -152,18 +155,23 @@ type Events interface {
 	// is a change the counts do not hold, and one at or before it is one
 	// they do.
 	StatusSnapshot(ctx context.Context) (StatusSnapshot, error)
-	// PruneEvents removes old events in the feed's order and returns how
-	// many it removed and whether more are due. Among the oldest
-	// MaxPruneScan events it finds the newest, in the feed's order, whose
-	// time is before before, and removes every event up to and including
-	// it, at most limit (1 to MaxPruneBatch): an event dated later that sits
-	// before it in the feed goes with it. It works in transactions of at
+	// CheckpointEvents records that at the time at the newest event
+	// committed was the one it is now, for PruneEvents to measure an
+	// event's age by. A checkpoint is written only when events were
+	// committed since the last one, so an idle feed adds none. One earlier
+	// than the newest checkpoint is a precondition failure: the clock that
+	// records them went back, and an age measured by it would prune too
+	// soon.
+	CheckpointEvents(ctx context.Context, at time.Time) error
+	// PruneEvents removes every event up to the newest checkpoint whose
+	// time is before before, in the feed's order, at most limit (1 to
+	// MaxPruneBatch), and returns how many it removed and whether more are
+	// due. No event's own time is read. It works in transactions of at
 	// most PruneStep events, each moving the feed's mark of what was pruned
 	// with what it removes, so the writer is never held for long and a
 	// reader whose cursor it passed is answered ErrCursorExpired on its next
-	// read, never a gap. Only a run of more than MaxPruneScan events dated
-	// after before, at the head of the feed, keeps what follows them until
-	// they are old enough themselves.
+	// read, never a gap. A checkpoint that can prune nothing more is
+	// removed with the last events it covered.
 	PruneEvents(ctx context.Context, before time.Time, limit int) (removed int, more bool, err error)
 }
 
@@ -185,9 +193,10 @@ const (
 	// kept, a change made beside a pruning waited at most 68 ms, its own
 	// synced commit included (85 ms with steps of 500).
 	PruneStep = 200
-	// MaxPruneScan is how many of the oldest events PruneEvents looks
-	// through for the newest one old enough.
-	MaxPruneScan = 100000
+	// CheckpointInterval is how often the server records a checkpoint of
+	// each tenant's feed, and so how close to its retention period an
+	// event is pruned.
+	CheckpointInterval = time.Hour
 	// DefaultEventRetention is how long events are kept when the setting
 	// events.retention is not set, the contract's 90 days.
 	DefaultEventRetention = 90 * 24 * time.Hour

@@ -520,7 +520,7 @@ master_pg_id=$("$SQLITE3" "$data/master.db" "select id from tenants where name =
 want_master="api_keys audit grants schema_migrations settings tenants "
 # Both hold what a reception needs. A SQLite tenant also has the event feed's
 # tables, which a Postgres tenant gains when its driver does.
-want_lite="audit catalog_totals event_marks events instances quarantine quarantine_totals received_files receivers reception_associations reception_steps receptions scans schema_migrations sessions settings sqlite_sequence storages subjects tenant_secrets work "
+want_lite="audit catalog_totals event_checkpoints event_marks events instances quarantine quarantine_totals received_files receivers reception_associations reception_steps receptions scans schema_migrations sessions settings sqlite_sequence storages subjects tenant_secrets work "
 want_pg="audit catalog_totals instances quarantine quarantine_totals received_files receivers reception_associations receptions scans schema_migrations sessions settings storages subjects tenant_identity tenant_secrets work "
 if [ "$master_tables" = "$want_master" ] && [ "$lite_tables" = "$want_lite" ] && [ "$pg_tables" = "$want_pg" ] &&
 	[ "$pg_owner" = "mgt_proof " ] && [ -n "$pg_identity" ] && [ "$pg_identity" = "$master_pg_id" ]; then
