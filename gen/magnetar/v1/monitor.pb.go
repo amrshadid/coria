@@ -1651,19 +1651,30 @@ type WatchKeepAlive struct {
 	// them a second time. Empty with every tenant. Opaque; at most 1 KiB.
 	Cursor string `protobuf:"bytes,2,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	// With every tenant, the position the stream has read up to in each
-	// tenant it follows, by tenant name, those left out of the list of tenants
-	// for now included; an empty cursor for a tenant it follows from its
-	// first event and has not read yet. A tenant it was asked to start from
-	// now and could not read yet is left out: resumed without it, the tenant
-	// starts from its first event, which loses nothing. Empty with one tenant.
-	// Each cursor is opaque, at most 1 KiB; a keep-alive names at most 10000
-	// tenants, about 200 bytes each at most, within one message.
+	// tenant it follows (full) or in each tenant whose position changed since
+	// the keep-alive before (not full), by tenant name, those left out of the
+	// list of tenants for now included; an empty cursor for a tenant it
+	// follows from its first event and has not read yet. A client keeps a
+	// map: a full keep-alive replaces it, a later one is applied to it, and
+	// the map is what a new stream resumes from (WatchRequest.tenant_cursors).
+	// A stream never stops following a tenant, so no entry is ever taken out.
+	// A tenant it was asked to start from now and could not read yet is left
+	// out: resumed without it, the tenant starts from its first event, which
+	// loses nothing. Empty with one tenant. Each cursor is opaque, at most 1
+	// KiB; a keep-alive names at most 10000 tenants, about 200 bytes each at
+	// most, within one message.
 	TenantCursors map[string]string `protobuf:"bytes,3,rep,name=tenant_cursors,json=tenantCursors,proto3" json:"tenant_cursors,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// With every tenant, the tenants the stream is skipping for now because
-	// their database did not answer, in order of name. Empty with one tenant.
+	// their database did not answer, in order of name, all of them in every
+	// keep-alive. Empty with one tenant.
 	UnansweredTenants []string `protobuf:"bytes,4,rep,name=unanswered_tenants,json=unansweredTenants,proto3" json:"unanswered_tenants,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// With every tenant, set on the keep-alive that opens the stream, whose
+	// tenant_cursors name every tenant followed; a later keep-alive names
+	// only those whose position changed, so a mostly idle stream's keep-alive
+	// is a few bytes, not the whole map. Always false with one tenant.
+	Full          bool `protobuf:"varint,5,opt,name=full,proto3" json:"full,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WatchKeepAlive) Reset() {
@@ -1722,6 +1733,13 @@ func (x *WatchKeepAlive) GetUnansweredTenants() []string {
 		return x.UnansweredTenants
 	}
 	return nil
+}
+
+func (x *WatchKeepAlive) GetFull() bool {
+	if x != nil {
+		return x.Full
+	}
+	return false
 }
 
 // WatchRequest asks for a stream of events.
@@ -2028,12 +2046,13 @@ const file_magnetar_v1_monitor_proto_rawDesc = "" +
 	"\x0freceiver_health\x18\t \x01(\v2\".magnetar.v1.ReceiverHealthChangedH\x00R\x0ereceiverHealth\x12G\n" +
 	"\rstorage_space\x18\n" +
 	" \x01(\v2 .magnetar.v1.StorageSpaceChangedH\x00R\fstorageSpaceB\t\n" +
-	"\apayload\"\xa0\x02\n" +
+	"\apayload\"\xb4\x02\n" +
 	"\x0eWatchKeepAlive\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12U\n" +
 	"\x0etenant_cursors\x18\x03 \x03(\v2..magnetar.v1.WatchKeepAlive.TenantCursorsEntryR\rtenantCursors\x12-\n" +
-	"\x12unanswered_tenants\x18\x04 \x03(\tR\x11unansweredTenants\x1a@\n" +
+	"\x12unanswered_tenants\x18\x04 \x03(\tR\x11unansweredTenants\x12\x12\n" +
+	"\x04full\x18\x05 \x01(\bR\x04full\x1a@\n" +
 	"\x12TenantCursorsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xad\x02\n" +

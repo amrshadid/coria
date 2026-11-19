@@ -28,8 +28,10 @@
 //     database fails or does not answer in time is skipped, named in the
 //     keep-alives, and tried again after a wait; a tenant created joins from
 //     its first event; a tenant that leaves the list is paused and goes on
-//     from its cursor if it comes back; a keep-alive names every tenant
-//     followed, so a stream resumed from it loses no tenant's events.
+//     from its cursor if it comes back; the opening keep-alive names every
+//     tenant followed and a later one those whose cursor changed, so a
+//     client that keeps the map they make resumes a stream from it losing
+//     no tenant's events.
 //
 // The bounds the API contract states are kept here: a most of watches per
 // caller, per tenant and in all, refused beyond with ErrTooManyWatches.

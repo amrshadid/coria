@@ -140,12 +140,20 @@ type KeepAlive struct {
 	// Cursor is, on one tenant, where the stream has read up to, past the
 	// events its filter left out.
 	Cursor string
+	// Full is set, with every tenant, on the keep-alive that opens the
+	// stream, whose TenantCursors name every tenant it follows; a later
+	// keep-alive names only the tenants whose cursor changed since the
+	// keep-alive before it, which the caller applies to the map it keeps.
+	// A stream never stops following a tenant, so nothing is ever taken
+	// out of that map.
+	Full bool
 	// TenantCursors are, with every tenant, where the stream is in each
-	// tenant it follows, those not listed for now included; the empty
-	// cursor for one it follows from its first event and has not read
-	// yet. A tenant it was told to start from now and could not read yet
-	// is left out: resumed without it, it starts from its first event,
-	// which loses nothing. A copy, the caller's to keep.
+	// tenant it follows (Full) or in those whose place changed since the
+	// last keep-alive, those not listed for now included; the empty cursor
+	// for one it follows from its first event and has not read yet. A
+	// tenant it was told to start from now and could not read yet is left
+	// out: resumed without it, it starts from its first event, which loses
+	// nothing. A copy, the caller's to keep.
 	TenantCursors map[string]string
 	// Unanswered are, with every tenant, the tenants the stream is
 	// skipping for now because their last read failed or did not answer

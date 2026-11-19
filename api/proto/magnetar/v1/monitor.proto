@@ -566,18 +566,30 @@ message WatchKeepAlive {
   string cursor = 2;
 
   // With every tenant, the position the stream has read up to in each
-  // tenant it follows, by tenant name, those left out of the list of tenants
-  // for now included; an empty cursor for a tenant it follows from its
-  // first event and has not read yet. A tenant it was asked to start from
-  // now and could not read yet is left out: resumed without it, the tenant
-  // starts from its first event, which loses nothing. Empty with one tenant.
-  // Each cursor is opaque, at most 1 KiB; a keep-alive names at most 10000
-  // tenants, about 200 bytes each at most, within one message.
+  // tenant it follows (full) or in each tenant whose position changed since
+  // the keep-alive before (not full), by tenant name, those left out of the
+  // list of tenants for now included; an empty cursor for a tenant it
+  // follows from its first event and has not read yet. A client keeps a
+  // map: a full keep-alive replaces it, a later one is applied to it, and
+  // the map is what a new stream resumes from (WatchRequest.tenant_cursors).
+  // A stream never stops following a tenant, so no entry is ever taken out.
+  // A tenant it was asked to start from now and could not read yet is left
+  // out: resumed without it, the tenant starts from its first event, which
+  // loses nothing. Empty with one tenant. Each cursor is opaque, at most 1
+  // KiB; a keep-alive names at most 10000 tenants, about 200 bytes each at
+  // most, within one message.
   map<string, string> tenant_cursors = 3;
 
   // With every tenant, the tenants the stream is skipping for now because
-  // their database did not answer, in order of name. Empty with one tenant.
+  // their database did not answer, in order of name, all of them in every
+  // keep-alive. Empty with one tenant.
   repeated string unanswered_tenants = 4;
+
+  // With every tenant, set on the keep-alive that opens the stream, whose
+  // tenant_cursors name every tenant followed; a later keep-alive names
+  // only those whose position changed, so a mostly idle stream's keep-alive
+  // is a few bytes, not the whole map. Always false with one tenant.
+  bool full = 5;
 }
 
 // WatchRequest asks for a stream of events.

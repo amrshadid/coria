@@ -573,6 +573,12 @@ All notable changes to Magnetar are written here. The form is
 
 ### Changed
 
+- A keep-alive of the stream of every tenant names, after the first, only
+  the tenants whose position changed since the keep-alive before
+  (`WatchKeepAlive.full` marks the first, which names them all), so a
+  mostly idle stream at a thousand tenants sends a few bytes every 15
+  seconds instead of the whole map of positions.
+
 - A recorded file whose copy in the incoming area is gone is quarantined as
   `incoming_lost` and the rest of its study is archived; before, the whole
   reception failed. A scan's manifest is written from the catalog's list of

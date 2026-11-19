@@ -38,7 +38,12 @@ type follow struct {
 	cursor  string
 	fromNow bool // start from the tenant's newest event when first read
 	known   bool // the cursor is set ("" is its first event)
-	listed  bool // in the latest listing; a tenant not listed is paused, its cursor kept
+	// sent is the cursor the last keep-alive gave for the tenant, and
+	// sentKnown whether one gave any: a later keep-alive names the tenant
+	// only when its cursor differs.
+	sent      string
+	sentKnown bool
+	listed    bool // in the latest listing; a tenant not listed is paused, its cursor kept
 	// failing is set while the tenant is skipped after a read that failed
 	// or did not answer; it is tried again at retry, after backoff.
 	failing bool
@@ -88,7 +93,8 @@ func (b *Broadcaster) readTenant(ctx context.Context, ts Tenants, types []tenant
 // MaxStreamTenants.
 //
 // The first message is a keep-alive with the cursor of every tenant it
-// follows. A tenant named in Cursors starts from its cursor; one not named
+// follows (Full); a later one names the tenants whose cursor changed since
+// the one before. A tenant named in Cursors starts from its cursor; one not named
 // starts from now, or with Resume from its first event kept; a tenant
 // listed later starts from its first event. A tenant missing from a listing
 // is paused, not forgotten, and continues from its cursor when listed
@@ -97,8 +103,8 @@ func (b *Broadcaster) readTenant(ctx context.Context, ts Tenants, types []tenant
 // that the stream starts it from its first event. A tenant whose read fails
 // or does not answer within TenantReadTimeout is skipped while the others
 // go on, named in each keep-alive's Unanswered, and tried again after a
-// wait. A keep-alive with every cursor follows whenever nothing was sent for
-// the keep-alive interval.
+// wait. A keep-alive follows whenever nothing was sent for the keep-alive
+// interval.
 func (b *Broadcaster) WatchAll(ctx context.Context, w WatchAll, send Send) error {
 	if w.Tenants == nil || send == nil {
 		return fault.New(fault.Invalid, "a watch of every tenant has a list of tenants and a send function")
@@ -154,11 +160,16 @@ func (b *Broadcaster) WatchAll(ctx context.Context, w WatchAll, send Send) error
 		listed = true
 		return nil
 	}
-	keepAlive := func() Message {
-		k := &KeepAlive{Time: b.cfg.Clock.Now(), TenantCursors: make(map[string]string, len(follows))}
+	// keepAlive names every tenant followed when full, and otherwise
+	// those whose cursor changed since the last keep-alive: at a thousand
+	// tenants, a mostly idle stream's keep-alive is a few bytes rather
+	// than the whole map every interval.
+	keepAlive := func(full bool) Message {
+		k := &KeepAlive{Time: b.cfg.Clock.Now(), Full: full, TenantCursors: map[string]string{}}
 		for n, f := range follows {
-			if f.known {
+			if f.known && (full || !f.sentKnown || f.sent != f.cursor) {
 				k.TenantCursors[n] = f.cursor
+				f.sent, f.sentKnown = f.cursor, true
 			}
 			if f.failing && f.listed {
 				k.Unanswered = append(k.Unanswered, n)
@@ -193,7 +204,7 @@ func (b *Broadcaster) WatchAll(ctx context.Context, w WatchAll, send Send) error
 	if ctx.Err() != nil {
 		return ended(ctx)
 	}
-	if err := send(ctx, keepAlive()); err != nil {
+	if err := send(ctx, keepAlive(true)); err != nil {
 		return sendFailed(ctx, err)
 	}
 	lastSent := b.cfg.Clock.Now()
@@ -274,7 +285,7 @@ func (b *Broadcaster) WatchAll(ctx context.Context, w WatchAll, send Send) error
 	// interval, whether or not a read is under way.
 	keepAliveDue := func() error {
 		if now := b.cfg.Clock.Now(); now.Sub(lastSent) >= b.cfg.KeepAlive {
-			if err := send(ctx, keepAlive()); err != nil {
+			if err := send(ctx, keepAlive(false)); err != nil {
 				return sendFailed(ctx, err)
 			}
 			lastSent = now

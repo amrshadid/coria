@@ -225,3 +225,42 @@ func TestWatchAllRereadsATenantWokenDuringItsRead(t *testing.T) {
 		t.Errorf("tenant a gave %v, want [1 2] without waiting for a tick", ids)
 	}
 }
+
+// TestWatchAllKeepAliveNamesOnlyWhatChanged guards the size of a mostly idle
+// stream: its opening keep-alive is full and names every tenant; a later
+// one, with nothing read since, names none; one after a tenant's events
+// names that tenant alone, with its new cursor.
+func TestWatchAllKeepAliveNamesOnlyWhatChanged(t *testing.T) {
+	b, clock := newTest(t, Config{})
+	ts := &fakeTenants{}
+	feeds := map[string]*fakeFeed{}
+	for _, n := range []string{"a", "b", "c"} {
+		feeds[n] = &fakeFeed{}
+		feeds[n].write(1)
+		ts.set(n, feeds[n])
+	}
+	s := start(t, b, Watch{}, &WatchAll{Tenants: ts})
+	if k := s.keepAlive(t); !k.Full || len(k.TenantCursors) != 3 {
+		t.Fatalf("the opening keep-alive: full %v, %v; want full with the 3 tenants", k.Full, k.TenantCursors)
+	}
+	b.idle(t, "")
+	clock.Advance(DefaultKeepAlive)
+	tick(t, b, clock)
+	if k := s.keepAlive(t); k.Full || len(k.TenantCursors) != 0 {
+		t.Errorf("an idle stream's keep-alive: full %v, %v; want no tenant named", k.Full, k.TenantCursors)
+	}
+	feeds["b"].write(2)
+	b.Wake("b")
+	if ids := s.eventIDs(t, 2); fmt.Sprint(ids) != "[2 3]" {
+		t.Fatalf("b gave %v, want [2 3]", ids)
+	}
+	b.idle(t, "")
+	clock.Advance(DefaultKeepAlive)
+	tick(t, b, clock)
+	if k := s.keepAlive(t); k.Full || fmt.Sprint(k.TenantCursors) != "map[b:3]" {
+		t.Errorf("the keep-alive after b's events: full %v, %v; want b at 3 alone", k.Full, k.TenantCursors)
+	}
+	if fmt.Sprint(s.cursors) != "map[a:1 b:3 c:1]" {
+		t.Errorf("the cursors a client keeps are %v, want a and c at 1 and b at 3", s.cursors)
+	}
+}

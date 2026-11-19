@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"runtime"
 	"strconv"
@@ -40,6 +41,9 @@ type stream struct {
 	msgs chan Message
 	done chan error
 	stop context.CancelFunc
+	// cursors is every tenant's cursor as a client keeps it: a full
+	// keep-alive replaces it, a later one is applied to it.
+	cursors map[string]string
 }
 
 // start runs Watch (or WatchAll, when all is not nil) with a send that puts
@@ -158,7 +162,12 @@ func (s *stream) keepAlive(t testing.TB) *KeepAlive {
 	if m.KeepAlive == nil {
 		t.Fatalf("got %+v, want a keep-alive", m)
 	}
-	return m.KeepAlive
+	k := m.KeepAlive
+	if k.Full || s.cursors == nil {
+		s.cursors = map[string]string{}
+	}
+	maps.Copy(s.cursors, k.TenantCursors)
+	return k
 }
 
 // eventIDs reads n events and returns their ids, failing on a keep-alive.
@@ -735,8 +744,13 @@ func TestWatchAll(t *testing.T) {
 	ts.remove("a")
 	clock.Advance(DefaultKeepAlive)
 	tick(t, b, clock)
-	if k := s.keepAlive(t); fmt.Sprint(k.TenantCursors) != "map[a:6 b:5 c:2]" || len(k.Unanswered) != 0 {
-		t.Errorf("after a left the listing the keep-alive = %v (unanswered %v), want a still at 6, b at 5 and c at 2", k.TenantCursors, k.Unanswered)
+	// The keep-alive names only the tenants whose place changed since the
+	// last one; applied to what the client keeps, a is still at 6.
+	if k := s.keepAlive(t); k.Full || fmt.Sprint(k.TenantCursors) != "map[b:5 c:2]" || len(k.Unanswered) != 0 {
+		t.Errorf("after a left the listing the keep-alive = %v (full %v, unanswered %v), want b at 5 and c at 2 only", k.TenantCursors, k.Full, k.Unanswered)
+	}
+	if fmt.Sprint(s.cursors) != "map[a:6 b:5 c:2]" {
+		t.Errorf("the cursors a client keeps are %v, want a still at 6, b at 5 and c at 2", s.cursors)
 	}
 	created.pruned.Store(10)
 	created.write(10)
