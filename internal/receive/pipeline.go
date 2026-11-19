@@ -39,7 +39,7 @@ type Pipeline struct {
 	scanLocks  keyedMutex
 
 	// mu guards stopping and accepting, so Stop's wait cannot pass an
-	// Accept that has just begun.
+	// Accept, or a decision (enterDecision), that has just begun.
 	mu        sync.Mutex
 	stopping  bool
 	accepting sync.WaitGroup

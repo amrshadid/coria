@@ -1,12 +1,15 @@
 package receive
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/core/reception"
+	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/receive/incoming"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -202,5 +205,66 @@ func TestAHoldWhoseIDIsTakenTouchesNoBytes(t *testing.T) {
 	landedName := filepath.Join(e.cfg.IncomingRoot, "lab", filepath.FromSlash(q.Incoming)) + ".new"
 	if _, err := os.Stat(landedName); err != nil {
 		t.Fatalf("the file does not keep its landed name: %v", err)
+	}
+}
+
+// TestARestartWaitsForAReleaseInFlight guards a release that a restart of
+// the tenant's pipeline in the same process meets halfway: Stop waits for
+// the release, so the next pipeline's Recover never sees the file's landed
+// name with its record still held (it would give back the recorded name,
+// and the release then recorded would leave a recorded file no row keeps,
+// removed at the start after). The released file is checked again and
+// kept through the next start.
+func TestARestartWaitsForAReleaseInFlight(t *testing.T) {
+	var e *env
+	var armed, stopped atomic.Bool
+	stopDone := make(chan struct{})
+	e = newEnv(t, envOptions{hook: func(point string) {
+		if point != "release.before-store" || !armed.CompareAndSwap(true, false) {
+			return
+		}
+		old := e.p
+		go func() {
+			_ = old.Stop(context.Background())
+			stopped.Store(true)
+			close(stopDone)
+		}()
+		// Long enough for a Stop that does not wait to pass.
+		time.Sleep(200 * time.Millisecond)
+		if stopped.Load() {
+			t.Error("Stop returned while a release was in flight")
+		}
+	}})
+	e.sendBytes([]byte("not a DICOM file at all"), Received)
+	e.waitFor("the hold", time.Second, func() bool { return len(e.held()) == 1 && e.p.batch.idle() })
+	q := e.held()[0]
+	armed.Store(true)
+	out, err := e.p.Release(e.ctx, tenant.Release{ID: q.ID, Mode: tenant.ReleaseAsIs}, e.audit(), nil)
+	if err != nil || out.State != tenant.QuarantineReleased {
+		t.Fatalf("the release: %+v %v", out, err)
+	}
+	<-stopDone
+	// A release refused while stopping records nothing.
+	if _, err := e.p.Release(e.ctx, tenant.Release{ID: q.ID, Mode: tenant.ReleaseAsIs}, e.audit(), nil); fault.KindOf(err) != fault.Unavailable {
+		t.Errorf("a release on a stopped pipeline: %v, want unavailable", err)
+	}
+	for restart := 1; restart <= 2; restart++ {
+		e.start()
+		e.waitFor("the check of the released file", 5*time.Second, func() bool { return e.p.batch.idle() })
+		if ok, err := e.p.area.Exists(q.Incoming); err != nil || !ok {
+			t.Fatalf("after restart %d the released file is gone (%v)", restart, err)
+		}
+		if err := e.p.Stop(e.ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	held := 0
+	for _, r := range e.held() {
+		if r.ReleasedFrom == q.ID && r.State == tenant.QuarantineHeld && r.ContentKept {
+			held++
+		}
+	}
+	if held != 1 {
+		t.Fatalf("%d records hold the released file again, want 1", held)
 	}
 }

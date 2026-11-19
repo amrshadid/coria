@@ -732,6 +732,11 @@ All notable changes to Magnetar are written here. The form is
   and the start after deleted the file. At start such a file is now checked
   again as a release of its record, under a record of its own; and a hold
   the store skips because its id is taken leaves the file's bytes alone.
+- A release in flight while the tenant's reception pipeline was restarted
+  in the same process (its database reopened) could leave the released
+  file under a name nothing kept, removed at the start after. A release, a
+  retry, a rejection and a discard are now admitted as a received file is:
+  refused once the pipeline stops, and waited for by its stop.
 - A receiver added without a port had its bind address probed before the
   request was checked, so a host name was resolved and bound for a moment;
   the request is now checked first.

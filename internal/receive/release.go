@@ -47,6 +47,11 @@ import (
 //     and 3 leaves its bytes under the landed name with no record keeping
 //     them, which a restart checks the same way.
 func (p *Pipeline) Release(ctx context.Context, rel tenant.Release, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error) {
+	leave, err := p.enterDecision()
+	if err != nil {
+		return tenant.QuarantinedFile{}, err
+	}
+	defer leave()
 	if rel.ReceptionID == "" {
 		rel.ReceptionID = newID()
 	}
@@ -118,6 +123,11 @@ func (p *Pipeline) afterRelease(ctx context.Context, before, after tenant.Quaran
 // removes its bytes. A crash between the two leaves them under their
 // recorded name with no record keeping them, which a restart removes.
 func (p *Pipeline) Reject(ctx context.Context, id, reason string, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error) {
+	leave, err := p.enterDecision()
+	if err != nil {
+		return tenant.QuarantinedFile{}, err
+	}
+	defer leave()
 	before, err := p.store.QuarantinedFile(ctx, id)
 	if err != nil {
 		return tenant.QuarantinedFile{}, err
@@ -128,14 +138,25 @@ func (p *Pipeline) Reject(ctx context.Context, id, reason string, audit master.A
 	}
 	p.wake()
 	if before.ContentKept && before.State == tenant.QuarantineHeld {
-		return out, p.RemoveRejected(before.Incoming)
+		return out, p.removeRejected(before.Incoming)
 	}
 	return out, nil
 }
 
 // RemoveRejected removes the bytes of a held file at path in the incoming
 // area, after the store recorded its rejection.
+// A pipeline stopping removes nothing: Recover at the next start does.
 func (p *Pipeline) RemoveRejected(path string) error {
+	leave, err := p.enterDecision()
+	if err != nil {
+		return err
+	}
+	defer leave()
+	return p.removeRejected(path)
+}
+
+// removeRejected removes a rejected file's bytes, inside a decision.
+func (p *Pipeline) removeRejected(path string) error {
 	p.at("reject.before-remove")
 	return p.area.Remove(path)
 }
@@ -146,6 +167,11 @@ func (p *Pipeline) RemoveRejected(path string) error {
 // Start's repair queues.
 // newReceptionID, when not empty, is the id of the new reception.
 func (p *Pipeline) Retry(ctx context.Context, id, newReceptionID, receiver string, audit master.AuditEntry, guard tenant.Guard) (failed, retry tenant.Reception, err error) {
+	leave, err := p.enterDecision()
+	if err != nil {
+		return failed, retry, err
+	}
+	defer leave()
 	if newReceptionID == "" {
 		newReceptionID = newID()
 	}
@@ -162,16 +188,32 @@ func (p *Pipeline) Retry(ctx context.Context, id, newReceptionID, receiver strin
 // lists. A crash midway leaves recorded names no row keeps, which a restart
 // removes.
 func (p *Pipeline) Discard(ctx context.Context, id, reason string, audit master.AuditEntry, guard tenant.Guard) (tenant.Reception, error) {
+	leave, err := p.enterDecision()
+	if err != nil {
+		return tenant.Reception{}, err
+	}
+	defer leave()
 	r, err := p.store.DiscardReception(ctx, id, reason, p.now(), audit, guard)
 	if err != nil {
 		return r, err
 	}
-	return r, p.RemoveDiscarded(ctx, id)
+	return r, p.removeDiscarded(ctx, id)
 }
 
 // RemoveDiscarded removes the bytes the store lists for a reception whose
 // discard it recorded (tenant.Pipeline.DiscardedFiles).
+// A pipeline stopping removes nothing: Recover at the next start does.
 func (p *Pipeline) RemoveDiscarded(ctx context.Context, receptionID string) error {
+	leave, err := p.enterDecision()
+	if err != nil {
+		return err
+	}
+	defer leave()
+	return p.removeDiscarded(ctx, receptionID)
+}
+
+// removeDiscarded removes a discarded reception's bytes, inside a decision.
+func (p *Pipeline) removeDiscarded(ctx context.Context, receptionID string) error {
 	page := master.Page{Limit: master.MaxPageLimit}
 	for {
 		files, next, err := p.store.DiscardedFiles(ctx, receptionID, page)
@@ -189,6 +231,28 @@ func (p *Pipeline) RemoveDiscarded(ctx context.Context, receptionID string) erro
 		}
 		page.Cursor = next
 	}
+}
+
+// errStopping answers a decision made while the pipeline stops or has not
+// started: nothing is recorded, and the person tries again once the next
+// pipeline runs.
+var errStopping = fault.New(fault.Unavailable, "the tenant's reception pipeline is stopping or not started; try again shortly")
+
+// enterDecision admits a decision as Accept admits a file: refused once the
+// pipeline stops, and counted until it returns, so Stop waits for it before
+// it closes the incoming area and before another pipeline's Recover can
+// run. Without it a release in flight across a restart could give the file
+// its landed name, see the next pipeline's Recover give back the recorded
+// name the held record named, then record the release: a recorded file no
+// row keeps, which the start after removes.
+func (p *Pipeline) enterDecision() (func(), error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stopping || !p.running.Load() {
+		return nil, errStopping
+	}
+	p.accepting.Add(1)
+	return p.accepting.Done, nil
 }
 
 // pathID returns the id of an incoming path, empty for one not of the form.
