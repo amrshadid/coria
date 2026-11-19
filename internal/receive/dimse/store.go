@@ -3,7 +3,6 @@ package dimse
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 
@@ -65,7 +64,9 @@ func (h *handler) HandleCStoreStream(ctx context.Context, req *network.CStoreReq
 		// resources instead, which tells the sender to keep its copy, and
 		// nothing was answered success.
 		if p := recover(); p != nil {
-			l.log.Error("receiver: a store panicked; it is answered out of resources", "panic", fmt.Sprint(p))
+			// The phrase only: a panic's value may quote what the file held,
+			// a UID or a name, which no log line carries.
+			l.log.Error("receiver: a store panicked; it is answered out of resources")
 			resp, err = answer(network.StatusOutOfResources), nil
 		}
 	}()
