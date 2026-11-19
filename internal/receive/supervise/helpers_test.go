@@ -142,12 +142,30 @@ type pipeline struct {
 	store   tenant.Pipeline
 	stopped atomic.Bool
 	gates   supervise.Gates
+	// duringStop, when set, runs inside Stop, before it returns.
+	duringStop func()
 }
 
 func (p *pipeline) Accept(context.Context, receive.Arrival) receive.Outcome {
 	return receive.Outcome{Status: receive.Received}
 }
-func (p *pipeline) Stop(context.Context) error { p.stopped.Store(true); return nil }
+func (p *pipeline) Stop(context.Context) error {
+	if p.duringStop != nil {
+		p.duringStop()
+	}
+	p.stopped.Store(true)
+	return nil
+}
+
+// The fake takes decisions as the reception pipeline does, doing nothing.
+func (p *pipeline) Release(context.Context, tenant.Release, master.AuditEntry, tenant.Guard) (tenant.QuarantinedFile, error) {
+	return tenant.QuarantinedFile{}, nil
+}
+func (p *pipeline) Retry(context.Context, string, string, string, master.AuditEntry, tenant.Guard) (tenant.Reception, tenant.Reception, error) {
+	return tenant.Reception{}, tenant.Reception{}, nil
+}
+func (p *pipeline) RemoveRejected(string) error                   { return nil }
+func (p *pipeline) RemoveDiscarded(context.Context, string) error { return nil }
 
 // rig is a supervisor over one tenant with fake listeners and pipelines.
 type rig struct {

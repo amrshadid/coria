@@ -31,8 +31,10 @@ var _ Decisions = (*receive.Pipeline)(nil)
 
 // Decisions returns the running pipeline of the tenant named name, for a
 // decision, and whether one runs. It reads memory only: the pipeline the
-// tenant's worker last published, which may be stopping; a decision it
-// takes then is finished by the next pipeline's start (receive.Recover).
+// tenant's worker published, which it withdraws before it stops one and
+// replaces as soon as the next has started. A removal handed over in the
+// moment a pipeline starts is refused, and done by the start after
+// (receive.Recover).
 func (s *Supervisor) Decisions(name string) (Decisions, bool) {
 	s.mu.Lock()
 	t := s.tenants[name]

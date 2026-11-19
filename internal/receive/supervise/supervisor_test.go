@@ -2,6 +2,7 @@ package supervise_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -234,6 +235,41 @@ func TestAReopenedDatabaseRestartsThePipelineNotTheListeners(t *testing.T) {
 	}
 	if r.pipelines[1].store != r.ts.pipe() {
 		t.Fatal("the new pipeline does not run over the reopened database")
+	}
+}
+
+// TestADecisionNeverReachesAStoppingPipeline guards the pipeline handed
+// to a person's decision across a restart of the tenant's pipeline: while
+// the old one stops, none is handed out (a release is then refused, never
+// taken by a pipeline whose successor's start may already have read the
+// incoming area), and the new one is handed out once it has started.
+func TestADecisionNeverReachesAStoppingPipeline(t *testing.T) {
+	r := newRig(t)
+	r.add("ct", 11112, true)
+	r.start()
+	r.waitFor("ct up", r.isUp("ct"))
+	r.waitFor("a pipeline handed out", func() bool { _, ok := r.sup.Decisions("lab"); return ok })
+	r.mu.Lock()
+	first := r.pipelines[0]
+	r.mu.Unlock()
+	var handedWhileStopping atomic.Bool
+	first.duringStop = func() {
+		if d, ok := r.sup.Decisions("lab"); ok && d == supervise.Decisions(first) {
+			handedWhileStopping.Store(true)
+		}
+	}
+	r.ts.reopen(t)
+	r.waitFor("the new pipeline handed out", func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if len(r.pipelines) != 2 {
+			return false
+		}
+		d, ok := r.sup.Decisions("lab")
+		return ok && d == supervise.Decisions(r.pipelines[1])
+	})
+	if handedWhileStopping.Load() {
+		t.Fatal("a pipeline that was stopping was handed to a decision")
 	}
 }
 

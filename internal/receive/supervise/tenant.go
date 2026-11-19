@@ -198,6 +198,10 @@ func (t *tenantRun) restartPipeline(st tenant.Store, p tenant.Pipeline) {
 	}
 	t.pipeline = pl
 	t.sink.set(pl)
+	// Decisions reach the new pipeline at once, not after the rest of the
+	// reconcile: a removal handed to a pipeline that has stopped is put off
+	// to the next start.
+	t.publish()
 }
 
 // stopPipeline stops the running pipeline, if any, within StopTimeout.
@@ -206,12 +210,17 @@ func (t *tenantRun) stopPipeline() {
 		return
 	}
 	t.sink.set(nil)
+	// No decision is handed to a pipeline that is stopping: from here
+	// Decisions finds none, and a release or a retry is refused until the
+	// next pipeline is published.
+	stopping := t.pipeline
+	t.pipeline = nil
+	t.publish()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.sup.ctx), t.sup.cfg.StopTimeout)
 	defer cancel()
-	if err := t.pipeline.Stop(ctx); err != nil {
+	if err := stopping.Stop(ctx); err != nil {
 		t.log.Warn("receivers: the tenant's reception pipeline did not stop cleanly", "reason", fault.Message(err))
 	}
-	t.pipeline = nil
 }
 
 // shutdown stops every listener at once, each finishing its stores in
