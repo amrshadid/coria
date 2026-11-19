@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -84,7 +85,7 @@ func enqueueInTx(ctx context.Context, tx pgx.Tx, w tenant.Work, now time.Time) (
 		out, err := scanWork(tx.QueryRow(ctx, `INSERT INTO work (id, kind, subject, reception_id, unique_key, state, due, attempt,
 			max_attempts, owner, last_error, created, updated) VALUES ($1, $2, $3, $4, $5, 'queued', $6, 0, $7, '', '', $8, $8)
 			ON CONFLICT DO NOTHING RETURNING `+workColumns,
-			w.ID, w.Kind, w.Subject, w.ReceptionID, nullText(w.UniqueKey), micros(w.Due), attempts, micros(now)))
+			w.ID, w.Kind, w.Subject, w.ReceptionID, sqlkit.NullText(w.UniqueKey), micros(w.Due), attempts, micros(now)))
 		if err == nil {
 			return out, true, nil
 		}

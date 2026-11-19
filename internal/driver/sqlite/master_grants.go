@@ -44,7 +44,7 @@ func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.Audi
 		}
 		previous = master.Role(old)
 		if _, err := tx.StmtContext(ctx, s.upsertGrant).ExecContext(ctx,
-			g.KeyID, g.Scope.TenantID, nullText(g.Scope.TenantID), string(g.Role)); err != nil {
+			g.KeyID, g.Scope.TenantID, sqlkit.NullText(g.Scope.TenantID), string(g.Role)); err != nil {
 			return err
 		}
 		return insertAudit(ctx, tx, s, audit.WithRoleChange(previous, g.Role))

@@ -37,7 +37,7 @@ func scanQuarantined(row scanner) (tenant.QuarantinedFile, error) {
 	q.SHA256, q.KeptSHA256 = sqlkit.ToSHA256(sum), sqlkit.ToSHA256(kept)
 	q.Quarantined, q.Decided = at.UTC(), fromNullMicros(decided)
 	var err error
-	q.Details, err = decodeDetails(details)
+	q.Details, err = sqlkit.DecodeDetails(details)
 	return q, err
 }
 
@@ -131,7 +131,7 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 	contentKept := make([]bool, 0, n)
 	ats := make([]time.Time, 0, n)
 	for _, q := range batch {
-		d, err := encodeDetails(q.Details)
+		d, err := sqlkit.EncodeDetails(q.Details)
 		if err != nil {
 			return 0, err
 		}

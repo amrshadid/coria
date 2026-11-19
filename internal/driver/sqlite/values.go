@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"database/sql"
-	"encoding/json"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -35,42 +34,6 @@ func fromNullMicros(v sql.NullInt64) time.Time {
 		return time.Time{}
 	}
 	return fromMicros(v.Int64)
-}
-
-// nullText returns NULL for the empty string, for the grants' tenant_id.
-func nullText(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-// encodeDetails writes an audit entry's details as a JSON object. JSON is
-// stored and returned whole and never searched inside, so it is the same in
-// every SQL database, with no dialect's JSON functions to keep correct.
-// encoding/json sorts the keys, so an entry's text does not depend on the
-// map's order.
-func encodeDetails(d map[string]string) (string, error) {
-	if len(d) == 0 {
-		return "{}", nil
-	}
-	b, err := json.Marshal(d)
-	if err != nil {
-		return "", fault.Wrap(fault.Internal, err, "the audit entry's details cannot be written")
-	}
-	return string(b), nil
-}
-
-// decodeDetails reads what encodeDetails wrote; no details is nil.
-func decodeDetails(s string) (map[string]string, error) {
-	var d map[string]string
-	if err := json.Unmarshal([]byte(s), &d); err != nil {
-		return nil, fault.Wrap(fault.Internal, err, "an audit entry's details cannot be read")
-	}
-	if len(d) == 0 {
-		return nil, nil
-	}
-	return d, nil
 }
 
 // oneRow returns NotFound with what unless the statement changed a row.

@@ -84,3 +84,60 @@ func TestToSHA256(t *testing.T) {
 		t.Error("a short or NULL column is not none")
 	}
 }
+
+// TestDetails guards the one encoding of an audit entry's details both
+// drivers store: keys sorted whatever the map's order, no details written
+// as {} and read back as nil, and a column that is not JSON an Internal
+// fault, not a silent empty map.
+func TestDetails(t *testing.T) {
+	text, err := EncodeDetails(map[string]string{"b": "2", "a": "1"})
+	if err != nil || text != `{"a":"1","b":"2"}` {
+		t.Fatalf("encoded %q, %v", text, err)
+	}
+	back, err := DecodeDetails(text)
+	if err != nil || !reflect.DeepEqual(back, map[string]string{"a": "1", "b": "2"}) {
+		t.Fatalf("decoded %v, %v", back, err)
+	}
+	if text, _ := EncodeDetails(nil); text != "{}" {
+		t.Fatalf("no details encoded as %q", text)
+	}
+	if back, err := DecodeDetails("{}"); err != nil || back != nil {
+		t.Fatalf("{} decoded as %v, %v", back, err)
+	}
+	if _, err := DecodeDetails("not json"); fault.KindOf(err) != fault.Internal {
+		t.Fatalf("a broken column: %v", err)
+	}
+}
+
+// TestNullText guards that no value is NULL and any other is itself.
+func TestNullText(t *testing.T) {
+	if NullText("") != nil || NullText("t1") != "t1" {
+		t.Fatal("NullText")
+	}
+}
+
+// TestDistinctTypes guards that a type named twice in a read of events is
+// read once, in the order it was first named.
+func TestDistinctTypes(t *testing.T) {
+	step, held, health := tenant.EventReceptionStep, tenant.EventFileQuarantined, tenant.EventReceiverHealth
+	got := DistinctTypes([]tenant.EventType{held, step, held, health, step})
+	if !reflect.DeepEqual(got, []tenant.EventType{held, step, health}) {
+		t.Fatalf("got %v", got)
+	}
+	if DistinctTypes(nil) != nil {
+		t.Fatal("no types gave some")
+	}
+}
+
+// TestReleaseEntry guards a release's audit entry: it names the reception
+// the file joined, and is the entry as given when it joined none.
+func TestReleaseEntry(t *testing.T) {
+	a := master.AuditEntry{Details: map[string]string{"reason": "read again"}}
+	same, err := ReleaseEntry(a, "")
+	if err != nil || !reflect.DeepEqual(same, a) {
+		t.Fatalf("joined none: %+v, %v", same, err)
+	}
+	if e, _ := ReleaseEntry(a, "R1"); e.Details[tenant.DetailReleaseReception] != "R1" || e.Details["reason"] != "read again" {
+		t.Fatalf("joined R1: %+v", e.Details)
+	}
+}

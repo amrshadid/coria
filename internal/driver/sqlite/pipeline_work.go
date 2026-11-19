@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -70,7 +71,7 @@ func enqueueInTx(ctx context.Context, tx *sql.Tx, w tenant.Work, now time.Time) 
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO work (id, kind, subject, reception_id, unique_key, state, due, attempt, max_attempts,
 		owner, last_error, created, updated) VALUES (?, ?, ?, ?, ?, 'queued', ?, 0, ?, '', '', ?, ?)`,
-		w.ID, w.Kind, w.Subject, w.ReceptionID, nullText(w.UniqueKey), micros(w.Due), attempts, micros(now), micros(now))
+		w.ID, w.Kind, w.Subject, w.ReceptionID, sqlkit.NullText(w.UniqueKey), micros(w.Due), attempts, micros(now), micros(now))
 	if isUniqueViolation(err) {
 		return tenant.Work{}, false, fault.Wrap(fault.Conflict, err, "a unit of work with this id exists")
 	}

@@ -51,7 +51,7 @@ func (m *Master) SetGrant(ctx context.Context, g master.Grant, audit master.Audi
 			INSERT INTO grants (key_id, scope, tenant_id, role) VALUES ($1, $2, $3, $4)
 			ON CONFLICT (key_id, scope) DO UPDATE SET role = EXCLUDED.role
 			RETURNING (SELECT role FROM previous)`,
-			g.KeyID, g.Scope.TenantID, nullText(g.Scope.TenantID), string(g.Role)).Scan(&old)
+			g.KeyID, g.Scope.TenantID, sqlkit.NullText(g.Scope.TenantID), string(g.Role)).Scan(&old)
 		if isForeignKeyViolation(err) {
 			// The tenant was removed between the check and the insert.
 			return fault.Wrap(fault.NotFound, m.red.scrub(err), "no such tenant")

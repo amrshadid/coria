@@ -43,7 +43,7 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		case tenant.QuarantineRejected:
 			return tenant.Precondition("the file was rejected")
 		case tenant.QuarantineReleased:
-			a, err := releaseEntry(audit, q.ReleaseReception)
+			a, err := sqlkit.ReleaseEntry(audit, q.ReleaseReception)
 			if err != nil {
 				return err
 			}
@@ -142,7 +142,7 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		if err := writeEvents(ctx, tx, append(events, decided)...); err != nil {
 			return err
 		}
-		a, err := releaseEntry(audit, joined)
+		a, err := sqlkit.ReleaseEntry(audit, joined)
 		if err != nil {
 			return err
 		}
@@ -152,15 +152,6 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		return tenant.QuarantinedFile{}, err
 	}
 	return out, nil
-}
-
-// releaseEntry returns a release's audit entry with the reception the file
-// joined, when it joined one.
-func releaseEntry(audit master.AuditEntry, joined string) (master.AuditEntry, error) {
-	if joined == "" {
-		return audit, nil
-	}
-	return sqlkit.AddDetails(audit, tenant.DetailReleaseReception, joined)
 }
 
 // joinReception finds or opens the reception a released file joins

@@ -263,22 +263,6 @@ func eventsQuery(types []tenant.EventType, after int64, limit int) (string, []an
 	return strings.Join(parts, " UNION ALL ") + " ORDER BY id LIMIT $2", args
 }
 
-// distinctTypes returns types without repeats, in their first order: a
-// type named twice would be read twice.
-func distinctTypes(types []tenant.EventType) []tenant.EventType {
-	var out []tenant.EventType
-	for _, typ := range types {
-		seen := false
-		for _, o := range out {
-			seen = seen || o == typ
-		}
-		if !seen {
-			out = append(out, typ)
-		}
-	}
-	return out
-}
-
 // ReadEvents implements tenant.Events.
 func (t *Tenant) ReadEvents(ctx context.Context, after string, types []tenant.EventType, limit int) (tenant.EventPage, error) {
 	if err := tenant.ValidateEventRead(types, limit); err != nil {
@@ -304,7 +288,7 @@ func (t *Tenant) ReadEvents(ctx context.Context, after string, types []tenant.Ev
 			// at and before the cursor are not those the reader saw.
 			return tenant.CursorExpired()
 		}
-		query, args := eventsQuery(distinctTypes(types), from, limit)
+		query, args := eventsQuery(sqlkit.DistinctTypes(types), from, limit)
 		rows, err := tx.Query(ctx, query, args...)
 		var ids []int64
 		unreadable := 0

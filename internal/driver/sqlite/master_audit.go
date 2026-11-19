@@ -28,7 +28,7 @@ func insertAudit(ctx context.Context, tx *sql.Tx, s *statements, e master.AuditE
 // The audit table's only unique key is the id, so a unique violation here is
 // a duplicate id: master.ErrDuplicateAuditID, never a Conflict.
 func execAudit(ctx context.Context, stmt *sql.Stmt, e master.AuditEntry) error {
-	details, err := encodeDetails(e.Details)
+	details, err := sqlkit.EncodeDetails(e.Details)
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func scanAudit(row interface{ Scan(...any) error }) (master.AuditEntry, error) {
 	e.Time = fromMicros(at)
 	e.Outcome = master.Outcome(outcome)
 	var err error
-	e.Details, err = decodeDetails(details)
+	e.Details, err = sqlkit.DecodeDetails(details)
 	return e, err
 }
 

@@ -41,14 +41,6 @@ func fromNullMicros(t *time.Time) time.Time {
 	return t.UTC()
 }
 
-// nullText returns NULL for the empty string, for the grants' tenant_id.
-func nullText(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
 // notFoundIn turns pgx.ErrNoRows into NotFound with what and passes any
 // other error through for write to classify.
 func notFoundIn(err error, what string) error {

@@ -33,7 +33,7 @@ func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFil
 	q.SHA256, q.KeptSHA256 = sqlkit.ToSHA256(sum), sqlkit.ToSHA256(kept)
 	q.Quarantined, q.Decided = fromMicros(at), fromNullMicros(decided)
 	var err error
-	q.Details, err = decodeDetails(details)
+	q.Details, err = sqlkit.DecodeDetails(details)
 	return q, err
 }
 
@@ -114,7 +114,7 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 				}
 			}
 			q.State = tenant.QuarantineHeld
-			details, err := encodeDetails(q.Details)
+			details, err := sqlkit.EncodeDetails(q.Details)
 			if err != nil {
 				return err
 			}
