@@ -536,46 +536,66 @@ def strangers(p, port, closed_port):
              "echoscu as STORESCU to it: exit %d" % code, [out[-300:]])
 
 
+def wait_receptions_ended(p, tenant, study, timeout=120):
+    """Waits until the study has a reception and every one has ended."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        rows = p.query(tenant, "SELECT ended FROM receptions WHERE study_uid = ?", study)
+        if rows and all(x["ended"] for x in rows):
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def crashes(p, port, rounds, tenant="crash", whens=("receiving", "quiet", "archiving")):
     """The server killed with signal 9 during reception, during the quiet
-    period and during archive, again and again: after each restart the
-    study is sent again, and every file acknowledged before the kill is
-    archived or in quarantine, none lost and none twice."""
+    period and during archive, again and again. After each restart, before
+    anything is sent again, every file acknowledged before the kill must be
+    archived (or in quarantine) from that first delivery alone: that is what
+    shows nothing acknowledged was lost. Only then are the files not
+    acknowledged sent, and the study must end with each instance archived
+    once, each read back from where it is kept."""
     bad, kills = [], 0
     for r in range(rounds):
         for when in whens:
             study, files = study_copy(p, CT, 7)
-            acked = []
+            uid = [str(dcmread(f, stop_before_pixels=True).SOPInstanceUID) for f in files]
             if when == "receiving":
                 def kill_after_three(i):
-                    acked.append(i)
                     if i == 2:
                         p.kill()
-                p.pynetdicom_store(port, files, on_each=kill_after_three)
+                statuses = p.pynetdicom_store(port, files, on_each=kill_after_three)
             else:
-                acked = [i for i, s in enumerate(p.pynetdicom_store(port, files)) if s == 0]
+                statuses = p.pynetdicom_store(port, files)
                 if when == "archiving":
                     deadline = time.time() + 30
                     while time.time() < deadline and not p.query(tenant, "SELECT 1 FROM receptions WHERE study_uid = ? AND state IN "
                                                                  "('identified', 'archived', 'verified')", study):
                         time.sleep(0.05)
-                p.kill()
+                    if time.time() >= deadline:
+                        bad.append("round %d: archiving was never reached before the kill" % (r + 1))
+            acked = [i for i, s in enumerate(statuses) if s == 0]
+            p.kill()
             kills += 1
             p.serve()
             wait_up(p, tenant, "scanner")
-            again = p.pynetdicom_store(port, files)
-            deadline = time.time() + 120
-            while time.time() < deadline:
-                rows = p.query(tenant, "SELECT ended FROM receptions WHERE study_uid = ?", study)
-                if rows and all(x["ended"] for x in rows):
-                    break
-                time.sleep(0.2)
+            if not acked:
+                bad.append("round %d, killed while %s: no file was acknowledged before the kill, so nothing was tested" % (r + 1, when))
+                continue
+            # The acknowledged files, from their first delivery only.
+            wait_receptions_ended(p, tenant, study)
+            have = {x["sop_instance_uid"] for x in p.query(tenant, "SELECT sop_instance_uid FROM instances WHERE state = 'held' AND study_uid = ?", study)}
+            quarantined = {x["sop_instance_uid"] for x in p.query(tenant, "SELECT sop_instance_uid FROM quarantine WHERE study_uid = ?", study)}
+            lost = [uid[i] for i in acked if uid[i] not in have and uid[i] not in quarantined]
+            # Then the rest, as a sender would send what it was not told was
+            # received.
+            rest = [files[i] for i in range(len(files)) if i not in acked]
+            again = p.pynetdicom_store(port, rest) if rest else []
+            if rest:
+                wait_receptions_ended(p, tenant, study)
             held = p.query(tenant, "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
             claimed = p.query(tenant, "SELECT count(*) AS n FROM instances WHERE state <> 'held' AND study_uid = ?", study)[0]["n"]
-            uids = [str(dcmread(files[i], stop_before_pixels=True).SOPInstanceUID) for i in acked]
-            have = {x["sop_instance_uid"] for x in held}
-            quarantined = {x["sop_instance_uid"] for x in p.query(tenant, "SELECT sop_instance_uid FROM quarantine WHERE study_uid = ?", study)}
-            lost = [u for u in uids if u not in have and u not in quarantined]
+            distinct = {x["sop_instance_uid"] for x in held}
             unreadable = []
             for x in held:
                 try:
@@ -583,16 +603,17 @@ def crashes(p, port, rounds, tenant="crash", whens=("receiving", "quiet", "archi
                         unreadable.append(x["storage_key"])
                 except Exception as e:  # noqa: BLE001 - any failure to read back is the finding
                     unreadable.append("%s: %s" % (x["storage_key"], e))
-            if len(held) != 7 or len(have) != 7 or claimed or lost or unreadable or again != [0] * 7:
-                bad.append("round %d, killed while %s: %d held (%d distinct), %d claimed, %d acknowledged lost, %d not read back, resend %s"
-                           % (r + 1, when, len(held), len(have), claimed, len(lost), len(unreadable), again))
+            if lost or len(held) != 7 or len(distinct) != 7 or claimed or unreadable or again != [0] * len(rest):
+                bad.append("round %d, killed while %s: %d of %d acknowledged lost before any resend; then %d held (%d distinct), "
+                           "%d claimed, %d not read back, the rest's statuses %s"
+                           % (r + 1, when, len(lost), len(acked), len(held), len(distinct), claimed, len(unreadable), again))
     return bad, kills
 
 
 def crash_proof(p, port, rounds):
     bad, kills = crashes(p, port, rounds)
     p.result("6.1 killed with signal 9 while receiving, in the quiet period and while archiving: nothing lost, nothing twice",
-             not bad, "%d kills and restarts, each study of 7 files sent again after" % kills, bad)
+             not bad, "%d kills and restarts; what was acknowledged checked before anything was sent again" % kills, bad)
 
 
 def _bytes_file(b):
@@ -671,6 +692,56 @@ def on_postgres(p, port):
     bad, kills = crashes(p, port, 1, tenant="pg", whens=("receiving", "archiving"))
     p.result("11.3 killed with signal 9 while receiving and while archiving on Postgres: nothing lost, nothing twice",
              not bad, "%d kills and restarts" % kills, bad)
+
+
+def released_after_raise(p, port):
+    """A file whose header is longer than the receiver's bound is held as
+    header_too_large with its bytes; the bound is raised and the file
+    released with the program's own command; the server is killed at once
+    and started again; the file must end archived, read back by dcmdump, and
+    stay so through another restart."""
+    p.m("setting", "set", "receiver.header-limit", "1MiB")
+    time.sleep(2)
+    study, files = study_copy(p, CT, 1)
+    ds = dcmread(files[0])
+    ds.add_new((0x0009, 0x0010), "LO", "PROVE")
+    ds.add_new((0x0009, 0x1001), "OB", b"\0" * (2 << 20))
+    ds.save_as(files[0], write_like_original=False)
+    uid = str(ds.SOPInstanceUID)
+    statuses = p.pynetdicom_store(port, files)
+    deadline = time.time() + 30
+    rows = []
+    while time.time() < deadline and not rows:
+        rows = p.query("lab", "SELECT id FROM quarantine WHERE reason = 'header_too_large' AND content_kept AND state = 'held'")
+        time.sleep(0.2)
+    if not rows:
+        p.result("12.1 a file held for its header's size, released once the bound is raised, is archived through a kill",
+                 False, "statuses %s; no header_too_large record held" % statuses)
+        return
+    qid = rows[0]["id"]
+    p.m("setting", "set", "receiver.header-limit", "64MiB")
+    time.sleep(2)
+    out = p.m("quarantine", "release", "lab", qid, "--reason", "the header bound was raised")
+    p.kill()
+    p.serve()
+    wait_up(p, "lab", "scanner")
+    deadline = time.time() + 90
+    held = []
+    while time.time() < deadline and not held:
+        held = p.query("lab", "SELECT storage_key FROM instances WHERE state = 'held' AND sop_instance_uid = ?", uid)
+        time.sleep(0.5)
+    p.stop()
+    p.serve()
+    wait_up(p, "lab", "scanner")
+    still = p.query("lab", "SELECT storage_key FROM instances WHERE state = 'held' AND sop_instance_uid = ?", uid)
+    ok_dump = False
+    if still:
+        d = subprocess.run([p.dcmtk("dcmdump"), os.path.join(storage_dir(p, "lab"), still[0]["storage_key"])], capture_output=True, text=True)
+        ok_dump = d.returncode == 0 and uid in d.stdout
+    p.result("12.1 a file held for its header's size, released once the bound is raised, is archived through a kill",
+             statuses == [0] and len(held) == 1 and len(still) == 1 and ok_dump,
+             "acknowledged %s; held as header_too_large; released (%s); after kill -9 and restart: %d archived; after another restart: %d, dcmdump %s"
+             % (statuses, out.strip().splitlines()[0] if out.strip() else "no output", len(held), len(still), "reads it" if ok_dump else "fails"))
 
 
 def nearly_full(p, port):
@@ -807,6 +878,7 @@ def main():
             on_postgres(p, pg_port)
         else:
             p.skip("11.1-11.3 a tenant on Postgres", "no --postgres and --psql given")
+        released_after_raise(p, lab_port)
         nearly_full(p, lab_port)
         numbers(p, cursor)
         slow_watchers(p, lab_port)
