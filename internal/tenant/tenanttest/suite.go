@@ -32,9 +32,9 @@ const (
 // driver that drops them fails.
 var T0 = time.Date(2026, 11, 18, 9, 30, 0, 123456000, time.UTC)
 
-// Run runs the whole contract suite against the stores open makes. Each
+// runStore runs the store groups against the stores open makes. Each
 // test has its own store and runs in parallel with the others.
-func Run(t *testing.T, open Open) {
+func runStore(t *testing.T, open Open) {
 	tests := []struct {
 		name string
 		fn   func(*env)

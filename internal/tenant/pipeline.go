@@ -17,7 +17,7 @@ import (
 // what was committed.
 //
 // It is a Store and more. A driver implements it and proves it with the
-// contract suite's pipeline groups (tenanttest.RunPipeline); once every
+// contract suite's pipeline groups (tenanttest.Run, its pipeline groups); once every
 // driver does, its operations become part of Store itself.
 //
 // # Rules every driver keeps

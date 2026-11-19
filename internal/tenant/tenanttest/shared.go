@@ -17,9 +17,9 @@ import (
 // closes both when tb ends.
 type OpenPair func(tb testing.TB, tenantID string) (first, second tenant.Store)
 
-// RunShared runs the tests that need two instances of the store on one
-// database. A driver's tests call it as well as Run.
-func RunShared(t *testing.T, open OpenPair) {
+// runStoreShared runs the tests that need two instances of the store on one
+// database. Run runs it.
+func runStoreShared(t *testing.T, open OpenPair) {
 	tests := []struct {
 		name string
 		fn   func(e *env, other tenant.Store)

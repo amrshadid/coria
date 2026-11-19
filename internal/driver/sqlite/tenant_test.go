@@ -34,9 +34,17 @@ func openTenantTest(tb testing.TB, tenantID string) tenant.Store {
 	return s
 }
 
-// TestTenantContract runs the tenant port's contract suite on SQLite.
+// TestTenantContract runs the tenant port's whole contract suite on SQLite:
+// the store, the pipeline and the events, each also across two instances
+// on one database.
 func TestTenantContract(t *testing.T) {
-	tenanttest.Run(t, openTenantTest)
+	tenanttest.Run(t, tenanttest.Driver{
+		Open: func(tb testing.TB, id string) tenanttest.EventStore { return openTenantTest(tb, id).(*Tenant) },
+		OpenPair: func(tb testing.TB, id string) (tenanttest.EventStore, tenanttest.EventStore) {
+			a, b := openTenantPair(tb, id)
+			return a.(*Tenant), b.(*Tenant)
+		},
+	})
 }
 
 // openTenantPair opens two stores on one new tenant database, as two
@@ -58,12 +66,6 @@ func openTenantPair(tb testing.TB, tenantID string) (tenant.Store, tenant.Store)
 		out[i] = s
 	}
 	return out[0], out[1]
-}
-
-// TestTenantContractShared runs the suite's tests that need two instances on
-// one tenant database.
-func TestTenantContractShared(t *testing.T) {
-	tenanttest.RunShared(t, openTenantPair)
 }
 
 // TestTenantPanicInWriteReleasesTheWriter guards the deferred rollback on

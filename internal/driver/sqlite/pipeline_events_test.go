@@ -14,23 +14,6 @@ import (
 	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
-// TestTenantEventsContract runs the contract suite's event groups on
-// SQLite.
-func TestTenantEventsContract(t *testing.T) {
-	tenanttest.RunEvents(t, func(tb testing.TB, id string) tenanttest.EventStore {
-		return openTenantTest(tb, id).(*Tenant)
-	})
-}
-
-// TestTenantEventsContractShared runs the event tests that need two
-// instances on one tenant database.
-func TestTenantEventsContractShared(t *testing.T) {
-	tenanttest.RunEventsShared(t, func(tb testing.TB, id string) (tenanttest.EventStore, tenanttest.EventStore) {
-		a, b := openTenantPair(tb, id)
-		return a.(*Tenant), b.(*Tenant)
-	})
-}
-
 // countEvents returns how many events of a type the feed holds.
 func countEvents(t *testing.T, p *Tenant, typ tenant.EventType) int {
 	t.Helper()

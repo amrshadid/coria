@@ -51,15 +51,17 @@ func openTenantPair(tb testing.TB, tenantID string) (tenant.Store, tenant.Store)
 	return openTenantAt(tb, address, tenantID), openTenantAt(tb, address, tenantID)
 }
 
-// TestTenantContract runs the tenant port's contract suite on Postgres.
+// TestTenantContract runs the tenant port's whole contract suite on Postgres, each case on a schema of its own (two stores of a pair share one, each with a pool of its own, as two processes would):
+// the store, the pipeline and the events, each also across two instances
+// on one database.
 func TestTenantContract(t *testing.T) {
-	tenanttest.Run(t, openTenantTest)
-}
-
-// TestTenantContractShared runs the tenant suite's tests that need two
-// instances of the store on one database.
-func TestTenantContractShared(t *testing.T) {
-	tenanttest.RunShared(t, openTenantPair)
+	tenanttest.Run(t, tenanttest.Driver{
+		Open: func(tb testing.TB, id string) tenanttest.EventStore { return openTenantTest(tb, id).(*Tenant) },
+		OpenPair: func(tb testing.TB, id string) (tenanttest.EventStore, tenanttest.EventStore) {
+			a, b := openTenantPair(tb, id)
+			return a.(*Tenant), b.(*Tenant)
+		},
+	})
 }
 
 // TestShippedTenantMigrationsUnchanged guards a tenant's migration files
