@@ -3,6 +3,7 @@ package api_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	connect "connectrpc.com/connect/v2"
@@ -49,7 +50,9 @@ func testAddStorage(t *testing.T) {
 					t.Errorf("%v", s)
 				}
 				info, err := os.Stat(filepath.Join(f.root, "lab1", "mri"))
-				if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+				// Windows has no owner-only mode bits: a directory's Perm is
+				// 0o777 there whatever was asked, and access is by its ACL.
+				if err != nil || !info.IsDir() || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o700) {
 					t.Errorf("the directory made: %v %v", info, err)
 				}
 			}},
