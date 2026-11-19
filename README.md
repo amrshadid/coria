@@ -1,12 +1,41 @@
 # CORIA
 
-A research imaging archive in one Go binary. It receives DICOM, de-identifies it,
-routes it to a storage, catalogs it as subject / session / scan, and serves it to
-other systems through a gRPC API with keys.
+Core Research Imaging Archive: a research imaging archive in one Go binary. It
+receives DICOM, de-identifies it, routes it to a storage, catalogs it as subject /
+session / scan, and serves it to other systems through an API with keys, as a
+core that research platforms are built on.
 
-**State: early development. Nothing here is usable yet.** The binary says
-which build it is and has the commands that operate an installation through its
-API (see below); there is no server for them to talk to yet.
+**State: early development, no release yet.** What runs today:
+
+- an installation made with `coria init` and served with `coria serve`, over TLS
+  and a local socket;
+- tenants, each with its own database on SQLite or Postgres; keys, grants and
+  an audit log of every request;
+- DICOM receivers per tenant, closed to callers they do not list, that archive
+  each study to a directory or an S3 bucket as subject / session / scan, with a
+  manifest and checksums, verified against what was sent; a quarantine for what
+  cannot be archived, with its reason; a crash at any step loses no file a
+  sender was told was received;
+- a tenant's status and a live stream of its events;
+- the commands and an interactive program for all of it.
+
+Not yet: reading the archive back through the API (the next step), and
+**de-identification. Until it exists, send only synthetic or public test data:
+what a receiver gets is archived as it was sent.**
+
+## Documents
+
+- [Architecture](docs/architecture.md): the packages, the rules that hold them
+  together and what enforces each, where state lives, a reception end to end.
+- Guides: [a database driver](docs/guides/database-driver.md),
+  [a storage driver](docs/guides/storage-driver.md),
+  [an API method](docs/guides/api-method.md),
+  [a migration](docs/guides/migration.md),
+  [an event type](docs/guides/event-type.md).
+- [Receiving a study, step by step](docs/api-walkthrough-reception.md), and
+  which changes take effect without a restart.
+- [Testing](docs/testing.md): the kinds of test, how a slow one is marked, and
+  every environment variable the tests and scripts read.
 
 ## Build
 
@@ -84,8 +113,9 @@ coria quarantine list <tenant> [--state held|released|rejected] [--reason REASON
 
 `coria` with no arguments, when standard input and standard output are both
 a terminal, opens a program with a menu, lists that scroll and detail screens:
-tenants (with each tenant's grants, settings and audit log), keys, settings,
-and the audit log. It finds the server with the same flags and environment as
+tenants (with each tenant's grants, settings and audit log, its status that
+follows its events, and its storages, receivers, receptions and quarantine,
+where a held file is released or rejected), keys, settings, and the audit log. It finds the server with the same flags and environment as
 the commands (`--data-dir`, `--server`, `--key-file`, `--ca-file`) and is a
 client of the same API, so it can do nothing a command cannot. With any
 argument, or with either end not a terminal, `coria` prints the usage line
@@ -124,7 +154,7 @@ locally passes there for the same reason.
 | `make build` | static binaries for linux/amd64, linux/386, linux/arm64, darwin/arm64 and windows/amd64, in `bin/` |
 | `make size` | the size of each binary `make build` left, as a table |
 | `make proto-lint` | `buf lint` on the API contract in `api/proto` |
-| `make proto-breaking` | `buf breaking` against the commit where `HEAD` and `PROTO_BASE` (default `origin/develop`) meet; skipped, saying so, when that commit has no proto files |
+| `make proto-breaking` | `buf breaking` against the commit where `HEAD` and `PROTO_BASE` (default `origin/develop`) meet; skipped, saying so, when that commit has no proto files; a package renamed in `api/renamed.txt` is read under its new name |
 | `make proto-check` | regenerates the Go code and fails if it differs from the committed `gen/` |
 | `make check` | all of the above, in that order |
 
@@ -151,6 +181,8 @@ them as steps of their own on Linux:
 | `make check-master-postgres` | the Postgres master database against `psql` and `pg_dump`: `scripts/check/master-postgres.sh` has the driver write a sample installation into a schema of the database `CORIA_TEST_POSTGRES` names (a `postgres://` URL), then lists its tables and rows, checks every constraint and foreign key, reads times and audit details with Postgres's functions, and searches a `pg_dump` for the sample key's secret (absent) and its hash (present). `PSQL=` and `PG_DUMP=` name the commands, which may run in a container. The Postgres tests of `go test` use the same variable and skip without it; `CORIA_REQUIRE_POSTGRES=1` makes a missing address a failure, as CI sets it |
 | `make check-tenant-postgres` | a tenant on Postgres against `psql` and `pg_dump`: `scripts/check/tenant-postgres.sh` has the registry create a tenant on Postgres, in a schema of the database `CORIA_TEST_POSTGRES` names, with a Postgres master in another, writes the tenant suite's sample, then lists the tables and rows, checks every constraint and index, reads times and audit details, reads the tenant's row and state change from the master, checks the schema records the tenant's id, and searches both dumps for the login's password (absent) |
 | `make prove PYTHON=... GRPCURL=grpcurl` | the proof of this version, from outside: `scripts/prove/run.sh` builds every target as `make build` does, then runs the real binary: `init` and `serve` on the local socket and TLS; the first key made on the socket; every method of the contract refused without a key; tenants on SQLite and on Postgres (in a container it starts, or the one `CORIA_PROVE_PG_CONTAINER` names); no key, a malformed, unknown, wrong, expired and revoked key, and a key with no grant tried with grpcurl, Python's grpcio and curl, the answers compared byte for byte; secrets searched for in the databases' dumps, every file, the logs and the audit log; the server with another key file; Postgres stopped and started under a running server; the server killed with signal 9 during tenant creation at least 20 times; every request reconciled with the audit log; a second server and another operating system user refused; `--json` and the interactive program; the size of each binary. One line per check and a table at the end; a check it cannot run here (a second user without sudo) is skipped and says so, and `CORIA_PROVE_STRICT=1` (CI) fails on any skip. It needs docker and leaves nothing behind |
+| `make prove-reception PYTHON=... DCMTK=dir` | the reception, from outside: `scripts/prove/reception.py` serves the real binary, sends public studies with dcmtk's storescu and pynetdicom, and checks with dcmdump, pydicom, hashlib and sqlite3 what was archived, quarantined and counted: byte for byte, manifests, duplicates, a corrected and a broken file, strangers refused, kills by signal 9 while receiving, in the quiet period and while archiving, a nearly full storage, a released file, the status and the event stream. `PROVE_S3` adds a tenant on an S3 bucket read back by GETs the proof signs itself, and `PROVE_POSTGRES` with `PROVE_PSQL` a tenant on Postgres read by psql (`scripts/requirements/prove-reception.txt`) |
+| `make bench-gate` | reception's speed, files a second from landing to verified, measured on the base branch's tree and this one in turns on the same machine; fails when this one is slower by more than `BENCH_MARGIN` (25) percent |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
 into `bin/tools/` the first time, and the proto targets do the same for buf,
@@ -162,20 +194,20 @@ directly.
 
 CI runs the gates on Linux with Go 1.26 and 1.27, and `go vet` and the tests on
 Windows with Go 1.27, for every pull request. The tests run on macOS with Go
-1.27 after each merge into `develop` or `main`. A separate Linux job runs the
-Postgres driver against Postgres 16 and 18 service containers and fails if the
-server is missing; on Windows and macOS, which have none, the Postgres tests
-skip and say so in the log.
+1.27 after each merge into `develop` or `main`. Jobs of their own run the
+database drivers and the reception end to end against Postgres 16 and 18, the
+S3 driver and the reception against two S3 servers (Silo and RustFS), both
+proofs, and the speed gate; each fails if the service it needs is missing. On
+Windows and macOS, which have none of these services, those tests skip and say
+so in the log.
 
 ## Branches
 
 `develop` is where work is merged; `main` holds releases and takes pull
 requests from `develop` only. The branch policy check
 (`.github/workflows/branch-policy.yml`) fails on a pull request into `main` from
-any other branch. It advises and cannot block: while the repository is private
-on the free plan, GitHub refuses branch protection on it (the API answers 403),
-so no check can be made required. When the repository is public, a protection
-rule on `main` makes it required.
+any other branch. A protection rule on `main` makes it required; without one,
+it advises.
 
 ## License
 
