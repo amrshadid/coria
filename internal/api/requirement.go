@@ -454,6 +454,26 @@ func studyDate(s string) string {
 	return s
 }
 
+// modality returns a Modality filter as an audit entry records it: as
+// given when it is a value of the CS value representation (PS3.5 6.2), 1
+// to 16 of A-Z, 0-9, space and "_", and "invalid" otherwise.
+func modality(s string) string {
+	if s == "" || len(s) > 16 || strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _") != "" {
+		return invalidValue
+	}
+	return s
+}
+
+// receiverName returns a receiver filter as an audit entry records it: as
+// given when it follows the rule of a receiver's name, and "invalid"
+// otherwise.
+func receiverName(s string) string {
+	if master.ValidateTenantName(s) != nil {
+		return invalidValue
+	}
+	return s
+}
+
 // catalogFilterDetails returns the details every catalog listing records:
 // its label prefix and its order, when given.
 func catalogFilterDetails(prefix string, order v1.CatalogOrder) map[string]string {
@@ -478,10 +498,10 @@ func sessionFilterDetails(r *v1.ListSessionsRequest) map[string]string {
 		d[detailStudyDateEnd] = studyDate(r.GetStudyDateEnd())
 	}
 	if r.GetModality() != "" {
-		d[detailModality] = clip(r.GetModality(), 16)
+		d[detailModality] = modality(r.GetModality())
 	}
 	if r.GetReceiver() != "" {
-		d[detailReceiver] = clip(r.GetReceiver(), 64)
+		d[detailReceiver] = receiverName(r.GetReceiver())
 	}
 	timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
 	return d
@@ -494,13 +514,13 @@ func sessionFilterDetails(r *v1.ListSessionsRequest) map[string]string {
 func scanFilterDetails(r *v1.ListScansRequest) map[string]string {
 	d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
 	if r.GetModality() != "" {
-		d[detailModality] = clip(r.GetModality(), 16)
+		d[detailModality] = modality(r.GetModality())
 	}
 	if r.GetSeriesDescriptionPrefix() != "" {
 		d[detailDescriptionPrefix] = presentValue
 	}
 	if r.GetReceiver() != "" {
-		d[detailReceiver] = clip(r.GetReceiver(), 64)
+		d[detailReceiver] = receiverName(r.GetReceiver())
 	}
 	timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
 	return d

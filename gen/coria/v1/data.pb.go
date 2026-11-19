@@ -38,8 +38,9 @@ type ScanMarker struct {
 	// from, in lowercase hexadecimal, 64 characters, as
 	// Scan.manifest_sha256.
 	ManifestSha256 string `protobuf:"bytes,4,opt,name=manifest_sha256,json=manifestSha256,proto3" json:"manifest_sha256,omitempty"`
-	// How many instances that manifest lists. The stream sends those after
-	// start_after, or the one instance asked for.
+	// How many instances that manifest lists: the scan's whole count,
+	// whatever start_after or an instance asked for leaves out of the
+	// stream.
 	InstanceCount int64 `protobuf:"varint,5,opt,name=instance_count,json=instanceCount,proto3" json:"instance_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

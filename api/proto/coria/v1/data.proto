@@ -60,7 +60,10 @@ package coria.v1;
 //     what another form names. Each label must pass the label rule and the
 //     id its own; the instance is looked up by its id, the catalog's
 //     primary key, and its subject, session and scan labels are compared
-//     byte for byte with the path's, or the answer is 404. The bytes are
+//     byte for byte with the path's, or the answer is 404. Only an
+//     instance the tenant holds, archived and confirmed by its reception,
+//     is found: one a reception has claimed and not yet archived is
+//     answered 404, as one that does not exist. The bytes are
 //     read from the storage at the key and place the catalog holds, the
 //     key checked by the server's layout rules before it reaches a
 //     storage; a path is never a file path, and nothing of the request is
@@ -101,8 +104,10 @@ package coria.v1;
 //     the instance's ETag, whose bytes the window is a part of. Both
 //     parameters are given or neither, each in decimal digits with no sign
 //     or leading zero (other than "0" itself), length at least 1, and
-//     offset plus length no more than 2^63 - 1; otherwise the answer is
-//     400. A window that ends past the instance's length is answered 416
+//     offset plus length no more than 2^63 - 1, and no other parameter
+//     and neither of the two given twice (a parameter the server ignored
+//     would let two URIs name one part, and a second value would let one
+//     URI name two); a query that breaks any of these is answered 400. A window that ends past the instance's length is answered 416
 //     with "Content-Range: bytes */<length>". A Range, with If-Range, is
 //     applied within the window as within a whole instance, its positions
 //     counted from the window's first byte. The server does not check the
@@ -116,7 +121,10 @@ package coria.v1;
 //     caller, a key or the local operator, holds at most 16 at once, and
 //     the server 256; one more is answered 429. No deadline is applied; a
 //     download whose client reads nothing for 5 minutes is ended by
-//     closing its connection.
+//     closing its connection. A client that fetches the BulkDataURIs of a
+//     scan in parallel keeps a small pool of downloads, a few at once:
+//     they share the caller's 16 with its streams, and the seventeenth is
+//     refused rather than queued.
 //   - Logs. The audit entry of a download has the scan's path,
 //     "<subject>/<session>/<scan>", as its object (a label that is not
 //     valid is written "invalid" in it), and in details whether a range
@@ -149,7 +157,9 @@ service DataService {
   // contract, always under the 4 MB a stock gRPC client accepts.
   //
   // The instances of a scan are those its manifest lists when the stream
-  // reaches the scan, and the scan's marker carries that manifest's
+  // reaches the scan, every one of them held by the tenant (an instance a
+  // reception has claimed and not yet archived is in no manifest; named
+  // by instance_id, it is not found, as one that does not exist), and the scan's marker carries that manifest's
   // SHA-256: a client that compares it with the one it held, or with
   // Scan.manifest_sha256 of a listing, sees when a scan changed behind its
   // position, and reads that scan again. A stream that ends before the
@@ -214,8 +224,9 @@ message ScanMarker {
   // Scan.manifest_sha256.
   string manifest_sha256 = 4;
 
-  // How many instances that manifest lists. The stream sends those after
-  // start_after, or the one instance asked for.
+  // How many instances that manifest lists: the scan's whole count,
+  // whatever start_after or an instance asked for leaves out of the
+  // stream.
   int64 instance_count = 5;
 }
 

@@ -593,6 +593,12 @@ func TestPendingRules(t *testing.T) {
 			&v1.ListSubjectsRequest{Tenant: "lab1", LabelPrefix: "Smith John"}, "", map[string]string{"label_prefix": "invalid"}},
 		{"ListSubjects with a prefix that is a start of a label", coriav1connect.CatalogServiceListSubjectsProcedure,
 			&v1.ListSubjectsRequest{Tenant: "lab1", LabelPrefix: "sub."}, "", map[string]string{"label_prefix": "sub."}},
+		{"ListSessions with a modality and a receiver that break their rules", coriav1connect.CatalogServiceListSessionsProcedure,
+			&v1.ListSessionsRequest{Tenant: "lab1", Modality: "mr", Receiver: "Smith John"}, "", map[string]string{"modality": "invalid", "receiver": "invalid"}},
+		{"ListScans with a modality and a receiver that break their rules", coriav1connect.CatalogServiceListScansProcedure,
+			&v1.ListScansRequest{Tenant: "lab1", Modality: "MRMRMRMRMRMRMRMRMR", Receiver: "../" + uid}, "", map[string]string{"modality": "invalid", "receiver": "invalid"}},
+		{"ListScans with a modality with a space", coriav1connect.CatalogServiceListScansProcedure,
+			&v1.ListScansRequest{Tenant: "lab1", Modality: "OT_2 X", Receiver: "scanner-1"}, "", map[string]string{"modality": "OT_2 X", "receiver": "scanner-1"}},
 		{"ListSessions with a bad date", coriav1connect.CatalogServiceListSessionsProcedure,
 			&v1.ListSessionsRequest{Tenant: "lab1", SubjectLabel: "S01", StudyDateStart: "Smith"}, "S01", map[string]string{"study_date_start": "invalid"}},
 	} {

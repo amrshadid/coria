@@ -40,7 +40,9 @@ type InstanceMetadata struct {
 	// it, as in DICOMweb; its Transfer Syntax UID is transfer_syntax_uid.
 	// Empty when json_too_large is set.
 	DicomJson string `protobuf:"bytes,3,opt,name=dicom_json,json=dicomJson,proto3" json:"dicom_json,omitempty"`
-	// Whether dicom_json was left out because it is longer than 1 MiB.
+	// Whether dicom_json was left out: it would be longer than 1 MiB, or the
+	// file's header, when it had to be read, is longer than
+	// receiver.header-limit (the service's Size).
 	JsonTooLarge bool `protobuf:"varint,4,opt,name=json_too_large,json=jsonTooLarge,proto3" json:"json_too_large,omitempty"`
 	// The Transfer Syntax UID (0002,0010) its file is encoded in (PS3.5
 	// Section 10), which the bytes of each BulkDataURI are in.
