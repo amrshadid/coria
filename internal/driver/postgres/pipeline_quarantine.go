@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/sqlkit"
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 
 	"github.com/jackc/pgx/v5"
 

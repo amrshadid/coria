@@ -182,7 +182,7 @@ linters:
               desc: the master port knows no database; the Postgres driver does
             - pkg: github.com/amrshadid/magnetar/internal/driver
               desc: the port and its suite never import a driver; drivers import them
-            - pkg: github.com/amrshadid/magnetar/internal/sqlkit
+            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlkit
               desc: sqlkit is for SQL drivers; the port must not assume SQL
 
         # The tenant database's port (internal/tenant) and its contract suite
@@ -200,7 +200,7 @@ linters:
               desc: the tenant port knows no database; the Postgres driver does
             - pkg: github.com/amrshadid/magnetar/internal/driver
               desc: the port and its suite never import a driver; drivers import them
-            - pkg: github.com/amrshadid/magnetar/internal/sqlkit
+            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlkit
               desc: sqlkit is for SQL drivers; the port must not assume SQL
 
         # The tenant registry is given its drivers (registry.Config.Drivers),

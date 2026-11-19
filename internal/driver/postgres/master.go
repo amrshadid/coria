@@ -4,9 +4,9 @@ import (
 	"context"
 	"embed"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 )
 
 // masterFiles holds the master database's migrations, embedded so the binary

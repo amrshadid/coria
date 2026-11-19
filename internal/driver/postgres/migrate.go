@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 )
 
 // lockName is the name the migration advisory lock is made from: the

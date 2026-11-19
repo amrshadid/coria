@@ -15,8 +15,8 @@ import (
 	"github.com/amrshadid/magnetar/internal/core/label"
 	"github.com/amrshadid/magnetar/internal/core/layout"
 	"github.com/amrshadid/magnetar/internal/core/reception"
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 

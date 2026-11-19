@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 )
 
 // AppendAudit implements master.Store.
