@@ -137,7 +137,7 @@ func TestReleaseEntry(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(same, a) {
 		t.Fatalf("joined none: %+v, %v", same, err)
 	}
-	if e, _ := ReleaseEntry(a, "R1"); e.Details[tenant.DetailReleaseReception] != "R1" || e.Details["reason"] != "read again" {
-		t.Fatalf("joined R1: %+v", e.Details)
+	if e, _ := ReleaseEntry(a, "rc1"); e.Details[tenant.DetailReleaseReception] != "rc1" || e.Details["reason"] != "read again" {
+		t.Fatalf("joined rc1: %+v", e.Details)
 	}
 }
