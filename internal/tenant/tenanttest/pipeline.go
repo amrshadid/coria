@@ -41,6 +41,7 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"ConfigPagingWithDeletes", testConfigPagingWithDeletes},
 		{"OpenReception", testOpenReception},
 		{"OpenReceptionConcurrent", testOpenReceptionConcurrent},
+		{"OpenReceptionSameID", testOpenReceptionSameID},
 		{"ReceptionSteps", testReceptionSteps},
 		{"ReceptionStepRefusals", testReceptionStepRefusals},
 		{"StepHook", testStepHook},
@@ -51,11 +52,13 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"ReceivedFiles", testReceivedFiles},
 		{"ReceivedBatchRepeated", testReceivedBatchRepeated},
 		{"ReceivedFilesClosed", testReceivedFilesClosed},
+		{"ReceivedBatchOrder", testReceivedBatchOrder},
 		{"Claims", testClaims},
 		{"ClaimsOutliveTheirReception", testClaimsOutliveTheirReception},
 		{"CommitScan", testCommitScan},
 		{"ReleaseIntoSameReception", testReleaseIntoSameReception},
 		{"DiscardKeepsQuarantined", testDiscardKeepsQuarantined},
+		{"DiscardLeavesLivePlaces", testDiscardLeavesLivePlaces},
 		{"HoldCountsReceived", testHoldCountsReceived},
 		{"CountIdentity", testCountIdentity},
 		{"QuarantineHold", testQuarantineHold},
@@ -66,6 +69,7 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"QuarantineList", testQuarantineList},
 		{"WorkClaim", testWorkClaim},
 		{"WorkUniqueKey", testWorkUniqueKey},
+		{"WorkUniqueKeyFirst", testWorkUniqueKeyFirst},
 		{"WorkFencing", testWorkFencing},
 		{"WorkRetries", testWorkRetries},
 		{"WorkConcurrentClaims", testWorkConcurrentClaims},
@@ -74,6 +78,12 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"ReceptionsWithoutWork", testReceptionsWithoutWork},
 		{"CommitSharesSubject", testCommitSharesSubject},
 		{"PipelineBounds", testPipelineBounds},
+		{"StorageSecret", testStorageSecret},
+		{"ReleaseReason", testReleaseReason},
+		{"FencedFiles", testFencedFiles},
+		{"ClaimNextWork", testClaimNextWork},
+		{"ScanInstances", testScanInstances},
+		{"NewQuarantineReasons", testNewQuarantineReasons},
 		{"PipelineTenantsApart", testPipelineTenantsApart},
 	}
 	for _, tt := range tests {
@@ -139,10 +149,12 @@ func (e *penv) wantIs(what string, err error, target error, kind fault.Kind) {
 	}
 }
 
-// wantPrecondition fails unless err is a precondition failure.
+// wantPrecondition fails unless err is a precondition failure: its kind is
+// fault.Precondition, which is what a caller answers by, whatever sentinel
+// names the case.
 func (e *penv) wantPrecondition(what string, err error) {
 	e.Helper()
-	e.wantIs(what, err, tenant.ErrPrecondition, fault.Conflict)
+	e.wantKind(what, err, fault.Precondition)
 }
 
 // dirStorage returns a directory storage named name under root "fast".

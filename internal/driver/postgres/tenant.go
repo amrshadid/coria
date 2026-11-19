@@ -54,6 +54,19 @@ type Tenant struct {
 	// retried counts the pipeline's changes run again (Tenant.pipe), by
 	// why, so a test can show a change that must never deadlock did not.
 	retried retryCounts
+	seams   tenantSeams
+}
+
+// tenantSeams are the points where a test changes what a Tenant does, all
+// nil in a running server. They are set only through export_test.go.
+type tenantSeams struct {
+	// failAttempt, when set, is called after a pipeline change's function
+	// returned nil and before its commit, with the attempt's number from 1;
+	// an error it returns ends that attempt as if Postgres had raised it
+	// there, so a test makes Tenant.pipe meet a deadlock or a serialization
+	// failure on the attempt it chooses, after the change, its hook and its
+	// guard ran.
+	failAttempt func(attempt int) error
 }
 
 var _ tenant.Store = (*Tenant)(nil)

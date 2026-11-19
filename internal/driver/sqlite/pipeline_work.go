@@ -111,25 +111,38 @@ func (t *Tenant) Work(ctx context.Context, id string) (tenant.Work, error) {
 		`SELECT `+workColumns+` FROM work WHERE id = ?`, []any{id}, scanWork)
 }
 
-// ClaimWork implements tenant.Pipeline. Within one transaction no other
-// writer runs (BEGIN IMMEDIATE), and a claim grouped with another in one
-// transaction sees that one's lease, so two claims never take one unit.
+// ClaimWork implements tenant.Pipeline: ClaimNextWork, with nothing due
+// answered NotFound.
+func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Time, lease time.Duration) (tenant.Work, error) {
+	c, err := t.ClaimNextWork(ctx, kind, owner, now, lease)
+	if err != nil {
+		return tenant.Work{}, err
+	}
+	if !c.Found {
+		return tenant.Work{}, fault.New(fault.NotFound, "no unit of work of this kind is due")
+	}
+	return c.Work, nil
+}
+
+// ClaimNextWork implements tenant.WorkClaims. Within one transaction no
+// other writer runs (BEGIN IMMEDIATE), and a claim grouped with another in
+// one transaction sees that one's lease, so two claims never take one unit.
 // Finding nothing due is answered after the transaction commits, since on
 // the way it may have held units as failed.
-func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Time, lease time.Duration) (tenant.Work, error) {
+func (t *Tenant) ClaimNextWork(ctx context.Context, kind, owner string, now time.Time, lease time.Duration) (tenant.WorkClaim, error) {
 	if err := tenant.ValidateName("work kind", kind); err != nil {
-		return tenant.Work{}, err
+		return tenant.WorkClaim{}, err
 	}
 	if err := master.ValidateID("worker", owner); err != nil {
-		return tenant.Work{}, err
+		return tenant.WorkClaim{}, err
 	}
 	if err := tenant.ValidateLease(now, lease); err != nil {
-		return tenant.Work{}, err
+		return tenant.WorkClaim{}, err
 	}
-	var out tenant.Work
-	var found bool
+	var out tenant.WorkClaim
 	err := t.write(ctx, "a unit of work cannot be claimed", func(tx *sql.Tx, s *tenantStatements) error {
-		found = false
+		var c tenant.WorkClaim
+		defer func() { out = c }()
 		// Each round holds as failed or leases what it read, so a round
 		// reads new units; the bound only keeps a broken table from holding
 		// the writer.
@@ -141,6 +154,9 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 			}
 			for _, w := range due {
 				if w.Attempt >= w.MaxAttempts {
+					if len(c.GaveUp) == tenant.MaxGaveUp {
+						return nil
+					}
 					// Its last allowed attempt's lease ended: held as failed.
 					res, err := tx.ExecContext(ctx, `UPDATE work SET state = 'failed', owner = '',
 						last_error = 'the lease of its last attempt ended', updated = ? WHERE id = ? AND attempt = ?
@@ -154,9 +170,11 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 						}
 						continue
 					}
-					if err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
+					failed, err := giveUp(ctx, tx, w.ReceptionID, now)
+					if err != nil {
 						return err
 					}
+					c.GaveUp = append(c.GaveUp, tenant.GaveUpWork{WorkID: w.ID, ReceptionID: w.ReceptionID, ReceptionFailed: failed})
 					continue
 				}
 				res, err := tx.StmtContext(ctx, s.leaseUnit).ExecContext(ctx, owner, micros(now.Add(lease)), micros(now), w.ID, w.Attempt)
@@ -169,10 +187,10 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 					}
 					continue
 				}
-				if out, err = workInTx(ctx, tx, w.ID); err != nil {
+				if c.Work, err = workInTx(ctx, tx, w.ID); err != nil {
 					return err
 				}
-				found = true
+				c.Found = true
 				return nil
 			}
 			if len(due) < claimCandidates {
@@ -182,10 +200,7 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 		return nil
 	})
 	if err != nil {
-		return tenant.Work{}, err
-	}
-	if !found {
-		return tenant.Work{}, fault.New(fault.NotFound, "no unit of work of this kind is due")
+		return tenant.WorkClaim{}, err
 	}
 	return out, nil
 }
@@ -270,7 +285,7 @@ func (t *Tenant) FailWork(ctx context.Context, fence tenant.WorkFence, reason st
 			return err
 		}
 		if state == tenant.WorkFailed {
-			if err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
+			if _, err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
 				return err
 			}
 		}

@@ -520,8 +520,27 @@ All notable changes to Magnetar are written here. The form is
   event carries the step its reception left (`previous_step`), so a client
   can keep the counts of receptions by step from a status and the events
   after it. One stream follows at most 10000 tenants.
+- A quarantined file's release can carry a reason, kept on its record
+  (`ReleaseQuarantinedFileRequest.reason`, `QuarantinedFile.release_reason`),
+  and a release's audit entry names the reception the file joined.
+- Two quarantine reasons: `QUARANTINE_REASON_HEADER_TOO_LARGE`, whose bytes
+  are kept so a person can release or reject the file, and
+  `QUARANTINE_REASON_INCOMING_LOST`, for a recorded file whose incoming copy
+  is gone.
+- The tenant's store can list a scan's instances, tell a caller which
+  receptions failed when it gave up their work, and refuse a write of
+  received or held files from a worker that lost its lease.
 
 ### Changed
+
+- Where a tenant's data may be (directory roots and their resolution, S3
+  endpoints, port allotment, opening a storage) is one package,
+  `internal/place`, that the handlers and the reception pipeline both use.
+  The rule of a name, Windows device names and the nesting of paths are
+  written once, in `internal/core/pathname`.
+- An S3 storage's prefix is at most 128 bytes (it was 512), so with the
+  longest key the server writes every object's key fits the 1024 bytes S3
+  allows.
 
 - Running what CI runs meant reading the workflow and assembling it by hand:
   the Python packages, Postgres, two S3 servers, the proof. `make ci` now runs
@@ -574,6 +593,45 @@ All notable changes to Magnetar are written here. The form is
   development database made before this change must be made again.
 
 ### Fixed
+
+- Two directory roots whose paths differ in text could be one directory on
+  the disk: a root whose path was a symbolic link into another root's tenant
+  directory let two tenants share a storage. Every link in a root's path is
+  now followed when `storage.directory-roots` is set and whenever a root is
+  used, and two roots that are one directory, or one inside the other, once
+  followed are refused.
+- On Windows `/` also separates a path's segments and a segment's final dots
+  and spaces are dropped, so roots such as `D:\srv` and `D:\srv/x` were
+  accepted as apart. A root's path is now read that way, and a directory
+  storage's path may not have a segment ending in a dot or one that is a
+  Windows device name, on any system.
+- A directory storage could be added under a path too long for the server to
+  open, and then failed every write. Its directory, root included, is now
+  bounded at 1023 bytes when it is added.
+- A tenant's reader could read the installation's absolute root paths through
+  `GetSetting storage.directory-roots`. A caller who is not an admin on the
+  installation now reads the roots' names only.
+- An S3 storage at an endpoint listed with `private-address` could address its
+  bucket in the host name, so a bucket name a tenant chose decided which host
+  in the server's network was reached. Such a storage must use path style.
+- `SetStorage` could move an S3 storage to another endpoint and keep its
+  credentials, signing requests to the new host with them. A mask that names
+  `s3.endpoint` must now name both credentials too.
+- `TestStorage` on an S3 storage answered an internal error: the tenant's
+  store could not hand back the sealed secret. It can now, on both databases.
+- `TestStorage` told a storage's faults apart by the drivers' message text;
+  the storage drivers now mark each cause with an exported error value.
+- Discarding a failed reception could list, for removal, a place in the
+  incoming area that a released file had given to a reception still running
+  or one that failed and may be retried. Such a place is no longer listed.
+- On Postgres, two opens of a reception at once with the same id answered a
+  conflict, a unit of work queued under a held key was refused when its
+  reception did not exist, and a refused batch of files named a different
+  reception than on SQLite. Both databases now give the one answer the
+  store's contract states, and a change retried after a deadlock is tested.
+- A precondition from the tenant's store is answered FAILED_PRECONDITION and
+  an expired event cursor OUT_OF_RANGE by their own kind, not by a mapping
+  in the handlers.
 
 - A request its caller canceled could be recorded under another reason than the
   cancel: when the cancel arrived while the server waited for the request's

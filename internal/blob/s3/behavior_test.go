@@ -112,7 +112,7 @@ func TestAddressCheck(t *testing.T) {
 	cfg.AllowAddress = func(a netip.Addr) bool { seen = append(seen, a); return false }
 	start := time.Now()
 	_, err := Open(context.Background(), cfg)
-	if fault.KindOf(err) != fault.Unavailable || !errors.Is(err, errAddressRefused) {
+	if fault.KindOf(err) != fault.Unavailable || !errors.Is(err, ErrAddressNotAllowed) {
 		t.Fatalf("Open with loopback refused = %v, want Unavailable and the refusal", err)
 	}
 	noLeak(t, "refused address", err)
@@ -209,7 +209,7 @@ func TestAddressCheckFollowsDNS(t *testing.T) {
 	before := f.hits.Load()
 	dns.addr.Store(net.ParseIP("10.9.8.7").To4()) // The name now points somewhere refused.
 	_, err = s.Stat(context.Background(), "k")
-	if fault.KindOf(err) != fault.Unavailable || !errors.Is(err, errAddressRefused) {
+	if fault.KindOf(err) != fault.Unavailable || !errors.Is(err, ErrAddressNotAllowed) {
 		t.Fatalf("Stat after the name moved to a private address = %v, want the refusal", err)
 	}
 	noLeak(t, "moved name", err, "storage.test", "10.9.8.7")

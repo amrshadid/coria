@@ -37,7 +37,7 @@ func scanReception(row interface{ Scan(...any) error }) (tenant.Reception, error
 	r.State = reception.State(state)
 	r.Started, r.LastFile, r.StepTime = fromMicros(started), fromMicros(lastFile), fromMicros(stepAt)
 	r.Ended, r.DiscardTime = fromNullMicros(endedAt), fromNullMicros(discardAt)
-	if err := fromJSON(titles, &r.CallingAETitles); err != nil {
+	if err := sqlkit.FromJSON(titles, &r.CallingAETitles); err != nil {
 		return r, err
 	}
 	if len(r.CallingAETitles) == 0 {
@@ -65,6 +65,15 @@ func receptionInTx(ctx context.Context, tx *sql.Tx, id string) (tenant.Reception
 // the arrival number taken. On a database with several writers the second
 // insert waits for the first's commit, then reads what it committed.
 func openReceptionInTx(ctx context.Context, tx *sql.Tx, receiver, studyUID, id string, at time.Time) (tenant.Reception, bool, error) {
+	// The receiver first, so a receiver removed is refused whether or not
+	// a reception of it is still open, as on every driver.
+	has, err := exists(ctx, tx, `SELECT 1 FROM receivers WHERE name = ?`, receiver)
+	if err != nil {
+		return tenant.Reception{}, false, err
+	}
+	if !has {
+		return tenant.Reception{}, false, tenant.Precondition("the tenant has no receiver named " + receiver)
+	}
 	for try := 0; try < 8; try++ {
 		r, err := scanReception(tx.QueryRowContext(ctx, openReceptionSQL, receiver, studyUID))
 		if err == nil {
@@ -72,15 +81,6 @@ func openReceptionInTx(ctx context.Context, tx *sql.Tx, receiver, studyUID, id s
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return r, false, err
-		}
-		if try == 0 {
-			has, err := exists(ctx, tx, `SELECT 1 FROM receivers WHERE name = ?`, receiver)
-			if err != nil {
-				return r, false, err
-			}
-			if !has {
-				return r, false, tenant.Precondition("the tenant has no receiver named " + receiver)
-			}
 		}
 		inserted, err := insertReception(ctx, tx, id, receiver, studyUID, reception.Receiving, "", at)
 		if err != nil {
@@ -191,15 +191,7 @@ func (t *Tenant) receptionBinding(f tenant.ReceptionFilter) string {
 		states[i] = string(s)
 	}
 	return t.binding(f.Receiver, f.StudyUID, strings.Join(states, ","), strconv.FormatBool(f.InProgress),
-		microsText(nullableMicros(f.Since)), microsText(nullableMicros(f.Until)))
-}
-
-// nullableMicros is micros, with 0 for the zero time.
-func nullableMicros(t time.Time) int64 {
-	if t.IsZero() {
-		return 0
-	}
-	return micros(t)
+		sqlkit.MicrosText(f.Since), sqlkit.MicrosText(f.Until))
 }
 
 // ListReceptions implements tenant.Pipeline.
@@ -208,10 +200,11 @@ func (t *Tenant) ListReceptions(ctx context.Context, filter tenant.ReceptionFilt
 		return nil, "", err
 	}
 	binding := t.receptionBinding(filter)
-	after, err := pageAfterTime(page, listReceptions, binding)
+	pos, err := sqlkit.PageAfterTime(page, listReceptions, binding)
 	if err != nil {
 		return nil, "", err
 	}
+	after := afterArgs(pos)
 	query, args := receptionsQuery(filter, after, page.Limit+1)
 	if query == "" {
 		if _, err := t.ready(ctx); err != nil {
@@ -223,11 +216,11 @@ func (t *Tenant) ListReceptions(ctx context.Context, filter tenant.ReceptionFilt
 	if err != nil {
 		return nil, "", err
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, timeCursor(listReceptions, binding, micros(last.Started), last.ID), nil
+	return out, sqlkit.TimeCursor(listReceptions, binding, last.Started, last.ID), nil
 }
 
 // checkFence refuses a worker's write whose lease no longer holds: the unit
@@ -254,11 +247,6 @@ func checkFence(ctx context.Context, tx *sql.Tx, f tenant.WorkFence) error {
 	return tenant.LeaseLost()
 }
 
-// errStateChanged is the refusal of a step whose reception moved meanwhile.
-func errStateChanged() error {
-	return fault.Wrap(fault.Conflict, tenant.ErrStateChanged, "the reception is no longer in the state the step started from")
-}
-
 // StepReception implements tenant.Pipeline.
 func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, hook tenant.StepHook) (tenant.Reception, error) {
 	if err := step.Validate(); err != nil {
@@ -278,7 +266,7 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		next, err := reception.Step(step.From, step.Event)
 		if err != nil {
 			if before.State != step.From {
-				return errStateChanged()
+				return tenant.StateChanged()
 			}
 			return fault.Wrap(fault.Conflict, err, "the reception cannot take this step: "+err.Error())
 		}
@@ -323,7 +311,7 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 			if err != nil {
 				return err
 			}
-			return errStateChanged()
+			return tenant.StateChanged()
 		}
 		if next.Ended() {
 			if err := releaseClaims(ctx, tx, step.ID); err != nil {
@@ -358,220 +346,38 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 	return out, nil
 }
 
-// RetryReception implements tenant.Pipeline.
-func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string, now time.Time, audit master.AuditEntry, guard tenant.Guard) (tenant.Reception, tenant.Reception, error) {
-	for _, v := range []struct{ what, id string }{{"reception id", id}, {"new reception id", newID}} {
-		if err := master.ValidateID(v.what, v.id); err != nil {
-			return tenant.Reception{}, tenant.Reception{}, err
-		}
-	}
-	if receiver != "" {
-		if err := tenant.ValidateName("receiver", receiver); err != nil {
-			return tenant.Reception{}, tenant.Reception{}, err
-		}
-	}
-	if err := master.ValidateTime("time", now); err != nil {
-		return tenant.Reception{}, tenant.Reception{}, err
-	}
-	if err := audit.ValidateWith(tenant.DetailRetryReception); err != nil {
-		return tenant.Reception{}, tenant.Reception{}, err
-	}
-	var failed, retry tenant.Reception
-	err := t.write(ctx, "the reception cannot be retried", func(tx *sql.Tx, st *tenantStatements) error {
-		// The failed reception is marked first, in the statement that
-		// checks it may be retried, so two retries at once make one new
-		// reception: on a database with several writers the second waits
-		// for the first and then finds it retried.
-		res, err := tx.ExecContext(ctx, `UPDATE receptions SET retry_reception = ?
-			WHERE id = ? AND state = 'failed' AND retry_reception = '' AND discard_reason = ''`, newID, id)
-		if err != nil {
-			return err
-		}
-		marked, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		f, err := receptionInTx(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if marked == 0 {
-			switch {
-			case f.RetryReception != "":
-				r, err := receptionInTx(ctx, tx, f.RetryReception)
-				if err != nil {
-					return err
-				}
-				a, err := addDetails(audit, tenant.DetailRetryReception, r.ID)
-				if err != nil {
-					return err
-				}
-				failed, retry = f, r
-				return audited(ctx, tx, st, a, guard)
-			case f.State != reception.Failed:
-				return tenant.Precondition("the reception has not failed")
-			default:
-				return tenant.Precondition("the reception's files were discarded")
-			}
-		}
-		via := receiver
-		if via == "" {
-			via = f.Receiver
-		}
-		has, err := exists(ctx, tx, `SELECT 1 FROM receivers WHERE name = ?`, via)
-		if err != nil {
-			return err
-		}
-		if !has && receiver == "" {
-			return tenant.Precondition("the reception's receiver has been removed; name the receiver to run it by")
-		}
-		if !has {
-			return tenant.Precondition("the tenant has no receiver named " + receiver)
-		}
-		if err := releaseClaims(ctx, tx, f.ID); err != nil {
-			return err
-		}
-		inserted := false
-		for try := 0; try < 8 && !inserted; try++ {
-			if inserted, err = insertReception(ctx, tx, newID, via, f.StudyUID, reception.Complete, f.ID, now); err != nil {
-				return err
-			}
-		}
-		if !inserted {
-			return fault.New(fault.Unavailable, "receptions of the study kept opening at the same moment; try again")
-		}
-		// The failed reception's files, as they are in the incoming area,
-		// become the new one's; a file it confirmed is held, and the new
-		// reception's claim answers it SameFile.
-		if _, err := tx.ExecContext(ctx, `INSERT INTO received_files (`+receivedColumns+`)
-			SELECT ?, sop_instance_uid, sha256, series_uid, study_uid, sop_class_uid, transfer_syntax_uid, size, incoming,
-				calling_ae, called_ae, remote_addr, association, released, ?
-			FROM received_files WHERE reception_id = ?`, newID, micros(now), f.ID); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE receptions SET
-			files_received = (SELECT count(*) FROM received_files WHERE reception_id = ?1),
-			bytes_received = (SELECT coalesce(sum(size), 0) FROM received_files WHERE reception_id = ?1)
-			WHERE id = ?1`, newID); err != nil {
-			return err
-		}
-		if failed, err = receptionInTx(ctx, tx, f.ID); err != nil {
-			return err
-		}
-		if retry, err = receptionInTx(ctx, tx, newID); err != nil {
-			return err
-		}
-		// The new reception reaching complete, with the reception it runs
-		// again, is its first event.
-		e, err := tenant.ReceptionStepEvent("", retry)
-		if err != nil {
-			return err
-		}
-		if _, err := writeEvent(ctx, tx, e, nil); err != nil {
-			return err
-		}
-		a, err := addDetails(audit, tenant.DetailRetryReception, newID)
-		if err != nil {
-			return err
-		}
-		return audited(ctx, tx, st, a, guard)
-	})
-	if err != nil {
-		return tenant.Reception{}, tenant.Reception{}, err
-	}
-	return failed, retry, nil
-}
-
-// DiscardReception implements tenant.Pipeline.
-func (t *Tenant) DiscardReception(ctx context.Context, id, reason string, now time.Time, audit master.AuditEntry, guard tenant.Guard) (tenant.Reception, error) {
-	if err := master.ValidateID("reception id", id); err != nil {
-		return tenant.Reception{}, err
-	}
-	if err := tenant.ValidateDiscardReason(reason); err != nil {
-		return tenant.Reception{}, err
-	}
-	if err := master.ValidateTime("time", now); err != nil {
-		return tenant.Reception{}, err
-	}
-	if err := audit.ValidateWith(tenant.DetailFiles, tenant.DetailBytes); err != nil {
-		return tenant.Reception{}, err
-	}
-	var out tenant.Reception
-	err := t.write(ctx, "the reception's files cannot be discarded", func(tx *sql.Tx, st *tenantStatements) error {
-		// Marked in the statement that checks it may be discarded, so a
-		// retry and a discard at once do not both happen.
-		res, err := tx.ExecContext(ctx, `UPDATE receptions SET discard_reason = ?, discard_at = ?
-			WHERE id = ? AND state = 'failed' AND retry_reception = '' AND discard_reason = ''`, reason, micros(now), id)
-		if err != nil {
-			return err
-		}
-		marked, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		r, err := receptionInTx(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		if marked == 0 {
-			switch {
-			case r.State != reception.Failed:
-				return tenant.Precondition("the reception has not failed")
-			case r.RetryReception != "":
-				return tenant.Precondition("the reception was retried; its files belong to the reception that runs them")
-			}
-		}
-		if err := releaseClaims(ctx, tx, id); err != nil {
-			return err
-		}
-		var files, bytes int64
-		if err := tx.QueryRowContext(ctx, discardCountSQL, id).Scan(&files, &bytes); err != nil {
-			return err
-		}
-		a, err := addDetails(audit, tenant.DetailFiles, strconv.FormatInt(files, 10), tenant.DetailBytes, strconv.FormatInt(bytes, 10))
-		if err != nil {
-			return err
-		}
-		out = r
-		return audited(ctx, tx, st, a, guard)
-	})
-	if err != nil {
-		return tenant.Reception{}, err
-	}
-	return out, nil
-}
-
 // giveUp takes a reception whose unit of work was held as failed through
 // the Fail step, in the transaction that held the unit, with
 // tenant.FailureWorkGaveUp, releases its claims, so no claim outlives every
-// worker that could end its reception, and writes the step's event. A reception that has ended, or
-// is not there, is left as it is. The step is the core's (reception.Step),
+// worker that could end its reception, and writes the step's event. It
+// reports whether the reception failed: one that has ended, or is not
+// there, is left as it is. The step is the core's (reception.Step),
 // compared and set like any other.
-func giveUp(ctx context.Context, tx *sql.Tx, receptionID string, now time.Time) error {
+func giveUp(ctx context.Context, tx *sql.Tx, receptionID string, now time.Time) (bool, error) {
 	if receptionID == "" {
-		return nil
+		return false, nil
 	}
 	var state string
 	found, err := catalogID(ctx, tx, `SELECT state FROM receptions WHERE id = ?`, []any{receptionID}, &state)
 	if err != nil || !found {
-		return err
+		return false, err
 	}
 	next, err := reception.Step(reception.State(state), reception.Fail)
 	if err != nil {
-		return nil // ended already: nothing is held for it
+		return false, nil // ended already: nothing is held for it
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE receptions SET state = ?, ended = 1, step_at = ?, ended_at = ?, failure = ?
 		WHERE id = ? AND state = ?`, string(next), micros(now), micros(now), tenant.FailureWorkGaveUp, receptionID, state)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
-		return err
+		return false, err
 	}
 	if err := releaseClaims(ctx, tx, receptionID); err != nil {
-		return err
+		return false, err
 	}
-	return writeStepEvent(ctx, tx, receptionID, reception.State(state))
+	return true, writeStepEvent(ctx, tx, receptionID, reception.State(state))
 }
 
 // ReceptionsWithoutWork implements tenant.Pipeline.
@@ -597,41 +403,11 @@ func (t *Tenant) ReceptionsWithoutWork(ctx context.Context, page master.Page) ([
 	if err != nil {
 		return nil, "", err
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, timeCursor(listWithoutWork, binding, micros(last.Started), last.ID), nil
-}
-
-// notKept is the condition, on a received file r, that no quarantine record
-// keeps its bytes at the same place: the files a discard removes. The one
-// condition serves the count in the audit entry and the list the caller
-// removes, so the two agree. quarantine_kept answers it.
-const notKept = `NOT EXISTS (SELECT 1 FROM quarantine AS q WHERE q.incoming = r.incoming AND q.content_kept = 1)`
-
-// discardCountSQL counts the files and bytes a discard removes.
-const discardCountSQL = `SELECT count(*), coalesce(sum(r.size), 0) FROM received_files AS r WHERE r.reception_id = ? AND ` + notKept
-
-// discardedSQL pages the files a discard removes: the received files'
-// primary key.
-const discardedSQL = `SELECT ` + receivedColumns + ` FROM received_files AS r
-	WHERE r.reception_id = ? AND (r.sop_instance_uid, r.sha256) > (?, ?) AND ` + notKept + `
-	ORDER BY r.sop_instance_uid, r.sha256 LIMIT ?`
-
-// DiscardedFiles implements tenant.Pipeline.
-func (t *Tenant) DiscardedFiles(ctx context.Context, receptionID string, page master.Page) ([]tenant.ReceivedFile, string, error) {
-	if err := master.ValidateID("reception id", receptionID); err != nil {
-		return nil, "", err
-	}
-	r, _, err := t.Reception(ctx, receptionID)
-	if err != nil {
-		return nil, "", err
-	}
-	if r.DiscardReason == "" {
-		return nil, "", tenant.Precondition("the reception's files were not discarded")
-	}
-	return t.pageReceived(ctx, listDiscarded, discardedSQL, receptionID, page)
+	return out, sqlkit.TimeCursor(listWithoutWork, binding, last.Started, last.ID), nil
 }
 
 // receptionsQuery returns the statement and arguments of one page of
@@ -648,17 +424,15 @@ func receptionsQuery(filter tenant.ReceptionFilter, after []any, limit int) (str
 	if filter.StudyUID != "" {
 		where, args = append(where, "study_uid = ?"), append(args, filter.StudyUID)
 	}
-	var states []string
-	for _, st := range filter.States {
-		// With in progress, a step that is an end keeps nothing.
-		if !slices.Contains(states, string(st)) && (!filter.InProgress || !st.Ended()) {
-			states = append(states, string(st))
-		}
-	}
-	if filter.InProgress && len(filter.States) > 0 && len(states) == 0 {
+	narrowed, none := filter.NarrowStates()
+	if none {
 		// Only ended steps were asked for, with in progress: nothing can
 		// match, and no statement is run.
 		return "", nil
+	}
+	states := make([]string, len(narrowed))
+	for i, st := range narrowed {
+		states[i] = string(st)
 	}
 	if filter.InProgress && len(states) == 0 {
 		// The literal matches receptions_in_progress's condition. With

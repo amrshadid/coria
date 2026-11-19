@@ -112,7 +112,7 @@ func clientOptions(set settings, tr *http.Transport) awss3.Options {
 			o.MaxBackoff = 5 * time.Second
 			o.RateLimiter = ratelimit.None
 			o.Retryables = append([]retry.IsErrorRetryable{retry.IsErrorRetryableFunc(func(err error) aws.Ternary {
-				if errors.Is(err, errAddressRefused) || errors.Is(err, errAnswerTooLarge) {
+				if errors.Is(err, ErrAddressNotAllowed) || errors.Is(err, errAnswerTooLarge) {
 					return aws.FalseTernary
 				}
 				return aws.UnknownTernary
@@ -149,9 +149,9 @@ func openError(err error) error {
 	if errors.As(err, &sc) {
 		switch sc {
 		case "NoSuchBucket", "InvalidBucketName":
-			return fault.Wrap(fault.Invalid, sc, "opening the storage failed: the bucket does not exist")
+			return fault.Wrap(fault.Invalid, inClass(ErrBucketMissing, sc), "opening the storage failed: the bucket does not exist")
 		case "AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch", "AccountProblem", "AllAccessDisabled":
-			return fault.Wrap(fault.Invalid, sc, "opening the storage failed: the storage refused the credentials it was given or their permissions")
+			return fault.Wrap(fault.Invalid, inClass(ErrRefused, sc), "opening the storage failed: the storage refused the credentials it was given or their permissions")
 		}
 	}
 	return err

@@ -66,7 +66,7 @@
 // A request into one tenant reaches the tenant's store through the registry
 // and acts on it as tenant.Pipeline, the port every driver implements. A
 // refusal of the port that depends on the state of what the request names
-// is answered FAILED_PRECONDITION, in one place (portError). Where the
+// is answered FAILED_PRECONDITION, by its kind, mapped in package codes. Where the
 // installation lets data go (its directory roots, S3 endpoints, ports and
 // bind addresses) is read from its settings: a storage or a receiver is
 // checked against them under a read lock, and a change of one of those

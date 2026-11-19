@@ -246,6 +246,26 @@ linters:
             - pkg: github.com/amrshadid/magnetar/internal/driver
               desc: the handlers name a database type with master.SQLiteDriver and reach a tenant through the registry
 
+        # The rules of where a tenant's data may be are one package that the
+        # handlers and the reception pipeline both use, so a rule is never
+        # applied one way when a storage is added and another when it is
+        # opened. It is handed settings and secrets through its own small
+        # interfaces; an import of either user would turn that around.
+        place:
+          files:
+            - "**/internal/place/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/api
+              desc: the handlers use package place; place never uses them
+            - pkg: github.com/amrshadid/magnetar/internal/receive
+              desc: the reception pipeline uses package place; place never uses it
+            - pkg: github.com/amrshadid/magnetar/internal/registry
+              desc: place is handed a tenant's secrets; it does not look a tenant up
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: place reads settings and secrets through its interfaces, never a database
+            - pkg: database/sql
+              desc: place reads settings and secrets through its interfaces, never a database
+
         # The reception pipeline is written against the ports: a tenant's
         # database through tenant.Pipeline and bytes through blob.Store. If it
         # named a driver, a reception would work on one database or one kind

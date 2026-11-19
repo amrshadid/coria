@@ -11,6 +11,26 @@ import (
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
+// ErrUnreachable is in the chain (errors.Is) of an error whose cause is that
+// the storage's directory could not be examined or opened at all, as
+// opposed to a directory that is not there (fs.ErrNotExist) or one that
+// refuses an operation once open. A caller that tells the causes apart,
+// such as a test of a storage, reads this value, not the message, so the
+// message can be reworded without the caller's reading of it changing.
+var ErrUnreachable = errors.New("the storage's directory could not be reached")
+
+// unreachable is a cause, already without paths, marked as ErrUnreachable:
+// its text is the cause's, and errors.Is finds both.
+type unreachable struct{ cause error }
+
+func (u *unreachable) Error() string   { return u.cause.Error() }
+func (u *unreachable) Unwrap() []error { return []error{u.cause, ErrUnreachable} }
+
+// wrapUnreachable is wrap for a directory that could not be reached.
+func (s *Store) wrapUnreachable(cause error, message string) error {
+	return fault.Wrap(fault.Unavailable, &unreachable{cause: s.pathless(cause)}, message)
+}
+
 // wrap returns an error of the kind and message given that wraps cause with
 // the storage's path taken out of it (see pathless). Every error the store
 // returns with a cause goes through here.

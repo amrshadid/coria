@@ -1,6 +1,7 @@
 package tenant
 
 import (
+	"slices"
 	"strconv"
 	"time"
 
@@ -205,6 +206,37 @@ func (f ReceptionFilter) Validate() error {
 		}
 	}
 	return validateRange(f.Since, f.Until)
+}
+
+// NarrowStates returns the states a filter keeps, each once, in the order
+// it names them, with the rule of InProgress applied: with InProgress set,
+// a state that is an end keeps nothing and is left out. none is true when
+// the filter can keep no reception at all (InProgress with only ended
+// states named), so a store answers an empty page without reading. An empty
+// list with none false keeps every state (InProgress then keeps those that
+// have not ended).
+func (f ReceptionFilter) NarrowStates() (states []reception.State, none bool) {
+	for _, st := range f.States {
+		if !slices.Contains(states, st) && (!f.InProgress || !st.Ended()) {
+			states = append(states, st)
+		}
+	}
+	return states, f.InProgress && len(f.States) > 0 && len(states) == 0
+}
+
+// AddCallingAETitle adds a calling AE title to a reception's list when it
+// is not in it, keeping at most MaxCallingAETitles in the order they first
+// appeared and saying when there were more. An empty title adds nothing.
+// It returns a new slice, never changing the one given, so a change that
+// runs again starts from what it read.
+func AddCallingAETitle(titles []string, truncated bool, title string) ([]string, bool) {
+	if title == "" || slices.Contains(titles, title) {
+		return titles, truncated
+	}
+	if len(titles) >= MaxCallingAETitles {
+		return titles, true
+	}
+	return append(slices.Clip(titles), title), truncated
 }
 
 // validateRange checks a filter's optional time range.

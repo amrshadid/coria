@@ -201,6 +201,21 @@ enum QuarantineReason {
   // is the one kept. Details: "storage", its name, and "read_sha256", the
   // checksum of what was read.
   QUARANTINE_REASON_READ_BACK_MISMATCH = 10;
+
+  // The file's header (the attributes before its pixel data) runs past the
+  // bound the server reads a header to, so its UIDs could not be read and
+  // it cannot be placed. Unlike QUARANTINE_REASON_TOO_LARGE, its bytes are
+  // kept, so a person can release it (it is then checked again as it was
+  // received) or reject it. Details: "limit", the bound in bytes.
+  QUARANTINE_REASON_HEADER_TOO_LARGE = 11;
+
+  // The server recorded the file as received, and its copy in the incoming
+  // area was gone when the pipeline came to read it: removed or lost from
+  // the disk outside the server. There are no bytes left to keep, so it
+  // cannot be released, and the record keeps what is known of the file (its
+  // UIDs, size and checksum as received). Details: none beyond the record's
+  // own fields.
+  QUARANTINE_REASON_INCOMING_LOST = 12;
 }
 
 // QuarantineState is what has been decided about a quarantined file.
@@ -346,6 +361,10 @@ message QuarantinedFile {
   // The name of the receiver its release ran through. Empty unless it is
   // released.
   string release_receiver = 23;
+
+  // Why it was released, as given to ReleaseQuarantinedFile. Empty unless it
+  // is released and a reason was given.
+  string release_reason = 24;
 }
 
 // ListQuarantinedFilesRequest asks for a page of a tenant's quarantined
@@ -452,6 +471,12 @@ message ReleaseQuarantinedFileRequest {
   // file runs by. Empty for the receiver it first came to; required when
   // that receiver has been removed.
   string receiver = 4;
+
+  // Why it is released, in words for whoever reads the record later: a
+  // release is a decision, kept with the record as a rejection's reason is.
+  // Optional; when given, 1 to 1024 bytes of UTF-8, not only spaces. A
+  // file already released keeps the reason of its first release.
+  string reason = 5;
 }
 
 // ReleaseQuarantinedFileResponse is the record after the release.

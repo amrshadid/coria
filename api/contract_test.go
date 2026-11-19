@@ -108,6 +108,7 @@ var textFields = []string{
 	"magnetar.v1.QuarantinedFile.transfer_syntax_uid",
 	"magnetar.v1.QuarantinedFile.release_reception",
 	"magnetar.v1.QuarantinedFile.reject_reason",
+	"magnetar.v1.QuarantinedFile.release_reason",
 	"magnetar.v1.QuarantinedFile.released_from",
 	"magnetar.v1.QuarantinedFile.release_receiver",
 	"magnetar.v1.ListQuarantinedFilesRequest.tenant",
@@ -126,6 +127,7 @@ var textFields = []string{
 	"magnetar.v1.RejectQuarantinedFileRequest.tenant",
 	"magnetar.v1.RejectQuarantinedFileRequest.id",
 	"magnetar.v1.RejectQuarantinedFileRequest.reason",
+	"magnetar.v1.ReleaseQuarantinedFileRequest.reason",
 
 	// reception.proto
 	"magnetar.v1.Reception.id",

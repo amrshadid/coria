@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -12,17 +11,17 @@ import (
 	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
 )
 
-// TestEventFeedAtScale measures, with MAGNETAR_EVENTS_SCALE events in the
-// feed (keyed, as appended events are, unless MAGNETAR_EVENTS_NOKEY is 1), a
-// page read mid-feed with and without filters, a status snapshot, the
-// feed's place, a pruning of MaxPruneBatch events and an append after it.
-// It logs each time and guards nothing else; it is skipped unless the
-// variable is set.
-func TestEventFeedAtScale(t *testing.T) {
-	n, _ := strconv.Atoi(os.Getenv("MAGNETAR_EVENTS_SCALE"))
-	if n == 0 {
-		t.Skip("set MAGNETAR_EVENTS_SCALE to the number of events")
-	}
+// scaleEvents is how many events TestScaleEventFeed seeds: a feed a busy
+// tenant keeps for its retention, keyed as appended events are.
+const scaleEvents = 1_000_000
+
+// TestScaleEventFeed measures, with scaleEvents events in the feed, a page
+// read mid-feed with and without filters, a status snapshot, the feed's
+// place, a pruning of MaxPruneBatch events and an append after it. It logs
+// each time and guards nothing else; it runs in the scale run (skipScale).
+func TestScaleEventFeed(t *testing.T) {
+	skipScale(t)
+	n := scaleEvents
 	ctx := context.Background()
 	p := openTenantTest(t, tenanttest.SuiteTenant).(*Tenant)
 	if _, err := p.ready(ctx); err != nil {
@@ -34,8 +33,8 @@ func TestEventFeedAtScale(t *testing.T) {
 	if err := p.writeTx(ctx, "seed", func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `INSERT INTO events (type, at, payload, key)
 			WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM c WHERE i < ?)
-			SELECT CASE WHEN i % 1000 = 0 THEN 'receiver_health' ELSE 'storage_space' END, ?+i, CASE WHEN i % 1000 = 0 THEN ? ELSE ? END, CASE WHEN ? = '1' THEN NULL ELSE 'k' || i END FROM c`,
-			n, micros(fixtureAt(0)), hl, pl, os.Getenv("MAGNETAR_EVENTS_NOKEY"))
+			SELECT CASE WHEN i % 1000 = 0 THEN 'receiver_health' ELSE 'storage_space' END, ?+i, CASE WHEN i % 1000 = 0 THEN ? ELSE ? END, 'k' || i FROM c`,
+			n, micros(fixtureAt(0)), hl, pl)
 		return err
 	}); err != nil {
 		t.Fatal(err)

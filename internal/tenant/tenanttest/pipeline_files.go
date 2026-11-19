@@ -115,8 +115,43 @@ func testReceivedFilesClosed(e *penv) {
 	e.wantKind("AddReceivedFiles of another study's file", err, fault.Invalid)
 	e.stepTo(r, reception.Complete, "store")
 	_, err = e.p.AddReceivedFiles(e.ctx, []tenant.ReceivedFile{file(r, 1, 1)}, at(3))
-	e.wantIs("AddReceivedFiles into a complete reception", err, tenant.ErrReceptionClosed, fault.Conflict)
-	e.wantPrecondition("AddReceivedFiles into a complete reception", err)
+	e.wantIs("AddReceivedFiles into a complete reception", err, tenant.ErrReceptionClosed, fault.Precondition)
+}
+
+// testReceivedBatchOrder guards which failure a batch naming several
+// receptions reports: the first, in the order the batch first names its
+// receptions, whatever the failures of the receptions after it. Both
+// drivers must answer alike, since the receiver acts on the answer: a
+// closed reception (ErrReceptionClosed) opens the next arrival, while a
+// reception not there is the server's fault.
+func testReceivedBatchOrder(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	open := e.openReception("a", 1, at(1))
+	closed := e.stepTo(e.openReception("a", 2, at(1)), reception.Complete, "store")
+	missing := file(open, 1, 9)
+	missing.ReceptionID = "missing"
+	other := file(open, 1, 8)
+	other.StudyUID = uidOf(1, 99)
+	for _, c := range []struct {
+		what  string
+		batch []tenant.ReceivedFile
+		kind  fault.Kind
+	}{
+		{"a closed reception, then one not there", []tenant.ReceivedFile{file(closed, 2, 1), missing}, fault.Precondition},
+		{"one not there, then a closed reception", []tenant.ReceivedFile{missing, file(closed, 2, 1)}, fault.NotFound},
+		{"an open reception, then a closed one, then the open one again", []tenant.ReceivedFile{file(open, 1, 1), file(closed, 2, 1), file(open, 1, 2)}, fault.Precondition},
+		{"another study's file, then a closed reception", []tenant.ReceivedFile{other, file(closed, 2, 1)}, fault.Invalid},
+		{"a closed reception, then another study's file", []tenant.ReceivedFile{file(closed, 2, 1), other}, fault.Precondition},
+	} {
+		_, err := e.p.AddReceivedFiles(e.ctx, c.batch, at(3))
+		e.wantKind("AddReceivedFiles naming "+c.what, err, c.kind)
+		if c.kind == fault.Precondition {
+			e.wantIs("AddReceivedFiles naming "+c.what, err, tenant.ErrReceptionClosed, fault.Precondition)
+		}
+	}
+	if got, _, _ := e.p.Reception(e.ctx, open.ID); got.Counts.FilesReceived != 0 {
+		e.Errorf("batches that failed recorded %d files", got.Counts.FilesReceived)
+	}
 }
 
 // heldFile returns a held record of reason not DICOM, kept, of size bytes.
@@ -374,7 +409,7 @@ func testQuarantineTotals(e *penv) {
 			e.ok("RejectQuarantined", err)
 		case 1:
 			_, err := e.p.ReleaseQuarantined(e.ctx, id, tenant.ReleaseAsIs, "", e.id("rel"), at(1000), e.audit(), nil)
-			if fault.KindOf(err) != fault.Conflict {
+			if fault.KindOf(err) != fault.Precondition {
 				e.ok("ReleaseQuarantined", err)
 			}
 		}

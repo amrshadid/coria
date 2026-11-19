@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +10,7 @@ import (
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/core/naming"
-	"github.com/amrshadid/magnetar/internal/core/settings"
+	"github.com/amrshadid/magnetar/internal/place"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -146,43 +145,10 @@ func receiverChange(m *v1.Receiver, fields []tenant.ReceiverField) (tenant.Recei
 }
 
 // checkReceiverPlace checks what a receiver may use against what the
-// installation allows: its port among the tenant's allotted ports, and its
-// bind address, when it names one, among the installation's. st is the
-// tenant's store, whose receiver.ports is read.
+// installation allows (place.CheckReceiver). st is the tenant's store,
+// whose receiver.ports is read.
 func (c *core) checkReceiverPlace(ctx context.Context, st tenant.Store, r tenant.Receiver) error {
-	if r.Type != tenant.ReceiverDIMSE {
-		return nil
-	}
-	v, err := c.tenantValue(ctx, st, settings.ReceiverPorts)
-	if err != nil {
-		return err
-	}
-	ports, err := settings.ParsePorts(v)
-	if err != nil {
-		return err
-	}
-	if !ports.Contains(r.DIMSE.Port) {
-		return precondition("receiver.dimse.port: the port " + strconv.Itoa(r.DIMSE.Port) + " is not among the ports the installation allotted to this tenant (its setting " + settings.ReceiverPorts + ")")
-	}
-	if r.DIMSE.BindAddress == "" {
-		return nil
-	}
-	v, err = c.installationValue(ctx, settings.ReceiverBindAddresses)
-	if err != nil {
-		return err
-	}
-	addrs, err := settings.ParseBindAddresses(v)
-	if err != nil {
-		return err
-	}
-	if len(addrs) == 0 {
-		return precondition("receiver.dimse.bind_address: the installation lists no bind address, so a receiver listens on every address and names none")
-	}
-	a, err := netip.ParseAddr(r.DIMSE.BindAddress)
-	if err != nil || !addrs.Contains(a) {
-		return precondition("receiver.dimse.bind_address: the address is not one the installation's setting " + settings.ReceiverBindAddresses + " lists")
-	}
-	return nil
+	return place.CheckReceiver(ctx, tenantReceiverValues{c: c, st: st}, r)
 }
 
 // healthMessage returns a receiver's health as the contract writes it.

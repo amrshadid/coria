@@ -61,6 +61,35 @@ func TestParseDirectoryRoots(t *testing.T) {
 	}
 }
 
+// TestParseDirectoryRootsWindowsForms guards the forms Windows reads as
+// another path than their text: "/" separates segments as "\\" does, and a
+// segment's final dots and spaces are dropped, so each refused value below
+// holds two roots that are one directory, or one inside the other, there,
+// or a root that is not the path it says. A Windows path written with "/"
+// is still a path.
+func TestParseDirectoryRootsWindowsForms(t *testing.T) {
+	for _, v := range []string{
+		"a=D:\\srv\nb=D:\\srv/x",
+		"a=D:\\srv\nb=D:/srv",
+		"a=D:\\srv\nb=D:\\srv.\\x",
+		"a=D:\\srv\nb=D:\\srv \\x",
+		"a=D:\\srv/../srv",
+		"a=D:\\srv/./x",
+		"a=D:\\srv\\x/",
+		"a=D:\\srv\\x.",
+		"a=D:/",
+	} {
+		if _, err := ParseDirectoryRoots(v); err == nil {
+			t.Errorf("%q: accepted", v)
+		}
+	}
+	for _, v := range []string{"a=D:/srv/x", "a=D:\\srv/x\nb=D:\\srv/y", "a=/srv/x.", "a=/srv/x "} {
+		if _, err := ParseDirectoryRoots(v); err != nil {
+			t.Errorf("%q: %v", v, err)
+		}
+	}
+}
+
 // TestParseS3Endpoints guards the form of storage.s3-endpoints: an entry and
 // its flags, and each entry that cannot mean what it says.
 func TestParseS3Endpoints(t *testing.T) {

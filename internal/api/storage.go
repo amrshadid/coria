@@ -12,11 +12,16 @@ import (
 	"github.com/amrshadid/magnetar/internal/blob"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/place"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
 // messageNoStorage answers a storage name the tenant does not have.
 const messageNoStorage = "the tenant has no storage with this name"
+
+// MaxSecretAccessKeyLength bounds an S3 storage's secret access key, the
+// contract's 128 bytes of printable ASCII.
+const MaxSecretAccessKeyLength = 128
 
 // storageService is StorageService: a tenant's storages, kept in its store,
 // placed where the installation's settings allow.
@@ -101,6 +106,24 @@ func storageFromRequest(field string, m *v1.Storage) (tenant.Storage, string, er
 	return s, secret, nil
 }
 
+// secretAccessKey returns an Invalid error naming field unless secret is a
+// secret access key the contract accepts: 1 to 128 bytes of printable
+// ASCII. The message never holds the secret.
+func secretAccessKey(field, secret string) error {
+	if secret == "" {
+		return invalid(field, "is required and not empty")
+	}
+	if len(secret) > MaxSecretAccessKeyLength {
+		return invalid(field, "is at most 128 bytes")
+	}
+	for i := 0; i < len(secret); i++ {
+		if secret[i] <= 0x20 || secret[i] >= 0x7f {
+			return invalid(field, "is printable ASCII")
+		}
+	}
+	return nil
+}
+
 // storageChange returns the values a SetStorage request gives, whatever its
 // type, for tenant.ApplyStorage to take the fields its mask names from.
 func storageChange(m *v1.Storage) (tenant.Storage, string) {
@@ -165,33 +188,25 @@ func (s storageService) AddStorage(ctx context.Context, req *v1.AddStorageReques
 	defer c.places.RUnlock()
 	switch in.Type {
 	case tenant.StorageDirectory:
-		others, err := tenantStorages(ctx, p)
-		if err != nil {
-			return nil, c.failIn(d, st, err)
-		}
-		pl, err := c.checkDirectory(ctx, req.GetTenant(), in, others)
-		if err != nil {
-			return nil, c.failIn(d, st, err)
-		}
 		// A port refusal after this (a name taken, a path another storage
 		// holds) leaves the directory made, empty, which a later add on the
 		// same path accepts.
-		if err := makePlace(pl); err != nil {
+		if err := c.makeDirectory(ctx, p, req.GetTenant(), in); err != nil {
 			return nil, c.failIn(d, st, err)
 		}
 	case tenant.StorageS3:
-		ep, err := c.findEndpoint(ctx, "storage.s3.endpoint", in.S3.Endpoint)
+		ep, err := c.allowS3(ctx, in.S3)
 		if err != nil {
 			return nil, c.failIn(d, st, err)
 		}
-		in.S3.Endpoint = ep.url
-		if in.S3.SealedSecret, err = c.sealSecret(ref.ID, in.Name, secret); err != nil {
+		in.S3.Endpoint = ep.URL
+		if in.S3.SealedSecret, err = place.SealSecret(c.keys, ref.ID, in.Name, secret); err != nil {
 			return nil, c.failIn(d, st, err)
 		}
 	}
 	out, err := p.AddStorage(ctx, in, c.now(), changeEntry(d, access.Facts{}), c.adminGuard(d))
 	if err != nil {
-		return nil, c.failIn(d, st, fieldOf("storage", portError(err)))
+		return nil, c.failIn(d, st, fieldOf("storage", err))
 	}
 	return &v1.AddStorageResponse{Storage: storageMessage(out)}, nil
 }
@@ -274,6 +289,11 @@ func (s storageService) SetStorage(ctx context.Context, req *v1.SetStorageReques
 	}
 	change, secret := storageChange(in)
 	newSecret := slices.Contains(fields, tenant.FieldS3SecretKey)
+	if slices.Contains(fields, tenant.FieldS3Endpoint) && !newSecret {
+		// Credentials are given for one store; sent to another host they
+		// would sign its requests, and so hand them to whoever runs it.
+		return nil, c.failIn(d, st, invalid("update_mask", "names s3.endpoint without s3.access_key_id and s3.secret_access_key: an S3 storage moved to another endpoint is given the credentials for it, never keeps those given for the endpoint it leaves"))
+	}
 	if newSecret {
 		if err := secretAccessKey("storage.s3.secret_access_key", secret); err != nil {
 			return nil, c.failIn(d, st, err)
@@ -287,7 +307,7 @@ func (s storageService) SetStorage(ctx context.Context, req *v1.SetStorageReques
 		return nil, c.failIn(d, st, err)
 	}
 	if newSecret {
-		if change.S3.SealedSecret, err = c.sealSecret(ref.ID, in.GetName(), secret); err != nil {
+		if change.S3.SealedSecret, err = place.SealSecret(c.keys, ref.ID, in.GetName(), secret); err != nil {
 			return nil, c.failIn(d, st, err)
 		}
 	}
@@ -297,27 +317,19 @@ func (s storageService) SetStorage(ctx context.Context, req *v1.SetStorageReques
 	}
 	switch {
 	case result.Type == tenant.StorageS3:
-		ep, err := c.findEndpoint(ctx, "storage.s3.endpoint", result.S3.Endpoint)
+		ep, err := c.allowS3(ctx, result.S3)
 		if err != nil {
 			return nil, c.failIn(d, st, err)
 		}
-		change.S3.Endpoint = ep.url
+		change.S3.Endpoint = ep.URL
 	case result.Type == tenant.StorageDirectory && location:
-		others, err := tenantStorages(ctx, p)
-		if err != nil {
-			return nil, c.failIn(d, st, err)
-		}
-		pl, err := c.checkDirectory(ctx, req.GetTenant(), result, others)
-		if err != nil {
-			return nil, c.failIn(d, st, err)
-		}
-		if err := makePlace(pl); err != nil {
+		if err := c.makeDirectory(ctx, p, req.GetTenant(), result); err != nil {
 			return nil, c.failIn(d, st, err)
 		}
 	}
 	out, err := p.SetStorage(ctx, change, fields, c.now(), changeEntry(d, access.Facts{}), c.adminGuard(d))
 	if err != nil {
-		return nil, c.failIn(d, st, fieldOf("storage", portError(err)))
+		return nil, c.failIn(d, st, fieldOf("storage", err))
 	}
 	return &v1.SetStorageResponse{Storage: storageMessage(out)}, nil
 }
@@ -355,7 +367,7 @@ func (s storageService) RemoveStorage(ctx context.Context, req *v1.RemoveStorage
 		err = fault.Wrap(fault.NotFound, err, messageNoStorage)
 	}
 	if err != nil {
-		return nil, c.failWith(d, st, facts, portError(err))
+		return nil, c.failWith(d, st, facts, err)
 	}
 	return &v1.RemoveStorageResponse{Storage: storageMessage(out)}, nil
 }
@@ -384,10 +396,10 @@ func (s storageService) TestStorage(ctx context.Context, req *v1.TestStorageRequ
 	ref, _ := d.Tenant()
 	var serverFault error
 	results := probe(ctx, faultOfType(stored.Type), func(ctx context.Context) (blob.Store, error) {
-		bs, err := c.openPlace(ctx, p, ref.ID, req.GetTenant(), stored)
-		var se *serverError
+		bs, err := c.opener().Open(ctx, placeTenant(ref.ID, req.GetTenant(), p), stored)
+		var se *place.ServerError
 		if errors.As(err, &se) {
-			serverFault = se.err
+			serverFault = se.Err
 		}
 		return bs, err
 	})
@@ -401,4 +413,33 @@ func (s storageService) TestStorage(ctx context.Context, req *v1.TestStorageRequ
 		out.Results = append(out.Results, r.message())
 	}
 	return out, nil
+}
+
+// makeDirectory checks the directory a directory storage s of the tenant
+// named tenantName, whose pipeline is p, is to be at (place.CheckDirectory,
+// against the tenant's other storages) and makes it.
+func (c *core) makeDirectory(ctx context.Context, p tenant.Pipeline, tenantName string, s tenant.Storage) error {
+	roots, err := installationPlaces{c}.DirectoryRoots(ctx)
+	if err != nil {
+		return err
+	}
+	others, err := tenantStorages(ctx, p)
+	if err != nil {
+		return err
+	}
+	dir, err := place.CheckDirectory(roots, tenantName, s, others)
+	if err != nil {
+		return err
+	}
+	return dir.Make()
+}
+
+// allowS3 returns the endpoint of an S3 storage's configuration as the
+// installation allows it (place.AllowS3).
+func (c *core) allowS3(ctx context.Context, s tenant.S3Storage) (place.Endpoint, error) {
+	entries, err := installationPlaces{c}.S3Endpoints(ctx)
+	if err != nil {
+		return place.Endpoint{}, err
+	}
+	return place.AllowS3(entries, s)
 }

@@ -151,7 +151,7 @@ test:
 # and made the race run a third longer. -v so its numbers are in the log.
 test-scale:
 	$(GO) test -count=1 -v -run '^TestThousandTenants$$' ./internal/registry
-	$(GO) test -count=1 -v -run '^(TestListFiltersAtScale|TestPipelineModelAllSeeds)$$' ./internal/driver/sqlite
+	$(GO) test -count=1 -v -run '^(TestListFiltersAtScale$$|TestPipelineModelAllSeeds$$|TestScale)' ./internal/driver/sqlite
 	$(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres
 	MAGNETAR_TEST_SCALE=1 $(GO) test -count=1 -v -timeout 30m -run '^TestScale' ./internal/receive
 

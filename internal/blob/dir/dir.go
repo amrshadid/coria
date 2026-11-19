@@ -123,13 +123,13 @@ func open(dirPath string, st steps) (*Store, error) {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, s.wrap(fault.Invalid, err, "the storage's directory does not exist; make it, or mount its volume")
 	case err != nil:
-		return nil, s.wrap(fault.Unavailable, err, "the storage's directory cannot be examined")
+		return nil, s.wrapUnreachable(err, "the storage's directory cannot be examined")
 	case !info.IsDir():
 		return nil, fault.New(fault.Invalid, "the storage's path is not a directory")
 	}
 	root, err := os.OpenRoot(dirPath)
 	if err != nil {
-		return nil, s.wrap(fault.Unavailable, err, "the storage's directory cannot be opened")
+		return nil, s.wrapUnreachable(err, "the storage's directory cannot be opened")
 	}
 	s.root = root
 	s.durable.init()

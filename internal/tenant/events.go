@@ -199,14 +199,16 @@ const (
 // was restored from an older backup, so the events at and before it are not
 // the ones the reader saw). Either way the events after it can no longer all
 // be answered, and the reader does the same thing: it reads a status again
-// and follows from its cursor. Its kind is Invalid, since sending the cursor
-// again fails again; the API answers it as cursor expired.
+// and follows from its cursor. Its kind is fault.OutOfRange: the cursor was
+// well formed and this feed's own, and sending it again fails again. The
+// sentinel names this one case of that kind, which a watch tells apart from
+// a feed that fails (package events).
 var ErrCursorExpired = errors.New("the feed can no longer answer from this cursor")
 
 // CursorExpired returns the refusal of a read whose cursor the feed can no
 // longer answer from.
 func CursorExpired() error {
-	return fault.Wrap(fault.Invalid, ErrCursorExpired,
+	return fault.Wrap(fault.OutOfRange, ErrCursorExpired,
 		"the cursor is outside the events the feed keeps; read the status again and watch from its event cursor")
 }
 

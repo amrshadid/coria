@@ -1,0 +1,133 @@
+package api
+
+import (
+	"context"
+
+	"github.com/amrshadid/magnetar/internal/core/settings"
+	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/place"
+	"github.com/amrshadid/magnetar/internal/tenant"
+)
+
+// maxWholeListPages bounds how many pages of master.MaxPageLimit items a
+// read of a whole list takes (wholeList, eachTenant): a list longer than
+// that is the server's fault, not something to read on without end.
+const maxWholeListPages = 100
+
+// installationPlaces answers package place the installation's settings it
+// checks a storage against, read from the master as they apply on the
+// installation.
+type installationPlaces struct{ c *core }
+
+var _ place.Values = installationPlaces{}
+
+// DirectoryRoots returns the installation's storage.directory-roots.
+func (v installationPlaces) DirectoryRoots(ctx context.Context) (settings.DirectoryRoots, error) {
+	s, err := v.c.installationValue(ctx, settings.StorageDirectoryRoots)
+	if err != nil {
+		return nil, err
+	}
+	roots, err := settings.ParseDirectoryRoots(s)
+	if err != nil {
+		return nil, fault.New(fault.Internal, "api: the stored "+settings.StorageDirectoryRoots+" does not follow its rule")
+	}
+	return roots, nil
+}
+
+// S3Endpoints returns the installation's storage.s3-endpoints.
+func (v installationPlaces) S3Endpoints(ctx context.Context) (settings.S3Endpoints, error) {
+	s, err := v.c.installationValue(ctx, settings.StorageS3Endpoints)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := settings.ParseS3Endpoints(s)
+	if err != nil {
+		return nil, fault.New(fault.Internal, "api: the stored "+settings.StorageS3Endpoints+" does not follow its rule")
+	}
+	return entries, nil
+}
+
+// tenantReceiverValues answers package place the settings a receiver of the
+// tenant whose store is st is checked against.
+type tenantReceiverValues struct {
+	c  *core
+	st tenant.Store
+}
+
+var _ place.ReceiverValues = tenantReceiverValues{}
+
+// Ports returns receiver.ports as it applies on the tenant.
+func (v tenantReceiverValues) Ports(ctx context.Context) (settings.Ports, error) {
+	s, err := v.c.tenantValue(ctx, v.st, settings.ReceiverPorts)
+	if err != nil {
+		return nil, err
+	}
+	ports, err := settings.ParsePorts(s)
+	if err != nil {
+		return nil, fault.New(fault.Internal, "api: the stored "+settings.ReceiverPorts+" does not follow its rule")
+	}
+	return ports, nil
+}
+
+// BindAddresses returns the installation's receiver.bind-addresses.
+func (v tenantReceiverValues) BindAddresses(ctx context.Context) (settings.BindAddresses, error) {
+	s, err := v.c.installationValue(ctx, settings.ReceiverBindAddresses)
+	if err != nil {
+		return nil, err
+	}
+	addrs, err := settings.ParseBindAddresses(s)
+	if err != nil {
+		return nil, fault.New(fault.Internal, "api: the stored "+settings.ReceiverBindAddresses+" does not follow its rule")
+	}
+	return addrs, nil
+}
+
+// opener returns the opener of a storage for a test: it touches nothing but
+// its own object, so it leaves the cleanup of old uploads to the reception
+// pipeline, which opens the storage to use it.
+func (c *core) opener() place.Opener {
+	return place.Opener{Values: installationPlaces{c}, Keys: c.keys, StaleUploadAge: -1}
+}
+
+// placeTenant returns the tenant whose pipeline is p as package place opens
+// its storages: its sealed secrets are handed back by its store when the
+// store keeps them.
+func placeTenant(id, name string, p tenant.Pipeline) place.Tenant {
+	t := place.Tenant{ID: id, Name: name}
+	if s, ok := p.(place.Secrets); ok {
+		t.Secrets = s
+	}
+	return t
+}
+
+// wholeList returns every item of a tenant's list, page after page; what
+// names the list in the error of one that does not end.
+func wholeList[T any](ctx context.Context, what string, list func(context.Context, master.Page) ([]T, string, error)) ([]T, error) {
+	var out []T
+	page := master.Page{Limit: master.MaxPageLimit}
+	for i := 0; ; i++ {
+		if i == maxWholeListPages {
+			return nil, fault.New(fault.Internal, "api: "+what+" did not end")
+		}
+		batch, next, err := list(ctx, page)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, batch...)
+		if next == "" {
+			return out, nil
+		}
+		page.Cursor = next
+	}
+}
+
+// tenantStorages returns every storage of a tenant.
+func tenantStorages(ctx context.Context, p tenant.Pipeline) ([]tenant.Storage, error) {
+	return wholeList(ctx, "a tenant's storages", p.ListStorages)
+}
+
+// tenantReceivers returns every receiver of a tenant.
+func tenantReceivers(ctx context.Context, p tenant.Pipeline) ([]tenant.Receiver, error) {
+	return wholeList(ctx, "a tenant's receivers", p.ListReceivers)
+}

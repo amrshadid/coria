@@ -9,13 +9,14 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/blob"
+	"github.com/amrshadid/magnetar/internal/blob/dir"
+	"github.com/amrshadid/magnetar/internal/blob/s3"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
@@ -154,10 +155,11 @@ var errWrongAnswer = errors.New("what was read back is not what was written")
 
 // directoryFault returns the contract's fault for an error of a directory
 // storage. The directory driver keeps the file system's error in its chain
-// (with no path in it), so its cause is read rather than its words: a
-// directory not there is not found; a refusal of permission, or any other
-// failure of the file system once the directory is open, is the file system
-// refusing the operation; a directory that could not be opened at all is
+// (with no path in it) and marks a directory it could not reach at all with
+// dir.ErrUnreachable, so causes are read, never words: a directory not there
+// is not found; a refusal of permission, or any other failure of the file
+// system once the directory is open, is the file system refusing the
+// operation; a directory that could not be examined or opened at all is
 // unreachable.
 func directoryFault(err error) v1.StorageFault {
 	switch {
@@ -169,35 +171,32 @@ func directoryFault(err error) v1.StorageFault {
 		return v1.StorageFault_STORAGE_FAULT_NOT_FOUND
 	case errors.Is(err, fs.ErrPermission), fault.KindOf(err) == fault.Precondition:
 		return v1.StorageFault_STORAGE_FAULT_REFUSED
-	case strings.Contains(fault.Message(err), "cannot be opened"), strings.Contains(fault.Message(err), "cannot be examined"):
+	case errors.Is(err, dir.ErrUnreachable):
 		return v1.StorageFault_STORAGE_FAULT_UNREACHABLE
 	}
 	return v1.StorageFault_STORAGE_FAULT_REFUSED
 }
 
 // s3Fault returns the contract's fault for an error of an S3 storage. The
-// S3 driver keeps none of the SDK's or the network's text, only a fixed
-// phrase of its own per cause (internal/blob/s3, errors.go), and exports no
-// sentinel for it, so its phrases are read here, in this one place. A TLS
-// failure is among what the driver calls "could not be reached", so it is
-// answered unreachable: TLS_FAILED needs the driver to tell it apart.
+// S3 driver keeps none of the SDK's or the network's text, and marks each
+// cause a caller tells apart with one of its classes (internal/blob/s3,
+// errors.go), which are read here, never its words; what it marks with none
+// is a store that could not be reached or did not answer in time. A TLS
+// failure is among what could not be reached, so it is answered
+// unreachable: TLS_FAILED needs the driver to tell it apart.
 func s3Fault(err error) v1.StorageFault {
-	m := fault.Message(err)
 	switch {
 	case errors.Is(err, errWrongAnswer):
 		return v1.StorageFault_STORAGE_FAULT_WRONG_ANSWER
 	case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled):
 		return v1.StorageFault_STORAGE_FAULT_UNREACHABLE
-	case strings.Contains(m, "address is not allowed"):
+	case errors.Is(err, s3.ErrAddressNotAllowed):
 		return v1.StorageFault_STORAGE_FAULT_ADDRESS_NOT_ALLOWED
-	case fault.KindOf(err) == fault.NotFound, strings.Contains(m, "bucket does not exist"):
+	case fault.KindOf(err) == fault.NotFound, errors.Is(err, s3.ErrBucketMissing):
 		return v1.StorageFault_STORAGE_FAULT_NOT_FOUND
-	case strings.Contains(m, "refused the credentials"), strings.Contains(m, "refused the request"),
-		strings.Contains(m, "refused the object's size or name"), fault.KindOf(err) == fault.Precondition:
+	case errors.Is(err, s3.ErrRefused), fault.KindOf(err) == fault.Precondition:
 		return v1.StorageFault_STORAGE_FAULT_REFUSED
-	case strings.Contains(m, "redirect"), strings.Contains(m, "not what the request was for"),
-		strings.Contains(m, "longer than any answer"), strings.Contains(m, "confirms"),
-		strings.Contains(m, "damaged in transit"), fault.KindOf(err) == fault.Invalid:
+	case errors.Is(err, s3.ErrWrongAnswer), fault.KindOf(err) == fault.Invalid:
 		return v1.StorageFault_STORAGE_FAULT_WRONG_ANSWER
 	}
 	return v1.StorageFault_STORAGE_FAULT_UNREACHABLE

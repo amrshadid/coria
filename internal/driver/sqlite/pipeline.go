@@ -3,11 +3,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"strconv"
 
-	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/sqlkit"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -38,6 +35,7 @@ const (
 	listQuarantine    = "tenant-quarantine"
 	listDiscarded     = "tenant-discarded-files"
 	listWithoutWork   = "tenant-receptions-without-work"
+	listScanInstances = "tenant-scan-instances"
 )
 
 // pipelineStatements are the pipeline's prepared statements.
@@ -162,38 +160,13 @@ func (t *Tenant) pageAfterName(page master.Page, list string) (string, error) {
 	return f[0], nil
 }
 
-// pageAfterTime decodes a newest-first list's cursor, which holds the (time,
-// id) of the last row returned, or returns nil for the first page.
-func pageAfterTime(page master.Page, list, binding string) ([]any, error) {
-	if err := page.Validate(); err != nil {
-		return nil, err
+// afterArgs returns a newest-first list's keyset arguments, the (time, id)
+// of the last row returned, or nil for the first page.
+func afterArgs(pos *sqlkit.TimePosition) []any {
+	if pos == nil {
+		return nil
 	}
-	if page.Cursor == "" {
-		return nil, nil
-	}
-	f, err := sqlkit.DecodeCursor(page.Cursor, list, binding, 2)
-	if err != nil {
-		return nil, err
-	}
-	at, err := sqlkit.DecodeCursorInt(f[0])
-	if err != nil {
-		return nil, err
-	}
-	return []any{at, f[1]}, nil
-}
-
-// timeCursor returns the cursor after a row of a newest-first list.
-func timeCursor(list, binding string, at int64, id string) string {
-	return sqlkit.EncodeCursor(list, binding, strconv.FormatInt(at, 10), id)
-}
-
-// microsText is a time's microseconds as text for a binding, or "" for the
-// zero time.
-func microsText(v int64) string {
-	if v == 0 {
-		return ""
-	}
-	return strconv.FormatInt(v, 10)
+	return []any{micros(pos.At), pos.ID}
 }
 
 // nullBlob returns NULL for a zero checksum, its bytes otherwise.
@@ -204,44 +177,10 @@ func nullBlob(s tenant.SHA256) any {
 	return s[:]
 }
 
-// toSHA256 reads a checksum column; NULL or a wrong length is none.
-func toSHA256(b []byte) tenant.SHA256 {
-	var s tenant.SHA256
-	if len(b) == len(s) {
-		copy(s[:], b)
-	}
-	return s
-}
-
 // boolInt stores a bool as SQLite's 0 or 1.
 func boolInt(b bool) int {
 	if b {
 		return 1
 	}
 	return 0
-}
-
-// jsonText writes v as JSON for a column that is stored and returned whole.
-func jsonText(v any) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "", fault.Wrap(fault.Internal, err, "a value cannot be written as JSON")
-	}
-	return string(b), nil
-}
-
-// fromJSON reads a column jsonText wrote.
-func fromJSON(s string, v any) error {
-	if err := json.Unmarshal([]byte(s), v); err != nil {
-		return fault.Wrap(fault.Internal, err, "a stored value cannot be read")
-	}
-	return nil
-}
-
-// addDetails returns the audit entry with the details a store adds, checked
-// with the rest of the entry: a caller's entry already at its bound of
-// details is refused before anything is written.
-func addDetails(audit master.AuditEntry, pairs ...string) (master.AuditEntry, error) {
-	a := audit.WithDetails(pairs...)
-	return a, a.Validate()
 }

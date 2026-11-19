@@ -299,8 +299,8 @@ func (t *Tenant) ReadEvents(ctx context.Context, after string, types []tenant.Ev
 		if err != nil {
 			return err
 		}
-		if t.betweenReads != nil {
-			t.betweenReads()
+		if t.seams.betweenReads != nil {
+			t.seams.betweenReads()
 		}
 		// A full page ends at its last event, and the events the filter
 		// left out before it are behind that. A short page has every event
@@ -343,8 +343,8 @@ func (t *Tenant) StatusSnapshot(ctx context.Context) (tenant.StatusSnapshot, err
 		if err := tx.QueryRowContext(ctx, eventHighSQL).Scan(&high, &pruned); err != nil {
 			return err
 		}
-		if t.betweenReads != nil {
-			t.betweenReads()
+		if t.seams.betweenReads != nil {
+			t.seams.betweenReads()
 		}
 		c := &s.Catalog
 		if err := tx.QueryRowContext(ctx, `SELECT subjects, sessions, scans, instances FROM catalog_totals WHERE one = 1`).

@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/core/ascii"
 	"github.com/amrshadid/magnetar/internal/core/naming"
+	"github.com/amrshadid/magnetar/internal/core/pathname"
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
@@ -39,7 +41,7 @@ const (
 	// MaxRegionLength bounds an S3 region.
 	MaxRegionLength = 64
 	// MaxPrefixLength bounds an S3 prefix.
-	MaxPrefixLength = 512
+	MaxPrefixLength = 128
 	// MaxAccessKeyIDLength bounds an S3 access key id.
 	MaxAccessKeyIDLength = 128
 	// MaxSealedSecretLength bounds a sealed secret access key: a secret of
@@ -197,7 +199,7 @@ func (c S3Storage) validate() error {
 		return err
 	}
 	if c.AccessKeyID == "" || len(c.AccessKeyID) > MaxAccessKeyIDLength ||
-		!allBytes(c.AccessKeyID, func(b byte) bool { return b > 0x20 && b < 0x7f }) {
+		!ascii.Printable(c.AccessKeyID) {
 		return invalid("an S3 access key id is 1 to 128 bytes of printable ASCII")
 	}
 	if len(c.SealedSecret) > MaxSealedSecretLength {
@@ -228,7 +230,7 @@ func (c S3Storage) validate() error {
 func NormalizeEndpoint(endpoint string) (string, error) {
 	const rule = "an S3 endpoint is an http or https URL of at most 2048 bytes, with a host name or an IP address, an optional port, and no user information, path, query or fragment"
 	if endpoint == "" || len(endpoint) > MaxEndpointLength || strings.Contains(endpoint, "%") ||
-		!allBytes(endpoint, func(b byte) bool { return b > 0x20 && b < 0x7f }) {
+		!ascii.Printable(endpoint) {
 		return "", invalid(rule)
 	}
 	u, err := url.Parse(endpoint)
@@ -322,18 +324,24 @@ func (s Storage) normalized() (Storage, error) {
 // validateDirectoryPath applies the contract's rule of a directory storage's
 // path: at most 16 segments and 1024 bytes, each 1 to 128 of letters,
 // digits, ".", "_" and "-", not starting with a dot; empty for the tenant's
-// directory.
+// directory. A segment may not end in "." either, nor be a device name
+// Windows reserves, with or without an extension (pathname.DeviceName), on
+// every system: Windows drops a segment's final dots, so "mri." would be
+// the directory of the storage at "mri" there, and opens the device for a
+// name such as "nul.txt", so a storage there could never be made; a data
+// directory moved to Windows must still hold what it held.
 func validateDirectoryPath(p string) error {
 	if p == "" {
 		return nil
 	}
-	const rule = "a directory storage's path is at most 16 segments and 1024 bytes, each 1 to 128 of A-Z, a-z, 0-9, ., _ and -, not starting with a dot"
+	const rule = "a directory storage's path is at most 16 segments and 1024 bytes, each 1 to 128 of A-Z, a-z, 0-9, ., _ and -, not starting or ending with a dot, and not a device name Windows reserves (con, prn, aux, nul, com0 to com9, lpt0 to lpt9, with or without an extension)"
 	segs := strings.Split(p, "/")
 	if len(p) > MaxDirectoryPathLength || len(segs) > MaxDirectorySegments {
 		return invalid(rule)
 	}
 	for _, seg := range segs {
-		if seg == "" || len(seg) > MaxSegmentLength || seg[0] == '.' || !allBytes(seg, pathByte) {
+		if seg == "" || len(seg) > MaxSegmentLength || seg[0] == '.' || !allBytes(seg, pathByte) ||
+			pathname.TrailingDotOrSpace(seg) || pathname.DeviceName(seg) {
 			return invalid(rule)
 		}
 	}
@@ -361,7 +369,7 @@ func validatePrefix(p string) error {
 	if p == "" {
 		return nil
 	}
-	const rule = "an S3 prefix is at most 512 of A-Z, a-z, 0-9, ., _, - and /, ending with / and with no empty, . or .. part"
+	const rule = "an S3 prefix is at most 128 of A-Z, a-z, 0-9, ., _, - and /, ending with / and with no empty, . or .. part"
 	if len(p) > MaxPrefixLength || p[len(p)-1] != '/' || !allBytes(p, func(b byte) bool { return pathByte(b) || b == '/' }) {
 		return invalid(rule)
 	}
@@ -439,9 +447,9 @@ func ApplyStorage(stored, change Storage, fields []StorageField) (Storage, bool,
 // StoragesOverlap reports whether two storages of one tenant would write
 // into each other's files: two directory storages under one root whose
 // paths are equal or one lies inside the other, segment by segment with
-// ASCII case folded (a file system that ignores case makes two spellings
-// one directory), or two S3 storages on one endpoint and bucket of which
-// one prefix starts with the other.
+// case folded (pathname.Nest: a file system that ignores case makes two
+// spellings one directory), or two S3 storages on one endpoint and bucket of
+// which one prefix starts with the other.
 func StoragesOverlap(a, b Storage) bool {
 	if a.Type != b.Type {
 		return false
@@ -451,8 +459,7 @@ func StoragesOverlap(a, b Storage) bool {
 		if a.Directory.Root != b.Directory.Root {
 			return false
 		}
-		pa, pb := strings.ToLower(a.Directory.Path), strings.ToLower(b.Directory.Path)
-		return segmentPrefix(pa, pb) || segmentPrefix(pb, pa)
+		return pathname.Nest(DirectorySegments(a.Directory.Path), DirectorySegments(b.Directory.Path))
 	case StorageS3:
 		if a.S3.Endpoint != b.S3.Endpoint || a.S3.Bucket != b.S3.Bucket {
 			return false
@@ -462,9 +469,13 @@ func StoragesOverlap(a, b Storage) bool {
 	return false
 }
 
-// segmentPrefix reports whether path p is q or lies inside it.
-func segmentPrefix(p, q string) bool {
-	return q == "" || p == q || strings.HasPrefix(p, q+"/")
+// DirectorySegments returns the segments of a directory storage's path,
+// none for the tenant's directory itself.
+func DirectorySegments(p string) []string {
+	if p == "" {
+		return nil
+	}
+	return strings.Split(p, "/")
 }
 
 // ReceiverType is a receiver's type. Its text is what a store keeps.

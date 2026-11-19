@@ -61,7 +61,7 @@ func (s receiverService) AddReceiver(ctx context.Context, req *v1.AddReceiverReq
 	}
 	out, err := p.AddReceiver(ctx, in, c.now(), changeEntry(d, access.Facts{Details: receiverDetails(in, true)}), c.adminGuard(d))
 	if err != nil {
-		return nil, c.failIn(d, st, fieldOf("receiver", portError(err)))
+		return nil, c.failIn(d, st, fieldOf("receiver", err))
 	}
 	return &v1.AddReceiverResponse{Receiver: s.message(req.GetTenant(), out)}, nil
 }
@@ -162,7 +162,7 @@ func (s receiverService) SetReceiver(ctx context.Context, req *v1.SetReceiverReq
 	}
 	out, err := p.SetReceiver(ctx, change, fields, c.now(), changeEntry(d, access.Facts{}), c.adminGuard(d))
 	if err != nil {
-		return nil, c.failIn(d, st, fieldOf("receiver", portError(err)))
+		return nil, c.failIn(d, st, fieldOf("receiver", err))
 	}
 	return &v1.SetReceiverResponse{Receiver: s.message(req.GetTenant(), out)}, nil
 }
@@ -193,7 +193,7 @@ func (s receiverService) RemoveReceiver(ctx context.Context, req *v1.RemoveRecei
 		err = fault.Wrap(fault.NotFound, err, messageNoReceiver)
 	}
 	if err != nil {
-		return nil, c.failWith(d, st, facts, portError(err))
+		return nil, c.failWith(d, st, facts, err)
 	}
 	// The receiver as it was, stopped: its configuration as stored, and a
 	// health that says it no longer runs, whatever ran it.

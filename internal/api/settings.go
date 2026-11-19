@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
@@ -50,6 +51,48 @@ func (c *core) onInstallation(ctx context.Context, def settings.Definition) (str
 	return "", v1.SettingSource_SETTING_SOURCE_UNSPECIFIED, err
 }
 
+// installationValue returns the value of the setting named name that
+// applies on the installation. A setting the server's list does not hold, or
+// a stored value its rule refuses, is the server's fault: every value is
+// checked before it is stored.
+func (c *core) installationValue(ctx context.Context, name string) (string, error) {
+	def, ok := c.settings.Lookup(name)
+	if !ok {
+		return "", fault.New(fault.Internal, "api: the server's list of settings has no "+name)
+	}
+	v, _, err := c.onInstallation(ctx, def)
+	if err != nil {
+		return "", err
+	}
+	if def.Validate(v) != nil {
+		return "", fault.New(fault.Internal, "api: the stored "+name+" does not follow its rule")
+	}
+	return v, nil
+}
+
+// tenantValue returns the value of the setting named name that applies on
+// the tenant whose store is st: its own, else the installation's (none for a
+// setting with no installation value), else the built-in default.
+func (c *core) tenantValue(ctx context.Context, st tenant.Store, name string) (string, error) {
+	def, ok := c.settings.Lookup(name)
+	if !ok {
+		return "", fault.New(fault.Internal, "api: the server's list of settings has no "+name)
+	}
+	v, err := st.Setting(ctx, name)
+	switch {
+	case fault.KindOf(err) == fault.NotFound && def.TenantOnly:
+		v = def.Default
+	case fault.KindOf(err) == fault.NotFound:
+		return c.installationValue(ctx, name)
+	case err != nil:
+		return "", err
+	}
+	if def.Validate(v) != nil {
+		return "", fault.New(fault.Internal, "api: the tenant's stored "+name+" does not follow its rule")
+	}
+	return v, nil
+}
+
 // keyLifetime returns the lifetime of a key made with no expiry: the
 // installation's key.default-lifetime, else its built-in default. ok is
 // false when the server's list has no such setting, and the access package's
@@ -75,6 +118,30 @@ func (c *core) keyLifetime(ctx context.Context) (time.Duration, bool, error) {
 // settingMessage returns a setting as the contract writes it.
 func settingMessage(name string, scope access.Scope, value string, source v1.SettingSource) *v1.Setting {
 	return &v1.Setting{Name: name, Scope: scopeMessage(scope), Value: value, Source: source}
+}
+
+// shownValue returns the value of the setting named name as the caller d
+// may read it. The paths of storage.directory-roots are the installation's:
+// where its disks are mounted is no tenant's business, and the rest of the
+// server never shows one (an error, a log line, an audit entry). So a caller
+// who is not an admin on the installation is answered the roots' names
+// alone, one per line, which is all a storage names; the installation's
+// admin, who sets them, reads them whole.
+func shownValue(d access.Decision, name, value string) string {
+	if name != settings.StorageDirectoryRoots || d.Principal().Role(master.Installation).Includes(master.RoleAdmin) {
+		return value
+	}
+	roots, err := settings.ParseDirectoryRoots(value)
+	if err != nil {
+		// Every stored value follows its rule; one that does not is shown
+		// as nothing rather than as it is.
+		return ""
+	}
+	names := make([]string, len(roots))
+	for i, r := range roots {
+		names[i] = r.Name
+	}
+	return strings.Join(names, "\n")
 }
 
 // tenantScoped returns the Invalid error of a tenant scope for a setting a
@@ -133,7 +200,7 @@ func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingReque
 		return nil, c.failIn(d, st, err)
 	}
 	c.done(d, st)
-	return &v1.GetSettingResponse{Setting: settingMessage(name, access.InstallationScope, v, source)}, nil
+	return &v1.GetSettingResponse{Setting: settingMessage(name, access.InstallationScope, shownValue(d, name, v), source)}, nil
 }
 
 // SetSetting sets the installation's value of a setting or a tenant's
@@ -354,7 +421,7 @@ func (s settingsService) ListSettings(ctx context.Context, req *v1.ListSettingsR
 		return nil, c.failIn(d, st, err)
 	}
 	if st == nil {
-		out, err := c.installationSettings(ctx, page)
+		out, err := c.installationSettings(ctx, d, page)
 		if err != nil {
 			return nil, c.fail(d, err)
 		}
@@ -387,7 +454,7 @@ func (s settingsService) ListSettings(ctx context.Context, req *v1.ListSettingsR
 // server's list, not the master's rows, so a setting with no value set is
 // listed with its built-in default; a row of a setting the server no longer
 // knows is not listed.
-func (c *core) installationSettings(ctx context.Context, page master.Page) (*v1.ListSettingsResponse, error) {
+func (c *core) installationSettings(ctx context.Context, d access.Decision, page master.Page) (*v1.ListSettingsResponse, error) {
 	after := ""
 	if page.Cursor != "" {
 		var err error
@@ -413,7 +480,7 @@ func (c *core) installationSettings(ctx context.Context, page master.Page) (*v1.
 		if err != nil {
 			return nil, err
 		}
-		out.Settings = append(out.Settings, settingMessage(n, access.InstallationScope, v, source))
+		out.Settings = append(out.Settings, settingMessage(n, access.InstallationScope, shownValue(d, n, v), source))
 	}
 	return out, nil
 }

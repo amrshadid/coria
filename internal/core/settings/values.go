@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/amrshadid/magnetar/internal/core/ascii"
+	"github.com/amrshadid/magnetar/internal/core/pathname"
 )
 
 // The bounds of the values below. Each keeps a value a person writes by hand
@@ -81,17 +84,22 @@ func (r DirectoryRoots) String() string {
 // "name=path", such as "fast=/srv/archive"; a final newline is allowed and
 // the empty value lists none. A name follows the rule of a tenant's name and
 // is used once. A path is absolute, in the form of Unix ("/srv/archive") or
-// of Windows ("D:\archive"), with no empty, "." or ".." segment, no
-// separator at its end, and no control character; at most 4096 bytes.
+// of Windows ("D:\archive", where "/" separates segments too), with no
+// empty, "." or ".." segment, no separator at its end, and no control
+// character; at most 4096 bytes. A segment of a Windows path may not end in
+// "." or " ", which Windows drops when it opens a path, so "D:\srv." is
+// "D:\srv" there.
 //
 // Two roots must not be the same directory or lie one inside the other,
-// compared segment by segment with ASCII case folded: a tenant's directory
-// is <path>/<tenant>, so with "a=/srv" and "b=/srv/x" the tenant named x
+// compared segment by segment with case folded: a tenant's directory is
+// <path>/<tenant>, so with "a=/srv" and "b=/srv/x" the tenant named x
 // would own, under a, the directory holding every tenant's directories
 // under b. Case is folded because a file system that ignores case makes two
-// spellings one directory. The server checks besides that each path is
-// absolute on its own system and resolves where it says; this is the rule
-// of the text.
+// spellings one directory. This is the rule of the text. The server applies
+// two more, which need its file system (package place): each path is
+// absolute on its own system, and no two roots nest once every symbolic
+// link in their paths is followed, checked when the value is set and again
+// whenever a root is used, since a link can change after the value is set.
 func ParseDirectoryRoots(v string) (DirectoryRoots, error) {
 	lines, err := splitLines(v, MaxDirectoryRoots, "roots")
 	if err != nil {
@@ -103,7 +111,7 @@ func ParseDirectoryRoots(v string) (DirectoryRoots, error) {
 		if !ok {
 			return nil, errors.New("is one root per line, written name=path, such as fast=/srv/archive")
 		}
-		if !validTenantName(name) {
+		if !pathname.ValidName(name) {
 			return nil, errors.New("has a root name that does not follow the rule of a tenant's name: 1 to 63 of a-z, 0-9 and -, starting with a letter, not a device name Windows reserves")
 		}
 		if _, dup := out.Lookup(name); dup {
@@ -132,7 +140,7 @@ func checkRootPath(p string) error {
 			return errors.New("holds a control character")
 		}
 	}
-	segs, ok := rootSegments(p)
+	segs, windows, ok := rootSegments(p)
 	if !ok {
 		return errors.New("is not absolute: it starts with / on Unix, or with a drive such as D:\\ on Windows")
 	}
@@ -140,41 +148,37 @@ func checkRootPath(p string) error {
 		if s == "" || s == "." || s == ".." {
 			return errors.New("has an empty, . or .. segment, or a separator at its end")
 		}
+		if windows && pathname.TrailingDotOrSpace(s) {
+			return errors.New("has a segment that ends in . or a space, which Windows drops, so the path would stand for another")
+		}
 	}
 	return nil
 }
 
-// rootSegments returns the segments of an absolute path below its root, and
-// false for a path that is not absolute: "/a/b" is a and b; "D:\a\b" is d:,
-// a and b, its drive first, so two drives never nest. The root itself, "/"
-// or "D:\", has no segment and so is refused by its caller: a root must be
-// a directory below it.
-func rootSegments(p string) ([]string, bool) {
+// rootSegments returns the segments of an absolute path below its root,
+// whether the path is in the form of Windows, and false for a path that is
+// not absolute: "/a/b" is a and b; "D:\a\b" is d:, a and b, its drive
+// first, so two drives never nest. In a Windows path "/" separates segments
+// as "\" does, since Windows reads it so: "D:\a/b" is "D:\a\b". The root
+// itself, "/" or "D:\", has one empty segment and so is refused by its
+// caller: a root must be a directory below it.
+func rootSegments(p string) ([]string, bool, bool) {
 	switch {
 	case strings.HasPrefix(p, "/"):
-		if len(p) == 1 {
-			return []string{""}, true
-		}
-		return strings.Split(p[1:], "/"), true
-	case len(p) >= 3 && isASCIILetter(p[0]) && p[1] == ':' && p[2] == '\\':
-		rest := p[3:]
-		if rest == "" {
-			return []string{""}, true
-		}
-		return append([]string{strings.ToLower(p[:2])}, strings.Split(rest, "\\")...), true
+		return strings.Split(p[1:], "/"), false, true
+	case len(p) >= 3 && isASCIILetter(p[0]) && p[1] == ':' && (p[2] == '\\' || p[2] == '/'):
+		segs := strings.Split(strings.ReplaceAll(p[3:], "/", "\\"), "\\")
+		return append([]string{strings.ToLower(p[:2])}, segs...), true, true
 	}
-	return nil, false
+	return nil, false, false
 }
 
-// pathsNest reports whether two root paths are one directory or one lies
-// inside the other, segment by segment with ASCII case folded.
+// pathsNest reports whether two root paths, each accepted by checkRootPath,
+// are one directory or one lies inside the other (pathname.Nest).
 func pathsNest(a, b string) bool {
-	sa, _ := rootSegments(strings.ToLower(a))
-	sb, _ := rootSegments(strings.ToLower(b))
-	if len(sa) > len(sb) {
-		sa, sb = sb, sa
-	}
-	return slices.Equal(sa, sb[:len(sa)])
+	sa, _, _ := rootSegments(a)
+	sb, _, _ := rootSegments(b)
+	return pathname.Nest(sa, sb)
 }
 
 // S3Endpoint is one entry of storage.s3-endpoints.
@@ -225,7 +229,7 @@ func ParseS3Endpoints(v string) (S3Endpoints, error) {
 	for _, line := range lines {
 		fields := strings.Split(line, " ")
 		u := fields[0]
-		if u == "" || len(u) > MaxEndpointLength || !printable(u) {
+		if u == "" || len(u) > MaxEndpointLength || !ascii.Printable(u) {
 			return nil, errors.New("is one endpoint per line: a URL of at most 2048 bytes of printable ASCII, then plain-http or private-address, each after one space")
 		}
 		ep := S3Endpoint{URL: u}
@@ -551,37 +555,6 @@ func wholeNumber(s string, limit int64) (int64, error) {
 		return 0, bad
 	}
 	return n, nil
-}
-
-// validTenantName applies the rule of a tenant's name, which roots share
-// with tenants, storages and receivers (master.ValidateTenantName, restated
-// because the core imports nothing of Magnetar's): 1 to 63 of a-z, 0-9 and
-// "-", starting with a letter, and not a device name Windows reserves.
-func validTenantName(name string) bool {
-	if name == "" || len(name) > 63 || name[0] < 'a' || name[0] > 'z' {
-		return false
-	}
-	for i := 0; i < len(name); i++ {
-		b := name[i]
-		if (b < 'a' || b > 'z') && (b < '0' || b > '9') && b != '-' {
-			return false
-		}
-	}
-	switch name {
-	case "con", "prn", "aux", "nul":
-		return false
-	}
-	return len(name) != 4 || (name[:3] != "com" && name[:3] != "lpt") || name[3] < '0' || name[3] > '9'
-}
-
-// printable reports whether s is printable ASCII with no space.
-func printable(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] <= 0x20 || s[i] >= 0x7f {
-			return false
-		}
-	}
-	return true
 }
 
 // isASCIILetter reports whether b is an ASCII letter.

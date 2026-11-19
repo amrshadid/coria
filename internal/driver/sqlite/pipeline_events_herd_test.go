@@ -3,9 +3,7 @@ package sqlite
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
-	"strconv"
 	"testing"
 	"time"
 
@@ -14,16 +12,18 @@ import (
 	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
 )
 
-// TestWriterBesideIdleWatches measures how long an append takes while
-// MAGNETAR_EVENTS_WATCHES idle watches of the same tenant are woken by the
-// timer ten times a second, each reading the feed: what the timer's reads
-// cost the one writer. It logs the times and guards nothing else; it is
-// skipped unless the variable is set.
-func TestWriterBesideIdleWatches(t *testing.T) {
-	n, _ := strconv.Atoi(os.Getenv("MAGNETAR_EVENTS_WATCHES"))
-	if n == 0 {
-		t.Skip("set MAGNETAR_EVENTS_WATCHES to the number of watches")
-	}
+// scaleWatches is how many idle watches TestScaleWriterBesideIdleWatches
+// keeps open on one tenant: far more than a tenant's monitors would hold.
+const scaleWatches = 1000
+
+// TestScaleWriterBesideIdleWatches measures how long an append takes while
+// scaleWatches idle watches of the same tenant are woken by the timer ten
+// times a second, each reading the feed: what the timer's reads cost the
+// one writer. It logs the times and guards nothing else; it runs in the
+// scale run (skipScale).
+func TestScaleWriterBesideIdleWatches(t *testing.T) {
+	skipScale(t)
+	n := scaleWatches
 	ctx := context.Background()
 	p := openTenantTest(t, tenanttest.SuiteTenant).(*Tenant)
 	var batch []tenant.EventAppend

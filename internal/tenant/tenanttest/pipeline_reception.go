@@ -65,6 +65,64 @@ func testOpenReception(e *penv) {
 	e.wantKind("Reception not there", err, fault.NotFound)
 }
 
+// testOpenReceptionSameID guards an open called again, or at once, with
+// the id of the reception it opened (a receiver's call run again, an
+// association that reconnects): the open reception is answered with opened
+// false, never a Conflict, and nothing else is made. An id taken by a
+// reception that is no longer receiving is still a Conflict, since a new
+// reception would need it. And a receiver the tenant no longer has is a
+// precondition failure even while a reception of it is open. Both drivers
+// must answer alike.
+func testOpenReceptionSameID(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	e.addReceiver("b", "store", 11113)
+	study := uidOf(1, 3)
+	first, opened, err := e.p.OpenReception(e.ctx, "a", study, "same-1", at(1))
+	e.ok("OpenReception", err)
+	if !opened {
+		e.Error("the first open did not open")
+	}
+	again, opened, err := e.p.OpenReception(e.ctx, "a", study, "same-1", at(2))
+	e.ok("OpenReception again with the same id", err)
+	if opened || again.ID != first.ID || !again.Started.Equal(at(1)) {
+		e.Errorf("an open again with the same id = %s started %v (opened %v), want %s as it was", again.ID, again.Started, opened, first.ID)
+	}
+	const n = 8
+	errs := make([]error, n)
+	ids := make([]string, n)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range n {
+		wg.Go(func() {
+			<-start
+			r, _, err := e.p.OpenReception(e.ctx, "a", uidOf(1, 4), "same-2", at(3))
+			ids[i], errs[i] = r.ID, err
+		})
+	}
+	close(start)
+	wg.Wait()
+	for i := range n {
+		e.ok("OpenReception at once with one id", errs[i])
+		if ids[i] != "same-2" {
+			e.Errorf("an open at once with one id answered %q", ids[i])
+		}
+	}
+	e.stepTo(first, reception.Complete, "store")
+	_, _, err = e.p.OpenReception(e.ctx, "a", study, "same-1", at(4))
+	e.wantKind("OpenReception with the id of a reception that ended", err, fault.Conflict)
+	gone, _, err := e.p.OpenReception(e.ctx, "b", study, "same-3", at(5))
+	e.ok("OpenReception", err)
+	_, err = e.p.RemoveReceiver(e.ctx, "b", e.audit(), nil)
+	e.ok("RemoveReceiver", err)
+	_, _, err = e.p.OpenReception(e.ctx, "b", study, gone.ID, at(6))
+	e.wantPrecondition("OpenReception at a removed receiver whose reception is open", err)
+	list, _, err := e.p.ListReceptions(e.ctx, tenant.ReceptionFilter{}, master.Page{Limit: 100})
+	e.ok("ListReceptions", err)
+	if len(list) != 3 {
+		e.Errorf("%d receptions, want 3", len(list))
+	}
+}
+
 // testOpenReceptionConcurrent guards that opens of one study at one
 // receiver made at once open one reception, whatever the order they reach
 // the database in.
@@ -389,16 +447,43 @@ func testRetryReception(e *penv) {
 	gone := e.failReception(e.openReception("b", 2, at(10)))
 	_, err = e.p.RemoveReceiver(e.ctx, "b", e.audit(), nil)
 	e.ok("RemoveReceiver", err)
-	_, _, err = e.p.RetryReception(e.ctx, gone.ID, "retry-4", "", at(600), e.audit(), nil)
+	refused := e.audit()
+	_, _, err = e.p.RetryReception(e.ctx, gone.ID, "retry-4", "", at(600), refused, nil)
 	e.wantPrecondition("RetryReception of a removed receiver's reception, naming none", err)
+	// The failed reception is marked as retried in the statement that
+	// checks it may be; a refusal after that leaves no mark, no reception
+	// and no audit entry.
+	if still, _, _ := e.p.Reception(e.ctx, gone.ID); still.RetryReception != "" {
+		e.Errorf("a refused retry left the failed reception marked retried by %q", still.RetryReception)
+	}
+	if _, _, err := e.p.Reception(e.ctx, "retry-4"); fault.KindOf(err) != fault.NotFound {
+		e.Error("a refused retry made a reception")
+	}
+	if e.auditIDs()[refused.ID] {
+		e.Error("a refused retry wrote its audit entry")
+	}
+	// A reception already retried is answered as it stands, with the
+	// reception made then, even once its receiver is removed and none is
+	// named: the removed receiver is a precondition only for a reception
+	// not yet retried.
+	_, err = e.p.RemoveReceiver(e.ctx, "a", e.audit(), nil)
+	e.ok("RemoveReceiver of the retried reception's receiver", err)
+	_, stands, err := e.p.RetryReception(e.ctx, r.ID, "retry-x", "", at(650), e.audit(), nil)
+	e.ok("RetryReception of a reception retried before its receiver was removed", err)
+	if stands.ID != "retry-1" {
+		e.Errorf("a retried reception whose receiver is gone answered %s, want retry-1", stands.ID)
+	}
+	_, err = e.p.AddReceiver(e.ctx, receiverOf("a", "store", 11112), at(651), e.audit(), nil)
+	e.wantKind("AddReceiver with the name its receptions still hold", err, fault.Conflict)
+	e.addReceiver("c", "store", 11114)
 	_, _, err = e.p.RetryReception(e.ctx, gone.ID, "retry-4", "nobody", at(600), e.audit(), nil)
 	e.wantPrecondition("RetryReception through a receiver not there", err)
-	_, retry, err = e.p.RetryReception(e.ctx, gone.ID, "retry-4", "a", at(600), e.audit(), nil)
+	_, retry, err = e.p.RetryReception(e.ctx, gone.ID, "retry-4", "c", at(600), e.audit(), nil)
 	e.ok("RetryReception through another receiver", err)
-	if retry.Receiver != "a" {
-		e.Errorf("the retry runs by %s, want a", retry.Receiver)
+	if retry.Receiver != "c" {
+		e.Errorf("the retry runs by %s, want c", retry.Receiver)
 	}
-	discarded := e.failReception(e.openReception("a", 3, at(20)))
+	discarded := e.failReception(e.openReception("c", 3, at(20)))
 	_, err = e.p.DiscardReception(e.ctx, discarded.ID, "bad data", at(30), e.audit(), nil)
 	e.ok("DiscardReception", err)
 	_, _, err = e.p.RetryReception(e.ctx, discarded.ID, "retry-5", "", at(600), e.audit(), nil)

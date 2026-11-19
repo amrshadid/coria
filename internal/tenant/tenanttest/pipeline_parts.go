@@ -1,0 +1,296 @@
+package tenanttest
+
+import (
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/amrshadid/magnetar/internal/core/layout"
+	"github.com/amrshadid/magnetar/internal/core/reception"
+	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/tenant"
+)
+
+// parts returns the store as tenant.PipelineParts, the pipeline's narrower
+// interfaces, which every driver implements as part of Pipeline.
+func (e *penv) parts() tenant.PipelineParts { return e.p }
+
+// testStorageSecret guards that an S3 storage's sealed secret comes back
+// exactly as AddStorage or SetStorage was given it, kept through a change
+// that does not name it, while Storage still never answers it; a storage
+// not there, or not of type S3, is NotFound.
+func testStorageSecret(e *penv) {
+	pp := e.parts()
+	_, err := e.p.AddStorage(e.ctx, s3Storage("bucket", "p/"), at(1), e.audit(), nil)
+	e.ok("AddStorage", err)
+	got, err := pp.StorageSecret(e.ctx, "bucket")
+	e.ok("StorageSecret", err)
+	if string(got) != "sealed-secret-bytes" {
+		e.Errorf("StorageSecret = %q, want the sealed bytes given", got)
+	}
+	_, err = e.p.SetStorage(e.ctx, tenant.Storage{Name: "bucket", S3: tenant.S3Storage{AccessKeyID: "NEWKEY", SealedSecret: []byte("new-sealed")}},
+		[]tenant.StorageField{tenant.FieldS3AccessKeyID, tenant.FieldS3SecretKey}, at(2), e.audit(), nil)
+	e.ok("SetStorage credentials", err)
+	_, err = e.p.SetStorage(e.ctx, tenant.Storage{Name: "bucket", CapacityBytes: 10}, []tenant.StorageField{tenant.FieldCapacityBytes}, at(3), e.audit(), nil)
+	e.ok("SetStorage capacity", err)
+	if got, err = pp.StorageSecret(e.ctx, "bucket"); err != nil || string(got) != "new-sealed" {
+		e.Errorf("StorageSecret after a change of credentials and one of capacity = %q, %v; want the new sealed bytes", got, err)
+	}
+	if s, _ := e.p.Storage(e.ctx, "bucket"); s.S3.SealedSecret != nil {
+		e.Error("Storage answered the sealed secret")
+	}
+	e.addStorage("disk")
+	_, err = pp.StorageSecret(e.ctx, "disk")
+	e.wantKind("StorageSecret of a directory storage", err, fault.NotFound)
+	_, err = pp.StorageSecret(e.ctx, "missing")
+	e.wantKind("StorageSecret of a storage not there", err, fault.NotFound)
+	_, err = pp.StorageSecret(e.ctx, "Bad Name")
+	e.wantKind("StorageSecret of a malformed name", err, fault.Invalid)
+}
+
+// testReleaseReason guards a release's record: the reason the person gave
+// is kept on the record, a release again keeps the first reason, an empty
+// reason records none, a reason of spaces or too long is Invalid; and the
+// reception the file joined is in the audit entry, also when the release
+// is answered as it stands.
+func testReleaseReason(e *penv) {
+	pp := e.parts()
+	e.addReceiver("a", "store", 11112)
+	r := e.openReception("a", 1, at(1))
+	joins, alone, plain := e.differentFile("a", r.ID, 7), e.heldFile("a", 40, 2), e.heldFile("a", 41, 3)
+	_, err := e.p.HoldFiles(e.ctx, []tenant.QuarantinedFile{joins, alone, plain})
+	e.ok("HoldFiles", err)
+	for _, reason := range []string{"   ", strings.Repeat("x", tenant.MaxDecisionReasonLength+1)} {
+		_, err := pp.ReleaseFile(e.ctx, tenant.Release{ID: joins.ID, Mode: tenant.ReleaseAsIs, ReceptionID: "rel-0", Reason: reason, Now: at(5)}, e.audit(), nil)
+		e.wantKind("ReleaseFile with a reason of spaces or too long", err, fault.Invalid)
+	}
+	audit := e.audit()
+	got, err := pp.ReleaseFile(e.ctx, tenant.Release{ID: joins.ID, Mode: tenant.ReleaseAsIs, ReceptionID: "rel-1",
+		Reason: "the sender confirmed the file", Now: at(10)}, audit, nil)
+	e.ok("ReleaseFile", err)
+	if got.State != tenant.QuarantineReleased || got.ReleaseReason != "the sender confirmed the file" || got.ReleaseReception != r.ID {
+		e.Errorf("a release with a reason reads %+v", got)
+	}
+	if read, _ := e.p.QuarantinedFile(e.ctx, joins.ID); read.ReleaseReason != got.ReleaseReason {
+		e.Errorf("the record read back has the reason %q, want %q", read.ReleaseReason, got.ReleaseReason)
+	}
+	entryOf := func(id string) master.AuditEntry {
+		e.Helper()
+		for _, a := range e.allAudit(master.AuditFilter{}) {
+			if a.ID == id {
+				return a
+			}
+		}
+		e.Fatalf("no audit entry %s", id)
+		return master.AuditEntry{}
+	}
+	if d := entryOf(audit.ID).Details; d[tenant.DetailReleaseReception] != r.ID {
+		e.Errorf("the release's audit entry holds %v, want the reception it joined, %s", d, r.ID)
+	}
+	again := e.audit()
+	got, err = pp.ReleaseFile(e.ctx, tenant.Release{ID: joins.ID, Mode: tenant.ReleaseAsIs, ReceptionID: "rel-2",
+		Reason: "another reason", Now: at(20)}, again, nil)
+	e.ok("ReleaseFile again", err)
+	if got.ReleaseReason != "the sender confirmed the file" || !got.Decided.Equal(at(10)) {
+		e.Errorf("a release again changed the record: %+v", got)
+	}
+	if d := entryOf(again.ID).Details; d[tenant.DetailReleaseReception] != r.ID {
+		e.Errorf("a release answered as it stands has the entry %v, want the reception it joined", d)
+	}
+	lone := e.audit()
+	got, err = pp.ReleaseFile(e.ctx, tenant.Release{ID: alone.ID, Mode: tenant.ReleaseAsIs, ReceptionID: "rel-3",
+		Reason: "looked at it", Now: at(30)}, lone, nil)
+	e.ok("ReleaseFile of a file that joins no reception", err)
+	if got.ReleaseReception != "" || got.ReleaseReason != "looked at it" {
+		e.Errorf("a release that joined nothing reads %+v", got)
+	}
+	if _, ok := entryOf(lone.ID).Details[tenant.DetailReleaseReception]; ok {
+		e.Error("a release that joined no reception names one in its audit entry")
+	}
+	got, err = e.p.ReleaseQuarantined(e.ctx, plain.ID, tenant.ReleaseAsIs, "", "rel-4", at(40), e.audit(), nil)
+	e.ok("ReleaseQuarantined", err)
+	if got.ReleaseReason != "" {
+		e.Errorf("a release with no reason recorded %q", got.ReleaseReason)
+	}
+}
+
+// testFencedFiles guards the fence of the file writes: a worker whose lease
+// was taken over records no received file and holds no file, and is told
+// ErrLeaseLost; the worker that holds the lease records both; no fence is
+// the unfenced write.
+func testFencedFiles(e *penv) {
+	pp := e.parts()
+	e.addReceiver("a", "store", 11112)
+	r := e.openReception("a", 1, at(1))
+	e.enqueue("w1", at(0))
+	first, err := e.p.ClaimWork(e.ctx, "reception", "worker-1", at(0), time.Minute)
+	e.ok("ClaimWork", err)
+	second, err := e.p.ClaimWork(e.ctx, "reception", "worker-2", at(120), time.Minute)
+	e.ok("ClaimWork after the first lease ended", err)
+	stale, held := first.Fence(), second.Fence()
+	_, err = pp.AddReceivedFilesFenced(e.ctx, []tenant.ReceivedFile{file(r, 1, 1)}, at(121), &stale)
+	e.wantIs("AddReceivedFilesFenced under a lease taken over", err, tenant.ErrLeaseLost, fault.Conflict)
+	_, err = pp.HoldFilesFenced(e.ctx, []tenant.QuarantinedFile{e.heldFile("a", 10, 1)}, &stale)
+	e.wantIs("HoldFilesFenced under a lease taken over", err, tenant.ErrLeaseLost, fault.Conflict)
+	if got, _, _ := e.p.Reception(e.ctx, r.ID); got.Counts.FilesReceived != 0 {
+		e.Errorf("a write under a lost lease recorded %d files", got.Counts.FilesReceived)
+	}
+	if files, _, _ := e.p.QuarantineTotals(e.ctx); files != 0 {
+		e.Errorf("a hold under a lost lease recorded %d files", files)
+	}
+	n, err := pp.AddReceivedFilesFenced(e.ctx, []tenant.ReceivedFile{file(r, 1, 1)}, at(122), &held)
+	e.ok("AddReceivedFilesFenced under the lease", err)
+	m, err := pp.HoldFilesFenced(e.ctx, []tenant.QuarantinedFile{e.heldFile("a", 10, 2)}, &held)
+	e.ok("HoldFilesFenced under the lease", err)
+	k, err := pp.AddReceivedFilesFenced(e.ctx, []tenant.ReceivedFile{file(r, 1, 2)}, at(123), nil)
+	e.ok("AddReceivedFilesFenced with no fence", err)
+	if n != 1 || m != 1 || k != 1 {
+		e.Errorf("writes under the lease and with none recorded %d, %d, %d; want 1 each", n, m, k)
+	}
+	_, err = pp.AddReceivedFilesFenced(e.ctx, nil, at(124), &stale)
+	e.wantIs("an empty batch under a lease taken over", err, tenant.ErrLeaseLost, fault.Conflict)
+	_, err = pp.HoldFilesFenced(e.ctx, nil, &tenant.WorkFence{ID: "w1"})
+	e.wantKind("HoldFilesFenced with a malformed fence", err, fault.Invalid)
+}
+
+// testClaimNextWork guards that a claim says what it gave up on the way:
+// each unit held as failed because its last attempt's lease ended, with
+// the reception it carried and whether that reception failed then; nothing
+// due is not an error and still lists them; a unit leased is answered with
+// them.
+func testClaimNextWork(e *penv) {
+	pp := e.parts()
+	e.addReceiver("a", "store", 11112)
+	r, _ := e.identified("a", 1, 1)
+	ended := e.stepTo(e.openReception("a", 2, at(1)), reception.Done, "store")
+	for _, w := range []tenant.Work{
+		{ID: "g1", Kind: "archive", ReceptionID: r.ID, Due: at(0), MaxAttempts: 1},
+		{ID: "g2", Kind: "archive", Due: at(1), MaxAttempts: 1},
+		{ID: "g3", Kind: "archive", ReceptionID: ended.ID, Due: at(2), MaxAttempts: 1},
+	} {
+		_, _, err := e.p.EnqueueWork(e.ctx, w, T0)
+		e.ok("EnqueueWork", err)
+	}
+	for range 3 {
+		_, err := e.p.ClaimWork(e.ctx, "archive", "worker-1", at(10), time.Minute)
+		e.ok("ClaimWork", err)
+	}
+	c, err := pp.ClaimNextWork(e.ctx, "archive", "worker-2", at(3600), time.Minute)
+	e.ok("ClaimNextWork with only units whose last lease ended", err)
+	want := []tenant.GaveUpWork{{WorkID: "g1", ReceptionID: r.ID, ReceptionFailed: true}, {WorkID: "g2"}, {WorkID: "g3", ReceptionID: ended.ID}}
+	if c.Found || !slices.Equal(c.GaveUp, want) {
+		e.Errorf("ClaimNextWork = found %v, gave up %+v; want nothing found and %+v", c.Found, c.GaveUp, want)
+	}
+	if got, _, _ := e.p.Reception(e.ctx, r.ID); got.State != reception.Failed || got.Failure != tenant.FailureWorkGaveUp {
+		e.Errorf("the reception of a unit given up is %s (%q)", got.State, got.Failure)
+	}
+	if again, err := pp.ClaimNextWork(e.ctx, "archive", "worker-2", at(3601), time.Minute); err != nil || again.Found || len(again.GaveUp) != 0 {
+		e.Errorf("a claim after the units were given up = %+v, %v; want nothing", again, err)
+	}
+	_, _, err = e.p.EnqueueWork(e.ctx, tenant.Work{ID: "g4", Kind: "archive", Due: at(0), MaxAttempts: 1}, T0)
+	e.ok("EnqueueWork", err)
+	_, _, err = e.p.EnqueueWork(e.ctx, tenant.Work{ID: "g5", Kind: "archive", Due: at(5000)}, T0)
+	e.ok("EnqueueWork", err)
+	_, err = e.p.ClaimWork(e.ctx, "archive", "worker-1", at(4000), time.Minute)
+	e.ok("ClaimWork", err)
+	c, err = pp.ClaimNextWork(e.ctx, "archive", "worker-2", at(6000), time.Minute)
+	e.ok("ClaimNextWork", err)
+	if !c.Found || c.Work.ID != "g5" || c.Work.Attempt != 1 || len(c.GaveUp) != 1 || c.GaveUp[0].WorkID != "g4" {
+		e.Errorf("ClaimNextWork past a unit given up = %+v", c)
+	}
+	_, err = pp.ClaimNextWork(e.ctx, "archive", "worker-2", at(6000), 0)
+	e.wantKind("ClaimNextWork with no lease", err, fault.Invalid)
+}
+
+// testScanInstances guards the catalog's list of a scan: every instance
+// held in it, whichever reception confirmed it, in order of SOP Instance
+// UID, read back as committed, paged by a cursor bound to its series; a
+// claim not confirmed is not listed; a series with no scan lists nothing.
+func testScanInstances(e *penv) {
+	pp := e.parts()
+	e.addReceiver("a", "store", 11112)
+	first, files := e.identified("a", 1, 3, 1, 2)
+	e.commit(first, files...)
+	second, more := e.identified("a", 1, 4)
+	e.commit(second, more...)
+	third, pending := e.identified("a", 1, 5)
+	e.claim(third, claimOf(pending[0]))
+	series := uidOf(2, 1)
+	list := allPages(e, 2, func(p master.Page) ([]tenant.ScanInstance, string, error) { return pp.ScanInstances(e.ctx, series, p) })
+	var uids []string
+	for _, in := range list {
+		uids = append(uids, in.SOPInstanceUID)
+	}
+	if want := []string{uidOf(3, 1), uidOf(3, 2), uidOf(3, 3), uidOf(3, 4)}; !slices.Equal(uids, want) {
+		e.Fatalf("ScanInstances = %q, want %q", uids, want)
+	}
+	byUID := map[string]tenant.ReceivedFile{}
+	for _, f := range append(files, more...) {
+		byUID[f.SOPInstanceUID] = f
+	}
+	labels := e.labelsOf(first.StudyUID, series)
+	for _, in := range list {
+		f := byUID[in.SOPInstanceUID]
+		key, err := layout.InstanceKey(labels, in.SOPInstanceUID)
+		e.ok("InstanceKey", err)
+		by := first.ID
+		if in.SOPInstanceUID == uidOf(3, 4) {
+			by = second.ID
+		}
+		if in.ReceptionID != by || in.Storage != "store" || in.Size != f.Size || in.Length != f.Size || in.Offset != 0 ||
+			in.SHA256 != f.SHA256 || in.ArchivedSHA256 != f.SHA256 || in.Key != key || in.Held.IsZero() {
+			e.Errorf("an instance of the scan reads %+v", in)
+		}
+	}
+	none, next, err := pp.ScanInstances(e.ctx, uidOf(2, 99), master.Page{Limit: 10})
+	e.ok("ScanInstances of a series with no scan", err)
+	if len(none) != 0 || next != "" {
+		e.Errorf("a series with no scan lists %d instances", len(none))
+	}
+	_, cursor, err := pp.ScanInstances(e.ctx, series, master.Page{Limit: 1})
+	e.ok("ScanInstances", err)
+	_, _, err = pp.ScanInstances(e.ctx, uidOf(2, 99), master.Page{Limit: 1, Cursor: cursor})
+	e.wantKind("ScanInstances with another series' cursor", err, fault.Invalid)
+	_, _, err = pp.ScanInstances(e.ctx, "1.2.x", master.Page{Limit: 1})
+	e.wantKind("ScanInstances of a malformed UID", err, fault.Invalid)
+}
+
+// testNewQuarantineReasons guards the rules of the reasons a header past
+// the reader's bound and a lost incoming copy are held with: a header too
+// large is kept, with its bound, so a person can release or reject it; a
+// lost copy has no bytes to keep; each read back as held.
+func testNewQuarantineReasons(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	header := e.heldFile("a", 70000, 1)
+	header.Reason, header.Details = tenant.QuarantineHeaderTooLarge, map[string]string{"limit": "65536"}
+	lost := tenant.QuarantinedFile{ID: e.id("q"), Reason: tenant.QuarantineIncomingLost, Receiver: "a", Size: 900, SHA256: sum(5),
+		SOPInstanceUID: uidOf(3, 5), StudyUID: uidOf(1, 1), SeriesUID: uidOf(2, 1), Quarantined: at(2)}
+	n, err := e.p.HoldFiles(e.ctx, []tenant.QuarantinedFile{header, lost})
+	e.ok("HoldFiles", err)
+	if n != 2 {
+		e.Errorf("HoldFiles = %d, want 2", n)
+	}
+	for _, q := range []tenant.QuarantinedFile{header, lost} {
+		got, err := e.p.QuarantinedFile(e.ctx, q.ID)
+		e.ok("QuarantinedFile", err)
+		if got.Reason != q.Reason || got.ContentKept != q.ContentKept || got.State != tenant.QuarantineHeld {
+			e.Errorf("a record of %s reads %+v", q.Reason, got)
+		}
+	}
+	if files, bytes, _ := e.p.QuarantineTotals(e.ctx); files != 2 || bytes != 70000 {
+		e.Errorf("totals %d files, %d bytes; want 2 and 70000, the lost file's bytes not held", files, bytes)
+	}
+	unkept := e.heldFile("a", 1, 3)
+	unkept.Reason, unkept.Details, unkept.Incoming, unkept.ContentKept = tenant.QuarantineHeaderTooLarge, nil, "", false
+	kept := e.heldFile("a", 1, 4)
+	kept.Reason, kept.Details = tenant.QuarantineIncomingLost, nil
+	for _, q := range []tenant.QuarantinedFile{unkept, kept} {
+		_, err := e.p.HoldFiles(e.ctx, []tenant.QuarantinedFile{q})
+		e.wantKind("HoldFiles of "+string(q.Reason)+" with its bytes kept the wrong way", err, fault.Invalid)
+	}
+	_, err = e.p.RejectQuarantined(e.ctx, header.ID, "not readable", at(10), e.audit(), nil)
+	e.ok("RejectQuarantined of a header too large", err)
+	_, err = e.p.ReleaseQuarantined(e.ctx, lost.ID, tenant.ReleaseAsIs, "", "rel-1", at(10), e.audit(), nil)
+	e.wantPrecondition("ReleaseQuarantined of a file whose incoming copy is lost", err)
+}

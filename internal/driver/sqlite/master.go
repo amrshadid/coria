@@ -265,7 +265,7 @@ func (m *Master) ListTenants(ctx context.Context, page master.Page) ([]master.Te
 	if err != nil {
 		return nil, "", m.fail(ctx, err, "the tenants cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -420,7 +420,7 @@ func (m *Master) ListKeys(ctx context.Context, page master.Page) ([]master.Key, 
 	if err != nil {
 		return nil, "", m.fail(ctx, err, "the keys cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -618,7 +618,7 @@ func (m *Master) GrantsByKey(ctx context.Context, keyID string, page master.Page
 	if err != nil {
 		return nil, "", m.fail(ctx, err, "the key's grants cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -657,7 +657,7 @@ func (m *Master) GrantsByScope(ctx context.Context, scope master.Scope, page mas
 	if err != nil {
 		return nil, "", m.fail(ctx, err, "the grants cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -1026,15 +1026,4 @@ func collect[T any](rows *sql.Rows, err error, scan func(interface{ Scan(...any)
 		out = append(out, v)
 	}
 	return out, rows.Err()
-}
-
-// cut trims a page read with limit+1 rows to limit, and reports whether
-// there was more and which row is the last one returned.
-func cut[T any](rows []T, limit int) ([]T, T, bool) {
-	var zero T
-	if len(rows) <= limit {
-		return rows, zero, false
-	}
-	rows = rows[:limit]
-	return rows, rows[limit-1], true
 }

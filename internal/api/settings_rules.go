@@ -3,14 +3,13 @@ package api
 import (
 	"context"
 	"net/netip"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/place"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -25,40 +24,36 @@ var placeSettings = map[string]bool{
 }
 
 // checkSettingValue applies the rules of a setting's value that need more
-// than its own text (settings.Definition.Validate has that): each root's
-// path absolute on this server's system, and each S3 endpoint one a storage
-// could use, with no two entries spelling one endpoint. The errors are
-// Invalid, naming field.
+// than its own text (settings.Definition.Validate has that), which package
+// place holds: each root's path absolute on this server's system and no two
+// roots nesting once their symbolic links are followed (place.CheckRoots),
+// and each S3 endpoint one a storage could use, with no two entries spelling
+// one endpoint (place.CheckEndpoints). A refusal of the text is Invalid,
+// naming field; one that depends on what is on the server's disk is a
+// precondition.
 func checkSettingValue(field, name, value string) error {
+	var err error
 	switch name {
 	case settings.StorageDirectoryRoots:
-		roots, err := settings.ParseDirectoryRoots(value)
-		if err != nil {
-			return invalid(field, err.Error())
+		roots, perr := settings.ParseDirectoryRoots(value)
+		if perr != nil {
+			return invalid(field, perr.Error())
 		}
-		for _, r := range roots {
-			if !filepath.IsAbs(r.Path) {
-				return invalid(field, "has a path for the root "+r.Name+" that is not absolute on this server's system")
-			}
-		}
+		err = place.CheckRoots(roots)
 	case settings.StorageS3Endpoints:
-		entries, err := settings.ParseS3Endpoints(value)
-		if err != nil {
-			return invalid(field, err.Error())
+		entries, perr := settings.ParseS3Endpoints(value)
+		if perr != nil {
+			return invalid(field, perr.Error())
 		}
-		seen := map[string]bool{}
-		for i, e := range entries {
-			n, err := tenant.NormalizeEndpoint(e.URL)
-			if err != nil {
-				return invalid(field, "has, on line "+strconv.Itoa(i+1)+", an endpoint a storage cannot use: "+fault.Message(err))
-			}
-			if seen[n] {
-				return invalid(field, "lists, on line "+strconv.Itoa(i+1)+", an endpoint another line lists in another spelling")
-			}
-			seen[n] = true
-		}
+		err = place.CheckEndpoints(entries)
 	}
-	return nil
+	switch fault.KindOf(err) {
+	case fault.Invalid:
+		return invalid(field, fault.Message(err))
+	case fault.Precondition:
+		return fault.Wrap(fault.Precondition, err, field+": "+fault.Message(err))
+	}
+	return err
 }
 
 // takenAway refuses, as a precondition, a value of a place setting that
@@ -71,7 +66,7 @@ func checkSettingValue(field, name, value string) error {
 func (c *core) takenAway(ctx context.Context, scope access.Scope, name, value string) error {
 	switch name {
 	case settings.StorageDirectoryRoots:
-		old, err := c.directoryRoots(ctx)
+		old, err := installationPlaces{c}.DirectoryRoots(ctx)
 		if err != nil {
 			return err
 		}
@@ -107,8 +102,11 @@ func (c *core) takenAway(ctx context.Context, scope access.Scope, name, value st
 				return err
 			}
 			for _, s := range storages {
-				if s.Type == tenant.StorageS3 && !endpointListed(next, s.S3.Endpoint) {
-					return precondition("the S3 storage " + s.Name + " of the tenant " + name + " uses an endpoint this value no longer allows; move or remove the storage first")
+				if s.Type != tenant.StorageS3 {
+					continue
+				}
+				if _, err := place.AllowS3(next, s.S3); err != nil {
+					return precondition("the S3 storage " + s.Name + " of the tenant " + name + " uses an endpoint this value no longer allows (" + fault.Message(err) + "); move or remove the storage first")
 				}
 			}
 			return nil
@@ -181,17 +179,6 @@ func (c *core) portsTakenAway(ctx context.Context, name, value string) error {
 	})
 }
 
-// endpointListed reports whether a storage's endpoint, kept in the port's
-// one spelling, is in entries, and allowed plain http when it is http.
-func endpointListed(entries settings.S3Endpoints, endpoint string) bool {
-	for _, e := range entries {
-		if n, err := tenant.NormalizeEndpoint(e.URL); err == nil && n == endpoint {
-			return !strings.HasPrefix(endpoint, "http://") || e.PlainHTTP
-		}
-	}
-	return false
-}
-
 // eachTenant calls fn with the name and pipeline of every tenant the master
 // lists, in order of name, and stops at its first error. A tenant removed
 // meanwhile is passed over; one that is not ready fails the walk as
@@ -200,7 +187,7 @@ func endpointListed(entries settings.S3Endpoints, endpoint string) bool {
 func (c *core) eachTenant(ctx context.Context, fn func(name string, p tenant.Pipeline) error) error {
 	page := master.Page{Limit: master.MaxPageLimit}
 	for i := 0; ; i++ {
-		if i == maxGrantPages {
+		if i == maxWholeListPages {
 			return fault.New(fault.Internal, "api: the master's tenants did not end")
 		}
 		rows, next, err := c.master.ListTenants(ctx, page)

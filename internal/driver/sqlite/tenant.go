@@ -43,10 +43,15 @@ type Tenant struct {
 	mu    sync.Mutex
 	stmts atomic.Pointer[tenantStatements]
 
-	// betweenReads, when a test sets it, runs inside the read transaction
-	// of ReadEvents and StatusSnapshot between their reads, so a test can
+	seams tenantSeams
+}
+
+// tenantSeams are the points where a test changes what a Tenant does, all
+// nil in a running server. They are set only through export_test.go.
+type tenantSeams struct {
+	// betweenReads, when set, runs inside the read transaction of
+	// ReadEvents and StatusSnapshot between their reads, so a test can
 	// commit a change there and show that the answer is of one snapshot.
-	// Nil outside tests.
 	betweenReads func()
 }
 

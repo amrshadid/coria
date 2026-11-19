@@ -234,7 +234,7 @@ func TestReadEventsIsOneSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	once := false
-	p.betweenReads = func() {
+	p.setBetweenReads(func() {
 		if once {
 			return
 		}
@@ -242,9 +242,9 @@ func TestReadEventsIsOneSnapshot(t *testing.T) {
 		if _, err := p.AppendEvents(ctx, []tenant.EventAppend{{Key: "k2", Event: spaceEvent(t, 2, fixtureAt(2))}}); err != nil {
 			t.Error(err)
 		}
-	}
+	})
 	page, err := p.ReadEvents(ctx, "", nil, 100)
-	p.betweenReads = nil
+	p.setBetweenReads(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestStatusSnapshotIsOneSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	once := false
-	p.betweenReads = func() {
+	p.setBetweenReads(func() {
 		if once {
 			return
 		}
@@ -279,9 +279,9 @@ func TestStatusSnapshotIsOneSnapshot(t *testing.T) {
 		if _, err := p.StepReception(ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Receiving, Event: reception.Quiet, At: fixtureAt(70)}, nil); err != nil {
 			t.Error(err)
 		}
-	}
+	})
 	s, err := p.StatusSnapshot(ctx)
-	p.betweenReads = nil
+	p.setBetweenReads(nil)
 	if err != nil {
 		t.Fatal(err)
 	}

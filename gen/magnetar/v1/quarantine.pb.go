@@ -101,6 +101,19 @@ const (
 	// is the one kept. Details: "storage", its name, and "read_sha256", the
 	// checksum of what was read.
 	QuarantineReason_QUARANTINE_REASON_READ_BACK_MISMATCH QuarantineReason = 10
+	// The file's header (the attributes before its pixel data) runs past the
+	// bound the server reads a header to, so its UIDs could not be read and
+	// it cannot be placed. Unlike QUARANTINE_REASON_TOO_LARGE, its bytes are
+	// kept, so a person can release it (it is then checked again as it was
+	// received) or reject it. Details: "limit", the bound in bytes.
+	QuarantineReason_QUARANTINE_REASON_HEADER_TOO_LARGE QuarantineReason = 11
+	// The server recorded the file as received, and its copy in the incoming
+	// area was gone when the pipeline came to read it: removed or lost from
+	// the disk outside the server. There are no bytes left to keep, so it
+	// cannot be released, and the record keeps what is known of the file (its
+	// UIDs, size and checksum as received). Details: none beyond the record's
+	// own fields.
+	QuarantineReason_QUARANTINE_REASON_INCOMING_LOST QuarantineReason = 12
 )
 
 // Enum value maps for QuarantineReason.
@@ -117,6 +130,8 @@ var (
 		8:  "QUARANTINE_REASON_UID_ELSEWHERE",
 		9:  "QUARANTINE_REASON_STORAGE_REFUSED",
 		10: "QUARANTINE_REASON_READ_BACK_MISMATCH",
+		11: "QUARANTINE_REASON_HEADER_TOO_LARGE",
+		12: "QUARANTINE_REASON_INCOMING_LOST",
 	}
 	QuarantineReason_value = map[string]int32{
 		"QUARANTINE_REASON_UNSPECIFIED":            0,
@@ -130,6 +145,8 @@ var (
 		"QUARANTINE_REASON_UID_ELSEWHERE":          8,
 		"QUARANTINE_REASON_STORAGE_REFUSED":        9,
 		"QUARANTINE_REASON_READ_BACK_MISMATCH":     10,
+		"QUARANTINE_REASON_HEADER_TOO_LARGE":       11,
+		"QUARANTINE_REASON_INCOMING_LOST":          12,
 	}
 )
 
@@ -409,8 +426,11 @@ type QuarantinedFile struct {
 	// The name of the receiver its release ran through. Empty unless it is
 	// released.
 	ReleaseReceiver string `protobuf:"bytes,23,opt,name=release_receiver,json=releaseReceiver,proto3" json:"release_receiver,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Why it was released, as given to ReleaseQuarantinedFile. Empty unless it
+	// is released and a reason was given.
+	ReleaseReason string `protobuf:"bytes,24,opt,name=release_reason,json=releaseReason,proto3" json:"release_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *QuarantinedFile) Reset() {
@@ -600,6 +620,13 @@ func (x *QuarantinedFile) GetReleasedFrom() string {
 func (x *QuarantinedFile) GetReleaseReceiver() string {
 	if x != nil {
 		return x.ReleaseReceiver
+	}
+	return ""
+}
+
+func (x *QuarantinedFile) GetReleaseReason() string {
+	if x != nil {
+		return x.ReleaseReason
 	}
 	return ""
 }
@@ -955,7 +982,12 @@ type ReleaseQuarantinedFileRequest struct {
 	// The name of the receiver whose configuration (storage, naming rule) the
 	// file runs by. Empty for the receiver it first came to; required when
 	// that receiver has been removed.
-	Receiver      string `protobuf:"bytes,4,opt,name=receiver,proto3" json:"receiver,omitempty"`
+	Receiver string `protobuf:"bytes,4,opt,name=receiver,proto3" json:"receiver,omitempty"`
+	// Why it is released, in words for whoever reads the record later: a
+	// release is a decision, kept with the record as a rejection's reason is.
+	// Optional; when given, 1 to 1024 bytes of UTF-8, not only spaces. A
+	// file already released keeps the reason of its first release.
+	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1014,6 +1046,13 @@ func (x *ReleaseQuarantinedFileRequest) GetMode() ReleaseMode {
 func (x *ReleaseQuarantinedFileRequest) GetReceiver() string {
 	if x != nil {
 		return x.Receiver
+	}
+	return ""
+}
+
+func (x *ReleaseQuarantinedFileRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
 	}
 	return ""
 }
@@ -1183,7 +1222,7 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"\x06Caller\x12(\n" +
 	"\x10calling_ae_title\x18\x01 \x01(\tR\x0ecallingAeTitle\x12&\n" +
 	"\x0fcalled_ae_title\x18\x02 \x01(\tR\rcalledAeTitle\x12\x18\n" +
-	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xac\b\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xd3\b\n" +
 	"\x0fQuarantinedFile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x125\n" +
 	"\x06reason\x18\x02 \x01(\x0e2\x1d.magnetar.v1.QuarantineReasonR\x06reason\x12C\n" +
@@ -1211,7 +1250,8 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"\x11release_reception\x18\x14 \x01(\tR\x10releaseReception\x12#\n" +
 	"\rreject_reason\x18\x15 \x01(\tR\frejectReason\x12#\n" +
 	"\rreleased_from\x18\x16 \x01(\tR\freleasedFrom\x12)\n" +
-	"\x10release_receiver\x18\x17 \x01(\tR\x0freleaseReceiver\x1a:\n" +
+	"\x10release_receiver\x18\x17 \x01(\tR\x0freleaseReceiver\x12%\n" +
+	"\x0erelease_reason\x18\x18 \x01(\tR\rreleaseReason\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe0\x03\n" +
@@ -1241,12 +1281,13 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"\x04file\x18\x01 \x01(\v2\x1c.magnetar.v1.QuarantinedFileR\x04file\x12\x1f\n" +
 	"\vheader_json\x18\x02 \x01(\tR\n" +
 	"headerJson\x12(\n" +
-	"\x10header_too_large\x18\x03 \x01(\bR\x0eheaderTooLarge\"\x91\x01\n" +
+	"\x10header_too_large\x18\x03 \x01(\bR\x0eheaderTooLarge\"\xa9\x01\n" +
 	"\x1dReleaseQuarantinedFileRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12,\n" +
 	"\x04mode\x18\x03 \x01(\x0e2\x18.magnetar.v1.ReleaseModeR\x04mode\x12\x1a\n" +
-	"\breceiver\x18\x04 \x01(\tR\breceiver\"R\n" +
+	"\breceiver\x18\x04 \x01(\tR\breceiver\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"R\n" +
 	"\x1eReleaseQuarantinedFileResponse\x120\n" +
 	"\x04file\x18\x01 \x01(\v2\x1c.magnetar.v1.QuarantinedFileR\x04file\"^\n" +
 	"\x1cRejectQuarantinedFileRequest\x12\x16\n" +
@@ -1254,7 +1295,7 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"Q\n" +
 	"\x1dRejectQuarantinedFileResponse\x120\n" +
-	"\x04file\x18\x01 \x01(\v2\x1c.magnetar.v1.QuarantinedFileR\x04file*\xa7\x03\n" +
+	"\x04file\x18\x01 \x01(\v2\x1c.magnetar.v1.QuarantinedFileR\x04file*\xf4\x03\n" +
 	"\x10QuarantineReason\x12!\n" +
 	"\x1dQUARANTINE_REASON_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bQUARANTINE_REASON_NOT_DICOM\x10\x01\x12,\n" +
@@ -1267,7 +1308,9 @@ const file_magnetar_v1_quarantine_proto_rawDesc = "" +
 	"\x1fQUARANTINE_REASON_UID_ELSEWHERE\x10\b\x12%\n" +
 	"!QUARANTINE_REASON_STORAGE_REFUSED\x10\t\x12(\n" +
 	"$QUARANTINE_REASON_READ_BACK_MISMATCH\x10\n" +
-	"*\x8c\x01\n" +
+	"\x12&\n" +
+	"\"QUARANTINE_REASON_HEADER_TOO_LARGE\x10\v\x12#\n" +
+	"\x1fQUARANTINE_REASON_INCOMING_LOST\x10\f*\x8c\x01\n" +
 	"\x0fQuarantineState\x12 \n" +
 	"\x1cQUARANTINE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15QUARANTINE_STATE_HELD\x10\x01\x12\x1d\n" +

@@ -1,7 +1,10 @@
 package tenant
 
 import (
+	"bytes"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -308,6 +311,26 @@ func JudgeRow(q DuplicateQuery, row *InstanceRow) Duplicate {
 		d.Kind = CompareHeld(q, d)
 	}
 	return d
+}
+
+// SortClaims returns the indexes of files in the order every driver claims
+// them in: by SOP Instance UID, then checksum, byte by byte, whatever order
+// the caller gave. One order for every claim means two claims that share
+// UIDs never wait for each other in a cycle, and two files of one batch
+// under one UID always keep the lower checksum (DifferentFile for the
+// other).
+func SortClaims(files []InstanceClaim) []int {
+	order := make([]int, len(files))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		if c := strings.Compare(files[a].SOPInstanceUID, files[b].SOPInstanceUID); c != 0 {
+			return c
+		}
+		return bytes.Compare(files[a].SHA256[:], files[b].SHA256[:])
+	})
+	return order
 }
 
 // ValidateClaimBatch returns an Invalid error unless the batch is within

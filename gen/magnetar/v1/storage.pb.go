@@ -477,12 +477,14 @@ type S3Storage struct {
 	// storage is added: the server never makes or removes a bucket.
 	Bucket string `protobuf:"bytes,3,opt,name=bucket,proto3" json:"bucket,omitempty"`
 	// The prefix under which every key of the storage is written, so several
-	// storages can share one bucket. Empty for the whole bucket. At most 512
+	// storages can share one bucket. Empty for the whole bucket. At most 128
 	// bytes of ASCII letters, digits, ".", "_", "-" and "/", not starting with
 	// "/", ending with "/", and with no empty, "." or ".." part; so
-	// "magnetar/lab-a/" is valid and "magnetar/lab-a" is not. Two storages of
-	// one tenant on the same endpoint and bucket must not have prefixes of
-	// which one starts with the other: that is a precondition failure.
+	// "magnetar/lab-a/" is valid and "magnetar/lab-a" is not. The bound keeps
+	// every object's key within the 1024 bytes S3 allows: the longest key the
+	// server writes under a prefix is 896 bytes. Two storages of one tenant on
+	// the same endpoint and bucket must not have prefixes of which one starts
+	// with the other: that is a precondition failure.
 	Prefix string `protobuf:"bytes,4,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	// Whether the bucket is addressed in the URL's path
 	// (https://endpoint/bucket/key) rather than in its host name

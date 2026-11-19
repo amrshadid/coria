@@ -114,7 +114,7 @@ func newTransport(s settings) *http.Transport {
 		Control: func(_, address string, _ syscall.RawConn) error {
 			ap, err := netip.ParseAddrPort(address)
 			if err != nil || !s.allow(ap.Addr().Unmap().WithZone("")) {
-				return errAddressRefused
+				return ErrAddressNotAllowed
 			}
 			return nil
 		},

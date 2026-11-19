@@ -47,8 +47,11 @@ import (
 //
 // A rule that depends on the state of what a request names (a storage that
 // holds data, a reception that has not failed, a file already rejected) is
-// refused with ErrPrecondition in the chain (Precondition), so a caller can
-// answer it apart from a Conflict, which is a name or a key already taken.
+// refused with the kind fault.Precondition (Precondition), so a caller can
+// answer it apart from a Conflict, which is a name or a key already taken. A
+// sentinel in the chain names a case inside a kind (ErrReceptionClosed,
+// ErrLeaseLost, ErrStateChanged), never the kind itself: what a caller
+// answers follows from the kind alone.
 //
 // Every list is paged by a cursor bound to its list, its filter and the
 // tenant, and every list, claim and lookup is answered from an index.
@@ -130,6 +133,7 @@ import (
 // where they are.
 type Pipeline interface {
 	Store
+	PipelineParts
 
 	// AddStorage adds a storage, stored as given with Created and Updated
 	// set to now, and returns it as a read would. A name taken by another
@@ -184,8 +188,12 @@ type Pipeline interface {
 	// OpenReception returns the reception of the study at the receiver that
 	// is receiving, or makes one with the id given, the next arrival of the
 	// study in the tenant, receiving since at; opened says which. A
-	// receiver the tenant does not have is a precondition failure. Two
-	// calls at once for one study and receiver open one reception.
+	// receiver the tenant does not have is a precondition failure, checked
+	// first, even while a reception of it is open. Two calls at once for
+	// one study and receiver open one reception. A call again, or calls at
+	// once, with the id of the reception receiving answer that reception
+	// with opened false, never a Conflict; an id taken by a reception that
+	// is not the one receiving is a Conflict.
 	OpenReception(ctx context.Context, receiver, studyUID, id string, at time.Time) (r Reception, opened bool, err error)
 	// Reception returns the reception with its study's arrivals, up to
 	// MaxArrivals of the latest, in order of arrival number; or NotFound.
@@ -214,10 +222,12 @@ type Pipeline interface {
 	// is empty; the next arrival of its study, complete since now, with the
 	// failed reception's received files and RetryOf set; and sets the
 	// failed one's RetryReception. A reception already retried is returned
-	// as it stands with the one made then, and nothing more is made. A
+	// as it stands with the one made then, and nothing more is made, even
+	// when its receiver was removed since and none is named. A
 	// reception that has not failed or whose files were discarded, a
 	// failed one's receiver removed with none named, and a receiver named
-	// that does not exist, are precondition failures. The failed
+	// that does not exist, are precondition failures, which leave the
+	// failed reception as it was and write no audit entry. The failed
 	// reception's claims not confirmed are released in the same
 	// transaction; its received files that are held instances are found
 	// SameFile by the new reception's claim and ignored. The store adds the
@@ -230,11 +240,13 @@ type Pipeline interface {
 	// removes the bytes DiscardedFiles lists, and a restart that finds them
 	// still there removes them. The quarantine records of the reception
 	// stay, with their bytes, until each is released or rejected: a file a
-	// record keeps is never in the list. A reception already discarded is
+	// record keeps, or whose place another reception still needs, is never
+	// in the list (DiscardedFiles). A reception already discarded is
 	// returned as it stands with its first reason. A reception that has
 	// not failed or that was retried is a precondition failure. The store
 	// adds the details DetailFiles and DetailBytes, the count and bytes of
-	// what DiscardedFiles lists, to the audit entry.
+	// what DiscardedFiles lists at the moment of the discard, to the audit
+	// entry.
 	DiscardReception(ctx context.Context, id, reason string, now time.Time, audit master.AuditEntry, guard Guard) (Reception, error)
 	// ReceptionsWithoutWork returns a page of the receptions that have not
 	// ended, are past receiving, and have no unit of work queued or leased
@@ -243,9 +255,17 @@ type Pipeline interface {
 	// queues work for each, or fails it.
 	ReceptionsWithoutWork(ctx context.Context, page master.Page) ([]Reception, string, error)
 	// DiscardedFiles returns a page of the received files of a discarded
-	// reception whose bytes the caller removes: every one no quarantine
-	// record keeps at the same place, in order of SOP Instance UID, then
-	// checksum. A reception not discarded is a precondition failure.
+	// reception whose bytes the caller removes, in order of SOP Instance
+	// UID, then checksum: every one whose place in the incoming area
+	// nothing else needs. It never lists a place a quarantine record keeps
+	// its bytes at, nor a place a received file of another reception
+	// occupies while that reception has not ended, or has failed and its
+	// files were not discarded (a retry would run them again): a release
+	// gives a record's place to the reception it joins, and removing what
+	// is listed, which a restart does again, must never delete bytes a
+	// reception has yet to archive. The list is read when it is asked for,
+	// so a place freed later is listed then. A reception not discarded is
+	// a precondition failure.
 	DiscardedFiles(ctx context.Context, receptionID string, page master.Page) ([]ReceivedFile, string, error)
 
 	// AddReceivedFiles records files that have landed in the incoming area,
@@ -257,8 +277,11 @@ type Pipeline interface {
 	// first time the reception sees it, adds to the reception's
 	// associations and calling AE titles. A reception not there is
 	// NotFound, and one that is not receiving is a precondition failure
-	// with ErrReceptionClosed in the chain: its files belong to the next
-	// arrival.
+	// with ErrReceptionClosed in the chain (ReceptionClosed): its files
+	// belong to the next arrival. A batch naming several receptions is
+	// checked one reception at a time, in the order the batch first names
+	// them, and the first failure met is the answer (a file of another
+	// study is Invalid when its reception is reached).
 	AddReceivedFiles(ctx context.Context, files []ReceivedFile, at time.Time) (int, error)
 	// ReceivedFiles returns a page of a reception's received files in order
 	// of SOP Instance UID, then checksum.
@@ -364,8 +387,10 @@ type Pipeline interface {
 	// EnqueueWork queues a unit of work, due at w.Due, and returns it with
 	// created true; or, when w.UniqueKey is set and a unit with that key is
 	// queued or leased, returns that one with created false and queues
-	// nothing, so the same work is queued once. A unit naming a reception
-	// the tenant does not have is a precondition failure.
+	// nothing, so the same work is queued once. The key is looked at first:
+	// a held unit is the answer whatever reception w names. A new unit
+	// naming a reception the tenant does not have is a precondition
+	// failure.
 	EnqueueWork(ctx context.Context, w Work, now time.Time) (unit Work, created bool, err error)
 	// Work returns the unit of that id, or NotFound.
 	Work(ctx context.Context, id string) (Work, error)
@@ -398,15 +423,26 @@ type Pipeline interface {
 // with the reception as it was and as it is now; an error undoes the step.
 type StepHook func(ctx context.Context, before, after Reception) error
 
-// ErrPrecondition is in the chain of every refusal that depends on the state
-// of what a request names rather than on how it is written (Pipeline). Its
-// kind is Conflict; the API answers it as a failed precondition.
-var ErrPrecondition = errors.New("a precondition of the change does not hold")
-
-// Precondition returns a refusal with ErrPrecondition in its chain and the
-// message, which says which rule failed and is safe to show.
+// Precondition returns a refusal of the kind fault.Precondition with the
+// message, which says which rule failed and is safe to show: the request is
+// well formed, and the state of what it names forbids it.
 func Precondition(message string) error {
-	return fault.Wrap(fault.Conflict, ErrPrecondition, message)
+	return fault.New(fault.Precondition, message)
+}
+
+// ReceptionClosed returns the refusal of received files whose reception is
+// no longer receiving: a precondition, with ErrReceptionClosed in the chain
+// for the receiver, which then opens the next arrival.
+func ReceptionClosed() error {
+	return fault.Wrap(fault.Precondition, ErrReceptionClosed,
+		"the reception is no longer receiving; its files belong to the next arrival")
+}
+
+// StateChanged returns the refusal of a reception step whose reception is
+// no longer in the state the step started from: a Conflict, with
+// ErrStateChanged in the chain, since another step came first.
+func StateChanged() error {
+	return fault.Wrap(fault.Conflict, ErrStateChanged, "the reception is no longer in the state the step started from")
 }
 
 // ErrStateChanged is in the chain of a reception step whose reception is no
@@ -414,7 +450,8 @@ func Precondition(message string) error {
 var ErrStateChanged = errors.New("the reception is no longer in the state the step started from")
 
 // ErrReceptionClosed is in the chain of received files refused because their
-// reception is no longer receiving.
+// reception is no longer receiving (ReceptionClosed): the one precondition a
+// receiver acts on by itself, opening the next arrival.
 var ErrReceptionClosed = errors.New("the reception is no longer receiving")
 
 // ErrLeaseLost is in the chain of a worker's write refused because the
@@ -445,4 +482,7 @@ const (
 	// DetailSHA256 is a quarantined file's checksum in lowercase
 	// hexadecimal, empty when it was not kept whole.
 	DetailSHA256 = "sha256"
+	// DetailReleaseReception is the id of the reception a released file
+	// joined.
+	DetailReleaseReception = "release_reception"
 )

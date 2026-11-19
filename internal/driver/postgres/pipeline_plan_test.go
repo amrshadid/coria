@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/sqlkit"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/amrshadid/magnetar/internal/core/reception"
@@ -129,7 +131,7 @@ func TestPipelinePlansAtScale(t *testing.T) {
 		   CASE WHEN i % 10000 = 0 THEN 'held' ELSE 'released' END, CASE WHEN i % 100 = 0 THEN 'other' ELSE 'busy' END, 'rc' || i,
 		   '', '', '', 10, NULL, NULL, '', '2.25.3.' || i, '2.25.1.' || (i / 4), '', '', 'quarantine/q' || i, i % 10000 = 0,
 		   timestamptz 'epoch' + i * interval '1 second', CASE WHEN i % 10000 = 0 THEN NULL ELSE now() END,
-		   CASE WHEN i % 10000 = 0 THEN '' ELSE 'as_is' END, '', '', '', ''
+		   CASE WHEN i % 10000 = 0 THEN '' ELSE 'as_is' END, '', '', '', '', ''
 		 FROM generate_series(1, 1000000) i`,
 		`INSERT INTO subjects (label, folded, created) SELECT 'sub-' || n, 'sub-' || n, now() FROM generate_series(1, 1000) n`,
 		`INSERT INTO sessions (study_uid, subject_id, label, folded, storage, created)
@@ -291,7 +293,7 @@ func TestPipelinePlansAtScale(t *testing.T) {
 		}
 	}
 	since, until := time.Unix(500000, 0).UTC(), time.Unix(1500000, 0).UTC()
-	after := &timePosition{at: time.Unix(1200000, 0).UTC(), id: "rc1200000"}
+	after := &sqlkit.TimePosition{At: time.Unix(1200000, 0).UTC(), ID: "rc1200000"}
 	stateSets := [][]reception.State{nil, {reception.Failed}, {reception.Failed, reception.Quarantined}, {reception.Receiving}}
 	n := 0
 	for _, receiver := range []string{"", "busy"} {
@@ -304,7 +306,7 @@ func TestPipelinePlansAtScale(t *testing.T) {
 							f.Since, f.Until = since, until
 						}
 						what := fmt.Sprintf("receptions %+v", f)
-						for _, pos := range []*timePosition{nil, after} {
+						for _, pos := range []*sqlkit.TimePosition{nil, after} {
 							if q, a := receptionsQuery(f, pos, 51); q != "" {
 								check(what, connQuerier{conn}, "receptions_", q, false, a...)
 							}

@@ -134,12 +134,17 @@ func (w *mworker) run() {
 	if !w.answer("list", err) {
 		return
 	}
-	held, _, err := w.store.ListQuarantined(w.e.ctx, tenant.QuarantineFilter{State: tenant.QuarantineHeld, ReceptionID: r.ID}, master.Page{Limit: 1000})
-	if !w.answer("list held", err) {
+	// Every record of the reception, whatever its state: a file the
+	// reception held is counted quarantined from then on, and another
+	// worker may release or reject the record between the hold and this
+	// list. Leaving out only records still held would claim such a file
+	// again, and a second record of it would count it quarantined twice.
+	kept, _, err := w.store.ListQuarantined(w.e.ctx, tenant.QuarantineFilter{ReceptionID: r.ID}, master.Page{Limit: 1000})
+	if !w.answer("list quarantined", err) {
 		return
 	}
 	for _, f := range got {
-		if !slices.ContainsFunc(held, func(q tenant.QuarantinedFile) bool {
+		if !slices.ContainsFunc(kept, func(q tenant.QuarantinedFile) bool {
 			return q.SOPInstanceUID == f.SOPInstanceUID && q.SHA256 == f.SHA256
 		}) {
 			files = append(files, f)

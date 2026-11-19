@@ -1,16 +1,15 @@
 package sqlite
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/core/label"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/sqlkit"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -22,7 +21,7 @@ func scanInstanceRow(row interface{ Scan(...any) error }) (tenant.InstanceRow, e
 	var r tenant.InstanceRow
 	var sum []byte
 	err := row.Scan(&r.StudyUID, &r.SeriesUID, &sum, &r.By, &r.Held)
-	r.SHA256 = toSHA256(sum)
+	r.SHA256 = sqlkit.ToSHA256(sum)
 	return r, err
 }
 
@@ -100,19 +99,7 @@ func (t *Tenant) ClaimInstances(ctx context.Context, receptionID string, files [
 			return nil, err
 		}
 	}
-	order := make([]int, len(files))
-	for i := range order {
-		order[i] = i
-	}
-	slices.SortFunc(order, func(a, b int) int {
-		if files[a].SOPInstanceUID != files[b].SOPInstanceUID {
-			if files[a].SOPInstanceUID < files[b].SOPInstanceUID {
-				return -1
-			}
-			return 1
-		}
-		return bytes.Compare(files[a].SHA256[:], files[b].SHA256[:])
-	})
+	order := tenant.SortClaims(files)
 	var out []tenant.Duplicate
 	err := t.write(ctx, "the instances cannot be claimed", func(tx *sql.Tx, s *tenantStatements) error {
 		if fence != nil {
@@ -189,7 +176,7 @@ func (t *Tenant) CheckDuplicates(ctx context.Context, files []tenant.DuplicateQu
 	for i, f := range files {
 		uids[i] = f.SOPInstanceUID
 	}
-	list, err := jsonText(uids)
+	list, err := sqlkit.JSONText(uids)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +418,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			if err != nil {
 				return err
 			}
-			if found && state == "held" && by == c.ReceptionID && toSHA256(archived) == in.ArchivedSHA256 {
+			if found && state == "held" && by == c.ReceptionID && sqlkit.ToSHA256(archived) == in.ArchivedSHA256 {
 				continue // confirmed by this reception before: a commit written again
 			}
 			if !found || state != "claimed" || by != c.ReceptionID {
@@ -476,7 +463,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			Scan(&out.Instances, &out.Bytes, &sum); err != nil {
 			return err
 		}
-		out.ManifestSHA256 = toSHA256(sum)
+		out.ManifestSHA256 = sqlkit.ToSHA256(sum)
 		return nil
 	})
 	if err != nil {
@@ -506,7 +493,7 @@ func (t *Tenant) CatalogLabels(ctx context.Context, studyUID string, seriesUIDs 
 	if len(seriesUIDs) == 0 {
 		return out, nil
 	}
-	list, err := jsonText(seriesUIDs)
+	list, err := sqlkit.JSONText(seriesUIDs)
 	if err != nil {
 		return out, err
 	}
@@ -556,4 +543,49 @@ func (t *Tenant) ReceptionScans(ctx context.Context, receptionID string) ([]tena
 		return out[:tenant.MaxReceptionScans], true, nil
 	}
 	return out, false, nil
+}
+
+// scanInstancesSQL pages the instances held in the scan of a series: the
+// scans' unique index on series_uid, then instances_by_scan, in order of
+// SOP Instance UID.
+const scanInstancesSQL = `SELECT i.sop_instance_uid, i.reception_id, i.storage, i.storage_key, i.byte_offset, i.byte_length,
+	i.size, i.sha256, i.archived_sha256, i.held_at
+	FROM scans AS s JOIN instances AS i ON i.scan_id = s.id AND i.state = 'held'
+	WHERE s.series_uid = ? AND i.sop_instance_uid > ? ORDER BY i.sop_instance_uid LIMIT ?`
+
+// ScanInstances implements tenant.ScanContents.
+func (t *Tenant) ScanInstances(ctx context.Context, seriesUID string, page master.Page) ([]tenant.ScanInstance, string, error) {
+	if err := tenant.ValidateSeriesUID(seriesUID); err != nil {
+		return nil, "", err
+	}
+	if err := page.Validate(); err != nil {
+		return nil, "", err
+	}
+	binding := t.binding(seriesUID)
+	after := ""
+	if page.Cursor != "" {
+		f, err := sqlkit.DecodeCursor(page.Cursor, listScanInstances, binding, 1)
+		if err != nil {
+			return nil, "", err
+		}
+		after = f[0]
+	}
+	out, err := readRows(ctx, t, "the scan's instances cannot be listed", scanInstancesSQL,
+		[]any{seriesUID, after, page.Limit + 1}, func(row interface{ Scan(...any) error }) (tenant.ScanInstance, error) {
+			var in tenant.ScanInstance
+			var sum, archived []byte
+			var held int64
+			err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Storage, &in.Key, &in.Offset, &in.Length, &in.Size,
+				&sum, &archived, &held)
+			in.SHA256, in.ArchivedSHA256, in.Held = sqlkit.ToSHA256(sum), sqlkit.ToSHA256(archived), fromMicros(held)
+			return in, err
+		})
+	if err != nil {
+		return nil, "", err
+	}
+	out, last, more := sqlkit.Cut(out, page.Limit)
+	if !more {
+		return out, "", nil
+	}
+	return out, sqlkit.EncodeCursor(listScanInstances, binding, last.SOPInstanceUID), nil
 }

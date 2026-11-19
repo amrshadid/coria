@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
@@ -25,24 +24,26 @@ func scanReceived(row interface{ Scan(...any) error }) (tenant.ReceivedFile, err
 	err := row.Scan(&f.ReceptionID, &f.SOPInstanceUID, &sum, &f.SeriesUID, &f.StudyUID, &f.SOPClassUID, &f.TransferSyntaxUID,
 		&f.Size, &f.Incoming, &f.Caller.CallingAETitle, &f.Caller.CalledAETitle, &f.Caller.Address, &f.Association,
 		&f.Released, &received)
-	f.SHA256, f.Received = toSHA256(sum), fromMicros(received)
+	f.SHA256, f.Received = sqlkit.ToSHA256(sum), fromMicros(received)
 	return f, err
-}
-
-// errReceptionClosed is the refusal of files for a reception that is no
-// longer receiving: a precondition, and ErrReceptionClosed for the receiver
-// that opens the next arrival.
-func errReceptionClosed() error {
-	return fault.Wrap(fault.Conflict, errors.Join(tenant.ErrPrecondition, tenant.ErrReceptionClosed),
-		"the reception is no longer receiving; its files belong to the next arrival")
 }
 
 // AddReceivedFiles implements tenant.Pipeline.
 func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFile, at time.Time) (int, error) {
+	return t.AddReceivedFilesFenced(ctx, files, at, nil)
+}
+
+// AddReceivedFilesFenced implements tenant.FencedFiles.
+func (t *Tenant) AddReceivedFilesFenced(ctx context.Context, files []tenant.ReceivedFile, at time.Time, fence *tenant.WorkFence) (int, error) {
 	if err := tenant.ValidateReceivedBatch(files, at); err != nil {
 		return 0, err
 	}
-	if len(files) == 0 {
+	if fence != nil {
+		if err := fence.Validate(); err != nil {
+			return 0, err
+		}
+	}
+	if len(files) == 0 && fence == nil {
 		return 0, t.open()
 	}
 	// The files of each reception, in the order the batch first names it.
@@ -56,6 +57,11 @@ func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFi
 	}
 	var inserted int
 	err := t.write(ctx, "the received files cannot be recorded", func(tx *sql.Tx, s *tenantStatements) error {
+		if fence != nil {
+			if err := checkFence(ctx, tx, *fence); err != nil {
+				return err
+			}
+		}
 		total := 0
 		insert, insertAssoc := tx.StmtContext(ctx, s.insertReceived), tx.StmtContext(ctx, s.insertAssociation)
 		for _, id := range order {
@@ -70,13 +76,13 @@ func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFi
 				if !has {
 					return fault.New(fault.NotFound, "the tenant has no reception with this id")
 				}
-				return errReceptionClosed()
+				return tenant.ReceptionClosed()
 			}
 			if err != nil {
 				return err
 			}
 			var titles []string
-			if err := fromJSON(titlesText, &titles); err != nil {
+			if err := sqlkit.FromJSON(titlesText, &titles); err != nil {
 				return err
 			}
 			var nFiles, nBytes, nReleased, nAssoc int64
@@ -114,13 +120,13 @@ func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFi
 				}
 				if n == 1 {
 					nAssoc++
-					titles, truncated = addTitle(titles, truncated, f.Caller.CallingAETitle)
+					titles, truncated = tenant.AddCallingAETitle(titles, truncated, f.Caller.CallingAETitle)
 				}
 			}
 			if nFiles == 0 {
 				continue
 			}
-			titlesText, err = jsonText(titles)
+			titlesText, err = sqlkit.JSONText(titles)
 			if err != nil {
 				return err
 			}
@@ -137,20 +143,6 @@ func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFi
 		return 0, err
 	}
 	return inserted, nil
-}
-
-// addTitle adds a calling AE title to a reception's list when it is not in
-// it, keeping at most tenant.MaxCallingAETitles and saying when there were
-// more. It returns a new slice, never changing the one given, so a change
-// that runs again starts from what it read.
-func addTitle(titles []string, truncated bool, title string) ([]string, bool) {
-	if title == "" || slices.Contains(titles, title) {
-		return titles, truncated
-	}
-	if len(titles) >= tenant.MaxCallingAETitles {
-		return titles, true
-	}
-	return append(slices.Clip(titles), title), truncated
 }
 
 // ReceivedFiles implements tenant.Pipeline.
@@ -186,7 +178,7 @@ func (t *Tenant) pageReceived(ctx context.Context, list, query, receptionID stri
 	if err != nil {
 		return nil, "", err
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}

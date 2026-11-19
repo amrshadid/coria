@@ -86,6 +86,33 @@ func testWorkUniqueKey(e *penv) {
 	}
 }
 
+// testWorkUniqueKeyFirst guards the order of EnqueueWork's answers: a unit
+// whose key is held is answered with the held unit, created false, before
+// the store looks at whether the reception it names exists, so a unit
+// queued again after its reception was removed, or naming another
+// reception, is the held unit and never a precondition failure. Both
+// drivers must answer alike: the caller's repair of a reception queues its
+// unit by key and relies on the held unit coming back.
+func testWorkUniqueKeyFirst(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	r := e.openReception("a", 1, at(1))
+	w := tenant.Work{ID: "k1", Kind: "reception", ReceptionID: r.ID, UniqueKey: "reception/" + r.ID + "/next", Due: at(5)}
+	_, created, err := e.p.EnqueueWork(e.ctx, w, T0)
+	e.ok("EnqueueWork", err)
+	if !created {
+		e.Error("the first unit under a key was not created")
+	}
+	w.ID, w.ReceptionID = "k2", "missing"
+	held, created, err := e.p.EnqueueWork(e.ctx, w, T0)
+	e.ok("EnqueueWork under a held key naming a reception not there", err)
+	if created || held.ID != "k1" || held.ReceptionID != r.ID {
+		e.Errorf("EnqueueWork under a held key = %s for %s (created %v), want k1 for %s", held.ID, held.ReceptionID, created, r.ID)
+	}
+	w.ID, w.UniqueKey = "k3", "another key"
+	_, _, err = e.p.EnqueueWork(e.ctx, w, T0)
+	e.wantPrecondition("EnqueueWork under a free key naming a reception not there", err)
+}
+
 // testWorkFencing guards the fence: a worker renews while it holds the
 // lease; once the lease ends another worker claims the unit with a new
 // attempt, and then every write of the first (renew, complete, fail, a

@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/master"
 )
 
 // MaxCursorLength bounds a cursor a caller hands back. A cursor holds the
@@ -121,4 +123,63 @@ func DecodeCursorInt(field string) (int64, error) {
 		return 0, errBadCursor()
 	}
 	return v, nil
+}
+
+// TimePosition is where a newest-first list resumes: the time and id of the
+// last row its previous page returned.
+type TimePosition struct {
+	// At is the row's time, to the microsecond, in UTC.
+	At time.Time
+	// ID is the row's id, which orders rows of one time.
+	ID string
+}
+
+// PageAfterTime checks page and decodes its cursor, made by TimeCursor for
+// the same list and binding, or returns nil for the first page.
+func PageAfterTime(page master.Page, list, binding string) (*TimePosition, error) {
+	if err := page.Validate(); err != nil {
+		return nil, err
+	}
+	if page.Cursor == "" {
+		return nil, nil
+	}
+	f, err := DecodeCursor(page.Cursor, list, binding, 2)
+	if err != nil {
+		return nil, err
+	}
+	at, err := DecodeCursorInt(f[0])
+	if err != nil {
+		return nil, err
+	}
+	return &TimePosition{At: time.UnixMicro(at).UTC(), ID: f[1]}, nil
+}
+
+// TimeCursor returns the cursor after a row of a newest-first list, whose
+// time is at and id is id. Times are kept to the microsecond, as every
+// driver stores them, so the cursor names exactly the row's time.
+func TimeCursor(list, binding string, at time.Time, id string) string {
+	return EncodeCursor(list, binding, strconv.FormatInt(at.UnixMicro(), 10), id)
+}
+
+// MicrosText writes a filter's time for a binding: its microseconds, or the
+// empty string for the zero time (no bound), so two filters bind alike
+// exactly when they bound alike.
+func MicrosText(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return strconv.FormatInt(t.UnixMicro(), 10)
+}
+
+// Cut trims a page read with limit+1 rows to limit, and reports whether
+// there was more and which row is the last one returned, whose sort key
+// the next page's cursor holds. Reading one row past the page is how every
+// list learns whether it ended without a second query.
+func Cut[T any](rows []T, limit int) ([]T, T, bool) {
+	var zero T
+	if len(rows) <= limit {
+		return rows, zero, false
+	}
+	rows = rows[:limit]
+	return rows, rows[limit-1], true
 }

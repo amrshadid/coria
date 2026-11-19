@@ -67,7 +67,8 @@ func TestTenantContractShared(t *testing.T) {
 // database that applied it refuse to start (sqlkit.ErrChecksum). A new file
 // is added to the list; a listed checksum is never changed.
 func TestShippedTenantMigrationsUnchanged(t *testing.T) {
-	want := []string{"0001_init.sql " + shippedTenantInit, "0002_pipeline.sql " + shippedTenantPipeline}
+	want := []string{"0001_init.sql " + shippedTenantInit, "0002_pipeline.sql " + shippedTenantPipeline,
+		"0003_released_places.sql " + shippedTenantReleasedPlaces, "0004_release_reason_and_scans.sql " + shippedTenantReleaseReason}
 	if tenantMigrationsErr != nil {
 		t.Fatal(tenantMigrationsErr)
 	}
@@ -89,6 +90,15 @@ const shippedTenantInit = "c8f7a87846954df3589281ee46a4a0a288261f57c3ebb07f3cdab
 // shippedTenantPipeline is the SHA-256 of
 // migrations/tenant/0002_pipeline.sql as this change ships it.
 const shippedTenantPipeline = "243bc62ba80845ae699c432d2c861f014a9f3fe49742865cf9059b6555e2884e"
+
+// shippedTenantReleasedPlaces is the SHA-256 of
+// migrations/tenant/0003_released_places.sql as this change ships it.
+const shippedTenantReleasedPlaces = "2641f017ef90b5c528e6544c0f4986f555b72ca8974adc7aaab998e9530ead50"
+
+// shippedTenantReleaseReason is the SHA-256 of
+// migrations/tenant/0004_release_reason_and_scans.sql as this change ships
+// it.
+const shippedTenantReleaseReason = "f84dae32c505f8a7906f943df9de7c5c038abb6e5b1bccdfced258365c2a7387"
 
 // TestTenantNotMigrated guards that a tenant store used before Migrate fails
 // as Unavailable with a message that says so, instead of a SQL error, and

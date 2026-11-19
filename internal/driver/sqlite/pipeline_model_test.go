@@ -16,6 +16,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/core/layout"
 	"github.com/amrshadid/magnetar/internal/core/reception"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/sqlkit"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -245,14 +246,14 @@ func runModel(t *testing.T, seed int64, shared bool) {
 			if state == "held" {
 				seenH++
 				h, ok := held[uid]
-				if !ok || toSHA256(sum) != h.sha || by != h.by {
+				if !ok || sqlkit.ToSHA256(sum) != h.sha || by != h.by {
 					t.Fatalf("seed %d after %s: held row %s by %s differs from model %+v (%v)", seed, op, uid, by, h, ok)
 				}
 				continue
 			}
 			seenC++
 			c, ok := claims[uid]
-			if !ok || toSHA256(sum) != c.sha || by != c.by {
+			if !ok || sqlkit.ToSHA256(sum) != c.sha || by != c.by {
 				t.Fatalf("seed %d after %s: claim row %s by %s differs from model %+v (%v)", seed, op, uid, by, c, ok)
 			}
 		}

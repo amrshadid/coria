@@ -71,7 +71,7 @@ show settings "SELECT * FROM settings"
 show audit "SELECT * FROM audit"
 echo
 
-want "schema_migrations rows" 2 "$(q 'SELECT count(*) FROM schema_migrations')"
+want "schema_migrations rows" 4 "$(q 'SELECT count(*) FROM schema_migrations')"
 want "settings rows" 2 "$(q 'SELECT count(*) FROM settings')"
 want "audit rows" 5 "$(q 'SELECT count(*) FROM audit')"
 want "integrity_check" ok "$(q 'PRAGMA integrity_check')"

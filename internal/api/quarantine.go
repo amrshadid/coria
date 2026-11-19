@@ -35,6 +35,8 @@ var reasons = map[tenant.QuarantineReason]v1.QuarantineReason{
 	tenant.QuarantineUIDElsewhere:        v1.QuarantineReason_QUARANTINE_REASON_UID_ELSEWHERE,
 	tenant.QuarantineStorageRefused:      v1.QuarantineReason_QUARANTINE_REASON_STORAGE_REFUSED,
 	tenant.QuarantineReadBackMismatch:    v1.QuarantineReason_QUARANTINE_REASON_READ_BACK_MISMATCH,
+	tenant.QuarantineHeaderTooLarge:      v1.QuarantineReason_QUARANTINE_REASON_HEADER_TOO_LARGE,
+	tenant.QuarantineIncomingLost:        v1.QuarantineReason_QUARANTINE_REASON_INCOMING_LOST,
 }
 
 // quarantineStates pairs each state the store keeps with the contract's.
@@ -56,7 +58,7 @@ func fileMessage(f tenant.QuarantinedFile) *v1.QuarantinedFile {
 		SeriesInstanceUid: f.SeriesUID, TransferSyntaxUid: f.TransferSyntaxUID, ContentKept: f.ContentKept,
 		QuarantineTime: timestamp(f.Quarantined), DecideTime: timestamp(f.Decided),
 		ReleaseReception: f.ReleaseReception, RejectReason: f.RejectReason, ReleasedFrom: f.ReleasedFrom,
-		ReleaseReceiver: f.ReleaseReceiver,
+		ReleaseReceiver: f.ReleaseReceiver, ReleaseReason: f.ReleaseReason,
 	}
 	if f.ReleaseMode == tenant.ReleaseAsIs {
 		m.ReleaseMode = v1.ReleaseMode_RELEASE_MODE_AS_IS
@@ -254,6 +256,11 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 			return nil, c.failIn(d, st, err)
 		}
 	}
+	if req.GetReason() != "" {
+		if err := tenant.ValidateDiscardReason(req.GetReason()); err != nil {
+			return nil, c.failIn(d, st, fieldOf("reason", err))
+		}
+	}
 	// Read first for the receiver the release runs through when the request
 	// names none, which the entry records.
 	before, err := lookupFile(ctx, p, req.GetId())
@@ -265,12 +272,13 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 		return nil, c.failIn(d, st, fault.New(fault.Internal, "api: the id source made a reception id that is not valid"))
 	}
 	facts := access.Facts{Details: releaseDetails(req, before.Receiver)}
-	f, err := p.ReleaseQuarantined(ctx, req.GetId(), tenant.ReleaseAsIs, req.GetReceiver(), receptionID, c.now(), changeEntry(d, facts), c.roleGuard(d, master.RoleOperator))
+	f, err := p.ReleaseFile(ctx, tenant.Release{ID: req.GetId(), Mode: tenant.ReleaseAsIs, Receiver: req.GetReceiver(),
+		ReceptionID: receptionID, Reason: req.GetReason(), Now: c.now()}, changeEntry(d, facts), c.roleGuard(d, master.RoleOperator))
 	if fault.KindOf(err) == fault.NotFound {
 		err = fault.Wrap(fault.NotFound, err, messageNoFile)
 	}
 	if err != nil {
-		return nil, c.failWith(d, st, facts, portError(err))
+		return nil, c.failWith(d, st, facts, err)
 	}
 	return &v1.ReleaseQuarantinedFileResponse{File: fileMessage(f)}, nil
 }
@@ -319,7 +327,7 @@ func (s quarantineService) RejectQuarantinedFile(ctx context.Context, req *v1.Re
 		err = fault.Wrap(fault.NotFound, err, messageNoFile)
 	}
 	if err != nil {
-		return nil, c.failIn(d, st, portError(err))
+		return nil, c.failIn(d, st, err)
 	}
 	if before.State == tenant.QuarantineHeld && before.Incoming != "" {
 		if err := c.incoming.RemoveRejected(ctx, req.GetTenant(), before.Incoming); err != nil {

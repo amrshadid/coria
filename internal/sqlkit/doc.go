@@ -1,5 +1,8 @@
 // Package sqlkit holds what the SQL database drivers share: the migration
-// runner, and the opaque cursors their lists are paged by.
+// runner, the opaque cursors their lists are paged by, and the encodings of
+// the values both keep alike (a checksum column, a JSON column, a
+// receiver's configuration, the details a store adds to an audit entry), so
+// a value written by one driver reads the same in the other.
 //
 // # Migrations
 //
@@ -42,6 +45,8 @@
 //
 // It must never import a database driver: a driver passes in its *sql.DB and
 // its Dialect, so this package compiles into a binary with no SQL database at
-// all. It knows nothing of tenants, keys or any other table of the archive.
-// It never puts a database address in an error.
+// all. It may use the ports' types (package master, package tenant), never
+// their rules: a rule of the domain lives in its port, where a database
+// with no SQL would find it too. It never puts a database address in an
+// error.
 package sqlkit

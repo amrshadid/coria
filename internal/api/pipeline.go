@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"strconv"
 	"strings"
@@ -46,26 +45,6 @@ const presentValue = "present"
 // MaxServerIDLength bounds an id the server makes (a reception's, a
 // quarantined file's), the contract's 64 bytes.
 const MaxServerIDLength = master.MaxIDLength
-
-// portError returns the API's error for an error of the tenant's port, in
-// the one place the port's sentinels are read. The port gives a refusal that
-// depends on the state of what a request names (tenant.Precondition) the
-// kind Conflict with tenant.ErrPrecondition in its chain, and a cursor its
-// feed can no longer answer from the kind Invalid with
-// tenant.ErrCursorExpired; the contract answers the first FAILED_PRECONDITION
-// and the second OUT_OF_RANGE. The port is to carry fault.Precondition and
-// fault.OutOfRange itself, and this function then has nothing left to do.
-func portError(err error) error {
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, tenant.ErrPrecondition):
-		return fault.Wrap(fault.Precondition, err, fault.Message(err))
-	case errors.Is(err, tenant.ErrCursorExpired):
-		return fault.Wrap(fault.OutOfRange, err, fault.Message(err))
-	}
-	return err
-}
 
 // precondition returns a refusal of a state that forbids a change, with a
 // message safe to show.

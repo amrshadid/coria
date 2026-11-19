@@ -165,10 +165,10 @@ func fakeS3(t *testing.T) string {
 	return srv.URL
 }
 
-// TestS3StorageTest guards TestStorage on an S3 storage, whose store must
-// hand back its sealed secret: on a store that cannot, the call fails as
-// INTERNAL and says nothing of why; on one that can, a store that refuses
-// the credentials is the write step's REFUSED, and an endpoint whose
+// TestS3StorageTest guards TestStorage on an S3 storage, whose store hands
+// back its sealed secret on every driver (SQLite and Postgres alike): a
+// store that refuses the credentials is the write step's REFUSED, and an
+// endpoint whose
 // address the installation's entry does not allow is ADDRESS_NOT_ALLOWED,
 // with nothing sent; the store's own words are never answered.
 func TestS3StorageTest(t *testing.T) {
@@ -187,16 +187,17 @@ func TestS3StorageTest(t *testing.T) {
 	test := func(tn, name string) outcome {
 		return call(f.as(local).storages.TestStorage, &v1.TestStorageRequest{Tenant: tn, Name: name})
 	}
-	if o := test("lab1", "cold"); o.code() != connect.CodeInternal || o.message() != "internal error" {
-		t.Errorf("a store that cannot hand back the secret: %v %q", o.code(), o.message())
-	}
-	o = test("pg1", "cold")
-	res := mustCall[*v1.TestStorageResponse](t, "test", o)
-	if res.GetPassed() || res.GetResults()[0].GetFault() != v1.StorageFault_STORAGE_FAULT_REFUSED {
-		t.Errorf("refused credentials: %v", res)
+	// The store hands the sealed secret back on every driver, so a SQLite
+	// tenant's S3 storage is tested like a Postgres one's: the credentials
+	// reach the store, which refuses them.
+	for _, tn := range []string{"lab1", "pg1"} {
+		res := mustCall[*v1.TestStorageResponse](t, "test", test(tn, "cold"))
+		if res.GetPassed() || res.GetResults()[0].GetFault() != v1.StorageFault_STORAGE_FAULT_REFUSED {
+			t.Errorf("%s: refused credentials: %v", tn, res)
+		}
 	}
 	o = test("pg1", "local")
-	res = mustCall[*v1.TestStorageResponse](t, "test", o)
+	res := mustCall[*v1.TestStorageResponse](t, "test", o)
 	if res.GetPassed() || res.GetResults()[0].GetFault() != v1.StorageFault_STORAGE_FAULT_ADDRESS_NOT_ALLOWED {
 		t.Errorf("an address not allowed: %v", res)
 	}

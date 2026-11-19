@@ -142,8 +142,10 @@ func testGetQuarantinedFile(t *testing.T) {
 
 // testReleaseQuarantinedFile guards ReleaseQuarantinedFile: operator and
 // up; the one mode; a file whose bytes were never kept, and one rejected,
-// refused as preconditions; a release that joins a reception; a repeat
-// answered as it stands; and the entry with the mode and the receiver.
+// refused as preconditions; a reason, optional, bounded as a rejection's
+// and kept on the record; a release that joins a reception; a repeat
+// answered as it stands with its first reason; and the entry with the mode,
+// the receiver and the reception the file joined.
 func testReleaseQuarantinedFile(t *testing.T) {
 	f := newPlaceFixture(t)
 	f.receiving(t)
@@ -151,6 +153,12 @@ func testReleaseQuarantinedFile(t *testing.T) {
 	large := f.heldFile(t, "scanner1", true)
 	rejected := f.heldFile(t, "scanner1", false)
 	mustCall[*v1.RejectQuarantinedFileResponse](t, "reject", call(f.as(local).quarantine.RejectQuarantinedFile, &v1.RejectQuarantinedFileRequest{Tenant: "lab1", Id: rejected, Reason: "sent twice"}))
+	withReason := func(id, reason string) func(clients) outcome {
+		return func(c clients) outcome {
+			return call(c.quarantine.ReleaseQuarantinedFile, &v1.ReleaseQuarantinedFileRequest{Tenant: "lab1", Id: id,
+				Mode: v1.ReleaseMode_RELEASE_MODE_AS_IS, Reason: reason})
+		}
+	}
 	release := func(id string, mode v1.ReleaseMode, receiver string) func(clients) outcome {
 		return func(c clients) outcome {
 			return call(c.quarantine.ReleaseQuarantinedFile, &v1.ReleaseQuarantinedFileRequest{Tenant: "lab1", Id: id, Mode: mode, Receiver: receiver})
@@ -167,15 +175,19 @@ func testReleaseQuarantinedFile(t *testing.T) {
 		{name: "bytes never kept", as: f.lab1Operator, call: release(large, asIs, ""), code: connect.CodeFailedPrecondition},
 		{name: "rejected", as: f.lab1Operator, call: release(rejected, asIs, ""), code: connect.CodeFailedPrecondition},
 		{name: "a receiver named that does not exist", as: f.lab1Operator, call: release(held, asIs, "scanner9"), code: connect.CodeFailedPrecondition},
-		{name: "released", as: f.lab1Operator, call: release(held, asIs, ""),
-			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, object: held, details: map[string]string{"mode": "RELEASE_MODE_AS_IS", "receiver": "scanner1"}},
+		{name: "a reason of spaces", as: f.lab1Operator, call: withReason(held, "   "), code: connect.CodeInvalidArgument, msg: "reason"},
+		{name: "a reason too long", as: f.lab1Operator, call: withReason(held, strings.Repeat("x", 1025)), code: connect.CodeInvalidArgument, msg: "reason"},
+		{name: "released", as: f.lab1Operator, call: withReason(held, "the sender confirmed it"),
+			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, object: held, details: map[string]string{"mode": "RELEASE_MODE_AS_IS",
+				"receiver": "scanner1", "release_reception": "*"}},
 			check: func(t *testing.T, o outcome) {
 				first = o.res.(*v1.ReleaseQuarantinedFileResponse).GetFile()
-				if first.GetState() != v1.QuarantineState_QUARANTINE_STATE_RELEASED || first.GetReleaseReception() == "" || first.GetReleaseMode() != asIs || first.GetReleaseReceiver() != "scanner1" {
+				if first.GetState() != v1.QuarantineState_QUARANTINE_STATE_RELEASED || first.GetReleaseReception() == "" || first.GetReleaseMode() != asIs ||
+					first.GetReleaseReceiver() != "scanner1" || first.GetReleaseReason() != "the sender confirmed it" {
 					t.Errorf("%v", first)
 				}
 			}},
-		{name: "released again", as: f.lab1Admin, call: release(held, asIs, ""), check: func(t *testing.T, o outcome) {
+		{name: "released again", as: f.lab1Admin, call: withReason(held, "another reason"), check: func(t *testing.T, o outcome) {
 			if got := o.res.(*v1.ReleaseQuarantinedFileResponse).GetFile(); !proto.Equal(got, first) {
 				t.Errorf("a repeat answers %v, the first %v", got, first)
 			}

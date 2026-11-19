@@ -50,20 +50,17 @@ const enqueueTries = 8
 // insert waits for the first's commit and then does nothing (ON CONFLICT DO
 // NOTHING, which covers the id's key as well), and the next round, a
 // statement of its own, reads the unit that won.
+//
+// The unit already held under the key is the answer before anything about
+// w is looked at, its reception included: a caller that queues under a key
+// asks for the work to be queued once, and the unit that holds the key is
+// that work, whatever the new call names.
 func enqueueInTx(ctx context.Context, tx pgx.Tx, w tenant.Work, now time.Time) (tenant.Work, bool, error) {
-	if w.ReceptionID != "" {
-		has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = $1`, w.ReceptionID)
-		if err != nil {
-			return tenant.Work{}, false, err
-		}
-		if !has {
-			return tenant.Work{}, false, tenant.Precondition("a unit of work names a reception the tenant does not have")
-		}
-	}
 	attempts := w.MaxAttempts
 	if attempts == 0 {
 		attempts = tenant.DefaultWorkAttempts
 	}
+	checked := w.ReceptionID == ""
 	for range enqueueTries {
 		if w.UniqueKey != "" {
 			held, err := scanWork(tx.QueryRow(ctx, workByKeySQL, w.UniqueKey))
@@ -73,6 +70,16 @@ func enqueueInTx(ctx context.Context, tx pgx.Tx, w tenant.Work, now time.Time) (
 			if !isNoRow(err) {
 				return held, false, err
 			}
+		}
+		if !checked {
+			has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = $1`, w.ReceptionID)
+			if err != nil {
+				return tenant.Work{}, false, err
+			}
+			if !has {
+				return tenant.Work{}, false, tenant.Precondition("a unit of work names a reception the tenant does not have")
+			}
+			checked = true
 		}
 		out, err := scanWork(tx.QueryRow(ctx, `INSERT INTO work (id, kind, subject, reception_id, unique_key, state, due, attempt,
 			max_attempts, owner, last_error, created, updated) VALUES ($1, $2, $3, $4, $5, 'queued', $6, 0, $7, '', '', $8, $8)
@@ -132,28 +139,46 @@ const (
 	claimGaveUp
 )
 
-// ClaimWork implements tenant.Pipeline. Each round takes the earliest due
+// ClaimWork implements tenant.Pipeline: ClaimNextWork, with nothing due
+// answered NotFound.
+func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Time, lease time.Duration) (tenant.Work, error) {
+	c, err := t.ClaimNextWork(ctx, kind, owner, now, lease)
+	if err != nil {
+		return tenant.Work{}, err
+	}
+	if !c.Found {
+		return tenant.Work{}, fault.New(fault.NotFound, "no unit of work of this kind is due")
+	}
+	return c.Work, nil
+}
+
+// ClaimNextWork implements tenant.WorkClaims. Each round takes the earliest due
 // unit FOR NO KEY UPDATE SKIP LOCKED (claimNextSQL): a unit another claim or
 // a fenced write holds is skipped, never waited for, so two claims at once
 // take different units and neither waits. A unit whose last allowed attempt
 // ended is held as failed, its reception failed with it (giveUp), and that
 // round commits on its own, so no transaction holds the rows of two
 // receptions. Finding nothing due is answered after the rounds commit.
-func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Time, lease time.Duration) (tenant.Work, error) {
+func (t *Tenant) ClaimNextWork(ctx context.Context, kind, owner string, now time.Time, lease time.Duration) (tenant.WorkClaim, error) {
 	if err := tenant.ValidateName("work kind", kind); err != nil {
-		return tenant.Work{}, err
+		return tenant.WorkClaim{}, err
 	}
 	if err := master.ValidateID("worker", owner); err != nil {
-		return tenant.Work{}, err
+		return tenant.WorkClaim{}, err
 	}
 	if err := tenant.ValidateLease(now, lease); err != nil {
-		return tenant.Work{}, err
+		return tenant.WorkClaim{}, err
 	}
+	var c tenant.WorkClaim
 	for range claimRounds {
+		if len(c.GaveUp) == tenant.MaxGaveUp {
+			return c, nil
+		}
 		var out tenant.Work
+		var gave tenant.GaveUpWork
 		outcome := claimNone
 		err := t.pipe(ctx, "a unit of work cannot be claimed", func(tx pgx.Tx) error {
-			outcome = claimNone
+			outcome, gave = claimNone, tenant.GaveUpWork{}
 			w, err := scanWork(tx.QueryRow(ctx, claimNextSQL, kind, micros(now)))
 			if isNoRow(err) {
 				return nil
@@ -167,9 +192,11 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 					last_error = 'the lease of its last attempt ended', updated = $1 WHERE id = $2`, micros(now), w.ID); err != nil {
 					return err
 				}
-				if err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
+				failed, err := giveUp(ctx, tx, w.ReceptionID, now)
+				if err != nil {
 					return err
 				}
+				gave = tenant.GaveUpWork{WorkID: w.ID, ReceptionID: w.ReceptionID, ReceptionFailed: failed}
 				outcome = claimGaveUp
 				return nil
 			}
@@ -181,16 +208,18 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 			return nil
 		})
 		if err != nil {
-			return tenant.Work{}, err
+			return tenant.WorkClaim{}, err
 		}
 		switch outcome {
 		case claimLeased:
-			return out, nil
+			c.Work, c.Found = out, true
+			return c, nil
 		case claimNone:
-			return tenant.Work{}, fault.New(fault.NotFound, "no unit of work of this kind is due")
+			return c, nil
 		}
+		c.GaveUp = append(c.GaveUp, gave)
 	}
-	return tenant.Work{}, fault.New(fault.NotFound, "no unit of work of this kind is due")
+	return c, nil
 }
 
 // fenced runs fn in a change after checking the fence (checkFence), which
@@ -271,7 +300,7 @@ func (t *Tenant) FailWork(ctx context.Context, fence tenant.WorkFence, reason st
 			return err
 		}
 		if state == tenant.WorkFailed {
-			if err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
+			if _, err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
 				return err
 			}
 		}

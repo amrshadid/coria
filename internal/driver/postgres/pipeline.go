@@ -2,10 +2,8 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"math/rand/v2"
-	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -19,7 +17,8 @@ import (
 )
 
 // The pipeline's operations on a tenant's database (tenant.Pipeline), in
-// pipeline_*.go, on the tables of migrations/tenant/0002_pipeline.sql. The
+// pipeline_*.go, on the tables of migrations/tenant/0002_pipeline.sql (and
+// the index 0003_released_places.sql adds). The
 // package documentation lists the row locks each change takes, in which
 // order, and why; every change goes through Tenant.pipe, which retries a
 // transaction Postgres ended as a deadlock or a serialization failure, so
@@ -38,6 +37,7 @@ const (
 	listQuarantine    = "tenant-quarantine"
 	listDiscarded     = "tenant-discarded-files"
 	listWithoutWork   = "tenant-receptions-without-work"
+	listScanInstances = "tenant-scan-instances"
 )
 
 // SQLSTATEs a change is tried again for (appendix A of the Postgres manual).
@@ -90,6 +90,9 @@ func (t *Tenant) pipe(ctx context.Context, message string, fn func(tx pgx.Tx) er
 		var raw error
 		err := t.write(ctx, message, func(tx pgx.Tx) error {
 			raw = fn(tx)
+			if raw == nil && t.seams.failAttempt != nil {
+				raw = t.seams.failAttempt(attempt)
+			}
 			return raw
 		})
 		if err == nil || !retryable(raw) || ctx.Err() != nil {
@@ -235,46 +238,6 @@ func (t *Tenant) pageAfterName(page master.Page, list string) (string, error) {
 	return f[0], nil
 }
 
-// timePosition is the (time, id) of the last row of a newest-first page.
-type timePosition struct {
-	at time.Time
-	id string
-}
-
-// pageAfterTime decodes a newest-first list's cursor, or returns nil for the
-// first page.
-func pageAfterTime(page master.Page, list, binding string) (*timePosition, error) {
-	if err := page.Validate(); err != nil {
-		return nil, err
-	}
-	if page.Cursor == "" {
-		return nil, nil
-	}
-	f, err := sqlkit.DecodeCursor(page.Cursor, list, binding, 2)
-	if err != nil {
-		return nil, err
-	}
-	at, err := sqlkit.DecodeCursorInt(f[0])
-	if err != nil {
-		return nil, err
-	}
-	return &timePosition{at: microsTime(at), id: f[1]}, nil
-}
-
-// timeCursor returns the cursor after a row of a time-ordered list.
-func timeCursor(list, binding string, at time.Time, id string) string {
-	return sqlkit.EncodeCursor(list, binding, strconv.FormatInt(at.UnixMicro(), 10), id)
-}
-
-// microsText is a time's microseconds as text for a binding, or "" for the
-// zero time.
-func microsText(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return strconv.FormatInt(t.UnixMicro(), 10)
-}
-
 // nullSum returns NULL for a zero checksum, its bytes otherwise.
 func nullSum(s tenant.SHA256) any {
 	if s.IsZero() {
@@ -288,40 +251,6 @@ func sumBytes(s tenant.SHA256) []byte {
 	b := make([]byte, len(s))
 	copy(b, s[:])
 	return b
-}
-
-// toSHA256 reads a checksum column; NULL or a wrong length is none.
-func toSHA256(b []byte) tenant.SHA256 {
-	var s tenant.SHA256
-	if len(b) == len(s) {
-		copy(s[:], b)
-	}
-	return s
-}
-
-// jsonText writes v as JSON for a column that is stored and returned whole.
-func jsonText(v any) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "", fault.Wrap(fault.Internal, err, "a value cannot be written as JSON")
-	}
-	return string(b), nil
-}
-
-// fromJSON reads a column jsonText wrote.
-func fromJSON(s string, v any) error {
-	if err := json.Unmarshal([]byte(s), v); err != nil {
-		return fault.Wrap(fault.Internal, err, "a stored value cannot be read")
-	}
-	return nil
-}
-
-// addDetails returns the audit entry with the details a store adds, checked
-// with the rest of the entry: a caller's entry already at its bound of
-// details is refused before anything is written.
-func addDetails(audit master.AuditEntry, pairs ...string) (master.AuditEntry, error) {
-	a := audit.WithDetails(pairs...)
-	return a, a.Validate()
 }
 
 // rowsChanged returns how many rows a statement changed, or its error.

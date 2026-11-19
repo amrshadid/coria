@@ -238,7 +238,7 @@ func (s receptionService) RetryReception(ctx context.Context, req *v1.RetryRecep
 		err = fault.Wrap(fault.NotFound, err, messageNoReception)
 	}
 	if err != nil {
-		return nil, c.failIn(d, st, portError(err))
+		return nil, c.failIn(d, st, err)
 	}
 	return &v1.RetryReceptionResponse{Reception: receptionMessage(failed), Retry: receptionMessage(retry)}, nil
 }
@@ -267,7 +267,7 @@ func (s receptionService) DiscardReception(ctx context.Context, req *v1.DiscardR
 		err = fault.Wrap(fault.NotFound, err, messageNoReception)
 	}
 	if err != nil {
-		return nil, c.failIn(d, st, portError(err))
+		return nil, c.failIn(d, st, err)
 	}
 	// The discard is recorded; the bytes are the pipeline's to remove, and
 	// a removal that fails here is done again when it next starts.

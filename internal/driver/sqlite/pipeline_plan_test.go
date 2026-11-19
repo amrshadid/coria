@@ -42,7 +42,7 @@ func fillPipeline(tb testing.TB, path string) {
 		 INSERT INTO quarantine SELECT 'q' || i, CASE i % 3 WHEN 0 THEN 'not_dicom' WHEN 1 THEN 'bad_uid' ELSE 'different_file' END,
 		   '{}', CASE i % 4 WHEN 0 THEN 'held' WHEN 1 THEN 'released' ELSE 'rejected' END, 'recv' || (i % 200 + 1), 'rc' || i,
 		   '', '', '', 10, NULL, NULL, '', '2.25.3.' || i, '2.25.1.' || (i % 5000 + 1), '', '', '', 0, i * 1000000, NULL,
-		   '', '', '', '', '' FROM n`,
+		   '', '', '', '', '', '' FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 500)
 		 INSERT INTO subjects SELECT i, 'sub-' || i, 'sub-' || i, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)

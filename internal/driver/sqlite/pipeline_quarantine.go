@@ -8,15 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/uid"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/sqlkit"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
 const quarantineColumns = `id, reason, details, state, receiver, reception_id, calling_ae, called_ae, remote_addr, size,
 	sha256, kept_sha256, sop_class_uid, sop_instance_uid, study_uid, series_uid, transfer_syntax_uid, incoming,
-	content_kept, at, decided_at, release_mode, release_reception, release_receiver, reject_reason, released_from`
+	content_kept, at, decided_at, release_mode, release_reception, release_receiver, reject_reason, released_from, release_reason`
 
 // scanQuarantined reads one row of quarantineColumns.
 func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFile, error) {
@@ -28,11 +28,11 @@ func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFil
 	if err := row.Scan(&q.ID, &reason, &details, &state, &q.Receiver, &q.ReceptionID, &q.Caller.CallingAETitle,
 		&q.Caller.CalledAETitle, &q.Caller.Address, &q.Size, &sum, &kept, &q.SOPClassUID, &q.SOPInstanceUID, &q.StudyUID,
 		&q.SeriesUID, &q.TransferSyntaxUID, &q.Incoming, &q.ContentKept, &at, &decided, &mode, &q.ReleaseReception,
-		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom); err != nil {
+		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason); err != nil {
 		return q, err
 	}
 	q.Reason, q.State, q.ReleaseMode = tenant.QuarantineReason(reason), tenant.QuarantineState(state), tenant.ReleaseMode(mode)
-	q.SHA256, q.KeptSHA256 = toSHA256(sum), toSHA256(kept)
+	q.SHA256, q.KeptSHA256 = sqlkit.ToSHA256(sum), sqlkit.ToSHA256(kept)
 	q.Quarantined, q.Decided = fromMicros(at), fromNullMicros(decided)
 	var err error
 	q.Details, err = decodeDetails(details)
@@ -60,14 +60,29 @@ func addTotals(ctx context.Context, tx *sql.Tx, files, bytes int64) error {
 
 // HoldFiles implements tenant.Pipeline.
 func (t *Tenant) HoldFiles(ctx context.Context, files []tenant.QuarantinedFile) (int, error) {
+	return t.HoldFilesFenced(ctx, files, nil)
+}
+
+// HoldFilesFenced implements tenant.FencedFiles.
+func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.QuarantinedFile, fence *tenant.WorkFence) (int, error) {
 	if err := tenant.ValidateQuarantineBatch(files); err != nil {
 		return 0, err
 	}
-	if len(files) == 0 {
+	if fence != nil {
+		if err := fence.Validate(); err != nil {
+			return 0, err
+		}
+	}
+	if len(files) == 0 && fence == nil {
 		return 0, t.open()
 	}
 	var inserted int
 	err := t.write(ctx, "the quarantined files cannot be recorded", func(tx *sql.Tx, _ *tenantStatements) error {
+		if fence != nil {
+			if err := checkFence(ctx, tx, *fence); err != nil {
+				return err
+			}
+		}
 		n := 0
 		var heldFiles, heldBytes int64
 		// The totals before the batch, so each record's event carries the
@@ -106,7 +121,7 @@ func (t *Tenant) HoldFiles(ctx context.Context, files []tenant.QuarantinedFile) 
 				return err
 			}
 			res, err := tx.ExecContext(ctx, `INSERT INTO quarantine (`+quarantineColumns+`)
-				VALUES (?, ?, ?, 'held', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', '', '', ?)
+				VALUES (?, ?, ?, 'held', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', '', '', ?, '')
 				ON CONFLICT (id) DO NOTHING`,
 				q.ID, string(q.Reason), details, q.Receiver, q.ReceptionID, q.Caller.CallingAETitle, q.Caller.CalledAETitle,
 				q.Caller.Address, q.Size, nullBlob(q.SHA256), nullBlob(q.KeptSHA256), q.SOPClassUID, q.SOPInstanceUID,
@@ -189,42 +204,38 @@ func (t *Tenant) ListQuarantined(ctx context.Context, filter tenant.QuarantineFi
 		return nil, "", err
 	}
 	binding := t.binding(string(filter.State), string(filter.Reason), filter.Receiver, filter.ReceptionID, filter.StudyUID,
-		filter.SOPInstanceUID, microsText(nullableMicros(filter.Since)), microsText(nullableMicros(filter.Until)))
-	after, err := pageAfterTime(page, listQuarantine, binding)
+		filter.SOPInstanceUID, sqlkit.MicrosText(filter.Since), sqlkit.MicrosText(filter.Until))
+	pos, err := sqlkit.PageAfterTime(page, listQuarantine, binding)
 	if err != nil {
 		return nil, "", err
 	}
+	after := afterArgs(pos)
 	query, args := quarantineQuery(filter, after, page.Limit+1)
 	out, err := readRows(ctx, t, "the quarantined files cannot be listed", query, args, scanQuarantined)
 	if err != nil {
 		return nil, "", err
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
-	return out, timeCursor(listQuarantine, binding, micros(last.Quarantined), last.ID), nil
+	return out, sqlkit.TimeCursor(listQuarantine, binding, last.Quarantined, last.ID), nil
 }
 
-// receivable reports whether a quarantined file carries what a received
-// file needs, so a release can put it into a reception.
-func receivable(q tenant.QuarantinedFile) bool {
-	for _, u := range []string{q.SOPInstanceUID, q.SeriesUID, q.StudyUID, q.SOPClassUID, q.TransferSyntaxUID} {
-		if !uid.Valid(u) {
-			return false
-		}
-	}
-	return !q.SHA256.IsZero() && q.Incoming != ""
-}
-
-// ReleaseQuarantined implements tenant.Pipeline.
+// ReleaseQuarantined implements tenant.Pipeline: a release with no reason.
 func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.ReleaseMode, receiver, receptionID string, now time.Time, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error) {
-	if err := tenant.ValidateRelease(id, mode, receiver, receptionID, now); err != nil {
+	return t.ReleaseFile(ctx, tenant.Release{ID: id, Mode: mode, Receiver: receiver, ReceptionID: receptionID, Now: now}, audit, guard)
+}
+
+// ReleaseFile implements tenant.QuarantineReleases.
+func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error) {
+	if err := rel.Validate(); err != nil {
 		return tenant.QuarantinedFile{}, err
 	}
-	if err := audit.Validate(); err != nil {
+	if err := audit.ValidateWith(tenant.DetailReleaseReception); err != nil {
 		return tenant.QuarantinedFile{}, err
 	}
+	id, mode, receiver, receptionID, now := rel.ID, rel.Mode, rel.Receiver, rel.ReceptionID, rel.Now
 	var out tenant.QuarantinedFile
 	err := t.write(ctx, "the quarantined file cannot be released", func(tx *sql.Tx, st *tenantStatements) error {
 		// The record's row is locked before it is read, so on a database
@@ -240,8 +251,12 @@ func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.
 		case tenant.QuarantineRejected:
 			return tenant.Precondition("the file was rejected")
 		case tenant.QuarantineReleased:
+			a, err := releaseEntry(audit, q.ReleaseReception)
+			if err != nil {
+				return err
+			}
 			out = q
-			return audited(ctx, tx, st, audit, guard)
+			return audited(ctx, tx, st, a, guard)
 		}
 		if q.Reason == tenant.QuarantineDifferentFile && q.SOPInstanceUID != "" {
 			// Released as it is, it would only be quarantined again while
@@ -273,7 +288,7 @@ func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.
 			return tenant.Precondition("the tenant has no receiver named " + receiver)
 		}
 		joined := ""
-		if receivable(q) {
+		if q.Receivable() {
 			r, _, err := openReceptionInTx(ctx, tx, via, q.StudyUID, receptionID, now)
 			if err != nil {
 				return err
@@ -314,8 +329,8 @@ func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.
 		// The record's state is in the statement that changes it, so two
 		// decisions at once make one.
 		res, err := tx.ExecContext(ctx, `UPDATE quarantine SET state = 'released', content_kept = 0, decided_at = ?,
-			release_mode = ?, release_reception = ?, release_receiver = ? WHERE id = ? AND state = 'held'`,
-			micros(now), string(mode), joined, via, id)
+			release_mode = ?, release_reception = ?, release_receiver = ?, release_reason = ? WHERE id = ? AND state = 'held'`,
+			micros(now), string(mode), joined, via, rel.Reason, id)
 		if err != nil {
 			return err
 		}
@@ -334,12 +349,25 @@ func (t *Tenant) ReleaseQuarantined(ctx context.Context, id string, mode tenant.
 		if err := writeDecisionEvent(ctx, tx, out); err != nil {
 			return err
 		}
-		return audited(ctx, tx, st, audit, guard)
+		a, err := releaseEntry(audit, joined)
+		if err != nil {
+			return err
+		}
+		return audited(ctx, tx, st, a, guard)
 	})
 	if err != nil {
 		return tenant.QuarantinedFile{}, err
 	}
 	return out, nil
+}
+
+// releaseEntry returns a release's audit entry with the reception the file
+// joined, when it joined one.
+func releaseEntry(audit master.AuditEntry, joined string) (master.AuditEntry, error) {
+	if joined == "" {
+		return audit, nil
+	}
+	return sqlkit.AddDetails(audit, tenant.DetailReleaseReception, joined)
 }
 
 // RejectQuarantined implements tenant.Pipeline.
@@ -392,7 +420,7 @@ func (t *Tenant) RejectQuarantined(ctx context.Context, id, reason string, now t
 				return err
 			}
 		}
-		a, err := addDetails(audit, tenant.DetailReason, string(q.Reason), tenant.DetailSize, strconv.FormatInt(q.Size, 10),
+		a, err := sqlkit.AddDetails(audit, tenant.DetailReason, string(q.Reason), tenant.DetailSize, strconv.FormatInt(q.Size, 10),
 			tenant.DetailSHA256, q.SHA256.String())
 		if err != nil {
 			return err

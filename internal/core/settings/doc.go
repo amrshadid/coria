@@ -22,9 +22,12 @@
 //
 // # What this package must never do
 //
-// It must never do I/O, read the clock, or import anything of Magnetar's: it
-// is part of the core (.golangci.yml, depguard "core"), so it is tested
-// without a database and a new database type never changes it. It must never
+// It must never do I/O, read the clock, or import anything of Magnetar's
+// outside the core: it is part of the core (.golangci.yml, depguard "core"),
+// so it is tested without a database and a new database type never changes
+// it. The rules it shares with the rest of the server (the rule of a name,
+// the nesting of paths) it takes from the core's packages pathname and
+// ascii, so they are written once. It must never
 // hold a setting whose value is a secret: a value is kept in plain text in
 // the databases and answered to any reader of its scope (settings.proto: "A
 // setting never holds a secret").

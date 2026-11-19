@@ -26,6 +26,14 @@ const (
 	QuarantineUIDElsewhere        QuarantineReason = "uid_elsewhere"
 	QuarantineStorageRefused      QuarantineReason = "storage_refused"
 	QuarantineReadBackMismatch    QuarantineReason = "read_back_mismatch"
+	// QuarantineHeaderTooLarge is a file whose header runs past the bound
+	// the reader keeps to, so its UIDs could not be read. Unlike a file too
+	// large, its bytes are kept, so a person can release or reject it.
+	QuarantineHeaderTooLarge QuarantineReason = "header_too_large"
+	// QuarantineIncomingLost is a file the store recorded whose copy in the
+	// incoming area is gone when the pipeline came to read it: there are
+	// no bytes left to keep, and the record says what was lost.
+	QuarantineIncomingLost QuarantineReason = "incoming_lost"
 )
 
 // The fault words a quarantine record's details carry under "fault", the API
@@ -81,6 +89,8 @@ var reasonDetails = map[QuarantineReason]map[string]func(string) bool{
 	QuarantineUIDElsewhere:     {"study_instance_uid": isUID, "series_instance_uid": isUID},
 	QuarantineStorageRefused:   {"storage": isName, "fault": oneOf(FaultUnreachable, FaultTLSFailed, FaultRefused, FaultNotFound, FaultWrongAnswer, FaultAddressNotAllowed)},
 	QuarantineReadBackMismatch: {"storage": isName, "read_sha256": isHex64},
+	QuarantineHeaderTooLarge:   {"limit": isNumber},
+	QuarantineIncomingLost:     {},
 }
 
 // oneOf returns a check that a value is one of words.
@@ -175,8 +185,8 @@ type QuarantinedFile struct {
 	Quarantined time.Time
 	// Decided is when it was released or rejected, zero while held.
 	Decided time.Time
-	// ReleaseMode, ReleaseReception and ReleaseReceiver are set when it
-	// is released.
+	// ReleaseMode, ReleaseReception, ReleaseReceiver and ReleaseReason are
+	// set when it is released.
 	ReleaseMode ReleaseMode
 	// ReleaseReception is the reception its release joined.
 	ReleaseReception string
@@ -184,6 +194,9 @@ type QuarantinedFile struct {
 	ReleaseReceiver string
 	// RejectReason is why it was rejected.
 	RejectReason string
+	// ReleaseReason is why it was released, as the person gave it; empty
+	// when none was given or it was not released.
+	ReleaseReason string
 	// ReleasedFrom names the record whose release quarantined it again.
 	ReleasedFrom string
 }
@@ -254,6 +267,12 @@ func (q QuarantinedFile) Validate() error {
 	if q.Reason == QuarantineTooLarge && q.ContentKept {
 		return invalid("a file too large is never kept")
 	}
+	if q.Reason == QuarantineIncomingLost && q.ContentKept {
+		return invalid("a file whose incoming copy is lost has no bytes to keep")
+	}
+	if q.Reason == QuarantineHeaderTooLarge && !q.ContentKept {
+		return invalid("a file whose header is too large to read is kept, so a person can decide on it")
+	}
 	if q.ReleasedFrom != "" {
 		if err := master.ValidateID("released-from id", q.ReleasedFrom); err != nil {
 			return err
@@ -274,6 +293,20 @@ func ValidateQuarantineBatch(files []QuarantinedFile) error {
 		}
 	}
 	return nil
+}
+
+// Receivable reports whether the quarantined file carries what a received
+// file needs (every UID valid, a checksum and its place in the incoming
+// area), so a release can put it into a reception of its study. A file
+// that is not receivable joins no reception when released, and is checked
+// again by its receiver's rules as a file that just arrived.
+func (q QuarantinedFile) Receivable() bool {
+	for _, u := range []string{q.SOPInstanceUID, q.SeriesUID, q.StudyUID, q.SOPClassUID, q.TransferSyntaxUID} {
+		if !uid.Valid(u) {
+			return false
+		}
+	}
+	return !q.SHA256.IsZero() && q.Incoming != ""
 }
 
 // HeldBytes is what a record adds to the quarantine's held bytes: its size

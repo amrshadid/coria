@@ -149,7 +149,7 @@ func listSettingsPage(ctx context.Context, b *base, l lists, page master.Page) (
 	if err != nil {
 		return nil, "", b.fail(ctx, err, "the settings cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -209,7 +209,7 @@ func listAuditPage(ctx context.Context, b *base, l lists, filter master.AuditFil
 	if err != nil {
 		return nil, "", b.fail(ctx, err, "the audit log cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}

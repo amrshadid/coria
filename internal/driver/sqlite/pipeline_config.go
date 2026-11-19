@@ -6,7 +6,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/naming"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/sqlkit"
@@ -131,6 +130,22 @@ func (t *Tenant) Storage(ctx context.Context, name string) (tenant.Storage, erro
 		`SELECT `+storageColumns+` FROM storages WHERE name = ?`, []any{name}, scanStorage)
 }
 
+// StorageSecret implements tenant.StorageSecrets. The sealed bytes are
+// read as stored and handed back as they are; nothing here opens or logs
+// them.
+func (t *Tenant) StorageSecret(ctx context.Context, name string) ([]byte, error) {
+	if err := tenant.ValidateName("storage", name); err != nil {
+		return nil, err
+	}
+	return readOne(ctx, t, "the tenant has no S3 storage named "+name, "the storage's secret cannot be read",
+		`SELECT s3_secret FROM storages WHERE name = ? AND type = 's3' AND s3_secret IS NOT NULL`, []any{name},
+		func(row interface{ Scan(...any) error }) ([]byte, error) {
+			var b []byte
+			err := row.Scan(&b)
+			return b, err
+		})
+}
+
 // ListStorages implements tenant.Pipeline.
 func (t *Tenant) ListStorages(ctx context.Context, page master.Page) ([]tenant.Storage, string, error) {
 	after, err := t.pageAfterName(page, listStorages)
@@ -142,7 +157,7 @@ func (t *Tenant) ListStorages(ctx context.Context, page master.Page) ([]tenant.S
 	if err != nil {
 		return nil, "", err
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -272,57 +287,13 @@ func (t *Tenant) RemoveStorage(ctx context.Context, name string, audit master.Au
 
 // --- Receivers ---
 
-// dimseConfig is a DIMSE receiver's configuration as its JSON column holds
-// it.
-type dimseConfig struct {
-	AETitle          string             `json:"ae_title"`
-	AnyCaller        bool               `json:"any_caller"`
-	Callers          []callerRuleConfig `json:"callers"`
-	TLS              *tlsConfig         `json:"tls"`
-	SOPClasses       []string           `json:"sop_classes"`
-	TransferSyntaxes []string           `json:"transfer_syntaxes"`
-}
-
-type callerRuleConfig struct {
-	CallingAETitle string `json:"calling_ae_title"`
-	AddressRange   string `json:"address_range"`
-}
-
-type tlsConfig struct {
-	CertificateFile string `json:"certificate_file"`
-	PrivateKeyFile  string `json:"private_key_file"`
-}
-
-type namingConfig struct {
-	Subject          string `json:"subject"`
-	Session          string `json:"session"`
-	Scan             string `json:"scan"`
-	PatternAttribute string `json:"pattern_attribute"`
-	Pattern          string `json:"pattern"`
-}
-
 const receiverColumns = `name, type, enabled, storage, port, bind_address, config, naming, quiet_us, max_open_us, max_file_bytes, created, updated`
 
 // receiverArgs are a receiver's values in the order of receiverColumns.
 func receiverArgs(r tenant.Receiver) ([]any, error) {
-	c := dimseConfig{AETitle: r.DIMSE.AETitle, AnyCaller: r.DIMSE.AnyCaller,
-		SOPClasses: r.DIMSE.SOPClasses, TransferSyntaxes: r.DIMSE.TransferSyntaxes}
-	for _, cr := range r.DIMSE.Callers {
-		c.Callers = append(c.Callers, callerRuleConfig(cr))
-	}
-	if r.DIMSE.TLS != nil {
-		tc := tlsConfig(*r.DIMSE.TLS)
-		c.TLS = &tc
-	}
-	config, err := jsonText(c)
+	config, namingText, err := sqlkit.ReceiverConfigText(r)
 	if err != nil {
 		return nil, err
-	}
-	namingText := ""
-	if r.Naming != nil {
-		if namingText, err = jsonText(namingConfig(*r.Naming)); err != nil {
-			return nil, err
-		}
 	}
 	return []any{r.Name, string(r.Type), boolInt(r.Enabled), r.Storage, r.DIMSE.Port, r.DIMSE.BindAddress, config, namingText,
 		r.QuietPeriod.Microseconds(), r.MaxOpenTime.Microseconds(), r.MaxFileBytes, micros(r.Created), micros(r.Updated)}, nil
@@ -340,28 +311,7 @@ func scanReceiver(row interface{ Scan(...any) error }) (tenant.Receiver, error) 
 	r.Type = tenant.ReceiverType(typ)
 	r.QuietPeriod, r.MaxOpenTime = time.Duration(quiet)*time.Microsecond, time.Duration(maxOpen)*time.Microsecond
 	r.Created, r.Updated = fromMicros(created), fromMicros(updated)
-	var c dimseConfig
-	if err := fromJSON(config, &c); err != nil {
-		return r, err
-	}
-	r.DIMSE.AETitle, r.DIMSE.AnyCaller = c.AETitle, c.AnyCaller
-	r.DIMSE.SOPClasses, r.DIMSE.TransferSyntaxes = c.SOPClasses, c.TransferSyntaxes
-	for _, cr := range c.Callers {
-		r.DIMSE.Callers = append(r.DIMSE.Callers, tenant.CallerRule(cr))
-	}
-	if c.TLS != nil {
-		t := tenant.ReceiverTLS(*c.TLS)
-		r.DIMSE.TLS = &t
-	}
-	if namingText != "" {
-		var n namingConfig
-		if err := fromJSON(namingText, &n); err != nil {
-			return r, err
-		}
-		spec := naming.Spec(n)
-		r.Naming = &spec
-	}
-	return r, nil
+	return r, sqlkit.ReadReceiverConfig(&r, config, namingText)
 }
 
 // receiverInTx reads a receiver inside a change's transaction, or NotFound.
@@ -472,7 +422,7 @@ func (t *Tenant) ListReceivers(ctx context.Context, page master.Page) ([]tenant.
 	if err != nil {
 		return nil, "", err
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}

@@ -1,12 +1,9 @@
 package postgres
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
-	"errors"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -28,16 +25,8 @@ func scanReceived(row scanner) (tenant.ReceivedFile, error) {
 	err := row.Scan(&f.ReceptionID, &f.SOPInstanceUID, &sum, &f.SeriesUID, &f.StudyUID, &f.SOPClassUID, &f.TransferSyntaxUID,
 		&f.Size, &f.Incoming, &f.Caller.CallingAETitle, &f.Caller.CalledAETitle, &f.Caller.Address, &f.Association,
 		&f.Released, &received)
-	f.SHA256, f.Received = toSHA256(sum), received.UTC()
+	f.SHA256, f.Received = sqlkit.ToSHA256(sum), received.UTC()
 	return f, err
-}
-
-// errReceptionClosed is the refusal of files for a reception that is no
-// longer receiving: a precondition, and ErrReceptionClosed for the receiver
-// that opens the next arrival.
-func errReceptionClosed() error {
-	return fault.Wrap(fault.Conflict, errors.Join(tenant.ErrPrecondition, tenant.ErrReceptionClosed),
-		"the reception is no longer receiving; its files belong to the next arrival")
 }
 
 // fileKey is what makes two received files of one reception the same file.
@@ -80,7 +69,7 @@ func insertReceived(ctx context.Context, tx pgx.Tx, files []tenant.ReceivedFile,
 		var k fileKey
 		var sum []byte
 		err := row.Scan(&k.uid, &sum)
-		k.sum = toSHA256(sum)
+		k.sum = sqlkit.ToSHA256(sum)
 		return k, err
 	})
 	if err != nil {
@@ -93,26 +82,83 @@ func insertReceived(ctx context.Context, tx pgx.Tx, files []tenant.ReceivedFile,
 	return out, nil
 }
 
+// batchReception is what AddReceivedFiles read of one reception it locked:
+// its study and calling AE titles, or why it refuses the batch.
+type batchReception struct {
+	study, titles string
+	truncated     bool
+	refused       error
+}
+
+// lockBatchReceptions locks each reception of ids that is receiving, FOR NO
+// KEY UPDATE, in the order given (sorted by id, the package's order), in the
+// statement that checks it is receiving, and reads what the batch needs of
+// it. One that is not receiving is not locked and is recorded as refusing
+// the batch: NotFound when the tenant does not have it, ErrReceptionClosed
+// when it has left receiving.
+func lockBatchReceptions(ctx context.Context, tx pgx.Tx, ids []string) (map[string]batchReception, error) {
+	out := make(map[string]batchReception, len(ids))
+	for _, id := range ids {
+		var h batchReception
+		err := tx.QueryRow(ctx, `SELECT study_uid, calling_ae_titles, calling_truncated FROM receptions
+			WHERE id = $1 AND state = 'receiving' FOR NO KEY UPDATE`, id).Scan(&h.study, &h.titles, &h.truncated)
+		if isNoRow(err) {
+			has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = $1`, id)
+			if err != nil {
+				return nil, err
+			}
+			h.refused = tenant.ReceptionClosed()
+			if !has {
+				h.refused = errNoReception()
+			}
+		} else if err != nil {
+			return nil, err
+		}
+		out[id] = h
+	}
+	return out, nil
+}
+
 // AddReceivedFiles implements tenant.Pipeline. Each reception the batch
 // names is locked first, FOR NO KEY UPDATE (the lock its UPDATE of counts
 // takes), in order of id, in the statement that checks it is receiving: a
 // step and a batch of one reception are then ordered, and two batches naming
-// two receptions take them in one order. Its files are then written as one
-// set, and its counts added by one UPDATE on the row it holds.
+// two receptions take them in one order. When receptions refuse the batch,
+// the answer is the first that refuses it in the order the batch names
+// them, not in the order they were locked. Each reception's files are then
+// written as one set, and its counts added by one UPDATE on the row it holds.
 func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFile, at time.Time) (int, error) {
+	return t.AddReceivedFilesFenced(ctx, files, at, nil)
+}
+
+// AddReceivedFilesFenced implements tenant.FencedFiles. The unit's row is
+// locked first (checkFence), before any reception's, as every fenced write
+// of the package locks it.
+func (t *Tenant) AddReceivedFilesFenced(ctx context.Context, files []tenant.ReceivedFile, at time.Time, fence *tenant.WorkFence) (int, error) {
 	if err := tenant.ValidateReceivedBatch(files, at); err != nil {
 		return 0, err
 	}
+	if fence != nil {
+		if err := fence.Validate(); err != nil {
+			return 0, err
+		}
+	}
 	if len(files) == 0 {
-		return 0, t.open()
+		if fence == nil {
+			return 0, t.open()
+		}
+		return 0, t.pipe(ctx, "the received files cannot be recorded", func(tx pgx.Tx) error { return checkFence(ctx, tx, *fence) })
 	}
 	// The files of each reception, in the batch's order, each key once (the
-	// first kept, as a row-by-row insert would keep it).
+	// first kept, as a row-by-row insert would keep it), and the receptions
+	// in the order the batch first names them.
+	var named []string
 	byReception := map[string][]tenant.ReceivedFile{}
 	seen := map[string]map[fileKey]bool{}
 	for _, f := range files {
 		if seen[f.ReceptionID] == nil {
 			seen[f.ReceptionID] = map[fileKey]bool{}
+			named = append(named, f.ReceptionID)
 		}
 		k := fileKey{f.SOPInstanceUID, f.SHA256}
 		if seen[f.ReceptionID][k] {
@@ -121,40 +167,40 @@ func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFi
 		seen[f.ReceptionID][k] = true
 		byReception[f.ReceptionID] = append(byReception[f.ReceptionID], f)
 	}
-	order := make([]string, 0, len(byReception))
-	for id := range byReception {
-		order = append(order, id)
-	}
-	slices.Sort(order)
+	order := slices.Sorted(slices.Values(named))
 	var inserted int
 	err := t.pipe(ctx, "the received files cannot be recorded", func(tx pgx.Tx) error {
-		total := 0
-		for _, id := range order {
-			var study, titlesText string
-			var truncated bool
-			err := tx.QueryRow(ctx, `SELECT study_uid, calling_ae_titles, calling_truncated FROM receptions
-				WHERE id = $1 AND state = 'receiving' FOR NO KEY UPDATE`, id).Scan(&study, &titlesText, &truncated)
-			if isNoRow(err) {
-				has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = $1`, id)
-				if err != nil {
-					return err
-				}
-				if !has {
-					return errNoReception()
-				}
-				return errReceptionClosed()
-			}
-			if err != nil {
+		if fence != nil {
+			if err := checkFence(ctx, tx, *fence); err != nil {
 				return err
 			}
-			batch := byReception[id]
-			for _, f := range batch {
-				if f.StudyUID != study {
+		}
+		held, err := lockBatchReceptions(ctx, tx, order)
+		if err != nil {
+			return err
+		}
+		// Every reception is locked before any is judged, and the first
+		// that refuses the batch in the order the batch names them is the
+		// answer: the order of the locks is the database's concern, and a
+		// batch that two receptions refuse gets the same answer from every
+		// driver.
+		for _, id := range named {
+			h := held[id]
+			if h.refused != nil {
+				return h.refused
+			}
+			for _, f := range byReception[id] {
+				if f.StudyUID != h.study {
 					return fault.New(fault.Invalid, "a received file's Study Instance UID is its reception's")
 				}
 			}
+		}
+		total := 0
+		for _, id := range order {
+			batch := byReception[id]
+			titlesText, truncated := held[id].titles, held[id].truncated
 			var titles []string
-			if err := fromJSON(titlesText, &titles); err != nil {
+			if err := sqlkit.FromJSON(titlesText, &titles); err != nil {
 				return err
 			}
 			added, err := insertReceived(ctx, tx, batch, at)
@@ -202,13 +248,13 @@ func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFi
 			for _, f := range batch {
 				if newAssoc[f.Association] && added[fileKey{f.SOPInstanceUID, f.SHA256}] {
 					delete(newAssoc, f.Association)
-					titles, truncated = addTitle(titles, truncated, f.Caller.CallingAETitle)
+					titles, truncated = tenant.AddCallingAETitle(titles, truncated, f.Caller.CallingAETitle)
 				}
 			}
 			if titles == nil {
 				titles = []string{}
 			}
-			titlesText, err = jsonText(titles)
+			titlesText, err = sqlkit.JSONText(titles)
 			if err != nil {
 				return err
 			}
@@ -227,20 +273,6 @@ func (t *Tenant) AddReceivedFiles(ctx context.Context, files []tenant.ReceivedFi
 		return 0, err
 	}
 	return inserted, nil
-}
-
-// addTitle adds a calling AE title to a reception's list when it is not in
-// it, keeping at most tenant.MaxCallingAETitles and saying when there were
-// more. It returns a new slice, never changing the one given, so a change
-// that runs again starts from what it read.
-func addTitle(titles []string, truncated bool, title string) ([]string, bool) {
-	if title == "" || slices.Contains(titles, title) {
-		return titles, truncated
-	}
-	if len(titles) >= tenant.MaxCallingAETitles {
-		return titles, true
-	}
-	return append(slices.Clip(titles), title), truncated
 }
 
 // ReceivedFiles implements tenant.Pipeline.
@@ -276,25 +308,9 @@ func (t *Tenant) pageReceived(ctx context.Context, list, query, receptionID stri
 	if err != nil {
 		return nil, "", err
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
 	return out, sqlkit.EncodeCursor(list, binding, last.SOPInstanceUID, hex.EncodeToString(last.SHA256[:])), nil
-}
-
-// sortClaims returns the indexes of files in sorted order of SOP Instance
-// UID, then checksum, byte by byte, the order every claim takes its rows in.
-func sortClaims(files []tenant.InstanceClaim) []int {
-	order := make([]int, len(files))
-	for i := range order {
-		order[i] = i
-	}
-	slices.SortFunc(order, func(a, b int) int {
-		if c := strings.Compare(files[a].SOPInstanceUID, files[b].SOPInstanceUID); c != 0 {
-			return c
-		}
-		return bytes.Compare(files[a].SHA256[:], files[b].SHA256[:])
-	})
-	return order
 }
