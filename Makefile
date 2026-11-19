@@ -542,6 +542,14 @@ CHECK_TOOLS   = $(if $(filter file,$(origin PYTHON)),$(PYTHON_STAMP)) $(if $(fil
 # names another) with its own DOCKER_HOST or context. Nothing here assumes
 # where its socket is. A target that needs it checks that it answers first.
 DOCKER ?= docker
+
+# TEST_RUN names this run's containers: empty by default, so a run finds the
+# containers an earlier one left. Two runs on one machine at once (make ci
+# in two checkouts, say) each give their own, with ports of their own, since
+# each run removes its containers when it ends:
+#
+#   make ci TEST_RUN=-b PG_PORT=55433 S3_SILO_PORT=59010 S3_RUSTFS_PORT=59011
+TEST_RUN ?=
 docker-answers = $(DOCKER) info > /dev/null 2>&1 || { echo "$@: docker does not answer: start it, or point DOCKER_HOST or the docker context at it" >&2; exit 2; }
 
 # A throwaway Postgres, as CI's Postgres jobs have: the server's own image,
@@ -550,7 +558,7 @@ docker-answers = $(DOCKER) info > /dev/null 2>&1 || { echo "$@: docker does not 
 # holds nothing and listens on 127.0.0.1 only.
 PG_VERSION   ?= 18
 PG_PORT      ?= 55432
-PG_CONTAINER ?= magnetar-test-postgres
+PG_CONTAINER ?= magnetar-test-postgres$(TEST_RUN)
 PG_PASSWORD  := throwaway-password
 PG_URL        = postgres://postgres:$(PG_PASSWORD)@127.0.0.1:$(PG_PORT)/magnetar_test?sslmode=disable
 # The same database as psql and pg_dump inside the container see it, where
@@ -643,7 +651,7 @@ s3-port = s3port() { case "$$1" in silo) echo $(S3_SILO_PORT) ;; rustfs) echo $(
 s3-up:
 	@$(docker-answers)
 	@set -e; $(s3-port); for s in $(S3_SERVERS); do \
-		port=$$(s3port $$s); name=magnetar-test-$$s; \
+		port=$$(s3port $$s); name=magnetar-test-$$s$(TEST_RUN); \
 		if [ -n "$$($(DOCKER) ps -q --filter "name=^/$$name\$$")" ]; then echo "s3-up: $$name is already running"; continue; fi; \
 		$(DOCKER) rm -f $$name > /dev/null 2>&1 || true; \
 		echo "s3-up: starting $$s as $$name on 127.0.0.1:$$port"; \
@@ -666,7 +674,7 @@ s3-wait:
 		port=$$(s3port $$s); i=0; \
 		until curl -sS -o /dev/null http://127.0.0.1:$$port/ 2> /dev/null; do \
 			i=$$((i + 1)); \
-			if [ $$i -ge 60 ]; then $(DOCKER) logs magnetar-test-$$s 2>&1 | tail -20; echo "s3-wait: $$s did not answer within 60 s" >&2; exit 1; fi; \
+			if [ $$i -ge 60 ]; then $(DOCKER) logs magnetar-test-$$s$(TEST_RUN) 2>&1 | tail -20; echo "s3-wait: $$s did not answer within 60 s" >&2; exit 1; fi; \
 			sleep 1; \
 		done; \
 		echo "MAGNETAR_TEST_S3='http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:'$$port'/magnetar-test'   # $$s"; \
@@ -674,7 +682,7 @@ s3-wait:
 
 s3-down:
 	@$(docker-answers)
-	@for s in $(S3_SERVERS); do $(DOCKER) rm -f magnetar-test-$$s > /dev/null 2>&1 || true; echo "s3-down: magnetar-test-$$s removed"; done
+	@for s in $(S3_SERVERS); do $(DOCKER) rm -f magnetar-test-$$s$(TEST_RUN) > /dev/null 2>&1 || true; echo "s3-down: magnetar-test-$$s$(TEST_RUN) removed"; done
 
 # The S3 driver's tests against each server s3-up started.
 # MAGNETAR_REQUIRE_S3 turns a server that is not there into a failure, so a
@@ -683,7 +691,7 @@ test-s3:
 	@$(docker-answers)
 	@set -e; $(s3-port); for s in $(S3_SERVERS); do \
 		port=$$(s3port $$s); \
-		[ -n "$$($(DOCKER) ps -q --filter "name=^/magnetar-test-$$s\$$")" ] || { echo "test-s3: $$s is not running; run make s3-up" >&2; exit 2; }; \
+		[ -n "$$($(DOCKER) ps -q --filter "name=^/magnetar-test-$$s$(TEST_RUN)\$$")" ] || { echo "test-s3: $$s is not running; run make s3-up" >&2; exit 2; }; \
 		echo "test-s3: $$s on 127.0.0.1:$$port: $(GO) test -race -count=1 -v ./internal/blob/s3/..."; \
 		MAGNETAR_TEST_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$$port/magnetar-test" MAGNETAR_REQUIRE_S3=1 \
 			$(GO) test -race -count=1 -v ./internal/blob/s3/...; \
