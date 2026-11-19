@@ -390,9 +390,15 @@ type DirectoryStorage struct {
 	Root string `protobuf:"bytes,1,opt,name=root,proto3" json:"root,omitempty"`
 	// The directory below the tenant's directory in the root, as segments
 	// joined by "/": at most 16 segments and 1024 bytes, each segment 1 to 128
-	// characters of ASCII letters, digits, ".", "_" and "-", not starting with
-	// a dot (so neither "." nor ".." is a segment). Empty for the tenant's
-	// directory itself. Not absolute: a leading "/" is invalid. It is not a
+	// characters of ASCII letters, digits, ".", "_" and "-", neither starting
+	// nor ending with a dot (so neither "." nor ".." is a segment, and no
+	// segment is one Windows would shorten), and not a device name Windows
+	// reserves (con, prn, aux, nul, com0 to com9, lpt0 to lpt9, in any case,
+	// with or without an extension), on every system. The directory on the
+	// server, its root's path and the tenant's name included, is at most 1023
+	// bytes once the root's links are followed, so every system the server
+	// runs on can open it; a longer one is a precondition failure. Empty for
+	// the tenant's directory itself. Not absolute: a leading "/" is invalid. It is not a
 	// secret, and is answered to every caller who may read the storage.
 	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -489,7 +495,8 @@ type S3Storage struct {
 	// Whether the bucket is addressed in the URL's path
 	// (https://endpoint/bucket/key) rather than in its host name
 	// (https://bucket.endpoint/key). Most stores other than AWS S3 need true;
-	// AWS S3 needs false.
+	// AWS S3 needs false. It must be true at an endpoint whose installation
+	// entry allows private addresses; false there is a precondition failure.
 	PathStyle bool `protobuf:"varint,5,opt,name=path_style,json=pathStyle,proto3" json:"path_style,omitempty"`
 	// The access key id of the credentials the server uses, as the store
 	// issued it; at most 128 bytes of printable ASCII. Required. It names the
@@ -1014,7 +1021,8 @@ type SetStorageRequest struct {
 	// "directory.path". A path that names a type's whole message ("s3",
 	// "directory") is refused: its fields are named one by one, so a secret
 	// is never replaced by leaving it out. "s3.access_key_id" and
-	// "s3.secret_access_key" are named together or not at all. Required and
+	// "s3.secret_access_key" are named together or not at all, and both are
+	// named with "s3.endpoint". Required and
 	// not empty; "*" is refused, so every field a call changes is named. A
 	// named field is set to the value given, its zero value included, except
 	// a secret, which must not be empty.

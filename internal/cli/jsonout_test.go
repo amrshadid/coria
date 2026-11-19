@@ -61,7 +61,7 @@ func TestWriteJSONOutputs(t *testing.T) {
 		{"reception-discard", []string{"reception", "discard", "lab1", "rcp-discard", "--reason", "test data", "--yes"}},
 		{"quarantine-list", []string{"quarantine", "list", "lab1", "--state", "held"}},
 		{"quarantine-show", []string{"quarantine", "show", "lab1", "q-release", "--header"}},
-		{"quarantine-release", []string{"quarantine", "release", "lab1", "q-release"}},
+		{"quarantine-release", []string{"quarantine", "release", "lab1", "q-release", "--reason", "naming rule fixed"}},
 		{"quarantine-reject", []string{"quarantine", "reject", "lab1", "q-reject", "--reason", "test data", "--yes"}},
 		{"receiver-remove", []string{"receiver", "remove", "lab1", "scanner1", "--yes"}},
 		{"storage-remove", []string{"storage", "remove", "lab1", "cold", "--yes"}},

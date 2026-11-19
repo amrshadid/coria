@@ -192,3 +192,38 @@ func TestReceiverHealthWords(t *testing.T) {
 		t.Errorf("starting:\n%s", res.stdout)
 	}
 }
+
+// TestReceiverAllowAETFromSplitsOnTheLastAt guards how --allow-aet-from reads
+// TITLE@CIDR: at the last "@", since an AE title may hold one and a range never
+// does, so a title with an "@" in it reaches the server whole; and a value
+// that lacks its title or its range is a usage error that names the missing
+// part and sends nothing.
+func TestReceiverAllowAETFromSplitsOnTheLastAt(t *testing.T) {
+	r := newArchiveRig(t)
+	before := r.fake.Requests()
+	add := []string{"receiver", "add", "lab1", "at", "--storage", "main", "--port", "11116", "--aet", "AT"}
+	for value, want := range map[string]string{
+		"@10.0.0.0/8": "lacks its title",
+		"PRISMA1@":    "lacks its range",
+		"@":           "lacks its title",
+		"PRISMA1":     "is not TITLE@CIDR",
+		"":            "is not TITLE@CIDR",
+	} {
+		res := r.run(append(append([]string{}, add...), "--allow-aet-from", value)...)
+		if res.code != 2 || res.stdout != "" || !strings.Contains(res.stderr, want) || strings.Count(res.stderr, "\n") != 1 {
+			t.Errorf("--allow-aet-from %q: %+v, want exit 2 and one line with %q", value, res, want)
+		}
+	}
+	if got := r.fake.Requests(); got != before {
+		t.Errorf("%d requests were sent for a malformed rule", got-before)
+	}
+
+	res := r.run(append(append([]string{}, add...), "--allow-aet-from", "A@B@10.0.0.0/8", "--json")...)
+	if res.code != 0 {
+		t.Fatalf("a title with an @: %+v", res)
+	}
+	rules := document(t, res)["receiver"].(map[string]any)["dimse"].(map[string]any)["allowedCallers"].(map[string]any)["rules"].([]any)
+	if len(rules) != 1 || rules[0].(map[string]any)["callingAeTitle"] != "A@B" || rules[0].(map[string]any)["addressRange"] != "10.0.0.0/8" {
+		t.Errorf("the rule sent: %v", rules)
+	}
+}

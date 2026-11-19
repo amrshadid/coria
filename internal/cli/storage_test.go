@@ -65,6 +65,10 @@ func TestStorageCommands(t *testing.T) {
 	if set := r.run("storage", "set", "lab1", "cold", "--prefix", "", "--path-style"); set.code != 0 || !strings.Contains(set.stdout, "Prefix:            -\n") || !strings.Contains(set.stdout, "Addressing:        path\n") {
 		t.Errorf("set --prefix \"\": %+v", set)
 	}
+	// A flag set to false changes its field too: back to the host name.
+	if set := r.run("storage", "set", "lab1", "cold", "--path-style=false"); set.code != 0 || !strings.Contains(set.stdout, "Addressing:        host name\n") {
+		t.Errorf("set --path-style=false: %+v", set)
+	}
 	document(t, r.run("storage", "set", "lab1", "main", "--path", "elsewhere", "--json"))
 
 	expect(t, r.run("storage", "test", "lab1", "main"), 0,
@@ -248,5 +252,55 @@ func TestStorageListPages(t *testing.T) {
 	}
 	if res := r.run("storage", "list", "lab1", "--all"); strings.Count(res.stdout, "\n") != 5 || res.stderr != "" {
 		t.Errorf("--all: %+v", res)
+	}
+}
+
+// TestStorageEndpointRules guards the rules the commands meet when an S3
+// storage's endpoint is involved: a change of the endpoint is refused unless it
+// is given with both credentials, so credentials given for one store are never
+// kept for another (exit 2, and nothing changes); with both, the endpoint and
+// the secret move together; and at an endpoint the installation marks
+// private-address the bucket must be addressed in the path, on add and on set
+// (precondition, exit 5), and passes with --path-style.
+func TestStorageEndpointRules(t *testing.T) {
+	r := newRig(t)
+	r.env["S3SECRET"] = s3Secret
+	r.env["NEWSECRET"] = "a-different-secret-access-key-0000000"
+	r.must("tenant", "create", "lab1")
+	r.must(s3Args...)
+
+	res := r.run("storage", "set", "lab1", "cold", "--endpoint", "https://other.example")
+	if res.code != 2 || res.stdout != "" || !strings.Contains(res.stderr, "s3.endpoint is named with s3.access_key_id and s3.secret_access_key") || strings.Count(res.stderr, "\n") != 1 {
+		t.Errorf("an endpoint without credentials: %+v", res)
+	}
+	if show := r.run("storage", "show", "lab1", "cold"); !strings.Contains(show.stdout, "Endpoint:          https://s3.example\n") {
+		t.Errorf("a refused change moved the endpoint:\n%s", show.stdout)
+	}
+	if got := r.fake.StorageSecret("lab1", "cold"); got != s3Secret {
+		t.Errorf("a refused change replaced the secret: %q", got)
+	}
+	res = r.run("storage", "set", "lab1", "cold", "--endpoint", "https://other.example", "--access-key-id", "AKIANEW", "--credential-env", "NEWSECRET")
+	if res.code != 0 || !strings.Contains(res.stdout, "Endpoint:          https://other.example\n") || !strings.Contains(res.stdout, "Access key id:     AKIANEW\n") {
+		t.Errorf("an endpoint with credentials: %+v", res)
+	}
+	if got := r.fake.StorageSecret("lab1", "cold"); got != r.env["NEWSECRET"] {
+		t.Errorf("the secret did not move with the endpoint: %q", got)
+	}
+
+	r.must("setting", "set", "storage.s3-endpoints", "https://s3.example private-address\nhttps://other.example")
+	private := append([]string{}, s3Args...)
+	private[3] = "cold2"
+	if res := r.run(private...); res.code != 5 || res.stdout != "" || !strings.Contains(res.stderr, "storage.s3.path_style") {
+		t.Errorf("host-name addressing at a private-address endpoint: %+v", res)
+	}
+	if res := r.run(append(private, "--path-style")...); res.code != 0 {
+		t.Errorf("path-style at a private-address endpoint: %+v", res)
+	}
+	if res := r.run("storage", "set", "lab1", "cold2", "--path-style=false"); res.code != 5 || !strings.Contains(res.stderr, "storage.s3.path_style") {
+		t.Errorf("a change back to host-name addressing at a private-address endpoint: %+v", res)
+	}
+	// An endpoint without the flag takes either addressing.
+	if res := r.run("storage", "set", "lab1", "cold", "--path-style"); res.code != 0 {
+		t.Errorf("path-style at an ordinary endpoint: %+v", res)
 	}
 }

@@ -221,6 +221,9 @@ func (h quarantineHandler) ReleaseQuarantinedFile(_ context.Context, req *v1.Rel
 	if req.GetMode() != v1.ReleaseMode_RELEASE_MODE_AS_IS {
 		return nil, fault.New(fault.Invalid, "mode: only as-is is accepted")
 	}
+	if req.GetReason() != "" && (strings.TrimSpace(req.GetReason()) == "" || len(req.GetReason()) > 1024) {
+		return nil, fault.New(fault.Invalid, "reason: is 1 to 1024 bytes, not only spaces")
+	}
 	f, err := s.arch.findFile(req.GetTenant(), req.GetId())
 	if err != nil {
 		return nil, err
@@ -239,7 +242,7 @@ func (h quarantineHandler) ReleaseQuarantinedFile(_ context.Context, req *v1.Rel
 		receiver = req.GetReceiver()
 	}
 	f.State, f.ReleaseMode, f.ReleaseReceiver = v1.QuarantineState_QUARANTINE_STATE_RELEASED, req.GetMode(), receiver
-	f.ReleaseReception, f.DecideTime, f.ContentKept = "rec-released", timestamppb.New(s.now()), true
+	f.ReleaseReception, f.ReleaseReason, f.DecideTime, f.ContentKept = "rec-released", req.GetReason(), timestamppb.New(s.now()), true
 	return &v1.ReleaseQuarantinedFileResponse{File: f}, nil
 }
 

@@ -530,8 +530,22 @@ All notable changes to Magnetar are written here. The form is
 - The tenant's store can list a scan's instances, tell a caller which
   receptions failed when it gave up their work, and refuse a write of
   received or held files from a worker that lost its lease.
+- `magnetar quarantine release --reason TEXT` keeps why a held file was
+  released with its record, as a rejection keeps its reason; `quarantine show`
+  prints it as "Release reason". The reason is optional, 1 to 1024 bytes, not
+  only spaces.
 
 ### Changed
+
+- `magnetar receiver add` and `set` refuse `--allow-aet-from` with no title or
+  no range, naming the missing part; an AE title that contains `@` is read
+  whole, since the rule splits at the last `@`.
+- The comments of the storage and settings contract state the 1023-byte limit
+  of a directory's path, the segments safe on Windows, the refusal of roots
+  that overlap once symbolic links are followed, that credentials change with
+  the endpoint, `path_style` at private-address endpoints, and what a caller
+  who is not an admin reads of `storage.directory-roots`. No field, number or
+  name changed.
 
 - Where a tenant's data may be (directory roots and their resolution, S3
   endpoints, port allotment, opening a storage) is one package,

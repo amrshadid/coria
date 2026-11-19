@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
@@ -44,6 +45,9 @@ func (h storageHandler) AddStorage(_ context.Context, req *v1.AddStorageRequest)
 	if s3 := st.GetS3(); s3 != nil && (s3.GetSecretAccessKey() == "" || s3.GetAccessKeyId() == "") {
 		return nil, fault.New(fault.Invalid, "storage.s3: access_key_id and secret_access_key are required")
 	}
+	if err := s.allowEndpoint(st.GetS3()); err != nil {
+		return nil, err
+	}
 	k := key(req.GetTenant(), st.GetName())
 	if _, ok := s.arch.storages[k]; ok {
 		return nil, fault.New(fault.Conflict, "the tenant has a storage with that name")
@@ -56,6 +60,28 @@ func (h storageHandler) AddStorage(_ context.Context, req *v1.AddStorageRequest)
 	s.arch.storages[k] = stored
 	_, held := s.arch.secrets[k]
 	return &v1.AddStorageResponse{Storage: withoutSecret(stored, held)}, nil
+}
+
+// allowEndpoint refuses, as a precondition, an S3 storage that addresses its
+// bucket in the host name at an endpoint the installation's
+// storage.s3-endpoints marks private-address: with the bucket in the host
+// name, a tenant's bucket name would choose which host in the server's
+// network is reached. A storage with no S3 configuration, and an endpoint the
+// setting does not list, pass: the fake keeps no list of its own.
+func (s *Server) allowEndpoint(st *v1.S3Storage) error {
+	if st == nil || st.GetPathStyle() {
+		return nil
+	}
+	entries, err := settings.ParseS3Endpoints(s.settings[""][settings.StorageS3Endpoints])
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if e.URL == st.GetEndpoint() && e.PrivateAddress {
+			return fault.New(fault.Precondition, "storage.s3.path_style: the installation's entry for this endpoint allows private addresses, so the bucket must be addressed in the path")
+		}
+	}
+	return nil
 }
 
 // find returns a tenant's storage or the contract's NOT_FOUND.
@@ -125,6 +151,9 @@ func (h storageHandler) SetStorage(_ context.Context, req *v1.SetStorageRequest)
 	if slices.Contains(paths, "s3.access_key_id") != slices.Contains(paths, "s3.secret_access_key") {
 		return nil, fault.New(fault.Invalid, "update_mask: s3.access_key_id and s3.secret_access_key change together")
 	}
+	if slices.Contains(paths, "s3.endpoint") && !slices.Contains(paths, "s3.secret_access_key") {
+		return nil, fault.New(fault.Invalid, "update_mask: s3.endpoint is named with s3.access_key_id and s3.secret_access_key: credentials given for one store are never kept for another")
+	}
 	next := proto.Clone(cur).(*v1.Storage)
 	for _, p := range paths {
 		switch p {
@@ -166,6 +195,9 @@ func (h storageHandler) SetStorage(_ context.Context, req *v1.SetStorageRequest)
 		default:
 			return nil, fault.New(fault.Invalid, "update_mask: "+p+" names no field that can change")
 		}
+	}
+	if err := s.allowEndpoint(next.GetS3()); err != nil {
+		return nil, err
 	}
 	next.UpdateTime = timestamppb.New(s.now())
 	s.arch.storages[k] = next

@@ -122,9 +122,18 @@ func (f *receiverFlags) callers(cmd *cobra.Command) (callers any, path string, e
 			rules = append(rules, &v1.CallerRule{AddressRange: r})
 		}
 		for _, both := range f.allowAETFrom {
+			// An AE title may hold "@", a range never does, so the last "@"
+			// divides them; each side must be there.
 			at := strings.LastIndex(both, "@")
 			if at < 0 {
 				return nil, "", fault.New(fault.Invalid, fmt.Sprintf("--allow-aet-from %q is not TITLE@CIDR, such as PRISMA1@10.20.0.0/24", output.Clean(both)))
+			}
+			if at == 0 || at == len(both)-1 {
+				missing := "range"
+				if at == 0 {
+					missing = "title"
+				}
+				return nil, "", fault.New(fault.Invalid, fmt.Sprintf("--allow-aet-from %q lacks its %s: give both, as TITLE@CIDR, such as PRISMA1@10.20.0.0/24", output.Clean(both), missing))
 			}
 			rules = append(rules, &v1.CallerRule{CallingAeTitle: both[:at], AddressRange: both[at+1:]})
 		}

@@ -67,7 +67,7 @@ func (f *storageFlags) add(cmd *cobra.Command, forSet bool) {
 	fl.StringVar(&f.region, "region", "", "s3: the region the bucket is in, such as eu-central-1")
 	fl.StringVar(&f.bucket, "bucket", "", "s3: the bucket's name; it must exist, the server never makes one")
 	fl.StringVar(&f.prefix, "prefix", "", "s3: the prefix every key is written under, ending in \"/\", such as magnetar/lab-a/; empty for the whole bucket")
-	fl.BoolVar(&f.pathStyle, "path-style", false, "s3: address the bucket in the URL's path rather than its host name; most stores other than AWS need it")
+	fl.BoolVar(&f.pathStyle, "path-style", false, "s3: address the bucket in the URL's path rather than its host name; most stores other than AWS need it, and the server requires it at an endpoint the installation allows private addresses at")
 	fl.StringVar(&f.accessKeyID, "access-key-id", "", "s3: the access key id of the credentials the server uses (it is not a secret)")
 	fl.StringVar(&f.credEnv, "credential-env", "", "s3: name of the environment variable that holds the secret access key that goes with --access-key-id")
 	fl.StringVar(&f.credFile, "credential-file", "", "s3: path of a file, readable only by you, that holds the secret access key that goes with --access-key-id")
@@ -348,7 +348,9 @@ included, so a change of the limit does not need the secret again.
 A storage's type never changes. Once it holds an archived file, the fields that
 say where its files are (--root, --path, --endpoint, --bucket, --prefix) cannot
 change. --access-key-id and its secret change together: give both, the secret
-from --credential-env or --credential-file.`,
+from --credential-env or --credential-file. So does a change of --endpoint:
+credentials given for one store are never sent to another, so it is given with
+--access-key-id and its secret, and the server refuses it otherwise.`,
 		Example: `  magnetar storage set lab1 main --capacity 1TiB
   magnetar storage set lab1 cold --access-key-id AKIANEW --credential-file /etc/magnetar/new.s3`,
 		Args: exactArgs(2),

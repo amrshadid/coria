@@ -109,8 +109,12 @@ type StorageServiceClient interface {
 	// tenant), conflict (the tenant has a storage with that name),
 	// precondition (a root or an endpoint the installation does not list; a
 	// directory that is not empty, has a symbolic link in its path, or
-	// overlaps another storage of the tenant; an S3 location that overlaps
-	// another storage of the tenant), unavailable (the tenant's database does
+	// overlaps another storage of the tenant; a directory whose path on the
+	// server would pass 1023 bytes; a root that lies at, inside or around
+	// another root once their symbolic links are followed; an S3 location
+	// that overlaps another storage of the tenant; an S3 storage that
+	// addresses its bucket in the host name at an endpoint whose entry allows
+	// private addresses), unavailable (the tenant's database does
 	// not answer, or the tenant is not ready).
 	AddStorage(context.Context, *v1.AddStorageRequest) (*v1.AddStorageResponse, error)
 	// GetStorage answers one storage of a tenant. Its secret is never
@@ -146,8 +150,9 @@ type StorageServiceClient interface {
 	// fields that say where its files are (a directory's root and path, an S3
 	// storage's endpoint, bucket and prefix) cannot change, since the files
 	// would no longer be where the catalog says. An S3 storage's access key
-	// id and secret access key change together or not at all: a mask that
-	// names one names the other, or it is invalid.
+	// id and secret access key change together or not at all, and a mask
+	// that names s3.endpoint names both: credentials given for one store are
+	// never sent to another. A mask that breaks either rule is invalid.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the storage's name as its
@@ -156,11 +161,15 @@ type StorageServiceClient interface {
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also an empty mask, a path that names no field, a read-only field or a
 	// type's whole message, a path into the other type's configuration, one
-	// of the two credentials without the other, and every rule AddStorage
-	// checks on a field), not found (the tenant has no storage with that
+	// of the two credentials without the other, the endpoint without both
+	// credentials, and every rule AddStorage checks on a field), not found (the tenant has no storage with that
 	// name; a tenant that does not exist, for a caller who may list every
 	// tenant), precondition (a change of where the files are on a storage
-	// that holds files, and every precondition AddStorage checks),
+	// that holds files, and every precondition AddStorage checks: a directory
+	// whose path on the server would pass 1023 bytes; a root that lies at,
+	// inside or around another root once their symbolic links are followed;
+	// an S3 storage that addresses its bucket in the host name at an endpoint
+	// whose entry allows private addresses),
 	// unavailable (the tenant's database does not answer, or the tenant is
 	// not ready).
 	SetStorage(context.Context, *v1.SetStorageRequest) (*v1.SetStorageResponse, error)
@@ -226,8 +235,12 @@ type StorageServiceHandler interface {
 	// tenant), conflict (the tenant has a storage with that name),
 	// precondition (a root or an endpoint the installation does not list; a
 	// directory that is not empty, has a symbolic link in its path, or
-	// overlaps another storage of the tenant; an S3 location that overlaps
-	// another storage of the tenant), unavailable (the tenant's database does
+	// overlaps another storage of the tenant; a directory whose path on the
+	// server would pass 1023 bytes; a root that lies at, inside or around
+	// another root once their symbolic links are followed; an S3 location
+	// that overlaps another storage of the tenant; an S3 storage that
+	// addresses its bucket in the host name at an endpoint whose entry allows
+	// private addresses), unavailable (the tenant's database does
 	// not answer, or the tenant is not ready).
 	AddStorage(context.Context, *v1.AddStorageRequest) (*v1.AddStorageResponse, error)
 	// GetStorage answers one storage of a tenant. Its secret is never
@@ -263,8 +276,9 @@ type StorageServiceHandler interface {
 	// fields that say where its files are (a directory's root and path, an S3
 	// storage's endpoint, bucket and prefix) cannot change, since the files
 	// would no longer be where the catalog says. An S3 storage's access key
-	// id and secret access key change together or not at all: a mask that
-	// names one names the other, or it is invalid.
+	// id and secret access key change together or not at all, and a mask
+	// that names s3.endpoint names both: credentials given for one store are
+	// never sent to another. A mask that breaks either rule is invalid.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the storage's name as its
@@ -273,11 +287,15 @@ type StorageServiceHandler interface {
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also an empty mask, a path that names no field, a read-only field or a
 	// type's whole message, a path into the other type's configuration, one
-	// of the two credentials without the other, and every rule AddStorage
-	// checks on a field), not found (the tenant has no storage with that
+	// of the two credentials without the other, the endpoint without both
+	// credentials, and every rule AddStorage checks on a field), not found (the tenant has no storage with that
 	// name; a tenant that does not exist, for a caller who may list every
 	// tenant), precondition (a change of where the files are on a storage
-	// that holds files, and every precondition AddStorage checks),
+	// that holds files, and every precondition AddStorage checks: a directory
+	// whose path on the server would pass 1023 bytes; a root that lies at,
+	// inside or around another root once their symbolic links are followed;
+	// an S3 storage that addresses its bucket in the host name at an endpoint
+	// whose entry allows private addresses),
 	// unavailable (the tenant's database does not answer, or the tenant is
 	// not ready).
 	SetStorage(context.Context, *v1.SetStorageRequest) (*v1.SetStorageResponse, error)

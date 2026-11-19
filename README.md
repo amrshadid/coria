@@ -50,7 +50,7 @@ magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|fai
 magnetar storage    add <tenant> <name> --type dir --root ROOT [--path P] | --type s3 --endpoint URL --region R --bucket B --access-key-id ID (--credential-env VAR | --credential-file PATH) [--capacity SIZE] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes | test <tenant> <name>
 magnetar receiver   add <tenant> <name> --storage S --port N --aet TITLE [--allow-aet T] [--allow-from CIDR] [--allow-aet-from T@CIDR] [--any-caller] [--enabled] [--tls-certificate-file F --tls-private-key-file F] [--quiet-period 5m] [--max-open-time 1h] [--max-file-size 4GiB] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes
 magnetar reception  list <tenant> [--receiver NAME] [--step STEP]... [--in-progress] [--since TIME] [--until TIME] | show <tenant> <id> | retry <tenant> <id> [--receiver NAME] | discard <tenant> <id> --reason TEXT [--yes]
-magnetar quarantine list <tenant> [--state held|released|rejected] [--reason REASON] [--receiver NAME] [--reception ID] [--since TIME] [--until TIME] | show <tenant> <id> [--header] | release <tenant> <id> [--receiver NAME] | reject <tenant> <id> --reason TEXT [--yes]
+magnetar quarantine list <tenant> [--state held|released|rejected] [--reason REASON] [--receiver NAME] [--reception ID] [--since TIME] [--until TIME] | show <tenant> <id> [--header] | release <tenant> <id> [--receiver NAME] [--reason TEXT] | reject <tenant> <id> --reason TEXT [--yes]
 ```
 
 - **Where it connects.** By default the local socket `run/magnetar.sock` in the

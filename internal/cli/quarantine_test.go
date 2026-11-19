@@ -115,7 +115,7 @@ func TestQuarantineListUsageErrors(t *testing.T) {
 		t.Errorf("a bad state: %+v", res)
 	}
 	res = r.run("quarantine", "list", "lab1", "--reason", "odd")
-	if res.code != 2 || !strings.Contains(res.stderr, "--reason \"odd\" is not one of: not-dicom, sop-class-not-accepted, too-large, bad-uid, bad-label, label-conflict, different-file, uid-elsewhere, storage-refused, read-back-mismatch") {
+	if res.code != 2 || !strings.Contains(res.stderr, "--reason \"odd\" is not one of: not-dicom, sop-class-not-accepted, too-large, bad-uid, bad-label, label-conflict, different-file, uid-elsewhere, storage-refused, read-back-mismatch, header-too-large, incoming-lost") {
 		t.Errorf("a bad reason: %+v", res)
 	}
 	if got := r.fake.Requests(); got != before {
@@ -144,6 +144,91 @@ func TestQuarantineRelease(t *testing.T) {
 	}
 	if res := r.run("quarantine", "release", "lab1", "q-large", "--receiver", "nope"); res.code != 5 {
 		t.Errorf("release at a receiver that does not exist: %+v", res)
+	}
+}
+
+// TestQuarantineReleaseReason guards the reason a release may carry: it is sent
+// with the request and kept with the record, "quarantine show" prints it only
+// for a record that has one, a reason of only spaces is refused before anything
+// is sent, one past 1024 bytes is the server's refusal (exit 2), and a file
+// already released keeps the reason of its first release.
+func TestQuarantineReleaseReason(t *testing.T) {
+	r := newArchiveRig(t)
+	seedQuarantine(r)
+	before := r.fake.Requests()
+	if res := r.run("quarantine", "release", "lab1", "q-label", "--reason", "   "); res.code != 2 || res.stdout != "" || !strings.Contains(res.stderr, "--reason must say why") {
+		t.Errorf("a reason of spaces: %+v", res)
+	}
+	if got := r.fake.Requests(); got != before {
+		t.Errorf("%d requests were sent for a reason of spaces", got-before)
+	}
+	if res := r.run("quarantine", "release", "lab1", "q-label", "--reason", strings.Repeat("x", 1025)); res.code != 2 || !strings.Contains(res.stderr, "reason: is 1 to 1024 bytes") {
+		t.Errorf("a reason of 1025 bytes: %+v", res)
+	}
+	if show := r.run("quarantine", "show", "lab1", "q-label"); !strings.Contains(show.stdout, "State:            held\n") {
+		t.Errorf("a refused release changed the record:\n%s", show.stdout)
+	}
+
+	expect(t, r.run("quarantine", "release", "lab1", "q-label", "--reason", "naming rule fixed"), 0,
+		"file q-label released (it was quarantined: bad label) into reception rec-released at receiver scanner1\n", "")
+	if show := r.run("quarantine", "show", "lab1", "q-label"); !strings.Contains(show.stdout, "Released into:    rec-released\nRelease reason:   naming rule fixed\n") {
+		t.Errorf("a released record with its reason:\n%s", show.stdout)
+	}
+	doc := document(t, r.run("quarantine", "show", "lab1", "q-label", "--json"))
+	if doc["file"].(map[string]any)["releaseReason"] != "naming rule fixed" {
+		t.Errorf("show --json: %v", doc["file"])
+	}
+	// A second release, with another reason, answers as the record stands.
+	again := document(t, r.run("quarantine", "release", "lab1", "q-label", "--reason", "another", "--json"))
+	if again["file"].(map[string]any)["releaseReason"] != "naming rule fixed" {
+		t.Errorf("a repeated release replaced the reason: %v", again["file"])
+	}
+	// Optional: a release without one leaves none, and show prints no line for it.
+	r.fake.AddQuarantined("lab1", &v1.QuarantinedFile{
+		Id: "q-plain", Reason: v1.QuarantineReason_QUARANTINE_REASON_BAD_UID, State: v1.QuarantineState_QUARANTINE_STATE_HELD,
+		Receiver: "scanner1", SizeBytes: 5, ContentKept: true, QuarantineTime: timestamppb.New(fixedNow),
+	}, "")
+	r.must("quarantine", "release", "lab1", "q-plain", "--receiver", "scanner1")
+	if show := r.run("quarantine", "show", "lab1", "q-plain"); !strings.Contains(show.stdout, "State:            released\n") || strings.Contains(show.stdout, "Release reason") {
+		t.Errorf("a record without a release reason shows one:\n%s", show.stdout)
+	}
+}
+
+// TestQuarantineNewReasons guards the words, the filter, the choices in a usage
+// error and the shell completion for the reasons of a header past the bound
+// and of an incoming copy that was lost: a held header-too-large file can be
+// released, an incoming-lost one has no bytes and cannot (exit 5).
+func TestQuarantineNewReasons(t *testing.T) {
+	r := newArchiveRig(t)
+	r.fake.AddQuarantined("lab1", &v1.QuarantinedFile{
+		Id: "q-header", Reason: v1.QuarantineReason_QUARANTINE_REASON_HEADER_TOO_LARGE, Details: map[string]string{"limit": "1048576"},
+		State: v1.QuarantineState_QUARANTINE_STATE_HELD, Receiver: "scanner1", SizeBytes: 3000000, ContentKept: true, QuarantineTime: timestamppb.New(fixedNow),
+	}, "")
+	r.fake.AddQuarantined("lab1", &v1.QuarantinedFile{
+		Id: "q-lost", Reason: v1.QuarantineReason_QUARANTINE_REASON_INCOMING_LOST,
+		State: v1.QuarantineState_QUARANTINE_STATE_HELD, Receiver: "scanner1", SizeBytes: 500, QuarantineTime: timestamppb.New(fixedNow.Add(-time.Hour)),
+	}, "")
+	expect(t, r.run("quarantine", "list", "lab1"), 0,
+		"ID        STATE  REASON            RECEIVER  RECEPTION  BYTES    QUARANTINED\n"+
+			"q-header  held   header too large  scanner1  -          3000000  2026-11-17 15:00:00 +03:00\n"+
+			"q-lost    held   incoming lost     scanner1  -          500      2026-11-17 14:00:00 +03:00\n", "")
+	if res := r.run("quarantine", "list", "lab1", "--reason", "incoming-lost", "--json"); !strings.Contains(res.stdout, `"id": "q-lost"`) || strings.Contains(res.stdout, "q-header") {
+		t.Errorf("the filter --reason incoming-lost: %+v", res)
+	}
+	if res := r.run("quarantine", "show", "lab1", "q-header"); !strings.Contains(res.stdout, "Reason:           header too large\n  limit:          1048576\n") {
+		t.Errorf("show of a header-too-large record:\n%s", res.stdout)
+	}
+	if res := r.run("quarantine", "release", "lab1", "q-lost"); res.code != 5 {
+		t.Errorf("release of a file whose incoming copy was lost: %+v", res)
+	}
+	if res := r.run("quarantine", "release", "lab1", "q-header"); res.code != 0 || !strings.Contains(res.stdout, "(it was quarantined: header too large)") {
+		t.Errorf("release of a header-too-large file: %+v", res)
+	}
+	offered := runWith(nil, "__complete", "quarantine", "list", "lab1", "--reason", "").stdout
+	for _, want := range []string{"header-too-large\n", "incoming-lost\n"} {
+		if !strings.Contains(offered, want) {
+			t.Errorf("--reason completion does not offer %q:\n%s", want, offered)
+		}
 	}
 }
 

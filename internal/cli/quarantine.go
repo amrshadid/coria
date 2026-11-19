@@ -76,6 +76,9 @@ func (a *app) quarantineDetails(f *v1.QuarantinedFile) []output.Pair {
 		pairs = append(pairs,
 			output.Pair{Label: "Released at", Value: f.GetReleaseReceiver()},
 			output.Pair{Label: "Released into", Value: output.Dash(f.GetReleaseReception())})
+		if f.GetReleaseReason() != "" {
+			pairs = append(pairs, output.Pair{Label: "Release reason", Value: f.GetReleaseReason()})
+		}
 	}
 	if f.GetRejectReason() != "" {
 		pairs = append(pairs, output.Pair{Label: "Reject reason", Value: f.GetRejectReason()})
@@ -237,9 +240,9 @@ read, or it is longer than 1 MiB; the output says which.`,
 
 // newQuarantineRelease builds "quarantine release".
 func (a *app) newQuarantineRelease() *cobra.Command {
-	var receiver string
+	var receiver, reason string
 	cmd := &cobra.Command{
-		Use:   "release <tenant> <id> [--receiver NAME]",
+		Use:   "release <tenant> <id> [--receiver NAME] [--reason TEXT]",
 		Short: "Run a held file through the pipeline again",
 		Long: `Run a held file through the pipeline again, as if it arrived now at the
 receiver it first came to, or at the one --receiver names, which is needed when
@@ -251,11 +254,21 @@ remains is quarantined again under a new record, and this one stays released.
 The output says why the file had been quarantined. A file quarantined as a
 different file under a SOP Instance UID the tenant holds can only be rejected,
 and so can a file whose bytes were never kept (exit 5). A file already released
-is answered as it stands, so a repeated command releases nothing more.`,
+is answered as it stands, so a repeated command releases nothing more, and it
+keeps the reason of its first release.
+
+--reason says why the file is released, in words for whoever reads the record
+later, as a rejection's reason does. It is optional, and when given it is 1 to
+1024 bytes, not only spaces. "quarantine show" prints it.`,
 		Example: `  magnetar quarantine release lab1 q_41Ab
-  magnetar quarantine release lab1 q_41Ab --receiver scanner2`,
+  magnetar quarantine release lab1 q_41Ab --receiver scanner2 --reason "naming rule fixed"`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("reason") {
+				if err := checkReason(reason); err != nil {
+					return err
+				}
+			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {
 				return err
@@ -263,7 +276,7 @@ is answered as it stands, so a repeated command releases nothing more.`,
 			defer closeClient()
 			res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.ReleaseQuarantinedFileResponse, error) {
 				return c.Quarantine.ReleaseQuarantinedFile(ctx, &v1.ReleaseQuarantinedFileRequest{
-					Tenant: args[0], Id: args[1], Mode: v1.ReleaseMode_RELEASE_MODE_AS_IS, Receiver: receiver,
+					Tenant: args[0], Id: args[1], Mode: v1.ReleaseMode_RELEASE_MODE_AS_IS, Receiver: receiver, Reason: reason,
 				})
 			})
 			if err != nil {
@@ -278,6 +291,7 @@ is answered as it stands, so a repeated command releases nothing more.`,
 		}),
 	}
 	cmd.Flags().StringVar(&receiver, "receiver", "", "the receiver whose storage and naming rule the file runs by (default: the receiver it first came to)")
+	cmd.Flags().StringVar(&reason, "reason", "", "why the file is released, kept with its record (1 to 1024 bytes, not only spaces)")
 	return cmd
 }
 

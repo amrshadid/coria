@@ -152,3 +152,29 @@ func TestJSONValue(t *testing.T) {
 		t.Error("an array was accepted as a document")
 	}
 }
+
+// TestQuarantineReasonWords guards that every reason the contract defines has
+// words of its own, lowercase and spaced (so a new reason is never shown as
+// "unknown" or as its enum name), and that one this client does not know is
+// shown as one it cannot name.
+func TestQuarantineReasonWords(t *testing.T) {
+	for n, name := range v1.QuarantineReason_name {
+		if n == 0 {
+			continue
+		}
+		want := strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(name, "QUARANTINE_REASON_")), "_", " ")
+		if got := output.QuarantineReason(v1.QuarantineReason(n)); got != want {
+			t.Errorf("%s is worded %q, want %q", name, got, want)
+		}
+	}
+	for r, want := range map[v1.QuarantineReason]string{
+		v1.QuarantineReason_QUARANTINE_REASON_HEADER_TOO_LARGE: "header too large",
+		v1.QuarantineReason_QUARANTINE_REASON_INCOMING_LOST:    "incoming lost",
+		v1.QuarantineReason(999):                               "a reason this client cannot name",
+		v1.QuarantineReason_QUARANTINE_REASON_UNSPECIFIED:      "unknown",
+	} {
+		if got := output.QuarantineReason(r); got != want {
+			t.Errorf("reason %d: %q, want %q", r, got, want)
+		}
+	}
+}
