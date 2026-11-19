@@ -97,7 +97,9 @@ func TestThePipelinesStorageIsKeptOpenAndCheckedAtEveryUse(t *testing.T) {
 	if _, err := c.Stat(ctx, "data/none"); err == nil || isNotFound(err) {
 		t.Fatalf("a store is still open after Close: %v", err)
 	}
-	if err := os.Remove(dir); err != nil {
+	// The link, where the swap was made; the directory itself, with what
+	// the store wrote in it, where it was not (Windows).
+	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
