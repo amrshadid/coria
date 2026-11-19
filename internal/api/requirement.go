@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -40,14 +42,7 @@ type Methods struct{}
 // requirement depends on the request, or nil when the requirement is fixed,
 // so the server need not read the body of a request it may refuse.
 func (Methods) RequestFor(procedure string) (msg proto.Message, known bool) {
-	r, ok := rules[procedure]
-	if !ok {
-		return nil, false
-	}
-	if r.newMsg == nil {
-		return nil, true
-	}
-	return r.newMsg(), true
+	return requestFor(rules, procedure)
 }
 
 // Requirement returns what a request to procedure needs of its caller, and
@@ -60,7 +55,24 @@ func (Methods) RequestFor(procedure string) (msg proto.Message, known bool) {
 // never panics. An unknown procedure gets the zero Requirement, which
 // nobody meets.
 func (Methods) Requirement(procedure string, msg proto.Message) (access.Requirement, access.Request) {
-	r, ok := rules[procedure]
+	return requirementIn(rules, procedure, msg)
+}
+
+// requestFor is RequestFor over table.
+func requestFor(table map[string]rule, procedure string) (proto.Message, bool) {
+	r, ok := table[procedure]
+	if !ok {
+		return nil, false
+	}
+	if r.newMsg == nil {
+		return nil, true
+	}
+	return r.newMsg(), true
+}
+
+// requirementIn is Requirement over table.
+func requirementIn(table map[string]rule, procedure string, msg proto.Message) (access.Requirement, access.Request) {
+	r, ok := table[procedure]
 	if !ok {
 		return access.Requirement{}, access.Request{}
 	}
@@ -282,6 +294,158 @@ var rules = map[string]rule{
 	coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure: byMessage(func(r *v1.RejectQuarantinedFileRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
 	}),
+}
+
+// pendingRules is the table of the methods whose service the contract
+// defines and no handler serves yet: the services api/not-served.txt
+// names. Methods does not consult it, so the server answers each of these
+// methods as one it does not serve, after the caller is authenticated, and
+// a listed service can never be served by mistake with no handler behind
+// it. Each line is written with its method's contract and checked against
+// its Role line now; the change that serves a service moves its lines
+// into rules and its name off the list, and the tests fail until both are
+// done.
+//
+// Every method here reads the archive of one tenant, and needs reader on
+// it. The object of an entry is the path of labels the request names,
+// never a UID: a UID or a storage key (which holds one) is an identifier
+// as received, recorded only as present.
+var pendingRules = map[string]rule{
+	// CatalogService.
+	coriav1connect.CatalogServiceListSubjectsProcedure: byMessage(func(r *v1.ListSubjectsRequest) (access.Requirement, access.Request) {
+		d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
+		timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Details: d}
+	}),
+	coriav1connect.CatalogServiceGetSubjectProcedure: byMessage(func(r *v1.GetSubjectRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel())}
+	}),
+	coriav1connect.CatalogServiceListSessionsProcedure: byMessage(func(r *v1.ListSessionsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel()), Details: sessionFilterDetails(r)}
+	}),
+	coriav1connect.CatalogServiceGetSessionProcedure: byMessage(func(r *v1.GetSessionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel())}
+	}),
+	coriav1connect.CatalogServiceListScansProcedure: byMessage(func(r *v1.ListScansRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel()), Details: scanFilterDetails(r)}
+	}),
+	coriav1connect.CatalogServiceGetScanProcedure: byMessage(func(r *v1.GetScanRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel())}
+	}),
+
+	// MetadataService.
+	coriav1connect.MetadataServiceGetScanMetadataProcedure: byMessage(func(r *v1.GetScanMetadataRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel())}
+	}),
+	coriav1connect.MetadataServiceGetInstanceMetadataProcedure: byMessage(func(r *v1.GetInstanceMetadataRequest) (access.Requirement, access.Request) {
+		d := map[string]string{}
+		if r.GetSopInstanceUid() != "" {
+			d[detailSOPUID] = presentValue
+		}
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: d}
+	}),
+
+	// DataService.
+	coriav1connect.DataServiceReadFilesProcedure: byMessage(func(r *v1.ReadFilesRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: readFilesDetails(r)}
+	}),
+}
+
+// The keys of the details the reading methods put in audit entries.
+const (
+	detailLabelPrefix       = "label_prefix"
+	detailOrder             = "order"
+	detailStudyDateStart    = "study_date_start"
+	detailStudyDateEnd      = "study_date_end"
+	detailModality          = "modality"
+	detailDescriptionPrefix = "series_description_prefix"
+	detailStartAfter        = "start_after"
+	detailAnnounceOnly      = "announce_only"
+)
+
+// labelPath returns the path of labels a request names, "<subject>",
+// "<subject>/<session>" or "<subject>/<session>/<scan>", as an audit
+// entry's object writes it: the labels given from the top, up to the first
+// empty one, so a level named without the one above it (which the handler
+// refuses as invalid) is not recorded as if it were placed. It is clipped
+// to fit an entry's field: three labels can be longer than one.
+func labelPath(labels ...string) string {
+	var parts []string
+	for _, l := range labels {
+		if l == "" {
+			break
+		}
+		parts = append(parts, l)
+	}
+	return clip(strings.Join(parts, "/"), master.MaxAuditFieldLength-8)
+}
+
+// catalogFilterDetails returns the details every catalog listing records:
+// its label prefix and its order, when given.
+func catalogFilterDetails(prefix string, order v1.CatalogOrder) map[string]string {
+	d := map[string]string{}
+	if prefix != "" {
+		d[detailLabelPrefix] = clip(prefix, 128)
+	}
+	if order != v1.CatalogOrder_CATALOG_ORDER_UNSPECIFIED {
+		d[detailOrder] = clip(order.String(), 64)
+	}
+	return d
+}
+
+// sessionFilterDetails returns the filters of a listing of sessions, as
+// its entry's details record them (catalog.proto, ListSessions).
+func sessionFilterDetails(r *v1.ListSessionsRequest) map[string]string {
+	d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
+	if r.GetStudyDateStart() != "" {
+		d[detailStudyDateStart] = clip(r.GetStudyDateStart(), 16)
+	}
+	if r.GetStudyDateEnd() != "" {
+		d[detailStudyDateEnd] = clip(r.GetStudyDateEnd(), 16)
+	}
+	if r.GetModality() != "" {
+		d[detailModality] = clip(r.GetModality(), 16)
+	}
+	if r.GetReceiver() != "" {
+		d[detailReceiver] = clip(r.GetReceiver(), 64)
+	}
+	timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
+	return d
+}
+
+// scanFilterDetails returns the filters of a listing of scans, as its
+// entry's details record them (catalog.proto, ListScans). A series
+// description is recorded only as present: it is text the sender wrote,
+// which can hold anything, a name included.
+func scanFilterDetails(r *v1.ListScansRequest) map[string]string {
+	d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
+	if r.GetModality() != "" {
+		d[detailModality] = clip(r.GetModality(), 16)
+	}
+	if r.GetSeriesDescriptionPrefix() != "" {
+		d[detailDescriptionPrefix] = presentValue
+	}
+	if r.GetReceiver() != "" {
+		d[detailReceiver] = clip(r.GetReceiver(), 64)
+	}
+	timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
+	return d
+}
+
+// readFilesDetails returns the details of the entry a stream of files
+// opens with (data.proto, ReadFiles): whether an instance and a place to
+// resume from were given, never which, since a UID and a key are
+// identifiers as received; and whether only the announcements were asked
+// for.
+func readFilesDetails(r *v1.ReadFilesRequest) map[string]string {
+	d := map[string]string{detailAnnounceOnly: strconv.FormatBool(r.GetAnnounceOnly())}
+	if r.GetSopInstanceUid() != "" {
+		d[detailSOPUID] = presentValue
+	}
+	if r.GetStartAfter() != "" {
+		d[detailStartAfter] = presentValue
+	}
+	return d
 }
 
 // builtinSettings is the list of settings the binary ships, which the

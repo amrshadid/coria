@@ -8,6 +8,15 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- The contract for reading the archive: `CatalogService` (list and get a
+  tenant's subjects, sessions and scans, with filters and paging),
+  `MetadataService` (a scan's or an instance's headers as DICOM JSON) and
+  `DataService` (a stream of the files of an instance, scan, session or
+  subject, each with its key, size and SHA-256; and, as stated in the
+  contract, a plain HTTP download of one file with byte ranges). Each is
+  answered "not served yet" until its handlers come; a reader on the tenant
+  may call them, and an audit entry never holds a UID or a storage key. The
+  error kinds gain `DATA_LOSS`.
 - The repository had a README and nothing else: no module, no license, and no
   check that a change builds, is formatted or passes its tests. It is now the Go
   module `github.com/amrshadid/coria`, under the Apache License 2.0, with the

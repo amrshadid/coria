@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/api"
 	"github.com/amrshadid/coria/internal/core/settings"
@@ -352,30 +353,41 @@ func withScope(t *testing.T, msg proto.Message, s *v1.Scope) proto.Message {
 	return m.Interface()
 }
 
+// requirementTable is what the server asks of a method table: api.Methods
+// for the services served, api.Pending for those not served yet.
+type requirementTable interface {
+	RequestFor(procedure string) (proto.Message, bool)
+	Requirement(procedure string, msg proto.Message) (access.Requirement, access.Request)
+}
+
 // TestRequirementsFollowTheRoleLines guards the method-to-requirement table
 // against the proto text itself, in both directions: every rpc of the proto
-// files has a Role line of a known shape and a line in api.Methods with that
-// shape, request by request, and every method of the descriptors is an rpc of
-// the files. A malformed or missing scope or name is held to the role on the
-// installation (the accepted reference).
+// files has a Role line of a known shape and a line with that shape,
+// request by request, in api.Methods for a service served and in
+// api.Pending for a service not served yet, so a method is held to its
+// Role line from the change that writes its contract; and every method of
+// the descriptors is an rpc of the files. A malformed or missing scope or
+// name is held to the role on the installation (the accepted reference).
 func TestRequirementsFollowTheRoleLines(t *testing.T) {
 	lines := roleLines(t)
-	// The services not served yet are held by TestNotServedServices.
 	notServed := readNotServed(t)
-	for proc := range lines {
-		if inServices(notServed, proc) {
-			delete(lines, proc)
-		}
-	}
 	methods := contractMethods()
 	for proc := range methods {
 		if _, ok := lines[proc]; !ok {
 			t.Errorf("%s is in the descriptors but not an rpc of the proto files", proc)
 		}
 	}
-	var m api.Methods
 	for proc, text := range lines {
-		if _, ok := methods[proc]; !ok {
+		var m requirementTable = api.Methods{}
+		if inServices(notServed, proc) {
+			// A service not served is not among the files contractMethods
+			// reads, which are the served ones; its descriptor is looked up
+			// by name.
+			m = api.Pending{}
+			if _, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(strings.ReplaceAll(strings.TrimPrefix(proc, "/"), "/", "."))); err != nil {
+				t.Errorf("%s is an rpc of the files but not in the descriptors: %v", proc, err)
+			}
+		} else if _, ok := methods[proc]; !ok {
 			t.Errorf("%s is an rpc of the files but not in the descriptors", proc)
 		}
 		shape, ok := rolePhrases[text]
@@ -385,7 +397,7 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 		}
 		msg, known := m.RequestFor(proc)
 		if !known {
-			t.Errorf("%s: not in api.Methods", proc)
+			t.Errorf("%s: not in the table (%T)", proc, m)
 			continue
 		}
 		need := func(req proto.Message) access.Requirement {
@@ -494,6 +506,96 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 			checkTenantRole(t, proc, need, msg, role)
 			for _, f := range operatorWhen[text] {
 				checkTenantRole(t, proc+" with "+f, need, withField(t, msg, f, "2.25.1"), master.RoleOperator)
+			}
+		}
+	}
+}
+
+// TestPendingRules guards the table of the methods not served yet from
+// drifting from the list and the contract: each of its lines names a
+// method of a service the list names, reads a request of the method's own
+// input type, and the count says when a method was added to or dropped
+// from a service not served without its line. It also holds the audit
+// facts of the reading methods to their Audit lines: the object is the
+// path of labels the request names, and a UID or a storage key is
+// recorded only as present, never as given.
+func TestPendingRules(t *testing.T) {
+	notServed := readNotServed(t)
+	lines := roleLines(t)
+	var p api.Pending
+	procs := p.Procedures()
+	if len(procs) != 9 {
+		t.Errorf("the table of methods not served has %d lines; this test was written for 9, so look at what changed", len(procs))
+	}
+	for _, proc := range procs {
+		if !inServices(notServed, proc) {
+			t.Errorf("%s has a line among the methods not served, but its service is not on the list: move the line to the served table", proc)
+		}
+		if _, ok := lines[proc]; !ok {
+			t.Errorf("%s has a line among the methods not served, but is not an rpc of the proto files", proc)
+			continue
+		}
+		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(strings.ReplaceAll(strings.TrimPrefix(proc, "/"), "/", ".")))
+		md, ok := d.(protoreflect.MethodDescriptor)
+		if err != nil || !ok {
+			t.Errorf("%s is not a method of the descriptors: %v", proc, err)
+			continue
+		}
+		if msg, _ := p.RequestFor(proc); msg == nil || msg.ProtoReflect().Descriptor().FullName() != md.Input().FullName() {
+			t.Errorf("%s: the table reads %v, the method takes a %s", proc, msg, md.Input().FullName())
+		}
+	}
+
+	const uid, key = "2.25.4711", "data/S01/E01/T1/2.25.4711.dcm"
+	facts := func(proc string, msg proto.Message) access.Request {
+		t.Helper()
+		_, f := p.Requirement(proc, msg)
+		for k, v := range f.Details {
+			if strings.Contains(v, uid) || strings.Contains(v, "Smith") {
+				t.Errorf("%s: the detail %s holds what the request gave: %q", proc, k, v)
+			}
+		}
+		if strings.Contains(f.Object, uid) {
+			t.Errorf("%s: the object holds a UID: %q", proc, f.Object)
+		}
+		return f
+	}
+	for _, c := range []struct {
+		name    string
+		proc    string
+		msg     proto.Message
+		object  string
+		details map[string]string
+	}{
+		{"GetSubject", coriav1connect.CatalogServiceGetSubjectProcedure, &v1.GetSubjectRequest{Tenant: "lab1", SubjectLabel: "S01"}, "S01", nil},
+		{"GetSession", coriav1connect.CatalogServiceGetSessionProcedure, &v1.GetSessionRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01"}, "S01/E01", nil},
+		{"GetScan", coriav1connect.CatalogServiceGetScanProcedure, &v1.GetScanRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1"}, "S01/E01/T1", nil},
+		{"ListScans with a session and no subject", coriav1connect.CatalogServiceListScansProcedure, &v1.ListScansRequest{Tenant: "lab1", SessionLabel: "E01"}, "", nil},
+		{"ListScans", coriav1connect.CatalogServiceListScansProcedure,
+			&v1.ListScansRequest{Tenant: "lab1", SubjectLabel: "S01", Modality: "MR", SeriesDescriptionPrefix: "Smith", Order: v1.CatalogOrder_CATALOG_ORDER_LABEL},
+			"S01", map[string]string{"modality": "MR", "series_description_prefix": "present", "order": "CATALOG_ORDER_LABEL"}},
+		{"ListSessions", coriav1connect.CatalogServiceListSessionsProcedure,
+			&v1.ListSessionsRequest{Tenant: "lab1", StudyDateStart: "20240101", StudyDateEnd: "20241231", Receiver: "scanner1"},
+			"", map[string]string{"study_date_start": "20240101", "study_date_end": "20241231", "receiver": "scanner1"}},
+		{"GetInstanceMetadata", coriav1connect.MetadataServiceGetInstanceMetadataProcedure,
+			&v1.GetInstanceMetadataRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", SopInstanceUid: uid},
+			"S01/E01/T1", map[string]string{"sop_instance_uid": "present"}},
+		{"ReadFiles", coriav1connect.DataServiceReadFilesProcedure,
+			&v1.ReadFilesRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", SopInstanceUid: uid, StartAfter: key},
+			"S01/E01/T1", map[string]string{"sop_instance_uid": "present", "start_after": "present", "announce_only": "false"}},
+	} {
+		f := facts(c.proc, c.msg)
+		if f.Object != c.object {
+			t.Errorf("%s: the object is %q, want %q", c.name, f.Object, c.object)
+		}
+		for k, v := range c.details {
+			if f.Details[k] != v {
+				t.Errorf("%s: the detail %s is %q, want %q", c.name, k, f.Details[k], v)
+			}
+		}
+		for k, v := range f.Details {
+			if strings.Contains(v, "data/") {
+				t.Errorf("%s: the detail %s holds a storage key: %q", c.name, k, v)
 			}
 		}
 	}

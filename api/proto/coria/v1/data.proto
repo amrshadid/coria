@@ -1,0 +1,212 @@
+syntax = "proto3";
+
+// Package coria.v1: what holds for the whole package (callers, roles, error
+// kinds, limits, paging, secrets, partial updates) is said on the package in
+// access.proto.
+package coria.v1;
+
+// DataService answers the archived files of a tenant: the DICOM files of
+// an instance, a scan, a session or a subject, each as it was archived,
+// byte for byte.
+//
+// Every file is announced before its bytes with its storage key, size and
+// SHA-256, taken from its scan's manifest (the list, kept on the storage
+// beside the scan's files, of every file of the scan with its key, size and
+// SHA-256), so a client checks each file as it reads it and needs nothing
+// else to know a copy is whole. The server reads the bytes from the
+// storage and computes their SHA-256 as it sends them; a file whose bytes
+// do not match its manifest ends the stream (data loss), so a file that
+// was damaged on the storage is never passed on as good.
+//
+// A storage key is the file's place on the storage, the same on every
+// storage of a tenant: "data/<subject>/<session>/<scan>/<SOP Instance
+// UID>.dcm" in this version. It is opaque to a client, which compares it
+// whole and takes the labels from the announcement's own fields. A later
+// version may place several instances in one stored object; a file is then
+// still announced with the size and SHA-256 of its own bytes.
+//
+// One file over plain HTTP. Each file is also served by a plain HTTP GET,
+// for a client that wants one file, a part of one, or a download resumed
+// where it stopped, with any HTTP client:
+//
+//   GET /tenants/<tenant>/files/<key>
+//   Authorization: Bearer cor_<id>_<secret>
+//
+// on the API's port, with the same key, grant check and audit as every
+// method. The answer is 200 with the whole file, Content-Type
+// "application/dicom" (RFC 3240), Content-Length its size, "Accept-Ranges:
+// bytes" and an ETag that is its SHA-256 in lowercase hexadecimal, in
+// quotes: a strong validator (RFC 9110 8.8.3). A request with one byte
+// range, "Range: bytes=<first>-<last>" or a suffix range (RFC 9110 14.1.2),
+// is answered 206 with those bytes and their Content-Range; a range that
+// starts past the end is answered 416 with "Content-Range: bytes */<size>"
+// (RFC 9110 15.5.17); a request with more than one range is answered 200
+// with the whole file, which RFC 9110 14.2 allows. A resumed download
+// sends "If-Range" with the ETag it holds: the server answers the range
+// only while the file is that one, and the whole file otherwise, so a
+// download resumed after the file changed can never join the bytes of two
+// versions. HEAD answers the same headers without a body. The server does
+// not check the SHA-256 of a range it answers, which would mean reading
+// the whole file; the client checks the file it assembles against the
+// ETag. A key is refused 404 unless it is listed in a manifest of the
+// tenant, so no path the archive does not hold reaches a storage. The
+// other answers carry the codes of the package (access.proto): 401, 403,
+// 404 (also a tenant that does not exist, for a caller who may list every
+// tenant), 500 (also a file missing from the storage), and 503 (the
+// tenant's database or the file's storage does not answer, or the tenant
+// is not ready), with the request id in Coria-Request-Id. The audit entry
+// of a download has the scan's path, "<subject>/<session>/<scan>", as its
+// object and the range and the bytes sent in details, never the key: a
+// key holds a SOP Instance UID, an identifier as received, which no log
+// holds. A reader on the tenant may download.
+//
+// The headers of the files, without their bulk data, are MetadataService's.
+//
+// Every method acts inside one tenant, named by the request's tenant field,
+// so a request into a tenant that is not ready is answered UNAVAILABLE.
+service DataService {
+  // ReadFiles streams the files of one instance, one scan, one session or
+  // one subject, in the order of their storage keys: each file's
+  // announcement (a ReadFilesResponse with file set), then its bytes in
+  // order (each with chunk set), then the next file. A file's chunks hold
+  // its bytes from the first to the last, their offsets following on with
+  // no gap, and the last ends at its size; a file of size zero has no
+  // chunk. A chunk holds at most 1 MiB in this version; a client accepts
+  // any chunk of up to 3 MiB, so the server may send larger ones later
+  // without a change of the contract, always under the 4 MB a stock gRPC
+  // client accepts.
+  //
+  // The files are those the catalog holds when the stream reaches each
+  // scan: a file archived into a scan the stream has passed is not sent. A
+  // stream that ends before the last file (the client went away, the
+  // server stopped, a storage stopped answering) is resumed by a new call
+  // with start_after set to the key of the last file the client received
+  // whole and checked; a call with announce_only set lists the files
+  // without their bytes, to compare a copy held elsewhere.
+  //
+  // The caller's key and grant are checked again at least every 15 seconds
+  // while the stream is open: a key revoked or expired, or a grant removed,
+  // ends the stream with the answer a new call would get.
+  //
+  // An instance is named inside its scan, so a caller must already hold
+  // the archive's labels of the scan; its SOP Instance UID only picks one
+  // of the scan's instances, and is not a search of the tenant by an
+  // identifier.
+  //
+  // Role: reader on the tenant.
+  // Audit: one entry in the tenant's log when the stream opens, with the
+  // path asked for ("<subject>", "<subject>/<session>" or
+  // "<subject>/<session>/<scan>") as its object, and in details whether an
+  // instance, start_after and announce_only were given (an instance's UID
+  // and a key are recorded only as present, since each holds an identifier
+  // as received, which no log holds); and one when it ends, with how many
+  // files and bytes it sent and how it ended.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant that
+  // does not exist, for a caller who may not list every tenant), invalid
+  // (also a level named without the levels above it, a start_after that is
+  // not a key of what is asked for), not found (the tenant has no such
+  // subject, session or scan, or the scan no instance with that SOP
+  // Instance UID; a tenant that does not exist, for a caller who may list
+  // every tenant), unavailable (the tenant's database or a storage does
+  // not answer, when the stream opens or while it is open, or the tenant
+  // is not ready; the client resumes with start_after), data loss (a file
+  // is missing from its storage, or its bytes do not match the SHA-256 of
+  // its manifest; the message names the file's scan, and the bytes of that
+  // file already sent are not to be kept), resource exhausted (the caller,
+  // a key or the local operator, already holds 16 open streams of this
+  // method, or the server holds 256).
+  // Limits: no deadline is applied to the stream when the client sends
+  // none, since a subject's files may take hours; the 30-second default of
+  // other calls does not hold here. A stream whose client reads nothing for
+  // 5 minutes is ended as deadline exceeded, so a client that stalls does
+  // not hold a storage's connection for ever.
+  rpc ReadFiles(ReadFilesRequest) returns (stream ReadFilesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+// ArchivedFile is the announcement of one archived file, from its scan's
+// manifest.
+message ArchivedFile {
+  // Its storage key: opaque, at most 1024 bytes, the same on every storage
+  // and the last part of its plain HTTP path.
+  string key = 1;
+
+  // Its size in bytes: the DICOM file header and the data set, as
+  // archived.
+  int64 size_bytes = 2;
+
+  // The SHA-256 of its bytes, in lowercase hexadecimal, 64 characters.
+  string sha256 = 3;
+
+  // The SOP Instance UID (0008,0018) of the instance it holds, as
+  // received.
+  string sop_instance_uid = 4;
+
+  // The label of its subject.
+  string subject_label = 5;
+
+  // The label of its session.
+  string session_label = 6;
+
+  // The label of its scan.
+  string scan_label = 7;
+}
+
+// FileChunk is a part of the bytes of the file last announced.
+message FileChunk {
+  // Where the part starts in the file, in bytes from its first: 0 for the
+  // first chunk of a file, and the end of the one before for each next.
+  int64 offset = 1;
+
+  // The bytes: at least one, at most 1 MiB in this version, and never more
+  // than 3 MiB.
+  bytes data = 2;
+}
+
+// ReadFilesRequest names what to stream: a subject, or a session of it, or
+// a scan of that, or one instance of the scan. The deepest level given is
+// what is streamed, and each level needs every level above it.
+message ReadFilesRequest {
+  // The tenant, by name. Required.
+  string tenant = 1;
+
+  // The subject's label. Required.
+  string subject_label = 2;
+
+  // The session's label. Empty for every session of the subject.
+  string session_label = 3;
+
+  // The scan's label. Empty for every scan of the session; needs
+  // session_label.
+  string scan_label = 4;
+
+  // The SOP Instance UID (0008,0018) of one instance of the scan, as
+  // received. Empty for every instance of the scan; needs scan_label.
+  string sop_instance_uid = 5;
+
+  // The key of the last file the client received whole, to resume after
+  // it: the stream starts with the first file whose key sorts after it in
+  // byte order. Empty to start from the first file. At most 1024 bytes,
+  // and a key of what is asked for: one of its files, received from an
+  // earlier stream.
+  string start_after = 6;
+
+  // Whether to send only each file's announcement, without its bytes: a
+  // listing of the files with their sizes and checksums, which reads the
+  // manifests alone and no file.
+  bool announce_only = 7;
+}
+
+// ReadFilesResponse is one message of the stream: a file's announcement,
+// or a part of its bytes.
+message ReadFilesResponse {
+  // What this message carries.
+  oneof part {
+    // The next file, announced before its bytes.
+    ArchivedFile file = 1;
+
+    // A part of the bytes of the file last announced.
+    FileChunk chunk = 2;
+  }
+}

@@ -60,10 +60,17 @@ syntax = "proto3";
 //     answers it: the cursor it was given points before the oldest event
 //     kept, so the events after it can no longer all be answered. Sending
 //     it again fails again; the client starts over from a status.
+//   - data loss: DATA_LOSS (HTTP 500). An archived file, or a file the
+//     server keeps beside it, is missing from its storage or is not what
+//     was archived: its bytes do not match the SHA-256 its scan's manifest
+//     holds. Answered only by the methods that read archived files
+//     (MetadataService, DataService); the message names the scan, and the
+//     cause is in the server's log. Sending it again fails again until the
+//     file is mended from another copy.
 //
 // Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
-// RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch, for
-// too many open streams), and DEADLINE_EXCEEDED when its deadline passes.
+// RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch and
+// DataService.ReadFiles, for too many open streams), and DEADLINE_EXCEEDED when its deadline passes.
 // The message of an INTERNAL answer says nothing about the cause; the cause
 // is in the server's log and the audit entry, under the request's id.
 //
@@ -80,16 +87,18 @@ syntax = "proto3";
 // client cannot set it: a request header of that name is ignored. The same id
 // is in the server's log and in the request's audit entry.
 //
-// Reads and retries. Every Get and List method, WhoAmI and Watch is marked
-// NO_SIDE_EFFECTS, and the changes that may be repeated safely are marked
-// IDEMPOTENT. A read still writes an audit entry: that entry is the server's
-// record of the call, not a change to anything a read answers, and repeating
-// the read answers the same. CreateTenant, CreateKey, AddStorage and
+// Reads and retries. Every Get and List method, WhoAmI, Watch and ReadFiles
+// is marked NO_SIDE_EFFECTS, and the changes that may be repeated safely are
+// marked IDEMPOTENT. A read still writes an audit entry: that entry is the
+// server's record of the call, not a change to anything a read answers, and
+// repeating the read answers the same. CreateTenant, CreateKey, AddStorage and
 // AddReceiver are neither, as each call makes a new thing.
 //
 // Limits. A message over 4 MB is refused. Every call has a deadline; when the
 // client sends none, the server applies 30 seconds, except to the stream of
-// MonitorService.Watch, which stays open until either side ends it. A list
+// MonitorService.Watch, which stays open until either side ends it, and to
+// the stream of DataService.ReadFiles, which may carry a subject's files
+// for hours (its comment says how a stalled one ends). A list
 // answers 100 items unless page_size asks for another number, and at most
 // 1000; a larger page_size is invalid.
 //

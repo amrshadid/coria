@@ -1,7 +1,37 @@
 package api
 
-import "github.com/amrshadid/coria/internal/place"
+import (
+	"google.golang.org/protobuf/proto"
+
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/place"
+)
 
 // SetPortProbe makes the services of h probe a port with probe instead of
 // binding it, so a test sees each port tried and on which address.
 func SetPortProbe(h Handlers, probe place.Probe) { h.c.seams.probe = probe }
+
+// Pending is the table of the methods whose service is not served yet,
+// with the methods of Methods, so a test holds each of its lines to the
+// method's Role line before the service is served.
+type Pending struct{}
+
+// RequestFor is Methods.RequestFor over the methods not served yet.
+func (Pending) RequestFor(procedure string) (proto.Message, bool) {
+	return requestFor(pendingRules, procedure)
+}
+
+// Requirement is Methods.Requirement over the methods not served yet.
+func (Pending) Requirement(procedure string, msg proto.Message) (access.Requirement, access.Request) {
+	return requirementIn(pendingRules, procedure, msg)
+}
+
+// Procedures returns the full procedure name of every method not served
+// yet that has a line in the table.
+func (Pending) Procedures() []string {
+	out := make([]string, 0, len(pendingRules))
+	for p := range pendingRules {
+		out = append(out, p)
+	}
+	return out
+}

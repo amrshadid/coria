@@ -15,3 +15,7 @@
 #
 # A line is removed in the change that serves its service; the tests fail
 # until it is.
+
+coria.v1.CatalogService
+coria.v1.MetadataService
+coria.v1.DataService
