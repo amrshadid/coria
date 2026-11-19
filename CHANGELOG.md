@@ -612,9 +612,19 @@ All notable changes to Magnetar are written here. The form is
   tenant's allotted ports that no receiver of the tenant holds and that the
   server can bind now, IPv4 included. None such is refused, naming the
   setting `receiver.ports`.
+- `make bench-gate`, and a CI job of its own: reception's speed (files a
+  second from landing to verified, small slices on SQLite and a directory)
+  measured on the base branch's tree and on the change's, in turns on the
+  same machine, failing when the change is slower by more than 25%.
+- The reception's speed is measured on Postgres and on an S3 bucket as well
+  as on SQLite and a directory (`BenchmarkLandToVerified`).
 
 ### Changed
 
+- A scan's files are put to the storage, and read back, eight at a time
+  instead of one after another, every put still ended before any read-back.
+  A reception of 200 slices of 256 KiB went from 21.5 to 30.6 files a second
+  on SQLite and a directory, 36 to 44 on Postgres, and 31.5 to 38 on S3.
 - A keep-alive of the stream of every tenant names, after the first, only
   the tenants whose position changed since the keep-alive before
   (`WatchKeepAlive.full` marks the first, which names them all), so a
@@ -704,6 +714,13 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A server killed while it archived a study, and started again, left the
+  study's work claimed by the killed process for two minutes, the length of
+  a lease, before archiving it. It now takes that work back at its start.
+- The end-to-end tests of reception on Postgres and on S3 never ran in CI:
+  they read variables nothing set, and `make test-s3` ran only the S3
+  driver's tests. `make test-postgres` and `make test-s3` now run them, each
+  test on a scratch schema or prefix of its own.
 - A tenant's events were never pruned: the setting `events.retention` was
   read by nothing. The server now records, at its start and every hour, a
   checkpoint of each tenant's feed with its own clock (at this time the

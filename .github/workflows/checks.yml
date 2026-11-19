@@ -476,7 +476,31 @@ jobs:
           make prove-reception PYTHON="$VENV_PYTHON" DCMTK=/usr/bin \
             PROVE_S3="http://throwaway-key:throwaway-secret@127.0.0.1:59000/prove-reception"
 
-  # Windows has its own paths, line endings and executables, so the tests run
+  # Reception's speed against the branch a change goes into (make
+  # bench-gate): the base's tree and this one measured in turns on the same
+  # runner, failing on a slowdown past the margin. The whole history is
+  # fetched so the base commit is there.
+  bench:
+    name: 'Speed: reception against the base'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: '1.27'
+
+      - name: Reception against the base
+        env:
+          BASE: ${{ github.base_ref || 'develop' }}
+        run: make bench-gate BENCH_BASE="origin/$BASE"
+
   # there on every pull request. The newest Go only: Windows minutes count
   # double against a private repository, and the older Go is tested on Linux.
   windows:

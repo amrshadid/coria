@@ -32,6 +32,11 @@
 #   make check-tenant-postgres  a tenant on Postgres, created by the registry,
 #                    read back by psql and pg_dump (same variables)
 #   make test-386    the tests as linux/386 binaries, on a Linux x86-64 host
+#   make prove-reception  the reception proven from outside: dcmtk and
+#                    pynetdicom send, dcmdump, pydicom and sqlite3 check, kills
+#                    at each step (DCMTK=dir; PROVE_S3=url adds a bucket)
+#   make bench-gate  reception's speed against BENCH_BASE (origin/develop),
+#                    failing on a slowdown past BENCH_MARGIN percent
 #
 # And everything CI runs, on one machine (the last section of this file):
 #
@@ -53,10 +58,11 @@
 #                    127.0.0.1:PG_PORT); pg-up prints MAGNETAR_TEST_POSTGRES
 #   make s3-up / s3-down  the two S3 servers CI tests against, in docker;
 #                    s3-up prints each one's MAGNETAR_TEST_S3
-#   make test-postgres  the database drivers' tests against that Postgres (or
-#                    MAGNETAR_TEST_POSTGRES), failing if there is none
-#   make test-s3     the S3 driver's tests against each S3 server, failing if
-#                    one is not up
+#   make test-postgres  the database drivers' tests, and the reception end to
+#                    end, against that Postgres (or MAGNETAR_TEST_POSTGRES),
+#                    failing if there is none
+#   make test-s3     the S3 driver's tests, and the reception end to end,
+#                    against each S3 server, failing if one is not up
 #   make check-static  bin/magnetar-linux-amd64 is a static binary built with
 #                    CGO_ENABLED=0
 #
@@ -158,6 +164,18 @@ test-scale:
 # The event feed's speed: a step with its event, a page read from a feed of
 # ten million events (built once, about a minute), and what waking the
 # watches costs. Not part of `check`: it takes minutes.
+# Reception's speed held against a base commit (scripts/bench-gate.py):
+# files a second from landing to verified for small slices on SQLite and a
+# directory, the base's tree and this one measured in turns on the same
+# machine; it fails when this one is slower by more than BENCH_MARGIN
+# percent. BENCH_BASE is the commit to compare with.
+BENCH_BASE   ?= origin/develop
+BENCH_MARGIN ?= 25
+BENCH_COUNT  ?= 5
+.PHONY: bench-gate
+bench-gate:
+	python3 scripts/bench-gate.py --go "$(GO)" --base "$(BENCH_BASE)" --count $(BENCH_COUNT) --margin $(BENCH_MARGIN)
+
 bench-events:
 	$(GO) test -count=1 -run '^$$' -bench '^(BenchmarkReadEventsPage|BenchmarkReceptionStepEvent)$$' -benchtime 2s -timeout 30m ./internal/driver/sqlite
 	$(GO) test -count=1 -run '^$$' -bench '^BenchmarkWake$$' ./internal/events
@@ -717,7 +735,7 @@ outside: $(CHECK_TOOLS)
 # make ci: every job of checks.yml, one after another, cheapest first so a
 # mistake fails in seconds, not after the tests: the comments, formatting,
 # vet, lint and the contract; then the tests, the builds, the outside checks,
-# the server's checks, Postgres at each version CI tests, both S3 servers,
+# the server's checks, reception's speed against origin/develop, Postgres at each version CI tests, both S3 servers,
 # the proof as CI's proof job runs it (strict on Linux, where every check can
 # run), and the proof of reception last when dcmtk is found. Docker is checked first, since half of it needs docker.
 #
@@ -780,6 +798,7 @@ ci:
 		skip "TestSocketRefusesOtherUser: needs a second operating system user, named by MAGNETAR_TEST_OTHER_USER (CI makes one with sudo)"; \
 	fi; \
 	step check-e2e; \
+	step bench-gate; \
 	for v in $(CI_PG_VERSIONS); do \
 		step pg-down; \
 		step pg-up PG_VERSION=$$v; \
