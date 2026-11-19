@@ -151,6 +151,13 @@ func TestPipelinePlansAtScale(t *testing.T) {
 		 FROM generate_series(1, 1000000) i`,
 		`INSERT INTO work SELECT 'q' || i, 'archive', '', '', 'key' || i, 'queued', timestamptz 'epoch' + i * interval '1 second', 0, 10, '', '', now(), now()
 		 FROM generate_series(1, 1000) i`,
+		// A feed of two million events, nearly all of one type, pruned up
+		// to its first hundred thousand, with a checkpoint an hour.
+		`INSERT INTO events (type, at, payload, key) OVERRIDING SYSTEM VALUE
+		 SELECT CASE WHEN i % 1000 = 0 THEN 'storage_space' ELSE 'reception_step' END, timestamptz 'epoch' + i * interval '1 second', '{}',
+		   CASE WHEN i % 10 = 0 THEN 'k' || i END FROM generate_series(100001, 2100000) i`,
+		`UPDATE event_marks SET pruned_through = 100000`,
+		`INSERT INTO event_checkpoints SELECT timestamptz 'epoch' + h * interval '1 hour', h * 3600 FROM generate_series(28, 583) h`,
 		`ANALYZE`)
 	t.Logf("built in %v", time.Since(start))
 
@@ -168,7 +175,9 @@ func TestPipelinePlansAtScale(t *testing.T) {
 	// allowSort is a statement that reads every row of one reception, as a
 	// count or a group does.
 	const sortBound = 1000
-	smallTables := []string{"storages", "receivers", "catalog_totals", "quarantine_totals"}
+	// event_marks is one row; event_checkpoints is one row an hour of the
+	// retention period, those that can prune nothing more removed.
+	smallTables := []string{"storages", "receivers", "catalog_totals", "quarantine_totals", "event_marks", "event_checkpoints"}
 	rowsOf := regexp.MustCompile(`rows=([0-9]+)`)
 	bad := func(plan string, allowSort bool) string {
 		for _, line := range strings.Split(plan, "\n") {
@@ -247,6 +256,12 @@ func TestPipelinePlansAtScale(t *testing.T) {
 		{"receptions without work", "receptions_in_progress|receptions_by_storage", receptionsWithoutWorkSQL, []any{time.Unix(0, 0).UTC(), "", 1001}, true},
 		{"a batch's instance rows", "instances_pkey", instanceRowsSQL, []any{uids}, false},
 		{"the received files a claim names", "received_files_pkey", receivedOfClaimSQL, []any{"claimer", uids, sums}, false},
+		{"a page of events", "events_pkey", eventsAfterSQL, []any{int64(1500000), 1000}, false},
+		{"a page of a rare type of events", "events_by_type", eventsOfType(tenant.EventStorageSpace), []any{int64(1500000), 1000}, false},
+		{"a page of the common type of events", "events_by_type|events_pkey", eventsOfType(tenant.EventReceptionStep), []any{int64(1500000), 1000}, false},
+		{"the feed's place", "events_pkey", eventHighSQL, nil, false},
+		{"a step of pruning", "events_pkey", pruneStepSQL, []any{int64(1000000), 200}, false},
+		{"the checkpoint pruning reads", "", pruneTargetSQL, []any{time.Unix(1000000, 0).UTC()}, false},
 	} {
 		check(c.what, connQuerier{conn}, c.want, c.statement, c.allowSort, c.args...)
 	}

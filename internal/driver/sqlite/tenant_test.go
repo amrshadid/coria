@@ -145,6 +145,8 @@ func TestShippedTenantMigrationsUnchanged(t *testing.T) {
 		"0002_pipeline.sql " + shippedTenantPipeline,
 		"0003_released_places.sql " + shippedTenantReleasedPlaces,
 		"0004_release_reason_and_scans.sql " + shippedTenantReleaseReason,
+		"0005_tenant_secrets.sql " + shippedTenantSealedKeys,
+		"0006_event_checkpoints.sql " + shippedTenantCheckpoints,
 	}
 	if tenantMigrationsErr != nil {
 		t.Fatal(tenantMigrationsErr)
@@ -176,6 +178,14 @@ const shippedTenantReleasedPlaces = "2641f017ef90b5c528e6544c0f4986f555b72ca8974
 // migrations/tenant/0004_release_reason_and_scans.sql as this change ships
 // it.
 const shippedTenantReleaseReason = "01042ce745ca84db776330e80595534557db09fc119f8fc85cdf984fbd86ac3d"
+
+// shippedTenantSealedKeys is the SHA-256 of migrations/tenant/0005_tenant_secrets.sql,
+// as this change ships it.
+const shippedTenantSealedKeys = "fd806bad7453d38a20301963fac797b7eb9f15b982079f69c2389b78c4288d91"
+
+// shippedTenantCheckpoints is the SHA-256 of
+// migrations/tenant/0006_event_checkpoints.sql as this change ships it.
+const shippedTenantCheckpoints = "81a7d67803fb370929d6fb4bf3af00dd05e3dd4c712ee46a1e7c33901098e4b2"
 
 // TestTenantNotMigrated guards that a tenant store used before Migrate
 // fails as Unavailable with a message that says so, instead of a SQL error,

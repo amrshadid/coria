@@ -518,10 +518,11 @@ pg_owner=$(psql_su -d mgt_proof_main -c "select distinct tableowner from pg_tabl
 pg_identity=$(psql_su -d mgt_proof_main -c "select id from tenant_identity" 2> /dev/null || true)
 master_pg_id=$("$SQLITE3" "$data/master.db" "select id from tenants where name = 'pg'")
 want_master="api_keys audit grants schema_migrations settings tenants "
-# Both hold what a reception needs. A SQLite tenant also has the event feed's
-# tables, which a Postgres tenant gains when its driver does.
+# Both hold what a reception needs and the event feed's tables; SQLite keeps
+# its running count of receptions by step in a table, and its sequence of ids
+# in sqlite_sequence.
 want_lite="audit catalog_totals event_checkpoints event_marks events instances quarantine quarantine_totals received_files receivers reception_associations reception_steps receptions scans schema_migrations sessions settings sqlite_sequence storages subjects tenant_secrets work "
-want_pg="audit catalog_totals instances quarantine quarantine_totals received_files receivers reception_associations receptions scans schema_migrations sessions settings storages subjects tenant_identity tenant_secrets work "
+want_pg="audit catalog_totals event_checkpoints event_marks events instances quarantine quarantine_totals received_files receivers reception_associations receptions scans schema_migrations sessions settings storages subjects tenant_identity tenant_secrets work "
 if [ "$master_tables" = "$want_master" ] && [ "$lite_tables" = "$want_lite" ] && [ "$pg_tables" = "$want_pg" ] &&
 	[ "$pg_owner" = "mgt_proof " ] && [ -n "$pg_identity" ] && [ "$pg_identity" = "$master_pg_id" ]; then
 	ok "3.4 sqlite3 and psql list each database's tables" "master (sqlite3): $master_tables; lite (sqlite3): $lite_tables; pg (psql): $pg_tables(owner mgt_proof; tenant_identity holds pg's id in the master)"

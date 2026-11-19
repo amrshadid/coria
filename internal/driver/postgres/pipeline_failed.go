@@ -126,6 +126,15 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 		if retry, err = receptionInTx(ctx, tx, newID, ""); err != nil {
 			return err
 		}
+		// The new reception reaching complete, with the reception it runs
+		// again, is its first event, last before the audit entry.
+		e, err := tenant.ReceptionStepEvent("", retry)
+		if err != nil {
+			return err
+		}
+		if err := writeEvents(ctx, tx, e); err != nil {
+			return err
+		}
 		a, err := sqlkit.AddDetails(audit, tenant.DetailRetryReception, newID)
 		if err != nil {
 			return err

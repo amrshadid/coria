@@ -160,7 +160,16 @@ func (t *Tenant) OpenReception(ctx context.Context, receiver, studyUID, id strin
 	err := t.pipe(ctx, "the reception cannot be opened", func(tx pgx.Tx) error {
 		var err error
 		out, opened, err = openReceptionInTx(ctx, tx, receiver, studyUID, id, at)
-		return err
+		if err != nil || !opened {
+			return err
+		}
+		// The reception reaching receiving is its first event, last in the
+		// transaction that opens it.
+		e, err := tenant.ReceptionStepEvent("", out)
+		if err != nil {
+			return err
+		}
+		return writeEvents(ctx, tx, e)
 	})
 	if err != nil {
 		return tenant.Reception{}, false, err
@@ -327,6 +336,16 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 				return err
 			}
 		}
+		// The step's event, whatever hook the caller gave: a step is never
+		// taken without it. It is written after the hook, last in the
+		// transaction, so the feed's lock is held only to the commit.
+		e, err := tenant.ReceptionStepEvent(before.State, after)
+		if err != nil {
+			return err
+		}
+		if err := writeEvents(ctx, tx, e); err != nil {
+			return err
+		}
 		out = after
 		return nil
 	})
@@ -367,7 +386,15 @@ func giveUp(ctx context.Context, tx pgx.Tx, receptionID string, now time.Time) (
 	if err != nil || n != 1 {
 		return false, err
 	}
-	return true, releaseClaims(ctx, tx, receptionID)
+	if err := releaseClaims(ctx, tx, receptionID); err != nil {
+		return false, err
+	}
+	// The step's event, last: both callers only read after giving up.
+	e, err := stepEventInTx(ctx, tx, receptionID, reception.State(state))
+	if err != nil {
+		return false, err
+	}
+	return true, writeEvents(ctx, tx, e)
 }
 
 // ReceptionsWithoutWork implements tenant.Pipeline.

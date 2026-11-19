@@ -570,6 +570,16 @@ All notable changes to Magnetar are written here. The form is
 - `docs/testing.md` lists how tests and checks are run, what `-short` means,
   how a slow test is marked, and every `MAGNETAR_*` variable; the reception
   walk-through says which changes take effect without a restart.
+- A tenant on Postgres has the event feed a SQLite tenant has: every step of
+  a reception, each file quarantined and each decision on one, receivers'
+  health, storages' space and turned-away callers are events written with
+  the change they report, read in commit order from a cursor, with the
+  status snapshot, retention by checkpoints and the live stream. Several
+  transactions write at once on Postgres, so a change that writes events
+  takes the feed's lock just before its first and holds it to its commit:
+  event ids follow commit order and a reader never passes an event that
+  commits behind it. Changes that write no event, such as a batch of
+  received files, are not slowed.
 
 ### Changed
 

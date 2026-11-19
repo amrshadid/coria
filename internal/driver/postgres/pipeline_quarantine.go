@@ -117,6 +117,9 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 			receptions = append(receptions, q.ReceptionID)
 		}
 	}
+	// The events follow the order the caller gave, as the records are
+	// numbered in its running totals; the rows are written in order of id.
+	given := slices.Clone(batch)
 	slices.SortFunc(batch, func(a, b tenant.QuarantinedFile) int { return strings.Compare(a.ID, b.ID) })
 	slices.Sort(receptions)
 	n := len(batch)
@@ -249,6 +252,28 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 		if err := addTotals(ctx, tx, heldFiles, heldBytes); err != nil {
 			return err
 		}
+		// One event per record made, with the quarantine's totals as they
+		// stood after it, last in the transaction.
+		var files, bytes int64
+		if err := tx.QueryRow(ctx, `SELECT files, bytes FROM quarantine_totals WHERE only_row`).Scan(&files, &bytes); err != nil {
+			return err
+		}
+		files, bytes = files-heldFiles, bytes-heldBytes
+		events := make([]tenant.EventRecord, 0, len(written))
+		for _, q := range given {
+			if !added[q.ID] {
+				continue
+			}
+			files, bytes = files+1, bytes+q.HeldBytes()
+			e, err := tenant.FileQuarantinedEvent(q, files, bytes)
+			if err != nil {
+				return err
+			}
+			events = append(events, e)
+		}
+		if err := writeEvents(ctx, tx, events...); err != nil {
+			return err
+		}
 		inserted = len(written)
 		return nil
 	})
@@ -357,11 +382,13 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 			return tenant.Precondition("the tenant has no receiver named " + receiver)
 		}
 		joined := ""
+		var events []tenant.EventRecord
 		if q.Receivable() {
-			r, err := joinReception(ctx, tx, via, q.StudyUID, receptionID, now)
+			r, openEvents, err := joinReception(ctx, tx, via, q.StudyUID, receptionID, now)
 			if err != nil {
 				return err
 			}
+			events = openEvents
 			joined = r.ID
 			f := tenant.ReceivedFile{ReceptionID: r.ID, SOPInstanceUID: q.SOPInstanceUID, SHA256: q.SHA256, SeriesUID: q.SeriesUID,
 				StudyUID: q.StudyUID, SOPClassUID: q.SOPClassUID, TransferSyntaxUID: q.TransferSyntaxUID, Size: q.Size,
@@ -409,6 +436,13 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		if out, err = quarantinedInTx(ctx, tx, id, ""); err != nil {
 			return err
 		}
+		decided, err := decisionEventInTx(ctx, tx, out)
+		if err != nil {
+			return err
+		}
+		if err := writeEvents(ctx, tx, append(events, decided)...); err != nil {
+			return err
+		}
 		a, err := releaseEntry(audit, joined)
 		if err != nil {
 			return err
@@ -437,18 +471,29 @@ func releaseEntry(audit master.AuditEntry, joined string) (master.AuditEntry, er
 // its row is receiving no more, and the file belongs to the next arrival:
 // the next round, a statement of its own, does not find it receiving and
 // opens that arrival.
-func joinReception(ctx context.Context, tx pgx.Tx, via, studyUID, receptionID string, now time.Time) (tenant.Reception, error) {
+//
+// A reception it opened comes with its first event, made as it was opened
+// and for the caller to write last in its transaction.
+func joinReception(ctx context.Context, tx pgx.Tx, via, studyUID, receptionID string, now time.Time) (tenant.Reception, []tenant.EventRecord, error) {
 	for range openTries {
-		r, _, err := openReceptionInTx(ctx, tx, via, studyUID, receptionID, now)
+		r, opened, err := openReceptionInTx(ctx, tx, via, studyUID, receptionID, now)
 		if err != nil {
-			return r, err
+			return r, nil, err
+		}
+		var events []tenant.EventRecord
+		if opened {
+			e, err := tenant.ReceptionStepEvent("", r)
+			if err != nil {
+				return r, nil, err
+			}
+			events = append(events, e)
 		}
 		receiving, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = $1 AND state = 'receiving' FOR NO KEY UPDATE`, r.ID)
 		if err != nil || receiving {
-			return r, err
+			return r, events, err
 		}
 	}
-	return tenant.Reception{}, fault.New(fault.Unavailable, "receptions of the study kept closing at the same moment; try again")
+	return tenant.Reception{}, nil, fault.New(fault.Unavailable, "receptions of the study kept closing at the same moment; try again")
 }
 
 // RejectQuarantined implements tenant.Pipeline. The record's row is read FOR
@@ -489,6 +534,13 @@ func (t *Tenant) RejectQuarantined(ctx context.Context, id, reason string, now t
 				return err
 			}
 			if q, err = quarantinedInTx(ctx, tx, id, ""); err != nil {
+				return err
+			}
+			decided, err := decisionEventInTx(ctx, tx, q)
+			if err != nil {
+				return err
+			}
+			if err := writeEvents(ctx, tx, decided); err != nil {
 				return err
 			}
 		}
