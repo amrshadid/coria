@@ -172,7 +172,8 @@ func (b *batcher) writeHolds(ctx context.Context, items []batchItem) {
 		records[i] = *it.d.hold
 	}
 	b.p.at("batch.before-hold")
-	if _, err := b.p.store.HoldFiles(ctx, records); err != nil {
+	written, err := b.p.store.HoldFiles(ctx, records)
+	if err != nil {
 		b.p.log.Warn("received files could not be held; they are kept and tried again", "files", len(items), "reason", safe(err))
 		for _, it := range items {
 			b.later(it.l)
@@ -182,6 +183,15 @@ func (b *batcher) writeHolds(ctx context.Context, items []batchItem) {
 	b.p.at("batch.after-hold")
 	b.p.wake()
 	for _, it := range items {
+		if written < len(items) && !b.heldAsWritten(ctx, *it.d.hold, it.l.file.Path) {
+			// The store skipped this record: its id was taken by a record
+			// that does not keep this file (one released, say). Its bytes
+			// are touched no further; they keep their landed name, which
+			// the next start checks again.
+			b.p.log.Error("a held file's record was not written, since its id is taken by another; the file keeps its landed name",
+				"record", it.d.hold.ID)
+			continue
+		}
 		b.p.stats.Held.Add(1)
 		if !it.d.hold.ContentKept {
 			// A record that keeps no bytes: they go now that it is
@@ -343,4 +353,20 @@ func (b *batcher) commitName(l landed) {
 	if err := b.p.area.Commit(l.file.Path); err != nil {
 		b.p.log.Warn("a recorded file keeps its landed name until a restart", "reason", safe(err))
 	}
+}
+
+// heldAsWritten reports whether the store holds the record rec as this
+// batch wrote it, for the bytes at path: held, keeping its bytes (and at
+// path) when rec does. A record the store skipped as already held is the
+// same record when it is, since its id is made from the file's, and another
+// one when its id was taken by a record in another state.
+func (b *batcher) heldAsWritten(ctx context.Context, rec tenant.QuarantinedFile, path string) bool {
+	q, err := b.p.store.QuarantinedFile(ctx, rec.ID)
+	if err != nil {
+		return false
+	}
+	if q.State != tenant.QuarantineHeld || q.ContentKept != rec.ContentKept {
+		return false
+	}
+	return !rec.ContentKept || q.Incoming == path
 }

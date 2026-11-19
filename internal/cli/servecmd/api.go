@@ -103,7 +103,7 @@ func APIServices(d Deps) (Built, error) {
 		return Built{}, err
 	}
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
-		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds})
+		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err

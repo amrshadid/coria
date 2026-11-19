@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 
 	"github.com/amrshadid/magnetar/internal/core/reception"
+	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/receive/incoming"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -54,7 +55,14 @@ type owed struct {
 //     held, as if it had just arrived, since its sender was answered; a
 //     recorded file the database names stays, and one it does not is
 //     removed, since its row was let go by a step or a person that recorded
-//     why first.
+//     why first;
+//   - a landed file with no row whose latest quarantine record was released
+//     into no reception (releasedRecord) is checked again as a release of
+//     that record: a release gives the file its landed name before the
+//     store records it (Release), so this is a release whose check had not
+//     been written when the process stopped. Its new record's id is made
+//     from the released record's, so it never meets the old one, which the
+//     store would skip as already held, leaving no record to keep the file.
 //
 // A file the database owes and the disk does not have is a fault, counted
 // and logged; nothing is dropped from the database for it. A received file
@@ -62,7 +70,7 @@ type owed struct {
 // duplicate) is not missing.
 //
 // Its memory holds one entry per file the database names in the incoming
-// area, a few dozen bytes each.
+// area: the file's id, and for a received file a copy of its row.
 func (p *Pipeline) Recover(ctx context.Context) (RecoverReport, error) {
 	var rep RecoverReport
 	known := map[[16]byte]owed{}
@@ -163,13 +171,53 @@ func (p *Pipeline) Recover(ctx context.Context) (RecoverReport, error) {
 	}
 	for _, e := range recheck {
 		rep.Rechecked++
+		from, err := p.releasedRecord(ctx, e.ID)
+		if err != nil {
+			return rep, err
+		}
 		f, err := p.landedFile(e)
 		if err != nil {
 			return rep, err
 		}
-		p.intakeNow(ctx, landed{file: f, receiver: e.Receiver})
+		p.intakeNow(ctx, landed{file: f, receiver: e.Receiver, releasedFrom: from})
 	}
 	return rep, nil
+}
+
+// maxReleases bounds how many times one file's records are followed from
+// release to release: each release of a file that joins nothing makes one
+// more record, and a person would have to release the same file this many
+// times for the bound to matter.
+const maxReleases = 64
+
+// releasedRecord returns the id of the latest quarantine record of the file
+// with the incoming id fileID when that record was released into no
+// reception, and "" otherwise. A file held when it arrived has the record
+// derivedID("q", "receive", fileID); each check after a release holds it,
+// if it holds it again, under derivedID("q", "release", <the released
+// record>) (holdAtReceive). Following those ids needs nothing but the
+// database, so a restart reads what a release in progress left.
+func (p *Pipeline) releasedRecord(ctx context.Context, fileID string) (string, error) {
+	id := derivedID("q", "receive", fileID)
+	var latest tenant.QuarantinedFile
+	for range maxReleases {
+		q, err := p.store.QuarantinedFile(ctx, id)
+		if fault.KindOf(err) == fault.NotFound {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+		latest = q
+		if q.State != tenant.QuarantineReleased {
+			break
+		}
+		id = derivedID("q", "release", q.ID)
+	}
+	if latest.ID == "" || latest.State != tenant.QuarantineReleased || latest.ReleaseReception != "" {
+		return "", nil
+	}
+	return latest.ID, nil
 }
 
 // heldElsewhere reports whether the catalog holds a file under its UID with

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -85,10 +86,23 @@ func (notStarted) Health(_ string, r tenant.Receiver) Health {
 	return Health{State: HealthDown, Reason: DownOther, Detail: detailNotStarted, Since: r.Updated}
 }
 
-// Incoming removes files from the server's incoming area, which the
-// reception pipeline owns. A handler never deletes a file itself: it records
-// the decision through the tenant's store, then hands the removal here.
+// Incoming is what follows a person's decision in the server's incoming
+// area and the tenant's work queue, which the reception pipeline owns. A
+// release and a retry run through it whole, with the tenant's store the
+// handler resolved, so the pipeline gives a released file's bytes their
+// landed name before the store records the release and queues a retry's
+// first unit at once; a release recorded by the store alone would leave a
+// file that joins no reception under a name nothing keeps, which the
+// pipeline's next start removes. A rejection or a discard the handler
+// records through the store itself, and hands the removal of the bytes
+// here; a handler never deletes a file itself.
 type Incoming interface {
+	// Release releases a held file (tenant.QuarantineReleases.ReleaseFile)
+	// with what follows it.
+	Release(ctx context.Context, tenantName string, store tenant.Pipeline, rel tenant.Release, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error)
+	// Retry makes a new reception of a failed one's files
+	// (tenant.Pipeline.RetryReception) with what follows it.
+	Retry(ctx context.Context, tenantName string, store tenant.Pipeline, id, newReceptionID, receiver string, now time.Time, audit master.AuditEntry, guard tenant.Guard) (failed, retry tenant.Reception, err error)
 	// RemoveDiscarded removes the bytes of the files of a discarded
 	// reception that no quarantine record keeps, as the tenant's store lists
 	// them (tenant.Pipeline.DiscardedFiles), after the store has recorded the
@@ -103,12 +117,23 @@ type Incoming interface {
 	RemoveRejected(ctx context.Context, tenantName, incoming string) error
 }
 
-// leaveForPipeline is the Incoming of a server whose reception pipeline does
-// not run yet: it removes nothing. A discarded reception's files and a
-// rejected file's bytes are recorded as no longer kept, and stay on disk
-// until the pipeline, at its start, finds the records and removes them, as
-// it does after a crash between the record and the removal.
+// leaveForPipeline is the Incoming of a server that runs no reception
+// pipeline, as the API's own tests do: a release and a retry are the
+// store's alone, and no bytes are removed. It is not for a server that
+// receives: there a released file that joins no reception would be left
+// under a name nothing keeps (Incoming); serve gives the API the running
+// pipelines instead.
 type leaveForPipeline struct{}
+
+// Release releases through the store alone.
+func (leaveForPipeline) Release(ctx context.Context, _ string, store tenant.Pipeline, rel tenant.Release, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error) {
+	return store.ReleaseFile(ctx, rel, audit, guard)
+}
+
+// Retry retries through the store alone.
+func (leaveForPipeline) Retry(ctx context.Context, _ string, store tenant.Pipeline, id, newReceptionID, receiver string, now time.Time, audit master.AuditEntry, guard tenant.Guard) (tenant.Reception, tenant.Reception, error) {
+	return store.RetryReception(ctx, id, newReceptionID, receiver, now, audit, guard)
+}
 
 // RemoveDiscarded removes nothing.
 func (leaveForPipeline) RemoveDiscarded(context.Context, string, string) error { return nil }

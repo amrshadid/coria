@@ -25,13 +25,35 @@ import (
 )
 
 // testParts stands for the reception pipeline in the tests: it records what
-// the handlers hand it to remove, and answers a header as a test sets it.
+// the handlers hand it to release, retry and remove, releases and retries
+// through the store as a pipeline does around its own steps, and answers a
+// header as a test sets it.
 type testParts struct {
 	mu        sync.Mutex
 	discarded []string
 	rejected  []string
+	released  []string
+	retried   []string
 	// header, when set, answers Header; otherwise no header can be read.
 	header atomic.Pointer[func(f tenant.QuarantinedFile, limit int) (string, bool, error)]
+}
+
+// Release records the record, as "<tenant>/<id>", and releases it through
+// the store.
+func (p *testParts) Release(ctx context.Context, tenantName string, store tenant.Pipeline, rel tenant.Release, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error) {
+	p.mu.Lock()
+	p.released = append(p.released, tenantName+"/"+rel.ID)
+	p.mu.Unlock()
+	return store.ReleaseFile(ctx, rel, audit, guard)
+}
+
+// Retry records the reception, as "<tenant>/<id>", and retries it through
+// the store.
+func (p *testParts) Retry(ctx context.Context, tenantName string, store tenant.Pipeline, id, newReceptionID, receiver string, now time.Time, audit master.AuditEntry, guard tenant.Guard) (tenant.Reception, tenant.Reception, error) {
+	p.mu.Lock()
+	p.retried = append(p.retried, tenantName+"/"+id)
+	p.mu.Unlock()
+	return store.RetryReception(ctx, id, newReceptionID, receiver, now, audit, guard)
 }
 
 // RemoveDiscarded records the reception, as "<tenant>/<id>".
@@ -56,6 +78,13 @@ func (p *testParts) Header(_ context.Context, _ string, f tenant.QuarantinedFile
 		return (*h)(f, limit)
 	}
 	return "", false, api.ErrNoHeader
+}
+
+// decisions returns what was handed over to release and retry so far.
+func (p *testParts) decisions() (released, retried []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.released), slices.Clone(p.retried)
 }
 
 // removals returns what was handed over to remove so far.

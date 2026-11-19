@@ -317,7 +317,7 @@ func TestAHeaderPastTheBoundIsKeptAndReleasedOnceItIsRaised(t *testing.T) {
 	}
 	limit.Store(4 << 20)
 	e.clock.Advance(2 * HeaderLimitInterval)
-	out, err := e.p.Release(e.ctx, q.ID, "", e.audit(), nil)
+	out, err := e.p.Release(e.ctx, tenant.Release{ID: q.ID, Mode: tenant.ReleaseAsIs}, e.audit(), nil)
 	if err != nil {
 		t.Fatalf("release %+v %v", out, err)
 	}

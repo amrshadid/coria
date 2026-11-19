@@ -343,7 +343,7 @@ func TestWorkThatKeepsFailingFailsTheReception(t *testing.T) {
 
 	// Retry: the storage takes writes again, and the retry archives it all.
 	fs.putFails.Store(0)
-	_, retry, err := e.p.Retry(e.ctx, r.ID, "", e.audit(), nil)
+	_, retry, err := e.p.Retry(e.ctx, r.ID, "", "", e.audit(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestReleasedFileIsArchived(t *testing.T) {
 		e.p.now(), e.audit(), nil); err != nil {
 		t.Fatal(err)
 	}
-	out, err := e.p.Release(e.ctx, q.ID, "", e.audit(), nil)
+	out, err := e.p.Release(e.ctx, tenant.Release{ID: q.ID, Mode: tenant.ReleaseAsIs}, e.audit(), nil)
 	if err != nil || out.ReleaseReception == "" {
 		t.Fatalf("release %+v %v", out, err)
 	}
@@ -430,7 +430,7 @@ func TestReleasedFileThatIsStillNotDICOMIsHeldAgain(t *testing.T) {
 	e.sendBytes([]byte("not a DICOM file at all"), Received)
 	e.waitFor("the hold", time.Second, func() bool { return len(e.held()) == 1 })
 	q := e.held()[0]
-	out, err := e.p.Release(e.ctx, q.ID, "", e.audit(), nil)
+	out, err := e.p.Release(e.ctx, tenant.Release{ID: q.ID, Mode: tenant.ReleaseAsIs}, e.audit(), nil)
 	if err != nil || out.State != tenant.QuarantineReleased || out.ReleaseReception != "" {
 		t.Fatalf("release %+v %v", out, err)
 	}

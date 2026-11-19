@@ -272,7 +272,7 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 		return nil, c.failIn(d, st, fault.New(fault.Internal, "api: the id source made a reception id that is not valid"))
 	}
 	facts := access.Facts{Details: releaseDetails(req, before.Receiver)}
-	f, err := p.ReleaseFile(ctx, tenant.Release{ID: req.GetId(), Mode: tenant.ReleaseAsIs, Receiver: req.GetReceiver(),
+	f, err := c.incoming.Release(ctx, req.GetTenant(), p, tenant.Release{ID: req.GetId(), Mode: tenant.ReleaseAsIs, Receiver: req.GetReceiver(),
 		ReceptionID: receptionID, Reason: req.GetReason(), Now: c.now()}, changeEntry(d, facts), c.roleGuard(d, master.RoleOperator))
 	if fault.KindOf(err) == fault.NotFound {
 		err = fault.Wrap(fault.NotFound, err, messageNoFile)

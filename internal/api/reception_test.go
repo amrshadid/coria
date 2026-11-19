@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,8 +135,9 @@ func testGetReception(t *testing.T) {
 // testRetryReception guards RetryReception: operator on the tenant and
 // above, a reception that has not failed refused as a precondition, a
 // repeat answered as it stands with the same retry, a removed receiver
-// with none named refused, and the entry the store writes with the change,
-// naming the new reception.
+// with none named refused, the entry the store writes with the change,
+// naming the new reception, and the retry handed to the reception pipeline
+// whole.
 func testRetryReception(t *testing.T) {
 	f := newPlaceFixture(t)
 	f.receiving(t)
@@ -167,6 +169,11 @@ func testRetryReception(t *testing.T) {
 					t.Errorf("%v", res)
 				}
 				f.checkAudit(t, "retried", o.requestID, wantAudit{log: "lab1", outcome: master.OutcomeDone, object: failed, details: map[string]string{"retry_reception": made}})
+				// The retry ran through the pipeline, which queues the new
+				// reception's first unit at once.
+				if _, retried := f.parts.decisions(); !slices.Contains(retried, "lab1/"+failed) {
+					t.Errorf("the retry was not handed to the pipeline: %v", retried)
+				}
 			}},
 		{name: "retried again", as: f.lab1Admin, call: retry(failed, ""), check: func(t *testing.T, o outcome) {
 			if got := o.res.(*v1.RetryReceptionResponse).GetRetry().GetId(); got != made {

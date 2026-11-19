@@ -715,6 +715,28 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A quarantined file released through the API or the command line was
+  released by the tenant's store alone: the reception pipeline never heard
+  of it. A released file that joined no reception (a file held for its
+  header's size, released after `receiver.header-limit` was raised, say)
+  was never checked again, and the next start of the server deleted it as
+  kept by nothing; a file that joined a reception, and a retried reception,
+  waited for the next start before going on. A release and a retry now run
+  through the tenant's running pipeline, which gives the file's bytes their
+  landed name before the release is recorded and queues the next step at
+  once; with no pipeline running they are refused as unavailable, recording
+  nothing. A rejected or discarded file's bytes are removed at once too.
+- A server stopped during a release, after it was recorded and before the
+  released file was checked again, gave the file at its next start a record
+  whose id was the released record's; the store skipped it as already held,
+  and the start after deleted the file. At start such a file is now checked
+  again as a release of its record, under a record of its own; and a hold
+  the store skips because its id is taken leaves the file's bytes alone.
+- A receiver added without a port had its bind address probed before the
+  request was checked, so a host name was resolved and bound for a moment;
+  the request is now checked first.
+- The event feed's keeper logged that a checkpoint or a pruning failed, but
+  not why.
 - A server killed while it archived a study, and started again, left the
   study's work claimed by the killed process for two minutes, the length of
   a lease, before archiving it. It now takes that work back at its start.

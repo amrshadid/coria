@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/amrshadid/magnetar/internal/api"
 	"github.com/amrshadid/magnetar/internal/blob"
@@ -219,4 +220,57 @@ func (h receiverHealth) TenantLive(tenantName string) (api.TenantLive, bool) {
 		out.Storages[name] = api.StorageSpace{FreeBytes: s.FreeBytes, NearlyFull: s.NearlyFull}
 	}
 	return out, true
+}
+
+// pipelineDecisions is the API's Incoming: a release and a retry run
+// through the tenant's running reception pipeline, which gives a released
+// file's bytes their landed name before the store records the release and
+// queues a retry's first unit at once; the removal of a rejected or
+// discarded file's bytes is handed to it too. With no pipeline running (the
+// tenant's database not ready), a release or a retry is refused as
+// unavailable, so nothing is recorded that the bytes do not follow, and a
+// removal is left to the pipeline's next start, which finds the decision
+// recorded.
+type pipelineDecisions struct{ s *supervise.Supervisor }
+
+var _ api.Incoming = pipelineDecisions{}
+
+// errNoPipeline answers a release or a retry of a tenant whose reception
+// pipeline does not run.
+var errNoPipeline = fault.New(fault.Unavailable, "the tenant's reception is not running now; try again shortly")
+
+// Release releases through the tenant's pipeline.
+func (d pipelineDecisions) Release(ctx context.Context, tenantName string, _ tenant.Pipeline, rel tenant.Release, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error) {
+	p, ok := d.s.Decisions(tenantName)
+	if !ok {
+		return tenant.QuarantinedFile{}, errNoPipeline
+	}
+	return p.Release(ctx, rel, audit, guard)
+}
+
+// Retry retries through the tenant's pipeline, which reads its own clock.
+func (d pipelineDecisions) Retry(ctx context.Context, tenantName string, _ tenant.Pipeline, id, newReceptionID, receiver string, _ time.Time, audit master.AuditEntry, guard tenant.Guard) (tenant.Reception, tenant.Reception, error) {
+	p, ok := d.s.Decisions(tenantName)
+	if !ok {
+		return tenant.Reception{}, tenant.Reception{}, errNoPipeline
+	}
+	return p.Retry(ctx, id, newReceptionID, receiver, audit, guard)
+}
+
+// RemoveDiscarded hands the removal to the tenant's pipeline, or leaves it
+// to its next start.
+func (d pipelineDecisions) RemoveDiscarded(ctx context.Context, tenantName, receptionID string) error {
+	if p, ok := d.s.Decisions(tenantName); ok {
+		return p.RemoveDiscarded(ctx, receptionID)
+	}
+	return nil
+}
+
+// RemoveRejected hands the removal to the tenant's pipeline, or leaves it
+// to its next start.
+func (d pipelineDecisions) RemoveRejected(_ context.Context, tenantName, incoming string) error {
+	if p, ok := d.s.Decisions(tenantName); ok {
+		return p.RemoveRejected(incoming)
+	}
+	return nil
 }

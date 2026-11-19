@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,7 +146,8 @@ func testGetQuarantinedFile(t *testing.T) {
 // refused as preconditions; a reason, optional, bounded as a rejection's
 // and kept on the record; a release that joins a reception; a repeat
 // answered as it stands with its first reason; and the entry with the mode,
-// the receiver and the reception the file joined.
+// the receiver and the reception the file joined; the release handed to the
+// reception pipeline whole.
 func testReleaseQuarantinedFile(t *testing.T) {
 	f := newPlaceFixture(t)
 	f.receiving(t)
@@ -185,6 +187,11 @@ func testReleaseQuarantinedFile(t *testing.T) {
 				if first.GetState() != v1.QuarantineState_QUARANTINE_STATE_RELEASED || first.GetReleaseReception() == "" || first.GetReleaseMode() != asIs ||
 					first.GetReleaseReceiver() != "scanner1" || first.GetReleaseReason() != "the sender confirmed it" {
 					t.Errorf("%v", first)
+				}
+				// The release ran through the pipeline, which gives the
+				// bytes their landed name first, not the store alone.
+				if released, _ := f.parts.decisions(); !slices.Contains(released, "lab1/"+held) {
+					t.Errorf("the release was not handed to the pipeline: %v", released)
 				}
 			}},
 		{name: "released again", as: f.lab1Admin, call: withReason(held, "another reason"), check: func(t *testing.T, o outcome) {

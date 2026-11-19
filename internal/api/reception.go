@@ -233,7 +233,7 @@ func (s receptionService) RetryReception(ctx context.Context, req *v1.RetryRecep
 	if master.ValidateID("reception id", newID) != nil {
 		return nil, c.failIn(d, st, fault.New(fault.Internal, "api: the id source made a reception id that is not valid"))
 	}
-	failed, retry, err := p.RetryReception(ctx, req.GetId(), newID, req.GetReceiver(), c.now(), changeEntry(d, access.Facts{}), c.roleGuard(d, master.RoleOperator))
+	failed, retry, err := c.incoming.Retry(ctx, req.GetTenant(), p, req.GetId(), newID, req.GetReceiver(), c.now(), changeEntry(d, access.Facts{}), c.roleGuard(d, master.RoleOperator))
 	if fault.KindOf(err) == fault.NotFound {
 		err = fault.Wrap(fault.NotFound, err, messageNoReception)
 	}

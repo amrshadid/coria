@@ -123,3 +123,84 @@ func TestRecoverReportCountsAtStart(t *testing.T) {
 		t.Fatalf("report %+v", rep)
 	}
 }
+
+// TestAReleaseCutShortIsCheckedAgainAtStart guards a release stopped after
+// the store recorded it and before the check of the released file was
+// written, for a file that joins no reception: the file, which the release
+// gave its landed name first, is checked again at start as a release of its
+// record, held again under a record of its own (ReleasedFrom naming the
+// released one), and kept through a second restart. Checked again as a
+// file that just arrived, its record would take the released record's id,
+// which the store skips as held already, and the next start would remove
+// the file as kept by nothing.
+func TestAReleaseCutShortIsCheckedAgainAtStart(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.sendBytes([]byte("not a DICOM file at all"), Received)
+	e.waitFor("the hold", time.Second, func() bool { return len(e.held()) == 1 && e.p.batch.idle() })
+	q := e.held()[0]
+	if err := e.p.Stop(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Release's first two steps, by hand, as a process killed before its
+	// third leaves them: the landed name, then the store's release.
+	area, err := incoming.Open(e.cfg.IncomingRoot, "lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := area.Unrecord(q.Incoming); err != nil {
+		t.Fatal(err)
+	}
+	_ = area.Close()
+	out, err := e.store.ReleaseFile(e.ctx, tenant.Release{ID: q.ID, Mode: tenant.ReleaseAsIs, ReceptionID: newID(), Now: e.p.now()}, e.audit(), nil)
+	if err != nil || out.ReleaseReception != "" || out.ContentKept {
+		t.Fatalf("the release: %+v %v", out, err)
+	}
+	for restart := 1; restart <= 2; restart++ {
+		e.start()
+		e.waitFor("the check of the released file", 5*time.Second, func() bool { return e.p.batch.idle() })
+		if ok, err := e.p.area.Exists(q.Incoming); err != nil || !ok {
+			t.Fatalf("after restart %d the released file is gone (%v)", restart, err)
+		}
+		var again []tenant.QuarantinedFile
+		for _, r := range e.held() {
+			if r.ReleasedFrom == q.ID && r.State == tenant.QuarantineHeld && r.ContentKept && r.Incoming == q.Incoming {
+				again = append(again, r)
+			}
+		}
+		if len(again) != 1 {
+			t.Fatalf("after restart %d: %d records hold the released file again, want 1: %+v", restart, len(again), e.held())
+		}
+		if err := e.p.Stop(e.ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestAHoldWhoseIDIsTakenTouchesNoBytes guards the batch against a record
+// the store skips because another record has its id: the file is neither
+// given its recorded name nor removed, but keeps its landed name for the
+// next start to check again.
+func TestAHoldWhoseIDIsTakenTouchesNoBytes(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.sendBytes([]byte("not a DICOM file at all"), Received)
+	e.waitFor("the hold", time.Second, func() bool { return len(e.held()) == 1 && e.p.batch.idle() })
+	q := e.held()[0]
+	if err := e.p.area.Unrecord(q.Incoming); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.ReleaseFile(e.ctx, tenant.Release{ID: q.ID, Mode: tenant.ReleaseAsIs, ReceptionID: newID(), Now: e.p.now()}, e.audit(), nil); err != nil {
+		t.Fatal(err)
+	}
+	// Checked again with no word of the release: its hold has the released
+	// record's id.
+	f, err := e.p.landedFile(incoming.Entry{Receiver: q.Receiver, Path: q.Incoming, ID: pathID(q.Incoming)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.p.intakeNow(e.ctx, landed{file: f, receiver: q.Receiver})
+	e.waitFor("the batch", time.Second, func() bool { return e.p.batch.idle() })
+	landedName := filepath.Join(e.cfg.IncomingRoot, "lab", filepath.FromSlash(q.Incoming)) + ".new"
+	if _, err := os.Stat(landedName); err != nil {
+		t.Fatalf("the file does not keep its landed name: %v", err)
+	}
+}
