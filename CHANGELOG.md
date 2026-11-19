@@ -575,7 +575,8 @@ All notable changes to Magnetar are written here. The form is
   the status and the event stream agreeing with the catalog; and streams
   that stop reading costing no memory; with `PROVE_S3`, a tenant on an S3
   bucket, each object read back by a GET the proof signs itself, through
-  kills as well. It replaces `make check-reception`.
+  kills as well; with `PROVE_POSTGRES` and `PROVE_PSQL`, a tenant on
+  Postgres whose catalog psql reads, through kills as well. It replaces `make check-reception`.
 - `docs/testing.md` lists how tests and checks are run, what `-short` means,
   how a slow test is marked, and every `MAGNETAR_*` variable; the reception
   walk-through says which changes take effect without a restart.

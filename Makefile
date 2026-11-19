@@ -262,13 +262,19 @@ prove:
 # pynetdicom installs programs of the same names), openssl, and a PYTHON with
 # scripts/requirements/prove-reception.txt. PROVE_CRASH_ROUNDS kills per step.
 # PROVE_S3, a URL as make s3-up prints it, adds a tenant on that S3 server,
-# read back by GETs the proof signs itself; without it those checks skip.
+# read back by GETs the proof signs itself; PROVE_POSTGRES (a server's
+# address whose login may make databases) with PROVE_PSQL (the psql command
+# that reaches it) adds a tenant on Postgres whose catalog psql reads.
+# Without them those checks skip.
 DCMTK              ?=
 PROVE_CRASH_ROUNDS ?= 2
 PROVE_S3           ?=
+PROVE_POSTGRES     ?=
+PROVE_PSQL         ?=
 .PHONY: prove-reception
 prove-reception:
-	"$(PYTHON)" scripts/prove/reception.py --go "$(GO)" --dcmtk "$(DCMTK)" --crash-rounds $(PROVE_CRASH_ROUNDS) --s3 "$(PROVE_S3)"
+	"$(PYTHON)" scripts/prove/reception.py --go "$(GO)" --dcmtk "$(DCMTK)" --crash-rounds $(PROVE_CRASH_ROUNDS) \
+		--s3 "$(PROVE_S3)" --postgres "$(PROVE_POSTGRES)" --psql "$(PROVE_PSQL)"
 
 
 # The outside check of a tenant's SQLite database: the registry creates a
@@ -834,7 +840,9 @@ ci:
 	dcmtk="$(DCMTK)"; storescu="$${dcmtk:+$$dcmtk/}storescu"; \
 	if command -v "$$storescu" > /dev/null && "$$storescu" --version 2> /dev/null | grep -q "^\$$dcmtk:"; then \
 		step s3-up S3_SERVERS=silo; \
-		step prove-reception PYTHON="$$py" DCMTK="$$dcmtk" PROVE_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$(S3_SILO_PORT)/prove-reception"; \
+		step prove-reception PYTHON="$$py" DCMTK="$$dcmtk" PROVE_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$(S3_SILO_PORT)/prove-reception" \
+			PROVE_POSTGRES="postgres://postgres:$(PG_PASSWORD)@127.0.0.1:$(PG_PORT)/postgres?sslmode=disable" \
+			PROVE_PSQL="$(DOCKER) exec -i $(PG_CONTAINER) psql -U postgres"; \
 		step s3-down S3_SERVERS=silo; \
 	else \
 		skip "make prove-reception: no dcmtk storescu (DCMTK=dir names its directory; pynetdicom installs a program of the same name)"; \

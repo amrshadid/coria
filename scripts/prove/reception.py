@@ -9,7 +9,8 @@ Python's sqlite3 reads the tenant's catalog; the status and the event
 stream are read over HTTPS in the Connect protocol with Python's standard
 library alone. With --s3, a tenant archives to a bucket, and each object is
 read back with an S3 GET signed (Signature Version 4) by the standard
-library, not by Magnetar's client. Each check prints one line, "ok",
+library, not by Magnetar's client. With --postgres and --psql, a tenant's
+catalog is a Postgres database, read by psql. Each check prints one line, "ok",
 "FAIL" or "skip", with what it saw, and the run ends with the counts; it
 exits 1 when one failed.
 
@@ -17,6 +18,11 @@ exits 1 when one failed.
 
 URL is http://KEY:SECRET@HOST:PORT/BUCKET, as make s3-up prints it; the
 bucket is made if it is not there. Without --s3 the S3 checks are skipped.
+--postgres is the address of a Postgres server whose login may make
+databases (postgres://USER:PASSWORD@HOST:PORT/DB), and --psql the command
+that runs psql against it, such as "docker exec -i CONTAINER psql -U
+postgres"; the proof makes a database of its own and drops it at the end.
+Without them the Postgres checks are skipped.
 
 Needs: Go, dcmtk, openssl, and a Python with pydicom and pynetdicom
 (scripts/requirements/prove-reception.txt).
@@ -31,6 +37,7 @@ import http.client
 import io
 import json
 import os
+import shlex
 import socket
 import sqlite3
 import ssl
@@ -65,6 +72,8 @@ class Proof:
         self.counts = {"ok": 0, "FAIL": 0, "skip": 0}
         self.s3 = None
         self.s3_tenants = {}  # tenant -> the key prefix of its bucket storage
+        self.pg_tenants = {}  # tenant -> the name of its Postgres database
+        self.pg_made = ""  # the database the proof made, dropped at the end
 
     # ---- results ----
 
@@ -164,7 +173,26 @@ class Proof:
         db.row_factory = sqlite3.Row
         return db
 
+    def psql(self, db, sql):
+        """Runs one statement with psql in the database db; returns what it
+        printed, unaligned and without headers."""
+        p = subprocess.run(shlex.split(self.args.psql) + ["-d", db, "-v", "ON_ERROR_STOP=1", "-tAq", "-c", sql],
+                           capture_output=True, text=True, timeout=120)
+        if p.returncode != 0:
+            raise SystemExit("psql: %s" % p.stderr.strip())
+        return p.stdout.strip()
+
     def query(self, tenant, sql, *params):
+        """Rows of the tenant's catalog, read by SQLite itself, or by psql
+        for a tenant on Postgres (each row a JSON object, so both answer
+        rows by column name)."""
+        if tenant in self.pg_tenants:
+            parts = sql.split("?")
+            assert len(parts) == len(params) + 1, sql
+            text = parts[0]
+            for value, rest in zip(params, parts[1:]):
+                text += "'" + str(value).replace("'", "''") + "'" + rest
+            return json.loads(self.psql(self.pg_tenants[tenant], "SELECT coalesce(json_agg(t), '[]') FROM (%s) t" % text))
         db = self.catalog(tenant)
         try:
             return db.execute(sql, params).fetchall()
@@ -340,8 +368,8 @@ def manifests_of(p, tenant, study):
     return out
 
 
-def setup_tenant(p, tenant, port, callers=("STORESCU", "PYNETDICOM"), storage=None):
-    p.m("tenant", "create", tenant)
+def setup_tenant(p, tenant, port, callers=("STORESCU", "PYNETDICOM"), storage=None, create=()):
+    p.m("tenant", "create", tenant, *create)
     p.m("setting", "set", "receiver.ports", str(port), "--tenant", tenant)
     p.m("storage", "add", tenant, "main", *(storage or ["--type", "dir", "--root", "fast", "--path", "main"]))
     args = ["receiver", "add", tenant, "scanner", "--storage", "main", "--port", str(port), "--aet", "ARCHIVE",
@@ -613,6 +641,38 @@ def on_s3(p, port):
              not bad, "%d kills and restarts" % kills, bad)
 
 
+def on_postgres(p, port):
+    """A tenant whose catalog is a Postgres database: a study is archived,
+    every file on the storage read by dcmdump with its manifest's checksums
+    right, the status's counts are the catalog's as psql reads them, and a
+    kill while archiving loses nothing and doubles nothing there."""
+    study, files = study_copy(p, CT, 7)
+    statuses = p.pynetdicom_store(port, files)
+    rows = wait_ended(p, "pg", study, 1)
+    held = p.query("pg", "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
+    bad = []
+    for r in held:
+        d = subprocess.run([p.dcmtk("dcmdump"), os.path.join(storage_dir(p, "pg"), r["storage_key"])], capture_output=True, text=True)
+        if d.returncode != 0 or r["sop_instance_uid"] not in d.stdout:
+            bad.append("dcmdump %s: exit %d" % (r["storage_key"], d.returncode))
+    for man in manifests_of(p, "pg", study):
+        for e in man["files"]:
+            if hashlib.sha256(read_object(p, "pg", e["key"])).hexdigest() != e["sha256"]:
+                bad.append("manifest checksum %s" % e["key"])
+    p.result("11.1 a study archived for a tenant on Postgres, its catalog read by psql, every file read by dcmdump and its checksum right",
+             statuses == [0] * 7 and [x["state"] for x in rows] == ["done"] and len(held) == 7 and not bad,
+             "statuses %s; receptions %s (psql); %d instances held (psql)" % (statuses, [x["state"] for x in rows], len(held)), bad)
+    st = p.call("magnetar.v1.MonitorService/GetStatus", {"scope": {"tenant": "pg"}})["tenants"][0]
+    c = st.get("counts", {})
+    want = p.query("pg", """SELECT (SELECT count(*) FROM subjects) AS subjects, (SELECT count(*) FROM sessions) AS sessions,
+        (SELECT count(*) FROM scans) AS scans, (SELECT count(*) FROM instances WHERE state = 'held') AS instances""")[0]
+    got = {k: int(c.get(k, 0)) for k in ("subjects", "sessions", "scans", "instances")}
+    p.result("11.2 the status's counts are the Postgres catalog's, read by psql", got == want, "status %s; psql %s" % (got, want))
+    bad, kills = crashes(p, port, 1, tenant="pg", whens=("receiving", "archiving"))
+    p.result("11.3 killed with signal 9 while receiving and while archiving on Postgres: nothing lost, nothing twice",
+             not bad, "%d kills and restarts" % kills, bad)
+
+
 def nearly_full(p, port):
     """With every disk below the reserve, a sender is refused as transient;
     when space returns, it is served."""
@@ -695,6 +755,8 @@ def main():
     ap.add_argument("--dcmtk", default="")
     ap.add_argument("--crash-rounds", type=int, default=2)
     ap.add_argument("--s3", default="", help="http://KEY:SECRET@HOST:PORT/BUCKET of an S3 server for the S3 checks")
+    ap.add_argument("--postgres", default="", help="postgres://USER:PASSWORD@HOST:PORT/DB of a server the proof may make a database on")
+    ap.add_argument("--psql", default="", help='the command that runs psql against that server, such as "docker exec -i CONTAINER psql -U postgres"')
     args = ap.parse_args()
     p = Proof(args)
     try:
@@ -703,7 +765,7 @@ def main():
         subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-days", "1",
                         "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", p.key_file, "-out", p.cert],
                        check=True, capture_output=True)
-        p.api_port, lab_port, closed_port, crash_port, cloud_port = free_ports(5)
+        p.api_port, lab_port, closed_port, crash_port, cloud_port, pg_port = free_ports(6)
         p.m("init")
         p.serve()
         p.api_key = p.m("key", "create", "--holder", "reception proof", "--no-expiry").strip()
@@ -722,6 +784,14 @@ def main():
                                                           "--bucket", p.s3.bucket, "--prefix", prefix, "--path-style",
                                                           "--access-key-id", p.s3.key, "--credential-env", "PROVE_S3_SECRET"])
             p.s3_tenants["cloud"] = prefix
+        if args.postgres and args.psql:
+            db = "prove_reception_%d" % int(time.time() * 1000)
+            p.psql("postgres", "CREATE DATABASE " + db)
+            p.pg_made = db
+            base = urllib.parse.urlsplit(args.postgres)
+            os.environ["PROVE_PG_ADDRESS"] = urllib.parse.urlunsplit((base.scheme, base.netloc, "/" + db, base.query, ""))
+            p.pg_tenants["pg"] = db
+            setup_tenant(p, "pg", pg_port, create=["--db-env", "PROVE_PG_ADDRESS"])
         cursor = p.call("magnetar.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]["eventCursor"]
         arrives(p, lab_port)
         study, files = two_parts(p, lab_port)
@@ -733,11 +803,17 @@ def main():
             on_s3(p, cloud_port)
         else:
             p.skip("10.1-10.3 a tenant on S3", "no --s3 given (make s3-up prints a URL)")
+        if p.pg_tenants:
+            on_postgres(p, pg_port)
+        else:
+            p.skip("11.1-11.3 a tenant on Postgres", "no --postgres and --psql given")
         nearly_full(p, lab_port)
         numbers(p, cursor)
         slow_watchers(p, lab_port)
     finally:
         p.stop()
+        if p.pg_made:
+            p.psql("postgres", "DROP DATABASE IF EXISTS %s WITH (FORCE)" % p.pg_made)
     print("%d ok, %d FAIL, %d skipped" % (p.counts["ok"], p.counts["FAIL"], p.counts["skip"]))
     if p.counts["FAIL"]:
         print("the work directory is kept: %s" % p.work)

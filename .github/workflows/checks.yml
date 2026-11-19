@@ -435,12 +435,24 @@ jobs:
   # public studies from dcmtk and pynetdicom, and dcmdump, pydicom, hashlib
   # and sqlite3 check what it archived, quarantined and counted, through
   # crashes by signal 9 at each step of a reception, on a directory and on
-  # an S3 bucket. dcmtk from the distribution; pydicom and pynetdicom at
+  # an S3 bucket, and with a tenant's catalog on Postgres. dcmtk from the distribution; pydicom and pynetdicom at
   # exact versions with their hashes.
   proof-reception:
     name: 'Proof: reception, from outside'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci-throwaway-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -469,12 +481,17 @@ jobs:
       - name: An S3 server
         run: make s3-up S3_SERVERS=silo
 
+      # A tenant on the service's Postgres, its catalog read by psql inside
+      # the service container, so psql's version is the server's.
       - name: The proof of reception
         env:
           VENV_PYTHON: ${{ steps.python.outputs.python }}
+          PG_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           make prove-reception PYTHON="$VENV_PYTHON" DCMTK=/usr/bin \
-            PROVE_S3="http://throwaway-key:throwaway-secret@127.0.0.1:59000/prove-reception"
+            PROVE_S3="http://throwaway-key:throwaway-secret@127.0.0.1:59000/prove-reception" \
+            PROVE_POSTGRES="postgres://postgres:ci-throwaway-password@127.0.0.1:5432/postgres?sslmode=disable" \
+            PROVE_PSQL="docker exec -i $PG_CONTAINER psql -U postgres"
 
   # Reception's speed against the branch a change goes into (make
   # bench-gate): the base's tree and this one measured in turns on the same
