@@ -1,7 +1,10 @@
 // Package testkit holds the test helpers more than one package's tests use,
 // so each is written once: a generator of DICOM files of any size from one
-// public test file, streamed so a large file costs no memory, and a sampler
-// of the live heap for the tests that bound a reception's memory.
+// public test file, streamed so a large file costs no memory; a sampler of
+// the live heap for the tests that bound a reception's memory; and the
+// services a test may use (a scratch Postgres schema, a scratch S3 server),
+// each read from one variable, skipped when it is not set unless its
+// REQUIRE variable is.
 //
 // # What this package must never do
 //

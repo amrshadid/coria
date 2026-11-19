@@ -573,7 +573,9 @@ All notable changes to Magnetar are written here. The form is
   in the quiet period and while archiving losing nothing and doubling
   nothing; a nearly full storage refusing as transient and serving again;
   the status and the event stream agreeing with the catalog; and streams
-  that stop reading costing no memory. It replaces `make check-reception`.
+  that stop reading costing no memory; with `PROVE_S3`, a tenant on an S3
+  bucket, each object read back by a GET the proof signs itself, through
+  kills as well. It replaces `make check-reception`.
 - `docs/testing.md` lists how tests and checks are run, what `-short` means,
   how a slow test is marked, and every `MAGNETAR_*` variable; the reception
   walk-through says which changes take effect without a restart.

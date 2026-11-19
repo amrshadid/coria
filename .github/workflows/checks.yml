@@ -269,9 +269,15 @@ jobs:
       - name: Go version
         run: go version
 
+      # dcmtk's storescu sends the study of the end-to-end test of serve.
+      - name: dcmtk
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --yes --no-install-recommends dcmtk > /dev/null
+
       # -v so each test's result, a skip included, is in the log.
-      - name: go test -race, the Postgres driver and the contract suite
-        run: make test-postgres
+      - name: go test -race, the Postgres driver, the contract suite and the reception end to end
+        run: make test-postgres DCMTK=/usr/bin
 
       # The same tests as 32-bit binaries, which an x86-64 Linux runs
       # natively. One server version only, to spend fewer minutes.
@@ -428,8 +434,9 @@ jobs:
   # The proof of reception (make prove-reception): the real program receives
   # public studies from dcmtk and pynetdicom, and dcmdump, pydicom, hashlib
   # and sqlite3 check what it archived, quarantined and counted, through
-  # crashes by signal 9 at each step of a reception. dcmtk from the
-  # distribution; pydicom and pynetdicom at exact versions with their hashes.
+  # crashes by signal 9 at each step of a reception, on a directory and on
+  # an S3 bucket. dcmtk from the distribution; pydicom and pynetdicom at
+  # exact versions with their hashes.
   proof-reception:
     name: 'Proof: reception, from outside'
     runs-on: ubuntu-latest
@@ -457,10 +464,17 @@ jobs:
           sudo apt-get install --yes --no-install-recommends dcmtk > /dev/null
           /usr/bin/storescu --version | head -1
 
+      # Silo, at the image the S3 job pins, for the tenant that archives to
+      # a bucket.
+      - name: An S3 server
+        run: make s3-up S3_SERVERS=silo
+
       - name: The proof of reception
         env:
           VENV_PYTHON: ${{ steps.python.outputs.python }}
-        run: make prove-reception PYTHON="$VENV_PYTHON" DCMTK=/usr/bin
+        run: |
+          make prove-reception PYTHON="$VENV_PYTHON" DCMTK=/usr/bin \
+            PROVE_S3="http://throwaway-key:throwaway-secret@127.0.0.1:59000/prove-reception"
 
   # Windows has its own paths, line endings and executables, so the tests run
   # there on every pull request. The newest Go only: Windows minutes count
@@ -558,8 +572,13 @@ jobs:
         with:
           go-version: '1.27'
 
-      - name: go test -race, the S3 driver
-        run: make test-s3 S3_SERVERS=${{ matrix.server }}
+      - name: dcmtk
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --yes --no-install-recommends dcmtk > /dev/null
+
+      - name: go test -race, the S3 driver and the reception end to end
+        run: make test-s3 S3_SERVERS=${{ matrix.server }} DCMTK=/usr/bin
 
       - name: Server log on failure
         if: failure()

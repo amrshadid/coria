@@ -7,10 +7,16 @@ dcmtk (storescu, echoscu, dcmdump, dcmconv) and pynetdicom send; pydicom
 and dcmdump read what was archived; hashlib checks every manifest entry;
 Python's sqlite3 reads the tenant's catalog; the status and the event
 stream are read over HTTPS in the Connect protocol with Python's standard
-library alone. Each check prints one line, "ok", "FAIL" or "skip", with
-what it saw, and the run ends with the counts; it exits 1 when one failed.
+library alone. With --s3, a tenant archives to a bucket, and each object is
+read back with an S3 GET signed (Signature Version 4) by the standard
+library, not by Magnetar's client. Each check prints one line, "ok",
+"FAIL" or "skip", with what it saw, and the run ends with the counts; it
+exits 1 when one failed.
 
-  reception.py --go GO --dcmtk DIR [--crash-rounds N]     (make prove-reception)
+  reception.py --go GO --dcmtk DIR [--crash-rounds N] [--s3 URL]     (make prove-reception)
+
+URL is http://KEY:SECRET@HOST:PORT/BUCKET, as make s3-up prints it; the
+bucket is made if it is not there. Without --s3 the S3 checks are skipped.
 
 Needs: Go, dcmtk, openssl, and a Python with pydicom and pynetdicom
 (scripts/requirements-prove-reception.txt).
@@ -18,8 +24,11 @@ Needs: Go, dcmtk, openssl, and a Python with pydicom and pynetdicom
 
 import argparse
 import copy
+import datetime
 import hashlib
+import hmac
 import http.client
+import io
 import json
 import os
 import socket
@@ -31,6 +40,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 
 from pydicom import dcmread
 from pydicom.uid import generate_uid
@@ -53,6 +63,8 @@ class Proof:
         self.bin = os.path.join(self.work, "magnetar")
         self.server = None
         self.counts = {"ok": 0, "FAIL": 0, "skip": 0}
+        self.s3 = None
+        self.s3_tenants = {}  # tenant -> the key prefix of its bucket storage
 
     # ---- results ----
 
@@ -187,6 +199,54 @@ class Proof:
         return c, c.getresponse()
 
 
+class S3:
+    """The few S3 calls the proof needs, signed with Signature Version 4
+    (AWS's published algorithm) by hand, so what is read back does not pass
+    through the client that wrote it."""
+
+    def __init__(self, url, region="us-east-1"):
+        u = urllib.parse.urlsplit(url)
+        self.endpoint = "%s://%s:%d" % (u.scheme, u.hostname, u.port)
+        self.host, self.port = u.hostname, u.port
+        self.key, self.secret = urllib.parse.unquote(u.username), urllib.parse.unquote(u.password)
+        self.bucket = u.path.strip("/")
+        self.region = region
+
+    def request(self, method, key=""):
+        path = "/" + self.bucket + ("/" + urllib.parse.quote(key, safe="/~") if key else "")
+        now = datetime.datetime.now(datetime.timezone.utc)
+        amz, day = now.strftime("%Y%m%dT%H%M%SZ"), now.strftime("%Y%m%d")
+        empty = hashlib.sha256(b"").hexdigest()
+        host = "%s:%d" % (self.host, self.port)
+        headers = {"host": host, "x-amz-content-sha256": empty, "x-amz-date": amz}
+        signed = ";".join(sorted(headers))
+        canonical = "\n".join([method, path, "", "".join("%s:%s\n" % (k, headers[k]) for k in sorted(headers)), signed, empty])
+        scope = "%s/%s/s3/aws4_request" % (day, self.region)
+        to_sign = "\n".join(["AWS4-HMAC-SHA256", amz, scope, hashlib.sha256(canonical.encode()).hexdigest()])
+        k = ("AWS4" + self.secret).encode()
+        for part in (day, self.region, "s3", "aws4_request"):
+            k = hmac.new(k, part.encode(), hashlib.sha256).digest()
+        sig = hmac.new(k, to_sign.encode(), hashlib.sha256).hexdigest()
+        headers["Authorization"] = "AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s" % (self.key, scope, signed, sig)
+        c = http.client.HTTPConnection(self.host, self.port, timeout=60)
+        c.request(method, path, headers=headers)
+        resp = c.getresponse()
+        body = resp.read()
+        c.close()
+        return resp.status, body
+
+    def make_bucket(self):
+        status, body = self.request("PUT")
+        if status not in (200, 409):
+            raise SystemExit("S3: making bucket %s: HTTP %d %s" % (self.bucket, status, body[:200]))
+
+    def get(self, key):
+        status, body = self.request("GET", key)
+        if status != 200:
+            raise RuntimeError("S3 GET %s: HTTP %d" % (key, status))
+        return body
+
+
 def frames(resp):
     """The messages of a Connect stream, until its end."""
     while True:
@@ -260,6 +320,15 @@ def storage_dir(p, tenant):
     return os.path.join(p.work, "roots", "fast", tenant, "main")
 
 
+def read_object(p, tenant, key):
+    """An archived object's bytes, read from where its tenant keeps them:
+    the directory, or the bucket by a GET signed here."""
+    if tenant in p.s3_tenants:
+        return p.s3.get(p.s3_tenants[tenant] + key)
+    with open(os.path.join(storage_dir(p, tenant), key), "rb") as f:
+        return f.read()
+
+
 def manifests_of(p, tenant, study):
     """Every manifest of the study's scans, read from the storage's meta tree."""
     rows = p.query(tenant, """SELECT subjects.label AS subject, sessions.label AS session, scans.label AS scan
@@ -267,16 +336,14 @@ def manifests_of(p, tenant, study):
         WHERE sessions.study_uid = ?""", study)
     out = []
     for r in rows:
-        path = os.path.join(storage_dir(p, tenant), "meta", r["subject"], r["session"], r["scan"], "manifest.json")
-        with open(path) as f:
-            out.append(json.load(f))
+        out.append(json.loads(read_object(p, tenant, "/".join(["meta", r["subject"], r["session"], r["scan"], "manifest.json"]))))
     return out
 
 
-def setup_tenant(p, tenant, port, callers=("STORESCU", "PYNETDICOM")):
+def setup_tenant(p, tenant, port, callers=("STORESCU", "PYNETDICOM"), storage=None):
     p.m("tenant", "create", tenant)
     p.m("setting", "set", "receiver.ports", str(port), "--tenant", tenant)
-    p.m("storage", "add", tenant, "main", "--type", "dir", "--root", "fast", "--path", "main")
+    p.m("storage", "add", tenant, "main", *(storage or ["--type", "dir", "--root", "fast", "--path", "main"]))
     args = ["receiver", "add", tenant, "scanner", "--storage", "main", "--port", str(port), "--aet", "ARCHIVE",
             "--quiet-period", "%ds" % QUIET, "--enabled"]
     for c in callers:
@@ -441,14 +508,14 @@ def strangers(p, port, closed_port):
              "echoscu as STORESCU to it: exit %d" % code, [out[-300:]])
 
 
-def crashes(p, port, rounds):
+def crashes(p, port, rounds, tenant="crash", whens=("receiving", "quiet", "archiving")):
     """The server killed with signal 9 during reception, during the quiet
     period and during archive, again and again: after each restart the
     study is sent again, and every file acknowledged before the kill is
     archived or in quarantine, none lost and none twice."""
     bad, kills = [], 0
     for r in range(rounds):
-        for when in ("receiving", "quiet", "archiving"):
+        for when in whens:
             study, files = study_copy(p, CT, 7)
             acked = []
             if when == "receiving":
@@ -461,31 +528,89 @@ def crashes(p, port, rounds):
                 acked = [i for i, s in enumerate(p.pynetdicom_store(port, files)) if s == 0]
                 if when == "archiving":
                     deadline = time.time() + 30
-                    while time.time() < deadline and not p.query("crash", "SELECT 1 FROM receptions WHERE study_uid = ? AND state IN "
+                    while time.time() < deadline and not p.query(tenant, "SELECT 1 FROM receptions WHERE study_uid = ? AND state IN "
                                                                  "('identified', 'archived', 'verified')", study):
                         time.sleep(0.05)
                 p.kill()
             kills += 1
             p.serve()
-            wait_up(p, "crash", "scanner")
+            wait_up(p, tenant, "scanner")
             again = p.pynetdicom_store(port, files)
             deadline = time.time() + 120
             while time.time() < deadline:
-                rows = p.query("crash", "SELECT ended FROM receptions WHERE study_uid = ?", study)
+                rows = p.query(tenant, "SELECT ended FROM receptions WHERE study_uid = ?", study)
                 if rows and all(x["ended"] for x in rows):
                     break
                 time.sleep(0.2)
-            held = p.query("crash", "SELECT sop_instance_uid FROM instances WHERE state = 'held' AND study_uid = ?", study)
-            claimed = p.query("crash", "SELECT count(*) AS n FROM instances WHERE state <> 'held' AND study_uid = ?", study)[0]["n"]
+            held = p.query(tenant, "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
+            claimed = p.query(tenant, "SELECT count(*) AS n FROM instances WHERE state <> 'held' AND study_uid = ?", study)[0]["n"]
             uids = [str(dcmread(files[i], stop_before_pixels=True).SOPInstanceUID) for i in acked]
             have = {x["sop_instance_uid"] for x in held}
-            quarantined = {x["sop_instance_uid"] for x in p.query("crash", "SELECT sop_instance_uid FROM quarantine WHERE study_uid = ?", study)}
+            quarantined = {x["sop_instance_uid"] for x in p.query(tenant, "SELECT sop_instance_uid FROM quarantine WHERE study_uid = ?", study)}
             lost = [u for u in uids if u not in have and u not in quarantined]
-            if len(held) != 7 or len(have) != 7 or claimed or lost or again != [0] * 7:
-                bad.append("round %d, killed while %s: %d held (%d distinct), %d claimed, %d acknowledged lost, resend %s"
-                           % (r + 1, when, len(held), len(have), claimed, len(lost), again))
+            unreadable = []
+            for x in held:
+                try:
+                    if dcmread(_bytes_file(read_object(p, tenant, x["storage_key"]))).SOPInstanceUID != x["sop_instance_uid"]:
+                        unreadable.append(x["storage_key"])
+                except Exception as e:  # noqa: BLE001 - any failure to read back is the finding
+                    unreadable.append("%s: %s" % (x["storage_key"], e))
+            if len(held) != 7 or len(have) != 7 or claimed or lost or unreadable or again != [0] * 7:
+                bad.append("round %d, killed while %s: %d held (%d distinct), %d claimed, %d acknowledged lost, %d not read back, resend %s"
+                           % (r + 1, when, len(held), len(have), claimed, len(lost), len(unreadable), again))
+    return bad, kills
+
+
+def crash_proof(p, port, rounds):
+    bad, kills = crashes(p, port, rounds)
     p.result("6.1 killed with signal 9 while receiving, in the quiet period and while archiving: nothing lost, nothing twice",
              not bad, "%d kills and restarts, each study of 7 files sent again after" % kills, bad)
+
+
+def _bytes_file(b):
+    return io.BytesIO(b)
+
+
+def on_s3(p, port):
+    """A tenant whose storage is a bucket: a study sent with storescu is
+    archived; each object, read back with a GET signed here, is read by
+    pydicom and dcmdump with its data set the one sent, and every manifest
+    entry's checksum is its object's; killed while archiving, nothing is
+    lost or archived twice in the bucket either."""
+    study, files = study_copy(p, CT, 7)
+    sent = {str(dcmread(f, stop_before_pixels=True).SOPInstanceUID): data_set(f) for f in files}
+    statuses = p.pynetdicom_store(port, files)
+    rows = wait_ended(p, "cloud", study, 1)
+    held = p.query("cloud", "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
+    bad = []
+    for r in held:
+        try:
+            body = read_object(p, "cloud", r["storage_key"])
+        except Exception as e:  # noqa: BLE001
+            bad.append(str(e))
+            continue
+        path = os.path.join(p.work, "s3-read.dcm")
+        with open(path, "wb") as f:
+            f.write(body)
+        d = subprocess.run([p.dcmtk("dcmdump"), path], capture_output=True, text=True)
+        if d.returncode != 0 or r["sop_instance_uid"] not in d.stdout:
+            bad.append("dcmdump %s: exit %d" % (r["storage_key"], d.returncode))
+        if str(dcmread(path).SOPInstanceUID) != r["sop_instance_uid"] or data_set(path) != sent.get(r["sop_instance_uid"]):
+            bad.append("pydicom %s: the data set is not the one sent" % r["storage_key"])
+    p.result("10.1 a study archived to an S3 bucket is read back by a signed GET, dcmdump and pydicom, byte for byte the one sent",
+             statuses == [0] * 7 and [x["state"] for x in rows] == ["done"] and len(held) == 7 and not bad,
+             "statuses %s; receptions %s; %d objects read back" % (statuses, [x["state"] for x in rows], len(held)), bad)
+    entries, bad = 0, []
+    for man in manifests_of(p, "cloud", study):
+        for e in man["files"]:
+            entries += 1
+            if hashlib.sha256(read_object(p, "cloud", e["key"])).hexdigest() != e["sha256"]:
+                bad.append(e["key"])
+    p.result("10.2 every manifest entry in the bucket has the SHA-256 of its object", entries == 7 and not bad,
+             "%d entries, %d differ" % (entries, len(bad)), bad)
+    bad, kills = crashes(p, port, 1, tenant="cloud", whens=("receiving", "archiving"))
+    p.result("10.3 killed with signal 9 while receiving and while archiving to S3: nothing lost, nothing twice, every object read back",
+             not bad, "%d kills and restarts" % kills, bad)
 
 
 def nearly_full(p, port):
@@ -569,6 +694,7 @@ def main():
     ap.add_argument("--go", default="go")
     ap.add_argument("--dcmtk", default="")
     ap.add_argument("--crash-rounds", type=int, default=2)
+    ap.add_argument("--s3", default="", help="http://KEY:SECRET@HOST:PORT/BUCKET of an S3 server for the S3 checks")
     args = ap.parse_args()
     p = Proof(args)
     try:
@@ -577,7 +703,7 @@ def main():
         subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-days", "1",
                         "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", p.key_file, "-out", p.cert],
                        check=True, capture_output=True)
-        p.api_port, lab_port, closed_port, crash_port = free_ports(4)
+        p.api_port, lab_port, closed_port, crash_port, cloud_port = free_ports(5)
         p.m("init")
         p.serve()
         p.api_key = p.m("key", "create", "--holder", "reception proof", "--no-expiry").strip()
@@ -586,13 +712,27 @@ def main():
         p.m("setting", "set", "storage.directory-roots", "fast=" + os.path.join(p.work, "roots", "fast"))
         setup_tenant(p, "lab", lab_port)
         setup_tenant(p, "crash", crash_port)
+        if args.s3:
+            p.s3 = S3(args.s3)
+            p.s3.make_bucket()
+            p.m("setting", "set", "storage.s3-endpoints", p.s3.endpoint + " plain-http private-address")
+            prefix = "prove-%d/" % int(time.time() * 1000)
+            os.environ["PROVE_S3_SECRET"] = p.s3.secret
+            setup_tenant(p, "cloud", cloud_port, storage=["--type", "s3", "--endpoint", p.s3.endpoint, "--region", p.s3.region,
+                                                          "--bucket", p.s3.bucket, "--prefix", prefix, "--path-style",
+                                                          "--access-key-id", p.s3.key, "--credential-env", "PROVE_S3_SECRET"])
+            p.s3_tenants["cloud"] = prefix
         cursor = p.call("magnetar.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]["eventCursor"]
         arrives(p, lab_port)
         study, files = two_parts(p, lab_port)
         corrected(p, lab_port, study, files)
         broken(p, lab_port)
         strangers(p, lab_port, closed_port)
-        crashes(p, crash_port, args.crash_rounds)
+        crash_proof(p, crash_port, args.crash_rounds)
+        if args.s3:
+            on_s3(p, cloud_port)
+        else:
+            p.skip("10.1-10.3 a tenant on S3", "no --s3 given (make s3-up prints a URL)")
         nearly_full(p, lab_port)
         numbers(p, cursor)
         slow_watchers(p, lab_port)

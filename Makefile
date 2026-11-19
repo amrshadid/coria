@@ -243,11 +243,14 @@ prove:
 # HTTPS, and streams that stop reading. Needs dcmtk (DCMTK=dir, since
 # pynetdicom installs programs of the same names), openssl, and a PYTHON with
 # scripts/requirements-prove-reception.txt. PROVE_CRASH_ROUNDS kills per step.
+# PROVE_S3, a URL as make s3-up prints it, adds a tenant on that S3 server,
+# read back by GETs the proof signs itself; without it those checks skip.
 DCMTK              ?=
 PROVE_CRASH_ROUNDS ?= 2
+PROVE_S3           ?=
 .PHONY: prove-reception
 prove-reception:
-	"$(PYTHON)" scripts/prove/reception.py --go "$(GO)" --dcmtk "$(DCMTK)" --crash-rounds $(PROVE_CRASH_ROUNDS)
+	"$(PYTHON)" scripts/prove/reception.py --go "$(GO)" --dcmtk "$(DCMTK)" --crash-rounds $(PROVE_CRASH_ROUNDS) --s3 "$(PROVE_S3)"
 
 
 # The outside check of a tenant's SQLite database: the registry creates a
@@ -578,7 +581,10 @@ test-postgres:
 		url='$(PG_URL)'; \
 	fi; \
 	echo "MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/..."; \
-	MAGNETAR_TEST_POSTGRES="$$url" MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/...
+	MAGNETAR_TEST_POSTGRES="$$url" MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/...; \
+	echo "the reception end to end on Postgres: the pipeline, and serve with a study from storescu"; \
+	MAGNETAR_TEST_POSTGRES="$$url" MAGNETAR_REQUIRE_POSTGRES=1 MAGNETAR_REQUIRE_DCMTK=1 MAGNETAR_DCMTK="$(DCMTK)" \
+		$(GO) test -race -count=1 -v -run '^(TestStudyIsArchivedOnPostgres|TestAStudyIsArchivedThroughServe)$$' ./internal/receive ./internal/cli/servecmd
 
 # The two outside checks of Postgres against the same database. With pg-up's
 # container, psql and pg_dump are the ones inside it, so their version is the
@@ -663,6 +669,10 @@ test-s3:
 		echo "test-s3: $$s on 127.0.0.1:$$port: $(GO) test -race -count=1 -v ./internal/blob/s3/..."; \
 		MAGNETAR_TEST_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$$port/magnetar-test" MAGNETAR_REQUIRE_S3=1 \
 			$(GO) test -race -count=1 -v ./internal/blob/s3/...; \
+		echo "test-s3: the reception end to end on $$s: the pipeline, and serve with a study from storescu"; \
+		MAGNETAR_TEST_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$$port/magnetar-test" MAGNETAR_REQUIRE_S3=1 \
+			MAGNETAR_REQUIRE_DCMTK=1 MAGNETAR_DCMTK="$(DCMTK)" \
+			$(GO) test -race -count=1 -v -run '^(TestStudyIsArchivedOnS3|TestAStudyIsArchivedThroughServe)$$' ./internal/receive ./internal/cli/servecmd; \
 	done
 
 # Each binary was built with CGO_ENABLED=0; this shows the Linux one is in
@@ -796,7 +806,9 @@ ci:
 		$(MAKE) --no-print-directory prove PYTHON="$$py" GRPCURL="$(CHECK_GRPCURL)"; \
 	dcmtk="$(DCMTK)"; storescu="$${dcmtk:+$$dcmtk/}storescu"; \
 	if command -v "$$storescu" > /dev/null && "$$storescu" --version 2> /dev/null | grep -q "^\$$dcmtk:"; then \
-		step prove-reception PYTHON="$$py" DCMTK="$$dcmtk"; \
+		step s3-up S3_SERVERS=silo; \
+		step prove-reception PYTHON="$$py" DCMTK="$$dcmtk" PROVE_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$(S3_SILO_PORT)/prove-reception"; \
+		step s3-down S3_SERVERS=silo; \
 	else \
 		skip "make prove-reception: no dcmtk storescu (DCMTK=dir names its directory; pynetdicom installs a program of the same name)"; \
 	fi; \

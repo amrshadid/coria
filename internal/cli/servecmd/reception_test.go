@@ -17,31 +17,23 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/amrshadid/magnetar/internal/blob"
 	"github.com/amrshadid/magnetar/internal/blob/dir"
 	"github.com/amrshadid/magnetar/internal/blob/s3"
+	"github.com/amrshadid/magnetar/internal/testkit"
 )
 
-// The environment of the end-to-end test's other databases and storages:
-// the address of an empty Postgres schema for its tenant
-// (postgres://.../db?search_path=schema; a schema belongs to one tenant,
-// so the case runs once per test process), and a scratch S3 server's
-// address as the S3 driver's own tests take it
-// (http://KEY:SECRET@host:port/bucket, with region=NAME and pathstyle=0 in
-// the query when needed). Each REQUIRE turns a missing address from a skip
-// into a failure, as in CI.
+// dcmtkEnv names a directory holding dcmtk's programs, looked in before the
+// PATH, where pynetdicom's programs of the same names may come first;
+// requireDcmtkEnv, set to anything, makes a missing storescu a failure, as
+// in the CI jobs that run this test for Postgres and S3. The Postgres and S3
+// cases take their services from testkit.
 const (
-	postgresEnv        = "MAGNETAR_TEST_SERVECMD_POSTGRES"
-	requirePostgresEnv = "MAGNETAR_REQUIRE_POSTGRES"
-	s3Env              = "MAGNETAR_TEST_S3"
-	requireS3Env       = "MAGNETAR_REQUIRE_S3"
-	// dcmtkEnv names a directory holding dcmtk's programs, looked in before
-	// the PATH, where pynetdicom's programs of the same names may come first.
-	dcmtkEnv = "MAGNETAR_DCMTK"
+	dcmtkEnv        = "MAGNETAR_DCMTK"
+	requireDcmtkEnv = "MAGNETAR_REQUIRE_DCMTK"
 )
 
 // ctStudy is the public CT study of the pipeline's test files: one study,
@@ -67,13 +59,12 @@ func storescu(t *testing.T) string {
 			return p
 		}
 	}
+	if os.Getenv(requireDcmtkEnv) != "" {
+		t.Fatalf("dcmtk's storescu is not installed, and %s is set", requireDcmtkEnv)
+	}
 	t.Skip("dcmtk's storescu is not installed; put it on the PATH or set " + dcmtkEnv)
 	return ""
 }
-
-// postgresOnce says the Postgres case has run in this process: its schema
-// then belongs to the tenant it made, and another run is refused there.
-var postgresOnce atomic.Bool
 
 // receptionCase is where the end-to-end test keeps a tenant and its storage.
 type receptionCase struct {
@@ -100,16 +91,12 @@ func TestAStudyIsArchivedThroughServe(t *testing.T) {
 	}
 	scu := storescu(t)
 	cases := []receptionCase{{name: "sqlite-directory", tenant: `"databaseType":"DATABASE_TYPE_SQLITE"`}}
-	if a := os.Getenv(postgresEnv); a != "" && postgresOnce.CompareAndSwap(false, true) {
+	if a, ok := testkit.PostgresSchema(t); ok {
 		raw, _ := json.Marshal(a)
 		cases = append(cases, receptionCase{name: "postgres-directory", tenant: `"databaseType":"DATABASE_TYPE_POSTGRES","databaseAddress":` + string(raw)})
-	} else if a == "" && os.Getenv(requirePostgresEnv) != "" {
-		t.Fatalf("%s is not set, and %s is", postgresEnv, requirePostgresEnv)
 	}
-	if a := os.Getenv(s3Env); a != "" {
+	if a, ok := testkit.S3Address(t); ok {
 		cases = append(cases, receptionCase{name: "sqlite-s3", tenant: `"databaseType":"DATABASE_TYPE_SQLITE"`, s3: a})
-	} else if os.Getenv(requireS3Env) != "" {
-		t.Fatalf("%s is not set, and %s is", s3Env, requireS3Env)
 	}
 	for i, c := range cases {
 		t.Run(c.name, func(t *testing.T) { archiveThroughServe(t, scu, c, i) })
@@ -186,7 +173,7 @@ func archiveThroughServe(t *testing.T, scu string, c receptionCase, n int) {
 	} else {
 		u, err := url.Parse(c.s3)
 		if err != nil || u.User == nil || len(u.Path) < 2 {
-			t.Fatalf("%s is not an http URL with a key, a secret and a bucket", s3Env)
+			t.Fatalf("%s is not an http URL with a key, a secret and a bucket", testkit.S3Env)
 		}
 		secret, _ := u.User.Password()
 		region := u.Query().Get("region")

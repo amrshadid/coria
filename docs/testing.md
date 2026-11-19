@@ -70,11 +70,10 @@ itself reads are listed first.
 
 | Variable | What it does | Default | Read by |
 |---|---|---|---|
-| `MAGNETAR_TEST_POSTGRES` | The address of a scratch Postgres database (`postgres://...`) the tests may make schemas in. | unset: the Postgres tests skip | `internal/driver/postgres`; `make test-postgres`, `make outside-postgres`; `scripts/check-master-postgres.sh`, `scripts/check-tenant-postgres.sh` (required) |
-| `MAGNETAR_REQUIRE_POSTGRES` | When set to anything, a missing Postgres address is a failure instead of a skip. | unset | `internal/driver/postgres`, `internal/receive`; set by `make test-postgres` and by CI |
-| `MAGNETAR_TEST_RECEIVE_POSTGRES` | The address of an empty Postgres schema (`postgres://.../db?search_path=schema`) for the reception pipeline's end-to-end test on Postgres. | unset: the test skips | `internal/receive` |
-| `MAGNETAR_TEST_S3` | How to reach a scratch S3 server, as `http://KEY:SECRET@host:port/bucket`, with `region=NAME` and `pathstyle=0` in the query when needed. | unset: the tests against a server skip | `internal/blob/s3`, `internal/receive`; `make test-s3` sets it for each server |
-| `MAGNETAR_REQUIRE_S3` | When set to anything, a missing S3 server is a failure instead of a skip. | unset | `internal/blob/s3`, `internal/receive`; set by `make test-s3` and by CI |
+| `MAGNETAR_TEST_POSTGRES` | The address of a scratch Postgres database (`postgres://...`) the tests may make schemas in; each test that makes a tenant there gets a schema of its own (`testkit.PostgresSchema`). | unset: the Postgres tests skip | `internal/driver/postgres`, `internal/receive`, `internal/cli/servecmd`; `make test-postgres`, `make outside-postgres`; `scripts/check-master-postgres.sh`, `scripts/check-tenant-postgres.sh` (required) |
+| `MAGNETAR_REQUIRE_POSTGRES` | When set to anything, a missing Postgres address is a failure instead of a skip. | unset | `internal/driver/postgres`, `internal/receive`, `internal/cli/servecmd`; set by `make test-postgres` and by CI |
+| `MAGNETAR_TEST_S3` | How to reach a scratch S3 server, as `http://KEY:SECRET@host:port/bucket`, with `region=NAME` and `pathstyle=0` in the query when needed. | unset: the tests against a server skip | `internal/blob/s3`, `internal/receive`, `internal/cli/servecmd`; `make test-s3` sets it for each server; the bucket must exist (the S3 driver's tests make it) |
+| `MAGNETAR_REQUIRE_S3` | When set to anything, a missing S3 server is a failure instead of a skip. | unset | `internal/blob/s3`, `internal/receive`, `internal/cli/servecmd`; set by `make test-s3` and by CI |
 | `MAGNETAR_TEST_SCALE` | When set, runs the scale tests of the reception pipeline that take minutes. | unset: they skip | `internal/receive` (`TestScale*`); set by `make test-scale` |
 | `MAGNETAR_SCALE` | When set, the event feed's adversarial test runs its long form (400 operations instead of 60). No make target sets it. | unset | `internal/driver/sqlite` (`TestEventFeedUnderAdversaries`) |
 | `MAGNETAR_MEASURE` | When set, runs the measurement of the gap between the two denial paths; it is a measurement, not a check. Run it without the race detector. | unset: it skips | `internal/access` (`TestMeasureDeniedGap`) |
@@ -83,8 +82,8 @@ itself reads are listed first.
 | `MAGNETAR_TEST_OTHER_USER` | The name of a second operating system user, for the test that the local socket refuses another user. It needs `sudo -n -u` to work without a password. | unset: it skips | `internal/server`; set by CI; `make ci` runs the test when it is set |
 | `MAGNETAR_SQLITE3_REQUIRED` | When set to anything, a missing `sqlite3` tool is a failure instead of a skip. | unset | `internal/driver/sqlite` (kill and plan tests); set by `scripts/check-master-sqlite.sh` |
 | `MAGNETAR_PYTHON` | The Python, with pynetdicom, that the DICOM receiver's outside tests use. | `python3` on the `PATH` | `internal/receive/dimse` |
-| `MAGNETAR_TEST_SERVECMD_POSTGRES` | The address of an empty Postgres schema for the end-to-end test of `serve`. | unset: that case skips | `internal/cli/servecmd` |
-| `MAGNETAR_DCMTK` | A directory holding dcmtk's programs, looked in before the `PATH` (another program of the same name may come first on it). | the `PATH` only; the test skips when dcmtk is not found | `internal/receive/dimse` |
+| `MAGNETAR_DCMTK` | A directory holding dcmtk's programs, looked in before the `PATH` (another program of the same name may come first on it). | the `PATH` only; the test skips when dcmtk is not found | `internal/receive/dimse`, `internal/cli/servecmd`; set by `make test-postgres` and `make test-s3` from `DCMTK` |
+| `MAGNETAR_REQUIRE_DCMTK` | When set to anything, a missing dcmtk `storescu` is a failure instead of a skip. | unset | `internal/cli/servecmd`; set by `make test-postgres` and `make test-s3` |
 | `MAGNETAR_RECEIVE_CRASH_ONLY` | A comma-separated list of crash points to try, instead of all of them. | unset: every point | `internal/receive` (crash test) |
 
 ### Written for a script or an outside check
