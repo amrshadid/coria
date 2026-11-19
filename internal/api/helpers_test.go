@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/events"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/place"
 	"github.com/amrshadid/magnetar/internal/registry"
 	"github.com/amrshadid/magnetar/internal/secret"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -247,6 +249,11 @@ func (m *faultyMaster) RemoveTenant(ctx context.Context, id string, audit master
 // registry, the handlers, and an HTTP server whose only middleware is the
 // stand-in for the server's path.
 type env struct {
+	// probedHosts are the addresses the services probed for a free port.
+	probedHosts struct {
+		sync.Mutex
+		hosts []string
+	}
 	t        testing.TB
 	dir      string
 	data     string
@@ -357,6 +364,12 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	api.SetPortProbe(h, func(host string, port int) bool {
+		e.probedHosts.Lock()
+		e.probedHosts.hosts = append(e.probedHosts.hosts, host)
+		e.probedHosts.Unlock()
+		return place.SystemProbe(host, port)
+	})
 	srv := connect.NewServer(e.standIn)
 	h.Register(srv)
 	mux := http.NewServeMux()
@@ -754,4 +767,11 @@ func installation() *v1.Scope {
 // tenantScope is a tenant scope as a request names it.
 func tenantScope(name string) *v1.Scope {
 	return &v1.Scope{Kind: &v1.Scope_Tenant{Tenant: name}}
+}
+
+// probed returns the addresses probed for a free port so far.
+func (e *env) probed() []string {
+	e.probedHosts.Lock()
+	defer e.probedHosts.Unlock()
+	return slices.Clone(e.probedHosts.hosts)
 }

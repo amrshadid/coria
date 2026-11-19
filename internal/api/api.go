@@ -14,6 +14,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/place"
 	"github.com/amrshadid/magnetar/internal/registry"
 	"github.com/amrshadid/magnetar/internal/secret"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -99,6 +100,10 @@ type Handlers struct {
 	Quarantine magnetarv1connect.QuarantineServiceHandler
 	// Monitor is MonitorService.
 	Monitor magnetarv1connect.MonitorServiceHandler
+
+	// c is what the services share, kept for the test seams
+	// (export_test.go).
+	c *core
 }
 
 // New returns the services over cfg. It fails as Internal when a required
@@ -145,6 +150,7 @@ func New(cfg Config) (Handlers, error) {
 		Receptions: receptionService{c},
 		Quarantine: quarantineService{c},
 		Monitor:    monitorService{c},
+		c:          c,
 	}, nil
 }
 
@@ -202,7 +208,8 @@ type core struct {
 	now func() time.Time
 	// receivers answers a receiver's health.
 	receivers Receivers
-	// incoming removes files from the incoming area.
+	// incoming carries a release, a retry and the removal of bytes to the
+	// tenant's reception pipeline.
 	incoming Incoming
 	// headers reads a quarantined file's header.
 	headers Headers
@@ -218,6 +225,12 @@ type core struct {
 	// other unseen. One process serves an installation (the lock on its
 	// data directory), so a lock in memory is enough.
 	places sync.RWMutex
+	// seams are set by tests only (export_test.go).
+	seams struct {
+		// probe, when set, stands for place.SystemProbe in the choice of a
+		// free port.
+		probe place.Probe
+	}
 }
 
 // decision returns the request's Decision. A request without one reached the

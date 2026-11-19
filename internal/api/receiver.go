@@ -59,7 +59,15 @@ func (s receiverService) AddReceiver(ctx context.Context, req *v1.AddReceiverReq
 	if dm := m.GetDimse(); dm != nil && dm.GetPort() == 0 {
 		// No port given: the server's lowest allotted port that no receiver
 		// of the tenant holds and that it can bind now, chosen under the
-		// lock a change of the allotment takes.
+		// lock a change of the allotment takes. The request is checked
+		// first, with a stand-in port, so the probe binds only an address
+		// that is valid for a receiver (an IP literal, never a name to
+		// resolve).
+		probe := proto.CloneOf(m)
+		probe.GetDimse().Port = 1
+		if _, err := receiverFromRequest("receiver", probe); err != nil {
+			return nil, c.failIn(d, st, err)
+		}
 		port, err := c.choosePort(ctx, p, st, dm.GetBindAddress())
 		if err != nil {
 			return nil, c.failIn(d, st, err)
@@ -259,5 +267,9 @@ func (c *core) choosePort(ctx context.Context, p tenant.Pipeline, st tenant.Stor
 			used[r.DIMSE.Port] = true
 		}
 	}
-	return place.FreePort(allotted, used, host, place.SystemProbe)
+	probe := place.Probe(place.SystemProbe)
+	if c.seams.probe != nil {
+		probe = c.seams.probe
+	}
+	return place.FreePort(allotted, used, host, probe)
 }

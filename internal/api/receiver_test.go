@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -101,6 +102,17 @@ func testAddReceiver(t *testing.T) {
 				port := o.res.(*v1.AddReceiverResponse).GetReceiver().GetDimse().GetPort()
 				if port < 11121 || port > 11129 || port == 11122 {
 					t.Errorf("the port given: %d, want the lowest free of 11121 and 11123 to 11129", port)
+				}
+			}},
+		// A host name is refused before any port is probed: the probe
+		// binds only an address valid for a receiver, never a name the
+		// server would resolve.
+		{name: "no port, a bind address that is a name", as: f.lab1Admin,
+			call: add(receiverWith(func(r *v1.Receiver) { r.Name, r.GetDimse().Port, r.GetDimse().BindAddress = "named", 0, "localhost" })),
+			code: connect.CodeInvalidArgument, msg: "bind address",
+			check: func(t *testing.T, _ outcome) {
+				if slices.Contains(f.probed(), "localhost") {
+					t.Error("a port was probed on a host name before the request was checked")
 				}
 			}},
 	})
