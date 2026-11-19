@@ -92,6 +92,17 @@ func testAddReceiver(t *testing.T) {
 				t.Error(o.res)
 			}
 		}},
+		// No port: the server gives the lowest allotted port that no
+		// receiver holds and that it can bind (11112, 11120 and 11122 are
+		// held above), and the entry records the port given.
+		{name: "no port, the server chooses", as: f.lab1Admin, call: add(receiverWith(func(r *v1.Receiver) { r.Name, r.GetDimse().Port = "auto", 0 })),
+			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, object: "auto", details: map[string]string{"port": "*"}},
+			check: func(t *testing.T, o outcome) {
+				port := o.res.(*v1.AddReceiverResponse).GetReceiver().GetDimse().GetPort()
+				if port < 11121 || port > 11129 || port == 11122 {
+					t.Errorf("the port given: %d, want the lowest free of 11121 and 11123 to 11129", port)
+				}
+			}},
 	})
 	// The installation's bind addresses, once listed, are the ones a
 	// receiver may name.

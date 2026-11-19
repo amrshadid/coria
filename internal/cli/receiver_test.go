@@ -123,7 +123,7 @@ func TestReceiverUsageErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		"missing flags":      {[]string{"receiver", "add", "lab1", "x", "--port", "11114"}, "a receiver needs --storage, --port and --aet"},
+		"missing flags":      {[]string{"receiver", "add", "lab1", "x", "--port", "11114"}, "a receiver needs --storage and --aet"},
 		"any with a list":    {with(add, "--any-caller", "--allow-aet", "A"), "--any-caller admits everyone"},
 		"any false":          {with(set, "--any-caller=false"), "--any-caller=false is not a choice"},
 		"no callers + list":  {with(set, "--no-callers", "--allow-from", "10.0.0.0/8"), "--no-callers admits nobody"},

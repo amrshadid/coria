@@ -385,9 +385,12 @@ func (*Receiver_Dimse) isReceiver_Type() {}
 // DimseReceiver is a DICOM listener on one port of the server.
 type DimseReceiver struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The TCP port it listens on. Required; it must lie in the ports the
-	// installation allotted to the tenant (the tenant's setting
-	// receiver.ports), or it is a precondition failure. Two receivers of the
+	// The TCP port it listens on; it must lie in the ports the installation
+	// allotted to the tenant (the tenant's setting receiver.ports), or it is a
+	// precondition failure. Zero in AddReceiver: the server gives the lowest
+	// allotted port that no receiver of the tenant holds and that it can bind
+	// now, answered in the receiver it returns; none such is a precondition
+	// failure. Two receivers of the
 	// tenant may share a port only on addresses that do not overlap; an empty
 	// bind address overlaps every address. A port the operating system does
 	// not give (taken by another program, or below 1024 without the right to

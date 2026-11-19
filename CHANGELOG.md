@@ -598,6 +598,11 @@ All notable changes to Magnetar are written here. The form is
   and quarantined files (`h`). A quarantined file is released or rejected
   from its screen, each with a reason; the rejection, which removes its
   bytes for good, needs the file's id typed again.
+- A receiver added without a port (`receiver add` without `--port`, or a
+  port of 0 in `AddReceiver`) is given one by the server: the lowest of the
+  tenant's allotted ports that no receiver of the tenant holds and that the
+  server can bind now, IPv4 included. None such is refused, naming the
+  setting `receiver.ports`.
 
 ### Changed
 

@@ -64,7 +64,7 @@ type receiverFlags struct {
 func (f *receiverFlags) add(cmd *cobra.Command, forSet bool) {
 	fl := cmd.Flags()
 	fl.StringVar(&f.storage, "storage", "", "the name of the tenant's storage that what arrives is archived to")
-	fl.IntVar(&f.port, "port", 0, "the TCP port to listen on, one of the ports the installation allotted to the tenant")
+	fl.IntVar(&f.port, "port", 0, "the TCP port to listen on, one of the ports the installation allotted to the tenant; on add, left out, the server gives the lowest of them that is free")
 	fl.StringVar(&f.bind, "bind-address", "", "the address of the server to listen on, one of those the setting receiver.bind-addresses lists (default: the installation's default)")
 	fl.StringVar(&f.aet, "aet", "", "the receiver's own AE title, the Called AE Title a caller must give: 1 to 16 printable characters")
 	fl.BoolVar(&f.enabled, "enabled", false, "whether the receiver accepts data; false, the default, keeps it stopped (--enabled=false stops one)")
@@ -258,7 +258,7 @@ func (f *receiverFlags) receiver(cmd *cobra.Command, name string) (*v1.Receiver,
 func (a *app) newReceiverAdd() *cobra.Command {
 	var f receiverFlags
 	cmd := &cobra.Command{
-		Use:   "add <tenant> <name> --storage NAME --port N --aet TITLE [--allow-aet T | --allow-from CIDR | --any-caller] [--enabled]",
+		Use:   "add <tenant> <name> --storage NAME [--port N] --aet TITLE [--allow-aet T | --allow-from CIDR | --any-caller] [--enabled]",
 		Short: "Add a receiver to a tenant",
 		Long: `Add a DICOM receiver to a tenant. It listens on its port only when it is
 enabled (--enabled), and admits only the callers it lists: a receiver added
@@ -282,8 +282,8 @@ with the reason, such as a port the server could not take.`,
   magnetar receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
-			if f.storage == "" || f.port == 0 || f.aet == "" {
-				return fault.New(fault.Invalid, "a receiver needs --storage, --port and --aet")
+			if f.storage == "" || f.aet == "" {
+				return fault.New(fault.Invalid, "a receiver needs --storage and --aet")
 			}
 			r, _, err := f.receiver(cmd, args[1])
 			if err != nil {

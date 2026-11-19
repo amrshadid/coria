@@ -3,10 +3,13 @@ package api
 import (
 	"context"
 
+	"google.golang.org/protobuf/proto"
+
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/place"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -50,12 +53,24 @@ func (s receiverService) AddReceiver(ctx context.Context, req *v1.AddReceiverReq
 	if err != nil {
 		return nil, err
 	}
-	in, err := receiverFromRequest("receiver", req.GetReceiver())
+	c.places.RLock()
+	defer c.places.RUnlock()
+	m := req.GetReceiver()
+	if dm := m.GetDimse(); dm != nil && dm.GetPort() == 0 {
+		// No port given: the server's lowest allotted port that no receiver
+		// of the tenant holds and that it can bind now, chosen under the
+		// lock a change of the allotment takes.
+		port, err := c.choosePort(ctx, p, st, dm.GetBindAddress())
+		if err != nil {
+			return nil, c.failIn(d, st, err)
+		}
+		m = proto.CloneOf(m)
+		m.GetDimse().Port = int32(port) //nolint:gosec // G115: a port of the allotment, 1 to 65535.
+	}
+	in, err := receiverFromRequest("receiver", m)
 	if err != nil {
 		return nil, c.failIn(d, st, err)
 	}
-	c.places.RLock()
-	defer c.places.RUnlock()
 	if err := c.checkReceiverPlace(ctx, st, in); err != nil {
 		return nil, c.failIn(d, st, err)
 	}
@@ -224,3 +239,25 @@ func (c *core) receiversChanged(tenantName string) {
 
 // detailRemoved is the phrase of a removed receiver's health.
 const detailRemoved = "removed"
+
+// choosePort returns the port a receiver added without one is given
+// (place.FreePort): the lowest allotted to the tenant that none of its
+// receivers holds, allotments never overlapping between tenants, and that
+// the server can bind on host now.
+func (c *core) choosePort(ctx context.Context, p tenant.Pipeline, st tenant.Store, host string) (int, error) {
+	allotted, err := c.values().OnTenant(st).Ports(ctx)
+	if err != nil {
+		return 0, err
+	}
+	receivers, err := allReceivers(ctx, p)
+	if err != nil {
+		return 0, err
+	}
+	used := make(map[int]bool, len(receivers))
+	for _, r := range receivers {
+		if r.Type == tenant.ReceiverDIMSE {
+			used[r.DIMSE.Port] = true
+		}
+	}
+	return place.FreePort(allotted, used, host, place.SystemProbe)
+}
