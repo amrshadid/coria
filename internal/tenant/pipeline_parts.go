@@ -135,6 +135,20 @@ type WorkClaims interface {
 	ClaimNextWork(ctx context.Context, kind, owner string, now time.Time, lease time.Duration) (WorkClaim, error)
 }
 
+// WorkReclaim gives back the work a dead process held.
+type WorkReclaim interface {
+	// ReclaimWork queues again, due at now, every unit leased now, and
+	// returns how many: their owner is a process that is gone. A unit
+	// keeps its attempts, so the next claim takes its next one and the
+	// fence of the lease that ended can no longer write. Only a process
+	// that holds the tenant alone may call it, at the start of its work
+	// and before its own workers run: a server holds its installation's
+	// data directory's lock, so any lease there when it starts belongs to
+	// one that ended without letting go. A unit otherwise waits out its
+	// lease before another worker takes it.
+	ReclaimWork(ctx context.Context, now time.Time) (int, error)
+}
+
 // WorkClaim is the answer of ClaimNextWork.
 type WorkClaim struct {
 	// Work is the unit leased, with its new attempt; zero when Found is
@@ -207,5 +221,6 @@ type PipelineParts interface {
 	QuarantineReleases
 	FencedFiles
 	WorkClaims
+	WorkReclaim
 	ScanContents
 }

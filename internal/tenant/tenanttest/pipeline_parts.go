@@ -350,3 +350,40 @@ func testNewQuarantineReasons(e *penv) {
 	_, err = e.p.ReleaseQuarantined(e.ctx, lost.ID, tenant.ReleaseAsIs, "", "rel-1", at(10), e.audit(), nil)
 	e.wantPrecondition("ReleaseQuarantined of a file whose incoming copy is lost", err)
 }
+
+// testReclaimWork guards ReclaimWork: every unit leased is queued again at
+// once, with no owner; a unit queued or done is left as it is; the next
+// claim takes the unit with its next attempt, and the fence of the lease
+// that was given back can no longer renew it.
+func testReclaimWork(e *penv) {
+	pp := e.parts()
+	held := e.enqueue("w1", at(0))
+	e.enqueue("w2", at(0))
+	waiting := e.enqueue("w3", at(100))
+	leased, err := e.p.ClaimWork(e.ctx, "reception", "dead-1", at(1), time.Hour)
+	e.ok("ClaimWork", err)
+	second, err := e.p.ClaimWork(e.ctx, "reception", "dead-2", at(1), time.Hour)
+	e.ok("ClaimWork", err)
+	n, err := pp.ReclaimWork(e.ctx, at(2))
+	e.ok("ReclaimWork", err)
+	if n != 2 {
+		e.Errorf("ReclaimWork gave back %d units, want the 2 leased", n)
+	}
+	for _, id := range []string{leased.ID, second.ID} {
+		w, err := e.p.Work(e.ctx, id)
+		e.ok("Work", err)
+		if w.State != tenant.WorkQueued || w.Owner != "" || !w.Due.Equal(at(2)) {
+			e.Errorf("a unit given back is %s, owner %q, due %v; want queued, no owner, due at the reclaim", w.State, w.Owner, w.Due)
+		}
+	}
+	if w, _ := e.p.Work(e.ctx, waiting.ID); w.State != tenant.WorkQueued || !w.Due.Equal(at(100)) {
+		e.Errorf("a unit queued was changed: %s due %v", w.State, w.Due)
+	}
+	again, err := e.p.ClaimWork(e.ctx, "reception", "alive", at(3), time.Minute)
+	e.ok("ClaimWork after the reclaim", err)
+	if again.ID != held.ID || again.Attempt != leased.Attempt+1 {
+		e.Errorf("the claim after the reclaim took %s attempt %d, want %s attempt %d", again.ID, again.Attempt, held.ID, leased.Attempt+1)
+	}
+	_, err = e.p.RenewWork(e.ctx, tenant.WorkFence{ID: leased.ID, Attempt: leased.Attempt}, at(4), time.Minute)
+	e.wantIs("RenewWork with the fence of a lease given back", err, tenant.ErrLeaseLost, fault.Conflict)
+}

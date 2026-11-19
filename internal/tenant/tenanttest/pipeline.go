@@ -83,6 +83,7 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 		{"ReleaseReason", testReleaseReason},
 		{"FencedFiles", testFencedFiles},
 		{"ClaimNextWork", testClaimNextWork},
+		{"ReclaimWork", testReclaimWork},
 		{"ScanInstances", testScanInstances},
 		{"NewQuarantineReasons", testNewQuarantineReasons},
 		{"PipelineTenantsApart", testPipelineTenantsApart},

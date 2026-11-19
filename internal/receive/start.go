@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
 // Start reconciles the incoming area with the database (Recover), queues the
@@ -24,6 +25,20 @@ func (p *Pipeline) Start(ctx context.Context) (RecoverReport, error) {
 	}
 	if err := p.repairWork(ctx); err != nil {
 		return rep, err
+	}
+	// A unit still leased now was held by a process that is gone: one
+	// server serves an installation (it holds the data directory's lock),
+	// and this pipeline's workers have not started. Given back now, it is
+	// taken up at once rather than when its lease runs out, which kept a
+	// restarted server from archiving for up to a lease after a crash.
+	if rw, ok := p.store.(tenant.WorkReclaim); ok {
+		n, err := rw.ReclaimWork(ctx, p.now())
+		if err != nil {
+			return rep, err
+		}
+		if n > 0 {
+			p.log.Info("work a stopped process held was taken back", "units", n)
+		}
 	}
 	stop := make(chan struct{})
 	p.batchStop = stop

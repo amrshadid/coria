@@ -124,6 +124,25 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 	return c.Work, nil
 }
 
+// ReclaimWork implements tenant.WorkReclaim: one statement, every leased
+// unit queued again at now with no owner, its attempts kept.
+func (t *Tenant) ReclaimWork(ctx context.Context, now time.Time) (int, error) {
+	if err := master.ValidateTime("time", now); err != nil {
+		return 0, err
+	}
+	var n int64
+	err := t.write(ctx, "the leased work cannot be reclaimed", func(tx *sql.Tx, _ *tenantStatements) error {
+		res, err := tx.ExecContext(ctx, `UPDATE work SET state = 'queued', owner = '', due = ?, updated = ? WHERE state = 'leased'`,
+			micros(now), micros(now))
+		if err != nil {
+			return err
+		}
+		n, err = res.RowsAffected()
+		return err
+	})
+	return int(n), err
+}
+
 // ClaimNextWork implements tenant.WorkClaims. Within one transaction no
 // other writer runs (BEGIN IMMEDIATE), and a claim grouped with another in
 // one transaction sees that one's lease, so two claims never take one unit.
