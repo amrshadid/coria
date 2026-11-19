@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -112,7 +113,7 @@ func (k *Keeper) Stop(context.Context) error {
 func (k *Keeper) Round(ctx context.Context) {
 	names, err := k.cfg.Tenants.TenantNames(ctx)
 	if err != nil {
-		k.log.Warn("events: the tenants could not be listed to keep their feeds")
+		k.log.Warn("events: the tenants could not be listed to keep their feeds", "reason", fault.Message(err))
 		return
 	}
 	for _, name := range names {
@@ -132,19 +133,19 @@ func (k *Keeper) keep(ctx context.Context, name string) {
 	}
 	now := k.cfg.Clock.Now()
 	if err := feed.CheckpointEvents(ctx, now); err != nil {
-		log.Warn("events: the feed's checkpoint could not be recorded")
+		log.Warn("events: the feed's checkpoint could not be recorded", "reason", fault.Message(err))
 		return
 	}
 	retention, err := k.cfg.Tenants.Retention(ctx, name)
 	if err != nil {
-		log.Warn("events: the feed's retention could not be read; nothing is pruned")
+		log.Warn("events: the feed's retention could not be read; nothing is pruned", "reason", fault.Message(err))
 		return
 	}
 	before := now.Add(-retention)
 	for ctx.Err() == nil {
 		_, more, err := feed.PruneEvents(ctx, before, tenant.MaxPruneBatch)
 		if err != nil {
-			log.Warn("events: the feed could not be pruned")
+			log.Warn("events: the feed could not be pruned", "reason", fault.Message(err))
 			return
 		}
 		if !more {
