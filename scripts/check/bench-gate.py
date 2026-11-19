@@ -69,6 +69,9 @@ def compare(args, work):
     os.makedirs(base)
     archive = subprocess.run(["git", "archive", "--format=tar", args.base], cwd=ROOT, capture_output=True, check=True)
     subprocess.run(["tar", "-x", "-C", base], input=archive.stdout, check=True)
+    if not os.path.isdir(os.path.join(base, PACKAGE)):
+        print("bench-gate: %s has no package %s; nothing to compare with, so it passes" % (args.base, PACKAGE))
+        return
     bins = {"base": os.path.join(work, "base.test"), "head": os.path.join(work, "head.test")}
     build(base, args.go, bins["base"])
     build(ROOT, args.go, bins["head"])
