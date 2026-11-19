@@ -45,7 +45,7 @@ func TestSystemProbeSeesAPortHeld(t *testing.T) {
 	if testing.Short() {
 		t.Skip("opens ports; left out under -short")
 	}
-	ln, err := net.Listen("tcp4", "0.0.0.0:0")
+	ln, err := net.Listen("tcp4", "0.0.0.0:0") // #nosec G102 -- the IPv4 wildcard is what the probe must see held.
 	if err != nil {
 		t.Fatal(err)
 	}
