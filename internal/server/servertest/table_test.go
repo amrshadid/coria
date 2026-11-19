@@ -257,6 +257,7 @@ var contractFiles = []protoreflect.FileDescriptor{
 	magnetarv1.File_magnetar_v1_receiver_proto,
 	magnetarv1.File_magnetar_v1_reception_proto,
 	magnetarv1.File_magnetar_v1_quarantine_proto,
+	magnetarv1.File_magnetar_v1_monitor_proto,
 }
 
 // contractMethods returns every method of the contract by procedure name.
@@ -419,6 +420,8 @@ func checkRole(t *testing.T, proc, role string, md protoreflect.MethodDescriptor
 		expectTenant(t, proc, md, master.RoleReader, []string{"study_instance_uid", "sop_instance_uid"})
 	case "reader on the tenant; operator on the tenant with include_header, since the header holds what the sender sent, identifying data included.":
 		expectTenant(t, proc, md, master.RoleReader, []string{"include_header"})
+	case "reader on the tenant asked for; operator on the installation for every tenant.":
+		expectMonitorScope(t, proc, md)
 	default:
 		t.Errorf("%s: the Role line %q is a phrase this test does not know; add what it means", proc, role)
 	}
@@ -522,6 +525,31 @@ func expectScope(t *testing.T, proc string, md protoreflect.MethodDescriptor, ro
 	} {
 		if _, got, _ := ruleFor(proc, c.msg); got != c.want {
 			t.Errorf("%s: the requirement for %v is not %s on that scope", proc, c.msg, role)
+		}
+	}
+}
+
+// expectMonitorScope checks reader on the tenant a request's scope names,
+// and operator on the installation for every tenant or no scope.
+func expectMonitorScope(t *testing.T, proc string, md protoreflect.MethodDescriptor) {
+	t.Helper()
+	tenant := newRequest(md)
+	if !setScope(tenant.ProtoReflect(), &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}}, 2) {
+		t.Errorf("%s: no scope field found in its request", proc)
+		return
+	}
+	inst := newRequest(md)
+	setScope(inst.ProtoReflect(), installation(), 2)
+	for _, c := range []struct {
+		msg  proto.Message
+		want access.Requirement
+	}{
+		{tenant, access.OnTenant("lab", master.RoleReader)},
+		{inst, access.OnInstallation(master.RoleOperator)},
+		{newRequest(md), access.OnInstallation(master.RoleOperator)},
+	} {
+		if _, got, _ := ruleFor(proc, c.msg); got != c.want {
+			t.Errorf("%s: the requirement for %v is not %v", proc, c.msg, c.want)
 		}
 	}
 }

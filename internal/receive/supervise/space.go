@@ -70,6 +70,8 @@ func (t *tenantRun) upHealth(r tenant.Receiver, now time.Time) Health {
 // reported once.
 type spaceState struct {
 	storages map[string]bool
+	// usage is each storage's space as last measured, for View.
+	usage map[string]StorageSpace
 }
 
 // checkSpace reads the reserve, the incoming disk's space, the space of
@@ -93,6 +95,7 @@ func (t *tenantRun) checkSpace(st tenant.Store, p tenant.Pipeline, rows []tenant
 		}
 	}
 	full := map[string]bool{}
+	usage := map[string]StorageSpace{}
 	var events []tenant.EventPayload
 	if t.space.storages == nil {
 		t.space.storages = map[string]bool{}
@@ -102,6 +105,8 @@ func (t *tenantRun) checkSpace(st tenant.Store, p tenant.Pipeline, rows []tenant
 		is, used, free, known := t.storageFull(ctx, p, name, reserve)
 		if !known {
 			is = was
+		} else {
+			usage[name] = StorageSpace{FreeBytes: free, NearlyFull: is}
 		}
 		full[name] = is
 		if is == was || !known {
@@ -116,6 +121,7 @@ func (t *tenantRun) checkSpace(st tenant.Store, p tenant.Pipeline, rows []tenant
 		events = append(events, &tenant.StorageSpaceChanged{Storage: name, State: state, UsedBytes: used, FreeBytes: &fb})
 	}
 	g.fullStorages = full
+	t.space.usage = usage
 	g.overLimit = t.overLimit(ctx, st)
 	t.gates.Store(&g)
 	t.appendEvents(events, t.sup.cfg.Now())

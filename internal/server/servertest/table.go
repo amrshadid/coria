@@ -188,7 +188,28 @@ func Contract() Table {
 		),
 		magnetarv1connect.QuarantineServiceReleaseQuarantinedFileProcedure: onTenant(func() *magnetarv1.ReleaseQuarantinedFileRequest { return &magnetarv1.ReleaseQuarantinedFileRequest{} }, master.RoleOperator),
 		magnetarv1connect.QuarantineServiceRejectQuarantinedFileProcedure:  onTenant(func() *magnetarv1.RejectQuarantinedFileRequest { return &magnetarv1.RejectQuarantinedFileRequest{} }, master.RoleOperator),
+
+		// MonitorService: "reader on the tenant asked for; operator on the
+		// installation for every tenant."
+		magnetarv1connect.MonitorServiceGetStatusProcedure: byMessage(
+			func() *magnetarv1.GetStatusRequest { return &magnetarv1.GetStatusRequest{} },
+			func(m *magnetarv1.GetStatusRequest) access.Requirement { return onMonitorScope(m.GetScope()) },
+		),
+		magnetarv1connect.MonitorServiceWatchProcedure: byMessage(
+			func() *magnetarv1.WatchRequest { return &magnetarv1.WatchRequest{} },
+			func(m *magnetarv1.WatchRequest) access.Requirement { return onMonitorScope(m.GetScope()) },
+		),
 	}
+}
+
+// onMonitorScope is the requirement of a Monitor method: reader on the
+// tenant the scope names, operator on the installation for every tenant
+// or a malformed scope.
+func onMonitorScope(s *magnetarv1.Scope) access.Requirement {
+	if t, ok := s.GetKind().(*magnetarv1.Scope_Tenant); ok && master.ValidateTenantName(t.Tenant) == nil {
+		return access.OnTenant(t.Tenant, master.RoleReader)
+	}
+	return access.OnInstallation(master.RoleOperator)
 }
 
 // tenanted is a request into one tenant, named by its field "tenant".

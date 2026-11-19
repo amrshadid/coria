@@ -29,6 +29,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/api/codes"
 	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/driver"
+	"github.com/amrshadid/magnetar/internal/events"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/registry"
@@ -346,8 +347,13 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 		}
 		return e.newID()
 	}
+	feeds, err := events.New(events.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = feeds.Close() })
 	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.faulty, NewID: tenantID, Log: logger, Settings: e.known, Keys: e.keys, Now: e.now,
-		Incoming: e.parts, Headers: e.parts})
+		Incoming: e.parts, Headers: e.parts, Feeds: feeds})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,6 +538,7 @@ type clients struct {
 	receivers  magnetarv1connect.ReceiverServiceClient
 	receptions magnetarv1connect.ReceptionServiceClient
 	quarantine magnetarv1connect.QuarantineServiceClient
+	monitor    magnetarv1connect.MonitorServiceClient
 }
 
 // as returns clients that call as c.
@@ -559,6 +566,7 @@ func (e *env) as(c caller) clients {
 		receivers:  magnetarv1connect.NewReceiverServiceClient(cl),
 		receptions: magnetarv1connect.NewReceptionServiceClient(cl),
 		quarantine: magnetarv1connect.NewQuarantineServiceClient(cl),
+		monitor:    magnetarv1connect.NewMonitorServiceClient(cl),
 	}
 }
 
@@ -595,6 +603,25 @@ func call[Req, Res proto.Message](f func(context.Context, Req) (Res, error), req
 	o := outcome{err: err, requestID: info.ResponseHeader().Get(api.RequestIDHeader)}
 	if err == nil {
 		o.res = res
+	}
+	return o
+}
+
+// watchOnce opens a stream with req and returns its first message or its
+// error as an outcome, then ends the stream: what a table needs of Watch.
+func watchOnce(c clients, req *v1.WatchRequest) outcome {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ctx, info := connect.NewClientContext(ctx)
+	s, err := c.monitor.Watch(ctx, req)
+	if err != nil {
+		return outcome{err: err, requestID: info.ResponseHeader().Get(api.RequestIDHeader)}
+	}
+	defer func() { _ = s.Close() }()
+	msg, err := s.Receive()
+	o := outcome{err: err, requestID: info.ResponseHeader().Get(api.RequestIDHeader)}
+	if err == nil {
+		o.res = msg
 	}
 	return o
 }

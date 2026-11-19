@@ -46,6 +46,8 @@ type tenantRun struct {
 	rows     []tenant.Receiver
 	nextRead time.Time
 	space    spaceState
+	// view is what the worker last published for View.
+	view atomic.Pointer[viewState]
 
 	failures *failureGroups
 }
@@ -153,6 +155,7 @@ func (t *tenantRun) reconcile(read bool) {
 		t.nextSpace = mono.Add(t.sup.cfg.SpaceInterval)
 	}
 	t.apply(rows)
+	t.publish()
 }
 
 // readReceivers reads every receiver of the tenant, page after page.

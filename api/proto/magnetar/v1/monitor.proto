@@ -189,8 +189,9 @@ message StorageStatus {
   // The storage's name.
   string storage = 1;
 
-  // Bytes the tenant holds on it: its archived files, manifests and
-  // metadata, as the catalog records them in the status's snapshot.
+  // Bytes of the archived files the catalog holds on it, in the status's
+  // snapshot: a running total kept with each commit. A scan's manifest and
+  // metadata, a few kilobytes each, are not counted.
   int64 used_bytes = 2;
 
   // Bytes it can still take: the smaller of what its file system reports

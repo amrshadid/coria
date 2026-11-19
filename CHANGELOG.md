@@ -580,6 +580,17 @@ All notable changes to Magnetar are written here. The form is
   event ids follow commit order and a reader never passes an event that
   commits behind it. Changes that write no event, such as a batch of
   received files, are not slowed.
+- `MonitorService` is served, the last service of the contract that was
+  not. `GetStatus` answers a tenant's numbers now, or a page of every
+  tenant's: its database's state, its counts and its feed's cursor read in
+  one snapshot, each storage's used bytes (a running total kept with each
+  commit) and free bytes, each receiver's health, the throughput of the
+  last ten seconds, and its incoming limit. A tenant whose database does
+  not answer is answered with what the server holds in memory rather than
+  refused. `Watch` streams one tenant's events, or every tenant's, as they
+  are committed, from a cursor or from now, with the caller's key and grant
+  checked again every 15 seconds and an audit entry when the stream opens
+  and when it ends, with the events it carried.
 
 ### Changed
 

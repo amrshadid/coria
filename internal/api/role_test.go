@@ -239,6 +239,9 @@ const (
 	// tenantReaderOrOperator: reader on the tenant, and operator on it when
 	// the request sets one of the fields operatorWhen names for the line.
 	tenantReaderOrOperator
+	// monitorScope: reader on the tenant the request names, operator on
+	// the installation for every tenant.
+	monitorScope
 )
 
 // rolePhrases is every Role line the contract has, with the shape it
@@ -261,6 +264,7 @@ var rolePhrases = map[string]roleShape{
 	"reader on the tenant; operator on the tenant to filter by Study Instance UID, since looking a study up by an identifier the caller already holds is a search for a person's data.": tenantReaderOrOperator,
 	"reader on the tenant; operator on the tenant to filter by a UID, since looking a file up by an identifier the caller already holds is a search for a person's data.":               tenantReaderOrOperator,
 	"reader on the tenant; operator on the tenant with include_header, since the header holds what the sender sent, identifying data included.":                                         tenantReaderOrOperator,
+	"reader on the tenant asked for; operator on the installation for every tenant.":                                                                                                    monitorScope,
 }
 
 // operatorWhen names, for each Role line of the shape tenantReaderOrOperator,
@@ -429,6 +433,24 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 				{"the installation", installation(), access.OnInstallation(role)},
 				{"a malformed tenant", tenantScope("Lab 1"), access.OnInstallation(role)},
 				{"no scope", nil, access.OnInstallation(role)},
+			} {
+				if got := need(withScope(t, msg, c.scope)); got != c.want {
+					t.Errorf("%s with %s: %+v, want %+v", proc, c.name, got, c.want)
+				}
+			}
+		case monitorScope:
+			if msg == nil {
+				t.Fatalf("%s: the table does not read the request", proc)
+			}
+			for _, c := range []struct {
+				name  string
+				scope *v1.Scope
+				want  access.Requirement
+			}{
+				{"a tenant", tenantScope("lab1"), access.OnTenant("lab1", master.RoleReader)},
+				{"the installation", installation(), access.OnInstallation(master.RoleOperator)},
+				{"a malformed tenant", tenantScope("Lab 1"), access.OnInstallation(master.RoleOperator)},
+				{"no scope", nil, access.OnInstallation(master.RoleOperator)},
 			} {
 				if got := need(withScope(t, msg, c.scope)); got != c.want {
 					t.Errorf("%s with %s: %+v, want %+v", proc, c.name, got, c.want)

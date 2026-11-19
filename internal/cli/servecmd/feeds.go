@@ -80,3 +80,14 @@ func (rs runners) Stop(ctx context.Context) error {
 	}
 	return errors.Join(errs...)
 }
+
+// closer is a runner that only closes something at stop, last of the
+// runners it is listed first among: the broadcaster, whose open streams end
+// when the server stops.
+type closer struct{ c interface{ Close() error } }
+
+// Start does nothing.
+func (closer) Start(context.Context) error { return nil }
+
+// Stop closes it.
+func (c closer) Stop(context.Context) error { return c.c.Close() }

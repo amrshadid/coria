@@ -147,6 +147,7 @@ func TestShippedTenantMigrationsUnchanged(t *testing.T) {
 		"0004_release_reason_and_scans.sql " + shippedTenantReleaseReason,
 		"0005_tenant_secrets.sql " + shippedTenantSealedKeys,
 		"0006_event_checkpoints.sql " + shippedTenantCheckpoints,
+		"0007_storage_totals.sql " + shippedTenantStorageTotals,
 	}
 	if tenantMigrationsErr != nil {
 		t.Fatal(tenantMigrationsErr)
@@ -283,3 +284,7 @@ func TestTenantRefusesMasterCursors(t *testing.T) {
 		t.Errorf("the tenant's ListAudit took the master's cursor: %v", err)
 	}
 }
+
+// shippedTenantStorageTotals is the SHA-256 of
+// migrations/tenant/0007_storage_totals.sql as this change ships it.
+const shippedTenantStorageTotals = "667329adb71f5ac6f5c9889ad3fd66ea871fea864504ab2d1973d7ea90f8d3d4"

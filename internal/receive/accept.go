@@ -79,6 +79,7 @@ func (p *Pipeline) Accept(ctx context.Context, a Arrival) Outcome {
 		return Outcome{Status: Refused, Reason: reasonNotKept}
 	}
 	p.stats.Landed.Add(1)
+	p.meter.received(p.cfg.Clock.Now(), f.Size)
 	p.at("accept.landed")
 	l := landed{file: f, receiver: a.Receiver, caller: a.Caller, association: a.Association, told: a}
 	l.told.Body = nil

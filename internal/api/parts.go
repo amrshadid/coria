@@ -150,3 +150,39 @@ type noHeaders struct{}
 func (noHeaders) Header(context.Context, string, tenant.QuarantinedFile, int) (string, bool, error) {
 	return "", false, ErrNoHeader
 }
+
+// Live answers what the server holds in memory of a tenant, for a status
+// that must answer also when the tenant's database does not.
+type Live interface {
+	// TenantLive returns what is held of the tenant named tenantName, and
+	// whether anything is.
+	TenantLive(tenantName string) (TenantLive, bool)
+}
+
+// TenantLive is what the server holds in memory of one tenant: the
+// receivers as the part that runs them last read them, the space it last
+// measured of the storages they write to, and the pipeline's throughput.
+type TenantLive struct {
+	Receivers  []tenant.Receiver
+	Storages   map[string]StorageSpace
+	Throughput Throughput
+}
+
+// StorageSpace is a storage's free space as last measured, and whether it
+// is below its reserve.
+type StorageSpace struct {
+	FreeBytes  int64
+	NearlyFull bool
+}
+
+// Throughput is how fast files moved through a tenant over the last ten
+// seconds, per second.
+type Throughput struct {
+	FilesReceived, BytesReceived, FilesArchived, BytesArchived float64
+}
+
+// noLive is the Live of a server that runs no receivers: nothing is held.
+type noLive struct{}
+
+// TenantLive implements Live.
+func (noLive) TenantLive(string) (TenantLive, bool) { return TenantLive{}, false }

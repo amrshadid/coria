@@ -139,8 +139,8 @@ def contract_methods(proto_dir):
             while depth and i < len(text):
                 depth += {"{": 1, "}": -1}.get(text[i], 0)
                 i += 1
-            for rpc in re.finditer(r"\brpc\s+(\w+)\s*\(", text[svc.end():i]):
-                out.append(("magnetar.v1." + svc.group(1), rpc.group(1), "magnetar/v1/" + name))
+            for rpc in re.finditer(r"\brpc\s+(\w+)\s*\(\s*\w+\s*\)\s*returns\s*\((\s*stream\b)?", text[svc.end():i]):
+                out.append(("magnetar.v1." + svc.group(1), rpc.group(1), "magnetar/v1/" + name, bool(rpc.group(2))))
     return out
 
 
@@ -149,7 +149,7 @@ def not_served(path, methods):
     that is not a full service name, a name given twice, a name no proto file
     defines."""
     names, problems = [], []
-    defined = {svc for svc, _, _ in methods}
+    defined = {m[0] for m in methods}
     with open(path) as f:
         for n, line in enumerate(f, 1):
             line = line.strip()
@@ -245,7 +245,7 @@ class Clients:
         # The key reaches grpcurl through its environment and -expand-headers,
         # never as an argument, which every user of the machine could read.
         env = dict(os.environ)
-        cmd = [self.args.grpcurl, "-import-path", self.proto, "-proto", proto, "-cacert", self.args.ca, "-v"]
+        cmd = [self.args.grpcurl, "-import-path", self.proto, "-import-path", STANDIN_PROTO, "-proto", proto, "-cacert", self.args.ca, "-v"]
         if key is not None:
             env["MGT_PROOF_AUTH"] = key
             cmd += ["-expand-headers", "-H", "authorization: ${MGT_PROOF_AUTH}"]
@@ -289,6 +289,29 @@ class Clients:
         keep = lambda m: sorted((k, v) for k, v in m if k not in ("magnetar-request-id", "date"))
         norm = "%s|%s|headers=%r|trailers=%r|body=%r" % (code.name, message, keep(init), keep(trail), answer)
         return code.name, message, norm, rid
+
+    def python_stream(self, service, method, key):
+        """A server-streaming call by Python, read to its end: the code and
+        message it ended with, and the request id."""
+        grpc = self.grpc
+        call = self.channel.unary_stream("/%s/%s" % (service, method), request_serializer=None, response_deserializer=None)
+        md = [("authorization", key)] if key is not None else []
+        stream = call(b"", metadata=md, timeout=30)
+        code, message = grpc.StatusCode.OK, ""
+        try:
+            for _ in stream:
+                break
+            stream.cancel()
+        except grpc.RpcError as e:
+            code, message = e.code(), e.details() or ""
+        rid = ""
+        try:
+            for k, v in list(stream.initial_metadata() or ()) + list(stream.trailing_metadata() or ()):
+                if k == "magnetar-request-id":
+                    rid = v
+        except grpc.RpcError:
+            pass
+        return code.name, message, rid
 
     def curl(self, path, body, key):
         # The key goes in a header file only the script's user can read.
@@ -419,27 +442,74 @@ def bad_keys(keys):
     ]
 
 
+# STANDIN is the service that stands for "a method not served" once every
+# service of the contract is served: defined by a proto file outside the
+# contract (scripts/testdata/notserved), so grpcurl can call it by name, and
+# served by no server.
+STANDIN = ("magnetar.v1.NotServedService", "Nothing", "magnetar/v1/notserved.proto", False)
+STANDIN_PROTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testdata", "notserved")
+
+
 def cmd_refusals(work, args):
     every = contract_methods(args.proto)
     names, problems = not_served(args.not_served, every)
-    methods = [x for x in every if x[0] not in names]
-    unserved = [x for x in every if x[0] in names]
+    served = [x[:3] for x in every if x[0] not in names]
+    # A server-streaming method is called the streaming way, apart
+    # (streaming): called as a unary method by curl it is refused for its
+    # content type before any check, which says nothing about the check.
+    methods = [x[:3] for x in every if x[0] not in names and not x[3]]
+    streaming = [x[:3] for x in every if x[0] not in names and x[3]]
+    unserved = [x[:3] for x in every if x[0] in names] or [STANDIN[:3]]
     cl = Clients(work, args)
     try:
         if args.mode == "walk":
             work.result("2.5 the services not served yet: named in api/not-served.txt, each defined by a proto file",
-                        not problems and bool(unserved) == bool(names),
-                        "%d methods in the proto files: %d served, %d not served, of %d service(s): %s"
-                        % (len(every), len(methods), len(unserved), len(names), ", ".join(n.split(".")[-1] for n in names) or "none"),
+                        not problems,
+                        "%d methods in the proto files: %d served, of them %d streaming; %d service(s) not served: %s"
+                        % (len(every), len(served), len(streaming), len(names),
+                           ", ".join(n.split(".")[-1] for n in names) or "none, so a service outside the contract stands for one ("
+                           + STANDIN[0] + ")"),
                         problems)
-            walk(work, cl, methods, unserved)
+            walk(work, cl, served, unserved)
         else:
             with open(os.path.join(work.path, "keys.json")) as f:
                 keys = json.load(f)
             matrix(work, cl, methods, unserved, keys, args)
+            streaming_refusals(work, cl, streaming, keys)
     finally:
         cl.close()
     return 1 if work.failed else 0
+
+
+def streaming_refusals(work, cl, streaming, keys):
+    """Section 4, the server-streaming methods, each called the streaming way
+    by each client (grpcurl reads the stream; Python with unary_stream; curl
+    in the Connect streaming protocol, whose error is the end-of-stream
+    message): with no key, unauthenticated; with a key with no grant,
+    permission denied; the message of every other method each time."""
+    nogrant_key, nogrant_id = key_of(keys, "nogrant")
+    ev, n = [], 0
+    for svc, m, proto in streaming:
+        for label, auth, key_id, code, message in (("no key", None, "", "unauthenticated", UNAUTH_MESSAGE),
+                                                   ("no grant", "Bearer " + nogrant_key, nogrant_id, "permission_denied", DENIED_MESSAGE)):
+            got = []
+            c, msg, norm, rid = cl.grpcurl(svc, m, proto, {}, auth)
+            work.ledger(rid, "/%s/%s" % (svc, m), key_id, outcome_of(c), "*", "grpcurl streaming " + label)
+            got.append(("grpcurl", c.lower().replace("_", ""), msg, rid))
+            c, msg, rid = cl.python_stream(svc, m, auth)
+            work.ledger(rid, "/%s/%s" % (svc, m), key_id, outcome_of(c), "*", "python streaming " + label)
+            got.append(("python", c.lower().replace("_", ""), msg, rid))
+            status, norm, rid, headers = cl.curl_raw("/%s/%s" % (svc, m), "POST", "application/connect+json", b"\0\0\0\0\x02{}", auth, False)
+            work.ledger(rid or "-", "/%s/%s" % (svc, m), key_id, outcome_of(code), "*", "curl streaming " + label)
+            ok_curl = ('"code":"%s"' % code) in norm and message in norm
+            got.append(("curl", code.replace("_", "") if ok_curl else status, message if ok_curl else norm, rid))
+            n += 3
+            for client, c, msg, rid in got:
+                if c != code.replace("_", "") or msg != message or not rid:
+                    ev.append("%s %s %s: %s %r request-id=%r" % (m, label, client, c, msg, rid))
+    work.result("4.15 a streaming method refuses as every other method does, called the streaming way", bool(streaming) and not ev,
+                "%d streaming method(s) x 2 kinds (no key, no grant) x 3 clients: %d requests, Unauthenticated %r and PermissionDenied %r"
+                % (len(streaming), n, UNAUTH_MESSAGE, DENIED_MESSAGE), ev)
 
 
 def walk(work, cl, methods, unserved):

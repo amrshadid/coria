@@ -20,7 +20,7 @@ func testStatusSnapshot(e *eenv) {
 	e.addReceiver("a", "store", 11112)
 	empty, err := e.ev.StatusSnapshot(e.ctx)
 	e.ok("StatusSnapshot", err)
-	if empty.EventCursor == "" || len(empty.InProgress) != 0 || empty.IncomingBytes != 0 || empty.Catalog != (tenant.CatalogCounts{}) {
+	if empty.EventCursor == "" || len(empty.InProgress) != 0 || empty.IncomingBytes != 0 || empty.Catalog != (tenant.CatalogCounts{}) || len(empty.StorageBytes) != 0 {
 		e.Errorf("an empty tenant's snapshot = %+v", empty)
 	}
 	r1 := e.openReception("a", 1, at(1))
@@ -46,6 +46,15 @@ func testStatusSnapshot(e *eenv) {
 	// and of the failed one (none), and the quarantine's 40.
 	if want := int64(1001 + 1002 + 1003 + 40); s.IncomingBytes != want {
 		e.Errorf("the snapshot's incoming bytes = %d, want %d", s.IncomingBytes, want)
+	}
+	// The one instance committed, of 1002 bytes, on its storage; the same
+	// file committed again adds nothing, and another file adds its size.
+	if fmt.Sprint(s.StorageBytes) != "map[store:1002]" {
+		e.Errorf("the snapshot's bytes by storage = %v, want store at 1002", s.StorageBytes)
+	}
+	e.commit(r2, file(r2, 2, 2), file(r2, 2, 3))
+	if again, err := e.ev.StatusSnapshot(e.ctx); err != nil || fmt.Sprint(again.StorageBytes) != "map[store:2005]" {
+		e.Errorf("after one more instance the bytes by storage = %v (%v), want store at 2005", again.StorageBytes, err)
 	}
 	_ = done
 	_, err = e.p.DiscardReception(e.ctx, failed.ID, "gone", at(6), e.audit(), nil)

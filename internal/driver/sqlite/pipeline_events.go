@@ -385,8 +385,13 @@ func (t *Tenant) StatusSnapshot(ctx context.Context) (tenant.StatusSnapshot, err
 		for _, r := range steps {
 			counts[reception.State(r.state)] = r.n
 		}
+		storages, err := storageBytes(ctx, tx)
+		if err != nil {
+			return err
+		}
 		s = tenant.StatusSnapshot{EventCursor: t.eventCursor(high), Catalog: *c, QuarantinedFiles: files,
-			QuarantinedBytes: bytes, InProgress: tenant.InProgressSteps(counts), IncomingBytes: incoming + bytes}
+			QuarantinedBytes: bytes, InProgress: tenant.InProgressSteps(counts), IncomingBytes: incoming + bytes,
+			StorageBytes: storages}
 		return nil
 	})
 	if err != nil {
@@ -498,4 +503,27 @@ func (t *Tenant) PruneEvents(ctx context.Context, before time.Time, limit int) (
 		return removed, false, err
 	}
 	return removed, more, nil
+}
+
+// storageBytes reads the bytes the catalog holds on each storage, in tx's
+// snapshot: one row per storage that holds any (storage_totals).
+func storageBytes(ctx context.Context, tx *sql.Tx) (map[string]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT storage, bytes FROM storage_totals`)
+	type row struct {
+		storage string
+		bytes   int64
+	}
+	list, err := collect(rows, err, func(r interface{ Scan(...any) error }) (row, error) {
+		var v row
+		err := r.Scan(&v.storage, &v.bytes)
+		return v, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]int64, len(list))
+	for _, v := range list {
+		out[v.storage] = v.bytes
+	}
+	return out, nil
 }

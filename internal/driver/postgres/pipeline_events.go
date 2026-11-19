@@ -390,8 +390,26 @@ func (t *Tenant) StatusSnapshot(ctx context.Context) (tenant.StatusSnapshot, err
 		for _, r := range steps {
 			counts[reception.State(r.state)] = r.n
 		}
+		type storageRow struct {
+			storage string
+			bytes   int64
+		}
+		rows, err = tx.Query(ctx, `SELECT storage, bytes FROM storage_totals`)
+		list, err := collect(rows, err, func(row scanner) (storageRow, error) {
+			var v storageRow
+			err := row.Scan(&v.storage, &v.bytes)
+			return v, err
+		})
+		if err != nil {
+			return err
+		}
+		storages := make(map[string]int64, len(list))
+		for _, v := range list {
+			storages[v.storage] = v.bytes
+		}
 		s = tenant.StatusSnapshot{EventCursor: t.eventCursor(high), Catalog: *c, QuarantinedFiles: files,
-			QuarantinedBytes: bytes, InProgress: tenant.InProgressSteps(counts), IncomingBytes: incoming + bytes}
+			QuarantinedBytes: bytes, InProgress: tenant.InProgressSteps(counts), IncomingBytes: incoming + bytes,
+			StorageBytes: storages}
 		return nil
 	})
 	if err != nil {

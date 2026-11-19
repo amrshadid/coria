@@ -257,6 +257,11 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 			return res, err
 		}
 		p.wake()
+		var bytes int64
+		for _, wr := range part {
+			bytes += wr.f.Size
+		}
+		p.meter.archived(p.cfg.Clock.Now(), int64(len(part)), bytes)
 		p.at("archive.after-commit")
 		res.kept += len(part)
 	}

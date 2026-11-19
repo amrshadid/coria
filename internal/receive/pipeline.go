@@ -54,6 +54,8 @@ type Pipeline struct {
 	running          atomic.Bool
 
 	stats Stats
+	// meter measures the throughput a status reports.
+	meter meter
 
 	// limit is the header bound last read and when (headerLimit).
 	limit struct {

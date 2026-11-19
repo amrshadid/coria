@@ -114,6 +114,16 @@ func onScope(s *v1.Scope, role master.Role) access.Requirement {
 	return access.OnInstallation(role)
 }
 
+// onMonitorScope is the requirement of a Monitor method: reader on the
+// tenant the scope names, operator on the installation for every tenant (a
+// malformed scope is held to the installation's, as onScope does).
+func onMonitorScope(s *v1.Scope) access.Requirement {
+	if t, ok := s.GetKind().(*v1.Scope_Tenant); ok && master.ValidateTenantName(t.Tenant) == nil {
+		return access.OnTenant(t.Tenant, master.RoleReader)
+	}
+	return access.OnInstallation(master.RoleOperator)
+}
+
 // scopeDetail returns a scope as an audit entry's details write it,
 // "installation" or "tenant/<name>", and "none" for a malformed one.
 func scopeDetail(s *v1.Scope) string {
@@ -181,6 +191,15 @@ var rules = map[string]rule{
 	// AuditService: admin on the scope asked for.
 	magnetarv1connect.AuditServiceListAuditEntriesProcedure: byMessage(func(r *v1.ListAuditEntriesRequest) (access.Requirement, access.Request) {
 		return onScope(r.GetScope(), master.RoleAdmin), access.Request{Details: auditFilterDetails(r)}
+	}),
+
+	// MonitorService: reader on the tenant asked for, operator on the
+	// installation for every tenant.
+	magnetarv1connect.MonitorServiceGetStatusProcedure: byMessage(func(r *v1.GetStatusRequest) (access.Requirement, access.Request) {
+		return onMonitorScope(r.GetScope()), access.Request{Details: map[string]string{detailScope: scopeDetail(r.GetScope())}}
+	}),
+	magnetarv1connect.MonitorServiceWatchProcedure: byMessage(func(r *v1.WatchRequest) (access.Requirement, access.Request) {
+		return onMonitorScope(r.GetScope()), access.Request{Details: watchDetails(r)}
 	}),
 
 	// StorageService: admin on the tenant to change, reader to read. The

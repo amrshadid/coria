@@ -310,4 +310,7 @@ type StatusSnapshot struct {
 	// failed and was neither retried nor discarded, less what it
 	// quarantined; and the quarantine's held bytes.
 	IncomingBytes int64
+	// StorageBytes are the bytes of the instances the catalog holds on each
+	// storage, by name; a storage that holds none is left out.
+	StorageBytes map[string]int64
 }

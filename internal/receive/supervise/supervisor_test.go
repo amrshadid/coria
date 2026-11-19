@@ -325,3 +325,32 @@ func TestAnExpiredCertificateIsDownWithItsPhrase(t *testing.T) {
 		return r.isUp("ct")() && len(ls) == 1 && ls[0].expires == &renewed
 	})
 }
+
+// TestViewHoldsWhatAStatusNeedsInMemory guards View: the receivers as last
+// read, ordered by name, each with its health; the space of the storage the
+// enabled receivers write to, as last measured, nearly full or not; and no
+// tenant the supervisor does not run.
+func TestViewHoldsWhatAStatusNeedsInMemory(t *testing.T) {
+	r := newRig(t)
+	r.add("mr", 11113, true)
+	r.add("ct", 11112, true)
+	r.storage.Store(r.total / 2)
+	r.start()
+	r.waitFor("both up", func() bool { return r.isUp("ct")() && r.isUp("mr")() })
+	r.waitFor("the storage measured", func() bool { v, _ := r.sup.View("lab"); _, ok := v.Storages["main"]; return ok })
+	v, ok := r.sup.View("lab")
+	if !ok || len(v.Receivers) != 2 || v.Receivers[0].Receiver.Name != "ct" || v.Receivers[1].Receiver.Name != "mr" {
+		t.Fatalf("the view: %v %+v, want ct then mr", ok, v.Receivers)
+	}
+	if v.Receivers[0].Health.State != tenant.ReceiverUp {
+		t.Errorf("ct's health in the view: %+v", v.Receivers[0].Health)
+	}
+	if s := v.Storages["main"]; s.NearlyFull || s.FreeBytes != r.total/2 {
+		t.Errorf("the storage in the view: %+v, want %d free and not nearly full", s, r.total/2)
+	}
+	r.storage.Store(r.total / 50)
+	r.waitFor("the storage nearly full in the view", func() bool { v, _ := r.sup.View("lab"); return v.Storages["main"].NearlyFull })
+	if _, ok := r.sup.View("other"); ok {
+		t.Error("a tenant the supervisor does not run has a view")
+	}
+}

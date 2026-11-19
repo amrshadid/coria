@@ -497,8 +497,9 @@ type StorageStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The storage's name.
 	Storage string `protobuf:"bytes,1,opt,name=storage,proto3" json:"storage,omitempty"`
-	// Bytes the tenant holds on it: its archived files, manifests and
-	// metadata, as the catalog records them in the status's snapshot.
+	// Bytes of the archived files the catalog holds on it, in the status's
+	// snapshot: a running total kept with each commit. A scan's manifest and
+	// metadata, a few kilobytes each, are not counted.
 	UsedBytes int64 `protobuf:"varint,2,opt,name=used_bytes,json=usedBytes,proto3" json:"used_bytes,omitempty"`
 	// Bytes it can still take: the smaller of what its file system reports
 	// free and what is left under its capacity_bytes, read when the status is

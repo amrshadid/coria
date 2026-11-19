@@ -456,6 +456,12 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			newSubjects, newSessions, boolInt(newScan), newInstances); err != nil {
 			return err
 		}
+		if newBytes > 0 {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO storage_totals (storage, bytes) VALUES (?, ?)
+				ON CONFLICT (storage) DO UPDATE SET bytes = bytes + excluded.bytes`, c.Storage, newBytes); err != nil {
+				return err
+			}
+		}
 		var sum []byte
 		out = tenant.Scan{SubjectLabel: c.SubjectLabel, SessionLabel: c.SessionLabel, Label: c.ScanLabel,
 			StudyUID: c.StudyUID, SeriesUID: c.SeriesUID, Storage: c.Storage}

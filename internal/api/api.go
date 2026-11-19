@@ -69,6 +69,12 @@ type Config struct {
 	Incoming Incoming
 	// Headers reads a quarantined file's header. Nil reads none (noHeaders).
 	Headers Headers
+	// Live answers what the server holds in memory of a tenant, for a
+	// status. Nil holds nothing (noLive).
+	Live Live
+	// Feeds streams tenants' events for Watch. Nil answers every Watch
+	// unavailable.
+	Feeds Feeds
 }
 
 // Handlers is the services of the contract this package serves, each an
@@ -91,6 +97,8 @@ type Handlers struct {
 	Receptions magnetarv1connect.ReceptionServiceHandler
 	// Quarantine is QuarantineService.
 	Quarantine magnetarv1connect.QuarantineServiceHandler
+	// Monitor is MonitorService.
+	Monitor magnetarv1connect.MonitorServiceHandler
 }
 
 // New returns the services over cfg. It fails as Internal when a required
@@ -110,6 +118,10 @@ func New(cfg Config) (Handlers, error) {
 	c := &core{
 		access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known,
 		keys: cfg.Keys, now: cfg.Now, receivers: cfg.Receivers, incoming: cfg.Incoming, headers: cfg.Headers,
+		live: cfg.Live, feeds: cfg.Feeds,
+	}
+	if c.live == nil {
+		c.live = noLive{}
 	}
 	if c.now == nil {
 		c.now = time.Now
@@ -132,6 +144,7 @@ func New(cfg Config) (Handlers, error) {
 		Receivers:  receiverService{c},
 		Receptions: receptionService{c},
 		Quarantine: quarantineService{c},
+		Monitor:    monitorService{c},
 	}, nil
 }
 
@@ -145,6 +158,7 @@ func (h Handlers) Register(srv *connect.Server) {
 	magnetarv1connect.RegisterReceiverServiceHandler(srv, h.Receivers)
 	magnetarv1connect.RegisterReceptionServiceHandler(srv, h.Receptions)
 	magnetarv1connect.RegisterQuarantineServiceHandler(srv, h.Quarantine)
+	magnetarv1connect.RegisterMonitorServiceHandler(srv, h.Monitor)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only
@@ -192,6 +206,10 @@ type core struct {
 	incoming Incoming
 	// headers reads a quarantined file's header.
 	headers Headers
+	// live answers what is held in memory of a tenant.
+	live Live
+	// feeds streams tenants' events.
+	feeds Feeds
 	// places orders the changes that depend on where the installation lets
 	// data go (its roots, endpoints, ports and bind addresses) against the
 	// changes of those settings: a storage or a receiver is checked and

@@ -287,6 +287,14 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 				return err
 			}
 		}
+		// The storage's total, a row of its own (storage_totals), last
+		// with the catalog's, among the totals the package locks last.
+		if newBytes > 0 {
+			if _, err := tx.Exec(ctx, `INSERT INTO storage_totals (storage, bytes) VALUES ($1, $2)
+				ON CONFLICT (storage) DO UPDATE SET bytes = storage_totals.bytes + excluded.bytes`, c.Storage, newBytes); err != nil {
+				return err
+			}
+		}
 		var sum []byte
 		out = tenant.Scan{SubjectLabel: c.SubjectLabel, SessionLabel: c.SessionLabel, Label: c.ScanLabel,
 			StudyUID: c.StudyUID, SeriesUID: c.SeriesUID, Storage: c.Storage}

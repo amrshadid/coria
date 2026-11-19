@@ -15,4 +15,3 @@
 #
 # A line is removed in the change that serves its service; the tests fail
 # until it is.
-magnetar.v1.MonitorService

@@ -42,7 +42,7 @@ type Runner interface {
 
 // newReception returns the supervisor of every tenant's receivers and
 // reception pipeline, over the registry's tenants.
-func newReception(d Deps, reg *registry.Registry) (*supervise.Supervisor, error) {
+func newReception(d Deps, reg *registry.Registry, wake func(tenantName string)) (*supervise.Supervisor, error) {
 	incomingRoot := filepath.Join(d.DataDir, IncomingDirName)
 	if err := os.MkdirAll(incomingRoot, 0o700); err != nil {
 		return nil, fault.Wrap(fault.Unavailable, err, "the incoming area cannot be made in the data directory")
@@ -73,7 +73,7 @@ func newReception(d Deps, reg *registry.Registry) (*supervise.Supervisor, error)
 			p, err := receive.New(receive.Config{
 				Tenant: name, Store: st, IncomingRoot: incomingRoot, Logger: log,
 				OpenStorage: storages.Open, Hasher: hasher, HeaderLimit: values.HeaderLimit,
-				LowDisk: g.LowDisk, OverLimit: g.OverLimit,
+				LowDisk: g.LowDisk, OverLimit: g.OverLimit, Wake: func() { wake(name) },
 			})
 			if err != nil {
 				return nil, err
@@ -111,6 +111,7 @@ func newReception(d Deps, reg *registry.Registry) (*supervise.Supervisor, error)
 			defer func() { _ = s.Close() }()
 			return s.Usage(ctx)
 		},
+		Wake:   wake,
 		Logger: log,
 	})
 }
@@ -195,4 +196,27 @@ func (h receiverHealth) Health(tenantName string, r tenant.Receiver) api.Health 
 		}
 	}
 	return out
+}
+
+var _ api.Live = receiverHealth{}
+
+// TenantLive returns what the supervisor holds of the tenant, as the
+// handlers' status reads it.
+func (h receiverHealth) TenantLive(tenantName string) (api.TenantLive, bool) {
+	v, ok := h.s.View(tenantName)
+	if !ok {
+		return api.TenantLive{}, false
+	}
+	out := api.TenantLive{
+		Storages: make(map[string]api.StorageSpace, len(v.Storages)),
+		Throughput: api.Throughput{FilesReceived: v.Throughput.FilesReceivedPerSecond, BytesReceived: v.Throughput.BytesReceivedPerSecond,
+			FilesArchived: v.Throughput.FilesArchivedPerSecond, BytesArchived: v.Throughput.BytesArchivedPerSecond},
+	}
+	for _, r := range v.Receivers {
+		out.Receivers = append(out.Receivers, r.Receiver)
+	}
+	for name, s := range v.Storages {
+		out.Storages[name] = api.StorageSpace{FreeBytes: s.FreeBytes, NearlyFull: s.NearlyFull}
+	}
+	return out, true
 }

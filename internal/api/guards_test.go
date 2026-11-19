@@ -117,6 +117,10 @@ func tenantMethods(name string) map[string]func(clients) outcome {
 		"RejectQuarantinedFile": func(c clients) outcome {
 			return call(c.quarantine.RejectQuarantinedFile, &v1.RejectQuarantinedFileRequest{Tenant: name, Id: "q1", Reason: "x"})
 		},
+		"GetStatus": func(c clients) outcome {
+			return call(c.monitor.GetStatus, &v1.GetStatusRequest{Scope: tenantScope(name)})
+		},
+		"Watch": func(c clients) outcome { return watchOnce(c, &v1.WatchRequest{Scope: tenantScope(name)}) },
 	}
 }
 
