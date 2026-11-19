@@ -3,8 +3,10 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,4 +129,33 @@ func writeCA(t *testing.T, fake *fakeserver.Server) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+// newArchiveRig is a rig with tenant lab1, a directory storage "main" and an
+// enabled receiver "scanner1" that archives to it: what the commands of the
+// archive's four services act on.
+func newArchiveRig(t *testing.T) *rig {
+	t.Helper()
+	r := newRig(t)
+	r.must("tenant", "create", "lab1")
+	r.must("storage", "add", "lab1", "main", "--type", "dir", "--root", "fast")
+	r.must("receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11112", "--aet", "MAGNETAR", "--allow-aet", "PRISMA1", "--enabled")
+	return r
+}
+
+// typed runs the command line as a person at a terminal who types input: both
+// ends are a terminal, standard input holds the text, and what the command
+// asks is on standard error.
+func typed(env map[string]string, input string, args ...string) result {
+	var stdout, stderr bytes.Buffer
+	code := cli.Run(context.Background(), args, cli.Env{
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+		Stdin:    strings.NewReader(input),
+		Terminal: func(io.Reader, io.Writer) bool { return true },
+		Getenv:   func(k string) string { return env[k] },
+		Now:      func() time.Time { return fixedNow },
+		Location: zone,
+	})
+	return result{stdout: stdout.String(), stderr: stderr.String(), code: code}
 }

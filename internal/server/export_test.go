@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"connectrpc.com/connect/v2"
@@ -30,3 +31,8 @@ func CredentialOf(authorization string) access.Credential {
 // SetSocketUser replaces the user a local socket peer must be, so a test
 // run by one user can show that a peer who is not that user is refused.
 func (s *Server) SetSocketUser(u string) { s.socketUser = u }
+
+// SetHook sets a function the server calls at the points of a request named
+// by the point constants ("front", "checked", "receive", "handled"), so a test can stop a request at
+// each. It must be set before Start.
+func (s *Server) SetHook(h func(ctx context.Context, point string)) { s.hook = h }

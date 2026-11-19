@@ -47,6 +47,10 @@ magnetar key      create --holder TEXT [--expires 90d | --no-expiry] | list | sh
 magnetar grant    set <key-id> --role ROLE (--tenant NAME | --installation) | list (--key-id ID | --tenant NAME | --installation) | remove <key-id> (--tenant NAME | --installation)
 magnetar setting  get <name> [--tenant NAME] | set <name> <value> [--tenant NAME] | unset <name> --tenant NAME | list [--tenant NAME]
 magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]
+magnetar storage    add <tenant> <name> --type dir --root ROOT [--path P] | --type s3 --endpoint URL --region R --bucket B --access-key-id ID (--credential-env VAR | --credential-file PATH) [--capacity SIZE] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes | test <tenant> <name>
+magnetar receiver   add <tenant> <name> --storage S [--port N] --aet TITLE [--allow-aet T] [--allow-from CIDR] [--allow-aet-from T@CIDR] [--any-caller] [--enabled] [--tls-certificate-file F --tls-private-key-file F] [--quiet-period 5m] [--max-open-time 1h] [--max-file-size 4GiB] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes
+magnetar reception  list <tenant> [--receiver NAME] [--step STEP]... [--in-progress] [--since TIME] [--until TIME] | show <tenant> <id> | retry <tenant> <id> [--receiver NAME] | discard <tenant> <id> --reason TEXT [--yes]
+magnetar quarantine list <tenant> [--state held|released|rejected] [--reason REASON] [--receiver NAME] [--reception ID] [--since TIME] [--until TIME] | show <tenant> <id> [--header] | release <tenant> <id> [--receiver NAME] [--reason TEXT] | reject <tenant> <id> --reason TEXT [--yes]
 ```
 
 - **Where it connects.** By default the local socket `run/magnetar.sock` in the
@@ -57,7 +61,8 @@ magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|fai
   `::1`.
 - **A secret is never an argument.** No flag takes a key, a password or a
   database address; a tenant's Postgres address is read from the variable named
-  by `--db-env` or the file named by `--db-file`. The filters that take a key's
+  by `--db-env` or the file named by `--db-file`, and an S3 storage's secret
+  access key from `--credential-env` or `--credential-file`. The filters that take a key's
   public id are `--key-id`, and a whole key given where an id goes is refused.
   `--key-file` must name a file only you can open (`chmod 600`).
 - **TLS.** TLS 1.2 or later. `--ca-file PATH` (or `MAGNETAR_CA_FILE`) names a
@@ -68,7 +73,10 @@ magnetar audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|fai
   there is no color when `NO_COLOR` is set or the output is not a terminal.
 - **Errors** are one line on standard error with the server's message and its
   request id. Exit codes: 0 done, 1 failed, 2 wrong usage, 3 refused
-  (unauthenticated or denied), 4 not found.
+  (unauthenticated or denied), 4 not found, 5 a state that forbids the change
+  (a storage that holds files, a port not allotted), 6 a position that can no
+  longer be answered (an event cursor too old), 7 a bound of the server
+  reached (a message too large, too many streams).
 - **Lists** fetch up to `--limit` (100) items and say when more exist; `--all`
   fetches every item.
 
@@ -124,31 +132,31 @@ The API contract is protobuf, package `magnetar.v1`, in `api/proto`; `make
 proto` regenerates the Go code in `gen/`, which is committed and never edited
 by hand. `make proto-python` compiles the same files with Python's
 grpcio-tools as a second toolchain (it needs a `PYTHON` with
-`scripts/requirements-proto.txt` installed, so it is not in `make check`).
+`scripts/requirements/proto.txt` installed, so it is not in `make check`).
 
 These checks need more than Go, so `make check` leaves them out and CI runs
 them as steps of their own on Linux:
 
 | Command | What it checks |
 |---|---|
-| `make check-seal PYTHON=python3` | the format of a sealed secret against another implementation: `scripts/check-seal.py`, with Python's `cryptography` package, opens a value Go sealed, and Go opens a value Python sealed. `PYTHON` names an interpreter that has the package; `pip install --require-hashes -r scripts/requirements-check-seal.txt` installs it at the versions CI uses. An empty `PYTHON` or a missing interpreter fails |
+| `make check-seal PYTHON=python3` | the format of a sealed secret against another implementation: `scripts/check/seal.py`, with Python's `cryptography` package, opens a value Go sealed, and Go opens a value Python sealed. `PYTHON` names an interpreter that has the package; `pip install --require-hashes -r scripts/requirements/check-seal.txt` installs it at the versions CI uses. An empty `PYTHON` or a missing interpreter fails |
 | `make fuzz` | each fuzz target for `FUZZTIME` (10 seconds unless given) |
 | `make test-386` | the tests as linux/386 binaries, which a Linux x86-64 machine runs natively (macOS cannot) |
-| `make check-server PYTHON=... GRPCURL=grpcurl` | the server against three clients that are not Magnetar: `scripts/check-server.sh` runs a real server with stand-in handlers, then curl, grpcurl and Python's grpcio (`scripts/requirements-check-server.txt`) each get the same refusal for no key, a malformed key, an unknown key and a key with no grant, and success for an admin key over TLS and for the local operator on the socket; `/metrics` is parsed by the Prometheus Python client; SIGTERM must exit 0 |
-| `make check-master-sqlite SQLITE3=sqlite3` | the SQLite master database against SQLite's own `sqlite3` tool: `scripts/check-master-sqlite.sh` has the driver write a sample installation, then lists its tables and rows, runs `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, reads times and audit details with SQLite's functions, and searches a dump for the sample key's secret (absent) and its hash (present). The master's tables are `STRICT`, so the `sqlite3` tool must be 3.37 or later to open the database at all |
-| `make check-json` | every command with `--json` against the in-process server, each output parsed by Python's `json` module (`scripts/check-json.py`, standard library only) and checked for `schemaVersion` |
+| `make check-server PYTHON=... GRPCURL=grpcurl` | the server against three clients that are not Magnetar: `scripts/check/server.sh` runs a real server with stand-in handlers, then curl, grpcurl and Python's grpcio (`scripts/requirements/check-server.txt`) each get the same refusal for no key, a malformed key, an unknown key and a key with no grant, and success for an admin key over TLS and for the local operator on the socket; `/metrics` is parsed by the Prometheus Python client; SIGTERM must exit 0 |
+| `make check-master-sqlite SQLITE3=sqlite3` | the SQLite master database against SQLite's own `sqlite3` tool: `scripts/check/master-sqlite.sh` has the driver write a sample installation, then lists its tables and rows, runs `PRAGMA integrity_check` and `PRAGMA foreign_key_check`, reads times and audit details with SQLite's functions, and searches a dump for the sample key's secret (absent) and its hash (present). The master's tables are `STRICT`, so the `sqlite3` tool must be 3.37 or later to open the database at all |
+| `make check-json` | every command with `--json` against the in-process server, each output parsed by Python's `json` module (`scripts/check/cli-json.py`, standard library only) and checked for `schemaVersion` |
 | `make check-completion` | the bash completion script the binary writes, parsed by `bash -n` |
-| `make check-tenant-sqlite SQLITE3=sqlite3` | a tenant's SQLite database against the `sqlite3` tool: `scripts/check-tenant-sqlite.sh` has the tenant registry create a tenant on SQLite in a fresh data directory and write a sample into it, then checks that its file is `<data-dir>/tenants/<name>.db` and private, lists its tables and rows, runs `PRAGMA integrity_check`, and reads the tenant's row and its state change from the master |
-| `make check-tui` | the interactive program, as built, run under a pseudo-terminal by Python's `pty` module against the in-process fake server (`scripts/check-tui.py`, standard library only): keys pressed, the screen read, quit, SIGTERM and SIGINT mid-session, and the terminal checked to be restored. Linux and macOS only |
-| `make check-master-postgres` | the Postgres master database against `psql` and `pg_dump`: `scripts/check-master-postgres.sh` has the driver write a sample installation into a schema of the database `MAGNETAR_TEST_POSTGRES` names (a `postgres://` URL), then lists its tables and rows, checks every constraint and foreign key, reads times and audit details with Postgres's functions, and searches a `pg_dump` for the sample key's secret (absent) and its hash (present). `PSQL=` and `PG_DUMP=` name the commands, which may run in a container. The Postgres tests of `go test` use the same variable and skip without it; `MAGNETAR_REQUIRE_POSTGRES=1` makes a missing address a failure, as CI sets it |
-| `make check-tenant-postgres` | a tenant on Postgres against `psql` and `pg_dump`: `scripts/check-tenant-postgres.sh` has the registry create a tenant on Postgres, in a schema of the database `MAGNETAR_TEST_POSTGRES` names, with a Postgres master in another, writes the tenant suite's sample, then lists the tables and rows, checks every constraint and index, reads times and audit details, reads the tenant's row and state change from the master, checks the schema records the tenant's id, and searches both dumps for the login's password (absent) |
-| `make prove PYTHON=... GRPCURL=grpcurl` | the proof of this version, from outside: `scripts/prove.sh` builds every target as `make build` does, then runs the real binary: `init` and `serve` on the local socket and TLS; the first key made on the socket; every method of the contract refused without a key; tenants on SQLite and on Postgres (in a container it starts, or the one `MAGNETAR_PROVE_PG_CONTAINER` names); no key, a malformed, unknown, wrong, expired and revoked key, and a key with no grant tried with grpcurl, Python's grpcio and curl, the answers compared byte for byte; secrets searched for in the databases' dumps, every file, the logs and the audit log; the server with another key file; Postgres stopped and started under a running server; the server killed with signal 9 during tenant creation at least 20 times; every request reconciled with the audit log; a second server and another operating system user refused; `--json` and the interactive program; the size of each binary. One line per check and a table at the end; a check it cannot run here (a second user without sudo) is skipped and says so, and `MAGNETAR_PROVE_STRICT=1` (CI) fails on any skip. It needs docker and leaves nothing behind |
+| `make check-tenant-sqlite SQLITE3=sqlite3` | a tenant's SQLite database against the `sqlite3` tool: `scripts/check/tenant-sqlite.sh` has the tenant registry create a tenant on SQLite in a fresh data directory and write a sample into it, then checks that its file is `<data-dir>/tenants/<name>.db` and private, lists its tables and rows, runs `PRAGMA integrity_check`, and reads the tenant's row and its state change from the master |
+| `make check-tui` | the interactive program, as built, run under a pseudo-terminal by Python's `pty` module against the in-process fake server (`scripts/check/tui.py`, standard library only): keys pressed, the screen read, quit, SIGTERM and SIGINT mid-session, and the terminal checked to be restored. Linux and macOS only |
+| `make check-master-postgres` | the Postgres master database against `psql` and `pg_dump`: `scripts/check/master-postgres.sh` has the driver write a sample installation into a schema of the database `MAGNETAR_TEST_POSTGRES` names (a `postgres://` URL), then lists its tables and rows, checks every constraint and foreign key, reads times and audit details with Postgres's functions, and searches a `pg_dump` for the sample key's secret (absent) and its hash (present). `PSQL=` and `PG_DUMP=` name the commands, which may run in a container. The Postgres tests of `go test` use the same variable and skip without it; `MAGNETAR_REQUIRE_POSTGRES=1` makes a missing address a failure, as CI sets it |
+| `make check-tenant-postgres` | a tenant on Postgres against `psql` and `pg_dump`: `scripts/check/tenant-postgres.sh` has the registry create a tenant on Postgres, in a schema of the database `MAGNETAR_TEST_POSTGRES` names, with a Postgres master in another, writes the tenant suite's sample, then lists the tables and rows, checks every constraint and index, reads times and audit details, reads the tenant's row and state change from the master, checks the schema records the tenant's id, and searches both dumps for the login's password (absent) |
+| `make prove PYTHON=... GRPCURL=grpcurl` | the proof of this version, from outside: `scripts/prove/run.sh` builds every target as `make build` does, then runs the real binary: `init` and `serve` on the local socket and TLS; the first key made on the socket; every method of the contract refused without a key; tenants on SQLite and on Postgres (in a container it starts, or the one `MAGNETAR_PROVE_PG_CONTAINER` names); no key, a malformed, unknown, wrong, expired and revoked key, and a key with no grant tried with grpcurl, Python's grpcio and curl, the answers compared byte for byte; secrets searched for in the databases' dumps, every file, the logs and the audit log; the server with another key file; Postgres stopped and started under a running server; the server killed with signal 9 during tenant creation at least 20 times; every request reconciled with the audit log; a second server and another operating system user refused; `--json` and the interactive program; the size of each binary. One line per check and a table at the end; a check it cannot run here (a second user without sudo) is skipped and says so, and `MAGNETAR_PROVE_STRICT=1` (CI) fails on any skip. It needs docker and leaves nothing behind |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
 into `bin/tools/` the first time, and the proto targets do the same for buf,
 protoc-gen-go and protoc-gen-connect-go; nothing is installed outside the
 checkout. buf is the release binary for Linux or macOS (x86-64 or ARM),
-installed only if its SHA-256 matches the one in `scripts/buf.sha256`.
+installed only if its SHA-256 matches the one in `scripts/tools/buf.sha256`.
 `make` needs a Unix shell; on Windows run `go vet ./...` and `go test ./...`
 directly.
 

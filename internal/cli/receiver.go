@@ -1,0 +1,578 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
+
+	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	"github.com/amrshadid/magnetar/internal/cli/output"
+	"github.com/amrshadid/magnetar/internal/fault"
+)
+
+// newReceiver builds the receiver noun.
+func (a *app) newReceiver() *cobra.Command {
+	return group("receiver", "Add, list, show, change and remove a tenant's receivers",
+		`A receiver is a way for data to arrive at a tenant: a DICOM listener on one
+port of the server that admits only the callers it lists, writes what it
+receives to the server's incoming area, and groups it into receptions that are
+archived to its storage. The ports and addresses a receiver may use are the
+installation's to allot (the settings receiver.ports and receiver.bind-addresses).
+Every command takes the tenant first. Adding, changing and removing need the
+admin role on the tenant; list and show need the reader role.`,
+		a.newReceiverAdd(), a.newReceiverList(), a.newReceiverShow(), a.newReceiverSet(), a.newReceiverRemove())
+}
+
+// receiverFlags are the flags that describe a receiver, for add and for set.
+type receiverFlags struct {
+	storage          string
+	port             int
+	bind             string
+	aet              string
+	allowAET         []string
+	allowFrom        []string
+	allowAETFrom     []string
+	anyCaller        bool
+	noCallers        bool
+	tlsCertificate   string
+	tlsPrivateKey    string
+	noTLS            bool
+	sopClasses       []string
+	transferSyntaxes []string
+	enabled          bool
+	namingSubject    string
+	namingSession    string
+	namingScan       string
+	namingAttribute  string
+	namingExpression string
+	defaultNaming    bool
+	quietPeriod      string
+	maxOpenTime      string
+	maxFileSize      string
+}
+
+// add registers the flags on a command. The flags that only make sense when
+// changing a receiver (turning TLS off, admitting nobody, returning to the
+// default naming) are registered for set only.
+func (f *receiverFlags) add(cmd *cobra.Command, forSet bool) {
+	fl := cmd.Flags()
+	fl.StringVar(&f.storage, "storage", "", "the name of the tenant's storage that what arrives is archived to")
+	fl.IntVar(&f.port, "port", 0, "the TCP port to listen on, one of the ports the installation allotted to the tenant; on add, left out, the server gives the lowest of them that is free")
+	fl.StringVar(&f.bind, "bind-address", "", "the address of the server to listen on, one of those the setting receiver.bind-addresses lists (default: the installation's default)")
+	fl.StringVar(&f.aet, "aet", "", "the receiver's own AE title, the Called AE Title a caller must give: 1 to 16 printable characters")
+	fl.BoolVar(&f.enabled, "enabled", false, "whether the receiver accepts data; false, the default, keeps it stopped (--enabled=false stops one)")
+	fl.StringArrayVar(&f.allowAET, "allow-aet", nil, "admit the caller that gives this Calling AE Title, from any address; repeat for more callers")
+	fl.StringArrayVar(&f.allowFrom, "allow-from", nil, "admit callers connecting from this address range in CIDR form, such as 10.20.0.0/24, with any AE title; repeat for more")
+	fl.StringArrayVar(&f.allowAETFrom, "allow-aet-from", nil, "admit the caller that gives this Calling AE Title and connects from this range, written TITLE@CIDR, such as PRISMA1@10.20.0.0/24; repeat for more")
+	fl.BoolVar(&f.anyCaller, "any-caller", false, "admit every caller that reaches the port; a receiver is open to everyone only when this says so")
+	fl.StringVar(&f.tlsCertificate, "tls-certificate-file", "", "the name of the certificate chain file, PEM, in the tenant's TLS directory on the server")
+	fl.StringVar(&f.tlsPrivateKey, "tls-private-key-file", "", "the name of the private key file, PEM, in the tenant's TLS directory on the server; it is a file name, not the key")
+	fl.StringArrayVar(&f.sopClasses, "sop-class", nil, "accept this SOP Class UID; repeat for more (default: every storage class the server knows)")
+	fl.StringArrayVar(&f.transferSyntaxes, "transfer-syntax", nil, "accept this Transfer Syntax UID; repeat for more (default: every transfer syntax the server knows)")
+	fl.StringVar(&f.namingSubject, "naming-subject", "", "the template of a new subject's label, such as sub-{#PatientID}")
+	fl.StringVar(&f.namingSession, "naming-session", "", "the template of a new session's label, such as ses-{#StudyInstanceUID}")
+	fl.StringVar(&f.namingScan, "naming-scan", "", "the template of a new scan's label, such as scan-{#SeriesInstanceUID}")
+	fl.StringVar(&f.namingAttribute, "naming-attribute", "", "the attribute whose value the naming pattern reads, such as PatientComments or (0010,4000)")
+	fl.StringVar(&f.namingExpression, "naming-expression", "", "the RE2 pattern with named parts that the templates may use, such as (?P<project>[^^]+)\\^(?P<subject>[^^]+)")
+	fl.StringVar(&f.quietPeriod, "quiet-period", "", "how long without a file for a study before its reception is complete: a number and s, m or h, from 5s to 1h (default 60s)")
+	fl.StringVar(&f.maxOpenTime, "max-open-time", "", "the longest a reception stays receiving: a number and s, m or h, from 1m to 24h, not less than the quiet period (default 1h)")
+	fl.StringVar(&f.maxFileSize, "max-file-size", "", "the largest file it accepts, a size such as 4GiB, from 1KiB to 256GiB (default 4GiB)")
+	if forSet {
+		fl.BoolVar(&f.noCallers, "no-callers", false, "admit nobody: the receiver stays closed until callers are listed again")
+		fl.BoolVar(&f.noTLS, "no-tls", false, "turn TLS off")
+		fl.BoolVar(&f.defaultNaming, "default-naming", false, "return to the default naming rule, which carries no value the sender gave")
+		cmd.MarkFlagsMutuallyExclusive("tls-certificate-file", "no-tls")
+		cmd.MarkFlagsMutuallyExclusive("tls-private-key-file", "no-tls")
+		for _, n := range []string{"naming-subject", "naming-session", "naming-scan", "naming-attribute", "naming-expression"} {
+			cmd.MarkFlagsMutuallyExclusive("default-naming", n)
+		}
+	}
+	cmd.MarkFlagsRequiredTogether("naming-attribute", "naming-expression")
+}
+
+// callers builds the receiver's callers from the flags and the mask path they
+// change. It returns nil and no path when no flag spoke of callers, so a new
+// receiver is closed.
+func (f *receiverFlags) callers(cmd *cobra.Command) (callers any, path string, err error) {
+	fl := cmd.Flags()
+	listed := fl.Changed("allow-aet") || fl.Changed("allow-from") || fl.Changed("allow-aet-from")
+	switch {
+	case f.anyCaller && (listed || f.noCallers):
+		return nil, "", fault.New(fault.Invalid, "--any-caller admits everyone; it cannot be combined with a list of callers or --no-callers")
+	case f.noCallers && listed:
+		return nil, "", fault.New(fault.Invalid, "--no-callers admits nobody; it cannot be combined with a list of callers")
+	case fl.Changed("any-caller"):
+		if !f.anyCaller {
+			return nil, "", fault.New(fault.Invalid, "--any-caller=false is not a choice: list callers with --allow-aet, --allow-from or --allow-aet-from, or give --no-callers")
+		}
+		return &v1.DimseReceiver_AnyCaller{AnyCaller: true}, "dimse.any_caller", nil
+	case listed || f.noCallers:
+		rules := []*v1.CallerRule{}
+		for _, t := range f.allowAET {
+			rules = append(rules, &v1.CallerRule{CallingAeTitle: t})
+		}
+		for _, r := range f.allowFrom {
+			rules = append(rules, &v1.CallerRule{AddressRange: r})
+		}
+		for _, both := range f.allowAETFrom {
+			// An AE title may hold "@", a range never does, so the last "@"
+			// divides them; each side must be there.
+			at := strings.LastIndex(both, "@")
+			if at < 0 {
+				return nil, "", fault.New(fault.Invalid, fmt.Sprintf("--allow-aet-from %q is not TITLE@CIDR, such as PRISMA1@10.20.0.0/24", output.Clean(both)))
+			}
+			if at == 0 || at == len(both)-1 {
+				missing := "range"
+				if at == 0 {
+					missing = "title"
+				}
+				return nil, "", fault.New(fault.Invalid, fmt.Sprintf("--allow-aet-from %q lacks its %s: give both, as TITLE@CIDR, such as PRISMA1@10.20.0.0/24", output.Clean(both), missing))
+			}
+			rules = append(rules, &v1.CallerRule{CallingAeTitle: both[:at], AddressRange: both[at+1:]})
+		}
+		return &v1.DimseReceiver_AllowedCallers{AllowedCallers: &v1.AllowedCallers{Rules: rules}}, "dimse.allowed_callers", nil
+	}
+	return nil, "", nil
+}
+
+// nonEmpty drops the empty values of a repeated flag, so --sop-class "" is the
+// way to ask for the default set when changing a receiver.
+func nonEmpty(values []string) []string {
+	out := []string{}
+	for _, v := range values {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// parseDuration reads a length of time a flag takes, a number and s, m or h.
+func parseDuration(flag, s string) (*durationpb.Duration, error) {
+	d, err := parseSpan(s)
+	if err != nil {
+		return nil, fault.New(fault.Invalid, fmt.Sprintf("--%s %q is not a length of time; use a number and s, m or h, such as 5m", flag, output.Clean(s)))
+	}
+	return durationpb.New(d), nil
+}
+
+// receiver builds the receiver the flags describe, with the mask paths of
+// each field that was given, in the order the flags are read. For add the mask
+// is not used; for set it names exactly what the person changed.
+func (f *receiverFlags) receiver(cmd *cobra.Command, name string) (*v1.Receiver, []string, error) {
+	fl := cmd.Flags()
+	r := &v1.Receiver{Name: name}
+	dimse := &v1.DimseReceiver{}
+	r.Type = &v1.Receiver_Dimse{Dimse: dimse}
+	var paths []string
+	touch := func(flag, path string) bool {
+		if fl.Changed(flag) {
+			paths = append(paths, path)
+			return true
+		}
+		return false
+	}
+	if touch("enabled", "enabled") {
+		r.Enabled = f.enabled
+	}
+	if touch("storage", "storage") {
+		r.Storage = f.storage
+	}
+	if touch("port", "dimse.port") {
+		dimse.Port = int32(f.port) // #nosec G115 -- a port above 2^31 is refused by the server either way
+	}
+	if touch("bind-address", "dimse.bind_address") {
+		dimse.BindAddress = f.bind
+	}
+	if touch("aet", "dimse.ae_title") {
+		dimse.AeTitle = f.aet
+	}
+	callers, path, err := f.callers(cmd)
+	if err != nil {
+		return nil, nil, err
+	}
+	switch c := callers.(type) {
+	case *v1.DimseReceiver_AnyCaller:
+		dimse.Callers = c
+	case *v1.DimseReceiver_AllowedCallers:
+		dimse.Callers = c
+	}
+	if path != "" {
+		paths = append(paths, path)
+	}
+	switch {
+	case fl.Changed("tls-certificate-file") != fl.Changed("tls-private-key-file"):
+		return nil, nil, fault.New(fault.Invalid, "--tls-certificate-file and --tls-private-key-file go together: give both")
+	case fl.Changed("tls-certificate-file"):
+		dimse.Tls = &v1.ReceiverTls{CertificateFile: f.tlsCertificate, PrivateKeyFile: f.tlsPrivateKey}
+		paths = append(paths, "dimse.tls")
+	case f.noTLS:
+		paths = append(paths, "dimse.tls")
+	}
+	if touch("sop-class", "dimse.sop_classes") {
+		dimse.SopClasses = nonEmpty(f.sopClasses)
+	}
+	if touch("transfer-syntax", "dimse.transfer_syntaxes") {
+		dimse.TransferSyntaxes = nonEmpty(f.transferSyntaxes)
+	}
+	named := fl.Changed("naming-subject") || fl.Changed("naming-session") || fl.Changed("naming-scan") || fl.Changed("naming-attribute")
+	switch {
+	case named:
+		if f.namingSubject == "" || f.namingSession == "" || f.namingScan == "" {
+			return nil, nil, fault.New(fault.Invalid, "a naming rule has three templates: give --naming-subject, --naming-session and --naming-scan together")
+		}
+		r.Naming = &v1.NamingRule{Subject: f.namingSubject, Session: f.namingSession, Scan: f.namingScan}
+		if f.namingAttribute != "" {
+			r.Naming.Pattern = &v1.NamingPattern{Attribute: f.namingAttribute, Expression: f.namingExpression}
+		}
+		paths = append(paths, "naming")
+	case f.defaultNaming:
+		paths = append(paths, "naming")
+	}
+	if touch("quiet-period", "quiet_period") {
+		if r.QuietPeriod, err = parseDuration("quiet-period", f.quietPeriod); err != nil {
+			return nil, nil, err
+		}
+	}
+	if touch("max-open-time", "max_open_time") {
+		if r.MaxOpenTime, err = parseDuration("max-open-time", f.maxOpenTime); err != nil {
+			return nil, nil, err
+		}
+	}
+	if touch("max-file-size", "max_file_bytes") {
+		if r.MaxFileBytes, err = parseSize("max-file-size", f.maxFileSize); err != nil {
+			return nil, nil, err
+		}
+	}
+	return r, paths, nil
+}
+
+// newReceiverAdd builds "receiver add".
+func (a *app) newReceiverAdd() *cobra.Command {
+	var f receiverFlags
+	cmd := &cobra.Command{
+		Use:   "add <tenant> <name> --storage NAME [--port N] --aet TITLE [--allow-aet T | --allow-from CIDR | --any-caller] [--enabled]",
+		Short: "Add a receiver to a tenant",
+		Long: `Add a DICOM receiver to a tenant. It listens on its port only when it is
+enabled (--enabled), and admits only the callers it lists: a receiver added
+with no caller admits nobody, and one is open to everyone only with
+--any-caller. A caller is admitted when it matches at least one rule: its
+Calling AE Title (--allow-aet), the range its connection comes from
+(--allow-from), or both together (--allow-aet-from TITLE@CIDR). An AE title is
+what a caller says it is, so alone it identifies a caller only on a network the
+site trusts.
+
+What arrives is archived to the tenant's storage named by --storage, under
+labels the naming rule makes. Without --naming-* the default rule is used, which
+carries no value the sender gave. A reception is complete after --quiet-period
+without a file for its study, or --max-open-time from its first file.
+
+The answer says whether the receiver could start: its health is up, or down
+with the reason, such as a port the server could not take.`,
+		Example: `  magnetar storage add lab1 main --type dir --root fast
+  magnetar receiver add lab1 scanner1 --storage main --port 11112 --aet MAGNETAR \
+      --allow-aet PRISMA1 --allow-from 10.20.0.0/24 --enabled
+  magnetar receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller`,
+		Args: exactArgs(2),
+		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			if f.storage == "" || f.aet == "" {
+				return fault.New(fault.Invalid, "a receiver needs --storage and --aet")
+			}
+			r, _, err := f.receiver(cmd, args[1])
+			if err != nil {
+				return err
+			}
+			c, closeClient, err := a.open(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeClient()
+			res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.AddReceiverResponse, error) {
+				return c.Receivers.AddReceiver(ctx, &v1.AddReceiverRequest{Tenant: args[0], Receiver: r})
+			})
+			if err != nil {
+				return err
+			}
+			return messageOut(a, res, func(w io.Writer) error { return a.receiverDetails(w, res.GetReceiver()) })
+		}),
+	}
+	f.add(cmd, false)
+	return cmd
+}
+
+// spanText words a length of time in the units a flag takes: 1h, 5m, 90s.
+func spanText(d *durationpb.Duration) string {
+	if d == nil {
+		return "-"
+	}
+	t := d.AsDuration()
+	switch {
+	case t >= time.Hour && t%time.Hour == 0:
+		return strconv.FormatInt(int64(t/time.Hour), 10) + "h"
+	case t >= time.Minute && t%time.Minute == 0:
+		return strconv.FormatInt(int64(t/time.Minute), 10) + "m"
+	}
+	return strconv.FormatInt(int64(t/time.Second), 10) + "s"
+}
+
+// callerText words the callers a DIMSE receiver admits.
+func callerText(d *v1.DimseReceiver) string {
+	switch c := d.GetCallers().(type) {
+	case *v1.DimseReceiver_AnyCaller:
+		return "any caller"
+	case *v1.DimseReceiver_AllowedCallers:
+		var rules []string
+		for _, r := range c.AllowedCallers.GetRules() {
+			title, from := r.GetCallingAeTitle(), r.GetAddressRange()
+			switch {
+			case title != "" && from != "":
+				rules = append(rules, title+" from "+from)
+			case title != "":
+				rules = append(rules, title)
+			default:
+				rules = append(rules, "from "+from)
+			}
+		}
+		if len(rules) == 0 {
+			return "nobody"
+		}
+		return strings.Join(rules, "; ")
+	}
+	return "nobody"
+}
+
+// countText words a list of UIDs a receiver accepts: the default set when it
+// is empty.
+func countText(uids []string) string {
+	if len(uids) == 0 {
+		return "the server's default set"
+	}
+	return strings.Join(uids, ", ")
+}
+
+// namingText words a receiver's naming rule.
+func namingText(n *v1.NamingRule) string {
+	if n == nil {
+		return "default"
+	}
+	text := fmt.Sprintf("subject %s, session %s, scan %s", n.GetSubject(), n.GetSession(), n.GetScan())
+	if p := n.GetPattern(); p != nil {
+		text += fmt.Sprintf("; pattern %s on %s", p.GetExpression(), p.GetAttribute())
+	}
+	return text
+}
+
+// receiverDetails writes one receiver as labeled lines.
+func (a *app) receiverDetails(w io.Writer, r *v1.Receiver) error {
+	enabled := "no"
+	if r.GetEnabled() {
+		enabled = "yes"
+	}
+	pairs := []output.Pair{
+		{Label: "Name", Value: r.GetName()},
+		{Label: "Type", Value: "dimse"},
+		{Label: "Enabled", Value: enabled},
+		{Label: "Health", Value: output.ReceiverHealth(r.GetHealth())},
+	}
+	if r.GetHealth().GetSince() != nil {
+		pairs = append(pairs, output.Pair{Label: "Health since", Value: a.when(r.GetHealth().GetSince())})
+	}
+	pairs = append(pairs, output.Pair{Label: "Storage", Value: r.GetStorage()})
+	if d := r.GetDimse(); d != nil {
+		tls := "none (plain TCP)"
+		if t := d.GetTls(); t != nil {
+			tls = "certificate " + t.GetCertificateFile() + ", private key " + t.GetPrivateKeyFile()
+		}
+		pairs = append(pairs,
+			output.Pair{Label: "Port", Value: strconv.Itoa(int(d.GetPort()))},
+			output.Pair{Label: "Bind address", Value: output.Dash(d.GetBindAddress())},
+			output.Pair{Label: "AE title", Value: d.GetAeTitle()},
+			output.Pair{Label: "Admits", Value: callerText(d)},
+			output.Pair{Label: "TLS", Value: tls},
+			output.Pair{Label: "SOP classes", Value: countText(d.GetSopClasses())},
+			output.Pair{Label: "Transfer syntaxes", Value: countText(d.GetTransferSyntaxes())})
+	}
+	pairs = append(pairs,
+		output.Pair{Label: "Naming", Value: namingText(r.GetNaming())},
+		output.Pair{Label: "Quiet period", Value: spanText(r.GetQuietPeriod())},
+		output.Pair{Label: "Max open time", Value: spanText(r.GetMaxOpenTime())},
+		output.Pair{Label: "Max file size", Value: output.Bytes(r.GetMaxFileBytes())},
+		output.Pair{Label: "Created", Value: a.when(r.GetCreateTime())},
+		output.Pair{Label: "Updated", Value: a.when(r.GetUpdateTime())})
+	return output.Details(w, a.style(), pairs)
+}
+
+// newReceiverList builds "receiver list".
+func (a *app) newReceiverList() *cobra.Command {
+	var l listFlags
+	cmd := &cobra.Command{
+		Use:   "list <tenant>",
+		Short: "List a tenant's receivers with their health",
+		Long: `List a tenant's receivers ordered by name, each with whether it accepts data
+now: up, or down with the reason (disabled, a port in use, a certificate that
+cannot be read, too little free space, and so on). A removed receiver is not
+listed.`,
+		Example: `  magnetar receiver list lab1
+  magnetar receiver list lab1 --json`,
+		Args: exactArgs(1),
+		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			if err := l.check(); err != nil {
+				return err
+			}
+			c, closeClient, err := a.open(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeClient()
+			receivers, more, err := fetchPages(ctx, l, func(ctx context.Context, size int32, token string) ([]*v1.Receiver, string, error) {
+				res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.ListReceiversResponse, error) {
+					return c.Receivers.ListReceivers(ctx, &v1.ListReceiversRequest{Tenant: args[0], PageSize: size, PageToken: token})
+				})
+				if err != nil {
+					return nil, "", err
+				}
+				return res.GetReceivers(), res.GetNextPageToken(), nil
+			})
+			if err != nil {
+				return err
+			}
+			return listOut(a, "receivers", receivers, more, func() error {
+				rows := make([][]string, 0, len(receivers))
+				for _, r := range receivers {
+					port, aet := "-", "-"
+					if d := r.GetDimse(); d != nil {
+						port, aet = strconv.Itoa(int(d.GetPort())), d.GetAeTitle()
+					}
+					rows = append(rows, []string{r.GetName(), port, aet, r.GetStorage(), output.ReceiverHealth(r.GetHealth())})
+				}
+				return a.write(func(w io.Writer) error {
+					return output.Table(w, a.style(), []string{"NAME", "PORT", "AET", "STORAGE", "HEALTH"}, rows)
+				})
+			})
+		}),
+	}
+	l.add(cmd)
+	return cmd
+}
+
+// newReceiverShow builds "receiver show".
+func (a *app) newReceiverShow() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <tenant> <name>",
+		Short: "Show one receiver with its health now",
+		Long: `Show one receiver of a tenant: its port, AE title, the callers it admits, its
+TLS files, its naming rule and limits, and whether it accepts data now.`,
+		Example: `  magnetar receiver show lab1 scanner1`,
+		Args:    exactArgs(2),
+		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			c, closeClient, err := a.open(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeClient()
+			res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.GetReceiverResponse, error) {
+				return c.Receivers.GetReceiver(ctx, &v1.GetReceiverRequest{Tenant: args[0], Name: args[1]})
+			})
+			if err != nil {
+				return err
+			}
+			return messageOut(a, res, func(w io.Writer) error { return a.receiverDetails(w, res.GetReceiver()) })
+		}),
+	}
+}
+
+// newReceiverSet builds "receiver set".
+func (a *app) newReceiverSet() *cobra.Command {
+	var f receiverFlags
+	cmd := &cobra.Command{
+		Use:   "set <tenant> <name> [flags of the fields to change]",
+		Short: "Change some fields of a receiver",
+		Long: `Change the fields of a receiver that the flags name, and no other. A change of
+the port, address, AE title, TLS, callers, SOP classes or transfer syntaxes
+restarts the listener after the stores in flight finish; a change of the storage,
+naming rule, quiet period, longest open time or size bound applies to what
+arrives from then on.
+
+Callers are replaced whole: --allow-aet, --allow-from and --allow-aet-from set
+the list, --any-caller opens the receiver to everyone, and --no-callers closes
+it. --sop-class "" and --transfer-syntax "" return to the server's default
+set. The three naming templates are given together, and --default-naming
+returns to the default rule. --enabled=false stops a receiver without removing
+it.`,
+		Example: `  magnetar receiver set lab1 scanner1 --quiet-period 5m
+  magnetar receiver set lab1 scanner1 --allow-aet PRISMA1 --allow-aet SKYRA2
+  magnetar receiver set lab1 scanner1 --enabled=false`,
+		Args: exactArgs(2),
+		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			r, paths, err := f.receiver(cmd, args[1])
+			if err != nil {
+				return err
+			}
+			if len(paths) == 0 {
+				return fault.New(fault.Invalid, "nothing to change: give at least one flag, such as --quiet-period")
+			}
+			c, closeClient, err := a.open(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeClient()
+			res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.SetReceiverResponse, error) {
+				return c.Receivers.SetReceiver(ctx, &v1.SetReceiverRequest{Tenant: args[0], Receiver: r, UpdateMask: &fieldmaskpb.FieldMask{Paths: paths}})
+			})
+			if err != nil {
+				return err
+			}
+			return messageOut(a, res, func(w io.Writer) error { return a.receiverDetails(w, res.GetReceiver()) })
+		}),
+	}
+	f.add(cmd, true)
+	return cmd
+}
+
+// newReceiverRemove builds "receiver remove".
+func (a *app) newReceiverRemove() *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "remove <tenant> <name> --yes",
+		Short: "Stop a receiver and remove its configuration",
+		Long: `Stop a receiver, after the stores in flight finish, and remove its
+configuration. Its receptions stay and those in progress go on to their end,
+and its name stays held, so a name in a record always means one receiver, while
+a reception or a quarantined file names it. A repeated command finds no
+receiver and exits 4.
+
+Without --yes nothing is sent: the command says what it would do and exits 2.`,
+		Example: `  magnetar receiver remove lab1 scanner1          # says what would happen, exits 2
+  magnetar receiver remove lab1 scanner1 --yes`,
+		Args: exactArgs(2),
+		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fault.New(fault.Invalid, fmt.Sprintf("nothing was removed: this would stop receiver %q of tenant %q and remove its configuration; its receptions stay; run it again with --yes to do it", output.Clean(args[1]), output.Clean(args[0])))
+			}
+			c, closeClient, err := a.open(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeClient()
+			res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.RemoveReceiverResponse, error) {
+				return c.Receivers.RemoveReceiver(ctx, &v1.RemoveReceiverRequest{Tenant: args[0], Name: args[1]})
+			})
+			if err != nil {
+				return err
+			}
+			return messageOut(a, res, func(w io.Writer) error {
+				_, err := fmt.Fprintf(w, "receiver %s of tenant %s stopped and removed; its receptions stay\n", output.Clean(args[1]), output.Clean(args[0]))
+				return err
+			})
+		}),
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "really stop and remove the receiver; without it the command only says what it would do")
+	return cmd
+}

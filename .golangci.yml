@@ -22,6 +22,59 @@ linters:
   settings:
     depguard:
       rules:
+        # The live feed is handed readers (tenant.Events through
+        # events.Reader, the tenants through events.Tenants); it never opens a
+        # database or a connection itself, so it is tested with fakes and
+        # serves any database type.
+        events:
+          files:
+            - "**/internal/events/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the live feed reads through tenant.Events and never knows the database type
+            - pkg: github.com/amrshadid/magnetar/internal/registry
+              desc: the live feed is handed its tenants (events.Tenants); it does not open them
+            - pkg: database/sql
+              desc: the live feed reads through tenant.Events
+            - pkg: net$
+              desc: the live feed opens no connection; the API's handler carries its messages
+            - pkg: net/http
+              desc: the live feed opens no connection; the API's handler carries its messages
+
+        # A storage uses only the credentials it is given. The SDK's config
+        # package reads the environment, shared files and instance metadata,
+        # which the S3 driver must never do.
+        s3-static-credentials:
+          files:
+            - "**/internal/**"
+          deny:
+            - pkg: github.com/aws/aws-sdk-go-v2/config
+              desc: reads credentials from the environment and files; the S3 driver uses only what it is given
+            - pkg: github.com/aws/aws-sdk-go-v2/feature/ec2/imds
+              desc: reads instance metadata; the S3 driver uses only what it is given
+            - pkg: github.com/aws/aws-sdk-go-v2/credentials
+              desc: not needed for static credentials, and pulls in the single sign-on and token-service clients
+
+        # The storage port (internal/blob) and its contract suite
+        # (internal/blob/blobtest) are stated as operations, so a bucket
+        # implements them as well as a disk, and the suite cannot be bent to
+        # one driver by knowing which one it runs on.
+        blob:
+          files:
+            - "**/internal/blob/*.go"
+            - "**/internal/blob/blobtest/**"
+          deny:
+            - pkg: os$
+              desc: the storage port knows no file system; internal/blob/dir does
+            - pkg: io/fs
+              desc: the storage port knows no file system; internal/blob/dir does
+            - pkg: path/filepath
+              desc: the storage port knows no file system; internal/blob/dir does
+            - pkg: github.com/amrshadid/magnetar/internal/blob/dir
+              desc: the port and its suite never import a driver; drivers import them
+            - pkg: github.com/aws
+              desc: the storage port knows no cloud SDK; the S3 driver does
+
         # The core holds the domain: types, the reception state machine, naming
         # and routing. It states what it needs as interfaces that the other
         # packages implement, so it is tested without a database, a network or
@@ -129,7 +182,7 @@ linters:
               desc: the master port knows no database; the Postgres driver does
             - pkg: github.com/amrshadid/magnetar/internal/driver
               desc: the port and its suite never import a driver; drivers import them
-            - pkg: github.com/amrshadid/magnetar/internal/sqlkit
+            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlkit
               desc: sqlkit is for SQL drivers; the port must not assume SQL
 
         # The tenant database's port (internal/tenant) and its contract suite
@@ -147,7 +200,7 @@ linters:
               desc: the tenant port knows no database; the Postgres driver does
             - pkg: github.com/amrshadid/magnetar/internal/driver
               desc: the port and its suite never import a driver; drivers import them
-            - pkg: github.com/amrshadid/magnetar/internal/sqlkit
+            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlkit
               desc: sqlkit is for SQL drivers; the port must not assume SQL
 
         # The tenant registry is given its drivers (registry.Config.Drivers),
@@ -179,6 +232,112 @@ linters:
             - pkg: github.com/amrshadid/magnetar/internal/cli
               desc: the handlers are a library of the server; the command line imports them, not the other way
 
+        # The handlers name a database type (master.SQLiteDriver) and are
+        # given their tenants by the registry; they never open a database. An
+        # import of the drivers would link pgx and the SQLite library into the
+        # handlers' package for two names, and let a handler open a database
+        # past the registry. Non-test files only: the handlers' tests give the
+        # registry real SQLite tenants through the drivers.
+        api-driver:
+          files:
+            - "**/internal/api/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the handlers name a database type with master.SQLiteDriver and reach a tenant through the registry
+
+        # Only the DICOM listener speaks DICOM on the network, so a second
+        # implementation of association handling cannot grow elsewhere.
+        dicom-network:
+          files:
+            - $all
+            - "!**/internal/receive/dimse/**"
+          deny:
+            - pkg: github.com/amrshadid/go-dicom/network
+              desc: only internal/receive/dimse speaks DICOM on the network
+
+        # The supervisor is handed a way to make a listener; it never speaks
+        # DICOM itself, so it is tested with fake listeners.
+        supervise:
+          files:
+            - "**/internal/receive/supervise/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/receive/dimse
+              desc: the supervisor is handed a listener factory; servecmd joins the two
+            - pkg: github.com/amrshadid/go-dicom
+              desc: the supervisor never reads or speaks DICOM
+
+        # Test helpers are for tests: nothing the binary runs imports them.
+        testkit:
+          files:
+            - $all
+            - "!$test"
+            - "!**/internal/testkit/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/testkit
+              desc: internal/testkit is for tests and test-only programs only
+
+        # The rules of where a tenant's data may be are one package that the
+        # handlers and the reception pipeline both use, so a rule is never
+        # applied one way when a storage is added and another when it is
+        # opened. It is handed settings and secrets through its own small
+        # interfaces; an import of either user would turn that around.
+        place:
+          files:
+            - "**/internal/place/**"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/api
+              desc: the handlers use package place; place never uses them
+            - pkg: github.com/amrshadid/magnetar/internal/receive
+              desc: the reception pipeline uses package place; place never uses it
+            - pkg: github.com/amrshadid/magnetar/internal/registry
+              desc: place is handed a tenant's secrets; it does not look a tenant up
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: place reads settings and secrets through its interfaces, never a database
+            - pkg: database/sql
+              desc: place reads settings and secrets through its interfaces, never a database
+
+        # The reception pipeline is written against the ports: a tenant's
+        # database through tenant.Pipeline and bytes through blob.Store. If it
+        # named a driver, a reception would work on one database or one kind
+        # of storage and the contract suites would no longer cover it.
+        # Non-test files only: its tests run it on the real drivers.
+        receive:
+          files:
+            - "**/internal/receive/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver
+              desc: the reception pipeline reaches a database through the tenant port
+            - pkg: github.com/amrshadid/magnetar/internal/blob/dir
+              desc: the reception pipeline reaches a storage through blob.Store
+            - pkg: github.com/amrshadid/magnetar/internal/blob/s3
+              desc: the reception pipeline reaches a storage through blob.Store
+            - pkg: database/sql
+              desc: the reception pipeline reaches a database through the tenant port
+            - pkg: github.com/amrshadid/magnetar/internal/registry
+              desc: the reception pipeline is handed its tenant, it does not look one up
+
+        # Package driver is the one door to the database drivers: it opens a
+        # master or a tenant by the type and address it is given, so nothing
+        # outside it comes to depend on which database it runs on, and a
+        # third database type changes driver alone. The excepted tests open a
+        # real SQLite master (sqlite.OpenMaster) to run their package against
+        # the database the binary uses.
+        database-drivers:
+          files:
+            - $all
+            - "!**/internal/driver/**"
+            - "!**/internal/access/*_test.go"
+            - "!**/internal/cli/servecmd/*_test.go"
+            - "!**/internal/server/*_test.go"
+            - "!**/internal/server/servertest/*_test.go"
+          deny:
+            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlite
+              desc: only internal/driver opens the SQLite driver; ask it for a master.Store or a tenant.Store
+            - pkg: github.com/amrshadid/magnetar/internal/driver/postgres
+              desc: only internal/driver opens the Postgres driver; ask it for a master.Store or a tenant.Store
+
         # Only the SQLite driver reaches the SQLite library, so nothing else
         # in the binary can come to depend on which database it runs on.
         sqlite-library:
@@ -190,10 +349,15 @@ linters:
               desc: only internal/driver/sqlite uses the SQLite library; ask for a master.Store from internal/driver
 
         # The same for Postgres: only its driver reaches pgx.
+        # internal/testkit makes and drops the scratch schemas tests use, so
+        # it speaks to Postgres as an administrator; nothing the binary runs
+        # imports it (the testkit rule), so no running code learns the
+        # database from it.
         postgres-library:
           files:
             - $all
             - "!**/internal/driver/postgres/**"
+            - "!**/internal/testkit/**"
           deny:
             - pkg: github.com/jackc/pgx
               desc: only internal/driver/postgres uses pgx; ask for a master.Store from internal/driver

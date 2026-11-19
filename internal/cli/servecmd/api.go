@@ -7,9 +7,11 @@ import (
 
 	"github.com/amrshadid/magnetar/internal/api"
 	"github.com/amrshadid/magnetar/internal/driver"
+	"github.com/amrshadid/magnetar/internal/events"
 	"github.com/amrshadid/magnetar/internal/master"
 	"github.com/amrshadid/magnetar/internal/registry"
 	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/magnetar/internal/settingvalue"
 )
 
 // The tenant registry's settings in serve. They are constants, not flags:
@@ -81,7 +83,27 @@ func APIServices(d Deps) (Built, error) {
 		closeRegistry(reg)
 		return Built{}, err
 	}
-	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log})
+	// The supervisor runs every tenant's receivers and reception pipeline,
+	// and answers each receiver's health. The removal of discarded and
+	// rejected files and a quarantined file's header are left to the
+	// handlers' defaults: nothing is removed from the incoming area by a
+	// handler (the pipeline removes it at its next start), no header is
+	// read.
+	// One broadcaster wakes the streams of a tenant after a commit that
+	// wrote its events; its timer covers a wake missed.
+	feeds, err := events.New(events.Config{})
+	if err != nil {
+		closeRegistry(reg)
+		return Built{}, err
+	}
+	sup, err := newReception(d, reg, feeds.Wake)
+	if err != nil {
+		_ = feeds.Close()
+		closeRegistry(reg)
+		return Built{}, err
+	}
+	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
+		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err
@@ -93,6 +115,10 @@ func APIServices(d Deps) (Built, error) {
 		WithDecision:   api.WithDecision,
 		Registry:       reg,
 		TenantsByState: counts.byState,
+		Reception: runners{closer{feeds}, sup, events.NewKeeper(events.KeeperConfig{
+			Tenants: keptFeeds{tenants: registryTenants{master: d.Master, registry: reg}, registry: reg, values: settingvalue.Reader{Master: d.Master}},
+			Logger:  d.Log,
+		})},
 	}, nil
 }
 

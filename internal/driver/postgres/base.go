@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 )
 
 // base is what every store on one Postgres database has, whatever it holds:

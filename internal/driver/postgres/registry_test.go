@@ -498,7 +498,7 @@ func TestRegistryRefusesTwoTenantsOnOneDatabase(t *testing.T) {
 // TestWriteTenantSample creates a tenant on Postgres through the registry, as
 // the server will, in the schema MAGNETAR_SAMPLE_SCHEMA names, and writes the
 // tenant suite's sample into it, for the outside check
-// (scripts/check-tenant-postgres.sh), which reads it with psql and pg_dump. It
+// (scripts/check/tenant-postgres.sh), which reads it with psql and pg_dump. It
 // runs only when that variable is set. The master is a Postgres one too, in
 // the schema MAGNETAR_SAMPLE_SCHEMA + "_master", so psql reads the tenant's
 // row and its state change as well. The login's password is made up and its
@@ -506,7 +506,7 @@ func TestRegistryRefusesTwoTenantsOnOneDatabase(t *testing.T) {
 func TestWriteTenantSample(t *testing.T) {
 	schema, dir := os.Getenv("MAGNETAR_SAMPLE_SCHEMA"), os.Getenv("MAGNETAR_SAMPLE_DIR")
 	if schema == "" || dir == "" {
-		t.Skip("MAGNETAR_SAMPLE_SCHEMA and MAGNETAR_SAMPLE_DIR are not set; scripts/check-tenant-postgres.sh sets them")
+		t.Skip("MAGNETAR_SAMPLE_SCHEMA and MAGNETAR_SAMPLE_DIR are not set; scripts/check/tenant-postgres.sh sets them")
 	}
 	ctx := context.Background()
 	base := serverAddress(t)

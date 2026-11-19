@@ -16,7 +16,7 @@ import (
 const pythonEnv = "MAGNETAR_CHECK_SEAL_PYTHON"
 
 // TestSealOpensInPython guards the sealed format against another
-// implementation: scripts/check-seal.py, written from the package
+// implementation: scripts/check/seal.py, written from the package
 // documentation with Python's cryptography package (OpenSSL's AES-GCM), opens
 // a value this package sealed and refuses it under another context or with a
 // byte changed; then this package opens a value Python sealed, under an older
@@ -35,7 +35,7 @@ func TestSealOpensInPython(t *testing.T) {
 	if python == "" {
 		t.Fatal(pythonEnv + " is set but empty: name a Python interpreter that has the cryptography package")
 	}
-	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "check-seal.py"))
+	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "check", "seal.py"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,21 +62,21 @@ func TestSealOpensInPython(t *testing.T) {
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("check-seal.py: %v\n%s%s", err, out, stderr.String())
+		t.Fatalf("seal.py: %v\n%s%s", err, out, stderr.String())
 	}
 
 	var pySealed []byte
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if h, ok := strings.CutPrefix(line, "value "); ok {
 			if pySealed, err = hex.DecodeString(h); err != nil {
-				t.Fatalf("check-seal.py printed a value that is not hex: %v", err)
+				t.Fatalf("seal.py printed a value that is not hex: %v", err)
 			}
 			continue
 		}
 		t.Logf("python: %s", line)
 	}
 	if pySealed == nil {
-		t.Fatalf("check-seal.py printed no sealed value:\n%s", out)
+		t.Fatalf("seal.py printed no sealed value:\n%s", out)
 	}
 	if pySealed[0] != formatV1 || binary.BigEndian.Uint32(pySealed[1:5]) != 1 {
 		t.Fatalf("Python's value has header %x, want 01 00000001", pySealed[:5])

@@ -51,15 +51,25 @@
 //     the caller may know that it does not.
 //   - conflict: ALREADY_EXISTS (HTTP 409). The change would collide with what
 //     exists, such as a second tenant with the same name.
+//   - precondition: FAILED_PRECONDITION (HTTP 400). What the request names
+//     is in a state that forbids the change, such as removing a storage
+//     that holds files, releasing a file already rejected, or using a port
+//     the installation has not allotted to the tenant. The message says
+//     which. Sending it again unchanged fails again until that state
+//     changes.
 //   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs does
 //     not answer, or a tenant is not ready. Sending it again later may
 //     succeed.
+//   - cursor expired: OUT_OF_RANGE (HTTP 400). Only MonitorService.Watch
+//     answers it: the cursor it was given points before the oldest event
+//     kept, so the events after it can no longer all be answered. Sending
+//     it again fails again; the client starts over from a status.
 //
 // Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
-// RESOURCE_EXHAUSTED for a message over the size limit, and DEADLINE_EXCEEDED
-// when its deadline passes. The message of an INTERNAL answer says nothing
-// about the cause; the cause is in the server's log and the audit entry,
-// under the request's id.
+// RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch, for
+// too many open streams), and DEADLINE_EXCEEDED when its deadline passes.
+// The message of an INTERNAL answer says nothing about the cause; the cause
+// is in the server's log and the audit entry, under the request's id.
 //
 // A tenant that does not exist. A request that names a tenant with no such
 // tenant is answered NOT_FOUND when the caller may list every tenant: a key
@@ -74,29 +84,44 @@
 // client cannot set it: a request header of that name is ignored. The same id
 // is in the server's log and in the request's audit entry.
 //
-// Reads and retries. Every Get and List method and WhoAmI is marked
+// Reads and retries. Every Get and List method, WhoAmI and Watch is marked
 // NO_SIDE_EFFECTS, and the changes that may be repeated safely are marked
 // IDEMPOTENT. A read still writes an audit entry: that entry is the server's
 // record of the call, not a change to anything a read answers, and repeating
-// the read answers the same. CreateTenant and CreateKey are neither, as each
-// call makes a new thing.
+// the read answers the same. CreateTenant, CreateKey, AddStorage and
+// AddReceiver are neither, as each call makes a new thing.
 //
 // Limits. A message over 4 MB is refused. Every call has a deadline; when the
-// client sends none, the server applies 30 seconds. A list answers 100 items
-// unless page_size asks for another number, and at most 1000; a larger
-// page_size is invalid.
+// client sends none, the server applies 30 seconds, except to the stream of
+// MonitorService.Watch, which stays open until either side ends it. A list
+// answers 100 items unless page_size asks for another number, and at most
+// 1000; a larger page_size is invalid.
 //
 // Rules of the whole package. A list method takes page_size and page_token and
 // answers next_page_token, never an offset; a page token is opaque, at most
 // 1 KiB, and valid only with the request it came from. Times are UTC. Ids are
-// opaque strings, compared whole and never parsed.
+// opaque strings, compared whole and never parsed. A thing a person names (a
+// tenant, a storage, a receiver) has its name as its id, under the tenant
+// name rule; a thing the server makes (a reception, a quarantined file, an
+// event's cursor) has an id the server makes.
 //
-// Secrets cross the API in two fields only, CreateTenantRequest.database_address
-// (in) and CreateKeyResponse.secret (out, once). Both are marked debug_redact.
+// Partial changes. A Set method that changes a configuration of several
+// fields (SetStorage, SetReceiver) takes a google.protobuf.FieldMask,
+// update_mask, naming the fields it changes; every other field keeps its
+// value. The mask is required and must not be empty or "*", so a call
+// changes only what it names. A named field takes the value given, its zero
+// value included, so a list can be emptied and an option turned off; a
+// secret is the exception, kept unless named and never set to empty. A field
+// the server answers is read-only, and naming it is invalid.
+//
+// Secrets cross the API in three fields only,
+// CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
+// by AddStorage and SetStorage; always empty in an answer) and
+// CreateKeyResponse.secret (out, once). All three are marked debug_redact.
 // The mark is metadata, not protection: the protobuf library prints such a
 // field like any other (checked with protobuf-go v1.36.12, in every text form).
-// The server's own redactor reads the mark and removes the two fields before
-// anything is logged.
+// The server's own redactor reads the mark and removes the three fields
+// before anything is logged.
 
 package magnetarv1
 
@@ -606,7 +631,7 @@ type CreateKeyResponse struct {
 	// The new key.
 	Key *Key `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	// SECRET. The whole key, mgt_<id>_<secret>, as a client sends it in the
-	// Authorization header. This is one of the two fields through which a
+	// Authorization header. This is one of the three fields through which a
 	// secret crosses the API, and the only time this one is answered: the
 	// server keeps only its SHA-256 and cannot answer it again. A client shows
 	// it to its user once and does not log it. The debug_redact mark is read by

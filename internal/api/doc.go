@@ -1,6 +1,7 @@
-// Package api is the handlers of the four services of the API contract
-// (api/proto/magnetar/v1): TenantService, AccessService, SettingsService and
-// AuditService. Each method turns a request into calls on the package that
+// Package api is the handlers of the services of the API contract
+// (api/proto/magnetar/v1): TenantService, AccessService, SettingsService,
+// AuditService, and the four that act inside one tenant, StorageService,
+// ReceiverService, ReceptionService and QuarantineService. Each method turns a request into calls on the package that
 // owns the change, and their answer into a response. The proto comments are
 // the specification; this package is what makes each sentence in them true.
 //
@@ -60,6 +61,20 @@
 // tenant's (access.RefusedAtChange). The window a tenant's change leaves is
 // package tenant's to state.
 //
+// # Inside a tenant
+//
+// A request into one tenant reaches the tenant's store through the registry
+// and acts on it as tenant.Pipeline, the port every driver implements. A
+// refusal of the port that depends on the state of what the request names
+// is answered FAILED_PRECONDITION, by its kind, mapped in package codes. Where the
+// installation lets data go (its directory roots, S3 endpoints, ports and
+// bind addresses) is read from its settings: a storage or a receiver is
+// checked against them under a read lock, and a change of one of those
+// settings is checked against every tenant's storages and receivers under
+// the write lock, so neither passes the other unseen. What only another part
+// of the server knows is asked through an interface (Receivers, Incoming,
+// Headers), with a stand-in that says plainly what it cannot do.
+//
 // # Errors
 //
 // A handler answers a *connect.Error, made from the error's fault kind
@@ -75,7 +90,11 @@
 // exist: a later lookup that misses answers PERMISSION_DENIED, as for no
 // grant, to a caller who may not list every tenant. It must never put a
 // tenant's database address in an answer, an audit entry, an error or a log
-// line, nor log anything a request or a response carries. It must never seal
-// or open a secret itself: the registry seals a tenant's address when it
-// writes the tenant's row. It must never start a goroutine.
+// line, nor log anything a request or a response carries. It seals one
+// secret itself, an S3 storage's secret access key, with the installation
+// key and bound to the tenant and the storage, before it reaches the
+// tenant's store, and opens it only to test that storage; it never answers,
+// logs or records it. A tenant's database address is sealed by the
+// registry. It must never start a goroutine, and never delete a file of the
+// incoming area: that is the reception pipeline's (Incoming).
 package api

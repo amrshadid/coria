@@ -68,10 +68,22 @@ type options struct {
 	closeT    time.Duration
 	delay     time.Duration
 	auditWait time.Duration
+	// refusalQueue replaces the access package's queue of refusals' audit
+	// entries, for a test that sends more refusals at once than it holds.
+	refusalQueue int
+	// store wraps the master as the access package sees it, for a test
+	// that counts what the check reads.
+	store func(access.Store) access.Store
+	// clock replaces the access package's clock, for a test that moves
+	// time past a key's expiry.
+	clock     func() time.Time
 	register  func(*connect.Server)
 	methods   servertest.Table
 	noNetwork bool
 	beforeRun func(*server.Server)
+	// registry is given to the server as its tenant registry, for a test of
+	// what Stop does with it; nil gives none.
+	registry server.Registry
 }
 
 // env is one running server over a fresh SQLite master, with stand-in
@@ -129,7 +141,15 @@ func newEnv(tb testing.TB, o options) *env {
 		o.format = obs.JSON
 	}
 	log := obs.NewLogger(e.log, obs.LogOptions{Format: o.format, Level: o.level})
-	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log, AuditInterval: o.auditWait})
+	var st access.Store = m
+	if o.store != nil {
+		st = o.store(m)
+	}
+	clock := time.Now
+	if o.clock != nil {
+		clock = o.clock
+	}
+	a, err := access.New(access.Config{Store: st, Clock: clock, NewID: server.NewID, Log: log, AuditInterval: o.auditWait, RefusalQueue: o.refusalQueue})
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -158,7 +178,7 @@ func newEnv(tb testing.TB, o options) *env {
 		DataDir: e.dir, Lock: lock, Access: a, Master: m, Log: log,
 		Register: register, DefaultDeadline: o.deadline, Drain: o.drain,
 		MaxDeadline: o.maxDL, BodyReadTimeout: o.bodyRead, Grace: o.grace, Close: o.closeT,
-		Methods: methods, WithDecision: withDecision,
+		Methods: methods, WithDecision: withDecision, Registry: o.registry,
 	}
 	if !o.noNetwork {
 		certFile, keyFile, roots := testCert(tb, e.dir)

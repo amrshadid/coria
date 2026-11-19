@@ -3,13 +3,12 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -93,12 +92,15 @@ const (
 // MetricsPattern is the route of the metrics.
 const MetricsPattern = "GET /metrics"
 
-// Checker is what the server needs of the access package: the check, the
-// recording of an allowed read, the counts it reports in the metrics, and
+// Checker is what the server needs of the access package: the judgment of a
+// credential before routing, the check, the recording of an allowed read and
+// of a request no check took up, the counts it reports in the metrics, and
 // Close, which writes the audit entries it holds. *access.Access is one.
 type Checker interface {
+	Authenticate(ctx context.Context, cred access.Credential, facts access.Request) (access.Credential, error)
 	Check(ctx context.Context, cred access.Credential, req access.Requirement, facts access.Request) (access.Decision, error)
 	Record(d access.Decision, outcome master.Outcome, reason string, facts access.Facts)
+	RecordUnchecked(cred access.Credential, facts access.Request, reason string)
 	AuditStats() access.AuditStats
 	MarkStats() access.MarkStats
 	Close(ctx context.Context) error
@@ -185,6 +187,15 @@ type Server struct {
 	cert         *tls.Certificate
 	mux          *routeMux
 	handler      http.Handler
+	// procs maps each served procedure, "/package.Service/Method", to its
+	// handler from the one checked connect.Server; the router dispatches a
+	// call by exact match against it and against plain.
+	procs map[string]http.Handler
+	// plain maps the path of each plain HTTP route to its pattern.
+	plain map[string]string
+	// hook, set only by tests before Start, is called at the points named
+	// by the point constants (Server.at), to stop a request there.
+	hook func(ctx context.Context, point string)
 
 	stopMu    sync.RWMutex
 	stopping  bool
@@ -286,9 +297,11 @@ func (s *Server) counters() []obs.Counter {
 }
 
 // buildRoutes makes the one connect.Server, registers the API's services
-// and the health service on it, and mounts it with the metrics and the
-// other plain HTTP routes on the server's mux, each through the request
-// path.
+// and the health service on it, and records each of its procedures, and
+// each plain HTTP route (the metrics and Config.HTTPRoutes, each in the
+// middleware), as an exact path the router serves. The handler of every
+// listener is then the envelope, around the front step, around the router:
+// no route is chosen before the caller is known.
 func (s *Server) buildRoutes() error {
 	rpc := connect.NewServer(s.interceptor)
 	// Check only: grpchealth serves Watch when its checker is also a
@@ -297,12 +310,6 @@ func (s *Server) buildRoutes() error {
 	// hold as many open as the system's file limit allows.
 	grpchealth.Register(rpc, checkOnly{s.health})
 	s.cfg.Register(rpc)
-	// A method nobody registered still passes the request path: an
-	// unauthenticated caller is refused before it is told the method does
-	// not exist.
-	rpc.SetUnknownHandler(func(context.Context, connect.Spec, connect.ServerStream) error {
-		return connect.NewError(connect.CodeUnimplemented, "no such method")
-	})
 	var missing []string
 	for spec := range rpc.Specs() {
 		if _, ok := s.ruleFor(spec.Procedure); !ok {
@@ -315,28 +322,59 @@ func (s *Server) buildRoutes() error {
 	}
 
 	s.mux = newRouteMux()
-	connecthttp.Mount(s.mux, rpc,
+	s.procs = make(map[string]http.Handler)
+	s.plain = make(map[string]string)
+	connecthttp.Mount(procedureMux{s}, rpc,
 		connecthttp.WithReadMaxBytes(MaxMessageBytes),
 		connecthttp.WithSendMaxBytes(MaxMessageBytes),
 	)
 	routes := append([]HTTPRoute{{Pattern: MetricsPattern, Need: access.OnInstallation(master.RoleReader), Handler: s.serveMetrics}}, s.cfg.HTTPRoutes...)
-	// Every other path still passes the request path, so even a request
-	// for nothing is checked before it is told there is nothing.
-	routes = append(routes, HTTPRoute{Pattern: "/", Need: access.Authenticated(), Handler: notFound})
 	for _, r := range routes {
 		if err := s.handleHTTP(r); err != nil {
 			return err
 		}
 	}
-	s.handler = s.envelope(s.mux)
+	s.handler = s.envelope(s.front(http.HandlerFunc(s.route)))
 	return nil
 }
 
+// procedureMux is what connecthttp.Mount registers on. It keeps each
+// procedure's handler for the router and records its pattern, and drops the
+// handler Mount adds for each service's subtree ("/package.Service/"): that
+// is the RPC library's handler of unknown procedures, which would dispatch a
+// path that is not exactly a procedure (a percent-encoded one, say) to a
+// served handler with the request's stream shape instead of the method's,
+// and refuse calls to unknown names on HTTP/1.1 before any check. A call to
+// a procedure nothing serves is answered by the server itself (notServed).
+type procedureMux struct{ s *Server }
+
+// Handle keeps h as the handler of the procedure pattern, or drops it when
+// pattern is a subtree.
+func (m procedureMux) Handle(pattern string, h http.Handler) {
+	if strings.HasSuffix(pattern, "/") {
+		return
+	}
+	m.s.procs[pattern] = h
+	m.s.mux.Handle(pattern, h)
+}
+
 // handleHTTP adds a plain HTTP route, wrapped in the request path. It is
-// the only way a plain route reaches the mux.
+// the only way a plain route is served: the router reaches the mux only for
+// a path recorded here. The pattern must be one exact path (plainPattern),
+// not a procedure's and not one already taken.
 func (s *Server) handleHTTP(r HTTPRoute) (err error) {
 	if r.Handler == nil || r.Pattern == "" {
 		return fault.New(fault.Internal, "server: a route needs a pattern and a handler")
+	}
+	path, ok := plainPattern(r.Pattern)
+	if !ok {
+		return fault.New(fault.Internal, "server: the route "+r.Pattern+" is not one exact path")
+	}
+	if _, taken := s.procs[path]; taken {
+		return fault.New(fault.Internal, "server: the route "+r.Pattern+" is a procedure's path")
+	}
+	if _, taken := s.plain[path]; taken {
+		return fault.New(fault.Internal, "server: the route "+r.Pattern+" has a path already taken")
 	}
 	defer func() {
 		// http.ServeMux panics on a pattern that is malformed or registered
@@ -346,17 +384,8 @@ func (s *Server) handleHTTP(r HTTPRoute) (err error) {
 		}
 	}()
 	s.mux.Handle(r.Pattern, s.middleware(r))
+	s.plain[path] = r.Pattern
 	return nil
-}
-
-// notFound answers a path that no route serves: UNIMPLEMENTED to an RPC
-// client, as a gRPC server answers a service it does not have, and
-// NOT_FOUND to a plain HTTP request.
-func notFound(_ context.Context, _ http.ResponseWriter, r *http.Request) error {
-	if errorWriter.IsSupported(r) {
-		return connect.NewError(connect.CodeUnimplemented, "no such service")
-	}
-	return fault.New(fault.NotFound, "no such route")
 }
 
 // serveMetrics writes the metrics. An allowed scrape writes no audit entry:
@@ -383,222 +412,6 @@ func (s *Server) Handler() http.Handler { return s.handler }
 
 // Metrics returns the server's metrics.
 func (s *Server) Metrics() *obs.Metrics { return s.metrics }
-
-// Start listens on the local socket and, when asked, on the network, and
-// serves until Stop. It returns once every listener is open, or the first
-// error, having closed what it opened.
-func (s *Server) Start() error {
-	if s.started {
-		return fault.New(fault.Internal, "server: started twice")
-	}
-	s.started = true
-	type opened struct {
-		ln    net.Listener
-		srv   *http.Server
-		tlsOn bool
-	}
-	var all []opened
-	closeAll := func() {
-		for _, o := range all {
-			_ = o.ln.Close()
-		}
-	}
-	if !s.cfg.NoSocket {
-		ln, err := listenSocket(s.cfg.DataDir)
-		if err != nil {
-			return err
-		}
-		pl := &peerListener{Listener: ln, self: s.socketUser, peerUser: peerUser, log: s.log}
-		srv := s.newHTTPServer(false)
-		srv.ConnContext = connContext
-		all = append(all, opened{ln: pl, srv: srv})
-		s.log.Info("server: listening on the local socket", "path", SocketPath(s.cfg.DataDir), "peer_check", peerCheck, "directory", dirGuard)
-	}
-	if s.cfg.Listen != "" {
-		ln, err := net.Listen("tcp", s.cfg.Listen)
-		if err != nil {
-			closeAll()
-			return fault.Wrap(fault.Unavailable, err, "server: cannot listen on "+s.cfg.Listen+": "+err.Error())
-		}
-		ln = newLimitListener(ln, maxNetworkConns())
-		srv := s.newHTTPServer(s.cert != nil)
-		if s.cert != nil {
-			// ServeTLS adds the ALPN protocols that srv.Protocols allows (h2,
-			// http/1.1) to a copy of this configuration.
-			srv.TLSConfig = tlsConfig(*s.cert)
-		}
-		all = append(all, opened{ln: ln, srv: srv, tlsOn: s.cert != nil})
-		s.netAddr = ln.Addr()
-		s.log.Info("server: listening on the network", "address", ln.Addr().String(), "tls", s.cert != nil, "max_connections", maxNetworkConns())
-	}
-	for _, o := range all {
-		s.servers = append(s.servers, o.srv)
-		s.serving.Add(1)
-		go func() {
-			defer s.serving.Done()
-			var err error
-			if o.tlsOn {
-				err = o.srv.ServeTLS(o.ln, "", "")
-			} else {
-				err = o.srv.Serve(o.ln)
-			}
-			if err != nil && !errors.Is(err, http.ErrServerClosed) {
-				s.serveErrs <- err
-			}
-		}()
-	}
-	return nil
-}
-
-// newHTTPServer returns an http.Server for one listener with the limits
-// above. The local socket and a loopback listener without TLS speak HTTP/2
-// without TLS (h2c, with prior knowledge, which gRPC clients use) and
-// HTTP/1.1; the standard library has done h2c since Go 1.24
-// (http.Protocols.SetUnencryptedHTTP2), so golang.org/x/net is not needed.
-// A TLS listener speaks HTTP/2 and HTTP/1.1. There is no read or write
-// timeout for a whole request: it would cut a long stream; the deadline of
-// each call does that job.
-func (s *Server) newHTTPServer(tlsOn bool) *http.Server {
-	var p http.Protocols
-	p.SetHTTP1(true)
-	if tlsOn {
-		p.SetHTTP2(true)
-	} else {
-		p.SetUnencryptedHTTP2(true)
-	}
-	return &http.Server{
-		Handler:           s.handler,
-		Protocols:         &p,
-		MaxHeaderBytes:    maxHeaderBytes,
-		ReadHeaderTimeout: readHeaderTimeout,
-		IdleTimeout:       idleTimeout,
-		HTTP2: &http.HTTP2Config{
-			MaxConcurrentStreams: maxConcurrentStreams,
-			PingTimeout:          pingTimeout,
-		},
-		BaseContext: func(net.Listener) context.Context { return s.baseCtx },
-		ErrorLog:    slog.NewLogLogger(s.log.Handler(), slog.LevelWarn),
-	}
-}
-
-// Addr returns the network listener's address once Start has opened it,
-// or nil; a Listen with port 0 learns its port here.
-func (s *Server) Addr() net.Addr { return s.netAddr }
-
-// Errors returns a channel that receives an error when a listener stops
-// serving by itself, which a caller treats like a stop signal.
-func (s *Server) Errors() <-chan error { return s.serveErrs }
-
-// Stop stops the server and closes what it was given, in order:
-//
-//  1. new requests are refused with UNAVAILABLE, and the health service's
-//     Check, still answered, says NOT_SERVING;
-//  2. the listeners close and the requests in flight have until the drain
-//     deadline to finish; then their contexts are canceled and their
-//     connections closed, and their handlers have the grace to return;
-//  3. a handler still running then (one that ignores its context) is given
-//     up on: Stop goes on and its error says how many were abandoned;
-//  4. the access package is closed, which writes the audit entries it
-//     holds; then the tenant registry, then the master database, each
-//     within its own close deadline, enforced even if it ignores its
-//     context;
-//  5. the lock on the data directory is released.
-//
-// The whole of Stop is bounded: drain + grace + 3 x close, 29 seconds with
-// the defaults. Every step runs even when one before it failed; the errors
-// are joined. Stop may be called more than once; later calls return the
-// first result.
-func (s *Server) Stop() error {
-	s.stopOnce.Do(func() { s.stopErr = s.stop() })
-	return s.stopErr
-}
-
-// stop does Stop's work, once.
-func (s *Server) stop() error {
-	s.stopMu.Lock()
-	s.stopping = true
-	s.stopMu.Unlock()
-	s.health.SetStatus("", grpchealth.StatusNotServing)
-
-	drain := orDefault(s.cfg.Drain, DefaultDrain)
-	grace := orDefault(s.cfg.Grace, StopGrace)
-	closeWithin := orDefault(s.cfg.Close, DefaultClose)
-	var errs []error
-
-	drainEnd := time.Now().Add(drain)
-	ctx, cancel := context.WithDeadline(context.Background(), drainEnd)
-	var wg sync.WaitGroup
-	for _, srv := range s.servers {
-		wg.Go(func() {
-			if err := srv.Shutdown(ctx); err != nil {
-				// The deadline passed with requests still running: end them.
-				s.baseCancel()
-				_ = srv.Close()
-			}
-		})
-	}
-	wg.Wait()
-	cancel()
-	drained := make(chan struct{})
-	go func() {
-		s.inFlight.Wait()
-		close(drained)
-	}()
-	select {
-	case <-drained:
-	case <-time.After(time.Until(drainEnd)):
-	}
-	s.baseCancel()
-	select {
-	case <-drained:
-	case <-time.After(grace):
-		// A handler that ignores its context would hold Stop, and with it
-		// the audit writer, the registry, the master and the lock, for ever.
-		// It is given up on; its goroutine stays until the process ends.
-		n := s.inFlightN.Load()
-		s.log.Error("server: requests did not end after the drain and the grace and were abandoned", "abandoned", n)
-		errs = append(errs, fault.New(fault.Internal, fmt.Sprintf("server: %d requests did not end after the drain and the grace and were abandoned", n)))
-	}
-	s.serving.Wait()
-
-	// Each part gets its own close deadline, so one that uses all of its
-	// time does not take the next one's: the access package first (its
-	// audit writer may still write to a tenant's log through the
-	// registry), then the registry, then the master both of them use. A
-	// close that does not return within its deadline, context or not, is
-	// given up on in the same way.
-	closeEach := func(what string, close func(context.Context) error) {
-		ctx, cancel := context.WithTimeout(context.Background(), closeWithin)
-		defer cancel()
-		done := make(chan error, 1)
-		go func() { done <- close(ctx) }()
-		var err error
-		select {
-		case err = <-done:
-		case <-time.After(closeWithin + closeWithin/4):
-			err = fault.New(fault.Internal, "it did not return within its close deadline and was abandoned")
-		}
-		if err != nil {
-			s.log.Error("server: closing "+what+" failed", "error", err)
-			errs = append(errs, fault.Wrap(fault.Internal, err, "server: closing "+what))
-		}
-	}
-	closeEach("the access check and its audit writer", s.access.Close)
-	if s.cfg.Registry != nil {
-		closeEach("the tenant registry", s.cfg.Registry.Close)
-	}
-	if s.cfg.Master != nil {
-		closeEach("the master database", func(context.Context) error { return s.cfg.Master.Close() })
-	}
-	if err := s.cfg.Lock.Release(); err != nil {
-		errs = append(errs, fault.Wrap(fault.Internal, err, "server: releasing the lock"))
-	}
-	a := s.access.AuditStats()
-	s.log.Info("server: stopped", "audit_written", a.Written, "audit_failed", a.Failed,
-		"audit_dropped_refusals", a.DroppedRefusals, "audit_dropped_records", a.DroppedRecords,
-		"audit_dropped_writes", a.DroppedWrites, "audit_dropped", a.Dropped())
-	return errors.Join(errs...)
-}
 
 // orDefault returns d, or def when d is not positive.
 func orDefault(d, def time.Duration) time.Duration {

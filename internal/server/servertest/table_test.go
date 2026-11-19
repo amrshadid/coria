@@ -1,13 +1,21 @@
 package servertest_test
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -15,10 +23,228 @@ import (
 
 	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/core/settings"
+	"github.com/amrshadid/magnetar/internal/driver/sqlite"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/obs"
 	"github.com/amrshadid/magnetar/internal/server"
 	"github.com/amrshadid/magnetar/internal/server/servertest"
 )
+
+// notServedFile is the list of the services the contract defines and the
+// server does not serve yet (its header says why such a list exists and
+// when a line leaves it). It is one file, read here, by the tests of internal/api, and
+// by scripts/prove/steps.py, so the three cannot disagree.
+var notServedFile = filepath.Join("..", "..", "..", "api", "not-served.txt")
+
+// notServedName is the form of a line of notServedFile: a full service
+// name.
+var notServedName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*$`)
+
+// readNotServed returns the services notServedFile names, in its order. A
+// line that is not a full service name, or a name given twice, fails the
+// test.
+func readNotServed(t testing.TB) []string {
+	t.Helper()
+	b, err := os.ReadFile(notServedFile)
+	if err != nil {
+		t.Fatalf("the list of services not served: %v", err)
+	}
+	var out []string
+	for i, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !notServedName.MatchString(line) || slices.Contains(out, line) {
+			t.Fatalf("%s:%d: %q is not a full service name given once", notServedFile, i+1, line)
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+// inServices reports whether proc, a full procedure name, is a method of
+// one of services.
+func inServices(services []string, proc string) bool {
+	return slices.ContainsFunc(services, func(s string) bool { return strings.HasPrefix(proc, "/"+s+"/") })
+}
+
+// fileRPCs returns the full procedure name of every rpc of the contract's
+// proto files, read from the files themselves.
+func fileRPCs(t *testing.T) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "proto", "magnetar", "v1", "*.proto"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no proto files: %v", err)
+	}
+	rpc := regexp.MustCompile(`(?m)^\s*rpc (\w+)\(`)
+	var out []string
+	for _, file := range files {
+		b, err := os.ReadFile(file) //nolint:gosec // G304: the repository's own proto files.
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(b)
+		services := servicePattern.FindAllStringSubmatchIndex(text, -1)
+		for _, m := range rpc.FindAllStringSubmatchIndex(text, -1) {
+			svc := ""
+			for _, s := range services {
+				if s[0] < m[0] {
+					svc = text[s[2]:s[3]]
+				}
+			}
+			out = append(out, "/magnetar.v1."+svc+"/"+text[m[2]:m[3]])
+		}
+	}
+	return out
+}
+
+// notServedProblems compares a list of services not served with the rpcs of
+// the proto files and the table's procedures: each listed service must have
+// at least one rpc in the files and none in the table.
+func notServedProblems(services, rpcs, procs []string) []string {
+	var problems []string
+	for _, s := range services {
+		n := 0
+		for _, p := range rpcs {
+			if !strings.HasPrefix(p, "/"+s+"/") {
+				continue
+			}
+			n++
+			if slices.Contains(procs, p) {
+				problems = append(problems, p+" is listed as not served, yet the table serves it")
+			}
+		}
+		if n == 0 {
+			problems = append(problems, s+" is listed as not served, and no proto file defines it")
+		}
+	}
+	slices.Sort(problems)
+	return problems
+}
+
+// TestNotServedServices guards the list of services not served yet, so it
+// cannot hide a method that is served: every listed service is in the proto
+// files and the generated descriptors, none of its methods is in the
+// table, and a call to each of its methods over a real server, as the
+// local operator, is answered UNIMPLEMENTED with "no such method", the
+// answer to any procedure no handler serves, after the caller is
+// authenticated. It also shows the check itself reports a served service put on
+// the list and a listed service no file defines.
+func TestNotServedServices(t *testing.T) {
+	notServed := readNotServed(t)
+	rpcs, procs := fileRPCs(t), tableProcs()
+	for _, p := range notServedProblems(notServed, rpcs, procs) {
+		t.Error(p)
+	}
+	served := notServedProblems(append(slices.Clone(notServed), "magnetar.v1.AccessService"), rpcs, procs)
+	if len(served) == 0 || !strings.Contains(served[0], "AccessService") {
+		t.Errorf("a served service on the list was not reported: %v", served)
+	}
+	missing := notServedProblems(append(slices.Clone(notServed), "magnetar.v1.NoSuchService"), rpcs, procs)
+	if len(missing) != 1 || !strings.Contains(missing[0], "NoSuchService") {
+		t.Errorf("a listed service no file defines was not reported: %v", missing)
+	}
+
+	cl := localClient(t)
+	for _, s := range notServed {
+		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(s))
+		sd, ok := d.(protoreflect.ServiceDescriptor)
+		if err != nil || !ok {
+			t.Errorf("%s is not a service of the generated descriptors: %v", s, err)
+			continue
+		}
+		for i := range sd.Methods().Len() {
+			md := sd.Methods().Get(i)
+			proc := "/" + s + "/" + string(md.Name())
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			req, res := dynamicpb.NewMessage(md.Input()), dynamicpb.NewMessage(md.Output())
+			var err error
+			if md.IsStreamingServer() {
+				st, serr := cl.CallServerStream(ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: proc}, req)
+				err = serr
+				if err == nil {
+					err = st.Receive(res)
+					_ = st.Close()
+				}
+			} else {
+				err = cl.CallUnary(ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: proc}, req, res)
+			}
+			cancel()
+			var ce *connect.Error
+			if connect.CodeOf(err) != connect.CodeUnimplemented || !errors.As(err, &ce) || ce.Message() != "no such method" {
+				t.Errorf("%s: %v, want UNIMPLEMENTED, no such method", proc, err)
+			}
+		}
+	}
+}
+
+// localClient starts a real server with the stand-in handlers and table over
+// a fresh SQLite master, on its local socket only, and returns a client of
+// it that calls as the local operator. The server stops when t ends.
+func localClient(t *testing.T) *connect.Client {
+	t.Helper()
+	ctx := context.Background()
+	dir, err := os.MkdirTemp("", "mgs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a directory, private to its owner.
+		t.Fatal(err)
+	}
+	m, err := sqlite.OpenMaster(ctx, filepath.Join(dir, "master.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Close() })
+	if err := m.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	log := obs.NewLogger(io.Discard, obs.LogOptions{Format: obs.JSON})
+	a, err := access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &servertest.Standins{Access: a, Release: make(chan struct{})}
+	t.Cleanup(func() { close(h.Release) })
+	lock, err := server.TakeLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := server.New(server.Config{
+		DataDir: dir, Lock: lock, Access: a, Master: m, Log: log,
+		Register: h.Register, Methods: servertest.Contract(),
+		WithDecision: func(ctx context.Context, _ access.Decision) context.Context { return ctx },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var p http.Protocols
+	p.SetUnencryptedHTTP2(true)
+	path := server.SocketPath(dir)
+	hc := &http.Client{Transport: &http.Transport{
+		Protocols: &p,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", path)
+		},
+	}}
+	t.Cleanup(func() {
+		hc.CloseIdleConnections()
+		if err := srv.Stop(); err != nil {
+			t.Errorf("stop: %v", err)
+		}
+		cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = a.Close(cctx)
+	})
+	return connect.NewClient(connecthttp.NewTransport(hc, "http://local", connecthttp.WithGRPC()))
+}
 
 // contractFiles are the generated descriptors of the contract's files.
 var contractFiles = []protoreflect.FileDescriptor{
@@ -27,6 +253,11 @@ var contractFiles = []protoreflect.FileDescriptor{
 	magnetarv1.File_magnetar_v1_settings_proto,
 	magnetarv1.File_magnetar_v1_audit_proto,
 	magnetarv1.File_magnetar_v1_scope_proto,
+	magnetarv1.File_magnetar_v1_storage_proto,
+	magnetarv1.File_magnetar_v1_receiver_proto,
+	magnetarv1.File_magnetar_v1_reception_proto,
+	magnetarv1.File_magnetar_v1_quarantine_proto,
+	magnetarv1.File_magnetar_v1_monitor_proto,
 }
 
 // contractMethods returns every method of the contract by procedure name.
@@ -109,6 +340,7 @@ func TestTableMatchesRoleLines(t *testing.T) {
 		t.Fatalf("no proto files: %v", err)
 	}
 	methods := contractMethods()
+	notServed := readNotServed(t)
 	seen := map[string]bool{}
 	for _, file := range files {
 		b, err := os.ReadFile(file) //nolint:gosec // G304: the repository's own proto files.
@@ -127,6 +359,10 @@ func TestTableMatchesRoleLines(t *testing.T) {
 				}
 			}
 			proc := "/magnetar.v1." + svc + "/" + name
+			if inServices(notServed, proc) {
+				// Held by TestNotServedServices.
+				continue
+			}
 			md, ok := methods[proc]
 			if !ok {
 				t.Errorf("%s: a Role line for %s, which is no method", filepath.Base(file), proc)
@@ -169,8 +405,89 @@ func checkRole(t *testing.T, proc, role string, md protoreflect.MethodDescriptor
 		expectScope(t, proc, md, master.RoleReader)
 	case "admin on the scope set.", "admin on the scope.", "admin on the scope asked for.":
 		expectScope(t, proc, md, master.RoleAdmin)
+	case "admin on the scope set; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.",
+		"admin on the scope; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.":
+		expectSettingChange(t, proc, md)
+	case "reader on the tenant.":
+		expectTenant(t, proc, md, master.RoleReader, nil)
+	case "operator on the tenant.":
+		expectTenant(t, proc, md, master.RoleOperator, nil)
+	case "admin on the tenant.":
+		expectTenant(t, proc, md, master.RoleAdmin, nil)
+	case "reader on the tenant; operator on the tenant to filter by Study Instance UID, since looking a study up by an identifier the caller already holds is a search for a person's data.":
+		expectTenant(t, proc, md, master.RoleReader, []string{"study_instance_uid"})
+	case "reader on the tenant; operator on the tenant to filter by a UID, since looking a file up by an identifier the caller already holds is a search for a person's data.":
+		expectTenant(t, proc, md, master.RoleReader, []string{"study_instance_uid", "sop_instance_uid"})
+	case "reader on the tenant; operator on the tenant with include_header, since the header holds what the sender sent, identifying data included.":
+		expectTenant(t, proc, md, master.RoleReader, []string{"include_header"})
+	case "reader on the tenant asked for; operator on the installation for every tenant.":
+		expectMonitorScope(t, proc, md)
 	default:
 		t.Errorf("%s: the Role line %q is a phrase this test does not know; add what it means", proc, role)
+	}
+}
+
+// expectTenant checks a role on the tenant a request names by its field
+// "tenant", and on the installation when it names none; with each field of
+// operatorIf set, operator instead.
+func expectTenant(t *testing.T, proc string, md protoreflect.MethodDescriptor, role master.Role, operatorIf []string) {
+	t.Helper()
+	named := newRequest(md)
+	setString(named, "tenant", "lab")
+	if _, got, _ := ruleFor(proc, named); got != access.OnTenant("lab", role) {
+		t.Errorf("%s: the requirement on a tenant is not %s there", proc, role)
+	}
+	if _, got, _ := ruleFor(proc, newRequest(md)); got != access.OnInstallation(role) {
+		t.Errorf("%s: the requirement with no tenant is not %s on the installation", proc, role)
+	}
+	for _, f := range operatorIf {
+		m := proto.Clone(named)
+		r := m.ProtoReflect()
+		fd := r.Descriptor().Fields().ByName(protoreflect.Name(f))
+		if fd.Kind() == protoreflect.BoolKind {
+			r.Set(fd, protoreflect.ValueOfBool(true))
+		} else {
+			r.Set(fd, protoreflect.ValueOfString("2.25.1"))
+		}
+		if _, got, _ := ruleFor(proc, m); got != access.OnTenant("lab", master.RoleOperator) {
+			t.Errorf("%s with %s: the requirement is not operator on the tenant", proc, f)
+		}
+	}
+}
+
+// expectSettingChange checks the requirement of a change of a setting: admin
+// on the scope for an ordinary setting, and admin on the installation,
+// whatever the scope, for each setting the server's list says the
+// installation's admin alone sets on a tenant.
+func expectSettingChange(t *testing.T, proc string, md protoreflect.MethodDescriptor) {
+	t.Helper()
+	named := func(name string, s *magnetarv1.Scope) proto.Message {
+		m := newRequest(md)
+		r := m.ProtoReflect()
+		target := r
+		if fd := r.Descriptor().Fields().ByName("setting"); fd != nil {
+			target = r.Mutable(fd).Message()
+		}
+		target.Set(target.Descriptor().Fields().ByName("name"), protoreflect.ValueOfString(name))
+		if s != nil {
+			setScope(r, s, 2)
+		}
+		return m
+	}
+	lab := &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}}
+	if _, got, _ := ruleFor(proc, named("events.retention", lab)); got != access.OnTenant("lab", master.RoleAdmin) {
+		t.Errorf("%s: an ordinary setting on a tenant is not admin there", proc)
+	}
+	if _, got, _ := ruleFor(proc, named("events.retention", installation())); got != access.OnInstallation(master.RoleAdmin) {
+		t.Errorf("%s: an ordinary setting on the installation is not admin there", proc)
+	}
+	for _, def := range settings.Builtin() {
+		if !def.TenantSetByInstallation {
+			continue
+		}
+		if _, got, _ := ruleFor(proc, named(def.Name, lab)); got != access.OnInstallation(master.RoleAdmin) {
+			t.Errorf("%s: %s on a tenant is not admin on the installation", proc, def.Name)
+		}
 	}
 }
 
@@ -208,6 +525,31 @@ func expectScope(t *testing.T, proc string, md protoreflect.MethodDescriptor, ro
 	} {
 		if _, got, _ := ruleFor(proc, c.msg); got != c.want {
 			t.Errorf("%s: the requirement for %v is not %s on that scope", proc, c.msg, role)
+		}
+	}
+}
+
+// expectMonitorScope checks reader on the tenant a request's scope names,
+// and operator on the installation for every tenant or no scope.
+func expectMonitorScope(t *testing.T, proc string, md protoreflect.MethodDescriptor) {
+	t.Helper()
+	tenant := newRequest(md)
+	if !setScope(tenant.ProtoReflect(), &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}}, 2) {
+		t.Errorf("%s: no scope field found in its request", proc)
+		return
+	}
+	inst := newRequest(md)
+	setScope(inst.ProtoReflect(), installation(), 2)
+	for _, c := range []struct {
+		msg  proto.Message
+		want access.Requirement
+	}{
+		{tenant, access.OnTenant("lab", master.RoleReader)},
+		{inst, access.OnInstallation(master.RoleOperator)},
+		{newRequest(md), access.OnInstallation(master.RoleOperator)},
+	} {
+		if _, got, _ := ruleFor(proc, c.msg); got != c.want {
+			t.Errorf("%s: the requirement for %v is not %v", proc, c.msg, c.want)
 		}
 	}
 }

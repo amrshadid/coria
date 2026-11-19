@@ -678,7 +678,7 @@ func TestErrorsNeverCarryTheAddress(t *testing.T) {
 }
 
 // TestWriteSample writes the contract suite's sample data into a schema for
-// the outside check (scripts/check-master-postgres.sh), which reads it with
+// the outside check (scripts/check/master-postgres.sh), which reads it with
 // psql. It runs only when MAGNETAR_SAMPLE_SCHEMA names a schema to make
 // (which must not exist) and MAGNETAR_SAMPLE_DIR a directory; there it leaves
 // the sample key's hash in hex, and never the secret, which the script holds
@@ -686,7 +686,7 @@ func TestErrorsNeverCarryTheAddress(t *testing.T) {
 func TestWriteSample(t *testing.T) {
 	schema, dir := os.Getenv("MAGNETAR_SAMPLE_SCHEMA"), os.Getenv("MAGNETAR_SAMPLE_DIR")
 	if schema == "" || dir == "" {
-		t.Skip("MAGNETAR_SAMPLE_SCHEMA and MAGNETAR_SAMPLE_DIR are not set; scripts/check-master-postgres.sh sets them")
+		t.Skip("MAGNETAR_SAMPLE_SCHEMA and MAGNETAR_SAMPLE_DIR are not set; scripts/check/master-postgres.sh sets them")
 	}
 	base := testAddress(t)
 	super := admin(t, base)

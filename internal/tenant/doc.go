@@ -1,7 +1,11 @@
 // Package tenant states what one tenant's own database holds and what can be
-// done with it. For now that is the tenant's overrides of the installation's
-// settings and the tenant's audit log; the catalog, receptions, events and
-// jobs are added to this port with the code that uses them.
+// done with it: the tenant's overrides of the installation's settings and its
+// audit log (Store), and what the reception pipeline keeps (Pipeline): the
+// tenant's storages and receivers, its receptions and the files they
+// received, its quarantine, and the leased units of work that carry a
+// reception through its steps, with the catalog of what it archived; and the
+// tenant's event feed (Events): what happened, written with the change it
+// reports and read back in commit order from a cursor.
 //
 // Each tenant has its own database, reached only through Store, an interface
 // stated as operations, never as SQL. A database type is one driver package

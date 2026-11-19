@@ -48,7 +48,9 @@ func TestEveryErrorKindHasItsExitCode(t *testing.T) {
 		{connect.CodeAlreadyExists, 1},
 		{connect.CodeUnavailable, 1},
 		{connect.CodeInternal, 1},
-		{connect.CodeResourceExhausted, 1},
+		{connect.CodeFailedPrecondition, 5},
+		{connect.CodeOutOfRange, 6},
+		{connect.CodeResourceExhausted, 7},
 		{connect.CodeUnimplemented, 1},
 		{connect.CodeUnknown, 1},
 		{connect.Code(99), 1},
@@ -391,7 +393,11 @@ func TestGrammar(t *testing.T) {
 		"key create": true, "key list": true, "key show": true, "key revoke": true,
 		"grant set": true, "grant list": true, "grant remove": true,
 		"setting get": true, "setting set": true, "setting unset": true, "setting list": true,
-		"audit list": true,
+		"audit list":  true,
+		"storage add": true, "storage list": true, "storage show": true, "storage set": true, "storage remove": true, "storage test": true,
+		"receiver add": true, "receiver list": true, "receiver show": true, "receiver set": true, "receiver remove": true,
+		"reception list": true, "reception show": true, "reception retry": true, "reception discard": true,
+		"quarantine list": true, "quarantine show": true, "quarantine release": true, "quarantine reject": true,
 	}
 	got := map[string]bool{}
 	for _, c := range cli.Command(cli.Env{}).Commands() {

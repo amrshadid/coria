@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect/v2"
@@ -15,6 +16,7 @@ import (
 	"github.com/amrshadid/magnetar/internal/access"
 	"github.com/amrshadid/magnetar/internal/api/codes"
 	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/magnetar/internal/master"
 )
 
 // Call is what the request path tells a handler about the request it is
@@ -36,6 +38,11 @@ type Call struct {
 	// Decision is what the check allowed. It is the zero Decision for the
 	// health service, which is not checked.
 	Decision access.Decision
+
+	// unreadable records that the handler's reading of the request's
+	// message failed (replayStream), for the reason of the entry pass writes
+	// when the request ends without one.
+	unreadable atomic.Bool
 }
 
 // callKey is the context key of a request's Call.
@@ -68,17 +75,25 @@ type exchange struct {
 	// it; nil for a plain HTTP request. The caller keeps the message and
 	// hands it to the handler, so it is read once.
 	readMessage func() (proto.Message, error)
+	// unaudited is set for the one route whose allowed requests write no
+	// audit entry by design: the metrics, read every few seconds by a
+	// scraper, holding counts and no tenant's content.
+	unaudited bool
 }
 
-// pass is the request path, the one function every request goes through:
-// the Connect interceptor calls it for every RPC, unary and streaming, and
-// the HTTP middleware for every plain HTTP route. In order:
+// pass is the request path, the one function every routed request goes
+// through: the Connect interceptor calls it for every RPC, unary and
+// streaming, and the HTTP middleware for every plain HTTP route. The front
+// step has already authenticated the caller (or the method is public). In
+// order:
 //
 //  1. the request id: the one the envelope made for this request (it is
 //     already in the Magnetar-Request-Id response header), or a new one;
-//  2. the credential: the Authorization bearer key, else the local operator
-//     when the connection came through the local socket's peer check, else
-//     none;
+//  2. the credential: the one the front step accepted, so the key is read
+//     once per request; were pass reached without it, the credential is
+//     read from the request again (the Authorization bearer key, else the
+//     local operator when the connection came through the local socket's
+//     peer check, else none) and checked in full;
 //  3. access.Check with the method's requirement, unless the method is the
 //     public health service. For a requirement that depends on the request,
 //     the first message is read first; nothing is read for any other;
@@ -98,14 +113,28 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 	}
 	call := &Call{RequestID: id, Method: x.method}
 	defer func() { s.finish(ctx, x, call, start, err) }()
+	// pass accounts for the request's one audit entry however it ends: the
+	// check writes a refusal's, the handler or the code below an allowed
+	// request's; the health service and an allowed scrape write none.
+	defer markAudited(ctx)
 
-	local, isLocal := localFrom(ctx)
-	call.Credential = credential(x.authorization, local, isLocal)
+	if c, ok := identityFrom(ctx); ok {
+		// The front step accepted this caller before the request was
+		// routed; its key is not read again.
+		call.Credential = c
+	} else {
+		local, isLocal := localFrom(ctx)
+		call.Credential = credential(x.authorization, local, isLocal)
+	}
 	call.Facts = access.Request{Method: x.method, RemoteAddress: x.remote, RequestID: id}
 
 	if !x.rule.public {
 		var msg proto.Message
 		if x.rule.readsMessage() && x.readMessage != nil {
+			// The message may take as long as the body's read bound to
+			// arrive; the key the front step accepted is read again by the
+			// check that follows, so a key revoked meanwhile is refused.
+			call.Credential = call.Credential.Reread()
 			m, rerr := x.readMessage()
 			if rerr != nil {
 				// The message could not be read. The caller is still checked
@@ -119,12 +148,20 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 				// message was late.
 				req, facts := x.rule.fallback()
 				cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fallbackCheckTimeout)
-				_, cerr := s.access.Check(cctx, call.Credential, req, withFacts(call.Facts, facts))
+				d, cerr := s.access.Check(cctx, call.Credential, req, withFacts(call.Facts, facts))
 				cancel()
 				if cerr != nil {
 					return cerr
 				}
-				if errors.Is(rerr, os.ErrDeadlineExceeded) || readBoundPassed(ctx) {
+				// The check allowed the caller, whose request then does
+				// nothing: its one entry says why.
+				late := errors.Is(rerr, os.ErrDeadlineExceeded) || readBoundPassed(ctx)
+				reason := reasonUnreadable
+				if late {
+					reason = reasonTooSlow
+				}
+				s.access.Record(d, master.OutcomeFailed, reason, access.Facts{})
+				if late {
 					return errBodyTooSlow
 				}
 				return rerr
@@ -138,6 +175,7 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 			return cerr
 		}
 		call.Decision = d
+		s.at(ctx, pointChecked)
 		if s.withDecision != nil {
 			ctx = s.withDecision(ctx, d)
 		}
@@ -148,7 +186,55 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 	}
 
 	ctx = context.WithValue(ctx, callKey{}, call)
-	return s.run(ctx, call, next)
+	if cerr := ctx.Err(); cerr != nil {
+		// The caller went away, or the request ran out of time, before its
+		// handler started: nothing is done for it.
+		err = cerr
+	} else {
+		err = s.run(ctx, call, next)
+	}
+	s.at(ctx, pointHandled)
+	if !x.rule.public && !call.Decision.Entered() && (!x.unaudited || err != nil) {
+		// The check allowed the request and nothing wrote its entry: the
+		// handler failed, panicked or was canceled before it recorded one,
+		// or succeeded without one. Its one entry is written here, so every
+		// checked request has exactly one.
+		outcome, reason := master.OutcomeDone, ""
+		if err != nil {
+			outcome, reason = master.OutcomeFailed, s.unrecordedReason(ctx, call, err)
+		}
+		s.access.Record(call.Decision, outcome, reason, access.Facts{})
+	}
+	return err
+}
+
+// The reasons of the entries pass writes for an allowed request that ended
+// without one. Each is fixed, so nothing of the request reaches the log.
+const (
+	reasonUnreadable = "the request's message could not be read"
+	reasonTooSlow    = "the request's message did not arrive in time"
+	reasonPanic      = "the handler failed (a panic) before it recorded the request"
+	reasonDeadline   = "the request's deadline passed before it was recorded"
+	reasonCanceled   = "the request was canceled before it was recorded"
+	reasonEnded      = "the request ended before it was recorded: "
+)
+
+// unrecordedReason names why an allowed request ended without an entry. A
+// request whose context has ended was canceled or ran out of time, whatever
+// error that caused on the way (a read of its message cut short reads as a
+// message that could not be read), so its context is asked first.
+func (s *Server) unrecordedReason(ctx context.Context, call *Call, err error) string {
+	switch {
+	case errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled):
+		return reasonCanceled
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded):
+		return reasonDeadline
+	case errors.Is(err, errPanic):
+		return reasonPanic
+	case call.unreadable.Load():
+		return reasonUnreadable
+	}
+	return reasonEnded + codeName(s.code(err))
 }
 
 // fallbackCheckTimeout bounds the check made after a request's message could

@@ -1,5 +1,5 @@
 // Command ptyserve serves the in-process fake server on a temporary local
-// socket, for scripts/check-tui.py, which runs the built magnetar binary under
+// socket, for scripts/check/tui.py, which runs the built magnetar binary under
 // a pseudo-terminal against it.
 //
 // It is test support and nothing else. It is not built by "make build", is not

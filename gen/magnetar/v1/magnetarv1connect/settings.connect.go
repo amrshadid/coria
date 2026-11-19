@@ -79,7 +79,9 @@ type SettingsServiceClient interface {
 	// asked for: on the installation, the installation's value, else the
 	// built-in default; on a tenant, the tenant's override when it has one,
 	// else what applies on the installation. The answer's scope and source say
-	// where the value came from.
+	// where the value came from. The paths of storage.directory-roots are
+	// answered only to an admin on the installation; any other caller is
+	// answered the roots' names alone, one per line.
 	//
 	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for, with the setting's
@@ -94,28 +96,33 @@ type SettingsServiceClient interface {
 	// override of it when the setting allows one. The change and its audit
 	// entry are written together or not at all.
 	//
-	// Role: admin on the scope set.
+	// Role: admin on the scope set; for a setting set on a tenant by the
+	// installation's admin only, admin on the installation, whatever the
+	// scope.
 	// Audit: one entry in the log of the scope set, with the setting's name as
 	// its object; the value is not recorded.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a value the setting does not accept, and a tenant scope for a
-	// setting a tenant may not override), not found (no setting the server
-	// knows has that name; a tenant that does not exist, for a caller who may
-	// list every tenant), unavailable (the database of the scope does not
-	// answer, or the tenant is not ready).
+	// (also a value the setting does not accept, and a scope the setting does
+	// not take), not found (no setting the server knows has that name; a
+	// tenant that does not exist, for a caller who may list every tenant),
+	// precondition (a value the setting refuses because of what exists, such
+	// as a port range another tenant holds), unavailable (the database of the
+	// scope does not answer, or the tenant is not ready).
 	SetSetting(context.Context, *v1.SetSettingRequest) (*v1.SetSettingResponse, error)
 	// UnsetSetting removes a value set on a scope: a tenant's override, so what
 	// applies on the installation applies to the tenant again, or the
 	// installation's value, so the built-in default applies again. Removing a
 	// value that is not set changes nothing and succeeds.
 	//
-	// Role: admin on the scope.
+	// Role: admin on the scope; for a setting set on a tenant by the
+	// installation's admin only, admin on the installation, whatever the
+	// scope.
 	// Audit: one entry in the log of the scope, with the setting's name as its
 	// object.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a tenant scope for a setting a tenant may not override), not found
+	// (also a scope the setting does not take), not found
 	// (no setting the server knows has that name; a tenant that does not
 	// exist, for a caller who may list every tenant), unavailable (the
 	// database of the scope does not answer, or the tenant is not ready).
@@ -123,7 +130,9 @@ type SettingsServiceClient interface {
 	// ListSettings answers settings of one scope, ordered by name: on the
 	// installation, every setting the server knows with the value that applies
 	// there (the installation's, else the built-in default); on a tenant, only
-	// that tenant's overrides.
+	// that tenant's overrides. The paths of storage.directory-roots are
+	// answered only to an admin on the installation; any other caller is
+	// answered the roots' names alone, one per line.
 	//
 	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for.
@@ -147,7 +156,9 @@ type SettingsServiceHandler interface {
 	// asked for: on the installation, the installation's value, else the
 	// built-in default; on a tenant, the tenant's override when it has one,
 	// else what applies on the installation. The answer's scope and source say
-	// where the value came from.
+	// where the value came from. The paths of storage.directory-roots are
+	// answered only to an admin on the installation; any other caller is
+	// answered the roots' names alone, one per line.
 	//
 	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for, with the setting's
@@ -162,28 +173,33 @@ type SettingsServiceHandler interface {
 	// override of it when the setting allows one. The change and its audit
 	// entry are written together or not at all.
 	//
-	// Role: admin on the scope set.
+	// Role: admin on the scope set; for a setting set on a tenant by the
+	// installation's admin only, admin on the installation, whatever the
+	// scope.
 	// Audit: one entry in the log of the scope set, with the setting's name as
 	// its object; the value is not recorded.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a value the setting does not accept, and a tenant scope for a
-	// setting a tenant may not override), not found (no setting the server
-	// knows has that name; a tenant that does not exist, for a caller who may
-	// list every tenant), unavailable (the database of the scope does not
-	// answer, or the tenant is not ready).
+	// (also a value the setting does not accept, and a scope the setting does
+	// not take), not found (no setting the server knows has that name; a
+	// tenant that does not exist, for a caller who may list every tenant),
+	// precondition (a value the setting refuses because of what exists, such
+	// as a port range another tenant holds), unavailable (the database of the
+	// scope does not answer, or the tenant is not ready).
 	SetSetting(context.Context, *v1.SetSettingRequest) (*v1.SetSettingResponse, error)
 	// UnsetSetting removes a value set on a scope: a tenant's override, so what
 	// applies on the installation applies to the tenant again, or the
 	// installation's value, so the built-in default applies again. Removing a
 	// value that is not set changes nothing and succeeds.
 	//
-	// Role: admin on the scope.
+	// Role: admin on the scope; for a setting set on a tenant by the
+	// installation's admin only, admin on the installation, whatever the
+	// scope.
 	// Audit: one entry in the log of the scope, with the setting's name as its
 	// object.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a tenant scope for a setting a tenant may not override), not found
+	// (also a scope the setting does not take), not found
 	// (no setting the server knows has that name; a tenant that does not
 	// exist, for a caller who may list every tenant), unavailable (the
 	// database of the scope does not answer, or the tenant is not ready).
@@ -191,7 +207,9 @@ type SettingsServiceHandler interface {
 	// ListSettings answers settings of one scope, ordered by name: on the
 	// installation, every setting the server knows with the value that applies
 	// there (the installation's, else the built-in default); on a tenant, only
-	// that tenant's overrides.
+	// that tenant's overrides. The paths of storage.directory-roots are
+	// answered only to an admin on the installation; any other caller is
+	// answered the roots' names alone, one per line.
 	//
 	// Role: reader on the scope asked for.
 	// Audit: one entry in the log of the scope asked for.

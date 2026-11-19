@@ -12,12 +12,47 @@ import "magnetar/v1/scope.proto";
 // setting is resolved as the tenant's override when it has one, else the
 // installation's value when it has one, else the built-in default. A setting
 // never holds a secret.
+//
+// Who may set a setting, and where, is a property of the setting, one of
+// three kinds:
+//
+//   - An ordinary setting: the installation's admin sets the installation's
+//     value, and, when the setting allows a tenant override, the tenant's
+//     admin sets the tenant's.
+//   - An installation-only setting: it has an installation value and no
+//     tenant override; a tenant scope is refused as invalid. It holds what
+//     only the installation may decide, such as which directories and
+//     endpoints storages may use.
+//   - A setting set on a tenant by the installation's admin only: a tenant's
+//     value is set and unset by an admin on the installation, never by the
+//     tenant's own admin (who is answered PERMISSION_DENIED), and is read by
+//     a reader on the tenant. It holds what the installation hands out to
+//     tenants, such as the ports a tenant's receivers may use. Such a
+//     setting may also have an installation value, the default for every
+//     tenant, or may refuse the installation scope as invalid when a
+//     default makes no sense; the setting says which. A value may be
+//     refused because of what other tenants hold, such as a port range that
+//     overlaps another tenant's: the installation's admin may list every
+//     tenant, so it is told (precondition).
+//
+// A value that would take away what a tenant's receiver or storage uses (a
+// port, a bind address, a directory root, an S3 endpoint) is refused
+// (precondition), and so is unsetting it; the receiver or storage is moved
+// or removed first.
+//
+// The settings a receiver, a storage or the event feed reads, with their
+// kinds, are named where they are used: receiver.ports,
+// receiver.bind-addresses, receiver.header-limit, incoming.limit and
+// storage.reserve (ReceiverService), storage.directory-roots and storage.s3-endpoints
+// (StorageService), and events.retention (MonitorService).
 service SettingsService {
   // GetSetting answers the value of one setting as it applies to the scope
   // asked for: on the installation, the installation's value, else the
   // built-in default; on a tenant, the tenant's override when it has one,
   // else what applies on the installation. The answer's scope and source say
-  // where the value came from.
+  // where the value came from. The paths of storage.directory-roots are
+  // answered only to an admin on the installation; any other caller is
+  // answered the roots' names alone, one per line.
   //
   // Role: reader on the scope asked for.
   // Audit: one entry in the log of the scope asked for, with the setting's
@@ -35,16 +70,19 @@ service SettingsService {
   // override of it when the setting allows one. The change and its audit
   // entry are written together or not at all.
   //
-  // Role: admin on the scope set.
+  // Role: admin on the scope set; for a setting set on a tenant by the
+  // installation's admin only, admin on the installation, whatever the
+  // scope.
   // Audit: one entry in the log of the scope set, with the setting's name as
   // its object; the value is not recorded.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
-  // (also a value the setting does not accept, and a tenant scope for a
-  // setting a tenant may not override), not found (no setting the server
-  // knows has that name; a tenant that does not exist, for a caller who may
-  // list every tenant), unavailable (the database of the scope does not
-  // answer, or the tenant is not ready).
+  // (also a value the setting does not accept, and a scope the setting does
+  // not take), not found (no setting the server knows has that name; a
+  // tenant that does not exist, for a caller who may list every tenant),
+  // precondition (a value the setting refuses because of what exists, such
+  // as a port range another tenant holds), unavailable (the database of the
+  // scope does not answer, or the tenant is not ready).
   rpc SetSetting(SetSettingRequest) returns (SetSettingResponse) {
     option idempotency_level = IDEMPOTENT;
   }
@@ -54,12 +92,14 @@ service SettingsService {
   // installation's value, so the built-in default applies again. Removing a
   // value that is not set changes nothing and succeeds.
   //
-  // Role: admin on the scope.
+  // Role: admin on the scope; for a setting set on a tenant by the
+  // installation's admin only, admin on the installation, whatever the
+  // scope.
   // Audit: one entry in the log of the scope, with the setting's name as its
   // object.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
-  // (also a tenant scope for a setting a tenant may not override), not found
+  // (also a scope the setting does not take), not found
   // (no setting the server knows has that name; a tenant that does not
   // exist, for a caller who may list every tenant), unavailable (the
   // database of the scope does not answer, or the tenant is not ready).
@@ -70,7 +110,9 @@ service SettingsService {
   // ListSettings answers settings of one scope, ordered by name: on the
   // installation, every setting the server knows with the value that applies
   // there (the installation's, else the built-in default); on a tenant, only
-  // that tenant's overrides.
+  // that tenant's overrides. The paths of storage.directory-roots are
+  // answered only to an admin on the installation; any other caller is
+  // answered the roots' names alone, one per line.
   //
   // Role: reader on the scope asked for.
   // Audit: one entry in the log of the scope asked for.

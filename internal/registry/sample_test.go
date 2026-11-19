@@ -15,13 +15,13 @@ import (
 
 // TestWriteTenantSample creates a tenant on SQLite through the registry, as
 // the server will, and writes the tenant suite's sample into it, for the
-// outside check (scripts/check-tenant-sqlite.sh), which reads the files with
+// outside check (scripts/check/tenant-sqlite.sh), which reads the files with
 // the sqlite3 tool. It runs only when MAGNETAR_SAMPLE_DIR names a directory,
 // which it uses as a data directory: master.db, key and tenants/sample.db.
 func TestWriteTenantSample(t *testing.T) {
 	dir := os.Getenv("MAGNETAR_SAMPLE_DIR")
 	if dir == "" {
-		t.Skip("MAGNETAR_SAMPLE_DIR is not set; scripts/check-tenant-sqlite.sh sets it")
+		t.Skip("MAGNETAR_SAMPLE_DIR is not set; scripts/check/tenant-sqlite.sh sets it")
 	}
 	ctx := context.Background()
 	keyPath := filepath.Join(dir, "key")

@@ -333,14 +333,14 @@ func TestNotMigrated(t *testing.T) {
 }
 
 // TestWriteSample writes the contract suite's sample data into a database
-// for the outside check (scripts/check-master-sqlite.sh), which reads it
+// for the outside check (scripts/check/master-sqlite.sh), which reads it
 // with the sqlite3 tool. It runs only when MAGNETAR_SAMPLE_DIR names a
 // directory; there it leaves master.db and the sample key's hash in hex,
 // and never the secret, which the script holds itself.
 func TestWriteSample(t *testing.T) {
 	dir := os.Getenv("MAGNETAR_SAMPLE_DIR")
 	if dir == "" {
-		t.Skip("MAGNETAR_SAMPLE_DIR is not set; scripts/check-master-sqlite.sh sets it")
+		t.Skip("MAGNETAR_SAMPLE_DIR is not set; scripts/check/master-sqlite.sh sets it")
 	}
 	path := filepath.Join(dir, "master.db")
 	ctx := context.Background()

@@ -15,8 +15,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 )
 
 // testMigrations are migrations that fail if run twice: the first makes a

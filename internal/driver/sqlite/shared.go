@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"strconv"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 )
 
 // The master and every tenant keep settings and an audit log in tables of
@@ -187,7 +187,7 @@ func listSettingsPage(ctx context.Context, h sharedHost, l lists, page master.Pa
 	if err != nil {
 		return nil, "", h.b().fail(ctx, err, "the settings cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -250,7 +250,7 @@ func listAuditPage(ctx context.Context, h sharedHost, l lists, filter master.Aud
 	if err != nil {
 		return nil, "", b.fail(ctx, err, "the audit log cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}

@@ -58,7 +58,7 @@ All notable changes to Magnetar are written here. The form is
   path is refused at once instead of hanging the start. It seals a secret with
   AES-256-GCM under a random nonce, bound to the context it is stored for, so a
   sealed value moved to another row does not open, and opening fails the same
-  way whatever is wrong. `scripts/check-seal.py` checks the format against
+  way whatever is wrong. `scripts/check/seal.py` checks the format against
   Python's `cryptography` package in both directions, installed in CI from
   hashed requirements. API keys look like `mgt_<id>_<secret>`, with 256 random
   bits in the secret, of which only the SHA-256 is to be stored, compared in
@@ -83,7 +83,7 @@ All notable changes to Magnetar are written here. The form is
   timeout, and refuses on Unix a database file that others can read or write.
   Migrations are embedded SQL files, checksummed and applied under a lock that
   holds across processes; a changed applied file, or a database a newer binary
-  upgraded, is refused. `scripts/check-master-sqlite.sh` reads what the driver wrote
+  upgraded, is refused. `scripts/check/master-sqlite.sh` reads what the driver wrote
   with the `sqlite3` tool and finds a key's hash but never its secret. The
   binary does not use the master database yet.
 - The binary had a version command and nothing that could use the API, so a
@@ -193,7 +193,7 @@ All notable changes to Magnetar are written here. The form is
   whose answer was lost does not leave the two apart. At start it warns when
   the tenants could not all hold their files under the process's limit.
   Closing the registry stops its timer, waits for opens in progress up to the
-  deadline it is given, and closes every store. `scripts/check-tenant-sqlite.sh`
+  deadline it is given, and closes every store. `scripts/check/tenant-sqlite.sh`
   reads a tenant the registry created with the `sqlite3` tool. The server does
   not use the registry yet.
 - The commands could not be browsed: finding a tenant's grants, its settings
@@ -212,7 +212,7 @@ All notable changes to Magnetar are written here. The form is
   id or name typed. The alternate screen is left and the cursor shown on quit,
   on SIGTERM and SIGINT, and on a panic. With any argument, or when either end
   is not a terminal, the usage line and exit 2 are as before.
-  `scripts/check-tui.py` runs the built binary under a pseudo-terminal against
+  `scripts/check/tui.py` runs the built binary under a pseudo-terminal against
   the fake server (`make check-tui`, a step of its own in CI, Linux and macOS
   only). The binaries grew by 1.67 to 2.09 MiB (linux/amd64: 10.78 to 12.73
   MiB).
@@ -231,7 +231,7 @@ All notable changes to Magnetar are written here. The form is
   on one dedicated connection, released on every path, so processes that start
   together apply each file once. No error repeats the address, the password or
   the host. CI runs the driver against Postgres 16 and 18 and fails, instead of
-  skipping, when the server is missing; `scripts/check-master-postgres.sh` reads
+  skipping, when the server is missing; `scripts/check/master-postgres.sh` reads
   what the driver wrote with `psql` and `pg_dump` and finds a key's hash but
   never its secret.
 - A tenant's database could only be a SQLite file. It can now be a Postgres
@@ -249,7 +249,7 @@ All notable changes to Magnetar are written here. The form is
   `pool_max_conns` and `pool_max_conn_idle_time` in the address change them).
   The registry's warning about the limit on open files counts each tenant by
   what its driver says it holds (an optional `FilesPerTenant`): eleven files
-  for SQLite, the pool's size for Postgres. `scripts/check-tenant-postgres.sh`
+  for SQLite, the pool's size for Postgres. `scripts/check/tenant-postgres.sh`
   reads a tenant the registry made with `psql` and `pg_dump`, and the Postgres
   CI jobs run the registry against real tenants.
 - The API contract had generated interfaces and nothing behind them.
@@ -304,8 +304,8 @@ All notable changes to Magnetar are written here. The form is
   restart that serves the same tenants, keys and log; `make check-server` now
   also points curl, grpcurl and Python's grpcio at the real program.
 - Nothing showed the installed program doing, in order, what this version
-  claims: each part was checked on its own. `make prove` (`scripts/prove.sh`,
-  with `scripts/prove.py`; CI's "Proof: the installed binary, from outside"
+  claims: each part was checked on its own. `make prove` (`scripts/prove/run.sh`,
+  with `scripts/prove/steps.py`; CI's "Proof: the installed binary, from outside"
   job, on Linux, with a Postgres service container) builds every target as
   `make build` does and runs the real binary against tools that are not
   Magnetar: curl, grpcurl, openssl, sqlite3, psql and pg_dump, and Python's
@@ -332,9 +332,357 @@ All notable changes to Magnetar are written here. The form is
   `--json` and the interactive program under a pseudo-terminal; and the size
   of each binary. It does not show Windows, a loss of power on real hardware,
   or any speed.
+- The API could create tenants and keys but had no way to give a tenant a place to
+  keep data or a way for data to arrive. The contract now has five more services in
+  `magnetar.v1`, as protobuf with nothing behind them yet: `StorageService` (a
+  directory under a root the installation names, or an S3 bucket at an endpoint the
+  installation lists, whose secret access key goes in and never comes back),
+  `ReceiverService` (a receiver, in this version a DICOM listener on a port the
+  installation allotted to the tenant, that admits nobody until its callers are
+  listed), `ReceptionService` (one study's arrival at a receiver and its steps,
+  with a retry or a discard for one that failed), `QuarantineService` (why a file
+  was held, released to run again or rejected with a reason) and `MonitorService`
+  (a tenant's numbers and a stream of its events, read from one snapshot so a
+  client misses nothing). By default a label is a keyed hash, so no label or event
+  carries an identifier the sender gave; a site's own naming rule makes labels
+  exactly as identifying as the rule. A change to a storage or a receiver names its
+  fields in a field mask; a state that forbids a change is answered
+  FAILED_PRECONDITION. Secrets cross the API in three fields. Until a service has
+  its handlers the server answers it as unimplemented, and a test holds the list
+  of such services to exactly that. A walk-through in
+  `docs/api-walkthrough-reception.md` follows three uses call by call with only the
+  contract in hand.
+- The server had no rules for where a received file goes or what state its
+  reception is in. `internal/core` now holds them, with no I/O, so each is
+  tested without a database, a network or a storage: labels (1 to 128 of
+  `A-Z a-z 0-9 . _ -`, never a hidden name, a trailing dot or a Windows device
+  name, so every label is a safe directory name on Linux, macOS and Windows);
+  the naming rule, a template over DICOM attributes or a pattern over one
+  attribute's value, checked when it is set, never cleaning a value up
+  silently and never putting one in an error's text, where `{#PatientID}` and
+  the like give the keyed hash of a value (HMAC-SHA-256 under the tenant's
+  key, 16 characters of base32) instead of the value; a default rule,
+  `sub-{#PatientID}`, `ses-{#StudyInstanceUID}`, `scan-{#SeriesInstanceUID}`,
+  so that by default no label carries an identifier the sender gave, and no
+  well-formed study is held for an empty date or number; the UID check of
+  PS3.5 9.1; the one place that builds and parses storage keys
+  (`data/<subject>/<session>/<scan>/<SOP Instance UID>.dcm`, and
+  `manifest.json` and `metadata.json` under `meta/`); the scan manifest,
+  versioned, written in one byte form only and read with bounds; and the
+  reception state machine as one table, with completion decided from the
+  quiet period and the longest open time, a clock set back included. The
+  template, pattern, key and manifest parsers are fuzzed.
+- Magnetar had nowhere to put a file. The storage port, `internal/blob`, now
+  states what every storage promises: Put streams bytes to a key and returns
+  their size and SHA-256 computed as they pass, and the object appears whole or
+  not at all, a replaced one included; Read gives a byte range as a stream of
+  the object as it was when the read began; List pages through keys in a stable
+  order, one level at a time with a delimiter; Delete of a missing key is not an
+  error; Usage says when it cannot know the free space. Keys are the archive's
+  own, ASCII letters, digits, ".", "_" and "-", checked in one place, so a key
+  names the same object on every storage and file system and never a path
+  outside it. One contract suite holds every driver to this, and is itself
+  checked against drivers broken on purpose. The first driver, a directory on a
+  local disk or NFS, writes each object to a temporary directory at the
+  storage's root, syncs it, renames it into place and syncs both directories,
+  and returns only when every directory on the key's path is durable. It
+  removes nothing but the object a Delete names. It refuses a storage that
+  spans two file systems, or whose file system cannot sync a directory, rather
+  than copy or pretend. It follows no symbolic link, never blocks on a file
+  swapped in under it, names no path in its errors, and pages through a
+  directory of 200,000 files in under a second. At start it reads only its
+  temporary directory. A child process killed in the middle of its Puts leaves
+  every key whole or absent, and the files written match `shasum` and `cmp`.
+- A tenant could keep its files only in a directory. The S3 driver,
+  `internal/blob/s3`, is a storage on Amazon S3 or an S3-compatible server,
+  under an optional prefix of a bucket, and passes the storage contract suite
+  unchanged against two different servers. An object of up to 8 MiB is one
+  request; a larger one is a multipart upload, aborted on any failure, in
+  memory bounded for the whole store, not only for one Put. A Put succeeds
+  only on what the server says about the bytes it was sent: the echo of the
+  checksum of each upload and part, the composite checksum of a completed
+  upload or else a HEAD of the object; a server that says nothing is refused
+  when the storage is opened. Read returns exactly the bytes asked or an
+  error. Every answer that is not an object's bytes is cut at 4 MiB. Uploads a
+  crash left unfinished are aborted when the storage opens, which never makes
+  the opening fail. The driver uses only the credentials it is given, and
+  neither they nor anything holding them can be printed; it asks a function of
+  the caller's whether each address may be connected to, and the one provided
+  passes global unicast addresses only; it follows no redirect; and its errors
+  carry neither the server's words nor the endpoint. A storage's prefix is at
+  most 128 bytes and the storage port's longest key is now 896, so every key
+  fits S3's 1024 bytes under every prefix. It adds the AWS SDK for Go's S3
+  client, about 5.6 MB of the binary when the driver is used.
+- A tenant's database held settings and an audit log, and nothing the reception
+  of a study needs. It now keeps, on SQLite, everything that must not be lost:
+  storages and receivers, with partial changes, S3 endpoints kept in one
+  spelling, and the contract's rules on names, overlap, ports and what is in
+  use, an S3 secret stored sealed and never read back; receptions, opened or
+  found per receiver and study, numbered by arrival, stepped by compare-and-set
+  through the core's state table, retried or discarded when failed; received
+  files, in batches that change nothing when written twice; a catalog of
+  subjects, sessions, scans and instances, in which an instance is claimed from
+  a reception's received files before it is written to a storage and confirmed
+  with its scan's rows, so that no instance is archived twice, none is ever
+  replaced by a reception, and what is held does not depend on what later
+  happened to the reception that archived it; quarantine, with release, reject
+  and running totals, where a different file under an archived UID can only be
+  rejected; and leased units of work, every write fenced by the attempt number,
+  whose reception fails with them when they give up, so that no claim outlives
+  its workers. A reception's received count is of every file that arrived, so
+  that received always equals archived plus duplicates plus quarantined when it
+  ends. The store reads no clock. Every list, claim and lookup is answered from
+  an index, also every combination of list filters at millions of rows. These
+  are a second interface, `tenant.Pipeline`, until the Postgres driver passes
+  the same suite.
+- Nothing told a system outside what was happening: a reception moved through
+  its steps and the only way to know was to ask again. A tenant's events are now
+  recorded with the change they report, in the same transaction: each step a
+  reception reaches, with its counts and arrival number, each file quarantined
+  and each decision on one, and what the server reports (failed associations,
+  receivers up or down, storages nearly full). An event carries the archive's
+  labels, ids and counts and never a UID or a value from a file. The feed is
+  read in commit order from a cursor that resumes exactly; a cursor older than
+  what is kept is refused, not skipped; old events are removed in batches; and
+  a status is read in one snapshot with the cursor of its moment, so that what
+  comes after the cursor is not in its counts. `internal/events` follows
+  tenants' feeds live without holding events for any client: a watch is a
+  cursor and a one-slot wake, so a client that stops reading costs no memory
+  and loses nothing until its cursor expires. On SQLite; the Postgres driver
+  follows.
+- A study could not be received into a tenant on Postgres: only SQLite kept
+  what a reception needs. The Postgres driver now has the same operations
+  (storages and receivers, receptions and their received files, the catalog
+  with claimed and held instances, quarantine, leased work) and passes the
+  same contract suite unchanged, on Postgres 16 and 18. With several writers
+  each operation keeps its rules at the default isolation: rows are locked in
+  one stated order and never upgraded, so claims of shared instances taken in
+  opposite orders do not deadlock; two opens of one study make one reception;
+  commits made at once share one subject and one session; two workers never
+  take one unit of work, and neither waits for the other; a storage cannot be
+  removed under a commit. A deadlock or serialization failure that still
+  occurs is retried inside the driver and never reaches a caller as an
+  unknown error. Every list, claim and lookup is answered from an index at
+  millions of rows, checked from the query plan in CI.
+- Four services of the contract answered "not implemented": a storage, a
+  receiver, a reception and a quarantined file could be described but not
+  made or read. `StorageService`, `ReceiverService`, `ReceptionService` and
+  `QuarantineService` are now served, each method behind the same key and
+  grant check as the rest. What a tenant's administrator may point at is
+  bounded by the installation: a directory storage lives under a root the
+  installation lists, at `<root>/<tenant>/<path>`; an S3 storage's endpoint
+  must be on the installation's list; a receiver's port must be one allotted
+  to its tenant, and no two receivers of the installation share one. A
+  storage's secret is sealed when it is written and is never returned.
+  `TestStorage` writes a small object, reads it back and removes it, and
+  says which of those failed. A storage that holds files cannot be removed.
+  The settings behind these
+  (`storage.reserve`, `receiver.ports`, the directory roots, the S3
+  endpoints, the bind addresses, `events.retention`) are parsed by
+  functions that are fuzzed in CI. The command line maps three more answers
+  to exit codes: 5 a state that forbids the change, 6 a position that can
+  no longer be answered, 7 a bound of the server reached.
+- The command line had no command for the archive's four services. It now has
+  `storage` (add, list, show, set, remove, test), `receiver` (add, list, show,
+  set, remove), `reception` (list, show, retry, discard) and `quarantine` (list,
+  show, release, reject), each taking the tenant first, with a table or --json,
+  the exit codes of the other commands and shell completion. An S3 storage's
+  secret access key is read from the variable named by --credential-env or the
+  private file named by --credential-file and never printed. Discarding a
+  failed reception and rejecting a quarantined file need a --reason, and ask for
+  the id to be typed again unless --yes is given.
+- Nothing turned received files into an archive. Package `receive` now does:
+  a file lands in a local incoming area with its SHA-256, its header is read
+  (never its pixel data), it is named subject, session and scan by the
+  tenant's rules, and a reception ends after its quiet period. Each scan is
+  then archived in order: its instances are claimed, each file is written to
+  the storage and read back and compared before its catalog row is
+  committed, then the scan's sidecar and manifest. A file that reads back
+  different is held in quarantine with its incoming copy kept, and is never
+  counted archived. Before the incoming copies are removed the reception is
+  checked whole: every instance at its key with its size, every manifest
+  agreeing with the catalog, no claim left. Every step is leased work
+  recorded in the tenant's database, so a server killed before or after any durable effect of any step
+  (tested with signal 9) resumes without losing a file or archiving one
+  twice. A header is bounded at 64 MiB before pixel data, so a file that
+  declares a huge value is refused without the memory being allocated.
+- The stream of every tenant's events could stall or mislead in ways its
+  first form did not say. A tenant whose database does not answer a read
+  within 5 seconds is now skipped, named in each keep-alive's
+  `unanswered_tenants`, and tried again after a wait that doubles from one
+  second to a minute, so one slow tenant does not hold the others. A tenant
+  that leaves the list of tenants is paused with its cursor kept; one removed
+  and created again under the same name is followed from its first event. A
+  stream resumed with `resume` set starts an unlisted tenant from its first
+  event kept instead of from now, so no event is lost between two streams.
+  A cursor after the newest event a tenant holds, as after a restore from an
+  older backup, is answered out of range instead of waiting forever. An
+  event carries the step its reception left (`previous_step`), so a client
+  can keep the counts of receptions by step from a status and the events
+  after it. One stream follows at most 10000 tenants.
+- A quarantined file's release can carry a reason, kept on its record
+  (`ReleaseQuarantinedFileRequest.reason`, `QuarantinedFile.release_reason`),
+  and a release's audit entry names the reception the file joined.
+- Two quarantine reasons: `QUARANTINE_REASON_HEADER_TOO_LARGE`, whose bytes
+  are kept so a person can release or reject the file, and
+  `QUARANTINE_REASON_INCOMING_LOST`, for a recorded file whose incoming copy
+  is gone.
+- The tenant's store can list a scan's instances, tell a caller which
+  receptions failed when it gave up their work, and refuse a write of
+  received or held files from a worker that lost its lease.
+- `magnetar quarantine release --reason TEXT` keeps why a held file was
+  released with its record, as a rejection keeps its reason; `quarantine show`
+  prints it as "Release reason". The reason is optional, 1 to 1024 bytes, not
+  only spaces.
+- Nothing listened for DICOM: a receiver could be made through the API, but a
+  scanner could not send to it. Each enabled receiver now has a listener on
+  its port and address, started, restarted and stopped as its row changes,
+  with no restart of the server, and started from the database after one. It
+  admits only the callers it lists (calling AE title, address range, or both;
+  an empty list admits nobody), rejecting a stranger as
+  calling-AE-title-not-recognized before anything is negotiated and a wrong
+  called title as called-AE-title-not-recognized. It negotiates only the
+  receiver's SOP classes and transfer syntaxes, and answers C-ECHO and
+  C-STORE and nothing else. A store is written as the bytes sent into the
+  incoming area in bounded memory (a 512 MiB file with a live heap under
+  11 MiB) and answered success only once it is synced there. A file past the
+  size bound, a full disk or storage, or a tenant over its incoming limit is
+  answered A700 and new associations are rejected as transient, with one
+  event when it starts and one when it ends. A receiver that cannot start
+  (port taken, TLS files unusable) shows down with its reason and is retried
+  while the others run. Stopping the server finishes the stores in flight
+  within 30 seconds.
+- A receiver in `magnetar serve` archives what it receives: the reception
+  pipeline opens a tenant's storage by the same rules the API applies when
+  the storage is added, checked again at every use, and names labels with the
+  tenant's own keyed hash. Each tenant has a naming key of 32 random bytes,
+  sealed with the installation key and bound to the tenant, kept in the
+  tenant's database; a tenant made before this version is given one when it
+  is next opened. No API answers it and no log holds it.
+- The setting `receiver.header-limit` (installation-only, default `64MiB`,
+  from `1MiB` to `4GiB`) bounds how much of a received file is read as its
+  header. A file whose header is longer is quarantined as `header_too_large`
+  with its bytes kept, so it can be released once the bound is raised; a
+  change applies within a second, without a restart.
+- `make prove-reception`: the reception proven from outside the binary with
+  dcmtk, pynetdicom, pydicom, hashlib, openssl and sqlite3, each claim one
+  named check: a study archived byte for byte with every manifest checksum
+  right; a study in two associations made one session; a study sent again
+  counted duplicate; a corrected file under the same UID and a file cut short
+  quarantined with their bytes; strangers refused; signal 9 while receiving,
+  in the quiet period and while archiving losing nothing and doubling
+  nothing; a nearly full storage refusing as transient and serving again;
+  the status and the event stream agreeing with the catalog; and streams
+  that stop reading costing no memory; with `PROVE_S3`, a tenant on an S3
+  bucket, each object read back by a GET the proof signs itself, through
+  kills as well; with `PROVE_POSTGRES` and `PROVE_PSQL`, a tenant on
+  Postgres whose catalog psql reads, through kills as well. It replaces `make check-reception`.
+- `docs/testing.md` lists how tests and checks are run, what `-short` means,
+  how a slow test is marked, and every `MAGNETAR_*` variable; the reception
+  walk-through says which changes take effect without a restart.
+- A tenant on Postgres has the event feed a SQLite tenant has: every step of
+  a reception, each file quarantined and each decision on one, receivers'
+  health, storages' space and turned-away callers are events written with
+  the change they report, read in commit order from a cursor, with the
+  status snapshot, retention by checkpoints and the live stream. Several
+  transactions write at once on Postgres, so a change that writes events
+  takes the feed's lock just before its first and holds it to its commit:
+  event ids follow commit order and a reader never passes an event that
+  commits behind it. Changes that write no event, such as a batch of
+  received files, are not slowed.
+- `MonitorService` is served, the last service of the contract that was
+  not. `GetStatus` answers a tenant's numbers now, or a page of every
+  tenant's: its database's state, its counts and its feed's cursor read in
+  one snapshot, each storage's used bytes (a running total kept with each
+  commit) and free bytes, each receiver's health, the throughput of the
+  last ten seconds, and its incoming limit. A tenant whose database does
+  not answer is answered with what the server holds in memory rather than
+  refused. `Watch` streams one tenant's events, or every tenant's, as they
+  are committed, from a cursor or from now, with the caller's key and grant
+  checked again every 15 seconds and an audit entry when the stream opens
+  and when it ends, with the events it carried.
+- The interactive program has a tenant's archive: from a tenant's screen,
+  its status (`t`), which asks for itself again each time the tenant
+  commits an event, through the live stream it follows while it is open;
+  its storages (`o`), receivers with their health (`r`), receptions (`e`)
+  and quarantined files (`h`). A quarantined file is released or rejected
+  from its screen, each with a reason; the rejection, which removes its
+  bytes for good, needs the file's id typed again.
+- A receiver added without a port (`receiver add` without `--port`, or a
+  port of 0 in `AddReceiver`) is given one by the server: the lowest of the
+  tenant's allotted ports that no receiver of the tenant holds and that the
+  server can bind now, IPv4 included. None such is refused, naming the
+  setting `receiver.ports`.
+- `make bench-gate`, and a CI job of its own: reception's speed (files a
+  second from landing to verified, small slices on SQLite and a directory)
+  measured on the base branch's tree and on the change's, in turns on the
+  same machine, failing when the change is slower by more than 25%.
+- The reception's speed is measured on Postgres and on an S3 bucket as well
+  as on SQLite and a directory (`BenchmarkLandToVerified`).
 
 ### Changed
 
+- A scan's files are put to the storage, and read back, eight at a time
+  instead of one after another, every put still ended before any read-back.
+  A reception of 200 slices of 256 KiB went from 21.5 to 30.6 files a second
+  on SQLite and a directory, 36 to 44 on Postgres, and 31.5 to 38 on S3.
+- A keep-alive of the stream of every tenant names, after the first, only
+  the tenants whose position changed since the keep-alive before
+  (`WatchKeepAlive.full` marks the first, which names them all), so a
+  mostly idle stream at a thousand tenants sends a few bytes every 15
+  seconds instead of the whole map of positions.
+
+- A recorded file whose copy in the incoming area is gone is quarantined as
+  `incoming_lost` and the rest of its study is archived; before, the whole
+  reception failed. A scan's manifest is written from the catalog's list of
+  the scan, and verification checks that it lists every instance the catalog
+  holds in the scan, whichever reception archived it.
+- A receiver added, changed or removed through the API is started, restarted
+  or stopped at once; the supervisor's own reading of the receivers is a
+  backstop every 30 seconds. A running receiver whose TLS certificate expires
+  is stopped and shown down within 5 seconds.
+- A receiver with no bind address is refused, address in use, when another
+  program holds its port on the IPv4 wildcard address, on macOS as elsewhere.
+
+- `magnetar receiver add` and `set` refuse `--allow-aet-from` with no title or
+  no range, naming the missing part; an AE title that contains `@` is read
+  whole, since the rule splits at the last `@`.
+- The comments of the storage and settings contract state the 1023-byte limit
+  of a directory's path, the segments safe on Windows, the refusal of roots
+  that overlap once symbolic links are followed, that credentials change with
+  the endpoint, `path_style` at private-address endpoints, and what a caller
+  who is not an admin reads of `storage.directory-roots`. No field, number or
+  name changed.
+
+- Where a tenant's data may be (directory roots and their resolution, S3
+  endpoints, port allotment, opening a storage) is one package,
+  `internal/place`, that the handlers and the reception pipeline both use.
+  The rule of a name, Windows device names and the nesting of paths are
+  written once, in `internal/core/pathname`.
+- An S3 storage's prefix is at most 128 bytes (it was 512), so with the
+  longest key the server writes every object's key fits the 1024 bytes S3
+  allows.
+
+- Running what CI runs meant reading the workflow and assembling it by hand:
+  the Python packages, Postgres, two S3 servers, the proof. `make ci` now runs
+  every job of the workflow in one go, cheapest first, ending with the proof.
+  It removes every container it started however it ends, and lists what it
+  could not run on the machine it ran on (on a Mac, the 32-bit tests, which it
+  builds and vets instead). `make tools-python`, `pg-up`/`pg-down`,
+  `s3-up`/`s3-down`, `test-postgres`, `test-s3`, `outside` and `check-static`
+  are its parts, and CI's Postgres, S3 and build jobs call them. Go and the
+  Python tools are set up by one composite action each instead of being
+  repeated in nine jobs. The contract's Python toolchain
+  (`scripts/requirements/proto.txt`) is now pinned with hashes and installed
+  with `--require-hashes` like the others.
+- The API's handlers imported the database drivers for the names of the two
+  database types, which linked both database libraries into them. The names are
+  now `master.SQLiteDriver` and `master.PostgresDriver`, beside the tenant's
+  field they are values of, and a lint rule keeps the handlers from importing a
+  driver. Another lint rule lets only `internal/driver` import the SQLite and
+  Postgres drivers, which their documentation had claimed and nothing held. The
+  redactor moved from `internal/server/redact` to `internal/obs/redact`, beside
+  the logger that uses it.
 - Each change through the SQLite drivers, the master's and a tenant's, was a
   transaction of its own with a sync of its own, so a SQLite-backed server
   made at most a few hundred changes a second however many callers waited,
@@ -367,6 +715,141 @@ All notable changes to Magnetar are written here. The form is
 
 ### Fixed
 
+- A quarantined file released through the API or the command line was
+  released by the tenant's store alone: the reception pipeline never heard
+  of it. A released file that joined no reception (a file held for its
+  header's size, released after `receiver.header-limit` was raised, say)
+  was never checked again, and the next start of the server deleted it as
+  kept by nothing; a file that joined a reception, and a retried reception,
+  waited for the next start before going on. A release and a retry now run
+  through the tenant's running pipeline, which gives the file's bytes their
+  landed name before the release is recorded and queues the next step at
+  once; with no pipeline running they are refused as unavailable, recording
+  nothing. A rejected or discarded file's bytes are removed at once too.
+- A server stopped during a release, after it was recorded and before the
+  released file was checked again, gave the file at its next start a record
+  whose id was the released record's; the store skipped it as already held,
+  and the start after deleted the file. At start such a file is now checked
+  again as a release of its record, under a record of its own; and a hold
+  the store skips because its id is taken leaves the file's bytes alone.
+- A release in flight while the tenant's reception pipeline was restarted
+  in the same process (its database reopened) could leave the released
+  file under a name nothing kept, removed at the start after. A release, a
+  retry, a rejection and a discard are now admitted as a received file is:
+  refused once the pipeline stops, and waited for by its stop.
+- A receiver added without a port had its bind address probed before the
+  request was checked, so a host name was resolved and bound for a moment;
+  the request is now checked first.
+- The event feed's keeper logged that a checkpoint or a pruning failed, but
+  not why.
+- A server killed while it archived a study, and started again, left the
+  study's work claimed by the killed process for two minutes, the length of
+  a lease, before archiving it. It now takes that work back at its start.
+- The end-to-end tests of reception on Postgres and on S3 never ran in CI:
+  they read variables nothing set, and `make test-s3` ran only the S3
+  driver's tests. `make test-postgres` and `make test-s3` now run them, each
+  test on a scratch schema or prefix of its own.
+- A tenant's events were never pruned: the setting `events.retention` was
+  read by nothing. The server now records, at its start and every hour, a
+  checkpoint of each tenant's feed with its own clock (at this time the
+  newest event was this one), and prunes every event up to the newest
+  checkpoint older than the tenant's retention. An event's own time plays
+  no part, so an event dated far ahead or a run of wrong dates no longer
+  holds back or stalls the pruning; an idle feed adds no checkpoint.
+
+- A receiver's associations are now negotiated from its own SOP classes and
+  transfer syntaxes from the first one: they are set before the port opens,
+  where before they were set just after it, and a caller in between was
+  turned away. Stopping a receiver lets a store in progress finish through
+  the DICOM library's own graceful stop; a new caller meanwhile is turned
+  away and keeps its file. An abort is reported as a protocol error only
+  when the caller broke the protocol or went quiet; a failed TLS handshake
+  is reported as `tls_failed`. The DICOM library logs nowhere for the
+  receivers and the header reader, by a logger given to each, where before
+  its global logger was silenced for the whole process. A value after a
+  file's pixel data is held to `receiver.header-limit`, as one before it is.
+
+- Two directory roots whose paths differ in text could be one directory on
+  the disk: a root whose path was a symbolic link into another root's tenant
+  directory let two tenants share a storage. Every link in a root's path is
+  now followed when `storage.directory-roots` is set and whenever a root is
+  used, and two roots that are one directory, or one inside the other, once
+  followed are refused.
+- On Windows `/` also separates a path's segments and a segment's final dots
+  and spaces are dropped, so roots such as `D:\srv` and `D:\srv/x` were
+  accepted as apart. A root's path is now read that way, and a directory
+  storage's path may not have a segment ending in a dot or one that is a
+  Windows device name, on any system.
+- A directory storage could be added under a path too long for the server to
+  open, and then failed every write. Its directory, root included, is now
+  bounded at 1023 bytes when it is added.
+- A tenant's reader could read the installation's absolute root paths through
+  `GetSetting storage.directory-roots`. A caller who is not an admin on the
+  installation now reads the roots' names only.
+- An S3 storage at an endpoint listed with `private-address` could address its
+  bucket in the host name, so a bucket name a tenant chose decided which host
+  in the server's network was reached. Such a storage must use path style.
+- `SetStorage` could move an S3 storage to another endpoint and keep its
+  credentials, signing requests to the new host with them. A mask that names
+  `s3.endpoint` must now name both credentials too.
+- `TestStorage` on an S3 storage answered an internal error: the tenant's
+  store could not hand back the sealed secret. It can now, on both databases.
+- `TestStorage` told a storage's faults apart by the drivers' message text;
+  the storage drivers now mark each cause with an exported error value.
+- Discarding a failed reception could list, for removal, a place in the
+  incoming area that a released file had given to a reception still running
+  or one that failed and may be retried. Such a place is no longer listed.
+- On Postgres, two opens of a reception at once with the same id answered a
+  conflict, a unit of work queued under a held key was refused when its
+  reception did not exist, and a refused batch of files named a different
+  reception than on SQLite. Both databases now give the one answer the
+  store's contract states, and a change retried after a deadlock is tested.
+- A precondition from the tenant's store is answered FAILED_PRECONDITION and
+  an expired event cursor OUT_OF_RANGE by their own kind, not by a mapping
+  in the handlers.
+
+- A request its caller canceled could be recorded under another reason than the
+  cancel: when the cancel arrived while the server waited for the request's
+  message, the entry said the message could not be read; and a cancel that
+  arrived just after the check still ran the handler, whose success was then
+  recorded as done. A request whose caller has gone is now recorded as
+  canceled at whatever moment the cancel lands, and nothing further is done
+  for it, a change included.
+- A key revoked or expired while a request's body was still arriving was
+  still honored by methods whose requirement reads the request (GetTenant,
+  the settings methods, ListAuditEntries), for as long as the body took, up to
+  its 10-second bound: the key judged when the headers arrived was not judged
+  again. Such a method's check now reads the key again once the message has
+  arrived, and every check judges a key's expiry at the moment it decides.
+  Every request that the check allows now writes exactly one audit entry
+  however it ends (an unreadable message, a handler's failure or panic, a
+  deadline, a cancel, the server stopping); a request canceled by its caller
+  during the check is recorded as having ended, not as a failure of the
+  master database; a refused HTTP/1.1 connection is closed as soon as the
+  refusal is written instead of after the body's read bound; and while the
+  server stops, only the health check's exact path is still answered.
+- A caller with no key, or a bad one, could tell from the server's answer which
+  methods it serves, and some of its requests were held or went unaudited. Who
+  the caller was got decided after the router and the RPC library had looked at
+  the path, the HTTP method and the content type, so the answer differed by what
+  the path named: over HTTP/1.1 a gRPC, gRPC-Web or Connect streaming call to a
+  name not served got HTTP 505 and a served one the refusal; a streaming content
+  type got 415 with a list of accepted types from a served method and a refusal
+  from one not served; a GET or a POST without an RPC content type got 405 with
+  an `Allow` header, 404 or 401 by path; a percent-encoded path reached the real
+  handler; a method that reads its request held a request whose body never ended
+  for 10 seconds; and the RPC library's own answers wrote no audit entry. The
+  server now authenticates every request before it routes it: a caller who is
+  not authenticated gets one refusal, chosen only by the protocol its
+  `Content-Type` names, written at once without reading the body, the same for
+  every path and every HTTP method, with the request id where a client reads
+  initial metadata. Only an authenticated caller reaches the router, which
+  serves exact paths only; anything else, a percent-encoded path included, is
+  answered UNIMPLEMENTED (NOT_FOUND to plain HTTP) in the caller's protocol over
+  any HTTP version. Every request but the health check writes exactly one audit
+  entry, under the method asked for when it has the shape of a protobuf method
+  name within 256 bytes and under `/` otherwise, including a call the RPC
+  library refuses before the check. The key is still read once per request.
 - A key revoked, expired, or stripped of its grant after its request was
   checked could still make that request's change: the management calls read
   the key again just before the change, in a step of their own, and the

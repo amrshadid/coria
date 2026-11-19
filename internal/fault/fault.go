@@ -33,6 +33,19 @@ const (
 	// Unavailable is a failure that may pass if the request is tried again
 	// later: a database or a storage that cannot be reached.
 	Unavailable
+	// Precondition is a request that is well formed but names something in
+	// a state that forbids it: a storage that still holds files, a file
+	// already rejected, a port the installation has not allotted. Sending
+	// it again unchanged fails again until that state changes.
+	Precondition
+	// OutOfRange is a request for a position that can no longer be
+	// answered, such as a cursor older than the oldest event kept.
+	// Sending it again fails again; the caller starts over.
+	OutOfRange
+	// Exhausted is a request refused because a bound of the server is
+	// reached: a message over the size limit, or too many streams open at
+	// once.
+	Exhausted
 )
 
 // String returns the kind's name in lowercase, as it appears in a log.
@@ -52,15 +65,25 @@ func (k Kind) String() string {
 		return "conflict"
 	case Unavailable:
 		return "unavailable"
+	case Precondition:
+		return "precondition"
+	case OutOfRange:
+		return "out of range"
+	case Exhausted:
+		return "exhausted"
 	}
 	return "Kind(" + strconv.Itoa(int(k)) + ")"
 }
 
 // ExitCode returns the status the command line exits with for an error of
-// this kind. Scripts tell a usage mistake (2), a refusal (3) and a missing
-// thing (4) apart by it; every other failure is 1. Unauthenticated and Denied
-// share 3 because a caller must not learn from the status whether its key or
-// its grant was the problem.
+// this kind. Scripts tell a usage mistake (2), a refusal (3), a missing thing
+// (4), a state that forbids the change (5), a position that can no longer be
+// answered (6) and a bound of the server reached (7) apart by it; every other
+// failure is 1. Unauthenticated and Denied share 3 because a caller must not
+// learn from the status whether its key or its grant was the problem. Each
+// of 5, 6 and 7 asks the script for something different: change the state
+// first, start over, or send less or later; none of them is a usage mistake
+// (2), since the request was well formed.
 func (k Kind) ExitCode() int {
 	switch k {
 	case Invalid:
@@ -69,6 +92,12 @@ func (k Kind) ExitCode() int {
 		return 3
 	case NotFound:
 		return 4
+	case Precondition:
+		return 5
+	case OutOfRange:
+		return 6
+	case Exhausted:
+		return 7
 	}
 	return 1
 }

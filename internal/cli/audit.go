@@ -5,11 +5,9 @@ import (
 	"io"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
 )
 
 // newAudit builds the audit noun.
@@ -64,26 +62,9 @@ zone with the offset.`,
 				}
 				req.Outcome = o
 			}
-			now := a.env.Now()
-			var from, to *timestamppb.Timestamp
-			if since != "" {
-				t, err := parseTime("since", since, now, a.env.Location)
-				if err != nil {
-					return err
-				}
-				from = timestamppb.New(t)
-				req.StartTime = from
-			}
-			if until != "" {
-				t, err := parseTime("until", until, now, a.env.Location)
-				if err != nil {
-					return err
-				}
-				to = timestamppb.New(t)
-				req.EndTime = to
-			}
-			if from != nil && to != nil && !to.AsTime().After(from.AsTime()) {
-				return fault.New(fault.Invalid, "--until must be after --since")
+			var err error
+			if req.StartTime, req.EndTime, err = a.timeRange(since, until); err != nil {
+				return err
 			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {

@@ -44,7 +44,9 @@ type Options struct {
 	// Size, when both numbers are set, is the terminal's size to start with,
 	// for a run on a pipe; a terminal reports its own.
 	Width, Height int
-	// NoRefresh turns off the timer that refreshes the list of tenants.
+	// NoRefresh turns off the timers by which screens refresh themselves:
+	// the live lists', and a status's wait before it follows its tenant's
+	// events again after a stream ended.
 	NoRefresh bool
 
 	// noInput runs the program without reading any input, for a test whose

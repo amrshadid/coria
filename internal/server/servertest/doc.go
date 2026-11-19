@@ -1,6 +1,6 @@
 // Package servertest holds stand-in handlers of the API's services, so the
 // server can be tested, by its own tests and by outside clients (grpcurl,
-// Python grpcio, curl; scripts/check-server.sh), before the real handlers
+// Python grpcio, curl; scripts/check/server.sh), before the real handlers
 // exist. The stand-ins hold no business logic of their own: the few methods
 // that do something (CreateKey, SetGrant, ListKeys, WhoAmI) hand the
 // request's Call to the access package, as a real handler will, and the

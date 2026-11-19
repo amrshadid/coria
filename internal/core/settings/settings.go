@@ -21,6 +21,42 @@ const (
 	MaxKeyLifetime = 3650 * 24 * time.Hour
 )
 
+// The settings the reception pipeline reads, each named where it is used in
+// the API contract: storage.proto (the roots and endpoints storages may use),
+// receiver.proto (the ports, the bind addresses, the incoming limit and the
+// reserve) and monitor.proto (how long events are kept).
+const (
+	// StorageDirectoryRoots is the roots directory storages may lie under,
+	// one "name=path" per line (ParseDirectoryRoots). Installation-only.
+	StorageDirectoryRoots = "storage.directory-roots"
+	// StorageS3Endpoints is the endpoints S3 storages may use, one per line
+	// (ParseS3Endpoints). Installation-only.
+	StorageS3Endpoints = "storage.s3-endpoints"
+	// StorageReserve is the free space kept on every disk or store data is
+	// written to (ParseReserve). Installation-only.
+	StorageReserve = "storage.reserve"
+	// ReceiverPorts is the ports allotted to a tenant (ParsePorts). Set on
+	// a tenant by the installation's admin only; no installation value.
+	ReceiverPorts = "receiver.ports"
+	// ReceiverBindAddresses is the addresses receivers may listen on
+	// (ParseBindAddresses). Installation-only.
+	ReceiverBindAddresses = "receiver.bind-addresses"
+	// IncomingLimit is the most bytes a tenant may hold in the incoming
+	// area, "0" for no limit of its own (ParseSize). Set on a tenant by the
+	// installation's admin only; the installation's value is every tenant's
+	// default.
+	IncomingLimit = "incoming.limit"
+	// EventsRetention is how long a tenant's events are kept
+	// (ParseRetention). Ordinary: a tenant's admin may override it.
+	EventsRetention = "events.retention"
+	// ReceiverHeaderLimit is the most bytes of a received file read as its
+	// header, everything before its pixel data (ParseHeaderLimit). A file
+	// whose header is longer is held with its bytes kept, never lost.
+	// Installation-only: it bounds the server's memory, which tenants
+	// share.
+	ReceiverHeaderLimit = "receiver.header-limit"
+)
+
 // ReservedPrefix starts the names the system keeps for itself in the
 // master's settings store, such as the installation's id. No setting of a
 // table may use it, so the settings service, which knows only a table's
@@ -43,12 +79,52 @@ type Definition struct {
 	// Default is the built-in default: the value that applies when neither
 	// the installation nor a tenant has set one. Validate accepts it.
 	Default string
-	// TenantOverride reports whether a tenant may set its own value.
+	// TenantOverride reports whether a tenant may hold its own value. A
+	// setting without it is installation-only: a tenant scope is refused.
 	TenantOverride bool
+	// TenantSetByInstallation reports that a tenant's value is set and unset
+	// by an admin on the installation only, never by the tenant's own admin:
+	// it holds what the installation hands out to tenants, such as the ports
+	// a tenant's receivers may use. It needs TenantOverride.
+	TenantSetByInstallation bool
+	// TenantOnly reports that the setting has no installation value: the
+	// installation scope is refused, and what applies to a tenant without a
+	// value of its own is the built-in default. It needs
+	// TenantSetByInstallation, since a default the installation sets for
+	// every tenant would make sense for any other setting.
+	TenantOnly bool
 	// Validate returns an error, whose text is for the person who wrote the
 	// value, unless the value is one this setting accepts. Whether an empty
 	// value is accepted is its own business.
 	Validate func(value string) error
+}
+
+// Kind is who may set a setting, and where (settings.proto,
+// SettingsService).
+type Kind int
+
+// The kinds.
+const (
+	// Ordinary: the installation's admin sets the installation's value and,
+	// when the setting allows a tenant override, the tenant's admin sets the
+	// tenant's.
+	Ordinary Kind = iota + 1
+	// InstallationOnly: an installation value and no tenant override.
+	InstallationOnly
+	// SetByInstallation: a tenant's value is set by an admin on the
+	// installation only.
+	SetByInstallation
+)
+
+// Kind returns the setting's kind.
+func (d Definition) Kind() Kind {
+	switch {
+	case d.TenantSetByInstallation:
+		return SetByInstallation
+	case !d.TenantOverride:
+		return InstallationOnly
+	}
+	return Ordinary
 }
 
 // Table is a list of definitions, looked up by name. It is not changed once
@@ -59,7 +135,7 @@ type Table struct {
 }
 
 // Builtin returns the definitions of the settings this version of the server
-// knows, a new slice each call.
+// knows, a new slice each call. Each value form and its rule is in values.go.
 func Builtin() []Definition {
 	return []Definition{{
 		Name:           KeyDefaultLifetime,
@@ -75,6 +151,64 @@ func Builtin() []Definition {
 			}
 			return nil
 		},
+	}, {
+		// Empty by default, so no directory storage can be added until the
+		// installation's admin names a root (storage.proto, StorageService).
+		Name:     StorageDirectoryRoots,
+		Default:  "",
+		Validate: func(v string) error { _, err := ParseDirectoryRoots(v); return err },
+	}, {
+		// Empty by default, so no S3 storage can be added until the
+		// installation's admin lists an endpoint.
+		Name:     StorageS3Endpoints,
+		Default:  "",
+		Validate: func(v string) error { _, err := ParseS3Endpoints(v); return err },
+	}, {
+		// Installation-only, so no tenant can lower the reserve that keeps
+		// a full disk from failing every tenant's receptions.
+		Name:     StorageReserve,
+		Default:  "10%,10GiB",
+		Validate: func(v string) error { _, err := ParseReserve(v); return err },
+	}, {
+		// Handed out per tenant, so two tenants' receivers never contend for
+		// a port; empty by default, so a tenant has no DIMSE receiver until
+		// ports are allotted to it. No installation value: a default port
+		// range for every tenant would be one range shared by all.
+		Name:                    ReceiverPorts,
+		Default:                 "",
+		TenantOverride:          true,
+		TenantSetByInstallation: true,
+		TenantOnly:              true,
+		Validate:                func(v string) error { _, err := ParsePorts(v); return err },
+	}, {
+		// Empty by default: every receiver listens on every address, and
+		// none may name one.
+		Name:     ReceiverBindAddresses,
+		Default:  "",
+		Validate: func(v string) error { _, err := ParseBindAddresses(v); return err },
+	}, {
+		// The installation's value is the default for every tenant; a
+		// tenant's own is set by the installation's admin, since the
+		// incoming area is the installation's disk.
+		Name:                    IncomingLimit,
+		Default:                 "0",
+		TenantOverride:          true,
+		TenantSetByInstallation: true,
+		Validate:                func(v string) error { _, err := ParseSize(v); return err },
+	}, {
+		// 64 MiB holds the largest honest headers known: the per-frame
+		// functional groups of an enhanced multi-frame object (PS3.3
+		// C.7.6.16) at about 4 KB a frame, 40 MiB for 10,000 frames. An
+		// installation that receives larger ones raises it without a new
+		// release.
+		Name:     ReceiverHeaderLimit,
+		Default:  "64MiB",
+		Validate: func(v string) error { _, err := ParseHeaderLimit(v); return err },
+	}, {
+		Name:           EventsRetention,
+		Default:        "90d",
+		TenantOverride: true,
+		Validate:       func(v string) error { _, err := ParseRetention(v); return err },
 	}}
 }
 
@@ -92,6 +226,10 @@ func New(defs ...Definition) (*Table, error) {
 			return nil, errors.New("settings: the name " + d.Name + " is under " + ReservedPrefix + ", which the system keeps for itself")
 		case d.Validate == nil:
 			return nil, errors.New("settings: " + d.Name + " has no Validate function")
+		case d.TenantSetByInstallation && !d.TenantOverride:
+			return nil, errors.New("settings: " + d.Name + " is set on a tenant by the installation, so it takes a tenant's value")
+		case d.TenantOnly && !d.TenantSetByInstallation:
+			return nil, errors.New("settings: " + d.Name + " has no installation value, which only a setting the installation sets on each tenant may lack")
 		case len(d.Default) > MaxValueLength:
 			return nil, errors.New("settings: the default of " + d.Name + " is longer than 64 KiB")
 		}

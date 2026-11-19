@@ -58,7 +58,7 @@ func (r *Registry) refresh(e *entry, first bool) {
 // stepError says which step of an open failed, which decides the kind a
 // failed creation answers.
 type stepError struct {
-	step string // "open", "ping" or "migrate"
+	step string // "open", "ping", "migrate" or "secret"
 	err  error
 }
 
@@ -112,6 +112,10 @@ func (r *Registry) open(e *entry, first bool) {
 		if err := s.Migrate(ctx); err != nil {
 			_ = s.Close() // The migration failure is the one reported.
 			return nil, &stepError{"migrate", err}
+		}
+		if err := r.ensureNamingSecret(ctx, e.id, s); err != nil {
+			_ = s.Close() // The failure to keep the key is the one reported.
+			return nil, &stepError{"secret", err}
 		}
 		return s, nil
 	})

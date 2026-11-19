@@ -129,7 +129,7 @@ func startProgram(t *testing.T, panics bool) *programRig {
 	// The first frame is drawn whole, so its words are in the output in one
 	// piece; later frames are drawn by differences, and a word that changed
 	// may be split by cursor movements, so nothing later is looked for in the
-	// raw output. scripts/check-tui.py reads the screen through an emulator.
+	// raw output. scripts/check/tui.py reads the screen through an emulator.
 	p.waitFor("Menu")
 	return p
 }
@@ -225,7 +225,7 @@ func TestProgramQuitsOnCtrlC(t *testing.T) {
 // TestIsTerminalIsNotFooledByCharacterDevices guards the test for a terminal:
 // /dev/null is a character device and no terminal, and neither is a pipe, a
 // buffer or nothing. (A real terminal is shown by the pseudo-terminal check,
-// scripts/check-tui.py.)
+// scripts/check/tui.py.)
 func TestIsTerminalIsNotFooledByCharacterDevices(t *testing.T) {
 	null, err := os.Open(os.DevNull)
 	if err != nil {

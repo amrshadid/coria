@@ -14,6 +14,7 @@ import (
 var allKinds = []fault.Kind{
 	fault.Internal, fault.Invalid, fault.Unauthenticated, fault.Denied,
 	fault.NotFound, fault.Conflict, fault.Unavailable,
+	fault.Precondition, fault.OutOfRange, fault.Exhausted,
 }
 
 // TestEveryKindRoundTrips guards the table: each kind maps to a code and that
@@ -43,6 +44,9 @@ func TestContractCodes(t *testing.T) {
 		fault.Conflict:        connect.CodeAlreadyExists,
 		fault.Unavailable:     connect.CodeUnavailable,
 		fault.Internal:        connect.CodeInternal,
+		fault.Precondition:    connect.CodeFailedPrecondition,
+		fault.OutOfRange:      connect.CodeOutOfRange,
+		fault.Exhausted:       connect.CodeResourceExhausted,
 	}
 	for k, c := range want {
 		if got := Code(k); got != c {
@@ -52,12 +56,12 @@ func TestContractCodes(t *testing.T) {
 }
 
 // TestReceivingSideCodes guards the codes any method may answer: a deadline
-// and a cancellation are unavailable, and every other code, a message over the
-// size limit and a code this version has never heard of among them, is
-// Internal (exit 1), never the caller's fault.
+// and a cancellation are unavailable, a bound of the server reached is
+// Exhausted (exit 7), and every other code, a code this version has never
+// heard of among them, is Internal (exit 1), never the caller's fault.
 func TestReceivingSideCodes(t *testing.T) {
 	cases := map[connect.Code]fault.Kind{
-		connect.CodeResourceExhausted: fault.Internal,
+		connect.CodeResourceExhausted: fault.Exhausted,
 		connect.Code(99):              fault.Internal,
 		connect.CodeDeadlineExceeded:  fault.Unavailable,
 		connect.CodeCanceled:          fault.Unavailable,

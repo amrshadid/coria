@@ -397,9 +397,50 @@ func TestAuditWrittenAtStop(t *testing.T) {
 	}
 }
 
+// stuckRegistry is a tenant registry whose Close never returns, whatever
+// its context says, until the test releases it.
+type stuckRegistry struct{ release chan struct{} }
+
+func (r stuckRegistry) Close(context.Context) error {
+	<-r.release
+	return nil
+}
+
+// TestStopAbandonsWhatDoesNotClose guards the close deadline: a part that
+// does not return from Close within it (here the tenant registry, which
+// ignores its context) is given up on, Stop says so, the parts after it
+// are still closed, the lock on the data directory is released, and the
+// whole of Stop is bounded by the deadline rather than by the part.
+func TestStopAbandonsWhatDoesNotClose(t *testing.T) {
+	reg := stuckRegistry{release: make(chan struct{})}
+	defer close(reg.release)
+	const closeT = 300 * time.Millisecond
+	e := newEnv(t, options{noNetwork: true, drain: 100 * time.Millisecond, grace: 100 * time.Millisecond, closeT: closeT, registry: reg})
+	e.stopErrOK = true
+	began := time.Now()
+	err := e.srv.Stop()
+	took := time.Since(began)
+	if err == nil || !strings.Contains(err.Error(), "closing the tenant registry") ||
+		!strings.Contains(err.Error(), "did not return within its close deadline and was abandoned") {
+		t.Fatalf("Stop with a registry that does not close: %v", err)
+	}
+	// Drain, grace and three close deadlines with their quarter of slack,
+	// and room for a loaded machine; the stuck part alone would never end.
+	if bound := 10 * time.Second; took > bound {
+		t.Fatalf("Stop took %v with a part that does not close, past %v", took, bound)
+	}
+	lock, err := server.TakeLock(e.dir)
+	if err != nil {
+		t.Fatalf("the lock was not released after the part was given up on: %v", err)
+	}
+	_ = lock.Release()
+}
+
 // TestRequestDuringStop guards what a request meets while Stop drains: any
-// request is UNAVAILABLE, except the health service's Check, which answers
-// NOT_SERVING; and when Stop is done the lock is released.
+// request is UNAVAILABLE, except the health service's Check at its exact
+// path (not percent-encoded, not in another case, not with a trailing
+// slash), which answers NOT_SERVING; and when Stop is done the lock is
+// released.
 func TestRequestDuringStop(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, delay: 800 * time.Millisecond, drain: 5 * time.Second})
 	cl := e.local()
@@ -423,6 +464,13 @@ func TestRequestDuringStop(t *testing.T) {
 	}
 	if h := call(server.HealthCheckProcedure); h.Code != http.StatusOK || !strings.Contains(h.Body.String(), "NOT_SERVING") {
 		t.Fatalf("health during stop: %d %s", h.Code, h.Body.String())
+	}
+	// Only the health check's exact path is let in: not another spelling of
+	// it, which the server does not serve as the health check.
+	for _, p := range []string{"/grpc.health.v1.Health%2FCheck", "/GRPC.HEALTH.V1.HEALTH/CHECK", "/grpc.health.v1.Health/Check/", server.HealthWatchProcedure} {
+		if h := call(p); h.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s during stop: %d %s, want the stopping refusal", p, h.Code, h.Body.String())
+		}
 	}
 	if err := <-stopped; err != nil {
 		t.Fatal(err)
@@ -525,14 +573,16 @@ func TestCatchAllNever200(t *testing.T) {
 }
 
 // TestUnknownMethodLabels guards the metrics' series: a method nobody
-// registered is counted as "unknown" and its path never becomes a label,
-// so callers cannot make series without bound; and its path is cut in the
-// log.
+// registered is counted as "unknown", whether its caller is allowed or
+// refused, and its path never becomes a label, so callers cannot make series
+// without bound; and its path is cut in the log.
 func TestUnknownMethodLabels(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	long := strings.Repeat("x", 5000)
+	refused := newClients(e.socketClient(true), "http://local", true, "Bearer "+unknownKey)
 	for _, p := range []string{"/magnetar.v1.AccessService/NoSuchOne", "/magnetar.v1.AccessService/" + long, "/no.such.Service/Call"} {
 		_ = e.local().raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: p}, &emptyMsg{}, &emptyMsg{})
+		_ = refused.raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: p}, &emptyMsg{}, &emptyMsg{})
 	}
 	text := metricsText(e)
 	if strings.Contains(text, "NoSuchOne") || strings.Contains(text, "xxxx") || strings.Contains(text, "no.such.Service") {

@@ -8,6 +8,7 @@ import (
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
 	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/master"
 )
 
@@ -20,7 +21,7 @@ const (
 	detailEnd     = "end_time"
 )
 
-// Methods is the method-to-requirement table of the four services: for each
+// Methods is the method-to-requirement table of the services: for each
 // method, what a request needs of its caller and the facts of its audit
 // entry, each line from the Role line of the method's comment. The server
 // asks it about every request before the handler runs, and makes the access
@@ -113,6 +114,16 @@ func onScope(s *v1.Scope, role master.Role) access.Requirement {
 	return access.OnInstallation(role)
 }
 
+// onMonitorScope is the requirement of a Monitor method: reader on the
+// tenant the scope names, operator on the installation for every tenant (a
+// malformed scope is held to the installation's, as onScope does).
+func onMonitorScope(s *v1.Scope) access.Requirement {
+	if t, ok := s.GetKind().(*v1.Scope_Tenant); ok && master.ValidateTenantName(t.Tenant) == nil {
+		return access.OnTenant(t.Tenant, master.RoleReader)
+	}
+	return access.OnInstallation(master.RoleOperator)
+}
+
 // scopeDetail returns a scope as an audit entry's details write it,
 // "installation" or "tenant/<name>", and "none" for a malformed one.
 func scopeDetail(s *v1.Scope) string {
@@ -163,12 +174,15 @@ var rules = map[string]rule{
 	magnetarv1connect.SettingsServiceGetSettingProcedure: byMessage(func(r *v1.GetSettingRequest) (access.Requirement, access.Request) {
 		return onScope(r.GetScope(), master.RoleReader), settingFacts(r.GetName(), r.GetScope())
 	}),
+	// "Role: admin on the scope set; for a setting set on a tenant by the
+	// installation's admin only, admin on the installation, whatever the
+	// scope."
 	magnetarv1connect.SettingsServiceSetSettingProcedure: byMessage(func(r *v1.SetSettingRequest) (access.Requirement, access.Request) {
 		s := r.GetSetting()
-		return onScope(s.GetScope(), master.RoleAdmin), settingFacts(s.GetName(), s.GetScope())
+		return settingChange(s.GetName(), s.GetScope()), settingFacts(s.GetName(), s.GetScope())
 	}),
 	magnetarv1connect.SettingsServiceUnsetSettingProcedure: byMessage(func(r *v1.UnsetSettingRequest) (access.Requirement, access.Request) {
-		return onScope(r.GetScope(), master.RoleAdmin), settingFacts(r.GetName(), r.GetScope())
+		return settingChange(r.GetName(), r.GetScope()), settingFacts(r.GetName(), r.GetScope())
 	}),
 	magnetarv1connect.SettingsServiceListSettingsProcedure: byMessage(func(r *v1.ListSettingsRequest) (access.Requirement, access.Request) {
 		return onScope(r.GetScope(), master.RoleReader), access.Request{Details: map[string]string{detailScope: scopeDetail(r.GetScope())}}
@@ -178,6 +192,112 @@ var rules = map[string]rule{
 	magnetarv1connect.AuditServiceListAuditEntriesProcedure: byMessage(func(r *v1.ListAuditEntriesRequest) (access.Requirement, access.Request) {
 		return onScope(r.GetScope(), master.RoleAdmin), access.Request{Details: auditFilterDetails(r)}
 	}),
+
+	// MonitorService: reader on the tenant asked for, operator on the
+	// installation for every tenant.
+	magnetarv1connect.MonitorServiceGetStatusProcedure: byMessage(func(r *v1.GetStatusRequest) (access.Requirement, access.Request) {
+		return onMonitorScope(r.GetScope()), access.Request{Details: map[string]string{detailScope: scopeDetail(r.GetScope())}}
+	}),
+	magnetarv1connect.MonitorServiceWatchProcedure: byMessage(func(r *v1.WatchRequest) (access.Requirement, access.Request) {
+		return onMonitorScope(r.GetScope()), access.Request{Details: watchDetails(r)}
+	}),
+
+	// StorageService: admin on the tenant to change, reader to read. The
+	// object is the storage's name.
+	magnetarv1connect.StorageServiceAddStorageProcedure: byMessage(func(r *v1.AddStorageRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetStorage().GetName(), Details: map[string]string{detailType: storageType(r.GetStorage())}}
+	}),
+	magnetarv1connect.StorageServiceGetStorageProcedure: byMessage(func(r *v1.GetStorageRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: r.GetName()}
+	}),
+	magnetarv1connect.StorageServiceListStoragesProcedure: byMessage(func(r *v1.ListStoragesRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{}
+	}),
+	magnetarv1connect.StorageServiceSetStorageProcedure: byMessage(func(r *v1.SetStorageRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetStorage().GetName(), Details: maskDetails(r.GetUpdateMask().GetPaths())}
+	}),
+	magnetarv1connect.StorageServiceRemoveStorageProcedure: byMessage(func(r *v1.RemoveStorageRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetName()}
+	}),
+	magnetarv1connect.StorageServiceTestStorageProcedure: byMessage(func(r *v1.TestStorageRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetName()}
+	}),
+
+	// ReceiverService: admin on the tenant to change, reader to read. The
+	// object is the receiver's name.
+	magnetarv1connect.ReceiverServiceAddReceiverProcedure: byMessage(func(r *v1.AddReceiverRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetReceiver().GetName(), Details: requestReceiverDetails(r.GetReceiver())}
+	}),
+	magnetarv1connect.ReceiverServiceGetReceiverProcedure: byMessage(func(r *v1.GetReceiverRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: r.GetName()}
+	}),
+	magnetarv1connect.ReceiverServiceListReceiversProcedure: byMessage(func(r *v1.ListReceiversRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{}
+	}),
+	magnetarv1connect.ReceiverServiceSetReceiverProcedure: byMessage(func(r *v1.SetReceiverRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetReceiver().GetName(), Details: maskDetails(r.GetUpdateMask().GetPaths())}
+	}),
+	magnetarv1connect.ReceiverServiceRemoveReceiverProcedure: byMessage(func(r *v1.RemoveReceiverRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetName()}
+	}),
+
+	// ReceptionService: reader to read, operator to settle a failed
+	// reception, and operator to look a study up by its UID.
+	magnetarv1connect.ReceptionServiceListReceptionsProcedure: byMessage(func(r *v1.ListReceptionsRequest) (access.Requirement, access.Request) {
+		role := master.RoleReader
+		if r.GetStudyInstanceUid() != "" {
+			role = master.RoleOperator
+		}
+		return onTenantNamed(r.GetTenant(), role), access.Request{Details: receptionFilterDetails(r)}
+	}),
+	magnetarv1connect.ReceptionServiceGetReceptionProcedure: byMessage(func(r *v1.GetReceptionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: r.GetId()}
+	}),
+	magnetarv1connect.ReceptionServiceRetryReceptionProcedure: byMessage(func(r *v1.RetryReceptionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
+	}),
+	magnetarv1connect.ReceptionServiceDiscardReceptionProcedure: byMessage(func(r *v1.DiscardReceptionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
+	}),
+
+	// QuarantineService: reader to read the records; operator for a file's
+	// header, a search by UID, and a release or a rejection.
+	magnetarv1connect.QuarantineServiceListQuarantinedFilesProcedure: byMessage(func(r *v1.ListQuarantinedFilesRequest) (access.Requirement, access.Request) {
+		role := master.RoleReader
+		if r.GetStudyInstanceUid() != "" || r.GetSopInstanceUid() != "" {
+			role = master.RoleOperator
+		}
+		return onTenantNamed(r.GetTenant(), role), access.Request{Details: quarantineFilterDetails(r)}
+	}),
+	magnetarv1connect.QuarantineServiceGetQuarantinedFileProcedure: byMessage(func(r *v1.GetQuarantinedFileRequest) (access.Requirement, access.Request) {
+		role := master.RoleReader
+		if r.GetIncludeHeader() {
+			role = master.RoleOperator
+		}
+		return onTenantNamed(r.GetTenant(), role), access.Request{Object: r.GetId(), Details: headerDetails(r.GetIncludeHeader())}
+	}),
+	magnetarv1connect.QuarantineServiceReleaseQuarantinedFileProcedure: byMessage(func(r *v1.ReleaseQuarantinedFileRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId(), Details: releaseDetails(r, "")}
+	}),
+	magnetarv1connect.QuarantineServiceRejectQuarantinedFileProcedure: byMessage(func(r *v1.RejectQuarantinedFileRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
+	}),
+}
+
+// builtinSettings is the list of settings the binary ships, which the
+// table reads a setting's kind from: the table has no other list, and the
+// handlers check the kind again against theirs (settingsService).
+var builtinSettings = settings.MustBuiltin()
+
+// settingChange returns the requirement of a change of the setting named
+// name on scope: admin on the scope, except for a setting a tenant's value
+// of which the installation's admin alone sets, which needs admin on the
+// installation whatever the scope (settings.proto, SetSetting).
+func settingChange(name string, scope *v1.Scope) access.Requirement {
+	if def, ok := builtinSettings.Lookup(name); ok && def.TenantSetByInstallation {
+		return installationAdmin
+	}
+	return onScope(scope, master.RoleAdmin)
 }
 
 // settingFacts returns the audit facts of a request about one setting.

@@ -18,8 +18,10 @@ type guardKey struct{}
 // testGuards guards the Guard every change takes (tenant.Store): a Guard
 // that refuses stops the change, so neither the change nor its entry is
 // written, and its error comes back as it is, kind and chain; a Guard that
-// allows lets the change be written. A Guard runs once per change, with the
-// change's context, inside the change's transaction: what it reads of the
+// allows lets the change be written, once. A Guard runs with the change's
+// context, inside the change's transaction, at least once (a driver that
+// runs a change again runs its Guard again, so the effect is asserted, not
+// the number of calls): what it reads of the
 // store through another connection is what was there before the change,
 // since the change is not committed yet. A nil Guard is no check.
 func testGuards(e *env) {
@@ -74,8 +76,8 @@ func testGuards(e *env) {
 		if e.auditIDs()[audit.ID] {
 			e.Errorf("%s with a Guard that refuses: its audit entry was written", o.name)
 		}
-		if n := calls.Load(); n != 1 {
-			e.Errorf("%s: the Guard ran %d times, want once", o.name, n)
+		if n := calls.Load(); n < 1 {
+			e.Errorf("%s: the Guard did not run", o.name)
 		}
 	}
 
@@ -94,8 +96,8 @@ func testGuards(e *env) {
 		if !o.seen() || !e.auditIDs()[audit.ID] {
 			e.Errorf("%s with a Guard that allows: the change or its entry is missing", o.name)
 		}
-		if n := calls.Load(); n != 1 {
-			e.Errorf("%s: the Guard ran %d times, want once", o.name, n)
+		if n := calls.Load(); n < 1 {
+			e.Errorf("%s: the Guard did not run", o.name)
 		}
 		if gotCtx != "the change's" {
 			e.Errorf("%s: the Guard got another context than the change's (value %v)", o.name, gotCtx)

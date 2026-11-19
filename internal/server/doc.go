@@ -5,35 +5,75 @@
 //
 // # The request path
 //
-// One function, pass, is the request path. The Connect interceptor calls it
-// for every RPC, unary and streaming, and the HTTP middleware for every
-// plain HTTP route; nothing reaches a handler any other way. In order: the
-// request id; the credential (the Authorization bearer key, or the local
-// operator); access.Check with the method's requirement; a refusal answered
-// with the access package's fixed message and code; then the handler, with
-// a Call in its context (CallFrom) and any panic recovered and answered
-// INTERNAL. The order of checks is the contract's: unauthenticated first,
-// then the role, then the handler validates the request.
+// Every request takes the same steps, in this order:
+//
+//  1. The envelope (below): the request id, the stop, the deadlines, the
+//     body's read bound.
+//  2. The front step, before any route is chosen. The health service's
+//     Check and Watch, matched exactly, are the only public paths and go on
+//     unauthenticated. For anything else the credential is read from the
+//     headers alone (the Authorization bearer key; without one, the local
+//     operator on the local socket) and access.Authenticate judges it,
+//     reading the key once. A caller who is not authenticated is answered
+//     there and then, by one writer, with a refusal chosen only by the
+//     protocol the request's Content-Type names: never by the path, the
+//     HTTP method, whether anything serves the path, or the body, which is
+//     not read. So such a caller learns nothing from the server, not even
+//     which methods it serves, and cannot hold one path longer than another.
+//  3. The router, for an authenticated caller (or a public path): exact
+//     match only. A served procedure goes to its handler from the one
+//     connect.Server built with the interceptor; a plain route's path to
+//     its route. Anything else, a path with any percent-encoding, a double
+//     or trailing slash included, reaches no handler: the server answers it
+//     UNIMPLEMENTED in the caller's RPC protocol (NOT_FOUND to plain HTTP),
+//     over any HTTP version, and audits it as failed, served=false.
+//  4. pass, the one function the Connect interceptor calls for every RPC and
+//     the HTTP middleware for every plain route: access.Check with the
+//     method's requirement, using the credential the front step accepted;
+//     a refusal answered with the access package's fixed message and code;
+//     then the handler, with a Call in its context (CallFrom) and any panic
+//     recovered and answered INTERNAL. For an authenticated caller the order
+//     of checks is the contract's: the role, then the handler validates the
+//     request.
+//
+// Every request writes exactly one audit entry, but for those deliberately
+// not audited: a request to a public path (the health service), a request
+// refused because the server is stopping, and an allowed scrape of
+// /metrics. The entry is the front step's refusal; the router's for a path
+// nothing serves; the check's refusal; the handler's for an allowed request,
+// or, when an allowed request ends without one (its message could not be
+// read or came too late, the handler failed, panicked, was canceled or ran
+// past its deadline, or succeeded without recording), the one pass writes
+// with a fixed reason; and, for a call the RPC library answered before the
+// check (a wrong HTTP method, content type, codec, compression or timeout
+// header), a failed one the front step writes. A refused scrape of /metrics
+// is audited under its pattern. A caller who goes away during the check is
+// recorded as having ended its request, never as a failure of the master.
+//
+// For a method whose requirement reads the request, the check that follows
+// the message reads the key again: the message may take as long as the
+// body's read bound to arrive, and the decision to allow is made on the key
+// as it is then, revoked, expired or removed. Every other request reads its
+// key once.
 //
 // The requirement of each method comes from one table, keyed by the full
 // procedure name, which package internal/api owns and tests against the
 // contract; the server takes it as Config.Methods. Where the requirement
 // depends on the request (a role on the tenant the request names) the table
-// says so, and only then is the request's message read before the check. The
-// server owns one rule itself: the health service needs no key. New refuses
-// a method registered without an entry. Config.WithDecision hands each
-// handler the check's Decision; the access operations take it, so a request
-// is checked once. Package servertest holds a stand-in table (taken from the
-// "Role:" lines, tested against the descriptors both ways) and stand-in
-// handlers for tests.
+// says so, and only then is the request's message read before the check,
+// and only for an authenticated caller. New refuses a method registered
+// without an entry. Config.WithDecision hands each handler the check's
+// Decision; the access operations take it, so a request is checked once.
+// Package servertest holds a stand-in table (taken from the "Role:" lines,
+// tested against the descriptors both ways) and stand-in handlers for tests.
 //
 // There is one way to add a route: the one connect.Server the server builds
 // with its interceptor (Config.Register is handed it), and Config.HTTPRoutes,
-// each wrapped in the middleware. A method nobody registered and a path no
-// route serves still pass the request path, so an unauthenticated caller
-// is refused before it is told there is nothing there. The route test sends
-// an unauthenticated request to every pattern registered and fails on any
-// that answers without refusing.
+// each one exact path, wrapped in the middleware. The router serves only the
+// paths recorded at New; a handler registered any other way is never
+// reached. The route test sends every pattern registered a request without
+// a key, which must be refused, and one from the local operator, which must
+// be served through the request path.
 //
 // # The envelope
 //
@@ -80,7 +120,8 @@
 // counted in the request's encoding; a call without a deadline gets 30
 // seconds, and no call runs longer than 5 minutes, whatever its client
 // asks; the body of a request whose requirement reads it must arrive within
-// 10 seconds, before the check; headers are bounded to 64 KiB, HTTP/2
+// 10 seconds, before the check (only an authenticated caller's body is
+// read before the check); headers are bounded to 64 KiB, HTTP/2
 // streams to 100 per connection, the time to send headers to 10 seconds, an
 // idle connection to 2 minutes. The health service serves Check only:
 // Watch, a public stream that never ends, answers UNIMPLEMENTED. Each number
@@ -89,8 +130,9 @@
 // network listener holds at most the process's file limit less a reserve
 // of 64 connections at once (connlimit.go), so the local socket and the
 // databases always have file descriptors left. So a caller without a key
-// can hold a request for at most the body's 10 seconds, nothing past the
-// 5-minute maximum, and never the local operator's way in.
+// holds a request no longer than it takes to send its headers, at most 10
+// seconds: it is refused before its body is read, on every path alike, and
+// never reaches the local operator's way in.
 //
 // Known and accepted in this version: a flood of requests with bad keys is
 // answered and audited at about 16,000 refusals a second, and makes the

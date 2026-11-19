@@ -7,9 +7,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 	"github.com/amrshadid/magnetar/internal/tenant"
 )
 
@@ -42,6 +42,17 @@ type Tenant struct {
 	// since a statement cannot be prepared against tables not yet made.
 	mu    sync.Mutex
 	stmts atomic.Pointer[tenantStatements]
+
+	seams tenantSeams
+}
+
+// tenantSeams are the points where a test changes what a Tenant does, all
+// nil in a running server. They are set only through export_test.go.
+type tenantSeams struct {
+	// betweenReads, when set, runs inside the read transaction of
+	// ReadEvents and StatusSnapshot between their reads, so a test can
+	// commit a change there and show that the answer is of one snapshot.
+	betweenReads func()
 }
 
 var _ tenant.Store = (*Tenant)(nil)
@@ -103,11 +114,12 @@ func (t *Tenant) Close() error {
 	})
 }
 
-// tenantStatements are a tenant's prepared statements: for now only the ones
-// it shares with the master.
+// tenantStatements are a tenant's prepared statements: the ones it shares
+// with the master, and the pipeline's (pipeline.go).
 type tenantStatements struct {
 	all []*sql.Stmt
 	sharedStatements
+	pipelineStatements
 }
 
 // ready returns the prepared statements, preparing them on first use.
@@ -124,7 +136,7 @@ func (t *Tenant) ready(ctx context.Context) (*tenantStatements, error) {
 		return s, nil
 	}
 	s := &tenantStatements{}
-	all, err := prepareAll(ctx, sharedEntries(&s.sharedStatements, t.p))
+	all, err := prepareAll(ctx, append(sharedEntries(&s.sharedStatements, t.p), pipelineEntries(&s.pipelineStatements, t.p)...))
 	if err != nil {
 		return nil, t.notReady(ctx, err)
 	}

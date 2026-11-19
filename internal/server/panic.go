@@ -7,7 +7,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/amrshadid/magnetar/internal/server/redact"
+	"github.com/amrshadid/magnetar/internal/obs/redact"
 )
 
 // maxPanicText bounds the text of a panic's value that reaches the log. A

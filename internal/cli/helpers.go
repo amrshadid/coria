@@ -1,19 +1,23 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
 	"github.com/amrshadid/magnetar/internal/cli/client"
 	"github.com/amrshadid/magnetar/internal/cli/output"
+	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/fault"
 )
 
@@ -256,4 +260,107 @@ func messageOut(a *app, m proto.Message, table func(w io.Writer) error) error {
 		return a.write(func(w io.Writer) error { return output.JSONMessage(w, m) })
 	}
 	return a.write(table)
+}
+
+// timeRange reads the --since and --until of a list command into the
+// contract's bounds: either may be absent, and when both are given the end
+// must be after the start, since a list that can never hold anything is a
+// mistake the person should hear about.
+func (a *app) timeRange(since, until string) (from, to *timestamppb.Timestamp, err error) {
+	now := a.env.Now()
+	if since != "" {
+		t, err := parseTime("since", since, now, a.env.Location)
+		if err != nil {
+			return nil, nil, err
+		}
+		from = timestamppb.New(t)
+	}
+	if until != "" {
+		t, err := parseTime("until", until, now, a.env.Location)
+		if err != nil {
+			return nil, nil, err
+		}
+		to = timestamppb.New(t)
+	}
+	if from != nil && to != nil && !to.AsTime().After(from.AsTime()) {
+		return nil, nil, fault.New(fault.Invalid, "--until must be after --since")
+	}
+	return from, to, nil
+}
+
+// parseSize reads a size a flag takes, a whole number of bytes or one with a
+// binary unit such as 200GiB, the form the settings take.
+func parseSize(flag, s string) (int64, error) {
+	n, err := settings.ParseSize(s)
+	if err != nil {
+		return 0, fault.New(fault.Invalid, fmt.Sprintf("--%s %q %s", flag, output.Clean(s), err))
+	}
+	return n, nil
+}
+
+// enumNames lists the names a person may type for an enum's values, each the
+// value's name without its prefix, in lowercase with hyphens, in the order of
+// the values and without the unspecified one, which is never a choice.
+func enumNames(values map[int32]string, prefix string) []string {
+	nums := make([]int32, 0, len(values))
+	for n := range values {
+		if n != 0 {
+			nums = append(nums, n)
+		}
+	}
+	slices.Sort(nums)
+	names := make([]string, len(nums))
+	for i, n := range nums {
+		names[i] = strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(values[n], prefix)), "_", "-")
+	}
+	return names
+}
+
+// parseEnum reads the name of an enum value as a person types it, one of
+// enumNames, and says the choices when it is not one.
+func parseEnum[E ~int32](flag, s string, values map[int32]string, prefix string) (E, error) {
+	want := strings.ToLower(s)
+	for n, name := range values {
+		if n != 0 && strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(name, prefix)), "_", "-") == want {
+			return E(n), nil
+		}
+	}
+	return 0, fault.New(fault.Invalid, fmt.Sprintf("--%s %q is not one of: %s", flag, output.Clean(s), strings.Join(enumNames(values, prefix), ", ")))
+}
+
+// enumCompletion offers an enum's names to the shell for a flag.
+func enumCompletion(cmd *cobra.Command, flag string, values map[int32]string, prefix string) {
+	_ = cmd.RegisterFlagCompletionFunc(flag, cobra.FixedCompletions(enumNames(values, prefix), cobra.ShellCompDirectiveNoFileComp))
+}
+
+// checkReason refuses, before anything is sent, a reason the contract would
+// refuse: empty or only spaces. The server says the rest, such as the length.
+func checkReason(reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		return fault.New(fault.Invalid, "--reason must say why, in words for whoever reads the record later")
+	}
+	return nil
+}
+
+// confirmTyped is the one guard of a command that removes data for good: with
+// --yes it passes; on a terminal it asks for the id to be typed again and
+// passes only for the same text; otherwise it refuses with exit 2, saying what
+// would have happened, and nothing is sent. done is the past participle of
+// what the command does ("rejected") and effect says what it would do.
+func (a *app) confirmTyped(yes bool, id, done, effect string) error {
+	if yes {
+		return nil
+	}
+	if a.env.Stdin == nil || !a.terminal() {
+		return fault.New(fault.Invalid, fmt.Sprintf("nothing was %s: this would %s; run it again with --yes to do it", done, effect))
+	}
+	_, _ = fmt.Fprintf(a.env.Stderr, "This would %s.\nType the id %s again to go on: ", output.Clean(effect), output.Clean(id))
+	line, err := bufio.NewReader(io.LimitReader(a.env.Stdin, 4096)).ReadString('\n')
+	if err != nil && line == "" {
+		return fault.New(fault.Invalid, fmt.Sprintf("nothing was %s: no confirmation was typed", done))
+	}
+	if strings.TrimSpace(line) != id {
+		return fault.New(fault.Invalid, fmt.Sprintf("nothing was %s: the id typed is not the id given", done))
+	}
+	return nil
 }

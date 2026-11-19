@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -10,9 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/sqlkit"
 )
 
 // The master and every tenant keep settings and an audit log in tables of
@@ -149,7 +148,7 @@ func listSettingsPage(ctx context.Context, b *base, l lists, page master.Page) (
 	if err != nil {
 		return nil, "", b.fail(ctx, err, "the settings cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -209,7 +208,7 @@ func listAuditPage(ctx context.Context, b *base, l lists, filter master.AuditFil
 	if err != nil {
 		return nil, "", b.fail(ctx, err, "the audit log cannot be listed")
 	}
-	out, last, more := cut(out, page.Limit)
+	out, last, more := sqlkit.Cut(out, page.Limit)
 	if !more {
 		return out, "", nil
 	}
@@ -233,7 +232,7 @@ func execAudit(ctx context.Context, tx pgx.Tx, red *redactor, entries []master.A
 	if len(entries) == 1 {
 		e := entries[0]
 		var details string
-		if details, err = encodeDetails(e.Details); err != nil {
+		if details, err = sqlkit.EncodeDetails(e.Details); err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `INSERT INTO audit (`+auditColumns+`) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
@@ -246,7 +245,7 @@ func execAudit(ctx context.Context, tx pgx.Tx, red *redactor, entries []master.A
 		times := make([]time.Time, 0, n)
 		for _, e := range entries {
 			var details string
-			if details, err = encodeDetails(e.Details); err != nil {
+			if details, err = sqlkit.EncodeDetails(e.Details); err != nil {
 				return err
 			}
 			ids, times, keys = append(ids, e.ID), append(times, micros(e.Time)), append(keys, e.KeyID)
@@ -280,7 +279,7 @@ func scanAudit(row scanner) (master.AuditEntry, error) {
 	e.Time = at.UTC()
 	e.Outcome = master.Outcome(outcome)
 	var err error
-	e.Details, err = decodeDetails(details)
+	e.Details, err = sqlkit.DecodeDetails(details)
 	return e, err
 }
 
@@ -343,30 +342,4 @@ func auditQuery(filter master.AuditFilter, after *auditPosition, limit int) (str
 	// total and a cursor at (at, id) is unambiguous.
 	query += " ORDER BY at DESC, id DESC LIMIT " + arg(limit)
 	return query, args
-}
-
-// encodeDetails writes an audit entry's details as a JSON object, which the
-// column (jsonb) stores and returns whole. encoding/json sorts the keys, so
-// the text sent does not depend on the map's order.
-func encodeDetails(d map[string]string) (string, error) {
-	if len(d) == 0 {
-		return "{}", nil
-	}
-	b, err := json.Marshal(d)
-	if err != nil {
-		return "", fault.Wrap(fault.Internal, err, "the audit entry's details cannot be written")
-	}
-	return string(b), nil
-}
-
-// decodeDetails reads what the column holds; no details is nil.
-func decodeDetails(s string) (map[string]string, error) {
-	var d map[string]string
-	if err := json.Unmarshal([]byte(s), &d); err != nil {
-		return nil, fault.Wrap(fault.Internal, err, "an audit entry's details cannot be read")
-	}
-	if len(d) == 0 {
-		return nil, nil
-	}
-	return d, nil
 }

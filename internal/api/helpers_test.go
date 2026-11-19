@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,8 +30,10 @@ import (
 	"github.com/amrshadid/magnetar/internal/api/codes"
 	"github.com/amrshadid/magnetar/internal/core/settings"
 	"github.com/amrshadid/magnetar/internal/driver"
+	"github.com/amrshadid/magnetar/internal/events"
 	"github.com/amrshadid/magnetar/internal/fault"
 	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/magnetar/internal/place"
 	"github.com/amrshadid/magnetar/internal/registry"
 	"github.com/amrshadid/magnetar/internal/secret"
 	"github.com/amrshadid/magnetar/internal/tenant"
@@ -97,9 +100,13 @@ func (s *syncBuffer) String() string {
 // address, as a database library's error might, so the tests show that the
 // cause reaches nothing a caller or the logs see.
 type fakePostgres struct {
-	dir  string
-	mu   sync.Mutex
-	down map[string]bool
+	// secrets holds each S3 storage's sealed secret as its tenant's store
+	// was given it, by "<tenant>/<storage>", so the store can hand it back
+	// (pgStore.StorageSecret).
+	secrets sync.Map
+	dir     string
+	mu      sync.Mutex
+	down    map[string]bool
 	// logDown names the tenants whose audit log refuses entries while the
 	// rest of their database answers.
 	logDown map[string]bool
@@ -145,9 +152,10 @@ func noAnswer(address string) error {
 	return fault.Wrap(fault.Unavailable, errors.New("dial "+address+": connection refused"), "connection refused")
 }
 
-// pgStore is a tenant's store whose pings fail while its tenant is down.
+// pgStore is a tenant's store whose pings fail while its tenant is down. It
+// keeps the reception pipeline's data as every driver does.
 type pgStore struct {
-	tenant.Store
+	tenant.Pipeline
 	f       *fakePostgres
 	name    string
 	address string
@@ -159,7 +167,7 @@ func (s pgStore) AppendAudit(ctx context.Context, entries ...master.AuditEntry) 
 	if s.f.isLogDown(s.name) {
 		return noAnswer(s.address)
 	}
-	return s.Store.AppendAudit(ctx, entries...)
+	return s.Pipeline.AppendAudit(ctx, entries...)
 }
 
 // Ping fails while the tenant is down.
@@ -167,7 +175,7 @@ func (s pgStore) Ping(ctx context.Context) error {
 	if s.f.isDown(s.name) {
 		return noAnswer(s.address)
 	}
-	return s.Store.Ping(ctx)
+	return s.Pipeline.Ping(ctx)
 }
 
 // Location returns a location with no user, password or host of the
@@ -201,7 +209,12 @@ func (f *fakePostgres) Open(ctx context.Context, id, name, address string) (tena
 	if err != nil {
 		return nil, err
 	}
-	return pgStore{Store: st, f: f, name: name, address: address}, nil
+	p, ok := st.(tenant.Pipeline)
+	if !ok {
+		_ = st.Close()
+		return nil, errors.New("the SQLite driver's store keeps no pipeline")
+	}
+	return pgStore{Pipeline: p, f: f, name: name, address: address}, nil
 }
 
 // faultyMaster is the master as the registry and the handlers see it, with
@@ -236,6 +249,11 @@ func (m *faultyMaster) RemoveTenant(ctx context.Context, id string, audit master
 // registry, the handlers, and an HTTP server whose only middleware is the
 // stand-in for the server's path.
 type env struct {
+	// probedHosts are the addresses the services probed for a free port.
+	probedHosts struct {
+		sync.Mutex
+		hosts []string
+	}
 	t        testing.TB
 	dir      string
 	data     string
@@ -266,6 +284,10 @@ type env struct {
 	// allowed a request and before its handler, as something else the
 	// server does meanwhile would.
 	afterCheck atomic.Pointer[func()]
+	// parts is what the handlers are given in place of the reception
+	// pipeline and the receivers' supervisor: it records what they are
+	// asked, and answers as a test sets it.
+	parts *testParts
 }
 
 // newEnv returns a running installation with no tenant and no key, whose
@@ -282,7 +304,7 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a directory needs its execute bit.
 		t.Fatal(err)
 	}
-	e := &env{t: t, dir: dir, data: filepath.Join(dir, "data"), log: &syncBuffer{}, known: testSettings(t)}
+	e := &env{t: t, dir: dir, data: filepath.Join(dir, "data"), log: &syncBuffer{}, known: testSettings(t), parts: &testParts{}}
 	e.decide.Store(true)
 	if err := os.Mkdir(e.data, 0o700); err != nil {
 		t.Fatal(err)
@@ -313,7 +335,7 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	e.pg = &fakePostgres{dir: filepath.Join(dir, "pg")}
 	e.registry, err = registry.New(registry.Config{
 		Master: e.faulty, Keys: keys,
-		Drivers: map[string]registry.Driver{driver.SQLiteDriver: driver.SQLiteTenants{DataDir: e.data}, driver.PostgresDriver: e.pg},
+		Drivers: map[string]registry.Driver{master.SQLiteDriver: driver.SQLiteTenants{DataDir: e.data}, master.PostgresDriver: e.pg},
 		Now:     e.now,
 		// Generous deadlines: a real SQLite open, or a ping of one, on a
 		// loaded runner can take seconds, and no test here is about them.
@@ -332,10 +354,22 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 		}
 		return e.newID()
 	}
-	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.faulty, NewID: tenantID, Log: logger, Settings: e.known})
+	feeds, err := events.New(events.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = feeds.Close() })
+	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.faulty, NewID: tenantID, Log: logger, Settings: e.known, Keys: e.keys, Now: e.now,
+		Incoming: e.parts, Headers: e.parts, Feeds: feeds})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api.SetPortProbe(h, func(host string, port int) bool {
+		e.probedHosts.Lock()
+		e.probedHosts.hosts = append(e.probedHosts.hosts, host)
+		e.probedHosts.Unlock()
+		return place.SystemProbe(host, port)
+	})
 	srv := connect.NewServer(e.standIn)
 	h.Register(srv)
 	mux := http.NewServeMux()
@@ -371,6 +405,11 @@ const (
 	// testText takes any text, the empty one included, and a tenant may
 	// override it.
 	testText = "test.text"
+	// testAllotted is set on a tenant by the installation's admin only. The
+	// method table does not know it (it reads the server's own list), so a
+	// tenant's admin passes the check, and only the handler's own rule
+	// refuses the change.
+	testAllotted = "test.allotted"
 )
 
 // testSettings returns the server's list of settings with the test's two.
@@ -383,6 +422,7 @@ func testSettings(t testing.TB) *settings.Table {
 	defs := append(settings.Builtin(),
 		settings.Definition{Name: testRetention, Default: "365d", TenantOverride: true, Validate: period},
 		settings.Definition{Name: testText, Default: "", TenantOverride: true, Validate: func(string) error { return nil }},
+		settings.Definition{Name: testAllotted, Default: "", TenantOverride: true, TenantSetByInstallation: true, Validate: func(string) error { return nil }},
 	)
 	tab, err := settings.New(defs...)
 	if err != nil {
@@ -501,13 +541,17 @@ var local = caller{local: "501"}
 // nobody is a caller with no key.
 var nobody = caller{}
 
-// clients is the generated Connect clients of the four services, for one
-// caller.
+// clients is the generated Connect clients of the services, for one caller.
 type clients struct {
-	tenants  magnetarv1connect.TenantServiceClient
-	access   magnetarv1connect.AccessServiceClient
-	settings magnetarv1connect.SettingsServiceClient
-	audit    magnetarv1connect.AuditServiceClient
+	tenants    magnetarv1connect.TenantServiceClient
+	access     magnetarv1connect.AccessServiceClient
+	settings   magnetarv1connect.SettingsServiceClient
+	audit      magnetarv1connect.AuditServiceClient
+	storages   magnetarv1connect.StorageServiceClient
+	receivers  magnetarv1connect.ReceiverServiceClient
+	receptions magnetarv1connect.ReceptionServiceClient
+	quarantine magnetarv1connect.QuarantineServiceClient
+	monitor    magnetarv1connect.MonitorServiceClient
 }
 
 // as returns clients that call as c.
@@ -527,10 +571,15 @@ func (e *env) as(c caller) clients {
 	}
 	cl := connect.NewClient(connecthttp.NewTransport(e.client, e.url), set)
 	return clients{
-		tenants:  magnetarv1connect.NewTenantServiceClient(cl),
-		access:   magnetarv1connect.NewAccessServiceClient(cl),
-		settings: magnetarv1connect.NewSettingsServiceClient(cl),
-		audit:    magnetarv1connect.NewAuditServiceClient(cl),
+		tenants:    magnetarv1connect.NewTenantServiceClient(cl),
+		access:     magnetarv1connect.NewAccessServiceClient(cl),
+		settings:   magnetarv1connect.NewSettingsServiceClient(cl),
+		audit:      magnetarv1connect.NewAuditServiceClient(cl),
+		storages:   magnetarv1connect.NewStorageServiceClient(cl),
+		receivers:  magnetarv1connect.NewReceiverServiceClient(cl),
+		receptions: magnetarv1connect.NewReceptionServiceClient(cl),
+		quarantine: magnetarv1connect.NewQuarantineServiceClient(cl),
+		monitor:    magnetarv1connect.NewMonitorServiceClient(cl),
 	}
 }
 
@@ -567,6 +616,25 @@ func call[Req, Res proto.Message](f func(context.Context, Req) (Res, error), req
 	o := outcome{err: err, requestID: info.ResponseHeader().Get(api.RequestIDHeader)}
 	if err == nil {
 		o.res = res
+	}
+	return o
+}
+
+// watchOnce opens a stream with req and returns its first message or its
+// error as an outcome, then ends the stream: what a table needs of Watch.
+func watchOnce(c clients, req *v1.WatchRequest) outcome {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ctx, info := connect.NewClientContext(ctx)
+	s, err := c.monitor.Watch(ctx, req)
+	if err != nil {
+		return outcome{err: err, requestID: info.ResponseHeader().Get(api.RequestIDHeader)}
+	}
+	defer func() { _ = s.Close() }()
+	msg, err := s.Receive()
+	o := outcome{err: err, requestID: info.ResponseHeader().Get(api.RequestIDHeader)}
+	if err == nil {
+		o.res = msg
 	}
 	return o
 }
@@ -699,4 +767,11 @@ func installation() *v1.Scope {
 // tenantScope is a tenant scope as a request names it.
 func tenantScope(name string) *v1.Scope {
 	return &v1.Scope{Kind: &v1.Scope_Tenant{Tenant: name}}
+}
+
+// probed returns the addresses probed for a free port so far.
+func (e *env) probed() []string {
+	e.probedHosts.Lock()
+	defer e.probedHosts.Unlock()
+	return slices.Clone(e.probedHosts.hosts)
 }
