@@ -31,34 +31,19 @@ GO="${GO:-go}"
 : "${CORIA_TEST_POSTGRES:?set CORIA_TEST_POSTGRES to the URL of a scratch database}"
 PSQL_URL="${PSQL_URL:-$CORIA_TEST_POSTGRES}"
 
-fail() {
-	echo "FAIL: $*" >&2
-	exit 1
-}
+# fail and want (scripts/lib/check.sh); q and show for psql (scripts/lib/psql.sh).
+# shellcheck source=../lib/check.sh
+. "$(dirname "$0")/../lib/check.sh"
+# shellcheck source=../lib/psql.sh
+. "$(dirname "$0")/../lib/psql.sh"
 
 # want <what> <expected> <actual>
-want() {
-	if [ "$2" != "$3" ]; then
-		fail "$1: got '$3', want '$2'"
-	fi
-	echo "ok: $1 = $3"
-}
 
 dir="$(mktemp -d)"
 schema="coria_check_$(date +%s)_$$"
 
 # q runs one statement and prints its result alone, with no alignment or
 # headers; show prints it as a table. Neither shows the URL.
-q() {
-	# shellcheck disable=SC2086 # PSQL is a command and its arguments.
-	$PSQL -X -q -A -t -v ON_ERROR_STOP=1 "$PSQL_URL" -c "$1"
-}
-show() {
-	echo
-	echo "== $1"
-	# shellcheck disable=SC2086
-	$PSQL -X -q -v ON_ERROR_STOP=1 "$PSQL_URL" -c "$2"
-}
 
 cleanup() {
 	q "DROP SCHEMA IF EXISTS \"$schema\" CASCADE" > /dev/null 2>&1 || true

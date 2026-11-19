@@ -19,18 +19,13 @@ set -euo pipefail
 SQLITE3="${SQLITE3:-sqlite3}"
 GO="${GO:-go}"
 
-fail() {
-	echo "FAIL: $*" >&2
-	exit 1
-}
+# fail and want (scripts/lib/check.sh); q and show for sqlite3 (scripts/lib/sqlite.sh).
+# shellcheck source=../lib/check.sh
+. "$(dirname "$0")/../lib/check.sh"
+# shellcheck source=../lib/sqlite.sh
+. "$(dirname "$0")/../lib/sqlite.sh"
 
 # want <what> <expected> <actual>
-want() {
-	if [ "$2" != "$3" ]; then
-		fail "$1: got '$3', want '$2'"
-	fi
-	echo "ok: $1 = $3"
-}
 
 dir="$(mktemp -d)"
 trap 'rm -rf "$dir"' EXIT
@@ -51,21 +46,12 @@ mode() {
 want "the tenants directory's mode" 700 "$(mode "$dir/tenants")"
 want "the tenant file's mode" 600 "$(mode "$db")"
 
-q() {
-	"$SQLITE3" -batch -noheader "$db" "$1"
-}
-
 echo
 echo "== tables"
 "$SQLITE3" -batch "$db" '.tables'
 want "tables" "audit catalog_totals event_checkpoints event_marks events instances quarantine quarantine_totals received_files receivers reception_associations reception_steps receptions scans schema_migrations sessions settings sqlite_sequence storage_totals storages subjects tenant_secrets work" \
 	"$(q "SELECT group_concat(name, ' ') FROM (SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name)")"
 
-show() {
-	echo
-	echo "== $1"
-	"$SQLITE3" -batch -header -column "$db" "$2"
-}
 show schema_migrations "SELECT version, name, hex(checksum) AS checksum, applied FROM schema_migrations"
 show settings "SELECT * FROM settings"
 show audit "SELECT * FROM audit"
