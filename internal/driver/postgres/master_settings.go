@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // Setting implements master.Store.

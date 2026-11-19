@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // tempDir is the directory at the root where every Put writes its bytes
@@ -153,7 +153,7 @@ func (s *Store) prepareTemp() error {
 	if notFound(err) {
 		if err := s.mkdir(s.root, tempDir); err != nil && !errors.Is(err, fs.ErrExist) {
 			if errors.Is(err, fs.ErrPermission) {
-				return s.wrap(fault.Invalid, err, "the storage's directory cannot be written by the user magnetar runs as")
+				return s.wrap(fault.Invalid, err, "the storage's directory cannot be written by the user coria runs as")
 			}
 			return s.wrap(fault.Unavailable, err, "the storage could not make its temporary directory")
 		}
@@ -204,7 +204,7 @@ func (s *Store) probe() error {
 	f, err := s.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) {
-			return s.wrap(fault.Invalid, err, "the storage's directory cannot be written by the user magnetar runs as")
+			return s.wrap(fault.Invalid, err, "the storage's directory cannot be written by the user coria runs as")
 		}
 		return s.wrap(fault.Unavailable, err, "the storage's directory cannot be written")
 	}

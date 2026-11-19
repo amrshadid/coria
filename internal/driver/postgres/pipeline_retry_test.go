@@ -7,9 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // The tests in this file make Tenant.pipe meet the failures it runs a change

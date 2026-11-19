@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // Start reads every tenant from the master, opens each in parallel (at most

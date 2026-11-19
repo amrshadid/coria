@@ -7,15 +7,15 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // jsonDirEnv names the directory TestWriteJSONOutputs writes into. The test
 // is the first half of the outside check of the JSON documents: it runs every
 // command with --json against the in-process server and leaves each output as
-// a file, and scripts/check/cli-json.py, which is Python and not Magnetar, parses
+// a file, and scripts/check/cli-json.py, which is Python and not CORIA, parses
 // them with Python's json module.
-const jsonDirEnv = "MAGNETAR_CHECK_JSON_DIR"
+const jsonDirEnv = "CORIA_CHECK_JSON_DIR"
 
 // TestWriteJSONOutputs runs every command with --json and writes standard
 // output to <dir>/<name>.json, for scripts/check/cli-json.py. It skips only when
@@ -26,7 +26,7 @@ func TestWriteJSONOutputs(t *testing.T) {
 		t.Skipf("%s is not set; make check-json runs this test", jsonDirEnv)
 	}
 	r := newRig(t)
-	r.fake.AddAudit(&v1.AuditEntry{Id: "1", Time: timestamppb.New(fixedNow), KeyId: "k1", Method: "/magnetar.v1.TenantService/CreateTenant", Object: "lab1", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, RequestId: "req-1"})
+	r.fake.AddAudit(&v1.AuditEntry{Id: "1", Time: timestamppb.New(fixedNow), KeyId: "k1", Method: "/coria.v1.TenantService/CreateTenant", Object: "lab1", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, RequestId: "req-1"})
 	r.env["LAB2_DB"] = "postgres://lab2:x@db.example.org/lab2"
 	r.env["LAB1_S3"] = "made-up-secret-access-key-for-the-test"
 	for _, id := range []string{"rcp-retry", "rcp-discard"} {
@@ -51,7 +51,7 @@ func TestWriteJSONOutputs(t *testing.T) {
 		{"storage-show", []string{"storage", "show", "lab1", "cold"}},
 		{"storage-set", []string{"storage", "set", "lab1", "cold", "--capacity", "1TiB"}},
 		{"storage-test", []string{"storage", "test", "lab1", "main"}},
-		{"receiver-add", []string{"receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11112", "--aet", "MAGNETAR", "--allow-aet", "PRISMA1", "--enabled"}},
+		{"receiver-add", []string{"receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11112", "--aet", "CORIA", "--allow-aet", "PRISMA1", "--enabled"}},
 		{"receiver-list", []string{"receiver", "list", "lab1"}},
 		{"receiver-show", []string{"receiver", "show", "lab1", "scanner1"}},
 		{"receiver-set", []string{"receiver", "set", "lab1", "scanner1", "--quiet-period", "5m"}},
@@ -82,7 +82,7 @@ func TestWriteJSONOutputs(t *testing.T) {
 	for _, s := range steps {
 		res := r.run(append(s.args, "--json")...)
 		if res.code != 0 || res.stderr != "" {
-			t.Fatalf("magnetar %v: exit %d, standard error %q", s.args, res.code, res.stderr)
+			t.Fatalf("coria %v: exit %d, standard error %q", s.args, res.code, res.stderr)
 		}
 		// The directory is the one make check-json made for this run.
 		if err := os.WriteFile(filepath.Join(dir, s.name+".json"), []byte(res.stdout), 0o600); err != nil { //nolint:gosec // dir is the test's own scratch directory

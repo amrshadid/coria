@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Run the built magnetar binary's interactive program under a pseudo-terminal.
+"""Run the built coria binary's interactive program under a pseudo-terminal.
 
-This is the outside check of internal/tui: a tool that is not Magnetar's own
+This is the outside check of internal/tui: a tool that is not CORIA's own
 code (Python's pty module, a real pseudo-terminal) starts the real binary against
 the in-process fake server (internal/tui/ptyserve), presses keys, reads what the
 program draws, quits, and asserts what the terminal was left in. It uses only
@@ -218,7 +218,7 @@ class Session:
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         env = dict(os.environ)
         env.pop("NO_COLOR", None)
-        env.update({"TERM": "xterm-256color", "MAGNETAR_DATA_DIR": datadir})
+        env.update({"TERM": "xterm-256color", "CORIA_DATA_DIR": datadir})
         env.update(env_extra or {})
         self.proc = subprocess.Popen(
             [binary], stdin=slave, stdout=slave, stderr=slave, env=env,
@@ -322,7 +322,7 @@ def scenario_quit(binary, helper_path):
         s = Session(binary, datadir)
         check(s.wait_for("local operator"), "the header says who is connected")
         check(s.wait_for("Audit log"), "the menu is drawn")
-        check(s.wait_for("magnetar | local operator (user 501) | "), "the header line reads whole on the screen")
+        check(s.wait_for("coria | local operator (user 501) | "), "the header line reads whole on the screen")
         s.press("1")
         check(s.wait_for("t000"), "the tenant list is drawn after a key")
         check("connection refused" in s.screen.text(), "a tenant that is not ready shows its reason")
@@ -405,8 +405,8 @@ def scenario_not_a_terminal(binary, helper_path):
     print("-- no terminal, or an argument: it does not open")
     helper, datadir = start_helper(helper_path)
     try:
-        env = dict(os.environ, MAGNETAR_DATA_DIR=datadir)
-        want = b'magnetar: no command (usage: magnetar <noun> <verb> [flags], for example magnetar tenant list); try "magnetar --help"\n'
+        env = dict(os.environ, CORIA_DATA_DIR=datadir)
+        want = b'coria: no command (usage: coria <noun> <verb> [flags], for example coria tenant list); try "coria --help"\n'
         # Standard output is a pipe; standard input is the null device, which
         # is a character device and must not be taken for a terminal.
         with open(os.devnull) as null:
@@ -437,7 +437,7 @@ def scenario_not_a_terminal(binary, helper_path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--binary", required=True, help="the built magnetar binary")
+    ap.add_argument("--binary", required=True, help="the built coria binary")
     ap.add_argument("--helper", required=True, help="the built ptyserve helper")
     args = ap.parse_args()
 

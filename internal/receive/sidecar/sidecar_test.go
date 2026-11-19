@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/layout"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/layout"
 )
 
 // inst returns an instance of the scan s/e/c with UID u.

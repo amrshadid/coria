@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/core/naming"
-	"github.com/amrshadid/magnetar/internal/core/uid"
+	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/core/uid"
 )
 
 // read opens a test file and reads its header, failing the test on error.

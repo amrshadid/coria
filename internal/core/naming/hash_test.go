@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/uid"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/uid"
 )
 
 // TestHashTextVectors guards the text of a keyed hash against vectors

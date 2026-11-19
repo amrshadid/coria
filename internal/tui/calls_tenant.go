@@ -7,9 +7,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // eventSeenMsg is the answer of a stream that saw an event of its tenant:

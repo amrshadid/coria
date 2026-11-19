@@ -3,7 +3,7 @@ package postgres
 import (
 	"context"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // AppendAudit implements master.Store.

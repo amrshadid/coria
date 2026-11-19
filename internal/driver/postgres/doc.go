@@ -9,7 +9,7 @@
 // The address is a postgres:// (or postgresql://) URL. The driver creates
 // and upgrades its tables in the schema the connection's search_path starts
 // with, which is "public" unless the URL says otherwise
-// (?search_path=magnetar). It never creates a database, a schema or a role,
+// (?search_path=coria). It never creates a database, a schema or a role,
 // and works with a login that owns that schema and nothing else. It is
 // tested on Postgres 16 and 18; pgx supports 14 and later.
 //

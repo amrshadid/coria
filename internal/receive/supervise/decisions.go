@@ -3,9 +3,9 @@ package supervise
 import (
 	"context"
 
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/receive"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/receive"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Decisions is what a tenant's running pipeline does for a person's

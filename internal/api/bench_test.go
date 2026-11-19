@@ -7,10 +7,10 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectinprocess"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/api"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // inProcess returns clients that reach e's handlers without the network:
@@ -34,10 +34,10 @@ func (e *env) inProcess(b *testing.B, c caller) clients {
 	}
 	cl := connect.NewClient(connectinprocess.New(srv), set)
 	return clients{
-		tenants:  magnetarv1connect.NewTenantServiceClient(cl),
-		access:   magnetarv1connect.NewAccessServiceClient(cl),
-		settings: magnetarv1connect.NewSettingsServiceClient(cl),
-		audit:    magnetarv1connect.NewAuditServiceClient(cl),
+		tenants:  coriav1connect.NewTenantServiceClient(cl),
+		access:   coriav1connect.NewAccessServiceClient(cl),
+		settings: coriav1connect.NewSettingsServiceClient(cl),
+		audit:    coriav1connect.NewAuditServiceClient(cl),
 	}
 }
 

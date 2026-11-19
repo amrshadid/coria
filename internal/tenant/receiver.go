@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/naming"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // ReceiverType is a receiver's type. Its text is what a store keeps.

@@ -7,9 +7,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/amrshadid/magnetar/internal/core/uid"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/core/uid"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // The bounds of the pipeline's values. Each is the API contract's where it

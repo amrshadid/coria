@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // testContext and testPlaintext are a synthetic secret and the row it belongs
 // to, as the catalog will use them.
 const (
 	testContext   = "tenant/0f3a/database"
-	testPlaintext = "postgres://magnetar:synthetic-test-password@db.invalid:5432/tenant" //nolint:gosec // G101: synthetic, for tests.
+	testPlaintext = "postgres://coria:synthetic-test-password@db.invalid:5432/tenant" //nolint:gosec // G101: synthetic, for tests.
 )
 
 // TestSealOpen guards the round trip and the layout of a sealed value: format

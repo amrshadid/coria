@@ -16,14 +16,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/receive"
-	"github.com/amrshadid/magnetar/internal/receive/dimse"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/receive"
+	"github.com/amrshadid/coria/internal/receive/dimse"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // pythonEnv names the Python with pynetdicom the outside tests use; when it
 // is not set, python3 on the PATH is tried.
-const pythonEnv = "MAGNETAR_PYTHON"
+const pythonEnv = "CORIA_PYTHON"
 
 // t0 is the time the rows of a test's receivers are made at.
 var t0 = time.Date(2026, 3, 1, 9, 0, 0, 0, time.UTC)
@@ -216,7 +216,7 @@ func listenSeams(t *testing.T, r tenant.Receiver, sink receive.Sink, refusal dim
 // dcmtkEnv names a directory holding dcmtk's programs, looked in before the
 // PATH: another program of the same name (pynetdicom installs an echoscu
 // and a storescu of its own) may come first on the PATH.
-const dcmtkEnv = "MAGNETAR_DCMTK"
+const dcmtkEnv = "CORIA_DCMTK"
 
 // tool returns the path of one of dcmtk's programs, or skips the test. A
 // program of that name that is not dcmtk's is passed over.

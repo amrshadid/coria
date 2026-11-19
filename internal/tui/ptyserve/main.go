@@ -1,11 +1,11 @@
 // Command ptyserve serves the in-process fake server on a temporary local
-// socket, for scripts/check/tui.py, which runs the built magnetar binary under
+// socket, for scripts/check/tui.py, which runs the built coria binary under
 // a pseudo-terminal against it.
 //
 // It is test support and nothing else. It is not built by "make build", is not
-// part of the magnetar binary, and must never be: it imports the fake server,
+// part of the coria binary, and must never be: it imports the fake server,
 // which is test support too, and the testing package that the fake's helpers
-// are written against. cmd/magnetar's tests fail if either is linked there.
+// are written against. cmd/coria's tests fail if either is linked there.
 //
 // On standard output it writes one line, "DATADIR=<path>", when the socket is
 // ready. It then reads commands from standard input, one per line: "stats"
@@ -28,8 +28,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
 )
 
 // runner is the part of testing.TB the fake server's helpers use. Embedding the
@@ -78,7 +78,7 @@ func main() {
 		fake.AddTenant(t)
 	}
 	fake.AddKey(&v1.Key{Id: "k00000000100", Holder: "nightly export", CreateTime: timestamppb.New(now)})
-	fake.AddAudit(&v1.AuditEntry{Id: "a1", Time: timestamppb.New(now), Method: "/magnetar.v1.TenantService/ListTenants",
+	fake.AddAudit(&v1.AuditEntry{Id: "a1", Time: timestamppb.New(now), Method: "/coria.v1.TenantService/ListTenants",
 		Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, RequestId: "req-seed"})
 
 	r := &runner{}

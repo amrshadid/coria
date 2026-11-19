@@ -3,7 +3,7 @@ package dimse
 import (
 	"errors"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // A listener that cannot start says why with a reason of a receiver's

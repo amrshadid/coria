@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // chmodACL runs /bin/chmod with args, the system's own way to edit an access
@@ -34,7 +34,7 @@ func lsACL(path string) string {
 // only denies is accepted.
 func TestLoadRefusesPermitACL(t *testing.T) {
 	dir := privateDir(t)
-	path := filepath.Join(dir, "magnetar.key")
+	path := filepath.Join(dir, "coria.key")
 	writePrivate(t, path, []byte(keyLine(1, 1)))
 	chmodACL(t, "+a", "everyone allow read", path)
 	t.Logf("%s", lsACL(path))
@@ -64,7 +64,7 @@ func TestLoadRefusesPermitACL(t *testing.T) {
 // access list lets everyone add files is refused for loading and creating.
 func TestDirectoryRefusesPermitACL(t *testing.T) {
 	dir := privateDir(t)
-	path := filepath.Join(dir, "magnetar.key")
+	path := filepath.Join(dir, "coria.key")
 	writePrivate(t, path, []byte(keyLine(1, 1)))
 	chmodACL(t, "+a", "everyone allow add_file,delete_child", dir)
 	t.Logf("%s", lsACL(dir))

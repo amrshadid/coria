@@ -9,11 +9,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 const receptionColumns = `id, receiver, study_uid, arrival, state, files_received, bytes_received, files_archived,

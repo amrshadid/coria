@@ -7,9 +7,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // itoa writes n in decimal.
@@ -151,7 +151,7 @@ func statusPairs(c *ctx, ref any) []pair {
 // newStorageList makes the list of a tenant's storages.
 func newStorageList(c *ctx, tenant string) (screen, tea.Cmd) {
 	l := newList(c, "Storages of "+clean(tenant), []column{{"NAME", 8, 40}, {"TYPE", 9, 9}, {"LOCATION", 12, 60}, {"CAPACITY", 8, 12}},
-		"no storage yet; \"magnetar storage add\" makes one")
+		"no storage yet; \"coria storage add\" makes one")
 	l.fetch = func(c *ctx, l listScreen, token string) tea.Cmd { return storagesPage(c, l.id, l.gen, token, tenant) }
 	l.open = func(c *ctx, _ listScreen, r row) tea.Cmd {
 		st, _ := r.ref.(*v1.Storage)
@@ -170,7 +170,7 @@ func newStorageList(c *ctx, tenant string) (screen, tea.Cmd) {
 // health.
 func newReceiverList(c *ctx, tenant string) (screen, tea.Cmd) {
 	l := newList(c, "Receivers of "+clean(tenant), []column{{"NAME", 8, 40}, {"PORT", 5, 5}, {"AE TITLE", 8, 16}, {"STORAGE", 8, 40}, {"HEALTH", 6, 60}},
-		"no receiver yet; \"magnetar receiver add\" makes one")
+		"no receiver yet; \"coria receiver add\" makes one")
 	l.live = true
 	l.fetch = func(c *ctx, l listScreen, token string) tea.Cmd { return receiversPage(c, l.id, l.gen, token, tenant) }
 	l.open = func(c *ctx, _ listScreen, r row) tea.Cmd {

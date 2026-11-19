@@ -13,12 +13,12 @@ import (
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // busyTimeout is how long a connection waits for a lock another process holds
-// before it fails with SQLITE_BUSY: another magnetar starting and migrating,
+// before it fails with SQLITE_BUSY: another coria starting and migrating,
 // a backup made with the sqlite3 tool, a checkpoint of the write-ahead log.
 // Inside the process writers never meet it, since they queue for the one
 // write connection. SQLite waits up to this long for the lock and then

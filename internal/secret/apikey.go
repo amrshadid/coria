@@ -10,12 +10,12 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // apiKeyPrefix starts every API key, so a secret scanner can recognize one
 // that leaked into a repository or a log.
-const apiKeyPrefix = "mgt_"
+const apiKeyPrefix = "cor_"
 
 // The lengths of an API key's parts, in characters.
 const (
@@ -64,7 +64,7 @@ type NewAPIKey struct {
 	full *string
 }
 
-// Key returns the whole key, mgt_<id>_<secret>, to be shown once.
+// Key returns the whole key, cor_<id>_<secret>, to be shown once.
 func (k NewAPIKey) Key() string {
 	if k.full == nil {
 		return ""
@@ -131,7 +131,7 @@ func randomBase58(n int) (string, error) {
 }
 
 // ParseAPIKey splits a presented key into its id and its secret. Anything
-// that is not exactly mgt_, 12 base58 characters, an underscore and 44 base58
+// that is not exactly cor_, 12 base58 characters, an underscore and 44 base58
 // characters is refused with kind Unauthenticated and one fixed message,
 // which never quotes the key.
 func ParseAPIKey(presented string) (id, secret string, err error) {

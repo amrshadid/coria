@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // newAudit builds the audit noun.
@@ -41,9 +41,9 @@ A TIME is a date (2026-11-17, midnight in your zone), a time with its offset
 (2026-11-17T09:30:00+03:00) or an age (24h, 7d: that long before now). --since
 is inclusive and --until is exclusive. Times in the table are shown in your
 zone with the offset.`,
-		Example: `  magnetar audit list --since 24h
-  magnetar audit list --outcome refused --since 2026-11-01
-  magnetar audit list --tenant lab1 --key-id k8Zp2QvXn5Rt --json`,
+		Example: `  coria audit list --since 24h
+  coria audit list --outcome refused --since 2026-11-01
+  coria audit list --tenant lab1 --key-id k8Zp2QvXn5Rt --json`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			if err := l.check(); err != nil {

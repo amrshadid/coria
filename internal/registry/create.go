@@ -5,8 +5,8 @@ import (
 	"crypto/subtle"
 	"errors"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // NewTenant is a tenant to create.

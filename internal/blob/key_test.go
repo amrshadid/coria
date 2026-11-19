@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestCheckKeyAccepts guards that the keys the archive's layout makes, and

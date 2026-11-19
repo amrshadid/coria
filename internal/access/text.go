@@ -4,7 +4,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // auditText returns s as an audit entry may hold it: every character that

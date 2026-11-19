@@ -3,7 +3,7 @@ package dimse
 import (
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/receive"
+	"github.com/amrshadid/coria/internal/receive"
 )
 
 // SetAnyPort makes l listen on a port the system picks, so tests never

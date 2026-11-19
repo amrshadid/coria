@@ -3,9 +3,9 @@ package receive
 import (
 	"context"
 
-	"github.com/amrshadid/magnetar/internal/core/manifest"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/manifest"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // eachScanInstance calls fn for each instance the catalog holds in the scan

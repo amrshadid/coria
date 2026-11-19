@@ -36,6 +36,6 @@
 //
 // # What this package must never do
 //
-// It must never do I/O, read the clock, or import anything of Magnetar's
+// It must never do I/O, read the clock, or import anything of CORIA's
 // outside the core (.golangci.yml, depguard "core").
 package reception

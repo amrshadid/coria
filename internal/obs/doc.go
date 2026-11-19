@@ -28,5 +28,5 @@
 // What it must never do: write a secret, a key, a request's content or any
 // label taken unchecked from a request (a label's values come from fixed
 // sets: known method names, API codes, tenant states). It holds no business
-// logic and imports no other package of Magnetar's but redact.
+// logic and imports no other package of CORIA's but redact.
 package obs

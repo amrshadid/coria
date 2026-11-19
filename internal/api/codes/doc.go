@@ -4,7 +4,7 @@
 // back into a kind and, through fault.Kind.ExitCode, into an exit status.
 //
 // The table follows the contract's list of error kinds in
-// api/proto/magnetar/v1/access.proto, and each pair is one to one:
+// api/proto/coria/v1/access.proto, and each pair is one to one:
 //
 //	INVALID_ARGUMENT     invalid          exit 2
 //	UNAUTHENTICATED      unauthenticated  exit 3

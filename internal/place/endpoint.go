@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/blob/s3"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/blob/s3"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // endpointField is the field of a storage's configuration an endpoint's

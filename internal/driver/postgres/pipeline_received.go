@@ -8,10 +8,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 const receivedColumns = `reception_id, sop_instance_uid, sha256, series_uid, study_uid, sop_class_uid, transfer_syntax_uid,

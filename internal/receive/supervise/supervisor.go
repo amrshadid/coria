@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/receive"
-	"github.com/amrshadid/magnetar/internal/settingvalue"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/receive"
+	"github.com/amrshadid/coria/internal/settingvalue"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Tenants is where the supervisor learns which tenants exist and reaches

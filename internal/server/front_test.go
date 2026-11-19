@@ -23,13 +23,13 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/server"
-	"github.com/amrshadid/magnetar/internal/server/servertest"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/server"
+	"github.com/amrshadid/coria/internal/server/servertest"
 )
 
 // notServedMethod returns a method of the first service api/not-served.txt
@@ -72,7 +72,7 @@ type badCredential struct {
 // Authorization headers each holding a good key.
 func badCredentials(t *testing.T, e *env) []badCredential {
 	t.Helper()
-	good := e.makeKey(magnetarv1.Role_ROLE_ADMIN, installation())
+	good := e.makeKey(coriav1.Role_ROLE_ADMIN, installation())
 	last := "a"
 	if strings.HasSuffix(good, "a") {
 		last = "b"
@@ -161,11 +161,11 @@ func matrixPaths(t *testing.T) []matrixPath {
 	long := "/acme.v9.Nothing/" + strings.Repeat("x", 5000)
 	return []matrixPath{
 		{"served", servedProcedure, servedProcedure},
-		{"served, reads the request", magnetarv1connect.SettingsServiceGetSettingProcedure, magnetarv1connect.SettingsServiceGetSettingProcedure},
+		{"served, reads the request", coriav1connect.SettingsServiceGetSettingProcedure, coriav1connect.SettingsServiceGetSettingProcedure},
 		{"not served", ns, ns},
-		{"unknown method", "/magnetar.v1.AccessService/NoSuchMethod", "/magnetar.v1.AccessService/NoSuchMethod"},
+		{"unknown method", "/coria.v1.AccessService/NoSuchMethod", "/coria.v1.AccessService/NoSuchMethod"},
 		{"no contract", "/acme.v9.Nothing/Do", "/acme.v9.Nothing/Do"},
-		{"percent-encoded", "/magnetar.v1.AccessService%2FListKeys", "/"},
+		{"percent-encoded", "/coria.v1.AccessService%2FListKeys", "/"},
 		{"root", "/", "/"},
 		{"metrics", "/metrics", server.MetricsPattern},
 		{"long", long, "/"},
@@ -556,7 +556,7 @@ func TestUnauthenticatedOddRequests(t *testing.T) {
 func TestStalledBodyRefusedAtOnce(t *testing.T) {
 	e := newEnv(t, options{bodyRead: 5 * time.Second})
 	for _, h2 := range []bool{false, true} {
-		for _, p := range []string{magnetarv1connect.SettingsServiceGetSettingProcedure, servedProcedure, notServedMethod(t), "/acme.v9.Nothing/Do", "/"} {
+		for _, p := range []string{coriav1connect.SettingsServiceGetSettingProcedure, servedProcedure, notServedMethod(t), "/acme.v9.Nothing/Do", "/"} {
 			for _, ct := range []string{"application/grpc", "application/json", "application/connect+proto"} {
 				pr, pw := io.Pipe()
 				go func() { _, _ = pw.Write([]byte{0, 0, 0, 0, 9, 1}) }() // promises 9 bytes, sends 1
@@ -583,7 +583,7 @@ func TestStalledBodyRefusedAtOnce(t *testing.T) {
 
 // recordProcedure is a method only TestPercentEncodedNeverDispatched
 // registers, whose handler records being called.
-const recordProcedure = "/magnetar.test.Record/Call"
+const recordProcedure = "/coria.test.Record/Call"
 
 // TestPercentEncodedNeverDispatched guards that a path that is not exactly
 // a route never reaches a handler, whoever asks: percent-encoded, with a
@@ -599,18 +599,18 @@ func TestPercentEncodedNeverDispatched(t *testing.T) {
 			Spec: connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: recordProcedure},
 			Handler: func(_ context.Context, _ connect.Spec, st connect.ServerStream) error {
 				calls.Add(1)
-				var in magnetarv1.WhoAmIRequest
+				var in coriav1.WhoAmIRequest
 				if err := st.Receive(&in); err != nil {
 					return err
 				}
-				return st.Send(&magnetarv1.WhoAmIResponse{})
+				return st.Send(&coriav1.WhoAmIResponse{})
 			},
 		})
 	}})
 	near := []string{
-		"/magnetar.test.Record%2FCall", "/magnetar.test.Record%2fCall", "/magnetar.test.Record/Cal%6C",
-		"/%6Dagnetar.test.Record/Call", "//magnetar.test.Record/Call", "/magnetar.test.Record/Call/",
-		"/magnetar.test.record/Call", "/magnetar.test.Record//Call",
+		"/coria.test.Record%2FCall", "/coria.test.Record%2fCall", "/coria.test.Record/Cal%6C",
+		"/%6Dagnetar.test.Record/Call", "//coria.test.Record/Call", "/coria.test.Record/Call/",
+		"/coria.test.record/Call", "/coria.test.Record//Call",
 	}
 	for _, h2 := range []bool{false, true} {
 		hc := e.socketClient(h2)
@@ -643,10 +643,10 @@ func TestPercentEncodedNeverDispatched(t *testing.T) {
 // detail served=false, under the safe name of the path.
 func TestAuthenticatedNotServed(t *testing.T) {
 	e := newEnv(t, options{})
-	key := e.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
+	key := e.makeKey(coriav1.Role_ROLE_UNSPECIFIED, nil)
 	ns := notServedMethod(t)
-	paths := map[string]string{ns: ns, "/magnetar.v1.AccessService/NoSuchMethod": "/magnetar.v1.AccessService/NoSuchMethod",
-		"/acme.v9.Nothing/Do": "/acme.v9.Nothing/Do", "/magnetar.v1.AccessService%2FListKeys": "/", "/": "/", "//x": "/"}
+	paths := map[string]string{ns: ns, "/coria.v1.AccessService/NoSuchMethod": "/coria.v1.AccessService/NoSuchMethod",
+		"/acme.v9.Nothing/Do": "/acme.v9.Nothing/Do", "/coria.v1.AccessService%2FListKeys": "/", "/": "/", "//x": "/"}
 	type sent struct {
 		label, id, audited string
 	}
@@ -748,7 +748,7 @@ func TestAnsweredBeforeCheckAudited(t *testing.T) {
 	var all []sent
 	for _, h2 := range []bool{false, true} {
 		for _, k := range cases {
-			req, _ := http.NewRequest(k.method, "http://local"+magnetarv1connect.AccessServiceWhoAmIProcedure, bytes.NewReader(k.body))
+			req, _ := http.NewRequest(k.method, "http://local"+coriav1connect.AccessServiceWhoAmIProcedure, bytes.NewReader(k.body))
 			for h, v := range k.header {
 				req.Header.Set(h, v)
 			}
@@ -762,7 +762,7 @@ func TestAnsweredBeforeCheckAudited(t *testing.T) {
 		}
 	}
 	ctx, info := withInfo(e.ctx)
-	if _, err := e.local().access.WhoAmI(ctx, &magnetarv1.WhoAmIRequest{}); err != nil {
+	if _, err := e.local().access.WhoAmI(ctx, &coriav1.WhoAmIRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	okID := info.ResponseHeader().Get(server.RequestIDHeader)
@@ -782,7 +782,7 @@ func TestAnsweredBeforeCheckAudited(t *testing.T) {
 		}
 		en := got[0]
 		if en.Outcome != master.OutcomeFailed || !strings.HasPrefix(en.Reason, "answered before the check") ||
-			en.Details["http_status"] != s.status || en.Method != magnetarv1connect.AccessServiceWhoAmIProcedure || en.LocalUser == "" {
+			en.Details["http_status"] != s.status || en.Method != coriav1connect.AccessServiceWhoAmIProcedure || en.LocalUser == "" {
 			t.Errorf("%s: entry %+v, want failed, answered before the check, http_status %s", s.label, en, s.status)
 		}
 	}
@@ -848,8 +848,8 @@ func (k *keyReads) Key(ctx context.Context, id string) (master.Key, error) {
 func TestKeyReadOncePerRequest(t *testing.T) {
 	reads := &keyReads{}
 	e := newEnv(t, options{store: func(s access.Store) access.Store { reads.Store = s; return reads }})
-	admin := e.makeKey(magnetarv1.Role_ROLE_ADMIN, installation())
-	noGrant := e.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
+	admin := e.makeKey(coriav1.Role_ROLE_ADMIN, installation())
+	noGrant := e.makeKey(coriav1.Role_ROLE_UNSPECIFIED, nil)
 	stranger, err := secret.MakeAPIKey() // a key of the right form that nobody holds
 	if err != nil {
 		t.Fatal(err)
@@ -857,13 +857,13 @@ func TestKeyReadOncePerRequest(t *testing.T) {
 	reads.n.Store(0)
 	const n = 5
 	for range n {
-		if _, err := e.network("Bearer "+admin).access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{}); err != nil {
+		if _, err := e.network("Bearer "+admin).access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := e.network("Bearer "+noGrant).access.ListKeys(e.ctx, &magnetarv1.ListKeysRequest{}); connect.CodeOf(err) != connect.CodePermissionDenied {
+		if _, err := e.network("Bearer "+noGrant).access.ListKeys(e.ctx, &coriav1.ListKeysRequest{}); connect.CodeOf(err) != connect.CodePermissionDenied {
 			t.Fatal(err)
 		}
-		if _, err := e.network("Bearer "+stranger.Key()).access.ListKeys(e.ctx, &magnetarv1.ListKeysRequest{}); connect.CodeOf(err) != connect.CodeUnauthenticated {
+		if _, err := e.network("Bearer "+stranger.Key()).access.ListKeys(e.ctx, &coriav1.ListKeysRequest{}); connect.CodeOf(err) != connect.CodeUnauthenticated {
 			t.Fatal(err)
 		}
 		req, _ := http.NewRequest(http.MethodGet, e.netURL+"/metrics", nil)
@@ -882,7 +882,7 @@ func TestKeyReadOncePerRequest(t *testing.T) {
 	// while the message arrived.
 	reads.n.Store(0)
 	for range n {
-		_, err := e.network("Bearer "+admin).settings.GetSetting(e.ctx, &magnetarv1.GetSettingRequest{Name: "x", Scope: installation()})
+		_, err := e.network("Bearer "+admin).settings.GetSetting(e.ctx, &coriav1.GetSettingRequest{Name: "x", Scope: installation()})
 		if connect.CodeOf(err) != connect.CodeUnimplemented {
 			t.Fatal(err)
 		}

@@ -9,12 +9,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/api"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/registry"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/registry"
 )
 
 // methodTests is the table of tests of each method of the contract, by its
@@ -22,45 +22,45 @@ import (
 // fails for a method with no entry here, so a method added to the contract
 // fails until it is tested.
 var methodTests = map[string]func(t *testing.T){
-	magnetarv1connect.AccessServiceCreateKeyProcedure:       testCreateKey,
-	magnetarv1connect.AccessServiceGetKeyProcedure:          testGetKey,
-	magnetarv1connect.AccessServiceListKeysProcedure:        testListKeys,
-	magnetarv1connect.AccessServiceRevokeKeyProcedure:       testRevokeKey,
-	magnetarv1connect.AccessServiceSetGrantProcedure:        testSetGrant,
-	magnetarv1connect.AccessServiceListGrantsProcedure:      testListGrants,
-	magnetarv1connect.AccessServiceRemoveGrantProcedure:     testRemoveGrant,
-	magnetarv1connect.AccessServiceWhoAmIProcedure:          testWhoAmI,
-	magnetarv1connect.TenantServiceCreateTenantProcedure:    testCreateTenant,
-	magnetarv1connect.TenantServiceGetTenantProcedure:       testGetTenant,
-	magnetarv1connect.TenantServiceListTenantsProcedure:     testListTenants,
-	magnetarv1connect.TenantServiceRemoveTenantProcedure:    testRemoveTenant,
-	magnetarv1connect.SettingsServiceGetSettingProcedure:    testGetSetting,
-	magnetarv1connect.SettingsServiceSetSettingProcedure:    testSetSetting,
-	magnetarv1connect.SettingsServiceUnsetSettingProcedure:  testUnsetSetting,
-	magnetarv1connect.SettingsServiceListSettingsProcedure:  testListSettings,
-	magnetarv1connect.AuditServiceListAuditEntriesProcedure: testListAuditEntries,
+	coriav1connect.AccessServiceCreateKeyProcedure:       testCreateKey,
+	coriav1connect.AccessServiceGetKeyProcedure:          testGetKey,
+	coriav1connect.AccessServiceListKeysProcedure:        testListKeys,
+	coriav1connect.AccessServiceRevokeKeyProcedure:       testRevokeKey,
+	coriav1connect.AccessServiceSetGrantProcedure:        testSetGrant,
+	coriav1connect.AccessServiceListGrantsProcedure:      testListGrants,
+	coriav1connect.AccessServiceRemoveGrantProcedure:     testRemoveGrant,
+	coriav1connect.AccessServiceWhoAmIProcedure:          testWhoAmI,
+	coriav1connect.TenantServiceCreateTenantProcedure:    testCreateTenant,
+	coriav1connect.TenantServiceGetTenantProcedure:       testGetTenant,
+	coriav1connect.TenantServiceListTenantsProcedure:     testListTenants,
+	coriav1connect.TenantServiceRemoveTenantProcedure:    testRemoveTenant,
+	coriav1connect.SettingsServiceGetSettingProcedure:    testGetSetting,
+	coriav1connect.SettingsServiceSetSettingProcedure:    testSetSetting,
+	coriav1connect.SettingsServiceUnsetSettingProcedure:  testUnsetSetting,
+	coriav1connect.SettingsServiceListSettingsProcedure:  testListSettings,
+	coriav1connect.AuditServiceListAuditEntriesProcedure: testListAuditEntries,
 
-	magnetarv1connect.StorageServiceAddStorageProcedure:                testAddStorage,
-	magnetarv1connect.StorageServiceGetStorageProcedure:                testGetStorage,
-	magnetarv1connect.StorageServiceListStoragesProcedure:              testListStorages,
-	magnetarv1connect.StorageServiceSetStorageProcedure:                testSetStorage,
-	magnetarv1connect.StorageServiceRemoveStorageProcedure:             testRemoveStorage,
-	magnetarv1connect.StorageServiceTestStorageProcedure:               testTestStorage,
-	magnetarv1connect.ReceiverServiceAddReceiverProcedure:              testAddReceiver,
-	magnetarv1connect.ReceiverServiceGetReceiverProcedure:              testGetReceiver,
-	magnetarv1connect.ReceiverServiceListReceiversProcedure:            testListReceivers,
-	magnetarv1connect.ReceiverServiceSetReceiverProcedure:              testSetReceiver,
-	magnetarv1connect.ReceiverServiceRemoveReceiverProcedure:           testRemoveReceiver,
-	magnetarv1connect.ReceptionServiceListReceptionsProcedure:          testListReceptions,
-	magnetarv1connect.ReceptionServiceGetReceptionProcedure:            testGetReception,
-	magnetarv1connect.ReceptionServiceRetryReceptionProcedure:          testRetryReception,
-	magnetarv1connect.ReceptionServiceDiscardReceptionProcedure:        testDiscardReception,
-	magnetarv1connect.QuarantineServiceListQuarantinedFilesProcedure:   testListQuarantinedFiles,
-	magnetarv1connect.QuarantineServiceGetQuarantinedFileProcedure:     testGetQuarantinedFile,
-	magnetarv1connect.QuarantineServiceReleaseQuarantinedFileProcedure: testReleaseQuarantinedFile,
-	magnetarv1connect.QuarantineServiceRejectQuarantinedFileProcedure:  testRejectQuarantinedFile,
-	magnetarv1connect.MonitorServiceGetStatusProcedure:                 testGetStatus,
-	magnetarv1connect.MonitorServiceWatchProcedure:                     testWatch,
+	coriav1connect.StorageServiceAddStorageProcedure:                testAddStorage,
+	coriav1connect.StorageServiceGetStorageProcedure:                testGetStorage,
+	coriav1connect.StorageServiceListStoragesProcedure:              testListStorages,
+	coriav1connect.StorageServiceSetStorageProcedure:                testSetStorage,
+	coriav1connect.StorageServiceRemoveStorageProcedure:             testRemoveStorage,
+	coriav1connect.StorageServiceTestStorageProcedure:               testTestStorage,
+	coriav1connect.ReceiverServiceAddReceiverProcedure:              testAddReceiver,
+	coriav1connect.ReceiverServiceGetReceiverProcedure:              testGetReceiver,
+	coriav1connect.ReceiverServiceListReceiversProcedure:            testListReceivers,
+	coriav1connect.ReceiverServiceSetReceiverProcedure:              testSetReceiver,
+	coriav1connect.ReceiverServiceRemoveReceiverProcedure:           testRemoveReceiver,
+	coriav1connect.ReceptionServiceListReceptionsProcedure:          testListReceptions,
+	coriav1connect.ReceptionServiceGetReceptionProcedure:            testGetReception,
+	coriav1connect.ReceptionServiceRetryReceptionProcedure:          testRetryReception,
+	coriav1connect.ReceptionServiceDiscardReceptionProcedure:        testDiscardReception,
+	coriav1connect.QuarantineServiceListQuarantinedFilesProcedure:   testListQuarantinedFiles,
+	coriav1connect.QuarantineServiceGetQuarantinedFileProcedure:     testGetQuarantinedFile,
+	coriav1connect.QuarantineServiceReleaseQuarantinedFileProcedure: testReleaseQuarantinedFile,
+	coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure:  testRejectQuarantinedFile,
+	coriav1connect.MonitorServiceGetStatusProcedure:                 testGetStatus,
+	coriav1connect.MonitorServiceWatchProcedure:                     testWatch,
 }
 
 // contractMethods returns the full procedure name and descriptor of every
@@ -69,11 +69,11 @@ var methodTests = map[string]func(t *testing.T){
 func contractMethods() map[string]protoreflect.MethodDescriptor {
 	out := map[string]protoreflect.MethodDescriptor{}
 	for _, f := range []protoreflect.FileDescriptor{
-		v1.File_magnetar_v1_access_proto, v1.File_magnetar_v1_tenant_proto,
-		v1.File_magnetar_v1_settings_proto, v1.File_magnetar_v1_audit_proto,
-		v1.File_magnetar_v1_storage_proto, v1.File_magnetar_v1_receiver_proto,
-		v1.File_magnetar_v1_reception_proto, v1.File_magnetar_v1_quarantine_proto,
-		v1.File_magnetar_v1_monitor_proto,
+		v1.File_coria_v1_access_proto, v1.File_coria_v1_tenant_proto,
+		v1.File_coria_v1_settings_proto, v1.File_coria_v1_audit_proto,
+		v1.File_coria_v1_storage_proto, v1.File_coria_v1_receiver_proto,
+		v1.File_coria_v1_reception_proto, v1.File_coria_v1_quarantine_proto,
+		v1.File_coria_v1_monitor_proto,
 	} {
 		for i := 0; i < f.Services().Len(); i++ {
 			s := f.Services().Get(i)
@@ -118,10 +118,10 @@ func TestEveryMethod(t *testing.T) {
 			t.Errorf("%s has a test table but is not a method of the contract", proc)
 		}
 	}
-	if _, known := table.RequestFor("/magnetar.v1.TenantService/Nothing"); known {
+	if _, known := table.RequestFor("/coria.v1.TenantService/Nothing"); known {
 		t.Error("an unknown procedure is known")
 	}
-	if need, _ := table.Requirement("/magnetar.v1.TenantService/Nothing", nil); need != (access.Requirement{}) {
+	if need, _ := table.Requirement("/coria.v1.TenantService/Nothing", nil); need != (access.Requirement{}) {
 		t.Error("an unknown procedure has a requirement other than the zero one, which nobody meets")
 	}
 	for proc, md := range methods {
@@ -158,34 +158,34 @@ func TestRequirementTable(t *testing.T) {
 		msg  proto.Message
 		want access.Requirement
 	}{
-		{"CreateKey", magnetarv1connect.AccessServiceCreateKeyProcedure, nil, admin},
-		{"GetKey", magnetarv1connect.AccessServiceGetKeyProcedure, nil, admin},
-		{"ListKeys", magnetarv1connect.AccessServiceListKeysProcedure, nil, admin},
-		{"RevokeKey", magnetarv1connect.AccessServiceRevokeKeyProcedure, nil, admin},
-		{"SetGrant", magnetarv1connect.AccessServiceSetGrantProcedure, nil, admin},
-		{"ListGrants", magnetarv1connect.AccessServiceListGrantsProcedure, nil, admin},
-		{"RemoveGrant", magnetarv1connect.AccessServiceRemoveGrantProcedure, nil, admin},
-		{"WhoAmI", magnetarv1connect.AccessServiceWhoAmIProcedure, nil, access.Authenticated()},
-		{"CreateTenant", magnetarv1connect.TenantServiceCreateTenantProcedure, nil, admin},
-		{"ListTenants", magnetarv1connect.TenantServiceListTenantsProcedure, nil, access.Authenticated()},
-		{"RemoveTenant", magnetarv1connect.TenantServiceRemoveTenantProcedure, nil, admin},
-		{"GetTenant", magnetarv1connect.TenantServiceGetTenantProcedure, &v1.GetTenantRequest{Name: "lab1"}, access.TenantRegistration("lab1")},
-		{"GetTenant malformed", magnetarv1connect.TenantServiceGetTenantProcedure, &v1.GetTenantRequest{Name: "Lab 1"}, access.OnInstallation(master.RoleReader)},
-		{"GetTenant empty", magnetarv1connect.TenantServiceGetTenantProcedure, &v1.GetTenantRequest{}, access.OnInstallation(master.RoleReader)},
-		{"GetSetting tenant", magnetarv1connect.SettingsServiceGetSettingProcedure, &v1.GetSettingRequest{Scope: tenantScope("lab1")}, access.OnTenant("lab1", master.RoleReader)},
-		{"GetSetting installation", magnetarv1connect.SettingsServiceGetSettingProcedure, &v1.GetSettingRequest{Scope: installation()}, access.OnInstallation(master.RoleReader)},
-		{"GetSetting no scope", magnetarv1connect.SettingsServiceGetSettingProcedure, &v1.GetSettingRequest{}, access.OnInstallation(master.RoleReader)},
-		{"GetSetting malformed", magnetarv1connect.SettingsServiceGetSettingProcedure, &v1.GetSettingRequest{Scope: tenantScope("../x")}, access.OnInstallation(master.RoleReader)},
-		{"SetSetting tenant", magnetarv1connect.SettingsServiceSetSettingProcedure, &v1.SetSettingRequest{Setting: &v1.Setting{Scope: tenantScope("lab1")}}, access.OnTenant("lab1", master.RoleAdmin)},
-		{"SetSetting installation", magnetarv1connect.SettingsServiceSetSettingProcedure, &v1.SetSettingRequest{Setting: &v1.Setting{Scope: installation()}}, admin},
-		{"SetSetting no setting", magnetarv1connect.SettingsServiceSetSettingProcedure, &v1.SetSettingRequest{}, admin},
-		{"UnsetSetting tenant", magnetarv1connect.SettingsServiceUnsetSettingProcedure, &v1.UnsetSettingRequest{Scope: tenantScope("lab1")}, access.OnTenant("lab1", master.RoleAdmin)},
-		{"UnsetSetting installation", magnetarv1connect.SettingsServiceUnsetSettingProcedure, &v1.UnsetSettingRequest{Scope: installation()}, admin},
-		{"ListSettings tenant", magnetarv1connect.SettingsServiceListSettingsProcedure, &v1.ListSettingsRequest{Scope: tenantScope("lab1")}, access.OnTenant("lab1", master.RoleReader)},
-		{"ListSettings installation", magnetarv1connect.SettingsServiceListSettingsProcedure, &v1.ListSettingsRequest{Scope: installation()}, access.OnInstallation(master.RoleReader)},
-		{"ListAuditEntries tenant", magnetarv1connect.AuditServiceListAuditEntriesProcedure, &v1.ListAuditEntriesRequest{Scope: tenantScope("lab1")}, access.OnTenant("lab1", master.RoleAdmin)},
-		{"ListAuditEntries installation", magnetarv1connect.AuditServiceListAuditEntriesProcedure, &v1.ListAuditEntriesRequest{Scope: installation()}, admin},
-		{"ListAuditEntries no scope", magnetarv1connect.AuditServiceListAuditEntriesProcedure, &v1.ListAuditEntriesRequest{}, admin},
+		{"CreateKey", coriav1connect.AccessServiceCreateKeyProcedure, nil, admin},
+		{"GetKey", coriav1connect.AccessServiceGetKeyProcedure, nil, admin},
+		{"ListKeys", coriav1connect.AccessServiceListKeysProcedure, nil, admin},
+		{"RevokeKey", coriav1connect.AccessServiceRevokeKeyProcedure, nil, admin},
+		{"SetGrant", coriav1connect.AccessServiceSetGrantProcedure, nil, admin},
+		{"ListGrants", coriav1connect.AccessServiceListGrantsProcedure, nil, admin},
+		{"RemoveGrant", coriav1connect.AccessServiceRemoveGrantProcedure, nil, admin},
+		{"WhoAmI", coriav1connect.AccessServiceWhoAmIProcedure, nil, access.Authenticated()},
+		{"CreateTenant", coriav1connect.TenantServiceCreateTenantProcedure, nil, admin},
+		{"ListTenants", coriav1connect.TenantServiceListTenantsProcedure, nil, access.Authenticated()},
+		{"RemoveTenant", coriav1connect.TenantServiceRemoveTenantProcedure, nil, admin},
+		{"GetTenant", coriav1connect.TenantServiceGetTenantProcedure, &v1.GetTenantRequest{Name: "lab1"}, access.TenantRegistration("lab1")},
+		{"GetTenant malformed", coriav1connect.TenantServiceGetTenantProcedure, &v1.GetTenantRequest{Name: "Lab 1"}, access.OnInstallation(master.RoleReader)},
+		{"GetTenant empty", coriav1connect.TenantServiceGetTenantProcedure, &v1.GetTenantRequest{}, access.OnInstallation(master.RoleReader)},
+		{"GetSetting tenant", coriav1connect.SettingsServiceGetSettingProcedure, &v1.GetSettingRequest{Scope: tenantScope("lab1")}, access.OnTenant("lab1", master.RoleReader)},
+		{"GetSetting installation", coriav1connect.SettingsServiceGetSettingProcedure, &v1.GetSettingRequest{Scope: installation()}, access.OnInstallation(master.RoleReader)},
+		{"GetSetting no scope", coriav1connect.SettingsServiceGetSettingProcedure, &v1.GetSettingRequest{}, access.OnInstallation(master.RoleReader)},
+		{"GetSetting malformed", coriav1connect.SettingsServiceGetSettingProcedure, &v1.GetSettingRequest{Scope: tenantScope("../x")}, access.OnInstallation(master.RoleReader)},
+		{"SetSetting tenant", coriav1connect.SettingsServiceSetSettingProcedure, &v1.SetSettingRequest{Setting: &v1.Setting{Scope: tenantScope("lab1")}}, access.OnTenant("lab1", master.RoleAdmin)},
+		{"SetSetting installation", coriav1connect.SettingsServiceSetSettingProcedure, &v1.SetSettingRequest{Setting: &v1.Setting{Scope: installation()}}, admin},
+		{"SetSetting no setting", coriav1connect.SettingsServiceSetSettingProcedure, &v1.SetSettingRequest{}, admin},
+		{"UnsetSetting tenant", coriav1connect.SettingsServiceUnsetSettingProcedure, &v1.UnsetSettingRequest{Scope: tenantScope("lab1")}, access.OnTenant("lab1", master.RoleAdmin)},
+		{"UnsetSetting installation", coriav1connect.SettingsServiceUnsetSettingProcedure, &v1.UnsetSettingRequest{Scope: installation()}, admin},
+		{"ListSettings tenant", coriav1connect.SettingsServiceListSettingsProcedure, &v1.ListSettingsRequest{Scope: tenantScope("lab1")}, access.OnTenant("lab1", master.RoleReader)},
+		{"ListSettings installation", coriav1connect.SettingsServiceListSettingsProcedure, &v1.ListSettingsRequest{Scope: installation()}, access.OnInstallation(master.RoleReader)},
+		{"ListAuditEntries tenant", coriav1connect.AuditServiceListAuditEntriesProcedure, &v1.ListAuditEntriesRequest{Scope: tenantScope("lab1")}, access.OnTenant("lab1", master.RoleAdmin)},
+		{"ListAuditEntries installation", coriav1connect.AuditServiceListAuditEntriesProcedure, &v1.ListAuditEntriesRequest{Scope: installation()}, admin},
+		{"ListAuditEntries no scope", coriav1connect.AuditServiceListAuditEntriesProcedure, &v1.ListAuditEntriesRequest{}, admin},
 	}
 	for _, c := range cases {
 		if got := need(c.proc, c.msg); got != c.want {
@@ -193,18 +193,18 @@ func TestRequirementTable(t *testing.T) {
 		}
 	}
 	// A fixed requirement reads no request: RequestFor answers nil.
-	for _, proc := range []string{magnetarv1connect.AccessServiceCreateKeyProcedure, magnetarv1connect.TenantServiceCreateTenantProcedure, magnetarv1connect.TenantServiceListTenantsProcedure} {
+	for _, proc := range []string{coriav1connect.AccessServiceCreateKeyProcedure, coriav1connect.TenantServiceCreateTenantProcedure, coriav1connect.TenantServiceListTenantsProcedure} {
 		if msg, _ := m.RequestFor(proc); msg != nil {
 			t.Errorf("%s: a fixed requirement asks for the request", proc)
 		}
 	}
 	// A message of the wrong type is read as an empty one, so it is held to
 	// the role on the installation and nothing panics.
-	if got, _ := m.Requirement(magnetarv1connect.SettingsServiceGetSettingProcedure, &v1.GetTenantRequest{Name: "lab1"}); got != access.OnInstallation(master.RoleReader) {
+	if got, _ := m.Requirement(coriav1connect.SettingsServiceGetSettingProcedure, &v1.GetTenantRequest{Name: "lab1"}); got != access.OnInstallation(master.RoleReader) {
 		t.Errorf("a message of the wrong type gives %+v", got)
 	}
 	// The facts of a setting name the setting and the scope, never the value.
-	_, facts := m.Requirement(magnetarv1connect.SettingsServiceSetSettingProcedure,
+	_, facts := m.Requirement(coriav1connect.SettingsServiceSetSettingProcedure,
 		&v1.SetSettingRequest{Setting: &v1.Setting{Name: "audit.retention", Scope: tenantScope("lab1"), Value: "a-secret-value"}})
 	if facts.Object != "audit.retention" || facts.Details["scope"] != "tenant/lab1" {
 		t.Errorf("SetSetting's facts are %+v", facts)

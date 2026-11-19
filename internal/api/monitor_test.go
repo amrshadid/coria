@@ -7,9 +7,9 @@ import (
 
 	"connectrpc.com/connect/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // testGetStatus guards GetStatus: reader on the tenant and operator on the
@@ -87,7 +87,7 @@ func testGetStatus(t *testing.T) {
 func testWatch(t *testing.T) {
 	f := newPlaceFixture(t)
 	f.receiving(t)
-	open := func(c clients, r *v1.WatchRequest) (magnetarv1connect.MonitorServiceWatchClientStream, context.CancelFunc, error) {
+	open := func(c clients, r *v1.WatchRequest) (coriav1connect.MonitorServiceWatchClientStream, context.CancelFunc, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		s, err := c.monitor.Watch(ctx, r)
 		if err != nil {

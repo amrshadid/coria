@@ -17,9 +17,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/master/mastertest"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/master/mastertest"
 )
 
 // TestShippedMigrationsUnchanged guards the master's migration files against
@@ -654,7 +654,7 @@ func TestErrorsNeverCarryTheAddress(t *testing.T) {
 	}
 	super := admin(t, base)
 	var gone int
-	if err := super.QueryRow(ctx, `SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = 'magnetar' AND pid <> pg_backend_pid() AND datname = current_database()`).Scan(&gone); err != nil {
+	if err := super.QueryRow(ctx, `SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = 'coria' AND pid <> pg_backend_pid() AND datname = current_database()`).Scan(&gone); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("terminated %d backends", gone)
@@ -679,14 +679,14 @@ func TestErrorsNeverCarryTheAddress(t *testing.T) {
 
 // TestWriteSample writes the contract suite's sample data into a schema for
 // the outside check (scripts/check/master-postgres.sh), which reads it with
-// psql. It runs only when MAGNETAR_SAMPLE_SCHEMA names a schema to make
-// (which must not exist) and MAGNETAR_SAMPLE_DIR a directory; there it leaves
+// psql. It runs only when CORIA_SAMPLE_SCHEMA names a schema to make
+// (which must not exist) and CORIA_SAMPLE_DIR a directory; there it leaves
 // the sample key's hash in hex, and never the secret, which the script holds
 // itself.
 func TestWriteSample(t *testing.T) {
-	schema, dir := os.Getenv("MAGNETAR_SAMPLE_SCHEMA"), os.Getenv("MAGNETAR_SAMPLE_DIR")
+	schema, dir := os.Getenv("CORIA_SAMPLE_SCHEMA"), os.Getenv("CORIA_SAMPLE_DIR")
 	if schema == "" || dir == "" {
-		t.Skip("MAGNETAR_SAMPLE_SCHEMA and MAGNETAR_SAMPLE_DIR are not set; scripts/check/master-postgres.sh sets them")
+		t.Skip("CORIA_SAMPLE_SCHEMA and CORIA_SAMPLE_DIR are not set; scripts/check/master-postgres.sh sets them")
 	}
 	base := testAddress(t)
 	super := admin(t, base)

@@ -3,12 +3,12 @@ package api
 import (
 	"context"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // monitorService is MonitorService: a tenant's numbers now, read from its
@@ -16,7 +16,7 @@ import (
 // the stream of its events.
 type monitorService struct{ c *core }
 
-var _ magnetarv1connect.MonitorServiceHandler = monitorService{}
+var _ coriav1connect.MonitorServiceHandler = monitorService{}
 
 // GetStatus answers the status of one tenant, or a page of every tenant's.
 // A tenant whose database does not answer is answered with its state and
@@ -26,7 +26,7 @@ var _ magnetarv1connect.MonitorServiceHandler = monitorService{}
 // the reason.
 func (s monitorService) GetStatus(ctx context.Context, req *v1.GetStatusRequest) (*v1.GetStatusResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.MonitorServiceGetStatusProcedure)
+	d, err := c.decision(ctx, coriav1connect.MonitorServiceGetStatusProcedure)
 	if err != nil {
 		return nil, err
 	}

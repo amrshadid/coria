@@ -8,10 +8,10 @@ import (
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/core/naming"
-	"github.com/amrshadid/magnetar/internal/place"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/place"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // receiverMask is what SetReceiver's update_mask may name (receiver.proto,

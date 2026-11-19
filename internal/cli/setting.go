@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // newSetting builds the setting noun.
@@ -46,8 +46,8 @@ func (a *app) newSettingGet() *cobra.Command {
 		Long: `Show a setting's value on the installation, or on a tenant: the tenant's
 override when it has one, else the installation's value, else the built-in
 default. The answer says which of the three the value came from.`,
-		Example: `  magnetar setting get key.default-lifetime
-  magnetar setting get key.default-lifetime --tenant lab1`,
+		Example: `  coria setting get key.default-lifetime
+  coria setting get key.default-lifetime --tenant lab1`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -78,7 +78,7 @@ func (a *app) newSettingSet() *cobra.Command {
 override it), or, with --tenant, that tenant's override, for a setting a tenant
 may override. The server refuses a name it does not know, a value the setting
 does not accept, and --tenant for a setting set on the installation only.`,
-		Example: `  magnetar setting set key.default-lifetime 30d`,
+		Example: `  coria setting set key.default-lifetime 30d`,
 		Args:    exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -109,7 +109,7 @@ func (a *app) newSettingUnset() *cobra.Command {
 built-in default applies again; with --tenant, that tenant's override, so what
 applies on the installation applies to the tenant again. Removing a value that
 is not set changes nothing and succeeds.`,
-		Example: `  magnetar setting unset key.default-lifetime`,
+		Example: `  coria setting unset key.default-lifetime`,
 		Args:    exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -148,8 +148,8 @@ func (a *app) newSettingList() *cobra.Command {
 		Long: `List settings of one scope, ordered by name: on the installation, every setting
 the server knows with the value that applies there and where it comes from; on
 a tenant, only that tenant's overrides.`,
-		Example: `  magnetar setting list
-  magnetar setting list --tenant lab1 --json`,
+		Example: `  coria setting list
+  coria setting list --tenant lab1 --json`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			if err := l.check(); err != nil {

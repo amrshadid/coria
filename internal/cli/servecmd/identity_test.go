@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/cli/servecmd"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/coria/internal/cli/servecmd"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/server"
 )
 
 // TestServeRefusesAnotherMaster guards that serve pointed at a master that is
@@ -132,7 +132,7 @@ func TestHalfMadeDirectory(t *testing.T) {
 		})
 	}
 	// A directory with nothing of an installation says to run init.
-	if _, err := run(t, nil, "serve", "--data-dir", shortDir(t)); err == nil || !strings.Contains(err.Error(), "make one with: magnetar init") {
+	if _, err := run(t, nil, "serve", "--data-dir", shortDir(t)); err == nil || !strings.Contains(err.Error(), "make one with: coria init") {
 		t.Fatalf("serve on nothing: %v", err)
 	}
 }

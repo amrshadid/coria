@@ -11,17 +11,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // servedProcedure is a method the stand-ins serve whose requirement does
 // not read the request, so a refusal of it depends on the key alone.
-const servedProcedure = "/magnetar.v1.AccessService/ListKeys"
+const servedProcedure = "/coria.v1.AccessService/ListKeys"
 
 // notServedProcedures are a method of the contract that no handler serves
 // and a name in no contract: both must be indistinguishable from a served
 // method to a caller without a valid key.
-var notServedProcedures = []string{"/magnetar.v1.StorageService/GetStorage", "/acme.v9.Nothing/Do"}
+var notServedProcedures = []string{"/coria.v1.StorageService/GetStorage", "/acme.v9.Nothing/Do"}
 
 // rpcProtocol is one way of making a call: its content type and the body of
 // an empty request in it.
@@ -63,7 +63,7 @@ func (a answer) String() string {
 func headerText(h http.Header) string {
 	var lines []string
 	for k, vs := range h {
-		if k == "Date" || k == "Magnetar-Request-Id" {
+		if k == "Date" || k == "Coria-Request-Id" {
 			continue
 		}
 		for _, v := range vs {
@@ -103,7 +103,7 @@ func call(t *testing.T, hc *http.Client, base, path string, p rpcProtocol, autho
 	}
 	return answer{
 		status: resp.StatusCode, header: headerText(resp.Header), trailer: headerText(resp.Trailer),
-		body: body, id: resp.Header.Get("Magnetar-Request-Id"), protocol: p.name,
+		body: body, id: resp.Header.Get("Coria-Request-Id"), protocol: p.name,
 	}
 }
 
@@ -112,7 +112,7 @@ func call(t *testing.T, hc *http.Client, base, path string, p rpcProtocol, autho
 // protocol, the status, the headers, the trailers and the body of the
 // refusal are the same for a served method, for a method of the contract
 // no handler serves, and for a name in no contract. With
-// MAGNETAR_SERVED_ANSWERS set to a file name, the served method's answers
+// CORIA_SERVED_ANSWERS set to a file name, the served method's answers
 // are written there, so the answers of two builds can be compared.
 func TestNotServedRefusedAsServed(t *testing.T) {
 	e := newEnv(t, options{})
@@ -139,7 +139,7 @@ func TestNotServedRefusedAsServed(t *testing.T) {
 	if !strings.Contains(dump.String(), "the request carries no valid key") {
 		t.Fatalf("no refusal was seen:\n%s", dump.String())
 	}
-	if f := os.Getenv("MAGNETAR_SERVED_ANSWERS"); f != "" {
+	if f := os.Getenv("CORIA_SERVED_ANSWERS"); f != "" {
 		if err := os.WriteFile(f, []byte(dump.String()), 0o600); err != nil { //nolint:gosec // G703: a file the person running the test names.
 			t.Fatal(err)
 		}

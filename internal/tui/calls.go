@@ -7,9 +7,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // This file is the only place the program reaches the API. Each function

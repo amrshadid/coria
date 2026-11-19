@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // readDirChunk is how many directory entries are read at a time.

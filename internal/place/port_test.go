@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestFreePortTakesTheLowestBindable guards the choice of a port for a

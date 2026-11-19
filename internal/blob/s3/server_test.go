@@ -24,9 +24,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // proxy is a reverse proxy in front of the test server that counts what
@@ -500,7 +500,7 @@ func TestOpenFailures(t *testing.T) {
 		mod  func(*Config)
 		kind fault.Kind
 	}{
-		"no such bucket": {func(c *Config) { c.Bucket = "no-such-bucket-for-magnetar" }, fault.Invalid},
+		"no such bucket": {func(c *Config) { c.Bucket = "no-such-bucket-for-coria" }, fault.Invalid},
 		"unknown key":    {func(c *Config) { c.AccessKeyID = NewSecret("unknownkeyunknownkey") }, fault.Invalid},
 		"wrong secret":   {func(c *Config) { c.SecretAccessKey = NewSecret("wrong-secret-wrong-secret") }, fault.Invalid},
 		"nothing there":  {func(c *Config) { c.Endpoint = "http://127.0.0.1:1" }, fault.Unavailable},

@@ -14,16 +14,16 @@ jsonout() {
 	cp "$work/cli.out" "$work/json-$name.json"
 	docs="$docs $work/json-$name.json:$field"
 }
-jsonout tenants /magnetar.v1.TenantService/ListTenants tenants "*" tenant list
-jsonout keys /magnetar.v1.AccessService/ListKeys keys "*" key list
-jsonout grants-inst /magnetar.v1.AccessService/ListGrants grants "*" grant list --installation
-jsonout grants-key /magnetar.v1.AccessService/ListGrants grants "*" grant list --key-id "$reader_id"
-jsonout grants-tenant /magnetar.v1.AccessService/ListGrants grants "*" grant list --tenant lite
-jsonout settings /magnetar.v1.SettingsService/ListSettings settings "*" setting list
-jsonout settings-lite /magnetar.v1.SettingsService/ListSettings settings lite setting list --tenant lite
-jsonout audit /magnetar.v1.AuditService/ListAuditEntries entries "*" audit list
-jsonout audit-lite /magnetar.v1.AuditService/ListAuditEntries entries lite audit list --tenant lite
-jsonout audit-pg /magnetar.v1.AuditService/ListAuditEntries entries pg audit list --tenant pg
+jsonout tenants /coria.v1.TenantService/ListTenants tenants "*" tenant list
+jsonout keys /coria.v1.AccessService/ListKeys keys "*" key list
+jsonout grants-inst /coria.v1.AccessService/ListGrants grants "*" grant list --installation
+jsonout grants-key /coria.v1.AccessService/ListGrants grants "*" grant list --key-id "$reader_id"
+jsonout grants-tenant /coria.v1.AccessService/ListGrants grants "*" grant list --tenant lite
+jsonout settings /coria.v1.SettingsService/ListSettings settings "*" setting list
+jsonout settings-lite /coria.v1.SettingsService/ListSettings settings lite setting list --tenant lite
+jsonout audit /coria.v1.AuditService/ListAuditEntries entries "*" audit list
+jsonout audit-lite /coria.v1.AuditService/ListAuditEntries entries lite audit list --tenant lite
+jsonout audit-pg /coria.v1.AuditService/ListAuditEntries entries pg audit list --tenant pg
 # shellcheck disable=SC2086
 "$PYTHON" "$helper" --work "$work" json $docs || true
 # The interactive program's requests cannot be told by id; section 8 counts

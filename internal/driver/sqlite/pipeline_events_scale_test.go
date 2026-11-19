@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // scaleEvents is how many events TestScaleEventFeed seeds: a feed a busy

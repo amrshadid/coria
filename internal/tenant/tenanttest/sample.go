@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // WriteSample writes a small tenant into s: two setting overrides, one of
 // them set twice and one removed, and the audit entries of each change plus
-// one refusal, so that a tool other than Magnetar can read what the driver
+// one refusal, so that a tool other than CORIA can read what the driver
 // wrote. It leaves 2 settings and 5 audit entries.
 func WriteSample(tb testing.TB, s tenant.Store) {
 	tb.Helper()

@@ -19,7 +19,7 @@
 //
 // A file whose first line is exactly
 //
-//	-- magnetar:no-transaction
+//	-- coria:no-transaction
 //
 // runs outside a transaction, for a statement a database refuses inside one
 // (Postgres's CREATE INDEX CONCURRENTLY). Such a file is recorded only after

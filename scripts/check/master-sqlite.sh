@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The outside check of the SQLite master database: the contract suite's
 # sample installation is written by the driver, then read with the sqlite3
-# command line tool, which is SQLite's own and not Magnetar's.
+# command line tool, which is SQLite's own and not CORIA's.
 #
 # It shows the tables and their rows, runs SQLite's integrity and foreign key
 # checks, reads times and audit details with SQLite's own functions, and
@@ -41,7 +41,7 @@ echo "sqlite3 $("$SQLITE3" --version | cut -d' ' -f1)"
 secret="$(sed -n 's/^const SampleSecret = "\([^"]*\)".*/\1/p' internal/master/mastertest/sample.go)"
 [ -n "$secret" ] || fail "cannot read SampleSecret from internal/master/mastertest/sample.go"
 
-MAGNETAR_SAMPLE_DIR="$dir" "$GO" test -count=1 -run '^TestWriteSample$' ./internal/driver/sqlite
+CORIA_SAMPLE_DIR="$dir" "$GO" test -count=1 -run '^TestWriteSample$' ./internal/driver/sqlite
 db="$dir/master.db"
 hash="$(tr -d '\n' < "$dir/hash.hex")"
 [ -f "$db" ] || fail "the sample database was not written"
@@ -125,7 +125,7 @@ want "the key row holding the hash" SampleKey001 "$(q "SELECT id FROM api_keys W
 # missing tool fails instead of skipping.
 echo
 echo "== a process killed while making changes"
-SQLITE3="$(command -v "$SQLITE3")" MAGNETAR_SQLITE3_REQUIRED=1 \
+SQLITE3="$(command -v "$SQLITE3")" CORIA_SQLITE3_REQUIRED=1 \
 	"$GO" test -count=1 -v -run '^TestKillDuringChanges$' ./internal/driver/sqlite
 
 echo

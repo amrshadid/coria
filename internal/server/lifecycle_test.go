@@ -16,14 +16,14 @@ import (
 
 	"connectrpc.com/connect/v2"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/server"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/server"
 )
 
 // testClock is a clock a test moves by hand.
@@ -118,8 +118,8 @@ func TestKeyRevokedWhileBodyArrives(t *testing.T) {
 	reads := &keyReads{}
 	e := newEnv(t, options{store: func(s access.Store) access.Store { reads.Store = s; return reads }})
 	for _, c := range []struct{ proc, body string }{
-		{magnetarv1connect.SettingsServiceGetSettingProcedure, `{"name":"key.default-lifetime","scope":{"installation":{}}}`},
-		{magnetarv1connect.SettingsServiceSetSettingProcedure, `{"setting":{"name":"key.default-lifetime","value":"1h","scope":{"installation":{}}}}`},
+		{coriav1connect.SettingsServiceGetSettingProcedure, `{"name":"key.default-lifetime","scope":{"installation":{}}}`},
+		{coriav1connect.SettingsServiceSetSettingProcedure, `{"setting":{"name":"key.default-lifetime","value":"1h","scope":{"installation":{}}}}`},
 	} {
 		id, key := adminKey(t, e, time.Now().UTC().Add(-time.Hour), time.Time{})
 		ran := e.standins.Ran.Load()
@@ -149,7 +149,7 @@ func TestKeyExpiredWhileBodyArrives(t *testing.T) {
 	clock := &testClock{now: time.Now().UTC()}
 	e := newEnv(t, options{clock: clock.Now, store: func(s access.Store) access.Store { reads.Store = s; return reads }})
 	id, key := adminKey(t, e, clock.Now().Add(-time.Hour), clock.Now().Add(time.Hour))
-	finish := heldBody(t, e, reads, magnetarv1connect.SettingsServiceGetSettingProcedure, "Bearer "+key,
+	finish := heldBody(t, e, reads, coriav1connect.SettingsServiceGetSettingProcedure, "Bearer "+key,
 		`{"name":"key.default-lifetime","scope":{"installation":{}}}`)
 	clock.Add(2 * time.Hour)
 	resp, rid, body := finish()
@@ -195,12 +195,12 @@ func TestAllowedRequestWritesOneEntry(t *testing.T) {
 		// GetTenant's fallback requirement names the tenant "", which does
 		// not exist: the check itself answers NOT_FOUND and writes the one
 		// entry, before the message is found malformed.
-		{"GetTenant, bad JSON", post(magnetarv1connect.TenantServiceGetTenantProcedure, "{bad", nil), master.OutcomeFailed, "no such tenant"},
-		{"GetSetting, bad JSON", post(magnetarv1connect.SettingsServiceGetSettingProcedure, "{bad", nil), master.OutcomeFailed, unreadable},
-		{"ListTenants, bad JSON", post(magnetarv1connect.TenantServiceListTenantsProcedure, "{bad", nil), master.OutcomeFailed, unreadable},
-		{"panic", post(magnetarv1connect.TenantServiceListTenantsProcedure, `{"pageToken":"panic"}`, nil), master.OutcomeFailed, "the handler failed (a panic) before it recorded the request"},
-		{"deadline", post(magnetarv1connect.TenantServiceListTenantsProcedure, `{"pageToken":"block"}`, map[string]string{"Connect-Timeout-Ms": "100"}), master.OutcomeFailed, "the request's deadline passed before it was recorded"},
-		{"succeeded without recording", post(magnetarv1connect.TenantServiceListTenantsProcedure, `{}`, nil), master.OutcomeDone, ""},
+		{"GetTenant, bad JSON", post(coriav1connect.TenantServiceGetTenantProcedure, "{bad", nil), master.OutcomeFailed, "no such tenant"},
+		{"GetSetting, bad JSON", post(coriav1connect.SettingsServiceGetSettingProcedure, "{bad", nil), master.OutcomeFailed, unreadable},
+		{"ListTenants, bad JSON", post(coriav1connect.TenantServiceListTenantsProcedure, "{bad", nil), master.OutcomeFailed, unreadable},
+		{"panic", post(coriav1connect.TenantServiceListTenantsProcedure, `{"pageToken":"panic"}`, nil), master.OutcomeFailed, "the handler failed (a panic) before it recorded the request"},
+		{"deadline", post(coriav1connect.TenantServiceListTenantsProcedure, `{"pageToken":"block"}`, map[string]string{"Connect-Timeout-Ms": "100"}), master.OutcomeFailed, "the request's deadline passed before it was recorded"},
+		{"succeeded without recording", post(coriav1connect.TenantServiceListTenantsProcedure, `{}`, nil), master.OutcomeDone, ""},
 	}
 	var ids []string
 	for _, w := range wants {
@@ -283,14 +283,14 @@ func TestCanceledAtEachMomentWritesOneEntry(t *testing.T) {
 					// waiting for it when the cancel lands.
 					pr, pw := io.Pipe()
 					defer func() { _ = pw.Close() }()
-					req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://local"+magnetarv1connect.TenantServiceListTenantsProcedure, pr)
+					req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://local"+coriav1connect.TenantServiceListTenantsProcedure, pr)
 					req.Header.Set("Content-Type", "application/json")
 					if resp, err := e.socketClient(true).Do(req); err == nil {
 						_ = resp.Body.Close()
 					}
 					return
 				}
-				_, _ = e.local().tenants.ListTenants(ctx, &magnetarv1.ListTenantsRequest{PageToken: c.token})
+				_, _ = e.local().tenants.ListTenants(ctx, &coriav1.ListTenantsRequest{PageToken: c.token})
 			}()
 			if c.point != "" {
 				<-reached
@@ -299,13 +299,13 @@ func TestCanceledAtEachMomentWritesOneEntry(t *testing.T) {
 			}
 			cancel()
 			<-done
-			waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 0\n") })
+			waitFor(t, func() bool { return strings.Contains(metricsText(e), "coria_requests_in_flight 0\n") })
 			if c.point != "" && !ended.Load() {
 				t.Fatal("the request's context did not end when its caller canceled")
 			}
 			var got []master.AuditEntry
 			isCall := func(en master.AuditEntry) bool {
-				return en.Method == magnetarv1connect.TenantServiceListTenantsProcedure
+				return en.Method == coriav1connect.TenantServiceListTenantsProcedure
 			}
 			for _, en := range allAudit(t, e, haveEntry(isCall)) {
 				if isCall(en) {
@@ -326,8 +326,8 @@ func TestCanceledAtEachMomentWritesOneEntry(t *testing.T) {
 func TestStoppedRequestWritesOneEntry(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, drain: 300 * time.Millisecond, grace: time.Second})
 	cl := e.local()
-	go func() { _, _ = cl.tenants.ListTenants(e.ctx, &magnetarv1.ListTenantsRequest{PageToken: "block"}) }()
-	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 1\n") })
+	go func() { _, _ = cl.tenants.ListTenants(e.ctx, &coriav1.ListTenantsRequest{PageToken: "block"}) }()
+	waitFor(t, func() bool { return strings.Contains(metricsText(e), "coria_requests_in_flight 1\n") })
 	if err := e.srv.Stop(); err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestStoppedRequestWritesOneEntry(t *testing.T) {
 	}
 	n := 0
 	for _, en := range entries {
-		if en.Method == magnetarv1connect.TenantServiceListTenantsProcedure {
+		if en.Method == coriav1connect.TenantServiceListTenantsProcedure {
 			n++
 			if en.Outcome != master.OutcomeFailed || en.Reason != "the request was canceled before it was recorded" {
 				t.Errorf("the stopped request's entry: %+v", en)
@@ -389,7 +389,7 @@ func TestCanceledCheckIsNotAStoreFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(e.ctx)
 	done := make(chan error, 1)
 	go func() {
-		_, err := e.network("Bearer "+made.Key()).access.ListKeys(ctx, &magnetarv1.ListKeysRequest{})
+		_, err := e.network("Bearer "+made.Key()).access.ListKeys(ctx, &coriav1.ListKeysRequest{})
 		done <- err
 	}()
 	<-blocking.entered
@@ -397,7 +397,7 @@ func TestCanceledCheckIsNotAStoreFailure(t *testing.T) {
 	if err := <-done; connect.CodeOf(err) != connect.CodeCanceled && !errors.Is(err, context.Canceled) {
 		t.Fatalf("the canceled call: %v", err)
 	}
-	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 0\n") })
+	waitFor(t, func() bool { return strings.Contains(metricsText(e), "coria_requests_in_flight 0\n") })
 	var got []master.AuditEntry
 	for _, en := range allAudit(t, e, haveEntry(func(en master.AuditEntry) bool { return en.KeyID == made.ID })) {
 		if en.KeyID == made.ID {

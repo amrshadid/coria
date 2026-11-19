@@ -3,8 +3,8 @@ package mastertest
 import (
 	"fmt"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // testGrants guards setting a grant (new, then replaced, returning the old

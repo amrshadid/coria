@@ -10,10 +10,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
-	"github.com/amrshadid/magnetar/internal/core/settings"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
+	"github.com/amrshadid/coria/internal/core/settings"
 )
 
 // testSettings is the list of settings of the tests' fake: the server's own,
@@ -42,7 +42,7 @@ var zone = time.FixedZone("EAT", 3*60*60)
 
 // testSecret is the secret the fake makes for the first key it creates; the
 // fake builds it from the key's id, and the tests look for it everywhere.
-const testSecret = "mgt_k00000000001_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+const testSecret = "cor_k00000000001_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
 
 // rig drives the root model with no terminal: key presses and the answers of a
 // real fake server go in, frames come out. Every command a screen returns is

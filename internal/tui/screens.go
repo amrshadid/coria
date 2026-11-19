@@ -7,8 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // This file builds the screens: for each, its columns, what a page of it asks
@@ -71,7 +71,7 @@ func newList(c *ctx, heading string, cols []column, empty string) listScreen {
 // being pressed.
 func newTenantList(c *ctx) (screen, tea.Cmd) {
 	l := newList(c, "Tenants", []column{{"NAME", 8, 40}, {"DB", 2, 8}, {"STATE", 8, 40}, {"CREATED", 19, 19}},
-		"no tenant yet; \"magnetar tenant create\" makes one")
+		"no tenant yet; \"coria tenant create\" makes one")
 	l.live = true
 	l.fetch = func(c *ctx, l listScreen, token string) tea.Cmd { return tenantsPage(c, l.id, l.gen, token) }
 	l.open = func(c *ctx, _ listScreen, r row) tea.Cmd {

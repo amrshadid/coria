@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // fakeClock is a Clock the test moves: Now changes only with Advance, and

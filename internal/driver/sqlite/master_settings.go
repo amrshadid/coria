@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // Setting implements master.Store.

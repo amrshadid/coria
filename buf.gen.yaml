@@ -10,7 +10,7 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/amrshadid/magnetar/gen
+      value: github.com/amrshadid/coria/gen
 
 # gen/ holds only generated code, so it is emptied before each run and a file
 # whose proto file was removed does not stay behind.

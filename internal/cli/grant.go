@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // newGrant builds the grant noun.
@@ -35,8 +35,8 @@ func (a *app) newGrantSet() *cobra.Command {
 holds a role there, it is replaced in one step, so there is no moment without
 access. The answer says what the role was before. A revoked key cannot be given
 a grant.`,
-		Example: `  magnetar grant set k8Zp2QvXn5Rt --role reader --tenant lab1
-  magnetar grant set k8Zp2QvXn5Rt --role admin --installation`,
+		Example: `  coria grant set k8Zp2QvXn5Rt --role reader --tenant lab1
+  coria grant set k8Zp2QvXn5Rt --role admin --installation`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := checkKeyID(args[0]); err != nil {
@@ -96,9 +96,9 @@ func (a *app) newGrantList() *cobra.Command {
 		Long: `List the grants of one key on every scope (--key-id, which takes the key's public
 id and never the key itself), or the grants of every key on one scope. Exactly
 one of the three is required: there is no list of every grant at once.`,
-		Example: `  magnetar grant list --key-id k8Zp2QvXn5Rt
-  magnetar grant list --tenant lab1
-  magnetar grant list --installation`,
+		Example: `  coria grant list --key-id k8Zp2QvXn5Rt
+  coria grant list --tenant lab1
+  coria grant list --installation`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			if err := l.check(); err != nil {
@@ -160,7 +160,7 @@ func (a *app) newGrantRemove() *cobra.Command {
 		Long: `Take back the grant a key holds on a tenant or on the installation. Removing a
 grant the key does not hold changes nothing and succeeds, so a repeated command
 does not fail.`,
-		Example: `  magnetar grant remove k8Zp2QvXn5Rt --tenant lab1`,
+		Example: `  coria grant remove k8Zp2QvXn5Rt --tenant lab1`,
 		Args:    exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := checkKeyID(args[0]); err != nil {

@@ -48,10 +48,10 @@ func Get() Info {
 	return fromBuildInfo(nil, Version, Commit)
 }
 
-// String is the one line "magnetar <version> (commit <commit>, <go version>)"
+// String is the one line "coria <version> (commit <commit>, <go version>)"
 // that the version command prints.
 func (i Info) String() string {
-	return fmt.Sprintf("magnetar %s (commit %s, %s)", i.Version, i.Commit, i.GoVersion)
+	return fmt.Sprintf("coria %s (commit %s, %s)", i.Version, i.Commit, i.GoVersion)
 }
 
 // fromBuildInfo builds Info from build information, which may be nil, and the

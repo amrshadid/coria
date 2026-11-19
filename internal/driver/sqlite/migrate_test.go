@@ -14,8 +14,8 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // testMigrations are migrations that fail if run twice: the first makes a
@@ -271,7 +271,7 @@ func TestMigrationLockExcludes(t *testing.T) {
 
 // helperEnv names the variable that turns this test binary into one of the
 // processes of TestMigrateAcrossProcesses.
-const helperEnv = "MAGNETAR_MIGRATE_HELPER"
+const helperEnv = "CORIA_MIGRATE_HELPER"
 
 // TestMigrateAcrossProcesses guards the migration lock across processes:
 // several processes started at the same moment on one new database all

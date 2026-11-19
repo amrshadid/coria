@@ -38,7 +38,7 @@ const errorSharingViolation syscall.Errno = 32
 // file open in a way that forbids the change: a virus scanner or an indexer
 // does that for moments at a time, and a second try usually succeeds. Go
 // opens files with FILE_SHARE_DELETE and renames with POSIX semantics, so
-// Magnetar's own readers never cause it.
+// CORIA's own readers never cause it.
 func isBusy(err error) bool {
 	return errors.Is(err, errorSharingViolation) || errors.Is(err, syscall.ERROR_ACCESS_DENIED)
 }

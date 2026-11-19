@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"strconv"
 
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // The master and every tenant keep settings and an audit log in tables of

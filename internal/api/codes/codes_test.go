@@ -6,7 +6,7 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // allKinds lists every fault kind, so a kind added to fault without a pair in

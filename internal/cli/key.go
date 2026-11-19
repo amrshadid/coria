@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // keyLabel is a key's id with its holder, for a sentence.
@@ -23,7 +23,7 @@ func (a *app) keyStatus(k *v1.Key) string { return output.KeyStatus(k, a.env.Now
 func (a *app) newKey() *cobra.Command {
 	return group("key", "Create, list, show and revoke keys",
 		`A key is a credential held by a person or a system. A key has no rights of its
-own: grants give it roles (see "magnetar grant"). These commands need the admin
+own: grants give it roles (see "coria grant"). These commands need the admin
 role on the installation. A key's secret is shown once, when it is made, and
 cannot be shown again.`,
 		a.newKeyCreate(), a.newKeyList(), a.newKeyShow(), a.newKeyRevoke())
@@ -52,17 +52,17 @@ func (a *app) newKeyCreate() *cobra.Command {
 		Long: `Make a key for a person or a system and show it once.
 
 On standard output the key is alone on its line, so a script can capture it
-(KEY=$(magnetar key create --holder ci)). On standard error a note says that it
+(KEY=$(coria key create --holder ci)). On standard error a note says that it
 will not be shown again: the server keeps only a hash of it and cannot show it
 a second time. Store it now, in a file only its holder can read, and give it
-to a command through MAGNETAR_KEY or --key-file.
+to a command through CORIA_KEY or --key-file.
 
 A key expires after 90 days unless --expires says otherwise; a key that never
 expires has to be asked for with --no-expiry. With --json the whole answer,
 the key included, is written to standard output.`,
-		Example: `  magnetar key create --holder "nightly export"
-  magnetar key create --holder ci --expires 30d
-  magnetar key create --holder service-x --no-expiry`,
+		Example: `  coria key create --holder "nightly export"
+  coria key create --holder ci --expires 30d
+  coria key create --holder service-x --no-expiry`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			req := &v1.CreateKeyRequest{Holder: holder}
@@ -99,8 +99,8 @@ the key included, is written to standard output.`,
 				return err
 			}
 			k := res.GetKey()
-			_, _ = fmt.Fprintf(a.env.Stderr, "magnetar: key %s, expires %s\n", output.Clean(keyLabel(k)), a.whenOr(k.GetExpireTime(), "never"))
-			_, _ = fmt.Fprintln(a.env.Stderr, "magnetar: this is the only time the key is shown; it cannot be shown again, so store it now")
+			_, _ = fmt.Fprintf(a.env.Stderr, "coria: key %s, expires %s\n", output.Clean(keyLabel(k)), a.whenOr(k.GetExpireTime(), "never"))
+			_, _ = fmt.Fprintln(a.env.Stderr, "coria: this is the only time the key is shown; it cannot be shown again, so store it now")
 			return nil
 		}),
 	}
@@ -120,8 +120,8 @@ func (a *app) newKeyList() *cobra.Command {
 		Short: "List every key, revoked and expired ones included",
 		Long: `List the installation's keys, oldest first, with whether each is active,
 expired or revoked. The secrets are not here: the server never has them.`,
-		Example: `  magnetar key list
-  magnetar key list --json`,
+		Example: `  coria key list
+  coria key list --json`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			if err := l.check(); err != nil {
@@ -166,8 +166,8 @@ func (a *app) newKeyShow() *cobra.Command {
 		Short: "Show one key",
 		Long: `Show one key by its id: its holder, whether it works, when it was made, when it
 expires, when it was last used and when it was revoked. The id is public; it is
-the part of a key between "mgt_" and the second underscore.`,
-		Example: `  magnetar key show k8Zp2QvXn5Rt`,
+the part of a key between "cor_" and the second underscore.`,
+		Example: `  coria key show k8Zp2QvXn5Rt`,
 		Args:    exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := checkKeyID(args[0]); err != nil {
@@ -198,7 +198,7 @@ func (a *app) newKeyRevoke() *cobra.Command {
 listed, so the record shows what it could do, but they give nothing. Revoking a
 key that is already revoked changes nothing and shows its first revoke time.
 There is no way to undo it; make a new key instead.`,
-		Example: `  magnetar key revoke k8Zp2QvXn5Rt`,
+		Example: `  coria key revoke k8Zp2QvXn5Rt`,
 		Args:    exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := checkKeyID(args[0]); err != nil {

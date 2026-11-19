@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestOpenRefusesSharedFiles guards the rule that a database file or its -wal

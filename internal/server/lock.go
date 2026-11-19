@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // LockName is the lock file's name inside <data-dir>/run.
@@ -45,7 +45,7 @@ func TakeLock(dataDir string) (*Lock, error) {
 		return nil, fault.Wrap(fault.Internal, err, "server: cannot lock "+path)
 	}
 	if held {
-		msg := "server: another magnetar serve is running on the data directory " + dataDir
+		msg := "server: another coria serve is running on the data directory " + dataDir
 		if pid := holderPID(path); pid != "" {
 			msg += " (process " + pid + ")"
 		}

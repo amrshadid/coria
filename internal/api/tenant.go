@@ -5,12 +5,12 @@ import (
 	"slices"
 	"strconv"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/registry"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/registry"
 )
 
 // maxGrantPages bounds how many pages of a key's grants ListTenants reads
@@ -24,12 +24,12 @@ const maxGrantPages = 100
 // its open store.
 type tenantService struct{ c *core }
 
-var _ magnetarv1connect.TenantServiceHandler = tenantService{}
+var _ coriav1connect.TenantServiceHandler = tenantService{}
 
 // CreateTenant registers a tenant and makes its tables in its database.
 func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantRequest) (*v1.CreateTenantResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.TenantServiceCreateTenantProcedure)
+	d, err := c.changing(ctx, coriav1connect.TenantServiceCreateTenantProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (s tenantService) CreateTenant(ctx context.Context, req *v1.CreateTenantReq
 // since the check is answered as the check would have answered it.
 func (s tenantService) GetTenant(ctx context.Context, req *v1.GetTenantRequest) (*v1.GetTenantResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.TenantServiceGetTenantProcedure)
+	d, err := c.decision(ctx, coriav1connect.TenantServiceGetTenantProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (s tenantService) GetTenant(ctx context.Context, req *v1.GetTenantRequest) 
 // holds a grant on.
 func (s tenantService) ListTenants(ctx context.Context, req *v1.ListTenantsRequest) (*v1.ListTenantsResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.TenantServiceListTenantsProcedure)
+	d, err := c.decision(ctx, coriav1connect.TenantServiceListTenantsProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +225,7 @@ func (c *core) grantedTenants(ctx context.Context, keyID string, page master.Pag
 // tenant's name is sent twice; the two must be equal.
 func (s tenantService) RemoveTenant(ctx context.Context, req *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.TenantServiceRemoveTenantProcedure)
+	d, err := c.changing(ctx, coriav1connect.TenantServiceRemoveTenantProcedure)
 	if err != nil {
 		return nil, err
 	}

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // The words below are how a person reads the API's enums, scopes and keys. The
@@ -104,10 +104,10 @@ func KeyStatus(k *v1.Key, now time.Time) string {
 	return "active"
 }
 
-// Method shortens a method's full name, "/magnetar.v1.TenantService/CreateTenant",
+// Method shortens a method's full name, "/coria.v1.TenantService/CreateTenant",
 // to "TenantService/CreateTenant".
 func Method(m string) string {
-	return strings.TrimPrefix(m, "/magnetar.v1.")
+	return strings.TrimPrefix(m, "/coria.v1.")
 }
 
 // Who says who made a request: the key's id, the local operator's user, or
@@ -145,10 +145,10 @@ func ParseSpan(s string) (time.Duration, error) {
 // screen. The message never repeats the value.
 func CheckKeyID(id string) error {
 	if id == "" {
-		return fault.New(fault.Invalid, "the key id is empty; \"magnetar key list\" shows the ids")
+		return fault.New(fault.Invalid, "the key id is empty; \"coria key list\" shows the ids")
 	}
-	if strings.HasPrefix(id, "mgt_") {
-		return fault.New(fault.Invalid, "that is a whole key, which is a secret and is never an argument; give the key's id, which \"magnetar key list\" shows")
+	if strings.HasPrefix(id, "cor_") {
+		return fault.New(fault.Invalid, "that is a whole key, which is a secret and is never an argument; give the key's id, which \"coria key list\" shows")
 	}
 	return nil
 }

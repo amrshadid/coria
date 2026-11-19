@@ -3,8 +3,8 @@ package s3
 import (
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
 )
 
 // TestSuite guards that the S3 driver keeps the storage contract on the

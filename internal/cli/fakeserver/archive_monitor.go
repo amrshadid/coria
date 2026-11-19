@@ -3,9 +3,9 @@ package fakeserver
 import (
 	"context"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // monitorHandler is MonitorService over the fake's tables: a status made of
@@ -14,7 +14,7 @@ import (
 // runs each command to its end never waits on a stream.
 type monitorHandler struct{ s *Server }
 
-var _ magnetarv1connect.MonitorServiceHandler = monitorHandler{}
+var _ coriav1connect.MonitorServiceHandler = monitorHandler{}
 
 // QueueEvent queues an event of tenant for the next stream of it.
 func (s *Server) QueueEvent(tenant string, e *v1.Event) {
@@ -70,7 +70,7 @@ func (h monitorHandler) GetStatus(_ context.Context, req *v1.GetStatusRequest) (
 
 // Watch sends a keep-alive, then the first event queued for the tenant, if
 // any, and ends.
-func (h monitorHandler) Watch(_ context.Context, req *v1.WatchRequest, stream magnetarv1connect.MonitorServiceWatchServerStream) error {
+func (h monitorHandler) Watch(_ context.Context, req *v1.WatchRequest, stream coriav1connect.MonitorServiceWatchServerStream) error {
 	s := h.s
 	name := req.GetScope().GetTenant()
 	if name == "" {

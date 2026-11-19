@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // TestAuthenticate guards the judgment of a credential on its own: a
@@ -30,7 +30,7 @@ func TestAuthenticate(t *testing.T) {
 		keyID  string
 	}{
 		{"no key", access.APIKey(""), "no key", ""},
-		{"malformed", access.APIKey("mgt_short"), "malformed key", ""},
+		{"malformed", access.APIKey("cor_short"), "malformed key", ""},
 		{"expired", access.APIKey(expired.full), "key expired", expired.id},
 	} {
 		e.reset()

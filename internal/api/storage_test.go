@@ -9,9 +9,9 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // testAddStorage guards AddStorage: admin on the tenant and no other role,
@@ -282,7 +282,7 @@ func testTestStorage(t *testing.T) {
 						t.Errorf("%v has no duration", r.GetStep())
 					}
 				}
-				objects, _ := filepath.Glob(filepath.Join(f.root, "lab1", "mri", "magnetar-test", "*"))
+				objects, _ := filepath.Glob(filepath.Join(f.root, "lab1", "mri", "coria-test", "*"))
 				if len(objects) != 0 {
 					t.Errorf("the test left %v", objects)
 				}

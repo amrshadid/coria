@@ -6,8 +6,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // listKeys is a set of keys whose byte order is easy to get wrong: "." and

@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // gateState is why a tenant's receivers refuse new associations now, as the

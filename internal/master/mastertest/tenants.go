@@ -3,8 +3,8 @@ package mastertest
 import (
 	"fmt"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // testTenants guards each tenant operation: the normal case read back

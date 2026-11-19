@@ -12,9 +12,9 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // newReceiver builds the receiver noun.
@@ -276,10 +276,10 @@ without a file for its study, or --max-open-time from its first file.
 
 The answer says whether the receiver could start: its health is up, or down
 with the reason, such as a port the server could not take.`,
-		Example: `  magnetar storage add lab1 main --type dir --root fast
-  magnetar receiver add lab1 scanner1 --storage main --port 11112 --aet MAGNETAR \
+		Example: `  coria storage add lab1 main --type dir --root fast
+  coria receiver add lab1 scanner1 --storage main --port 11112 --aet CORIA \
       --allow-aet PRISMA1 --allow-from 10.20.0.0/24 --enabled
-  magnetar receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller`,
+  coria receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if f.storage == "" || f.aet == "" {
@@ -419,8 +419,8 @@ func (a *app) newReceiverList() *cobra.Command {
 now: up, or down with the reason (disabled, a port in use, a certificate that
 cannot be read, too little free space, and so on). A removed receiver is not
 listed.`,
-		Example: `  magnetar receiver list lab1
-  magnetar receiver list lab1 --json`,
+		Example: `  coria receiver list lab1
+  coria receiver list lab1 --json`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := l.check(); err != nil {
@@ -469,7 +469,7 @@ func (a *app) newReceiverShow() *cobra.Command {
 		Short: "Show one receiver with its health now",
 		Long: `Show one receiver of a tenant: its port, AE title, the callers it admits, its
 TLS files, its naming rule and limits, and whether it accepts data now.`,
-		Example: `  magnetar receiver show lab1 scanner1`,
+		Example: `  coria receiver show lab1 scanner1`,
 		Args:    exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -506,9 +506,9 @@ it. --sop-class "" and --transfer-syntax "" return to the server's default
 set. The three naming templates are given together, and --default-naming
 returns to the default rule. --enabled=false stops a receiver without removing
 it.`,
-		Example: `  magnetar receiver set lab1 scanner1 --quiet-period 5m
-  magnetar receiver set lab1 scanner1 --allow-aet PRISMA1 --allow-aet SKYRA2
-  magnetar receiver set lab1 scanner1 --enabled=false`,
+		Example: `  coria receiver set lab1 scanner1 --quiet-period 5m
+  coria receiver set lab1 scanner1 --allow-aet PRISMA1 --allow-aet SKYRA2
+  coria receiver set lab1 scanner1 --enabled=false`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			r, paths, err := f.receiver(cmd, args[1])
@@ -549,8 +549,8 @@ a reception or a quarantined file names it. A repeated command finds no
 receiver and exits 4.
 
 Without --yes nothing is sent: the command says what it would do and exits 2.`,
-		Example: `  magnetar receiver remove lab1 scanner1          # says what would happen, exits 2
-  magnetar receiver remove lab1 scanner1 --yes`,
+		Example: `  coria receiver remove lab1 scanner1          # says what would happen, exits 2
+  coria receiver remove lab1 scanner1 --yes`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if !yes {

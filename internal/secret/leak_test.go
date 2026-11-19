@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestErrorsCarryNoSecret guards the package's promise that no error it
@@ -55,7 +55,7 @@ func TestErrorsCarryNoSecret(t *testing.T) {
 	_, err = LoadKeyFile(filepath.Join(privateDir(t), "absent.key"))
 	errs = append(errs, err)
 
-	existing := filepath.Join(privateDir(t), "magnetar.key")
+	existing := filepath.Join(privateDir(t), "coria.key")
 	if err := os.WriteFile(existing, []byte(keyLine(1, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestErrorsCarryNoSecret(t *testing.T) {
 	errs = append(errs, err)
 
 	for _, presented := range []string{
-		k.Key() + "x", k.Key()[:len(k.Key())-1], "MGT_" + k.Key()[4:], k.Key()[:len(k.Key())-1] + "0", " " + k.Key(),
+		k.Key() + "x", k.Key()[:len(k.Key())-1], "COR_" + k.Key()[4:], k.Key()[:len(k.Key())-1] + "0", " " + k.Key(),
 	} {
 		_, _, err := ParseAPIKey(presented)
 		errs = append(errs, err)

@@ -13,7 +13,7 @@ import (
 
 // pythonEnv names the Python interpreter, with the cryptography package
 // installed, that TestSealOpensInPython runs. make check-seal sets it.
-const pythonEnv = "MAGNETAR_CHECK_SEAL_PYTHON"
+const pythonEnv = "CORIA_CHECK_SEAL_PYTHON"
 
 // TestSealOpensInPython guards the sealed format against another
 // implementation: scripts/check/seal.py, written from the package
@@ -21,7 +21,7 @@ const pythonEnv = "MAGNETAR_CHECK_SEAL_PYTHON"
 // a value this package sealed and refuses it under another context or with a
 // byte changed; then this package opens a value Python sealed, under an older
 // key version than the one Go seals with, and refuses it under another
-// context. It runs only when MAGNETAR_CHECK_SEAL_PYTHON names an interpreter,
+// context. It runs only when CORIA_CHECK_SEAL_PYTHON names an interpreter,
 // as make check-seal and CI do, because the other tests must not need Python.
 func TestSealOpensInPython(t *testing.T) {
 	// Unset means the outside check was not asked for, so the test skips.
@@ -40,7 +40,7 @@ func TestSealOpensInPython(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	keyFile := filepath.Join(privateDir(t), "magnetar.key")
+	keyFile := filepath.Join(privateDir(t), "coria.key")
 	writePrivate(t, keyFile, []byte(keyLine(1, 1)+keyLine(2, 2)))
 	keys, err := LoadKeyFile(keyFile)
 	if err != nil {

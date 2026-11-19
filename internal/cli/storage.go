@@ -10,10 +10,10 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/secret"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/secret"
 )
 
 // maxCredentialFile bounds a credential read: an S3 secret access key is at
@@ -66,7 +66,7 @@ func (f *storageFlags) add(cmd *cobra.Command, forSet bool) {
 	fl.StringVar(&f.endpoint, "endpoint", "", "s3: the store's base URL, one the setting storage.s3-endpoints lists")
 	fl.StringVar(&f.region, "region", "", "s3: the region the bucket is in, such as eu-central-1")
 	fl.StringVar(&f.bucket, "bucket", "", "s3: the bucket's name; it must exist, the server never makes one")
-	fl.StringVar(&f.prefix, "prefix", "", "s3: the prefix every key is written under, ending in \"/\", such as magnetar/lab-a/; empty for the whole bucket")
+	fl.StringVar(&f.prefix, "prefix", "", "s3: the prefix every key is written under, ending in \"/\", such as coria/lab-a/; empty for the whole bucket")
 	fl.BoolVar(&f.pathStyle, "path-style", false, "s3: address the bucket in the URL's path rather than its host name; most stores other than AWS need it, and the server requires it at an endpoint the installation allows private addresses at")
 	fl.StringVar(&f.accessKeyID, "access-key-id", "", "s3: the access key id of the credentials the server uses (it is not a secret)")
 	fl.StringVar(&f.credEnv, "credential-env", "", "s3: name of the environment variable that holds the secret access key that goes with --access-key-id")
@@ -155,10 +155,10 @@ answer only says whether one is held.
 A storage's name is 1 to 63 lowercase letters, digits and hyphens, starting with
 a letter. The commands "storage test" and "tenant status" tell whether it can be
 written to and how much room it has.`,
-		Example: `  magnetar storage add lab1 main --type dir --root fast --path main
-  export LAB1_S3_SECRET="$(cat /etc/magnetar/lab1.s3)"
-  magnetar storage add lab1 cold --type s3 --endpoint https://s3.eu-central-1.amazonaws.com \
-      --region eu-central-1 --bucket lab1-archive --prefix magnetar/ \
+		Example: `  coria storage add lab1 main --type dir --root fast --path main
+  export LAB1_S3_SECRET="$(cat /etc/coria/lab1.s3)"
+  coria storage add lab1 cold --type s3 --endpoint https://s3.eu-central-1.amazonaws.com \
+      --region eu-central-1 --bucket lab1-archive --prefix coria/ \
       --access-key-id AKIAEXAMPLE --credential-env LAB1_S3_SECRET --capacity 2TiB`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
@@ -268,8 +268,8 @@ func (a *app) newStorageList() *cobra.Command {
 		Long: `List a tenant's storages ordered by name, with their type, where their files go
 and the most they may hold. No secret is here: the server never answers one.
 Used and free space are part of the tenant's status.`,
-		Example: `  magnetar storage list lab1
-  magnetar storage list lab1 --json`,
+		Example: `  coria storage list lab1
+  coria storage list lab1 --json`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := l.check(); err != nil {
@@ -315,7 +315,7 @@ func (a *app) newStorageShow() *cobra.Command {
 		Long: `Show one storage of a tenant: its type, where its files go, its limit and when
 it was added and last changed. For an S3 storage it says whether a secret access
 key is held, never the key.`,
-		Example: `  magnetar storage show lab1 main`,
+		Example: `  coria storage show lab1 main`,
 		Args:    exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -351,8 +351,8 @@ change. --access-key-id and its secret change together: give both, the secret
 from --credential-env or --credential-file. So does a change of --endpoint:
 credentials given for one store are never sent to another, so it is given with
 --access-key-id and its secret, and the server refuses it otherwise.`,
-		Example: `  magnetar storage set lab1 main --capacity 1TiB
-  magnetar storage set lab1 cold --access-key-id AKIANEW --credential-file /etc/magnetar/new.s3`,
+		Example: `  coria storage set lab1 main --capacity 1TiB
+  coria storage set lab1 cold --access-key-id AKIANEW --credential-file /etc/coria/new.s3`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			st := &v1.Storage{Name: args[1]}
@@ -437,8 +437,8 @@ as its storage, so the configuration of a storage that holds data is never lost.
 A repeated command finds no storage and exits 4.
 
 Without --yes nothing is sent: the command says what it would do and exits 2.`,
-		Example: `  magnetar storage remove lab1 old          # says what would happen, exits 2
-  magnetar storage remove lab1 old --yes`,
+		Example: `  coria storage remove lab1 old          # says what would happen, exits 2
+  coria storage remove lab1 old --yes`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if !yes {
@@ -478,7 +478,7 @@ touches data, and repeating it leaves the storage as it was.
 A storage that fails a step is a result, not an error: the table says which step
 failed and why, and the command exits 1 so a script sees it. A step after a failed
 one is skipped, except the removal.`,
-		Example: `  magnetar storage test lab1 main`,
+		Example: `  coria storage test lab1 main`,
 		Args:    exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)

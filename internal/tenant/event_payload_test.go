@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
+	"github.com/amrshadid/coria/internal/core/reception"
 )
 
 // eventTime is the time of the events these tests make.

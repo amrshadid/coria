@@ -9,13 +9,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/events"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/events"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Feeds streams tenants' events: the events package's Broadcaster, which
@@ -64,9 +64,9 @@ func watchDetails(r *v1.WatchRequest) map[string]string {
 // contract says: the first message a keep-alive, the caller's key and grant
 // checked again every RecheckInterval, one audit entry when the stream
 // opens and one when it ends, with how many events it carried.
-func (s monitorService) Watch(ctx context.Context, req *v1.WatchRequest, stream magnetarv1connect.MonitorServiceWatchServerStream) error {
+func (s monitorService) Watch(ctx context.Context, req *v1.WatchRequest, stream coriav1connect.MonitorServiceWatchServerStream) error {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.MonitorServiceWatchProcedure)
+	d, err := c.decision(ctx, coriav1connect.MonitorServiceWatchProcedure)
 	if err != nil {
 		return err
 	}

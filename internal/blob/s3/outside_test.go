@@ -9,13 +9,13 @@ import (
 	"os"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
 )
 
 // manifestEnv names a file to which TestWriteForOutsideCheck writes what it
 // put, for a program that is not this one (an S3 command line, a Python
 // client) to read back and compare. Without it the test is skipped.
-const manifestEnv = "MAGNETAR_S3_OUTSIDE_MANIFEST"
+const manifestEnv = "CORIA_S3_OUTSIDE_MANIFEST"
 
 // TestWriteForOutsideCheck puts objects of sizes around the single-request
 // limit and the part size, in nested keys, and writes their keys, sizes and

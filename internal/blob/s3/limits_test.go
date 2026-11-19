@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // peakHeap runs fn and returns the most the heap in use grew above what it

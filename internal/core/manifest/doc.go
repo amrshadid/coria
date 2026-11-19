@@ -43,6 +43,6 @@
 // # What this package must never do
 //
 // It must never do I/O beyond the reader it is given, read the clock, or
-// import anything of Magnetar's outside the core (.golangci.yml, depguard
+// import anything of CORIA's outside the core (.golangci.yml, depguard
 // "core").
 package manifest

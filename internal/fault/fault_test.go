@@ -87,7 +87,7 @@ func TestKindString(t *testing.T) {
 // carries the wrapped error's text, which may name a file or an address,
 // while the log's text (Error) still has it.
 func TestMessageHidesCause(t *testing.T) {
-	const detail = "open /var/lib/magnetar/master.db: permission denied"
+	const detail = "open /var/lib/coria/master.db: permission denied"
 	err := Wrap(Unavailable, errors.New(detail), "the catalog cannot be reached")
 
 	if got := Message(err); strings.Contains(got, detail) || strings.Contains(got, "/var/lib") {

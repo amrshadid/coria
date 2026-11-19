@@ -4,13 +4,13 @@ import (
 	"context"
 	"strconv"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // messageNoReception answers a reception id the tenant does not have.
@@ -21,7 +21,7 @@ const messageNoReception = "the tenant has no reception with this id"
 // retries or discards one that failed.
 type receptionService struct{ c *core }
 
-var _ magnetarv1connect.ReceptionServiceHandler = receptionService{}
+var _ coriav1connect.ReceptionServiceHandler = receptionService{}
 
 // steps pairs each state of the core's reception machine with the
 // contract's step of the same name.
@@ -147,7 +147,7 @@ func lookupReception(ctx context.Context, p tenant.Pipeline, id string) (tenant.
 // ListReceptions answers a page of a tenant's receptions, newest first.
 func (s receptionService) ListReceptions(ctx context.Context, req *v1.ListReceptionsRequest) (*v1.ListReceptionsResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.ReceptionServiceListReceptionsProcedure)
+	d, err := c.decision(ctx, coriav1connect.ReceptionServiceListReceptionsProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (s receptionService) ListReceptions(ctx context.Context, req *v1.ListRecept
 // arrivals of its study.
 func (s receptionService) GetReception(ctx context.Context, req *v1.GetReceptionRequest) (*v1.GetReceptionResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.ReceptionServiceGetReceptionProcedure)
+	d, err := c.decision(ctx, coriav1connect.ReceptionServiceGetReceptionProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (s receptionService) GetReception(ctx context.Context, req *v1.GetReception
 // a reception already retried is answered as it stands.
 func (s receptionService) RetryReception(ctx context.Context, req *v1.RetryReceptionRequest) (*v1.RetryReceptionResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.ReceptionServiceRetryReceptionProcedure)
+	d, err := c.changing(ctx, coriav1connect.ReceptionServiceRetryReceptionProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +248,7 @@ func (s receptionService) RetryReception(ctx context.Context, req *v1.RetryRecep
 // to the reception pipeline; nothing on a storage is touched.
 func (s receptionService) DiscardReception(ctx context.Context, req *v1.DiscardReceptionRequest) (*v1.DiscardReceptionResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.ReceptionServiceDiscardReceptionProcedure)
+	d, err := c.changing(ctx, coriav1connect.ReceptionServiceDiscardReceptionProcedure)
 	if err != nil {
 		return nil, err
 	}

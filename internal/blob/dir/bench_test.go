@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
 )
 
 // repeat yields n bytes by cycling through buf, so a benchmark measures the

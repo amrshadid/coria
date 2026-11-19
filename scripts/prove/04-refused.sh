@@ -7,15 +7,15 @@
 section "4. refused everywhere, the same way"
 make_key nogrant --no-expiry || fail "4.0 the keys of the refusals" "key create nogrant failed" "$(cat "$work/cli.err")"
 make_key reader --no-expiry || fail "4.0 the keys of the refusals" "key create reader failed" "$(cat "$work/cli.err")"
-cli "$data" /magnetar.v1.AccessService/SetGrant "*" grant set "$(cat "$work/keys/reader.id")" --role reader --tenant lite
+cli "$data" /coria.v1.AccessService/SetGrant "*" grant set "$(cat "$work/keys/reader.id")" --role reader --tenant lite
 make_key revoked --no-expiry || fail "4.0 the keys of the refusals" "key create revoked failed" "$(cat "$work/cli.err")"
-cli "$data" /magnetar.v1.AccessService/RevokeKey "*" key revoke "$(cat "$work/keys/revoked.id")"
+cli "$data" /coria.v1.AccessService/RevokeKey "*" key revoke "$(cat "$work/keys/revoked.id")"
 revoke_status=$CLI_STATUS
 # The shortest expiry the command takes: its lengths are a whole number of
 # s, m, h, d or w, so one second (the server takes any positive duration).
 make_key expired --expires 1s || fail "4.0 the keys of the refusals" "key create --expires 1s failed" "$(cat "$work/cli.err")"
 expired_made=$(date +%s)
-cli "$data" /magnetar.v1.AccessService/GetKey "*" --json key show "$(cat "$work/keys/expired.id")"
+cli "$data" /coria.v1.AccessService/GetKey "*" --json key show "$(cat "$work/keys/expired.id")"
 life=$("$PYTHON" -c '
 import json, sys, datetime
 k = json.load(open(sys.argv[1]))["key"]

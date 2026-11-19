@@ -15,7 +15,7 @@ import (
 	"github.com/amrshadid/go-dicom/filereader"
 	"github.com/amrshadid/go-dicom/tag"
 
-	"github.com/amrshadid/magnetar/internal/core/naming"
+	"github.com/amrshadid/coria/internal/core/naming"
 )
 
 // BulkThreshold is the longest value of a binary representation (OB, OW, UN

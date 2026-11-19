@@ -5,12 +5,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/events"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/registry"
-	"github.com/amrshadid/magnetar/internal/settingvalue"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/events"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/registry"
+	"github.com/amrshadid/coria/internal/settingvalue"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // keptFeeds is the events Keeper's view of the installation: the tenants'

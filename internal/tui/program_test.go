@@ -12,9 +12,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // The sequences a terminal is told when the program enters and leaves the

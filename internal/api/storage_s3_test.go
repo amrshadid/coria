@@ -9,8 +9,8 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/core/settings"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/core/settings"
 )
 
 // pgTenant creates a tenant of the test's Postgres driver, whose store

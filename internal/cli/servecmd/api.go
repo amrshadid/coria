@@ -5,13 +5,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/api"
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/events"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/registry"
-	"github.com/amrshadid/magnetar/internal/server"
-	"github.com/amrshadid/magnetar/internal/settingvalue"
+	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/events"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/registry"
+	"github.com/amrshadid/coria/internal/server"
+	"github.com/amrshadid/coria/internal/settingvalue"
 )
 
 // The tenant registry's settings in serve. They are constants, not flags:

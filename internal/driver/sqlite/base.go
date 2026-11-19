@@ -6,7 +6,7 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // base is what every store on one SQLite file has, whatever it holds: its

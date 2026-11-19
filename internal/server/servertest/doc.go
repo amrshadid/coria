@@ -16,7 +16,7 @@
 // any other token answers an empty page. CreateTenant echoes the tenant it is given, so the secret field of
 // its request reaches the log path.
 //
-// What it must never do: be linked into the magnetar binary (only tests and
+// What it must never do: be linked into the coria binary (only tests and
 // the stand-in program in standin/ import it), or hold logic a real handler
 // would need.
 package servertest

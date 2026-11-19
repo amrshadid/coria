@@ -3,10 +3,10 @@ package api
 import (
 	"context"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // accessService is AccessService. Every change and read goes through package
@@ -18,12 +18,12 @@ import (
 // as invalid before calling access.
 type accessService struct{ c *core }
 
-var _ magnetarv1connect.AccessServiceHandler = accessService{}
+var _ coriav1connect.AccessServiceHandler = accessService{}
 
 // CreateKey makes a key and answers its secret, once.
 func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) (*v1.CreateKeyResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.AccessServiceCreateKeyProcedure)
+	d, err := c.changing(ctx, coriav1connect.AccessServiceCreateKeyProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) 
 // GetKey answers one key, revoked and expired keys included.
 func (s accessService) GetKey(ctx context.Context, req *v1.GetKeyRequest) (*v1.GetKeyResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AccessServiceGetKeyProcedure)
+	d, err := c.decision(ctx, coriav1connect.AccessServiceGetKeyProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (s accessService) GetKey(ctx context.Context, req *v1.GetKeyRequest) (*v1.G
 // ListKeys answers a page of every key, oldest first.
 func (s accessService) ListKeys(ctx context.Context, req *v1.ListKeysRequest) (*v1.ListKeysResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AccessServiceListKeysProcedure)
+	d, err := c.decision(ctx, coriav1connect.AccessServiceListKeysProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func (s accessService) ListKeys(ctx context.Context, req *v1.ListKeysRequest) (*
 // time.
 func (s accessService) RevokeKey(ctx context.Context, req *v1.RevokeKeyRequest) (*v1.RevokeKeyResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.AccessServiceRevokeKeyProcedure)
+	d, err := c.changing(ctx, coriav1connect.AccessServiceRevokeKeyProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (s accessService) RevokeKey(ctx context.Context, req *v1.RevokeKeyRequest) 
 // in one step.
 func (s accessService) SetGrant(ctx context.Context, req *v1.SetGrantRequest) (*v1.SetGrantResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.AccessServiceSetGrantProcedure)
+	d, err := c.changing(ctx, coriav1connect.AccessServiceSetGrantProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (s accessService) SetGrant(ctx context.Context, req *v1.SetGrantRequest) (*
 // ListGrants answers a page of the grants of one key or on one scope.
 func (s accessService) ListGrants(ctx context.Context, req *v1.ListGrantsRequest) (*v1.ListGrantsResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AccessServiceListGrantsProcedure)
+	d, err := c.decision(ctx, coriav1connect.AccessServiceListGrantsProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (s accessService) ListGrants(ctx context.Context, req *v1.ListGrantsRequest
 // hold succeeds.
 func (s accessService) RemoveGrant(ctx context.Context, req *v1.RemoveGrantRequest) (*v1.RemoveGrantResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.AccessServiceRemoveGrantProcedure)
+	d, err := c.changing(ctx, coriav1connect.AccessServiceRemoveGrantProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func (s accessService) RemoveGrant(ctx context.Context, req *v1.RemoveGrantReque
 // operator.
 func (s accessService) WhoAmI(ctx context.Context, _ *v1.WhoAmIRequest) (*v1.WhoAmIResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AccessServiceWhoAmIProcedure)
+	d, err := c.decision(ctx, coriav1connect.AccessServiceWhoAmIProcedure)
 	if err != nil {
 		return nil, err
 	}

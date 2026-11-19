@@ -11,8 +11,8 @@ import (
 
 	"connectrpc.com/connect/v2"
 
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/server"
 )
 
 // uncheckedRoutes sends two requests to every pattern the server has
@@ -122,7 +122,7 @@ func TestEveryRouteIsChecked(t *testing.T) {
 		var ran atomic.Int64
 		e.srv.MountUnchecked(func(s *connect.Server) {
 			s.Register(connect.Method{
-				Spec: connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: "/magnetar.test.Open/Call"},
+				Spec: connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: "/coria.test.Open/Call"},
 				Handler: func(context.Context, connect.Spec, connect.ServerStream) error {
 					ran.Add(1)
 					return nil
@@ -134,7 +134,7 @@ func TestEveryRouteIsChecked(t *testing.T) {
 			t.Fatal("the unchecked connect server was not caught")
 		}
 		for _, p := range bad {
-			if !strings.HasPrefix(p, "/magnetar.test.Open/") {
+			if !strings.HasPrefix(p, "/coria.test.Open/") {
 				t.Fatalf("a checked route was reported: %v", bad)
 			}
 		}
@@ -149,7 +149,7 @@ func TestEveryRouteIsChecked(t *testing.T) {
 // operator it is UNIMPLEMENTED.
 func TestUnknownMethodIsChecked(t *testing.T) {
 	e := newEnv(t, options{})
-	spec := connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: magnetarv1connect.AccessServiceName + "/NoSuchMethod"}
+	spec := connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: coriav1connect.AccessServiceName + "/NoSuchMethod"}
 	spec.Procedure = "/" + spec.Procedure
 	err := e.network("").raw.CallUnary(e.ctx, spec, &emptyMsg{}, &emptyMsg{})
 	if code, _ := codeOf(err); code != connect.CodeUnauthenticated {

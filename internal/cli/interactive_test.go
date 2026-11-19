@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/cli"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/tui"
+	"github.com/amrshadid/coria/internal/cli"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/tui"
 )
 
 // openRun is what one run of the command line did about the interactive
@@ -49,7 +49,7 @@ func runInteractive(env map[string]string, terminal bool, ended error, args ...s
 // or the command's own behavior, exactly.
 func TestInteractiveOpensOnlyOnATerminalWithNoArguments(t *testing.T) {
 	r := newRig(t)
-	const usage = "magnetar: no command (usage: magnetar <noun> <verb> [flags], for example magnetar tenant list); try \"magnetar --help\"\n"
+	const usage = "coria: no command (usage: coria <noun> <verb> [flags], for example coria tenant list); try \"coria --help\"\n"
 
 	t.Run("terminal and no arguments opens it", func(t *testing.T) {
 		got := runInteractive(r.env, true, nil)
@@ -118,7 +118,7 @@ func TestInteractiveEndsAsTheProgramDid(t *testing.T) {
 		t.Errorf("an interrupt: %+v", got)
 	}
 	got = runInteractive(r.env, true, io.ErrUnexpectedEOF)
-	if got.code != 1 || !strings.HasPrefix(got.stderr, "magnetar: ") || strings.Count(got.stderr, "\n") != 1 {
+	if got.code != 1 || !strings.HasPrefix(got.stderr, "coria: ") || strings.Count(got.stderr, "\n") != 1 {
 		t.Errorf("a failure: %+v", got)
 	}
 }

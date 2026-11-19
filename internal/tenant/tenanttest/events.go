@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // EventStore is a store with the pipeline and the event feed.

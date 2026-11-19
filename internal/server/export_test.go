@@ -7,7 +7,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 
-	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/coria/internal/access"
 )
 
 // HandleUnchecked registers h on the server's mux without the request

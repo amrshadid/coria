@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // checkPrivate does not check modes where there are no Unix modes. On Windows

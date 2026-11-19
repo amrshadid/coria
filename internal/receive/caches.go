@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // receiverTTL is how long a receiver's configuration read from the database

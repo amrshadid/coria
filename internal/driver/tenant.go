@@ -8,11 +8,11 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/driver/postgres"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/driver/postgres"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // SQLiteDriver is master.SQLiteDriver, the name of the SQLite database type,

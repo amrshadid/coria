@@ -3,7 +3,7 @@ package secret
 import (
 	"encoding/binary"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // formatV1 is the first byte of every sealed value in the format the package

@@ -11,7 +11,7 @@ import (
 // following the format in doc.go, not by this package. It is fixed, so the
 // fuzz workers (separate processes) all agree on the one genuine value, and
 // so a change to the format that still round-trips in Go alone fails here.
-const knownSealedHex = "0100000002e1867bd724e0fddc881008f57ed5decb1ab017c79c97556d79f3422dc8f8a235fba6ea8c0588aa10ace1e3f8462a7c45f6ed4e5fab9a2a95e2684c94c437f595b012a1a57f32ceff44e80610a0cb9e54df931ece66b0dda9bdf10005481e"
+const knownSealedHex = "010000000224e12027df3aac96367d2996d391d69b13e10b12c7b4b92414469365bc7e90ee6284da87bb8b10561a5e08b25665038ff0205548729457582744a3b8aa912ddbbaa29b3a68c003d947ff04fc6559b8785312f80c4eea9c205bd533"
 
 // knownSealed returns knownSealedHex as bytes.
 func knownSealed(tb testing.TB) []byte {

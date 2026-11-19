@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // quiet decides whether a receiving reception is complete, and completes it.

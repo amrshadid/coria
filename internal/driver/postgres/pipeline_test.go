@@ -3,8 +3,8 @@ package postgres
 import (
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // TestTenantPipelineContract runs the contract suite's pipeline groups on

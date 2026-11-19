@@ -10,8 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	xterm "github.com/charmbracelet/x/term"
 
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // ErrInterrupted is returned by Run when the program was ended by an interrupt

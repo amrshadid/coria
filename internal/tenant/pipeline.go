@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // Pipeline is a tenant's database with what the reception pipeline keeps in

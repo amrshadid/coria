@@ -4,9 +4,9 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/secret"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/secret"
 )
 
 // The key check: the installation's id, sealed by init with the
@@ -40,7 +40,7 @@ const (
 	// MessageNoKeyCheck answers a master that holds no key check: an
 	// installation made before serve checked its key file.
 	MessageNoKeyCheck = "the master database holds no key check: this installation was made before serve checked its key file, " +
-		"so serve cannot tell whether the key file is the right one; nothing was changed. Make the installation again with magnetar init in a new data directory"
+		"so serve cannot tell whether the key file is the right one; nothing was changed. Make the installation again with coria init in a new data directory"
 )
 
 // SealKeyCheck returns the key check of the installation with this id,

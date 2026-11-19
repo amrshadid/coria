@@ -12,7 +12,7 @@
 //
 // # What this package must never do
 //
-// It must never do I/O, read the clock, or import anything of Magnetar's
+// It must never do I/O, read the clock, or import anything of CORIA's
 // outside the core (.golangci.yml, depguard "core"). It must never trim or
 // repair a value: the padding byte a UI value carries on the wire (a single
 // trailing NUL, PS3.5 6.2) is removed by whoever decodes the data set, and

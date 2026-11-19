@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // currentAccount returns the current user as DOMAIN\name, the form icacls
@@ -57,7 +57,7 @@ func readSecurity(t *testing.T, path string) (owner string, sids []string) {
 // compared with the account name of that SID, so a mistake in how the
 // package reads a DACL cannot hide one in how it writes one.
 func TestCreatedKeyFileACL(t *testing.T) {
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	if err := CreateKeyFile(path); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func icaclsEntries(out, name string) []string {
 // directory is granted to SYSTEM and the Administrators group as well as the
 // user.
 func TestLoadRefusesWideACL(t *testing.T) {
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	if err := os.WriteFile(path, []byte(keyLine(1, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestLoadRefusesWideACL(t *testing.T) {
 // make the file load: an instruction that does not work is worse than none.
 // It runs exactly the commands the message is built from.
 func TestLoadAfterSuggestedFix(t *testing.T) {
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	if err := os.WriteFile(path, []byte(keyLine(1, 1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestLoadAfterSuggestedFix(t *testing.T) {
 // Administrators group with icacls, which needs an elevated process; it
 // skips, saying so, when the process is not elevated.
 func TestLoadRefusesOtherOwner(t *testing.T) {
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	writePrivate(t, path, []byte(keyLine(1, 1)))
 	const administrators = "S-1-5-32-544"
 	if out, err := icacls(path, "/setowner", "*"+administrators); err != nil {

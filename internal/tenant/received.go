@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // ReceivedFile is a file that has landed in the incoming area, synced, before

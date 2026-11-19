@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/secret"
 )
 
 // sprintf is fmt.Sprintf, named so the tests read as what they search.
@@ -42,7 +42,7 @@ func TestNoSecretAnywhere(t *testing.T) {
 		access.APIKey(full + "x"),
 		access.APIKey("Bearer " + full),
 		access.APIKey(strings.ToUpper(full)),
-		access.APIKey("mgt_" + other.ID + "_" + sec),
+		access.APIKey("cor_" + other.ID + "_" + sec),
 		access.APIKey(full[:len(full)-1] + "1"),
 	}
 	reqs := []access.Requirement{

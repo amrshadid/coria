@@ -8,11 +8,11 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/api"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // testListQuarantinedFiles guards ListQuarantinedFiles: reader on the

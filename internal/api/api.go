@@ -8,22 +8,22 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/api/codes"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/place"
-	"github.com/amrshadid/magnetar/internal/registry"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/api/codes"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/place"
+	"github.com/amrshadid/coria/internal/registry"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // RequestIDHeader is the response header that carries the request's id
 // (access.proto, "The request id"). The server sets it; a handler that has no
 // Decision reads it back to name the request in its log line.
-const RequestIDHeader = "Magnetar-Request-Id"
+const RequestIDHeader = "Coria-Request-Id"
 
 // internalMessage is the whole message of every INTERNAL answer: the contract
 // says it tells nothing about the cause, which is in the log.
@@ -83,23 +83,23 @@ type Config struct {
 // register on a connect.Server behind the server's access check.
 type Handlers struct {
 	// Tenants is TenantService.
-	Tenants magnetarv1connect.TenantServiceHandler
+	Tenants coriav1connect.TenantServiceHandler
 	// Access is AccessService.
-	Access magnetarv1connect.AccessServiceHandler
+	Access coriav1connect.AccessServiceHandler
 	// Settings is SettingsService.
-	Settings magnetarv1connect.SettingsServiceHandler
+	Settings coriav1connect.SettingsServiceHandler
 	// Audit is AuditService.
-	Audit magnetarv1connect.AuditServiceHandler
+	Audit coriav1connect.AuditServiceHandler
 	// Storages is StorageService.
-	Storages magnetarv1connect.StorageServiceHandler
+	Storages coriav1connect.StorageServiceHandler
 	// Receivers is ReceiverService.
-	Receivers magnetarv1connect.ReceiverServiceHandler
+	Receivers coriav1connect.ReceiverServiceHandler
 	// Receptions is ReceptionService.
-	Receptions magnetarv1connect.ReceptionServiceHandler
+	Receptions coriav1connect.ReceptionServiceHandler
 	// Quarantine is QuarantineService.
-	Quarantine magnetarv1connect.QuarantineServiceHandler
+	Quarantine coriav1connect.QuarantineServiceHandler
 	// Monitor is MonitorService.
-	Monitor magnetarv1connect.MonitorServiceHandler
+	Monitor coriav1connect.MonitorServiceHandler
 
 	// c is what the services share, kept for the test seams
 	// (export_test.go).
@@ -156,15 +156,15 @@ func New(cfg Config) (Handlers, error) {
 
 // Register registers the services on srv.
 func (h Handlers) Register(srv *connect.Server) {
-	magnetarv1connect.RegisterTenantServiceHandler(srv, h.Tenants)
-	magnetarv1connect.RegisterAccessServiceHandler(srv, h.Access)
-	magnetarv1connect.RegisterSettingsServiceHandler(srv, h.Settings)
-	magnetarv1connect.RegisterAuditServiceHandler(srv, h.Audit)
-	magnetarv1connect.RegisterStorageServiceHandler(srv, h.Storages)
-	magnetarv1connect.RegisterReceiverServiceHandler(srv, h.Receivers)
-	magnetarv1connect.RegisterReceptionServiceHandler(srv, h.Receptions)
-	magnetarv1connect.RegisterQuarantineServiceHandler(srv, h.Quarantine)
-	magnetarv1connect.RegisterMonitorServiceHandler(srv, h.Monitor)
+	coriav1connect.RegisterTenantServiceHandler(srv, h.Tenants)
+	coriav1connect.RegisterAccessServiceHandler(srv, h.Access)
+	coriav1connect.RegisterSettingsServiceHandler(srv, h.Settings)
+	coriav1connect.RegisterAuditServiceHandler(srv, h.Audit)
+	coriav1connect.RegisterStorageServiceHandler(srv, h.Storages)
+	coriav1connect.RegisterReceiverServiceHandler(srv, h.Receivers)
+	coriav1connect.RegisterReceptionServiceHandler(srv, h.Receptions)
+	coriav1connect.RegisterQuarantineServiceHandler(srv, h.Quarantine)
+	coriav1connect.RegisterMonitorServiceHandler(srv, h.Monitor)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // testAudit guards that an entry reads back exactly, with Unicode and every
@@ -18,7 +18,7 @@ func testAudit(e *env) {
 		Time:          T0.Add(time.Second),
 		KeyID:         "K1234567890a",
 		RemoteAddress: "[2001:db8::1]:51234",
-		Method:        "/magnetar.v1.AdminService/CreateTenant",
+		Method:        "/coria.v1.AdminService/CreateTenant",
 		TenantName:    "never-existed",
 		Object:        "tenant/never-existed",
 		Outcome:       master.OutcomeRefused,

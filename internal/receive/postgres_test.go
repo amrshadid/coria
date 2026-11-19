@@ -3,7 +3,7 @@ package receive
 import (
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/testkit"
+	"github.com/amrshadid/coria/internal/testkit"
 )
 
 // TestStudyIsArchivedOnPostgres guards the whole pipeline on the Postgres

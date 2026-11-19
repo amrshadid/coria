@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // testPutRead guards that Put returns the size and SHA-256 of what it was

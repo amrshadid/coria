@@ -2,10 +2,10 @@
 
 package dir
 
-import "github.com/amrshadid/magnetar/internal/blob"
+import "github.com/amrshadid/coria/internal/blob"
 
 // usageKnown says whether volumeUsage can report this system's volumes. On
-// the systems Magnetar is not shipped for, the call that would tell differs
+// the systems CORIA is not shipped for, the call that would tell differs
 // from one to the next, so the driver says it does not know.
 const usageKnown = false
 

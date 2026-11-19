@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/secret"
 )
 
 // TestStoreDoesNotReachMaster guards that getting a ready tenant's store,

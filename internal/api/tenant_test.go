@@ -8,11 +8,11 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/registry"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/registry"
 )
 
 // createTenant returns a call of CreateTenant.
@@ -121,7 +121,7 @@ func checkCreationEntries(t *testing.T, f *fixture, name, requestID string, outc
 	var own, started []master.AuditEntry
 	for _, en := range entriesOf(f.masterLog(), requestID) {
 		switch en.Method {
-		case magnetarv1connect.TenantServiceCreateTenantProcedure:
+		case coriav1connect.TenantServiceCreateTenantProcedure:
 			own = append(own, en)
 		case registry.StartMethod:
 			started = append(started, en)

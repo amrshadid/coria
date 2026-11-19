@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/label"
 )
 
 // TestCheck guards each rule of PS3.5 9.1 at its edges.

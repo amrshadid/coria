@@ -13,12 +13,12 @@ import (
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/dir"
-	"github.com/amrshadid/magnetar/internal/blob/s3"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/dir"
+	"github.com/amrshadid/coria/internal/blob/s3"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // The test object of TestStorage.
@@ -26,7 +26,7 @@ const (
 	// probePrefix is where a test object is put: no archived file is under
 	// it, since the archive's keys start with data/ or meta/
 	// (internal/core/layout), so the test never touches data.
-	probePrefix = "magnetar-test/"
+	probePrefix = "coria-test/"
 	// probeSize is the test object's size: small enough to cost nothing on
 	// any storage, large enough that a store that cuts or pads an object is
 	// seen in the comparison.

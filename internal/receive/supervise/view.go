@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/receive"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/receive"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // View is what the supervisor holds in memory of one tenant, for a status

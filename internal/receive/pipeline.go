@@ -12,11 +12,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/uid"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/receive/header"
-	"github.com/amrshadid/magnetar/internal/receive/incoming"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/uid"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/receive/header"
+	"github.com/amrshadid/coria/internal/receive/incoming"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Pipeline is one tenant's reception pipeline: it takes files from sources

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // openArea opens an area in a temporary directory.

@@ -7,7 +7,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/amrshadid/magnetar/internal/obs/redact"
+	"github.com/amrshadid/coria/internal/obs/redact"
 )
 
 // Format is how a log line is written.

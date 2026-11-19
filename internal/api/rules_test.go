@@ -7,11 +7,11 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/registry"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/registry"
 )
 
 // TestRecreatedTenantIsNotTheCheckedOne guards the rule that a handler acts
@@ -106,7 +106,7 @@ func TestReadyTenantHasNoReason(t *testing.T) {
 }
 
 // TestSettingsLimitsAreTheMasters guards the limits the settings list
-// restates, because the core imports nothing of Magnetar's: a key's longest
+// restates, because the core imports nothing of CORIA's: a key's longest
 // lifetime, a value's length and the rule for a name must be those of the
 // access package and the master, or a value one accepts the other refuses.
 func TestSettingsLimitsAreTheMasters(t *testing.T) {

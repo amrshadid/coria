@@ -3,9 +3,9 @@ package tui
 import (
 	tea "charm.land/bubbletea/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // roleChoices are the four roles a grant can give, in the order of the

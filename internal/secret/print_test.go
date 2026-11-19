@@ -111,7 +111,7 @@ func TestNewAPIKeyPrintsOnlyID(t *testing.T) {
 	if b, _ := json.Marshal(k); string(b) != `{"id":"`+k.ID+`"}` {
 		t.Errorf("json.Marshal = %s, want the id alone", b)
 	}
-	if !strings.HasPrefix(full, "mgt_"+k.ID+"_") {
+	if !strings.HasPrefix(full, "cor_"+k.ID+"_") {
 		t.Errorf("Key() = a %d-character value that does not start with the id", len(full))
 	}
 }

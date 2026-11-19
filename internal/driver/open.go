@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/driver/postgres"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/driver/postgres"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // SQLiteScheme is the prefix of a SQLite database's address; what follows it

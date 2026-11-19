@@ -13,8 +13,8 @@ import (
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // The bounds of one cleanup of unfinished uploads. A page is the most S3
@@ -222,7 +222,7 @@ func (s *Store) probeUpload(ctx context.Context) error {
 	j := &putJob{s: s, key: key}
 	pctx, cancel := context.WithTimeout(ctx, s.set.callTimeout)
 	defer cancel()
-	err := j.putObject(pctx, []byte("magnetar open probe"))
+	err := j.putObject(pctx, []byte("coria open probe"))
 	switch {
 	case err == nil:
 	case errors.Is(err, errNotConfirmed):

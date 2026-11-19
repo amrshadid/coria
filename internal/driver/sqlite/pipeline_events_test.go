@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/tenant"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // TestTenantEventsContract runs the contract suite's event groups on

@@ -25,14 +25,14 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/obs"
-	"github.com/amrshadid/magnetar/internal/server"
-	"github.com/amrshadid/magnetar/internal/server/servertest"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/obs"
+	"github.com/amrshadid/coria/internal/server"
+	"github.com/amrshadid/coria/internal/server/servertest"
 )
 
 // syncBuffer is a bytes.Buffer safe for the server's goroutines to write
@@ -218,7 +218,7 @@ func testCert(tb testing.TB, dir string) (certFile, keyFile string, roots *x509.
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "magnetar test"},
+		Subject:      pkix.Name{CommonName: "coria test"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
@@ -322,9 +322,9 @@ func bearer(value string) connect.ClientInterceptor {
 // clients are the generated clients of the four services over one
 // transport.
 type clients struct {
-	access   magnetarv1connect.AccessServiceClient
-	tenants  magnetarv1connect.TenantServiceClient
-	settings magnetarv1connect.SettingsServiceClient
+	access   coriav1connect.AccessServiceClient
+	tenants  coriav1connect.TenantServiceClient
+	settings coriav1connect.SettingsServiceClient
 	raw      *connect.Client
 }
 
@@ -339,9 +339,9 @@ func newClients(hc *http.Client, base string, grpc bool, authorization string) c
 	}
 	c := connect.NewClient(connecthttp.NewTransport(hc, base, opts...), bearer(authorization))
 	return clients{
-		access:   magnetarv1connect.NewAccessServiceClient(c),
-		tenants:  magnetarv1connect.NewTenantServiceClient(c),
-		settings: magnetarv1connect.NewSettingsServiceClient(c),
+		access:   coriav1connect.NewAccessServiceClient(c),
+		tenants:  coriav1connect.NewTenantServiceClient(c),
+		settings: coriav1connect.NewSettingsServiceClient(c),
 		raw:      c,
 	}
 }
@@ -356,14 +356,14 @@ func (e *env) network(authorization string) clients {
 
 // makeKey makes a key as the local operator and, when role is set, grants
 // it that role on scope; it returns the whole key.
-func (e *env) makeKey(role magnetarv1.Role, scope *magnetarv1.Scope) string {
+func (e *env) makeKey(role coriav1.Role, scope *coriav1.Scope) string {
 	e.t.Helper()
-	res, err := e.local().access.CreateKey(e.ctx, &magnetarv1.CreateKeyRequest{Holder: "test", Expiry: &magnetarv1.CreateKeyRequest_NeverExpire{NeverExpire: true}})
+	res, err := e.local().access.CreateKey(e.ctx, &coriav1.CreateKeyRequest{Holder: "test", Expiry: &coriav1.CreateKeyRequest_NeverExpire{NeverExpire: true}})
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	if role != magnetarv1.Role_ROLE_UNSPECIFIED {
-		if _, err := e.local().access.SetGrant(e.ctx, &magnetarv1.SetGrantRequest{KeyId: res.GetKey().GetId(), Scope: scope, Role: role}); err != nil {
+	if role != coriav1.Role_ROLE_UNSPECIFIED {
+		if _, err := e.local().access.SetGrant(e.ctx, &coriav1.SetGrantRequest{KeyId: res.GetKey().GetId(), Scope: scope, Role: role}); err != nil {
 			e.t.Fatal(err)
 		}
 	}
@@ -371,8 +371,8 @@ func (e *env) makeKey(role magnetarv1.Role, scope *magnetarv1.Scope) string {
 }
 
 // installation is the installation scope.
-func installation() *magnetarv1.Scope {
-	return &magnetarv1.Scope{Kind: &magnetarv1.Scope_Installation{Installation: &magnetarv1.Installation{}}}
+func installation() *coriav1.Scope {
+	return &coriav1.Scope{Kind: &coriav1.Scope_Installation{Installation: &coriav1.Installation{}}}
 }
 
 // codeOf returns an error's API code and message.

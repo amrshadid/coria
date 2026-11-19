@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # The proof of this version: it shows, from outside, that the installed binary
-# does what this version of Magnetar claims (an installation made and served,
+# does what this version of CORIA claims (an installation made and served,
 # keys, grants and tenants on SQLite and Postgres, refusals, secrets kept
 # sealed, crash safety, the audit log, the local socket, both command line
 # forms and the static builds). It builds the real binary as "make build"
-# does, starts it, and checks each claim with tools that are not Magnetar.
+# does, starts it, and checks each claim with tools that are not CORIA.
 # Nothing here reaches into a Go package: it drives the installed thing from outside, with the binary's own commands,
 # grpcurl, curl, openssl, sqlite3, psql, pg_dump and a Python grpcio client
 # (scripts/prove/steps.py).
@@ -12,7 +12,7 @@
 # Each claim is a named check that prints one line, ok or FAIL with its
 # evidence; a failed check does not stop the others. The run ends with a table
 # of every check and the numbers it measured, and exits 1 when any check
-# failed (or, with MAGNETAR_PROVE_STRICT=1, as in CI, when any was skipped).
+# failed (or, with CORIA_PROVE_STRICT=1, as in CI, when any was skipped).
 #
 #   1  install and run       6  a tenant stops alone
 #   2  the first key         7  nothing half-made after a crash
@@ -26,9 +26,9 @@
 # scripts/requirements/check-server.txt installed. Bash 3.2 or later.
 #
 # Postgres: by default the script starts its own container (image
-# MAGNETAR_PROVE_PG_IMAGE, postgres:18) and removes it at the end. With
-# MAGNETAR_PROVE_PG_CONTAINER (a running container, such as CI's service
-# container) and MAGNETAR_PROVE_PG_PORT (its port on 127.0.0.1) it uses that
+# CORIA_PROVE_PG_IMAGE, postgres:18) and removes it at the end. With
+# CORIA_PROVE_PG_CONTAINER (a running container, such as CI's service
+# container) and CORIA_PROVE_PG_PORT (its port on 127.0.0.1) it uses that
 # one, makes its own role and databases in it, and drops them at the end. In
 # both cases the container is stopped and started again for section 6, and psql
 # and pg_dump are run inside it, so their version is the server's.
@@ -38,7 +38,7 @@
 #
 #   make prove PYTHON=/path/to/venv/bin/python GRPCURL=grpcurl
 #
-# MAGNETAR_PROVE_BUILD=host builds only this machine's binary, for a quicker
+# CORIA_PROVE_BUILD=host builds only this machine's binary, for a quicker
 # run while working on the script; check 11 is then skipped.
 set -euo pipefail
 
@@ -52,15 +52,15 @@ PYTHON=${PYTHON:-python3}
 GRPCURL=${GRPCURL:-grpcurl}
 SQLITE3=${SQLITE3:-sqlite3}
 DOCKER=${DOCKER:-docker}
-PG_CONTAINER=${MAGNETAR_PROVE_PG_CONTAINER:-}
-PG_PORT=${MAGNETAR_PROVE_PG_PORT:-}
-PG_IMAGE=${MAGNETAR_PROVE_PG_IMAGE:-postgres:18}
-STRICT=${MAGNETAR_PROVE_STRICT:-0}
-BUILD=${MAGNETAR_PROVE_BUILD:-all}
+PG_CONTAINER=${CORIA_PROVE_PG_CONTAINER:-}
+PG_PORT=${CORIA_PROVE_PG_PORT:-}
+PG_IMAGE=${CORIA_PROVE_PG_IMAGE:-postgres:18}
+STRICT=${CORIA_PROVE_STRICT:-0}
+BUILD=${CORIA_PROVE_BUILD:-all}
 # At least 20 kills, so that a creation interrupted at different moments is
 # seen more than once; more give the adaptive delays
 # more chances to land inside the creation.
-CRASHES=${MAGNETAR_PROVE_CRASHES:-24}
+CRASHES=${CORIA_PROVE_CRASHES:-24}
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 helper=$root/scripts/prove/steps.py
@@ -77,7 +77,7 @@ done
 # A short directory: the local socket's path must fit the 104 bytes a Unix
 # socket address holds on macOS, so the system's temporary directory (long on
 # macOS) is not used.
-work=$(mktemp -d /tmp/mgt-proof.XXXXXX)
+work=$(mktemp -d /tmp/cor-proof.XXXXXX)
 chmod 700 "$work"
 : > "$work/results.tsv"
 : > "$work/ledger.tsv"
@@ -110,10 +110,10 @@ cleanup() {
 		# what this run made in it dropped.
 		"$DOCKER" start "$PG_CONTAINER" > /dev/null 2>&1
 		wait_pg > /dev/null 2>&1
-		for db in $("$DOCKER" exec "$PG_CONTAINER" psql -U postgres -qtAc "select datname from pg_database where datname like 'mgt_proof%'" 2> /dev/null); do
+		for db in $("$DOCKER" exec "$PG_CONTAINER" psql -U postgres -qtAc "select datname from pg_database where datname like 'cor_proof%'" 2> /dev/null); do
 			"$DOCKER" exec "$PG_CONTAINER" psql -U postgres -qc "drop database if exists $db with (force)" > /dev/null 2>&1
 		done
-		"$DOCKER" exec "$PG_CONTAINER" psql -U postgres -qc "drop role if exists mgt_proof" > /dev/null 2>&1
+		"$DOCKER" exec "$PG_CONTAINER" psql -U postgres -qc "drop role if exists cor_proof" > /dev/null 2>&1
 	fi
 	if [ -n "$user_made" ]; then sudo -n userdel "$user_made" > /dev/null 2>&1; fi
 	rm -rf "$work"
@@ -233,7 +233,7 @@ api() {
 	API_STATUS=${out%% *}
 	API_TIME=${out#* }
 	API_BODY=$(cat "$work/api.body")
-	API_RID=$(tr -d '\r' < "$work/api.head" | awk -F ': ' 'tolower($1) == "magnetar-request-id" { print $2 }')
+	API_RID=$(tr -d '\r' < "$work/api.head" | awk -F ': ' 'tolower($1) == "coria-request-id" { print $2 }')
 	if [ "$API_STATUS" != 000 ]; then
 		if [ "$method" = grpc.health.v1.Health/Check ]; then
 			ledger "$API_RID" "/$method" "$key_id" none "$tenant" "curl $via health"
@@ -253,7 +253,7 @@ cli() {
 	shift 3
 	CLI_STATUS=0
 	CLI_T0=$(date +%s)
-	env -u MAGNETAR_SERVER -u MAGNETAR_KEY MAGNETAR_DATA_DIR="$dir" "$bin" "$@" > "$work/cli.out" 2> "$work/cli.err" || CLI_STATUS=$?
+	env -u CORIA_SERVER -u CORIA_KEY CORIA_DATA_DIR="$dir" "$bin" "$@" > "$work/cli.out" 2> "$work/cli.err" || CLI_STATUS=$?
 	[ -n "$method" ] || return 0
 	rid=$(sed -n 's/.*(request id \([a-z2-7]*\)).*/\1/p' "$work/cli.err" | tail -1)
 	case $CLI_STATUS in
@@ -275,7 +275,7 @@ start_server() {
 	"$bin" serve --data-dir "$dir" "$@" >> "$log" 2>&1 &
 	SERVER_PID=$!
 	track "$SERVER_PID"
-	wait_ready "$dir/run/magnetar.sock" "$SERVER_PID"
+	wait_ready "$dir/run/coria.sock" "$SERVER_PID"
 }
 wait_ready() {
 	local i
@@ -327,6 +327,6 @@ n_fail=$(awk -F '\t' '$2 == "FAIL"' "$work/results.tsv" | wc -l | tr -d ' ')
 n_skip=$(awk -F '\t' '$2 == "skipped"' "$work/results.tsv" | wc -l | tr -d ' ')
 if [ "$n_fail" != 0 ]; then exit 1; fi
 if [ "$STRICT" = 1 ] && [ "$n_skip" != 0 ]; then
-	echo "prove: MAGNETAR_PROVE_STRICT=1 and $n_skip check(s) skipped: nothing may be skipped here" >&2
+	echo "prove: CORIA_PROVE_STRICT=1 and $n_skip check(s) skipped: nothing may be skipped here" >&2
 	exit 1
 fi

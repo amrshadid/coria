@@ -1,5 +1,5 @@
 // Package servecmd is the two commands that make and run an installation:
-// "magnetar init" and "magnetar serve". They are built as cobra commands
+// "coria init" and "coria serve". They are built as cobra commands
 // that attach to the command tree with one line,
 //
 //	root.AddCommand(servecmd.Init(opts), servecmd.Serve(opts))

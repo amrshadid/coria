@@ -8,7 +8,7 @@ import (
 
 	"github.com/amrshadid/go-dicom/network"
 
-	"github.com/amrshadid/magnetar/internal/receive"
+	"github.com/amrshadid/coria/internal/receive"
 )
 
 // errNotServed answers every service the receiver does not provide. Only

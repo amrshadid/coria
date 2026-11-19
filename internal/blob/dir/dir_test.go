@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // openTemp opens a store on a new temporary directory, closed when tb ends.
@@ -505,7 +505,7 @@ func TestSymlinks(t *testing.T) {
 
 // TestOutsideTools guards that the file a Put wrote is, byte for byte, what
 // it was given, and that the SHA-256 Put returned is the file's, by tools
-// that are not Magnetar: shasum or sha256sum, and cmp. It skips when the
+// that are not CORIA: shasum or sha256sum, and cmp. It skips when the
 // tools are absent.
 //
 // Neither tool is given a path of this system. The checksum tool reads the

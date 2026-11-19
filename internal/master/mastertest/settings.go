@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // testSettings guards each setting operation and the bounds of a name and a

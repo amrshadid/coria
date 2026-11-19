@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestPutSuccessNeedsConfirmation guards that Put reports success only when

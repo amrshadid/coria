@@ -10,24 +10,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/secret"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/secret"
 )
 
 // Environment variables the command line reads. They are named here so the
 // help text and the tests use the one spelling.
 const (
-	// EnvDataDir names the data directory whose run/magnetar.sock is the
+	// EnvDataDir names the data directory whose run/coria.sock is the
 	// default way to reach the API.
-	EnvDataDir = "MAGNETAR_DATA_DIR"
+	EnvDataDir = "CORIA_DATA_DIR"
 	// EnvServer names the address of a server on the network.
-	EnvServer = "MAGNETAR_SERVER"
+	EnvServer = "CORIA_SERVER"
 	// EnvCAFile names a PEM file of certificate authorities to trust for the
 	// network, in place of the system's.
-	EnvCAFile = "MAGNETAR_CA_FILE"
+	EnvCAFile = "CORIA_CA_FILE"
 	// EnvKey holds the key used over the network. It is the only place a key
 	// can come from besides a file.
-	EnvKey = "MAGNETAR_KEY"
+	EnvKey = "CORIA_KEY"
 )
 
 // DefaultTimeout is how long one call may take when the person gives no
@@ -41,7 +41,7 @@ const maxKeyFile = 1024
 // SocketPath returns where the local socket of a data directory is, as the
 // installation's layout fixes it.
 func SocketPath(dataDir string) string {
-	return filepath.Join(dataDir, "run", "magnetar.sock")
+	return filepath.Join(dataDir, "run", "coria.sock")
 }
 
 // Config says how to reach the API. Exactly one of DataDir and Server is set.

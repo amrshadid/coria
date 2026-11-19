@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # The outside check of the Postgres master database: the contract suite's
 # sample installation is written by the driver, then read with psql and
-# pg_dump, which are Postgres's own and not Magnetar's.
+# pg_dump, which are Postgres's own and not CORIA's.
 #
 # It shows the tables and their rows, checks that every constraint is valid
 # and the grants' foreign keys hold, reads times and audit details with
 # Postgres's own functions, and searches a dump for the sample key's secret,
 # which must be absent, and for its SHA-256, which must be present.
 #
-# The driver is given MAGNETAR_TEST_POSTGRES, the URL of a scratch database
+# The driver is given CORIA_TEST_POSTGRES, the URL of a scratch database
 # the login may make a schema in. The sample goes in a schema of its own,
 # dropped when the script ends. psql and pg_dump are run by the commands in
 # PSQL and PG_DUMP, so a machine without them can use the ones in a
 # container, which also keeps their version equal to the server's (pg_dump
 # refuses a server newer than itself):
 #
-#   MAGNETAR_TEST_POSTGRES=postgres://u:p@127.0.0.1:5432/db scripts/check/master-postgres.sh
+#   CORIA_TEST_POSTGRES=postgres://u:p@127.0.0.1:5432/db scripts/check/master-postgres.sh
 #   PSQL="docker exec -i some-postgres psql" PG_DUMP="docker exec -i some-postgres pg_dump" \
 #     PSQL_URL=postgres://u:p@127.0.0.1:5432/db  scripts/check/master-postgres.sh
 #
@@ -28,8 +28,8 @@ set -euo pipefail
 PSQL="${PSQL:-psql}"
 PG_DUMP="${PG_DUMP:-pg_dump}"
 GO="${GO:-go}"
-: "${MAGNETAR_TEST_POSTGRES:?set MAGNETAR_TEST_POSTGRES to the URL of a scratch database}"
-PSQL_URL="${PSQL_URL:-$MAGNETAR_TEST_POSTGRES}"
+: "${CORIA_TEST_POSTGRES:?set CORIA_TEST_POSTGRES to the URL of a scratch database}"
+PSQL_URL="${PSQL_URL:-$CORIA_TEST_POSTGRES}"
 
 fail() {
 	echo "FAIL: $*" >&2
@@ -45,7 +45,7 @@ want() {
 }
 
 dir="$(mktemp -d)"
-schema="magnetar_check_$(date +%s)_$$"
+schema="coria_check_$(date +%s)_$$"
 
 # q runs one statement and prints its result alone, with no alignment or
 # headers; show prints it as a table. Neither shows the URL.
@@ -73,7 +73,7 @@ echo "psql: $(q 'SHOW server_version')"
 secret="$(sed -n 's/^const SampleSecret = "\([^"]*\)".*/\1/p' internal/master/mastertest/sample.go)"
 [ -n "$secret" ] || fail "cannot read SampleSecret from internal/master/mastertest/sample.go"
 
-MAGNETAR_SAMPLE_SCHEMA="$schema" MAGNETAR_SAMPLE_DIR="$dir" "$GO" test -count=1 -run '^TestWriteSample$' ./internal/driver/postgres
+CORIA_SAMPLE_SCHEMA="$schema" CORIA_SAMPLE_DIR="$dir" "$GO" test -count=1 -run '^TestWriteSample$' ./internal/driver/postgres
 hash="$(tr -d '\n' < "$dir/hash.hex")"
 [ -n "$hash" ] || fail "the sample's hash was not written"
 

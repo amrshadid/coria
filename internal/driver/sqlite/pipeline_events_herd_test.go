@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/events"
-	"github.com/amrshadid/magnetar/internal/tenant"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/events"
+	"github.com/amrshadid/coria/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // scaleWatches is how many idle watches TestScaleWriterBesideIdleWatches

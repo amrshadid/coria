@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestJudge guards the one statement of the rule every driver applies to
@@ -120,7 +120,7 @@ func TestRoleIncludes(t *testing.T) {
 // makes changes no key is checked for: adding one changes who may change the
 // installation, and has to be added here on purpose.
 func TestUncheckedActorsNamedOnlyByTheirPackages(t *testing.T) {
-	const masterPath = "github.com/amrshadid/magnetar/internal/master"
+	const masterPath = "github.com/amrshadid/coria/internal/master"
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

@@ -3,8 +3,8 @@ package postgres
 import (
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // TestEnqueueHeldKeyAnswersFirst guards the order of EnqueueWork's answers:

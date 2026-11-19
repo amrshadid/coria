@@ -12,7 +12,7 @@ import (
 
 	"connectrpc.com/grpchealth/v2"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Start listens on the local socket and, when asked, on the network, and

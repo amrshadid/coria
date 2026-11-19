@@ -6,9 +6,9 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
 )
 
 // TestMenuAndHeader guards the first screen: the header says who is connected
@@ -17,7 +17,7 @@ import (
 func TestMenuAndHeader(t *testing.T) {
 	forSizes(t, func(t *testing.T, w, h int) {
 		r := newRig(t, w, h, nil)
-		r.expect("magnetar | local operator (user 501) | ", "Menu", "Tenants", "Keys", "Settings", "Audit log", "q quit")
+		r.expect("coria | local operator (user 501) | ", "Menu", "Tenants", "Keys", "Settings", "Audit log", "q quit")
 		if got := len(r.lines()); got != h {
 			t.Errorf("the frame has %d lines, want exactly the terminal's %d", got, h)
 		}
@@ -111,7 +111,7 @@ func TestTenantDetailAndItsScreens(t *testing.T) {
 	forSizes(t, func(t *testing.T, w, h int) {
 		r := newRig(t, w, h, func(f *fakeserver.Server) {
 			addTenants(f, 2)
-			f.AddAudit(&v1.AuditEntry{Id: "a1", Time: timestamp(-1), Method: "/magnetar.v1.TenantService/GetTenant", Tenant: "t000",
+			f.AddAudit(&v1.AuditEntry{Id: "a1", Time: timestamp(-1), Method: "/coria.v1.TenantService/GetTenant", Tenant: "t000",
 				Object: "t000", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, RequestId: "req-abc", KeyId: "k00000000001"})
 		})
 		r.key("enter", "enter")
@@ -234,8 +234,8 @@ func TestSettingsSetAndUnset(t *testing.T) {
 func TestAuditFilter(t *testing.T) {
 	forSizes(t, func(t *testing.T, w, h int) {
 		r := newRig(t, w, h, func(f *fakeserver.Server) {
-			f.AddAudit(&v1.AuditEntry{Id: "a1", Time: timestamp(-1), Method: "/magnetar.v1.AccessService/CreateKey", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, KeyId: "k00000000001", RequestId: "req-1"})
-			f.AddAudit(&v1.AuditEntry{Id: "a2", Time: timestamp(-2), Method: "/magnetar.v1.AccessService/RevokeKey", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_REFUSED, KeyId: "k00000000002", RequestId: "req-2",
+			f.AddAudit(&v1.AuditEntry{Id: "a1", Time: timestamp(-1), Method: "/coria.v1.AccessService/CreateKey", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, KeyId: "k00000000001", RequestId: "req-1"})
+			f.AddAudit(&v1.AuditEntry{Id: "a2", Time: timestamp(-2), Method: "/coria.v1.AccessService/RevokeKey", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_REFUSED, KeyId: "k00000000002", RequestId: "req-2",
 				Reason: "the key lacks the admin role", Details: map[string]string{"zeta": "last", "alpha": "first"}})
 		})
 		r.key("4")
@@ -285,7 +285,7 @@ func TestHelpListsTheKeysOfTheScreen(t *testing.T) {
 func TestErrorIsOneLineWithTheRequestID(t *testing.T) {
 	for _, s := range sizes {
 		r := newRig(t, s.w, s.h, nil)
-		r.fake.FailWith(magnetarv1connect.TenantServiceListTenantsProcedure, connect.CodePermissionDenied,
+		r.fake.FailWith(coriav1connect.TenantServiceListTenantsProcedure, connect.CodePermissionDenied,
 			"the key lacks the reader role on the installation, and so it cannot list tenants for anyone at all")
 		r.key("enter")
 		lines := r.lines()

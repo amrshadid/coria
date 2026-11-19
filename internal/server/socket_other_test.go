@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/coria/internal/server"
 )
 
 // The environment of the other-user test.
@@ -24,13 +24,13 @@ const (
 	// when it is set, and needs "sudo -n -u <user>" to work without a
 	// password, as it does on GitHub's Linux runners. CI runs it as:
 	//
-	//	sudo useradd --no-create-home --shell /usr/sbin/nologin magnetar-other
-	//	MAGNETAR_TEST_OTHER_USER=magnetar-other go test -count=1 -v -run '^TestSocketRefusesOtherUser$' ./internal/server
-	otherUserEnv = "MAGNETAR_TEST_OTHER_USER"
+	//	sudo useradd --no-create-home --shell /usr/sbin/nologin coria-other
+	//	CORIA_TEST_OTHER_USER=coria-other go test -count=1 -v -run '^TestSocketRefusesOtherUser$' ./internal/server
+	otherUserEnv = "CORIA_TEST_OTHER_USER"
 	// otherUserHelperEnv, when set, makes this test binary a helper that
 	// dials the socket at that path, as whatever user started it, and says
 	// what happened.
-	otherUserHelperEnv = "MAGNETAR_OTHER_USER_DIAL"
+	otherUserHelperEnv = "CORIA_OTHER_USER_DIAL"
 )
 
 // runOtherUserHelper dials the local socket named by otherUserHelperEnv,
@@ -50,7 +50,7 @@ func runOtherUserHelper() int {
 	}
 	defer func() { _ = c.Close() }()
 	_ = c.SetDeadline(time.Now().Add(5 * time.Second))
-	_, err = io.WriteString(c, "POST /magnetar.v1.AccessService/WhoAmI HTTP/1.1\r\nHost: local\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
+	_, err = io.WriteString(c, "POST /coria.v1.AccessService/WhoAmI HTTP/1.1\r\nHost: local\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}")
 	if err != nil {
 		fmt.Println("closed")
 		return 0
@@ -71,7 +71,7 @@ func runOtherUserHelper() int {
 // ("denied"); then with the directory and the socket opened to everyone, so
 // the peer check is the only guard left, and the server must close the
 // connection unanswered ("closed"). It needs a second user and passwordless
-// sudo, so it is skipped unless MAGNETAR_TEST_OTHER_USER names the user (CI
+// sudo, so it is skipped unless CORIA_TEST_OTHER_USER names the user (CI
 // on Linux; see otherUserEnv).
 func TestSocketRefusesOtherUser(t *testing.T) {
 	other := os.Getenv(otherUserEnv)

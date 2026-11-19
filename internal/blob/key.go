@@ -3,7 +3,7 @@ package blob
 import (
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // The bounds of a key. S3 accepts a key of 1024 bytes

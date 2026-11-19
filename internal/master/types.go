@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/pathname"
+	"github.com/amrshadid/coria/internal/core/pathname"
 )
 
 // The bounds this package holds every value to. Input is hostile (rules,
@@ -256,7 +256,7 @@ func ValidateTenantName(name string) error {
 // Key is an API key as the master keeps it: its id and the hash of its
 // secret, never the secret.
 type Key struct {
-	// ID is the key's public id, the part between "mgt_" and the secret.
+	// ID is the key's public id, the part between "cor_" and the secret.
 	ID string
 	// Hash is the SHA-256 of the key's secret, made by package secret.
 	Hash []byte

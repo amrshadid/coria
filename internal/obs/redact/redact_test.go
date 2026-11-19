@@ -14,13 +14,13 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/obs/redact"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/obs/redact"
 )
 
 // The secrets the tests plant and then search for.
 const (
-	secretKey     = "mgt_SECRETKEYID1_SECRETSECRETSECRETSECRETSECRETSECRETSECRETS" //nolint:gosec // G101: a planted test secret.
+	secretKey     = "cor_SECRETKEYID1_SECRETSECRETSECRETSECRETSECRETSECRETSECRETS" //nolint:gosec // G101: a planted test secret.
 	secretAddress = "postgres://admin:hunter2-password@db.example/lab"             //nolint:gosec // G101: a planted test secret.
 )
 
@@ -28,8 +28,8 @@ const (
 // Message neither value is in any printed form of the message, the other
 // fields are kept, and the message given is unchanged.
 func TestContractSecrets(t *testing.T) {
-	req := &magnetarv1.CreateTenantRequest{Name: "lab", DatabaseType: magnetarv1.DatabaseType_DATABASE_TYPE_POSTGRES, DatabaseAddress: secretAddress}
-	res := &magnetarv1.CreateKeyResponse{Key: &magnetarv1.Key{Id: "SECRETKEYID1", Holder: "robot"}, Secret: secretKey}
+	req := &coriav1.CreateTenantRequest{Name: "lab", DatabaseType: coriav1.DatabaseType_DATABASE_TYPE_POSTGRES, DatabaseAddress: secretAddress}
+	res := &coriav1.CreateKeyResponse{Key: &coriav1.Key{Id: "SECRETKEYID1", Holder: "robot"}, Secret: secretKey}
 	for _, tc := range []struct {
 		m      proto.Message
 		secret string
@@ -60,7 +60,7 @@ func TestContractSecrets(t *testing.T) {
 // library itself prints a marked field. If it ever stops, this test says so,
 // and the package is still right but no longer the only guard.
 func TestUnredactedPrintsSecret(t *testing.T) {
-	res := &magnetarv1.CreateKeyResponse{Secret: secretKey}
+	res := &coriav1.CreateKeyResponse{Secret: secretKey}
 	found := false
 	for _, form := range printedForms(res) {
 		found = found || strings.Contains(form, secretKey)
@@ -89,7 +89,7 @@ func jsonOf(m proto.Message) string {
 // TestAnyIsWalked guards that a secret packed in a google.protobuf.Any of a
 // known type is redacted, and that an Any of an unknown type loses its value.
 func TestAnyIsWalked(t *testing.T) {
-	packed, err := anypb.New(&magnetarv1.CreateKeyResponse{Secret: secretKey, Key: &magnetarv1.Key{Holder: "robot"}})
+	packed, err := anypb.New(&coriav1.CreateKeyResponse{Secret: secretKey, Key: &coriav1.Key{Holder: "robot"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestNil(t *testing.T) {
 	if redact.Message(nil) != nil {
 		t.Fatal("nil in, something out")
 	}
-	var typed *magnetarv1.CreateKeyResponse
+	var typed *coriav1.CreateKeyResponse
 	_ = redact.Message(typed)
 	_ = redact.LogValue(nil)
 }

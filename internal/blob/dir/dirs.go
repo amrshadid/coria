@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // durableRecordSize bounds the record of directories known durable. A

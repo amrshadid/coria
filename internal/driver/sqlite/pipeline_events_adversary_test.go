@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // pageRec is one page a reader of TestEventFeedUnderAdversaries read: the
@@ -39,7 +39,7 @@ type pageRec struct {
 // EventCursor's, a status snapshot's, the empty one). A trigger logs every
 // committed event, and each page read must hold exactly the committed
 // events between its two cursors that its filter keeps. The ordinary run is
-// bounded and skipped under the race detector; MAGNETAR_SCALE runs the long
+// bounded and skipped under the race detector; CORIA_SCALE runs the long
 // one (make test-scale).
 func TestEventFeedUnderAdversaries(t *testing.T) {
 	ctx := context.Background()
@@ -49,7 +49,7 @@ func TestEventFeedUnderAdversaries(t *testing.T) {
 		t.Skip("run without the race detector")
 	}
 	ops := 60
-	if os.Getenv("MAGNETAR_SCALE") != "" {
+	if os.Getenv("CORIA_SCALE") != "" {
 		ops = 400
 	}
 	a0, b0 := openTenantPair(t, tenanttest.SuiteTenant)

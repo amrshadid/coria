@@ -7,9 +7,9 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // archive is what the fake keeps for the four services of a tenant's
@@ -147,11 +147,11 @@ func (s *Server) Reception(tenant, id string) *v1.Reception {
 
 // registerArchive adds the four archive services to a Connect server.
 func (s *Server) registerArchive(srv *connect.Server) {
-	magnetarv1connect.RegisterStorageServiceHandler(srv, storageHandler{s})
-	magnetarv1connect.RegisterReceiverServiceHandler(srv, receiverHandler{s})
-	magnetarv1connect.RegisterReceptionServiceHandler(srv, receptionHandler{s})
-	magnetarv1connect.RegisterQuarantineServiceHandler(srv, quarantineHandler{s})
-	magnetarv1connect.RegisterMonitorServiceHandler(srv, monitorHandler{s})
+	coriav1connect.RegisterStorageServiceHandler(srv, storageHandler{s})
+	coriav1connect.RegisterReceiverServiceHandler(srv, receiverHandler{s})
+	coriav1connect.RegisterReceptionServiceHandler(srv, receptionHandler{s})
+	coriav1connect.RegisterQuarantineServiceHandler(srv, quarantineHandler{s})
+	coriav1connect.RegisterMonitorServiceHandler(srv, monitorHandler{s})
 }
 
 // begin takes the lock, makes the tables and checks the tenant: what every

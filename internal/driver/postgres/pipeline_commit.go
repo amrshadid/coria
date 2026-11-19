@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // A scan's commit into the catalog (CommitScan): the subject, session and

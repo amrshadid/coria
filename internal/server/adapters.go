@@ -15,8 +15,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/obs/redact"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/obs/redact"
 )
 
 // errNoSuchMethod answers a procedure the table does not know, after the

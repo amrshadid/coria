@@ -6,8 +6,8 @@
 
 section "6. a tenant stops alone"
 make_key tenants --no-expiry || fail "6.0 a key for both tenants" "key create failed"
-cli "$data" /magnetar.v1.AccessService/SetGrant "*" grant set "$(cat "$work/keys/tenants.id")" --role reader --tenant lite
-cli "$data" /magnetar.v1.AccessService/SetGrant "*" grant set "$(cat "$work/keys/tenants.id")" --role reader --tenant pg
+cli "$data" /coria.v1.AccessService/SetGrant "*" grant set "$(cat "$work/keys/tenants.id")" --role reader --tenant lite
+cli "$data" /coria.v1.AccessService/SetGrant "*" grant set "$(cat "$work/keys/tenants.id")" --role reader --tenant pg
 lite_req='{"scope":{"tenant":"lite"}}'
 pg_req='{"scope":{"tenant":"pg"}}'
 # time_lite FILE N: N calls to the SQLite tenant over TLS, their times in FILE,
@@ -20,21 +20,21 @@ time_lite() {
 	: > "$1"
 	: > "$1.ref"
 	for i in $(seq 1 "$2"); do
-		api tls tenants magnetar.v1.SettingsService/ListSettings "$lite_req" lite
+		api tls tenants coria.v1.SettingsService/ListSettings "$lite_req" lite
 		echo "$API_TIME" >> "$1"
 		[ "$API_STATUS" = 200 ] || bad=$((bad + 1))
-		api tls tenants magnetar.v1.AccessService/WhoAmI '{}'
+		api tls tenants coria.v1.AccessService/WhoAmI '{}'
 		echo "$API_TIME" >> "$1.ref"
 	done
 	echo "$bad"
 }
 tenant_state() {
-	api tls admin magnetar.v1.TenantService/GetTenant "{\"name\":\"$1\"}" "$1"
+	api tls admin coria.v1.TenantService/GetTenant "{\"name\":\"$1\"}" "$1"
 	printf '%s' "$API_BODY" | json_get '["tenant"]["state"]' 2> /dev/null || echo "status $API_STATUS"
 }
 bad_before=$(time_lite "$work/lite.before" 30)
 read -r before_med before_max <<< "$(median_max "$work/lite.before")"
-api tls tenants magnetar.v1.SettingsService/ListSettings "$pg_req" pg
+api tls tenants coria.v1.SettingsService/ListSettings "$pg_req" pg
 pg_before=$API_STATUS
 
 # Stopped with "docker stop": the database's server goes away as on a crash
@@ -53,7 +53,7 @@ if [ "$state" = TENANT_STATE_UNREACHABLE ]; then
 else
 	fail "6.1 the Postgres tenant becomes unreachable when its database stops" "after ${detected} s: $state" "$API_BODY"
 fi
-api tls tenants magnetar.v1.SettingsService/ListSettings "$pg_req" pg
+api tls tenants coria.v1.SettingsService/ListSettings "$pg_req" pg
 pg_down_status=$API_STATUS
 pg_down_time=$(awk -v t="$API_TIME" 'BEGIN { printf "%.1f", t * 1000 }')
 pg_down_body=$API_BODY
@@ -85,7 +85,7 @@ for i in $(seq 1 180); do
 	sleep 1
 done
 back=$("$PYTHON" -c "import time; print('%.1f' % (time.time() - $back_at))")
-api tls tenants magnetar.v1.SettingsService/ListSettings "$pg_req" pg
+api tls tenants coria.v1.SettingsService/ListSettings "$pg_req" pg
 if [ "$state" = TENANT_STATE_READY ] && [ "$API_STATUS" = 200 ] && kill -0 "$main_pid" 2> /dev/null; then
 	ok "6.4 the Postgres tenant is ready again without a restart" "$state ${back} s after Postgres answered; same server process ($main_pid); ListSettings on pg: 200"
 else

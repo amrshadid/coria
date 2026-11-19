@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // failed returns the tenant's association failure events.

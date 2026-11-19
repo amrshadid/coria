@@ -13,12 +13,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // NoTransactionMark is the first line of a migration file that must run
 // outside a transaction.
-const NoTransactionMark = "-- magnetar:no-transaction"
+const NoTransactionMark = "-- coria:no-transaction"
 
 // ErrChecksum is in the chain of the error Migrate returns when an applied
 // migration's recorded name or checksum differs from the file this binary

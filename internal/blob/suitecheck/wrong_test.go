@@ -13,9 +13,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // flaw names one way an in-memory driver is made wrong on purpose, to show
@@ -41,7 +41,7 @@ var flaws = []flaw{partialReplace, wrongChecksum, nextOnFullPage, liveRead, unst
 
 // flawEnv names the variable that makes this test binary, run again by
 // TestSuiteCatchesWrongDrivers, run the suite against one flawed driver.
-const flawEnv = "MAGNETAR_BLOBTEST_FLAW"
+const flawEnv = "CORIA_BLOBTEST_FLAW"
 
 // TestSuiteOnMemory guards that a correct in-memory driver, written from
 // blob.Store's documentation alone, passes the suite: the suite asks for

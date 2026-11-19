@@ -5,12 +5,12 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/naming"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/receive/header"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/receive/header"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // series is the received files of one series of a reception, in order of

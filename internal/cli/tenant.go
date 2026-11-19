@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // when writes a timestamp in the zone times are shown in, with its offset.
@@ -68,14 +68,14 @@ environment variable or the file that holds the database's address (a
 connection URI with its login and password). The address is a secret, so it is
 never an argument: it is read from the variable or the file, sent to the server
 over the connection, and never printed. The database and its login must exist
-before this command runs; Magnetar makes only the tables.
+before this command runs; CORIA makes only the tables.
 
 A tenant's name is 1 to 63 lowercase letters, digits and hyphens, starting with
 a letter. It is used in paths on the server, so nothing else is accepted.`,
-		Example: `  magnetar tenant create lab1
-  export LAB2_DB="$(cat /etc/magnetar/lab2.dsn)"
-  magnetar tenant create lab2 --db-env LAB2_DB
-  magnetar tenant create lab3 --db-file /etc/magnetar/lab3.dsn`,
+		Example: `  coria tenant create lab1
+  export LAB2_DB="$(cat /etc/coria/lab2.dsn)"
+  coria tenant create lab2 --db-env LAB2_DB
+  coria tenant create lab3 --db-file /etc/coria/lab3.dsn`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			req := &v1.CreateTenantRequest{Name: args[0], DatabaseType: v1.DatabaseType_DATABASE_TYPE_SQLITE}
@@ -119,8 +119,8 @@ func (a *app) newTenantList() *cobra.Command {
 installation and for the local operator, otherwise only the tenants the key
 holds a grant on. A tenant whose database is down is listed with its state and
 the reason.`,
-		Example: `  magnetar tenant list
-  magnetar tenant list --all --json`,
+		Example: `  coria tenant list
+  coria tenant list --all --json`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			if err := l.check(); err != nil {
@@ -176,7 +176,7 @@ func (a *app) newTenantShow() *cobra.Command {
 		Long: `Show one tenant from the master database: its database type, its state and,
 when it is not ready, why. It answers even when the tenant's own database is
 down.`,
-		Example: `  magnetar tenant show lab1`,
+		Example: `  coria tenant show lab1`,
 		Args:    exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -207,8 +207,8 @@ says where, so you can keep them, move them or delete them by hand. Deleting
 data is a separate, later feature.
 
 Without --yes nothing is sent: the command says what it would do and exits 2.`,
-		Example: `  magnetar tenant remove lab1          # says what would happen, exits 2
-  magnetar tenant remove lab1 --yes`,
+		Example: `  coria tenant remove lab1          # says what would happen, exits 2
+  coria tenant remove lab1 --yes`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if !yes {

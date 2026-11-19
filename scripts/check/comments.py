@@ -91,7 +91,7 @@ PATH_RULES = [
 #
 # for example a processor's name in a measured number:
 #
-#   ("cmd/magnetar/bench_test.go", "Apple M1 Pro", "a processor, not a milestone"),
+#   ("cmd/coria/bench_test.go", "Apple M1 Pro", "a processor, not a milestone"),
 #
 # The text must cover the whole match, so an entry lets through that phrase
 # on that file's lines and nothing else.

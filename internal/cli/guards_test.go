@@ -15,11 +15,11 @@ import (
 	"github.com/spf13/pflag"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/cli"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/cli"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
 )
 
 // parseRFC3339 reads a time for a test's seed data.
@@ -58,9 +58,9 @@ func TestEveryErrorKindHasItsExitCode(t *testing.T) {
 	for _, c := range cases {
 		for _, extra := range [][]string{nil, {"--json"}} {
 			r := newRig(t)
-			r.fake.FailWith(magnetarv1connect.TenantServiceGetTenantProcedure, c.code, "what the server said")
+			r.fake.FailWith(coriav1connect.TenantServiceGetTenantProcedure, c.code, "what the server said")
 			res := r.run(append([]string{"tenant", "show", "lab1"}, extra...)...)
-			want := "magnetar: tenant show: what the server said (request id req-000001)\n"
+			want := "coria: tenant show: what the server said (request id req-000001)\n"
 			expect(t, res, c.exit, "", want)
 		}
 	}
@@ -72,7 +72,7 @@ func TestEveryErrorKindHasItsExitCode(t *testing.T) {
 // that ran out, with the request id, rather than the server's own words.
 func TestDeadlineExceededIsAFailureWithTheTimeout(t *testing.T) {
 	r := newRig(t)
-	r.fake.FailWith(magnetarv1connect.TenantServiceGetTenantProcedure, connect.CodeDeadlineExceeded, "the deadline passed")
+	r.fake.FailWith(coriav1connect.TenantServiceGetTenantProcedure, connect.CodeDeadlineExceeded, "the deadline passed")
 	res := r.run("tenant", "show", "lab1")
 	if res.code != 1 || res.stdout != "" || !strings.HasSuffix(res.stderr, " within 30s (see --timeout) (request id req-000001)\n") || strings.Count(res.stderr, "\n") != 1 {
 		t.Errorf("%+v", res)
@@ -84,9 +84,9 @@ func TestDeadlineExceededIsAFailureWithTheTimeout(t *testing.T) {
 // the line never holds the key that was sent.
 func TestRefusedLooksTheSame(t *testing.T) {
 	n := newNetworkRig(t)
-	n.env[client.EnvKey] = "mgt_wrongwrongwr_" + strings.Repeat("W", 44)
+	n.env[client.EnvKey] = "cor_wrongwrongwr_" + strings.Repeat("W", 44)
 	res := n.run("tenant", "list")
-	expect(t, res, 3, "", "magnetar: tenant list: the key is missing, unknown, expired or revoked (request id req-000001)\n")
+	expect(t, res, 3, "", "coria: tenant list: the key is missing, unknown, expired or revoked (request id req-000001)\n")
 	if strings.Contains(res.stderr, "WWWW") {
 		t.Errorf("the line shows the key: %q", res.stderr)
 	}
@@ -109,7 +109,7 @@ func TestNoFlagCanCarryASecret(t *testing.T) {
 			name := strings.ToLower(f.Name)
 			carries := slices.Contains(forbidden, name) || strings.Contains(name, "password") || strings.Contains(name, "secret") || strings.Contains(name, "token")
 			if carries {
-				t.Errorf("%s --%s: a flag named for a secret", strings.TrimPrefix(c.CommandPath(), "magnetar "), f.Name)
+				t.Errorf("%s --%s: a flag named for a secret", strings.TrimPrefix(c.CommandPath(), "coria "), f.Name)
 			}
 		}
 		c.LocalFlags().VisitAll(visit)
@@ -123,7 +123,7 @@ func TestNoFlagCanCarryASecret(t *testing.T) {
 
 // TestKeyAndAddressAreNotFlags guards the other side of the same rule from the
 // command line: the flags a person might try for a secret are unknown flags
-// (exit 2), the key is read only from MAGNETAR_KEY or --key-file, and the
+// (exit 2), the key is read only from CORIA_KEY or --key-file, and the
 // address only from --db-env or --db-file.
 func TestKeyAndAddressAreNotFlags(t *testing.T) {
 	n := newNetworkRig(t)
@@ -138,7 +138,7 @@ func TestKeyAndAddressAreNotFlags(t *testing.T) {
 	} {
 		res := n.run(args...)
 		if res.code != 2 || res.stdout != "" || !strings.Contains(res.stderr, "unknown flag") || strings.Contains(res.stderr, testKey) {
-			t.Errorf("magnetar %s: %+v", strings.Join(args[:2], " "), res)
+			t.Errorf("coria %s: %+v", strings.Join(args[:2], " "), res)
 		}
 	}
 	if n.fake.Requests() != 0 {
@@ -202,7 +202,7 @@ func TestServerAddressRules(t *testing.T) {
 	env := map[string]string{client.EnvKey: testKey}
 	res := runWith(env, "--server", "http://example.com", "tenant", "list")
 	expect(t, res, 2, "",
-		"magnetar: tenant list: the server address http://example.com is refused: http is allowed only for a loopback host (localhost, 127.0.0.1, ::1); use https://\n")
+		"coria: tenant list: the server address http://example.com is refused: http is allowed only for a loopback host (localhost, 127.0.0.1, ::1); use https://\n")
 
 	// The certificate is the test's own, and the command is given no CA file,
 	// so it is judged by the system's authorities, which do not know it.
@@ -234,10 +234,10 @@ func TestChoosingTheServer(t *testing.T) {
 	// The flag beats a server in the environment that could not be reached.
 	res := runWith(map[string]string{client.EnvServer: "https://127.0.0.1:1", client.EnvKey: testKey}, "--data-dir", dir, "whoami")
 	if res.code != 0 {
-		t.Errorf("--data-dir did not beat MAGNETAR_SERVER: %+v", res)
+		t.Errorf("--data-dir did not beat CORIA_SERVER: %+v", res)
 	}
 	res = runWith(r.env, "--data-dir", dir, "--server", "https://example.org", "whoami")
-	expect(t, res, 2, "", "magnetar: whoami: give --server or --data-dir, not both\n")
+	expect(t, res, 2, "", "coria: whoami: give --server or --data-dir, not both\n")
 	res = runWith(nil, "whoami")
 	if res.code != 2 || !strings.Contains(res.stderr, "do not know where the server is: give --data-dir") {
 		t.Errorf("nothing given: %+v", res)
@@ -261,7 +261,7 @@ func TestPaging(t *testing.T) {
 	if got := r.fake.Requests() - before; got != 1 {
 		t.Errorf("--limit 100 made %d calls, want 1 page", got)
 	}
-	if res.stderr != "magnetar: more exist; showing the first 100; use --limit N or --all to see more\n" {
+	if res.stderr != "coria: more exist; showing the first 100; use --limit N or --all to see more\n" {
 		t.Errorf("the note about more: %q", res.stderr)
 	}
 	// The default limit is 100 too.
@@ -312,15 +312,15 @@ func TestUsageErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		"no command":     {nil, "magnetar: no command (usage: magnetar <noun> <verb> [flags], for example magnetar tenant list); try \"magnetar --help\"\n"},
-		"unknown":        {[]string{"nope"}, "magnetar: unknown command \"nope\" for \"magnetar\"; try \"magnetar --help\"\n"},
-		"terminal codes": {[]string{"\x1b[2J"}, "magnetar: unknown command \"\\x1b[2J\" for \"magnetar\"; try \"magnetar --help\"\n"},
-		"no verb":        {[]string{"tenant"}, "magnetar: tenant needs a verb: create, list, remove, show; try \"magnetar tenant --help\"\n"},
-		"wrong verb":     {[]string{"tenant", "nope"}, "magnetar: unknown command \"nope\" for \"magnetar tenant\"; try \"magnetar tenant --help\"\n"},
-		"extra words":    {[]string{"version", "now"}, "magnetar: unknown command \"now\" for \"magnetar version\"; try \"magnetar version --help\"\n"},
-		"missing name":   {[]string{"tenant", "show"}, "magnetar: wrong number of arguments (want 1, got 0); usage: magnetar tenant show <name> [flags]; try \"magnetar tenant show --help\"\n"},
-		"unknown flag":   {[]string{"whoami", "--nope"}, "magnetar: unknown flag: --nope; try \"magnetar whoami --help\"\n"},
-		"bad timeout":    {[]string{"--timeout", "soon", "whoami"}, "magnetar: invalid argument \"soon\" for \"--timeout\" flag: time: invalid duration \"soon\"; try \"magnetar whoami --help\"\n"},
+		"no command":     {nil, "coria: no command (usage: coria <noun> <verb> [flags], for example coria tenant list); try \"coria --help\"\n"},
+		"unknown":        {[]string{"nope"}, "coria: unknown command \"nope\" for \"coria\"; try \"coria --help\"\n"},
+		"terminal codes": {[]string{"\x1b[2J"}, "coria: unknown command \"\\x1b[2J\" for \"coria\"; try \"coria --help\"\n"},
+		"no verb":        {[]string{"tenant"}, "coria: tenant needs a verb: create, list, remove, show; try \"coria tenant --help\"\n"},
+		"wrong verb":     {[]string{"tenant", "nope"}, "coria: unknown command \"nope\" for \"coria tenant\"; try \"coria tenant --help\"\n"},
+		"extra words":    {[]string{"version", "now"}, "coria: unknown command \"now\" for \"coria version\"; try \"coria version --help\"\n"},
+		"missing name":   {[]string{"tenant", "show"}, "coria: wrong number of arguments (want 1, got 0); usage: coria tenant show <name> [flags]; try \"coria tenant show --help\"\n"},
+		"unknown flag":   {[]string{"whoami", "--nope"}, "coria: unknown flag: --nope; try \"coria whoami --help\"\n"},
+		"bad timeout":    {[]string{"--timeout", "soon", "whoami"}, "coria: invalid argument \"soon\" for \"--timeout\" flag: time: invalid duration \"soon\"; try \"coria whoami --help\"\n"},
 	}
 	for name, c := range cases {
 		res := runWith(nil, c.args...)
@@ -433,7 +433,7 @@ func TestBashCompletionParses(t *testing.T) {
 		t.Skipf("bash is not installed, so the completion script cannot be parsed here: %v", err)
 	}
 	res := runWith(nil, "completion", "bash")
-	if res.code != 0 || res.stderr != "" || !strings.Contains(res.stdout, "_magnetar") {
+	if res.code != 0 || res.stderr != "" || !strings.Contains(res.stdout, "_coria") {
 		t.Fatalf("completion bash: exit %d, stderr %q", res.code, res.stderr)
 	}
 	cmd := exec.Command(bash, "-n")

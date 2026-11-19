@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // SocketName is the local socket's file name inside <data-dir>/run.
-const SocketName = "magnetar.sock"
+const SocketName = "coria.sock"
 
 // RunDir returns the directory of the local socket and the lock:
 // <data-dir>/run, private to the user that runs the server.

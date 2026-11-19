@@ -5,12 +5,12 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/place"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/place"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // messageNoReceiver answers a receiver name the tenant does not have.
@@ -23,7 +23,7 @@ const messageNoReceiver = "the tenant has no receiver with this name"
 // (Receivers).
 type receiverService struct{ c *core }
 
-var _ magnetarv1connect.ReceiverServiceHandler = receiverService{}
+var _ coriav1connect.ReceiverServiceHandler = receiverService{}
 
 // lookupReceiver reads a receiver, answering one the tenant does not have as
 // NotFound with the contract's message.
@@ -45,7 +45,7 @@ func (s receiverService) message(tenantName string, r tenant.Receiver) *v1.Recei
 // and an address it lists.
 func (s receiverService) AddReceiver(ctx context.Context, req *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.ReceiverServiceAddReceiverProcedure)
+	d, err := c.changing(ctx, coriav1connect.ReceiverServiceAddReceiverProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (s receiverService) AddReceiver(ctx context.Context, req *v1.AddReceiverReq
 // GetReceiver answers one receiver of a tenant, with its health now.
 func (s receiverService) GetReceiver(ctx context.Context, req *v1.GetReceiverRequest) (*v1.GetReceiverResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.ReceiverServiceGetReceiverProcedure)
+	d, err := c.decision(ctx, coriav1connect.ReceiverServiceGetReceiverProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (s receiverService) GetReceiver(ctx context.Context, req *v1.GetReceiverReq
 // each with its health now.
 func (s receiverService) ListReceivers(ctx context.Context, req *v1.ListReceiversRequest) (*v1.ListReceiversResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.ReceiverServiceListReceiversProcedure)
+	d, err := c.decision(ctx, coriav1connect.ReceiverServiceListReceiversProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (s receiverService) ListReceivers(ctx context.Context, req *v1.ListReceiver
 // every rule AddReceiver applies.
 func (s receiverService) SetReceiver(ctx context.Context, req *v1.SetReceiverRequest) (*v1.SetReceiverResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.ReceiverServiceSetReceiverProcedure)
+	d, err := c.changing(ctx, coriav1connect.ReceiverServiceSetReceiverProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +196,7 @@ func (s receiverService) SetReceiver(ctx context.Context, req *v1.SetReceiverReq
 // quarantined files stay, naming it.
 func (s receiverService) RemoveReceiver(ctx context.Context, req *v1.RemoveReceiverRequest) (*v1.RemoveReceiverResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.ReceiverServiceRemoveReceiverProcedure)
+	d, err := c.changing(ctx, coriav1connect.ReceiverServiceRemoveReceiverProcedure)
 	if err != nil {
 		return nil, err
 	}

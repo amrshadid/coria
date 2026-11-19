@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // realTemp returns a temporary directory with its own links resolved, so a

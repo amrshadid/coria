@@ -5,7 +5,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/coria/internal/access"
 )
 
 // The procedures of the standard gRPC health service
@@ -28,7 +28,7 @@ const (
 // checks").
 type Methods interface {
 	// RequestFor reports whether procedure, a full procedure name such as
-	// "/magnetar.v1.TenantService/GetTenant", is a method of the table, and
+	// "/coria.v1.TenantService/GetTenant", is a method of the table, and
 	// returns a new empty request message of it when its requirement
 	// depends on the request, or nil when it does not. The server reads the
 	// request's first message into that message before the check.

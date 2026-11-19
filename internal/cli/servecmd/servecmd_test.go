@@ -22,21 +22,21 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/amrshadid/magnetar/internal/cli/servecmd"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/server"
-	"github.com/amrshadid/magnetar/internal/server/servertest"
+	"github.com/amrshadid/coria/internal/cli/servecmd"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/server"
+	"github.com/amrshadid/coria/internal/server/servertest"
 )
 
 // childArgsEnv, when set, makes this test binary run the commands with the
 // JSON list of arguments it holds, as a separate process, so a test can
 // signal and kill a real server.
-const childArgsEnv = "MAGNETAR_SERVECMD_CHILD_ARGS"
+const childArgsEnv = "CORIA_SERVECMD_CHILD_ARGS"
 
 // childRealEnv, when set, makes the child serve the real handlers and tenant
 // registry instead of the stand-ins.
-const childRealEnv = "MAGNETAR_SERVECMD_CHILD_REAL"
+const childRealEnv = "CORIA_SERVECMD_CHILD_REAL"
 
 // TestMain runs the tests, or the commands as a child process.
 func TestMain(m *testing.M) {
@@ -68,7 +68,7 @@ func runChild(args []string) int {
 	root := newRoot(opts)
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "magnetar:", err)
+		fmt.Fprintln(os.Stderr, "coria:", err)
 		return 1
 	}
 	return 0
@@ -77,7 +77,7 @@ func runChild(args []string) int {
 // newRoot is a minimal command tree with the two commands attached by the
 // one line the real tree will use.
 func newRoot(opts servecmd.Options) *cobra.Command {
-	root := &cobra.Command{Use: "magnetar", SilenceUsage: true, SilenceErrors: true}
+	root := &cobra.Command{Use: "coria", SilenceUsage: true, SilenceErrors: true}
 	// As internal/cli does: --data-dir belongs to the root, for every command.
 	root.PersistentFlags().String(servecmd.DataDirFlag, "", "the data directory")
 	root.AddCommand(servecmd.Init(opts), servecmd.Serve(opts))
@@ -108,7 +108,7 @@ func shortDir(t *testing.T) string {
 	return filepath.Join(parent, "d")
 }
 
-// TestInit guards "magnetar init": it makes the directory private with the
+// TestInit guards "coria init": it makes the directory private with the
 // key file, the migrated master database, tenants/ and run/; it says where
 // the key file is and that losing it loses every secret; it prints nothing
 // of the key; and a second init on the same directory is refused.
@@ -119,7 +119,7 @@ func TestInit(t *testing.T) {
 		t.Fatal(err)
 	}
 	keyPath := filepath.Join(dir, servecmd.KeyFileName)
-	for _, want := range []string{keyPath, "Losing it loses every secret", "magnet", filepath.Join(dir, servecmd.MasterFileName)} {
+	for _, want := range []string{keyPath, "Losing it loses every secret", "coria serve", filepath.Join(dir, servecmd.MasterFileName)} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the output lacks %q:\n%s", want, out)
 		}
@@ -195,7 +195,7 @@ func TestServeNeedsInit(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := run(t, nil, "serve", "--data-dir", dir); err == nil || !strings.Contains(err.Error(), "magnetar init") {
+	if _, err := run(t, nil, "serve", "--data-dir", dir); err == nil || !strings.Contains(err.Error(), "coria init") {
 		t.Fatalf("serve on an empty directory: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, servecmd.KeyFileName)); !errors.Is(err, os.ErrNotExist) {
@@ -210,7 +210,7 @@ type child struct {
 	done   chan error
 }
 
-// startChild starts this binary as "magnetar <args>".
+// startChild starts this binary as "coria <args>".
 func startChild(t *testing.T, args ...string) *child {
 	t.Helper()
 	return startChildEnv(t, nil, args...)
@@ -287,7 +287,7 @@ func waitServing(t *testing.T, dir string, c *child) {
 	defer hc.CloseIdleConnections()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if status, err := call(hc, "/magnetar.v1.AccessService/WhoAmI", "{}", ""); err == nil && status == http.StatusOK {
+		if status, err := call(hc, "/coria.v1.AccessService/WhoAmI", "{}", ""); err == nil && status == http.StatusOK {
 			return
 		}
 		select {
@@ -318,7 +318,7 @@ func TestOneServerPerDirectory(t *testing.T) {
 		if !errors.As(err, &ee) || ee.ExitCode() != 1 {
 			t.Fatalf("the second serve: %v", err)
 		}
-		want := fmt.Sprintf("another magnetar serve is running on the data directory %s (process %d)", dir, first.cmd.Process.Pid)
+		want := fmt.Sprintf("another coria serve is running on the data directory %s (process %d)", dir, first.cmd.Process.Pid)
 		if !strings.Contains(second.stderr.String(), want) {
 			t.Fatalf("the second serve's refusal does not say %q:\n%s", want, second.stderr.String())
 		}
@@ -362,7 +362,7 @@ func TestStopUnderLoad(t *testing.T) {
 
 	// Refusals first, each queuing one audit entry.
 	for range refusals {
-		if status, err := call(hc, "/magnetar.v1.AccessService/WhoAmI", "{}", "Bearer mgt_111111111111_1111111111111111111111111111111111111111111"); err != nil || status != http.StatusUnauthorized {
+		if status, err := call(hc, "/coria.v1.AccessService/WhoAmI", "{}", "Bearer cor_111111111111_1111111111111111111111111111111111111111111"); err != nil || status != http.StatusUnauthorized {
 			t.Fatalf("a refusal: %d %v", status, err)
 		}
 	}
@@ -370,7 +370,7 @@ func TestStopUnderLoad(t *testing.T) {
 	statuses := make(chan int, inFlight)
 	for range inFlight {
 		wg.Go(func() {
-			status, err := call(hc, "/magnetar.v1.TenantService/ListTenants", `{"pageToken":"wait"}`, "")
+			status, err := call(hc, "/coria.v1.TenantService/ListTenants", `{"pageToken":"wait"}`, "")
 			if err != nil {
 				status = -1
 			}
@@ -423,7 +423,7 @@ func waitInFlight(t *testing.T, dir string, n int) {
 	t.Helper()
 	hc := socketClient(dir)
 	defer hc.CloseIdleConnections()
-	want := fmt.Sprintf("magnetar_requests_in_flight %d\n", n+1)
+	want := fmt.Sprintf("coria_requests_in_flight %d\n", n+1)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		resp, err := hc.Get("http://local/metrics")

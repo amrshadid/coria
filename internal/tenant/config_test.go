@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestDirectoryPathWindowsForms guards the segments of a directory

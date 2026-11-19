@@ -17,10 +17,10 @@ import (
 	"connectrpc.com/connect/v2/connecthttp"
 	"connectrpc.com/grpchealth/v2"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/obs"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/obs"
 )
 
 // The limits of the server (access.proto, "Limits"). Each is a number the RPC
@@ -117,7 +117,7 @@ type Registry interface {
 // unless the server is started with no local socket (tests only).
 type Config struct {
 	// DataDir is the installation's data directory; the local socket is
-	// <DataDir>/run/magnetar.sock.
+	// <DataDir>/run/coria.sock.
 	DataDir string
 	// Lock is the hold on DataDir taken by TakeLock. The server releases it
 	// last, after everything else is closed.
@@ -146,7 +146,7 @@ type Config struct {
 
 	// Register registers the API's services on the server's
 	// connect.Server, such as
-	// magnetarv1connect.RegisterTenantServiceHandler(s, h). That
+	// coriav1connect.RegisterTenantServiceHandler(s, h). That
 	// connect.Server is built with the request path's interceptor, so every
 	// method registered on it is checked; it is the only connect.Server the
 	// server mounts. Every method registered must be known to Methods.
@@ -280,7 +280,7 @@ func New(cfg Config) (*Server, error) {
 func (s *Server) counters() []obs.Counter {
 	a, m := s.access.AuditStats(), s.access.MarkStats()
 	c := func(name, help string, v uint64) obs.Counter {
-		return obs.Counter{Name: "magnetar_" + name + "_total", Help: help, Value: v}
+		return obs.Counter{Name: "coria_" + name + "_total", Help: help, Value: v}
 	}
 	return []obs.Counter{
 		c("audit_entries_written", "Audit entries of refusals and reads that a log took.", a.Written),

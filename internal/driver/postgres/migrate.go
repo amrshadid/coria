@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // lockName is the name the migration advisory lock is made from: the
@@ -17,7 +17,7 @@ import (
 // advisory lock belongs to the whole database, and two installations in two
 // schemas of one database must not wait for each other. hashtextextended
 // turns the text into the bigint the lock functions take.
-const lockName = `hashtextextended('magnetar/master-migration/' || current_schema(), 0)`
+const lockName = `hashtextextended('coria/master-migration/' || current_schema(), 0)`
 
 // unlockTimeout bounds how long the release of the migration lock waits.
 const unlockTimeout = 10 * time.Second

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestCreateThenLoad guards the whole life of a new key file: it is one line
@@ -18,7 +18,7 @@ import (
 // left beside it.
 func TestCreateThenLoad(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "magnetar.key")
+	path := filepath.Join(dir, "coria.key")
 	if err := CreateKeyFile(path); err != nil {
 		t.Fatalf("CreateKeyFile: %v", err)
 	}
@@ -26,7 +26,7 @@ func TestCreateThenLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`^magnetar-key-v1 1 [A-Za-z0-9+/]{43}=\n$`).Match(data) {
+	if !regexp.MustCompile(`^coria-key-v1 1 [A-Za-z0-9+/]{43}=\n$`).Match(data) {
 		t.Errorf("the key file is not one line of the documented format (%d bytes)", len(data))
 	}
 	keys, err := LoadKeyFile(path)
@@ -71,7 +71,7 @@ func TestCreateMakesDifferentKeys(t *testing.T) {
 // replaced: losing the key that sealed the secrets loses the secrets.
 func TestCreateRefusesExisting(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "magnetar.key")
+	path := filepath.Join(dir, "coria.key")
 	const before = "not to be replaced\n"
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
 		t.Fatal(err)
@@ -111,7 +111,7 @@ func TestCreatePrivateRefusesExisting(t *testing.T) {
 // TestCreateInMissingDirectory guards that a key file in a directory that
 // does not exist fails with an error rather than being written elsewhere.
 func TestCreateInMissingDirectory(t *testing.T) {
-	path := filepath.Join(privateDir(t), "no-such-dir", "magnetar.key")
+	path := filepath.Join(privateDir(t), "no-such-dir", "coria.key")
 	if err := CreateKeyFile(path); err == nil {
 		t.Fatal("CreateKeyFile succeeded in a directory that does not exist")
 	}
@@ -184,26 +184,26 @@ func malformedKeyFiles() map[string]string {
 		"empty":               "",
 		"blank line":          keyLine(1, 1) + "\n" + keyLine(2, 2),
 		"only a line feed":    "\n",
-		"wrong prefix":        "magnetar-key-v2 1 " + b64 + "\n",
-		"two spaces":          "magnetar-key-v1  1 " + b64 + "\n",
-		"tab":                 "magnetar-key-v1\t1 " + b64 + "\n",
-		"trailing space":      "magnetar-key-v1 1 " + b64 + " \n",
-		"extra field":         "magnetar-key-v1 1 " + b64 + " extra\n",
-		"missing key":         "magnetar-key-v1 1\n",
-		"version zero":        "magnetar-key-v1 0 " + b64 + "\n",
-		"leading zero":        "magnetar-key-v1 01 " + b64 + "\n",
-		"plus sign":           "magnetar-key-v1 +1 " + b64 + "\n",
-		"negative version":    "magnetar-key-v1 -1 " + b64 + "\n",
-		"version too large":   "magnetar-key-v1 4294967296 " + b64 + "\n",
-		"version not number":  "magnetar-key-v1 one " + b64 + "\n",
-		"key 31 bytes":        "magnetar-key-v1 1 " + b64Short + "\n",
-		"key 33 bytes":        "magnetar-key-v1 1 " + b64Long + "\n",
-		"key without padding": "magnetar-key-v1 1 " + b64Unpadded + "\n",
-		"key in url base64":   "magnetar-key-v1 1 " + b64URL + "\n",
-		"key with cr inside":  "magnetar-key-v1 1 " + b64[:20] + "\r" + b64[20:] + "\n",
-		"key not base64":      "magnetar-key-v1 1 " + strings.Repeat("!", 44) + "\n",
+		"wrong prefix":        "coria-key-v2 1 " + b64 + "\n",
+		"two spaces":          "coria-key-v1  1 " + b64 + "\n",
+		"tab":                 "coria-key-v1\t1 " + b64 + "\n",
+		"trailing space":      "coria-key-v1 1 " + b64 + " \n",
+		"extra field":         "coria-key-v1 1 " + b64 + " extra\n",
+		"missing key":         "coria-key-v1 1\n",
+		"version zero":        "coria-key-v1 0 " + b64 + "\n",
+		"leading zero":        "coria-key-v1 01 " + b64 + "\n",
+		"plus sign":           "coria-key-v1 +1 " + b64 + "\n",
+		"negative version":    "coria-key-v1 -1 " + b64 + "\n",
+		"version too large":   "coria-key-v1 4294967296 " + b64 + "\n",
+		"version not number":  "coria-key-v1 one " + b64 + "\n",
+		"key 31 bytes":        "coria-key-v1 1 " + b64Short + "\n",
+		"key 33 bytes":        "coria-key-v1 1 " + b64Long + "\n",
+		"key without padding": "coria-key-v1 1 " + b64Unpadded + "\n",
+		"key in url base64":   "coria-key-v1 1 " + b64URL + "\n",
+		"key with cr inside":  "coria-key-v1 1 " + b64[:20] + "\r" + b64[20:] + "\n",
+		"key not base64":      "coria-key-v1 1 " + strings.Repeat("!", 44) + "\n",
 		"repeated version":    keyLine(1, 1) + keyLine(1, 2),
-		"good then bad":       keyLine(1, 1) + "magnetar-key-v1 2 " + b64Short + "\n",
+		"good then bad":       keyLine(1, 1) + "coria-key-v1 2 " + b64Short + "\n",
 	}
 }
 
@@ -226,7 +226,7 @@ func TestParseKeyFileRefuses(t *testing.T) {
 // TestParseKeyFileNamesLine guards that a refusal says which line is wrong,
 // so an operator with several versions can find it.
 func TestParseKeyFileNamesLine(t *testing.T) {
-	_, err := parseKeyFile([]byte(keyLine(1, 1) + keyLine(2, 2) + "magnetar-key-v1 3 short\n"))
+	_, err := parseKeyFile([]byte(keyLine(1, 1) + keyLine(2, 2) + "coria-key-v1 3 short\n"))
 	if err == nil || !strings.Contains(fault.Message(err), "line 3:") {
 		t.Fatalf("error %v does not name line 3", err)
 	}
@@ -279,7 +279,7 @@ func FuzzParseKeyFile(f *testing.F) {
 // os.Rename, which replaces an existing file, fails this test.
 func TestCreateRefusesFileMadeBeforeLink(t *testing.T) {
 	dir := privateDir(t)
-	path := filepath.Join(dir, "magnetar.key")
+	path := filepath.Join(dir, "coria.key")
 	const other = "a key file someone else made at the same moment\n"
 	beforeLink = func() {
 		if err := os.WriteFile(path, []byte(other), 0o600); err != nil {
@@ -307,7 +307,7 @@ func TestCreateRefusesFileMadeBeforeLink(t *testing.T) {
 // loadable, so the error must say it was created and may not survive a
 // crash, never that nothing was created.
 func TestCreateSyncFailureSaysCreated(t *testing.T) {
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	syncDirFunc = func(string) error { return errors.New("synthetic sync failure") }
 	t.Cleanup(func() { syncDirFunc = syncDir })
 

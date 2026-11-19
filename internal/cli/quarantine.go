@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 	"maps"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // Every name of a quarantine reason and of a quarantine state starts with one
@@ -110,8 +110,8 @@ is inclusive and --until is exclusive.
 --study-uid and --sop-uid look a file up by an identifier already in hand, which
 is a search for a person's data: they need the operator role and are recorded in
 the audit log as present, not as their value.`,
-		Example: `  magnetar quarantine list lab1 --state held
-  magnetar quarantine list lab1 --reason bad-label --since 7d --json`,
+		Example: `  coria quarantine list lab1 --state held
+  coria quarantine list lab1 --reason bad-label --since 7d --json`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := l.check(); err != nil {
@@ -198,8 +198,8 @@ without pixel data or any value longer than 1 KiB. It holds what the sender sent
 identifying data included, so it needs the operator role and is shown only when
 asked for. It is left out when the file's bytes are gone, its data set cannot be
 read, or it is longer than 1 MiB; the output says which.`,
-		Example: `  magnetar quarantine show lab1 q_41Ab
-  magnetar quarantine show lab1 q_41Ab --header --json`,
+		Example: `  coria quarantine show lab1 q_41Ab
+  coria quarantine show lab1 q_41Ab --header --json`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -260,8 +260,8 @@ keeps the reason of its first release.
 --reason says why the file is released, in words for whoever reads the record
 later, as a rejection's reason does. It is optional, and when given it is 1 to
 1024 bytes, not only spaces. "quarantine show" prints it.`,
-		Example: `  magnetar quarantine release lab1 q_41Ab
-  magnetar quarantine release lab1 q_41Ab --receiver scanner2 --reason "naming rule fixed"`,
+		Example: `  coria quarantine release lab1 q_41Ab
+  coria quarantine release lab1 q_41Ab --receiver scanner2 --reason "naming rule fixed"`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("reason") {
@@ -311,8 +311,8 @@ file that was released cannot be rejected (exit 5).
 This cannot be undone. Without --yes the command asks for the id to be typed
 again on a terminal; with no terminal it sends nothing, says what it would do
 and exits 2.`,
-		Example: `  magnetar quarantine reject lab1 q_41Ab --reason "not a study of this project"
-  magnetar quarantine reject lab1 q_41Ab --reason "duplicate upload" --yes`,
+		Example: `  coria quarantine reject lab1 q_41Ab --reason "not a study of this project"
+  coria quarantine reject lab1 q_41Ab --reason "duplicate upload" --yes`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := checkReason(reason); err != nil {

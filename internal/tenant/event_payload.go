@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // EventType is the kind of an event, the API contract's EventType in

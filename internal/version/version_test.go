@@ -12,7 +12,7 @@ import (
 func stamped() *debug.BuildInfo {
 	return &debug.BuildInfo{
 		GoVersion: "go1.26.1",
-		Main:      debug.Module{Path: "github.com/amrshadid/magnetar", Version: "v0.0.0-20261117120000-0123456789ab+dirty"},
+		Main:      debug.Module{Path: "github.com/amrshadid/coria", Version: "v0.0.0-20261117120000-0123456789ab+dirty"},
 		Settings: []debug.BuildSetting{
 			{Key: "vcs", Value: "git"},
 			{Key: "vcs.revision", Value: "0123456789abcdef0123456789abcdef01234567"},
@@ -26,7 +26,7 @@ func stamped() *debug.BuildInfo {
 // person can paste it into a report and a script can read it.
 func TestStringHasTheThreeParts(t *testing.T) {
 	got := fromBuildInfo(stamped(), "", "").String()
-	want := "magnetar v0.0.0-20261117120000-0123456789ab+dirty (commit 0123456789ab-dirty, go1.26.1)"
+	want := "coria v0.0.0-20261117120000-0123456789ab+dirty (commit 0123456789ab-dirty, go1.26.1)"
 	if got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
@@ -52,7 +52,7 @@ func TestOverridesWin(t *testing.T) {
 // no overrides: each part must read "unknown", never be empty and never be
 // Go's "(devel)", which a person cannot look up.
 func TestMissingValuesSayUnknown(t *testing.T) {
-	bare := &debug.BuildInfo{Main: debug.Module{Path: "github.com/amrshadid/magnetar", Version: "(devel)"}}
+	bare := &debug.BuildInfo{Main: debug.Module{Path: "github.com/amrshadid/coria", Version: "(devel)"}}
 	for name, bi := range map[string]*debug.BuildInfo{"devel build": bare, "no build information": nil} {
 		info := fromBuildInfo(bi, "", "")
 		if info.Version != unknown || info.Commit != unknown {

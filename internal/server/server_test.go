@@ -20,19 +20,19 @@ import (
 	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/obs"
-	"github.com/amrshadid/magnetar/internal/server"
-	"github.com/amrshadid/magnetar/internal/server/servertest"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/obs"
+	"github.com/amrshadid/coria/internal/server"
+	"github.com/amrshadid/coria/internal/server/servertest"
 )
 
 // unknownKey is a key of the right shape that no installation holds.
-const unknownKey = "mgt_111111111111_1111111111111111111111111111111111111111111"
+const unknownKey = "cor_111111111111_1111111111111111111111111111111111111111111"
 
 // TestRefusalsAreTheSame guards that refusals tell a caller nothing, and the
 // order of checks: no key, a malformed key, an unknown key and a key with no
@@ -41,8 +41,8 @@ const unknownKey = "mgt_111111111111_1111111111111111111111111111111111111111111
 // with the grant succeed. Each refusal carries a request id.
 func TestRefusalsAreTheSame(t *testing.T) {
 	e := newEnv(t, options{})
-	noGrant := e.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
-	admin := e.makeKey(magnetarv1.Role_ROLE_ADMIN, installation())
+	noGrant := e.makeKey(coriav1.Role_ROLE_UNSPECIFIED, nil)
+	admin := e.makeKey(coriav1.Role_ROLE_ADMIN, installation())
 	before := e.standins.Ran.Load()
 
 	cases := []struct {
@@ -60,7 +60,7 @@ func TestRefusalsAreTheSame(t *testing.T) {
 		for _, c := range cases {
 			cl := newClients(e.tlsClient(grpc), e.netURL, grpc, c.auth)
 			ctx, info := withInfo(e.ctx)
-			_, err := cl.access.ListKeys(ctx, &magnetarv1.ListKeysRequest{})
+			_, err := cl.access.ListKeys(ctx, &coriav1.ListKeysRequest{})
 			code, msg := codeOf(err)
 			if code != c.code || msg != c.msg {
 				t.Errorf("grpc=%v %s: got %v %q, want %v %q", grpc, c.name, code, msg, c.code, c.msg)
@@ -74,14 +74,14 @@ func TestRefusalsAreTheSame(t *testing.T) {
 		t.Fatalf("a refused request ran a handler %d times", ran)
 	}
 
-	if _, err := e.local().access.ListKeys(e.ctx, &magnetarv1.ListKeysRequest{}); err != nil {
+	if _, err := e.local().access.ListKeys(e.ctx, &coriav1.ListKeysRequest{}); err != nil {
 		t.Fatalf("the local operator was refused: %v", err)
 	}
-	if _, err := e.network("Bearer "+admin).access.ListKeys(e.ctx, &magnetarv1.ListKeysRequest{}); err != nil {
+	if _, err := e.network("Bearer "+admin).access.ListKeys(e.ctx, &coriav1.ListKeysRequest{}); err != nil {
 		t.Fatalf("an admin key was refused: %v", err)
 	}
 	// WhoAmI needs only a good key, so the key with no grant may call it.
-	if _, err := e.network("Bearer "+noGrant).access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{}); err != nil {
+	if _, err := e.network("Bearer "+noGrant).access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{}); err != nil {
 		t.Fatalf("WhoAmI refused a good key: %v", err)
 	}
 }
@@ -91,11 +91,11 @@ func TestRefusalsAreTheSame(t *testing.T) {
 // caller is the local operator.
 func TestKeyOnTheSocket(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
-	_, err := newClients(e.socketClient(true), "http://local", true, "Bearer "+unknownKey).access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{})
+	_, err := newClients(e.socketClient(true), "http://local", true, "Bearer "+unknownKey).access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{})
 	if code, _ := codeOf(err); code != connect.CodeUnauthenticated {
 		t.Fatalf("an unknown key on the socket: %v", err)
 	}
-	res, err := e.local().access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{})
+	res, err := e.local().access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{})
 	if err != nil || res.GetPrincipal().GetLocalOperator().GetUserId() == "" {
 		t.Fatalf("no local operator: %v %v", res, err)
 	}
@@ -115,21 +115,21 @@ func TestScopeRequirementReadsMessage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	reader := e.makeKey(magnetarv1.Role_ROLE_READER, &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}})
+	reader := e.makeKey(coriav1.Role_ROLE_READER, &coriav1.Scope{Kind: &coriav1.Scope_Tenant{Tenant: "lab"}})
 	cl := e.network("Bearer " + reader)
-	_, err := cl.settings.GetSetting(ctx, &magnetarv1.GetSettingRequest{Name: "x", Scope: &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}}})
+	_, err := cl.settings.GetSetting(ctx, &coriav1.GetSettingRequest{Name: "x", Scope: &coriav1.Scope{Kind: &coriav1.Scope_Tenant{Tenant: "lab"}}})
 	if code, _ := codeOf(err); code != connect.CodeUnimplemented {
 		t.Fatalf("reader on lab asking about lab: %v", err)
 	}
 	for _, other := range []string{"clinic", "nosuch"} {
-		_, err = cl.settings.GetSetting(ctx, &magnetarv1.GetSettingRequest{Name: "x", Scope: &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: other}}})
+		_, err = cl.settings.GetSetting(ctx, &coriav1.GetSettingRequest{Name: "x", Scope: &coriav1.Scope{Kind: &coriav1.Scope_Tenant{Tenant: other}}})
 		if code, msg := codeOf(err); code != connect.CodePermissionDenied || msg != access.MessageDenied {
 			t.Fatalf("reader on lab asking about %s: %v", other, err)
 		}
 	}
 	// A body that is not JSON, without a key: the credential is checked
 	// before the message is found malformed.
-	req, _ := http.NewRequest(http.MethodPost, e.netURL+magnetarv1connect.SettingsServiceGetSettingProcedure, strings.NewReader("{not json"))
+	req, _ := http.NewRequest(http.MethodPost, e.netURL+coriav1connect.SettingsServiceGetSettingProcedure, strings.NewReader("{not json"))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := e.tlsClient(false).Do(req)
 	if err != nil {
@@ -143,7 +143,7 @@ func TestScopeRequirementReadsMessage(t *testing.T) {
 	// The same body with the reader's key: it holds no role on the
 	// installation, the fallback, so it is refused before it is told the
 	// message is malformed.
-	req, _ = http.NewRequest(http.MethodPost, e.netURL+magnetarv1connect.SettingsServiceGetSettingProcedure, strings.NewReader("{not json"))
+	req, _ = http.NewRequest(http.MethodPost, e.netURL+coriav1connect.SettingsServiceGetSettingProcedure, strings.NewReader("{not json"))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+reader)
 	resp, err = e.tlsClient(false).Do(req)
@@ -184,13 +184,13 @@ func TestRequestID(t *testing.T) {
 		seen[id] = true
 		return id
 	}
-	admin := "Bearer " + e.makeKey(magnetarv1.Role_ROLE_ADMIN, installation())
-	do("POST", magnetarv1connect.AccessServiceWhoAmIProcedure, "{}", admin)                         // success
-	do("POST", magnetarv1connect.AccessServiceWhoAmIProcedure, "{}", "")                            // refusal
-	do("POST", magnetarv1connect.TenantServiceListTenantsProcedure, `{"pageToken":"panic"}`, admin) // panic
-	do("POST", magnetarv1connect.TenantServiceListTenantsProcedure, "{", admin)                     // the library's own error
-	do("GET", "/no/such/path", "", "")                                                              // no route
-	do("GET", "/metrics", "", "")                                                                   // plain route, refused
+	admin := "Bearer " + e.makeKey(coriav1.Role_ROLE_ADMIN, installation())
+	do("POST", coriav1connect.AccessServiceWhoAmIProcedure, "{}", admin)                         // success
+	do("POST", coriav1connect.AccessServiceWhoAmIProcedure, "{}", "")                            // refusal
+	do("POST", coriav1connect.TenantServiceListTenantsProcedure, `{"pageToken":"panic"}`, admin) // panic
+	do("POST", coriav1connect.TenantServiceListTenantsProcedure, "{", admin)                     // the library's own error
+	do("GET", "/no/such/path", "", "")                                                           // no route
+	do("GET", "/metrics", "", "")                                                                // plain route, refused
 	if !contains(e.log.String(), "chosen-by-client") {
 		return
 	}
@@ -208,18 +208,18 @@ func TestMessageLimit(t *testing.T) {
 	// length as a varint, for a length near 4 MiB) + len(h).
 	over := strings.Repeat("h", server.MaxMessageBytes+1-5)
 	exact := strings.Repeat("h", server.MaxMessageBytes-5)
-	if n := proto.Size(&magnetarv1.CreateKeyRequest{Holder: over}); n != server.MaxMessageBytes+1 {
+	if n := proto.Size(&coriav1.CreateKeyRequest{Holder: over}); n != server.MaxMessageBytes+1 {
 		t.Fatalf("the over-limit message is %d bytes", n)
 	}
-	_, err := cl.access.CreateKey(e.ctx, &magnetarv1.CreateKeyRequest{Holder: over})
+	_, err := cl.access.CreateKey(e.ctx, &coriav1.CreateKeyRequest{Holder: over})
 	if code, _ := codeOf(err); code != connect.CodeResourceExhausted {
 		t.Fatalf("4 MiB + 1: %v", err)
 	}
-	_, err = cl.access.CreateKey(e.ctx, &magnetarv1.CreateKeyRequest{Holder: exact})
+	_, err = cl.access.CreateKey(e.ctx, &coriav1.CreateKeyRequest{Holder: exact})
 	if code, _ := codeOf(err); code != connect.CodeInvalidArgument {
 		t.Fatalf("exactly 4 MiB: %v", err)
 	}
-	_, err = cl.tenants.ListTenants(e.ctx, &magnetarv1.ListTenantsRequest{PageToken: "huge"})
+	_, err = cl.tenants.ListTenants(e.ctx, &coriav1.ListTenantsRequest{PageToken: "huge"})
 	if code, _ := codeOf(err); code != connect.CodeResourceExhausted {
 		t.Fatalf("an answer over the limit: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestDefaultDeadline(t *testing.T) {
 	// server), so a watchdog fails the test if the server never cuts it.
 	result := make(chan error, 1)
 	go func() {
-		_, err := cl.tenants.ListTenants(e.ctx, &magnetarv1.ListTenantsRequest{PageToken: "block"})
+		_, err := cl.tenants.ListTenants(e.ctx, &coriav1.ListTenantsRequest{PageToken: "block"})
 		result <- err
 	}()
 	var err error
@@ -255,7 +255,7 @@ func TestDefaultDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(e.ctx, 900*time.Millisecond)
 	defer cancel()
 	start = time.Now()
-	_, err = cl.tenants.ListTenants(ctx, &magnetarv1.ListTenantsRequest{PageToken: "block"})
+	_, err = cl.tenants.ListTenants(ctx, &coriav1.ListTenantsRequest{PageToken: "block"})
 	if took := time.Since(start); took < 800*time.Millisecond {
 		t.Fatalf("the client's longer deadline was cut at %v: %v", took, err)
 	}
@@ -268,7 +268,7 @@ func TestPanicRecovered(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	cl := e.local()
 	ctx, info := withInfo(e.ctx)
-	_, err := cl.tenants.ListTenants(ctx, &magnetarv1.ListTenantsRequest{PageToken: "panic"})
+	_, err := cl.tenants.ListTenants(ctx, &coriav1.ListTenantsRequest{PageToken: "panic"})
 	code, msg := codeOf(err)
 	if code != connect.CodeInternal || msg != "internal error" {
 		t.Fatalf("a panic answered %v %q", code, msg)
@@ -281,7 +281,7 @@ func TestPanicRecovered(t *testing.T) {
 	if contains(msg, "on purpose") {
 		t.Fatal("the panic's value reached the caller")
 	}
-	if _, err := cl.access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{}); err != nil {
+	if _, err := cl.access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{}); err != nil {
 		t.Fatalf("the server stopped serving after a panic: %v", err)
 	}
 }
@@ -296,20 +296,20 @@ func TestRedactedLogs(t *testing.T) {
 	for _, format := range []obs.Format{obs.JSON, obs.Text} {
 		t.Run(string(format), func(t *testing.T) {
 			e := newEnv(t, options{format: format, level: -4})
-			admin := e.makeKey(magnetarv1.Role_ROLE_ADMIN, installation())
+			admin := e.makeKey(coriav1.Role_ROLE_ADMIN, installation())
 			cl := e.network("Bearer " + admin)
-			if _, err := cl.tenants.CreateTenant(e.ctx, &magnetarv1.CreateTenantRequest{
-				Name: "lab", DatabaseType: magnetarv1.DatabaseType_DATABASE_TYPE_POSTGRES, DatabaseAddress: address,
+			if _, err := cl.tenants.CreateTenant(e.ctx, &coriav1.CreateTenantRequest{
+				Name: "lab", DatabaseType: coriav1.DatabaseType_DATABASE_TYPE_POSTGRES, DatabaseAddress: address,
 			}); err != nil {
 				t.Fatal(err)
 			}
-			res, err := cl.access.CreateKey(e.ctx, &magnetarv1.CreateKeyRequest{Holder: "robot"})
+			res, err := cl.access.CreateKey(e.ctx, &coriav1.CreateKeyRequest{Holder: "robot"})
 			if err != nil {
 				t.Fatal(err)
 			}
 			logText := e.log.String()
-			_, adminSecret, _ := strings.Cut(strings.TrimPrefix(admin, "mgt_"), "_")
-			_, newSecret, _ := strings.Cut(strings.TrimPrefix(res.GetSecret(), "mgt_"), "_")
+			_, adminSecret, _ := strings.Cut(strings.TrimPrefix(admin, "cor_"), "_")
+			_, newSecret, _ := strings.Cut(strings.TrimPrefix(res.GetSecret(), "cor_"), "_")
 			for name, s := range map[string]string{"address": address, "password": "Pa55-in-the-log", "new key": res.GetSecret(),
 				"new secret": newSecret, "admin key": admin, "admin secret": adminSecret} {
 				if contains(logText, s) {
@@ -343,18 +343,18 @@ func TestMetrics(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, string(b)
 	}
-	if _, err := e.local().access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{}); err != nil {
+	if _, err := e.local().access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{}); err != nil {
 		t.Fatal(err)
 	}
 	status, text := get(e.socketClient(false), "http://local", "")
 	if status != http.StatusOK {
 		t.Fatalf("local: %d %s", status, text)
 	}
-	for _, want := range []string{"magnetar_requests_total", "magnetar_request_duration_seconds_bucket", "magnetar_audit_entries_written_total",
-		"magnetar_audit_entries_failed_total", "magnetar_audit_entries_dropped_refusals_total", "magnetar_audit_entries_dropped_records_total",
-		"magnetar_audit_entries_dropped_writes_total", "magnetar_audit_entries_rerouted_total", "magnetar_audit_entries_notices_total",
-		"magnetar_key_last_use_marks_written_total", "magnetar_key_last_use_marks_dropped_total", "magnetar_key_last_use_marks_failed_total",
-		"magnetar_requests_in_flight 1"} {
+	for _, want := range []string{"coria_requests_total", "coria_request_duration_seconds_bucket", "coria_audit_entries_written_total",
+		"coria_audit_entries_failed_total", "coria_audit_entries_dropped_refusals_total", "coria_audit_entries_dropped_records_total",
+		"coria_audit_entries_dropped_writes_total", "coria_audit_entries_rerouted_total", "coria_audit_entries_notices_total",
+		"coria_key_last_use_marks_written_total", "coria_key_last_use_marks_dropped_total", "coria_key_last_use_marks_failed_total",
+		"coria_requests_in_flight 1"} {
 		if !contains(text, want) {
 			t.Errorf("the metrics lack %q", want)
 		}
@@ -362,11 +362,11 @@ func TestMetrics(t *testing.T) {
 	if status, _ := get(e.tlsClient(false), e.netURL, ""); status != http.StatusUnauthorized {
 		t.Fatalf("network without a key: %d", status)
 	}
-	noGrant := e.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
+	noGrant := e.makeKey(coriav1.Role_ROLE_UNSPECIFIED, nil)
 	if status, _ := get(e.tlsClient(false), e.netURL, "Bearer "+noGrant); status != http.StatusForbidden {
 		t.Fatalf("network with a key without a grant: %d", status)
 	}
-	reader := e.makeKey(magnetarv1.Role_ROLE_READER, installation())
+	reader := e.makeKey(coriav1.Role_ROLE_READER, installation())
 	if status, _ := get(e.tlsClient(false), e.netURL, "Bearer "+reader); status != http.StatusOK {
 		t.Fatalf("network with a reader key: %d", status)
 	}
@@ -394,7 +394,7 @@ func TestHealth(t *testing.T) {
 	defer cancel()
 	cl := newClients(e.tlsClient(true), e.netURL, true, "")
 	start := time.Now()
-	stream, err := cl.raw.CallServerStream(ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: server.HealthWatchProcedure}, &magnetarv1.WhoAmIRequest{})
+	stream, err := cl.raw.CallServerStream(ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: server.HealthWatchProcedure}, &coriav1.WhoAmIRequest{})
 	if err == nil {
 		defer func() { _ = stream.Close() }()
 		var first healthStatus
@@ -407,13 +407,13 @@ func TestHealth(t *testing.T) {
 
 // healthStatus reads a HealthCheckResponse without its generated type: an
 // empty message accepts any bytes, which is all the Watch test needs.
-type healthStatus = magnetarv1.WhoAmIResponse
+type healthStatus = coriav1.WhoAmIResponse
 
 // TestStreamingRequiresKey guards the interceptor's streaming path for a
 // method that needs a key: a server-streaming method registered on the
 // server's connect.Server is refused without a key and served with one.
 func TestStreamingRequiresKey(t *testing.T) {
-	const proc = "/magnetar.test.Stream/Count"
+	const proc = "/coria.test.Stream/Count"
 	methods := servertest.Contract()
 	methods[proc] = servertest.Entry{Fixed: access.Authenticated()}
 	ran, withDecisionSeen := 0, false
@@ -423,12 +423,12 @@ func TestStreamingRequiresKey(t *testing.T) {
 			Handler: func(ctx context.Context, _ connect.Spec, st connect.ServerStream) error {
 				ran++
 				_, withDecisionSeen = decisionFrom(ctx)
-				var in magnetarv1.WhoAmIRequest
+				var in coriav1.WhoAmIRequest
 				if err := st.Receive(&in); err != nil {
 					return err
 				}
 				for range 3 {
-					if err := st.Send(&magnetarv1.WhoAmIResponse{}); err != nil {
+					if err := st.Send(&coriav1.WhoAmIResponse{}); err != nil {
 						return err
 					}
 				}
@@ -438,14 +438,14 @@ func TestStreamingRequiresKey(t *testing.T) {
 	}})
 	count := func(auth string) (int, error) {
 		cl := newClients(e.tlsClient(true), e.netURL, true, auth)
-		st, err := cl.raw.CallServerStream(e.ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: proc}, &magnetarv1.WhoAmIRequest{})
+		st, err := cl.raw.CallServerStream(e.ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: proc}, &coriav1.WhoAmIRequest{})
 		if err != nil {
 			return 0, err
 		}
 		defer func() { _ = st.Close() }()
 		n := 0
 		for {
-			var m magnetarv1.WhoAmIResponse
+			var m coriav1.WhoAmIResponse
 			if err := st.Receive(&m); err != nil {
 				if errors.Is(err, io.EOF) {
 					return n, nil
@@ -461,7 +461,7 @@ func TestStreamingRequiresKey(t *testing.T) {
 	if ran != 0 {
 		t.Fatal("the stream's handler ran for a refused caller")
 	}
-	key := e.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
+	key := e.makeKey(coriav1.Role_ROLE_UNSPECIFIED, nil)
 	if n, err := count("Bearer " + key); err != nil || n != 3 {
 		t.Fatalf("a stream with a key: %d messages, %v", n, err)
 	}
@@ -479,9 +479,9 @@ func TestNewRefusesUncheckedMethod(t *testing.T) {
 	}
 	defer func() { _ = a.Close(context.Background()) }()
 	methods := servertest.Contract()
-	delete(methods, magnetarv1connect.AccessServiceWhoAmIProcedure)
+	delete(methods, coriav1connect.AccessServiceWhoAmIProcedure)
 	_, err = server.New(server.Config{NoSocket: true, Access: a, Methods: methods, Register: func(s *connect.Server) {
-		magnetarv1connect.RegisterAccessServiceHandler(s, magnetarv1connect.UnimplementedAccessServiceHandler{})
+		coriav1connect.RegisterAccessServiceHandler(s, coriav1connect.UnimplementedAccessServiceHandler{})
 	}})
 	if err == nil || !contains(err.Error(), "WhoAmI") {
 		t.Fatalf("a method without a rule was accepted: %v", err)
@@ -569,7 +569,7 @@ func TestSocketPrivate(t *testing.T) {
 	// A peer who is not the server's user: the server is told to expect
 	// another user, so this test's own connection is that stranger.
 	e2 := newEnv(t, options{noNetwork: true, beforeRun: func(s *server.Server) { s.SetSocketUser("4242424242") }})
-	_, err := e2.local().access.WhoAmI(e2.ctx, &magnetarv1.WhoAmIRequest{})
+	_, err := e2.local().access.WhoAmI(e2.ctx, &coriav1.WhoAmIRequest{})
 	if err == nil {
 		t.Fatal("a peer who is not the server's user was served")
 	}
@@ -613,7 +613,7 @@ func TestStaleSocket(t *testing.T) {
 		t.Fatal("the stale socket was not left in place")
 	}
 	e := startedIn(t, dir)
-	if _, err := e.local().access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{}); err != nil {
+	if _, err := e.local().access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{}); err != nil {
 		t.Fatalf("the server did not start over a stale socket: %v", err)
 	}
 
@@ -723,19 +723,19 @@ func TestStopDrains(t *testing.T) {
 	errs := make(chan error, inFlight)
 	for range inFlight {
 		wg.Go(func() {
-			_, err := cl.tenants.ListTenants(e.ctx, &magnetarv1.ListTenantsRequest{PageToken: "wait"})
+			_, err := cl.tenants.ListTenants(e.ctx, &coriav1.ListTenantsRequest{PageToken: "wait"})
 			errs <- err
 		})
 	}
 	// Refusals: each queues one audit entry for the writer.
 	bad := newClients(e.socketClient(true), "http://local", true, "Bearer "+unknownKey)
 	for range refusals {
-		if _, err := bad.access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{}); err == nil {
+		if _, err := bad.access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{}); err == nil {
 			t.Fatal("an unknown key was served")
 		}
 	}
 	waitFor(t, func() bool {
-		return e.srv.Metrics() != nil && strings.Contains(metricsText(e), "magnetar_requests_in_flight 40")
+		return e.srv.Metrics() != nil && strings.Contains(metricsText(e), "coria_requests_in_flight 40")
 	})
 	start := time.Now()
 	if err := e.srv.Stop(); err != nil {
@@ -763,7 +763,7 @@ func TestStopDrains(t *testing.T) {
 		t.Fatalf("only %d audit entries written for %d refusals", stats.Written, refusals)
 	}
 	// A request after Stop finds nothing listening.
-	if _, err := cl.access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{}); err == nil {
+	if _, err := cl.access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{}); err == nil {
 		t.Fatal("a request after stop was served")
 	}
 }
@@ -795,10 +795,10 @@ func TestStopCancelsAfterDrain(t *testing.T) {
 	cl := e.local()
 	done := make(chan error, 1)
 	go func() {
-		_, err := cl.tenants.ListTenants(e.ctx, &magnetarv1.ListTenantsRequest{PageToken: "block"})
+		_, err := cl.tenants.ListTenants(e.ctx, &coriav1.ListTenantsRequest{PageToken: "block"})
 		done <- err
 	}()
-	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 1") })
+	waitFor(t, func() bool { return strings.Contains(metricsText(e), "coria_requests_in_flight 1") })
 	start := time.Now()
 	_ = e.srv.Stop()
 	if took := time.Since(start); took > 3*time.Second {
@@ -882,14 +882,14 @@ func TestTableFactsReachAudit(t *testing.T) {
 			c.CloseIdleConnections()
 		}
 	})
-	noGrant := e2.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
+	noGrant := e2.makeKey(coriav1.Role_ROLE_UNSPECIFIED, nil)
 	ctx, info := withInfo(context.Background())
-	_, err = newClients(e2.socketClient(true), "http://local", true, "Bearer "+noGrant).access.ListKeys(ctx, &magnetarv1.ListKeysRequest{})
+	_, err = newClients(e2.socketClient(true), "http://local", true, "Bearer "+noGrant).access.ListKeys(ctx, &coriav1.ListKeysRequest{})
 	if code, _ := codeOf(err); code != connect.CodePermissionDenied {
 		t.Fatalf("a key with no grant: %v", err)
 	}
 	uctx, uinfo := withInfo(context.Background())
-	_, err = newClients(e2.socketClient(true), "http://local", true, "Bearer "+unknownKey).access.ListKeys(uctx, &magnetarv1.ListKeysRequest{})
+	_, err = newClients(e2.socketClient(true), "http://local", true, "Bearer "+unknownKey).access.ListKeys(uctx, &coriav1.ListKeysRequest{})
 	if code, _ := codeOf(err); code != connect.CodeUnauthenticated {
 		t.Fatalf("an unknown key: %v", err)
 	}
@@ -905,11 +905,11 @@ func TestTableFactsReachAudit(t *testing.T) {
 		byID[en.RequestID] = en
 	}
 	en := byID[info.ResponseHeader().Get(server.RequestIDHeader)]
-	if en.Object != "the-object" || en.Method != magnetarv1connect.AccessServiceListKeysProcedure || en.Reason != "no sufficient grant" {
+	if en.Object != "the-object" || en.Method != coriav1connect.AccessServiceListKeysProcedure || en.Reason != "no sufficient grant" {
 		t.Fatalf("the denial's entry is %+v", en)
 	}
 	en = byID[uinfo.ResponseHeader().Get(server.RequestIDHeader)]
-	if en.Object != "" || en.Method != magnetarv1connect.AccessServiceListKeysProcedure || en.Outcome != master.OutcomeRefused {
+	if en.Object != "" || en.Method != coriav1connect.AccessServiceListKeysProcedure || en.Outcome != master.OutcomeRefused {
 		t.Fatalf("the unknown key's entry is %+v", en)
 	}
 }
@@ -920,7 +920,7 @@ func TestTableFactsReachAudit(t *testing.T) {
 // codes.ToConnect, and mapping a connect error again would turn it into
 // INTERNAL.
 func TestHandlerConnectErrorsPassThrough(t *testing.T) {
-	const proc = "/magnetar.test.Errors/Fail"
+	const proc = "/coria.test.Errors/Fail"
 	methods := servertest.Contract()
 	methods[proc] = servertest.Entry{Fixed: access.Authenticated()}
 	var answer connect.Code
@@ -928,7 +928,7 @@ func TestHandlerConnectErrorsPassThrough(t *testing.T) {
 		s.Register(connect.Method{
 			Spec: connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: proc},
 			Handler: func(_ context.Context, _ connect.Spec, st connect.ServerStream) error {
-				var in magnetarv1.WhoAmIRequest
+				var in coriav1.WhoAmIRequest
 				if err := st.Receive(&in); err != nil {
 					return err
 				}
@@ -939,7 +939,7 @@ func TestHandlerConnectErrorsPassThrough(t *testing.T) {
 	cl := e.local()
 	for c := connect.CodeCanceled; c <= connect.CodeUnauthenticated; c++ {
 		answer = c
-		err := cl.raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: proc}, &magnetarv1.WhoAmIRequest{}, &magnetarv1.WhoAmIResponse{})
+		err := cl.raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: proc}, &coriav1.WhoAmIRequest{}, &coriav1.WhoAmIResponse{})
 		code, msg := codeOf(err)
 		if code != c || msg != "handler says "+c.String() {
 			t.Errorf("a handler's %v reached the caller as %v %q", c, code, msg)

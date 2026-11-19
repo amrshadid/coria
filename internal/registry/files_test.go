@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // TestLoosenedTenantFile guards what happens to a tenant whose database file

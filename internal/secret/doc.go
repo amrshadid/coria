@@ -6,7 +6,7 @@
 //
 // A text file with one line per key version:
 //
-//	magnetar-key-v1 <version> <key>
+//	coria-key-v1 <version> <key>
 //
 // The version is a decimal integer from 1 to 4294967295 written without
 // leading zeros, and the key is 32 random bytes in standard base64 with
@@ -65,7 +65,7 @@
 //
 // # API keys
 //
-// A key is mgt_<id>_<secret>: a 12-character public id that finds the key's
+// A key is cor_<id>_<secret>: a 12-character public id that finds the key's
 // row, and a 44-character secret holding 256 random bits, both drawn from the
 // Base58 alphabet (digits and letters without 0, O, I and l, which are easy
 // to confuse). The prefix and the underscores let a secret scanner recognize

@@ -4,8 +4,8 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Probe reports whether port can be bound on host now, host "" meaning

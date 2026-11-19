@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestOpenRefusesSymlinks guards that a symbolic link planted at a

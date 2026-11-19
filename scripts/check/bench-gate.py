@@ -57,7 +57,7 @@ def main():
     ap.add_argument("--margin", type=float, default=25.0, help="the slowdown, in percent, that fails")
     args = ap.parse_args()
 
-    work = tempfile.mkdtemp(prefix="mgt-bench-gate.")
+    work = tempfile.mkdtemp(prefix="cor-bench-gate.")
     try:
         compare(args, work)
     finally:

@@ -13,16 +13,16 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/api/codes"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/api/codes"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // RequestIDHeader is the response header in which the server returns the id
 // it made for the request, on success and on error alike; the contract says a
 // client cannot set it.
-const RequestIDHeader = "Magnetar-Request-Id"
+const RequestIDHeader = "Coria-Request-Id"
 
 // maxMessage is the contract's limit on a message, 4 MB. Setting it here too
 // means an answer larger than the server may send is refused rather than read
@@ -32,23 +32,23 @@ const maxMessage = 4 << 20
 // Client holds the service clients of the API over one transport.
 type Client struct {
 	// Tenants is the TenantService.
-	Tenants magnetarv1connect.TenantServiceClient
+	Tenants coriav1connect.TenantServiceClient
 	// Access is the AccessService: keys, grants and WhoAmI.
-	Access magnetarv1connect.AccessServiceClient
+	Access coriav1connect.AccessServiceClient
 	// Settings is the SettingsService.
-	Settings magnetarv1connect.SettingsServiceClient
+	Settings coriav1connect.SettingsServiceClient
 	// Audit is the AuditService.
-	Audit magnetarv1connect.AuditServiceClient
+	Audit coriav1connect.AuditServiceClient
 	// Storages is the StorageService.
-	Storages magnetarv1connect.StorageServiceClient
+	Storages coriav1connect.StorageServiceClient
 	// Receivers is the ReceiverService.
-	Receivers magnetarv1connect.ReceiverServiceClient
+	Receivers coriav1connect.ReceiverServiceClient
 	// Receptions is the ReceptionService.
-	Receptions magnetarv1connect.ReceptionServiceClient
+	Receptions coriav1connect.ReceptionServiceClient
 	// Quarantine is the QuarantineService.
-	Quarantine magnetarv1connect.QuarantineServiceClient
+	Quarantine coriav1connect.QuarantineServiceClient
 	// Monitor is the MonitorService.
-	Monitor magnetarv1connect.MonitorServiceClient
+	Monitor coriav1connect.MonitorServiceClient
 
 	timeout time.Duration
 	target  string
@@ -84,7 +84,7 @@ func New(cfg Config) (*Client, error) {
 		hc = unixClient(target)
 		// The host is a placeholder: the dialer ignores it and always opens
 		// the socket. HTTP/2 without TLS is what the server speaks there.
-		base = "http://magnetar.local"
+		base = "http://coria.local"
 	default:
 		u, err := ParseServer(cfg.Server)
 		if err != nil {
@@ -113,15 +113,15 @@ func New(cfg Config) (*Client, error) {
 			connecthttp.WithSendMaxBytes(maxMessage)),
 		interc...)
 	return &Client{
-		Tenants:    magnetarv1connect.NewTenantServiceClient(c),
-		Access:     magnetarv1connect.NewAccessServiceClient(c),
-		Settings:   magnetarv1connect.NewSettingsServiceClient(c),
-		Audit:      magnetarv1connect.NewAuditServiceClient(c),
-		Storages:   magnetarv1connect.NewStorageServiceClient(c),
-		Receivers:  magnetarv1connect.NewReceiverServiceClient(c),
-		Receptions: magnetarv1connect.NewReceptionServiceClient(c),
-		Quarantine: magnetarv1connect.NewQuarantineServiceClient(c),
-		Monitor:    magnetarv1connect.NewMonitorServiceClient(c),
+		Tenants:    coriav1connect.NewTenantServiceClient(c),
+		Access:     coriav1connect.NewAccessServiceClient(c),
+		Settings:   coriav1connect.NewSettingsServiceClient(c),
+		Audit:      coriav1connect.NewAuditServiceClient(c),
+		Storages:   coriav1connect.NewStorageServiceClient(c),
+		Receivers:  coriav1connect.NewReceiverServiceClient(c),
+		Receptions: coriav1connect.NewReceptionServiceClient(c),
+		Quarantine: coriav1connect.NewQuarantineServiceClient(c),
+		Monitor:    coriav1connect.NewMonitorServiceClient(c),
 		timeout:    timeout,
 		target:     target,
 		trust:      trust,
