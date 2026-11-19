@@ -564,9 +564,16 @@ All notable changes to Magnetar are written here. The form is
   header. A file whose header is longer is quarantined as `header_too_large`
   with its bytes kept, so it can be released once the bound is raised; a
   change applies within a second, without a restart.
-- `make check-reception`: the reception checked from outside with dcmtk,
-  pynetdicom, pydicom, shasum and sqlite3, including a server killed with
-  signal 9 in the middle of a study.
+- `make prove-reception`: the reception proven from outside the binary with
+  dcmtk, pynetdicom, pydicom, hashlib, openssl and sqlite3, each claim one
+  named check: a study archived byte for byte with every manifest checksum
+  right; a study in two associations made one session; a study sent again
+  counted duplicate; a corrected file under the same UID and a file cut short
+  quarantined with their bytes; strangers refused; signal 9 while receiving,
+  in the quiet period and while archiving losing nothing and doubling
+  nothing; a nearly full storage refusing as transient and serving again;
+  the status and the event stream agreeing with the catalog; and streams
+  that stop reading costing no memory. It replaces `make check-reception`.
 - `docs/testing.md` lists how tests and checks are run, what `-short` means,
   how a slow test is marked, and every `MAGNETAR_*` variable; the reception
   walk-through says which changes take effect without a restart.

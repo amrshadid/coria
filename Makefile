@@ -233,16 +233,21 @@ check-e2e:
 prove:
 	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" bash scripts/prove.sh
 
-# The reception checked from outside: init and serve the real program, a
-# tenant, a directory storage and a receiver; dcmtk's storescu and pynetdicom
-# send public studies; dcmdump, pydicom, shasum and sqlite3 check what was
-# archived, a stranger is refused, and a server killed with signal 9 mid-study
-# loses nothing and doubles nothing. Needs dcmtk (DCMTK=dir), sqlite3, and a
-# PYTHON with pydicom and pynetdicom.
-DCMTK ?=
-.PHONY: check-reception
-check-reception:
-	GO="$(GO)" PYTHON="$(PYTHON)" SQLITE3="$(SQLITE3)" DCMTK="$(DCMTK)" bash scripts/check-reception.sh
+# The proof of reception (scripts/prove/reception.py): the real program
+# built, served and set up with its own commands; dcmtk's storescu and
+# pynetdicom send public studies split, sent again, corrected, cut short and
+# from strangers; dcmdump, pydicom, hashlib and sqlite3 check what was
+# archived, quarantined and counted; the server is killed with signal 9 while
+# receiving, in the quiet period and while archiving, and nothing is lost or
+# archived twice; a storage nearly full, the status and the event stream over
+# HTTPS, and streams that stop reading. Needs dcmtk (DCMTK=dir, since
+# pynetdicom installs programs of the same names), openssl, and a PYTHON with
+# scripts/requirements-prove-reception.txt. PROVE_CRASH_ROUNDS kills per step.
+DCMTK              ?=
+PROVE_CRASH_ROUNDS ?= 2
+.PHONY: prove-reception
+prove-reception:
+	"$(PYTHON)" scripts/prove/reception.py --go "$(GO)" --dcmtk "$(DCMTK)" --crash-rounds $(PROVE_CRASH_ROUNDS)
 
 
 # The outside check of a tenant's SQLite database: the registry creates a
@@ -480,7 +485,7 @@ check-tui:
 # makes it.
 PYTHON3             ?= python3
 PYTHON_ENV          ?= $(BIN)/python
-PYTHON_REQUIREMENTS ?= scripts/requirements-check-seal.txt scripts/requirements-check-server.txt scripts/requirements-proto.txt
+PYTHON_REQUIREMENTS ?= scripts/requirements-check-seal.txt scripts/requirements-check-server.txt scripts/requirements-proto.txt scripts/requirements-prove-reception.txt
 PYTHON_ENV_PYTHON   := $(abspath $(PYTHON_ENV))/bin/python
 PYTHON_STAMP        := $(PYTHON_ENV)/.installed-$(shell printf '%s' '$(PYTHON_REQUIREMENTS)' | cksum | cut -d ' ' -f 1)
 
@@ -703,8 +708,8 @@ outside: $(CHECK_TOOLS)
 # mistake fails in seconds, not after the tests: the comments, formatting,
 # vet, lint and the contract; then the tests, the builds, the outside checks,
 # the server's checks, Postgres at each version CI tests, both S3 servers,
-# and the proof last, as CI's proof job runs it (strict on Linux, where every
-# check can run). Docker is checked first, since half of it needs docker.
+# the proof as CI's proof job runs it (strict on Linux, where every check can
+# run), and the proof of reception last when dcmtk is found. Docker is checked first, since half of it needs docker.
 #
 # What CI runs that cannot run here is said, and listed again at the end:
 # the 32-bit tests need a Linux x86-64 machine (elsewhere their binaries are
@@ -789,6 +794,12 @@ ci:
 	echo; echo "==> make prove (MAGNETAR_PROVE_STRICT=$$strict)"; \
 	MAGNETAR_PROVE_PG_CONTAINER=$(PG_CONTAINER) MAGNETAR_PROVE_PG_PORT=$(PG_PORT) MAGNETAR_PROVE_STRICT=$$strict \
 		$(MAKE) --no-print-directory prove PYTHON="$$py" GRPCURL="$(CHECK_GRPCURL)"; \
+	dcmtk="$(DCMTK)"; storescu="$${dcmtk:+$$dcmtk/}storescu"; \
+	if command -v "$$storescu" > /dev/null && "$$storescu" --version 2> /dev/null | grep -q "^\$$dcmtk:"; then \
+		step prove-reception PYTHON="$$py" DCMTK="$$dcmtk"; \
+	else \
+		skip "make prove-reception: no dcmtk storescu (DCMTK=dir names its directory; pynetdicom installs a program of the same name)"; \
+	fi; \
 	skip "the Windows and macOS jobs and Go releases other than this one run in CI only (lint and vet for Windows ran here)"; \
 	echo; echo "ci: passed in $$(( $$(date +%s) - start )) s on $$os/$$arch. Not run here:"; \
 	printf '%s\n' "$$skipped" | tr '|' '\n' | sed -n 's/^./  - &/p'

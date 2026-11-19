@@ -425,6 +425,43 @@ jobs:
             sed -n '/^| Check |/,$p' "$RUNNER_TEMP/proof.log" 2> /dev/null || echo "no summary: the proof did not reach its end"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # The proof of reception (make prove-reception): the real program receives
+  # public studies from dcmtk and pynetdicom, and dcmdump, pydicom, hashlib
+  # and sqlite3 check what it archived, quarantined and counted, through
+  # crashes by signal 9 at each step of a reception. dcmtk from the
+  # distribution; pydicom and pynetdicom at exact versions with their hashes.
+  proof-reception:
+    name: 'Proof: reception, from outside'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: '1.27'
+
+      - name: Python tools
+        id: python
+        uses: ./.github/actions/python-tools
+        with:
+          requirements: scripts/requirements-prove-reception.txt
+
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --yes --no-install-recommends dcmtk > /dev/null
+          /usr/bin/storescu --version | head -1
+
+      - name: The proof of reception
+        env:
+          VENV_PYTHON: ${{ steps.python.outputs.python }}
+        run: make prove-reception PYTHON="$VENV_PYTHON" DCMTK=/usr/bin
+
   # Windows has its own paths, line endings and executables, so the tests run
   # there on every pull request. The newest Go only: Windows minutes count
   # double against a private repository, and the older Go is tested on Linux.

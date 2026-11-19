@@ -1,0 +1,609 @@
+#!/usr/bin/env python3
+"""The proof of reception, from outside the binary.
+
+It builds and runs the real program, sets it up with its own command line,
+and then checks what reception did only with tools that are not Magnetar:
+dcmtk (storescu, echoscu, dcmdump, dcmconv) and pynetdicom send; pydicom
+and dcmdump read what was archived; hashlib checks every manifest entry;
+Python's sqlite3 reads the tenant's catalog; the status and the event
+stream are read over HTTPS in the Connect protocol with Python's standard
+library alone. Each check prints one line, "ok", "FAIL" or "skip", with
+what it saw, and the run ends with the counts; it exits 1 when one failed.
+
+  reception.py --go GO --dcmtk DIR [--crash-rounds N]     (make prove-reception)
+
+Needs: Go, dcmtk, openssl, and a Python with pydicom and pynetdicom
+(scripts/requirements-prove-reception.txt).
+"""
+
+import argparse
+import copy
+import hashlib
+import http.client
+import json
+import os
+import socket
+import sqlite3
+import ssl
+import struct
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+from pydicom import dcmread
+from pydicom.uid import generate_uid
+from pynetdicom import AE
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+CORPUS = os.path.join(ROOT, "internal", "receive", "testdata")
+CT = ["ct2n-6293.dcm", "ct2n-6924.dcm", "ct5n-2062.dcm", "ct5n-2392.dcm", "ct5n-2693.dcm", "ct5n-3023.dcm", "ct5n-3353.dcm"]
+QUIET = 5  # seconds, the least a receiver allows; every receiver of the proof is quiet after it
+
+
+class Proof:
+    """The run: its work directory, the server it runs, and its results."""
+
+    def __init__(self, args):
+        self.args = args
+        self.work = tempfile.mkdtemp(prefix="mgt-prove-reception.")
+        os.chmod(self.work, 0o700)
+        self.data = os.path.join(self.work, "data")
+        self.bin = os.path.join(self.work, "magnetar")
+        self.server = None
+        self.counts = {"ok": 0, "FAIL": 0, "skip": 0}
+
+    # ---- results ----
+
+    def result(self, name, ok, detail, evidence=()):
+        word = "ok" if ok else "FAIL"
+        self.counts[word] += 1
+        print("%-4s %s: %s" % (word, name, detail), flush=True)
+        if not ok:
+            for e in list(evidence)[:12]:
+                print("     | %s" % e, flush=True)
+
+    def skip(self, name, why):
+        self.counts["skip"] += 1
+        print("skip %s: %s" % (name, why), flush=True)
+
+    # ---- the program ----
+
+    def m(self, *args, check=True):
+        """Runs the command line on the local socket and returns its output."""
+        p = subprocess.run([self.bin, "--data-dir", self.data, *args], capture_output=True, text=True, timeout=120)
+        if check and p.returncode != 0:
+            raise SystemExit("magnetar %s: exit %d: %s" % (" ".join(args), p.returncode, p.stderr.strip()))
+        return p.stdout
+
+    def serve(self):
+        log = open(os.path.join(self.work, "serve.log"), "a")
+        self.server = subprocess.Popen([self.bin, "--data-dir", self.data, "serve", "--listen", "127.0.0.1:%d" % self.api_port,
+                                        "--tls-cert", self.cert, "--tls-key", self.key_file], stdout=log, stderr=log)
+        for _ in range(300):
+            if self.server.poll() is not None:
+                raise SystemExit("the server exited at its start; see serve.log")
+            if self.m("whoami", check=False):
+                return
+            time.sleep(0.1)
+        raise SystemExit("the server did not answer")
+
+    def kill(self):
+        """Ends the server with signal 9, as a crash does."""
+        self.server.kill()
+        self.server.wait()
+
+    def stop(self):
+        if self.server and self.server.poll() is None:
+            self.server.terminate()
+            try:
+                self.server.wait(60)
+            except subprocess.TimeoutExpired:
+                self.kill()
+
+    # ---- outside tools ----
+
+    def dcmtk(self, name):
+        return os.path.join(self.args.dcmtk, name) if self.args.dcmtk else name
+
+    def storescu(self, port, files, aet="STORESCU"):
+        """Sends files with dcmtk's storescu; returns how many were answered success."""
+        p = subprocess.run([self.dcmtk("storescu"), "-v", "-aet", aet, "-aec", "ARCHIVE", "127.0.0.1", str(port), *files],
+                           capture_output=True, text=True, timeout=300)
+        out = p.stdout + p.stderr
+        return out.count("Received Store Response (Success)"), out
+
+    def echoscu(self, port, aet):
+        p = subprocess.run([self.dcmtk("echoscu"), "-v", "-aet", aet, "-aec", "ARCHIVE", "127.0.0.1", str(port)],
+                           capture_output=True, text=True, timeout=60)
+        return p.returncode, p.stdout + p.stderr
+
+    def pynetdicom_store(self, port, files, aet="PYNETDICOM", on_each=None):
+        """Sends files with pynetdicom, each from its path as the file holds
+        it; returns each status (None for one not answered)."""
+        ae = AE(ae_title=aet)
+        ae.acse_timeout = ae.dimse_timeout = ae.network_timeout = 30
+        contexts = []
+        for f in files:
+            meta = dcmread(f, stop_before_pixels=True)
+            pair = (str(meta.SOPClassUID), str(meta.file_meta.TransferSyntaxUID))
+            if pair not in contexts:
+                contexts.append(pair)
+                ae.add_requested_context(*pair)
+        assoc = ae.associate("127.0.0.1", port, ae_title="ARCHIVE")
+        statuses = []
+        if not assoc.is_established:
+            return statuses
+        try:
+            for i, f in enumerate(files):
+                st = assoc.send_c_store(f)
+                statuses.append(st.Status if "Status" in st else None)
+                if on_each:
+                    on_each(i)
+            assoc.release()
+        except Exception:  # the server went away mid association: a crash
+            statuses.append(None)
+        return statuses
+
+    def catalog(self, tenant):
+        """The tenant's database, read only, by SQLite itself."""
+        db = sqlite3.connect("file:%s?mode=ro" % os.path.join(self.data, "tenants", tenant + ".db"), uri=True, timeout=30)
+        db.row_factory = sqlite3.Row
+        return db
+
+    def query(self, tenant, sql, *params):
+        db = self.catalog(tenant)
+        try:
+            return db.execute(sql, params).fetchall()
+        finally:
+            db.close()
+
+    # ---- the API over HTTPS, by Python's standard library ----
+
+    def connect(self):
+        ctx = ssl.create_default_context(cafile=self.cert)
+        return http.client.HTTPSConnection("127.0.0.1", self.api_port, context=ctx, timeout=60)
+
+    def call(self, procedure, body):
+        """One unary call in the Connect protocol, JSON both ways."""
+        c = self.connect()
+        c.request("POST", "/" + procedure, json.dumps(body), {"Content-Type": "application/json", "Connect-Protocol-Version": "1",
+                                                              "Authorization": "Bearer " + self.api_key})
+        r = c.getresponse()
+        data = json.loads(r.read() or b"{}")
+        c.close()
+        if r.status != 200:
+            raise SystemExit("%s: HTTP %d %s" % (procedure, r.status, data))
+        return data
+
+    def watch(self, body):
+        """Opens a stream of events in the Connect streaming protocol and
+        returns the connection and its response, unread."""
+        c = self.connect()
+        payload = json.dumps(body).encode()
+        c.request("POST", "/magnetar.v1.MonitorService/Watch", b"\0" + struct.pack(">I", len(payload)) + payload,
+                  {"Content-Type": "application/connect+json", "Connect-Protocol-Version": "1", "Authorization": "Bearer " + self.api_key})
+        return c, c.getresponse()
+
+
+def frames(resp):
+    """The messages of a Connect stream, until its end."""
+    while True:
+        head = resp.read(5)
+        if len(head) < 5:
+            return
+        flags, n = head[0], struct.unpack(">I", head[1:])[0]
+        msg = json.loads(resp.read(n) or b"{}")
+        if flags & 2:
+            if msg.get("error"):
+                raise RuntimeError(msg["error"])
+            return
+        yield msg
+
+
+def free_ports(n):
+    socks = [socket.socket() for _ in range(n)]
+    for s in socks:
+        s.bind(("127.0.0.1", 0))
+    ports = [s.getsockname()[1] for s in socks]
+    for s in socks:
+        s.close()
+    return ports
+
+
+def data_set(path):
+    """The bytes of a Part 10 file after its meta group: the data set as it
+    was sent (PS3.10 7.1; the meta group's length is its first element)."""
+    with open(path, "rb") as f:
+        b = f.read()
+    group = struct.unpack("<I", b[140:144])[0]
+    return b[144 + group:]
+
+
+def study_copy(p, sources, n, truncate=None):
+    """Writes n files made from sources (cycling) as one new study with one
+    new series, each with a new SOP Instance UID, and returns their paths;
+    the file at index truncate is cut inside its pixel data, as a sender
+    that died mid file would leave it."""
+    os.makedirs(os.path.join(p.work, "studies"), exist_ok=True)
+    out = tempfile.mkdtemp(dir=os.path.join(p.work, "studies"))
+    study, series = generate_uid(), generate_uid()
+    paths = []
+    for i in range(n):
+        ds = dcmread(os.path.join(CORPUS, sources[i % len(sources)]))
+        ds.StudyInstanceUID, ds.SeriesInstanceUID = study, series
+        ds.SOPInstanceUID = ds.file_meta.MediaStorageSOPInstanceUID = generate_uid()
+        ds.InstanceNumber = i + 1
+        path = os.path.join(out, "%02d.dcm" % i)
+        ds.save_as(path, write_like_original=False)
+        if i == truncate:
+            size = os.path.getsize(path)
+            with open(path, "r+b") as f:
+                f.truncate(size - max(size // 4, 64))
+        paths.append(path)
+    return study, paths
+
+
+def wait_ended(p, tenant, study, n, timeout=120):
+    """Waits until n receptions of study have ended, and none is in progress."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        rows = p.query(tenant, "SELECT state, ended FROM receptions WHERE study_uid = ?", study)
+        if len(rows) >= n and all(r["ended"] for r in rows) and sum(1 for r in rows if r["ended"]) >= n:
+            return rows
+        time.sleep(0.2)
+    return p.query(tenant, "SELECT state, ended FROM receptions WHERE study_uid = ?", study)
+
+
+def storage_dir(p, tenant):
+    return os.path.join(p.work, "roots", "fast", tenant, "main")
+
+
+def manifests_of(p, tenant, study):
+    """Every manifest of the study's scans, read from the storage's meta tree."""
+    rows = p.query(tenant, """SELECT subjects.label AS subject, sessions.label AS session, scans.label AS scan
+        FROM scans JOIN sessions ON sessions.id = scans.session_id JOIN subjects ON subjects.id = sessions.subject_id
+        WHERE sessions.study_uid = ?""", study)
+    out = []
+    for r in rows:
+        path = os.path.join(storage_dir(p, tenant), "meta", r["subject"], r["session"], r["scan"], "manifest.json")
+        with open(path) as f:
+            out.append(json.load(f))
+    return out
+
+
+def setup_tenant(p, tenant, port, callers=("STORESCU", "PYNETDICOM")):
+    p.m("tenant", "create", tenant)
+    p.m("setting", "set", "receiver.ports", str(port), "--tenant", tenant)
+    p.m("storage", "add", tenant, "main", "--type", "dir", "--root", "fast", "--path", "main")
+    args = ["receiver", "add", tenant, "scanner", "--storage", "main", "--port", str(port), "--aet", "ARCHIVE",
+            "--quiet-period", "%ds" % QUIET, "--enabled"]
+    for c in callers:
+        args += ["--allow-aet", c]
+    p.m(*args)
+    wait_up(p, tenant, "scanner")
+    p.m("grant", "set", p.api_key_id, "--role", "reader", "--tenant", tenant)
+
+
+def wait_up(p, tenant, receiver, want="RECEIVER_STATE_UP", timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r = json.loads(p.m("receiver", "show", tenant, receiver, "--json"))
+        if r.get("receiver", r).get("health", {}).get("state") == want:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+# ---- the sections ----
+
+def arrives(p, port):
+    """A study sent with storescu is archived as subject, session and scan;
+    each file is read by dcmdump and pydicom and its data set is the one
+    sent; every manifest entry's checksum is the object's."""
+    sent = {}
+    os.makedirs(os.path.join(p.work, "sent"), exist_ok=True)
+    for name in CT:
+        # dcmtk encodes a data set again as it sends it: what it sends is
+        # the file as its own dcmconv writes it.
+        out = os.path.join(p.work, "sent", name)
+        subprocess.run([p.dcmtk("dcmconv"), os.path.join(CORPUS, name), out], check=True, capture_output=True)
+        sent[str(dcmread(out, stop_before_pixels=True).SOPInstanceUID)] = data_set(out)
+    n, out = p.storescu(port, [os.path.join(CORPUS, f) for f in CT])
+    study = str(dcmread(os.path.join(CORPUS, CT[0]), stop_before_pixels=True).StudyInstanceUID)
+    rows = wait_ended(p, "lab", study, 1)
+    held = p.query("lab", "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
+    p.result("1.1 a study sent with storescu is archived", n == 7 and [r["state"] for r in rows] == ["done"] and len(held) == 7,
+             "%d of 7 answered success; receptions %s; %d instances held" % (n, [r["state"] for r in rows], len(held)), [out[-400:]])
+    bad = []
+    for r in held:
+        path = os.path.join(storage_dir(p, "lab"), r["storage_key"])
+        d = subprocess.run([p.dcmtk("dcmdump"), path], capture_output=True, text=True)
+        if d.returncode != 0 or r["sop_instance_uid"] not in d.stdout:
+            bad.append("dcmdump %s: exit %d" % (r["storage_key"], d.returncode))
+        if str(dcmread(path).SOPInstanceUID) != r["sop_instance_uid"] or data_set(path) != sent.get(r["sop_instance_uid"]):
+            bad.append("pydicom %s: the data set is not the one sent" % r["storage_key"])
+    p.result("1.2 each archived file is read by dcmdump and pydicom, its data set byte for byte the one sent", not bad,
+             "%d files" % len(held), bad)
+    entries, bad = 0, []
+    for man in manifests_of(p, "lab", study):
+        for e in man["files"]:
+            entries += 1
+            with open(os.path.join(storage_dir(p, "lab"), e["key"]), "rb") as f:
+                if hashlib.sha256(f.read()).hexdigest() != e["sha256"]:
+                    bad.append(e["key"])
+    p.result("1.3 every manifest entry's checksum is the SHA-256 of its object", entries == 7 and not bad,
+             "%d entries, %d differ" % (entries, len(bad)), bad)
+
+
+def two_parts(p, port):
+    """A study sent in two parts, a gap longer than the quiet period between
+    them: one session, two arrivals, the manifest holding both parts. Then
+    the whole sent again: answered success, counted duplicate, nothing
+    archived twice."""
+    study, files = study_copy(p, CT, 6)
+    first = p.pynetdicom_store(port, files[:3])
+    wait_ended(p, "lab", study, 1)
+    second = p.pynetdicom_store(port, files[3:])
+    rows = wait_ended(p, "lab", study, 2)
+    arrivals = sorted(r["arrival"] for r in p.query("lab", "SELECT arrival FROM receptions WHERE study_uid = ?", study))
+    sessions = p.query("lab", "SELECT count(*) AS n FROM sessions WHERE study_uid = ?", study)[0]["n"]
+    entries = sum(len(m["files"]) for m in manifests_of(p, "lab", study))
+    p.result("2.1 two associations, the quiet period between them: one session, two arrivals, one manifest of both",
+             first == [0] * 3 and second == [0] * 3 and sessions == 1 and arrivals == [1, 2] and entries == 6,
+             "statuses %s %s; %d session(s); arrivals %s; %d manifest entries" % (first, second, sessions, arrivals, entries),
+             [dict(r) for r in rows])
+    again = p.pynetdicom_store(port, files)
+    wait_ended(p, "lab", study, 3)
+    last = p.query("lab", "SELECT files_duplicate, files_archived, state FROM receptions WHERE study_uid = ? AND arrival = 3", study)
+    held = p.query("lab", "SELECT count(*) AS n, count(DISTINCT sop_instance_uid) AS d FROM instances WHERE state = 'held' AND study_uid = ?", study)[0]
+    ok = again == [0] * 6 and last and last[0]["files_duplicate"] == 6 and last[0]["files_archived"] == 0 and (held["n"], held["d"]) == (6, 6)
+    p.result("2.2 the study sent again: answered success, counted duplicate, nothing archived twice", ok,
+             "statuses %s; the third reception %s; %d instances, %d distinct" % (again, [dict(r) for r in last], held["n"], held["d"]))
+    return study, files
+
+
+def corrected(p, port, study, files):
+    """One instance sent again with an attribute changed under its UID: the
+    first copy kept, the second held in quarantine with both checksums."""
+    ds = dcmread(files[0])
+    uid = str(ds.SOPInstanceUID)
+    ds.PatientComments = "corrected after the first send"
+    path = os.path.join(p.work, "corrected.dcm")
+    ds.save_as(path, write_like_original=False)
+    with open(files[0], "rb") as f:
+        first_sum = hashlib.sha256(f.read()).hexdigest()
+    st = p.pynetdicom_store(port, [path])
+    wait_ended(p, "lab", study, 4)
+    q = p.query("lab", "SELECT reason, hex(sha256) AS sum, hex(kept_sha256) AS kept FROM quarantine WHERE sop_instance_uid = ?", uid)
+    held = p.query("lab", "SELECT hex(archived_sha256) AS sum FROM instances WHERE sop_instance_uid = ? AND state = 'held'", uid)
+    ok = st == [0] and len(q) == 1 and q[0]["reason"] == "different_file" and q[0]["sum"] and q[0]["kept"] and \
+        q[0]["sum"] != q[0]["kept"] and len(held) == 1
+    p.result("3.1 a corrected file under the same UID: the first kept, the second in quarantine with both checksums", ok,
+             "status %s; quarantine %s; the first file's SHA-256 %s" % (st, [dict(r) for r in q], first_sum[:16]))
+
+
+def broken(p, port):
+    """A data set cut inside its pixel data, its length still declaring the
+    whole, sent with pynetdicom beside two whole files of its study: held
+    as not DICOM with its reason, the two archived. pynetdicom encodes what
+    it sends, and pydicom reads a cut file as a shorter whole one, so the
+    cut bytes are handed to pynetdicom at its encoding step: the broken
+    file reaches the server as a sender that died mid file would leave it."""
+    import pynetdicom.association as association
+    study, files = study_copy(p, ["MR_small.dcm"], 3)
+    whole = data_set(files[1])
+    cut = whole[: len(whole) - max(len(whole) // 4, 64)]
+    encode = association.encode
+    def cut_second(ds, *args, **kwargs):
+        if str(ds.SOPInstanceUID) == str(dcmread(files[1], stop_before_pixels=True).SOPInstanceUID):
+            return cut
+        return encode(ds, *args, **kwargs)
+    not_dicom = "SELECT count(*) AS n FROM quarantine WHERE reason = 'not_dicom' AND content_kept"
+    before = p.query("lab", not_dicom)[0]["n"]
+    association.encode = cut_second
+    try:
+        ae = AE(ae_title="PYNETDICOM")
+        ae.acse_timeout = ae.dimse_timeout = ae.network_timeout = 30
+        meta = dcmread(files[0], stop_before_pixels=True)
+        ae.add_requested_context(str(meta.SOPClassUID), str(meta.file_meta.TransferSyntaxUID))
+        assoc = ae.associate("127.0.0.1", port, ae_title="ARCHIVE")
+        st = []
+        if assoc.is_established:
+            for f in files:
+                r = assoc.send_c_store(dcmread(f))
+                st.append(r.Status if "Status" in r else None)
+            assoc.release()
+    finally:
+        association.encode = encode
+    wait_ended(p, "lab", study, 1)
+    # Its header unread, the file belongs to no study and no reception: it
+    # is held under its receiver alone, its bytes kept.
+    held_now = p.query("lab", not_dicom)[0]["n"] - before
+    held = p.query("lab", "SELECT count(*) AS n FROM instances WHERE state = 'held' AND study_uid = ?", study)[0]["n"]
+    p.result("4.1 a file cut short is held as not DICOM with its bytes, the rest of its study archived",
+             st == [0, 0, 0] and held == 2 and held_now == 1,
+             "statuses %s; %d archived; %d new not-DICOM record(s) with bytes kept" % (st, held, held_now))
+
+
+def strangers(p, port, closed_port):
+    """A caller not listed is refused, and a receiver that lists nobody
+    admits nobody."""
+    code, out = p.echoscu(port, "STRANGER")
+    p.result("5.1 a calling AE title not listed gets no association", code != 0 and "Calling AE Title Not Recognized" in out,
+             "echoscu as STRANGER: exit %d" % code, [out[-300:]])
+    p.m("setting", "set", "receiver.ports", "%d,%d" % (port, closed_port), "--tenant", "lab")
+    p.m("receiver", "add", "lab", "closed", "--storage", "main", "--port", str(closed_port), "--aet", "ARCHIVE", "--enabled")
+    wait_up(p, "lab", "closed")
+    code, out = p.echoscu(closed_port, "STORESCU")
+    p.result("5.2 a receiver that lists no caller admits nobody", code != 0 and "Calling AE Title Not Recognized" in out,
+             "echoscu as STORESCU to it: exit %d" % code, [out[-300:]])
+
+
+def crashes(p, port, rounds):
+    """The server killed with signal 9 during reception, during the quiet
+    period and during archive, again and again: after each restart the
+    study is sent again, and every file acknowledged before the kill is
+    archived or in quarantine, none lost and none twice."""
+    bad, kills = [], 0
+    for r in range(rounds):
+        for when in ("receiving", "quiet", "archiving"):
+            study, files = study_copy(p, CT, 7)
+            acked = []
+            if when == "receiving":
+                def kill_after_three(i):
+                    acked.append(i)
+                    if i == 2:
+                        p.kill()
+                p.pynetdicom_store(port, files, on_each=kill_after_three)
+            else:
+                acked = [i for i, s in enumerate(p.pynetdicom_store(port, files)) if s == 0]
+                if when == "archiving":
+                    deadline = time.time() + 30
+                    while time.time() < deadline and not p.query("crash", "SELECT 1 FROM receptions WHERE study_uid = ? AND state IN "
+                                                                 "('identified', 'archived', 'verified')", study):
+                        time.sleep(0.05)
+                p.kill()
+            kills += 1
+            p.serve()
+            wait_up(p, "crash", "scanner")
+            again = p.pynetdicom_store(port, files)
+            deadline = time.time() + 120
+            while time.time() < deadline:
+                rows = p.query("crash", "SELECT ended FROM receptions WHERE study_uid = ?", study)
+                if rows and all(x["ended"] for x in rows):
+                    break
+                time.sleep(0.2)
+            held = p.query("crash", "SELECT sop_instance_uid FROM instances WHERE state = 'held' AND study_uid = ?", study)
+            claimed = p.query("crash", "SELECT count(*) AS n FROM instances WHERE state <> 'held' AND study_uid = ?", study)[0]["n"]
+            uids = [str(dcmread(files[i], stop_before_pixels=True).SOPInstanceUID) for i in acked]
+            have = {x["sop_instance_uid"] for x in held}
+            quarantined = {x["sop_instance_uid"] for x in p.query("crash", "SELECT sop_instance_uid FROM quarantine WHERE study_uid = ?", study)}
+            lost = [u for u in uids if u not in have and u not in quarantined]
+            if len(held) != 7 or len(have) != 7 or claimed or lost or again != [0] * 7:
+                bad.append("round %d, killed while %s: %d held (%d distinct), %d claimed, %d acknowledged lost, resend %s"
+                           % (r + 1, when, len(held), len(have), claimed, len(lost), again))
+    p.result("6.1 killed with signal 9 while receiving, in the quiet period and while archiving: nothing lost, nothing twice",
+             not bad, "%d kills and restarts, each study of 7 files sent again after" % kills, bad)
+
+
+def nearly_full(p, port):
+    """With every disk below the reserve, a sender is refused as transient;
+    when space returns, it is served."""
+    p.m("setting", "set", "storage.reserve", "100%")
+    down = wait_up(p, "lab", "scanner", want="RECEIVER_STATE_DOWN", timeout=20)
+    code, out = p.echoscu(port, "STORESCU")
+    refused = code != 0 and "Association Rejected" in out and "Transient" in out
+    p.m("setting", "set", "storage.reserve", "1%")
+    up = wait_up(p, "lab", "scanner", timeout=20)
+    code2, out2 = p.echoscu(port, "STORESCU")
+    p.result("7.1 nearly full: refused as transient, then served once space returns", down and refused and up and code2 == 0,
+             "down %s; echoscu while full exit %d; up again %s; echoscu after exit %d" % (down, code, up, code2), [out[-300:], out2[-200:]])
+
+
+def numbers(p, cursor):
+    """The status and the events, read over HTTPS by Python, give the
+    counts the catalog holds, read by SQLite."""
+    st = p.call("magnetar.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]
+    c = st.get("counts", {})
+    want = p.query("lab", """SELECT (SELECT count(*) FROM subjects) AS subjects, (SELECT count(*) FROM sessions) AS sessions,
+        (SELECT count(*) FROM scans) AS scans, (SELECT count(*) FROM instances WHERE state = 'held') AS instances,
+        (SELECT count(*) FROM quarantine WHERE state = 'held') AS held""")[0]
+    got = {k: int(c.get(k, 0)) for k in ("subjects", "sessions", "scans", "instances")}
+    got["held"] = int(c.get("quarantinedFiles", 0))
+    p.result("8.1 the status's counts are the catalog's, read by SQLite", got == dict(want), "status %s; sqlite3 %s" % (got, dict(want)))
+    conn, resp = p.watch({"scope": {"tenant": "lab"}, "cursor": cursor})
+    done, quarantined, seen = 0, 0, 0
+    conn.sock.settimeout(5)
+    try:
+        for msg in frames(resp):
+            e = msg.get("event")
+            if not e:
+                continue
+            seen += 1
+            if e.get("receptionStep", {}).get("step") == "RECEPTION_STEP_DONE":
+                done += 1
+            if "fileQuarantined" in e:
+                quarantined += 1
+    except (socket.timeout, TimeoutError):
+        pass
+    conn.close()
+    want_done = p.query("lab", "SELECT count(*) AS n FROM receptions WHERE state = 'done'")[0]["n"]
+    want_q = p.query("lab", "SELECT count(*) AS n FROM quarantine")[0]["n"]
+    p.result("8.2 the events of the stream, from the first status's cursor, count what the catalog holds",
+             done == want_done and quarantined == want_q,
+             "%d events: %d receptions done (sqlite3 %d), %d files quarantined (sqlite3 %d)" % (seen, done, want_done, quarantined, want_q))
+
+
+def rss_kib(pid):
+    return int(subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True).stdout.strip() or 0)
+
+
+def slow_watchers(p, port):
+    """Streams that stop reading cost the server no memory and do not slow a
+    reception: four are opened and never read while a study is received."""
+    def receive():
+        study, files = study_copy(p, CT, 14)
+        t0 = time.time()
+        p.pynetdicom_store(port, files)
+        wait_ended(p, "lab", study, 1)
+        return time.time() - t0
+    alone = receive()
+    before = rss_kib(p.server.pid)
+    stalled = [p.watch({"scope": {"tenant": "lab"}}) for _ in range(4)]
+    with_them = receive()
+    receive()
+    after = rss_kib(p.server.pid)
+    for conn, _ in stalled:
+        conn.close()
+    grew = (after - before) / 1024
+    p.result("9.1 streams that stop reading cost no memory and do not slow a reception",
+             grew < 64 and with_them < alone * 2 + 2,
+             "a study of 14 files received in %.1f s alone, %.1f s beside 4 streams never read; the server's memory grew %.1f MiB"
+             % (alone, with_them, grew))
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--go", default="go")
+    ap.add_argument("--dcmtk", default="")
+    ap.add_argument("--crash-rounds", type=int, default=2)
+    args = ap.parse_args()
+    p = Proof(args)
+    try:
+        subprocess.run([args.go, "build", "-o", p.bin, os.path.join(ROOT, "cmd", "magnetar")], check=True)
+        p.cert, p.key_file = os.path.join(p.work, "cert.pem"), os.path.join(p.work, "key.pem")
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-days", "1",
+                        "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", p.key_file, "-out", p.cert],
+                       check=True, capture_output=True)
+        p.api_port, lab_port, closed_port, crash_port = free_ports(4)
+        p.m("init")
+        p.serve()
+        p.api_key = p.m("key", "create", "--holder", "reception proof", "--no-expiry").strip()
+        p.api_key_id = p.api_key.split("_")[1]
+        os.makedirs(os.path.join(p.work, "roots", "fast"))
+        p.m("setting", "set", "storage.directory-roots", "fast=" + os.path.join(p.work, "roots", "fast"))
+        setup_tenant(p, "lab", lab_port)
+        setup_tenant(p, "crash", crash_port)
+        cursor = p.call("magnetar.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]["eventCursor"]
+        arrives(p, lab_port)
+        study, files = two_parts(p, lab_port)
+        corrected(p, lab_port, study, files)
+        broken(p, lab_port)
+        strangers(p, lab_port, closed_port)
+        crashes(p, crash_port, args.crash_rounds)
+        nearly_full(p, lab_port)
+        numbers(p, cursor)
+        slow_watchers(p, lab_port)
+    finally:
+        p.stop()
+    print("%d ok, %d FAIL, %d skipped" % (p.counts["ok"], p.counts["FAIL"], p.counts["skip"]))
+    if p.counts["FAIL"]:
+        print("the work directory is kept: %s" % p.work)
+        sys.exit(1)
+    subprocess.run(["rm", "-rf", p.work])
+
+
+if __name__ == "__main__":
+    main()
