@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // receiverRun is one enabled receiver of a tenant: the row its listener was

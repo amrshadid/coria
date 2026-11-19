@@ -3,7 +3,7 @@ package secret
 import (
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // FuzzParseAPIKey guards the key parser against any presented text: it never
@@ -19,9 +19,9 @@ func FuzzParseAPIKey(f *testing.F) {
 		f.Add(k.Key())
 	}
 	f.Add("")
-	f.Add("mgt_")
-	f.Add("mgt_111111111111_11111111111111111111111111111111111111111110")
-	f.Add("mgt_0OIl0OIl0OIl_0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl")
+	f.Add("cor_")
+	f.Add("cor_111111111111_11111111111111111111111111111111111111111110")
+	f.Add("cor_0OIl0OIl0OIl_0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl")
 
 	f.Fuzz(func(t *testing.T, presented string) {
 		id, secret, err := ParseAPIKey(presented)
@@ -37,7 +37,7 @@ func FuzzParseAPIKey(f *testing.F) {
 		if !apiKeyPattern.MatchString(presented) {
 			t.Fatalf("accepted %q, which does not have the documented shape", presented)
 		}
-		if "mgt_"+id+"_"+secret != presented {
+		if "cor_"+id+"_"+secret != presented {
 			t.Fatalf("%q split into %q and %q", presented, id, secret)
 		}
 	})

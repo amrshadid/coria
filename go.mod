@@ -1,4 +1,4 @@
-module github.com/amrshadid/magnetar
+module github.com/amrshadid/coria
 
 go 1.26.0
 

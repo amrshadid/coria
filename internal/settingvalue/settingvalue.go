@@ -3,8 +3,8 @@ package settingvalue
 import (
 	"context"
 
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Source answers the value stored for a setting: master.Store for the

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // byRequest returns, oldest first, every entry of the master's log whose

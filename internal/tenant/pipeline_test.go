@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/layout"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/layout"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // sha returns a checksum whose every byte is b.

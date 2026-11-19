@@ -111,13 +111,13 @@ const ContentType = "text/plain; version=0.0.4; charset=utf-8"
 func (m *Metrics) WriteText(w io.Writer) error {
 	b := bufio.NewWriter(w)
 	m.writeRequests(b)
-	header(b, "magnetar_requests_in_flight", "gauge", "Requests being served now.")
-	sample(b, "magnetar_requests_in_flight", nil, strconv.FormatInt(m.inFlight.Load(), 10))
+	header(b, "coria_requests_in_flight", "gauge", "Requests being served now.")
+	sample(b, "coria_requests_in_flight", nil, strconv.FormatInt(m.inFlight.Load(), 10))
 	if f := m.sources.TenantsByState; f != nil {
-		header(b, "magnetar_tenants", "gauge", "Tenants by state.")
+		header(b, "coria_tenants", "gauge", "Tenants by state.")
 		states := f()
 		for _, s := range slices.Sorted(maps.Keys(states)) {
-			sample(b, "magnetar_tenants", []string{"state", s}, strconv.Itoa(states[s]))
+			sample(b, "coria_tenants", []string{"state", s}, strconv.Itoa(states[s]))
 		}
 	}
 	if f := m.sources.Counters; f != nil {
@@ -134,7 +134,7 @@ func (m *Metrics) WriteText(w io.Writer) error {
 func (m *Metrics) writeRequests(b *bufio.Writer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	header(b, "magnetar_requests_total", "counter", "Requests answered, by method and API code.")
+	header(b, "coria_requests_total", "counter", "Requests answered, by method and API code.")
 	keys := slices.SortedFunc(maps.Keys(m.requests), func(x, y requestKey) int {
 		if c := strings.Compare(x.method, y.method); c != 0 {
 			return c
@@ -142,19 +142,19 @@ func (m *Metrics) writeRequests(b *bufio.Writer) {
 		return strings.Compare(x.code, y.code)
 	})
 	for _, k := range keys {
-		sample(b, "magnetar_requests_total", []string{"method", k.method, "code", k.code}, strconv.FormatUint(m.requests[k], 10))
+		sample(b, "coria_requests_total", []string{"method", k.method, "code", k.code}, strconv.FormatUint(m.requests[k], 10))
 	}
-	header(b, "magnetar_request_duration_seconds", "histogram", "Time from a request's arrival to its answer, by method.")
+	header(b, "coria_request_duration_seconds", "histogram", "Time from a request's arrival to its answer, by method.")
 	for _, method := range slices.Sorted(maps.Keys(m.durations)) {
 		h := m.durations[method]
 		var cum uint64
 		for i, bound := range DurationBuckets {
 			cum += h.buckets[i]
-			sample(b, "magnetar_request_duration_seconds_bucket", []string{"method", method, "le", formatFloat(bound)}, strconv.FormatUint(cum, 10))
+			sample(b, "coria_request_duration_seconds_bucket", []string{"method", method, "le", formatFloat(bound)}, strconv.FormatUint(cum, 10))
 		}
-		sample(b, "magnetar_request_duration_seconds_bucket", []string{"method", method, "le", "+Inf"}, strconv.FormatUint(h.count, 10))
-		sample(b, "magnetar_request_duration_seconds_sum", []string{"method", method}, formatFloat(h.sum))
-		sample(b, "magnetar_request_duration_seconds_count", []string{"method", method}, strconv.FormatUint(h.count, 10))
+		sample(b, "coria_request_duration_seconds_bucket", []string{"method", method, "le", "+Inf"}, strconv.FormatUint(h.count, 10))
+		sample(b, "coria_request_duration_seconds_sum", []string{"method", method}, formatFloat(h.sum))
+		sample(b, "coria_request_duration_seconds_count", []string{"method", method}, strconv.FormatUint(h.count, 10))
 	}
 }
 

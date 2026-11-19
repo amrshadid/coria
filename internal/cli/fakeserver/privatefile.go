@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/secret"
+	"github.com/amrshadid/coria/internal/secret"
 )
 
 // PrivateFile writes content to a new file that only the current user may
@@ -16,7 +16,7 @@ import (
 // replaced in place, which keeps that access list.
 func PrivateFile(tb testing.TB, content string) string {
 	tb.Helper()
-	dir, err := os.MkdirTemp("", "mgtkey")
+	dir, err := os.MkdirTemp("", "corkey")
 	if err != nil {
 		tb.Fatalf("making a directory: %v", err)
 	}

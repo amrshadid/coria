@@ -20,17 +20,17 @@ import (
 const (
 	// PostgresEnv is the address of a Postgres database tests may make
 	// schemas in (postgres://user:password@host:port/db).
-	PostgresEnv = "MAGNETAR_TEST_POSTGRES"
+	PostgresEnv = "CORIA_TEST_POSTGRES"
 	// RequirePostgresEnv, set to anything, fails a test that needs
 	// Postgres when PostgresEnv is not set.
-	RequirePostgresEnv = "MAGNETAR_REQUIRE_POSTGRES"
+	RequirePostgresEnv = "CORIA_REQUIRE_POSTGRES"
 	// S3Env is a scratch S3 server's address,
 	// http://KEY:SECRET@host:port/bucket, with region=NAME and pathstyle=0
 	// in the query when needed.
-	S3Env = "MAGNETAR_TEST_S3"
+	S3Env = "CORIA_TEST_S3"
 	// RequireS3Env, set to anything, fails a test that needs S3 when S3Env
 	// is not set.
-	RequireS3Env = "MAGNETAR_REQUIRE_S3"
+	RequireS3Env = "CORIA_REQUIRE_S3"
 )
 
 // PostgresSchema makes a schema no other test uses in the database

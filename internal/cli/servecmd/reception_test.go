@@ -20,10 +20,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/dir"
-	"github.com/amrshadid/magnetar/internal/blob/s3"
-	"github.com/amrshadid/magnetar/internal/testkit"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/dir"
+	"github.com/amrshadid/coria/internal/blob/s3"
+	"github.com/amrshadid/coria/internal/testkit"
 )
 
 // dcmtkEnv names a directory holding dcmtk's programs, looked in before the
@@ -32,8 +32,8 @@ import (
 // in the CI jobs that run this test for Postgres and S3. The Postgres and S3
 // cases take their services from testkit.
 const (
-	dcmtkEnv        = "MAGNETAR_DCMTK"
-	requireDcmtkEnv = "MAGNETAR_REQUIRE_DCMTK"
+	dcmtkEnv        = "CORIA_DCMTK"
+	requireDcmtkEnv = "CORIA_REQUIRE_DCMTK"
 )
 
 // ctStudy is the public CT study of the pipeline's test files: one study,
@@ -153,16 +153,16 @@ func archiveThroughServe(t *testing.T, scu string, c receptionCase, n int) {
 	if err := os.MkdirAll(roots, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	post(t, hc, "/magnetar.v1.SettingsService/SetSetting",
+	post(t, hc, "/coria.v1.SettingsService/SetSetting",
 		`{"setting":{"name":"storage.directory-roots","scope":{"installation":{}},"value":`+quoted("fast="+roots)+`}}`)
-	post(t, hc, "/magnetar.v1.TenantService/CreateTenant", `{"name":"`+tenantName+`",`+c.tenant+`}`)
+	post(t, hc, "/coria.v1.TenantService/CreateTenant", `{"name":"`+tenantName+`",`+c.tenant+`}`)
 	port := freePort(t)
-	post(t, hc, "/magnetar.v1.SettingsService/SetSetting",
+	post(t, hc, "/coria.v1.SettingsService/SetSetting",
 		`{"setting":{"name":"receiver.ports","scope":{"tenant":"`+tenantName+`"},"value":"`+strconv.Itoa(port)+`"}}`)
 
 	var open func() blob.Store
 	if c.s3 == "" {
-		post(t, hc, "/magnetar.v1.StorageService/AddStorage", `{"tenant":"`+tenantName+`","storage":{"name":"main","directory":{"root":"fast","path":"main"}}}`)
+		post(t, hc, "/coria.v1.StorageService/AddStorage", `{"tenant":"`+tenantName+`","storage":{"name":"main","directory":{"root":"fast","path":"main"}}}`)
 		open = func() blob.Store {
 			s, err := dir.Open(filepath.Join(roots, tenantName, "main"))
 			if err != nil {
@@ -185,10 +185,10 @@ func archiveThroughServe(t *testing.T, scu string, c receptionCase, n int) {
 		if u.Scheme == "http" {
 			entry = endpoint + " plain-http private-address"
 		}
-		post(t, hc, "/magnetar.v1.SettingsService/SetSetting",
+		post(t, hc, "/coria.v1.SettingsService/SetSetting",
 			`{"setting":{"name":"storage.s3-endpoints","scope":{"installation":{}},"value":`+quoted(entry)+`}}`)
 		prefix := fmt.Sprintf("serve-e2e-%d-%d/", time.Now().UnixNano(), n)
-		post(t, hc, "/magnetar.v1.StorageService/AddStorage", `{"tenant":"`+tenantName+`","storage":{"name":"main","s3":{"endpoint":`+quoted(endpoint)+
+		post(t, hc, "/coria.v1.StorageService/AddStorage", `{"tenant":"`+tenantName+`","storage":{"name":"main","s3":{"endpoint":`+quoted(endpoint)+
 			`,"region":`+quoted(region)+`,"bucket":`+quoted(u.Path[1:])+`,"prefix":`+quoted(prefix)+`,"pathStyle":true,"accessKeyId":`+
 			quoted(u.User.Username())+`,"secretAccessKey":`+quoted(secret)+`}}}`)
 		open = func() blob.Store {
@@ -203,12 +203,12 @@ func archiveThroughServe(t *testing.T, scu string, c receptionCase, n int) {
 			return s
 		}
 	}
-	post(t, hc, "/magnetar.v1.ReceiverService/AddReceiver", `{"tenant":"`+tenantName+`","receiver":{"name":"scanner","enabled":true,"storage":"main",`+
+	post(t, hc, "/coria.v1.ReceiverService/AddReceiver", `{"tenant":"`+tenantName+`","receiver":{"name":"scanner","enabled":true,"storage":"main",`+
 		`"quietPeriod":"5s","dimse":{"port":`+strconv.Itoa(port)+`,"aeTitle":"ARCHIVE","allowedCallers":{"rules":[{"callingAeTitle":"STORESCU"}]}}}}`)
 	// Within seconds, well inside the supervisor's periodic read (30
 	// seconds): the handler's notice of the new receiver starts it at once.
 	waitWithin(t, "the receiver to be up", 10*time.Second, func() bool {
-		return bytes.Contains(post(t, hc, "/magnetar.v1.ReceiverService/ListReceivers", `{"tenant":"`+tenantName+`"}`), []byte(`"RECEIVER_STATE_UP"`))
+		return bytes.Contains(post(t, hc, "/coria.v1.ReceiverService/ListReceivers", `{"tenant":"`+tenantName+`"}`), []byte(`"RECEIVER_STATE_UP"`))
 	})
 
 	args := []string{"-v", "-aet", "STORESCU", "-aec", "ARCHIVE", "127.0.0.1", strconv.Itoa(port)}
@@ -232,7 +232,7 @@ func archiveThroughServe(t *testing.T, scu string, c receptionCase, n int) {
 		} `json:"receptions"`
 	}
 	waitBody(t, "the reception to be done", func() bool {
-		if err := json.Unmarshal(post(t, hc, "/magnetar.v1.ReceptionService/ListReceptions", `{"tenant":"`+tenantName+`"}`), &list); err != nil {
+		if err := json.Unmarshal(post(t, hc, "/coria.v1.ReceptionService/ListReceptions", `{"tenant":"`+tenantName+`"}`), &list); err != nil {
 			t.Fatal(err)
 		}
 		if len(list.Receptions) == 1 && list.Receptions[0].Step == "RECEPTION_STEP_FAILED" {
@@ -248,7 +248,7 @@ func archiveThroughServe(t *testing.T, scu string, c receptionCase, n int) {
 	// A removal is acted on at once too: the API answers a removed
 	// receiver without asking its health, so only the handler's notice
 	// stops it before the supervisor's periodic read (30 seconds).
-	post(t, hc, "/magnetar.v1.ReceiverService/RemoveReceiver", `{"tenant":"`+tenantName+`","name":"scanner"}`)
+	post(t, hc, "/coria.v1.ReceiverService/RemoveReceiver", `{"tenant":"`+tenantName+`","name":"scanner"}`)
 	waitWithin(t, "the removed receiver's port to close", 10*time.Second, func() bool {
 		c, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), time.Second)
 		if err != nil {

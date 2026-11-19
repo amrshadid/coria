@@ -8,13 +8,13 @@ import (
 	"errors"
 	"io"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/layout"
-	"github.com/amrshadid/magnetar/internal/core/manifest"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/receive/sidecar"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/layout"
+	"github.com/amrshadid/coria/internal/core/manifest"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/receive/sidecar"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // scanResult is what archiving one scan decided.

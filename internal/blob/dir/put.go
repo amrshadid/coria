@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Put writes r to key, whole or not at all; see blob.Store. The steps, and

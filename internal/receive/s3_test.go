@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/s3"
-	"github.com/amrshadid/magnetar/internal/testkit"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/s3"
+	"github.com/amrshadid/coria/internal/testkit"
 )
 
 // TestStudyIsArchivedOnS3 guards the whole pipeline with an S3 storage: the

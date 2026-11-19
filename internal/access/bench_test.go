@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // The benchmarks of the check on the SQLite master, with the last-use worker
@@ -103,12 +103,12 @@ func BenchmarkCheckRefused(b *testing.B) {
 	e, k, need := benchEnv(b)
 	// The secret with its last character changed to another one, so the
 	// secret is wrong whatever that character was.
-	sec := k.full[len("mgt_")+13:]
+	sec := k.full[len("cor_")+13:]
 	last := "1"
 	if strings.HasSuffix(sec, last) {
 		last = "2"
 	}
-	cred := access.APIKey("mgt_" + k.id + "_" + sec[:len(sec)-1] + last)
+	cred := access.APIKey("cor_" + k.id + "_" + sec[:len(sec)-1] + last)
 	b.ReportAllocs()
 	for b.Loop() {
 		if _, err := e.access.Check(e.ctx, cred, need, facts("bench")); err == nil {
@@ -191,12 +191,12 @@ func BenchmarkCheckWithMark(b *testing.B) {
 // TestMeasureDeniedGap measures the two Denied cases, interleaved, 20,000
 // times each on the SQLite master: a key naming a tenant it has no grant
 // on, and the same key naming a tenant that does not exist. It is a
-// measurement, not a check, so it runs only when MAGNETAR_MEASURE is set,
+// measurement, not a check, so it runs only when CORIA_MEASURE is set,
 // and reports the median and the 90th percentile of each and the gap
 // between the medians. Run it without the race detector.
 func TestMeasureDeniedGap(t *testing.T) {
-	if os.Getenv("MAGNETAR_MEASURE") == "" {
-		t.Skip("a measurement; set MAGNETAR_MEASURE=1 to run it")
+	if os.Getenv("CORIA_MEASURE") == "" {
+		t.Skip("a measurement; set CORIA_MEASURE=1 to run it")
 	}
 	e := newEnv(t)
 	k := e.key(time.Time{}, on(master.TenantScope(e.clinic.ID), master.RoleAdmin))

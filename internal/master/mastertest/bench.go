@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // The benchmarks of the per-request path: what every API call costs the
@@ -99,7 +99,7 @@ func BenchAppendAudit(b *testing.B, open Open) {
 	s, id := benchStore(b, open)
 	ctx := context.Background()
 	entry := master.AuditEntry{
-		Time: T0, KeyID: id, RemoteAddress: "192.0.2.10:50000", Method: "/magnetar.v1.AdminService/ListTenants",
+		Time: T0, KeyID: id, RemoteAddress: "192.0.2.10:50000", Method: "/coria.v1.AdminService/ListTenants",
 		Outcome: master.OutcomeDone, Details: map[string]string{"limit": "100"}, RequestID: "bench",
 	}
 	i := 0
@@ -158,7 +158,7 @@ func BenchSetSettingByLocalOperator(b *testing.B, open Open) {
 // benchSetSetting sets one setting by by, again and again.
 func benchSetSetting(b *testing.B, s master.Store, by master.Actor) {
 	ctx := context.Background()
-	entry := master.AuditEntry{Time: T0, KeyID: by.KeyID(), Method: "/magnetar.v1.SettingsService/SetSetting", Outcome: master.OutcomeDone, RequestID: "bench"}
+	entry := master.AuditEntry{Time: T0, KeyID: by.KeyID(), Method: "/coria.v1.SettingsService/SetSetting", Outcome: master.OutcomeDone, RequestID: "bench"}
 	i := 0
 	b.ReportAllocs()
 	b.ResetTimer()

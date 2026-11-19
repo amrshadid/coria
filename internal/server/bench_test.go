@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // BenchmarkRequest measures one request end to end with the check in place:
@@ -21,7 +21,7 @@ import (
 //	go test -run '^$' -bench BenchmarkRequest -benchtime 3s ./internal/server
 func BenchmarkRequest(b *testing.B) {
 	e := newEnv(b, options{})
-	key := e.makeKey(magnetarv1.Role_ROLE_UNSPECIFIED, nil)
+	key := e.makeKey(coriav1.Role_ROLE_UNSPECIFIED, nil)
 	for _, tr := range []struct {
 		name string
 		cl   clients
@@ -31,7 +31,7 @@ func BenchmarkRequest(b *testing.B) {
 	} {
 		for _, n := range []int{1, 8, 64} {
 			b.Run(tr.name+"/clients="+strconv.Itoa(n), func(b *testing.B) {
-				req := &magnetarv1.ListTenantsRequest{}
+				req := &coriav1.ListTenantsRequest{}
 				if _, err := tr.cl.tenants.ListTenants(e.ctx, req); err != nil {
 					b.Fatal(err)
 				}

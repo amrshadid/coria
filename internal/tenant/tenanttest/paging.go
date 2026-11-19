@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // testPagingWithDeletes guards the settings list against settings removed

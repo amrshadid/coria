@@ -7,7 +7,7 @@ import (
 
 	"github.com/amrshadid/go-dicom/network"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // admit decides an association before anything is negotiated (PS3.8

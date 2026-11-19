@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/secret"
 )
 
 // TestCheckTable guards the whole decision over every credential state and
@@ -34,7 +34,7 @@ func TestCheckTable(t *testing.T) {
 	}
 	unknown := other.Key()
 	// The stored id with another key's secret.
-	wrongSecret := "mgt_" + good.id + "_" + other.Key()[len("mgt_")+13:]
+	wrongSecret := "cor_" + good.id + "_" + other.Key()[len("cor_")+13:]
 
 	const (
 		unauth = access.MessageUnauthenticated
@@ -55,7 +55,7 @@ func TestCheckTable(t *testing.T) {
 	}{
 		{"no key", access.Credential{}, access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "no key", "", ""},
 		{"empty key", access.APIKey(""), access.OnInstallation(master.RoleReader), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "no key", "", ""},
-		{"malformed", access.APIKey("mgt_short"), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "malformed key", "", ""},
+		{"malformed", access.APIKey("cor_short"), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "malformed key", "", ""},
 		{"bearer word left in", access.APIKey("Bearer " + good.full), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "malformed key", "", ""},
 		{"unknown id", access.APIKey(unknown), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "unknown key", other.ID, ""},
 		{"wrong secret", access.APIKey(wrongSecret), access.Authenticated(), fault.Unauthenticated, false, unauth, master.OutcomeRefused, "wrong secret", good.id, ""},
@@ -94,7 +94,7 @@ func TestCheckTable(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			e.reset()
-			d, err := e.access.Check(e.ctx, tc.cred, tc.req, facts("/magnetar.v1.Test/Method"))
+			d, err := e.access.Check(e.ctx, tc.cred, tc.req, facts("/coria.v1.Test/Method"))
 			_, entries := e.recorded()
 			if tc.ok {
 				if err != nil {
@@ -104,7 +104,7 @@ func TestCheckTable(t *testing.T) {
 					t.Fatalf("an allowed check wrote %d entries; the caller writes it", len(entries))
 				}
 				got := d.Entry(master.OutcomeDone, "", access.Facts{})
-				if got.ID == "" || got.Method != "/magnetar.v1.Test/Method" || got.KeyID != tc.keyID || got.TenantName != tc.tenant || got.RemoteAddress != "192.0.2.7:51000" || got.RequestID != "req-1" || !got.Time.Equal(t0) {
+				if got.ID == "" || got.Method != "/coria.v1.Test/Method" || got.KeyID != tc.keyID || got.TenantName != tc.tenant || got.RemoteAddress != "192.0.2.7:51000" || got.RequestID != "req-1" || !got.Time.Equal(t0) {
 					t.Fatalf("entry handed back: %+v", got)
 				}
 				if tc.cred == local && (got.LocalUser != "501" || !d.Principal().IsLocalOperator()) {
@@ -166,7 +166,7 @@ func TestDeniedSamePath(t *testing.T) {
 	}
 	run := func(tenant string) ([]string, master.AuditEntry, error) {
 		e.reset()
-		_, err := e.access.Check(e.ctx, access.APIKey(k.full), access.OnTenant(tenant, master.RoleReader), facts("/magnetar.v1.Test/Read"))
+		_, err := e.access.Check(e.ctx, access.APIKey(k.full), access.OnTenant(tenant, master.RoleReader), facts("/coria.v1.Test/Read"))
 		calls, entries := e.recorded()
 		if len(entries) != 1 {
 			t.Fatalf("%s: %d entries", tenant, len(entries))

@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // skipScale skips a test at millions of rows except in the run made for it

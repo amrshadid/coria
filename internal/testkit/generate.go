@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/receive/header"
+	"github.com/amrshadid/coria/internal/receive/header"
 )
 
 // Generator makes DICOM files for scale tests and benchmarks from one public

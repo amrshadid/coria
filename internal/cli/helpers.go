@@ -14,11 +14,11 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Paging limits. The contract's page holds at most 1000 and 100 by default.
@@ -218,7 +218,7 @@ func fetchPages[T any](ctx context.Context, l listFlags, fetch func(ctx context.
 // moreNote tells the person, on standard error so a pipe stays clean, that the
 // list was cut short and how to get the rest.
 func (a *app) moreNote(shown int) {
-	_, _ = fmt.Fprintf(a.env.Stderr, "magnetar: more exist; showing the first %d; use --limit N or --all to see more\n", shown)
+	_, _ = fmt.Fprintf(a.env.Stderr, "coria: more exist; showing the first %d; use --limit N or --all to see more\n", shown)
 }
 
 // listOut writes a fetched list: as a JSON document with the items under the

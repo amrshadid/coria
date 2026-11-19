@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/receive"
-	"github.com/amrshadid/magnetar/internal/receive/supervise"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/receive"
+	"github.com/amrshadid/coria/internal/receive/supervise"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // t0 is when the test's rows are made.

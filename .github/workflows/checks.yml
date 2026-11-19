@@ -213,9 +213,9 @@ jobs:
 
   # The Postgres master database against real servers, versions 16 and 18.
   # The Postgres tests make a schema of their own in the service's database
-  # and skip when MAGNETAR_TEST_POSTGRES is not set, as they do in the Linux
+  # and skip when CORIA_TEST_POSTGRES is not set, as they do in the Linux
   # job above and on Windows, which has no service containers. Here
-  # MAGNETAR_REQUIRE_POSTGRES turns a missing address into a failure, so a
+  # CORIA_REQUIRE_POSTGRES turns a missing address into a failure, so a
   # service that did not start fails this job instead of letting it pass by
   # running nothing. psql and pg_dump for the outside check come from the
   # server's own image, so their version equals the server's (pg_dump
@@ -233,17 +233,17 @@ jobs:
         image: postgres:${{ matrix.postgres }}
         env:
           POSTGRES_PASSWORD: ci-throwaway-password
-          POSTGRES_DB: magnetar_test
+          POSTGRES_DB: coria_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d magnetar_test"
+          --health-cmd "pg_isready -U postgres -d coria_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      MAGNETAR_TEST_POSTGRES: postgres://postgres:ci-throwaway-password@127.0.0.1:5432/magnetar_test?sslmode=disable
-      MAGNETAR_REQUIRE_POSTGRES: '1'
+      CORIA_TEST_POSTGRES: postgres://postgres:ci-throwaway-password@127.0.0.1:5432/coria_test?sslmode=disable
+      CORIA_REQUIRE_POSTGRES: '1'
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -332,8 +332,8 @@ jobs:
       # server must close the connection unanswered).
       - name: The local socket refused to another user
         run: |
-          sudo useradd --no-create-home --shell /usr/sbin/nologin magnetar-other
-          MAGNETAR_TEST_OTHER_USER=magnetar-other go test -count=1 -v -run '^TestSocketRefusesOtherUser$' ./internal/server
+          sudo useradd --no-create-home --shell /usr/sbin/nologin coria-other
+          CORIA_TEST_OTHER_USER=coria-other go test -count=1 -v -run '^TestSocketRefusesOtherUser$' ./internal/server
 
       # The Python packages at exact versions with their hashes
       # (.github/actions/python-tools); grpcurl from its release, checked
@@ -361,10 +361,10 @@ jobs:
 
   # The proof of this version (scripts/prove/run.sh): the binaries built as make
   # build builds them, the Linux one started for real, and every claim of this
-  # version shown by tools that are not Magnetar. Postgres is a service
+  # version shown by tools that are not CORIA. Postgres is a service
   # container the script uses for its tenant databases, and stops and starts
   # again to show that a tenant stops alone; the second operating system user
-  # is made with sudo. MAGNETAR_PROVE_STRICT=1: nothing may be skipped here,
+  # is made with sudo. CORIA_PROVE_STRICT=1: nothing may be skipped here,
   # so a check that could not run fails the job instead of passing unseen.
   proof:
     name: 'Proof: the installed binary, from outside'
@@ -413,9 +413,9 @@ jobs:
 
       - name: The proof
         env:
-          MAGNETAR_PROVE_PG_CONTAINER: ${{ job.services.postgres.id }}
-          MAGNETAR_PROVE_PG_PORT: '5432'
-          MAGNETAR_PROVE_STRICT: '1'
+          CORIA_PROVE_PG_CONTAINER: ${{ job.services.postgres.id }}
+          CORIA_PROVE_PG_PORT: '5432'
+          CORIA_PROVE_STRICT: '1'
           VENV_PYTHON: ${{ steps.python.outputs.python }}
         run: |
           make prove PYTHON="$VENV_PYTHON" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl" | tee "$RUNNER_TEMP/proof.log"
@@ -576,8 +576,8 @@ jobs:
   # behavior is not the protocol's. Each is started with docker run, by make
   # s3-up (the images are pinned by digest in the Makefile), because a
   # service container cannot be given the server's command. The tests skip
-  # when MAGNETAR_TEST_S3 is not set; make test-s3 sets it with
-  # MAGNETAR_REQUIRE_S3, which turns a server that did not start into a
+  # when CORIA_TEST_S3 is not set; make test-s3 sets it with
+  # CORIA_REQUIRE_S3, which turns a server that did not start into a
   # failure, so a green job means the suite ran.
   s3:
     name: S3 (${{ matrix.server }})
@@ -623,7 +623,7 @@ jobs:
 
       - name: Server log on failure
         if: failure()
-        run: docker logs magnetar-test-${{ matrix.server }} | tail -100
+        run: docker logs coria-test-${{ matrix.server }} | tail -100
 
   # The API contract in api/proto: buf lint, the breaking-change check against
   # the base, the check that the committed gen/ is what the proto files

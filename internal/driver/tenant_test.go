@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // TestSQLiteTenantPath guards the file a tenant on SQLite gets: exactly

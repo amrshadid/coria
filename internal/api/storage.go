@@ -6,14 +6,14 @@ import (
 	"slices"
 	"strconv"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/place"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/place"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // messageNoStorage answers a storage name the tenant does not have.
@@ -27,7 +27,7 @@ const MaxSecretAccessKeyLength = 128
 // placed where the installation's settings allow.
 type storageService struct{ c *core }
 
-var _ magnetarv1connect.StorageServiceHandler = storageService{}
+var _ coriav1connect.StorageServiceHandler = storageService{}
 
 // storageMask is what SetStorage's update_mask may name (storage.proto,
 // SetStorageRequest.update_mask).
@@ -171,7 +171,7 @@ func lookupStorage(ctx context.Context, p tenant.Pipeline, name string) (tenant.
 // the storage's row before it reaches the store.
 func (s storageService) AddStorage(ctx context.Context, req *v1.AddStorageRequest) (*v1.AddStorageResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.StorageServiceAddStorageProcedure)
+	d, err := c.changing(ctx, coriav1connect.StorageServiceAddStorageProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +214,7 @@ func (s storageService) AddStorage(ctx context.Context, req *v1.AddStorageReques
 // GetStorage answers one storage of a tenant, without its secret.
 func (s storageService) GetStorage(ctx context.Context, req *v1.GetStorageRequest) (*v1.GetStorageResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.StorageServiceGetStorageProcedure)
+	d, err := c.decision(ctx, coriav1connect.StorageServiceGetStorageProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func (s storageService) GetStorage(ctx context.Context, req *v1.GetStorageReques
 // ListStorages answers a page of a tenant's storages, ordered by name.
 func (s storageService) ListStorages(ctx context.Context, req *v1.ListStoragesRequest) (*v1.ListStoragesResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.StorageServiceListStoragesProcedure)
+	d, err := c.decision(ctx, coriav1connect.StorageServiceListStoragesProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func (s storageService) ListStorages(ctx context.Context, req *v1.ListStoragesRe
 // every rule AddStorage applies to them.
 func (s storageService) SetStorage(ctx context.Context, req *v1.SetStorageRequest) (*v1.SetStorageResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.StorageServiceSetStorageProcedure)
+	d, err := c.changing(ctx, coriav1connect.StorageServiceSetStorageProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +344,7 @@ func maskDetails(paths []string) map[string]string {
 // refuses it while the storage holds data or a receiver names it.
 func (s storageService) RemoveStorage(ctx context.Context, req *v1.RemoveStorageRequest) (*v1.RemoveStorageResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.StorageServiceRemoveStorageProcedure)
+	d, err := c.changing(ctx, coriav1connect.StorageServiceRemoveStorageProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func (s storageService) RemoveStorage(ctx context.Context, req *v1.RemoveStorage
 // storage's secret) is an error.
 func (s storageService) TestStorage(ctx context.Context, req *v1.TestStorageRequest) (*v1.TestStorageResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.StorageServiceTestStorageProcedure)
+	d, err := c.changing(ctx, coriav1connect.StorageServiceTestStorageProcedure)
 	if err != nil {
 		return nil, err
 	}

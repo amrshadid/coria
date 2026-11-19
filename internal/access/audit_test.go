@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // refuse makes n requests with no key, each a refusal whose entry goes to
@@ -301,12 +301,12 @@ func TestRefusalsDoNotPushOutReads(t *testing.T) {
 		}
 	}
 	a := newMemAccessWith(t, m, access.Config{RefusalQueue: 8, RecordQueue: 400, AuditBatch: 1, AuditInterval: time.Hour})
-	_, _ = a.Check(context.Background(), access.APIKey("mgt_flood"), access.Authenticated(), facts("flood"))
+	_, _ = a.Check(context.Background(), access.APIKey("cor_flood"), access.Authenticated(), facts("flood"))
 	<-entered // the writer is held with the first refusal
 	const reads = 300
 	for range reads {
 		for range 5 {
-			_, _ = a.Check(context.Background(), access.APIKey("mgt_flood"), access.Authenticated(), facts("flood"))
+			_, _ = a.Check(context.Background(), access.APIKey("cor_flood"), access.Authenticated(), facts("flood"))
 		}
 		d, err := a.Check(context.Background(), access.APIKey(full), access.Authenticated(), facts("read"))
 		if err != nil {

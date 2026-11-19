@@ -5,11 +5,11 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // The keys of the details this package puts in audit entries.
@@ -35,7 +35,7 @@ const (
 type Methods struct{}
 
 // RequestFor reports whether procedure, a full procedure name such as
-// "/magnetar.v1.TenantService/GetTenant", is a method of the table, and
+// "/coria.v1.TenantService/GetTenant", is a method of the table, and
 // returns a new empty request message of its input type when its
 // requirement depends on the request, or nil when the requirement is fixed,
 // so the server need not read the body of a request it may refuse.
@@ -146,140 +146,140 @@ func tenantObject(name string) string { return "tenant/" + name }
 var rules = map[string]rule{
 	// AccessService: admin on the installation, but WhoAmI. Package access
 	// writes each entry's object and details itself.
-	magnetarv1connect.AccessServiceCreateKeyProcedure:   fixed(installationAdmin),
-	magnetarv1connect.AccessServiceGetKeyProcedure:      fixed(installationAdmin),
-	magnetarv1connect.AccessServiceListKeysProcedure:    fixed(installationAdmin),
-	magnetarv1connect.AccessServiceRevokeKeyProcedure:   fixed(installationAdmin),
-	magnetarv1connect.AccessServiceSetGrantProcedure:    fixed(installationAdmin),
-	magnetarv1connect.AccessServiceListGrantsProcedure:  fixed(installationAdmin),
-	magnetarv1connect.AccessServiceRemoveGrantProcedure: fixed(installationAdmin),
+	coriav1connect.AccessServiceCreateKeyProcedure:   fixed(installationAdmin),
+	coriav1connect.AccessServiceGetKeyProcedure:      fixed(installationAdmin),
+	coriav1connect.AccessServiceListKeysProcedure:    fixed(installationAdmin),
+	coriav1connect.AccessServiceRevokeKeyProcedure:   fixed(installationAdmin),
+	coriav1connect.AccessServiceSetGrantProcedure:    fixed(installationAdmin),
+	coriav1connect.AccessServiceListGrantsProcedure:  fixed(installationAdmin),
+	coriav1connect.AccessServiceRemoveGrantProcedure: fixed(installationAdmin),
 	// "Role: none; any caller the server authenticates."
-	magnetarv1connect.AccessServiceWhoAmIProcedure: fixed(access.Authenticated()),
+	coriav1connect.AccessServiceWhoAmIProcedure: fixed(access.Authenticated()),
 
 	// TenantService.
-	magnetarv1connect.TenantServiceCreateTenantProcedure: fixed(installationAdmin),
+	coriav1connect.TenantServiceCreateTenantProcedure: fixed(installationAdmin),
 	// "Role: reader on that tenant, or reader on the installation."
-	magnetarv1connect.TenantServiceGetTenantProcedure: byMessage(func(r *v1.GetTenantRequest) (access.Requirement, access.Request) {
+	coriav1connect.TenantServiceGetTenantProcedure: byMessage(func(r *v1.GetTenantRequest) (access.Requirement, access.Request) {
 		if master.ValidateTenantName(r.GetName()) != nil {
 			return access.OnInstallation(master.RoleReader), access.Request{}
 		}
 		return access.TenantRegistration(r.GetName()), access.Request{}
 	}),
 	// "Role: none beyond an authenticated caller."
-	magnetarv1connect.TenantServiceListTenantsProcedure:  fixed(access.Authenticated()),
-	magnetarv1connect.TenantServiceRemoveTenantProcedure: fixed(installationAdmin),
+	coriav1connect.TenantServiceListTenantsProcedure:  fixed(access.Authenticated()),
+	coriav1connect.TenantServiceRemoveTenantProcedure: fixed(installationAdmin),
 
 	// SettingsService: reader to read, admin to change, on the scope asked
 	// for. The object is the setting's name, never its value.
-	magnetarv1connect.SettingsServiceGetSettingProcedure: byMessage(func(r *v1.GetSettingRequest) (access.Requirement, access.Request) {
+	coriav1connect.SettingsServiceGetSettingProcedure: byMessage(func(r *v1.GetSettingRequest) (access.Requirement, access.Request) {
 		return onScope(r.GetScope(), master.RoleReader), settingFacts(r.GetName(), r.GetScope())
 	}),
 	// "Role: admin on the scope set; for a setting set on a tenant by the
 	// installation's admin only, admin on the installation, whatever the
 	// scope."
-	magnetarv1connect.SettingsServiceSetSettingProcedure: byMessage(func(r *v1.SetSettingRequest) (access.Requirement, access.Request) {
+	coriav1connect.SettingsServiceSetSettingProcedure: byMessage(func(r *v1.SetSettingRequest) (access.Requirement, access.Request) {
 		s := r.GetSetting()
 		return settingChange(s.GetName(), s.GetScope()), settingFacts(s.GetName(), s.GetScope())
 	}),
-	magnetarv1connect.SettingsServiceUnsetSettingProcedure: byMessage(func(r *v1.UnsetSettingRequest) (access.Requirement, access.Request) {
+	coriav1connect.SettingsServiceUnsetSettingProcedure: byMessage(func(r *v1.UnsetSettingRequest) (access.Requirement, access.Request) {
 		return settingChange(r.GetName(), r.GetScope()), settingFacts(r.GetName(), r.GetScope())
 	}),
-	magnetarv1connect.SettingsServiceListSettingsProcedure: byMessage(func(r *v1.ListSettingsRequest) (access.Requirement, access.Request) {
+	coriav1connect.SettingsServiceListSettingsProcedure: byMessage(func(r *v1.ListSettingsRequest) (access.Requirement, access.Request) {
 		return onScope(r.GetScope(), master.RoleReader), access.Request{Details: map[string]string{detailScope: scopeDetail(r.GetScope())}}
 	}),
 
 	// AuditService: admin on the scope asked for.
-	magnetarv1connect.AuditServiceListAuditEntriesProcedure: byMessage(func(r *v1.ListAuditEntriesRequest) (access.Requirement, access.Request) {
+	coriav1connect.AuditServiceListAuditEntriesProcedure: byMessage(func(r *v1.ListAuditEntriesRequest) (access.Requirement, access.Request) {
 		return onScope(r.GetScope(), master.RoleAdmin), access.Request{Details: auditFilterDetails(r)}
 	}),
 
 	// MonitorService: reader on the tenant asked for, operator on the
 	// installation for every tenant.
-	magnetarv1connect.MonitorServiceGetStatusProcedure: byMessage(func(r *v1.GetStatusRequest) (access.Requirement, access.Request) {
+	coriav1connect.MonitorServiceGetStatusProcedure: byMessage(func(r *v1.GetStatusRequest) (access.Requirement, access.Request) {
 		return onMonitorScope(r.GetScope()), access.Request{Details: map[string]string{detailScope: scopeDetail(r.GetScope())}}
 	}),
-	magnetarv1connect.MonitorServiceWatchProcedure: byMessage(func(r *v1.WatchRequest) (access.Requirement, access.Request) {
+	coriav1connect.MonitorServiceWatchProcedure: byMessage(func(r *v1.WatchRequest) (access.Requirement, access.Request) {
 		return onMonitorScope(r.GetScope()), access.Request{Details: watchDetails(r)}
 	}),
 
 	// StorageService: admin on the tenant to change, reader to read. The
 	// object is the storage's name.
-	magnetarv1connect.StorageServiceAddStorageProcedure: byMessage(func(r *v1.AddStorageRequest) (access.Requirement, access.Request) {
+	coriav1connect.StorageServiceAddStorageProcedure: byMessage(func(r *v1.AddStorageRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetStorage().GetName(), Details: map[string]string{detailType: storageType(r.GetStorage())}}
 	}),
-	magnetarv1connect.StorageServiceGetStorageProcedure: byMessage(func(r *v1.GetStorageRequest) (access.Requirement, access.Request) {
+	coriav1connect.StorageServiceGetStorageProcedure: byMessage(func(r *v1.GetStorageRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: r.GetName()}
 	}),
-	magnetarv1connect.StorageServiceListStoragesProcedure: byMessage(func(r *v1.ListStoragesRequest) (access.Requirement, access.Request) {
+	coriav1connect.StorageServiceListStoragesProcedure: byMessage(func(r *v1.ListStoragesRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{}
 	}),
-	magnetarv1connect.StorageServiceSetStorageProcedure: byMessage(func(r *v1.SetStorageRequest) (access.Requirement, access.Request) {
+	coriav1connect.StorageServiceSetStorageProcedure: byMessage(func(r *v1.SetStorageRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetStorage().GetName(), Details: maskDetails(r.GetUpdateMask().GetPaths())}
 	}),
-	magnetarv1connect.StorageServiceRemoveStorageProcedure: byMessage(func(r *v1.RemoveStorageRequest) (access.Requirement, access.Request) {
+	coriav1connect.StorageServiceRemoveStorageProcedure: byMessage(func(r *v1.RemoveStorageRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetName()}
 	}),
-	magnetarv1connect.StorageServiceTestStorageProcedure: byMessage(func(r *v1.TestStorageRequest) (access.Requirement, access.Request) {
+	coriav1connect.StorageServiceTestStorageProcedure: byMessage(func(r *v1.TestStorageRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetName()}
 	}),
 
 	// ReceiverService: admin on the tenant to change, reader to read. The
 	// object is the receiver's name.
-	magnetarv1connect.ReceiverServiceAddReceiverProcedure: byMessage(func(r *v1.AddReceiverRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceiverServiceAddReceiverProcedure: byMessage(func(r *v1.AddReceiverRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetReceiver().GetName(), Details: requestReceiverDetails(r.GetReceiver())}
 	}),
-	magnetarv1connect.ReceiverServiceGetReceiverProcedure: byMessage(func(r *v1.GetReceiverRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceiverServiceGetReceiverProcedure: byMessage(func(r *v1.GetReceiverRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: r.GetName()}
 	}),
-	magnetarv1connect.ReceiverServiceListReceiversProcedure: byMessage(func(r *v1.ListReceiversRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceiverServiceListReceiversProcedure: byMessage(func(r *v1.ListReceiversRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{}
 	}),
-	magnetarv1connect.ReceiverServiceSetReceiverProcedure: byMessage(func(r *v1.SetReceiverRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceiverServiceSetReceiverProcedure: byMessage(func(r *v1.SetReceiverRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetReceiver().GetName(), Details: maskDetails(r.GetUpdateMask().GetPaths())}
 	}),
-	magnetarv1connect.ReceiverServiceRemoveReceiverProcedure: byMessage(func(r *v1.RemoveReceiverRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceiverServiceRemoveReceiverProcedure: byMessage(func(r *v1.RemoveReceiverRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: r.GetName()}
 	}),
 
 	// ReceptionService: reader to read, operator to settle a failed
 	// reception, and operator to look a study up by its UID.
-	magnetarv1connect.ReceptionServiceListReceptionsProcedure: byMessage(func(r *v1.ListReceptionsRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceptionServiceListReceptionsProcedure: byMessage(func(r *v1.ListReceptionsRequest) (access.Requirement, access.Request) {
 		role := master.RoleReader
 		if r.GetStudyInstanceUid() != "" {
 			role = master.RoleOperator
 		}
 		return onTenantNamed(r.GetTenant(), role), access.Request{Details: receptionFilterDetails(r)}
 	}),
-	magnetarv1connect.ReceptionServiceGetReceptionProcedure: byMessage(func(r *v1.GetReceptionRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceptionServiceGetReceptionProcedure: byMessage(func(r *v1.GetReceptionRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: r.GetId()}
 	}),
-	magnetarv1connect.ReceptionServiceRetryReceptionProcedure: byMessage(func(r *v1.RetryReceptionRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceptionServiceRetryReceptionProcedure: byMessage(func(r *v1.RetryReceptionRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
 	}),
-	magnetarv1connect.ReceptionServiceDiscardReceptionProcedure: byMessage(func(r *v1.DiscardReceptionRequest) (access.Requirement, access.Request) {
+	coriav1connect.ReceptionServiceDiscardReceptionProcedure: byMessage(func(r *v1.DiscardReceptionRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
 	}),
 
 	// QuarantineService: reader to read the records; operator for a file's
 	// header, a search by UID, and a release or a rejection.
-	magnetarv1connect.QuarantineServiceListQuarantinedFilesProcedure: byMessage(func(r *v1.ListQuarantinedFilesRequest) (access.Requirement, access.Request) {
+	coriav1connect.QuarantineServiceListQuarantinedFilesProcedure: byMessage(func(r *v1.ListQuarantinedFilesRequest) (access.Requirement, access.Request) {
 		role := master.RoleReader
 		if r.GetStudyInstanceUid() != "" || r.GetSopInstanceUid() != "" {
 			role = master.RoleOperator
 		}
 		return onTenantNamed(r.GetTenant(), role), access.Request{Details: quarantineFilterDetails(r)}
 	}),
-	magnetarv1connect.QuarantineServiceGetQuarantinedFileProcedure: byMessage(func(r *v1.GetQuarantinedFileRequest) (access.Requirement, access.Request) {
+	coriav1connect.QuarantineServiceGetQuarantinedFileProcedure: byMessage(func(r *v1.GetQuarantinedFileRequest) (access.Requirement, access.Request) {
 		role := master.RoleReader
 		if r.GetIncludeHeader() {
 			role = master.RoleOperator
 		}
 		return onTenantNamed(r.GetTenant(), role), access.Request{Object: r.GetId(), Details: headerDetails(r.GetIncludeHeader())}
 	}),
-	magnetarv1connect.QuarantineServiceReleaseQuarantinedFileProcedure: byMessage(func(r *v1.ReleaseQuarantinedFileRequest) (access.Requirement, access.Request) {
+	coriav1connect.QuarantineServiceReleaseQuarantinedFileProcedure: byMessage(func(r *v1.ReleaseQuarantinedFileRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId(), Details: releaseDetails(r, "")}
 	}),
-	magnetarv1connect.QuarantineServiceRejectQuarantinedFileProcedure: byMessage(func(r *v1.RejectQuarantinedFileRequest) (access.Requirement, access.Request) {
+	coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure: byMessage(func(r *v1.RejectQuarantinedFileRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
 	}),
 }

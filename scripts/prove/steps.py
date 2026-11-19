@@ -2,7 +2,7 @@
 """The parts of scripts/prove/run.sh that are easier to say in Python.
 
 Each subcommand is one step of the proof, run by scripts/prove/run.sh against the
-real binary it started; none imports anything of Magnetar's. They share the
+real binary it started; none imports anything of CORIA's. They share the
 script's work directory:
 
   results.tsv  one line per named check: name, ok / FAIL / skipped, numbers
@@ -64,9 +64,9 @@ READ_PREFIXES = ("Get", "List", "WhoAmI")
 # (internal/registry and servecmd): known and accounted for by name. Any other
 # method that does not start with "/" or "GET " is unexpected, among them
 # access.AuditWriter, the notice that entries were dropped.
-INIT_METHOD = "magnetar init"
-STARTED_METHOD = "magnetar.registry/CreateTenantStarted"
-STATE_METHOD = "magnetar.registry/SetTenantState"
+INIT_METHOD = "coria init"
+STARTED_METHOD = "coria.registry/CreateTenantStarted"
+STATE_METHOD = "coria.registry/SetTenantState"
 
 
 class Work:
@@ -128,7 +128,7 @@ def outcome_of(code):
 def contract_methods(proto_dir):
     """Every (service, method, proto file) of the contract, in file order."""
     out = []
-    pkg_dir = os.path.join(proto_dir, "magnetar", "v1")
+    pkg_dir = os.path.join(proto_dir, "coria", "v1")
     for name in sorted(os.listdir(pkg_dir)):
         if not name.endswith(".proto"):
             continue
@@ -140,7 +140,7 @@ def contract_methods(proto_dir):
                 depth += {"{": 1, "}": -1}.get(text[i], 0)
                 i += 1
             for rpc in re.finditer(r"\brpc\s+(\w+)\s*\(\s*\w+\s*\)\s*returns\s*\((\s*stream\b)?", text[svc.end():i]):
-                out.append(("magnetar.v1." + svc.group(1), rpc.group(1), "magnetar/v1/" + name, bool(rpc.group(2))))
+                out.append(("coria.v1." + svc.group(1), rpc.group(1), "coria/v1/" + name, bool(rpc.group(2))))
     return out
 
 
@@ -168,7 +168,7 @@ def ns_body(svc, tenant):
     """A request to a method of a service not served yet that names a tenant,
     as JSON and as protobuf: field 1 is the tenant's name in the requests of
     every such service, or the Scope that names it in MonitorService's."""
-    if svc == "magnetar.v1.MonitorService":
+    if svc == "coria.v1.MonitorService":
         return {"scope": {"tenant": tenant}}, pb_string(1, pb_string(1, tenant))
     return {"tenant": tenant}, pb_string(1, tenant)
 
@@ -208,13 +208,13 @@ def pb_string(field, value):
 def tenant_requests(tenant):
     scope = pb_string(1, pb_string(1, tenant))
     return [
-        ("magnetar.v1.TenantService", "GetTenant", "magnetar/v1/tenant.proto", {"name": tenant}, pb_string(1, tenant)),
-        ("magnetar.v1.SettingsService", "ListSettings", "magnetar/v1/settings.proto", {"scope": {"tenant": tenant}}, scope),
-        ("magnetar.v1.AuditService", "ListAuditEntries", "magnetar/v1/audit.proto", {"scope": {"tenant": tenant}}, scope),
-        ("magnetar.v1.StorageService", "ListStorages", "magnetar/v1/storage.proto", {"tenant": tenant}, pb_string(1, tenant)),
-        ("magnetar.v1.ReceiverService", "ListReceivers", "magnetar/v1/receiver.proto", {"tenant": tenant}, pb_string(1, tenant)),
-        ("magnetar.v1.ReceptionService", "ListReceptions", "magnetar/v1/reception.proto", {"tenant": tenant}, pb_string(1, tenant)),
-        ("magnetar.v1.QuarantineService", "ListQuarantinedFiles", "magnetar/v1/quarantine.proto", {"tenant": tenant}, pb_string(1, tenant)),
+        ("coria.v1.TenantService", "GetTenant", "coria/v1/tenant.proto", {"name": tenant}, pb_string(1, tenant)),
+        ("coria.v1.SettingsService", "ListSettings", "coria/v1/settings.proto", {"scope": {"tenant": tenant}}, scope),
+        ("coria.v1.AuditService", "ListAuditEntries", "coria/v1/audit.proto", {"scope": {"tenant": tenant}}, scope),
+        ("coria.v1.StorageService", "ListStorages", "coria/v1/storage.proto", {"tenant": tenant}, pb_string(1, tenant)),
+        ("coria.v1.ReceiverService", "ListReceivers", "coria/v1/receiver.proto", {"tenant": tenant}, pb_string(1, tenant)),
+        ("coria.v1.ReceptionService", "ListReceptions", "coria/v1/reception.proto", {"tenant": tenant}, pb_string(1, tenant)),
+        ("coria.v1.QuarantineService", "ListQuarantinedFiles", "coria/v1/quarantine.proto", {"tenant": tenant}, pb_string(1, tenant)),
     ]
 
 
@@ -247,8 +247,8 @@ class Clients:
         env = dict(os.environ)
         cmd = [self.args.grpcurl, "-import-path", self.proto, "-import-path", STANDIN_PROTO, "-proto", proto, "-cacert", self.args.ca, "-v"]
         if key is not None:
-            env["MGT_PROOF_AUTH"] = key
-            cmd += ["-expand-headers", "-H", "authorization: ${MGT_PROOF_AUTH}"]
+            env["COR_PROOF_AUTH"] = key
+            cmd += ["-expand-headers", "-H", "authorization: ${COR_PROOF_AUTH}"]
         cmd += ["-d", json.dumps(body), self.args.addr, "%s/%s" % (service, method)]
         p = subprocess.run(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
         out = p.stdout.decode("utf-8", "replace")
@@ -260,7 +260,7 @@ class Clients:
         kept = []
         for line in answer.split("\n"):
             low = line.lower()
-            if low.startswith("magnetar-request-id:"):
+            if low.startswith("coria-request-id:"):
                 rid = line.split(":", 1)[1].strip()
                 continue
             if low.startswith("date:"):
@@ -284,9 +284,9 @@ class Clients:
             code, message, init, trail = e.code(), e.details() or "", e.initial_metadata() or (), e.trailing_metadata() or ()
         rid = ""
         for k, v in list(init) + list(trail):
-            if k == "magnetar-request-id":
+            if k == "coria-request-id":
                 rid = v
-        keep = lambda m: sorted((k, v) for k, v in m if k not in ("magnetar-request-id", "date"))
+        keep = lambda m: sorted((k, v) for k, v in m if k not in ("coria-request-id", "date"))
         norm = "%s|%s|headers=%r|trailers=%r|body=%r" % (code.name, message, keep(init), keep(trail), answer)
         return code.name, message, norm, rid
 
@@ -307,7 +307,7 @@ class Clients:
         rid = ""
         try:
             for k, v in list(stream.initial_metadata() or ()) + list(stream.trailing_metadata() or ()):
-                if k == "magnetar-request-id":
+                if k == "coria-request-id":
                     rid = v
         except grpc.RpcError:
             pass
@@ -339,7 +339,7 @@ class Clients:
         kept = []
         for line in head.split("\r\n"):
             low = line.lower()
-            if low.startswith("magnetar-request-id:"):
+            if low.startswith("coria-request-id:"):
                 rid = line.split(":", 1)[1].strip()
                 continue
             if low.startswith("date:"):
@@ -408,7 +408,7 @@ class Clients:
             name, _, value = line.partition(":")
             low = name.lower()
             headers[low] = value.strip()
-            if low == "magnetar-request-id":
+            if low == "coria-request-id":
                 rid = value.strip()
                 continue
             if low == "date":
@@ -430,8 +430,8 @@ def bad_keys(keys):
     unknown_id = "".join(pysecrets.choice(BASE58) for _ in range(12))
     real_secret = keys["nogrant"]["key"].split("_", 2)[2]
     wrong = "".join(pysecrets.choice(BASE58) for _ in range(len(real_secret)))
-    unknown = "mgt_%s_%s" % (unknown_id, "".join(pysecrets.choice(BASE58) for _ in range(len(real_secret))))
-    wrong_secret = "mgt_%s_%s" % (keys["nogrant"]["id"], wrong)
+    unknown = "cor_%s_%s" % (unknown_id, "".join(pysecrets.choice(BASE58) for _ in range(len(real_secret))))
+    wrong_secret = "cor_%s_%s" % (keys["nogrant"]["id"], wrong)
     return [
         ("no key", None, ""),
         ("malformed key", "Bearer not-a-key", ""),
@@ -446,7 +446,7 @@ def bad_keys(keys):
 # service of the contract is served: defined by a proto file outside the
 # contract (scripts/prove/testdata/notserved), so grpcurl can call it by name, and
 # served by no server.
-STANDIN = ("magnetar.v1.NotServedService", "Nothing", "magnetar/v1/notserved.proto", False)
+STANDIN = ("coria.v1.NotServedService", "Nothing", "coria/v1/notserved.proto", False)
 STANDIN_PROTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testdata", "notserved")
 
 
@@ -815,7 +815,7 @@ def socket_post(sock, path, body):
     head, _, data = p.stdout.decode().partition("\r\n\r\n")
     rid = ""
     for line in head.split("\r\n"):
-        if line.lower().startswith("magnetar-request-id:"):
+        if line.lower().startswith("coria-request-id:"):
             rid = line.split(":", 1)[1].strip()
     return json.loads(data), rid
 
@@ -825,14 +825,14 @@ def read_logs(sock, out_path):
     the API as the local operator. Returns the entries, each with "log" set,
     and the request ids of the reads made here."""
     reads = []
-    tenants, rid = socket_post(sock, "/magnetar.v1.TenantService/ListTenants", {"pageSize": 1000})
+    tenants, rid = socket_post(sock, "/coria.v1.TenantService/ListTenants", {"pageSize": 1000})
     reads.append(("ListTenants", rid))
     entries = []
     scopes = [("installation", {"installation": {}})] + [(t["name"], {"tenant": t["name"]}) for t in tenants.get("tenants", [])]
     for log, scope in scopes:
         token = ""
         while True:
-            page, rid = socket_post(sock, "/magnetar.v1.AuditService/ListAuditEntries", {"scope": scope, "pageSize": 1000, "pageToken": token})
+            page, rid = socket_post(sock, "/coria.v1.AuditService/ListAuditEntries", {"scope": scope, "pageSize": 1000, "pageToken": token})
             reads.append(("ListAuditEntries", rid))
             for e in page.get("entries", []):
                 e["log"] = log
@@ -953,7 +953,7 @@ def cmd_audit(work, args):
     # The other direction: nothing in the logs that the proof did not do.
     started = set()
     for e in entries:
-        if id(e) in used and e.get("method") == "/magnetar.v1.TenantService/CreateTenant":
+        if id(e) in used and e.get("method") == "/coria.v1.TenantService/CreateTenant":
             started.add(e.get("requestId"))
     unexpected, counts = [], {"init": 0, "started": 0, "state": 0, "tui": 0, "after the stop": 0}
     states = []
@@ -1008,7 +1008,7 @@ def cmd_tui(work, args):
     spec = importlib.util.spec_from_file_location("check_tui", os.path.join(here, "..", "check", "tui.py"))
     tui = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tui)
-    for var in ("MAGNETAR_SERVER", "MAGNETAR_KEY", "MAGNETAR_CA_FILE"):
+    for var in ("CORIA_SERVER", "CORIA_KEY", "CORIA_CA_FILE"):
         os.environ.pop(var, None)
     start = datetime.datetime.now().timestamp()
     s = tui.Session(args.binary, args.data_dir, cols=120, rows=40)
@@ -1056,10 +1056,10 @@ def cmd_metrics(work, args):
 
     with open(args.file) as f:
         families = {fam.name: fam for fam in text_string_to_metric_families(f.read())}
-    want_zero = ["magnetar_audit_entries_dropped_refusals", "magnetar_audit_entries_dropped_records",
-                 "magnetar_audit_entries_dropped_writes", "magnetar_audit_entries_failed", "magnetar_audit_entries_notices"]
+    want_zero = ["coria_audit_entries_dropped_refusals", "coria_audit_entries_dropped_records",
+                 "coria_audit_entries_dropped_writes", "coria_audit_entries_failed", "coria_audit_entries_notices"]
     values, evidence = {}, []
-    for name in want_zero + ["magnetar_audit_entries_written"]:
+    for name in want_zero + ["coria_audit_entries_written"]:
         fam = families.get(name)
         if fam is None or not fam.samples:
             evidence.append("no family " + name)
@@ -1068,7 +1068,7 @@ def cmd_metrics(work, args):
     for name in want_zero:
         if values.get(name, 0) != 0:
             evidence.append("%s = %g" % (name, values[name]))
-    written = values.get("magnetar_audit_entries_written", 0)
+    written = values.get("coria_audit_entries_written", 0)
     if written <= 0:
         evidence.append("no entry written by the batching writer")
     work.result("8.3 the server's metrics count no dropped or failed audit entry", not evidence,

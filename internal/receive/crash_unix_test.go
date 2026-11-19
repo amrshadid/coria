@@ -17,23 +17,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/dir"
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/receive/header"
-	"github.com/amrshadid/magnetar/internal/receive/incoming"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/dir"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/receive/header"
+	"github.com/amrshadid/coria/internal/receive/incoming"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // The crash child's environment.
 const (
-	crashDirEnv    = "MAGNETAR_RECEIVE_CRASH_DIR"
-	crashPointEnv  = "MAGNETAR_RECEIVE_CRASH_POINT"
-	crashHitEnv    = "MAGNETAR_RECEIVE_CRASH_HIT"
-	crashRunEnv    = "MAGNETAR_RECEIVE_CRASH_RUN"
-	crashResendEnv = "MAGNETAR_RECEIVE_CRASH_RESEND"
+	crashDirEnv    = "CORIA_RECEIVE_CRASH_DIR"
+	crashPointEnv  = "CORIA_RECEIVE_CRASH_POINT"
+	crashHitEnv    = "CORIA_RECEIVE_CRASH_HIT"
+	crashRunEnv    = "CORIA_RECEIVE_CRASH_RUN"
+	crashResendEnv = "CORIA_RECEIVE_CRASH_RESEND"
 )
 
 // crashPoints are the points, before and after every durable effect of
@@ -135,7 +135,7 @@ func TestCrashMatrix(t *testing.T) {
 		hits = []int{1}
 	}
 	points := crashPoints
-	if only := os.Getenv("MAGNETAR_RECEIVE_CRASH_ONLY"); only != "" {
+	if only := os.Getenv("CORIA_RECEIVE_CRASH_ONLY"); only != "" {
 		points = strings.Split(only, ",")
 	}
 	rounds, killed := 0, 0

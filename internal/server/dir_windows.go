@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Windows keeps a directory's permissions in an access list (DACL), not in
@@ -54,7 +54,7 @@ func EnsurePrivateDir(dir string) error {
 		return fault.New(fault.Invalid, "server: "+dir+" is not a directory (a link is not accepted); move it away")
 	}
 	if err := setPrivateDACL(dir); err != nil {
-		return fault.Wrap(fault.Internal, err, "server: cannot make "+dir+" private to the user running magnetar")
+		return fault.Wrap(fault.Internal, err, "server: cannot make "+dir+" private to the user running coria")
 	}
 	return nil
 }

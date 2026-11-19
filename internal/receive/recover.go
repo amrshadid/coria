@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/receive/incoming"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/receive/incoming"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // RecoverReport is what Recover found and did.

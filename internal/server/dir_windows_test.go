@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/coria/internal/server"
 )
 
 // account returns the current user as DOMAIN\name, the form icacls prints,

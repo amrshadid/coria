@@ -17,23 +17,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
 )
 
 // crashRootEnv names the variable that makes this test binary, run again by
 // TestCrash, the child that puts until it is killed.
-const crashRootEnv = "MAGNETAR_BLOB_CRASH_ROOT"
+const crashRootEnv = "CORIA_BLOB_CRASH_ROOT"
 
 // crashGenEnv names the variable that gives the child its first
 // generation, higher each round, so a later round's objects are told from
 // an earlier one's.
-const crashGenEnv = "MAGNETAR_BLOB_CRASH_GENERATION"
+const crashGenEnv = "CORIA_BLOB_CRASH_GENERATION"
 
 // crashStallEnv names the variable that tells the child, in some rounds,
 // after how many finished Puts to stop halfway through the next one and
 // say so, so the kill is certain to land inside a Put.
-const crashStallEnv = "MAGNETAR_BLOB_CRASH_STALL"
+const crashStallEnv = "CORIA_BLOB_CRASH_STALL"
 
 // crashRounds is how many times the child is started and killed, each time
 // after a different number of finished Puts.

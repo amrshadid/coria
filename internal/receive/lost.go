@@ -3,7 +3,7 @@ package receive
 import (
 	"context"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // dropLost holds, as incoming_lost, every received file of the groups whose

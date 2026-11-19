@@ -49,7 +49,7 @@ func writePrivate(t *testing.T, path string, data []byte) {
 // loadText writes text as a private key file in a new directory and loads it.
 func loadText(t *testing.T, text string) (*Keys, error) {
 	t.Helper()
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	writePrivate(t, path, []byte(text))
 	return LoadKeyFile(path)
 }

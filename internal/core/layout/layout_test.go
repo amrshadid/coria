@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/label"
 )
 
 var scan = label.Path{Subject: "SUB-001", Session: "20240131-1.2.3", Scan: "3-1.2.4"}

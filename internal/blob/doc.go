@@ -1,4 +1,4 @@
-// Package blob is the storage port: the operations through which Magnetar
+// Package blob is the storage port: the operations through which CORIA
 // puts, reads, lists and removes the bytes of a tenant's archive, whatever
 // holds them. A storage is reached only through Store, so no code outside a
 // driver knows whether its bytes are on a disk or in a bucket, and a new kind

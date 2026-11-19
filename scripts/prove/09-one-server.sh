@@ -16,25 +16,25 @@ if kill -0 "$spid" 2> /dev/null; then
 fi
 wait "$spid" 2> /dev/null || second=$?
 untrack "$spid"
-api sock "" magnetar.v1.AccessService/WhoAmI '{}'
+api sock "" coria.v1.AccessService/WhoAmI '{}'
 # Refused for the reason that matters, the lock, and not for another one
 # (such as the socket's address being in use) that a server without the lock
 # might also meet.
-if [ "$second" != 0 ] && [ "$second" != running ] && grep -q 'another magnetar serve is running' "$work/second.log" && [ "$API_STATUS" = 200 ]; then
+if [ "$second" != 0 ] && [ "$second" != running ] && grep -q 'another coria serve is running' "$work/second.log" && [ "$API_STATUS" = 200 ]; then
 	ok "9.1 a second serve on the same directory is refused" "exit $second: '$(head -1 "$work/second.log")'; the first still answers on its socket"
 else
 	fail "9.1 a second serve on the same directory is refused" "second serve: $second; first server's answer: $API_STATUS" "$(cat "$work/second.log")"
 fi
 
 if [ "$(uname -s)" = Linux ] && sudo -n true 2> /dev/null; then
-	other=mgtproof$$
+	other=corproof$$
 	sudo -n useradd --no-create-home --shell /usr/sbin/nologin "$other"
 	user_made=$other
 	other_uid=$(id -u "$other")
 	try_other() {
 		OTHER_STATUS=0
 		sudo -n -u "$other" curl -sS --max-time 5 -o /dev/null -w '%{http_code}' --unix-socket "$sock" -H 'Content-Type: application/json' \
-			-d '{}' http://local/magnetar.v1.AccessService/WhoAmI > "$work/other.out" 2> "$work/other.err" || OTHER_STATUS=$?
+			-d '{}' http://local/coria.v1.AccessService/WhoAmI > "$work/other.out" 2> "$work/other.err" || OTHER_STATUS=$?
 	}
 	# As the server keeps its directories: the socket cannot be reached.
 	try_other

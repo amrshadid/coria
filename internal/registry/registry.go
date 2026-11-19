@@ -10,10 +10,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Driver opens the tenant databases of one database type. Package driver
@@ -55,11 +55,11 @@ const StateChangeInterval = time.Minute
 // "actor" set to "system".
 const (
 	// SystemMethod records a change of a tenant's state.
-	SystemMethod = "magnetar.registry/SetTenantState"
+	SystemMethod = "coria.registry/SetTenantState"
 	// StartMethod records a creation started: the tenant's row written as
 	// upgrading. It carries the request's id; the request's own entry is
 	// written when the creation settles.
-	StartMethod = "magnetar.registry/CreateTenantStarted"
+	StartMethod = "coria.registry/CreateTenantStarted"
 )
 
 // The details of the registry's audit entries.

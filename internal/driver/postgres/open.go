@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // minConnections is the fewest connections the pool may have. Migrate holds
@@ -63,7 +63,7 @@ func openPool(ctx context.Context, address, name string, opts poolOptions) (*pgx
 	// finds the connections of this program; UTC makes the times a psql
 	// session shows for these tables unsurprising.
 	if _, ok := cfg.ConnConfig.RuntimeParams["application_name"]; !ok {
-		cfg.ConnConfig.RuntimeParams["application_name"] = "magnetar"
+		cfg.ConnConfig.RuntimeParams["application_name"] = "coria"
 	}
 	if _, ok := cfg.ConnConfig.RuntimeParams["timezone"]; !ok {
 		cfg.ConnConfig.RuntimeParams["timezone"] = "UTC"

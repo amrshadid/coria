@@ -36,7 +36,7 @@
 //
 // # What this package must never do
 //
-// It must never do I/O, read the clock, or import anything of Magnetar's
+// It must never do I/O, read the clock, or import anything of CORIA's
 // outside the core: it is part of the core (.golangci.yml, depguard "core").
 // It must never put the refused value in an error's text: before
 // de-identification a value can be a patient's identifier, and an error's

@@ -6,8 +6,8 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // tenantHandler implements TenantService.
@@ -104,7 +104,7 @@ func (h tenantHandler) RemoveTenant(_ context.Context, req *v1.RemoveTenantReque
 		return nil, fault.New(fault.NotFound, "no tenant has that name")
 	}
 	delete(h.s.tenants, req.GetName())
-	loc := "/var/lib/magnetar/tenants/" + t.GetName() + ".db"
+	loc := "/var/lib/coria/tenants/" + t.GetName() + ".db"
 	if t.GetDatabaseType() == v1.DatabaseType_DATABASE_TYPE_POSTGRES {
 		loc = "db.example.org:5432/" + t.GetName()
 	}

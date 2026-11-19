@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // SampleSecret is the secret of the sample's key. It is made up for the
@@ -25,7 +25,7 @@ func SampleHash() []byte {
 // WriteSample writes a small installation into s: two tenants, three keys
 // (one revoked, one with a Unicode holder), grants on the installation and
 // on a tenant, settings, and the audit entries of each change, so that a
-// tool other than Magnetar can read what the driver wrote.
+// tool other than CORIA can read what the driver wrote.
 func WriteSample(tb testing.TB, s master.Store) {
 	tb.Helper()
 	ctx := context.Background()

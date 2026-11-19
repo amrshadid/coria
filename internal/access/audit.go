@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // dropNoticeEvery is how often at most the audit writer writes an entry

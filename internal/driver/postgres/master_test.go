@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 
-	"github.com/amrshadid/magnetar/internal/master/mastertest"
+	"github.com/amrshadid/coria/internal/master/mastertest"
 )
 
 // TestMasterContract runs the master port's contract suite on Postgres.

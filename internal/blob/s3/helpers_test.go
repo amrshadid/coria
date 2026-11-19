@@ -16,7 +16,7 @@ import (
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
-	"github.com/amrshadid/magnetar/internal/blob"
+	"github.com/amrshadid/coria/internal/blob"
 )
 
 // addressEnv names the variable that holds how to reach a scratch S3
@@ -27,8 +27,8 @@ import (
 // address from a skip into a failure: CI sets it, so a server that failed to
 // start cannot make the tests pass by not running.
 const (
-	addressEnv = "MAGNETAR_TEST_S3"
-	requireEnv = "MAGNETAR_REQUIRE_S3"
+	addressEnv = "CORIA_TEST_S3"
+	requireEnv = "CORIA_REQUIRE_S3"
 )
 
 // allowAll is the address check of tests, which talk to servers on

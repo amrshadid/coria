@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // effectiveUID is os.Geteuid, replaceable by a test that needs a file to
@@ -18,7 +18,7 @@ var effectiveUID = os.Geteuid
 
 // checkPrivate refuses a database that must not be used, by the same rule
 // as the installation's key file: the database file, its -wal and -shm files
-// when they exist, and its directory must belong to the user magnetar runs
+// when they exist, and its directory must belong to the user coria runs
 // as; nobody else may read or write the files, and nobody else may write the
 // directory, where they could replace the file or plant a -wal file of their
 // own. The master holds key hashes and sealed database addresses, and a user
@@ -80,7 +80,7 @@ func checkOne(path string, isDir bool, what, fix string) error {
 		return fault.New(fault.Invalid, what+" is not a regular file")
 	}
 	if st, ok := info.Sys().(*syscall.Stat_t); ok && int64(st.Uid) != int64(effectiveUID()) {
-		return fault.New(fault.Invalid, what+" belongs to another user; run magnetar as its owner, or chown it to the user magnetar runs as")
+		return fault.New(fault.Invalid, what+" belongs to another user; run coria as its owner, or chown it to the user coria runs as")
 	}
 	if isDir && info.Mode().Perm()&0o022 != 0 {
 		return fault.New(fault.Invalid, what+" can be written by users other than its owner ("+info.Mode().Perm().String()+"); run "+fix+" on it")

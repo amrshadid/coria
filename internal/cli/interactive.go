@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/amrshadid/magnetar/internal/tui"
+	"github.com/amrshadid/coria/internal/tui"
 )
 
 // exitSignal is the status of a program ended by an interrupt: 128 plus the
@@ -31,7 +31,7 @@ func (a *app) terminal() bool {
 // canOpenInteractive is the one rule for opening the interactive program: no
 // arguments (cobra has already refused any, so this is reached only for none)
 // and a terminal at both ends. The flags that find the server do not count as
-// arguments, so "magnetar --data-dir DIR" opens it too.
+// arguments, so "coria --data-dir DIR" opens it too.
 func (a *app) canOpenInteractive() bool { return a.terminal() }
 
 // openInteractive makes the client the way every command does, from the same

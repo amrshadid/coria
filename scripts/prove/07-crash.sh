@@ -19,10 +19,10 @@ hi=200
 odd=""
 bad_integrity=""
 for i in $(seq 1 "$CRASHES"); do
-	db=mgt_proof_crash_$i
-	psql_su -c "create database $db owner mgt_proof" > /dev/null
-	MGT_PROOF_CRASH=$(pg_dsn "$db")
-	secret "$MGT_PROOF_CRASH" search
+	db=cor_proof_crash_$i
+	psql_su -c "create database $db owner cor_proof" > /dev/null
+	COR_PROOF_CRASH=$(pg_dsn "$db")
+	secret "$COR_PROOF_CRASH" search
 	# The first kills are spread over 0 to 120 ms after the command starts;
 	# the rest aim between the latest kill that came before the creation
 	# and the earliest that came after it, where a kill lands inside it.
@@ -31,7 +31,7 @@ for i in $(seq 1 "$CRASHES"); do
 	else
 		ms=$((lo + 1 + RANDOM % (hi - lo - 1)))
 	fi
-	MGT_PROOF_CRASH=$MGT_PROOF_CRASH MAGNETAR_DATA_DIR=$crash "$bin" tenant create "c$i" --db-env MGT_PROOF_CRASH > /dev/null 2>&1 &
+	COR_PROOF_CRASH=$COR_PROOF_CRASH CORIA_DATA_DIR=$crash "$bin" tenant create "c$i" --db-env COR_PROOF_CRASH > /dev/null 2>&1 &
 	cpid=$!
 	sleep "$(printf '%d.%03d' $((ms / 1000)) $((ms % 1000)))"
 	kill -KILL "$crash_pid" 2> /dev/null || true

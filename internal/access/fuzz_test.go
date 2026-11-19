@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // FuzzCheck guards the check against arbitrary presented keys and tenant
@@ -24,14 +24,14 @@ func FuzzCheck(f *testing.F) {
 	a := newMemAccess(f, m, 0)
 	id := m.key.ID
 	for _, seed := range []string{
-		"", "mgt_", "mgt__", "Bearer x", "mgt_" + id + "_",
-		"mgt_" + id + "_" + strings.Repeat("1", 44),
-		"mgt_" + strings.Repeat("1", 12) + "_" + strings.Repeat("z", 44),
-		strings.Repeat("\x00", 61), "mgt_" + id + "_" + strings.Repeat("é", 22),
+		"", "cor_", "cor__", "Bearer x", "cor_" + id + "_",
+		"cor_" + id + "_" + strings.Repeat("1", 44),
+		"cor_" + strings.Repeat("1", 12) + "_" + strings.Repeat("z", 44),
+		strings.Repeat("\x00", 61), "cor_" + id + "_" + strings.Repeat("é", 22),
 	} {
 		f.Add(seed, "lab")
 	}
-	f.Add("mgt_"+id+"_"+strings.Repeat("A", 44), strings.Repeat("x", 300))
+	f.Add("cor_"+id+"_"+strings.Repeat("A", 44), strings.Repeat("x", 300))
 	f.Fuzz(func(t *testing.T, key, tenant string) {
 		if key == full {
 			t.Skip("the stored key itself")
@@ -72,7 +72,7 @@ func FuzzCheck(f *testing.F) {
 func FuzzCheckSQLite(f *testing.F) {
 	e := newEnv(f)
 	good := e.key(time.Time{}, on(master.Installation, master.RoleReader), on(master.TenantScope(e.lab.ID), master.RoleWriter))
-	f.Add("mgt_x", false, uint8(1), uint8(1), "lab")
+	f.Add("cor_x", false, uint8(1), uint8(1), "lab")
 	f.Add("", true, uint8(3), uint8(2), "lab")
 	f.Add("", true, uint8(3), uint8(3), "lab")
 	f.Add("", true, uint8(3), uint8(1), "clinic")

@@ -5,12 +5,12 @@ import (
 	"errors"
 	"maps"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // messageNoFile answers a quarantined file's id the tenant does not have.
@@ -21,7 +21,7 @@ const messageNoFile = "the tenant has no quarantined file with this id"
 // the reception pipeline.
 type quarantineService struct{ c *core }
 
-var _ magnetarv1connect.QuarantineServiceHandler = quarantineService{}
+var _ coriav1connect.QuarantineServiceHandler = quarantineService{}
 
 // reasons pairs each reason the store keeps with the contract's value.
 var reasons = map[tenant.QuarantineReason]v1.QuarantineReason{
@@ -155,7 +155,7 @@ func lookupFile(ctx context.Context, p tenant.Pipeline, id string) (tenant.Quara
 // newest first.
 func (s quarantineService) ListQuarantinedFiles(ctx context.Context, req *v1.ListQuarantinedFilesRequest) (*v1.ListQuarantinedFilesResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.QuarantineServiceListQuarantinedFilesProcedure)
+	d, err := c.decision(ctx, coriav1connect.QuarantineServiceListQuarantinedFilesProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (s quarantineService) ListQuarantinedFiles(ctx context.Context, req *v1.Lis
 // one can be given, the held file's header.
 func (s quarantineService) GetQuarantinedFile(ctx context.Context, req *v1.GetQuarantinedFileRequest) (*v1.GetQuarantinedFileResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.QuarantineServiceGetQuarantinedFileProcedure)
+	d, err := c.decision(ctx, coriav1connect.QuarantineServiceGetQuarantinedFileProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func headerDetails(include bool) map[string]string {
 // is; a file already released is answered as it stands.
 func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.ReleaseQuarantinedFileRequest) (*v1.ReleaseQuarantinedFileResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.QuarantineServiceReleaseQuarantinedFileProcedure)
+	d, err := c.changing(ctx, coriav1connect.QuarantineServiceReleaseQuarantinedFileProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func releaseDetails(req *v1.ReleaseQuarantinedFileRequest, first string) map[str
 // already rejected is answered as it stands, with its first reason.
 func (s quarantineService) RejectQuarantinedFile(ctx context.Context, req *v1.RejectQuarantinedFileRequest) (*v1.RejectQuarantinedFileResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.QuarantineServiceRejectQuarantinedFileProcedure)
+	d, err := c.changing(ctx, coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure)
 	if err != nil {
 		return nil, err
 	}

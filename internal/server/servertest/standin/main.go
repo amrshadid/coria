@@ -2,9 +2,9 @@
 // stand-in handlers of package servertest, so outside clients (grpcurl,
 // Python grpcio, curl) can be pointed at a real server process before the
 // real handlers exist. scripts/check/server.sh builds and drives it. It is
-// never part of a release: make build builds ./cmd/magnetar only.
+// never part of a release: make build builds ./cmd/coria only.
 //
-// MAGNETAR_STANDIN_DELAY sets how long ListTenants holds a request whose
+// CORIA_STANDIN_DELAY sets how long ListTenants holds a request whose
 // page token is "wait", as a Go duration (default 200ms).
 package main
 
@@ -16,16 +16,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/amrshadid/magnetar/internal/cli/servecmd"
-	"github.com/amrshadid/magnetar/internal/server/servertest"
+	"github.com/amrshadid/coria/internal/cli/servecmd"
+	"github.com/amrshadid/coria/internal/server/servertest"
 )
 
 func main() {
 	delay := 200 * time.Millisecond
-	if v := os.Getenv("MAGNETAR_STANDIN_DELAY"); v != "" {
+	if v := os.Getenv("CORIA_STANDIN_DELAY"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "standin: MAGNETAR_STANDIN_DELAY is not a duration")
+			fmt.Fprintln(os.Stderr, "standin: CORIA_STANDIN_DELAY is not a duration")
 			os.Exit(2)
 		}
 		delay = d

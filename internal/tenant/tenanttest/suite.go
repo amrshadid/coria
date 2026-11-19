@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/master/mastertest"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/master/mastertest"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Open returns a fresh, empty, migrated store for the tenant whose id is
@@ -299,7 +299,7 @@ func testAudit(e *env) {
 		Time:          T0.Add(time.Second),
 		KeyID:         "K1234567890a",
 		RemoteAddress: "[2001:db8::1]:51234",
-		Method:        "/magnetar.v1.SettingsService/SetSetting",
+		Method:        "/coria.v1.SettingsService/SetSetting",
 		TenantName:    "lab",
 		Object:        "setting/api.limit",
 		Outcome:       master.OutcomeRefused,

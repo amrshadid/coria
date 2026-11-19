@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestOpenMasterByScheme guards that a sqlite: address opens a working

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // TestStaleDecisionRefused guards a Decision kept past its request: the
@@ -106,7 +106,7 @@ func TestEntryDetailsAreItsOwn(t *testing.T) {
 func TestHandlerFacts(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(time.Time{}, on(master.Installation, master.RoleAdmin))
-	d := e.decide(access.APIKey(k.full), access.OnInstallation(master.RoleAdmin), "/magnetar.v1.TenantService/CreateTenant")
+	d := e.decide(access.APIKey(k.full), access.OnInstallation(master.RoleAdmin), "/coria.v1.TenantService/CreateTenant")
 	hf := access.Facts{Object: "obj\nx", TenantName: "lab", Details: map[string]string{"driver": "sqlite"}}
 
 	change := d.Entry(master.OutcomeDone, "", hf)
@@ -127,7 +127,7 @@ func TestHandlerFacts(t *testing.T) {
 		if s.Object != `obj\nx` || s.TenantName != "lab" || s.Details["driver"] != "sqlite" {
 			t.Errorf("entry %s lacks the handler's facts: %+v", s.ID, s)
 		}
-		if s.KeyID != k.id || s.LocalUser != "" || !s.Time.Equal(t0) || s.Method != "/magnetar.v1.TenantService/CreateTenant" ||
+		if s.KeyID != k.id || s.LocalUser != "" || !s.Time.Equal(t0) || s.Method != "/coria.v1.TenantService/CreateTenant" ||
 			s.RemoteAddress != "192.0.2.7:51000" || s.RequestID != "req-1" {
 			t.Errorf("entry %s has another identity than the check's: %+v", s.ID, s)
 		}
@@ -152,14 +152,14 @@ func TestUnknownKeyCostsAComparison(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(time.Time{})
 	count := access.CountVerifications(e.access)
-	unknown := "mgt_" + strings.Repeat("A", 12) + k.full[len("mgt_")+12:]
+	unknown := "cor_" + strings.Repeat("A", 12) + k.full[len("cor_")+12:]
 	for _, tc := range []struct {
 		key  string
 		want int
 	}{
-		{"mgt_malformed", 0},
+		{"cor_malformed", 0},
 		{unknown, 1},
-		{"mgt_" + k.id + "_" + strings.Repeat("A", 44), 1},
+		{"cor_" + k.id + "_" + strings.Repeat("A", 44), 1},
 	} {
 		before := count()
 		_, err := e.access.Check(e.ctx, access.APIKey(tc.key), access.Authenticated(), facts("m"))

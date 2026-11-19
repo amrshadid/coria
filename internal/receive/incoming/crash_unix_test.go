@@ -22,9 +22,9 @@ import (
 // The child process's environment: the area's root, the step to stop at,
 // and on which hit of it.
 const (
-	crashRootEnv  = "MAGNETAR_INCOMING_CRASH_ROOT"
-	crashPointEnv = "MAGNETAR_INCOMING_CRASH_POINT"
-	crashHitEnv   = "MAGNETAR_INCOMING_CRASH_HIT"
+	crashRootEnv  = "CORIA_INCOMING_CRASH_ROOT"
+	crashPointEnv = "CORIA_INCOMING_CRASH_POINT"
+	crashHitEnv   = "CORIA_INCOMING_CRASH_HIT"
 )
 
 // crashPoints are the durable steps of a landing.

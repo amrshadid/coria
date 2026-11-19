@@ -3,7 +3,7 @@ package tenant
 import (
 	"context"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // Store is one tenant's database, stated as operations. A driver package

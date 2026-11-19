@@ -9,7 +9,7 @@
 //
 // # What this package must never do
 //
-// It must never do I/O or import anything of Magnetar's: it is part of the
+// It must never do I/O or import anything of CORIA's: it is part of the
 // core (.golangci.yml, depguard "core"), so every package may import it,
 // including the settings, which import nothing else. It works on the text it
 // is given; where a path really leads, through symbolic links, is for the

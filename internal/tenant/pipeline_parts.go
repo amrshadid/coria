@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // The pipeline's narrower interfaces, each one concern, which Pipeline

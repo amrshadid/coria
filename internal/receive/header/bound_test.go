@@ -170,7 +170,7 @@ func TestAValueAfterThePixelDataIsHeldToTheBound(t *testing.T) {
 }
 
 // The child's environment: set, the test reads damaged files and exits.
-const quietChildEnv = "MAGNETAR_HEADER_QUIET_CHILD"
+const quietChildEnv = "CORIA_HEADER_QUIET_CHILD"
 
 // TestQuietChild reads a text file and a cut DICOM file, which go-dicom
 // would log about. Run alone, it does nothing.

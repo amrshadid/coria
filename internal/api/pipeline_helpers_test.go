@@ -15,13 +15,13 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/api"
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // testParts stands for the reception pipeline in the tests: it records what
@@ -202,7 +202,7 @@ func dimseReceiver(name, storage string, port int32) *v1.Receiver {
 	return &v1.Receiver{
 		Name: name, Storage: storage, Enabled: true,
 		Type: &v1.Receiver_Dimse{Dimse: &v1.DimseReceiver{
-			Port: port, AeTitle: "MAGNETAR",
+			Port: port, AeTitle: "CORIA",
 			Callers: &v1.DimseReceiver_AllowedCallers{AllowedCallers: &v1.AllowedCallers{Rules: []*v1.CallerRule{{CallingAeTitle: "PRISMA1", AddressRange: "10.20.0.0/24"}}}},
 		}},
 	}
@@ -257,7 +257,7 @@ func (f *placeFixture) heldFile(t *testing.T, receiver string, tooLarge bool) st
 	q := tenant.QuarantinedFile{
 		ID: id, Reason: tenant.QuarantineBadLabel, Receiver: receiver,
 		Details:     map[string]string{"label": "subject", "attribute": "PatientID", "fault": "missing"},
-		Caller:      tenant.Caller{CallingAETitle: "PRISMA1", CalledAETitle: "MAGNETAR", Address: "10.20.0.31:50288"},
+		Caller:      tenant.Caller{CallingAETitle: "PRISMA1", CalledAETitle: "CORIA", Address: "10.20.0.31:50288"},
 		Size:        528650,
 		SHA256:      sha256.Sum256([]byte(id)),
 		SOPClassUID: "1.2.840.10008.5.1.4.1.1.4", SOPInstanceUID: "2.25.9" + strings.TrimPrefix(id, "id-"),

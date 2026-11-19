@@ -8,8 +8,8 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // day is a day, for key lifetimes.
@@ -36,7 +36,7 @@ func testCreateKey(t *testing.T) {
 			check: func(t *testing.T, o outcome) {
 				made = o.res.(*v1.CreateKeyResponse)
 				k := made.GetKey()
-				if !strings.HasPrefix(made.GetSecret(), "mgt_"+k.GetId()+"_") {
+				if !strings.HasPrefix(made.GetSecret(), "cor_"+k.GetId()+"_") {
 					t.Errorf("the secret does not carry the key's id")
 				}
 				if got := k.GetExpireTime().AsTime().Sub(k.GetCreateTime().AsTime()); got != 90*day {
@@ -85,10 +85,10 @@ func testCreateKey(t *testing.T) {
 	// The entry's object is the new key's id, and no entry anywhere holds
 	// the secret.
 	for _, en := range f.masterLog() {
-		if strings.Contains(en.Reason+en.Object+strings.Join(mapValues(en.Details), " "), made.GetSecret()[len("mgt_"+made.GetKey().GetId()+"_"):]) {
+		if strings.Contains(en.Reason+en.Object+strings.Join(mapValues(en.Details), " "), made.GetSecret()[len("cor_"+made.GetKey().GetId()+"_"):]) {
 			t.Errorf("an audit entry holds the key's secret: %+v", en)
 		}
-		if en.Method == "/magnetar.v1.AccessService/CreateKey" && en.Details["holder"] == "alice" && en.Object != made.GetKey().GetId() {
+		if en.Method == "/coria.v1.AccessService/CreateKey" && en.Details["holder"] == "alice" && en.Object != made.GetKey().GetId() {
 			t.Errorf("the entry's object is %q, want the new key's id", en.Object)
 		}
 	}
@@ -391,7 +391,7 @@ func testWhoAmI(t *testing.T) {
 	who := func(c clients) outcome { return call(c.access.WhoAmI, &v1.WhoAmIRequest{}) }
 	f.run(t, []tcase{
 		{name: "no key", as: nobody, call: who, code: connect.CodeUnauthenticated},
-		{name: "an unknown key", as: caller{key: "mgt_AAAAAAAAAAAA_" + strings.Repeat("B", 44)}, call: who, code: connect.CodeUnauthenticated},
+		{name: "an unknown key", as: caller{key: "cor_AAAAAAAAAAAA_" + strings.Repeat("B", 44)}, call: who, code: connect.CodeUnauthenticated},
 		{name: "a key with no grant", as: f.noGrant, call: who, audit: done(),
 			check: func(t *testing.T, o outcome) {
 				p := o.res.(*v1.WhoAmIResponse).GetPrincipal()

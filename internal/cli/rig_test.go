@@ -10,16 +10,16 @@ import (
 	"testing"
 	"time"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
-	"github.com/amrshadid/magnetar/internal/core/settings"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
+	"github.com/amrshadid/coria/internal/core/settings"
 )
 
 // testKey is a made-up key for the network tests; it is not a real credential
 // and the fake accepts it only because the test says so.
-const testKey = "mgt_k00000000001_" + "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+const testKey = "cor_k00000000001_" + "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
 
 // fixedNow is the clock of every test, so times in the output are the same on
 // every run.
@@ -60,7 +60,7 @@ type rig struct {
 }
 
 // newRig serves a fake on a unix socket and points the commands at it through
-// MAGNETAR_DATA_DIR, the default way a person reaches a local server.
+// CORIA_DATA_DIR, the default way a person reaches a local server.
 func newRig(t *testing.T) *rig {
 	t.Helper()
 	fake := fakeserver.New()
@@ -71,7 +71,7 @@ func newRig(t *testing.T) *rig {
 }
 
 // newNetworkRig serves a fake over TLS that accepts only testKey, and points
-// the commands at it through MAGNETAR_SERVER and MAGNETAR_KEY.
+// the commands at it through CORIA_SERVER and CORIA_KEY.
 func newNetworkRig(t *testing.T) *rig {
 	t.Helper()
 	return newNetworkRigAs(t, true)
@@ -121,7 +121,7 @@ func runWith(env map[string]string, args ...string) result {
 }
 
 // writeCA writes the fake's certificate as a PEM file of authorities and
-// returns its path, for --ca-file or MAGNETAR_CA_FILE.
+// returns its path, for --ca-file or CORIA_CA_FILE.
 func writeCA(t *testing.T, fake *fakeserver.Server) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "ca.pem")
@@ -139,7 +139,7 @@ func newArchiveRig(t *testing.T) *rig {
 	r := newRig(t)
 	r.must("tenant", "create", "lab1")
 	r.must("storage", "add", "lab1", "main", "--type", "dir", "--root", "fast")
-	r.must("receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11112", "--aet", "MAGNETAR", "--allow-aet", "PRISMA1", "--enabled")
+	r.must("receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11112", "--aet", "CORIA", "--allow-aet", "PRISMA1", "--enabled")
 	return r
 }
 

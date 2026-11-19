@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // The secrets the logging tests plant.
 const (
-	plantedKey     = "mgt_LOGTESTKEY1_LOGSECRETLOGSECRETLOGSECRETLOGSECRETLOGSECRET1"
+	plantedKey     = "cor_LOGTESTKEY1_LOGSECRETLOGSECRETLOGSECRETLOGSECRETLOGSECRET1"
 	plantedAddress = "postgres://owner:s3cret-pw@db.example/lab"                       //nolint:gosec // G101: a planted test secret.
-	plantedBearer  = "Bearer mgt_HEADERKEY01_HEADERSECRETHEADERSECRETHEADERSECRETHEAD" //nolint:gosec // G101: a planted test secret.
+	plantedBearer  = "Bearer cor_HEADERKEY01_HEADERSECRETHEADERSECRETHEADERSECRETHEAD" //nolint:gosec // G101: a planted test secret.
 )
 
 // logEverything logs both secret-carrying messages and an authorization
@@ -24,8 +24,8 @@ const (
 func logEverything(format Format) string {
 	var buf bytes.Buffer
 	log := NewLogger(&buf, LogOptions{Format: format, Level: slog.LevelDebug})
-	req := &magnetarv1.CreateTenantRequest{Name: "lab", DatabaseType: magnetarv1.DatabaseType_DATABASE_TYPE_POSTGRES, DatabaseAddress: plantedAddress}
-	res := &magnetarv1.CreateKeyResponse{Key: &magnetarv1.Key{Id: "LOGTESTKEY1", Holder: "robot"}, Secret: plantedKey}
+	req := &coriav1.CreateTenantRequest{Name: "lab", DatabaseType: coriav1.DatabaseType_DATABASE_TYPE_POSTGRES, DatabaseAddress: plantedAddress}
+	res := &coriav1.CreateKeyResponse{Key: &coriav1.Key{Id: "LOGTESTKEY1", Holder: "robot"}, Secret: plantedKey}
 	log.Debug("request", "message", req)
 	log.Debug("response", slog.Any("message", res))
 	log.DebugContext(context.Background(), "grouped", slog.Group("call", slog.Any("in", req), slog.Any("out", res)))
@@ -88,14 +88,14 @@ func TestMetricsText(t *testing.T) {
 		TenantsByState: func() map[string]int { return map[string]int{"ready": 2, "failed": 1} },
 		Counters: func() []Counter {
 			return []Counter{
-				{Name: "magnetar_audit_entries_written_total", Help: "Written.", Value: 7},
-				{Name: "magnetar_audit_entries_dropped_refusals_total", Help: "Dropped.", Value: 1},
-				{Name: "magnetar_key_last_use_marks_written_total", Help: "Marks.", Value: 3},
+				{Name: "coria_audit_entries_written_total", Help: "Written.", Value: 7},
+				{Name: "coria_audit_entries_dropped_refusals_total", Help: "Dropped.", Value: 1},
+				{Name: "coria_key_last_use_marks_written_total", Help: "Marks.", Value: 3},
 			}
 		},
 	})
-	m.Observe("/magnetar.v1.AccessService/WhoAmI", "ok", 2*time.Millisecond)
-	m.Observe("/magnetar.v1.AccessService/WhoAmI", "unauthenticated", 40*time.Second)
+	m.Observe("/coria.v1.AccessService/WhoAmI", "ok", 2*time.Millisecond)
+	m.Observe("/coria.v1.AccessService/WhoAmI", "unauthenticated", 40*time.Second)
 	m.Observe(`we"ird\`, "ok", time.Microsecond)
 	end := m.Begin()
 	var buf bytes.Buffer
@@ -106,19 +106,19 @@ func TestMetricsText(t *testing.T) {
 	end()
 	out := buf.String()
 	for _, want := range []string{
-		"# TYPE magnetar_requests_total counter\n",
-		`magnetar_requests_total{method="/magnetar.v1.AccessService/WhoAmI",code="ok"} 1` + "\n",
-		`magnetar_request_duration_seconds_bucket{method="/magnetar.v1.AccessService/WhoAmI",le="0.0025"} 1` + "\n",
-		`magnetar_request_duration_seconds_bucket{method="/magnetar.v1.AccessService/WhoAmI",le="30"} 1` + "\n",
-		`magnetar_request_duration_seconds_bucket{method="/magnetar.v1.AccessService/WhoAmI",le="+Inf"} 2` + "\n",
-		`magnetar_request_duration_seconds_count{method="/magnetar.v1.AccessService/WhoAmI"} 2` + "\n",
+		"# TYPE coria_requests_total counter\n",
+		`coria_requests_total{method="/coria.v1.AccessService/WhoAmI",code="ok"} 1` + "\n",
+		`coria_request_duration_seconds_bucket{method="/coria.v1.AccessService/WhoAmI",le="0.0025"} 1` + "\n",
+		`coria_request_duration_seconds_bucket{method="/coria.v1.AccessService/WhoAmI",le="30"} 1` + "\n",
+		`coria_request_duration_seconds_bucket{method="/coria.v1.AccessService/WhoAmI",le="+Inf"} 2` + "\n",
+		`coria_request_duration_seconds_count{method="/coria.v1.AccessService/WhoAmI"} 2` + "\n",
 		`method="we\"ird\\"`,
-		"magnetar_requests_in_flight 1\n",
-		`magnetar_tenants{state="failed"} 1` + "\n",
-		"magnetar_audit_entries_written_total 7\n",
-		"# TYPE magnetar_audit_entries_dropped_refusals_total counter\n",
-		"magnetar_audit_entries_dropped_refusals_total 1\n",
-		"magnetar_key_last_use_marks_written_total 3\n",
+		"coria_requests_in_flight 1\n",
+		`coria_tenants{state="failed"} 1` + "\n",
+		"coria_audit_entries_written_total 7\n",
+		"# TYPE coria_audit_entries_dropped_refusals_total counter\n",
+		"coria_audit_entries_dropped_refusals_total 1\n",
+		"coria_key_last_use_marks_written_total 3\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)

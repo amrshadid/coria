@@ -8,10 +8,10 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // receiverWith returns the receiver of dimseReceiver changed by edit.
@@ -59,17 +59,17 @@ func testAddReceiver(t *testing.T) {
 		{name: "a quiet period in fractions", as: f.lab1Admin, call: add(receiverWith(func(r *v1.Receiver) { r.QuietPeriod = seconds(10); r.QuietPeriod.Nanos = 5 })), code: connect.CodeInvalidArgument, msg: "quiet_period"},
 		{name: "a file bound too small", as: f.lab1Admin, call: add(receiverWith(func(r *v1.Receiver) { r.MaxFileBytes = 1023 })), code: connect.CodeInvalidArgument, msg: "largest file"},
 		{name: "a port not allotted", as: f.lab1Admin, call: add(dimseReceiver("scanner1", "main", 104)), code: connect.CodeFailedPrecondition, msg: "receiver.ports",
-			audit: &wantAudit{log: "lab1", outcome: master.OutcomeFailed, object: "scanner1", details: map[string]string{"port": "104", "ae_title": "MAGNETAR", "storage": "main", "type": "dimse"}}},
+			audit: &wantAudit{log: "lab1", outcome: master.OutcomeFailed, object: "scanner1", details: map[string]string{"port": "104", "ae_title": "CORIA", "storage": "main", "type": "dimse"}}},
 		{name: "a bind address while none is listed", as: f.lab1Admin, call: add(receiverWith(func(r *v1.Receiver) { r.GetDimse().BindAddress = "192.0.2.10" })), code: connect.CodeFailedPrecondition, msg: "lists no bind address"},
 		{name: "a storage the tenant does not have", as: f.lab1Admin, call: add(dimseReceiver("scanner1", "none", 11112)), code: connect.CodeFailedPrecondition},
-		{name: "added", as: f.lab1Admin, call: add(receiverWith(func(r *v1.Receiver) { r.GetDimse().AeTitle = "  MAGNETAR " })),
-			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, object: "scanner1", details: map[string]string{"type": "dimse", "port": "11112", "ae_title": "MAGNETAR", "storage": "main"}},
+		{name: "added", as: f.lab1Admin, call: add(receiverWith(func(r *v1.Receiver) { r.GetDimse().AeTitle = "  CORIA " })),
+			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, object: "scanner1", details: map[string]string{"type": "dimse", "port": "11112", "ae_title": "CORIA", "storage": "main"}},
 			check: func(t *testing.T, o outcome) {
 				r := o.res.(*v1.AddReceiverResponse).GetReceiver()
 				if r.GetQuietPeriod().GetSeconds() != 60 || r.GetMaxOpenTime().GetSeconds() != 3600 || r.GetMaxFileBytes() != 1<<32 {
 					t.Errorf("the defaults: %v", r)
 				}
-				if r.GetDimse().GetAeTitle() != "MAGNETAR" || r.GetNaming() != nil || len(r.GetDimse().GetSopClasses()) != 0 {
+				if r.GetDimse().GetAeTitle() != "CORIA" || r.GetNaming() != nil || len(r.GetDimse().GetSopClasses()) != 0 {
 					t.Errorf("%v", r)
 				}
 				h := r.GetHealth()
@@ -256,7 +256,7 @@ func testRemoveReceiver(t *testing.T) {
 		{name: "no grant", as: f.noGrant, call: remove("scanner1"), code: connect.CodePermissionDenied},
 		{name: "operator", as: f.lab1Operator, call: remove("scanner1"), code: connect.CodePermissionDenied},
 		{name: "removed", as: f.lab1Admin, call: remove("scanner1"),
-			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, object: "scanner1", details: map[string]string{"type": "dimse", "port": "11112", "ae_title": "MAGNETAR"}},
+			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, object: "scanner1", details: map[string]string{"type": "dimse", "port": "11112", "ae_title": "CORIA"}},
 			check: func(t *testing.T, o outcome) {
 				r := o.res.(*v1.RemoveReceiverResponse).GetReceiver()
 				if r.GetName() != "scanner1" || !r.GetEnabled() || r.GetHealth().GetState() != v1.ReceiverState_RECEIVER_STATE_DOWN {

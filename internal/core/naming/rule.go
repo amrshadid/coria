@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/uid"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/uid"
 )
 
 // The bounds of a rule and of what it reads. A template longer than 256

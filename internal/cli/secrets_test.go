@@ -11,9 +11,9 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
 )
 
 // withoutKey returns a copy of an environment without the named variables.
@@ -37,7 +37,7 @@ func TestKeyTravelsOnlyInTheAuthorizationHeader(t *testing.T) {
 	const (
 		keyID  = "k00000000001"
 		secret = "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"
-		key    = "mgt_" + keyID + "_" + secret
+		key    = "cor_" + keyID + "_" + secret
 	)
 	fake := fakeserver.New()
 	fake.Settings = testSettings()
@@ -79,14 +79,14 @@ func TestKeyTravelsOnlyInTheAuthorizationHeader(t *testing.T) {
 	runAll(fromFile, "--key-file", keyFile)
 	// Forced failures of every kind, whose messages come from the server.
 	for _, code := range []connect.Code{connect.CodeInvalidArgument, connect.CodePermissionDenied, connect.CodeInternal, connect.CodeUnavailable} {
-		fake.FailWith(magnetarv1connect.TenantServiceListTenantsProcedure, code, "forced")
+		fake.FailWith(coriav1connect.TenantServiceListTenantsProcedure, code, "forced")
 		outputs = append(outputs, runWith(fromEnv, "tenant", "list").stderr)
 	}
 	// A wrong key, which the server refuses: its secret must not come back
 	// either.
 	const wrongSecret = "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
 	wrong := without(fromEnv, client.EnvKey)
-	wrong[client.EnvKey] = "mgt_" + keyID + "_" + wrongSecret
+	wrong[client.EnvKey] = "cor_" + keyID + "_" + wrongSecret
 	res := runWith(wrong, "whoami")
 	outputs = append(outputs, res.stdout, res.stderr)
 
@@ -112,7 +112,7 @@ func TestKeyTravelsOnlyInTheAuthorizationHeader(t *testing.T) {
 		for name, values := range r.Header {
 			for _, v := range values {
 				if name == http.CanonicalHeaderKey("Authorization") {
-					if v != "Bearer "+key && v != "Bearer mgt_"+keyID+"_"+wrongSecret {
+					if v != "Bearer "+key && v != "Bearer cor_"+keyID+"_"+wrongSecret {
 						t.Errorf("request %d: Authorization is %q", i, v)
 					}
 					authorized++
@@ -161,7 +161,7 @@ func TestKeyFileMustBePrivate(t *testing.T) {
 	}
 }
 
-// TestCAFileThroughTheCommands guards --ca-file and MAGNETAR_CA_FILE as a
+// TestCAFileThroughTheCommands guards --ca-file and CORIA_CA_FILE as a
 // person meets them: the flag or the variable names the authorities for
 // --server and replaces the system's; the flag beats the variable; a file that
 // is not certificates is a usage error naming the file and not its content;
@@ -179,7 +179,7 @@ func TestCAFileThroughTheCommands(t *testing.T) {
 	}
 	// The variable and the flag each work.
 	if res := runWith(n.env, "whoami"); res.code != 0 {
-		t.Errorf("MAGNETAR_CA_FILE: %+v", res)
+		t.Errorf("CORIA_CA_FILE: %+v", res)
 	}
 	if res := runWith(noCA, "--ca-file", ca, "whoami"); res.code != 0 {
 		t.Errorf("--ca-file: %+v", res)

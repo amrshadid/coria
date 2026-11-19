@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // testStatusSnapshot guards the snapshot: its counts equal the running

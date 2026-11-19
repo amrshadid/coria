@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/master/mastertest"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/master/mastertest"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // BenchmarkTenantSetting measures reading a tenant's setting by name, in a
@@ -36,7 +36,7 @@ func BenchmarkTenantAppendAudit(b *testing.B) {
 	s := openTenantTest(b, tenanttest.SuiteTenant)
 	ctx := context.Background()
 	entry := master.AuditEntry{
-		Time: mastertest.T0, KeyID: "BenchKey0500", RemoteAddress: "192.0.2.10:50000", Method: "/magnetar.v1.SettingsService/GetSetting",
+		Time: mastertest.T0, KeyID: "BenchKey0500", RemoteAddress: "192.0.2.10:50000", Method: "/coria.v1.SettingsService/GetSetting",
 		TenantName: "lab", Outcome: master.OutcomeDone, Details: map[string]string{"name": "x"}, RequestID: "bench",
 	}
 	i := 0

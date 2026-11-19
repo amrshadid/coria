@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Magnetar are written here. The form is
+All notable changes to CORIA are written here. The form is
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -10,7 +10,7 @@ All notable changes to Magnetar are written here. The form is
 
 - The repository had a README and nothing else: no module, no license, and no
   check that a change builds, is formatted or passes its tests. It is now the Go
-  module `github.com/amrshadid/magnetar`, under the Apache License 2.0, with the
+  module `github.com/amrshadid/coria`, under the Apache License 2.0, with the
   gates every change is judged by: `gofmt -s`, `go vet` on 64 and 32 bits,
   golangci-lint, govulncheck, `go test -race`, and static builds for linux/amd64,
   linux/386, linux/arm64, darwin/arm64 and windows/amd64 with their sizes
@@ -19,14 +19,14 @@ All notable changes to Magnetar are written here. The form is
   outside its tests, `internal/core` may import only the standard library and
   its own packages, and from the standard library no database, network, file
   or system package (`net/netip` and `net/url`, which do no I/O, excepted).
-- `magnetar version` (and `magnetar --version`) prints the version, the commit
+- `coria version` (and `coria --version`) prints the version, the commit
   and the Go release the binary was built with, read from the binary's own
   build information, so a report can name the build that wrote the data. Any
   other command is a usage error: one line on standard error and exit code 2.
 - A pull request into `main` is refused unless it comes from `develop`.
 - The API had no written contract, so handlers, the command line and outside
   clients had nothing fixed to agree on. It is now protobuf, package
-  `magnetar.v1` in `api/proto`: `TenantService`, `AccessService` (keys,
+  `coria.v1` in `api/proto`: `TenantService`, `AccessService` (keys,
   grants, `WhoAmI`), `SettingsService` and `AuditService`. Each method's
   comment states the role it needs, what it writes to the audit log and the
   errors it can answer, and each read or repeatable change is marked as such.
@@ -48,9 +48,9 @@ All notable changes to Magnetar are written here. The form is
   log only. An error with no kind is internal.
 - There was nowhere to keep a secret such as a tenant database's password
   except in plain text, and no way to make an API key. Package `internal/secret`
-  adds the installation key file (one `magnetar-key-v1 <version> <key>` line
+  adds the installation key file (one `coria-key-v1 <version> <key>` line
   per key version, created only where no file exists). The file must be private
-  to the user magnetar runs as, or it is refused with the command that fixes
+  to the user coria runs as, or it is refused with the command that fixes
   it: on Linux and macOS a regular file owned by that user with mode 0600 or
   narrower, with no macOS access list entry granting anything, in a directory
   owned by that user that nobody else can write; on Windows a regular file
@@ -60,7 +60,7 @@ All notable changes to Magnetar are written here. The form is
   sealed value moved to another row does not open, and opening fails the same
   way whatever is wrong. `scripts/check/seal.py` checks the format against
   Python's `cryptography` package in both directions, installed in CI from
-  hashed requirements. API keys look like `mgt_<id>_<secret>`, with 256 random
+  hashed requirements. API keys look like `cor_<id>_<secret>`, with 256 random
   bits in the secret, of which only the SHA-256 is to be stored, compared in
   constant time. Printing the loaded keys or a new API key, by any `fmt` verb,
   `log/slog` or `encoding/json`, shows no key material.
@@ -93,12 +93,12 @@ All notable changes to Magnetar are written here. The form is
   `key create|list|show|revoke`, `grant set|list|remove`, `setting
   get|set|unset|list`, `audit list`, `whoami` and `version`, with `--help` and
   shell completion. They reach the server on the local socket in the data
-  directory (`--data-dir`, `MAGNETAR_DATA_DIR`) or on the network over TLS
-  (`--server`, `MAGNETAR_SERVER`) with the key read from `MAGNETAR_KEY` or
+  directory (`--data-dir`, `CORIA_DATA_DIR`) or on the network over TLS
+  (`--server`, `CORIA_SERVER`) with the key read from `CORIA_KEY` or
   `--key-file`, which must name a file only its owner can open; no flag takes a
   key, a password or a database address, the filters that take a key's public
   id are `--key-id`, and `http://` is refused for any host that is not
-  loopback. TLS is 1.2 or later, and `--ca-file` (or `MAGNETAR_CA_FILE`) names
+  loopback. TLS is 1.2 or later, and `--ca-file` (or `CORIA_CA_FILE`) names
   the authorities to trust for `--server` in place of the system's, for an
   institution with a private authority. Output is a table
   for a person, or with `--json` one document that starts with
@@ -198,7 +198,7 @@ All notable changes to Magnetar are written here. The form is
   not use the registry yet.
 - The commands could not be browsed: finding a tenant's grants, its settings
   and its audit entries took a command each, and making a key meant copying
-  its secret from standard output. `magnetar` with no arguments, when standard
+  its secret from standard output. `coria` with no arguments, when standard
   input and output are both terminals, now opens an interactive program (Bubble
   Tea 2.1.1 and Lip Gloss 2.1.1, MIT, with the modules they need) with a menu,
   scrolling lists and detail screens for tenants, keys, grants, settings and
@@ -285,7 +285,7 @@ All notable changes to Magnetar are written here. The form is
   default. The list's one setting, `key.default-lifetime` (whole hours or
   days, such as `90d`, from 1h to 3650d; 90 days by default), is the
   lifetime of a key made with no expiry.
-- `magnetar serve` served no API method: the handlers existed and nothing
+- `coria serve` served no API method: the handlers existed and nothing
   joined them to the server, and the commands and the interactive program
   had only run against an in-memory stand-in. `serve` now builds the tenant
   registry, with the SQLite and Postgres tenant drivers, and the handlers,
@@ -308,7 +308,7 @@ All notable changes to Magnetar are written here. The form is
   with `scripts/prove/steps.py`; CI's "Proof: the installed binary, from outside"
   job, on Linux, with a Postgres service container) builds every target as
   `make build` does and runs the real binary against tools that are not
-  Magnetar: curl, grpcurl, openssl, sqlite3, psql and pg_dump, and Python's
+  CORIA: curl, grpcurl, openssl, sqlite3, psql and pg_dump, and Python's
   grpcio. It shows, each as a named check with what it measured: `init` and
   `serve` on the local socket and on TLS; no key or grant after `init`, the
   first key made on the socket, and all 17 methods of the contract (with
@@ -334,7 +334,7 @@ All notable changes to Magnetar are written here. The form is
   or any speed.
 - The API could create tenants and keys but had no way to give a tenant a place to
   keep data or a way for data to arrive. The contract now has five more services in
-  `magnetar.v1`, as protobuf with nothing behind them yet: `StorageService` (a
+  `coria.v1`, as protobuf with nothing behind them yet: `StorageService` (a
   directory under a root the installation names, or an S3 bucket at an endpoint the
   installation lists, whose secret access key goes in and never comes back),
   `ReceiverService` (a receiver, in this version a DICOM listener on a port the
@@ -372,7 +372,7 @@ All notable changes to Magnetar are written here. The form is
   reception state machine as one table, with completion decided from the
   quiet period and the longest open time, a clock set back included. The
   template, pattern, key and manifest parsers are fuzzed.
-- Magnetar had nowhere to put a file. The storage port, `internal/blob`, now
+- CORIA had nowhere to put a file. The storage port, `internal/blob`, now
   states what every storage promises: Put streams bytes to a key and returns
   their size and SHA-256 computed as they pass, and the object appears whole or
   not at all, a replaced one included; Read gives a byte range as a stream of
@@ -530,7 +530,7 @@ All notable changes to Magnetar are written here. The form is
 - The tenant's store can list a scan's instances, tell a caller which
   receptions failed when it gave up their work, and refuse a write of
   received or held files from a worker that lost its lease.
-- `magnetar quarantine release --reason TEXT` keeps why a held file was
+- `coria quarantine release --reason TEXT` keeps why a held file was
   released with its record, as a rejection keeps its reason; `quarantine show`
   prints it as "Release reason". The reason is optional, 1 to 1024 bytes, not
   only spaces.
@@ -552,7 +552,7 @@ All notable changes to Magnetar are written here. The form is
   (port taken, TLS files unusable) shows down with its reason and is retried
   while the others run. Stopping the server finishes the stores in flight
   within 30 seconds.
-- A receiver in `magnetar serve` archives what it receives: the reception
+- A receiver in `coria serve` archives what it receives: the reception
   pipeline opens a tenant's storage by the same rules the API applies when
   the storage is added, checked again at every use, and names labels with the
   tenant's own keyed hash. Each tenant has a naming key of 32 random bytes,
@@ -578,7 +578,7 @@ All notable changes to Magnetar are written here. The form is
   kills as well; with `PROVE_POSTGRES` and `PROVE_PSQL`, a tenant on
   Postgres whose catalog psql reads, through kills as well. It replaces `make check-reception`.
 - `docs/testing.md` lists how tests and checks are run, what `-short` means,
-  how a slow test is marked, and every `MAGNETAR_*` variable; the reception
+  how a slow test is marked, and every `CORIA_*` variable; the reception
   walk-through says which changes take effect without a restart.
 - A tenant on Postgres has the event feed a SQLite tenant has: every step of
   a reception, each file quarantined and each decision on one, receivers'
@@ -622,6 +622,15 @@ All notable changes to Magnetar are written here. The form is
 
 ### Changed
 
+- The project is named CORIA, Core Research Imaging Archive. The module is
+  `github.com/amrshadid/coria`; the command is `coria`; the API's package is
+  `coria.v1` (every method's path starts `/coria.v1.`); the environment
+  variables start `CORIA_`; a key starts `cor_`; a key file's lines start
+  `coria-key-v1`; the request id header is `Coria-Request-Id`; the metrics
+  start `coria_`; the local socket is `run/coria.sock`. Nothing was released
+  under the old name, so nothing reads it: an installation made before this
+  change is made again. `api/renamed.txt` lets the API's breaking-change
+  check read a commit before the rename under the new name.
 - A scan's files are put to the storage, and read back, eight at a time
   instead of one after another, every put still ended before any read-back.
   A reception of 200 slices of 256 KiB went from 21.5 to 30.6 files a second
@@ -644,7 +653,7 @@ All notable changes to Magnetar are written here. The form is
 - A receiver with no bind address is refused, address in use, when another
   program holds its port on the IPv4 wildcard address, on macOS as elsewhere.
 
-- `magnetar receiver add` and `set` refuse `--allow-aet-from` with no title or
+- `coria receiver add` and `set` refuse `--allow-aet-from` with no title or
   no range, naming the missing part; an AE title that contains `@` is read
   whole, since the rule splits at the last `@`.
 - The comments of the storage and settings contract state the 1023-byte limit
@@ -920,7 +929,7 @@ All notable changes to Magnetar are written here. The form is
   each step. They now have a key of their own. The 1,000-tenant test runs
   once, without the race detector, as a step of its own (`make test-scale`),
   instead of inside the race and 32-bit runs.
-- `magnetar init` and `magnetar serve`. Nothing could make an installation or
+- `coria init` and `coria serve`. Nothing could make an installation or
   serve the API. `init` makes the data directory private to its user, the key
   file, the migrated master database (SQLite unless `--master-env` names an
   environment variable holding another address), `tenants/` and `run/`; it
@@ -928,12 +937,12 @@ All notable changes to Magnetar are written here. The form is
   the key file loses every secret. `serve` takes an operating system lock on
   the data directory (a second server is refused, naming the first; a server
   killed with signal 9 leaves nothing stale), listens on the local socket
-  `run/magnetar.sock` (HTTP/2 without TLS; the caller must be the server's own
+  `run/coria.sock` (HTTP/2 without TLS; the caller must be the server's own
   user, read from the kernel on Linux and macOS; on Windows the directory's
   access list is the only guard), and on the network only with `--listen`
   (TLS 1.2 or later; without a certificate, a loopback address only). Every
   request, RPC or plain HTTP, goes through one checked path: request id in
-  `Magnetar-Request-Id`, credential, the access check with the method's
+  `Coria-Request-Id`, credential, the access check with the method's
   requirement from a table tested against the contract's `Role:` lines, then
   the handler, with a panic answered as internal. Messages over 4 MiB are
   refused both ways, a call without a deadline gets 30 seconds and no call
@@ -953,4 +962,4 @@ All notable changes to Magnetar are written here. The form is
   until they are, every API method passes the check and then answers that
   the service is not there.
 
-[Unreleased]: https://github.com/amrshadid/magnetar/commits/develop
+[Unreleased]: https://github.com/amrshadid/coria/commits/develop

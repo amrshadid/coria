@@ -6,7 +6,7 @@
 
 section "11. the static builds and their sizes"
 if [ "$BUILD" = host ]; then
-	skip "11.1 a static build for every target of make build" "MAGNETAR_PROVE_BUILD=host: only $host_os/$host_arch was built"
+	skip "11.1 a static build for every target of make build" "CORIA_PROVE_BUILD=host: only $host_os/$host_arch was built"
 else
 	targets=$(sed -n 's/^PLATFORMS *:= *//p' "$root/Makefile")
 	bad=""
@@ -15,7 +15,7 @@ else
 		echo "|---|---:|---:|"
 	} > "$work/sizes.txt"
 	for t in $targets; do
-		f=$work/bin/magnetar-${t%/*}-${t#*/}
+		f=$work/bin/coria-${t%/*}-${t#*/}
 		[ "${t%/*}" = windows ] && f=$f.exe
 		if [ ! -f "$f" ]; then
 			bad="$bad $t: missing;"

@@ -7,7 +7,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // seedReceptions puts three receptions in lab1: a failed one, a finished one
@@ -149,7 +149,7 @@ func TestReceptionDiscard(t *testing.T) {
 	before := r.fake.Requests()
 
 	expect(t, r.run("reception", "discard", "lab1", "rcp-failed", "--reason", "sender resent it"), 2, "",
-		"magnetar: reception discard: nothing was discarded: this would remove for good the files of reception \"rcp-failed\" that were not archived; run it again with --yes to do it\n")
+		"coria: reception discard: nothing was discarded: this would remove for good the files of reception \"rcp-failed\" that were not archived; run it again with --yes to do it\n")
 	if res := r.run("reception", "discard", "lab1", "rcp-failed"); res.code != 2 || !strings.Contains(res.stderr, "required flag(s) \"reason\" not set") {
 		t.Errorf("no reason: %+v", res)
 	}

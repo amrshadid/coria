@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/receive/dimse"
-	"github.com/amrshadid/magnetar/internal/receive/supervise"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/receive/dimse"
+	"github.com/amrshadid/coria/internal/receive/supervise"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // oneTenant is the supervisor's view of an archive's one tenant.

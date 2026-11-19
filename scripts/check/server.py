@@ -9,7 +9,7 @@ calls the server run by scripts/check/server.sh:
   - over TLS: ListKeys with no key, a malformed key, an unknown key and a key
     with no grant, each of which must be refused with the code and message
     the contract fixes, and the same call with an admin key, which must
-    succeed; every answer must carry a Magnetar-Request-Id;
+    succeed; every answer must carry a Coria-Request-Id;
   - over the local socket (unix: address): WhoAmI as the local operator,
     which must succeed, and with an unknown key, which must be refused;
   - the standard health service over TLS without a key, as raw bytes (an
@@ -17,13 +17,13 @@ calls the server run by scripts/check/server.sh:
     is needed;
   - the text in METRICS_FILE (a scrape of /metrics) through the Prometheus
     Python client's parser;
-  - when MAGNETAR_CHECK_TENANTS is 1 (the real program, not the stand-in):
+  - when CORIA_CHECK_TENANTS is 1 (the real program, not the stand-in):
     CreateTenant over TLS with no key and with a key with no grant, each
     refused, then with the admin key, which must make the tenant ready, and
     ListTenants, which must list it to the admin key and nothing to the key
     with no grant; then the first and the third use of
     docs/api-walkthrough-reception.md, call by call, on that tenant (see
-    check_reception), with the directory root MAGNETAR_CHECK_ROOT names,
+    check_reception), with the directory root CORIA_CHECK_ROOT names,
     which the installation's setting storage.directory-roots lists as
     "fast".
 
@@ -41,7 +41,7 @@ from prometheus_client.parser import text_string_to_metric_families
 
 UNAUTHENTICATED = "the request carries no valid key"
 DENIED = "the key may not do this"
-UNKNOWN_KEY = "mgt_111111111111_1111111111111111111111111111111111111111111"
+UNKNOWN_KEY = "cor_111111111111_1111111111111111111111111111111111111111111"
 
 
 def fail(msg):
@@ -50,7 +50,7 @@ def fail(msg):
 
 
 def compile_contract(proto_dir, out_dir):
-    files = [os.path.join("magnetar", "v1", f) for f in sorted(os.listdir(os.path.join(proto_dir, "magnetar", "v1")))]
+    files = [os.path.join("coria", "v1", f) for f in sorted(os.listdir(os.path.join(proto_dir, "coria", "v1")))]
     import grpc_tools
 
     include = os.path.join(os.path.dirname(grpc_tools.__file__), "_proto")
@@ -74,14 +74,14 @@ def expect(name, got, code, message):
     status, details, md = got
     if status != code or (message is not None and details != message):
         fail(f"{name}: got {status} {details!r}, want {code} {message!r}")
-    if not md.get("magnetar-request-id"):
-        fail(f"{name}: no magnetar-request-id")
-    print(f"ok   {name}: {status.name} {details!r} request-id={md['magnetar-request-id']}")
+    if not md.get("coria-request-id"):
+        fail(f"{name}: no coria-request-id")
+    print(f"ok   {name}: {status.name} {details!r} request-id={md['coria-request-id']}")
 
 
 def check_tenants(tls_addr, creds, no_grant, admin):
-    tenant_pb2 = importlib.import_module("magnetar.v1.tenant_pb2")
-    tenant_grpc = importlib.import_module("magnetar.v1.tenant_pb2_grpc")
+    tenant_pb2 = importlib.import_module("coria.v1.tenant_pb2")
+    tenant_grpc = importlib.import_module("coria.v1.tenant_pb2_grpc")
     channel = grpc.secure_channel(tls_addr, creds)
     stub = tenant_grpc.TenantServiceStub(channel)
     create = tenant_pb2.CreateTenantRequest(name="py1", database_type=tenant_pb2.DATABASE_TYPE_SQLITE)
@@ -139,14 +139,14 @@ def check_reception(tls_addr, creds, socket, admin, root):
     header and the UID filters for a reader, a release in no mode, a
     rejection with no reason, a release of a file that is not there.
     """
-    pb = {n: importlib.import_module(f"magnetar.v1.{n}_pb2") for n in ("access", "scope", "settings", "storage", "receiver", "reception", "quarantine")}
-    grpc_mod = {n: importlib.import_module(f"magnetar.v1.{n}_pb2_grpc") for n in ("access", "settings", "storage", "receiver", "reception", "quarantine", "tenant")}
+    pb = {n: importlib.import_module(f"coria.v1.{n}_pb2") for n in ("access", "scope", "settings", "storage", "receiver", "reception", "quarantine")}
+    grpc_mod = {n: importlib.import_module(f"coria.v1.{n}_pb2_grpc") for n in ("access", "settings", "storage", "receiver", "reception", "quarantine", "tenant")}
     from google.protobuf import duration_pb2, field_mask_pb2
 
     local = grpc.insecure_channel("unix:" + socket)
     acc = grpc_mod["access"].AccessServiceStub(local)
     tenants = grpc_mod["tenant"].TenantServiceStub(local)
-    tenant_pb2 = importlib.import_module("magnetar.v1.tenant_pb2")
+    tenant_pb2 = importlib.import_module("coria.v1.tenant_pb2")
     must("socket CreateTenant py2", tenants.CreateTenant, tenant_pb2.CreateTenantRequest(name="py2", database_type=tenant_pb2.DATABASE_TYPE_SQLITE))
 
     def key_on(tenant, role, holder):
@@ -199,7 +199,7 @@ def check_reception(tls_addr, creds, socket, admin, root):
     # Add a receiver.
     rule = R.CallerRule(calling_ae_title="PRISMA1", address_range="10.20.0.0/24")
     scanner = R.Receiver(name="scanner1", enabled=True, storage="main",
-                         dimse=R.DimseReceiver(port=11112, ae_title="MAGNETAR", allowed_callers=R.AllowedCallers(rules=[rule])))
+                         dimse=R.DimseReceiver(port=11112, ae_title="CORIA", allowed_callers=R.AllowedCallers(rules=[rule])))
     got = must("use 1: AddReceiver", receivers.AddReceiver, R.AddReceiverRequest(tenant="py1", receiver=scanner), lab_admin).receiver
     if got.quiet_period.seconds != 60 or got.max_open_time.seconds != 3600 or got.max_file_bytes != 4294967296 or got.HasField("naming"):
         fail(f"use 1: AddReceiver defaults: {got}")
@@ -262,10 +262,10 @@ def main():
     if len(sys.argv) != 8:
         fail(__doc__)
     proto_dir, socket, tls_addr, ca_file, no_grant, admin, metrics_file = sys.argv[1:]
-    out = tempfile.mkdtemp(prefix="mgt-py-")
+    out = tempfile.mkdtemp(prefix="cor-py-")
     compile_contract(proto_dir, out)
-    access_pb2 = importlib.import_module("magnetar.v1.access_pb2")
-    access_grpc = importlib.import_module("magnetar.v1.access_pb2_grpc")
+    access_pb2 = importlib.import_module("coria.v1.access_pb2")
+    access_grpc = importlib.import_module("coria.v1.access_pb2_grpc")
 
     with open(ca_file, "rb") as f:
         creds = grpc.ssl_channel_credentials(root_certificates=f.read())
@@ -289,9 +289,9 @@ def main():
     print("ok   tls health without a key: SERVING")
     tls.close()
 
-    if os.environ.get("MAGNETAR_CHECK_TENANTS") == "1":
+    if os.environ.get("CORIA_CHECK_TENANTS") == "1":
         check_tenants(tls_addr, creds, no_grant, admin)
-        check_reception(tls_addr, creds, socket, admin, os.environ["MAGNETAR_CHECK_ROOT"])
+        check_reception(tls_addr, creds, socket, admin, os.environ["CORIA_CHECK_ROOT"])
 
     local = grpc.insecure_channel("unix:" + socket)
     lstub = access_grpc.AccessServiceStub(local)
@@ -303,11 +303,11 @@ def main():
     with open(metrics_file) as f:
         text = f.read()
     families = {fam.name: fam for fam in text_string_to_metric_families(text)}
-    for name in ("magnetar_requests", "magnetar_request_duration_seconds", "magnetar_requests_in_flight",
-                 "magnetar_audit_entries_written", "magnetar_audit_entries_failed",
-                 "magnetar_audit_entries_dropped_refusals", "magnetar_audit_entries_dropped_records",
-                 "magnetar_audit_entries_dropped_writes", "magnetar_audit_entries_rerouted", "magnetar_audit_entries_notices",
-                 "magnetar_key_last_use_marks_written", "magnetar_key_last_use_marks_dropped", "magnetar_key_last_use_marks_failed"):
+    for name in ("coria_requests", "coria_request_duration_seconds", "coria_requests_in_flight",
+                 "coria_audit_entries_written", "coria_audit_entries_failed",
+                 "coria_audit_entries_dropped_refusals", "coria_audit_entries_dropped_records",
+                 "coria_audit_entries_dropped_writes", "coria_audit_entries_rerouted", "coria_audit_entries_notices",
+                 "coria_key_last_use_marks_written", "coria_key_last_use_marks_dropped", "coria_key_last_use_marks_failed"):
         if name not in families:
             fail(f"metrics: no family {name} in {sorted(families)}")
     samples = sum(len(f.samples) for f in families.values())

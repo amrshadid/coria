@@ -13,8 +13,8 @@ import (
 // client connection or a database: any left once every test has stopped
 // its server is a goroutine without an owner.
 var leakMarks = []string{
-	"magnetar/internal/server",
-	"magnetar/internal/access",
+	"coria/internal/server",
+	"coria/internal/access",
 	"net/http.(*conn)",
 	"net/http.(*Server)",
 	"net/http.(*persistConn)",

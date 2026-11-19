@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Events is a tenant's event feed: one row for each thing that happened in

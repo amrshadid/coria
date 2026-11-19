@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/master/mastertest"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/master/mastertest"
 )
 
 // BenchmarkKeyByID measures the first read of every request with a key.

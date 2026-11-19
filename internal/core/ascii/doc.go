@@ -4,6 +4,6 @@
 //
 // # What this package must never do
 //
-// It must never do I/O or import anything of Magnetar's: it is part of the
+// It must never do I/O or import anything of CORIA's: it is part of the
 // core (.golangci.yml, depguard "core"), which every package may import.
 package ascii

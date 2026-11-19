@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // maxTLSFile bounds a certificate chain or key file read: 1 MiB is far past

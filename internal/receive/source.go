@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Arrival is one file a source hands in: its bytes as they come, and what

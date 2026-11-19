@@ -1,4 +1,4 @@
-// Package version says which build of Magnetar is running: its version, the
+// Package version says which build of CORIA is running: its version, the
 // commit it was built from and the Go release that compiled it.
 //
 // A report about an archive is only useful when it names the build that wrote
@@ -7,8 +7,8 @@
 // information the Go linker embeds (runtime/debug), and a release build may set
 // them with -ldflags:
 //
-//	go build -ldflags "-X github.com/amrshadid/magnetar/internal/version.Version=v1.0.0 \
-//	    -X github.com/amrshadid/magnetar/internal/version.Commit=0123456789ab" ./cmd/magnetar
+//	go build -ldflags "-X github.com/amrshadid/coria/internal/version.Version=v1.0.0 \
+//	    -X github.com/amrshadid/coria/internal/version.Commit=0123456789ab" ./cmd/coria
 //
 // This package must never read a file, the environment or the network, and
 // never fail: a binary that cannot say what it is gives the person asking

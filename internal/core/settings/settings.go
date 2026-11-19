@@ -66,7 +66,7 @@ const ReservedPrefix = "system."
 
 // The bounds every setting's name and value are held to, the same as the
 // databases hold them (master.ValidateSettingName, master.MaxSettingValueLength),
-// restated here because the core imports nothing of Magnetar's.
+// restated here because the core imports nothing of CORIA's.
 const (
 	MaxNameLength  = 128
 	MaxValueLength = 64 << 10

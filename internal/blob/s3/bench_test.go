@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob/blobtest"
+	"github.com/amrshadid/coria/internal/blob/blobtest"
 )
 
 // repeat is a reader of n bytes made of one block over and over, so a

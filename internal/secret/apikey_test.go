@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // apiKeyPattern is the documented shape of an API key, written out
 // independently of the code that makes and parses one.
-var apiKeyPattern = regexp.MustCompile(`^mgt_([1-9A-HJ-NP-Za-km-z]{12})_([1-9A-HJ-NP-Za-km-z]{44})$`)
+var apiKeyPattern = regexp.MustCompile(`^cor_([1-9A-HJ-NP-Za-km-z]{12})_([1-9A-HJ-NP-Za-km-z]{44})$`)
 
 // TestMakeAPIKeyShape guards the made key: the documented shape, its id is
 // the one returned, and its hash is the SHA-256 of the secret part.
@@ -103,29 +103,29 @@ func TestParseAPIKeyRefuses(t *testing.T) {
 	id, secret := k.ID, k.Key()[len(k.Key())-secretLength:]
 	tests := map[string]string{
 		"empty":              "",
-		"prefix only":        "mgt_",
-		"upper prefix":       "MGT_" + id + "_" + secret,
+		"prefix only":        "cor_",
+		"upper prefix":       "COR_" + id + "_" + secret,
 		"other prefix":       "mgx_" + id + "_" + secret,
 		"no prefix":          id + "_" + secret + "xxxx",
-		"dash separator":     "mgt_" + id + "-" + secret,
-		"short id":           "mgt_" + id[:11] + "_" + secret + "1",
-		"long id":            "mgt_" + id + "1_" + secret[:43],
-		"short secret":       "mgt_" + id + "_" + secret[:43],
-		"long secret":        "mgt_" + id + "_" + secret + "1",
-		"zero in secret":     "mgt_" + id + "_0" + secret[1:],
-		"O in id":            "mgt_O" + id[1:] + "_" + secret,
-		"I in secret":        "mgt_" + id + "_" + secret[:43] + "I",
-		"l in id":            "mgt_" + id[:11] + "l_" + secret,
-		"space":              "mgt_" + id + "_" + secret[:43] + " ",
-		"newline":            "mgt_" + id + "_" + secret[:43] + "\n",
-		"leading space":      " mgt_" + id + "_" + secret[:43],
-		"multibyte":          "mgt_" + id + "_" + secret[:42] + "é",
+		"dash separator":     "cor_" + id + "-" + secret,
+		"short id":           "cor_" + id[:11] + "_" + secret + "1",
+		"long id":            "cor_" + id + "1_" + secret[:43],
+		"short secret":       "cor_" + id + "_" + secret[:43],
+		"long secret":        "cor_" + id + "_" + secret + "1",
+		"zero in secret":     "cor_" + id + "_0" + secret[1:],
+		"O in id":            "cor_O" + id[1:] + "_" + secret,
+		"I in secret":        "cor_" + id + "_" + secret[:43] + "I",
+		"l in id":            "cor_" + id[:11] + "l_" + secret,
+		"space":              "cor_" + id + "_" + secret[:43] + " ",
+		"newline":            "cor_" + id + "_" + secret[:43] + "\n",
+		"leading space":      " cor_" + id + "_" + secret[:43],
+		"multibyte":          "cor_" + id + "_" + secret[:42] + "é",
 		"bearer word":        "Bearer " + k.Key(),
-		"underscore in id":   "mgt_" + id[:11] + "__" + secret[:43],
+		"underscore in id":   "cor_" + id[:11] + "__" + secret[:43],
 		"key twice":          k.Key() + k.Key(),
 		"very long":          strings.Repeat("a", 1<<20),
-		"nul in secret":      "mgt_" + id + "_" + secret[:43] + "\x00",
-		"separator replaced": "mgt_" + id + "1" + secret,
+		"nul in secret":      "cor_" + id + "_" + secret[:43] + "\x00",
+		"separator replaced": "cor_" + id + "1" + secret,
 	}
 	for name, presented := range tests {
 		t.Run(name, func(t *testing.T) {

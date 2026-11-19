@@ -12,15 +12,15 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // testKey is a made-up key for the fake; it is not a real credential.
-const testKey = "mgt_testtesttest_" + "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqr"
+const testKey = "cor_testtesttest_" + "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqr"
 
 // env returns an environment reader over a map.
 func env(m map[string]string) func(string) string {
@@ -204,7 +204,7 @@ func TestReadKey(t *testing.T) {
 		env  string
 		want string
 	}{
-		"unset":       {"", "", "no key: set MAGNETAR_KEY or pass --key-file PATH"},
+		"unset":       {"", "", "no key: set CORIA_KEY or pass --key-file PATH"},
 		"empty file":  {write("empty", "\n"), "", "no key"},
 		"missing":     {filepath.Join(dir, "missing"), "", "cannot read the key file"},
 		"huge":        {write("huge", strings.Repeat("secretsecret", 200)), "", "larger than a key can be"},
@@ -298,7 +298,7 @@ func TestForcedCodes(t *testing.T) {
 	}
 	for code, kind := range cases {
 		fake := fakeserver.New()
-		fake.FailWith(magnetarv1connect.TenantServiceListTenantsProcedure, code, "forced")
+		fake.FailWith(coriav1connect.TenantServiceListTenantsProcedure, code, "forced")
 		dir := fake.ServeUnix(t)
 		c, err := client.New(client.Config{DataDir: dir})
 		if err != nil {

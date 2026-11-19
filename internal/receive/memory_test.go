@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/testkit"
+	"github.com/amrshadid/coria/internal/testkit"
 )
 
 // scaleEnv, when set, runs the scale test of many files, which takes minutes
 // where every sync reaches the drive (F_FULLFSYNC on macOS).
-const scaleEnv = "MAGNETAR_TEST_SCALE"
+const scaleEnv = "CORIA_TEST_SCALE"
 
 // TestScaleLargeFileInBoundedMemory guards that memory does not grow with a
 // file's size: a generated file of 512 MiB is landed, archived and read back

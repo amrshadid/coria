@@ -2,14 +2,14 @@
 """The proof of reception, from outside the binary.
 
 It builds and runs the real program, sets it up with its own command line,
-and then checks what reception did only with tools that are not Magnetar:
+and then checks what reception did only with tools that are not CORIA:
 dcmtk (storescu, echoscu, dcmdump, dcmconv) and pynetdicom send; pydicom
 and dcmdump read what was archived; hashlib checks every manifest entry;
 Python's sqlite3 reads the tenant's catalog; the status and the event
 stream are read over HTTPS in the Connect protocol with Python's standard
 library alone. With --s3, a tenant archives to a bucket, and each object is
 read back with an S3 GET signed (Signature Version 4) by the standard
-library, not by Magnetar's client. With --postgres and --psql, a tenant's
+library, not by CORIA's client. With --postgres and --psql, a tenant's
 catalog is a Postgres database, read by psql. Each check prints one line, "ok",
 "FAIL" or "skip", with what it saw, and the run ends with the counts; it
 exits 1 when one failed.
@@ -64,10 +64,10 @@ class Proof:
 
     def __init__(self, args):
         self.args = args
-        self.work = tempfile.mkdtemp(prefix="mgt-prove-reception.")
+        self.work = tempfile.mkdtemp(prefix="cor-prove-reception.")
         os.chmod(self.work, 0o700)
         self.data = os.path.join(self.work, "data")
-        self.bin = os.path.join(self.work, "magnetar")
+        self.bin = os.path.join(self.work, "coria")
         self.server = None
         self.counts = {"ok": 0, "FAIL": 0, "skip": 0}
         self.s3 = None
@@ -95,7 +95,7 @@ class Proof:
         """Runs the command line on the local socket and returns its output."""
         p = subprocess.run([self.bin, "--data-dir", self.data, *args], capture_output=True, text=True, timeout=120)
         if check and p.returncode != 0:
-            raise SystemExit("magnetar %s: exit %d: %s" % (" ".join(args), p.returncode, p.stderr.strip()))
+            raise SystemExit("coria %s: exit %d: %s" % (" ".join(args), p.returncode, p.stderr.strip()))
         return p.stdout
 
     def serve(self):
@@ -222,7 +222,7 @@ class Proof:
         returns the connection and its response, unread."""
         c = self.connect()
         payload = json.dumps(body).encode()
-        c.request("POST", "/magnetar.v1.MonitorService/Watch", b"\0" + struct.pack(">I", len(payload)) + payload,
+        c.request("POST", "/coria.v1.MonitorService/Watch", b"\0" + struct.pack(">I", len(payload)) + payload,
                   {"Content-Type": "application/connect+json", "Connect-Protocol-Version": "1", "Authorization": "Bearer " + self.api_key})
         return c, c.getresponse()
 
@@ -693,7 +693,7 @@ def on_postgres(p, port):
     p.result("11.1 a study archived for a tenant on Postgres, its catalog read by psql, every file read by dcmdump and its checksum right",
              statuses == [0] * 7 and [x["state"] for x in rows] == ["done"] and len(held) == 7 and not bad,
              "statuses %s; receptions %s (psql); %d instances held (psql)" % (statuses, [x["state"] for x in rows], len(held)), bad)
-    st = p.call("magnetar.v1.MonitorService/GetStatus", {"scope": {"tenant": "pg"}})["tenants"][0]
+    st = p.call("coria.v1.MonitorService/GetStatus", {"scope": {"tenant": "pg"}})["tenants"][0]
     c = st.get("counts", {})
     want = p.query("pg", """SELECT (SELECT count(*) FROM subjects) AS subjects, (SELECT count(*) FROM sessions) AS sessions,
         (SELECT count(*) FROM scans) AS scans, (SELECT count(*) FROM instances WHERE state = 'held') AS instances""")[0]
@@ -762,16 +762,21 @@ def nearly_full(p, port):
     code, out = p.echoscu(port, "STORESCU")
     refused = code != 0 and "Association Rejected" in out and "Transient" in out
     p.m("setting", "set", "storage.reserve", "1%")
-    up = wait_up(p, "lab", "scanner", timeout=20)
+    # Space is looked at every 5 seconds; a round of the tenant's worker
+    # busy with other work has been seen to delay it to 25 seconds.
+    up_started = time.time()
+    up = wait_up(p, "lab", "scanner", timeout=60)
+    up_after = time.time() - up_started
     code2, out2 = p.echoscu(port, "STORESCU")
     p.result("7.1 nearly full: refused as transient, then served once space returns", down and refused and up and code2 == 0,
-             "down %s; echoscu while full exit %d; up again %s; echoscu after exit %d" % (down, code, up, code2), [out[-300:], out2[-200:]])
+             "down %s; echoscu while full exit %d; up again %s, %.1f s after the reserve was lowered; echoscu after exit %d"
+             % (down, code, up, up_after, code2), [out[-300:], out2[-200:]])
 
 
 def numbers(p, cursor):
     """The status and the events, read over HTTPS by Python, give the
     counts the catalog holds, read by SQLite."""
-    st = p.call("magnetar.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]
+    st = p.call("coria.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]
     c = st.get("counts", {})
     want = p.query("lab", """SELECT (SELECT count(*) FROM subjects) AS subjects, (SELECT count(*) FROM sessions) AS sessions,
         (SELECT count(*) FROM scans) AS scans, (SELECT count(*) FROM instances WHERE state = 'held') AS instances,
@@ -841,7 +846,7 @@ def main():
     args = ap.parse_args()
     p = Proof(args)
     try:
-        subprocess.run([args.go, "build", "-o", p.bin, os.path.join(ROOT, "cmd", "magnetar")], check=True)
+        subprocess.run([args.go, "build", "-o", p.bin, os.path.join(ROOT, "cmd", "coria")], check=True)
         p.cert, p.key_file = os.path.join(p.work, "cert.pem"), os.path.join(p.work, "key.pem")
         subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes", "-days", "1",
                         "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", p.key_file, "-out", p.cert],
@@ -873,7 +878,7 @@ def main():
             os.environ["PROVE_PG_ADDRESS"] = urllib.parse.urlunsplit((base.scheme, base.netloc, "/" + db, base.query, ""))
             p.pg_tenants["pg"] = db
             setup_tenant(p, "pg", pg_port, create=["--db-env", "PROVE_PG_ADDRESS"])
-        cursor = p.call("magnetar.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]["eventCursor"]
+        cursor = p.call("coria.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]["eventCursor"]
         arrives(p, lab_port)
         study, files = two_parts(p, lab_port)
         corrected(p, lab_port, study, files)

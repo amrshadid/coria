@@ -7,14 +7,14 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // seedQuarantine puts four records in lab1: two held (a bad label with a
 // header, a too-large file whose bytes were never kept), one rejected and one
 // released.
 func seedQuarantine(r *rig) {
-	caller := &v1.Caller{CallingAeTitle: "PRISMA1", CalledAeTitle: "MAGNETAR", Address: "192.0.2.7:51234"}
+	caller := &v1.Caller{CallingAeTitle: "PRISMA1", CalledAeTitle: "CORIA", Address: "192.0.2.7:51234"}
 	r.fake.AddQuarantined("lab1", &v1.QuarantinedFile{
 		Id: "q-label", Reason: v1.QuarantineReason_QUARANTINE_REASON_BAD_LABEL, Details: map[string]string{"label": "subject", "fault": "missing", "attribute": "PatientID"},
 		State: v1.QuarantineState_QUARANTINE_STATE_HELD, Receiver: "scanner1", Reception: "rcp-1", Caller: caller, SizeBytes: 2048, Sha256: strings.Repeat("ab", 32),
@@ -78,7 +78,7 @@ func TestQuarantineListAndShow(t *testing.T) {
 	expect(t, r.run("quarantine", "show", "lab1", "q-label"), 0,
 		"ID:               q-label\nState:            held\nReason:           bad label\n"+
 			"  attribute:      PatientID\n  fault:          missing\n  label:          subject\n"+
-			"Receiver:         scanner1\nReception:        rcp-1\nCalling AE title: PRISMA1\nCalled AE title:  MAGNETAR\nAddress:          192.0.2.7:51234\n"+
+			"Receiver:         scanner1\nReception:        rcp-1\nCalling AE title: PRISMA1\nCalled AE title:  CORIA\nAddress:          192.0.2.7:51234\n"+
 			"Size:             2048 bytes\nSHA-256:          "+strings.Repeat("ab", 32)+"\nSOP class:        -\nSOP instance:     1.2.3.4\nStudy:            1.2.3\n"+
 			"Series:           -\nTransfer syntax:  -\nBytes held:       yes\nQuarantined:      2026-11-17 15:00:00 +03:00\nDecided:          -\n", "")
 	with := r.run("quarantine", "show", "lab1", "q-label", "--header")
@@ -241,7 +241,7 @@ func TestQuarantineReject(t *testing.T) {
 	before := r.fake.Requests()
 
 	expect(t, r.run("quarantine", "reject", "lab1", "q-label", "--reason", "not our study"), 2, "",
-		"magnetar: quarantine reject: nothing was rejected: this would remove for good the bytes of quarantined file \"q-label\"; its record stays; run it again with --yes to do it\n")
+		"coria: quarantine reject: nothing was rejected: this would remove for good the bytes of quarantined file \"q-label\"; its record stays; run it again with --yes to do it\n")
 	if res := r.run("quarantine", "reject", "lab1", "q-label"); res.code != 2 || !strings.Contains(res.stderr, "required flag(s) \"reason\" not set") {
 		t.Errorf("no reason: %+v", res)
 	}

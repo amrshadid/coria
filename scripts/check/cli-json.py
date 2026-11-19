@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Check the JSON that every Magnetar command writes with --json, with Python.
+"""Check the JSON that every CORIA command writes with --json, with Python.
 
 The Go test TestWriteJSONOutputs (internal/cli/jsonout_test.go) runs each
 command with --json against an in-process server and leaves its standard output
-in <dir>/<name>.json. This script, which shares no code with Magnetar, reads
+in <dir>/<name>.json. This script, which shares no code with CORIA, reads
 each file with Python's json module and checks what a program that reads the
 output relies on:
 

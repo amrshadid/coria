@@ -12,12 +12,12 @@ section "5. sealed: the server with another key file"
 # is given an entry first (a read of its settings, by request id), so the
 # copy can be asked for both tenants' data; the pause lets the batching
 # audit writer put both entries in their logs before the copy is taken.
-api sock "" magnetar.v1.SettingsService/ListSettings '{"scope":{"tenant":"lite"}}' lite
+api sock "" coria.v1.SettingsService/ListSettings '{"scope":{"tenant":"lite"}}' lite
 rid_lite=$API_RID
-api sock "" magnetar.v1.SettingsService/ListSettings '{"scope":{"tenant":"pg"}}' pg
+api sock "" coria.v1.SettingsService/ListSettings '{"scope":{"tenant":"pg"}}' pg
 rid_pg=$API_RID
 sleep 2
-cli "$data" /magnetar.v1.AccessService/ListKeys "*" --json key list
+cli "$data" /coria.v1.AccessService/ListKeys "*" --json key list
 main_keys=$(grep -c '"holder"' "$work/cli.out" || true)
 copy=$work/c
 mkdir -m 700 "$copy" "$copy/run" "$copy/tenants"
@@ -53,7 +53,7 @@ for i in $(seq 1 150); do kill -0 "$cpid" 2> /dev/null || break; sleep 0.1; done
 port_status=0
 curl -sS --max-time 3 -o /dev/null --cacert "$work/cert.pem" "https://127.0.0.1:$cport/grpc.health.v1.Health/Check" 2> /dev/null || port_status=$?
 socket_made=no
-[ -e "$copy/run/magnetar.sock" ] && socket_made=yes
+[ -e "$copy/run/coria.sock" ] && socket_made=yes
 if kill -0 "$cpid" 2> /dev/null; then
 	kill -KILL "$cpid"
 fi
@@ -109,7 +109,7 @@ if start_server "$work/copy.log" "$copy"; then
 	# requests.
 	cli "$copy" "" "" --json audit list --tenant lite --limit 1000
 	lite_has=$(grep -c "\"requestId\": \"$rid_lite\"" "$work/cli.out" || true)
-	cli "$copy" /magnetar.v1.AuditService/ListAuditEntries pg --json audit list --tenant pg --limit 1000
+	cli "$copy" /coria.v1.AuditService/ListAuditEntries pg --json audit list --tenant pg --limit 1000
 	pg_has=$(grep -c "\"requestId\": \"$rid_pg\"" "$work/cli.out" || true)
 	cli "$copy" "" "" --json key list
 	copy_keys=$(grep -c '"holder"' "$work/cli.out" || true)

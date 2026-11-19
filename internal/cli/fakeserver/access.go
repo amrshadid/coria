@@ -9,9 +9,9 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // accessHandler implements AccessService.
@@ -70,7 +70,7 @@ func (h accessHandler) CreateKey(_ context.Context, req *v1.CreateKeyRequest) (*
 	if _, never := req.GetExpiry().(*v1.CreateKeyRequest_NeverExpire); !never {
 		key.ExpireTime = timestamppb.New(expire)
 	}
-	secret := "mgt_" + id + "_" + strings.Repeat("S", 44)
+	secret := "cor_" + id + "_" + strings.Repeat("S", 44)
 	s.keys = append(s.keys, &keyRecord{key: key, secret: secret})
 	return &v1.CreateKeyResponse{Key: key, Secret: secret}, nil
 }

@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/server"
 )
 
 // The names inside a data directory.
@@ -31,7 +31,7 @@ const (
 
 // EnvDataDir names the data directory when --data-dir is not given; the
 // command line's client reads the same variable.
-const EnvDataDir = "MAGNETAR_DATA_DIR"
+const EnvDataDir = "CORIA_DATA_DIR"
 
 // Options is what the two commands take from the process around them, so a
 // test can run them with its own streams and environment.
@@ -121,9 +121,9 @@ environment variable holding another database's address), tenants/ and run/.
 A directory that already holds an installation is refused. Losing the key
 file loses every secret: back it up as soon as it is made.
 
-The data directory is --data-dir, or MAGNETAR_DATA_DIR.`,
-		Example: `  magnetar init --data-dir /var/lib/magnetar
-  MASTER_DB='postgres://...' magnetar init --data-dir /var/lib/magnetar --master-env MASTER_DB`,
+The data directory is --data-dir, or CORIA_DATA_DIR.`,
+		Example: `  coria init --data-dir /var/lib/coria
+  MASTER_DB='postgres://...' coria init --data-dir /var/lib/coria --master-env MASTER_DB`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			dir, err := dataDir(cmd, opts.Getenv)
@@ -156,7 +156,7 @@ func writeIdentity(ctx context.Context, m master.Store, dir string, keys *secret
 	}
 	id := server.NewID()
 	audit := master.AuditEntry{
-		ID: server.NewID(), Time: time.Now().UTC(), Method: "magnetar init", Object: server.InstallationIDSetting,
+		ID: server.NewID(), Time: time.Now().UTC(), Method: "coria init", Object: server.InstallationIDSetting,
 		Outcome: master.OutcomeDone, Reason: "the installation's identity, which serve checks against the data directory",
 	}
 	if err := m.SetSetting(ctx, server.InstallationIDSetting, id, audit, master.Server()); err != nil {
@@ -167,7 +167,7 @@ func writeIdentity(ctx context.Context, m master.Store, dir string, keys *secret
 		return err
 	}
 	audit = master.AuditEntry{
-		ID: server.NewID(), Time: time.Now().UTC(), Method: "magnetar init", Object: server.KeyCheckSetting,
+		ID: server.NewID(), Time: time.Now().UTC(), Method: "coria init", Object: server.KeyCheckSetting,
 		Outcome: master.OutcomeDone, Reason: "the key check, which serve opens with its key file before it starts",
 	}
 	if err := m.SetSetting(ctx, server.KeyCheckSetting, check, audit, master.Server()); err != nil {
@@ -267,7 +267,7 @@ file itself.
 The master database is %s.
 
 Start the server with:
-  magnetar serve --data-dir %s
+  coria serve --data-dir %s
 `, dir, keyPath, where, dir)
 	if err != nil {
 		// The installation is whole; only the message failed. It is not

@@ -17,11 +17,11 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/api"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // notServedFile is the list of the services the contract defines and the
@@ -103,11 +103,11 @@ func TestNotServedServices(t *testing.T) {
 	for _, p := range notServedProblems(notServed, lines, known) {
 		t.Error(p)
 	}
-	served := notServedProblems(append(slices.Clone(notServed), "magnetar.v1.AccessService"), lines, known)
+	served := notServedProblems(append(slices.Clone(notServed), "coria.v1.AccessService"), lines, known)
 	if len(served) == 0 || !strings.Contains(served[0], "AccessService") {
 		t.Errorf("a served service on the list was not reported: %v", served)
 	}
-	missing := notServedProblems(append(slices.Clone(notServed), "magnetar.v1.NoSuchService"), lines, known)
+	missing := notServedProblems(append(slices.Clone(notServed), "coria.v1.NoSuchService"), lines, known)
 	if len(missing) != 1 || !strings.Contains(missing[0], "NoSuchService") {
 		t.Errorf("a listed service no file defines was not reported: %v", missing)
 	}
@@ -159,7 +159,7 @@ func TestNotServedServices(t *testing.T) {
 // comments, so the files themselves are read.
 func roleLines(t *testing.T) map[string]string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join("..", "..", "api", "proto", "magnetar", "v1", "*.proto"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "api", "proto", "coria", "v1", "*.proto"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("the proto files: %v (%d found)", err, len(files))
 	}
@@ -183,7 +183,7 @@ func roleLines(t *testing.T) map[string]string {
 				comment = append(comment, strings.TrimSpace(strings.TrimPrefix(trimmed, "//")))
 			case rpc.MatchString(line):
 				name := rpc.FindStringSubmatch(line)[1]
-				proc := "/magnetar.v1." + svc + "/" + name
+				proc := "/coria.v1." + svc + "/" + name
 				out[proc] = roleOf(comment)
 				comment = nil
 			default:

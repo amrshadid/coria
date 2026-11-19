@@ -7,12 +7,12 @@
 section "1. install and run"
 out=$("$bin" version 2>&1) || true
 case $out in
-	"magnetar "*) ok "1.1 magnetar version answers" "$out" ;;
-	*) fail "1.1 magnetar version answers" "unexpected output" "$out" ;;
+	"coria "*) ok "1.1 coria version answers" "$out" ;;
+	*) fail "1.1 coria version answers" "unexpected output" "$out" ;;
 esac
 
 data=$work/d
-sock=$data/run/magnetar.sock
+sock=$data/run/coria.sock
 mkdir -m 700 "$data"
 if "$bin" init --data-dir "$data" > "$work/init.out" 2>&1 &&
 	[ "$(mode_of "$data/key")" = 600 ] && [ "$(mode_of "$data/run")" = 700 ] && [ "$(mode_of "$data")" = 700 ] &&
@@ -30,12 +30,12 @@ else
 fi
 
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 \
-	-subj /CN=magnetar-proof -addext subjectAltName=IP:127.0.0.1 \
+	-subj /CN=coria-proof -addext subjectAltName=IP:127.0.0.1 \
 	-keyout "$work/key.pem" -out "$work/cert.pem" 2> /dev/null
 port=$(free_port)
 if start_server "$work/serve.log" "$data" --listen "127.0.0.1:$port" --tls-cert "$work/cert.pem" --tls-key "$work/key.pem" --log-level debug; then
 	main_pid=$SERVER_PID
-	cli "$data" /magnetar.v1.AccessService/WhoAmI "*" whoami
+	cli "$data" /coria.v1.AccessService/WhoAmI "*" whoami
 	whoami=$(head -1 "$work/cli.out")
 	tls_subject=$(echo | openssl s_client -connect "127.0.0.1:$port" -CAfile "$work/cert.pem" -verify_return_error 2> /dev/null | grep -c 'Verify return code: 0 (ok)' || true)
 	if [ "$CLI_STATUS" = 0 ] && [ "$tls_subject" -ge 1 ] && [ -S "$sock" ] && [ "$(mode_of "$data/run")" = 700 ]; then
@@ -62,7 +62,7 @@ message HealthCheckResponse {
 service Health { rpc Check(HealthCheckRequest) returns (HealthCheckResponse); }
 EOF
 gout=$("$GRPCURL" -import-path "$work/health" -proto grpc/health/v1/health.proto -cacert "$work/cert.pem" -v -d '{}' "127.0.0.1:$port" grpc.health.v1.Health/Check 2>&1) || true
-grid=$(printf '%s\n' "$gout" | awk -F ': ' 'tolower($1) == "magnetar-request-id" { print $2 }')
+grid=$(printf '%s\n' "$gout" | awk -F ': ' 'tolower($1) == "coria-request-id" { print $2 }')
 [ -z "$grid" ] || ledger "$grid" /grpc.health.v1.Health/Check "" none "*" "grpcurl health"
 api tls "" grpc.health.v1.Health/Check '{}'
 if printf '%s' "$gout" | grep -q '"status": "SERVING"' && [ "$API_STATUS" = 200 ] && [ "$API_BODY" = '{"status":"SERVING"}' ]; then

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/amrshadid/magnetar/internal/core/naming"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // testStorages guards adding, reading, listing and removing storages: each
@@ -32,7 +32,7 @@ func testStorages(e *penv) {
 	if !e.auditIDs()[addAudit.ID] {
 		e.Error("AddStorage wrote no audit entry")
 	}
-	s3 := s3Storage("bucket-a", "magnetar/lab-a/")
+	s3 := s3Storage("bucket-a", "coria/lab-a/")
 	got, err = e.p.AddStorage(e.ctx, s3, at(2), e.audit(), nil)
 	e.ok("AddStorage s3", err)
 	if got.S3.SealedSecret != nil || !got.S3.SecretSet {
@@ -40,7 +40,7 @@ func testStorages(e *penv) {
 	}
 	read, err := e.p.Storage(e.ctx, "bucket-a")
 	e.ok("Storage", err)
-	if read.S3.SealedSecret != nil || !read.S3.SecretSet || read.S3.AccessKeyID != "AKIDEXAMPLE" || read.S3.Prefix != "magnetar/lab-a/" {
+	if read.S3.SealedSecret != nil || !read.S3.SecretSet || read.S3.AccessKeyID != "AKIDEXAMPLE" || read.S3.Prefix != "coria/lab-a/" {
 		e.Errorf("Storage read back %+v", read.S3)
 	}
 	for _, s := range allPages(e, 1, func(p master.Page) ([]tenant.Storage, string, error) { return e.p.ListStorages(e.ctx, p) }) {
@@ -63,13 +63,13 @@ func testStorages(e *penv) {
 		{"containing another directory", dirStorage("fast-c", "studies")},
 		{"the same directory in other case", dirStorage("fast-d", "Studies/A")},
 		{"the tenant's whole directory", dirStorage("fast-e", "")},
-		{"a prefix inside another's", s3Storage("bucket-b", "magnetar/lab-a/inner/")},
+		{"a prefix inside another's", s3Storage("bucket-b", "coria/lab-a/inner/")},
 		{"the whole bucket", s3Storage("bucket-c", "")},
 	} {
 		_, err := e.p.AddStorage(e.ctx, c.s, at(3), e.audit(), nil)
 		e.wantPrecondition("AddStorage "+c.what, err)
 	}
-	for _, s := range []tenant.Storage{dirStorage("fast-f", "studies/ab"), s3Storage("bucket-d", "magnetar/lab-b/")} {
+	for _, s := range []tenant.Storage{dirStorage("fast-f", "studies/ab"), s3Storage("bucket-d", "coria/lab-b/")} {
 		_, err := e.p.AddStorage(e.ctx, s, at(3), e.audit(), nil)
 		e.ok("AddStorage beside another, not inside it", err)
 	}

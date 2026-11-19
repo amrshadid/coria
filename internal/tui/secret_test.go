@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
 )
 
 // holds reports whether any string or byte slice reachable from v, through

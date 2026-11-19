@@ -28,7 +28,7 @@
 #                    registry, read back by the sqlite3 tool
 #   make check-master-postgres  the Postgres master database read back by
 #                    psql and pg_dump (PSQL=... PG_DUMP=... name them; needs
-#                    MAGNETAR_TEST_POSTGRES, the URL of a scratch database)
+#                    CORIA_TEST_POSTGRES, the URL of a scratch database)
 #   make check-tenant-postgres  a tenant on Postgres, created by the registry,
 #                    read back by psql and pg_dump (same variables)
 #   make test-386    the tests as linux/386 binaries, on a Linux x86-64 host
@@ -55,15 +55,15 @@
 #                    bin/python, from the hashed requirement files; once it
 #                    exists, PYTHON defaults to its interpreter
 #   make pg-up / pg-down  a throwaway Postgres in docker (PG_VERSION, on
-#                    127.0.0.1:PG_PORT); pg-up prints MAGNETAR_TEST_POSTGRES
+#                    127.0.0.1:PG_PORT); pg-up prints CORIA_TEST_POSTGRES
 #   make s3-up / s3-down  the two S3 servers CI tests against, in docker;
-#                    s3-up prints each one's MAGNETAR_TEST_S3
+#                    s3-up prints each one's CORIA_TEST_S3
 #   make test-postgres  the database drivers' tests, and the reception end to
-#                    end, against that Postgres (or MAGNETAR_TEST_POSTGRES),
+#                    end, against that Postgres (or CORIA_TEST_POSTGRES),
 #                    failing if there is none
 #   make test-s3     the S3 driver's tests, and the reception end to end,
 #                    against each S3 server, failing if one is not up
-#   make check-static  bin/magnetar-linux-amd64 is a static binary built with
+#   make check-static  bin/coria-linux-amd64 is a static binary built with
 #                    CGO_ENABLED=0
 #
 # A target that needs docker fails with exit status 2, saying so, when the
@@ -71,7 +71,7 @@
 
 GO      ?= go
 BIN     := bin
-MODULE  := github.com/amrshadid/magnetar
+MODULE  := github.com/amrshadid/coria
 
 # Pinned, so a gate does not change under a pull request that changed nothing.
 # golangci-lint's version is also in checks.yml; the two move together.
@@ -159,7 +159,7 @@ test-scale:
 	$(GO) test -count=1 -v -run '^TestThousandTenants$$' ./internal/registry
 	$(GO) test -count=1 -v -run '^(TestListFiltersAtScale$$|TestPipelineModelAllSeeds$$|TestScale)' ./internal/driver/sqlite
 	$(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres
-	MAGNETAR_TEST_SCALE=1 $(GO) test -count=1 -v -timeout 30m -run '^TestScale' ./internal/receive
+	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -timeout 30m -run '^TestScale' ./internal/receive
 
 # The event feed's speed: a step with its event, a page read from a feed of
 # ten million events (built once, about a minute), and what waking the
@@ -183,20 +183,20 @@ bench-events:
 build:
 	@set -e; for platform in $(PLATFORMS); do \
 		os=$${platform%/*}; arch=$${platform#*/}; \
-		out=$(BIN)/magnetar-$$os-$$arch; \
+		out=$(BIN)/coria-$$os-$$arch; \
 		if [ "$$os" = windows ]; then out=$$out.exe; fi; \
-		echo "CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags \"$(LDFLAGS)\" -o $$out ./cmd/magnetar"; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $$out ./cmd/magnetar; \
+		echo "CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags \"$(LDFLAGS)\" -o $$out ./cmd/coria"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $$out ./cmd/coria; \
 	done
 
 # size reads what build made and does not depend on it: CI writes this target's
 # output to the job summary, and a rebuild here would put build commands there
 # in front of the table.
 size:
-	@ls $(BIN)/magnetar-* > /dev/null 2>&1 || { echo "no binaries in $(BIN)/; run make build first" >&2; exit 1; }
+	@ls $(BIN)/coria-* > /dev/null 2>&1 || { echo "no binaries in $(BIN)/; run make build first" >&2; exit 1; }
 	@echo "| Binary | Bytes | MiB |"
 	@echo "|---|---:|---:|"
-	@for f in $(BIN)/magnetar-*; do \
+	@for f in $(BIN)/coria-*; do \
 		bytes=$$(wc -c < "$$f" | tr -d ' '); \
 		echo "| $${f#$(BIN)/} | $$bytes | $$(awk "BEGIN { printf \"%.2f\", $$bytes / 1048576 }") |"; \
 	done
@@ -210,7 +210,7 @@ size:
 check-seal:
 	@test -n "$(PYTHON)" || { echo "check-seal: PYTHON is empty; name an interpreter that has the cryptography package" >&2; exit 1; }
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-seal: no interpreter $(PYTHON)" >&2; exit 1; }
-	MAGNETAR_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
+	CORIA_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
 
 # The outside check of the SQLite master database: the driver writes the
 # contract suite's sample, and the sqlite3 tool (SQLITE3=... names one) reads
@@ -238,15 +238,15 @@ check-server:
 # and in CI's server job, not in every go test.
 .PHONY: check-e2e
 check-e2e:
-	MAGNETAR_E2E=1 $(GO) test -race -count=1 -v -run '^TestRealServerEndToEnd$$' ./cmd/magnetar
+	CORIA_E2E=1 $(GO) test -race -count=1 -v -run '^TestRealServerEndToEnd$$' ./cmd/coria
 
 # The proof of this version (scripts/prove/run.sh): the binary built as make
 # build builds it, started for real, and every claim of this version shown by
-# tools that are not Magnetar (curl, grpcurl, openssl, sqlite3, psql and
+# tools that are not CORIA (curl, grpcurl, openssl, sqlite3, psql and
 # pg_dump in a Postgres container, Python's grpcio), each as a named check,
 # with a table of the results and what they measured. It needs docker for
 # Postgres and a PYTHON with scripts/requirements/check-server.txt. CI runs
-# it on Linux with MAGNETAR_PROVE_STRICT=1, where a skipped check fails.
+# it on Linux with CORIA_PROVE_STRICT=1, where a skipped check fails.
 .PHONY: prove
 prove:
 	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" bash scripts/prove/run.sh
@@ -284,7 +284,7 @@ check-tenant-sqlite:
 	SQLITE3="$(SQLITE3)" GO="$(GO)" bash scripts/check/tenant-sqlite.sh
 
 # The outside check of the Postgres master database: the driver writes the
-# contract suite's sample into a schema of the database MAGNETAR_TEST_POSTGRES
+# contract suite's sample into a schema of the database CORIA_TEST_POSTGRES
 # names, and psql and pg_dump (the commands in PSQL and PG_DUMP, which may run
 # in a container so their version equals the server's) read it back.
 PSQL    ?= psql
@@ -417,6 +417,18 @@ proto-breaking: $(BUF)
 	fi; \
 	rm -rf $(PROTO_TMP); mkdir -p $(PROTO_TMP)/base; \
 	git archive "$$mb" -- buf.yaml api/proto | tar -x -C $(PROTO_TMP)/base; \
+	if [ -f api/renamed.txt ]; then \
+		grep -v '^#' api/renamed.txt | while read -r old new; do \
+			[ -n "$$old" ] || continue; \
+			from="$(PROTO_TMP)/base/api/proto/$$(echo "$$old" | tr . /)"; \
+			to="$(PROTO_TMP)/base/api/proto/$$(echo "$$new" | tr . /)"; \
+			[ -d "$$from" ] || continue; \
+			echo "proto-breaking: reading the base's $$old as $$new (api/renamed.txt)"; \
+			mkdir -p "$$(dirname "$$to")"; mv "$$from" "$$to"; \
+			OLD="$$old" NEW="$$new" OLDPATH="$$(echo "$$old" | tr . /)" NEWPATH="$$(echo "$$new" | tr . /)" \
+				perl -pi -e 's/\b\Q$$ENV{OLD}\E\b/$$ENV{NEW}/g; s{"\Q$$ENV{OLDPATH}\E/}{"$$ENV{NEWPATH}/}g' $$(find "$(PROTO_TMP)/base/api/proto" -name '*.proto'); \
+		done; \
+	fi; \
 	status=0; $(BUF) breaking --against $(PROTO_TMP)/base || status=$$?; \
 	rm -rf $(PROTO_TMP); \
 	if [ $$status -ne 0 ]; then echo "proto-breaking: the contract breaks what $$mb published" >&2; exit $$status; fi; \
@@ -442,7 +454,7 @@ $(PROTOC_GEN_CONNECT_GO):
 	GOBIN=$(@D) GOTOOLCHAIN=auto $(GO) install connectrpc.com/connect/v2/cmd/protoc-gen-connect-go@$(PROTOC_GEN_CONNECT_GO_VERSION)
 
 # ---------------------------------------------------------------------------
-# The command line (internal/cli): two checks by tools that are not Magnetar.
+# The command line (internal/cli): two checks by tools that are not CORIA.
 #
 #   make check-json        every command with --json against the in-process
 #                          server, each output parsed by Python's json module
@@ -459,24 +471,24 @@ $(PROTOC_GEN_CONNECT_GO):
 check-json:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-json: no interpreter $(PYTHON)" >&2; exit 1; }
 	@set -e; dir="$$(mktemp -d)"; \
-	MAGNETAR_CHECK_JSON_DIR="$$dir" $(GO) test -count=1 -run '^TestWriteJSONOutputs$$' ./internal/cli; \
+	CORIA_CHECK_JSON_DIR="$$dir" $(GO) test -count=1 -run '^TestWriteJSONOutputs$$' ./internal/cli; \
 	status=0; $(PYTHON) scripts/check/cli-json.py "$$dir" || status=$$?; \
 	rm -f "$$dir"/*.json; rmdir "$$dir"; exit $$status
 
 check-completion:
 	@command -v bash > /dev/null || { echo "check-completion: bash is not installed" >&2; exit 1; }
 	@set -e; out="$$(mktemp)"; \
-	$(GO) run ./cmd/magnetar completion bash > "$$out"; \
+	$(GO) run ./cmd/coria completion bash > "$$out"; \
 	status=0; \
 	test -s "$$out" || { echo "check-completion: the script is empty" >&2; status=1; }; \
-	[ $$status -ne 0 ] || grep -q '_magnetar' "$$out" || { echo "check-completion: the script does not define _magnetar" >&2; status=1; }; \
+	[ $$status -ne 0 ] || grep -q '_coria' "$$out" || { echo "check-completion: the script does not define _coria" >&2; status=1; }; \
 	[ $$status -ne 0 ] || bash -n "$$out" || status=$$?; \
 	[ $$status -ne 0 ] || echo "check-completion: bash -n accepts the completion script ($$(wc -l < "$$out" | tr -d ' ') lines)"; \
 	rm -f "$$out"; exit $$status
 
 # ---------------------------------------------------------------------------
 # The interactive program (internal/tui): an outside check by Python's pty
-# module, which is not Magnetar's code.
+# module, which is not CORIA's code.
 #
 #   make check-tui   builds the binary and a test helper that serves the
 #                    in-process fake server on a temporary socket, then runs
@@ -493,10 +505,10 @@ check-completion:
 check-tui:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-tui: no interpreter $(PYTHON)" >&2; exit 1; }
 	@set -e; dir="$$(mktemp -d)"; \
-	CGO_ENABLED=0 $(GO) build -o "$$dir/magnetar" ./cmd/magnetar; \
+	CGO_ENABLED=0 $(GO) build -o "$$dir/coria" ./cmd/coria; \
 	CGO_ENABLED=0 $(GO) build -o "$$dir/ptyserve" ./internal/tui/ptyserve; \
-	status=0; $(PYTHON) scripts/check/tui.py --binary "$$dir/magnetar" --helper "$$dir/ptyserve" || status=$$?; \
-	rm -f "$$dir/magnetar" "$$dir/ptyserve"; rmdir "$$dir"; exit $$status
+	status=0; $(PYTHON) scripts/check/tui.py --binary "$$dir/coria" --helper "$$dir/ptyserve" || status=$$?; \
+	rm -f "$$dir/coria" "$$dir/ptyserve"; rmdir "$$dir"; exit $$status
 
 # ---------------------------------------------------------------------------
 # Everything CI runs, on one machine: the Python tools, the services in
@@ -564,12 +576,12 @@ docker-answers = $(DOCKER) info > /dev/null 2>&1 || { echo "$@: docker does not 
 # holds nothing and listens on 127.0.0.1 only.
 PG_VERSION   ?= 18
 PG_PORT      ?= 55432
-PG_CONTAINER ?= magnetar-test-postgres$(TEST_RUN)
+PG_CONTAINER ?= coria-test-postgres$(TEST_RUN)
 PG_PASSWORD  := throwaway-password
-PG_URL        = postgres://postgres:$(PG_PASSWORD)@127.0.0.1:$(PG_PORT)/magnetar_test?sslmode=disable
+PG_URL        = postgres://postgres:$(PG_PASSWORD)@127.0.0.1:$(PG_PORT)/coria_test?sslmode=disable
 # The same database as psql and pg_dump inside the container see it, where
 # the server's port is the container's own.
-PG_INNER_URL  = postgres://postgres:$(PG_PASSWORD)@127.0.0.1:5432/magnetar_test?sslmode=disable
+PG_INNER_URL  = postgres://postgres:$(PG_PASSWORD)@127.0.0.1:5432/coria_test?sslmode=disable
 pg-running    = [ -n "$$($(DOCKER) ps -q --filter 'name=^/$(PG_CONTAINER)$$' 2> /dev/null)" ]
 
 .PHONY: pg-up pg-down test-postgres outside-postgres
@@ -585,15 +597,15 @@ pg-up:
 		$(DOCKER) rm -f $(PG_CONTAINER) > /dev/null 2>&1 || true; \
 		echo "pg-up: starting postgres:$(PG_VERSION) as $(PG_CONTAINER) on 127.0.0.1:$(PG_PORT)"; \
 		$(DOCKER) run -d --name $(PG_CONTAINER) -p 127.0.0.1:$(PG_PORT):5432 \
-			-e POSTGRES_PASSWORD=$(PG_PASSWORD) -e POSTGRES_DB=magnetar_test \
+			-e POSTGRES_PASSWORD=$(PG_PASSWORD) -e POSTGRES_DB=coria_test \
 			postgres:$(PG_VERSION) > /dev/null; \
 	fi
-	@i=0; until $(DOCKER) exec $(PG_CONTAINER) pg_isready -q -h 127.0.0.1 -U postgres -d magnetar_test; do \
+	@i=0; until $(DOCKER) exec $(PG_CONTAINER) pg_isready -q -h 127.0.0.1 -U postgres -d coria_test; do \
 		i=$$((i + 1)); \
 		if [ $$i -ge 60 ]; then $(DOCKER) logs $(PG_CONTAINER) 2>&1 | tail -20; echo "pg-up: Postgres did not answer within 60 s" >&2; exit 1; fi; \
 		sleep 1; \
 	done
-	@echo "MAGNETAR_TEST_POSTGRES='$(PG_URL)'"
+	@echo "CORIA_TEST_POSTGRES='$(PG_URL)'"
 
 pg-down:
 	@$(docker-answers)
@@ -601,36 +613,36 @@ pg-down:
 	@echo "pg-down: $(PG_CONTAINER) removed"
 
 # The database drivers' tests and the contract suites against a real
-# Postgres, as CI's Postgres job runs them: MAGNETAR_TEST_POSTGRES when it is
+# Postgres, as CI's Postgres job runs them: CORIA_TEST_POSTGRES when it is
 # set (CI's service container), or else the container of pg-up.
-# MAGNETAR_REQUIRE_POSTGRES turns a missing database into a failure, so the
+# CORIA_REQUIRE_POSTGRES turns a missing database into a failure, so the
 # Postgres tests cannot pass by skipping.
 test-postgres:
-	@set -e; url="$${MAGNETAR_TEST_POSTGRES:-}"; \
+	@set -e; url="$${CORIA_TEST_POSTGRES:-}"; \
 	if [ -z "$$url" ]; then \
 		$(docker-answers); \
-		$(pg-running) || { echo "test-postgres: no Postgres: run make pg-up, or set MAGNETAR_TEST_POSTGRES" >&2; exit 2; }; \
+		$(pg-running) || { echo "test-postgres: no Postgres: run make pg-up, or set CORIA_TEST_POSTGRES" >&2; exit 2; }; \
 		url='$(PG_URL)'; \
 	fi; \
-	echo "MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/..."; \
-	MAGNETAR_TEST_POSTGRES="$$url" MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/...; \
+	echo "CORIA_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/..."; \
+	CORIA_TEST_POSTGRES="$$url" CORIA_REQUIRE_POSTGRES=1 $(GO) test -race -count=1 -v ./internal/driver/...; \
 	echo "the reception end to end on Postgres: the pipeline, and serve with a study from storescu"; \
-	MAGNETAR_TEST_POSTGRES="$$url" MAGNETAR_REQUIRE_POSTGRES=1 MAGNETAR_REQUIRE_DCMTK=1 MAGNETAR_DCMTK="$(DCMTK)" \
+	CORIA_TEST_POSTGRES="$$url" CORIA_REQUIRE_POSTGRES=1 CORIA_REQUIRE_DCMTK=1 CORIA_DCMTK="$(DCMTK)" \
 		$(GO) test -race -count=1 -v -run '^(TestStudyIsArchivedOnPostgres|TestAStudyIsArchivedThroughServe)$$' ./internal/receive ./internal/cli/servecmd
 
 # The two outside checks of Postgres against the same database. With pg-up's
 # container, psql and pg_dump are the ones inside it, so their version is the
-# server's (pg_dump refuses a newer server); with MAGNETAR_TEST_POSTGRES, the
+# server's (pg_dump refuses a newer server); with CORIA_TEST_POSTGRES, the
 # PSQL and PG_DUMP given.
 outside-postgres:
 	@set -e; \
-	if [ -n "$${MAGNETAR_TEST_POSTGRES:-}" ]; then \
+	if [ -n "$${CORIA_TEST_POSTGRES:-}" ]; then \
 		$(MAKE) --no-print-directory check-master-postgres; \
 		$(MAKE) --no-print-directory check-tenant-postgres; \
 	else \
 		$(docker-answers); \
-		$(pg-running) || { echo "outside-postgres: no Postgres: run make pg-up, or set MAGNETAR_TEST_POSTGRES" >&2; exit 2; }; \
-		export MAGNETAR_TEST_POSTGRES='$(PG_URL)' PSQL_URL='$(PG_INNER_URL)'; \
+		$(pg-running) || { echo "outside-postgres: no Postgres: run make pg-up, or set CORIA_TEST_POSTGRES" >&2; exit 2; }; \
+		export CORIA_TEST_POSTGRES='$(PG_URL)' PSQL_URL='$(PG_INNER_URL)'; \
 		$(MAKE) --no-print-directory check-master-postgres PSQL="$(DOCKER) exec -i $(PG_CONTAINER) psql" PG_DUMP="$(DOCKER) exec -i $(PG_CONTAINER) pg_dump"; \
 		$(MAKE) --no-print-directory check-tenant-postgres PSQL="$(DOCKER) exec -i $(PG_CONTAINER) psql" PG_DUMP="$(DOCKER) exec -i $(PG_CONTAINER) pg_dump"; \
 	fi
@@ -657,7 +669,7 @@ s3-port = s3port() { case "$$1" in silo) echo $(S3_SILO_PORT) ;; rustfs) echo $(
 s3-up:
 	@$(docker-answers)
 	@set -e; $(s3-port); for s in $(S3_SERVERS); do \
-		port=$$(s3port $$s); name=magnetar-test-$$s$(TEST_RUN); \
+		port=$$(s3port $$s); name=coria-test-$$s$(TEST_RUN); \
 		if [ -n "$$($(DOCKER) ps -q --filter "name=^/$$name\$$")" ]; then echo "s3-up: $$name is already running"; continue; fi; \
 		$(DOCKER) rm -f $$name > /dev/null 2>&1 || true; \
 		echo "s3-up: starting $$s as $$name on 127.0.0.1:$$port"; \
@@ -680,30 +692,30 @@ s3-wait:
 		port=$$(s3port $$s); i=0; \
 		until curl -sS -o /dev/null http://127.0.0.1:$$port/ 2> /dev/null; do \
 			i=$$((i + 1)); \
-			if [ $$i -ge 60 ]; then $(DOCKER) logs magnetar-test-$$s$(TEST_RUN) 2>&1 | tail -20; echo "s3-wait: $$s did not answer within 60 s" >&2; exit 1; fi; \
+			if [ $$i -ge 60 ]; then $(DOCKER) logs coria-test-$$s$(TEST_RUN) 2>&1 | tail -20; echo "s3-wait: $$s did not answer within 60 s" >&2; exit 1; fi; \
 			sleep 1; \
 		done; \
-		echo "MAGNETAR_TEST_S3='http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:'$$port'/magnetar-test'   # $$s"; \
+		echo "CORIA_TEST_S3='http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:'$$port'/coria-test'   # $$s"; \
 	done
 
 s3-down:
 	@$(docker-answers)
-	@for s in $(S3_SERVERS); do $(DOCKER) rm -f magnetar-test-$$s$(TEST_RUN) > /dev/null 2>&1 || true; echo "s3-down: magnetar-test-$$s$(TEST_RUN) removed"; done
+	@for s in $(S3_SERVERS); do $(DOCKER) rm -f coria-test-$$s$(TEST_RUN) > /dev/null 2>&1 || true; echo "s3-down: coria-test-$$s$(TEST_RUN) removed"; done
 
 # The S3 driver's tests against each server s3-up started.
-# MAGNETAR_REQUIRE_S3 turns a server that is not there into a failure, so a
+# CORIA_REQUIRE_S3 turns a server that is not there into a failure, so a
 # pass means the suite ran.
 test-s3:
 	@$(docker-answers)
 	@set -e; $(s3-port); for s in $(S3_SERVERS); do \
 		port=$$(s3port $$s); \
-		[ -n "$$($(DOCKER) ps -q --filter "name=^/magnetar-test-$$s$(TEST_RUN)\$$")" ] || { echo "test-s3: $$s is not running; run make s3-up" >&2; exit 2; }; \
+		[ -n "$$($(DOCKER) ps -q --filter "name=^/coria-test-$$s$(TEST_RUN)\$$")" ] || { echo "test-s3: $$s is not running; run make s3-up" >&2; exit 2; }; \
 		echo "test-s3: $$s on 127.0.0.1:$$port: $(GO) test -race -count=1 -v ./internal/blob/s3/..."; \
-		MAGNETAR_TEST_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$$port/magnetar-test" MAGNETAR_REQUIRE_S3=1 \
+		CORIA_TEST_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$$port/coria-test" CORIA_REQUIRE_S3=1 \
 			$(GO) test -race -count=1 -v ./internal/blob/s3/...; \
 		echo "test-s3: the reception end to end on $$s: the pipeline, and serve with a study from storescu"; \
-		MAGNETAR_TEST_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$$port/magnetar-test" MAGNETAR_REQUIRE_S3=1 \
-			MAGNETAR_REQUIRE_DCMTK=1 MAGNETAR_DCMTK="$(DCMTK)" \
+		CORIA_TEST_S3="http://$(S3_KEY):$(S3_SECRET)@127.0.0.1:$$port/coria-test" CORIA_REQUIRE_S3=1 \
+			CORIA_REQUIRE_DCMTK=1 CORIA_DCMTK="$(DCMTK)" \
 			$(GO) test -race -count=1 -v -run '^(TestStudyIsArchivedOnS3|TestAStudyIsArchivedThroughServe)$$' ./internal/receive ./internal/cli/servecmd; \
 	done
 
@@ -713,18 +725,18 @@ test-s3:
 # closed pipe. The binary is run only where it can be.
 .PHONY: check-static
 check-static:
-	@test -f $(BIN)/magnetar-linux-amd64 || { echo "check-static: no $(BIN)/magnetar-linux-amd64; run make build first" >&2; exit 1; }
-	file $(BIN)/magnetar-linux-amd64 | grep 'statically linked'
-	$(GO) version -m $(BIN)/magnetar-linux-amd64 | grep -x "$$(printf '\tbuild\tCGO_ENABLED=0')"
+	@test -f $(BIN)/coria-linux-amd64 || { echo "check-static: no $(BIN)/coria-linux-amd64; run make build first" >&2; exit 1; }
+	file $(BIN)/coria-linux-amd64 | grep 'statically linked'
+	$(GO) version -m $(BIN)/coria-linux-amd64 | grep -x "$$(printf '\tbuild\tCGO_ENABLED=0')"
 	@if [ "$$(uname -s)/$$(uname -m)" = Linux/x86_64 ]; then \
-		echo "./$(BIN)/magnetar-linux-amd64 version"; ./$(BIN)/magnetar-linux-amd64 version; \
+		echo "./$(BIN)/coria-linux-amd64 version"; ./$(BIN)/coria-linux-amd64 version; \
 	else \
-		echo "check-static: $(BIN)/magnetar-linux-amd64 is not run on $$(uname -s)/$$(uname -m)"; \
+		echo "check-static: $(BIN)/coria-linux-amd64 is not run on $$(uname -s)/$$(uname -m)"; \
 	fi
 
 # Every outside check that needs a tool that is not Go: Python, sqlite3,
 # bash, grpcurl, curl, a pseudo-terminal, and psql and pg_dump when a Postgres
-# is up (MAGNETAR_TEST_POSTGRES, or pg-up's container). OUTSIDE_POSTGRES=no
+# is up (CORIA_TEST_POSTGRES, or pg-up's container). OUTSIDE_POSTGRES=no
 # leaves the two Postgres checks out, for a caller that runs them itself.
 OUTSIDE_POSTGRES ?= auto
 
@@ -740,10 +752,10 @@ outside: $(CHECK_TOOLS)
 	m check-server PYTHON="$(CHECK_PYTHON)" GRPCURL="$(CHECK_GRPCURL)"; \
 	if [ "$(OUTSIDE_POSTGRES)" = no ]; then \
 		echo "outside: check-master-postgres and check-tenant-postgres left out (OUTSIDE_POSTGRES=no)"; \
-	elif [ -n "$${MAGNETAR_TEST_POSTGRES:-}" ] || { $(DOCKER) info > /dev/null 2>&1 && $(pg-running); }; then \
+	elif [ -n "$${CORIA_TEST_POSTGRES:-}" ] || { $(DOCKER) info > /dev/null 2>&1 && $(pg-running); }; then \
 		m outside-postgres; \
 	else \
-		echo "outside: skipped check-master-postgres and check-tenant-postgres: no Postgres (make pg-up, or set MAGNETAR_TEST_POSTGRES)"; \
+		echo "outside: skipped check-master-postgres and check-tenant-postgres: no Postgres (make pg-up, or set CORIA_TEST_POSTGRES)"; \
 	fi
 
 # make ci: every job of checks.yml, one after another, cheapest first so a
@@ -756,7 +768,7 @@ outside: $(CHECK_TOOLS)
 # What CI runs that cannot run here is said, and listed again at the end:
 # the 32-bit tests need a Linux x86-64 machine (elsewhere their binaries are
 # built and vetted, not run); the local socket refused to a second user needs
-# that user (MAGNETAR_TEST_OTHER_USER names one, as CI makes one with sudo);
+# that user (CORIA_TEST_OTHER_USER names one, as CI makes one with sudo);
 # the Windows and macOS jobs need those systems (lint and vet run for
 # Windows here, and the tests run on whichever system this is); and the
 # Linux job's second Go release is CI's alone.
@@ -776,7 +788,7 @@ ci:
 	$(DOCKER) info > /dev/null 2>&1 || { echo "ci: docker does not answer: Postgres, S3 and the proof need it; start it, or point DOCKER_HOST or the docker context at it" >&2; exit 2; }; \
 	trap '$(MAKE) --no-print-directory pg-down s3-down > /dev/null 2>&1 || true' EXIT; \
 	trap 'exit 130' INT TERM; \
-	unset MAGNETAR_TEST_POSTGRES PSQL_URL MAGNETAR_TEST_S3; \
+	unset CORIA_TEST_POSTGRES PSQL_URL CORIA_TEST_S3; \
 	echo "ci: $$($(GO) version) on $$os/$$arch"; \
 	step check-comments; \
 	step fmt; \
@@ -805,11 +817,11 @@ ci:
 	step size; \
 	step check-static; \
 	step outside PYTHON="$$py" OUTSIDE_POSTGRES=no; \
-	if [ -n "$${MAGNETAR_TEST_OTHER_USER:-}" ]; then \
-		echo; echo "==> the local socket refused to $$MAGNETAR_TEST_OTHER_USER"; \
+	if [ -n "$${CORIA_TEST_OTHER_USER:-}" ]; then \
+		echo; echo "==> the local socket refused to $$CORIA_TEST_OTHER_USER"; \
 		$(GO) test -count=1 -v -run '^TestSocketRefusesOtherUser$$' ./internal/server; \
 	else \
-		skip "TestSocketRefusesOtherUser: needs a second operating system user, named by MAGNETAR_TEST_OTHER_USER (CI makes one with sudo)"; \
+		skip "TestSocketRefusesOtherUser: needs a second operating system user, named by CORIA_TEST_OTHER_USER (CI makes one with sudo)"; \
 	fi; \
 	step check-e2e; \
 	step bench-gate; \
@@ -819,12 +831,12 @@ ci:
 		step test-postgres; \
 		if [ "$$os/$$arch" = Linux/x86_64 ] && [ "$$v" = 18 ]; then \
 			echo; echo "==> the Postgres driver as linux/386"; \
-			MAGNETAR_TEST_POSTGRES='$(PG_URL)' MAGNETAR_REQUIRE_POSTGRES=1 GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test -count=1 ./internal/driver/postgres; \
+			CORIA_TEST_POSTGRES='$(PG_URL)' CORIA_REQUIRE_POSTGRES=1 GOOS=linux GOARCH=386 CGO_ENABLED=0 $(GO) test -count=1 ./internal/driver/postgres; \
 		elif [ "$$v" = 18 ]; then \
 			skip "the Postgres driver as linux/386: 32-bit Linux binaries do not run on $$os/$$arch"; \
 		fi; \
 		echo; echo "==> query plans at millions of rows, Postgres $$v"; \
-		MAGNETAR_TEST_POSTGRES='$(PG_URL)' MAGNETAR_REQUIRE_POSTGRES=1 $(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres; \
+		CORIA_TEST_POSTGRES='$(PG_URL)' CORIA_REQUIRE_POSTGRES=1 $(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres; \
 		step outside-postgres; \
 	done; \
 	step pg-down; \
@@ -833,9 +845,9 @@ ci:
 	step s3-down; \
 	step pg-up PG_VERSION=18; \
 	strict=0; [ "$$os" = Linux ] && strict=1; \
-	[ "$$strict" = 1 ] || skip "MAGNETAR_PROVE_STRICT=1: on $$os a check of the proof may be skipped (the second user needs sudo on Linux); the proof says which"; \
-	echo; echo "==> make prove (MAGNETAR_PROVE_STRICT=$$strict)"; \
-	MAGNETAR_PROVE_PG_CONTAINER=$(PG_CONTAINER) MAGNETAR_PROVE_PG_PORT=$(PG_PORT) MAGNETAR_PROVE_STRICT=$$strict \
+	[ "$$strict" = 1 ] || skip "CORIA_PROVE_STRICT=1: on $$os a check of the proof may be skipped (the second user needs sudo on Linux); the proof says which"; \
+	echo; echo "==> make prove (CORIA_PROVE_STRICT=$$strict)"; \
+	CORIA_PROVE_PG_CONTAINER=$(PG_CONTAINER) CORIA_PROVE_PG_PORT=$(PG_PORT) CORIA_PROVE_STRICT=$$strict \
 		$(MAKE) --no-print-directory prove PYTHON="$$py" GRPCURL="$(CHECK_GRPCURL)"; \
 	dcmtk="$(DCMTK)"; storescu="$${dcmtk:+$$dcmtk/}storescu"; \
 	if command -v "$$storescu" > /dev/null && "$$storescu" --version 2> /dev/null | grep -q "^\$$dcmtk:"; then \

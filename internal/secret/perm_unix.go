@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // privateMode is the only access a key file may give: read and write for its
@@ -89,7 +89,7 @@ func checkOwner(info fs.FileInfo, path, what, fix string) error {
 		uid := strconv.FormatUint(uint64(st.Uid), 10)
 		me := strconv.Itoa(euid)
 		return fault.New(fault.Invalid, "secret: the "+what+" "+path+" is owned by uid "+uid+", not by uid "+me+
-			" that magnetar runs as; give it to that user with: "+fix+" "+me+" "+path)
+			" that coria runs as; give it to that user with: "+fix+" "+me+" "+path)
 	}
 	return nil
 }

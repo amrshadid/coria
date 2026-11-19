@@ -10,9 +10,9 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/layout"
-	"github.com/amrshadid/magnetar/internal/core/uid"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/layout"
+	"github.com/amrshadid/coria/internal/core/uid"
 )
 
 // Version is the format version this package writes and the only one it

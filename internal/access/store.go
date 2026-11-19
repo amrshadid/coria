@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // Store is the part of the master database this package uses: the

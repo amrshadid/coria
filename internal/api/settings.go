@@ -5,14 +5,14 @@ import (
 	"strings"
 	"time"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/settingvalue"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/settingvalue"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // messageNoSetting answers a name that is not in the list of settings the
@@ -26,7 +26,7 @@ const messageNoSetting = "no setting has this name"
 // override, else the installation's value, else the built-in default.
 type settingsService struct{ c *core }
 
-var _ magnetarv1connect.SettingsServiceHandler = settingsService{}
+var _ coriav1connect.SettingsServiceHandler = settingsService{}
 
 // definition returns the setting named name, or NotFound when the server
 // knows no such setting.
@@ -136,7 +136,7 @@ func scopeDetails(scope access.Scope) map[string]string {
 // where it came from.
 func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingRequest) (*v1.GetSettingResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.SettingsServiceGetSettingProcedure)
+	d, err := c.decision(ctx, coriav1connect.SettingsServiceGetSettingProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (s settingsService) GetSetting(ctx context.Context, req *v1.GetSettingReque
 // tenant's storages and receivers use (takenAway).
 func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingRequest) (*v1.SetSettingResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.SettingsServiceSetSettingProcedure)
+	d, err := c.changing(ctx, coriav1connect.SettingsServiceSetSettingProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func (c *core) settingGuard(d access.Decision, def settings.Definition) tenant.G
 // refused, as setting one that leaves it out is.
 func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingRequest) (*v1.UnsetSettingResponse, error) {
 	c := s.c
-	d, err := c.changing(ctx, magnetarv1connect.SettingsServiceUnsetSettingProcedure)
+	d, err := c.changing(ctx, coriav1connect.SettingsServiceUnsetSettingProcedure)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func (c *core) adminGuard(d access.Decision) tenant.Guard {
 // there; on a tenant, its overrides of settings the server knows.
 func (s settingsService) ListSettings(ctx context.Context, req *v1.ListSettingsRequest) (*v1.ListSettingsResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.SettingsServiceListSettingsProcedure)
+	d, err := c.decision(ctx, coriav1connect.SettingsServiceListSettingsProcedure)
 	if err != nil {
 		return nil, err
 	}

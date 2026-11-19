@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/receive/supervise"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/receive/supervise"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // TestStartsWhatTheRowsAskFor guards a start: every enabled receiver's

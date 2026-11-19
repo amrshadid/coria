@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Check Magnetar's sealed-secret format against Python's cryptography package.
+"""Check CORIA's sealed-secret format against Python's cryptography package.
 
 A sealed value that only the code that made it can open proves nothing about
 the format. This script implements the format from its description in
 internal/secret/doc.go, with AES-GCM from the cryptography package (OpenSSL),
-and nothing of Magnetar's:
+and nothing of CORIA's:
 
     1 byte    format, 0x01
     4 bytes   key version, big-endian
@@ -36,7 +36,7 @@ FORMAT = 0x01
 HEADER = 5
 NONCE = 12
 TAG = 16
-PREFIX = "magnetar-key-v1"
+PREFIX = "coria-key-v1"
 
 
 def fail(reason):
@@ -45,7 +45,7 @@ def fail(reason):
 
 
 def read_keys(path):
-    """Read a key file: one "magnetar-key-v1 <version> <base64 key>" per line."""
+    """Read a key file: one "coria-key-v1 <version> <base64 key>" per line."""
     keys = {}
     with open(path, "rb") as f:
         text = f.read().decode("ascii")

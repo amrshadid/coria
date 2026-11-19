@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/naming"
-	"github.com/amrshadid/magnetar/internal/core/uid"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/core/uid"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // QuarantineReason is why a file was quarantined, from the API contract's

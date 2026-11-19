@@ -3,7 +3,7 @@ package codes
 import (
 	connect "connectrpc.com/connect/v2"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // pairs is the table: each fault kind with the one code that carries it. It is

@@ -14,13 +14,13 @@ import (
 	"connectrpc.com/connect/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/obs"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/obs"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/server"
 )
 
 // Deps is what an installation's handlers are built from, once serve has
@@ -88,7 +88,7 @@ func Serve(opts Options) *cobra.Command {
 		Short: "Run the installation's server",
 		Long: `Run the server of the installation in the data directory.
 
-It listens on the local socket <data-dir>/run/magnetar.sock, where the caller is
+It listens on the local socket <data-dir>/run/coria.sock, where the caller is
 the operating system user that runs it, and on the network only when --listen
 is given: with TLS when --tls-cert and --tls-key are given, and without TLS on a
 loopback address only. One server runs per data directory.
@@ -97,9 +97,9 @@ The first stop signal (Ctrl-C, SIGTERM) refuses new requests, lets those in
 flight finish, writes the audit entries held in memory and exits 0. A second
 signal exits at once.
 
-The data directory is --data-dir, or MAGNETAR_DATA_DIR.`,
-		Example: `  magnetar serve --data-dir /var/lib/magnetar
-  magnetar serve --data-dir /var/lib/magnetar --listen 0.0.0.0:8443 --tls-cert cert.pem --tls-key key.pem`,
+The data directory is --data-dir, or CORIA_DATA_DIR.`,
+		Example: `  coria serve --data-dir /var/lib/coria
+  coria serve --data-dir /var/lib/coria --listen 0.0.0.0:8443 --tls-cert cert.pem --tls-key key.pem`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			dir, err := dataDir(cmd, opts.Getenv)
@@ -181,7 +181,7 @@ func checkMade(dir, masterEnv string) error {
 	sqlite := exists(db)
 	switch {
 	case !key && !id && !sqlite:
-		return fault.New(fault.NotFound, "no installation in "+dir+"; make one with: magnetar init --data-dir "+dir)
+		return fault.New(fault.NotFound, "no installation in "+dir+"; make one with: coria init --data-dir "+dir)
 	case !key:
 		return fault.New(fault.Invalid, "the data directory "+dir+" has no key file but holds part of an installation: init was interrupted before it wrote the key file, or the key file was lost "+
 			"(and with it every secret). If init was interrupted, remove "+filepath.Join(dir, server.IDFileName)+" and "+db+"* and run init again")

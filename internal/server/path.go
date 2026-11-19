@@ -13,10 +13,10 @@ import (
 	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/api/codes"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/api/codes"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // Call is what the request path tells a handler about the request it is
@@ -25,7 +25,7 @@ import (
 // request id, the credential's kind) to a handler or a test that needs it.
 type Call struct {
 	// RequestID is the id the server made for the request, the one in the
-	// Magnetar-Request-Id response header, the log and the audit entry.
+	// Coria-Request-Id response header, the log and the audit entry.
 	RequestID string
 	// Method is the full procedure name, or the route of a plain HTTP
 	// request.
@@ -88,7 +88,7 @@ type exchange struct {
 // order:
 //
 //  1. the request id: the one the envelope made for this request (it is
-//     already in the Magnetar-Request-Id response header), or a new one;
+//     already in the Coria-Request-Id response header), or a new one;
 //  2. the credential: the one the front step accepted, so the key is read
 //     once per request; were pass reached without it, the credential is
 //     read from the request again (the Authorization bearer key, else the

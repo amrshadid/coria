@@ -1,8 +1,8 @@
 package sqlkit
 
 import (
-	"github.com/amrshadid/magnetar/internal/core/naming"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // A receiver's configuration is kept in two JSON columns, config and

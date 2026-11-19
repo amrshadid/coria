@@ -21,14 +21,14 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/obs"
-	"github.com/amrshadid/magnetar/internal/server"
-	"github.com/amrshadid/magnetar/internal/server/servertest"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/obs"
+	"github.com/amrshadid/coria/internal/server"
+	"github.com/amrshadid/coria/internal/server/servertest"
 )
 
 // notServedFile is the list of the services the contract defines and the
@@ -74,7 +74,7 @@ func inServices(services []string, proc string) bool {
 // proto files, read from the files themselves.
 func fileRPCs(t *testing.T) []string {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "proto", "magnetar", "v1", "*.proto"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "proto", "coria", "v1", "*.proto"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no proto files: %v", err)
 	}
@@ -94,7 +94,7 @@ func fileRPCs(t *testing.T) []string {
 					svc = text[s[2]:s[3]]
 				}
 			}
-			out = append(out, "/magnetar.v1."+svc+"/"+text[m[2]:m[3]])
+			out = append(out, "/coria.v1."+svc+"/"+text[m[2]:m[3]])
 		}
 	}
 	return out
@@ -138,11 +138,11 @@ func TestNotServedServices(t *testing.T) {
 	for _, p := range notServedProblems(notServed, rpcs, procs) {
 		t.Error(p)
 	}
-	served := notServedProblems(append(slices.Clone(notServed), "magnetar.v1.AccessService"), rpcs, procs)
+	served := notServedProblems(append(slices.Clone(notServed), "coria.v1.AccessService"), rpcs, procs)
 	if len(served) == 0 || !strings.Contains(served[0], "AccessService") {
 		t.Errorf("a served service on the list was not reported: %v", served)
 	}
-	missing := notServedProblems(append(slices.Clone(notServed), "magnetar.v1.NoSuchService"), rpcs, procs)
+	missing := notServedProblems(append(slices.Clone(notServed), "coria.v1.NoSuchService"), rpcs, procs)
 	if len(missing) != 1 || !strings.Contains(missing[0], "NoSuchService") {
 		t.Errorf("a listed service no file defines was not reported: %v", missing)
 	}
@@ -248,16 +248,16 @@ func localClient(t *testing.T) *connect.Client {
 
 // contractFiles are the generated descriptors of the contract's files.
 var contractFiles = []protoreflect.FileDescriptor{
-	magnetarv1.File_magnetar_v1_access_proto,
-	magnetarv1.File_magnetar_v1_tenant_proto,
-	magnetarv1.File_magnetar_v1_settings_proto,
-	magnetarv1.File_magnetar_v1_audit_proto,
-	magnetarv1.File_magnetar_v1_scope_proto,
-	magnetarv1.File_magnetar_v1_storage_proto,
-	magnetarv1.File_magnetar_v1_receiver_proto,
-	magnetarv1.File_magnetar_v1_reception_proto,
-	magnetarv1.File_magnetar_v1_quarantine_proto,
-	magnetarv1.File_magnetar_v1_monitor_proto,
+	coriav1.File_coria_v1_access_proto,
+	coriav1.File_coria_v1_tenant_proto,
+	coriav1.File_coria_v1_settings_proto,
+	coriav1.File_coria_v1_audit_proto,
+	coriav1.File_coria_v1_scope_proto,
+	coriav1.File_coria_v1_storage_proto,
+	coriav1.File_coria_v1_receiver_proto,
+	coriav1.File_coria_v1_reception_proto,
+	coriav1.File_coria_v1_quarantine_proto,
+	coriav1.File_coria_v1_monitor_proto,
 }
 
 // contractMethods returns every method of the contract by procedure name.
@@ -295,7 +295,7 @@ func TestTableTestCatchesGaps(t *testing.T) {
 	if p := tableProblems(contractMethods(), dropped); len(p) != 1 || !strings.Contains(p[0], "WhoAmI") {
 		t.Fatalf("a missing entry was not reported: %v", p)
 	}
-	extra := append(slices.Clone(procs), "/magnetar.v1.AccessService/Nothing")
+	extra := append(slices.Clone(procs), "/coria.v1.AccessService/Nothing")
 	if p := tableProblems(contractMethods(), extra); len(p) != 1 || !strings.Contains(p[0], "Nothing") {
 		t.Fatalf("an entry naming no method was not reported: %v", p)
 	}
@@ -329,13 +329,13 @@ var rolePattern = regexp.MustCompile(`(?s)// Role: (.*?)\n\s*// (?:Audit|Errors)
 var servicePattern = regexp.MustCompile(`(?m)^service (\w+) \{`)
 
 // TestTableMatchesRoleLines guards that each entry gives the requirement
-// its method's "Role:" line in api/proto/magnetar/v1 states. The lines are
+// its method's "Role:" line in api/proto/coria/v1 states. The lines are
 // read from the proto files, since the generated descriptors carry no
 // comments; each phrase the contract uses is mapped to what it means, and
 // a phrase not known here fails the test, so a new kind of role line is
 // looked at before it is served.
 func TestTableMatchesRoleLines(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "proto", "magnetar", "v1", "*.proto"))
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "proto", "coria", "v1", "*.proto"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no proto files: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestTableMatchesRoleLines(t *testing.T) {
 					svc = text[s[2]:s[3]]
 				}
 			}
-			proc := "/magnetar.v1." + svc + "/" + name
+			proc := "/coria.v1." + svc + "/" + name
 			if inServices(notServed, proc) {
 				// Held by TestNotServedServices.
 				continue
@@ -461,7 +461,7 @@ func expectTenant(t *testing.T, proc string, md protoreflect.MethodDescriptor, r
 // installation's admin alone sets on a tenant.
 func expectSettingChange(t *testing.T, proc string, md protoreflect.MethodDescriptor) {
 	t.Helper()
-	named := func(name string, s *magnetarv1.Scope) proto.Message {
+	named := func(name string, s *coriav1.Scope) proto.Message {
 		m := newRequest(md)
 		r := m.ProtoReflect()
 		target := r
@@ -474,7 +474,7 @@ func expectSettingChange(t *testing.T, proc string, md protoreflect.MethodDescri
 		}
 		return m
 	}
-	lab := &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}}
+	lab := &coriav1.Scope{Kind: &coriav1.Scope_Tenant{Tenant: "lab"}}
 	if _, got, _ := ruleFor(proc, named("events.retention", lab)); got != access.OnTenant("lab", master.RoleAdmin) {
 		t.Errorf("%s: an ordinary setting on a tenant is not admin there", proc)
 	}
@@ -509,7 +509,7 @@ func expectStatic(t *testing.T, proc string, got, want access.Requirement) {
 func expectScope(t *testing.T, proc string, md protoreflect.MethodDescriptor, role master.Role) {
 	t.Helper()
 	tenant := newRequest(md)
-	if !setScope(tenant.ProtoReflect(), &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}}, 2) {
+	if !setScope(tenant.ProtoReflect(), &coriav1.Scope{Kind: &coriav1.Scope_Tenant{Tenant: "lab"}}, 2) {
 		t.Errorf("%s: no scope field found in its request", proc)
 		return
 	}
@@ -534,7 +534,7 @@ func expectScope(t *testing.T, proc string, md protoreflect.MethodDescriptor, ro
 func expectMonitorScope(t *testing.T, proc string, md protoreflect.MethodDescriptor) {
 	t.Helper()
 	tenant := newRequest(md)
-	if !setScope(tenant.ProtoReflect(), &magnetarv1.Scope{Kind: &magnetarv1.Scope_Tenant{Tenant: "lab"}}, 2) {
+	if !setScope(tenant.ProtoReflect(), &coriav1.Scope{Kind: &coriav1.Scope_Tenant{Tenant: "lab"}}, 2) {
 		t.Errorf("%s: no scope field found in its request", proc)
 		return
 	}
@@ -570,16 +570,16 @@ func setString(m proto.Message, field, v string) {
 	r.Set(r.Descriptor().Fields().ByName(protoreflect.Name(field)), protoreflect.ValueOfString(v))
 }
 
-// setScope sets the first field of type magnetar.v1.Scope found within
+// setScope sets the first field of type coria.v1.Scope found within
 // depth levels of messages, and reports whether it found one.
-func setScope(m protoreflect.Message, s *magnetarv1.Scope, depth int) bool {
+func setScope(m protoreflect.Message, s *coriav1.Scope, depth int) bool {
 	fields := m.Descriptor().Fields()
 	for i := range fields.Len() {
 		fd := fields.Get(i)
 		if fd.Message() == nil || fd.IsList() || fd.IsMap() {
 			continue
 		}
-		if fd.Message().FullName() == "magnetar.v1.Scope" {
+		if fd.Message().FullName() == "coria.v1.Scope" {
 			m.Set(fd, protoreflect.ValueOfMessage(s.ProtoReflect()))
 			return true
 		}
@@ -627,6 +627,6 @@ func readsMessage(procedure string) bool {
 }
 
 // installation is the installation scope.
-func installation() *magnetarv1.Scope {
-	return &magnetarv1.Scope{Kind: &magnetarv1.Scope_Installation{Installation: &magnetarv1.Installation{}}}
+func installation() *coriav1.Scope {
+	return &coriav1.Scope{Kind: &coriav1.Scope_Installation{Installation: &coriav1.Installation{}}}
 }

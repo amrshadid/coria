@@ -3,7 +3,7 @@ package postgres
 import (
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // TestTenantEventsContract runs the contract suite's event groups on

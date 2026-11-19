@@ -30,9 +30,9 @@ linters:
           files:
             - "**/internal/events/**"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/driver
+            - pkg: github.com/amrshadid/coria/internal/driver
               desc: the live feed reads through tenant.Events and never knows the database type
-            - pkg: github.com/amrshadid/magnetar/internal/registry
+            - pkg: github.com/amrshadid/coria/internal/registry
               desc: the live feed is handed its tenants (events.Tenants); it does not open them
             - pkg: database/sql
               desc: the live feed reads through tenant.Events
@@ -70,7 +70,7 @@ linters:
               desc: the storage port knows no file system; internal/blob/dir does
             - pkg: path/filepath
               desc: the storage port knows no file system; internal/blob/dir does
-            - pkg: github.com/amrshadid/magnetar/internal/blob/dir
+            - pkg: github.com/amrshadid/coria/internal/blob/dir
               desc: the port and its suite never import a driver; drivers import them
             - pkg: github.com/aws
               desc: the storage port knows no cloud SDK; the S3 driver does
@@ -99,15 +99,15 @@ linters:
           allow:
             - $gostd
             # The core's root package and its subpackages are the core.
-            - github.com/amrshadid/magnetar/internal/core$
-            - github.com/amrshadid/magnetar/internal/core/
+            - github.com/amrshadid/coria/internal/core$
+            - github.com/amrshadid/coria/internal/core/
             # Pure value types with parsers and no I/O: an address in a
             # receiver's list of callers, a storage location written as a URL.
             - net/netip$
             - net/url$
           deny:
-            - pkg: github.com/amrshadid/magnetar
-              desc: the core imports nothing of Magnetar's; state the need as an interface in the core
+            - pkg: github.com/amrshadid/coria
+              desc: the core imports nothing of CORIA's; state the need as an interface in the core
             # Databases.
             - pkg: database/sql
               desc: the core does not reach a database; the catalog package does
@@ -152,7 +152,7 @@ linters:
             - pkg: unsafe
               desc: the core does not step outside Go's memory safety
             - pkg: runtime/cgo
-              desc: Magnetar is pure Go, and the core most of all
+              desc: CORIA is pure Go, and the core most of all
             - pkg: plugin
               desc: the core loads no code at run time
             # Effects that make the core's result depend on more than its
@@ -180,9 +180,9 @@ linters:
               desc: the master port knows no database; internal/driver/sqlite does
             - pkg: github.com/jackc/pgx
               desc: the master port knows no database; the Postgres driver does
-            - pkg: github.com/amrshadid/magnetar/internal/driver
+            - pkg: github.com/amrshadid/coria/internal/driver
               desc: the port and its suite never import a driver; drivers import them
-            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlkit
+            - pkg: github.com/amrshadid/coria/internal/driver/sqlkit
               desc: sqlkit is for SQL drivers; the port must not assume SQL
 
         # The tenant database's port (internal/tenant) and its contract suite
@@ -198,9 +198,9 @@ linters:
               desc: the tenant port knows no database; internal/driver/sqlite does
             - pkg: github.com/jackc/pgx
               desc: the tenant port knows no database; the Postgres driver does
-            - pkg: github.com/amrshadid/magnetar/internal/driver
+            - pkg: github.com/amrshadid/coria/internal/driver
               desc: the port and its suite never import a driver; drivers import them
-            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlkit
+            - pkg: github.com/amrshadid/coria/internal/driver/sqlkit
               desc: sqlkit is for SQL drivers; the port must not assume SQL
 
         # The tenant registry is given its drivers (registry.Config.Drivers),
@@ -212,7 +212,7 @@ linters:
             - "**/internal/registry/**"
             - "!$test"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/driver
+            - pkg: github.com/amrshadid/coria/internal/driver
               desc: the registry is given its drivers in Config; the server wires them
             - pkg: database/sql
               desc: the registry reaches a tenant's database only through tenant.Store
@@ -227,9 +227,9 @@ linters:
           files:
             - "**/internal/api/**"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/server
+            - pkg: github.com/amrshadid/coria/internal/server
               desc: the handlers satisfy the server's types by their shape; internal/cli/servecmd joins the two
-            - pkg: github.com/amrshadid/magnetar/internal/cli
+            - pkg: github.com/amrshadid/coria/internal/cli
               desc: the handlers are a library of the server; the command line imports them, not the other way
 
         # The handlers name a database type (master.SQLiteDriver) and are
@@ -243,7 +243,7 @@ linters:
             - "**/internal/api/**"
             - "!$test"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/driver
+            - pkg: github.com/amrshadid/coria/internal/driver
               desc: the handlers name a database type with master.SQLiteDriver and reach a tenant through the registry
 
         # Only the DICOM listener speaks DICOM on the network, so a second
@@ -262,7 +262,7 @@ linters:
           files:
             - "**/internal/receive/supervise/**"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/receive/dimse
+            - pkg: github.com/amrshadid/coria/internal/receive/dimse
               desc: the supervisor is handed a listener factory; servecmd joins the two
             - pkg: github.com/amrshadid/go-dicom
               desc: the supervisor never reads or speaks DICOM
@@ -274,7 +274,7 @@ linters:
             - "!$test"
             - "!**/internal/testkit/**"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/testkit
+            - pkg: github.com/amrshadid/coria/internal/testkit
               desc: internal/testkit is for tests and test-only programs only
 
         # The rules of where a tenant's data may be are one package that the
@@ -286,13 +286,13 @@ linters:
           files:
             - "**/internal/place/**"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/api
+            - pkg: github.com/amrshadid/coria/internal/api
               desc: the handlers use package place; place never uses them
-            - pkg: github.com/amrshadid/magnetar/internal/receive
+            - pkg: github.com/amrshadid/coria/internal/receive
               desc: the reception pipeline uses package place; place never uses it
-            - pkg: github.com/amrshadid/magnetar/internal/registry
+            - pkg: github.com/amrshadid/coria/internal/registry
               desc: place is handed a tenant's secrets; it does not look a tenant up
-            - pkg: github.com/amrshadid/magnetar/internal/driver
+            - pkg: github.com/amrshadid/coria/internal/driver
               desc: place reads settings and secrets through its interfaces, never a database
             - pkg: database/sql
               desc: place reads settings and secrets through its interfaces, never a database
@@ -307,15 +307,15 @@ linters:
             - "**/internal/receive/**"
             - "!$test"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/driver
+            - pkg: github.com/amrshadid/coria/internal/driver
               desc: the reception pipeline reaches a database through the tenant port
-            - pkg: github.com/amrshadid/magnetar/internal/blob/dir
+            - pkg: github.com/amrshadid/coria/internal/blob/dir
               desc: the reception pipeline reaches a storage through blob.Store
-            - pkg: github.com/amrshadid/magnetar/internal/blob/s3
+            - pkg: github.com/amrshadid/coria/internal/blob/s3
               desc: the reception pipeline reaches a storage through blob.Store
             - pkg: database/sql
               desc: the reception pipeline reaches a database through the tenant port
-            - pkg: github.com/amrshadid/magnetar/internal/registry
+            - pkg: github.com/amrshadid/coria/internal/registry
               desc: the reception pipeline is handed its tenant, it does not look one up
 
         # Package driver is the one door to the database drivers: it opens a
@@ -333,9 +333,9 @@ linters:
             - "!**/internal/server/*_test.go"
             - "!**/internal/server/servertest/*_test.go"
           deny:
-            - pkg: github.com/amrshadid/magnetar/internal/driver/sqlite
+            - pkg: github.com/amrshadid/coria/internal/driver/sqlite
               desc: only internal/driver opens the SQLite driver; ask it for a master.Store or a tenant.Store
-            - pkg: github.com/amrshadid/magnetar/internal/driver/postgres
+            - pkg: github.com/amrshadid/coria/internal/driver/postgres
               desc: only internal/driver opens the Postgres driver; ask it for a master.Store or a tenant.Store
 
         # Only the SQLite driver reaches the SQLite library, so nothing else

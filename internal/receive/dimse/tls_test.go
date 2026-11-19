@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/receive/dimse"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/receive/dimse"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // writePair writes a self-signed certificate for 127.0.0.1, valid from

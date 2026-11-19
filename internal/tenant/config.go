@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/ascii"
-	"github.com/amrshadid/magnetar/internal/core/pathname"
+	"github.com/amrshadid/coria/internal/core/ascii"
+	"github.com/amrshadid/coria/internal/core/pathname"
 )
 
 // StorageType is a storage's type. Its text is what a store keeps.

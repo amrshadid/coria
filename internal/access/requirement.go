@@ -1,7 +1,7 @@
 package access
 
 import (
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // requirementKind is what a Requirement asks for.
@@ -75,7 +75,7 @@ func (r Requirement) valid() bool {
 // Method is required.
 type Request struct {
 	// Method is the API method or command, such as
-	// "/magnetar.v1.AccessService/CreateKey".
+	// "/coria.v1.AccessService/CreateKey".
 	Method string
 	// RemoteAddress is where the request came from; empty on the local
 	// socket.

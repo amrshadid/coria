@@ -1,4 +1,4 @@
-// Package tui is the interactive program: what "magnetar" with no arguments
+// Package tui is the interactive program: what "coria" with no arguments
 // opens on a terminal. It is a client of the same API as the commands, through
 // the same client, and can do nothing a command cannot.
 //

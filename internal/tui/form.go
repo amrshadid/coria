@@ -5,8 +5,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // formField is one line of a form: a text field, or a choice among a few words.
@@ -129,11 +129,11 @@ func (f formScreen) send(c *ctx) (screen, tea.Cmd) {
 		return f, nil
 	}
 	for i, fld := range f.fields {
-		if fld.keyID && strings.HasPrefix(strings.TrimSpace(fld.in.value()), "mgt_") {
+		if fld.keyID && strings.HasPrefix(strings.TrimSpace(fld.in.value()), "cor_") {
 			f.fields = append([]formField{}, f.fields...)
 			f.fields[i].in = field{}
 			f.focus = i
-			f.msg = fault.Message(output.CheckKeyID("mgt_"))
+			f.msg = fault.Message(output.CheckKeyID("cor_"))
 			return f, nil
 		}
 	}
@@ -195,7 +195,7 @@ func (f formScreen) layoutLines(c *ctx) (lines []string, cx, cy int) {
 			text = strings.Join(parts, " ")
 		} else {
 			shown := fld.in
-			if fld.keyID && strings.HasPrefix(strings.TrimSpace(shown.value()), "mgt_") {
+			if fld.keyID && strings.HasPrefix(strings.TrimSpace(shown.value()), "cor_") {
 				// A whole key was typed or pasted where an id belongs: it is
 				// drawn as stars while it is there, never as itself.
 				stars := make([]rune, len(shown.val))

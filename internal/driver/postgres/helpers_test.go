@@ -15,12 +15,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
-	"github.com/amrshadid/magnetar/internal/core/layout"
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/layout"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // addressEnv names the variable that holds the address of a Postgres
@@ -29,8 +29,8 @@ import (
 // where a Postgres is always there, so a service that failed to start cannot
 // make the tests pass by not running.
 const (
-	addressEnv = "MAGNETAR_TEST_POSTGRES"
-	requireEnv = "MAGNETAR_REQUIRE_POSTGRES"
+	addressEnv = "CORIA_TEST_POSTGRES"
+	requireEnv = "CORIA_REQUIRE_POSTGRES"
 )
 
 // testAddress returns the address of the test database. Without one it skips

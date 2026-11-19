@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // checkChurn lists with list, limit at a time, calling mutate between pages,

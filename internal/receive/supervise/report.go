@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // The grouping of refused callers (monitor.proto, AssociationFailed).

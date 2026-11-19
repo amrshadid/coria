@@ -15,8 +15,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // IDLength is the length of a file's id: 128 random bits in lowercase hex.

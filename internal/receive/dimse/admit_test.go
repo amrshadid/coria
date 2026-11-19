@@ -7,8 +7,8 @@ import (
 
 	"github.com/amrshadid/go-dicom/network"
 
-	"github.com/amrshadid/magnetar/internal/receive"
-	"github.com/amrshadid/magnetar/internal/receive/dimse"
+	"github.com/amrshadid/coria/internal/receive"
+	"github.com/amrshadid/coria/internal/receive/dimse"
 )
 
 // TestStatusIsSuccessOnlyForAFileKeptWhole guards the mapping of what the

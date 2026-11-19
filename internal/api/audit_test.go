@@ -8,8 +8,8 @@ import (
 	connect "connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // testListAuditEntries guards ListAuditEntries: admin on the scope asked
@@ -92,14 +92,14 @@ func testListAuditEntries(t *testing.T) {
 			audit: &wantAudit{log: "lab1", outcome: master.OutcomeDone, tenant: "lab1", details: map[string]string{"scope": "tenant/lab1"}},
 			check: func(t *testing.T, o outcome) {
 				es := o.res.(*v1.ListAuditEntriesResponse).GetEntries()
-				if len(es) == 0 || es[0].GetMethod() != "/magnetar.v1.SettingsService/SetSetting" || es[0].GetTenant() != "lab1" || es[0].GetObject() != testRetention {
+				if len(es) == 0 || es[0].GetMethod() != "/coria.v1.SettingsService/SetSetting" || es[0].GetTenant() != "lab1" || es[0].GetObject() != testRetention {
 					t.Errorf("the tenant's log starts with %v", es)
 				}
 			}},
 		{name: "tenant, the listing is in its log", as: f.lab1Admin, call: list(&v1.ListAuditEntriesRequest{Scope: tenantScope("lab1"), Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE}),
 			check: func(t *testing.T, o outcome) {
 				es := o.res.(*v1.ListAuditEntriesResponse).GetEntries()
-				if len(es) == 0 || es[0].GetMethod() != "/magnetar.v1.AuditService/ListAuditEntries" {
+				if len(es) == 0 || es[0].GetMethod() != "/coria.v1.AuditService/ListAuditEntries" {
 					t.Errorf("the newest entry is not the last listing: %v", es)
 				}
 			}},

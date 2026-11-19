@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 var t0 = time.Date(2026, 11, 18, 9, 30, 0, 123456000, time.UTC)

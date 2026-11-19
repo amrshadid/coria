@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // receptionStepPrefix is what every name of a reception step starts with.
@@ -103,9 +103,9 @@ is inclusive and --until is exclusive.
 a study up by an identifier already in hand is a search for a person's data, so
 it needs the operator role and is recorded in the audit log as present, not as
 its value.`,
-		Example: `  magnetar reception list lab1
-  magnetar reception list lab1 --step failed
-  magnetar reception list lab1 --in-progress --receiver scanner1 --json`,
+		Example: `  coria reception list lab1
+  coria reception list lab1 --step failed
+  coria reception list lab1 --in-progress --receiver scanner1 --json`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := l.check(); err != nil {
@@ -180,7 +180,7 @@ func (a *app) newReceptionShow() *cobra.Command {
 archived, ignored as a duplicate and quarantined, the subject and session it
 belongs to, the callers that brought it, the scans it archived into, and every
 other reception of the same study in the tenant, in the order of their arrival.`,
-		Example: `  magnetar reception show lab1 rcp_8Qm2`,
+		Example: `  coria reception show lab1 rcp_8Qm2`,
 		Args:    exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -244,8 +244,8 @@ the same receiver, or at the one --receiver names, which is needed when the
 failed reception's receiver has been removed. A reception already retried is
 answered as it stands, so a repeated command starts nothing more. A reception
 that has not failed, or whose files were discarded, cannot be retried (exit 5).`,
-		Example: `  magnetar reception retry lab1 rcp_8Qm2
-  magnetar reception retry lab1 rcp_8Qm2 --receiver scanner2`,
+		Example: `  coria reception retry lab1 rcp_8Qm2
+  coria reception retry lab1 rcp_8Qm2 --receiver scanner2`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -288,8 +288,8 @@ that has not failed, or was retried, cannot be discarded (exit 5).
 This cannot be undone. Without --yes the command asks for the id to be typed
 again on a terminal; with no terminal it sends nothing, says what it would do
 and exits 2.`,
-		Example: `  magnetar reception discard lab1 rcp_8Qm2 --reason "sender resent the study"
-  magnetar reception discard lab1 rcp_8Qm2 --reason "test data" --yes`,
+		Example: `  coria reception discard lab1 rcp_8Qm2 --reason "sender resent the study"
+  coria reception discard lab1 rcp_8Qm2 --reason "test data" --yes`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if err := checkReason(reason); err != nil {

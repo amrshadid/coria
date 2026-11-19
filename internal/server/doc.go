@@ -78,7 +78,7 @@
 // # The envelope
 //
 // Around everything, for every request, the envelope deletes a client's own
-// Magnetar-Request-Id header, makes the request's id and sets it on the
+// Coria-Request-Id header, makes the request's id and sets it on the
 // response (so every answer carries it: success, refusal, error, panic, and
 // the RPC library's own errors); refuses new requests once Stop has begun;
 // counts requests in flight for the drain; applies the deadlines and the
@@ -87,7 +87,7 @@
 //
 // # Listeners
 //
-// The local socket, <data-dir>/run/magnetar.sock, speaks HTTP/2 without TLS
+// The local socket, <data-dir>/run/coria.sock, speaks HTTP/2 without TLS
 // (h2c) and HTTP/1.1. Its directory is private to the server's user, and on
 // Linux and macOS each connection's peer user is read from the kernel
 // (SO_PEERCRED, LOCAL_PEERCRED) and must be the server's own effective

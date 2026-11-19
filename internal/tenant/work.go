@@ -3,7 +3,7 @@ package tenant
 import (
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // WorkState is where a unit of work is. Its text is what a store keeps.

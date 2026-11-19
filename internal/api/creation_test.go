@@ -7,9 +7,9 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // ownEntries returns the entries of the installation's log that are the
@@ -18,7 +18,7 @@ import (
 func ownEntries(e *env, requestID string) []master.AuditEntry {
 	var out []master.AuditEntry
 	for _, en := range entriesOf(e.masterLog(), requestID) {
-		if en.Method == magnetarv1connect.TenantServiceCreateTenantProcedure {
+		if en.Method == coriav1connect.TenantServiceCreateTenantProcedure {
 			out = append(out, en)
 		}
 	}

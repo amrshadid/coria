@@ -92,12 +92,12 @@ func serve(tb testing.TB, srv *http.Server, ln net.Listener, tlsOn bool) {
 
 // ServeUnix serves the fake on the local socket of a new data directory, with
 // HTTP/2 without TLS, and returns the directory. The socket is at
-// run/magnetar.sock, where the installation's layout puts it. The directory is
+// run/coria.sock, where the installation's layout puts it. The directory is
 // short and under the system's temporary directory, because a socket path has
 // a small limit that a test's own long directory name could pass.
 func (s *Server) ServeUnix(tb testing.TB) (dataDir string) {
 	tb.Helper()
-	dir, err := os.MkdirTemp("", "mgt")
+	dir, err := os.MkdirTemp("", "cor")
 	if err != nil {
 		tb.Fatalf("making a data directory: %v", err)
 	}
@@ -105,7 +105,7 @@ func (s *Server) ServeUnix(tb testing.TB) (dataDir string) {
 	if err := os.Mkdir(filepath.Join(dir, "run"), 0o700); err != nil {
 		tb.Fatalf("making run/: %v", err)
 	}
-	ln, err := net.Listen("unix", filepath.Join(dir, "run", "magnetar.sock"))
+	ln, err := net.Listen("unix", filepath.Join(dir, "run", "coria.sock"))
 	if err != nil {
 		tb.Fatalf("listening on a unix socket: %v", err)
 	}
@@ -173,7 +173,7 @@ func selfSigned(tb testing.TB) (tls.Certificate, []byte) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "magnetar test"},
+		Subject:               pkix.Name{CommonName: "coria test"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,

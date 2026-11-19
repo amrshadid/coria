@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/amrshadid/magnetar/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/label"
 )
 
 // Fault says why a rule could not make a label from a file's attributes.

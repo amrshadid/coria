@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Reader is one tenant's event feed as a watch reads it: the read and the

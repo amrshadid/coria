@@ -10,7 +10,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 
-	"github.com/amrshadid/magnetar/internal/access"
+	"github.com/amrshadid/coria/internal/access"
 )
 
 // The audit entries the front step writes for a caller it authenticated

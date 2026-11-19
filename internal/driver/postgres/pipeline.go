@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/amrshadid/magnetar/internal/driver/sqlkit"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/driver/sqlkit"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // The pipeline's operations on a tenant's database (tenant.Pipeline), in
@@ -142,7 +142,7 @@ func (c *retryCounts) count(err error) {
 // configuration. An advisory lock belongs to the whole database, so the key
 // is made from the schema's name too, as the migration lock's is: two
 // tenants in two schemas of one database never wait for each other.
-const configLockKey = `hashtextextended('magnetar/tenant-config/' || current_schema(), 0)`
+const configLockKey = `hashtextextended('coria/tenant-config/' || current_schema(), 0)`
 
 // lockConfig takes the tenant's configuration lock for the rest of the
 // transaction (pg_advisory_xact_lock, released by the commit or the

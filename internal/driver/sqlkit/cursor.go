@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // MaxCursorLength bounds a cursor a caller hands back. A cursor holds the

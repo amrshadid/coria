@@ -21,13 +21,13 @@ import (
 	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/proto"
 
-	magnetarv1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/server"
-	"github.com/amrshadid/magnetar/internal/server/servertest"
+	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/server"
+	"github.com/amrshadid/coria/internal/server/servertest"
 )
 
 // sendOldHello sends addr a TLS ClientHello that offers TLS 1.0 and 1.1
@@ -130,7 +130,7 @@ func TestMaxDeadline(t *testing.T) {
 	start := time.Now()
 	result := make(chan error, 1)
 	go func() {
-		_, err := cl.tenants.ListTenants(ctx, &magnetarv1.ListTenantsRequest{PageToken: "block"})
+		_, err := cl.tenants.ListTenants(ctx, &coriav1.ListTenantsRequest{PageToken: "block"})
 		result <- err
 	}()
 	var err error
@@ -147,7 +147,7 @@ func TestMaxDeadline(t *testing.T) {
 	ctx2, cancel2 := context.WithTimeout(e.ctx, 150*time.Millisecond)
 	defer cancel2()
 	start = time.Now()
-	_, _ = cl.tenants.ListTenants(ctx2, &magnetarv1.ListTenantsRequest{PageToken: "block"})
+	_, _ = cl.tenants.ListTenants(ctx2, &coriav1.ListTenantsRequest{PageToken: "block"})
 	if took := time.Since(start); took > 350*time.Millisecond {
 		t.Fatalf("a client's shorter deadline was not kept: %v", took)
 	}
@@ -159,7 +159,7 @@ func TestMaxDeadline(t *testing.T) {
 // grpc-timeout (with no Connect-Timeout-Ms) each run past the default.
 func TestClientDeadlineHeaders(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, deadline: 300 * time.Millisecond})
-	req, _ := http.NewRequest(http.MethodPost, "http://local"+magnetarv1connect.TenantServiceListTenantsProcedure, strings.NewReader(`{"pageToken":"block"}`))
+	req, _ := http.NewRequest(http.MethodPost, "http://local"+coriav1connect.TenantServiceListTenantsProcedure, strings.NewReader(`{"pageToken":"block"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Connect-Timeout-Ms", "900")
 	start := time.Now()
@@ -174,7 +174,7 @@ func TestClientDeadlineHeaders(t *testing.T) {
 	ctx, cancel := context.WithTimeout(e.ctx, 900*time.Millisecond)
 	defer cancel()
 	start = time.Now()
-	_, _ = e.local().tenants.ListTenants(ctx, &magnetarv1.ListTenantsRequest{PageToken: "block"})
+	_, _ = e.local().tenants.ListTenants(ctx, &coriav1.ListTenantsRequest{PageToken: "block"})
 	if took := time.Since(start); took < 800*time.Millisecond {
 		t.Fatalf("grpc-timeout 900ms was cut at %v by the default", took)
 	}
@@ -188,7 +188,7 @@ func TestClientDeadlineHeaders(t *testing.T) {
 // invalid.
 func TestBodyReadBound(t *testing.T) {
 	e := newEnv(t, options{bodyRead: 300 * time.Millisecond})
-	reader := e.makeKey(magnetarv1.Role_ROLE_READER, installation())
+	reader := e.makeKey(coriav1.Role_ROLE_READER, installation())
 	for _, c := range []struct {
 		auth   string
 		status int
@@ -199,7 +199,7 @@ func TestBodyReadBound(t *testing.T) {
 	} {
 		conn := rawTLS(t, e)
 		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-		r := stalledRequest(t, conn, magnetarv1connect.SettingsServiceGetSettingProcedure, c.auth)
+		r := stalledRequest(t, conn, coriav1connect.SettingsServiceGetSettingProcedure, c.auth)
 		start := time.Now()
 		resp, err := http.ReadResponse(r, nil)
 		if err != nil {
@@ -225,23 +225,23 @@ func TestUnauthenticatedHoldsNothing(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 20 {
 		conn := rawTLS(t, e)
-		_ = stalledRequest(t, conn, magnetarv1connect.SettingsServiceGetSettingProcedure, "")
+		_ = stalledRequest(t, conn, coriav1connect.SettingsServiceGetSettingProcedure, "")
 		wg.Go(func() {
 			cl := newClients(e.tlsClient(true), e.netURL, true, "")
 			ctx, cancel := context.WithTimeout(e.ctx, time.Hour)
 			defer cancel()
-			st, err := cl.raw.CallServerStream(ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: server.HealthWatchProcedure}, &magnetarv1.WhoAmIRequest{})
+			st, err := cl.raw.CallServerStream(ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: server.HealthWatchProcedure}, &coriav1.WhoAmIRequest{})
 			if err == nil {
 				var m healthStatus
 				_ = st.Receive(&m)
 				_ = st.Close()
 			}
-			_, _ = cl.tenants.ListTenants(ctx, &magnetarv1.ListTenantsRequest{PageToken: "block"})
+			_, _ = cl.tenants.ListTenants(ctx, &coriav1.ListTenantsRequest{PageToken: "block"})
 		})
 	}
 	wg.Wait()
-	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 0\n") })
-	if _, err := e.local().access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{}); err != nil {
+	waitFor(t, func() bool { return strings.Contains(metricsText(e), "coria_requests_in_flight 0\n") })
+	if _, err := e.local().access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{}); err != nil {
 		t.Fatalf("the local operator was not answered: %v", err)
 	}
 }
@@ -252,15 +252,15 @@ func TestUnauthenticatedHoldsNothing(t *testing.T) {
 // idle connections; an authenticated caller's connection is kept.
 func TestUnauthenticatedConnectionClosed(t *testing.T) {
 	e := newEnv(t, options{})
-	admin := e.makeKey(magnetarv1.Role_ROLE_ADMIN, installation())
+	admin := e.makeKey(coriav1.Role_ROLE_ADMIN, installation())
 	for _, c := range []struct {
 		path, auth string
 		closed     bool
 	}{
-		{magnetarv1connect.AccessServiceWhoAmIProcedure, "", true},
+		{coriav1connect.AccessServiceWhoAmIProcedure, "", true},
 		{server.HealthCheckProcedure, "", true},
-		{magnetarv1connect.AccessServiceWhoAmIProcedure, "Bearer junk", true},
-		{magnetarv1connect.AccessServiceWhoAmIProcedure, "Bearer " + admin, false},
+		{coriav1connect.AccessServiceWhoAmIProcedure, "Bearer junk", true},
+		{coriav1connect.AccessServiceWhoAmIProcedure, "Bearer " + admin, false},
 	} {
 		conn := rawTLS(t, e)
 		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
@@ -296,8 +296,8 @@ func TestStopAbandonsStuck(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, drain: 200 * time.Millisecond, grace: 200 * time.Millisecond, closeT: time.Second})
 	e.stopErrOK = true
 	cl := e.local()
-	go func() { _, _ = cl.tenants.ListTenants(e.ctx, &magnetarv1.ListTenantsRequest{PageToken: "stuck"}) }()
-	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 1\n") })
+	go func() { _, _ = cl.tenants.ListTenants(e.ctx, &coriav1.ListTenantsRequest{PageToken: "stuck"}) }()
+	waitFor(t, func() bool { return strings.Contains(metricsText(e), "coria_requests_in_flight 1\n") })
 	start := time.Now()
 	stopped := make(chan error, 1)
 	go func() { stopped <- e.srv.Stop() }()
@@ -331,14 +331,14 @@ func TestLateRegistrationNotServed(t *testing.T) {
 	ran := false
 	e := newEnv(t, options{noNetwork: true, register: func(s *connect.Server) { rpc = s }, beforeRun: func(*server.Server) {
 		rpc.Register(connect.Method{
-			Spec: connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: "/" + magnetarv1connect.AccessServiceName + "/Late"},
+			Spec: connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: "/" + coriav1connect.AccessServiceName + "/Late"},
 			Handler: func(context.Context, connect.Spec, connect.ServerStream) error {
 				ran = true
 				return nil
 			},
 		})
 	}})
-	err := e.local().raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: "/" + magnetarv1connect.AccessServiceName + "/Late"}, &emptyMsg{}, &emptyMsg{})
+	err := e.local().raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: "/" + coriav1connect.AccessServiceName + "/Late"}, &emptyMsg{}, &emptyMsg{})
 	if code, _ := codeOf(err); code != connect.CodeUnimplemented || ran {
 		t.Fatalf("a late registration: %v, handler ran: %v", err, ran)
 	}
@@ -353,7 +353,7 @@ func TestPanicValueRedacted(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	cl := e.local()
 	for _, token := range []string{"panic-secret", "panic-proto", "panic-struct"} {
-		if _, err := cl.tenants.ListTenants(e.ctx, &magnetarv1.ListTenantsRequest{PageToken: token}); err == nil {
+		if _, err := cl.tenants.ListTenants(e.ctx, &coriav1.ListTenantsRequest{PageToken: token}); err == nil {
 			t.Fatalf("%s did not fail", token)
 		}
 	}
@@ -361,7 +361,7 @@ func TestPanicValueRedacted(t *testing.T) {
 	if strings.Contains(text, "pw-in-a-panic") {
 		t.Fatalf("a panic put a password in the log:\n%s", text)
 	}
-	for _, want := range []string{`"panic_type":"string"`, `"panic_type":"*magnetarv1.CreateTenantRequest"`, `"panic_type":"servertest.panicHolder"`, "postgres://[hidden]@db.example"} {
+	for _, want := range []string{`"panic_type":"string"`, `"panic_type":"*coriav1.CreateTenantRequest"`, `"panic_type":"servertest.panicHolder"`, "postgres://[hidden]@db.example"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("the panic log lacks %s:\n%s", want, text)
 		}
@@ -378,7 +378,7 @@ func TestAuditWrittenAtStop(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, auditWait: time.Hour})
 	bad := newClients(e.socketClient(true), "http://local", true, "Bearer "+unknownKey)
 	for range refusals {
-		_, _ = bad.access.WhoAmI(e.ctx, &magnetarv1.WhoAmIRequest{})
+		_, _ = bad.access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{})
 	}
 	if err := e.srv.Stop(); err != nil {
 		t.Fatal(err)
@@ -444,8 +444,8 @@ func TestStopAbandonsWhatDoesNotClose(t *testing.T) {
 func TestRequestDuringStop(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true, delay: 800 * time.Millisecond, drain: 5 * time.Second})
 	cl := e.local()
-	go func() { _, _ = cl.tenants.ListTenants(e.ctx, &magnetarv1.ListTenantsRequest{PageToken: "wait"}) }()
-	waitFor(t, func() bool { return strings.Contains(metricsText(e), "magnetar_requests_in_flight 1\n") })
+	go func() { _, _ = cl.tenants.ListTenants(e.ctx, &coriav1.ListTenantsRequest{PageToken: "wait"}) }()
+	waitFor(t, func() bool { return strings.Contains(metricsText(e), "coria_requests_in_flight 1\n") })
 	stopped := make(chan error, 1)
 	go func() { stopped <- e.srv.Stop() }()
 	call := func(path string) *httptest.ResponseRecorder {
@@ -456,9 +456,9 @@ func TestRequestDuringStop(t *testing.T) {
 		return w
 	}
 	waitFor(t, func() bool {
-		return call(magnetarv1connect.AccessServiceWhoAmIProcedure).Code == http.StatusServiceUnavailable
+		return call(coriav1connect.AccessServiceWhoAmIProcedure).Code == http.StatusServiceUnavailable
 	})
-	w := call(magnetarv1connect.AccessServiceWhoAmIProcedure)
+	w := call(coriav1connect.AccessServiceWhoAmIProcedure)
 	if !strings.Contains(w.Body.String(), "unavailable") || w.Header().Get(server.RequestIDHeader) == "" {
 		t.Fatalf("a request during stop: %d %s", w.Code, w.Body.String())
 	}
@@ -486,10 +486,10 @@ func TestRequestDuringStop(t *testing.T) {
 // read: on a client stream whose requirement reads the request, the handler
 // gets every message once and the first not twice.
 func TestStreamFirstMessageOnce(t *testing.T) {
-	const proc = "/magnetar.test.Stream/Collect"
+	const proc = "/coria.test.Stream/Collect"
 	methods := servertest.Contract()
 	methods[proc] = servertest.Entry{
-		NewMsg: func() proto.Message { return &magnetarv1.GetTenantRequest{} },
+		NewMsg: func() proto.Message { return &coriav1.GetTenantRequest{} },
 		Need:   func(proto.Message) access.Requirement { return access.Authenticated() },
 	}
 	e := newEnv(t, options{noNetwork: true, methods: methods, register: func(s *connect.Server) {
@@ -498,7 +498,7 @@ func TestStreamFirstMessageOnce(t *testing.T) {
 			Handler: func(_ context.Context, _ connect.Spec, st connect.ServerStream) error {
 				var names []string
 				for {
-					var m magnetarv1.GetTenantRequest
+					var m coriav1.GetTenantRequest
 					if err := st.Receive(&m); err != nil {
 						if errors.Is(err, io.EOF) {
 							break
@@ -507,7 +507,7 @@ func TestStreamFirstMessageOnce(t *testing.T) {
 					}
 					names = append(names, m.GetName())
 				}
-				return st.Send(&magnetarv1.GetTenantResponse{Tenant: &magnetarv1.Tenant{Name: strings.Join(names, ",")}})
+				return st.Send(&coriav1.GetTenantResponse{Tenant: &coriav1.Tenant{Name: strings.Join(names, ",")}})
 			},
 		})
 	}})
@@ -516,12 +516,12 @@ func TestStreamFirstMessageOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range []string{"m1", "m2", "m3"} {
-		if err := st.Send(&magnetarv1.GetTenantRequest{Name: n}); err != nil {
+		if err := st.Send(&coriav1.GetTenantRequest{Name: n}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	_ = st.CloseSend()
-	var out magnetarv1.GetTenantResponse
+	var out coriav1.GetTenantResponse
 	if err := st.Receive(&out); err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +536,7 @@ func TestStreamFirstMessageOnce(t *testing.T) {
 func TestWwwAuthenticate(t *testing.T) {
 	e := newEnv(t, options{})
 	for _, r := range []struct{ method, path string }{
-		{http.MethodPost, magnetarv1connect.AccessServiceWhoAmIProcedure},
+		{http.MethodPost, coriav1connect.AccessServiceWhoAmIProcedure},
 		{http.MethodGet, "/metrics"},
 	} {
 		req, _ := http.NewRequest(r.method, e.netURL+r.path, strings.NewReader("{}"))
@@ -557,7 +557,7 @@ func TestWwwAuthenticate(t *testing.T) {
 func TestCatchAllNever200(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	hc := e.socketClient(false)
-	for _, p := range []string{"/", "/x", "/magnetar.v1.AccessService", "/a/b/c", "/metrics/x", "/grpc.health.v1.Health"} {
+	for _, p := range []string{"/", "/x", "/coria.v1.AccessService", "/a/b/c", "/metrics/x", "/grpc.health.v1.Health"} {
 		for _, m := range []string{http.MethodGet, http.MethodPost} {
 			req, _ := http.NewRequest(m, "http://local"+p, strings.NewReader("{}"))
 			resp, err := hc.Do(req)
@@ -580,7 +580,7 @@ func TestUnknownMethodLabels(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	long := strings.Repeat("x", 5000)
 	refused := newClients(e.socketClient(true), "http://local", true, "Bearer "+unknownKey)
-	for _, p := range []string{"/magnetar.v1.AccessService/NoSuchOne", "/magnetar.v1.AccessService/" + long, "/no.such.Service/Call"} {
+	for _, p := range []string{"/coria.v1.AccessService/NoSuchOne", "/coria.v1.AccessService/" + long, "/no.such.Service/Call"} {
 		_ = e.local().raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: p}, &emptyMsg{}, &emptyMsg{})
 		_ = refused.raw.CallUnary(e.ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: p}, &emptyMsg{}, &emptyMsg{})
 	}
@@ -604,7 +604,7 @@ func TestUnknownMethodLabels(t *testing.T) {
 func TestTransportAnswersLogged(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
 	hc := e.socketClient(false)
-	proc := magnetarv1connect.AccessServiceWhoAmIProcedure
+	proc := coriav1connect.AccessServiceWhoAmIProcedure
 	for _, c := range []struct {
 		name, method string
 		header       map[string]string
@@ -627,7 +627,7 @@ func TestTransportAnswersLogged(t *testing.T) {
 		if resp.StatusCode == http.StatusOK || id == "" || !strings.Contains(e.log.String(), `"request_id":"`+id+`"`) {
 			t.Fatalf("%s: %d, request id %q not in the log:\n%s", c.name, resp.StatusCode, id, e.log.String())
 		}
-		want := fmt.Sprintf(`magnetar_requests_total{method="transport",code="http_%d"}`, resp.StatusCode)
+		want := fmt.Sprintf(`coria_requests_total{method="transport",code="http_%d"}`, resp.StatusCode)
 		if !strings.Contains(metricsText(e), want) {
 			t.Fatalf("%s: not counted as %s", c.name, want)
 		}
@@ -641,7 +641,7 @@ func TestTransportAnswersLogged(t *testing.T) {
 func TestNothingLoggedBeforeCheck(t *testing.T) {
 	e := newEnv(t, options{level: -4})
 	const marker = "marker-before-check"
-	req := &magnetarv1.GetSettingRequest{Name: marker, Scope: installation()}
+	req := &coriav1.GetSettingRequest{Name: marker, Scope: installation()}
 	_, _ = e.network("").settings.GetSetting(e.ctx, req)
 	if strings.Contains(e.log.String(), marker) {
 		t.Fatal("a refused request's message was logged")
@@ -657,7 +657,7 @@ func TestNothingLoggedBeforeCheck(t *testing.T) {
 // JSON.
 func TestJSONSizeLimit(t *testing.T) {
 	e := newEnv(t, options{noNetwork: true})
-	req := &magnetarv1.ListTenantsRequest{PageToken: "huge-json"}
+	req := &coriav1.ListTenantsRequest{PageToken: "huge-json"}
 	if _, err := e.local().tenants.ListTenants(e.ctx, req); err != nil {
 		t.Fatalf("in protobuf: %v", err)
 	}

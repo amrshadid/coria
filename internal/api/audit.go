@@ -6,16 +6,16 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/master"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // auditService is AuditService: the installation's log from the master, a
 // tenant's from its own store.
 type auditService struct{ c *core }
 
-var _ magnetarv1connect.AuditServiceHandler = auditService{}
+var _ coriav1connect.AuditServiceHandler = auditService{}
 
 // filterTime returns a filter's time, the zero time for an absent one, or an
 // Invalid error naming field for a timestamp that is not valid or that the
@@ -34,7 +34,7 @@ func filterTime(field string, ts *timestamppb.Timestamp) (time.Time, error) {
 // outcome and time. The listing records itself in the log it read.
 func (s auditService) ListAuditEntries(ctx context.Context, req *v1.ListAuditEntriesRequest) (*v1.ListAuditEntriesResponse, error) {
 	c := s.c
-	d, err := c.decision(ctx, magnetarv1connect.AuditServiceListAuditEntriesProcedure)
+	d, err := c.decision(ctx, coriav1connect.AuditServiceListAuditEntriesProcedure)
 	if err != nil {
 		return nil, err
 	}

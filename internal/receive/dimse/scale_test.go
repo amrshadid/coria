@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/testkit"
+	"github.com/amrshadid/coria/internal/testkit"
 )
 
 // TestScaleLargeFileThroughTheListenerInBoundedMemory measures the live

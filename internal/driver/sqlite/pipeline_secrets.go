@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // TenantSecret implements tenant.Secrets. The sealed bytes are read

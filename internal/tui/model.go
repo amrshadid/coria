@@ -9,10 +9,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // The size a screen is drawn at before the terminal has said its own, and the
@@ -414,7 +414,7 @@ func (m model) header() string {
 			who = "unknown caller"
 		}
 	}
-	text := "magnetar | " + clean(who) + " | " + clean(c.where)
+	text := "coria | " + clean(who) + " | " + clean(c.where)
 	return c.st.bold(trunc(text, c.w))
 }
 

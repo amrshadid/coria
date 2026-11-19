@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/master"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // The environment of the child process TestKillDuringChanges starts: the
 // database it writes, set only in the child.
-const killChildEnv = "MAGNETAR_KILL_CHILD_DB"
+const killChildEnv = "CORIA_KILL_CHILD_DB"
 
 // killAnswered is how many changes the child must have answered before it is
 // killed: enough that it is killed among many changes in flight, whatever
@@ -42,7 +42,7 @@ const killDupID = "kill-dup"
 // there without its entry or an entry without its change.
 //
 // The test is skipped without the sqlite3 tool (SQLITE3 names one, or it is
-// looked up on PATH), unless MAGNETAR_SQLITE3_REQUIRED is set, as the
+// looked up on PATH), unless CORIA_SQLITE3_REQUIRED is set, as the
 // outside check sets it, which makes a missing tool a failure.
 func TestKillDuringChanges(t *testing.T) {
 	if path := os.Getenv(killChildEnv); path != "" {
@@ -55,7 +55,7 @@ func TestKillDuringChanges(t *testing.T) {
 	}
 	sqlite3, err := exec.LookPath(sqlite3)
 	if err != nil {
-		if os.Getenv("MAGNETAR_SQLITE3_REQUIRED") != "" {
+		if os.Getenv("CORIA_SQLITE3_REQUIRED") != "" {
 			t.Fatalf("the sqlite3 tool is required: %v", err)
 		}
 		t.Skipf("the sqlite3 tool is not here: %v", err)

@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestCreatedKeyFileMode guards that a new key file gives nobody but its
 // owner any access: mode 0600 exactly.
 func TestCreatedKeyFileMode(t *testing.T) {
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	if err := CreateKeyFile(path); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestCreatedKeyFileMode(t *testing.T) {
 // file only its owner may open loads.
 func TestLoadRefusesOpenModes(t *testing.T) {
 	for _, mode := range []os.FileMode{0o644, 0o640, 0o604, 0o620, 0o602, 0o660, 0o666, 0o610, 0o601} {
-		path := filepath.Join(privateDir(t), "magnetar.key")
+		path := filepath.Join(privateDir(t), "coria.key")
 		if err := os.WriteFile(path, []byte(keyLine(1, 1)), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +57,7 @@ func TestLoadRefusesOpenModes(t *testing.T) {
 		}
 	}
 	for _, mode := range []os.FileMode{0o600, 0o400} {
-		path := filepath.Join(privateDir(t), "magnetar.key")
+		path := filepath.Join(privateDir(t), "coria.key")
 		if err := os.WriteFile(path, []byte(keyLine(1, 1)), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -73,7 +73,7 @@ func TestLoadRefusesOpenModes(t *testing.T) {
 // TestLoadRefusesDirectory guards that a directory at the key file's path is
 // refused as not a regular file, rather than read as an empty key file.
 func TestLoadRefusesDirectory(t *testing.T) {
-	dir := filepath.Join(privateDir(t), "magnetar.key")
+	dir := filepath.Join(privateDir(t), "coria.key")
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func asOtherUID(t *testing.T) (real, other int) {
 // is refused, whatever its mode, naming the owner by uid and the chown that
 // fixes it.
 func TestLoadRefusesOtherOwner(t *testing.T) {
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	writePrivate(t, path, []byte(keyLine(1, 1)))
 	f, err := openKeyFile(path)
 	if err != nil {
@@ -126,7 +126,7 @@ func TestLoadRefusesOtherOwner(t *testing.T) {
 // once as not a regular file. Opened for reading without O_NONBLOCK, a FIFO
 // blocks until a writer appears, which would hang the server at start.
 func TestLoadRefusesFIFO(t *testing.T) {
-	path := filepath.Join(privateDir(t), "magnetar.key")
+	path := filepath.Join(privateDir(t), "coria.key")
 	if err := syscall.Mkfifo(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestLoadRefusesFIFO(t *testing.T) {
 func TestDirectoryMustBePrivate(t *testing.T) {
 	for _, mode := range []os.FileMode{0o770, 0o730, 0o707, 0o703, 0o777, 0o1777} {
 		dir := privateDir(t)
-		path := filepath.Join(dir, "magnetar.key")
+		path := filepath.Join(dir, "coria.key")
 		writePrivate(t, path, []byte(keyLine(1, 1)))
 		if err := os.Chmod(dir, mode); err != nil {
 			t.Fatal(err)
@@ -181,7 +181,7 @@ func TestDirectoryMustBePrivate(t *testing.T) {
 		if err := os.Chmod(dir, mode); err != nil {
 			t.Fatal(err)
 		}
-		path := filepath.Join(dir, "magnetar.key")
+		path := filepath.Join(dir, "coria.key")
 		if err := CreateKeyFile(path); err != nil {
 			t.Errorf("create in a directory of mode %04o: %v", mode, err)
 			continue
@@ -193,7 +193,7 @@ func TestDirectoryMustBePrivate(t *testing.T) {
 
 	dir := privateDir(t)
 	real, _ := asOtherUID(t)
-	err := CreateKeyFile(filepath.Join(dir, "magnetar.key"))
+	err := CreateKeyFile(filepath.Join(dir, "coria.key"))
 	if fault.KindOf(err) != fault.Invalid || !strings.Contains(fault.Message(err), "directory "+dir+" is owned by uid "+strconv.Itoa(real)) {
 		t.Errorf("create in a directory owned by another uid: %v, want Invalid naming the owner", err)
 	}
@@ -202,7 +202,7 @@ func TestDirectoryMustBePrivate(t *testing.T) {
 // TestLoadMissingDirectory guards that a key file path in a directory that
 // does not exist is NotFound, like a missing file.
 func TestLoadMissingDirectory(t *testing.T) {
-	path := filepath.Join(privateDir(t), "absent", "magnetar.key")
+	path := filepath.Join(privateDir(t), "absent", "coria.key")
 	if _, err := LoadKeyFile(path); fault.KindOf(err) != fault.NotFound {
 		t.Errorf("LoadKeyFile in a missing directory: %v, want NotFound", err)
 	}

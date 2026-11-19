@@ -7,21 +7,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // TestWriteTenantSample creates a tenant on SQLite through the registry, as
 // the server will, and writes the tenant suite's sample into it, for the
 // outside check (scripts/check/tenant-sqlite.sh), which reads the files with
-// the sqlite3 tool. It runs only when MAGNETAR_SAMPLE_DIR names a directory,
+// the sqlite3 tool. It runs only when CORIA_SAMPLE_DIR names a directory,
 // which it uses as a data directory: master.db, key and tenants/sample.db.
 func TestWriteTenantSample(t *testing.T) {
-	dir := os.Getenv("MAGNETAR_SAMPLE_DIR")
+	dir := os.Getenv("CORIA_SAMPLE_DIR")
 	if dir == "" {
-		t.Skip("MAGNETAR_SAMPLE_DIR is not set; scripts/check/tenant-sqlite.sh sets it")
+		t.Skip("CORIA_SAMPLE_DIR is not set; scripts/check/tenant-sqlite.sh sets it")
 	}
 	ctx := context.Background()
 	keyPath := filepath.Join(dir, "key")
@@ -47,7 +47,7 @@ func TestWriteTenantSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	audit := master.AuditEntry{ID: "sample-create", Time: t0, LocalUser: "501", Method: "/magnetar.v1.TenantService/CreateTenant", TenantName: "sample", Outcome: master.OutcomeDone, RequestID: "sample-request"}
+	audit := master.AuditEntry{ID: "sample-create", Time: t0, LocalUser: "501", Method: "/coria.v1.TenantService/CreateTenant", TenantName: "sample", Outcome: master.OutcomeDone, RequestID: "sample-request"}
 	tn, _, err := r.Create(ctx, NewTenant{ID: "sample-tenant", Name: "sample", Driver: driver.SQLiteDriver}, audit, master.LocalOperator())
 	if err != nil {
 		t.Fatal(err)

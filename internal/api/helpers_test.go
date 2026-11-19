@@ -23,20 +23,20 @@ import (
 	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/access"
-	"github.com/amrshadid/magnetar/internal/api"
-	"github.com/amrshadid/magnetar/internal/api/codes"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/events"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/place"
-	"github.com/amrshadid/magnetar/internal/registry"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/api/codes"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/events"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/place"
+	"github.com/amrshadid/coria/internal/registry"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // TestMain runs the package's tests, then fails if goroutines are left
@@ -543,15 +543,15 @@ var nobody = caller{}
 
 // clients is the generated Connect clients of the services, for one caller.
 type clients struct {
-	tenants    magnetarv1connect.TenantServiceClient
-	access     magnetarv1connect.AccessServiceClient
-	settings   magnetarv1connect.SettingsServiceClient
-	audit      magnetarv1connect.AuditServiceClient
-	storages   magnetarv1connect.StorageServiceClient
-	receivers  magnetarv1connect.ReceiverServiceClient
-	receptions magnetarv1connect.ReceptionServiceClient
-	quarantine magnetarv1connect.QuarantineServiceClient
-	monitor    magnetarv1connect.MonitorServiceClient
+	tenants    coriav1connect.TenantServiceClient
+	access     coriav1connect.AccessServiceClient
+	settings   coriav1connect.SettingsServiceClient
+	audit      coriav1connect.AuditServiceClient
+	storages   coriav1connect.StorageServiceClient
+	receivers  coriav1connect.ReceiverServiceClient
+	receptions coriav1connect.ReceptionServiceClient
+	quarantine coriav1connect.QuarantineServiceClient
+	monitor    coriav1connect.MonitorServiceClient
 }
 
 // as returns clients that call as c.
@@ -571,15 +571,15 @@ func (e *env) as(c caller) clients {
 	}
 	cl := connect.NewClient(connecthttp.NewTransport(e.client, e.url), set)
 	return clients{
-		tenants:    magnetarv1connect.NewTenantServiceClient(cl),
-		access:     magnetarv1connect.NewAccessServiceClient(cl),
-		settings:   magnetarv1connect.NewSettingsServiceClient(cl),
-		audit:      magnetarv1connect.NewAuditServiceClient(cl),
-		storages:   magnetarv1connect.NewStorageServiceClient(cl),
-		receivers:  magnetarv1connect.NewReceiverServiceClient(cl),
-		receptions: magnetarv1connect.NewReceptionServiceClient(cl),
-		quarantine: magnetarv1connect.NewQuarantineServiceClient(cl),
-		monitor:    magnetarv1connect.NewMonitorServiceClient(cl),
+		tenants:    coriav1connect.NewTenantServiceClient(cl),
+		access:     coriav1connect.NewAccessServiceClient(cl),
+		settings:   coriav1connect.NewSettingsServiceClient(cl),
+		audit:      coriav1connect.NewAuditServiceClient(cl),
+		storages:   coriav1connect.NewStorageServiceClient(cl),
+		receivers:  coriav1connect.NewReceiverServiceClient(cl),
+		receptions: coriav1connect.NewReceptionServiceClient(cl),
+		quarantine: coriav1connect.NewQuarantineServiceClient(cl),
+		monitor:    coriav1connect.NewMonitorServiceClient(cl),
 	}
 }
 

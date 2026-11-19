@@ -1,5 +1,5 @@
 // Package api is the handlers of the services of the API contract
-// (api/proto/magnetar/v1): TenantService, AccessService, SettingsService,
+// (api/proto/coria/v1): TenantService, AccessService, SettingsService,
 // AuditService, and the four that act inside one tenant, StorageService,
 // ReceiverService, ReceptionService and QuarantineService. Each method turns a request into calls on the package that
 // owns the change, and their answer into a response. The proto comments are

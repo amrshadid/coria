@@ -11,16 +11,16 @@ import (
 
 	connect "connectrpc.com/connect/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/gen/magnetar/v1/magnetarv1connect"
-	"github.com/amrshadid/magnetar/internal/api/codes"
-	"github.com/amrshadid/magnetar/internal/core/settings"
-	"github.com/amrshadid/magnetar/internal/fault"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/api/codes"
+	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // RequestIDHeader is the response header the contract has the server set on
 // every answer.
-const RequestIDHeader = "Magnetar-Request-Id"
+const RequestIDHeader = "Coria-Request-Id"
 
 // tenantName is the contract's rule for a tenant name: 1 to 63 lowercase
 // ASCII letters, digits and hyphens, starting with a letter.
@@ -103,7 +103,7 @@ func (s *Server) now() time.Time {
 }
 
 // FailWith makes every call of a procedure (such as
-// magnetarv1connect.TenantServiceCreateTenantProcedure) answer with an API
+// coriav1connect.TenantServiceCreateTenantProcedure) answer with an API
 // error of the given code and message, after the request id is set.
 func (s *Server) FailWith(procedure string, code connect.Code, message string) {
 	s.mu.Lock()
@@ -166,10 +166,10 @@ func (s *Server) Requests() int {
 // Register adds the services to a Connect server, with the interceptor
 // that makes the request id, checks the key and turns kinds into codes.
 func (s *Server) Register(srv *connect.Server) {
-	magnetarv1connect.RegisterTenantServiceHandler(srv, tenantHandler{s})
-	magnetarv1connect.RegisterAccessServiceHandler(srv, accessHandler{s})
-	magnetarv1connect.RegisterSettingsServiceHandler(srv, settingsHandler{s})
-	magnetarv1connect.RegisterAuditServiceHandler(srv, auditHandler{s})
+	coriav1connect.RegisterTenantServiceHandler(srv, tenantHandler{s})
+	coriav1connect.RegisterAccessServiceHandler(srv, accessHandler{s})
+	coriav1connect.RegisterSettingsServiceHandler(srv, settingsHandler{s})
+	coriav1connect.RegisterAuditServiceHandler(srv, auditHandler{s})
 	s.registerArchive(srv)
 }
 

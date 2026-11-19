@@ -19,7 +19,7 @@ import (
 // RequestIDHeader is the response header that carries the request's id
 // (access.proto, "The request id"). A request header of the same name is
 // deleted unread: the client cannot choose the id.
-const RequestIDHeader = "Magnetar-Request-Id"
+const RequestIDHeader = "Coria-Request-Id"
 
 // The headers by which a client gives its own deadline: gRPC and gRPC-Web
 // send grpc-timeout, the Connect protocol connect-timeout-ms. The RPC
@@ -81,7 +81,7 @@ func NewID() string {
 // an unknown compression, a malformed timeout header) as much as for any
 // route. In order:
 //
-//   - it deletes a client's own Magnetar-Request-Id, makes the request's id
+//   - it deletes a client's own Coria-Request-Id, makes the request's id
 //     and sets it on the response, so every answer carries it, success,
 //     refusal, error or panic alike;
 //   - it refuses new work once the server is stopping, with UNAVAILABLE,

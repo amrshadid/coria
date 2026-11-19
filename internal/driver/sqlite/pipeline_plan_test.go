@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/core/reception"
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/core/reception"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // fillPipeline writes many rows into every pipeline table of a migrated
@@ -223,7 +223,7 @@ func TestPipelinePlans(t *testing.T) {
 // triggers keep the receptions per step as the tool writes, and the feed's
 // ids never go back. It is
 // skipped without the tool (SQLITE3 names one, or it is looked up on PATH),
-// unless MAGNETAR_SQLITE3_REQUIRED is set.
+// unless CORIA_SQLITE3_REQUIRED is set.
 func TestPipelineSchemaWithSQLite(t *testing.T) {
 	tool := os.Getenv("SQLITE3")
 	if tool == "" {
@@ -231,7 +231,7 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 	}
 	tool, err := exec.LookPath(tool)
 	if err != nil {
-		if os.Getenv("MAGNETAR_SQLITE3_REQUIRED") != "" {
+		if os.Getenv("CORIA_SQLITE3_REQUIRED") != "" {
 			t.Fatalf("the sqlite3 tool is required: %v", err)
 		}
 		t.Skipf("the sqlite3 tool is not here: %v", err)

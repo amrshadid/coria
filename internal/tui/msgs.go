@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // The messages below are everything a screen can be told besides a key press.

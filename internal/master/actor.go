@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Actor is who makes a change, as the change carries it to the store: an API

@@ -19,12 +19,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/amrshadid/magnetar/internal/driver"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/registry"
-	"github.com/amrshadid/magnetar/internal/secret"
-	"github.com/amrshadid/magnetar/internal/tenant/tenanttest"
+	"github.com/amrshadid/coria/internal/driver"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/registry"
+	"github.com/amrshadid/coria/internal/secret"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // This file tests the registry on real Postgres tenants. It is an external
@@ -35,8 +35,8 @@ import (
 // tests (helpers_test.go): the address of a scratch database, and a switch
 // that turns its absence from a skip into a failure.
 const (
-	addressEnv = "MAGNETAR_TEST_POSTGRES"
-	requireEnv = "MAGNETAR_REQUIRE_POSTGRES"
+	addressEnv = "CORIA_TEST_POSTGRES"
+	requireEnv = "CORIA_REQUIRE_POSTGRES"
 )
 
 // serverAddress returns the test database's address, or skips the test, or
@@ -496,17 +496,17 @@ func TestRegistryRefusesTwoTenantsOnOneDatabase(t *testing.T) {
 }
 
 // TestWriteTenantSample creates a tenant on Postgres through the registry, as
-// the server will, in the schema MAGNETAR_SAMPLE_SCHEMA names, and writes the
+// the server will, in the schema CORIA_SAMPLE_SCHEMA names, and writes the
 // tenant suite's sample into it, for the outside check
 // (scripts/check/tenant-postgres.sh), which reads it with psql and pg_dump. It
 // runs only when that variable is set. The master is a Postgres one too, in
-// the schema MAGNETAR_SAMPLE_SCHEMA + "_master", so psql reads the tenant's
+// the schema CORIA_SAMPLE_SCHEMA + "_master", so psql reads the tenant's
 // row and its state change as well. The login's password is made up and its
 // absence from the dump is checked by the script.
 func TestWriteTenantSample(t *testing.T) {
-	schema, dir := os.Getenv("MAGNETAR_SAMPLE_SCHEMA"), os.Getenv("MAGNETAR_SAMPLE_DIR")
+	schema, dir := os.Getenv("CORIA_SAMPLE_SCHEMA"), os.Getenv("CORIA_SAMPLE_DIR")
 	if schema == "" || dir == "" {
-		t.Skip("MAGNETAR_SAMPLE_SCHEMA and MAGNETAR_SAMPLE_DIR are not set; scripts/check/tenant-postgres.sh sets them")
+		t.Skip("CORIA_SAMPLE_SCHEMA and CORIA_SAMPLE_DIR are not set; scripts/check/tenant-postgres.sh sets them")
 	}
 	ctx := context.Background()
 	base := serverAddress(t)
@@ -542,7 +542,7 @@ func TestWriteTenantSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	audit := master.AuditEntry{ID: "sample-create", Time: clock.Now(), LocalUser: "501", Method: "/magnetar.v1.TenantService/CreateTenant", TenantName: "sample", Outcome: master.OutcomeDone, RequestID: "sample-request"}
+	audit := master.AuditEntry{ID: "sample-create", Time: clock.Now(), LocalUser: "501", Method: "/coria.v1.TenantService/CreateTenant", TenantName: "sample", Outcome: master.OutcomeDone, RequestID: "sample-request"}
 	tn, _, err := r.Create(ctx, registry.NewTenant{ID: "sample-tenant", Name: "sample", Driver: driver.PostgresDriver, Address: withSchema(t, base, schema)}, audit, master.LocalOperator())
 	if err != nil {
 		t.Fatal(err)

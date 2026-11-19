@@ -17,12 +17,12 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // keyLinePrefix starts every line of a key file. It names the line's format,
 // so a later format can sit beside it in the same file.
-const keyLinePrefix = "magnetar-key-v1"
+const keyLinePrefix = "coria-key-v1"
 
 // keySize is the length of a key in bytes: AES-256 takes a 256-bit key.
 const keySize = 32

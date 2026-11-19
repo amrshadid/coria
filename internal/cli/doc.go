@@ -1,4 +1,4 @@
-// Package cli is the command line of Magnetar: the commands that operate an
+// Package cli is the command line of CORIA: the commands that operate an
 // installation through its API, built with cobra.
 //
 // Every command is a client of the API and nothing else. It parses its
@@ -11,7 +11,7 @@
 // http, refusing a secret as an argument, and requiring --yes before a
 // removal.
 //
-// The grammar is "magnetar <noun> <verb> [name] [flags]". Exit codes come from
+// The grammar is "coria <noun> <verb> [name] [flags]". Exit codes come from
 // the kind of the error through fault.Kind.ExitCode: 0 done, 1 failed, 2 wrong
 // usage, 3 refused, 4 not found, 5 a state that forbids the change (change it
 // first), 6 a position that can no longer be answered (start over), 7 a bound

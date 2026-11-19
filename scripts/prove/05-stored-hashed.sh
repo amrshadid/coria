@@ -31,10 +31,10 @@ if [ -z "$f" ] && [ -s "$work/master.dump" ]; then
 else
 	fail "5.1 no secret in the master's dump" "found in the dump" "$(where_found "$work/master.dump")"
 fi
-"$DOCKER" exec "$PG_CONTAINER" pg_dump -U postgres mgt_proof_main > "$work/tenant.dump"
+"$DOCKER" exec "$PG_CONTAINER" pg_dump -U postgres cor_proof_main > "$work/tenant.dump"
 f=$(found "$work/tenant.dump")
 if [ -z "$f" ] && [ -s "$work/tenant.dump" ]; then
-	ok "5.2 no secret in the Postgres tenant's pg_dump" "absent from pg_dump of mgt_proof_main ($(wc -c < "$work/tenant.dump" | tr -d ' ') bytes, its audit log included)"
+	ok "5.2 no secret in the Postgres tenant's pg_dump" "absent from pg_dump of cor_proof_main ($(wc -c < "$work/tenant.dump" | tr -d ' ') bytes, its audit log included)"
 else
 	fail "5.2 no secret in the Postgres tenant's pg_dump" "found in the dump" "$(where_found "$work/tenant.dump")"
 fi

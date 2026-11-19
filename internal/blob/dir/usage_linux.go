@@ -5,7 +5,7 @@ package dir
 import (
 	"syscall"
 
-	"github.com/amrshadid/magnetar/internal/blob"
+	"github.com/amrshadid/coria/internal/blob"
 )
 
 // usageKnown says whether volumeUsage can report this system's volumes.

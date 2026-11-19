@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // TestReceiverCommands guards every receiver command in both forms: the
@@ -15,11 +15,11 @@ func TestReceiverCommands(t *testing.T) {
 	r.must("tenant", "create", "lab1")
 	r.must("storage", "add", "lab1", "main", "--type", "dir", "--root", "fast")
 
-	add := r.run("receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11112", "--aet", "MAGNETAR",
+	add := r.run("receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11112", "--aet", "CORIA",
 		"--allow-aet", "PRISMA1", "--allow-from", "10.20.0.0/24", "--allow-aet-from", "SKYRA@10.0.0.0/8", "--enabled")
 	expect(t, add, 0,
 		"Name:              scanner1\nType:              dimse\nEnabled:           yes\nHealth:            up\nHealth since:      2026-11-17 15:00:00 +03:00\n"+
-			"Storage:           main\nPort:              11112\nBind address:      -\nAE title:          MAGNETAR\n"+
+			"Storage:           main\nPort:              11112\nBind address:      -\nAE title:          CORIA\n"+
 			"Admits:            PRISMA1; from 10.20.0.0/24; SKYRA from 10.0.0.0/8\nTLS:               none (plain TCP)\n"+
 			"SOP classes:       the server's default set\nTransfer syntaxes: the server's default set\nNaming:            default\n"+
 			"Quiet period:      1m\nMax open time:     1h\nMax file size:     4GiB\n"+
@@ -27,9 +27,9 @@ func TestReceiverCommands(t *testing.T) {
 
 	r.must("receiver", "add", "lab1", "closed", "--storage", "main", "--port", "11113", "--aet", "CLOSED")
 	expect(t, r.run("receiver", "list", "lab1"), 0,
-		"NAME      PORT   AET       STORAGE  HEALTH\n"+
-			"closed    11113  CLOSED    main     down (disabled: the receiver is disabled)\n"+
-			"scanner1  11112  MAGNETAR  main     up\n", "")
+		"NAME      PORT   AET     STORAGE  HEALTH\n"+
+			"closed    11113  CLOSED  main     down (disabled: the receiver is disabled)\n"+
+			"scanner1  11112  CORIA   main     up\n", "")
 	if show := r.run("receiver", "show", "lab1", "closed"); !strings.Contains(show.stdout, "Admits:            nobody\n") || !strings.Contains(show.stdout, "Enabled:           no\n") {
 		t.Errorf("a receiver added with no caller admits nobody and is stopped:\n%s", show.stdout)
 	}
@@ -41,7 +41,7 @@ func TestReceiverCommands(t *testing.T) {
 	doc := document(t, r.run("receiver", "show", "lab1", "scanner1", "--json"))
 	rec := doc["receiver"].(map[string]any)
 	dimse := rec["dimse"].(map[string]any)
-	if rec["enabled"] != true || dimse["port"] != float64(11112) || dimse["aeTitle"] != "MAGNETAR" || rec["quietPeriod"] != "60s" || rec["health"].(map[string]any)["state"] != "RECEIVER_STATE_UP" {
+	if rec["enabled"] != true || dimse["port"] != float64(11112) || dimse["aeTitle"] != "CORIA" || rec["quietPeriod"] != "60s" || rec["health"].(map[string]any)["state"] != "RECEIVER_STATE_UP" {
 		t.Errorf("show --json: %v", rec)
 	}
 
@@ -160,16 +160,16 @@ func TestReceiverErrorsKeepTheirExitCodes(t *testing.T) {
 		code int
 		line string
 	}{
-		{[]string{"receiver", "show", "lab1", "nope"}, 4, "magnetar: receiver show: the tenant has no receiver with that name (request id "},
-		{[]string{"receiver", "remove", "lab1", "nope", "--yes"}, 4, "magnetar: receiver remove: the tenant has no receiver with that name (request id "},
-		{[]string{"receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11115", "--aet", "A"}, 1, "magnetar: receiver add: the tenant has a receiver with that name (request id "},
-		{[]string{"receiver", "add", "lab1", "r2", "--storage", "none", "--port", "11115", "--aet", "A"}, 5, "magnetar: receiver add: the tenant has no storage with that name (request id "},
-		{[]string{"receiver", "set", "lab1", "nope", "--port", "11115"}, 4, "magnetar: receiver set: the tenant has no receiver with that name (request id "},
+		{[]string{"receiver", "show", "lab1", "nope"}, 4, "coria: receiver show: the tenant has no receiver with that name (request id "},
+		{[]string{"receiver", "remove", "lab1", "nope", "--yes"}, 4, "coria: receiver remove: the tenant has no receiver with that name (request id "},
+		{[]string{"receiver", "add", "lab1", "scanner1", "--storage", "main", "--port", "11115", "--aet", "A"}, 1, "coria: receiver add: the tenant has a receiver with that name (request id "},
+		{[]string{"receiver", "add", "lab1", "r2", "--storage", "none", "--port", "11115", "--aet", "A"}, 5, "coria: receiver add: the tenant has no storage with that name (request id "},
+		{[]string{"receiver", "set", "lab1", "nope", "--port", "11115"}, 4, "coria: receiver set: the tenant has no receiver with that name (request id "},
 	}
 	for _, c := range cases {
 		res := r.run(c.args...)
 		if res.code != c.code || res.stdout != "" || !strings.HasPrefix(res.stderr, c.line) || strings.Count(res.stderr, "\n") != 1 {
-			t.Errorf("magnetar %s: %+v, want exit %d and a line starting %q", strings.Join(c.args[:2], " "), res, c.code, c.line)
+			t.Errorf("coria %s: %+v, want exit %d and a line starting %q", strings.Join(c.args[:2], " "), res, c.code, c.line)
 		}
 	}
 }

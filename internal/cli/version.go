@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/version"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/version"
 )
 
 // versionDoc is the JSON document of the version command.
@@ -19,7 +19,7 @@ type versionDoc struct {
 	GoVersion string `json:"goVersion"`
 }
 
-// newVersion builds "magnetar version". It asks nothing of the server: it says
+// newVersion builds "coria version". It asks nothing of the server: it says
 // which build is running, so a report can name the build that wrote the data.
 func (a *app) newVersion() *cobra.Command {
 	return &cobra.Command{
@@ -27,8 +27,8 @@ func (a *app) newVersion() *cobra.Command {
 		Short: "Print the version of this program",
 		Long: `Print the version, the commit and the Go release this program was built with,
 read from the program's own build information. It does not contact a server.`,
-		Example: `  magnetar version
-  magnetar version --json`,
+		Example: `  coria version
+  coria version --json`,
 		Args: noArgs,
 		RunE: a.run(func(_ context.Context, _ *cobra.Command, _ []string) error {
 			info := version.Get()
@@ -45,7 +45,7 @@ read from the program's own build information. It does not contact a server.`,
 	}
 }
 
-// newWhoami builds "magnetar whoami".
+// newWhoami builds "coria whoami".
 func (a *app) newWhoami() *cobra.Command {
 	return &cobra.Command{
 		Use:   "whoami",
@@ -53,8 +53,8 @@ func (a *app) newWhoami() *cobra.Command {
 		Long: `Ask the server who is calling: the key the request carried, with its grants, or
 the local operator when the call came on the local socket. It is the quickest
 way to check that a key works and what it may do.`,
-		Example: `  magnetar whoami
-  magnetar --server https://magnetar.example.org:8443 --key-file ~/.magnetar-key whoami`,
+		Example: `  coria whoami
+  coria --server https://coria.example.org:8443 --key-file ~/.coria-key whoami`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			c, closeClient, err := a.open(cmd)

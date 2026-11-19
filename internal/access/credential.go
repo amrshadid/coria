@@ -18,7 +18,7 @@ type Credential struct {
 	reread bool
 }
 
-// APIKey is a credential of a presented key, mgt_<id>_<secret>. The server
+// APIKey is a credential of a presented key, cor_<id>_<secret>. The server
 // takes it from the Authorization header, strips the "Bearer" scheme and the
 // space after it (the scheme compared case-insensitively, RFC 6750 2.1), and
 // passes only the key: anything else, such as the scheme left in, is a

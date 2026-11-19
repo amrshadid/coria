@@ -2,7 +2,7 @@
 # The outside check of a tenant's Postgres database: the registry creates a
 # tenant on Postgres, as the server will, in a schema of its own, with a
 # Postgres master in another, and the tenant suite's sample is written into
-# it; then psql and pg_dump, which are Postgres's own and not Magnetar's, read
+# it; then psql and pg_dump, which are Postgres's own and not CORIA's, read
 # the tenant's schema and the master's.
 #
 # It lists the tables and rows, checks every constraint and index, reads
@@ -11,13 +11,13 @@
 # tenant's id, and searches both dumps for the login's password, which must
 # be absent.
 #
-# The driver is given MAGNETAR_TEST_POSTGRES, the URL of a scratch database
+# The driver is given CORIA_TEST_POSTGRES, the URL of a scratch database
 # the login may make schemas in. PSQL and PG_DUMP are the commands that run
 # psql and pg_dump, which may be the ones in a container, as for
 # scripts/check/master-postgres.sh (which says why); PSQL_URL is the URL as
 # psql sees it.
 #
-#   MAGNETAR_TEST_POSTGRES=postgres://u:p@127.0.0.1:5432/db scripts/check/tenant-postgres.sh
+#   CORIA_TEST_POSTGRES=postgres://u:p@127.0.0.1:5432/db scripts/check/tenant-postgres.sh
 #
 # Run from the repository's root. Exits non-zero on the first failed check.
 # Nothing here prints a URL: it holds the password.
@@ -26,8 +26,8 @@ set -euo pipefail
 PSQL="${PSQL:-psql}"
 PG_DUMP="${PG_DUMP:-pg_dump}"
 GO="${GO:-go}"
-: "${MAGNETAR_TEST_POSTGRES:?set MAGNETAR_TEST_POSTGRES to the URL of a scratch database}"
-PSQL_URL="${PSQL_URL:-$MAGNETAR_TEST_POSTGRES}"
+: "${CORIA_TEST_POSTGRES:?set CORIA_TEST_POSTGRES to the URL of a scratch database}"
+PSQL_URL="${PSQL_URL:-$CORIA_TEST_POSTGRES}"
 
 fail() {
 	echo "FAIL: $*" >&2
@@ -44,7 +44,7 @@ want() {
 
 dir="$(mktemp -d)"
 chmod 700 "$dir"
-schema="magnetar_check_t_$(date +%s)_$$"
+schema="coria_check_t_$(date +%s)_$$"
 mschema="${schema}_master"
 
 q() {
@@ -66,7 +66,7 @@ trap cleanup EXIT
 
 echo "psql: $(q 'SHOW server_version')"
 
-MAGNETAR_SAMPLE_SCHEMA="$schema" MAGNETAR_SAMPLE_DIR="$dir" "$GO" test -count=1 -run '^TestWriteTenantSample$' ./internal/driver/postgres
+CORIA_SAMPLE_SCHEMA="$schema" CORIA_SAMPLE_DIR="$dir" "$GO" test -count=1 -run '^TestWriteTenantSample$' ./internal/driver/postgres
 
 t="\"$schema\""
 m="\"$mschema\""
@@ -129,13 +129,13 @@ show tenants "SELECT id, name, driver, length(address) AS sealed_bytes, state, s
 want "the tenant's state in the master" "sample postgres ready" "$(q "SELECT name || ' ' || driver || ' ' || state FROM $m.tenants")"
 want "entries of the creation's request" 2 "$(q "SELECT count(*) FROM $m.audit WHERE request_id = 'sample-request'")"
 want "the creation started, by the system" "done system sample-create postgres" \
-	"$(q "SELECT outcome || ' ' || (details ->> 'actor') || ' ' || (details ->> 'request_entry') || ' ' || (details ->> 'database_type') FROM $m.audit WHERE request_id = 'sample-request' AND method = 'magnetar.registry/CreateTenantStarted'")"
+	"$(q "SELECT outcome || ' ' || (details ->> 'actor') || ' ' || (details ->> 'request_entry') || ' ' || (details ->> 'database_type') FROM $m.audit WHERE request_id = 'sample-request' AND method = 'coria.registry/CreateTenantStarted'")"
 want "the request's own entry, with the change to ready" "sample-create done upgrading -> ready" \
-	"$(q "SELECT id || ' ' || outcome || ' ' || (details ->> 'old_state') || ' -> ' || (details ->> 'new_state') FROM $m.audit WHERE request_id = 'sample-request' AND method = '/magnetar.v1.TenantService/CreateTenant'")"
-want "no other state change was written" 0 "$(q "SELECT count(*) FROM $m.audit WHERE method = 'magnetar.registry/SetTenantState'")"
+	"$(q "SELECT id || ' ' || outcome || ' ' || (details ->> 'old_state') || ' -> ' || (details ->> 'new_state') FROM $m.audit WHERE request_id = 'sample-request' AND method = '/coria.v1.TenantService/CreateTenant'")"
+want "no other state change was written" 0 "$(q "SELECT count(*) FROM $m.audit WHERE method = 'coria.registry/SetTenantState'")"
 
 # The login's password is in neither dump, nor in the master's rows.
-pw="$(printf '%s' "$MAGNETAR_TEST_POSTGRES" | sed -n 's|^[a-zA-Z]*://[^:@/]*:\([^@]*\)@.*|\1|p')"
+pw="$(printf '%s' "$CORIA_TEST_POSTGRES" | sed -n 's|^[a-zA-Z]*://[^:@/]*:\([^@]*\)@.*|\1|p')"
 tdump="$dir/tenant.sql"
 mdump="$dir/master.sql"
 # shellcheck disable=SC2086

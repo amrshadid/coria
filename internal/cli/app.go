@@ -12,12 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/amrshadid/magnetar/internal/cli/client"
-	"github.com/amrshadid/magnetar/internal/cli/output"
-	"github.com/amrshadid/magnetar/internal/cli/servecmd"
-	"github.com/amrshadid/magnetar/internal/fault"
-	"github.com/amrshadid/magnetar/internal/tui"
-	"github.com/amrshadid/magnetar/internal/version"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/cli/servecmd"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tui"
+	"github.com/amrshadid/coria/internal/version"
 )
 
 // Env is everything the commands take from the process around them, so a test
@@ -33,7 +33,7 @@ type Env struct {
 	Now func() time.Time
 	// Location is the zone times are shown in; time.Local when nil.
 	Location *time.Location
-	// Stdin is standard input. With Stdout it decides whether "magnetar" with
+	// Stdin is standard input. With Stdout it decides whether "coria" with
 	// no arguments opens the interactive program; nil is not a terminal.
 	Stdin io.Reader
 	// Terminal says whether input and output are both terminals; when nil it
@@ -133,7 +133,7 @@ func (a *app) report(cmd *cobra.Command, err error) int {
 	if !errors.As(err, &re) {
 		// cobra's own: an unknown flag, a missing required flag, a flag group.
 		err = fault.Wrap(fault.Invalid, err, err.Error())
-		help := "magnetar --help"
+		help := "coria --help"
 		if cmd != nil {
 			help = cmd.CommandPath() + " --help"
 		}
@@ -153,7 +153,7 @@ func (a *app) report(cmd *cobra.Command, err error) int {
 	case errors.As(err, &ce):
 		a.line(ce.Error())
 	case kind == fault.Invalid && cmd != nil:
-		a.line(fmt.Sprintf("%s: %s", strings.TrimPrefix(cmd.CommandPath(), "magnetar "), fault.Message(err)))
+		a.line(fmt.Sprintf("%s: %s", strings.TrimPrefix(cmd.CommandPath(), "coria "), fault.Message(err)))
 	case kind == fault.Internal:
 		// A failure of ours with no kind of its own: its text was written for
 		// a person at this terminal, not taken from the network.
@@ -167,7 +167,7 @@ func (a *app) report(cmd *cobra.Command, err error) int {
 // line writes one line to standard error, cleaned of anything that would act
 // on the terminal.
 func (a *app) line(s string) {
-	_, _ = fmt.Fprintf(a.env.Stderr, "magnetar: %s\n", output.Clean(s))
+	_, _ = fmt.Fprintf(a.env.Stderr, "coria: %s\n", output.Clean(s))
 }
 
 // style returns the emphasis allowed on standard output.
@@ -220,14 +220,14 @@ func (a *app) client(cmd *cobra.Command) (*client.Client, error) {
 // newRoot builds the root command with the options every command shares.
 func (a *app) newRoot() *cobra.Command {
 	root := &cobra.Command{
-		Use:   "magnetar",
-		Short: "Operate a Magnetar installation: tenants, keys, grants, settings, the audit log, and a tenant's storages, receivers, receptions and quarantine",
-		Long: `magnetar operates a Magnetar installation through its API.
+		Use:   "coria",
+		Short: "Operate a CORIA installation: tenants, keys, grants, settings, the audit log, and a tenant's storages, receivers, receptions and quarantine",
+		Long: `coria operates a CORIA installation through its API.
 
 By default it reaches the server on the local socket in the data directory
-(--data-dir, or MAGNETAR_DATA_DIR), as the operating system user that runs the
-server, with no key. With --server (or MAGNETAR_SERVER) it reaches a server on
-the network over TLS, with the key read from MAGNETAR_KEY or from the file named
+(--data-dir, or CORIA_DATA_DIR), as the operating system user that runs the
+server, with no key. With --server (or CORIA_SERVER) it reaches a server on
+the network over TLS, with the key read from CORIA_KEY or from the file named
 by --key-file. A key is never an argument: arguments are visible to every user
 of the machine and are kept in shell history.
 
@@ -249,7 +249,7 @@ not allowed), 4 not found.`,
 			}
 			// Not marked as a command's own error: it is a usage mistake, so
 			// report adds the pointer to the help.
-			return fault.New(fault.Invalid, "no command (usage: magnetar <noun> <verb> [flags], for example magnetar tenant list)")
+			return fault.New(fault.Invalid, "no command (usage: coria <noun> <verb> [flags], for example coria tenant list)")
 		},
 	}
 	root.SetOut(a.env.Stdout)
@@ -258,7 +258,7 @@ not allowed), 4 not found.`,
 	root.SetVersionTemplate("{{.Version}}\n")
 
 	f := root.PersistentFlags()
-	f.StringVar(&a.opts.dataDir, "data-dir", "", "the installation's data directory; the server is reached on its local socket, run/magnetar.sock (default: "+client.EnvDataDir+")")
+	f.StringVar(&a.opts.dataDir, "data-dir", "", "the installation's data directory; the server is reached on its local socket, run/coria.sock (default: "+client.EnvDataDir+")")
 	f.StringVar(&a.opts.server, "server", "", "address of a server on the network, https://host:port (http:// only for a loopback host); needs a key (default: "+client.EnvServer+")")
 	f.StringVar(&a.opts.keyFile, "key-file", "", "path of a file holding the key to send with --server (default: the "+client.EnvKey+" variable); the key itself is never an argument")
 	f.StringVar(&a.opts.caFile, "ca-file", "", "path of a PEM file of certificate authorities to trust for --server, instead of the system's, for a private authority (default: "+client.EnvCAFile+"); it has no effect on the local socket")
@@ -343,7 +343,7 @@ func exactArgs(n int) cobra.PositionalArgs {
 // what names a command for an error: its path without the program's name,
 // such as "tenant create".
 func what(cmd *cobra.Command) string {
-	return strings.TrimPrefix(cmd.CommandPath(), "magnetar ")
+	return strings.TrimPrefix(cmd.CommandPath(), "coria ")
 }
 
 // write runs a function that writes to standard output and returns its error

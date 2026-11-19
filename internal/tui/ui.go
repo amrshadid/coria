@@ -6,7 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/amrshadid/magnetar/internal/cli/output"
+	"github.com/amrshadid/coria/internal/cli/output"
 )
 
 // styler gives text emphasis, or leaves it plain. It is the one place that

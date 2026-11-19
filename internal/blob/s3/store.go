@@ -16,8 +16,8 @@ import (
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Store is a blob.Store on a bucket. Open makes one.
@@ -87,7 +87,7 @@ func clientOptions(set settings, tr *http.Transport) awss3.Options {
 		HTTPClient:   &http.Client{Transport: limitTransport{tr}, CheckRedirect: noRedirect},
 		// Static credentials, from the configuration and nowhere else.
 		Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {
-			return aws.Credentials{AccessKeyID: set.accessKey.Reveal(), SecretAccessKey: set.secretKey.Reveal(), Source: "magnetar storage configuration"}, nil
+			return aws.Credentials{AccessKeyID: set.accessKey.Reveal(), SecretAccessKey: set.secretKey.Reveal(), Source: "coria storage configuration"}, nil
 		}),
 		// Since early 2025 the SDK adds a CRC32 checksum to every upload as an
 		// aws-chunked trailer, and validates one on every download, which

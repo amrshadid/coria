@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 var errBrokenReader = errors.New("the reader broke on purpose")
@@ -579,13 +579,13 @@ func TestListCacheSeesOtherChanges(t *testing.T) {
 }
 
 // TestFullVolumeKeepsOldObject guards, on a small volume named by
-// MAGNETAR_BLOB_SMALL_VOLUME (a tmpfs of a few megabytes, say), that a Put
+// CORIA_BLOB_SMALL_VOLUME (a tmpfs of a few megabytes, say), that a Put
 // that fills the volume fails, keeps the old object, leaves no temporary
 // file, and that a small Put works afterwards. It skips without one.
 func TestFullVolumeKeepsOldObject(t *testing.T) {
-	vol := os.Getenv("MAGNETAR_BLOB_SMALL_VOLUME")
+	vol := os.Getenv("CORIA_BLOB_SMALL_VOLUME")
 	if vol == "" {
-		t.Skip("MAGNETAR_BLOB_SMALL_VOLUME names no small volume")
+		t.Skip("CORIA_BLOB_SMALL_VOLUME names no small volume")
 	}
 	root, err := os.MkdirTemp(vol, "full")
 	if err != nil {

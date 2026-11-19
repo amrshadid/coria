@@ -12,7 +12,7 @@
 // the archive's own fault, never as the caller's, so it is not hidden as a
 // refusal and not reported to the caller in detail.
 //
-// This package must never import another package of Magnetar's, and never log
+// This package must never import another package of CORIA's, and never log
 // or print: every other package depends on it, and it decides nothing but the
 // shape of an error. The API code of a kind is mapped in the API package, so
 // that this package does not depend on the RPC library.

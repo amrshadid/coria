@@ -10,8 +10,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // testConcurrentPuts guards that Puts racing on one key never mix: every

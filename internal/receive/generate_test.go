@@ -3,7 +3,7 @@ package receive
 import (
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/testkit"
+	"github.com/amrshadid/coria/internal/testkit"
 )
 
 // newGenerator returns the generator of files for scale tests and

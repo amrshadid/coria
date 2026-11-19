@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // TestCursorRoundTrip guards that a cursor gives back the fields it was made

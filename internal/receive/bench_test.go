@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/blob"
-	"github.com/amrshadid/magnetar/internal/testkit"
+	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/testkit"
 )
 
 // backend is where a benchmark's tenant keeps its catalog and its bytes.

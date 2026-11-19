@@ -6,7 +6,7 @@ import (
 
 	"github.com/amrshadid/go-dicom/network"
 
-	"github.com/amrshadid/magnetar/internal/tenant"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // observe reports the refusals the library makes outside admission, which

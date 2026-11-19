@@ -9,7 +9,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/amrshadid/magnetar/internal/fault"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // EnsurePrivateDir makes dir, mode 0700, when it does not exist; when it
@@ -39,7 +39,7 @@ func EnsurePrivateDir(dir string) error {
 		return fault.New(fault.Invalid, "server: "+dir+" is not a directory (a link is not accepted); move it away")
 	}
 	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Geteuid() {
-		return fault.New(fault.Invalid, fmt.Sprintf("server: %s belongs to user %d, not to the user running magnetar (%d); fix with: chown %d %s",
+		return fault.New(fault.Invalid, fmt.Sprintf("server: %s belongs to user %d, not to the user running coria (%d); fix with: chown %d %s",
 			dir, st.Uid, os.Geteuid(), os.Geteuid(), dir))
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {

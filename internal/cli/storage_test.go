@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
-	"github.com/amrshadid/magnetar/internal/cli/fakeserver"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
 )
 
 // s3Secret is a made-up secret access key, long enough to be found by text
@@ -16,7 +16,7 @@ const s3Secret = "wJalrXUtnFEMI-K7MDENG-bPxRfiCYEXAMPLEKEY0" //nolint:gosec // G
 
 // s3Args adds an S3 storage whose secret comes from the variable S3SECRET.
 var s3Args = []string{"storage", "add", "lab1", "cold", "--type", "s3", "--endpoint", "https://s3.example", "--region", "eu-central-1",
-	"--bucket", "lab1-archive", "--prefix", "magnetar/", "--access-key-id", "AKIAEXAMPLE", "--credential-env", "S3SECRET", "--capacity", "2TiB"}
+	"--bucket", "lab1-archive", "--prefix", "coria/", "--access-key-id", "AKIAEXAMPLE", "--credential-env", "S3SECRET", "--capacity", "2TiB"}
 
 // TestStorageCommands guards every storage command in both forms: what the
 // table says, what the document holds, and that an S3 storage answers only
@@ -31,13 +31,13 @@ func TestStorageCommands(t *testing.T) {
 			"Created:  2026-11-17 15:00:00 +03:00\nUpdated:  2026-11-17 15:00:00 +03:00\n", "")
 	expect(t, r.run(s3Args...), 0,
 		"Name:              cold\nType:              s3\nEndpoint:          https://s3.example\nRegion:            eu-central-1\n"+
-			"Bucket:            lab1-archive\nPrefix:            magnetar/\nAddressing:        host name\nAccess key id:     AKIAEXAMPLE\n"+
+			"Bucket:            lab1-archive\nPrefix:            coria/\nAddressing:        host name\nAccess key id:     AKIAEXAMPLE\n"+
 			"Secret access key: set\nCapacity:          2TiB\nCreated:           2026-11-17 15:00:00 +03:00\nUpdated:           2026-11-17 15:00:00 +03:00\n", "")
 
 	expect(t, r.run("storage", "list", "lab1"), 0,
-		"NAME  TYPE       LOCATION                                                 CAPACITY  CREATED\n"+
-			"cold  s3         https://s3.example bucket lab1-archive prefix magnetar/  2TiB      2026-11-17 15:00:00 +03:00\n"+
-			"main  directory  root fast, path main                                     no limit  2026-11-17 15:00:00 +03:00\n", "")
+		"NAME  TYPE       LOCATION                                              CAPACITY  CREATED\n"+
+			"cold  s3         https://s3.example bucket lab1-archive prefix coria/  2TiB      2026-11-17 15:00:00 +03:00\n"+
+			"main  directory  root fast, path main                                  no limit  2026-11-17 15:00:00 +03:00\n", "")
 	list := document(t, r.run("storage", "list", "lab1", "--json"))
 	if ss, _ := list["storages"].([]any); len(ss) != 2 || list["more"] != false {
 		t.Errorf("list --json: %v", list)
@@ -96,7 +96,7 @@ func TestStorageTestFailureIsExitOne(t *testing.T) {
 	r.fake.FailStorageTest("lab1", "main", v1.StorageTestStep_STORAGE_TEST_STEP_WRITE)
 	expect(t, r.run("storage", "test", "lab1", "main"), 1,
 		"STEP     OUTCOME  TOOK  FAULT\nwrite    failed   12ms  unreachable\nread     skipped  -     -\ncompare  skipped  -     -\nremove   passed   12ms  -\n",
-		"magnetar: storage main of tenant lab1 failed its test\n")
+		"coria: storage main of tenant lab1 failed its test\n")
 }
 
 // TestStorageSecretComesFromEnvOrFile guards where an S3 secret access key
@@ -223,18 +223,18 @@ func TestStorageErrorsKeepTheirExitCodes(t *testing.T) {
 		code int
 		line string
 	}{
-		{[]string{"storage", "show", "lab1", "nope"}, 4, "magnetar: storage show: the tenant has no storage with this name (request id "},
-		{[]string{"storage", "list", "nope"}, 4, "magnetar: storage list: no tenant has that name (request id "},
-		{[]string{"storage", "add", "lab1", "main", "--type", "dir", "--root", "fast"}, 1, "magnetar: storage add: the tenant has a storage with that name (request id "},
-		{[]string{"storage", "remove", "lab1", "main", "--yes"}, 5, "magnetar: storage remove: a receiver names the storage (request id "},
-		{[]string{"storage", "remove", "lab1", "old", "--yes"}, 5, "magnetar: storage remove: the storage holds archived files (request id "},
-		{[]string{"storage", "add", "lab1", "Bad_Name", "--type", "dir", "--root", "fast"}, 2, "magnetar: storage add: storage.name: is 1 to 63 of a-z, 0-9 and -, starting with a letter (request id "},
-		{[]string{"storage", "set", "lab1", "main", "--bucket", "b"}, 2, "magnetar: storage set: update_mask: s3.bucket is a field of the other type (request id "},
+		{[]string{"storage", "show", "lab1", "nope"}, 4, "coria: storage show: the tenant has no storage with this name (request id "},
+		{[]string{"storage", "list", "nope"}, 4, "coria: storage list: no tenant has that name (request id "},
+		{[]string{"storage", "add", "lab1", "main", "--type", "dir", "--root", "fast"}, 1, "coria: storage add: the tenant has a storage with that name (request id "},
+		{[]string{"storage", "remove", "lab1", "main", "--yes"}, 5, "coria: storage remove: a receiver names the storage (request id "},
+		{[]string{"storage", "remove", "lab1", "old", "--yes"}, 5, "coria: storage remove: the storage holds archived files (request id "},
+		{[]string{"storage", "add", "lab1", "Bad_Name", "--type", "dir", "--root", "fast"}, 2, "coria: storage add: storage.name: is 1 to 63 of a-z, 0-9 and -, starting with a letter (request id "},
+		{[]string{"storage", "set", "lab1", "main", "--bucket", "b"}, 2, "coria: storage set: update_mask: s3.bucket is a field of the other type (request id "},
 	}
 	for _, c := range cases {
 		res := r.run(c.args...)
 		if res.code != c.code || res.stdout != "" || !strings.HasPrefix(res.stderr, c.line) || strings.Count(res.stderr, "\n") != 1 {
-			t.Errorf("magnetar %s: %+v, want exit %d and a line starting %q", strings.Join(c.args[:2], " "), res, c.code, c.line)
+			t.Errorf("coria %s: %+v, want exit %d and a line starting %q", strings.Join(c.args[:2], " "), res, c.code, c.line)
 		}
 	}
 }

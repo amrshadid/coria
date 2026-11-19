@@ -10,7 +10,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // expect fails the test unless the run ended with the exit code and wrote
@@ -54,7 +54,7 @@ func (r *rig) must(args ...string) result {
 	r.t.Helper()
 	res := r.run(args...)
 	if res.code != 0 {
-		r.t.Fatalf("magnetar %s: exit %d: %s", strings.Join(args, " "), res.code, res.stderr)
+		r.t.Fatalf("coria %s: exit %d: %s", strings.Join(args, " "), res.code, res.stderr)
 	}
 	return res
 }
@@ -64,7 +64,7 @@ func (r *rig) must(args ...string) result {
 func TestVersion(t *testing.T) {
 	// No server is needed, so no environment is given.
 	res := runWith(nil, "version")
-	if res.code != 0 || res.stderr != "" || !strings.HasPrefix(res.stdout, "magnetar ") || strings.Count(res.stdout, "\n") != 1 {
+	if res.code != 0 || res.stderr != "" || !strings.HasPrefix(res.stdout, "coria ") || strings.Count(res.stdout, "\n") != 1 {
 		t.Errorf("version: %+v", res)
 	}
 	doc := document(t, runWith(nil, "version", "--json"))
@@ -163,7 +163,7 @@ func TestTenantCommands(t *testing.T) {
 	}
 
 	expect(t, r.run("tenant", "remove", "lab1", "--yes"), 0,
-		"Tenant:       lab1 unregistered; no data was deleted\nDatabase:     sqlite\nData left at: /var/lib/magnetar/tenants/lab1.db\n", "")
+		"Tenant:       lab1 unregistered; no data was deleted\nDatabase:     sqlite\nData left at: /var/lib/coria/tenants/lab1.db\n", "")
 	doc = document(t, r.run("tenant", "remove", "lab2", "--yes", "--json"))
 	if doc["dataLocation"] != "db.example.org:5432/lab2" || doc["databaseType"] != "DATABASE_TYPE_POSTGRES" {
 		t.Errorf("remove --json: %v", doc)
@@ -179,7 +179,7 @@ func TestTenantRemoveNeedsYes(t *testing.T) {
 	before := r.fake.Requests()
 	for _, args := range [][]string{{"tenant", "remove", "lab1"}, {"tenant", "remove", "lab1", "--json"}} {
 		expect(t, r.run(args...), 2, "",
-			"magnetar: tenant remove: nothing was removed: this would unregister tenant \"lab1\"; its database and files stay where they are; run it again with --yes to do it\n")
+			"coria: tenant remove: nothing was removed: this would unregister tenant \"lab1\"; its database and files stay where they are; run it again with --yes to do it\n")
 	}
 	if got := r.fake.Requests(); got != before {
 		t.Errorf("a removal without --yes sent %d requests", got-before)
@@ -230,16 +230,16 @@ func TestTenantCreateSecretsComeFromEnvOrFile(t *testing.T) {
 // of key create: the key alone on standard output, the note on standard error.
 func TestKeyCommands(t *testing.T) {
 	r := newRig(t)
-	const secret = "mgt_k00000000001_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+	const secret = "cor_k00000000001_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
 	expect(t, r.run("key", "create", "--holder", "ci"), 0, secret+"\n",
-		"magnetar: key k00000000001 (ci), expires 2027-02-15 15:00:00 +03:00\n"+
-			"magnetar: this is the only time the key is shown; it cannot be shown again, so store it now\n")
+		"coria: key k00000000001 (ci), expires 2027-02-15 15:00:00 +03:00\n"+
+			"coria: this is the only time the key is shown; it cannot be shown again, so store it now\n")
 	res := r.run("key", "create", "--holder", "nightly export", "--expires", "30d")
 	if !strings.Contains(res.stderr, "expires 2026-12-17 15:00:00 +03:00") {
 		t.Errorf("--expires 30d: %q", res.stderr)
 	}
 	doc := document(t, r.run("key", "create", "--holder", "svc", "--no-expiry", "--json"))
-	if doc["secret"] != "mgt_k00000000003_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS" || doc["key"].(map[string]any)["expireTime"] != nil {
+	if doc["secret"] != "cor_k00000000003_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS" || doc["key"].(map[string]any)["expireTime"] != nil {
 		t.Errorf("create --json: %v", doc)
 	}
 
@@ -298,7 +298,7 @@ func TestKeyIsNotShownAnywhereElse(t *testing.T) {
 	} {
 		res := r.run(args...)
 		if strings.Contains(res.stdout+res.stderr, secret) {
-			t.Errorf("magnetar %s shows the secret", strings.Join(args, " "))
+			t.Errorf("coria %s shows the secret", strings.Join(args, " "))
 		}
 	}
 }
@@ -308,7 +308,7 @@ func TestKeyIsNotShownAnywhereElse(t *testing.T) {
 // repeats it, so it is not copied into a terminal's scrollback twice.
 func TestWholeKeyAsAnArgumentIsRefused(t *testing.T) {
 	r := newRig(t)
-	const whole = "mgt_k00000000001_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+	const whole = "cor_k00000000001_SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
 	for _, args := range [][]string{
 		{"key", "show", whole}, {"key", "revoke", whole},
 		{"grant", "set", whole, "--role", "reader", "--installation"},
@@ -318,7 +318,7 @@ func TestWholeKeyAsAnArgumentIsRefused(t *testing.T) {
 	} {
 		res := r.run(args...)
 		if res.code != 2 || res.stdout != "" || strings.Contains(res.stderr, "SSSS") || !strings.Contains(res.stderr, "is a secret and is never an argument") {
-			t.Errorf("magnetar %s: %+v", strings.Join(args[:2], " "), res)
+			t.Errorf("coria %s: %+v", strings.Join(args[:2], " "), res)
 		}
 	}
 	if r.fake.Requests() != 0 {
@@ -361,12 +361,12 @@ func TestGrantCommands(t *testing.T) {
 
 	// What the server refuses, shown as the server said it.
 	res := r.run("grant", "set", "k00000000001", "--role", "writer", "--installation")
-	expect(t, res, 2, "", "magnetar: grant set: the writer role is not given on the installation (request id req-000013)\n")
+	expect(t, res, 2, "", "coria: grant set: the writer role is not given on the installation (request id req-000013)\n")
 	res = r.run("grant", "set", "knosuchkey01", "--role", "reader", "--tenant", "lab1")
-	expect(t, res, 4, "", "magnetar: grant set: no key has that id (request id req-000014)\n")
+	expect(t, res, 4, "", "coria: grant set: no key has that id (request id req-000014)\n")
 	r.must("key", "revoke", "k00000000001")
 	res = r.run("grant", "set", "k00000000001", "--role", "reader", "--tenant", "lab1")
-	expect(t, res, 1, "", "magnetar: grant set: the key is revoked (request id req-000016)\n")
+	expect(t, res, 1, "", "coria: grant set: the key is revoked (request id req-000016)\n")
 
 	for name, args := range map[string][]string{
 		"no scope":    {"grant", "set", "k1", "--role", "reader"},
@@ -453,10 +453,10 @@ func TestAuditCommands(t *testing.T) {
 		}
 		return ts
 	}
-	r.fake.AddAudit(&v1.AuditEntry{Id: "3", Time: at("2026-11-17T09:00:00Z"), KeyId: "k1", Method: "/magnetar.v1.TenantService/CreateTenant", Object: "lab1", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, RequestId: "req-3"})
-	r.fake.AddAudit(&v1.AuditEntry{Id: "2", Time: at("2026-11-16T09:00:00Z"), LocalUserId: "501", Method: "/magnetar.v1.AccessService/CreateKey", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_FAILED, RequestId: "req-2", Reason: "the master database does not answer"})
-	r.fake.AddAudit(&v1.AuditEntry{Id: "1", Time: at("2026-11-10T09:00:00Z"), KeyId: "k2", Method: "/magnetar.v1.AccessService/RevokeKey", Object: "k1", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_REFUSED, RequestId: "req-1", Reason: "permission denied"})
-	r.fake.AddAudit(&v1.AuditEntry{Id: "t1", Time: at("2026-11-16T10:00:00Z"), KeyId: "k1", Tenant: "lab1", Method: "/magnetar.v1.SettingsService/SetSetting", Object: "audit.retention", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, RequestId: "req-t1"})
+	r.fake.AddAudit(&v1.AuditEntry{Id: "3", Time: at("2026-11-17T09:00:00Z"), KeyId: "k1", Method: "/coria.v1.TenantService/CreateTenant", Object: "lab1", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, RequestId: "req-3"})
+	r.fake.AddAudit(&v1.AuditEntry{Id: "2", Time: at("2026-11-16T09:00:00Z"), LocalUserId: "501", Method: "/coria.v1.AccessService/CreateKey", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_FAILED, RequestId: "req-2", Reason: "the master database does not answer"})
+	r.fake.AddAudit(&v1.AuditEntry{Id: "1", Time: at("2026-11-10T09:00:00Z"), KeyId: "k2", Method: "/coria.v1.AccessService/RevokeKey", Object: "k1", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_REFUSED, RequestId: "req-1", Reason: "permission denied"})
+	r.fake.AddAudit(&v1.AuditEntry{Id: "t1", Time: at("2026-11-16T10:00:00Z"), KeyId: "k1", Tenant: "lab1", Method: "/coria.v1.SettingsService/SetSetting", Object: "audit.retention", Outcome: v1.AuditOutcome_AUDIT_OUTCOME_DONE, RequestId: "req-t1"})
 
 	expect(t, r.run("audit", "list"), 0,
 		"TIME                        WHO        METHOD                      TENANT  OBJECT  OUTCOME  REQUEST ID  REASON\n"+
@@ -502,5 +502,5 @@ func TestAuditCommands(t *testing.T) {
 			t.Errorf("%s: %+v, want exit 2 and one line", name, res)
 		}
 	}
-	expect(t, r.run("audit", "list", "--tenant", "nope"), 4, "", fmt.Sprintf("magnetar: audit list: no tenant has that name (request id req-%06d)\n", r.fake.Requests()))
+	expect(t, r.run("audit", "list", "--tenant", "nope"), 4, "", fmt.Sprintf("coria: audit list: no tenant has that name (request id req-%06d)\n", r.fake.Requests()))
 }

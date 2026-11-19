@@ -20,10 +20,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/cli/servecmd"
-	"github.com/amrshadid/magnetar/internal/driver/sqlite"
-	"github.com/amrshadid/magnetar/internal/master"
-	"github.com/amrshadid/magnetar/internal/server"
+	"github.com/amrshadid/coria/internal/cli/servecmd"
+	"github.com/amrshadid/coria/internal/driver/sqlite"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/server"
 )
 
 // snapshot returns every file and directory under dir with the SHA-256 of
@@ -177,7 +177,7 @@ func TestKeyFileWithNewerVersionStarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.WriteString("magnetar-key-v1 2 " + base64.StdEncoding.EncodeToString(key) + "\n"); err != nil {
+	if _, err := f.WriteString("coria-key-v1 2 " + base64.StdEncoding.EncodeToString(key) + "\n"); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.Close(); err != nil {
@@ -243,7 +243,7 @@ func TestWrongKeyFileLeavesTenants(t *testing.T) {
 	c := startChildEnv(t, real, "serve", "--data-dir", dir)
 	waitServing(t, dir, c)
 	hc := socketClient(dir)
-	status, err := call(hc, "/magnetar.v1.TenantService/CreateTenant", `{"name":"lab","databaseType":"DATABASE_TYPE_SQLITE"}`, "")
+	status, err := call(hc, "/coria.v1.TenantService/CreateTenant", `{"name":"lab","databaseType":"DATABASE_TYPE_SQLITE"}`, "")
 	hc.CloseIdleConnections()
 	if err != nil || status != http.StatusOK {
 		t.Fatalf("creating a tenant: %d %v\n%s", status, err, c.stderr.String())
@@ -278,7 +278,7 @@ func TestWrongKeyFileLeavesTenants(t *testing.T) {
 	waitServing(t, dir, c)
 	hc = socketClient(dir)
 	defer hc.CloseIdleConnections()
-	req, _ := http.NewRequest(http.MethodPost, "http://local/magnetar.v1.TenantService/GetTenant", bytes.NewReader([]byte(`{"name":"lab"}`)))
+	req, _ := http.NewRequest(http.MethodPost, "http://local/coria.v1.TenantService/GetTenant", bytes.NewReader([]byte(`{"name":"lab"}`)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := hc.Do(req)
 	if err != nil {

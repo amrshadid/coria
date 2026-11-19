@@ -1,6 +1,6 @@
 # Receiving data through the API: a walk-through
 
-This walks three uses of the API contract in `api/proto/magnetar/v1`, call by
+This walks three uses of the API contract in `api/proto/coria/v1`, call by
 call, with nothing but the contract in hand:
 
 1. setting a tenant up to receive DICOM;
@@ -11,7 +11,7 @@ call, with nothing but the contract in hand:
 
 The calls are shown as the JSON a plain HTTP client posts with the Connect
 protocol: `POST https://<server>/<service>/<method>` with
-`Content-Type: application/json` and `Authorization: Bearer mgt_<id>_<secret>`.
+`Content-Type: application/json` and `Authorization: Bearer cor_<id>_<secret>`.
 A gRPC or Connect client sends the same messages. Field names are in the JSON
 form of protobuf: `lowerCamelCase`, 64-bit integers as strings, durations as
 `"300s"`, enum values by name, and a field mask as one string of
@@ -78,7 +78,7 @@ server reads when it starts do not change until it is started again.
 | the server's `--listen` address | Needs a restart: the address is opened once, when the server starts |
 | the server's `--tls-cert` and `--tls-key` | Need a restart: the pair is read once, when the server starts; a renewed certificate is used after the server is started again |
 | the key file | Needs a restart: it is read once, when the server starts, and the keys are held in memory |
-| the data directory (`--data-dir` or `MAGNETAR_DATA_DIR`) | Needs a restart: it is read once, when the command starts |
+| the data directory (`--data-dir` or `CORIA_DATA_DIR`) | Needs a restart: it is read once, when the command starts |
 | the server's `--master-env`, `--log-format`, `--log-level`, `--drain` | Need a restart: they are read once, when the command starts |
 | the certificate and private key files of a receiver's TLS | When the receiver's listener is started or started again: a change to the receiver does that, as does a retry after a failure; a listener that is running keeps the pair it loaded |
 
@@ -90,11 +90,11 @@ installation may decide; then an admin on the tenant does the rest.
 ### What the installation allows
 
 ```
-POST /magnetar.v1.SettingsService/SetSetting
+POST /coria.v1.SettingsService/SetSetting
 {"setting": {"name": "storage.directory-roots", "scope": {"installation": {}},
              "value": "fast=/srv/archive"}}
 
-POST /magnetar.v1.SettingsService/SetSetting
+POST /coria.v1.SettingsService/SetSetting
 {"setting": {"name": "receiver.ports", "scope": {"tenant": "lab"},
              "value": "11112,11120-11129"}}
 ```
@@ -107,7 +107,7 @@ tenants' receivers never contend for a port.
 ### Add a storage and test it
 
 ```
-POST /magnetar.v1.StorageService/AddStorage
+POST /coria.v1.StorageService/AddStorage
 {"tenant": "lab",
  "storage": {"name": "main", "directory": {"root": "fast", "path": "mri"}}}
 ```
@@ -120,7 +120,7 @@ passes through a symbolic link is refused. The answer shows `root` and `path`,
 never the root's own location.
 
 ```
-POST /magnetar.v1.StorageService/TestStorage
+POST /coria.v1.StorageService/TestStorage
 {"tenant": "lab", "name": "main"}
 
 {"passed": true,
@@ -142,7 +142,7 @@ answered again; a read shows only `secretAccessKeySet: true`. Credentials are
 rotated together, both named in the mask:
 
 ```
-POST /magnetar.v1.StorageService/SetStorage
+POST /coria.v1.StorageService/SetStorage
 {"tenant": "lab",
  "storage": {"name": "cold", "s3": {"accessKeyId": "AKIA...NEW", "secretAccessKey": "..."}},
  "updateMask": "s3.accessKeyId,s3.secretAccessKey"}
@@ -156,13 +156,13 @@ keeps the secret held.
 The scanner calls itself `PRISMA1` and sits on `10.20.0.0/24`:
 
 ```
-POST /magnetar.v1.ReceiverService/AddReceiver
+POST /coria.v1.ReceiverService/AddReceiver
 {"tenant": "lab",
  "receiver": {"name": "scanner1",
               "enabled": true,
               "storage": "main",
               "dimse": {"port": 11112,
-                        "aeTitle": "MAGNETAR",
+                        "aeTitle": "CORIA",
                         "allowedCallers": {"rules": [{"callingAeTitle": "PRISMA1",
                                                       "addressRange": "10.20.0.0/24"}]}}}}
 ```
@@ -204,7 +204,7 @@ The scanner pauses for minutes between series, so a reception should wait
 five minutes of quiet before it is complete:
 
 ```
-POST /magnetar.v1.ReceiverService/SetReceiver
+POST /coria.v1.ReceiverService/SetReceiver
 {"tenant": "lab",
  "receiver": {"name": "scanner1", "quietPeriod": "300s"},
  "updateMask": "quietPeriod"}
@@ -216,7 +216,7 @@ prefix, as `dimse.port`; naming `dimse` whole is refused.
 ### Check it is up
 
 ```
-POST /magnetar.v1.MonitorService/GetStatus
+POST /coria.v1.MonitorService/GetStatus
 {"scope": {"tenant": "lab"}}
 
 {"tenants": [{"tenant": "lab",
@@ -230,7 +230,7 @@ POST /magnetar.v1.MonitorService/GetStatus
 ```
 
 The tenant is ready to receive. A C-ECHO from the scanner's host,
-`echoscu -aet PRISMA1 -aec MAGNETAR archive.example.org 11112` with dcmtk, is
+`echoscu -aet PRISMA1 -aec CORIA archive.example.org 11112` with dcmtk, is
 answered. From a calling AE title or an address no rule admits, the
 association is rejected.
 
@@ -242,7 +242,7 @@ the storage, missing nothing in between.
 ### Start from a status, then watch from its cursor
 
 ```
-POST /magnetar.v1.MonitorService/GetStatus
+POST /coria.v1.MonitorService/GetStatus
 {"scope": {"tenant": "lab"}}
 
 {"tenants": [{"tenant": "lab",
@@ -256,7 +256,7 @@ every event after `c1` is a change the counts do not hold yet, and none
 before it is. The client keeps the counts and opens a stream:
 
 ```
-POST /magnetar.v1.MonitorService/Watch
+POST /coria.v1.MonitorService/Watch
 {"scope": {"tenant": "lab"}, "cursor": "c1"}
 ```
 
@@ -301,7 +301,7 @@ value the scanner sent. The client reads the reception to know which study
 it is:
 
 ```
-POST /magnetar.v1.ReceptionService/GetReception
+POST /coria.v1.ReceptionService/GetReception
 {"tenant": "lab", "id": "r-7f3a"}
 
 {"reception": {"id": "r-7f3a", "receiver": "scanner1",
@@ -348,7 +348,7 @@ computed when it was received. At `RECEPTION_STEP_DONE`,
 The scans it archived:
 
 ```
-POST /magnetar.v1.ReceptionService/GetReception
+POST /coria.v1.ReceptionService/GetReception
 {"tenant": "lab", "id": "r-7f3a"}
 
 {"reception": {..., "step": "RECEPTION_STEP_DONE", "storage": "main"},
@@ -395,7 +395,7 @@ consumer that this is an addition, and the counts are this arrival's own, so
 it acts on the 96 new files only.
 
 ```
-POST /magnetar.v1.ReceptionService/GetReception
+POST /coria.v1.ReceptionService/GetReception
 {"tenant": "lab", "id": "r-80c1"}
 
 {"reception": {"id": "r-80c1", "arrival": 2, "step": "RECEPTION_STEP_DONE", ...},
@@ -430,7 +430,7 @@ event, so a client keeps them from the stream alone. Someone who was not
 watching lists what is held:
 
 ```
-POST /magnetar.v1.QuarantineService/ListQuarantinedFiles
+POST /coria.v1.QuarantineService/ListQuarantinedFiles
 {"tenant": "lab", "state": "QUARANTINE_STATE_HELD"}
 ```
 
@@ -440,14 +440,14 @@ Reading the header takes operator on the tenant; the record alone needs
 reader.
 
 ```
-POST /magnetar.v1.QuarantineService/GetQuarantinedFile
+POST /coria.v1.QuarantineService/GetQuarantinedFile
 {"tenant": "lab", "id": "q-19d2", "includeHeader": true}
 
 {"file": {"id": "q-19d2",
           "reason": "QUARANTINE_REASON_DIFFERENT_FILE",
           "state": "QUARANTINE_STATE_HELD",
           "receiver": "scanner1", "reception": "r-8a77",
-          "caller": {"callingAeTitle": "PRISMA1", "calledAeTitle": "MAGNETAR",
+          "caller": {"callingAeTitle": "PRISMA1", "calledAeTitle": "CORIA",
                      "address": "10.20.0.31:50288"},
           "sizeBytes": "528650",
           "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
@@ -485,7 +485,7 @@ mode of release: it will be an operation of its own, with a recorded reason
 and proof of the copy that replaces it.
 
 ```
-POST /magnetar.v1.QuarantineService/RejectQuarantinedFile
+POST /coria.v1.QuarantineService/RejectQuarantinedFile
 {"tenant": "lab", "id": "q-19d2", "reason": "re-sent by mistake; the archived file is correct"}
 
 {"file": {"id": "q-19d2", "state": "QUARANTINE_STATE_REJECTED",

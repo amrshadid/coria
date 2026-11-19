@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amrshadid/magnetar/internal/core/ascii"
-	"github.com/amrshadid/magnetar/internal/core/pathname"
+	"github.com/amrshadid/coria/internal/core/ascii"
+	"github.com/amrshadid/coria/internal/core/pathname"
 )
 
 // The bounds of the values below. Each keeps a value a person writes by hand

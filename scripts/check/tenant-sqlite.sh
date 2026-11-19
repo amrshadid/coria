@@ -2,7 +2,7 @@
 # The outside check of a tenant's SQLite database: the registry creates a
 # tenant on SQLite in a fresh data directory, as the server will, and the
 # tenant suite's sample is written into it; then the sqlite3 command line
-# tool, which is SQLite's own and not Magnetar's, opens the tenant's file and
+# tool, which is SQLite's own and not CORIA's, opens the tenant's file and
 # the master's.
 #
 # It checks that the file is where the design puts it
@@ -39,7 +39,7 @@ chmod 700 "$dir"
 
 echo "sqlite3 $("$SQLITE3" --version | cut -d' ' -f1)"
 
-MAGNETAR_SAMPLE_DIR="$dir" "$GO" test -count=1 -run '^TestWriteTenantSample$' ./internal/registry
+CORIA_SAMPLE_DIR="$dir" "$GO" test -count=1 -run '^TestWriteTenantSample$' ./internal/registry
 db="$dir/tenants/sample.db"
 master="$dir/master.db"
 [ -f "$db" ] || fail "the tenant's database is not at <data-dir>/tenants/sample.db"
@@ -104,10 +104,10 @@ echo "== the creation's audit entries, by request id"
 "$SQLITE3" -batch -header -column "$master" "SELECT id, method, outcome, request_id, details FROM audit WHERE request_id = 'sample-request' ORDER BY at, id"
 want "entries of the creation's request" 2 "$(mq "SELECT count(*) FROM audit WHERE request_id = 'sample-request'")"
 want "the creation started, by the system" "done system sample-create sqlite" \
-	"$(mq "SELECT outcome || ' ' || json_extract(details, '\$.actor') || ' ' || json_extract(details, '\$.request_entry') || ' ' || json_extract(details, '\$.database_type') FROM audit WHERE request_id = 'sample-request' AND method = 'magnetar.registry/CreateTenantStarted'")"
+	"$(mq "SELECT outcome || ' ' || json_extract(details, '\$.actor') || ' ' || json_extract(details, '\$.request_entry') || ' ' || json_extract(details, '\$.database_type') FROM audit WHERE request_id = 'sample-request' AND method = 'coria.registry/CreateTenantStarted'")"
 want "the request's own entry, with the change to ready" "sample-create done upgrading -> ready" \
-	"$(mq "SELECT id || ' ' || outcome || ' ' || json_extract(details, '\$.old_state') || ' -> ' || json_extract(details, '\$.new_state') FROM audit WHERE request_id = 'sample-request' AND method = '/magnetar.v1.TenantService/CreateTenant'")"
-want "no other state change was written" 0 "$(mq "SELECT count(*) FROM audit WHERE method = 'magnetar.registry/SetTenantState'")"
+	"$(mq "SELECT id || ' ' || outcome || ' ' || json_extract(details, '\$.old_state') || ' -> ' || json_extract(details, '\$.new_state') FROM audit WHERE request_id = 'sample-request' AND method = '/coria.v1.TenantService/CreateTenant'")"
+want "no other state change was written" 0 "$(mq "SELECT count(*) FROM audit WHERE method = 'coria.registry/SetTenantState'")"
 want "the master's integrity_check" ok "$(mq 'PRAGMA integrity_check')"
 
 echo
