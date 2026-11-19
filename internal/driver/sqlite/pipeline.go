@@ -14,7 +14,7 @@ import (
 // pipeline_*.go, on the tables of migrations/tenant/0002_pipeline.sql.
 //
 // Every change goes through Tenant.write, so it is grouped with the changes
-// waiting at the same moment like every other (group.go), and like every
+// waiting at the same moment like every other (write.go), and like every
 // other it only reads, writes and assigns its results to variables it sets
 // afresh on each run: a change may run again in a new transaction.
 //

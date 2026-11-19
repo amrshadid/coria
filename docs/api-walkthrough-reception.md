@@ -517,6 +517,13 @@ What the contract settles about this call:
   `"receiver": "scanner2"`.
 - A file released that fails again is quarantined under a new record whose
   `releasedFrom` names the first; that record stays released.
+- A release, like a retry of a failed reception, runs through the tenant's
+  reception pipeline, which puts the file's bytes back in line in an order a
+  crash cannot break. While that pipeline is not running (the tenant's
+  database not ready, or the pipeline restarting) the request is refused with
+  `UNAVAILABLE` and nothing is recorded; it can be sent again. A rejection is
+  recorded at once, and its bytes are removed by the pipeline, at once or at
+  its next start.
 
 ## What this contract does not do
 

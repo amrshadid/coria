@@ -27,10 +27,10 @@ type OpenEvents func(tb testing.TB, tenantID string) EventStore
 // instances on one database.
 type OpenEventsPair func(tb testing.TB, tenantID string) (first, second EventStore)
 
-// RunEvents runs the contract suite's event groups (tenant.Events) against
-// the stores open makes, each test on its own store, in parallel. A driver
-// that implements Events calls it as well as RunPipeline.
-func RunEvents(t *testing.T, open OpenEvents) {
+// runEvents runs the contract suite's event groups (tenant.Events) against
+// the stores open makes, each test on its own store, in parallel. Run runs
+// it.
+func runEvents(t *testing.T, open OpenEvents) {
 	tests := []struct {
 		name string
 		fn   func(*eenv)
@@ -61,9 +61,9 @@ func RunEvents(t *testing.T, open OpenEvents) {
 	}
 }
 
-// RunEventsShared runs the event tests that need two instances of the store
+// runEventsShared runs the event tests that need two instances of the store
 // on one database.
-func RunEventsShared(t *testing.T, open OpenEventsPair) {
+func runEventsShared(t *testing.T, open OpenEventsPair) {
 	t.Run("LateCommitAcrossInstances", func(t *testing.T) {
 		t.Parallel()
 		first, second := open(t, SuiteTenant)

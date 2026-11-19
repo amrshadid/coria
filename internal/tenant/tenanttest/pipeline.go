@@ -21,10 +21,10 @@ type OpenPipeline func(tb testing.TB, tenantID string) tenant.Pipeline
 // OpenPipelinePair is OpenPair for stores that implement tenant.Pipeline.
 type OpenPipelinePair func(tb testing.TB, tenantID string) (first, second tenant.Pipeline)
 
-// RunPipeline runs the contract suite's pipeline groups (tenant.Pipeline)
-// against the stores open makes, each test on its own store, in parallel. A
-// driver that implements Pipeline calls it as well as Run.
-func RunPipeline(t *testing.T, open OpenPipeline) {
+// runPipeline runs the contract suite's pipeline groups (tenant.Pipeline)
+// against the stores open makes, each test on its own store, in parallel. Run
+// runs it.
+func runPipeline(t *testing.T, open OpenPipeline) {
 	tests := []struct {
 		name string
 		fn   func(*penv)
@@ -97,9 +97,9 @@ func RunPipeline(t *testing.T, open OpenPipeline) {
 	}
 }
 
-// RunPipelineShared runs the pipeline's tests that need two instances of
+// runPipelineShared runs the pipeline's tests that need two instances of
 // the store on one database.
-func RunPipelineShared(t *testing.T, open OpenPipelinePair) {
+func runPipelineShared(t *testing.T, open OpenPipelinePair) {
 	tests := []struct {
 		name string
 		fn   func(e *penv, other tenant.Pipeline)

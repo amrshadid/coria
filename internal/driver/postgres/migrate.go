@@ -105,3 +105,29 @@ func destroy(conn *sql.Conn) {
 	})
 	_ = conn.Close() // Reports ErrConnDone once Raw discarded it.
 }
+
+// migrate applies migrations under the migration lock and returns the schema
+// version the database is then at. A store's Migrate passes its own files; a
+// test passes others, so the lock and the runner are tried with files that
+// fail when applied twice.
+func (b *base) migrate(ctx context.Context, migrations []sqlkit.Migration) (int, error) {
+	if err := b.open(); err != nil {
+		return 0, err
+	}
+	var version int
+	err := b.withMigrationLock(ctx, func() error {
+		var err error
+		version, err = sqlkit.Migrate(ctx, b.mig, dialect, migrations)
+		return err
+	})
+	return version, b.runnerErr(ctx, err, "the "+b.name+" cannot be migrated")
+}
+
+// version returns the schema version the database is at.
+func (b *base) version(ctx context.Context) (int, error) {
+	if err := b.open(); err != nil {
+		return 0, err
+	}
+	v, err := sqlkit.Version(ctx, b.mig, dialect)
+	return v, b.runnerErr(ctx, err, "the "+b.short+"'s schema version cannot be read")
+}

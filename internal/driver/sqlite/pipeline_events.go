@@ -18,7 +18,7 @@ import (
 // tables of migrations/tenant/0002_pipeline.sql.
 //
 // Commit order. Every change runs on the one write connection, one
-// transaction at a time (group.go), and an event's id is taken by
+// transaction at a time (write.go), and an event's id is taken by
 // AUTOINCREMENT inside that transaction, so ids are in the order of commits
 // and only grow. A reader on the read pool sees a snapshot that holds every
 // commit up to one point and none after it (sqlite.org/wal.html,

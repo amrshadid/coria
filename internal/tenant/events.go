@@ -14,7 +14,7 @@ import (
 // transaction of the change it reports and read back in the order of the
 // commits that wrote them. A driver that keeps a feed implements it beside
 // Pipeline and proves it with the contract suite's event groups
-// (tenanttest.RunEvents); once every driver does, it becomes part of Store.
+// (tenanttest.Run, its event groups); once every driver does, it becomes part of Store.
 //
 // # Where events are written
 //

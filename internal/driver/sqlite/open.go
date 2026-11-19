@@ -13,7 +13,6 @@ import (
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
-	"github.com/amrshadid/coria/internal/driver/sqlkit"
 	"github.com/amrshadid/coria/internal/fault"
 )
 
@@ -248,19 +247,6 @@ func cloneValues(v url.Values) url.Values {
 		out[k] = append([]string(nil), vs...)
 	}
 	return out
-}
-
-// dialect is how the migration runner works on SQLite. BeginLocked begins on
-// the write pool, whose transactions are BEGIN IMMEDIATE, so the lock is the
-// database's write lock and holds across processes.
-var dialect = sqlkit.Dialect{
-	HasTable:      `SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'schema_migrations'`,
-	CreateTable:   `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL, checksum BLOB NOT NULL, applied INTEGER NOT NULL) STRICT`,
-	SelectApplied: `SELECT version, name, checksum FROM schema_migrations ORDER BY version`,
-	InsertApplied: `INSERT INTO schema_migrations (version, name, checksum, applied) VALUES (?, ?, ?, ?)`,
-	BeginLocked: func(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
-		return db.BeginTx(ctx, nil)
-	},
 }
 
 // classify turns an error from the driver into a fault with a kind. An error

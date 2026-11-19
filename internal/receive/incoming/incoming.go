@@ -312,18 +312,29 @@ func (a *Area) Commit(path string) error {
 	if err != nil {
 		return err
 	}
-	err = a.root.Rename(path+landedSuffix, path)
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, fs.ErrNotExist):
+	for range renameLooks {
+		err = a.root.Rename(path+landedSuffix, path)
+		switch {
+		case err == nil:
+			return nil
+		case !errors.Is(err, fs.ErrNotExist):
+			return unavailable("an incoming file cannot be renamed", err)
+		}
 		if _, serr := a.root.Lstat(path); serr == nil {
 			return nil
 		}
-		return fault.New(fault.NotFound, "the incoming file "+id+" is not there")
+		// Under neither name: an Unrecord renamed it between the two
+		// looks, so it is landed again; look again.
 	}
-	return unavailable("an incoming file cannot be renamed", err)
+	return fault.New(fault.NotFound, "the incoming file "+id+" is not there")
 }
+
+// renameLooks is how many times Commit and Unrecord look for a file under
+// its two names before they call it missing. Each rename is atomic, so a
+// file is always under one of them, and a look that finds neither saw the
+// other rename happen between its two reads (the batch committing a name
+// while a release takes it back); the next look finds it.
+const renameLooks = 3
 
 // Unrecord renames a recorded file back to its landed name, so a restart that
 // finds it with no row checks and records it again instead of removing it.
@@ -333,17 +344,21 @@ func (a *Area) Unrecord(path string) error {
 	if err != nil {
 		return err
 	}
-	err = a.root.Rename(path, path+landedSuffix)
-	switch {
-	case err == nil:
-		return syncDirectory(a.root, path[:strings.LastIndexByte(path, '/')])
-	case errors.Is(err, fs.ErrNotExist):
+	for range renameLooks {
+		err = a.root.Rename(path, path+landedSuffix)
+		switch {
+		case err == nil:
+			return syncDirectory(a.root, path[:strings.LastIndexByte(path, '/')])
+		case !errors.Is(err, fs.ErrNotExist):
+			return unavailable("an incoming file cannot be renamed", err)
+		}
 		if _, serr := a.root.Lstat(path + landedSuffix); serr == nil {
 			return nil
 		}
-		return fault.New(fault.NotFound, "the incoming file "+id+" is not there")
+		// Under neither name: a Commit renamed it between the two looks,
+		// so it is recorded now; look again.
 	}
-	return unavailable("an incoming file cannot be renamed", err)
+	return fault.New(fault.NotFound, "the incoming file "+id+" is not there")
 }
 
 // Open opens the file at a recorded path for reading, under its recorded

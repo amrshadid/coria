@@ -29,34 +29,16 @@ GO="${GO:-go}"
 : "${CORIA_TEST_POSTGRES:?set CORIA_TEST_POSTGRES to the URL of a scratch database}"
 PSQL_URL="${PSQL_URL:-$CORIA_TEST_POSTGRES}"
 
-fail() {
-	echo "FAIL: $*" >&2
-	exit 1
-}
-
-# want <what> <expected> <actual>
-want() {
-	if [ "$2" != "$3" ]; then
-		fail "$1: got '$3', want '$2'"
-	fi
-	echo "ok: $1 = $3"
-}
+# fail and want (scripts/lib/check.sh); q and show for psql (scripts/lib/psql.sh).
+# shellcheck source=../lib/check.sh
+. "$(dirname "$0")/../lib/check.sh"
+# shellcheck source=../lib/psql.sh
+. "$(dirname "$0")/../lib/psql.sh"
 
 dir="$(mktemp -d)"
 chmod 700 "$dir"
 schema="coria_check_t_$(date +%s)_$$"
 mschema="${schema}_master"
-
-q() {
-	# shellcheck disable=SC2086 # PSQL is a command and its arguments.
-	$PSQL -X -q -A -t -v ON_ERROR_STOP=1 "$PSQL_URL" -c "$1"
-}
-show() {
-	echo
-	echo "== $1"
-	# shellcheck disable=SC2086
-	$PSQL -X -q -v ON_ERROR_STOP=1 "$PSQL_URL" -c "$2"
-}
 
 cleanup() {
 	q "DROP SCHEMA IF EXISTS \"$schema\" CASCADE; DROP SCHEMA IF EXISTS \"$mschema\" CASCADE" > /dev/null 2>&1 || true

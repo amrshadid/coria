@@ -18,18 +18,11 @@ set -euo pipefail
 SQLITE3="${SQLITE3:-sqlite3}"
 GO="${GO:-go}"
 
-fail() {
-	echo "FAIL: $*" >&2
-	exit 1
-}
-
-# want <what> <expected> <actual>
-want() {
-	if [ "$2" != "$3" ]; then
-		fail "$1: got '$3', want '$2'"
-	fi
-	echo "ok: $1 = $3"
-}
+# fail and want (scripts/lib/check.sh); q and show for sqlite3 (scripts/lib/sqlite.sh).
+# shellcheck source=../lib/check.sh
+. "$(dirname "$0")/../lib/check.sh"
+# shellcheck source=../lib/sqlite.sh
+. "$(dirname "$0")/../lib/sqlite.sh"
 
 dir="$(mktemp -d)"
 trap 'rm -rf "$dir"' EXIT
@@ -46,10 +39,6 @@ db="$dir/master.db"
 hash="$(tr -d '\n' < "$dir/hash.hex")"
 [ -f "$db" ] || fail "the sample database was not written"
 
-q() {
-	"$SQLITE3" -batch -noheader "$db" "$1"
-}
-
 echo
 echo "== tables"
 "$SQLITE3" -batch "$db" '.tables'
@@ -58,11 +47,6 @@ want "tables" "api_keys audit grants schema_migrations settings tenants" \
 
 # Every row of every table, with byte columns as hex so a terminal can show
 # them.
-show() {
-	echo
-	echo "== $1"
-	"$SQLITE3" -batch -header -column "$db" "$2"
-}
 show schema_migrations "SELECT version, name, hex(checksum) AS checksum, applied FROM schema_migrations"
 show tenants "SELECT id, name, driver, hex(address) AS address, state, state_reason, created FROM tenants"
 show api_keys "SELECT id, hex(hash) AS hash, holder, created, expires, last_used, revoked FROM api_keys"
