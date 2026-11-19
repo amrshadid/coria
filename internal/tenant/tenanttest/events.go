@@ -28,8 +28,8 @@ type OpenEvents func(tb testing.TB, tenantID string) EventStore
 type OpenEventsPair func(tb testing.TB, tenantID string) (first, second EventStore)
 
 // runEvents runs the contract suite's event groups (tenant.Events) against
-// the stores open makes, each test on its own store, in parallel. A driver
-// that implements Events calls it as well as RunPipeline.
+// the stores open makes, each test on its own store, in parallel. Run runs
+// it.
 func runEvents(t *testing.T, open OpenEvents) {
 	tests := []struct {
 		name string

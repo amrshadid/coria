@@ -37,13 +37,8 @@ PSQL_URL="${PSQL_URL:-$CORIA_TEST_POSTGRES}"
 # shellcheck source=../lib/psql.sh
 . "$(dirname "$0")/../lib/psql.sh"
 
-# want <what> <expected> <actual>
-
 dir="$(mktemp -d)"
 schema="coria_check_$(date +%s)_$$"
-
-# q runs one statement and prints its result alone, with no alignment or
-# headers; show prints it as a table. Neither shows the URL.
 
 cleanup() {
 	q "DROP SCHEMA IF EXISTS \"$schema\" CASCADE" > /dev/null 2>&1 || true

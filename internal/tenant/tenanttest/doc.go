@@ -1,6 +1,7 @@
 // Package tenanttest is the contract suite of tenant.Store: the tests every
 // database driver must pass for a tenant's database. A driver's own test
-// calls Run with a function that opens a fresh, migrated store; a driver that
+// calls Run with a Driver, whose functions open fresh, migrated stores; Run
+// is the suite's one entry point, so a driver runs all of it. A driver that
 // passes is interchangeable with every other, because what callers rely on is
 // pinned here and not in any one driver's tests.
 //

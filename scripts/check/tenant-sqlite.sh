@@ -25,8 +25,6 @@ GO="${GO:-go}"
 # shellcheck source=../lib/sqlite.sh
 . "$(dirname "$0")/../lib/sqlite.sh"
 
-# want <what> <expected> <actual>
-
 dir="$(mktemp -d)"
 trap 'rm -rf "$dir"' EXIT
 # The key file's directory must be private to its owner (package secret).

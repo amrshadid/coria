@@ -51,9 +51,11 @@ func openTenantPair(tb testing.TB, tenantID string) (tenant.Store, tenant.Store)
 	return openTenantAt(tb, address, tenantID), openTenantAt(tb, address, tenantID)
 }
 
-// TestTenantContract runs the tenant port's whole contract suite on Postgres, each case on a schema of its own (two stores of a pair share one, each with a pool of its own, as two processes would):
-// the store, the pipeline and the events, each also across two instances
-// on one database.
+// TestTenantContract runs the tenant port's whole contract suite on
+// Postgres: the store, the pipeline and the events, each also across two
+// instances on one database. Each case has a schema of its own; the two
+// stores of a pair share one, each with a pool of its own, as two processes
+// would, so their transactions are truly at once.
 func TestTenantContract(t *testing.T) {
 	tenanttest.Run(t, tenanttest.Driver{
 		Open: func(tb testing.TB, id string) tenanttest.EventStore { return openTenantTest(tb, id).(*Tenant) },

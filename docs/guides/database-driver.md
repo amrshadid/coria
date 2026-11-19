@@ -6,11 +6,11 @@ database. SQLite and Postgres are the two today; read them side by side, they
 have the same files.
 
 1. **Make the package** `internal/driver/<name>`, with the same files as the
-   others: `open.go` (opening an address), `base.go` (the pool, failure
-   classification, write transactions), `master.go` and `master_*.go`,
-   `tenant.go` and `pipeline_*.go`, `values.go`, `migrate.go`, `write.go`
-   (the write transaction), and the
-   embedded `migrations/master/*.sql` and `migrations/tenant/*.sql`.
+   others: `open.go` (opening an address), `base.go` (the pool and failure
+   classification), `write.go` (the write transaction), `migrate.go`,
+   `master.go` and `master_*.go`, `tenant.go` and `pipeline_*.go`,
+   `values.go`, `shared.go`, and the embedded `migrations/master/*.sql` and
+   `migrations/tenant/*.sql`.
 2. **Write the schema as forward-only migrations**, numbered from `0001`, run
    by `internal/driver/sqlkit`'s migration runner, one transaction each under
    a lock that holds across processes. See [a migration](migration.md).

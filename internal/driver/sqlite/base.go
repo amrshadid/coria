@@ -11,7 +11,7 @@ import (
 
 // base is what every store on one SQLite file has, whatever it holds: its
 // pools, whether it is closed, its name in error messages, and the queue of
-// changes waiting to be written (group.go). Master and Tenant embed it, so
+// changes waiting to be written (write.go). Master and Tenant embed it, so
 // the two classify a failure the same way, close the same way, and write
 // changes the same way.
 type base struct {

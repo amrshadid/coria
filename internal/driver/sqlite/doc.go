@@ -22,7 +22,7 @@
 // fullfsync), and the sync, not SQLite's work, is what a change costs: one
 // commit per change would hold a store to about as many changes a second as
 // the disk takes syncs, a few hundred, however many callers wait. So
-// changes are committed in groups (group.go). A change that finds the writer
+// changes are committed in groups (write.go). A change that finds the writer
 // idle is written at once by its caller, alone, as a transaction of its own;
 // changes that arrive while a transaction is running or syncing queue, and
 // the next transaction writes them all, up to a bound, each in a savepoint of

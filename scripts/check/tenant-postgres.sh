@@ -35,8 +35,6 @@ PSQL_URL="${PSQL_URL:-$CORIA_TEST_POSTGRES}"
 # shellcheck source=../lib/psql.sh
 . "$(dirname "$0")/../lib/psql.sh"
 
-# want <what> <expected> <actual>
-
 dir="$(mktemp -d)"
 chmod 700 "$dir"
 schema="coria_check_t_$(date +%s)_$$"

@@ -103,7 +103,8 @@ migration runner, cursors, value encodings).
 `internal/testkit` (helpers more than one package's tests use: a DICOM file
 generator, a heap sampler, scratch Postgres schemas and S3 addresses),
 `internal/cli/fakeserver`, `internal/server/servertest`, and the test-only
-programs under them. Nothing the binary runs imports them.
+programs under them. Nothing the binary runs imports them: lint enforces it
+for `testkit`; for the other two, `go list -deps ./cmd/coria` shows it.
 
 ## The rules, and what enforces each
 
@@ -121,7 +122,7 @@ programs under them. Nothing the binary runs imports them.
 | A secret never appears in a log, an error or an answer | `internal/secret` (unprintable type), `obs/redact`, the proof's searches of logs, audit and databases (`make prove`) |
 | Every access and change is audited | `internal/access`; the proof reconciles every request with the audit log |
 | A file acknowledged to a sender is never lost or archived twice | the incoming area's sync before acknowledgement; the pipeline's crash matrix test; `make prove-reception`'s kills at each step |
-| State lives in the database, not memory | recovery at start (`receive.Recover`, the work queue's repair and reclaim); restart tests |
+| State lives in the database, not memory | recovery at start (the pipeline's `Recover`, the work queue's repair and reclaim); restart tests |
 | Reception does not get slower unseen | `make bench-gate` in CI |
 | Nothing in the repository refers to notes outside it | `make check-comments` |
 
