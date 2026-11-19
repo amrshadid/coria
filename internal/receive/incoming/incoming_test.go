@@ -199,3 +199,40 @@ func TestLandSyncsBeforeItAnswers(t *testing.T) {
 		t.Fatalf("the steps were %q, want sync-file,rename,sync-dir", got)
 	}
 }
+
+// TestCommitAndUnrecordRacingNeverLoseTheFile guards a file whose name is
+// committed by one goroutine (the batch, once its row is written) while
+// another takes it back (a release): each rename is atomic, so the file is
+// always under one of its two names, and neither call may answer that it
+// is not there however their renames fall between each other's looks.
+func TestCommitAndUnrecordRacingNeverLoseTheFile(t *testing.T) {
+	a, _ := openArea(t)
+	f, err := a.Land(context.Background(), "dimse", strings.NewReader("held bytes"), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const rounds = 2000
+	errs := make(chan error, 2*rounds)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range rounds {
+			if err := a.Unrecord(f.Path); err != nil {
+				errs <- err
+			}
+		}
+	}()
+	for range rounds {
+		if err := a.Commit(f.Path); err != nil {
+			errs <- err
+		}
+	}
+	<-done
+	close(errs)
+	for err := range errs {
+		t.Fatalf("a rename answered: %v", err)
+	}
+	if ok, err := a.Exists(f.Path); err != nil || !ok {
+		t.Fatalf("the file is gone after the race: %v", err)
+	}
+}
