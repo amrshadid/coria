@@ -81,6 +81,9 @@ type options struct {
 	methods   servertest.Table
 	noNetwork bool
 	beforeRun func(*server.Server)
+	// registry is given to the server as its tenant registry, for a test of
+	// what Stop does with it; nil gives none.
+	registry server.Registry
 }
 
 // env is one running server over a fresh SQLite master, with stand-in
@@ -175,7 +178,7 @@ func newEnv(tb testing.TB, o options) *env {
 		DataDir: e.dir, Lock: lock, Access: a, Master: m, Log: log,
 		Register: register, DefaultDeadline: o.deadline, Drain: o.drain,
 		MaxDeadline: o.maxDL, BodyReadTimeout: o.bodyRead, Grace: o.grace, Close: o.closeT,
-		Methods: methods, WithDecision: withDecision,
+		Methods: methods, WithDecision: withDecision, Registry: o.registry,
 	}
 	if !o.noNetwork {
 		certFile, keyFile, roots := testCert(tb, e.dir)

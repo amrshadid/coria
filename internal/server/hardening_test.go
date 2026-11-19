@@ -397,6 +397,45 @@ func TestAuditWrittenAtStop(t *testing.T) {
 	}
 }
 
+// stuckRegistry is a tenant registry whose Close never returns, whatever
+// its context says, until the test releases it.
+type stuckRegistry struct{ release chan struct{} }
+
+func (r stuckRegistry) Close(context.Context) error {
+	<-r.release
+	return nil
+}
+
+// TestStopAbandonsWhatDoesNotClose guards the close deadline: a part that
+// does not return from Close within it (here the tenant registry, which
+// ignores its context) is given up on, Stop says so, the parts after it
+// are still closed, the lock on the data directory is released, and the
+// whole of Stop is bounded by the deadline rather than by the part.
+func TestStopAbandonsWhatDoesNotClose(t *testing.T) {
+	reg := stuckRegistry{release: make(chan struct{})}
+	defer close(reg.release)
+	const closeT = 300 * time.Millisecond
+	e := newEnv(t, options{noNetwork: true, drain: 100 * time.Millisecond, grace: 100 * time.Millisecond, closeT: closeT, registry: reg})
+	e.stopErrOK = true
+	began := time.Now()
+	err := e.srv.Stop()
+	took := time.Since(began)
+	if err == nil || !strings.Contains(err.Error(), "closing the tenant registry") ||
+		!strings.Contains(err.Error(), "did not return within its close deadline and was abandoned") {
+		t.Fatalf("Stop with a registry that does not close: %v", err)
+	}
+	// Drain, grace and three close deadlines with their quarter of slack,
+	// and room for a loaded machine; the stuck part alone would never end.
+	if bound := 10 * time.Second; took > bound {
+		t.Fatalf("Stop took %v with a part that does not close, past %v", took, bound)
+	}
+	lock, err := server.TakeLock(e.dir)
+	if err != nil {
+		t.Fatalf("the lock was not released after the part was given up on: %v", err)
+	}
+	_ = lock.Release()
+}
+
 // TestRequestDuringStop guards what a request meets while Stop drains: any
 // request is UNAVAILABLE, except the health service's Check at its exact
 // path (not percent-encoded, not in another case, not with a trailing

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -74,14 +75,20 @@ func TestThePipelinesStorageIsKeptOpenAndCheckedAtEveryUse(t *testing.T) {
 		t.Fatalf("the replaced store was closed while a step may hold it: %v", err)
 	}
 
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(t.TempDir(), dir); err != nil {
-		t.Skipf("no symbolic links here: %v", err)
-	}
-	if _, err := s.Open(ctx, "main"); err == nil {
-		t.Fatal("a storage whose directory became a link was handed out from the open store")
+	// A storage's directory swapped for a link under the open store is
+	// refused at the next use. On Windows the swap cannot happen: a
+	// directory a process holds open cannot be removed, which protects the
+	// store there by itself.
+	if runtime.GOOS != "windows" {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(t.TempDir(), dir); err != nil {
+			t.Fatalf("making the link: %v", err)
+		}
+		if _, err := s.Open(ctx, "main"); err == nil {
+			t.Fatal("a storage whose directory became a link was handed out from the open store")
+		}
 	}
 
 	if err := s.Close(); err != nil {

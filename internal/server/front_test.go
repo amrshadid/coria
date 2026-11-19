@@ -312,7 +312,11 @@ func rawCall(hc *http.Client, method, url string, ct contentCase, authorization 
 // the path is safely recorded by. The health service, the one public path,
 // answers without a key and writes none.
 func TestUnauthenticatedAnswerIsTheProtocols(t *testing.T) {
-	e := newEnv(t, options{refusalQueue: 1 << 17})
+	// Stop writes the tens of thousands of refusals queued here and then
+	// closes the master; on a loaded machine that passes the default close
+	// deadline, which is not what this test is about (the deadline itself is
+	// held by TestStopAbandonsWhatDoesNotClose).
+	e := newEnv(t, options{refusalQueue: 1 << 17, closeT: time.Minute})
 	creds := badCredentials(t, e)
 	paths := matrixPaths(t)
 	methods := []string{http.MethodPost, http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodHead}
@@ -795,7 +799,9 @@ func TestRefusalTiming(t *testing.T) {
 	if testing.Short() {
 		t.Skip("timing needs many samples")
 	}
-	e := newEnv(t, options{refusalQueue: 1 << 15})
+	// A long close deadline, as in TestUnauthenticatedAnswerIsTheProtocols:
+	// stop writes every refusal queued here first.
+	e := newEnv(t, options{refusalQueue: 1 << 15, closeT: time.Minute})
 	hc := e.tlsClient(true)
 	paths := []string{servedProcedure, notServedMethod(t), "/acme.v9.Nothing/Do"}
 	samples := make([][]time.Duration, len(paths))
