@@ -212,11 +212,19 @@ func (t *Tenant) DiscardReception(ctx context.Context, id, reason string, now ti
 // failed reception that was retried counts as needing it, so the condition
 // also covers a chain of releases and retries: what it may leave behind is
 // a place no reception needs any more, never a place one still does.
+//
+// The second test ends in OFFSET 0 so Postgres keeps it as a test run for
+// each file, one probe of quarantine_released_places by the file's place,
+// rather than turning it into a join. Turned into a join, the planner may
+// choose to read every released record once and match them all, which it
+// prefers when its statistics say few receptions are live; released
+// records only accumulate, so that plan reads a table that grows without
+// bound for a discard of a few files, and a plan chosen by statistics can
+// change under a running server.
 const notKept = `NOT EXISTS (SELECT 1 FROM quarantine AS q WHERE q.incoming = r.incoming AND q.content_kept)
-
 	AND NOT EXISTS (SELECT 1 FROM quarantine AS q JOIN receptions AS p ON p.id = q.release_reception
 		WHERE q.incoming = r.incoming AND q.state = 'released' AND p.id <> r.reception_id
-		AND (NOT p.ended OR (p.state = 'failed' AND p.discard_reason = '')))`
+		AND (NOT p.ended OR (p.state = 'failed' AND p.discard_reason = '')) OFFSET 0)`
 
 // discardCountSQL counts the files and bytes a discard removes.
 const discardCountSQL = `SELECT count(*), coalesce(sum(r.size), 0)::bigint FROM received_files AS r WHERE r.reception_id = $1 AND ` + notKept

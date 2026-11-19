@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	v1 "github.com/amrshadid/magnetar/gen/magnetar/v1"
@@ -33,13 +34,21 @@ func TestDirectoryFaultReadsCauses(t *testing.T) {
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Below a file, Unix answers "not a directory", which the driver reports
+	// as a directory it cannot reach; Windows answers "the path is not
+	// found" (ERROR_PATH_NOT_FOUND), which Go reads as fs.ErrNotExist, so
+	// there the storage's directory is not found, as the system says.
+	belowAFile := v1.StorageFault_STORAGE_FAULT_UNREACHABLE
+	if runtime.GOOS == "windows" {
+		belowAFile = v1.StorageFault_STORAGE_FAULT_NOT_FOUND
+	}
 	for _, c := range []struct {
 		name string
 		path string
 		want v1.StorageFault
 	}{
 		{"not there", filepath.Join(base, "absent"), v1.StorageFault_STORAGE_FAULT_NOT_FOUND},
-		{"below a file", filepath.Join(file, "x"), v1.StorageFault_STORAGE_FAULT_UNREACHABLE},
+		{"below a file", filepath.Join(file, "x"), belowAFile},
 	} {
 		_, err := dir.Open(c.path)
 		if err == nil {

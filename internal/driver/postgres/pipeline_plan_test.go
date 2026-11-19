@@ -250,6 +250,19 @@ func TestPipelinePlansAtScale(t *testing.T) {
 	} {
 		check(c.what, connQuerier{conn}, c.want, c.statement, c.allowSort, c.args...)
 	}
+	// A discard's test of released places is one probe for each file. Turned
+	// into a join, it may read every released record once instead, which
+	// passes the checks above when it reads them through an index, and
+	// grows with the records a tenant has ever released.
+	for _, c := range []struct {
+		what, statement string
+		args            []any
+	}{
+		{"the files a discard removes, released places", discardedSQL, []any{"claimer", "", []byte{}, 1001}},
+		{"the count of what a discard removes, released places", discardCountSQL, []any{"rc500"}},
+	} {
+		check(c.what, connQuerier{conn}, "SubPlan", c.statement, true, c.args...)
+	}
 
 	// A claim's insert and a commit's confirmation, and the release of the
 	// claims of a reception with 100,000 of them, each run for real in a

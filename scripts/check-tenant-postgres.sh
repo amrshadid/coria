@@ -72,7 +72,7 @@ t="\"$schema\""
 m="\"$mschema\""
 echo
 echo "== the tenant's tables"
-want "tables" "audit catalog_totals instances quarantine quarantine_totals received_files receivers reception_associations receptions scans schema_migrations sessions settings storages subjects tenant_identity work" \
+want "tables" "audit catalog_totals instances quarantine quarantine_totals received_files receivers reception_associations receptions scans schema_migrations sessions settings storages subjects tenant_identity tenant_secrets work" \
 	"$(q "SELECT string_agg(table_name, ' ' ORDER BY table_name COLLATE \"C\") FROM information_schema.tables WHERE table_schema = '$schema'")"
 
 show schema_migrations "SELECT version, name, encode(checksum, 'hex') AS checksum, applied FROM $t.schema_migrations"
@@ -81,7 +81,7 @@ show settings "SELECT * FROM $t.settings ORDER BY name"
 show audit "SELECT id, at, key_id, remote_addr, method, tenant_name, object, outcome, reason, details FROM $t.audit ORDER BY at, id"
 echo
 
-want "schema_migrations rows" 2 "$(q "SELECT count(*) FROM $t.schema_migrations")"
+want "schema_migrations rows" 5 "$(q "SELECT count(*) FROM $t.schema_migrations")"
 want "the schema records the tenant's id" sample-tenant "$(q "SELECT id FROM $t.tenant_identity")"
 want "settings rows" 2 "$(q "SELECT count(*) FROM $t.settings")"
 want "audit rows" 5 "$(q "SELECT count(*) FROM $t.audit")"
@@ -98,9 +98,9 @@ want "at is timestamptz and details jsonb" "timestamp with time zone jsonb" \
 # one row each, and the rules the code relies on held by the database.
 show "the pipeline's constraints" "SELECT c.conrelid::regclass AS table_name, c.conname, pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = '$schema' AND c.conrelid::regclass::text NOT IN ('audit', 'settings', 'tenant_identity', 'schema_migrations') ORDER BY 1, 2"
 show "the pipeline's indexes" "SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = '$schema' AND tablename NOT IN ('audit', 'settings', 'tenant_identity', 'schema_migrations') ORDER BY 1, 2"
-want "the pipeline's indexes" 53 \
+want "the pipeline's indexes" 56 \
 	"$(q "SELECT count(*) FROM pg_indexes WHERE schemaname = '$schema' AND tablename NOT IN ('audit', 'settings', 'tenant_identity', 'schema_migrations')")"
-want "the instances' indexes" "instances_claimed instances_held_by instances_on_storage instances_pkey" \
+want "the instances' indexes" "instances_by_scan instances_claimed instances_held_by instances_on_storage instances_pkey" \
 	"$(q "SELECT string_agg(indexname, ' ' ORDER BY indexname COLLATE \"C\") FROM pg_indexes WHERE schemaname = '$schema' AND tablename = 'instances'")"
 want "one open reception per receiver and study, and one arrival number per study" "receptions_arrival receptions_open" \
 	"$(q "SELECT string_agg(indexname, ' ' ORDER BY indexname COLLATE \"C\") FROM pg_indexes WHERE schemaname = '$schema' AND tablename = 'receptions' AND indexdef LIKE 'CREATE UNIQUE INDEX%' AND indexname <> 'receptions_pkey'")"
