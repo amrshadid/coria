@@ -26,23 +26,37 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// CatalogOrder is the order a catalog list answers in. Each order has a
-// last key that makes it total, so a page token resumes it exactly even
-// while new rows are archived: a row archived after the first page appears
-// on a later page only if it sorts after the rows already answered.
+// CatalogOrder is the order a catalog list answers in. Each order ends
+// with a key unique among the rows it orders, so it is total, and the page
+// token carries the position of the last row answered: a page resumes
+// exactly after it even while new rows are archived, and a row archived
+// after the first page appears on a later page only if it sorts after the
+// rows already answered.
 type CatalogOrder int32
 
 const (
 	// Newest first, as CATALOG_ORDER_NEWEST.
 	CatalogOrder_CATALOG_ORDER_UNSPECIFIED CatalogOrder = 0
-	// Newest first by archive_time, and by label, then by the labels of the
-	// levels above, among rows archived at the same instant: what arrived
-	// lately is on the first page.
+	// Newest first by archive_time, and among rows archived at the same
+	// instant by the server's own id of the row, highest first: what arrived
+	// lately is on the first page. The id is internal to the tenant's
+	// database and is never answered; the page token carries it.
 	CatalogOrder_CATALOG_ORDER_NEWEST CatalogOrder = 1
-	// By label in byte order (digits, then upper case, then lower case),
-	// then by the labels of the levels above: the order a person reads a
-	// tree in.
+	// Parent first, the order a person reads a tree in: by the folded label
+	// of the subject, then of the session, then of the scan, down to the
+	// level listed, each in byte order (digits, then letters, with "-", "."
+	// and "_" where their bytes place them). Folded labels are unique at each
+	// level, so the order is total.
 	CatalogOrder_CATALOG_ORDER_LABEL CatalogOrder = 2
+	// Sessions only: by study_date, latest first, then by the server's id of
+	// the session, highest first. Sessions with no study date are not listed
+	// in this order.
+	CatalogOrder_CATALOG_ORDER_STUDY_DATE CatalogOrder = 3
+	// Scans only: by the folded form of series_description (ASCII letters in
+	// lower case), in byte order, then by the server's id of the scan,
+	// lowest first. Scans with no series description are not listed in this
+	// order.
+	CatalogOrder_CATALOG_ORDER_SERIES_DESCRIPTION CatalogOrder = 4
 )
 
 // Enum value maps for CatalogOrder.
@@ -51,11 +65,15 @@ var (
 		0: "CATALOG_ORDER_UNSPECIFIED",
 		1: "CATALOG_ORDER_NEWEST",
 		2: "CATALOG_ORDER_LABEL",
+		3: "CATALOG_ORDER_STUDY_DATE",
+		4: "CATALOG_ORDER_SERIES_DESCRIPTION",
 	}
 	CatalogOrder_value = map[string]int32{
-		"CATALOG_ORDER_UNSPECIFIED": 0,
-		"CATALOG_ORDER_NEWEST":      1,
-		"CATALOG_ORDER_LABEL":       2,
+		"CATALOG_ORDER_UNSPECIFIED":        0,
+		"CATALOG_ORDER_NEWEST":             1,
+		"CATALOG_ORDER_LABEL":              2,
+		"CATALOG_ORDER_STUDY_DATE":         3,
+		"CATALOG_ORDER_SERIES_DESCRIPTION": 4,
 	}
 )
 
@@ -502,23 +520,29 @@ func (x *Scan) GetUpdateTime() *timestamppb.Timestamp {
 	return nil
 }
 
-// ListSubjectsRequest asks for a page of a tenant's subjects. Every filter
-// given must hold for a subject to be listed.
+// ListSubjectsRequest asks for a page of a tenant's subjects. The
+// combinations an index serves:
+//
+//   - order newest (or unspecified), with start_time and end_time or
+//     without them;
+//   - order label, with label_prefix or without it.
+//
+// Any other combination is invalid.
 type ListSubjectsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tenant, by name. Required.
 	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	// Only the subjects whose label starts with this, ignoring the case of
-	// ASCII letters. Empty for every label; when given, a label or the start
-	// of one, under the label rule.
+	// Only the subjects whose folded label starts with the folded form of
+	// this. Empty for every label; when given, a label or the start of one,
+	// under the label rule. Order label only.
 	LabelPrefix string `protobuf:"bytes,2,opt,name=label_prefix,json=labelPrefix,proto3" json:"label_prefix,omitempty"`
 	// Only the subjects first archived at or after this time. Absent for no
-	// lower bound.
+	// lower bound. Order newest only.
 	StartTime *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	// Only the subjects first archived before this time. Absent for no upper
-	// bound. Must be after start_time when both are set.
+	// bound. Must be after start_time when both are set. Order newest only.
 	EndTime *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	// The order of the answer.
+	// The order of the answer: newest or label.
 	Order CatalogOrder `protobuf:"varint,5,opt,name=order,proto3,enum=coria.v1.CatalogOrder" json:"order,omitempty"`
 	// The most subjects to answer: zero means 100; at most 1000. A larger or
 	// negative value is invalid.
@@ -619,9 +643,8 @@ type ListSubjectsResponse struct {
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	// How many subjects match the request, on every page alike. Answered
 	// only when no filter is given, from the tenant's running total of its
-	// subjects, kept in the transaction of every archive; absent, meaning
-	// not known, when a filter is given, since only a count of the rows
-	// could tell.
+	// subjects; absent, meaning not known, when a filter is given, since
+	// only a count of the rows could tell.
 	TotalCount    *int64 `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3,oneof" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -779,8 +802,20 @@ func (x *GetSubjectResponse) GetSubject() *Subject {
 	return nil
 }
 
-// ListSessionsRequest asks for a page of a tenant's sessions. Every filter
-// given must hold for a session to be listed.
+// ListSessionsRequest asks for a page of a tenant's sessions. The
+// combinations an index serves:
+//
+//   - order newest (or unspecified), with at most one of subject_label,
+//     modality and receiver, and with start_time and end_time or without
+//     them;
+//   - order label, with subject_label or without it, and label_prefix
+//     only with subject_label;
+//   - order study date, with subject_label or without it, and with
+//     study_date_start and study_date_end or without them.
+//
+// Any other combination is invalid: a study date range comes with the
+// study date order, a time range with the newest order, and two of
+// subject, modality and receiver together are not served.
 type ListSessionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tenant, by name. Required.
@@ -788,34 +823,34 @@ type ListSessionsRequest struct {
 	// Only the sessions of the subject with this label. Empty for every
 	// subject.
 	SubjectLabel string `protobuf:"bytes,2,opt,name=subject_label,json=subjectLabel,proto3" json:"subject_label,omitempty"`
-	// Only the sessions whose label starts with this, ignoring the case of
-	// ASCII letters. Empty for every label; when given, a label or the start
-	// of one, under the label rule.
+	// Only the sessions whose folded label starts with the folded form of
+	// this. Empty for every label; when given, a label or the start of one,
+	// under the label rule. Order label with subject_label only.
 	LabelPrefix string `protobuf:"bytes,3,opt,name=label_prefix,json=labelPrefix,proto3" json:"label_prefix,omitempty"`
 	// Only the sessions whose study_date is on or after this date, in the
-	// form "YYYYMMDD". Empty for no lower bound. A session with no study
-	// date is not listed when either bound is given.
+	// form "YYYYMMDD". Empty for no lower bound. Order study date only.
 	StudyDateStart string `protobuf:"bytes,4,opt,name=study_date_start,json=studyDateStart,proto3" json:"study_date_start,omitempty"`
 	// Only the sessions whose study_date is on or before this date, in the
 	// form "YYYYMMDD": both bounds are inclusive, as a DICOM date range is
 	// (PS3.4 C.2.2.2.5). Empty for no upper bound. Must not be before
-	// study_date_start when both are given.
+	// study_date_start when both are given. Order study date only.
 	StudyDateEnd string `protobuf:"bytes,5,opt,name=study_date_end,json=studyDateEnd,proto3" json:"study_date_end,omitempty"`
 	// Only the sessions with a scan of this Modality (0008,0060), compared
 	// exactly, such as "MR": 1 to 16 characters of A-Z, 0-9, "_" and space
 	// (the CS value representation, PS3.5 6.2). Empty for every modality.
+	// Order newest only.
 	Modality string `protobuf:"bytes,6,opt,name=modality,proto3" json:"modality,omitempty"`
 	// Only the sessions first archived through the receiver of this name.
 	// Empty for every receiver. A name no receiver holds is not invalid: a
-	// removed receiver's sessions keep its name.
+	// removed receiver's sessions keep its name. Order newest only.
 	Receiver string `protobuf:"bytes,7,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	// Only the sessions first archived at or after this time. Absent for no
-	// lower bound.
+	// lower bound. Order newest only.
 	StartTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	// Only the sessions first archived before this time. Absent for no upper
-	// bound. Must be after start_time when both are set.
+	// bound. Must be after start_time when both are set. Order newest only.
 	EndTime *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	// The order of the answer.
+	// The order of the answer: newest, label or study date.
 	Order CatalogOrder `protobuf:"varint,10,opt,name=order,proto3,enum=coria.v1.CatalogOrder" json:"order,omitempty"`
 	// The most sessions to answer: zero means 100; at most 1000. A larger or
 	// negative value is invalid.
@@ -950,10 +985,10 @@ type ListSessionsResponse struct {
 	// The page_token that asks for the next page. Empty on the last page.
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	// How many sessions match the request, on every page alike. Answered
-	// only when no filter but subject_label is given: from the tenant's
-	// running total of its sessions with no filter, and from the subject's
-	// session_count with subject_label. Absent, meaning not known, with any
-	// other filter.
+	// only in the newest or label order with no filter but subject_label:
+	// from the tenant's running total of its sessions with no filter, and
+	// from the subject's session_count with subject_label. Absent, meaning
+	// not known, otherwise.
 	TotalCount    *int64 `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3,oneof" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1120,8 +1155,20 @@ func (x *GetSessionResponse) GetSession() *Session {
 	return nil
 }
 
-// ListScansRequest asks for a page of a tenant's scans. Every filter given
-// must hold for a scan to be listed.
+// ListScansRequest asks for a page of a tenant's scans. The combinations
+// an index serves:
+//
+//   - order newest (or unspecified), with at most one of a session
+//     (subject_label and session_label), modality and receiver, and with
+//     start_time and end_time or without them;
+//   - order label, with a subject, a session or neither, and label_prefix
+//     only with a session;
+//   - order series description, with series_description_prefix or without
+//     it, and no other filter.
+//
+// Any other combination is invalid: a subject alone comes with the label
+// order, a time range with the newest order, a description prefix with
+// the series description order.
 type ListScansRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The tenant, by name. Required.
@@ -1132,28 +1179,30 @@ type ListScansRequest struct {
 	// Only the scans of the session with this label, in the subject named by
 	// subject_label, which it needs. Empty for every session.
 	SessionLabel string `protobuf:"bytes,3,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
-	// Only the scans whose label starts with this, ignoring the case of ASCII
-	// letters. Empty for every label; when given, a label or the start of
-	// one, under the label rule.
+	// Only the scans whose folded label starts with the folded form of this.
+	// Empty for every label; when given, a label or the start of one, under
+	// the label rule. Order label with a session only.
 	LabelPrefix string `protobuf:"bytes,4,opt,name=label_prefix,json=labelPrefix,proto3" json:"label_prefix,omitempty"`
 	// Only the scans of this Modality (0008,0060), compared exactly: 1 to 16
-	// characters of A-Z, 0-9, "_" and space. Empty for every modality.
+	// characters of A-Z, 0-9, "_" and space. Empty for every modality. Order
+	// newest only.
 	Modality string `protobuf:"bytes,5,opt,name=modality,proto3" json:"modality,omitempty"`
-	// Only the scans whose Series Description (0008,103E) starts with this,
-	// ignoring the case of ASCII letters; at most 64 characters. Empty for
-	// every description. A start, not a part anywhere in the text: an index
-	// finds a start, and only a reading of every row finds a part.
+	// Only the scans whose Series Description (0008,103E), folded (ASCII
+	// letters in lower case), starts with the folded form of this; at most
+	// 64 characters. Empty for every description. A start, not a part
+	// anywhere in the text: an index finds a start, and only a reading of
+	// every row finds a part. Order series description only.
 	SeriesDescriptionPrefix string `protobuf:"bytes,6,opt,name=series_description_prefix,json=seriesDescriptionPrefix,proto3" json:"series_description_prefix,omitempty"`
 	// Only the scans first archived through the receiver of this name. Empty
-	// for every receiver.
+	// for every receiver. Order newest only.
 	Receiver string `protobuf:"bytes,7,opt,name=receiver,proto3" json:"receiver,omitempty"`
 	// Only the scans first archived at or after this time. Absent for no
-	// lower bound.
+	// lower bound. Order newest only.
 	StartTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	// Only the scans first archived before this time. Absent for no upper
-	// bound. Must be after start_time when both are set.
+	// bound. Must be after start_time when both are set. Order newest only.
 	EndTime *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	// The order of the answer.
+	// The order of the answer: newest, label or series description.
 	Order CatalogOrder `protobuf:"varint,10,opt,name=order,proto3,enum=coria.v1.CatalogOrder" json:"order,omitempty"`
 	// The most scans to answer: zero means 100; at most 1000. A larger or
 	// negative value is invalid.
@@ -1288,11 +1337,10 @@ type ListScansResponse struct {
 	// The page_token that asks for the next page. Empty on the last page.
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	// How many scans match the request, on every page alike. Answered only
-	// when no filter is given, from the tenant's running total of its scans,
-	// or when the only filter is a session (subject_label and
-	// session_label), from the session's scan_count. Absent, meaning not
-	// known, with any other filter, a subject alone included: a subject keeps
-	// no count of its scans.
+	// in the newest or label order with no filter, from the tenant's running
+	// total of its scans, or with a session alone, from the session's
+	// scan_count. Absent, meaning not known, otherwise, a subject alone
+	// included: a subject keeps no count of its scans.
 	TotalCount    *int64 `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3,oneof" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1599,11 +1647,13 @@ const file_coria_v1_catalog_proto_rawDesc = "" +
 	"\n" +
 	"scan_label\x18\x04 \x01(\tR\tscanLabel\"5\n" +
 	"\x0fGetScanResponse\x12\"\n" +
-	"\x04scan\x18\x01 \x01(\v2\x0e.coria.v1.ScanR\x04scan*`\n" +
+	"\x04scan\x18\x01 \x01(\v2\x0e.coria.v1.ScanR\x04scan*\xa4\x01\n" +
 	"\fCatalogOrder\x12\x1d\n" +
 	"\x19CATALOG_ORDER_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14CATALOG_ORDER_NEWEST\x10\x01\x12\x17\n" +
-	"\x13CATALOG_ORDER_LABEL\x10\x022\xe4\x03\n" +
+	"\x13CATALOG_ORDER_LABEL\x10\x02\x12\x1c\n" +
+	"\x18CATALOG_ORDER_STUDY_DATE\x10\x03\x12$\n" +
+	" CATALOG_ORDER_SERIES_DESCRIPTION\x10\x042\xe4\x03\n" +
 	"\x0eCatalogService\x12R\n" +
 	"\fListSubjects\x12\x1d.coria.v1.ListSubjectsRequest\x1a\x1e.coria.v1.ListSubjectsResponse\"\x03\x90\x02\x01\x12L\n" +
 	"\n" +

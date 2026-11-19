@@ -28,10 +28,10 @@ const (
 // InstanceMetadata is the header of one archived instance.
 type InstanceMetadata struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
+	// The instance's id in the tenant, as ArchivedFile.instance_id.
+	InstanceId string `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
 	// Its SOP Instance UID (0008,0018), as received.
-	SopInstanceUid string `protobuf:"bytes,1,opt,name=sop_instance_uid,json=sopInstanceUid,proto3" json:"sop_instance_uid,omitempty"`
-	// The storage key of its file, as DataService announces it.
-	Key string `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	SopInstanceUid string `protobuf:"bytes,2,opt,name=sop_instance_uid,json=sopInstanceUid,proto3" json:"sop_instance_uid,omitempty"`
 	// Its data set in the DICOM JSON model: one JSON object, keyed by tag
 	// (PS3.18 F.2), the form of one element of the array a DICOMweb metadata
 	// answer holds, so the instances of a page joined in an array, in order,
@@ -40,13 +40,17 @@ type InstanceMetadata struct {
 	// it, as in DICOMweb; its Transfer Syntax UID is transfer_syntax_uid.
 	// Empty when json_too_large is set.
 	DicomJson string `protobuf:"bytes,3,opt,name=dicom_json,json=dicomJson,proto3" json:"dicom_json,omitempty"`
-	// Whether dicom_json was left out because it is longer than 3 MiB.
+	// Whether dicom_json was left out because it is longer than 1 MiB.
 	JsonTooLarge bool `protobuf:"varint,4,opt,name=json_too_large,json=jsonTooLarge,proto3" json:"json_too_large,omitempty"`
 	// The Transfer Syntax UID (0002,0010) its file is encoded in (PS3.5
 	// Section 10), which the bytes of each BulkDataURI are in.
 	TransferSyntaxUid string `protobuf:"bytes,5,opt,name=transfer_syntax_uid,json=transferSyntaxUid,proto3" json:"transfer_syntax_uid,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Whether the values that would be bulk data were left out of
+	// dicom_json, attribute and all, because its file is in the deflated
+	// transfer syntax, where no offset names them.
+	BulkDataOmitted bool `protobuf:"varint,6,opt,name=bulk_data_omitted,json=bulkDataOmitted,proto3" json:"bulk_data_omitted,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *InstanceMetadata) Reset() {
@@ -79,16 +83,16 @@ func (*InstanceMetadata) Descriptor() ([]byte, []int) {
 	return file_coria_v1_metadata_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *InstanceMetadata) GetSopInstanceUid() string {
+func (x *InstanceMetadata) GetInstanceId() string {
 	if x != nil {
-		return x.SopInstanceUid
+		return x.InstanceId
 	}
 	return ""
 }
 
-func (x *InstanceMetadata) GetKey() string {
+func (x *InstanceMetadata) GetSopInstanceUid() string {
 	if x != nil {
-		return x.Key
+		return x.SopInstanceUid
 	}
 	return ""
 }
@@ -112,6 +116,13 @@ func (x *InstanceMetadata) GetTransferSyntaxUid() string {
 		return x.TransferSyntaxUid
 	}
 	return ""
+}
+
+func (x *InstanceMetadata) GetBulkDataOmitted() bool {
+	if x != nil {
+		return x.BulkDataOmitted
+	}
+	return false
 }
 
 // GetScanMetadataRequest names a scan and the page of its instances.
@@ -212,17 +223,17 @@ func (x *GetScanMetadataRequest) GetPageToken() string {
 // GetScanMetadataResponse is a page of a scan's headers.
 type GetScanMetadataResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The headers of this page's instances, in the order of the manifest.
+	// The headers of this page's instances, by instance id.
 	Instances []*InstanceMetadata `protobuf:"bytes,1,rep,name=instances,proto3" json:"instances,omitempty"`
 	// The page_token that asks for the next page. Empty on the last page.
 	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	// The SHA-256 of the scan's manifest when this page was read, in
 	// lowercase hexadecimal, as Scan.manifest_sha256. A page token resumes
-	// after the last instance answered, so instances archived into the scan
-	// while it is paged appear on a later page only when they sort after it:
-	// a client that sees this change from one page to the next knows the
-	// scan changed, and reads it again from the first page to have every
-	// instance.
+	// after the instance id last answered, so instances archived into the
+	// scan while it is paged appear on a later page only when they sort
+	// after it: a client that sees this change from one page to the next
+	// knows the scan changed, and reads it again from the first page to have
+	// every instance.
 	ManifestSha256 string `protobuf:"bytes,3,opt,name=manifest_sha256,json=manifestSha256,proto3" json:"manifest_sha256,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -290,11 +301,10 @@ type GetInstanceMetadataRequest struct {
 	SessionLabel string `protobuf:"bytes,3,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
 	// The scan's label. Required.
 	ScanLabel string `protobuf:"bytes,4,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
-	// The instance's SOP Instance UID (0008,0018), as received. Required; a
-	// UID of 1 to 64 characters of digits and dots (PS3.5 9.1).
-	SopInstanceUid string `protobuf:"bytes,5,opt,name=sop_instance_uid,json=sopInstanceUid,proto3" json:"sop_instance_uid,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The instance's id, as ArchivedFile.instance_id. Required.
+	InstanceId    string `protobuf:"bytes,5,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetInstanceMetadataRequest) Reset() {
@@ -355,9 +365,9 @@ func (x *GetInstanceMetadataRequest) GetScanLabel() string {
 	return ""
 }
 
-func (x *GetInstanceMetadataRequest) GetSopInstanceUid() string {
+func (x *GetInstanceMetadataRequest) GetInstanceId() string {
 	if x != nil {
-		return x.SopInstanceUid
+		return x.InstanceId
 	}
 	return ""
 }
@@ -412,14 +422,16 @@ var File_coria_v1_metadata_proto protoreflect.FileDescriptor
 
 const file_coria_v1_metadata_proto_rawDesc = "" +
 	"\n" +
-	"\x17coria/v1/metadata.proto\x12\bcoria.v1\"\xc3\x01\n" +
-	"\x10InstanceMetadata\x12(\n" +
-	"\x10sop_instance_uid\x18\x01 \x01(\tR\x0esopInstanceUid\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1d\n" +
+	"\x17coria/v1/metadata.proto\x12\bcoria.v1\"\xfe\x01\n" +
+	"\x10InstanceMetadata\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12(\n" +
+	"\x10sop_instance_uid\x18\x02 \x01(\tR\x0esopInstanceUid\x12\x1d\n" +
 	"\n" +
 	"dicom_json\x18\x03 \x01(\tR\tdicomJson\x12$\n" +
 	"\x0ejson_too_large\x18\x04 \x01(\bR\fjsonTooLarge\x12.\n" +
-	"\x13transfer_syntax_uid\x18\x05 \x01(\tR\x11transferSyntaxUid\"\xd5\x01\n" +
+	"\x13transfer_syntax_uid\x18\x05 \x01(\tR\x11transferSyntaxUid\x12*\n" +
+	"\x11bulk_data_omitted\x18\x06 \x01(\bR\x0fbulkDataOmitted\"\xd5\x01\n" +
 	"\x16GetScanMetadataRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12#\n" +
 	"\rsubject_label\x18\x02 \x01(\tR\fsubjectLabel\x12#\n" +
@@ -432,14 +444,15 @@ const file_coria_v1_metadata_proto_rawDesc = "" +
 	"\x17GetScanMetadataResponse\x128\n" +
 	"\tinstances\x18\x01 \x03(\v2\x1a.coria.v1.InstanceMetadataR\tinstances\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12'\n" +
-	"\x0fmanifest_sha256\x18\x03 \x01(\tR\x0emanifestSha256\"\xc7\x01\n" +
+	"\x0fmanifest_sha256\x18\x03 \x01(\tR\x0emanifestSha256\"\xbe\x01\n" +
 	"\x1aGetInstanceMetadataRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12#\n" +
 	"\rsubject_label\x18\x02 \x01(\tR\fsubjectLabel\x12#\n" +
 	"\rsession_label\x18\x03 \x01(\tR\fsessionLabel\x12\x1d\n" +
 	"\n" +
-	"scan_label\x18\x04 \x01(\tR\tscanLabel\x12(\n" +
-	"\x10sop_instance_uid\x18\x05 \x01(\tR\x0esopInstanceUid\"U\n" +
+	"scan_label\x18\x04 \x01(\tR\tscanLabel\x12\x1f\n" +
+	"\vinstance_id\x18\x05 \x01(\tR\n" +
+	"instanceId\"U\n" +
 	"\x1bGetInstanceMetadataResponse\x126\n" +
 	"\binstance\x18\x01 \x01(\v2\x1a.coria.v1.InstanceMetadataR\binstance2\xd7\x01\n" +
 	"\x0fMetadataService\x12[\n" +

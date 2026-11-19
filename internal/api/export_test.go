@@ -35,3 +35,14 @@ func (Pending) Procedures() []string {
 	}
 	return out
 }
+
+// DownloadMethod is the method the audit entry of a plain HTTP download
+// names.
+const DownloadMethod = downloadMethod
+
+// PendingDownload is the requirement and the audit facts of a plain HTTP
+// download of an instance with these parts of its path, and whether it
+// carries a Range and a window.
+func PendingDownload(tenant, subject, session, scan, instance string, ranged, window bool) (access.Requirement, access.Request) {
+	return pendingDownload(download{Tenant: tenant, Subject: subject, Session: session, Scan: scan, Instance: instance, Ranged: ranged, Window: window})
+}

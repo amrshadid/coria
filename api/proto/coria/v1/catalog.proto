@@ -24,36 +24,50 @@ import "google/protobuf/timestamp.proto";
 // level never differ only in the case of their letters, so a label asked
 // for in another case is not found rather than taken as another's.
 //
-// The UIDs this service answers are the ones received, as the sender wrote
-// them. When a later version replaces identifiers at reception, the
-// archive's own UIDs will be separate fields. No method filters by a UID:
-// looking a study up by an identifier the caller already holds is a search
-// for a person's data, which ReceptionService keeps to an operator.
+// What a reader reads. Until a later version de-identifies files at
+// reception, the archive holds what the senders sent, and a reader of a
+// tenant reads it as it was received, identifying data included: the UIDs
+// this service answers are the ones received, and a study date or a series
+// description is the sender's. When identifiers are replaced at reception,
+// the archive's own UIDs will be separate fields. No method filters by a
+// UID: no index of the catalog serves such a search, and DICOMweb's search
+// will be the place for one.
 //
-// A list is paged as every list of the package is, and is ordered by
-// CatalogOrder. Every filter is answered from an index of the tenant's
-// database, so a page costs the same at ten thousand rows as at a hundred
-// million. A list answers how many rows match only when an index or a
-// running total gives that number without counting rows (total_count);
-// otherwise the number is absent, which means not known, never zero. The
-// counts and sizes on a subject, a session and a scan are such running
-// totals, kept in the transaction that archives each file, so they are
-// read, never counted, and equal a count of the files after each archive.
+// Lists and indexes. A list is paged as every list of the package is, in
+// the order CatalogOrder names, and answers only the combinations of
+// filters and order that an index of the tenant's database serves in that
+// order, which each list request names; any other combination is refused
+// as invalid, with a message that names the ones served, rather than
+// answered by reading the table. So a page costs about the same at ten
+// thousand rows as at a hundred million, and a client learns at once what
+// cannot be asked rather than waiting for it. A label prefix is compared
+// with the labels' folded form (ASCII letters in lower case), the form the
+// catalog keeps unique at each level, so a prefix is served by the same
+// index that keeps labels unique.
+//
+// Counts. A list answers how many rows match only when a running total
+// gives that number without counting rows (total_count); otherwise the
+// number is absent, which means not known, never zero. The counts and
+// sizes on a subject, a session and a scan are such running totals, kept
+// in the transaction that archives each file, so they are read, never
+// counted, and equal a count of the files after each archive.
 //
 // Every method acts inside one tenant, named by the request's tenant field,
 // so a request into a tenant that is not ready is answered UNAVAILABLE.
 service CatalogService {
-  // ListSubjects answers a page of a tenant's subjects, filtered by label
-  // and by when they were first archived.
+  // ListSubjects answers a page of a tenant's subjects, newest first or by
+  // label, filtered by label or by when they were first archived.
   //
   // Role: reader on the tenant.
   // Audit: one entry in the tenant's log, with the filters and the order in
-  // details.
+  // details; a label prefix that is not the start of a valid label is
+  // recorded as "invalid".
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
-  // does not exist, for a caller who may not list every tenant), invalid,
-  // not found (a tenant that does not exist, for a caller who may list every
-  // tenant), unavailable (the tenant's database does not answer, or the
-  // tenant is not ready).
+  // does not exist, for a caller who may not list every tenant), invalid
+  // (also a combination of filters and order no index serves), not found
+  // (a tenant that does not exist, for a caller who may list every tenant),
+  // unavailable (the tenant's database does not answer, or the tenant is
+  // not ready).
   rpc ListSubjects(ListSubjectsRequest) returns (ListSubjectsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -62,7 +76,7 @@ service CatalogService {
   //
   // Role: reader on the tenant.
   // Audit: one entry in the tenant's log, with the subject's label as its
-  // object.
+  // object, or "invalid" for a value that is not a valid label.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid,
   // not found (the tenant has no subject with that label; a tenant that
@@ -72,19 +86,20 @@ service CatalogService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
-  // ListSessions answers a page of a tenant's sessions, of one subject or
-  // of every subject, filtered by label, study date, modality, receiver and
-  // when they were first archived.
+  // ListSessions answers a page of a tenant's sessions, newest first, by
+  // label or by study date, of one subject or of every subject, filtered
+  // as ListSessionsRequest says.
   //
   // Role: reader on the tenant.
   // Audit: one entry in the tenant's log, with the subject's label as its
-  // object when one is given, and the filters and the order in details.
+  // object when one is given, and the filters and the order in details; a
+  // label or a label prefix that is not valid is recorded as "invalid".
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
-  // does not exist, for a caller who may not list every tenant), invalid,
-  // not found (the tenant has no subject with the label given; a tenant
-  // that does not exist, for a caller who may list every tenant),
-  // unavailable (the tenant's database does not answer, or the tenant is
-  // not ready).
+  // does not exist, for a caller who may not list every tenant), invalid
+  // (also a combination of filters and order no index serves), not found
+  // (the tenant has no subject with the label given; a tenant that does not
+  // exist, for a caller who may list every tenant), unavailable (the
+  // tenant's database does not answer, or the tenant is not ready).
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -93,7 +108,8 @@ service CatalogService {
   //
   // Role: reader on the tenant.
   // Audit: one entry in the tenant's log, with the session's path,
-  // "<subject>/<session>", as its object.
+  // "<subject>/<session>", as its object; a label that is not valid is
+  // written "invalid" in it.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid,
   // not found (the tenant has no such subject, or the subject no session
@@ -104,19 +120,22 @@ service CatalogService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 
-  // ListScans answers a page of a tenant's scans, of one session, of one
-  // subject or of every subject, filtered by label, modality, series
-  // description, receiver and when they were first archived.
+  // ListScans answers a page of a tenant's scans, newest first, by label
+  // or by series description, of one session, of one subject or of every
+  // subject, filtered as ListScansRequest says.
   //
   // Role: reader on the tenant.
   // Audit: one entry in the tenant's log, with the path of the subject or
-  // session given as its object, and the filters and the order in details.
+  // session given as its object, and the filters and the order in details;
+  // a label or a label prefix that is not valid is recorded as "invalid",
+  // and a series description prefix only as present.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
-  // (also a session label without a subject label), not found (the tenant
-  // has no such subject, or the subject no such session; a tenant that does
-  // not exist, for a caller who may list every tenant), unavailable (the
-  // tenant's database does not answer, or the tenant is not ready).
+  // (also a session label without a subject label, and a combination of
+  // filters and order no index serves), not found (the tenant has no such
+  // subject, or the subject no such session; a tenant that does not exist,
+  // for a caller who may list every tenant), unavailable (the tenant's
+  // database does not answer, or the tenant is not ready).
   rpc ListScans(ListScansRequest) returns (ListScansResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -125,7 +144,8 @@ service CatalogService {
   //
   // Role: reader on the tenant.
   // Audit: one entry in the tenant's log, with the scan's path,
-  // "<subject>/<session>/<scan>", as its object.
+  // "<subject>/<session>/<scan>", as its object; a label that is not valid
+  // is written "invalid" in it.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid,
   // not found (the tenant has no such subject, the subject no such session,
@@ -137,23 +157,39 @@ service CatalogService {
   }
 }
 
-// CatalogOrder is the order a catalog list answers in. Each order has a
-// last key that makes it total, so a page token resumes it exactly even
-// while new rows are archived: a row archived after the first page appears
-// on a later page only if it sorts after the rows already answered.
+// CatalogOrder is the order a catalog list answers in. Each order ends
+// with a key unique among the rows it orders, so it is total, and the page
+// token carries the position of the last row answered: a page resumes
+// exactly after it even while new rows are archived, and a row archived
+// after the first page appears on a later page only if it sorts after the
+// rows already answered.
 enum CatalogOrder {
   // Newest first, as CATALOG_ORDER_NEWEST.
   CATALOG_ORDER_UNSPECIFIED = 0;
 
-  // Newest first by archive_time, and by label, then by the labels of the
-  // levels above, among rows archived at the same instant: what arrived
-  // lately is on the first page.
+  // Newest first by archive_time, and among rows archived at the same
+  // instant by the server's own id of the row, highest first: what arrived
+  // lately is on the first page. The id is internal to the tenant's
+  // database and is never answered; the page token carries it.
   CATALOG_ORDER_NEWEST = 1;
 
-  // By label in byte order (digits, then upper case, then lower case),
-  // then by the labels of the levels above: the order a person reads a
-  // tree in.
+  // Parent first, the order a person reads a tree in: by the folded label
+  // of the subject, then of the session, then of the scan, down to the
+  // level listed, each in byte order (digits, then letters, with "-", "."
+  // and "_" where their bytes place them). Folded labels are unique at each
+  // level, so the order is total.
   CATALOG_ORDER_LABEL = 2;
+
+  // Sessions only: by study_date, latest first, then by the server's id of
+  // the session, highest first. Sessions with no study date are not listed
+  // in this order.
+  CATALOG_ORDER_STUDY_DATE = 3;
+
+  // Scans only: by the folded form of series_description (ASCII letters in
+  // lower case), in byte order, then by the server's id of the scan,
+  // lowest first. Scans with no series description are not listed in this
+  // order.
+  CATALOG_ORDER_SERIES_DESCRIPTION = 4;
 }
 
 // Subject is a person or an animal studied, as the catalog holds it.
@@ -278,26 +314,32 @@ message Scan {
   google.protobuf.Timestamp update_time = 14;
 }
 
-// ListSubjectsRequest asks for a page of a tenant's subjects. Every filter
-// given must hold for a subject to be listed.
+// ListSubjectsRequest asks for a page of a tenant's subjects. The
+// combinations an index serves:
+//
+//   - order newest (or unspecified), with start_time and end_time or
+//     without them;
+//   - order label, with label_prefix or without it.
+//
+// Any other combination is invalid.
 message ListSubjectsRequest {
   // The tenant, by name. Required.
   string tenant = 1;
 
-  // Only the subjects whose label starts with this, ignoring the case of
-  // ASCII letters. Empty for every label; when given, a label or the start
-  // of one, under the label rule.
+  // Only the subjects whose folded label starts with the folded form of
+  // this. Empty for every label; when given, a label or the start of one,
+  // under the label rule. Order label only.
   string label_prefix = 2;
 
   // Only the subjects first archived at or after this time. Absent for no
-  // lower bound.
+  // lower bound. Order newest only.
   google.protobuf.Timestamp start_time = 3;
 
   // Only the subjects first archived before this time. Absent for no upper
-  // bound. Must be after start_time when both are set.
+  // bound. Must be after start_time when both are set. Order newest only.
   google.protobuf.Timestamp end_time = 4;
 
-  // The order of the answer.
+  // The order of the answer: newest or label.
   CatalogOrder order = 5;
 
   // The most subjects to answer: zero means 100; at most 1000. A larger or
@@ -320,9 +362,8 @@ message ListSubjectsResponse {
 
   // How many subjects match the request, on every page alike. Answered
   // only when no filter is given, from the tenant's running total of its
-  // subjects, kept in the transaction of every archive; absent, meaning
-  // not known, when a filter is given, since only a count of the rows
-  // could tell.
+  // subjects; absent, meaning not known, when a filter is given, since
+  // only a count of the rows could tell.
   optional int64 total_count = 3;
 }
 
@@ -341,8 +382,20 @@ message GetSubjectResponse {
   Subject subject = 1;
 }
 
-// ListSessionsRequest asks for a page of a tenant's sessions. Every filter
-// given must hold for a session to be listed.
+// ListSessionsRequest asks for a page of a tenant's sessions. The
+// combinations an index serves:
+//
+//   - order newest (or unspecified), with at most one of subject_label,
+//     modality and receiver, and with start_time and end_time or without
+//     them;
+//   - order label, with subject_label or without it, and label_prefix
+//     only with subject_label;
+//   - order study date, with subject_label or without it, and with
+//     study_date_start and study_date_end or without them.
+//
+// Any other combination is invalid: a study date range comes with the
+// study date order, a time range with the newest order, and two of
+// subject, modality and receiver together are not served.
 message ListSessionsRequest {
   // The tenant, by name. Required.
   string tenant = 1;
@@ -351,41 +404,41 @@ message ListSessionsRequest {
   // subject.
   string subject_label = 2;
 
-  // Only the sessions whose label starts with this, ignoring the case of
-  // ASCII letters. Empty for every label; when given, a label or the start
-  // of one, under the label rule.
+  // Only the sessions whose folded label starts with the folded form of
+  // this. Empty for every label; when given, a label or the start of one,
+  // under the label rule. Order label with subject_label only.
   string label_prefix = 3;
 
   // Only the sessions whose study_date is on or after this date, in the
-  // form "YYYYMMDD". Empty for no lower bound. A session with no study
-  // date is not listed when either bound is given.
+  // form "YYYYMMDD". Empty for no lower bound. Order study date only.
   string study_date_start = 4;
 
   // Only the sessions whose study_date is on or before this date, in the
   // form "YYYYMMDD": both bounds are inclusive, as a DICOM date range is
   // (PS3.4 C.2.2.2.5). Empty for no upper bound. Must not be before
-  // study_date_start when both are given.
+  // study_date_start when both are given. Order study date only.
   string study_date_end = 5;
 
   // Only the sessions with a scan of this Modality (0008,0060), compared
   // exactly, such as "MR": 1 to 16 characters of A-Z, 0-9, "_" and space
   // (the CS value representation, PS3.5 6.2). Empty for every modality.
+  // Order newest only.
   string modality = 6;
 
   // Only the sessions first archived through the receiver of this name.
   // Empty for every receiver. A name no receiver holds is not invalid: a
-  // removed receiver's sessions keep its name.
+  // removed receiver's sessions keep its name. Order newest only.
   string receiver = 7;
 
   // Only the sessions first archived at or after this time. Absent for no
-  // lower bound.
+  // lower bound. Order newest only.
   google.protobuf.Timestamp start_time = 8;
 
   // Only the sessions first archived before this time. Absent for no upper
-  // bound. Must be after start_time when both are set.
+  // bound. Must be after start_time when both are set. Order newest only.
   google.protobuf.Timestamp end_time = 9;
 
-  // The order of the answer.
+  // The order of the answer: newest, label or study date.
   CatalogOrder order = 10;
 
   // The most sessions to answer: zero means 100; at most 1000. A larger or
@@ -407,10 +460,10 @@ message ListSessionsResponse {
   string next_page_token = 2;
 
   // How many sessions match the request, on every page alike. Answered
-  // only when no filter but subject_label is given: from the tenant's
-  // running total of its sessions with no filter, and from the subject's
-  // session_count with subject_label. Absent, meaning not known, with any
-  // other filter.
+  // only in the newest or label order with no filter but subject_label:
+  // from the tenant's running total of its sessions with no filter, and
+  // from the subject's session_count with subject_label. Absent, meaning
+  // not known, otherwise.
   optional int64 total_count = 3;
 }
 
@@ -432,8 +485,20 @@ message GetSessionResponse {
   Session session = 1;
 }
 
-// ListScansRequest asks for a page of a tenant's scans. Every filter given
-// must hold for a scan to be listed.
+// ListScansRequest asks for a page of a tenant's scans. The combinations
+// an index serves:
+//
+//   - order newest (or unspecified), with at most one of a session
+//     (subject_label and session_label), modality and receiver, and with
+//     start_time and end_time or without them;
+//   - order label, with a subject, a session or neither, and label_prefix
+//     only with a session;
+//   - order series description, with series_description_prefix or without
+//     it, and no other filter.
+//
+// Any other combination is invalid: a subject alone comes with the label
+// order, a time range with the newest order, a description prefix with
+// the series description order.
 message ListScansRequest {
   // The tenant, by name. Required.
   string tenant = 1;
@@ -446,34 +511,36 @@ message ListScansRequest {
   // subject_label, which it needs. Empty for every session.
   string session_label = 3;
 
-  // Only the scans whose label starts with this, ignoring the case of ASCII
-  // letters. Empty for every label; when given, a label or the start of
-  // one, under the label rule.
+  // Only the scans whose folded label starts with the folded form of this.
+  // Empty for every label; when given, a label or the start of one, under
+  // the label rule. Order label with a session only.
   string label_prefix = 4;
 
   // Only the scans of this Modality (0008,0060), compared exactly: 1 to 16
-  // characters of A-Z, 0-9, "_" and space. Empty for every modality.
+  // characters of A-Z, 0-9, "_" and space. Empty for every modality. Order
+  // newest only.
   string modality = 5;
 
-  // Only the scans whose Series Description (0008,103E) starts with this,
-  // ignoring the case of ASCII letters; at most 64 characters. Empty for
-  // every description. A start, not a part anywhere in the text: an index
-  // finds a start, and only a reading of every row finds a part.
+  // Only the scans whose Series Description (0008,103E), folded (ASCII
+  // letters in lower case), starts with the folded form of this; at most
+  // 64 characters. Empty for every description. A start, not a part
+  // anywhere in the text: an index finds a start, and only a reading of
+  // every row finds a part. Order series description only.
   string series_description_prefix = 6;
 
   // Only the scans first archived through the receiver of this name. Empty
-  // for every receiver.
+  // for every receiver. Order newest only.
   string receiver = 7;
 
   // Only the scans first archived at or after this time. Absent for no
-  // lower bound.
+  // lower bound. Order newest only.
   google.protobuf.Timestamp start_time = 8;
 
   // Only the scans first archived before this time. Absent for no upper
-  // bound. Must be after start_time when both are set.
+  // bound. Must be after start_time when both are set. Order newest only.
   google.protobuf.Timestamp end_time = 9;
 
-  // The order of the answer.
+  // The order of the answer: newest, label or series description.
   CatalogOrder order = 10;
 
   // The most scans to answer: zero means 100; at most 1000. A larger or
@@ -495,11 +562,10 @@ message ListScansResponse {
   string next_page_token = 2;
 
   // How many scans match the request, on every page alike. Answered only
-  // when no filter is given, from the tenant's running total of its scans,
-  // or when the only filter is a session (subject_label and
-  // session_label), from the session's scan_count. Absent, meaning not
-  // known, with any other filter, a subject alone included: a subject keeps
-  // no count of its scans.
+  // in the newest or label order with no filter, from the tenant's running
+  // total of its scans, or with a session alone, from the session's
+  // scan_count. Absent, meaning not known, otherwise, a subject alone
+  // included: a subject keeps no count of its scans.
   optional int64 total_count = 3;
 }
 

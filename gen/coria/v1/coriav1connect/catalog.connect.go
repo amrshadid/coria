@@ -96,48 +96,52 @@ var (
 
 // CatalogServiceClient is a client for the coria.v1.CatalogService service.
 type CatalogServiceClient interface {
-	// ListSubjects answers a page of a tenant's subjects, filtered by label
-	// and by when they were first archived.
+	// ListSubjects answers a page of a tenant's subjects, newest first or by
+	// label, filtered by label or by when they were first archived.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the filters and the order in
-	// details.
+	// details; a label prefix that is not the start of a valid label is
+	// recorded as "invalid".
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (a tenant that does not exist, for a caller who may list every
-	// tenant), unavailable (the tenant's database does not answer, or the
-	// tenant is not ready).
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a combination of filters and order no index serves), not found
+	// (a tenant that does not exist, for a caller who may list every tenant),
+	// unavailable (the tenant's database does not answer, or the tenant is
+	// not ready).
 	ListSubjects(context.Context, *v1.ListSubjectsRequest) (*v1.ListSubjectsResponse, error)
 	// GetSubject answers one subject.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the subject's label as its
-	// object.
+	// object, or "invalid" for a value that is not a valid label.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no subject with that label; a tenant that
 	// does not exist, for a caller who may list every tenant), unavailable
 	// (the tenant's database does not answer, or the tenant is not ready).
 	GetSubject(context.Context, *v1.GetSubjectRequest) (*v1.GetSubjectResponse, error)
-	// ListSessions answers a page of a tenant's sessions, of one subject or
-	// of every subject, filtered by label, study date, modality, receiver and
-	// when they were first archived.
+	// ListSessions answers a page of a tenant's sessions, newest first, by
+	// label or by study date, of one subject or of every subject, filtered
+	// as ListSessionsRequest says.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the subject's label as its
-	// object when one is given, and the filters and the order in details.
+	// object when one is given, and the filters and the order in details; a
+	// label or a label prefix that is not valid is recorded as "invalid".
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (the tenant has no subject with the label given; a tenant
-	// that does not exist, for a caller who may list every tenant),
-	// unavailable (the tenant's database does not answer, or the tenant is
-	// not ready).
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a combination of filters and order no index serves), not found
+	// (the tenant has no subject with the label given; a tenant that does not
+	// exist, for a caller who may list every tenant), unavailable (the
+	// tenant's database does not answer, or the tenant is not ready).
 	ListSessions(context.Context, *v1.ListSessionsRequest) (*v1.ListSessionsResponse, error)
 	// GetSession answers one session.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the session's path,
-	// "<subject>/<session>", as its object.
+	// "<subject>/<session>", as its object; a label that is not valid is
+	// written "invalid" in it.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no such subject, or the subject no session
@@ -145,25 +149,29 @@ type CatalogServiceClient interface {
 	// list every tenant), unavailable (the tenant's database does not answer,
 	// or the tenant is not ready).
 	GetSession(context.Context, *v1.GetSessionRequest) (*v1.GetSessionResponse, error)
-	// ListScans answers a page of a tenant's scans, of one session, of one
-	// subject or of every subject, filtered by label, modality, series
-	// description, receiver and when they were first archived.
+	// ListScans answers a page of a tenant's scans, newest first, by label
+	// or by series description, of one session, of one subject or of every
+	// subject, filtered as ListScansRequest says.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the path of the subject or
-	// session given as its object, and the filters and the order in details.
+	// session given as its object, and the filters and the order in details;
+	// a label or a label prefix that is not valid is recorded as "invalid",
+	// and a series description prefix only as present.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a session label without a subject label), not found (the tenant
-	// has no such subject, or the subject no such session; a tenant that does
-	// not exist, for a caller who may list every tenant), unavailable (the
-	// tenant's database does not answer, or the tenant is not ready).
+	// (also a session label without a subject label, and a combination of
+	// filters and order no index serves), not found (the tenant has no such
+	// subject, or the subject no such session; a tenant that does not exist,
+	// for a caller who may list every tenant), unavailable (the tenant's
+	// database does not answer, or the tenant is not ready).
 	ListScans(context.Context, *v1.ListScansRequest) (*v1.ListScansResponse, error)
 	// GetScan answers one scan.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the scan's path,
-	// "<subject>/<session>/<scan>", as its object.
+	// "<subject>/<session>/<scan>", as its object; a label that is not valid
+	// is written "invalid" in it.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no such subject, the subject no such session,
@@ -181,48 +189,52 @@ func NewCatalogServiceClient(client *connect.Client) CatalogServiceClient {
 
 // CatalogServiceHandler is an implementation of the coria.v1.CatalogService service.
 type CatalogServiceHandler interface {
-	// ListSubjects answers a page of a tenant's subjects, filtered by label
-	// and by when they were first archived.
+	// ListSubjects answers a page of a tenant's subjects, newest first or by
+	// label, filtered by label or by when they were first archived.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the filters and the order in
-	// details.
+	// details; a label prefix that is not the start of a valid label is
+	// recorded as "invalid".
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (a tenant that does not exist, for a caller who may list every
-	// tenant), unavailable (the tenant's database does not answer, or the
-	// tenant is not ready).
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a combination of filters and order no index serves), not found
+	// (a tenant that does not exist, for a caller who may list every tenant),
+	// unavailable (the tenant's database does not answer, or the tenant is
+	// not ready).
 	ListSubjects(context.Context, *v1.ListSubjectsRequest) (*v1.ListSubjectsResponse, error)
 	// GetSubject answers one subject.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the subject's label as its
-	// object.
+	// object, or "invalid" for a value that is not a valid label.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no subject with that label; a tenant that
 	// does not exist, for a caller who may list every tenant), unavailable
 	// (the tenant's database does not answer, or the tenant is not ready).
 	GetSubject(context.Context, *v1.GetSubjectRequest) (*v1.GetSubjectResponse, error)
-	// ListSessions answers a page of a tenant's sessions, of one subject or
-	// of every subject, filtered by label, study date, modality, receiver and
-	// when they were first archived.
+	// ListSessions answers a page of a tenant's sessions, newest first, by
+	// label or by study date, of one subject or of every subject, filtered
+	// as ListSessionsRequest says.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the subject's label as its
-	// object when one is given, and the filters and the order in details.
+	// object when one is given, and the filters and the order in details; a
+	// label or a label prefix that is not valid is recorded as "invalid".
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (the tenant has no subject with the label given; a tenant
-	// that does not exist, for a caller who may list every tenant),
-	// unavailable (the tenant's database does not answer, or the tenant is
-	// not ready).
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also a combination of filters and order no index serves), not found
+	// (the tenant has no subject with the label given; a tenant that does not
+	// exist, for a caller who may list every tenant), unavailable (the
+	// tenant's database does not answer, or the tenant is not ready).
 	ListSessions(context.Context, *v1.ListSessionsRequest) (*v1.ListSessionsResponse, error)
 	// GetSession answers one session.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the session's path,
-	// "<subject>/<session>", as its object.
+	// "<subject>/<session>", as its object; a label that is not valid is
+	// written "invalid" in it.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no such subject, or the subject no session
@@ -230,25 +242,29 @@ type CatalogServiceHandler interface {
 	// list every tenant), unavailable (the tenant's database does not answer,
 	// or the tenant is not ready).
 	GetSession(context.Context, *v1.GetSessionRequest) (*v1.GetSessionResponse, error)
-	// ListScans answers a page of a tenant's scans, of one session, of one
-	// subject or of every subject, filtered by label, modality, series
-	// description, receiver and when they were first archived.
+	// ListScans answers a page of a tenant's scans, newest first, by label
+	// or by series description, of one session, of one subject or of every
+	// subject, filtered as ListScansRequest says.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the path of the subject or
-	// session given as its object, and the filters and the order in details.
+	// session given as its object, and the filters and the order in details;
+	// a label or a label prefix that is not valid is recorded as "invalid",
+	// and a series description prefix only as present.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a session label without a subject label), not found (the tenant
-	// has no such subject, or the subject no such session; a tenant that does
-	// not exist, for a caller who may list every tenant), unavailable (the
-	// tenant's database does not answer, or the tenant is not ready).
+	// (also a session label without a subject label, and a combination of
+	// filters and order no index serves), not found (the tenant has no such
+	// subject, or the subject no such session; a tenant that does not exist,
+	// for a caller who may list every tenant), unavailable (the tenant's
+	// database does not answer, or the tenant is not ready).
 	ListScans(context.Context, *v1.ListScansRequest) (*v1.ListScansResponse, error)
 	// GetScan answers one scan.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the scan's path,
-	// "<subject>/<session>/<scan>", as its object.
+	// "<subject>/<session>/<scan>", as its object; a label that is not valid
+	// is written "invalid" in it.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no such subject, the subject no such session,

@@ -44,61 +44,66 @@ var (
 
 // DataServiceClient is a client for the coria.v1.DataService service.
 type DataServiceClient interface {
-	// ReadFiles streams the files of one instance, one scan, one session or
-	// one subject, in the order of their storage keys: each file's
-	// announcement (a ReadFilesResponse with file set), then its bytes in
-	// order (each with chunk set), then the next file. A file's chunks hold
-	// its bytes from the first to the last, their offsets following on with
-	// no gap, and the last ends at its size; a file of size zero has no
-	// chunk. A chunk holds at most 1 MiB in this version; a client accepts
-	// any chunk of up to 3 MiB, so the server may send larger ones later
-	// without a change of the contract, always under the 4 MB a stock gRPC
-	// client accepts.
+	// ReadFiles streams the instances of one instance, one scan, one session
+	// or one subject, in the order of the tuple (session label, scan label,
+	// instance id), each label folded (ASCII letters in lower case) and each
+	// part compared in byte order; the levels a request names are the same
+	// for every instance, so a scan's instances come by instance id. The
+	// instances of each scan are preceded by a marker of the scan (a
+	// ReadFilesResponse with scan set), and each instance by its
+	// announcement (with file set), then its bytes in order (each with chunk
+	// set). An instance's chunks hold its bytes from the first to the last,
+	// their offsets following on with no gap, and the last ends at its
+	// length; an instance of length zero has no chunk. A chunk holds at most
+	// 1 MiB in this version; a client accepts any chunk of up to 3 MiB, so
+	// the server may send larger ones later without a change of the
+	// contract, always under the 4 MB a stock gRPC client accepts.
 	//
-	// The files are those the catalog holds when the stream reaches each
-	// scan: a file archived into a scan the stream has passed is not sent. A
-	// stream that ends before the last file (the client went away, the
-	// server stopped, a storage stopped answering) is resumed by a new call
-	// with start_after set to the key of the last file the client received
-	// whole and checked; a call with announce_only set lists the files
-	// without their bytes, to compare a copy held elsewhere.
+	// The instances of a scan are those its manifest lists when the stream
+	// reaches the scan, and the scan's marker carries that manifest's
+	// SHA-256: a client that compares it with the one it held, or with
+	// Scan.manifest_sha256 of a listing, sees when a scan changed behind its
+	// position, and reads that scan again. A stream that ends before the
+	// last instance (the client went away, the server stopped, a storage
+	// stopped answering) is resumed by a new call with start_after set to the
+	// position of the last instance the client received whole and checked:
+	// the stream goes on from the first instance after that position in the
+	// order above, whether or not that instance is still held. A call with
+	// announce_only set sends the markers and announcements without the
+	// bytes, to compare a copy held elsewhere.
 	//
 	// The caller's key and grant are checked again at least every 15 seconds
 	// while the stream is open: a key revoked or expired, or a grant removed,
 	// ends the stream with the answer a new call would get.
 	//
-	// An instance is named inside its scan, so a caller must already hold
-	// the archive's labels of the scan; its SOP Instance UID only picks one
-	// of the scan's instances, and is not a search of the tenant by an
-	// identifier.
-	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log when the stream opens, with the
 	// path asked for ("<subject>", "<subject>/<session>" or
-	// "<subject>/<session>/<scan>") as its object, and in details whether an
-	// instance, start_after and announce_only were given (an instance's UID
-	// and a key are recorded only as present, since each holds an identifier
-	// as received, which no log holds); and one when it ends, with how many
-	// files and bytes it sent and how it ended.
+	// "<subject>/<session>/<scan>", a label that is not valid written
+	// "invalid") as its object, and in details whether an instance and
+	// start_after were given, and announce_only (an instance id is recorded
+	// only as present, since in this version it holds an identifier as
+	// received, which no log holds); and one when it ends, with how many
+	// instances and bytes it sent and how it ended.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a level named without the levels above it, a start_after that is
-	// not a key of what is asked for), not found (the tenant has no such
-	// subject, session or scan, or the scan no instance with that SOP
-	// Instance UID; a tenant that does not exist, for a caller who may list
+	// (also a level named without the levels above it, a start_after that
+	// does not name a position inside what is asked for), not found (the
+	// tenant has no such subject, session or scan, or the scan no instance
+	// with that id; a tenant that does not exist, for a caller who may list
 	// every tenant), unavailable (the tenant's database or a storage does
 	// not answer, when the stream opens or while it is open, or the tenant
-	// is not ready; the client resumes with start_after), data loss (a file
-	// is missing from its storage, or its bytes do not match the SHA-256 of
-	// its manifest; the message names the file's scan, and the bytes of that
-	// file already sent are not to be kept), resource exhausted (the caller,
-	// a key or the local operator, already holds 16 open streams of this
-	// method, or the server holds 256).
+	// is not ready; the client resumes with start_after), data loss (an
+	// instance is missing from its storage, or its bytes do not match the
+	// SHA-256 of its manifest; the message names its scan, and the bytes of
+	// that instance already sent are not to be kept), resource exhausted
+	// (the caller, a key or the local operator, already holds 16 open
+	// streams of this method and downloads, or the server holds 256).
 	// Limits: no deadline is applied to the stream when the client sends
-	// none, since a subject's files may take hours; the 30-second default of
-	// other calls does not hold here. A stream whose client reads nothing for
-	// 5 minutes is ended as deadline exceeded, so a client that stalls does
-	// not hold a storage's connection for ever.
+	// none, since a subject's instances may take hours; the 30-second
+	// default of other calls does not hold here. A stream whose client reads
+	// nothing for 5 minutes is ended as deadline exceeded, so a client that
+	// stalls does not hold a storage's connection for ever.
 	ReadFiles(context.Context, *v1.ReadFilesRequest) (DataServiceReadFilesClientStream, error)
 }
 
@@ -130,61 +135,66 @@ func (s DataServiceReadFilesClientStream) Close() error {
 
 // DataServiceHandler is an implementation of the coria.v1.DataService service.
 type DataServiceHandler interface {
-	// ReadFiles streams the files of one instance, one scan, one session or
-	// one subject, in the order of their storage keys: each file's
-	// announcement (a ReadFilesResponse with file set), then its bytes in
-	// order (each with chunk set), then the next file. A file's chunks hold
-	// its bytes from the first to the last, their offsets following on with
-	// no gap, and the last ends at its size; a file of size zero has no
-	// chunk. A chunk holds at most 1 MiB in this version; a client accepts
-	// any chunk of up to 3 MiB, so the server may send larger ones later
-	// without a change of the contract, always under the 4 MB a stock gRPC
-	// client accepts.
+	// ReadFiles streams the instances of one instance, one scan, one session
+	// or one subject, in the order of the tuple (session label, scan label,
+	// instance id), each label folded (ASCII letters in lower case) and each
+	// part compared in byte order; the levels a request names are the same
+	// for every instance, so a scan's instances come by instance id. The
+	// instances of each scan are preceded by a marker of the scan (a
+	// ReadFilesResponse with scan set), and each instance by its
+	// announcement (with file set), then its bytes in order (each with chunk
+	// set). An instance's chunks hold its bytes from the first to the last,
+	// their offsets following on with no gap, and the last ends at its
+	// length; an instance of length zero has no chunk. A chunk holds at most
+	// 1 MiB in this version; a client accepts any chunk of up to 3 MiB, so
+	// the server may send larger ones later without a change of the
+	// contract, always under the 4 MB a stock gRPC client accepts.
 	//
-	// The files are those the catalog holds when the stream reaches each
-	// scan: a file archived into a scan the stream has passed is not sent. A
-	// stream that ends before the last file (the client went away, the
-	// server stopped, a storage stopped answering) is resumed by a new call
-	// with start_after set to the key of the last file the client received
-	// whole and checked; a call with announce_only set lists the files
-	// without their bytes, to compare a copy held elsewhere.
+	// The instances of a scan are those its manifest lists when the stream
+	// reaches the scan, and the scan's marker carries that manifest's
+	// SHA-256: a client that compares it with the one it held, or with
+	// Scan.manifest_sha256 of a listing, sees when a scan changed behind its
+	// position, and reads that scan again. A stream that ends before the
+	// last instance (the client went away, the server stopped, a storage
+	// stopped answering) is resumed by a new call with start_after set to the
+	// position of the last instance the client received whole and checked:
+	// the stream goes on from the first instance after that position in the
+	// order above, whether or not that instance is still held. A call with
+	// announce_only set sends the markers and announcements without the
+	// bytes, to compare a copy held elsewhere.
 	//
 	// The caller's key and grant are checked again at least every 15 seconds
 	// while the stream is open: a key revoked or expired, or a grant removed,
 	// ends the stream with the answer a new call would get.
 	//
-	// An instance is named inside its scan, so a caller must already hold
-	// the archive's labels of the scan; its SOP Instance UID only picks one
-	// of the scan's instances, and is not a search of the tenant by an
-	// identifier.
-	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log when the stream opens, with the
 	// path asked for ("<subject>", "<subject>/<session>" or
-	// "<subject>/<session>/<scan>") as its object, and in details whether an
-	// instance, start_after and announce_only were given (an instance's UID
-	// and a key are recorded only as present, since each holds an identifier
-	// as received, which no log holds); and one when it ends, with how many
-	// files and bytes it sent and how it ended.
+	// "<subject>/<session>/<scan>", a label that is not valid written
+	// "invalid") as its object, and in details whether an instance and
+	// start_after were given, and announce_only (an instance id is recorded
+	// only as present, since in this version it holds an identifier as
+	// received, which no log holds); and one when it ends, with how many
+	// instances and bytes it sent and how it ended.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
-	// (also a level named without the levels above it, a start_after that is
-	// not a key of what is asked for), not found (the tenant has no such
-	// subject, session or scan, or the scan no instance with that SOP
-	// Instance UID; a tenant that does not exist, for a caller who may list
+	// (also a level named without the levels above it, a start_after that
+	// does not name a position inside what is asked for), not found (the
+	// tenant has no such subject, session or scan, or the scan no instance
+	// with that id; a tenant that does not exist, for a caller who may list
 	// every tenant), unavailable (the tenant's database or a storage does
 	// not answer, when the stream opens or while it is open, or the tenant
-	// is not ready; the client resumes with start_after), data loss (a file
-	// is missing from its storage, or its bytes do not match the SHA-256 of
-	// its manifest; the message names the file's scan, and the bytes of that
-	// file already sent are not to be kept), resource exhausted (the caller,
-	// a key or the local operator, already holds 16 open streams of this
-	// method, or the server holds 256).
+	// is not ready; the client resumes with start_after), data loss (an
+	// instance is missing from its storage, or its bytes do not match the
+	// SHA-256 of its manifest; the message names its scan, and the bytes of
+	// that instance already sent are not to be kept), resource exhausted
+	// (the caller, a key or the local operator, already holds 16 open
+	// streams of this method and downloads, or the server holds 256).
 	// Limits: no deadline is applied to the stream when the client sends
-	// none, since a subject's files may take hours; the 30-second default of
-	// other calls does not hold here. A stream whose client reads nothing for
-	// 5 minutes is ended as deadline exceeded, so a client that stalls does
-	// not hold a storage's connection for ever.
+	// none, since a subject's instances may take hours; the 30-second
+	// default of other calls does not hold here. A stream whose client reads
+	// nothing for 5 minutes is ended as deadline exceeded, so a client that
+	// stalls does not hold a storage's connection for ever.
 	ReadFiles(context.Context, *v1.ReadFilesRequest, DataServiceReadFilesServerStream) error
 }
 

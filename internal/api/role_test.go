@@ -516,9 +516,10 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 // method of a service the list names, reads a request of the method's own
 // input type, and the count says when a method was added to or dropped
 // from a service not served without its line. It also holds the audit
-// facts of the reading methods to their Audit lines: the object is the
-// path of labels the request names, and a UID or a storage key is
-// recorded only as present, never as given.
+// facts of the reading methods, and of the plain HTTP download, to their
+// Audit lines: the object is the path of labels the request names, a value
+// that does not pass the label rule is recorded as "invalid", and an
+// instance id is recorded only as present, never as given.
 func TestPendingRules(t *testing.T) {
 	notServed := readNotServed(t)
 	lines := roleLines(t)
@@ -546,7 +547,7 @@ func TestPendingRules(t *testing.T) {
 		}
 	}
 
-	const uid, key = "2.25.4711", "data/S01/E01/T1/2.25.4711.dcm"
+	const uid = "2.25.4711"
 	facts := func(proc string, msg proto.Message) access.Request {
 		t.Helper()
 		_, f := p.Requirement(proc, msg)
@@ -578,11 +579,22 @@ func TestPendingRules(t *testing.T) {
 			&v1.ListSessionsRequest{Tenant: "lab1", StudyDateStart: "20240101", StudyDateEnd: "20241231", Receiver: "scanner1"},
 			"", map[string]string{"study_date_start": "20240101", "study_date_end": "20241231", "receiver": "scanner1"}},
 		{"GetInstanceMetadata", coriav1connect.MetadataServiceGetInstanceMetadataProcedure,
-			&v1.GetInstanceMetadataRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", SopInstanceUid: uid},
-			"S01/E01/T1", map[string]string{"sop_instance_uid": "present"}},
+			&v1.GetInstanceMetadataRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", InstanceId: uid},
+			"S01/E01/T1", map[string]string{"instance": "present"}},
 		{"ReadFiles", coriav1connect.DataServiceReadFilesProcedure,
-			&v1.ReadFilesRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", SopInstanceUid: uid, StartAfter: key},
-			"S01/E01/T1", map[string]string{"sop_instance_uid": "present", "start_after": "present", "announce_only": "false"}},
+			&v1.ReadFilesRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", InstanceId: uid, StartAfter: &v1.ReadPosition{InstanceId: uid}},
+			"S01/E01/T1", map[string]string{"instance": "present", "start_after": "present", "announce_only": "false"}},
+		// A value that is not a label is recorded as "invalid", whatever it
+		// holds: a name, a path, a UID, a value too long for a label.
+		{"GetScan with values that are not labels", coriav1connect.CatalogServiceGetScanProcedure,
+			&v1.GetScanRequest{Tenant: "lab1", SubjectLabel: "Smith^John", SessionLabel: "../" + uid, ScanLabel: strings.Repeat("a", 129)},
+			"invalid/invalid/invalid", nil},
+		{"ListSubjects with a prefix that is not a start of a label", coriav1connect.CatalogServiceListSubjectsProcedure,
+			&v1.ListSubjectsRequest{Tenant: "lab1", LabelPrefix: "Smith John"}, "", map[string]string{"label_prefix": "invalid"}},
+		{"ListSubjects with a prefix that is a start of a label", coriav1connect.CatalogServiceListSubjectsProcedure,
+			&v1.ListSubjectsRequest{Tenant: "lab1", LabelPrefix: "sub."}, "", map[string]string{"label_prefix": "sub."}},
+		{"ListSessions with a bad date", coriav1connect.CatalogServiceListSessionsProcedure,
+			&v1.ListSessionsRequest{Tenant: "lab1", SubjectLabel: "S01", StudyDateStart: "Smith"}, "S01", map[string]string{"study_date_start": "invalid"}},
 	} {
 		f := facts(c.proc, c.msg)
 		if f.Object != c.object {
@@ -598,5 +610,26 @@ func TestPendingRules(t *testing.T) {
 				t.Errorf("%s: the detail %s holds a storage key: %q", c.name, k, v)
 			}
 		}
+	}
+
+	// The download over plain HTTP: reader on the tenant the path names,
+	// the scan's path as its object, the instance id only as present.
+	need, f := api.PendingDownload("lab1", "S01", "E01", "T1", uid, true, false)
+	if need != access.OnTenant("lab1", master.RoleReader) {
+		t.Errorf("a download needs %+v, want reader on the tenant", need)
+	}
+	if f.Object != "S01/E01/T1" || f.Details["instance"] != "present" || f.Details["range"] != "true" || f.Details["window"] != "false" {
+		t.Errorf("a download's facts are %+v", f)
+	}
+	for k, v := range f.Details {
+		if strings.Contains(v, uid) {
+			t.Errorf("a download's detail %s holds the instance id: %q", k, v)
+		}
+	}
+	if need, _ := api.PendingDownload("Lab 1", "S01", "E01", "T1", uid, false, false); need != access.OnInstallation(master.RoleReader) {
+		t.Errorf("a download into a malformed tenant needs %+v, want reader on the installation", need)
+	}
+	if strings.Contains(api.DownloadMethod, "%") || !strings.HasPrefix(api.DownloadMethod, "GET /tenants/{tenant}/instances/") {
+		t.Errorf("the download's audit method is %q", api.DownloadMethod)
 	}
 }

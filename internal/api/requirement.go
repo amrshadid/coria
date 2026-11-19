@@ -10,6 +10,7 @@ import (
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/master"
 )
@@ -308,8 +309,9 @@ var rules = map[string]rule{
 //
 // Every method here reads the archive of one tenant, and needs reader on
 // it. The object of an entry is the path of labels the request names,
-// never a UID: a UID or a storage key (which holds one) is an identifier
-// as received, recorded only as present.
+// each label recorded only when it passes the label rule; never an
+// instance id or a storage key, each of which holds a SOP Instance UID as
+// received in this version, and is recorded only as present.
 var pendingRules = map[string]rule{
 	// CatalogService.
 	coriav1connect.CatalogServiceListSubjectsProcedure: byMessage(func(r *v1.ListSubjectsRequest) (access.Requirement, access.Request) {
@@ -339,8 +341,8 @@ var pendingRules = map[string]rule{
 	}),
 	coriav1connect.MetadataServiceGetInstanceMetadataProcedure: byMessage(func(r *v1.GetInstanceMetadataRequest) (access.Requirement, access.Request) {
 		d := map[string]string{}
-		if r.GetSopInstanceUid() != "" {
-			d[detailSOPUID] = presentValue
+		if r.GetInstanceId() != "" {
+			d[detailInstance] = presentValue
 		}
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: d}
 	}),
@@ -351,6 +353,40 @@ var pendingRules = map[string]rule{
 	}),
 }
 
+// downloadMethod is what the audit entry of a plain HTTP download of an
+// instance names as its method (data.proto, DataService): the route, never
+// the request's path, which holds an instance id.
+const downloadMethod = "GET /tenants/{tenant}/instances/{subject}/{session}/{scan}/{instance}"
+
+// download is the parts of the path and query of a plain HTTP download of
+// an instance, as the route has read them, unchecked.
+type download struct {
+	// Tenant, Subject, Session and Scan are the path's names.
+	Tenant, Subject, Session, Scan string
+	// Instance is the path's instance id.
+	Instance string
+	// Ranged is whether the request carries a Range header; Window is
+	// whether its query names a part of the instance (offset and length).
+	Ranged, Window bool
+}
+
+// pendingDownload is the requirement and the audit facts of a plain HTTP
+// download of an instance, which no route serves yet; the change that
+// serves it gives its route this rule. It is checked before the rest of
+// the path is read and the instance looked up, so a refusal says nothing
+// of what the tenant holds: reader on the tenant the path names, or on the
+// installation for a malformed name (doc.go), as for every method.
+func pendingDownload(d download) (access.Requirement, access.Request) {
+	details := map[string]string{
+		detailRanged: strconv.FormatBool(d.Ranged),
+		detailWindow: strconv.FormatBool(d.Window),
+	}
+	if d.Instance != "" {
+		details[detailInstance] = presentValue
+	}
+	return onTenantNamed(d.Tenant, master.RoleReader), access.Request{Object: labelPath(d.Subject, d.Session, d.Scan), Details: details}
+}
+
 // The keys of the details the reading methods put in audit entries.
 const (
 	detailLabelPrefix       = "label_prefix"
@@ -359,25 +395,63 @@ const (
 	detailStudyDateEnd      = "study_date_end"
 	detailModality          = "modality"
 	detailDescriptionPrefix = "series_description_prefix"
+	detailInstance          = "instance"
 	detailStartAfter        = "start_after"
 	detailAnnounceOnly      = "announce_only"
+	detailRanged            = "range"
+	detailWindow            = "window"
 )
+
+// invalidValue is what an audit entry records in place of a value the
+// request gave that does not pass its rule: the entry still says the
+// field was given, and nothing malformed, of any length or content,
+// reaches the log.
+const invalidValue = "invalid"
 
 // labelPath returns the path of labels a request names, "<subject>",
 // "<subject>/<session>" or "<subject>/<session>/<scan>", as an audit
 // entry's object writes it: the labels given from the top, up to the first
 // empty one, so a level named without the one above it (which the handler
-// refuses as invalid) is not recorded as if it were placed. It is clipped
-// to fit an entry's field: three labels can be longer than one.
+// refuses as invalid) is not recorded as if it were placed. A label that
+// does not pass the label rule is written "invalid": what a caller sent
+// that is not a label can be anything, a patient's name included. Three
+// valid labels fit an entry's field, which holds 256 bytes, only up to
+// about 84 bytes each, so the path is clipped.
 func labelPath(labels ...string) string {
 	var parts []string
 	for _, l := range labels {
 		if l == "" {
 			break
 		}
+		if label.Check(l) != nil {
+			l = invalidValue
+		}
 		parts = append(parts, l)
 	}
 	return clip(strings.Join(parts, "/"), master.MaxAuditFieldLength-8)
+}
+
+// labelPrefix returns a label prefix as an audit entry records it: as
+// given when it is a label or the start of one, and "invalid" otherwise. A
+// start of a label may end where a whole label may not (in a "."), or be
+// a name reserved on Windows that a longer label is not, so a prefix
+// passes when it, or it with one more character that is valid anywhere
+// in a label, passes the label rule.
+func labelPrefix(p string) string {
+	if label.Check(p) == nil || label.Check(p+"_") == nil {
+		return p
+	}
+	return invalidValue
+}
+
+// studyDate returns a study date bound as an audit entry records it: as
+// given when it has the form of a DICOM date, "YYYYMMDD", and "invalid"
+// otherwise.
+func studyDate(s string) string {
+	if len(s) != 8 || strings.Trim(s, "0123456789") != "" {
+		return invalidValue
+	}
+	return s
 }
 
 // catalogFilterDetails returns the details every catalog listing records:
@@ -385,7 +459,7 @@ func labelPath(labels ...string) string {
 func catalogFilterDetails(prefix string, order v1.CatalogOrder) map[string]string {
 	d := map[string]string{}
 	if prefix != "" {
-		d[detailLabelPrefix] = clip(prefix, 128)
+		d[detailLabelPrefix] = labelPrefix(prefix)
 	}
 	if order != v1.CatalogOrder_CATALOG_ORDER_UNSPECIFIED {
 		d[detailOrder] = clip(order.String(), 64)
@@ -398,10 +472,10 @@ func catalogFilterDetails(prefix string, order v1.CatalogOrder) map[string]strin
 func sessionFilterDetails(r *v1.ListSessionsRequest) map[string]string {
 	d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
 	if r.GetStudyDateStart() != "" {
-		d[detailStudyDateStart] = clip(r.GetStudyDateStart(), 16)
+		d[detailStudyDateStart] = studyDate(r.GetStudyDateStart())
 	}
 	if r.GetStudyDateEnd() != "" {
-		d[detailStudyDateEnd] = clip(r.GetStudyDateEnd(), 16)
+		d[detailStudyDateEnd] = studyDate(r.GetStudyDateEnd())
 	}
 	if r.GetModality() != "" {
 		d[detailModality] = clip(r.GetModality(), 16)
@@ -433,16 +507,16 @@ func scanFilterDetails(r *v1.ListScansRequest) map[string]string {
 }
 
 // readFilesDetails returns the details of the entry a stream of files
-// opens with (data.proto, ReadFiles): whether an instance and a place to
-// resume from were given, never which, since a UID and a key are
-// identifiers as received; and whether only the announcements were asked
-// for.
+// opens with (data.proto, ReadFiles): whether an instance and a position
+// to resume from were given, never which, since an instance id is an
+// identifier as received in this version; and whether only the
+// announcements were asked for.
 func readFilesDetails(r *v1.ReadFilesRequest) map[string]string {
 	d := map[string]string{detailAnnounceOnly: strconv.FormatBool(r.GetAnnounceOnly())}
-	if r.GetSopInstanceUid() != "" {
-		d[detailSOPUID] = presentValue
+	if r.GetInstanceId() != "" {
+		d[detailInstance] = presentValue
 	}
-	if r.GetStartAfter() != "" {
+	if r.GetStartAfter() != nil {
 		d[detailStartAfter] = presentValue
 	}
 	return d

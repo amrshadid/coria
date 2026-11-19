@@ -37,7 +37,9 @@ func TestKindOf(t *testing.T) {
 
 // TestExitCode guards the exit status of each kind, which scripts depend on:
 // Invalid 2, Unauthenticated and Denied 3, NotFound 4, Precondition 5,
-// OutOfRange 6, Exhausted 7, every other kind 1.
+// OutOfRange 6, Exhausted 7, every other kind 1 (DataLoss among them: a
+// failure of the archive, which the caller did not cause and cannot mend
+// by sending something else).
 func TestExitCode(t *testing.T) {
 	want := map[Kind]int{
 		Internal:        1,
@@ -50,6 +52,7 @@ func TestExitCode(t *testing.T) {
 		Precondition:    5,
 		OutOfRange:      6,
 		Exhausted:       7,
+		DataLoss:        1,
 		Kind(-1):        1,
 		Kind(99):        1,
 	}
@@ -74,7 +77,8 @@ func TestKindString(t *testing.T) {
 		Precondition:    "precondition",
 		OutOfRange:      "out of range",
 		Exhausted:       "exhausted",
-		Kind(10):        "Kind(10)",
+		DataLoss:        "data loss",
+		Kind(11):        "Kind(11)",
 	}
 	for kind, name := range want {
 		if got := kind.String(); got != name {

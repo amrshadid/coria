@@ -57,13 +57,14 @@ var (
 // MetadataServiceClient is a client for the coria.v1.MetadataService service.
 type MetadataServiceClient interface {
 	// GetScanMetadata answers the headers of a scan's instances, a page at a
-	// time, in the order of the scan's manifest (by storage key, which in
-	// this version is by SOP Instance UID).
+	// time, by instance id in byte order (DataService's order, within one
+	// scan).
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the scan's path,
-	// "<subject>/<session>/<scan>", as its object, and the count of instances
-	// answered in details.
+	// "<subject>/<session>/<scan>", as its object (a label that is not valid
+	// is written "invalid" in it), and the count of instances answered in
+	// details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also a page token made for another scan), not found (the tenant has
@@ -76,24 +77,18 @@ type MetadataServiceClient interface {
 	GetScanMetadata(context.Context, *v1.GetScanMetadataRequest) (*v1.GetScanMetadataResponse, error)
 	// GetInstanceMetadata answers the header of one instance of a scan.
 	//
-	// The instance is named inside its scan, so a caller must already hold
-	// the archive's labels of the scan; its SOP Instance UID only picks one
-	// of the scan's instances, and is not a search of the tenant by an
-	// identifier.
-	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the scan's path as its
-	// object; the SOP Instance UID is recorded only as present, since it is
-	// an identifier as received, which no log holds.
+	// object; the instance id is recorded only as present, since in this
+	// version it is a SOP Instance UID as received, which no log holds.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no such subject, session or scan, or the scan
-	// no instance with that SOP Instance UID; a tenant that does not exist,
-	// for a caller who may list every tenant), unavailable (the tenant's
-	// database or the scan's storage does not answer, or the tenant is not
-	// ready), data loss (the scan's metadata file, or the instance's file
-	// when the server had to read it, is missing from the storage or is not
-	// what was archived).
+	// no instance with that id; a tenant that does not exist, for a caller
+	// who may list every tenant), unavailable (the tenant's database or the
+	// scan's storage does not answer, or the tenant is not ready), data loss
+	// (the scan's metadata file, or the instance's file when the server had
+	// to read it, is missing from the storage or is not what was archived).
 	GetInstanceMetadata(context.Context, *v1.GetInstanceMetadataRequest) (*v1.GetInstanceMetadataResponse, error)
 }
 
@@ -106,13 +101,14 @@ func NewMetadataServiceClient(client *connect.Client) MetadataServiceClient {
 // MetadataServiceHandler is an implementation of the coria.v1.MetadataService service.
 type MetadataServiceHandler interface {
 	// GetScanMetadata answers the headers of a scan's instances, a page at a
-	// time, in the order of the scan's manifest (by storage key, which in
-	// this version is by SOP Instance UID).
+	// time, by instance id in byte order (DataService's order, within one
+	// scan).
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the scan's path,
-	// "<subject>/<session>/<scan>", as its object, and the count of instances
-	// answered in details.
+	// "<subject>/<session>/<scan>", as its object (a label that is not valid
+	// is written "invalid" in it), and the count of instances answered in
+	// details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also a page token made for another scan), not found (the tenant has
@@ -125,24 +121,18 @@ type MetadataServiceHandler interface {
 	GetScanMetadata(context.Context, *v1.GetScanMetadataRequest) (*v1.GetScanMetadataResponse, error)
 	// GetInstanceMetadata answers the header of one instance of a scan.
 	//
-	// The instance is named inside its scan, so a caller must already hold
-	// the archive's labels of the scan; its SOP Instance UID only picks one
-	// of the scan's instances, and is not a search of the tenant by an
-	// identifier.
-	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the scan's path as its
-	// object; the SOP Instance UID is recorded only as present, since it is
-	// an identifier as received, which no log holds.
+	// object; the instance id is recorded only as present, since in this
+	// version it is a SOP Instance UID as received, which no log holds.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no such subject, session or scan, or the scan
-	// no instance with that SOP Instance UID; a tenant that does not exist,
-	// for a caller who may list every tenant), unavailable (the tenant's
-	// database or the scan's storage does not answer, or the tenant is not
-	// ready), data loss (the scan's metadata file, or the instance's file
-	// when the server had to read it, is missing from the storage or is not
-	// what was archived).
+	// no instance with that id; a tenant that does not exist, for a caller
+	// who may list every tenant), unavailable (the tenant's database or the
+	// scan's storage does not answer, or the tenant is not ready), data loss
+	// (the scan's metadata file, or the instance's file when the server had
+	// to read it, is missing from the storage or is not what was archived).
 	GetInstanceMetadata(context.Context, *v1.GetInstanceMetadataRequest) (*v1.GetInstanceMetadataResponse, error)
 }
 

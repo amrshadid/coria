@@ -25,34 +25,126 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ArchivedFile is the announcement of one archived file, from its scan's
-// manifest.
+// ScanMarker opens the instances of one scan in a stream of ReadFiles.
+type ScanMarker struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The label of its subject.
+	SubjectLabel string `protobuf:"bytes,1,opt,name=subject_label,json=subjectLabel,proto3" json:"subject_label,omitempty"`
+	// The label of its session.
+	SessionLabel string `protobuf:"bytes,2,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
+	// The scan's label.
+	ScanLabel string `protobuf:"bytes,3,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
+	// The SHA-256 of the manifest the stream reads the scan's instances
+	// from, in lowercase hexadecimal, 64 characters, as
+	// Scan.manifest_sha256.
+	ManifestSha256 string `protobuf:"bytes,4,opt,name=manifest_sha256,json=manifestSha256,proto3" json:"manifest_sha256,omitempty"`
+	// How many instances that manifest lists. The stream sends those after
+	// start_after, or the one instance asked for.
+	InstanceCount int64 `protobuf:"varint,5,opt,name=instance_count,json=instanceCount,proto3" json:"instance_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScanMarker) Reset() {
+	*x = ScanMarker{}
+	mi := &file_coria_v1_data_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScanMarker) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScanMarker) ProtoMessage() {}
+
+func (x *ScanMarker) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_data_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScanMarker.ProtoReflect.Descriptor instead.
+func (*ScanMarker) Descriptor() ([]byte, []int) {
+	return file_coria_v1_data_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ScanMarker) GetSubjectLabel() string {
+	if x != nil {
+		return x.SubjectLabel
+	}
+	return ""
+}
+
+func (x *ScanMarker) GetSessionLabel() string {
+	if x != nil {
+		return x.SessionLabel
+	}
+	return ""
+}
+
+func (x *ScanMarker) GetScanLabel() string {
+	if x != nil {
+		return x.ScanLabel
+	}
+	return ""
+}
+
+func (x *ScanMarker) GetManifestSha256() string {
+	if x != nil {
+		return x.ManifestSha256
+	}
+	return ""
+}
+
+func (x *ScanMarker) GetInstanceCount() int64 {
+	if x != nil {
+		return x.InstanceCount
+	}
+	return 0
+}
+
+// ArchivedFile is the announcement of one archived instance, from its
+// scan's manifest.
 type ArchivedFile struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Its storage key: opaque, at most 1024 bytes, the same on every storage
-	// and the last part of its plain HTTP path.
-	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	// Its size in bytes: the DICOM file header and the data set, as
-	// archived.
-	SizeBytes int64 `protobuf:"varint,2,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
-	// The SHA-256 of its bytes, in lowercase hexadecimal, 64 characters.
-	Sha256 string `protobuf:"bytes,3,opt,name=sha256,proto3" json:"sha256,omitempty"`
-	// The SOP Instance UID (0008,0018) of the instance it holds, as
-	// received.
-	SopInstanceUid string `protobuf:"bytes,4,opt,name=sop_instance_uid,json=sopInstanceUid,proto3" json:"sop_instance_uid,omitempty"`
+	// The instance's id in the tenant: unique in it, at most 64 bytes of A-Z,
+	// a-z, 0-9, ".", "_" and "-", the last part of its plain HTTP path.
+	// Opaque: in this version it is the SOP Instance UID as received, which
+	// a client must not rely on, since a later version that replaces
+	// identifiers at reception gives the archive's own.
+	InstanceId string `protobuf:"bytes,1,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	// Its SOP Instance UID (0008,0018), as received.
+	SopInstanceUid string `protobuf:"bytes,2,opt,name=sop_instance_uid,json=sopInstanceUid,proto3" json:"sop_instance_uid,omitempty"`
 	// The label of its subject.
-	SubjectLabel string `protobuf:"bytes,5,opt,name=subject_label,json=subjectLabel,proto3" json:"subject_label,omitempty"`
+	SubjectLabel string `protobuf:"bytes,3,opt,name=subject_label,json=subjectLabel,proto3" json:"subject_label,omitempty"`
 	// The label of its session.
-	SessionLabel string `protobuf:"bytes,6,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
+	SessionLabel string `protobuf:"bytes,4,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
 	// The label of its scan.
-	ScanLabel     string `protobuf:"bytes,7,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
+	ScanLabel string `protobuf:"bytes,5,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
+	// The storage key of the object that holds it: opaque, at most 1024
+	// bytes, the same on every storage of the tenant.
+	Key string `protobuf:"bytes,6,opt,name=key,proto3" json:"key,omitempty"`
+	// Where its bytes start in that object. 0 in this version.
+	Offset int64 `protobuf:"varint,7,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Its length in bytes: the DICOM file header and the data set, as
+	// archived. The stream sends this many bytes of it.
+	Length int64 `protobuf:"varint,8,opt,name=length,proto3" json:"length,omitempty"`
+	// The SHA-256 of its bytes, in lowercase hexadecimal, 64 characters.
+	Sha256        string `protobuf:"bytes,9,opt,name=sha256,proto3" json:"sha256,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ArchivedFile) Reset() {
 	*x = ArchivedFile{}
-	mi := &file_coria_v1_data_proto_msgTypes[0]
+	mi := &file_coria_v1_data_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -64,7 +156,7 @@ func (x *ArchivedFile) String() string {
 func (*ArchivedFile) ProtoMessage() {}
 
 func (x *ArchivedFile) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_data_proto_msgTypes[0]
+	mi := &file_coria_v1_data_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -77,26 +169,12 @@ func (x *ArchivedFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchivedFile.ProtoReflect.Descriptor instead.
 func (*ArchivedFile) Descriptor() ([]byte, []int) {
-	return file_coria_v1_data_proto_rawDescGZIP(), []int{0}
+	return file_coria_v1_data_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ArchivedFile) GetKey() string {
+func (x *ArchivedFile) GetInstanceId() string {
 	if x != nil {
-		return x.Key
-	}
-	return ""
-}
-
-func (x *ArchivedFile) GetSizeBytes() int64 {
-	if x != nil {
-		return x.SizeBytes
-	}
-	return 0
-}
-
-func (x *ArchivedFile) GetSha256() string {
-	if x != nil {
-		return x.Sha256
+		return x.InstanceId
 	}
 	return ""
 }
@@ -129,11 +207,40 @@ func (x *ArchivedFile) GetScanLabel() string {
 	return ""
 }
 
-// FileChunk is a part of the bytes of the file last announced.
+func (x *ArchivedFile) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *ArchivedFile) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *ArchivedFile) GetLength() int64 {
+	if x != nil {
+		return x.Length
+	}
+	return 0
+}
+
+func (x *ArchivedFile) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+// FileChunk is a part of the bytes of the instance last announced.
 type FileChunk struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Where the part starts in the file, in bytes from its first: 0 for the
-	// first chunk of a file, and the end of the one before for each next.
+	// Where the part starts in the instance, in bytes from its first: 0 for
+	// the first chunk of an instance, and the end of the one before for each
+	// next.
 	Offset int64 `protobuf:"varint,1,opt,name=offset,proto3" json:"offset,omitempty"`
 	// The bytes: at least one, at most 1 MiB in this version, and never more
 	// than 3 MiB.
@@ -144,7 +251,7 @@ type FileChunk struct {
 
 func (x *FileChunk) Reset() {
 	*x = FileChunk{}
-	mi := &file_coria_v1_data_proto_msgTypes[1]
+	mi := &file_coria_v1_data_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -156,7 +263,7 @@ func (x *FileChunk) String() string {
 func (*FileChunk) ProtoMessage() {}
 
 func (x *FileChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_data_proto_msgTypes[1]
+	mi := &file_coria_v1_data_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -169,7 +276,7 @@ func (x *FileChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileChunk.ProtoReflect.Descriptor instead.
 func (*FileChunk) Descriptor() ([]byte, []int) {
-	return file_coria_v1_data_proto_rawDescGZIP(), []int{1}
+	return file_coria_v1_data_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *FileChunk) GetOffset() int64 {
@@ -186,6 +293,73 @@ func (x *FileChunk) GetData() []byte {
 	return nil
 }
 
+// ReadPosition is a place in the order of ReadFiles: the instance id of an
+// instance and the labels of its session and scan.
+type ReadPosition struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The label of the instance's session. Required when the request names
+	// a subject alone; otherwise empty or the session named.
+	SessionLabel string `protobuf:"bytes,1,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
+	// The label of the instance's scan. Required when the request names no
+	// scan; otherwise empty or the scan named.
+	ScanLabel string `protobuf:"bytes,2,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
+	// The instance's id. Required.
+	InstanceId    string `protobuf:"bytes,3,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadPosition) Reset() {
+	*x = ReadPosition{}
+	mi := &file_coria_v1_data_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadPosition) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadPosition) ProtoMessage() {}
+
+func (x *ReadPosition) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_data_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadPosition.ProtoReflect.Descriptor instead.
+func (*ReadPosition) Descriptor() ([]byte, []int) {
+	return file_coria_v1_data_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ReadPosition) GetSessionLabel() string {
+	if x != nil {
+		return x.SessionLabel
+	}
+	return ""
+}
+
+func (x *ReadPosition) GetScanLabel() string {
+	if x != nil {
+		return x.ScanLabel
+	}
+	return ""
+}
+
+func (x *ReadPosition) GetInstanceId() string {
+	if x != nil {
+		return x.InstanceId
+	}
+	return ""
+}
+
 // ReadFilesRequest names what to stream: a subject, or a session of it, or
 // a scan of that, or one instance of the scan. The deepest level given is
 // what is streamed, and each level needs every level above it.
@@ -200,18 +374,17 @@ type ReadFilesRequest struct {
 	// The scan's label. Empty for every scan of the session; needs
 	// session_label.
 	ScanLabel string `protobuf:"bytes,4,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
-	// The SOP Instance UID (0008,0018) of one instance of the scan, as
-	// received. Empty for every instance of the scan; needs scan_label.
-	SopInstanceUid string `protobuf:"bytes,5,opt,name=sop_instance_uid,json=sopInstanceUid,proto3" json:"sop_instance_uid,omitempty"`
-	// The key of the last file the client received whole, to resume after
-	// it: the stream starts with the first file whose key sorts after it in
-	// byte order. Empty to start from the first file. At most 1024 bytes,
-	// and a key of what is asked for: one of its files, received from an
-	// earlier stream.
-	StartAfter string `protobuf:"bytes,6,opt,name=start_after,json=startAfter,proto3" json:"start_after,omitempty"`
-	// Whether to send only each file's announcement, without its bytes: a
-	// listing of the files with their sizes and checksums, which reads the
-	// manifests alone and no file.
+	// The id of one instance of the scan. Empty for every instance of the
+	// scan; needs scan_label.
+	InstanceId string `protobuf:"bytes,5,opt,name=instance_id,json=instanceId,proto3" json:"instance_id,omitempty"`
+	// The position of the last instance the client received whole, to
+	// resume after it, from an earlier stream of the same request. Absent to
+	// start from the first instance. It need not name an instance still
+	// held: the stream goes on from the first instance after the position.
+	StartAfter *ReadPosition `protobuf:"bytes,6,opt,name=start_after,json=startAfter,proto3" json:"start_after,omitempty"`
+	// Whether to send only the markers and announcements, without the bytes:
+	// a listing of the instances with their places, lengths and checksums,
+	// which reads the manifests alone and no file.
 	AnnounceOnly  bool `protobuf:"varint,7,opt,name=announce_only,json=announceOnly,proto3" json:"announce_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -219,7 +392,7 @@ type ReadFilesRequest struct {
 
 func (x *ReadFilesRequest) Reset() {
 	*x = ReadFilesRequest{}
-	mi := &file_coria_v1_data_proto_msgTypes[2]
+	mi := &file_coria_v1_data_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -231,7 +404,7 @@ func (x *ReadFilesRequest) String() string {
 func (*ReadFilesRequest) ProtoMessage() {}
 
 func (x *ReadFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_data_proto_msgTypes[2]
+	mi := &file_coria_v1_data_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -244,7 +417,7 @@ func (x *ReadFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFilesRequest.ProtoReflect.Descriptor instead.
 func (*ReadFilesRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_data_proto_rawDescGZIP(), []int{2}
+	return file_coria_v1_data_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ReadFilesRequest) GetTenant() string {
@@ -275,18 +448,18 @@ func (x *ReadFilesRequest) GetScanLabel() string {
 	return ""
 }
 
-func (x *ReadFilesRequest) GetSopInstanceUid() string {
+func (x *ReadFilesRequest) GetInstanceId() string {
 	if x != nil {
-		return x.SopInstanceUid
+		return x.InstanceId
 	}
 	return ""
 }
 
-func (x *ReadFilesRequest) GetStartAfter() string {
+func (x *ReadFilesRequest) GetStartAfter() *ReadPosition {
 	if x != nil {
 		return x.StartAfter
 	}
-	return ""
+	return nil
 }
 
 func (x *ReadFilesRequest) GetAnnounceOnly() bool {
@@ -296,8 +469,8 @@ func (x *ReadFilesRequest) GetAnnounceOnly() bool {
 	return false
 }
 
-// ReadFilesResponse is one message of the stream: a file's announcement,
-// or a part of its bytes.
+// ReadFilesResponse is one message of the stream: a scan's marker, an
+// instance's announcement, or a part of its bytes.
 type ReadFilesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// What this message carries.
@@ -306,6 +479,7 @@ type ReadFilesResponse struct {
 	//
 	//	*ReadFilesResponse_File
 	//	*ReadFilesResponse_Chunk
+	//	*ReadFilesResponse_Scan
 	Part          isReadFilesResponse_Part `protobuf_oneof:"part"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -313,7 +487,7 @@ type ReadFilesResponse struct {
 
 func (x *ReadFilesResponse) Reset() {
 	*x = ReadFilesResponse{}
-	mi := &file_coria_v1_data_proto_msgTypes[3]
+	mi := &file_coria_v1_data_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -325,7 +499,7 @@ func (x *ReadFilesResponse) String() string {
 func (*ReadFilesResponse) ProtoMessage() {}
 
 func (x *ReadFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_data_proto_msgTypes[3]
+	mi := &file_coria_v1_data_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -338,7 +512,7 @@ func (x *ReadFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFilesResponse.ProtoReflect.Descriptor instead.
 func (*ReadFilesResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_data_proto_rawDescGZIP(), []int{3}
+	return file_coria_v1_data_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ReadFilesResponse) GetPart() isReadFilesResponse_Part {
@@ -366,55 +540,89 @@ func (x *ReadFilesResponse) GetChunk() *FileChunk {
 	return nil
 }
 
+func (x *ReadFilesResponse) GetScan() *ScanMarker {
+	if x != nil {
+		if x, ok := x.Part.(*ReadFilesResponse_Scan); ok {
+			return x.Scan
+		}
+	}
+	return nil
+}
+
 type isReadFilesResponse_Part interface {
 	isReadFilesResponse_Part()
 }
 
 type ReadFilesResponse_File struct {
-	// The next file, announced before its bytes.
+	// The next instance, announced before its bytes.
 	File *ArchivedFile `protobuf:"bytes,1,opt,name=file,proto3,oneof"`
 }
 
 type ReadFilesResponse_Chunk struct {
-	// A part of the bytes of the file last announced.
+	// A part of the bytes of the instance last announced.
 	Chunk *FileChunk `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
+}
+
+type ReadFilesResponse_Scan struct {
+	// The next scan, before its instances.
+	Scan *ScanMarker `protobuf:"bytes,3,opt,name=scan,proto3,oneof"`
 }
 
 func (*ReadFilesResponse_File) isReadFilesResponse_Part() {}
 
 func (*ReadFilesResponse_Chunk) isReadFilesResponse_Part() {}
 
+func (*ReadFilesResponse_Scan) isReadFilesResponse_Part() {}
+
 var File_coria_v1_data_proto protoreflect.FileDescriptor
 
 const file_coria_v1_data_proto_rawDesc = "" +
 	"\n" +
-	"\x13coria/v1/data.proto\x12\bcoria.v1\"\xea\x01\n" +
-	"\fArchivedFile\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x1d\n" +
+	"\x13coria/v1/data.proto\x12\bcoria.v1\"\xc5\x01\n" +
 	"\n" +
-	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\x12\x16\n" +
-	"\x06sha256\x18\x03 \x01(\tR\x06sha256\x12(\n" +
-	"\x10sop_instance_uid\x18\x04 \x01(\tR\x0esopInstanceUid\x12#\n" +
-	"\rsubject_label\x18\x05 \x01(\tR\fsubjectLabel\x12#\n" +
-	"\rsession_label\x18\x06 \x01(\tR\fsessionLabel\x12\x1d\n" +
+	"ScanMarker\x12#\n" +
+	"\rsubject_label\x18\x01 \x01(\tR\fsubjectLabel\x12#\n" +
+	"\rsession_label\x18\x02 \x01(\tR\fsessionLabel\x12\x1d\n" +
 	"\n" +
-	"scan_label\x18\a \x01(\tR\tscanLabel\"7\n" +
+	"scan_label\x18\x03 \x01(\tR\tscanLabel\x12'\n" +
+	"\x0fmanifest_sha256\x18\x04 \x01(\tR\x0emanifestSha256\x12%\n" +
+	"\x0einstance_count\x18\x05 \x01(\x03R\rinstanceCount\"\x9c\x02\n" +
+	"\fArchivedFile\x12\x1f\n" +
+	"\vinstance_id\x18\x01 \x01(\tR\n" +
+	"instanceId\x12(\n" +
+	"\x10sop_instance_uid\x18\x02 \x01(\tR\x0esopInstanceUid\x12#\n" +
+	"\rsubject_label\x18\x03 \x01(\tR\fsubjectLabel\x12#\n" +
+	"\rsession_label\x18\x04 \x01(\tR\fsessionLabel\x12\x1d\n" +
+	"\n" +
+	"scan_label\x18\x05 \x01(\tR\tscanLabel\x12\x10\n" +
+	"\x03key\x18\x06 \x01(\tR\x03key\x12\x16\n" +
+	"\x06offset\x18\a \x01(\x03R\x06offset\x12\x16\n" +
+	"\x06length\x18\b \x01(\x03R\x06length\x12\x16\n" +
+	"\x06sha256\x18\t \x01(\tR\x06sha256\"7\n" +
 	"\tFileChunk\x12\x16\n" +
 	"\x06offset\x18\x01 \x01(\x03R\x06offset\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"\x83\x02\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"s\n" +
+	"\fReadPosition\x12#\n" +
+	"\rsession_label\x18\x01 \x01(\tR\fsessionLabel\x12\x1d\n" +
+	"\n" +
+	"scan_label\x18\x02 \x01(\tR\tscanLabel\x12\x1f\n" +
+	"\vinstance_id\x18\x03 \x01(\tR\n" +
+	"instanceId\"\x92\x02\n" +
 	"\x10ReadFilesRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12#\n" +
 	"\rsubject_label\x18\x02 \x01(\tR\fsubjectLabel\x12#\n" +
 	"\rsession_label\x18\x03 \x01(\tR\fsessionLabel\x12\x1d\n" +
 	"\n" +
-	"scan_label\x18\x04 \x01(\tR\tscanLabel\x12(\n" +
-	"\x10sop_instance_uid\x18\x05 \x01(\tR\x0esopInstanceUid\x12\x1f\n" +
-	"\vstart_after\x18\x06 \x01(\tR\n" +
+	"scan_label\x18\x04 \x01(\tR\tscanLabel\x12\x1f\n" +
+	"\vinstance_id\x18\x05 \x01(\tR\n" +
+	"instanceId\x127\n" +
+	"\vstart_after\x18\x06 \x01(\v2\x16.coria.v1.ReadPositionR\n" +
 	"startAfter\x12#\n" +
-	"\rannounce_only\x18\a \x01(\bR\fannounceOnly\"v\n" +
+	"\rannounce_only\x18\a \x01(\bR\fannounceOnly\"\xa2\x01\n" +
 	"\x11ReadFilesResponse\x12,\n" +
 	"\x04file\x18\x01 \x01(\v2\x16.coria.v1.ArchivedFileH\x00R\x04file\x12+\n" +
-	"\x05chunk\x18\x02 \x01(\v2\x13.coria.v1.FileChunkH\x00R\x05chunkB\x06\n" +
+	"\x05chunk\x18\x02 \x01(\v2\x13.coria.v1.FileChunkH\x00R\x05chunk\x12*\n" +
+	"\x04scan\x18\x03 \x01(\v2\x14.coria.v1.ScanMarkerH\x00R\x04scanB\x06\n" +
 	"\x04part2Z\n" +
 	"\vDataService\x12K\n" +
 	"\tReadFiles\x12\x1a.coria.v1.ReadFilesRequest\x1a\x1b.coria.v1.ReadFilesResponse\"\x03\x90\x02\x010\x01B\x8b\x01\n" +
@@ -432,23 +640,27 @@ func file_coria_v1_data_proto_rawDescGZIP() []byte {
 	return file_coria_v1_data_proto_rawDescData
 }
 
-var file_coria_v1_data_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_coria_v1_data_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_coria_v1_data_proto_goTypes = []any{
-	(*ArchivedFile)(nil),      // 0: coria.v1.ArchivedFile
-	(*FileChunk)(nil),         // 1: coria.v1.FileChunk
-	(*ReadFilesRequest)(nil),  // 2: coria.v1.ReadFilesRequest
-	(*ReadFilesResponse)(nil), // 3: coria.v1.ReadFilesResponse
+	(*ScanMarker)(nil),        // 0: coria.v1.ScanMarker
+	(*ArchivedFile)(nil),      // 1: coria.v1.ArchivedFile
+	(*FileChunk)(nil),         // 2: coria.v1.FileChunk
+	(*ReadPosition)(nil),      // 3: coria.v1.ReadPosition
+	(*ReadFilesRequest)(nil),  // 4: coria.v1.ReadFilesRequest
+	(*ReadFilesResponse)(nil), // 5: coria.v1.ReadFilesResponse
 }
 var file_coria_v1_data_proto_depIdxs = []int32{
-	0, // 0: coria.v1.ReadFilesResponse.file:type_name -> coria.v1.ArchivedFile
-	1, // 1: coria.v1.ReadFilesResponse.chunk:type_name -> coria.v1.FileChunk
-	2, // 2: coria.v1.DataService.ReadFiles:input_type -> coria.v1.ReadFilesRequest
-	3, // 3: coria.v1.DataService.ReadFiles:output_type -> coria.v1.ReadFilesResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	3, // 0: coria.v1.ReadFilesRequest.start_after:type_name -> coria.v1.ReadPosition
+	1, // 1: coria.v1.ReadFilesResponse.file:type_name -> coria.v1.ArchivedFile
+	2, // 2: coria.v1.ReadFilesResponse.chunk:type_name -> coria.v1.FileChunk
+	0, // 3: coria.v1.ReadFilesResponse.scan:type_name -> coria.v1.ScanMarker
+	4, // 4: coria.v1.DataService.ReadFiles:input_type -> coria.v1.ReadFilesRequest
+	5, // 5: coria.v1.DataService.ReadFiles:output_type -> coria.v1.ReadFilesResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_data_proto_init() }
@@ -456,9 +668,10 @@ func file_coria_v1_data_proto_init() {
 	if File_coria_v1_data_proto != nil {
 		return
 	}
-	file_coria_v1_data_proto_msgTypes[3].OneofWrappers = []any{
+	file_coria_v1_data_proto_msgTypes[5].OneofWrappers = []any{
 		(*ReadFilesResponse_File)(nil),
 		(*ReadFilesResponse_Chunk)(nil),
+		(*ReadFilesResponse_Scan)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -466,7 +679,7 @@ func file_coria_v1_data_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_data_proto_rawDesc), len(file_coria_v1_data_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

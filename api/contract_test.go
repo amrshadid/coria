@@ -286,8 +286,8 @@ var textFields = []string{
 	"coria.v1.GetScanRequest.scan_label",
 
 	// metadata.proto
+	"coria.v1.InstanceMetadata.instance_id",
 	"coria.v1.InstanceMetadata.sop_instance_uid",
-	"coria.v1.InstanceMetadata.key",
 	"coria.v1.InstanceMetadata.dicom_json",
 	"coria.v1.InstanceMetadata.transfer_syntax_uid",
 	"coria.v1.GetScanMetadataRequest.tenant",
@@ -301,9 +301,18 @@ var textFields = []string{
 	"coria.v1.GetInstanceMetadataRequest.subject_label",
 	"coria.v1.GetInstanceMetadataRequest.session_label",
 	"coria.v1.GetInstanceMetadataRequest.scan_label",
-	"coria.v1.GetInstanceMetadataRequest.sop_instance_uid",
+	"coria.v1.GetInstanceMetadataRequest.instance_id",
 
 	// data.proto
+	"coria.v1.ScanMarker.subject_label",
+	"coria.v1.ScanMarker.session_label",
+	"coria.v1.ScanMarker.scan_label",
+	"coria.v1.ScanMarker.manifest_sha256",
+	"coria.v1.ArchivedFile.instance_id",
+	"coria.v1.ReadPosition.session_label",
+	"coria.v1.ReadPosition.scan_label",
+	"coria.v1.ReadPosition.instance_id",
+	"coria.v1.ReadFilesRequest.instance_id",
 	"coria.v1.ArchivedFile.key",
 	"coria.v1.ArchivedFile.sha256",
 	"coria.v1.ArchivedFile.sop_instance_uid",
@@ -315,8 +324,6 @@ var textFields = []string{
 	"coria.v1.ReadFilesRequest.subject_label",
 	"coria.v1.ReadFilesRequest.session_label",
 	"coria.v1.ReadFilesRequest.scan_label",
-	"coria.v1.ReadFilesRequest.sop_instance_uid",
-	"coria.v1.ReadFilesRequest.start_after",
 }
 
 // TestOnlyTheNamedFieldsCarrySecrets guards where secrets may cross the

@@ -63,14 +63,15 @@ syntax = "proto3";
 //   - data loss: DATA_LOSS (HTTP 500). An archived file, or a file the
 //     server keeps beside it, is missing from its storage or is not what
 //     was archived: its bytes do not match the SHA-256 its scan's manifest
-//     holds. Answered only by the methods that read archived files
-//     (MetadataService, DataService); the message names the scan, and the
-//     cause is in the server's log. Sending it again fails again until the
+//     holds. Answered only where archived files are read
+//     (MetadataService, DataService and its plain HTTP download, where it
+//     is HTTP 500); the message names the scan, and the cause is in the
+//     server's log. Sending it again fails again until the
 //     file is mended from another copy.
 //
 // Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
 // RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch and
-// DataService.ReadFiles, for too many open streams), and DEADLINE_EXCEEDED when its deadline passes.
+// DataService.ReadFiles, for too many open streams and downloads), and DEADLINE_EXCEEDED when its deadline passes.
 // The message of an INTERNAL answer says nothing about the cause; the cause
 // is in the server's log and the audit entry, under the request's id.
 //
