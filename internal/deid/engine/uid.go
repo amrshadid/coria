@@ -42,8 +42,18 @@ func RemapUID(key []byte, original string) string {
 // Registered reports whether a UID is one the standard registers (PS3.6
 // Annex A): a SOP class, a transfer syntax, a coding scheme, a well-known
 // instance. It identifies a kind of object, never a patient, and replacing
-// it would make the file unreadable, so it is never remapped.
-func Registered(u string) bool { return dicomuid.GetUIDInfo(u) != nil }
+// it would make the file unreadable, so it is never remapped. The library's
+// registry does not list every UID the standard defines (Secondary Capture,
+// RT Dose, RT Plan and Segmentation among those missing), so the root the
+// standard keeps for its own UIDs, 1.2.840.10008 (PS3.5 B.1), counts too:
+// no identifier of a patient or a study can be made under it.
+func Registered(u string) bool {
+	return dicomuid.GetUIDInfo(u) != nil || strings.HasPrefix(u, standardRoot)
+}
+
+// standardRoot is the UID root PS3.5 B.1 keeps for UIDs the standard
+// defines.
+const standardRoot = "1.2.840.10008."
 
 // remapUIDValue remaps each UID of a value of VR UI, values separated by
 // backslashes (PS3.5 6.4), keeping the registered ones and the empty ones.

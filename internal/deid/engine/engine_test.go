@@ -238,7 +238,11 @@ func TestEveryUIDRemappedIsValidAndKeyed(t *testing.T) {
 		}
 		seen[a] = true
 	}
-	for _, u := range []string{ctImageStorage, "1.2.840.10008.1.2.1", "1.2.840.10008.1.1"} {
+	for _, u := range []string{ctImageStorage, "1.2.840.10008.1.2.1", "1.2.840.10008.1.1",
+		// Secondary Capture, RT Dose, RT Plan and Segmentation: standard
+		// classes the library's registry does not list.
+		"1.2.840.10008.5.1.4.1.1.7", "1.2.840.10008.5.1.4.1.1.481.2",
+		"1.2.840.10008.5.1.4.1.1.481.5", "1.2.840.10008.5.1.4.1.1.66.4"} {
 		if !Registered(u) {
 			t.Errorf("%s is not taken as registered", u)
 		}
