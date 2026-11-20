@@ -1,5 +1,7 @@
 # Adding an API method
 
+[Documentation index](../README.md) · [Architecture](../architecture.md) · [Testing](../testing.md) · Guides: [a database driver](database-driver.md) · [a storage driver](storage-driver.md) · [a migration](migration.md) · [an event type](event-type.md)
+
 The API is a protobuf contract (`api/proto/coria/v1`), served by ConnectRPC
 over HTTPS and the local socket, and called by the command line and the
 interactive program.

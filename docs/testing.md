@@ -1,5 +1,7 @@
 # Testing
 
+[Documentation index](README.md) · [Gates and outside checks](gates.md) · [Architecture](architecture.md)
+
 How the tests and checks are run, what `-short` means here, how a slow test is
 marked, and every `CORIA_*` environment variable the repository reads.
 
@@ -17,7 +19,8 @@ marked, and every `CORIA_*` environment variable the repository reads.
 | `go test -short ./...` | Only the tests that start no process and take under a second. |
 
 The outside checks use a tool that is not CORIA's own code, so a result is
-not only the program agreeing with itself:
+not only the program agreeing with itself. [Gates and outside checks](gates.md)
+says how each is run and what it needs:
 
 | Command | What it checks against what |
 |---|---|

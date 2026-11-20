@@ -1,5 +1,7 @@
 # Adding a storage driver
 
+[Documentation index](../README.md) · [Architecture](../architecture.md) · [Testing](../testing.md) · Guides: [a database driver](database-driver.md) · [an API method](api-method.md) · [a migration](migration.md) · [an event type](event-type.md)
+
 A storage driver implements `blob.Store`: put an object whole or not at all,
 read it or a range of it, list a prefix, delete with a reason recorded by the
 caller, and report usage. The directory and S3 drivers are the two today.
@@ -7,7 +9,7 @@ caller, and report usage. The directory and S3 drivers are the two today.
 1. **Make the package** `internal/blob/<name>`. Nothing outside it may know
    which storage it is: the reception pipeline and the handlers see only
    `blob.Store`.
-2. **Meet the port's promises**, which its documentation states and its suite
+2. **Meet the port's promises**, which [the port's documentation](../../internal/blob/doc.go) states and its suite
    tests: a put is whole or absent, never torn, and replaces an object whole;
    a read sees one version; keys are validated before they reach the storage;
    a listing is stable under concurrent puts; sizes are bounded.

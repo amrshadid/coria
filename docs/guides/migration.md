@@ -1,11 +1,14 @@
 # Adding a migration
 
+[Documentation index](../README.md) · [Architecture](../architecture.md) · [Testing](../testing.md) · Guides: [a database driver](database-driver.md) · [a storage driver](storage-driver.md) · [an API method](api-method.md) · [an event type](event-type.md)
+
 A database's schema changes only by a new migration: a SQL file, forward only,
 applied once, never edited after it is merged.
 
 1. **Write it twice**, once per driver, as the next number in
    `internal/driver/sqlite/migrations/<master|tenant>/` and
-   `internal/driver/postgres/migrations/<master|tenant>/`: `0008_<what>.sql`.
+   `internal/driver/postgres/migrations/<master|tenant>/`: `<number>_<what>.sql`,
+   numbered after the highest file there.
    Start the file with a comment saying why the change is needed. Text columns
    that hold identifiers use the `C` collation on Postgres.
 2. **Keep it safe on a database in use**: a new column has a default or is

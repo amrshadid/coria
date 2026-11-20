@@ -1,5 +1,7 @@
 # Adding an event type
 
+[Documentation index](../README.md) · [Architecture](../architecture.md) · [Testing](../testing.md) · Guides: [a database driver](database-driver.md) · [a storage driver](storage-driver.md) · [an API method](api-method.md) · [a migration](migration.md)
+
 An event is written in the same transaction as the change it reports, and
 read in commit order by the live feed.
 

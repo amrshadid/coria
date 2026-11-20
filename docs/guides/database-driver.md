@@ -1,5 +1,7 @@
 # Adding a database driver
 
+[Documentation index](../README.md) · [Architecture](../architecture.md) · [Testing](../testing.md) · Guides: [a storage driver](storage-driver.md) · [an API method](api-method.md) · [a migration](migration.md) · [an event type](event-type.md)
+
 A database driver implements both database ports, `master.Store` (the
 installation's database) and `tenant.Pipeline` (one tenant's), for one
 database. SQLite and Postgres are the two today; read them side by side, they
@@ -13,7 +15,7 @@ have the same files.
    `migrations/tenant/*.sql`.
 2. **Write the schema as forward-only migrations**, numbered from `0001`, run
    by `internal/driver/sqlkit`'s migration runner, one transaction each under
-   a lock that holds across processes. See [a migration](migration.md).
+   a lock that holds across processes. See [a migration](migration.md). The contract of each port is in [master](../../internal/master/doc.go) and [tenant](../../internal/tenant/doc.go).
 3. **Keep the domain out of the driver.** A rule of what may be stored
    (a label's form, a state's moves, a bound) belongs in the port
    (`internal/master`, `internal/tenant`); a helper both SQL drivers need goes
