@@ -208,6 +208,16 @@ func (t *Tenant) ClaimNextWork(ctx context.Context, kind, owner string, now time
 					last_error = 'the lease of its last attempt ended', updated = $1 WHERE id = $2`, micros(now), w.ID); err != nil {
 					return err
 				}
+				// A unit carries a reception or a job, never both; the job's
+				// rows are locked before either writes an event, which
+				// takes the feed's lock to the commit.
+				events, err := giveUpJobUnit(ctx, tx, w.ID, now)
+				if err != nil {
+					return err
+				}
+				if err := writeEvents(ctx, tx, events...); err != nil {
+					return err
+				}
 				failed, err := giveUp(ctx, tx, w.ReceptionID, now)
 				if err != nil {
 					return err
@@ -316,6 +326,14 @@ func (t *Tenant) FailWork(ctx context.Context, fence tenant.WorkFence, reason st
 			return err
 		}
 		if state == tenant.WorkFailed {
+			// A unit carries a reception or a job, never both.
+			events, err := giveUpJobUnit(ctx, tx, w.ID, now)
+			if err != nil {
+				return err
+			}
+			if err := writeEvents(ctx, tx, events...); err != nil {
+				return err
+			}
 			if _, err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
 				return err
 			}

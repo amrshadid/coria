@@ -33,12 +33,18 @@ const (
 	// EventFramesAdded is the pass that gives frame tables to scans
 	// archived before them rewriting a scan's metadata, or ending.
 	EventFramesAdded EventType = "frames_added"
+	// EventJobStep is a job made or reaching a state.
+	EventJobStep EventType = "job_step"
+	// EventJobProgress is a running job's counts.
+	EventJobProgress EventType = "job_progress"
+	// EventSenderHealth is a sender's state changing.
+	EventSenderHealth EventType = "sender_health"
 )
 
 // EventTypes returns every event type, in the contract's order.
 func EventTypes() []EventType {
 	return []EventType{EventAssociationFailed, EventReceptionStep, EventFileQuarantined, EventQuarantineDecided,
-		EventReceiverHealth, EventStorageSpace, EventFramesAdded}
+		EventReceiverHealth, EventStorageSpace, EventFramesAdded, EventJobStep, EventJobProgress, EventSenderHealth}
 }
 
 // Valid reports whether t is one of EventTypes.
@@ -48,7 +54,8 @@ func (t EventType) Valid() bool { return slices.Contains(EventTypes(), t) }
 // report through AppendEvents: what is not a row of the pipeline. The
 // others are written by the store with the change they report.
 func ServerEventType(t EventType) bool {
-	return t == EventAssociationFailed || t == EventReceiverHealth || t == EventStorageSpace || t == EventFramesAdded
+	return t == EventAssociationFailed || t == EventReceiverHealth || t == EventStorageSpace || t == EventFramesAdded ||
+		t == EventSenderHealth
 }
 
 // ValidateEventTypes returns an Invalid error unless types is a filter a
@@ -59,7 +66,7 @@ func ValidateEventTypes(types []EventType) error {
 	}
 	for _, t := range types {
 		if !t.Valid() {
-			return invalid("an event type is one of association_failed, reception_step, file_quarantined, quarantine_decided, receiver_health, storage_space, frames_added")
+			return invalid("an event type is one of association_failed, reception_step, file_quarantined, quarantine_decided, receiver_health, storage_space, frames_added, job_step, job_progress, sender_health")
 		}
 	}
 	return nil
@@ -114,12 +121,17 @@ func NewEvent(p EventPayload, at time.Time) (EventRecord, error) {
 	if err := master.ValidateTime("event time", at); err != nil {
 		return EventRecord{}, err
 	}
-	if h, ok := p.(*ReceiverHealthChanged); ok {
-		// A time is written as JSON in its location and to the nanosecond;
-		// held to UTC and microseconds, as every time a store keeps, the
-		// same health makes the same bytes whatever clock made it.
+	// A time is written as JSON in its location and to the nanosecond;
+	// held to UTC and microseconds, as every time a store keeps, the same
+	// health makes the same bytes whatever clock made it.
+	switch h := p.(type) {
+	case *ReceiverHealthChanged:
 		c := *h
-		c.Since = c.Since.UTC().Truncate(time.Microsecond)
+		c.Since = storedTime(c.Since)
+		p = &c
+	case *SenderHealthChanged:
+		c := *h
+		c.Since, c.NextTry, c.LastSuccess = storedTime(c.Since), storedTime(c.NextTry), storedTime(c.LastSuccess)
 		p = &c
 	}
 	if err := p.validate(); err != nil {
@@ -157,6 +169,12 @@ func DecodeEvent(t EventType, payload string) (EventPayload, bool) {
 		p = &StorageSpaceChanged{}
 	case EventFramesAdded:
 		p = &FramesAdded{}
+	case EventJobStep:
+		p = &JobStepReached{}
+	case EventJobProgress:
+		p = &JobProgressed{}
+	case EventSenderHealth:
+		p = &SenderHealthChanged{}
 	default:
 		return nil, true
 	}

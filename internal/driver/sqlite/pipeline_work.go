@@ -194,6 +194,9 @@ func (t *Tenant) ClaimNextWork(ctx context.Context, kind, owner string, now time
 					if err != nil {
 						return err
 					}
+					if err := giveUpJobUnit(ctx, tx, w.ID, now); err != nil {
+						return err
+					}
 					c.GaveUp = append(c.GaveUp, tenant.GaveUpWork{WorkID: w.ID, ReceptionID: w.ReceptionID, ReceptionFailed: failed})
 					continue
 				}
@@ -306,6 +309,9 @@ func (t *Tenant) FailWork(ctx context.Context, fence tenant.WorkFence, reason st
 		}
 		if state == tenant.WorkFailed {
 			if _, err := giveUp(ctx, tx, w.ReceptionID, now); err != nil {
+				return err
+			}
+			if err := giveUpJobUnit(ctx, tx, w.ID, now); err != nil {
 				return err
 			}
 		}

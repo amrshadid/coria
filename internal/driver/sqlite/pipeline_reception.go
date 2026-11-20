@@ -332,6 +332,11 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		if _, err := writeEvent(ctx, tx, e, nil); err != nil {
 			return err
 		}
+		// A step that reached done forwards the reception to each sender
+		// its receiver names, in this transaction (tenant.Sending).
+		if err := forwardInTx(ctx, tx, after); err != nil {
+			return err
+		}
 		if hook != nil {
 			if err := hook(ctx, before, after); err != nil {
 				return err

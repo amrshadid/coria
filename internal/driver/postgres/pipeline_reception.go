@@ -331,6 +331,14 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		if err != nil {
 			return err
 		}
+		// A step that reached done forwards the reception to each sender
+		// its receiver names, in this transaction (tenant.Sending); each
+		// sender's row is held after the reception's, in the package's
+		// order.
+		forwards, err := forwardInTx(ctx, tx, after)
+		if err != nil {
+			return err
+		}
 		if hook != nil {
 			if err := hook(ctx, before, after); err != nil {
 				return err
@@ -343,7 +351,7 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		if err != nil {
 			return err
 		}
-		if err := writeEvents(ctx, tx, e); err != nil {
+		if err := writeEvents(ctx, tx, append([]tenant.EventRecord{e}, forwards...)...); err != nil {
 			return err
 		}
 		out = after

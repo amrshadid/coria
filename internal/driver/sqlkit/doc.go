@@ -1,8 +1,10 @@
 // Package sqlkit holds what the SQL database drivers share: the migration
-// runner, the opaque cursors their lists are paged by, and the encodings of
-// the values both keep alike (a checksum column, a JSON column, a
-// receiver's configuration, the details a store adds to an audit entry), so
-// a value written by one driver reads the same in the other.
+// runner, the opaque cursors their lists are paged by, the encodings of the
+// values both keep alike (a checksum column, a JSON column, a receiver's
+// configuration, the details a store adds to an audit entry), so a value
+// written by one driver reads the same in the other; the catalog's reads;
+// and the senders and jobs of a tenant (Sending), one implementation run in
+// each driver's transactions.
 //
 // # Migrations
 //

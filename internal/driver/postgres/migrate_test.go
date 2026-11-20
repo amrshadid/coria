@@ -551,3 +551,28 @@ func TestLeanCatalogMigrationRefusesAMismatchedStorage(t *testing.T) {
 		t.Errorf("after the refusal the schema is at %d with %d rows on the other storage, want 8 and 1", version, held)
 	}
 }
+
+// TestSendingMigrationKeepsData guards the migration that adds senders and
+// jobs on a database that holds data: a tenant filled through the port at
+// the schema before it (tenanttest.FillBeforeSending) reads the same after
+// it, and a job over that data lists and sends every instance
+// (tenanttest.CheckAfterSending).
+func TestSendingMigrationKeepsData(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenTenant(ctx, newSchema(t), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.migrate(ctx, tenantMigrations[:10]); err != nil {
+		t.Fatal(err)
+	}
+	tenanttest.FillBeforeSending(t, s)
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := s.Version(ctx); err != nil || v != 11 {
+		t.Fatalf("the version after the migration = %d, %v", v, err)
+	}
+	tenanttest.CheckAfterSending(t, s)
+}

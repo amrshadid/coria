@@ -1,0 +1,299 @@
+package tenant
+
+import (
+	"context"
+	"time"
+
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/master"
+)
+
+// Sending is what the tenant's database keeps for sending archived data
+// out: its senders, its jobs, and the progress of each job's units of work.
+// Each concern is a narrow interface; Sending is all of them, which
+// PipelineParts embeds, so a driver implements them whole.
+//
+// # How a send job is carried out
+//
+// A job is one row with its state and running counts. Its work is units of
+// the tenant's leased queue (Work), all of the kind SendKind(sender), so a
+// worker claims the units of one sender and a sender that is down or
+// disabled holds only its own jobs: first a listing unit, which lists the
+// job's scans a page at a time (ListJobScans) and queues one unit per scan,
+// so a subject of thousands of scans is never one transaction; then each
+// scan's unit, which sends the scan's instances in the catalog's order
+// (JobScanInstances) and records how far the peer answered (RecordJobProgress,
+// EndJobScan). Every write of a unit is fenced by its attempt (WorkFence): a
+// worker whose lease was taken over writes nothing and is answered
+// ErrLeaseLost. A unit's cursor is the last instance the peer answered for,
+// moved only forward and only from the cursor the write names, so a write
+// sent again after its answer was lost changes nothing; after a crash or a
+// takeover the next attempt goes on after the cursor, and at most the
+// instances answered since the last write are sent again.
+//
+// What a job sends is fixed when it is made. A job of a subject, a session
+// or a scan sends the instances its target's scans held at its create time:
+// each instance whose held time (ScanInstance.Held) is at or before it,
+// whatever is archived later. A forward sends exactly the instances one
+// reception archived. A retry sends the ended job's refused instances and
+// those it never sent, of the instances that job sent, and nothing archived
+// since. The rule is a bound each read applies, never a copy of the catalog,
+// so a job of millions of instances costs one row per scan; the held time is
+// the caller's clock at the commit (see Pipeline's clocks), so a commit that
+// took its time before a job's creation and commits after the job listed its
+// scan is counted by neither; on one server it takes a commit held across a
+// whole creation and listing.
+//
+// # Rules every driver keeps
+//
+// Store's and Pipeline's rules hold. A change a person or a key asks for
+// (a sender added, changed or removed, a job made, canceled or retried)
+// takes its audit entry and a Guard; the work of units is the server's and
+// takes neither. Events are written in the transaction of their change:
+//
+//   - CreateJob, RetryJob and a forward: the new job reaching queued;
+//   - StartJobUnit: the job reaching running, at its first unit;
+//   - CancelJob and RemoveSender with cancel: each job reaching canceled;
+//   - EndJobScan, and a unit whose attempts ran out (FailWork, ClaimWork):
+//     the job reaching its end when it was its last unit (EndState);
+//   - RecordJobProgress and EndJobScan: the job's counts, at most one event
+//     per job every ProgressEventInterval, and none when its counts did not
+//     change since the last.
+//
+// A forward is made by StepReception itself: a step that reaches done makes,
+// in its transaction, one job per sender its receiver's ForwardTo names
+// (ForwardJobID, ForwardKey), so a step run again makes nothing twice and a
+// caller cannot take the step without it.
+//
+// Under several writers (Postgres) a driver keeps these, which the suite
+// tests: two workers on two units of one job both count, and neither's
+// counts are lost; a cancel and a unit's write at once end with the job
+// canceled and the unit's counts kept, the unit told at its next write; a
+// sender removed while a forward is made either sees the job and refuses or
+// cancels it, or the forward sees no sender and makes none.
+type Sending interface {
+	Senders
+	Jobs
+	JobWork
+}
+
+// Senders keeps a tenant's senders.
+type Senders interface {
+	// AddSender adds a sender, Normalize'd, with Created and Updated set to
+	// now, and returns it as a read would. A name taken by a sender, or
+	// still named by a job, is Conflict, so a name in a record always
+	// means one sender. A stow sender's sealed credential is kept as given
+	// and never answered.
+	AddSender(ctx context.Context, s Sender, now time.Time, audit master.AuditEntry, guard Guard) (Sender, error)
+	// Sender returns the sender of that name, or NotFound; its credential
+	// is never answered (STOWSender.CredentialSet says whether one is
+	// held).
+	Sender(ctx context.Context, name string) (Sender, error)
+	// ListSenders returns a page of the senders in order of name.
+	ListSenders(ctx context.Context, page master.Page) ([]Sender, string, error)
+	// SetSender changes the fields named to their values in s, whose Name
+	// names the sender, by ApplySender's rules; Updated becomes now. A
+	// credential not named is kept; one named replaces it; an
+	// authentication that becomes none removes it.
+	SetSender(ctx context.Context, s Sender, fields []SenderField, now time.Time, audit master.AuditEntry, guard Guard) (Sender, error)
+	// RemoveSender removes the sender and its credential and returns it as
+	// it was, with how many of its jobs it canceled. A receiver that
+	// forwards to it is a precondition failure; so is a job to it that is
+	// queued or running, unless cancelJobs, which cancels them in the same
+	// transaction as CancelJob does (with JobReasonSenderRemoved). Its
+	// jobs stay, naming it. The store adds the detail DetailJobsCanceled
+	// to the audit entry.
+	RemoveSender(ctx context.Context, name string, cancelJobs bool, now time.Time, audit master.AuditEntry, guard Guard) (Sender, int64, error)
+	// SenderCredential returns the sealed credential of the stow sender of
+	// that name, as AddSender or SetSender was given it, still sealed: the
+	// store neither opens nor logs it. A sender not there, or holding
+	// none, is NotFound.
+	SenderCredential(ctx context.Context, name string) ([]byte, error)
+}
+
+// Jobs keeps a tenant's jobs.
+type Jobs interface {
+	// CreateJob makes a send job, queued, and its listing unit, and
+	// returns it. A sender the tenant does not have is a precondition
+	// failure; a target the catalog does not hold is NotFound. The key
+	// that makes it is its audit entry's.
+	CreateJob(ctx context.Context, j NewJob, audit master.AuditEntry, guard Guard) (Job, error)
+	// Job returns the job of that id with its counts now, or NotFound.
+	Job(ctx context.Context, id string) (Job, error)
+	// ListJobs returns a page of the jobs the filter keeps, newest first:
+	// by create time, then by id, both descending.
+	ListJobs(ctx context.Context, filter JobFilter, page master.Page) ([]Job, string, error)
+	// CancelJob ends a queued or running job as canceled, and ends in the
+	// same transaction its units that are queued; a unit a worker holds
+	// is told at its next write, whose counts are kept. A job canceled
+	// already is answered as it stands; one ended otherwise is a
+	// precondition failure.
+	CancelJob(ctx context.Context, id string, now time.Time, audit master.AuditEntry, guard Guard) (Job, error)
+	// RetryJob makes a new job, newID, of the same kind, sender and target
+	// as the ended job id, with RetryOf set, that sends exactly that job's
+	// refused instances and those it never sent, and sets the ended job's
+	// RetryJob. A job retried already is answered as it stands with the
+	// one made then. A job not ended, one ended done with nothing to send
+	// again, and one whose sender was removed, are precondition failures.
+	// A scan whose refused instances were not all listed (past
+	// job.failures-kept) is sent again whole, since the store no longer
+	// knows which of its instances were refused. The store adds the
+	// detail DetailRetryJob to the audit entry.
+	RetryJob(ctx context.Context, id, newID string, now time.Time, audit master.AuditEntry, guard Guard) (ended, retry Job, err error)
+	// ListJobFailures returns a page of a job's failures, those refused
+	// and, with includeWarnings, those sent with a warning, in order of
+	// their scan's labels, then SOP Instance UID. A job not there is
+	// NotFound.
+	ListJobFailures(ctx context.Context, id string, includeWarnings bool, page master.Page) ([]JobFailure, string, error)
+}
+
+// JobWork is the work of a job's units, each call fenced by the unit's
+// lease. A unit is one the store queued for a job (a listing or a scan);
+// any other is a precondition failure.
+type JobWork interface {
+	// StartJobUnit says what the leased unit is and how far it got, and
+	// moves its job from queued to running (its event) at its first unit.
+	// A unit whose job has ended (canceled) is answered with the job's
+	// state: the worker ends it at once with EndJobScan, or, for a
+	// listing, CompleteWork.
+	StartJobUnit(ctx context.Context, fence WorkFence, now time.Time) (JobUnit, error)
+	// ListJobScans lists the next page of a listing unit's job's scans,
+	// up to JobListPage, queues a unit for each that holds an instance to
+	// send, and adds them to the job's counts; more says whether to call
+	// it again. The page that lists the last scan marks the job listed
+	// and completes the listing unit in its transaction, and ends a job
+	// whose every unit has ended (EndState). A job canceled meanwhile
+	// lists nothing more and completes the unit.
+	ListJobScans(ctx context.Context, fence WorkFence, now time.Time) (job Job, more bool, err error)
+	// JobScanInstances returns up to limit (1 to MaxJobInstancePage) of
+	// the instances of a scan unit's stream after the SOP Instance UID
+	// after, in its order, each placed as ScanInstances places them.
+	JobScanInstances(ctx context.Context, fence WorkFence, after string, limit int) ([]ScanInstance, error)
+	// RecordJobProgress records what a scan unit's peer answered since
+	// the unit's cursor and returns the job as it is after: the counts
+	// added to the scan's and the job's, the failures listed while the
+	// job lists fewer than p.FailuresKept and counted past it, the cursor
+	// moved to p.To. A write whose p.From is not the unit's cursor
+	// changes nothing: when the cursor is already p.To it was recorded
+	// before and is answered as it stands, and otherwise it is a
+	// precondition failure. A job no longer running is answered with its
+	// state, after recording, so the worker stops.
+	RecordJobProgress(ctx context.Context, p JobProgress) (Job, error)
+	// EndJobScan records p as RecordJobProgress does, ends the scan,
+	// completes its unit, and ends the job when it was its last unit and
+	// the job is listed (EndState). Its instances not answered stay
+	// remaining.
+	EndJobScan(ctx context.Context, p JobProgress) (Job, error)
+}
+
+// JobUnit is what a leased unit of a job is.
+type JobUnit struct {
+	// Job is its job, as it is after the unit started.
+	Job Job
+	// Listing says the unit lists the job's scans; otherwise it sends
+	// Scan.
+	Listing bool
+	// Scan is the scan a scan unit sends, and how far it got.
+	Scan JobScan
+}
+
+// JobScan is one scan of a job and how far its unit got.
+type JobScan struct {
+	// Path is the scan's labels; Storage its storage.
+	Path    label.Path
+	Storage string
+	// Cursor is the SOP Instance UID of the last instance the peer
+	// answered for, empty before the first.
+	Cursor string
+	// Counts are the scan's instances and bytes so far; Scans and
+	// ScansDone are 1 and 0 or 1.
+	Counts JobCounts
+	// Ended says its unit ended.
+	Ended bool
+}
+
+// JobProgress is what a scan unit's peer answered since its cursor.
+type JobProgress struct {
+	// Fence is the unit's lease.
+	Fence WorkFence
+	// From is the unit's cursor the instances counted follow; To the last
+	// of them, the new cursor. Equal, with nothing counted, for no
+	// progress (an EndJobScan of a unit that sends nothing more).
+	From, To string
+	// Sent, Warned and Refused count the instances answered, each with
+	// its bytes.
+	Sent, SentBytes       int64
+	Warned, WarnedBytes   int64
+	Refused, RefusedBytes int64
+	// Failures are the instances refused and those sent with a warning,
+	// one each: as many refused as Refused and as many warned as Warned.
+	Failures []JobFailure
+	// FailuresKept is the setting job.failures-kept, the most failures
+	// the job lists.
+	FailuresKept int
+	// Now is when they were recorded.
+	Now time.Time
+}
+
+// Validate returns an Invalid error unless p can be recorded.
+func (p JobProgress) Validate() error {
+	if err := p.Fence.Validate(); err != nil {
+		return err
+	}
+	for _, u := range []string{p.From, p.To} {
+		if u != "" {
+			if err := ValidateInstanceUID(u); err != nil {
+				return err
+			}
+		}
+	}
+	answered := p.Sent + p.Warned + p.Refused
+	for _, n := range []int64{p.Sent, p.SentBytes, p.Warned, p.WarnedBytes, p.Refused, p.RefusedBytes} {
+		if n < 0 {
+			return invalid("a job's progress counts are not negative")
+		}
+	}
+	if answered > MaxJobProgressBatch || len(p.Failures) > MaxJobFailureBatch {
+		return invalid("a progress write records at most 10000 instances and 1000 failures")
+	}
+	if (answered == 0) != (p.From == p.To) || (answered > 0 && p.To <= p.From) {
+		return invalid("a progress write moves the cursor forward past the instances it counts, and only then")
+	}
+	var refused, warned int64
+	seen := make(map[string]bool, len(p.Failures))
+	for _, f := range p.Failures {
+		if err := f.Validate(); err != nil {
+			return err
+		}
+		if seen[f.SOPInstanceUID] {
+			return invalid("a progress write lists an instance's failure once")
+		}
+		seen[f.SOPInstanceUID] = true
+		if f.SOPInstanceUID <= p.From || f.SOPInstanceUID > p.To {
+			return invalid("a failure is of an instance the progress write moves the cursor past")
+		}
+		if f.Code.Refused() {
+			refused++
+		} else {
+			warned++
+		}
+	}
+	if refused != p.Refused || warned != p.Warned {
+		return invalid("a progress write lists each instance refused or sent with a warning, once")
+	}
+	if p.FailuresKept < MinFailuresKept || p.FailuresKept > MaxFailuresKept {
+		return invalid("a job keeps 100 to 1000000 failures")
+	}
+	return master.ValidateTime("progress time", p.Now)
+}
+
+// The details a store adds to the audit entry of a change of senders or
+// jobs.
+const (
+	// DetailJobsCanceled is the number of jobs a sender's removal
+	// canceled.
+	DetailJobsCanceled = "jobs_canceled"
+	// DetailRetryJob is the id of the job that sends an ended job's unsent
+	// instances.
+	DetailRetryJob = "retry_job"
+)

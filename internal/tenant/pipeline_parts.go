@@ -249,4 +249,5 @@ type PipelineParts interface {
 	ScanContents
 	CatalogReads
 	ScanValueFill
+	Sending
 }

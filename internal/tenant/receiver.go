@@ -39,6 +39,8 @@ const (
 	MaxAddressRange  = 64
 	// MaxSTOWKeys bounds the keys one stow receiver lists.
 	MaxSTOWKeys = 256
+	// MaxForwardTo is the most senders a receiver forwards to.
+	MaxForwardTo = 16
 	// MinMaxRequestBytes and MaxMaxRequestBytes bound a stow receiver's
 	// largest request: at least its smallest largest file, at most 1 TiB.
 	MinMaxRequestBytes = MinMaxFileBytes
@@ -83,6 +85,11 @@ type Receiver struct {
 	MaxOpenTime time.Duration
 	// MaxFileBytes is the largest file it accepts, 1024 to 2^38.
 	MaxFileBytes int64
+	// ForwardTo names the senders each reception it completes is sent to,
+	// one job per sender when the reception reaches done; at most
+	// MaxForwardTo, each once, each a sender the tenant has (the store's
+	// to check).
+	ForwardTo []string
 	// Created is when it was added; Updated when it last changed.
 	Created, Updated time.Time
 }
@@ -238,7 +245,8 @@ const (
 	FieldDIMSESyntaxes    ReceiverField = "dimse.transfer_syntaxes"
 	FieldSTOWKeys         ReceiverField = "stow.key_ids"
 	FieldSTOWMaxRequest   ReceiverField = "stow.max_request_bytes"
-	maxReceiverFieldCount               = 18
+	FieldForwardTo        ReceiverField = "forward_to"
+	maxReceiverFieldCount               = 19
 )
 
 // Validate returns an Invalid error unless r can be stored, by the
@@ -262,6 +270,17 @@ func (r Receiver) Validate() error {
 	}
 	if r.MaxFileBytes < MinMaxFileBytes || r.MaxFileBytes > MaxMaxFileBytes {
 		return invalid("a largest file is 1024 to 2^38 bytes")
+	}
+	if len(r.ForwardTo) > MaxForwardTo {
+		return invalid("a receiver forwards to at most 16 senders")
+	}
+	for i, f := range r.ForwardTo {
+		if err := ValidateSenderName(f); err != nil {
+			return err
+		}
+		if slices.Contains(r.ForwardTo[:i], f) {
+			return invalid("a receiver names each sender it forwards to once")
+		}
 	}
 	if r.Naming != nil {
 		if _, err := naming.Parse(*r.Naming); err != nil {
@@ -371,6 +390,7 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 	out.DIMSE.SOPClasses = slices.Clone(stored.DIMSE.SOPClasses)
 	out.DIMSE.TransferSyntaxes = slices.Clone(stored.DIMSE.TransferSyntaxes)
 	out.STOW.Keys = slices.Clone(stored.STOW.Keys)
+	out.ForwardTo = slices.Clone(stored.ForwardTo)
 	if stored.DIMSE.TLS != nil {
 		t := *stored.DIMSE.TLS
 		out.DIMSE.TLS = &t
@@ -446,6 +466,8 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 			out.STOW.Keys = slices.Clone(change.STOW.Keys)
 		case FieldSTOWMaxRequest:
 			out.STOW.MaxRequestBytes = change.STOW.MaxRequestBytes
+		case FieldForwardTo:
+			out.ForwardTo = slices.Clone(change.ForwardTo)
 		default:
 			return stored, invalid("a change of a receiver names a field it does not have: " + strconv.Quote(string(f)))
 		}

@@ -117,6 +117,13 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- A tenant's senders and jobs are kept in its database (both database
+  types, migration 11): senders with their sealed credential, send jobs of a
+  subject, a session or a scan, each made of one unit of work per scan with a
+  fenced cursor, counts and failures; a receiver's forward_to makes one job
+  per sender when a reception reaches done, in the same transaction; cancel
+  and retry; the events job_step and job_progress written with their change.
+  Not served by the API yet.
 - The de-identification engine, not yet called by reception: a data set
   de-identified in place by an expanded profile version under a tenant's
   keys, every element visited (sequences, items, private blocks), each by the

@@ -335,6 +335,9 @@ func checkReceiver(ctx context.Context, tx *sql.Tx, r tenant.Receiver) error {
 	if !has {
 		return tenant.Precondition("the tenant has no storage named " + r.Storage)
 	}
+	if err := checkForwardTo(ctx, tx, r.ForwardTo); err != nil {
+		return err
+	}
 	rows, err := tx.QueryContext(ctx, receiversOnPortSQL, r.DIMSE.Port, r.Name)
 	others, err := collect(rows, err, scanReceiver)
 	if err != nil {

@@ -24,6 +24,7 @@ type dimseConfig struct {
 	TransferSyntaxes []string           `json:"transfer_syntaxes"`
 	STOWKeys         []string           `json:"stow_key_ids,omitempty"`
 	MaxRequestBytes  int64              `json:"stow_max_request_bytes,omitempty"`
+	ForwardTo        []string           `json:"forward_to,omitempty"`
 }
 
 // callerRuleConfig is one caller a DIMSE receiver accepts.
@@ -52,7 +53,7 @@ type namingConfig struct {
 func ReceiverConfigText(r tenant.Receiver) (config, namingText string, err error) {
 	c := dimseConfig{AETitle: r.DIMSE.AETitle, AnyCaller: r.DIMSE.AnyCaller,
 		SOPClasses: r.DIMSE.SOPClasses, TransferSyntaxes: r.DIMSE.TransferSyntaxes,
-		STOWKeys: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes}
+		STOWKeys: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes, ForwardTo: r.ForwardTo}
 	for _, cr := range r.DIMSE.Callers {
 		c.Callers = append(c.Callers, callerRuleConfig(cr))
 	}
@@ -81,6 +82,7 @@ func ReadReceiverConfig(r *tenant.Receiver, config, namingText string) error {
 	r.DIMSE.AETitle, r.DIMSE.AnyCaller = c.AETitle, c.AnyCaller
 	r.DIMSE.SOPClasses, r.DIMSE.TransferSyntaxes = c.SOPClasses, c.TransferSyntaxes
 	r.STOW = tenant.STOWReceiver{Keys: c.STOWKeys, MaxRequestBytes: c.MaxRequestBytes}
+	r.ForwardTo = c.ForwardTo
 	r.DIMSE.Callers = nil
 	for _, cr := range c.Callers {
 		r.DIMSE.Callers = append(r.DIMSE.Callers, tenant.CallerRule(cr))

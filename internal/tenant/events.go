@@ -41,7 +41,10 @@ import (
 //     takes no other;
 //   - ReleaseQuarantined and RejectQuarantined: one event per decision, with
 //     the totals after it. A file already decided changes nothing and makes
-//     no event.
+//     no event;
+//   - a job's changes, each its state reached or, at most once in
+//     ProgressEventInterval, its counts, as Sending lists them; a forward's
+//     jobs with the step that makes them.
 //
 // A reception step's event names the step left as well as the step reached
 // (ReceptionStepReached.PreviousStep), so a client can keep the receptions in
@@ -313,4 +316,7 @@ type StatusSnapshot struct {
 	// StorageBytes are the bytes of the instances the catalog holds on each
 	// storage, by name; a storage that holds none is left out.
 	StorageBytes map[string]int64
+	// JobsInProgress are the jobs that have not ended, one entry per state
+	// that has any, in the contract's order (InProgressJobs).
+	JobsInProgress []JobStateCount
 }

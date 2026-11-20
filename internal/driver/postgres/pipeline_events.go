@@ -391,9 +391,13 @@ func (t *Tenant) StatusSnapshot(ctx context.Context) (tenant.StatusSnapshot, err
 		for _, v := range list {
 			storages[v.storage] = v.bytes
 		}
+		jobs, err := jobsInProgress(ctx, tx)
+		if err != nil {
+			return err
+		}
 		s = tenant.StatusSnapshot{EventCursor: t.eventCursor(high), Catalog: *c, QuarantinedFiles: files,
 			QuarantinedBytes: bytes, InProgress: tenant.InProgressSteps(counts), IncomingBytes: incoming + bytes,
-			StorageBytes: storages}
+			StorageBytes: storages, JobsInProgress: jobs}
 		return nil
 	})
 	if err != nil {

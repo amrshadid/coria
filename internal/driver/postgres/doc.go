@@ -97,16 +97,26 @@
 // cycle:
 //
 //  1. the tenant's configuration lock (an advisory lock for the
-//     transaction), taken only by changes of storages and receivers;
+//     transaction), taken only by changes of storages, receivers and
+//     senders;
 //  2. a unit of work's row, the fence of a worker's write;
 //  3. a quarantine record's row;
 //  4. receptions' rows, several in order of id;
-//  5. a storage's row;
-//  6. the catalog's subject, session and scan, in that order, as their
+//  5. a sender's row (FOR KEY SHARE by what makes a job for it, FOR
+//     UPDATE by its removal), then a job's row, then a job's scan's;
+//  6. a storage's row;
+//  7. the catalog's subject, session and scan, in that order, as their
 //     inserts meet them;
-//  7. instance rows, several in order of SOP Instance UID;
-//  8. received files and associations, new rows of a reception held;
-//  9. the running totals, last.
+//  8. instance rows, several in order of SOP Instance UID;
+//  9. received files and associations, new rows of a reception held;
+//  10. the running totals, last.
+//
+// A cancel of a job (CancelJob, RemoveSender) holds the job's row and then
+// ends the job's queued units with SKIP LOCKED: it never waits for a
+// unit's row, which a worker locks before its job's, so the two cannot wait
+// for each other; a unit it skipped is told of the cancel at its worker's
+// next write. A unit held as failed ends its job's scan before the
+// reception step's event of the same unit, which a unit of a job never has.
 //
 // Each lock is the weakest that is enough, and a row is locked the first time
 // a change touches it with the strongest lock that change will take on it
@@ -157,6 +167,16 @@
 //	                       in a transaction of its own                        holds two receptions
 //	Renew/Complete/Fail    UPDATE work WHERE id, attempt, leased (the         a takeover skips the unit while it is
 //	                       fence), then the change                            held, and a write after it changes nothing
+//	Add/Set/Remove a       pg_advisory_xact_lock; SELECT sender FOR NO KEY    a name and a receiver's forward are checked
+//	sender                 UPDATE, or FOR UPDATE to remove it                 with no other change of them in flight; a
+//	                                                                          forward being made waits for a removal
+//	CreateJob, RetryJob,   SELECT sender FOR KEY SHARE; RetryJob: SELECT      the sender is not removed under the job;
+//	a forward              job FOR NO KEY UPDATE; INSERT job ON CONFLICT      a forward is made once per reception and
+//	                       (unique_key) DO NOTHING                            sender
+//	CancelJob              SELECT job FOR NO KEY UPDATE; SELECT its queued    a unit's write and a cancel are ordered
+//	                       units FOR UPDATE SKIP LOCKED                       by the job's row, never by the unit's
+//	A unit's progress,     UPDATE work (fence); SELECT job FOR NO KEY         two units of one job add to its counts
+//	its end, a listing     UPDATE; SELECT its scan FOR NO KEY UPDATE OF js    one after the other; the cursor is compared
 //
 // Batches are one statement each, whatever their size: received files,
 // claims, confirmations and quarantine records go as one array per column
