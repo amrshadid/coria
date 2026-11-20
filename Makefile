@@ -238,7 +238,7 @@ check-seal:
 PYDICOM_CORPUS ?=
 CHECK_READING_ENV = $(if $(PYDICOM_CORPUS),CORIA_PYDICOM_CORPUS="$(PYDICOM_CORPUS)")
 
-.PHONY: check-metadata check-catalog check-frames check-dicomweb check-stow check-deid
+.PHONY: check-metadata check-catalog check-frames check-dicomweb check-stow check-deid check-send
 
 check-metadata:
 	@test -n "$(PYTHON)" || { echo "check-metadata: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
@@ -272,6 +272,12 @@ check-stow:
 	@test -n "$(PYTHON)" || { echo "check-stow: PYTHON is empty; name an interpreter that has dicomweb-client and pydicom" >&2; exit 1; }
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-stow: no interpreter $(PYTHON)" >&2; exit 1; }
 	CORIA_CHECK_STOW_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSTOWWithDicomwebClient$$' ./internal/cli/servecmd
+
+# The senders against dcmtk's storescp (+B) and a pynetdicom peer: each data
+# set they write is the archived one, byte for byte (DCMTK=<dir>, PYTHON=...).
+check-send:
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-send: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_REQUIRE_DCMTK=1 CORIA_DCMTK="$(DCMTK)" CORIA_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestOutside' ./internal/send
 
 # The outside check of the SQLite master database: the driver writes the
 # contract suite's sample, and the sqlite3 tool (SQLITE3=... names one) reads

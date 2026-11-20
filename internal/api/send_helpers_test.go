@@ -107,6 +107,21 @@ type fakeSending struct {
 	health  map[string]api.SenderHealth
 	results []api.SenderTestResult
 	asked   []string
+	changed []string
+}
+
+// SendersChanged records the notice.
+func (f *fakeSending) SendersChanged(tenantName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.changed = append(f.changed, tenantName)
+}
+
+// changes returns how many notices of changes it was given.
+func (f *fakeSending) changes() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.changed)
 }
 
 // SenderHealth answers the health set for the sender, or unknown.

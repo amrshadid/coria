@@ -371,3 +371,24 @@ func testListJobFailures(t *testing.T) {
 		{name: "a token that is not one", as: f.lab1Reader, call: list(job.GetId(), true, 1, "x"), code: connect.CodeInvalidArgument, msg: "page_token"},
 	})
 }
+
+// TestJobChangesWakeTheSenders guards the notice to the part of the server
+// that sends: a job made, canceled and retried each tells it the tenant's
+// jobs changed, so a worker takes the work at once and not at its next
+// look.
+func TestJobChangesWakeTheSenders(t *testing.T) {
+	d := newJobData(t)
+	sending := d.f.sending()
+	j := d.makeJob(t, "pacs", d.session.GetSubjectLabel())
+	if n := sending.changes(); n != 1 {
+		t.Fatalf("%d notices after CreateJob, want 1", n)
+	}
+	mustCall[*v1.CancelJobResponse](t, "cancel", cancelJob(j.GetId())(d.f.as(local)))
+	if n := sending.changes(); n != 2 {
+		t.Fatalf("%d notices after CancelJob, want 2", n)
+	}
+	mustCall[*v1.RetryJobResponse](t, "retry", retryJob(j.GetId())(d.f.as(local)))
+	if n := sending.changes(); n != 3 {
+		t.Errorf("%d notices after RetryJob, want 3", n)
+	}
+}

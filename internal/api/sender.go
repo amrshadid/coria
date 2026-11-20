@@ -53,7 +53,7 @@ func (s senderService) message(tenantName string, in tenant.Sender) *v1.Sender {
 }
 
 // sendersChanged tells the part of the server that sends that a tenant's
-// senders changed.
+// senders or jobs changed.
 func (c *core) sendersChanged(tenantName string) {
 	if sc, ok := c.senders.(SenderChanges); ok {
 		sc.SendersChanged(tenantName)

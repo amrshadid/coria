@@ -204,6 +204,29 @@ All notable changes to CORIA are written here. The form is
   is sealed with the installation key and is never answered, logged or
   audited. A receiver may name senders in `forward_to`; the tenant status
   lists its jobs in progress and its senders.
+- Senders send: a tenant's send jobs are carried out by the server. A DIMSE
+  sender sends each archived data set by C-STORE exactly as stored, on a
+  presentation context of its stored transfer syntax and naming the data
+  set's own SOP class; a stow sender sends the archived files by STOW-RS in
+  requests bounded by the sender's instance and byte limits. Every byte is
+  checked against the catalog's SHA-256 and length, and a damaged instance
+  never reaches the peer whole; an instance whose file meta information
+  cannot be placed, or names another class or instance than its data set, is
+  refused alone. Progress is recorded every 64 instances or second, so a
+  crash or cancel resends at most one batch; peer statuses are read as the
+  contract says. A send is cut only when the peer takes no bytes for the
+  sender's response timeout, so slow links send instances of any size; a
+  store answer is read up to 4 MiB. Each connection resolves the host once,
+  tries each address sender.destinations allows in turn, and reaches no
+  other; each unit reads its sender as stored, so a credential only ever
+  goes to the URL it was stored with, and a change of destination, AE
+  titles, authentication or credential stops what is in flight. A peer that
+  fails three connections in a row makes its sender down and holds its jobs
+  without using attempts until a C-ECHO or OPTIONS probe answers; health is
+  reported in sender_health events and the status. The API and the senders
+  share one bound of 256 open reads, of which the senders hold at most half;
+  TestSender tries the peer; the senders take up a new, canceled or retried
+  job at once.
 - Settings `sender.destinations` (the hosts and address ranges, with
   optional ports, that senders may reach; none by default),
   `sender.allow-plain-http`, `sender.max-associations`,

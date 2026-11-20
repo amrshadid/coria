@@ -8,6 +8,7 @@ import (
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/driver"
 	"github.com/amrshadid/coria/internal/events"
@@ -109,8 +110,18 @@ func APIServices(d Deps) (Built, error) {
 		closeRegistry(reg)
 		return Built{}, err
 	}
+	// The senders, which read archived bytes under the same count of reads
+	// open as the API, so one bound covers both.
+	reads := &checkedread.Slots{}
+	senders, err := newSending(d, reg, feeds.Wake, reads)
+	if err != nil {
+		_ = feeds.Close()
+		closeRegistry(reg)
+		return Built{}, err
+	}
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
-		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, Headers: heldHeaders{sup}, STOW: stowReceivers})
+		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, Headers: heldHeaders{sup}, STOW: stowReceivers,
+		Reads: reads, SenderHealths: senderHealths{senders}, SenderTests: senderTests{senders}})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err
@@ -149,7 +160,9 @@ func APIServices(d Deps) (Built, error) {
 		// A store by STOW-RS may send a whole study in one request; a client
 		// that stops sending is cut by the receiver's read stall bound.
 		LongMethods: []string{coriav1connect.DataServiceReadFilesProcedure, api.DownloadPattern, api.DICOMwebPattern, api.STOWPattern},
-		Reception: runners{closer{feeds}, sup, events.NewKeeper(events.KeeperConfig{
+		// Stopped last first: the event keeper, the senders (each giving its
+		// unit back), then the receivers and pipelines, then the feeds.
+		Reception: runners{closer{feeds}, sup, senders, events.NewKeeper(events.KeeperConfig{
 			Tenants: keptFeeds{tenants: registryTenants{master: d.Master, registry: reg}, registry: reg, values: settingvalue.Reader{Master: d.Master}},
 			Logger:  d.Log,
 		})},

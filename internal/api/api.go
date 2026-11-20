@@ -89,6 +89,11 @@ type Config struct {
 	// STOW finds the running stow receiver that takes a key's STOW-RS
 	// requests. Nil takes none: every such request is refused.
 	STOW *stow.Directory
+	// Reads counts the reads of archived bytes open in the server, shared
+	// with the senders, so one bound (checkedread.MaxServerReads) covers
+	// the API's streams and downloads and the instances senders read. Nil
+	// gives the API a count of its own.
+	Reads *checkedread.Slots
 }
 
 // Handlers is the services of the contract this package serves, each an
@@ -147,6 +152,10 @@ func New(cfg Config) (Handlers, error) {
 		access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known,
 		keys: cfg.Keys, now: cfg.Now, receivers: cfg.Receivers, incoming: cfg.Incoming, headers: cfg.Headers,
 		live: cfg.Live, feeds: cfg.Feeds, stowReceivers: cfg.STOW, senders: cfg.SenderHealths, senderTests: cfg.SenderTests,
+		reads: cfg.Reads,
+	}
+	if c.reads == nil {
+		c.reads = &checkedread.Slots{}
 	}
 	if c.live == nil {
 		c.live = noLive{}
@@ -263,8 +272,9 @@ type core struct {
 	// stowReceivers finds the stow receiver that takes a key's requests.
 	stowReceivers *stow.Directory
 	// reads counts the streams of ReadFiles and the downloads open now,
-	// for their bounds.
-	reads checkedread.Slots
+	// for their bounds, in the server's one count, which the senders'
+	// reads share (Config.Reads).
+	reads *checkedread.Slots
 	// places orders the changes that depend on where the installation lets
 	// data go (its roots, endpoints, ports and bind addresses) against the
 	// changes of those settings: a storage or a receiver is checked and

@@ -9,12 +9,14 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/receive/frames"
 	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/tenant"
@@ -136,6 +138,34 @@ func TestDICOMwebSearchHoldsAnOpenRead(t *testing.T) {
 	release()
 	if a := w.get(t, "studies"); a.status != http.StatusOK {
 		t.Errorf("a search once the reads are free: %d %s", a.status, clipBody(a.body))
+	}
+}
+
+// TestOpenReadsAreSharedWithSenders guards the server's one bound on reads
+// of archived bytes: with every read of the count the handlers are given
+// held elsewhere (as the senders hold theirs, under their own owner names),
+// a search is refused with 429, and once one is free it is answered.
+func TestOpenReadsAreSharedWithSenders(t *testing.T) {
+	w := newWebFixture(t)
+	reads := &checkedread.Slots{}
+	s := serveWebWith(t, w.f.env, reads)
+	var releases []func()
+	for i := range api.MaxServerReads {
+		release, err := reads.Take("send:lab1/s" + strconv.Itoa(i/checkedread.MaxOpenReads) + "-" + strconv.Itoa(i))
+		if err != nil {
+			t.Fatal(err)
+		}
+		releases = append(releases, release)
+	}
+	if a := s.get(t, http.MethodGet, webPath("studies"), w.f.lab1Reader); a.status != http.StatusTooManyRequests {
+		t.Errorf("a search with every read held by senders: %d %s", a.status, clipBody(a.body))
+	}
+	releases[0]()
+	if a := s.get(t, http.MethodGet, webPath("studies"), w.f.lab1Reader); a.status != http.StatusOK {
+		t.Errorf("a search once a read is free: %d %s", a.status, clipBody(a.body))
+	}
+	for _, r := range releases[1:] {
+		r()
 	}
 }
 

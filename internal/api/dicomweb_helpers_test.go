@@ -18,6 +18,7 @@ import (
 	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/api"
 	"github.com/amrshadid/coria/internal/api/codes"
+	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/receive/header"
 )
@@ -28,7 +29,15 @@ import (
 // test ends.
 func serveWeb(t testing.TB, e *env) *dataServer {
 	t.Helper()
-	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.faulty, NewID: e.newID, Settings: e.known, Keys: e.keys, Now: e.now})
+	return serveWebWith(t, e, nil)
+}
+
+// serveWebWith is serveWeb with the server's count of open reads given, as
+// the server shares it with its senders; nil gives the handlers their own.
+func serveWebWith(t testing.TB, e *env, reads *checkedread.Slots) *dataServer {
+	t.Helper()
+	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.faulty, NewID: e.newID, Settings: e.known, Keys: e.keys, Now: e.now,
+		Reads: reads})
 	if err != nil {
 		t.Fatal(err)
 	}

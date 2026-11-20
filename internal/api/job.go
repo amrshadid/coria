@@ -109,6 +109,7 @@ func (s jobService) CreateJob(ctx context.Context, req *v1.CreateJobRequest) (*v
 	if err != nil {
 		return nil, c.failIn(d, st, err)
 	}
+	c.sendersChanged(req.GetTenant())
 	return &v1.CreateJobResponse{Job: c.newJobViews(p, req.GetTenant()).message(ctx, out)}, nil
 }
 
@@ -220,6 +221,7 @@ func (s jobService) CancelJob(ctx context.Context, req *v1.CancelJobRequest) (*v
 	if err != nil {
 		return nil, c.failIn(d, st, err)
 	}
+	c.sendersChanged(req.GetTenant())
 	return &v1.CancelJobResponse{Job: c.newJobViews(p, req.GetTenant()).message(ctx, out)}, nil
 }
 
@@ -249,6 +251,7 @@ func (s jobService) RetryJob(ctx context.Context, req *v1.RetryJobRequest) (*v1.
 	if err != nil {
 		return nil, c.failIn(d, st, err)
 	}
+	c.sendersChanged(req.GetTenant())
 	views := c.newJobViews(p, req.GetTenant())
 	return &v1.RetryJobResponse{Job: views.message(ctx, ended), Retry: views.message(ctx, retry)}, nil
 }

@@ -46,13 +46,15 @@ type SenderHealths interface {
 	SenderHealth(tenantName string, s tenant.Sender) SenderHealth
 }
 
-// SenderChanges is told, after a change of a tenant's senders is committed
-// (added, changed, removed, or jobs canceled with one), so what sends acts
-// on it at once instead of at its next periodic read. Config.SenderHealths
-// may implement it; one that does not is left to its own reading.
+// SenderChanges is told, after a change of a tenant's senders or jobs is
+// committed (a sender added, changed or removed, a job made, canceled or
+// retried), so what sends acts on it at once instead of at its next
+// periodic read. Config.SenderHealths may implement it; one that does not
+// is left to its own reading.
 type SenderChanges interface {
-	// SendersChanged says the senders of the tenant named tenantName
-	// changed. It must not block: it is called on the request's path.
+	// SendersChanged says the senders or the jobs of the tenant named
+	// tenantName changed. It must not block: it is called on the request's
+	// path.
 	SendersChanged(tenantName string)
 }
 
