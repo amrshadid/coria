@@ -196,40 +196,10 @@ func (t *Tenant) ClaimInstances(ctx context.Context, receptionID string, files [
 			}
 			var lost []string
 			if len(insUIDs) > 0 {
-				rows, err := tx.Query(ctx, insertClaimsSQL, receptionID, micros(now), insUIDs, insStudies, insSeries, insSums)
-				written, err := collect(rows, err, func(row scanner) (string, error) {
-					var u string
-					err := row.Scan(&u)
-					return u, err
-				})
+				var err error
+				lost, err = writeClaims(ctx, tx, receptionID, now, insUIDs, insStudies, insSeries, insSums)
 				if err != nil {
 					return err
-				}
-				done := make(map[string]bool, len(written))
-				for _, u := range written {
-					done[u] = true
-				}
-				for _, u := range insUIDs {
-					if !done[u] {
-						lost = append(lost, u)
-					}
-				}
-				if len(written) > 0 {
-					rows, err := tx.Query(ctx, heldAfterClaimSQL, written)
-					moved, err := collect(rows, err, func(row scanner) (string, error) {
-						var u string
-						err := row.Scan(&u)
-						return u, err
-					})
-					if err != nil {
-						return err
-					}
-					if len(moved) > 0 {
-						if _, err := tx.Exec(ctx, dropClaimsSQL, moved, receptionID); err != nil {
-							return err
-						}
-						lost = append(lost, moved...)
-					}
 				}
 			}
 			for _, u := range distinct {
@@ -254,6 +224,54 @@ func (t *Tenant) ClaimInstances(ctx context.Context, receptionID string, files [
 		return nil, err
 	}
 	return out, nil
+}
+
+// writeClaims inserts claims for the UIDs given and returns those it did not
+// keep: the ones another claim won while this one waited for its lock, and
+// the ones a commit of another reception moved into instances meanwhile
+// (that commit deleted the claim this one is written over, and was not yet
+// visible when the batch was judged). A UID is claimed or held, never both;
+// no constraint ties the two tables, so the probe after the insert is what
+// keeps a claim from sitting beside the instance that took its place.
+func writeClaims(ctx context.Context, tx pgx.Tx, receptionID string, now time.Time, uids, studies, series []string, sums [][]byte) ([]string, error) {
+	rows, err := tx.Query(ctx, insertClaimsSQL, receptionID, micros(now), uids, studies, series, sums)
+	written, err := collect(rows, err, func(row scanner) (string, error) {
+		var u string
+		err := row.Scan(&u)
+		return u, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	done := make(map[string]bool, len(written))
+	for _, u := range written {
+		done[u] = true
+	}
+	var lost []string
+	for _, u := range uids {
+		if !done[u] {
+			lost = append(lost, u)
+		}
+	}
+	if len(written) == 0 {
+		return lost, nil
+	}
+	rows, err = tx.Query(ctx, heldAfterClaimSQL, written)
+	moved, err := collect(rows, err, func(row scanner) (string, error) {
+		var u string
+		err := row.Scan(&u)
+		return u, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(moved) > 0 {
+		if _, err := tx.Exec(ctx, dropClaimsSQL, moved, receptionID); err != nil {
+			return nil, err
+		}
+		lost = append(lost, moved...)
+	}
+	return lost, nil
 }
 
 // CheckDuplicates implements tenant.Pipeline: one read of the batch's UIDs'

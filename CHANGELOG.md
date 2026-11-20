@@ -18,7 +18,8 @@ All notable changes to CORIA are written here. The form is
   an index in order. At 200,000 synthetic instances SQLite receives 2.4 times
   as fast into a full tenant, in a file 6 times smaller, and Postgres's
   instance rows are 3.8 times smaller. Existing tenants are converted when
-  the database is upgraded.
+  the database is upgraded; the upgrade refuses, with a message, a database
+  where a held instance is on another storage than its scan.
 
 ### Fixed
 

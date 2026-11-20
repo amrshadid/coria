@@ -39,6 +39,21 @@
 --
 -- The rules of 0002_pipeline.sql hold.
 
+-- An instance's own storage is dropped and its scan's is read instead, which
+-- is the same only if no held instance is on another storage than its
+-- scan. SQLite has no statement that fails on a condition, so a temporary
+-- trigger raises the error when a row is inserted into a temporary table:
+-- the migration stops, and its transaction leaves nothing changed.
+CREATE TEMP TABLE migration_guard (x INTEGER);
+CREATE TEMP TRIGGER migration_guard_storage BEFORE INSERT ON migration_guard
+WHEN EXISTS (SELECT 1 FROM main.instances AS i JOIN main.scans AS s ON s.id = i.scan_id
+        WHERE i.state = 'held' AND i.storage <> s.storage)
+BEGIN
+    SELECT RAISE(ABORT, 'migration 0009 cannot run: a held instance is on a different storage than its scan, and an instance no longer keeps its own');
+END;
+INSERT INTO migration_guard VALUES (1);
+DROP TABLE migration_guard;
+
 CREATE TABLE instance_claims (
     sop_instance_uid TEXT    NOT NULL PRIMARY KEY,
     reception_id     TEXT    NOT NULL CHECK (reception_id <> ''),
@@ -95,7 +110,10 @@ DROP TABLE instances;
 ALTER TABLE held_instances RENAME TO instances;
 CREATE UNIQUE INDEX instances_by_uid ON instances (sop_instance_uid);
 
-CREATE INDEX scans_by_storage ON scans (storage, instances);
+-- On the storage alone: the read keeps the test of instances > 0 as a filter
+-- (the first scan of a storage nearly always passes it), and every commit
+-- that adds to a scan no longer rewrites an entry of this index.
+CREATE INDEX scans_by_storage ON scans (storage);
 
 -- A study's instances are read scan by scan in order of id, then of SOP
 -- Instance UID: this index gives the scans in that order and each scan's
@@ -103,6 +121,9 @@ CREATE INDEX scans_by_storage ON scans (storage, instances);
 -- and stops at its limit. Read through sessions and the scans of each
 -- session by creation, the first page of a large study sorted every
 -- instance of it (p99 23 ms on Postgres, 71 ms on SQLite at ten million).
+-- It serves a study's instances (DICOMweb's retrieval of a study and the
+-- search for the instances of a study) and costs an entry per scan, written
+-- once when the scan is made: a scan's study never changes.
 CREATE INDEX scans_by_study ON scans (study_uid, id);
 
 DROP INDEX received_by_instance;

@@ -442,3 +442,47 @@ func TestLeanCatalogMigrationKeepsRows(t *testing.T) {
 		t.Errorf("the migrated rows keep %q, want %q: only a key and a checksum no other row gives", kept, want)
 	}
 }
+
+// TestLeanCatalogMigrationRefusesAMismatchedStorage guards the migration
+// that drops each instance's own storage and reads its scan's: a database
+// at the schema before it, where a held instance is on another storage
+// than its scan, is refused with a message that says why, and is left at
+// the schema it was at, with its rows as they were.
+func TestLeanCatalogMigrationRefusesAMismatchedStorage(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenTenant(ctx, filepath.Join(t.TempDir(), "tenant.db"), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err := sqlkit.Migrate(ctx, s.p.write, dialect, tenantMigrations[:8]); err != nil {
+		t.Fatal(err)
+	}
+	sum := func(uid string) string { s := tenanttest.LeanSum(uid); return fmt.Sprintf("x'%x'", s[:]) }
+	for _, stmt := range []string{
+		`INSERT INTO subjects (id, label, folded, created) VALUES (1, 'Sub-A', 'sub-a', 100)`,
+		`INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created, subject_label, subject_folded)
+			VALUES (1, '` + tenanttest.LeanStudy + `', 1, 'ses-1', 'ses-1', 'store', 100, 'Sub-A', 'sub-a')`,
+		`INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated,
+			subject_label, subject_folded, session_label, session_folded, storage)
+			VALUES (1, 1, '` + tenanttest.LeanSeries + `', 'scan-1', 'scan-1', 1, 10, NULL, 100, 100, 'Sub-A', 'sub-a', 'ses-1', 'ses-1', 'store')`,
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', %s, 'rc', 1, 'elsewhere', 'k', 0, 10, 10, %s, 100, 100)`,
+			tenanttest.LeanLayoutUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanLayoutUID), sum(tenanttest.LeanLayoutUID)),
+	} {
+		if _, err := s.p.write.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	err = s.Migrate(ctx)
+	if err == nil || !strings.Contains(err.Error(), "a held instance is on a different storage than its scan") {
+		t.Fatalf("migrating with a mismatched storage: %v, want a refusal that names it", err)
+	}
+	var version, held int
+	if err := s.p.read.QueryRowContext(ctx, `SELECT (SELECT max(version) FROM schema_migrations),
+		(SELECT count(*) FROM instances WHERE state = 'held' AND storage = 'elsewhere')`).Scan(&version, &held); err != nil {
+		t.Fatal(err)
+	}
+	if version != 8 || held != 1 {
+		t.Errorf("after the refusal the schema is at %d with %d rows on the other storage, want 8 and 1", version, held)
+	}
+}

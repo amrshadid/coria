@@ -36,6 +36,18 @@
 --
 -- The rules of 0002_pipeline.sql hold.
 
+-- An instance's own storage is dropped and its scan's is read instead, which
+-- is the same only if no held instance is on another storage than its
+-- scan. Stop here, with nothing changed, if one is.
+DO $guard$
+BEGIN
+    IF EXISTS (SELECT 1 FROM instances AS i JOIN scans AS s ON s.id = i.scan_id
+            WHERE i.state = 'held' AND i.storage <> s.storage) THEN
+        RAISE EXCEPTION 'migration 0009 cannot run: a held instance is on a different storage than its scan, and an instance no longer keeps its own';
+    END IF;
+END
+$guard$;
+
 CREATE TABLE instance_claims (
     sop_instance_uid text        COLLATE "C" NOT NULL,
     reception_id     text        COLLATE "C" NOT NULL,
@@ -114,7 +126,12 @@ ALTER TABLE instances
 -- A scan's instances in order of SOP Instance UID.
 CREATE INDEX instances_by_scan ON instances (scan_id, sop_instance_uid);
 
-CREATE INDEX scans_by_storage ON scans (storage, instances);
+-- On the storage alone: the read keeps the test of instances > 0 as a filter
+-- (the first scan of a storage nearly always passes it). An index that also
+-- held instances would change on every commit that adds to a scan, and an
+-- UPDATE of an indexed column is never heap-only, so every index of scans
+-- (nine) would be written again for each commit.
+CREATE INDEX scans_by_storage ON scans (storage);
 
 -- A study's instances are read scan by scan in order of id, then of SOP
 -- Instance UID: this index gives the scans in that order and each scan's
@@ -122,6 +139,10 @@ CREATE INDEX scans_by_storage ON scans (storage, instances);
 -- and stops at its limit. Read through sessions and the scans of each
 -- session by creation, the first page of a large study sorted every
 -- instance of it (p99 23 ms on Postgres, 71 ms on SQLite at ten million).
+-- It serves a study's instances (DICOMweb's retrieval of a study and the
+-- search for the instances of a study) and costs a row per scan, written
+-- once when the scan is made: a scan's study never changes, so no commit
+-- writes this index again.
 CREATE INDEX scans_by_study ON scans (study_uid, id);
 
 DELETE FROM received_files WHERE reception_id IN (SELECT id FROM receptions WHERE state IN ('done', 'quarantined'));

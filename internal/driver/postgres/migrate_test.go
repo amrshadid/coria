@@ -512,3 +512,42 @@ func TestLeanCatalogMigrationKeepsRows(t *testing.T) {
 		t.Errorf("the migrated rows keep %q, want %q: only a key and a checksum no other row gives", kept, want)
 	}
 }
+
+// TestLeanCatalogMigrationRefusesAMismatchedStorage guards the migration
+// that drops each instance's own storage and reads its scan's: a database
+// at the schema before it, where a held instance is on another storage
+// than its scan, is refused with a message that says why, and is left at
+// the schema it was at, with its rows as they were.
+func TestLeanCatalogMigrationRefusesAMismatchedStorage(t *testing.T) {
+	ctx := context.Background()
+	address := newSchema(t)
+	s, err := OpenTenant(ctx, address, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.migrate(ctx, tenantMigrations[:8]); err != nil {
+		t.Fatal(err)
+	}
+	conn := admin(t, address)
+	mustExec(t, conn,
+		`INSERT INTO subjects (id, label, folded, created) OVERRIDING SYSTEM VALUE VALUES (1, 'sub-a', 'sub-a', now())`,
+		`INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created) OVERRIDING SYSTEM VALUE
+			VALUES (1, '2.25.1.1', 1, 'ses-1', 'ses-1', 'store', now())`,
+		`INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated, storage)
+			OVERRIDING SYSTEM VALUE VALUES (1, 1, '2.25.2.1', 'scan-1', 'scan-1', 1, 10, NULL, now(), now(), 'store')`,
+		`INSERT INTO instances VALUES ('2.25.3.1', '2.25.1.1', '2.25.2.1', 'held', sha256('a'::bytea), 'rc', 1, 'elsewhere', 'k', 0, 10, 10,
+			sha256('a'::bytea), now(), now())`)
+	err = s.Migrate(ctx)
+	if err == nil || !strings.Contains(err.Error(), "a held instance is on a different storage than its scan") {
+		t.Fatalf("migrating with a mismatched storage: %v, want a refusal that names it", err)
+	}
+	var version, held int
+	if err := conn.QueryRow(ctx, `SELECT (SELECT max(version) FROM schema_migrations),
+		(SELECT count(*) FROM instances WHERE state = 'held' AND storage = 'elsewhere')`).Scan(&version, &held); err != nil {
+		t.Fatal(err)
+	}
+	if version != 8 || held != 1 {
+		t.Errorf("after the refusal the schema is at %d with %d rows on the other storage, want 8 and 1", version, held)
+	}
+}

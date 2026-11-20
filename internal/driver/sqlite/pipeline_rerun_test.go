@@ -228,6 +228,11 @@ func TestPipelineRandomizedAcrossInstances(t *testing.T) {
 			AND NOT (q.state = 'released' AND q.release_reception = p.id))
 		OR files_archived <> (SELECT count(*) FROM instances WHERE reception_id = p.id)
 		OR associations <> (SELECT count(*) FROM reception_associations WHERE reception_id = p.id)`)
+	// A reception's released count is the same however far it got: the
+	// quarantine records released into it (the received files that say so
+	// are gone once it ended done or quarantined).
+	check("each reception's released count equals the records released into it", `SELECT count(*) FROM receptions AS p WHERE
+		files_released <> (SELECT count(*) FROM quarantine AS q WHERE q.state = 'released' AND q.release_reception = p.id)`)
 	check("the quarantine's totals", `SELECT count(*) FROM quarantine_totals WHERE
 		files <> (SELECT count(*) FROM quarantine WHERE state = 'held')
 		OR bytes <> (SELECT coalesce(sum(size), 0) FROM quarantine WHERE state = 'held' AND content_kept = 1)`)
@@ -366,6 +371,15 @@ func randomChange(ctx context.Context, p *Tenant, qids *[]string, i int, next fu
 		}
 		q := tenant.QuarantinedFile{ID: id, Reason: tenant.QuarantineNotDICOM, Receiver: recv, ReceptionID: r.ID,
 			Size: int64(next(1000)), SHA256: fixtureSum(next(1000)), Incoming: "quarantine/" + id, ContentKept: true, Quarantined: fixtureAt(i)}
+		if next(2) == 0 {
+			// A record that names its instance, series and study is
+			// receivable: its release puts it into a reception, which counts
+			// it released there, so the counter the checks below read is
+			// exercised.
+			f := fixtureFile(r, study, study*1000+next(20))
+			q.SOPInstanceUID, q.SeriesUID, q.StudyUID, q.SOPClassUID, q.TransferSyntaxUID = f.SOPInstanceUID, f.SeriesUID, f.StudyUID,
+				f.SOPClassUID, f.TransferSyntaxUID
+		}
 		if err := retry(func() error { _, err := p.HoldFiles(ctx, []tenant.QuarantinedFile{q}); return err }); err != nil {
 			return fmt.Errorf("hold: %w", err)
 		}
