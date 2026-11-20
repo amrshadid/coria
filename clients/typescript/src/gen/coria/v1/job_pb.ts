@@ -32,7 +32,8 @@ export const file_coria_v1_job: GenFile = /*@__PURE__*/
 export type JobCounts = Message<"coria.v1.JobCounts"> & {
   /**
    * The instances of the job's target. It grows while the job lists its
-   * scans, a page at a time; listed says when it is final.
+   * scans, a page at a time, and by an instance whose archive ended after
+   * its scan was listed; listed says when every scan is listed.
    *
    * @generated from field: int64 instances = 1;
    */
@@ -117,8 +118,9 @@ export type JobCounts = Message<"coria.v1.JobCounts"> & {
   scansDone: bigint;
 
   /**
-   * Whether every scan of the target is listed, so instances, bytes and
-   * scans are final.
+   * Whether every scan of the target is listed, so scans is final;
+   * instances and bytes are too, but for an archive that ended after its
+   * scan was listed.
    *
    * @generated from field: bool listed = 13;
    */
@@ -969,9 +971,11 @@ export const JobFailureCodeSchema: GenEnum<JobFailureCode> = /*@__PURE__*/
  * What a send job sends. The instances the catalog held for its target when
  * the job was made: each instance archived at or before the job's
  * create_time. An instance archived later into the same session is sent by
- * its own forward or by a new job, never by this one. A job made by a
- * receiver's forward_to (Receiver) sends exactly the instances one
- * reception archived, and names that reception and its receiver; the
+ * its own forward or by a new job, never by this one. An archive that began
+ * before create_time and ended after the job listed its scan is the job's
+ * all the same: it is sent, and the counts grow by it when it is. A job
+ * made by a receiver's forward_to (Receiver) sends exactly the instances
+ * one reception archived, and names that reception and its receiver; the
  * server makes one such job per sender the receiver names when the
  * reception reaches done, in the same transaction, and never two for the
  * same reception and sender, so a step run again makes nothing twice.
@@ -984,9 +988,13 @@ export const JobFailureCodeSchema: GenEnum<JobFailureCode> = /*@__PURE__*/
  * unit taken over after a crash or a lost lease goes on after the last
  * instance recorded. So a send is at least once: an instance the job counts
  * as sent was answered by the peer, and after a crash at most the instances
- * answered since the last record, one batch per unit, are sent again.
- * Every peer seen treats the same SOP Instance UID with the same bytes as a
- * repeat; a peer that keeps both copies would keep both.
+ * answered since the last record, one batch per unit, are sent again. An
+ * instance a stow peer leaves unaccounted does not hold the record back:
+ * the unit moves past it and keeps it owed, tries it once more by name, and
+ * only then refuses it as JOB_FAILURE_CODE_PEER_UNACCOUNTED; a crash in
+ * between still sends at most one batch again. Every peer seen treats the
+ * same SOP Instance UID with the same bytes as a repeat; a peer that keeps
+ * both copies would keep both.
  *
  * What the peer's answer means, for each instance. A DIMSE sender reads the
  * C-STORE response's status (PS3.4 B.2.3, PS3.7 Annex C): 0000 is sent;
@@ -1004,9 +1012,13 @@ export const JobFailureCodeSchema: GenEnum<JobFailureCode> = /*@__PURE__*/
  * Attempts. A unit that fails for a temporary cause is tried again after a
  * wait that doubles from 10 seconds to an hour; it has 30 attempts, about a
  * day at the longest wait. While its sender is down or disabled, no attempt
- * is made and none is used, so a peer down overnight does not fail a job.
- * A unit whose attempts run out ends with its instances not sent, and its
- * job ends failed once its other units end; RetryJob sends them later.
+ * is made and none is used, so a peer down overnight does not fail a job. A
+ * unit whose attempts run out ends with its instances not sent, and its job
+ * ends failed once its other units end. When the unit that lists the job's
+ * scans runs out, the job ends failed at once with its units that have not
+ * started, and a unit still sending records nothing more: a job's counts
+ * are final once it ends failed. RetryJob sends what was not sent; it may
+ * send again at most one batch of each unit that was still sending.
  *
  * How a job ends. Done: every instance sent, with or without a warning.
  * Partial: some refused, every other one sent. Failed: some instances not
@@ -1096,11 +1108,12 @@ export const JobService: GenService<{
     output: typeof ListJobsResponseSchema;
   },
   /**
-   * CancelJob ends a queued or running job as canceled. Its units that
-   * have not started are ended in the same transaction; a unit sending ends
-   * at its next instance, so an instance being sent when the call lands may
-   * still be sent, and is counted. A job already canceled is answered as it
-   * stands, so a repeated call ends nothing more.
+   * CancelJob ends a queued or running job as canceled. Its units that have
+   * not started are ended in the same transaction; a unit sending ends
+   * within one batch (at most 64 instances or one second), and what the
+   * peer answered for that batch is still counted, since the peer holds it.
+   * A job already canceled is answered as it stands, so a repeated call
+   * ends nothing more.
    *
    * Role: operator on the tenant.
    * Audit: one entry in the tenant's log, with the job's id as its object.
@@ -1148,9 +1161,10 @@ export const JobService: GenService<{
   /**
    * ListJobFailures answers the instances a job's peer refused, or that
    * were refused before they reached it, each with its reason; and, with
-   * include_warnings, those sent with a warning. Ordered by scan label,
-   * then instance id. At most job.failures-kept are kept per job; the
-   * job's failures_not_listed counts the others.
+   * include_warnings, those sent with a warning. Ordered by subject label,
+   * session label, scan label, then SOP Instance UID, each compared byte by
+   * byte. At most job.failures-kept are kept per job; the job's
+   * failures_not_listed counts the others.
    *
    * Role: reader on the tenant.
    * Audit: one entry in the tenant's log, with the job's id as its object.

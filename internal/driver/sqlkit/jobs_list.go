@@ -3,6 +3,7 @@ package sqlkit
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/amrshadid/coria/internal/core/label"
@@ -206,18 +207,14 @@ func (k Sending) listRetried(ctx context.Context, tx SendingTx, r jobRow) ([]lis
 	var found []listedScan
 	for i := range olds {
 		o := &olds[i]
-		c := o.scan.Counts
 		s := listedScan{scanID: o.scanID, resendFrom: o}
-		if c.InstancesRefused == 0 && c.InstancesRemaining() == 0 {
+		if o.scan.Counts.NothingToRetry() {
 			// Nothing of it to send again; it still moves the listing on.
 			s.skip = true
 			found = append(found, s)
 			continue
 		}
-		s.startAfter = max(o.startAfter, o.scan.Cursor)
-		if o.refusedNotListed > 0 {
-			s.startAfter = o.startAfter
-		}
+		s.startAfter = tenant.RetryStart(o.startAfter, o.scan.Cursor, o.refusedNotListed)
 		found = append(found, s)
 	}
 	return found, len(olds) == tenant.JobListPage, nil
@@ -252,31 +249,39 @@ func (k Sending) addJobScan(ctx context.Context, tx SendingTx, r jobRow, s liste
 		return false, 0, 0, err
 	}
 	if _, _, err := tx.Enqueue(ctx, tenant.Work{ID: workID, Kind: tenant.SendKind(j.Sender), Subject: j.ID + "/" + part,
-		UniqueKey: "send:" + j.ID + ":" + part, Due: now, MaxAttempts: tenant.JobUnitAttempts}, now); err != nil {
+		UniqueKey: tenant.JobScanKey(j.ID, part), Due: now, MaxAttempts: tenant.JobUnitAttempts}, now); err != nil {
 		return false, 0, 0, err
 	}
 	return true, s.instances, s.bytes, nil
 }
 
 // copyResends writes the instances a retry's scan sends again that lie at
-// or before its start: the ended scan's own resends after its cursor and
-// its refused instances, or, when its refused were not all listed, all its
-// resends (its whole stream is sent again).
+// or before its start: the ended scan's own resends after its cursor, its
+// refused instances and those it still owed, or, when its refused were not
+// all listed, all its resends and those it owed (its whole stream is sent
+// again). Each set may hold an instance another holds, hence ON CONFLICT
+// on the resends' key.
 func (k Sending) copyResends(ctx context.Context, tx SendingTx, jobID string, o *jobScanRow) error {
 	if o.refusedNotListed > 0 {
-		_, err := tx.Exec(ctx, `INSERT INTO job_resends (job_id, scan_id, sop_instance_uid) SELECT CAST(? AS TEXT), scan_id, sop_instance_uid
-			FROM job_resends WHERE job_id = ? AND scan_id = ? ON CONFLICT DO NOTHING`, jobID, o.jobID, o.scanID)
-		return err
+		if _, err := tx.Exec(ctx, `INSERT INTO job_resends (job_id, scan_id, sop_instance_uid) SELECT CAST(? AS TEXT), scan_id, sop_instance_uid
+			FROM job_resends WHERE job_id = ? AND scan_id = ? ON CONFLICT DO NOTHING`, jobID, o.jobID, o.scanID); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.Exec(ctx, `INSERT INTO job_resends (job_id, scan_id, sop_instance_uid) SELECT CAST(? AS TEXT), scan_id, sop_instance_uid
+			FROM job_resends WHERE job_id = ? AND scan_id = ? AND sop_instance_uid > ? ON CONFLICT DO NOTHING`,
+			jobID, o.jobID, o.scanID, o.scan.Cursor); err != nil {
+			return err
+		}
+		// The refused, found by the scan's key, which no relabeling of
+		// the catalog changes.
+		if _, err := tx.Exec(ctx, `INSERT INTO job_resends (job_id, scan_id, sop_instance_uid) SELECT CAST(? AS TEXT), `+
+			strings.TrimPrefix(scanRefusedSQL, "SELECT ")+` ON CONFLICT DO NOTHING`, jobID, o.jobID, o.scanID, k.D.Bool(false)); err != nil {
+			return err
+		}
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO job_resends (job_id, scan_id, sop_instance_uid) SELECT CAST(? AS TEXT), scan_id, sop_instance_uid
-		FROM job_resends WHERE job_id = ? AND scan_id = ? AND sop_instance_uid > ? ON CONFLICT DO NOTHING`,
-		jobID, o.jobID, o.scanID, o.scan.Cursor); err != nil {
-		return err
-	}
-	_, err := tx.Exec(ctx, `INSERT INTO job_resends (job_id, scan_id, sop_instance_uid) SELECT CAST(? AS TEXT), CAST(? AS BIGINT), sop_instance_uid
-		FROM job_failures WHERE job_id = ? AND warning = ? AND subject_label = ? AND session_label = ? AND scan_label = ?
-		ON CONFLICT DO NOTHING`, jobID, o.scanID, o.jobID, k.D.Bool(false), o.scan.Path.Subject, o.scan.Path.Session,
-		o.scan.Path.Scan)
+	_, err := tx.Exec(ctx, `INSERT INTO job_resends (job_id, scan_id, sop_instance_uid) SELECT CAST(? AS TEXT), scan_id, sop_instance_uid
+		FROM job_owed WHERE job_id = ? AND scan_id = ? ON CONFLICT DO NOTHING`, jobID, o.jobID, o.scanID)
 	return err
 }
 

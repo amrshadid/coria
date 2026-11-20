@@ -197,7 +197,8 @@ func (JobFailureCode) EnumDescriptor() ([]byte, []int) {
 type JobCounts struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The instances of the job's target. It grows while the job lists its
-	// scans, a page at a time; listed says when it is final.
+	// scans, a page at a time, and by an instance whose archive ended after
+	// its scan was listed; listed says when every scan is listed.
 	Instances int64 `protobuf:"varint,1,opt,name=instances,proto3" json:"instances,omitempty"`
 	// The bytes of those instances.
 	Bytes int64 `protobuf:"varint,2,opt,name=bytes,proto3" json:"bytes,omitempty"`
@@ -222,8 +223,9 @@ type JobCounts struct {
 	Scans int64 `protobuf:"varint,11,opt,name=scans,proto3" json:"scans,omitempty"`
 	// The scans whose unit has ended, whatever it sent.
 	ScansDone int64 `protobuf:"varint,12,opt,name=scans_done,json=scansDone,proto3" json:"scans_done,omitempty"`
-	// Whether every scan of the target is listed, so instances, bytes and
-	// scans are final.
+	// Whether every scan of the target is listed, so scans is final;
+	// instances and bytes are too, but for an archive that ended after its
+	// scan was listed.
 	Listed        bool `protobuf:"varint,13,opt,name=listed,proto3" json:"listed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

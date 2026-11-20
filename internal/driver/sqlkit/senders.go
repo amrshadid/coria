@@ -154,6 +154,11 @@ func (k Sending) AddSender(ctx context.Context, s tenant.Sender, now time.Time, 
 	if len(s.STOW.SealedCredential) > 0 {
 		credential = s.STOW.SealedCredential
 	}
+	// Where it sends and its type, never its credential (Sender.Destination).
+	a, err := AddDetails(audit, tenant.DetailSenderType, string(s.Type), tenant.DetailSenderDestination, s.Destination())
+	if err != nil {
+		return tenant.Sender{}, err
+	}
 	var out tenant.Sender
 	err = k.Host.Write(ctx, "the sender cannot be added", func(tx SendingTx) error {
 		if err := tx.LockConfig(ctx); err != nil {
@@ -181,7 +186,7 @@ func (k Sending) AddSender(ctx context.Context, s tenant.Sender, now time.Time, 
 		if out, err = senderInTx(ctx, tx, s.Name, ""); err != nil {
 			return err
 		}
-		return tx.Audited(ctx, audit, guard)
+		return tx.Audited(ctx, a, guard)
 	})
 	if err != nil {
 		return tenant.Sender{}, err
@@ -367,7 +372,8 @@ func (k Sending) RemoveSender(ctx context.Context, name string, cancelJobs bool,
 			return err
 		}
 		out = stored
-		a, err := AddDetails(audit, tenant.DetailJobsCanceled, strconv.FormatInt(canceled, 10))
+		a, err := AddDetails(audit, tenant.DetailSenderType, string(stored.Type), tenant.DetailJobsCanceled,
+			strconv.FormatInt(canceled, 10))
 		if err != nil {
 			return err
 		}

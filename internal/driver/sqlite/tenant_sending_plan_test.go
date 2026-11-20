@@ -13,7 +13,7 @@ import (
 // made at i seconds, one in a hundred of sender s1 and one in a hundred
 // failed, a tenth running; 20,000
 // scans of jobs; 20,000 failures, half of them of job j1, one in seven
-// refused.
+// refused; 20,000 instances owed.
 func fillSending(tb testing.TB, path string) {
 	tb.Helper()
 	db, err := sql.Open("sqlite", path)
@@ -34,6 +34,8 @@ func fillSending(tb testing.TB, path string) {
 		   CASE i % 7 WHEN 0 THEN 0 ELSE 1 END, 'peer_refused', 49152, '', '', '', 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO job_resends SELECT 'j' || (i % 2000 + 1), i % 2000, '2.25.3.' || i FROM n`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		 INSERT INTO job_owed SELECT 'j' || (i % 2000 + 1), i % 2000, '2.25.3.' || i FROM n`,
 		`ANALYZE`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {

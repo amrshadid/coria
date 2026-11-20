@@ -123,7 +123,15 @@ All notable changes to CORIA are written here. The form is
   fenced cursor, counts and failures; a receiver's forward_to makes one job
   per sender when a reception reaches done, in the same transaction; cancel
   and retry; the events job_step and job_progress written with their change.
-  Not served by the API yet.
+  An instance whose archive ended after its scan was listed is sent and grows
+  the job's totals; a job whose listing runs out of attempts ends at once with
+  its units not started, and its counts are final; a unit can be given back
+  for a cause not its own (its sender down, no read slot free) without using
+  one of its 30 attempts; an instance a STOW-RS peer leaves unaccounted is
+  kept owed and tried again by name, never holding the unit's place back; a
+  reception that archived nothing makes no forward job. Adding a sender
+  audits its type and destination, never its credential. Not served by the
+  API yet.
 - The de-identification engine, not yet called by reception: a data set
   de-identified in place by an expanded profile version under a tenant's
   keys, every element visited (sequences, items, private blocks, content
@@ -142,9 +150,9 @@ All notable changes to CORIA are written here. The form is
   removed from every file, from the one list the profile language refuses to
   name. A date shift is keyed by the Patient ID alone, as the subject label
   is; a year or year-and-month the shift would leave unchanged is emptied.
-  De-identification Method records CORIA's and the DICOM library's versions. Clean removes the file's
-  values, names in every script and dates in their written forms from free
-  text, within a bound. Specific Character Set is the engine's: ISO_IR 192
+  De-identification Method records CORIA's and the DICOM library's
+  versions. Clean removes the file's values, names in every script and dates
+  in their written forms from free text, within a bound. Specific Character Set is the engine's: ISO_IR 192
   when text outside ASCII remains. A file the profile cannot process, text
   that is not UTF-8, a UN value holding items that would be kept, or a fault
   of the engine is refused with a fixed cause and left unchanged; a lookup

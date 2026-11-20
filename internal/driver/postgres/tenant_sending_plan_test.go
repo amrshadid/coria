@@ -9,11 +9,12 @@ import (
 
 // TestSendingPlans guards that every statement of senders' and jobs' work
 // that reads a table that grows is answered from an index, never by reading
-// a whole table, at a moderate size: 20,000 jobs made at i seconds, one in a hundred of
-// sender s1 and one in a hundred failed, a tenth running; 20,000 scans of jobs; 20,000 failures, half of job j1, one in seven refused;
-// 2,000 scans of the catalog with 200,000 instances; 50,000 finished units
-// of work. For the very statements package sqlkit runs
-// (SendingDialect.Plans), Postgres's plan for the values used and its
+// a whole table, at a moderate size: 20,000 jobs made at i seconds, one in a
+// hundred of sender s1 and one in a hundred failed, a tenth running; 20,000
+// scans of jobs; 20,000 failures, half of job j1, one in seven refused;
+// 20,000 instances owed; 2,000 scans of the catalog with 200,000 instances;
+// 50,000 finished units of work. For the very statements package sqlkit
+// runs (SendingDialect.Plans), Postgres's plan for the values used and its
 // generic plan (the one a prepared statement keeps) read no such table
 // whole, and the first uses the index named for it. The plans are logged.
 func TestSendingPlans(t *testing.T) {
@@ -45,6 +46,7 @@ func TestSendingPlans(t *testing.T) {
 		`INSERT INTO job_failures SELECT CASE i % 2 WHEN 0 THEN 'j1' ELSE 'j' || (i % 200 + 2) END, 'sub-1', 'ses-1', 'scan-' || (i % 50), '2.25.3.' || i, i % 50,
 		   i % 7 <> 0, 'peer_refused', 49152, '', '', '', now() FROM generate_series(1, 20000) i`,
 		`INSERT INTO job_resends SELECT 'j' || (i % 2000 + 1), i % 2000, '2.25.3.' || i FROM generate_series(1, 20000) i`,
+		`INSERT INTO job_owed SELECT 'j' || (i % 2000 + 1), i % 2000, '2.25.3.' || i FROM generate_series(1, 20000) i`,
 		`ANALYZE`)
 	for _, c := range sendingDialect.Plans() {
 		statement := sqlkit.Rebind(c.SQL)

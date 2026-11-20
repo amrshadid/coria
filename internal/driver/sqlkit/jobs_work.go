@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/amrshadid/coria/internal/core/reception"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/tenant"
@@ -115,6 +114,11 @@ func (k Sending) StartJobUnit(ctx context.Context, fence tenant.WorkFence, now t
 		}
 		out.Scan = scan.scan
 		out.Job = r.job
+		if isScan {
+			if out.Scan.Owed, err = k.owedInstances(ctx, tx, scan); err != nil {
+				return err
+			}
+		}
 		if r.job.State != tenant.JobQueued {
 			return nil
 		}
@@ -167,24 +171,38 @@ func (k Sending) JobScanInstances(ctx context.Context, fence tenant.WorkFence, a
 			return err
 		}
 		query, args := k.D.StreamPage(r.job, r.bound, s.scanID, s.startAfter, after, limit)
-		if err := tx.Query(ctx, query, args, func(row Row) error {
-			var in tenant.ScanInstance
-			var sum, archived []byte
-			var held DBTime
-			err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Key, &in.Offset, &in.Length, &in.Size, &sum, &archived, &held)
-			in.SHA256, in.ArchivedSHA256, in.Held = ToSHA256(sum), ToSHA256(archived), held.T
-			out = append(out, in)
-			return err
-		}); err != nil {
-			return err
-		}
-		return placeHeld(tenant.CatalogScan{SubjectLabel: s.scan.Path.Subject, SessionLabel: s.scan.Path.Session,
-			Label: s.scan.Path.Scan, Storage: s.scan.Storage}, out)
+		out, err = streamInstances(ctx, tx, s, query, args)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// streamInstances reads the instances of a scan's stream query returns,
+// placed as a catalog read places them.
+func streamInstances(ctx context.Context, tx SendingTx, s jobScanRow, query string, args []any) ([]tenant.ScanInstance, error) {
+	var out []tenant.ScanInstance
+	if err := tx.Query(ctx, query, args, func(row Row) error {
+		var in tenant.ScanInstance
+		var sum, archived []byte
+		var held DBTime
+		err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Key, &in.Offset, &in.Length, &in.Size, &sum, &archived, &held)
+		in.SHA256, in.ArchivedSHA256, in.Held = ToSHA256(sum), ToSHA256(archived), held.T
+		out = append(out, in)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	err := placeHeld(tenant.CatalogScan{SubjectLabel: s.scan.Path.Subject, SessionLabel: s.scan.Path.Session,
+		Label: s.scan.Path.Scan, Storage: s.scan.Storage}, out)
+	return out, err
+}
+
+// owedInstances reads the instances a scan's unit owes, placed, in order.
+func (k Sending) owedInstances(ctx context.Context, tx SendingTx, s jobScanRow) ([]tenant.ScanInstance, error) {
+	return streamInstances(ctx, tx, s, owedInstancesSQL, []any{s.jobID, s.scanID, s.scanID, tenant.MaxJobOwed})
 }
 
 // RecordJobProgress implements tenant.JobWork.
@@ -270,20 +288,32 @@ func (k Sending) recordInTx(ctx context.Context, tx SendingTx, p tenant.JobProgr
 	if err != nil {
 		return tenant.Job{}, jobScanRow{}, nil, err
 	}
+	if !r.job.State.TakesProgress() {
+		return r.job, s, nil, nil // its counts are final
+	}
 	if s.scan.Cursor != p.From {
 		if p.From != p.To && s.scan.Cursor == p.To {
 			return r.job, s, nil, nil // recorded before: its answer was lost
 		}
 		return tenant.Job{}, jobScanRow{}, nil, tenant.Precondition("the unit's cursor is not the one the progress follows")
 	}
-	if p.From == p.To {
+	settled, err := k.settle(ctx, tx, s, p.Settled)
+	if err != nil {
+		return tenant.Job{}, jobScanRow{}, nil, err
+	}
+	if settled < int64(len(p.Settled)) {
+		if p.From == p.To && settled == 0 {
+			return r.job, s, nil, nil // recorded before: its answer was lost
+		}
+		return tenant.Job{}, jobScanRow{}, nil, tenant.Precondition("the progress settles an instance the unit does not owe")
+	}
+	if p.From == p.To && len(p.Settled) == 0 {
 		return r.job, s, nil, nil
 	}
-	c := s.scan.Counts
-	if c.InstancesSent+c.InstancesWarned+c.InstancesRefused+p.Sent+p.Warned+p.Refused > c.Instances ||
-		c.BytesSent+c.BytesWarned+c.BytesRefused+p.SentBytes+p.WarnedBytes+p.RefusedBytes > c.Bytes {
-		return tenant.Job{}, jobScanRow{}, nil, tenant.Precondition("the progress counts more than the scan's instances hold")
+	if err := k.owe(ctx, tx, s, p.Owed); err != nil {
+		return tenant.Job{}, jobScanRow{}, nil, err
 	}
+	moreInstances, moreBytes := tenant.ProgressExcess(s.scan.Counts, p)
 	listed, notListed, refusedNotListed := r.listed, int64(0), int64(0)
 	for _, f := range p.Failures {
 		if listed >= int64(p.FailuresKept) {
@@ -293,27 +323,30 @@ func (k Sending) recordInTx(ctx context.Context, tx SendingTx, p tenant.JobProgr
 			}
 			continue
 		}
-		n, err := tx.Exec(ctx, `INSERT INTO job_failures (job_id, subject_label, session_label, scan_label, sop_instance_uid,
+		// No ON CONFLICT: an instance answered once per job is listed
+		// once, and a second row would be a caller's bug that must fail
+		// the write rather than vanish from the counts.
+		if _, err := tx.Exec(ctx, `INSERT INTO job_failures (job_id, subject_label, session_label, scan_label, sop_instance_uid,
 			scan_id, warning, code, peer_status, sop_class_uid, transfer_syntax_uid, detail, at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, r.job.ID, s.scan.Path.Subject,
-			s.scan.Path.Session, s.scan.Path.Scan, f.SOPInstanceUID, s.scanID, k.D.Bool(!f.Code.Refused()), string(f.Code),
-			f.PeerStatus, f.SOPClassUID, f.TransferSyntaxUID, f.Detail, k.D.Time(f.Time))
-		if err != nil {
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, r.job.ID, s.scan.Path.Subject, s.scan.Path.Session, s.scan.Path.Scan,
+			f.SOPInstanceUID, s.scanID, k.D.Bool(!f.Code.Refused()), string(f.Code), f.PeerStatus, f.SOPClassUID,
+			f.TransferSyntaxUID, f.Detail, k.D.Time(f.Time)); err != nil {
 			return tenant.Job{}, jobScanRow{}, nil, err
 		}
-		listed += n
+		listed++
 	}
-	if _, err := tx.Exec(ctx, `UPDATE job_scans SET cursor = ?, sent = sent + ?, sent_bytes = sent_bytes + ?, warned = warned + ?,
-		warned_bytes = warned_bytes + ?, refused = refused + ?, refused_bytes = refused_bytes + ?,
-		refused_not_listed = refused_not_listed + ? WHERE job_id = ? AND scan_id = ? AND cursor = ?`,
-		p.To, p.Sent, p.SentBytes, p.Warned, p.WarnedBytes, p.Refused, p.RefusedBytes, refusedNotListed, s.jobID, s.scanID,
-		p.From); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE job_scans SET cursor = ?, instances = instances + ?, bytes = bytes + ?, sent = sent + ?,
+		sent_bytes = sent_bytes + ?, warned = warned + ?, warned_bytes = warned_bytes + ?, refused = refused + ?,
+		refused_bytes = refused_bytes + ?, refused_not_listed = refused_not_listed + ? WHERE job_id = ? AND scan_id = ?
+		AND cursor = ?`, p.To, moreInstances, moreBytes, p.Sent, p.SentBytes, p.Warned, p.WarnedBytes, p.Refused,
+		p.RefusedBytes, refusedNotListed, s.jobID, s.scanID, p.From); err != nil {
 		return tenant.Job{}, jobScanRow{}, nil, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE jobs SET sent = sent + ?, sent_bytes = sent_bytes + ?, warned = warned + ?,
-		warned_bytes = warned_bytes + ?, refused = refused + ?, refused_bytes = refused_bytes + ?, failures_listed = ?,
-		failures_not_listed = failures_not_listed + ? WHERE id = ?`, p.Sent, p.SentBytes, p.Warned, p.WarnedBytes,
-		p.Refused, p.RefusedBytes, listed, notListed, r.job.ID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE jobs SET instances = instances + ?, bytes = bytes + ?, sent = sent + ?,
+		sent_bytes = sent_bytes + ?, warned = warned + ?, warned_bytes = warned_bytes + ?, refused = refused + ?,
+		refused_bytes = refused_bytes + ?, failures_listed = ?, failures_not_listed = failures_not_listed + ? WHERE id = ?`,
+		moreInstances, moreBytes, p.Sent, p.SentBytes, p.Warned, p.WarnedBytes, p.Refused, p.RefusedBytes, listed, notListed,
+		r.job.ID); err != nil {
 		return tenant.Job{}, jobScanRow{}, nil, err
 	}
 	after, err := jobInTx(ctx, tx, r.job.ID, "")
@@ -321,22 +354,55 @@ func (k Sending) recordInTx(ctx context.Context, tx SendingTx, p tenant.JobProgr
 		return tenant.Job{}, jobScanRow{}, nil, err
 	}
 	s.scan.Cursor = p.To
-	var events []tenant.EventRecord
-	ac := after.job.Counts
-	mark := ac.InstancesSent + ac.InstancesWarned + ac.InstancesRefused
-	if after.job.State == tenant.JobRunning && mark != after.progressMark &&
-		(after.progressAt.IsZero() || !p.Now.Before(after.progressAt.Add(tenant.ProgressEventInterval))) {
-		e, err := tenant.JobProgressEvent(after.job, p.Now)
-		if err != nil {
-			return tenant.Job{}, jobScanRow{}, nil, err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE jobs SET progress_at = ?, progress_mark = ? WHERE id = ?`,
-			k.D.Time(p.Now), mark, r.job.ID); err != nil {
-			return tenant.Job{}, jobScanRow{}, nil, err
-		}
-		events = append(events, e)
+	if !tenant.ProgressEventDue(after.job, after.progressMark, after.progressAt, p.Now) {
+		return after.job, s, nil, nil
 	}
-	return after.job, s, events, nil
+	e, err := tenant.JobProgressEvent(after.job, p.Now)
+	if err != nil {
+		return tenant.Job{}, jobScanRow{}, nil, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE jobs SET progress_at = ?, progress_mark = ? WHERE id = ?`,
+		k.D.Time(p.Now), tenant.ProgressMark(after.job.Counts), r.job.ID); err != nil {
+		return tenant.Job{}, jobScanRow{}, nil, err
+	}
+	return after.job, s, []tenant.EventRecord{e}, nil
+}
+
+// settle removes the instances given from what the scan's unit owes and
+// returns how many it owed.
+func (k Sending) settle(ctx context.Context, tx SendingTx, s jobScanRow, uids []string) (int64, error) {
+	var n int64
+	for _, u := range uids {
+		m, err := tx.Exec(ctx, `DELETE FROM job_owed WHERE job_id = ? AND scan_id = ? AND sop_instance_uid = ?`, s.jobID, s.scanID, u)
+		if err != nil {
+			return 0, err
+		}
+		n += m
+	}
+	return n, nil
+}
+
+// owe keeps the instances given owed to the scan's unit, at most
+// tenant.MaxJobOwed at once. An instance owed already fails the write: the
+// cursor passes an instance once.
+func (k Sending) owe(ctx context.Context, tx SendingTx, s jobScanRow, uids []string) error {
+	if len(uids) == 0 {
+		return nil
+	}
+	var held int64
+	if _, err := tx.QueryRow(ctx, owedCountSQL, []any{s.jobID, s.scanID}, &held); err != nil {
+		return err
+	}
+	if held+int64(len(uids)) > tenant.MaxJobOwed {
+		return tenant.Precondition("a unit owes at most 1000 instances at once; settle some first")
+	}
+	for _, u := range uids {
+		if _, err := tx.Exec(ctx, `INSERT INTO job_owed (job_id, scan_id, sop_instance_uid) VALUES (?, ?, ?)`,
+			s.jobID, s.scanID, u); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // lockOf returns the lock clause for the rows of one table of a join, so a
@@ -384,10 +450,13 @@ func (k Sending) endJob(ctx context.Context, tx SendingTx, j tenant.Job, state t
 // GiveUpJobUnit ends what a unit of a job carried when the unit is held as
 // failed, its attempts run out, in the transaction that holds it: a scan's
 // unit ends its scan with what it did not send remaining, and ends the job
-// (failed) when it was its last; a listing's unit ends its job failed, since
-// what it did not list can no longer be sent. It returns the events, which
-// the driver writes; a unit of no job changes nothing. A driver calls it
-// where a unit is held as failed (FailWork, a claim).
+// (failed) when it was its last; a listing's unit ends its job failed,
+// since what it did not list can no longer be sent, and with it, as a
+// cancel does, the job's queued units, and every scan of it, so the job's
+// counts are final and a unit still held records nothing more
+// (tenant.JobState.TakesProgress). It returns the events, which the
+// driver writes; a unit of no job changes nothing. A driver calls it where
+// a unit is held as failed (FailWork, a claim).
 func (k Sending) GiveUpJobUnit(ctx context.Context, tx SendingTx, workID string, now time.Time) ([]tenant.EventRecord, error) {
 	s, found, err := jobScanOf(ctx, tx, workID, "")
 	if err != nil {
@@ -417,49 +486,86 @@ func (k Sending) GiveUpJobUnit(ctx context.Context, tx SendingTx, workID string,
 	if err != nil || r.job.State.Ended() {
 		return nil, err
 	}
+	if _, err := k.endQueuedUnits(ctx, tx, r, tenant.WorkReasonJobFailed, now); err != nil {
+		return nil, err
+	}
+	n, err := tx.Exec(ctx, `UPDATE job_scans SET ended = ? WHERE job_id = ? AND ended = ?`, k.D.Bool(true), jobID, k.D.Bool(false))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE jobs SET scans_done = scans_done + ? WHERE id = ?`, n, jobID); err != nil {
+		return nil, err
+	}
 	_, events, err := k.endJob(ctx, tx, r.job, tenant.JobFailed, tenant.JobReasonAttemptsRanOut, now)
 	return events, err
 }
 
-// Forward makes, in the transaction of a reception's step that reached
-// done, one job per sender its receiver forwards to (tenant.Sending), and
-// returns their events, which the driver writes with the step's. A sender
-// removed meanwhile is skipped; one forwarded to already is not made twice
-// (tenant.ForwardKey). A reception not done makes nothing.
-func (k Sending) Forward(ctx context.Context, tx SendingTx, r tenant.Reception) ([]tenant.EventRecord, error) {
-	if r.State != reception.Done {
-		return nil, nil
-	}
-	var config string
-	found, err := tx.QueryRow(ctx, `SELECT config FROM receivers WHERE name = ?`, []any{r.Receiver}, &config)
-	if err != nil || !found {
+// endQueuedUnits ends the units of a job that are queued and no
+// transaction holds, with reason as their last error, and returns them. A
+// unit a transaction holds is skipped, never waited for: it is leased, or
+// being claimed, and its worker learns of its job's end at its next write,
+// so this never waits on a unit's row, which a worker locks before the
+// job's.
+func (k Sending) endQueuedUnits(ctx context.Context, tx SendingTx, r jobRow, reason string, now time.Time) ([]string, error) {
+	var units []string
+	if err := tx.Query(ctx, queuedUnitsSQL+k.D.SkipLocked, []any{r.listWork, r.job.ID}, func(row Row) error {
+		var u string
+		err := row.Scan(&u)
+		units = append(units, u)
+		return err
+	}); err != nil {
 		return nil, err
 	}
-	var c dimseConfig
-	if err := FromJSON(config, &c); err != nil {
-		return nil, err
-	}
-	var events []tenant.EventRecord
-	for _, sender := range c.ForwardTo {
-		has, err := k.lockSender(ctx, tx, sender)
-		if err != nil {
+	for _, u := range units {
+		if _, err := tx.Exec(ctx, `UPDATE work SET state = 'done', owner = '', last_error = ?, updated = ?
+			WHERE id = ? AND state = 'queued'`, reason, k.D.Time(now), u); err != nil {
 			return nil, err
 		}
-		if !has {
-			continue
-		}
-		_, e, err := k.insertJob(ctx, tx, newJob{id: tenant.ForwardJobID(r.ID, sender), sender: sender,
-			target: tenant.JobTarget{SubjectLabel: r.SubjectLabel, SessionLabel: r.SessionLabel}, receptionID: r.ID,
-			receiver: r.Receiver, uniqueKey: tenant.ForwardKey(r.ID, sender), created: r.StepTime, bound: r.StepTime,
-			retryListed: true})
-		if err != nil {
-			return nil, err
-		}
-		if e != nil {
-			events = append(events, *e)
-		}
 	}
-	return events, nil
+	return units, nil
+}
+
+// ReleaseJobUnit implements tenant.JobWork. The attempt the claim counted is
+// given back by allowing one more, never by lowering the attempt, which
+// fences every write: a lease released stays lost.
+func (k Sending) ReleaseJobUnit(ctx context.Context, fence tenant.WorkFence, due time.Time, reason string, now time.Time) error {
+	if err := fence.Validate(); err != nil {
+		return err
+	}
+	if err := tenant.ValidateWorkReason(reason); err != nil {
+		return err
+	}
+	if err := master.ValidateTime("time", now); err != nil {
+		return err
+	}
+	if err := master.ValidateTime("due time", due); err != nil {
+		return err
+	}
+	if due.Before(now) {
+		return fault.New(fault.Invalid, "a unit is given back until a time not before now")
+	}
+	return k.Host.Write(ctx, "the job's unit cannot be given back", func(tx SendingTx) error {
+		if err := tx.CheckFence(ctx, fence); err != nil {
+			return err
+		}
+		_, isScan, err := jobScanOf(ctx, tx, fence.ID, "")
+		if err != nil {
+			return err
+		}
+		if !isScan {
+			jobID, err := listingJobOf(ctx, tx, fence.ID)
+			if err != nil {
+				return err
+			}
+			if jobID == "" {
+				return errNotJobUnit()
+			}
+		}
+		_, err = tx.Exec(ctx, `UPDATE work SET state = 'queued', owner = '', due = ?, last_error = ?,
+			max_attempts = max_attempts + 1, updated = ? WHERE id = ? AND attempt = ?`,
+			k.D.Time(due), reason, k.D.Time(now), fence.ID, fence.Attempt)
+		return err
+	})
 }
 
 // JobsInProgressSQL counts the jobs not ended by state, from

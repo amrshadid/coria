@@ -1,7 +1,8 @@
 -- What a tenant keeps to send archived data out: its senders, its jobs, each
 -- job's scans with how far each scan's unit got, the instances a retry sends
--- again below its scan's starting point, and the instances a job's peer
--- refused or kept with a warning. The work itself is units of the work
+-- again below its scan's starting point, the instances a scan's unit owes
+-- a second try, and the instances a job's peer refused or kept with a
+-- warning. The work itself is units of the work
 -- table, of the kind send-<sender>. Only tables are added, empty, so the
 -- migration is safe on a database that holds data.
 --
@@ -130,6 +131,16 @@ CREATE TABLE job_resends (
     PRIMARY KEY (job_id, scan_id, sop_instance_uid)
 ) STRICT, WITHOUT ROWID;
 
+-- An instance a scan's unit owes: the peer left it unaccounted, and the
+-- unit's cursor moved past it, so a crash sends at most one batch again; it
+-- is tried again by name, and a retry sends it while it is still owed.
+CREATE TABLE job_owed (
+    job_id           TEXT    NOT NULL,
+    scan_id          INTEGER NOT NULL,
+    sop_instance_uid TEXT    NOT NULL,
+    PRIMARY KEY (job_id, scan_id, sop_instance_uid)
+) STRICT, WITHOUT ROWID;
+
 -- An instance a job's peer refused, or kept with a warning, listed by its
 -- scan's labels; at most the setting job.failures-kept a job.
 CREATE TABLE job_failures (
@@ -149,5 +160,7 @@ CREATE TABLE job_failures (
     PRIMARY KEY (job_id, subject_label, session_label, scan_label, sop_instance_uid)
 ) STRICT, WITHOUT ROWID;
 
--- The refused alone, in the same order; and a scan's refused, for a retry.
+-- The refused alone, in the same order.
 CREATE INDEX job_failures_by_kind ON job_failures (job_id, warning, subject_label, session_label, scan_label, sop_instance_uid);
+-- A scan's failures by the scan's key, for a retry.
+CREATE INDEX job_failures_by_scan ON job_failures (job_id, scan_id, sop_instance_uid);

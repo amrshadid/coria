@@ -1,12 +1,10 @@
 package tenanttest
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"time"
 
-	"github.com/amrshadid/coria/internal/core/reception"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/tenant"
@@ -517,66 +515,6 @@ func testJobProgressEvents(e *senv) {
 	}
 	if fmt.Sprint(got) != "[1@3601 4@3612]" {
 		e.Errorf("the progress events: %v, want one at 3601 s and the next 10 s or more later", got)
-	}
-}
-
-// testForward guards a receiver's forward: a reception that reaches done
-// makes one job per sender its receiver names, in the step's transaction,
-// once whatever runs the step again; each sends exactly what that
-// reception archived; a reception that fails makes none.
-func testForward(e *senv) {
-	e.addReceiver("recv", "store", 11112)
-	e.addSender("orthanc")
-	e.addSender("pacs")
-	_, err := e.p.SetReceiver(e.ctx, tenant.Receiver{Name: "recv", ForwardTo: []string{"orthanc", "pacs"}},
-		[]tenant.ReceiverField{tenant.FieldForwardTo}, T0, e.audit(), nil)
-	e.ok("SetReceiver forward_to", err)
-	first := e.archive("recv", 1, 1, 3, 0, at(0), "ses-1")
-	start := e.now()
-	r := e.finish(first)
-	jobs := allPages(e.penv, 10, func(p master.Page) ([]tenant.Job, string, error) {
-		return e.p.ListJobs(e.ctx, tenant.JobFilter{}, p)
-	})
-	if len(jobs) != 2 {
-		e.Fatalf("a reception done made %d jobs, want one per sender", len(jobs))
-	}
-	for _, j := range jobs {
-		if j.ID != tenant.ForwardJobID(r.ID, j.Sender) || j.ReceptionID != r.ID || j.Receiver != "recv" ||
-			j.Target.SessionLabel != "ses-1" || j.CreatedByKeyID != "" || !j.Created.Equal(r.StepTime) {
-			e.Errorf("a forward reads %+v", j)
-		}
-	}
-	events := e.jobEvents(start)
-	if len(events) != 2 || events[0].Payload.(*tenant.JobStepReached).Reception != r.ID {
-		e.Errorf("the forwards' events: %v", types(events))
-	}
-	_, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: r.ID, From: reception.Verified, Event: reception.Finish,
-		At: r.StepTime.Add(time.Minute)}, nil)
-	if !errors.Is(err, tenant.ErrStateChanged) && fault.KindOf(err) != fault.Conflict {
-		e.Errorf("a step taken again: %v", err)
-	}
-	second := e.archive("recv", 1, 1, 2, 500, at(7200), "ses-1")
-	e.finish(second)
-	failed := e.archive("recv", 1, 1, 1, 800, at(9000), "ses-1")
-	_, err = e.p.StepReception(e.ctx, tenant.ReceptionStep{ID: failed.r.ID, From: reception.Archived, Event: reception.Fail,
-		At: failed.r.StepTime.Add(time.Minute), Failure: "storage unreachable"}, nil)
-	e.ok("StepReception fail", err)
-	all, _, err := e.p.ListJobs(e.ctx, tenant.JobFilter{Sender: "orthanc"}, master.Page{Limit: 10})
-	e.ok("ListJobs", err)
-	if len(all) != 2 {
-		e.Errorf("the orthanc forwards: %d, want one per reception done", len(all))
-	}
-	j := e.list("orthanc", at(9500))
-	if j.ID != tenant.ForwardJobID(r.ID, "orthanc") {
-		e.Fatalf("the first listing was of %s", j.ID)
-	}
-	e.wantCounts("a forward listed after a later arrival", j, 3, 0, 0, 0, 1, 0, true)
-	if later := e.list("orthanc", at(9600)); later.Counts.Instances != 2 {
-		e.Errorf("the later reception's forward lists %d instances, want its 2", later.Counts.Instances)
-	}
-	w := e.claim("orthanc", "w", at(9700))
-	if got := uidsOf(e.instances(w, "")); fmt.Sprint(got) != fmt.Sprint(fileUIDs(first.files, first.files[0].SeriesUID)) {
-		e.Errorf("a forward's stream = %v, want exactly its reception's", got)
 	}
 }
 

@@ -1,12 +1,15 @@
 package tenant
 
 import (
+	"net"
 	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // SenderType is a sender's protocol, the contract's oneof member in
@@ -244,6 +247,30 @@ func (s Sender) Normalize() Sender {
 		}
 	}
 	return s
+}
+
+// Destination returns where s sends, as an audit entry records it: a DIMSE
+// peer's host and port, a stow peer's URL host with its port when the URL
+// names one. Never a credential: a stow URL holds no user information
+// (Validate), and only its host is taken. A host and port longer than an
+// audit detail holds (master.MaxAuditDetailValueLength) is given as the
+// host alone, which a valid host always fits.
+func (s Sender) Destination() string {
+	host, port := s.DIMSE.Host, strconv.Itoa(s.DIMSE.Port)
+	if s.Type == SenderSTOW {
+		u, err := url.Parse(s.STOW.URL)
+		if err != nil {
+			return ""
+		}
+		host, port = u.Hostname(), u.Port()
+	}
+	if port == "" {
+		return host
+	}
+	if out := net.JoinHostPort(host, port); len(out) <= master.MaxAuditDetailValueLength {
+		return out
+	}
+	return host
 }
 
 // Validate returns an Invalid error unless s can be stored, by the

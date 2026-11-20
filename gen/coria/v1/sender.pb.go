@@ -750,10 +750,10 @@ func (x *DimseSender) GetTls() *SenderTls {
 // its Referenced SOP Sequence (0008,1199) is sent, with a warning when it
 // has a Warning Reason (0008,1196); one listed in its Failed SOP Sequence
 // (0008,1198) is refused, with its Failure Reason (0008,1197); one listed
-// in neither is sent once more in the next request, and then refused as
-// JOB_FAILURE_CODE_PEER_UNACCOUNTED. A 5xx answer, 408, 429, a connection
-// cut or a timeout is a failure of the whole request, tried again later
-// (JobService).
+// in neither is sent once more later in the same scan's sending, and then
+// refused as JOB_FAILURE_CODE_PEER_UNACCOUNTED. A 5xx answer, 408, 429, a
+// connection cut or a timeout is a failure of the whole request, tried
+// again later (JobService).
 type StowSender struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The base URL of the peer's DICOMweb service, such as

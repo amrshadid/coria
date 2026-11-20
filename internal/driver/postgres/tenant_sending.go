@@ -201,6 +201,11 @@ func (t *Tenant) EndJobScan(ctx context.Context, p tenant.JobProgress) (tenant.J
 	return t.sending().EndJobScan(ctx, p)
 }
 
+// ReleaseJobUnit implements tenant.JobWork.
+func (t *Tenant) ReleaseJobUnit(ctx context.Context, fence tenant.WorkFence, due time.Time, reason string, now time.Time) error {
+	return t.sending().ReleaseJobUnit(ctx, fence, due, reason, now)
+}
+
 // giveUpJobUnit ends what a unit held as failed carried for a job, in the
 // transaction that holds it, and returns the events, which the caller
 // writes last.

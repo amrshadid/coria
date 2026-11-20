@@ -38,7 +38,14 @@ func runSending(t *testing.T, open OpenEvents) {
 		{"JobRetryUnlisted", testJobRetryUnlisted},
 		{"JobGivesUp", testJobGivesUp},
 		{"JobProgressEvents", testJobProgressEvents},
+		{"JobLateCommit", testJobLateCommit},
+		{"JobRetryLateCommit", testJobRetryLateCommit},
+		{"JobListingGivesUp", testJobListingGivesUp},
+		{"JobReleased", testJobReleased},
+		{"JobOwed", testJobOwed},
 		{"Forward", testForward},
+		{"ForwardNothingArchived", testForwardNothingArchived},
+		{"SenderRemovedWhileForwarding", testSenderRemovedWhileForwarding},
 		{"JobUnitsAtOnce", testJobUnitsAtOnce},
 		{"CancelRacesUnit", testCancelRacesUnit},
 		{"CrashResumes", testCrashResumes},
@@ -388,6 +395,20 @@ func testSenders(e *senv) {
 	}
 	_, err = e.p.Sender(e.ctx, "missing")
 	e.wantKind("Sender not there", err, fault.NotFound)
+	destinations := map[string]bool{}
+	for _, a := range e.allAudit(master.AuditFilter{}) {
+		if a.Details[tenant.DetailSenderType] != "" {
+			destinations[a.Details[tenant.DetailSenderType]+" "+a.Details[tenant.DetailSenderDestination]] = true
+		}
+		for k, v := range a.Details {
+			if bytes.Contains([]byte(v), sealed) || bytes.Contains([]byte(k), sealed) {
+				e.Errorf("an audit entry carries the credential in %s", k)
+			}
+		}
+	}
+	if len(destinations) != 2 || !destinations["dimse pacs.lab.example:4242"] || !destinations["stow pacs2.lab.example"] {
+		e.Errorf("the additions' audit details by type and destination: %v", destinations)
+	}
 }
 
 // testSenderSetMask guards a partial change of a sender by the mask's
@@ -483,12 +504,12 @@ func testSenderRemove(e *senv) {
 	e.wantKind("RemoveSender again", err, fault.NotFound)
 	found := false
 	for _, a := range e.allAudit(master.AuditFilter{}) {
-		if a.Details[tenant.DetailJobsCanceled] == "1" {
+		if a.Details[tenant.DetailJobsCanceled] == "1" && a.Details[tenant.DetailSenderType] == "dimse" {
 			found = true
 		}
 	}
 	if !found {
-		e.Error("the removal's audit entry does not say how many jobs it canceled")
+		e.Error("the removal's audit entry does not say the sender's type and how many jobs it canceled")
 	}
 }
 

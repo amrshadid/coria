@@ -42,6 +42,18 @@ const (
 	streamCountSQL = `SELECT count(*), CAST(coalesce(sum(i.size), 0) AS BIGINT) FROM instances AS i WHERE `
 	streamPageSQL  = `SELECT i.sop_instance_uid, i.reception_id, i.storage_key, i.byte_offset, i.byte_length, i.size,
 		i.sha256, coalesce(i.archived_sha256, i.sha256), i.held_at FROM instances AS i WHERE `
+	// scanRefusedSQL reads the instances an ended job's scan refused, by
+	// the scan's key: job_failures_by_scan.
+	scanRefusedSQL = `SELECT scan_id, sop_instance_uid FROM job_failures WHERE job_id = ? AND scan_id = ? AND warning = ?`
+	// owedCountSQL counts the instances a scan's unit owes: job_owed's key.
+	owedCountSQL = `SELECT count(*) FROM job_owed WHERE job_id = ? AND scan_id = ?`
+	// owedInstancesSQL reads the instances a scan's unit owes, as a page of
+	// its stream: job_owed's key, then the instances' key.
+	owedInstancesSQL = streamPageSQL + `i.sop_instance_uid IN (SELECT sop_instance_uid FROM job_owed WHERE job_id = ?
+		AND scan_id = ?) AND i.scan_id = ? ORDER BY i.sop_instance_uid LIMIT ?`
+	// receptionArchivedSQL asks whether a reception archived an instance:
+	// reception_scans' key.
+	receptionArchivedSQL = `SELECT 1 FROM reception_scans WHERE reception_id = ? AND instances > 0 LIMIT 1`
 	// queuedUnitsSQL reads a job's units that are queued: the work's key,
 	// for its listing and each scan of job_scans' key.
 	queuedUnitsSQL = `SELECT id FROM work WHERE state = 'queued' AND (id = ? OR id IN (SELECT work_id FROM job_scans
@@ -72,7 +84,8 @@ type SendingPlan struct {
 // Plans returns every statement of senders' and jobs' work that reads a
 // table that grows, with arguments a plan test fills the tables to match:
 // jobs "j<n>" made at n seconds, few of them of sender "s1" or failed;
-// job_scans of job "j1" keyed by scan; failures of job "j1".
+// job_scans of job "j1" keyed by scan; failures of job "j1"; owed
+// instances of job "j1".
 func (d SendingDialect) Plans() []SendingPlan {
 	at := time.Unix(5000, 0).UTC()
 	after := &TimePosition{At: at, ID: "j5000"}
@@ -108,6 +121,10 @@ func (d SendingDialect) Plans() []SendingPlan {
 		q("a scan's instances by a time", "", heldByCountSQL, []any{int64(77), d.Time(at)}),
 		q("a retry's scans", "", retriedScansSQL, []any{"j1", int64(0), tenant.JobListPage}),
 		q("a job's queued units", "", queuedUnitsSQL, []any{"u1", "j1"}),
+		q("a retried scan's refused", "job_failures_by_scan", scanRefusedSQL, []any{"j1", int64(7), d.Bool(false)}),
+		q("a unit's owed count", "", owedCountSQL, []any{"j1", int64(7)}),
+		q("a unit's owed instances", "", owedInstancesSQL, []any{"j1", int64(7), int64(7), tenant.MaxJobOwed}),
+		q("whether a reception archived", "", receptionArchivedSQL, []any{"rc5"}),
 		q("a sender's jobs in progress", "jobs_of_sender_in_progress", d.SenderJobsInProgressSQL(), []any{"s1"}),
 		// Either partial index of the jobs not ended bounds the count.
 		q("the jobs in progress by state", "_in_progress", d.JobsInProgressSQL(), nil),

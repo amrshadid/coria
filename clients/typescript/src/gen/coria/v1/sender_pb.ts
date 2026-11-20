@@ -232,10 +232,10 @@ export const DimseSenderSchema: GenMessage<DimseSender> = /*@__PURE__*/
  * its Referenced SOP Sequence (0008,1199) is sent, with a warning when it
  * has a Warning Reason (0008,1196); one listed in its Failed SOP Sequence
  * (0008,1198) is refused, with its Failure Reason (0008,1197); one listed
- * in neither is sent once more in the next request, and then refused as
- * JOB_FAILURE_CODE_PEER_UNACCOUNTED. A 5xx answer, 408, 429, a connection
- * cut or a timeout is a failure of the whole request, tried again later
- * (JobService).
+ * in neither is sent once more later in the same scan's sending, and then
+ * refused as JOB_FAILURE_CODE_PEER_UNACCOUNTED. A 5xx answer, 408, 429, a
+ * connection cut or a timeout is a failure of the whole request, tried
+ * again later (JobService).
  *
  * @generated from message coria.v1.StowSender
  */
@@ -1332,8 +1332,8 @@ export const SenderService: GenService<{
    *
    * Role: admin on the tenant.
    * Audit: one entry in the tenant's log, with the sender's name as its
-   * object, and its type and destination (host and port, or the URL's host)
-   * in details; never its credential.
+   * object, and its type and destination (host and port, or the URL's host
+   * with its port when the URL names one) in details; never its credential.
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
    * does not exist, for a caller who may not list every tenant), invalid,
    * not found (a tenant that does not exist, for a caller who may list every
@@ -1434,11 +1434,11 @@ export const SenderService: GenService<{
    * credential. It is refused while a receiver names it in forward_to, and
    * while a job to it is queued or running unless cancel_jobs is set: then
    * those jobs are canceled in the same transaction, as CancelJob cancels
-   * one, and an association or request in flight ends at its next
-   * instance. Its jobs stay, ended, and its name stays held, and cannot be
-   * given to a new sender, while any job names it, so a name in a record
-   * always means one sender. A repeated call finds no sender and is
-   * answered NOT_FOUND; it removes nothing more.
+   * one, and an association or request in flight ends within one batch (at
+   * most 64 instances or one second). Its jobs stay, ended, and its name
+   * stays held, and cannot be given to a new sender, while any job names
+   * it, so a name in a record always means one sender. A repeated call
+   * finds no sender and is answered NOT_FOUND; it removes nothing more.
    *
    * Role: admin on the tenant.
    * Audit: one entry in the tenant's log, with the sender's name as its

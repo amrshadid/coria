@@ -47,6 +47,13 @@ func (s JobState) Ended() bool {
 	return s == JobDone || s == JobPartial || s == JobFailed || s == JobCanceled
 }
 
+// TakesProgress reports whether a unit's progress write into a job in s is
+// recorded: while the job runs, and after a cancel, which keeps what a unit
+// in flight answered when the cancel landed (the peer holds those
+// instances). A job that ended any other way has final counts: a unit
+// still held when its listing gave up (failed) writes nothing more.
+func (s JobState) TakesProgress() bool { return !s.Ended() || s == JobCanceled }
+
 // The reasons a store writes on a job, from the contract's fixed set of
 // phrases (Job.reason); the server adds those of a job held back (its
 // sender down or disabled) when it answers, from its own view of the
@@ -55,6 +62,13 @@ const (
 	JobReasonAttemptsRanOut = "attempts ran out"
 	JobReasonCanceled       = "canceled"
 	JobReasonSenderRemoved  = "canceled: its sender was removed"
+)
+
+// The last errors a store gives a job's queued unit that it ends because
+// its job ended.
+const (
+	WorkReasonJobCanceled = "its job was canceled"
+	WorkReasonJobFailed   = "its job failed"
 )
 
 // The bounds of jobs.
@@ -82,6 +96,10 @@ const (
 	// MaxJobInstancePage is the most instances one JobScanInstances call
 	// answers.
 	MaxJobInstancePage = 1000
+	// MaxJobOwed is the most instances a scan's unit holds owed at once
+	// (JobProgress.Owed), and the most one progress write names as owed or
+	// settled.
+	MaxJobOwed = 1000
 )
 
 // JobTarget is what a send job sends: a subject, a session of it, or a scan
@@ -126,10 +144,59 @@ type JobCounts struct {
 	// Scans counts the scans listed, one unit each; ScansDone those whose
 	// unit ended.
 	Scans, ScansDone int64
-	// Listed says every scan of the target is listed, so Instances, Bytes
-	// and Scans are final.
+	// Listed says every scan of the target is listed, so Scans is final;
+	// Instances and Bytes are too, but for an instance held before the
+	// job's bound whose commit landed after its scan was listed, which is
+	// added when its unit records it (Sending).
 	Listed bool
 }
+
+// NothingToRetry reports whether a job, or one scan of it, with counts c
+// left nothing to send again: everything listed, nothing refused, nothing
+// remaining. A retry of it is refused, and a retry of its job skips it.
+func (c JobCounts) NothingToRetry() bool {
+	return c.Listed && c.InstancesRefused == 0 && c.InstancesRemaining() == 0
+}
+
+// RetryStart is where a retry's stream of an ended job's scan starts, the
+// SOP Instance UID its instances follow: after the ended scan's cursor,
+// what that scan's unit never reached, with the refused and owed
+// instances, which lie at or before the cursor, sent again by name. When
+// the scan's refused instances were not all listed (past
+// job.failures-kept) the store no longer knows which they were, and the
+// retry sends the scan's whole stream again from its own start.
+func RetryStart(startAfter, cursor string, refusedNotListed int64) string {
+	if refusedNotListed > 0 {
+		return startAfter
+	}
+	return max(startAfter, cursor)
+}
+
+// ProgressExcess returns how many instances and bytes a progress write
+// counts past what its scan's counts c hold. Each instance a unit's
+// stream answers is the job's by the job's definition (held at or before
+// its bound), but a commit that took its held time before the bound and
+// landed after the scan was listed is in the stream without being in the
+// count, so the store grows the scan's and the job's totals by the excess
+// in the same write rather than refuse it, which would stop the unit for
+// good.
+func ProgressExcess(c JobCounts, p JobProgress) (instances, bytes int64) {
+	instances = c.InstancesSent + c.InstancesWarned + c.InstancesRefused + p.Sent + p.Warned + p.Refused - c.Instances
+	bytes = c.BytesSent + c.BytesWarned + c.BytesRefused + p.SentBytes + p.WarnedBytes + p.RefusedBytes - c.Bytes
+	return max(instances, 0), max(bytes, 0)
+}
+
+// ProgressEventDue reports whether a progress write that leaves job j with
+// its counts should write a progress event: the job runs, its instances
+// answered (mark) moved since the last event's, and the last event, at
+// last (zero for none), is at least ProgressEventInterval before now.
+func ProgressEventDue(j Job, lastMark int64, last, now time.Time) bool {
+	return j.State == JobRunning && ProgressMark(j.Counts) != lastMark && (last.IsZero() || !now.Before(last.Add(ProgressEventInterval)))
+}
+
+// ProgressMark is the instances of a job answered so far, what a progress
+// event records it was written at.
+func ProgressMark(c JobCounts) int64 { return c.InstancesSent + c.InstancesWarned + c.InstancesRefused }
 
 // InstancesRemaining returns the instances not sent yet; in an ended job,
 // those it never sent.
@@ -362,6 +429,14 @@ func ForwardKey(receptionID, sender string) string { return "fwd:" + receptionID
 func ForwardJobID(receptionID, sender string) string {
 	return "fwd-" + digest(ForwardKey(receptionID, sender))
 }
+
+// JobListKey is the unique key of a job's listing unit, so a job is listed
+// by one unit at a time.
+func JobListKey(jobID string) string { return "list:" + jobID }
+
+// JobScanKey is the unique key of the unit that sends one scan of a job
+// (part the store's key of the scan), so a scan is queued once.
+func JobScanKey(jobID, part string) string { return "send:" + jobID + ":" + part }
 
 // JobUnitID is the id of a unit of work of a job: its listing (part empty)
 // or one of its scans (part the store's key of the scan), made from both so

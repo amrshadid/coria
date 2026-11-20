@@ -132,11 +132,12 @@ type JobServiceClient interface {
 	// tenant), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	ListJobs(context.Context, *v1.ListJobsRequest) (*v1.ListJobsResponse, error)
-	// CancelJob ends a queued or running job as canceled. Its units that
-	// have not started are ended in the same transaction; a unit sending ends
-	// at its next instance, so an instance being sent when the call lands may
-	// still be sent, and is counted. A job already canceled is answered as it
-	// stands, so a repeated call ends nothing more.
+	// CancelJob ends a queued or running job as canceled. Its units that have
+	// not started are ended in the same transaction; a unit sending ends
+	// within one batch (at most 64 instances or one second), and what the
+	// peer answered for that batch is still counted, since the peer holds it.
+	// A job already canceled is answered as it stands, so a repeated call
+	// ends nothing more.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.
@@ -168,9 +169,10 @@ type JobServiceClient interface {
 	RetryJob(context.Context, *v1.RetryJobRequest) (*v1.RetryJobResponse, error)
 	// ListJobFailures answers the instances a job's peer refused, or that
 	// were refused before they reached it, each with its reason; and, with
-	// include_warnings, those sent with a warning. Ordered by scan label,
-	// then instance id. At most job.failures-kept are kept per job; the
-	// job's failures_not_listed counts the others.
+	// include_warnings, those sent with a warning. Ordered by subject label,
+	// session label, scan label, then SOP Instance UID, each compared byte by
+	// byte. At most job.failures-kept are kept per job; the job's
+	// failures_not_listed counts the others.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.
@@ -229,11 +231,12 @@ type JobServiceHandler interface {
 	// tenant), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	ListJobs(context.Context, *v1.ListJobsRequest) (*v1.ListJobsResponse, error)
-	// CancelJob ends a queued or running job as canceled. Its units that
-	// have not started are ended in the same transaction; a unit sending ends
-	// at its next instance, so an instance being sent when the call lands may
-	// still be sent, and is counted. A job already canceled is answered as it
-	// stands, so a repeated call ends nothing more.
+	// CancelJob ends a queued or running job as canceled. Its units that have
+	// not started are ended in the same transaction; a unit sending ends
+	// within one batch (at most 64 instances or one second), and what the
+	// peer answered for that batch is still counted, since the peer holds it.
+	// A job already canceled is answered as it stands, so a repeated call
+	// ends nothing more.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.
@@ -265,9 +268,10 @@ type JobServiceHandler interface {
 	RetryJob(context.Context, *v1.RetryJobRequest) (*v1.RetryJobResponse, error)
 	// ListJobFailures answers the instances a job's peer refused, or that
 	// were refused before they reached it, each with its reason; and, with
-	// include_warnings, those sent with a warning. Ordered by scan label,
-	// then instance id. At most job.failures-kept are kept per job; the
-	// job's failures_not_listed counts the others.
+	// include_warnings, those sent with a warning. Ordered by subject label,
+	// session label, scan label, then SOP Instance UID, each compared byte by
+	// byte. At most job.failures-kept are kept per job; the job's
+	// failures_not_listed counts the others.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.

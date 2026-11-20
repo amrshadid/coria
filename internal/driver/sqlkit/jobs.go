@@ -118,7 +118,7 @@ func (k Sending) insertJob(ctx context.Context, tx SendingTx, n newJob) (tenant.
 		return tenant.Job{}, nil, err
 	}
 	if _, _, err := tx.Enqueue(ctx, tenant.Work{ID: listWork, Kind: tenant.SendKind(n.sender), Subject: n.id,
-		UniqueKey: "list:" + n.id, Due: n.created, MaxAttempts: tenant.JobUnitAttempts}, n.created); err != nil {
+		UniqueKey: tenant.JobListKey(n.id), Due: n.created, MaxAttempts: tenant.JobUnitAttempts}, n.created); err != nil {
 		return tenant.Job{}, nil, err
 	}
 	r, err := jobInTx(ctx, tx, n.id, "")
@@ -355,12 +355,11 @@ func (k Sending) CancelJob(ctx context.Context, id string, now time.Time, audit 
 }
 
 // cancelInTx ends a job as canceled with the reason, and the units of it
-// that are queued and no transaction holds, and returns it with its event;
-// one canceled already is returned as it stands with no event, and one
-// ended otherwise is a precondition failure. A unit a transaction holds is
-// skipped, never waited for: it is leased, or being claimed, and its worker
-// learns of the cancel at its next write, so a cancel never waits on a
-// unit's row, which a worker locks before the job's.
+// that are queued and no transaction holds (endQueuedUnits), and returns it
+// with its event; one canceled already is returned as it stands with no
+// event, and one ended otherwise is a precondition failure. A unit a
+// worker holds keeps its scan open: its next write is recorded and tells
+// it of the cancel.
 func (k Sending) cancelInTx(ctx context.Context, tx SendingTx, id, reason string, now time.Time) (tenant.Job, *tenant.EventRecord, error) {
 	r, err := jobInTx(ctx, tx, id, k.D.Lock)
 	if err != nil {
@@ -372,21 +371,12 @@ func (k Sending) cancelInTx(ctx context.Context, tx SendingTx, id, reason string
 	if r.job.State.Ended() {
 		return tenant.Job{}, nil, tenant.Precondition("the job has ended " + string(r.job.State) + "; only a job queued or running is canceled")
 	}
-	var units []string
-	if err := tx.Query(ctx, queuedUnitsSQL+k.D.SkipLocked, []any{r.listWork, id}, func(row Row) error {
-		var u string
-		err := row.Scan(&u)
-		units = append(units, u)
-		return err
-	}); err != nil {
+	units, err := k.endQueuedUnits(ctx, tx, r, tenant.WorkReasonJobCanceled, now)
+	if err != nil {
 		return tenant.Job{}, nil, err
 	}
 	var ended int64
 	for _, u := range units {
-		if _, err := tx.Exec(ctx, `UPDATE work SET state = 'done', owner = '', last_error = 'its job was canceled', updated = ?
-			WHERE id = ? AND state = 'queued'`, k.D.Time(now), u); err != nil {
-			return tenant.Job{}, nil, err
-		}
 		n, err := tx.Exec(ctx, `UPDATE job_scans SET ended = ? WHERE work_id = ? AND ended = ?`, k.D.Bool(true), u, k.D.Bool(false))
 		if err != nil {
 			return tenant.Job{}, nil, err
@@ -456,7 +446,7 @@ func (k Sending) RetryJob(ctx context.Context, id, newID string, now time.Time, 
 			return tenant.Precondition("the job's sender " + old.job.Sender + " has been removed")
 		}
 		c := old.job.Counts
-		if c.Listed && c.InstancesRefused == 0 && c.InstancesRemaining() == 0 {
+		if c.NothingToRetry() {
 			return tenant.Precondition("the job sent every instance; there is nothing to send again")
 		}
 		taken, err := exists(ctx, tx, `SELECT 1 FROM jobs WHERE id = ?`, newID)
