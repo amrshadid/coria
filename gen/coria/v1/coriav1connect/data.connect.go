@@ -60,7 +60,9 @@ type DataServiceClient interface {
 	// contract, always under the 4 MB a stock gRPC client accepts.
 	//
 	// The instances of a scan are those its manifest lists when the stream
-	// reaches the scan, and the scan's marker carries that manifest's
+	// reaches the scan, every one of them held by the tenant (an instance a
+	// reception has claimed and not yet archived is in no manifest; named
+	// by instance_id, it is not found, as one that does not exist), and the scan's marker carries that manifest's
 	// SHA-256: a client that compares it with the one it held, or with
 	// Scan.manifest_sha256 of a listing, sees when a scan changed behind its
 	// position, and reads that scan again. A stream that ends before the
@@ -151,7 +153,9 @@ type DataServiceHandler interface {
 	// contract, always under the 4 MB a stock gRPC client accepts.
 	//
 	// The instances of a scan are those its manifest lists when the stream
-	// reaches the scan, and the scan's marker carries that manifest's
+	// reaches the scan, every one of them held by the tenant (an instance a
+	// reception has claimed and not yet archived is in no manifest; named
+	// by instance_id, it is not found, as one that does not exist), and the scan's marker carries that manifest's
 	// SHA-256: a client that compares it with the one it held, or with
 	// Scan.manifest_sha256 of a listing, sees when a scan changed behind its
 	// position, and reads that scan again. A stream that ends before the
