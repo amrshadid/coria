@@ -62,6 +62,10 @@ for one technology. Everything else depends on ports, never on a driver.
 | `internal/tenant` | One tenant's database: storages, receivers, receptions, received files, catalog, quarantine, leased work, events | `tenant/tenanttest` | `driver/sqlite`, `driver/postgres` |
 | `internal/blob` | A storage: put, read a range, list, delete, usage | `blob/blobtest` | `blob/dir`, `blob/s3` |
 
+`internal/blob/readat` reads a stored object at offsets (`io.ReaderAt`)
+through the port's ranged reads, so go-dicom can read a header or walk the
+items of encapsulated pixel data without fetching the whole object.
+
 `internal/driver` opens a database from its address and picks the driver;
 `internal/driver/sqlkit` holds what only the two SQL drivers share (the
 migration runner, cursors, value encodings).
@@ -72,7 +76,8 @@ migration runner, cursors, value encodings).
 |---|---|
 | `internal/server` | The process: listeners, limits, the checked path of every request, shutdown, metrics |
 | `internal/access` | Who is calling (key or local operator), what they may do, and the audit entry of every request |
-| `internal/api` | The handlers of the API contract's services; `api/codes` maps a fault kind to an API code |
+| `internal/api` | The handlers of the API contract's services, the plain HTTP download and DICOMweb routes; `api/codes` maps a fault kind to an API code |
+| `internal/dicomweb` | The DICOMweb protocol (PS3.18) without the archive behind it: the resources a path names, a search's query, matching and paging, media types and Warning headers |
 | `internal/registry` | One open store per tenant, and the only way a handler reaches a tenant's database |
 | `internal/events` | The live feed of tenants' events, and the keeper that checkpoints and prunes it |
 | `internal/place` | Where a tenant's data may be: roots, endpoints, ports, bind addresses; opens a storage |
@@ -90,7 +95,7 @@ migration runner, cursors, value encodings).
 | `internal/receive` | A tenant's reception pipeline: a landed file to a verified scan, its work queue, its recovery at start |
 | `internal/receive/incoming` | A tenant's incoming area: a file synced before it is acknowledged |
 | `internal/receive/header`, `sidecar` | Reading what the pipeline needs from a file's header; the scan's metadata sidecar |
-| `internal/receive/frames` | Each instance's frame table (where each frame lies in its file) for the sidecar, and the pass at start that gives tables to sidecars written before them |
+| `internal/receive/frames` | Each instance's frame table (where each frame lies in its file) for the sidecar, and the pass at start that gives tables to sidecars written before them and header values to scans the catalog lists without them |
 
 ### Clients
 
@@ -98,7 +103,10 @@ migration runner, cursors, value encodings).
 |---|---|
 | `internal/cli` | The commands; `cli/client` reaches the API; `cli/output` writes tables and JSON |
 | `internal/cli/servecmd` | `coria init` and `coria serve`: makes an installation, wires the server's parts together |
+| `internal/cli/download` | Fetching the files of a subject, session or scan into a directory, each checked against its announced SHA-256 and resumed where it stopped; the command and the interactive program share it |
 | `internal/tui` | The interactive program |
+| `clients/python` | The generated Python client `coria`: the contract compiled with grpcio-tools and checked in, a thin client that sends the key, pages and raises one error |
+| `clients/typescript` | The generated TypeScript client `coria`: the contract compiled with protoc-gen-es, a typed client per service over Connect, gRPC and gRPC-web |
 
 ### Tests only
 

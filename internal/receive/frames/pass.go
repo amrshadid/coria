@@ -26,11 +26,12 @@ type Clock interface {
 	After(d time.Duration) <-chan time.Time
 }
 
-// Catalog lists a tenant's scans, which is all the pass reads of its
-// database.
+// Catalog lists a tenant's scans and fills in the header values of one
+// archived without them, which is all the pass asks of its database.
 type Catalog interface {
 	// ListScans is tenant.ScanReads.ListScans.
 	ListScans(ctx context.Context, filter tenant.ScanFilter, page master.Page) (tenant.CatalogPage[tenant.CatalogScan], error)
+	tenant.ScanValueFill
 }
 
 // The pass's bounds and pace.
@@ -98,10 +99,17 @@ type Report struct {
 	ScansDone int64
 	// InstancesDone counts the instances given a table.
 	InstancesDone int64
+	// ScansFilled counts the scans listed without a modality whose header
+	// values were handed to the catalog.
+	ScansFilled int64
 }
 
 // Run makes one pass over every scan of the tenant, in label order, and
-// gives each scan's metadata of version 1 the frame tables its lines lack.
+// gives each scan's metadata of version 1 the frame tables its lines lack,
+// and each scan the catalog lists without a modality, whatever its
+// metadata's version, the header values its files say (the catalog's
+// values, kept since a later version than the scans may have been archived
+// by).
 // It returns when every scan was checked, or at the first failure that is
 // not a fact of a file (a storage or the database not answering, ctx
 // ending), with what it did so far; a pass run again goes on from the
@@ -121,6 +129,11 @@ func Run(ctx context.Context, cfg Config) (Report, error) {
 			path := label.Path{Subject: sc.SubjectLabel, Session: sc.SessionLabel, Scan: sc.Label}
 			if err := r.scan(ctx, sc.Storage, path); err != nil {
 				return r.rep, err
+			}
+			if sc.Values.Modality == "" {
+				if err := r.fill(ctx, sc, path); err != nil {
+					return r.rep, err
+				}
 			}
 		}
 		if page.Next == "" {

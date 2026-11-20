@@ -103,8 +103,22 @@ func Run(ctx context.Context, o Options) (*Result, error) {
 	if err := os.MkdirAll(d.root, 0o700); err != nil {
 		return nil, fault.Wrap(fault.Invalid, err, "cannot make the directory "+d.root+": "+err.Error())
 	}
-	if err := d.findPosition(ctx); err != nil {
-		return nil, d.interrupted(ctx, err)
+	// A partial copy of the first file still missing is continued by range
+	// before any stream opens: a stream opened at it would start sending
+	// the file whole, and what it sent before the client closed it (a
+	// stream has up to megabytes in flight) would be fetched for nothing.
+	for {
+		next, err := d.findPosition(ctx)
+		if err != nil {
+			return nil, d.interrupted(ctx, err)
+		}
+		if next == nil {
+			break
+		}
+		d.current = next.final
+		if err := d.resumePart(ctx, next); err != nil {
+			return nil, d.interrupted(ctx, err)
+		}
 	}
 	stalls := 0
 	for {
@@ -231,24 +245,25 @@ func complete(path string, f *v1.ArchivedFile) bool {
 	return hex.EncodeToString(h.Sum(nil)) == f.GetSha256()
 }
 
-// findPosition reads only the announcements of the stream, which costs no
-// file bytes, and moves pos past every file already complete on disk, so a
-// rerun starts its stream at the first file still missing.
-func (d *downloader) findPosition(ctx context.Context) error {
+// findPosition reads only the announcements of the stream after pos, which
+// costs no file bytes, and moves pos past every file already complete on
+// disk, so a rerun starts its stream at the first file still missing. It
+// returns that file when a partial copy of it can be continued by range.
+func (d *downloader) findPosition(ctx context.Context) (*partial, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	st, err := d.c.Data.ReadFiles(ctx, d.request(true))
 	if err != nil {
-		return d.c.StreamError(ctx, "download", err)
+		return nil, d.c.StreamError(ctx, "download", err)
 	}
 	defer func() { _ = st.Close() }()
 	for {
 		m, err := st.Receive()
 		if errors.Is(err, io.EOF) {
-			return nil
+			return nil, nil
 		}
 		if err != nil {
-			return d.c.StreamError(ctx, "download", err)
+			return nil, d.c.StreamError(ctx, "download", err)
 		}
 		f := m.GetFile()
 		if f == nil {
@@ -256,10 +271,13 @@ func (d *downloader) findPosition(ctx context.Context) error {
 		}
 		final, err := d.target(f)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !complete(final, f) {
-			return nil
+			if d.resumable(final, f) {
+				return &partial{ann: f, final: final}, nil
+			}
+			return nil, nil
 		}
 		d.pos = position(f)
 		d.skipped++
@@ -377,8 +395,7 @@ func (d *downloader) begin(f *v1.ArchivedFile) (*partial, bool, error) {
 		d.report()
 		return o, false, nil
 	}
-	if st, err := os.Stat(final + partSuffix); err == nil && st.Mode().IsRegular() && st.Size() > 0 && st.Size() < f.GetLength() && !d.tried[final] &&
-		recorded(final) == f.GetSha256() {
+	if d.resumable(final, f) {
 		return o, true, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(final), 0o700); err != nil {
@@ -395,6 +412,15 @@ func (d *downloader) begin(f *v1.ArchivedFile) (*partial, bool, error) {
 	}
 	o.file, o.h = file, sha256.New()
 	return o, false, nil
+}
+
+// resumable says whether a partial copy of f at final can be continued by
+// range: a .part shorter than the file, whose record names the announced
+// SHA-256, and not given up on already in this run.
+func (d *downloader) resumable(final string, f *v1.ArchivedFile) bool {
+	st, err := os.Stat(final + partSuffix)
+	return err == nil && st.Mode().IsRegular() && st.Size() > 0 && st.Size() < f.GetLength() && !d.tried[final] &&
+		recorded(final) == f.GetSha256()
 }
 
 // close ends the file being written: it is renamed when whole and correct,

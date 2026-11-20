@@ -51,7 +51,7 @@ func (s *Server) Start() error {
 			closeAll()
 			return fault.Wrap(fault.Unavailable, err, "server: cannot listen on "+s.cfg.Listen+": "+err.Error())
 		}
-		ln = newLimitListener(ln, maxNetworkConns())
+		ln = stallListener{newLimitListener(ln, maxNetworkConns())}
 		srv := s.newHTTPServer(s.cert != nil)
 		if s.cert != nil {
 			// ServeTLS adds the ALPN protocols that srv.Protocols allows (h2,

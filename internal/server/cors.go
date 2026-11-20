@@ -36,7 +36,15 @@ import (
 // key, HEAD, Range and If-Range for a download resumed (RFC 9110 14.2,
 // 13.1.5), and Coria-Request-Id, ETag, Content-Range and Accept-Ranges
 // exposed, so a page can quote the request id of a failure and check a
-// download against its SHA-256.
+// download against its SHA-256. The tenant's DICOMweb service adds Accept
+// and Warning. Accept is CORS-safelisted only while its value holds none
+// of the bytes the Fetch standard calls unsafe, which include the double
+// quote, and a WADO-RS media type names its parts' type in quotes
+// (multipart/related; type="application/dicom", PS3.18 8.7.3), so such a
+// request is preflighted and Accept must be allowed. Warning is how a
+// QIDO-RS answer says that more results exist than it lists, or that
+// fuzzy matching is not done (PS3.18 10.6.3.2, 8.3.4.4, 10.6.1.2.2),
+// which a page can read only when it is exposed.
 //
 // No answer ever carries Access-Control-Allow-Credentials. A key travels
 // in the Authorization header, set by the page's own code, which the Fetch
@@ -47,9 +55,9 @@ import (
 const (
 	corsAllowMethods = "GET, HEAD, POST"
 	corsAllowHeaders = "Authorization, Content-Type, Connect-Protocol-Version, Connect-Timeout-Ms, " +
-		"Grpc-Timeout, X-Grpc-Web, X-User-Agent, Range, If-Range"
+		"Grpc-Timeout, X-Grpc-Web, X-User-Agent, Range, If-Range, Accept"
 	corsExposeHeaders = "Coria-Request-Id, Grpc-Status, Grpc-Message, Grpc-Status-Details-Bin, " +
-		"ETag, Content-Range, Accept-Ranges"
+		"ETag, Content-Range, Accept-Ranges, Warning"
 	// corsMaxAge is how long a browser may keep a preflight's answer: two
 	// hours, the most Chromium keeps one (Connect's documentation gives
 	// the same number), so a page does not send a preflight before every

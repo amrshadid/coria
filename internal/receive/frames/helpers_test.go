@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/amrshadid/coria/internal/blob/dir"
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/layout"
+	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/receive/sidecar"
@@ -54,13 +56,50 @@ func (c *clock) After(d time.Duration) <-chan time.Time {
 }
 
 // catalog lists the scans it holds, in the order given, two a page so a
-// pass reads several pages.
-type catalog struct{ scans []tenant.CatalogScan }
+// pass reads several pages, and fills in their values as the tenant port
+// does: a value held is kept.
+type catalog struct {
+	mu    sync.Mutex
+	scans []tenant.CatalogScan
+	// fills lists each fill asked, in order.
+	fills []fillAsked
+}
+
+// fillAsked is one FillScanValues asked of the catalog.
+type fillAsked struct {
+	series string
+	values tenant.ScanValues
+}
+
+func (c *catalog) FillScanValues(_ context.Context, seriesUID string, v tenant.ScanValues) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.scans {
+		sc := &c.scans[i]
+		if sc.SeriesUID != seriesUID {
+			continue
+		}
+		c.fills = append(c.fills, fillAsked{series: seriesUID, values: v})
+		if sc.Values.Modality == "" {
+			sc.Values.Modality = v.Modality
+		}
+		if sc.Values.SeriesDescription == "" {
+			sc.Values.SeriesDescription = v.SeriesDescription
+		}
+		if !sc.Values.HasSeriesNumber {
+			sc.Values.SeriesNumber, sc.Values.HasSeriesNumber = v.SeriesNumber, v.HasSeriesNumber
+		}
+		return nil
+	}
+	return fault.New(fault.NotFound, "no scan holds the series")
+}
 
 func (c *catalog) ListScans(_ context.Context, filter tenant.ScanFilter, page master.Page) (tenant.CatalogPage[tenant.CatalogScan], error) {
 	if filter.Order != tenant.OrderLabel {
 		return tenant.CatalogPage[tenant.CatalogScan]{}, errors.New("the pass lists scans by label")
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	start := 0
 	if page.Cursor != "" {
 		for i, s := range c.scans {
@@ -278,7 +317,23 @@ func (a *archive) scan(path label.Path, old bool, files ...file) {
 	if _, err := a.store.Store.Put(a.ctx, key, bytes.NewReader(b.Bytes())); err != nil {
 		a.t.Fatal(err)
 	}
-	a.cat.scans = append(a.cat.scans, tenant.CatalogScan{SubjectLabel: path.Subject, SessionLabel: path.Session, Label: path.Scan, Storage: "main"})
+	// Listed with a modality, as every scan archived since the catalog
+	// kept one is; unvalued lists one without.
+	a.cat.scans = append(a.cat.scans, tenant.CatalogScan{SubjectLabel: path.Subject, SessionLabel: path.Session, Label: path.Scan,
+		Storage: "main", SeriesUID: seriesUIDOf(len(a.cat.scans)), Values: tenant.ScanValues{Modality: "OT"}})
+}
+
+// seriesUIDOf returns the Series Instance UID the catalog gives its scan i.
+func seriesUIDOf(i int) string { return "2.25.77" + strconv.Itoa(i) }
+
+// unvalued lists the scan at path as one archived before the catalog kept
+// its header values: with none.
+func (a *archive) unvalued(path label.Path) {
+	for i, sc := range a.cat.scans {
+		if sc.SubjectLabel == path.Subject && sc.SessionLabel == path.Session && sc.Label == path.Scan {
+			a.cat.scans[i].Values = tenant.ScanValues{}
+		}
+	}
 }
 
 // config returns the pass's configuration over the archive.

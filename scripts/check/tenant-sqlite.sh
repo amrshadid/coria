@@ -55,7 +55,11 @@ show settings "SELECT * FROM settings"
 show audit "SELECT * FROM audit"
 echo
 
-want "schema_migrations rows" 9 "$(q 'SELECT count(*) FROM schema_migrations')"
+want "schema_migrations rows" 10 "$(q 'SELECT count(*) FROM schema_migrations')"
+want "the newest migration" "10 0010_stow_receivers.sql" "$(q "SELECT version || ' ' || name FROM schema_migrations ORDER BY version DESC LIMIT 1")"
+# A receiver is of type dimse, on a port of its own, or stow, on no port.
+want "the receivers' rule of types and ports" 1 \
+	"$(q "SELECT instr(sql, 'CHECK ((type = ''dimse'' AND port BETWEEN 1 AND 65535) OR (type = ''stow'' AND port = 0 AND bind_address = ''''))') > 0 FROM sqlite_schema WHERE type = 'table' AND name = 'receivers'")"
 want "settings rows" 2 "$(q 'SELECT count(*) FROM settings')"
 want "audit rows" 5 "$(q 'SELECT count(*) FROM audit')"
 want "integrity_check" ok "$(q 'PRAGMA integrity_check')"

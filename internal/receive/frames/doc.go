@@ -51,6 +51,21 @@
 // Its progress is reported as events (tenant.FramesAdded): one per scan
 // rewritten, and one when a pass that rewrote any ends.
 //
+// # The catalog's values
+//
+// The same pass fills in the catalog's header values (the session's Study
+// Date, the scan's Modality, Series Description and Series Number), which
+// the catalog did not keep for scans archived before a version that does,
+// and which the searches that filter by them (QIDO-RS's StudyDate,
+// ModalitiesInStudy and Modality among them) read. A scan the catalog lists
+// without a modality, whatever its sidecar's version, has the header of
+// the file its sidecar's first line names read, by bounded ranged reads,
+// and the values made from it as the reception that archives a file makes
+// them (header.CatalogText) handed to the catalog (tenant.ScanValueFill),
+// which gives each only to a row that holds it empty. A scan listed with a
+// modality costs nothing more, so a pass over a catalog filled in reads no
+// file for it.
+//
 // # What this package must never do
 //
 // It must never hold a whole instance file in memory, never give a frame a

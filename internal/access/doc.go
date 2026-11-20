@@ -87,7 +87,11 @@
 // judges a key's own rules once its secret and state have passed, and a
 // tenant's networks once the role check has allowed the caller, so a caller
 // with no grant learns nothing of them; the installation's networks are the
-// server's to judge, before any key is read. A refusal by any of them is
+// server's to judge, before any key is read. A tenant's registration read
+// by a caller its role on the installation allows (GetTenant) is a read of
+// the master and is judged by no tenant's networks, so a tenant whose
+// database stopped is still seen as unreachable; a tenant's networks that
+// cannot be read refuse the request as the tenant's database not answering. A refusal by any of them is
 // answered as a key that is no good, recorded with the rule's name
 // (RuleReason), and raised as an Event. A request on the local socket
 // (Request.Local) is judged by none of them.

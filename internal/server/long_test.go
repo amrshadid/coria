@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -90,7 +91,13 @@ func TestLongMethodNamesAreChecked(t *testing.T) {
 
 // TestLongMethodStallEndsTheResponse guards the stall rule: a client that
 // stops reading a long method's response does not hold the handler for ever;
-// a write that cannot finish within the stall timeout fails.
+// a write that cannot finish within the stall timeout fails, and the
+// connection's close does not wait on the client either. It is shown on the
+// TLS listener on every system, where a client that stops reading fills
+// TCP's bounded windows and where the close sends a TLS alert, and on the
+// local socket except on Windows: there a client that stopped reading an
+// AF_UNIX socket did not make the server's writes wait within 10 seconds,
+// so that socket gives the rule nothing to cut.
 func TestLongMethodStallEndsTheResponse(t *testing.T) {
 	failed := make(chan time.Duration, 1)
 	flow := func(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
@@ -106,30 +113,44 @@ func TestLongMethodStallEndsTheResponse(t *testing.T) {
 		return nil
 	}
 	e := newEnv(t, options{
-		noNetwork: true, stall: 300 * time.Millisecond,
+		stall:       300 * time.Millisecond,
 		patterns:    []server.PatternRoute{{Pattern: flowPattern, Need: readerOnPathTenant, Handler: flow}},
 		longMethods: []string{flowPattern},
 	})
 	e.makeTenants("lab")
-	conn, err := net.Dial("unix", server.SocketPath(e.dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	if _, err := io.WriteString(conn, "GET /tenants/lab/flow/x HTTP/1.1\r\nHost: x\r\n\r\n"); err != nil {
-		t.Fatal(err)
-	}
-	// Read the status line only, then stop reading.
-	if line, err := bufio.NewReaderSize(conn, 16).ReadString('\n'); err != nil || !strings.Contains(line, "200") {
-		t.Fatalf("status line %q: %v", line, err)
-	}
-	select {
-	case d := <-failed:
-		if d < 250*time.Millisecond || d > 5*time.Second {
-			t.Errorf("the write failed after %v, want about the 300ms stall timeout", d)
+	reader := "Bearer " + e.makeKey(coriav1.Role_ROLE_READER, &coriav1.Scope{Kind: &coriav1.Scope_Tenant{Tenant: "lab"}})
+
+	stall := func(name string, conn net.Conn, authorization string) {
+		t.Helper()
+		head := "GET /tenants/lab/flow/x HTTP/1.1\r\nHost: x\r\n"
+		if authorization != "" {
+			head += "Authorization: " + authorization + "\r\n"
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("a client that stopped reading held the handler for 10s")
+		if _, err := io.WriteString(conn, head+"\r\n"); err != nil {
+			t.Fatal(err)
+		}
+		// Read the status line only, then stop reading.
+		if line, err := bufio.NewReaderSize(conn, 16).ReadString('\n'); err != nil || !strings.Contains(line, "200") {
+			t.Fatalf("%s: status line %q: %v", name, line, err)
+		}
+		select {
+		case d := <-failed:
+			if d < 250*time.Millisecond || d > 5*time.Second {
+				t.Errorf("%s: the write failed after %v, want about the 300ms stall timeout", name, d)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s: a client that stopped reading held the handler for 10s", name)
+		}
+	}
+
+	stall("the TLS listener", rawTLS(t, e), reader)
+	if runtime.GOOS != "windows" {
+		conn, err := net.Dial("unix", server.SocketPath(e.dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		stall("the local socket", conn, "")
 	}
 }
 

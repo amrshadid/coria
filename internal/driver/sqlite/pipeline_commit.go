@@ -340,6 +340,29 @@ func addToCatalog(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, session 
 	return err
 }
 
+// FillScanValues implements tenant.ScanValueFill, by addToCatalog with no
+// instance added, so the rule of the values a row keeps is the commit's
+// own, and the rows are locked in its order.
+func (t *Tenant) FillScanValues(ctx context.Context, seriesUID string, v tenant.ScanValues) error {
+	if err := tenant.ValidateFillScanValues(seriesUID, v); err != nil {
+		return err
+	}
+	return t.write(ctx, "the scan's values cannot be filled in", func(tx *sql.Tx, _ *tenantStatements) error {
+		var scanID int64
+		var session sessionRow
+		found, err := catalogID(ctx, tx, `SELECT sc.id, se.id, se.subject_id, se.created FROM scans AS sc
+			JOIN sessions AS se ON se.id = sc.session_id WHERE sc.series_uid = ?`, []any{seriesUID},
+			&scanID, &session.id, &session.subjectID, &session.created)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fault.New(fault.NotFound, "no scan holds the series")
+		}
+		return addToCatalog(ctx, tx, tenant.ScanCommit{Values: v}, session, scanID, false, 0, 0, nil)
+	})
+}
+
 // seriesNumber returns a scan's series number as a column holds it: NULL
 // when its files held none.
 func seriesNumber(v tenant.ScanValues) any {

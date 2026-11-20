@@ -133,19 +133,27 @@ case $untrusted in
 	*) fail "12.4 a forwarded address from an untrusted peer is ignored" "audit recorded '$untrusted'" ;;
 esac
 
-# 12.5 A forwarded address from a trusted proxy is the caller.
+# 12.5 A forwarded address from a trusted proxy is the caller, read from
+# the one header access.forwarded-header names: X-Forwarded-For by default,
+# where a Forwarded header alone is not read and the peer is the caller;
+# Forwarded (RFC 7239) once the setting names it.
 acc_set access.trusted-proxies 127.0.0.1
 acc_call bogus "$who" '{}' 'X-Forwarded-For: 198.51.100.1, 203.0.113.9'
 xff=$(acc_sql "select remote_addr from audit where key_id = '111111111111' order by at desc limit 1")
 acc_call bogus "$who" '{}' 'Forwarded: for="[2001:db8::7]:4711"'
+fwd_default=$(acc_sql "select remote_addr from audit where key_id = '111111111111' order by at desc limit 1")
+acc_set access.forwarded-header forwarded
+acc_call bogus "$who" '{}' 'Forwarded: for="[2001:db8::7]:4711"'
 fwd=$(acc_sql "select remote_addr from audit where key_id = '111111111111' order by at desc limit 1")
+acc_unset access.forwarded-header
 acc_key fresh
 acc_call fresh "$who" '{}' 'X-Forwarded-For: 203.0.113.10'
 last=$(acc_sql "select last_address from api_keys where id = '$(cat "$acc/keys/fresh.id")'")
-if [ "$xff" = 203.0.113.9 ] && [ "$fwd" = 2001:db8::7 ] && [ "$last" = 203.0.113.10 ]; then
-	ok "12.5 a forwarded address from a trusted proxy is the caller" "access.trusted-proxies 127.0.0.1: X-Forwarded-For '198.51.100.1, 203.0.113.9' recorded as $xff (the rightmost untrusted); Forwarded for=[2001:db8::7]:4711 as $fwd; a key's last-used address $last"
+case $fwd_default in 127.0.0.1:*) fwd_ignored=1 ;; *) fwd_ignored=0 ;; esac
+if [ "$xff" = 203.0.113.9 ] && [ "$fwd_ignored" = 1 ] && [ "$fwd" = 2001:db8::7 ] && [ "$last" = 203.0.113.10 ]; then
+	ok "12.5 a forwarded address from a trusted proxy is the caller" "access.trusted-proxies 127.0.0.1: X-Forwarded-For '198.51.100.1, 203.0.113.9' recorded as $xff (the rightmost untrusted); Forwarded for=[2001:db8::7]:4711 alone not read by default ($fwd_default, the peer), and with access.forwarded-header forwarded recorded as $fwd; a key's last-used address $last"
 else
-	fail "12.5 a forwarded address from a trusted proxy is the caller" "X-Forwarded-For: '$xff', Forwarded: '$fwd', last used from '$last'"
+	fail "12.5 a forwarded address from a trusted proxy is the caller" "X-Forwarded-For: '$xff', Forwarded by default: '$fwd_default', Forwarded when named: '$fwd', last used from '$last'"
 fi
 
 # 12.6 An address blocked for bad keys; behind the trusted proxy each

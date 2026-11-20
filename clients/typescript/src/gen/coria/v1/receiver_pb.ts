@@ -349,6 +349,15 @@ export const DimseReceiverSchema: GenMessage<DimseReceiver> = /*@__PURE__*/
  * 10.5.3 gives the Store Instances Response Module to an answer part by
  * part), and a search of the study (QIDO-RS) shows which arrived.
  *
+ * A request may take as long as its client sends, so its key is checked
+ * again every 15 seconds while it is open, as for a long read
+ * (DataService). Once the key has been revoked, has expired or has lost its
+ * role on the tenant, the request ends at its next read of the body: it is
+ * answered as a new request with that key would be (401 or 403, in the
+ * API's JSON error form), the parts held whole before are kept and
+ * archived, the rest are not kept, and the installation's audit log
+ * records the request as refused with the cause.
+ *
  * After the answer, each stored instance goes through the same reception
  * pipeline as one a DIMSE receiver took: grouped into receptions by study,
  * archived after the quiet period, quarantined for what the pipeline

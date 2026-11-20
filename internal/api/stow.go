@@ -82,12 +82,27 @@ func (c *core) stow(ctx context.Context, w http.ResponseWriter, r *http.Request)
 	if r.TLS != nil {
 		scheme = "https"
 	}
+	// A request may take as long as its client sends: the caller's key and
+	// grant are checked again every RecheckInterval, as for a long read,
+	// and a request whose caller may no longer store ends at its next read
+	// of the body. The parts stored before are kept, as for any request
+	// refused part way.
+	ctx, stop := c.watchKey(ctx, d)
+	defer stop()
 	res := ep.Serve(ctx, w, r, stow.Request{
 		Study:       study,
 		Base:        scheme + "://" + r.Host + "/tenants/" + name + "/dicom-web",
 		Caller:      tenant.Caller{Address: callerAddress(r.RemoteAddr)},
 		Association: w.Header().Get(RequestIDHeader),
+		Refused: func() bool {
+			_, refused := refusedWhileOpen(ctx)
+			return refused
+		},
 	})
+	if refusal, refused := refusedWhileOpen(ctx); refused && res.Unanswered {
+		// Confirm recorded the refusal.
+		return c.toAPI(d, refusal)
+	}
 	details := withDetails(facts.Details, map[string]string{
 		detailReceiver: ep.Receiver().Name, detailStored: strconv.Itoa(res.Stored), detailRefused: strconv.Itoa(res.Refused),
 	})

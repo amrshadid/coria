@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -209,7 +210,9 @@ func readAnswerHead(t *testing.T, conn net.Conn) (int, string) {
 // sending a part that is being refused (not DICOM, or past the largest
 // file) or read: it returns within the drain bound and a little more,
 // however long the client would go on, and the request is answered 503
-// with Retry-After, nothing of the part kept.
+// with Retry-After, nothing of the part kept; and a client that then stops
+// sending but keeps its connection open does not hold the connection: what
+// net/http reads of the body after the answer ends at once.
 func TestStopCutsAClientStillSending(t *testing.T) {
 	for _, mediaType := range []string{"text/plain", "application/dicom"} {
 		t.Run(strings.ReplaceAll(mediaType, "/", "-"), func(t *testing.T) {
@@ -219,9 +222,10 @@ func TestStopCutsAClientStillSending(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				results <- r.ep.Serve(req.Context(), w, req, Request{Base: "http://x"})
 			}))
-			defer srv.Close()
 			stop := make(chan struct{})
-			defer close(stop)
+			var stopOnce sync.Once
+			stopClient := func() { stopOnce.Do(func() { close(stop) }) }
+			defer stopClient()
 			conn := streamingClient(t, srv.Listener.Addr().String(), mediaType, 200*time.Microsecond, stop)
 			time.Sleep(300 * time.Millisecond)
 			start := time.Now()
@@ -235,13 +239,25 @@ func TestStopCutsAClientStillSending(t *testing.T) {
 			if d := time.Since(start); d < drain {
 				t.Errorf("Stop returned after %v, before the drain bound", d)
 			}
-			res := <-results
+			// The client goes quiet with its connection open, before what
+			// is left of its body could be read.
+			stopClient()
+			res := within(t, results)
 			status, retry := readAnswerHead(t, conn)
 			if res.Status != http.StatusServiceUnavailable || status != http.StatusServiceUnavailable || retry == "" || res.Stored != 0 {
 				t.Errorf("the request cut: %+v, answered %d with Retry-After %q", res, status, retry)
 			}
 			if n := len(r.sink.stored()); n != 0 {
 				t.Errorf("%d files kept", n)
+			}
+			// The server's connection must still end, or httptest's Close
+			// waits on it.
+			closed := make(chan struct{})
+			go func() { srv.Close(); close(closed) }()
+			select {
+			case <-closed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("a quiet client that keeps its connection open holds the cut request's connection")
 			}
 		})
 	}
@@ -279,5 +295,105 @@ func TestStopCutsAnIdleClient503(t *testing.T) {
 	status, retry := readAnswerHead(t, conn)
 	if res.Status != http.StatusServiceUnavailable || status != http.StatusServiceUnavailable || retry == "" || res.Stored != 0 {
 		t.Errorf("an idle request cut: %+v, answered %d with Retry-After %q", res, status, retry)
+	}
+}
+
+// onRead runs fn at the first read and then reads as if empty: it marks
+// the moment in a body where something happens to its request.
+type onRead struct {
+	fn   func()
+	done bool
+}
+
+// Read implements io.Reader.
+func (o *onRead) Read([]byte) (int, error) {
+	if !o.done {
+		o.done = true
+		o.fn()
+	}
+	return 0, io.EOF
+}
+
+// TestARefusedCallerEndsTheRequestUnanswered guards a request whose
+// caller is refused while it is open (Request.Refused): the part stored
+// before is kept and counted, the request ends at its next read of the
+// body with nothing of the parts after it kept, and Serve writes no
+// answer, leaving the refusal to the route, rather than answering as the
+// receiver stops.
+func TestARefusedCallerEndsTheRequestUnanswered(t *testing.T) {
+	f := corpus(t, ctFiles[0])
+	const ct = `multipart/related; type="application/dicom"; boundary=B`
+	head := "--B\r\nContent-Type: application/dicom\r\n\r\n"
+	first := append(append([]byte(head), f...), "\r\n"+head...)
+	rest := append(append(append([]byte{}, corpus(t, ctFiles[1])...), "\r\n"+head...), corpus(t, ctFiles[2])...)
+	rest = append(rest, "\r\n--B--\r\n"...)
+
+	r := newRig(t, 1<<20, 1<<24, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var refused atomic.Bool
+	body := io.MultiReader(bytes.NewReader(first), &onRead{fn: func() { refused.Store(true); cancel() }}, bytes.NewReader(rest))
+	req := httptest.NewRequest(http.MethodPost, "http://archive.test/tenants/lab1/dicom-web/studies", body)
+	req.Header.Set("Content-Type", ct)
+	req.Header.Set("Accept", "application/dicom+json")
+	w := httptest.NewRecorder()
+	res := r.ep.Serve(ctx, w, req, Request{Base: "http://archive.test/tenants/lab1/dicom-web", Refused: refused.Load})
+	if !res.Unanswered || res.Stored != 1 || res.Refused != 0 {
+		t.Errorf("a caller refused after the first part: %+v, want unanswered with 1 stored", res)
+	}
+	if w.Body.Len() != 0 || w.Header().Get("Content-Type") != "" {
+		t.Errorf("Serve wrote an answer for a refused caller: %d %q", w.Code, w.Body.String())
+	}
+	if got := r.sink.stored(); len(got) != 1 || !bytes.Equal(got[0], f) {
+		t.Errorf("%d parts kept, want the first only", len(got))
+	}
+}
+
+// TestARefusedBodyDoesNotHoldItsConnection guards the connection of a
+// request refused part way through its body while the client, which sent
+// a part header past MaxPartHeader in a chunked body, then sends nothing
+// more and keeps the connection open: net/http reads what is left of a
+// body after the answer, and that read must end at once, so the connection
+// ends and the server can close.
+func TestARefusedBodyDoesNotHoldItsConnection(t *testing.T) {
+	r := newRig(t, 1<<20, 1<<24, func(c *Config) { c.ReadStall = time.Minute })
+	results := make(chan Result, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		results <- r.ep.Serve(req.Context(), w, req, Request{Base: "http://x"})
+	}))
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	head := "POST / HTTP/1.1\r\nHost: x\r\nContent-Type: multipart/related; type=\"application/dicom\"; boundary=B\r\nTransfer-Encoding: chunked\r\n\r\n"
+	part := "--B\r\nContent-Type: application/dicom\r\nX-Filler: " + strings.Repeat("x", MaxPartHeader+headerSlack+1024) + "\r\n\r\n"
+	if _, err := fmt.Fprintf(conn, "%s%x\r\n%s\r\n", head, len(part), part); err != nil {
+		t.Fatal(err)
+	}
+	res := within(t, results)
+	status, _ := readAnswerHead(t, conn)
+	if res.Status != http.StatusBadRequest || status != http.StatusBadRequest {
+		t.Errorf("a part header too large: %+v, answered %d", res, status)
+	}
+	closed := make(chan struct{})
+	go func() { srv.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a quiet client that keeps its connection open holds the refused request's connection")
+	}
+}
+
+// within receives the request's Result, failing the test when Serve has
+// not returned within 5 seconds, so a hang fails at once.
+func within(t *testing.T, results <-chan Result) Result {
+	t.Helper()
+	select {
+	case res := <-results:
+		return res
+	case <-time.After(5 * time.Second):
+		t.Fatal("Serve did not return within 5s")
+		return Result{}
 	}
 }

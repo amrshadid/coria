@@ -12,7 +12,6 @@ import (
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/layout"
 	"github.com/amrshadid/coria/internal/core/manifest"
-	"github.com/amrshadid/coria/internal/core/naming"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/receive/frames"
 	"github.com/amrshadid/coria/internal/receive/header"
@@ -468,26 +467,9 @@ func storageError(err error, message string) error {
 	return fault.Wrap(k, err, message+": "+safe(err))
 }
 
-// The attributes a scan's commit carries to the catalog (PS3.6 Table 6-1):
-// the session's Study Date and the scan's Modality, Series Description and
-// Series Number. Each is a study's or a series's attribute, the same in
-// every file of the scan by the standard (PS3.3 C.7.2.1, C.7.3.1), so one
-// file's header says it.
-var (
-	tagStudyDate         = naming.NewTag(0x0008, 0x0020)
-	tagModality          = naming.NewTag(0x0008, 0x0060)
-	tagSeriesDescription = naming.NewTag(0x0008, 0x103E)
-	tagSeriesNumber      = naming.NewTag(0x0020, 0x0011)
-)
-
 // scanValues returns what a file's header says of its scan and session, as
-// the catalog keeps it (tenant.ScanValuesOf): the values go-dicom decodes,
-// under the file's character set, with their padding removed; one absent
-// or not of its kind is left empty.
+// the catalog keeps it (tenant.ScanValuesOf of header.CatalogText): one
+// absent or not of its kind is left empty.
 func scanValues(h *header.Header) tenant.ScanValues {
-	text := func(t naming.Tag) string {
-		v, _ := h.Lookup(t)
-		return v
-	}
-	return tenant.ScanValuesOf(text(tagStudyDate), text(tagModality), text(tagSeriesDescription), text(tagSeriesNumber))
+	return tenant.ScanValuesOf(h.CatalogText())
 }

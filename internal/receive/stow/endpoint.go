@@ -80,7 +80,13 @@ type inFlight struct {
 	// stopped says the request was cut: its body's reads fail from then
 	// on (stallReader) and it is answered as the receiver stops.
 	stopped atomic.Bool
+	// refusedBy is the request's Request.Refused, nil for none.
+	refusedBy func() bool
 }
+
+// refused reports whether the request's caller was refused while it was
+// open.
+func (f *inFlight) refused() bool { return f.refusedBy != nil && f.refusedBy() }
 
 // cut ends the request: set first, so no read after it extends the
 // deadline it then sets.

@@ -152,8 +152,12 @@ func TestKeyRulesReread(t *testing.T) {
 // TestTenantNetworks guards a tenant's networks: judged only for a caller
 // the role check allowed, so one without a grant is told Denied as before;
 // a request from outside them is refused as unauthenticated with the rule
-// recorded; one from inside, or on the local socket, is allowed; and a rule
-// that cannot be read fails the request rather than allow it.
+// recorded; one from inside, or on the local socket, is allowed; a rule
+// that cannot be read fails the request rather than allow it, named as the
+// tenant's database's failure, not the master's; and a tenant's
+// registration read by a caller the installation's role allows is judged by
+// no tenant rule, so the installation's admin sees a tenant whose database
+// stopped, while one allowed only by its grant on the tenant is judged.
 func TestTenantNetworks(t *testing.T) {
 	s := &sink{}
 	var readErr error
@@ -188,11 +192,18 @@ func TestTenantNetworks(t *testing.T) {
 	if _, err := e.access.Check(e.ctx, access.APIKey(k.full), access.OnTenant("lab", master.RoleReader), sock); err != nil {
 		t.Errorf("on the local socket: %v", err)
 	}
+	_, err = e.access.Check(e.ctx, access.APIKey(k.full), access.TenantRegistration("lab"), from("M", "192.0.2.7:1"))
+	wantErr(t, "the registration by a tenant grant, outside the lab's networks", err, fault.Unauthenticated, access.MessageUnauthenticated)
+
 	readErr = fault.New(fault.Unavailable, "down")
-	_, err = e.access.Check(e.ctx, access.APIKey(k.full), access.OnTenant("lab", master.RoleReader), from("M", "10.0.0.9:1"))
-	if fault.KindOf(err) != fault.Unavailable {
-		t.Errorf("a rule that cannot be read: %v, want Unavailable", err)
+	admin := e.key(t0.Add(time.Hour), on(master.Installation, master.RoleAdmin))
+	if _, err := e.access.Check(e.ctx, access.APIKey(admin.full), access.TenantRegistration("lab"), from("M", "192.0.2.7:1")); err != nil {
+		t.Errorf("the registration by the installation's admin, the tenant's database down: %v", err)
 	}
+	_, err = e.access.Check(e.ctx, access.APIKey(k.full), access.OnTenant("lab", master.RoleReader), from("M", "10.0.0.9:1"))
+	wantErr(t, "a rule that cannot be read", err, fault.Unavailable, "the tenant's database does not answer")
+	_, err = e.access.Check(e.ctx, access.APIKey(k.full), access.TenantRegistration("lab"), from("M", "10.0.0.9:1"))
+	wantErr(t, "the registration by a tenant grant, the rule unreadable", err, fault.Unavailable, "the tenant's database does not answer")
 }
 
 // TestRecordRefusal guards the record of a refusal the server judged: in the

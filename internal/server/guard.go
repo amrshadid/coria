@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/amrshadid/coria/internal/access"
@@ -56,6 +57,9 @@ type guard struct {
 	// delay is how long a slowed refusal is held: failureDelay, but in a
 	// test.
 	delay time.Duration
+	// held counts the refusals held for delay, so the holds are counted
+	// and not inferred from how long requests took.
+	held atomic.Int64
 
 	mu    sync.Mutex
 	rules AccessRules
@@ -158,6 +162,7 @@ func installationRefusal(r AccessRules, o origin) string {
 
 // wait holds a slowed refusal for the guard's delay, or until ctx ends.
 func (g *guard) wait(ctx context.Context) {
+	g.held.Add(1)
 	t := time.NewTimer(g.delay)
 	defer t.Stop()
 	select {

@@ -46,6 +46,10 @@ func (s *Server) SetGuardClock(now func() time.Time, delay time.Duration) {
 	s.guard.now, s.guard.delay = now, delay
 }
 
+// GuardHolds is how many refusals the server has held for the failure
+// delay since it started.
+func (s *Server) GuardHolds() int64 { return s.guard.held.Load() }
+
 // SetStallTimeout replaces the write stall bound of long methods, so a test
 // of a client that stops reading does not wait minutes. It must be set
 // before Start.

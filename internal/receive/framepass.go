@@ -19,9 +19,11 @@ import (
 const framePassRetry = time.Minute
 
 // framePass gives the metadata sidecars written before frame tables
-// existed their tables (frames.Run), once a start: every sidecar written
-// after it starts has its tables already, because the archive step writes
-// them, so one pass that ends leaves none to do. A pass that stops on a
+// existed their tables, and the scans archived before the catalog kept
+// their header values those values (frames.Run), once a start: every
+// sidecar written after it starts has its tables already, and every scan
+// committed after it its values, because the archive step writes them, so
+// one pass that ends leaves none to do. A pass that stops on a
 // failure is run again after framePassRetry, and the next start runs one
 // again, which finds the scans done by reading one small range of each.
 // It runs while the workers run and ends with them.
@@ -56,6 +58,9 @@ func (p *Pipeline) framePass() {
 		if rep.ScansDone > 0 {
 			p.log.Info("frame tables were added to scans archived before them", "scans", rep.ScansDone,
 				"instances", rep.InstancesDone, "checked", rep.ScansChecked)
+		}
+		if rep.ScansFilled > 0 {
+			p.log.Info("the catalog's header values were filled in for scans archived before it kept them", "scans", rep.ScansFilled)
 		}
 		if err == nil {
 			return

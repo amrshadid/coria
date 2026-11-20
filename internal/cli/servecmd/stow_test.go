@@ -481,3 +481,98 @@ func TestSTOWHoldsAFileWhosePlacingUIDsDiffer(t *testing.T) {
 		t.Fatalf("held %+v", list.Files)
 	}
 }
+
+// TestSTOWEndsWhenItsKeyIsRevokedPartWay guards a long STOW-RS request
+// whose key is revoked while its body still arrives, in a real server
+// process over the network: the first part, whole before the revocation,
+// is kept and archived; once the server has checked the key again (it
+// does every 15 seconds, as for a long read) the request ends at its next
+// read of the body, the parts sent after are not kept, the client is
+// answered 401 as a new request with that key would be, and the
+// installation's audit log records the request refused with its cause.
+func TestSTOWEndsWhenItsKeyIsRevokedPartWay(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs a server process and holds a request open past the key's recheck; left out under -short")
+	}
+	s := newSTOWSite(t, 1<<20)
+	const boundary = "revokedPartWay"
+	head := "--" + boundary + "\r\nContent-Type: application/dicom\r\n\r\n"
+	pr, pw := io.Pipe()
+	req, _ := http.NewRequestWithContext(s.t.Context(), http.MethodPost, "http://"+s.listen+"/tenants/"+s.tenant+"/dicom-web/studies", pr)
+	req.Header.Set("Content-Type", `multipart/related; type="application/dicom"; boundary=`+boundary)
+	req.Header.Set("Accept", "application/dicom+json")
+	req.Header.Set("Authorization", "Bearer "+s.key)
+	type answer struct {
+		status int
+		body   []byte
+		err    error
+	}
+	answered := make(chan answer, 1)
+	go func() {
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			answered <- answer{err: err}
+			return
+		}
+		defer func() { _ = res.Body.Close() }()
+		b, _ := io.ReadAll(res.Body)
+		answered <- answer{status: res.StatusCode, body: b}
+	}()
+	// The first part, closed by the next part's header so the server takes
+	// it as whole and waits in the second part's bytes.
+	first := append(append([]byte(head), testdata(t, ctStudy[0])...), "\r\n"+head...)
+	if _, err := pw.Write(first); err != nil {
+		t.Fatal(err)
+	}
+	waitWithin(t, "the first part to be kept", 10*time.Second, func() bool { return len(s.incomingFiles()) == 1 })
+	post(t, s.hc, "/coria.v1.AccessService/RevokeKey", `{"id":"`+s.keyID+`"}`)
+
+	var log struct {
+		Entries []struct {
+			KeyID   string `json:"keyId"`
+			Outcome string `json:"outcome"`
+			Reason  string `json:"reason"`
+			Method  string `json:"method"`
+		} `json:"entries"`
+	}
+	refusal := ""
+	waitWithin(t, "the key's recheck to refuse the request", 40*time.Second, func() bool {
+		if err := json.Unmarshal(post(t, s.hc, "/coria.v1.AuditService/ListAuditEntries", `{"scope":{"installation":{}},"keyId":"`+s.keyID+`","outcome":"AUDIT_OUTCOME_REFUSED"}`), &log); err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range log.Entries {
+			if e.KeyID == s.keyID && e.Outcome == "AUDIT_OUTCOME_REFUSED" && strings.Contains(e.Method, "dicom-web") {
+				refusal = e.Reason
+				return true
+			}
+		}
+		return false
+	})
+	if refusal != "key revoked since the check" {
+		t.Errorf("the audit entry's reason: %q", refusal)
+	}
+
+	go func() {
+		rest := append(append(testdata(t, ctStudy[1]), "\r\n"+head...), testdata(t, ctStudy[2])...)
+		_, _ = pw.Write(append(rest, "\r\n--"+boundary+"--\r\n"...))
+		_ = pw.Close()
+	}()
+	var got answer
+	select {
+	case got = <-answered:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the request was not answered after its key's refusal")
+	}
+	if got.err != nil {
+		t.Fatalf("the request: %v", got.err)
+	}
+	if got.status != http.StatusUnauthorized || !strings.Contains(string(got.body), "the request carries no valid key") {
+		t.Fatalf("the request after its key was revoked: %d %s, want 401", got.status, got.body)
+	}
+	if n := s.waitArchived(); n != 1 {
+		t.Fatalf("%d files archived, want the first part only", n)
+	}
+	if got := s.incomingFiles(); len(got) != 0 {
+		t.Errorf("the incoming area holds %d files after the reception", len(got))
+	}
+}

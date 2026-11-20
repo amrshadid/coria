@@ -67,6 +67,12 @@ type Request struct {
 	// Association is an id of the request (master.ValidateID's form), which
 	// each received file records, empty for none.
 	Association string
+	// Refused reports that the caller's key or grant may no longer store,
+	// found while the request was open; nil never refuses. It is asked when
+	// the request's context ends before its body was read whole: Serve then
+	// writes no answer and returns a Result marked Unanswered, so the route
+	// answers as it answers a new request with that key.
+	Refused func() bool
 }
 
 // Result is what became of a request, for its audit entry.
@@ -79,6 +85,10 @@ type Result struct {
 	// Reason is the phrase of a request refused or cut short as a whole,
 	// "" for one answered part by part.
 	Reason string
+	// Unanswered says Serve wrote nothing, since the caller was refused
+	// while the request was open (Request.Refused): the parts stored
+	// before are kept and counted, and the route writes the refusal.
+	Unanswered bool
 }
 
 // outcome is what became of one part.
@@ -126,12 +136,15 @@ func (t *tally) parts() int { return t.stored + t.refused }
 // before a request is refused part way are kept and counted in its
 // Result; the plain answer does not list them (PS3.18 10.5.3 gives a
 // Store Instances Response Module to an answer part by part only), and a
-// client finds them with a search (PS3.18 10.6).
+// client finds them with a search (PS3.18 10.6). A request whose caller is
+// refused while it is open (Request.Refused) ends at its next read of the
+// body, keeping the parts stored before, and is left for the route to
+// answer.
 func (e *Endpoint) Serve(ctx context.Context, w http.ResponseWriter, r *http.Request, req Request) Result {
 	rc := http.NewResponseController(w)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	f := &inFlight{cancel: cancel, deadline: func() { _ = rc.SetReadDeadline(time.Now()) }}
+	f := &inFlight{cancel: cancel, deadline: func() { _ = rc.SetReadDeadline(time.Now()) }, refusedBy: req.Refused}
 	if !e.enter(f) {
 		return stopping(w)
 	}
@@ -153,7 +166,21 @@ func (e *Endpoint) Serve(ctx context.Context, w http.ResponseWriter, r *http.Req
 	stall := e.cfg.ReadStall
 	body := &stallReader{r: http.MaxBytesReader(w, r.Body, e.cfg.Receiver.STOW.MaxRequestBytes), ctx: ctx, cut: &f.stopped,
 		extend: func() { _ = rc.SetReadDeadline(time.Now().Add(stall)) }}
-	defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
+	// A body read to its end lifts the stall deadline, so the connection's
+	// next request does not inherit it. A body left unread (a failure, a
+	// refusal, a cut) keeps a deadline that has passed instead: net/http
+	// reads up to 256 KiB of what is left of a body after the handler
+	// returns, whatever the answer's Connection: close says, and without a
+	// deadline a client that keeps its connection open and sends nothing
+	// more would hold that read, and the connection, for ever.
+	unread := false
+	defer func() {
+		if unread {
+			_ = rc.SetReadDeadline(time.Now())
+			return
+		}
+		_ = rc.SetReadDeadline(time.Time{})
+	}()
 	bound := &headerBound{r: body}
 	mr := multipart.NewReader(bound, boundary)
 	var t tally
@@ -180,6 +207,7 @@ func (e *Endpoint) Serve(ctx context.Context, w http.ResponseWriter, r *http.Req
 				continue
 			}
 		}
+		unread = true
 		res := e.bodyFailed(ctx, w, f, err)
 		res.Stored, res.Refused = t.stored, t.refused
 		return res
@@ -246,6 +274,10 @@ func (e *Endpoint) bodyFailed(ctx context.Context, w http.ResponseWriter, f *inF
 	w.Header().Set("Connection", "close")
 	var tooLarge *http.MaxBytesError
 	switch {
+	case ctx.Err() != nil && f.refused():
+		// Checked first: the caller's own refusal is the answer a new
+		// request would get, whatever read it ended.
+		return Result{Unanswered: true}
 	case f.stopped.Load() || errors.Is(err, errCut):
 		// Checked first: the cut ends the reads with a deadline, which
 		// would otherwise be taken for a stalled client.
@@ -320,14 +352,21 @@ func (e *Endpoint) storePart(ctx context.Context, part *multipart.Part, req Requ
 		// its whole header says otherwise (receive.Arrival).
 		a.StudyUID, a.SeriesUID = o.study, o.series
 	}
+	if err := ctx.Err(); err != nil {
+		// Cut by Stop or by a refusal of the caller while the part was
+		// read: nothing of it is handed on.
+		return outcome{}, err
+	}
 	out := e.cfg.Sink.Accept(ctx, a)
 	if body.err != nil && !errors.Is(body.err, io.EOF) {
 		// The body failed under the Sink, which then kept nothing of the
 		// part (receive.Sink); the request ends here.
 		return outcome{}, body.err
 	}
-	if err := ctx.Err(); err != nil {
-		// Cut by Stop: the request ends as the receiver stops.
+	if err := ctx.Err(); err != nil && out.Status != receive.Received {
+		// Cut by Stop or by a refusal of the caller: the request ends. A
+		// part the Sink kept before is durable and counted stored; the
+		// next read of the body ends the request.
 		return outcome{}, err
 	}
 	switch {

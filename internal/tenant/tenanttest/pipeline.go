@@ -96,6 +96,7 @@ func runPipeline(t *testing.T, open OpenPipeline) {
 		{"CatalogCursors", testCatalogCursors},
 		{"CatalogInstances", testCatalogInstances},
 		{"CatalogValuesKept", testCatalogValuesKept},
+		{"CatalogValuesFilled", testCatalogValuesFilled},
 		{"CatalogTotals", testCatalogTotals},
 	}
 	for _, tt := range tests {

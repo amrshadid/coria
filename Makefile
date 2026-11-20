@@ -215,6 +215,47 @@ check-seal:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-seal: no interpreter $(PYTHON)" >&2; exit 1; }
 	CORIA_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
 
+# The outside checks of reading the archive, each the Go test that runs a
+# script of scripts/check against what the server answers: the Metadata
+# service against pydicom's to_json_dict, the Catalog service against what
+# pydicom reads of the received files, each file's frame table against the
+# fragments pydicom divides it into, QIDO-RS and WADO-RS from dicomweb-client
+# against pydicom, and STOW-RS from dicomweb-client in a real server process.
+# As for check-seal, -count=1 so a cached pass is never reported, and the
+# variable is always set, so the check runs or fails. PYTHON needs pydicom,
+# and for check-dicomweb and check-stow dicomweb-client too
+# (docs/testing.md). PYDICOM_CORPUS=<pydicom's test_files directory> adds
+# that corpus's files where the test takes them.
+PYDICOM_CORPUS ?=
+CHECK_READING_ENV = $(if $(PYDICOM_CORPUS),CORIA_PYDICOM_CORPUS="$(PYDICOM_CORPUS)")
+
+.PHONY: check-metadata check-catalog check-frames check-dicomweb check-stow
+
+check-metadata:
+	@test -n "$(PYTHON)" || { echo "check-metadata: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-metadata: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_METADATA_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestMetadataEqualsPydicom$$' ./internal/api
+
+check-catalog:
+	@test -n "$(PYTHON)" || { echo "check-catalog: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-catalog: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_CATALOG_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestCatalogEqualsPydicom$$' ./internal/api
+
+check-frames:
+	@test -n "$(PYTHON)" || { echo "check-frames: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-frames: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_FRAMES_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestTableEqualsPydicom$$' ./internal/receive/frames
+
+check-dicomweb:
+	@test -n "$(PYTHON)" || { echo "check-dicomweb: PYTHON is empty; name an interpreter that has dicomweb-client and pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-dicomweb: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_DICOMWEB_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestDICOMwebWithDicomwebClient$$' ./internal/api
+
+check-stow:
+	@test -n "$(PYTHON)" || { echo "check-stow: PYTHON is empty; name an interpreter that has dicomweb-client and pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-stow: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_STOW_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSTOWWithDicomwebClient$$' ./internal/cli/servecmd
+
 # The outside check of the SQLite master database: the driver writes the
 # contract suite's sample, and the sqlite3 tool (SQLITE3=... names one) reads
 # it back, checks it, and searches it for the sample key's secret.

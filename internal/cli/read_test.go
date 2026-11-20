@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -227,8 +228,10 @@ func TestDownload(t *testing.T) {
 	if len(tree) != 4 {
 		t.Errorf("the tree holds %d files, want 4", len(tree))
 	}
+	// Windows keeps no mode bits: a directory made there takes the access
+	// list of the directory it is made in, the one the user named.
 	info, err := os.Stat(filepath.Join(out, "sub-a", "ses-1"))
-	if err != nil || info.Mode().Perm() != 0o700 {
+	if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0o700) {
 		t.Errorf("the directories are not private: %v %v", info, err)
 	}
 
@@ -347,6 +350,40 @@ func TestDownloadResumes(t *testing.T) {
 	}
 }
 
+// TestDownloadResumesTheFirstFileByRangeAlone guards a rerun whose first
+// missing file is a partial copy: it is continued by range before any
+// stream of file bytes opens, and the stream then starts after it, so no
+// stream begins sending a file the client continues by range (what such a
+// stream sends before it is closed would be fetched for nothing).
+func TestDownloadResumesTheFirstFileByRangeAlone(t *testing.T) {
+	r := newArchiveRig(t)
+	seedArchive(r)
+	out := filepath.Join(t.TempDir(), "out")
+	first := inst("1.2.3.1.1", 700)
+	dir := filepath.Join(out, "sub-a", "ses-1", "scan-1")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "1.2.3.1.1.dcm.part"), first.Data[:300], 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "1.2.3.1.1.dcm.part.sha256"), []byte(sum(first.Data)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	doc := document(t, r.run("download", "lab1", "sub-a", "--to", out, "--json"))
+	if doc["files"] != float64(4) || doc["resumed"] != float64(1) || doc["bytes"] != float64(4096-300) {
+		t.Errorf("a download resumed at its first file: %v", doc)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "1.2.3.1.1.dcm")); !bytes.Equal(got, first.Data) {
+		t.Errorf("the resumed file has SHA-256 %s, want %s", sum(got), sum(first.Data))
+	}
+	for _, req := range r.fake.ReadFilesRequests() {
+		if !req.GetAnnounceOnly() && req.GetStartAfter().GetInstanceId() == "" {
+			t.Errorf("a stream of file bytes opened at the start, at the file continued by range: %v", req)
+		}
+	}
+}
+
 // TestDownloadFailsClosed guards what a hostile or damaged server cannot do:
 // a file announced with a checksum its bytes do not have is removed, named,
 // and fails the command only after the rest arrived; a name with "../" is
@@ -359,7 +396,7 @@ func TestDownloadFailsClosed(t *testing.T) {
 	r.fake.AddScan("lab1", &v1.Scan{SubjectLabel: "sub-d", SessionLabel: "ses-1", Label: "scan-1", InstanceCount: 2, ArchiveTime: timestamppb.New(fixedNow)}, damaged, inst("1.2.3.5.2", 300))
 	out := filepath.Join(t.TempDir(), "out")
 	res := r.run("download", "lab1", "sub-d", "--to", out)
-	if res.code != 1 || !strings.Contains(res.stderr, "sub-d/ses-1/scan-1/1.2.3.5.1.dcm") || !strings.Contains(res.stdout, "1 failed") {
+	if res.code != 1 || !strings.Contains(res.stderr, filepath.FromSlash("sub-d/ses-1/scan-1/1.2.3.5.1.dcm")) || !strings.Contains(res.stdout, "1 failed") {
 		t.Errorf("a file that does not match: exit %d\nstdout %q\nstderr %q", res.code, res.stdout, res.stderr)
 	}
 	if got := readTree(t, out); len(got) != 1 || got["sub-d/ses-1/scan-1/1.2.3.5.2.dcm"] == nil {

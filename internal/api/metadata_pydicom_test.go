@@ -79,7 +79,7 @@ func TestMetadataEqualsPydicom(t *testing.T) {
 				t.Fatalf("%s: too large", m.GetInstanceId())
 			}
 			name := filepath.Join(work, m.GetInstanceId()+".dcm")
-			if err := os.WriteFile(name, a.sent[m.GetInstanceId()], 0o600); err != nil {
+			if err := os.WriteFile(name, a.sent[m.GetInstanceId()], 0o600); err != nil { // #nosec G703 -- an instance id the test's own server answered, under its temporary directory.
 				t.Fatal(err)
 			}
 			entries = append(entries, entry{File: name, ID: m.GetInstanceId(), JSON: m.GetDicomJson(), Omitted: m.GetBulkDataOmitted()})

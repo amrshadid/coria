@@ -85,8 +85,10 @@ func varies(h http.Header, field string) bool {
 
 // TestCORSPreflight guards the preflight of a listed origin, to a procedure
 // and to a pattern route alike: 204 with the origin itself, every method
-// and request header a Connect, gRPC-Web or download client sends, the
-// response headers they read exposed, a max age, Vary on the origin and
+// and request header a Connect, gRPC-Web, download or DICOMweb client
+// sends (Accept, which a WADO-RS media type with quotes takes out of the
+// safelist), the response headers they read exposed (Warning, by which
+// QIDO-RS says more results exist), a max age, Vary on the origin and
 // the asked method and headers, never Access-Control-Allow-Credentials,
 // no audit entry, and no line of the log holding the path's ids; and the preflight of an origin not listed: no CORS
 // header at all, refused for its missing key like any request.
@@ -115,12 +117,12 @@ func TestCORSPreflight(t *testing.T) {
 				t.Errorf("%s: %s is not an allowed method: %q", path, m, h.Get("Access-Control-Allow-Methods"))
 			}
 		}
-		for _, name := range []string{"authorization", "content-type", "connect-protocol-version", "connect-timeout-ms", "grpc-timeout", "x-grpc-web", "x-user-agent", "range", "if-range"} {
+		for _, name := range []string{"authorization", "content-type", "connect-protocol-version", "connect-timeout-ms", "grpc-timeout", "x-grpc-web", "x-user-agent", "range", "if-range", "accept"} {
 			if !hasToken(h.Get("Access-Control-Allow-Headers"), name) {
 				t.Errorf("%s: %s is not an allowed header: %q", path, name, h.Get("Access-Control-Allow-Headers"))
 			}
 		}
-		for _, name := range []string{"coria-request-id", "grpc-status", "grpc-message", "grpc-status-details-bin"} {
+		for _, name := range []string{"coria-request-id", "grpc-status", "grpc-message", "grpc-status-details-bin", "etag", "content-range", "accept-ranges", "warning"} {
 			if !hasToken(h.Get("Access-Control-Expose-Headers"), name) {
 				t.Errorf("%s: %s is not exposed: %q", path, name, h.Get("Access-Control-Expose-Headers"))
 			}

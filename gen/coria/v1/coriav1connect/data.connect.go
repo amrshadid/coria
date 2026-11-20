@@ -100,7 +100,8 @@ type DataServiceClient interface {
 	// SHA-256 of its manifest; the message names its scan, and the bytes of
 	// that instance already sent are not to be kept), resource exhausted
 	// (the caller, a key or the local operator, already holds 16 open
-	// streams of this method and downloads, or the server holds 256).
+	// reads, shared by the streams of this method, downloads and the
+	// DICOMweb requests that read the archive, or the server holds 256).
 	// Limits: no deadline is applied to the stream when the client sends
 	// none, since a subject's instances may take hours; the 30-second
 	// default of other calls does not hold here. A stream whose client reads
@@ -193,7 +194,8 @@ type DataServiceHandler interface {
 	// SHA-256 of its manifest; the message names its scan, and the bytes of
 	// that instance already sent are not to be kept), resource exhausted
 	// (the caller, a key or the local operator, already holds 16 open
-	// streams of this method and downloads, or the server holds 256).
+	// reads, shared by the streams of this method, downloads and the
+	// DICOMweb requests that read the archive, or the server holds 256).
 	// Limits: no deadline is applied to the stream when the client sends
 	// none, since a subject's instances may take hours; the 30-second
 	// default of other calls does not hold here. A stream whose client reads

@@ -63,7 +63,11 @@ show settings "SELECT * FROM $t.settings ORDER BY name"
 show audit "SELECT id, at, key_id, remote_addr, method, tenant_name, object, outcome, reason, details FROM $t.audit ORDER BY at, id"
 echo
 
-want "schema_migrations rows" 9 "$(q "SELECT count(*) FROM $t.schema_migrations")"
+want "schema_migrations rows" 10 "$(q "SELECT count(*) FROM $t.schema_migrations")"
+want "the newest migration" "10 0010_stow_receivers.sql" "$(q "SELECT version || ' ' || name FROM $t.schema_migrations ORDER BY version DESC LIMIT 1")"
+# A receiver is of type dimse, on a port of its own, or stow, on no port.
+want "the receivers' rules of types and ports" "CHECK ((((type = 'dimse'::text) AND ((port >= 1) AND (port <= 65535))) OR ((type = 'stow'::text) AND (port = 0) AND (bind_address = ''::text)))) CHECK ((type = ANY (ARRAY['dimse'::text, 'stow'::text])))" \
+	"$(q "SELECT string_agg(pg_get_constraintdef(oid), ' ' ORDER BY conname) FROM pg_constraint WHERE conname IN ('receivers_type_check', 'receivers_port_check') AND connamespace = '$schema'::regnamespace")"
 want "the schema records the tenant's id" sample-tenant "$(q "SELECT id FROM $t.tenant_identity")"
 want "settings rows" 2 "$(q "SELECT count(*) FROM $t.settings")"
 want "audit rows" 5 "$(q "SELECT count(*) FROM $t.audit")"

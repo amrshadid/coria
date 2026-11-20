@@ -200,6 +200,14 @@ type archive struct {
 // directory storage, and waits until every one is held.
 func receiveArchive(t *testing.T, f *placeFixture, files [][]byte) *archive {
 	t.Helper()
+	return receiveArchiveVia(t, f, files, nil)
+}
+
+// receiveArchiveVia is receiveArchive with the store the pipeline is given
+// made by wrap from lab1's, or lab1's own when wrap is nil; the archive
+// returned holds lab1's own.
+func receiveArchiveVia(t *testing.T, f *placeFixture, files [][]byte, wrap func(tenant.Pipeline) tenant.Pipeline) *archive {
+	t.Helper()
 	f.receiving(t)
 	store, err := dir.Open(filepath.Join(f.root, "lab1", "mri"))
 	if err != nil {
@@ -212,8 +220,12 @@ func receiveArchive(t *testing.T, f *placeFixture, files [][]byte) *archive {
 		t.Fatal(err)
 	}
 	clock := &fakeClock{now: time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)}
+	given := p
+	if wrap != nil {
+		given = wrap(p)
+	}
 	pipe, err := receive.New(receive.Config{
-		Tenant: "lab1", Store: p, Hasher: hasher, Clock: clock, IncomingRoot: filepath.Join(f.dir, "incoming"),
+		Tenant: "lab1", Store: given, Hasher: hasher, Clock: clock, IncomingRoot: filepath.Join(f.dir, "incoming"),
 		OpenStorage: func(context.Context, string) (blob.Store, error) { return store, nil },
 		Lease:       10 * time.Minute,
 	})

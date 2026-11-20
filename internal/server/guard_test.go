@@ -284,9 +284,10 @@ func TestKeyBlocked(t *testing.T) {
 
 // TestBusyKeyNeverSlowed guards that a key's successful requests are never
 // counted: many in a row, with a limit of one failure, are neither slowed
-// nor blocked.
+// nor blocked, while the refusals of a bad key that follow are held, so the
+// count of holds the test reads is the one that rises.
 func TestBusyKeyNeverSlowed(t *testing.T) {
-	const delay = time.Second
+	const delay = 100 * time.Millisecond
 	e, _ := guarded(t, 1, delay)
 	key := e.makeKey(coriav1.Role_ROLE_UNSPECIFIED, nil)
 	c := e.tlsClient(false)
@@ -296,11 +297,21 @@ func TestBusyKeyNeverSlowed(t *testing.T) {
 			t.Fatalf("request %d: %d", i, got)
 		}
 	}
-	if took := time.Since(start); took >= delay {
-		t.Errorf("200 successful requests took %v; none may be held", took)
+	// Counted, not timed: a run under the race detector on a busy machine
+	// takes as long as one hold for 200 requests that were never held.
+	if held := e.srv.GuardHolds(); held != 0 {
+		t.Errorf("200 successful requests (%v) held %d times; none may be held", time.Since(start), held)
 	}
 	if blocked := withReason(e.entries(master.OutcomeRefused), access.RuleReason(access.RuleAddressBlocked)); len(blocked) != 0 {
 		t.Errorf("a block of a busy key's address: %+v", blocked)
+	}
+	for range 2 {
+		if got := e.post(c, whoAmIPath, "cor_nope_nope", nil); got != http.StatusUnauthorized {
+			t.Fatalf("a bad key: %d", got)
+		}
+	}
+	if held := e.srv.GuardHolds(); held != 1 {
+		t.Errorf("two bad keys past the limit of one held %d times, want 1", held)
 	}
 }
 

@@ -453,14 +453,17 @@ export const ReadFilesResponseSchema: GenMessage<ReadFilesResponse> = /*@__PURE_
  *     instance missing from its storage), and 503 (the tenant's database
  *     or the instance's storage does not answer, or the tenant is not
  *     ready), each with the request id in Coria-Request-Id.
- *   - Limits. A download counts against the open streams of ReadFiles: a
- *     caller, a key or the local operator, holds at most 16 at once, and
- *     the server 256; one more is answered 429. No deadline is applied; a
+ *   - Limits. A caller, a key or the local operator, holds at most 16 open
+ *     reads at once, and the server 256; one more is answered 429. The 16
+ *     are shared by the streams of ReadFiles, these downloads, and the
+ *     requests of the tenant's DICOMweb service that read the archive (a
+ *     search, a retrieve, a frame), each of which holds one while it is
+ *     answered. No deadline is applied; a
  *     download whose client reads nothing for 5 minutes is ended by
  *     closing its connection. A client that fetches the BulkDataURIs of a
  *     scan in parallel keeps a small pool of downloads, a few at once:
- *     they share the caller's 16 with its streams, and the seventeenth is
- *     refused rather than queued.
+ *     they share the caller's 16 with its streams and its DICOMweb
+ *     requests, and the seventeenth is refused rather than queued.
  *   - Logs. The audit entry of a download has the scan's path,
  *     "<subject>/<session>/<scan>", as its object (a label that is not
  *     valid is written "invalid" in it), and in details whether a range
@@ -537,7 +540,8 @@ export const DataService: GenService<{
    * SHA-256 of its manifest; the message names its scan, and the bytes of
    * that instance already sent are not to be kept), resource exhausted
    * (the caller, a key or the local operator, already holds 16 open
-   * streams of this method and downloads, or the server holds 256).
+   * reads, shared by the streams of this method, downloads and the
+   * DICOMweb requests that read the archive, or the server holds 256).
    * Limits: no deadline is applied to the stream when the client sends
    * none, since a subject's instances may take hours; the 30-second
    * default of other calls does not hold here. A stream whose client reads

@@ -44,6 +44,7 @@ const (
 	reasonNoTenant     = "no such tenant"
 	reasonBadCheck     = "server error: the check was called without a valid requirement or method"
 	reasonStoreFailure = "the master database failed during the check"
+	reasonTenantRule   = "the tenant's networks could not be read from its database"
 	reasonGone         = "the request ended before the check finished: canceled by the caller or past its deadline"
 )
 
@@ -166,13 +167,19 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 		a.record(entry, master.OutcomeRefused, reasonNoGrant)
 		return Decision{}, fault.New(fault.Denied, MessageDenied)
 	}
-	if d.hasTenant && p.isKey {
+	registrationByInstallation := req.kind == needTenantRegistration && p.CanListTenants()
+	if d.hasTenant && p.isKey && !registrationByInstallation {
 		// The tenant's networks are judged only once the caller may act on
 		// the tenant, so a caller with no grant there is told Denied, as for
 		// a tenant that does not exist, and learns nothing of its rules.
+		// A tenant's registration read by a caller the installation's role
+		// allows is a read of the master, judged by the installation's
+		// networks alone: the tenant's own rule lives in the tenant's
+		// database, and an installation's admin must see a tenant whose
+		// database stopped as unreachable, not be refused for it.
 		refused, err := a.tenantRuleRefusal(ctx, d.tenant, facts)
 		if err != nil {
-			return Decision{}, a.fail(ctx, entry, err)
+			return Decision{}, a.failTenantRule(ctx, entry, err)
 		}
 		if refused {
 			return Decision{}, a.refuseByRule(entry, RuleTenantNetworks, req.tenant)
@@ -447,6 +454,23 @@ func (a *Access) fail(ctx context.Context, e master.AuditEntry, err error) error
 	}
 	a.record(e, master.OutcomeFailed, reasonStoreFailure+": "+fault.KindOf(err).String())
 	return storeError(err)
+}
+
+// failTenantRule is fail for a tenant's networks that could not be read:
+// the rule lives in the tenant's database, so a database that does not
+// answer is the tenant's, and the caller is told so, not that the master
+// failed. The request is refused either way: a rule that cannot be read
+// lets nobody through.
+func (a *Access) failTenantRule(ctx context.Context, e master.AuditEntry, err error) error {
+	if cerr := ctx.Err(); cerr != nil {
+		a.record(e, master.OutcomeFailed, reasonGone)
+		return cerr
+	}
+	a.record(e, master.OutcomeFailed, reasonTenantRule+": "+fault.KindOf(err).String())
+	if fault.KindOf(err) == fault.Unavailable {
+		return fault.Wrap(fault.Unavailable, err, "the tenant's database does not answer")
+	}
+	return fault.Wrap(fault.Internal, err, "internal error")
 }
 
 // storeError returns the caller's error for a store's failure.
