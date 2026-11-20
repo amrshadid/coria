@@ -238,7 +238,7 @@ check-seal:
 PYDICOM_CORPUS ?=
 CHECK_READING_ENV = $(if $(PYDICOM_CORPUS),CORIA_PYDICOM_CORPUS="$(PYDICOM_CORPUS)")
 
-.PHONY: check-metadata check-catalog check-frames check-dicomweb check-stow
+.PHONY: check-metadata check-catalog check-frames check-dicomweb check-stow check-deid
 
 check-metadata:
 	@test -n "$(PYTHON)" || { echo "check-metadata: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
@@ -259,6 +259,14 @@ check-dicomweb:
 	@test -n "$(PYTHON)" || { echo "check-dicomweb: PYTHON is empty; name an interpreter that has dicomweb-client and pydicom" >&2; exit 1; }
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-dicomweb: no interpreter $(PYTHON)" >&2; exit 1; }
 	CORIA_CHECK_DICOMWEB_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestDICOMwebWithDicomwebClient$$' ./internal/api
+
+# The de-identification engine against pydicom: every file the engine
+# de-identifies from the corpus is read by pydicom and searched for each value
+# the test profile removes.
+check-deid:
+	@test -n "$(PYTHON)" || { echo "check-deid: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-deid: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_DEID_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestCorpusFilesAreDeidentified$$' ./internal/deid/engine
 
 check-stow:
 	@test -n "$(PYTHON)" || { echo "check-stow: PYTHON is empty; name an interpreter that has dicomweb-client and pydicom" >&2; exit 1; }
