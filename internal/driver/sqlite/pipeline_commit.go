@@ -290,13 +290,13 @@ func addToCatalog(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, session 
 	v := c.Values
 	var modality string
 	if err := tx.QueryRowContext(ctx, `UPDATE scans SET instances = instances + ?, bytes = bytes + ?,
-		manifest_sha256 = coalesce(?, manifest_sha256), updated = ?,
+		manifest_sha256 = coalesce(?, manifest_sha256), updated = CASE WHEN ? > 0 THEN max(updated, ?) ELSE updated END,
 		modality = CASE WHEN modality = '' THEN ? ELSE modality END,
 		description_folded = CASE WHEN series_description = '' THEN ? ELSE description_folded END,
 		series_description = CASE WHEN series_description = '' THEN ? ELSE series_description END,
 		series_number = coalesce(series_number, ?)
 		WHERE id = ? RETURNING modality`,
-		newInstances, newBytes, manifest, micros(c.At), v.Modality, tenant.FoldDescription(v.SeriesDescription), v.SeriesDescription,
+		newInstances, newBytes, manifest, newInstances, micros(c.At), v.Modality, tenant.FoldDescription(v.SeriesDescription), v.SeriesDescription,
 		seriesNumber(v), scanID).Scan(&modality); err != nil {
 		return err
 	}

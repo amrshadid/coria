@@ -23,7 +23,8 @@ var catalogIndexes = testkit.CatalogIndexes{SubjectsFolded: "sqlite_autoindex_su
 // fillCatalog writes a catalog of subjects subjects, five sessions each and
 // six scans a session with two instances each, straight through SQL into a
 // migrated tenant database, with the values the reads filter by spread as
-// a real tenant's are, and runs ANALYZE.
+// a real tenant's are, the rare values of testkit given to the oldest rows,
+// and runs ANALYZE.
 func fillCatalog(tb testing.TB, db *sql.DB, subjects int) {
 	tb.Helper()
 	sessions, scans := subjects*5, subjects*30
@@ -50,6 +51,9 @@ func fillCatalog(tb testing.TB, db *sql.DB, subjects int) {
 		   CASE i %% 5 WHEN 0 THEN 'T1 MPRAGE ' || i WHEN 1 THEN 'Localizer' WHEN 2 THEN 'DWI b1000' WHEN 3 THEN '' ELSE 'Scout ' || i END,
 		   lower(CASE i %% 5 WHEN 0 THEN 'T1 MPRAGE ' || i WHEN 1 THEN 'Localizer' WHEN 2 THEN 'DWI b1000' WHEN 3 THEN '' ELSE 'Scout ' || i END),
 		   (i - 1) %% 6 + 1, 'recv' || (((i - 1) / 6 + 1) %% 3) FROM n`, scans, scanSubject, scanSubject, scanSession, scanSession),
+		`UPDATE sessions SET receiver = '` + testkit.RareReceiver + `' WHERE id <= 10`,
+		`UPDATE scans SET receiver = '` + testkit.RareReceiver + `' WHERE session_id <= 10`,
+		`UPDATE scans SET modality = '` + testkit.RareModality + `' WHERE id <= 10`,
 		`INSERT INTO session_modalities (session_id, modality, created)
 		 SELECT DISTINCT c.session_id, c.modality, s.created FROM scans AS c JOIN sessions AS s ON s.id = c.session_id`,
 		fmt.Sprintf(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < %d)
@@ -168,8 +172,8 @@ func tableRows(t *testing.T, db *sql.DB, statement string) int64 {
 }
 
 // checkCatalogPlans checks SQLite's plan of every catalog read with
-// arguments from v (testkit.CatalogPlanCases and the two statements of
-// this driver's own) and logs it; toolAndPath, when not empty, is the
+// arguments from v (testkit.CatalogPlanCases and the two reads by a list
+// of ids) and logs it; toolAndPath, when not empty, is the
 // sqlite3 tool and the database's path, joined by a NUL, and the tool
 // plans each one again. A read of a table of fewer than strictRows rows
 // has its faults logged, not failed: reading a few thousand rows whole is
@@ -179,12 +183,18 @@ func tableRows(t *testing.T, db *sql.DB, statement string) int64 {
 func checkCatalogPlans(t *testing.T, db *sql.DB, v testkit.CatalogSample, toolAndPath string, strictRows int64) {
 	t.Helper()
 	cases := testkit.CatalogPlanCases(catalogSQL, v, catalogIndexes, 101)
-	ids := fmt.Sprintf("[%d,%d,%d]", v.SessionID, v.SessionID+1, v.SessionID+2)
+	ids := []int64{v.SessionID, v.SessionID + 1, v.SessionID + 2}
+	byID, err := catalogSQL.SessionsByID(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modalities, err := catalogSQL.ModalitiesOf(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases = append(cases,
-		testkit.CatalogPlanCase{Name: "a modality's sessions by id", Read: sqlkit.CatalogRead{SQL: sessionsByIDSQL, Args: []any{ids}},
-			Index: "INTEGER PRIMARY KEY", Paged: true},
-		testkit.CatalogPlanCase{Name: "a page's modalities", Read: sqlkit.CatalogRead{SQL: modalitiesSQL, Args: []any{ids}},
-			Index: "PRIMARY KEY", Paged: true})
+		testkit.CatalogPlanCase{Name: "a modality's sessions by id", Read: byID, Index: "INTEGER PRIMARY KEY", Paged: true},
+		testkit.CatalogPlanCase{Name: "a page's modalities", Read: modalities, Index: "PRIMARY KEY", Paged: true})
 	for _, c := range cases {
 		plan := queryPlan(t, db, c.Read.SQL, c.Read.Args...)
 		t.Logf("%s:\n  %s", c.Name, strings.Join(plan, "\n  "))
@@ -194,12 +204,16 @@ func checkCatalogPlans(t *testing.T, db *sql.DB, v testkit.CatalogSample, toolAn
 				t.Logf("a table of %d rows: "+format, append([]any{rows}, args...)...)
 			}
 		}
-		if why := sqlitePlanFault(plan, c.Index, c.Paged); why != "" {
+		index := c.Index
+		if c.Also != "" && !strings.Contains(strings.Join(plan, "\n"), " "+index) {
+			index = c.Also
+		}
+		if why := sqlitePlanFault(plan, index, c.Paged); why != "" {
 			fail("%s: %s", c.Name, why)
 		}
 		if tool, path, ok := strings.Cut(toolAndPath, "\x00"); ok {
 			out := runSQLite3(t, tool, path, "EXPLAIN QUERY PLAN "+literal(c.Read.SQL, c.Read.Args))
-			if why := sqlitePlanFault(strings.Split(out, "\n"), c.Index, c.Paged); why != "" {
+			if why := sqlitePlanFault(strings.Split(out, "\n"), index, c.Paged); why != "" {
 				fail("%s, planned by sqlite3: %s\n%s", c.Name, why, out)
 			}
 		}

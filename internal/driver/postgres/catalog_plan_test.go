@@ -23,7 +23,8 @@ var catalogIndexes = testkit.CatalogIndexes{SubjectsFolded: "subjects_folded_key
 // fillCatalog writes a catalog of subjects subjects, five sessions each and
 // six scans a session with two instances each, straight through SQL into a
 // migrated tenant schema, with the values the reads filter by spread as a
-// real tenant's are, and analyzes it.
+// real tenant's are, the rare values of testkit given to the oldest rows,
+// and analyzes it.
 func fillCatalog(tb testing.TB, conn *pgx.Conn, subjects int) {
 	tb.Helper()
 	sessions, scans := subjects*5, subjects*30
@@ -53,6 +54,9 @@ func fillCatalog(tb testing.TB, conn *pgx.Conn, subjects int) {
 		   (i - 1) %% 6 + 1, 'recv' || (((i - 1) / 6 + 1) %% 3) FROM generate_series(1::bigint, %d) i`,
 			at("((i - 1) / 6 + 1) * 1000000 + i"), at("((i - 1) / 6 + 1) * 1000000 + i"), scanSubject, scanSubject, scanSession, scanSession,
 			description, description, scans),
+		`UPDATE sessions SET receiver = '`+testkit.RareReceiver+`' WHERE id <= 10`,
+		`UPDATE scans SET receiver = '`+testkit.RareReceiver+`' WHERE session_id <= 10`,
+		`UPDATE scans SET modality = '`+testkit.RareModality+`' WHERE id <= 10`,
 		`INSERT INTO session_modalities (session_id, modality, created)
 		 SELECT DISTINCT c.session_id, c.modality, s.created FROM scans AS c JOIN sessions AS s ON s.id = c.session_id`,
 		fmt.Sprintf(`INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.1', '2.25.2.1', 'held', sha256(i::text::bytea), 'rc', (i - 1) / 2 + 1,
@@ -92,15 +96,22 @@ func sampleCatalog(tb testing.TB, conn *pgx.Conn) testkit.CatalogSample {
 }
 
 // pgPlanFault returns why a Postgres plan of a catalog read is not one
-// range of an index read in the list's order, or "": a sequential scan of
-// any table, an explicit sort (Sort or Incremental Sort), or for a page
-// after a cursor (paged) an index scan with no Index Cond, which walks its
-// index from one end. The index named for the read is not required: where
-// a filter keeps a third of the rows (one of three receivers), Postgres
-// rightly reads the time index in its order and drops the others, a few
-// rows a page, and an instance of a scan is found as well by the scan's
-// index on both columns as by the primary key; usesIndex reports it.
-func pgPlanFault(plan string, paged bool) string {
+// range of the index the case names read in the list's order, or "": a
+// sequential scan of any table, an explicit sort (Sort or Incremental
+// Sort), a read of another index (but the one the case allows as well),
+// for a page after a cursor (paged) an index scan with no Index Cond,
+// which walks its index from one end, and for a list that keeps one value
+// of a column an index scan that tests the column in a Filter with no
+// Index Cond on it, which walks rows the value does not hold: a value few
+// rows hold, or none, then reads the whole index.
+func pgPlanFault(plan string, c testkit.CatalogPlanCase) string {
+	index, column, paged := c.Index, c.Column, c.Paged
+	if c.Also != "" && !usesIndex(plan, index) {
+		index = c.Also
+	}
+	if !usesIndex(plan, index) {
+		return "it does not read " + c.Index
+	}
 	lines := strings.Split(plan, "\n")
 	for i, line := range lines {
 		l := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "->"))
@@ -109,19 +120,28 @@ func pgPlanFault(plan string, paged bool) string {
 			return "it reads a table whole: " + l
 		case strings.HasPrefix(l, "Sort") || strings.HasPrefix(l, "Incremental Sort"):
 			return "it sorts rows instead of reading them in order: " + l
-		case paged && (strings.HasPrefix(l, "Index Scan") || strings.HasPrefix(l, "Index Only Scan")):
-			cond := false
+		case strings.HasPrefix(l, "Index Scan") || strings.HasPrefix(l, "Index Only Scan") || strings.HasPrefix(l, "Bitmap"):
+			if !usesIndex(l, index) && !strings.HasPrefix(l, "Bitmap Heap") {
+				return "it reads another index than " + index + ": " + l
+			}
+			var cond, filter string
 			for _, next := range lines[i+1:] {
 				n := strings.TrimSpace(next)
 				if strings.HasPrefix(n, "->") {
 					break
 				}
-				if strings.HasPrefix(n, "Index Cond:") {
-					cond = true
+				switch {
+				case strings.HasPrefix(n, "Index Cond:"):
+					cond = n
+				case strings.HasPrefix(n, "Filter:"):
+					filter = n
 				}
 			}
-			if !cond {
+			if paged && cond == "" && !strings.HasPrefix(l, "Bitmap Heap") {
 				return "a page after a cursor walks its index from one end, with no Index Cond: " + l
+			}
+			if column != "" && strings.Contains(filter, column) && !strings.Contains(cond, column) {
+				return "it tests " + column + " row by row (" + filter + ") instead of finding its value in the index: " + l
 			}
 		}
 	}
@@ -138,9 +158,11 @@ func usesIndex(plan, index string) bool {
 // thousands of subjects and hundreds of thousands of scans, analyzed: for
 // each statement the driver sends, the plan Postgres makes for the values
 // used (EXPLAIN ANALYZE) and its generic plan (the one a prepared statement
-// keeps) are checked (pgPlanFault), and a read of another index than the
-// one named for it is logged. The statements of a modality's
-// sessions read by id and of a page's modalities are checked too.
+// keeps, made for any value) are checked (pgPlanFault), a read of another
+// index than the one named for it included. A list that keeps one value of
+// a column is checked with a value a third of the rows hold, one ten rows
+// hold and one no row holds. The statements of a modality's sessions read
+// by id and of a page's modalities are checked too.
 func TestCatalogPlans(t *testing.T) {
 	skipScale(t)
 	address := newSchema(t)
@@ -171,9 +193,9 @@ func tableRows(t *testing.T, conn *pgx.Conn, statement string) int64 {
 }
 
 // checkCatalogPlans checks both plans of every catalog read with arguments
-// from v (testkit.CatalogPlanCases and the two statements of this driver's
-// own) and logs them. A read of a table of fewer than strictRows rows has
-// its faults logged, not failed: reading a few thousand rows whole and
+// from v (testkit.CatalogPlanCases and the two reads by a list of ids) and
+// logs them. A read of a table of fewer than strictRows rows has its
+// faults logged, not failed: reading a few thousand rows whole and
 // sorting them is the planner's right choice, as a tenant of ten million
 // instances has only that many subjects and sessions; TestCatalogPlans
 // checks those reads at a size where it is not.
@@ -181,11 +203,17 @@ func checkCatalogPlans(t *testing.T, conn *pgx.Conn, v testkit.CatalogSample, st
 	t.Helper()
 	cases := testkit.CatalogPlanCases(catalogSQL, v, catalogIndexes, 101)
 	ids := []int64{v.SessionID, v.SessionID + 1, v.SessionID + 2}
+	byID, err := catalogSQL.SessionsByID(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modalities, err := catalogSQL.ModalitiesOf(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cases = append(cases,
-		testkit.CatalogPlanCase{Name: "a modality's sessions by id", Read: sqlkit.CatalogRead{SQL: sessionsByIDSQL, Args: []any{ids}},
-			Index: "sessions_pkey", Paged: true},
-		testkit.CatalogPlanCase{Name: "a page's modalities", Read: sqlkit.CatalogRead{SQL: modalitiesSQL, Args: []any{ids}},
-			Index: "session_modalities_pkey", Paged: true})
+		testkit.CatalogPlanCase{Name: "a modality's sessions by id", Read: byID, Index: "sessions_pkey", Paged: true},
+		testkit.CatalogPlanCase{Name: "a page's modalities", Read: modalities, Index: "session_modalities_pkey", Paged: true})
 	for _, c := range cases {
 		for _, generic := range []bool{false, true} {
 			plan := planOf(t, connQuerier{conn}, generic, c.Read.SQL, c.Read.Args...)
@@ -194,15 +222,12 @@ func checkCatalogPlans(t *testing.T, conn *pgx.Conn, v testkit.CatalogSample, st
 				what += " (generic)"
 			}
 			t.Logf("%s:\n%s", what, plan)
-			if why := pgPlanFault(plan, c.Paged); why != "" {
+			if why := pgPlanFault(plan, c); why != "" {
 				if rows := tableRows(t, conn, c.Read.SQL); rows < strictRows {
 					t.Logf("%s, a table of %d rows: %s", what, rows, why)
 				} else {
 					t.Errorf("%s: %s", what, why)
 				}
-			}
-			if !usesIndex(plan, c.Index) {
-				t.Logf("%s reads another index than %s", what, c.Index)
 			}
 		}
 	}

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/amrshadid/coria/internal/core/label"
-	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
@@ -45,20 +44,13 @@ const (
 		archived_sha256, held_at`
 )
 
-// CatalogKey is the key of one catalog row, read with it, from which the
-// cursor after it is made.
-type CatalogKey struct {
-	// ID is the row's id in its table.
-	ID int64
-	// Created is when the row was first archived.
-	Created time.Time
-	// SubjectFolded, SessionFolded and Folded are the folded labels of its
-	// subject, its session and its own, down to its level.
-	SubjectFolded, SessionFolded, Folded string
-	// StudyDate is a session's study date; DescriptionFolded a scan's
-	// folded series description.
-	StudyDate, DescriptionFolded string
-}
+// The bounds of a newest-first range of keyRange with no time given. Every
+// row is created in the years 1970 to 9999
+// (master.ValidateTime), so these bound nothing; both databases hold them.
+var (
+	catalogTimeStart = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
+	catalogTimeEnd   = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC)
+)
 
 // CatalogSQL writes the catalog's reads in one driver's terms.
 type CatalogSQL struct {
@@ -67,11 +59,18 @@ type CatalogSQL struct {
 	Param func(n int) string
 	// Time returns a time as the driver's columns hold it.
 	Time func(time.Time) any
+	// InIDs returns the condition that column is one of the ids of the
+	// one parameter whose placeholder is p.
+	InIDs func(column, p string) string
+	// IDs returns a list of ids as InIDs's parameter takes it.
+	IDs func(ids []int64) (any, error)
 }
 
 // CatalogRead is one statement and its arguments.
 type CatalogRead struct {
-	SQL  string
+	// SQL is the statement.
+	SQL string
+	// Args are its parameters' values, in order.
 	Args []any
 }
 
@@ -113,11 +112,16 @@ func (b *builder) read(columns, table, order string, limit int) CatalogRead {
 	return CatalogRead{SQL: q, Args: b.args} // #nosec G202 -- every fragment is a constant of this file; values are parameters.
 }
 
+// one returns the statement of one row over table with the conditions.
+func (b *builder) one(columns, table string) CatalogRead {
+	return CatalogRead{SQL: "SELECT " + columns + " FROM " + table + " WHERE " + strings.Join(b.cond, " AND "), Args: b.args}
+}
+
 // newest adds a newest-first list's time range and cursor on the columns
 // given. After a cursor the range's end is left out: the cursor's row was
-// before it, so the cursor's condition is the tighter upper bound, and a
-// planner given both estimates fewer rows than there are and may choose
-// to sort them.
+// before it (timeFits refuses a cursor that is not), so the cursor's
+// condition is the tighter upper bound, and a planner given both estimates
+// fewer rows than there are and may choose to sort them.
 func (b *builder) newest(created, id string, r tenant.TimeRange, after *CatalogKey) {
 	if !r.Start.IsZero() {
 		b.where(created+" >= %s", b.c.Time(r.Start))
@@ -130,13 +134,56 @@ func (b *builder) newest(created, id string, r tenant.TimeRange, after *CatalogK
 	}
 }
 
+// keyRange adds the rows whose column equals value as a range of the index
+// on (column, key, id): from (value, low, lowID) on, to before (value,
+// high, highID). A list that keeps one value of a column many rows share
+// (a receiver, a modality) states it this way rather than as column =
+// value, and orders by all three columns. With an equality, Postgres takes
+// the column as constant, so the order (key, id) is one an index on (key,
+// id) gives too, and it may walk that index and test each row: the plan it
+// keeps for a statement run often, made for any value, does so for a value
+// that a third of the rows hold, and for a value a few rows hold, or none,
+// it then reads the whole index (tens of milliseconds at fifty thousand
+// rows, growing with the table); so does a plan for a value whose rows are
+// all old. As a range of the composite key, only the index that begins
+// with the column yields the order, whatever the value; no other index
+// begins with these columns.
+func (b *builder) keyRange(column, key, id string, value, low any, lowID int64, high any, highID int64) {
+	cols := "(" + column + ", " + key + ", " + id + ")"
+	b.where(cols+" >= (%s, %s, %s)", value, low, lowID)
+	b.where(cols+" < (%s, %s, %s)", value, high, highID)
+}
+
+// newestOf adds a newest-first list of the rows whose column equals value
+// (keyRange), with its time range and cursor: ids are positive, so id 0
+// places a bound before every row of its time. After a cursor the upper
+// bound is the cursor, which is inside the range (timeFits).
+func (b *builder) newestOf(column string, value any, created, id string, r tenant.TimeRange, after *CatalogKey) {
+	low, high, highID := catalogTimeStart, catalogTimeEnd, int64(0)
+	if !r.Start.IsZero() {
+		low = r.Start
+	}
+	if !r.End.IsZero() {
+		high = r.End
+	}
+	if after != nil {
+		high, highID = after.Created, after.ID
+	}
+	b.keyRange(column, created, id, value, b.c.Time(low), 0, b.c.Time(high), highID)
+}
+
+// newestOrder is the order of newestOf over column.
+func newestOrder(column, created, id string) string {
+	return column + " DESC, " + created + " DESC, " + id + " DESC"
+}
+
 // prefix adds the range of the texts of column that start with p, folded
 // already; nothing for an empty prefix. After a cursor (resumed) the
 // cursor's own condition is the lower bound, past the prefix's start since
-// the rows before it were kept by the prefix too, so only the end is
-// added: a planner given two lower bounds on one column reads its index
-// from one of them, and could choose the prefix's start, walking every row
-// before the cursor again.
+// the cursor's text starts with the prefix (its key check), so only
+// the end is added: a planner given two lower bounds on one column reads its
+// index from one of them, and could choose the prefix's start, walking
+// every row before the cursor again.
 func (b *builder) prefix(column, p string, resumed bool) {
 	if p == "" {
 		return
@@ -185,14 +232,14 @@ func (c CatalogSQL) Sessions(f tenant.SessionFilter, subjectID int64, after *Cat
 		}
 		return b.read(SessionColumns, "sessions", "subject_folded, folded", limit)
 	case tenant.OrderStudyDate:
-		if f.SubjectLabel != "" {
-			b.where("subject_id = %s", subjectID)
-		}
 		// A session with no study date holds '', before every date, so
 		// a lower bound of "0" leaves it out when no start is given.
 		start := f.StudyDateStart
 		if start == "" {
 			start = "0"
+		}
+		if f.SubjectLabel != "" {
+			b.where("subject_id = %s", subjectID)
 		}
 		b.where("study_date >= %s", start)
 		if f.StudyDateEnd != "" && after == nil {
@@ -205,16 +252,22 @@ func (c CatalogSQL) Sessions(f tenant.SessionFilter, subjectID int64, after *Cat
 		}
 		return b.read(SessionColumns, "sessions", "study_date DESC, id DESC", limit)
 	}
-	if f.Modality != "" {
-		b.where("modality = %s", f.Modality)
-		b.newest("created", "session_id", f.Range, after)
-		return b.read("session_id, created", "session_modalities", "created DESC, session_id DESC", limit)
-	}
 	switch {
+	case f.Modality != "":
+		b.newestOf("modality", f.Modality, "created", "session_id", f.Range, after)
+		return b.read("session_id, created", "session_modalities", newestOrder("modality", "created", "session_id"), limit)
 	case f.SubjectLabel != "":
+		// A subject's id, unlike a receiver or a modality, is held by a few
+		// rows each, so the plan made for any value is the one for a few
+		// rows; and other indexes begin with it (by label, by study date),
+		// so a range of its key would let a planner read one of them and
+		// sort. It stays an equality, as a session's id does in Scans.
 		b.where("subject_id = %s", subjectID)
+		b.newest("created", "id", f.Range, after)
+		return b.read(SessionColumns, "sessions", "created DESC, id DESC", limit)
 	case f.Receiver != "":
-		b.where("receiver = %s", f.Receiver)
+		b.newestOf("receiver", f.Receiver, "created", "id", f.Range, after)
+		return b.read(SessionColumns, "sessions", newestOrder("receiver", "created", "id"), limit)
 	}
 	b.newest("created", "id", f.Range, after)
 	return b.read(SessionColumns, "sessions", "created DESC, id DESC", limit)
@@ -253,9 +306,10 @@ func (c CatalogSQL) Scans(f tenant.ScanFilter, sessionID int64, after *CatalogKe
 		return b.read(ScanColumns, "scans", "subject_folded, session_folded, folded", limit)
 	case tenant.OrderSeriesDescription:
 		// A scan with no description holds '', before every other text,
-		// and a cursor's description is never empty, so the cursor is the
-		// lower bound once there is one (prefix says why only one).
-		if p := tenant.FoldDescription(f.DescriptionPrefix); p != "" {
+		// and a cursor's description is never empty (scanKeyFits), so
+		// the cursor is the lower bound once there is one (prefix says why
+		// only one).
+		if p := tenant.FoldDescriptionPrefix(f.DescriptionPrefix); p != "" {
 			b.prefix("description_folded", p, after != nil)
 		} else if after == nil {
 			b.where("description_folded > %s", "")
@@ -268,10 +322,14 @@ func (c CatalogSQL) Scans(f tenant.ScanFilter, sessionID int64, after *CatalogKe
 	switch {
 	case f.SessionLabel != "":
 		b.where("session_id = %s", sessionID)
+		b.newest("created", "id", f.Range, after)
+		return b.read(ScanColumns, "scans", "created DESC, id DESC", limit)
 	case f.Modality != "":
-		b.where("modality = %s", f.Modality)
+		b.newestOf("modality", f.Modality, "created", "id", f.Range, after)
+		return b.read(ScanColumns, "scans", newestOrder("modality", "created", "id"), limit)
 	case f.Receiver != "":
-		b.where("receiver = %s", f.Receiver)
+		b.newestOf("receiver", f.Receiver, "created", "id", f.Range, after)
+		return b.read(ScanColumns, "scans", newestOrder("receiver", "created", "id"), limit)
 	}
 	b.newest("created", "id", f.Range, after)
 	return b.read(ScanColumns, "scans", "created DESC, id DESC", limit)
@@ -283,7 +341,7 @@ func (c CatalogSQL) SubjectByLabel(subjectLabel string) CatalogRead {
 	b := &builder{c: c}
 	b.where("folded = %s", label.Fold(subjectLabel))
 	b.where("label = %s", subjectLabel)
-	return CatalogRead{SQL: "SELECT " + SubjectColumns + " FROM subjects WHERE " + strings.Join(b.cond, " AND "), Args: b.args}
+	return b.one(SubjectColumns, "subjects")
 }
 
 // SessionByLabels returns the read of one session by its labels: the
@@ -295,7 +353,7 @@ func (c CatalogSQL) SessionByLabels(subjectLabel, sessionLabel string) CatalogRe
 	b.where("folded = %s", label.Fold(sessionLabel))
 	b.where("subject_label = %s", subjectLabel)
 	b.where("label = %s", sessionLabel)
-	return CatalogRead{SQL: "SELECT " + SessionColumns + " FROM sessions WHERE " + strings.Join(b.cond, " AND "), Args: b.args}
+	return b.one(SessionColumns, "sessions")
 }
 
 // ScanByLabels returns the read of one scan by its labels: the scans'
@@ -309,7 +367,32 @@ func (c CatalogSQL) ScanByLabels(p label.Path) CatalogRead {
 	b.where("subject_label = %s", p.Subject)
 	b.where("session_label = %s", p.Session)
 	b.where("label = %s", p.Scan)
-	return CatalogRead{SQL: "SELECT " + ScanColumns + " FROM scans WHERE " + strings.Join(b.cond, " AND "), Args: b.args}
+	return b.one(ScanColumns, "scans")
+}
+
+// SessionsByID returns the read of the sessions of these ids, each a
+// lookup of the primary key: the sessions of a page of a modality's.
+func (c CatalogSQL) SessionsByID(ids []int64) (CatalogRead, error) {
+	list, err := c.IDs(ids)
+	if err != nil {
+		return CatalogRead{}, err
+	}
+	b := &builder{c: c}
+	b.where(c.InIDs("id", "%s"), list)
+	return b.one(SessionColumns, "sessions"), nil
+}
+
+// ModalitiesOf returns the read of the modalities of the sessions of these
+// ids: session_modalities' primary key. They are put in order by the
+// reader, a few a session, rather than sorted by the database.
+func (c CatalogSQL) ModalitiesOf(ids []int64) (CatalogRead, error) {
+	list, err := c.IDs(ids)
+	if err != nil {
+		return CatalogRead{}, err
+	}
+	b := &builder{c: c}
+	b.where(c.InIDs("session_id", "%s"), list)
+	return b.one("session_id, modality", "session_modalities"), nil
 }
 
 // HeldInstances returns the page of a scan's held instances after the UID
@@ -329,95 +412,5 @@ func (c CatalogSQL) HeldInstance(scanID int64, uid string) CatalogRead {
 	b.where("sop_instance_uid = %s", uid)
 	b.where("state = 'held'")
 	b.where("scan_id = %s", scanID)
-	return CatalogRead{SQL: "SELECT " + HeldInstanceColumns + " FROM instances WHERE " + strings.Join(b.cond, " AND "), Args: b.args}
-}
-
-// SubjectFilterParts returns what a subject list's cursor is bound to: its
-// order and every field of its filter.
-func SubjectFilterParts(f tenant.SubjectFilter) []string {
-	return []string{ListCatalogSubjects, f.Order.String(), f.LabelPrefix, MicrosText(f.Range.Start), MicrosText(f.Range.End)}
-}
-
-// SessionFilterParts returns what a session list's cursor is bound to.
-func SessionFilterParts(f tenant.SessionFilter) []string {
-	return []string{ListCatalogSessions, f.Order.String(), f.SubjectLabel, f.LabelPrefix, f.StudyDateStart, f.StudyDateEnd,
-		f.Modality, f.Receiver, MicrosText(f.Range.Start), MicrosText(f.Range.End)}
-}
-
-// ScanFilterParts returns what a scan list's cursor is bound to.
-func ScanFilterParts(f tenant.ScanFilter) []string {
-	return []string{ListCatalogScans, f.Order.String(), f.SubjectLabel, f.SessionLabel, f.LabelPrefix, f.Modality,
-		f.DescriptionPrefix, f.Receiver, MicrosText(f.Range.Start), MicrosText(f.Range.End)}
-}
-
-// keyFields returns the fields of a cursor after k in a list of level (1
-// subjects, 2 sessions, 3 scans) and order: the order's key, then the id
-// where the key is not unique.
-func keyFields(order tenant.CatalogOrder, level int, k CatalogKey) []string {
-	id := strconv.FormatInt(k.ID, 10)
-	switch order {
-	case tenant.OrderLabel:
-		switch level {
-		case 1:
-			return []string{k.Folded}
-		case 2:
-			return []string{k.SubjectFolded, k.Folded}
-		}
-		return []string{k.SubjectFolded, k.SessionFolded, k.Folded}
-	case tenant.OrderStudyDate:
-		return []string{k.StudyDate, id}
-	case tenant.OrderSeriesDescription:
-		return []string{k.DescriptionFolded, id}
-	}
-	return []string{strconv.FormatInt(k.Created.UnixMicro(), 10), id}
-}
-
-// CatalogCursor returns the cursor after the row of key k of a catalog
-// list of level (1 subjects, 2 sessions, 3 scans), bound to binding.
-func CatalogCursor(list, binding string, order tenant.CatalogOrder, level int, k CatalogKey) string {
-	return EncodeCursor(list, binding, keyFields(order, level, k)...)
-}
-
-// CatalogAfter checks page and decodes its cursor, made by CatalogCursor
-// for the same list, binding, order and level, or returns nil for the
-// first page.
-func CatalogAfter(page master.Page, list, binding string, order tenant.CatalogOrder, level int) (*CatalogKey, error) {
-	if err := page.Validate(); err != nil {
-		return nil, err
-	}
-	if page.Cursor == "" {
-		return nil, nil
-	}
-	n := len(keyFields(order, level, CatalogKey{}))
-	f, err := DecodeCursor(page.Cursor, list, binding, n)
-	if err != nil {
-		return nil, err
-	}
-	var k CatalogKey
-	switch order {
-	case tenant.OrderLabel:
-		switch level {
-		case 1:
-			k.Folded = f[0]
-		case 2:
-			k.SubjectFolded, k.Folded = f[0], f[1]
-		default:
-			k.SubjectFolded, k.SessionFolded, k.Folded = f[0], f[1], f[2]
-		}
-		return &k, nil
-	case tenant.OrderStudyDate:
-		k.StudyDate = f[0]
-	case tenant.OrderSeriesDescription:
-		k.DescriptionFolded = f[0]
-	default:
-		at, err := DecodeCursorInt(f[0])
-		if err != nil {
-			return nil, err
-		}
-		k.Created = time.UnixMicro(at).UTC()
-	}
-	if k.ID, err = DecodeCursorInt(f[1]); err != nil {
-		return nil, err
-	}
-	return &k, nil
+	return b.one(HeldInstanceColumns, "instances")
 }

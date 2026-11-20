@@ -54,7 +54,7 @@ type ScanValues struct {
 // removed from it. The result passes ScanValues.Validate.
 func ScanValuesOf(studyDate, modality, seriesDescription, seriesNumber string) ScanValues {
 	v := ScanValues{SeriesDescription: cleanDescription(seriesDescription)}
-	if d := strings.TrimSpace(studyDate); validStudyDate(d) {
+	if d := strings.TrimSpace(studyDate); ValidStudyDate(d) {
 		v.StudyDate = d
 	}
 	if m := strings.TrimSpace(modality); ValidateModality(m) == nil {
@@ -69,7 +69,7 @@ func ScanValuesOf(studyDate, modality, seriesDescription, seriesNumber string) S
 // Validate returns an Invalid error unless each value is of its kind, as
 // ScanValuesOf leaves it.
 func (v ScanValues) Validate() error {
-	if v.StudyDate != "" && !validStudyDate(v.StudyDate) {
+	if v.StudyDate != "" && !ValidStudyDate(v.StudyDate) {
 		return invalid("a study date is a date that exists, written YYYYMMDD")
 	}
 	if v.Modality != "" {
@@ -86,8 +86,9 @@ func (v ScanValues) Validate() error {
 	return nil
 }
 
-// validStudyDate reports whether s is "YYYYMMDD", a date that exists.
-func validStudyDate(s string) bool {
+// ValidStudyDate reports whether s is "YYYYMMDD", a date that exists: a
+// study date as the catalog keeps it.
+func ValidStudyDate(s string) bool {
 	if len(s) != 8 {
 		return false
 	}
@@ -151,17 +152,36 @@ func cleanDescription(s string) string {
 // ASCII letters in lower case. Every other byte is kept as it is, so the
 // order of folded descriptions is the order of their bytes, the same on
 // every database, and a description in another script is found by the
-// prefix of its own characters. Both the description a scan keeps and a
-// prefix a reader asks for are folded with it.
+// prefix of its own characters. The description a scan keeps is folded
+// with it; a prefix a reader asks for with FoldDescriptionPrefix.
 func FoldDescription(s string) string {
-	s = strings.TrimSpace(s)
-	b := []byte(s)
+	return FoldDescriptionPrefix(strings.TrimSpace(s))
+}
+
+// FoldDescriptionPrefix returns the form of a series description prefix
+// that the catalog compares with folded descriptions: its ASCII letters in
+// lower case, every other byte kept. It is not trimmed: the contract folds
+// a prefix and says nothing of its spaces, so "T1 " keeps the descriptions
+// that start with "t1 " and not "t10", and a prefix of spaces alone keeps
+// those that start with them, which none does, since a description is kept
+// trimmed.
+func FoldDescriptionPrefix(p string) string {
+	b := []byte(p)
 	for i, c := range b {
 		if 'A' <= c && c <= 'Z' {
 			b[i] = c + ('a' - 'A')
 		}
 	}
 	return string(b)
+}
+
+// IsFoldedDescription reports whether s is a series description as the
+// catalog keeps it folded (FoldDescription of a description
+// ScanValues.Validate accepts): not empty, at most 64 characters of UTF-8
+// with no control character, no space at either end and no ASCII capital
+// letter.
+func IsFoldedDescription(s string) bool {
+	return s != "" && cleanDescription(s) == s && FoldDescriptionPrefix(s) == s
 }
 
 // PrefixEnd returns the least text greater than every text that starts

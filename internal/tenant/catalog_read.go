@@ -239,7 +239,7 @@ func (f SessionFilter) Validate() error {
 			return invalid(served)
 		}
 		for _, d := range []string{f.StudyDateStart, f.StudyDateEnd} {
-			if d != "" && !validStudyDate(d) {
+			if d != "" && !ValidStudyDate(d) {
 				return invalid("a study date is a date that exists, written YYYYMMDD")
 			}
 		}
@@ -290,8 +290,9 @@ type ScanFilter struct {
 	// OrderNewest only.
 	Modality string
 	// DescriptionPrefix keeps the scans whose folded series description
-	// starts with its folded form (FoldDescription), at most 64 characters
-	// of UTF-8. OrderSeriesDescription only.
+	// starts with its folded form (FoldDescriptionPrefix: ASCII letters in
+	// lower case, spaces kept), at most 64 characters of UTF-8.
+	// OrderSeriesDescription only.
 	DescriptionPrefix string
 	// Receiver keeps the scans first archived through the receiver of
 	// this name. OrderNewest only.

@@ -20,10 +20,13 @@ type CatalogProbe struct {
 
 // TimeCatalogReads times each read of the catalog through the port, on a
 // tenant made by GenerateTenant (its modalities MR and CT, its
-// descriptions of research protocols), rounds times each with a scan of
-// probes drawn at random: every list in its main combinations of filter
-// and order, its first page and the page after it, of 100 rows, and the
-// gets by labels and the reads of a scan's instances. It adds each read's
+// descriptions of research protocols, every reception through
+// GenReceiver), rounds times each with a scan of probes drawn at random:
+// every list in its main combinations of filter and order, its first page
+// and the page after it, of 100 rows, the lists of a receiver and of a
+// modality no row holds (whose plan, if it tested rows of another index,
+// would read all of it), and the gets by labels and the reads of a scan's
+// instances. It adds each read's
 // spread (median, 99th percentile) to sum, and fails tb for a read that
 // fails or whose 99th percentile is past bound.
 func TimeCatalogReads(tb testing.TB, p tenant.CatalogReads, probes []CatalogProbe, rounds int, sum *Summary, bound time.Duration) {
@@ -103,6 +106,13 @@ func TimeCatalogReads(tb testing.TB, p tenant.CatalogReads, probes []CatalogProb
 	reads = append(reads, lists("a modality's sessions", sessions(func() tenant.SessionFilter {
 		return tenant.SessionFilter{Modality: []string{"MR", "CT"}[r.IntN(2)]}
 	}))...)
+	reads = append(reads, lists("a receiver's sessions", sessions(func() tenant.SessionFilter { return tenant.SessionFilter{Receiver: GenReceiver} }))...)
+	reads = append(reads, lists("the sessions of a receiver no row holds", sessions(func() tenant.SessionFilter {
+		return tenant.SessionFilter{Receiver: AbsentReceiver}
+	}))...)
+	reads = append(reads, lists("the sessions of a modality no scan holds", sessions(func() tenant.SessionFilter {
+		return tenant.SessionFilter{Modality: AbsentModality}
+	}))...)
 	reads = append(reads, lists("sessions by label", sessions(func() tenant.SessionFilter { return tenant.SessionFilter{Order: tenant.OrderLabel} }))...)
 	reads = append(reads, lists("sessions by study date", sessions(func() tenant.SessionFilter {
 		return tenant.SessionFilter{Order: tenant.OrderStudyDate, StudyDateEnd: "2015" + []string{"0101", "0601", "1231"}[r.IntN(3)]}
@@ -114,6 +124,13 @@ func TimeCatalogReads(tb testing.TB, p tenant.CatalogReads, probes []CatalogProb
 	}))...)
 	reads = append(reads, lists("a modality's scans", scans(func() tenant.ScanFilter {
 		return tenant.ScanFilter{Modality: []string{"MR", "CT"}[r.IntN(2)]}
+	}))...)
+	reads = append(reads, lists("the scans of a modality no scan holds", scans(func() tenant.ScanFilter {
+		return tenant.ScanFilter{Modality: AbsentModality}
+	}))...)
+	reads = append(reads, lists("a receiver's scans", scans(func() tenant.ScanFilter { return tenant.ScanFilter{Receiver: GenReceiver} }))...)
+	reads = append(reads, lists("the scans of a receiver no row holds", scans(func() tenant.ScanFilter {
+		return tenant.ScanFilter{Receiver: AbsentReceiver}
 	}))...)
 	reads = append(reads, lists("a subject's scans by label", scans(func() tenant.ScanFilter {
 		return tenant.ScanFilter{Order: tenant.OrderLabel, SubjectLabel: pick().Path.Subject}

@@ -342,7 +342,7 @@ func addToCatalog(ctx context.Context, tx pgx.Tx, c tenant.ScanCommit, session s
 	v := c.Values
 	var modality string
 	if err := tx.QueryRow(ctx, `UPDATE scans SET instances = instances + $1, bytes = bytes + $2,
-		manifest_sha256 = coalesce($3, manifest_sha256), updated = $4,
+		manifest_sha256 = coalesce($3, manifest_sha256), updated = CASE WHEN $1 > 0 THEN greatest(updated, $4) ELSE updated END,
 		modality = CASE WHEN modality = '' THEN $5 ELSE modality END,
 		description_folded = CASE WHEN series_description = '' THEN $6 ELSE description_folded END,
 		series_description = CASE WHEN series_description = '' THEN $7 ELSE series_description END,

@@ -81,7 +81,8 @@ func (e *penv) wantTotalsRecounted(when string) {
 // testCatalogTotals guards the running totals of subjects and sessions
 // (and the scans' and the tenant's) against a recount after each path that
 // adds held instances or could seem to: a reception's commits, a commit
-// written again after a crash, a file sent again (a duplicate, which adds
+// written again after a crash (which moves neither the subject's nor the
+// scan's update time), a file sent again (a duplicate, which adds
 // nothing), claims released when a reception fails, a quarantined file
 // released into a new reception and archived, and a failed reception
 // retried after part of it was archived (what it held counted once).
@@ -102,6 +103,8 @@ func testCatalogTotals(e *penv) {
 		again.Instances = append(again.Instances, tenant.ConfirmedInstance{SOPInstanceUID: in.SOPInstanceUID, Key: in.Key,
 			Length: in.Length, Size: in.Size, ArchivedSHA256: in.ArchivedSHA256})
 	}
+	scanBefore, err := e.p.CatalogScan(e.ctx, path)
+	e.ok("CatalogScan", err)
 	_, err = e.p.CommitScan(e.ctx, again)
 	e.ok("CommitScan written again", err)
 	e.wantTotalsRecounted("after a commit written again")
@@ -109,6 +112,11 @@ func testCatalogTotals(e *penv) {
 	e.ok("CatalogSubject", err)
 	if !sub.Updated.Equal(at(20)) {
 		e.Errorf("a commit that added nothing moved the subject's update time to %v", sub.Updated)
+	}
+	scanAfter, err := e.p.CatalogScan(e.ctx, path)
+	e.ok("CatalogScan", err)
+	if !scanAfter.Updated.Equal(scanBefore.Updated) {
+		e.Errorf("a commit that added nothing moved the scan's update time from %v to %v", scanBefore.Updated, scanAfter.Updated)
 	}
 
 	// The same files sent again: duplicates, and a claim of a new file that

@@ -53,6 +53,30 @@ func TestFoldDescription(t *testing.T) {
 	}
 }
 
+// TestFoldDescriptionPrefix guards the folded form of a prefix a reader
+// asks for: its ASCII letters in lower case, its spaces kept at either
+// end, every other byte kept.
+func TestFoldDescriptionPrefix(t *testing.T) {
+	for in, want := range map[string]string{"T1 ": "t1 ", "   ": "   ", " DWI": " dwi", "PET Ä": "pet Ä", "": ""} {
+		if got := FoldDescriptionPrefix(in); got != want {
+			t.Errorf("FoldDescriptionPrefix(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestIsFoldedDescription guards which texts are a description as the
+// catalog keeps it folded, which a cursor's key must be: not empty, no
+// capital ASCII letter, no space at either end, valid UTF-8 with no
+// control character, at most 64 characters.
+func TestIsFoldedDescription(t *testing.T) {
+	for s, want := range map[string]bool{"t1 mprage": true, "pet Äbrain": true, strings.Repeat("é", 64): true,
+		"": false, "T1": false, "t1 ": false, " t1": false, "t1\x00": false, "t1\xff": false, strings.Repeat("é", 65): false} {
+		if got := IsFoldedDescription(s); got != want {
+			t.Errorf("IsFoldedDescription(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
+
 // TestPrefixEnd guards the end of a prefix's range: every text that starts
 // with the prefix is before it and at or after the prefix, every other
 // text of the examples is outside, it is valid UTF-8, and a prefix that

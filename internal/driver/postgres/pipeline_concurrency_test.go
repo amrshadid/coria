@@ -160,7 +160,9 @@ func make2Claims(files []tenant.ReceivedFile, descending bool) []tenant.Instance
 //     once: one is made, the other is a label conflict held by another
 //     session, never an unclassified failure.
 //
-// After each round the running totals equal the rows.
+// Each commit carries a modality. After each round the running totals of
+// the catalog, its subjects, sessions and scans equal a recount of the
+// rows, and each session's modalities are its scans'.
 func TestCommitsShareCatalogRows(t *testing.T) {
 	e := newCenv(t, 3, 8)
 	e.storage("store")
@@ -179,9 +181,18 @@ func TestCommitsShareCatalogRows(t *testing.T) {
 		}
 		return out
 	}
+	// Each commit carries a modality of its own among four, so commits of
+	// one scan at once race to give it theirs and commits of one session
+	// to add its modalities; checkTotals then compares the session's
+	// modalities with its scans'.
+	modalities := []string{"MR", "CT", "PT", "SR"}
 	commitAll := func(round int, commits []tenant.ScanCommit) []error {
 		errs := make([]error, len(commits))
-		atOnce(len(commits), func(i int) { _, errs[i] = e.stores[i%len(e.stores)].CommitScan(e.ctx, commits[i]) })
+		atOnce(len(commits), func(i int) {
+			c := commits[i]
+			c.Values = tenant.ScanValuesOf("20200101", modalities[(round+i)%len(modalities)], "", "")
+			_, errs[i] = e.stores[i%len(e.stores)].CommitScan(e.ctx, c)
+		})
 		return errs
 	}
 	for round := range 10 {

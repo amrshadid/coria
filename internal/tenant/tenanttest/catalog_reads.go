@@ -172,6 +172,13 @@ func testCatalogLists(e *penv) {
 		[]string{"sub-c/ses-1/scan-pt"}, -1)
 	scans("scans by a description prefix outside ASCII in another case", tenant.ScanFilter{Order: tenant.OrderSeriesDescription,
 		DescriptionPrefix: "pet ä"}, []string{}, -1)
+	// A prefix is folded, not trimmed: its spaces are part of it.
+	scans("scans by a description prefix that ends in a space", tenant.ScanFilter{Order: tenant.OrderSeriesDescription,
+		DescriptionPrefix: "T1 "}, []string{"sub-a/ses-1/scan-t1"}, -1)
+	scans("scans by a description prefix whose space no description has", tenant.ScanFilter{Order: tenant.OrderSeriesDescription,
+		DescriptionPrefix: "Abdomen "}, []string{}, -1)
+	scans("scans by a description prefix of spaces alone", tenant.ScanFilter{Order: tenant.OrderSeriesDescription,
+		DescriptionPrefix: "   "}, []string{}, -1)
 	_, err = e.p.ListScans(e.ctx, tenant.ScanFilter{SubjectLabel: "sub-a", SessionLabel: "ses-9"}, master.Page{Limit: 10})
 	e.wantKind("the scans of a session not held", err, fault.NotFound)
 	_, err = e.p.ListScans(e.ctx, tenant.ScanFilter{Order: tenant.OrderLabel, SubjectLabel: "sub-z"}, master.Page{Limit: 10})
