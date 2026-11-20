@@ -171,6 +171,9 @@ func (h catalogHandler) ListSubjects(_ context.Context, req *v1.ListSubjectsRequ
 	if err := h.s.check(req.GetTenant()); err != nil {
 		return nil, err
 	}
+	if err := checkSubjectFilter(req); err != nil {
+		return nil, err
+	}
 	h.s.read.mu.Lock()
 	var all []*v1.Subject
 	for _, x := range h.s.read.subjects[req.GetTenant()] {
@@ -220,6 +223,9 @@ func (h catalogHandler) GetSubject(_ context.Context, req *v1.GetSubjectRequest)
 // ListSessions answers a page of sessions.
 func (h catalogHandler) ListSessions(_ context.Context, req *v1.ListSessionsRequest) (*v1.ListSessionsResponse, error) {
 	if err := h.s.check(req.GetTenant()); err != nil {
+		return nil, err
+	}
+	if err := checkSessionFilter(req); err != nil {
 		return nil, err
 	}
 	h.s.read.mu.Lock()
@@ -279,6 +285,9 @@ func (h catalogHandler) ListScans(_ context.Context, req *v1.ListScansRequest) (
 	if err := h.s.check(req.GetTenant()); err != nil {
 		return nil, err
 	}
+	if err := checkScanFilter(req); err != nil {
+		return nil, err
+	}
 	h.s.read.mu.Lock()
 	var all []*v1.Scan
 	for _, x := range h.s.read.scans[req.GetTenant()] {
@@ -297,8 +306,14 @@ func (h catalogHandler) ListScans(_ context.Context, req *v1.ListScansRequest) (
 	}
 	h.s.read.mu.Unlock()
 	sort.SliceStable(all, func(i, j int) bool {
-		if req.GetOrder() == v1.CatalogOrder_CATALOG_ORDER_SERIES_DESCRIPTION {
+		switch req.GetOrder() {
+		case v1.CatalogOrder_CATALOG_ORDER_SERIES_DESCRIPTION:
 			return fold(all[i].GetSeriesDescription()) < fold(all[j].GetSeriesDescription())
+		case v1.CatalogOrder_CATALOG_ORDER_LABEL:
+			a, b := all[i], all[j]
+			ka := fold(a.GetSubjectLabel()) + "/" + fold(a.GetSessionLabel()) + "/" + fold(a.GetLabel())
+			kb := fold(b.GetSubjectLabel()) + "/" + fold(b.GetSessionLabel()) + "/" + fold(b.GetLabel())
+			return ka < kb
 		}
 		return all[i].GetArchiveTime().AsTime().After(all[j].GetArchiveTime().AsTime())
 	})

@@ -7,6 +7,7 @@ import (
 
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/receive/incoming"
 	"github.com/amrshadid/coria/internal/tenant"
 )
@@ -232,4 +233,25 @@ func sumReader(r io.Reader) (tenant.SHA256, error) {
 	var out tenant.SHA256
 	copy(out[:], h.Sum(nil))
 	return out, nil
+}
+
+// ReadHeld reads the header of the held file at path in the incoming area,
+// within the header bound. It is admitted as a decision is, so the incoming
+// area is not closed under it; while the pipeline stops or has not started
+// it is answered unavailable. A file that is not there is NotFound; a header
+// that runs past the bound is a *header.TooLargeError and a file that is not
+// a whole DICOM file a *header.NotDICOMError, both unwrapped, so the caller
+// can tell them from a failure of the disk.
+func (p *Pipeline) ReadHeld(ctx context.Context, path string) (*header.Header, error) {
+	done, err := p.enterDecision()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	f, size, err := p.area.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return header.ReadWithin(f, size, p.headerLimit(ctx))
 }

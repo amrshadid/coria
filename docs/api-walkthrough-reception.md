@@ -544,10 +544,14 @@ out entirely; a header over 1 MiB is not cut but left out, with
 `headerTooLarge` set. The UIDs are as received. The read is recorded in the
 tenant's audit log.
 
-The server of this version does not read a held file's header yet: the
-answer carries the record alone, with neither `headerJson` nor
-`headerTooLarge`, which is what the contract answers for a header that could
-not be read. The record's checksums and UIDs are answered in full.
+The header is read through the tenant's running reception pipeline, which owns the
+incoming area the held bytes are in, within the `receiver.header-limit` bound. A
+value of exactly 1 KiB or less stays; a longer one, and Pixel Data, are left out. The
+answer carries the record alone, with neither `headerJson` nor `headerTooLarge`,
+which is what the contract answers for a header that could not be read: a file whose
+bytes are not kept (rejected, or lost from the disk), whose header runs past the
+bound (`header_too_large`), or a tenant whose pipeline does not run now.
+The record's checksums and UIDs are answered in full.
 
 This contract has no call that reads the archived file itself, so the
 comparison with the kept file rests on what the person reviewing it knows of

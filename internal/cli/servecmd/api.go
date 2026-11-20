@@ -89,10 +89,10 @@ func APIServices(d Deps) (Built, error) {
 	}
 	// The supervisor runs every tenant's receivers and reception pipeline,
 	// and answers each receiver's health. The removal of discarded and
-	// rejected files and a quarantined file's header are left to the
-	// handlers' defaults: nothing is removed from the incoming area by a
-	// handler (the pipeline removes it at its next start), no header is
-	// read.
+	// rejected files is left to the handlers' defaults: nothing is removed
+	// from the incoming area by a handler (the pipeline removes it at its
+	// next start). A quarantined file's header is read through the pipeline
+	// that owns the incoming area.
 	// One broadcaster wakes the streams of a tenant after a commit that
 	// wrote its events; its timer covers a wake missed.
 	feeds, err := events.New(events.Config{})
@@ -110,7 +110,7 @@ func APIServices(d Deps) (Built, error) {
 		return Built{}, err
 	}
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
-		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, STOW: stowReceivers})
+		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, Headers: heldHeaders{sup}, STOW: stowReceivers})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err

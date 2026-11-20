@@ -16,6 +16,7 @@ import (
 	"github.com/amrshadid/coria/internal/place"
 	"github.com/amrshadid/coria/internal/receive"
 	"github.com/amrshadid/coria/internal/receive/dimse"
+	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/receive/stow"
 	"github.com/amrshadid/coria/internal/receive/supervise"
 	"github.com/amrshadid/coria/internal/registry"
@@ -275,4 +276,41 @@ func (d pipelineDecisions) RemoveDiscarded(ctx context.Context, tenantName, rece
 // keeps it while none runs and does it once the next has started.
 func (d pipelineDecisions) RemoveRejected(ctx context.Context, tenantName, incoming string) error {
 	return d.s.RemoveRejected(ctx, tenantName, incoming)
+}
+
+// heldHeaders reads a quarantined file's header through the tenant's running
+// pipeline (api.Headers).
+type heldHeaders struct{ s *supervise.Supervisor }
+
+var _ api.Headers = heldHeaders{}
+
+// Header reads the header of the held file within the receiver header limit
+// and writes it as DICOM JSON without bulk data (PS3.18 F.2). The cases the
+// contract answers as a header it cannot give are ErrNoHeader: no pipeline
+// runs for the tenant, the file is gone from the incoming area, its header
+// runs past the bound or it is not a whole DICOM file.
+func (h heldHeaders) Header(ctx context.Context, tenantName string, f tenant.QuarantinedFile, limit int) (string, bool, error) {
+	if f.Incoming == "" {
+		return "", false, api.ErrNoHeader
+	}
+	hdr, ok, err := h.s.HeldHeader(ctx, tenantName, f.Incoming)
+	if !ok {
+		return "", false, api.ErrNoHeader
+	}
+	var big *header.TooLargeError
+	var notDICOM *header.NotDICOMError
+	switch {
+	case errors.As(err, &big), errors.As(err, &notDICOM), fault.KindOf(err) == fault.NotFound:
+		return "", false, api.ErrNoHeader
+	case err != nil:
+		return "", false, err
+	}
+	text, err := hdr.DICOMJSONShort()
+	if err != nil {
+		return "", false, api.ErrNoHeader
+	}
+	if len(text) > limit {
+		return "", true, nil
+	}
+	return string(text), false, nil
 }

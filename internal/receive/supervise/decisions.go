@@ -7,6 +7,7 @@ import (
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/receive"
+	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
@@ -164,4 +165,36 @@ func (t *tenantRun) runDeferred(d Decisions) {
 			t.log.Warn("receivers: the bytes of a recorded rejection or discard could not be removed; the next start removes them", "reason", fault.Message(err))
 		}
 	}
+}
+
+// Held reads the header of a file held in the incoming area, through the
+// tenant's running pipeline, which owns that area. The reception pipeline
+// (receive.Pipeline) is one.
+type Held interface {
+	// ReadHeld reads the header of the file at path (receive.Pipeline.ReadHeld).
+	ReadHeld(ctx context.Context, path string) (*header.Header, error)
+}
+
+// The reception pipeline reads held files.
+var _ Held = (*receive.Pipeline)(nil)
+
+// HeldHeader reads the header of the held file at path in the incoming area
+// of the tenant named name, through its running pipeline. ok is false when
+// none runs, which reads memory only, as Decisions does; the errors are
+// ReadHeld's.
+func (s *Supervisor) HeldHeader(ctx context.Context, name, path string) (h *header.Header, ok bool, err error) {
+	t := s.tenant(name)
+	if t == nil {
+		return nil, false, nil
+	}
+	v := t.view.Load()
+	if v == nil || v.pipeline == nil {
+		return nil, false, nil
+	}
+	held, ok := v.pipeline.(Held)
+	if !ok {
+		return nil, false, nil
+	}
+	h, err = held.ReadHeld(ctx, path)
+	return h, true, err
 }

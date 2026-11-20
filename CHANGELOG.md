@@ -44,6 +44,12 @@ All notable changes to CORIA are written here. The form is
 
 ### Fixed
 
+- `GetQuarantinedFile` with `include_header` returns the held file's header
+  on a real server, read from the incoming area within the receiver's header
+  limit and written as DICOM JSON without pixel data or any value over 1 KiB;
+  `coria quarantine show --header` works against a real server.
+- The command-line test server refuses the catalog filter combinations the
+  real server refuses.
 - A tenant's reception pipeline that failed to start no longer leaves its
   incoming directory open each time it is retried; it has 15 minutes to start
   after a crash instead of 30 seconds; and the bytes of a file rejected or

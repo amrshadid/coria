@@ -114,7 +114,8 @@ func TestCatalogCommands(t *testing.T) {
 		{[]string{"catalog", "sessions", "lab1", "--order", "study-date", "--study-date-from", "20240110", "--study-date-to", "20240215"}, "sub-b/ses-1"},
 		{[]string{"catalog", "scans", "lab1"}, "sub-b/ses-1/scan-1,sub-a/ses-2/scan-1,sub-a/ses-1/scan-1,sub-a/ses-1/scan-2"},
 		{[]string{"catalog", "scans", "lab1", "sub-a", "ses-1"}, "sub-a/ses-1/scan-1,sub-a/ses-1/scan-2"},
-		{[]string{"catalog", "scans", "lab1", "sub-a", "--modality", "MR"}, "sub-a/ses-2/scan-1,sub-a/ses-1/scan-1"},
+		{[]string{"catalog", "scans", "lab1", "--modality", "MR"}, "sub-a/ses-2/scan-1,sub-a/ses-1/scan-1"},
+		{[]string{"catalog", "scans", "lab1", "sub-a", "--order", "label"}, "sub-a/ses-1/scan-1,sub-a/ses-1/scan-2,sub-a/ses-2/scan-1"},
 		{[]string{"catalog", "scans", "lab1", "--order", "series-description", "--description-prefix", "t"}, "sub-a/ses-1/scan-1,sub-a/ses-2/scan-1"},
 	} {
 		if got := ids(c.args...); got != c.want {
@@ -125,6 +126,18 @@ func TestCatalogCommands(t *testing.T) {
 		"SUBJECT  SESSION  SCAN    MODALITY  SERIES  DESCRIPTION  INSTANCES  SIZE     ARCHIVED\n"+
 			"sub-a    ses-1    scan-1  MR        7       T1 axial     2          2.0 KiB  2026-11-17 05:00:00 +03:00\n"+
 			"sub-a    ses-1    scan-2  CT        -       Scout        1          1000 B   2026-11-17 05:00:00 +03:00\n", "")
+	// The real server refuses a subject alone with the newest-first order and
+	// a modality with a session; the fake refuses them by the same rules.
+	for _, args := range [][]string{
+		{"catalog", "scans", "lab1", "sub-a", "--modality", "MR"},
+		{"catalog", "scans", "lab1", "sub-a", "ses-1", "--modality", "MR"},
+		{"catalog", "sessions", "lab1", "sub-a", "--modality", "CT"},
+		{"catalog", "subjects", "lab1", "--label-prefix", "sub"},
+	} {
+		if got := r.run(args...); got.code == 0 || !strings.Contains(got.stderr, "filters:") {
+			t.Errorf("%v: exit %d, standard error %q, want a refused filter combination", args, got.code, got.stderr)
+		}
+	}
 	if got := r.run("catalog", "scans", "lab1", "a", "b", "c"); got.code != 2 {
 		t.Errorf("four names: exit %d", got.code)
 	}

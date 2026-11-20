@@ -97,14 +97,14 @@ func (h *Header) DICOMJSONBulk(uri func(offset, length int64) string, omit bool)
 		return nil, errors.New("header: the data set cannot be written as DICOM JSON")
 	}
 	delete(m, keyTrailingPadding)
-	refer(h.file.DataElements, m, uri, omit)
+	refer(h.file.DataElements, m, uri, omit, isBulk)
 	return json.Marshal(m)
 }
 
 // refer replaces, in the members m of the data set whose elements are
 // elements, each value that is bulk data by its reference, or drops it, and
 // does the same inside each item of a sequence.
-func refer(elements []*filereader.DataElementValue, m map[string]dataset.DICOMJSONElement, uri func(offset, length int64) string, omit bool) {
+func refer(elements []*filereader.DataElementValue, m map[string]dataset.DICOMJSONElement, uri func(offset, length int64) string, omit bool, bulk func(*filereader.DataElementValue, string, int64) bool) {
 	for _, e := range elements {
 		key := fmt.Sprintf("%04X%04X", e.Tag.Group(), e.Tag.Element())
 		entry, ok := m[key]
@@ -117,7 +117,7 @@ func refer(elements []*filereader.DataElementValue, m map[string]dataset.DICOMJS
 					break
 				}
 				if nested, ok := entry.Value[i].(map[string]dataset.DICOMJSONElement); ok {
-					refer(it.Elements, nested, uri, omit)
+					refer(it.Elements, nested, uri, omit, bulk)
 				}
 			}
 			continue
@@ -126,7 +126,7 @@ func refer(elements []*filereader.DataElementValue, m map[string]dataset.DICOMJS
 		if e.UndefinedLength {
 			length = e.Position.End - e.Position.ValueOffset
 		}
-		if !isBulk(e, entry.VR, length) {
+		if !bulk(e, entry.VR, length) {
 			continue
 		}
 		if omit {
