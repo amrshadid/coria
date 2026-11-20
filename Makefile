@@ -396,6 +396,17 @@ check: proto-lint proto-breaking proto-check
 proto-python:
 	$(PYTHON) scripts/check/proto-python.py api/proto
 
+# The generated Python client: its checked-in code must equal a fresh
+# generation from the contract, and its tests run it against the real server.
+# PYTHON needs scripts/requirements/client-python.txt installed, and the client
+# installed with: pip install --no-deps --no-build-isolation ./clients/python
+.PHONY: client-python-check client-python-test
+client-python-check:
+	$(PYTHON) clients/python/generate.py --check
+
+client-python-test:
+	$(PYTHON) -m pytest clients/python/tests
+
 proto: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO)
 	@echo "buf generate (protoc-gen-go $(PROTOC_GEN_GO_VERSION), protoc-gen-connect-go $(PROTOC_GEN_CONNECT_GO_VERSION))"
 	@PATH="$(PROTO_PATH)" $(BUF) generate

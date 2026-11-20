@@ -698,3 +698,20 @@ jobs:
         env:
           VENV_PYTHON: ${{ steps.python.outputs.python }}
         run: make proto-python PYTHON="$VENV_PYTHON"
+
+      # The Python client's own pinned packages replace the environment the
+      # step above used; the client is then installed into it without
+      # fetching anything more.
+      - name: Python client tools
+        id: client
+        uses: ./.github/actions/python-tools
+        with:
+          requirements: scripts/requirements/client-python.txt
+
+      - name: The Python client matches the contract and works against the server
+        env:
+          VENV_PYTHON: ${{ steps.client.outputs.python }}
+        run: |
+          "$VENV_PYTHON" -m pip install --quiet --disable-pip-version-check --no-deps --no-build-isolation ./clients/python
+          make client-python-check PYTHON="$VENV_PYTHON"
+          make client-python-test PYTHON="$VENV_PYTHON"

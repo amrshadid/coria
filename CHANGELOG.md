@@ -8,6 +8,10 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- A generated Python client, `coria` (`clients/python`): the API contract
+  compiled with grpcio-tools and checked in, a thin `coria.Client` that sends
+  the key, exposes each service's stub, pages through list calls by cursor and
+  raises one `coria.Error`, and tests that run it against the real server.
 - The tenant port states that a tenant holds one instance per SOP Instance
   UID (a file whose UID is held in another series, or a different file under
   a held UID, is quarantined), and its contract suite holds both drivers to

@@ -11,8 +11,12 @@ coverage.*
 # Local data directories made while trying the binary
 /data/
 
-# Python's compiled copies of the check scripts
+# Python's compiled copies of the check scripts, and what installing and
+# testing the Python client leaves behind
 __pycache__/
+*.egg-info/
+/clients/python/build/
+.pytest_cache/
 
 # Editors and systems
 .DS_Store
