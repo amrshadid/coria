@@ -70,6 +70,11 @@ func Run(t *testing.T, open Open) {
 		{"CheckActor", testCheckActor},
 		{"ActorRevokeRace", testActorRevokeRace},
 		{"CrossedKeyChanges", testCrossedKeyChanges},
+		{"KeyRules", testKeyRules},
+		{"MarkKeyUsedAddress", testMarkKeyUsedAddress},
+		{"RotateKey", testRotateKey},
+		{"RotateKeyActor", testRotateKeyActor},
+		{"RotatedFrom", testRotatedFrom},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -237,6 +242,11 @@ func diffKey(got, want master.Key) string {
 	}
 	if string(got.Hash) != string(want.Hash) {
 		d = append(d, "hash differs")
+	}
+	if got.Rules.Networks.String() != want.Rules.Networks.String() || got.Rules.ClientCert != want.Rules.ClientCert ||
+		got.LastAddress != want.LastAddress || got.Successor != want.Successor {
+		d = append(d, fmt.Sprintf("rules/address/successor %+v/%q/%q, want %+v/%q/%q",
+			got.Rules, got.LastAddress, got.Successor, want.Rules, want.LastAddress, want.Successor))
 	}
 	for _, f := range []struct {
 		name      string

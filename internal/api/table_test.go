@@ -30,6 +30,8 @@ var methodTests = map[string]func(t *testing.T){
 	coriav1connect.AccessServiceListGrantsProcedure:      testListGrants,
 	coriav1connect.AccessServiceRemoveGrantProcedure:     testRemoveGrant,
 	coriav1connect.AccessServiceWhoAmIProcedure:          testWhoAmI,
+	coriav1connect.AccessServiceRotateKeyProcedure:       testRotateKey,
+	coriav1connect.AccessServiceSetKeyRulesProcedure:     testSetKeyRules,
 	coriav1connect.TenantServiceCreateTenantProcedure:    testCreateTenant,
 	coriav1connect.TenantServiceGetTenantProcedure:       testGetTenant,
 	coriav1connect.TenantServiceListTenantsProcedure:     testListTenants,
@@ -63,6 +65,13 @@ var methodTests = map[string]func(t *testing.T){
 	coriav1connect.MonitorServiceWatchProcedure:                     testWatch,
 	coriav1connect.MetadataServiceGetScanMetadataProcedure:          testGetScanMetadata,
 	coriav1connect.MetadataServiceGetInstanceMetadataProcedure:      testGetInstanceMetadata,
+	coriav1connect.CatalogServiceListSubjectsProcedure:              testListSubjects,
+	coriav1connect.CatalogServiceGetSubjectProcedure:                testGetSubject,
+	coriav1connect.CatalogServiceListSessionsProcedure:              testListSessions,
+	coriav1connect.CatalogServiceGetSessionProcedure:                testGetSession,
+	coriav1connect.CatalogServiceListScansProcedure:                 testListScans,
+	coriav1connect.CatalogServiceGetScanProcedure:                   testGetScan,
+	coriav1connect.DataServiceReadFilesProcedure:                    testReadFiles,
 }
 
 // contractMethods returns the full procedure name and descriptor of every
@@ -76,6 +85,7 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 		v1.File_coria_v1_storage_proto, v1.File_coria_v1_receiver_proto,
 		v1.File_coria_v1_reception_proto, v1.File_coria_v1_quarantine_proto,
 		v1.File_coria_v1_monitor_proto, v1.File_coria_v1_metadata_proto,
+		v1.File_coria_v1_catalog_proto, v1.File_coria_v1_data_proto,
 	} {
 		for i := 0; i < f.Services().Len(); i++ {
 			s := f.Services().Get(i)
@@ -95,8 +105,8 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 // here names a method the contract does not have.
 func TestEveryMethod(t *testing.T) {
 	methods := contractMethods()
-	if len(methods) != 40 {
-		t.Errorf("the contract has %d methods; this test was written for 40, so look at what changed", len(methods))
+	if len(methods) != 49 {
+		t.Errorf("the contract has %d methods; this test was written for 49, so look at what changed", len(methods))
 	}
 	var table api.Methods
 	for proc, md := range methods {
@@ -168,6 +178,8 @@ func TestRequirementTable(t *testing.T) {
 		{"ListGrants", coriav1connect.AccessServiceListGrantsProcedure, nil, admin},
 		{"RemoveGrant", coriav1connect.AccessServiceRemoveGrantProcedure, nil, admin},
 		{"WhoAmI", coriav1connect.AccessServiceWhoAmIProcedure, nil, access.Authenticated()},
+		{"RotateKey", coriav1connect.AccessServiceRotateKeyProcedure, nil, access.Authenticated()},
+		{"SetKeyRules", coriav1connect.AccessServiceSetKeyRulesProcedure, nil, admin},
 		{"CreateTenant", coriav1connect.TenantServiceCreateTenantProcedure, nil, admin},
 		{"ListTenants", coriav1connect.TenantServiceListTenantsProcedure, nil, access.Authenticated()},
 		{"RemoveTenant", coriav1connect.TenantServiceRemoveTenantProcedure, nil, admin},

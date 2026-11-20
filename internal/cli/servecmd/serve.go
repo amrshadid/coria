@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/driver"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
@@ -57,9 +58,15 @@ type Built struct {
 	// PatternRoutes are plain HTTP routes inside one tenant, whose
 	// requirement the server computes from each request's path.
 	PatternRoutes []server.PatternRoute
+	// LongMethods are the procedures and pattern routes that stream what may
+	// take hours and so have no deadline (server.Config.LongMethods).
+	LongMethods []string
 	// TenantsByState counts the tenants in each state for /metrics, or nil
 	// to leave the family out.
 	TenantsByState func() map[string]int
+	// TenantNetworks reads a tenant's access.tenant-networks for the access
+	// check, or nil for no tenant's rule (no tenants).
+	TenantNetworks access.TenantNetworks
 	// Reception runs the receivers and the reception pipeline, or nil for
 	// none. It is started once the server listens and stopped before the
 	// server stops, while the tenants' databases are still open.
@@ -199,23 +206,36 @@ func checkMade(dir, masterEnv string) error {
 	return nil
 }
 
-// checkIdentity refuses a master database that is not the one this
-// installation was made with: one with no tables, one with no installation
-// id, or one with another installation's id. A mistyped address would
-// otherwise start a server on an empty or foreign master as if nothing were
-// wrong. It runs before any migration, so a wrong master is never changed.
-func checkIdentity(ctx context.Context, m master.Store, dir string) error {
-	want, err := server.ReadInstallationID(dir)
-	if err != nil {
-		return err
-	}
-	notOurs := "the master database is not the one this installation was made with"
+// checkNotEmpty refuses a master database with no tables, before anything
+// is migrated: serve never fills a master it did not make, so a mistyped
+// address to an empty database is refused and the database left as it was.
+// It reads only the schema version, which needs no table of the master's.
+func checkNotEmpty(ctx context.Context, m master.Store) error {
 	v, err := m.Version(ctx)
 	if err != nil {
 		return err
 	}
 	if v == 0 {
 		return fault.New(fault.Invalid, notOurs+": it is empty. Check the address (--master-env) or the data directory; serve never fills a master it did not make")
+	}
+	return nil
+}
+
+// notOurs begins every refusal of a master that is not this installation's.
+const notOurs = "the master database is not the one this installation was made with"
+
+// checkIdentity refuses a master database that is not the one this
+// installation was made with: one with no installation id, or one with
+// another installation's id. A mistyped address would otherwise start a
+// server on a foreign master as if nothing were wrong. It reads a setting,
+// which needs the master's statements, and a driver may prepare every
+// statement on its first read, naming columns only the latest schema has;
+// so it runs after the migration, and an installation made by an older
+// version starts.
+func checkIdentity(ctx context.Context, m master.Store, dir string) error {
+	want, err := server.ReadInstallationID(dir)
+	if err != nil {
+		return err
 	}
 	got, err := m.Setting(ctx, server.InstallationIDSetting)
 	switch {
@@ -272,22 +292,46 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 			_ = m.Close()
 		}
 	}()
-	// The identity, then the key check, before any migration and before any
-	// tenant is opened: a master that is not this installation's must not
-	// be upgraded; and a server running with another key file would fail
-	// every tenant and seal a new tenant's address with the wrong key,
-	// leaving an installation that no one key file can open, so it must stop
-	// before it opens anything.
+	// An empty master is refused before it is migrated, so it is left as it
+	// was. The migration comes next, before anything prepares the master's
+	// statements: a driver may prepare all of them on the first read, and
+	// statements that name a column the installation's older schema lacks
+	// would not prepare, so an installation made by an older version could
+	// never start. Then the identity and the key check, before any tenant is
+	// opened: a server running with another key file would fail every
+	// tenant and seal a new tenant's address with the wrong key, leaving an
+	// installation that no one key file can open, so it must stop before it
+	// opens anything. A migration changes only the schema, never a tenant's
+	// state, and is what the right key file would have done.
+	if err := checkNotEmpty(ctx, m); err != nil {
+		return nil, nil, err
+	}
+	if err := m.Migrate(ctx); err != nil {
+		return nil, nil, err
+	}
 	if err := checkIdentity(ctx, m, dir); err != nil {
 		return nil, nil, err
 	}
 	if err := checkKeyFile(ctx, m, dir, keys); err != nil {
 		return nil, nil, err
 	}
-	if err := m.Migrate(ctx); err != nil {
-		return nil, nil, err
-	}
-	a, err = access.New(access.Config{Store: m, Clock: time.Now, NewID: server.NewID, Log: log})
+	// The tenants' networks are read through the registry, which the
+	// services build after the access check exists; the check reads them
+	// through this variable, set before the server is made and so before
+	// any request is served.
+	var tenantNetworks access.TenantNetworks
+	values := settingvalue.Reader{Master: m}
+	a, err = access.New(access.Config{
+		Store: m, Clock: time.Now, NewID: server.NewID, Log: log,
+		Events: access.LogEvents(log),
+		TenantNetworks: func(ctx context.Context, t access.TenantRef) (settings.Networks, error) {
+			if tenantNetworks == nil {
+				return nil, nil
+			}
+			return tenantNetworks(ctx, t)
+		},
+		ExpiryWarning: values.KeyExpiryWarning,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -312,6 +356,7 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 			}()
 		}
 	}
+	tenantNetworks = built.TenantNetworks
 	srv, err = server.New(server.Config{
 		DataDir:         dir,
 		Lock:            lock,
@@ -328,7 +373,9 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 		WithDecision:    built.WithDecision,
 		HTTPRoutes:      built.HTTPRoutes,
 		PatternRoutes:   built.PatternRoutes,
-		CORSOrigins:     settingvalue.Reader{Master: m}.CORSOrigins,
+		LongMethods:     built.LongMethods,
+		CORSOrigins:     values.CORSOrigins,
+		AccessRules:     accessRules(values),
 		Drain:           f.drain,
 		DefaultDeadline: f.deadline,
 	})
@@ -384,4 +431,38 @@ func serveUntilStopped(srv *server.Server, reception Runner, opts Options, log *
 	err := srv.Stop()
 	close(done)
 	return errors.Join(cause, rerr, err)
+}
+
+// tenantNetworksRefresh is how long a tenant's networks, once read, are used
+// before they are read again: a change applies within it.
+const tenantNetworksRefresh = 5 * time.Second
+
+// accessRules returns the reader of the installation's access settings the
+// server's front step applies (server.AccessRules), each through its typed
+// reader, so a stored value its rule refuses is a failure, never no rule.
+func accessRules(values settingvalue.Reader) func(ctx context.Context) (server.AccessRules, error) {
+	return func(ctx context.Context) (server.AccessRules, error) {
+		var r server.AccessRules
+		var err error
+		if r.TrustedProxies, err = values.Networks(ctx, settings.AccessTrustedProxies); err != nil {
+			return r, err
+		}
+		if r.ForwardedHeader, err = values.ForwardedHeader(ctx); err != nil {
+			return r, err
+		}
+		if r.Allowed, err = values.Networks(ctx, settings.AccessAllowedNetworks); err != nil {
+			return r, err
+		}
+		if r.Denied, err = values.Networks(ctx, settings.AccessDeniedNetworks); err != nil {
+			return r, err
+		}
+		if r.FailureLimit, err = values.FailureLimit(ctx); err != nil {
+			return r, err
+		}
+		if r.FailureWindow, err = values.FailureWindow(ctx); err != nil {
+			return r, err
+		}
+		r.BlockTime, err = values.BlockTime(ctx)
+		return r, err
+	}
 }

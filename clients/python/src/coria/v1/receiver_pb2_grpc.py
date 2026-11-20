@@ -33,11 +33,13 @@ class ReceiverServiceStub:
     (ReceptionService), one per study and arrival, which are archived to its
     storage under labels its naming rule makes. Every type of receiver shares
     that part of its configuration; what belongs to its protocol is in its
-    type's message. This version has one type, a DIMSE receiver: a DICOM
+    type's message. This version has two types. A DIMSE receiver is a DICOM
     listener (PS3.8 upper layer, PS3.7 message exchange) on one port of the
     server, which accepts C-STORE requests (PS3.4 Annex B) for the SOP classes
     it accepts, answers C-ECHO (PS3.4 Annex A) to an admitted caller, and
-    answers nothing else.
+    answers nothing else. A stow receiver takes the instances a key it lists
+    stores over HTTP into the tenant's DICOMweb service (STOW-RS, PS3.18
+    10.5); it holds no port (StowReceiver).
 
     The server makes what listens match what is configured: a receiver added,
     changed or removed is started, restarted or stopped without a restart of
@@ -132,11 +134,13 @@ class ReceiverServiceServicer:
     (ReceptionService), one per study and arrival, which are archived to its
     storage under labels its naming rule makes. Every type of receiver shares
     that part of its configuration; what belongs to its protocol is in its
-    type's message. This version has one type, a DIMSE receiver: a DICOM
+    type's message. This version has two types. A DIMSE receiver is a DICOM
     listener (PS3.8 upper layer, PS3.7 message exchange) on one port of the
     server, which accepts C-STORE requests (PS3.4 Annex B) for the SOP classes
     it accepts, answers C-ECHO (PS3.4 Annex A) to an admitted caller, and
-    answers nothing else.
+    answers nothing else. A stow receiver takes the instances a key it lists
+    stores over HTTP into the tenant's DICOMweb service (STOW-RS, PS3.18
+    10.5); it holds no port (StowReceiver).
 
     The server makes what listens match what is configured: a receiver added,
     changed or removed is started, restarted or stopped without a restart of
@@ -338,11 +342,13 @@ class ReceiverService:
     (ReceptionService), one per study and arrival, which are archived to its
     storage under labels its naming rule makes. Every type of receiver shares
     that part of its configuration; what belongs to its protocol is in its
-    type's message. This version has one type, a DIMSE receiver: a DICOM
+    type's message. This version has two types. A DIMSE receiver is a DICOM
     listener (PS3.8 upper layer, PS3.7 message exchange) on one port of the
     server, which accepts C-STORE requests (PS3.4 Annex B) for the SOP classes
     it accepts, answers C-ECHO (PS3.4 Annex A) to an admitted caller, and
-    answers nothing else.
+    answers nothing else. A stow receiver takes the instances a key it lists
+    stores over HTTP into the tenant's DICOMweb service (STOW-RS, PS3.18
+    10.5); it holds no port (StowReceiver).
 
     The server makes what listens match what is configured: a receiver added,
     changed or removed is started, restarted or stopped without a restart of

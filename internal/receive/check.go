@@ -90,6 +90,9 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 			return p.holdAtReceive(l, tenant.QuarantineBadUID, map[string]string{"attribute": string(a), "fault": word}, h), nil
 		}
 	}
+	if a := toldOtherwise(l.told, h); a != "" {
+		return p.holdAtReceive(l, tenant.QuarantineUIDMismatch, map[string]string{"attribute": string(a)}, h), nil
+	}
 	class, _ := h.UID(header.SOPClassUID)
 	// An empty list is the server's default set, which the listener applies
 	// when it negotiates (PS3.7 D.3.3.2); a file that reached here under it
@@ -111,6 +114,29 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 		Released: l.releasedFrom != "",
 	}
 	return decision{received: rf}, nil
+}
+
+// toldOtherwise returns the first placing attribute whose value in the
+// whole header h differs from what the source read from the file's first
+// bytes (Arrival.StudyUID), or "" when they agree or the source read
+// none. A source that read nothing of the file (a C-STORE's Affected SOP
+// Instance UID comes from its command, not its data set) is not compared.
+func toldOtherwise(told Arrival, h *header.Header) header.Attribute {
+	if told.StudyUID == "" && told.SeriesUID == "" {
+		return ""
+	}
+	for _, c := range []struct {
+		a    header.Attribute
+		told string
+	}{
+		{header.SOPClassUID, told.SOPClassUID}, {header.SOPInstanceUID, told.SOPInstanceUID},
+		{header.StudyUID, told.StudyUID}, {header.SeriesUID, told.SeriesUID},
+	} {
+		if v, _ := h.UID(c.a); v != c.told {
+			return c.a
+		}
+	}
+	return ""
 }
 
 // holdAtReceive returns the record of a file held by the receiving side,

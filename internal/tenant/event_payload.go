@@ -31,12 +31,15 @@ const (
 	EventReceiverHealth EventType = "receiver_health"
 	// EventStorageSpace is a storage becoming nearly full or recovering.
 	EventStorageSpace EventType = "storage_space"
+	// EventFramesAdded is the pass that gives frame tables to scans
+	// archived before them rewriting a scan's metadata, or ending.
+	EventFramesAdded EventType = "frames_added"
 )
 
 // EventTypes returns every event type, in the contract's order.
 func EventTypes() []EventType {
 	return []EventType{EventAssociationFailed, EventReceptionStep, EventFileQuarantined, EventQuarantineDecided,
-		EventReceiverHealth, EventStorageSpace}
+		EventReceiverHealth, EventStorageSpace, EventFramesAdded}
 }
 
 // Valid reports whether t is one of EventTypes.
@@ -46,7 +49,7 @@ func (t EventType) Valid() bool { return slices.Contains(EventTypes(), t) }
 // report through AppendEvents: what is not a row of the pipeline. The
 // others are written by the store with the change they report.
 func ServerEventType(t EventType) bool {
-	return t == EventAssociationFailed || t == EventReceiverHealth || t == EventStorageSpace
+	return t == EventAssociationFailed || t == EventReceiverHealth || t == EventStorageSpace || t == EventFramesAdded
 }
 
 // ValidateEventTypes returns an Invalid error unless types is a filter a
@@ -57,7 +60,7 @@ func ValidateEventTypes(types []EventType) error {
 	}
 	for _, t := range types {
 		if !t.Valid() {
-			return invalid("an event type is one of association_failed, reception_step, file_quarantined, quarantine_decided, receiver_health, storage_space")
+			return invalid("an event type is one of association_failed, reception_step, file_quarantined, quarantine_decided, receiver_health, storage_space, frames_added")
 		}
 	}
 	return nil
@@ -153,6 +156,8 @@ func DecodeEvent(t EventType, payload string) (EventPayload, bool) {
 		p = &ReceiverHealthChanged{}
 	case EventStorageSpace:
 		p = &StorageSpaceChanged{}
+	case EventFramesAdded:
+		p = &FramesAdded{}
 	default:
 		return nil, true
 	}
@@ -500,6 +505,55 @@ func (p *StorageSpaceChanged) validate() error {
 	}
 	if p.UsedBytes < 0 || (p.FreeBytes != nil && *p.FreeBytes < 0) {
 		return invalid("a storage's bytes are not negative")
+	}
+	return nil
+}
+
+// FramesAdded is the progress of the pass that gives frame tables to the
+// metadata of scans archived before tables existed, the contract's message
+// of that name: one scan's metadata rewritten with its tables, or, with
+// Finished, a pass that rewrote any having checked every scan.
+type FramesAdded struct {
+	// SubjectLabel, SessionLabel and ScanLabel place the scan rewritten;
+	// empty when Finished.
+	SubjectLabel string `json:"subject_label"`
+	// SessionLabel is the scan's session's label.
+	SessionLabel string `json:"session_label"`
+	// ScanLabel is the scan's label.
+	ScanLabel string `json:"scan_label"`
+	// Instances is how many of the scan's instances were given a table; 0
+	// when Finished.
+	Instances int64 `json:"instances"`
+	// ScansDone and InstancesDone are the pass's totals so far: scans
+	// rewritten and instances given a table.
+	ScansDone int64 `json:"scans_done"`
+	// InstancesDone is the pass's total of instances given a table.
+	InstancesDone int64 `json:"instances_done"`
+	// Finished says the pass ended, every scan of the tenant checked.
+	Finished bool `json:"finished"`
+}
+
+// EventType implements EventPayload.
+func (*FramesAdded) EventType() EventType { return EventFramesAdded }
+
+// validate implements EventPayload.
+func (p *FramesAdded) validate() error {
+	if p.Instances < 0 || p.ScansDone < 0 || p.InstancesDone < p.Instances {
+		return invalid("a frames event's counts are not negative, and its totals hold its scan's")
+	}
+	if p.Finished {
+		if p.SubjectLabel != "" || p.SessionLabel != "" || p.ScanLabel != "" || p.Instances != 0 {
+			return invalid("a finished frames event names no scan")
+		}
+		return nil
+	}
+	if p.ScansDone < 1 {
+		return invalid("a frames event of a scan counts that scan in its totals")
+	}
+	for _, l := range []struct{ level, value string }{{"subject", p.SubjectLabel}, {"session", p.SessionLabel}, {"scan", p.ScanLabel}} {
+		if err := ValidateLabel(l.level, l.value); err != nil {
+			return err
+		}
 	}
 	return nil
 }

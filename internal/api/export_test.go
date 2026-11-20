@@ -1,11 +1,31 @@
 package api
 
 import (
+	"strconv"
+
 	"google.golang.org/protobuf/proto"
 
 	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/place"
 )
+
+// HoldServerReads takes every read the server of h holds open at once, as
+// MaxServerReads callers each holding one would, and returns their release.
+func HoldServerReads(h Handlers) func() {
+	var releases []func()
+	for i := range MaxServerReads {
+		release, err := h.c.reads.take("held/" + strconv.Itoa(i))
+		if err != nil {
+			break
+		}
+		releases = append(releases, release)
+	}
+	return func() {
+		for _, r := range releases {
+			r()
+		}
+	}
+}
 
 // SetPortProbe makes the services of h probe a port with probe instead of
 // binding it, so a test sees each port tried and on which address.
@@ -40,9 +60,9 @@ func (Pending) Procedures() []string {
 // names.
 const DownloadMethod = DownloadPattern
 
-// PendingDownload is the requirement and the audit facts of a plain HTTP
+// DownloadFacts is the requirement and the audit facts of a plain HTTP
 // download of an instance with these parts of its path, and whether it
 // carries a Range and a window.
-func PendingDownload(tenant, subject, session, scan, instance string, ranged, window bool) (access.Requirement, access.Request) {
-	return pendingDownload(download{Tenant: tenant, Subject: subject, Session: session, Scan: scan, Instance: instance, Ranged: ranged, Window: window})
+func DownloadFacts(tenant, subject, session, scan, instance string, ranged, window bool) (access.Requirement, access.Request) {
+	return downloadNeed(download{Tenant: tenant, Subject: subject, Session: session, Scan: scan, Instance: instance, Ranged: ranged, Window: window})
 }

@@ -122,14 +122,41 @@
 // secret is the exception, kept unless named and never set to empty. A field
 // the server answers is read-only, and naming it is invalid.
 //
-// Secrets cross the API in three fields only,
+// Secrets cross the API in four fields only,
 // CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
-// by AddStorage and SetStorage; always empty in an answer) and
-// CreateKeyResponse.secret (out, once). All three are marked debug_redact.
-// The mark is metadata, not protection: the protobuf library prints such a
-// field like any other (checked with protobuf-go v1.36.12, in every text form).
-// The server's own redactor reads the mark and removes the three fields
-// before anything is logged.
+// by AddStorage and SetStorage; always empty in an answer),
+// CreateKeyResponse.secret and RotateKeyResponse.secret (out, once). All four
+// are marked debug_redact. The mark is metadata, not protection: the
+// protobuf library prints such a field like any other (checked with
+// protobuf-go v1.36.12, in every text form). The server's own redactor reads
+// the mark and removes the four fields before anything is logged.
+//
+// Where a request may come from. A request off the local socket must pass,
+// in this order: the installation's denied networks and allowed networks
+// (the settings access.denied-networks and access.allowed-networks), judged
+// before its key is read; then, once its key and grant are known, the
+// networks of the tenant it names (access.tenant-networks), and the key's
+// own networks and client certificate (Key.networks,
+// Key.client_cert_sha256). A request refused by any of them is answered
+// UNAUTHENTICATED, exactly as a key that is no good, and recorded in the
+// installation's audit log with the rule's name; the caller is never told
+// which rule. The caller's address is the connection's, or, when the
+// connection comes from a proxy listed in access.trusted-proxies, the
+// rightmost address that is not itself a listed proxy in the one header
+// access.forwarded-header names (X-Forwarded-For by default, or Forwarded,
+// RFC 7239); the other header is never read, and from any other connection
+// neither is. The local socket is never refused by a network rule.
+//
+// Failed calls. Requests refused because their key is no good are counted
+// per address (IPv6 per /64), and requests refused because a good key lacks
+// the role are counted per key, over access.failure-window. Past
+// access.failure-limit failures in the window, each further refusal is
+// answered one second late; at twice the limit, the address or the key is
+// blocked for access.block-time: every request from it, a good key's
+// included, is answered UNAUTHENTICATED, and the block is audited. A
+// request that succeeds is never counted, delayed or blocked for its own
+// sake, however many a key makes. The counts are kept in the server's
+// memory and are lost when it restarts.
 
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
@@ -143,7 +170,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/access.proto.
  */
 export const file_coria_v1_access: GenFile = /*@__PURE__*/
-  fileDesc("ChVjb3JpYS92MS9hY2Nlc3MucHJvdG8SCGNvcmlhLnYxIucBCgNLZXkSCgoCaWQYASABKAkSDgoGaG9sZGVyGAIgASgJEi8KC2NyZWF0ZV90aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtleHBpcmVfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoNbGFzdF91c2VfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLcmV2b2tlX3RpbWUYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIlUKBUdyYW50Eg4KBmtleV9pZBgBIAEoCRIeCgVzY29wZRgCIAEoCzIPLmNvcmlhLnYxLlNjb3BlEhwKBHJvbGUYAyABKA4yDi5jb3JpYS52MS5Sb2xlIocBCglQcmluY2lwYWwSHAoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5SAASMQoObG9jYWxfb3BlcmF0b3IYAiABKAsyFy5jb3JpYS52MS5Mb2NhbE9wZXJhdG9ySAASHwoGZ3JhbnRzGAMgAygLMg8uY29yaWEudjEuR3JhbnRCCAoGY2FsbGVyIiAKDUxvY2FsT3BlcmF0b3ISDwoHdXNlcl9pZBgBIAEoCSJ3ChBDcmVhdGVLZXlSZXF1ZXN0Eg4KBmhvbGRlchgBIAEoCRIxCgxleHBpcmVfYWZ0ZXIYAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25IABIWCgxuZXZlcl9leHBpcmUYAyABKAhIAEIICgZleHBpcnkiRAoRQ3JlYXRlS2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5EhMKBnNlY3JldBgCIAEoCUIDgAEBIhsKDUdldEtleVJlcXVlc3QSCgoCaWQYASABKAkiLAoOR2V0S2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5IjgKD0xpc3RLZXlzUmVxdWVzdBIRCglwYWdlX3NpemUYASABKAUSEgoKcGFnZV90b2tlbhgCIAEoCSJIChBMaXN0S2V5c1Jlc3BvbnNlEhsKBGtleXMYASADKAsyDS5jb3JpYS52MS5LZXkSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIh4KEFJldm9rZUtleVJlcXVlc3QSCgoCaWQYASABKAkiLwoRUmV2b2tlS2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5Il8KD1NldEdyYW50UmVxdWVzdBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZRIcCgRyb2xlGAMgASgOMg4uY29yaWEudjEuUm9sZSJZChBTZXRHcmFudFJlc3BvbnNlEh4KBWdyYW50GAEgASgLMg8uY29yaWEudjEuR3JhbnQSJQoNcHJldmlvdXNfcm9sZRgCIAEoDjIOLmNvcmlhLnYxLlJvbGUieAoRTGlzdEdyYW50c1JlcXVlc3QSEAoGa2V5X2lkGAEgASgJSAASIAoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZUgAEhEKCXBhZ2Vfc2l6ZRgDIAEoBRISCgpwYWdlX3Rva2VuGAQgASgJQggKBmZpbHRlciJOChJMaXN0R3JhbnRzUmVzcG9uc2USHwoGZ3JhbnRzGAEgAygLMg8uY29yaWEudjEuR3JhbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIkQKElJlbW92ZUdyYW50UmVxdWVzdBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZSI8ChNSZW1vdmVHcmFudFJlc3BvbnNlEiUKDXByZXZpb3VzX3JvbGUYASABKA4yDi5jb3JpYS52MS5Sb2xlIg8KDVdob0FtSVJlcXVlc3QiOAoOV2hvQW1JUmVzcG9uc2USJgoJcHJpbmNpcGFsGAEgASgLMhMuY29yaWEudjEuUHJpbmNpcGFsKmEKBFJvbGUSFAoQUk9MRV9VTlNQRUNJRklFRBAAEg8KC1JPTEVfUkVBREVSEAESDwoLUk9MRV9XUklURVIQAhIRCg1ST0xFX09QRVJBVE9SEAMSDgoKUk9MRV9BRE1JThAEMtMECg1BY2Nlc3NTZXJ2aWNlEkQKCUNyZWF0ZUtleRIaLmNvcmlhLnYxLkNyZWF0ZUtleVJlcXVlc3QaGy5jb3JpYS52MS5DcmVhdGVLZXlSZXNwb25zZRJACgZHZXRLZXkSFy5jb3JpYS52MS5HZXRLZXlSZXF1ZXN0GhguY29yaWEudjEuR2V0S2V5UmVzcG9uc2UiA5ACARJGCghMaXN0S2V5cxIZLmNvcmlhLnYxLkxpc3RLZXlzUmVxdWVzdBoaLmNvcmlhLnYxLkxpc3RLZXlzUmVzcG9uc2UiA5ACARJJCglSZXZva2VLZXkSGi5jb3JpYS52MS5SZXZva2VLZXlSZXF1ZXN0GhsuY29yaWEudjEuUmV2b2tlS2V5UmVzcG9uc2UiA5ACAhJGCghTZXRHcmFudBIZLmNvcmlhLnYxLlNldEdyYW50UmVxdWVzdBoaLmNvcmlhLnYxLlNldEdyYW50UmVzcG9uc2UiA5ACAhJMCgpMaXN0R3JhbnRzEhsuY29yaWEudjEuTGlzdEdyYW50c1JlcXVlc3QaHC5jb3JpYS52MS5MaXN0R3JhbnRzUmVzcG9uc2UiA5ACARJPCgtSZW1vdmVHcmFudBIcLmNvcmlhLnYxLlJlbW92ZUdyYW50UmVxdWVzdBodLmNvcmlhLnYxLlJlbW92ZUdyYW50UmVzcG9uc2UiA5ACAhJACgZXaG9BbUkSFy5jb3JpYS52MS5XaG9BbUlSZXF1ZXN0GhguY29yaWEudjEuV2hvQW1JUmVzcG9uc2UiA5ACAWIGcHJvdG8z", [file_google_protobuf_duration, file_google_protobuf_timestamp, file_coria_v1_scope]);
+  fileDesc("ChVjb3JpYS92MS9hY2Nlc3MucHJvdG8SCGNvcmlhLnYxIsUCCgNLZXkSCgoCaWQYASABKAkSDgoGaG9sZGVyGAIgASgJEi8KC2NyZWF0ZV90aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtleHBpcmVfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoNbGFzdF91c2VfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLcmV2b2tlX3RpbWUYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCG5ldHdvcmtzGAcgAygJEhoKEmNsaWVudF9jZXJ0X3NoYTI1NhgIIAEoCRIYChBsYXN0X3VzZV9hZGRyZXNzGAkgASgJEhQKDHN1Y2Nlc3Nvcl9pZBgKIAEoCSJVCgVHcmFudBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZRIcCgRyb2xlGAMgASgOMg4uY29yaWEudjEuUm9sZSKHAQoJUHJpbmNpcGFsEhwKA2tleRgBIAEoCzINLmNvcmlhLnYxLktleUgAEjEKDmxvY2FsX29wZXJhdG9yGAIgASgLMhcuY29yaWEudjEuTG9jYWxPcGVyYXRvckgAEh8KBmdyYW50cxgDIAMoCzIPLmNvcmlhLnYxLkdyYW50QggKBmNhbGxlciIgCg1Mb2NhbE9wZXJhdG9yEg8KB3VzZXJfaWQYASABKAkipQEKEENyZWF0ZUtleVJlcXVlc3QSDgoGaG9sZGVyGAEgASgJEjEKDGV4cGlyZV9hZnRlchgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbkgAEhYKDG5ldmVyX2V4cGlyZRgDIAEoCEgAEhAKCG5ldHdvcmtzGAQgAygJEhoKEmNsaWVudF9jZXJ0X3NoYTI1NhgFIAEoCUIICgZleHBpcnkiRAoRQ3JlYXRlS2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5EhMKBnNlY3JldBgCIAEoCUIDgAEBIhsKDUdldEtleVJlcXVlc3QSCgoCaWQYASABKAkiLAoOR2V0S2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5IjgKD0xpc3RLZXlzUmVxdWVzdBIRCglwYWdlX3NpemUYASABKAUSEgoKcGFnZV90b2tlbhgCIAEoCSJIChBMaXN0S2V5c1Jlc3BvbnNlEhsKBGtleXMYASADKAsyDS5jb3JpYS52MS5LZXkSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIh4KEFJldm9rZUtleVJlcXVlc3QSCgoCaWQYASABKAkiLwoRUmV2b2tlS2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5Il8KD1NldEdyYW50UmVxdWVzdBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZRIcCgRyb2xlGAMgASgOMg4uY29yaWEudjEuUm9sZSJZChBTZXRHcmFudFJlc3BvbnNlEh4KBWdyYW50GAEgASgLMg8uY29yaWEudjEuR3JhbnQSJQoNcHJldmlvdXNfcm9sZRgCIAEoDjIOLmNvcmlhLnYxLlJvbGUieAoRTGlzdEdyYW50c1JlcXVlc3QSEAoGa2V5X2lkGAEgASgJSAASIAoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZUgAEhEKCXBhZ2Vfc2l6ZRgDIAEoBRISCgpwYWdlX3Rva2VuGAQgASgJQggKBmZpbHRlciJOChJMaXN0R3JhbnRzUmVzcG9uc2USHwoGZ3JhbnRzGAEgAygLMg8uY29yaWEudjEuR3JhbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIkQKElJlbW92ZUdyYW50UmVxdWVzdBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZSI8ChNSZW1vdmVHcmFudFJlc3BvbnNlEiUKDXByZXZpb3VzX3JvbGUYASABKA4yDi5jb3JpYS52MS5Sb2xlIg8KDVdob0FtSVJlcXVlc3QiOAoOV2hvQW1JUmVzcG9uc2USJgoJcHJpbmNpcGFsGAEgASgLMhMuY29yaWEudjEuUHJpbmNpcGFsIkoKEFJvdGF0ZUtleVJlcXVlc3QSCgoCaWQYASABKAkSKgoHb3ZlcmxhcBgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiJkChFSb3RhdGVLZXlSZXNwb25zZRIaCgNrZXkYASABKAsyDS5jb3JpYS52MS5LZXkSEwoGc2VjcmV0GAIgASgJQgOAAQESHgoHcm90YXRlZBgDIAEoCzINLmNvcmlhLnYxLktleSJOChJTZXRLZXlSdWxlc1JlcXVlc3QSCgoCaWQYASABKAkSEAoIbmV0d29ya3MYAiADKAkSGgoSY2xpZW50X2NlcnRfc2hhMjU2GAMgASgJIjEKE1NldEtleVJ1bGVzUmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5KmEKBFJvbGUSFAoQUk9MRV9VTlNQRUNJRklFRBAAEg8KC1JPTEVfUkVBREVSEAESDwoLUk9MRV9XUklURVIQAhIRCg1ST0xFX09QRVJBVE9SEAMSDgoKUk9MRV9BRE1JThAEMuoFCg1BY2Nlc3NTZXJ2aWNlEkQKCUNyZWF0ZUtleRIaLmNvcmlhLnYxLkNyZWF0ZUtleVJlcXVlc3QaGy5jb3JpYS52MS5DcmVhdGVLZXlSZXNwb25zZRJACgZHZXRLZXkSFy5jb3JpYS52MS5HZXRLZXlSZXF1ZXN0GhguY29yaWEudjEuR2V0S2V5UmVzcG9uc2UiA5ACARJGCghMaXN0S2V5cxIZLmNvcmlhLnYxLkxpc3RLZXlzUmVxdWVzdBoaLmNvcmlhLnYxLkxpc3RLZXlzUmVzcG9uc2UiA5ACARJJCglSZXZva2VLZXkSGi5jb3JpYS52MS5SZXZva2VLZXlSZXF1ZXN0GhsuY29yaWEudjEuUmV2b2tlS2V5UmVzcG9uc2UiA5ACAhJGCghTZXRHcmFudBIZLmNvcmlhLnYxLlNldEdyYW50UmVxdWVzdBoaLmNvcmlhLnYxLlNldEdyYW50UmVzcG9uc2UiA5ACAhJMCgpMaXN0R3JhbnRzEhsuY29yaWEudjEuTGlzdEdyYW50c1JlcXVlc3QaHC5jb3JpYS52MS5MaXN0R3JhbnRzUmVzcG9uc2UiA5ACARJPCgtSZW1vdmVHcmFudBIcLmNvcmlhLnYxLlJlbW92ZUdyYW50UmVxdWVzdBodLmNvcmlhLnYxLlJlbW92ZUdyYW50UmVzcG9uc2UiA5ACAhJACgZXaG9BbUkSFy5jb3JpYS52MS5XaG9BbUlSZXF1ZXN0GhguY29yaWEudjEuV2hvQW1JUmVzcG9uc2UiA5ACARJECglSb3RhdGVLZXkSGi5jb3JpYS52MS5Sb3RhdGVLZXlSZXF1ZXN0GhsuY29yaWEudjEuUm90YXRlS2V5UmVzcG9uc2USTwoLU2V0S2V5UnVsZXMSHC5jb3JpYS52MS5TZXRLZXlSdWxlc1JlcXVlc3QaHS5jb3JpYS52MS5TZXRLZXlSdWxlc1Jlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_duration, file_google_protobuf_timestamp, file_coria_v1_scope]);
 
 /**
  * Key is a credential held by a person or a system. It never carries its
@@ -198,6 +225,42 @@ export type Key = Message<"coria.v1.Key"> & {
    * @generated from field: google.protobuf.Timestamp revoke_time = 6;
    */
   revokeTime?: Timestamp | undefined;
+
+  /**
+   * The networks a request with the key may come from, each an address or
+   * a network in CIDR form (address/bits) in its one written form: IPv4
+   * dotted, IPv6 as RFC 5952 writes it, no bit set past the prefix, a
+   * single address without /32 or /128. Empty for every network. At most
+   * 64.
+   *
+   * @generated from field: repeated string networks = 7;
+   */
+  networks: string[];
+
+  /**
+   * The SHA-256 of the TLS client certificate a request with the key must
+   * present, in 64 lowercase hexadecimal digits; empty for none. A request
+   * that comes through a proxy that ends TLS presents none.
+   *
+   * @generated from field: string client_cert_sha256 = 8;
+   */
+  clientCertSha256: string;
+
+  /**
+   * The caller's address at the use last_use_time records, written with it;
+   * empty when the key was never used off the local socket.
+   *
+   * @generated from field: string last_use_address = 9;
+   */
+  lastUseAddress: string;
+
+  /**
+   * The id of the key a rotation replaced this one with; empty when it was
+   * never rotated.
+   *
+   * @generated from field: string successor_id = 10;
+   */
+  successorId: string;
 };
 
 /**
@@ -328,14 +391,15 @@ export type CreateKeyRequest = Message<"coria.v1.CreateKeyRequest"> & {
   /**
    * When the key stops working. When neither field is set, the key expires
    * after the installation's setting key.default-lifetime, whose built-in
-   * default is 90 days.
+   * default is 90 days, or key.max-lifetime when that is shorter.
    *
    * @generated from oneof coria.v1.CreateKeyRequest.expiry
    */
   expiry: {
     /**
      * The key expires this long after it is made. Must be positive and at
-     * most 10 years (3650 days).
+     * most the installation's setting key.max-lifetime (built-in default
+     * 3650 days).
      *
      * @generated from field: google.protobuf.Duration expire_after = 2;
      */
@@ -352,6 +416,22 @@ export type CreateKeyRequest = Message<"coria.v1.CreateKeyRequest"> & {
     value: boolean;
     case: "neverExpire";
   } | { case: undefined; value?: undefined };
+
+  /**
+   * The networks the key may be used from, as Key.networks states them.
+   * Empty for every network.
+   *
+   * @generated from field: repeated string networks = 4;
+   */
+  networks: string[];
+
+  /**
+   * The SHA-256 of the TLS client certificate the key must come with, as
+   * Key.client_cert_sha256 states it. Empty for none.
+   *
+   * @generated from field: string client_cert_sha256 = 5;
+   */
+  clientCertSha256: string;
 };
 
 /**
@@ -376,7 +456,7 @@ export type CreateKeyResponse = Message<"coria.v1.CreateKeyResponse"> & {
 
   /**
    * SECRET. The whole key, cor_<id>_<secret>, as a client sends it in the
-   * Authorization header. This is one of the three fields through which a
+   * Authorization header. This is one of the four fields through which a
    * secret crosses the API, and the only time this one is answered: the
    * server keeps only its SHA-256 and cannot answer it again. A client shows
    * it to its user once and does not log it. The debug_redact mark is read by
@@ -769,6 +849,132 @@ export const WhoAmIResponseSchema: GenMessage<WhoAmIResponse> = /*@__PURE__*/
   messageDesc(file_coria_v1_access, 19);
 
 /**
+ * RotateKeyRequest names the key to rotate.
+ *
+ * @generated from message coria.v1.RotateKeyRequest
+ */
+export type RotateKeyRequest = Message<"coria.v1.RotateKeyRequest"> & {
+  /**
+   * The key's id. Required.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * How long the rotated key keeps working beside its successor: from zero
+   * to 30 days, and at least one hour for a key rotating itself without
+   * admin on the installation. Unset means one day.
+   *
+   * @generated from field: google.protobuf.Duration overlap = 2;
+   */
+  overlap?: Duration | undefined;
+};
+
+/**
+ * Describes the message coria.v1.RotateKeyRequest.
+ * Use `create(RotateKeyRequestSchema)` to create a new message.
+ */
+export const RotateKeyRequestSchema: GenMessage<RotateKeyRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_access, 20);
+
+/**
+ * RotateKeyResponse is the successor and, once, its secret.
+ *
+ * @generated from message coria.v1.RotateKeyResponse
+ */
+export type RotateKeyResponse = Message<"coria.v1.RotateKeyResponse"> & {
+  /**
+   * The successor.
+   *
+   * @generated from field: coria.v1.Key key = 1;
+   */
+  key?: Key | undefined;
+
+  /**
+   * SECRET. The successor's whole key, cor_<id>_<secret>, answered this
+   * once, as CreateKeyResponse.secret is. The debug_redact mark is read by
+   * the server's redactor; the protobuf library itself still prints the
+   * field.
+   *
+   * @generated from field: string secret = 2;
+   */
+  secret: string;
+
+  /**
+   * The rotated key as it now stands, with its new expire_time and its
+   * successor_id.
+   *
+   * @generated from field: coria.v1.Key rotated = 3;
+   */
+  rotated?: Key | undefined;
+};
+
+/**
+ * Describes the message coria.v1.RotateKeyResponse.
+ * Use `create(RotateKeyResponseSchema)` to create a new message.
+ */
+export const RotateKeyResponseSchema: GenMessage<RotateKeyResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_access, 21);
+
+/**
+ * SetKeyRulesRequest is where a key may now be used from.
+ *
+ * @generated from message coria.v1.SetKeyRulesRequest
+ */
+export type SetKeyRulesRequest = Message<"coria.v1.SetKeyRulesRequest"> & {
+  /**
+   * The key's id. Required.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * The networks, as Key.networks states them; empty for every network.
+   *
+   * @generated from field: repeated string networks = 2;
+   */
+  networks: string[];
+
+  /**
+   * The client certificate's SHA-256, as Key.client_cert_sha256 states it;
+   * empty for none.
+   *
+   * @generated from field: string client_cert_sha256 = 3;
+   */
+  clientCertSha256: string;
+};
+
+/**
+ * Describes the message coria.v1.SetKeyRulesRequest.
+ * Use `create(SetKeyRulesRequestSchema)` to create a new message.
+ */
+export const SetKeyRulesRequestSchema: GenMessage<SetKeyRulesRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_access, 22);
+
+/**
+ * SetKeyRulesResponse is the key with its new rules.
+ *
+ * @generated from message coria.v1.SetKeyRulesResponse
+ */
+export type SetKeyRulesResponse = Message<"coria.v1.SetKeyRulesResponse"> & {
+  /**
+   * The key.
+   *
+   * @generated from field: coria.v1.Key key = 1;
+   */
+  key?: Key | undefined;
+};
+
+/**
+ * Describes the message coria.v1.SetKeyRulesResponse.
+ * Use `create(SetKeyRulesResponseSchema)` to create a new message.
+ */
+export const SetKeyRulesResponseSchema: GenMessage<SetKeyRulesResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_access, 23);
+
+/**
  * Role is what a grant allows. Each role includes every role listed before it.
  * On a tenant, a role acts on that tenant only; on the installation, it acts
  * on the installation's own objects, not on what is inside a tenant. The local
@@ -890,7 +1096,9 @@ export const AccessService: GenService<{
    * RevokeKey ends a key for good: from this call on, a request with it is
    * answered UNAUTHENTICATED. Its grants stay listed, so the record shows what
    * the key could do, but they give nothing. Revoking a revoked key changes
-   * nothing and answers the key with its first revoke time.
+   * nothing and answers the key with its first revoke time. Revoking a
+   * rotated key does not revoke its successor (Key.successor_id), which is
+   * revoked by its own call.
    *
    * Role: admin on the installation.
    * Audit: one entry in the installation's log, with the key's id as its
@@ -984,6 +1192,56 @@ export const AccessService: GenService<{
     methodKind: "unary";
     input: typeof WhoAmIRequestSchema;
     output: typeof WhoAmIResponseSchema;
+  },
+  /**
+   * RotateKey replaces a key with a new one, its successor, and answers the
+   * successor's secret, once. The successor holds the same grants, holder,
+   * networks and client certificate. The rotated key keeps working for the
+   * overlap, or until its own expiry when that is sooner, and then stops:
+   * whoever holds it has the overlap to switch, with no moment without a
+   * working key. The successor lives as long as the rotated key was made to
+   * live, counted from now, but never longer than the installation's setting
+   * key.max-lifetime (built-in default 3650 days); a key made never to
+   * expire makes a successor that never expires. A key is rotated at most
+   * once; its successor may be rotated in turn. A key rotating itself,
+   * without admin on the installation, keeps working at least an hour beside
+   * its successor, so a thief holding it cannot cut its holder off at once.
+   *
+   * Role: admin on the installation; or the key being rotated itself, so a
+   * system renews its own key with no person involved. Any other key is
+   * answered permission denied.
+   * Audit: one entry in the installation's log, with the rotated key's id as
+   * its object, and the successor's id, the rotated key's new end and the
+   * overlap in details; never the secret.
+   * Errors: unauthenticated, permission denied, invalid, not found (no key
+   * has that id), conflict (the key is revoked, has expired, or was already
+   * rotated), unavailable (the master database does not answer).
+   *
+   * @generated from rpc coria.v1.AccessService.RotateKey
+   */
+  rotateKey: {
+    methodKind: "unary";
+    input: typeof RotateKeyRequestSchema;
+    output: typeof RotateKeyResponseSchema;
+  },
+  /**
+   * SetKeyRules replaces where a key may be used from: its networks and the
+   * client certificate it must come with. The key's next request is judged
+   * by the new rules.
+   *
+   * Role: admin on the installation.
+   * Audit: one entry in the installation's log, with the key's id as its
+   * object and the new rules in details.
+   * Errors: unauthenticated, permission denied, invalid, not found (no key
+   * has that id), conflict (the key is revoked), unavailable (the master
+   * database does not answer).
+   *
+   * @generated from rpc coria.v1.AccessService.SetKeyRules
+   */
+  setKeyRules: {
+    methodKind: "unary";
+    input: typeof SetKeyRulesRequestSchema;
+    output: typeof SetKeyRulesResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_coria_v1_access, 0);

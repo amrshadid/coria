@@ -24,7 +24,7 @@ import (
 func benchEnv(b *testing.B) (*env, testKey, access.Requirement) {
 	e := newEnv(b)
 	k := e.key(time.Time{}, on(master.TenantScope(e.lab.ID), master.RoleWriter))
-	if _, err := e.master.MarkKeyUsed(e.ctx, k.id, t0.Add(-time.Second)); err != nil {
+	if _, err := e.master.MarkKeyUsed(e.ctx, k.id, t0.Add(-time.Second), ""); err != nil {
 		b.Fatal(err)
 	}
 	return e, k, access.OnTenant("lab", master.RoleReader)
@@ -182,7 +182,7 @@ func BenchmarkCheckWithMark(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if _, err := e.master.MarkKeyUsed(ctx, d.Principal().KeyID(), at); err != nil {
+		if _, err := e.master.MarkKeyUsed(ctx, d.Principal().KeyID(), at, ""); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -200,7 +200,7 @@ func TestMeasureDeniedGap(t *testing.T) {
 	}
 	e := newEnv(t)
 	k := e.key(time.Time{}, on(master.TenantScope(e.clinic.ID), master.RoleAdmin))
-	if _, err := e.master.MarkKeyUsed(e.ctx, k.id, t0.Add(-time.Second)); err != nil {
+	if _, err := e.master.MarkKeyUsed(e.ctx, k.id, t0.Add(-time.Second), ""); err != nil {
 		t.Fatal(err)
 	}
 	cred := access.APIKey(k.full)

@@ -81,6 +81,22 @@ type Config struct {
 	// AuditBackoff is the wait before the first retry, doubled for each
 	// next one; zero is DefaultAuditBackoff.
 	AuditBackoff time.Duration
+	// Events receives the access events (Event): refusals by a rule,
+	// rotations, keys about to expire. Nil discards them; the audit log
+	// records each refusal and rotation whatever it is.
+	Events Events
+	// TenantNetworks reads a tenant's allowed networks for the check. Nil
+	// is no tenant's rule, for a server that has no tenants' databases (a
+	// test of this package alone).
+	TenantNetworks TenantNetworks
+	// ExpiryWarning returns the installation's key.expiry-warning; with it
+	// set, New starts a goroutine that raises EventKeyExpiring once a day
+	// per key that expires within it, checking every ExpiryInterval. Nil
+	// starts none.
+	ExpiryWarning func(ctx context.Context) (time.Duration, error)
+	// ExpiryInterval is how often the keys are read for EventKeyExpiring;
+	// zero is DefaultExpiryInterval.
+	ExpiryInterval time.Duration
 	// Log receives what the package cannot return to anyone: a last-use
 	// write or an audit append that failed, entries dropped. Nil discards.
 	// No line carries a secret.
@@ -96,6 +112,10 @@ type Access struct {
 	newID  func() string
 	log    *slog.Logger
 	verify func(secret string, stored []byte) bool
+
+	events         Events
+	tenantNetworks TenantNetworks
+	expiry         expiryWatch
 
 	// sendMu makes a hand-off to a worker's queue and the start of Close
 	// exclude each other: a sender holds it for reading while it checks
@@ -249,9 +269,23 @@ func New(cfg Config) (*Access, error) {
 		auditTimeout:  orDefault(cfg.AuditTimeout, DefaultAuditTimeout),
 		auditRetries:  retries,
 		auditBackoff:  orDefault(cfg.AuditBackoff, DefaultAuditBackoff),
+
+		events:         cfg.Events,
+		tenantNetworks: cfg.TenantNetworks,
+		expiry: expiryWatch{
+			warning:  cfg.ExpiryWarning,
+			interval: orDefault(cfg.ExpiryInterval, DefaultExpiryInterval),
+			done:     make(chan struct{}),
+			raised:   map[string]time.Time{},
+		},
 	}
 	go a.markWorker()
 	go a.auditWriter()
+	if a.expiry.warning != nil {
+		go a.expiryWorker()
+	} else {
+		close(a.expiry.done)
+	}
 	return a, nil
 }
 
@@ -281,6 +315,9 @@ func (a *Access) Close(ctx context.Context) error {
 	})
 	marksOK := waitDone(ctx, a.marksDone)
 	auditOK := marksOK && waitDone(ctx, a.auditDone)
+	// The expiry worker writes nothing that must be counted; it is waited
+	// for so no goroutine outlives Close, and given up at the deadline.
+	_ = waitDone(ctx, a.expiry.done)
 	if marksOK && auditOK {
 		a.workCancel()
 		return nil

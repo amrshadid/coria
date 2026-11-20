@@ -8,6 +8,22 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- Reading the archive is faster. A whole instance's SHA-256 is computed
+  while the piece before it is written, so a 16 MiB download goes from 1.4 to
+  2.1 GB/s on loopback and a WADO-RS study retrieve from 1.3 to 2.0 GB/s, the
+  speed of one SHA-256 stream. ReadFiles messages are sent uncompressed
+  whatever the client accepts (gzip ran at about 80 MB/s on DICOM files);
+  compressed requests are still read. A range of a download over plain
+  HTTP/1.1 is sent by the system's file-to-socket copy (3.2 to 5.0 GB/s). A
+  scan's metadata passes each element through (300 instances 38 to 17 ms),
+  and a directory storage looks up each directory of a key once.
+- STOW-RS: a request holds at most 10,000 parts (413 past it) and each part's
+  header at most 16 KiB (400 past it); a receiver that stops cuts a request
+  in flight after its drain and answers 503 with Retry-After.
+- A duration setting also takes seconds and minutes (`30s`, `15m`), within
+  each setting's bounds.
+- The everyday tests leave the tests at scale to `make test-scale`, which
+  every push still runs in CI.
 - A tenant's catalog is leaner and faster to write. A claim on an instance
   is a row of its own, removed by the commit that confirms it, so a held
   instance is written once and never updated; it no longer repeats its
@@ -23,6 +39,37 @@ All notable changes to CORIA are written here. The form is
 
 ### Fixed
 
+- Behind a trusted proxy the caller's address is read from one header only,
+  named by the setting `access.forwarded-header` (`x-forwarded-for`, the
+  default, or `forwarded`); a client could write its own address in the other
+  and pass a key's network rule or have another address blocked.
+- An installation made before the keys' network rules starts: the master
+  database is upgraded before anything reads it.
+- A download or metadata read right after another no longer answers 503: a
+  storage opened for reading writes nothing, so two opens no longer remove
+  each other's probe file, nor a reception's temporary file.
+- The limits on failed calls hold under a flood (a new caller 1.3 ms to
+  240 ns; the block check of every request 5 ms to 32 ns); refusals by the
+  installation's networks and after a malformed message are counted.
+- The access settings are read again even when the request that triggers the
+  read is canceled, one read at a time, outside the lock every request takes.
+  A key's last use is written only by an allowed request.
+- A DICOMweb search holds one of the caller's open reads and one scan's
+  metadata file at a time, reads at most 256 MiB of metadata files, and
+  streams its answer (an instance answer stops at 64 MiB with the more-results
+  Warning); a search of 24 instances of 840 KB headers raised the heap by
+  72 MiB, now 7 MiB.
+- A read of a scan's metadata file that races its rewrite reads the index
+  again and tries once more instead of reporting data loss. A WADO-RS request
+  for several frames finds the frame table once and refuses repeated frames.
+- `coria download` continues a .part only when it is the start of the file
+  announced now (its SHA-256 is recorded beside it), and gives a file up as
+  soon as more bytes arrive than were announced.
+- STOW-RS: a body that ends inside a part is answered 400 and that part is
+  not kept; a request refused part way is answered without waiting for the
+  rest of its body.
+- A test helper of reception no longer moves its clock while a received file
+  waits for its row, which made two tests fail on slow runners.
 - A file in the Deflated Explicit VR Little Endian transfer syntax is
   archived. Its scan's metadata file records no pixel data place for it
   (offsets counted in inflated bytes are not places in the file); it was
@@ -37,6 +84,62 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- Keys can be rotated with no gap: `coria key rotate <id> --overlap 24h`, or
+  AccessService.RotateKey, which a key may call on itself (keeping at least an
+  hour of overlap). The successor has the same grants, holder and network
+  rules; a key is rotated once and no successor outlives `key.max-lifetime`
+  (3650d). `coria key revoke` names a live successor, and
+  `--with-successors` revokes the chain.
+- Where a key may be used from: its own networks and optionally a TLS client
+  certificate (`--network`, `--client-cert`, `coria key set`,
+  AccessService.SetKeyRules); a tenant's networks (`access.tenant-networks`);
+  the installation's allowed and denied networks. A refusal is answered as a
+  wrong key and audited with the rule's name. Trusted proxies
+  (`access.trusted-proxies`) give the real caller in the audit and the rules.
+  A key's last-used address is kept and shown.
+- Limits on failed calls only (`access.failure-limit`, `failure-window`,
+  `block-time`): an address that keeps sending bad keys, and a good key that
+  keeps being refused, are slowed and then blocked, each block audited; a
+  key's successful requests are never limited. Keys expiring within
+  `key.expiry-warning` (7d) are listed in the status.
+- The catalog service lists and gets subjects, sessions and scans in the
+  orders and with the filters the contract names, with totals only where a
+  running total gives them; checked against pydicom's reading of the files.
+- The data service streams the instances of an instance, scan, session or
+  subject, each announced with its key, place, length and SHA-256 and checked
+  as it is sent; a stream resumes after a position and can announce without
+  bytes. GET and HEAD of one instance by plain HTTP serve single byte ranges
+  (RFC 9110 14), If-Range, If-None-Match and the window of a bulk data URI,
+  with the SHA-256 as the strong ETag. A caller holds at most 16 streams and
+  downloads at once, the server 256. No deadline applies to these long reads;
+  a client that reads nothing for 5 minutes is cut.
+- The scan's metadata file records where each frame lies in its file and each
+  frame's SHA-256; a pass at each start gives scans archived before their
+  tables, resumable and yielding to reception, reported as the event
+  `frames_added`.
+- DICOMweb per tenant at /tenants/<tenant>/dicom-web, behind the key and
+  grant check and audited without UIDs: QIDO-RS answered from the catalog
+  with real paging; WADO-RS retrieve of studies, series and instances as
+  stored, each checked against its SHA-256 as it is sent, their metadata,
+  bulk data and frames (each frame checked against its SHA-256). Nothing is
+  transcoded.
+- A receiver of type stow, the tenant's STOW-RS service (PS3.18 10.5), closed
+  to every key it does not list (a key rotated from a listed one is taken);
+  each part is synced in the incoming area before the answer and received
+  like a DIMSE file. A part whose placing UIDs read whole differ from those
+  read from its first bytes is held as `uid_mismatch`.
+- `coria catalog subjects|sessions|scans`, `coria scan show --metadata` and
+  `coria download` (checked against the announced SHA-256 as it arrives,
+  resumed by a range guarded by the checksum); the interactive program
+  browses the catalog, shows a scan's headers, downloads, and shows a key's
+  rules, successor, last-used address and expiry warning.
+- Both clients are tested against the catalog, metadata and data services.
+- The proof reads the archive from outside (sections 13 to 19): the catalog
+  equals pydicom's reading, every scan's headers equal pydicom's
+  to_json_dict, downloads whole and in random ranges equal the manifests with
+  curl, a killed `coria download` finishes whole, dicomweb-client searches,
+  loads and stores a study that is archived byte for byte, the Python client
+  reads, and every way in refuses the same way, each refusal audited.
 - The scan's metadata file records each instance's transfer syntax, and an
   index of where its lines start; the metadata service reads both instead of
   opening instance files or reading from the start. Files written before this

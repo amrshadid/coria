@@ -72,3 +72,13 @@ func (c Credential) Reread() Credential {
 
 // GoString is String, for the %#v verb.
 func (c Credential) GoString() string { return c.String() }
+
+// KeyID returns the id of the key Authenticate accepted in c, or "" for a
+// credential it did not accept or the local operator. The server keys its
+// count of a key's refused calls by it.
+func (c Credential) KeyID() string {
+	if c.accepted == nil || !c.accepted.isKey {
+		return ""
+	}
+	return c.accepted.key.ID
+}

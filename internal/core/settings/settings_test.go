@@ -38,6 +38,16 @@ func TestBuiltin(t *testing.T) {
 		EventsRetention:       {Ordinary, "90d", false},
 		ReceiverHeaderLimit:   {InstallationOnly, "64MiB", false},
 		APICORSOrigins:        {InstallationOnly, "", false},
+		AccessTrustedProxies:  {InstallationOnly, "", false},
+		AccessForwardedHeader: {InstallationOnly, "x-forwarded-for", false},
+		AccessAllowedNetworks: {InstallationOnly, "", false},
+		AccessDeniedNetworks:  {InstallationOnly, "", false},
+		AccessTenantNetworks:  {Ordinary, "", false},
+		AccessFailureLimit:    {InstallationOnly, "10", false},
+		AccessFailureWindow:   {InstallationOnly, "1m", false},
+		AccessBlockTime:       {InstallationOnly, "15m", false},
+		KeyMaxLifetime:        {InstallationOnly, "3650d", false},
+		KeyExpiryWarning:      {InstallationOnly, "7d", false},
 	}
 	if got := tab.Names(); len(got) != len(want) {
 		t.Errorf("names %v, want the %d this test knows", got, len(want))
@@ -60,7 +70,7 @@ func TestKeyLifetimeBounds(t *testing.T) {
 	d, _ := MustBuiltin().Lookup(KeyDefaultLifetime)
 	for v, ok := range map[string]bool{
 		"1h": true, "0h": false, "3650d": true, "3651d": false, "87600h": true, "87601h": false,
-		"2160h": true, "90d": true, "": false, "90": false, "d": false, "-1d": false, "1.5d": false,
+		"2160h": true, "90d": true, "60m": true, "3600s": true, "59m": false, "": false, "90": false, "d": false, "-1d": false, "1.5d": false,
 		"090d": false, "90D": false, "1d1h": false, " 90d": false, "99999999999999999999d": false,
 	} {
 		if err := d.Validate(v); (err == nil) != ok {

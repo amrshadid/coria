@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -36,3 +38,24 @@ func (s *Server) SetSocketUser(u string) { s.socketUser = u }
 // by the point constants ("front", "checked", "receive", "handled"), so a test can stop a request at
 // each. It must be set before Start.
 func (s *Server) SetHook(h func(ctx context.Context, point string)) { s.hook = h }
+
+// SetGuardClock replaces the clock the limits on failed calls read and the
+// time a slowed refusal is held, so a test moves past a window or a block
+// without sleeping. It must be set before Start.
+func (s *Server) SetGuardClock(now func() time.Time, delay time.Duration) {
+	s.guard.now, s.guard.delay = now, delay
+}
+
+// SetStallTimeout replaces the write stall bound of long methods, so a test
+// of a client that stops reading does not wait minutes. It must be set
+// before Start.
+func (s *Server) SetStallTimeout(d time.Duration) { s.stall = d }
+
+// GuardRules returns the front step's reading of the access settings, as a
+// server made with read and the clock now holds it, so a test can call it
+// as the requests do: with their contexts, at the same time.
+func GuardRules(read func(ctx context.Context) (AccessRules, error), now func() time.Time) func(ctx context.Context) (AccessRules, bool) {
+	g := newGuard(read, slog.New(slog.DiscardHandler))
+	g.now = now
+	return g.current
+}

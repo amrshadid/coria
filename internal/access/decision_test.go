@@ -46,7 +46,7 @@ func TestStaleDecisionRefused(t *testing.T) {
 	if _, err := e.access.RemoveGrant(e.ctx, e.admin("RemoveGrant"), demoted.id, access.InstallationScope); err != nil {
 		t.Fatal(err)
 	}
-	_, err := e.access.CreateKey(e.ctx, d, "h", access.Expiry{})
+	_, err := e.access.CreateKey(e.ctx, d, "h", access.Expiry{}, master.KeyRules{})
 	wantErr(t, "CreateKey with the Decision of a key no longer admin", err, fault.Denied, access.MessageDenied)
 
 	expiring := e.key(t0.Add(time.Hour), on(master.Installation, master.RoleAdmin))
@@ -179,7 +179,7 @@ func TestDuplicateIDFreshOnFailure(t *testing.T) {
 	e.store.failCreateKey = fault.Wrap(fault.Internal, master.ErrDuplicateAuditID, "test: duplicate")
 	e.store.mu.Unlock()
 	e.reset()
-	_, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "h", access.Expiry{})
+	_, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "h", access.Expiry{}, master.KeyRules{})
 	wantErr(t, "create", err, fault.Internal, "")
 	_, entries := e.recorded()
 	e.store.mu.Lock()

@@ -4,17 +4,25 @@ import (
 	"net/netip"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/amrshadid/coria/internal/core/naming"
 	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 )
 
 // ReceiverType is a receiver's type. Its text is what a store keeps.
 type ReceiverType string
 
-// ReceiverDIMSE is a DICOM listener on one port (PS3.8, PS3.7).
-const ReceiverDIMSE ReceiverType = "dimse"
+// The receiver types.
+const (
+	// ReceiverDIMSE is a DICOM listener on one port (PS3.8, PS3.7).
+	ReceiverDIMSE ReceiverType = "dimse"
+	// ReceiverSTOW takes instances stored over HTTP into the tenant's
+	// DICOMweb service, STOW-RS (PS3.18 10.5), from the keys it lists.
+	ReceiverSTOW ReceiverType = "stow"
+)
 
 // The bounds of a receiver's configuration, the API contract's.
 const (
@@ -29,6 +37,12 @@ const (
 	MaxTransferSyns  = 64
 	MaxTLSFileLength = 255
 	MaxAddressRange  = 64
+	// MaxSTOWKeys bounds the keys one stow receiver lists.
+	MaxSTOWKeys = 256
+	// MinMaxRequestBytes and MaxMaxRequestBytes bound a stow receiver's
+	// largest request: at least its smallest largest file, at most 1 TiB.
+	MinMaxRequestBytes = MinMaxFileBytes
+	MaxMaxRequestBytes = 1 << 40
 )
 
 // The defaults the contract gives a receiver that leaves them out; the
@@ -38,6 +52,9 @@ const (
 	DefaultQuietPeriod  = 60 * time.Second
 	DefaultMaxOpenTime  = time.Hour
 	DefaultMaxFileBytes = 1 << 32
+	// DefaultMaxRequestBytes is a stow receiver's largest request when it
+	// names none: 16 GiB, a large study in one request.
+	DefaultMaxRequestBytes = 1 << 34
 )
 
 // Receiver is a way for data to arrive at a tenant, and how what arrives is
@@ -45,10 +62,13 @@ const (
 type Receiver struct {
 	// Name is the receiver's name, under the rule of a tenant's name.
 	Name string
-	// Type is its type; DIMSE holds that type's configuration.
+	// Type is its type; DIMSE or STOW holds that type's configuration,
+	// and the other is its zero value.
 	Type ReceiverType
 	// DIMSE is a DIMSE receiver's configuration.
 	DIMSE DIMSEReceiver
+	// STOW is a stow receiver's configuration.
+	STOW STOWReceiver
 	// Enabled says it accepts data.
 	Enabled bool
 	// Storage names the storage what it receives is archived to.
@@ -89,6 +109,61 @@ type DIMSEReceiver struct {
 	// TransferSyntaxes are the Transfer Syntax UIDs it accepts, empty for
 	// the server's default set.
 	TransferSyntaxes []string
+}
+
+// STOWReceiver is the configuration of a receiver that takes instances
+// stored over HTTP (PS3.18 10.5). It is closed by default: a request is
+// taken only from a key it lists, and that key must also hold writer or
+// more on the tenant, which the request's check asks before anything else.
+type STOWReceiver struct {
+	// Keys are the ids of the keys whose requests it takes; an empty list
+	// takes none. A key is listed by at most one stow receiver of a
+	// tenant, so which receiver a request comes to is never a choice. The
+	// route also takes a key rotated from one listed (the master holds the
+	// line of rotations, master.FindRotatedFrom); Accepts asks only the
+	// list.
+	Keys []string
+	// MaxRequestBytes is the largest request body it reads, from 1024 to
+	// 2^40; each part is also bounded by the receiver's MaxFileBytes.
+	MaxRequestBytes int64
+}
+
+// Accepts reports whether the receiver takes a request made with the key
+// whose id is keyID. An empty id, the local operator's, is never listed.
+func (s STOWReceiver) Accepts(keyID string) bool {
+	return keyID != "" && slices.Contains(s.Keys, keyID)
+}
+
+// isZero reports whether s holds nothing, as a receiver of another type
+// keeps it.
+func (s STOWReceiver) isZero() bool { return len(s.Keys) == 0 && s.MaxRequestBytes == 0 }
+
+func (s STOWReceiver) validate() error {
+	if len(s.Keys) > MaxSTOWKeys {
+		return invalid("a stow receiver lists at most 256 keys")
+	}
+	seen := make(map[string]bool, len(s.Keys))
+	for _, k := range s.Keys {
+		if err := validateKeyID(k); err != nil {
+			return err
+		}
+		if seen[k] {
+			return invalid("a stow receiver lists each key once")
+		}
+		seen[k] = true
+	}
+	if s.MaxRequestBytes < MinMaxRequestBytes || s.MaxRequestBytes > MaxMaxRequestBytes {
+		return invalid("a largest request is 1024 to 2^40 bytes")
+	}
+	return nil
+}
+
+// validateKeyID refuses what cannot be a key's id (master.ValidateID).
+func validateKeyID(id string) error {
+	if err := master.ValidateID("key id", id); err != nil {
+		return invalid(fault.Message(err))
+	}
+	return nil
 }
 
 // CallerRule admits callers by calling AE title, address range, or both.
@@ -161,7 +236,9 @@ const (
 	FieldDIMSETLSKey      ReceiverField = "dimse.tls.private_key_file"
 	FieldDIMSESOPClasses  ReceiverField = "dimse.sop_classes"
 	FieldDIMSESyntaxes    ReceiverField = "dimse.transfer_syntaxes"
-	maxReceiverFieldCount               = 16
+	FieldSTOWKeys         ReceiverField = "stow.key_ids"
+	FieldSTOWMaxRequest   ReceiverField = "stow.max_request_bytes"
+	maxReceiverFieldCount               = 18
 )
 
 // Validate returns an Invalid error unless r can be stored, by the
@@ -191,10 +268,26 @@ func (r Receiver) Validate() error {
 			return fault.Wrap(fault.Invalid, err, "the naming rule is not valid: "+err.Error())
 		}
 	}
-	if r.Type != ReceiverDIMSE {
-		return invalid("a receiver's type is dimse")
+	switch r.Type {
+	case ReceiverDIMSE:
+		if !r.STOW.isZero() {
+			return invalid("a dimse receiver has no stow configuration")
+		}
+		return r.DIMSE.validate()
+	case ReceiverSTOW:
+		if !r.DIMSE.isZero() {
+			return invalid("a stow receiver has no dimse configuration")
+		}
+		return r.STOW.validate()
 	}
-	return r.DIMSE.validate()
+	return invalid("a receiver's type is dimse or stow")
+}
+
+// isZero reports whether d holds nothing, as a receiver of another type
+// keeps it.
+func (d DIMSEReceiver) isZero() bool {
+	return d.Port == 0 && d.BindAddress == "" && d.AETitle == "" && !d.AnyCaller && len(d.Callers) == 0 &&
+		d.TLS == nil && len(d.SOPClasses) == 0 && len(d.TransferSyntaxes) == 0
 }
 
 func (d DIMSEReceiver) validate() error {
@@ -277,6 +370,7 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 	out.DIMSE.Callers = slices.Clone(stored.DIMSE.Callers)
 	out.DIMSE.SOPClasses = slices.Clone(stored.DIMSE.SOPClasses)
 	out.DIMSE.TransferSyntaxes = slices.Clone(stored.DIMSE.TransferSyntaxes)
+	out.STOW.Keys = slices.Clone(stored.STOW.Keys)
 	if stored.DIMSE.TLS != nil {
 		t := *stored.DIMSE.TLS
 		out.DIMSE.TLS = &t
@@ -292,6 +386,9 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 		return out.DIMSE.TLS
 	}
 	for _, f := range fields {
+		if typ, _, typed := strings.Cut(string(f), "."); typed && ReceiverType(typ) != stored.Type {
+			return stored, invalid("a change of a " + string(stored.Type) + " receiver names a field of another type: " + strconv.Quote(string(f)))
+		}
 		switch f {
 		case FieldEnabled:
 			out.Enabled = change.Enabled
@@ -345,6 +442,10 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 			out.DIMSE.SOPClasses = slices.Clone(change.DIMSE.SOPClasses)
 		case FieldDIMSESyntaxes:
 			out.DIMSE.TransferSyntaxes = slices.Clone(change.DIMSE.TransferSyntaxes)
+		case FieldSTOWKeys:
+			out.STOW.Keys = slices.Clone(change.STOW.Keys)
+		case FieldSTOWMaxRequest:
+			out.STOW.MaxRequestBytes = change.STOW.MaxRequestBytes
 		default:
 			return stored, invalid("a change of a receiver names a field it does not have: " + strconv.Quote(string(f)))
 		}
@@ -355,7 +456,10 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 	return out, nil
 }
 
-// ReceiversClash reports whether two DIMSE receivers of one tenant would
+// ReceiversClash reports whether two receivers of one tenant would contend
+// for what only one may have. Two stow receivers clash when they list a key
+// in common, since a request names no receiver and is taken by the one
+// receiver that lists its key. Two DIMSE receivers clash when they would
 // contend for one port at the operating system: on the same port, two bind
 // addresses clash when they are equal, when either is empty (every
 // address), when either is "::" (every IPv6 address, and on a dual-stack
@@ -365,6 +469,9 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 // IPv4-mapped IPv6 addresses are refused by Validate, so each address has
 // one spelling here.
 func ReceiversClash(a, b Receiver) bool {
+	if a.Type == ReceiverSTOW && b.Type == ReceiverSTOW {
+		return slices.ContainsFunc(a.STOW.Keys, func(k string) bool { return slices.Contains(b.STOW.Keys, k) })
+	}
 	if a.Type != ReceiverDIMSE || b.Type != ReceiverDIMSE || a.DIMSE.Port != b.DIMSE.Port {
 		return false
 	}
@@ -374,4 +481,13 @@ func ReceiversClash(a, b Receiver) bool {
 	}
 	ipv4 := func(s string) bool { ad, err := netip.ParseAddr(s); return err == nil && ad.Is4() }
 	return (x == "0.0.0.0" && ipv4(y)) || (y == "0.0.0.0" && ipv4(x))
+}
+
+// ClashError is the refusal of a receiver that clashes with other
+// (ReceiversClash), in the words of what the two contend for.
+func ClashError(other Receiver) error {
+	if other.Type == ReceiverSTOW {
+		return Precondition("the receiver " + other.Name + " already takes requests from one of these keys; a key is listed by one stow receiver of a tenant")
+	}
+	return Precondition("the receiver " + other.Name + " listens on the same port and an overlapping address")
 }

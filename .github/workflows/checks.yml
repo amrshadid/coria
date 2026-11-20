@@ -396,19 +396,22 @@ jobs:
           go-version: '1.27'
 
       # The Python packages at exact versions with their hashes
-      # (.github/actions/python-tools); sqlite3 from the distribution;
-      # grpcurl from its release, checked against scripts/tools/grpcurl.sha256.
+      # (.github/actions/python-tools): the server's checks, and pydicom and
+      # dicomweb-client for reading the archive; sqlite3 and dcmtk from the
+      # distribution; grpcurl from its release, checked against
+      # scripts/tools/grpcurl.sha256.
       - name: Python tools
         id: python
         uses: ./.github/actions/python-tools
         with:
-          requirements: scripts/requirements/check-server.txt
+          requirements: scripts/requirements/check-server.txt scripts/requirements/prove-reading.txt
 
       - name: Tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install --yes --no-install-recommends sqlite3 > /dev/null
+          sudo apt-get install --yes --no-install-recommends sqlite3 dcmtk > /dev/null
           sqlite3 --version
+          /usr/bin/storescu --version | head -1
           bash scripts/tools/install-grpcurl.sh v1.9.4 "$RUNNER_TEMP/grpcurl/grpcurl"
 
       - name: The proof
@@ -418,7 +421,7 @@ jobs:
           CORIA_PROVE_STRICT: '1'
           VENV_PYTHON: ${{ steps.python.outputs.python }}
         run: |
-          make prove PYTHON="$VENV_PYTHON" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl" | tee "$RUNNER_TEMP/proof.log"
+          make prove PYTHON="$VENV_PYTHON" GRPCURL="$RUNNER_TEMP/grpcurl/grpcurl" DCMTK=/usr/bin | tee "$RUNNER_TEMP/proof.log"
 
       # The table of every check and what it measured, on the run's page,
       # also when a check failed.

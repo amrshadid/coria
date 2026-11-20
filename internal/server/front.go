@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect/v2"
 
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // The audit entries the front step writes for a caller it authenticated
@@ -132,12 +133,8 @@ func (s *Server) front(next http.Handler) http.Handler {
 		ctx := r.Context()
 		id, _ := requestIDFrom(ctx)
 		method, metric := s.nameOf(r)
-		x := exchange{method: method, metric: metric, remote: remoteOf(ctx, r.RemoteAddr)}
-		local, isLocal := localFrom(ctx)
-		facts := access.Request{Method: method, RemoteAddress: x.remote, RequestID: id}
-		s.at(ctx, pointFront)
-		accepted, err := s.access.Authenticate(ctx, credentialFrom(r.Header, local, isLocal), facts)
-		if err != nil {
+		x := exchange{method: method, metric: metric}
+		refuse := func(err error) {
 			ce := s.answer(err)
 			writeWireError(w, wireOf(r), ce.Code(), ce.Message())
 			if r.ProtoMajor == 1 {
@@ -150,7 +147,58 @@ func (s *Server) front(next http.Handler) http.Handler {
 				_ = http.NewResponseController(w).SetReadDeadline(time.Now())
 			}
 			s.finish(ctx, x, &Call{RequestID: id, Method: method}, start, err)
+		}
+		// The local socket is judged by no network rule nor limit, so its
+		// requests do not read the rules: the operator on the machine is
+		// let in even when they cannot be read.
+		var rules AccessRules
+		if _, isLocal := localFrom(ctx); !isLocal {
+			var ok bool
+			if rules, ok = s.guard.current(ctx); !ok {
+				// The installation's access settings were never read: the
+				// master does not answer, and no request can be judged.
+				refuse(errRulesUnread)
+				return
+			}
+		}
+		o := originOf(ctx, r, rules.TrustedProxies, rules.ForwardedHeader)
+		ctx = context.WithValue(ctx, originKey{}, o)
+		x.remote = o.remote
+		local, isLocal := localFrom(ctx)
+		facts := access.Request{Method: method, RemoteAddress: o.remote, RequestID: id, Local: o.local, ClientCert: o.clientCert}
+		s.at(ctx, pointFront)
+		// The installation's networks are judged before anything else, and
+		// a blocked address before its key is read: neither costs the
+		// master a read.
+		if rule := installationRefusal(rules, o); rule != "" {
+			// Counted and slowed as a bad key is, so a refused network
+			// cannot probe the server at full speed either.
+			err := s.access.RecordRefusal(facts, "", rule, false, time.Time{})
+			if s.failAddress(o, rules, facts) {
+				s.guard.wait(ctx)
+			}
+			refuse(err)
 			return
+		}
+		if !o.local && o.addr.IsValid() {
+			if blocked, _ := s.guard.addresses.blocked(addressKey(o.addr), s.guard.now()); blocked {
+				refuse(s.access.RecordRefusal(facts, "", access.RuleAddressBlocked, false, time.Time{}))
+				return
+			}
+		}
+		accepted, err := s.access.Authenticate(ctx, credentialFrom(r.Header, local, isLocal), facts)
+		if err != nil {
+			if fault.KindOf(err) == fault.Unauthenticated && s.failAddress(o, rules, facts) {
+				s.guard.wait(ctx)
+			}
+			refuse(err)
+			return
+		}
+		if keyID := accepted.KeyID(); keyID != "" && !o.local {
+			if blocked, _ := s.guard.keys.blocked(keyID, s.guard.now()); blocked {
+				refuse(s.access.RecordRefusal(facts, keyID, access.RuleKeyBlocked, false, time.Time{}))
+				return
+			}
 		}
 		ctx = context.WithValue(ctx, identityKey{}, accepted)
 		defer func() {
@@ -175,6 +223,11 @@ func (s *Server) front(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// errRulesUnread answers a request when the installation's access settings
+// have never been read: the master does not answer, so no request can be
+// judged by them, and none is let through unjudged.
+var errRulesUnread = fault.New(fault.Unavailable, "the master database does not answer")
 
 // credentialFrom reads the credential of a request from its headers and
 // the connection it came on. More than one Authorization header is a

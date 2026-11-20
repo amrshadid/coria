@@ -13,6 +13,7 @@ import (
 
 	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/server"
 )
@@ -282,6 +283,11 @@ func (noChecker) Record(access.Decision, master.Outcome, string, access.Facts) {
 
 // RecordUnchecked records nothing.
 func (noChecker) RecordUnchecked(access.Credential, access.Request, string) {}
+
+// RecordRefusal records nothing and answers unauthenticated.
+func (noChecker) RecordRefusal(access.Request, string, string, bool, time.Time) error {
+	return fault.New(fault.Unauthenticated, access.MessageUnauthenticated)
+}
 
 // AuditStats counts nothing.
 func (noChecker) AuditStats() access.AuditStats { return access.AuditStats{} }

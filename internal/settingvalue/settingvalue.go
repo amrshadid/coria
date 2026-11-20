@@ -2,6 +2,7 @@ package settingvalue
 
 import (
 	"context"
+	"time"
 
 	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/fault"
@@ -181,4 +182,55 @@ func (t Tenant) BindAddresses(ctx context.Context) (settings.BindAddresses, erro
 func (t Tenant) IncomingLimit(ctx context.Context) (int64, error) {
 	v, err := t.r.Tenant(ctx, t.st, settings.IncomingLimit)
 	return typed(settings.IncomingLimit, v, err, settings.ParseSize)
+}
+
+// Networks returns the installation's value of a setting that lists
+// networks (access.trusted-proxies, access.allowed-networks,
+// access.denied-networks).
+func (r Reader) Networks(ctx context.Context, name string) (settings.Networks, error) {
+	v, err := r.Installation(ctx, name)
+	return typed(name, v, err, settings.ParseNetworks)
+}
+
+// ForwardedHeader returns the installation's access.forwarded-header.
+func (r Reader) ForwardedHeader(ctx context.Context) (settings.ForwardedHeader, error) {
+	v, err := r.Installation(ctx, settings.AccessForwardedHeader)
+	return typed(settings.AccessForwardedHeader, v, err, settings.ParseForwardedHeader)
+}
+
+// FailureLimit returns the installation's access.failure-limit.
+func (r Reader) FailureLimit(ctx context.Context) (int, error) {
+	v, err := r.Installation(ctx, settings.AccessFailureLimit)
+	return typed(settings.AccessFailureLimit, v, err, settings.ParseFailureLimit)
+}
+
+// FailureWindow returns the installation's access.failure-window.
+func (r Reader) FailureWindow(ctx context.Context) (time.Duration, error) {
+	v, err := r.Installation(ctx, settings.AccessFailureWindow)
+	return typed(settings.AccessFailureWindow, v, err, settings.ParseFailureWindow)
+}
+
+// BlockTime returns the installation's access.block-time.
+func (r Reader) BlockTime(ctx context.Context) (time.Duration, error) {
+	v, err := r.Installation(ctx, settings.AccessBlockTime)
+	return typed(settings.AccessBlockTime, v, err, settings.ParseBlockTime)
+}
+
+// KeyMaxLifetime returns the installation's key.max-lifetime.
+func (r Reader) KeyMaxLifetime(ctx context.Context) (time.Duration, error) {
+	v, err := r.Installation(ctx, settings.KeyMaxLifetime)
+	return typed(settings.KeyMaxLifetime, v, err, settings.ParseKeyLifetime)
+}
+
+// KeyExpiryWarning returns the installation's key.expiry-warning.
+func (r Reader) KeyExpiryWarning(ctx context.Context) (time.Duration, error) {
+	v, err := r.Installation(ctx, settings.KeyExpiryWarning)
+	return typed(settings.KeyExpiryWarning, v, err, settings.ParseExpiryWarning)
+}
+
+// TenantNetworks returns access.tenant-networks as it applies on the
+// tenant: its own, else the installation's, else none.
+func (t Tenant) TenantNetworks(ctx context.Context) (settings.Networks, error) {
+	v, err := t.r.Tenant(ctx, t.st, settings.AccessTenantNetworks)
+	return typed(settings.AccessTenantNetworks, v, err, settings.ParseNetworks)
 }

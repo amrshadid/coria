@@ -505,7 +505,7 @@ func testTimeEdges(e *env) {
 	if !SameTime(got.Created, first) || !SameTime(got.Expires, last) {
 		e.Errorf("created %v and expires %v, want %v and %v", got.Created, got.Expires, first, last)
 	}
-	w, err := e.s.MarkKeyUsed(e.ctx, k.ID, last)
+	w, err := e.s.MarkKeyUsed(e.ctx, k.ID, last, "")
 	if err != nil || !w {
 		e.Errorf("MarkKeyUsed at the last time = %v, %v", w, err)
 	}

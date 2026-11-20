@@ -311,12 +311,14 @@ func publicKey(k master.Key) master.Key {
 	return k
 }
 
-// CreateKey makes a key for holder, which expires as exp says. It needs the
-// installation's admin. The holder is required, at most 256 bytes of UTF-8.
-// The key and its audit entry, which names the key and its holder and never
-// its secret, are written in one transaction. The whole key is in the
-// result's Secret, once: only its hash is stored.
-func (a *Access) CreateKey(ctx context.Context, d Decision, holder string, exp Expiry) (CreatedKey, error) {
+// CreateKey makes a key for holder, which expires as exp says and may be
+// used only as rules allow. It needs the installation's admin, and so does a
+// key that never expires: no other caller can ask for one. The holder is
+// required, at most 256 bytes of UTF-8. The key and its audit entry, which
+// names the key, its holder and its rules and never its secret, are written
+// in one transaction. The whole key is in the result's Secret, once: only
+// its hash is stored.
+func (a *Access) CreateKey(ctx context.Context, d Decision, holder string, exp Expiry, rules master.KeyRules) (CreatedKey, error) {
 	entry, by, err := a.change(ctx, d, "", map[string]string{detailHolder: auditText(holder, master.MaxAuditDetailValueLength)})
 	if err != nil {
 		return CreatedKey{}, err
@@ -330,8 +332,9 @@ func (a *Access) CreateKey(ctx context.Context, d Decision, holder string, exp E
 	if err != nil {
 		return CreatedKey{}, a.failAfter(entry, err)
 	}
-	k := master.Key{ID: made.ID, Hash: made.Hash[:], Holder: holder, Created: now, Expires: expires}
+	k := master.Key{ID: made.ID, Hash: made.Hash[:], Holder: holder, Created: now, Expires: expires, Rules: rules}
 	entry.Object = k.ID
+	addRuleDetails(entry.Details, rules)
 	if expires.IsZero() {
 		entry.Details[detailExpires] = "never"
 	} else {

@@ -92,7 +92,7 @@ func (s *accessService) CreateKey(ctx context.Context, req *coriav1.CreateKeyReq
 	case *coriav1.CreateKeyRequest_ExpireAfter:
 		exp = access.ExpireAfter(e.ExpireAfter.AsDuration())
 	}
-	made, err := s.h.Access.CreateKey(ctx, c.Decision, req.GetHolder(), exp)
+	made, err := s.h.Access.CreateKey(ctx, c.Decision, req.GetHolder(), exp, master.KeyRules{})
 	if err != nil {
 		return nil, err
 	}

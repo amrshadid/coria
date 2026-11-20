@@ -55,7 +55,7 @@ func (m *memStore) TenantByName(_ context.Context, name string) (master.Tenant, 
 	return master.Tenant{}, fault.New(fault.NotFound, "no such tenant")
 }
 
-func (m *memStore) MarkKeyUsed(ctx context.Context, _ string, _ time.Time) (bool, error) {
+func (m *memStore) MarkKeyUsed(ctx context.Context, _ string, _ time.Time, _ string) (bool, error) {
 	if m.mark != nil {
 		return false, m.mark(ctx)
 	}

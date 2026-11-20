@@ -107,7 +107,7 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 		entry.TenantName = clipTenantName(req.tenant)
 	}
 
-	p, reason, err := a.authenticate(ctx, cred, &entry)
+	p, reason, err := a.authenticate(ctx, cred, facts, &entry)
 	if err != nil {
 		return Decision{}, a.fail(ctx, entry, err)
 	}
@@ -166,6 +166,24 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 		a.record(entry, master.OutcomeRefused, reasonNoGrant)
 		return Decision{}, fault.New(fault.Denied, MessageDenied)
 	}
+	if d.hasTenant && p.isKey {
+		// The tenant's networks are judged only once the caller may act on
+		// the tenant, so a caller with no grant there is told Denied, as for
+		// a tenant that does not exist, and learns nothing of its rules.
+		refused, err := a.tenantRuleRefusal(ctx, d.tenant, facts)
+		if err != nil {
+			return Decision{}, a.fail(ctx, entry, err)
+		}
+		if refused {
+			return Decision{}, a.refuseByRule(entry, RuleTenantNetworks, req.tenant)
+		}
+	}
+	if p.isKey {
+		// The key is marked used only by a request the check allows, so a
+		// request refused for its grants or its tenant's networks leaves the
+		// key's last use, and the address beside it, as they were.
+		a.queueMark(p.key, entry.Time, entry.RemoteAddress)
+	}
 	entry.ID = ""
 	d.entry = entry
 	d.req = req
@@ -183,8 +201,8 @@ func (a *Access) Check(ctx context.Context, cred Credential, req Requirement, fa
 // store that fails is Unavailable or Internal, and recorded as failed. A good
 // credential is returned as one that carries the caller: Check given it does
 // not read the key again, so a request reads its key once whether or not it
-// went through Authenticate first. A key that passes has its last use marked
-// here, as Check would.
+// went through Authenticate first. A key's last use is marked by Check, once
+// it allows the request, never here.
 func (a *Access) Authenticate(ctx context.Context, cred Credential, facts Request) (Credential, error) {
 	if cred.accepted != nil {
 		return cred, nil
@@ -200,7 +218,7 @@ func (a *Access) Authenticate(ctx context.Context, cred Credential, facts Reques
 		a.record(entry, master.OutcomeFailed, reasonBadCheck)
 		return Credential{}, fault.New(fault.Internal, "internal error")
 	}
-	p, reason, err := a.authenticate(ctx, cred, &entry)
+	p, reason, err := a.authenticate(ctx, cred, facts, &entry)
 	if err != nil {
 		return Credential{}, a.fail(ctx, entry, err)
 	}
@@ -260,7 +278,11 @@ func allows(p Principal, req Requirement, tenantID string) bool {
 // It sets the entry's key id or local user as soon as either is known, so a
 // refusal of a key with a known shape records which key it was
 // (audit.proto, AuditEntry.key_id).
-func (a *Access) authenticate(ctx context.Context, cred Credential, entry *master.AuditEntry) (Principal, string, error) {
+//
+// A key whose own rules (its networks, its client certificate) refuse the
+// request is refused here like any key that is no good, with the rule's
+// name as the reason and its event raised.
+func (a *Access) authenticate(ctx context.Context, cred Credential, facts Request, entry *master.AuditEntry) (Principal, string, error) {
 	if p := cred.accepted; p != nil {
 		// Authenticate read and judged this key earlier in this same request.
 		// Its expiry is judged again now, from the key as read, at no cost;
@@ -274,6 +296,9 @@ func (a *Access) authenticate(ctx context.Context, cred Credential, entry *maste
 		if reason := keyState(p.key, entry.Time); reason != "" {
 			return Principal{}, reason, nil
 		}
+		if reason := a.ruleReason(p.key, facts, *entry); reason != "" {
+			return Principal{}, reason, nil
+		}
 		if cred.reread {
 			k, err := a.store.Key(ctx, p.key.ID)
 			if fault.KindOf(err) == fault.NotFound {
@@ -283,6 +308,9 @@ func (a *Access) authenticate(ctx context.Context, cred Credential, entry *maste
 				return Principal{}, "", err
 			}
 			if reason := keyState(k, entry.Time); reason != "" {
+				return Principal{}, reason, nil
+			}
+			if reason := a.ruleReason(k, facts, *entry); reason != "" {
 				return Principal{}, reason, nil
 			}
 		}
@@ -316,7 +344,9 @@ func (a *Access) authenticate(ctx context.Context, cred Credential, entry *maste
 	if reason := a.keyRefusal(k, sec, entry.Time); reason != "" {
 		return Principal{}, reason, nil
 	}
-	a.queueMark(k, entry.Time)
+	if reason := a.ruleReason(k, facts, *entry); reason != "" {
+		return Principal{}, reason, nil
+	}
 	k.Hash = nil
 	return Principal{key: k, isKey: true}, "", nil
 }
@@ -329,6 +359,20 @@ func (a *Access) keyRefusal(k master.Key, sec string, now time.Time) string {
 		return reasonWrongSecret
 	}
 	return keyState(k, now)
+}
+
+// ruleReason returns the audit reason when k's own rules refuse the request
+// entry stands for, having raised the refusal's event, or "". It is judged
+// after the secret and the key's state, so a caller who does not hold the
+// key, or holds one that ended, never meets it.
+func (a *Access) ruleReason(k master.Key, facts Request, entry master.AuditEntry) string {
+	rule := keyRuleRefusal(k, facts)
+	if rule == "" {
+		return ""
+	}
+	a.raise(Event{Kind: EventRefused, Time: entry.Time, Rule: rule, KeyID: k.ID,
+		Address: entry.RemoteAddress, Tenant: entry.TenantName, Method: entry.Method})
+	return RuleReason(rule)
 }
 
 // allGrants reads every grant of a key, page by page.

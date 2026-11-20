@@ -198,7 +198,7 @@ func TestPoolIsNotLeaked(t *testing.T) {
 			defer wg.Done()
 			_, _ = m.Key(ctx, key.ID)
 			_, _, _ = m.GrantsByKey(ctx, key.ID, master.Page{Limit: 10})
-			_, _ = m.MarkKeyUsed(ctx, key.ID, mastertest.T0)
+			_, _ = m.MarkKeyUsed(ctx, key.ID, mastertest.T0, "")
 		}()
 	}
 	wg.Wait()

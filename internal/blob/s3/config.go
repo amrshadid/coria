@@ -117,6 +117,11 @@ type Config struct {
 	// turns the cleanup at Open off, and a later call of AbortStaleUploads
 	// then uses DefaultStaleUploadAge.
 	StaleUploadAge time.Duration
+	// ForReading opens the storage for Read, Stat, List and Usage only: Open
+	// lists to check the bucket and the credentials, and neither puts its
+	// probe object nor aborts old uploads, so a read costs no write and
+	// needs no right to write; Put and Delete are refused.
+	ForReading bool
 }
 
 // String returns the configuration without its credentials. The credentials
@@ -148,6 +153,7 @@ type settings struct {
 	partSize    int64
 	concurrency int
 	staleAge    time.Duration
+	forReading  bool
 	memory      int64
 	// The timeouts, which are the constants above except in tests that need
 	// a server to be slow without waiting for a minute.
@@ -165,7 +171,7 @@ func (c Config) check() (settings, error) {
 		region: c.Region, bucket: c.Bucket, pathStyle: c.PathStyle,
 		accessKey: c.AccessKeyID, secretKey: c.SecretAccessKey,
 		allow: c.AllowAddress, resolver: c.Resolver,
-		partSize: c.PartSize, concurrency: c.Concurrency, staleAge: c.StaleUploadAge,
+		partSize: c.PartSize, concurrency: c.Concurrency, staleAge: c.StaleUploadAge, forReading: c.ForReading,
 		callTimeout: callTimeout, dataTimeout: dataTimeout, idleTimeout: idleTimeout, maxParts: maxParts,
 	}
 	if c.Endpoint != "" {

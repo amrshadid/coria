@@ -166,6 +166,11 @@ var rules = map[string]rule{
 	coriav1connect.AccessServiceSetGrantProcedure:    fixed(installationAdmin),
 	coriav1connect.AccessServiceListGrantsProcedure:  fixed(installationAdmin),
 	coriav1connect.AccessServiceRemoveGrantProcedure: fixed(installationAdmin),
+	coriav1connect.AccessServiceSetKeyRulesProcedure: fixed(installationAdmin),
+	// RotateKey: any authenticated caller reaches the handler, and package
+	// access lets through only the installation's admin or the key being
+	// rotated, deciding before it reads or validates anything else.
+	coriav1connect.AccessServiceRotateKeyProcedure: fixed(access.Authenticated()),
 	// "Role: none; any caller the server authenticates."
 	coriav1connect.AccessServiceWhoAmIProcedure: fixed(access.Authenticated()),
 
@@ -309,25 +314,9 @@ var rules = map[string]rule{
 		}
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: d}
 	}),
-}
 
-// pendingRules is the table of the methods whose service the contract
-// defines and no handler serves yet: the services api/not-served.txt
-// names. Methods does not consult it, so the server answers each of these
-// methods as one it does not serve, after the caller is authenticated, and
-// a listed service can never be served by mistake with no handler behind
-// it. Each line is written with its method's contract and checked against
-// its Role line now; the change that serves a service moves its lines
-// into rules and its name off the list, and the tests fail until both are
-// done.
-//
-// Every method here reads the archive of one tenant, and needs reader on
-// it. The object of an entry is the path of labels the request names,
-// each label recorded only when it passes the label rule; never an
-// instance id or a storage key, each of which holds a SOP Instance UID as
-// received in this version, and is recorded only as present.
-var pendingRules = map[string]rule{
-	// CatalogService.
+	// CatalogService: reader on the tenant. The object is the path of
+	// labels the request names, and the filters are in the details.
 	coriav1connect.CatalogServiceListSubjectsProcedure: byMessage(func(r *v1.ListSubjectsRequest) (access.Requirement, access.Request) {
 		d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
 		timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
@@ -349,11 +338,26 @@ var pendingRules = map[string]rule{
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel())}
 	}),
 
-	// DataService.
+	// DataService: reader on the tenant. The object is the path of labels
+	// the request names; an instance id and a position are recorded only
+	// as present.
 	coriav1connect.DataServiceReadFilesProcedure: byMessage(func(r *v1.ReadFilesRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: readFilesDetails(r)}
 	}),
 }
+
+// pendingRules is the table of the methods whose service the contract
+// defines and no handler serves yet: the services api/not-served.txt
+// names. Methods does not consult it, so the server answers each of these
+// methods as one it does not serve, after the caller is authenticated, and
+// a listed service can never be served by mistake with no handler behind
+// it. Each line is written with its method's contract and checked against
+// its Role line now; the change that serves a service moves its lines
+// into rules and its name off the list, and the tests fail until both are
+// done.
+//
+// It is empty while the server serves every service the contract defines.
+var pendingRules = map[string]rule{}
 
 // The keys of the details the reading methods put in audit entries.
 const (

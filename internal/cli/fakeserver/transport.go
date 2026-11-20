@@ -57,6 +57,7 @@ func (s *Server) handler() http.Handler {
 	s.Register(srv)
 	mux := http.NewServeMux()
 	connecthttp.Mount(mux, srv)
+	mux.HandleFunc("GET /tenants/{tenant}/instances/{subject}/{session}/{scan}/{id}", s.serveInstance)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
 		r.Body = io.NopCloser(bytes.NewReader(body))

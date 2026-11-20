@@ -284,6 +284,18 @@ def not_served_services():
     return [l.split("#")[0].strip().removeprefix("coria.v1.") for l in lines if l.split("#")[0].strip()]
 
 
+def test_a_method_of_no_service_answers_unimplemented(client):
+    """A method of no service of the contract answers UNIMPLEMENTED.
+
+    Once every service is served, api/not-served.txt is empty and the test
+    below has nothing to cover; this stands in for "a method not served".
+    """
+    call = client._channel.unary_unary("/coria.v1.NotServedService/Nothing")
+    with pytest.raises(grpc.RpcError) as caught:
+        call(b"")
+    assert caught.value.code() == grpc.StatusCode.UNIMPLEMENTED
+
+
 @pytest.mark.parametrize("service", not_served_services())
 def test_a_service_without_handlers_answers_unimplemented(client, service):
     """Every method of a service the server does not serve yet answers UNIMPLEMENTED.

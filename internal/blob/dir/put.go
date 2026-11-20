@@ -24,7 +24,7 @@ import (
 // an object into it, or, since a remove by name cannot tell a directory
 // from what replaced it, remove an object that took its name.
 func (s *Store) Put(ctx context.Context, key string, r io.Reader) (blob.Written, error) {
-	if err := s.begin(ctx); err != nil {
+	if err := s.beginWrite(ctx); err != nil {
 		return blob.Written{}, err
 	}
 	if err := blob.CheckKey(key); err != nil {

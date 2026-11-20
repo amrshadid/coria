@@ -140,7 +140,10 @@
 // A message over 4 MiB is refused, read or sent (RESOURCE_EXHAUSTED), sent
 // counted in the request's encoding; a call without a deadline gets 30
 // seconds, and no call runs longer than 5 minutes, whatever its client
-// asks; the body of a request whose requirement reads it must arrive within
+// asks, except the long methods (Config.LongMethods), which stream what may
+// take hours and have no deadline, a client that reads nothing of their
+// response for 5 minutes (StallTimeout) being cut instead; the body of a
+// request whose requirement reads it must arrive within
 // 10 seconds, before the check (only an authenticated caller's body is
 // read before the check); headers are bounded to 64 KiB, HTTP/2
 // streams to 100 per connection, the time to send headers to 10 seconds, an
@@ -159,7 +162,36 @@
 // answered and audited at about 16,000 refusals a second, and makes the
 // master's audit log grow by about 6 MB a second, until the audit writer's
 // bounded queue drops entries, which it counts. Both numbers were measured on
-// one development laptop and are an order of magnitude, not a promise. A limit per remote address is later work.
+// one development laptop and are an order of magnitude, not a promise. The
+// limits on failed calls below hold such a flood from one address: past the
+// installation's access.failure-limit its refusals are held a second each,
+// and at twice the limit it is blocked.
+//
+// # Where a request comes from
+//
+// The front step judges once, before any key is read, where a request comes
+// from (caller.go): the connection's peer, or, when the peer is one of the
+// installation's access.trusted-proxies, the rightmost address that is not
+// a trusted proxy itself in the one header access.forwarded-header names
+// (X-Forwarded-For by default, or Forwarded, RFC 7239); the other header is
+// never read, since a proxy that appends to one passes a client's copy of
+// the other through. That address is what the audit entry, the log line and a key's
+// last use record, and what every network rule judges. A request from one
+// of access.denied-networks, or from outside access.allowed-networks when
+// it lists any, is refused there and recorded with the rule's name (the
+// access package judges a key's and a tenant's networks later, in the
+// check). Every refusal answers as a key that is no good does.
+//
+// The limits on failed calls (failures.go, guard.go) count only refusals:
+// per address (an IPv6 address by its /64) the requests refused for their
+// credential, per key the requests of a good key refused for its grants.
+// Past access.failure-limit in access.failure-window a refusal is held a
+// second before it is answered; at twice the limit the address or the key is
+// blocked for access.block-time, and every request from it is refused and
+// audited, the block's start raised as an event. A request that succeeds is
+// never counted nor held. The counts live in this process's memory, bounded
+// in size; a restart forgets them. The local socket is judged by none of
+// this, and does not read the rules at all.
 //
 // # One server per data directory
 //

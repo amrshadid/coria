@@ -85,10 +85,12 @@ migration runner, cursors, value encodings).
 | Package | What it does |
 |---|---|
 | `internal/receive/dimse` | The DICOM listener of one receiver, on go-dicom: admission, C-ECHO, C-STORE |
+| `internal/receive/stow` | The STOW-RS receiver of a tenant (PS3.18 10.5): each part of a request streamed into the incoming area through the pipeline's one entry, the answer written once every part is durable |
 | `internal/receive/supervise` | Starts, restarts and stops listeners and each tenant's pipeline as configuration and space change |
 | `internal/receive` | A tenant's reception pipeline: a landed file to a verified scan, its work queue, its recovery at start |
 | `internal/receive/incoming` | A tenant's incoming area: a file synced before it is acknowledged |
 | `internal/receive/header`, `sidecar` | Reading what the pipeline needs from a file's header; the scan's metadata sidecar |
+| `internal/receive/frames` | Each instance's frame table (where each frame lies in its file) for the sidecar, and the pass at start that gives tables to sidecars written before them |
 
 ### Clients
 
@@ -140,12 +142,42 @@ for `testkit`; for the other two, `go list -deps ./cmd/coria` shows it.
 A restart loses nothing held only in memory: a reception in progress, a
 unit of work and an event not yet delivered are all rows.
 
+## What a read checks, and its bounds
+
+- **A whole instance** (a retrieve, a download) is checked against the
+  SHA-256 it was archived with as it is sent; a mismatch cuts the answer
+  before its last piece.
+- **A frame** is checked against the SHA-256 the scan's sidecar records for
+  it beside its ranges, as it is sent; a mismatch cuts the multipart body
+  before the frame's last piece. A frame of a line that holds no table yet
+  (a sidecar written before frame tables, until the pass at start gives it
+  its tables) is found from the file's header and sent unchecked.
+- **A bulk data window** (a BulkDataURI, a download with offset and length)
+  is not checked: no checksum of a part of a file is recorded, so bytes
+  changed inside a window are not found by reading it. A retrieve of the
+  whole instance finds them.
+- **Metadata** is answered from the sidecar and, for what it does not hold,
+  from a read of the file's header, which is checked against the size the
+  catalog holds, not against its checksum: a stored file changed without a
+  change of size is not found by the metadata service.
+- **A search** holds one of the caller's open reads, as a retrieve does,
+  and one scan's sidecar open at a time. It is refused with 413 when it
+  passes over more than 10,000 rows it does not keep, or reads more than
+  256 MiB of sidecars to find its results; making them may read as much
+  again, past which the answer is cut. Its answer is streamed one result at a time; an
+  answer of instances stops at 64 MiB of results, with the Warning that
+  more results can be requested.
+
 ## A reception, end to end
 
 1. A sender opens an association to a receiver; `receive/dimse` admits it
-   only if the caller is listed.
-2. Each C-STORE is streamed into the tenant's incoming area, synced, and
-   only then answered success (`receive/incoming`).
+   only if the caller is listed. Or a client stores over HTTP into the
+   tenant's STOW-RS service with a key; `receive/stow` takes the request
+   only if a stow receiver of the tenant lists the key or a key it was
+   rotated from.
+2. Each C-STORE, or each part of a STOW-RS request, is streamed into the
+   tenant's incoming area, synced, and only then answered success
+   (`receive/incoming`).
 3. The pipeline reads the header, records the file in a batch, or holds it
    in quarantine with its reason and its bytes.
 4. When no file has come for the receiver's quiet period, the reception is

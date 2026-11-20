@@ -278,8 +278,9 @@ func (e *env) sendBytes(b []byte, want Status) Outcome {
 }
 
 // waitFor waits until cond holds, moving the clock forward by step each
-// time the pipeline does nothing for a moment, and fails the test after a
-// generous real deadline. It waits on the pipeline's hooks, never on a
+// time the pipeline does nothing for a moment (no step running, no received
+// file waiting for its row), and fails the test after a generous real
+// deadline. It waits on the pipeline's hooks, never on a
 // fixed sleep.
 func (e *env) waitFor(what string, step time.Duration, cond func() bool) {
 	e.t.Helper()
@@ -295,7 +296,11 @@ func (e *env) waitFor(what string, step time.Duration, cond func() bool) {
 		select {
 		case <-e.notify:
 		case <-time.After(20 * time.Millisecond):
-			if e.running.Load() == 0 {
+			// Not while a received file waits for its row: the row is
+			// written at the clock's time, so a clock moved past the quiet
+			// period first would put the study's later files in a second
+			// reception, as a slow database does on a loaded machine.
+			if e.running.Load() == 0 && e.p.batch.queued.Load() == 0 {
 				e.clock.Advance(step)
 			}
 		}

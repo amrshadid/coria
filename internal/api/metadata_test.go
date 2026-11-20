@@ -534,7 +534,7 @@ func storedInstance(t *testing.T, file []byte) (blob.Store, label.Path, tenant.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	held := tenant.ScanInstance{SOPInstanceUID: uid, Key: key, Size: w.Size, SHA256: tenant.SHA256(w.SHA256)}
+	held := tenant.ScanInstance{SOPInstanceUID: uid, Key: key, Length: w.Size, Size: w.Size, SHA256: tenant.SHA256(w.SHA256)}
 	return store, path, held, sidecar.Instance{SOPInstanceUID: uid, Key: key, Size: w.Size, SHA256: held.SHA256.String(), DatasetOmitted: true}
 }
 

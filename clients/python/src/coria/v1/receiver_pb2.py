@@ -27,7 +27,7 @@ from google.protobuf import field_mask_pb2 as google_dot_protobuf_dot_field__mas
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17\x63oria/v1/receiver.proto\x12\x08\x63oria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x99\x03\n\x08Receiver\x12\x0c\n\x04name\x18\x01 \x01(\t\x12(\n\x05\x64imse\x18\x02 \x01(\x0b\x32\x17.coria.v1.DimseReceiverH\x00\x12\x0f\n\x07\x65nabled\x18\x03 \x01(\x08\x12\x0f\n\x07storage\x18\x04 \x01(\t\x12$\n\x06naming\x18\x05 \x01(\x0b\x32\x14.coria.v1.NamingRule\x12/\n\x0cquiet_period\x18\x06 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\x30\n\rmax_open_time\x18\x07 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\x16\n\x0emax_file_bytes\x18\x08 \x01(\x03\x12(\n\x06health\x18\t \x01(\x0b\x32\x18.coria.v1.ReceiverHealth\x12/\n\x0b\x63reate_time\x18\n \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12/\n\x0bupdate_time\x18\x0b \x01(\x0b\x32\x1a.google.protobuf.TimestampB\x06\n\x04type\"\xef\x01\n\rDimseReceiver\x12\x0c\n\x04port\x18\x01 \x01(\x05\x12\x14\n\x0c\x62ind_address\x18\x02 \x01(\t\x12\x10\n\x08\x61\x65_title\x18\x03 \x01(\t\x12\x33\n\x0f\x61llowed_callers\x18\x04 \x01(\x0b\x32\x18.coria.v1.AllowedCallersH\x00\x12\x14\n\nany_caller\x18\x05 \x01(\x08H\x00\x12\"\n\x03tls\x18\x06 \x01(\x0b\x32\x15.coria.v1.ReceiverTls\x12\x13\n\x0bsop_classes\x18\x07 \x03(\t\x12\x19\n\x11transfer_syntaxes\x18\x08 \x03(\tB\t\n\x07\x63\x61llers\"5\n\x0e\x41llowedCallers\x12#\n\x05rules\x18\x01 \x03(\x0b\x32\x14.coria.v1.CallerRule\"=\n\nCallerRule\x12\x18\n\x10\x63\x61lling_ae_title\x18\x01 \x01(\t\x12\x15\n\raddress_range\x18\x02 \x01(\t\"A\n\x0bReceiverTls\x12\x18\n\x10\x63\x65rtificate_file\x18\x01 \x01(\t\x12\x18\n\x10private_key_file\x18\x02 \x01(\t\"f\n\nNamingRule\x12\x0f\n\x07subject\x18\x01 \x01(\t\x12\x0f\n\x07session\x18\x02 \x01(\t\x12\x0c\n\x04scan\x18\x03 \x01(\t\x12(\n\x07pattern\x18\x04 \x01(\x0b\x32\x17.coria.v1.NamingPattern\"6\n\rNamingPattern\x12\x11\n\tattribute\x18\x01 \x01(\t\x12\x12\n\nexpression\x18\x02 \x01(\t\"\xa6\x01\n\x0eReceiverHealth\x12&\n\x05state\x18\x01 \x01(\x0e\x32\x17.coria.v1.ReceiverState\x12\x31\n\x0b\x64own_reason\x18\x02 \x01(\x0e\x32\x1c.coria.v1.ReceiverDownReason\x12\x0e\n\x06\x64\x65tail\x18\x03 \x01(\t\x12)\n\x05since\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"J\n\x12\x41\x64\x64ReceiverRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12$\n\x08receiver\x18\x02 \x01(\x0b\x32\x12.coria.v1.Receiver\";\n\x13\x41\x64\x64ReceiverResponse\x12$\n\x08receiver\x18\x01 \x01(\x0b\x32\x12.coria.v1.Receiver\"2\n\x12GetReceiverRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\";\n\x13GetReceiverResponse\x12$\n\x08receiver\x18\x01 \x01(\x0b\x32\x12.coria.v1.Receiver\"M\n\x14ListReceiversRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x11\n\tpage_size\x18\x02 \x01(\x05\x12\x12\n\npage_token\x18\x03 \x01(\t\"W\n\x15ListReceiversResponse\x12%\n\treceivers\x18\x01 \x03(\x0b\x32\x12.coria.v1.Receiver\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\"{\n\x12SetReceiverRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12$\n\x08receiver\x18\x02 \x01(\x0b\x32\x12.coria.v1.Receiver\x12/\n\x0bupdate_mask\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.FieldMask\";\n\x13SetReceiverResponse\x12$\n\x08receiver\x18\x01 \x01(\x0b\x32\x12.coria.v1.Receiver\"5\n\x15RemoveReceiverRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\">\n\x16RemoveReceiverResponse\x12$\n\x08receiver\x18\x01 \x01(\x0b\x32\x12.coria.v1.Receiver*|\n\rReceiverState\x12\x1e\n\x1aRECEIVER_STATE_UNSPECIFIED\x10\x00\x12\x1b\n\x17RECEIVER_STATE_STARTING\x10\x01\x12\x15\n\x11RECEIVER_STATE_UP\x10\x02\x12\x17\n\x13RECEIVER_STATE_DOWN\x10\x03*\xbd\x03\n\x12ReceiverDownReason\x12$\n RECEIVER_DOWN_REASON_UNSPECIFIED\x10\x00\x12!\n\x1dRECEIVER_DOWN_REASON_DISABLED\x10\x01\x12\'\n#RECEIVER_DOWN_REASON_ADDRESS_IN_USE\x10\x02\x12*\n&RECEIVER_DOWN_REASON_PERMISSION_DENIED\x10\x03\x12.\n*RECEIVER_DOWN_REASON_ADDRESS_NOT_AVAILABLE\x10\x04\x12\x1c\n\x18RECEIVER_DOWN_REASON_TLS\x10\x05\x12$\n RECEIVER_DOWN_REASON_NEARLY_FULL\x10\x06\x12)\n%RECEIVER_DOWN_REASON_TENANT_NOT_READY\x10\x07\x12!\n\x1dRECEIVER_DOWN_REASON_STOPPING\x10\x08\x12\x1e\n\x1aRECEIVER_DOWN_REASON_OTHER\x10\t\x12\'\n#RECEIVER_DOWN_REASON_INCOMING_LIMIT\x10\n2\xb0\x03\n\x0fReceiverService\x12J\n\x0b\x41\x64\x64Receiver\x12\x1c.coria.v1.AddReceiverRequest\x1a\x1d.coria.v1.AddReceiverResponse\x12O\n\x0bGetReceiver\x12\x1c.coria.v1.GetReceiverRequest\x1a\x1d.coria.v1.GetReceiverResponse\"\x03\x90\x02\x01\x12U\n\rListReceivers\x12\x1e.coria.v1.ListReceiversRequest\x1a\x1f.coria.v1.ListReceiversResponse\"\x03\x90\x02\x01\x12O\n\x0bSetReceiver\x12\x1c.coria.v1.SetReceiverRequest\x1a\x1d.coria.v1.SetReceiverResponse\"\x03\x90\x02\x02\x12X\n\x0eRemoveReceiver\x12\x1f.coria.v1.RemoveReceiverRequest\x1a .coria.v1.RemoveReceiverResponse\"\x03\x90\x02\x02\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17\x63oria/v1/receiver.proto\x12\x08\x63oria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xc1\x03\n\x08Receiver\x12\x0c\n\x04name\x18\x01 \x01(\t\x12(\n\x05\x64imse\x18\x02 \x01(\x0b\x32\x17.coria.v1.DimseReceiverH\x00\x12&\n\x04stow\x18\x0c \x01(\x0b\x32\x16.coria.v1.StowReceiverH\x00\x12\x0f\n\x07\x65nabled\x18\x03 \x01(\x08\x12\x0f\n\x07storage\x18\x04 \x01(\t\x12$\n\x06naming\x18\x05 \x01(\x0b\x32\x14.coria.v1.NamingRule\x12/\n\x0cquiet_period\x18\x06 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\x30\n\rmax_open_time\x18\x07 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\x16\n\x0emax_file_bytes\x18\x08 \x01(\x03\x12(\n\x06health\x18\t \x01(\x0b\x32\x18.coria.v1.ReceiverHealth\x12/\n\x0b\x63reate_time\x18\n \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12/\n\x0bupdate_time\x18\x0b \x01(\x0b\x32\x1a.google.protobuf.TimestampB\x06\n\x04type\"\xef\x01\n\rDimseReceiver\x12\x0c\n\x04port\x18\x01 \x01(\x05\x12\x14\n\x0c\x62ind_address\x18\x02 \x01(\t\x12\x10\n\x08\x61\x65_title\x18\x03 \x01(\t\x12\x33\n\x0f\x61llowed_callers\x18\x04 \x01(\x0b\x32\x18.coria.v1.AllowedCallersH\x00\x12\x14\n\nany_caller\x18\x05 \x01(\x08H\x00\x12\"\n\x03tls\x18\x06 \x01(\x0b\x32\x15.coria.v1.ReceiverTls\x12\x13\n\x0bsop_classes\x18\x07 \x03(\t\x12\x19\n\x11transfer_syntaxes\x18\x08 \x03(\tB\t\n\x07\x63\x61llers\":\n\x0cStowReceiver\x12\x0f\n\x07key_ids\x18\x01 \x03(\t\x12\x19\n\x11max_request_bytes\x18\x02 \x01(\x03\"5\n\x0e\x41llowedCallers\x12#\n\x05rules\x18\x01 \x03(\x0b\x32\x14.coria.v1.CallerRule\"=\n\nCallerRule\x12\x18\n\x10\x63\x61lling_ae_title\x18\x01 \x01(\t\x12\x15\n\raddress_range\x18\x02 \x01(\t\"A\n\x0bReceiverTls\x12\x18\n\x10\x63\x65rtificate_file\x18\x01 \x01(\t\x12\x18\n\x10private_key_file\x18\x02 \x01(\t\"f\n\nNamingRule\x12\x0f\n\x07subject\x18\x01 \x01(\t\x12\x0f\n\x07session\x18\x02 \x01(\t\x12\x0c\n\x04scan\x18\x03 \x01(\t\x12(\n\x07pattern\x18\x04 \x01(\x0b\x32\x17.coria.v1.NamingPattern\"6\n\rNamingPattern\x12\x11\n\tattribute\x18\x01 \x01(\t\x12\x12\n\nexpression\x18\x02 \x01(\t\"\xa6\x01\n\x0eReceiverHealth\x12&\n\x05state\x18\x01 \x01(\x0e\x32\x17.coria.v1.ReceiverState\x12\x31\n\x0b\x64own_reason\x18\x02 \x01(\x0e\x32\x1c.coria.v1.ReceiverDownReason\x12\x0e\n\x06\x64\x65tail\x18\x03 \x01(\t\x12)\n\x05since\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"J\n\x12\x41\x64\x64ReceiverRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12$\n\x08receiver\x18\x02 \x01(\x0b\x32\x12.coria.v1.Receiver\";\n\x13\x41\x64\x64ReceiverResponse\x12$\n\x08receiver\x18\x01 \x01(\x0b\x32\x12.coria.v1.Receiver\"2\n\x12GetReceiverRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\";\n\x13GetReceiverResponse\x12$\n\x08receiver\x18\x01 \x01(\x0b\x32\x12.coria.v1.Receiver\"M\n\x14ListReceiversRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x11\n\tpage_size\x18\x02 \x01(\x05\x12\x12\n\npage_token\x18\x03 \x01(\t\"W\n\x15ListReceiversResponse\x12%\n\treceivers\x18\x01 \x03(\x0b\x32\x12.coria.v1.Receiver\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\"{\n\x12SetReceiverRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12$\n\x08receiver\x18\x02 \x01(\x0b\x32\x12.coria.v1.Receiver\x12/\n\x0bupdate_mask\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.FieldMask\";\n\x13SetReceiverResponse\x12$\n\x08receiver\x18\x01 \x01(\x0b\x32\x12.coria.v1.Receiver\"5\n\x15RemoveReceiverRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\">\n\x16RemoveReceiverResponse\x12$\n\x08receiver\x18\x01 \x01(\x0b\x32\x12.coria.v1.Receiver*|\n\rReceiverState\x12\x1e\n\x1aRECEIVER_STATE_UNSPECIFIED\x10\x00\x12\x1b\n\x17RECEIVER_STATE_STARTING\x10\x01\x12\x15\n\x11RECEIVER_STATE_UP\x10\x02\x12\x17\n\x13RECEIVER_STATE_DOWN\x10\x03*\xbd\x03\n\x12ReceiverDownReason\x12$\n RECEIVER_DOWN_REASON_UNSPECIFIED\x10\x00\x12!\n\x1dRECEIVER_DOWN_REASON_DISABLED\x10\x01\x12\'\n#RECEIVER_DOWN_REASON_ADDRESS_IN_USE\x10\x02\x12*\n&RECEIVER_DOWN_REASON_PERMISSION_DENIED\x10\x03\x12.\n*RECEIVER_DOWN_REASON_ADDRESS_NOT_AVAILABLE\x10\x04\x12\x1c\n\x18RECEIVER_DOWN_REASON_TLS\x10\x05\x12$\n RECEIVER_DOWN_REASON_NEARLY_FULL\x10\x06\x12)\n%RECEIVER_DOWN_REASON_TENANT_NOT_READY\x10\x07\x12!\n\x1dRECEIVER_DOWN_REASON_STOPPING\x10\x08\x12\x1e\n\x1aRECEIVER_DOWN_REASON_OTHER\x10\t\x12\'\n#RECEIVER_DOWN_REASON_INCOMING_LIMIT\x10\n2\xb0\x03\n\x0fReceiverService\x12J\n\x0b\x41\x64\x64Receiver\x12\x1c.coria.v1.AddReceiverRequest\x1a\x1d.coria.v1.AddReceiverResponse\x12O\n\x0bGetReceiver\x12\x1c.coria.v1.GetReceiverRequest\x1a\x1d.coria.v1.GetReceiverResponse\"\x03\x90\x02\x01\x12U\n\rListReceivers\x12\x1e.coria.v1.ListReceiversRequest\x1a\x1f.coria.v1.ListReceiversResponse\"\x03\x90\x02\x01\x12O\n\x0bSetReceiver\x12\x1c.coria.v1.SetReceiverRequest\x1a\x1d.coria.v1.SetReceiverResponse\"\x03\x90\x02\x02\x12X\n\x0eRemoveReceiver\x12\x1f.coria.v1.RemoveReceiverRequest\x1a .coria.v1.RemoveReceiverResponse\"\x03\x90\x02\x02\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -42,46 +42,48 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_RECEIVERSERVICE'].methods_by_name['SetReceiver']._serialized_options = b'\220\002\002'
   _globals['_RECEIVERSERVICE'].methods_by_name['RemoveReceiver']._loaded_options = None
   _globals['_RECEIVERSERVICE'].methods_by_name['RemoveReceiver']._serialized_options = b'\220\002\002'
-  _globals['_RECEIVERSTATE']._serialized_start=2027
-  _globals['_RECEIVERSTATE']._serialized_end=2151
-  _globals['_RECEIVERDOWNREASON']._serialized_start=2154
-  _globals['_RECEIVERDOWNREASON']._serialized_end=2599
+  _globals['_RECEIVERSTATE']._serialized_start=2127
+  _globals['_RECEIVERSTATE']._serialized_end=2251
+  _globals['_RECEIVERDOWNREASON']._serialized_start=2254
+  _globals['_RECEIVERDOWNREASON']._serialized_end=2699
   _globals['_RECEIVER']._serialized_start=137
-  _globals['_RECEIVER']._serialized_end=546
-  _globals['_DIMSERECEIVER']._serialized_start=549
-  _globals['_DIMSERECEIVER']._serialized_end=788
-  _globals['_ALLOWEDCALLERS']._serialized_start=790
-  _globals['_ALLOWEDCALLERS']._serialized_end=843
-  _globals['_CALLERRULE']._serialized_start=845
-  _globals['_CALLERRULE']._serialized_end=906
-  _globals['_RECEIVERTLS']._serialized_start=908
-  _globals['_RECEIVERTLS']._serialized_end=973
-  _globals['_NAMINGRULE']._serialized_start=975
-  _globals['_NAMINGRULE']._serialized_end=1077
-  _globals['_NAMINGPATTERN']._serialized_start=1079
-  _globals['_NAMINGPATTERN']._serialized_end=1133
-  _globals['_RECEIVERHEALTH']._serialized_start=1136
-  _globals['_RECEIVERHEALTH']._serialized_end=1302
-  _globals['_ADDRECEIVERREQUEST']._serialized_start=1304
-  _globals['_ADDRECEIVERREQUEST']._serialized_end=1378
-  _globals['_ADDRECEIVERRESPONSE']._serialized_start=1380
-  _globals['_ADDRECEIVERRESPONSE']._serialized_end=1439
-  _globals['_GETRECEIVERREQUEST']._serialized_start=1441
-  _globals['_GETRECEIVERREQUEST']._serialized_end=1491
-  _globals['_GETRECEIVERRESPONSE']._serialized_start=1493
-  _globals['_GETRECEIVERRESPONSE']._serialized_end=1552
-  _globals['_LISTRECEIVERSREQUEST']._serialized_start=1554
-  _globals['_LISTRECEIVERSREQUEST']._serialized_end=1631
-  _globals['_LISTRECEIVERSRESPONSE']._serialized_start=1633
-  _globals['_LISTRECEIVERSRESPONSE']._serialized_end=1720
-  _globals['_SETRECEIVERREQUEST']._serialized_start=1722
-  _globals['_SETRECEIVERREQUEST']._serialized_end=1845
-  _globals['_SETRECEIVERRESPONSE']._serialized_start=1847
-  _globals['_SETRECEIVERRESPONSE']._serialized_end=1906
-  _globals['_REMOVERECEIVERREQUEST']._serialized_start=1908
-  _globals['_REMOVERECEIVERREQUEST']._serialized_end=1961
-  _globals['_REMOVERECEIVERRESPONSE']._serialized_start=1963
-  _globals['_REMOVERECEIVERRESPONSE']._serialized_end=2025
-  _globals['_RECEIVERSERVICE']._serialized_start=2602
-  _globals['_RECEIVERSERVICE']._serialized_end=3034
+  _globals['_RECEIVER']._serialized_end=586
+  _globals['_DIMSERECEIVER']._serialized_start=589
+  _globals['_DIMSERECEIVER']._serialized_end=828
+  _globals['_STOWRECEIVER']._serialized_start=830
+  _globals['_STOWRECEIVER']._serialized_end=888
+  _globals['_ALLOWEDCALLERS']._serialized_start=890
+  _globals['_ALLOWEDCALLERS']._serialized_end=943
+  _globals['_CALLERRULE']._serialized_start=945
+  _globals['_CALLERRULE']._serialized_end=1006
+  _globals['_RECEIVERTLS']._serialized_start=1008
+  _globals['_RECEIVERTLS']._serialized_end=1073
+  _globals['_NAMINGRULE']._serialized_start=1075
+  _globals['_NAMINGRULE']._serialized_end=1177
+  _globals['_NAMINGPATTERN']._serialized_start=1179
+  _globals['_NAMINGPATTERN']._serialized_end=1233
+  _globals['_RECEIVERHEALTH']._serialized_start=1236
+  _globals['_RECEIVERHEALTH']._serialized_end=1402
+  _globals['_ADDRECEIVERREQUEST']._serialized_start=1404
+  _globals['_ADDRECEIVERREQUEST']._serialized_end=1478
+  _globals['_ADDRECEIVERRESPONSE']._serialized_start=1480
+  _globals['_ADDRECEIVERRESPONSE']._serialized_end=1539
+  _globals['_GETRECEIVERREQUEST']._serialized_start=1541
+  _globals['_GETRECEIVERREQUEST']._serialized_end=1591
+  _globals['_GETRECEIVERRESPONSE']._serialized_start=1593
+  _globals['_GETRECEIVERRESPONSE']._serialized_end=1652
+  _globals['_LISTRECEIVERSREQUEST']._serialized_start=1654
+  _globals['_LISTRECEIVERSREQUEST']._serialized_end=1731
+  _globals['_LISTRECEIVERSRESPONSE']._serialized_start=1733
+  _globals['_LISTRECEIVERSRESPONSE']._serialized_end=1820
+  _globals['_SETRECEIVERREQUEST']._serialized_start=1822
+  _globals['_SETRECEIVERREQUEST']._serialized_end=1945
+  _globals['_SETRECEIVERRESPONSE']._serialized_start=1947
+  _globals['_SETRECEIVERRESPONSE']._serialized_end=2006
+  _globals['_REMOVERECEIVERREQUEST']._serialized_start=2008
+  _globals['_REMOVERECEIVERREQUEST']._serialized_end=2061
+  _globals['_REMOVERECEIVERRESPONSE']._serialized_start=2063
+  _globals['_REMOVERECEIVERRESPONSE']._serialized_end=2125
+  _globals['_RECEIVERSERVICE']._serialized_start=2702
+  _globals['_RECEIVERSERVICE']._serialized_end=3134
 # @@protoc_insertion_point(module_scope)

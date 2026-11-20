@@ -329,3 +329,58 @@ func TestAHeaderPastTheBoundIsKeptAndReleasedOnceItIsRaised(t *testing.T) {
 		t.Fatalf("%d incoming files", n)
 	}
 }
+
+// TestPlacingUIDsReadWholeMustAgree guards a file whose first bytes and
+// whole header place it differently: a corpus file with a second Study
+// Instance UID appended after its pixel data, out of the order of tags.
+// Handed in with the UIDs a source read from its first bytes (a STOW-RS
+// part, checked against the study its request named), it is held as
+// uid_mismatch with its bytes, never archived into the study its last
+// value names; the same file unchanged, told the same, is archived.
+func TestPlacingUIDsReadWholeMustAgree(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	src := corpus(t, studyFiles[0])
+	h, err := header.Read(bytes.NewReader(src), int64(len(src)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	told := Arrival{Receiver: "dimse", Caller: tenant.Caller{Address: "192.0.2.7:40000"}, TransferSyntaxUID: h.TransferSyntaxUID}
+	told.SOPClassUID, _ = h.UID(header.SOPClassUID)
+	told.SOPInstanceUID, _ = h.UID(header.SOPInstanceUID)
+	told.StudyUID, _ = h.UID(header.StudyUID)
+	told.SeriesUID, _ = h.UID(header.SeriesUID)
+
+	// (0020,000D) UI "1.2.3.999\0", explicit VR little endian (PS3.5 7.1.2).
+	value := "1.2.3.999\x00"
+	elem := []byte{0x20, 0x00, 0x0D, 0x00, 'U', 'I', byte(len(value)), 0} // #nosec G115 -- a 10-byte value.
+	moved := append(append(append([]byte{}, src...), elem...), value...)
+	if hm, err := header.Read(bytes.NewReader(moved), int64(len(moved))); err != nil {
+		t.Fatal(err)
+	} else if v, _ := hm.UID(header.StudyUID); v != "1.2.3.999" {
+		t.Fatalf("the whole header reads the study as %q", v)
+	}
+
+	a := told
+	a.Body = bytes.NewReader(moved)
+	if out := e.p.Accept(e.ctx, a); out.Status != Received {
+		t.Fatalf("outcome %v (%s)", out.Status, out.Reason)
+	}
+	e.waitFor("the file held or archived", time.Second, func() bool { return len(e.held()) == 1 || len(e.receptions()) > 0 })
+	if rs := e.receptions(); len(rs) > 0 {
+		t.Fatalf("the file opened a reception of study %s", rs[0].StudyUID)
+	}
+	q := e.held()[0]
+	if q.Reason != tenant.QuarantineUIDMismatch || q.Details["attribute"] != string(header.StudyUID) || !q.ContentKept || q.Size != int64(len(moved)) {
+		t.Fatalf("held %+v", q)
+	}
+
+	a = told
+	a.Body = bytes.NewReader(src)
+	if out := e.p.Accept(e.ctx, a); out.Status != Received {
+		t.Fatalf("outcome %v (%s)", out.Status, out.Reason)
+	}
+	rs := e.settle(1)
+	if len(rs) != 1 || !done(rs[0]) || rs[0].StudyUID != told.StudyUID || len(e.held()) != 1 {
+		t.Fatalf("receptions %+v, held %d", rs, len(e.held()))
+	}
+}

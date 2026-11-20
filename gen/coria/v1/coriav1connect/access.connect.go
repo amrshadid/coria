@@ -122,14 +122,41 @@
 // secret is the exception, kept unless named and never set to empty. A field
 // the server answers is read-only, and naming it is invalid.
 //
-// Secrets cross the API in three fields only,
+// Secrets cross the API in four fields only,
 // CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
-// by AddStorage and SetStorage; always empty in an answer) and
-// CreateKeyResponse.secret (out, once). All three are marked debug_redact.
-// The mark is metadata, not protection: the protobuf library prints such a
-// field like any other (checked with protobuf-go v1.36.12, in every text form).
-// The server's own redactor reads the mark and removes the three fields
-// before anything is logged.
+// by AddStorage and SetStorage; always empty in an answer),
+// CreateKeyResponse.secret and RotateKeyResponse.secret (out, once). All four
+// are marked debug_redact. The mark is metadata, not protection: the
+// protobuf library prints such a field like any other (checked with
+// protobuf-go v1.36.12, in every text form). The server's own redactor reads
+// the mark and removes the four fields before anything is logged.
+//
+// Where a request may come from. A request off the local socket must pass,
+// in this order: the installation's denied networks and allowed networks
+// (the settings access.denied-networks and access.allowed-networks), judged
+// before its key is read; then, once its key and grant are known, the
+// networks of the tenant it names (access.tenant-networks), and the key's
+// own networks and client certificate (Key.networks,
+// Key.client_cert_sha256). A request refused by any of them is answered
+// UNAUTHENTICATED, exactly as a key that is no good, and recorded in the
+// installation's audit log with the rule's name; the caller is never told
+// which rule. The caller's address is the connection's, or, when the
+// connection comes from a proxy listed in access.trusted-proxies, the
+// rightmost address that is not itself a listed proxy in the one header
+// access.forwarded-header names (X-Forwarded-For by default, or Forwarded,
+// RFC 7239); the other header is never read, and from any other connection
+// neither is. The local socket is never refused by a network rule.
+//
+// Failed calls. Requests refused because their key is no good are counted
+// per address (IPv6 per /64), and requests refused because a good key lacks
+// the role are counted per key, over access.failure-window. Past
+// access.failure-limit failures in the window, each further refusal is
+// answered one second late; at twice the limit, the address or the key is
+// blocked for access.block-time: every request from it, a good key's
+// included, is answered UNAUTHENTICATED, and the block is audited. A
+// request that succeeds is never counted, delayed or blocked for its own
+// sake, however many a key makes. The counts are kept in the server's
+// memory and are lost when it restarts.
 package coriav1connect
 
 import (
@@ -168,6 +195,10 @@ const (
 	AccessServiceRemoveGrantProcedure = "/coria.v1.AccessService/RemoveGrant"
 	// AccessServiceWhoAmIProcedure is the procedure name of the AccessService's WhoAmI RPC.
 	AccessServiceWhoAmIProcedure = "/coria.v1.AccessService/WhoAmI"
+	// AccessServiceRotateKeyProcedure is the procedure name of the AccessService's RotateKey RPC.
+	AccessServiceRotateKeyProcedure = "/coria.v1.AccessService/RotateKey"
+	// AccessServiceSetKeyRulesProcedure is the procedure name of the AccessService's SetKeyRules RPC.
+	AccessServiceSetKeyRulesProcedure = "/coria.v1.AccessService/SetKeyRules"
 )
 
 var (
@@ -234,6 +265,21 @@ var (
 			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
+	accessServiceRotateKeySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_coria_v1_access_proto.Services().ByName("AccessService").Methods().ByName("RotateKey"),
+			Procedure:  AccessServiceRotateKeyProcedure,
+		}
+	})
+	accessServiceSetKeyRulesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_access_proto.Services().ByName("AccessService").Methods().ByName("SetKeyRules"),
+			Procedure:        AccessServiceSetKeyRulesProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
+		}
+	})
 )
 
 // AccessServiceClient is a client for the coria.v1.AccessService service.
@@ -266,7 +312,9 @@ type AccessServiceClient interface {
 	// RevokeKey ends a key for good: from this call on, a request with it is
 	// answered UNAUTHENTICATED. Its grants stay listed, so the record shows what
 	// the key could do, but they give nothing. Revoking a revoked key changes
-	// nothing and answers the key with its first revoke time.
+	// nothing and answers the key with its first revoke time. Revoking a
+	// rotated key does not revoke its successor (Key.successor_id), which is
+	// revoked by its own call.
 	//
 	// Role: admin on the installation.
 	// Audit: one entry in the installation's log, with the key's id as its
@@ -322,6 +370,40 @@ type AccessServiceClient interface {
 	// Errors: unauthenticated, unavailable (the master database does not
 	// answer).
 	WhoAmI(context.Context, *v1.WhoAmIRequest) (*v1.WhoAmIResponse, error)
+	// RotateKey replaces a key with a new one, its successor, and answers the
+	// successor's secret, once. The successor holds the same grants, holder,
+	// networks and client certificate. The rotated key keeps working for the
+	// overlap, or until its own expiry when that is sooner, and then stops:
+	// whoever holds it has the overlap to switch, with no moment without a
+	// working key. The successor lives as long as the rotated key was made to
+	// live, counted from now, but never longer than the installation's setting
+	// key.max-lifetime (built-in default 3650 days); a key made never to
+	// expire makes a successor that never expires. A key is rotated at most
+	// once; its successor may be rotated in turn. A key rotating itself,
+	// without admin on the installation, keeps working at least an hour beside
+	// its successor, so a thief holding it cannot cut its holder off at once.
+	//
+	// Role: admin on the installation; or the key being rotated itself, so a
+	// system renews its own key with no person involved. Any other key is
+	// answered permission denied.
+	// Audit: one entry in the installation's log, with the rotated key's id as
+	// its object, and the successor's id, the rotated key's new end and the
+	// overlap in details; never the secret.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id), conflict (the key is revoked, has expired, or was already
+	// rotated), unavailable (the master database does not answer).
+	RotateKey(context.Context, *v1.RotateKeyRequest) (*v1.RotateKeyResponse, error)
+	// SetKeyRules replaces where a key may be used from: its networks and the
+	// client certificate it must come with. The key's next request is judged
+	// by the new rules.
+	//
+	// Role: admin on the installation.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object and the new rules in details.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id), conflict (the key is revoked), unavailable (the master
+	// database does not answer).
+	SetKeyRules(context.Context, *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error)
 }
 
 // NewAccessServiceClient constructs a client for the coria.v1.AccessService service. Multiple
@@ -360,7 +442,9 @@ type AccessServiceHandler interface {
 	// RevokeKey ends a key for good: from this call on, a request with it is
 	// answered UNAUTHENTICATED. Its grants stay listed, so the record shows what
 	// the key could do, but they give nothing. Revoking a revoked key changes
-	// nothing and answers the key with its first revoke time.
+	// nothing and answers the key with its first revoke time. Revoking a
+	// rotated key does not revoke its successor (Key.successor_id), which is
+	// revoked by its own call.
 	//
 	// Role: admin on the installation.
 	// Audit: one entry in the installation's log, with the key's id as its
@@ -416,6 +500,40 @@ type AccessServiceHandler interface {
 	// Errors: unauthenticated, unavailable (the master database does not
 	// answer).
 	WhoAmI(context.Context, *v1.WhoAmIRequest) (*v1.WhoAmIResponse, error)
+	// RotateKey replaces a key with a new one, its successor, and answers the
+	// successor's secret, once. The successor holds the same grants, holder,
+	// networks and client certificate. The rotated key keeps working for the
+	// overlap, or until its own expiry when that is sooner, and then stops:
+	// whoever holds it has the overlap to switch, with no moment without a
+	// working key. The successor lives as long as the rotated key was made to
+	// live, counted from now, but never longer than the installation's setting
+	// key.max-lifetime (built-in default 3650 days); a key made never to
+	// expire makes a successor that never expires. A key is rotated at most
+	// once; its successor may be rotated in turn. A key rotating itself,
+	// without admin on the installation, keeps working at least an hour beside
+	// its successor, so a thief holding it cannot cut its holder off at once.
+	//
+	// Role: admin on the installation; or the key being rotated itself, so a
+	// system renews its own key with no person involved. Any other key is
+	// answered permission denied.
+	// Audit: one entry in the installation's log, with the rotated key's id as
+	// its object, and the successor's id, the rotated key's new end and the
+	// overlap in details; never the secret.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id), conflict (the key is revoked, has expired, or was already
+	// rotated), unavailable (the master database does not answer).
+	RotateKey(context.Context, *v1.RotateKeyRequest) (*v1.RotateKeyResponse, error)
+	// SetKeyRules replaces where a key may be used from: its networks and the
+	// client certificate it must come with. The key's next request is judged
+	// by the new rules.
+	//
+	// Role: admin on the installation.
+	// Audit: one entry in the installation's log, with the key's id as its
+	// object and the new rules in details.
+	// Errors: unauthenticated, permission denied, invalid, not found (no key
+	// has that id), conflict (the key is revoked), unavailable (the master
+	// database does not answer).
+	SetKeyRules(context.Context, *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error)
 }
 
 // RegisterAccessServiceHandler registers svc as the coria.v1.AccessService implementation on
@@ -431,6 +549,8 @@ func RegisterAccessServiceHandler(server *connect.Server, svc AccessServiceHandl
 		connect.Method{Spec: accessServiceListGrantsSpec(), Handler: adapter.listGrants},
 		connect.Method{Spec: accessServiceRemoveGrantSpec(), Handler: adapter.removeGrant},
 		connect.Method{Spec: accessServiceWhoAmISpec(), Handler: adapter.whoAmI},
+		connect.Method{Spec: accessServiceRotateKeySpec(), Handler: adapter.rotateKey},
+		connect.Method{Spec: accessServiceSetKeyRulesSpec(), Handler: adapter.setKeyRules},
 	)
 }
 
@@ -467,6 +587,14 @@ func (UnimplementedAccessServiceHandler) RemoveGrant(context.Context, *v1.Remove
 
 func (UnimplementedAccessServiceHandler) WhoAmI(context.Context, *v1.WhoAmIRequest) (*v1.WhoAmIResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.AccessService.WhoAmI is not implemented")
+}
+
+func (UnimplementedAccessServiceHandler) RotateKey(context.Context, *v1.RotateKeyRequest) (*v1.RotateKeyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.AccessService.RotateKey is not implemented")
+}
+
+func (UnimplementedAccessServiceHandler) SetKeyRules(context.Context, *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.AccessService.SetKeyRules is not implemented")
 }
 
 type accessServiceClient struct {
@@ -532,6 +660,22 @@ func (c *accessServiceClient) RemoveGrant(ctx context.Context, req *v1.RemoveGra
 func (c *accessServiceClient) WhoAmI(ctx context.Context, req *v1.WhoAmIRequest) (*v1.WhoAmIResponse, error) {
 	var res v1.WhoAmIResponse
 	if err := c.client.CallUnary(ctx, accessServiceWhoAmISpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *accessServiceClient) RotateKey(ctx context.Context, req *v1.RotateKeyRequest) (*v1.RotateKeyResponse, error) {
+	var res v1.RotateKeyResponse
+	if err := c.client.CallUnary(ctx, accessServiceRotateKeySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *accessServiceClient) SetKeyRules(ctx context.Context, req *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error) {
+	var res v1.SetKeyRulesResponse
+	if err := c.client.CallUnary(ctx, accessServiceSetKeyRulesSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -629,6 +773,30 @@ func (h accessServiceHandler) whoAmI(ctx context.Context, _ connect.Spec, stream
 		return err
 	}
 	res, err := h.svc.WhoAmI(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h accessServiceHandler) rotateKey(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RotateKeyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RotateKey(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h accessServiceHandler) setKeyRules(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.SetKeyRulesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SetKeyRules(ctx, &req)
 	if err != nil {
 		return err
 	}

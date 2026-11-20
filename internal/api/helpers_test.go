@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -373,7 +374,14 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	srv := connect.NewServer(e.standIn)
 	h.Register(srv)
 	mux := http.NewServeMux()
-	connecthttp.Mount(mux, srv)
+	// As the server does for its long procedures: ReadFiles is sent
+	// uncompressed whatever the client accepts.
+	connecthttp.Mount(mux, srv, connecthttp.WithConditionalOptions(func(spec connect.Spec) []connecthttp.Option {
+		if spec.Procedure != coriav1connect.DataServiceReadFilesProcedure {
+			return nil
+		}
+		return []connecthttp.Option{connecthttp.WithCompressMinBytes(math.MaxInt)}
+	}))
 	hs := httptest.NewServer(mux)
 	e.url, e.client = hs.URL, hs.Client()
 	t.Cleanup(func() {
@@ -553,6 +561,8 @@ type clients struct {
 	quarantine coriav1connect.QuarantineServiceClient
 	monitor    coriav1connect.MonitorServiceClient
 	metadata   coriav1connect.MetadataServiceClient
+	catalog    coriav1connect.CatalogServiceClient
+	data       coriav1connect.DataServiceClient
 }
 
 // as returns clients that call as c.
@@ -582,6 +592,8 @@ func (e *env) as(c caller) clients {
 		quarantine: coriav1connect.NewQuarantineServiceClient(cl),
 		monitor:    coriav1connect.NewMonitorServiceClient(cl),
 		metadata:   coriav1connect.NewMetadataServiceClient(cl),
+		catalog:    coriav1connect.NewCatalogServiceClient(cl),
+		data:       coriav1connect.NewDataServiceClient(cl),
 	}
 }
 

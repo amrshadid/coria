@@ -57,7 +57,7 @@ func WriteSample(tb testing.TB, s master.Store) {
 	}
 	_, err := s.RevokeKey(ctx, gone.ID, T0.Add(time.Hour), audit("RevokeKey", master.OutcomeDone, nil), master.LocalOperator())
 	must(err)
-	_, err = s.MarkKeyUsed(ctx, admin.ID, T0.Add(2*time.Hour))
+	_, err = s.MarkKeyUsed(ctx, admin.ID, T0.Add(2*time.Hour), "")
 	must(err)
 
 	_, err = s.SetGrant(ctx, master.Grant{KeyID: admin.ID, Scope: master.Installation, Role: master.RoleAdmin}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "installation"}), master.LocalOperator())

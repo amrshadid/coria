@@ -23,6 +23,7 @@ _sym_db = _symbol_database.Default()
 
 
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
+from coria.v1 import access_pb2 as coria_dot_v1_dot_access__pb2
 from coria.v1 import quarantine_pb2 as coria_dot_v1_dot_quarantine__pb2
 from coria.v1 import reception_pb2 as coria_dot_v1_dot_reception__pb2
 from coria.v1 import receiver_pb2 as coria_dot_v1_dot_receiver__pb2
@@ -30,7 +31,7 @@ from coria.v1 import scope_pb2 as coria_dot_v1_dot_scope__pb2
 from coria.v1 import tenant_pb2 as coria_dot_v1_dot_tenant__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x63oria/v1/monitor.proto\x12\x08\x63oria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19\x63oria/v1/quarantine.proto\x1a\x18\x63oria/v1/reception.proto\x1a\x17\x63oria/v1/receiver.proto\x1a\x14\x63oria/v1/scope.proto\x1a\x15\x63oria/v1/tenant.proto\"O\n\x12ReceptionStepCount\x12%\n\x04step\x18\x01 \x01(\x0e\x32\x17.coria.v1.ReceptionStep\x12\x12\n\nreceptions\x18\x02 \x01(\x03\"\xe0\x01\n\x0cTenantCounts\x12\x10\n\x08subjects\x18\x01 \x01(\x03\x12\x10\n\x08sessions\x18\x02 \x01(\x03\x12\r\n\x05scans\x18\x03 \x01(\x03\x12\x11\n\tinstances\x18\x04 \x01(\x03\x12\x19\n\x11quarantined_files\x18\x05 \x01(\x03\x12\x19\n\x11quarantined_bytes\x18\x06 \x01(\x03\x12<\n\x16receptions_in_progress\x18\x07 \x03(\x0b\x32\x1c.coria.v1.ReceptionStepCount\x12\x16\n\x0eincoming_bytes\x18\x08 \x01(\x03\"\x98\x01\n\nThroughput\x12!\n\x19\x66iles_received_per_second\x18\x01 \x01(\x01\x12!\n\x19\x62ytes_received_per_second\x18\x02 \x01(\x01\x12!\n\x19\x66iles_archived_per_second\x18\x03 \x01(\x01\x12!\n\x19\x62ytes_archived_per_second\x18\x04 \x01(\x01\"\x89\x01\n\rStorageStatus\x12\x0f\n\x07storage\x18\x01 \x01(\t\x12\x12\n\nused_bytes\x18\x02 \x01(\x03\x12\x17\n\nfree_bytes\x18\x03 \x01(\x03H\x00\x88\x01\x01\x12\x16\n\x0e\x63\x61pacity_bytes\x18\x04 \x01(\x03\x12\x13\n\x0bnearly_full\x18\x05 \x01(\x08\x42\r\n\x0b_free_bytes\"`\n\x0eReceiverStatus\x12\x10\n\x08receiver\x18\x01 \x01(\t\x12(\n\x06health\x18\x02 \x01(\x0b\x32\x18.coria.v1.ReceiverHealth\x12\x12\n\nany_caller\x18\x03 \x01(\x08\"\xe4\x02\n\x0cTenantStatus\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12-\n\x0e\x64\x61tabase_state\x18\x02 \x01(\x0e\x32\x15.coria.v1.TenantState\x12\x37\n\x13\x64\x61tabase_state_time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x14\n\x0c\x65vent_cursor\x18\x04 \x01(\t\x12&\n\x06\x63ounts\x18\x05 \x01(\x0b\x32\x16.coria.v1.TenantCounts\x12(\n\nthroughput\x18\x06 \x01(\x0b\x32\x14.coria.v1.Throughput\x12)\n\x08storages\x18\x07 \x03(\x0b\x32\x17.coria.v1.StorageStatus\x12+\n\treceivers\x18\x08 \x03(\x0b\x32\x18.coria.v1.ReceiverStatus\x12\x1c\n\x14incoming_limit_bytes\x18\t \x01(\x03\"Y\n\x10GetStatusRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x11\n\tpage_size\x18\x02 \x01(\x05\x12\x12\n\npage_token\x18\x03 \x01(\t\"\x7f\n\x11GetStatusResponse\x12\'\n\x07tenants\x18\x01 \x03(\x0b\x32\x16.coria.v1.TenantStatus\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\x12(\n\x04time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\x94\x01\n\x11\x41ssociationFailed\x12\x10\n\x08receiver\x18\x01 \x01(\t\x12 \n\x06\x63\x61ller\x18\x02 \x01(\x0b\x32\x10.coria.v1.Caller\x12-\n\x07\x66\x61ilure\x18\x03 \x01(\x0e\x32\x1c.coria.v1.AssociationFailure\x12\r\n\x05\x63ount\x18\x04 \x01(\x03\x12\r\n\x05hosts\x18\x05 \x01(\x03\"\x8e\x02\n\x14ReceptionStepReached\x12\x11\n\treception\x18\x01 \x01(\t\x12\x10\n\x08receiver\x18\x02 \x01(\t\x12\x0f\n\x07\x61rrival\x18\x03 \x01(\x05\x12%\n\x04step\x18\x04 \x01(\x0e\x32\x17.coria.v1.ReceptionStep\x12.\n\rprevious_step\x18\t \x01(\x0e\x32\x17.coria.v1.ReceptionStep\x12)\n\x06\x63ounts\x18\x05 \x01(\x0b\x32\x19.coria.v1.ReceptionCounts\x12\x15\n\rsubject_label\x18\x06 \x01(\t\x12\x15\n\rsession_label\x18\x07 \x01(\t\x12\x10\n\x08retry_of\x18\x08 \x01(\t\"\xac\x01\n\x0f\x46ileQuarantined\x12\x0c\n\x04\x66ile\x18\x01 \x01(\t\x12\x11\n\treception\x18\x02 \x01(\t\x12\x10\n\x08receiver\x18\x03 \x01(\t\x12*\n\x06reason\x18\x04 \x01(\x0e\x32\x1a.coria.v1.QuarantineReason\x12\x12\n\nsize_bytes\x18\x05 \x01(\x03\x12\x12\n\nheld_files\x18\x06 \x01(\x03\x12\x12\n\nheld_bytes\x18\x07 \x01(\x03\"\xbb\x01\n\x11QuarantineDecided\x12\x0c\n\x04\x66ile\x18\x01 \x01(\t\x12(\n\x05state\x18\x02 \x01(\x0e\x32\x19.coria.v1.QuarantineState\x12+\n\x0crelease_mode\x18\x03 \x01(\x0e\x32\x15.coria.v1.ReleaseMode\x12\x19\n\x11release_reception\x18\x04 \x01(\t\x12\x12\n\nheld_files\x18\x05 \x01(\x03\x12\x12\n\nheld_bytes\x18\x06 \x01(\x03\"S\n\x15ReceiverHealthChanged\x12\x10\n\x08receiver\x18\x01 \x01(\t\x12(\n\x06health\x18\x02 \x01(\x0b\x32\x18.coria.v1.ReceiverHealth\"\x8e\x01\n\x13StorageSpaceChanged\x12\x0f\n\x07storage\x18\x01 \x01(\t\x12*\n\x05state\x18\x02 \x01(\x0e\x32\x1b.coria.v1.StorageSpaceState\x12\x12\n\nused_bytes\x18\x03 \x01(\x03\x12\x17\n\nfree_bytes\x18\x04 \x01(\x03H\x00\x88\x01\x01\x42\r\n\x0b_free_bytes\"\xda\x03\n\x05\x45vent\x12\x0e\n\x06\x63ursor\x18\x01 \x01(\t\x12(\n\x04time\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0e\n\x06tenant\x18\x03 \x01(\t\x12!\n\x04type\x18\x04 \x01(\x0e\x32\x13.coria.v1.EventType\x12\x39\n\x12\x61ssociation_failed\x18\x05 \x01(\x0b\x32\x1b.coria.v1.AssociationFailedH\x00\x12\x38\n\x0ereception_step\x18\x06 \x01(\x0b\x32\x1e.coria.v1.ReceptionStepReachedH\x00\x12\x35\n\x10\x66ile_quarantined\x18\x07 \x01(\x0b\x32\x19.coria.v1.FileQuarantinedH\x00\x12\x39\n\x12quarantine_decided\x18\x08 \x01(\x0b\x32\x1b.coria.v1.QuarantineDecidedH\x00\x12:\n\x0freceiver_health\x18\t \x01(\x0b\x32\x1f.coria.v1.ReceiverHealthChangedH\x00\x12\x36\n\rstorage_space\x18\n \x01(\x0b\x32\x1d.coria.v1.StorageSpaceChangedH\x00\x42\t\n\x07payload\"\xef\x01\n\x0eWatchKeepAlive\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0e\n\x06\x63ursor\x18\x02 \x01(\t\x12\x43\n\x0etenant_cursors\x18\x03 \x03(\x0b\x32+.coria.v1.WatchKeepAlive.TenantCursorsEntry\x12\x1a\n\x12unanswered_tenants\x18\x04 \x03(\t\x12\x0c\n\x04\x66ull\x18\x05 \x01(\x08\x1a\x34\n\x12TenantCursorsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xeb\x01\n\x0cWatchRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x0e\n\x06\x63ursor\x18\x02 \x01(\t\x12\"\n\x05types\x18\x03 \x03(\x0e\x32\x13.coria.v1.EventType\x12\x41\n\x0etenant_cursors\x18\x04 \x03(\x0b\x32).coria.v1.WatchRequest.TenantCursorsEntry\x12\x0e\n\x06resume\x18\x05 \x01(\x08\x1a\x34\n\x12TenantCursorsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"i\n\rWatchResponse\x12 \n\x05\x65vent\x18\x01 \x01(\x0b\x32\x0f.coria.v1.EventH\x00\x12.\n\nkeep_alive\x18\x02 \x01(\x0b\x32\x18.coria.v1.WatchKeepAliveH\x00\x42\x06\n\x04kind*\xeb\x01\n\tEventType\x12\x1a\n\x16\x45VENT_TYPE_UNSPECIFIED\x10\x00\x12!\n\x1d\x45VENT_TYPE_ASSOCIATION_FAILED\x10\x01\x12\x1d\n\x19\x45VENT_TYPE_RECEPTION_STEP\x10\x02\x12\x1f\n\x1b\x45VENT_TYPE_FILE_QUARANTINED\x10\x03\x12!\n\x1d\x45VENT_TYPE_QUARANTINE_DECIDED\x10\x04\x12\x1e\n\x1a\x45VENT_TYPE_RECEIVER_HEALTH\x10\x05\x12\x1c\n\x18\x45VENT_TYPE_STORAGE_SPACE\x10\x06*\x8f\x03\n\x12\x41ssociationFailure\x12#\n\x1f\x41SSOCIATION_FAILURE_UNSPECIFIED\x10\x00\x12*\n&ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED\x10\x01\x12\x36\n2ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED\x10\x02\x12-\n)ASSOCIATION_FAILURE_NO_ACCEPTABLE_CONTEXT\x10\x03\x12#\n\x1f\x41SSOCIATION_FAILURE_NEARLY_FULL\x10\x04\x12(\n$ASSOCIATION_FAILURE_TENANT_NOT_READY\x10\x05\x12\"\n\x1e\x41SSOCIATION_FAILURE_TLS_FAILED\x10\x06\x12&\n\"ASSOCIATION_FAILURE_PROTOCOL_ERROR\x10\x07\x12&\n\"ASSOCIATION_FAILURE_INCOMING_LIMIT\x10\x08*\x80\x01\n\x11StorageSpaceState\x12#\n\x1fSTORAGE_SPACE_STATE_UNSPECIFIED\x10\x00\x12#\n\x1fSTORAGE_SPACE_STATE_NEARLY_FULL\x10\x01\x12!\n\x1dSTORAGE_SPACE_STATE_RECOVERED\x10\x02\x32\x9c\x01\n\x0eMonitorService\x12I\n\tGetStatus\x12\x1a.coria.v1.GetStatusRequest\x1a\x1b.coria.v1.GetStatusResponse\"\x03\x90\x02\x01\x12?\n\x05Watch\x12\x16.coria.v1.WatchRequest\x1a\x17.coria.v1.WatchResponse\"\x03\x90\x02\x01\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x16\x63oria/v1/monitor.proto\x12\x08\x63oria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15\x63oria/v1/access.proto\x1a\x19\x63oria/v1/quarantine.proto\x1a\x18\x63oria/v1/reception.proto\x1a\x17\x63oria/v1/receiver.proto\x1a\x14\x63oria/v1/scope.proto\x1a\x15\x63oria/v1/tenant.proto\"O\n\x12ReceptionStepCount\x12%\n\x04step\x18\x01 \x01(\x0e\x32\x17.coria.v1.ReceptionStep\x12\x12\n\nreceptions\x18\x02 \x01(\x03\"\xe0\x01\n\x0cTenantCounts\x12\x10\n\x08subjects\x18\x01 \x01(\x03\x12\x10\n\x08sessions\x18\x02 \x01(\x03\x12\r\n\x05scans\x18\x03 \x01(\x03\x12\x11\n\tinstances\x18\x04 \x01(\x03\x12\x19\n\x11quarantined_files\x18\x05 \x01(\x03\x12\x19\n\x11quarantined_bytes\x18\x06 \x01(\x03\x12<\n\x16receptions_in_progress\x18\x07 \x03(\x0b\x32\x1c.coria.v1.ReceptionStepCount\x12\x16\n\x0eincoming_bytes\x18\x08 \x01(\x03\"\x98\x01\n\nThroughput\x12!\n\x19\x66iles_received_per_second\x18\x01 \x01(\x01\x12!\n\x19\x62ytes_received_per_second\x18\x02 \x01(\x01\x12!\n\x19\x66iles_archived_per_second\x18\x03 \x01(\x01\x12!\n\x19\x62ytes_archived_per_second\x18\x04 \x01(\x01\"\x89\x01\n\rStorageStatus\x12\x0f\n\x07storage\x18\x01 \x01(\t\x12\x12\n\nused_bytes\x18\x02 \x01(\x03\x12\x17\n\nfree_bytes\x18\x03 \x01(\x03H\x00\x88\x01\x01\x12\x16\n\x0e\x63\x61pacity_bytes\x18\x04 \x01(\x03\x12\x13\n\x0bnearly_full\x18\x05 \x01(\x08\x42\r\n\x0b_free_bytes\"`\n\x0eReceiverStatus\x12\x10\n\x08receiver\x18\x01 \x01(\t\x12(\n\x06health\x18\x02 \x01(\x0b\x32\x18.coria.v1.ReceiverHealth\x12\x12\n\nany_caller\x18\x03 \x01(\x08\"\xe4\x02\n\x0cTenantStatus\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12-\n\x0e\x64\x61tabase_state\x18\x02 \x01(\x0e\x32\x15.coria.v1.TenantState\x12\x37\n\x13\x64\x61tabase_state_time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x14\n\x0c\x65vent_cursor\x18\x04 \x01(\t\x12&\n\x06\x63ounts\x18\x05 \x01(\x0b\x32\x16.coria.v1.TenantCounts\x12(\n\nthroughput\x18\x06 \x01(\x0b\x32\x14.coria.v1.Throughput\x12)\n\x08storages\x18\x07 \x03(\x0b\x32\x17.coria.v1.StorageStatus\x12+\n\treceivers\x18\x08 \x03(\x0b\x32\x18.coria.v1.ReceiverStatus\x12\x1c\n\x14incoming_limit_bytes\x18\t \x01(\x03\"Y\n\x10GetStatusRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x11\n\tpage_size\x18\x02 \x01(\x05\x12\x12\n\npage_token\x18\x03 \x01(\t\"\xa5\x01\n\x11GetStatusResponse\x12\'\n\x07tenants\x18\x01 \x03(\x0b\x32\x16.coria.v1.TenantStatus\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\x12(\n\x04time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12$\n\rexpiring_keys\x18\x04 \x03(\x0b\x32\r.coria.v1.Key\"\x94\x01\n\x11\x41ssociationFailed\x12\x10\n\x08receiver\x18\x01 \x01(\t\x12 \n\x06\x63\x61ller\x18\x02 \x01(\x0b\x32\x10.coria.v1.Caller\x12-\n\x07\x66\x61ilure\x18\x03 \x01(\x0e\x32\x1c.coria.v1.AssociationFailure\x12\r\n\x05\x63ount\x18\x04 \x01(\x03\x12\r\n\x05hosts\x18\x05 \x01(\x03\"\x8e\x02\n\x14ReceptionStepReached\x12\x11\n\treception\x18\x01 \x01(\t\x12\x10\n\x08receiver\x18\x02 \x01(\t\x12\x0f\n\x07\x61rrival\x18\x03 \x01(\x05\x12%\n\x04step\x18\x04 \x01(\x0e\x32\x17.coria.v1.ReceptionStep\x12.\n\rprevious_step\x18\t \x01(\x0e\x32\x17.coria.v1.ReceptionStep\x12)\n\x06\x63ounts\x18\x05 \x01(\x0b\x32\x19.coria.v1.ReceptionCounts\x12\x15\n\rsubject_label\x18\x06 \x01(\t\x12\x15\n\rsession_label\x18\x07 \x01(\t\x12\x10\n\x08retry_of\x18\x08 \x01(\t\"\xac\x01\n\x0f\x46ileQuarantined\x12\x0c\n\x04\x66ile\x18\x01 \x01(\t\x12\x11\n\treception\x18\x02 \x01(\t\x12\x10\n\x08receiver\x18\x03 \x01(\t\x12*\n\x06reason\x18\x04 \x01(\x0e\x32\x1a.coria.v1.QuarantineReason\x12\x12\n\nsize_bytes\x18\x05 \x01(\x03\x12\x12\n\nheld_files\x18\x06 \x01(\x03\x12\x12\n\nheld_bytes\x18\x07 \x01(\x03\"\xbb\x01\n\x11QuarantineDecided\x12\x0c\n\x04\x66ile\x18\x01 \x01(\t\x12(\n\x05state\x18\x02 \x01(\x0e\x32\x19.coria.v1.QuarantineState\x12+\n\x0crelease_mode\x18\x03 \x01(\x0e\x32\x15.coria.v1.ReleaseMode\x12\x19\n\x11release_reception\x18\x04 \x01(\t\x12\x12\n\nheld_files\x18\x05 \x01(\x03\x12\x12\n\nheld_bytes\x18\x06 \x01(\x03\"S\n\x15ReceiverHealthChanged\x12\x10\n\x08receiver\x18\x01 \x01(\t\x12(\n\x06health\x18\x02 \x01(\x0b\x32\x18.coria.v1.ReceiverHealth\"\x8e\x01\n\x13StorageSpaceChanged\x12\x0f\n\x07storage\x18\x01 \x01(\t\x12*\n\x05state\x18\x02 \x01(\x0e\x32\x1b.coria.v1.StorageSpaceState\x12\x12\n\nused_bytes\x18\x03 \x01(\x03\x12\x17\n\nfree_bytes\x18\x04 \x01(\x03H\x00\x88\x01\x01\x42\r\n\x0b_free_bytes\"\xa0\x01\n\x0b\x46ramesAdded\x12\x15\n\rsubject_label\x18\x01 \x01(\t\x12\x15\n\rsession_label\x18\x02 \x01(\t\x12\x12\n\nscan_label\x18\x03 \x01(\t\x12\x11\n\tinstances\x18\x04 \x01(\x03\x12\x12\n\nscans_done\x18\x05 \x01(\x03\x12\x16\n\x0einstances_done\x18\x06 \x01(\x03\x12\x10\n\x08\x66inished\x18\x07 \x01(\x08\"\x89\x04\n\x05\x45vent\x12\x0e\n\x06\x63ursor\x18\x01 \x01(\t\x12(\n\x04time\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0e\n\x06tenant\x18\x03 \x01(\t\x12!\n\x04type\x18\x04 \x01(\x0e\x32\x13.coria.v1.EventType\x12\x39\n\x12\x61ssociation_failed\x18\x05 \x01(\x0b\x32\x1b.coria.v1.AssociationFailedH\x00\x12\x38\n\x0ereception_step\x18\x06 \x01(\x0b\x32\x1e.coria.v1.ReceptionStepReachedH\x00\x12\x35\n\x10\x66ile_quarantined\x18\x07 \x01(\x0b\x32\x19.coria.v1.FileQuarantinedH\x00\x12\x39\n\x12quarantine_decided\x18\x08 \x01(\x0b\x32\x1b.coria.v1.QuarantineDecidedH\x00\x12:\n\x0freceiver_health\x18\t \x01(\x0b\x32\x1f.coria.v1.ReceiverHealthChangedH\x00\x12\x36\n\rstorage_space\x18\n \x01(\x0b\x32\x1d.coria.v1.StorageSpaceChangedH\x00\x12-\n\x0c\x66rames_added\x18\x0b \x01(\x0b\x32\x15.coria.v1.FramesAddedH\x00\x42\t\n\x07payload\"\xef\x01\n\x0eWatchKeepAlive\x12(\n\x04time\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x0e\n\x06\x63ursor\x18\x02 \x01(\t\x12\x43\n\x0etenant_cursors\x18\x03 \x03(\x0b\x32+.coria.v1.WatchKeepAlive.TenantCursorsEntry\x12\x1a\n\x12unanswered_tenants\x18\x04 \x03(\t\x12\x0c\n\x04\x66ull\x18\x05 \x01(\x08\x1a\x34\n\x12TenantCursorsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xeb\x01\n\x0cWatchRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x0e\n\x06\x63ursor\x18\x02 \x01(\t\x12\"\n\x05types\x18\x03 \x03(\x0e\x32\x13.coria.v1.EventType\x12\x41\n\x0etenant_cursors\x18\x04 \x03(\x0b\x32).coria.v1.WatchRequest.TenantCursorsEntry\x12\x0e\n\x06resume\x18\x05 \x01(\x08\x1a\x34\n\x12TenantCursorsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"i\n\rWatchResponse\x12 \n\x05\x65vent\x18\x01 \x01(\x0b\x32\x0f.coria.v1.EventH\x00\x12.\n\nkeep_alive\x18\x02 \x01(\x0b\x32\x18.coria.v1.WatchKeepAliveH\x00\x42\x06\n\x04kind*\x88\x02\n\tEventType\x12\x1a\n\x16\x45VENT_TYPE_UNSPECIFIED\x10\x00\x12!\n\x1d\x45VENT_TYPE_ASSOCIATION_FAILED\x10\x01\x12\x1d\n\x19\x45VENT_TYPE_RECEPTION_STEP\x10\x02\x12\x1f\n\x1b\x45VENT_TYPE_FILE_QUARANTINED\x10\x03\x12!\n\x1d\x45VENT_TYPE_QUARANTINE_DECIDED\x10\x04\x12\x1e\n\x1a\x45VENT_TYPE_RECEIVER_HEALTH\x10\x05\x12\x1c\n\x18\x45VENT_TYPE_STORAGE_SPACE\x10\x06\x12\x1b\n\x17\x45VENT_TYPE_FRAMES_ADDED\x10\x07*\x8f\x03\n\x12\x41ssociationFailure\x12#\n\x1f\x41SSOCIATION_FAILURE_UNSPECIFIED\x10\x00\x12*\n&ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED\x10\x01\x12\x36\n2ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED\x10\x02\x12-\n)ASSOCIATION_FAILURE_NO_ACCEPTABLE_CONTEXT\x10\x03\x12#\n\x1f\x41SSOCIATION_FAILURE_NEARLY_FULL\x10\x04\x12(\n$ASSOCIATION_FAILURE_TENANT_NOT_READY\x10\x05\x12\"\n\x1e\x41SSOCIATION_FAILURE_TLS_FAILED\x10\x06\x12&\n\"ASSOCIATION_FAILURE_PROTOCOL_ERROR\x10\x07\x12&\n\"ASSOCIATION_FAILURE_INCOMING_LIMIT\x10\x08*\x80\x01\n\x11StorageSpaceState\x12#\n\x1fSTORAGE_SPACE_STATE_UNSPECIFIED\x10\x00\x12#\n\x1fSTORAGE_SPACE_STATE_NEARLY_FULL\x10\x01\x12!\n\x1dSTORAGE_SPACE_STATE_RECOVERED\x10\x02\x32\x9c\x01\n\x0eMonitorService\x12I\n\tGetStatus\x12\x1a.coria.v1.GetStatusRequest\x1a\x1b.coria.v1.GetStatusResponse\"\x03\x90\x02\x01\x12?\n\x05Watch\x12\x16.coria.v1.WatchRequest\x1a\x17.coria.v1.WatchResponse\"\x03\x90\x02\x01\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -45,52 +46,54 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_MONITORSERVICE'].methods_by_name['GetStatus']._serialized_options = b'\220\002\001'
   _globals['_MONITORSERVICE'].methods_by_name['Watch']._loaded_options = None
   _globals['_MONITORSERVICE'].methods_by_name['Watch']._serialized_options = b'\220\002\001'
-  _globals['_EVENTTYPE']._serialized_start=3556
-  _globals['_EVENTTYPE']._serialized_end=3791
-  _globals['_ASSOCIATIONFAILURE']._serialized_start=3794
-  _globals['_ASSOCIATIONFAILURE']._serialized_end=4193
-  _globals['_STORAGESPACESTATE']._serialized_start=4196
-  _globals['_STORAGESPACESTATE']._serialized_end=4324
-  _globals['_RECEPTIONSTEPCOUNT']._serialized_start=192
-  _globals['_RECEPTIONSTEPCOUNT']._serialized_end=271
-  _globals['_TENANTCOUNTS']._serialized_start=274
-  _globals['_TENANTCOUNTS']._serialized_end=498
-  _globals['_THROUGHPUT']._serialized_start=501
-  _globals['_THROUGHPUT']._serialized_end=653
-  _globals['_STORAGESTATUS']._serialized_start=656
-  _globals['_STORAGESTATUS']._serialized_end=793
-  _globals['_RECEIVERSTATUS']._serialized_start=795
-  _globals['_RECEIVERSTATUS']._serialized_end=891
-  _globals['_TENANTSTATUS']._serialized_start=894
-  _globals['_TENANTSTATUS']._serialized_end=1250
-  _globals['_GETSTATUSREQUEST']._serialized_start=1252
-  _globals['_GETSTATUSREQUEST']._serialized_end=1341
-  _globals['_GETSTATUSRESPONSE']._serialized_start=1343
-  _globals['_GETSTATUSRESPONSE']._serialized_end=1470
-  _globals['_ASSOCIATIONFAILED']._serialized_start=1473
-  _globals['_ASSOCIATIONFAILED']._serialized_end=1621
-  _globals['_RECEPTIONSTEPREACHED']._serialized_start=1624
-  _globals['_RECEPTIONSTEPREACHED']._serialized_end=1894
-  _globals['_FILEQUARANTINED']._serialized_start=1897
-  _globals['_FILEQUARANTINED']._serialized_end=2069
-  _globals['_QUARANTINEDECIDED']._serialized_start=2072
-  _globals['_QUARANTINEDECIDED']._serialized_end=2259
-  _globals['_RECEIVERHEALTHCHANGED']._serialized_start=2261
-  _globals['_RECEIVERHEALTHCHANGED']._serialized_end=2344
-  _globals['_STORAGESPACECHANGED']._serialized_start=2347
-  _globals['_STORAGESPACECHANGED']._serialized_end=2489
-  _globals['_EVENT']._serialized_start=2492
-  _globals['_EVENT']._serialized_end=2966
-  _globals['_WATCHKEEPALIVE']._serialized_start=2969
-  _globals['_WATCHKEEPALIVE']._serialized_end=3208
-  _globals['_WATCHKEEPALIVE_TENANTCURSORSENTRY']._serialized_start=3156
-  _globals['_WATCHKEEPALIVE_TENANTCURSORSENTRY']._serialized_end=3208
-  _globals['_WATCHREQUEST']._serialized_start=3211
-  _globals['_WATCHREQUEST']._serialized_end=3446
-  _globals['_WATCHREQUEST_TENANTCURSORSENTRY']._serialized_start=3156
-  _globals['_WATCHREQUEST_TENANTCURSORSENTRY']._serialized_end=3208
-  _globals['_WATCHRESPONSE']._serialized_start=3448
-  _globals['_WATCHRESPONSE']._serialized_end=3553
-  _globals['_MONITORSERVICE']._serialized_start=4327
-  _globals['_MONITORSERVICE']._serialized_end=4483
+  _globals['_EVENTTYPE']._serialized_start=3828
+  _globals['_EVENTTYPE']._serialized_end=4092
+  _globals['_ASSOCIATIONFAILURE']._serialized_start=4095
+  _globals['_ASSOCIATIONFAILURE']._serialized_end=4494
+  _globals['_STORAGESPACESTATE']._serialized_start=4497
+  _globals['_STORAGESPACESTATE']._serialized_end=4625
+  _globals['_RECEPTIONSTEPCOUNT']._serialized_start=215
+  _globals['_RECEPTIONSTEPCOUNT']._serialized_end=294
+  _globals['_TENANTCOUNTS']._serialized_start=297
+  _globals['_TENANTCOUNTS']._serialized_end=521
+  _globals['_THROUGHPUT']._serialized_start=524
+  _globals['_THROUGHPUT']._serialized_end=676
+  _globals['_STORAGESTATUS']._serialized_start=679
+  _globals['_STORAGESTATUS']._serialized_end=816
+  _globals['_RECEIVERSTATUS']._serialized_start=818
+  _globals['_RECEIVERSTATUS']._serialized_end=914
+  _globals['_TENANTSTATUS']._serialized_start=917
+  _globals['_TENANTSTATUS']._serialized_end=1273
+  _globals['_GETSTATUSREQUEST']._serialized_start=1275
+  _globals['_GETSTATUSREQUEST']._serialized_end=1364
+  _globals['_GETSTATUSRESPONSE']._serialized_start=1367
+  _globals['_GETSTATUSRESPONSE']._serialized_end=1532
+  _globals['_ASSOCIATIONFAILED']._serialized_start=1535
+  _globals['_ASSOCIATIONFAILED']._serialized_end=1683
+  _globals['_RECEPTIONSTEPREACHED']._serialized_start=1686
+  _globals['_RECEPTIONSTEPREACHED']._serialized_end=1956
+  _globals['_FILEQUARANTINED']._serialized_start=1959
+  _globals['_FILEQUARANTINED']._serialized_end=2131
+  _globals['_QUARANTINEDECIDED']._serialized_start=2134
+  _globals['_QUARANTINEDECIDED']._serialized_end=2321
+  _globals['_RECEIVERHEALTHCHANGED']._serialized_start=2323
+  _globals['_RECEIVERHEALTHCHANGED']._serialized_end=2406
+  _globals['_STORAGESPACECHANGED']._serialized_start=2409
+  _globals['_STORAGESPACECHANGED']._serialized_end=2551
+  _globals['_FRAMESADDED']._serialized_start=2554
+  _globals['_FRAMESADDED']._serialized_end=2714
+  _globals['_EVENT']._serialized_start=2717
+  _globals['_EVENT']._serialized_end=3238
+  _globals['_WATCHKEEPALIVE']._serialized_start=3241
+  _globals['_WATCHKEEPALIVE']._serialized_end=3480
+  _globals['_WATCHKEEPALIVE_TENANTCURSORSENTRY']._serialized_start=3428
+  _globals['_WATCHKEEPALIVE_TENANTCURSORSENTRY']._serialized_end=3480
+  _globals['_WATCHREQUEST']._serialized_start=3483
+  _globals['_WATCHREQUEST']._serialized_end=3718
+  _globals['_WATCHREQUEST_TENANTCURSORSENTRY']._serialized_start=3428
+  _globals['_WATCHREQUEST_TENANTCURSORSENTRY']._serialized_end=3480
+  _globals['_WATCHRESPONSE']._serialized_start=3720
+  _globals['_WATCHRESPONSE']._serialized_end=3825
+  _globals['_MONITORSERVICE']._serialized_start=4628
+  _globals['_MONITORSERVICE']._serialized_end=4784
 # @@protoc_insertion_point(module_scope)

@@ -28,7 +28,7 @@ type Store interface {
 	// TenantByName returns the tenant with this name, or NotFound.
 	TenantByName(ctx context.Context, name string) (master.Tenant, error)
 	// MarkKeyUsed records a key's use, at most once a minute per key.
-	MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool, error)
+	MarkKeyUsed(ctx context.Context, id string, at time.Time, address string) (bool, error)
 	// AppendAudit writes audit entries, all or none.
 	AppendAudit(ctx context.Context, entries ...master.AuditEntry) error
 	// CheckActor makes the check of an actor that every change makes in
@@ -42,6 +42,12 @@ type Store interface {
 	// RevokeKey revokes a key with its audit entry, if by is still allowed
 	// to, and returns its revoke time.
 	RevokeKey(ctx context.Context, id string, at time.Time, audit master.AuditEntry, by master.Actor) (time.Time, error)
+	// SetKeyRules replaces a key's rules with its audit entry, if by is
+	// still allowed to.
+	SetKeyRules(ctx context.Context, id string, rules master.KeyRules, audit master.AuditEntry, by master.Actor) error
+	// RotateKey replaces a key with a successor holding its grants and
+	// rules, with its audit entry, if by is still allowed to.
+	RotateKey(ctx context.Context, id string, successor master.Key, oldEnds time.Time, audit master.AuditEntry, by master.Actor) (master.Key, error)
 	// SetGrant sets a key's role on a scope with its audit entry, if by is
 	// still allowed to, and returns the role it replaced.
 	SetGrant(ctx context.Context, g master.Grant, audit master.AuditEntry, by master.Actor) (master.Role, error)

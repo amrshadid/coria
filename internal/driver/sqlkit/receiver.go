@@ -11,8 +11,10 @@ import (
 // reads the same. The field names are the columns' contract and never
 // change; a field added later is read as its zero value from an older row.
 
-// dimseConfig is a DIMSE receiver's configuration as its config column
-// holds it.
+// dimseConfig is a receiver's configuration of its type as its config
+// column holds it: a DIMSE receiver's fields, or a stow receiver's, which
+// are left out of a DIMSE receiver's text so a row written before the stow
+// type existed reads and writes back the same.
 type dimseConfig struct {
 	AETitle          string             `json:"ae_title"`
 	AnyCaller        bool               `json:"any_caller"`
@@ -20,6 +22,8 @@ type dimseConfig struct {
 	TLS              *tlsConfig         `json:"tls"`
 	SOPClasses       []string           `json:"sop_classes"`
 	TransferSyntaxes []string           `json:"transfer_syntaxes"`
+	STOWKeys         []string           `json:"stow_key_ids,omitempty"`
+	MaxRequestBytes  int64              `json:"stow_max_request_bytes,omitempty"`
 }
 
 // callerRuleConfig is one caller a DIMSE receiver accepts.
@@ -47,7 +51,8 @@ type namingConfig struct {
 // its naming column, empty when it has no naming rule of its own.
 func ReceiverConfigText(r tenant.Receiver) (config, namingText string, err error) {
 	c := dimseConfig{AETitle: r.DIMSE.AETitle, AnyCaller: r.DIMSE.AnyCaller,
-		SOPClasses: r.DIMSE.SOPClasses, TransferSyntaxes: r.DIMSE.TransferSyntaxes}
+		SOPClasses: r.DIMSE.SOPClasses, TransferSyntaxes: r.DIMSE.TransferSyntaxes,
+		STOWKeys: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes}
 	for _, cr := range r.DIMSE.Callers {
 		c.Callers = append(c.Callers, callerRuleConfig(cr))
 	}
@@ -66,7 +71,7 @@ func ReceiverConfigText(r tenant.Receiver) (config, namingText string, err error
 	return config, namingText, nil
 }
 
-// ReadReceiverConfig sets r's DIMSE configuration and naming rule from the
+// ReadReceiverConfig sets r's DIMSE or stow configuration and naming rule from the
 // text of its config and naming columns, as ReceiverConfigText wrote them.
 func ReadReceiverConfig(r *tenant.Receiver, config, namingText string) error {
 	var c dimseConfig
@@ -75,6 +80,7 @@ func ReadReceiverConfig(r *tenant.Receiver, config, namingText string) error {
 	}
 	r.DIMSE.AETitle, r.DIMSE.AnyCaller = c.AETitle, c.AnyCaller
 	r.DIMSE.SOPClasses, r.DIMSE.TransferSyntaxes = c.SOPClasses, c.TransferSyntaxes
+	r.STOW = tenant.STOWReceiver{Keys: c.STOWKeys, MaxRequestBytes: c.MaxRequestBytes}
 	r.DIMSE.Callers = nil
 	for _, cr := range c.Callers {
 		r.DIMSE.Callers = append(r.DIMSE.Callers, tenant.CallerRule(cr))

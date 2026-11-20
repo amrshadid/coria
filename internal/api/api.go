@@ -15,6 +15,7 @@ import (
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/place"
+	"github.com/amrshadid/coria/internal/receive/stow"
 	"github.com/amrshadid/coria/internal/registry"
 	"github.com/amrshadid/coria/internal/secret"
 	"github.com/amrshadid/coria/internal/tenant"
@@ -76,6 +77,9 @@ type Config struct {
 	// Feeds streams tenants' events for Watch. Nil answers every Watch
 	// unavailable.
 	Feeds Feeds
+	// STOW finds the running stow receiver that takes a key's STOW-RS
+	// requests. Nil takes none: every such request is refused.
+	STOW *stow.Directory
 }
 
 // Handlers is the services of the contract this package serves, each an
@@ -102,6 +106,10 @@ type Handlers struct {
 	Monitor coriav1connect.MonitorServiceHandler
 	// Metadata is MetadataService.
 	Metadata coriav1connect.MetadataServiceHandler
+	// Catalog is CatalogService.
+	Catalog coriav1connect.CatalogServiceHandler
+	// Data is DataService.
+	Data coriav1connect.DataServiceHandler
 
 	// c is what the services share, kept for the test seams
 	// (export_test.go).
@@ -125,7 +133,7 @@ func New(cfg Config) (Handlers, error) {
 	c := &core{
 		access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known,
 		keys: cfg.Keys, now: cfg.Now, receivers: cfg.Receivers, incoming: cfg.Incoming, headers: cfg.Headers,
-		live: cfg.Live, feeds: cfg.Feeds,
+		live: cfg.Live, feeds: cfg.Feeds, stowReceivers: cfg.STOW,
 	}
 	if c.live == nil {
 		c.live = noLive{}
@@ -153,6 +161,8 @@ func New(cfg Config) (Handlers, error) {
 		Quarantine: quarantineService{c},
 		Monitor:    monitorService{c},
 		Metadata:   metadataService{c},
+		Catalog:    catalogService{c},
+		Data:       dataService{c},
 		c:          c,
 	}, nil
 }
@@ -169,6 +179,8 @@ func (h Handlers) Register(srv *connect.Server) {
 	coriav1connect.RegisterQuarantineServiceHandler(srv, h.Quarantine)
 	coriav1connect.RegisterMonitorServiceHandler(srv, h.Monitor)
 	coriav1connect.RegisterMetadataServiceHandler(srv, h.Metadata)
+	coriav1connect.RegisterCatalogServiceHandler(srv, h.Catalog)
+	coriav1connect.RegisterDataServiceHandler(srv, h.Data)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only
@@ -221,6 +233,11 @@ type core struct {
 	live Live
 	// feeds streams tenants' events.
 	feeds Feeds
+	// stowReceivers finds the stow receiver that takes a key's requests.
+	stowReceivers *stow.Directory
+	// reads counts the streams of ReadFiles and the downloads open now,
+	// for their bounds.
+	reads openReads
 	// places orders the changes that depend on where the installation lets
 	// data go (its roots, endpoints, ports and bind addresses) against the
 	// changes of those settings: a storage or a receiver is checked and

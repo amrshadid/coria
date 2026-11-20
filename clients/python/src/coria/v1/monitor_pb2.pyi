@@ -1,6 +1,7 @@
 import datetime
 
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
+from coria.v1 import access_pb2 as _access_pb2
 from coria.v1 import quarantine_pb2 as _quarantine_pb2
 from coria.v1 import reception_pb2 as _reception_pb2
 from coria.v1 import receiver_pb2 as _receiver_pb2
@@ -24,6 +25,7 @@ class EventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     EVENT_TYPE_QUARANTINE_DECIDED: _ClassVar[EventType]
     EVENT_TYPE_RECEIVER_HEALTH: _ClassVar[EventType]
     EVENT_TYPE_STORAGE_SPACE: _ClassVar[EventType]
+    EVENT_TYPE_FRAMES_ADDED: _ClassVar[EventType]
 
 class AssociationFailure(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -49,6 +51,7 @@ EVENT_TYPE_FILE_QUARANTINED: EventType
 EVENT_TYPE_QUARANTINE_DECIDED: EventType
 EVENT_TYPE_RECEIVER_HEALTH: EventType
 EVENT_TYPE_STORAGE_SPACE: EventType
+EVENT_TYPE_FRAMES_ADDED: EventType
 ASSOCIATION_FAILURE_UNSPECIFIED: AssociationFailure
 ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED: AssociationFailure
 ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED: AssociationFailure
@@ -159,14 +162,16 @@ class GetStatusRequest(_message.Message):
     def __init__(self, scope: _Optional[_Union[_scope_pb2.Scope, _Mapping]] = ..., page_size: _Optional[int] = ..., page_token: _Optional[str] = ...) -> None: ...
 
 class GetStatusResponse(_message.Message):
-    __slots__ = ("tenants", "next_page_token", "time")
+    __slots__ = ("tenants", "next_page_token", "time", "expiring_keys")
     TENANTS_FIELD_NUMBER: _ClassVar[int]
     NEXT_PAGE_TOKEN_FIELD_NUMBER: _ClassVar[int]
     TIME_FIELD_NUMBER: _ClassVar[int]
+    EXPIRING_KEYS_FIELD_NUMBER: _ClassVar[int]
     tenants: _containers.RepeatedCompositeFieldContainer[TenantStatus]
     next_page_token: str
     time: _timestamp_pb2.Timestamp
-    def __init__(self, tenants: _Optional[_Iterable[_Union[TenantStatus, _Mapping]]] = ..., next_page_token: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    expiring_keys: _containers.RepeatedCompositeFieldContainer[_access_pb2.Key]
+    def __init__(self, tenants: _Optional[_Iterable[_Union[TenantStatus, _Mapping]]] = ..., next_page_token: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., expiring_keys: _Optional[_Iterable[_Union[_access_pb2.Key, _Mapping]]] = ...) -> None: ...
 
 class AssociationFailed(_message.Message):
     __slots__ = ("receiver", "caller", "failure", "count", "hosts")
@@ -258,8 +263,26 @@ class StorageSpaceChanged(_message.Message):
     free_bytes: int
     def __init__(self, storage: _Optional[str] = ..., state: _Optional[_Union[StorageSpaceState, str]] = ..., used_bytes: _Optional[int] = ..., free_bytes: _Optional[int] = ...) -> None: ...
 
+class FramesAdded(_message.Message):
+    __slots__ = ("subject_label", "session_label", "scan_label", "instances", "scans_done", "instances_done", "finished")
+    SUBJECT_LABEL_FIELD_NUMBER: _ClassVar[int]
+    SESSION_LABEL_FIELD_NUMBER: _ClassVar[int]
+    SCAN_LABEL_FIELD_NUMBER: _ClassVar[int]
+    INSTANCES_FIELD_NUMBER: _ClassVar[int]
+    SCANS_DONE_FIELD_NUMBER: _ClassVar[int]
+    INSTANCES_DONE_FIELD_NUMBER: _ClassVar[int]
+    FINISHED_FIELD_NUMBER: _ClassVar[int]
+    subject_label: str
+    session_label: str
+    scan_label: str
+    instances: int
+    scans_done: int
+    instances_done: int
+    finished: bool
+    def __init__(self, subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., instances: _Optional[int] = ..., scans_done: _Optional[int] = ..., instances_done: _Optional[int] = ..., finished: _Optional[bool] = ...) -> None: ...
+
 class Event(_message.Message):
-    __slots__ = ("cursor", "time", "tenant", "type", "association_failed", "reception_step", "file_quarantined", "quarantine_decided", "receiver_health", "storage_space")
+    __slots__ = ("cursor", "time", "tenant", "type", "association_failed", "reception_step", "file_quarantined", "quarantine_decided", "receiver_health", "storage_space", "frames_added")
     CURSOR_FIELD_NUMBER: _ClassVar[int]
     TIME_FIELD_NUMBER: _ClassVar[int]
     TENANT_FIELD_NUMBER: _ClassVar[int]
@@ -270,6 +293,7 @@ class Event(_message.Message):
     QUARANTINE_DECIDED_FIELD_NUMBER: _ClassVar[int]
     RECEIVER_HEALTH_FIELD_NUMBER: _ClassVar[int]
     STORAGE_SPACE_FIELD_NUMBER: _ClassVar[int]
+    FRAMES_ADDED_FIELD_NUMBER: _ClassVar[int]
     cursor: str
     time: _timestamp_pb2.Timestamp
     tenant: str
@@ -280,7 +304,8 @@ class Event(_message.Message):
     quarantine_decided: QuarantineDecided
     receiver_health: ReceiverHealthChanged
     storage_space: StorageSpaceChanged
-    def __init__(self, cursor: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., tenant: _Optional[str] = ..., type: _Optional[_Union[EventType, str]] = ..., association_failed: _Optional[_Union[AssociationFailed, _Mapping]] = ..., reception_step: _Optional[_Union[ReceptionStepReached, _Mapping]] = ..., file_quarantined: _Optional[_Union[FileQuarantined, _Mapping]] = ..., quarantine_decided: _Optional[_Union[QuarantineDecided, _Mapping]] = ..., receiver_health: _Optional[_Union[ReceiverHealthChanged, _Mapping]] = ..., storage_space: _Optional[_Union[StorageSpaceChanged, _Mapping]] = ...) -> None: ...
+    frames_added: FramesAdded
+    def __init__(self, cursor: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., tenant: _Optional[str] = ..., type: _Optional[_Union[EventType, str]] = ..., association_failed: _Optional[_Union[AssociationFailed, _Mapping]] = ..., reception_step: _Optional[_Union[ReceptionStepReached, _Mapping]] = ..., file_quarantined: _Optional[_Union[FileQuarantined, _Mapping]] = ..., quarantine_decided: _Optional[_Union[QuarantineDecided, _Mapping]] = ..., receiver_health: _Optional[_Union[ReceiverHealthChanged, _Mapping]] = ..., storage_space: _Optional[_Union[StorageSpaceChanged, _Mapping]] = ..., frames_added: _Optional[_Union[FramesAdded, _Mapping]] = ...) -> None: ...
 
 class WatchKeepAlive(_message.Message):
     __slots__ = ("time", "cursor", "tenant_cursors", "unanswered_tenants", "full")

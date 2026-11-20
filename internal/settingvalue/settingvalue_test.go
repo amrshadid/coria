@@ -111,3 +111,46 @@ func TestAChangeIsReadAtOnce(t *testing.T) {
 		t.Fatalf("CORS origins after a change %+v, %v", o, err)
 	}
 }
+
+// TestAccessValues guards the typed readers of the access settings: the
+// built-in defaults when nothing is stored, a stored value read, a tenant's
+// networks over the installation's, and a stored value its rule refuses
+// answered as the server's fault.
+func TestAccessValues(t *testing.T) {
+	ctx := context.Background()
+	r := settingvalue.Reader{Master: stored{v: map[string]string{
+		settings.AccessDeniedNetworks: "192.0.2.0/24", settings.AccessTenantNetworks: "10.0.0.0/8",
+		settings.AccessFailureLimit: "3",
+	}}}
+	if n, err := r.Networks(ctx, settings.AccessDeniedNetworks); err != nil || n.String() != "192.0.2.0/24" {
+		t.Errorf("denied %v, %v", n, err)
+	}
+	if n, err := r.Networks(ctx, settings.AccessTrustedProxies); err != nil || len(n) != 0 {
+		t.Errorf("proxies %v, %v", n, err)
+	}
+	if v, err := r.FailureLimit(ctx); err != nil || v != 3 {
+		t.Errorf("limit %v, %v", v, err)
+	}
+	if v, err := r.FailureWindow(ctx); err != nil || v.String() != "1m0s" {
+		t.Errorf("window %v, %v", v, err)
+	}
+	if v, err := r.BlockTime(ctx); err != nil || v.String() != "15m0s" {
+		t.Errorf("block %v, %v", v, err)
+	}
+	if v, err := r.KeyMaxLifetime(ctx); err != nil || v.Hours() != 3650*24 {
+		t.Errorf("max lifetime %v, %v", v, err)
+	}
+	if v, err := r.KeyExpiryWarning(ctx); err != nil || v.Hours() != 7*24 {
+		t.Errorf("warning %v, %v", v, err)
+	}
+	if n, err := r.OnTenant(stored{v: map[string]string{}}).TenantNetworks(ctx); err != nil || n.String() != "10.0.0.0/8" {
+		t.Errorf("tenant without its own %v, %v", n, err)
+	}
+	if n, err := r.OnTenant(stored{v: map[string]string{settings.AccessTenantNetworks: "198.51.100.0/24"}}).TenantNetworks(ctx); err != nil || n.String() != "198.51.100.0/24" {
+		t.Errorf("tenant with its own %v, %v", n, err)
+	}
+	broken := settingvalue.Reader{Master: stored{v: map[string]string{settings.AccessAllowedNetworks: "10.1.2.3/8"}}}
+	if _, err := broken.Networks(ctx, settings.AccessAllowedNetworks); fault.KindOf(err) != fault.Internal {
+		t.Errorf("a stored value its rule refuses: %v", err)
+	}
+}

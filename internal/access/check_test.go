@@ -161,7 +161,7 @@ func TestCheckTable(t *testing.T) {
 func TestDeniedSamePath(t *testing.T) {
 	e := newEnv(t)
 	k := e.key(time.Time{}, on(master.TenantScope(e.clinic.ID), master.RoleAdmin))
-	if _, err := e.master.MarkKeyUsed(e.ctx, k.id, t0.Add(-time.Second)); err != nil {
+	if _, err := e.master.MarkKeyUsed(e.ctx, k.id, t0.Add(-time.Second), ""); err != nil {
 		t.Fatal(err)
 	}
 	run := func(tenant string) ([]string, master.AuditEntry, error) {
@@ -419,7 +419,7 @@ func TestMarkOnlyWhenStale(t *testing.T) {
 	} {
 		k := e.key(time.Time{})
 		if !tc.lastUsed.IsZero() {
-			if _, err := e.master.MarkKeyUsed(e.ctx, k.id, tc.lastUsed); err != nil {
+			if _, err := e.master.MarkKeyUsed(e.ctx, k.id, tc.lastUsed, ""); err != nil {
 				t.Fatal(err)
 			}
 		}

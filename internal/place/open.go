@@ -116,11 +116,30 @@ type Opener struct {
 // *ServerError; anything else is the storage's: its directory not there or
 // behind a link, its endpoint no longer listed, or the driver's own failure.
 func (o Opener) Open(ctx context.Context, t Tenant, s tenant.Storage) (blob.Store, error) {
+	return o.open(ctx, t, s, false)
+}
+
+// OpenForReading is Open for a user that only reads (a download, the
+// metadata of an instance, the free space): the same rules, and a store
+// that writes nothing when it opens and refuses Put and Delete
+// (dir.OpenForReading, s3.Config.ForReading). Opening a storage to write
+// removes what a crash left in it, which would remove the work in progress
+// of a store already writing there; a reader opened per request must never
+// do that, nor fail when another open runs beside it.
+func (o Opener) OpenForReading(ctx context.Context, t Tenant, s tenant.Storage) (blob.Store, error) {
+	return o.open(ctx, t, s, true)
+}
+
+// open is Open, or OpenForReading when forReading is set.
+func (o Opener) open(ctx context.Context, t Tenant, s tenant.Storage, forReading bool) (blob.Store, error) {
 	at, err := o.resolve(ctx, t, s)
 	if err != nil {
 		return nil, err
 	}
 	if s.Type == tenant.StorageDirectory {
+		if forReading {
+			return dir.OpenForReading(at.dir.Path())
+		}
 		return dir.Open(at.dir.Path())
 	}
 	if t.Secrets == nil {
@@ -139,7 +158,7 @@ func (o Opener) Open(ctx context.Context, t Tenant, s tenant.Storage) (blob.Stor
 		Endpoint: ep.URL, Region: s.S3.Region, Bucket: s.S3.Bucket, Prefix: s.S3.Prefix, PathStyle: s.S3.PathStyle,
 		AccessKeyID: s3.NewSecret(s.S3.AccessKeyID), SecretAccessKey: s3.NewSecret(string(plain)),
 		AllowHTTP: ep.Entry.PlainHTTP, AllowAddress: ep.AllowAddress(),
-		StaleUploadAge: o.StaleUploadAge,
+		StaleUploadAge: o.StaleUploadAge, ForReading: forReading,
 	})
 }
 

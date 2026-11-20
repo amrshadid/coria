@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/blob/readat"
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/receive/header"
@@ -65,7 +66,7 @@ func (s *metaSource) instance(ctx context.Context, held tenant.ScanInstance, in 
 	if in.Key != held.Key || in.Size != held.Size || (!held.SHA256.IsZero() && in.SHA256 != held.SHA256.String()) {
 		return nil, fault.New(fault.DataLoss, messageBadSidecar)
 	}
-	ra := &blobAt{ctx: ctx, store: s.store, key: held.Key, size: held.Size}
+	ra := readat.New(ctx, s.store, held.Key, held.Size)
 	// The line names the transfer syntax when it was written by a version
 	// that keeps it; an older line is answered from the file's meta group.
 	ts := in.TransferSyntax
@@ -105,7 +106,7 @@ func (s *metaSource) instance(ctx context.Context, held tenant.ScanInstance, in 
 // datasetFromFile reads the header of the instance's file within the
 // header bound and returns its DICOM JSON, and whether the header is too
 // large to be read within the bound, in which case there is no JSON.
-func (s *metaSource) datasetFromFile(ctx context.Context, ra *blobAt, held tenant.ScanInstance, deflated bool) ([]byte, bool, error) {
+func (s *metaSource) datasetFromFile(ctx context.Context, ra io.ReaderAt, held tenant.ScanInstance, deflated bool) ([]byte, bool, error) {
 	info, err := s.store.Stat(ctx, held.Key)
 	if err != nil {
 		return nil, false, fileFailure(err)
@@ -153,72 +154,4 @@ func headerLength(ts string) (int64, bool) {
 		return 12, true
 	}
 	return 0, false
-}
-
-// blobAt reads a stored object at an offset, for the DICOM reader, which
-// reads a header in many small pieces. A read that continues where the
-// bytes held end fetches the next chunk, twice as long as the last up to
-// readChunk, so a header is a few ranged reads of the storage and never a
-// read per element; a read that jumps (the reader skipping over encapsulated
-// pixel data, item by item) fetches only what it asks for, rounded up to
-// minChunk, so skipping a large file does not read it.
-type blobAt struct {
-	ctx   context.Context
-	store blob.Store
-	key   string
-	size  int64
-	// chunk holds the bytes from chunkAt on.
-	chunk   []byte
-	chunkAt int64
-	// next is the length of the next read-ahead.
-	next int64
-}
-
-// readChunk is the most a fetch asks the storage for, and minChunk the
-// least.
-const (
-	readChunk = 256 << 10
-	minChunk  = 512
-)
-
-// ReadAt implements io.ReaderAt.
-func (b *blobAt) ReadAt(p []byte, off int64) (int, error) {
-	n := 0
-	for n < len(p) {
-		pos := off + int64(n)
-		if pos >= b.size {
-			return n, io.EOF
-		}
-		if pos < b.chunkAt || pos >= b.chunkAt+int64(len(b.chunk)) {
-			if err := b.fetch(pos, int64(len(p)-n)); err != nil {
-				return n, err
-			}
-		}
-		n += copy(p[n:], b.chunk[pos-b.chunkAt:])
-	}
-	return n, nil
-}
-
-// fetch holds the bytes from pos on: want of them at least, rounded up, and
-// more when pos follows the bytes held.
-func (b *blobAt) fetch(pos, want int64) error {
-	if b.chunk == nil || pos != b.chunkAt+int64(len(b.chunk)) {
-		b.next = minChunk
-	}
-	length := min(max(b.next, (want+minChunk-1)/minChunk*minChunk), readChunk, b.size-pos)
-	b.next = min(b.next*2, readChunk)
-	if want > length && want <= b.size-pos {
-		length = want
-	}
-	rc, err := b.store.Read(b.ctx, b.key, pos, length)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = rc.Close() }()
-	buf := make([]byte, length)
-	if _, err := io.ReadFull(rc, buf); err != nil {
-		return err
-	}
-	b.chunk, b.chunkAt = buf, pos
-	return nil
 }

@@ -92,8 +92,11 @@ func receiversPage(c *ctx, owner, gen int, token, tenant string) tea.Cmd {
 		return answer(res, err, func(r *v1.ListReceiversResponse) tea.Msg {
 			rows := make([]row, 0, len(r.GetReceivers()))
 			for _, rc := range r.GetReceivers() {
-				d := rc.GetDimse()
-				rows = append(rows, row{cells: []string{rc.GetName(), itoa(int64(d.GetPort())), d.GetAeTitle(), rc.GetStorage(), output.ReceiverHealth(rc.GetHealth())}, ref: rc})
+				port, aet := "-", "-"
+				if d := rc.GetDimse(); d != nil {
+					port, aet = itoa(int64(d.GetPort())), d.GetAeTitle()
+				}
+				rows = append(rows, row{cells: []string{rc.GetName(), port, aet, rc.GetStorage(), output.ReceiverHealth(rc.GetHealth())}, ref: rc})
 			}
 			return pageMsg{gen: gen, rows: rows, next: r.GetNextPageToken()}
 		})

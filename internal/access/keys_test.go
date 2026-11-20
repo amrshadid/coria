@@ -32,7 +32,7 @@ func TestCreateKeyExpiry(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e.reset()
-			made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "lab robot", tc.exp)
+			made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "lab robot", tc.exp, master.KeyRules{})
 			_, entries := e.recorded()
 			if len(entries) != 1 {
 				t.Fatalf("%d audit entries, want 1", len(entries))
@@ -74,7 +74,7 @@ func TestCreateKeyHolder(t *testing.T) {
 		{"Zoë 山田", true},
 		{"bad\xff", false},
 	} {
-		_, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), tc.holder, access.Expiry{})
+		_, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), tc.holder, access.Expiry{}, master.KeyRules{})
 		if tc.ok && err != nil {
 			t.Errorf("holder of %d bytes: %v", len(tc.holder), err)
 		}
@@ -89,7 +89,7 @@ func TestCreateKeyHolder(t *testing.T) {
 func managementCalls(e *env, keyID string) map[string]func(access.Decision) error {
 	return map[string]func(access.Decision) error{
 		"CreateKey": func(d access.Decision) error {
-			_, err := e.access.CreateKey(e.ctx, d, "h", access.Expiry{})
+			_, err := e.access.CreateKey(e.ctx, d, "h", access.Expiry{}, master.KeyRules{})
 			return err
 		},
 		"GetKey": func(d access.Decision) error {
@@ -199,9 +199,9 @@ func TestManagementValidatesAfterRole(t *testing.T) {
 	e := newEnv(t)
 	operator := e.key(time.Time{}, on(master.Installation, master.RoleOperator))
 	d := e.decide(access.APIKey(operator.full), access.Authenticated(), "CreateKey")
-	_, err := e.access.CreateKey(e.ctx, d, "", access.ExpireAfter(-1))
+	_, err := e.access.CreateKey(e.ctx, d, "", access.ExpireAfter(-1), master.KeyRules{})
 	wantErr(t, "operator, bad request", err, fault.Denied, access.MessageDenied)
-	_, err = e.access.CreateKey(e.ctx, e.admin("CreateKey"), "", access.ExpireAfter(-1))
+	_, err = e.access.CreateKey(e.ctx, e.admin("CreateKey"), "", access.ExpireAfter(-1), master.KeyRules{})
 	wantErr(t, "admin, bad request", err, fault.Invalid, "")
 }
 
@@ -332,7 +332,7 @@ func TestKeysListedWithoutHash(t *testing.T) {
 // secret, the result of CreateKey, prints only the key's id in every form.
 func TestCreatedKeyPrintsNoSecret(t *testing.T) {
 	e := newEnv(t)
-	made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "h", access.Expiry{})
+	made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "h", access.Expiry{}, master.KeyRules{})
 	if err != nil {
 		t.Fatal(err)
 	}

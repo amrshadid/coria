@@ -158,7 +158,7 @@ func (c *counting) TenantByName(ctx context.Context, name string) (master.Tenant
 	return c.Store.TenantByName(ctx, name)
 }
 
-func (c *counting) MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool, error) {
+func (c *counting) MarkKeyUsed(ctx context.Context, id string, at time.Time, address string) (bool, error) {
 	c.marks.Add(1)
 	c.mu.Lock()
 	c.markedKeys = append(c.markedKeys, id)
@@ -166,7 +166,7 @@ func (c *counting) MarkKeyUsed(ctx context.Context, id string, at time.Time) (bo
 	if c.failMarks.Load() {
 		return false, fault.New(fault.Unavailable, "test: marks fail")
 	}
-	return c.Store.MarkKeyUsed(ctx, id, at)
+	return c.Store.MarkKeyUsed(ctx, id, at, address)
 }
 
 func (c *counting) AppendAudit(ctx context.Context, entries ...master.AuditEntry) error {
@@ -251,18 +251,23 @@ func (w lockedWriter) Write(p []byte) (int, error) {
 	return w.b.Write(p)
 }
 
-// newEnv makes an env with the tenants "lab" and "clinic".
-func newEnv(t testing.TB) *env {
+// newEnv makes an env with the tenants "lab" and "clinic". Each option
+// changes the Config before New, such as to give it an event sink.
+func newEnv(t testing.TB, options ...func(*access.Config)) *env {
 	t.Helper()
 	m := openSQLite(t)
 	e := &env{
 		t: t, ctx: context.Background(), master: m, store: &counting{Store: m},
 		clock: &clock{now: t0}, log: &bytes.Buffer{}, logMu: &sync.Mutex{}, setup: ids("setup"),
 	}
-	a, err := access.New(access.Config{
+	cfg := access.Config{
 		Store: e.store, Clock: e.clock.Now, NewID: ids("audit"),
 		Log: slog.New(slog.NewTextHandler(lockedWriter{e.logMu, e.log}, nil)),
-	})
+	}
+	for _, o := range options {
+		o(&cfg)
+	}
+	a, err := access.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -35,6 +35,14 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 \
 port=$(free_port)
 if start_server "$work/serve.log" "$data" --listen "127.0.0.1:$port" --tls-cert "$work/cert.pem" --tls-key "$work/key.pem" --log-level debug; then
 	main_pid=$SERVER_PID
+	# The sections that follow send hundreds of refused requests from this
+	# one address on purpose, to show each refusal; the limits on failed
+	# calls would block it after twenty. They are raised as far as they go
+	# on this installation, on the local socket, before any request over
+	# the network reads them; section 12 proves the limits on an
+	# installation of its own.
+	cli "$data" /coria.v1.SettingsService/SetSetting "*" setting set access.failure-limit 10000
+	cli "$data" /coria.v1.SettingsService/SetSetting "*" setting set access.failure-window 1s
 	cli "$data" /coria.v1.AccessService/WhoAmI "*" whoami
 	whoami=$(head -1 "$work/cli.out")
 	tls_subject=$(echo | openssl s_client -connect "127.0.0.1:$port" -CAfile "$work/cert.pem" -verify_return_error 2> /dev/null | grep -c 'Verify return code: 0 (ok)' || true)

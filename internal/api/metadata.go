@@ -198,7 +198,7 @@ func (c *core) metadataSource(ctx context.Context, p tenant.Pipeline, tenantName
 	if err != nil {
 		return nil, nil, err
 	}
-	store, err := c.opener().Open(ctx, place.TenantOf(row.ID, tenantName, p), srow)
+	store, err := c.opener().OpenForReading(ctx, place.TenantOf(row.ID, tenantName, p), srow)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -218,29 +218,21 @@ func (c *core) metadataSource(ctx context.Context, p tenant.Pipeline, tenantName
 // file that is missing, is not in its form, or does not hold an instance
 // the catalog holds, is data loss.
 func (s *metaSource) page(ctx context.Context, held []tenant.ScanInstance) ([]*v1.InstanceMetadata, error) {
-	var rd *sidecar.Reader
-	start := s.lineStart(ctx, held[0].SOPInstanceUID)
-	rc, err := s.store.Read(ctx, s.key, start, -1)
-	switch {
-	case fault.KindOf(err) == fault.NotFound:
-		return nil, fault.Wrap(fault.DataLoss, err, messageNoSidecar)
-	case err != nil:
-		return nil, storageFailure(err, "the scan's metadata file cannot be read")
+	rd, rc, first, err := s.lineOf(ctx, held[0].SOPInstanceUID, nil)
+	if err != nil {
+		return nil, err
 	}
 	defer func() { _ = rc.Close() }()
-	if start > 0 {
-		rd = sidecar.NewReaderFrom(rc)
-	} else {
-		rd = sidecar.NewReader(rc)
-	}
 	var (
 		out   []*v1.InstanceMetadata
 		total int
 	)
-	for _, h := range held {
-		in, err := nextInstance(rd, h.SOPInstanceUID)
-		if err != nil {
-			return nil, err
+	for i, h := range held {
+		in := first
+		if i > 0 {
+			if in, err = nextInstance(rd, h.SOPInstanceUID); err != nil {
+				return nil, err
+			}
 		}
 		m, err := s.instance(ctx, h, in)
 		if err != nil {
@@ -253,6 +245,48 @@ func (s *metaSource) page(ctx context.Context, held []tenant.ScanInstance) ([]*v
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// lineOf opens the scan's metadata file at the place its index gives for
+// the instance uid and reads forward to that instance's line. It returns
+// the reader, which goes on from the line after it, the open body for the
+// caller to close, and the line. wrap, when not nil, wraps the body before
+// it is read, for a caller that counts what it reads.
+//
+// The index and the lines are two reads of the file, and the frame pass
+// and an archive into the scan replace the file whole between any two
+// reads: an offset of the old file's index is then a place in the middle
+// of a line, or at another line, of the new one. A read from an index's
+// offset that does not find the line where it should be is made once more
+// with the index read again; a second failure, or a failure of a read
+// from the first line, which no rewrite explains, is data loss.
+func (s *metaSource) lineOf(ctx context.Context, uid string, wrap func(io.Reader) io.Reader) (*sidecar.Reader, io.ReadCloser, sidecar.Instance, error) {
+	for try := 0; ; try++ {
+		start := s.lineStart(ctx, uid)
+		rc, err := s.store.Read(ctx, s.key, start, -1)
+		switch {
+		case fault.KindOf(err) == fault.NotFound:
+			return nil, nil, sidecar.Instance{}, fault.Wrap(fault.DataLoss, err, messageNoSidecar)
+		case err != nil:
+			return nil, nil, sidecar.Instance{}, storageFailure(err, "the scan's metadata file cannot be read")
+		}
+		var body io.Reader = rc
+		if wrap != nil {
+			body = wrap(rc)
+		}
+		rd := sidecar.NewReader(body)
+		if start > 0 {
+			rd = sidecar.NewReaderFrom(body)
+		}
+		in, err := nextInstance(rd, uid)
+		if err == nil {
+			return rd, rc, in, nil
+		}
+		_ = rc.Close()
+		if try > 0 || start == 0 || fault.KindOf(err) != fault.DataLoss {
+			return nil, nil, in, err
+		}
+	}
 }
 
 // The tail of the metadata file the index is looked for in, first this many

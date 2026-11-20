@@ -62,6 +62,28 @@ func TestReceiverCommands(t *testing.T) {
 	}
 }
 
+// TestReceiverSTOWCommands guards a stow receiver through the commands: an
+// add with --type stow sends its keys and no port or AE title, its details
+// say what it takes, and a change of its keys names only stow.key_ids.
+func TestReceiverSTOWCommands(t *testing.T) {
+	r := newRig(t)
+	r.must("tenant", "create", "lab1")
+	r.must("storage", "add", "lab1", "main", "--type", "dir", "--root", "fast")
+	add := r.run("receiver", "add", "lab1", "web", "--type", "stow", "--storage", "main", "--allow-key", "k1", "--allow-key", "k2",
+		"--max-request-size", "1GiB", "--enabled")
+	if add.code != 0 || !strings.Contains(add.stdout, "Type:             stow\n") || !strings.Contains(add.stdout, "Takes keys:       k1, k2\n") ||
+		!strings.Contains(add.stdout, "Max request size: 1GiB\n") || strings.Contains(add.stdout, "Port:") {
+		t.Errorf("add --type stow:\n%+v", add)
+	}
+	set := r.run("receiver", "set", "lab1", "web", "--no-keys")
+	if set.code != 0 || !strings.Contains(set.stdout, "Takes keys:       no key\n") || !strings.Contains(set.stdout, "Max request size: 1GiB\n") {
+		t.Errorf("set --no-keys:\n%+v", set)
+	}
+	expect(t, r.run("receiver", "list", "lab1"), 0,
+		"NAME  PORT  AET  STORAGE  HEALTH\n"+
+			"web   -     -    main     up\n", "")
+}
+
 // TestReceiverSetNamesOnlyWhatChanges guards the mask a change sends: each
 // field of the callers, TLS, lists and naming is replaced whole or reset the
 // way its flag says, and a field without a flag keeps its value.
@@ -123,7 +145,11 @@ func TestReceiverUsageErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		"missing flags":      {[]string{"receiver", "add", "lab1", "x", "--port", "11114"}, "a receiver needs --storage and --aet"},
+		"missing flags":      {[]string{"receiver", "add", "lab1", "x", "--port", "11114"}, "a receiver needs --storage, and a dimse receiver --aet"},
+		"stow flag on dimse": {with(add, "--allow-key", "k1"), "give --type stow"},
+		"dimse flag on stow": {[]string{"receiver", "add", "lab1", "w", "--type", "stow", "--storage", "main", "--port", "1"}, "a stow receiver has no port"},
+		"unknown type":       {[]string{"receiver", "add", "lab1", "w", "--type", "web", "--storage", "main"}, "is not a receiver type"},
+		"both types on set":  {with(set, "--allow-key", "k1", "--aet", "A"), "a stow receiver has no port"},
 		"any with a list":    {with(add, "--any-caller", "--allow-aet", "A"), "--any-caller admits everyone"},
 		"any false":          {with(set, "--any-caller=false"), "--any-caller=false is not a choice"},
 		"no callers + list":  {with(set, "--no-callers", "--allow-from", "10.0.0.0/8"), "--no-callers admits nobody"},

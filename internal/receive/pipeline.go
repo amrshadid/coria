@@ -56,6 +56,9 @@ type Pipeline struct {
 	stats Stats
 	// meter measures the throughput a status reports.
 	meter meter
+	// stepping counts the steps in flight, and landedSeen the files landed
+	// when the pass of frame tables last asked (busy).
+	stepping, landedSeen atomic.Int64
 
 	// limit is the header bound last read and when (headerLimit).
 	limit struct {

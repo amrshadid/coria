@@ -45,7 +45,7 @@ func (h receiverHandler) AddReceiver(_ context.Context, req *v1.AddReceiverReque
 		return nil, err
 	}
 	d := in.GetDimse()
-	if d == nil || d.GetPort() < 1 || d.GetPort() > 65535 || d.GetAeTitle() == "" {
+	if in.GetStow() == nil && (d == nil || d.GetPort() < 1 || d.GetPort() > 65535 || d.GetAeTitle() == "") {
 		return nil, fault.New(fault.Invalid, "receiver.dimse: a port and an AE title are required")
 	}
 	if _, ok := s.arch.storages[key(req.GetTenant(), in.GetStorage())]; !ok {
@@ -64,6 +64,9 @@ func (h receiverHandler) AddReceiver(_ context.Context, req *v1.AddReceiverReque
 	}
 	if r.GetMaxFileBytes() == 0 {
 		r.MaxFileBytes = 1 << 32
+	}
+	if st := r.GetStow(); st != nil && st.GetMaxRequestBytes() == 0 {
+		st.MaxRequestBytes = 1 << 34
 	}
 	r.CreateTime, r.UpdateTime = timestamppb.New(s.now()), timestamppb.New(s.now())
 	s.arch.receivers[k] = r
@@ -162,6 +165,15 @@ func (h receiverHandler) SetReceiver(_ context.Context, req *v1.SetReceiverReque
 			next.GetDimse().SopClasses = in.GetDimse().GetSopClasses()
 		case "dimse.transfer_syntaxes":
 			next.GetDimse().TransferSyntaxes = in.GetDimse().GetTransferSyntaxes()
+		case "stow.key_ids", "stow.max_request_bytes":
+			if next.GetStow() == nil {
+				return nil, fault.New(fault.Invalid, "update_mask: "+p+" names a field of another type")
+			}
+			if p == "stow.key_ids" {
+				next.GetStow().KeyIds = in.GetStow().GetKeyIds()
+			} else {
+				next.GetStow().MaxRequestBytes = in.GetStow().GetMaxRequestBytes()
+			}
 		default:
 			return nil, fault.New(fault.Invalid, "update_mask: "+p+" names no field that can change")
 		}

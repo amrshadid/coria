@@ -1,11 +1,16 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/receive/sidecar"
 )
 
@@ -64,5 +69,113 @@ func TestDatasetFromSidecarSendsWhatItCannotSettleToTheFile(t *testing.T) {
 	}
 	if got := answer(sidecar.Instance{PixelData: &sidecar.PixelData{Offset: 1000, Length: 4100}, DatasetOmitted: true}, "1.2.840.10008.1.2.1"); got != "" {
 		t.Errorf("a line with no data set was answered: %s", got)
+	}
+}
+
+// reencoded is the answer to a line as encoding/json makes it: the data set
+// decoded into values, trailing padding left out, Pixel Data replaced by
+// its reference, and written again. datasetFromSidecar must answer what it
+// does, byte for byte, without decoding the values.
+func reencoded(t *testing.T, in sidecar.Instance, ts string) string {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(in.Dataset))
+	dec.UseNumber()
+	var set map[string]any
+	if err := dec.Decode(&set); err != nil {
+		t.Fatal(err)
+	}
+	delete(set, keyPaddingMember)
+	hdr, _ := headerLength(ts)
+	for key := range pixelMembers {
+		if el, ok := set[key].(map[string]any); ok {
+			set[key] = map[string]any{memberVR: el[memberVR], memberBulkURI: "u?" + strconv.FormatInt(in.PixelData.Offset+hdr, 10) + "," + strconv.FormatInt(in.PixelData.Length-hdr, 10)}
+		}
+	}
+	out, err := json.Marshal(set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+// TestDatasetFromSidecarIsWhatEncodingJSONWrites guards the answer made
+// from a line against encoding/json: for each file of the corpus whose
+// header the line settles, go-dicom's DICOM JSON as the line holds it is
+// answered exactly as decoding it and writing it again would; and a line
+// in another form (members out of order, written twice, names escaped,
+// white space, a second value after the first) is answered with the same
+// members and values, or not at all when encoding/json would not.
+func TestDatasetFromSidecarIsWhatEncodingJSONWrites(t *testing.T) {
+	names, err := filepath.Glob(filepath.Join("..", "receive", "testdata", "*.dcm"))
+	if err != nil || len(names) < 10 {
+		t.Fatalf("the corpus: %d files, %v", len(names), err)
+	}
+	settled := 0
+	for _, name := range names {
+		file, err := os.ReadFile(name) // #nosec G304 -- the corpus's own names.
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := header.Read(bytes.NewReader(file), int64(len(file)))
+		if err != nil {
+			continue // A file the corpus holds to be refused.
+		}
+		js, err := h.DICOMJSON()
+		if err != nil {
+			t.Fatal(err)
+		}
+		in := sidecar.Instance{Dataset: js}
+		if h.HasPixelData {
+			in.PixelData = &sidecar.PixelData{Offset: h.PixelData.Offset, Length: h.PixelData.Length}
+		}
+		got := answer(in, h.TransferSyntaxUID)
+		if got == "" {
+			continue // The file is read for this one.
+		}
+		settled++
+		if want := reencoded(t, in, h.TransferSyntaxUID); got != want {
+			t.Errorf("%s: the answer differs from encoding/json's:\n%.300s\n%.300s", filepath.Base(name), got, want)
+		}
+	}
+	if settled < 5 {
+		t.Errorf("only %d files of the corpus were answered from a line", settled)
+	}
+
+	const pixel = `"7FE00010":{"vr":"OW"}`
+	for name, set := range map[string]string{
+		"out of order":      `{"00280010":{"vr":"US","Value":[64]},"00100010":{"Value":[{"Alphabetic":"A^B"}],"vr":"PN"},` + pixel + `}`,
+		"written twice":     `{"00280010":{"vr":"US","Value":[1]},"00280010":{"vr":"US","Value":[64]},` + pixel + `}`,
+		"escaped names":     `{"\u0030\u00300280010":{"\u0076r":"US","Value":[64]},` + pixel + `}`,
+		"white space":       " {\n \"00280010\" : { \"vr\" : \"US\" , \"Value\" : [ 64 ] } ,\t" + pixel + " }\n",
+		"a value after":     `{"00280010":{"vr":"US","Value":[64]},` + pixel + `} {"x":1}`,
+		"text with escapes": `{"00081030":{"vr":"LO","Value":["a\"b\\c<&>\u00e9"]},` + pixel + `}`,
+		"a sequence":        `{"00081140":{"vr":"SQ","Value":[{"00081150":{"vr":"UI","Value":["1.2"]}},{}]},` + pixel + `}`,
+		"an empty sequence": `{"00081140":{"vr":"SQ"},"00081141":{"vr":"SQ","Value":null},` + pixel + `}`,
+		"an empty text":     `{"00081030":{"vr":"LO"},` + pixel + `}`,
+	} {
+		in := sidecarLine(set)
+		got := answer(in, "1.2.840.10008.1.2.1")
+		if got == "" {
+			t.Errorf("%s: not answered", name)
+			continue
+		}
+		var a, b any
+		if json.Unmarshal([]byte(got), &a) != nil || json.Unmarshal([]byte(reencoded(t, in, "1.2.840.10008.1.2.1")), &b) != nil || !reflect.DeepEqual(a, b) {
+			t.Errorf("%s: %s, want the members of %s", name, got, reencoded(t, in, "1.2.840.10008.1.2.1"))
+		}
+	}
+	for name, set := range map[string]string{
+		"not an object":        `[1]`,
+		"not JSON":             `{"00280010":`,
+		"an element not a set": `{"00280010":1,` + pixel + `}`,
+		"an item not a set":    `{"00081140":{"vr":"SQ","Value":[1]},` + pixel + `}`,
+		"a long value":         `{"00081030":{"vr":"LO","Value":["` + strings.Repeat("x", 17<<10) + `"]},` + pixel + `}`,
+		"a long inline":        `{"00091010":{"vr":"OB","InlineBinary":"` + strings.Repeat("A", 17<<10) + `"},` + pixel + `}`,
+		"a reference":          `{"00091010":{"vr":"OB","BulkDataURI":"x"},` + pixel + `}`,
+		"two pixel data":       `{"7FE00008":{"vr":"OF"},` + pixel + `}`,
+	} {
+		if got := answer(sidecarLine(set), "1.2.840.10008.1.2.1"); got != "" {
+			t.Errorf("%s: answered %.80s", name, got)
+		}
 	}
 }

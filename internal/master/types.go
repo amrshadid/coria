@@ -272,6 +272,15 @@ type Key struct {
 	LastUsed time.Time
 	// Revoked is when the key was revoked; the zero time is not revoked.
 	Revoked time.Time
+	// Rules is where the key may be used from.
+	Rules KeyRules
+	// LastAddress is the caller's address at the use LastUsed records:
+	// written with it, so it is as old as that time; empty when the key has
+	// never been used off the local socket.
+	LastAddress string
+	// Successor is the id of the key a rotation replaced this one with;
+	// empty when it was never rotated. A key is rotated at most once.
+	Successor string
 }
 
 // Validate returns an Invalid error when k cannot be created. A new key has
@@ -297,10 +306,10 @@ func (k Key) Validate() error {
 			return invalid("a key's expiry is after its creation")
 		}
 	}
-	if !k.LastUsed.IsZero() || !k.Revoked.IsZero() {
-		return invalid("a new key has not been used or revoked")
+	if !k.LastUsed.IsZero() || !k.Revoked.IsZero() || k.LastAddress != "" || k.Successor != "" {
+		return invalid("a new key has not been used, revoked or rotated")
 	}
-	return nil
+	return k.Rules.Validate()
 }
 
 // Scope is what a grant applies to: one tenant, or the installation. The zero

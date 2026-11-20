@@ -107,7 +107,7 @@ export type CreateTenantRequest = Message<"coria.v1.CreateTenantRequest"> & {
   /**
    * SECRET. The address of the tenant's Postgres database, with its login and
    * password, as a Postgres connection URI or keyword/value string; at most
-   * 4 KiB. This is one of the three fields through which a secret crosses the
+   * 4 KiB. This is one of the four fields through which a secret crosses the
    * API, and it only comes in: the server seals it with the installation key
    * and no answer, log or audit entry ever holds it. Required for
    * DATABASE_TYPE_POSTGRES; must be empty for DATABASE_TYPE_SQLITE. The

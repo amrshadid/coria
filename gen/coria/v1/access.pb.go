@@ -124,14 +124,41 @@
 // secret is the exception, kept unless named and never set to empty. A field
 // the server answers is read-only, and naming it is invalid.
 //
-// Secrets cross the API in three fields only,
+// Secrets cross the API in four fields only,
 // CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
-// by AddStorage and SetStorage; always empty in an answer) and
-// CreateKeyResponse.secret (out, once). All three are marked debug_redact.
-// The mark is metadata, not protection: the protobuf library prints such a
-// field like any other (checked with protobuf-go v1.36.12, in every text form).
-// The server's own redactor reads the mark and removes the three fields
-// before anything is logged.
+// by AddStorage and SetStorage; always empty in an answer),
+// CreateKeyResponse.secret and RotateKeyResponse.secret (out, once). All four
+// are marked debug_redact. The mark is metadata, not protection: the
+// protobuf library prints such a field like any other (checked with
+// protobuf-go v1.36.12, in every text form). The server's own redactor reads
+// the mark and removes the four fields before anything is logged.
+//
+// Where a request may come from. A request off the local socket must pass,
+// in this order: the installation's denied networks and allowed networks
+// (the settings access.denied-networks and access.allowed-networks), judged
+// before its key is read; then, once its key and grant are known, the
+// networks of the tenant it names (access.tenant-networks), and the key's
+// own networks and client certificate (Key.networks,
+// Key.client_cert_sha256). A request refused by any of them is answered
+// UNAUTHENTICATED, exactly as a key that is no good, and recorded in the
+// installation's audit log with the rule's name; the caller is never told
+// which rule. The caller's address is the connection's, or, when the
+// connection comes from a proxy listed in access.trusted-proxies, the
+// rightmost address that is not itself a listed proxy in the one header
+// access.forwarded-header names (X-Forwarded-For by default, or Forwarded,
+// RFC 7239); the other header is never read, and from any other connection
+// neither is. The local socket is never refused by a network rule.
+//
+// Failed calls. Requests refused because their key is no good are counted
+// per address (IPv6 per /64), and requests refused because a good key lacks
+// the role are counted per key, over access.failure-window. Past
+// access.failure-limit failures in the window, each further refusal is
+// answered one second late; at twice the limit, the address or the key is
+// blocked for access.block-time: every request from it, a good key's
+// included, is answered UNAUTHENTICATED, and the block is audited. A
+// request that succeeds is never counted, delayed or blocked for its own
+// sake, however many a key makes. The counts are kept in the server's
+// memory and are lost when it restarts.
 
 package coriav1
 
@@ -246,7 +273,23 @@ type Key struct {
 	// behind.
 	LastUseTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_use_time,json=lastUseTime,proto3" json:"last_use_time,omitempty"`
 	// When the key was revoked. Absent while it is not revoked.
-	RevokeTime    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=revoke_time,json=revokeTime,proto3" json:"revoke_time,omitempty"`
+	RevokeTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=revoke_time,json=revokeTime,proto3" json:"revoke_time,omitempty"`
+	// The networks a request with the key may come from, each an address or
+	// a network in CIDR form (address/bits) in its one written form: IPv4
+	// dotted, IPv6 as RFC 5952 writes it, no bit set past the prefix, a
+	// single address without /32 or /128. Empty for every network. At most
+	// 64.
+	Networks []string `protobuf:"bytes,7,rep,name=networks,proto3" json:"networks,omitempty"`
+	// The SHA-256 of the TLS client certificate a request with the key must
+	// present, in 64 lowercase hexadecimal digits; empty for none. A request
+	// that comes through a proxy that ends TLS presents none.
+	ClientCertSha256 string `protobuf:"bytes,8,opt,name=client_cert_sha256,json=clientCertSha256,proto3" json:"client_cert_sha256,omitempty"`
+	// The caller's address at the use last_use_time records, written with it;
+	// empty when the key was never used off the local socket.
+	LastUseAddress string `protobuf:"bytes,9,opt,name=last_use_address,json=lastUseAddress,proto3" json:"last_use_address,omitempty"`
+	// The id of the key a rotation replaced this one with; empty when it was
+	// never rotated.
+	SuccessorId   string `protobuf:"bytes,10,opt,name=successor_id,json=successorId,proto3" json:"successor_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -321,6 +364,34 @@ func (x *Key) GetRevokeTime() *timestamppb.Timestamp {
 		return x.RevokeTime
 	}
 	return nil
+}
+
+func (x *Key) GetNetworks() []string {
+	if x != nil {
+		return x.Networks
+	}
+	return nil
+}
+
+func (x *Key) GetClientCertSha256() string {
+	if x != nil {
+		return x.ClientCertSha256
+	}
+	return ""
+}
+
+func (x *Key) GetLastUseAddress() string {
+	if x != nil {
+		return x.LastUseAddress
+	}
+	return ""
+}
+
+func (x *Key) GetSuccessorId() string {
+	if x != nil {
+		return x.SuccessorId
+	}
+	return ""
 }
 
 // Grant gives one key one role on one scope.
@@ -541,15 +612,21 @@ type CreateKeyRequest struct {
 	Holder string `protobuf:"bytes,1,opt,name=holder,proto3" json:"holder,omitempty"`
 	// When the key stops working. When neither field is set, the key expires
 	// after the installation's setting key.default-lifetime, whose built-in
-	// default is 90 days.
+	// default is 90 days, or key.max-lifetime when that is shorter.
 	//
 	// Types that are valid to be assigned to Expiry:
 	//
 	//	*CreateKeyRequest_ExpireAfter
 	//	*CreateKeyRequest_NeverExpire
-	Expiry        isCreateKeyRequest_Expiry `protobuf_oneof:"expiry"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Expiry isCreateKeyRequest_Expiry `protobuf_oneof:"expiry"`
+	// The networks the key may be used from, as Key.networks states them.
+	// Empty for every network.
+	Networks []string `protobuf:"bytes,4,rep,name=networks,proto3" json:"networks,omitempty"`
+	// The SHA-256 of the TLS client certificate the key must come with, as
+	// Key.client_cert_sha256 states it. Empty for none.
+	ClientCertSha256 string `protobuf:"bytes,5,opt,name=client_cert_sha256,json=clientCertSha256,proto3" json:"client_cert_sha256,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *CreateKeyRequest) Reset() {
@@ -614,13 +691,28 @@ func (x *CreateKeyRequest) GetNeverExpire() bool {
 	return false
 }
 
+func (x *CreateKeyRequest) GetNetworks() []string {
+	if x != nil {
+		return x.Networks
+	}
+	return nil
+}
+
+func (x *CreateKeyRequest) GetClientCertSha256() string {
+	if x != nil {
+		return x.ClientCertSha256
+	}
+	return ""
+}
+
 type isCreateKeyRequest_Expiry interface {
 	isCreateKeyRequest_Expiry()
 }
 
 type CreateKeyRequest_ExpireAfter struct {
 	// The key expires this long after it is made. Must be positive and at
-	// most 10 years (3650 days).
+	// most the installation's setting key.max-lifetime (built-in default
+	// 3650 days).
 	ExpireAfter *durationpb.Duration `protobuf:"bytes,2,opt,name=expire_after,json=expireAfter,proto3,oneof"`
 }
 
@@ -641,7 +733,7 @@ type CreateKeyResponse struct {
 	// The new key.
 	Key *Key `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	// SECRET. The whole key, cor_<id>_<secret>, as a client sends it in the
-	// Authorization header. This is one of the three fields through which a
+	// Authorization header. This is one of the four fields through which a
 	// secret crosses the API, and the only time this one is answered: the
 	// server keeps only its SHA-256 and cannot answer it again. A client shows
 	// it to its user once and does not log it. The debug_redact mark is read by
@@ -1459,11 +1551,247 @@ func (x *WhoAmIResponse) GetPrincipal() *Principal {
 	return nil
 }
 
+// RotateKeyRequest names the key to rotate.
+type RotateKeyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The key's id. Required.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// How long the rotated key keeps working beside its successor: from zero
+	// to 30 days, and at least one hour for a key rotating itself without
+	// admin on the installation. Unset means one day.
+	Overlap       *durationpb.Duration `protobuf:"bytes,2,opt,name=overlap,proto3" json:"overlap,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateKeyRequest) Reset() {
+	*x = RotateKeyRequest{}
+	mi := &file_coria_v1_access_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateKeyRequest) ProtoMessage() {}
+
+func (x *RotateKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_access_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateKeyRequest.ProtoReflect.Descriptor instead.
+func (*RotateKeyRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_access_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RotateKeyRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RotateKeyRequest) GetOverlap() *durationpb.Duration {
+	if x != nil {
+		return x.Overlap
+	}
+	return nil
+}
+
+// RotateKeyResponse is the successor and, once, its secret.
+type RotateKeyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The successor.
+	Key *Key `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// SECRET. The successor's whole key, cor_<id>_<secret>, answered this
+	// once, as CreateKeyResponse.secret is. The debug_redact mark is read by
+	// the server's redactor; the protobuf library itself still prints the
+	// field.
+	Secret string `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	// The rotated key as it now stands, with its new expire_time and its
+	// successor_id.
+	Rotated       *Key `protobuf:"bytes,3,opt,name=rotated,proto3" json:"rotated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateKeyResponse) Reset() {
+	*x = RotateKeyResponse{}
+	mi := &file_coria_v1_access_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateKeyResponse) ProtoMessage() {}
+
+func (x *RotateKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_access_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateKeyResponse.ProtoReflect.Descriptor instead.
+func (*RotateKeyResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_access_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *RotateKeyResponse) GetKey() *Key {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *RotateKeyResponse) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+func (x *RotateKeyResponse) GetRotated() *Key {
+	if x != nil {
+		return x.Rotated
+	}
+	return nil
+}
+
+// SetKeyRulesRequest is where a key may now be used from.
+type SetKeyRulesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The key's id. Required.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The networks, as Key.networks states them; empty for every network.
+	Networks []string `protobuf:"bytes,2,rep,name=networks,proto3" json:"networks,omitempty"`
+	// The client certificate's SHA-256, as Key.client_cert_sha256 states it;
+	// empty for none.
+	ClientCertSha256 string `protobuf:"bytes,3,opt,name=client_cert_sha256,json=clientCertSha256,proto3" json:"client_cert_sha256,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *SetKeyRulesRequest) Reset() {
+	*x = SetKeyRulesRequest{}
+	mi := &file_coria_v1_access_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetKeyRulesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetKeyRulesRequest) ProtoMessage() {}
+
+func (x *SetKeyRulesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_access_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetKeyRulesRequest.ProtoReflect.Descriptor instead.
+func (*SetKeyRulesRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_access_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *SetKeyRulesRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SetKeyRulesRequest) GetNetworks() []string {
+	if x != nil {
+		return x.Networks
+	}
+	return nil
+}
+
+func (x *SetKeyRulesRequest) GetClientCertSha256() string {
+	if x != nil {
+		return x.ClientCertSha256
+	}
+	return ""
+}
+
+// SetKeyRulesResponse is the key with its new rules.
+type SetKeyRulesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The key.
+	Key           *Key `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetKeyRulesResponse) Reset() {
+	*x = SetKeyRulesResponse{}
+	mi := &file_coria_v1_access_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetKeyRulesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetKeyRulesResponse) ProtoMessage() {}
+
+func (x *SetKeyRulesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_access_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetKeyRulesResponse.ProtoReflect.Descriptor instead.
+func (*SetKeyRulesResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_access_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *SetKeyRulesResponse) GetKey() *Key {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
 var File_coria_v1_access_proto protoreflect.FileDescriptor
 
 const file_coria_v1_access_proto_rawDesc = "" +
 	"\n" +
-	"\x15coria/v1/access.proto\x12\bcoria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14coria/v1/scope.proto\"\xa4\x02\n" +
+	"\x15coria/v1/access.proto\x12\bcoria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14coria/v1/scope.proto\"\xbb\x03\n" +
 	"\x03Key\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12;\n" +
@@ -1473,7 +1801,12 @@ const file_coria_v1_access_proto_rawDesc = "" +
 	"expireTime\x12>\n" +
 	"\rlast_use_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\vlastUseTime\x12;\n" +
 	"\vrevoke_time\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"revokeTime\"i\n" +
+	"revokeTime\x12\x1a\n" +
+	"\bnetworks\x18\a \x03(\tR\bnetworks\x12,\n" +
+	"\x12client_cert_sha256\x18\b \x01(\tR\x10clientCertSha256\x12(\n" +
+	"\x10last_use_address\x18\t \x01(\tR\x0elastUseAddress\x12!\n" +
+	"\fsuccessor_id\x18\n" +
+	" \x01(\tR\vsuccessorId\"i\n" +
 	"\x05Grant\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12%\n" +
 	"\x05scope\x18\x02 \x01(\v2\x0f.coria.v1.ScopeR\x05scope\x12\"\n" +
@@ -1484,11 +1817,13 @@ const file_coria_v1_access_proto_rawDesc = "" +
 	"\x06grants\x18\x03 \x03(\v2\x0f.coria.v1.GrantR\x06grantsB\b\n" +
 	"\x06caller\"(\n" +
 	"\rLocalOperator\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"\x99\x01\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"\xe3\x01\n" +
 	"\x10CreateKeyRequest\x12\x16\n" +
 	"\x06holder\x18\x01 \x01(\tR\x06holder\x12>\n" +
 	"\fexpire_after\x18\x02 \x01(\v2\x19.google.protobuf.DurationH\x00R\vexpireAfter\x12#\n" +
-	"\fnever_expire\x18\x03 \x01(\bH\x00R\vneverExpireB\b\n" +
+	"\fnever_expire\x18\x03 \x01(\bH\x00R\vneverExpire\x12\x1a\n" +
+	"\bnetworks\x18\x04 \x03(\tR\bnetworks\x12,\n" +
+	"\x12client_cert_sha256\x18\x05 \x01(\tR\x10clientCertSha256B\b\n" +
 	"\x06expiry\"Q\n" +
 	"\x11CreateKeyResponse\x12\x1f\n" +
 	"\x03key\x18\x01 \x01(\v2\r.coria.v1.KeyR\x03key\x12\x1b\n" +
@@ -1532,14 +1867,27 @@ const file_coria_v1_access_proto_rawDesc = "" +
 	"\rprevious_role\x18\x01 \x01(\x0e2\x0e.coria.v1.RoleR\fpreviousRole\"\x0f\n" +
 	"\rWhoAmIRequest\"C\n" +
 	"\x0eWhoAmIResponse\x121\n" +
-	"\tprincipal\x18\x01 \x01(\v2\x13.coria.v1.PrincipalR\tprincipal*a\n" +
+	"\tprincipal\x18\x01 \x01(\v2\x13.coria.v1.PrincipalR\tprincipal\"W\n" +
+	"\x10RotateKeyRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x123\n" +
+	"\aoverlap\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\aoverlap\"z\n" +
+	"\x11RotateKeyResponse\x12\x1f\n" +
+	"\x03key\x18\x01 \x01(\v2\r.coria.v1.KeyR\x03key\x12\x1b\n" +
+	"\x06secret\x18\x02 \x01(\tB\x03\x80\x01\x01R\x06secret\x12'\n" +
+	"\arotated\x18\x03 \x01(\v2\r.coria.v1.KeyR\arotated\"n\n" +
+	"\x12SetKeyRulesRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1a\n" +
+	"\bnetworks\x18\x02 \x03(\tR\bnetworks\x12,\n" +
+	"\x12client_cert_sha256\x18\x03 \x01(\tR\x10clientCertSha256\"6\n" +
+	"\x13SetKeyRulesResponse\x12\x1f\n" +
+	"\x03key\x18\x01 \x01(\v2\r.coria.v1.KeyR\x03key*a\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vROLE_READER\x10\x01\x12\x0f\n" +
 	"\vROLE_WRITER\x10\x02\x12\x11\n" +
 	"\rROLE_OPERATOR\x10\x03\x12\x0e\n" +
 	"\n" +
-	"ROLE_ADMIN\x10\x042\xd3\x04\n" +
+	"ROLE_ADMIN\x10\x042\xea\x05\n" +
 	"\rAccessService\x12D\n" +
 	"\tCreateKey\x12\x1a.coria.v1.CreateKeyRequest\x1a\x1b.coria.v1.CreateKeyResponse\x12@\n" +
 	"\x06GetKey\x12\x17.coria.v1.GetKeyRequest\x1a\x18.coria.v1.GetKeyResponse\"\x03\x90\x02\x01\x12F\n" +
@@ -1549,7 +1897,9 @@ const file_coria_v1_access_proto_rawDesc = "" +
 	"\n" +
 	"ListGrants\x12\x1b.coria.v1.ListGrantsRequest\x1a\x1c.coria.v1.ListGrantsResponse\"\x03\x90\x02\x01\x12O\n" +
 	"\vRemoveGrant\x12\x1c.coria.v1.RemoveGrantRequest\x1a\x1d.coria.v1.RemoveGrantResponse\"\x03\x90\x02\x02\x12@\n" +
-	"\x06WhoAmI\x12\x17.coria.v1.WhoAmIRequest\x1a\x18.coria.v1.WhoAmIResponse\"\x03\x90\x02\x01B\x8d\x01\n" +
+	"\x06WhoAmI\x12\x17.coria.v1.WhoAmIRequest\x1a\x18.coria.v1.WhoAmIResponse\"\x03\x90\x02\x01\x12D\n" +
+	"\tRotateKey\x12\x1a.coria.v1.RotateKeyRequest\x1a\x1b.coria.v1.RotateKeyResponse\x12O\n" +
+	"\vSetKeyRules\x12\x1c.coria.v1.SetKeyRulesRequest\x1a\x1d.coria.v1.SetKeyRulesResponse\"\x03\x90\x02\x02B\x8d\x01\n" +
 	"\fcom.coria.v1B\vAccessProtoP\x01Z/github.com/amrshadid/coria/gen/coria/v1;coriav1\xa2\x02\x03CXX\xaa\x02\bCoria.V1\xca\x02\bCoria\\V1\xe2\x02\x14Coria\\V1\\GPBMetadata\xea\x02\tCoria::V1b\x06proto3"
 
 var (
@@ -1565,7 +1915,7 @@ func file_coria_v1_access_proto_rawDescGZIP() []byte {
 }
 
 var file_coria_v1_access_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_coria_v1_access_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_coria_v1_access_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_coria_v1_access_proto_goTypes = []any{
 	(Role)(0),                     // 0: coria.v1.Role
 	(*Key)(nil),                   // 1: coria.v1.Key
@@ -1588,55 +1938,67 @@ var file_coria_v1_access_proto_goTypes = []any{
 	(*RemoveGrantResponse)(nil),   // 18: coria.v1.RemoveGrantResponse
 	(*WhoAmIRequest)(nil),         // 19: coria.v1.WhoAmIRequest
 	(*WhoAmIResponse)(nil),        // 20: coria.v1.WhoAmIResponse
-	(*timestamppb.Timestamp)(nil), // 21: google.protobuf.Timestamp
-	(*Scope)(nil),                 // 22: coria.v1.Scope
-	(*durationpb.Duration)(nil),   // 23: google.protobuf.Duration
+	(*RotateKeyRequest)(nil),      // 21: coria.v1.RotateKeyRequest
+	(*RotateKeyResponse)(nil),     // 22: coria.v1.RotateKeyResponse
+	(*SetKeyRulesRequest)(nil),    // 23: coria.v1.SetKeyRulesRequest
+	(*SetKeyRulesResponse)(nil),   // 24: coria.v1.SetKeyRulesResponse
+	(*timestamppb.Timestamp)(nil), // 25: google.protobuf.Timestamp
+	(*Scope)(nil),                 // 26: coria.v1.Scope
+	(*durationpb.Duration)(nil),   // 27: google.protobuf.Duration
 }
 var file_coria_v1_access_proto_depIdxs = []int32{
-	21, // 0: coria.v1.Key.create_time:type_name -> google.protobuf.Timestamp
-	21, // 1: coria.v1.Key.expire_time:type_name -> google.protobuf.Timestamp
-	21, // 2: coria.v1.Key.last_use_time:type_name -> google.protobuf.Timestamp
-	21, // 3: coria.v1.Key.revoke_time:type_name -> google.protobuf.Timestamp
-	22, // 4: coria.v1.Grant.scope:type_name -> coria.v1.Scope
+	25, // 0: coria.v1.Key.create_time:type_name -> google.protobuf.Timestamp
+	25, // 1: coria.v1.Key.expire_time:type_name -> google.protobuf.Timestamp
+	25, // 2: coria.v1.Key.last_use_time:type_name -> google.protobuf.Timestamp
+	25, // 3: coria.v1.Key.revoke_time:type_name -> google.protobuf.Timestamp
+	26, // 4: coria.v1.Grant.scope:type_name -> coria.v1.Scope
 	0,  // 5: coria.v1.Grant.role:type_name -> coria.v1.Role
 	1,  // 6: coria.v1.Principal.key:type_name -> coria.v1.Key
 	4,  // 7: coria.v1.Principal.local_operator:type_name -> coria.v1.LocalOperator
 	2,  // 8: coria.v1.Principal.grants:type_name -> coria.v1.Grant
-	23, // 9: coria.v1.CreateKeyRequest.expire_after:type_name -> google.protobuf.Duration
+	27, // 9: coria.v1.CreateKeyRequest.expire_after:type_name -> google.protobuf.Duration
 	1,  // 10: coria.v1.CreateKeyResponse.key:type_name -> coria.v1.Key
 	1,  // 11: coria.v1.GetKeyResponse.key:type_name -> coria.v1.Key
 	1,  // 12: coria.v1.ListKeysResponse.keys:type_name -> coria.v1.Key
 	1,  // 13: coria.v1.RevokeKeyResponse.key:type_name -> coria.v1.Key
-	22, // 14: coria.v1.SetGrantRequest.scope:type_name -> coria.v1.Scope
+	26, // 14: coria.v1.SetGrantRequest.scope:type_name -> coria.v1.Scope
 	0,  // 15: coria.v1.SetGrantRequest.role:type_name -> coria.v1.Role
 	2,  // 16: coria.v1.SetGrantResponse.grant:type_name -> coria.v1.Grant
 	0,  // 17: coria.v1.SetGrantResponse.previous_role:type_name -> coria.v1.Role
-	22, // 18: coria.v1.ListGrantsRequest.scope:type_name -> coria.v1.Scope
+	26, // 18: coria.v1.ListGrantsRequest.scope:type_name -> coria.v1.Scope
 	2,  // 19: coria.v1.ListGrantsResponse.grants:type_name -> coria.v1.Grant
-	22, // 20: coria.v1.RemoveGrantRequest.scope:type_name -> coria.v1.Scope
+	26, // 20: coria.v1.RemoveGrantRequest.scope:type_name -> coria.v1.Scope
 	0,  // 21: coria.v1.RemoveGrantResponse.previous_role:type_name -> coria.v1.Role
 	3,  // 22: coria.v1.WhoAmIResponse.principal:type_name -> coria.v1.Principal
-	5,  // 23: coria.v1.AccessService.CreateKey:input_type -> coria.v1.CreateKeyRequest
-	7,  // 24: coria.v1.AccessService.GetKey:input_type -> coria.v1.GetKeyRequest
-	9,  // 25: coria.v1.AccessService.ListKeys:input_type -> coria.v1.ListKeysRequest
-	11, // 26: coria.v1.AccessService.RevokeKey:input_type -> coria.v1.RevokeKeyRequest
-	13, // 27: coria.v1.AccessService.SetGrant:input_type -> coria.v1.SetGrantRequest
-	15, // 28: coria.v1.AccessService.ListGrants:input_type -> coria.v1.ListGrantsRequest
-	17, // 29: coria.v1.AccessService.RemoveGrant:input_type -> coria.v1.RemoveGrantRequest
-	19, // 30: coria.v1.AccessService.WhoAmI:input_type -> coria.v1.WhoAmIRequest
-	6,  // 31: coria.v1.AccessService.CreateKey:output_type -> coria.v1.CreateKeyResponse
-	8,  // 32: coria.v1.AccessService.GetKey:output_type -> coria.v1.GetKeyResponse
-	10, // 33: coria.v1.AccessService.ListKeys:output_type -> coria.v1.ListKeysResponse
-	12, // 34: coria.v1.AccessService.RevokeKey:output_type -> coria.v1.RevokeKeyResponse
-	14, // 35: coria.v1.AccessService.SetGrant:output_type -> coria.v1.SetGrantResponse
-	16, // 36: coria.v1.AccessService.ListGrants:output_type -> coria.v1.ListGrantsResponse
-	18, // 37: coria.v1.AccessService.RemoveGrant:output_type -> coria.v1.RemoveGrantResponse
-	20, // 38: coria.v1.AccessService.WhoAmI:output_type -> coria.v1.WhoAmIResponse
-	31, // [31:39] is the sub-list for method output_type
-	23, // [23:31] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	27, // 23: coria.v1.RotateKeyRequest.overlap:type_name -> google.protobuf.Duration
+	1,  // 24: coria.v1.RotateKeyResponse.key:type_name -> coria.v1.Key
+	1,  // 25: coria.v1.RotateKeyResponse.rotated:type_name -> coria.v1.Key
+	1,  // 26: coria.v1.SetKeyRulesResponse.key:type_name -> coria.v1.Key
+	5,  // 27: coria.v1.AccessService.CreateKey:input_type -> coria.v1.CreateKeyRequest
+	7,  // 28: coria.v1.AccessService.GetKey:input_type -> coria.v1.GetKeyRequest
+	9,  // 29: coria.v1.AccessService.ListKeys:input_type -> coria.v1.ListKeysRequest
+	11, // 30: coria.v1.AccessService.RevokeKey:input_type -> coria.v1.RevokeKeyRequest
+	13, // 31: coria.v1.AccessService.SetGrant:input_type -> coria.v1.SetGrantRequest
+	15, // 32: coria.v1.AccessService.ListGrants:input_type -> coria.v1.ListGrantsRequest
+	17, // 33: coria.v1.AccessService.RemoveGrant:input_type -> coria.v1.RemoveGrantRequest
+	19, // 34: coria.v1.AccessService.WhoAmI:input_type -> coria.v1.WhoAmIRequest
+	21, // 35: coria.v1.AccessService.RotateKey:input_type -> coria.v1.RotateKeyRequest
+	23, // 36: coria.v1.AccessService.SetKeyRules:input_type -> coria.v1.SetKeyRulesRequest
+	6,  // 37: coria.v1.AccessService.CreateKey:output_type -> coria.v1.CreateKeyResponse
+	8,  // 38: coria.v1.AccessService.GetKey:output_type -> coria.v1.GetKeyResponse
+	10, // 39: coria.v1.AccessService.ListKeys:output_type -> coria.v1.ListKeysResponse
+	12, // 40: coria.v1.AccessService.RevokeKey:output_type -> coria.v1.RevokeKeyResponse
+	14, // 41: coria.v1.AccessService.SetGrant:output_type -> coria.v1.SetGrantResponse
+	16, // 42: coria.v1.AccessService.ListGrants:output_type -> coria.v1.ListGrantsResponse
+	18, // 43: coria.v1.AccessService.RemoveGrant:output_type -> coria.v1.RemoveGrantResponse
+	20, // 44: coria.v1.AccessService.WhoAmI:output_type -> coria.v1.WhoAmIResponse
+	22, // 45: coria.v1.AccessService.RotateKey:output_type -> coria.v1.RotateKeyResponse
+	24, // 46: coria.v1.AccessService.SetKeyRules:output_type -> coria.v1.SetKeyRulesResponse
+	37, // [37:47] is the sub-list for method output_type
+	27, // [27:37] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_access_proto_init() }
@@ -1663,7 +2025,7 @@ func file_coria_v1_access_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_access_proto_rawDesc), len(file_coria_v1_access_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   20,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -6,6 +6,7 @@ syntax = "proto3";
 package coria.v1;
 
 import "google/protobuf/timestamp.proto";
+import "coria/v1/access.proto";
 import "coria/v1/quarantine.proto";
 import "coria/v1/reception.proto";
 import "coria/v1/receiver.proto";
@@ -291,6 +292,12 @@ message GetStatusResponse {
 
   // When the answer was made.
   google.protobuf.Timestamp time = 3;
+
+  // With the installation, the keys that work now and expire within the
+  // installation's setting key.expiry-warning (built-in default 7 days),
+  // oldest first, on every page; empty with a tenant. Each such key is also
+  // reported once a day in the server's log of access events.
+  repeated Key expiring_keys = 4;
 }
 
 // EventType is the kind of an event. A type added in a later version is a
@@ -317,6 +324,10 @@ enum EventType {
 
   // A storage became nearly full, or recovered.
   EVENT_TYPE_STORAGE_SPACE = 6;
+
+  // The pass that gives frame tables to the metadata of scans archived
+  // before them rewrote a scan's metadata, or ended.
+  EVENT_TYPE_FRAMES_ADDED = 7;
 }
 
 // AssociationFailure is why a DIMSE receiver turned a caller away. Each
@@ -516,6 +527,36 @@ message StorageSpaceChanged {
   optional int64 free_bytes = 4;
 }
 
+// FramesAdded is the progress of the pass that gives frame tables (where
+// each frame of an instance's pixel data lies in its file) to the metadata
+// of scans archived before such tables were recorded. The server runs it
+// once at each start; it reads only the metadata's first bytes for a scan
+// already done, so a pass with nothing to do writes no event. One event
+// reports a scan's metadata rewritten; one with finished set reports the
+// end of a pass that rewrote any.
+message FramesAdded {
+  // The subject label of the scan rewritten; empty when finished.
+  string subject_label = 1;
+
+  // Its session's label; empty when finished.
+  string session_label = 2;
+
+  // Its label; empty when finished.
+  string scan_label = 3;
+
+  // How many of the scan's instances were given a table; 0 when finished.
+  int64 instances = 4;
+
+  // The pass's total so far of scans rewritten.
+  int64 scans_done = 5;
+
+  // The pass's total so far of instances given a table.
+  int64 instances_done = 6;
+
+  // Set on the event that ends a pass, every scan of the tenant checked.
+  bool finished = 7;
+}
+
 // Event is one thing that happened in a tenant.
 message Event {
   // The event's cursor: a Watch of its tenant from it answers the events
@@ -552,6 +593,9 @@ message Event {
 
     // A storage became nearly full or recovered.
     StorageSpaceChanged storage_space = 10;
+
+    // The pass of frame tables rewrote a scan's metadata, or ended.
+    FramesAdded frames_added = 11;
   }
 }
 

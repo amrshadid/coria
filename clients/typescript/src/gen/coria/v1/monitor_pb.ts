@@ -10,6 +10,8 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { Key } from "./access_pb.js";
+import { file_coria_v1_access } from "./access_pb.js";
 import type { Caller, QuarantineReason, QuarantineState, ReleaseMode } from "./quarantine_pb.js";
 import { file_coria_v1_quarantine } from "./quarantine_pb.js";
 import type { ReceptionCounts, ReceptionStep } from "./reception_pb.js";
@@ -26,7 +28,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/monitor.proto.
  */
 export const file_coria_v1_monitor: GenFile = /*@__PURE__*/
-  fileDesc("ChZjb3JpYS92MS9tb25pdG9yLnByb3RvEghjb3JpYS52MSJPChJSZWNlcHRpb25TdGVwQ291bnQSJQoEc3RlcBgBIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASEgoKcmVjZXB0aW9ucxgCIAEoAyLgAQoMVGVuYW50Q291bnRzEhAKCHN1YmplY3RzGAEgASgDEhAKCHNlc3Npb25zGAIgASgDEg0KBXNjYW5zGAMgASgDEhEKCWluc3RhbmNlcxgEIAEoAxIZChFxdWFyYW50aW5lZF9maWxlcxgFIAEoAxIZChFxdWFyYW50aW5lZF9ieXRlcxgGIAEoAxI8ChZyZWNlcHRpb25zX2luX3Byb2dyZXNzGAcgAygLMhwuY29yaWEudjEuUmVjZXB0aW9uU3RlcENvdW50EhYKDmluY29taW5nX2J5dGVzGAggASgDIpgBCgpUaHJvdWdocHV0EiEKGWZpbGVzX3JlY2VpdmVkX3Blcl9zZWNvbmQYASABKAESIQoZYnl0ZXNfcmVjZWl2ZWRfcGVyX3NlY29uZBgCIAEoARIhChlmaWxlc19hcmNoaXZlZF9wZXJfc2Vjb25kGAMgASgBEiEKGWJ5dGVzX2FyY2hpdmVkX3Blcl9zZWNvbmQYBCABKAEiiQEKDVN0b3JhZ2VTdGF0dXMSDwoHc3RvcmFnZRgBIAEoCRISCgp1c2VkX2J5dGVzGAIgASgDEhcKCmZyZWVfYnl0ZXMYAyABKANIAIgBARIWCg5jYXBhY2l0eV9ieXRlcxgEIAEoAxITCgtuZWFybHlfZnVsbBgFIAEoCEINCgtfZnJlZV9ieXRlcyJgCg5SZWNlaXZlclN0YXR1cxIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aBISCgphbnlfY2FsbGVyGAMgASgIIuQCCgxUZW5hbnRTdGF0dXMSDgoGdGVuYW50GAEgASgJEi0KDmRhdGFiYXNlX3N0YXRlGAIgASgOMhUuY29yaWEudjEuVGVuYW50U3RhdGUSNwoTZGF0YWJhc2Vfc3RhdGVfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMZXZlbnRfY3Vyc29yGAQgASgJEiYKBmNvdW50cxgFIAEoCzIWLmNvcmlhLnYxLlRlbmFudENvdW50cxIoCgp0aHJvdWdocHV0GAYgASgLMhQuY29yaWEudjEuVGhyb3VnaHB1dBIpCghzdG9yYWdlcxgHIAMoCzIXLmNvcmlhLnYxLlN0b3JhZ2VTdGF0dXMSKwoJcmVjZWl2ZXJzGAggAygLMhguY29yaWEudjEuUmVjZWl2ZXJTdGF0dXMSHAoUaW5jb21pbmdfbGltaXRfYnl0ZXMYCSABKAMiWQoQR2V0U3RhdHVzUmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIn8KEUdldFN0YXR1c1Jlc3BvbnNlEicKB3RlbmFudHMYASADKAsyFi5jb3JpYS52MS5UZW5hbnRTdGF0dXMSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEigKBHRpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIpQBChFBc3NvY2lhdGlvbkZhaWxlZBIQCghyZWNlaXZlchgBIAEoCRIgCgZjYWxsZXIYAiABKAsyEC5jb3JpYS52MS5DYWxsZXISLQoHZmFpbHVyZRgDIAEoDjIcLmNvcmlhLnYxLkFzc29jaWF0aW9uRmFpbHVyZRINCgVjb3VudBgEIAEoAxINCgVob3N0cxgFIAEoAyKOAgoUUmVjZXB0aW9uU3RlcFJlYWNoZWQSEQoJcmVjZXB0aW9uGAEgASgJEhAKCHJlY2VpdmVyGAIgASgJEg8KB2Fycml2YWwYAyABKAUSJQoEc3RlcBgEIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASLgoNcHJldmlvdXNfc3RlcBgJIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASKQoGY291bnRzGAUgASgLMhkuY29yaWEudjEuUmVjZXB0aW9uQ291bnRzEhUKDXN1YmplY3RfbGFiZWwYBiABKAkSFQoNc2Vzc2lvbl9sYWJlbBgHIAEoCRIQCghyZXRyeV9vZhgIIAEoCSKsAQoPRmlsZVF1YXJhbnRpbmVkEgwKBGZpbGUYASABKAkSEQoJcmVjZXB0aW9uGAIgASgJEhAKCHJlY2VpdmVyGAMgASgJEioKBnJlYXNvbhgEIAEoDjIaLmNvcmlhLnYxLlF1YXJhbnRpbmVSZWFzb24SEgoKc2l6ZV9ieXRlcxgFIAEoAxISCgpoZWxkX2ZpbGVzGAYgASgDEhIKCmhlbGRfYnl0ZXMYByABKAMiuwEKEVF1YXJhbnRpbmVEZWNpZGVkEgwKBGZpbGUYASABKAkSKAoFc3RhdGUYAiABKA4yGS5jb3JpYS52MS5RdWFyYW50aW5lU3RhdGUSKwoMcmVsZWFzZV9tb2RlGAMgASgOMhUuY29yaWEudjEuUmVsZWFzZU1vZGUSGQoRcmVsZWFzZV9yZWNlcHRpb24YBCABKAkSEgoKaGVsZF9maWxlcxgFIAEoAxISCgpoZWxkX2J5dGVzGAYgASgDIlMKFVJlY2VpdmVySGVhbHRoQ2hhbmdlZBIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aCKOAQoTU3RvcmFnZVNwYWNlQ2hhbmdlZBIPCgdzdG9yYWdlGAEgASgJEioKBXN0YXRlGAIgASgOMhsuY29yaWEudjEuU3RvcmFnZVNwYWNlU3RhdGUSEgoKdXNlZF9ieXRlcxgDIAEoAxIXCgpmcmVlX2J5dGVzGAQgASgDSACIAQFCDQoLX2ZyZWVfYnl0ZXMi2gMKBUV2ZW50Eg4KBmN1cnNvchgBIAEoCRIoCgR0aW1lGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgZ0ZW5hbnQYAyABKAkSIQoEdHlwZRgEIAEoDjITLmNvcmlhLnYxLkV2ZW50VHlwZRI5ChJhc3NvY2lhdGlvbl9mYWlsZWQYBSABKAsyGy5jb3JpYS52MS5Bc3NvY2lhdGlvbkZhaWxlZEgAEjgKDnJlY2VwdGlvbl9zdGVwGAYgASgLMh4uY29yaWEudjEuUmVjZXB0aW9uU3RlcFJlYWNoZWRIABI1ChBmaWxlX3F1YXJhbnRpbmVkGAcgASgLMhkuY29yaWEudjEuRmlsZVF1YXJhbnRpbmVkSAASOQoScXVhcmFudGluZV9kZWNpZGVkGAggASgLMhsuY29yaWEudjEuUXVhcmFudGluZURlY2lkZWRIABI6Cg9yZWNlaXZlcl9oZWFsdGgYCSABKAsyHy5jb3JpYS52MS5SZWNlaXZlckhlYWx0aENoYW5nZWRIABI2Cg1zdG9yYWdlX3NwYWNlGAogASgLMh0uY29yaWEudjEuU3RvcmFnZVNwYWNlQ2hhbmdlZEgAQgkKB3BheWxvYWQi7wEKDldhdGNoS2VlcEFsaXZlEigKBHRpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBmN1cnNvchgCIAEoCRJDCg50ZW5hbnRfY3Vyc29ycxgDIAMoCzIrLmNvcmlhLnYxLldhdGNoS2VlcEFsaXZlLlRlbmFudEN1cnNvcnNFbnRyeRIaChJ1bmFuc3dlcmVkX3RlbmFudHMYBCADKAkSDAoEZnVsbBgFIAEoCBo0ChJUZW5hbnRDdXJzb3JzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASLrAQoMV2F0Y2hSZXF1ZXN0Eh4KBXNjb3BlGAEgASgLMg8uY29yaWEudjEuU2NvcGUSDgoGY3Vyc29yGAIgASgJEiIKBXR5cGVzGAMgAygOMhMuY29yaWEudjEuRXZlbnRUeXBlEkEKDnRlbmFudF9jdXJzb3JzGAQgAygLMikuY29yaWEudjEuV2F0Y2hSZXF1ZXN0LlRlbmFudEN1cnNvcnNFbnRyeRIOCgZyZXN1bWUYBSABKAgaNAoSVGVuYW50Q3Vyc29yc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiaQoNV2F0Y2hSZXNwb25zZRIgCgVldmVudBgBIAEoCzIPLmNvcmlhLnYxLkV2ZW50SAASLgoKa2VlcF9hbGl2ZRgCIAEoCzIYLmNvcmlhLnYxLldhdGNoS2VlcEFsaXZlSABCBgoEa2luZCrrAQoJRXZlbnRUeXBlEhoKFkVWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIhCh1FVkVOVF9UWVBFX0FTU09DSUFUSU9OX0ZBSUxFRBABEh0KGUVWRU5UX1RZUEVfUkVDRVBUSU9OX1NURVAQAhIfChtFVkVOVF9UWVBFX0ZJTEVfUVVBUkFOVElORUQQAxIhCh1FVkVOVF9UWVBFX1FVQVJBTlRJTkVfREVDSURFRBAEEh4KGkVWRU5UX1RZUEVfUkVDRUlWRVJfSEVBTFRIEAUSHAoYRVZFTlRfVFlQRV9TVE9SQUdFX1NQQUNFEAYqjwMKEkFzc29jaWF0aW9uRmFpbHVyZRIjCh9BU1NPQ0lBVElPTl9GQUlMVVJFX1VOU1BFQ0lGSUVEEAASKgomQVNTT0NJQVRJT05fRkFJTFVSRV9DQUxMRVJfTk9UX0FMTE9XRUQQARI2CjJBU1NPQ0lBVElPTl9GQUlMVVJFX0NBTExFRF9BRV9USVRMRV9OT1RfUkVDT0dOSVpFRBACEi0KKUFTU09DSUFUSU9OX0ZBSUxVUkVfTk9fQUNDRVBUQUJMRV9DT05URVhUEAMSIwofQVNTT0NJQVRJT05fRkFJTFVSRV9ORUFSTFlfRlVMTBAEEigKJEFTU09DSUFUSU9OX0ZBSUxVUkVfVEVOQU5UX05PVF9SRUFEWRAFEiIKHkFTU09DSUFUSU9OX0ZBSUxVUkVfVExTX0ZBSUxFRBAGEiYKIkFTU09DSUFUSU9OX0ZBSUxVUkVfUFJPVE9DT0xfRVJST1IQBxImCiJBU1NPQ0lBVElPTl9GQUlMVVJFX0lOQ09NSU5HX0xJTUlUEAgqgAEKEVN0b3JhZ2VTcGFjZVN0YXRlEiMKH1NUT1JBR0VfU1BBQ0VfU1RBVEVfVU5TUEVDSUZJRUQQABIjCh9TVE9SQUdFX1NQQUNFX1NUQVRFX05FQVJMWV9GVUxMEAESIQodU1RPUkFHRV9TUEFDRV9TVEFURV9SRUNPVkVSRUQQAjKcAQoOTW9uaXRvclNlcnZpY2USSQoJR2V0U3RhdHVzEhouY29yaWEudjEuR2V0U3RhdHVzUmVxdWVzdBobLmNvcmlhLnYxLkdldFN0YXR1c1Jlc3BvbnNlIgOQAgESPwoFV2F0Y2gSFi5jb3JpYS52MS5XYXRjaFJlcXVlc3QaFy5jb3JpYS52MS5XYXRjaFJlc3BvbnNlIgOQAgEwAWIGcHJvdG8z", [file_google_protobuf_timestamp, file_coria_v1_quarantine, file_coria_v1_reception, file_coria_v1_receiver, file_coria_v1_scope, file_coria_v1_tenant]);
+  fileDesc("ChZjb3JpYS92MS9tb25pdG9yLnByb3RvEghjb3JpYS52MSJPChJSZWNlcHRpb25TdGVwQ291bnQSJQoEc3RlcBgBIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASEgoKcmVjZXB0aW9ucxgCIAEoAyLgAQoMVGVuYW50Q291bnRzEhAKCHN1YmplY3RzGAEgASgDEhAKCHNlc3Npb25zGAIgASgDEg0KBXNjYW5zGAMgASgDEhEKCWluc3RhbmNlcxgEIAEoAxIZChFxdWFyYW50aW5lZF9maWxlcxgFIAEoAxIZChFxdWFyYW50aW5lZF9ieXRlcxgGIAEoAxI8ChZyZWNlcHRpb25zX2luX3Byb2dyZXNzGAcgAygLMhwuY29yaWEudjEuUmVjZXB0aW9uU3RlcENvdW50EhYKDmluY29taW5nX2J5dGVzGAggASgDIpgBCgpUaHJvdWdocHV0EiEKGWZpbGVzX3JlY2VpdmVkX3Blcl9zZWNvbmQYASABKAESIQoZYnl0ZXNfcmVjZWl2ZWRfcGVyX3NlY29uZBgCIAEoARIhChlmaWxlc19hcmNoaXZlZF9wZXJfc2Vjb25kGAMgASgBEiEKGWJ5dGVzX2FyY2hpdmVkX3Blcl9zZWNvbmQYBCABKAEiiQEKDVN0b3JhZ2VTdGF0dXMSDwoHc3RvcmFnZRgBIAEoCRISCgp1c2VkX2J5dGVzGAIgASgDEhcKCmZyZWVfYnl0ZXMYAyABKANIAIgBARIWCg5jYXBhY2l0eV9ieXRlcxgEIAEoAxITCgtuZWFybHlfZnVsbBgFIAEoCEINCgtfZnJlZV9ieXRlcyJgCg5SZWNlaXZlclN0YXR1cxIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aBISCgphbnlfY2FsbGVyGAMgASgIIuQCCgxUZW5hbnRTdGF0dXMSDgoGdGVuYW50GAEgASgJEi0KDmRhdGFiYXNlX3N0YXRlGAIgASgOMhUuY29yaWEudjEuVGVuYW50U3RhdGUSNwoTZGF0YWJhc2Vfc3RhdGVfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMZXZlbnRfY3Vyc29yGAQgASgJEiYKBmNvdW50cxgFIAEoCzIWLmNvcmlhLnYxLlRlbmFudENvdW50cxIoCgp0aHJvdWdocHV0GAYgASgLMhQuY29yaWEudjEuVGhyb3VnaHB1dBIpCghzdG9yYWdlcxgHIAMoCzIXLmNvcmlhLnYxLlN0b3JhZ2VTdGF0dXMSKwoJcmVjZWl2ZXJzGAggAygLMhguY29yaWEudjEuUmVjZWl2ZXJTdGF0dXMSHAoUaW5jb21pbmdfbGltaXRfYnl0ZXMYCSABKAMiWQoQR2V0U3RhdHVzUmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIqUBChFHZXRTdGF0dXNSZXNwb25zZRInCgd0ZW5hbnRzGAEgAygLMhYuY29yaWEudjEuVGVuYW50U3RhdHVzEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIkCg1leHBpcmluZ19rZXlzGAQgAygLMg0uY29yaWEudjEuS2V5IpQBChFBc3NvY2lhdGlvbkZhaWxlZBIQCghyZWNlaXZlchgBIAEoCRIgCgZjYWxsZXIYAiABKAsyEC5jb3JpYS52MS5DYWxsZXISLQoHZmFpbHVyZRgDIAEoDjIcLmNvcmlhLnYxLkFzc29jaWF0aW9uRmFpbHVyZRINCgVjb3VudBgEIAEoAxINCgVob3N0cxgFIAEoAyKOAgoUUmVjZXB0aW9uU3RlcFJlYWNoZWQSEQoJcmVjZXB0aW9uGAEgASgJEhAKCHJlY2VpdmVyGAIgASgJEg8KB2Fycml2YWwYAyABKAUSJQoEc3RlcBgEIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASLgoNcHJldmlvdXNfc3RlcBgJIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASKQoGY291bnRzGAUgASgLMhkuY29yaWEudjEuUmVjZXB0aW9uQ291bnRzEhUKDXN1YmplY3RfbGFiZWwYBiABKAkSFQoNc2Vzc2lvbl9sYWJlbBgHIAEoCRIQCghyZXRyeV9vZhgIIAEoCSKsAQoPRmlsZVF1YXJhbnRpbmVkEgwKBGZpbGUYASABKAkSEQoJcmVjZXB0aW9uGAIgASgJEhAKCHJlY2VpdmVyGAMgASgJEioKBnJlYXNvbhgEIAEoDjIaLmNvcmlhLnYxLlF1YXJhbnRpbmVSZWFzb24SEgoKc2l6ZV9ieXRlcxgFIAEoAxISCgpoZWxkX2ZpbGVzGAYgASgDEhIKCmhlbGRfYnl0ZXMYByABKAMiuwEKEVF1YXJhbnRpbmVEZWNpZGVkEgwKBGZpbGUYASABKAkSKAoFc3RhdGUYAiABKA4yGS5jb3JpYS52MS5RdWFyYW50aW5lU3RhdGUSKwoMcmVsZWFzZV9tb2RlGAMgASgOMhUuY29yaWEudjEuUmVsZWFzZU1vZGUSGQoRcmVsZWFzZV9yZWNlcHRpb24YBCABKAkSEgoKaGVsZF9maWxlcxgFIAEoAxISCgpoZWxkX2J5dGVzGAYgASgDIlMKFVJlY2VpdmVySGVhbHRoQ2hhbmdlZBIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aCKOAQoTU3RvcmFnZVNwYWNlQ2hhbmdlZBIPCgdzdG9yYWdlGAEgASgJEioKBXN0YXRlGAIgASgOMhsuY29yaWEudjEuU3RvcmFnZVNwYWNlU3RhdGUSEgoKdXNlZF9ieXRlcxgDIAEoAxIXCgpmcmVlX2J5dGVzGAQgASgDSACIAQFCDQoLX2ZyZWVfYnl0ZXMioAEKC0ZyYW1lc0FkZGVkEhUKDXN1YmplY3RfbGFiZWwYASABKAkSFQoNc2Vzc2lvbl9sYWJlbBgCIAEoCRISCgpzY2FuX2xhYmVsGAMgASgJEhEKCWluc3RhbmNlcxgEIAEoAxISCgpzY2Fuc19kb25lGAUgASgDEhYKDmluc3RhbmNlc19kb25lGAYgASgDEhAKCGZpbmlzaGVkGAcgASgIIokECgVFdmVudBIOCgZjdXJzb3IYASABKAkSKAoEdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGdGVuYW50GAMgASgJEiEKBHR5cGUYBCABKA4yEy5jb3JpYS52MS5FdmVudFR5cGUSOQoSYXNzb2NpYXRpb25fZmFpbGVkGAUgASgLMhsuY29yaWEudjEuQXNzb2NpYXRpb25GYWlsZWRIABI4Cg5yZWNlcHRpb25fc3RlcBgGIAEoCzIeLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXBSZWFjaGVkSAASNQoQZmlsZV9xdWFyYW50aW5lZBgHIAEoCzIZLmNvcmlhLnYxLkZpbGVRdWFyYW50aW5lZEgAEjkKEnF1YXJhbnRpbmVfZGVjaWRlZBgIIAEoCzIbLmNvcmlhLnYxLlF1YXJhbnRpbmVEZWNpZGVkSAASOgoPcmVjZWl2ZXJfaGVhbHRoGAkgASgLMh8uY29yaWEudjEuUmVjZWl2ZXJIZWFsdGhDaGFuZ2VkSAASNgoNc3RvcmFnZV9zcGFjZRgKIAEoCzIdLmNvcmlhLnYxLlN0b3JhZ2VTcGFjZUNoYW5nZWRIABItCgxmcmFtZXNfYWRkZWQYCyABKAsyFS5jb3JpYS52MS5GcmFtZXNBZGRlZEgAQgkKB3BheWxvYWQi7wEKDldhdGNoS2VlcEFsaXZlEigKBHRpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBmN1cnNvchgCIAEoCRJDCg50ZW5hbnRfY3Vyc29ycxgDIAMoCzIrLmNvcmlhLnYxLldhdGNoS2VlcEFsaXZlLlRlbmFudEN1cnNvcnNFbnRyeRIaChJ1bmFuc3dlcmVkX3RlbmFudHMYBCADKAkSDAoEZnVsbBgFIAEoCBo0ChJUZW5hbnRDdXJzb3JzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASLrAQoMV2F0Y2hSZXF1ZXN0Eh4KBXNjb3BlGAEgASgLMg8uY29yaWEudjEuU2NvcGUSDgoGY3Vyc29yGAIgASgJEiIKBXR5cGVzGAMgAygOMhMuY29yaWEudjEuRXZlbnRUeXBlEkEKDnRlbmFudF9jdXJzb3JzGAQgAygLMikuY29yaWEudjEuV2F0Y2hSZXF1ZXN0LlRlbmFudEN1cnNvcnNFbnRyeRIOCgZyZXN1bWUYBSABKAgaNAoSVGVuYW50Q3Vyc29yc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiaQoNV2F0Y2hSZXNwb25zZRIgCgVldmVudBgBIAEoCzIPLmNvcmlhLnYxLkV2ZW50SAASLgoKa2VlcF9hbGl2ZRgCIAEoCzIYLmNvcmlhLnYxLldhdGNoS2VlcEFsaXZlSABCBgoEa2luZCqIAgoJRXZlbnRUeXBlEhoKFkVWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIhCh1FVkVOVF9UWVBFX0FTU09DSUFUSU9OX0ZBSUxFRBABEh0KGUVWRU5UX1RZUEVfUkVDRVBUSU9OX1NURVAQAhIfChtFVkVOVF9UWVBFX0ZJTEVfUVVBUkFOVElORUQQAxIhCh1FVkVOVF9UWVBFX1FVQVJBTlRJTkVfREVDSURFRBAEEh4KGkVWRU5UX1RZUEVfUkVDRUlWRVJfSEVBTFRIEAUSHAoYRVZFTlRfVFlQRV9TVE9SQUdFX1NQQUNFEAYSGwoXRVZFTlRfVFlQRV9GUkFNRVNfQURERUQQByqPAwoSQXNzb2NpYXRpb25GYWlsdXJlEiMKH0FTU09DSUFUSU9OX0ZBSUxVUkVfVU5TUEVDSUZJRUQQABIqCiZBU1NPQ0lBVElPTl9GQUlMVVJFX0NBTExFUl9OT1RfQUxMT1dFRBABEjYKMkFTU09DSUFUSU9OX0ZBSUxVUkVfQ0FMTEVEX0FFX1RJVExFX05PVF9SRUNPR05JWkVEEAISLQopQVNTT0NJQVRJT05fRkFJTFVSRV9OT19BQ0NFUFRBQkxFX0NPTlRFWFQQAxIjCh9BU1NPQ0lBVElPTl9GQUlMVVJFX05FQVJMWV9GVUxMEAQSKAokQVNTT0NJQVRJT05fRkFJTFVSRV9URU5BTlRfTk9UX1JFQURZEAUSIgoeQVNTT0NJQVRJT05fRkFJTFVSRV9UTFNfRkFJTEVEEAYSJgoiQVNTT0NJQVRJT05fRkFJTFVSRV9QUk9UT0NPTF9FUlJPUhAHEiYKIkFTU09DSUFUSU9OX0ZBSUxVUkVfSU5DT01JTkdfTElNSVQQCCqAAQoRU3RvcmFnZVNwYWNlU3RhdGUSIwofU1RPUkFHRV9TUEFDRV9TVEFURV9VTlNQRUNJRklFRBAAEiMKH1NUT1JBR0VfU1BBQ0VfU1RBVEVfTkVBUkxZX0ZVTEwQARIhCh1TVE9SQUdFX1NQQUNFX1NUQVRFX1JFQ09WRVJFRBACMpwBCg5Nb25pdG9yU2VydmljZRJJCglHZXRTdGF0dXMSGi5jb3JpYS52MS5HZXRTdGF0dXNSZXF1ZXN0GhsuY29yaWEudjEuR2V0U3RhdHVzUmVzcG9uc2UiA5ACARI/CgVXYXRjaBIWLmNvcmlhLnYxLldhdGNoUmVxdWVzdBoXLmNvcmlhLnYxLldhdGNoUmVzcG9uc2UiA5ACATABYgZwcm90bzM", [file_google_protobuf_timestamp, file_coria_v1_access, file_coria_v1_quarantine, file_coria_v1_reception, file_coria_v1_receiver, file_coria_v1_scope, file_coria_v1_tenant]);
 
 /**
  * ReceptionStepCount is how many receptions are in one step.
@@ -424,6 +426,16 @@ export type GetStatusResponse = Message<"coria.v1.GetStatusResponse"> & {
    * @generated from field: google.protobuf.Timestamp time = 3;
    */
   time?: Timestamp | undefined;
+
+  /**
+   * With the installation, the keys that work now and expire within the
+   * installation's setting key.expiry-warning (built-in default 7 days),
+   * oldest first, on every page; empty with a tenant. Each such key is also
+   * reported once a day in the server's log of access events.
+   *
+   * @generated from field: repeated coria.v1.Key expiring_keys = 4;
+   */
+  expiringKeys: Key[];
 };
 
 /**
@@ -768,6 +780,75 @@ export const StorageSpaceChangedSchema: GenMessage<StorageSpaceChanged> = /*@__P
   messageDesc(file_coria_v1_monitor, 13);
 
 /**
+ * FramesAdded is the progress of the pass that gives frame tables (where
+ * each frame of an instance's pixel data lies in its file) to the metadata
+ * of scans archived before such tables were recorded. The server runs it
+ * once at each start; it reads only the metadata's first bytes for a scan
+ * already done, so a pass with nothing to do writes no event. One event
+ * reports a scan's metadata rewritten; one with finished set reports the
+ * end of a pass that rewrote any.
+ *
+ * @generated from message coria.v1.FramesAdded
+ */
+export type FramesAdded = Message<"coria.v1.FramesAdded"> & {
+  /**
+   * The subject label of the scan rewritten; empty when finished.
+   *
+   * @generated from field: string subject_label = 1;
+   */
+  subjectLabel: string;
+
+  /**
+   * Its session's label; empty when finished.
+   *
+   * @generated from field: string session_label = 2;
+   */
+  sessionLabel: string;
+
+  /**
+   * Its label; empty when finished.
+   *
+   * @generated from field: string scan_label = 3;
+   */
+  scanLabel: string;
+
+  /**
+   * How many of the scan's instances were given a table; 0 when finished.
+   *
+   * @generated from field: int64 instances = 4;
+   */
+  instances: bigint;
+
+  /**
+   * The pass's total so far of scans rewritten.
+   *
+   * @generated from field: int64 scans_done = 5;
+   */
+  scansDone: bigint;
+
+  /**
+   * The pass's total so far of instances given a table.
+   *
+   * @generated from field: int64 instances_done = 6;
+   */
+  instancesDone: bigint;
+
+  /**
+   * Set on the event that ends a pass, every scan of the tenant checked.
+   *
+   * @generated from field: bool finished = 7;
+   */
+  finished: boolean;
+};
+
+/**
+ * Describes the message coria.v1.FramesAdded.
+ * Use `create(FramesAddedSchema)` to create a new message.
+ */
+export const FramesAddedSchema: GenMessage<FramesAdded> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 14);
+
+/**
  * Event is one thing that happened in a tenant.
  *
  * @generated from message coria.v1.Event
@@ -857,6 +938,14 @@ export type Event = Message<"coria.v1.Event"> & {
      */
     value: StorageSpaceChanged;
     case: "storageSpace";
+  } | {
+    /**
+     * The pass of frame tables rewrote a scan's metadata, or ended.
+     *
+     * @generated from field: coria.v1.FramesAdded frames_added = 11;
+     */
+    value: FramesAdded;
+    case: "framesAdded";
   } | { case: undefined; value?: undefined };
 };
 
@@ -865,7 +954,7 @@ export type Event = Message<"coria.v1.Event"> & {
  * Use `create(EventSchema)` to create a new message.
  */
 export const EventSchema: GenMessage<Event> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 14);
+  messageDesc(file_coria_v1_monitor, 15);
 
 /**
  * WatchKeepAlive opens every stream, and is sent again when no event has
@@ -934,7 +1023,7 @@ export type WatchKeepAlive = Message<"coria.v1.WatchKeepAlive"> & {
  * Use `create(WatchKeepAliveSchema)` to create a new message.
  */
 export const WatchKeepAliveSchema: GenMessage<WatchKeepAlive> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 15);
+  messageDesc(file_coria_v1_monitor, 16);
 
 /**
  * WatchRequest asks for a stream of events.
@@ -997,7 +1086,7 @@ export type WatchRequest = Message<"coria.v1.WatchRequest"> & {
  * Use `create(WatchRequestSchema)` to create a new message.
  */
 export const WatchRequestSchema: GenMessage<WatchRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 16);
+  messageDesc(file_coria_v1_monitor, 17);
 
 /**
  * WatchResponse is one message of the stream: an event or a keep-alive.
@@ -1035,7 +1124,7 @@ export type WatchResponse = Message<"coria.v1.WatchResponse"> & {
  * Use `create(WatchResponseSchema)` to create a new message.
  */
 export const WatchResponseSchema: GenMessage<WatchResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 17);
+  messageDesc(file_coria_v1_monitor, 18);
 
 /**
  * EventType is the kind of an event. A type added in a later version is a
@@ -1093,6 +1182,14 @@ export enum EventType {
    * @generated from enum value: EVENT_TYPE_STORAGE_SPACE = 6;
    */
   STORAGE_SPACE = 6,
+
+  /**
+   * The pass that gives frame tables to the metadata of scans archived
+   * before them rewrote a scan's metadata, or ended.
+   *
+   * @generated from enum value: EVENT_TYPE_FRAMES_ADDED = 7;
+   */
+  FRAMES_ADDED = 7,
 }
 
 /**

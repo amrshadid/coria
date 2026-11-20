@@ -100,6 +100,10 @@ func Contract() Table {
 		coriav1connect.AccessServiceSetGrantProcedure:    admin,
 		coriav1connect.AccessServiceListGrantsProcedure:  admin,
 		coriav1connect.AccessServiceRemoveGrantProcedure: admin,
+		coriav1connect.AccessServiceSetKeyRulesProcedure: admin,
+		// "Role: admin on the installation; or the key being rotated
+		// itself": the handler decides which, after the check.
+		coriav1connect.AccessServiceRotateKeyProcedure: fixed(access.Authenticated()),
 		// "Role: none; any caller the server authenticates."
 		coriav1connect.AccessServiceWhoAmIProcedure: fixed(access.Authenticated()),
 
@@ -193,6 +197,17 @@ func Contract() Table {
 		// instance's header.
 		coriav1connect.MetadataServiceGetScanMetadataProcedure:     onTenant(func() *coriav1.GetScanMetadataRequest { return &coriav1.GetScanMetadataRequest{} }, master.RoleReader),
 		coriav1connect.MetadataServiceGetInstanceMetadataProcedure: onTenant(func() *coriav1.GetInstanceMetadataRequest { return &coriav1.GetInstanceMetadataRequest{} }, master.RoleReader),
+
+		// CatalogService: reader on the tenant for every list and get.
+		coriav1connect.CatalogServiceListSubjectsProcedure: onTenant(func() *coriav1.ListSubjectsRequest { return &coriav1.ListSubjectsRequest{} }, master.RoleReader),
+		coriav1connect.CatalogServiceGetSubjectProcedure:   onTenant(func() *coriav1.GetSubjectRequest { return &coriav1.GetSubjectRequest{} }, master.RoleReader),
+		coriav1connect.CatalogServiceListSessionsProcedure: onTenant(func() *coriav1.ListSessionsRequest { return &coriav1.ListSessionsRequest{} }, master.RoleReader),
+		coriav1connect.CatalogServiceGetSessionProcedure:   onTenant(func() *coriav1.GetSessionRequest { return &coriav1.GetSessionRequest{} }, master.RoleReader),
+		coriav1connect.CatalogServiceListScansProcedure:    onTenant(func() *coriav1.ListScansRequest { return &coriav1.ListScansRequest{} }, master.RoleReader),
+		coriav1connect.CatalogServiceGetScanProcedure:      onTenant(func() *coriav1.GetScanRequest { return &coriav1.GetScanRequest{} }, master.RoleReader),
+
+		// DataService: reader on the tenant for a stream of files.
+		coriav1connect.DataServiceReadFilesProcedure: onTenant(func() *coriav1.ReadFilesRequest { return &coriav1.ReadFilesRequest{} }, master.RoleReader),
 
 		// MonitorService: "reader on the tenant asked for; operator on the
 		// installation for every tenant."

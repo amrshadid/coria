@@ -31,7 +31,7 @@ func DownloadNeed(r *http.Request) (access.Requirement, access.Request) {
 		// entry still says a window was asked for in some form.
 		window = r.URL.RawQuery != ""
 	}
-	return pendingDownload(download{
+	return downloadNeed(download{
 		Tenant:   r.PathValue("tenant"),
 		Subject:  r.PathValue("subject"),
 		Session:  r.PathValue("session"),
@@ -54,12 +54,12 @@ type download struct {
 	Ranged, Window bool
 }
 
-// pendingDownload is the requirement and the audit facts of a plain HTTP
+// downloadNeed is the requirement and the audit facts of a plain HTTP
 // download of an instance. It is checked before the rest of the path is
 // read and the instance looked up, so a refusal says nothing of what the
 // tenant holds: reader on the tenant the path names, or on the
 // installation for a malformed name (doc.go), as for every method.
-func pendingDownload(d download) (access.Requirement, access.Request) {
+func downloadNeed(d download) (access.Requirement, access.Request) {
 	details := map[string]string{
 		detailRanged: strconv.FormatBool(d.Ranged),
 		detailWindow: strconv.FormatBool(d.Window),

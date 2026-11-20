@@ -81,6 +81,30 @@ func JSONList[T proto.Message](w io.Writer, field string, items []T, more bool) 
 	return writeDocument(w, b.Bytes())
 }
 
+// JSONListTotal is JSONList with "totalCount" after "more": the number of
+// rows that match, written only when the server knew it, since an absent
+// count means not known and a zero would say there are none.
+func JSONListTotal[T proto.Message](w io.Writer, field string, items []T, more bool, total *int64) error {
+	var b bytes.Buffer
+	fmt.Fprintf(&b, `{"schemaVersion":%d,%q:[`, SchemaVersion, field)
+	for i, it := range items {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		raw, err := compactProto(it)
+		if err != nil {
+			return err
+		}
+		b.Write(raw)
+	}
+	fmt.Fprintf(&b, `],"more":%t`, more)
+	if total != nil {
+		fmt.Fprintf(&b, `,"totalCount":%d`, *total)
+	}
+	b.WriteByte('}')
+	return writeDocument(w, b.Bytes())
+}
+
 // JSONValue writes any value that encoding/json can encode as a document with
 // schemaVersion added first. The value must encode as an object.
 func JSONValue(w io.Writer, v any) error {

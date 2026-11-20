@@ -279,8 +279,13 @@ func (s *Server) writeAnyError(w http.ResponseWriter, r *http.Request, ce *conne
 }
 
 // remoteOf returns the caller's address for the log and the audit entry:
-// empty on the local socket, where the "address" names no machine.
+// the one the front step judged (originOf), which is a trusted proxy's
+// forwarded client when there is one; empty on the local socket, where the
+// "address" names no machine; addr when the front step did not run.
 func remoteOf(ctx context.Context, addr string) string {
+	if o, ok := originFrom(ctx); ok {
+		return o.remote
+	}
 	if _, ok := localFrom(ctx); ok {
 		return ""
 	}

@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/receiver.proto.
  */
 export const file_coria_v1_receiver: GenFile = /*@__PURE__*/
-  fileDesc("Chdjb3JpYS92MS9yZWNlaXZlci5wcm90bxIIY29yaWEudjEimQMKCFJlY2VpdmVyEgwKBG5hbWUYASABKAkSKAoFZGltc2UYAiABKAsyFy5jb3JpYS52MS5EaW1zZVJlY2VpdmVySAASDwoHZW5hYmxlZBgDIAEoCBIPCgdzdG9yYWdlGAQgASgJEiQKBm5hbWluZxgFIAEoCzIULmNvcmlhLnYxLk5hbWluZ1J1bGUSLwoMcXVpZXRfcGVyaW9kGAYgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uEjAKDW1heF9vcGVuX3RpbWUYByABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SFgoObWF4X2ZpbGVfYnl0ZXMYCCABKAMSKAoGaGVhbHRoGAkgASgLMhguY29yaWEudjEuUmVjZWl2ZXJIZWFsdGgSLwoLY3JlYXRlX3RpbWUYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC3VwZGF0ZV90aW1lGAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIGCgR0eXBlIu8BCg1EaW1zZVJlY2VpdmVyEgwKBHBvcnQYASABKAUSFAoMYmluZF9hZGRyZXNzGAIgASgJEhAKCGFlX3RpdGxlGAMgASgJEjMKD2FsbG93ZWRfY2FsbGVycxgEIAEoCzIYLmNvcmlhLnYxLkFsbG93ZWRDYWxsZXJzSAASFAoKYW55X2NhbGxlchgFIAEoCEgAEiIKA3RscxgGIAEoCzIVLmNvcmlhLnYxLlJlY2VpdmVyVGxzEhMKC3NvcF9jbGFzc2VzGAcgAygJEhkKEXRyYW5zZmVyX3N5bnRheGVzGAggAygJQgkKB2NhbGxlcnMiNQoOQWxsb3dlZENhbGxlcnMSIwoFcnVsZXMYASADKAsyFC5jb3JpYS52MS5DYWxsZXJSdWxlIj0KCkNhbGxlclJ1bGUSGAoQY2FsbGluZ19hZV90aXRsZRgBIAEoCRIVCg1hZGRyZXNzX3JhbmdlGAIgASgJIkEKC1JlY2VpdmVyVGxzEhgKEGNlcnRpZmljYXRlX2ZpbGUYASABKAkSGAoQcHJpdmF0ZV9rZXlfZmlsZRgCIAEoCSJmCgpOYW1pbmdSdWxlEg8KB3N1YmplY3QYASABKAkSDwoHc2Vzc2lvbhgCIAEoCRIMCgRzY2FuGAMgASgJEigKB3BhdHRlcm4YBCABKAsyFy5jb3JpYS52MS5OYW1pbmdQYXR0ZXJuIjYKDU5hbWluZ1BhdHRlcm4SEQoJYXR0cmlidXRlGAEgASgJEhIKCmV4cHJlc3Npb24YAiABKAkipgEKDlJlY2VpdmVySGVhbHRoEiYKBXN0YXRlGAEgASgOMhcuY29yaWEudjEuUmVjZWl2ZXJTdGF0ZRIxCgtkb3duX3JlYXNvbhgCIAEoDjIcLmNvcmlhLnYxLlJlY2VpdmVyRG93blJlYXNvbhIOCgZkZXRhaWwYAyABKAkSKQoFc2luY2UYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkoKEkFkZFJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSJAoIcmVjZWl2ZXIYAiABKAsyEi5jb3JpYS52MS5SZWNlaXZlciI7ChNBZGRSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiMgoSR2V0UmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIMCgRuYW1lGAIgASgJIjsKE0dldFJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlciJNChRMaXN0UmVjZWl2ZXJzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkiVwoVTGlzdFJlY2VpdmVyc1Jlc3BvbnNlEiUKCXJlY2VpdmVycxgBIAMoCzISLmNvcmlhLnYxLlJlY2VpdmVyEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJ7ChJTZXRSZWNlaXZlclJlcXVlc3QSDgoGdGVuYW50GAEgASgJEiQKCHJlY2VpdmVyGAIgASgLMhIuY29yaWEudjEuUmVjZWl2ZXISLwoLdXBkYXRlX21hc2sYAyABKAsyGi5nb29nbGUucHJvdG9idWYuRmllbGRNYXNrIjsKE1NldFJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlciI1ChVSZW1vdmVSZWNlaXZlclJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkiPgoWUmVtb3ZlUmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyKnwKDVJlY2VpdmVyU3RhdGUSHgoaUkVDRUlWRVJfU1RBVEVfVU5TUEVDSUZJRUQQABIbChdSRUNFSVZFUl9TVEFURV9TVEFSVElORxABEhUKEVJFQ0VJVkVSX1NUQVRFX1VQEAISFwoTUkVDRUlWRVJfU1RBVEVfRE9XThADKr0DChJSZWNlaXZlckRvd25SZWFzb24SJAogUkVDRUlWRVJfRE9XTl9SRUFTT05fVU5TUEVDSUZJRUQQABIhCh1SRUNFSVZFUl9ET1dOX1JFQVNPTl9ESVNBQkxFRBABEicKI1JFQ0VJVkVSX0RPV05fUkVBU09OX0FERFJFU1NfSU5fVVNFEAISKgomUkVDRUlWRVJfRE9XTl9SRUFTT05fUEVSTUlTU0lPTl9ERU5JRUQQAxIuCipSRUNFSVZFUl9ET1dOX1JFQVNPTl9BRERSRVNTX05PVF9BVkFJTEFCTEUQBBIcChhSRUNFSVZFUl9ET1dOX1JFQVNPTl9UTFMQBRIkCiBSRUNFSVZFUl9ET1dOX1JFQVNPTl9ORUFSTFlfRlVMTBAGEikKJVJFQ0VJVkVSX0RPV05fUkVBU09OX1RFTkFOVF9OT1RfUkVBRFkQBxIhCh1SRUNFSVZFUl9ET1dOX1JFQVNPTl9TVE9QUElORxAIEh4KGlJFQ0VJVkVSX0RPV05fUkVBU09OX09USEVSEAkSJwojUkVDRUlWRVJfRE9XTl9SRUFTT05fSU5DT01JTkdfTElNSVQQCjKwAwoPUmVjZWl2ZXJTZXJ2aWNlEkoKC0FkZFJlY2VpdmVyEhwuY29yaWEudjEuQWRkUmVjZWl2ZXJSZXF1ZXN0Gh0uY29yaWEudjEuQWRkUmVjZWl2ZXJSZXNwb25zZRJPCgtHZXRSZWNlaXZlchIcLmNvcmlhLnYxLkdldFJlY2VpdmVyUmVxdWVzdBodLmNvcmlhLnYxLkdldFJlY2VpdmVyUmVzcG9uc2UiA5ACARJVCg1MaXN0UmVjZWl2ZXJzEh4uY29yaWEudjEuTGlzdFJlY2VpdmVyc1JlcXVlc3QaHy5jb3JpYS52MS5MaXN0UmVjZWl2ZXJzUmVzcG9uc2UiA5ACARJPCgtTZXRSZWNlaXZlchIcLmNvcmlhLnYxLlNldFJlY2VpdmVyUmVxdWVzdBodLmNvcmlhLnYxLlNldFJlY2VpdmVyUmVzcG9uc2UiA5ACAhJYCg5SZW1vdmVSZWNlaXZlchIfLmNvcmlhLnYxLlJlbW92ZVJlY2VpdmVyUmVxdWVzdBogLmNvcmlhLnYxLlJlbW92ZVJlY2VpdmVyUmVzcG9uc2UiA5ACAmIGcHJvdG8z", [file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp]);
+  fileDesc("Chdjb3JpYS92MS9yZWNlaXZlci5wcm90bxIIY29yaWEudjEiwQMKCFJlY2VpdmVyEgwKBG5hbWUYASABKAkSKAoFZGltc2UYAiABKAsyFy5jb3JpYS52MS5EaW1zZVJlY2VpdmVySAASJgoEc3RvdxgMIAEoCzIWLmNvcmlhLnYxLlN0b3dSZWNlaXZlckgAEg8KB2VuYWJsZWQYAyABKAgSDwoHc3RvcmFnZRgEIAEoCRIkCgZuYW1pbmcYBSABKAsyFC5jb3JpYS52MS5OYW1pbmdSdWxlEi8KDHF1aWV0X3BlcmlvZBgGIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIwCg1tYXhfb3Blbl90aW1lGAcgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uEhYKDm1heF9maWxlX2J5dGVzGAggASgDEigKBmhlYWx0aBgJIAEoCzIYLmNvcmlhLnYxLlJlY2VpdmVySGVhbHRoEi8KC2NyZWF0ZV90aW1lGAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgt1cGRhdGVfdGltZRgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCBgoEdHlwZSLvAQoNRGltc2VSZWNlaXZlchIMCgRwb3J0GAEgASgFEhQKDGJpbmRfYWRkcmVzcxgCIAEoCRIQCghhZV90aXRsZRgDIAEoCRIzCg9hbGxvd2VkX2NhbGxlcnMYBCABKAsyGC5jb3JpYS52MS5BbGxvd2VkQ2FsbGVyc0gAEhQKCmFueV9jYWxsZXIYBSABKAhIABIiCgN0bHMYBiABKAsyFS5jb3JpYS52MS5SZWNlaXZlclRscxITCgtzb3BfY2xhc3NlcxgHIAMoCRIZChF0cmFuc2Zlcl9zeW50YXhlcxgIIAMoCUIJCgdjYWxsZXJzIjoKDFN0b3dSZWNlaXZlchIPCgdrZXlfaWRzGAEgAygJEhkKEW1heF9yZXF1ZXN0X2J5dGVzGAIgASgDIjUKDkFsbG93ZWRDYWxsZXJzEiMKBXJ1bGVzGAEgAygLMhQuY29yaWEudjEuQ2FsbGVyUnVsZSI9CgpDYWxsZXJSdWxlEhgKEGNhbGxpbmdfYWVfdGl0bGUYASABKAkSFQoNYWRkcmVzc19yYW5nZRgCIAEoCSJBCgtSZWNlaXZlclRscxIYChBjZXJ0aWZpY2F0ZV9maWxlGAEgASgJEhgKEHByaXZhdGVfa2V5X2ZpbGUYAiABKAkiZgoKTmFtaW5nUnVsZRIPCgdzdWJqZWN0GAEgASgJEg8KB3Nlc3Npb24YAiABKAkSDAoEc2NhbhgDIAEoCRIoCgdwYXR0ZXJuGAQgASgLMhcuY29yaWEudjEuTmFtaW5nUGF0dGVybiI2Cg1OYW1pbmdQYXR0ZXJuEhEKCWF0dHJpYnV0ZRgBIAEoCRISCgpleHByZXNzaW9uGAIgASgJIqYBCg5SZWNlaXZlckhlYWx0aBImCgVzdGF0ZRgBIAEoDjIXLmNvcmlhLnYxLlJlY2VpdmVyU3RhdGUSMQoLZG93bl9yZWFzb24YAiABKA4yHC5jb3JpYS52MS5SZWNlaXZlckRvd25SZWFzb24SDgoGZGV0YWlsGAMgASgJEikKBXNpbmNlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJKChJBZGRSZWNlaXZlclJlcXVlc3QSDgoGdGVuYW50GAEgASgJEiQKCHJlY2VpdmVyGAIgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiOwoTQWRkUmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIjIKEkdldFJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCSI7ChNHZXRSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiTQoUTGlzdFJlY2VpdmVyc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIlcKFUxpc3RSZWNlaXZlcnNSZXNwb25zZRIlCglyZWNlaXZlcnMYASADKAsyEi5jb3JpYS52MS5SZWNlaXZlchIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiewoSU2V0UmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIkCghyZWNlaXZlchgCIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyEi8KC3VwZGF0ZV9tYXNrGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLkZpZWxkTWFzayI7ChNTZXRSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiNQoVUmVtb3ZlUmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIMCgRuYW1lGAIgASgJIj4KFlJlbW92ZVJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlcip8Cg1SZWNlaXZlclN0YXRlEh4KGlJFQ0VJVkVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGwoXUkVDRUlWRVJfU1RBVEVfU1RBUlRJTkcQARIVChFSRUNFSVZFUl9TVEFURV9VUBACEhcKE1JFQ0VJVkVSX1NUQVRFX0RPV04QAyq9AwoSUmVjZWl2ZXJEb3duUmVhc29uEiQKIFJFQ0VJVkVSX0RPV05fUkVBU09OX1VOU1BFQ0lGSUVEEAASIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fRElTQUJMRUQQARInCiNSRUNFSVZFUl9ET1dOX1JFQVNPTl9BRERSRVNTX0lOX1VTRRACEioKJlJFQ0VJVkVSX0RPV05fUkVBU09OX1BFUk1JU1NJT05fREVOSUVEEAMSLgoqUkVDRUlWRVJfRE9XTl9SRUFTT05fQUREUkVTU19OT1RfQVZBSUxBQkxFEAQSHAoYUkVDRUlWRVJfRE9XTl9SRUFTT05fVExTEAUSJAogUkVDRUlWRVJfRE9XTl9SRUFTT05fTkVBUkxZX0ZVTEwQBhIpCiVSRUNFSVZFUl9ET1dOX1JFQVNPTl9URU5BTlRfTk9UX1JFQURZEAcSIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fU1RPUFBJTkcQCBIeChpSRUNFSVZFUl9ET1dOX1JFQVNPTl9PVEhFUhAJEicKI1JFQ0VJVkVSX0RPV05fUkVBU09OX0lOQ09NSU5HX0xJTUlUEAoysAMKD1JlY2VpdmVyU2VydmljZRJKCgtBZGRSZWNlaXZlchIcLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVxdWVzdBodLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVzcG9uc2USTwoLR2V0UmVjZWl2ZXISHC5jb3JpYS52MS5HZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5HZXRSZWNlaXZlclJlc3BvbnNlIgOQAgESVQoNTGlzdFJlY2VpdmVycxIeLmNvcmlhLnYxLkxpc3RSZWNlaXZlcnNSZXF1ZXN0Gh8uY29yaWEudjEuTGlzdFJlY2VpdmVyc1Jlc3BvbnNlIgOQAgESTwoLU2V0UmVjZWl2ZXISHC5jb3JpYS52MS5TZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5TZXRSZWNlaXZlclJlc3BvbnNlIgOQAgISWAoOUmVtb3ZlUmVjZWl2ZXISHy5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlcXVlc3QaIC5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp]);
 
 /**
  * Receiver is a way for data to arrive at a tenant, and how what arrives is
@@ -54,6 +54,14 @@ export type Receiver = Message<"coria.v1.Receiver"> & {
      */
     value: DimseReceiver;
     case: "dimse";
+  } | {
+    /**
+     * The tenant's STOW-RS service, for the keys it lists.
+     *
+     * @generated from field: coria.v1.StowReceiver stow = 12;
+     */
+    value: StowReceiver;
+    case: "stow";
   } | { case: undefined; value?: undefined };
 
   /**
@@ -279,6 +287,115 @@ export const DimseReceiverSchema: GenMessage<DimseReceiver> = /*@__PURE__*/
   messageDesc(file_coria_v1_receiver, 1);
 
 /**
+ * StowReceiver takes the instances stored over HTTP into the tenant's
+ * DICOMweb service: POST /tenants/<tenant>/dicom-web/studies, or
+ * .../studies/<Study Instance UID> to store into one study (STOW-RS, PS3.18
+ * 10.5), each request read part by part.
+ *
+ * It is closed by default. A request is taken only when it is made with a
+ * key the receiver lists, or a key made by rotating one it lists
+ * (AccessService.RotateKey, followed back at most 16 rotations), and that
+ * key holds writer or more on the tenant; a key with the role but listed
+ * by no enabled stow receiver of the tenant is refused with
+ * PERMISSION_DENIED (HTTP 403), and so is the local operator, which holds
+ * no key. A rotation therefore needs no change of the receiver: the
+ * successor stores from its first request, during the overlap and after. A key is listed by at most one stow
+ * receiver of a tenant (a precondition failure otherwise), so which
+ * receiver takes a request, and so its storage, naming rule and quiet
+ * period, is never a choice.
+ *
+ * The request is multipart/related; type="application/dicom" (PS3.18
+ * 10.5.1.1.1), each part one DICOM file (PS3.10 7.1). The form that sends
+ * metadata as application/dicom+json with its bulk data in other parts
+ * (PS3.18 10.5.1.1.2) is not taken in this version: it is refused with 415
+ * Unsupported Media Type, as is any other type. Each part is written to the
+ * server's incoming area as it arrives and synced to its disk before the
+ * answer is written, so an instance the answer lists as stored survives a
+ * crash of the server; nothing of a part is held whole in memory. A request
+ * holds at most 10,000 parts, and each part's header (its header fields
+ * and the boundary line before them) at most 16 KiB. A part is
+ * refused, and listed in the answer's Failed SOP Sequence (0008,1198) with
+ * its Failure Reason (0008,1197, PS3.18 Table I.2-2), when:
+ *
+ *   - it is not a DICOM file whose SOP Class, SOP Instance, Study Instance
+ *     and Series Instance UIDs are read, well formed, from its first MiB:
+ *     C000H, "cannot understand", and nothing of it is kept; a part whose
+ *     SOP Class and Instance UIDs cannot be read, or whose Content-Type is
+ *     not application/dicom, is not listed, having nothing to list it by,
+ *     and counts as refused for the answer's status;
+ *   - it is of another study than the path names: A900H, the data set
+ *     does not match what the request stores it into;
+ *   - it is larger than max_file_bytes, or the archive cannot take files
+ *     now (the incoming area or the storage below its reserve, the tenant
+ *     at its incoming.limit or not ready): A700H, "out of resources", and
+ *     a part too large is quarantined without its bytes with
+ *     QUARANTINE_REASON_TOO_LARGE, as for a DIMSE receiver;
+ *   - it could not be kept for another reason: 0110H, "processing failure".
+ *
+ * The answer is application/dicom+json (PS3.18 10.5.3): the Referenced SOP
+ * Sequence (0008,1199) lists each instance stored with its Retrieve URL
+ * (0008,1190), the instance's WADO-RS URL in the tenant's DICOMweb service;
+ * the status is 200 when every part was stored, 202 when some were, 409
+ * when none was. A request refused as a whole is answered in plain text:
+ * 400 for a body that is not well-formed multipart, holds no part, ends
+ * inside a part or has a part's header past 16 KiB; 413 for a request
+ * larger than max_request_bytes or of more than 10,000 parts; 408 when the
+ * body stops arriving for 5 minutes; 406 when the request accepts no JSON
+ * answer; and 503, with Retry-After, while the receiver cannot take files
+ * at all or is stopping (a stop lets a request in flight run 30 seconds,
+ * then cuts it at once). When such a refusal comes part way through the
+ * body, the parts it held whole before are kept and archived, and a part
+ * cut short is not kept; the plain answer does not list them (PS3.18
+ * 10.5.3 gives the Store Instances Response Module to an answer part by
+ * part), and a search of the study (QIDO-RS) shows which arrived.
+ *
+ * After the answer, each stored instance goes through the same reception
+ * pipeline as one a DIMSE receiver took: grouped into receptions by study,
+ * archived after the quiet period, quarantined for what the pipeline
+ * finds, with the same events. The answer cannot know what the pipeline
+ * will find: an instance listed as stored may still be quarantined, as a
+ * C-STORE answered success may be. In particular, a different file under a
+ * SOP Instance UID the tenant already holds is answered stored and then
+ * quarantined (QUARANTINE_REASON_DIFFERENT_FILE, or
+ * QUARANTINE_REASON_UID_ELSEWHERE for one under another study or series),
+ * never refused in the answer; and a file whose placing UIDs read whole
+ * differ from those read from its first bytes, by which the part was
+ * checked against the request's study, is quarantined as
+ * QUARANTINE_REASON_UID_MISMATCH.
+ *
+ * @generated from message coria.v1.StowReceiver
+ */
+export type StowReceiver = Message<"coria.v1.StowReceiver"> & {
+  /**
+   * The ids of the keys (AccessService) whose requests it takes, each 1 to
+   * 64 of A-Z, a-z, 0-9, _ and -, each once; at most 256. Empty takes
+   * none: a new receiver is closed until a key is listed. A key that does
+   * not exist, or no longer does, is kept and matches nothing. A key
+   * rotated from one listed is taken too (StowReceiver).
+   *
+   * @generated from field: repeated string key_ids = 1;
+   */
+  keyIds: string[];
+
+  /**
+   * The largest request body it reads, in bytes, from 1024 to 2^40 (1 TiB);
+   * each part is also bounded by the receiver's max_file_bytes. Zero in
+   * AddReceiver means the default, 2^34 (16 GiB), which is stored as the
+   * receiver's value.
+   *
+   * @generated from field: int64 max_request_bytes = 2;
+   */
+  maxRequestBytes: bigint;
+};
+
+/**
+ * Describes the message coria.v1.StowReceiver.
+ * Use `create(StowReceiverSchema)` to create a new message.
+ */
+export const StowReceiverSchema: GenMessage<StowReceiver> = /*@__PURE__*/
+  messageDesc(file_coria_v1_receiver, 2);
+
+/**
  * AllowedCallers is the list of callers a DIMSE receiver admits.
  *
  * @generated from message coria.v1.AllowedCallers
@@ -298,7 +415,7 @@ export type AllowedCallers = Message<"coria.v1.AllowedCallers"> & {
  * Use `create(AllowedCallersSchema)` to create a new message.
  */
 export const AllowedCallersSchema: GenMessage<AllowedCallers> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 2);
+  messageDesc(file_coria_v1_receiver, 3);
 
 /**
  * CallerRule admits callers by their calling AE title, their network
@@ -336,7 +453,7 @@ export type CallerRule = Message<"coria.v1.CallerRule"> & {
  * Use `create(CallerRuleSchema)` to create a new message.
  */
 export const CallerRuleSchema: GenMessage<CallerRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 3);
+  messageDesc(file_coria_v1_receiver, 4);
 
 /**
  * ReceiverTls is where a DIMSE receiver's TLS certificate and private key
@@ -371,7 +488,7 @@ export type ReceiverTls = Message<"coria.v1.ReceiverTls"> & {
  * Use `create(ReceiverTlsSchema)` to create a new message.
  */
 export const ReceiverTlsSchema: GenMessage<ReceiverTls> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 4);
+  messageDesc(file_coria_v1_receiver, 5);
 
 /**
  * NamingRule is how a receiver makes the labels of a new subject, session
@@ -462,7 +579,7 @@ export type NamingRule = Message<"coria.v1.NamingRule"> & {
  * Use `create(NamingRuleSchema)` to create a new message.
  */
 export const NamingRuleSchema: GenMessage<NamingRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 5);
+  messageDesc(file_coria_v1_receiver, 6);
 
 /**
  * NamingPattern takes named parts out of one attribute, such as Patient
@@ -497,7 +614,7 @@ export type NamingPattern = Message<"coria.v1.NamingPattern"> & {
  * Use `create(NamingPatternSchema)` to create a new message.
  */
 export const NamingPatternSchema: GenMessage<NamingPattern> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 6);
+  messageDesc(file_coria_v1_receiver, 7);
 
 /**
  * ReceiverHealth is whether a receiver accepts data now, and why not.
@@ -543,7 +660,7 @@ export type ReceiverHealth = Message<"coria.v1.ReceiverHealth"> & {
  * Use `create(ReceiverHealthSchema)` to create a new message.
  */
 export const ReceiverHealthSchema: GenMessage<ReceiverHealth> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 7);
+  messageDesc(file_coria_v1_receiver, 8);
 
 /**
  * AddReceiverRequest is the receiver to add.
@@ -573,7 +690,7 @@ export type AddReceiverRequest = Message<"coria.v1.AddReceiverRequest"> & {
  * Use `create(AddReceiverRequestSchema)` to create a new message.
  */
 export const AddReceiverRequestSchema: GenMessage<AddReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 8);
+  messageDesc(file_coria_v1_receiver, 9);
 
 /**
  * AddReceiverResponse is the receiver added.
@@ -595,7 +712,7 @@ export type AddReceiverResponse = Message<"coria.v1.AddReceiverResponse"> & {
  * Use `create(AddReceiverResponseSchema)` to create a new message.
  */
 export const AddReceiverResponseSchema: GenMessage<AddReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 9);
+  messageDesc(file_coria_v1_receiver, 10);
 
 /**
  * GetReceiverRequest names a receiver.
@@ -623,7 +740,7 @@ export type GetReceiverRequest = Message<"coria.v1.GetReceiverRequest"> & {
  * Use `create(GetReceiverRequestSchema)` to create a new message.
  */
 export const GetReceiverRequestSchema: GenMessage<GetReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 10);
+  messageDesc(file_coria_v1_receiver, 11);
 
 /**
  * GetReceiverResponse is the receiver named.
@@ -644,7 +761,7 @@ export type GetReceiverResponse = Message<"coria.v1.GetReceiverResponse"> & {
  * Use `create(GetReceiverResponseSchema)` to create a new message.
  */
 export const GetReceiverResponseSchema: GenMessage<GetReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 11);
+  messageDesc(file_coria_v1_receiver, 12);
 
 /**
  * ListReceiversRequest asks for a page of a tenant's receivers.
@@ -682,7 +799,7 @@ export type ListReceiversRequest = Message<"coria.v1.ListReceiversRequest"> & {
  * Use `create(ListReceiversRequestSchema)` to create a new message.
  */
 export const ListReceiversRequestSchema: GenMessage<ListReceiversRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 12);
+  messageDesc(file_coria_v1_receiver, 13);
 
 /**
  * ListReceiversResponse is a page of receivers.
@@ -710,7 +827,7 @@ export type ListReceiversResponse = Message<"coria.v1.ListReceiversResponse"> & 
  * Use `create(ListReceiversResponseSchema)` to create a new message.
  */
 export const ListReceiversResponseSchema: GenMessage<ListReceiversResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 13);
+  messageDesc(file_coria_v1_receiver, 14);
 
 /**
  * SetReceiverRequest is the change to a receiver.
@@ -738,9 +855,10 @@ export type SetReceiverRequest = Message<"coria.v1.SetReceiverRequest"> & {
    * The fields to change, as paths of Receiver, such as "quiet_period" or
    * "naming" ("naming" with naming absent returns to the default rule), or
    * a field of the receiver's type joined to it by a dot, such as
-   * "dimse.port" or "dimse.tls.certificate_file". A path that names a
-   * type's whole message ("dimse") is refused: its fields are named one by
-   * one. Required and not empty; "*" is refused, so every field a call
+   * "dimse.port", "dimse.tls.certificate_file" or "stow.key_ids". A path
+   * that names a type's whole message ("dimse", "stow") is refused: its
+   * fields are named one by one; so is a field of another type than the
+   * receiver's, since a receiver's type does not change. Required and not empty; "*" is refused, so every field a call
    * changes is named. A named field is set to the value given, its zero
    * value included: "dimse.tls" with tls absent turns TLS off,
    * "dimse.allowed_callers" with an empty list admits nobody, and a
@@ -759,7 +877,7 @@ export type SetReceiverRequest = Message<"coria.v1.SetReceiverRequest"> & {
  * Use `create(SetReceiverRequestSchema)` to create a new message.
  */
 export const SetReceiverRequestSchema: GenMessage<SetReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 14);
+  messageDesc(file_coria_v1_receiver, 15);
 
 /**
  * SetReceiverResponse is the receiver as changed.
@@ -780,7 +898,7 @@ export type SetReceiverResponse = Message<"coria.v1.SetReceiverResponse"> & {
  * Use `create(SetReceiverResponseSchema)` to create a new message.
  */
 export const SetReceiverResponseSchema: GenMessage<SetReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 15);
+  messageDesc(file_coria_v1_receiver, 16);
 
 /**
  * RemoveReceiverRequest names the receiver to remove.
@@ -808,7 +926,7 @@ export type RemoveReceiverRequest = Message<"coria.v1.RemoveReceiverRequest"> & 
  * Use `create(RemoveReceiverRequestSchema)` to create a new message.
  */
 export const RemoveReceiverRequestSchema: GenMessage<RemoveReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 16);
+  messageDesc(file_coria_v1_receiver, 17);
 
 /**
  * RemoveReceiverResponse is the configuration that was removed.
@@ -829,7 +947,7 @@ export type RemoveReceiverResponse = Message<"coria.v1.RemoveReceiverResponse"> 
  * Use `create(RemoveReceiverResponseSchema)` to create a new message.
  */
 export const RemoveReceiverResponseSchema: GenMessage<RemoveReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 17);
+  messageDesc(file_coria_v1_receiver, 18);
 
 /**
  * ReceiverState is whether a receiver accepts data now.
@@ -984,11 +1102,13 @@ export const ReceiverDownReasonSchema: GenEnum<ReceiverDownReason> = /*@__PURE__
  * (ReceptionService), one per study and arrival, which are archived to its
  * storage under labels its naming rule makes. Every type of receiver shares
  * that part of its configuration; what belongs to its protocol is in its
- * type's message. This version has one type, a DIMSE receiver: a DICOM
+ * type's message. This version has two types. A DIMSE receiver is a DICOM
  * listener (PS3.8 upper layer, PS3.7 message exchange) on one port of the
  * server, which accepts C-STORE requests (PS3.4 Annex B) for the SOP classes
  * it accepts, answers C-ECHO (PS3.4 Annex A) to an admitted caller, and
- * answers nothing else.
+ * answers nothing else. A stow receiver takes the instances a key it lists
+ * stores over HTTP into the tenant's DICOMweb service (STOW-RS, PS3.18
+ * 10.5); it holds no port (StowReceiver).
  *
  * The server makes what listens match what is configured: a receiver added,
  * changed or removed is started, restarted or stopped without a restart of

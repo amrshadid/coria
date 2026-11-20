@@ -66,6 +66,7 @@ type Server struct {
 	seen      []Seen
 	certPEM   []byte
 	arch      archive
+	read      readArchive
 }
 
 // keyRecord is a key and the secret it was made with.
@@ -171,6 +172,7 @@ func (s *Server) Register(srv *connect.Server) {
 	coriav1connect.RegisterSettingsServiceHandler(srv, settingsHandler{s})
 	coriav1connect.RegisterAuditServiceHandler(srv, auditHandler{s})
 	s.registerArchive(srv)
+	s.registerRead(srv)
 }
 
 // interceptor is the one place every call passes: the request id first, so

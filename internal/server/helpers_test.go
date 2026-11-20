@@ -91,6 +91,15 @@ type options struct {
 	// corsOrigins is the server's reading of the allowed CORS origins;
 	// nil allows none.
 	corsOrigins func(context.Context) (settings.Origins, error)
+	// accessRules is the server's reading of the installation's access
+	// settings; nil applies the defaults.
+	accessRules func(context.Context) (server.AccessRules, error)
+	// events receives the access package's events; nil discards them.
+	events access.Events
+	// longMethods are the server's calls without a deadline, and stall
+	// replaces its write stall bound (zero keeps it).
+	longMethods []string
+	stall       time.Duration
 }
 
 // env is one running server over a fresh SQLite master, with stand-in
@@ -156,7 +165,7 @@ func newEnv(tb testing.TB, o options) *env {
 	if o.clock != nil {
 		clock = o.clock
 	}
-	a, err := access.New(access.Config{Store: st, Clock: clock, NewID: server.NewID, Log: log, AuditInterval: o.auditWait, RefusalQueue: o.refusalQueue})
+	a, err := access.New(access.Config{Store: st, Clock: clock, NewID: server.NewID, Log: log, AuditInterval: o.auditWait, RefusalQueue: o.refusalQueue, Events: o.events})
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -186,7 +195,7 @@ func newEnv(tb testing.TB, o options) *env {
 		Register: register, DefaultDeadline: o.deadline, Drain: o.drain,
 		MaxDeadline: o.maxDL, BodyReadTimeout: o.bodyRead, Grace: o.grace, Close: o.closeT,
 		Methods: methods, WithDecision: withDecision, Registry: o.registry,
-		PatternRoutes: o.patterns, CORSOrigins: o.corsOrigins,
+		PatternRoutes: o.patterns, LongMethods: o.longMethods, CORSOrigins: o.corsOrigins, AccessRules: o.accessRules,
 	}
 	if cfg.PatternRoutes == nil {
 		cfg.PatternRoutes = testPatterns()
@@ -199,6 +208,9 @@ func newEnv(tb testing.TB, o options) *env {
 	srv, err := server.New(cfg)
 	if err != nil {
 		tb.Fatal(err)
+	}
+	if o.stall > 0 {
+		srv.SetStallTimeout(o.stall)
 	}
 	if o.beforeRun != nil {
 		o.beforeRun(srv)

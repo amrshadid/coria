@@ -30,3 +30,21 @@ func MetaPage(ctx context.Context, store blob.Store, tenantName string, path lab
 	s := &metaSource{store: store, tenant: tenantName, path: path, key: key, limit: 1 << 20}
 	return s.page(ctx, held)
 }
+
+// MetaFrame answers where frame n of the instance held lies in its file,
+// from the scan's metadata file that store holds, as a frame route does.
+func MetaFrame(ctx context.Context, store blob.Store, path label.Path, limit int64, held tenant.ScanInstance, n int) (StoredFrame, error) {
+	key, err := layout.MetadataKey(path)
+	if err != nil {
+		return StoredFrame{}, err
+	}
+	s := &metaSource{store: store, tenant: "lab1", path: path, key: key, limit: limit}
+	return s.frame(ctx, held, n)
+}
+
+// MetaFrameOf answers frame n of the instance held from the line given,
+// so a test can give it a line that reception does not make.
+func MetaFrameOf(ctx context.Context, store blob.Store, path label.Path, limit int64, held tenant.ScanInstance, in sidecar.Instance, n int) (StoredFrame, error) {
+	s := &metaSource{store: store, tenant: "lab1", path: path, limit: limit}
+	return s.frameOf(ctx, held, in, n)
+}

@@ -137,20 +137,11 @@ type Table struct {
 // Builtin returns the definitions of the settings this version of the server
 // knows, a new slice each call. Each value form and its rule is in values.go.
 func Builtin() []Definition {
-	return []Definition{{
+	return append([]Definition{{
 		Name:           KeyDefaultLifetime,
 		Default:        "90d",
 		TenantOverride: false,
-		Validate: func(v string) error {
-			d, err := ParseDuration(v)
-			if err != nil {
-				return err
-			}
-			if d < MinKeyLifetime || d > MaxKeyLifetime {
-				return errors.New("is at least 1h and at most 3650d")
-			}
-			return nil
-		},
+		Validate:       func(v string) error { _, err := ParseKeyLifetime(v); return err },
 	}, {
 		// Empty by default, so no directory storage can be added until the
 		// installation's admin names a root (storage.proto, StorageService).
@@ -215,7 +206,7 @@ func Builtin() []Definition {
 		Default:        "90d",
 		TenantOverride: true,
 		Validate:       func(v string) error { _, err := ParseRetention(v); return err },
-	}}
+	}}, accessDefinitions()...)
 }
 
 // New returns a table of defs. It refuses a name that is not valid or given
@@ -273,17 +264,22 @@ func (t *Table) Lookup(name string) (Definition, bool) {
 func (t *Table) Names() []string { return t.names }
 
 // ParseDuration reads a duration written as a positive whole number followed
-// by one unit, "h" for hours or "d" for days of 24 hours: "90d", "2160h".
-// It is the one form a duration setting takes, so a value reads the same in
-// every place it is shown, and it has no fractions, no signs and no mixed
-// units to misread.
+// by one unit: "s" for seconds, "m" for minutes, "h" for hours or "d" for
+// days of 24 hours: "90d", "2160h", "15m", "30s". It is the one form a
+// duration setting takes, so a value reads the same in every place it is
+// shown, and it has no fractions, no signs and no mixed units to misread.
+// Each setting holds the result to its own bounds.
 func ParseDuration(s string) (time.Duration, error) {
-	bad := errors.New("is a whole number of hours or days, such as 90d or 2160h")
+	bad := errors.New("is a whole number of seconds, minutes, hours or days, such as 30s, 15m, 2160h or 90d")
 	if len(s) < 2 {
 		return 0, bad
 	}
 	var unit time.Duration
 	switch s[len(s)-1] {
+	case 's':
+		unit = time.Second
+	case 'm':
+		unit = time.Minute
 	case 'h':
 		unit = time.Hour
 	case 'd':

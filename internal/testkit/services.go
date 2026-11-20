@@ -111,3 +111,35 @@ func exec(tb testing.TB, u *url.URL, statement string) {
 		tb.Fatalf("%s: %v", statement, err)
 	}
 }
+
+// PostgresExec runs statements, in order, on a connection of its own to the
+// database at address (as PostgresSchema returned it), in its schema: for a
+// test that must change what a driver made, such as bringing a schema back
+// to the form an older version left. The pool's parameters are dropped, as
+// exec drops them; the search path is kept.
+func PostgresExec(tb testing.TB, address string, statements ...string) {
+	tb.Helper()
+	u, err := url.Parse(address)
+	if err != nil {
+		tb.Fatal("the address is not a URL")
+	}
+	q := u.Query()
+	for k := range q {
+		if strings.HasPrefix(k, "pool_") {
+			q.Del(k)
+		}
+	}
+	u.RawQuery = q.Encode()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	conn, err := pgx.Connect(ctx, u.String())
+	if err != nil {
+		tb.Fatalf("cannot connect to the database %s names: %v", PostgresEnv, err)
+	}
+	defer func() { _ = conn.Close(context.Background()) }() // A failed close of a test's connection hides nothing.
+	for _, s := range statements {
+		if _, err := conn.Exec(ctx, s); err != nil {
+			tb.Fatalf("%s: %v", s, err)
+		}
+	}
+}

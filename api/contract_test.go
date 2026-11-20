@@ -26,6 +26,7 @@ const contractPackage = "coria.v1"
 var secretFields = []string{
 	"coria.v1.CreateKeyResponse.secret",
 	"coria.v1.CreateTenantRequest.database_address",
+	"coria.v1.RotateKeyResponse.secret",
 	"coria.v1.S3Storage.secret_access_key",
 }
 
@@ -55,6 +56,17 @@ var textFields = []string{
 	"coria.v1.ListGrantsRequest.page_token",
 	"coria.v1.ListGrantsResponse.next_page_token",
 	"coria.v1.RemoveGrantRequest.key_id",
+	"coria.v1.Key.networks",
+	"coria.v1.Key.client_cert_sha256",
+	"coria.v1.Key.last_use_address",
+	"coria.v1.Key.successor_id",
+	"coria.v1.CreateKeyRequest.networks",
+	"coria.v1.CreateKeyRequest.client_cert_sha256",
+	"coria.v1.RotateKeyRequest.id",
+	"coria.v1.RotateKeyResponse.secret",
+	"coria.v1.SetKeyRulesRequest.id",
+	"coria.v1.SetKeyRulesRequest.networks",
+	"coria.v1.SetKeyRulesRequest.client_cert_sha256",
 
 	// audit.proto
 	"coria.v1.AuditEntry.id",
@@ -165,6 +177,7 @@ var textFields = []string{
 	"coria.v1.DimseReceiver.ae_title",
 	"coria.v1.DimseReceiver.sop_classes",
 	"coria.v1.DimseReceiver.transfer_syntaxes",
+	"coria.v1.StowReceiver.key_ids",
 	"coria.v1.CallerRule.calling_ae_title",
 	"coria.v1.CallerRule.address_range",
 	"coria.v1.ReceiverTls.certificate_file",
@@ -205,6 +218,9 @@ var textFields = []string{
 	"coria.v1.QuarantineDecided.release_reception",
 	"coria.v1.ReceiverHealthChanged.receiver",
 	"coria.v1.StorageSpaceChanged.storage",
+	"coria.v1.FramesAdded.subject_label",
+	"coria.v1.FramesAdded.session_label",
+	"coria.v1.FramesAdded.scan_label",
 	"coria.v1.Event.cursor",
 	"coria.v1.Event.tenant",
 	"coria.v1.WatchKeepAlive.cursor",

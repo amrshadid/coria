@@ -21,10 +21,12 @@ import (
 func (a *app) newReceiver() *cobra.Command {
 	return group("receiver", "Add, list, show, change and remove a tenant's receivers",
 		`A receiver is a way for data to arrive at a tenant: a DICOM listener on one
-port of the server that admits only the callers it lists, writes what it
-receives to the server's incoming area, and groups it into receptions that are
-archived to its storage. The ports and addresses a receiver may use are the
-installation's to allot (the settings receiver.ports and receiver.bind-addresses).
+port of the server that admits only the callers it lists (type dimse), or the
+tenant's STOW-RS service for the keys it lists (type stow). Either writes what
+it receives to the server's incoming area and groups it into receptions that
+are archived to its storage. The ports and addresses a DIMSE receiver may use
+are the installation's to allot (the settings receiver.ports and
+receiver.bind-addresses).
 Every command takes the tenant first. Adding, changing and removing need the
 admin role on the tenant; list and show need the reader role.`,
 		a.newReceiverAdd(), a.newReceiverList(), a.newReceiverShow(), a.newReceiverSet(), a.newReceiverRemove())
@@ -32,6 +34,10 @@ admin role on the tenant; list and show need the reader role.`,
 
 // receiverFlags are the flags that describe a receiver, for add and for set.
 type receiverFlags struct {
+	typ              string
+	allowKeys        []string
+	noKeys           bool
+	maxRequestSize   string
 	storage          string
 	port             int
 	bind             string
@@ -63,6 +69,11 @@ type receiverFlags struct {
 // default naming) are registered for set only.
 func (f *receiverFlags) add(cmd *cobra.Command, forSet bool) {
 	fl := cmd.Flags()
+	if !forSet {
+		fl.StringVar(&f.typ, "type", "dimse", "the receiver's type: dimse, a DICOM listener on a port, or stow, the tenant's STOW-RS service for the keys it lists")
+	}
+	fl.StringArrayVar(&f.allowKeys, "allow-key", nil, "stow: take requests made with the key of this id, which must also hold writer or more on the tenant; repeat for more keys")
+	fl.StringVar(&f.maxRequestSize, "max-request-size", "", "stow: the largest request it reads, a size such as 16GiB, from 1KiB to 1TiB (default 16GiB)")
 	fl.StringVar(&f.storage, "storage", "", "the name of the tenant's storage that what arrives is archived to")
 	fl.IntVar(&f.port, "port", 0, "the TCP port to listen on, one of the ports the installation allotted to the tenant; on add, left out, the server gives the lowest of them that is free")
 	fl.StringVar(&f.bind, "bind-address", "", "the address of the server to listen on, one of those the setting receiver.bind-addresses lists (default: the installation's default)")
@@ -85,6 +96,8 @@ func (f *receiverFlags) add(cmd *cobra.Command, forSet bool) {
 	fl.StringVar(&f.maxOpenTime, "max-open-time", "", "the longest a reception stays receiving: a number and s, m or h, from 1m to 24h, not less than the quiet period (default 1h)")
 	fl.StringVar(&f.maxFileSize, "max-file-size", "", "the largest file it accepts, a size such as 4GiB, from 1KiB to 256GiB (default 4GiB)")
 	if forSet {
+		fl.BoolVar(&f.noKeys, "no-keys", false, "stow: take requests from no key; the receiver stays closed until keys are listed again")
+		cmd.MarkFlagsMutuallyExclusive("allow-key", "no-keys")
 		fl.BoolVar(&f.noCallers, "no-callers", false, "admit nobody: the receiver stays closed until callers are listed again")
 		fl.BoolVar(&f.noTLS, "no-tls", false, "turn TLS off")
 		fl.BoolVar(&f.defaultNaming, "default-naming", false, "return to the default naming rule, which carries no value the sender gave")
@@ -171,6 +184,15 @@ func (f *receiverFlags) receiver(cmd *cobra.Command, name string) (*v1.Receiver,
 	r := &v1.Receiver{Name: name}
 	dimse := &v1.DimseReceiver{}
 	r.Type = &v1.Receiver_Dimse{Dimse: dimse}
+	stowFlags := fl.Changed("allow-key") || f.noKeys || fl.Changed("max-request-size")
+	isStow, err := f.isStow(cmd, stowFlags)
+	if err != nil {
+		return nil, nil, err
+	}
+	stow := &v1.StowReceiver{}
+	if isStow {
+		r.Type = &v1.Receiver_Stow{Stow: stow}
+	}
 	var paths []string
 	touch := func(flag, path string) bool {
 		if fl.Changed(flag) {
@@ -184,6 +206,17 @@ func (f *receiverFlags) receiver(cmd *cobra.Command, name string) (*v1.Receiver,
 	}
 	if touch("storage", "storage") {
 		r.Storage = f.storage
+	}
+	if touch("allow-key", "stow.key_ids") {
+		stow.KeyIds = nonEmpty(f.allowKeys)
+	}
+	if f.noKeys {
+		paths = append(paths, "stow.key_ids")
+	}
+	if touch("max-request-size", "stow.max_request_bytes") {
+		if stow.MaxRequestBytes, err = parseSize("max-request-size", f.maxRequestSize); err != nil {
+			return nil, nil, err
+		}
 	}
 	if touch("port", "dimse.port") {
 		dimse.Port = int32(f.port) // #nosec G115 -- a port above 2^31 is refused by the server either way
@@ -254,11 +287,48 @@ func (f *receiverFlags) receiver(cmd *cobra.Command, name string) (*v1.Receiver,
 	return r, paths, nil
 }
 
+// dimseFlags are the flags of a DIMSE receiver's own fields.
+var dimseFlags = []string{
+	"port", "bind-address", "aet", "allow-aet", "allow-from", "allow-aet-from", "any-caller", "no-callers",
+	"tls-certificate-file", "tls-private-key-file", "no-tls", "sop-class", "transfer-syntax",
+}
+
+// isStow reports whether the flags describe a stow receiver: its --type on
+// add; on set, where the type is the stored receiver's, whether a flag of
+// the stow type was given. Flags of both types together are refused, since
+// a receiver has one.
+func (f *receiverFlags) isStow(cmd *cobra.Command, stowFlags bool) (bool, error) {
+	fl := cmd.Flags()
+	dimse := false
+	for _, n := range dimseFlags {
+		if fl.Lookup(n) != nil && fl.Changed(n) {
+			dimse = true
+		}
+	}
+	stow := stowFlags
+	if fl.Lookup("type") != nil {
+		switch f.typ {
+		case "dimse":
+		case "stow":
+			stow = true
+		default:
+			return false, fault.New(fault.Invalid, fmt.Sprintf("--type %q is not a receiver type; use dimse or stow", output.Clean(f.typ)))
+		}
+		if stowFlags && f.typ != "stow" {
+			return false, fault.New(fault.Invalid, "--allow-key and --max-request-size are a stow receiver's: give --type stow")
+		}
+	}
+	if stow && dimse {
+		return false, fault.New(fault.Invalid, "a stow receiver has no port, AE title, callers, TLS, SOP classes or transfer syntaxes: those flags are a dimse receiver's")
+	}
+	return stow, nil
+}
+
 // newReceiverAdd builds "receiver add".
 func (a *app) newReceiverAdd() *cobra.Command {
 	var f receiverFlags
 	cmd := &cobra.Command{
-		Use:   "add <tenant> <name> --storage NAME [--port N] --aet TITLE [--allow-aet T | --allow-from CIDR | --any-caller] [--enabled]",
+		Use:   "add <tenant> <name> --storage NAME [--port N] --aet TITLE [--allow-aet T | --allow-from CIDR | --any-caller] [--enabled] | --type stow --storage NAME [--allow-key ID] [--enabled]",
 		Short: "Add a receiver to a tenant",
 		Long: `Add a DICOM receiver to a tenant. It listens on its port only when it is
 enabled (--enabled), and admits only the callers it lists: a receiver added
@@ -274,20 +344,28 @@ labels the naming rule makes. Without --naming-* the default rule is used, which
 carries no value the sender gave. A reception is complete after --quiet-period
 without a file for its study, or --max-open-time from its first file.
 
+With --type stow the receiver is instead the tenant's STOW-RS service,
+POST /tenants/<tenant>/dicom-web/studies (PS3.18 10.5): it takes the instances
+stored with a key it lists (--allow-key, repeat for more), and that key must
+also hold writer or more on the tenant. One added with no key takes nothing. A
+key is listed by one stow receiver of a tenant at most. Each part is bounded by
+--max-file-size and each request by --max-request-size.
+
 The answer says whether the receiver could start: its health is up, or down
 with the reason, such as a port the server could not take.`,
 		Example: `  coria storage add lab1 main --type dir --root fast
   coria receiver add lab1 scanner1 --storage main --port 11112 --aet CORIA \
       --allow-aet PRISMA1 --allow-from 10.20.0.0/24 --enabled
-  coria receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller`,
+  coria receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller
+  coria receiver add lab1 web --type stow --storage main --allow-key 7QmXc2LpZ4 --enabled`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
-			if f.storage == "" || f.aet == "" {
-				return fault.New(fault.Invalid, "a receiver needs --storage and --aet")
-			}
 			r, _, err := f.receiver(cmd, args[1])
 			if err != nil {
 				return err
+			}
+			if f.storage == "" || (r.GetDimse() != nil && f.aet == "") {
+				return fault.New(fault.Invalid, "a receiver needs --storage, and a dimse receiver --aet")
 			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {
@@ -375,9 +453,13 @@ func (a *app) receiverDetails(w io.Writer, r *v1.Receiver) error {
 	if r.GetEnabled() {
 		enabled = "yes"
 	}
+	typ := "dimse"
+	if r.GetStow() != nil {
+		typ = "stow"
+	}
 	pairs := []output.Pair{
 		{Label: "Name", Value: r.GetName()},
-		{Label: "Type", Value: "dimse"},
+		{Label: "Type", Value: typ},
 		{Label: "Enabled", Value: enabled},
 		{Label: "Health", Value: output.ReceiverHealth(r.GetHealth())},
 	}
@@ -398,6 +480,15 @@ func (a *app) receiverDetails(w io.Writer, r *v1.Receiver) error {
 			output.Pair{Label: "TLS", Value: tls},
 			output.Pair{Label: "SOP classes", Value: countText(d.GetSopClasses())},
 			output.Pair{Label: "Transfer syntaxes", Value: countText(d.GetTransferSyntaxes())})
+	}
+	if s := r.GetStow(); s != nil {
+		keys := "no key"
+		if len(s.GetKeyIds()) > 0 {
+			keys = strings.Join(s.GetKeyIds(), ", ")
+		}
+		pairs = append(pairs,
+			output.Pair{Label: "Takes keys", Value: keys},
+			output.Pair{Label: "Max request size", Value: output.Bytes(s.GetMaxRequestBytes())})
 	}
 	pairs = append(pairs,
 		output.Pair{Label: "Naming", Value: namingText(r.GetNaming())},
@@ -503,12 +594,14 @@ arrives from then on.
 Callers are replaced whole: --allow-aet, --allow-from and --allow-aet-from set
 the list, --any-caller opens the receiver to everyone, and --no-callers closes
 it. --sop-class "" and --transfer-syntax "" return to the server's default
-set. The three naming templates are given together, and --default-naming
+set. A stow receiver's keys are replaced whole by --allow-key, and --no-keys
+closes it. The three naming templates are given together, and --default-naming
 returns to the default rule. --enabled=false stops a receiver without removing
 it.`,
 		Example: `  coria receiver set lab1 scanner1 --quiet-period 5m
   coria receiver set lab1 scanner1 --allow-aet PRISMA1 --allow-aet SKYRA2
-  coria receiver set lab1 scanner1 --enabled=false`,
+  coria receiver set lab1 scanner1 --enabled=false
+  coria receiver set lab1 web --allow-key 7QmXc2LpZ4 --allow-key 9FvTb8RkW3`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			r, paths, err := f.receiver(cmd, args[1])

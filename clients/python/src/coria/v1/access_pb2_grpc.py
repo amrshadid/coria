@@ -77,6 +77,16 @@ class AccessServiceStub:
                 request_serializer=coria_dot_v1_dot_access__pb2.WhoAmIRequest.SerializeToString,
                 response_deserializer=coria_dot_v1_dot_access__pb2.WhoAmIResponse.FromString,
                 _registered_method=True)
+        self.RotateKey = channel.unary_unary(
+                '/coria.v1.AccessService/RotateKey',
+                request_serializer=coria_dot_v1_dot_access__pb2.RotateKeyRequest.SerializeToString,
+                response_deserializer=coria_dot_v1_dot_access__pb2.RotateKeyResponse.FromString,
+                _registered_method=True)
+        self.SetKeyRules = channel.unary_unary(
+                '/coria.v1.AccessService/SetKeyRules',
+                request_serializer=coria_dot_v1_dot_access__pb2.SetKeyRulesRequest.SerializeToString,
+                response_deserializer=coria_dot_v1_dot_access__pb2.SetKeyRulesResponse.FromString,
+                _registered_method=True)
 
 
 class AccessServiceServicer:
@@ -129,7 +139,9 @@ class AccessServiceServicer:
         """RevokeKey ends a key for good: from this call on, a request with it is
         answered UNAUTHENTICATED. Its grants stay listed, so the record shows what
         the key could do, but they give nothing. Revoking a revoked key changes
-        nothing and answers the key with its first revoke time.
+        nothing and answers the key with its first revoke time. Revoking a
+        rotated key does not revoke its successor (Key.successor_id), which is
+        revoked by its own call.
 
         Role: admin on the installation.
         Audit: one entry in the installation's log, with the key's id as its
@@ -209,6 +221,50 @@ class AccessServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RotateKey(self, request, context):
+        """RotateKey replaces a key with a new one, its successor, and answers the
+        successor's secret, once. The successor holds the same grants, holder,
+        networks and client certificate. The rotated key keeps working for the
+        overlap, or until its own expiry when that is sooner, and then stops:
+        whoever holds it has the overlap to switch, with no moment without a
+        working key. The successor lives as long as the rotated key was made to
+        live, counted from now, but never longer than the installation's setting
+        key.max-lifetime (built-in default 3650 days); a key made never to
+        expire makes a successor that never expires. A key is rotated at most
+        once; its successor may be rotated in turn. A key rotating itself,
+        without admin on the installation, keeps working at least an hour beside
+        its successor, so a thief holding it cannot cut its holder off at once.
+
+        Role: admin on the installation; or the key being rotated itself, so a
+        system renews its own key with no person involved. Any other key is
+        answered permission denied.
+        Audit: one entry in the installation's log, with the rotated key's id as
+        its object, and the successor's id, the rotated key's new end and the
+        overlap in details; never the secret.
+        Errors: unauthenticated, permission denied, invalid, not found (no key
+        has that id), conflict (the key is revoked, has expired, or was already
+        rotated), unavailable (the master database does not answer).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SetKeyRules(self, request, context):
+        """SetKeyRules replaces where a key may be used from: its networks and the
+        client certificate it must come with. The key's next request is judged
+        by the new rules.
+
+        Role: admin on the installation.
+        Audit: one entry in the installation's log, with the key's id as its
+        object and the new rules in details.
+        Errors: unauthenticated, permission denied, invalid, not found (no key
+        has that id), conflict (the key is revoked), unavailable (the master
+        database does not answer).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AccessServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -251,6 +307,16 @@ def add_AccessServiceServicer_to_server(servicer, server):
                     servicer.WhoAmI,
                     request_deserializer=coria_dot_v1_dot_access__pb2.WhoAmIRequest.FromString,
                     response_serializer=coria_dot_v1_dot_access__pb2.WhoAmIResponse.SerializeToString,
+            ),
+            'RotateKey': grpc.unary_unary_rpc_method_handler(
+                    servicer.RotateKey,
+                    request_deserializer=coria_dot_v1_dot_access__pb2.RotateKeyRequest.FromString,
+                    response_serializer=coria_dot_v1_dot_access__pb2.RotateKeyResponse.SerializeToString,
+            ),
+            'SetKeyRules': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetKeyRules,
+                    request_deserializer=coria_dot_v1_dot_access__pb2.SetKeyRulesRequest.FromString,
+                    response_serializer=coria_dot_v1_dot_access__pb2.SetKeyRulesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -472,6 +538,60 @@ class AccessService:
             '/coria.v1.AccessService/WhoAmI',
             coria_dot_v1_dot_access__pb2.WhoAmIRequest.SerializeToString,
             coria_dot_v1_dot_access__pb2.WhoAmIResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RotateKey(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/coria.v1.AccessService/RotateKey',
+            coria_dot_v1_dot_access__pb2.RotateKeyRequest.SerializeToString,
+            coria_dot_v1_dot_access__pb2.RotateKeyResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetKeyRules(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/coria.v1.AccessService/SetKeyRules',
+            coria_dot_v1_dot_access__pb2.SetKeyRulesRequest.SerializeToString,
+            coria_dot_v1_dot_access__pb2.SetKeyRulesResponse.FromString,
             options,
             channel_credentials,
             insecure,

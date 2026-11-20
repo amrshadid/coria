@@ -363,7 +363,9 @@ func receiverExists(ctx context.Context, tx pgx.Tx, name string) (bool, error) {
 }
 
 // checkReceiver refuses r when its storage is not the tenant's or another
-// receiver listens on its port and address (tenant.ReceiversClash).
+// receiver clashes with it (tenant.ReceiversClash): a DIMSE receiver on its
+// port and address, or a stow receiver, all of which are on port 0, that
+// lists one of its keys.
 func checkReceiver(ctx context.Context, tx pgx.Tx, r tenant.Receiver) error {
 	has, err := exists(ctx, tx, `SELECT 1 FROM storages WHERE name = $1`, r.Storage)
 	if err != nil {
@@ -379,7 +381,7 @@ func checkReceiver(ctx context.Context, tx pgx.Tx, r tenant.Receiver) error {
 	}
 	for _, o := range others {
 		if tenant.ReceiversClash(r, o) {
-			return tenant.Precondition("the receiver " + o.Name + " listens on the same port and an overlapping address")
+			return tenant.ClashError(o)
 		}
 	}
 	return nil

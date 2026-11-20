@@ -634,3 +634,58 @@ func TestListLargeDirectory(t *testing.T) {
 		}
 	}
 }
+
+// TestOpenForReadingChangesNothing guards the open a reader makes: it
+// leaves a temporary file in place (a Put in progress beside it), makes no
+// temporary directory in a storage that has none, opens a directory it may
+// not write, reads its objects, and refuses Put and Delete as the caller's
+// mistake.
+func TestOpenForReadingChangesNothing(t *testing.T) {
+	ctx := context.Background()
+	w := openTemp(t)
+	if _, err := w.Put(ctx, "a/obj", strings.NewReader("held")); err != nil {
+		t.Fatal(err)
+	}
+	root := w.root.Name()
+	plant(t, filepath.Join(root, tempDir, "inflight"), []byte("partial"))
+	r, err := OpenForReading(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tempFiles(t, root); !slices.Equal(got, []string{"inflight"}) {
+		t.Errorf("after an open for reading the temporary directory holds %q, want the Put in progress kept", got)
+	}
+	if _, err := r.Put(ctx, "b/obj", strings.NewReader("x")); fault.KindOf(err) != fault.Internal {
+		t.Errorf("Put on a store opened for reading: %v, want Internal", err)
+	}
+	if err := r.Delete(ctx, "a/obj"); fault.KindOf(err) != fault.Internal || !exists(t, filepath.Join(root, "a", "obj")) {
+		t.Errorf("Delete on a store opened for reading: %v, want Internal and the object kept", err)
+	}
+	_ = r.Close()
+
+	bare := t.TempDir()
+	plant(t, filepath.Join(bare, "c", "obj"), []byte("only read"))
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(bare, 0o500); err != nil { //nolint:gosec // G302: a directory the test's user may read and enter, not write.
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(bare, 0o700) }) //nolint:gosec // G302: the directory's mode back, so the test's cleanup can remove it.
+	}
+	r, err = OpenForReading(bare)
+	if err != nil {
+		t.Fatalf("an open for reading of a directory that cannot be written: %v", err)
+	}
+	defer func() { _ = r.Close() }()
+	rc, err := r.Read(ctx, "c/obj", 0, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(rc)
+	_ = rc.Close()
+	if string(b) != "only read" {
+		t.Errorf("read %q", b)
+	}
+	if exists(t, filepath.Join(bare, tempDir)) {
+		t.Error("an open for reading made the temporary directory")
+	}
+}

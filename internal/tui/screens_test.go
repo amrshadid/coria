@@ -210,7 +210,8 @@ func TestGrantsOfATenantSetByKeyID(t *testing.T) {
 // name and a value, and unset with the name typed, on a tenant and on the
 // installation.
 func TestSettingsSetAndUnset(t *testing.T) {
-	r := newRig(t, 100, 24, func(f *fakeserver.Server) { addTenants(f, 1) })
+	// Tall enough for every setting of the installation on one screen.
+	r := newRig(t, 100, 32, func(f *fakeserver.Server) { addTenants(f, 1) })
 	r.key("3")
 	r.expect("Settings of the installation", "key.default-lifetime", "90d", "built-in default", "test.retention", "365d")
 	r.key("esc", "1", "enter", "s")

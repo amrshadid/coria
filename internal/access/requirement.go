@@ -77,9 +77,18 @@ type Request struct {
 	// Method is the API method or command, such as
 	// "/coria.v1.AccessService/CreateKey".
 	Method string
-	// RemoteAddress is where the request came from; empty on the local
-	// socket.
+	// RemoteAddress is where the request came from: the caller's address,
+	// "ip:port" from the connection or "ip" from a trusted proxy's
+	// forwarded header; empty on the local socket. The networks of a key and
+	// of a tenant are judged against it.
 	RemoteAddress string
+	// Local reports that the request came on the installation's local
+	// socket, which no network rule applies to: its caller is a user of the
+	// machine the server runs on.
+	Local bool
+	// ClientCert is the SHA-256 of the TLS client certificate the request's
+	// connection presented, in lowercase hexadecimal; empty for none.
+	ClientCert string
 	// RequestID is the id the server made for the request.
 	RequestID string
 	// Object is what the request is about, such as a key's id.

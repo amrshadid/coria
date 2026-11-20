@@ -246,13 +246,16 @@ check-e2e:
 # The proof of this version (scripts/prove/run.sh): the binary built as make
 # build builds it, started for real, and every claim of this version shown by
 # tools that are not CORIA (curl, grpcurl, openssl, sqlite3, psql and
-# pg_dump in a Postgres container, Python's grpcio), each as a named check,
-# with a table of the results and what they measured. It needs docker for
-# Postgres and a PYTHON with scripts/requirements/check-server.txt. CI runs
-# it on Linux with CORIA_PROVE_STRICT=1, where a skipped check fails.
+# pg_dump in a Postgres container, Python's grpcio, and for reading the
+# archive dcmtk's storescu, pydicom and dicomweb-client), each as a named
+# check, with a table of the results and what they measured. It needs docker
+# for Postgres, DCMTK= naming dcmtk's directory, and a PYTHON with
+# scripts/requirements/check-server.txt and prove-reading.txt (pydicom 3, so
+# not the environment of prove-reception, which pins pydicom 2). CI runs it
+# on Linux with CORIA_PROVE_STRICT=1, where a skipped check fails.
 .PHONY: prove
 prove:
-	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" bash scripts/prove/run.sh
+	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" DCMTK="$(DCMTK)" bash scripts/prove/run.sh
 
 # The proof of reception (scripts/prove/reception.py): the real program
 # built, served and set up with its own commands; dcmtk's storescu and
@@ -881,7 +884,7 @@ ci:
 	[ "$$strict" = 1 ] || skip "CORIA_PROVE_STRICT=1: on $$os a check of the proof may be skipped (the second user needs sudo on Linux); the proof says which"; \
 	echo; echo "==> make prove (CORIA_PROVE_STRICT=$$strict)"; \
 	CORIA_PROVE_PG_CONTAINER=$(PG_CONTAINER) CORIA_PROVE_PG_PORT=$(PG_PORT) CORIA_PROVE_STRICT=$$strict \
-		$(MAKE) --no-print-directory prove PYTHON="$$py" GRPCURL="$(CHECK_GRPCURL)"; \
+		$(MAKE) --no-print-directory prove PYTHON="$$py" GRPCURL="$(CHECK_GRPCURL)" DCMTK="$(DCMTK)"; \
 	dcmtk="$(DCMTK)"; storescu="$${dcmtk:+$$dcmtk/}storescu"; \
 	if command -v "$$storescu" > /dev/null && "$$storescu" --version 2> /dev/null | grep -q "^\$$dcmtk:"; then \
 		step s3-up S3_SERVERS=silo; \

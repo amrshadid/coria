@@ -43,7 +43,7 @@ type putJob struct {
 // most one part is one PutObject request, a larger one a multipart upload
 // that is completed, or aborted on every failure.
 func (s *Store) Put(ctx context.Context, key string, r io.Reader) (blob.Written, error) {
-	if err := s.begin(ctx, "the put"); err != nil {
+	if err := s.beginWrite(ctx, "the put"); err != nil {
 		return blob.Written{}, err
 	}
 	if err := blob.CheckKey(key); err != nil {

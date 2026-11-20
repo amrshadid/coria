@@ -465,8 +465,17 @@ describe("services without handlers", () => {
     .map((l) => l.split("#")[0]!.trim().replace(/^coria\.v1\./, ""))
     .filter((l) => l !== "");
 
-  it("lists at least one service", () => {
-    expect(listed.length).toBeGreaterThan(0);
+  // Once every service is served the list is empty; a method of a service
+  // the contract does not have then stands for "not served", and the server
+  // answers it as it answers any method it does not have.
+  it("answers Unimplemented to a method of no service of the contract", async () => {
+    const response = await fetch(`${baseUrl}/coria.v1.NotServedService/Nothing`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${server.key}` },
+      body: "{}",
+    });
+    expect(response.status).toBe(501);
+    expect(((await response.json()) as { code: string }).code).toBe("unimplemented");
   });
 
   for (const service of listed) {

@@ -5,10 +5,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/api"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/driver"
 	"github.com/amrshadid/coria/internal/events"
 	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/receive/stow"
 	"github.com/amrshadid/coria/internal/registry"
 	"github.com/amrshadid/coria/internal/server"
 	"github.com/amrshadid/coria/internal/settingvalue"
@@ -96,14 +100,17 @@ func APIServices(d Deps) (Built, error) {
 		closeRegistry(reg)
 		return Built{}, err
 	}
-	sup, err := newReception(d, reg, feeds.Wake)
+	// The running stow receivers, which the supervisor starts and stops
+	// and the STOW-RS route finds by the caller's key.
+	stowReceivers := stow.NewDirectory()
+	sup, err := newReception(d, reg, feeds.Wake, stowReceivers)
 	if err != nil {
 		_ = feeds.Close()
 		closeRegistry(reg)
 		return Built{}, err
 	}
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
-		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}})
+		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, STOW: stowReceivers})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err
@@ -115,10 +122,33 @@ func APIServices(d Deps) (Built, error) {
 		WithDecision:   api.WithDecision,
 		Registry:       reg,
 		TenantsByState: counts.byState,
-		// The download of an instance over plain HTTP: checked and audited
-		// as the contract says, and answered 501 until its handler is
-		// written.
-		PatternRoutes: []server.PatternRoute{{Pattern: api.DownloadPattern, Need: api.DownloadNeed, Handler: server.NotImplemented}},
+		// A tenant's networks live in its own database; each answer is kept
+		// a few seconds, so a request into a tenant does not read it.
+		TenantNetworks: access.CachedTenantNetworks(func(ctx context.Context, t access.TenantRef) (settings.Networks, error) {
+			st, err := reg.Store(t.Name)
+			if err != nil {
+				return nil, err
+			}
+			return settingvalue.Reader{Master: d.Master}.OnTenant(st).TenantNetworks(ctx)
+		}, tenantNetworksRefresh, time.Now),
+		// The download of an instance over plain HTTP, and a tenant's
+		// DICOMweb services (QIDO-RS, WADO-RS) on one route for their
+		// subtree, each checked and audited as every route is.
+		PatternRoutes: []server.PatternRoute{
+			{Pattern: api.DownloadPattern, Need: api.DownloadNeed, Handler: h.Download},
+			{Pattern: api.DICOMwebPattern, Need: api.DICOMwebNeed, Handler: h.DICOMweb},
+			// STOW-RS, a POST on the same subtree, served by the tenant's
+			// stow receiver that lists the caller's key.
+			{Pattern: api.STOWPattern, Need: api.STOWNeed, Handler: h.STOW},
+		},
+		// No deadline applies to a read of a subject's instances, whose
+		// stream may take hours; a client that stops reading is cut by the
+		// server's stall bound instead. DICOMweb's one route carries both
+		// retrieval, which may stream a whole study, and search, which is
+		// bounded by its own row limits, so the route is long as a whole.
+		// A store by STOW-RS may send a whole study in one request; a client
+		// that stops sending is cut by the receiver's read stall bound.
+		LongMethods: []string{coriav1connect.DataServiceReadFilesProcedure, api.DownloadPattern, api.DICOMwebPattern, api.STOWPattern},
 		Reception: runners{closer{feeds}, sup, events.NewKeeper(events.KeeperConfig{
 			Tenants: keptFeeds{tenants: registryTenants{master: d.Master, registry: reg}, registry: reg, values: settingvalue.Reader{Master: d.Master}},
 			Logger:  d.Log,

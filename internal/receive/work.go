@@ -101,7 +101,9 @@ func (p *Pipeline) worker(owner string) {
 				continue
 			}
 			did = true
+			p.stepping.Add(1)
 			p.runUnit(c.Work)
+			p.stepping.Add(-1)
 		}
 		if did {
 			continue

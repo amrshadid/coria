@@ -249,14 +249,18 @@ const (
 // states. A Role line not here fails the test, so a change of the proto
 // text is a change of this table, made on purpose.
 var rolePhrases = map[string]roleShape{
-	"admin on the installation.":                                                      fixedAdmin,
-	"none; any caller the server authenticates.":                                      fixedAuthenticated,
-	"none beyond an authenticated caller; the caller's grants decide what is listed.": fixedAuthenticated,
-	"reader on that tenant, or reader on the installation.":                           registration,
-	"reader on the scope asked for.":                                                  scopeReader,
-	"admin on the scope set.":                                                         scopeAdmin,
-	"admin on the scope.":                                                             scopeAdmin,
-	"admin on the scope asked for.":                                                   scopeAdmin,
+	"admin on the installation.":                 fixedAdmin,
+	"none; any caller the server authenticates.": fixedAuthenticated,
+	// The table lets any authenticated caller reach RotateKey; package access
+	// decides admin or the key itself before anything else (TestRotateKey*
+	// there, and the API's own test of a key rotating another).
+	"admin on the installation; or the key being rotated itself, so a system renews its own key with no person involved. Any other key is answered permission denied.": fixedAuthenticated,
+	"none beyond an authenticated caller; the caller's grants decide what is listed.":                                                                                  fixedAuthenticated,
+	"reader on that tenant, or reader on the installation.":                                                                                                            registration,
+	"reader on the scope asked for.": scopeReader,
+	"admin on the scope set.":        scopeAdmin,
+	"admin on the scope.":            scopeAdmin,
+	"admin on the scope asked for.":  scopeAdmin,
 	"admin on the scope set; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.": settingChange,
 	"admin on the scope; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.":     settingChange,
 	"reader on the tenant.":   tenantReader,
@@ -525,8 +529,8 @@ func TestPendingRules(t *testing.T) {
 	lines := roleLines(t)
 	var p api.Pending
 	procs := p.Procedures()
-	if len(procs) != 7 {
-		t.Errorf("the table of methods not served has %d lines; this test was written for 7, so look at what changed", len(procs))
+	if len(procs) != 0 {
+		t.Errorf("the table of methods not served has %d lines; this test was written for 0, so look at what changed", len(procs))
 	}
 	for _, proc := range procs {
 		if !inServices(notServed, proc) {
@@ -550,7 +554,7 @@ func TestPendingRules(t *testing.T) {
 	const uid = "2.25.4711"
 	facts := func(proc string, msg proto.Message) access.Request {
 		t.Helper()
-		_, f := p.Requirement(proc, msg)
+		_, f := api.Methods{}.Requirement(proc, msg)
 		for k, v := range f.Details {
 			if strings.Contains(v, uid) || strings.Contains(v, "Smith") {
 				t.Errorf("%s: the detail %s holds what the request gave: %q", proc, k, v)
@@ -568,36 +572,9 @@ func TestPendingRules(t *testing.T) {
 		object  string
 		details map[string]string
 	}{
-		{"GetSubject", coriav1connect.CatalogServiceGetSubjectProcedure, &v1.GetSubjectRequest{Tenant: "lab1", SubjectLabel: "S01"}, "S01", nil},
-		{"GetSession", coriav1connect.CatalogServiceGetSessionProcedure, &v1.GetSessionRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01"}, "S01/E01", nil},
-		{"GetScan", coriav1connect.CatalogServiceGetScanProcedure, &v1.GetScanRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1"}, "S01/E01/T1", nil},
-		{"ListScans with a session and no subject", coriav1connect.CatalogServiceListScansProcedure, &v1.ListScansRequest{Tenant: "lab1", SessionLabel: "E01"}, "", nil},
-		{"ListScans", coriav1connect.CatalogServiceListScansProcedure,
-			&v1.ListScansRequest{Tenant: "lab1", SubjectLabel: "S01", Modality: "MR", SeriesDescriptionPrefix: "Smith", Order: v1.CatalogOrder_CATALOG_ORDER_LABEL},
-			"S01", map[string]string{"modality": "MR", "series_description_prefix": "present", "order": "CATALOG_ORDER_LABEL"}},
-		{"ListSessions", coriav1connect.CatalogServiceListSessionsProcedure,
-			&v1.ListSessionsRequest{Tenant: "lab1", StudyDateStart: "20240101", StudyDateEnd: "20241231", Receiver: "scanner1"},
-			"", map[string]string{"study_date_start": "20240101", "study_date_end": "20241231", "receiver": "scanner1"}},
 		{"ReadFiles", coriav1connect.DataServiceReadFilesProcedure,
 			&v1.ReadFilesRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", InstanceId: uid, StartAfter: &v1.ReadPosition{InstanceId: uid}},
 			"S01/E01/T1", map[string]string{"instance": "present", "start_after": "present", "announce_only": "false"}},
-		// A value that is not a label is recorded as "invalid", whatever it
-		// holds: a name, a path, a UID, a value too long for a label.
-		{"GetScan with values that are not labels", coriav1connect.CatalogServiceGetScanProcedure,
-			&v1.GetScanRequest{Tenant: "lab1", SubjectLabel: "Smith^John", SessionLabel: "../" + uid, ScanLabel: strings.Repeat("a", 129)},
-			"invalid/invalid/invalid", nil},
-		{"ListSubjects with a prefix that is not a start of a label", coriav1connect.CatalogServiceListSubjectsProcedure,
-			&v1.ListSubjectsRequest{Tenant: "lab1", LabelPrefix: "Smith John"}, "", map[string]string{"label_prefix": "invalid"}},
-		{"ListSubjects with a prefix that is a start of a label", coriav1connect.CatalogServiceListSubjectsProcedure,
-			&v1.ListSubjectsRequest{Tenant: "lab1", LabelPrefix: "sub."}, "", map[string]string{"label_prefix": "sub."}},
-		{"ListSessions with a modality and a receiver that break their rules", coriav1connect.CatalogServiceListSessionsProcedure,
-			&v1.ListSessionsRequest{Tenant: "lab1", Modality: "mr", Receiver: "Smith John"}, "", map[string]string{"modality": "invalid", "receiver": "invalid"}},
-		{"ListScans with a modality and a receiver that break their rules", coriav1connect.CatalogServiceListScansProcedure,
-			&v1.ListScansRequest{Tenant: "lab1", Modality: "MRMRMRMRMRMRMRMRMR", Receiver: "../" + uid}, "", map[string]string{"modality": "invalid", "receiver": "invalid"}},
-		{"ListScans with a modality with a space", coriav1connect.CatalogServiceListScansProcedure,
-			&v1.ListScansRequest{Tenant: "lab1", Modality: "OT_2 X", Receiver: "scanner-1"}, "", map[string]string{"modality": "OT_2 X", "receiver": "scanner-1"}},
-		{"ListSessions with a bad date", coriav1connect.CatalogServiceListSessionsProcedure,
-			&v1.ListSessionsRequest{Tenant: "lab1", SubjectLabel: "S01", StudyDateStart: "Smith"}, "S01", map[string]string{"study_date_start": "invalid"}},
 	} {
 		f := facts(c.proc, c.msg)
 		if f.Object != c.object {
@@ -617,7 +594,7 @@ func TestPendingRules(t *testing.T) {
 
 	// The download over plain HTTP: reader on the tenant the path names,
 	// the scan's path as its object, the instance id only as present.
-	need, f := api.PendingDownload("lab1", "S01", "E01", "T1", uid, true, false)
+	need, f := api.DownloadFacts("lab1", "S01", "E01", "T1", uid, true, false)
 	if need != access.OnTenant("lab1", master.RoleReader) {
 		t.Errorf("a download needs %+v, want reader on the tenant", need)
 	}
@@ -629,7 +606,7 @@ func TestPendingRules(t *testing.T) {
 			t.Errorf("a download's detail %s holds the instance id: %q", k, v)
 		}
 	}
-	if need, _ := api.PendingDownload("Lab 1", "S01", "E01", "T1", uid, false, false); need != access.OnInstallation(master.RoleReader) {
+	if need, _ := api.DownloadFacts("Lab 1", "S01", "E01", "T1", uid, false, false); need != access.OnInstallation(master.RoleReader) {
 		t.Errorf("a download into a malformed tenant needs %+v, want reader on the installation", need)
 	}
 	if strings.Contains(api.DownloadMethod, "%") || !strings.HasPrefix(api.DownloadMethod, "GET /tenants/{tenant}/instances/") {

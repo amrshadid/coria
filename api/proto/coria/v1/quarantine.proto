@@ -217,6 +217,17 @@ enum QuarantineReason {
   // UIDs, size and checksum as received). Details: none beyond the record's
   // own fields.
   QUARANTINE_REASON_INCOMING_LOST = 12;
+
+  // The file's SOP Class, SOP Instance, Study Instance or Series Instance
+  // UID read from its whole header differs from the one the receiver read
+  // from its first bytes to decide where it goes (a stow receiver's part,
+  // checked against the study its request names): a data set that repeats
+  // a placing attribute, or gives one after an attribute of a later tag,
+  // against the order of tags (PS3.5 7.1). The file was answered stored;
+  // it is never placed by what its first bytes did not say. Its bytes are
+  // kept, and a release places it by its whole header. Details:
+  // "attribute", the keyword of the first attribute that differs.
+  QUARANTINE_REASON_UID_MISMATCH = 13;
 }
 
 // QuarantineState is what has been decided about a quarantined file.

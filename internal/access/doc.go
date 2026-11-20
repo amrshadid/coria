@@ -78,6 +78,24 @@
 // from its row, one that does not is not. The audit entry keeps the real
 // cause in its reason; the caller never sees it.
 //
+// # Where a key may be used from
+//
+// A key may list the networks it may be used from and the TLS client
+// certificate it must come with (master.KeyRules), and a tenant may list the
+// networks every key used on it must come from (TenantNetworks, read through
+// the server, since the value lives in the tenant's database). The check
+// judges a key's own rules once its secret and state have passed, and a
+// tenant's networks once the role check has allowed the caller, so a caller
+// with no grant learns nothing of them; the installation's networks are the
+// server's to judge, before any key is read. A refusal by any of them is
+// answered as a key that is no good, recorded with the rule's name
+// (RuleReason), and raised as an Event. A request on the local socket
+// (Request.Local) is judged by none of them.
+//
+// A key may also be rotated (RotateKey): a successor with its grants and
+// rules, while the rotated key keeps working for an overlap, all in one
+// transaction of the master. A key may rotate itself.
+//
 // # Where an entry goes
 //
 // A refusal is always written to the installation's log (the master), with
