@@ -34,7 +34,8 @@ import (
 
 // notServedMethod returns a method of the first service api/not-served.txt
 // lists, read from the generated descriptors, so the matrix asks for a
-// method of the contract that no handler serves whichever service that is.
+// method of the contract that no handler serves whichever service that is;
+// when the list is empty, a method of a service the contract lacks.
 func notServedMethod(t *testing.T) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", "api", "not-served.txt"))
@@ -53,8 +54,10 @@ func notServedMethod(t *testing.T) string {
 		}
 		return "/" + line + "/" + string(sd.Methods().Get(0).Name())
 	}
-	t.Skip("api/not-served.txt lists no service")
-	return ""
+	// Every service of the contract is served: use a method of a service the
+	// contract does not have, which the server answers as any method it does
+	// not serve, so the matrices that need one still run.
+	return "/coria.v1.NotServedService/Nothing"
 }
 
 // badCredential is one way of not being authenticated: the Authorization
@@ -316,7 +319,11 @@ func TestUnauthenticatedAnswerIsTheProtocols(t *testing.T) {
 	// closes the master; on a loaded machine that passes the default close
 	// deadline, which is not what this test is about (the deadline itself is
 	// held by TestStopAbandonsWhatDoesNotClose).
-	e := newEnv(t, options{refusalQueue: 1 << 17, closeT: time.Minute})
+	// The limit on failed calls is out of reach: the matrix sends tens of
+	// thousands of refusals from one address, which would be slowed and then
+	// blocked, and each answer is held to be the protocol's alone.
+	e := newEnv(t, options{refusalQueue: 1 << 17, closeT: time.Minute,
+		accessRules: rulesOf(func(r *server.AccessRules) { r.FailureLimit = 1 << 30 })})
 	creds := badCredentials(t, e)
 	paths := matrixPaths(t)
 	methods := []string{http.MethodPost, http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodOptions, http.MethodHead}
@@ -554,7 +561,10 @@ func TestUnauthenticatedOddRequests(t *testing.T) {
 // the request included, over HTTP/1.1 and HTTP/2, with a read bound long
 // enough that waiting for the body would show.
 func TestStalledBodyRefusedAtOnce(t *testing.T) {
-	e := newEnv(t, options{bodyRead: 5 * time.Second})
+	// Out of reach of the limit on failed calls, which would hold these
+	// refusals back: the test is about refusing at once.
+	e := newEnv(t, options{bodyRead: 5 * time.Second,
+		accessRules: rulesOf(func(r *server.AccessRules) { r.FailureLimit = 1 << 30 })})
 	for _, h2 := range []bool{false, true} {
 		for _, p := range []string{coriav1connect.SettingsServiceGetSettingProcedure, servedProcedure, notServedMethod(t), "/acme.v9.Nothing/Do", "/"} {
 			for _, ct := range []string{"application/grpc", "application/json", "application/connect+proto"} {
@@ -804,23 +814,30 @@ func TestRefusalTiming(t *testing.T) {
 	e := newEnv(t, options{refusalQueue: 1 << 15, closeT: time.Minute})
 	hc := e.tlsClient(true)
 	paths := []string{servedProcedure, notServedMethod(t), "/acme.v9.Nothing/Do"}
+	// Each sample is the mean of a batch of refusals: one refusal takes a
+	// fraction of a millisecond, below the resolution of the clock on some
+	// systems (Windows read most single refusals as 0s), while a batch is
+	// long enough for every clock to measure.
+	const batches, perBatch = 150, 20
 	samples := make([][]time.Duration, len(paths))
-	for i := range 3000 {
+	for i := range batches {
 		for j := range paths {
 			p := paths[(i+j)%len(paths)]
 			k := slices.Index(paths, p)
 			start := time.Now()
-			if _, err := rawCall(hc, http.MethodPost, e.netURL+p, contentCases[0], []string{"Bearer " + unknownKey}); err != nil {
-				t.Fatal(err)
+			for range perBatch {
+				if _, err := rawCall(hc, http.MethodPost, e.netURL+p, contentCases[0], []string{"Bearer " + unknownKey}); err != nil {
+					t.Fatal(err)
+				}
 			}
-			samples[k] = append(samples[k], time.Since(start))
+			samples[k] = append(samples[k], time.Since(start)/perBatch)
 		}
 	}
 	medians := make([]time.Duration, len(paths))
 	for i, s := range samples {
 		sort.Slice(s, func(a, b int) bool { return s[a] < s[b] })
 		medians[i] = s[len(s)/2]
-		t.Logf("%-45s median %v over %d", paths[i], medians[i], len(s))
+		t.Logf("%-45s median %v over %d batches of %d", paths[i], medians[i], len(s), perBatch)
 	}
 	lo, hi := slices.Min(medians), slices.Max(medians)
 	if hi > lo+lo/2 {

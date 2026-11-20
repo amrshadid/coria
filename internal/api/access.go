@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"strconv"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/master"
 )
 
@@ -33,6 +35,14 @@ func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) 
 	if err := text("holder", req.GetHolder(), 1, MaxHolderLength); err != nil {
 		return nil, c.failWith(d, nil, facts, err)
 	}
+	rules, err := keyRulesOf("", req.GetNetworks(), req.GetClientCertSha256())
+	if err != nil {
+		return nil, c.failWith(d, nil, facts, err)
+	}
+	maxLifetime, err := c.values().KeyMaxLifetime(ctx)
+	if err != nil {
+		return nil, c.failWith(d, nil, facts, err)
+	}
 	var exp access.Expiry
 	switch e := req.GetExpiry().(type) {
 	case *v1.CreateKeyRequest_ExpireAfter:
@@ -42,6 +52,9 @@ func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) 
 		after := e.ExpireAfter.AsDuration()
 		if after <= 0 || after > MaxKeyLifetime {
 			return nil, c.failWith(d, nil, facts, invalid("expire_after", "is positive and at most 10 years (3650 days)"))
+		}
+		if after > maxLifetime {
+			return nil, c.failWith(d, nil, facts, invalid("expire_after", "is at most the installation's key.max-lifetime, "+maxLifetime.String()))
 		}
 		exp = access.ExpireAfter(after)
 	case *v1.CreateKeyRequest_NeverExpire:
@@ -58,10 +71,10 @@ func (s accessService) CreateKey(ctx context.Context, req *v1.CreateKeyRequest) 
 			return nil, c.failWith(d, nil, facts, err)
 		}
 		if known {
-			exp = access.ExpireAfter(lifetime)
+			exp = access.ExpireAfter(min(lifetime, maxLifetime))
 		}
 	}
-	made, err := c.access.CreateKey(ctx, d, req.GetHolder(), exp)
+	made, err := c.access.CreateKey(ctx, d, req.GetHolder(), exp, rules)
 	if err != nil {
 		return nil, c.toAPI(d, err)
 	}
@@ -263,4 +276,107 @@ func grantFilterDetail(r *v1.ListGrantsRequest) string {
 		return scopeDetail(f.Scope)
 	}
 	return "none"
+}
+
+// RotateKey replaces a key with a successor holding its grants and rules,
+// and answers the successor's secret, once.
+func (s accessService) RotateKey(ctx context.Context, req *v1.RotateKeyRequest) (*v1.RotateKeyResponse, error) {
+	c := s.c
+	d, err := c.changing(ctx, coriav1connect.AccessServiceRotateKeyProcedure)
+	if err != nil {
+		return nil, err
+	}
+	// The overlap and the id are checked by package access after it has
+	// decided whether the caller may rotate this key at all, so a caller
+	// who may not learns nothing about what a valid request looks like.
+	overlap := access.DefaultRotationOverlap
+	if o := req.GetOverlap(); o != nil {
+		overlap = -1
+		if o.CheckValid() == nil {
+			overlap = o.AsDuration()
+		}
+	}
+	maxLifetime, err := c.values().KeyMaxLifetime(ctx)
+	if err != nil {
+		return nil, c.failWith(d, nil, access.Facts{Object: req.GetId()}, err)
+	}
+	made, rotated, err := c.access.RotateKey(ctx, d, req.GetId(), overlap, maxLifetime)
+	if err != nil {
+		return nil, c.toAPI(d, err)
+	}
+	return &v1.RotateKeyResponse{Key: keyMessage(made.Key), Secret: made.Secret.Key(), Rotated: keyMessage(rotated)}, nil
+}
+
+// SetKeyRules replaces where a key may be used from.
+func (s accessService) SetKeyRules(ctx context.Context, req *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error) {
+	c := s.c
+	d, err := c.changing(ctx, coriav1connect.AccessServiceSetKeyRulesProcedure)
+	if err != nil {
+		return nil, err
+	}
+	facts := access.Facts{Object: req.GetId()}
+	if err := keyID("id", req.GetId()); err != nil {
+		return nil, c.failWith(d, nil, facts, err)
+	}
+	rules, err := keyRulesOf("", req.GetNetworks(), req.GetClientCertSha256())
+	if err != nil {
+		return nil, c.failWith(d, nil, facts, err)
+	}
+	k, err := c.access.SetKeyRules(ctx, d, req.GetId(), rules)
+	if err != nil {
+		return nil, c.toAPI(d, err)
+	}
+	return &v1.SetKeyRulesResponse{Key: keyMessage(k)}, nil
+}
+
+// keyRulesOf reads a key's rules from the networks and the fingerprint a
+// request gives (access.proto, Key.networks and Key.client_cert_sha256):
+// at most master.MaxKeyNetworks networks, each in its one written form and
+// none twice, and a fingerprint of 64 lowercase hexadecimal digits or none.
+// Each network is read alone, so a comma inside one cannot pass for two.
+func keyRulesOf(prefix string, networks []string, cert string) (master.KeyRules, error) {
+	if len(networks) > master.MaxKeyNetworks {
+		return master.KeyRules{}, invalid(prefix+"networks", "lists at most "+strconv.Itoa(master.MaxKeyNetworks)+" networks")
+	}
+	var r master.KeyRules
+	seen := make(map[string]bool, len(networks))
+	for _, n := range networks {
+		one, err := settings.ParseNetworks(n)
+		if err != nil || len(one) != 1 {
+			return master.KeyRules{}, invalid(prefix+"networks", "are each an address or address/bits, such as 10.0.0.0/8 or 2001:db8::/32, in its one written form: "+
+				"IPv4 dotted, IPv6 as RFC 5952 writes it, no bit set past the prefix, a single address without /32 or /128")
+		}
+		if seen[n] {
+			return master.KeyRules{}, invalid(prefix+"networks", "list "+n+" twice")
+		}
+		seen[n] = true
+		r.Networks = append(r.Networks, one[0])
+	}
+	if cert != "" && !master.ValidClientCert(cert) {
+		return master.KeyRules{}, invalid(prefix+"client_cert_sha256", "is the certificate's SHA-256 in 64 lowercase hexadecimal digits")
+	}
+	r.ClientCert = cert
+	return r, nil
+}
+
+// expiringKeys returns the keys that expire within the installation's
+// key.expiry-warning, as the status of every tenant answers them. A part
+// of the status that cannot be read is left out and logged, never answered
+// as an error, as every other part of a status is.
+func (c *core) expiringKeys(ctx context.Context) []*v1.Key {
+	within, err := c.values().KeyExpiryWarning(ctx)
+	if err != nil {
+		c.log.Warn("api: the keys about to expire were not read", "error", err)
+		return nil
+	}
+	keys, err := c.access.ExpiringKeys(ctx, within)
+	if err != nil {
+		c.log.Warn("api: the keys about to expire were not read", "error", err)
+		return nil
+	}
+	out := make([]*v1.Key, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, keyMessage(k))
+	}
+	return out
 }

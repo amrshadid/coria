@@ -258,6 +258,9 @@ var contractFiles = []protoreflect.FileDescriptor{
 	coriav1.File_coria_v1_reception_proto,
 	coriav1.File_coria_v1_quarantine_proto,
 	coriav1.File_coria_v1_monitor_proto,
+	coriav1.File_coria_v1_metadata_proto,
+	coriav1.File_coria_v1_catalog_proto,
+	coriav1.File_coria_v1_data_proto,
 }
 
 // contractMethods returns every method of the contract by procedure name.
@@ -392,6 +395,7 @@ func checkRole(t *testing.T, proc, role string, md protoreflect.MethodDescriptor
 	case "admin on the installation.":
 		expectStatic(t, proc, got, access.OnInstallation(master.RoleAdmin))
 	case "none; any caller the server authenticates.",
+		"admin on the installation; or the key being rotated itself, so a system renews its own key with no person involved. Any other key is answered permission denied.",
 		"none beyond an authenticated caller; the caller's grants decide what is listed.":
 		expectStatic(t, proc, got, access.Authenticated())
 	case "reader on that tenant, or reader on the installation.":

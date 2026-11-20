@@ -45,7 +45,7 @@ func (t *tenantRun) apply(rows []tenant.Receiver) {
 	now := t.sup.cfg.Now()
 	want := make(map[string]tenant.Receiver, len(rows))
 	for _, r := range rows {
-		if r.Type == tenant.ReceiverDIMSE {
+		if runs(r) {
 			want[r.Name] = r
 		}
 	}
@@ -66,7 +66,7 @@ func (t *tenantRun) apply(rows []tenant.Receiver) {
 		}
 	}
 	for _, r := range rows {
-		if r.Type != tenant.ReceiverDIMSE {
+		if !runs(r) {
 			continue
 		}
 		if !r.Enabled {
@@ -112,7 +112,11 @@ func (t *tenantRun) start(run *receiverRun) {
 		t.setHealth(r, Health{State: tenant.ReceiverStarting, Since: now})
 	}
 	run.made = r
-	bind, err := t.bindAddress(r)
+	var bind string
+	var err error
+	if r.Type == tenant.ReceiverDIMSE {
+		bind, err = t.bindAddress(r)
+	}
 	if err == nil {
 		var l Listener
 		l, err = t.sup.cfg.NewListener(ListenerSpec{
@@ -206,12 +210,23 @@ func (t *tenantRun) refreshHealth(now time.Time) {
 	}
 }
 
+// runs reports whether the supervisor runs a listener for a receiver of
+// r's type: a DICOM listener for a DIMSE receiver, the endpoint that takes
+// STOW-RS requests for a stow receiver. A type it does not know is left
+// alone, with no health.
+func runs(r tenant.Receiver) bool {
+	return r.Type == tenant.ReceiverDIMSE || r.Type == tenant.ReceiverSTOW
+}
+
 // sameListener reports whether two rows make the same listener: the same
-// DIMSE configuration and the same largest file, which bounds what the
-// listener reads of a data set. A change of anything else is read by the
-// pipeline from the row and needs no restart.
+// type and configuration of it, and the same largest file, which bounds
+// what the listener reads of a data set. A change of anything else is read
+// by the pipeline from the row and needs no restart.
 func sameListener(a, b tenant.Receiver) bool {
 	da, db := a.DIMSE, b.DIMSE
+	if a.Type != b.Type || a.STOW.MaxRequestBytes != b.STOW.MaxRequestBytes || !slices.Equal(a.STOW.Keys, b.STOW.Keys) {
+		return false
+	}
 	if a.Name != b.Name || a.MaxFileBytes != b.MaxFileBytes || da.Port != db.Port || da.BindAddress != db.BindAddress ||
 		da.AETitle != db.AETitle || da.AnyCaller != db.AnyCaller {
 		return false

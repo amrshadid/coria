@@ -74,7 +74,7 @@ func TestShippedTenantMigrationsUnchanged(t *testing.T) {
 	want := []string{"0001_init.sql " + shippedTenantInit, "0002_pipeline.sql " + shippedTenantPipeline,
 		"0003_released_places.sql " + shippedTenantReleasedPlaces, "0004_release_reason_and_scans.sql " + shippedTenantReleaseReason,
 		"0005_tenant_secrets.sql " + shippedTenantSealedKeys, "0006_events.sql " + shippedTenantEvents,
-		"0007_storage_totals.sql " + shippedTenantStorageTotals}
+		"0007_storage_totals.sql " + shippedTenantStorageTotals, "0008_catalog_reads.sql " + shippedTenantCatalogReads}
 	if tenantMigrationsErr != nil {
 		t.Fatal(tenantMigrationsErr)
 	}
@@ -761,3 +761,7 @@ func TestTenantFailuresHideSecrets(t *testing.T) {
 // shippedTenantStorageTotals is the SHA-256 of
 // migrations/tenant/0007_storage_totals.sql as this change ships it.
 const shippedTenantStorageTotals = "cd66926d9d00044ea5e1a17a003234181906ee4c692e8295686abea151b34159"
+
+// shippedTenantCatalogReads is the SHA-256 of
+// migrations/tenant/0008_catalog_reads.sql as this change ships it.
+const shippedTenantCatalogReads = "4454de633a5f4d540904c74bcdcfebb7fa04aaf09408b82a56cda1e084b070bf"

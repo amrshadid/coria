@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	connect "connectrpc.com/connect/v2"
@@ -49,11 +50,19 @@ type Client struct {
 	Quarantine coriav1connect.QuarantineServiceClient
 	// Monitor is the MonitorService.
 	Monitor coriav1connect.MonitorServiceClient
+	// Catalog is the CatalogService.
+	Catalog coriav1connect.CatalogServiceClient
+	// Metadata is the MetadataService.
+	Metadata coriav1connect.MetadataServiceClient
+	// Data is the DataService.
+	Data coriav1connect.DataServiceClient
 
 	timeout time.Duration
 	target  string
 	trust   string
 	http    *http.Client
+	base    string
+	key     string
 }
 
 // New makes a client for a configuration. It does not connect: the first call
@@ -73,6 +82,7 @@ func New(cfg Config) (*Client, error) {
 		target   string
 		trust    string
 		interc   []connect.ClientInterceptor
+		bearerK  string
 		haveData = cfg.DataDir != ""
 		haveSrv  = cfg.Server != ""
 	)
@@ -105,6 +115,7 @@ func New(cfg Config) (*Client, error) {
 		}
 		hc = networkClient(u.Scheme == "https", roots)
 		base = u.String()
+		bearerK = key
 		interc = append(interc, bearer(key))
 	}
 	c := connect.NewClient(
@@ -122,6 +133,11 @@ func New(cfg Config) (*Client, error) {
 		Receptions: coriav1connect.NewReceptionServiceClient(c),
 		Quarantine: coriav1connect.NewQuarantineServiceClient(c),
 		Monitor:    coriav1connect.NewMonitorServiceClient(c),
+		Catalog:    coriav1connect.NewCatalogServiceClient(c),
+		Metadata:   coriav1connect.NewMetadataServiceClient(c),
+		Data:       coriav1connect.NewDataServiceClient(c),
+		base:       strings.TrimSuffix(base, "/"),
+		key:        bearerK,
 		timeout:    timeout,
 		target:     target,
 		trust:      trust,

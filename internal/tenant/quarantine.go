@@ -34,6 +34,12 @@ const (
 	// incoming area is gone when the pipeline came to read it: there are
 	// no bytes left to keep, and the record says what was lost.
 	QuarantineIncomingLost QuarantineReason = "incoming_lost"
+	// QuarantineUIDMismatch is a file whose placing UIDs read from its
+	// whole header differ from those its source read from its first bytes
+	// to decide where it went (a STOW-RS part): a data set that repeats a
+	// placing attribute or gives one out of the order of tags. Its bytes
+	// are kept; a release places it by its whole header.
+	QuarantineUIDMismatch QuarantineReason = "uid_mismatch"
 )
 
 // The fault words a quarantine record's details carry under "fault", the API
@@ -91,6 +97,7 @@ var reasonDetails = map[QuarantineReason]map[string]func(string) bool{
 	QuarantineReadBackMismatch: {"storage": isName, "read_sha256": isHex64},
 	QuarantineHeaderTooLarge:   {"limit": isNumber},
 	QuarantineIncomingLost:     {},
+	QuarantineUIDMismatch:      {"attribute": oneOf("SOPInstanceUID", "SOPClassUID", "StudyInstanceUID", "SeriesInstanceUID")},
 }
 
 // oneOf returns a check that a value is one of words.

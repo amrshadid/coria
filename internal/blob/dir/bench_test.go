@@ -1,6 +1,7 @@
 package dir
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -161,5 +162,41 @@ func BenchmarkListDirectory(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// BenchmarkPackedScan measures reading a scan of 500 small instances kept
+// one object per instance against one packed object read by ranges
+// (blobtest.BenchPackedScan), so the layout of a scan on this storage is
+// chosen by its numbers.
+func BenchmarkPackedScan(b *testing.B) {
+	blobtest.BenchPackedScan(b, openTemp(b))
+}
+
+// BenchmarkReadSmallDeep measures opening and reading 8 KiB of an object
+// at the depth of an archived instance's key, the read a frame, a bulk
+// data value or a metadata file's line costs: most of it is the checks of
+// each directory of the key and of the object, not the bytes.
+func BenchmarkReadSmallDeep(b *testing.B) {
+	s := openTemp(b)
+	ctx := context.Background()
+	const key = "data/sub-tsf7ij4iejwvlbvq/ses-6jsgvunfrtp5bsyj/scan-vgb3rmyj3qagwfly/1.2.840.99.1.dcm"
+	if _, err := s.Put(ctx, key, bytes.NewReader(blobtest.PatternBytes(3, 64<<10))); err != nil {
+		b.Fatal(err)
+	}
+	buf := make([]byte, 8<<10)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		r, err := s.Read(ctx, key, 1000, int64(len(buf)))
+		if err != nil {
+			b.Fatal(err)
+		}
+		if _, err := io.ReadFull(r, buf); err != nil {
+			b.Fatal(err)
+		}
+		if err := r.Close(); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

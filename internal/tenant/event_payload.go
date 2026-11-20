@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/reception"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
@@ -31,12 +30,15 @@ const (
 	EventReceiverHealth EventType = "receiver_health"
 	// EventStorageSpace is a storage becoming nearly full or recovering.
 	EventStorageSpace EventType = "storage_space"
+	// EventFramesAdded is the pass that gives frame tables to scans
+	// archived before them rewriting a scan's metadata, or ending.
+	EventFramesAdded EventType = "frames_added"
 )
 
 // EventTypes returns every event type, in the contract's order.
 func EventTypes() []EventType {
 	return []EventType{EventAssociationFailed, EventReceptionStep, EventFileQuarantined, EventQuarantineDecided,
-		EventReceiverHealth, EventStorageSpace}
+		EventReceiverHealth, EventStorageSpace, EventFramesAdded}
 }
 
 // Valid reports whether t is one of EventTypes.
@@ -46,7 +48,7 @@ func (t EventType) Valid() bool { return slices.Contains(EventTypes(), t) }
 // report through AppendEvents: what is not a row of the pipeline. The
 // others are written by the store with the change they report.
 func ServerEventType(t EventType) bool {
-	return t == EventAssociationFailed || t == EventReceiverHealth || t == EventStorageSpace
+	return t == EventAssociationFailed || t == EventReceiverHealth || t == EventStorageSpace || t == EventFramesAdded
 }
 
 // ValidateEventTypes returns an Invalid error unless types is a filter a
@@ -57,7 +59,7 @@ func ValidateEventTypes(types []EventType) error {
 	}
 	for _, t := range types {
 		if !t.Valid() {
-			return invalid("an event type is one of association_failed, reception_step, file_quarantined, quarantine_decided, receiver_health, storage_space")
+			return invalid("an event type is one of association_failed, reception_step, file_quarantined, quarantine_decided, receiver_health, storage_space, frames_added")
 		}
 	}
 	return nil
@@ -153,6 +155,8 @@ func DecodeEvent(t EventType, payload string) (EventPayload, bool) {
 		p = &ReceiverHealthChanged{}
 	case EventStorageSpace:
 		p = &StorageSpaceChanged{}
+	case EventFramesAdded:
+		p = &FramesAdded{}
 	default:
 		return nil, true
 	}
@@ -160,201 +164,6 @@ func DecodeEvent(t EventType, payload string) (EventPayload, bool) {
 		return nil, false
 	}
 	return p, true
-}
-
-// ReceptionStepReached is a reception reaching a step, the contract's
-// message of that name.
-type ReceptionStepReached struct {
-	// Reception is the reception's id.
-	Reception string `json:"reception"`
-	// Receiver names the receiver it arrived at.
-	Receiver string `json:"receiver"`
-	// Arrival is its arrival number.
-	Arrival int `json:"arrival"`
-	// Step is the step it reached.
-	Step reception.State `json:"step"`
-	// PreviousStep is the step it left; empty for a reception's first
-	// step (receiving, or complete for one made by RetryReception).
-	PreviousStep reception.State `json:"previous_step"`
-	// Counts are its totals when it reached the step.
-	Counts EventCounts `json:"counts"`
-	// SubjectLabel and SessionLabel are its labels, empty before it is
-	// identified.
-	SubjectLabel string `json:"subject_label"`
-	// SessionLabel is its session's label, empty before it is identified.
-	SessionLabel string `json:"session_label"`
-	// RetryOf is the failed reception it runs again, empty unless it was
-	// made by RetryReception.
-	RetryOf string `json:"retry_of"`
-}
-
-// EventCounts are a reception's totals as an event carries them, the
-// contract's ReceptionCounts. Its fields are ReceptionCounts' own, in the
-// same order, so one converts to the other and a count added to one and
-// not the other does not compile.
-type EventCounts struct {
-	FilesReceived    int64 `json:"files_received"`
-	BytesReceived    int64 `json:"bytes_received"`
-	FilesArchived    int64 `json:"files_archived"`
-	BytesArchived    int64 `json:"bytes_archived"`
-	FilesDuplicate   int64 `json:"files_duplicate"`
-	BytesDuplicate   int64 `json:"bytes_duplicate"`
-	FilesQuarantined int64 `json:"files_quarantined"`
-	BytesQuarantined int64 `json:"bytes_quarantined"`
-	FilesReleased    int64 `json:"files_released"`
-}
-
-// EventType implements EventPayload.
-func (*ReceptionStepReached) EventType() EventType { return EventReceptionStep }
-
-// validate implements EventPayload.
-func (p *ReceptionStepReached) validate() error {
-	if err := master.ValidateID("reception id", p.Reception); err != nil {
-		return err
-	}
-	if err := ValidateName("receiver", p.Receiver); err != nil {
-		return err
-	}
-	if p.Arrival < 1 {
-		return invalid("an arrival number is at least 1")
-	}
-	if !knownState(p.Step) || (p.PreviousStep != "" && !knownState(p.PreviousStep)) {
-		return invalid("a step is one of " + statesText())
-	}
-	c := p.Counts
-	for _, n := range []int64{c.FilesReceived, c.BytesReceived, c.FilesArchived, c.BytesArchived, c.FilesDuplicate,
-		c.BytesDuplicate, c.FilesQuarantined, c.BytesQuarantined, c.FilesReleased} {
-		if n < 0 {
-			return invalid("a reception's counts are not negative")
-		}
-	}
-	for _, l := range []string{p.SubjectLabel, p.SessionLabel} {
-		if l != "" && !label.Valid(l) {
-			return invalid("an event's labels are valid labels")
-		}
-	}
-	if p.RetryOf != "" {
-		return master.ValidateID("retried reception id", p.RetryOf)
-	}
-	return nil
-}
-
-// ReceptionStepEvent returns the event of a reception as it is after a
-// step from the state previous (empty for its first), at the step's time.
-// Its study's UID is not in it.
-func ReceptionStepEvent(previous reception.State, r Reception) (EventRecord, error) {
-	return NewEvent(&ReceptionStepReached{
-		Reception: r.ID, Receiver: r.Receiver, Arrival: r.Arrival, Step: r.State, PreviousStep: previous, Counts: EventCounts(r.Counts),
-		SubjectLabel: r.SubjectLabel, SessionLabel: r.SessionLabel, RetryOf: r.RetryOf,
-	}, r.StepTime)
-}
-
-// FileQuarantined is one file quarantined, the contract's message of that
-// name.
-type FileQuarantined struct {
-	// File is the record's id.
-	File string `json:"file"`
-	// Reception is its reception's id, empty when it had none.
-	Reception string `json:"reception"`
-	// Receiver names the receiver it arrived at.
-	Receiver string `json:"receiver"`
-	// Reason is why it was quarantined.
-	Reason QuarantineReason `json:"reason"`
-	// SizeBytes is its size.
-	SizeBytes int64 `json:"size_bytes"`
-	// HeldFiles and HeldBytes are the quarantine's totals with it.
-	HeldFiles int64 `json:"held_files"`
-	// HeldBytes are the bytes kept for the files held, as
-	// QuarantineTotals counts them.
-	HeldBytes int64 `json:"held_bytes"`
-}
-
-// EventType implements EventPayload.
-func (*FileQuarantined) EventType() EventType { return EventFileQuarantined }
-
-// validate implements EventPayload.
-func (p *FileQuarantined) validate() error {
-	if err := master.ValidateID("quarantine id", p.File); err != nil {
-		return err
-	}
-	if p.Reception != "" {
-		if err := master.ValidateID("reception id", p.Reception); err != nil {
-			return err
-		}
-	}
-	if err := ValidateName("receiver", p.Receiver); err != nil {
-		return err
-	}
-	if !p.Reason.Valid() {
-		return invalid("a quarantine reason is one of the contract's codes")
-	}
-	if p.SizeBytes < 0 || p.HeldFiles < 1 || p.HeldBytes < 0 {
-		return invalid("a quarantined file's size and totals are not negative, and the files held count it")
-	}
-	return nil
-}
-
-// FileQuarantinedEvent returns the event of a record just held, with the
-// quarantine's totals after it, at its quarantine time.
-func FileQuarantinedEvent(q QuarantinedFile, heldFiles, heldBytes int64) (EventRecord, error) {
-	return NewEvent(&FileQuarantined{File: q.ID, Reception: q.ReceptionID, Receiver: q.Receiver, Reason: q.Reason,
-		SizeBytes: q.Size, HeldFiles: heldFiles, HeldBytes: heldBytes}, q.Quarantined)
-}
-
-// QuarantineDecided is a quarantined file released or rejected, the
-// contract's message of that name.
-type QuarantineDecided struct {
-	// File is the record's id.
-	File string `json:"file"`
-	// State is what was decided: released or rejected.
-	State QuarantineState `json:"state"`
-	// ReleaseMode is how it was released; empty for a rejection.
-	ReleaseMode ReleaseMode `json:"release_mode"`
-	// ReleaseReception is the reception its release joined; empty for a
-	// rejection, and for a release of a file that joined none.
-	ReleaseReception string `json:"release_reception"`
-	// HeldFiles and HeldBytes are the quarantine's totals after it.
-	HeldFiles int64 `json:"held_files"`
-	// HeldBytes are the bytes kept for the files held after it.
-	HeldBytes int64 `json:"held_bytes"`
-}
-
-// EventType implements EventPayload.
-func (*QuarantineDecided) EventType() EventType { return EventQuarantineDecided }
-
-// validate implements EventPayload.
-func (p *QuarantineDecided) validate() error {
-	if err := master.ValidateID("quarantine id", p.File); err != nil {
-		return err
-	}
-	switch p.State {
-	case QuarantineReleased:
-		if p.ReleaseMode != ReleaseAsIs {
-			return invalid("a release's mode is as_is")
-		}
-		if p.ReleaseReception != "" {
-			if err := master.ValidateID("reception id", p.ReleaseReception); err != nil {
-				return err
-			}
-		}
-	case QuarantineRejected:
-		if p.ReleaseMode != "" || p.ReleaseReception != "" {
-			return invalid("a rejection has no release mode or reception")
-		}
-	default:
-		return invalid("a decision is released or rejected")
-	}
-	if p.HeldFiles < 0 || p.HeldBytes < 0 {
-		return invalid("the quarantine's totals are not negative")
-	}
-	return nil
-}
-
-// QuarantineDecidedEvent returns the event of a record just released or
-// rejected, with the quarantine's totals after it, at its decision time.
-func QuarantineDecidedEvent(q QuarantinedFile, heldFiles, heldBytes int64) (EventRecord, error) {
-	return NewEvent(&QuarantineDecided{File: q.ID, State: q.State, ReleaseMode: q.ReleaseMode,
-		ReleaseReception: q.ReleaseReception, HeldFiles: heldFiles, HeldBytes: heldBytes}, q.Decided)
 }
 
 // AssociationFailure is why a receiver turned a caller away, the contract's
@@ -500,6 +309,55 @@ func (p *StorageSpaceChanged) validate() error {
 	}
 	if p.UsedBytes < 0 || (p.FreeBytes != nil && *p.FreeBytes < 0) {
 		return invalid("a storage's bytes are not negative")
+	}
+	return nil
+}
+
+// FramesAdded is the progress of the pass that gives frame tables to the
+// metadata of scans archived before tables existed, the contract's message
+// of that name: one scan's metadata rewritten with its tables, or, with
+// Finished, a pass that rewrote any having checked every scan.
+type FramesAdded struct {
+	// SubjectLabel, SessionLabel and ScanLabel place the scan rewritten;
+	// empty when Finished.
+	SubjectLabel string `json:"subject_label"`
+	// SessionLabel is the scan's session's label.
+	SessionLabel string `json:"session_label"`
+	// ScanLabel is the scan's label.
+	ScanLabel string `json:"scan_label"`
+	// Instances is how many of the scan's instances were given a table; 0
+	// when Finished.
+	Instances int64 `json:"instances"`
+	// ScansDone and InstancesDone are the pass's totals so far: scans
+	// rewritten and instances given a table.
+	ScansDone int64 `json:"scans_done"`
+	// InstancesDone is the pass's total of instances given a table.
+	InstancesDone int64 `json:"instances_done"`
+	// Finished says the pass ended, every scan of the tenant checked.
+	Finished bool `json:"finished"`
+}
+
+// EventType implements EventPayload.
+func (*FramesAdded) EventType() EventType { return EventFramesAdded }
+
+// validate implements EventPayload.
+func (p *FramesAdded) validate() error {
+	if p.Instances < 0 || p.ScansDone < 0 || p.InstancesDone < p.Instances {
+		return invalid("a frames event's counts are not negative, and its totals hold its scan's")
+	}
+	if p.Finished {
+		if p.SubjectLabel != "" || p.SessionLabel != "" || p.ScanLabel != "" || p.Instances != 0 {
+			return invalid("a finished frames event names no scan")
+		}
+		return nil
+	}
+	if p.ScansDone < 1 {
+		return invalid("a frames event of a scan counts that scan in its totals")
+	}
+	for _, l := range []struct{ level, value string }{{"subject", p.SubjectLabel}, {"session", p.SessionLabel}, {"scan", p.ScanLabel}} {
+		if err := ValidateLabel(l.level, l.value); err != nil {
+			return err
+		}
 	}
 	return nil
 }

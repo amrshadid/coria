@@ -54,14 +54,14 @@ const (
 	// scanLabelsSQL reads the labels of the scans of a list of series: the
 	// scans' unique index on series_uid.
 	scanLabelsSQL = `SELECT series_uid, label FROM scans WHERE series_uid = ANY($1::text[])`
-	// receptionScansSQL reads the scans a reception confirmed instances in:
-	// instances_held_by, and the scans' primary key.
-	receptionScansSQL = `SELECT s.label, s.series_uid, count(*), sum(i.size)::bigint FROM instances AS i
-		JOIN scans AS s ON s.id = i.scan_id WHERE i.reception_id = $1 AND i.state = 'held'
-		GROUP BY s.id, s.label, s.series_uid ORDER BY s.label, s.id LIMIT $2`
-	// storageHoldsSQL asks whether a storage holds an instance:
-	// instances_on_storage.
-	storageHoldsSQL = `SELECT 1 FROM instances WHERE storage = $1 AND state = 'held' LIMIT 1`
+	// receptionScansSQL reads the scans a reception confirmed instances in,
+	// with its running totals of each: reception_scans' primary key, and
+	// the scans' primary key.
+	receptionScansSQL = `SELECT s.label, s.series_uid, r.instances, r.bytes FROM reception_scans AS r
+		JOIN scans AS s ON s.id = r.scan_id WHERE r.reception_id = $1 ORDER BY s.label, s.id LIMIT $2`
+	// storageHoldsSQL asks whether a storage holds an instance, which is
+	// whether a scan on it holds one: scans_by_storage.
+	storageHoldsSQL = `SELECT 1 FROM scans WHERE storage = $1 AND instances > 0 LIMIT 1`
 	// sessionsOnStorageSQL asks whether a session names a storage, where
 	// every later arrival of it is archived: sessions_by_storage.
 	sessionsOnStorageSQL = `SELECT 1 FROM sessions WHERE storage = $1 LIMIT 1`
@@ -75,12 +75,20 @@ const (
 		AND NOT EXISTS (SELECT 1 FROM work AS w WHERE w.reception_id = p.id AND w.state IN ('queued', 'leased'))
 		ORDER BY p.started, p.id LIMIT $3`
 	// releaseClaimedSQL releases a reception's claims not confirmed:
-	// instances_claimed. A held row is never in its condition.
-	releaseClaimedSQL = `DELETE FROM instances WHERE reception_id = $1 AND state = 'claimed'`
-	// instanceRowsSQL reads the instance rows of a batch's SOP Instance
-	// UIDs: the primary key, once for each.
-	instanceRowsSQL = `SELECT sop_instance_uid, study_uid, series_uid, sha256, reception_id, state = 'held'
-		FROM instances WHERE sop_instance_uid = ANY($1::text[])`
+	// instance_claims_by_reception. A held instance is in another table.
+	releaseClaimedSQL = `DELETE FROM instance_claims WHERE reception_id = $1`
+	// instanceRowsSQL reads what the catalog holds or a reception claims
+	// under each of a batch's SOP Instance UIDs: the held instance with its
+	// scan's study and series (the instances' primary key, then the scans'
+	// for each row found), or the claim (the claims' primary key). A UID is
+	// in one of the two at most. The scan is read by a subquery for each
+	// row: as a join, a planner that expects few rows may hash the whole
+	// scans table, which grows with the tenant.
+	instanceRowsSQL = `SELECT i.sop_instance_uid, (SELECT study_uid FROM scans WHERE id = i.scan_id),
+		(SELECT series_uid FROM scans WHERE id = i.scan_id), i.sha256, i.reception_id, true
+		FROM instances AS i WHERE i.sop_instance_uid = ANY($1::text[])
+		UNION ALL SELECT sop_instance_uid, study_uid, series_uid, sha256, reception_id, false
+		FROM instance_claims WHERE sop_instance_uid = ANY($1::text[])`
 	// receivedOfClaimSQL reads the received files a claim names, by the
 	// received files' primary key, once for each.
 	receivedOfClaimSQL = `SELECT r.sop_instance_uid, r.sha256, r.study_uid, r.series_uid FROM received_files AS r

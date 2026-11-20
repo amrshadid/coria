@@ -282,6 +282,9 @@ not allowed), 4 not found.`,
 		a.newReceiver(),
 		a.newReception(),
 		a.newQuarantine(),
+		a.newCatalog(),
+		a.newScan(),
+		a.newDownload(),
 	)
 	return root
 }

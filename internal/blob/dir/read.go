@@ -6,6 +6,9 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
+	"strings"
+	"syscall"
 
 	"github.com/amrshadid/coria/internal/blob"
 	"github.com/amrshadid/coria/internal/fault"
@@ -22,10 +25,14 @@ func (s *Store) Read(ctx context.Context, key string, offset, length int64) (io.
 	if err := blob.CheckRange(offset, length); err != nil {
 		return nil, err
 	}
-	if err := s.checkKeyDirs(key); err != nil {
+	dir, name, err := s.openKeyDir(key)
+	if err != nil {
 		return nil, err
 	}
-	f, info, err := s.openChecked(native(key), false)
+	f, info, err := s.openCheckedIn(dir, name, false)
+	if dir != s.root {
+		_ = dir.Close() // Only read; f stays open.
+	}
 	if err != nil {
 		return nil, s.objectError(err, "the storage could not open the object")
 	}
@@ -38,7 +45,7 @@ func (s *Store) Read(ctx context.Context, key string, offset, length int64) (io.
 	if length >= 0 && length < n {
 		n = length
 	}
-	return &section{r: io.NewSectionReader(f, offset, n), f: f, s: s}, nil
+	return &section{r: io.NewSectionReader(f, offset, n), f: f, s: s, base: offset}, nil
 }
 
 // section is a range of an open file that closes the file. Its errors are
@@ -47,6 +54,37 @@ type section struct {
 	r *io.SectionReader
 	f *os.File
 	s *Store
+	// base is the offset in the file of the range's first byte.
+	base int64
+}
+
+// Remaining returns how many bytes of the range are not yet read: the
+// range as Read cut it at the end of the file when it was opened.
+func (r *section) Remaining() int64 {
+	pos, _ := r.r.Seek(0, io.SeekCurrent) // A SectionReader's Seek to its current place never fails.
+	return r.r.Size() - pos
+}
+
+// SendTo writes the next n bytes of the range to w, or the rest of it when
+// fewer are left, and moves the range past what was written: what Read
+// would have given. The bytes are copied from the file itself by io.Copy,
+// so a writer whose ReadFrom takes a file (net/http's answer over a plain
+// TCP or Unix connection) has the system copy them from file to socket
+// (sendfile on Linux, macOS and the BSDs, TransmitFile on Windows) without
+// their passing through this process. A file cut short since the open
+// gives fewer bytes and no error, as Read gives io.EOF early.
+func (r *section) SendTo(w io.Writer, n int64) (int64, error) {
+	pos, _ := r.r.Seek(0, io.SeekCurrent) // As in Remaining.
+	n = min(n, r.r.Size()-pos)
+	if n <= 0 {
+		return 0, nil
+	}
+	if _, err := r.f.Seek(r.base+pos, io.SeekStart); err != nil {
+		return 0, r.s.wrap(fault.Unavailable, err, "the storage could not read the object")
+	}
+	sent, err := io.Copy(w, &io.LimitedReader{R: r.f, N: n})
+	_, _ = r.r.Seek(pos+sent, io.SeekStart) // Within the section: sent is at most n.
+	return sent, err
 }
 
 // Read reads the range.
@@ -87,8 +125,14 @@ var (
 // between is opened again. Each try is spent only when a Put won that race,
 // so the tries are not a timing guess.
 func (s *Store) openChecked(name string, wantDir bool) (*os.File, fs.FileInfo, error) {
+	return s.openCheckedIn(s.root, name, wantDir)
+}
+
+// openCheckedIn is openChecked of name in the directory dir, which is the
+// root or a directory under it.
+func (s *Store) openCheckedIn(dir *os.Root, name string, wantDir bool) (*os.File, fs.FileInfo, error) {
 	for range 64 {
-		f, err := s.open(s.root, name)
+		f, err := s.open(dir, name)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -101,7 +145,7 @@ func (s *Store) openChecked(name string, wantDir bool) (*os.File, fs.FileInfo, e
 			_ = f.Close() // Only read; not what was asked for.
 			return nil, nil, errWrongType
 		}
-		named, err := s.root.Lstat(name)
+		named, err := dir.Lstat(name)
 		if notFound(err) {
 			_ = f.Close() // Only read; removed or replaced since the open.
 			continue
@@ -121,16 +165,51 @@ func (s *Store) openChecked(name string, wantDir bool) (*os.File, fs.FileInfo, e
 	return nil, nil, errKeptReplacing
 }
 
-// checkKeyDirs examines the directories of key without following a link,
-// and says NotFound when one is missing or is a file.
-func (s *Store) checkKeyDirs(key string) error {
-	if err := s.checkDirs(parent(key)); err != nil {
-		if notFound(err) {
-			return notFoundError()
+// openKeyDir opens the directory key is in and returns it, the root itself
+// for a key at the top, with the object's name in it; the caller closes a
+// directory that is not the root. It goes down one directory at a time,
+// each examined with Lstat in the one above before it is opened, so a
+// symbolic link planted where a directory belongs is refused, as
+// checkDirs refuses it, and each name is looked up once: a lookup by the
+// whole path from the root (checkDirs, and the root's own Lstat and open)
+// goes through every directory above again, which for an instance's key
+// was most of what a small read cost. A directory missing or a file is
+// NotFound.
+func (s *Store) openKeyDir(key string) (*os.Root, string, error) {
+	dirs, name := path.Split(key)
+	dir := s.root
+	fail := func(err error) (*os.Root, string, error) {
+		if dir != s.root {
+			_ = dir.Close() // Only read.
 		}
-		return s.fail(err, "the storage could not examine the object's directories")
+		if notFound(err) {
+			return nil, "", notFoundError()
+		}
+		return nil, "", s.fail(err, "the storage could not examine the object's directories")
 	}
-	return nil
+	if dirs == "" {
+		return dir, native(name), nil
+	}
+	for seg := range strings.SplitSeq(strings.TrimSuffix(dirs, "/"), "/") {
+		info, err := dir.Lstat(seg)
+		switch {
+		case err != nil:
+			return fail(err)
+		case info.Mode()&fs.ModeSymlink != 0:
+			return fail(linkError())
+		case !info.IsDir():
+			return fail(syscall.ENOTDIR)
+		}
+		next, err := dir.OpenRoot(seg)
+		if err != nil {
+			return fail(err)
+		}
+		if dir != s.root {
+			_ = dir.Close() // Only read.
+		}
+		dir = next
+	}
+	return dir, native(name), nil
 }
 
 // objectError turns an error from opening or examining an object into one
@@ -149,10 +228,14 @@ func (s *Store) objectError(err error, message string) error {
 // lstatObject returns what is at key, examined without following a link, or
 // NotFound when that is nothing, a directory, or not a regular file.
 func (s *Store) lstatObject(key string) (fs.FileInfo, error) {
-	if err := s.checkKeyDirs(key); err != nil {
+	dir, name, err := s.openKeyDir(key)
+	if err != nil {
 		return nil, err
 	}
-	info, err := s.root.Lstat(native(key))
+	info, err := dir.Lstat(name)
+	if dir != s.root {
+		_ = dir.Close() // Only read.
+	}
 	if err != nil {
 		return nil, s.objectError(err, "the storage could not examine the object")
 	}

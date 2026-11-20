@@ -16,6 +16,7 @@ import (
 
 	"github.com/amrshadid/coria/internal/driver/sqlkit"
 	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // testMigrations are migrations that fail if run twice: the first makes a
@@ -325,5 +326,163 @@ func TestMigrateHelperProcess(t *testing.T) {
 	v, err := migrateFileAt(context.Background(), path, testMigrations(t, ""), time.Unix(0, startNano))
 	if err != nil || v != 5 {
 		t.Fatalf("Migrate = %d, %v; want 5", v, err)
+	}
+}
+
+// TestCatalogReadsMigrationFillsRows guards the migration that gives the
+// catalog what its reads need, on a database that holds a catalog already
+// (the rows tenanttest.CheckMigratedCatalog describes):
+// each session and scan gets its parents' labels and its storage, the
+// receiver of the reception that confirmed its first instance, and running
+// totals equal to a count of the instances its scans hold; each subject
+// its sessions, instances, bytes and last update; and the lists by label,
+// which read those columns, answer the rows in their order.
+func TestCatalogReadsMigrationFillsRows(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenTenant(ctx, filepath.Join(t.TempDir(), "tenant.db"), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err := sqlkit.Migrate(ctx, s.p.write, dialect, tenantMigrations[:7]); err != nil {
+		t.Fatal(err)
+	}
+	reception := func(id, receiver, study string, arrival int) string {
+		return fmt.Sprintf(`INSERT INTO receptions VALUES ('%s', '%s', '%s', %d, 'done', 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			'', '', 'store', '', 0, 0, 0, 0, 0, '[]', 0, '', '', '', NULL)`, id, receiver, study, arrival)
+	}
+	held := func(uid, study, series, rc string, scan, size, at int) string {
+		return fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', randomblob(32), '%s', %d, 'store', 'k/%s', 0, %d, %d,
+			randomblob(32), %d, %d)`, uid, study, series, rc, scan, uid, size, size, at, at)
+	}
+	for _, stmt := range []string{
+		reception("rc1", "recv-x", "2.25.1.1", 1), reception("rc2", "recv-y", "2.25.1.2", 1), reception("rc3", "recv-y", "2.25.1.3", 1),
+		reception("rc4", "recv-z", "2.25.1.1", 2),
+		`INSERT INTO subjects VALUES (1, 'Sub-A', 'sub-a', 100), (2, 'sub-b', 'sub-b', 200), (3, 'sub-c', 'sub-c', 300)`,
+		`INSERT INTO sessions VALUES (1, '2.25.1.1', 1, 'ses-1', 'ses-1', 'store', 100), (2, '2.25.1.2', 1, 'ses-2', 'ses-2', 'store', 150),
+			(3, '2.25.1.3', 2, 'ses-1', 'ses-1', 'store', 200)`,
+		`INSERT INTO scans VALUES (1, 1, '2.25.2.1', 'scan-1', 'scan-1', 2, 30, NULL, 100, 120), (2, 1, '2.25.2.2', 'scan-2', 'scan-2', 1, 5, NULL, 110, 110),
+			(3, 2, '2.25.2.3', 'scan-1', 'scan-1', 1, 7, NULL, 150, 160), (4, 3, '2.25.2.4', 'scan-1', 'scan-1', 1, 9, NULL, 200, 200)`,
+		held("2.25.3.2", "2.25.1.1", "2.25.2.1", "rc4", 1, 20, 120), held("2.25.3.1", "2.25.1.1", "2.25.2.1", "rc1", 1, 10, 100),
+		held("2.25.3.3", "2.25.1.1", "2.25.2.2", "rc1", 2, 5, 110), held("2.25.3.4", "2.25.1.2", "2.25.2.3", "rc2", 3, 7, 150),
+		held("2.25.3.5", "2.25.1.3", "2.25.2.4", "rc3", 4, 9, 200),
+		`INSERT INTO instances VALUES ('2.25.3.9', '2.25.1.1', '2.25.2.1', 'claimed', randomblob(32), 'rc4', NULL, '', '', 0, 0, 0, NULL, 0, NULL)`,
+	} {
+		if _, err := s.p.write.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tenanttest.CheckMigratedCatalog(t, s, fromMicros)
+}
+
+// TestLeanCatalogMigrationKeepsRows guards the migration that moves claims
+// into their own table, writes held instances clustered by scan without the
+// key and checksum other rows give, counts each reception's scans, and
+// removes the received files of receptions that ended done or quarantined,
+// on a database that holds each kind of row already
+// (tenanttest.CheckLeanCatalog describes them and reads them back).
+func TestLeanCatalogMigrationKeepsRows(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenTenant(ctx, filepath.Join(t.TempDir(), "tenant.db"), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err := sqlkit.Migrate(ctx, s.p.write, dialect, tenantMigrations[:8]); err != nil {
+		t.Fatal(err)
+	}
+	reception := func(id string, arrival int, state string, ended int) string {
+		return fmt.Sprintf(`INSERT INTO receptions VALUES ('%s', 'recv', '%s', %d, '%s', %d, 1, 10, 0, 0, 0, 0, 0, 0, 0,
+			'Sub-A', 'ses-1', 'store', '', 0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL)`,
+			id, tenanttest.LeanStudy, arrival, state, ended)
+	}
+	sum := func(uid string) string { s := tenanttest.LeanSum(uid); return fmt.Sprintf("x'%x'", s[:]) }
+	archived := tenanttest.LeanArchivedSum()
+	received := func(id string) string {
+		return fmt.Sprintf(`INSERT INTO received_files VALUES ('%s', '%s', %s, '%s', '%s', '1.2.840.10008.5.1.4.1.1.4', '1.2.840.10008.1.2.1',
+			10, 'in/%s', '', '', '', '', 0, 0)`, id, tenanttest.LeanReceivedUID, sum(tenanttest.LeanReceivedUID), tenanttest.LeanSeries,
+			tenanttest.LeanStudy, id)
+	}
+	for _, stmt := range []string{
+		reception(tenanttest.LeanDone, 1, "done", 1), reception(tenanttest.LeanQuarantined, 2, "quarantined", 1),
+		reception(tenanttest.LeanFailed, 3, "failed", 1), reception(tenanttest.LeanOpen, 4, "identified", 0),
+		`INSERT INTO subjects (id, label, folded, created) VALUES (1, 'Sub-A', 'sub-a', 100)`,
+		`INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created, subject_label, subject_folded)
+			VALUES (1, '` + tenanttest.LeanStudy + `', 1, 'ses-1', 'ses-1', 'store', 100, 'Sub-A', 'sub-a')`,
+		`INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated,
+			subject_label, subject_folded, session_label, session_folded, storage)
+			VALUES (1, 1, '` + tenanttest.LeanSeries + `', 'scan-1', 'scan-1', 2, 30, NULL, 100, 100, 'Sub-A', 'sub-a', 'ses-1', 'ses-1', 'store')`,
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', %s, '%s', 1, 'store', 'data/Sub-A/ses-1/scan-1/%s.dcm', 0, 10, 10,
+			%s, 100, 100)`, tenanttest.LeanLayoutUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanLayoutUID),
+			tenanttest.LeanDone, tenanttest.LeanLayoutUID, sum(tenanttest.LeanLayoutUID)),
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', %s, '%s', 1, 'store', '%s', 0, 20, 20, x'%x', 100, 100)`,
+			tenanttest.LeanKeptUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanKeptUID), tenanttest.LeanDone,
+			tenanttest.LeanKeptKey, archived[:]),
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'claimed', %s, '%s', NULL, '', '', 0, 0, 0, NULL, 100, NULL)`,
+			tenanttest.LeanClaimedUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanClaimedUID), tenanttest.LeanOpen),
+		received(tenanttest.LeanDone), received(tenanttest.LeanQuarantined), received(tenanttest.LeanFailed), received(tenanttest.LeanOpen),
+	} {
+		if _, err := s.p.write.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tenanttest.CheckLeanCatalog(t, s)
+	var kept string
+	if err := s.p.read.QueryRowContext(ctx, `SELECT group_concat(sop_instance_uid || ':' || storage_key || ':' ||
+		(archived_sha256 IS NULL), ' ') FROM (SELECT * FROM instances ORDER BY sop_instance_uid)`).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if want := tenanttest.LeanLayoutUID + "::1 " + tenanttest.LeanKeptUID + ":" + tenanttest.LeanKeptKey + ":0"; kept != want {
+		t.Errorf("the migrated rows keep %q, want %q: only a key and a checksum no other row gives", kept, want)
+	}
+}
+
+// TestLeanCatalogMigrationRefusesAMismatchedStorage guards the migration
+// that drops each instance's own storage and reads its scan's: a database
+// at the schema before it, where a held instance is on another storage
+// than its scan, is refused with a message that says why, and is left at
+// the schema it was at, with its rows as they were.
+func TestLeanCatalogMigrationRefusesAMismatchedStorage(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenTenant(ctx, filepath.Join(t.TempDir(), "tenant.db"), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err := sqlkit.Migrate(ctx, s.p.write, dialect, tenantMigrations[:8]); err != nil {
+		t.Fatal(err)
+	}
+	sum := func(uid string) string { s := tenanttest.LeanSum(uid); return fmt.Sprintf("x'%x'", s[:]) }
+	for _, stmt := range []string{
+		`INSERT INTO subjects (id, label, folded, created) VALUES (1, 'Sub-A', 'sub-a', 100)`,
+		`INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created, subject_label, subject_folded)
+			VALUES (1, '` + tenanttest.LeanStudy + `', 1, 'ses-1', 'ses-1', 'store', 100, 'Sub-A', 'sub-a')`,
+		`INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated,
+			subject_label, subject_folded, session_label, session_folded, storage)
+			VALUES (1, 1, '` + tenanttest.LeanSeries + `', 'scan-1', 'scan-1', 1, 10, NULL, 100, 100, 'Sub-A', 'sub-a', 'ses-1', 'ses-1', 'store')`,
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', %s, 'rc', 1, 'elsewhere', 'k', 0, 10, 10, %s, 100, 100)`,
+			tenanttest.LeanLayoutUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanLayoutUID), sum(tenanttest.LeanLayoutUID)),
+	} {
+		if _, err := s.p.write.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	err = s.Migrate(ctx)
+	if err == nil || !strings.Contains(err.Error(), "a held instance is on a different storage than its scan") {
+		t.Fatalf("migrating with a mismatched storage: %v, want a refusal that names it", err)
+	}
+	var version, held int
+	if err := s.p.read.QueryRowContext(ctx, `SELECT (SELECT max(version) FROM schema_migrations),
+		(SELECT count(*) FROM instances WHERE state = 'held' AND storage = 'elsewhere')`).Scan(&version, &held); err != nil {
+		t.Fatal(err)
+	}
+	if version != 8 || held != 1 {
+		t.Errorf("after the refusal the schema is at %d with %d rows on the other storage, want 8 and 1", version, held)
 	}
 }

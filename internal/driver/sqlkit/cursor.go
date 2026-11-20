@@ -24,7 +24,8 @@ const cursorVersion = "c1"
 // checkLength is how many bytes of SHA-256 end a cursor. It is a check
 // against a cursor altered or cut short by accident, not a signature: a
 // cursor holds nothing the caller was not shown, and a forged one can only
-// start its own list at another place.
+// start its own list at another place (a list that leaves a bound of its
+// filter to the cursor checks the cursor against the filter first).
 const checkLength = 8
 
 // errBadCursor is what every refused cursor reports, so a caller learns

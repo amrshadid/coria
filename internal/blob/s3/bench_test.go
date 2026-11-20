@@ -96,3 +96,11 @@ func BenchmarkRead(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkPackedScan measures reading a scan of 500 small instances kept
+// one object per instance against one packed object read by ranges
+// (blobtest.BenchPackedScan), so the layout of a scan on this storage is
+// chosen by its numbers.
+func BenchmarkPackedScan(b *testing.B) {
+	blobtest.BenchPackedScan(b, openTest(b))
+}

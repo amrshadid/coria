@@ -1,7 +1,68 @@
 package api
 
-import "github.com/amrshadid/coria/internal/place"
+import (
+	"strconv"
+
+	"google.golang.org/protobuf/proto"
+
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/place"
+)
+
+// HoldServerReads takes every read the server of h holds open at once, as
+// MaxServerReads callers each holding one would, and returns their release.
+func HoldServerReads(h Handlers) func() {
+	var releases []func()
+	for i := range MaxServerReads {
+		release, err := h.c.reads.take("held/" + strconv.Itoa(i))
+		if err != nil {
+			break
+		}
+		releases = append(releases, release)
+	}
+	return func() {
+		for _, r := range releases {
+			r()
+		}
+	}
+}
 
 // SetPortProbe makes the services of h probe a port with probe instead of
 // binding it, so a test sees each port tried and on which address.
 func SetPortProbe(h Handlers, probe place.Probe) { h.c.seams.probe = probe }
+
+// Pending is the table of the methods whose service is not served yet,
+// with the methods of Methods, so a test holds each of its lines to the
+// method's Role line before the service is served.
+type Pending struct{}
+
+// RequestFor is Methods.RequestFor over the methods not served yet.
+func (Pending) RequestFor(procedure string) (proto.Message, bool) {
+	return requestFor(pendingRules, procedure)
+}
+
+// Requirement is Methods.Requirement over the methods not served yet.
+func (Pending) Requirement(procedure string, msg proto.Message) (access.Requirement, access.Request) {
+	return requirementIn(pendingRules, procedure, msg)
+}
+
+// Procedures returns the full procedure name of every method not served
+// yet that has a line in the table.
+func (Pending) Procedures() []string {
+	out := make([]string, 0, len(pendingRules))
+	for p := range pendingRules {
+		out = append(out, p)
+	}
+	return out
+}
+
+// DownloadMethod is the method the audit entry of a plain HTTP download
+// names.
+const DownloadMethod = DownloadPattern
+
+// DownloadFacts is the requirement and the audit facts of a plain HTTP
+// download of an instance with these parts of its path, and whether it
+// carries a Range and a window.
+func DownloadFacts(tenant, subject, session, scan, instance string, ranged, window bool) (access.Requirement, access.Request) {
+	return downloadNeed(download{Tenant: tenant, Subject: subject, Session: session, Scan: scan, Instance: instance, Ranged: ranged, Window: window})
+}

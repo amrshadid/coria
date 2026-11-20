@@ -65,18 +65,20 @@ want "tables" "api_keys audit grants schema_migrations settings tenants" \
 
 show schema_migrations "SELECT version, name, encode(checksum, 'hex') AS checksum, applied FROM $s.schema_migrations"
 show tenants "SELECT id, name, driver, encode(address, 'hex') AS address, state, state_reason, created FROM $s.tenants ORDER BY name"
-show api_keys "SELECT id, encode(hash, 'hex') AS hash, holder, created, expires, last_used, revoked FROM $s.api_keys ORDER BY id"
+show api_keys "SELECT id, encode(hash, 'hex') AS hash, holder, created, expires, last_used, revoked, networks, client_cert, last_address, successor FROM $s.api_keys ORDER BY id"
 show grants "SELECT * FROM $s.grants ORDER BY key_id, scope"
 show settings "SELECT * FROM $s.settings ORDER BY name"
 show audit "SELECT id, at, key_id, local_user, remote_addr, method, tenant_name, outcome, reason, details FROM $s.audit ORDER BY at, id"
 echo
 
-want "schema_migrations rows" 1 "$(q "SELECT count(*) FROM $s.schema_migrations")"
+want "schema_migrations rows" 3 "$(q "SELECT count(*) FROM $s.schema_migrations")"
+want "the migrations, in order" "1 0001_init.sql 2 0002_key_rules.sql 3 0003_key_rotated_from.sql" \
+	"$(q "SELECT string_agg(version || ' ' || name, ' ' ORDER BY version) FROM $s.schema_migrations")"
 want "tenants rows" 2 "$(q "SELECT count(*) FROM $s.tenants")"
-want "api_keys rows" 3 "$(q "SELECT count(*) FROM $s.api_keys")"
-want "grants rows" 2 "$(q "SELECT count(*) FROM $s.grants")"
+want "api_keys rows" 4 "$(q "SELECT count(*) FROM $s.api_keys")"
+want "grants rows" 3 "$(q "SELECT count(*) FROM $s.grants")"
 want "settings rows" 2 "$(q "SELECT count(*) FROM $s.settings")"
-want "audit rows" 12 "$(q "SELECT count(*) FROM $s.audit")"
+want "audit rows" 13 "$(q "SELECT count(*) FROM $s.audit")"
 
 # Postgres's own view of the schema's integrity: every constraint is valid,
 # and a join finds no grant that points at nothing.
@@ -89,7 +91,7 @@ want "time columns are timestamptz" "api_keys.created audit.at schema_migrations
 	"$(q "SELECT string_agg(table_name || '.' || column_name, ' ' ORDER BY table_name COLLATE \"C\", column_name COLLATE \"C\") FROM information_schema.columns WHERE table_schema = '$schema' AND data_type = 'timestamp with time zone' AND column_name IN ('created', 'at', 'applied') AND is_nullable = 'NO'")"
 want "details is jsonb" jsonb "$(q "SELECT data_type FROM information_schema.columns WHERE table_schema = '$schema' AND table_name = 'audit' AND column_name = 'details'")"
 # The columns that are compared or ordered carry the byte-order collation.
-want "columns with the C collation" 10 \
+want "columns with the C collation" 11 \
 	"$(q "SELECT count(*) FROM information_schema.columns WHERE table_schema = '$schema' AND collation_name = 'C'")"
 
 # Times keep their microseconds and are read here in UTC, as the sample's T0,
@@ -104,11 +106,35 @@ want "a Unicode holder, as UTF-8" "Zoë 山田 🧠" "$(q "SELECT holder FROM $s
 # one step, never leaving the key without one; the audit entry of that change
 # says the old and the new role.
 want "the replaced grant's role" writer "$(q "SELECT role FROM $s.grants WHERE key_id = 'SampleKey002'")"
-want "every audit entry's details are a JSON object" 12 "$(q "SELECT count(*) FROM $s.audit WHERE jsonb_typeof(details) = 'object'")"
+want "every audit entry's details are a JSON object" 13 "$(q "SELECT count(*) FROM $s.audit WHERE jsonb_typeof(details) = 'object'")"
 want "the replacement's audit entry" "reader -> writer" \
 	"$(q "SELECT details ->> 'old_role' || ' -> ' || (details ->> 'new_role') FROM $s.audit WHERE method = 'SetGrant' ORDER BY at DESC LIMIT 1")"
 want "an entry for a tenant that has no row" "never-existed refused" \
 	"$(q "SELECT tenant_name || ' ' || outcome FROM $s.audit WHERE tenant_name NOT IN (SELECT name FROM $s.tenants) AND tenant_name <> ''")"
+
+# A key's rules: the networks in their one written form, the client
+# certificate's fingerprint, the address of the last use; a key with none
+# holds empty text, and the fingerprint's length is held by the table.
+want "the admin key's rules and last address" "10.0.0.0/8,192.0.2.7 5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819203 203.0.113.7" \
+	"$(q "SELECT networks || ' ' || client_cert || ' ' || last_address FROM $s.api_keys WHERE id = 'SampleKey001'")"
+want "keys with no rule hold empty text" 3 "$(q "SELECT count(*) FROM $s.api_keys WHERE networks = '' AND client_cert = '' AND last_address = ''")"
+want "the fingerprint's length check" "CHECK (((client_cert = ''::text) OR (octet_length(client_cert) = 64)))" \
+	"$(q "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'api_keys_client_cert_check' AND connamespace = '$schema'::regnamespace")"
+want "a fingerprint of the wrong length is refused by the database" refused \
+	"$(q "DO \$\$ BEGIN UPDATE $s.api_keys SET client_cert = 'abc' WHERE id = 'SampleKey002'; EXCEPTION WHEN check_violation THEN NULL; END \$\$; SELECT CASE WHEN client_cert = '' THEN 'refused' ELSE 'kept' END FROM $s.api_keys WHERE id = 'SampleKey002'")"
+# A rotation: the rotated key names its successor, which holds the rotated
+# key's holder and a copy of its grant; the rotated key now ends; the index
+# that follows a rotation backward holds the rotated keys alone.
+want "the rotated key's successor" SampleKey004 "$(q "SELECT successor FROM $s.api_keys WHERE id = 'SampleKey002'")"
+want "keys that name a successor" 1 "$(q "SELECT count(*) FROM $s.api_keys WHERE successor <> ''")"
+want "the successor's holder and copied grant" "Zoë 山田 🧠 writer" \
+	"$(q "SELECT k.holder || ' ' || g.role FROM $s.api_keys k JOIN $s.grants g ON g.key_id = k.id WHERE k.id = 'SampleKey004'")"
+want "the rotated key's end" "2026-11-18 13:30:00.123456" \
+	"$(q "SELECT to_char(expires AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') FROM $s.api_keys WHERE id = 'SampleKey002'")"
+want "the successor column carries the C collation" C \
+	"$(q "SELECT collation_name FROM information_schema.columns WHERE table_schema = '$schema' AND table_name = 'api_keys' AND column_name = 'successor'")"
+want "the successor index, partial" "CREATE INDEX api_keys_by_successor ON $schema.api_keys USING btree (successor) WHERE (successor <> ''::text)" \
+	"$(q "SELECT indexdef FROM pg_indexes WHERE schemaname = '$schema' AND indexname = 'api_keys_by_successor'")"
 
 # The key's secret is nowhere, and its hash is where the key is. pg_dump
 # writes a bytea in hex, so the hash is searched for in hex.

@@ -100,7 +100,7 @@ func testMarkKeyUsed(e *env) {
 	writes := 0
 	for i := range 1000 {
 		at := T0.Add(time.Duration(i) * 59 * time.Millisecond) // the last is at 58.941 s
-		wrote, err := e.s.MarkKeyUsed(e.ctx, k.ID, at)
+		wrote, err := e.s.MarkKeyUsed(e.ctx, k.ID, at, "")
 		e.ok("MarkKeyUsed", err)
 		if wrote {
 			writes++
@@ -114,13 +114,13 @@ func testMarkKeyUsed(e *env) {
 	if !SameTime(got.LastUsed, T0) {
 		e.Errorf("last used = %v, want the first call's %v", got.LastUsed, T0)
 	}
-	wrote, err := e.s.MarkKeyUsed(e.ctx, k.ID, T0.Add(time.Minute))
+	wrote, err := e.s.MarkKeyUsed(e.ctx, k.ID, T0.Add(time.Minute), "")
 	e.ok("MarkKeyUsed", err)
 	if wrote {
 		e.Error("a call exactly one minute later wrote; the stored time must be more than a minute older")
 	}
 	later := T0.Add(time.Minute + time.Microsecond)
-	wrote, err = e.s.MarkKeyUsed(e.ctx, k.ID, later)
+	wrote, err = e.s.MarkKeyUsed(e.ctx, k.ID, later, "")
 	e.ok("MarkKeyUsed", err)
 	if !wrote {
 		e.Error("a call more than a minute later did not write")
@@ -130,11 +130,11 @@ func testMarkKeyUsed(e *env) {
 	if !SameTime(got.LastUsed, later) {
 		e.Errorf("last used = %v, want %v", got.LastUsed, later)
 	}
-	wrote, err = e.s.MarkKeyUsed(e.ctx, "nope", T0)
+	wrote, err = e.s.MarkKeyUsed(e.ctx, "nope", T0, "")
 	if err != nil || wrote {
 		e.Errorf("MarkKeyUsed(unknown) = %v, %v; want false, nil", wrote, err)
 	}
-	_, err = e.s.MarkKeyUsed(e.ctx, k.ID, time.Time{})
+	_, err = e.s.MarkKeyUsed(e.ctx, k.ID, time.Time{}, "")
 	e.wantKind("MarkKeyUsed, zero time", err, fault.Invalid)
 }
 
@@ -147,7 +147,7 @@ func testMarkKeyUsedConcurrent(e *env) {
 	wrote := make(chan bool, callers)
 	for range callers {
 		go func() {
-			w, err := e.s.MarkKeyUsed(e.ctx, k.ID, T0)
+			w, err := e.s.MarkKeyUsed(e.ctx, k.ID, T0, "")
 			wrote <- w
 			results <- err
 		}()
@@ -196,7 +196,7 @@ func testMarkKeyUsedEdges(e *env) {
 	k := e.mustKey()
 	at := func(t time.Time) bool {
 		e.Helper()
-		w, err := e.s.MarkKeyUsed(e.ctx, k.ID, t)
+		w, err := e.s.MarkKeyUsed(e.ctx, k.ID, t, "")
 		e.ok("MarkKeyUsed", err)
 		return w
 	}

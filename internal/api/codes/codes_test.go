@@ -14,7 +14,7 @@ import (
 var allKinds = []fault.Kind{
 	fault.Internal, fault.Invalid, fault.Unauthenticated, fault.Denied,
 	fault.NotFound, fault.Conflict, fault.Unavailable,
-	fault.Precondition, fault.OutOfRange, fault.Exhausted,
+	fault.Precondition, fault.OutOfRange, fault.Exhausted, fault.DataLoss,
 }
 
 // TestEveryKindRoundTrips guards the table: each kind maps to a code and that
@@ -47,6 +47,7 @@ func TestContractCodes(t *testing.T) {
 		fault.Precondition:    connect.CodeFailedPrecondition,
 		fault.OutOfRange:      connect.CodeOutOfRange,
 		fault.Exhausted:       connect.CodeResourceExhausted,
+		fault.DataLoss:        connect.CodeDataLoss,
 	}
 	for k, c := range want {
 		if got := Code(k); got != c {
@@ -57,8 +58,9 @@ func TestContractCodes(t *testing.T) {
 
 // TestReceivingSideCodes guards the codes any method may answer: a deadline
 // and a cancellation are unavailable, a bound of the server reached is
-// Exhausted (exit 7), and every other code, a code this version has never
-// heard of among them, is Internal (exit 1), never the caller's fault.
+// Exhausted (exit 7), data loss is DataLoss (exit 1), and every other code,
+// a code this version has never heard of among them, is Internal (exit 1),
+// never the caller's fault.
 func TestReceivingSideCodes(t *testing.T) {
 	cases := map[connect.Code]fault.Kind{
 		connect.CodeResourceExhausted: fault.Exhausted,
@@ -67,13 +69,13 @@ func TestReceivingSideCodes(t *testing.T) {
 		connect.CodeCanceled:          fault.Unavailable,
 		connect.CodeUnimplemented:     fault.Internal,
 		connect.CodeUnknown:           fault.Internal,
-		connect.CodeDataLoss:          fault.Internal,
+		connect.CodeDataLoss:          fault.DataLoss,
 	}
 	for c, k := range cases {
 		if got := Kind(c); got != k {
 			t.Errorf("Kind(%v) = %v, want %v", c, got, k)
 		}
-		if got := Kind(c).ExitCode(); (k == fault.Unavailable || k == fault.Internal) && got != 1 {
+		if got := Kind(c).ExitCode(); (k == fault.Unavailable || k == fault.Internal || k == fault.DataLoss) && got != 1 {
 			t.Errorf("Kind(%v) exits %d, want 1", c, got)
 		}
 	}

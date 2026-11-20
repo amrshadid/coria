@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -48,15 +49,32 @@ func newKeyDetail(c *ctx, k *v1.Key, fetch bool) (screen, tea.Cmd) {
 			}
 			return output.Time(ts, c.loc)
 		}
-		return []pair{
+		last := never(k.GetLastUseTime(), "never")
+		if addr := k.GetLastUseAddress(); addr != "" && k.GetLastUseTime() != nil {
+			last += " from " + addr
+		}
+		ps := []pair{
 			{"ID", k.GetId()},
 			{"Holder", k.GetHolder()},
 			{"Status", output.KeyStatus(k, c.now())},
 			{"Created", never(k.GetCreateTime(), "-")},
 			{"Expires", never(k.GetExpireTime(), "never")},
-			{"Last used", never(k.GetLastUseTime(), "never")},
+			{"Last used", last},
 			{"Revoked", never(k.GetRevokeTime(), "-")},
 		}
+		if left, soon := keyExpiresSoon(k, c.now()); soon {
+			ps = append(ps, pair{"Warning", "expires in " + left + "; make its successor with \"coria key rotate\" before then"})
+		}
+		if n := k.GetNetworks(); len(n) > 0 {
+			ps = append(ps, pair{"Networks", strings.Join(n, ", ")})
+		}
+		if cert := k.GetClientCertSha256(); cert != "" {
+			ps = append(ps, pair{"Client cert", "sha256 " + cert})
+		}
+		if succ := k.GetSuccessorId(); succ != "" {
+			ps = append(ps, pair{"Successor", succ})
+		}
+		return ps
 	}
 	d.refetch = func(c *ctx, id int, ref any) tea.Cmd {
 		k, _ := ref.(*v1.Key)
@@ -139,4 +157,35 @@ func newRevokeKey(c *ctx, k *v1.Key, pop int) (screen, tea.Cmd) {
 	}
 	f.submit = func(c *ctx, f formScreen) (tea.Cmd, error) { return revokeKey(c, f.id, id), nil }
 	return f, nil
+}
+
+// keyWarnWithin is how long before its expiry a key is shown as about to
+// expire: the built-in value of the installation's key.expiry-warning, which
+// a client cannot read without more rights than a key lister has.
+const keyWarnWithin = 7 * 24 * time.Hour
+
+// keyExpiresSoon says whether a key that works now expires within the
+// warning, and in how long, in words.
+func keyExpiresSoon(k *v1.Key, now time.Time) (string, bool) {
+	if k.GetRevokeTime() != nil || k.GetExpireTime() == nil {
+		return "", false
+	}
+	left := k.GetExpireTime().AsTime().Sub(now)
+	if left <= 0 || left > keyWarnWithin {
+		return "", false
+	}
+	if left < 48*time.Hour {
+		return fmt.Sprintf("%d hours", int(left.Hours())), true
+	}
+	return fmt.Sprintf("%d days", int(left.Hours()/24)), true
+}
+
+// keyStatusWord is a key's status for a list: expiring while it works but is
+// about to stop.
+func keyStatusWord(k *v1.Key, now time.Time) string {
+	st := output.KeyStatus(k, now)
+	if _, soon := keyExpiresSoon(k, now); soon && st == "active" {
+		return "expiring"
+	}
+	return st
 }

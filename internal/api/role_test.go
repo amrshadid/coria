@@ -1,158 +1,23 @@
 package api_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
-	"time"
 
-	connect "connectrpc.com/connect/v2"
-	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
-	"google.golang.org/protobuf/types/dynamicpb"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/api"
 	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/master"
 )
-
-// notServedFile is the list of the services the contract defines and the
-// server does not serve yet (its header says why such a list exists and
-// when a line leaves it). It is one file, read here, by the tests of internal/server/servertest, and
-// by scripts/prove/steps.py, so the three cannot disagree.
-var notServedFile = filepath.Join("..", "..", "api", "not-served.txt")
-
-// notServedName is the form of a line of notServedFile: a full service
-// name.
-var notServedName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*$`)
-
-// readNotServed returns the services notServedFile names, in its order. A
-// line that is not a full service name, or a name given twice, fails the
-// test.
-func readNotServed(t testing.TB) []string {
-	t.Helper()
-	b, err := os.ReadFile(notServedFile)
-	if err != nil {
-		t.Fatalf("the list of services not served: %v", err)
-	}
-	var out []string
-	for i, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if !notServedName.MatchString(line) || slices.Contains(out, line) {
-			t.Fatalf("%s:%d: %q is not a full service name given once", notServedFile, i+1, line)
-		}
-		out = append(out, line)
-	}
-	return out
-}
-
-// inServices reports whether proc, a full procedure name, is a method of
-// one of services.
-func inServices(services []string, proc string) bool {
-	return slices.ContainsFunc(services, func(s string) bool { return strings.HasPrefix(proc, "/"+s+"/") })
-}
-
-// notServedProblems compares a list of services not served with the rpcs of
-// the proto files (lines) and with what the table serves (known): each
-// listed service must have at least one rpc in the files and none the table
-// knows.
-func notServedProblems(services []string, lines map[string]string, known func(string) bool) []string {
-	var problems []string
-	for _, s := range services {
-		rpcs := 0
-		for proc := range lines {
-			if !strings.HasPrefix(proc, "/"+s+"/") {
-				continue
-			}
-			rpcs++
-			if known(proc) {
-				problems = append(problems, proc+" is listed as not served, yet api.Methods serves it")
-			}
-		}
-		if rpcs == 0 {
-			problems = append(problems, s+" is listed as not served, and no proto file defines it")
-		}
-	}
-	slices.Sort(problems)
-	return problems
-}
-
-// TestNotServedServices guards the list of services not served yet, so it
-// cannot hide a method that is served: every listed service is in the proto
-// files and in the generated descriptors, none of its methods is in
-// api.Methods, and a call to each of its methods over the test server, as
-// the local operator, is answered UNIMPLEMENTED. It also shows the check
-// itself reports a served service put on the list and a listed service no
-// file defines.
-func TestNotServedServices(t *testing.T) {
-	notServed := readNotServed(t)
-	lines := roleLines(t)
-	var m api.Methods
-	known := func(proc string) bool { _, ok := m.RequestFor(proc); return ok }
-	for _, p := range notServedProblems(notServed, lines, known) {
-		t.Error(p)
-	}
-	served := notServedProblems(append(slices.Clone(notServed), "coria.v1.AccessService"), lines, known)
-	if len(served) == 0 || !strings.Contains(served[0], "AccessService") {
-		t.Errorf("a served service on the list was not reported: %v", served)
-	}
-	missing := notServedProblems(append(slices.Clone(notServed), "coria.v1.NoSuchService"), lines, known)
-	if len(missing) != 1 || !strings.Contains(missing[0], "NoSuchService") {
-		t.Errorf("a listed service no file defines was not reported: %v", missing)
-	}
-
-	e := newEnv(t)
-	asLocal := func(next connect.ClientFunc) connect.ClientFunc {
-		return func(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
-			if info, ok := connect.CallInfoForClientContext(ctx); ok {
-				info.RequestHeader().Set(localHeader, local.local)
-			}
-			return next(ctx, spec)
-		}
-	}
-	cl := connect.NewClient(connecthttp.NewTransport(e.client, e.url), asLocal)
-	for _, s := range notServed {
-		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(s))
-		sd, ok := d.(protoreflect.ServiceDescriptor)
-		if err != nil || !ok {
-			t.Errorf("%s is not a service of the generated descriptors: %v", s, err)
-			continue
-		}
-		for i := range sd.Methods().Len() {
-			md := sd.Methods().Get(i)
-			proc := "/" + s + "/" + string(md.Name())
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			req, res := dynamicpb.NewMessage(md.Input()), dynamicpb.NewMessage(md.Output())
-			if md.IsStreamingServer() {
-				st, err := cl.CallServerStream(ctx, connect.Spec{StreamType: connect.StreamTypeServer, Procedure: proc}, req)
-				if err == nil {
-					err = st.Receive(res)
-					_ = st.Close()
-				}
-				if connect.CodeOf(err) != connect.CodeUnimplemented {
-					t.Errorf("%s: %v, want UNIMPLEMENTED", proc, err)
-				}
-			} else {
-				err := cl.CallUnary(ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: proc}, req, res)
-				if connect.CodeOf(err) != connect.CodeUnimplemented {
-					t.Errorf("%s: %v, want UNIMPLEMENTED", proc, err)
-				}
-			}
-			cancel()
-		}
-	}
-}
 
 // roleLines reads the "Role:" line of every rpc of the contract's proto
 // files, by full procedure name. The generated descriptors carry no
@@ -248,14 +113,18 @@ const (
 // states. A Role line not here fails the test, so a change of the proto
 // text is a change of this table, made on purpose.
 var rolePhrases = map[string]roleShape{
-	"admin on the installation.":                                                      fixedAdmin,
-	"none; any caller the server authenticates.":                                      fixedAuthenticated,
-	"none beyond an authenticated caller; the caller's grants decide what is listed.": fixedAuthenticated,
-	"reader on that tenant, or reader on the installation.":                           registration,
-	"reader on the scope asked for.":                                                  scopeReader,
-	"admin on the scope set.":                                                         scopeAdmin,
-	"admin on the scope.":                                                             scopeAdmin,
-	"admin on the scope asked for.":                                                   scopeAdmin,
+	"admin on the installation.":                 fixedAdmin,
+	"none; any caller the server authenticates.": fixedAuthenticated,
+	// The table lets any authenticated caller reach RotateKey; package access
+	// decides admin or the key itself before anything else (TestRotateKey*
+	// there, and the API's own test of a key rotating another).
+	"admin on the installation; or the key being rotated itself, so a system renews its own key with no person involved. Any other key is answered permission denied.": fixedAuthenticated,
+	"none beyond an authenticated caller; the caller's grants decide what is listed.":                                                                                  fixedAuthenticated,
+	"reader on that tenant, or reader on the installation.":                                                                                                            registration,
+	"reader on the scope asked for.": scopeReader,
+	"admin on the scope set.":        scopeAdmin,
+	"admin on the scope.":            scopeAdmin,
+	"admin on the scope asked for.":  scopeAdmin,
 	"admin on the scope set; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.": settingChange,
 	"admin on the scope; for a setting set on a tenant by the installation's admin only, admin on the installation, whatever the scope.":     settingChange,
 	"reader on the tenant.":   tenantReader,
@@ -352,30 +221,41 @@ func withScope(t *testing.T, msg proto.Message, s *v1.Scope) proto.Message {
 	return m.Interface()
 }
 
+// requirementTable is what the server asks of a method table: api.Methods
+// for the services served, api.Pending for those not served yet.
+type requirementTable interface {
+	RequestFor(procedure string) (proto.Message, bool)
+	Requirement(procedure string, msg proto.Message) (access.Requirement, access.Request)
+}
+
 // TestRequirementsFollowTheRoleLines guards the method-to-requirement table
 // against the proto text itself, in both directions: every rpc of the proto
-// files has a Role line of a known shape and a line in api.Methods with that
-// shape, request by request, and every method of the descriptors is an rpc of
-// the files. A malformed or missing scope or name is held to the role on the
-// installation (the accepted reference).
+// files has a Role line of a known shape and a line with that shape,
+// request by request, in api.Methods for a service served and in
+// api.Pending for a service not served yet, so a method is held to its
+// Role line from the change that writes its contract; and every method of
+// the descriptors is an rpc of the files. A malformed or missing scope or
+// name is held to the role on the installation (the accepted reference).
 func TestRequirementsFollowTheRoleLines(t *testing.T) {
 	lines := roleLines(t)
-	// The services not served yet are held by TestNotServedServices.
 	notServed := readNotServed(t)
-	for proc := range lines {
-		if inServices(notServed, proc) {
-			delete(lines, proc)
-		}
-	}
 	methods := contractMethods()
 	for proc := range methods {
 		if _, ok := lines[proc]; !ok {
 			t.Errorf("%s is in the descriptors but not an rpc of the proto files", proc)
 		}
 	}
-	var m api.Methods
 	for proc, text := range lines {
-		if _, ok := methods[proc]; !ok {
+		var m requirementTable = api.Methods{}
+		if inServices(notServed, proc) {
+			// A service not served is not among the files contractMethods
+			// reads, which are the served ones; its descriptor is looked up
+			// by name.
+			m = api.Pending{}
+			if _, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(strings.ReplaceAll(strings.TrimPrefix(proc, "/"), "/", "."))); err != nil {
+				t.Errorf("%s is an rpc of the files but not in the descriptors: %v", proc, err)
+			}
+		} else if _, ok := methods[proc]; !ok {
 			t.Errorf("%s is an rpc of the files but not in the descriptors", proc)
 		}
 		shape, ok := rolePhrases[text]
@@ -385,7 +265,7 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 		}
 		msg, known := m.RequestFor(proc)
 		if !known {
-			t.Errorf("%s: not in api.Methods", proc)
+			t.Errorf("%s: not in the table (%T)", proc, m)
 			continue
 		}
 		need := func(req proto.Message) access.Requirement {
@@ -496,5 +376,104 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 				checkTenantRole(t, proc+" with "+f, need, withField(t, msg, f, "2.25.1"), master.RoleOperator)
 			}
 		}
+	}
+}
+
+// TestPendingRules guards the table of the methods not served yet from
+// drifting from the list and the contract: each of its lines names a
+// method of a service the list names, reads a request of the method's own
+// input type, and the count says when a method was added to or dropped
+// from a service not served without its line. It also holds the audit
+// facts of the reading methods, and of the plain HTTP download, to their
+// Audit lines: the object is the path of labels the request names, a value
+// that does not pass the label rule is recorded as "invalid", and an
+// instance id is recorded only as present, never as given.
+func TestPendingRules(t *testing.T) {
+	notServed := readNotServed(t)
+	lines := roleLines(t)
+	var p api.Pending
+	procs := p.Procedures()
+	if len(procs) != 0 {
+		t.Errorf("the table of methods not served has %d lines; this test was written for 0, so look at what changed", len(procs))
+	}
+	for _, proc := range procs {
+		if !inServices(notServed, proc) {
+			t.Errorf("%s has a line among the methods not served, but its service is not on the list: move the line to the served table", proc)
+		}
+		if _, ok := lines[proc]; !ok {
+			t.Errorf("%s has a line among the methods not served, but is not an rpc of the proto files", proc)
+			continue
+		}
+		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(strings.ReplaceAll(strings.TrimPrefix(proc, "/"), "/", ".")))
+		md, ok := d.(protoreflect.MethodDescriptor)
+		if err != nil || !ok {
+			t.Errorf("%s is not a method of the descriptors: %v", proc, err)
+			continue
+		}
+		if msg, _ := p.RequestFor(proc); msg == nil || msg.ProtoReflect().Descriptor().FullName() != md.Input().FullName() {
+			t.Errorf("%s: the table reads %v, the method takes a %s", proc, msg, md.Input().FullName())
+		}
+	}
+
+	const uid = "2.25.4711"
+	facts := func(proc string, msg proto.Message) access.Request {
+		t.Helper()
+		_, f := api.Methods{}.Requirement(proc, msg)
+		for k, v := range f.Details {
+			if strings.Contains(v, uid) || strings.Contains(v, "Smith") {
+				t.Errorf("%s: the detail %s holds what the request gave: %q", proc, k, v)
+			}
+		}
+		if strings.Contains(f.Object, uid) {
+			t.Errorf("%s: the object holds a UID: %q", proc, f.Object)
+		}
+		return f
+	}
+	for _, c := range []struct {
+		name    string
+		proc    string
+		msg     proto.Message
+		object  string
+		details map[string]string
+	}{
+		{"ReadFiles", coriav1connect.DataServiceReadFilesProcedure,
+			&v1.ReadFilesRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", InstanceId: uid, StartAfter: &v1.ReadPosition{InstanceId: uid}},
+			"S01/E01/T1", map[string]string{"instance": "present", "start_after": "present", "announce_only": "false"}},
+	} {
+		f := facts(c.proc, c.msg)
+		if f.Object != c.object {
+			t.Errorf("%s: the object is %q, want %q", c.name, f.Object, c.object)
+		}
+		for k, v := range c.details {
+			if f.Details[k] != v {
+				t.Errorf("%s: the detail %s is %q, want %q", c.name, k, f.Details[k], v)
+			}
+		}
+		for k, v := range f.Details {
+			if strings.Contains(v, "data/") {
+				t.Errorf("%s: the detail %s holds a storage key: %q", c.name, k, v)
+			}
+		}
+	}
+
+	// The download over plain HTTP: reader on the tenant the path names,
+	// the scan's path as its object, the instance id only as present.
+	need, f := api.DownloadFacts("lab1", "S01", "E01", "T1", uid, true, false)
+	if need != access.OnTenant("lab1", master.RoleReader) {
+		t.Errorf("a download needs %+v, want reader on the tenant", need)
+	}
+	if f.Object != "S01/E01/T1" || f.Details["instance"] != "present" || f.Details["range"] != "true" || f.Details["window"] != "false" {
+		t.Errorf("a download's facts are %+v", f)
+	}
+	for k, v := range f.Details {
+		if strings.Contains(v, uid) {
+			t.Errorf("a download's detail %s holds the instance id: %q", k, v)
+		}
+	}
+	if need, _ := api.DownloadFacts("Lab 1", "S01", "E01", "T1", uid, false, false); need != access.OnInstallation(master.RoleReader) {
+		t.Errorf("a download into a malformed tenant needs %+v, want reader on the installation", need)
+	}
+	if strings.Contains(api.DownloadMethod, "%") || !strings.HasPrefix(api.DownloadMethod, "GET /tenants/{tenant}/instances/") {
+		t.Errorf("the download's audit method is %q", api.DownloadMethod)
 	}
 }

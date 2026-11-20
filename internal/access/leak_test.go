@@ -21,7 +21,7 @@ func sprintf(format string, a ...any) string { return fmt.Sprintf(format, a...) 
 // searched for the secret.
 func TestNoSecretAnywhere(t *testing.T) {
 	e := newEnv(t)
-	made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "searched", access.NeverExpire())
+	made, err := e.access.CreateKey(e.ctx, e.admin("CreateKey"), "searched", access.NeverExpire(), master.KeyRules{})
 	if err != nil {
 		t.Fatal(err)
 	}

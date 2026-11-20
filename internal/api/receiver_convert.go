@@ -23,10 +23,11 @@ var receiverMask = maskRules{
 		string(tenant.FieldDIMSEPort), string(tenant.FieldDIMSEBindAddress), string(tenant.FieldDIMSEAETitle),
 		string(tenant.FieldDIMSECallers), string(tenant.FieldDIMSEAnyCaller), string(tenant.FieldDIMSETLS),
 		string(tenant.FieldDIMSETLSCert), string(tenant.FieldDIMSETLSKey), string(tenant.FieldDIMSESOPClasses),
-		string(tenant.FieldDIMSESyntaxes),
+		string(tenant.FieldDIMSESyntaxes), string(tenant.FieldSTOWKeys), string(tenant.FieldSTOWMaxRequest),
 	},
 	refused: map[string]string{
 		"dimse":       "names a type's whole message: name its fields one by one",
+		"stow":        "names a type's whole message: name its fields one by one",
 		"name":        "is the receiver's name, which does not change",
 		"health":      "is answered by the server and cannot be set",
 		"create_time": "is answered by the server and cannot be set",
@@ -69,6 +70,13 @@ func receiverValues(field string, m *v1.Receiver) (r tenant.Receiver, quiet, ope
 			r.DIMSE.TLS = &tenant.ReceiverTLS{CertificateFile: t.GetCertificateFile(), PrivateKeyFile: t.GetPrivateKeyFile()}
 		}
 	}
+	if sm := m.GetStow(); sm != nil {
+		if len(sm.GetKeyIds()) > tenant.MaxSTOWKeys {
+			return r, false, false, invalid(field+".stow.key_ids", "holds at most 256 key ids")
+		}
+		r.Type = tenant.ReceiverSTOW
+		r.STOW = tenant.STOWReceiver{Keys: sm.GetKeyIds(), MaxRequestBytes: sm.GetMaxRequestBytes()}
+	}
 	if n := m.GetNaming(); n != nil {
 		spec := naming.Spec{Subject: n.GetSubject(), Session: n.GetSession(), Scan: n.GetScan()}
 		if pt := n.GetPattern(); pt != nil {
@@ -98,8 +106,8 @@ func receiverFromRequest(field string, m *v1.Receiver) (tenant.Receiver, error) 
 	if err := itemName(field+".name", m.GetName()); err != nil {
 		return tenant.Receiver{}, err
 	}
-	if m.GetDimse() == nil {
-		return tenant.Receiver{}, invalid(field, "has a type: dimse")
+	if m.GetDimse() == nil && m.GetStow() == nil {
+		return tenant.Receiver{}, invalid(field, "has a type: dimse or stow")
 	}
 	if err := itemName(field+".storage", m.GetStorage()); err != nil {
 		return tenant.Receiver{}, err
@@ -116,6 +124,9 @@ func receiverFromRequest(field string, m *v1.Receiver) (tenant.Receiver, error) 
 	}
 	if r.MaxFileBytes == 0 {
 		r.MaxFileBytes = tenant.DefaultMaxFileBytes
+	}
+	if r.Type == tenant.ReceiverSTOW && r.STOW.MaxRequestBytes == 0 {
+		r.STOW.MaxRequestBytes = tenant.DefaultMaxRequestBytes
 	}
 	if err := r.Validate(); err != nil {
 		return tenant.Receiver{}, fieldOf(field, err)
@@ -139,6 +150,8 @@ func receiverChange(m *v1.Receiver, fields []tenant.ReceiverField) (tenant.Recei
 			return r, invalid("receiver.max_open_time", "is named by update_mask and has no value; a duration is not reset to its default")
 		case f == tenant.FieldMaxFileBytes && r.MaxFileBytes == 0:
 			return r, invalid("receiver.max_file_bytes", "is named by update_mask and has no value; a size is not reset to its default")
+		case f == tenant.FieldSTOWMaxRequest && r.STOW.MaxRequestBytes == 0:
+			return r, invalid("receiver.stow.max_request_bytes", "is named by update_mask and has no value; a size is not reset to its default")
 		}
 	}
 	return r, nil
@@ -217,6 +230,9 @@ func receiverMessage(r tenant.Receiver, h Health) *v1.Receiver {
 		}
 		m.Type = &v1.Receiver_Dimse{Dimse: d}
 	}
+	if r.Type == tenant.ReceiverSTOW {
+		m.Type = &v1.Receiver_Stow{Stow: &v1.StowReceiver{KeyIds: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes}}
+	}
 	return m
 }
 
@@ -230,7 +246,8 @@ func seconds(d time.Duration) *durationpb.Duration {
 }
 
 // receiverDetails returns the audit details of a receiver: its type, port,
-// AE title and storage, as AddReceiver's entry records them.
+// AE title and storage, as AddReceiver's entry records them; a stow
+// receiver's port is 0 and its AE title empty, having neither.
 func receiverDetails(r tenant.Receiver, withStorage bool) map[string]string {
 	d := map[string]string{detailType: string(r.Type), detailPort: strconv.Itoa(r.DIMSE.Port), detailAETitle: r.DIMSE.AETitle}
 	if withStorage {
@@ -243,8 +260,11 @@ func receiverDetails(r tenant.Receiver, withStorage bool) map[string]string {
 // gives them, before it is checked.
 func requestReceiverDetails(m *v1.Receiver) map[string]string {
 	typ := "none"
-	if m.GetDimse() != nil {
+	switch {
+	case m.GetDimse() != nil:
 		typ = string(tenant.ReceiverDIMSE)
+	case m.GetStow() != nil:
+		typ = string(tenant.ReceiverSTOW)
 	}
 	return map[string]string{
 		detailType: typ, detailPort: strconv.Itoa(int(m.GetDimse().GetPort())),

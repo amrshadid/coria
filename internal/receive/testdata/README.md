@@ -16,6 +16,14 @@ of a real patient.
 | `MR_small_jp2klossless.dcm` | `MR_small_jp2klossless.dcm` | the same instance, JPEG 2000 lossless |
 | `MR_truncated.dcm` | `MR_truncated.dcm` | MR_small cut short |
 | `liver_1frame.dcm` | `liver_1frame.dcm` | a segmentation, an enhanced multi-frame image with functional groups |
+| `SC_rgb_rle_2frame.dcm` | `SC_rgb_rle_2frame.dcm` | RLE, two frames of one fragment each, with a Basic Offset Table |
+| `jpeg_3frame_nobot.dcm` | made from `examples_ybr_color.dcm` | JPEG baseline, its first three frames in three fragments each with an empty Basic Offset Table, so only the end-of-image markers divide the frames |
+
+`jpeg_3frame_nobot.dcm` is not in pydicom's corpus: it is made from one of
+its files, with its own SOP Instance UID, by
+`python3 scripts/check/frames-pydicom.py build <pydicom's test_files> <dir>`
+(`pydicom.encaps.encapsulate` with three fragments a frame and no Basic
+Offset Table), which makes the same bytes on every run.
 
 ## pydicom's license
 

@@ -50,87 +50,100 @@ func findOrMake(ctx context.Context, tx *sql.Tx, insert string, insertArgs []any
 	return false, fault.New(fault.Unavailable, "the catalog's row kept changing under the commit; try again")
 }
 
-// commitSession finds or makes the commit's session, and its subject, and
-// returns the session's id and how many subjects and sessions it made.
-// Each row is found or made by findOrMake, so two commits at once of two
-// studies of one subject share the subject, and a label another row took
-// meanwhile is classified as the conflict it is.
-func commitSession(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit) (int64, int64, int64, error) {
-	var sessionID, subjectID int64
+// sessionRow is the session a commit found or made, with what it made on
+// the way.
+type sessionRow struct {
+	// id and subjectID are the session's and its subject's ids; created
+	// is when the session was made, in microseconds.
+	id, subjectID, created int64
+	// newSubjects and newSessions count the rows this commit made.
+	newSubjects, newSessions int64
+}
+
+// commitSession finds or makes the commit's session, and its subject, made
+// through the receiver of the commit's reception. Each row is found or made
+// by findOrMake, so two commits at once of two studies of one subject share
+// the subject, and a label another row took meanwhile is classified as the
+// conflict it is.
+func commitSession(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, receiver string) (sessionRow, error) {
+	var row sessionRow
 	var sessionLabel, storage, subjectLabel string
 	readSession := func() (bool, error) {
-		return catalogID(ctx, tx, `SELECT s.id, s.label, s.storage, sub.label FROM sessions AS s
-			JOIN subjects AS sub ON sub.id = s.subject_id WHERE s.study_uid = ?`, []any{c.StudyUID},
-			&sessionID, &sessionLabel, &storage, &subjectLabel)
+		return catalogID(ctx, tx, `SELECT id, subject_id, created, label, storage, subject_label FROM sessions WHERE study_uid = ?`,
+			[]any{c.StudyUID}, &row.id, &row.subjectID, &row.created, &sessionLabel, &storage, &subjectLabel)
 	}
 	found, err := readSession()
 	if err != nil {
-		return 0, 0, 0, err
+		return row, err
 	}
-	var newSubjects, newSessions int64
 	if !found {
 		var held string
-		made, err := findOrMake(ctx, tx, `INSERT INTO subjects (label, folded, created) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`,
-			[]any{c.SubjectLabel, label.Fold(c.SubjectLabel), micros(c.At)}, func() (bool, error) {
+		var subjectID int64
+		made, err := findOrMake(ctx, tx, `INSERT INTO subjects (label, folded, created, updated) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+			[]any{c.SubjectLabel, label.Fold(c.SubjectLabel), micros(c.At), micros(c.At)}, func() (bool, error) {
 				return catalogID(ctx, tx, `SELECT id, label FROM subjects WHERE folded = ?`, []any{label.Fold(c.SubjectLabel)}, &subjectID, &held)
 			})
 		if err != nil {
-			return 0, 0, 0, err
+			return row, err
 		}
 		if held != c.SubjectLabel {
-			return 0, 0, 0, tenant.LabelConflictError("subject", tenant.FaultCaseCollision)
+			return row, tenant.LabelConflictError("subject", tenant.FaultCaseCollision)
 		}
-		newSubjects = int64(boolInt(made))
+		row.newSubjects = int64(boolInt(made))
 		// The session is made unless its study's row or its label is
 		// there; which one, the reads after say.
-		res, err := tx.ExecContext(ctx, `INSERT INTO sessions (study_uid, subject_id, label, folded, storage, created)
-			VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, c.StudyUID, subjectID, c.SessionLabel, label.Fold(c.SessionLabel),
-			c.Storage, micros(c.At))
+		res, err := tx.ExecContext(ctx, `INSERT INTO sessions (study_uid, subject_id, label, folded, storage, created,
+			subject_label, subject_folded, study_date, receiver, updated)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, c.StudyUID, subjectID, c.SessionLabel, label.Fold(c.SessionLabel),
+			c.Storage, micros(c.At), c.SubjectLabel, label.Fold(c.SubjectLabel), c.Values.StudyDate, receiver, micros(c.At))
 		if err != nil {
-			return 0, 0, 0, err
+			return row, err
 		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return 0, 0, 0, err
+		if row.newSessions, err = res.RowsAffected(); err != nil {
+			return row, err
 		}
-		newSessions = n
 		if found, err = readSession(); err != nil {
-			return 0, 0, 0, err
+			return row, err
 		}
 		if !found {
 			// Not the study's row: its label is held at its subject.
 			if _, err := catalogID(ctx, tx, `SELECT label FROM sessions WHERE subject_id = ? AND folded = ?`,
 				[]any{subjectID, label.Fold(c.SessionLabel)}, &held); err != nil {
-				return 0, 0, 0, err
+				return row, err
 			}
 			if held == c.SessionLabel {
-				return 0, 0, 0, tenant.LabelConflictError("session", tenant.FaultHeldByAnotherSession)
+				return row, tenant.LabelConflictError("session", tenant.FaultHeldByAnotherSession)
 			}
-			return 0, 0, 0, tenant.LabelConflictError("session", tenant.FaultCaseCollision)
+			return row, tenant.LabelConflictError("session", tenant.FaultCaseCollision)
 		}
 	}
 	switch {
 	case subjectLabel != c.SubjectLabel:
-		return 0, 0, 0, tenant.LabelConflictError("subject", tenant.FaultTwoSubjectsForOneStudy)
+		return row, tenant.LabelConflictError("subject", tenant.FaultTwoSubjectsForOneStudy)
 	case sessionLabel != c.SessionLabel:
-		return 0, 0, 0, tenant.Precondition("the session already has its label; an existing session's labels are found with CatalogLabels")
+		return row, tenant.Precondition("the session already has its label; an existing session's labels are found with CatalogLabels")
 	case storage != c.Storage:
-		return 0, 0, 0, tenant.Precondition("the session's files are on another storage, where every arrival of it is archived")
+		return row, tenant.Precondition("the session's files are on another storage, where every arrival of it is archived")
 	}
-	return sessionID, newSubjects, newSessions, nil
+	return row, nil
 }
 
 // commitScanRow finds or makes the commit's scan under its session and
 // returns its id and whether it made it, as commitSession does.
-func commitScanRow(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, sessionID int64) (int64, bool, error) {
+func commitScanRow(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, sessionID int64, receiver string) (int64, bool, error) {
 	var scanID, scanSession int64
 	var held string
 	readScan := func() (bool, error) {
 		return catalogID(ctx, tx, `SELECT id, session_id, label FROM scans WHERE series_uid = ?`, []any{c.SeriesUID}, &scanID, &scanSession, &held)
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated)
-		VALUES (?, ?, ?, ?, 0, 0, NULL, ?, ?) ON CONFLICT DO NOTHING`, sessionID, c.SeriesUID, c.ScanLabel, label.Fold(c.ScanLabel),
-		micros(c.At), micros(c.At))
+	v := c.Values
+	res, err := tx.ExecContext(ctx, `INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated,
+		subject_label, subject_folded, session_label, session_folded, storage, modality, series_description, description_folded,
+		series_number, receiver, study_uid)
+		VALUES (?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		sessionID, c.SeriesUID, c.ScanLabel, label.Fold(c.ScanLabel), micros(c.At), micros(c.At),
+		c.SubjectLabel, label.Fold(c.SubjectLabel), c.SessionLabel, label.Fold(c.SessionLabel), c.Storage,
+		v.Modality, v.SeriesDescription, tenant.FoldDescription(v.SeriesDescription), seriesNumber(v), receiver, c.StudyUID)
 	if err != nil {
 		return 0, false, err
 	}
@@ -161,12 +174,18 @@ func commitScanRow(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, session
 	return scanID, n == 1, nil
 }
 
-// confirmInstanceSQL turns an instance's claim by the reception into the
-// held instance, in the statement that checks the claim is still this
-// reception's, in the commit's study and series.
-const confirmInstanceSQL = `UPDATE instances SET state = 'held', scan_id = ?, storage = ?, storage_key = ?, byte_offset = ?,
-	byte_length = ?, size = ?, archived_sha256 = ?, held_at = ?
-	WHERE sop_instance_uid = ? AND reception_id = ? AND state = 'claimed' AND study_uid = ? AND series_uid = ?`
+// takeClaimSQL removes an instance's claim by the reception, in the
+// statement that checks the claim is still this reception's, in the
+// commit's study and series, and returns the checksum it was received with,
+// which the held row keeps.
+const takeClaimSQL = `DELETE FROM instance_claims WHERE sop_instance_uid = ? AND reception_id = ? AND study_uid = ? AND series_uid = ?
+	RETURNING sha256`
+
+// insertHeldSQL writes a held instance, in its scan. Its key is the
+// layout's (tenant.InstanceKey), so none is kept; its archived checksum is
+// kept only when it is not the received one.
+const insertHeldSQL = `INSERT INTO instances (scan_id, sop_instance_uid, reception_id, sha256, archived_sha256, storage_key,
+	byte_offset, byte_length, size, held_at) VALUES (?1, ?2, ?3, ?4, CASE WHEN ?5 = ?4 THEN NULL ELSE ?5 END, '', ?6, ?7, ?8, ?9)`
 
 // CommitScan implements tenant.Pipeline.
 func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Scan, error) {
@@ -180,7 +199,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 				return err
 			}
 		}
-		study, err := lockArchiving(ctx, tx, c.ReceptionID)
+		study, receiver, err := lockArchiving(ctx, tx, c.ReceptionID)
 		if err != nil {
 			return err
 		}
@@ -190,50 +209,64 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		if err := lockStorage(ctx, tx, c.Storage); err != nil {
 			return err
 		}
-		sessionID, newSubjects, newSessions, err := commitSession(ctx, tx, c)
+		session, err := commitSession(ctx, tx, c, receiver)
 		if err != nil {
 			return err
 		}
-		scanID, newScan, err := commitScanRow(ctx, tx, c, sessionID)
+		scanID, newScan, err := commitScanRow(ctx, tx, c, session.id, receiver)
 		if err != nil {
 			return err
 		}
 		var newInstances, newBytes int64
 		for _, in := range c.Instances {
-			var state, by string
+			var by string
 			var archived []byte
-			found, err := catalogID(ctx, tx, `SELECT state, reception_id, archived_sha256 FROM instances WHERE sop_instance_uid = ?`,
-				[]any{in.SOPInstanceUID}, &state, &by, &archived)
+			found, err := catalogID(ctx, tx, `SELECT reception_id, coalesce(archived_sha256, sha256) FROM instances
+				WHERE sop_instance_uid = ?`, []any{in.SOPInstanceUID}, &by, &archived)
 			if err != nil {
 				return err
 			}
-			if found && state == "held" && by == c.ReceptionID && sqlkit.ToSHA256(archived) == in.ArchivedSHA256 {
+			if found && by == c.ReceptionID && sqlkit.ToSHA256(archived) == in.ArchivedSHA256 {
 				continue // confirmed by this reception before: a commit written again
 			}
-			if !found || state != "claimed" || by != c.ReceptionID {
+			if found {
 				return tenant.Precondition("an instance confirmed is not claimed by this reception")
 			}
-			res, err := tx.ExecContext(ctx, confirmInstanceSQL, scanID, c.Storage, in.Key, in.Offset, in.Length, in.Size,
-				in.ArchivedSHA256[:], micros(c.At), in.SOPInstanceUID, c.ReceptionID, c.StudyUID, c.SeriesUID)
-			if err != nil {
-				return err
-			}
-			if n, err := res.RowsAffected(); err != nil || n != 1 {
+			var sum []byte
+			err = tx.QueryRowContext(ctx, takeClaimSQL, in.SOPInstanceUID, c.ReceptionID, c.StudyUID, c.SeriesUID).Scan(&sum)
+			if errors.Is(err, sql.ErrNoRows) {
+				mine, err := exists(ctx, tx, `SELECT 1 FROM instance_claims WHERE sop_instance_uid = ? AND reception_id = ?`,
+					in.SOPInstanceUID, c.ReceptionID)
 				if err != nil {
 					return err
 				}
-				return tenant.Precondition("an instance confirmed was claimed in another study or series")
+				if mine {
+					return tenant.Precondition("an instance confirmed was claimed in another study or series")
+				}
+				return tenant.Precondition("an instance confirmed is not claimed by this reception")
+			}
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, insertHeldSQL, scanID, in.SOPInstanceUID, c.ReceptionID, sum, in.ArchivedSHA256[:],
+				in.Offset, in.Length, in.Size, micros(c.At)); err != nil {
+				return err
 			}
 			newInstances++
 			newBytes += in.Size
+		}
+		if newInstances > 0 {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO reception_scans (reception_id, scan_id, instances, bytes) VALUES (?, ?, ?, ?)
+				ON CONFLICT (reception_id, scan_id) DO UPDATE SET instances = instances + excluded.instances, bytes = bytes + excluded.bytes`,
+				c.ReceptionID, scanID, newInstances, newBytes); err != nil {
+				return err
+			}
 		}
 		var manifest any
 		if !c.ManifestSHA256.IsZero() {
 			manifest = c.ManifestSHA256[:]
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE scans SET instances = instances + ?, bytes = bytes + ?,
-			manifest_sha256 = coalesce(?, manifest_sha256), updated = ? WHERE id = ?`,
-			newInstances, newBytes, manifest, micros(c.At), scanID); err != nil {
+		if err := addToCatalog(ctx, tx, c, session, scanID, newScan, newInstances, newBytes, manifest); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE receptions SET files_archived = files_archived + ?, bytes_archived = bytes_archived + ?
@@ -242,7 +275,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE catalog_totals SET subjects = subjects + ?, sessions = sessions + ?,
 			scans = scans + ?, instances = instances + ? WHERE one = 1`,
-			newSubjects, newSessions, boolInt(newScan), newInstances); err != nil {
+			session.newSubjects, session.newSessions, boolInt(newScan), newInstances); err != nil {
 			return err
 		}
 		if newBytes > 0 {
@@ -265,4 +298,76 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		return tenant.Scan{}, err
 	}
 	return out, nil
+}
+
+// addToCatalog adds a commit's instances to the running totals of its scan,
+// its session and its subject, and gives the scan and session the values
+// they hold empty, in that order: on a database with several writers every
+// commit locks the rows it changes in this one order (scan, session, the
+// session's modalities, subject, then the catalog's and the storage's
+// totals), so two commits never wait for each other in a cycle. A row's
+// update time moves only when instances are added.
+func addToCatalog(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, session sessionRow, scanID int64, newScan bool,
+	newInstances, newBytes int64, manifest any) error {
+	v := c.Values
+	var modality string
+	if err := tx.QueryRowContext(ctx, `UPDATE scans SET instances = instances + ?, bytes = bytes + ?,
+		manifest_sha256 = coalesce(?, manifest_sha256), updated = CASE WHEN ? > 0 THEN max(updated, ?) ELSE updated END,
+		modality = CASE WHEN modality = '' THEN ? ELSE modality END,
+		description_folded = CASE WHEN series_description = '' THEN ? ELSE description_folded END,
+		series_description = CASE WHEN series_description = '' THEN ? ELSE series_description END,
+		series_number = coalesce(series_number, ?)
+		WHERE id = ? RETURNING modality`,
+		newInstances, newBytes, manifest, newInstances, micros(c.At), v.Modality, tenant.FoldDescription(v.SeriesDescription), v.SeriesDescription,
+		seriesNumber(v), scanID).Scan(&modality); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE sessions SET scan_count = scan_count + ?, instance_count = instance_count + ?,
+		bytes = bytes + ?, updated = CASE WHEN ? > 0 THEN max(updated, ?) ELSE updated END,
+		study_date = CASE WHEN study_date = '' THEN ? ELSE study_date END WHERE id = ?`,
+		boolInt(newScan), newInstances, newBytes, newInstances, micros(c.At), v.StudyDate, session.id); err != nil {
+		return err
+	}
+	if modality != "" {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO session_modalities (session_id, modality, created) VALUES (?, ?, ?)
+			ON CONFLICT DO NOTHING`, session.id, modality, session.created); err != nil {
+			return err
+		}
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE subjects SET session_count = session_count + ?, instance_count = instance_count + ?,
+		bytes = bytes + ?, updated = CASE WHEN ? > 0 THEN max(updated, ?) ELSE updated END WHERE id = ?`,
+		session.newSessions, newInstances, newBytes, newInstances, micros(c.At), session.subjectID)
+	return err
+}
+
+// FillScanValues implements tenant.ScanValueFill, by addToCatalog with no
+// instance added, so the rule of the values a row keeps is the commit's
+// own, and the rows are locked in its order.
+func (t *Tenant) FillScanValues(ctx context.Context, seriesUID string, v tenant.ScanValues) error {
+	if err := tenant.ValidateFillScanValues(seriesUID, v); err != nil {
+		return err
+	}
+	return t.write(ctx, "the scan's values cannot be filled in", func(tx *sql.Tx, _ *tenantStatements) error {
+		var scanID int64
+		var session sessionRow
+		found, err := catalogID(ctx, tx, `SELECT sc.id, se.id, se.subject_id, se.created FROM scans AS sc
+			JOIN sessions AS se ON se.id = sc.session_id WHERE sc.series_uid = ?`, []any{seriesUID},
+			&scanID, &session.id, &session.subjectID, &session.created)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fault.New(fault.NotFound, "no scan holds the series")
+		}
+		return addToCatalog(ctx, tx, tenant.ScanCommit{Values: v}, session, scanID, false, 0, 0, nil)
+	})
+}
+
+// seriesNumber returns a scan's series number as a column holds it: NULL
+// when its files held none.
+func seriesNumber(v tenant.ScanValues) any {
+	if !v.HasSeriesNumber {
+		return nil
+	}
+	return v.SeriesNumber
 }

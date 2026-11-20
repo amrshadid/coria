@@ -16,6 +16,7 @@ import (
 	"github.com/amrshadid/coria/internal/place"
 	"github.com/amrshadid/coria/internal/receive"
 	"github.com/amrshadid/coria/internal/receive/dimse"
+	"github.com/amrshadid/coria/internal/receive/stow"
 	"github.com/amrshadid/coria/internal/receive/supervise"
 	"github.com/amrshadid/coria/internal/registry"
 	"github.com/amrshadid/coria/internal/settingvalue"
@@ -43,7 +44,7 @@ type Runner interface {
 
 // newReception returns the supervisor of every tenant's receivers and
 // reception pipeline, over the registry's tenants.
-func newReception(d Deps, reg *registry.Registry, wake func(tenantName string)) (*supervise.Supervisor, error) {
+func newReception(d Deps, reg *registry.Registry, wake func(tenantName string), stowReceivers *stow.Directory) (*supervise.Supervisor, error) {
 	incomingRoot := filepath.Join(d.DataDir, IncomingDirName)
 	if err := os.MkdirAll(incomingRoot, 0o700); err != nil {
 		return nil, fault.Wrap(fault.Unavailable, err, "the incoming area cannot be made in the data directory")
@@ -94,9 +95,17 @@ func newReception(d Deps, reg *registry.Registry, wake func(tenantName string)) 
 			if err != nil {
 				return nil, err
 			}
-			return spaceOpener.Open(ctx, place.TenantOf(t.ID, tenantName, st), row)
+			return spaceOpener.OpenForReading(ctx, place.TenantOf(t.ID, tenantName, st), row)
 		},
 		NewListener: func(spec supervise.ListenerSpec) (supervise.Listener, error) {
+			if spec.Receiver.Type == tenant.ReceiverSTOW {
+				// No port: found by the STOW-RS route while it runs.
+				return stow.New(stow.Config{
+					Tenant: spec.Tenant, Receiver: spec.Receiver, Sink: spec.Sink, Directory: stowReceivers,
+					Refusal: stow.Refusal(spec.Refusal), Report: stow.Report(spec.Report),
+					Logger: log.With("tenant", spec.Tenant),
+				})
+			}
 			return dimse.New(dimse.Config{
 				Receiver: spec.Receiver, BindAddress: spec.BindAddress, Sink: spec.Sink,
 				TLSDir:  filepath.Join(d.DataDir, TLSDirName, spec.Tenant),
@@ -105,7 +114,7 @@ func newReception(d Deps, reg *registry.Registry, wake func(tenantName string)) 
 			})
 		},
 		IncomingUsage: func(ctx context.Context) (blob.Usage, error) {
-			s, err := dir.Open(incomingRoot)
+			s, err := dir.OpenForReading(incomingRoot)
 			if err != nil {
 				return blob.Usage{}, err
 			}

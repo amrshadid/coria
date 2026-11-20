@@ -1,6 +1,7 @@
 package tenanttest
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/amrshadid/coria/internal/core/reception"
@@ -44,7 +45,8 @@ func testHoldCountsReceived(e *penv) {
 // pipeline that holds what it does not archive or ignore, mixes every kind
 // of hold (a file with no received file, a received file), releases (into
 // the same reception and into another), rejections, retries and discards,
-// and checks the identity whenever a reception ends.
+// and checks the identity whenever a reception ends, and the catalog's
+// running totals against a recount after every round.
 func testCountIdentity(e *penv) {
 	e.addReceiver("a", "store", 11112)
 	e.addReceiver("b", "store", 11113)
@@ -204,6 +206,9 @@ func testCountIdentity(e *penv) {
 			e.ok("RetryReception", err)
 			run(retry, map[string]bool{})
 		}
+		// The catalog's running totals equal a recount after every round
+		// of receptions, releases, rejections, retries and discards.
+		e.wantTotalsRecounted("round " + strconv.Itoa(round))
 	}
 	ended, _, err := e.p.ListReceptions(e.ctx, tenant.ReceptionFilter{States: []reception.State{reception.Done}}, master.Page{Limit: 1000})
 	e.ok("ListReceptions", err)

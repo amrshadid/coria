@@ -62,6 +62,10 @@ for one technology. Everything else depends on ports, never on a driver.
 | `internal/tenant` | One tenant's database: storages, receivers, receptions, received files, catalog, quarantine, leased work, events | `tenant/tenanttest` | `driver/sqlite`, `driver/postgres` |
 | `internal/blob` | A storage: put, read a range, list, delete, usage | `blob/blobtest` | `blob/dir`, `blob/s3` |
 
+`internal/blob/readat` reads a stored object at offsets (`io.ReaderAt`)
+through the port's ranged reads, so go-dicom can read a header or walk the
+items of encapsulated pixel data without fetching the whole object.
+
 `internal/driver` opens a database from its address and picks the driver;
 `internal/driver/sqlkit` holds what only the two SQL drivers share (the
 migration runner, cursors, value encodings).
@@ -72,7 +76,8 @@ migration runner, cursors, value encodings).
 |---|---|
 | `internal/server` | The process: listeners, limits, the checked path of every request, shutdown, metrics |
 | `internal/access` | Who is calling (key or local operator), what they may do, and the audit entry of every request |
-| `internal/api` | The handlers of the API contract's services; `api/codes` maps a fault kind to an API code |
+| `internal/api` | The handlers of the API contract's services, the plain HTTP download and DICOMweb routes; `api/codes` maps a fault kind to an API code |
+| `internal/dicomweb` | The DICOMweb protocol (PS3.18) without the archive behind it: the resources a path names, a search's query, matching and paging, media types and Warning headers |
 | `internal/registry` | One open store per tenant, and the only way a handler reaches a tenant's database |
 | `internal/events` | The live feed of tenants' events, and the keeper that checkpoints and prunes it |
 | `internal/place` | Where a tenant's data may be: roots, endpoints, ports, bind addresses; opens a storage |
@@ -85,10 +90,12 @@ migration runner, cursors, value encodings).
 | Package | What it does |
 |---|---|
 | `internal/receive/dimse` | The DICOM listener of one receiver, on go-dicom: admission, C-ECHO, C-STORE |
+| `internal/receive/stow` | The STOW-RS receiver of a tenant (PS3.18 10.5): each part of a request streamed into the incoming area through the pipeline's one entry, the answer written once every part is durable |
 | `internal/receive/supervise` | Starts, restarts and stops listeners and each tenant's pipeline as configuration and space change |
 | `internal/receive` | A tenant's reception pipeline: a landed file to a verified scan, its work queue, its recovery at start |
 | `internal/receive/incoming` | A tenant's incoming area: a file synced before it is acknowledged |
 | `internal/receive/header`, `sidecar` | Reading what the pipeline needs from a file's header; the scan's metadata sidecar |
+| `internal/receive/frames` | Each instance's frame table (where each frame lies in its file) for the sidecar, and the pass at start that gives tables to sidecars written before them and header values to scans the catalog lists without them |
 
 ### Clients
 
@@ -96,7 +103,10 @@ migration runner, cursors, value encodings).
 |---|---|
 | `internal/cli` | The commands; `cli/client` reaches the API; `cli/output` writes tables and JSON |
 | `internal/cli/servecmd` | `coria init` and `coria serve`: makes an installation, wires the server's parts together |
+| `internal/cli/download` | Fetching the files of a subject, session or scan into a directory, each checked against its announced SHA-256 and resumed where it stopped; the command and the interactive program share it |
 | `internal/tui` | The interactive program |
+| `clients/python` | The generated Python client `coria`: the contract compiled with grpcio-tools and checked in, a thin client that sends the key, pages and raises one error |
+| `clients/typescript` | The generated TypeScript client `coria`: the contract compiled with protoc-gen-es, a typed client per service over Connect, gRPC and gRPC-web |
 
 ### Tests only
 
@@ -140,12 +150,42 @@ for `testkit`; for the other two, `go list -deps ./cmd/coria` shows it.
 A restart loses nothing held only in memory: a reception in progress, a
 unit of work and an event not yet delivered are all rows.
 
+## What a read checks, and its bounds
+
+- **A whole instance** (a retrieve, a download) is checked against the
+  SHA-256 it was archived with as it is sent; a mismatch cuts the answer
+  before its last piece.
+- **A frame** is checked against the SHA-256 the scan's sidecar records for
+  it beside its ranges, as it is sent; a mismatch cuts the multipart body
+  before the frame's last piece. A frame of a line that holds no table yet
+  (a sidecar written before frame tables, until the pass at start gives it
+  its tables) is found from the file's header and sent unchecked.
+- **A bulk data window** (a BulkDataURI, a download with offset and length)
+  is not checked: no checksum of a part of a file is recorded, so bytes
+  changed inside a window are not found by reading it. A retrieve of the
+  whole instance finds them.
+- **Metadata** is answered from the sidecar and, for what it does not hold,
+  from a read of the file's header, which is checked against the size the
+  catalog holds, not against its checksum: a stored file changed without a
+  change of size is not found by the metadata service.
+- **A search** holds one of the caller's open reads, as a retrieve does,
+  and one scan's sidecar open at a time. It is refused with 413 when it
+  passes over more than 10,000 rows it does not keep, or reads more than
+  256 MiB of sidecars to find its results; making them may read as much
+  again, past which the answer is cut. Its answer is streamed one result at a time; an
+  answer of instances stops at 64 MiB of results, with the Warning that
+  more results can be requested.
+
 ## A reception, end to end
 
 1. A sender opens an association to a receiver; `receive/dimse` admits it
-   only if the caller is listed.
-2. Each C-STORE is streamed into the tenant's incoming area, synced, and
-   only then answered success (`receive/incoming`).
+   only if the caller is listed. Or a client stores over HTTP into the
+   tenant's STOW-RS service with a key; `receive/stow` takes the request
+   only if a stow receiver of the tenant lists the key or a key it was
+   rotated from.
+2. Each C-STORE, or each part of a STOW-RS request, is streamed into the
+   tenant's incoming area, synced, and only then answered success
+   (`receive/incoming`).
 3. The pipeline reads the header, records the file in a batch, or holds it
    in quarantine with its reason and its bytes.
 4. When no file has come for the receiver's quiet period, the reception is

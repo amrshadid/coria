@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/master"
 )
 
@@ -22,10 +23,20 @@ func SampleHash() []byte {
 	return h[:]
 }
 
-// WriteSample writes a small installation into s: two tenants, three keys
-// (one revoked, one with a Unicode holder), grants on the installation and
-// on a tenant, settings, and the audit entries of each change, so that a
-// tool other than CORIA can read what the driver wrote.
+// SampleClientCert is the client certificate fingerprint the sample's
+// admin key must come with, and SampleNetworks the networks it may be used
+// from, as the key rules' columns hold them.
+const (
+	SampleClientCert = "5a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70819203"
+	SampleNetworks   = "10.0.0.0/8,192.0.2.7"
+)
+
+// WriteSample writes a small installation into s: two tenants, four keys
+// (one revoked, one with a Unicode holder, one with networks and a client
+// certificate and used from an address, one made by rotating another),
+// grants on the installation and on a tenant, settings, and the audit
+// entries of each change, so that a tool other than CORIA can read what the
+// driver wrote.
 func WriteSample(tb testing.TB, s master.Store) {
 	tb.Helper()
 	ctx := context.Background()
@@ -49,15 +60,17 @@ func WriteSample(tb testing.TB, s master.Store) {
 	must(s.CreateTenant(ctx, lab, audit("CreateTenant", master.OutcomeDone, map[string]string{"driver": "sqlite"}), master.LocalOperator()))
 	must(s.CreateTenant(ctx, clinic, audit("CreateTenant", master.OutcomeDone, map[string]string{"driver": "postgres"}), master.LocalOperator()))
 
-	admin := master.Key{ID: "SampleKey001", Hash: SampleHash(), Holder: "sample admin", Created: T0, Expires: T0.Add(90 * 24 * time.Hour)}
+	networks, err := settings.ParseNetworks(SampleNetworks)
+	must(err)
+	admin := master.Key{ID: "SampleKey001", Hash: SampleHash(), Holder: "sample admin", Created: T0, Expires: T0.Add(90 * 24 * time.Hour), Rules: master.KeyRules{Networks: networks, ClientCert: SampleClientCert}}
 	reader := master.Key{ID: "SampleKey002", Hash: make([]byte, 32), Holder: "Zoë 山田 🧠", Created: T0}
 	gone := master.Key{ID: "SampleKey003", Hash: append(make([]byte, 31), 1), Holder: "former", Created: T0}
 	for _, k := range []master.Key{admin, reader, gone} {
 		must(s.CreateKey(ctx, k, audit("CreateKey", master.OutcomeDone, nil), master.LocalOperator()))
 	}
-	_, err := s.RevokeKey(ctx, gone.ID, T0.Add(time.Hour), audit("RevokeKey", master.OutcomeDone, nil), master.LocalOperator())
+	_, err = s.RevokeKey(ctx, gone.ID, T0.Add(time.Hour), audit("RevokeKey", master.OutcomeDone, nil), master.LocalOperator())
 	must(err)
-	_, err = s.MarkKeyUsed(ctx, admin.ID, T0.Add(2*time.Hour))
+	_, err = s.MarkKeyUsed(ctx, admin.ID, T0.Add(2*time.Hour), "203.0.113.7")
 	must(err)
 
 	_, err = s.SetGrant(ctx, master.Grant{KeyID: admin.ID, Scope: master.Installation, Role: master.RoleAdmin}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "installation"}), master.LocalOperator())
@@ -65,6 +78,12 @@ func WriteSample(tb testing.TB, s master.Store) {
 	_, err = s.SetGrant(ctx, master.Grant{KeyID: reader.ID, Scope: master.TenantScope(lab.ID), Role: master.RoleReader}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "tenant/" + lab.ID}), master.LocalOperator())
 	must(err)
 	_, err = s.SetGrant(ctx, master.Grant{KeyID: reader.ID, Scope: master.TenantScope(lab.ID), Role: master.RoleWriter}, audit("SetGrant", master.OutcomeDone, map[string]string{"scope": "tenant/" + lab.ID}), master.LocalOperator())
+	must(err)
+
+	// The reader's key is rotated once its grant is set, so the successor
+	// holds a copy of the grant and the rotated key names its successor.
+	successor := master.Key{ID: "SampleKey004", Hash: append(make([]byte, 31), 4), Created: T0.Add(3 * time.Hour)}
+	_, err = s.RotateKey(ctx, reader.ID, successor, T0.Add(4*time.Hour), audit("RotateKey", master.OutcomeDone, nil), master.LocalOperator())
 	must(err)
 
 	must(s.SetSetting(ctx, "api.max_message_bytes", "4194304", audit("SetSetting", master.OutcomeDone, map[string]string{"name": "api.max_message_bytes"}), master.LocalOperator()))

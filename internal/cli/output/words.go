@@ -263,3 +263,19 @@ func QuarantineState(s v1.QuarantineState) string {
 // Bytes writes a count of bytes with its unit when a binary unit divides it
 // whole (200GiB) and as plain bytes otherwise, the form the settings take.
 func Bytes(n int64) string { return settings.FormatSize(n) }
+
+// Human writes a size for a person: whole bytes below 1 KiB, and one
+// decimal in the largest binary unit that keeps it at least 1 above.
+func Human(n int64) string {
+	if n < 1024 {
+		return strconv.FormatInt(n, 10) + " B"
+	}
+	v := float64(n)
+	for _, u := range []string{"KiB", "MiB", "GiB", "TiB", "PiB"} {
+		v /= 1024
+		if v < 1024 || u == "PiB" {
+			return fmt.Sprintf("%.1f %s", v, u)
+		}
+	}
+	return ""
+}

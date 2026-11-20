@@ -1,7 +1,7 @@
 // Package api is the handlers of the services of the API contract
 // (api/proto/coria/v1): TenantService, AccessService, SettingsService,
-// AuditService, and the four that act inside one tenant, StorageService,
-// ReceiverService, ReceptionService and QuarantineService. Each method turns a request into calls on the package that
+// AuditService, and the ones that act inside one tenant, StorageService,
+// ReceiverService, ReceptionService, QuarantineService and MetadataService. Each method turns a request into calls on the package that
 // owns the change, and their answer into a response. The proto comments are
 // the specification; this package is what makes each sentence in them true.
 //

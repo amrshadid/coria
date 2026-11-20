@@ -28,6 +28,7 @@ import (
 	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/driver/sqlite"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/obs"
@@ -84,6 +85,21 @@ type options struct {
 	// registry is given to the server as its tenant registry, for a test of
 	// what Stop does with it; nil gives none.
 	registry server.Registry
+	// patterns replaces the pattern routes every test server has (the
+	// stand-in download, testPatterns).
+	patterns []server.PatternRoute
+	// corsOrigins is the server's reading of the allowed CORS origins;
+	// nil allows none.
+	corsOrigins func(context.Context) (settings.Origins, error)
+	// accessRules is the server's reading of the installation's access
+	// settings; nil applies the defaults.
+	accessRules func(context.Context) (server.AccessRules, error)
+	// events receives the access package's events; nil discards them.
+	events access.Events
+	// longMethods are the server's calls without a deadline, and stall
+	// replaces its write stall bound (zero keeps it).
+	longMethods []string
+	stall       time.Duration
 }
 
 // env is one running server over a fresh SQLite master, with stand-in
@@ -149,7 +165,7 @@ func newEnv(tb testing.TB, o options) *env {
 	if o.clock != nil {
 		clock = o.clock
 	}
-	a, err := access.New(access.Config{Store: st, Clock: clock, NewID: server.NewID, Log: log, AuditInterval: o.auditWait, RefusalQueue: o.refusalQueue})
+	a, err := access.New(access.Config{Store: st, Clock: clock, NewID: server.NewID, Log: log, AuditInterval: o.auditWait, RefusalQueue: o.refusalQueue, Events: o.events})
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -179,6 +195,10 @@ func newEnv(tb testing.TB, o options) *env {
 		Register: register, DefaultDeadline: o.deadline, Drain: o.drain,
 		MaxDeadline: o.maxDL, BodyReadTimeout: o.bodyRead, Grace: o.grace, Close: o.closeT,
 		Methods: methods, WithDecision: withDecision, Registry: o.registry,
+		PatternRoutes: o.patterns, LongMethods: o.longMethods, CORSOrigins: o.corsOrigins, AccessRules: o.accessRules,
+	}
+	if cfg.PatternRoutes == nil {
+		cfg.PatternRoutes = testPatterns()
 	}
 	if !o.noNetwork {
 		certFile, keyFile, roots := testCert(tb, e.dir)
@@ -188,6 +208,9 @@ func newEnv(tb testing.TB, o options) *env {
 	srv, err := server.New(cfg)
 	if err != nil {
 		tb.Fatal(err)
+	}
+	if o.stall > 0 {
+		srv.SetStallTimeout(o.stall)
 	}
 	if o.beforeRun != nil {
 		o.beforeRun(srv)

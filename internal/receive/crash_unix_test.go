@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -138,34 +140,46 @@ func TestCrashMatrix(t *testing.T) {
 	if only := os.Getenv("CORIA_RECEIVE_CRASH_ONLY"); only != "" {
 		points = strings.Split(only, ",")
 	}
-	rounds, killed := 0, 0
-	for _, point := range points {
-		for _, hit := range hits {
-			rounds++
-			dataDir := t.TempDir()
-			stdout, wasKilled := runChild(t, dataDir, 1, point, hit, "")
-			if wasKilled {
-				killed++
+	// Each round has its own data directory and its own two child
+	// processes, which open no port and share nothing but the read-only
+	// corpus, so rounds run side by side, a few at a time: every child
+	// fsyncs, and more of them than cores only measures the disk.
+	slots := make(chan struct{}, min(runtime.GOMAXPROCS(0), 4))
+	var rounds, killed atomic.Int64
+	t.Run("rounds", func(t *testing.T) {
+		for _, point := range points {
+			for _, hit := range hits {
+				rounds.Add(1)
+				t.Run(fmt.Sprintf("%s/hit%d", point, hit), func(t *testing.T) {
+					t.Parallel()
+					slots <- struct{}{}
+					defer func() { <-slots }()
+					dataDir := t.TempDir()
+					stdout, wasKilled := runChild(t, dataDir, 1, point, hit, "")
+					if wasKilled {
+						killed.Add(1)
+					}
+					acked := map[string]bool{}
+					for _, line := range strings.Split(stdout, "\n") {
+						if n, ok := strings.CutPrefix(line, "ACK "); ok {
+							acked[n] = true
+						}
+					}
+					var resend []string
+					for _, n := range crashSend {
+						if !acked[n] {
+							resend = append(resend, n)
+						}
+					}
+					if _, k := runChild(t, dataDir, 2, "", 0, strings.Join(resend, ",")); k {
+						t.Fatalf("%s hit %d: the second run was killed", point, hit)
+					}
+					checkInvariants(t, fmt.Sprintf("%s hit %d", point, hit), dataDir)
+				})
 			}
-			acked := map[string]bool{}
-			for _, line := range strings.Split(stdout, "\n") {
-				if n, ok := strings.CutPrefix(line, "ACK "); ok {
-					acked[n] = true
-				}
-			}
-			var resend []string
-			for _, n := range crashSend {
-				if !acked[n] {
-					resend = append(resend, n)
-				}
-			}
-			if _, k := runChild(t, dataDir, 2, "", 0, strings.Join(resend, ",")); k {
-				t.Fatalf("%s hit %d: the second run was killed", point, hit)
-			}
-			checkInvariants(t, fmt.Sprintf("%s hit %d", point, hit), dataDir)
 		}
-	}
-	t.Logf("%d rounds, %d of them killed at their point", rounds, killed)
+	})
+	t.Logf("%d rounds, %d of them killed at their point", rounds.Load(), killed.Load())
 }
 
 // runChild runs the crash child and returns its output and whether it was

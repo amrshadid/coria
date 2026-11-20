@@ -100,7 +100,14 @@ type Store interface {
 	// LastUsed is within the minute before at, which saves the statement on
 	// nearly every request of a busy key; the store's own throttle still
 	// holds for callers that do not.
-	MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool, error)
+	//
+	// address is the caller's address at that use, at most MaxAddressLength
+	// bytes of UTF-8, empty for a use on the local socket; it is written
+	// with the time and under the same throttle, so it is the address of a
+	// use at most a minute old, never one per request. An empty address
+	// keeps the one stored: the last address is the last known on the
+	// network.
+	MarkKeyUsed(ctx context.Context, id string, at time.Time, address string) (bool, error)
 	// RevokeKey sets a key's revoked time to at and returns it, or is
 	// NotFound. A key already revoked keeps the time it was first revoked,
 	// which is returned; nothing changes, and the audit entry, which records
@@ -108,6 +115,29 @@ type Store interface {
 	// key succeeds with its first revoke time). The entry's details say
 	// whether the key was already revoked (AuditEntry.WithRevocation).
 	RevokeKey(ctx context.Context, id string, at time.Time, audit AuditEntry, by Actor) (time.Time, error)
+
+	// SetKeyRules replaces where a key may be used from (KeyRules), or is
+	// NotFound. A revoked key is Conflict, decided in the change's
+	// transaction.
+	SetKeyRules(ctx context.Context, id string, rules KeyRules, audit AuditEntry, by Actor) error
+	// RotateKey replaces the key id with successor, in one transaction: the
+	// successor is added with the rotated key's holder and rules (read
+	// inside the change; successor's own are ignored) and a copy of every
+	// grant the rotated key holds, and the rotated key is set to stop
+	// working at oldEnds, or at its own expiry when that is sooner
+	// (RotatedExpiry), with Successor naming the new key. It returns the
+	// successor as stored. An unknown key is NotFound; a key revoked,
+	// expired at the successor's creation time, or already rotated is
+	// Conflict, so a key makes at most one successor; a successor id taken
+	// is Conflict. The audit entry's details get the successor's id and the
+	// rotated key's new end (DetailSuccessor, DetailOldExpires).
+	RotateKey(ctx context.Context, id string, successor Key, oldEnds time.Time, audit AuditEntry, by Actor) (Key, error)
+	// RotatedFrom returns the key a rotation replaced with the key id (the
+	// key whose Successor is id), revoked or expired or not, or NotFound
+	// when id was not made by a rotation or does not exist. A key has at
+	// most one: a key makes at most one successor, and a successor's id is
+	// new. It is one read of an index.
+	RotatedFrom(ctx context.Context, id string) (Key, error)
 
 	// SetGrant gives a key a role on a scope. When the key already has a
 	// grant on that scope, its role is replaced in one step, so a role is

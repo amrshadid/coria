@@ -37,6 +37,7 @@ var reasons = map[tenant.QuarantineReason]v1.QuarantineReason{
 	tenant.QuarantineReadBackMismatch:    v1.QuarantineReason_QUARANTINE_REASON_READ_BACK_MISMATCH,
 	tenant.QuarantineHeaderTooLarge:      v1.QuarantineReason_QUARANTINE_REASON_HEADER_TOO_LARGE,
 	tenant.QuarantineIncomingLost:        v1.QuarantineReason_QUARANTINE_REASON_INCOMING_LOST,
+	tenant.QuarantineUIDMismatch:         v1.QuarantineReason_QUARANTINE_REASON_UID_MISMATCH,
 }
 
 // quarantineStates pairs each state the store keeps with the contract's.

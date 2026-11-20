@@ -390,7 +390,7 @@ func TestGrammar(t *testing.T) {
 		"init": true, "serve": true,
 		"version": true, "whoami": true,
 		"tenant create": true, "tenant list": true, "tenant show": true, "tenant remove": true,
-		"key create": true, "key list": true, "key show": true, "key revoke": true,
+		"key create": true, "key list": true, "key show": true, "key revoke": true, "key rotate": true, "key set": true,
 		"grant set": true, "grant list": true, "grant remove": true,
 		"setting get": true, "setting set": true, "setting unset": true, "setting list": true,
 		"audit list":  true,
@@ -398,6 +398,7 @@ func TestGrammar(t *testing.T) {
 		"receiver add": true, "receiver list": true, "receiver show": true, "receiver set": true, "receiver remove": true,
 		"reception list": true, "reception show": true, "reception retry": true, "reception discard": true,
 		"quarantine list": true, "quarantine show": true, "quarantine release": true, "quarantine reject": true,
+		"catalog subjects": true, "catalog sessions": true, "catalog scans": true, "scan show": true, "download": true,
 	}
 	got := map[string]bool{}
 	for _, c := range cli.Command(cli.Env{}).Commands() {

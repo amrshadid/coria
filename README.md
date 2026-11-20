@@ -80,6 +80,9 @@ coria storage    add <tenant> <name> --type dir --root ROOT [--path P] | --type 
 coria receiver   add <tenant> <name> --storage S [--port N] --aet TITLE [--allow-aet T] [--allow-from CIDR] [--allow-aet-from T@CIDR] [--any-caller] [--enabled] [--tls-certificate-file F --tls-private-key-file F] [--quiet-period 5m] [--max-open-time 1h] [--max-file-size 4GiB] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes
 coria reception  list <tenant> [--receiver NAME] [--step STEP]... [--in-progress] [--since TIME] [--until TIME] | show <tenant> <id> | retry <tenant> <id> [--receiver NAME] | discard <tenant> <id> --reason TEXT [--yes]
 coria quarantine list <tenant> [--state held|released|rejected] [--reason REASON] [--receiver NAME] [--reception ID] [--since TIME] [--until TIME] | show <tenant> <id> [--header] | release <tenant> <id> [--receiver NAME] [--reason TEXT] | reject <tenant> <id> --reason TEXT [--yes]
+coria catalog    subjects <tenant> [--label-prefix P] [--from TIME] [--to TIME] [--order ORDER] [--limit N | --all] | sessions <tenant> [<subject>] [--study-date-from D] [--study-date-to D] [--modality M] [--receiver NAME] [--order ORDER] [--limit N | --all] | scans <tenant> [<subject> [<session>]] [--modality M] [--description-prefix P] [--receiver NAME] [--order ORDER] [--limit N | --all]
+coria scan       show <tenant> <subject>/<session>/<scan> [--metadata]
+coria download   <tenant> <subject>[/<session>[/<scan>]] --to DIR [--quiet]
 ```
 
 - **Where it connects.** By default the local socket `run/coria.sock` in the
@@ -115,7 +118,8 @@ coria quarantine list <tenant> [--state held|released|rejected] [--reason REASON
 a terminal, opens a program with a menu, lists that scroll and detail screens:
 tenants (with each tenant's grants, settings and audit log, its status that
 follows its events, and its storages, receivers, receptions and quarantine,
-where a held file is released or rejected), keys, settings, and the audit log. It finds the server with the same flags and environment as
+where a held file is released or rejected), the subjects, sessions and scans of a tenant with a scan's headers and a download of
+what is shown, keys, settings, and the audit log. It finds the server with the same flags and environment as
 the commands (`--data-dir`, `--server`, `--key-file`, `--ca-file`) and is a
 client of the same API, so it can do nothing a command cannot. With any
 argument, or with either end not a terminal, `coria` prints the usage line
@@ -150,7 +154,7 @@ locally passes there for the same reason.
 | `make lint` | golangci-lint with `.golangci.yml`, run for Linux, Windows and macOS so that files built for one system only are linted too, including the rule that `internal/core` imports only the standard library and itself, and from the standard library no database, network, file or system package |
 | `make vuln` | govulncheck: no known vulnerability reachable from the code |
 | `make test` | `go test -race -count=1 ./...`: always run, never a cached result |
-| `make test-scale` | the tenant registry at 1,000 tenants (`TestThousandTenants`), without the race detector, which that test skips; its time to ready, memory and open files are in the log |
+| `make test-scale` | the tenant registry at 1,000 tenants (`TestScaleThousandTenants`), the drivers' tests at scale and the pipeline model under every seed, without the race detector, which that test skips; its time to ready, memory and open files are in the log |
 | `make build` | static binaries for linux/amd64, linux/386, linux/arm64, darwin/arm64 and windows/amd64, in `bin/` |
 | `make size` | the size of each binary `make build` left, as a table |
 | `make proto-lint` | `buf lint` on the API contract in `api/proto` |

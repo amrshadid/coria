@@ -41,6 +41,7 @@ func runEvents(t *testing.T, open OpenEvents) {
 		{"EventPaging", testEventPaging},
 		{"EventFilterAdvances", testEventFilterAdvances},
 		{"EventAppendOnce", testEventAppendOnce},
+		{"FramesEventRoundTrips", testFramesEventRoundTrips},
 		{"EventCursors", testEventCursors},
 		{"EventsExpire", testEventsExpire},
 		{"PruneUnderReader", testPruneUnderReader},

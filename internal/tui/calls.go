@@ -75,7 +75,7 @@ func tenantsPage(c *ctx, owner, gen int, token string) tea.Cmd {
 // keyRow is a key as the cells of a row.
 func keyRow(k *v1.Key, now time.Time, loc *time.Location) row {
 	return row{
-		cells: []string{k.GetId(), k.GetHolder(), output.KeyStatus(k, now), listDate(k.GetCreateTime(), loc, "-"), listDate(k.GetExpireTime(), loc, "never"), listDate(k.GetLastUseTime(), loc, "never")},
+		cells: []string{k.GetId(), k.GetHolder(), keyStatusWord(k, now), listDate(k.GetCreateTime(), loc, "-"), listDate(k.GetExpireTime(), loc, "never"), listDate(k.GetLastUseTime(), loc, "never")},
 		ref:   k,
 	}
 }

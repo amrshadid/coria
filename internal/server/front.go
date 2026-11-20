@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect/v2"
 
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // The audit entries the front step writes for a caller it authenticated
@@ -132,12 +133,8 @@ func (s *Server) front(next http.Handler) http.Handler {
 		ctx := r.Context()
 		id, _ := requestIDFrom(ctx)
 		method, metric := s.nameOf(r)
-		x := exchange{method: method, metric: metric, remote: remoteOf(ctx, r.RemoteAddr)}
-		local, isLocal := localFrom(ctx)
-		facts := access.Request{Method: method, RemoteAddress: x.remote, RequestID: id}
-		s.at(ctx, pointFront)
-		accepted, err := s.access.Authenticate(ctx, credentialFrom(r.Header, local, isLocal), facts)
-		if err != nil {
+		x := exchange{method: method, metric: metric}
+		refuse := func(err error) {
 			ce := s.answer(err)
 			writeWireError(w, wireOf(r), ce.Code(), ce.Message())
 			if r.ProtoMajor == 1 {
@@ -150,7 +147,58 @@ func (s *Server) front(next http.Handler) http.Handler {
 				_ = http.NewResponseController(w).SetReadDeadline(time.Now())
 			}
 			s.finish(ctx, x, &Call{RequestID: id, Method: method}, start, err)
+		}
+		// The local socket is judged by no network rule nor limit, so its
+		// requests do not read the rules: the operator on the machine is
+		// let in even when they cannot be read.
+		var rules AccessRules
+		if _, isLocal := localFrom(ctx); !isLocal {
+			var ok bool
+			if rules, ok = s.guard.current(ctx); !ok {
+				// The installation's access settings were never read: the
+				// master does not answer, and no request can be judged.
+				refuse(errRulesUnread)
+				return
+			}
+		}
+		o := originOf(ctx, r, rules.TrustedProxies, rules.ForwardedHeader)
+		ctx = context.WithValue(ctx, originKey{}, o)
+		x.remote = o.remote
+		local, isLocal := localFrom(ctx)
+		facts := access.Request{Method: method, RemoteAddress: o.remote, RequestID: id, Local: o.local, ClientCert: o.clientCert}
+		s.at(ctx, pointFront)
+		// The installation's networks are judged before anything else, and
+		// a blocked address before its key is read: neither costs the
+		// master a read.
+		if rule := installationRefusal(rules, o); rule != "" {
+			// Counted and slowed as a bad key is, so a refused network
+			// cannot probe the server at full speed either.
+			err := s.access.RecordRefusal(facts, "", rule, false, time.Time{})
+			if s.failAddress(o, rules, facts) {
+				s.guard.wait(ctx)
+			}
+			refuse(err)
 			return
+		}
+		if !o.local && o.addr.IsValid() {
+			if blocked, _ := s.guard.addresses.blocked(addressKey(o.addr), s.guard.now()); blocked {
+				refuse(s.access.RecordRefusal(facts, "", access.RuleAddressBlocked, false, time.Time{}))
+				return
+			}
+		}
+		accepted, err := s.access.Authenticate(ctx, credentialFrom(r.Header, local, isLocal), facts)
+		if err != nil {
+			if fault.KindOf(err) == fault.Unauthenticated && s.failAddress(o, rules, facts) {
+				s.guard.wait(ctx)
+			}
+			refuse(err)
+			return
+		}
+		if keyID := accepted.KeyID(); keyID != "" && !o.local {
+			if blocked, _ := s.guard.keys.blocked(keyID, s.guard.now()); blocked {
+				refuse(s.access.RecordRefusal(facts, keyID, access.RuleKeyBlocked, false, time.Time{}))
+				return
+			}
 		}
 		ctx = context.WithValue(ctx, identityKey{}, accepted)
 		defer func() {
@@ -176,6 +224,11 @@ func (s *Server) front(next http.Handler) http.Handler {
 	})
 }
 
+// errRulesUnread answers a request when the installation's access settings
+// have never been read: the master does not answer, so no request can be
+// judged by them, and none is let through unjudged.
+var errRulesUnread = fault.New(fault.Unavailable, "the master database does not answer")
+
 // credentialFrom reads the credential of a request from its headers and
 // the connection it came on. More than one Authorization header is a
 // malformed key: the field holds one credential (RFC 9110 11.6.2), and
@@ -199,6 +252,11 @@ func credentialFrom(h http.Header, local localPeer, isLocal bool) access.Credent
 // without bound. A path with percent-encoding is never exact: it is asked
 // for under a name the server does not serve.
 func (s *Server) nameOf(r *http.Request) (method, metric string) {
+	if m, ok := s.matchPattern(r); ok {
+		// A pattern route is named by its pattern whatever its path holds:
+		// the path holds the tenant's labels and ids, which no log keeps.
+		return m.route.Pattern, m.route.Pattern
+	}
 	if r.URL.RawPath != "" {
 		return unnamedMethod, unknownMetric
 	}
@@ -218,11 +276,14 @@ const unknownMetric = "unknown"
 
 // route is the router, which only a request front let through reaches:
 // one whose caller is authenticated, or one for a public path. It
-// dispatches by exact match only: a served procedure to its handler from
-// the one checked connect.Server, a plain route's path to the mux, which
-// holds the route's HTTP method; anything else, a path with any
-// percent-encoding, a double slash, a trailing slash or a different case
-// included, is answered by notServed and reaches no handler.
+// dispatches a served procedure to its handler from the one checked
+// connect.Server, and a plain route's path to the mux, which holds the
+// route's HTTP method, by exact match only; a path with the shape and the
+// method of a pattern route to servePattern, which checks the route's
+// requirement before it reads the rest of the path; anything else, a path
+// with any percent-encoding, a double slash, a trailing slash or a
+// different case included, is answered by notServed and reaches no
+// handler.
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawPath == "" {
 		if h, ok := s.procs[r.URL.Path]; ok {
@@ -233,6 +294,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			s.mux.ServeHTTP(w, r)
 			return
 		}
+	}
+	if m, ok := s.matchPattern(r); ok {
+		s.servePattern(w, r, m)
+		return
 	}
 	s.notServed(w, r)
 }

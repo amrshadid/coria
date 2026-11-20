@@ -152,13 +152,16 @@ vuln: $(filter $(TOOLS)/%,$(GOVULNCHECK))
 test:
 	$(GO) test -race -count=1 ./...
 
-# The registry at 1,000 tenants (TestThousandTenants), without the race
-# detector, which the test skips: under it the test measured the detector
-# and made the race run a third longer. -v so its numbers are in the log.
+# The scale tests, which the everyday run skips unless CORIA_TEST_SCALE is
+# set: the registry at 1,000 tenants (TestScaleThousandTenants), the
+# drivers' tests at scale, and the pipeline model under every seed
+# (CORIA_TEST_ALL_SEEDS). Without the race detector, which these tests
+# skip: under it they measured the detector. -v so their numbers are in
+# the log.
 test-scale:
-	$(GO) test -count=1 -v -run '^TestThousandTenants$$' ./internal/registry
-	$(GO) test -count=1 -v -run '^(TestListFiltersAtScale$$|TestPipelineModelAllSeeds$$|TestScale)' ./internal/driver/sqlite
-	$(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres
+	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -run '^TestScaleThousandTenants$$' ./internal/registry
+	CORIA_TEST_SCALE=1 CORIA_TEST_ALL_SEEDS=1 $(GO) test -count=1 -v -timeout 30m -run '^(TestScale|TestPipelineModelAllSeeds$$)' ./internal/driver/sqlite
+	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -run '^TestScalePipelinePlans$$' ./internal/driver/postgres
 	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -timeout 30m -run '^TestScale' ./internal/receive
 
 # The event feed's speed: a step with its event, a page read from a feed of
@@ -212,6 +215,47 @@ check-seal:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-seal: no interpreter $(PYTHON)" >&2; exit 1; }
 	CORIA_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
 
+# The outside checks of reading the archive, each the Go test that runs a
+# script of scripts/check against what the server answers: the Metadata
+# service against pydicom's to_json_dict, the Catalog service against what
+# pydicom reads of the received files, each file's frame table against the
+# fragments pydicom divides it into, QIDO-RS and WADO-RS from dicomweb-client
+# against pydicom, and STOW-RS from dicomweb-client in a real server process.
+# As for check-seal, -count=1 so a cached pass is never reported, and the
+# variable is always set, so the check runs or fails. PYTHON needs pydicom,
+# and for check-dicomweb and check-stow dicomweb-client too
+# (docs/testing.md). PYDICOM_CORPUS=<pydicom's test_files directory> adds
+# that corpus's files where the test takes them.
+PYDICOM_CORPUS ?=
+CHECK_READING_ENV = $(if $(PYDICOM_CORPUS),CORIA_PYDICOM_CORPUS="$(PYDICOM_CORPUS)")
+
+.PHONY: check-metadata check-catalog check-frames check-dicomweb check-stow
+
+check-metadata:
+	@test -n "$(PYTHON)" || { echo "check-metadata: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-metadata: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_METADATA_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestMetadataEqualsPydicom$$' ./internal/api
+
+check-catalog:
+	@test -n "$(PYTHON)" || { echo "check-catalog: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-catalog: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_CATALOG_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestCatalogEqualsPydicom$$' ./internal/api
+
+check-frames:
+	@test -n "$(PYTHON)" || { echo "check-frames: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-frames: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_FRAMES_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestTableEqualsPydicom$$' ./internal/receive/frames
+
+check-dicomweb:
+	@test -n "$(PYTHON)" || { echo "check-dicomweb: PYTHON is empty; name an interpreter that has dicomweb-client and pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-dicomweb: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_DICOMWEB_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestDICOMwebWithDicomwebClient$$' ./internal/api
+
+check-stow:
+	@test -n "$(PYTHON)" || { echo "check-stow: PYTHON is empty; name an interpreter that has dicomweb-client and pydicom" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-stow: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_STOW_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSTOWWithDicomwebClient$$' ./internal/cli/servecmd
+
 # The outside check of the SQLite master database: the driver writes the
 # contract suite's sample, and the sqlite3 tool (SQLITE3=... names one) reads
 # it back, checks it, and searches it for the sample key's secret.
@@ -243,13 +287,16 @@ check-e2e:
 # The proof of this version (scripts/prove/run.sh): the binary built as make
 # build builds it, started for real, and every claim of this version shown by
 # tools that are not CORIA (curl, grpcurl, openssl, sqlite3, psql and
-# pg_dump in a Postgres container, Python's grpcio), each as a named check,
-# with a table of the results and what they measured. It needs docker for
-# Postgres and a PYTHON with scripts/requirements/check-server.txt. CI runs
-# it on Linux with CORIA_PROVE_STRICT=1, where a skipped check fails.
+# pg_dump in a Postgres container, Python's grpcio, and for reading the
+# archive dcmtk's storescu, pydicom and dicomweb-client), each as a named
+# check, with a table of the results and what they measured. It needs docker
+# for Postgres, DCMTK= naming dcmtk's directory, and a PYTHON with
+# scripts/requirements/check-server.txt and prove-reading.txt (pydicom 3, so
+# not the environment of prove-reception, which pins pydicom 2). CI runs it
+# on Linux with CORIA_PROVE_STRICT=1, where a skipped check fails.
 .PHONY: prove
 prove:
-	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" bash scripts/prove/run.sh
+	GO="$(GO)" PYTHON="$(PYTHON)" GRPCURL="$(GRPCURL)" SQLITE3="$(SQLITE3)" DCMTK="$(DCMTK)" bash scripts/prove/run.sh
 
 # The proof of reception (scripts/prove/reception.py): the real program
 # built, served and set up with its own commands; dcmtk's storescu and
@@ -395,6 +442,36 @@ check: proto-lint proto-breaking proto-check
 
 proto-python:
 	$(PYTHON) scripts/check/proto-python.py api/proto
+
+# The generated Python client: its checked-in code must equal a fresh
+# generation from the contract, and its tests run it against the real server.
+# PYTHON needs scripts/requirements/client-python.txt installed, and the client
+# installed with: pip install --no-deps --no-build-isolation ./clients/python
+.PHONY: client-python-check client-python-test
+client-python-check:
+	$(PYTHON) clients/python/generate.py --check
+
+client-python-test:
+	$(PYTHON) -m pytest clients/python/tests
+
+# The generated TypeScript client, the same two checks. Its packages come from
+# its own lockfile, so each target installs them with npm ci first, without
+# running any package's install script. The tests build and start the server,
+# so they need Go; the TLS test needs openssl. The advisory audit
+# (client-ts-audit) depends on the advisory database of the day, so it is not
+# part of the check.
+.PHONY: client-ts client-ts-check client-ts-test client-ts-audit
+client-ts:
+	cd clients/typescript && npm ci --ignore-scripts --no-audit --no-fund && npm run generate
+
+client-ts-check:
+	cd clients/typescript && npm ci --ignore-scripts --no-audit --no-fund && npm run generate:check && npm run typecheck
+
+client-ts-test:
+	cd clients/typescript && npm ci --ignore-scripts --no-audit --no-fund && npm test
+
+client-ts-audit:
+	cd clients/typescript && npm audit --omit=dev
 
 proto: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO)
 	@echo "buf generate (protoc-gen-go $(PROTOC_GEN_GO_VERSION), protoc-gen-connect-go $(PROTOC_GEN_CONNECT_GO_VERSION))"
@@ -836,7 +913,7 @@ ci:
 			skip "the Postgres driver as linux/386: 32-bit Linux binaries do not run on $$os/$$arch"; \
 		fi; \
 		echo; echo "==> query plans at millions of rows, Postgres $$v"; \
-		CORIA_TEST_POSTGRES='$(PG_URL)' CORIA_REQUIRE_POSTGRES=1 $(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres; \
+		CORIA_TEST_SCALE=1 CORIA_TEST_POSTGRES='$(PG_URL)' CORIA_REQUIRE_POSTGRES=1 $(GO) test -count=1 -v -run '^TestScalePipelinePlans$$' ./internal/driver/postgres; \
 		step outside-postgres; \
 	done; \
 	step pg-down; \
@@ -848,7 +925,7 @@ ci:
 	[ "$$strict" = 1 ] || skip "CORIA_PROVE_STRICT=1: on $$os a check of the proof may be skipped (the second user needs sudo on Linux); the proof says which"; \
 	echo; echo "==> make prove (CORIA_PROVE_STRICT=$$strict)"; \
 	CORIA_PROVE_PG_CONTAINER=$(PG_CONTAINER) CORIA_PROVE_PG_PORT=$(PG_PORT) CORIA_PROVE_STRICT=$$strict \
-		$(MAKE) --no-print-directory prove PYTHON="$$py" GRPCURL="$(CHECK_GRPCURL)"; \
+		$(MAKE) --no-print-directory prove PYTHON="$$py" GRPCURL="$(CHECK_GRPCURL)" DCMTK="$(DCMTK)"; \
 	dcmtk="$(DCMTK)"; storescu="$${dcmtk:+$$dcmtk/}storescu"; \
 	if command -v "$$storescu" > /dev/null && "$$storescu" --version 2> /dev/null | grep -q "^\$$dcmtk:"; then \
 		step s3-up S3_SERVERS=silo; \

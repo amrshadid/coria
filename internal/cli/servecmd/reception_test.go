@@ -261,6 +261,9 @@ func archiveThroughServe(t *testing.T, scu string, c receptionCase, n int) {
 	store := open()
 	defer func() { _ = store.Close() }()
 	checkStored(t, store, len(ctStudy))
+	checkDownloads(t, hc, dataDir, tenantName, store)
+	checkDICOMweb(t, hc, tenantName, store)
+	checkCLIDownload(t, dataDir, tenantName, store)
 	var left []string
 	_ = filepath.WalkDir(filepath.Join(dataDir, "incoming"), func(p string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {

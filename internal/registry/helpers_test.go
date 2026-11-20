@@ -508,9 +508,9 @@ func (c *countingMaster) ListKeys(ctx context.Context, p master.Page) ([]master.
 	c.count()
 	return c.Store.ListKeys(ctx, p)
 }
-func (c *countingMaster) MarkKeyUsed(ctx context.Context, id string, at time.Time) (bool, error) {
+func (c *countingMaster) MarkKeyUsed(ctx context.Context, id string, at time.Time, address string) (bool, error) {
 	c.count()
-	return c.Store.MarkKeyUsed(ctx, id, at)
+	return c.Store.MarkKeyUsed(ctx, id, at, address)
 }
 func (c *countingMaster) RevokeKey(ctx context.Context, id string, at time.Time, a master.AuditEntry, by master.Actor) (time.Time, error) {
 	c.count()

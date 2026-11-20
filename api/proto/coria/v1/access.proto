@@ -60,10 +60,18 @@ syntax = "proto3";
 //     answers it: the cursor it was given points before the oldest event
 //     kept, so the events after it can no longer all be answered. Sending
 //     it again fails again; the client starts over from a status.
+//   - data loss: DATA_LOSS (HTTP 500). An archived file, or a file the
+//     server keeps beside it, is missing from its storage or is not what
+//     was archived: its bytes do not match the SHA-256 its scan's manifest
+//     holds. Answered only where archived files are read
+//     (MetadataService, DataService and its plain HTTP download, where it
+//     is HTTP 500); the message names the scan, and the cause is in the
+//     server's log. Sending it again fails again until the
+//     file is mended from another copy.
 //
 // Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
-// RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch, for
-// too many open streams), and DEADLINE_EXCEEDED when its deadline passes.
+// RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch and
+// DataService.ReadFiles, for too many open streams and downloads), and DEADLINE_EXCEEDED when its deadline passes.
 // The message of an INTERNAL answer says nothing about the cause; the cause
 // is in the server's log and the audit entry, under the request's id.
 //
@@ -80,16 +88,18 @@ syntax = "proto3";
 // client cannot set it: a request header of that name is ignored. The same id
 // is in the server's log and in the request's audit entry.
 //
-// Reads and retries. Every Get and List method, WhoAmI and Watch is marked
-// NO_SIDE_EFFECTS, and the changes that may be repeated safely are marked
-// IDEMPOTENT. A read still writes an audit entry: that entry is the server's
-// record of the call, not a change to anything a read answers, and repeating
-// the read answers the same. CreateTenant, CreateKey, AddStorage and
+// Reads and retries. Every Get and List method, WhoAmI, Watch and ReadFiles
+// is marked NO_SIDE_EFFECTS, and the changes that may be repeated safely are
+// marked IDEMPOTENT. A read still writes an audit entry: that entry is the
+// server's record of the call, not a change to anything a read answers, and
+// repeating the read answers the same. CreateTenant, CreateKey, AddStorage and
 // AddReceiver are neither, as each call makes a new thing.
 //
 // Limits. A message over 4 MB is refused. Every call has a deadline; when the
 // client sends none, the server applies 30 seconds, except to the stream of
-// MonitorService.Watch, which stays open until either side ends it. A list
+// MonitorService.Watch, which stays open until either side ends it, and to
+// the stream of DataService.ReadFiles, which may carry a subject's files
+// for hours (its comment says how a stalled one ends). A list
 // answers 100 items unless page_size asks for another number, and at most
 // 1000; a larger page_size is invalid.
 //
@@ -110,14 +120,41 @@ syntax = "proto3";
 // secret is the exception, kept unless named and never set to empty. A field
 // the server answers is read-only, and naming it is invalid.
 //
-// Secrets cross the API in three fields only,
+// Secrets cross the API in four fields only,
 // CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
-// by AddStorage and SetStorage; always empty in an answer) and
-// CreateKeyResponse.secret (out, once). All three are marked debug_redact.
-// The mark is metadata, not protection: the protobuf library prints such a
-// field like any other (checked with protobuf-go v1.36.12, in every text form).
-// The server's own redactor reads the mark and removes the three fields
-// before anything is logged.
+// by AddStorage and SetStorage; always empty in an answer),
+// CreateKeyResponse.secret and RotateKeyResponse.secret (out, once). All four
+// are marked debug_redact. The mark is metadata, not protection: the
+// protobuf library prints such a field like any other (checked with
+// protobuf-go v1.36.12, in every text form). The server's own redactor reads
+// the mark and removes the four fields before anything is logged.
+//
+// Where a request may come from. A request off the local socket must pass,
+// in this order: the installation's denied networks and allowed networks
+// (the settings access.denied-networks and access.allowed-networks), judged
+// before its key is read; then, once its key and grant are known, the
+// networks of the tenant it names (access.tenant-networks), and the key's
+// own networks and client certificate (Key.networks,
+// Key.client_cert_sha256). A request refused by any of them is answered
+// UNAUTHENTICATED, exactly as a key that is no good, and recorded in the
+// installation's audit log with the rule's name; the caller is never told
+// which rule. The caller's address is the connection's, or, when the
+// connection comes from a proxy listed in access.trusted-proxies, the
+// rightmost address that is not itself a listed proxy in the one header
+// access.forwarded-header names (X-Forwarded-For by default, or Forwarded,
+// RFC 7239); the other header is never read, and from any other connection
+// neither is. The local socket is never refused by a network rule.
+//
+// Failed calls. Requests refused because their key is no good are counted
+// per address (IPv6 per /64), and requests refused because a good key lacks
+// the role are counted per key, over access.failure-window. Past
+// access.failure-limit failures in the window, each further refusal is
+// answered one second late; at twice the limit, the address or the key is
+// blocked for access.block-time: every request from it, a good key's
+// included, is answered UNAUTHENTICATED, and the block is audited. A
+// request that succeeds is never counted, delayed or blocked for its own
+// sake, however many a key makes. The counts are kept in the server's
+// memory and are lost when it restarts.
 package coria.v1;
 
 import "google/protobuf/duration.proto";
@@ -163,7 +200,9 @@ service AccessService {
   // RevokeKey ends a key for good: from this call on, a request with it is
   // answered UNAUTHENTICATED. Its grants stay listed, so the record shows what
   // the key could do, but they give nothing. Revoking a revoked key changes
-  // nothing and answers the key with its first revoke time.
+  // nothing and answers the key with its first revoke time. Revoking a
+  // rotated key does not revoke its successor (Key.successor_id), which is
+  // revoked by its own call.
   //
   // Role: admin on the installation.
   // Audit: one entry in the installation's log, with the key's id as its
@@ -233,6 +272,44 @@ service AccessService {
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+
+  // RotateKey replaces a key with a new one, its successor, and answers the
+  // successor's secret, once. The successor holds the same grants, holder,
+  // networks and client certificate. The rotated key keeps working for the
+  // overlap, or until its own expiry when that is sooner, and then stops:
+  // whoever holds it has the overlap to switch, with no moment without a
+  // working key. The successor lives as long as the rotated key was made to
+  // live, counted from now, but never longer than the installation's setting
+  // key.max-lifetime (built-in default 3650 days); a key made never to
+  // expire makes a successor that never expires. A key is rotated at most
+  // once; its successor may be rotated in turn. A key rotating itself,
+  // without admin on the installation, keeps working at least an hour beside
+  // its successor, so a thief holding it cannot cut its holder off at once.
+  //
+  // Role: admin on the installation; or the key being rotated itself, so a
+  // system renews its own key with no person involved. Any other key is
+  // answered permission denied.
+  // Audit: one entry in the installation's log, with the rotated key's id as
+  // its object, and the successor's id, the rotated key's new end and the
+  // overlap in details; never the secret.
+  // Errors: unauthenticated, permission denied, invalid, not found (no key
+  // has that id), conflict (the key is revoked, has expired, or was already
+  // rotated), unavailable (the master database does not answer).
+  rpc RotateKey(RotateKeyRequest) returns (RotateKeyResponse);
+
+  // SetKeyRules replaces where a key may be used from: its networks and the
+  // client certificate it must come with. The key's next request is judged
+  // by the new rules.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the key's id as its
+  // object and the new rules in details.
+  // Errors: unauthenticated, permission denied, invalid, not found (no key
+  // has that id), conflict (the key is revoked), unavailable (the master
+  // database does not answer).
+  rpc SetKeyRules(SetKeyRulesRequest) returns (SetKeyRulesResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
 }
 
 // Role is what a grant allows. Each role includes every role listed before it.
@@ -291,6 +368,26 @@ message Key {
 
   // When the key was revoked. Absent while it is not revoked.
   google.protobuf.Timestamp revoke_time = 6;
+
+  // The networks a request with the key may come from, each an address or
+  // a network in CIDR form (address/bits) in its one written form: IPv4
+  // dotted, IPv6 as RFC 5952 writes it, no bit set past the prefix, a
+  // single address without /32 or /128. Empty for every network. At most
+  // 64.
+  repeated string networks = 7;
+
+  // The SHA-256 of the TLS client certificate a request with the key must
+  // present, in 64 lowercase hexadecimal digits; empty for none. A request
+  // that comes through a proxy that ends TLS presents none.
+  string client_cert_sha256 = 8;
+
+  // The caller's address at the use last_use_time records, written with it;
+  // empty when the key was never used off the local socket.
+  string last_use_address = 9;
+
+  // The id of the key a rotation replaced this one with; empty when it was
+  // never rotated.
+  string successor_id = 10;
 }
 
 // Grant gives one key one role on one scope.
@@ -338,10 +435,11 @@ message CreateKeyRequest {
 
   // When the key stops working. When neither field is set, the key expires
   // after the installation's setting key.default-lifetime, whose built-in
-  // default is 90 days.
+  // default is 90 days, or key.max-lifetime when that is shorter.
   oneof expiry {
     // The key expires this long after it is made. Must be positive and at
-    // most 10 years (3650 days).
+    // most the installation's setting key.max-lifetime (built-in default
+    // 3650 days).
     google.protobuf.Duration expire_after = 2;
 
     // The key never expires. Must be true when set; false is refused as
@@ -349,6 +447,14 @@ message CreateKeyRequest {
     // words.
     bool never_expire = 3;
   }
+
+  // The networks the key may be used from, as Key.networks states them.
+  // Empty for every network.
+  repeated string networks = 4;
+
+  // The SHA-256 of the TLS client certificate the key must come with, as
+  // Key.client_cert_sha256 states it. Empty for none.
+  string client_cert_sha256 = 5;
 }
 
 // CreateKeyResponse is the new key and, once, its secret.
@@ -357,7 +463,7 @@ message CreateKeyResponse {
   Key key = 1;
 
   // SECRET. The whole key, cor_<id>_<secret>, as a client sends it in the
-  // Authorization header. This is one of the three fields through which a
+  // Authorization header. This is one of the four fields through which a
   // secret crosses the API, and the only time this one is answered: the
   // server keeps only its SHA-256 and cannot answer it again. A client shows
   // it to its user once and does not log it. The debug_redact mark is read by
@@ -484,4 +590,50 @@ message WhoAmIRequest {}
 message WhoAmIResponse {
   // Who made the request, with what it may do.
   Principal principal = 1;
+}
+
+// RotateKeyRequest names the key to rotate.
+message RotateKeyRequest {
+  // The key's id. Required.
+  string id = 1;
+
+  // How long the rotated key keeps working beside its successor: from zero
+  // to 30 days, and at least one hour for a key rotating itself without
+  // admin on the installation. Unset means one day.
+  google.protobuf.Duration overlap = 2;
+}
+
+// RotateKeyResponse is the successor and, once, its secret.
+message RotateKeyResponse {
+  // The successor.
+  Key key = 1;
+
+  // SECRET. The successor's whole key, cor_<id>_<secret>, answered this
+  // once, as CreateKeyResponse.secret is. The debug_redact mark is read by
+  // the server's redactor; the protobuf library itself still prints the
+  // field.
+  string secret = 2 [debug_redact = true];
+
+  // The rotated key as it now stands, with its new expire_time and its
+  // successor_id.
+  Key rotated = 3;
+}
+
+// SetKeyRulesRequest is where a key may now be used from.
+message SetKeyRulesRequest {
+  // The key's id. Required.
+  string id = 1;
+
+  // The networks, as Key.networks states them; empty for every network.
+  repeated string networks = 2;
+
+  // The client certificate's SHA-256, as Key.client_cert_sha256 states it;
+  // empty for none.
+  string client_cert_sha256 = 3;
+}
+
+// SetKeyRulesResponse is the key with its new rules.
+message SetKeyRulesResponse {
+  // The key.
+  Key key = 1;
 }

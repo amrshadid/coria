@@ -6,8 +6,227 @@ All notable changes to CORIA are written here. The form is
 
 ## [Unreleased]
 
+### Changed
+
+- Reading the archive is faster. A whole instance's SHA-256 is computed
+  while the piece before it is written, so a 16 MiB download goes from 1.4 to
+  2.1 GB/s on loopback and a WADO-RS study retrieve from 1.3 to 2.0 GB/s, the
+  speed of one SHA-256 stream. ReadFiles messages are sent uncompressed
+  whatever the client accepts (gzip ran at about 80 MB/s on DICOM files);
+  compressed requests are still read. A range of a download over plain
+  HTTP/1.1 is sent by the system's file-to-socket copy (3.2 to 5.0 GB/s). A
+  scan's metadata passes each element through (300 instances 38 to 17 ms),
+  and a directory storage looks up each directory of a key once.
+- STOW-RS: a request holds at most 10,000 parts (413 past it) and each part's
+  header at most 16 KiB (400 past it); a receiver that stops cuts a request
+  in flight after its drain and answers 503 with Retry-After.
+- A duration setting also takes seconds and minutes (`30s`, `15m`), within
+  each setting's bounds.
+- The everyday tests leave the tests at scale to `make test-scale`, which
+  every push still runs in CI.
+- A tenant's catalog is leaner and faster to write. A claim on an instance
+  is a row of its own, removed by the commit that confirms it, so a held
+  instance is written once and never updated; it no longer repeats its
+  study, series, storage, key or an archived checksum equal to the received
+  one, and on SQLite a scan's instances are stored together. A reception that
+  ends done or quarantined no longer keeps its received files (a failed one
+  keeps them for its retry or discard), and a study's instances are read from
+  an index in order. At 200,000 synthetic instances SQLite receives 2.4 times
+  as fast into a full tenant, in a file 6 times smaller, and Postgres's
+  instance rows are 3.8 times smaller. Existing tenants are converted when
+  the database is upgraded; the upgrade refuses, with a message, a database
+  where a held instance is on another storage than its scan.
+
+### Fixed
+
+- A stalled client of a long method over TLS no longer holds the handler
+  five seconds past the stall timeout: a connection whose write timed out
+  fails later writes at once.
+- An installation's admin sees a tenant whose database stopped as
+  unreachable, not as an error of the master; a tenant network rule that
+  cannot be read is reported as the tenant's database not answering.
+- A STOW-RS request left unread no longer lets a quiet client hold its
+  connection.
+- `coria download` continues a partial first file by range before it opens a
+  stream, so no bytes are fetched twice.
+- The outside schema checks cover the key rules, rotation and stow
+  receivers.
+- Behind a trusted proxy the caller's address is read from one header only,
+  named by the setting `access.forwarded-header` (`x-forwarded-for`, the
+  default, or `forwarded`); a client could write its own address in the other
+  and pass a key's network rule or have another address blocked.
+- An installation made before the keys' network rules starts: the master
+  database is upgraded before anything reads it.
+- A download or metadata read right after another no longer answers 503: a
+  storage opened for reading writes nothing, so two opens no longer remove
+  each other's probe file, nor a reception's temporary file.
+- The limits on failed calls hold under a flood (a new caller 1.3 ms to
+  240 ns; the block check of every request 5 ms to 32 ns); refusals by the
+  installation's networks and after a malformed message are counted.
+- The access settings are read again even when the request that triggers the
+  read is canceled, one read at a time, outside the lock every request takes.
+  A key's last use is written only by an allowed request.
+- A DICOMweb search holds one of the caller's open reads and one scan's
+  metadata file at a time, reads at most 256 MiB of metadata files, and
+  streams its answer (an instance answer stops at 64 MiB with the more-results
+  Warning); a search of 24 instances of 840 KB headers raised the heap by
+  72 MiB, now 7 MiB.
+- A read of a scan's metadata file that races its rewrite reads the index
+  again and tries once more instead of reporting data loss. A WADO-RS request
+  for several frames finds the frame table once and refuses repeated frames.
+- `coria download` continues a .part only when it is the start of the file
+  announced now (its SHA-256 is recorded beside it), and gives a file up as
+  soon as more bytes arrive than were announced.
+- STOW-RS: a body that ends inside a part is answered 400 and that part is
+  not kept; a request refused part way is answered without waiting for the
+  rest of its body.
+- A test helper of reception no longer moves its clock while a received file
+  waits for its row, which made two tests fail on slow runners.
+- A file in the Deflated Explicit VR Little Endian transfer syntax is
+  archived. Its scan's metadata file records no pixel data place for it
+  (offsets counted in inflated bytes are not places in the file); it was
+  refused and retried without end.
+- The metadata service reads only what it needs from storage: a header read
+  passes over pixel data without fetching its frames (a 12 MB JPEG 2000 file
+  read under 1%), a scan's page is located by the index at the end of its
+  metadata file instead of read from the start, and empty pixel data is
+  answered with a reference on every path.
+- The setting `api.cors-origins` refuses an IPv4 address in a form no browser
+  sends, such as `127.000.0.1`.
+
 ### Added
 
+- Keys can be rotated with no gap: `coria key rotate <id> --overlap 24h`, or
+  AccessService.RotateKey, which a key may call on itself (keeping at least an
+  hour of overlap). The successor has the same grants, holder and network
+  rules; a key is rotated once and no successor outlives `key.max-lifetime`
+  (3650d). `coria key revoke` names a live successor, and
+  `--with-successors` revokes the chain.
+- Where a key may be used from: its own networks and optionally a TLS client
+  certificate (`--network`, `--client-cert`, `coria key set`,
+  AccessService.SetKeyRules); a tenant's networks (`access.tenant-networks`);
+  the installation's allowed and denied networks. A refusal is answered as a
+  wrong key and audited with the rule's name. Trusted proxies
+  (`access.trusted-proxies`) give the real caller in the audit and the rules.
+  A key's last-used address is kept and shown.
+- Limits on failed calls only (`access.failure-limit`, `failure-window`,
+  `block-time`): an address that keeps sending bad keys, and a good key that
+  keeps being refused, are slowed and then blocked, each block audited; a
+  key's successful requests are never limited. Keys expiring within
+  `key.expiry-warning` (7d) are listed in the status.
+- The catalog service lists and gets subjects, sessions and scans in the
+  orders and with the filters the contract names, with totals only where a
+  running total gives them; checked against pydicom's reading of the files.
+- The data service streams the instances of an instance, scan, session or
+  subject, each announced with its key, place, length and SHA-256 and checked
+  as it is sent; a stream resumes after a position and can announce without
+  bytes. GET and HEAD of one instance by plain HTTP serve single byte ranges
+  (RFC 9110 14), If-Range, If-None-Match and the window of a bulk data URI,
+  with the SHA-256 as the strong ETag. A caller holds at most 16 open reads
+  at once, shared by its streams, its downloads and its DICOMweb requests,
+  the server 256. No deadline applies to these long reads;
+  a client that reads nothing for 5 minutes is cut.
+- The scan's metadata file records where each frame lies in its file and each
+  frame's SHA-256; a pass at each start gives scans archived before their
+  tables, resumable and yielding to reception, reported as the event
+  `frames_added`.
+- DICOMweb per tenant at /tenants/<tenant>/dicom-web, behind the key and
+  grant check and audited without UIDs: QIDO-RS answered from the catalog
+  with real paging; WADO-RS retrieve of studies, series and instances as
+  stored, each checked against its SHA-256 as it is sent, their metadata,
+  bulk data and frames (each frame checked against its SHA-256). Nothing is
+  transcoded.
+- A receiver of type stow, the tenant's STOW-RS service (PS3.18 10.5), closed
+  to every key it does not list (a key rotated from a listed one is taken);
+  each part is synced in the incoming area before the answer and received
+  like a DIMSE file. A part whose placing UIDs read whole differ from those
+  read from its first bytes is held as `uid_mismatch`. The key is checked
+  again every 15 seconds while a request is open, as for a long read: a
+  request whose key is revoked, expires or loses its role ends at its next
+  read of the body, answered 401 or 403, keeping the parts held whole before
+  it, and is audited as refused.
+- `coria catalog subjects|sessions|scans`, `coria scan show --metadata` and
+  `coria download` (checked against the announced SHA-256 as it arrives,
+  resumed by a range guarded by the checksum); the interactive program
+  browses the catalog, shows a scan's headers, downloads, and shows a key's
+  rules, successor, last-used address and expiry warning.
+- Both clients are tested against the catalog, metadata and data services.
+- The proof reads the archive from outside (sections 13 to 19): the catalog
+  equals pydicom's reading, every scan's headers equal pydicom's
+  to_json_dict, downloads whole and in random ranges equal the manifests with
+  curl, a killed `coria download` finishes whole, dicomweb-client searches,
+  loads and stores a study that is archived byte for byte, the Python client
+  reads, and every way in refuses the same way, each refusal audited.
+- The scan's metadata file records each instance's transfer syntax, and an
+  index of where its lines start; the metadata service reads both instead of
+  opening instance files or reading from the start. Files written before this
+  still work.
+- The metadata service answers a scan's or an instance's header as DICOM
+  JSON (PS3.18 Annex F), with bulk data URIs for pixel data and other large
+  values, from one read of the scan's metadata file and a bounded read of an
+  instance's file header for what that file does not hold; checked against
+  pydicom on the public corpus files.
+- The plain HTTP download of an instance, `GET /tenants/<tenant>/instances/
+  <subject>/<session>/<scan>/<instance id>`, is routed, checked and audited:
+  no key, a wrong key, or a key without reader on the tenant the path names
+  is refused as on every route; a path with percent-encoding, a dot segment,
+  or an empty or over-long segment is answered 404 after the check and never
+  redirected.
+- The setting `api.cors-origins` (installation only, empty by default) lists
+  the web origins whose pages may call the API from a browser, one per line as
+  a browser sends them, or `*` for any. A listed origin's preflight is
+  answered with the methods and headers the Connect, gRPC-Web, download and
+  DICOMweb clients send (Accept among them, which a WADO-RS media type with
+  quotes takes out of the headers a browser sends without asking), and a
+  QIDO-RS answer's Warning is exposed; an origin not listed gets no CORS
+  header. No answer allows
+  credentials; every answer carries `Vary: Origin`.
+- The catalog keeps what reading needs: each scan's modality, series
+  description and series number and each session's study date, read from the
+  files' headers; the receiver that first archived into each; running counts
+  of sessions, scans, instances and bytes on subjects and sessions; and an
+  index for every list order and filter, so a page of subjects, sessions,
+  scans or a scan's instances is read from one index at any size. When the
+  database is upgraded, an existing catalog gets its receivers, counts and
+  indexes at once; the header values, which only the files hold, are filled
+  in by the pass each start makes over the scans, from each scan's first
+  file, for every scan the catalog lists without a modality. Until that pass
+  reaches a scan, searches that filter by these values (QIDO-RS's StudyDate,
+  ModalitiesInStudy and Modality among them) do not find it.
+- A generated TypeScript client, `coria` (`clients/typescript`): the API
+  contract compiled with protoc-gen-es, one typed client per service over the
+  Connect protocol (browser and Node) or gRPC and gRPC-web (Node), a key
+  interceptor, a paging helper and one error class carrying the request id.
+  Every failure, deadlines and cancellation included, is a `CoriaError`; the
+  default deadline applies to single calls, never to server streams.
+- Both clients refuse a malformed key without echoing it, refuse to send a key
+  unencrypted to another machine unless told to (`allow_insecure`,
+  `allowInsecure`), and raise instead of looping when the server repeats a
+  page token. The Python client reports the request id of every failed call,
+  and its generated modules are `coria.v1.*_pb2`, typed.
+- A generated Python client, `coria` (`clients/python`): the API contract
+  compiled with grpcio-tools and checked in, a thin `coria.Client` that sends
+  the key, exposes each service's stub, pages through list calls by cursor and
+  raises one `coria.Error`, and tests that run it against the real server.
+- The tenant port states that a tenant holds one instance per SOP Instance
+  UID (a file whose UID is held in another series, or a different file under
+  a held UID, is quarantined), and its contract suite holds both drivers to
+  it.
+- Scale measurements, run on demand: a generator of synthetic tenants in
+  `internal/testkit`, written through the tenant port; `TestScaleCatalog` in
+  each database driver (sizes, insert rates, the catalog's query plans and
+  times, index sizes, vacuum time), sized by `CORIA_SCALE_INSTANCES`; and
+  `BenchmarkPackedScan` on the directory and S3 drivers (a scan read one
+  object at a time against one packed object).
+- The contract for reading the archive: `CatalogService` (list and get a
+  tenant's subjects, sessions and scans, with filters and paging),
+  `MetadataService` (a scan's or an instance's headers as DICOM JSON) and
+  `DataService` (a stream of the files of an instance, scan, session or
+  subject, each with its key, size and SHA-256; and, as stated in the
+  contract, a plain HTTP download of one file with byte ranges). A reader on
+  the tenant may call them, and an audit entry never holds a UID or a
+  storage key. The
+  error kinds gain `DATA_LOSS`.
 - The repository had a README and nothing else: no module, no license, and no
   check that a change builds, is formatted or passes its tests. It is now the Go
   module `github.com/amrshadid/coria`, under the Apache License 2.0, with the
@@ -39,7 +258,7 @@ All notable changes to CORIA are written here. The form is
   text field of the contract that has not been listed as reviewed. `buf
   lint`, a breaking-change check against the base branch, and a check that the
   committed Go code in `gen/` is current run in CI, with Python's grpcio-tools
-  compiling the same files as a second toolchain. No server serves it yet.
+  compiling the same files as a second toolchain.
 - An error had no way to say what sort of failure it was, so the API and the
   command line would each have had to guess a code from its text. Package
   `internal/fault` gives an error a kind (invalid, unauthenticated, denied, not
@@ -84,8 +303,7 @@ All notable changes to CORIA are written here. The form is
   Migrations are embedded SQL files, checksummed and applied under a lock that
   holds across processes; a changed applied file, or a database a newer binary
   upgraded, is refused. `scripts/check/master-sqlite.sh` reads what the driver wrote
-  with the `sqlite3` tool and finds a key's hash but never its secret. The
-  binary does not use the master database yet.
+  with the `sqlite3` tool and finds a key's hash but never its secret.
 - The binary had a version command and nothing that could use the API, so a
   person had no way to make a tenant or a key without writing a client. It now
   has the single commands of the command line, built with cobra and written
@@ -140,8 +358,7 @@ All notable changes to CORIA are written here. The form is
   recorded at most once a minute, by a bounded background worker. Making,
   listing and revoking keys and setting, listing and removing grants need
   the installation admin; a new key expires after 90 days unless another
-  period (at most 10 years) or "never" is asked for. The binary does not use
-  it yet.
+  period (at most 10 years) or "never" is asked for.
 - The master port's `RolesFor` now also reports whether the named tenant
   exists and its id, in one statement on SQLite and Postgres, and a name that
   is not a valid tenant name finds no tenant instead of failing, so the
@@ -194,8 +411,7 @@ All notable changes to CORIA are written here. The form is
   the tenants could not all hold their files under the process's limit.
   Closing the registry stops its timer, waits for opens in progress up to the
   deadline it is given, and closes every store. `scripts/check/tenant-sqlite.sh`
-  reads a tenant the registry created with the `sqlite3` tool. The server does
-  not use the registry yet.
+  reads a tenant the registry created with the `sqlite3` tool.
 - The commands could not be browsed: finding a tenant's grants, its settings
   and its audit entries took a command each, and making a key meant copying
   its secret from standard output. `coria` with no arguments, when standard
@@ -272,8 +488,7 @@ All notable changes to CORIA are written here. The form is
   reached (`Tenant.state_time`, a new field). A read costs 16 µs (a tenant)
   to 24 µs (a tenant's setting) through the check and the handler without
   the network, its audit entry batched into the log of the scope it read; a
-  change, one synced commit (5 ms on a laptop). The server does not serve
-  them yet.
+  change, one synced commit (5 ms on a laptop).
 - Settings were any name anyone wrote, with no default and no rule for their
   values, so the contract's "not found" and "a value the setting does not
   accept" could not happen. The server now knows a fixed list
@@ -311,11 +526,11 @@ All notable changes to CORIA are written here. The form is
   CORIA: curl, grpcurl, openssl, sqlite3, psql and pg_dump, and Python's
   grpcio. It shows, each as a named check with what it measured: `init` and
   `serve` on the local socket and on TLS; no key or grant after `init`, the
-  first key made on the socket, and all 17 methods of the contract (with
+  first key made on the socket, and every method of the contract (with
   `/metrics`) refused without a key, health answering; tenants on SQLite and
   on Postgres, and a remote address without its sslmode refused and leaving
   nothing; no key, a malformed, unknown, wrong, expired (`--expires 1s`) and
-  revoked key, each with all 17 methods, through the three clients, with one
+  revoked key, each with every method, through the three clients, with one
   answer per client byte for byte, "no grant" and "no such tenant" identical,
   and a caller who may list tenants told not found; no secret in the master's
   dump, the tenant's `pg_dump`, any file of the data directory, the logs at
@@ -334,12 +549,12 @@ All notable changes to CORIA are written here. The form is
   or any speed.
 - The API could create tenants and keys but had no way to give a tenant a place to
   keep data or a way for data to arrive. The contract now has five more services in
-  `coria.v1`, as protobuf with nothing behind them yet: `StorageService` (a
+  `coria.v1`: `StorageService` (a
   directory under a root the installation names, or an S3 bucket at an endpoint the
   installation lists, whose secret access key goes in and never comes back),
-  `ReceiverService` (a receiver, in this version a DICOM listener on a port the
-  installation allotted to the tenant, that admits nobody until its callers are
-  listed), `ReceptionService` (one study's arrival at a receiver and its steps,
+  `ReceiverService` (a receiver, a DICOM listener on a port the installation
+  allotted to the tenant that admits nobody until its callers are listed, or
+  a STOW-RS service), `ReceptionService` (one study's arrival at a receiver and its steps,
   with a retry or a discard for one that failed), `QuarantineService` (why a file
   was held, released to run again or rejected with a reason) and `MonitorService`
   (a tenant's numbers and a stream of its events, read from one snapshot so a
@@ -347,9 +562,7 @@ All notable changes to CORIA are written here. The form is
   carries an identifier the sender gave; a site's own naming rule makes labels
   exactly as identifying as the rule. A change to a storage or a receiver names its
   fields in a field mask; a state that forbids a change is answered
-  FAILED_PRECONDITION. Secrets cross the API in three fields. Until a service has
-  its handlers the server answers it as unimplemented, and a test holds the list
-  of such services to exactly that. A walk-through in
+  FAILED_PRECONDITION. Secrets cross the API in three fields. A walk-through in
   `docs/api-walkthrough-reception.md` follows three uses call by call with only the
   contract in hand.
 - The server had no rules for where a received file goes or what state its
@@ -433,8 +646,7 @@ All notable changes to CORIA are written here. The form is
   that received always equals archived plus duplicates plus quarantined when it
   ends. The store reads no clock. Every list, claim and lookup is answered from
   an index, also every combination of list filters at millions of rows. These
-  are a second interface, `tenant.Pipeline`, until the Postgres driver passes
-  the same suite.
+  are a second interface, `tenant.Pipeline`.
 - Nothing told a system outside what was happening: a reception moved through
   its steps and the only way to know was to ask again. A tenant's events are now
   recorded with the change they report, in the same transaction: each step a
@@ -448,8 +660,7 @@ All notable changes to CORIA are written here. The form is
   comes after the cursor is not in its counts. `internal/events` follows
   tenants' feeds live without holding events for any client: a watch is a
   cursor and a one-slot wake, so a client that stops reading costs no memory
-  and loses nothing until its cursor expires. On SQLite; the Postgres driver
-  follows.
+  and loses nothing until its cursor expires.
 - A study could not be received into a tenant on Postgres: only SQLite kept
   what a reception needs. The Postgres driver now has the same operations
   (storages and receivers, receptions and their received files, the catalog
@@ -965,8 +1176,6 @@ All notable changes to CORIA are written here. The form is
   queued audit entries, closes everything within 29 seconds even when a
   handler ignores its context, and exits; a second signal exits at once.
   `make check-server` checks it with curl,
-  grpcurl and Python's grpcio. The API's handlers are not in this change, so
-  until they are, every API method passes the check and then answers that
-  the service is not there.
+  grpcurl and Python's grpcio.
 
 [Unreleased]: https://github.com/amrshadid/coria/commits/develop

@@ -275,6 +275,17 @@ class S3:
         return body
 
 
+
+# The catalog's held instances as the proof reads them: each with its key
+# on its storage, which a row keeps only when it is not the layout's key of
+# its scan and UID; its archived checksum, which a row keeps only when it
+# is not the received one; and its scan's study.
+HELD = """(SELECT i.sop_instance_uid, s.study_uid,
+    CASE WHEN i.storage_key = '' THEN 'data/' || s.subject_label || '/' || s.session_label || '/' || s.label || '/'
+        || i.sop_instance_uid || '.dcm' ELSE i.storage_key END AS storage_key,
+    coalesce(i.archived_sha256, i.sha256) AS archived_sha256
+    FROM instances AS i JOIN scans AS s ON s.id = i.scan_id) AS held"""
+
 def frames(resp):
     """The messages of a Connect stream, until its end."""
     while True:
@@ -408,7 +419,7 @@ def arrives(p, port):
     n, out = p.storescu(port, [os.path.join(CORPUS, f) for f in CT])
     study = str(dcmread(os.path.join(CORPUS, CT[0]), stop_before_pixels=True).StudyInstanceUID)
     rows = wait_ended(p, "lab", study, 1)
-    held = p.query("lab", "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
+    held = p.query("lab", "SELECT sop_instance_uid, storage_key FROM " + HELD + " WHERE study_uid = ?", study)
     p.result("1.1 a study sent with storescu is archived", n == 7 and [r["state"] for r in rows] == ["done"] and len(held) == 7,
              "%d of 7 answered success; receptions %s; %d instances held" % (n, [r["state"] for r in rows], len(held)), [out[-400:]])
     bad = []
@@ -452,7 +463,7 @@ def two_parts(p, port):
     again = p.pynetdicom_store(port, files)
     wait_ended(p, "lab", study, 3)
     last = p.query("lab", "SELECT files_duplicate, files_archived, state FROM receptions WHERE study_uid = ? AND arrival = 3", study)
-    held = p.query("lab", "SELECT count(*) AS n, count(DISTINCT sop_instance_uid) AS d FROM instances WHERE state = 'held' AND study_uid = ?", study)[0]
+    held = p.query("lab", "SELECT count(*) AS n, count(DISTINCT sop_instance_uid) AS d FROM " + HELD + " WHERE study_uid = ?", study)[0]
     ok = again == [0] * 6 and last and last[0]["files_duplicate"] == 6 and last[0]["files_archived"] == 0 and (held["n"], held["d"]) == (6, 6)
     p.result("2.2 the study sent again: answered success, counted duplicate, nothing archived twice", ok,
              "statuses %s; the third reception %s; %d instances, %d distinct" % (again, [dict(r) for r in last], held["n"], held["d"]))
@@ -472,7 +483,7 @@ def corrected(p, port, study, files):
     st = p.pynetdicom_store(port, [path])
     wait_ended(p, "lab", study, 4)
     q = p.query("lab", "SELECT reason, hex(sha256) AS sum, hex(kept_sha256) AS kept FROM quarantine WHERE sop_instance_uid = ?", uid)
-    held = p.query("lab", "SELECT hex(archived_sha256) AS sum FROM instances WHERE sop_instance_uid = ? AND state = 'held'", uid)
+    held = p.query("lab", "SELECT hex(archived_sha256) AS sum FROM " + HELD + " WHERE sop_instance_uid = ?", uid)
     ok = st == [0] and len(q) == 1 and q[0]["reason"] == "different_file" and q[0]["sum"] and q[0]["kept"] and \
         q[0]["sum"] != q[0]["kept"] and len(held) == 1
     p.result("3.1 a corrected file under the same UID: the first kept, the second in quarantine with both checksums", ok,
@@ -516,7 +527,7 @@ def broken(p, port):
     # Its header unread, the file belongs to no study and no reception: it
     # is held under its receiver alone, its bytes kept.
     held_now = p.query("lab", not_dicom)[0]["n"] - before
-    held = p.query("lab", "SELECT count(*) AS n FROM instances WHERE state = 'held' AND study_uid = ?", study)[0]["n"]
+    held = p.query("lab", "SELECT count(*) AS n FROM " + HELD + " WHERE study_uid = ?", study)[0]["n"]
     p.result("4.1 a file cut short is held as not DICOM with its bytes, the rest of its study archived",
              st == [0, 0, 0] and held == 2 and held_now == 1,
              "statuses %s; %d archived; %d new not-DICOM record(s) with bytes kept" % (st, held, held_now))
@@ -594,7 +605,7 @@ def crashes(p, port, rounds, tenant="crash", whens=("receiving", "quiet", "archi
                 continue
             # The acknowledged files, from their first delivery only.
             wait_receptions_ended(p, tenant, study)
-            have = {x["sop_instance_uid"] for x in p.query(tenant, "SELECT sop_instance_uid FROM instances WHERE state = 'held' AND study_uid = ?", study)}
+            have = {x["sop_instance_uid"] for x in p.query(tenant, "SELECT sop_instance_uid FROM " + HELD + " WHERE study_uid = ?", study)}
             quarantined = {x["sop_instance_uid"] for x in p.query(tenant, "SELECT sop_instance_uid FROM quarantine WHERE study_uid = ?", study)}
             lost = [uid[i] for i in acked if uid[i] not in have and uid[i] not in quarantined]
             # Then the rest, as a sender would send what it was not told was
@@ -603,8 +614,8 @@ def crashes(p, port, rounds, tenant="crash", whens=("receiving", "quiet", "archi
             again = p.pynetdicom_store(port, rest) if rest else []
             if rest:
                 wait_receptions_ended(p, tenant, study)
-            held = p.query(tenant, "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
-            claimed = p.query(tenant, "SELECT count(*) AS n FROM instances WHERE state <> 'held' AND study_uid = ?", study)[0]["n"]
+            held = p.query(tenant, "SELECT sop_instance_uid, storage_key FROM " + HELD + " WHERE study_uid = ?", study)
+            claimed = p.query(tenant, "SELECT count(*) AS n FROM instance_claims WHERE study_uid = ?", study)[0]["n"]
             distinct = {x["sop_instance_uid"] for x in held}
             unreadable = []
             for x in held:
@@ -640,7 +651,7 @@ def on_s3(p, port):
     sent = {str(dcmread(f, stop_before_pixels=True).SOPInstanceUID): data_set(f) for f in files}
     statuses = p.pynetdicom_store(port, files)
     rows = wait_ended(p, "cloud", study, 1)
-    held = p.query("cloud", "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
+    held = p.query("cloud", "SELECT sop_instance_uid, storage_key FROM " + HELD + " WHERE study_uid = ?", study)
     bad = []
     for r in held:
         try:
@@ -680,7 +691,7 @@ def on_postgres(p, port):
     study, files = study_copy(p, CT, 7)
     statuses = p.pynetdicom_store(port, files)
     rows = wait_ended(p, "pg", study, 1)
-    held = p.query("pg", "SELECT sop_instance_uid, storage_key FROM instances WHERE state = 'held' AND study_uid = ?", study)
+    held = p.query("pg", "SELECT sop_instance_uid, storage_key FROM " + HELD + " WHERE study_uid = ?", study)
     bad = []
     for r in held:
         d = subprocess.run([p.dcmtk("dcmdump"), os.path.join(storage_dir(p, "pg"), r["storage_key"])], capture_output=True, text=True)
@@ -696,7 +707,7 @@ def on_postgres(p, port):
     st = p.call("coria.v1.MonitorService/GetStatus", {"scope": {"tenant": "pg"}})["tenants"][0]
     c = st.get("counts", {})
     want = p.query("pg", """SELECT (SELECT count(*) FROM subjects) AS subjects, (SELECT count(*) FROM sessions) AS sessions,
-        (SELECT count(*) FROM scans) AS scans, (SELECT count(*) FROM instances WHERE state = 'held') AS instances""")[0]
+        (SELECT count(*) FROM scans) AS scans, (SELECT count(*) FROM instances) AS instances""")[0]
     got = {k: int(c.get(k, 0)) for k in ("subjects", "sessions", "scans", "instances")}
     p.result("11.2 the status's counts are the Postgres catalog's, read by psql", got == want, "status %s; psql %s" % (got, want))
     bad, kills = crashes(p, port, 1, tenant="pg", whens=("receiving", "archiving"))
@@ -738,12 +749,12 @@ def released_after_raise(p, port):
     deadline = time.time() + 90
     held = []
     while time.time() < deadline and not held:
-        held = p.query("lab", "SELECT storage_key FROM instances WHERE state = 'held' AND sop_instance_uid = ?", uid)
+        held = p.query("lab", "SELECT storage_key FROM " + HELD + " WHERE sop_instance_uid = ?", uid)
         time.sleep(0.5)
     p.stop()
     p.serve()
     wait_up(p, "lab", "scanner")
-    still = p.query("lab", "SELECT storage_key FROM instances WHERE state = 'held' AND sop_instance_uid = ?", uid)
+    still = p.query("lab", "SELECT storage_key FROM " + HELD + " WHERE sop_instance_uid = ?", uid)
     ok_dump = False
     if still:
         d = subprocess.run([p.dcmtk("dcmdump"), os.path.join(storage_dir(p, "lab"), still[0]["storage_key"])], capture_output=True, text=True)
@@ -779,7 +790,7 @@ def numbers(p, cursor):
     st = p.call("coria.v1.MonitorService/GetStatus", {"scope": {"tenant": "lab"}})["tenants"][0]
     c = st.get("counts", {})
     want = p.query("lab", """SELECT (SELECT count(*) FROM subjects) AS subjects, (SELECT count(*) FROM sessions) AS sessions,
-        (SELECT count(*) FROM scans) AS scans, (SELECT count(*) FROM instances WHERE state = 'held') AS instances,
+        (SELECT count(*) FROM scans) AS scans, (SELECT count(*) FROM instances) AS instances,
         (SELECT count(*) FROM quarantine WHERE state = 'held') AS held""")[0]
     got = {k: int(c.get(k, 0)) for k in ("subjects", "sessions", "scans", "instances")}
     got["held"] = int(c.get("quarantinedFiles", 0))

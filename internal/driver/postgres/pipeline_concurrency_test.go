@@ -160,7 +160,9 @@ func make2Claims(files []tenant.ReceivedFile, descending bool) []tenant.Instance
 //     once: one is made, the other is a label conflict held by another
 //     session, never an unclassified failure.
 //
-// After each round the running totals equal the rows.
+// Each commit carries a modality. After each round the running totals of
+// the catalog, its subjects, sessions and scans equal a recount of the
+// rows, and each session's modalities are its scans'.
 func TestCommitsShareCatalogRows(t *testing.T) {
 	e := newCenv(t, 3, 8)
 	e.storage("store")
@@ -179,9 +181,18 @@ func TestCommitsShareCatalogRows(t *testing.T) {
 		}
 		return out
 	}
+	// Each commit carries a modality of its own among four, so commits of
+	// one scan at once race to give it theirs and commits of one session
+	// to add its modalities; checkTotals then compares the session's
+	// modalities with its scans'.
+	modalities := []string{"MR", "CT", "PT", "SR"}
 	commitAll := func(round int, commits []tenant.ScanCommit) []error {
 		errs := make([]error, len(commits))
-		atOnce(len(commits), func(i int) { _, errs[i] = e.stores[i%len(e.stores)].CommitScan(e.ctx, commits[i]) })
+		atOnce(len(commits), func(i int) {
+			c := commits[i]
+			c.Values = tenant.ScanValuesOf("20200101", modalities[(round+i)%len(modalities)], "", "")
+			_, errs[i] = e.stores[i%len(e.stores)].CommitScan(e.ctx, c)
+		})
 		return errs
 	}
 	for round := range 10 {
@@ -350,7 +361,7 @@ func TestClaimRacesEnd(t *testing.T) {
 		if claim != nil && fault.KindOf(claim) != fault.Precondition {
 			t.Fatalf("round %d: the claim: %v, want success or a precondition failure", round, claim)
 		}
-		if n := e.scalar(`SELECT count(*) FROM instances WHERE reception_id = $1 AND state = 'claimed'`, r.ID); n != 0 {
+		if n := e.scalar(`SELECT count(*) FROM instance_claims WHERE reception_id = $1`, r.ID); n != 0 {
 			t.Fatalf("round %d: %d claims held by a reception that ended", round, n)
 		}
 	}
@@ -395,7 +406,7 @@ func TestCommitRacesEnd(t *testing.T) {
 		if commit != nil && fault.KindOf(commit) != fault.Precondition {
 			t.Fatalf("round %d: the commit: %v, want success or a precondition failure", round, commit)
 		}
-		held := e.scalar(`SELECT count(*) FROM instances WHERE reception_id = $1 AND state = 'held'`, r.ID)
+		held := e.scalar(`SELECT count(*) FROM instances WHERE reception_id = $1`, r.ID)
 		if (commit == nil && held != 100) || (commit != nil && held != 0) {
 			t.Fatalf("round %d: commit %v, and %d instances held", round, commit, held)
 		}

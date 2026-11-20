@@ -6,14 +6,21 @@ import (
 	"errors"
 	"time"
 
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/reception"
 	"github.com/amrshadid/coria/internal/driver/sqlkit"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
-// instanceRowSQL reads the instance row under a UID. The primary key.
-const instanceRowSQL = `SELECT study_uid, series_uid, sha256, reception_id, state = 'held' FROM instances WHERE sop_instance_uid = ?`
+// instanceRowSQL reads what the catalog holds or a reception claims under a
+// UID: the held instance with its scan's study and series
+// (instances_by_uid, then the scans' primary key), or the claim
+// (instance_claims' primary key). A UID is in one of the two at most.
+const instanceRowSQL = `SELECT s.study_uid, s.series_uid, i.sha256, i.reception_id, 1 FROM instances AS i
+	JOIN scans AS s ON s.id = i.scan_id WHERE i.sop_instance_uid = ?1
+	UNION ALL SELECT study_uid, series_uid, sha256, reception_id, 0 FROM instance_claims WHERE sop_instance_uid = ?1`
 
 // scanInstanceRow reads one row of instanceRowSQL.
 func scanInstanceRow(row interface{ Scan(...any) error }) (tenant.InstanceRow, error) {
@@ -39,25 +46,24 @@ func instanceRowInTx(ctx context.Context, stmt *sql.Stmt, uid string) (*tenant.I
 
 // lockArchiving locks the row of a reception that has been identified and
 // not ended, in the statement that checks it, and returns its Study Instance
-// UID as received. A step that ends it (and releases its claims) is then
+// UID as received and its receiver. A step that ends it (and releases its claims) is then
 // ordered with a claim or a commit: on a database with several writers the
 // second waits for the first. It refuses a reception not there (NotFound) or
 // not archiving (a precondition).
-func lockArchiving(ctx context.Context, tx *sql.Tx, receptionID string) (string, error) {
-	var study string
-	err := tx.QueryRowContext(ctx, `UPDATE receptions SET step_at = step_at WHERE id = ? AND ended = 0 AND storage <> ''
-		RETURNING study_uid`, receptionID).Scan(&study)
+func lockArchiving(ctx context.Context, tx *sql.Tx, receptionID string) (study, receiver string, err error) {
+	err = tx.QueryRowContext(ctx, `UPDATE receptions SET step_at = step_at WHERE id = ? AND ended = 0 AND storage <> ''
+		RETURNING study_uid, receiver`, receptionID).Scan(&study, &receiver)
 	if err == nil || !errors.Is(err, sql.ErrNoRows) {
-		return study, err
+		return study, receiver, err
 	}
 	has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = ?`, receptionID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if !has {
-		return "", fault.New(fault.NotFound, "the tenant has no reception with this id")
+		return "", "", fault.New(fault.NotFound, "the tenant has no reception with this id")
 	}
-	return "", tenant.Precondition("the reception is not archiving: it has not been identified, or it has ended")
+	return "", "", tenant.Precondition("the reception is not archiving: it has not been identified, or it has ended")
 }
 
 // lockStorage takes a storage's row in the transaction, by an update that
@@ -83,6 +89,21 @@ func releaseClaims(ctx context.Context, tx *sql.Tx, receptionID string) error {
 	return err
 }
 
+// endReception does what a step to an end does besides writing the
+// reception's row: it releases the claims the reception did not confirm and,
+// for an end that is not a failure, removes its received files
+// (tenant.Pipeline's ReceivedFiles says why), in the step's transaction.
+func endReception(ctx context.Context, tx *sql.Tx, receptionID string, state reception.State) error {
+	if err := releaseClaims(ctx, tx, receptionID); err != nil {
+		return err
+	}
+	if !tenant.KeepsReceivedFiles(state) {
+		_, err := tx.ExecContext(ctx, `DELETE FROM received_files WHERE reception_id = ?`, receptionID)
+		return err
+	}
+	return nil
+}
+
 // ClaimInstances implements tenant.Pipeline. The files are claimed in sorted
 // order of UID, then checksum, and answered in the caller's order. Each must
 // be one of the reception's received files, as received. Each answer is
@@ -106,7 +127,7 @@ func (t *Tenant) ClaimInstances(ctx context.Context, receptionID string, files [
 				return err
 			}
 		}
-		if _, err := lockArchiving(ctx, tx, receptionID); err != nil {
+		if _, _, err := lockArchiving(ctx, tx, receptionID); err != nil {
 			return err
 		}
 		read, insert := tx.StmtContext(ctx, s.instanceRow), tx.StmtContext(ctx, s.insertClaim)
@@ -215,11 +236,14 @@ type scanPrefixed struct {
 // Scan reads the row.
 func (p scanPrefixed) Scan(dst ...any) error { return p.row.Scan(append([]any{p.first}, dst...)...) }
 
-// duplicatesSQL reads the instance rows of a batch's SOP Instance UIDs,
-// given as one JSON array (json_each), so one prepared statement serves a
-// batch of any size; each UID is a lookup of the instances' primary key.
-const duplicatesSQL = `SELECT sop_instance_uid, study_uid, series_uid, sha256, reception_id, state = 'held'
-	FROM instances WHERE sop_instance_uid IN (SELECT value FROM json_each(?))`
+// duplicatesSQL reads the rows of a batch's SOP Instance UIDs as
+// instanceRowSQL does, given as one JSON array (json_each), so one prepared
+// statement serves a batch of any size; each UID is a lookup of
+// instances_by_uid and of the claims' primary key.
+const duplicatesSQL = `SELECT i.sop_instance_uid, s.study_uid, s.series_uid, i.sha256, i.reception_id, 1 FROM instances AS i
+	JOIN scans AS s ON s.id = i.scan_id WHERE i.sop_instance_uid IN (SELECT value FROM json_each(?1))
+	UNION ALL SELECT sop_instance_uid, study_uid, series_uid, sha256, reception_id, 0 FROM instance_claims
+	WHERE sop_instance_uid IN (SELECT value FROM json_each(?1))`
 
 // CatalogLabels implements tenant.Pipeline.
 func (t *Tenant) CatalogLabels(ctx context.Context, studyUID string, seriesUIDs []string) (tenant.CatalogLabels, error) {
@@ -295,11 +319,12 @@ func (t *Tenant) ReceptionScans(ctx context.Context, receptionID string) ([]tena
 }
 
 // scanInstancesSQL pages the instances held in the scan of a series: the
-// scans' unique index on series_uid, then instances_by_scan, in order of
-// SOP Instance UID.
-const scanInstancesSQL = `SELECT i.sop_instance_uid, i.reception_id, i.storage, i.storage_key, i.byte_offset, i.byte_length,
-	i.size, i.sha256, i.archived_sha256, i.held_at
-	FROM scans AS s JOIN instances AS i ON i.scan_id = s.id AND i.state = 'held'
+// scans' unique index on series_uid, then the instances' primary key, in
+// order of SOP Instance UID. The storage and the labels the key is made
+// from are the scan's (tenant.InstanceKey).
+const scanInstancesSQL = `SELECT i.sop_instance_uid, i.reception_id, s.storage, i.storage_key, s.subject_label, s.session_label, s.label,
+	i.byte_offset, i.byte_length, i.size, i.sha256, coalesce(i.archived_sha256, i.sha256), i.held_at
+	FROM scans AS s JOIN instances AS i ON i.scan_id = s.id
 	WHERE s.series_uid = ? AND i.sop_instance_uid > ? ORDER BY i.sop_instance_uid LIMIT ?`
 
 // ScanInstances implements tenant.ScanContents.
@@ -324,9 +349,15 @@ func (t *Tenant) ScanInstances(ctx context.Context, seriesUID string, page maste
 			var in tenant.ScanInstance
 			var sum, archived []byte
 			var held int64
-			err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Storage, &in.Key, &in.Offset, &in.Length, &in.Size,
-				&sum, &archived, &held)
+			var stored string
+			var p label.Path
+			err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Storage, &stored, &p.Subject, &p.Session, &p.Scan,
+				&in.Offset, &in.Length, &in.Size, &sum, &archived, &held)
+			if err != nil {
+				return in, err
+			}
 			in.SHA256, in.ArchivedSHA256, in.Held = sqlkit.ToSHA256(sum), sqlkit.ToSHA256(archived), fromMicros(held)
+			in.Key, err = tenant.InstanceKey(p, in.SOPInstanceUID, stored)
 			return in, err
 		})
 	if err != nil {

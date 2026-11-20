@@ -28,8 +28,9 @@ const (
 
 // mark is one last-use write waiting for the worker.
 type mark struct {
-	keyID string
-	at    time.Time
+	keyID   string
+	at      time.Time
+	address string
 }
 
 // MarkStats counts what became of the last-use marks since New. A check
@@ -66,7 +67,10 @@ func needsMark(lastUsed, now time.Time) bool {
 // queue is full, or Close has begun, the mark is dropped and counted. The
 // mark is to within a minute anyway, and the next request with the key asks
 // again, so a drop delays the mark and never the request.
-func (a *Access) queueMark(k master.Key, at time.Time) {
+//
+// address is the caller's address as the request's audit entry records it,
+// written beside the time (master.Store.MarkKeyUsed).
+func (a *Access) queueMark(k master.Key, at time.Time, address string) {
 	if !needsMark(k.LastUsed, at) {
 		return
 	}
@@ -77,7 +81,7 @@ func (a *Access) queueMark(k master.Key, at time.Time) {
 		return
 	}
 	select {
-	case a.marks <- mark{keyID: k.ID, at: at}:
+	case a.marks <- mark{keyID: k.ID, at: at, address: address}:
 	default:
 		a.markAcct.add(markDropped, 1)
 	}
@@ -119,7 +123,7 @@ func (a *Access) writeMark(m mark) {
 	}
 	ctx, cancel := context.WithTimeout(a.workCtx, markTimeout)
 	defer cancel()
-	if _, err := a.store.MarkKeyUsed(ctx, m.keyID, m.at); err != nil {
+	if _, err := a.store.MarkKeyUsed(ctx, m.keyID, m.at, m.address); err != nil {
 		a.markAcct.resolve(markFailed, 1)
 		if !errors.Is(err, context.Canceled) {
 			a.log.Warn("access: a key's last use was not recorded", "key_id", m.keyID, "kind", fault.KindOf(err).String(), "error", err)

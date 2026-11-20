@@ -285,6 +285,32 @@ func (h *Header) Lookup(t naming.Tag) (string, bool) {
 	return trimValue(e.VR, filereader.DecodeText(e.VR, e.Value, h.encodings)), true
 }
 
+// The attributes the catalog keeps of a file's scan and session (PS3.6
+// Table 6-1): the session's Study Date and the scan's Modality, Series
+// Description and Series Number. Each is a study's or a series's
+// attribute, the same in every file of the scan by the standard (PS3.3
+// C.7.2.1, C.7.3.1), so one file's header says it.
+var (
+	tagStudyDate         = naming.NewTag(0x0008, 0x0020)
+	tagModality          = naming.NewTag(0x0008, 0x0060)
+	tagSeriesDescription = naming.NewTag(0x0008, 0x103E)
+	tagSeriesNumber      = naming.NewTag(0x0020, 0x0011)
+)
+
+// CatalogText returns the text of the attributes the catalog keeps of the
+// file's scan and session, each as Lookup decodes it, under the file's
+// character set with its padding removed, and empty when absent; the
+// catalog's values are made from them (tenant.ScanValuesOf), by the
+// reception that archives the file and by the pass that fills in a scan
+// archived before the catalog kept them, alike.
+func (h *Header) CatalogText() (studyDate, modality, seriesDescription, seriesNumber string) {
+	text := func(t naming.Tag) string {
+		v, _ := h.Lookup(t)
+		return v
+	}
+	return text(tagStudyDate), text(tagModality), text(tagSeriesDescription), text(tagSeriesNumber)
+}
+
 // DICOMJSON returns the data set in the DICOM JSON Model (PS3.18 Annex F),
 // without the file meta information and without the values left in the file
 // as bulk data, which have no Value member. The members are in the order of

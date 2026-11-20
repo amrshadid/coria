@@ -11,9 +11,9 @@
 # prints each package with all its hashes in the form pip install
 # --require-hashes reads. Copy the output under the file's header comment.
 #
-#   scripts/requirements/hash.sh <name> [python]     name: check-seal, check-server, proto, prove-reception
+#   scripts/requirements/hash.sh <name> [python]     name: check-seal, check-server, client-python, proto, prove-reception, prove-reading
 set -euo pipefail
-name="${1:?usage: scripts/requirements/hash.sh <name> [python], name being check-seal, check-server, proto or prove-reception}"
+name="${1:?usage: scripts/requirements/hash.sh <name> [python], name being check-seal, check-server, client-python, proto, prove-reception or prove-reading}"
 py="${2:-python3}"
 file="$(dirname "$0")/$name.txt"
 [ -f "$file" ] || { echo "hash.sh: no $file" >&2; exit 2; }
@@ -33,6 +33,13 @@ for version in 3.12 3.13 3.14; do
 	"$py" -m pip download --quiet --no-deps --only-binary=:all: \
 		--platform manylinux_2_34_x86_64 --platform manylinux_2_28_x86_64 \
 		--platform manylinux_2_17_x86_64 --platform manylinux2014_x86_64 \
+		--python-version "$version" --implementation cp -d "$dir" "${packages[@]}"
+	# macOS wheels as well, so a person on a Mac with any of these versions
+	# installs with the hashes, not only one who has this script's interpreter.
+	"$py" -m pip download --quiet --no-deps --only-binary=:all: \
+		--platform macosx_11_0_universal2 --platform macosx_11_0_arm64 \
+		--platform macosx_10_14_universal2 --platform macosx_10_13_x86_64 \
+		--platform macosx_10_9_x86_64 --platform macosx_10_9_universal2 \
 		--python-version "$version" --implementation cp -d "$dir" "${packages[@]}"
 done
 "$py" -m pip download --quiet --no-deps --only-binary=:all: -d "$dir" "${packages[@]}"

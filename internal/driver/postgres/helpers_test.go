@@ -372,25 +372,39 @@ func (e *cenv) scalar(query string, args ...any) int64 {
 
 // checkTotals fails unless the catalog's and the quarantine's running
 // totals equal counts over their rows, each scan's counts equal its
-// instances, and no claim is held by a reception that ended, is not
-// identified, or is not there.
+// instances, each session's its scans and their instances, each subject's
+// its sessions and their instances, a session's modalities are exactly
+// those of its scans, and no claim is held by a reception that ended, is
+// not identified, or is not there.
 func (e *cenv) checkTotals(when string) {
 	e.t.Helper()
 	for _, c := range []struct{ what, query string }{
 		{"the catalog's totals disagree with its rows", `SELECT count(*) FROM catalog_totals WHERE
 			subjects <> (SELECT count(*) FROM subjects) OR sessions <> (SELECT count(*) FROM sessions) OR
-			scans <> (SELECT count(*) FROM scans) OR instances <> (SELECT count(*) FROM instances WHERE state = 'held')`},
+			scans <> (SELECT count(*) FROM scans) OR instances <> (SELECT count(*) FROM instances)`},
 		{"scans' counts disagree with their instances", `SELECT count(*) FROM scans s WHERE
 			instances <> (SELECT count(*) FROM instances i WHERE i.scan_id = s.id) OR
 			bytes <> (SELECT coalesce(sum(size), 0) FROM instances i WHERE i.scan_id = s.id)`},
+		{"sessions' counts disagree with their scans", `SELECT count(*) FROM sessions s WHERE
+			scan_count <> (SELECT count(*) FROM scans c WHERE c.session_id = s.id) OR
+			instance_count <> (SELECT count(*) FROM instances i JOIN scans c ON c.id = i.scan_id WHERE c.session_id = s.id) OR
+			bytes <> (SELECT coalesce(sum(i.size), 0) FROM instances i JOIN scans c ON c.id = i.scan_id WHERE c.session_id = s.id)`},
+		{"subjects' counts disagree with their sessions", `SELECT count(*) FROM subjects u WHERE
+			session_count <> (SELECT count(*) FROM sessions s WHERE s.subject_id = u.id) OR
+			instance_count <> (SELECT coalesce(sum(instance_count), 0) FROM sessions s WHERE s.subject_id = u.id) OR
+			bytes <> (SELECT coalesce(sum(bytes), 0) FROM sessions s WHERE s.subject_id = u.id)`},
+		{"a session lacks a modality of its scans", `SELECT count(*) FROM (SELECT DISTINCT session_id, modality FROM scans
+			WHERE modality <> '') AS d WHERE NOT EXISTS (SELECT 1 FROM session_modalities m WHERE m.session_id = d.session_id AND m.modality = d.modality)`},
+		{"a session has a modality none of its scans has", `SELECT count(*) FROM session_modalities m
+			WHERE NOT EXISTS (SELECT 1 FROM scans c WHERE c.session_id = m.session_id AND c.modality = m.modality)`},
 		{"the quarantine's totals disagree with its records", `SELECT count(*) FROM quarantine_totals WHERE
 			files <> (SELECT count(*) FROM quarantine WHERE state = 'held') OR
 			bytes <> (SELECT coalesce(sum(size), 0) FROM quarantine WHERE state = 'held' AND content_kept)`},
-		{"claims are held by receptions that ended or are not archiving", `SELECT count(*) FROM instances i
-			LEFT JOIN receptions r ON r.id = i.reception_id WHERE i.state = 'claimed' AND (r.id IS NULL OR r.ended OR r.storage = '')`},
+		{"claims are held by receptions that ended or are not archiving", `SELECT count(*) FROM instance_claims i
+			LEFT JOIN receptions r ON r.id = i.reception_id WHERE r.id IS NULL OR r.ended OR r.storage = ''`},
 		{"receptions' archived counts disagree with what they confirmed", `SELECT count(*) FROM receptions r WHERE
-			files_archived <> (SELECT count(*) FROM instances i WHERE i.reception_id = r.id AND i.state = 'held') OR
-			bytes_archived <> (SELECT coalesce(sum(size), 0) FROM instances i WHERE i.reception_id = r.id AND i.state = 'held')`},
+			files_archived <> (SELECT count(*) FROM instances i WHERE i.reception_id = r.id) OR
+			bytes_archived <> (SELECT coalesce(sum(size), 0) FROM instances i WHERE i.reception_id = r.id)`},
 		{"a study's arrivals are not numbered 1 to n", `SELECT count(*) FROM (SELECT study_uid FROM receptions GROUP BY study_uid
 			HAVING max(arrival) <> count(*) OR min(arrival) <> 1 OR count(DISTINCT arrival) <> count(*)) AS bad`},
 		{"a reception done breaks received = archived + duplicate + quarantined", `SELECT count(*) FROM receptions WHERE state = 'done' AND

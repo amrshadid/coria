@@ -165,10 +165,19 @@ func removeStale(path string) error {
 // minimum, stated here so a change of default cannot lower it), with Go's
 // default cipher suites and key exchanges, which include the post-quantum
 // hybrid since Go 1.24.
+//
+// A client certificate is asked for and never required
+// (tls.RequestClientCert), and not checked against any authority: a key
+// that must come with one names the certificate by its SHA-256, which the
+// check compares, so the pin is the trust and no authority is needed. The
+// handshake still proves the client holds the certificate's private key
+// (its CertificateVerify, RFC 8446 4.4.3, which Go verifies whenever a
+// certificate is sent). A client that sends none connects as before.
 func tlsConfig(cert tls.Certificate) *tls.Config {
 	return &tls.Config{
 		MinVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequestClientCert,
 	}
 }
 

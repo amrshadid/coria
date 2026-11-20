@@ -52,14 +52,14 @@ const (
 	// scanLabelsSQL reads the labels of the scans of a list of series: the
 	// scans' unique index on series_uid.
 	scanLabelsSQL = `SELECT series_uid, label FROM scans WHERE series_uid IN (SELECT value FROM json_each(?))`
-	// receptionScansSQL reads the scans a reception confirmed instances in:
-	// instances_held_by, and the scans' primary key.
-	receptionScansSQL = `SELECT s.label, s.series_uid, count(*), sum(i.size) FROM instances AS i
-		JOIN scans AS s ON s.id = i.scan_id WHERE i.reception_id = ? AND i.state = 'held'
-		GROUP BY s.id ORDER BY s.label LIMIT ?`
-	// storageHoldsSQL asks whether a storage holds an instance:
-	// instances_on_storage.
-	storageHoldsSQL = `SELECT 1 FROM instances WHERE storage = ? AND state = 'held' LIMIT 1`
+	// receptionScansSQL reads the scans a reception confirmed instances in,
+	// with its running totals of each: reception_scans' primary key, and
+	// the scans' primary key.
+	receptionScansSQL = `SELECT s.label, s.series_uid, r.instances, r.bytes FROM reception_scans AS r
+		JOIN scans AS s ON s.id = r.scan_id WHERE r.reception_id = ? ORDER BY s.label LIMIT ?`
+	// storageHoldsSQL asks whether a storage holds an instance, which is
+	// whether a scan on it holds one: scans_by_storage.
+	storageHoldsSQL = `SELECT 1 FROM scans WHERE storage = ? AND instances > 0 LIMIT 1`
 	// sessionsOnStorageSQL asks whether a session names a storage, where
 	// every later arrival of it is archived: sessions_by_storage.
 	sessionsOnStorageSQL = `SELECT 1 FROM sessions WHERE storage = ? LIMIT 1`
@@ -71,6 +71,6 @@ const (
 		AND NOT EXISTS (SELECT 1 FROM work AS w WHERE w.reception_id = p.id AND w.state IN ('queued', 'leased'))
 		ORDER BY p.started, p.id LIMIT ?`
 	// releaseClaimedSQL releases a reception's claims not confirmed:
-	// instances_claimed. A held row is never in its condition.
-	releaseClaimedSQL = `DELETE FROM instances WHERE reception_id = ? AND state = 'claimed'`
+	// instance_claims_by_reception. A held instance is in another table.
+	releaseClaimedSQL = `DELETE FROM instance_claims WHERE reception_id = ?`
 )

@@ -209,6 +209,30 @@ type ScanInstance struct {
 	Held time.Time
 }
 
+// ScanValueFill gives the catalog the header values a scan was archived
+// without.
+type ScanValueFill interface {
+	// FillScanValues gives the scan of the series, and its session, the
+	// values of v they hold empty, by the rule a commit follows
+	// (ScanValues): a value held is never changed, so a call with values a
+	// row has already, or with none, changes nothing. A modality given to
+	// the scan is added to its session's modalities. No total and no
+	// update time moves: no instance is added. It is for a scan archived
+	// before the catalog kept these values, whose files still say them. A
+	// series with no scan is NotFound; v must pass ScanValues.Validate
+	// (Invalid otherwise).
+	FillScanValues(ctx context.Context, seriesUID string, v ScanValues) error
+}
+
+// ValidateFillScanValues returns an Invalid error unless a FillScanValues
+// call is well formed.
+func ValidateFillScanValues(seriesUID string, v ScanValues) error {
+	if err := ValidateSeriesUID(seriesUID); err != nil {
+		return err
+	}
+	return v.Validate()
+}
+
 // ValidateSeriesUID returns an Invalid error unless s is a Series Instance
 // UID (PS3.5 9.1).
 func ValidateSeriesUID(s string) error { return validateUID("Series Instance UID", s) }
@@ -223,4 +247,6 @@ type PipelineParts interface {
 	WorkClaims
 	WorkReclaim
 	ScanContents
+	CatalogReads
+	ScanValueFill
 }

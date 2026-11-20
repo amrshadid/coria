@@ -120,14 +120,14 @@ func BenchAppendAudit(b *testing.B, open Open) {
 func BenchMarkKeyUsedNoWrite(b *testing.B, open Open) {
 	s, id := benchStore(b, open)
 	ctx := context.Background()
-	if wrote, err := s.MarkKeyUsed(ctx, id, T0); err != nil || !wrote {
+	if wrote, err := s.MarkKeyUsed(ctx, id, T0, ""); err != nil || !wrote {
 		b.Fatalf("the first MarkKeyUsed = %v, %v; want a write", wrote, err)
 	}
 	at := T0.Add(30 * time.Second)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		wrote, err := s.MarkKeyUsed(ctx, id, at)
+		wrote, err := s.MarkKeyUsed(ctx, id, at, "")
 		if err != nil || wrote {
 			b.Fatalf("MarkKeyUsed = %v, %v; want no write", wrote, err)
 		}

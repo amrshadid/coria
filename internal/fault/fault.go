@@ -46,6 +46,14 @@ const (
 	// reached: a message over the size limit, or too many streams open at
 	// once.
 	Exhausted
+	// DataLoss is archived data found missing or damaged: a file gone from
+	// its storage, or bytes that do not match the SHA-256 recorded when
+	// they were archived. It is the archive's failure, not the caller's,
+	// and sending the request again fails again until the file is mended
+	// from another copy; it is a kind of its own, apart from Internal, so
+	// the caller is told which file's scan to mend rather than "internal
+	// error".
+	DataLoss
 )
 
 // String returns the kind's name in lowercase, as it appears in a log.
@@ -71,6 +79,8 @@ func (k Kind) String() string {
 		return "out of range"
 	case Exhausted:
 		return "exhausted"
+	case DataLoss:
+		return "data loss"
 	}
 	return "Kind(" + strconv.Itoa(int(k)) + ")"
 }

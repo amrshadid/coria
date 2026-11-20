@@ -17,6 +17,7 @@ import (
 
 	"github.com/amrshadid/coria/internal/driver/sqlkit"
 	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // testMigrations are migrations that fail if run twice: the first makes a
@@ -396,5 +397,157 @@ func TestMigrateHelperProcess(t *testing.T) {
 	v, err := migrateAt(context.Background(), address, testMigrations(t, ""), time.Unix(0, startNano))
 	if err != nil || v != 5 {
 		t.Fatalf("Migrate = %d, %v; want 5", v, err)
+	}
+}
+
+// TestCatalogReadsMigrationFillsRows guards the migration that gives the
+// catalog what its reads need, on a database that holds a catalog already
+// (the rows tenanttest.CheckMigratedCatalog describes): each session and
+// scan gets its parents' labels and its storage, the receiver of the
+// reception that confirmed its first instance, and running totals equal to
+// a count of the instances its scans hold; each subject its sessions,
+// instances, bytes and last update; and the lists by label, which read
+// those columns, answer the rows in their order.
+func TestCatalogReadsMigrationFillsRows(t *testing.T) {
+	ctx := context.Background()
+	address := newSchema(t)
+	s, err := OpenTenant(ctx, address, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.migrate(ctx, tenantMigrations[:7]); err != nil {
+		t.Fatal(err)
+	}
+	at := func(us int) string { return fmt.Sprintf(`timestamptz 'epoch' + %d * interval '1 microsecond'`, us) }
+	reception := func(id, receiver, study string, arrival int) string {
+		return fmt.Sprintf(`INSERT INTO receptions VALUES ('%s', '%s', '%s', %d, 'done', true, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			'', '', 'store', '', now(), now(), now(), now(), 0, '[]', false, '', '', '', NULL)`, id, receiver, study, arrival)
+	}
+	held := func(uid, study, series, rc string, scan, size, us int) string {
+		return fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', sha256('%s'::bytea), '%s', %d, 'store', 'k/%s', 0, %d, %d,
+			sha256('%s'::bytea), %s, %s)`, uid, study, series, uid, rc, scan, uid, size, size, uid, at(us), at(us))
+	}
+	mustExec(t, admin(t, address),
+		reception("rc1", "recv-x", "2.25.1.1", 1), reception("rc2", "recv-y", "2.25.1.2", 1), reception("rc3", "recv-y", "2.25.1.3", 1),
+		reception("rc4", "recv-z", "2.25.1.1", 2),
+		`INSERT INTO subjects (id, label, folded, created) OVERRIDING SYSTEM VALUE VALUES (1, 'Sub-A', 'sub-a', `+at(100)+`),
+			(2, 'sub-b', 'sub-b', `+at(200)+`), (3, 'sub-c', 'sub-c', `+at(300)+`)`,
+		`INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created) OVERRIDING SYSTEM VALUE VALUES
+			(1, '2.25.1.1', 1, 'ses-1', 'ses-1', 'store', `+at(100)+`), (2, '2.25.1.2', 1, 'ses-2', 'ses-2', 'store', `+at(150)+`),
+			(3, '2.25.1.3', 2, 'ses-1', 'ses-1', 'store', `+at(200)+`)`,
+		`INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated)
+			OVERRIDING SYSTEM VALUE VALUES (1, 1, '2.25.2.1', 'scan-1', 'scan-1', 2, 30, NULL, `+at(100)+`, `+at(120)+`),
+			(2, 1, '2.25.2.2', 'scan-2', 'scan-2', 1, 5, NULL, `+at(110)+`, `+at(110)+`),
+			(3, 2, '2.25.2.3', 'scan-1', 'scan-1', 1, 7, NULL, `+at(150)+`, `+at(160)+`),
+			(4, 3, '2.25.2.4', 'scan-1', 'scan-1', 1, 9, NULL, `+at(200)+`, `+at(200)+`)`,
+		held("2.25.3.2", "2.25.1.1", "2.25.2.1", "rc4", 1, 20, 120), held("2.25.3.1", "2.25.1.1", "2.25.2.1", "rc1", 1, 10, 100),
+		held("2.25.3.3", "2.25.1.1", "2.25.2.2", "rc1", 2, 5, 110), held("2.25.3.4", "2.25.1.2", "2.25.2.3", "rc2", 3, 7, 150),
+		held("2.25.3.5", "2.25.1.3", "2.25.2.4", "rc3", 4, 9, 200),
+		`INSERT INTO instances VALUES ('2.25.3.9', '2.25.1.1', '2.25.2.1', 'claimed', sha256('x'::bytea), 'rc4', NULL, '', '', 0, 0, 0,
+			NULL, now(), NULL)`)
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tenanttest.CheckMigratedCatalog(t, s, microsTime)
+}
+
+// TestLeanCatalogMigrationKeepsRows guards the migration that moves claims
+// into their own table, writes held instances once without the key and
+// checksum other rows give, counts each reception's scans, and removes the
+// received files of receptions that ended done or quarantined, on a
+// database that holds each kind of row already (tenanttest.CheckLeanCatalog
+// describes them and reads them back).
+func TestLeanCatalogMigrationKeepsRows(t *testing.T) {
+	ctx := context.Background()
+	address := newSchema(t)
+	s, err := OpenTenant(ctx, address, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.migrate(ctx, tenantMigrations[:8]); err != nil {
+		t.Fatal(err)
+	}
+	reception := func(id string, arrival int, state string, ended bool) string {
+		return fmt.Sprintf(`INSERT INTO receptions VALUES ('%s', 'recv', '%s', %d, '%s', %t, 1, 10, 0, 0, 0, 0, 0, 0, 0,
+			'Sub-A', 'ses-1', 'store', '', now(), now(), now(), %s, 0, '[]', false, '', '', '', NULL)`,
+			id, tenanttest.LeanStudy, arrival, state, ended, map[bool]string{true: "now()", false: "NULL"}[ended])
+	}
+	sum := func(uid string) string { return fmt.Sprintf("sha256('%s'::bytea)", uid) }
+	received := func(id string) string {
+		return fmt.Sprintf(`INSERT INTO received_files VALUES ('%s', '%s', %s, '%s', '%s', '1.2.840.10008.5.1.4.1.1.4', '1.2.840.10008.1.2.1',
+			10, 'in/%s', '', '', '', '', false, now())`, id, tenanttest.LeanReceivedUID, sum(tenanttest.LeanReceivedUID), tenanttest.LeanSeries,
+			tenanttest.LeanStudy, id)
+	}
+	mustExec(t, admin(t, address),
+		reception(tenanttest.LeanDone, 1, "done", true), reception(tenanttest.LeanQuarantined, 2, "quarantined", true),
+		reception(tenanttest.LeanFailed, 3, "failed", true), reception(tenanttest.LeanOpen, 4, "identified", false),
+		`INSERT INTO subjects (id, label, folded, created) OVERRIDING SYSTEM VALUE VALUES (1, 'Sub-A', 'sub-a', now())`,
+		`INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created, subject_label, subject_folded)
+			OVERRIDING SYSTEM VALUE VALUES (1, '`+tenanttest.LeanStudy+`', 1, 'ses-1', 'ses-1', 'store', now(), 'Sub-A', 'sub-a')`,
+		`INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated,
+			subject_label, subject_folded, session_label, session_folded, storage)
+			OVERRIDING SYSTEM VALUE VALUES (1, 1, '`+tenanttest.LeanSeries+`', 'scan-1', 'scan-1', 2, 30, NULL, now(), now(),
+			'Sub-A', 'sub-a', 'ses-1', 'ses-1', 'store')`,
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', %s, '%s', 1, 'store', 'data/Sub-A/ses-1/scan-1/%s.dcm', 0, 10, 10,
+			%s, now(), now())`, tenanttest.LeanLayoutUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanLayoutUID),
+			tenanttest.LeanDone, tenanttest.LeanLayoutUID, sum(tenanttest.LeanLayoutUID)),
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', %s, '%s', 1, 'store', '%s', 0, 20, 20, %s, now(), now())`,
+			tenanttest.LeanKeptUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanKeptUID), tenanttest.LeanDone,
+			tenanttest.LeanKeptKey, sum(tenanttest.LeanKeptUID+"x")),
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'claimed', %s, '%s', NULL, '', '', 0, 0, 0, NULL, now(), NULL)`,
+			tenanttest.LeanClaimedUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanClaimedUID), tenanttest.LeanOpen),
+		received(tenanttest.LeanDone), received(tenanttest.LeanQuarantined), received(tenanttest.LeanFailed), received(tenanttest.LeanOpen))
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tenanttest.CheckLeanCatalog(t, s)
+	var kept string
+	if err := admin(t, address).QueryRow(ctx, `SELECT string_agg(sop_instance_uid || ':' || storage_key || ':' ||
+		(archived_sha256 IS NULL), ' ' ORDER BY sop_instance_uid) FROM instances`).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if want := tenanttest.LeanLayoutUID + "::true " + tenanttest.LeanKeptUID + ":" + tenanttest.LeanKeptKey + ":false"; kept != want {
+		t.Errorf("the migrated rows keep %q, want %q: only a key and a checksum no other row gives", kept, want)
+	}
+}
+
+// TestLeanCatalogMigrationRefusesAMismatchedStorage guards the migration
+// that drops each instance's own storage and reads its scan's: a database
+// at the schema before it, where a held instance is on another storage
+// than its scan, is refused with a message that says why, and is left at
+// the schema it was at, with its rows as they were.
+func TestLeanCatalogMigrationRefusesAMismatchedStorage(t *testing.T) {
+	ctx := context.Background()
+	address := newSchema(t)
+	s, err := OpenTenant(ctx, address, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.migrate(ctx, tenantMigrations[:8]); err != nil {
+		t.Fatal(err)
+	}
+	conn := admin(t, address)
+	mustExec(t, conn,
+		`INSERT INTO subjects (id, label, folded, created) OVERRIDING SYSTEM VALUE VALUES (1, 'sub-a', 'sub-a', now())`,
+		`INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created) OVERRIDING SYSTEM VALUE
+			VALUES (1, '2.25.1.1', 1, 'ses-1', 'ses-1', 'store', now())`,
+		`INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated, storage)
+			OVERRIDING SYSTEM VALUE VALUES (1, 1, '2.25.2.1', 'scan-1', 'scan-1', 1, 10, NULL, now(), now(), 'store')`,
+		`INSERT INTO instances VALUES ('2.25.3.1', '2.25.1.1', '2.25.2.1', 'held', sha256('a'::bytea), 'rc', 1, 'elsewhere', 'k', 0, 10, 10,
+			sha256('a'::bytea), now(), now())`)
+	err = s.Migrate(ctx)
+	if err == nil || !strings.Contains(err.Error(), "a held instance is on a different storage than its scan") {
+		t.Fatalf("migrating with a mismatched storage: %v, want a refusal that names it", err)
+	}
+	var version, held int
+	if err := conn.QueryRow(ctx, `SELECT (SELECT max(version) FROM schema_migrations),
+		(SELECT count(*) FROM instances WHERE state = 'held' AND storage = 'elsewhere')`).Scan(&version, &held); err != nil {
+		t.Fatal(err)
+	}
+	if version != 8 || held != 1 {
+		t.Errorf("after the refusal the schema is at %d with %d rows on the other storage, want 8 and 1", version, held)
 	}
 }

@@ -51,6 +51,8 @@ type Store struct {
 	closeErr  error
 	durable   durableDirs
 	listing   dirCache
+	// readOnly is set by OpenForReading: Put and Delete are refused.
+	readOnly bool
 	steps
 }
 
@@ -107,8 +109,47 @@ func Open(dirPath string) (*Store, error) {
 	return open(dirPath, realSteps())
 }
 
+// OpenForReading opens the storage at the directory path for Read, Stat,
+// List and Usage only; Put and Delete are refused. It writes nothing: no
+// temporary directory is made, no file is probed and nothing a crash left
+// is removed. Open removes every file in the temporary directory, which is
+// right for the one store that writes after a crash and wrong for a reader
+// opened beside it: a reader's open would remove the temporary file of a
+// Put in progress, or the probe file of another Open, and fail that Put or
+// that Open. A read must not need the right to write either. It refuses
+// what Open refuses about the path itself: a path that does not exist or
+// is not a directory.
+func OpenForReading(dirPath string) (*Store, error) {
+	s, err := openRoot(dirPath, realSteps())
+	if err != nil {
+		return nil, err
+	}
+	s.readOnly = true
+	return s, nil
+}
+
+// errReadOnly answers a Put or a Delete on a store opened for reading: the
+// caller's mistake, never the storage's.
+var errReadOnly = fault.New(fault.Internal, "the storage was opened for reading only")
+
 // open is Open with the steps given, for a test that watches them.
 func open(dirPath string, st steps) (*Store, error) {
+	s, err := openRoot(dirPath, st)
+	if err != nil {
+		return nil, err
+	}
+	for _, step := range []func() error{s.prepareTemp, s.checkDirSync, s.probe, s.cleanTemp} {
+		if err := step(); err != nil {
+			_ = s.root.Close() // The step's error is the one that matters.
+			return nil, err
+		}
+	}
+	return s, nil
+}
+
+// openRoot opens the directory at dirPath as a store's root, changing
+// nothing in it.
+func openRoot(dirPath string, st steps) (*Store, error) {
 	s := &Store{steps: st}
 	s.rootPaths = []string{dirPath}
 	if abs, err := filepath.Abs(dirPath); err == nil && abs != dirPath {
@@ -130,12 +171,6 @@ func open(dirPath string, st steps) (*Store, error) {
 	s.root = root
 	s.durable.init()
 	s.listing.init()
-	for _, step := range []func() error{s.prepareTemp, s.checkDirSync, s.probe, s.cleanTemp} {
-		if err := step(); err != nil {
-			_ = root.Close() // The step's error is the one that matters.
-			return nil, err
-		}
-	}
 	return s, nil
 }
 
@@ -230,6 +265,15 @@ func (s *Store) Close() error {
 	return s.closeErr
 }
 
+// beginWrite is begin for a call that writes, which a store opened for
+// reading refuses.
+func (s *Store) beginWrite(ctx context.Context) error {
+	if s.readOnly {
+		return errReadOnly
+	}
+	return s.begin(ctx)
+}
+
 // begin refuses a call on a closed store or with an ended context.
 func (s *Store) begin(ctx context.Context) error {
 	if s.closed.Load() {
@@ -247,7 +291,7 @@ func (s *Store) begin(ctx context.Context) error {
 // symbolic link where the object would be is not an object, and is left
 // alone.
 func (s *Store) Delete(ctx context.Context, key string) error {
-	if err := s.begin(ctx); err != nil {
+	if err := s.beginWrite(ctx); err != nil {
 		return err
 	}
 	if err := blob.CheckKey(key); err != nil {

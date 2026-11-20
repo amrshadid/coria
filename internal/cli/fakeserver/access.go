@@ -66,7 +66,8 @@ func (h accessHandler) CreateKey(_ context.Context, req *v1.CreateKeyRequest) (*
 	}
 	s.nextKey++
 	id := fmt.Sprintf("k%011d", s.nextKey)
-	key := &v1.Key{Id: id, Holder: req.GetHolder(), CreateTime: timestamppb.New(created)}
+	key := &v1.Key{Id: id, Holder: req.GetHolder(), CreateTime: timestamppb.New(created),
+		Networks: req.GetNetworks(), ClientCertSha256: req.GetClientCertSha256()}
 	if _, never := req.GetExpiry().(*v1.CreateKeyRequest_NeverExpire); !never {
 		key.ExpireTime = timestamppb.New(expire)
 	}

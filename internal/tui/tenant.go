@@ -30,6 +30,7 @@ func tenantActions(name string) []action {
 		{key: "r", help: "receivers", do: open(newReceiverList)},
 		{key: "e", help: "receptions", do: open(newReceptionList)},
 		{key: "h", help: "quarantine", do: open(newQuarantineList)},
+		{key: "c", help: "catalog", do: open(newSubjectList)},
 	}
 }
 
@@ -177,6 +178,14 @@ func newReceiverList(c *ctx, tenant string) (screen, tea.Cmd) {
 		rc, _ := r.ref.(*v1.Receiver)
 		d := detailScreen{base: base{c.newID()}, heading: "Receiver " + clean(rc.GetName()), ref: rc, pairs: func(c *ctx, ref any) []pair {
 			rc, _ := ref.(*v1.Receiver)
+			if st := rc.GetStow(); st != nil {
+				keys := "no key: none is listed"
+				if n := len(st.GetKeyIds()); n > 0 {
+					keys = itoa(int64(n)) + " key(s)"
+				}
+				return []pair{{"Name", rc.GetName()}, {"Type", "stow"}, {"Enabled", strconv.FormatBool(rc.GetEnabled())},
+					{"Health", output.ReceiverHealth(rc.GetHealth())}, {"Takes", keys}, {"Storage", rc.GetStorage()}}
+			}
 			dm := rc.GetDimse()
 			callers := "nobody: no caller is listed"
 			if dm.GetAnyCaller() {

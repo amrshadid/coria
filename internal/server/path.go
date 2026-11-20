@@ -127,6 +127,12 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 		call.Credential = credential(x.authorization, local, isLocal)
 	}
 	call.Facts = access.Request{Method: x.method, RemoteAddress: x.remote, RequestID: id}
+	o, judged := originFrom(ctx)
+	if judged {
+		call.Facts.Local, call.Facts.ClientCert = o.local, o.clientCert
+	} else if _, ok := localFrom(ctx); ok {
+		call.Facts.Local = true
+	}
 
 	if !x.rule.public {
 		var msg proto.Message
@@ -151,6 +157,12 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 				d, cerr := s.access.Check(cctx, call.Credential, req, withFacts(call.Facts, facts))
 				cancel()
 				if cerr != nil {
+					// Counted as any refusal is: a malformed message must
+					// not be a way around the limits on failed calls. The
+					// hold outlives a context the failed read canceled.
+					if wctx := context.WithoutCancel(ctx); judged && s.countFailure(wctx, o, call, cerr) {
+						s.guard.wait(wctx)
+					}
 					return cerr
 				}
 				// The check allowed the caller, whose request then does
@@ -172,6 +184,9 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 		call.Facts = withFacts(call.Facts, facts)
 		d, cerr := s.access.Check(ctx, call.Credential, req, call.Facts)
 		if cerr != nil {
+			if judged && s.countFailure(ctx, o, call, cerr) {
+				s.guard.wait(ctx)
+			}
 			return cerr
 		}
 		call.Decision = d
@@ -206,6 +221,22 @@ func (s *Server) pass(ctx context.Context, x exchange, next func(context.Context
 		s.access.Record(call.Decision, outcome, reason, access.Facts{})
 	}
 	return err
+}
+
+// countFailure counts a request the check refused: by its key when the key
+// was good and lacked the grant (Denied), by its address when the key was
+// no good (Unauthenticated, such as a key revoked since the front step or
+// refused by a network rule). It reports whether the refusal is to be
+// slowed. A request the check allowed is never counted.
+func (s *Server) countFailure(ctx context.Context, o origin, call *Call, err error) bool {
+	switch fault.KindOf(err) {
+	case fault.Denied:
+		return s.failKey(ctx, o, call.Credential.KeyID(), call.Facts)
+	case fault.Unauthenticated:
+		rules, ok := s.guard.current(ctx)
+		return ok && s.failAddress(o, rules, call.Facts)
+	}
+	return false
 }
 
 // The reasons of the entries pass writes for an allowed request that ended

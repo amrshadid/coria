@@ -50,6 +50,8 @@ func (p *Pipeline) Start(ctx context.Context) (RecoverReport, error) {
 	for i := range p.cfg.Workers {
 		go p.worker(p.cfg.Owner + "-" + strconv.Itoa(i))
 	}
+	p.wg.Add(1)
+	go p.framePass()
 	p.running.Store(true)
 	if rep.Missing > 0 || rep.Rechecked > 0 || rep.Removed > 0 {
 		p.log.Info("the incoming area was reconciled", "rechecked", rep.Rechecked, "renamed", rep.Renamed,

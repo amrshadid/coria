@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 )
@@ -193,7 +194,24 @@ func keyMessage(k master.Key) *v1.Key {
 		ExpireTime:  timestamp(k.Expires),
 		LastUseTime: timestamp(k.LastUsed),
 		RevokeTime:  timestamp(k.Revoked),
+
+		Networks:         networkTexts(k.Rules.Networks),
+		ClientCertSha256: k.Rules.ClientCert,
+		LastUseAddress:   k.LastAddress,
+		SuccessorId:      k.Successor,
 	}
+}
+
+// networkTexts returns each network as the contract writes it.
+func networkTexts(n settings.Networks) []string {
+	if len(n) == 0 {
+		return nil
+	}
+	out := make([]string, len(n))
+	for i, p := range n {
+		out[i] = settings.FormatNetwork(p)
+	}
+	return out
 }
 
 // grantMessage returns a grant as the contract writes it.

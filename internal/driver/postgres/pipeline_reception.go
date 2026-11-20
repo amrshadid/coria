@@ -323,7 +323,7 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 			return tenant.StateChanged()
 		}
 		if next.Ended() {
-			if err := releaseClaims(ctx, tx, step.ID); err != nil {
+			if err := endReception(ctx, tx, step.ID, next); err != nil {
 				return err
 			}
 		}
@@ -386,7 +386,7 @@ func giveUp(ctx context.Context, tx pgx.Tx, receptionID string, now time.Time) (
 	if err != nil || n != 1 {
 		return false, err
 	}
-	if err := releaseClaims(ctx, tx, receptionID); err != nil {
+	if err := endReception(ctx, tx, receptionID, next); err != nil {
 		return false, err
 	}
 	// The step's event, last: both callers only read after giving up.
@@ -511,4 +511,19 @@ func receptionsQuery(filter tenant.ReceptionFilter, after *sqlkit.TimePosition, 
 func releaseClaims(ctx context.Context, tx pgx.Tx, receptionID string) error {
 	_, err := tx.Exec(ctx, releaseClaimedSQL, receptionID)
 	return err
+}
+
+// endReception does what a step to an end does besides writing the
+// reception's row: it releases the claims the reception did not confirm and,
+// for an end that is not a failure, removes its received files
+// (tenant.Pipeline's ReceivedFiles says why), in the step's transaction.
+func endReception(ctx context.Context, tx pgx.Tx, receptionID string, state reception.State) error {
+	if err := releaseClaims(ctx, tx, receptionID); err != nil {
+		return err
+	}
+	if !tenant.KeepsReceivedFiles(state) {
+		_, err := tx.Exec(ctx, `DELETE FROM received_files WHERE reception_id = $1`, receptionID)
+		return err
+	}
+	return nil
 }

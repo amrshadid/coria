@@ -23,6 +23,7 @@ var pairs = [...]struct {
 	{fault.Precondition, connect.CodeFailedPrecondition},
 	{fault.OutOfRange, connect.CodeOutOfRange},
 	{fault.Exhausted, connect.CodeResourceExhausted},
+	{fault.DataLoss, connect.CodeDataLoss},
 }
 
 // Code returns the API code that carries a fault kind. A kind the table does
@@ -40,8 +41,9 @@ func Code(kind fault.Kind) connect.Code {
 // Kind returns the fault kind of an API code. Besides the table, it maps the
 // codes any method may answer without the contract naming a kind: a deadline
 // or a cancellation is a failure that may pass on a later try (Unavailable).
-// Every other code is Internal, a failure and exit 1: UNIMPLEMENTED, UNKNOWN,
-// DATA_LOSS and any code a newer server adds. None of them is shown as the
+// Every other code is Internal, a failure and exit 1: UNIMPLEMENTED, UNKNOWN
+// and any code a newer server adds. DATA_LOSS is in the table as DataLoss,
+// which also exits 1, with the server's message naming what to mend. None of them is shown as the
 // caller's mistake, since exit 2 is for what the person typed wrong.
 // RESOURCE_EXHAUSTED is in the table as Exhausted, whether a message was over
 // the size limit or the server had too many streams open: either way the

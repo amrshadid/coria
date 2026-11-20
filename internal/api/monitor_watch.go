@@ -300,6 +300,9 @@ func eventMessage(name string, e tenant.Event) *v1.Event {
 	case *tenant.StorageSpaceChanged:
 		m.Payload = &v1.Event_StorageSpace{StorageSpace: &v1.StorageSpaceChanged{Storage: p.Storage, UsedBytes: p.UsedBytes, FreeBytes: p.FreeBytes,
 			State: v1.StorageSpaceState(word("STORAGE_SPACE_STATE_", string(p.State), v1.StorageSpaceState_value))}}
+	case *tenant.FramesAdded:
+		m.Payload = &v1.Event_FramesAdded{FramesAdded: &v1.FramesAdded{SubjectLabel: p.SubjectLabel, SessionLabel: p.SessionLabel,
+			ScanLabel: p.ScanLabel, Instances: p.Instances, ScansDone: p.ScansDone, InstancesDone: p.InstancesDone, Finished: p.Finished}}
 	}
 	return m
 }

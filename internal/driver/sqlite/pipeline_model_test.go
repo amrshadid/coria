@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -218,7 +219,7 @@ func runModel(t *testing.T, seed int64, shared bool) {
 		t.Helper()
 		var a, b, c, d string
 		_ = db.QueryRow(`SELECT subjects||','||sessions||','||scans||','||instances FROM catalog_totals`).Scan(&a)
-		_ = db.QueryRow(`SELECT (SELECT count(*) FROM subjects)||','||(SELECT count(*) FROM sessions)||','||(SELECT count(*) FROM scans)||','||(SELECT count(*) FROM instances WHERE state = 'held')`).Scan(&b)
+		_ = db.QueryRow(`SELECT (SELECT count(*) FROM subjects)||','||(SELECT count(*) FROM sessions)||','||(SELECT count(*) FROM scans)||','||(SELECT count(*) FROM instances)`).Scan(&b)
 		if a != b {
 			t.Fatalf("seed %d after %s: totals %s, rows %s", seed, op, a, b)
 		}
@@ -227,12 +228,13 @@ func runModel(t *testing.T, seed int64, shared bool) {
 		if c != "0" {
 			t.Fatalf("seed %d after %s: %s scans whose counts disagree with their rows", seed, op, c)
 		}
-		_ = db.QueryRow(`SELECT count(*) FROM instances i LEFT JOIN receptions r ON r.id = i.reception_id
-			WHERE i.state = 'claimed' AND (r.id IS NULL OR r.ended = 1 OR r.storage = '')`).Scan(&d)
+		_ = db.QueryRow(`SELECT count(*) FROM instance_claims i LEFT JOIN receptions r ON r.id = i.reception_id
+			WHERE r.id IS NULL OR r.ended = 1 OR r.storage = ''`).Scan(&d)
 		if d != "0" {
 			t.Fatalf("seed %d after %s: %s claims by ended or missing receptions", seed, op, d)
 		}
-		rows, err := db.Query(`SELECT sop_instance_uid, state, sha256, reception_id FROM instances`)
+		rows, err := db.Query(`SELECT sop_instance_uid, 'held', sha256, reception_id FROM instances
+			UNION ALL SELECT sop_instance_uid, 'claimed', sha256, reception_id FROM instance_claims`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -602,23 +604,35 @@ func runModel(t *testing.T, seed int64, shared bool) {
 // catalog's totals, each scan's counts, each reception's archived counts
 // and the count identity of each reception done equal the model's; no claim
 // is left by a reception that ended. Each operation is a synced commit, so a
-// seed takes about half a second: 20 seeds run here, and all 150 in
-// TestPipelineModelAllSeeds. Under the race detector, which slows each seed
+// seed takes about half a second: 8 seeds run here (four on one store, four
+// on two), and all 150 in TestPipelineModelAllSeeds. Under the race detector, which slows each seed
 // several times over, 6 run (three on one store, three on two): the detector
 // is there to see the two stores' goroutines, not to widen the model, and the
 // package has to fit the time a test run is given.
 func TestPipelineModel(t *testing.T) {
-	last := int64(20)
+	last := int64(8)
 	if raceDetector {
 		last = 6
 	}
 	runSeeds(t, 1, last)
 }
 
-// TestPipelineModelAllSeeds runs the model's 150 seeds, in the run made for
-// tests that take long (make test-scale).
+// allSeedsEnv is the variable that makes TestPipelineModelAllSeeds run.
+const allSeedsEnv = "CORIA_TEST_ALL_SEEDS"
+
+// TestPipelineModelAllSeeds runs the model's 150 seeds, which take minutes,
+// when allSeedsEnv is set (make test-scale sets it, and CI runs that). The
+// race detector slows each seed several times over, so the run is made
+// without it.
 func TestPipelineModelAllSeeds(t *testing.T) {
-	skipScale(t)
+	switch {
+	case testing.Short():
+		t.Skip("150 seeds: skipped under -short")
+	case os.Getenv(allSeedsEnv) == "":
+		t.Skip("150 seeds: set " + allSeedsEnv + "=1 (make test-scale does)")
+	case raceDetector:
+		t.Skip("150 seeds: run without the race detector")
+	}
 	runSeeds(t, 1, 150)
 }
 

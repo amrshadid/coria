@@ -49,6 +49,7 @@ func (s monitorService) GetStatus(ctx context.Context, req *v1.GetStatusRequest)
 			out.Tenants = append(out.Tenants, c.tenantStatus(ctx, t.Name, st))
 		}
 		out.NextPageToken = next
+		out.ExpiringKeys = c.expiringKeys(ctx)
 		out.Time = timestamp(c.now())
 		c.done(d, nil)
 		return out, nil

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -8,6 +10,7 @@ import (
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/master"
 )
@@ -40,14 +43,7 @@ type Methods struct{}
 // requirement depends on the request, or nil when the requirement is fixed,
 // so the server need not read the body of a request it may refuse.
 func (Methods) RequestFor(procedure string) (msg proto.Message, known bool) {
-	r, ok := rules[procedure]
-	if !ok {
-		return nil, false
-	}
-	if r.newMsg == nil {
-		return nil, true
-	}
-	return r.newMsg(), true
+	return requestFor(rules, procedure)
 }
 
 // Requirement returns what a request to procedure needs of its caller, and
@@ -60,7 +56,24 @@ func (Methods) RequestFor(procedure string) (msg proto.Message, known bool) {
 // never panics. An unknown procedure gets the zero Requirement, which
 // nobody meets.
 func (Methods) Requirement(procedure string, msg proto.Message) (access.Requirement, access.Request) {
-	r, ok := rules[procedure]
+	return requirementIn(rules, procedure, msg)
+}
+
+// requestFor is RequestFor over table.
+func requestFor(table map[string]rule, procedure string) (proto.Message, bool) {
+	r, ok := table[procedure]
+	if !ok {
+		return nil, false
+	}
+	if r.newMsg == nil {
+		return nil, true
+	}
+	return r.newMsg(), true
+}
+
+// requirementIn is Requirement over table.
+func requirementIn(table map[string]rule, procedure string, msg proto.Message) (access.Requirement, access.Request) {
+	r, ok := table[procedure]
 	if !ok {
 		return access.Requirement{}, access.Request{}
 	}
@@ -153,6 +166,11 @@ var rules = map[string]rule{
 	coriav1connect.AccessServiceSetGrantProcedure:    fixed(installationAdmin),
 	coriav1connect.AccessServiceListGrantsProcedure:  fixed(installationAdmin),
 	coriav1connect.AccessServiceRemoveGrantProcedure: fixed(installationAdmin),
+	coriav1connect.AccessServiceSetKeyRulesProcedure: fixed(installationAdmin),
+	// RotateKey: any authenticated caller reaches the handler, and package
+	// access lets through only the installation's admin or the key being
+	// rotated, deciding before it reads or validates anything else.
+	coriav1connect.AccessServiceRotateKeyProcedure: fixed(access.Authenticated()),
 	// "Role: none; any caller the server authenticates."
 	coriav1connect.AccessServiceWhoAmIProcedure: fixed(access.Authenticated()),
 
@@ -282,6 +300,218 @@ var rules = map[string]rule{
 	coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure: byMessage(func(r *v1.RejectQuarantinedFileRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
 	}),
+
+	// MetadataService: reader on the tenant. The object is the scan's path
+	// of labels, and an instance id is recorded only as present, since it
+	// holds a SOP Instance UID as received in this version.
+	coriav1connect.MetadataServiceGetScanMetadataProcedure: byMessage(func(r *v1.GetScanMetadataRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel())}
+	}),
+	coriav1connect.MetadataServiceGetInstanceMetadataProcedure: byMessage(func(r *v1.GetInstanceMetadataRequest) (access.Requirement, access.Request) {
+		d := map[string]string{}
+		if r.GetInstanceId() != "" {
+			d[detailInstance] = presentValue
+		}
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: d}
+	}),
+
+	// CatalogService: reader on the tenant. The object is the path of
+	// labels the request names, and the filters are in the details.
+	coriav1connect.CatalogServiceListSubjectsProcedure: byMessage(func(r *v1.ListSubjectsRequest) (access.Requirement, access.Request) {
+		d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
+		timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Details: d}
+	}),
+	coriav1connect.CatalogServiceGetSubjectProcedure: byMessage(func(r *v1.GetSubjectRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel())}
+	}),
+	coriav1connect.CatalogServiceListSessionsProcedure: byMessage(func(r *v1.ListSessionsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel()), Details: sessionFilterDetails(r)}
+	}),
+	coriav1connect.CatalogServiceGetSessionProcedure: byMessage(func(r *v1.GetSessionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel())}
+	}),
+	coriav1connect.CatalogServiceListScansProcedure: byMessage(func(r *v1.ListScansRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel()), Details: scanFilterDetails(r)}
+	}),
+	coriav1connect.CatalogServiceGetScanProcedure: byMessage(func(r *v1.GetScanRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel())}
+	}),
+
+	// DataService: reader on the tenant. The object is the path of labels
+	// the request names; an instance id and a position are recorded only
+	// as present.
+	coriav1connect.DataServiceReadFilesProcedure: byMessage(func(r *v1.ReadFilesRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: readFilesDetails(r)}
+	}),
+}
+
+// pendingRules is the table of the methods whose service the contract
+// defines and no handler serves yet: the services api/not-served.txt
+// names. Methods does not consult it, so the server answers each of these
+// methods as one it does not serve, after the caller is authenticated, and
+// a listed service can never be served by mistake with no handler behind
+// it. Each line is written with its method's contract and checked against
+// its Role line now; the change that serves a service moves its lines
+// into rules and its name off the list, and the tests fail until both are
+// done.
+//
+// It is empty while the server serves every service the contract defines.
+var pendingRules = map[string]rule{}
+
+// The keys of the details the reading methods put in audit entries.
+const (
+	detailLabelPrefix       = "label_prefix"
+	detailOrder             = "order"
+	detailStudyDateStart    = "study_date_start"
+	detailStudyDateEnd      = "study_date_end"
+	detailModality          = "modality"
+	detailDescriptionPrefix = "series_description_prefix"
+	detailInstance          = "instance"
+	detailStartAfter        = "start_after"
+	detailAnnounceOnly      = "announce_only"
+	detailRanged            = "range"
+	detailWindow            = "window"
+)
+
+// invalidValue is what an audit entry records in place of a value the
+// request gave that does not pass its rule: the entry still says the
+// field was given, and nothing malformed, of any length or content,
+// reaches the log.
+const invalidValue = "invalid"
+
+// labelPath returns the path of labels a request names, "<subject>",
+// "<subject>/<session>" or "<subject>/<session>/<scan>", as an audit
+// entry's object writes it: the labels given from the top, up to the first
+// empty one, so a level named without the one above it (which the handler
+// refuses as invalid) is not recorded as if it were placed. A label that
+// does not pass the label rule is written "invalid": what a caller sent
+// that is not a label can be anything, a patient's name included. Three
+// valid labels fit an entry's field, which holds 256 bytes, only up to
+// about 84 bytes each, so the path is clipped.
+func labelPath(labels ...string) string {
+	var parts []string
+	for _, l := range labels {
+		if l == "" {
+			break
+		}
+		if label.Check(l) != nil {
+			l = invalidValue
+		}
+		parts = append(parts, l)
+	}
+	return clip(strings.Join(parts, "/"), master.MaxAuditFieldLength-8)
+}
+
+// labelPrefix returns a label prefix as an audit entry records it: as
+// given when it is a label or the start of one, and "invalid" otherwise. A
+// start of a label may end where a whole label may not (in a "."), or be
+// a name reserved on Windows that a longer label is not, so a prefix
+// passes when it, or it with one more character that is valid anywhere
+// in a label, passes the label rule.
+func labelPrefix(p string) string {
+	if label.Check(p) == nil || label.Check(p+"_") == nil {
+		return p
+	}
+	return invalidValue
+}
+
+// studyDate returns a study date bound as an audit entry records it: as
+// given when it has the form of a DICOM date, "YYYYMMDD", and "invalid"
+// otherwise.
+func studyDate(s string) string {
+	if len(s) != 8 || strings.Trim(s, "0123456789") != "" {
+		return invalidValue
+	}
+	return s
+}
+
+// modality returns a Modality filter as an audit entry records it: as
+// given when it is a value of the CS value representation (PS3.5 6.2), 1
+// to 16 of A-Z, 0-9, space and "_", and "invalid" otherwise.
+func modality(s string) string {
+	if s == "" || len(s) > 16 || strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _") != "" {
+		return invalidValue
+	}
+	return s
+}
+
+// receiverName returns a receiver filter as an audit entry records it: as
+// given when it follows the rule of a receiver's name, and "invalid"
+// otherwise.
+func receiverName(s string) string {
+	if master.ValidateTenantName(s) != nil {
+		return invalidValue
+	}
+	return s
+}
+
+// catalogFilterDetails returns the details every catalog listing records:
+// its label prefix and its order, when given.
+func catalogFilterDetails(prefix string, order v1.CatalogOrder) map[string]string {
+	d := map[string]string{}
+	if prefix != "" {
+		d[detailLabelPrefix] = labelPrefix(prefix)
+	}
+	if order != v1.CatalogOrder_CATALOG_ORDER_UNSPECIFIED {
+		d[detailOrder] = clip(order.String(), 64)
+	}
+	return d
+}
+
+// sessionFilterDetails returns the filters of a listing of sessions, as
+// its entry's details record them (catalog.proto, ListSessions).
+func sessionFilterDetails(r *v1.ListSessionsRequest) map[string]string {
+	d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
+	if r.GetStudyDateStart() != "" {
+		d[detailStudyDateStart] = studyDate(r.GetStudyDateStart())
+	}
+	if r.GetStudyDateEnd() != "" {
+		d[detailStudyDateEnd] = studyDate(r.GetStudyDateEnd())
+	}
+	if r.GetModality() != "" {
+		d[detailModality] = modality(r.GetModality())
+	}
+	if r.GetReceiver() != "" {
+		d[detailReceiver] = receiverName(r.GetReceiver())
+	}
+	timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
+	return d
+}
+
+// scanFilterDetails returns the filters of a listing of scans, as its
+// entry's details record them (catalog.proto, ListScans). A series
+// description is recorded only as present: it is text the sender wrote,
+// which can hold anything, a name included.
+func scanFilterDetails(r *v1.ListScansRequest) map[string]string {
+	d := catalogFilterDetails(r.GetLabelPrefix(), r.GetOrder())
+	if r.GetModality() != "" {
+		d[detailModality] = modality(r.GetModality())
+	}
+	if r.GetSeriesDescriptionPrefix() != "" {
+		d[detailDescriptionPrefix] = presentValue
+	}
+	if r.GetReceiver() != "" {
+		d[detailReceiver] = receiverName(r.GetReceiver())
+	}
+	timeDetails(d, r.GetStartTime().AsTime(), r.GetStartTime() != nil, r.GetEndTime().AsTime(), r.GetEndTime() != nil)
+	return d
+}
+
+// readFilesDetails returns the details of the entry a stream of files
+// opens with (data.proto, ReadFiles): whether an instance and a position
+// to resume from were given, never which, since an instance id is an
+// identifier as received in this version; and whether only the
+// announcements were asked for.
+func readFilesDetails(r *v1.ReadFilesRequest) map[string]string {
+	d := map[string]string{detailAnnounceOnly: strconv.FormatBool(r.GetAnnounceOnly())}
+	if r.GetInstanceId() != "" {
+		d[detailInstance] = presentValue
+	}
+	if r.GetStartAfter() != nil {
+		d[detailStartAfter] = presentValue
+	}
+	return d
 }
 
 // builtinSettings is the list of settings the binary ships, which the

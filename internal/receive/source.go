@@ -24,6 +24,17 @@ type Arrival struct {
 	// Class and Instance UIDs, and the presentation context's transfer
 	// syntax), empty when the source was told nothing.
 	SOPClassUID, SOPInstanceUID, TransferSyntaxUID string
+	// StudyUID and SeriesUID are the Study and Series Instance UIDs a
+	// source read from the file's own first bytes to decide where it goes
+	// before it was kept (a STOW-RS part, checked against the study its
+	// request names), empty when the source read none. When either is
+	// set, SOPClassUID and SOPInstanceUID are read from the same bytes,
+	// and the pipeline holds the file as QuarantineUIDMismatch when its
+	// whole header gives any of the four otherwise: a data set that repeats
+	// a placing attribute, or gives one after a later tag, says one thing
+	// in its first bytes and another read whole (PS3.5 7.1), and it is
+	// never placed by the second after the source decided by the first.
+	StudyUID, SeriesUID string
 	// Body yields the file's bytes, a DICOM file (PS3.10 7.1). It is read
 	// to its end or to the receiver's largest file and one byte more.
 	Body io.Reader

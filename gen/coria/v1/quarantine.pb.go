@@ -115,6 +115,16 @@ const (
 	// UIDs, size and checksum as received). Details: none beyond the record's
 	// own fields.
 	QuarantineReason_QUARANTINE_REASON_INCOMING_LOST QuarantineReason = 12
+	// The file's SOP Class, SOP Instance, Study Instance or Series Instance
+	// UID read from its whole header differs from the one the receiver read
+	// from its first bytes to decide where it goes (a stow receiver's part,
+	// checked against the study its request names): a data set that repeats
+	// a placing attribute, or gives one after an attribute of a later tag,
+	// against the order of tags (PS3.5 7.1). The file was answered stored;
+	// it is never placed by what its first bytes did not say. Its bytes are
+	// kept, and a release places it by its whole header. Details:
+	// "attribute", the keyword of the first attribute that differs.
+	QuarantineReason_QUARANTINE_REASON_UID_MISMATCH QuarantineReason = 13
 )
 
 // Enum value maps for QuarantineReason.
@@ -133,6 +143,7 @@ var (
 		10: "QUARANTINE_REASON_READ_BACK_MISMATCH",
 		11: "QUARANTINE_REASON_HEADER_TOO_LARGE",
 		12: "QUARANTINE_REASON_INCOMING_LOST",
+		13: "QUARANTINE_REASON_UID_MISMATCH",
 	}
 	QuarantineReason_value = map[string]int32{
 		"QUARANTINE_REASON_UNSPECIFIED":            0,
@@ -148,6 +159,7 @@ var (
 		"QUARANTINE_REASON_READ_BACK_MISMATCH":     10,
 		"QUARANTINE_REASON_HEADER_TOO_LARGE":       11,
 		"QUARANTINE_REASON_INCOMING_LOST":          12,
+		"QUARANTINE_REASON_UID_MISMATCH":           13,
 	}
 )
 
@@ -1296,7 +1308,7 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"N\n" +
 	"\x1dRejectQuarantinedFileResponse\x12-\n" +
-	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file*\xf4\x03\n" +
+	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file*\x98\x04\n" +
 	"\x10QuarantineReason\x12!\n" +
 	"\x1dQUARANTINE_REASON_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bQUARANTINE_REASON_NOT_DICOM\x10\x01\x12,\n" +
@@ -1311,7 +1323,8 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"$QUARANTINE_REASON_READ_BACK_MISMATCH\x10\n" +
 	"\x12&\n" +
 	"\"QUARANTINE_REASON_HEADER_TOO_LARGE\x10\v\x12#\n" +
-	"\x1fQUARANTINE_REASON_INCOMING_LOST\x10\f*\x8c\x01\n" +
+	"\x1fQUARANTINE_REASON_INCOMING_LOST\x10\f\x12\"\n" +
+	"\x1eQUARANTINE_REASON_UID_MISMATCH\x10\r*\x8c\x01\n" +
 	"\x0fQuarantineState\x12 \n" +
 	"\x1cQUARANTINE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15QUARANTINE_STATE_HELD\x10\x01\x12\x1d\n" +

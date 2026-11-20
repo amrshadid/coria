@@ -20,13 +20,16 @@
 //     HTTP method, whether anything serves the path, or the body, which is
 //     not read. So such a caller learns nothing from the server, not even
 //     which methods it serves, and cannot hold one path longer than another.
-//  3. The router, for an authenticated caller (or a public path): exact
-//     match only. A served procedure goes to its handler from the one
-//     connect.Server built with the interceptor; a plain route's path to
-//     its route. Anything else, a path with any percent-encoding, a double
-//     or trailing slash included, reaches no handler: the server answers it
-//     UNIMPLEMENTED in the caller's RPC protocol (NOT_FOUND to plain HTTP),
-//     over any HTTP version, and audits it as failed, served=false.
+//  3. The router, for an authenticated caller (or a public path). A served
+//     procedure goes to its handler from the one connect.Server built with
+//     the interceptor, and a plain route's path to its route, by exact
+//     match only. A path with the shape and the method of a pattern route
+//     (a route inside one tenant, whose path names the tenant) goes to that
+//     route; its path is matched as sent, never decoded or cleaned. Anything
+//     else, a path with any percent-encoding, a double or trailing slash
+//     included, reaches no handler: the server answers it UNIMPLEMENTED in
+//     the caller's RPC protocol (NOT_FOUND to plain HTTP), over any HTTP
+//     version, and audits it as failed, served=false.
 //  4. pass, the one function the Connect interceptor calls for every RPC and
 //     the HTTP middleware for every plain route: access.Check with the
 //     method's requirement, using the credential the front step accepted;
@@ -68,8 +71,16 @@
 // tested against the descriptors both ways) and stand-in handlers for tests.
 //
 // There is one way to add a route: the one connect.Server the server builds
-// with its interceptor (Config.Register is handed it), and Config.HTTPRoutes,
-// each one exact path, wrapped in the middleware. The router serves only the
+// with its interceptor (Config.Register is handed it), Config.HTTPRoutes,
+// each one exact path, wrapped in the middleware, and Config.PatternRoutes.
+// A pattern route's requirement is computed for each request from its path
+// (the tenant's name, given to the requirement only when it follows the
+// rule of a tenant's name, so a malformed one is held to the role on the
+// installation) and checked by pass like any other; only then are the
+// path's other values read, and a path any of which is not a plain segment
+// (percent-encoding, a dot segment, an empty or over-long segment) is
+// answered 404, never redirected and never handed to its handler. No two
+// routes may match one path, but for one path served under two methods. The router serves only the
 // paths recorded at New; a handler registered any other way is never
 // reached. The route test sends every pattern registered a request without
 // a key, which must be refused, and one from the local operator, which must
@@ -84,6 +95,16 @@
 // counts requests in flight for the drain; applies the deadlines and the
 // body's read bound; and logs and counts every answer the request path did
 // not, so each request id on the wire is in the log.
+//
+// It also answers pages in a browser (cors.go). The server is closed to
+// them by default: only an origin the installation's api.cors-origins
+// lists exactly, or every origin when it is "*", gets
+// Access-Control-Allow-Origin and the exposed headers, on every answer, a
+// refusal included; its preflight is answered 204 with the methods and
+// headers the clients send, before the front step and unaudited, since it
+// carries no key. Any other origin gets no CORS header, and its preflight
+// is refused like any request without a key. Every answer carries Vary:
+// Origin; none carries Access-Control-Allow-Credentials.
 //
 // # Listeners
 //
@@ -119,7 +140,10 @@
 // A message over 4 MiB is refused, read or sent (RESOURCE_EXHAUSTED), sent
 // counted in the request's encoding; a call without a deadline gets 30
 // seconds, and no call runs longer than 5 minutes, whatever its client
-// asks; the body of a request whose requirement reads it must arrive within
+// asks, except the long methods (Config.LongMethods), which stream what may
+// take hours and have no deadline, a client that reads nothing of their
+// response for 5 minutes (StallTimeout) being cut instead; the body of a
+// request whose requirement reads it must arrive within
 // 10 seconds, before the check (only an authenticated caller's body is
 // read before the check); headers are bounded to 64 KiB, HTTP/2
 // streams to 100 per connection, the time to send headers to 10 seconds, an
@@ -138,7 +162,36 @@
 // answered and audited at about 16,000 refusals a second, and makes the
 // master's audit log grow by about 6 MB a second, until the audit writer's
 // bounded queue drops entries, which it counts. Both numbers were measured on
-// one development laptop and are an order of magnitude, not a promise. A limit per remote address is later work.
+// one development laptop and are an order of magnitude, not a promise. The
+// limits on failed calls below hold such a flood from one address: past the
+// installation's access.failure-limit its refusals are held a second each,
+// and at twice the limit it is blocked.
+//
+// # Where a request comes from
+//
+// The front step judges once, before any key is read, where a request comes
+// from (caller.go): the connection's peer, or, when the peer is one of the
+// installation's access.trusted-proxies, the rightmost address that is not
+// a trusted proxy itself in the one header access.forwarded-header names
+// (X-Forwarded-For by default, or Forwarded, RFC 7239); the other header is
+// never read, since a proxy that appends to one passes a client's copy of
+// the other through. That address is what the audit entry, the log line and a key's
+// last use record, and what every network rule judges. A request from one
+// of access.denied-networks, or from outside access.allowed-networks when
+// it lists any, is refused there and recorded with the rule's name (the
+// access package judges a key's and a tenant's networks later, in the
+// check). Every refusal answers as a key that is no good does.
+//
+// The limits on failed calls (failures.go, guard.go) count only refusals:
+// per address (an IPv6 address by its /64) the requests refused for their
+// credential, per key the requests of a good key refused for its grants.
+// Past access.failure-limit in access.failure-window a refusal is held a
+// second before it is answered; at twice the limit the address or the key is
+// blocked for access.block-time, and every request from it is refused and
+// audited, the block's start raised as an event. A request that succeeds is
+// never counted nor held. The counts live in this process's memory, bounded
+// in size; a restart forgets them. The local socket is judged by none of
+// this, and does not read the rules at all.
 //
 // # One server per data directory
 //

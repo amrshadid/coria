@@ -21,244 +21,22 @@ import (
 func (a *app) newReceiver() *cobra.Command {
 	return group("receiver", "Add, list, show, change and remove a tenant's receivers",
 		`A receiver is a way for data to arrive at a tenant: a DICOM listener on one
-port of the server that admits only the callers it lists, writes what it
-receives to the server's incoming area, and groups it into receptions that are
-archived to its storage. The ports and addresses a receiver may use are the
-installation's to allot (the settings receiver.ports and receiver.bind-addresses).
+port of the server that admits only the callers it lists (type dimse), or the
+tenant's STOW-RS service for the keys it lists (type stow). Either writes what
+it receives to the server's incoming area and groups it into receptions that
+are archived to its storage. The ports and addresses a DIMSE receiver may use
+are the installation's to allot (the settings receiver.ports and
+receiver.bind-addresses).
 Every command takes the tenant first. Adding, changing and removing need the
 admin role on the tenant; list and show need the reader role.`,
 		a.newReceiverAdd(), a.newReceiverList(), a.newReceiverShow(), a.newReceiverSet(), a.newReceiverRemove())
-}
-
-// receiverFlags are the flags that describe a receiver, for add and for set.
-type receiverFlags struct {
-	storage          string
-	port             int
-	bind             string
-	aet              string
-	allowAET         []string
-	allowFrom        []string
-	allowAETFrom     []string
-	anyCaller        bool
-	noCallers        bool
-	tlsCertificate   string
-	tlsPrivateKey    string
-	noTLS            bool
-	sopClasses       []string
-	transferSyntaxes []string
-	enabled          bool
-	namingSubject    string
-	namingSession    string
-	namingScan       string
-	namingAttribute  string
-	namingExpression string
-	defaultNaming    bool
-	quietPeriod      string
-	maxOpenTime      string
-	maxFileSize      string
-}
-
-// add registers the flags on a command. The flags that only make sense when
-// changing a receiver (turning TLS off, admitting nobody, returning to the
-// default naming) are registered for set only.
-func (f *receiverFlags) add(cmd *cobra.Command, forSet bool) {
-	fl := cmd.Flags()
-	fl.StringVar(&f.storage, "storage", "", "the name of the tenant's storage that what arrives is archived to")
-	fl.IntVar(&f.port, "port", 0, "the TCP port to listen on, one of the ports the installation allotted to the tenant; on add, left out, the server gives the lowest of them that is free")
-	fl.StringVar(&f.bind, "bind-address", "", "the address of the server to listen on, one of those the setting receiver.bind-addresses lists (default: the installation's default)")
-	fl.StringVar(&f.aet, "aet", "", "the receiver's own AE title, the Called AE Title a caller must give: 1 to 16 printable characters")
-	fl.BoolVar(&f.enabled, "enabled", false, "whether the receiver accepts data; false, the default, keeps it stopped (--enabled=false stops one)")
-	fl.StringArrayVar(&f.allowAET, "allow-aet", nil, "admit the caller that gives this Calling AE Title, from any address; repeat for more callers")
-	fl.StringArrayVar(&f.allowFrom, "allow-from", nil, "admit callers connecting from this address range in CIDR form, such as 10.20.0.0/24, with any AE title; repeat for more")
-	fl.StringArrayVar(&f.allowAETFrom, "allow-aet-from", nil, "admit the caller that gives this Calling AE Title and connects from this range, written TITLE@CIDR, such as PRISMA1@10.20.0.0/24; repeat for more")
-	fl.BoolVar(&f.anyCaller, "any-caller", false, "admit every caller that reaches the port; a receiver is open to everyone only when this says so")
-	fl.StringVar(&f.tlsCertificate, "tls-certificate-file", "", "the name of the certificate chain file, PEM, in the tenant's TLS directory on the server")
-	fl.StringVar(&f.tlsPrivateKey, "tls-private-key-file", "", "the name of the private key file, PEM, in the tenant's TLS directory on the server; it is a file name, not the key")
-	fl.StringArrayVar(&f.sopClasses, "sop-class", nil, "accept this SOP Class UID; repeat for more (default: every storage class the server knows)")
-	fl.StringArrayVar(&f.transferSyntaxes, "transfer-syntax", nil, "accept this Transfer Syntax UID; repeat for more (default: every transfer syntax the server knows)")
-	fl.StringVar(&f.namingSubject, "naming-subject", "", "the template of a new subject's label, such as sub-{#PatientID}")
-	fl.StringVar(&f.namingSession, "naming-session", "", "the template of a new session's label, such as ses-{#StudyInstanceUID}")
-	fl.StringVar(&f.namingScan, "naming-scan", "", "the template of a new scan's label, such as scan-{#SeriesInstanceUID}")
-	fl.StringVar(&f.namingAttribute, "naming-attribute", "", "the attribute whose value the naming pattern reads, such as PatientComments or (0010,4000)")
-	fl.StringVar(&f.namingExpression, "naming-expression", "", "the RE2 pattern with named parts that the templates may use, such as (?P<project>[^^]+)\\^(?P<subject>[^^]+)")
-	fl.StringVar(&f.quietPeriod, "quiet-period", "", "how long without a file for a study before its reception is complete: a number and s, m or h, from 5s to 1h (default 60s)")
-	fl.StringVar(&f.maxOpenTime, "max-open-time", "", "the longest a reception stays receiving: a number and s, m or h, from 1m to 24h, not less than the quiet period (default 1h)")
-	fl.StringVar(&f.maxFileSize, "max-file-size", "", "the largest file it accepts, a size such as 4GiB, from 1KiB to 256GiB (default 4GiB)")
-	if forSet {
-		fl.BoolVar(&f.noCallers, "no-callers", false, "admit nobody: the receiver stays closed until callers are listed again")
-		fl.BoolVar(&f.noTLS, "no-tls", false, "turn TLS off")
-		fl.BoolVar(&f.defaultNaming, "default-naming", false, "return to the default naming rule, which carries no value the sender gave")
-		cmd.MarkFlagsMutuallyExclusive("tls-certificate-file", "no-tls")
-		cmd.MarkFlagsMutuallyExclusive("tls-private-key-file", "no-tls")
-		for _, n := range []string{"naming-subject", "naming-session", "naming-scan", "naming-attribute", "naming-expression"} {
-			cmd.MarkFlagsMutuallyExclusive("default-naming", n)
-		}
-	}
-	cmd.MarkFlagsRequiredTogether("naming-attribute", "naming-expression")
-}
-
-// callers builds the receiver's callers from the flags and the mask path they
-// change. It returns nil and no path when no flag spoke of callers, so a new
-// receiver is closed.
-func (f *receiverFlags) callers(cmd *cobra.Command) (callers any, path string, err error) {
-	fl := cmd.Flags()
-	listed := fl.Changed("allow-aet") || fl.Changed("allow-from") || fl.Changed("allow-aet-from")
-	switch {
-	case f.anyCaller && (listed || f.noCallers):
-		return nil, "", fault.New(fault.Invalid, "--any-caller admits everyone; it cannot be combined with a list of callers or --no-callers")
-	case f.noCallers && listed:
-		return nil, "", fault.New(fault.Invalid, "--no-callers admits nobody; it cannot be combined with a list of callers")
-	case fl.Changed("any-caller"):
-		if !f.anyCaller {
-			return nil, "", fault.New(fault.Invalid, "--any-caller=false is not a choice: list callers with --allow-aet, --allow-from or --allow-aet-from, or give --no-callers")
-		}
-		return &v1.DimseReceiver_AnyCaller{AnyCaller: true}, "dimse.any_caller", nil
-	case listed || f.noCallers:
-		rules := []*v1.CallerRule{}
-		for _, t := range f.allowAET {
-			rules = append(rules, &v1.CallerRule{CallingAeTitle: t})
-		}
-		for _, r := range f.allowFrom {
-			rules = append(rules, &v1.CallerRule{AddressRange: r})
-		}
-		for _, both := range f.allowAETFrom {
-			// An AE title may hold "@", a range never does, so the last "@"
-			// divides them; each side must be there.
-			at := strings.LastIndex(both, "@")
-			if at < 0 {
-				return nil, "", fault.New(fault.Invalid, fmt.Sprintf("--allow-aet-from %q is not TITLE@CIDR, such as PRISMA1@10.20.0.0/24", output.Clean(both)))
-			}
-			if at == 0 || at == len(both)-1 {
-				missing := "range"
-				if at == 0 {
-					missing = "title"
-				}
-				return nil, "", fault.New(fault.Invalid, fmt.Sprintf("--allow-aet-from %q lacks its %s: give both, as TITLE@CIDR, such as PRISMA1@10.20.0.0/24", output.Clean(both), missing))
-			}
-			rules = append(rules, &v1.CallerRule{CallingAeTitle: both[:at], AddressRange: both[at+1:]})
-		}
-		return &v1.DimseReceiver_AllowedCallers{AllowedCallers: &v1.AllowedCallers{Rules: rules}}, "dimse.allowed_callers", nil
-	}
-	return nil, "", nil
-}
-
-// nonEmpty drops the empty values of a repeated flag, so --sop-class "" is the
-// way to ask for the default set when changing a receiver.
-func nonEmpty(values []string) []string {
-	out := []string{}
-	for _, v := range values {
-		if v != "" {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-// parseDuration reads a length of time a flag takes, a number and s, m or h.
-func parseDuration(flag, s string) (*durationpb.Duration, error) {
-	d, err := parseSpan(s)
-	if err != nil {
-		return nil, fault.New(fault.Invalid, fmt.Sprintf("--%s %q is not a length of time; use a number and s, m or h, such as 5m", flag, output.Clean(s)))
-	}
-	return durationpb.New(d), nil
-}
-
-// receiver builds the receiver the flags describe, with the mask paths of
-// each field that was given, in the order the flags are read. For add the mask
-// is not used; for set it names exactly what the person changed.
-func (f *receiverFlags) receiver(cmd *cobra.Command, name string) (*v1.Receiver, []string, error) {
-	fl := cmd.Flags()
-	r := &v1.Receiver{Name: name}
-	dimse := &v1.DimseReceiver{}
-	r.Type = &v1.Receiver_Dimse{Dimse: dimse}
-	var paths []string
-	touch := func(flag, path string) bool {
-		if fl.Changed(flag) {
-			paths = append(paths, path)
-			return true
-		}
-		return false
-	}
-	if touch("enabled", "enabled") {
-		r.Enabled = f.enabled
-	}
-	if touch("storage", "storage") {
-		r.Storage = f.storage
-	}
-	if touch("port", "dimse.port") {
-		dimse.Port = int32(f.port) // #nosec G115 -- a port above 2^31 is refused by the server either way
-	}
-	if touch("bind-address", "dimse.bind_address") {
-		dimse.BindAddress = f.bind
-	}
-	if touch("aet", "dimse.ae_title") {
-		dimse.AeTitle = f.aet
-	}
-	callers, path, err := f.callers(cmd)
-	if err != nil {
-		return nil, nil, err
-	}
-	switch c := callers.(type) {
-	case *v1.DimseReceiver_AnyCaller:
-		dimse.Callers = c
-	case *v1.DimseReceiver_AllowedCallers:
-		dimse.Callers = c
-	}
-	if path != "" {
-		paths = append(paths, path)
-	}
-	switch {
-	case fl.Changed("tls-certificate-file") != fl.Changed("tls-private-key-file"):
-		return nil, nil, fault.New(fault.Invalid, "--tls-certificate-file and --tls-private-key-file go together: give both")
-	case fl.Changed("tls-certificate-file"):
-		dimse.Tls = &v1.ReceiverTls{CertificateFile: f.tlsCertificate, PrivateKeyFile: f.tlsPrivateKey}
-		paths = append(paths, "dimse.tls")
-	case f.noTLS:
-		paths = append(paths, "dimse.tls")
-	}
-	if touch("sop-class", "dimse.sop_classes") {
-		dimse.SopClasses = nonEmpty(f.sopClasses)
-	}
-	if touch("transfer-syntax", "dimse.transfer_syntaxes") {
-		dimse.TransferSyntaxes = nonEmpty(f.transferSyntaxes)
-	}
-	named := fl.Changed("naming-subject") || fl.Changed("naming-session") || fl.Changed("naming-scan") || fl.Changed("naming-attribute")
-	switch {
-	case named:
-		if f.namingSubject == "" || f.namingSession == "" || f.namingScan == "" {
-			return nil, nil, fault.New(fault.Invalid, "a naming rule has three templates: give --naming-subject, --naming-session and --naming-scan together")
-		}
-		r.Naming = &v1.NamingRule{Subject: f.namingSubject, Session: f.namingSession, Scan: f.namingScan}
-		if f.namingAttribute != "" {
-			r.Naming.Pattern = &v1.NamingPattern{Attribute: f.namingAttribute, Expression: f.namingExpression}
-		}
-		paths = append(paths, "naming")
-	case f.defaultNaming:
-		paths = append(paths, "naming")
-	}
-	if touch("quiet-period", "quiet_period") {
-		if r.QuietPeriod, err = parseDuration("quiet-period", f.quietPeriod); err != nil {
-			return nil, nil, err
-		}
-	}
-	if touch("max-open-time", "max_open_time") {
-		if r.MaxOpenTime, err = parseDuration("max-open-time", f.maxOpenTime); err != nil {
-			return nil, nil, err
-		}
-	}
-	if touch("max-file-size", "max_file_bytes") {
-		if r.MaxFileBytes, err = parseSize("max-file-size", f.maxFileSize); err != nil {
-			return nil, nil, err
-		}
-	}
-	return r, paths, nil
 }
 
 // newReceiverAdd builds "receiver add".
 func (a *app) newReceiverAdd() *cobra.Command {
 	var f receiverFlags
 	cmd := &cobra.Command{
-		Use:   "add <tenant> <name> --storage NAME [--port N] --aet TITLE [--allow-aet T | --allow-from CIDR | --any-caller] [--enabled]",
+		Use:   "add <tenant> <name> --storage NAME [--port N] --aet TITLE [--allow-aet T | --allow-from CIDR | --any-caller] [--enabled] | --type stow --storage NAME [--allow-key ID] [--enabled]",
 		Short: "Add a receiver to a tenant",
 		Long: `Add a DICOM receiver to a tenant. It listens on its port only when it is
 enabled (--enabled), and admits only the callers it lists: a receiver added
@@ -274,20 +52,28 @@ labels the naming rule makes. Without --naming-* the default rule is used, which
 carries no value the sender gave. A reception is complete after --quiet-period
 without a file for its study, or --max-open-time from its first file.
 
+With --type stow the receiver is instead the tenant's STOW-RS service,
+POST /tenants/<tenant>/dicom-web/studies (PS3.18 10.5): it takes the instances
+stored with a key it lists (--allow-key, repeat for more), and that key must
+also hold writer or more on the tenant. One added with no key takes nothing. A
+key is listed by one stow receiver of a tenant at most. Each part is bounded by
+--max-file-size and each request by --max-request-size.
+
 The answer says whether the receiver could start: its health is up, or down
 with the reason, such as a port the server could not take.`,
 		Example: `  coria storage add lab1 main --type dir --root fast
   coria receiver add lab1 scanner1 --storage main --port 11112 --aet CORIA \
       --allow-aet PRISMA1 --allow-from 10.20.0.0/24 --enabled
-  coria receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller`,
+  coria receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller
+  coria receiver add lab1 web --type stow --storage main --allow-key 7QmXc2LpZ4 --enabled`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
-			if f.storage == "" || f.aet == "" {
-				return fault.New(fault.Invalid, "a receiver needs --storage and --aet")
-			}
 			r, _, err := f.receiver(cmd, args[1])
 			if err != nil {
 				return err
+			}
+			if f.storage == "" || (r.GetDimse() != nil && f.aet == "") {
+				return fault.New(fault.Invalid, "a receiver needs --storage, and a dimse receiver --aet")
 			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {
@@ -375,9 +161,13 @@ func (a *app) receiverDetails(w io.Writer, r *v1.Receiver) error {
 	if r.GetEnabled() {
 		enabled = "yes"
 	}
+	typ := "dimse"
+	if r.GetStow() != nil {
+		typ = "stow"
+	}
 	pairs := []output.Pair{
 		{Label: "Name", Value: r.GetName()},
-		{Label: "Type", Value: "dimse"},
+		{Label: "Type", Value: typ},
 		{Label: "Enabled", Value: enabled},
 		{Label: "Health", Value: output.ReceiverHealth(r.GetHealth())},
 	}
@@ -398,6 +188,15 @@ func (a *app) receiverDetails(w io.Writer, r *v1.Receiver) error {
 			output.Pair{Label: "TLS", Value: tls},
 			output.Pair{Label: "SOP classes", Value: countText(d.GetSopClasses())},
 			output.Pair{Label: "Transfer syntaxes", Value: countText(d.GetTransferSyntaxes())})
+	}
+	if s := r.GetStow(); s != nil {
+		keys := "no key"
+		if len(s.GetKeyIds()) > 0 {
+			keys = strings.Join(s.GetKeyIds(), ", ")
+		}
+		pairs = append(pairs,
+			output.Pair{Label: "Takes keys", Value: keys},
+			output.Pair{Label: "Max request size", Value: output.Bytes(s.GetMaxRequestBytes())})
 	}
 	pairs = append(pairs,
 		output.Pair{Label: "Naming", Value: namingText(r.GetNaming())},
@@ -503,12 +302,14 @@ arrives from then on.
 Callers are replaced whole: --allow-aet, --allow-from and --allow-aet-from set
 the list, --any-caller opens the receiver to everyone, and --no-callers closes
 it. --sop-class "" and --transfer-syntax "" return to the server's default
-set. The three naming templates are given together, and --default-naming
+set. A stow receiver's keys are replaced whole by --allow-key, and --no-keys
+closes it. The three naming templates are given together, and --default-naming
 returns to the default rule. --enabled=false stops a receiver without removing
 it.`,
 		Example: `  coria receiver set lab1 scanner1 --quiet-period 5m
   coria receiver set lab1 scanner1 --allow-aet PRISMA1 --allow-aet SKYRA2
-  coria receiver set lab1 scanner1 --enabled=false`,
+  coria receiver set lab1 scanner1 --enabled=false
+  coria receiver set lab1 web --allow-key 7QmXc2LpZ4 --allow-key 9FvTb8RkW3`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			r, paths, err := f.receiver(cmd, args[1])

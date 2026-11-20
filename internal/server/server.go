@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/grpchealth/v2"
 
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/obs"
@@ -50,6 +51,11 @@ const (
 	// unchecked; when it runs out the caller is refused (unauthenticated,
 	// denied) or told its request was invalid, in the usual order.
 	BodyReadTimeout = 10 * time.Second
+	// StallTimeout is how long the client of a long method may leave the
+	// response unread: a write or flush that cannot finish within it ends the
+	// response, so a client that stops reading does not hold the handler and
+	// a storage connection for ever, though the call has no deadline.
+	StallTimeout = 5 * time.Minute
 	// DefaultDrain is how long Stop waits for requests in flight before it
 	// cancels them: longer than one call under the default deadline is
 	// likely to need, and with the grace and the closes below it keeps the
@@ -101,6 +107,7 @@ type Checker interface {
 	Check(ctx context.Context, cred access.Credential, req access.Requirement, facts access.Request) (access.Decision, error)
 	Record(d access.Decision, outcome master.Outcome, reason string, facts access.Facts)
 	RecordUnchecked(cred access.Credential, facts access.Request, reason string)
+	RecordRefusal(facts access.Request, keyID, rule string, blocked bool, until time.Time) error
 	AuditStats() access.AuditStats
 	MarkStats() access.MarkStats
 	Close(ctx context.Context) error
@@ -161,6 +168,26 @@ type Config struct {
 	// HTTPRoutes are plain HTTP routes besides /metrics, each wrapped in the
 	// request path.
 	HTTPRoutes []HTTPRoute
+	// PatternRoutes are plain HTTP routes inside one tenant, whose
+	// requirement is computed from each request's path (PatternRoute).
+	PatternRoutes []PatternRoute
+	// LongMethods names the calls that have no deadline, neither the default
+	// nor the maximum, since they stream what may take hours: procedures
+	// ("/package.Service/Method") and pattern routes' patterns, as given in
+	// PatternRoutes. Each must name a served procedure or route, so a
+	// renamed route cannot silently lose its exemption. Their responses are
+	// bound by StallTimeout instead, and a long procedure's messages are
+	// sent uncompressed (uncompressedLong).
+	LongMethods []string
+	// CORSOrigins returns the web origins whose pages may call the API
+	// from a browser (the installation's api.cors-origins); the server
+	// reads it at most every corsRefresh. Nil allows no origin.
+	CORSOrigins func(ctx context.Context) (settings.Origins, error)
+	// AccessRules returns the installation's access settings (trusted
+	// proxies, allowed and denied networks, limits on failed calls); the
+	// server reads it at most every rulesRefresh. Nil applies
+	// DefaultAccessRules: no proxy trusted, every network allowed.
+	AccessRules func(ctx context.Context) (AccessRules, error)
 
 	// DefaultDeadline, MaxDeadline and BodyReadTimeout replace the
 	// constants of the same names; zero keeps them. Tests shorten them.
@@ -174,12 +201,17 @@ type Config struct {
 // network. It owns its goroutines: each listener's serve loop, which Stop
 // ends and waits for.
 type Server struct {
-	cfg          Config
-	access       Checker
-	log          *slog.Logger
-	metrics      *obs.Metrics
-	deadline     time.Duration
-	maxDeadline  time.Duration
+	cfg         Config
+	access      Checker
+	log         *slog.Logger
+	metrics     *obs.Metrics
+	deadline    time.Duration
+	maxDeadline time.Duration
+	// stall is the write stall bound of long methods; longProcs and
+	// longPatterns are the long methods by procedure and by pattern.
+	stall        time.Duration
+	longProcs    map[string]bool
+	longPatterns map[string]bool
 	bodyRead     time.Duration
 	methods      Methods
 	withDecision WithDecision
@@ -193,6 +225,15 @@ type Server struct {
 	procs map[string]http.Handler
 	// plain maps the path of each plain HTTP route to its pattern.
 	plain map[string]string
+	// patterns are the pattern routes, in the order given, and
+	// patternHeads the literal first segments of their paths, so a path
+	// under none of them is not split.
+	patterns     []*patternRoute
+	patternHeads map[string]bool
+	// cors is the policy of answers to pages in a browser.
+	cors *corsPolicy
+	// guard holds the access rules and the counts of failed calls.
+	guard *guard
 	// hook, set only by tests before Start, is called at the points named
 	// by the point constants (Server.at), to stop a request there.
 	hook func(ctx context.Context, point string)
@@ -244,19 +285,23 @@ func New(cfg Config) (*Server, error) {
 		log:          cfg.Log,
 		deadline:     orDefault(cfg.DefaultDeadline, DefaultDeadline),
 		maxDeadline:  orDefault(cfg.MaxDeadline, MaxDeadline),
+		stall:        StallTimeout,
 		bodyRead:     orDefault(cfg.BodyReadTimeout, BodyReadTimeout),
 		methods:      cfg.Methods,
 		withDecision: cfg.WithDecision,
 		health:       grpchealth.NewStaticChecker(),
 		serveErrs:    make(chan error, 2),
 		socketUser:   selfUser(),
+		cors:         &corsPolicy{read: cfg.CORSOrigins, log: cfg.Log, now: time.Now},
 	}
 	if s.methods == nil {
 		s.methods = noMethods{}
 	}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
+		s.cors.log = s.log
 	}
+	s.guard = newGuard(cfg.AccessRules, s.log)
 	if cfg.TLSCert != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
 		if err != nil {
@@ -299,7 +344,8 @@ func (s *Server) counters() []obs.Counter {
 // buildRoutes makes the one connect.Server, registers the API's services
 // and the health service on it, and records each of its procedures, and
 // each plain HTTP route (the metrics and Config.HTTPRoutes, each in the
-// middleware), as an exact path the router serves. The handler of every
+// middleware), as an exact path the router serves, and each pattern route
+// (Config.PatternRoutes), which the router matches on the path as sent. The handler of every
 // listener is then the envelope, around the front step, around the router:
 // no route is chosen before the caller is known.
 func (s *Server) buildRoutes() error {
@@ -327,6 +373,7 @@ func (s *Server) buildRoutes() error {
 	connecthttp.Mount(procedureMux{s}, rpc,
 		connecthttp.WithReadMaxBytes(MaxMessageBytes),
 		connecthttp.WithSendMaxBytes(MaxMessageBytes),
+		connecthttp.WithConditionalOptions(s.uncompressedLong),
 	)
 	routes := append([]HTTPRoute{{Pattern: MetricsPattern, Need: access.OnInstallation(master.RoleReader), Handler: s.serveMetrics}}, s.cfg.HTTPRoutes...)
 	for _, r := range routes {
@@ -334,8 +381,32 @@ func (s *Server) buildRoutes() error {
 			return err
 		}
 	}
+	s.patternHeads = make(map[string]bool)
+	for _, r := range s.cfg.PatternRoutes {
+		if err := s.handlePattern(r); err != nil {
+			return err
+		}
+	}
+	if err := s.setLongMethods(); err != nil {
+		return err
+	}
 	s.handler = s.envelope(s.front(http.HandlerFunc(s.route)))
 	return nil
+}
+
+// uncompressedLong returns, for a long procedure, the option that sends
+// every message of its answer uncompressed, whatever the client accepts. A
+// long procedure streams archived bytes for as long as a subject takes,
+// and gzip (RFC 1952) runs at some 80 MB/s per stream on DICOM files, a
+// tenth of a gigabit link and a twentieth of what the stream otherwise
+// sends; DICOM's compressed transfer syntaxes do not shrink at all. A
+// compressed request is still read, and every other procedure compresses
+// as the client asks.
+func (s *Server) uncompressedLong(spec connect.Spec) []connecthttp.Option {
+	if !slices.Contains(s.cfg.LongMethods, spec.Procedure) {
+		return nil
+	}
+	return []connecthttp.Option{connecthttp.WithCompressMinBytes(MaxMessageBytes + 1)}
 }
 
 // procedureMux is what connecthttp.Mount registers on. It keeps each

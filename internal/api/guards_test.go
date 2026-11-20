@@ -36,6 +36,8 @@ func everyMethod(f *fixture) map[string]func(clients) outcome {
 			return call(c.access.RemoveGrant, &v1.RemoveGrantRequest{KeyId: f.lab1ReaderID, Scope: tenantScope("lab1")})
 		},
 		"WhoAmI":       func(c clients) outcome { return call(c.access.WhoAmI, &v1.WhoAmIRequest{}) },
+		"RotateKey":    func(c clients) outcome { return call(c.access.RotateKey, &v1.RotateKeyRequest{Id: f.noGrantID}) },
+		"SetKeyRules":  func(c clients) outcome { return call(c.access.SetKeyRules, &v1.SetKeyRulesRequest{Id: f.noGrantID}) },
 		"CreateTenant": createTenant("lab9", sqliteType, ""),
 		"GetTenant":    func(c clients) outcome { return call(c.tenants.GetTenant, &v1.GetTenantRequest{Name: "lab1"}) },
 		"ListTenants":  func(c clients) outcome { return call(c.tenants.ListTenants, &v1.ListTenantsRequest{}) },
@@ -104,6 +106,27 @@ func tenantMethods(name string) map[string]func(clients) outcome {
 		},
 		"DiscardReception": func(c clients) outcome {
 			return call(c.receptions.DiscardReception, &v1.DiscardReceptionRequest{Tenant: name, Id: "r1", Reason: "x"})
+		},
+		"GetScanMetadata": func(c clients) outcome {
+			return call(c.metadata.GetScanMetadata, &v1.GetScanMetadataRequest{Tenant: name, SubjectLabel: "S1", SessionLabel: "E1", ScanLabel: "T1"})
+		},
+		"GetInstanceMetadata": func(c clients) outcome {
+			return call(c.metadata.GetInstanceMetadata, &v1.GetInstanceMetadataRequest{Tenant: name, SubjectLabel: "S1", SessionLabel: "E1", ScanLabel: "T1", InstanceId: "2.25.1"})
+		},
+		"ReadFiles": func(c clients) outcome {
+			return readFilesOnce(c, &v1.ReadFilesRequest{Tenant: name, SubjectLabel: "S1", SessionLabel: "E1", ScanLabel: "T1"})
+		},
+		"ListSubjects": func(c clients) outcome { return call(c.catalog.ListSubjects, &v1.ListSubjectsRequest{Tenant: name}) },
+		"GetSubject": func(c clients) outcome {
+			return call(c.catalog.GetSubject, &v1.GetSubjectRequest{Tenant: name, SubjectLabel: "S1"})
+		},
+		"ListSessions": func(c clients) outcome { return call(c.catalog.ListSessions, &v1.ListSessionsRequest{Tenant: name}) },
+		"GetSession": func(c clients) outcome {
+			return call(c.catalog.GetSession, &v1.GetSessionRequest{Tenant: name, SubjectLabel: "S1", SessionLabel: "E1"})
+		},
+		"ListScans": func(c clients) outcome { return call(c.catalog.ListScans, &v1.ListScansRequest{Tenant: name}) },
+		"GetScan": func(c clients) outcome {
+			return call(c.catalog.GetScan, &v1.GetScanRequest{Tenant: name, SubjectLabel: "S1", SessionLabel: "E1", ScanLabel: "T1"})
 		},
 		"ListQuarantinedFiles": func(c clients) outcome {
 			return call(c.quarantine.ListQuarantinedFiles, &v1.ListQuarantinedFilesRequest{Tenant: name})

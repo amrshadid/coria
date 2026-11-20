@@ -59,11 +59,29 @@ tenant's. These settings are set with `SettingsService.SetSetting`:
 | `incoming.limit` | installation (the default for every tenant) and each tenant | admin on the installation only | `0`: no limit of the tenant's own | a size, such as `200GiB` |
 | `events.retention` | installation, and each tenant may override | admin on the installation; the tenant's admin for the tenant | `90d` | a period, `1d` to `3650d` |
 
+The settings of where a key may be used from, and of how long it lives:
+
+| Setting | Scope | Who sets it | Default | Form |
+|---|---|---|---|---|
+| `access.denied-networks` | installation only | admin on the installation | empty: none refused | networks separated by commas, each an address or `address/bits` in its one written form; a request from one is refused before its key is read |
+| `access.allowed-networks` | installation only | admin on the installation | empty: every network | networks, as above; a request from outside them is refused |
+| `access.tenant-networks` | installation (the default for every tenant) and each tenant | admin on the installation; the tenant's admin for the tenant | empty: every network | networks, as above; every key used on the tenant must come from one |
+| `access.trusted-proxies` | installation only | admin on the installation | empty: no forwarded address is believed | networks, as above; from one of them the client named in the header `access.forwarded-header` chooses is the caller |
+| `access.forwarded-header` | installation only | admin on the installation | `x-forwarded-for` | `x-forwarded-for` or `forwarded` (RFC 7239): the one header a trusted proxy's client address is read from; the other is ignored, because a proxy that appends to one commonly passes a client's copy of the other through |
+| `access.failure-limit` | installation only | admin on the installation | `10` | failed calls an address or a key may make in the window before its refusals are held one second; at twice as many it is blocked |
+| `access.failure-window` | installation only | admin on the installation | `1m` | a period, `1s` to `24h` |
+| `access.block-time` | installation only | admin on the installation | `15m` | a period, `1s` to `7d` |
+| `key.max-lifetime` | installation only | admin on the installation | `3650d` | a period, `1h` to `3650d`; no key is made or rotated to live longer, but a key asked for with no expiry |
+| `key.expiry-warning` | installation only | admin on the installation | `7d` | a period, `1h` to `365d`; a key expiring within it is listed in the status of every tenant and reported in the server's log once a day |
+
+A request on the local socket is never refused by a network rule or a limit.
+A period is a whole number followed by `s`, `m`, `h` or `d`.
+
 ## Which changes take effect without a restart
 
 The settings listed here are read from the master database each time they are
-used, not cached by the server, so a value set through `SetSetting` applies at the next use,
-without a restart. What "next use" means differs, and the files and flags the
+used, or kept for at most the few seconds the table says, so a value set
+through `SetSetting` applies without a restart. What "next use" means differs, and the files and flags the
 server reads when it starts do not change until it is started again.
 
 | What | When a change takes effect |
@@ -75,6 +93,10 @@ server reads when it starts do not change until it is started again.
 | `storage.reserve` | Within five seconds, by default: the free space of the incoming area and of each storage a receiver writes to is checked on that interval |
 | `incoming.limit` | Within five seconds, by default, on the same check |
 | `key.default-lifetime` | At the next key made without an expiry; keys already made keep theirs |
+| `key.max-lifetime` | At the next key made or rotated; keys already made keep theirs |
+| `key.expiry-warning` | At the next status, and within an hour for the report in the log |
+| `access.denied-networks`, `access.allowed-networks`, `access.trusted-proxies`, `access.forwarded-header`, `access.failure-limit`, `access.failure-window`, `access.block-time` | Within five seconds: the server keeps the values it read for that long |
+| `access.tenant-networks` | Within five seconds, on the same terms, for each tenant |
 | the server's `--listen` address | Needs a restart: the address is opened once, when the server starts |
 | the server's `--tls-cert` and `--tls-key` | Need a restart: the pair is read once, when the server starts; a renewed certificate is used after the server is started again |
 | the key file | Needs a restart: it is read once, when the server starts, and the keys are held in memory |
@@ -197,6 +219,58 @@ Things that are easy to get wrong, and what the contract does about them:
   inside it that another program on the server holds is not refused; the
   receiver is down with `RECEIVER_DOWN_REASON_ADDRESS_IN_USE`, and its
   `detail` is a fixed phrase, never the operating system's text.
+
+### Add a stow receiver
+
+A program that stores over HTTP rather than DICOM uses the tenant's STOW-RS
+service, `POST /tenants/lab/dicom-web/studies` (PS3.18 10.5). It is a
+receiver like any other, of type `stow`, and takes requests only from the
+keys it lists; each key must also hold writer or more on the tenant:
+
+```
+POST /coria.v1.ReceiverService/AddReceiver
+{"tenant": "lab",
+ "receiver": {"name": "web",
+              "enabled": true,
+              "storage": "main",
+              "stow": {"keyIds": ["7QmXc2LpZ4"]}}}
+```
+
+What the answer shows, beside the defaults every receiver has:
+
+- `stow.maxRequestBytes: "17179869184"`: the default largest request, 16 GiB;
+  each part is also bounded by `maxFileBytes`.
+- No port and no AE title: the service is the API's own address.
+
+Things that are easy to get wrong:
+
+- `keyIds` left out takes no key: the receiver is closed until one is listed.
+  The local operator holds no key and is refused too.
+- A key rotated from a listed one (`AccessService.RotateKey`) is taken
+  without changing the receiver, during the overlap and after it, up to 16
+  rotations back from the key listed.
+- A key is listed by one stow receiver of a tenant at most; a second is a
+  precondition failure, so which receiver (and so which storage and naming
+  rule) a request goes to is never a choice.
+- The body is `multipart/related; type="application/dicom"`, one DICOM file a
+  part. Metadata sent as `application/dicom+json` with its bulk data in other
+  parts is refused with 415 in this version.
+- The answer is written once every part is synced on the server's disk: 200
+  when all were stored, 202 when some were, 409 when none was, each refused
+  instance in the Failed SOP Sequence with its reason (A900H of another study
+  than the path names, A700H too large or the archive full, C000H not a file
+  whose UIDs can be read). What the pipeline finds later is quarantined after
+  the answer, as for a C-STORE answered success: a different file under a UID
+  the tenant holds is answered stored, then held as `different_file` (or
+  `uid_elsewhere`); a file whose placing UIDs read whole differ from those in
+  its first bytes, by which it was checked against the path's study, is held
+  as `uid_mismatch`.
+- A request holds at most 10,000 parts (413 past it) and each part's header
+  at most 16 KiB (400 past it). A body that ends inside a part is 400 and
+  that part is not kept. When a request is refused part way, the parts sent
+  whole before are kept and archived; the plain-text answer does not list
+  them, and a search of the study shows them. A receiver that stops lets a
+  request run 30 seconds, then answers it 503 with `Retry-After`.
 
 ### Change the quiet period
 

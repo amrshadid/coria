@@ -5,15 +5,19 @@ import (
 	"crypto/rand"
 	"encoding/base32"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"connectrpc.com/connect/v2"
+
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // RequestIDHeader is the response header that carries the request's id
@@ -84,11 +88,18 @@ func NewID() string {
 //   - it deletes a client's own Coria-Request-Id, makes the request's id
 //     and sets it on the response, so every answer carries it, success,
 //     refusal, error or panic alike;
+//   - it sets the CORS headers for a page whose origin the installation
+//     allows, and Vary: Origin on every answer (cors.go);
 //   - it refuses new work once the server is stopping, with UNAVAILABLE,
 //     except the health service's Check, which answers NOT_SERVING then;
 //   - it counts the request in flight, for the drain on stop;
+//   - it answers a CORS preflight from an allowed origin, which goes no
+//     further; one from any other origin goes on, and is refused for its
+//     missing key like any request;
 //   - it bounds the request's time: the client's deadline when it sent one,
-//     otherwise the default, and never more than the maximum;
+//     otherwise the default, and never more than the maximum; a long
+//     method (Config.LongMethods) has none of these, and its response is
+//     bound by the write stall timeout instead;
 //   - it bounds the time to read the request's body until the check has
 //     allowed the request (BodyReadTimeout);
 //   - it recovers a panic that escaped the request path (a handler's panic
@@ -104,6 +115,9 @@ func (s *Server) envelope(next http.Handler) http.Handler {
 		r.Header.Del(RequestIDHeader)
 		id := newRequestID()
 		w.Header().Set(RequestIDHeader, id)
+		// Before anything can answer, so every answer to an allowed page,
+		// a refusal or a stop included, is one its page can read.
+		corsAllowed := s.cors.decorate(w.Header(), r)
 		mark := &pathMark{}
 		// "PRI * HTTP/2.0" sent on an HTTP/1 connection (the HTTP/2 preface
 		// where none is spoken) names HTTP/2 but is answered over HTTP/1.
@@ -117,17 +131,30 @@ func (s *Server) envelope(next http.Handler) http.Handler {
 		defer s.leave()
 		end := s.metrics.Begin()
 		defer end()
+		if corsAllowed && isPreflight(r) {
+			answerPreflight(sw)
+			return
+		}
 
 		ctx := context.WithValue(withRequestID(r.Context(), id), pathMarkKey{}, mark)
-		// The maximum always, so a client cannot hold a handler, a connection
-		// and a goroutine longer by asking for a longer deadline; the RPC
-		// library applies a shorter one the client sends inside it.
-		ctx, cancelMax := context.WithTimeout(ctx, s.maxDeadline)
-		defer cancelMax()
-		if r.Header.Get(grpcTimeoutHeader) == "" && r.Header.Get(connectTimeoutHeader) == "" {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, s.deadline)
-			defer cancel()
+		if s.isLong(r) {
+			// A long method has no deadline of its own (a subject's instances
+			// may take hours); a client that stops reading is cut by the
+			// write stall bound instead.
+			sw.stall = s.stall
+		} else {
+			// The maximum always, so a client cannot hold a handler, a
+			// connection and a goroutine longer by asking for a longer
+			// deadline; the RPC library applies a shorter one the client sends
+			// inside it.
+			var cancelMax context.CancelFunc
+			ctx, cancelMax = context.WithTimeout(ctx, s.maxDeadline)
+			defer cancelMax()
+			if r.Header.Get(grpcTimeoutHeader) == "" && r.Header.Get(connectTimeoutHeader) == "" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, s.deadline)
+				defer cancel()
+			}
 		}
 		// The body must arrive within the read bound until the check has let
 		// the request through; pass lifts the bound then. A refused request's
@@ -144,7 +171,7 @@ func (s *Server) envelope(next http.Handler) http.Handler {
 				}
 				attrs := append([]slog.Attr{
 					slog.String("request_id", id),
-					slog.String("path", cut(r.URL.Path, maxLoggedPath)),
+					slog.String("path", s.loggedPath(r)),
 					slog.String("stack", string(debug.Stack())),
 				}, panicAttrs(p)...)
 				s.log.LogAttrs(ctx, slog.LevelError, "panic outside a handler", attrs...)
@@ -247,7 +274,7 @@ func (s *Server) logTransport(r *http.Request, sw *statusWriter, mark *pathMark,
 	attrs := []slog.Attr{
 		slog.String("request_id", id),
 		slog.String("method", transportMethod),
-		slog.String("path", cut(r.URL.Path, maxLoggedPath)),
+		slog.String("path", s.loggedPath(r)),
 		slog.Int("http_status", status),
 		slog.String("code", code),
 		slog.Float64("duration_ms", float64(took.Microseconds())/1000),
@@ -271,6 +298,17 @@ type statusWriter struct {
 	mark   *pathMark
 	http1  bool
 	status atomic.Int64
+	// stall, when set, is how long one Write or Flush may take: the write
+	// deadline is moved to now plus stall before each, so a client that
+	// reads nothing ends the response instead of holding it.
+	stall time.Duration
+}
+
+// armStall moves the write deadline for a long method's next write.
+func (w *statusWriter) armStall() {
+	if w.stall > 0 {
+		_ = http.NewResponseController(w.ResponseWriter).SetWriteDeadline(time.Now().Add(w.stall))
+	}
 }
 
 // beforeHeaders runs once, before the response's headers are sent.
@@ -286,18 +324,35 @@ func (w *statusWriter) beforeHeaders(code int) {
 // WriteHeader records the status and writes it.
 func (w *statusWriter) WriteHeader(code int) {
 	w.beforeHeaders(code)
+	w.armStall()
 	w.ResponseWriter.WriteHeader(code)
 }
 
 // Write records the implied 200 when no status was written, and writes.
 func (w *statusWriter) Write(b []byte) (int, error) {
 	w.beforeHeaders(http.StatusOK)
+	w.armStall()
 	return w.ResponseWriter.Write(b)
+}
+
+// ReadFrom records the implied 200 when no status was written, and copies
+// src to the connection through the connection's own ReadFrom when it has
+// one, so a file reaches the socket by the system's copy (net/http passes
+// it to sendfile on a plain HTTP/1.1 connection) instead of through this
+// process. Without this method io.Copy would see only Write.
+func (w *statusWriter) ReadFrom(src io.Reader) (int64, error) {
+	w.beforeHeaders(http.StatusOK)
+	w.armStall()
+	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(src)
+	}
+	return io.Copy(struct{ io.Writer }{w.ResponseWriter}, src)
 }
 
 // Flush sends what is buffered, the headers first when none were sent.
 func (w *statusWriter) Flush() {
 	w.beforeHeaders(http.StatusOK)
+	w.armStall()
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }
 
@@ -344,4 +399,37 @@ func cut(s string, n int) string {
 		n--
 	}
 	return s[:n]
+}
+
+// isLong reports whether r is a call of a long method: a procedure named by
+// its exact path, or a request a long pattern route serves.
+func (s *Server) isLong(r *http.Request) bool {
+	if len(s.longProcs) == 0 && len(s.longPatterns) == 0 {
+		return false
+	}
+	if s.longProcs[r.URL.Path] {
+		return true
+	}
+	if len(s.longPatterns) == 0 {
+		return false
+	}
+	m, ok := s.matchPattern(r)
+	return ok && s.longPatterns[m.route.Pattern]
+}
+
+// setLongMethods reads Config.LongMethods against the routes built, and
+// refuses a name that is neither a served procedure nor a pattern route.
+func (s *Server) setLongMethods() error {
+	s.longProcs, s.longPatterns = map[string]bool{}, map[string]bool{}
+	for _, name := range s.cfg.LongMethods {
+		switch {
+		case s.procs[name] != nil:
+			s.longProcs[name] = true
+		case slices.ContainsFunc(s.patterns, func(p *patternRoute) bool { return p.Pattern == name }):
+			s.longPatterns[name] = true
+		default:
+			return fault.New(fault.Internal, "server: the long method "+name+" is neither a served procedure nor a pattern route")
+		}
+	}
+	return nil
 }

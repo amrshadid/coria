@@ -13,6 +13,8 @@ import (
 	"github.com/amrshadid/coria/internal/core/layout"
 	"github.com/amrshadid/coria/internal/core/manifest"
 	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/receive/frames"
+	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/receive/sidecar"
 	"github.com/amrshadid/coria/internal/tenant"
 )
@@ -159,7 +161,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	if err != nil {
 		return res, fault.Wrap(fault.Internal, err, "the scan's labels make no key")
 	}
-	unlock := p.scanLocks.lock(r.Storage + "\x00" + manifestKey)
+	unlock := p.lockScan(r.Storage, manifestKey)
 	defer unlock()
 
 	puts := make([]written, len(toWrite))
@@ -242,7 +244,8 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		inManifest[mf.SOPInstanceUID] = true
 	}
 	p.at("archive.before-sidecar")
-	if err := p.putSidecar(ctx, store, metadataKey, puts, func(u string) bool { return !inManifest[u] || ours[u] }); err != nil {
+	var values tenant.ScanValues
+	if err := p.putSidecar(ctx, store, metadataKey, puts, func(u string) bool { return !inManifest[u] || ours[u] }, &values); err != nil {
 		return res, err
 	}
 	p.at("archive.before-manifest")
@@ -257,7 +260,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		c := tenant.ScanCommit{
 			ReceptionID: r.ID, StudyUID: r.StudyUID, SeriesUID: g.uid,
 			SubjectLabel: path.Subject, SessionLabel: path.Session, ScanLabel: path.Scan,
-			Storage: r.Storage, ManifestSHA256: manifestSum, At: p.now(), Fence: &fence,
+			Storage: r.Storage, ManifestSHA256: manifestSum, Values: values, At: p.now(), Fence: &fence,
 		}
 		for _, wr := range part {
 			c.Instances = append(c.Instances, tenant.ConfirmedInstance{
@@ -339,11 +342,22 @@ func readManifest(ctx context.Context, store blob.Store, key string) (manifest.M
 	return m, nil
 }
 
+// lockScan takes the lock held while a scan's metadata sidecar and manifest
+// on a storage are made and replaced, by the archive step and by the pass
+// that gives old sidecars their frame tables (frames.Run), and returns its
+// release.
+func (p *Pipeline) lockScan(storage, manifestKey string) func() {
+	return p.scanLocks.lock(storage + "\x00" + manifestKey)
+}
+
 // putSidecar writes the scan's metadata sidecar: the sidecar the storage
 // holds, merged with this reception's instances, streamed to the storage as
-// it is made, each instance's header read from its incoming copy only when
-// its line is written.
-func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string, puts []written, drop func(string) bool) error {
+// it is made, each instance's header and frame table read from its
+// incoming copy only when its line is written. It sets values to what the
+// first of those headers says of the scan and its session (scanValues),
+// which the commit gives the catalog, so no header is read twice.
+func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string, puts []written, drop func(string) bool,
+	values *tenant.ScanValues) error {
 	var old io.ReadCloser
 	rc, err := store.Read(ctx, key, 0, -1)
 	switch {
@@ -360,13 +374,22 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 		}
 		wr := puts[i]
 		i++
-		h, err := p.readHeader(ctx, wr.f.Incoming)
+		h, table, sums, err := p.readLine(ctx, wr.f.Incoming, wr.f.SHA256)
 		if err != nil {
 			return sidecar.Instance{}, false, err
 		}
-		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.f.Size, SHA256: hex.EncodeToString(wr.f.SHA256[:])}
-		if h.HasPixelData {
+		if i == 1 {
+			*values = scanValues(h)
+		}
+		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.f.Size, SHA256: hex.EncodeToString(wr.f.SHA256[:]),
+			TransferSyntax: h.TransferSyntaxUID}
+		// A deflated data set's positions count inflated bytes (PS3.5 A.5),
+		// so the sidecar's check would refuse them as outside the file and
+		// the scan could never be made; such a file has no place for its
+		// pixels.
+		if h.HasPixelData && h.TransferSyntaxUID != header.TransferSyntaxDeflated {
 			in.PixelData = &sidecar.PixelData{Offset: h.PixelData.Offset, Length: h.PixelData.Length}
+			in.Frames, in.FrameSHA256 = table, sums
 		}
 		if js, err := h.DICOMJSON(); err == nil {
 			in.Dataset = js
@@ -399,6 +422,41 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 	return nil
 }
 
+// readLine reads what a received file's sidecar line holds from its
+// incoming copy: its header, its frame table (frames.Table) and each
+// frame's checksum (frames.Checksums), from the same open file, whose
+// bytes are those written to the storage, so the table's offsets are
+// places in the archived file. The frames' checksums are read in one pass
+// with the file's own, which must be the one the file was received with:
+// a copy that changed since is never given checksums that are not of the
+// bytes archived.
+func (p *Pipeline) readLine(ctx context.Context, path string, sum [32]byte) (*header.Header, [][]sidecar.Range, []string, error) {
+	f, size, err := p.area.Open(path)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer func() { _ = f.Close() }()
+	h, err := header.ReadWithin(f, size, p.headerLimit(ctx))
+	if err != nil {
+		return nil, nil, nil, fault.Wrap(fault.Internal, err, "a recorded file's header cannot be read")
+	}
+	table, err := frames.Table(h, f)
+	if err != nil {
+		return nil, nil, nil, fault.Wrap(fault.Internal, err, "a recorded file's pixel data cannot be read")
+	}
+	if len(table) == 0 {
+		return h, table, nil, nil
+	}
+	sums, whole, err := frames.Checksums(io.NewSectionReader(f, 0, size), table)
+	if err != nil {
+		return nil, nil, nil, fault.Wrap(fault.Internal, err, "a recorded file's frames cannot be read")
+	}
+	if whole != sum {
+		return nil, nil, nil, fault.New(fault.Internal, "a recorded file changed after it was received; its frames are not checksummed")
+	}
+	return h, table, sums, nil
+}
+
 // storageError keeps a storage's failure with its kind, and a message for
 // the log and the unit's last error that says which write failed.
 func storageError(err error, message string) error {
@@ -407,4 +465,11 @@ func storageError(err error, message string) error {
 		k = fault.Unavailable
 	}
 	return fault.Wrap(k, err, message+": "+safe(err))
+}
+
+// scanValues returns what a file's header says of its scan and session, as
+// the catalog keeps it (tenant.ScanValuesOf of header.CatalogText): one
+// absent or not of its kind is left empty.
+func scanValues(h *header.Header) tenant.ScanValues {
+	return tenant.ScanValuesOf(h.CatalogText())
 }

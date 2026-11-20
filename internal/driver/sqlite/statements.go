@@ -19,7 +19,7 @@ type statements struct {
 
 	// Read pool.
 	tenantByID, tenantByName, listTenants *sql.Stmt
-	keyByID, listKeys                     *sql.Stmt
+	keyByID, keyBySuccessor, listKeys     *sql.Stmt
 	grantsByKeyFirst, grantsByKeyNext     *sql.Stmt
 	grantsByScope, rolesFor, actorRead    *sql.Stmt
 
@@ -46,6 +46,9 @@ func prepare(ctx context.Context, p *pools) (*statements, error) {
 		{&s.tenantByName, r, `SELECT ` + tenantColumns + ` FROM tenants WHERE name = ?`},
 		{&s.listTenants, r, `SELECT ` + tenantColumns + ` FROM tenants WHERE name > ? ORDER BY name LIMIT ?`},
 		{&s.keyByID, r, `SELECT ` + keyColumns + ` FROM api_keys WHERE id = ?`},
+		// The condition of a successor not empty is the partial index's own,
+		// so the index is used.
+		{&s.keyBySuccessor, r, `SELECT ` + keyColumns + ` FROM api_keys WHERE successor = ? AND successor <> ''`},
 		{&s.listKeys, r, `SELECT ` + keyColumns + ` FROM api_keys WHERE (created, id) > (?, ?) ORDER BY created, id LIMIT ?`},
 		{&s.grantsByKeyFirst, r, `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = ? ORDER BY g.key_id, g.scope LIMIT ?`},
 		{&s.grantsByKeyNext, r, `SELECT ` + grantColumns + grantFrom + ` WHERE g.key_id = ? AND g.scope > ? ORDER BY g.key_id, g.scope LIMIT ?`},
@@ -60,13 +63,14 @@ func prepare(ctx context.Context, p *pools) (*statements, error) {
 		{&s.setTenantState, w, `UPDATE tenants SET state = ?, state_reason = ? WHERE id = ?`},
 		{&s.deleteTenantGrants, w, `DELETE FROM grants WHERE scope = ?`},
 		{&s.deleteTenant, w, `DELETE FROM tenants WHERE id = ?`},
-		{&s.insertKey, w, `INSERT INTO api_keys (id, hash, holder, created, expires) VALUES (?, ?, ?, ?, ?)`},
+		{&s.insertKey, w, `INSERT INTO api_keys (id, hash, holder, created, expires, networks, client_cert) VALUES (?, ?, ?, ?, ?, ?, ?)`},
 		{&s.keyRevoked, w, `SELECT revoked FROM api_keys WHERE id = ?`},
 		{&s.revokeKey, w, `UPDATE api_keys SET revoked = ? WHERE id = ? AND revoked IS NULL`},
 		// The throttle is in the WHERE: a row whose last use is within the
 		// minute before at, or after at, is not matched, so nothing is
-		// written and the stored time never moves backward.
-		{&s.markKeyUsed, w, `UPDATE api_keys SET last_used = ? WHERE id = ? AND (last_used IS NULL OR last_used < ?)`},
+		// written and the stored time never moves backward. A use with no
+		// address (the local socket) keeps the address stored.
+		{&s.markKeyUsed, w, `UPDATE api_keys SET last_used = ?, last_address = COALESCE(NULLIF(?, ''), last_address) WHERE id = ? AND (last_used IS NULL OR last_used < ?)`},
 		{&s.grantRole, w, `SELECT role FROM grants WHERE key_id = ? AND scope = ?`},
 		// One statement replaces the role of an existing grant, so a key
 		// changing role is never without one, not even for a moment between a

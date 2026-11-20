@@ -55,6 +55,9 @@ func Open(ctx context.Context, cfg Config) (*Store, error) {
 		s.tr.CloseIdleConnections()
 		return nil, err
 	}
+	if set.forReading {
+		return s, nil
+	}
 	if err := s.probeUpload(ctx); err != nil {
 		s.tr.CloseIdleConnections()
 		return nil, err
@@ -157,6 +160,19 @@ func openError(err error) error {
 	return err
 }
 
+// errReadOnly answers a Put or a Delete on a store opened with
+// Config.ForReading: the caller's mistake, never the storage's.
+var errReadOnly = fault.New(fault.Internal, "the storage was opened for reading only")
+
+// beginWrite is begin for a call that writes, which a store opened for
+// reading refuses.
+func (s *Store) beginWrite(ctx context.Context, what string) error {
+	if s.set.forReading {
+		return errReadOnly
+	}
+	return s.begin(ctx, what)
+}
+
 // begin is the start of every call: the store is open and ctx has not ended.
 func (s *Store) begin(ctx context.Context, what string) error {
 	if s.closed.Load() {
@@ -218,7 +234,7 @@ func (s *Store) Stat(ctx context.Context, key string) (blob.Info, error) {
 // Delete removes key with a DELETE request, which S3 answers with success
 // for a key that holds nothing, as the port requires.
 func (s *Store) Delete(ctx context.Context, key string) error {
-	if err := s.begin(ctx, "the delete"); err != nil {
+	if err := s.beginWrite(ctx, "the delete"); err != nil {
 		return err
 	}
 	if err := blob.CheckKey(key); err != nil {

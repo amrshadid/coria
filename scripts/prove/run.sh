@@ -3,7 +3,9 @@
 # does what this version of CORIA claims (an installation made and served,
 # keys, grants and tenants on SQLite and Postgres, refusals, secrets kept
 # sealed, crash safety, the audit log, the local socket, both command line
-# forms and the static builds). It builds the real binary as "make build"
+# forms and the static builds, and reading the archive: the catalog, the
+# headers, downloads, DICOMweb and STOW-RS, the Python client and refusals
+# on every way in to what a tenant holds). It builds the real binary as "make build"
 # does, starts it, and checks each claim with tools that are not CORIA.
 # Nothing here reaches into a Go package: it drives the installed thing from outside, with the binary's own commands,
 # grpcurl, curl, openssl, sqlite3, psql, pg_dump and a Python grpcio client
@@ -20,10 +22,23 @@
 #   4  refused everywhere    9  one server, one user
 #   5  hashed and sealed    10  both forms of the command line
 #                           11  the static builds and their sizes
+#                           12  where a key may be used from
+#
+#  13  a reading installation, built by sending public studies with storescu
+#  14  the catalog equals pydicom's reading
+#  15  metadata equals pydicom's to_json_dict
+#  16  downloads whole, in ranges, and resumed
+#  17  DICOMweb with dicomweb-client, STOW-RS included
+#  18  the Python client against the real server
+#  19  reading is closed by default
 #
 # Needs: go, make, curl, openssl, docker (for Postgres), sqlite3 (SQLITE3=...),
 # grpcurl (GRPCURL=...), and a Python (PYTHON=...) with
 # scripts/requirements/check-server.txt installed. Bash 3.2 or later.
+# Sections 13 to 19 also need dcmtk's storescu (DCMTK=its directory, since
+# pynetdicom installs a program of the same name) and
+# scripts/requirements/prove-reading.txt in that Python; without them they
+# are skipped, and say so.
 #
 # Postgres: by default the script starts its own container (image
 # CORIA_PROVE_PG_IMAGE, postgres:18) and removes it at the end. With
@@ -40,6 +55,8 @@
 #
 # CORIA_PROVE_BUILD=host builds only this machine's binary, for a quicker
 # run while working on the script; check 11 is then skipped.
+# CORIA_PROVE_ONLY=reading runs the builds and sections 13 to 19 alone,
+# without Docker: the reading tenant on Postgres is then skipped.
 set -euo pipefail
 
 if [ "${BASH_VERSINFO[0]}" -lt 3 ] || { [ "${BASH_VERSINFO[0]}" -eq 3 ] && [ "${BASH_VERSINFO[1]}" -lt 2 ]; }; then
@@ -57,6 +74,9 @@ PG_PORT=${CORIA_PROVE_PG_PORT:-}
 PG_IMAGE=${CORIA_PROVE_PG_IMAGE:-postgres:18}
 STRICT=${CORIA_PROVE_STRICT:-0}
 BUILD=${CORIA_PROVE_BUILD:-all}
+ONLY=${CORIA_PROVE_ONLY:-}
+DCMTK=${DCMTK:-}
+STORESCU=${DCMTK:+$DCMTK/}storescu
 # At least 20 kills, so that a creation interrupted at different moments is
 # seen more than once; more give the adaptive delays
 # more chances to land inside the creation.
@@ -66,9 +86,28 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 helper=$root/scripts/prove/steps.py
 started_at=$(date +%s)
 
-for tool in "$GO" make curl openssl "$DOCKER" "$SQLITE3" "$GRPCURL" "$PYTHON"; do
+case $ONLY in
+	'' | reading) ;;
+	*) echo "prove: CORIA_PROVE_ONLY is '$ONLY'; it takes only 'reading'" >&2; exit 2 ;;
+esac
+needs=("$GO" make curl openssl "$SQLITE3" "$GRPCURL" "$PYTHON")
+[ "$ONLY" = reading ] || needs+=("$DOCKER")
+for tool in "${needs[@]}"; do
 	command -v "$tool" > /dev/null || { echo "prove: $tool is not installed (see the header of this script)" >&2; exit 2; }
 done
+# What only the reading sections need. Without it they are skipped, and
+# said to be, so CORIA_PROVE_STRICT=1 fails; asked for alone, the run stops.
+reading_lacks=""
+case $("$STORESCU" --version 2> /dev/null || true) in
+	*dcmtk*) ;;
+	*) reading_lacks="$STORESCU is not dcmtk's storescu (DCMTK= names dcmtk's directory)" ;;
+esac
+"$PYTHON" -c 'import pydicom, dicomweb_client, requests' 2> /dev/null ||
+	reading_lacks="${reading_lacks:+$reading_lacks; }$PYTHON lacks pydicom, dicomweb-client or requests (scripts/requirements/prove-reading.txt)"
+if [ -n "$reading_lacks" ] && [ "$ONLY" = reading ]; then
+	echo "prove: $reading_lacks" >&2
+	exit 2
+fi
 "$PYTHON" -c 'import grpc, prometheus_client' 2> /dev/null || {
 	echo "prove: $PYTHON lacks grpcio or prometheus-client; install scripts/requirements/check-server.txt" >&2
 	exit 2
@@ -314,9 +353,18 @@ wait_pg() {
 # builds first, since the binary under test is one of them; the audit log
 # (8) after every section that made requests; the search for secrets in
 # everything written (the second part of 5) after the audit; the sizes of
-# the builds last. Each is sourced, so it shares this shell's variables.
+# the builds last. The reading sections (13 to 19) run on an installation of
+# their own, after section 3 has made the run's Postgres. Each is sourced,
+# so it shares this shell's variables.
 here=$root/scripts/prove
-for part in 11-builds 01-install 02-first-key 03-tenants 04-refused 05-sealed 06-tenant-stops-alone 07-crash 09-one-server 10-command-line 08-audited 05-stored-hashed 11-sizes; do
+reading_parts="13-reading-installation 14-catalog 15-metadata 16-downloads 17-dicomweb 18-python-client 19-reading-refused"
+if [ -n "$reading_lacks" ]; then
+	skip "13-19 reading the archive" "$reading_lacks"
+	reading_parts=""
+fi
+parts="11-builds 01-install 02-first-key 03-tenants 04-refused 05-sealed 06-tenant-stops-alone 07-crash 09-one-server 10-command-line 12-access $reading_parts 08-audited 05-stored-hashed 11-sizes"
+[ "$ONLY" != reading ] || parts="11-builds $reading_parts"
+for part in $parts; do
 	# shellcheck source=/dev/null
 	. "$here/$part.sh"
 done
