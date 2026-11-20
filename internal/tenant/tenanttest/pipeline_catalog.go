@@ -9,6 +9,7 @@ import (
 	"github.com/amrshadid/coria/internal/core/layout"
 	"github.com/amrshadid/coria/internal/core/reception"
 	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
@@ -379,5 +380,67 @@ func testCommitSharesSubject(e *penv) {
 	e.ok("CatalogTotals", err)
 	if totals.Subjects != 1 || totals.Sessions != 2 {
 		e.Errorf("two studies of one subject made %d subjects and %d sessions, want 1 and 2", totals.Subjects, totals.Sessions)
+	}
+}
+
+// testInstanceUIDOncePerTenant guards the port's rule that a SOP Instance
+// UID names one instance in a tenant, not one per scan: an instance held in
+// a scan of one study is the only one under its UID, and a file under the
+// same UID and the same bytes in another study, or in another series of
+// the same study, is the UID elsewhere, by CheckDuplicates and by the
+// claim, names the scan that holds it, cannot be confirmed into its own
+// scan, and leaves the catalog as it was; so an instance is found by its
+// UID alone.
+func testInstanceUIDOncePerTenant(e *penv) {
+	e.addReceiver("a", "store", 11112)
+	e.addReceiver("b", "store", 11113)
+	r1, f1 := e.identified("a", 1, 7)
+	e.commit(r1, f1...)
+	held := f1[0]
+	before, err := e.p.CatalogTotals(e.ctx)
+	e.ok("CatalogTotals", err)
+
+	// The same UID and checksum: in another study (series 2 of study 2),
+	// then in another series of the same study.
+	r2, f2 := e.identifiedWith("b", 2, func(r tenant.Reception) []tenant.ReceivedFile { return []tenant.ReceivedFile{file(r, 2, 7)} })
+	r3, f3 := e.identifiedWith("a", 1, func(r tenant.Reception) []tenant.ReceivedFile {
+		return []tenant.ReceivedFile{variant(file(r, 1, 7), 7, uidOf(2, 3))}
+	})
+	for _, c := range []struct {
+		what string
+		r    tenant.Reception
+		f    tenant.ReceivedFile
+	}{{"another study", r2, f2[0]}, {"another series of the same study", r3, f3[0]}} {
+		if c.f.SOPInstanceUID != held.SOPInstanceUID || c.f.SHA256 != held.SHA256 || c.f.SeriesUID == held.SeriesUID {
+			e.Fatalf("%s: the suite's file is not the held UID and bytes under another series", c.what)
+		}
+		d := e.check(claimOf(c.f))
+		e.wantDup("CheckDuplicates, "+c.what, d, tenant.UIDElsewhere, held.SHA256, r1.ID)
+		if d.HeldStudyUID != held.StudyUID || d.HeldSeriesUID != held.SeriesUID {
+			e.Errorf("CheckDuplicates, %s: names study %s series %s, want the held instance's %s %s", c.what,
+				d.HeldStudyUID, d.HeldSeriesUID, held.StudyUID, held.SeriesUID)
+		}
+		e.wantDup("the claim, "+c.what, e.claim(c.r, claimOf(c.f))[0], tenant.UIDElsewhere, held.SHA256, r1.ID)
+		p := e.labelsOf(c.r.StudyUID, c.f.SeriesUID)
+		key, err := layout.InstanceKey(p, c.f.SOPInstanceUID)
+		e.ok("InstanceKey", err)
+		_, err = e.p.CommitScan(e.ctx, tenant.ScanCommit{ReceptionID: c.r.ID, StudyUID: c.r.StudyUID, SeriesUID: c.f.SeriesUID,
+			SubjectLabel: p.Subject, SessionLabel: p.Session, ScanLabel: p.Scan, Storage: "store", At: at(100),
+			Instances: []tenant.ConfirmedInstance{{SOPInstanceUID: c.f.SOPInstanceUID, Key: key, Length: c.f.Size, Size: c.f.Size, ArchivedSHA256: c.f.SHA256}}})
+		e.wantPrecondition("a commit of a held UID into a scan of "+c.what, err)
+		if got := allPages(e, 10, func(pg master.Page) ([]tenant.ScanInstance, string, error) {
+			return e.p.ScanInstances(e.ctx, c.f.SeriesUID, pg)
+		}); len(got) != 0 {
+			e.Errorf("the scan of %s lists %d instances, want none", c.what, len(got))
+		}
+	}
+	got := allPages(e, 10, func(pg master.Page) ([]tenant.ScanInstance, string, error) {
+		return e.p.ScanInstances(e.ctx, held.SeriesUID, pg)
+	})
+	if len(got) != 1 || got[0].SOPInstanceUID != held.SOPInstanceUID || got[0].ReceptionID != r1.ID {
+		e.Errorf("the held scan lists %+v, want the one instance its reception confirmed", got)
+	}
+	if after, _ := e.p.CatalogTotals(e.ctx); after != before {
+		e.Errorf("the catalog changed %+v -> %+v for a UID it holds", before, after)
 	}
 }

@@ -47,6 +47,26 @@ asks for it through an environment variable below and skips when the variable
 is unset (or fails, when the matching `CORIA_REQUIRE_*` variable is set, as
 CI sets it).
 
+The catalog is measured at scale by `TestScaleCatalog` in each database
+driver, on a synthetic tenant `testkit.GenerateTenant` writes through the
+tenant port: it runs only when `CORIA_SCALE_INSTANCES` says how large, since
+ten million instances take from minutes to hours. `TestScaleCatalog` is
+skipped in `make test-scale` without it. One run of each:
+
+```
+CORIA_SCALE_INSTANCES=10000000 CORIA_SCALE_SUMMARY=$GITHUB_STEP_SUMMARY \
+  go test -count=1 -v -timeout 6h -run '^TestScaleCatalog$' ./internal/driver/sqlite
+CORIA_TEST_POSTGRES=postgres://... CORIA_SCALE_INSTANCES=10000000 CORIA_SCALE_SUMMARY=$GITHUB_STEP_SUMMARY \
+  go test -count=1 -v -timeout 6h -run '^TestScaleCatalog$' ./internal/driver/postgres
+go test -run '^$' -bench BenchmarkPackedScan -benchtime 10x ./internal/blob/dir
+CORIA_TEST_S3=http://KEY:SECRET@host:port/bucket go test -run '^$' -bench BenchmarkPackedScan -benchtime 10x ./internal/blob/s3
+```
+
+A Postgres tenant takes about 1.7 KB of disk per instance, tables and
+indexes together. The storage drivers' benchmark
+`BenchmarkPackedScan` reads a scan of 500 small instances kept one object per
+instance and kept as one packed object read by ranges.
+
 The SQLite driver's event feed is measured at scale by `TestScaleEventFeed` (a
 million events) and `TestScaleWriterBesideIdleWatches` (a thousand idle
 watches). Both run in `make test-scale` and are skipped under `-short`, under
@@ -75,6 +95,9 @@ itself reads are listed first.
 | `CORIA_TEST_S3` | How to reach a scratch S3 server, as `http://KEY:SECRET@host:port/bucket`, with `region=NAME` and `pathstyle=0` in the query when needed. | unset: the tests against a server skip | `internal/blob/s3`, `internal/receive`, `internal/cli/servecmd`; `make test-s3` sets it for each server; the bucket must exist (the S3 driver's tests make it) |
 | `CORIA_REQUIRE_S3` | When set to anything, a missing S3 server is a failure instead of a skip. | unset | `internal/blob/s3`, `internal/receive`, `internal/cli/servecmd`; set by `make test-s3` and by CI |
 | `CORIA_TEST_SCALE` | When set, runs the scale tests of the reception pipeline that take minutes. | unset: they skip | `internal/receive` (`TestScale*`); set by `make test-scale` |
+| `CORIA_SCALE_INSTANCES` | How many instances the catalog's scale tests make, through the tenant port, from a seed (`testkit.GenerateTenant`); they then log reception's rate into the empty and the large tenant, table and index sizes, the plan and the median and 99th percentile time of each catalog read, and the time of `VACUUM`. Ten million takes hours on SQLite and about 1.7 KB of database per instance on Postgres. No make target sets it. | unset: they skip | `internal/driver/sqlite`, `internal/driver/postgres` (`TestScaleCatalog`) |
+| `CORIA_SCALE_SUMMARY` | A file the catalog's scale tests append their numbers to as a Markdown table (in CI, `$GITHUB_STEP_SUMMARY`); the table is logged either way. | unset: logged only | `internal/driver/sqlite`, `internal/driver/postgres` (`TestScaleCatalog`) |
+| `CORIA_SCALE_KEEP` | When set to anything, the catalog's scale tests keep the database they made (a SQLite file in the temporary directory, a Postgres schema `scale_...`) and log where it is, so its plans can be read again with `sqlite3` or `psql`; whoever set it removes it. | unset: removed at the end | `internal/driver/sqlite`, `internal/driver/postgres` (`TestScaleCatalog`) |
 | `CORIA_SCALE` | When set, the event feed's adversarial test runs its long form (400 operations instead of 60). No make target sets it. | unset | `internal/driver/sqlite` (`TestEventFeedUnderAdversaries`) |
 | `CORIA_MEASURE` | When set, runs the measurement of the gap between the two denial paths; it is a measurement, not a check. Run it without the race detector. | unset: it skips | `internal/access` (`TestMeasureDeniedGap`) |
 | `CORIA_BLOB_SMALL_VOLUME` | A directory on a small volume (a tmpfs of a few megabytes, say) for the full-volume test of the directory storage driver. | unset: it skips | `internal/blob/dir` (`TestFullVolumeKeepsOldObject`) |

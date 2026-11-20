@@ -56,6 +56,7 @@ func runPipeline(t *testing.T, open OpenPipeline) {
 		{"Claims", testClaims},
 		{"ClaimsOutliveTheirReception", testClaimsOutliveTheirReception},
 		{"CommitScan", testCommitScan},
+		{"InstanceUIDOncePerTenant", testInstanceUIDOncePerTenant},
 		{"ReleaseIntoSameReception", testReleaseIntoSameReception},
 		{"DiscardKeepsQuarantined", testDiscardKeepsQuarantined},
 		{"DiscardLeavesLivePlaces", testDiscardLeavesLivePlaces},

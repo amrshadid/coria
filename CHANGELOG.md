@@ -8,6 +8,16 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- The tenant port states that a tenant holds one instance per SOP Instance
+  UID (a file whose UID is held in another series, or a different file under
+  a held UID, is quarantined), and its contract suite holds both drivers to
+  it.
+- Scale measurements, run on demand: a generator of synthetic tenants in
+  `internal/testkit`, written through the tenant port; `TestScaleCatalog` in
+  each database driver (sizes, insert rates, the catalog's query plans and
+  times, index sizes, vacuum time), sized by `CORIA_SCALE_INSTANCES`; and
+  `BenchmarkPackedScan` on the directory and S3 drivers (a scan read one
+  object at a time against one packed object).
 - The contract for reading the archive: `CatalogService` (list and get a
   tenant's subjects, sessions and scans, with filters and paging),
   `MetadataService` (a scan's or an instance's headers as DICOM JSON) and

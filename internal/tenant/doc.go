@@ -33,6 +33,26 @@
 // closed, Internal for the rest, a duplicate audit id included
 // (master.ErrDuplicateAuditID). Store's documentation says each rule.
 //
+// # One instance per UID in a tenant
+//
+// A SOP Instance UID names at most one instance in a tenant, whatever its
+// study, series or bytes: not one per scan. The catalog holds one row per
+// UID, claimed by one reception at a time and then held; a file under a
+// UID held in another study or series is UIDElsewhere, one under the same
+// series with other bytes is DifferentFile, and neither is ever archived
+// beside the held instance, which reception never replaces (CompareHeld,
+// DecideClaim). Each driver also holds the rule in its schema, the UID
+// being the key of the instances' table, so neither a race between two
+// claims nor a fault in a driver's code can hold two.
+//
+// Per tenant, because a UID is unique by the standard's own rule (PS3.5
+// 9.1), so two files under one UID in two series are a fault of a sender,
+// or of a de-identification that kept a UID it should have replaced, which
+// a person decides from the quarantine; and because an instance must be
+// found by its UID alone: DICOMweb's retrieval of an instance (PS3.18 10.4)
+// and a file's place in the catalog both name it so. Per scan would let
+// one UID answer with two files.
+//
 // # Who makes a change
 //
 // A change in the master takes the acting key (master.Actor) and checks it
