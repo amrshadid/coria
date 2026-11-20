@@ -552,6 +552,7 @@ type clients struct {
 	receptions coriav1connect.ReceptionServiceClient
 	quarantine coriav1connect.QuarantineServiceClient
 	monitor    coriav1connect.MonitorServiceClient
+	metadata   coriav1connect.MetadataServiceClient
 }
 
 // as returns clients that call as c.
@@ -580,6 +581,7 @@ func (e *env) as(c caller) clients {
 		receptions: coriav1connect.NewReceptionServiceClient(cl),
 		quarantine: coriav1connect.NewQuarantineServiceClient(cl),
 		monitor:    coriav1connect.NewMonitorServiceClient(cl),
+		metadata:   coriav1connect.NewMetadataServiceClient(cl),
 	}
 }
 

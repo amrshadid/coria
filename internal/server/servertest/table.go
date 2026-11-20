@@ -189,6 +189,11 @@ func Contract() Table {
 		coriav1connect.QuarantineServiceReleaseQuarantinedFileProcedure: onTenant(func() *coriav1.ReleaseQuarantinedFileRequest { return &coriav1.ReleaseQuarantinedFileRequest{} }, master.RoleOperator),
 		coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure:  onTenant(func() *coriav1.RejectQuarantinedFileRequest { return &coriav1.RejectQuarantinedFileRequest{} }, master.RoleOperator),
 
+		// MetadataService: reader on the tenant for a scan's or an
+		// instance's header.
+		coriav1connect.MetadataServiceGetScanMetadataProcedure:     onTenant(func() *coriav1.GetScanMetadataRequest { return &coriav1.GetScanMetadataRequest{} }, master.RoleReader),
+		coriav1connect.MetadataServiceGetInstanceMetadataProcedure: onTenant(func() *coriav1.GetInstanceMetadataRequest { return &coriav1.GetInstanceMetadataRequest{} }, master.RoleReader),
+
 		// MonitorService: "reader on the tenant asked for; operator on the
 		// installation for every tenant."
 		coriav1connect.MonitorServiceGetStatusProcedure: byMessage(

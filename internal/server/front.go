@@ -199,6 +199,11 @@ func credentialFrom(h http.Header, local localPeer, isLocal bool) access.Credent
 // without bound. A path with percent-encoding is never exact: it is asked
 // for under a name the server does not serve.
 func (s *Server) nameOf(r *http.Request) (method, metric string) {
+	if m, ok := s.matchPattern(r); ok {
+		// A pattern route is named by its pattern whatever its path holds:
+		// the path holds the tenant's labels and ids, which no log keeps.
+		return m.route.Pattern, m.route.Pattern
+	}
 	if r.URL.RawPath != "" {
 		return unnamedMethod, unknownMetric
 	}
@@ -218,11 +223,14 @@ const unknownMetric = "unknown"
 
 // route is the router, which only a request front let through reaches:
 // one whose caller is authenticated, or one for a public path. It
-// dispatches by exact match only: a served procedure to its handler from
-// the one checked connect.Server, a plain route's path to the mux, which
-// holds the route's HTTP method; anything else, a path with any
-// percent-encoding, a double slash, a trailing slash or a different case
-// included, is answered by notServed and reaches no handler.
+// dispatches a served procedure to its handler from the one checked
+// connect.Server, and a plain route's path to the mux, which holds the
+// route's HTTP method, by exact match only; a path with the shape and the
+// method of a pattern route to servePattern, which checks the route's
+// requirement before it reads the rest of the path; anything else, a path
+// with any percent-encoding, a double slash, a trailing slash or a
+// different case included, is answered by notServed and reaches no
+// handler.
 func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawPath == "" {
 		if h, ok := s.procs[r.URL.Path]; ok {
@@ -233,6 +241,10 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) {
 			s.mux.ServeHTTP(w, r)
 			return
 		}
+	}
+	if m, ok := s.matchPattern(r); ok {
+		s.servePattern(w, r, m)
+		return
 	}
 	s.notServed(w, r)
 }

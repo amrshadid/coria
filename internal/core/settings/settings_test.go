@@ -37,6 +37,7 @@ func TestBuiltin(t *testing.T) {
 		IncomingLimit:         {SetByInstallation, "0", false},
 		EventsRetention:       {Ordinary, "90d", false},
 		ReceiverHeaderLimit:   {InstallationOnly, "64MiB", false},
+		APICORSOrigins:        {InstallationOnly, "", false},
 	}
 	if got := tab.Names(); len(got) != len(want) {
 		t.Errorf("names %v, want the %d this test knows", got, len(want))

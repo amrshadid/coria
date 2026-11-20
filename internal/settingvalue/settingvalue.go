@@ -147,6 +147,13 @@ func (r Reader) HeaderLimit(ctx context.Context) (int64, error) {
 	return typed(settings.ReceiverHeaderLimit, v, err, settings.ParseHeaderLimit)
 }
 
+// CORSOrigins returns the installation's api.cors-origins: the web origins
+// whose pages may call the API from a browser.
+func (r Reader) CORSOrigins(ctx context.Context) (settings.Origins, error) {
+	v, err := r.Installation(ctx, settings.APICORSOrigins)
+	return typed(settings.APICORSOrigins, v, err, settings.ParseOrigins)
+}
+
 // OnTenant returns the reader of the settings that apply on the tenant
 // whose store is st.
 func (r Reader) OnTenant(st Source) Tenant { return Tenant{r: r, st: st} }

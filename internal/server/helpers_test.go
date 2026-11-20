@@ -28,6 +28,7 @@ import (
 	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/driver/sqlite"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/obs"
@@ -84,6 +85,12 @@ type options struct {
 	// registry is given to the server as its tenant registry, for a test of
 	// what Stop does with it; nil gives none.
 	registry server.Registry
+	// patterns replaces the pattern routes every test server has (the
+	// stand-in download, testPatterns).
+	patterns []server.PatternRoute
+	// corsOrigins is the server's reading of the allowed CORS origins;
+	// nil allows none.
+	corsOrigins func(context.Context) (settings.Origins, error)
 }
 
 // env is one running server over a fresh SQLite master, with stand-in
@@ -179,6 +186,10 @@ func newEnv(tb testing.TB, o options) *env {
 		Register: register, DefaultDeadline: o.deadline, Drain: o.drain,
 		MaxDeadline: o.maxDL, BodyReadTimeout: o.bodyRead, Grace: o.grace, Close: o.closeT,
 		Methods: methods, WithDecision: withDecision, Registry: o.registry,
+		PatternRoutes: o.patterns, CORSOrigins: o.corsOrigins,
+	}
+	if cfg.PatternRoutes == nil {
+		cfg.PatternRoutes = testPatterns()
 	}
 	if !o.noNetwork {
 		certFile, keyFile, roots := testCert(tb, e.dir)

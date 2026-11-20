@@ -20,13 +20,16 @@
 //     HTTP method, whether anything serves the path, or the body, which is
 //     not read. So such a caller learns nothing from the server, not even
 //     which methods it serves, and cannot hold one path longer than another.
-//  3. The router, for an authenticated caller (or a public path): exact
-//     match only. A served procedure goes to its handler from the one
-//     connect.Server built with the interceptor; a plain route's path to
-//     its route. Anything else, a path with any percent-encoding, a double
-//     or trailing slash included, reaches no handler: the server answers it
-//     UNIMPLEMENTED in the caller's RPC protocol (NOT_FOUND to plain HTTP),
-//     over any HTTP version, and audits it as failed, served=false.
+//  3. The router, for an authenticated caller (or a public path). A served
+//     procedure goes to its handler from the one connect.Server built with
+//     the interceptor, and a plain route's path to its route, by exact
+//     match only. A path with the shape and the method of a pattern route
+//     (a route inside one tenant, whose path names the tenant) goes to that
+//     route; its path is matched as sent, never decoded or cleaned. Anything
+//     else, a path with any percent-encoding, a double or trailing slash
+//     included, reaches no handler: the server answers it UNIMPLEMENTED in
+//     the caller's RPC protocol (NOT_FOUND to plain HTTP), over any HTTP
+//     version, and audits it as failed, served=false.
 //  4. pass, the one function the Connect interceptor calls for every RPC and
 //     the HTTP middleware for every plain route: access.Check with the
 //     method's requirement, using the credential the front step accepted;
@@ -68,8 +71,16 @@
 // tested against the descriptors both ways) and stand-in handlers for tests.
 //
 // There is one way to add a route: the one connect.Server the server builds
-// with its interceptor (Config.Register is handed it), and Config.HTTPRoutes,
-// each one exact path, wrapped in the middleware. The router serves only the
+// with its interceptor (Config.Register is handed it), Config.HTTPRoutes,
+// each one exact path, wrapped in the middleware, and Config.PatternRoutes.
+// A pattern route's requirement is computed for each request from its path
+// (the tenant's name, given to the requirement only when it follows the
+// rule of a tenant's name, so a malformed one is held to the role on the
+// installation) and checked by pass like any other; only then are the
+// path's other values read, and a path any of which is not a plain segment
+// (percent-encoding, a dot segment, an empty or over-long segment) is
+// answered 404, never redirected and never handed to its handler. No two
+// routes may match one path, but for one path served under two methods. The router serves only the
 // paths recorded at New; a handler registered any other way is never
 // reached. The route test sends every pattern registered a request without
 // a key, which must be refused, and one from the local operator, which must
@@ -84,6 +95,16 @@
 // counts requests in flight for the drain; applies the deadlines and the
 // body's read bound; and logs and counts every answer the request path did
 // not, so each request id on the wire is in the log.
+//
+// It also answers pages in a browser (cors.go). The server is closed to
+// them by default: only an origin the installation's api.cors-origins
+// lists exactly, or every origin when it is "*", gets
+// Access-Control-Allow-Origin and the exposed headers, on every answer, a
+// refusal included; its preflight is answered 204 with the methods and
+// headers the clients send, before the front step and unaudited, since it
+// carries no key. Any other origin gets no CORS header, and its preflight
+// is refused like any request without a key. Every answer carries Vary:
+// Origin; none carries Access-Control-Allow-Credentials.
 //
 // # Listeners
 //

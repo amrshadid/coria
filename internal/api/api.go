@@ -100,6 +100,8 @@ type Handlers struct {
 	Quarantine coriav1connect.QuarantineServiceHandler
 	// Monitor is MonitorService.
 	Monitor coriav1connect.MonitorServiceHandler
+	// Metadata is MetadataService.
+	Metadata coriav1connect.MetadataServiceHandler
 
 	// c is what the services share, kept for the test seams
 	// (export_test.go).
@@ -150,6 +152,7 @@ func New(cfg Config) (Handlers, error) {
 		Receptions: receptionService{c},
 		Quarantine: quarantineService{c},
 		Monitor:    monitorService{c},
+		Metadata:   metadataService{c},
 		c:          c,
 	}, nil
 }
@@ -165,6 +168,7 @@ func (h Handlers) Register(srv *connect.Server) {
 	coriav1connect.RegisterReceptionServiceHandler(srv, h.Receptions)
 	coriav1connect.RegisterQuarantineServiceHandler(srv, h.Quarantine)
 	coriav1connect.RegisterMonitorServiceHandler(srv, h.Monitor)
+	coriav1connect.RegisterMetadataServiceHandler(srv, h.Metadata)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only

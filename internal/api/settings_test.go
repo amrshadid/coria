@@ -244,7 +244,7 @@ func testListSettings(t *testing.T) {
 		{name: "installation, at the role", as: f.instReader, call: list(installation(), 0, ""),
 			audit: &wantAudit{outcome: master.OutcomeDone, details: map[string]string{"scope": "installation"}},
 			check: func(t *testing.T, o outcome) {
-				want := "events.retention=90d@/BUILT_IN,incoming.limit=0@/BUILT_IN,key.default-lifetime=90d@/BUILT_IN," +
+				want := "api.cors-origins=@/BUILT_IN,events.retention=90d@/BUILT_IN,incoming.limit=0@/BUILT_IN,key.default-lifetime=90d@/BUILT_IN," +
 					"receiver.bind-addresses=@/BUILT_IN,receiver.header-limit=64MiB@/BUILT_IN,receiver.ports=@/BUILT_IN,storage.directory-roots=@/BUILT_IN," +
 					"storage.reserve=10%,10GiB@/BUILT_IN,storage.s3-endpoints=@/BUILT_IN,test.allotted=@/BUILT_IN,test.retention=100d@/INSTALLATION,test.text=@/BUILT_IN"
 				if got := names(o); got != want {
@@ -254,13 +254,13 @@ func testListSettings(t *testing.T) {
 		{name: "installation, a page of 9", as: f.instReader, call: list(installation(), 9, ""),
 			check: func(t *testing.T, o outcome) {
 				token = o.res.(*v1.ListSettingsResponse).GetNextPageToken()
-				if got := names(o); !strings.HasPrefix(got, "events.retention=") || !strings.HasSuffix(got, "storage.s3-endpoints=@/BUILT_IN") || token == "" {
+				if got := names(o); !strings.HasPrefix(got, "api.cors-origins=") || !strings.HasSuffix(got, "storage.reserve=10%,10GiB@/BUILT_IN") || token == "" {
 					t.Errorf("got %q, token %q", got, token)
 				}
 			}},
 		{name: "installation, the next page", as: f.instReader, call: func(c clients) outcome { return list(installation(), 9, token)(c) },
 			check: func(t *testing.T, o outcome) {
-				if got, next := names(o), o.res.(*v1.ListSettingsResponse).GetNextPageToken(); got != "test.allotted=@/BUILT_IN,test.retention=100d@/INSTALLATION,test.text=@/BUILT_IN" || next != "" {
+				if got, next := names(o), o.res.(*v1.ListSettingsResponse).GetNextPageToken(); got != "storage.s3-endpoints=@/BUILT_IN,test.allotted=@/BUILT_IN,test.retention=100d@/INSTALLATION,test.text=@/BUILT_IN" || next != "" {
 					t.Errorf("got %q, token %q", got, next)
 				}
 			}},

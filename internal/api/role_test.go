@@ -525,8 +525,8 @@ func TestPendingRules(t *testing.T) {
 	lines := roleLines(t)
 	var p api.Pending
 	procs := p.Procedures()
-	if len(procs) != 9 {
-		t.Errorf("the table of methods not served has %d lines; this test was written for 9, so look at what changed", len(procs))
+	if len(procs) != 7 {
+		t.Errorf("the table of methods not served has %d lines; this test was written for 7, so look at what changed", len(procs))
 	}
 	for _, proc := range procs {
 		if !inServices(notServed, proc) {
@@ -578,9 +578,6 @@ func TestPendingRules(t *testing.T) {
 		{"ListSessions", coriav1connect.CatalogServiceListSessionsProcedure,
 			&v1.ListSessionsRequest{Tenant: "lab1", StudyDateStart: "20240101", StudyDateEnd: "20241231", Receiver: "scanner1"},
 			"", map[string]string{"study_date_start": "20240101", "study_date_end": "20241231", "receiver": "scanner1"}},
-		{"GetInstanceMetadata", coriav1connect.MetadataServiceGetInstanceMetadataProcedure,
-			&v1.GetInstanceMetadataRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", InstanceId: uid},
-			"S01/E01/T1", map[string]string{"instance": "present"}},
 		{"ReadFiles", coriav1connect.DataServiceReadFilesProcedure,
 			&v1.ReadFilesRequest{Tenant: "lab1", SubjectLabel: "S01", SessionLabel: "E01", ScanLabel: "T1", InstanceId: uid, StartAfter: &v1.ReadPosition{InstanceId: uid}},
 			"S01/E01/T1", map[string]string{"instance": "present", "start_after": "present", "announce_only": "false"}},

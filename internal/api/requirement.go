@@ -295,6 +295,20 @@ var rules = map[string]rule{
 	coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure: byMessage(func(r *v1.RejectQuarantinedFileRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
 	}),
+
+	// MetadataService: reader on the tenant. The object is the scan's path
+	// of labels, and an instance id is recorded only as present, since it
+	// holds a SOP Instance UID as received in this version.
+	coriav1connect.MetadataServiceGetScanMetadataProcedure: byMessage(func(r *v1.GetScanMetadataRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel())}
+	}),
+	coriav1connect.MetadataServiceGetInstanceMetadataProcedure: byMessage(func(r *v1.GetInstanceMetadataRequest) (access.Requirement, access.Request) {
+		d := map[string]string{}
+		if r.GetInstanceId() != "" {
+			d[detailInstance] = presentValue
+		}
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: d}
+	}),
 }
 
 // pendingRules is the table of the methods whose service the contract
@@ -335,56 +349,10 @@ var pendingRules = map[string]rule{
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel())}
 	}),
 
-	// MetadataService.
-	coriav1connect.MetadataServiceGetScanMetadataProcedure: byMessage(func(r *v1.GetScanMetadataRequest) (access.Requirement, access.Request) {
-		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel())}
-	}),
-	coriav1connect.MetadataServiceGetInstanceMetadataProcedure: byMessage(func(r *v1.GetInstanceMetadataRequest) (access.Requirement, access.Request) {
-		d := map[string]string{}
-		if r.GetInstanceId() != "" {
-			d[detailInstance] = presentValue
-		}
-		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: d}
-	}),
-
 	// DataService.
 	coriav1connect.DataServiceReadFilesProcedure: byMessage(func(r *v1.ReadFilesRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: labelPath(r.GetSubjectLabel(), r.GetSessionLabel(), r.GetScanLabel()), Details: readFilesDetails(r)}
 	}),
-}
-
-// downloadMethod is what the audit entry of a plain HTTP download of an
-// instance names as its method (data.proto, DataService): the route, never
-// the request's path, which holds an instance id.
-const downloadMethod = "GET /tenants/{tenant}/instances/{subject}/{session}/{scan}/{instance}"
-
-// download is the parts of the path and query of a plain HTTP download of
-// an instance, as the route has read them, unchecked.
-type download struct {
-	// Tenant, Subject, Session and Scan are the path's names.
-	Tenant, Subject, Session, Scan string
-	// Instance is the path's instance id.
-	Instance string
-	// Ranged is whether the request carries a Range header; Window is
-	// whether its query names a part of the instance (offset and length).
-	Ranged, Window bool
-}
-
-// pendingDownload is the requirement and the audit facts of a plain HTTP
-// download of an instance, which no route serves yet; the change that
-// serves it gives its route this rule. It is checked before the rest of
-// the path is read and the instance looked up, so a refusal says nothing
-// of what the tenant holds: reader on the tenant the path names, or on the
-// installation for a malformed name (doc.go), as for every method.
-func pendingDownload(d download) (access.Requirement, access.Request) {
-	details := map[string]string{
-		detailRanged: strconv.FormatBool(d.Ranged),
-		detailWindow: strconv.FormatBool(d.Window),
-	}
-	if d.Instance != "" {
-		details[detailInstance] = presentValue
-	}
-	return onTenantNamed(d.Tenant, master.RoleReader), access.Request{Object: labelPath(d.Subject, d.Session, d.Scan), Details: details}
 }
 
 // The keys of the details the reading methods put in audit entries.

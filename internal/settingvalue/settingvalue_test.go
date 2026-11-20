@@ -103,4 +103,11 @@ func TestAChangeIsReadAtOnce(t *testing.T) {
 	if n, err := r.HeaderLimit(ctx); err != nil || n != 128<<20 {
 		t.Fatalf("after a change %d, %v", n, err)
 	}
+	if o, err := r.CORSOrigins(ctx); err != nil || o.Any || len(o.List) != 0 {
+		t.Fatalf("CORS origins by default %+v, %v; want none", o, err)
+	}
+	m.v[settings.APICORSOrigins] = "https://viewer.example.org"
+	if o, err := r.CORSOrigins(ctx); err != nil || !o.Allows("https://viewer.example.org") || o.Allows("https://other.example.org") {
+		t.Fatalf("CORS origins after a change %+v, %v", o, err)
+	}
 }

@@ -17,5 +17,4 @@
 # until it is.
 
 coria.v1.CatalogService
-coria.v1.MetadataService
 coria.v1.DataService

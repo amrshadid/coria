@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -41,6 +42,9 @@ func uncheckedRoutes(t *testing.T, e *env) []string {
 			// A subtree: probe a path inside it.
 			path += "probe"
 		}
+		// A pattern route: probe a path of its shape, each wildcard one
+		// plain segment.
+		path = wildcard.ReplaceAllString(path, "probe")
 		do := func(c *http.Client, base string) (*http.Response, string) {
 			req, _ := http.NewRequest(method, base+path, strings.NewReader("{}"))
 			req.Header.Set("Content-Type", "application/json")
@@ -69,6 +73,10 @@ func uncheckedRoutes(t *testing.T, e *env) []string {
 	}
 	return bad
 }
+
+// wildcard is a wildcard of an http.ServeMux pattern, "{name}" or
+// "{name...}".
+var wildcard = regexp.MustCompile(`\{[a-z_0-9]+(\.\.\.)?\}`)
 
 // loggedMethod returns the method of the "request" log line of the request
 // with this id, or "" when there is none.

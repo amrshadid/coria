@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/grpchealth/v2"
 
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/obs"
@@ -161,6 +162,13 @@ type Config struct {
 	// HTTPRoutes are plain HTTP routes besides /metrics, each wrapped in the
 	// request path.
 	HTTPRoutes []HTTPRoute
+	// PatternRoutes are plain HTTP routes inside one tenant, whose
+	// requirement is computed from each request's path (PatternRoute).
+	PatternRoutes []PatternRoute
+	// CORSOrigins returns the web origins whose pages may call the API
+	// from a browser (the installation's api.cors-origins); the server
+	// reads it at most every corsRefresh. Nil allows no origin.
+	CORSOrigins func(ctx context.Context) (settings.Origins, error)
 
 	// DefaultDeadline, MaxDeadline and BodyReadTimeout replace the
 	// constants of the same names; zero keeps them. Tests shorten them.
@@ -193,6 +201,13 @@ type Server struct {
 	procs map[string]http.Handler
 	// plain maps the path of each plain HTTP route to its pattern.
 	plain map[string]string
+	// patterns are the pattern routes, in the order given, and
+	// patternHeads the literal first segments of their paths, so a path
+	// under none of them is not split.
+	patterns     []*patternRoute
+	patternHeads map[string]bool
+	// cors is the policy of answers to pages in a browser.
+	cors *corsPolicy
 	// hook, set only by tests before Start, is called at the points named
 	// by the point constants (Server.at), to stop a request there.
 	hook func(ctx context.Context, point string)
@@ -250,12 +265,14 @@ func New(cfg Config) (*Server, error) {
 		health:       grpchealth.NewStaticChecker(),
 		serveErrs:    make(chan error, 2),
 		socketUser:   selfUser(),
+		cors:         &corsPolicy{read: cfg.CORSOrigins, log: cfg.Log, now: time.Now},
 	}
 	if s.methods == nil {
 		s.methods = noMethods{}
 	}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
+		s.cors.log = s.log
 	}
 	if cfg.TLSCert != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
@@ -299,7 +316,8 @@ func (s *Server) counters() []obs.Counter {
 // buildRoutes makes the one connect.Server, registers the API's services
 // and the health service on it, and records each of its procedures, and
 // each plain HTTP route (the metrics and Config.HTTPRoutes, each in the
-// middleware), as an exact path the router serves. The handler of every
+// middleware), as an exact path the router serves, and each pattern route
+// (Config.PatternRoutes), which the router matches on the path as sent. The handler of every
 // listener is then the envelope, around the front step, around the router:
 // no route is chosen before the caller is known.
 func (s *Server) buildRoutes() error {
@@ -331,6 +349,12 @@ func (s *Server) buildRoutes() error {
 	routes := append([]HTTPRoute{{Pattern: MetricsPattern, Need: access.OnInstallation(master.RoleReader), Handler: s.serveMetrics}}, s.cfg.HTTPRoutes...)
 	for _, r := range routes {
 		if err := s.handleHTTP(r); err != nil {
+			return err
+		}
+	}
+	s.patternHeads = make(map[string]bool)
+	for _, r := range s.cfg.PatternRoutes {
+		if err := s.handlePattern(r); err != nil {
 			return err
 		}
 	}

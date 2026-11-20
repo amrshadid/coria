@@ -404,6 +404,7 @@ func TestSettingCommands(t *testing.T) {
 		"NAME            VALUE  FROM\ntest.retention  90d    tenant lab1 (override)\n", "")
 	expect(t, r.run("setting", "list"), 0,
 		"NAME                     VALUE      FROM\n"+
+			"api.cors-origins                    built-in default\n"+
 			"events.retention         90d        built-in default\n"+
 			"incoming.limit           0          built-in default\n"+
 			"key.default-lifetime     90d        built-in default\n"+
@@ -425,7 +426,7 @@ func TestSettingCommands(t *testing.T) {
 		t.Errorf("get --json: %v", doc)
 	}
 	document(t, r.run("setting", "set", "key.default-lifetime", "30d", "--json"))
-	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 10 {
+	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 11 {
 		t.Errorf("list --json: %v", ss)
 	}
 	document(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1", "--json"))

@@ -205,6 +205,12 @@ func Builtin() []Definition {
 		Default:  "64MiB",
 		Validate: func(v string) error { _, err := ParseHeaderLimit(v); return err },
 	}, {
+		// Empty by default, so no page in a browser can read an answer of
+		// the API until the installation's admin lists its origin.
+		Name:     APICORSOrigins,
+		Default:  "",
+		Validate: func(v string) error { _, err := ParseOrigins(v); return err },
+	}, {
 		Name:           EventsRetention,
 		Default:        "90d",
 		TenantOverride: true,

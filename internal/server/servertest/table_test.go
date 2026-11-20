@@ -258,6 +258,7 @@ var contractFiles = []protoreflect.FileDescriptor{
 	coriav1.File_coria_v1_reception_proto,
 	coriav1.File_coria_v1_quarantine_proto,
 	coriav1.File_coria_v1_monitor_proto,
+	coriav1.File_coria_v1_metadata_proto,
 }
 
 // contractMethods returns every method of the contract by procedure name.

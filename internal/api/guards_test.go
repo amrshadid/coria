@@ -105,6 +105,12 @@ func tenantMethods(name string) map[string]func(clients) outcome {
 		"DiscardReception": func(c clients) outcome {
 			return call(c.receptions.DiscardReception, &v1.DiscardReceptionRequest{Tenant: name, Id: "r1", Reason: "x"})
 		},
+		"GetScanMetadata": func(c clients) outcome {
+			return call(c.metadata.GetScanMetadata, &v1.GetScanMetadataRequest{Tenant: name, SubjectLabel: "S1", SessionLabel: "E1", ScanLabel: "T1"})
+		},
+		"GetInstanceMetadata": func(c clients) outcome {
+			return call(c.metadata.GetInstanceMetadata, &v1.GetInstanceMetadataRequest{Tenant: name, SubjectLabel: "S1", SessionLabel: "E1", ScanLabel: "T1", InstanceId: "2.25.1"})
+		},
 		"ListQuarantinedFiles": func(c clients) outcome {
 			return call(c.quarantine.ListQuarantinedFiles, &v1.ListQuarantinedFilesRequest{Tenant: name})
 		},

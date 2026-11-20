@@ -38,7 +38,7 @@ func (Pending) Procedures() []string {
 
 // DownloadMethod is the method the audit entry of a plain HTTP download
 // names.
-const DownloadMethod = downloadMethod
+const DownloadMethod = DownloadPattern
 
 // PendingDownload is the requirement and the audit facts of a plain HTTP
 // download of an instance with these parts of its path, and whether it

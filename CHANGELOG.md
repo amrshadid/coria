@@ -8,6 +8,24 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- The metadata service answers a scan's or an instance's header as DICOM
+  JSON (PS3.18 Annex F), with bulk data URIs for pixel data and other large
+  values, from one read of the scan's metadata file and a bounded read of an
+  instance's file header for what that file does not hold; checked against
+  pydicom on the public corpus files.
+- The plain HTTP download of an instance, `GET /tenants/<tenant>/instances/
+  <subject>/<session>/<scan>/<instance id>`, is routed, checked and audited:
+  no key, a wrong key, or a key without reader on the tenant the path names
+  is refused as on every route; a path with percent-encoding, a dot segment,
+  or an empty or over-long segment is answered 404 after the check and never
+  redirected. An allowed request is answered 501 until the download is
+  served.
+- The setting `api.cors-origins` (installation only, empty by default) lists
+  the web origins whose pages may call the API from a browser, one per line as
+  a browser sends them, or `*` for any. A listed origin's preflight is
+  answered with the methods and headers the Connect, gRPC-Web and download
+  clients send; an origin not listed gets no CORS header. No answer allows
+  credentials; every answer carries `Vary: Origin`.
 - The catalog keeps what reading needs: each scan's modality, series
   description and series number and each session's study date, read from the
   files' headers; the receiver that first archived into each; running counts

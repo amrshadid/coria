@@ -1,0 +1,284 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"io"
+	"strconv"
+
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
+	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/core/layout"
+	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/place"
+	"github.com/amrshadid/coria/internal/receive/sidecar"
+	"github.com/amrshadid/coria/internal/tenant"
+)
+
+// The bounds of an answer's DICOM JSON (metadata.proto, "Size").
+const (
+	// MaxInstanceJSON is the longest DICOM JSON answered for one instance,
+	// with a BulkDataURI in place of every value that is bulk data; an
+	// instance whose JSON would be longer is answered without it.
+	MaxInstanceJSON = 1 << 20
+	// MaxPageJSON is the most DICOM JSON a page holds in all, so that with
+	// the rest of the message it stays under the 4 MB a stock gRPC client
+	// accepts.
+	MaxPageJSON = 3 << 20
+)
+
+// The messages of what the metadata methods find missing.
+const (
+	messageNoScan     = "the tenant has no scan with these labels"
+	messageNoInstance = "the scan has no instance with this id"
+	messageNoSidecar  = "the scan's metadata file is missing from the storage"
+	messageBadSidecar = "the scan's metadata file is not what was archived"
+)
+
+// detailInstances is the audit detail that counts the instances a page
+// answered.
+const detailInstances = "instances"
+
+// metadataService is MetadataService: a scan's headers, read from the
+// metadata file the scan is archived with and, for what that file does not
+// hold, from the instances' files.
+type metadataService struct{ c *core }
+
+var _ coriav1connect.MetadataServiceHandler = metadataService{}
+
+// scanPath returns the path the request names, checked.
+func scanPath(subject, session, scan string) (label.Path, error) {
+	p := label.Path{Subject: subject, Session: session, Scan: scan}
+	if err := tenant.ValidateScanPath(p); err != nil {
+		return p, err
+	}
+	return p, nil
+}
+
+// lookupScan reads a scan of the catalog, answering one the tenant does not
+// have as NotFound with the contract's message.
+func lookupScan(ctx context.Context, p tenant.Pipeline, path label.Path) (tenant.CatalogScan, error) {
+	scan, err := p.CatalogScan(ctx, path)
+	if fault.KindOf(err) == fault.NotFound {
+		return scan, fault.Wrap(fault.NotFound, err, messageNoScan)
+	}
+	return scan, err
+}
+
+// GetScanMetadata answers the headers of a page of a scan's instances.
+func (s metadataService) GetScanMetadata(ctx context.Context, req *v1.GetScanMetadataRequest) (*v1.GetScanMetadataResponse, error) {
+	c := s.c
+	d, err := c.decision(ctx, coriav1connect.MetadataServiceGetScanMetadataProcedure)
+	if err != nil {
+		return nil, err
+	}
+	p, st, err := c.inTenant(ctx, d, req.GetTenant(), nil)
+	if err != nil {
+		return nil, err
+	}
+	path, err := scanPath(req.GetSubjectLabel(), req.GetSessionLabel(), req.GetScanLabel())
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	page, err := pageOf(req.GetPageSize(), req.GetPageToken())
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	scan, err := lookupScan(ctx, p, path)
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	held, next, err := p.ListHeldInstances(ctx, path, page)
+	if err != nil {
+		return nil, c.failIn(d, st, listError(err, page.Cursor))
+	}
+	out := &v1.GetScanMetadataResponse{ManifestSha256: scan.ManifestSHA256.String()}
+	if len(held) > 0 {
+		src, closeSrc, err := c.metadataSource(ctx, p, req.GetTenant(), scan.Storage, path)
+		if err != nil {
+			return nil, c.failIn(d, st, err)
+		}
+		defer closeSrc()
+		out.Instances, err = src.page(ctx, held)
+		if err != nil {
+			return nil, c.failIn(d, st, err)
+		}
+	}
+	if len(out.Instances) < len(held) {
+		// The page's DICOM JSON reached its bound before its last
+		// instance: the catalog's cursor, which resumes after the last row
+		// of a page of that size, is asked again for the page that was
+		// answered, which is the same rows.
+		next, err = resume(ctx, p, path, page.Cursor, held[:len(out.Instances)])
+		if err != nil {
+			return nil, c.failIn(d, st, err)
+		}
+	}
+	out.NextPageToken = next
+	c.record(d, st, master.OutcomeDone, "", access.Facts{Details: map[string]string{detailInstances: strconv.Itoa(len(out.Instances))}})
+	return out, nil
+}
+
+// resume returns the cursor that resumes after the last of answered, the
+// first instances of the page that began at cursor, by listing that page
+// again with their count.
+func resume(ctx context.Context, p tenant.InstanceReads, path label.Path, cursor string, answered []tenant.ScanInstance) (string, error) {
+	got, next, err := p.ListHeldInstances(ctx, path, master.Page{Cursor: cursor, Limit: len(answered)})
+	if err != nil {
+		return "", listError(err, cursor)
+	}
+	if len(got) != len(answered) || got[len(got)-1].SOPInstanceUID != answered[len(answered)-1].SOPInstanceUID {
+		return "", fault.New(fault.Unavailable, "the scan changed while its page was read; ask for it again")
+	}
+	return next, nil
+}
+
+// GetInstanceMetadata answers the header of one instance of a scan.
+func (s metadataService) GetInstanceMetadata(ctx context.Context, req *v1.GetInstanceMetadataRequest) (*v1.GetInstanceMetadataResponse, error) {
+	c := s.c
+	d, err := c.decision(ctx, coriav1connect.MetadataServiceGetInstanceMetadataProcedure)
+	if err != nil {
+		return nil, err
+	}
+	p, st, err := c.inTenant(ctx, d, req.GetTenant(), nil)
+	if err != nil {
+		return nil, err
+	}
+	path, err := scanPath(req.GetSubjectLabel(), req.GetSessionLabel(), req.GetScanLabel())
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	if req.GetInstanceId() == "" {
+		return nil, c.failIn(d, st, invalid("instance_id", "is required"))
+	}
+	if err := tenant.ValidateInstanceUID(req.GetInstanceId()); err != nil {
+		return nil, c.failIn(d, st, fieldOf("instance_id", err))
+	}
+	scan, err := lookupScan(ctx, p, path)
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	held, err := p.HeldInstance(ctx, path, req.GetInstanceId())
+	if fault.KindOf(err) == fault.NotFound {
+		err = fault.Wrap(fault.NotFound, err, messageNoInstance)
+	}
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	src, closeSrc, err := c.metadataSource(ctx, p, req.GetTenant(), scan.Storage, path)
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	defer closeSrc()
+	got, err := src.page(ctx, []tenant.ScanInstance{held})
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	c.done(d, st)
+	return &v1.GetInstanceMetadataResponse{Instance: got[0]}, nil
+}
+
+// metadataSource opens the storage the scan is on, and returns what
+// answers headers from it with the function that closes the storage. A
+// storage that cannot be opened is the server's or the storage's, as the
+// opener says.
+func (c *core) metadataSource(ctx context.Context, p tenant.Pipeline, tenantName, storage string, path label.Path) (*metaSource, func(), error) {
+	limit, err := c.values().HeaderLimit(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	row, err := c.master.TenantByName(ctx, tenantName)
+	if err != nil {
+		return nil, nil, err
+	}
+	srow, err := p.Storage(ctx, storage)
+	if err != nil {
+		return nil, nil, err
+	}
+	store, err := c.opener().Open(ctx, place.TenantOf(row.ID, tenantName, p), srow)
+	if err != nil {
+		return nil, nil, err
+	}
+	key, err := layout.MetadataKey(path)
+	if err != nil {
+		_ = store.Close()
+		return nil, nil, fault.Wrap(fault.Internal, err, "api: the scan's metadata key cannot be made")
+	}
+	src := &metaSource{store: store, tenant: tenantName, path: path, key: key, limit: limit}
+	return src, func() { _ = store.Close() }, nil
+}
+
+// page answers the headers of held, the instances of a page in order of
+// SOP Instance UID, from one read of the scan's metadata file. It stops
+// before the instance that would take the page's DICOM JSON past MaxPageJSON
+// and returns the instances answered, which are at least one. A metadata
+// file that is missing, is not in its form, or does not hold an instance
+// the catalog holds, is data loss.
+func (s *metaSource) page(ctx context.Context, held []tenant.ScanInstance) ([]*v1.InstanceMetadata, error) {
+	rc, err := s.store.Read(ctx, s.key, 0, -1)
+	switch {
+	case fault.KindOf(err) == fault.NotFound:
+		return nil, fault.Wrap(fault.DataLoss, err, messageNoSidecar)
+	case err != nil:
+		return nil, storageFailure(err, "the scan's metadata file cannot be read")
+	}
+	defer func() { _ = rc.Close() }()
+	rd := sidecar.NewReader(rc)
+	var (
+		out   []*v1.InstanceMetadata
+		total int
+	)
+	for _, h := range held {
+		in, err := nextInstance(rd, h.SOPInstanceUID)
+		if err != nil {
+			return nil, err
+		}
+		m, err := s.instance(ctx, h, in)
+		if err != nil {
+			return nil, err
+		}
+		if len(out) > 0 && total+len(m.GetDicomJson()) > MaxPageJSON {
+			break
+		}
+		total += len(m.GetDicomJson())
+		out = append(out, m)
+	}
+	return out, nil
+}
+
+// nextInstance reads the metadata file forward to the line of the instance
+// with the SOP Instance UID uid. The file holds the instances of the scan
+// in order, and may hold some the catalog does not (a reception wrote them
+// and did not confirm them), which are passed over; one the catalog holds
+// and the file does not is data loss.
+func nextInstance(rd *sidecar.Reader, uid string) (sidecar.Instance, error) {
+	for {
+		in, _, err := rd.Next()
+		switch {
+		case errors.Is(err, io.EOF):
+			return in, fault.New(fault.DataLoss, messageBadSidecar)
+		case errors.Is(err, sidecar.ErrFormat), errors.Is(err, sidecar.ErrOrder):
+			return in, fault.Wrap(fault.DataLoss, err, messageBadSidecar)
+		case err != nil:
+			return in, storageFailure(err, "the scan's metadata file cannot be read")
+		case in.SOPInstanceUID == uid:
+			return in, nil
+		case in.SOPInstanceUID > uid:
+			return in, fault.New(fault.DataLoss, messageBadSidecar)
+		}
+	}
+}
+
+// storageFailure returns a storage's failure with its kind: one the
+// storage does not classify is the storage not answering, never an
+// internal fault, which only the server's own code makes.
+func storageFailure(err error, message string) error {
+	k := fault.KindOf(err)
+	if k == fault.Internal {
+		k = fault.Unavailable
+	}
+	return fault.Wrap(k, err, message)
+}

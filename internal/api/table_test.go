@@ -61,6 +61,8 @@ var methodTests = map[string]func(t *testing.T){
 	coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure:  testRejectQuarantinedFile,
 	coriav1connect.MonitorServiceGetStatusProcedure:                 testGetStatus,
 	coriav1connect.MonitorServiceWatchProcedure:                     testWatch,
+	coriav1connect.MetadataServiceGetScanMetadataProcedure:          testGetScanMetadata,
+	coriav1connect.MetadataServiceGetInstanceMetadataProcedure:      testGetInstanceMetadata,
 }
 
 // contractMethods returns the full procedure name and descriptor of every
@@ -73,7 +75,7 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 		v1.File_coria_v1_settings_proto, v1.File_coria_v1_audit_proto,
 		v1.File_coria_v1_storage_proto, v1.File_coria_v1_receiver_proto,
 		v1.File_coria_v1_reception_proto, v1.File_coria_v1_quarantine_proto,
-		v1.File_coria_v1_monitor_proto,
+		v1.File_coria_v1_monitor_proto, v1.File_coria_v1_metadata_proto,
 	} {
 		for i := 0; i < f.Services().Len(); i++ {
 			s := f.Services().Get(i)
@@ -93,8 +95,8 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 // here names a method the contract does not have.
 func TestEveryMethod(t *testing.T) {
 	methods := contractMethods()
-	if len(methods) != 38 {
-		t.Errorf("the contract has %d methods; this test was written for 38, so look at what changed", len(methods))
+	if len(methods) != 40 {
+		t.Errorf("the contract has %d methods; this test was written for 40, so look at what changed", len(methods))
 	}
 	var table api.Methods
 	for proc, md := range methods {

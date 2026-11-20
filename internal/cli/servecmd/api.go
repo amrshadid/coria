@@ -115,6 +115,10 @@ func APIServices(d Deps) (Built, error) {
 		WithDecision:   api.WithDecision,
 		Registry:       reg,
 		TenantsByState: counts.byState,
+		// The download of an instance over plain HTTP: checked and audited
+		// as the contract says, and answered 501 until its handler is
+		// written.
+		PatternRoutes: []server.PatternRoute{{Pattern: api.DownloadPattern, Need: api.DownloadNeed, Handler: server.NotImplemented}},
 		Reception: runners{closer{feeds}, sup, events.NewKeeper(events.KeeperConfig{
 			Tenants: keptFeeds{tenants: registryTenants{master: d.Master, registry: reg}, registry: reg, values: settingvalue.Reader{Master: d.Master}},
 			Logger:  d.Log,

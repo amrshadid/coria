@@ -21,6 +21,7 @@ import (
 	"github.com/amrshadid/coria/internal/obs"
 	"github.com/amrshadid/coria/internal/secret"
 	"github.com/amrshadid/coria/internal/server"
+	"github.com/amrshadid/coria/internal/settingvalue"
 )
 
 // Deps is what an installation's handlers are built from, once serve has
@@ -53,6 +54,9 @@ type Built struct {
 	Registry server.Registry
 	// HTTPRoutes are plain HTTP routes besides /metrics.
 	HTTPRoutes []server.HTTPRoute
+	// PatternRoutes are plain HTTP routes inside one tenant, whose
+	// requirement the server computes from each request's path.
+	PatternRoutes []server.PatternRoute
 	// TenantsByState counts the tenants in each state for /metrics, or nil
 	// to leave the family out.
 	TenantsByState func() map[string]int
@@ -323,6 +327,8 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 		Methods:         built.Methods,
 		WithDecision:    built.WithDecision,
 		HTTPRoutes:      built.HTTPRoutes,
+		PatternRoutes:   built.PatternRoutes,
+		CORSOrigins:     settingvalue.Reader{Master: m}.CORSOrigins,
 		Drain:           f.drain,
 		DefaultDeadline: f.deadline,
 	})

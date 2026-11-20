@@ -84,9 +84,14 @@ func NewID() string {
 //   - it deletes a client's own Coria-Request-Id, makes the request's id
 //     and sets it on the response, so every answer carries it, success,
 //     refusal, error or panic alike;
+//   - it sets the CORS headers for a page whose origin the installation
+//     allows, and Vary: Origin on every answer (cors.go);
 //   - it refuses new work once the server is stopping, with UNAVAILABLE,
 //     except the health service's Check, which answers NOT_SERVING then;
 //   - it counts the request in flight, for the drain on stop;
+//   - it answers a CORS preflight from an allowed origin, which goes no
+//     further; one from any other origin goes on, and is refused for its
+//     missing key like any request;
 //   - it bounds the request's time: the client's deadline when it sent one,
 //     otherwise the default, and never more than the maximum;
 //   - it bounds the time to read the request's body until the check has
@@ -104,6 +109,9 @@ func (s *Server) envelope(next http.Handler) http.Handler {
 		r.Header.Del(RequestIDHeader)
 		id := newRequestID()
 		w.Header().Set(RequestIDHeader, id)
+		// Before anything can answer, so every answer to an allowed page,
+		// a refusal or a stop included, is one its page can read.
+		corsAllowed := s.cors.decorate(w.Header(), r)
 		mark := &pathMark{}
 		// "PRI * HTTP/2.0" sent on an HTTP/1 connection (the HTTP/2 preface
 		// where none is spoken) names HTTP/2 but is answered over HTTP/1.
@@ -117,6 +125,10 @@ func (s *Server) envelope(next http.Handler) http.Handler {
 		defer s.leave()
 		end := s.metrics.Begin()
 		defer end()
+		if corsAllowed && isPreflight(r) {
+			answerPreflight(sw)
+			return
+		}
 
 		ctx := context.WithValue(withRequestID(r.Context(), id), pathMarkKey{}, mark)
 		// The maximum always, so a client cannot hold a handler, a connection
@@ -144,7 +156,7 @@ func (s *Server) envelope(next http.Handler) http.Handler {
 				}
 				attrs := append([]slog.Attr{
 					slog.String("request_id", id),
-					slog.String("path", cut(r.URL.Path, maxLoggedPath)),
+					slog.String("path", s.loggedPath(r)),
 					slog.String("stack", string(debug.Stack())),
 				}, panicAttrs(p)...)
 				s.log.LogAttrs(ctx, slog.LevelError, "panic outside a handler", attrs...)
@@ -247,7 +259,7 @@ func (s *Server) logTransport(r *http.Request, sw *statusWriter, mark *pathMark,
 	attrs := []slog.Attr{
 		slog.String("request_id", id),
 		slog.String("method", transportMethod),
-		slog.String("path", cut(r.URL.Path, maxLoggedPath)),
+		slog.String("path", s.loggedPath(r)),
 		slog.Int("http_status", status),
 		slog.String("code", code),
 		slog.Float64("duration_ms", float64(took.Microseconds())/1000),
