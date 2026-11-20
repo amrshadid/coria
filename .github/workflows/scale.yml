@@ -23,6 +23,12 @@ on:
 permissions:
   contents: read
 
+# bash with pipefail (GitHub's bash -e has none), so a test that fails fails
+# its step though its output goes through tee.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   sqlite:
     name: Catalog at scale, SQLite
@@ -46,14 +52,9 @@ jobs:
           df -h /
       - name: The catalog at scale
         env:
-          CORIA_TEST_SCALE: '1'
           CORIA_SCALE_INSTANCES: ${{ inputs.instances || '10000000' }}
         run: |
           CORIA_SCALE_SUMMARY="$GITHUB_STEP_SUMMARY" go test -count=1 -v -timeout 330m -run '^TestScaleCatalog$' ./internal/driver/sqlite | tee "$RUNNER_TEMP/scale.log"
-      - name: Summary
-        if: always()
-        run: |
-          { echo "### Catalog at scale, SQLite (${{ inputs.instances || '10000000' }} instances)"; echo; echo '```'; grep -E 'SCALE|ms|rows/s|plan' "$RUNNER_TEMP/scale.log" 2> /dev/null | head -200; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
   postgres:
     name: Catalog at scale, Postgres
@@ -89,16 +90,11 @@ jobs:
           df -h /
       - name: The catalog at scale
         env:
-          CORIA_TEST_SCALE: '1'
           CORIA_SCALE_INSTANCES: ${{ inputs.instances || '10000000' }}
           CORIA_TEST_POSTGRES: postgres://postgres:ci-throwaway-password@127.0.0.1:5432/postgres?sslmode=disable
           CORIA_REQUIRE_POSTGRES: '1'
         run: |
           CORIA_SCALE_SUMMARY="$GITHUB_STEP_SUMMARY" go test -count=1 -v -timeout 330m -run '^TestScaleCatalog$' ./internal/driver/postgres | tee "$RUNNER_TEMP/scale.log"
-      - name: Summary
-        if: always()
-        run: |
-          { echo "### Catalog at scale, Postgres (${{ inputs.instances || '10000000' }} instances)"; echo; echo '```'; grep -E 'SCALE|ms|rows/s|plan' "$RUNNER_TEMP/scale.log" 2> /dev/null | head -200; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
   storage:
     name: Packed scans against one object per instance
@@ -120,7 +116,7 @@ jobs:
           {
             go test -count=1 -run '^$' -bench BenchmarkPackedScan -benchtime 10x ./internal/blob/dir
             for port in 59000 59001; do
-              CORIA_TEST_S3="http://throwaway-key:throwaway-secret@127.0.0.1:$port/coria-scale" go test -count=1 -run '^$' -bench BenchmarkPackedScan -benchtime 10x ./internal/blob/s3
+              CORIA_TEST_S3="http://throwaway-key:throwaway-secret@127.0.0.1:$port/coria-scale" CORIA_REQUIRE_S3=1 go test -count=1 -run '^$' -bench BenchmarkPackedScan -benchtime 10x ./internal/blob/s3
             done
           } | tee "$RUNNER_TEMP/bench.log"
       - name: Summary
