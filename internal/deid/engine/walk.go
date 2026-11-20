@@ -35,6 +35,12 @@ type run struct {
 	// undo restores what apply changed, last first, should it stop part
 	// way.
 	undo []func()
+	// source is what the file's text was written in (Reception.CharacterSet).
+	source textSource
+	// rawSources are the items of sequences held as UN bytes, each with
+	// what its own text was written in, for the sequences held as UN bytes
+	// inside it.
+	rawSources map[*dataset.Dataset]textSource
 }
 
 // opKind is what an op does.
@@ -57,6 +63,11 @@ const (
 	// asked for once the plan has succeeded; it then becomes opValue, or
 	// nothing when the code is the value.
 	opAssign
+	// opSequence gives an element held as UN bytes the sequence they were
+	// parsed into, and vr (SQ).
+	opSequence
+	// opElement puts elem in place of the element of its tag, or adds it.
+	opElement
 )
 
 // op is one change of the plan.
@@ -65,6 +76,10 @@ type op struct {
 	ds    *dataset.Dataset
 	tag   tag.Tag
 	value []byte
+	// seq is opSequence's sequence.
+	seq *sequence.Sequence
+	// elem is opElement's element.
+	elem *dataelem.DataElement
 	// vr, when set, is the VR the element takes: an element made, or one
 	// whose VR in the file was UN.
 	vr dataelem.VR
@@ -105,6 +120,10 @@ type scope struct {
 	// valueType is the content item's Value Type (0040,A040) without its
 	// padding; empty when the data set is not a content item.
 	valueType string
+	// source is what the bytes of a value the library did not decode (a
+	// sequence or a private value held as UN) are written in, in this
+	// data set.
+	source textSource
 }
 
 // Tags the engine treats by fixed rules.
@@ -117,6 +136,7 @@ const (
 	tagCodingScheme         = 0x00080102
 	tagIdentityRemoved      = 0x00120062
 	tagDeidMethod           = 0x00120063
+	tagDeidMethodCodes      = 0x00120064
 	tagTemporalModified     = 0x00280303
 )
 
@@ -240,6 +260,10 @@ func (r *run) fixed(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement, 
 // removed.
 func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement, seqs []uint32, path string, sc scope, creator string) (bool, error) {
 	vr := effectiveVR(t, elem)
+	unItems := unknownItems(elem, vr)
+	if unItems != nil {
+		vr = "SQ"
+	}
 	if err := checkText(elem, vr, sc.charset); err != nil {
 		return false, &Failure{Cause: CauseBadValue, Path: path}
 	}
@@ -270,6 +294,10 @@ func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement
 		}
 	}
 	c.seq, _ = elem.GetValue().(*sequence.Sequence)
+	c.unItems = unItems
+	if act.Kind == ActKeep && vr == "UN" && creator != "" && !c.floor {
+		r.keepSafePrivate(c, creator, &e)
+	}
 	r.record.Entries = append(r.record.Entries, e)
 	return r.act(c, act, dec.VRs)
 }
@@ -314,7 +342,10 @@ func (r *run) items(seq *sequence.Sequence, seqs []uint32, t tag.Tag, path strin
 		if !ok {
 			return &Failure{Cause: CauseBadValue, Path: path}
 		}
-		isc := scope{charset: charsetOf(item, sc.charset)}
+		isc := scope{charset: charsetOf(item, sc.charset), source: sc.source}
+		if src, ok := r.rawSources[item]; ok {
+			isc.source = src
+		}
 		isc.concept, isc.valueType = contentItemOf(item)
 		if err := r.walk(item, inner, path+"["+strconv.Itoa(i)+"]/", isc); err != nil {
 			return err
@@ -376,7 +407,17 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 				continue
 			}
 			p := base + formatTag(uint32(t))
-			if inner, isSeq := elem.GetValue().(*sequence.Sequence); isSeq {
+			inner, isSeq := elem.GetValue().(*sequence.Sequence)
+			if b := unknownItems(elem, effectiveVR(t, elem)); b != nil {
+				// A sequence held as UN bytes is read for its values like
+				// any other, its text decoded as the file wrote it; one
+				// that cannot be read gives none, and goes with the
+				// sequence that holds it.
+				if seq, err := decodeUnknownItems(b); err == nil && r.decodeRawItems(seq, r.sourceOf(item), depth+1) == nil {
+					inner, isSeq = seq, true
+				}
+			}
+			if isSeq {
 				innerSeqs := seqs
 				if mode == subtreeByPlace {
 					innerSeqs = slices.Concat(seqs, []uint32{uint32(t)})
@@ -391,12 +432,12 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 				continue
 			}
 			vr := effectiveVR(t, elem)
+			_, creator := privateCreator(t, creators)
 			value := naming.TrimValue(vr, raw)
 			if mode == subtreeAll {
 				r.needle(needleVR(t, vr, raw), value, p)
 				continue
 			}
-			_, creator := privateCreator(t, creators)
 			loc := profile.Location{Sequences: seqs, Tag: uint32(t), Creator: creator, VR: vr}
 			if valueType != "" {
 				loc.ContentItem, loc.ValueType = concept, valueType

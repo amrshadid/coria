@@ -98,7 +98,7 @@
 //
 //  1. the tenant's configuration lock (an advisory lock for the
 //     transaction), taken only by changes of storages, receivers and
-//     senders;
+//     senders, and by the creation of a profile version;
 //  2. a unit of work's row, the fence of a worker's write;
 //  3. a quarantine record's row;
 //  4. receptions' rows, several in order of id;
@@ -110,6 +110,11 @@
 //  8. instance rows, several in order of SOP Instance UID;
 //  9. received files and associations, new rows of a reception held;
 //  10. the running totals, last.
+//
+// A lookup table's counter row is locked (FOR NO KEY UPDATE) only by
+// AssignLookupCodes, which locks nothing else, the tables of a batch in
+// order of name. A commit reads the profile versions its instances name
+// without a lock: a version is never changed or removed.
 //
 // A cancel of a job (CancelJob, RemoveSender) holds the job's row and then
 // ends the job's queued units with SKIP LOCKED: it never waits for a

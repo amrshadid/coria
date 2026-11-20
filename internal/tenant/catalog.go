@@ -43,6 +43,9 @@ type ConfirmedInstance struct {
 	Size int64
 	// ArchivedSHA256 is the checksum of what was written and read back.
 	ArchivedSHA256 SHA256
+	// Profile is the profile version that de-identified the file, which
+	// the tenant must have; the zero ref for a file archived as received.
+	Profile ProfileRef
 }
 
 // ScanCommit is the catalog rows of one scan, or of a part of one, that a
@@ -113,6 +116,11 @@ func (c ScanCommit) Validate() error {
 		}
 		if seen[in.SOPInstanceUID] {
 			return invalid("a commit confirms an instance once")
+		}
+		if !in.Profile.IsZero() {
+			if err := in.Profile.Validate(); err != nil {
+				return err
+			}
 		}
 		seen[in.SOPInstanceUID] = true
 		k, err := layout.Parse(in.Key)

@@ -2,6 +2,7 @@ package tenant
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"time"
 
@@ -32,12 +33,25 @@ const (
 	// (HMAC-SHA-256, core/naming), so a label made from a sender's
 	// identifier cannot be turned back into it without the tenant's secret.
 	SecretNaming SecretName = "naming"
+	// SecretUID is the key of a de-identified file's UIDs: each UID is
+	// remapped to one derived from its HMAC-SHA-256 under it, so a study
+	// sent twice, after a restart or to two receivers of the tenant, maps
+	// to the same UIDs, and two tenants never share one.
+	SecretUID SecretName = "uid"
+	// SecretDate is the key of a subject's date shift: the number of days
+	// is derived from HMAC-SHA-256 of the subject's identifier under it.
+	// Kept apart from the others, so it can be destroyed alone when a
+	// data set is closed.
+	SecretDate SecretName = "date"
 )
+
+// SecretNames returns the tenant's secrets, in the order they are made.
+func SecretNames() []SecretName { return []SecretName{SecretNaming, SecretUID, SecretDate} }
 
 // ValidateSecretName returns an Invalid error unless n is a secret the port
 // keeps.
 func ValidateSecretName(n SecretName) error {
-	if n != SecretNaming {
+	if !slices.Contains(SecretNames(), n) {
 		return invalid("no tenant secret has this name")
 	}
 	return nil
@@ -54,7 +68,7 @@ type Secrets interface {
 	// is stored already, and returns the sealed bytes stored, the first
 	// writer's: two callers that make a secret at once both end with the
 	// same one, and a secret once kept is never replaced, since what was
-	// made with it (labels) depends on it. sealed is 1 to
+	// made with it (labels, remapped UIDs, shifted dates) depends on it. sealed is 1 to
 	// MaxSealedSecretLength bytes (Invalid otherwise); at is when it was
 	// made.
 	KeepTenantSecret(ctx context.Context, name SecretName, sealed []byte, at time.Time) ([]byte, error)
@@ -250,4 +264,5 @@ type PipelineParts interface {
 	CatalogReads
 	ScanValueFill
 	Sending
+	Deidentification
 }

@@ -289,15 +289,20 @@ linters:
             - pkg: github.com/amrshadid/coria/internal/driver
               desc: the handlers name a database type with master.SQLiteDriver and reach a tenant through the registry
 
-        # Only the DICOM listener speaks DICOM on the network, so a second
-        # implementation of association handling cannot grow elsewhere.
+        # Only the DICOM listener and the senders speak DICOM on the network,
+        # so a third implementation of association handling cannot grow
+        # elsewhere. The engine's unknown.go takes the library's decoder of
+        # UN-encoded items, which lives in its network package but parses
+        # bytes only.
         dicom-network:
           files:
             - $all
             - "!**/internal/receive/dimse/**"
+            - "!**/internal/send/**"
+            - "!**/internal/deid/engine/unknown.go"
           deny:
             - pkg: github.com/amrshadid/go-dicom/network
-              desc: only internal/receive/dimse speaks DICOM on the network
+              desc: only internal/receive/dimse and internal/send speak DICOM on the network
 
         # The supervisor is handed a way to make a listener; it never speaks
         # DICOM itself, so it is tested with fake listeners.

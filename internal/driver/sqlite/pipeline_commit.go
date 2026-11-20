@@ -183,9 +183,18 @@ const takeClaimSQL = `DELETE FROM instance_claims WHERE sop_instance_uid = ? AND
 
 // insertHeldSQL writes a held instance, in its scan. Its key is the
 // layout's (tenant.InstanceKey), so none is kept; its archived checksum is
-// kept only when it is not the received one.
+// kept only when it is not the received one; it records no profile
+// version, as an instance archived as received.
 const insertHeldSQL = `INSERT INTO instances (scan_id, sop_instance_uid, reception_id, sha256, archived_sha256, storage_key,
 	byte_offset, byte_length, size, held_at) VALUES (?1, ?2, ?3, ?4, CASE WHEN ?5 = ?4 THEN NULL ELSE ?5 END, '', ?6, ?7, ?8, ?9)`
+
+// insertDeidentifiedSQL is insertHeldSQL for an instance a profile version
+// de-identified: it records the version's id. An instance archived as
+// received is written by insertHeldSQL, the row it was before the catalog
+// had the column.
+const insertDeidentifiedSQL = `INSERT INTO instances (scan_id, sop_instance_uid, reception_id, sha256, archived_sha256, storage_key,
+	byte_offset, byte_length, size, held_at, profile_version_id)
+	VALUES (?1, ?2, ?3, ?4, CASE WHEN ?5 = ?4 THEN NULL ELSE ?5 END, '', ?6, ?7, ?8, ?9, ?10)`
 
 // CommitScan implements tenant.Pipeline.
 func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Scan, error) {
@@ -214,6 +223,10 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			return err
 		}
 		scanID, newScan, err := commitScanRow(ctx, tx, c, session.id, receiver)
+		if err != nil {
+			return err
+		}
+		profiles, err := sqlkit.ProfileVersionIDs(ctx, sendingTx{tx: tx}, c.Instances)
 		if err != nil {
 			return err
 		}
@@ -248,8 +261,12 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			if err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, insertHeldSQL, scanID, in.SOPInstanceUID, c.ReceptionID, sum, in.ArchivedSHA256[:],
-				in.Offset, in.Length, in.Size, micros(c.At)); err != nil {
+			query, args := insertHeldSQL, []any{scanID, in.SOPInstanceUID, c.ReceptionID, sum, in.ArchivedSHA256[:],
+				in.Offset, in.Length, in.Size, micros(c.At)}
+			if id, ok := profiles[in.Profile]; ok {
+				query, args = insertDeidentifiedSQL, append(args, id)
+			}
+			if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 				return err
 			}
 			newInstances++

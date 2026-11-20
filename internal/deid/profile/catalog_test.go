@@ -10,47 +10,62 @@ import (
 
 // TestShippedCatalog guards the bases the binary ships: the catalog is
 // made without error; every base of PS3.15 Annex E is known by name, of
-// this edition, and refused with its reason rather than built from a copy
-// of the standard; the composite bases are refused because they are built
-// on them; and a document naming any of them is refused, naming the base.
+// this edition; those with attributes to change are built from the DICOM
+// library's tables and expand, and the two that change pixels are refused
+// with their reason, and so is the composite built on one of them; a name
+// of an earlier edition is refused as unknown; and the catalog lists each
+// base as available or not.
 func TestShippedCatalog(t *testing.T) {
 	cat := profile.Shipped()
 	names := cat.Names()
 	want := []string{
-		"annex-e/basic:2026c", "annex-e/clean-descriptors:2026c", "annex-e/clean-graphics:2026c",
-		"annex-e/clean-pixel-data:2026c", "annex-e/clean-recognizable-visual-features:2026c",
-		"annex-e/clean-structured-content:2026c", "annex-e/retain-device-identity:2026c",
-		"annex-e/retain-institution-identity:2026c", "annex-e/retain-longitudinal-full-dates:2026c",
-		"annex-e/retain-longitudinal-modified-dates:2026c", "annex-e/retain-patient-characteristics:2026c",
-		"annex-e/retain-safe-private:2026c", "annex-e/retain-uids:2026c",
+		"annex-e/basic:2026d", "annex-e/clean-descriptors:2026d", "annex-e/clean-graphics:2026d",
+		"annex-e/clean-pixel-data:2026d", "annex-e/clean-recognizable-visual-features:2026d",
+		"annex-e/clean-structured-content:2026d", "annex-e/retain-device-identity:2026d",
+		"annex-e/retain-institution-identity:2026d", "annex-e/retain-longitudinal-full-dates:2026d",
+		"annex-e/retain-longitudinal-modified-dates:2026d", "annex-e/retain-patient-characteristics:2026d",
+		"annex-e/retain-safe-private:2026d", "annex-e/retain-uids:2026d",
 		"coria/longitudinal:1", "coria/strict:1",
 	}
 	if strings.Join(names, " ") != strings.Join(want, " ") {
 		t.Fatalf("bases %v, want %v", names, want)
 	}
+	refused := map[string]string{
+		"annex-e/clean-pixel-data:2026d":                   "pixels",
+		"annex-e/clean-recognizable-visual-features:2026d": "pixels",
+		"coria/longitudinal:1":                             "annex-e/clean-pixel-data:2026d",
+	}
 	for _, n := range names {
 		b, unavailable, found := cat.Lookup(n)
-		if !found || unavailable == "" || b.Description == "" {
-			t.Errorf("%s: found %v, unavailable %q, description %q", n, found, unavailable, b.Description)
-		}
-		if strings.HasPrefix(n, "annex-e/") && b.Document != nil {
-			t.Errorf("%s has rules of its own, where the standard's tables belong", n)
+		if !found || b.Description == "" {
+			t.Errorf("%s: found %v, description %q", n, found, b.Description)
 		}
 		_, problems := profile.Expand(&v1.ProfileDocument{Bases: []string{n}}, cat)
-		if len(problems) != 1 || problems[0].Code != profile.CodeBaseUnavailable || !strings.Contains(problems[0].Message, n) {
-			t.Errorf("a document naming %s: %v", n, problems)
+		if why, ok := refused[n]; ok {
+			if !strings.Contains(unavailable, why) || (strings.HasPrefix(n, "annex-e/") && b.Document != nil) {
+				t.Errorf("%s: unavailable %q, want it to say %q", n, unavailable, why)
+			}
+			if len(problems) != 1 || problems[0].Code != profile.CodeBaseUnavailable || !strings.Contains(problems[0].Message, n) {
+				t.Errorf("a document naming %s: %v", n, problems)
+			}
+			continue
+		}
+		if unavailable != "" || len(problems) > 0 {
+			t.Errorf("%s: unavailable %q, problems %v", n, unavailable, problems)
 		}
 	}
-	if _, unavailable, _ := cat.Lookup("coria/strict:1"); !strings.Contains(unavailable, "annex-e/basic:2026c") {
-		t.Errorf("a composite's reason does not name the base it waits for: %q", unavailable)
+	_, problems := profile.Expand(&v1.ProfileDocument{Bases: []string{"annex-e/basic:2026c"}}, cat)
+	if len(problems) != 1 || problems[0].Code != profile.CodeUnknownBase {
+		t.Errorf("a document naming an earlier edition: %v", problems)
 	}
 	listed := cat.Proto()
 	if len(listed) != len(want) {
 		t.Fatalf("%d bases listed", len(listed))
 	}
 	for _, b := range listed {
-		if b.GetAvailable() || b.GetUnavailableReason() == "" || b.GetDocument() != nil {
-			t.Errorf("listed %v", b)
+		_, isRefused := refused[b.GetName()]
+		if b.GetAvailable() == isRefused || (b.GetUnavailableReason() == "") == isRefused || (b.GetDocument() == nil) != isRefused {
+			t.Errorf("listed %s: available %v, reason %q, document %v", b.GetName(), b.GetAvailable(), b.GetUnavailableReason(), b.GetDocument() != nil)
 		}
 	}
 	// A document of its own rules needs no base.
@@ -60,14 +75,15 @@ func TestShippedCatalog(t *testing.T) {
 }
 
 // TestShippedCompositesAreValid guards the composite bases' own rules and
-// bases: with Annex E bases that are available (empty here, standing in for
-// the tables), each composite expands, so the composites are ready the day
-// the tables are.
+// bases: with every Annex E base available (empty ones standing in for
+// the two that change pixels), each composite expands over the basic
+// profile first and itself last, and coria/strict keeps its two rules and
+// removes what no rule names.
 func TestShippedCompositesAreValid(t *testing.T) {
 	var bases []profile.Base
 	for _, n := range profile.Shipped().Names() {
-		b, _, _ := profile.Shipped().Lookup(n)
-		if strings.HasPrefix(n, "annex-e/") {
+		b, unavailable, _ := profile.Shipped().Lookup(n)
+		if strings.HasPrefix(n, "annex-e/") && unavailable != "" {
 			b = profile.Base{Name: n, Document: &v1.ProfileDocument{}}
 		}
 		bases = append(bases, b)
@@ -83,8 +99,14 @@ func TestShippedCompositesAreValid(t *testing.T) {
 		}
 	}
 	strict := mustExpand(t, &v1.ProfileDocument{Bases: []string{"coria/strict:1"}}, cat)
-	if strict.GetUnnamed() != v1.UnnamedElements_UNNAMED_ELEMENTS_REMOVE || len(strict.GetRules()) != 2 {
-		t.Errorf("strict: %v", strict)
+	own := 0
+	for _, r := range strict.GetRules() {
+		if r.GetOrigin() == "coria/strict:1" {
+			own++
+		}
+	}
+	if strict.GetUnnamed() != v1.UnnamedElements_UNNAMED_ELEMENTS_REMOVE || own != 2 {
+		t.Errorf("strict: unnamed %v, %d rules of its own", strict.GetUnnamed(), own)
 	}
 }
 

@@ -68,12 +68,14 @@
 // does not match its checksum.
 //
 // The bases of PS3.15 Annex E come from the standard's tables, which the
-// DICOM library holds. Until it exports them, each Annex E base is in the
-// catalog by name and refused as not available, rather than built from a
-// copy of the standard kept here, which would drift from the library's.
-// The composite bases built on them are refused for the same reason. How a
-// column of Table E.1-1 becomes a base's rules, each code its action, is
-// written once (annexe.go), so the table only has to be read in.
+// DICOM library holds and CORIA does not copy: each column of Table E.1-1
+// (anonymize.ProfileTable) is read by the one adapter that turns its codes
+// into actions (annexe.go), and the Retain Safe Private option is Table
+// E.3.10-1 (anonymize.SafePrivateEntries). The two options that change
+// pixels have no rules, and are refused as not available, as is the
+// composite base built on one of them. Each base's name carries the
+// edition of its tables (AnnexEEdition), and the package's tests hold each
+// base's checksum, so a base of one name never changes meaning.
 //
 // A stored version's meaning is its expanded form together with the DICOM
 // library the engine runs it with: the engine reads the library's data

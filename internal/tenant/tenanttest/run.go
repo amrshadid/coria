@@ -17,7 +17,8 @@ type Driver struct {
 }
 
 // Run runs the whole contract suite of the tenant port against d's stores:
-// a group per concern (the store, the pipeline, the events, sending), each also
+// a group per concern (the store, the pipeline, the events, sending,
+// de-identification), each also
 // across two instances on one database. It is the suite's one entry point,
 // so a driver cannot pass part of the suite and seem to pass it all.
 func Run(t *testing.T, d Driver) {
@@ -47,6 +48,9 @@ func Run(t *testing.T, d Driver) {
 	})
 	t.Run("Sending", func(t *testing.T) {
 		runSending(t, func(tb testing.TB, id string) EventStore { return d.Open(tb, id) })
+	})
+	t.Run("Deidentification", func(t *testing.T) {
+		runDeidentification(t, func(tb testing.TB, id string) tenant.Pipeline { return d.Open(tb, id) })
 	})
 	t.Run("SendingShared", func(t *testing.T) {
 		runSendingShared(t, func(tb testing.TB, id string) (EventStore, EventStore) { return d.OpenPair(tb, id) })

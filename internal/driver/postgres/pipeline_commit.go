@@ -177,8 +177,10 @@ func commitScanRow(ctx context.Context, tx pgx.Tx, c tenant.ScanCommit, sessionI
 // claim is still this reception's, in the commit's study and series, and
 // inserts the held row with the checksum the claim was received with. The
 // key is the layout's (tenant.InstanceKey), so none is kept; the archived
-// checksum is kept only when it is not the received one. The UIDs confirmed
-// are returned.
+// checksum is kept only when it is not the received one. It records no
+// profile version: it writes the instances archived as received, the row
+// they were before the catalog had the column. The UIDs confirmed are
+// returned.
 const confirmSQL = `WITH taken AS (
 	DELETE FROM instance_claims AS c WHERE c.sop_instance_uid = ANY($3::text[]) AND c.reception_id = $8
 		AND c.study_uid = $9 AND c.series_uid = $10
@@ -187,6 +189,21 @@ const confirmSQL = `WITH taken AS (
 		size, held_at)
 	SELECT u.uid, $1, $8, t.sha256, nullif(u.sha, t.sha256), '', u.off, u.len, u.size, $2
 	FROM unnest($3::text[], $4::bigint[], $5::bigint[], $6::bigint[], $7::bytea[]) WITH ORDINALITY AS u(uid, off, len, size, sha, n)
+	JOIN taken AS t ON t.sop_instance_uid = u.uid ORDER BY u.n
+	RETURNING sop_instance_uid`
+
+// confirmDeidentifiedSQL is confirmSQL for a commit any of whose instances
+// a profile version de-identified: each records its version's id, given in
+// $11, 0 there and NULL in the row for one archived as received.
+const confirmDeidentifiedSQL = `WITH taken AS (
+	DELETE FROM instance_claims AS c WHERE c.sop_instance_uid = ANY($3::text[]) AND c.reception_id = $8
+		AND c.study_uid = $9 AND c.series_uid = $10
+	RETURNING c.sop_instance_uid, c.sha256)
+	INSERT INTO instances (sop_instance_uid, scan_id, reception_id, sha256, archived_sha256, storage_key, byte_offset, byte_length,
+		size, held_at, profile_version_id)
+	SELECT u.uid, $1, $8, t.sha256, nullif(u.sha, t.sha256), '', u.off, u.len, u.size, $2, nullif(u.pv, 0)
+	FROM unnest($3::text[], $4::bigint[], $5::bigint[], $6::bigint[], $7::bytea[], $11::bigint[])
+		WITH ORDINALITY AS u(uid, off, len, size, sha, pv, n)
 	JOIN taken AS t ON t.sop_instance_uid = u.uid ORDER BY u.n
 	RETURNING sop_instance_uid`
 
@@ -229,6 +246,10 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		if err != nil {
 			return err
 		}
+		profiles, err := sqlkit.ProfileVersionIDs(ctx, sendingTx{tx: tx, t: t}, c.Instances)
+		if err != nil {
+			return err
+		}
 		// This reception's rows cannot change under the commit: a claim of
 		// the reception holds its row FOR SHARE, and a step that releases
 		// its claims FOR NO KEY UPDATE, both of which wait for this one.
@@ -260,7 +281,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		for _, r := range got {
 			byUID[r.uid] = r.h
 		}
-		var offs, lens, sizes []int64
+		var offs, lens, sizes, pvs []int64
 		var sums [][]byte
 		var confirm []string
 		var newBytes int64
@@ -275,12 +296,17 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			confirm = append(confirm, in.SOPInstanceUID)
 			offs, lens, sizes = append(offs, in.Offset), append(lens, in.Length), append(sizes, in.Size)
 			sums = append(sums, sumBytes(in.ArchivedSHA256))
+			pvs = append(pvs, profiles[in.Profile])
 			newBytes += in.Size
 		}
 		var newInstances int64
 		if len(confirm) > 0 {
-			rows, err := tx.Query(ctx, confirmSQL, scanID, micros(c.At), confirm, offs, lens, sizes, sums,
-				c.ReceptionID, c.StudyUID, c.SeriesUID)
+			query, args := confirmSQL, []any{scanID, micros(c.At), confirm, offs, lens, sizes, sums,
+				c.ReceptionID, c.StudyUID, c.SeriesUID}
+			if len(profiles) > 0 {
+				query, args = confirmDeidentifiedSQL, append(args, pvs)
+			}
+			rows, err := tx.Query(ctx, query, args...)
 			done, err := collect(rows, err, func(row scanner) (string, error) {
 				var u string
 				err := row.Scan(&u)

@@ -54,14 +54,18 @@ func (m *mapLookups) Code(_ context.Context, table, key string) (string, bool, e
 	return c, ok, nil
 }
 
-func (m *mapLookups) Assign(_ context.Context, table, key string) (string, error) {
-	if c, ok := m.codes[table+"/"+key]; ok {
-		return c, nil
+func (m *mapLookups) Assign(_ context.Context, keys []LookupKey) ([]string, error) {
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		c, ok := m.codes[k.Table+"/"+k.Key]
+		if !ok {
+			m.next++
+			c = fmt.Sprintf("A%04d", m.next)
+			m.codes[k.Table+"/"+k.Key] = c
+		}
+		out[i] = c
 	}
-	m.next++
-	c := fmt.Sprintf("A%04d", m.next)
-	m.codes[table+"/"+key] = c
-	return c, nil
+	return out, nil
 }
 
 // sample is a data set with an identifying value of each kind.

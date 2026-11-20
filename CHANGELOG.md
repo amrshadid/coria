@@ -135,6 +135,30 @@ All notable changes to CORIA are written here. The form is
   reception that archived nothing makes no forward job. Adding a sender
   audits its type and destination, never its credential. Not served by the
   API yet.
+- A tenant's de-identification profiles and lookup tables are kept in its
+  database (both database types, migration 12): each version stored as the
+  exact bytes of its document and expanded form with their SHA-256, checked
+  on every read, created with an expected latest version in one transaction
+  (a document equal to the latest is answered with it, not stored again), at
+  most 10,000 versions a profile; lookup codes assigned in order from 1 per
+  table, all of a file's codes in one transaction or none, never changed for
+  a value; each held instance records the profile version that de-identified
+  it (none when archived as received). Each tenant is given two more secrets
+  beside its naming key, for UIDs and for dates, made and sealed the same way
+  and never answered. Not served by the API yet.
+- The de-identification engine walks a sequence a file holds as UN bytes
+  (a private sequence of defined length) instead of refusing it, its text
+  decoded by the character set the file was written in, which the caller
+  passes; text it cannot decode, or that still holds an ISO 2022 escape,
+  is never kept. It records the PS3.16 codes of the Annex E profile and
+  options in De-identification Method Code Sequence (0012,0064), unless the
+  profile's own rules keep what a base changes; writes Longitudinal Temporal
+  Information Modified (0028,0303) as each dates option says (PS3.15 E.3.6);
+  refuses more than 1,000 lookup codes in one file; and runs a stored version
+  only with the Annex E bases of its edition. Under Retain Safe Private a kept
+  private element held as UN takes the VR PS3.15 Table E.3.10-1 gives it when
+  its value fits that VR; a value that reads as a person's name is removed
+  whatever the table says. A profile can select OV, SV and UV.
 - The de-identification engine, not yet called by reception: a data set
   de-identified in place by an expanded profile version under a tenant's
   keys, every element visited (sequences, items, private blocks, content
@@ -210,8 +234,10 @@ All notable changes to CORIA are written here. The form is
   base's rule overrides or is overridden by its own. A version's expanded form
   is answered on request, and every version fits one answer. Creating a
   version can name the latest version it expects. The bases of PS3.15 Annex E
-  are listed and refused as not yet available until the DICOM library exports
-  the standard's tables. The service is not served yet. Both clients have it
+  (edition 2026d) are built from the DICOM library's Tables E.1-1 and
+  E.3.10-1; the two options that change pixels, and coria/longitudinal:1
+  which names one, are refused as not available. The service is not served
+  yet. Both clients have it
   as `profiles`.
 - `coria` and the interactive program can present a TLS client certificate
   (`--tls-client-cert`, `--tls-client-key`, or `CORIA_TLS_CLIENT_CERT` and

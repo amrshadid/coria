@@ -113,7 +113,7 @@ func (r *Registry) open(e *entry, first bool) {
 			_ = s.Close() // The migration failure is the one reported.
 			return nil, &stepError{"migrate", err}
 		}
-		if err := r.ensureNamingSecret(ctx, e.id, s); err != nil {
+		if err := r.ensureSecrets(ctx, e.id, s); err != nil {
 			_ = s.Close() // The failure to keep the key is the one reported.
 			return nil, &stepError{"secret", err}
 		}

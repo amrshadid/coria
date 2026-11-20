@@ -109,3 +109,24 @@ func TestPipelineElementsAreNeverSelected(t *testing.T) {
 		t.Errorf("another element of group 0400: %v", d.Rule)
 	}
 }
+
+// TestVeryLongVRsAreSelectable guards that a rule may select by OV, SV and
+// UV, the 64-bit VRs PS3.5 6.2 added in 2019, and selects an element of
+// each: before the DICOM library knew them, such a rule was refused as an
+// unknown VR.
+func TestVeryLongVRsAreSelectable(t *testing.T) {
+	p := mustCompile(t, &v1.ProfileDocument{Rules: []*v1.ProfileRule{
+		rl("ov", vr("OV"), remove()),
+		rl("sv", vr("SV"), empty()),
+		rl("uv", vr("UV"), keep()),
+	}}, testCatalog(t))
+	for name, loc := range map[string]profile.Location{
+		"ov": {Tag: 0x00660040, VR: "OV"},
+		"sv": {Tag: 0x00720082, VR: "SV"},
+		"uv": {Tag: 0x00720083, VR: "UV"},
+	} {
+		if d := p.Decide(loc, facts{}); d.Rule.GetRule().GetName() != name {
+			t.Errorf("%08X %s: decided by %v", loc.Tag, loc.VR, d.Rule)
+		}
+	}
+}

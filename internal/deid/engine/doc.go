@@ -55,8 +55,20 @@
 // written without spaces at any length) and each date in its common
 // written forms, in any case, rune by rune, again until nothing more is
 // found. Its work for a file is bounded, past which the file is refused.
-// A value of VR UN the engine cannot see into (one that begins with an
-// item, or not in memory) is never kept: it refuses the file.
+//
+// Values of VR UN (unknown.go). A UN value that begins with an item is a
+// sequence the DICOM library kept as bytes (PS3.5 6.2.2): it is parsed
+// (network.DecodeUNSequence) within the engine's own bounds, its text
+// decoded into UTF-8 by the character set the file was written in, which
+// the caller names (Reception.CharacterSet), and walked like any sequence;
+// a kept one is written back as VR SQ. One that is not items, or whose
+// text cannot be decoded, and a UN value not in memory, are never kept:
+// each refuses the file. Text holding an ISO 2022 escape, which no decoder
+// turned into UTF-8, is never kept or cleaned. Under the Retain Safe
+// Private base, a kept private element held as UN that PS3.15 Table
+// E.3.10-1 lists takes the table's VR when its value is what that VR says
+// and is not taken for a name (keepSafePrivate). A stored version runs
+// only with the Annex E bases of this build's edition (New).
 //
 // Keyed actions. A UID is remapped to "2.25." and a version 8 UUID from
 // HMAC-SHA-256 of it under the tenant's UID key (RemapUID); a UID the

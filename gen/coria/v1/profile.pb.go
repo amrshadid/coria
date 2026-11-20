@@ -383,7 +383,7 @@ func (ProfileView) EnumDescriptor() ([]byte, []int) {
 type ProfileDocument struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The bases, in order: names answered by ListProfileBases, such as
-	// "annex-e/basic:2026c". Each base's own bases come before its rules, and
+	// "annex-e/basic:2026d". Each base's own bases come before its rules, and
 	// a base that appears again, directly or inside another, is used once,
 	// where it first appears. At most 16 names.
 	Bases []string `protobuf:"bytes,1,rep,name=bases,proto3" json:"bases,omitempty"`
@@ -3137,7 +3137,7 @@ func (x *ProfileProblems) GetProblems() []*ProfileProblem {
 type ProfileBase struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The base's name: family, name and edition, such as
-	// "annex-e/basic:2026c".
+	// "annex-e/basic:2026d".
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Whether a document may name it. False for a base this server knows of
 	// but cannot expand.

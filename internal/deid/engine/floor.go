@@ -93,12 +93,13 @@ func floorReason(tag uint32, vr, nvr string) string {
 //
 // A private element's VR is not known from the data dictionary, and an
 // implicit VR file gives every private element VR UN (PS3.5 6.2.2), so its
-// VR in the file says nothing of what it holds. The VRs PS3.15 Table
-// E.3.10-1 gives the safe private attributes are not exported by the
-// DICOM library this build uses; until they are, a private value of VR UN
+// VR in the file says nothing of what it holds. A private value of VR UN
 // is taken as text for the needles, and as a name, which the floor
-// removes, whenever it reads as one. That errs toward removing: a private
-// element no rule keeps is removed anyway.
+// removes, whenever it reads as one, PS3.15 Table E.3.10-1 listing its
+// attribute or not: the table says which attributes are safe, not what a
+// file wrote into them (keepSafePrivate gives a listed one its VR only
+// when it is kept and is not taken for a name). That errs toward removing:
+// a private element no rule keeps is removed anyway.
 func needleVR(t tag.Tag, vr, raw string) string {
 	switch {
 	case vr == "PN":

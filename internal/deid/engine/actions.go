@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"errors"
 	"slices"
 	"strings"
@@ -58,6 +57,12 @@ type target struct {
 	rule  string
 	// seq is the element's value when it is a sequence.
 	seq *sequence.Sequence
+	// unItems is the value of an element held as UN that begins with an
+	// item: a sequence the library kept as bytes (unknown.go).
+	unItems []byte
+	// seqVR, when set, is the VR a sequence that was held as UN takes when
+	// it is kept or emptied.
+	seqVR dataelem.VR
 	// byRule is set when a rule decided the element, not a default.
 	byRule bool
 	// floor is set when the element is one the floor covers, whose value
@@ -107,6 +112,9 @@ func (c *target) fail(cause Cause) error { return &Failure{Cause: cause, Path: c
 // act applies a decision's action to an element and reports whether the
 // element is removed. Each action is one function.
 func (r *run) act(c *target, a Action, vrs []string) (bool, error) {
+	if c.unItems != nil {
+		return r.actUnknownItems(c, a)
+	}
 	if c.seq != nil {
 		return r.actSequence(c, a)
 	}
@@ -163,20 +171,20 @@ func (r *run) act(c *target, a Action, vrs []string) (bool, error) {
 func (r *run) actSequence(c *target, a Action) (bool, error) {
 	switch a.Kind {
 	case ActKeep, ActClean:
-		return false, r.items(c.seq, c.seqs, c.tag, c.path, c.sc)
+		return false, r.keepSequence(c)
 	case ActRemove:
 		r.record.Entries[c.entry].Changed = true
 		r.ops = append(r.ops, op{kind: opRemove, ds: c.ds, tag: c.tag})
 		return true, r.subtreeNeedlesAt(c)
 	case ActEmpty, ActDummy:
 		r.record.Entries[c.entry].Changed = c.seq.Length() > 0
-		r.ops = append(r.ops, op{kind: opNoItems, ds: c.ds, tag: c.tag})
+		r.ops = append(r.ops, op{kind: opNoItems, ds: c.ds, tag: c.tag, vr: c.seqVR})
 		return false, r.subtreeNeedlesAt(c)
 	case ActRemoveUnlessRequired:
 		switch r.required(c) {
 		case requiredValue:
 			if a.Fallback == FallbackUID {
-				return false, r.items(c.seq, c.seqs, c.tag, c.path, c.sc)
+				return false, r.keepSequence(c)
 			}
 			return r.actSequence(c, Action{Kind: ActEmpty})
 		case requiredPresent:
@@ -189,24 +197,30 @@ func (r *run) actSequence(c *target, a Action) (bool, error) {
 	return false, c.fail(CauseBadValue)
 }
 
-// itemTag is the first four bytes of an item, (FFFE,E000) in little endian
-// (PS3.5 7.5): a UN value that begins with them is a sequence the library
-// kept as bytes.
-var itemTag = []byte{0xFE, 0xFF, 0x00, 0xE0}
+// keepSequence keeps a sequence and plans the changes inside its items. A
+// sequence that was held as UN bytes takes its parsed items, and VR SQ.
+func (r *run) keepSequence(c *target) error {
+	if c.seqVR != "" {
+		r.ops = append(r.ops, op{kind: opSequence, ds: c.ds, tag: c.tag, seq: c.seq, vr: c.seqVR})
+	}
+	return r.items(c.seq, c.seqs, c.tag, c.path, c.sc)
+}
 
-// actKeep keeps an element, refusing a value of VR UN the engine cannot
-// see into: one that begins with an item, a sequence written as UN with a
-// defined length (PS3.5 6.2.2) whose items the library did not parse, and
-// one not in memory. Either could hold anything, a patient's name
-// included, and keeping it unread would pass what no rule looked at. The
-// DICOM library offers no call to parse such bytes as items; until it
-// does, the file is refused (bad_value) rather than read here.
+// actKeep keeps an element, refusing a value it cannot judge: one of VR
+// UN not in memory, which could hold anything, a patient's name included,
+// and keeping it unread would pass what no rule looked at; and text that
+// holds the escape of an ISO 2022 code extension, which no decoder turned
+// into UTF-8, so clean and the needles never saw what it says (escaped).
+// A UN value that begins with an item is not here: it is a sequence,
+// walked (unknown.go).
 func (r *run) actKeep(c *target) error {
+	if (c.vr == "UN" || charsetVRs[c.vr]) && escaped(c.elem) {
+		return c.fail(CauseBadValue)
+	}
 	if c.vr != "UN" {
 		return nil
 	}
-	b, ok := c.elem.Bytes()
-	if !ok || bytes.HasPrefix(b, itemTag) {
+	if _, ok := c.elem.Bytes(); !ok {
 		return c.fail(CauseBadValue)
 	}
 	return nil
@@ -468,7 +482,7 @@ func (r *run) actClean(c *target) error {
 		return c.fail(CauseBadValue)
 	}
 	v, err := r.text(c.ds, c.tag, c.vr)
-	if err != nil || len(v) > maxCleanValue {
+	if err != nil || len(v) > maxCleanValue || strings.IndexByte(v, esc) >= 0 {
 		return c.fail(CauseBadValue)
 	}
 	r.ops = append(r.ops, op{kind: opClean, ds: c.ds, tag: c.tag, text: v, entry: c.entry, path: c.path, rule: c.rule, vr: vrIfUN(c.elem, c.vr), charset: c.sc.charset})

@@ -1,22 +1,30 @@
 package profile
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/amrshadid/go-dicom/anonymize"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // How a column of PS3.15 Table E.1-1 becomes a base. The DICOM library
-// holds the table, every attribute with its code in the basic profile's
-// column and in each option's, the combined codes unresolved; this build's
-// library does not export it yet, and CORIA keeps no copy of it. When it
-// does, each column is read into annexERows and annexEDocument makes the
-// base's rules, one per attribute the column gives a code, in the table's
-// order, so a later base (an option) overrides an earlier one (the basic
-// profile) as PS3.15 E.3 says an option does. A blank code makes no rule:
-// the column says nothing of the attribute, and the bases before it stand.
+// holds the table (anonymize.ProfileTable), every attribute with its code
+// in the basic profile's column and in each option's, the combined codes
+// unresolved, and CORIA keeps no copy of it. Each column is read into
+// annexERows and annexEDocument makes the base's rules, one per attribute
+// the column gives a code, in the table's order, so a later base (an
+// option) overrides an earlier one (the basic profile) as PS3.15 E.3 says
+// an option does. A blank code makes no rule: the column says nothing of
+// the attribute, and the bases before it stand. A row for an element the
+// pipeline handles in every file (Pipeline: the file meta information,
+// command and directory elements, digital signatures, Original Attributes
+// Sequence) makes no rule either: no rule may name one, and the pipeline
+// removes each from every file, which is what the table asks of them or
+// more.
 //
 // The codes of PS3.15 E.1.1 and the action each becomes (annexEAction):
 //
@@ -170,4 +178,49 @@ func annexEAction(code string, vrs []string, modifiedDates bool) (*v1.ProfileAct
 		return unless(v1.RequiredFallback_REQUIRED_FALLBACK_UID), nil
 	}
 	return nil, fmt.Errorf("%q is not a code of PS3.15 Table E.1-1", code)
+}
+
+// annexERows returns one column of the DICOM library's Table E.1-1, in the
+// table's order, without the rows of elements the pipeline handles in
+// every file.
+func annexERows(col anonymize.ProfileColumn) []annexERow {
+	var out []annexERow
+	for e := range anonymize.ProfileEntries() {
+		t := uint32(e.Tag)
+		if e.Pattern == "" && pipelineOwned(t) {
+			continue
+		}
+		out = append(out, annexERow{tag: t, pattern: e.Pattern, name: e.Name, code: e.Code(col)})
+	}
+	return out
+}
+
+// safePrivateDocument returns the rules of PS3.15 Table E.3.10-1, the
+// Retain Safe Private option, from the DICOM library's table
+// (anonymize.SafePrivateEntries): one rule keeping each private attribute
+// the table lists, matched by its group, its private creator and its
+// element within the creator's block, never by the block a file put it in
+// (PS3.5 7.8.1). A private element no rule keeps is removed, so the option
+// is these rules and nothing else. The rules are in the table's order
+// (creator, group, element). A rule's name is its group, its element and
+// the first four bytes of the SHA-256 of its creator, since a creator's
+// text is longer than a name may be and holds characters a name may not.
+func safePrivateDocument() *v1.ProfileDocument {
+	doc := &v1.ProfileDocument{}
+	for e := range anonymize.SafePrivateEntries() {
+		h := sha256.Sum256([]byte(e.Creator))
+		vr := string(e.VR)
+		if vr == "" {
+			vr = "not given"
+		}
+		doc.Rules = append(doc.Rules, &v1.ProfileRule{
+			Name: fmt.Sprintf("e3-%04x-%02x-%x", e.Group, e.Element, h[:4]),
+			Selector: &v1.ProfileSelector{Kind: &v1.ProfileSelector_PrivateElement{PrivateElement: &v1.PrivateElement{
+				Creator: e.Creator, Group: fmt.Sprintf("%04X", e.Group), Element: fmt.Sprintf("%02X", e.Element),
+			}}},
+			Action: &v1.ProfileAction{Kind: &v1.ProfileAction_Keep{Keep: &v1.KeepAction{}}},
+			Reason: fmt.Sprintf("PS3.15 Table E.3.10-1: %s (%04X,xx%02X), VR %s", e.Creator, e.Group, e.Element, vr),
+		})
+	}
+	return doc
 }

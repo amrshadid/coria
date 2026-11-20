@@ -72,7 +72,7 @@ export const file_coria_v1_profile: GenFile = /*@__PURE__*/
 export type ProfileDocument = Message<"coria.v1.ProfileDocument"> & {
   /**
    * The bases, in order: names answered by ListProfileBases, such as
-   * "annex-e/basic:2026c". Each base's own bases come before its rules, and
+   * "annex-e/basic:2026d". Each base's own bases come before its rules, and
    * a base that appears again, directly or inside another, is used once,
    * where it first appears. At most 16 names.
    *
@@ -1609,7 +1609,7 @@ export const ProfileProblemsSchema: GenMessage<ProfileProblems> = /*@__PURE__*/
 export type ProfileBase = Message<"coria.v1.ProfileBase"> & {
   /**
    * The base's name: family, name and edition, such as
-   * "annex-e/basic:2026c".
+   * "annex-e/basic:2026d".
    *
    * @generated from field: string name = 1;
    */

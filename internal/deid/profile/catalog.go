@@ -5,20 +5,23 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
+
+	"github.com/amrshadid/go-dicom/anonymize"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
 
 // baseName is the rule of a base's name: a family, a name and an edition,
-// such as "annex-e/basic:2026c". A new edition of a base is a new name, so
+// such as "annex-e/basic:2026d". A new edition of a base is a new name, so
 // a stored version that names one never changes meaning.
 var baseName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,23}/[a-z][a-z0-9-]{0,47}:[a-z0-9][a-z0-9.]{0,15}$`)
 
 // Base is a profile the server ships, which a document may name among its
 // bases.
 type Base struct {
-	// Name is the base's name, such as "annex-e/basic:2026c".
+	// Name is the base's name, such as "annex-e/basic:2026d".
 	Name string
 	// Description says what the base does, for a person.
 	Description string
@@ -142,50 +145,159 @@ func (c *Catalog) Proto() []*v1.ProfileBase {
 }
 
 // The bases of PS3.15 Annex E: the basic profile and its options (PS3.15
-// E.3, Table E.1-1). They are generated from the standard's tables, which
-// the DICOM library holds, each column by annexEDocument; until the library
-// exports them, each is known by name and refused with this reason rather
-// than built from a copy of the standard kept here, which would drift from
-// the library's.
+// E.3). They are generated from the standard's tables, which the DICOM
+// library holds: each column of Table E.1-1 by annexEDocument, and the
+// Retain Safe Private option from Table E.3.10-1 (safePrivateDocument).
+// CORIA keeps no copy of either, which would drift from the library's.
+//
+// A base is named with the edition of the standard its tables are, and is
+// frozen with it: a version stores its rules expanded, so a later build
+// never changes what a stored version does, and a later edition of the
+// tables is a new base name beside this one. Should the library's tables
+// be of another edition than AnnexEEdition, every Annex E base is refused
+// as unavailable rather than built from tables that are not the edition
+// its name says; the package's tests hold each base's checksum, so a
+// change of the library's table under the same edition fails the build.
+//
+// A name of an earlier edition (2026c) is not in the catalog and is
+// refused as unknown: no build that could store a version naming one was
+// ever released, so no stored version names one.
 const (
 	// AnnexEEdition is the edition of PS3.15 the Annex E bases follow.
-	AnnexEEdition = "2026c"
-	// reasonTable is why a base from Table E.1-1 is not available.
-	reasonTable = "its rules are PS3.15 Table E.1-1, which this build does not carry yet"
-	// reasonSafePrivate is why the safe private option is not available.
-	reasonSafePrivate = "its rules are PS3.15 Table E.3.10-1, which this build does not carry yet"
+	AnnexEEdition = "2026d"
 	// reasonPixels is why the options that change pixels, which have no
 	// column in Table E.1-1, are not available as bases.
-	reasonPixels = "it changes pixels, not attributes, and is recorded in the de-identification method, which this build does not write yet"
+	reasonPixels = "it changes pixels, not attributes, and this build applies no pixel rules"
+)
+
+// annexEKind is where an Annex E base's rules come from.
+type annexEKind int
+
+// The kinds of Annex E base.
+const (
+	// annexEColumn: a column of Table E.1-1.
+	annexEColumn annexEKind = iota + 1
+	// annexESafePrivate: Table E.3.10-1.
+	annexESafePrivate
+	// annexEPixels: an option that changes pixels, which has no rules.
+	annexEPixels
 )
 
 // annexE lists each Annex E base: its name without the edition, what it
-// is, and why it is not available.
-var annexE = []struct{ name, description, reason string }{
-	{"basic", "PS3.15 E.2, the Basic Application Level Confidentiality Profile: the actions of Table E.1-1's basic column.", reasonTable},
-	{"clean-pixel-data", "PS3.15 E.3.1, Clean Pixel Data: burned-in identifying information is removed from the pixels.", reasonPixels},
-	{"clean-recognizable-visual-features", "PS3.15 E.3.2, Clean Recognizable Visual Features.", reasonPixels},
-	{"clean-graphics", "PS3.15 E.3.3, Clean Graphics: identifying text in graphics and overlays is removed.", reasonTable},
-	{"clean-structured-content", "PS3.15 E.3.4, Clean Structured Content: identifying content items of structured reports are cleaned.", reasonTable},
-	{"clean-descriptors", "PS3.15 E.3.5, Clean Descriptors: free-text descriptions are cleaned rather than kept or removed.", reasonTable},
-	{"retain-longitudinal-full-dates", "PS3.15 E.3.6, Retain Longitudinal Temporal Information with Full Dates.", reasonTable},
-	{"retain-longitudinal-modified-dates", "PS3.15 E.3.6, Retain Longitudinal Temporal Information with Modified Dates: dates are shifted, not removed.", reasonTable},
-	{"retain-patient-characteristics", "PS3.15 E.3.7, Retain Patient Characteristics: sex, age, size, weight and the like are kept.", reasonTable},
-	{"retain-device-identity", "PS3.15 E.3.8, Retain Device Identity.", reasonTable},
-	{"retain-uids", "PS3.15 E.3.9, Retain UIDs: original UIDs are kept.", reasonTable},
-	{"retain-safe-private", "PS3.15 E.3.10, Retain Safe Private: the private attributes Table E.3.10-1 lists as safe are kept.", reasonSafePrivate},
-	{"retain-institution-identity", "PS3.15 E.3.11, Retain Institution Identity.", reasonTable},
+// is, where its rules come from (and the column of Table E.1-1 for a
+// column), and its code in PS3.16 CID 7050, which De-identification Method
+// Code Sequence (0012,0064) records (PS3.15 E.1.1).
+var annexE = []struct {
+	name, description string
+	kind              annexEKind
+	column            anonymize.ProfileColumn
+	code              anonymize.MethodCodeValue
+}{
+	{"basic", "PS3.15 E.2, the Basic Application Level Confidentiality Profile: the actions of Table E.1-1's basic column.", annexEColumn, anonymize.ColumnBasic, anonymize.MethodBasicProfile},
+	{"clean-pixel-data", "PS3.15 E.3.1, Clean Pixel Data: burned-in identifying information is removed from the pixels.", annexEPixels, 0, anonymize.MethodCleanPixelData},
+	{"clean-recognizable-visual-features", "PS3.15 E.3.2, Clean Recognizable Visual Features.", annexEPixels, 0, anonymize.MethodCleanRecognizableVisualFeatures},
+	{"clean-graphics", "PS3.15 E.3.3, Clean Graphics: identifying text in graphics and overlays is removed.", annexEColumn, anonymize.ColumnCleanGraphics, anonymize.MethodCleanGraphics},
+	{"clean-structured-content", "PS3.15 E.3.4, Clean Structured Content: identifying content items of structured reports are cleaned.", annexEColumn, anonymize.ColumnCleanStructuredContent, anonymize.MethodCleanStructuredContent},
+	{"clean-descriptors", "PS3.15 E.3.5, Clean Descriptors: free-text descriptions are cleaned rather than kept or removed.", annexEColumn, anonymize.ColumnCleanDescriptors, anonymize.MethodCleanDescriptors},
+	{"retain-longitudinal-full-dates", "PS3.15 E.3.6, Retain Longitudinal Temporal Information with Full Dates.", annexEColumn, anonymize.ColumnRetainLongitudinalFullDates, anonymize.MethodRetainLongitudinalFullDates},
+	{"retain-longitudinal-modified-dates", "PS3.15 E.3.6, Retain Longitudinal Temporal Information with Modified Dates: dates are shifted, not removed.", annexEColumn, anonymize.ColumnRetainLongitudinalModifiedDates, anonymize.MethodRetainLongitudinalModifiedDates},
+	{"retain-patient-characteristics", "PS3.15 E.3.7, Retain Patient Characteristics: sex, age, size, weight and the like are kept.", annexEColumn, anonymize.ColumnRetainPatientCharacteristics, anonymize.MethodRetainPatientCharacteristics},
+	{"retain-device-identity", "PS3.15 E.3.8, Retain Device Identity.", annexEColumn, anonymize.ColumnRetainDeviceIdentity, anonymize.MethodRetainDeviceIdentity},
+	{"retain-uids", "PS3.15 E.3.9, Retain UIDs: original UIDs are kept.", annexEColumn, anonymize.ColumnRetainUIDs, anonymize.MethodRetainUIDs},
+	{"retain-safe-private", "PS3.15 E.3.10, Retain Safe Private: the private attributes Table E.3.10-1 lists as safe are kept.", annexESafePrivate, anonymize.ColumnRetainSafePrivate, anonymize.MethodRetainSafePrivate},
+	{"retain-institution-identity", "PS3.15 E.3.11, Retain Institution Identity.", annexEColumn, anonymize.ColumnRetainInstitutionIdentity, anonymize.MethodRetainInstitutionIdentity},
 }
 
 // AnnexE returns the name of an Annex E base of this edition, such as
-// AnnexE("basic") for "annex-e/basic:2026c".
+// AnnexE("basic") for "annex-e/basic:2026d".
 func AnnexE(name string) string { return "annex-e/" + name + ":" + AnnexEEdition }
+
+// AnnexEName splits the name of an Annex E base, "annex-e/<option>:<edition>",
+// into its option and edition; ok is false for a name of another family
+// or form.
+func AnnexEName(name string) (option, edition string, ok bool) {
+	rest, found := strings.CutPrefix(name, "annex-e/")
+	if !found {
+		return "", "", false
+	}
+	option, edition, found = strings.Cut(rest, ":")
+	return option, edition, found && option != "" && edition != ""
+}
+
+// MethodCodes returns the PS3.16 CID 7050 codes of the Annex E bases among
+// bases (an expanded version's, each base once), in the order of the list
+// of Annex E bases: the basic profile, then each option. A base is matched
+// by its option, whatever edition its stored name carries, so what a
+// stored version records never depends on the edition this build ships. A
+// base of another family has none. The engine records them in
+// De-identification Method Code Sequence (0012,0064) (PS3.15 E.1.1).
+func MethodCodes(bases []string) []anonymize.MethodCode {
+	have := map[string]bool{}
+	for _, b := range bases {
+		if option, _, ok := AnnexEName(b); ok {
+			have[option] = true
+		}
+	}
+	var out []anonymize.MethodCode
+	for _, b := range annexE {
+		if have[b.name] {
+			out = append(out, b.code.Code())
+		}
+	}
+	return out
+}
+
+// KeepsBaseChange reports whether a rule of a version's own keeps elements
+// a base of it changes or removes (Warnings, CodeKeepsBaseChange), or
+// whether it cannot tell because the warnings were cut at MaxWarnings. A
+// file made by such a version is not what its bases' codes would claim,
+// so the engine records no codes for it.
+func KeepsBaseChange(e *v1.ExpandedProfile) (bool, error) {
+	ws, err := Warnings(e)
+	if err != nil {
+		return false, err
+	}
+	for _, w := range ws {
+		if w.Code == CodeKeepsBaseChange || w.Code == CodeMoreWarnings {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// annexEBase builds one Annex E base from the library's tables, or says
+// why it cannot be.
+func annexEBase(name, description string, kind annexEKind, column anonymize.ProfileColumn, modifiedDates bool) Base {
+	b := Base{Name: AnnexE(name), Description: description}
+	switch {
+	case kind == annexEPixels:
+		b.Unavailable = reasonPixels
+		return b
+	case anonymize.ProfileTableEdition != AnnexEEdition:
+		b.Unavailable = fmt.Sprintf("the DICOM library's Table E.1-1 is of edition %s, not %s", anonymize.ProfileTableEdition, AnnexEEdition)
+		return b
+	case kind == annexESafePrivate && anonymize.SafePrivateEdition != AnnexEEdition:
+		b.Unavailable = fmt.Sprintf("the DICOM library's Table E.3.10-1 is of edition %s, not %s", anonymize.SafePrivateEdition, AnnexEEdition)
+		return b
+	}
+	doc, err := annexEDocument(annexERows(column), column.String(), modifiedDates)
+	if err != nil {
+		// The table is fixed in the library and every code is checked by
+		// the package's tests; a failure here is a defect of the build.
+		panic(err)
+	}
+	if kind == annexESafePrivate {
+		doc.Rules = append(doc.Rules, safePrivateDocument().GetRules()...)
+	}
+	b.Document = doc
+	return b
+}
 
 // shippedBases is every base the binary ships.
 func shippedBases() []Base {
 	var out []Base
 	for _, b := range annexE {
-		out = append(out, Base{Name: AnnexE(b.name), Description: b.description, Unavailable: b.reason})
+		out = append(out, annexEBase(b.name, b.description, b.kind, b.column, b.column == anonymize.ColumnRetainLongitudinalModifiedDates))
 	}
 	// The data set as The Cancer Imaging Archive publishes it: the basic
 	// profile with its six options, dates shifted so intervals between

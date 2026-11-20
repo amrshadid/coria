@@ -311,6 +311,8 @@ func TestScalePipelinePlans(t *testing.T) {
 	offs, lens := make([]int64, 1000), make([]int64, 1000)
 	check("a commit's confirmation", tx, "instance_claims_pkey", confirmSQL, false, int64(1), when, uids, offs, lens, lens, sums,
 		"claimer", "2.25.1.900000000", "2.25.2.900000000")
+	check("a commit's confirmation of de-identified instances", tx, "instance_claims_pkey", confirmDeidentifiedSQL, false, int64(1), when,
+		uids, offs, lens, lens, sums, "claimer", "2.25.1.900000000", "2.25.2.900000000", lens)
 	began := time.Now()
 	check("the release of 100,000 claims", tx, "instance_claims_by_reception", releaseClaimedSQL, false, "claimer")
 	t.Logf("released 100,000 claims in %v", time.Since(began))

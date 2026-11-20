@@ -1,0 +1,119 @@
+package engine
+
+import (
+	"errors"
+	"fmt"
+	"runtime/debug"
+	"strings"
+	"sync"
+
+	"github.com/amrshadid/go-dicom/anonymize"
+	"github.com/amrshadid/go-dicom/dataset"
+	"github.com/amrshadid/go-dicom/tag"
+	"github.com/amrshadid/go-dicom/valuerep"
+
+	"github.com/amrshadid/coria/internal/version"
+)
+
+// planMethod plans the record of the de-identification in the data set
+// (PS3.15 E.1.1, E.3.6), through the DICOM library's one writer of it
+// (anonymize.RecordDeidentificationMethod): Patient Identity Removed
+// (0012,0062) YES; De-identification Method Code Sequence (0012,0064)
+// with the PS3.16 CID 7050 code of each Annex E base the profile version
+// was built on (profile.MethodCodes); and De-identification Method
+// (0012,0063), LO of any number of values (PS3.6), holding those codes'
+// meanings, then the method the caller names, then this build's version
+// and the DICOM library's: what a stored profile version does depends on
+// the library's data dictionary, IOD tables and UID registry as well,
+// which the engine reads as it runs, so each instance says which it was
+// made with. Longitudinal Temporal Information Modified (0028,0303) is
+// what the profile's dates option says (PS3.15 E.3.6, Engine.temporal),
+// and MODIFIED whenever a date was shifted. A profile built on no Annex E
+// base, or whose own rules keep what a base changes or removes
+// (profile.KeepsBaseChange), records no code: the codes would claim what
+// the file is not. It then writes no code sequence, and (0012,0063) only
+// when the caller names a method.
+//
+// The library writes into a data set of its own here, and each element it
+// wrote is planned like every other change, so a file refused later is
+// left as it was.
+func (r *run) planMethod() error {
+	temporal := r.en.temporal
+	if r.record.DatesShifted {
+		temporal = "MODIFIED"
+	}
+	var meanings []string
+	if len(r.en.codes) > 0 {
+		scratch := dataset.NewDataset()
+		if err := anonymize.RecordDeidentificationMethod(scratch, r.en.codes, anonymize.MethodRecord{IdentityRemoved: true}); err != nil {
+			return fmt.Errorf("engine: recording the de-identification method: %w", err)
+		}
+		seq, ok := scratch.Get(tag.Tag(tagDeidMethodCodes))
+		if !ok {
+			return errors.New("engine: the DICOM library wrote no de-identification method code sequence")
+		}
+		r.ops = append(r.ops, op{kind: opElement, ds: r.top, tag: tag.Tag(tagDeidMethodCodes), elem: seq})
+		r.record.Entries = append(r.record.Entries, Entry{Path: formatTag(tagDeidMethodCodes), Tag: tagDeidMethodCodes, VR: "SQ", Action: "set", Rule: -1,
+			Reason: "the PS3.16 CID 7050 codes of the PS3.15 Annex E profile and options the profile version is built on (PS3.15 E.1.1)", Changed: true})
+		if v, ok := elementText(scratch, tag.Tag(tagDeidMethod)); ok && v != "" {
+			meanings = strings.Split(v, `\`)
+		}
+	}
+	r.put(tagIdentityRemoved, "CS", "YES", "the file was de-identified (PS3.15 E.1.1)")
+	values := meanings
+	if r.en.method != "" {
+		values = append(append(values, r.en.method), buildVersions()...)
+	}
+	if len(values) > 0 {
+		r.put(tagDeidMethod, "LO", strings.Join(values, `\`),
+			"the profile and options the file was de-identified by, the profile version, and the versions of the software that applied it (PS3.15 E.1.1)")
+	}
+	if temporal != "" {
+		r.put(tagTemporalModified, "CS", temporal, "what the dates option says, or that dates were shifted (PS3.15 E.3.6)")
+	}
+	return nil
+}
+
+// dicomLibrary is the module path of the DICOM library.
+const dicomLibrary = "github.com/amrshadid/go-dicom"
+
+// buildVersions returns this build's version and the DICOM library's, as
+// two values of De-identification Method: "CORIA <version>" and "go-dicom
+// <version>", each "unknown" where the build did not record it (a test
+// binary records no dependencies).
+var buildVersions = sync.OnceValue(func() []string {
+	bi, _ := debug.ReadBuildInfo()
+	return []string{methodValue("CORIA", version.Get().Version), methodValue("go-dicom", libraryVersion(bi))}
+})
+
+// libraryVersion returns the DICOM library's version in build information,
+// the version it is replaced by when it is, and "unknown" when bi is nil
+// or does not list it.
+func libraryVersion(bi *debug.BuildInfo) string {
+	if bi == nil {
+		return "unknown"
+	}
+	for _, d := range bi.Deps {
+		if d.Path != dicomLibrary {
+			continue
+		}
+		if d.Replace != nil && d.Replace.Version != "" {
+			return d.Replace.Version
+		}
+		if d.Version != "" {
+			return d.Version
+		}
+	}
+	return "unknown"
+}
+
+// methodValue writes a name and a version as one LO value (PS3.5 6.2: at
+// most 64 characters of the default repertoire, no backslash), the
+// version "unknown" when it is not one.
+func methodValue(name, v string) string {
+	s := name + " " + v
+	if len(s) > maxMethodLength || !isASCII(s) || strings.ContainsAny(s, `\`) || valuerep.ValidateValue("LO", s) != nil {
+		return name + " unknown"
+	}
+	return s
+}

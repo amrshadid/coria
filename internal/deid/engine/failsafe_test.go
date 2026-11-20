@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -68,21 +69,24 @@ func TestAPanicIsARefusalAndChangesNothing(t *testing.T) {
 	}
 }
 
-// countingLookups is Lookups that counts the codes it assigns.
+// countingLookups is Lookups that counts the codes it is asked to assign
+// and the calls that ask.
 type countingLookups struct {
 	mapLookups
-	assigned int
+	assigned, calls int
 }
 
-func (c *countingLookups) Assign(ctx context.Context, table, key string) (string, error) {
-	c.assigned++
-	return c.mapLookups.Assign(ctx, table, key)
+func (c *countingLookups) Assign(ctx context.Context, keys []LookupKey) ([]string, error) {
+	c.assigned += len(keys)
+	c.calls++
+	return c.mapLookups.Assign(ctx, keys)
 }
 
 // TestLookupsAssignOnlyAfterThePlan guards that a table assigns a code
 // only for a file the engine goes on to change: a file refused by a later
 // rule, or a later value, takes none; one that succeeds takes one for each
-// value, once though it appears twice.
+// value, once though it appears twice, all in one call, so a file takes
+// all its codes or none.
 func TestLookupsAssignOnlyAfterThePlan(t *testing.T) {
 	lk := &countingLookups{mapLookups: mapLookups{codes: map[string]string{}}}
 	en := newTestEngine(t, testKeys, Options{Lookups: lk},
@@ -105,7 +109,12 @@ func TestLookupsAssignOnlyAfterThePlan(t *testing.T) {
 	}
 	ok := build(t, el{tPatientID, "LO", "PAT001"}, el{0x00101000, "LO", "PAT001"})
 	apply(t, en, ok)
-	if lk.assigned != 1 || mustText(t, ok, tPatientID) != "A0001" || mustText(t, ok, 0x00101000) != "A0001" {
+	two := build(t, el{tPatientID, "LO", "PAT002"}, el{0x00101000, "LO", "PAT003"})
+	apply(t, en, two)
+	if lk.calls != 2 || lk.assigned != 3 || mustText(t, two, tPatientID) != "A0002" || mustText(t, two, 0x00101000) != "A0003" {
+		t.Errorf("two values of one file: %d calls for %d codes", lk.calls, lk.assigned)
+	}
+	if lk.assigned != 3 || mustText(t, ok, tPatientID) != "A0001" || mustText(t, ok, 0x00101000) != "A0001" {
 		t.Errorf("assigned %d: %q %q", lk.assigned, mustText(t, ok, tPatientID), mustText(t, ok, 0x00101000))
 	}
 }
@@ -153,21 +162,68 @@ func (d setDecider) Sets() []SetRule    { return []SetRule{d.s} }
 func (setDecider) Templates() []string  { return nil }
 func (setDecider) DateShiftDays() int32 { return 365 }
 
-// TestUnknownBytesAreNeverKeptUnread guards a value of VR UN the engine
-// cannot see into: kept, one that begins with an item tag (a sequence the
-// library kept as bytes) refuses the file; removed, it goes; and a UN
-// value of text is kept.
-func TestUnknownBytesAreNeverKeptUnread(t *testing.T) {
+// TestUnknownSequencesAreWalked guards a sequence the DICOM library kept
+// as UN bytes (a private sequence of defined length, PS3.5 6.2.2): kept by
+// a rule, it is parsed and walked, the name inside removed by the floor
+// and kept as a needle, and the element becomes a sequence that writes and
+// reads back without the name, in explicit and implicit VR; a standard
+// element unknown to the dictionary holding items is walked the same; one
+// that begins with an item and is not items refuses the file when kept
+// and is removed when a rule removes it; one no rule keeps is removed; and
+// a UN value of text is kept. Each case reads its input from a file
+// written in Explicit and in Implicit VR Little Endian.
+func TestUnknownSequencesAreWalked(t *testing.T) {
 	items := append([]byte{0xFE, 0xFF, 0x00, 0xE0, 0x10, 0, 0, 0}, []byte("\x10\x00\x10\x00\x08\x00\x00\x00Doe^John")...)
 	keep := newTestEngine(t, testKeys, Options{}, rule("vendor", privSel("VENDOR", "0029", "xx"), aKeep))
-	ds := build(t, el{0x00290010, "LO", "VENDOR"}, el{0x00291010, "UN", items})
-	var f *Failure
-	if _, err := keep.Apply(context.Background(), ds, Reception{}); !errors.As(err, &f) || f.Cause != CauseBadValue || f.Path != "00291010" {
-		t.Errorf("a UN sequence kept: %v", err)
+	for _, ts := range []string{"1.2.840.10008.1.2.1", implicitVR} {
+		// The input is a file of the syntax, as it arrives: in explicit VR
+		// the element says UN, in implicit VR it says nothing, and the
+		// reader keeps its bytes either way.
+		ds := readFile(t, writeFileAs(t, build(t, el{0x00080016, "UI", ctImageStorage}, el{0x00080018, "UI", "1.2.3.4"},
+			el{0x00290010, "LO", "VENDOR"}, el{0x00291010, "UN", items}), ts))
+		if e, _ := ds.Get(tagOf(0x00291010)); e.GetVR() == "SQ" {
+			t.Fatalf("%s: the reader parsed the sequence itself; the test reads nothing", ts)
+		}
+		rec := apply(t, keep, ds)
+		elem, ok := ds.Get(tagOf(0x00291010))
+		if !ok || elem.GetVR() != "SQ" {
+			t.Fatalf("%s: the private sequence: present %v, VR %v", ts, ok, elem.GetVR())
+		}
+		if got, _ := text(item(t, ds, 0x00291010, 0), tPatientName); got == "Doe^John" || got == "" {
+			t.Errorf("%s: the name inside the sequence: %q", ts, got)
+		}
+		found := false
+		for _, n := range rec.Needles {
+			found = found || (n.Value == "Doe^John" && n.Path == "00291010[0]/00100010")
+		}
+		if !found {
+			t.Errorf("%s: the name inside is not a needle: %v", ts, len(rec.Needles))
+		}
+		out := writeFileAs(t, ds, ts)
+		if bytes.Contains(out, []byte("Doe^John")) || bytes.Contains(out, []byte("Doe")) {
+			t.Errorf("%s: the written file holds the name", ts)
+		}
+		back := readFile(t, out)
+		if !back.Contains(tagOf(0x00291010)) {
+			t.Errorf("%s: the kept sequence did not read back", ts)
+		}
 	}
 	unknown := build(t, el{0x00089998, "UN", items})
-	if _, err := keep.Apply(context.Background(), unknown, Reception{}); !errors.As(err, &f) || f.Cause != CauseBadValue {
-		t.Errorf("an unknown standard element holding items, kept by default: %v", err)
+	apply(t, keep, unknown)
+	if got, _ := text(item(t, unknown, 0x00089998, 0), tPatientName); got == "Doe^John" {
+		t.Error("an unknown standard element holding items kept the name inside")
+	}
+	broken := append([]byte{0xFE, 0xFF, 0x00, 0xE0, 0x20, 0, 0, 0}, []byte("\x10\x00\x10\x00\x08\x00\x00\x00Doe^John")...)
+	var f *Failure
+	ds := build(t, el{0x00290010, "LO", "VENDOR"}, el{0x00291010, "UN", broken})
+	if _, err := keep.Apply(context.Background(), ds, Reception{}); !errors.As(err, &f) || f.Cause != CauseBadValue || f.Path != "00291010" {
+		t.Errorf("a UN value beginning with an item that is not items, kept: %v", err)
+	}
+	drop := newTestEngine(t, testKeys, Options{}, rule("vendor", privSel("VENDOR", "0029", "xx"), aRemove))
+	ds = build(t, el{0x00290010, "LO", "VENDOR"}, el{0x00291010, "UN", broken})
+	apply(t, drop, ds)
+	if ds.Contains(tagOf(0x00291010)) {
+		t.Error("a UN value that is not items, removed by a rule, stayed")
 	}
 	rm := newTestEngine(t, testKeys, Options{})
 	gone := build(t, el{0x00290010, "LO", "VENDOR"}, el{0x00291010, "UN", items})
@@ -295,5 +351,76 @@ func TestASubjectsLabelAndShiftAgree(t *testing.T) {
 		if len(dates) != 1 {
 			t.Errorf("subject %s has %d shifts", subject, len(dates))
 		}
+	}
+}
+
+// iso2022Item is an item, in Implicit VR Little Endian, whose Protocol
+// Name (0018,1030) is 山田太郎 written in ISO 2022 IR 87 (JIS X 0208 after
+// ESC $ B, back to ASCII after ESC ( B, PS3.5 6.1.2.5.3).
+var iso2022Item = append([]byte{0xFE, 0xFF, 0x00, 0xE0, 0x16, 0, 0, 0, 0x18, 0x00, 0x30, 0x10, 0x0E, 0, 0, 0},
+	"\x1b$B;3EDB@O:\x1b(B"...)
+
+// TestUnknownSequenceTextIsDecoded guards text inside a sequence held as
+// UN bytes, which the DICOM library leaves as the file wrote it: in a file
+// of ISO 2022 IR 87 whose patient is 山田太郎, a kept private sequence
+// whose Protocol Name says the name in that set's 7-bit bytes, which pass
+// for ASCII, is decoded when the engine is told the file's character set,
+// so clean finds the name and removes it; not told, the file is refused,
+// never kept with bytes no one read.
+func TestUnknownSequenceTextIsDecoded(t *testing.T) {
+	file := func() *dataset.Dataset {
+		return readFile(t, writeFile(t, build(t,
+			el{tagSpecificCharacterSet, "CS", `\ISO 2022 IR 87`},
+			el{tSOPClass, "UI", ctImageStorage}, el{tSOPInstance, "UI", "1.2.3.4"},
+			el{tPatientName, "PN", []byte("Yamada^Tarou=\x1b$B;3ED\x1b(B^\x1b$BB@O:\x1b(B")},
+			el{0x00290010, "LO", "VENDOR"}, el{0x00291010, "UN", iso2022Item})))
+	}
+	en := newTestEngine(t, testKeys, Options{},
+		rule("vendor", privSel("VENDOR", "0029", "xx"), aKeep), rule("protocol", kw("ProtocolName"), aClean))
+	ds := file()
+	var f *Failure
+	if _, err := en.Apply(context.Background(), ds, Reception{}); !errors.As(err, &f) || f.Cause != CauseBadValue {
+		t.Errorf("not told the character set: %v", err)
+	}
+	cs := `\ISO 2022 IR 87`
+	ds = file()
+	if _, err := en.Apply(context.Background(), ds, Reception{CharacterSet: &cs}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := text(item(t, ds, 0x00291010, 0), 0x00181030)
+	if strings.Contains(got, "山田") || strings.Contains(got, "太郎") || strings.ContainsRune(got, 0x1b) {
+		t.Errorf("the Protocol Name inside the sequence: %q", got)
+	}
+	if out := writeFile(t, ds); bytes.Contains(out, []byte(";3ED")) || bytes.Contains(out, []byte("B@O:")) {
+		t.Error("the written file holds the name's ISO 2022 bytes")
+	}
+}
+
+// TestLookupsPerFileAreBounded guards the bound of a file's lookups: a
+// file whose values need more than MaxLookups codes is refused as too
+// large before any table is asked, its data set left as it was; one at the
+// bound is assigned.
+func TestLookupsPerFileAreBounded(t *testing.T) {
+	file := func(n int) *dataset.Dataset {
+		items := make([]*dataset.Dataset, n)
+		for i := range items {
+			items[i] = build(t, el{tAccession, "SH", fmt.Sprintf("ACC%06d", i)})
+		}
+		return build(t, el{tPatientID, "LO", "PAT001"}, el{0x00081115, "SQ", items})
+	}
+	lk := &countingLookups{mapLookups: mapLookups{codes: map[string]string{}}}
+	en := newTestEngine(t, testKeys, Options{Lookups: lk}, rule("accession", kw("AccessionNumber"), aLookup("acc", true)))
+	ds := file(MaxLookups + 1)
+	before := writeFile(t, ds)
+	var f *Failure
+	if _, err := en.Apply(context.Background(), ds, Reception{}); !errors.As(err, &f) || f.Cause != CauseTooLarge {
+		t.Fatalf("%d lookups: %v", MaxLookups+1, err)
+	}
+	if lk.calls != 0 || !bytes.Equal(before, writeFile(t, ds)) {
+		t.Errorf("a refused file asked the tables %d times, or changed", lk.calls)
+	}
+	apply(t, en, file(MaxLookups))
+	if lk.calls != 1 || lk.assigned != MaxLookups {
+		t.Errorf("at the bound: %d calls for %d codes", lk.calls, lk.assigned)
 	}
 }

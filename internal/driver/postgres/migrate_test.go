@@ -571,7 +571,7 @@ func TestSendingMigrationKeepsData(t *testing.T) {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if v, err := s.Version(ctx); err != nil || v != 11 {
+	if v, err := s.Version(ctx); err != nil || v != len(tenantMigrations) {
 		t.Fatalf("the version after the migration = %d, %v", v, err)
 	}
 	tenanttest.CheckAfterSending(t, s)

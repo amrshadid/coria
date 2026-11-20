@@ -5,11 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
+	"github.com/amrshadid/go-dicom/anonymize"
 	"github.com/amrshadid/go-dicom/dataset"
 	"github.com/amrshadid/go-dicom/valuerep"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
 // Bounds of a data set the engine processes. A file past one is refused
@@ -27,6 +30,11 @@ const (
 	// of SHA-256, the least RFC 2104 section 3 recommends for HMAC, below
 	// which an identifier could be found from its code by trying them.
 	MinKeyLength = 32
+	// MaxLookups is the most values one file has lookup tables assign
+	// codes to (CauseTooLarge past it): the most a tenant's tables assign
+	// in one call (tenant.MaxLookupBatch), so a file's codes are one call
+	// and all or none.
+	MaxLookups = 1000
 	// maxMethodLength is the bound of De-identification Method (0012,0063),
 	// an LO value (PS3.5 6.2).
 	maxMethodLength = 64
@@ -59,6 +67,17 @@ type Reception struct {
 	CallingAETitle string
 	// CalledAETitle is the AE title the sender called.
 	CalledAETitle string
+	// CharacterSet is the file's Specific Character Set (0008,0005) as
+	// received, its values joined by a backslash, "" when the file
+	// declared none; nil when the caller does not say. The DICOM library
+	// decodes a file's text into UTF-8 and declares ISO_IR 192 over it, so
+	// the data set no longer says what the file was written in; but a
+	// sequence held as UN bytes, and a private value of VR UN, are bytes
+	// as the file wrote them, which the engine decodes itself with this
+	// (PS3.5 6.1.2.3). With nil, such text is taken only when it is in the
+	// default repertoire, and a file with any other is refused where the
+	// text would be kept.
+	CharacterSet *string
 }
 
 // Lookups reaches a tenant's lookup tables. A table is keyed by the keyed
@@ -66,9 +85,20 @@ type Reception struct {
 type Lookups interface {
 	// Code returns the code table holds for key, and whether it holds one.
 	Code(ctx context.Context, table, key string) (code string, found bool, err error)
-	// Assign returns the code table holds for key, giving key the table's
-	// next code first when it holds none.
-	Assign(ctx context.Context, table, key string) (string, error)
+	// Assign returns the codes the tables hold for keys, in their order,
+	// first giving each key its table's next code when it holds none, all
+	// at once or none: the engine asks once per file, for every value the
+	// file's plan assigns, so a file takes all its codes or none.
+	Assign(ctx context.Context, keys []LookupKey) ([]string, error)
+}
+
+// LookupKey is a value a lookup table is asked for: the table, and the
+// keyed hash of the value.
+type LookupKey struct {
+	// Table is the table's name.
+	Table string
+	// Key is the keyed hash of the value.
+	Key string
 }
 
 // Options are what an Engine takes besides its profile and keys.
@@ -81,8 +111,8 @@ type Options struct {
 	// library's IOD tables (IODTypes).
 	Types Types
 	// Method, when set, is written into De-identification Method
-	// (0012,0063): the profile and version that made the file, as the
-	// caller names them. At most 64 characters of the default repertoire.
+	// (0012,0063) after the meanings of the Annex E codes: the profile and
+	// version that made the file, as the caller names them. At most 64 characters of the default repertoire.
 	Method string
 }
 
@@ -96,6 +126,16 @@ type Engine struct {
 	lookups Lookups
 	types   Types
 	method  string
+	// codes are the PS3.16 CID 7050 codes of the Annex E bases the
+	// profile is built on, recorded in every file (planMethod).
+	codes []anonymize.MethodCode
+	// safeVRs is set when the profile is built on the Retain Safe Private
+	// base of the edition of the library's Table E.3.10-1, whose VRs a
+	// kept private element held as UN then takes (keepSafePrivate).
+	safeVRs bool
+	// temporal is what Longitudinal Temporal Information Modified
+	// (0028,0303) says by the profile's dates option, empty for none.
+	temporal string
 	// received are the top-level elements templates read, as received.
 	received []uint32
 	seams    engineSeams
@@ -120,7 +160,42 @@ func New(e *v1.ExpandedProfile, keys Keys, opts Options) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newEngine(dec, keys, opts)
+	bases := e.GetBases()
+	for _, b := range bases {
+		// A stored version runs only with the Annex E tables of the
+		// edition its bases name: the safe private attributes' VRs are
+		// read from the library's table as the file is processed, so a
+		// version of another edition would mean something else here.
+		if _, edition, ok := profile.AnnexEName(b); ok && edition != profile.AnnexEEdition {
+			return nil, fmt.Errorf("engine: the profile is built on %s, and this build runs the Annex E bases of edition %s only", b, profile.AnnexEEdition)
+		}
+	}
+	en, err := newEngine(dec, keys, opts)
+	if err != nil {
+		return nil, err
+	}
+	weakened, err := profile.KeepsBaseChange(e)
+	if err != nil {
+		return nil, err
+	}
+	if !weakened {
+		en.codes = profile.MethodCodes(bases)
+	}
+	en.safeVRs = slices.Contains(bases, profile.AnnexE("retain-safe-private")) && anonymize.SafePrivateEdition == profile.AnnexEEdition
+	// PS3.15 E.3.6: under the Retain Longitudinal Temporal Information
+	// with Full Dates option, Longitudinal Temporal Information Modified
+	// (0028,0303) "shall be added ... with a Value of UNMODIFIED"; under
+	// the option with Modified Dates, "with a Value of MODIFIED", whether
+	// or not a file holds a date. A later base overrides an earlier.
+	for _, b := range bases {
+		switch b {
+		case profile.AnnexE("retain-longitudinal-full-dates"):
+			en.temporal = "UNMODIFIED"
+		case profile.AnnexE("retain-longitudinal-modified-dates"):
+			en.temporal = "MODIFIED"
+		}
+	}
+	return en, nil
 }
 
 // newEngine makes an Engine over any Decider.
@@ -176,9 +251,10 @@ var defaultTypes = &IODTypes{}
 // profile's precedence chooses, or the default, but that the floor
 // (floor.go) never lets one that names or identifies the person stay.
 // Then the elements set rules make are added, and the de-identification
-// is recorded in the data set: Patient Identity Removed (0012,0062) YES,
-// De-identification Method (0012,0063) when Options.Method is set,
-// Longitudinal Temporal Information Modified (0028,0303) MODIFIED when a
+// is recorded in the data set (planMethod): Patient Identity Removed
+// (0012,0062) YES, De-identification Method Code Sequence (0012,0064) with
+// the codes of the Annex E bases the profile is built on, De-identification
+// Method (0012,0063) with their meanings and Options.Method, Longitudinal Temporal Information Modified (0028,0303) MODIFIED when a
 // date was shifted (PS3.15 E.1.1, E.3.6), and Specific Character Set
 // (0008,0005) as the text that stays needs it. Pixel data is never
 // changed.
@@ -193,7 +269,8 @@ func (en *Engine) Apply(ctx context.Context, ds *dataset.Dataset, rec Reception)
 	if ds == nil {
 		return nil, errors.New("engine: no data set")
 	}
-	r := &run{en: en, ctx: ctx, top: ds, record: &Record{PixelsUntouched: true}}
+	r := &run{en: en, ctx: ctx, top: ds, record: &Record{PixelsUntouched: true}, source: sourceFrom(rec.CharacterSet),
+		rawSources: map[*dataset.Dataset]textSource{}}
 	defer func() {
 		if p := recover(); p != nil {
 			r.rollback()
@@ -209,7 +286,7 @@ func (en *Engine) Apply(ctx context.Context, ds *dataset.Dataset, rec Reception)
 			r.received[t] = v
 		}
 	}
-	if err := r.walk(ds, nil, "", scope{charset: charsetOf(ds, charsetAbsent)}); err != nil {
+	if err := r.walk(ds, nil, "", scope{charset: charsetOf(ds, charsetAbsent), source: r.source}); err != nil {
 		return nil, err
 	}
 	if err := r.planSets(); err != nil {
@@ -224,7 +301,9 @@ func (en *Engine) Apply(ctx context.Context, ds *dataset.Dataset, rec Reception)
 	if err := r.finishAssigns(); err != nil {
 		return nil, err
 	}
-	r.planMethod()
+	if err := r.planMethod(); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

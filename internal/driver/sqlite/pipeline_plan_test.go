@@ -53,7 +53,7 @@ func fillPipeline(tb testing.TB, path string) {
 		 SELECT i, i % 5000 + 1, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 5, 5000, NULL, 0, 0, 'store' || (i % 200 + 1),
 		   '2.25.1.' || (i % 5000 + 1) FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
-		 INSERT INTO instances SELECT i % 20000 + 1, '2.25.3.' || i, 'rc' || (i % 10000 + 1), randomblob(32), NULL, '', 0, 1000, 1000, 0
+		 INSERT INTO instances SELECT i % 20000 + 1, '2.25.3.' || i, 'rc' || (i % 10000 + 1), randomblob(32), NULL, '', 0, 1000, 1000, 0, NULL
 		 FROM n WHERE i % 100 <> 0`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO instance_claims SELECT '2.25.3.' || i, 'rc' || (i % 10000 + 1), '2.25.1.' || (i % 5000 + 1),
@@ -307,9 +307,9 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 		// the wrong length.
 		`INSERT INTO instance_claims VALUES ('1.2', '', '1.2', '1.2', zeroblob(32), 0)`,
 		`INSERT INTO instance_claims VALUES ('1.2', 'rc', '1.2', '1.2', x'00', 0)`,
-		`INSERT INTO instances VALUES (1, '1.2', '', zeroblob(32), NULL, '', 0, 0, 0, 0)`,
-		`INSERT INTO instances VALUES (1, '1.2', 'rc', x'00', NULL, '', 0, 0, 0, 0)`,
-		`INSERT INTO instances VALUES (1, '1.2', 'rc', zeroblob(32), x'00', '', 0, 0, 0, 0)`,
+		`INSERT INTO instances VALUES (1, '1.2', '', zeroblob(32), NULL, '', 0, 0, 0, 0, NULL)`,
+		`INSERT INTO instances VALUES (1, '1.2', 'rc', x'00', NULL, '', 0, 0, 0, 0, NULL)`,
+		`INSERT INTO instances VALUES (1, '1.2', 'rc', zeroblob(32), x'00', '', 0, 0, 0, 0, NULL)`,
 	} {
 		out, err := exec.Command(tool, "-batch", path, bad).CombinedOutput() //nolint:gosec // G204, G702: the tool and the database are this test's own.
 		if err == nil || !strings.Contains(string(out), "CHECK constraint failed") {

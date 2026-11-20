@@ -137,3 +137,71 @@ func TestNamingHasherOfATenantNotReady(t *testing.T) {
 		t.Fatalf("an unknown tenant: %v", err)
 	}
 }
+
+// TestATenantIsMadeWithItsDeidentificationKeys guards the keys of UIDs and
+// dates: a ready tenant has each, sealed under its own name and the
+// tenant's id so that it opens there and nowhere else (not under another
+// name, not under another tenant), each 32 bytes and different from the
+// naming key and from each other; the same after the registry starts
+// again, so a UID remapped or a date shifted before a restart is the same
+// after; and the log holds no byte of either.
+func TestATenantIsMadeWithItsDeidentificationKeys(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	r := e.newRegistry(e.config())
+	e.create(r, "id-lab", "lab", driver.SQLiteDriver, "")
+	read := func(r *Registry) map[tenant.SecretName][]byte {
+		t.Helper()
+		st, err := r.Store("lab")
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys := map[tenant.SecretName][]byte{}
+		for _, name := range tenant.SecretNames() {
+			sealed, err := st.(tenant.Secrets).TenantSecret(ctx, name)
+			if err != nil {
+				t.Fatalf("a ready tenant has no %s key: %v", name, err)
+			}
+			key, err := e.keys.Open(SecretContext("id-lab", name), sealed)
+			if err != nil || len(key) != namingKeyLength {
+				t.Fatalf("the %s key opens to %d bytes, %v", name, len(key), err)
+			}
+			if _, err := e.keys.Open(SecretContext("id-other", name), sealed); err == nil {
+				t.Fatalf("the %s key opens under another tenant's id", name)
+			}
+			for _, other := range tenant.SecretNames() {
+				if _, err := e.keys.Open(SecretContext("id-lab", other), sealed); other != name && err == nil {
+					t.Fatalf("the %s key opens under the name %s", name, other)
+				}
+			}
+			keys[name] = key
+		}
+		return keys
+	}
+	first := read(r)
+	if len(first) != 3 {
+		t.Fatalf("%d keys", len(first))
+	}
+	if bytes.Equal(first[tenant.SecretUID], first[tenant.SecretDate]) || bytes.Equal(first[tenant.SecretUID], first[tenant.SecretNaming]) ||
+		bytes.Equal(first[tenant.SecretDate], first[tenant.SecretNaming]) {
+		t.Fatal("two of the tenant's keys are equal")
+	}
+	for name, key := range first {
+		if bytes.Contains([]byte(e.logBuf.String()), key) {
+			t.Fatalf("the log holds the %s key", name)
+		}
+	}
+	if err := r.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	again := e.newRegistry(e.config())
+	if err := again.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	again.checkAll().Wait()
+	for name, key := range read(again) {
+		if !bytes.Equal(key, first[name]) {
+			t.Fatalf("the %s key changed across a restart", name)
+		}
+	}
+}

@@ -2,22 +2,18 @@ package engine
 
 import (
 	"errors"
-	"runtime/debug"
 	"slices"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	"github.com/amrshadid/go-dicom/dataelem"
 	"github.com/amrshadid/go-dicom/dataset"
 	"github.com/amrshadid/go-dicom/sequence"
 	"github.com/amrshadid/go-dicom/tag"
-	"github.com/amrshadid/go-dicom/valuerep"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/core/naming"
 	"github.com/amrshadid/coria/internal/deid/profile"
-	"github.com/amrshadid/coria/internal/version"
 )
 
 // facts is what conditions read of a file, read once from its top level
@@ -275,17 +271,30 @@ func (r *run) finishCleans() error {
 // reason takes no code from a table. A value asked for twice in one file
 // is asked once.
 func (r *run) finishAssigns() error {
-	codes := map[[2]string]string{}
+	if len(r.assigns) == 0 {
+		return nil
+	}
+	var keys []LookupKey
+	at := map[LookupKey]int{}
 	for _, a := range r.assigns {
-		k := [2]string{a.table, a.key}
-		code, done := codes[k]
-		if !done {
-			var err error
-			if code, err = r.en.lookups.Assign(r.ctx, a.table, a.key); err != nil {
-				return err
-			}
-			codes[k] = code
+		k := LookupKey{Table: a.table, Key: a.key}
+		if _, ok := at[k]; !ok {
+			at[k] = len(keys)
+			keys = append(keys, k)
 		}
+	}
+	if len(keys) > MaxLookups {
+		return &Failure{Cause: CauseTooLarge}
+	}
+	codes, err := r.en.lookups.Assign(r.ctx, keys)
+	if err != nil {
+		return err
+	}
+	if len(codes) != len(keys) {
+		return errors.New("engine: the lookup tables answered another number of codes than asked for")
+	}
+	for _, a := range r.assigns {
+		code := codes[at[LookupKey{Table: a.table, Key: a.key}]]
 		o := &r.ops[a.op]
 		if code == "" || !isASCII(code) || !validText(a.vr, code) {
 			return &Failure{Cause: CauseBadValue, Path: o.path, Rule: o.rule}
@@ -298,68 +307,6 @@ func (r *run) finishAssigns() error {
 		r.record.Entries[o.entry].Changed = true
 	}
 	return nil
-}
-
-// planMethod plans the record of the de-identification in the data set
-// (PS3.15 E.1.1, E.3.6). De-identification Method (0012,0063), LO of any
-// number of values (PS3.6), holds the method the caller names, then this
-// build's version and the DICOM library's: what a stored profile version
-// does depends on the library's data dictionary, IOD tables and UID
-// registry as well, which the engine reads as it runs, so each instance
-// says which it was made with.
-func (r *run) planMethod() {
-	r.put(tagIdentityRemoved, "CS", "YES", "the file was de-identified (PS3.15 E.1.1)")
-	if r.en.method != "" {
-		r.put(tagDeidMethod, "LO", strings.Join(append([]string{r.en.method}, buildVersions()...), `\`),
-			"the profile version that de-identified the file, and the versions of the software that applied it (PS3.15 E.1.1)")
-	}
-	if r.record.DatesShifted {
-		r.put(tagTemporalModified, "CS", "MODIFIED", "dates were shifted (PS3.15 E.3.6)")
-	}
-}
-
-// dicomLibrary is the module path of the DICOM library.
-const dicomLibrary = "github.com/amrshadid/go-dicom"
-
-// buildVersions returns this build's version and the DICOM library's, as
-// two values of De-identification Method: "CORIA <version>" and "go-dicom
-// <version>", each "unknown" where the build did not record it (a test
-// binary records no dependencies).
-var buildVersions = sync.OnceValue(func() []string {
-	bi, _ := debug.ReadBuildInfo()
-	return []string{methodValue("CORIA", version.Get().Version), methodValue("go-dicom", libraryVersion(bi))}
-})
-
-// libraryVersion returns the DICOM library's version in build information,
-// the version it is replaced by when it is, and "unknown" when bi is nil
-// or does not list it.
-func libraryVersion(bi *debug.BuildInfo) string {
-	if bi == nil {
-		return "unknown"
-	}
-	for _, d := range bi.Deps {
-		if d.Path != dicomLibrary {
-			continue
-		}
-		if d.Replace != nil && d.Replace.Version != "" {
-			return d.Replace.Version
-		}
-		if d.Version != "" {
-			return d.Version
-		}
-	}
-	return "unknown"
-}
-
-// methodValue writes a name and a version as one LO value (PS3.5 6.2: at
-// most 64 characters of the default repertoire, no backslash), the
-// version "unknown" when it is not one.
-func methodValue(name, v string) string {
-	s := name + " " + v
-	if len(s) > maxMethodLength || !isASCII(s) || strings.ContainsAny(s, `\`) || valuerep.ValidateValue("LO", s) != nil {
-		return name + " unknown"
-	}
-	return s
 }
 
 // put plans a top-level element the engine writes itself, with its record
@@ -437,6 +384,9 @@ func (r *run) applyOp(o op) {
 			r.noteValue(elem)
 			if o.kind == opNoItems {
 				elem.SetValue(sequence.New())
+				if o.vr != "" {
+					elem.SetVR(o.vr)
+				}
 				return
 			}
 			elem.SetValue(o.value)
@@ -444,6 +394,21 @@ func (r *run) applyOp(o op) {
 				elem.SetVR(o.vr)
 			}
 		}
+	case opSequence:
+		if elem, ok := o.ds.Get(o.tag); ok {
+			r.noteValue(elem)
+			elem.SetValue(o.seq)
+			elem.SetVR(o.vr)
+		}
+	case opElement:
+		if old, ok := o.ds.Get(o.tag); ok {
+			o.ds.Remove(o.tag)
+			r.undo = append(r.undo, func() { _ = o.ds.Add(old) })
+		}
+		// Add fails only for a nil element or a tag that is not a tag.Tag,
+		// neither of which can be here.
+		_ = o.ds.Add(o.elem)
+		r.undo = append(r.undo, func() { o.ds.Remove(o.tag) })
 	case opPut:
 		if elem, ok := o.ds.Get(o.tag); ok {
 			r.noteValue(elem)
