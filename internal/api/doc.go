@@ -79,6 +79,54 @@
 // of the server knows is asked through an interface (Receivers, Incoming,
 // Headers), with a stand-in that says plainly what it cannot do.
 //
+// # Bounds of the reads
+//
+// A read of archived bytes holds one of the caller's open reads for as long as
+// it streams: a download, a ReadFiles stream, and a DICOMweb request that
+// reads the storage. A DICOMweb request holds its read from its first read to
+// its last byte (holdRead), so a request that does not stream cannot pass the
+// bound by asking for what does not stream. A read past the bound is refused,
+// never queued, with fault.Exhausted: checkedread.MaxOpenReads (16) for one
+// caller and checkedread.MaxServerReads (256) for the server
+// (checkedread.Slots).
+//
+// Each check is made as the bytes go out (checkedread.CopyChecked), so a
+// mismatch cuts the answer, which the client sees as a body short of its
+// length, never as a whole body that is wrong (PS3.18 10.4.1.1):
+//
+//   - A whole instance, by a retrieve or a download, is compared with the
+//     length and SHA-256 it was archived with.
+//   - A frame (PS3.18 10.4.1.1.4) is compared with the SHA-256 its line of the
+//     scan's metadata file records for it. A frame of a line that holds no
+//     table is found from the file's header and sent unchecked, since no
+//     checksum is recorded for it.
+//   - A bulk data window (a BulkDataURI, or a download with an offset and a
+//     length) is compared with its length only. No checksum of a part of a file
+//     is recorded, so bytes changed inside a window are found only by a
+//     retrieve of the whole instance.
+//   - Metadata is answered from the scan's metadata file and, for what the file
+//     does not hold, from a read of the instance's header. The header is
+//     checked against the size the catalog holds, not against its checksum: a
+//     stored file changed without a change of size is not found by the
+//     metadata service.
+//
+// A search (PS3.18 10.6.3) has three bounds, and holds one scan's metadata
+// file open at a time:
+//
+//   - It passes over at most 10,000 rows (webMaxPassed): rows an index serves
+//     that a key the index does not hold turns down. Past it the answer is 413.
+//   - It reads at most 256 MiB of metadata files (webMaxMetadataRead), counted
+//     as they come from the storage; past it the answer is 413. Making the
+//     results has an allowance of its own of the same size, and a read past
+//     that allowance ends the answer.
+//   - An answer of instances holds at most 64 MiB of results (webMaxAnswer).
+//     The rows past it are left for the next page, with the Warning that more
+//     match (PS3.18 8.3.4.4).
+//
+// The 413 messages name the keys the catalog matches by index (a study, a
+// series, a subject's PatientID, a StudyDate range, a Modality): a search with
+// them is the one that keeps inside the bounds.
+//
 // # Errors
 //
 // A handler answers a *connect.Error, made from the error's fault kind

@@ -69,7 +69,7 @@ A command that removes or discards something says what it would do and exits
 - **Downloads** are laid out `<dir>/<subject>/<session>/<scan>/<instance>.dcm`,
   each written as `.part` and renamed only once its SHA-256 matches the one the
   server announced. Run again, a download skips what is complete and resumes a
-  `.part` by range ([internal/cli/download](../internal/cli/download/download.go)).
+  `.part` by range ([internal/cli/download](../internal/cli/download/doc.go)).
 
 ## The interactive program
 

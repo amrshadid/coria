@@ -46,27 +46,7 @@ headers. [place](../internal/place/doc.go) opens the storage a scan lives on.
 
 ## What a read checks, and its bounds
 
-- **A whole instance** (a retrieve, a download) is checked against the SHA-256 it
-  was archived with as it is sent; a mismatch cuts the answer before its last
-  piece.
-- **A frame** is checked against the SHA-256 the scan's sidecar records for it
-  beside its ranges, as it is sent; a mismatch cuts the multipart body before the
-  frame's last piece. A frame of a line that holds no table yet (a sidecar written
-  before frame tables, until the pass at start gives it its tables) is found from
-  the file's header and sent unchecked.
-- **A bulk data window** (a BulkDataURI, a download with offset and length) is not
-  checked: no checksum of a part of a file is recorded, so bytes changed inside a
-  window are not found by reading it. A retrieve of the whole instance finds them.
-- **Metadata** is answered from the sidecar and, for what it does not hold, from a
-  read of the file's header, which is checked against the size the catalog holds,
-  not against its checksum: a stored file changed without a change of size is not
-  found by the metadata service.
-- **A search** holds one of the caller's open reads, as a retrieve does, and one
-  scan's sidecar open at a time. It is refused with 413 when it passes over more
-  than 10,000 rows it does not keep, or reads more than 256 MiB of sidecars to find
-  its results; making them may read as much again, past which the answer is cut.
-  Its answer is streamed one result at a time; an answer of instances stops at
-  64 MiB of results, with the Warning that more results can be requested.
-  A search the catalog can narrow by index (a study, a series, a subject's
-  PatientID, a StudyDate range, a Modality) is the one that stays inside these
-  bounds.
+Each read is checked as its bytes go out and is bounded: what a check cuts, what it
+does not check, the 413 limits of a search and the open-read slots are in
+[internal/api](../internal/api/doc.go) (its bounds of the reads) and
+[internal/checkedread](../internal/checkedread/doc.go) (what a checked read guarantees).

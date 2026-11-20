@@ -18,4 +18,35 @@
 //
 // The package knows nothing of HTTP, gRPC or DICOM: callers decide what to
 // do with a mismatch.
+//
+// # What a checked read guarantees
+//
+// CopyChecked withholds the last piece of a body until its length and, when a
+// checksum is given, its SHA-256 agree with the manifest. It does not withhold
+// the pieces before it: they are passed as they are read, so a reader that has
+// taken them holds the start of a damaged instance. A caller therefore ends the
+// response at a mismatch, so the client sees a body short of its length and
+// not a body that looks whole.
+//
+//   - A mismatch is ErrShort, ErrLong or ErrChecksum, and Mismatched reports
+//     them. Any other error from the reader or from emit is returned as it is.
+//   - With no checksum (a bulk data window) only the length is checked.
+//   - At most two pieces are held: one is read into while the other is passed
+//     or hashed. The hash runs on its own goroutine for a body of more than one
+//     piece and is joined before CopyChecked returns, so no piece is read after
+//     it returns and a caller may reuse its buffers at once.
+//
+// # Slots
+//
+// Slots counts the reads of archived bytes open now, per owner (a key, or the
+// local operator) and in all. Its zero value is ready to use. A read past
+// MaxOpenReads for its owner, or past MaxServerReads for the server, is refused
+// with fault.Exhausted and is not queued: a client that asks again later gets
+// its read, and one that waits in line would hold a connection while it waits.
+// The count is in memory, which is the whole server's count, since one process
+// serves an installation (the lock on its data directory).
+//
+// ChunkSize is the size of one piece of ReadFiles. The bound of a server's
+// memory assumes two buffers of that size for each open read, as its comment
+// states; the DICOMweb and download paths size their own buffers.
 package checkedread

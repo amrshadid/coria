@@ -144,7 +144,7 @@ Each part is documented where it lives:
   them: lint enforces it for `testkit`; for the other two, `go list -deps
   ./cmd/coria` shows it.
 
-[internal/blob/readat](../internal/blob/readat/readat.go) reads a stored object at offsets
+[internal/blob/readat](../internal/blob/readat/doc.go) reads a stored object at offsets
 (`io.ReaderAt`) through the port's ranged reads, so go-dicom can read a header or
 walk the items of encapsulated pixel data without fetching the whole object.
 
