@@ -1,5 +1,5 @@
 {
-  "name": "@coria/client",
+  "name": "coria",
   "version": "0.0.0",
   "description": "TypeScript client for the CORIA research imaging archive's API",
   "license": "Apache-2.0",

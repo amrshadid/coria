@@ -1,10 +1,11 @@
 """A real CORIA server on a temporary installation, for the tests to call.
 
 The binary is built from this repository (static, as the release is) and
-started on a loopback port, without TLS and with TLS. Everything is synthetic:
+started on a port the system picks, without TLS and with TLS. Everything is synthetic:
 a new installation, a key made on its local socket, no DICOM data.
 """
 
+import json
 import os
 import pathlib
 import shutil
@@ -36,8 +37,8 @@ class Server:
         self.data.mkdir(mode=0o700)
         self.env = dict(os.environ, CORIA_DATA_DIR=str(self.data))
         self.cli("init")
-        self.port = free_port()
-        self.process = self._start(f"127.0.0.1:{self.port}")
+        self.port = 0
+        self.process = self._start()
         self.key = self.make_key("admin", admin=True)
 
     def cli(self, *args: str) -> str:
@@ -58,24 +59,41 @@ class Server:
             self.cli("grant", "set", key_id, "--role", "admin", "--installation")
         return key
 
-    def _start(self, listen: str, *extra: str) -> subprocess.Popen:
-        log = open(self.data.parent / "serve.log", "ab")
-        process = subprocess.Popen(
-            [str(self.binary), "serve", "--listen", listen, *extra],
-            env=self.env, stdout=log, stderr=log,
-        )
+    def _start(self, *extra: str) -> subprocess.Popen:
+        """Start the server on a loopback port it picks, wait until it answers, and set self.port."""
+        log_path = self.data.parent / "serve.log"
+        with open(log_path, "wb") as log:
+            process = subprocess.Popen(
+                [str(self.binary), "serve", "--listen", "127.0.0.1:0", *extra],
+                env=self.env, stdout=log, stderr=log,
+            )
         sock = self.data / "run" / "coria.sock"
         for _ in range(300):
             if process.poll() is not None:
-                raise RuntimeError(f"coria serve exited: {(self.data.parent / 'serve.log').read_text()}")
-            if sock.exists():
+                raise RuntimeError(f"coria serve exited: {log_path.read_text()}")
+            port = self._logged_port(log_path)
+            if port and sock.exists():
                 try:
                     self.cli("whoami")
+                    self.port = port
                     return process
                 except AssertionError:
                     pass
             time.sleep(0.05)
+        process.kill()
         raise RuntimeError("coria serve did not answer in 15 seconds")
+
+    @staticmethod
+    def _logged_port(log_path: pathlib.Path) -> int:
+        """The port the server logged for its network listener; 0 until it has."""
+        for line in log_path.read_text().splitlines():
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            if entry.get("msg") == "server: listening on the network":
+                return int(entry["address"].rsplit(":", 1)[1])
+        return 0
 
     def stop(self) -> None:
         """Stop the server the way an operator does, and wait for it."""
@@ -90,7 +108,6 @@ def server():
     work = pathlib.Path(tempfile.mkdtemp(prefix="cor-py."))
     binary = work / "coria"
     env = dict(os.environ, CGO_ENABLED="0")
-    env.setdefault("GOTOOLCHAIN", "go1.26.11")
     subprocess.run(
         ["go", "build", "-o", str(binary), "./cmd/coria"], cwd=REPO, env=env, check=True, timeout=600
     )

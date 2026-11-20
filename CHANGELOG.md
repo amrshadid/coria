@@ -15,10 +15,17 @@ All notable changes to CORIA are written here. The form is
   index for every list order and filter, so a page of subjects, sessions,
   scans or a scan's instances is read from one index at any size. Existing
   catalogs are filled in when the database is upgraded.
-- A generated TypeScript client, `@coria/client` (`clients/typescript`): the
-  API contract compiled with protoc-gen-es, one typed client per service over
-  the Connect protocol (browser and Node) or gRPC and gRPC-web (Node), a key
+- A generated TypeScript client, `coria` (`clients/typescript`): the API
+  contract compiled with protoc-gen-es, one typed client per service over the
+  Connect protocol (browser and Node) or gRPC and gRPC-web (Node), a key
   interceptor, a paging helper and one error class carrying the request id.
+  Every failure, deadlines and cancellation included, is a `CoriaError`; the
+  default deadline applies to single calls, never to server streams.
+- Both clients refuse a malformed key without echoing it, refuse to send a key
+  unencrypted to another machine unless told to (`allow_insecure`,
+  `allowInsecure`), and raise instead of looping when the server repeats a
+  page token. The Python client reports the request id of every failed call,
+  and its generated modules are `coria.v1.*_pb2`, typed.
 - A generated Python client, `coria` (`clients/python`): the API contract
   compiled with grpcio-tools and checked in, a thin `coria.Client` that sends
   the key, exposes each service's stub, pages through list calls by cursor and

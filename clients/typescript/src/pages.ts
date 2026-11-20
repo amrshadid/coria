@@ -13,7 +13,8 @@ type Item<Res, K extends keyof Res> = Res[K] extends readonly (infer I)[] ? I : 
  * Calls `call(request)`, yields the items of the response's repeated field
  * `field`, and calls again with the response's `nextPageToken` until the
  * server answers an empty one. Set `pageSize` on the request to choose the
- * page. The request object is not changed.
+ * page. The request object is not changed. A server that answers the token it
+ * was just sent makes it throw rather than loop forever.
  *
  * @example
  * for await (const tenant of pages(clients.tenants.listTenants, { pageSize: 50 }, "tenants")) {
@@ -34,6 +35,9 @@ export async function* pages<
     const response = await call(current);
     yield* response[field] as Iterable<Item<Res, K>>;
     if (!response.nextPageToken) return;
+    if (response.nextPageToken === (current.pageToken ?? "")) {
+      throw new Error(`the server repeated nextPageToken while listing ${String(field)}`);
+    }
     current = { ...request, pageToken: response.nextPageToken };
   }
 }

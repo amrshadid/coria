@@ -9,8 +9,6 @@ import pytest
 import coria
 from coria.v1 import access_pb2
 
-from conftest import free_port
-
 
 @pytest.mark.skipif(shutil.which("openssl") is None, reason="needs the openssl tool")
 def test_tls_with_a_private_certificate(server, tmp_path):
@@ -23,9 +21,8 @@ def test_tls_with_a_private_certificate(server, tmp_path):
         check=True, capture_output=True,
     )
     server.stop()
-    port = free_port()
-    server.process = server._start(f"127.0.0.1:{port}", "--tls-cert", str(cert), "--tls-key", str(key))
-    address = f"127.0.0.1:{port}"
+    server.process = server._start("--tls-cert", str(cert), "--tls-key", str(key))
+    address = f"127.0.0.1:{server.port}"
     try:
         with coria.Client(address, server.key, root_certificates=cert.read_bytes()) as c:
             assert c.access.WhoAmI(access_pb2.WhoAmIRequest()).principal.key.holder == "admin"
@@ -35,5 +32,4 @@ def test_tls_with_a_private_certificate(server, tmp_path):
         assert caught.value.code == grpc.StatusCode.UNAVAILABLE
     finally:
         server.stop()
-        server.port = free_port()
-        server.process = server._start(f"127.0.0.1:{server.port}")
+        server.process = server._start()

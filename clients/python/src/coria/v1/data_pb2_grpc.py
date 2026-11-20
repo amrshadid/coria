@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from coria._gen.coria.v1 import data_pb2 as coria_dot_v1_dot_data__pb2
+from coria.v1 import data_pb2 as coria_dot_v1_dot_data__pb2
 
 GRPC_GENERATED_VERSION = '1.85.1'
 GRPC_VERSION = grpc.__version__

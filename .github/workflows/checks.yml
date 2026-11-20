@@ -730,3 +730,9 @@ jobs:
 
       - name: The TypeScript client works against the server
         run: make client-ts-test
+
+      # Reported, never gating: an advisory published today would otherwise
+      # fail a change that did not touch the client.
+      - name: Advisories on the TypeScript client's packages
+        continue-on-error: true
+        run: make client-ts-audit

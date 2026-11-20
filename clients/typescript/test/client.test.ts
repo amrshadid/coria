@@ -17,7 +17,7 @@ import { file_coria_v1_reception } from "../src/gen/coria/v1/reception_pb.js";
 import { file_coria_v1_settings, SettingSource } from "../src/gen/coria/v1/settings_pb.js";
 import { file_coria_v1_storage } from "../src/gen/coria/v1/storage_pb.js";
 import { DatabaseType, file_coria_v1_tenant, TenantState } from "../src/gen/coria/v1/tenant_pb.js";
-import { freePort, Server } from "./server.js";
+import { freePort, Server, silentServer } from "./server.js";
 
 // The client attribute for each service of the contract.
 const SERVICE_ATTRIBUTES: Record<string, string> = {
@@ -108,14 +108,41 @@ describe("failures", () => {
     expect(err.requestId).toMatch(/\S/);
   });
 
-  it("a wrong key is Unauthenticated over every protocol", async () => {
+  it("a wrong key is Unauthenticated, with a request id, over every transport", async () => {
     const bad = `cor_${"1".repeat(12)}_${"2".repeat(40)}`;
-    for (const protocol of ["grpc", "grpc-web"] as const) {
-      const err = await failure(() => createNodeClient({ baseUrl, key: bad, protocol }).access.whoAmI({}));
-      expect(err.code, protocol).toBe(Code.Unauthenticated);
+    const ways = [
+      ["connect over HTTP/1.1", () => createNodeClient({ baseUrl, key: bad })],
+      ["connect over h2c", () => createNodeClient({ baseUrl, key: bad, httpVersion: "2" })],
+      ["grpc", () => createNodeClient({ baseUrl, key: bad, protocol: "grpc" })],
+      ["grpc-web", () => createNodeClient({ baseUrl, key: bad, protocol: "grpc-web" })],
+      ["connect over fetch", () => createBrowserClient({ baseUrl, key: bad })],
+    ] as const;
+    for (const [name, make] of ways) {
+      const err = await failure(() => make().access.whoAmI({}));
+      expect(err.code, name).toBe(Code.Unauthenticated);
+      expect(err.requestId, name).toMatch(/\S/);
     }
-    const err = await failure(() => createBrowserClient({ baseUrl, key: bad }).access.whoAmI({}));
-    expect(err.code).toBe(Code.Unauthenticated);
+  });
+
+  it("a refused server stream carries the request id", async () => {
+    const bad = `cor_${"1".repeat(12)}_${"2".repeat(40)}`;
+    const scope = { kind: { case: "installation", value: {} } } as const;
+    for (const protocol of ["connect", "grpc", "grpc-web"] as const) {
+      const err = await failure(async () => {
+        for await (const _ of createNodeClient({ baseUrl, key: bad, protocol }).monitor.watch({ scope })) break;
+      });
+      expect(err.code, protocol).toBe(Code.Unauthenticated);
+      expect(err.requestId, protocol).toMatch(/\S/);
+    }
+  });
+
+  it("a not-found answer carries the request id over every transport", async () => {
+    for (const protocol of ["connect", "grpc", "grpc-web"] as const) {
+      const c = createNodeClient({ baseUrl, key: server.key, protocol });
+      const err = await failure(() => c.tenants.getTenant({ name: "no-such-tenant" }));
+      expect(err.code, protocol).toBe(Code.NotFound);
+      expect(err.requestId, protocol).toMatch(/\S/);
+    }
   });
 
   it("a key without a grant cannot create a tenant", async () => {
@@ -123,7 +150,8 @@ describe("failures", () => {
     const err = await failure(() =>
       nobody.tenants.createTenant({ name: "nope", databaseType: DatabaseType.SQLITE }),
     );
-    expect([Code.PermissionDenied, Code.Unauthenticated]).toContain(err.code);
+    expect(err.code).toBe(Code.PermissionDenied);
+    expect(err.requestId).toMatch(/\S/);
   });
 
   it("a connection that cannot be made is Unavailable", async () => {
@@ -138,6 +166,169 @@ describe("failures", () => {
 
   it("refuses to be made without a key", () => {
     expect(() => createNodeClient({ baseUrl, key: "" })).toThrow("a key is required");
+  });
+});
+
+describe("a malformed key", () => {
+  const keys = ["cor_a_b\nX-Evil: 1", "cor_a_b c", "cor_a_b\0", "cor_a_b\u00e9", " cor_a_b", "cor_a_b\n"];
+  for (const key of keys) {
+    it(`is refused without being repeated: ${JSON.stringify(key)}`, () => {
+      for (const make of [createNodeClient, createBrowserClient]) {
+        let thrown: unknown;
+        try {
+          make({ baseUrl, key });
+        } catch (err) {
+          thrown = err;
+        }
+        expect(thrown).toBeInstanceOf(TypeError);
+        const err = thrown as TypeError;
+        for (const text of [err.message, String(err), String(err.cause ?? ""), err.stack ?? ""]) {
+          expect(text).not.toContain(key.trim());
+          expect(text).not.toContain("X-Evil");
+        }
+        expect(err.cause).toBeUndefined();
+      }
+    });
+  }
+});
+
+describe("the key in clear", () => {
+  it("is not sent over plain HTTP to a host that is not this machine", () => {
+    for (const baseUrl of ["http://archive.example.org:8443", "http://10.0.0.5:8443", "HTTP://192.168.1.2", "http://[2001:db8::1]:8443"]) {
+      for (const make of [createNodeClient, createBrowserClient]) {
+        expect(() => make({ baseUrl, key: "cor_a_secret" }), baseUrl).toThrow(/allowInsecure/);
+        expect(() => make({ baseUrl, key: "cor_a_secret" }), baseUrl).not.toThrow(/cor_a_secret/);
+        expect(() => make({ baseUrl, key: "cor_a_secret", allowInsecure: true }), baseUrl).not.toThrow();
+      }
+    }
+  });
+
+  it("may go over plain HTTP to this machine, and over HTTPS anywhere", () => {
+    for (const baseUrl of ["http://127.0.0.1:1", "http://127.9.9.9:1", "http://localhost:1", "http://[::1]:8443", "https://archive.example.org"]) {
+      expect(() => createNodeClient({ baseUrl, key: "cor_a_secret" }), baseUrl).not.toThrow();
+      expect(() => createBrowserClient({ baseUrl, key: "cor_a_secret" }), baseUrl).not.toThrow();
+    }
+  });
+});
+
+describe("a call that does not finish", () => {
+  let silent: Awaited<ReturnType<typeof silentServer>>;
+  beforeAll(async () => {
+    silent = await silentServer();
+  });
+  afterAll(async () => {
+    await silent?.close();
+  });
+  const url = () => `http://127.0.0.1:${silent.port}`;
+  const scope = { kind: { case: "installation", value: {} } } as const;
+
+  const ways = [
+    ["connect over HTTP/1.1", (o: object) => createNodeClient({ baseUrl: url(), key: server.key, ...o })],
+    ["connect over h2c", (o: object) => createNodeClient({ baseUrl: url(), key: server.key, httpVersion: "2", ...o })],
+    ["grpc", (o: object) => createNodeClient({ baseUrl: url(), key: server.key, protocol: "grpc", ...o })],
+    ["grpc-web", (o: object) => createNodeClient({ baseUrl: url(), key: server.key, protocol: "grpc-web", ...o })],
+    ["connect over fetch", (o: object) => createBrowserClient({ baseUrl: url(), key: server.key, ...o })],
+  ] as const;
+
+  for (const [name, make] of ways) {
+    it(`a deadline is a CoriaError, unary and stream: ${name}`, async () => {
+      const unary = await failure(() => make({}).access.whoAmI({}, { timeoutMs: 1 }));
+      expect(unary.code).toBe(Code.DeadlineExceeded);
+      expect(unary.requestId).toBe("");
+      const stream = await failure(async () => {
+        for await (const _ of make({}).monitor.watch({ scope }, { timeoutMs: 1 })) break;
+      });
+      expect(stream.code).toBe(Code.DeadlineExceeded);
+      expect(stream.requestId).toBe("");
+    });
+
+    it(`an aborted call is a CoriaError, unary and stream: ${name}`, async () => {
+      const abort = new AbortController();
+      setTimeout(() => abort.abort(), 20);
+      const unary = await failure(() => make({}).access.whoAmI({}, { signal: abort.signal }));
+      expect(unary.code).toBe(Code.Canceled);
+      expect(unary.requestId).toBe("");
+
+      const again = new AbortController();
+      setTimeout(() => again.abort(), 20);
+      const stream = await failure(async () => {
+        for await (const _ of make({}).monitor.watch({ scope }, { signal: again.signal })) break;
+      });
+      expect(stream.code).toBe(Code.Canceled);
+      expect(stream.requestId).toBe("");
+    });
+  }
+
+  it("a unary call has the configured default deadline, and a call's own replaces it", async () => {
+    const started = Date.now();
+    const err = await failure(() => createNodeClient({ baseUrl: url(), key: server.key, timeoutMs: 150 }).access.whoAmI({}));
+    expect(err.code).toBe(Code.DeadlineExceeded);
+    expect(Date.now() - started).toBeLessThan(5000);
+    const own = await failure(() =>
+      createNodeClient({ baseUrl: url(), key: server.key, timeoutMs: 60_000 }).access.whoAmI({}, { timeoutMs: 1 }),
+    );
+    expect(own.code).toBe(Code.DeadlineExceeded);
+  });
+});
+
+describe("a server stream", () => {
+  it("is not cut by the default deadline of unary calls", async () => {
+    // The default is short here so the test is fast: a stream that the
+    // default applied to would end with DeadlineExceeded after 300 ms.
+    const client = createNodeClient({ baseUrl, key: server.key, timeoutMs: 300 });
+    const abort = new AbortController();
+    const scope = { kind: { case: "installation", value: {} } } as const;
+    const seen: string[] = [];
+    const error = failure(async () => {
+      for await (const event of client.monitor.watch({ scope }, { signal: abort.signal })) {
+        seen.push(event.$typeName);
+      }
+    });
+    await new Promise((r) => setTimeout(r, 1200));
+    abort.abort();
+    const err = await error;
+    expect(seen.length).toBeGreaterThan(0);
+    expect(err.code).toBe(Code.Canceled);
+  });
+
+  it("has a deadline when the call passes one", async () => {
+    const client = createNodeClient({ baseUrl, key: server.key });
+    const scope = { kind: { case: "installation", value: {} } } as const;
+    const err = await failure(async () => {
+      for await (const _ of client.monitor.watch({ scope }, { timeoutMs: 300 })) {
+        // Keep reading until the deadline ends the stream.
+      }
+    });
+    expect(err.code).toBe(Code.DeadlineExceeded);
+  });
+});
+
+describe("pages", () => {
+  it("throws when the server repeats the token it was just sent", async () => {
+    const sent: string[] = [];
+    const call = async (request: { pageToken?: string }) => {
+      sent.push(request.pageToken ?? "");
+      return { items: ["x"], nextPageToken: "same" };
+    };
+    await expect(async () => {
+      for await (const _ of pages(call, {}, "items")) {
+        // Drain it.
+      }
+    }).rejects.toThrow(/items/);
+    expect(sent).toEqual(["", "same"]);
+  });
+
+  it("follows tokens that change to the empty one", async () => {
+    const answers: Record<string, { items: string[]; nextPageToken: string }> = {
+      "": { items: ["a"], nextPageToken: "t1" },
+      t1: { items: ["b"], nextPageToken: "t2" },
+      t2: { items: ["c"], nextPageToken: "" },
+    };
+    const got: string[] = [];
+    for await (const item of pages(async (r: { pageToken?: string }) => answers[r.pageToken ?? ""]!, {}, "items")) {
+      got.push(item);
+    }
+    expect(got).toEqual(["a", "b", "c"]);
   });
 });
 

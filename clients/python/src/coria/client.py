@@ -1,11 +1,13 @@
 """The channel to a CORIA server and the stubs of its services."""
 
+import ipaddress
+import re
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any, Optional
 
 import grpc
 
-from coria._gen.coria.v1 import (
+from coria.v1 import (
     access_pb2_grpc,
     audit_pb2_grpc,
     catalog_pb2_grpc,
@@ -20,6 +22,24 @@ from coria._gen.coria.v1 import (
     tenant_pb2_grpc,
 )
 from coria.errors import Error
+
+# A key is the visible ASCII characters, with no space: anything else cannot
+# be an HTTP header value, and would be echoed back by the transport's errors.
+_KEY = re.compile(r"[\x21-\x7e]+")
+
+
+def _is_local(address: str) -> bool:
+    """Say whether an address names this machine: loopback or a Unix socket."""
+    if address.startswith(("unix:", "unix-abstract:")):
+        return True
+    host = address.rsplit(":", 1)[0] if not address.endswith("]") else address
+    host = host.strip("[]")
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 class _KeyInterceptor(
@@ -105,10 +125,21 @@ class Client:
         address: "host:port" of the server's network listener.
         key: the API key, as "cor_<id>_<secret>".
         tls: speak TLS (the default). False is for a loopback server started
-            without a certificate; the key then travels in clear.
+            without a certificate; the key then travels in clear, so any other
+            address is refused unless allow_insecure is True.
         root_certificates: PEM bytes of the authorities to trust instead of
-            the system's, for a server with a private certificate.
-        timeout: seconds a unary call may take; None for no limit.
+            grpcio's bundled roots (not the operating system's store), for a
+            server with a private certificate.
+        timeout: seconds a unary call may take; None for no limit. A server
+            stream has no deadline unless you pass timeout= to its call.
+        allow_insecure: send the key in clear to a server that is not on this
+            machine (tls=False). Off by default; use it only on a network
+            you trust.
+
+    Raises:
+        ValueError: the key is empty or has a character a header cannot carry
+            (the message never repeats the key), or tls=False for an address
+            that is not this machine without allow_insecure.
     """
 
     def __init__(
@@ -118,14 +149,22 @@ class Client:
         tls: bool = True,
         root_certificates: Optional[bytes] = None,
         timeout: Optional[float] = 60.0,
+        allow_insecure: bool = False,
     ):
         if not key:
             raise ValueError("a key is required")
+        if not _KEY.fullmatch(key):
+            raise ValueError("the key has a character that is not visible ASCII (no spaces or line breaks)")
         if tls:
             channel = grpc.secure_channel(address, grpc.ssl_channel_credentials(root_certificates))
         else:
             if root_certificates is not None:
                 raise ValueError("root_certificates need tls=True")
+            if not allow_insecure and not _is_local(address):
+                raise ValueError(
+                    f"tls=False would send the key in clear to {address}, which is not this machine; "
+                    "use TLS, or pass allow_insecure=True"
+                )
             channel = grpc.insecure_channel(address)
         self._channel = grpc.intercept_channel(channel, _KeyInterceptor(key))
         self._raw_channel = channel
@@ -162,7 +201,8 @@ class Client:
 
         Calls `call(request)`, yields the items of the response's repeated
         field `field`, and calls again with the response's next_page_token
-        until the server answers an empty one. Set page_size on the request
+        until the server answers an empty one; a token equal to the one just sent
+        raises RuntimeError rather than looping. Set page_size on the request
         to choose the page. The request is not changed.
 
         Example: client.pages(client.tenants.ListTenants, ListTenantsRequest(), "tenants")
@@ -173,4 +213,6 @@ class Client:
             yield from getattr(response, field)
             if not response.next_page_token:
                 return
+            if response.next_page_token == request.page_token:
+                raise RuntimeError(f"the server repeated next_page_token while listing {field}")
             request.page_token = response.next_page_token

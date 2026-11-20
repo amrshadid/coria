@@ -34,6 +34,13 @@ for version in 3.12 3.13 3.14; do
 		--platform manylinux_2_34_x86_64 --platform manylinux_2_28_x86_64 \
 		--platform manylinux_2_17_x86_64 --platform manylinux2014_x86_64 \
 		--python-version "$version" --implementation cp -d "$dir" "${packages[@]}"
+	# macOS wheels as well, so a person on a Mac with any of these versions
+	# installs with the hashes, not only one who has this script's interpreter.
+	"$py" -m pip download --quiet --no-deps --only-binary=:all: \
+		--platform macosx_11_0_universal2 --platform macosx_11_0_arm64 \
+		--platform macosx_10_14_universal2 --platform macosx_10_13_x86_64 \
+		--platform macosx_10_9_x86_64 --platform macosx_10_9_universal2 \
+		--python-version "$version" --implementation cp -d "$dir" "${packages[@]}"
 done
 "$py" -m pip download --quiet --no-deps --only-binary=:all: -d "$dir" "${packages[@]}"
 

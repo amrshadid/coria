@@ -1,11 +1,11 @@
 import datetime
 
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
-from coria._gen.coria.v1 import quarantine_pb2 as _quarantine_pb2
-from coria._gen.coria.v1 import reception_pb2 as _reception_pb2
-from coria._gen.coria.v1 import receiver_pb2 as _receiver_pb2
-from coria._gen.coria.v1 import scope_pb2 as _scope_pb2
-from coria._gen.coria.v1 import tenant_pb2 as _tenant_pb2
+from coria.v1 import quarantine_pb2 as _quarantine_pb2
+from coria.v1 import reception_pb2 as _reception_pb2
+from coria.v1 import receiver_pb2 as _receiver_pb2
+from coria.v1 import scope_pb2 as _scope_pb2
+from coria.v1 import tenant_pb2 as _tenant_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor

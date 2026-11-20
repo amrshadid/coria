@@ -5,7 +5,7 @@ import pytest
 
 import coria
 from conftest import free_port
-from coria.v1 import access_pb2, receiver_pb2, scope_pb2, settings_pb2, storage_pb2, tenant_pb2
+from coria.v1 import access_pb2, monitor_pb2, receiver_pb2, scope_pb2, settings_pb2, storage_pb2, tenant_pb2
 
 # The names of the contract's services and the client attribute for each.
 SERVICE_ATTRIBUTES = {
@@ -26,7 +26,7 @@ SERVICE_ATTRIBUTES = {
 
 def test_every_service_has_a_stub(client):
     """A service added to the contract and left out of Client fails here."""
-    from coria._gen.coria.v1 import (
+    from coria.v1 import (
         access_pb2, audit_pb2, catalog_pb2, data_pb2, metadata_pb2, monitor_pb2,
         quarantine_pb2, receiver_pb2, reception_pb2, settings_pb2, storage_pb2, tenant_pb2,
     )
@@ -57,6 +57,18 @@ def test_a_wrong_key_is_unauthenticated(server):
             c.access.WhoAmI(access_pb2.WhoAmIRequest())
     assert caught.value.code == grpc.StatusCode.UNAUTHENTICATED
     assert caught.value.message
+    assert caught.value.request_id
+
+
+def test_a_refused_stream_carries_the_request_id(server):
+    """A server stream that the server refuses raises coria.Error with the call's id."""
+    bad = "cor_" + "1" * 12 + "_" + "2" * 40
+    request = monitor_pb2.WatchRequest(scope=scope_pb2.Scope(installation=scope_pb2.Installation()))
+    with coria.Client(f"127.0.0.1:{server.port}", bad, tls=False) as c:
+        with pytest.raises(coria.Error) as caught:
+            next(iter(c.monitor.Watch(request)))
+    assert caught.value.code == grpc.StatusCode.UNAUTHENTICATED
+    assert caught.value.request_id
 
 
 def test_a_key_without_a_grant_is_refused(server):
@@ -65,7 +77,8 @@ def test_a_key_without_a_grant_is_refused(server):
     with coria.Client(f"127.0.0.1:{server.port}", key, tls=False) as c:
         with pytest.raises(coria.Error) as caught:
             c.tenants.CreateTenant(tenant_pb2.CreateTenantRequest(name="nope", database_type=tenant_pb2.DATABASE_TYPE_SQLITE))
-    assert caught.value.code in (grpc.StatusCode.PERMISSION_DENIED, grpc.StatusCode.UNAUTHENTICATED)
+    assert caught.value.code == grpc.StatusCode.PERMISSION_DENIED
+    assert caught.value.request_id
 
 
 def test_tenant_lifecycle_and_paging(client):
@@ -95,6 +108,7 @@ def test_tenant_lifecycle_and_paging(client):
     with pytest.raises(coria.Error) as caught:
         client.tenants.GetTenant(tenant_pb2.GetTenantRequest(name="pytest-b"))
     assert caught.value.code == grpc.StatusCode.NOT_FOUND
+    assert caught.value.request_id
 
 
 def test_pages_leaves_the_request_unchanged(client):
@@ -176,6 +190,91 @@ def test_storage_and_receiver_of_a_tenant(client, server, tmp_path):
     finally:
         client.tenants.RemoveTenant(tenant_pb2.RemoveTenantRequest(name="pytest-r", confirm_name="pytest-r"))
         client.settings.UnsetSetting(settings_pb2.UnsetSettingRequest(name="storage.directory-roots", scope=scope))
+
+
+class _Page:
+    """A fake list response: the items of one page and the token for the next."""
+
+    def __init__(self, tenants, next_page_token):
+        self.tenants = tenants
+        self.next_page_token = next_page_token
+
+
+def test_pages_stops_on_a_token_the_server_repeats():
+    """A server that answers the token it was just sent would loop the helper forever."""
+    sent = []
+
+    def call(request):
+        sent.append(request.page_token)
+        return _Page(["x"], "same")
+
+    with pytest.raises(RuntimeError, match="tenants"):
+        list(coria.Client.pages(call, tenant_pb2.ListTenantsRequest(), "tenants"))
+    assert sent == ["", "same"]
+
+
+def test_pages_follows_distinct_tokens_to_the_end():
+    """Tokens that change are followed until the empty one."""
+    answers = {"": _Page(["a"], "t1"), "t1": _Page(["b"], "t2"), "t2": _Page(["c"], "")}
+    got = list(coria.Client.pages(
+        lambda request: answers[request.page_token], tenant_pb2.ListTenantsRequest(), "tenants"))
+    assert got == ["a", "b", "c"]
+
+
+class _RpcError(grpc.RpcError):
+    """A failure with only the metadata a test gives it."""
+
+    def __init__(self, initial=(), trailing=()):
+        self._initial, self._trailing = initial, trailing
+
+    def code(self):
+        return grpc.StatusCode.INTERNAL
+
+    def details(self):
+        return "boom"
+
+    def initial_metadata(self):
+        return self._initial
+
+    def trailing_metadata(self):
+        return self._trailing
+
+
+def test_the_request_id_is_read_from_the_headers_or_the_trailers():
+    """The server sends the id with the headers; a call that ended without them carries it in the trailers."""
+    assert coria.Error.from_rpc_error(_RpcError(initial=(("coria-request-id", "h1"),))).request_id == "h1"
+    assert coria.Error.from_rpc_error(_RpcError(trailing=(("coria-request-id", "t1"),))).request_id == "t1"
+    assert coria.Error.from_rpc_error(_RpcError()).request_id == ""
+
+
+SECRET_KEYS = ["cor_a_b\nX-Evil: 1", "cor_a_b c", "cor_a_b\x00", "cor_a_b\u00e9", " cor_a_b", "cor_a_b\n"]
+
+
+@pytest.mark.parametrize("key", SECRET_KEYS)
+def test_a_malformed_key_is_refused_without_echoing_it(key):
+    """A key a header cannot carry is refused when the client is made, and never repeated."""
+    with pytest.raises(ValueError) as caught:
+        coria.Client("127.0.0.1:1", key, tls=False)
+    for text in (str(caught.value), repr(caught.value), *map(str, caught.value.args)):
+        assert key not in text
+        assert key.strip() not in text
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize("address", ["127.0.0.1:50051", "127.1.2.3:1", "localhost:1", "[::1]:8443", "unix:/tmp/x.sock"])
+def test_a_loopback_server_may_be_reached_without_tls(address):
+    """tls=False is accepted for this machine's own addresses."""
+    coria.Client(address, "cor_a_b", tls=False).close()
+
+
+@pytest.mark.parametrize("address", ["archive.example.org:8443", "10.0.0.5:8443", "192.168.1.2:1", "[2001:db8::1]:8443"])
+def test_the_key_is_not_sent_in_clear_to_another_host(address):
+    """tls=False for a server that is not on this machine is refused, with the way to allow it."""
+    with pytest.raises(ValueError, match="allow_insecure") as caught:
+        coria.Client(address, "cor_a_secret", tls=False)
+    assert "cor_a_secret" not in str(caught.value)
+    coria.Client(address, "cor_a_secret", tls=False, allow_insecure=True).close()
 
 
 def not_served_services():

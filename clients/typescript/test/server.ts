@@ -1,10 +1,14 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
+import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** Answers a loopback port nobody listens on. */
+/**
+ * Answers a loopback port nobody listens on. It is for a port a test hands
+ * to a thing that cannot report its own, and for a connection that must be
+ * refused; the server picks its own port.
+ */
 export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const s = createServer();
@@ -16,7 +20,45 @@ export function freePort(): Promise<number> {
   });
 }
 
+/**
+ * A loopback TCP server that accepts connections and never answers, so a call
+ * to it can end only by its deadline or by being cancelled.
+ */
+export async function silentServer(): Promise<{ port: number; close: () => Promise<void> }> {
+  const sockets = new Set<Socket>();
+  const s = createServer((c) => {
+    sockets.add(c);
+    c.on("error", () => {});
+    c.on("close", () => sockets.delete(c));
+  });
+  await new Promise<void>((resolve) => s.listen(0, "127.0.0.1", resolve));
+  const { port } = s.address() as { port: number };
+  return {
+    port,
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const c of sockets) c.destroy();
+        s.close(() => resolve());
+      }),
+  };
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The port in the server's log line for its network listener; 0 until the line is there. */
+function loggedPort(log: string): number {
+  for (const line of log.split("\n")) {
+    try {
+      const entry = JSON.parse(line) as { msg?: string; address?: string };
+      if (entry.msg === "server: listening on the network" && entry.address) {
+        return Number(entry.address.slice(entry.address.lastIndexOf(":") + 1));
+      }
+    } catch {
+      // A line that is not JSON is not the one.
+    }
+  }
+  return 0;
+}
 
 /**
  * A running server on a temporary installation, with an admin key for it.
@@ -38,7 +80,7 @@ export class Server {
     this.env = { ...process.env, CORIA_DATA_DIR: this.data };
   }
 
-  /** Initializes an installation, starts the server on a free loopback port and makes the admin key. */
+  /** Initializes an installation, starts the server on a loopback port it picks and makes the admin key. */
   static async start(binary: string, ...extra: string[]): Promise<Server> {
     const server = new Server(binary);
     server.cli("init");
@@ -67,12 +109,14 @@ export class Server {
     return `127.0.0.1:${this.port}`;
   }
 
-  /** Starts the server on a new free port, with extra serve flags, and waits until it answers. */
+  /**
+   * Starts the server on a loopback port it picks, with extra serve flags,
+   * waits until it answers, and sets `port` to the one it logged.
+   */
   async listen(...extra: string[]): Promise<void> {
-    this.port = await freePort();
     const logPath = join(this.work, "serve.log");
-    const log = openSync(logPath, "a");
-    const child = spawn(this.binary, ["serve", "--listen", this.address, ...extra], {
+    const log = openSync(logPath, "w");
+    const child = spawn(this.binary, ["serve", "--listen", "127.0.0.1:0", ...extra], {
       env: this.env,
       stdio: ["ignore", log, log],
     });
@@ -81,9 +125,11 @@ export class Server {
     const sock = join(this.data, "run", "coria.sock");
     for (let i = 0; i < 300; i++) {
       if (child.exitCode !== null) throw new Error(`coria serve exited: ${readFileSync(logPath, "utf8")}`);
-      if (existsSync(sock)) {
+      const port = loggedPort(readFileSync(logPath, "utf8"));
+      if (port > 0 && existsSync(sock)) {
         try {
           this.cli("whoami");
+          this.port = port;
           return;
         } catch {
           // The socket exists before the server answers on it.
@@ -91,6 +137,7 @@ export class Server {
       }
       await sleep(50);
     }
+    child.kill("SIGKILL");
     throw new Error("coria serve did not answer in 15 seconds");
   }
 

@@ -23,7 +23,7 @@ export default function setup(project: TestProject): () => void {
   const binary = join(work, "coria");
   execFileSync("go", ["build", "-o", binary, "./cmd/coria"], {
     cwd: repo,
-    env: { CGO_ENABLED: "0", GOTOOLCHAIN: "go1.26.11", ...process.env },
+    env: { ...process.env, CGO_ENABLED: "0" },
     stdio: "inherit",
     timeout: 600_000,
   });

@@ -8,7 +8,7 @@ import type { ClientSessionOptions, SecureClientSessionOptions } from "node:http
 import type { RequestOptions as HttpRequestOptions } from "node:http";
 import type { RequestOptions as HttpsRequestOptions } from "node:https";
 
-import { coriaInterceptors, createClients, type CoriaClients } from "./core.js";
+import { assertSecure, coriaInterceptors, createClients, type CoriaClients } from "./core.js";
 
 export { CoriaError, REQUEST_ID_HEADER } from "./errors.js";
 export { pages } from "./pages.js";
@@ -40,14 +40,24 @@ export type CoriaClientOptions =
        * `node:https` or `node:http2`, as the HTTP version uses.
        */
       nodeOptions?: HttpRequestOptions | HttpsRequestOptions | ClientSessionOptions | SecureClientSessionOptions;
-      /** Milliseconds a call may take; 60000 when absent, 0 for no limit. */
+      /**
+       * Milliseconds a unary call may take; 60000 when absent, 0 for no
+       * limit. A server stream has no deadline unless its call passes one.
+       */
       timeoutMs?: number;
+      /**
+       * Send the key over plain `http:` to a host that is not this machine.
+       * Off by default: such an address is refused, because the key would
+       * travel in clear.
+       */
+      allowInsecure?: boolean;
       transport?: undefined;
     }
   | {
       /**
        * A transport you built, whose interceptors include
-       * `coriaInterceptors(key)`. The other options are then not used.
+       * `coriaInterceptors(key)`. The other options are then not used, except
+       * `timeoutMs`.
        */
       transport: Transport;
       baseUrl?: string;
@@ -55,6 +65,8 @@ export type CoriaClientOptions =
       protocol?: undefined;
       httpVersion?: undefined;
       nodeOptions?: undefined;
+      allowInsecure?: undefined;
+      /** The deadline of a unary call made without its own; see above. */
       timeoutMs?: number;
     };
 
@@ -64,13 +76,14 @@ export type CoriaClientOptions =
  * instead. Every failure is thrown as a {@link CoriaError}.
  */
 export function createCoriaClient(options: CoriaClientOptions): CoriaClients {
-  if (options.transport) return createClients(options.transport);
+  const { timeoutMs } = options;
+  if (options.transport) return createClients(options.transport, { timeoutMs });
   if (!options.baseUrl) throw new TypeError("baseUrl is required");
+  assertSecure(options.baseUrl, options.allowInsecure);
   const protocol = options.protocol ?? "connect";
   const common = {
     baseUrl: options.baseUrl,
     interceptors: coriaInterceptors(options.key),
-    defaultTimeoutMs: options.timeoutMs === 0 ? undefined : (options.timeoutMs ?? 60_000),
   };
   // The union of Node's option types is narrowed by the HTTP version the
   // caller chose; a mismatch is the caller's, and Node reports it.
@@ -80,6 +93,7 @@ export function createCoriaClient(options: CoriaClientOptions): CoriaClients {
         ...common,
         nodeOptions: options.nodeOptions as SecureClientSessionOptions | undefined,
       }),
+      { timeoutMs },
     );
   }
   const node =
@@ -90,5 +104,6 @@ export function createCoriaClient(options: CoriaClientOptions): CoriaClients {
     protocol === "grpc-web"
       ? createGrpcWebTransport({ ...common, ...node })
       : createConnectTransport({ ...common, ...node }),
+    { timeoutMs },
   );
 }
