@@ -1,0 +1,94 @@
+import {
+  createConnectTransport,
+  createGrpcTransport,
+  createGrpcWebTransport,
+} from "@connectrpc/connect-node";
+import type { Transport } from "@connectrpc/connect";
+import type { ClientSessionOptions, SecureClientSessionOptions } from "node:http2";
+import type { RequestOptions as HttpRequestOptions } from "node:http";
+import type { RequestOptions as HttpsRequestOptions } from "node:https";
+
+import { coriaInterceptors, createClients, type CoriaClients } from "./core.js";
+
+export { CoriaError, REQUEST_ID_HEADER } from "./errors.js";
+export { pages } from "./pages.js";
+export { coriaInterceptors, createClients, errorInterceptor, keyInterceptor } from "./core.js";
+export type { CoriaClients } from "./core.js";
+export { Code } from "@connectrpc/connect";
+
+/** Options of {@link createCoriaClient} on Node. */
+export type CoriaClientOptions =
+  | {
+      /** The server's address, such as `https://coria.example.org:8443`. */
+      baseUrl: string;
+      /** The API key, `cor_<id>_<secret>`. */
+      key: string;
+      /**
+       * The wire protocol: `"connect"` (the default), `"grpc"` or
+       * `"grpc-web"`. gRPC always uses HTTP/2 and ignores `httpVersion`.
+       */
+      protocol?: "connect" | "grpc" | "grpc-web";
+      /**
+       * The HTTP version for the Connect and gRPC-web protocols: 1.1 (the
+       * default) or 2. Over plain `http://`, HTTP/2 is h2c with prior
+       * knowledge, which the server accepts on a loopback address.
+       */
+      httpVersion?: "1.1" | "2";
+      /**
+       * Node's own options for the connection, such as `{ ca }` to trust a
+       * private certificate authority. The type is that of `node:http`,
+       * `node:https` or `node:http2`, as the HTTP version uses.
+       */
+      nodeOptions?: HttpRequestOptions | HttpsRequestOptions | ClientSessionOptions | SecureClientSessionOptions;
+      /** Milliseconds a call may take; 60000 when absent, 0 for no limit. */
+      timeoutMs?: number;
+      transport?: undefined;
+    }
+  | {
+      /**
+       * A transport you built, whose interceptors include
+       * `coriaInterceptors(key)`. The other options are then not used.
+       */
+      transport: Transport;
+      baseUrl?: string;
+      key?: string;
+      protocol?: undefined;
+      httpVersion?: undefined;
+      nodeOptions?: undefined;
+      timeoutMs?: number;
+    };
+
+/**
+ * Makes one typed client per service of a CORIA server on Node. The default
+ * is the Connect protocol over HTTP/1.1; `protocol` picks gRPC or gRPC-web
+ * instead. Every failure is thrown as a {@link CoriaError}.
+ */
+export function createCoriaClient(options: CoriaClientOptions): CoriaClients {
+  if (options.transport) return createClients(options.transport);
+  if (!options.baseUrl) throw new TypeError("baseUrl is required");
+  const protocol = options.protocol ?? "connect";
+  const common = {
+    baseUrl: options.baseUrl,
+    interceptors: coriaInterceptors(options.key),
+    defaultTimeoutMs: options.timeoutMs === 0 ? undefined : (options.timeoutMs ?? 60_000),
+  };
+  // The union of Node's option types is narrowed by the HTTP version the
+  // caller chose; a mismatch is the caller's, and Node reports it.
+  if (protocol === "grpc") {
+    return createClients(
+      createGrpcTransport({
+        ...common,
+        nodeOptions: options.nodeOptions as SecureClientSessionOptions | undefined,
+      }),
+    );
+  }
+  const node =
+    options.httpVersion === "2"
+      ? ({ httpVersion: "2", nodeOptions: options.nodeOptions as SecureClientSessionOptions | undefined } as const)
+      : ({ httpVersion: "1.1", nodeOptions: options.nodeOptions as HttpsRequestOptions | undefined } as const);
+  return createClients(
+    protocol === "grpc-web"
+      ? createGrpcWebTransport({ ...common, ...node })
+      : createConnectTransport({ ...common, ...node }),
+  );
+}

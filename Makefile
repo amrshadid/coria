@@ -407,6 +407,19 @@ client-python-check:
 client-python-test:
 	$(PYTHON) -m pytest clients/python/tests
 
+# The generated TypeScript client, the same two checks. Its packages come from
+# its own lockfile, so each target installs them with npm ci first. The tests
+# build and start the server, so they need Go; the TLS test needs openssl.
+.PHONY: client-ts client-ts-check client-ts-test
+client-ts:
+	cd clients/typescript && npm ci --no-audit --no-fund && npm run generate
+
+client-ts-check:
+	cd clients/typescript && npm ci --no-audit --no-fund && npm run generate:check && npm run typecheck && npm audit --omit=dev
+
+client-ts-test:
+	cd clients/typescript && npm ci --no-audit --no-fund && npm test
+
 proto: $(BUF) $(PROTOC_GEN_GO) $(PROTOC_GEN_CONNECT_GO)
 	@echo "buf generate (protoc-gen-go $(PROTOC_GEN_GO_VERSION), protoc-gen-connect-go $(PROTOC_GEN_CONNECT_GO_VERSION))"
 	@PATH="$(PROTO_PATH)" $(BUF) generate

@@ -15,6 +15,10 @@ All notable changes to CORIA are written here. The form is
   index for every list order and filter, so a page of subjects, sessions,
   scans or a scan's instances is read from one index at any size. Existing
   catalogs are filled in when the database is upgraded.
+- A generated TypeScript client, `@coria/client` (`clients/typescript`): the
+  API contract compiled with protoc-gen-es, one typed client per service over
+  the Connect protocol (browser and Node) or gRPC and gRPC-web (Node), a key
+  interceptor, a paging helper and one error class carrying the request id.
 - A generated Python client, `coria` (`clients/python`): the API contract
   compiled with grpcio-tools and checked in, a thin `coria.Client` that sends
   the key, exposes each service's stub, pages through list calls by cursor and

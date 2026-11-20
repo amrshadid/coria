@@ -715,3 +715,18 @@ jobs:
           "$VENV_PYTHON" -m pip install --quiet --disable-pip-version-check --no-deps --no-build-isolation ./clients/python
           make client-python-check PYTHON="$VENV_PYTHON"
           make client-python-test PYTHON="$VENV_PYTHON"
+
+      # The TypeScript client's packages come from its lockfile (npm ci), so
+      # a version that changed on the registry is refused.
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: clients/typescript/package-lock.json
+
+      - name: The TypeScript client matches the contract
+        run: make client-ts-check
+
+      - name: The TypeScript client works against the server
+        run: make client-ts-test

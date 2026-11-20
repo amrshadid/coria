@@ -18,6 +18,10 @@ __pycache__/
 /clients/python/build/
 .pytest_cache/
 
+# The TypeScript client's installed packages and compiled output
+/clients/typescript/node_modules/
+/clients/typescript/dist/
+
 # Editors and systems
 .DS_Store
 .idea/
