@@ -12,6 +12,7 @@ import (
 	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/deid/profile"
 	"github.com/amrshadid/coria/internal/master"
 )
 
@@ -356,8 +357,43 @@ var rules = map[string]rule{
 // into rules and its name off the list, and the tests fail until both are
 // done.
 //
-// It is empty while the server serves every service the contract defines.
-var pendingRules = map[string]rule{}
+// ProfileService: operator on the tenant to read profiles and to check a
+// document, admin to make a version; the list of bases is the server's and
+// needs only an authenticated caller. The object is the profile's name,
+// recorded only when it passes the name rule, since what a caller sends in
+// its place can be anything.
+var pendingRules = map[string]rule{
+	coriav1connect.ProfileServiceCreateProfileVersionProcedure: byMessage(func(r *v1.CreateProfileVersionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: profileObject(r.GetName())}
+	}),
+	coriav1connect.ProfileServiceGetProfileVersionProcedure: byMessage(func(r *v1.GetProfileVersionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: profileObject(r.GetName()), Details: map[string]string{detailVersion: strconv.Itoa(int(r.GetVersion()))}}
+	}),
+	coriav1connect.ProfileServiceListProfilesProcedure: byMessage(func(r *v1.ListProfilesRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{}
+	}),
+	coriav1connect.ProfileServiceListProfileVersionsProcedure: byMessage(func(r *v1.ListProfileVersionsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: profileObject(r.GetName())}
+	}),
+	coriav1connect.ProfileServiceValidateProfileProcedure: byMessage(func(r *v1.ValidateProfileRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{}
+	}),
+	// "Role: none; any caller the server authenticates."
+	coriav1connect.ProfileServiceListProfileBasesProcedure: fixed(access.Authenticated()),
+}
+
+// detailVersion is the key of the version a request names, in the details
+// of a profile method's entry.
+const detailVersion = "version"
+
+// profileObject returns a profile's name as an audit entry's object: as
+// given when it passes the name rule, and "invalid" otherwise.
+func profileObject(name string) string {
+	if profile.ValidName(name) {
+		return name
+	}
+	return invalidValue
+}
 
 // The keys of the details the reading methods put in audit entries.
 const (

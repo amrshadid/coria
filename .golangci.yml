@@ -24,6 +24,31 @@ linters:
       rules:
         # Reading archived bytes is checked against the manifest and bounded,
         # and knows no transport: callers (the API, senders) decide what a
+        # De-identification is pure: a profile and the engine mean the same
+        # thing on every server and in every test, and no rule can become a
+        # way out for the values it removes. It touches no file, network,
+        # database or random source; what it needs is passed in.
+        deid:
+          files:
+            - "**/internal/deid/**"
+            - "!$test"
+          deny:
+            - pkg: os$
+              desc: de-identification touches no file; the pipeline hands it the data
+            - pkg: io/fs
+              desc: de-identification touches no file; the pipeline hands it the data
+            - pkg: path/filepath
+              desc: de-identification touches no file; the pipeline hands it the data
+            - pkg: net
+              desc: no de-identification rule may reach an address
+            - pkg: database/sql
+              desc: lookups reach the tenant database through an interface the caller passes
+            - pkg: github.com/amrshadid/coria/internal/driver
+              desc: lookups reach the tenant database through an interface the caller passes
+            - pkg: crypto/rand
+              desc: de-identification is deterministic; nothing is drawn at random
+            - pkg: math/rand
+              desc: de-identification is deterministic; nothing is drawn at random
         # mismatch means.
         checkedread:
           files:

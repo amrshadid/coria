@@ -14,6 +14,7 @@ from coria.v1 import (
     data_pb2_grpc,
     metadata_pb2_grpc,
     monitor_pb2_grpc,
+    profile_pb2_grpc,
     quarantine_pb2_grpc,
     receiver_pb2_grpc,
     reception_pb2_grpc,
@@ -178,6 +179,7 @@ class Client:
         self.data = stub(data_pb2_grpc, "DataServiceStub")
         self.metadata = stub(metadata_pb2_grpc, "MetadataServiceStub")
         self.monitor = stub(monitor_pb2_grpc, "MonitorServiceStub")
+        self.profiles = stub(profile_pb2_grpc, "ProfileServiceStub")
         self.quarantine = stub(quarantine_pb2_grpc, "QuarantineServiceStub")
         self.receivers = stub(receiver_pb2_grpc, "ReceiverServiceStub")
         self.receptions = stub(reception_pb2_grpc, "ReceptionServiceStub")

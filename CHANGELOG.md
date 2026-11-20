@@ -117,6 +117,17 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- The contract of de-identification profiles: ProfileService makes a
+  profile's versions, reads and lists them, checks a document without storing
+  it, and lists the bases a profile may build on. A profile is a document of
+  rules (selector, conditions, action) and pixel rules; its file form is the
+  protobuf JSON of ProfileDocument. A version never changes: it is stored
+  expanded, its bases' rules copied in and every keyword written as its tag,
+  with the SHA-256 of that text. A document with problems is refused with
+  every problem, each naming the rule, the field and a fixed code. The bases
+  of PS3.15 Annex E are listed and refused as not yet available until the
+  DICOM library exports the standard's tables. The service is not served yet.
+  Both clients have it as `profiles`.
 - `coria` and the interactive program can present a TLS client certificate
   (`--tls-client-cert`, `--tls-client-key`, or `CORIA_TLS_CLIENT_CERT` and
   `CORIA_TLS_CLIENT_KEY`), so a key limited to one can be used from the command

@@ -382,19 +382,21 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 // TestPendingRules guards the table of the methods not served yet from
 // drifting from the list and the contract: each of its lines names a
 // method of a service the list names, reads a request of the method's own
-// input type, and the count says when a method was added to or dropped
-// from a service not served without its line. It also holds the audit
-// facts of the reading methods, and of the plain HTTP download, to their
-// Audit lines: the object is the path of labels the request names, a value
-// that does not pass the label rule is recorded as "invalid", and an
-// instance id is recorded only as present, never as given.
+// input type when it reads one, and the count says when a method was added
+// to or dropped from a service not served without its line. It also holds
+// the audit facts of the reading methods, and of the plain HTTP download,
+// to their Audit lines: the object is the path of labels the request
+// names, a value that does not pass the label rule is recorded as
+// "invalid", and an instance id is recorded only as present, never as
+// given; and a profile method's object is the profile's name only when it
+// passes the name rule.
 func TestPendingRules(t *testing.T) {
 	notServed := readNotServed(t)
 	lines := roleLines(t)
 	var p api.Pending
 	procs := p.Procedures()
-	if len(procs) != 0 {
-		t.Errorf("the table of methods not served has %d lines; this test was written for 0, so look at what changed", len(procs))
+	if len(procs) != 6 {
+		t.Errorf("the table of methods not served has %d lines; this test was written for 6, so look at what changed", len(procs))
 	}
 	for _, proc := range procs {
 		if !inServices(notServed, proc) {
@@ -410,7 +412,9 @@ func TestPendingRules(t *testing.T) {
 			t.Errorf("%s is not a method of the descriptors: %v", proc, err)
 			continue
 		}
-		if msg, _ := p.RequestFor(proc); msg == nil || msg.ProtoReflect().Descriptor().FullName() != md.Input().FullName() {
+		// A fixed line reads no request; TestRequirementsFollowTheRoleLines
+		// holds it to its Role line.
+		if msg, _ := p.RequestFor(proc); msg != nil && msg.ProtoReflect().Descriptor().FullName() != md.Input().FullName() {
 			t.Errorf("%s: the table reads %v, the method takes a %s", proc, msg, md.Input().FullName())
 		}
 	}
@@ -454,6 +458,28 @@ func TestPendingRules(t *testing.T) {
 				t.Errorf("%s: the detail %s holds a storage key: %q", c.name, k, v)
 			}
 		}
+	}
+
+	// A profile method's object is the profile's name when it passes the
+	// name rule, and "invalid" otherwise: what a caller sends in its place
+	// can be anything, a patient's name included.
+	for _, c := range []struct {
+		proc   string
+		msg    proto.Message
+		object string
+	}{
+		{coriav1connect.ProfileServiceGetProfileVersionProcedure, &v1.GetProfileVersionRequest{Tenant: "lab1", Name: "research", Version: 2}, "research"},
+		{coriav1connect.ProfileServiceGetProfileVersionProcedure, &v1.GetProfileVersionRequest{Tenant: "lab1", Name: "Smith^John"}, "invalid"},
+		{coriav1connect.ProfileServiceCreateProfileVersionProcedure, &v1.CreateProfileVersionRequest{Tenant: "lab1", Name: "Smith^John"}, "invalid"},
+		{coriav1connect.ProfileServiceListProfileVersionsProcedure, &v1.ListProfileVersionsRequest{Tenant: "lab1", Name: "research"}, "research"},
+	} {
+		_, f := p.Requirement(c.proc, c.msg)
+		if f.Object != c.object {
+			t.Errorf("%s: the object is %q, want %q", c.proc, f.Object, c.object)
+		}
+	}
+	if _, f := p.Requirement(coriav1connect.ProfileServiceGetProfileVersionProcedure, &v1.GetProfileVersionRequest{Tenant: "lab1", Name: "research", Version: 2}); f.Details["version"] != "2" {
+		t.Errorf("GetProfileVersion's details are %v", f.Details)
 	}
 
 	// The download over plain HTTP: reader on the tenant the path names,

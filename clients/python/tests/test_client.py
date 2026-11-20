@@ -15,6 +15,7 @@ SERVICE_ATTRIBUTES = {
     "DataService": "data",
     "MetadataService": "metadata",
     "MonitorService": "monitor",
+    "ProfileService": "profiles",
     "QuarantineService": "quarantine",
     "ReceiverService": "receivers",
     "ReceptionService": "receptions",
@@ -27,11 +28,11 @@ SERVICE_ATTRIBUTES = {
 def test_every_service_has_a_stub(client):
     """A service added to the contract and left out of Client fails here."""
     from coria.v1 import (
-        access_pb2, audit_pb2, catalog_pb2, data_pb2, metadata_pb2, monitor_pb2,
+        access_pb2, audit_pb2, catalog_pb2, data_pb2, metadata_pb2, monitor_pb2, profile_pb2,
         quarantine_pb2, receiver_pb2, reception_pb2, settings_pb2, storage_pb2, tenant_pb2,
     )
     defined = set()
-    for module in (access_pb2, audit_pb2, catalog_pb2, data_pb2, metadata_pb2, monitor_pb2,
+    for module in (access_pb2, audit_pb2, catalog_pb2, data_pb2, metadata_pb2, monitor_pb2, profile_pb2,
                    quarantine_pb2, receiver_pb2, reception_pb2, settings_pb2, storage_pb2, tenant_pb2):
         defined |= set(module.DESCRIPTOR.services_by_name)
     assert defined == set(SERVICE_ATTRIBUTES)

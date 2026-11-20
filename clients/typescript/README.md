@@ -70,10 +70,10 @@ try {
 
 - `createCoriaClient({ baseUrl, key, transport?, timeoutMs?, allowInsecure? })` returns one
   client per service: `access`, `audit`, `catalog`, `data`, `metadata`,
-  `monitor`, `quarantine`, `receivers`, `receptions`, `settings`, `storages`,
-  `tenants`. Each method takes the request (a plain object of its fields) and
-  returns the response message; a server-streaming method returns an async
-  iterable. `key` (`cor_<id>_<secret>`) is sent with every call as
+  `monitor`, `profiles`, `quarantine`, `receivers`, `receptions`, `settings`,
+  `storages`, `tenants`. Each method takes the request (a plain object of its
+  fields) and returns the response message; a server-streaming method returns
+  an async iterable. `key` (`cor_<id>_<secret>`) is sent with every call as
   `Authorization: Bearer <key>`. A key with a space, a line break or any other
   character a header cannot carry makes `createCoriaClient` throw a
   `TypeError` that does not repeat it.

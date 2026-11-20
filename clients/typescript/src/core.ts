@@ -7,6 +7,7 @@ import { CatalogService } from "./gen/coria/v1/catalog_pb.js";
 import { DataService } from "./gen/coria/v1/data_pb.js";
 import { MetadataService } from "./gen/coria/v1/metadata_pb.js";
 import { MonitorService } from "./gen/coria/v1/monitor_pb.js";
+import { ProfileService } from "./gen/coria/v1/profile_pb.js";
 import { QuarantineService } from "./gen/coria/v1/quarantine_pb.js";
 import { ReceiverService } from "./gen/coria/v1/receiver_pb.js";
 import { ReceptionService } from "./gen/coria/v1/reception_pb.js";
@@ -29,6 +30,8 @@ export interface CoriaClients {
   readonly metadata: Client<typeof MetadataService>;
   /** Health and counters of the installation. */
   readonly monitor: Client<typeof MonitorService>;
+  /** De-identification profiles of a tenant and the bases they build on. */
+  readonly profiles: Client<typeof ProfileService>;
   /** Files set aside with a reason. */
   readonly quarantine: Client<typeof QuarantineService>;
   /** The receivers of a tenant. */
@@ -191,6 +194,7 @@ export function createClients(transport: Transport, options: ClientsOptions = {}
     data: make(DataService),
     metadata: make(MetadataService),
     monitor: make(MonitorService),
+    profiles: make(ProfileService),
     quarantine: make(QuarantineService),
     receivers: make(ReceiverService),
     receptions: make(ReceptionService),
