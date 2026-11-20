@@ -814,23 +814,30 @@ func TestRefusalTiming(t *testing.T) {
 	e := newEnv(t, options{refusalQueue: 1 << 15, closeT: time.Minute})
 	hc := e.tlsClient(true)
 	paths := []string{servedProcedure, notServedMethod(t), "/acme.v9.Nothing/Do"}
+	// Each sample is the mean of a batch of refusals: one refusal takes a
+	// fraction of a millisecond, below the resolution of the clock on some
+	// systems (Windows read most single refusals as 0s), while a batch is
+	// long enough for every clock to measure.
+	const batches, perBatch = 150, 20
 	samples := make([][]time.Duration, len(paths))
-	for i := range 3000 {
+	for i := range batches {
 		for j := range paths {
 			p := paths[(i+j)%len(paths)]
 			k := slices.Index(paths, p)
 			start := time.Now()
-			if _, err := rawCall(hc, http.MethodPost, e.netURL+p, contentCases[0], []string{"Bearer " + unknownKey}); err != nil {
-				t.Fatal(err)
+			for range perBatch {
+				if _, err := rawCall(hc, http.MethodPost, e.netURL+p, contentCases[0], []string{"Bearer " + unknownKey}); err != nil {
+					t.Fatal(err)
+				}
 			}
-			samples[k] = append(samples[k], time.Since(start))
+			samples[k] = append(samples[k], time.Since(start)/perBatch)
 		}
 	}
 	medians := make([]time.Duration, len(paths))
 	for i, s := range samples {
 		sort.Slice(s, func(a, b int) bool { return s[a] < s[b] })
 		medians[i] = s[len(s)/2]
-		t.Logf("%-45s median %v over %d", paths[i], medians[i], len(s))
+		t.Logf("%-45s median %v over %d batches of %d", paths[i], medians[i], len(s), perBatch)
 	}
 	lo, hi := slices.Min(medians), slices.Max(medians)
 	if hi > lo+lo/2 {
