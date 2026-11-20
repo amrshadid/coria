@@ -117,6 +117,16 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- The de-identification engine, not yet called by reception: a data set
+  de-identified in place by an expanded profile version under a tenant's
+  keys, every element visited (sequences, items, private blocks), each by the
+  rule the profile's precedence chooses. UIDs remapped to 2.25 UUIDs keyed
+  per tenant (registered UIDs kept), dates shifted per subject by a keyed
+  offset (times kept, the shift written nowhere), keyed hashes equal to the
+  labels' codes, dummy values valid for every VR, removal unless the object's
+  IOD requires the attribute, PS3.15 Table E.1-1 codes resolved by IOD Type.
+  A file the profile cannot process is refused with a fixed cause and left
+  unchanged; pixel data is never changed.
 - The contract of senders and jobs: SenderService adds, reads, changes,
   removes and tests a tenant's senders, a DIMSE peer reached by C-STORE or a
   DICOMweb service reached by STOW-RS, each with its TLS files named, at most
