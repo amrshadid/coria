@@ -11,13 +11,16 @@
 // A sidecar is JSON, written in one form only:
 //
 //	{"version":1,"instances":[
-//	{"sop_instance_uid":"1.2.3","key":"data/S/E/C/1.2.3.dcm","size":1234,"sha256":"<64 hex>","pixel_data":{"offset":1100,"length":134},"dataset":{...}},
+//	{"sop_instance_uid":"1.2.3","key":"data/S/E/C/1.2.3.dcm","size":1234,"sha256":"<64 hex>","transfer_syntax":"1.2.840.10008.1.2.1","pixel_data":{"offset":1100,"length":134},"dataset":{...}},
 //	...
 //	]}
 //
 // one instance per line, its fields in that order, the instances sorted by
-// SOP Instance UID with each UID once, and a final newline. pixel_data is
-// null for an instance without pixel data; its offset is the first byte of
+// SOP Instance UID with each UID once, and a final newline. transfer_syntax
+// is the file's Transfer Syntax UID and is left out of a line written before
+// it existed. pixel_data is null for an instance without pixel data and for
+// one whose data set is deflated (PS3.5 A.5), where an offset counted in the
+// inflated bytes is not a place in the file; its offset is the first byte of
 // the element's tag in the file and its length runs to the first byte after
 // the element. dataset is the data set's DICOM JSON, its members in the
 // order of their tags; when that text is longer than MaxDataset it is null

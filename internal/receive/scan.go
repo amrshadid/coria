@@ -373,8 +373,13 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 		if i == 1 {
 			*values = scanValues(h)
 		}
-		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.f.Size, SHA256: hex.EncodeToString(wr.f.SHA256[:])}
-		if h.HasPixelData {
+		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.f.Size, SHA256: hex.EncodeToString(wr.f.SHA256[:]),
+			TransferSyntax: h.TransferSyntaxUID}
+		// A deflated data set's positions count inflated bytes (PS3.5 A.5),
+		// so the sidecar's check would refuse them as outside the file and
+		// the scan could never be made; such a file has no place for its
+		// pixels.
+		if h.HasPixelData && h.TransferSyntaxUID != header.TransferSyntaxDeflated {
 			in.PixelData = &sidecar.PixelData{Offset: h.PixelData.Offset, Length: h.PixelData.Length}
 		}
 		if js, err := h.DICOMJSON(); err == nil {

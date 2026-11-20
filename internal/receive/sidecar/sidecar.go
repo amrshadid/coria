@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/amrshadid/coria/internal/core/layout"
 	"github.com/amrshadid/coria/internal/core/uid"
@@ -29,6 +30,29 @@ const (
 	footer = "]}\n"
 )
 
+// IndexEvery is how many instances lie between two entries of the index a
+// sidecar of more than IndexEvery instances ends with: the byte offset of
+// every IndexEvery-th instance's line, so a reader of one page of a large
+// scan starts near it instead of at the first line.
+const IndexEvery = 256
+
+// maxIndexLine is the longest the index line may be: 80 million instances'
+// worth of entries.
+const maxIndexLine = 16 << 20
+
+// IndexEntry is the place of one instance's line in the sidecar.
+type IndexEntry struct {
+	// UID is the instance's SOP Instance UID.
+	UID string `json:"uid"`
+	// Offset is the first byte of its line.
+	Offset int64 `json:"offset"`
+}
+
+// indexLine is the line that follows the footer.
+type indexLine struct {
+	Index []IndexEntry `json:"index"`
+}
+
 // PixelData is where an instance's pixel data element is in its file.
 type PixelData struct {
 	// Offset is the first byte of the element's tag.
@@ -47,7 +71,11 @@ type Instance struct {
 	Size int64 `json:"size"`
 	// SHA256 is the file's checksum in lowercase hex.
 	SHA256 string `json:"sha256"`
-	// PixelData is where its pixel data is, nil when it has none.
+	// TransferSyntax is the Transfer Syntax UID of the instance's file,
+	// empty in a line written before the field existed.
+	TransferSyntax string `json:"transfer_syntax,omitempty"`
+	// PixelData is where its pixel data is, nil when it has none or when the
+	// file's data set is deflated, where no offset in the file names it.
 	PixelData *PixelData `json:"pixel_data"`
 	// Dataset is its data set's DICOM JSON, nil when omitted.
 	Dataset json.RawMessage `json:"dataset"`
@@ -77,6 +105,11 @@ func check(in Instance) error {
 	if in.Size < 0 || len(in.SHA256) != 64 {
 		return fmt.Errorf("%w: size or sha256", ErrFormat)
 	}
+	if in.TransferSyntax != "" {
+		if err := uid.Check(in.TransferSyntax); err != nil {
+			return fmt.Errorf("%w: transfer_syntax: %w", ErrFormat, err)
+		}
+	}
 	if p := in.PixelData; p != nil && (p.Offset < 0 || p.Length < 0 || p.Offset+p.Length > in.Size) {
 		return fmt.Errorf("%w: pixel_data lies outside the file", ErrFormat)
 	}
@@ -92,6 +125,9 @@ type Writer struct {
 	last  string
 	count int
 	err   error
+	// off counts the bytes written; idx holds the index entries so far.
+	off int64
+	idx []IndexEntry
 }
 
 // NewWriter returns a writer of a sidecar to w.
@@ -132,6 +168,9 @@ func (w *Writer) addLine(sopUID string, line []byte) error {
 	} else {
 		w.write([]byte(",\n"))
 	}
+	if w.count%IndexEvery == 0 {
+		w.idx = append(w.idx, IndexEntry{UID: sopUID, Offset: w.off})
+	}
 	w.write(line)
 	w.last = sopUID
 	w.count++
@@ -141,7 +180,9 @@ func (w *Writer) addLine(sopUID string, line []byte) error {
 // write writes b, keeping the first error.
 func (w *Writer) write(b []byte) {
 	if w.err == nil {
-		_, w.err = w.w.Write(b)
+		var n int
+		n, w.err = w.w.Write(b)
+		w.off += int64(n)
 	}
 }
 
@@ -155,6 +196,14 @@ func (w *Writer) Close() error {
 		return fmt.Errorf("%w: no instances", ErrFormat)
 	}
 	w.write([]byte("\n" + footer))
+	if len(w.idx) > 1 {
+		line, err := json.Marshal(indexLine{Index: w.idx})
+		if err != nil {
+			return fmt.Errorf("%w: the index cannot be encoded", ErrFormat)
+		}
+		w.write(line)
+		w.write([]byte("\n"))
+	}
 	if w.err == nil {
 		w.err = w.w.Flush()
 	}
@@ -192,8 +241,8 @@ func (r *Reader) Next() (Instance, []byte, error) {
 		return Instance{}, nil, err
 	}
 	if string(line) == footer[:len(footer)-1] {
-		if _, err := r.r.ReadByte(); !errors.Is(err, io.EOF) {
-			return Instance{}, nil, fmt.Errorf("%w: bytes after the end", ErrFormat)
+		if err := r.end(); err != nil {
+			return Instance{}, nil, err
 		}
 		r.done = true
 		if r.last == "" {
@@ -221,14 +270,93 @@ func (r *Reader) Next() (Instance, []byte, error) {
 	return in, line, nil
 }
 
+// end checks what follows the footer: nothing, or the index line and then
+// nothing.
+func (r *Reader) end() error {
+	if _, err := r.r.ReadByte(); errors.Is(err, io.EOF) {
+		return nil
+	}
+	_ = r.r.UnreadByte()
+	line, err := r.lineWithin(maxIndexLine)
+	if err != nil {
+		return err
+	}
+	if _, err := decodeIndex(line); err != nil {
+		return err
+	}
+	if _, err := r.r.ReadByte(); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("%w: bytes after the end", ErrFormat)
+	}
+	return nil
+}
+
+// decodeIndex decodes the index line, which must be in the one form.
+func decodeIndex(line []byte) ([]IndexEntry, error) {
+	var il indexLine
+	dec := json.NewDecoder(bytes.NewReader(line))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&il); err != nil || len(il.Index) == 0 {
+		return nil, fmt.Errorf("%w: the index", ErrFormat)
+	}
+	prev := int64(0)
+	for i, e := range il.Index {
+		if e.Offset <= prev || uid.Check(e.UID) != nil || (i > 0 && e.UID <= il.Index[i-1].UID) {
+			return nil, fmt.Errorf("%w: the index is out of order", ErrFormat)
+		}
+		prev = e.Offset
+	}
+	return il.Index, nil
+}
+
+// ParseIndex returns the index a sidecar ends with, given its last bytes
+// and whether they are the whole file. complete is false when tail is too
+// short to hold the whole index line, and a longer tail should be read;
+// when it is true and entries is nil, the sidecar has no index (a small
+// one, or one written before indexes existed) or its index is not in its
+// form, and a reader starts at the first line.
+func ParseIndex(tail []byte, whole bool) (entries []IndexEntry, complete bool) {
+	if len(tail) == 0 || tail[len(tail)-1] != '\n' || bytes.HasSuffix(tail, []byte("\n"+footer)) {
+		return nil, true
+	}
+	body := tail[:len(tail)-1]
+	i := bytes.LastIndexByte(body, '\n')
+	if i < 0 && !whole {
+		return nil, false
+	}
+	entries, err := decodeIndex(body[i+1:])
+	if err != nil {
+		return nil, true
+	}
+	return entries, true
+}
+
+// Locate returns the offset to start reading at for the instance with the
+// SOP Instance UID uid: the line of the last indexed instance not after it.
+func Locate(entries []IndexEntry, uid string) int64 {
+	i := sort.Search(len(entries), func(i int) bool { return entries[i].UID > uid })
+	if i == 0 {
+		return entries[0].Offset
+	}
+	return entries[i-1].Offset
+}
+
+// NewReaderFrom returns a reader of the sidecar that r holds from the first
+// byte of an instance's line, an offset an index gives, to the end.
+func NewReaderFrom(r io.Reader) *Reader {
+	return &Reader{r: bufio.NewReaderSize(r, 64<<10), start: true}
+}
+
 // line reads one line without its newline, at most maxLine bytes.
-func (r *Reader) line() ([]byte, error) {
+func (r *Reader) line() ([]byte, error) { return r.lineWithin(maxLine) }
+
+// lineWithin reads one line without its newline, at most limit bytes.
+func (r *Reader) lineWithin(limit int) ([]byte, error) {
 	var out []byte
 	for {
 		chunk, err := r.r.ReadSlice('\n')
 		out = append(out, chunk...)
-		if len(out) > maxLine {
-			return nil, fmt.Errorf("%w: a line is longer than %d bytes", ErrFormat, maxLine)
+		if len(out) > limit {
+			return nil, fmt.Errorf("%w: a line is longer than %d bytes", ErrFormat, limit)
 		}
 		switch {
 		case err == nil:

@@ -218,7 +218,9 @@ func (c *core) metadataSource(ctx context.Context, p tenant.Pipeline, tenantName
 // file that is missing, is not in its form, or does not hold an instance
 // the catalog holds, is data loss.
 func (s *metaSource) page(ctx context.Context, held []tenant.ScanInstance) ([]*v1.InstanceMetadata, error) {
-	rc, err := s.store.Read(ctx, s.key, 0, -1)
+	var rd *sidecar.Reader
+	start := s.lineStart(ctx, held[0].SOPInstanceUID)
+	rc, err := s.store.Read(ctx, s.key, start, -1)
 	switch {
 	case fault.KindOf(err) == fault.NotFound:
 		return nil, fault.Wrap(fault.DataLoss, err, messageNoSidecar)
@@ -226,7 +228,11 @@ func (s *metaSource) page(ctx context.Context, held []tenant.ScanInstance) ([]*v
 		return nil, storageFailure(err, "the scan's metadata file cannot be read")
 	}
 	defer func() { _ = rc.Close() }()
-	rd := sidecar.NewReader(rc)
+	if start > 0 {
+		rd = sidecar.NewReaderFrom(rc)
+	} else {
+		rd = sidecar.NewReader(rc)
+	}
 	var (
 		out   []*v1.InstanceMetadata
 		total int
@@ -247,6 +253,48 @@ func (s *metaSource) page(ctx context.Context, held []tenant.ScanInstance) ([]*v
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// The tail of the metadata file the index is looked for in, first this many
+// bytes and then twice as many until the index line is whole, and the
+// smallest file worth a look at its index: one that is read through in less
+// time than the lookup takes.
+const (
+	indexTail      = 16 << 10
+	indexTailMax   = 16 << 20
+	indexMinimumAt = 256 << 10
+)
+
+// lineStart returns where to start reading the metadata file for the
+// instance uid: the offset the file's index gives, or 0 for a file with no
+// index or one that cannot be read, which is then read from its first line,
+// so every failure shows in that read.
+func (s *metaSource) lineStart(ctx context.Context, uid string) int64 {
+	info, err := s.store.Stat(ctx, s.key)
+	if err != nil || info.Size < indexMinimumAt {
+		return 0
+	}
+	for n := int64(indexTail); ; n *= 2 {
+		n = min(n, info.Size)
+		rc, err := s.store.Read(ctx, s.key, info.Size-n, n)
+		if err != nil {
+			return 0
+		}
+		tail, err := io.ReadAll(io.LimitReader(rc, n))
+		_ = rc.Close()
+		if err != nil || int64(len(tail)) != n {
+			return 0
+		}
+		entries, complete := sidecar.ParseIndex(tail, n == info.Size)
+		switch {
+		case complete && entries == nil:
+			return 0
+		case complete:
+			return sidecar.Locate(entries, uid)
+		case n >= min(info.Size, indexTailMax):
+			return 0
+		}
+	}
 }
 
 // nextInstance reads the metadata file forward to the line of the instance

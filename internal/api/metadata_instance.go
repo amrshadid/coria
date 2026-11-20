@@ -23,7 +23,7 @@ const (
 	// transferSyntaxDeflated is Deflated Explicit VR Little Endian (PS3.5
 	// A.5): its data set is compressed, so no offset in the file names a
 	// value.
-	transferSyntaxDeflated = "1.2.840.10008.1.2.1.99"
+	transferSyntaxDeflated = header.TransferSyntaxDeflated
 	// transferSyntaxRoot starts every other transfer syntax the standard
 	// registers, each of them explicit VR (PS3.5 7.1.2) with a 12-byte
 	// header for a long value such as Pixel Data.
@@ -66,10 +66,16 @@ func (s *metaSource) instance(ctx context.Context, held tenant.ScanInstance, in 
 		return nil, fault.New(fault.DataLoss, messageBadSidecar)
 	}
 	ra := &blobAt{ctx: ctx, store: s.store, key: held.Key, size: held.Size}
-	ts, err := header.ReadTransferSyntax(ra, held.Size)
-	if err != nil {
-		return nil, fileFailure(err)
+	// The line names the transfer syntax when it was written by a version
+	// that keeps it; an older line is answered from the file's meta group.
+	ts := in.TransferSyntax
+	if ts == "" {
+		var err error
+		if ts, err = header.ReadTransferSyntax(ra, held.Size); err != nil {
+			return nil, fileFailure(err)
+		}
 	}
+	var err error
 	m := &v1.InstanceMetadata{InstanceId: held.SOPInstanceUID, SopInstanceUid: held.SOPInstanceUID, TransferSyntaxUid: ts}
 	deflated := ts == transferSyntaxDeflated
 	m.BulkDataOmitted = deflated
@@ -150,9 +156,12 @@ func headerLength(ts string) (int64, bool) {
 }
 
 // blobAt reads a stored object at an offset, for the DICOM reader, which
-// reads a header in many small pieces: each call that is not in the bytes
-// held fetches the next chunk, so a header is a few ranged reads of the
-// storage and never a read per element.
+// reads a header in many small pieces. A read that continues where the
+// bytes held end fetches the next chunk, twice as long as the last up to
+// readChunk, so a header is a few ranged reads of the storage and never a
+// read per element; a read that jumps (the reader skipping over encapsulated
+// pixel data, item by item) fetches only what it asks for, rounded up to
+// minChunk, so skipping a large file does not read it.
 type blobAt struct {
 	ctx   context.Context
 	store blob.Store
@@ -161,10 +170,16 @@ type blobAt struct {
 	// chunk holds the bytes from chunkAt on.
 	chunk   []byte
 	chunkAt int64
+	// next is the length of the next read-ahead.
+	next int64
 }
 
-// readChunk is how many bytes a fetch asks the storage for.
-const readChunk = 256 << 10
+// readChunk is the most a fetch asks the storage for, and minChunk the
+// least.
+const (
+	readChunk = 256 << 10
+	minChunk  = 512
+)
 
 // ReadAt implements io.ReaderAt.
 func (b *blobAt) ReadAt(p []byte, off int64) (int, error) {
@@ -175,7 +190,7 @@ func (b *blobAt) ReadAt(p []byte, off int64) (int, error) {
 			return n, io.EOF
 		}
 		if pos < b.chunkAt || pos >= b.chunkAt+int64(len(b.chunk)) {
-			if err := b.fetch(pos); err != nil {
+			if err := b.fetch(pos, int64(len(p)-n)); err != nil {
 				return n, err
 			}
 		}
@@ -184,9 +199,17 @@ func (b *blobAt) ReadAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
-// fetch holds the bytes from pos on, at most readChunk of them.
-func (b *blobAt) fetch(pos int64) error {
-	length := min(readChunk, b.size-pos)
+// fetch holds the bytes from pos on: want of them at least, rounded up, and
+// more when pos follows the bytes held.
+func (b *blobAt) fetch(pos, want int64) error {
+	if b.chunk == nil || pos != b.chunkAt+int64(len(b.chunk)) {
+		b.next = minChunk
+	}
+	length := min(max(b.next, (want+minChunk-1)/minChunk*minChunk), readChunk, b.size-pos)
+	b.next = min(b.next*2, readChunk)
+	if want > length && want <= b.size-pos {
+		length = want
+	}
 	rc, err := b.store.Read(b.ctx, b.key, pos, length)
 	if err != nil {
 		return err

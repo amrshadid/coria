@@ -24,6 +24,11 @@ const (
 	InlineValueLimit = 64 << 10
 )
 
+// TransferSyntaxDeflated is Deflated Explicit VR Little Endian (PS3.5 A.5):
+// the data set is compressed, so a position counted in the data set's bytes
+// is not a position in the file.
+const TransferSyntaxDeflated = "1.2.840.10008.1.2.1.99"
+
 // MaxMetaPrefix is how many bytes of a file ReadTransferSyntax reads at
 // most: the preamble, the prefix and the file meta information, which is a
 // few hundred bytes in a file any tool writes.
@@ -136,10 +141,12 @@ func refer(elements []*filereader.DataElementValue, m map[string]dataset.DICOMJS
 // long and whose representation the answer gives as vr, is bulk data.
 func isBulk(e *filereader.DataElementValue, vr string, length int64) bool {
 	switch {
+	case isPixelTag(e.Tag):
+		// Whatever its length: an empty Pixel Data still has the reference
+		// the metadata file's line gives it (PS3.18 F.2.7).
+		return true
 	case length == 0:
 		return false
-	case isPixelTag(e.Tag):
-		return true
 	case e.ValueSkipped:
 		return true
 	case length > InlineValueLimit:

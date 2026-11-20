@@ -158,6 +158,15 @@ func checkHostName(h string) error {
 	if h == "" || len(h) > 253 {
 		return errors.New("has no host, or one longer than 253 bytes")
 	}
+	// A host whose last label is all digits is an IPv4 address, which a
+	// browser sends only in its canonical form (no leading zeros, four
+	// parts).
+	last := h[strings.LastIndexByte(h, '.')+1:]
+	if last != "" && strings.Trim(last, "0123456789") == "" {
+		if a, err := netip.ParseAddr(h); err != nil || !a.Is4() || a.String() != h {
+			return errors.New("has a host that ends in digits but is not an IPv4 address written as a browser writes it")
+		}
+	}
 	for label := range strings.SplitSeq(h, ".") {
 		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
 			return errors.New("has a host that is not a name of a-z, 0-9, - and . or an address, with nothing after it but a port")

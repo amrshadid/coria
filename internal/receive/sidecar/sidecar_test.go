@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -146,3 +147,124 @@ func TestReaderRefusesOtherForms(t *testing.T) {
 		}
 	}
 }
+
+// TestTransferSyntaxRoundTrips guards the optional transfer_syntax field: a
+// line that holds it reads back with it, a line written without it (an older
+// sidecar) reads back with it empty and unchanged, and a value that is not a
+// UID is refused.
+func TestTransferSyntaxRoundTrips(t *testing.T) {
+	with := inst(t, "1.2.3", false)
+	with.TransferSyntax = "1.2.840.10008.1.2.1.99"
+	without := inst(t, "1.2.4", true)
+	var b bytes.Buffer
+	w := NewWriter(&b)
+	for _, in := range []Instance{with, without} {
+		if err := w.Add(in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(b.String(), "transfer_syntax") != 1 {
+		t.Errorf("the field is written for the line that has it only:\n%s", b.String())
+	}
+	got := readAll(t, b.Bytes())
+	if got[0].TransferSyntax != with.TransferSyntax || got[1].TransferSyntax != "" {
+		t.Errorf("transfer syntaxes %q and %q, want %q and none", got[0].TransferSyntax, got[1].TransferSyntax, with.TransferSyntax)
+	}
+	bad := inst(t, "1.2.5", false)
+	bad.TransferSyntax = "not a uid"
+	if err := NewWriter(&bytes.Buffer{}).Add(bad); !errors.Is(err, ErrFormat) {
+		t.Errorf("a transfer syntax that is not a UID: %v, want ErrFormat", err)
+	}
+}
+
+// TestIndexLocatesALine guards the index a large sidecar ends with: a
+// sidecar of more than IndexEvery instances still reads whole, a reader
+// started at the offset Locate gives for an instance reads that instance's
+// line first or an earlier one of the same stretch and then the rest in
+// order, a merge rewrites the index for what it holds, and a small sidecar
+// has none.
+func TestIndexLocatesALine(t *testing.T) {
+	const n = 3*IndexEvery + 10
+	uidOf := func(i int) string { return "1.2." + itoa(1000000+i) }
+	var b bytes.Buffer
+	w := NewWriter(&b)
+	for i := 0; i < n; i++ {
+		if err := w.Add(inst(t, uidOf(i), i%2 == 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAll(t, b.Bytes()); len(got) != n {
+		t.Fatalf("%d instances read back, want %d", len(got), n)
+	}
+	for _, whole := range []bool{false, true} {
+		tail := b.Bytes()[b.Len()-100:]
+		if whole {
+			tail = b.Bytes()
+		}
+		entries, complete := ParseIndex(tail, whole)
+		if whole && (!complete || len(entries) != 4) {
+			t.Fatalf("whole file: %d entries, complete %v, want 4 and true", len(entries), complete)
+		}
+		if !whole && complete {
+			t.Fatalf("a tail inside the index line was taken as complete")
+		}
+	}
+	entries, complete := ParseIndex(b.Bytes()[b.Len()-2000:], false)
+	if !complete || len(entries) != 4 {
+		t.Fatalf("%d entries, complete %v, want 4 and true", len(entries), complete)
+	}
+	for _, i := range []int{0, 1, IndexEvery, IndexEvery + 5, 3*IndexEvery + 9} {
+		off := Locate(entries, uidOf(i))
+		rd := NewReaderFrom(bytes.NewReader(b.Bytes()[off:]))
+		first, _, err := rd.Next()
+		if err != nil || first.SOPInstanceUID > uidOf(i) || i-IndexEvery >= 0 && first.SOPInstanceUID < uidOf(i-IndexEvery) {
+			t.Fatalf("instance %d: started at %s, %v", i, first.SOPInstanceUID, err)
+		}
+		last, count := first.SOPInstanceUID, 1
+		for {
+			in, _, err := rd.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil || in.SOPInstanceUID <= last {
+				t.Fatalf("instance %d: %v after %s", i, err, last)
+			}
+			last, count = in.SOPInstanceUID, count+1
+		}
+		if last != uidOf(n-1) {
+			t.Errorf("instance %d: ended at %s, want %s", i, last, uidOf(n-1))
+		}
+	}
+	var merged bytes.Buffer
+	if _, err := Merge(&merged, bytes.NewReader(b.Bytes()), func() (Instance, bool, error) { return Instance{}, false, nil },
+		func(u string) bool { return u == uidOf(0) }); err != nil {
+		t.Fatal(err)
+	}
+	if got := readAll(t, merged.Bytes()); len(got) != n-1 {
+		t.Fatalf("merge kept %d instances, want %d", len(got), n-1)
+	}
+	es, ok := ParseIndex(merged.Bytes(), true)
+	if !ok || len(es) != 4 || es[0].UID != uidOf(1) {
+		t.Errorf("the merged index is %v (complete %v), want 4 entries from %s", es, ok, uidOf(1))
+	}
+	var small bytes.Buffer
+	sw := NewWriter(&small)
+	if err := sw.Add(inst(t, "1.2.3", false)); err != nil {
+		t.Fatal(err)
+	}
+	if err := sw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if es, ok := ParseIndex(small.Bytes(), true); !ok || es != nil || strings.Contains(small.String(), `"index"`) {
+		t.Errorf("a small sidecar has an index: %v", es)
+	}
+}
+
+// itoa writes a small number.
+func itoa(i int) string { return strconv.Itoa(i) }

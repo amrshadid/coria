@@ -20,8 +20,26 @@ All notable changes to CORIA are written here. The form is
   instance rows are 3.8 times smaller. Existing tenants are converted when
   the database is upgraded.
 
+### Fixed
+
+- A file in the Deflated Explicit VR Little Endian transfer syntax is
+  archived. Its scan's metadata file records no pixel data place for it
+  (offsets counted in inflated bytes are not places in the file); it was
+  refused and retried without end.
+- The metadata service reads only what it needs from storage: a header read
+  passes over pixel data without fetching its frames (a 12 MB JPEG 2000 file
+  read under 1%), a scan's page is located by the index at the end of its
+  metadata file instead of read from the start, and empty pixel data is
+  answered with a reference on every path.
+- The setting `api.cors-origins` refuses an IPv4 address in a form no browser
+  sends, such as `127.000.0.1`.
+
 ### Added
 
+- The scan's metadata file records each instance's transfer syntax, and an
+  index of where its lines start; the metadata service reads both instead of
+  opening instance files or reading from the start. Files written before this
+  still work.
 - The metadata service answers a scan's or an instance's header as DICOM
   JSON (PS3.18 Annex F), with bulk data URIs for pixel data and other large
   values, from one read of the scan's metadata file and a bounded read of an

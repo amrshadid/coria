@@ -46,6 +46,12 @@ func TestParseOrigins(t *testing.T) {
 		"https://a.example\nhttps://a.example": false,
 		"https://a.example\n\nhttps://b.ex":    false,
 		"https://-a.example":                   false,
+		"https://8.8.8.8":                      true,
+		"http://127.000.0.1":                   false,
+		"http://010.0.0.1":                     false,
+		"http://1.2.3":                         false,
+		"http://256.1.1.1":                     false,
+		"http://a.example.123":                 false,
 		"https://a..example":                   false,
 		" https://a.example":                   false,
 	} {
