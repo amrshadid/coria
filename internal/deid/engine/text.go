@@ -102,7 +102,7 @@ const (
 // errCleanTooLarge is a file whose cleans would pass maxCleanWork.
 var errCleanTooLarge = errors.New("engine: the cleans of the file pass their bound")
 
-// cleanTerm is one value clean removes, its runes folded (fold).
+// cleanTerm is one value clean removes, its runes folded (Fold).
 type cleanTerm struct {
 	runes []rune
 	// word is set for a term matched only as a whole word: not preceded
@@ -116,10 +116,10 @@ type cleanTerm struct {
 }
 
 // cleanTerms returns the terms clean removes for a file's needles: each
-// value, for a person's name each part (nameParts), and for a date the
-// forms people write it in (dateForms), by the lengths minCleanLength
-// gives; longest first, then by text, so the result is the
-// same every run. ok is false when there are more than maxCleanTerms.
+// value, for a person's name its forms (NameForms), and for a date the
+// forms people write it in (DateForms), by the lengths minCleanLength
+// gives; longest first, then by text, so the result is the same every run.
+// ok is false when there are more than maxCleanTerms.
 func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 	seen := map[string]bool{}
 	var out []cleanTerm
@@ -136,7 +136,7 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 		t := cleanTerm{runes: runes, partial: partial}
 		switch {
 		case partial:
-		case unspaced(runes), len(runes) >= minCleanLength:
+		case Unspaced(v), len(runes) >= minCleanLength:
 		case part:
 			t.word = true
 		default:
@@ -147,24 +147,22 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 	}
 	for _, n := range needles {
 		if n.Kind == NeedleDate {
-			if forms := partialDateForms(n.Value); forms != nil {
-				for _, f := range forms {
-					add(f, false, true)
-				}
-				continue
+			forms, partial := DateForms(n.Value)
+			if !partial {
+				add(n.Value, false, false)
 			}
+			for _, f := range forms {
+				add(f.Text, false, f.Bounded)
+			}
+			continue
+		}
+		if n.Kind == NeedleName {
+			for _, f := range NameForms(n.Value) {
+				add(f, true, false)
+			}
+			continue
 		}
 		add(n.Value, false, false)
-		switch n.Kind {
-		case NeedleName:
-			for _, p := range nameParts(n.Value) {
-				add(p, true, false)
-			}
-		case NeedleDate:
-			for _, f := range dateForms(n.Value) {
-				add(f, false, false)
-			}
-		}
 	}
 	slices.SortFunc(out, func(a, b cleanTerm) int {
 		if len(a.runes) != len(b.runes) {
@@ -175,94 +173,11 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 	return out, len(out) <= maxCleanTerms
 }
 
-// nameParts returns the parts of a person's name (PS3.5 6.2.1): its
-// component groups split by "=", each split into its components by "^",
-// and each component into its words by spaces, since a component often
-// holds more than one ("van der Berg", "山田 太郎").
-func nameParts(pn string) []string {
-	var out []string
-	for _, group := range strings.Split(pn, "=") {
-		for _, c := range strings.Split(group, "^") {
-			if c = strings.TrimSpace(c); c == "" {
-				continue
-			}
-			out = append(out, c)
-			if words := strings.Fields(c); len(words) > 1 {
-				out = append(out, words...)
-			}
-		}
-	}
-	return out
-}
-
-// dateForms returns the forms a date of a DA or DT value is commonly
-// written in by people, in free text: 2024-03-15, 2024/03/15, 2024.03.15,
-// 15/03/2024, 03/15/2024, 15.03.2024 and 15-03-2024; none for a value
-// that does not begin with eight digits.
-func dateForms(v string) []string {
-	if len(v) < 8 {
-		return nil
-	}
-	for i := range 8 {
-		if v[i] < '0' || v[i] > '9' {
-			return nil
-		}
-	}
-	y, m, d := v[:4], v[4:6], v[6:8]
-	return []string{
-		y + "-" + m + "-" + d, y + "/" + m + "/" + d, y + "." + m + "." + d,
-		d + "/" + m + "/" + y, m + "/" + d + "/" + y, d + "." + m + "." + y, d + "-" + m + "-" + y,
-	}
-}
-
-// partialDateForms returns the forms a DT value of only a year, or a year
-// and a month (PS3.5 6.2), is written in by people: 2024; 202403,
-// 2024-03, 2024/03, 2024.03, 03/2024, 03.2024 and 03-2024. Nil for a value
-// whose leading digits are not four or six, a full date among them.
-func partialDateForms(v string) []string {
-	digits := 0
-	for digits < len(v) && v[digits] >= '0' && v[digits] <= '9' {
-		digits++
-	}
-	switch digits {
-	case 4:
-		return []string{v[:4]}
-	case 6:
-		y, m := v[:4], v[4:6]
-		return []string{y + m, y + "-" + m, y + "/" + m, y + "." + m, m + "/" + y, m + "." + y, m + "-" + y}
-	}
-	return nil
-}
-
-// unspaced reports whether a term is in a script written without spaces
-// between words, or whose names are a syllable or two (Han, Hiragana,
-// Katakana, Hangul): any of its letters is.
-func unspaced(runes []rune) bool {
-	for _, r := range runes {
-		if unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) {
-			return true
-		}
-	}
-	return false
-}
-
-// fold returns the one rune of r's case folding orbit (unicode.SimpleFold)
-// every rune of it maps to, its least: "K", "k" and the Kelvin sign are one
-// rune. It maps a rune to a rune, so positions in a folded text are
-// positions in the text.
-func fold(r rune) rune {
-	least := r
-	for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
-		least = min(least, f)
-	}
-	return least
-}
-
-// foldString returns the runes of s, each folded.
+// foldString returns the runes of s, each folded (Fold).
 func foldString(s string) []rune {
 	runes := []rune(s)
 	for i, r := range runes {
-		runes[i] = fold(r)
+		runes[i] = Fold(r)
 	}
 	return runes
 }
@@ -314,7 +229,7 @@ func (c *cleaner) clean(ctx context.Context, s string) (string, error) {
 		c.budget -= len(runes) * c.weight
 		folded := make([]rune, len(runes))
 		for i, r := range runes {
-			folded[i] = fold(r)
+			folded[i] = Fold(r)
 		}
 		cut := make([]bool, len(runes))
 		found := false
@@ -356,18 +271,27 @@ func wordEdge(runes []rune, i int) bool {
 }
 
 // dateEdge reports whether position i of a text, on the side dir (-1
-// before a term, 1 after it), ends a date there: outside a word
-// (wordEdge), and not a date's separator ("-", "/", ".") with a digit
-// beyond it, which would make the term part of a longer date.
+// before a term, 1 after it), ends a date there: no ASCII letter or digit
+// (a letter of another script, as 年 in 1957年, does not join a date), and
+// not a date's separator ("-", "/", ".") with a digit beyond it, which
+// would make the term part of a longer date.
 func dateEdge(runes []rune, i, dir int) bool {
-	if !wordEdge(runes, i) {
+	if i < 0 || i >= len(runes) {
+		return true
+	}
+	if asciiAlnum(runes[i]) {
 		return false
 	}
-	if i < 0 || i >= len(runes) || !strings.ContainsRune("-/.", runes[i]) {
+	if !strings.ContainsRune("-/.", runes[i]) {
 		return true
 	}
 	j := i + dir
 	return j < 0 || j >= len(runes) || !unicode.IsDigit(runes[j])
+}
+
+// asciiAlnum reports whether r is an ASCII letter or digit.
+func asciiAlnum(r rune) bool {
+	return ('0' <= r && r <= '9') || ('A' <= r && r <= 'Z') || ('a' <= r && r <= 'z')
 }
 
 // isASCII reports whether s is only of the default character repertoire's

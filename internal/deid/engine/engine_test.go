@@ -481,7 +481,7 @@ func TestCleanRemovesTheFilesValues(t *testing.T) {
 		el{tPatientID, "LO", "PAT001"},
 	)
 	apply(t, en, ds)
-	if got := mustText(t, ds, tStudyDesc); got != "MRI of  , id , by  Alpha" {
+	if got := mustText(t, ds, tStudyDesc); got != "MRI of , id , by  Alpha" {
 		t.Errorf("cleaned %q", got)
 	}
 }

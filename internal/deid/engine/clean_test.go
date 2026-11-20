@@ -68,7 +68,7 @@ func TestCleanCostIsBounded(t *testing.T) {
 // Japanese name of two-character parts, written with or without a space,
 // is cut wherever it appears; a Korean name's one-syllable family name
 // too; a Latin part of one or two letters only as a whole word, in any
-// case; and a whole name in "Given Family" order through its parts.
+// case; and a whole name in "Given Family" order, with the space between.
 func TestShortAndCJKNamesAreCleaned(t *testing.T) {
 	en := newTestEngine(t, testKeys, Options{},
 		rule("names", vrSel("PN"), aRemove),
@@ -87,8 +87,8 @@ func TestShortAndCJKNamesAreCleaned(t *testing.T) {
 	)
 	rec := apply(t, en, ds)
 	for tg, want := range map[uint32]string{
-		tStudyDesc:       "  の頭部MRI、",
-		tPatientComments: "Dr  saw ; Alpha clinic,  ,   님",
+		tStudyDesc:       " の頭部MRI、",
+		tPatientComments: "Dr  saw ; Alpha clinic, ,  님",
 		0x00204000:       "さん",
 	} {
 		if got := mustText(t, ds, tg); got != want {

@@ -26,16 +26,22 @@ sources, so a mistake in one is caught by another:
     person's name when it has a name's form (a "^" between letters).
 
 Each needle is searched for in several written forms: a person's name as
-DOE^JOHN, JOHN DOE, DOE JOHN, DOE, JOHN and DOE,JOHN, and each part; a date
-as 20240315, 2024-03-15, 2024/03/15, 2024.03.15, 15/03/2024, 03/15/2024,
-15.03.2024 and 15-03-2024. A date of only a year, or a year and month
-(a DT of 4 or 6 digits), as 2024, or 202403, 2024-03, 2024/03, 2024.03,
-03/2024, 03.2024 and 03-2024, matched only as a date of that precision:
-not next to a digit, nor to a date's separator with a digit beyond it, so
-the year of a full date is not taken for it. Letters in any case. A needle
-that is a number is matched only where no digit is next to it, so it is not
-found inside a longer number (a remapped UID is a long run of digits); a
-full date may be followed by digits, as in a date and time.
+DOE^JOHN, JOHN DOE, DOE JOHN, DOE, JOHN and DOE,JOHN, JOHN PAUL DOE, and each
+part; a full date as 20240315, 2024-03-15, 2024/03/15, 2024.03.15,
+15/03/2024, 03/15/2024, 15.03.2024 and 15-03-2024, and, matched only where
+they stand alone as a date (no ASCII letter or digit beside them, nor a
+date's separator with a digit beyond it), without leading zeros (3/5/2024,
+2024-3-5), with a two-digit year (15/03/24), with the month's English name,
+its three letters and those with a dot, the day as an ordinal ("15th March
+2024", "Mar. 15, 2024", "15-Mar-2024", "15MAR2024") and as 2024年3月15日. A
+date of only a year, or a year and month (a DT of 4 or 6 digits), only as a
+date of that precision, standing alone: 2024, or 202403, 2024-03, 2024/03,
+2024.03, 03/2024, 3/2024, "March 2024" and 2024年3月; a letter of another
+script beside it does not join it ("1957年" is the year 1957). Letters in
+any case. A needle that is a number is matched only where no digit is next
+to it, so it is not found inside a longer number (a remapped UID is a long
+run of digits); a full date may be followed by digits, as in a date and
+time. These are the forms the engine's clean removes.
 
 Two searches of each result:
 
@@ -52,7 +58,8 @@ ordinary text), and nor is one character of a script written without
 spaces (Han, kana, Hangul), whose two or more characters are searched
 for; UIDs the standard registers are not needles. What is skipped is
 counted and printed, never passed over silently. The result must also say
-Patient Identity Removed (0012,0062) YES.
+Patient Identity Removed (0012,0062) YES. A result pydicom cannot read is
+reported as refused, never passed.
 
 Exit status 0 when no needle is found in any result and at least one was
 searched for; 1 otherwise. A finding prints the original, the form and
@@ -122,13 +129,12 @@ class Needles:
                     return
             except Exception:  # not a UID pydicom knows how to name
                 pass
-        partial = re.match(r"^(\d{4})(\d{2})?(?!\d)", value) if kind == "date" else None
-        if partial:
-            y, m = partial.group(1), partial.group(2)
-            forms = [y] if m is None else [y + m, f"{y}-{m}", f"{y}/{m}", f"{y}.{m}",
-                                            f"{m}/{y}", f"{m}.{y}", f"{m}-{y}"]
-            for f in forms:
-                self.add_form(f, value, "partial-date")
+        if kind == "date":
+            forms, partial = date_forms(value)
+            if not partial:
+                self.add_form(value, value, "date")
+            for f, bounded in forms:
+                self.add_form(f, value, "bounded" if bounded else "date")
             return
         self.add_form(value, value, kind)
         if kind == "name":
@@ -143,11 +149,60 @@ class Needles:
                     for f in (f"{given} {fam}", f"{fam} {given}", f"{fam}, {given}",
                               f"{fam},{given}", " ".join(parts)):
                         self.add_form(f, value, kind)
-        if kind == "date" and re.match(r"^\d{8}", value):
-            y, m, d = value[:4], value[4:6], value[6:8]
-            for f in (value[:8], f"{y}-{m}-{d}", f"{y}/{m}/{d}", f"{y}.{m}.{d}",
-                      f"{d}/{m}/{y}", f"{m}/{d}/{y}", f"{d}.{m}.{y}", f"{d}-{m}-{y}"):
-                self.add_form(f, value, kind)
+                if len(parts) >= 3:
+                    self.add_form(f"{parts[1]} {parts[2]} {parts[0]}", value, kind)
+
+
+MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+          "August", "September", "October", "November", "December"]
+
+
+def ordinal(d):
+    if 11 <= d <= 13:
+        return "th"
+    return {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
+
+
+def date_forms(v):
+    """The written forms of a DA or DT value, as (form, bounded) pairs, and
+    whether it is a date of only a year or a year and month, whose value is
+    then no form of its own."""
+    m = re.match(r"^(\d{4})(\d{2})?(\d{2})?", v)
+    if not m:
+        return [], False
+    digits = len(m.group(0))
+    if len(v) > digits and v[digits].isdigit():
+        return [], False
+    y = m.group(1)
+    if digits == 4:
+        return [(y, True)], True
+    mo = int(m.group(2))
+    if not 1 <= mo <= 12:
+        return [], digits == 6
+    mm, name = str(mo), MONTHS[mo - 1]
+    if digits == 6:
+        mp = m.group(2)
+        out = [y + mp, f"{y}-{mp}", f"{y}/{mp}", f"{y}.{mp}", f"{mp}/{y}", f"{mp}.{y}", f"{mp}-{y}",
+               f"{y}-{mm}", f"{mm}/{y}", f"{name} {y}", f"{name[:3]} {y}", f"{name[:3]}. {y}", f"{y}年{mm}月"]
+        return [(f, True) for f in out], True
+    mp, dp = m.group(2), m.group(3)
+    di = int(dp)
+    if not 1 <= di <= 31:
+        return [], False
+    dd, yy = str(di), y[2:]
+    out = [(f, False) for f in (y + mp + dp, f"{y}-{mp}-{dp}", f"{y}/{mp}/{dp}", f"{y}.{mp}.{dp}",
+                                f"{dp}/{mp}/{y}", f"{mp}/{dp}/{y}", f"{dp}.{mp}.{y}", f"{dp}-{mp}-{y}")]
+    bounded = [f"{y}-{mm}-{dd}", f"{y}/{mm}/{dd}", f"{y}.{mm}.{dd}", f"{dd}/{mm}/{y}", f"{mm}/{dd}/{y}",
+               f"{dd}.{mm}.{y}", f"{dd}-{mm}-{y}", f"{dp}/{mp}/{yy}", f"{mp}/{dp}/{yy}", f"{dp}.{mp}.{yy}",
+               f"{dp}-{mp}-{yy}", f"{dd}/{mm}/{yy}", f"{mm}/{dd}/{yy}", f"{dd}.{mm}.{yy}", f"{y}年{mm}月{dd}日"]
+    abbr = name[:3]
+    for day in (dp, dd, dd + ordinal(di)):
+        for n in (name, abbr, abbr + "."):
+            bounded += [f"{day} {n} {y}", f"{n} {day}, {y}", f"{n} {day} {y}"]
+    for day in (dp, dd):
+        bounded += [f"{day}-{abbr}-{y}", f"{day}{abbr}{y}"]
+    out += [(f, True) for f in bounded]
+    return out, False
 
 
 def values_of(elem):
@@ -234,15 +289,15 @@ def pattern(form, kind):
     """A regular expression for a form (text or bytes): a form that begins
     with a digit must not follow one, and one that ends with a digit must
     not be followed by one, but for a full date, which a time may follow; a
-    partial date must not be next to a date's separator with a digit
-    beyond it either."""
+    bounded form must have no ASCII letter or digit beside it, nor a date's
+    separator with a digit beyond it."""
     as_bytes = isinstance(form, bytes)
     text = form.decode("latin-1") if as_bytes else form
     body = re.escape(form)
-    if kind == "partial-date":
+    if kind == "bounded":
         if as_bytes:
             return re.compile(rb"(?<![0-9A-Za-z])(?<![0-9][-/.])" + body + rb"(?![0-9A-Za-z])(?![-/.][0-9])")
-        return re.compile(r"(?<![0-9\w])(?<![0-9][-/.])" + body + r"(?![0-9\w])(?![-/.][0-9])")
+        return re.compile(r"(?<![0-9A-Za-z])(?<![0-9][-/.])" + body + r"(?![0-9A-Za-z])(?![-/.][0-9])")
     if text[:1].isdigit():
         body = (rb"(?<![0-9])" if as_bytes else r"(?<![0-9])") + body
     if text[-1:].isdigit() and kind != "date":
@@ -282,39 +337,52 @@ def encoded(form, codec):
     return b if len(b) >= MIN_LENGTH else None
 
 
+def check_pair(pair, keywords):
+    """Search one result; return the forms searched, skipped and found."""
+    bad = 0
+    orig = pydicom.dcmread(pair["original"], force=True)
+    out = pydicom.dcmread(pair["deidentified"])
+    if str(out.get("PatientIdentityRemoved", "")) != "YES":
+        print(f"{pair['deidentified']}: Patient Identity Removed is not YES")
+        bad += 1
+    needles = Needles()
+    with open(pair["needles"], encoding="utf-8") as f:
+        for n in json.load(f):
+            needles.add(n["kind"], n["value"])
+    gather(orig, keywords, needles)
+    hay = texts(out)
+    raw = raw_without_pixels(pair["deidentified"], out)
+    codecs = codecs_of(orig)
+    for form, (needle, kind) in sorted(needles.forms.items()):
+        rx = pattern(form, kind)
+        hits = [where for where, s in hay if rx.search(s)]
+        if not hits:
+            raws = set()
+            for variant in (form, form.upper()):
+                raws.add(variant.encode("utf-8").lower())
+                raws.update(e.lower() for e in (encoded(variant, c) for c in codecs) if e)
+            hits = ["raw bytes" for b in sorted(raws) if pattern(b, kind).search(raw)]
+        if hits:
+            print(f"{pair['original']}: {needle!r} found as {form!r} in {hits[0]} of the de-identified file")
+            bad += 1
+    return len(needles.forms), needles.skipped, bad
+
+
 def main():
     with open(sys.argv[1], encoding="utf-8") as f:
         spec = json.load(f)
     keywords = set(spec["keywords"])
     searched = skipped = bad = 0
     for pair in spec["files"]:
-        orig = pydicom.dcmread(pair["original"], force=True)
-        out = pydicom.dcmread(pair["deidentified"])
-        if str(out.get("PatientIdentityRemoved", "")) != "YES":
-            print(f"{pair['deidentified']}: Patient Identity Removed is not YES")
+        try:
+            n, s, b = check_pair(pair, keywords)
+        except Exception as e:  # a file pydicom cannot read is no pass
+            print(f"{pair['original']}: refused, a file of the pair cannot be read ({type(e).__name__})")
             bad += 1
-        needles = Needles()
-        with open(pair["needles"], encoding="utf-8") as f:
-            for n in json.load(f):
-                needles.add(n["kind"], n["value"])
-        gather(orig, keywords, needles)
-        searched += len(needles.forms)
-        skipped += needles.skipped
-        hay = texts(out)
-        raw = raw_without_pixels(pair["deidentified"], out)
-        codecs = codecs_of(orig)
-        for form, (needle, kind) in sorted(needles.forms.items()):
-            rx = pattern(form, kind)
-            hits = [where for where, s in hay if rx.search(s)]
-            if not hits:
-                raws = set()
-                for variant in (form, form.upper()):
-                    raws.add(variant.encode("utf-8").lower())
-                    raws.update(e.lower() for e in (encoded(variant, c) for c in codecs) if e)
-                hits = ["raw bytes" for b in sorted(raws) if pattern(b, kind).search(raw)]
-            if hits:
-                print(f"{pair['original']}: {needle!r} found as {form!r} in {hits[0]} of the de-identified file")
-                bad += 1
+            continue
+        searched += n
+        skipped += s
+        bad += b
     print(f"{len(spec['files'])} files, {searched} forms searched for, {skipped} skipped as too short, {bad} found")
     if bad or searched == 0:
         sys.exit(1)

@@ -8,6 +8,10 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- De-identification's clean removes dates in more written forms (no
+  leading zeros, two-digit years, "Mar. 5", ordinals, 2024年3月5日),
+  full-width letters and digits as their ASCII ones, and a year beside a
+  letter of another script; the forms are shared with the check after.
 - The rule that an address is a global unicast address (the S3 endpoint
   check) is written once, in `internal/core/publicaddr`, and used by senders
   too.
@@ -135,6 +139,16 @@ All notable changes to CORIA are written here. The form is
   reception that archived nothing makes no forward job. Adding a sender
   audits its type and destination, never its credential. Not served by the
   API yet.
+- The check after de-identification (`internal/deid/check`): reads a
+  de-identified file with the codec-free reader and searches, in one pass
+  each, every element's decoded text (values of VR UN and OB and the
+  preamble also as UTF-8 and in the received character set) and the raw
+  bytes outside the image data in UTF-8 and the received character set, for
+  every value the profile removed or replaced, in the written forms clean
+  removes; a finding names the element and the kind of value, never the
+  value; a file not read whole (a sequence or item cut short), deflated, or
+  past its bounds is refused, never passed. Agrees with pydicom over the
+  public corpus and synthetic files.
 - A tenant's de-identification profiles and lookup tables are kept in its
   database (both database types, migration 12): each version stored as the
   exact bytes of its document and expanded form with their SHA-256, checked
