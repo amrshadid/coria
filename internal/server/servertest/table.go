@@ -209,6 +209,23 @@ func Contract() Table {
 		// DataService: reader on the tenant for a stream of files.
 		coriav1connect.DataServiceReadFilesProcedure: onTenant(func() *coriav1.ReadFilesRequest { return &coriav1.ReadFilesRequest{} }, master.RoleReader),
 
+		// SenderService: "admin on the tenant." to change or test a sender,
+		// "reader on the tenant." to read one. JobService: "operator on the
+		// tenant." to make, cancel and retry a job, "reader on the tenant."
+		// to read jobs and their failures.
+		coriav1connect.SenderServiceAddSenderProcedure:    onTenant(func() *coriav1.AddSenderRequest { return &coriav1.AddSenderRequest{} }, master.RoleAdmin),
+		coriav1connect.SenderServiceGetSenderProcedure:    onTenant(func() *coriav1.GetSenderRequest { return &coriav1.GetSenderRequest{} }, master.RoleReader),
+		coriav1connect.SenderServiceListSendersProcedure:  onTenant(func() *coriav1.ListSendersRequest { return &coriav1.ListSendersRequest{} }, master.RoleReader),
+		coriav1connect.SenderServiceSetSenderProcedure:    onTenant(func() *coriav1.SetSenderRequest { return &coriav1.SetSenderRequest{} }, master.RoleAdmin),
+		coriav1connect.SenderServiceRemoveSenderProcedure: onTenant(func() *coriav1.RemoveSenderRequest { return &coriav1.RemoveSenderRequest{} }, master.RoleAdmin),
+		coriav1connect.SenderServiceTestSenderProcedure:   onTenant(func() *coriav1.TestSenderRequest { return &coriav1.TestSenderRequest{} }, master.RoleAdmin),
+		coriav1connect.JobServiceCreateJobProcedure:       onTenant(func() *coriav1.CreateJobRequest { return &coriav1.CreateJobRequest{} }, master.RoleOperator),
+		coriav1connect.JobServiceGetJobProcedure:          onTenant(func() *coriav1.GetJobRequest { return &coriav1.GetJobRequest{} }, master.RoleReader),
+		coriav1connect.JobServiceListJobsProcedure:        onTenant(func() *coriav1.ListJobsRequest { return &coriav1.ListJobsRequest{} }, master.RoleReader),
+		coriav1connect.JobServiceCancelJobProcedure:       onTenant(func() *coriav1.CancelJobRequest { return &coriav1.CancelJobRequest{} }, master.RoleOperator),
+		coriav1connect.JobServiceRetryJobProcedure:        onTenant(func() *coriav1.RetryJobRequest { return &coriav1.RetryJobRequest{} }, master.RoleOperator),
+		coriav1connect.JobServiceListJobFailuresProcedure: onTenant(func() *coriav1.ListJobFailuresRequest { return &coriav1.ListJobFailuresRequest{} }, master.RoleReader),
+
 		// MonitorService: "reader on the tenant asked for; operator on the
 		// installation for every tenant."
 		coriav1connect.MonitorServiceGetStatusProcedure: byMessage(
@@ -261,7 +278,7 @@ func tenantRole(name string, role master.Role, operator bool) access.Requirement
 // alone sets on a tenant: SetSetting and UnsetSetting of one need admin on
 // the installation, whatever the scope. Restated from the server's list of
 // settings, so the table stays test data and its test compares the two.
-var installationSet = map[string]bool{"receiver.ports": true, "incoming.limit": true}
+var installationSet = map[string]bool{"receiver.ports": true, "incoming.limit": true, "sender.tenant-max-associations": true}
 
 // settingChange is the requirement of a change of the setting named name
 // on scope.

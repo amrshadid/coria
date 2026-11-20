@@ -21,6 +21,8 @@ var placeSettings = map[string]bool{
 	settings.StorageS3Endpoints:    true,
 	settings.ReceiverBindAddresses: true,
 	settings.ReceiverPorts:         true,
+	settings.SenderDestinations:    true,
+	settings.SenderAllowPlainHTTP:  true,
 }
 
 // checkSettingValue applies the rules of a setting's value that need more
@@ -108,6 +110,32 @@ func (c *core) takenAway(ctx context.Context, scope access.Scope, name, value st
 				if _, err := place.AllowS3(next, s.S3); err != nil {
 					return precondition("the S3 storage " + s.Name + " of the tenant " + name + " uses an endpoint this value no longer allows (" + fault.Message(err) + "); move or remove the storage first")
 				}
+			}
+			return nil
+		})
+	case settings.SenderDestinations:
+		next, err := settings.ParseDestinations(value)
+		if err != nil {
+			return invalid("setting.value", err.Error())
+		}
+		return c.eachSender(ctx, func(tenantName string, s tenant.Sender) error {
+			host, port, _ := senderEndpoint(s)
+			if next.Allowed(host, netip.Addr{}, port) != nil {
+				return precondition("the sender " + s.Name + " of the tenant " + tenantName + " uses a destination this value no longer allows; move or remove the sender first")
+			}
+			return nil
+		})
+	case settings.SenderAllowPlainHTTP:
+		allowed, err := settings.ParseBool(value)
+		if err != nil {
+			return invalid("setting.value", err.Error())
+		}
+		if allowed {
+			return nil
+		}
+		return c.eachSender(ctx, func(tenantName string, s tenant.Sender) error {
+			if _, _, plain := senderEndpoint(s); plain {
+				return precondition("the sender " + s.Name + " of the tenant " + tenantName + " sends over plain http; move or remove the sender before plain http is turned off")
 			}
 			return nil
 		})
@@ -217,4 +245,21 @@ func (c *core) eachTenant(ctx context.Context, fn func(name string, p tenant.Pip
 		}
 		page.Cursor = next
 	}
+}
+
+// eachSender calls fn with every sender of every tenant the master lists,
+// and stops at its first error (eachTenant).
+func (c *core) eachSender(ctx context.Context, fn func(tenantName string, s tenant.Sender) error) error {
+	return c.eachTenant(ctx, func(name string, p tenant.Pipeline) error {
+		senders, err := allSenders(ctx, p)
+		if err != nil {
+			return err
+		}
+		for _, s := range senders {
+			if err := fn(name, s); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

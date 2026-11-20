@@ -72,6 +72,18 @@ var methodTests = map[string]func(t *testing.T){
 	coriav1connect.CatalogServiceListScansProcedure:                 testListScans,
 	coriav1connect.CatalogServiceGetScanProcedure:                   testGetScan,
 	coriav1connect.DataServiceReadFilesProcedure:                    testReadFiles,
+	coriav1connect.SenderServiceAddSenderProcedure:                  testAddSender,
+	coriav1connect.SenderServiceGetSenderProcedure:                  testGetSender,
+	coriav1connect.SenderServiceListSendersProcedure:                testListSenders,
+	coriav1connect.SenderServiceSetSenderProcedure:                  testSetSender,
+	coriav1connect.SenderServiceRemoveSenderProcedure:               testRemoveSender,
+	coriav1connect.SenderServiceTestSenderProcedure:                 testTestSender,
+	coriav1connect.JobServiceCreateJobProcedure:                     testCreateJob,
+	coriav1connect.JobServiceGetJobProcedure:                        testGetJob,
+	coriav1connect.JobServiceListJobsProcedure:                      testListJobs,
+	coriav1connect.JobServiceCancelJobProcedure:                     testCancelJob,
+	coriav1connect.JobServiceRetryJobProcedure:                      testRetryJob,
+	coriav1connect.JobServiceListJobFailuresProcedure:               testListJobFailures,
 }
 
 // contractMethods returns the full procedure name and descriptor of every
@@ -86,6 +98,7 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 		v1.File_coria_v1_reception_proto, v1.File_coria_v1_quarantine_proto,
 		v1.File_coria_v1_monitor_proto, v1.File_coria_v1_metadata_proto,
 		v1.File_coria_v1_catalog_proto, v1.File_coria_v1_data_proto,
+		v1.File_coria_v1_sender_proto, v1.File_coria_v1_job_proto,
 	} {
 		for i := 0; i < f.Services().Len(); i++ {
 			s := f.Services().Get(i)
@@ -105,8 +118,8 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 // here names a method the contract does not have.
 func TestEveryMethod(t *testing.T) {
 	methods := contractMethods()
-	if len(methods) != 49 {
-		t.Errorf("the contract has %d methods; this test was written for 49, so look at what changed", len(methods))
+	if len(methods) != 61 {
+		t.Errorf("the contract has %d methods; this test was written for 61, so look at what changed", len(methods))
 	}
 	var table api.Methods
 	for proc, md := range methods {

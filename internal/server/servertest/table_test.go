@@ -260,6 +260,8 @@ var contractFiles = []protoreflect.FileDescriptor{
 	coriav1.File_coria_v1_monitor_proto,
 	coriav1.File_coria_v1_metadata_proto,
 	coriav1.File_coria_v1_catalog_proto,
+	coriav1.File_coria_v1_sender_proto,
+	coriav1.File_coria_v1_job_proto,
 	coriav1.File_coria_v1_data_proto,
 }
 

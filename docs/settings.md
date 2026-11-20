@@ -26,6 +26,11 @@ fixed list, with each default, bound and scope, is
 | `events.retention` | installation, and each tenant may override | admin on the installation; the tenant's admin for the tenant | `90d` | a period, `1d` to `3650d` |
 | `receiver.header-limit` | installation only | admin on the installation | `64MiB` | a size, `1MiB` to `4GiB`: the most a file's header may hold before the file is quarantined |
 | `api.cors-origins` | installation only | admin on the installation | empty: no page in a browser may read an answer | origins, one per line, as a browser writes them (`https://app.example.org`), or `*` alone for any |
+| `sender.destinations` | installation only | admin on the installation | empty: no sender can be added | one line per destination: a host name (letters, digits, hyphens and dots; a name whose last label is a number or `0x…` is refused, since a resolver reads it as an address), or a range of addresses (CIDR, never `/0`) or one address, then optionally `ports=104,11112-11120` (every port when left out) and, for a host name, `private-address`. Without `private-address` a host name must resolve to a global unicast address. With it, it may also resolve to loopback (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, `fe80::/10`), private use (RFC 1918, `fc00::/7`) or shared address space (`100.64.0.0/10`), and to nothing else special-purpose. The unspecified (`0.0.0.0`, `::`), multicast and broadcast addresses are never a destination, whatever a line says. A value that would take away a destination a sender uses is refused, as is unsetting it |
+| `sender.allow-plain-http` | installation only | admin on the installation | `false` | `true` or `false`: whether a stow sender's URL may be http; turning it off while a sender uses plain http is refused |
+| `sender.max-associations` | installation only | admin on the installation | `32` | `1` to `1024`: the most associations (stow requests) all senders of all tenants hold open at once |
+| `sender.tenant-max-associations` | installation (the default for every tenant) and each tenant | admin on the installation only | `8` | `1` to `1024`: the most associations (stow requests) one tenant's senders hold open at once |
+| `job.failures-kept` | installation, and each tenant may override | admin on the installation; the tenant's admin for the tenant | `10000` | `100` to `1000000`: how many refused instances (and instances sent with a warning) a job lists; the rest are counted, not listed |
 
 ## Where a key may be used from, and how long it lives
 
@@ -63,6 +68,7 @@ server reads when it starts do not change until it is started again.
 | `incoming.limit` | Within five seconds, by default, on the same check |
 | `receiver.header-limit` | Within a second, for the next file read |
 | `api.cors-origins` | Within ten seconds: the server keeps the value it read for that long |
+| `sender.destinations`, `sender.allow-plain-http` | At the next `AddSender` or `SetSender` that changes a destination; a sender that is configured already is checked again when the value is changed |
 | `key.default-lifetime` | At the next key made without an expiry; keys already made keep theirs |
 | `key.max-lifetime` | At the next key made or rotated; keys already made keep theirs |
 | `key.expiry-warning` | At the next status, and within an hour for the report in the log |

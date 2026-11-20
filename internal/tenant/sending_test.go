@@ -51,6 +51,8 @@ func TestSenderValidate(t *testing.T) {
 		"a URL with a user":           func(s *Sender) { s.STOW.URL = "https://u:p@pacs.example/dicom-web" },
 		"a URL with a query":          func(s *Sender) { s.STOW.URL = "https://pacs.example/dicom-web?x=1" },
 		"a URL with a fragment":       func(s *Sender) { s.STOW.URL = "https://pacs.example/dicom-web#x" },
+		"a URL port past 65535":       func(s *Sender) { s.STOW.URL = "https://pacs.example:99999999999999999999/dicom-web" },
+		"a URL port of 0":             func(s *Sender) { s.STOW.URL = "https://pacs.example:0/dicom-web" },
 		"an ftp URL":                  func(s *Sender) { s.STOW.URL = "ftp://pacs.example/" },
 		"TLS with an http URL":        func(s *Sender) { s.STOW.URL = "http://pacs.example/"; s.STOW.TLS = &SenderTLS{} },
 		"bearer with no credential":   func(s *Sender) { s.STOW.CredentialSet = false },
@@ -237,6 +239,7 @@ func TestSenderDestination(t *testing.T) {
 		{Sender{Type: SenderDIMSE, DIMSE: DIMSESender{Host: "2001:db8::1", Port: 104}}, "[2001:db8::1]:104"},
 		{Sender{Type: SenderSTOW, STOW: STOWSender{URL: "https://pacs2.example/dicom-web"}}, "pacs2.example"},
 		{Sender{Type: SenderSTOW, STOW: STOWSender{URL: "https://pacs2.example:8443/dicom-web"}}, "pacs2.example:8443"},
+		{Sender{Type: SenderSTOW, STOW: STOWSender{URL: "https://pacs2.example:99999999999999999999/x"}}, ""},
 	} {
 		if got := c.s.Destination(); got != c.want {
 			t.Errorf("Destination = %q, want %q", got, c.want)

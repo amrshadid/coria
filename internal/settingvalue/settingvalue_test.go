@@ -154,3 +154,40 @@ func TestAccessValues(t *testing.T) {
 		t.Errorf("a stored value its rule refuses: %v", err)
 	}
 }
+
+// TestSenderValues guards the readers of the sender and job settings: the
+// built-in defaults, a tenant's share over the installation's default, a
+// tenant's own count of failures kept, and a stored destination list that
+// its rule refuses answered as the server's fault.
+func TestSenderValues(t *testing.T) {
+	ctx := context.Background()
+	r := settingvalue.Reader{Master: stored{v: map[string]string{
+		settings.SenderDestinations: "pacs.lab.example ports=104", settings.SenderMaxAssociations: "64",
+		settings.SenderTenantMaxAssociations: "4",
+	}}}
+	if d, err := r.SenderDestinations(ctx); err != nil || d.String() != "pacs.lab.example ports=104" {
+		t.Errorf("destinations %v, %v", d, err)
+	}
+	if v, err := r.AllowPlainHTTP(ctx); err != nil || v {
+		t.Errorf("plain http %v, %v: off by default", v, err)
+	}
+	if v, err := r.MaxAssociations(ctx); err != nil || v != 64 {
+		t.Errorf("max associations %v, %v", v, err)
+	}
+	if v, err := r.OnTenant(stored{v: map[string]string{}}).MaxAssociations(ctx); err != nil || v != 4 {
+		t.Errorf("a tenant without its own share takes the installation's: %v, %v", v, err)
+	}
+	if v, err := r.OnTenant(stored{v: map[string]string{settings.SenderTenantMaxAssociations: "2"}}).MaxAssociations(ctx); err != nil || v != 2 {
+		t.Errorf("a tenant's own share: %v, %v", v, err)
+	}
+	if v, err := r.OnTenant(stored{v: map[string]string{}}).FailuresKept(ctx); err != nil || v != 10000 {
+		t.Errorf("failures kept by default: %v, %v", v, err)
+	}
+	if v, err := r.OnTenant(stored{v: map[string]string{settings.JobFailuresKept: "500"}}).FailuresKept(ctx); err != nil || v != 500 {
+		t.Errorf("a tenant's own failures kept: %v, %v", v, err)
+	}
+	broken := settingvalue.Reader{Master: stored{v: map[string]string{settings.SenderDestinations: "10.0.0.1/8"}}}
+	if _, err := broken.SenderDestinations(ctx); fault.KindOf(err) != fault.Internal {
+		t.Errorf("a stored value its rule refuses: %v", err)
+	}
+}

@@ -289,6 +289,8 @@ type env struct {
 	// pipeline and the receivers' supervisor: it records what they are
 	// asked, and answers as a test sets it.
 	parts *testParts
+	// handlers are the services under test, for the seams of export_test.go.
+	handlers api.Handlers
 }
 
 // newEnv returns a running installation with no tenant and no key, whose
@@ -365,6 +367,7 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
+	e.handlers = h
 	api.SetPortProbe(h, func(host string, port int) bool {
 		e.probedHosts.Lock()
 		e.probedHosts.hosts = append(e.probedHosts.hosts, host)
@@ -563,6 +566,8 @@ type clients struct {
 	metadata   coriav1connect.MetadataServiceClient
 	catalog    coriav1connect.CatalogServiceClient
 	data       coriav1connect.DataServiceClient
+	senders    coriav1connect.SenderServiceClient
+	jobs       coriav1connect.JobServiceClient
 }
 
 // as returns clients that call as c.
@@ -594,6 +599,8 @@ func (e *env) as(c caller) clients {
 		metadata:   coriav1connect.NewMetadataServiceClient(cl),
 		catalog:    coriav1connect.NewCatalogServiceClient(cl),
 		data:       coriav1connect.NewDataServiceClient(cl),
+		senders:    coriav1connect.NewSenderServiceClient(cl),
+		jobs:       coriav1connect.NewJobServiceClient(cl),
 	}
 }
 

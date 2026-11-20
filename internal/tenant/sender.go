@@ -263,6 +263,9 @@ func (s Sender) Destination() string {
 			return ""
 		}
 		host, port = u.Hostname(), u.Port()
+		if n, err := strconv.Atoi(port); port != "" && (err != nil || n < 1 || n > 65535) {
+			return ""
+		}
 	}
 	if port == "" {
 		return host
@@ -353,6 +356,13 @@ func (s STOWSender) validate() error {
 	}
 	if err := validateHost(u.Hostname()); err != nil {
 		return err
+	}
+	// A port that does not parse would leave a caller checking the scheme's
+	// default port against the destinations instead of the one written.
+	if p := u.Port(); p != "" {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return invalid("a stow sender's URL port is 1 to 65535")
+		}
 	}
 	if u.Scheme == "http" && s.TLS != nil {
 		return invalid("a stow sender with an http URL has no TLS settings")

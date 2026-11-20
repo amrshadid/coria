@@ -24,6 +24,7 @@ var receiverMask = maskRules{
 		string(tenant.FieldDIMSECallers), string(tenant.FieldDIMSEAnyCaller), string(tenant.FieldDIMSETLS),
 		string(tenant.FieldDIMSETLSCert), string(tenant.FieldDIMSETLSKey), string(tenant.FieldDIMSESOPClasses),
 		string(tenant.FieldDIMSESyntaxes), string(tenant.FieldSTOWKeys), string(tenant.FieldSTOWMaxRequest),
+		string(tenant.FieldForwardTo),
 	},
 	refused: map[string]string{
 		"dimse":       "names a type's whole message: name its fields one by one",
@@ -44,7 +45,10 @@ func trimAE(ae string) string { return strings.Trim(ae, " ") }
 // a mask names from. The durations and the size are returned as given, with
 // whether each was; the defaults are the caller's to fill.
 func receiverValues(field string, m *v1.Receiver) (r tenant.Receiver, quiet, open bool, err error) {
-	r = tenant.Receiver{Name: m.GetName(), Enabled: m.GetEnabled(), Storage: m.GetStorage(), MaxFileBytes: m.GetMaxFileBytes()}
+	r = tenant.Receiver{Name: m.GetName(), Enabled: m.GetEnabled(), Storage: m.GetStorage(), MaxFileBytes: m.GetMaxFileBytes(), ForwardTo: m.GetForwardTo()}
+	if len(r.ForwardTo) > tenant.MaxForwardTo {
+		return r, false, false, invalid(field+".forward_to", "names at most 16 senders")
+	}
 	if dm := m.GetDimse(); dm != nil {
 		r.Type = tenant.ReceiverDIMSE
 		r.DIMSE = tenant.DIMSEReceiver{
@@ -203,6 +207,7 @@ func receiverMessage(r tenant.Receiver, h Health) *v1.Receiver {
 		Name: r.Name, Enabled: r.Enabled, Storage: r.Storage,
 		QuietPeriod: seconds(r.QuietPeriod), MaxOpenTime: seconds(r.MaxOpenTime), MaxFileBytes: r.MaxFileBytes,
 		Health: healthMessage(h), CreateTime: timestamp(r.Created), UpdateTime: timestamp(r.Updated),
+		ForwardTo: r.ForwardTo,
 	}
 	if r.Naming != nil {
 		n := &v1.NamingRule{Subject: r.Naming.Subject, Session: r.Naming.Session, Scan: r.Naming.Scan}

@@ -155,6 +155,27 @@ func (r Reader) CORSOrigins(ctx context.Context) (settings.Origins, error) {
 	return typed(settings.APICORSOrigins, v, err, settings.ParseOrigins)
 }
 
+// SenderDestinations returns the installation's sender.destinations: where
+// a tenant's senders may send.
+func (r Reader) SenderDestinations(ctx context.Context) (settings.Destinations, error) {
+	v, err := r.Installation(ctx, settings.SenderDestinations)
+	return typed(settings.SenderDestinations, v, err, settings.ParseDestinations)
+}
+
+// AllowPlainHTTP returns the installation's sender.allow-plain-http.
+func (r Reader) AllowPlainHTTP(ctx context.Context) (bool, error) {
+	v, err := r.Installation(ctx, settings.SenderAllowPlainHTTP)
+	return typed(settings.SenderAllowPlainHTTP, v, err, settings.ParseBool)
+}
+
+// MaxAssociations returns the installation's sender.max-associations: the
+// most associations and requests all senders of all tenants hold open at
+// once.
+func (r Reader) MaxAssociations(ctx context.Context) (int, error) {
+	v, err := r.Installation(ctx, settings.SenderMaxAssociations)
+	return typed(settings.SenderMaxAssociations, v, err, settings.ParseAssociations)
+}
+
 // OnTenant returns the reader of the settings that apply on the tenant
 // whose store is st.
 func (r Reader) OnTenant(st Source) Tenant { return Tenant{r: r, st: st} }
@@ -233,4 +254,19 @@ func (r Reader) KeyExpiryWarning(ctx context.Context) (time.Duration, error) {
 func (t Tenant) TenantNetworks(ctx context.Context) (settings.Networks, error) {
 	v, err := t.r.Tenant(ctx, t.st, settings.AccessTenantNetworks)
 	return typed(settings.AccessTenantNetworks, v, err, settings.ParseNetworks)
+}
+
+// MaxAssociations returns sender.tenant-max-associations as it applies on
+// the tenant: the most associations and requests its senders hold open at
+// once.
+func (t Tenant) MaxAssociations(ctx context.Context) (int, error) {
+	v, err := t.r.Tenant(ctx, t.st, settings.SenderTenantMaxAssociations)
+	return typed(settings.SenderTenantMaxAssociations, v, err, settings.ParseAssociations)
+}
+
+// FailuresKept returns job.failures-kept as it applies on the tenant: how
+// many failures a job lists.
+func (t Tenant) FailuresKept(ctx context.Context) (int, error) {
+	v, err := t.r.Tenant(ctx, t.st, settings.JobFailuresKept)
+	return typed(settings.JobFailuresKept, v, err, settings.ParseFailuresKept)
 }

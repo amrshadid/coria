@@ -31,6 +31,14 @@ func HoldServerReads(h Handlers) func() {
 // binding it, so a test sees each port tried and on which address.
 func SetPortProbe(h Handlers, probe place.Probe) { h.c.seams.probe = probe }
 
+// SetSenderHealths makes the services of h answer a sender's health from
+// healths, as the part of the server that sends would.
+func SetSenderHealths(h Handlers, healths SenderHealths) { h.c.senders = healths }
+
+// SetSenderTests makes the services of h test a sender's peer through
+// tester, as the part of the server that sends would.
+func SetSenderTests(h Handlers, tester SenderTester) { h.c.senderTests = tester }
+
 // Pending is the table of the methods whose service is not served yet,
 // with the methods of Methods, so a test holds each of its lines to the
 // method's Role line before the service is served.

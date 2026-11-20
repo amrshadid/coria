@@ -8,6 +8,9 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- The rule that an address is a global unicast address (the S3 endpoint
+  check) is written once, in `internal/core/publicaddr`, and used by senders
+  too.
 - The server's TLS certificate is read again from its files when they
   change, at most every five seconds: a renewed certificate is served without
   a restart, and files that do not load are logged while the last good one is
@@ -170,6 +173,24 @@ All notable changes to CORIA are written here. The form is
   Where senders may send is the installation's (sender.destinations,
   sender.allow-plain-http). The services are not served yet. Both clients
   have them as `senders` and `jobs`.
+- SenderService and JobService are served: a tenant's admin adds, reads,
+  changes, removes and tests senders (a DIMSE peer or a STOW-RS service), and
+  an operator makes, lists, cancels and retries send jobs of a subject, a
+  session or a scan and reads what a job refused. A stow sender's credential
+  is sealed with the installation key and is never answered, logged or
+  audited. A receiver may name senders in `forward_to`; the tenant status
+  lists its jobs in progress and its senders.
+- Settings `sender.destinations` (the hosts and address ranges, with
+  optional ports, that senders may reach; none by default),
+  `sender.allow-plain-http`, `sender.max-associations`,
+  `sender.tenant-max-associations` and `job.failures-kept`. A name that
+  resolves to a loopback, link-local or private address is refused unless
+  its line says `private-address`; the unspecified, multicast and broadcast
+  addresses are never allowed; a range of the whole address space and a host
+  name a resolver reads as a number are refused. A sender's change is checked
+  against the destinations in one step with its write, and a value that would
+  take away a destination or plain http a sender uses is refused, as is
+  unsetting it.
 - The contract of de-identification profiles: ProfileService makes a
   profile's versions, reads and lists them, checks a document without storing
   it, and lists the bases a profile may build on. A profile is a document of

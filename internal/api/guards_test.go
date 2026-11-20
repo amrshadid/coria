@@ -143,6 +143,32 @@ func tenantMethods(name string) map[string]func(clients) outcome {
 		"GetStatus": func(c clients) outcome {
 			return call(c.monitor.GetStatus, &v1.GetStatusRequest{Scope: tenantScope(name)})
 		},
+		"AddSender": func(c clients) outcome {
+			return call(c.senders.AddSender, &v1.AddSenderRequest{Tenant: name, Sender: dimseTo("pacs", "pacs.lab.example", 104)})
+		},
+		"GetSender": func(c clients) outcome {
+			return call(c.senders.GetSender, &v1.GetSenderRequest{Tenant: name, Name: "pacs"})
+		},
+		"ListSenders": func(c clients) outcome { return call(c.senders.ListSenders, &v1.ListSendersRequest{Tenant: name}) },
+		"SetSender": func(c clients) outcome {
+			return call(c.senders.SetSender, &v1.SetSenderRequest{Tenant: name, Sender: &v1.Sender{Name: "pacs"}, UpdateMask: mask("enabled")})
+		},
+		"RemoveSender": func(c clients) outcome {
+			return call(c.senders.RemoveSender, &v1.RemoveSenderRequest{Tenant: name, Name: "pacs"})
+		},
+		"TestSender": func(c clients) outcome {
+			return call(c.senders.TestSender, &v1.TestSenderRequest{Tenant: name, Name: "pacs"})
+		},
+		"CreateJob": func(c clients) outcome {
+			return call(c.jobs.CreateJob, &v1.CreateJobRequest{Tenant: name, Kind: &v1.CreateJobRequest_Send{Send: target("pacs", "S1")}})
+		},
+		"GetJob":    func(c clients) outcome { return call(c.jobs.GetJob, &v1.GetJobRequest{Tenant: name, Id: "j1"}) },
+		"ListJobs":  func(c clients) outcome { return call(c.jobs.ListJobs, &v1.ListJobsRequest{Tenant: name}) },
+		"CancelJob": func(c clients) outcome { return call(c.jobs.CancelJob, &v1.CancelJobRequest{Tenant: name, Id: "j1"}) },
+		"RetryJob":  func(c clients) outcome { return call(c.jobs.RetryJob, &v1.RetryJobRequest{Tenant: name, Id: "j1"}) },
+		"ListJobFailures": func(c clients) outcome {
+			return call(c.jobs.ListJobFailures, &v1.ListJobFailuresRequest{Tenant: name, Id: "j1"})
+		},
 		"Watch": func(c clients) outcome { return watchOnce(c, &v1.WatchRequest{Scope: tenantScope(name)}) },
 	}
 }

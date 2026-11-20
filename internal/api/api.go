@@ -78,6 +78,14 @@ type Config struct {
 	// Feeds streams tenants' events for Watch. Nil answers every Watch
 	// unavailable.
 	Feeds Feeds
+	// SenderHealths answers a sender's health, and is told when a tenant's
+	// senders change if it implements SenderChanges. Nil answers every
+	// sender down when disabled and unknown otherwise, as a server that
+	// sends nothing yet (unknownSenders).
+	SenderHealths SenderHealths
+	// SenderTests tries a sender's peer for TestSender. Nil answers every
+	// test unavailable (noSenderTests).
+	SenderTests SenderTester
 	// STOW finds the running stow receiver that takes a key's STOW-RS
 	// requests. Nil takes none: every such request is refused.
 	STOW *stow.Directory
@@ -111,6 +119,10 @@ type Handlers struct {
 	Catalog coriav1connect.CatalogServiceHandler
 	// Data is DataService.
 	Data coriav1connect.DataServiceHandler
+	// Senders is SenderService.
+	Senders coriav1connect.SenderServiceHandler
+	// Jobs is JobService.
+	Jobs coriav1connect.JobServiceHandler
 
 	// c is what the services share, kept for the test seams
 	// (export_test.go).
@@ -134,7 +146,7 @@ func New(cfg Config) (Handlers, error) {
 	c := &core{
 		access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known,
 		keys: cfg.Keys, now: cfg.Now, receivers: cfg.Receivers, incoming: cfg.Incoming, headers: cfg.Headers,
-		live: cfg.Live, feeds: cfg.Feeds, stowReceivers: cfg.STOW,
+		live: cfg.Live, feeds: cfg.Feeds, stowReceivers: cfg.STOW, senders: cfg.SenderHealths, senderTests: cfg.SenderTests,
 	}
 	if c.live == nil {
 		c.live = noLive{}
@@ -144,6 +156,12 @@ func New(cfg Config) (Handlers, error) {
 	}
 	if c.receivers == nil {
 		c.receivers = notStarted{}
+	}
+	if c.senders == nil {
+		c.senders = unknownSenders{}
+	}
+	if c.senderTests == nil {
+		c.senderTests = noSenderTests{}
 	}
 	if c.incoming == nil {
 		c.incoming = leaveForPipeline{}
@@ -164,6 +182,8 @@ func New(cfg Config) (Handlers, error) {
 		Metadata:   metadataService{c},
 		Catalog:    catalogService{c},
 		Data:       dataService{c},
+		Senders:    senderService{c},
+		Jobs:       jobService{c},
 		c:          c,
 	}, nil
 }
@@ -182,6 +202,8 @@ func (h Handlers) Register(srv *connect.Server) {
 	coriav1connect.RegisterMetadataServiceHandler(srv, h.Metadata)
 	coriav1connect.RegisterCatalogServiceHandler(srv, h.Catalog)
 	coriav1connect.RegisterDataServiceHandler(srv, h.Data)
+	coriav1connect.RegisterSenderServiceHandler(srv, h.Senders)
+	coriav1connect.RegisterJobServiceHandler(srv, h.Jobs)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only
@@ -225,6 +247,10 @@ type core struct {
 	now func() time.Time
 	// receivers answers a receiver's health.
 	receivers Receivers
+	// senders answers a sender's health.
+	senders SenderHealths
+	// senderTests tries a sender's peer.
+	senderTests SenderTester
 	// incoming carries a release, a retry and the removal of bytes to the
 	// tenant's reception pipeline.
 	incoming Incoming

@@ -48,6 +48,12 @@ func TestBuiltin(t *testing.T) {
 		AccessBlockTime:       {InstallationOnly, "15m", false},
 		KeyMaxLifetime:        {InstallationOnly, "3650d", false},
 		KeyExpiryWarning:      {InstallationOnly, "7d", false},
+
+		SenderDestinations:          {InstallationOnly, "", false},
+		SenderAllowPlainHTTP:        {InstallationOnly, "false", false},
+		SenderMaxAssociations:       {InstallationOnly, "32", false},
+		SenderTenantMaxAssociations: {SetByInstallation, "8", false},
+		JobFailuresKept:             {Ordinary, "10000", false},
 	}
 	if got := tab.Names(); len(got) != len(want) {
 		t.Errorf("names %v, want the %d this test knows", got, len(want))

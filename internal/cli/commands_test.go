@@ -403,28 +403,33 @@ func TestSettingCommands(t *testing.T) {
 	expect(t, r.run("setting", "list", "--tenant", "lab1"), 0,
 		"NAME            VALUE  FROM\ntest.retention  90d    tenant lab1 (override)\n", "")
 	expect(t, r.run("setting", "list"), 0,
-		"NAME                     VALUE            FROM\n"+
-			"access.allowed-networks                   built-in default\n"+
-			"access.block-time        15m              built-in default\n"+
-			"access.denied-networks                    built-in default\n"+
-			"access.failure-limit     10               built-in default\n"+
-			"access.failure-window    1m               built-in default\n"+
-			"access.forwarded-header  x-forwarded-for  built-in default\n"+
-			"access.tenant-networks                    built-in default\n"+
-			"access.trusted-proxies                    built-in default\n"+
-			"api.cors-origins                          built-in default\n"+
-			"events.retention         90d              built-in default\n"+
-			"incoming.limit           0                built-in default\n"+
-			"key.default-lifetime     90d              built-in default\n"+
-			"key.expiry-warning       7d               built-in default\n"+
-			"key.max-lifetime         3650d            built-in default\n"+
-			"receiver.bind-addresses                   built-in default\n"+
-			"receiver.header-limit    64MiB            built-in default\n"+
-			"receiver.ports                            built-in default\n"+
-			"storage.directory-roots                   built-in default\n"+
-			"storage.reserve          10%,10GiB        built-in default\n"+
-			"storage.s3-endpoints                      built-in default\n"+
-			"test.retention           400d             installation\n", "")
+		"NAME                            VALUE            FROM\n"+
+			"access.allowed-networks                          built-in default\n"+
+			"access.block-time               15m              built-in default\n"+
+			"access.denied-networks                           built-in default\n"+
+			"access.failure-limit            10               built-in default\n"+
+			"access.failure-window           1m               built-in default\n"+
+			"access.forwarded-header         x-forwarded-for  built-in default\n"+
+			"access.tenant-networks                           built-in default\n"+
+			"access.trusted-proxies                           built-in default\n"+
+			"api.cors-origins                                 built-in default\n"+
+			"events.retention                90d              built-in default\n"+
+			"incoming.limit                  0                built-in default\n"+
+			"job.failures-kept               10000            built-in default\n"+
+			"key.default-lifetime            90d              built-in default\n"+
+			"key.expiry-warning              7d               built-in default\n"+
+			"key.max-lifetime                3650d            built-in default\n"+
+			"receiver.bind-addresses                          built-in default\n"+
+			"receiver.header-limit           64MiB            built-in default\n"+
+			"receiver.ports                                   built-in default\n"+
+			"sender.allow-plain-http         false            built-in default\n"+
+			"sender.destinations                              built-in default\n"+
+			"sender.max-associations         32               built-in default\n"+
+			"sender.tenant-max-associations  8                built-in default\n"+
+			"storage.directory-roots                          built-in default\n"+
+			"storage.reserve                 10%,10GiB        built-in default\n"+
+			"storage.s3-endpoints                             built-in default\n"+
+			"test.retention                  400d             installation\n", "")
 	expect(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1"), 0,
 		"tenant lab1 has no override of test.retention; now applies: 400d (installation)\n", "")
 	expect(t, r.run("setting", "list", "--tenant", "lab1"), 0, "NAME  VALUE  FROM\n", "")
@@ -436,7 +441,7 @@ func TestSettingCommands(t *testing.T) {
 		t.Errorf("get --json: %v", doc)
 	}
 	document(t, r.run("setting", "set", "key.default-lifetime", "30d", "--json"))
-	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 21 {
+	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 26 {
 		t.Errorf("list --json: %v", ss)
 	}
 	document(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1", "--json"))

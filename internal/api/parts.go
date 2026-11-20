@@ -185,10 +185,12 @@ type Live interface {
 }
 
 // TenantLive is what the server holds in memory of one tenant: the
-// receivers as the part that runs them last read them, the space it last
-// measured of the storages they write to, and the pipeline's throughput.
+// receivers as the part that runs them last read them, the senders as the
+// part that sends last read them, the space it last measured of the
+// storages the receivers write to, and the pipeline's throughput.
 type TenantLive struct {
 	Receivers  []tenant.Receiver
+	Senders    []tenant.Sender
 	Storages   map[string]StorageSpace
 	Throughput Throughput
 }

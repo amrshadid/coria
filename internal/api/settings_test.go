@@ -246,25 +246,27 @@ func testListSettings(t *testing.T) {
 			check: func(t *testing.T, o outcome) {
 				want := "access.allowed-networks=@/BUILT_IN,access.block-time=15m@/BUILT_IN,access.denied-networks=@/BUILT_IN,access.failure-limit=10@/BUILT_IN," +
 					"access.failure-window=1m@/BUILT_IN,access.forwarded-header=x-forwarded-for@/BUILT_IN,access.tenant-networks=@/BUILT_IN,access.trusted-proxies=@/BUILT_IN," +
-					"api.cors-origins=@/BUILT_IN,events.retention=90d@/BUILT_IN,incoming.limit=0@/BUILT_IN,key.default-lifetime=90d@/BUILT_IN," +
+					"api.cors-origins=@/BUILT_IN,events.retention=90d@/BUILT_IN,incoming.limit=0@/BUILT_IN,job.failures-kept=10000@/BUILT_IN,key.default-lifetime=90d@/BUILT_IN," +
 					"key.expiry-warning=7d@/BUILT_IN,key.max-lifetime=3650d@/BUILT_IN," +
-					"receiver.bind-addresses=@/BUILT_IN,receiver.header-limit=64MiB@/BUILT_IN,receiver.ports=@/BUILT_IN,storage.directory-roots=@/BUILT_IN," +
+					"receiver.bind-addresses=@/BUILT_IN,receiver.header-limit=64MiB@/BUILT_IN,receiver.ports=@/BUILT_IN,sender.allow-plain-http=false@/BUILT_IN," +
+					"sender.destinations=@/BUILT_IN,sender.max-associations=32@/BUILT_IN,sender.tenant-max-associations=8@/BUILT_IN,storage.directory-roots=@/BUILT_IN," +
 					"storage.reserve=10%,10GiB@/BUILT_IN,storage.s3-endpoints=@/BUILT_IN,test.allotted=@/BUILT_IN,test.retention=100d@/INSTALLATION,test.text=@/BUILT_IN"
 				if got := names(o); got != want {
 					t.Errorf("got %q, want %q", got, want)
 				}
 			}},
-		{name: "installation, a page of 12", as: f.instReader, call: list(installation(), 12, ""),
+		{name: "installation, a page of 14", as: f.instReader, call: list(installation(), 14, ""),
 			check: func(t *testing.T, o outcome) {
 				token = o.res.(*v1.ListSettingsResponse).GetNextPageToken()
-				if got := names(o); !strings.HasPrefix(got, "access.allowed-networks=") || !strings.HasSuffix(got, "key.default-lifetime=90d@/BUILT_IN") || token == "" {
+				if got := names(o); !strings.HasPrefix(got, "access.allowed-networks=") || !strings.HasSuffix(got, "key.expiry-warning=7d@/BUILT_IN") || token == "" {
 					t.Errorf("got %q, token %q", got, token)
 				}
 			}},
-		{name: "installation, the next page", as: f.instReader, call: func(c clients) outcome { return list(installation(), 12, token)(c) },
+		{name: "installation, the next page", as: f.instReader, call: func(c clients) outcome { return list(installation(), 14, token)(c) },
 			check: func(t *testing.T, o outcome) {
-				if got, next := names(o), o.res.(*v1.ListSettingsResponse).GetNextPageToken(); got != "key.expiry-warning=7d@/BUILT_IN,key.max-lifetime=3650d@/BUILT_IN,"+
-					"receiver.bind-addresses=@/BUILT_IN,receiver.header-limit=64MiB@/BUILT_IN,receiver.ports=@/BUILT_IN,storage.directory-roots=@/BUILT_IN,"+
+				if got, next := names(o), o.res.(*v1.ListSettingsResponse).GetNextPageToken(); got != "key.max-lifetime=3650d@/BUILT_IN,"+
+					"receiver.bind-addresses=@/BUILT_IN,receiver.header-limit=64MiB@/BUILT_IN,receiver.ports=@/BUILT_IN,sender.allow-plain-http=false@/BUILT_IN,"+
+					"sender.destinations=@/BUILT_IN,sender.max-associations=32@/BUILT_IN,sender.tenant-max-associations=8@/BUILT_IN,storage.directory-roots=@/BUILT_IN,"+
 					"storage.reserve=10%,10GiB@/BUILT_IN,storage.s3-endpoints=@/BUILT_IN,test.allotted=@/BUILT_IN,test.retention=100d@/INSTALLATION,test.text=@/BUILT_IN" || next != "" {
 					t.Errorf("got %q, token %q", got, next)
 				}

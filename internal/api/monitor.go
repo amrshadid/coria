@@ -95,7 +95,7 @@ func (c *core) tenantStatus(ctx context.Context, name string, st tenant.Store) *
 		FilesReceivedPerSecond: live.Throughput.FilesReceived, BytesReceivedPerSecond: live.Throughput.BytesReceived,
 		FilesArchivedPerSecond: live.Throughput.FilesArchived, BytesArchivedPerSecond: live.Throughput.BytesArchived,
 	}
-	receivers := live.Receivers
+	receivers, senders := live.Receivers, live.Senders
 	if st != nil {
 		var snap tenant.StatusSnapshot
 		feed, ok := st.(tenant.Events)
@@ -116,6 +116,9 @@ func (c *core) tenantStatus(ctx context.Context, name string, st tenant.Store) *
 				// from the database, each with the health that says so.
 				receivers, _ = allReceivers(ctx, p)
 			}
+			if senders == nil {
+				senders, _ = allSenders(ctx, p)
+			}
 		}
 		if limit, err := c.values().OnTenant(st).IncomingLimit(ctx); err == nil {
 			ts.IncomingLimitBytes = limit
@@ -127,6 +130,12 @@ func (c *core) tenantStatus(ctx context.Context, name string, st tenant.Store) *
 			rs.AnyCaller = r.DIMSE.AnyCaller
 		}
 		ts.Receivers = append(ts.Receivers, rs)
+	}
+	for _, sn := range senders {
+		h := c.senders.SenderHealth(name, sn)
+		ts.Senders = append(ts.Senders, &v1.SenderStatus{
+			Sender: sn.Name, Health: senderHealthMessage(h), OpenAssociations: int32(h.OpenAssociations), //nolint:gosec // G115: at most 1024.
+		})
 	}
 	return ts
 }
@@ -140,6 +149,9 @@ func countsMessage(s tenant.StatusSnapshot) *v1.TenantCounts {
 	}
 	for _, sc := range s.InProgress {
 		m.ReceptionsInProgress = append(m.ReceptionsInProgress, &v1.ReceptionStepCount{Step: stepOf(sc.Step), Receptions: sc.Receptions})
+	}
+	for _, jc := range s.JobsInProgress {
+		m.JobsInProgress = append(m.JobsInProgress, &v1.JobStateCount{State: enumOf[v1.JobState](v1.JobState_value, "JOB_STATE_", string(jc.State)), Jobs: jc.Jobs})
 	}
 	return m
 }
@@ -184,4 +196,10 @@ func allStorages(ctx context.Context, p tenant.Pipeline) ([]tenant.Storage, erro
 // allReceivers reads every receiver of the tenant, page after page.
 func allReceivers(ctx context.Context, p tenant.Pipeline) ([]tenant.Receiver, error) {
 	return wholeList(ctx, "receivers", p.ListReceivers)
+}
+
+// allSenders reads every sender of the tenant, page after page, ordered by
+// name.
+func allSenders(ctx context.Context, p tenant.Pipeline) ([]tenant.Sender, error) {
+	return wholeList(ctx, "senders", p.ListSenders)
 }
