@@ -124,6 +124,12 @@ const (
 	// DefaultStopTimeout bounds a pipeline's stop when the server stops or
 	// its tenant's database is replaced.
 	DefaultStopTimeout = 30 * time.Second
+	// DefaultStartTimeout bounds a pipeline's start: its Recover reads
+	// every file the database names in the incoming area and every file
+	// there, so a large leftover after a crash takes longer than a stop,
+	// and a start cut short is tried again from the beginning; a bound as
+	// short as the stop's could keep a tenant's receivers down for good.
+	DefaultStartTimeout = 15 * time.Minute
 	// opTimeout bounds one read or write of a tenant's database the
 	// supervisor makes, so a database that stops answering holds its own
 	// worker only for that long.
@@ -162,6 +168,9 @@ type Config struct {
 	MinBackoff, MaxBackoff time.Duration
 	// StopTimeout bounds a pipeline's stop; 0 is DefaultStopTimeout.
 	StopTimeout time.Duration
+	// StartTimeout bounds a pipeline's start; 0 is DefaultStartTimeout. A
+	// start also ends when the supervisor stops or the tenant goes.
+	StartTimeout time.Duration
 	// Logger receives the supervisor's lines: names, reasons and counts.
 	// Nil discards them.
 	Logger *slog.Logger
@@ -222,6 +231,9 @@ func New(cfg Config) (*Supervisor, error) {
 	}
 	if cfg.StopTimeout <= 0 {
 		cfg.StopTimeout = DefaultStopTimeout
+	}
+	if cfg.StartTimeout <= 0 {
+		cfg.StartTimeout = DefaultStartTimeout
 	}
 	log := cfg.Logger
 	if log == nil {

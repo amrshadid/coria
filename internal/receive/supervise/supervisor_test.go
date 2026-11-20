@@ -2,6 +2,8 @@ package supervise_test
 
 import (
 	"context"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -270,6 +272,110 @@ func TestADecisionNeverReachesAStoppingPipeline(t *testing.T) {
 	})
 	if handedWhileStopping.Load() {
 		t.Fatal("a pipeline that was stopping was handed to a decision")
+	}
+}
+
+// TestARemovalWhileNoPipelineRunsIsDoneByTheNext guards the removal of
+// bytes after a rejection or a discard handed over while the tenant's
+// pipeline restarts: no pipeline is published then, and the removal is kept
+// and handed to the next pipeline once it has started, not dropped until
+// the start after; one handed over while a pipeline runs reaches it at once.
+func TestARemovalWhileNoPipelineRunsIsDoneByTheNext(t *testing.T) {
+	r := newRig(t)
+	r.add("ct", 11112, true)
+	r.start()
+	r.waitFor("a pipeline handed out", func() bool { _, ok := r.sup.Decisions("lab"); return ok })
+	r.mu.Lock()
+	first := r.pipelines[0]
+	r.mu.Unlock()
+	ctx := context.Background()
+	if err := r.sup.RemoveRejected(ctx, "lab", "ct/aa/live"); err != nil {
+		t.Fatal(err)
+	}
+	if got := first.removals(); !slices.Equal(got, []string{"rejected:ct/aa/live"}) {
+		t.Fatalf("a running pipeline was handed %q", got)
+	}
+	errs := make(chan error, 2)
+	first.duringStop = func() {
+		errs <- r.sup.RemoveRejected(ctx, "lab", "ct/bb/kept")
+		errs <- r.sup.RemoveDiscarded(ctx, "lab", "reception-1")
+	}
+	r.ts.reopen(t)
+	r.waitFor("the new pipeline handed out", func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if len(r.pipelines) != 2 {
+			return false
+		}
+		d, ok := r.sup.Decisions("lab")
+		return ok && d == supervise.Decisions(r.pipelines[1])
+	})
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatalf("a removal while no pipeline runs: %v", err)
+		}
+	}
+	r.mu.Lock()
+	second := r.pipelines[1]
+	r.mu.Unlock()
+	want := []string{"rejected:ct/bb/kept", "discarded:reception-1"}
+	if got := second.removals(); !slices.Equal(got, want) {
+		t.Fatalf("the next pipeline was handed %q, want %q", got, want)
+	}
+	if got := first.removals(); len(got) != 1 {
+		t.Fatalf("the stopping pipeline was handed %q", got)
+	}
+	if err := r.sup.RemoveRejected(ctx, "nobody", "ct/cc/x"); err != nil {
+		t.Fatalf("a removal for a tenant not run: %v", err)
+	}
+}
+
+// TestAPipelineStartMayOutlastAStop guards a pipeline's start, which reads
+// the whole incoming area after a crash: it is bounded by its own timeout,
+// not by the stop's, so a start longer than a stop still ends with the
+// pipeline running instead of being cut short and tried again from the
+// beginning for ever.
+func TestAPipelineStartMayOutlastAStop(t *testing.T) {
+	r := newRig(t)
+	const stop = 20 * time.Millisecond
+	r.edit = func(c *supervise.Config) { c.StopTimeout = stop; c.StartTimeout = time.Minute }
+	r.startWait = func(ctx context.Context) error {
+		select {
+		case <-time.After(10 * stop):
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	r.add("ct", 11112, true)
+	r.start()
+	r.waitFor("a pipeline started", func() bool { _, ok := r.sup.Decisions("lab"); return ok })
+}
+
+// TestAStopEndsALongPipelineStart guards the supervisor's stop while a
+// tenant's pipeline is starting: the start is ended at once, not waited
+// for until its bound.
+func TestAStopEndsALongPipelineStart(t *testing.T) {
+	r := newRig(t)
+	r.edit = func(c *supervise.Config) { c.StartTimeout = time.Hour }
+	starting := make(chan struct{})
+	var once sync.Once
+	r.startWait = func(ctx context.Context) error {
+		once.Do(func() { close(starting) })
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	r.add("ct", 11112, true)
+	r.start()
+	<-starting
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	begun := time.Now()
+	if err := r.sup.Stop(ctx); err != nil {
+		t.Fatalf("the stop: %v", err)
+	}
+	if d := time.Since(begun); d > 10*time.Second {
+		t.Fatalf("the stop waited %v for a start", d)
 	}
 }
 

@@ -48,6 +48,9 @@ type tenantRun struct {
 	space    spaceState
 	// view is what the worker last published for View.
 	view atomic.Pointer[viewState]
+	// deferred are the removals handed over while no pipeline was
+	// published, done by the next one (runDeferred).
+	deferred deferredRemovals
 
 	failures *failureGroups
 }
@@ -179,14 +182,23 @@ func (t *tenantRun) readReceivers(p tenant.Pipeline) ([]tenant.Receiver, error) 
 }
 
 // restartPipeline stops the pipeline over the old database, if any, and
-// starts one over st. One pipeline runs per tenant at a time, since each
+// starts one over st, within StartTimeout. One pipeline runs per tenant at a time, since each
 // owns the tenant's incoming area. Stores that arrive meanwhile are refused
 // as a temporary failure by the sink.
 func (t *tenantRun) restartPipeline(st tenant.Store, p tenant.Pipeline) {
 	t.stopPipeline()
 	t.store = st
-	ctx, cancel := context.WithTimeout(t.sup.ctx, t.sup.cfg.StopTimeout)
+	ctx, cancel := context.WithTimeout(t.sup.ctx, t.sup.cfg.StartTimeout)
 	defer cancel()
+	go func() {
+		// A long start holds this worker; its retirement (the supervisor's
+		// stop, the tenant's removal) ends it rather than wait for its bound.
+		select {
+		case <-t.retired:
+		case <-ctx.Done():
+		}
+		cancel()
+	}()
 	g := Gates{
 		LowDisk:   func(context.Context) (bool, error) { return t.gates.Load().incomingFull, nil },
 		OverLimit: func(context.Context) (bool, error) { return t.gates.Load().overLimit, nil },
@@ -200,8 +212,11 @@ func (t *tenantRun) restartPipeline(st tenant.Store, p tenant.Pipeline) {
 	t.sink.set(pl)
 	// Decisions reach the new pipeline at once, not after the rest of the
 	// reconcile: a removal handed to a pipeline that has stopped is put off
-	// to the next start.
+	// to the next start. Then the removals kept while none ran.
 	t.publish()
+	if d, ok := pl.(Decisions); ok {
+		t.runDeferred(d)
+	}
 }
 
 // stopPipeline stops the running pipeline, if any, within StopTimeout.

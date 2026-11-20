@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -144,6 +145,18 @@ type pipeline struct {
 	gates   supervise.Gates
 	// duringStop, when set, runs inside Stop, before it returns.
 	duringStop func()
+
+	mu sync.Mutex
+	// removed lists the removals handed to it, in order: "rejected:<path>"
+	// and "discarded:<reception>".
+	removed []string
+}
+
+// removals returns the removals handed to the fake.
+func (p *pipeline) removals() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.removed)
 }
 
 func (p *pipeline) Accept(context.Context, receive.Arrival) receive.Outcome {
@@ -164,8 +177,18 @@ func (p *pipeline) Release(context.Context, tenant.Release, master.AuditEntry, t
 func (p *pipeline) Retry(context.Context, string, string, string, master.AuditEntry, tenant.Guard) (tenant.Reception, tenant.Reception, error) {
 	return tenant.Reception{}, tenant.Reception{}, nil
 }
-func (p *pipeline) RemoveRejected(string) error                   { return nil }
-func (p *pipeline) RemoveDiscarded(context.Context, string) error { return nil }
+func (p *pipeline) RemoveRejected(path string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.removed = append(p.removed, "rejected:"+path)
+	return nil
+}
+func (p *pipeline) RemoveDiscarded(_ context.Context, id string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.removed = append(p.removed, "discarded:"+id)
+	return nil
+}
 
 // rig is a supervisor over one tenant with fake listeners and pipelines.
 type rig struct {
@@ -186,6 +209,11 @@ type rig struct {
 	wakes     atomic.Int64
 	// expires, when set, is the certificate end of every listener made.
 	expires atomic.Pointer[time.Time]
+	// startWait, when set, runs at the start of every pipeline, which
+	// fails with its error; edit, when set, changes the supervisor's
+	// configuration before it is made.
+	startWait func(ctx context.Context) error
+	edit      func(*supervise.Config)
 }
 
 // newRig makes the tenant with a storage "main" and starts nothing.
@@ -210,10 +238,15 @@ func newRig(t *testing.T) *rig {
 // start makes and starts the supervisor.
 func (r *rig) start() {
 	r.t.Helper()
-	sup, err := supervise.New(supervise.Config{
+	cfg := supervise.Config{
 		Tenants: r.ts, Installation: r.inst, Now: r.clock.Now,
 		Interval: time.Hour, SpaceInterval: time.Nanosecond, MinBackoff: time.Millisecond, MaxBackoff: 5 * time.Millisecond,
-		StartPipeline: func(_ context.Context, _ string, st tenant.Pipeline, g supervise.Gates) (supervise.Pipeline, error) {
+		StartPipeline: func(ctx context.Context, _ string, st tenant.Pipeline, g supervise.Gates) (supervise.Pipeline, error) {
+			if r.startWait != nil {
+				if err := r.startWait(ctx); err != nil {
+					return nil, err
+				}
+			}
 			p := &pipeline{store: st, gates: g}
 			r.mu.Lock()
 			r.pipelines = append(r.pipelines, p)
@@ -240,7 +273,11 @@ func (r *rig) start() {
 			return usageStore{free: r.storage.Load(), total: r.total}, nil
 		},
 		Wake: func(string) { r.wakes.Add(1) },
-	})
+	}
+	if r.edit != nil {
+		r.edit(&cfg)
+	}
+	sup, err := supervise.New(cfg)
 	if err != nil {
 		r.t.Fatal(err)
 	}

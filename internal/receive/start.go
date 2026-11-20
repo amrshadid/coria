@@ -11,11 +11,29 @@ import (
 // Start reconciles the incoming area with the database (Recover), queues the
 // units a crash left missing, and starts the batcher and the workers. Files
 // are accepted from then on. It returns what Recover found. A second Start
-// is an error.
+// is an error. A Start that fails ends the pipeline as Stop would: it
+// releases the incoming area New opened, and the caller makes a new
+// pipeline to try again; files it found landed and could not record yet are
+// found again by the next one's Recover.
 func (p *Pipeline) Start(ctx context.Context) (RecoverReport, error) {
-	if p.running.Load() {
-		return RecoverReport{}, fault.New(fault.Internal, "the reception pipeline is already running")
+	p.mu.Lock()
+	ended := p.stopping
+	p.mu.Unlock()
+	if p.running.Load() || ended {
+		return RecoverReport{}, fault.New(fault.Internal, "the reception pipeline is already running or has ended")
 	}
+	rep, err := p.start(ctx)
+	if err != nil {
+		// Without this every failed start, retried by the supervisor for
+		// as long as the database refuses, left the area's directory open.
+		_ = p.Stop(context.WithoutCancel(ctx))
+	}
+	return rep, err
+}
+
+// start is Start up to its end; no goroutine is started before its last
+// failure can happen.
+func (p *Pipeline) start(ctx context.Context) (RecoverReport, error) {
 	p.started = p.now()
 	p.workCtx, p.stopWork = context.WithCancel(context.WithoutCancel(ctx))
 	p.stepCtx, p.abort = context.WithCancel(context.WithoutCancel(ctx))

@@ -238,8 +238,7 @@ func (h receiverHealth) TenantLive(tenantName string) (api.TenantLive, bool) {
 // discarded file's bytes is handed to it too. With no pipeline running (the
 // tenant's database not ready), a release or a retry is refused as
 // unavailable, so nothing is recorded that the bytes do not follow, and a
-// removal is left to the pipeline's next start, which finds the decision
-// recorded.
+// removal is kept and done by the next pipeline once it has started.
 type pipelineDecisions struct{ s *supervise.Supervisor }
 
 var _ api.Incoming = pipelineDecisions{}
@@ -266,20 +265,14 @@ func (d pipelineDecisions) Retry(ctx context.Context, tenantName string, _ tenan
 	return p.Retry(ctx, id, newReceptionID, receiver, audit, guard)
 }
 
-// RemoveDiscarded hands the removal to the tenant's pipeline, or leaves it
-// to its next start.
+// RemoveDiscarded hands the removal to the tenant's pipeline, which
+// keeps it while none runs and does it once the next has started.
 func (d pipelineDecisions) RemoveDiscarded(ctx context.Context, tenantName, receptionID string) error {
-	if p, ok := d.s.Decisions(tenantName); ok {
-		return p.RemoveDiscarded(ctx, receptionID)
-	}
-	return nil
+	return d.s.RemoveDiscarded(ctx, tenantName, receptionID)
 }
 
-// RemoveRejected hands the removal to the tenant's pipeline, or leaves it
-// to its next start.
-func (d pipelineDecisions) RemoveRejected(_ context.Context, tenantName, incoming string) error {
-	if p, ok := d.s.Decisions(tenantName); ok {
-		return p.RemoveRejected(incoming)
-	}
-	return nil
+// RemoveRejected hands the removal to the tenant's pipeline, which
+// keeps it while none runs and does it once the next has started.
+func (d pipelineDecisions) RemoveRejected(ctx context.Context, tenantName, incoming string) error {
+	return d.s.RemoveRejected(ctx, tenantName, incoming)
 }

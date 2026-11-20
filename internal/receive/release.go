@@ -119,30 +119,6 @@ func (p *Pipeline) afterRelease(ctx context.Context, before, after tenant.Quaran
 	return nil
 }
 
-// Reject rejects a held file (tenant.Pipeline.RejectQuarantined), then
-// removes its bytes. A crash between the two leaves them under their
-// recorded name with no record keeping them, which a restart removes.
-func (p *Pipeline) Reject(ctx context.Context, id, reason string, audit master.AuditEntry, guard tenant.Guard) (tenant.QuarantinedFile, error) {
-	leave, err := p.enterDecision()
-	if err != nil {
-		return tenant.QuarantinedFile{}, err
-	}
-	defer leave()
-	before, err := p.store.QuarantinedFile(ctx, id)
-	if err != nil {
-		return tenant.QuarantinedFile{}, err
-	}
-	out, err := p.store.RejectQuarantined(ctx, id, reason, p.now(), audit, guard)
-	if err != nil {
-		return tenant.QuarantinedFile{}, err
-	}
-	p.wake()
-	if before.ContentKept && before.State == tenant.QuarantineHeld {
-		return out, p.removeRejected(before.Incoming)
-	}
-	return out, nil
-}
-
 // RemoveRejected removes the bytes of a held file at path in the incoming
 // area, after the store recorded its rejection.
 // A pipeline stopping removes nothing: Recover at the next start does.
@@ -181,23 +157,6 @@ func (p *Pipeline) Retry(ctx context.Context, id, newReceptionID, receiver strin
 	}
 	p.wake()
 	return failed, retry, p.ensureNext(ctx, retry)
-}
-
-// Discard records that a failed reception's files are let go
-// (tenant.Pipeline.DiscardReception), then removes the bytes the store
-// lists. A crash midway leaves recorded names no row keeps, which a restart
-// removes.
-func (p *Pipeline) Discard(ctx context.Context, id, reason string, audit master.AuditEntry, guard tenant.Guard) (tenant.Reception, error) {
-	leave, err := p.enterDecision()
-	if err != nil {
-		return tenant.Reception{}, err
-	}
-	defer leave()
-	r, err := p.store.DiscardReception(ctx, id, reason, p.now(), audit, guard)
-	if err != nil {
-		return r, err
-	}
-	return r, p.removeDiscarded(ctx, id)
 }
 
 // RemoveDiscarded removes the bytes the store lists for a reception whose

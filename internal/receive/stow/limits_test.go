@@ -227,7 +227,7 @@ func TestStopCutsAClientStillSending(t *testing.T) {
 			stopClient := func() { stopOnce.Do(func() { close(stop) }) }
 			defer stopClient()
 			conn := streamingClient(t, srv.Listener.Addr().String(), mediaType, 200*time.Microsecond, stop)
-			time.Sleep(300 * time.Millisecond)
+			waitInFlight(t, r.ep)
 			start := time.Now()
 			stopped := make(chan struct{})
 			go func() { _ = r.ep.Stop(context.Background()); close(stopped) }()
@@ -287,7 +287,7 @@ func TestStopCutsAnIdleClient503(t *testing.T) {
 	if _, err := conn.Write(body[:len(body)/2]); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	waitInFlight(t, r.ep)
 	if err := r.ep.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -395,5 +395,23 @@ func within(t *testing.T, results <-chan Result) Result {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Serve did not return within 5s")
 		return Result{}
+	}
+}
+
+// waitInFlight waits until the endpoint serves one request, so a Stop that
+// follows meets it in flight however slow the machine: a fixed sleep let a
+// loaded machine reach the Stop first, which then had nothing to wait for.
+func waitInFlight(t *testing.T, e *Endpoint) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(time.Millisecond) {
+		e.mu.Lock()
+		n := len(e.active)
+		e.mu.Unlock()
+		if n == 1 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d requests in flight, want 1", n)
+		}
 	}
 }

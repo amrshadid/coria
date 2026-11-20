@@ -371,7 +371,10 @@ func TestDiscardRemovesTheBytesAfterTheReason(t *testing.T) {
 	e.send(studyFiles...)
 	e.waitFor("the reception to fail", 10*time.Minute, e.allEnded(1))
 	r := e.receptions()[0]
-	if _, err := e.p.Discard(e.ctx, r.ID, "the study was sent to the wrong archive", e.audit(), nil); err != nil {
+	if _, err := e.store.DiscardReception(e.ctx, r.ID, "the study was sent to the wrong archive", e.p.now(), e.audit(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.p.RemoveDiscarded(e.ctx, r.ID); err != nil {
 		t.Fatal(err)
 	}
 	got, _, _ := e.store.Reception(e.ctx, r.ID)
@@ -387,9 +390,12 @@ func TestRejectRemovesTheBytesAfterTheReason(t *testing.T) {
 	e.sendBytes([]byte("not a DICOM file at all"), Received)
 	e.waitFor("the hold", time.Second, func() bool { return len(e.held()) == 1 })
 	q := e.held()[0]
-	out, err := e.p.Reject(e.ctx, q.ID, "a stray text file", e.audit(), nil)
+	out, err := e.store.RejectQuarantined(e.ctx, q.ID, "a stray text file", e.p.now(), e.audit(), nil)
 	if err != nil || out.State != tenant.QuarantineRejected || out.ContentKept {
 		t.Fatalf("reject %+v %v", out, err)
+	}
+	if err := e.p.RemoveRejected(q.Incoming); err != nil {
+		t.Fatal(err)
 	}
 	if n := e.incomingFiles(); n != 0 {
 		t.Fatalf("%d incoming files after the rejection", n)

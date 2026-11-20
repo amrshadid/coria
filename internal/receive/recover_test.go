@@ -268,3 +268,45 @@ func TestARestartWaitsForAReleaseInFlight(t *testing.T) {
 		t.Fatalf("%d records hold the released file again, want 1", held)
 	}
 }
+
+// failingList is the tenant's database refusing every list of receptions,
+// as a database that is not ready does at a pipeline's start.
+type failingList struct{ tenant.Pipeline }
+
+func (failingList) ListReceptions(context.Context, tenant.ReceptionFilter, master.Page) ([]tenant.Reception, string, error) {
+	return nil, "", fault.New(fault.Unavailable, "the test database refuses to list receptions")
+}
+
+// TestAFailedStartReleasesTheIncomingArea guards a start whose Recover
+// fails: the pipeline releases the incoming area it opened (a supervisor
+// retries a failed start with a new pipeline for as long as the database
+// refuses, and each one left a directory open), takes no file and no
+// decision, cannot be started again, and stops cleanly.
+func TestAFailedStartReleasesTheIncomingArea(t *testing.T) {
+	e := newEnv(t, envOptions{manual: true})
+	cfg := e.cfg
+	cfg.Store = failingList{e.store}
+	p, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Start(e.ctx); fault.KindOf(err) != fault.Unavailable {
+		t.Fatalf("the start: %v, want the database's refusal", err)
+	}
+	path := incoming.PathOf("dimse", incoming.NewID())
+	if _, err := p.area.Exists(path); err == nil {
+		t.Fatal("the incoming area is still open after a failed start")
+	}
+	if out := p.Accept(e.ctx, Arrival{Receiver: "dimse", Body: bytesReader([]byte("x"))}); out.Status != Refused {
+		t.Fatalf("a file offered after a failed start: %+v", out)
+	}
+	if err := p.RemoveRejected(path); fault.KindOf(err) != fault.Unavailable {
+		t.Fatalf("a decision after a failed start: %v", err)
+	}
+	if _, err := p.Start(e.ctx); err == nil {
+		t.Fatal("a pipeline whose start failed started again")
+	}
+	if err := p.Stop(e.ctx); err != nil {
+		t.Fatalf("a stop after a failed start: %v", err)
+	}
+}
