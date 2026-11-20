@@ -27,7 +27,7 @@ func peerUser(net.Conn) (string, error) {
 	return systemUser(), nil
 }
 
-// selfUser returns the security identifier (SID) of the user the server
+// systemUser returns the security identifier (SID) of the user the server
 // runs as, which access.LocalOperator records in the audit log.
 func systemUser() string {
 	sid, err := currentSID()

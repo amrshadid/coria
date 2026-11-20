@@ -35,13 +35,6 @@ const maxSocketPath = 103
 // server that answers does so at once on the same machine.
 const staleDialTimeout = time.Second
 
-// selfUser returns the user a local socket peer must be: the server's own,
-// from the system (peer_*.go). It is a variable so a test in this package
-// can name another user, and show that a peer check reading the kernel's
-// answer refuses the test's own connection, where one that returned the
-// server's user without asking the kernel would let it through.
-var selfUser = systemUser
-
 // localPeer is the operating system user a local socket connection came
 // from, once the peer check has shown it is the server's own user.
 type localPeer struct {
@@ -173,11 +166,14 @@ func removeStale(path string) error {
 // handshake still proves the client holds the certificate's private key
 // (its CertificateVerify, RFC 8446 4.4.3, which Go verifies whenever a
 // certificate is sent). A client that sends none connects as before.
-func tlsConfig(cert tls.Certificate) *tls.Config {
+//
+// The server's certificate comes from certs on each handshake, so a
+// certificate renewed in its files is served without a restart.
+func tlsConfig(certs *certFiles) *tls.Config {
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{cert},
-		ClientAuth:   tls.RequestClientCert,
+		MinVersion:     tls.VersionTLS12,
+		GetCertificate: certs.get,
+		ClientAuth:     tls.RequestClientCert,
 	}
 }
 

@@ -199,7 +199,7 @@ func openKeyFile(path string) (*os.File, error) {
 // checkDir does not check the directory on Windows, in this version: the
 // directory's access list is not read. The key file's own owner and access
 // list are checked by checkPrivate.
-func checkDir(string, string) error {
+func (fileSystem) checkDir(string, string) error {
 	return nil
 }
 
@@ -215,7 +215,7 @@ func checkDir(string, string) error {
 // explicit rather than inherited (a file made by os.WriteFile in the
 // temporary directory carries explicit SYSTEM and Administrators entries),
 // and /inheritance:r alone leaves explicit entries in place.
-func checkPrivate(f *os.File, path string) error {
+func (fileSystem) checkPrivate(f *os.File, path string) error {
 	info, err := f.Stat()
 	if err != nil {
 		return fault.Wrap(fault.Internal, err, "secret: the key file "+path+" cannot be checked")

@@ -7,6 +7,7 @@ marked, and every `CORIA_*` environment variable the repository reads.
 
 | Command | What it runs |
 |---|---|
+| `make gates` | The gates before each push, and never a scale test: `check-comments`, `fmt`, `go vet` on 64 bits, linux/386 and windows, `lint`, and `make test`. |
 | `make test` | `go test -race -count=1 ./...`: every package under the race detector. A test that needs a service (Postgres, S3, a tool such as dcmtk or sqlite3) skips, saying why, when the service is not there. |
 | `make test-scale` | The tests that measure at scale, without the race detector (see below). Takes minutes. |
 | `make test-postgres` | The database drivers' tests against a Postgres, failing if there is none (`CORIA_TEST_POSTGRES`, or the container `make pg-up` starts). |
@@ -50,7 +51,7 @@ A test that measures at scale is named `TestScale*` and runs only in its own
 run, `make test-scale`; the ordinary run skips it. A test that needs a service
 asks for it through an environment variable below and skips when the variable
 is unset (or fails, when the matching `CORIA_REQUIRE_*` variable is set, as
-CI sets it).
+`make test-postgres` and `make test-s3` set it).
 
 The catalog is measured at scale by `TestScaleCatalog` in each database
 driver, on a synthetic tenant `testkit.GenerateTenant` writes through the
@@ -90,6 +91,8 @@ itself reads are listed first.
 | `CORIA_SERVER` | The address of a server on the network, reached over TLS. `--server` wins. | none | every command; the command-line tests, the end-to-end test, the proof script |
 | `CORIA_KEY` | The key used over the network; the only place a key comes from besides `--key-file`. | none | every command; the same tests and scripts |
 | `CORIA_CA_FILE` | A PEM file of certificate authorities to trust for the network, in place of the system's. `--ca-file` wins. | the system's | every command; the command-line tests, the end-to-end test, the proof script |
+| `CORIA_TLS_CLIENT_CERT` | A PEM file of a TLS client certificate to present to the server on the network, for a key that works only with it. `--tls-client-cert` wins. | none | every command; the command-line tests |
+| `CORIA_TLS_CLIENT_KEY` | The PEM file of that certificate's private key, private to its owner. `--tls-client-key` wins. | none | every command; the command-line tests |
 
 ### Select or enable a test
 

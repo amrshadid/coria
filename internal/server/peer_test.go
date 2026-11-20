@@ -21,8 +21,9 @@ import (
 // a stranger. A peer function that reads the kernel returns the real uid
 // and the connection is closed unanswered; one that returned the server's
 // user without asking the kernel would match the injected uid and let the
-// connection through, which fails this test. A second connection with the
-// real uid expected is accepted, so the refusal is not a broken socket.
+// connection through, which fails this test. A first connection, read
+// before the listener is told the other uid, shows the kernel's answer is
+// this process's uid, so the refusal is not a broken socket.
 func TestPeerCheckReadsTheKernel(t *testing.T) {
 	dir, err := os.MkdirTemp("", "mgp")
 	if err != nil {
@@ -42,10 +43,7 @@ func TestPeerCheckReadsTheKernel(t *testing.T) {
 		t.Fatalf("the kernel's peer uid is %q (%v), want this process's %s", got, err, real)
 	}
 
-	old := selfUser
-	selfUser = func() string { return "4242424242" }
-	defer func() { selfUser = old }()
-	pl := &peerListener{Listener: ln, self: selfUser(), peerUser: peerUser, log: slog.New(slog.DiscardHandler)}
+	pl := &peerListener{Listener: ln, self: "4242424242", peerUser: peerUser, log: slog.New(slog.DiscardHandler)}
 	accepted := make(chan net.Conn, 1)
 	go func() {
 		c, err := pl.Accept()

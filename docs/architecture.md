@@ -125,7 +125,7 @@ for `testkit`; for the other two, `go list -deps ./cmd/coria` shows it.
 | A port knows no database or file system and never imports a driver | lint rules `master`, `tenant`, `blob` |
 | A database is reached only through its port; no code outside a driver knows which | lint rules `master`, `tenant`, `registry`, `receive`, `api-driver`; only `driver/postgres` imports pgx (`postgres-library`) |
 | A storage is reached only through `blob.Store` | lint rules `blob`, `receive` |
-| Every driver passes its port's contract suite | each driver's tests run the suite; CI runs both databases and both S3 servers |
+| Every driver passes its port's contract suite | each driver's tests run the suite; `make test-postgres` and `make test-s3` run it against Postgres and both S3 servers |
 | Only `receive/dimse` speaks DICOM on the network | lint rule `dicom-network` |
 | Test helpers never reach the binary | lint rule `testkit` |
 | One error kind per kind the contract names, mapped in one place | `internal/api/codes` and its tests |
@@ -133,7 +133,7 @@ for `testkit`; for the other two, `go list -deps ./cmd/coria` shows it.
 | Every access and change is audited | `internal/access`; the proof reconciles every request with the audit log |
 | A file acknowledged to a sender is never lost or archived twice | the incoming area's sync before acknowledgement; the pipeline's crash matrix test; `make prove-reception`'s kills at each step |
 | State lives in the database, not memory | recovery at start (the pipeline's `Recover`, the work queue's repair and reclaim); restart tests |
-| Reception does not get slower unseen | `make bench-gate` in CI |
+| Reception does not get slower unseen | `make bench-gate`, run before a push that changes the reception path |
 | Nothing in the repository refers to notes outside it | `make check-comments` |
 
 ## Where state lives
@@ -172,8 +172,8 @@ unit of work and an event not yet delivered are all rows.
   and one scan's sidecar open at a time. It is refused with 413 when it
   passes over more than 10,000 rows it does not keep, or reads more than
   256 MiB of sidecars to find its results; making them may read as much
-  again, past which the answer is cut. Its answer is streamed one result at a time; an
-  answer of instances stops at 64 MiB of results, with the Warning that
+  again, past which the answer is cut. Its answer is streamed one result
+  at a time; an answer of instances stops at 64 MiB of results, with the Warning that
   more results can be requested.
 
 ## A reception, end to end

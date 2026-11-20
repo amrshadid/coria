@@ -1,7 +1,9 @@
 package client
 
 import (
+	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"io"
 	"net"
 	"net/url"
@@ -28,6 +30,11 @@ const (
 	// EnvKey holds the key used over the network. It is the only place a key
 	// can come from besides a file.
 	EnvKey = "CORIA_KEY"
+	// EnvClientCert names a PEM file of a TLS client certificate to present
+	// to the server on the network.
+	EnvClientCert = "CORIA_TLS_CLIENT_CERT"
+	// EnvClientKey names the PEM file of that certificate's private key.
+	EnvClientKey = "CORIA_TLS_CLIENT_KEY"
 )
 
 // DefaultTimeout is how long one call may take when the person gives no
@@ -65,6 +72,13 @@ type Config struct {
 	// private authority. It is a path, not a secret: the file holds public
 	// certificates only. It has no effect on the local socket.
 	CAFile string
+	// ClientCert and ClientKey are the PEM files of a TLS client
+	// certificate and its private key, presented to Server, for a key the
+	// server accepts only with that certificate (a key's client
+	// certificate rule); both or neither. The key file must be private to
+	// the person, as a key file is. They have no effect on the local
+	// socket.
+	ClientCert, ClientKey string
 }
 
 // getenv returns the configured environment reader.
@@ -187,4 +201,68 @@ func LoadCAs(path string) (*x509.CertPool, error) {
 		return nil, fault.New(fault.Invalid, "the CA file "+path+" holds no certificate in PEM form")
 	}
 	return pool, nil
+}
+
+// maxClientFile bounds a client certificate's chain or key file read: a
+// chain of a few certificates is a few kilobytes, so a megabyte is generous
+// and a larger file is a mistake.
+const maxClientFile = 1 << 20
+
+// LoadClientCert reads a TLS client certificate and its private key from PEM
+// files. The key file is opened only when it is private to the person
+// (secret.OpenPrivate), by the rule a key file follows: a private key others
+// can read lets them pass for its holder. Both paths or neither: one alone is
+// a usage error. A file that cannot be read, is too large, or does not hold a
+// certificate and the key that matches it is a usage error that names the
+// file and never quotes any of it. The bytes of the key are cleared once
+// read.
+func LoadClientCert(certFile, keyFile string) (tls.Certificate, error) {
+	if (certFile == "") != (keyFile == "") {
+		return tls.Certificate{}, fault.New(fault.Invalid, "a client certificate needs both its file and its private key's file (--tls-client-cert and --tls-client-key, or "+
+			EnvClientCert+" and "+EnvClientKey+")")
+	}
+	f, err := os.Open(certFile) // #nosec G304 -- the path is the person's own --tls-client-cert
+	if err != nil {
+		return tls.Certificate{}, fault.Wrap(fault.Invalid, err, "cannot read the client certificate file "+certFile)
+	}
+	certPEM, err := readBounded(f, maxClientFile)
+	_ = f.Close()
+	if err != nil {
+		return tls.Certificate{}, fault.Wrap(fault.Invalid, err, "cannot read the client certificate file "+certFile+": "+err.Error())
+	}
+	kf, err := secret.OpenPrivate(keyFile)
+	if err != nil {
+		msg := strings.TrimPrefix(fault.Message(err), "secret: ")
+		if fault.KindOf(err) == fault.NotFound {
+			msg = "cannot read the client key file " + keyFile + ": it does not exist"
+		}
+		return tls.Certificate{}, fault.Wrap(fault.Invalid, err, msg)
+	}
+	keyPEM, err := readBounded(kf, maxClientFile)
+	_ = kf.Close()
+	defer clear(keyPEM)
+	if err != nil {
+		return tls.Certificate{}, fault.Wrap(fault.Invalid, err, "cannot read the client key file "+keyFile+": "+err.Error())
+	}
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		// The library's error says which input it could not use; it never
+		// holds the input itself, but it is kept out of the message anyway.
+		return tls.Certificate{}, fault.Wrap(fault.Invalid, err, "the client certificate "+certFile+" and the key "+keyFile+
+			" are not a PEM certificate and the private key that matches it")
+	}
+	return pair, nil
+}
+
+// readBounded reads all of r, refusing more than limit bytes.
+func readBounded(r io.Reader, limit int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return b, err
+	}
+	if int64(len(b)) > limit {
+		clear(b)
+		return nil, errors.New("the file is larger than a certificate or a key can be")
+	}
+	return b, nil
 }

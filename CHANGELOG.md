@@ -8,6 +8,11 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- The server's TLS certificate is read again from its files when they
+  change, at most every five seconds: a renewed certificate is served without
+  a restart, and files that do not load are logged while the last good one is
+  still served.
+- A stream's or a read's key recheck ends before its handler returns.
 - Reading the archive is faster. A whole instance's SHA-256 is computed
   while the piece before it is written, so a 16 MiB download goes from 1.4 to
   2.1 GB/s on loopback and a WADO-RS study retrieve from 1.3 to 2.0 GB/s, the
@@ -39,6 +44,16 @@ All notable changes to CORIA are written here. The form is
 
 ### Fixed
 
+- A tenant's reception pipeline that failed to start no longer leaves its
+  incoming directory open each time it is retried; it has 15 minutes to start
+  after a crash instead of 30 seconds; and the bytes of a file rejected or
+  discarded while it restarted are removed once the next pipeline has started.
+- `coria key revoke` says which keys it revoked before reporting a failure of
+  a later call.
+- `coria catalog scans <tenant> <subject>` lists the subject's scans by label;
+  every such call was refused. A help example named a flag that does not
+  exist; every example is now parsed by a test. The root help lists every
+  exit code.
 - A stalled client of a long method over TLS no longer holds the handler
   five seconds past the stall timeout: a connection whose write timed out
   fails later writes at once.
@@ -96,6 +111,12 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- `coria` and the interactive program can present a TLS client certificate
+  (`--tls-client-cert`, `--tls-client-key`, or `CORIA_TLS_CLIENT_CERT` and
+  `CORIA_TLS_CLIENT_KEY`), so a key limited to one can be used from the command
+  line.
+- `make gates`: the checks before each push, never the scale tests; `make
+  check` no longer runs the scale tests.
 - Keys can be rotated with no gap: `coria key rotate <id> --overlap 24h`, or
   AccessService.RotateKey, which a key may call on itself (keeping at least an
   hour of overlap). The successor has the same grants, holder and network

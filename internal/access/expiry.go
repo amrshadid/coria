@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/amrshadid/coria/internal/fault"
@@ -37,6 +38,9 @@ type expiryWatch struct {
 	interval time.Duration
 	done     chan struct{}
 	raised   map[string]time.Time
+	// rounds counts the rounds finished, read by a test that waits for
+	// rounds rather than for time.
+	rounds atomic.Int64
 }
 
 // ExpiringKeys returns the keys that work now and expire within within of
@@ -85,6 +89,7 @@ func (a *Access) expiryWorker() {
 // expiryRound reads the warning and the keys once and raises the events
 // due. A failure is logged and the round skipped: the next one tries again.
 func (a *Access) expiryRound() {
+	defer a.expiry.rounds.Add(1)
 	ctx, cancel := context.WithTimeout(a.workCtx, expiryTimeout)
 	defer cancel()
 	within, err := a.expiry.warning(ctx)

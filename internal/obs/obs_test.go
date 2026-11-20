@@ -21,9 +21,9 @@ const (
 // logEverything logs both secret-carrying messages and an authorization
 // value at debug level, in every way a careless caller could, and returns
 // what was written.
-func logEverything(format Format) string {
+func logEverything(format Format, redactMessages bool) string {
 	var buf bytes.Buffer
-	log := NewLogger(&buf, LogOptions{Format: format, Level: slog.LevelDebug})
+	log := newLogger(&buf, LogOptions{Format: format, Level: slog.LevelDebug}, redactMessages)
 	req := &coriav1.CreateTenantRequest{Name: "lab", DatabaseType: coriav1.DatabaseType_DATABASE_TYPE_POSTGRES, DatabaseAddress: plantedAddress}
 	res := &coriav1.CreateKeyResponse{Key: &coriav1.Key{Id: "LOGTESTKEY1", Holder: "robot"}, Secret: plantedKey}
 	log.Debug("request", "message", req)
@@ -40,7 +40,7 @@ func logEverything(format Format) string {
 // from the output, and the lines are there with their other fields.
 func TestLoggerRedacts(t *testing.T) {
 	for _, f := range []Format{JSON, Text} {
-		out := logEverything(f)
+		out := logEverything(f, true)
 		for _, s := range []string{plantedKey, plantedAddress, "s3cret-pw", plantedBearer, "HEADERSECRET"} {
 			if strings.Contains(out, s) {
 				t.Fatalf("%s handler wrote a secret:\n%s", f, out)
@@ -58,10 +58,8 @@ func TestLoggerRedacts(t *testing.T) {
 // without the redactor: with it turned off, the same lines carry both
 // secrets. It guards the test itself from passing for the wrong reason.
 func TestLoggerWithoutRedactorLeaks(t *testing.T) {
-	redactMessages = false
-	defer func() { redactMessages = true }()
 	for _, f := range []Format{JSON, Text} {
-		out := logEverything(f)
+		out := logEverything(f, false)
 		if !strings.Contains(out, plantedKey) || !strings.Contains(out, "s3cret-pw") {
 			t.Fatalf("%s handler: without the redactor the secrets should be in the output:\n%s", f, out)
 		}

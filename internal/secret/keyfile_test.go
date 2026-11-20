@@ -281,14 +281,13 @@ func TestCreateRefusesFileMadeBeforeLink(t *testing.T) {
 	dir := privateDir(t)
 	path := filepath.Join(dir, "coria.key")
 	const other = "a key file someone else made at the same moment\n"
-	beforeLink = func() {
+	fsys := fileSystem{beforeLink: func() {
 		if err := os.WriteFile(path, []byte(other), 0o600); err != nil {
 			t.Error(err)
 		}
-	}
-	t.Cleanup(func() { beforeLink = func() {} })
+	}}
 
-	err := CreateKeyFile(path)
+	err := fsys.createKeyFile(path)
 	if fault.KindOf(err) != fault.Conflict {
 		t.Fatalf("CreateKeyFile with a file made before the link: %v (kind %v), want Conflict", err, fault.KindOf(err))
 	}
@@ -308,10 +307,9 @@ func TestCreateRefusesFileMadeBeforeLink(t *testing.T) {
 // crash, never that nothing was created.
 func TestCreateSyncFailureSaysCreated(t *testing.T) {
 	path := filepath.Join(privateDir(t), "coria.key")
-	syncDirFunc = func(string) error { return errors.New("synthetic sync failure") }
-	t.Cleanup(func() { syncDirFunc = syncDir })
+	fsys := fileSystem{syncDir: func(string) error { return errors.New("synthetic sync failure") }}
 
-	err := CreateKeyFile(path)
+	err := fsys.createKeyFile(path)
 	if err == nil {
 		t.Fatal("CreateKeyFile succeeded although the directory sync failed")
 	}

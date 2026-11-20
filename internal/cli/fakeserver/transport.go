@@ -5,9 +5,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -33,6 +35,10 @@ type Seen struct {
 	Header http.Header
 	// Body is the request's body, as sent.
 	Body []byte
+	// ClientCertSHA256 is the SHA-256 of the TLS client certificate the
+	// connection presented, lowercase hexadecimal, as the real server pins
+	// it; empty when none was presented.
+	ClientCertSHA256 string
 }
 
 // SeenRequests returns every HTTP request the server has received, in order.
@@ -61,8 +67,13 @@ func (s *Server) handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(io.LimitReader(r.Body, 8<<20))
 		r.Body = io.NopCloser(bytes.NewReader(body))
+		seen := Seen{URL: r.URL.String(), Header: r.Header.Clone(), Body: body}
+		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+			sum := sha256.Sum256(r.TLS.PeerCertificates[0].Raw)
+			seen.ClientCertSHA256 = hex.EncodeToString(sum[:])
+		}
 		s.mu.Lock()
-		s.seen = append(s.seen, Seen{URL: r.URL.String(), Header: r.Header.Clone(), Body: body})
+		s.seen = append(s.seen, seen)
 		s.mu.Unlock()
 		mux.ServeHTTP(w, r)
 	})
@@ -119,7 +130,8 @@ func (s *Server) ServeUnix(tb testing.TB) (dataDir string) {
 // ServeTLS serves the fake over TLS on the loopback address with a certificate
 // made here for it, and returns its https address. CertPEM is the certificate,
 // for a client told to trust it; a client with the system's authorities does
-// not.
+// not. A client certificate is asked for, never required, and recorded in
+// Seen.
 func (s *Server) ServeTLS(tb testing.TB) (addr string) {
 	tb.Helper()
 	return s.ServeTLSVersions(tb, 0, 0)
@@ -140,8 +152,10 @@ func (s *Server) ServeTLSVersions(tb testing.TB, minVersion, maxVersion uint16) 
 		tb.Fatalf("listening on loopback: %v", err)
 	}
 	srv := &http.Server{
-		Handler:           s.handler(),
-		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12, MaxVersion: maxVersion},
+		Handler: s.handler(),
+		// A client certificate is asked for and not required, as the real
+		// server asks, so a test sees what a client presents.
+		TLSConfig:         &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12, MaxVersion: maxVersion, ClientAuth: tls.RequestClientCert},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	if minVersion != 0 {
@@ -190,4 +204,41 @@ func selfSigned(tb testing.TB) (tls.Certificate, []byte) {
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, pemBytes
+}
+
+// WriteClientCert writes a new self-signed TLS client certificate and its
+// private key as PEM files in dir, the key private to its owner, and returns
+// their paths and the certificate's SHA-256 as the server pins it, for a
+// test of a client that presents one.
+func WriteClientCert(tb testing.TB, dir, name string) (certPath, keyPath, sum string) {
+	tb.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: name},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	certPath, keyPath = filepath.Join(dir, name+".pem"), filepath.Join(dir, name+".key")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		tb.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		tb.Fatal(err)
+	}
+	s := sha256.Sum256(der)
+	return certPath, keyPath, hex.EncodeToString(s[:])
 }

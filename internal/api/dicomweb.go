@@ -173,17 +173,20 @@ func (x *webRequest) done(results int) {
 	x.c.record(x.d, x.st, master.OutcomeDone, "", x.facts(map[string]string{detailResults: strconv.Itoa(results)}))
 }
 
-// base returns the URL of the tenant's DICOMweb root, as a client reached
-// it: the request's scheme and host. A Retrieve URL (0008,1190) and a
-// BulkDataURI are absolute (PS3.18 F.2.6), so a client resolves them the
-// same however it took the answer. Behind a proxy that changes the scheme,
-// the URL names the scheme the server saw.
-func (x *webRequest) base() string {
+// base returns the URL of the tenant's DICOMweb root (webBase).
+func (x *webRequest) base() string { return webBase(x.r, x.tenant) }
+
+// webBase returns the URL of the DICOMweb root of the tenant named
+// tenantName, as the client of r reached it: the request's scheme and host.
+// A Retrieve URL (0008,1190) and a BulkDataURI are absolute (PS3.18 F.2.6),
+// so a client resolves them the same however it took the answer. Behind a
+// proxy that changes the scheme, the URL names the scheme the server saw.
+func webBase(r *http.Request, tenantName string) string {
 	scheme := "http"
-	if x.r.TLS != nil {
+	if r.TLS != nil {
 		scheme = "https"
 	}
-	return scheme + "://" + x.r.Host + "/tenants/" + x.tenant + "/dicom-web"
+	return scheme + "://" + r.Host + "/tenants/" + tenantName + "/dicom-web"
 }
 
 // session returns the session of the study, or NotFound.

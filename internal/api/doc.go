@@ -1,8 +1,12 @@
 // Package api is the handlers of the services of the API contract
 // (api/proto/coria/v1): TenantService, AccessService, SettingsService,
-// AuditService, and the ones that act inside one tenant, StorageService,
-// ReceiverService, ReceptionService, QuarantineService and MetadataService. Each method turns a request into calls on the package that
-// owns the change, and their answer into a response. The proto comments are
+// AuditService and MonitorService, and the ones that act inside one tenant,
+// StorageService, ReceiverService, ReceptionService, QuarantineService,
+// CatalogService, MetadataService and DataService; and of the HTTP routes
+// beside them: a scan's download, and DICOMweb's QIDO-RS, WADO-RS and
+// STOW-RS (PS3.18 10.4 to 10.6) under /tenants/<name>/dicom-web. Each method
+// turns a request into calls on the package that owns the change, and their
+// answer into a response. The proto comments are
 // the specification; this package is what makes each sentence in them true.
 //
 // # What the server does first
@@ -95,6 +99,9 @@
 // key and bound to the tenant and the storage, before it reaches the
 // tenant's store, and opens it only to test that storage; it never answers,
 // logs or records it. A tenant's database address is sealed by the
-// registry. It must never start a goroutine, and never delete a file of the
-// incoming area: that is the reception pipeline's (Incoming).
+// registry. It never deletes a file of the incoming area: that is the
+// reception pipeline's (Incoming). It starts a goroutine only inside one
+// request, to check the caller's key again while a read or a stream is open
+// and to hash a read beside its copy, and waits for each to end before the
+// handler returns.
 package api

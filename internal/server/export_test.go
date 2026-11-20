@@ -63,3 +63,13 @@ func GuardRules(read func(ctx context.Context) (AccessRules, error), now func() 
 	g.now = now
 	return g.current
 }
+
+// SetCertClock replaces the clock by which the network listener times its
+// next look at its certificate files, so a test moves past the recheck
+// without sleeping. It must be set before Start; it does nothing without
+// TLS.
+func (s *Server) SetCertClock(now func() time.Time) {
+	if s.certs != nil {
+		s.certs.now = now
+	}
+}

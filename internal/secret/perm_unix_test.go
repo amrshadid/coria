@@ -82,15 +82,12 @@ func TestLoadRefusesDirectory(t *testing.T) {
 	}
 }
 
-// asOtherUID makes the package believe it runs as a uid one above the real
-// effective uid until the test ends, and returns both. A test cannot give a
-// file away without being root, so it changes who "we" are instead.
-func asOtherUID(t *testing.T) (real, other int) {
-	t.Helper()
+// asOtherUID returns a file system on which the package believes it runs
+// as a uid one above the real effective uid, and both uids. A test cannot
+// give a file away without being root, so it changes who "we" are instead.
+func asOtherUID() (fsys fileSystem, real, other int) {
 	real = os.Geteuid()
-	effectiveUID = func() int { return real + 1 }
-	t.Cleanup(func() { effectiveUID = os.Geteuid })
-	return real, real + 1
+	return fileSystem{uid: func() int { return real + 1 }}, real, real + 1
 }
 
 // TestLoadRefusesOtherOwner guards that a key file belonging to another user
@@ -104,11 +101,11 @@ func TestLoadRefusesOtherOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = f.Close() }()
-	real, other := asOtherUID(t)
+	asOther, real, other := asOtherUID()
 
 	// checkPrivate directly, because LoadKeyFile checks the directory first,
 	// and the directory is not "ours" either now.
-	err = checkPrivate(f, path)
+	err = asOther.checkPrivate(f, path)
 	if fault.KindOf(err) != fault.Invalid {
 		t.Fatalf("a key file owned by another uid: %v, want Invalid", err)
 	}
@@ -117,7 +114,7 @@ func TestLoadRefusesOtherOwner(t *testing.T) {
 	if !strings.Contains(msg, want) || !strings.Contains(msg, "chown "+strconv.Itoa(other)+" "+path) {
 		t.Errorf("message %q does not name the owner and the fix", msg)
 	}
-	if _, err := LoadKeyFile(path); fault.KindOf(err) != fault.Invalid {
+	if _, err := asOther.loadKeyFile(path); fault.KindOf(err) != fault.Invalid {
 		t.Errorf("LoadKeyFile as another uid: %v, want Invalid", err)
 	}
 }
@@ -192,8 +189,8 @@ func TestDirectoryMustBePrivate(t *testing.T) {
 	}
 
 	dir := privateDir(t)
-	real, _ := asOtherUID(t)
-	err := CreateKeyFile(filepath.Join(dir, "coria.key"))
+	asOther, real, _ := asOtherUID()
+	err := asOther.createKeyFile(filepath.Join(dir, "coria.key"))
 	if fault.KindOf(err) != fault.Invalid || !strings.Contains(fault.Message(err), "directory "+dir+" is owned by uid "+strconv.Itoa(real)) {
 		t.Errorf("create in a directory owned by another uid: %v, want Invalid naming the owner", err)
 	}

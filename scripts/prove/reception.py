@@ -29,7 +29,6 @@ Needs: Go, dcmtk, openssl, and a Python with pydicom and pynetdicom
 """
 
 import argparse
-import copy
 import datetime
 import hashlib
 import hmac
@@ -45,7 +44,6 @@ import struct
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import urllib.parse
 

@@ -60,6 +60,7 @@ type Server struct {
 	settings  map[string]map[string]string
 	audit     []*v1.AuditEntry
 	fail      map[string]*connect.Error
+	failSkip  map[string]int
 	auth      []string
 	requests  int
 	nextKey   int
@@ -84,6 +85,7 @@ func New() *Server {
 		grants:    map[string]v1.Role{},
 		settings:  map[string]map[string]string{"": {}},
 		fail:      map[string]*connect.Error{},
+		failSkip:  map[string]int{},
 	}
 }
 
@@ -110,6 +112,16 @@ func (s *Server) FailWith(procedure string, code connect.Code, message string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.fail[procedure] = connect.NewError(code, message)
+}
+
+// FailAfter is FailWith for the calls of a procedure after the first n,
+// which are answered as usual: a test of a command that makes the same call
+// more than once, and fails part way.
+func (s *Server) FailAfter(procedure string, n int, code connect.Code, message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fail[procedure] = connect.NewError(code, message)
+	s.failSkip[procedure] = n
 }
 
 // AddTenant puts a tenant in the fake directly, for a test that needs many.
@@ -188,6 +200,10 @@ func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 		header := info.RequestHeader().Get("Authorization")
 		s.auth = append(s.auth, header)
 		forced := s.fail[spec.Procedure]
+		if forced != nil && s.failSkip[spec.Procedure] > 0 {
+			s.failSkip[spec.Procedure]--
+			forced = nil
+		}
 		s.mu.Unlock()
 		info.ResponseHeader().Set(RequestIDHeader, id)
 

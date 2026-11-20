@@ -194,6 +194,39 @@ func TestNetworkOverTLS(t *testing.T) {
 	}
 }
 
+// TestClientCertificateOptions guards --tls-client-cert and --tls-client-key
+// and their variables through the commands: either way the handshake
+// presents the certificate, a flag beats the variable, and one of the two
+// alone is a usage error that says what is missing.
+func TestClientCertificateOptions(t *testing.T) {
+	n := newNetworkRig(t)
+	dir := t.TempDir()
+	cert, key, sum := fakeserver.WriteClientCert(t, dir, "flag")
+	envCert, envKey, envSum := fakeserver.WriteClientCert(t, dir, "env")
+	presented := func() string {
+		seen := n.fake.SeenRequests()
+		return seen[len(seen)-1].ClientCertSHA256
+	}
+
+	if res := n.run("--tls-client-cert", cert, "--tls-client-key", key, "whoami"); res.code != 0 || presented() != sum {
+		t.Errorf("by flags: %+v, presented %q, want %q", res, presented(), sum)
+	}
+	withEnv := map[string]string{client.EnvClientCert: envCert, client.EnvClientKey: envKey}
+	for k, v := range n.env {
+		withEnv[k] = v
+	}
+	if res := runWith(withEnv, "whoami"); res.code != 0 || presented() != envSum {
+		t.Errorf("by variables: %+v, presented %q, want %q", res, presented(), envSum)
+	}
+	if res := runWith(withEnv, "--tls-client-cert", cert, "--tls-client-key", key, "whoami"); res.code != 0 || presented() != sum {
+		t.Errorf("flags over variables: %+v, presented %q, want %q", res, presented(), sum)
+	}
+	res := n.run("--tls-client-cert", cert, "whoami")
+	if res.code != 2 || !strings.Contains(res.stderr, "a client certificate needs both its file and its private key's file") {
+		t.Errorf("a certificate without its key: %+v", res)
+	}
+}
+
 // TestServerAddressRules guards the rules for --server through the commands,
 // so a key is never sent in clear over a network: http to a host that is not
 // loopback is refused before anything is sent; https to a certificate the

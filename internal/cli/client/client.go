@@ -113,7 +113,18 @@ func New(cfg Config) (*Client, error) {
 				return nil, err
 			}
 		}
-		hc = networkClient(u.Scheme == "https", roots)
+		var certs []tls.Certificate
+		if cfg.ClientCert != "" || cfg.ClientKey != "" {
+			if u.Scheme != "https" {
+				return nil, fault.New(fault.Invalid, "a client certificate is presented only over https; the server address is "+u.Scheme+"://"+u.Host)
+			}
+			pair, err := LoadClientCert(cfg.ClientCert, cfg.ClientKey)
+			if err != nil {
+				return nil, err
+			}
+			certs = []tls.Certificate{pair}
+		}
+		hc = networkClient(u.Scheme == "https", roots, certs)
 		base = u.String()
 		bearerK = key
 		interc = append(interc, bearer(key))
@@ -184,6 +195,7 @@ func unixClient(path string) *http.Client {
 
 // networkClient is an HTTP client for the network: TLS 1.2 or later with the
 // system's authorities, or only the authorities in roots when it is given,
+// presenting certs, the client certificate, when the server asks for one,
 // and HTTP/2 where the server offers it. useTLS is false only for a loopback
 // http address.
 //
@@ -192,13 +204,13 @@ func unixClient(path string) *http.Client {
 // institutions still run often speak 1.2 and no later, and a command line
 // that cannot reach them is no safer for it. 1.2 with the AEAD suites Go
 // offers is sound; the server may raise its own floor.
-func networkClient(useTLS bool, roots *x509.CertPool) *http.Client {
+func networkClient(useTLS bool, roots *x509.CertPool, certs []tls.Certificate) *http.Client {
 	tr := &http.Transport{
 		Proxy:             http.ProxyFromEnvironment,
 		ForceAttemptHTTP2: true,
 	}
 	if useTLS {
-		tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}
+		tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, Certificates: certs}
 	}
 	return &http.Client{Transport: tr, CheckRedirect: noRedirect}
 }

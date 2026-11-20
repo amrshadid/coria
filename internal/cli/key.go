@@ -282,6 +282,12 @@ each with its own entry in the audit log, as a leaked key calls for.`,
 					}
 				}
 				if err != nil {
+					// What was revoked stays revoked: said before the error, so
+					// a failure further along the chain does not read as if
+					// nothing had happened.
+					for _, k := range revoked {
+						_, _ = fmt.Fprintf(a.env.Stderr, "coria: key %s was revoked at %s\n", output.Clean(keyLabel(k)), a.when(k.GetRevokeTime()))
+					}
 					return err
 				}
 				next = k.GetSuccessorId()

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"io"
 	"log/slog"
 	"net"
@@ -38,10 +37,12 @@ const (
 	// forever.
 	DefaultDeadline = 30 * time.Second
 	// MaxDeadline is the longest any call may run, whatever deadline its
-	// client asks for: 5 minutes, as this version has no long call (no
-	// download, no stream). Without it, a client that sends a long deadline,
-	// or a handler that waits, holds a connection, a goroutine and a file
-	// descriptor as long as it likes. A client's shorter deadline is kept.
+	// client asks for: 5 minutes. Without it, a client that sends a long
+	// deadline, or a handler that waits, holds a connection, a goroutine and
+	// a file descriptor as long as it likes. A client's shorter deadline is
+	// kept. The long methods (Config.LongMethods: streams and downloads that
+	// may take hours) have no deadline and are bound by StallTimeout
+	// instead.
 	MaxDeadline = 5 * time.Minute
 	// BodyReadTimeout bounds the time to read a request's body until the
 	// check has allowed the request: 10 seconds, ample for a message of at
@@ -216,9 +217,11 @@ type Server struct {
 	methods      Methods
 	withDecision WithDecision
 	health       *grpchealth.StaticChecker
-	cert         *tls.Certificate
-	mux          *routeMux
-	handler      http.Handler
+	// certs is the network listener's certificate, read again from its
+	// files when they change; nil without TLS.
+	certs   *certFiles
+	mux     *routeMux
+	handler http.Handler
 	// procs maps each served procedure, "/package.Service/Method", to its
 	// handler from the one checked connect.Server; the router dispatches a
 	// call by exact match against it and against plain.
@@ -291,7 +294,7 @@ func New(cfg Config) (*Server, error) {
 		withDecision: cfg.WithDecision,
 		health:       grpchealth.NewStaticChecker(),
 		serveErrs:    make(chan error, 2),
-		socketUser:   selfUser(),
+		socketUser:   systemUser(),
 		cors:         &corsPolicy{read: cfg.CORSOrigins, log: cfg.Log, now: time.Now},
 	}
 	if s.methods == nil {
@@ -303,13 +306,11 @@ func New(cfg Config) (*Server, error) {
 	}
 	s.guard = newGuard(cfg.AccessRules, s.log)
 	if cfg.TLSCert != "" {
-		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		certs, err := loadCertFiles(cfg.TLSCert, cfg.TLSKey, s.log)
 		if err != nil {
-			// The error names the files and why they do not load; it holds no
-			// key material.
-			return nil, fault.Wrap(fault.Invalid, err, "server: the TLS certificate and key do not load: "+err.Error())
+			return nil, err
 		}
-		s.cert = &cert
+		s.certs = certs
 	}
 	s.metrics = obs.NewMetrics(obs.Sources{TenantsByState: cfg.TenantsByState, Counters: s.counters})
 	if err := s.buildRoutes(); err != nil {

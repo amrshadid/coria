@@ -121,6 +121,8 @@ npm test                 # needs Go and, for the TLS test, openssl
 ```
 
 The tests build the `coria` binary, start it on a temporary installation and
-call it with a key made on that installation, over each protocol. They use no
-DICOM data. `npm run build` writes the compiled package to `dist/`, which is
+call it with a key made on that installation, over each protocol. The reading
+tests also send a small public CT study (from `internal/receive/testdata`) with
+dcmtk's `storescu`, found through `CORIA_DCMTK` or the `PATH`, and skip when it
+is missing; no other DICOM data is used. `npm run build` writes the compiled package to `dist/`, which is
 not checked in.

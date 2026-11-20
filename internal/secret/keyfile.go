@@ -106,13 +106,24 @@ func (k *Keys) SealVersion() uint32 {
 	return 0
 }
 
-// beforeLink runs in CreateKeyFile between writing the temporary file and
-// linking it to its name. Tests set it to make a file appear at exactly that
-// moment; it does nothing otherwise.
-var beforeLink = func() {}
+// fileSystem is how the key file is checked and written. The zero value is
+// the system itself, which every exported function uses; a test sets a
+// field to stand in for a user or a moment it cannot make happen.
+type fileSystem struct {
+	// uid returns the user a private file and its directory must belong
+	// to; nil is the process's effective user. Read on Unix only.
+	uid func() int //nolint:unused // read on Unix only, by perm_unix.go.
+	// beforeLink runs in createKeyFile between writing the temporary file
+	// and linking it to its name, so a test can make a file appear at
+	// exactly that moment; nil does nothing.
+	beforeLink func()
+	// syncDir flushes the key file's directory; nil is the system's
+	// syncDir, and a test sets one that fails.
+	syncDir func(dir string) error
+}
 
-// syncDirFunc is syncDir, replaceable by a test that needs the sync to fail.
-var syncDirFunc = syncDir
+// system is the file system as it is, with no stand-in.
+var system fileSystem
 
 // CreateKeyFile writes a new key file at path holding one random key, version
 // 1. It never replaces a file that exists: losing the key that sealed the
@@ -124,9 +135,12 @@ var syncDirFunc = syncDir
 // created with the narrowest permission the system has (see perm_unix.go and
 // perm_windows.go), and only then given its name, so a crash leaves either
 // no key file or a whole one, never a short one that would be loaded later.
-func CreateKeyFile(path string) error {
+func CreateKeyFile(path string) error { return system.createKeyFile(path) }
+
+// createKeyFile is CreateKeyFile on fsys.
+func (fsys fileSystem) createKeyFile(path string) error {
 	dir := filepath.Dir(path)
-	if err := checkDir(dir, path); err != nil {
+	if err := fsys.checkDir(dir, path); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(path); err == nil {
@@ -172,7 +186,9 @@ func CreateKeyFile(path string) error {
 		return fault.Wrap(fault.Internal, err, "secret: the key file "+path+" cannot be written")
 	}
 
-	beforeLink()
+	if fsys.beforeLink != nil {
+		fsys.beforeLink()
+	}
 	// A hard link is a rename that refuses to replace: os.Rename replaces an
 	// existing file on every system, so a file made at path since the check
 	// above would be lost. Link fails with fs.ErrExist instead, on Linux,
@@ -192,7 +208,11 @@ func CreateKeyFile(path string) error {
 	// (not Invalid), and trying again would not help (not Unavailable), since
 	// the file now exists and a second call is a Conflict. The message says
 	// what is true.
-	if err := syncDirFunc(dir); err != nil {
+	sync := syncDir
+	if fsys.syncDir != nil {
+		sync = fsys.syncDir
+	}
+	if err := sync(dir); err != nil {
 		return fault.Wrap(fault.Internal, err, "secret: the key file "+path+
 			" was created, but its directory could not be synced, so the file may not survive a crash; check the disk and back the file up")
 	}
@@ -219,7 +239,10 @@ func existsError(path string) error {
 // directory such as a shared temporary one is not a reason to refuse it. The
 // caller reads the file and closes it. The file is opened without blocking
 // and checked as opened, so the file checked is the file read.
-func OpenPrivate(path string) (*os.File, error) {
+func OpenPrivate(path string) (*os.File, error) { return system.openPrivate(path) }
+
+// openPrivate is OpenPrivate on fsys.
+func (fsys fileSystem) openPrivate(path string) (*os.File, error) {
 	f, err := openKeyFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -227,7 +250,7 @@ func OpenPrivate(path string) (*os.File, error) {
 		}
 		return nil, fault.Wrap(fault.Internal, err, "secret: the file "+path+" cannot be opened")
 	}
-	if err := checkPrivate(f, path); err != nil {
+	if err := fsys.checkPrivate(f, path); err != nil {
 		_ = f.Close()
 		return nil, err
 	}
@@ -243,8 +266,11 @@ func OpenPrivate(path string) (*os.File, error) {
 // The file is opened without blocking, so a FIFO or a device at the path is
 // refused rather than waited on, and its permission is checked on the open
 // file, not on the path, so the file checked is the file read.
-func LoadKeyFile(path string) (*Keys, error) {
-	if err := checkDir(filepath.Dir(path), path); err != nil {
+func LoadKeyFile(path string) (*Keys, error) { return system.loadKeyFile(path) }
+
+// loadKeyFile is LoadKeyFile on fsys.
+func (fsys fileSystem) loadKeyFile(path string) (*Keys, error) {
+	if err := fsys.checkDir(filepath.Dir(path), path); err != nil {
 		return nil, err
 	}
 	f, err := openKeyFile(path)
@@ -256,7 +282,7 @@ func LoadKeyFile(path string) (*Keys, error) {
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := checkPrivate(f, path); err != nil {
+	if err := fsys.checkPrivate(f, path); err != nil {
 		return nil, err
 	}
 	// One buffer of fixed size, read into directly, so no growing copy of the

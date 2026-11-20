@@ -1,11 +1,11 @@
-# The quality gates, one word each. .github/workflows/checks.yml runs these same
-# targets, so a gate that passes here passes there for the same reason.
+# The quality gates, one word each, run locally before each push.
 #
-#   make check   every gate below, in the order CI runs them
+#   make gates   the gates before each push; never the scale tests
+#   make check   every gate below but test-scale, which runs on its own
 #   make check-comments  no comment, document or script refers to a note
 #                that is not in the repository (scripts/check/comments.py)
 #   make fmt     gofmt -s; fails on any file it would change
-#   make vet     go vet on 64 and on 32 bits
+#   make vet     go vet on 64 bits, on 32 bits and for Windows
 #   make lint    golangci-lint with .golangci.yml
 #   make vuln    govulncheck
 #   make test    go test -race
@@ -103,7 +103,15 @@ LDFLAGS := -s -w $(if $(VERSION),-X $(MODULE)/internal/version.Version=$(VERSION
 .DEFAULT_GOAL := check
 .PHONY: check check-comments fmt vet lint vuln test test-scale bench-events build size check-seal fuzz
 
-check: check-comments fmt vet lint vuln test test-scale build size
+check: check-comments fmt vet lint vuln test build size
+
+.PHONY: gates
+# The gates before each push, and never a scale test: the comments, gofmt,
+# go vet on 64 bits, linux/386 and windows, lint, and the race tests of every
+# package. The scale variables are emptied, so a value left in the shell does
+# not turn a scale test on.
+gates: check-comments fmt vet lint
+	CORIA_TEST_SCALE= CORIA_TEST_ALL_SEEDS= CORIA_SCALE_INSTANCES= $(GO) test -race -count=1 ./...
 
 # Every comment, document and script message says its reason itself; one that
 # points at a note a reader of the repository cannot see explains nothing. The
@@ -130,6 +138,7 @@ fmt:
 vet:
 	$(GO) vet ./...
 	GOOS=linux GOARCH=386 $(GO) vet ./...
+	GOOS=windows $(GO) vet ./...
 
 # Linted once per system, because a file built only for one system
 # (perm_windows.go, acl_darwin.go) is invisible to a run for another; CI runs
@@ -164,9 +173,6 @@ test-scale:
 	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -run '^TestScalePipelinePlans$$' ./internal/driver/postgres
 	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -timeout 30m -run '^TestScale' ./internal/receive
 
-# The event feed's speed: a step with its event, a page read from a feed of
-# ten million events (built once, about a minute), and what waking the
-# watches costs. Not part of `check`: it takes minutes.
 # Reception's speed held against a base commit (scripts/check/bench-gate.py):
 # files a second from landing to verified for small slices on SQLite and a
 # directory, the base's tree and this one measured in turns on the same
@@ -179,6 +185,9 @@ BENCH_COUNT  ?= 5
 bench-gate:
 	python3 scripts/check/bench-gate.py --go "$(GO)" --base "$(BENCH_BASE)" --count $(BENCH_COUNT) --margin $(BENCH_MARGIN)
 
+# The event feed's speed: a step with its event, a page read from a feed of
+# ten million events (built once, about a minute), and what waking the
+# watches costs. Not part of `check`: it takes minutes.
 bench-events:
 	$(GO) test -count=1 -run '^$$' -bench '^(BenchmarkReadEventsPage|BenchmarkReceptionStepEvent)$$' -benchtime 2s -timeout 30m ./internal/driver/sqlite
 	$(GO) test -count=1 -run '^$$' -bench '^BenchmarkWake$$' ./internal/events

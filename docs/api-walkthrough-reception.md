@@ -98,7 +98,7 @@ server reads when it starts do not change until it is started again.
 | `access.denied-networks`, `access.allowed-networks`, `access.trusted-proxies`, `access.forwarded-header`, `access.failure-limit`, `access.failure-window`, `access.block-time` | Within five seconds: the server keeps the values it read for that long |
 | `access.tenant-networks` | Within five seconds, on the same terms, for each tenant |
 | the server's `--listen` address | Needs a restart: the address is opened once, when the server starts |
-| the server's `--tls-cert` and `--tls-key` | Need a restart: the pair is read once, when the server starts; a renewed certificate is used after the server is started again |
+| the server's `--tls-cert` and `--tls-key` | A certificate renewed in the same files: within five seconds, at the next connection; files that change into a pair that does not load are logged and the last good pair is still served. Other paths need a restart |
 | the key file | Needs a restart: it is read once, when the server starts, and the keys are held in memory |
 | the data directory (`--data-dir` or `CORIA_DATA_DIR`) | Needs a restart: it is read once, when the command starts |
 | the server's `--master-env`, `--log-format`, `--log-level`, `--drain` | Need a restart: they are read once, when the command starts |
@@ -543,6 +543,11 @@ DICOM JSON model (PS3.18 Annex F). Pixel data and every long value are left
 out entirely; a header over 1 MiB is not cut but left out, with
 `headerTooLarge` set. The UIDs are as received. The read is recorded in the
 tenant's audit log.
+
+The server of this version does not read a held file's header yet: the
+answer carries the record alone, with neither `headerJson` nor
+`headerTooLarge`, which is what the contract answers for a header that could
+not be read. The record's checksums and UIDs are answered in full.
 
 This contract has no call that reads the archived file itself, so the
 comparison with the kept file rests on what the person reviewing it knows of

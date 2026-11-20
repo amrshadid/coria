@@ -17,9 +17,14 @@ import (
 // owner, nothing for the group or anyone else.
 const privateMode = 0o600
 
-// effectiveUID is os.Geteuid, replaceable by a test that needs the key file
-// to belong to someone else without being root.
-var effectiveUID = os.Geteuid
+// euid returns the user a private file and its directory must belong to:
+// the process's effective user, unless a test names another.
+func (fsys fileSystem) euid() int {
+	if fsys.uid != nil {
+		return fsys.uid()
+	}
+	return os.Geteuid()
+}
 
 // createPrivate creates a new file at path that only its owner may open. It
 // fails if anything exists at path (O_EXCL), so it never opens a file or a
@@ -49,7 +54,7 @@ func openKeyFile(path string) (*os.File, error) {
 // user or group grants nothing beyond that mask, so mode 0600 means no
 // entry grants anything. macOS keeps its access lists apart from the mode,
 // so permitACL reads them (acl_darwin.go).
-func checkPrivate(f *os.File, path string) error {
+func (fsys fileSystem) checkPrivate(f *os.File, path string) error {
 	info, err := f.Stat()
 	if err != nil {
 		return fault.Wrap(fault.Internal, err, "secret: the key file "+path+" cannot be checked")
@@ -57,7 +62,7 @@ func checkPrivate(f *os.File, path string) error {
 	if !info.Mode().IsRegular() {
 		return fault.New(fault.Invalid, "secret: the key file "+path+" is not a regular file ("+info.Mode().Type().String()+")")
 	}
-	if err := checkOwner(info, path, "key file", "chown"); err != nil {
+	if err := checkOwner(info, path, "key file", "chown", fsys.euid()); err != nil {
 		return err
 	}
 	if perm := info.Mode().Perm(); perm&0o077 != 0 {
@@ -76,15 +81,14 @@ func checkPrivate(f *os.File, path string) error {
 	return nil
 }
 
-// checkOwner refuses info unless it belongs to the effective user. A file
+// checkOwner refuses info unless it belongs to the user euid. A file
 // owned by someone else is one they can make readable to anyone, or replace,
 // whatever its mode says now.
-func checkOwner(info fs.FileInfo, path, what, fix string) error {
+func checkOwner(info fs.FileInfo, path, what, fix string, euid int) error {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return fault.New(fault.Internal, "secret: the owner of the "+what+" "+path+" cannot be read")
 	}
-	euid := effectiveUID()
 	if uint64(st.Uid) != uint64(euid) { //nolint:gosec // G115: a uid is never negative; Geteuid returns -1 only on Windows.
 		uid := strconv.FormatUint(uint64(st.Uid), 10)
 		me := strconv.Itoa(euid)
@@ -100,7 +104,7 @@ func checkOwner(info fs.FileInfo, path, what, fix string) error {
 // even with the sticky bit, since they can then add a file of their own
 // before it is created), or, on macOS, with an access list entry that grants
 // anything. A missing directory is NotFound.
-func checkDir(dir, path string) error {
+func (fsys fileSystem) checkDir(dir, path string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -111,7 +115,7 @@ func checkDir(dir, path string) error {
 	if !info.IsDir() {
 		return fault.New(fault.Invalid, "secret: "+dir+", which should hold the key file "+path+", is not a directory")
 	}
-	if err := checkOwner(info, dir, "directory", "chown"); err != nil {
+	if err := checkOwner(info, dir, "directory", "chown", fsys.euid()); err != nil {
 		return err
 	}
 	if perm := info.Mode().Perm(); perm&0o022 != 0 {

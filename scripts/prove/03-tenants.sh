@@ -9,7 +9,7 @@ if [ -n "$PG_CONTAINER" ]; then
 	[ -n "$PG_PORT" ] || { echo "prove: CORIA_PROVE_PG_CONTAINER needs CORIA_PROVE_PG_PORT" >&2; exit 2; }
 	pg_where="the container $PG_CONTAINER"
 else
-	PG_CONTAINER=cor-proof-$(basename "$work" | cut -d . -f 2 | tr 'A-Z' 'a-z')
+	PG_CONTAINER=cor-proof-$(basename "$work" | cut -d . -f 2 | tr '[:upper:]' '[:lower:]')
 	supw=$(openssl rand -hex 16)
 	secret "$supw"
 	# A fixed host port: a published port chosen by Docker can change when
@@ -70,7 +70,7 @@ remote_status=$CLI_STATUS
 remote_err=$(cat "$work/cli.err")
 unset COR_PROOF_REMOTE
 rows=$("$SQLITE3" "$data/master.db" "select count(*) from tenants where name = 'remote'")
-files=$(ls "$data/tenants" | grep -c '^remote' || true)
+files=$(find "$data/tenants" -mindepth 1 -maxdepth 1 -name 'remote*' | wc -l | tr -d ' ')
 cli "$data" /coria.v1.TenantService/ListTenants "*" --json tenant list
 listed=$(grep -c '"name": "remote"' "$work/cli.out" || true)
 if [ "$remote_status" = 2 ] && printf '%s' "$remote_err" | grep -q 'is not one the database type postgres takes' && [ "$rows" = 0 ] && [ "$files" = 0 ] && [ "$listed" = 0 ]; then

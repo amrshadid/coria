@@ -17,11 +17,18 @@ core that research platforms are built on.
   cannot be archived, with its reason; a crash at any step loses no file a
   sender was told was received;
 - a tenant's status and a live stream of its events;
-- the commands and an interactive program for all of it.
+- the archive read back: its catalog of subjects, sessions and scans with
+  filters and pages, each instance's DICOM header as JSON, the files
+  themselves checked against their manifest as they stream (a scan's files
+  over gRPC, or one instance over HTTP, resumable by range), and DICOMweb
+  under `/tenants/<name>/dicom-web`: QIDO-RS search, WADO-RS retrieval of
+  instances, metadata, frames and bulk data, and STOW-RS storage through a
+  receiver that lists the keys it takes (PS3.18);
+- the commands and an interactive program for all of it, and generated
+  clients for Python (`clients/python`) and TypeScript (`clients/typescript`).
 
-Not yet: reading the archive back through the API (the next step), and
-**de-identification. Until it exists, send only synthetic or public test data:
-what a receiver gets is archived as it was sent.**
+Not yet: **de-identification. Until it exists, send only synthetic or public
+test data: what a receiver gets is archived as it was sent.**
 
 ## Documents
 
@@ -72,15 +79,15 @@ that needs several writing processes.
 ```
 coria version | whoami
 coria tenant   create <name> [--db-env VAR | --db-file PATH] | list | show <name> | remove <name> --yes
-coria key      create --holder TEXT [--expires 90d | --no-expiry] | list | show <id> | revoke <id>
+coria key      create --holder TEXT [--expires 90d | --no-expiry] [--network CIDR]... [--client-cert FILE | --client-cert-sha256 HEX] | list | show <id> | rotate <id> [--overlap 24h] | set <id> [--network CIDR]... [--client-cert FILE | --client-cert-sha256 HEX] | revoke <id>
 coria grant    set <key-id> --role ROLE (--tenant NAME | --installation) | list (--key-id ID | --tenant NAME | --installation) | remove <key-id> (--tenant NAME | --installation)
 coria setting  get <name> [--tenant NAME] | set <name> <value> [--tenant NAME] | unset <name> --tenant NAME | list [--tenant NAME]
 coria audit    list [--tenant NAME] [--key-id ID] [--outcome done|refused|failed] [--since TIME] [--until TIME]
 coria storage    add <tenant> <name> --type dir --root ROOT [--path P] | --type s3 --endpoint URL --region R --bucket B --access-key-id ID (--credential-env VAR | --credential-file PATH) [--capacity SIZE] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes | test <tenant> <name>
-coria receiver   add <tenant> <name> --storage S [--port N] --aet TITLE [--allow-aet T] [--allow-from CIDR] [--allow-aet-from T@CIDR] [--any-caller] [--enabled] [--tls-certificate-file F --tls-private-key-file F] [--quiet-period 5m] [--max-open-time 1h] [--max-file-size 4GiB] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes
+coria receiver   add <tenant> <name> --storage S [--port N] --aet TITLE [--allow-aet T] [--allow-from CIDR] [--allow-aet-from T@CIDR] [--any-caller] [--enabled] [--tls-certificate-file F --tls-private-key-file F] [--quiet-period 5m] [--max-open-time 1h] [--max-file-size 4GiB] | add <tenant> <name> --type stow --storage S [--allow-key ID]... [--enabled] | list <tenant> | show <tenant> <name> | set <tenant> <name> [flags] | remove <tenant> <name> --yes
 coria reception  list <tenant> [--receiver NAME] [--step STEP]... [--in-progress] [--since TIME] [--until TIME] | show <tenant> <id> | retry <tenant> <id> [--receiver NAME] | discard <tenant> <id> --reason TEXT [--yes]
 coria quarantine list <tenant> [--state held|released|rejected] [--reason REASON] [--receiver NAME] [--reception ID] [--since TIME] [--until TIME] | show <tenant> <id> [--header] | release <tenant> <id> [--receiver NAME] [--reason TEXT] | reject <tenant> <id> --reason TEXT [--yes]
-coria catalog    subjects <tenant> [--label-prefix P] [--from TIME] [--to TIME] [--order ORDER] [--limit N | --all] | sessions <tenant> [<subject>] [--study-date-from D] [--study-date-to D] [--modality M] [--receiver NAME] [--order ORDER] [--limit N | --all] | scans <tenant> [<subject> [<session>]] [--modality M] [--description-prefix P] [--receiver NAME] [--order ORDER] [--limit N | --all]
+coria catalog    subjects <tenant> [--label-prefix P] [--from TIME] [--to TIME] [--order ORDER] [--limit N | --all] | sessions <tenant> [<subject>] [--label-prefix P] [--study-date-from D] [--study-date-to D] [--modality M] [--receiver NAME] [--from TIME] [--to TIME] [--order ORDER] [--limit N | --all] | scans <tenant> [<subject> [<session>]] [--label-prefix P] [--modality M] [--description-prefix P] [--receiver NAME] [--from TIME] [--to TIME] [--order ORDER] [--limit N | --all]
 coria scan       show <tenant> <subject>/<session>/<scan> [--metadata]
 coria download   <tenant> <subject>[/<session>[/<scan>]] --to DIR [--quiet]
 ```
@@ -99,7 +106,10 @@ coria download   <tenant> <subject>[/<session>[/<scan>]] --to DIR [--quiet]
   `--key-file` must name a file only you can open (`chmod 600`).
 - **TLS.** TLS 1.2 or later. `--ca-file PATH` (or `CORIA_CA_FILE`) names a
   PEM file of certificate authorities to trust for `--server` instead of the
-  system's, for a private authority.
+  system's, for a private authority. A key that works only with a TLS client
+  certificate is used with `--tls-client-cert FILE` and `--tls-client-key FILE`
+  (or `CORIA_TLS_CLIENT_CERT` and `CORIA_TLS_CLIENT_KEY`); the key file must be
+  private to you.
 - **Output.** A table, or with `--json` one document that starts with
   `"schemaVersion": 1`. Times are shown in the local zone with their offset;
   there is no color when `NO_COLOR` is set or the output is not a terminal.
@@ -111,6 +121,16 @@ coria download   <tenant> <subject>[/<session>[/<scan>]] --to DIR [--quiet]
   reached (a message too large, too many streams).
 - **Lists** fetch up to `--limit` (100) items and say when more exist; `--all`
   fetches every item.
+- **The catalog** serves only the combinations of filter and order an index
+  answers (the server names them when it refuses one): newest first by
+  default; a label prefix with `--order label`, a study date range with
+  `--order study-date`, a description prefix with `--order
+  series-description`. `catalog scans` of a subject named alone lists by
+  label.
+- **Downloads** are laid out `<dir>/<subject>/<session>/<scan>/<instance>.dcm`,
+  each written as `.part` and renamed only once its SHA-256 matches the one
+  the server announced; run again, a download skips what is complete and
+  resumes a `.part` by range.
 
 ### The interactive program
 
@@ -143,9 +163,11 @@ and exits 2 as before.
 
 ## The quality gates
 
-Every pull request must pass these. Each is one `make` target, and CI
-(`.github/workflows/checks.yml`) runs the same targets, so a gate that passes
-locally passes there for the same reason.
+Each gate is one `make` target, run locally before a change is pushed.
+`make gates` runs the ones every push needs and never the scale tests:
+`check-comments`, `fmt`, `go vet` on 64 bits, linux/386 and windows, `lint`,
+and `go test -race` over every package (whose scale tests skip unless
+`CORIA_TEST_SCALE` is set).
 
 | Command | What it checks |
 |---|---|
@@ -160,7 +182,7 @@ locally passes there for the same reason.
 | `make proto-lint` | `buf lint` on the API contract in `api/proto` |
 | `make proto-breaking` | `buf breaking` against the commit where `HEAD` and `PROTO_BASE` (default `origin/develop`) meet; skipped, saying so, when that commit has no proto files; a package renamed in `api/renamed.txt` is read under its new name |
 | `make proto-check` | regenerates the Go code and fails if it differs from the committed `gen/` |
-| `make check` | all of the above, in that order |
+| `make check` | all of the above but `make test-scale`, in that order; the scale tests run on their own, on a machine meant for them |
 
 The API contract is protobuf, package `coria.v1`, in `api/proto`; `make
 proto` regenerates the Go code in `gen/`, which is committed and never edited
@@ -168,8 +190,8 @@ by hand. `make proto-python` compiles the same files with Python's
 grpcio-tools as a second toolchain (it needs a `PYTHON` with
 `scripts/requirements/proto.txt` installed, so it is not in `make check`).
 
-These checks need more than Go, so `make check` leaves them out and CI runs
-them as steps of their own on Linux:
+These checks need more than Go, so `make check` leaves them out; each runs on
+its own:
 
 | Command | What it checks |
 |---|---|
@@ -186,6 +208,8 @@ them as steps of their own on Linux:
 | `make check-tenant-postgres` | a tenant on Postgres against `psql` and `pg_dump`: `scripts/check/tenant-postgres.sh` has the registry create a tenant on Postgres, in a schema of the database `CORIA_TEST_POSTGRES` names, with a Postgres master in another, writes the tenant suite's sample, then lists the tables and rows, checks every constraint and index, reads times and audit details, reads the tenant's row and state change from the master, checks the schema records the tenant's id, and searches both dumps for the login's password (absent) |
 | `make prove PYTHON=... GRPCURL=grpcurl` | the proof of this version, from outside: `scripts/prove/run.sh` builds every target as `make build` does, then runs the real binary: `init` and `serve` on the local socket and TLS; the first key made on the socket; every method of the contract refused without a key; tenants on SQLite and on Postgres (in a container it starts, or the one `CORIA_PROVE_PG_CONTAINER` names); no key, a malformed, unknown, wrong, expired and revoked key, and a key with no grant tried with grpcurl, Python's grpcio and curl, the answers compared byte for byte; secrets searched for in the databases' dumps, every file, the logs and the audit log; the server with another key file; Postgres stopped and started under a running server; the server killed with signal 9 during tenant creation at least 20 times; every request reconciled with the audit log; a second server and another operating system user refused; `--json` and the interactive program; the size of each binary. One line per check and a table at the end; a check it cannot run here (a second user without sudo) is skipped and says so, and `CORIA_PROVE_STRICT=1` (CI) fails on any skip. It needs docker and leaves nothing behind |
 | `make prove-reception PYTHON=... DCMTK=dir` | the reception, from outside: `scripts/prove/reception.py` serves the real binary, sends public studies with dcmtk's storescu and pynetdicom, and checks with dcmdump, pydicom, hashlib and sqlite3 what was archived, quarantined and counted: byte for byte, manifests, duplicates, a corrected and a broken file, strangers refused, kills by signal 9 while receiving, in the quiet period and while archiving, a nearly full storage, a released file, the status and the event stream. `PROVE_S3` adds a tenant on an S3 bucket read back by GETs the proof signs itself, and `PROVE_POSTGRES` with `PROVE_PSQL` a tenant on Postgres read by psql (`scripts/requirements/prove-reception.txt`) |
+| `make check-metadata`, `check-catalog`, `check-frames`, `check-dicomweb`, `check-stow` `PYTHON=...` | reading the archive against tools that are not CORIA: the Metadata service against pydicom's `to_json_dict`, the Catalog service against what pydicom reads of the received files, each file's frame table against pydicom's fragments, QIDO-RS and WADO-RS from dicomweb-client against pydicom, and STOW-RS from dicomweb-client into a real server process (`docs/testing.md` names the packages) |
+| `make client-python-test`, `make client-ts-test` | the generated Python and TypeScript clients against a real server |
 | `make bench-gate` | reception's speed, files a second from landing to verified, measured on the base branch's tree and this one in turns on the same machine; fails when this one is slower by more than `BENCH_MARGIN` (25) percent |
 
 `make lint` and `make vuln` install the pinned golangci-lint and govulncheck
@@ -196,22 +220,20 @@ installed only if its SHA-256 matches the one in `scripts/tools/buf.sha256`.
 `make` needs a Unix shell; on Windows run `go vet ./...` and `go test ./...`
 directly.
 
-CI runs the gates on Linux with Go 1.26 and 1.27, and `go vet` and the tests on
-Windows with Go 1.27, for every pull request. The tests run on macOS with Go
-1.27 after each merge into `develop` or `main`. Jobs of their own run the
-database drivers and the reception end to end against Postgres 16 and 18, the
-S3 driver and the reception against two S3 servers (Silo and RustFS), both
-proofs, and the speed gate; each fails if the service it needs is missing. On
-Windows and macOS, which have none of these services, those tests skip and say
-so in the log.
+The workflows in `.github/workflows` describe the same gates on Linux with Go
+1.26 and 1.27, on Windows and on macOS, with Postgres 16 and 18 and two S3
+servers (Silo and RustFS); they are not run on each push, and the gates above
+are run locally instead. `make test-postgres` and `make test-s3` run the
+database drivers, the S3 driver and the reception end to end against those
+services, and fail if the service they need is missing. Without one, the
+tests that need it skip and say so in the log.
 
 ## Branches
 
-`develop` is where work is merged; `main` holds releases and takes pull
-requests from `develop` only. The branch policy check
-(`.github/workflows/branch-policy.yml`) fails on a pull request into `main` from
-any other branch. A protection rule on `main` makes it required; without one,
-it advises.
+`develop` is where work goes, pushed once the gates pass; `main` holds
+releases and takes changes from `develop` only. The branch policy check
+(`.github/workflows/branch-policy.yml`) fails on a pull request into `main`
+from any other branch.
 
 ## License
 

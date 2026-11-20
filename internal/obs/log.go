@@ -26,11 +26,6 @@ const (
 // HiddenValue is what an attribute named "authorization" reads in the log.
 const HiddenValue = "[hidden]"
 
-// redactMessages is whether the handler redacts protobuf messages. It is
-// always true in the binary; a test turns it off to show that the test of
-// the redaction fails without it.
-var redactMessages = true
-
 // LogOptions configures NewLogger.
 type LogOptions struct {
 	// Format is JSON or Text; empty is JSON.
@@ -42,7 +37,14 @@ type LogOptions struct {
 // NewLogger returns a logger writing to w with the guards described in the
 // package documentation. An unknown Format is written as JSON.
 func NewLogger(w io.Writer, opts LogOptions) *slog.Logger {
-	hopts := &slog.HandlerOptions{Level: opts.Level, ReplaceAttr: guard}
+	return newLogger(w, opts, true)
+}
+
+// newLogger is NewLogger with the redaction of protobuf messages on or off.
+// The binary always has it on; a test turns it off to show that the test of
+// the redaction fails without it.
+func newLogger(w io.Writer, opts LogOptions, redactMessages bool) *slog.Logger {
+	hopts := &slog.HandlerOptions{Level: opts.Level, ReplaceAttr: guard(redactMessages)}
 	if opts.Format == Text {
 		return slog.New(slog.NewTextHandler(w, hopts))
 	}
@@ -59,16 +61,19 @@ func ParseLevel(s string) (slog.Level, bool) {
 	return l, true
 }
 
-// guard is the handler's ReplaceAttr: it hides an authorization attribute
-// and redacts a protobuf message, wherever either appears.
-func guard(_ []string, a slog.Attr) slog.Attr {
-	if strings.EqualFold(a.Key, "authorization") {
-		return slog.String(a.Key, HiddenValue)
-	}
-	if a.Value.Kind() == slog.KindAny {
-		if m, ok := a.Value.Any().(proto.Message); ok && redactMessages {
-			return slog.Attr{Key: a.Key, Value: redact.LogValue(m)}
+// guard returns the handler's ReplaceAttr: it hides an authorization
+// attribute and, when redactMessages is set, redacts a protobuf message,
+// wherever either appears.
+func guard(redactMessages bool) func([]string, slog.Attr) slog.Attr {
+	return func(_ []string, a slog.Attr) slog.Attr {
+		if strings.EqualFold(a.Key, "authorization") {
+			return slog.String(a.Key, HiddenValue)
 		}
+		if a.Value.Kind() == slog.KindAny {
+			if m, ok := a.Value.Any().(proto.Message); ok && redactMessages {
+				return slog.Attr{Key: a.Key, Value: redact.LogValue(m)}
+			}
+		}
+		return a
 	}
-	return a
 }

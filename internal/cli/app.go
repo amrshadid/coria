@@ -74,8 +74,11 @@ type app struct {
 		server  string
 		keyFile string
 		caFile  string
-		timeout time.Duration
-		json    bool
+		// clientCert and clientKey are the TLS client certificate and its
+		// key's files, for --server.
+		clientCert, clientKey string
+		timeout               time.Duration
+		json                  bool
 	}
 }
 
@@ -196,11 +199,9 @@ func (a *app) client(cmd *cobra.Command) (*client.Client, error) {
 		Getenv:  a.env.Getenv,
 		Timeout: a.opts.timeout,
 	}
-	if flags.Changed("ca-file") {
-		cfg.CAFile = a.opts.caFile
-	} else {
-		cfg.CAFile = a.env.Getenv(client.EnvCAFile)
-	}
+	cfg.CAFile = flagOrEnv(flags.Changed("ca-file"), a.opts.caFile, a.env.Getenv(client.EnvCAFile))
+	cfg.ClientCert = flagOrEnv(flags.Changed("tls-client-cert"), a.opts.clientCert, a.env.Getenv(client.EnvClientCert))
+	cfg.ClientKey = flagOrEnv(flags.Changed("tls-client-key"), a.opts.clientKey, a.env.Getenv(client.EnvClientKey))
 	envServer, envData := a.env.Getenv(client.EnvServer), a.env.Getenv(client.EnvDataDir)
 	switch {
 	case serverFlag:
@@ -217,6 +218,15 @@ func (a *app) client(cmd *cobra.Command) (*client.Client, error) {
 	return client.New(cfg)
 }
 
+// flagOrEnv returns a flag's value when the flag was given, else the
+// environment's.
+func flagOrEnv(changed bool, flag, env string) string {
+	if changed {
+		return flag
+	}
+	return env
+}
+
 // newRoot builds the root command with the options every command shares.
 func (a *app) newRoot() *cobra.Command {
 	root := &cobra.Command{
@@ -229,13 +239,15 @@ By default it reaches the server on the local socket in the data directory
 server, with no key. With --server (or CORIA_SERVER) it reaches a server on
 the network over TLS, with the key read from CORIA_KEY or from the file named
 by --key-file. A key is never an argument: arguments are visible to every user
-of the machine and are kept in shell history.
+of the machine and are kept in shell history. A key that works only with a TLS
+client certificate is used with --tls-client-cert and --tls-client-key.
 
 Output is a table for a person. With --json it is one JSON document with a
 "schemaVersion" field, for a program. An error is one line on standard error.
 
 Exit codes: 0 done, 1 failed, 2 wrong usage, 3 refused (not authenticated, or
-not allowed), 4 not found.`,
+not allowed), 4 not found, 5 a state that forbids the change, 6 a position
+that can no longer be answered, 7 a bound of the server reached.`,
 		Version:       version.Get().String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -262,6 +274,8 @@ not allowed), 4 not found.`,
 	f.StringVar(&a.opts.server, "server", "", "address of a server on the network, https://host:port (http:// only for a loopback host); needs a key (default: "+client.EnvServer+")")
 	f.StringVar(&a.opts.keyFile, "key-file", "", "path of a file holding the key to send with --server (default: the "+client.EnvKey+" variable); the key itself is never an argument")
 	f.StringVar(&a.opts.caFile, "ca-file", "", "path of a PEM file of certificate authorities to trust for --server, instead of the system's, for a private authority (default: "+client.EnvCAFile+"); it has no effect on the local socket")
+	f.StringVar(&a.opts.clientCert, "tls-client-cert", "", "path of a PEM file of a TLS client certificate to present to --server, for a key that works only with it; needs --tls-client-key (default: "+client.EnvClientCert+")")
+	f.StringVar(&a.opts.clientKey, "tls-client-key", "", "path of the PEM file of that certificate's private key, private to you (default: "+client.EnvClientKey+")")
 	f.DurationVar(&a.opts.timeout, "timeout", client.DefaultTimeout, "how long one call to the server may take")
 	f.BoolVar(&a.opts.json, "json", false, "write one JSON document with schemaVersion instead of a table")
 

@@ -132,8 +132,11 @@
 // The network listener exists only when Config.Listen is given. With a
 // certificate it speaks TLS 1.2 or later with HTTP/2 and HTTP/1.1. Without
 // one, only a loopback address written as an address is accepted, and it
-// speaks h2c and HTTP/1.1. The certificate is read once, at New: a renewed
-// certificate takes effect when the server is restarted.
+// speaks h2c and HTTP/1.1. The certificate is read at New, where a pair that
+// does not load stops the server, and read again on a handshake at most
+// every five seconds: a certificate renewed in its files is served from
+// then on, with no restart; files that change into a pair that does not
+// load are logged and the last good pair is still served.
 //
 // # Limits
 //

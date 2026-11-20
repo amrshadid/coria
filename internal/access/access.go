@@ -107,11 +107,11 @@ type Config struct {
 // database. It owns two goroutines, the last-use worker and the audit
 // writer, which Close stops. Its methods are safe for concurrent use.
 type Access struct {
-	store  Store
-	clock  func() time.Time
-	newID  func() string
-	log    *slog.Logger
-	verify func(secret string, stored []byte) bool
+	store Store
+	clock func() time.Time
+	newID func() string
+	log   *slog.Logger
+	seams accessSeams
 
 	events         Events
 	tenantNetworks TenantNetworks
@@ -130,11 +130,6 @@ type Access struct {
 	// cancels it when its own deadline passes.
 	workCtx    context.Context
 	workCancel context.CancelFunc
-	// afterCancel, when set, runs in Close right after the workers' writes
-	// are canceled at its deadline. It is nil except in a test, which uses
-	// it to let a worker finish what the cancel cut short before Close
-	// counts anything, the order in which a miscount would show.
-	afterCancel func()
 
 	marks     chan mark
 	marksDone chan struct{}
@@ -150,6 +145,29 @@ type Access struct {
 	auditRetries  int
 	auditBackoff  time.Duration
 	auditAcct     accounts
+}
+
+// accessSeams are the points at which a test of this package stands in for
+// what it cannot otherwise observe or order. Each is nil in a server, and
+// set only through export_test.go.
+type accessSeams struct {
+	// verify replaces the comparison of a presented secret with a stored
+	// hash (secret.VerifyAPISecret), so a test can count the comparisons.
+	verify func(sec string, stored []byte) bool
+	// afterCancel runs in Close right after the workers' writes are
+	// canceled at its deadline, so a test lets a worker finish what the
+	// cancel cut short before Close counts anything, the order in which a
+	// miscount would show.
+	afterCancel func()
+}
+
+// verify reports whether the presented secret sec hashes to stored, in
+// constant time.
+func (a *Access) verify(sec string, stored []byte) bool {
+	if a.seams.verify != nil {
+		return a.seams.verify(sec, stored)
+	}
+	return secret.VerifyAPISecret(sec, stored)
 }
 
 // accounts counts what became of the items handed to one worker, and what
@@ -254,7 +272,6 @@ func New(cfg Config) (*Access, error) {
 		clock:         cfg.Clock,
 		newID:         cfg.NewID,
 		log:           log,
-		verify:        secret.VerifyAPISecret,
 		stop:          make(chan struct{}),
 		workCtx:       ctx,
 		workCancel:    cancel,
@@ -330,8 +347,8 @@ func (a *Access) Close(ctx context.Context) error {
 	marks := a.markAcct.abandon(markDropped)
 	entries := a.auditAcct.abandon(auditDroppedWrites)
 	a.workCancel()
-	if a.afterCancel != nil {
-		a.afterCancel()
+	if a.seams.afterCancel != nil {
+		a.seams.afterCancel()
 	}
 	queuedMarks := drainCount(a.marks)
 	a.markAcct.add(markDropped, queuedMarks)

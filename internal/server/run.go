@@ -52,15 +52,15 @@ func (s *Server) Start() error {
 			return fault.Wrap(fault.Unavailable, err, "server: cannot listen on "+s.cfg.Listen+": "+err.Error())
 		}
 		ln = stallListener{newLimitListener(ln, maxNetworkConns())}
-		srv := s.newHTTPServer(s.cert != nil)
-		if s.cert != nil {
+		srv := s.newHTTPServer(s.certs != nil)
+		if s.certs != nil {
 			// ServeTLS adds the ALPN protocols that srv.Protocols allows (h2,
 			// http/1.1) to a copy of this configuration.
-			srv.TLSConfig = tlsConfig(*s.cert)
+			srv.TLSConfig = tlsConfig(s.certs)
 		}
-		all = append(all, opened{ln: ln, srv: srv, tlsOn: s.cert != nil})
+		all = append(all, opened{ln: ln, srv: srv, tlsOn: s.certs != nil})
 		s.netAddr = ln.Addr()
-		s.log.Info("server: listening on the network", "address", ln.Addr().String(), "tls", s.cert != nil, "max_connections", maxNetworkConns())
+		s.log.Info("server: listening on the network", "address", ln.Addr().String(), "tls", s.certs != nil, "max_connections", maxNetworkConns())
 	}
 	for _, o := range all {
 		s.servers = append(s.servers, o.srv)

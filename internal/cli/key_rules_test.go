@@ -6,9 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	connect "connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 )
 
 // TestKeyRotateCommand guards key rotate: the successor alone on standard
@@ -140,5 +142,41 @@ func TestKeyRevokeNamesLiveSuccessor(t *testing.T) {
 	}
 	if res := r.run("key", "revoke", "k00000000001"); res.stderr != "" {
 		t.Errorf("a note after the chain was revoked: %q", res.stderr)
+	}
+}
+
+// TestKeyRevokeSaysWhatWasRevokedOnFailure guards a revoke whose later call
+// fails, after the key itself was revoked: the error is reported with its
+// exit code, and standard error first says which keys were revoked, so the
+// failure does not read as if nothing had happened.
+func TestKeyRevokeSaysWhatWasRevokedOnFailure(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		args      []string
+		procedure string
+		revoked   []string
+	}{
+		{"reading a successor", []string{"key", "revoke", "k00000000001"}, coriav1connect.AccessServiceGetKeyProcedure, []string{"k00000000001"}},
+		{"revoking a successor", []string{"key", "revoke", "k00000000001", "--with-successors"}, "", []string{"k00000000001"}},
+	} {
+		r := newRig(t)
+		r.must("key", "create", "--holder", "ci")
+		r.must("key", "rotate", "k00000000001")
+		procedure := c.procedure
+		if procedure == "" {
+			// The first revoke is let through, the second fails.
+			r.fake.FailAfter(coriav1connect.AccessServiceRevokeKeyProcedure, 1, connect.CodeUnavailable, "the master does not answer")
+		} else {
+			r.fake.FailWith(procedure, connect.CodeUnavailable, "the master does not answer")
+		}
+		res := r.run(c.args...)
+		if res.code != 1 || res.stdout != "" || !strings.Contains(res.stderr, "the master does not answer") {
+			t.Errorf("%s: %+v, want exit 1 with the server's error", c.name, res)
+		}
+		for _, id := range c.revoked {
+			if !strings.Contains(res.stderr, "coria: key "+id+" (ci) was revoked at ") {
+				t.Errorf("%s: standard error does not say %s was revoked: %q", c.name, id, res.stderr)
+			}
+		}
 	}
 }

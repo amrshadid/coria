@@ -74,4 +74,7 @@ python -m pytest clients/python/tests      # needs Go: builds and starts the ser
 ```
 
 The tests build the `coria` binary, start it on a temporary installation and
-call it with a key made on that installation. They use no DICOM data.
+call it with a key made on that installation. The reading tests also send a
+small public CT study (from `internal/receive/testdata`) with dcmtk's
+`storescu`, found through `CORIA_DCMTK` or the `PATH`, and skip when it is
+missing; no other DICOM data is used.

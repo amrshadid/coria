@@ -78,10 +78,6 @@ func (c *core) stow(ctx context.Context, w http.ResponseWriter, r *http.Request)
 	if !ok || ep == nil {
 		return c.failWith(d, st, access.Facts{Details: facts.Details}, fault.New(fault.Denied, messageNoSTOWReceiver))
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
 	// A request may take as long as its client sends: the caller's key and
 	// grant are checked again every RecheckInterval, as for a long read,
 	// and a request whose caller may no longer store ends at its next read
@@ -91,7 +87,7 @@ func (c *core) stow(ctx context.Context, w http.ResponseWriter, r *http.Request)
 	defer stop()
 	res := ep.Serve(ctx, w, r, stow.Request{
 		Study:       study,
-		Base:        scheme + "://" + r.Host + "/tenants/" + name + "/dicom-web",
+		Base:        webBase(r, name),
 		Caller:      tenant.Caller{Address: callerAddress(r.RemoteAddr)},
 		Association: w.Header().Get(RequestIDHeader),
 		Refused: func() bool {

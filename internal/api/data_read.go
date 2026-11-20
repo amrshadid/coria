@@ -7,6 +7,7 @@ import (
 	"hash"
 	"io"
 	"maps"
+	"strconv"
 	"sync"
 	"time"
 
@@ -67,7 +68,7 @@ func (o *openReads) take(owner string) (func(), error) {
 		return nil, fault.New(fault.Exhausted, "the server holds as many streams and downloads open as it serves at once; try again later")
 	}
 	if o.byOwner[owner] >= MaxOpenReads {
-		return nil, fault.New(fault.Exhausted, "the caller holds 16 streams and downloads open already; end one first")
+		return nil, fault.New(fault.Exhausted, "the caller holds "+strconv.Itoa(MaxOpenReads)+" streams and downloads open already; end one first")
 	}
 	if o.byOwner == nil {
 		o.byOwner = map[string]int{}
@@ -91,10 +92,13 @@ func (o *openReads) take(owner string) (func(), error) {
 // once the caller's key or grant may no longer read, checked again every
 // RecheckInterval, and the function that ends the checks. A long read is
 // then ended with the answer a new request would get, which Confirm
-// records.
+// records. The function returns once the checking goroutine has, so no
+// check of a request runs after its handler returned.
 func (c *core) watchKey(ctx context.Context, d access.Decision) (context.Context, func()) {
 	ctx, cancel := context.WithCancelCause(ctx)
+	ended := make(chan struct{})
 	go func() {
+		defer close(ended)
 		t := time.NewTicker(RecheckInterval)
 		defer t.Stop()
 		for {
@@ -109,8 +113,18 @@ func (c *core) watchKey(ctx context.Context, d access.Decision) (context.Context
 			}
 		}
 	}()
-	return ctx, func() { cancel(nil) }
+	return ctx, func() {
+		cancel(nil)
+		<-ended
+	}
 }
+
+// errRefusedWhileOpen is the cause of a read or a stream ended because its
+// caller's key or grant may no longer read, with the refusal.
+type errRefusedWhileOpen struct{ err error }
+
+// Error returns the refusal's message.
+func (e errRefusedWhileOpen) Error() string { return e.err.Error() }
 
 // refusedWhileOpen returns the refusal that ended ctx, when the caller's
 // key or grant was found unable to read while the read was open.

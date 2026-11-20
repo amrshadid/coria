@@ -92,15 +92,22 @@ tenant first and needs the reader role on it.`,
 }
 
 // totalNote says on standard error, for a table, how many rows match when the
-// server knew it.
-func (a *app) totalNote(total *int64, noun string) {
-	if total != nil && !a.opts.json {
-		_, _ = fmt.Fprintf(a.env.Stderr, "coria: %d %s in all\n", *total, noun)
+// server knew it, with the noun in the singular for one.
+func (a *app) totalNote(total *int64, one, many string) {
+	if total == nil || a.opts.json {
+		return
 	}
+	noun := many
+	if *total == 1 {
+		noun = one
+	}
+	_, _ = fmt.Fprintf(a.env.Stderr, "coria: %d %s in all\n", *total, noun)
 }
 
 // catalogOut writes a fetched list as JSON with its total, or as a table.
-func catalogOut[T proto.Message](a *app, field, noun string, items []T, more bool, total *int64, table func() error) error {
+// field is the JSON field of the items and the plural of their noun; one is
+// its singular.
+func catalogOut[T proto.Message](a *app, field, one string, items []T, more bool, total *int64, table func() error) error {
 	if a.opts.json {
 		return a.write(func(w io.Writer) error { return output.JSONListTotal(w, field, items, more, total) })
 	}
@@ -110,7 +117,7 @@ func catalogOut[T proto.Message](a *app, field, noun string, items []T, more boo
 	if more {
 		a.moreNote(len(items))
 	}
-	a.totalNote(total, noun)
+	a.totalNote(total, one, field)
 	return nil
 }
 
@@ -153,7 +160,7 @@ order, which is the default.`,
 			if err != nil {
 				return err
 			}
-			return catalogOut(a, "subjects", "subjects", items, more, total, func() error {
+			return catalogOut(a, "subjects", "subject", items, more, total, func() error {
 				rows := make([][]string, 0, len(items))
 				for _, s := range items {
 					rows = append(rows, []string{s.GetLabel(), count(s.GetSessionCount()), count(s.GetInstanceCount()), output.Human(s.GetSizeBytes()), a.when(s.GetArchiveTime())})
@@ -184,7 +191,7 @@ date range (YYYYMMDD, both ends inclusive) comes with --order study-date; a
 modality or a receiver comes with the newest order, and the server refuses a
 combination it does not serve.`,
 		Example: `  coria catalog sessions lab1 sub-3f9a
-  coria catalog sessions lab1 --modality MR --since 7d
+  coria catalog sessions lab1 --modality MR --from 7d
   coria catalog sessions lab1 --order study-date --study-date-from 20240101 --study-date-to 20241231`,
 		Args: rangeArgs(1, 2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
@@ -220,7 +227,7 @@ combination it does not serve.`,
 			if err != nil {
 				return err
 			}
-			return catalogOut(a, "sessions", "sessions", items, more, total, func() error {
+			return catalogOut(a, "sessions", "session", items, more, total, func() error {
 				rows := make([][]string, 0, len(items))
 				for _, s := range items {
 					rows = append(rows, []string{
@@ -250,10 +257,13 @@ func (a *app) newCatalogScans() *cobra.Command {
 		Use:   "scans <tenant> [<subject> [<session>]] [--modality M] [--description-prefix P] [--receiver R] [--order O] [--limit N | --all]",
 		Short: "List a tenant's scans, a subject's, or a session's",
 		Long: `List scans with their modality, series number and description, instance count
-and size. Name a subject to list its scans, and a session of it to list that
-session's. A description prefix comes with --order series-description; a
-modality or a receiver with the newest order.`,
+and size. Name a subject to list its scans, by label unless --order says
+otherwise, and a session of it to list that session's, newest first. A
+description prefix comes with --order series-description; a modality or a
+receiver with the newest order, and the server refuses a combination it does
+not serve.`,
 		Example: `  coria catalog scans lab1 sub-3f9a ses-81c2
+  coria catalog scans lab1 sub-3f9a
   coria catalog scans lab1 --modality CT --json`,
 		Args: rangeArgs(1, 3),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
@@ -267,6 +277,9 @@ modality or a receiver with the newest order.`,
 			}
 			if len(args) > 2 {
 				session = args[2]
+			}
+			if f.order == "" {
+				order = scansOrder(subject, session, modality, receiver, from != nil || to != nil)
 			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {
@@ -292,7 +305,7 @@ modality or a receiver with the newest order.`,
 			if err != nil {
 				return err
 			}
-			return catalogOut(a, "scans", "scans", items, more, total, func() error {
+			return catalogOut(a, "scans", "scan", items, more, total, func() error {
 				rows := make([][]string, 0, len(items))
 				for _, s := range items {
 					rows = append(rows, []string{
@@ -311,6 +324,19 @@ modality or a receiver with the newest order.`,
 	cmd.Flags().StringVar(&description, "description-prefix", "", "only scans whose series description starts with this, ignoring case (order series-description)")
 	cmd.Flags().StringVar(&receiver, "receiver", "", "only scans first archived through the receiver of this name (order newest)")
 	return cmd
+}
+
+// scansOrder is the order "catalog scans" asks for when --order is not
+// given. The scans of one subject are served by label only (the subject
+// keeps no index of its scans by time), so a subject named alone, with no
+// filter the newest order needs, is listed by label; everything else is
+// listed newest first, and a combination no index serves is refused by the
+// server with the combinations it serves.
+func scansOrder(subject, session, modality, receiver string, span bool) v1.CatalogOrder {
+	if subject != "" && session == "" && modality == "" && receiver == "" && !span {
+		return v1.CatalogOrder_CATALOG_ORDER_LABEL
+	}
+	return v1.CatalogOrder_CATALOG_ORDER_UNSPECIFIED
 }
 
 // seriesNumber is a scan's Series Number, or a dash when it has none.

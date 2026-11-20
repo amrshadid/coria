@@ -38,7 +38,7 @@ func peerUser(c net.Conn) (string, error) {
 	return strconv.FormatUint(uint64(cred.Uid), 10), nil
 }
 
-// selfUser returns the server's own effective user id, which a local
+// systemUser returns the server's own effective user id, which a local
 // socket peer must have.
 func systemUser() string { return strconv.Itoa(os.Geteuid()) }
 

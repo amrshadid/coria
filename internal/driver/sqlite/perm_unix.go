@@ -12,10 +12,6 @@ import (
 	"github.com/amrshadid/coria/internal/fault"
 )
 
-// effectiveUID is os.Geteuid, replaceable by a test that needs a file to
-// belong to someone else without being root.
-var effectiveUID = os.Geteuid
-
 // checkPrivate refuses a database that must not be used, by the same rule
 // as the installation's key file: the database file, its -wal and -shm files
 // when they exist, and its directory must belong to the user coria runs
@@ -31,8 +27,15 @@ var effectiveUID = os.Geteuid
 // The message says how to fix it, without the path: a database address never
 // appears in an error, and the operator knows the path they gave.
 func checkPrivate(path string, name dbName) error {
+	return checkPrivateAs(path, name, os.Geteuid())
+}
+
+// checkPrivateAs is checkPrivate for the files of the user euid: the
+// process's own effective user, but in a test, which cannot give a file away
+// without being root and so names another user instead.
+func checkPrivateAs(path string, name dbName, euid int) error {
 	dir := filepath.Dir(path)
-	if err := checkOne(dir, true, "the "+string(name)+"'s directory", "chmod go-w"); err != nil {
+	if err := checkOne(dir, true, "the "+string(name)+"'s directory", "chmod go-w", euid); err != nil {
 		return err
 	}
 	for _, f := range []struct{ path, what string }{
@@ -40,14 +43,14 @@ func checkPrivate(path string, name dbName) error {
 		{path + "-wal", "the " + string(name) + "'s -wal file"},
 		{path + "-shm", "the " + string(name) + "'s -shm file"},
 	} {
-		if err := checkOne(f.path, false, f.what, "chmod 600"); err != nil {
+		if err := checkOne(f.path, false, f.what, "chmod 600", euid); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// checkOne refuses path when it exists and belongs to another user, or when
+// checkOne refuses path when it exists and belongs to a user other than euid, or when
 // it gives the group or others read or write access (a file) or write access
 // (a directory). A path that does not exist is fine, except a directory,
 // which must.
@@ -57,7 +60,7 @@ func checkPrivate(path string, name dbName) error {
 // file" instead of being followed to a file of the planter's choosing. The
 // directory is followed: a data directory that is a link the operator made is
 // theirs to make.
-func checkOne(path string, isDir bool, what, fix string) error {
+func checkOne(path string, isDir bool, what, fix string, euid int) error {
 	stat := os.Lstat
 	if isDir {
 		stat = os.Stat
@@ -79,7 +82,7 @@ func checkOne(path string, isDir bool, what, fix string) error {
 	if !isDir && !info.Mode().IsRegular() {
 		return fault.New(fault.Invalid, what+" is not a regular file")
 	}
-	if st, ok := info.Sys().(*syscall.Stat_t); ok && int64(st.Uid) != int64(effectiveUID()) {
+	if st, ok := info.Sys().(*syscall.Stat_t); ok && int64(st.Uid) != int64(euid) {
 		return fault.New(fault.Invalid, what+" belongs to another user; run coria as its owner, or chown it to the user coria runs as")
 	}
 	if isDir && info.Mode().Perm()&0o022 != 0 {

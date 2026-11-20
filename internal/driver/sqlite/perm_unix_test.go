@@ -85,18 +85,19 @@ func TestOpenRefusesSharedFiles(t *testing.T) {
 }
 
 // TestOpenRefusesAnotherOwner guards that a database file belonging to
-// another user is refused, by pretending to be another user rather than
-// needing root.
+// another user is refused, by checking it as another user rather than
+// needing root; the same file checked as its owner passes, so the refusal is
+// the owner's.
 func TestOpenRefusesAnotherOwner(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "master.db")
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	real := effectiveUID
-	effectiveUID = func() int { return real() + 1 }
-	defer func() { effectiveUID = real }()
-	_, err := OpenMaster(context.Background(), path)
+	if err := checkPrivateAs(path, masterDB, os.Geteuid()); err != nil {
+		t.Fatalf("the file checked as its owner: %v", err)
+	}
+	err := checkPrivateAs(path, masterDB, os.Geteuid()+1)
 	if fault.KindOf(err) != fault.Invalid || !strings.Contains(fault.Message(err), "belongs to another user") {
-		t.Errorf("OpenMaster on another user's file = %v, want Invalid saying so", err)
+		t.Errorf("a check of another user's file = %v, want Invalid saying so", err)
 	}
 }

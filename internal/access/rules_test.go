@@ -302,7 +302,6 @@ func TestExpiringKeys(t *testing.T) {
 	if len(keys) != 1 || keys[0].ID != soon.id || keys[0].Hash != nil {
 		t.Fatalf("expiring %+v, want only %s", keys, soon.id)
 	}
-	time.Sleep(100 * time.Millisecond)
 	count := func() int {
 		n := 0
 		for _, ev := range s.all() {
@@ -312,11 +311,21 @@ func TestExpiringKeys(t *testing.T) {
 		}
 		return n
 	}
+	// The first round raises the event; three rounds more, within the day,
+	// raise nothing. Rounds are waited for, not time, so a slow machine
+	// cannot read the count before the first round or after too few.
+	deadline := time.Now().Add(5 * time.Second)
+	for count() < 1 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	for start := access.ExpiryRounds(e.access); access.ExpiryRounds(e.access) < start+3 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
 	if n := count(); n != 1 {
 		t.Fatalf("%d expiring events for one key within the day, want 1", n)
 	}
 	e.clock.Set(t0.Add(25 * time.Hour))
-	deadline := time.Now().Add(5 * time.Second)
+	deadline = time.Now().Add(5 * time.Second)
 	for count() < 2 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}

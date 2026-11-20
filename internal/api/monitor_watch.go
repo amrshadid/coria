@@ -105,23 +105,8 @@ func (s monitorService) Watch(ctx context.Context, req *v1.WatchRequest, stream 
 	// The key and grant are checked again while the stream is open; a key
 	// that may no longer read ends it with the answer a new call would get,
 	// which Confirm records.
-	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
-	go func() {
-		t := time.NewTicker(RecheckInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if _, err := c.access.Confirm(ctx, d); err != nil {
-					cancel(errRefusedWhileOpen{err})
-					return
-				}
-			}
-		}
-	}()
+	ctx, stop := c.watchKey(ctx, d)
+	defer stop()
 
 	var carried atomic.Int64
 	send := func(ctx context.Context, m events.Message) error {
@@ -142,11 +127,11 @@ func (s monitorService) Watch(ctx context.Context, req *v1.WatchRequest, stream 
 		err = c.feeds.Watch(ctx, events.Watch{Tenant: scope.Tenant, Owner: owner, Reader: feed, Cursor: req.GetCursor(), Types: types}, send)
 	}
 	end := access.Facts{Details: map[string]string{detailStream: "ended", detailEvents: strconv.FormatInt(carried.Load(), 10)}}
-	var refused errRefusedWhileOpen
-	switch cause := context.Cause(ctx); {
-	case errors.As(cause, &refused):
+	if refusal, ok := refusedWhileOpen(ctx); ok {
 		// Confirm recorded the refusal.
-		return c.toAPI(d, refused.err)
+		return c.toAPI(d, refusal)
+	}
+	switch cause := context.Cause(ctx); {
 	case err == nil, errors.Is(err, context.Canceled):
 		// The client went away, or the server is stopping: the stream ends
 		// as the contract says a stream may end at any time.
@@ -158,12 +143,6 @@ func (s monitorService) Watch(ctx context.Context, req *v1.WatchRequest, stream 
 	}
 	return c.failWith(d, st, end, watchError(err))
 }
-
-// errRefusedWhileOpen is the cause of a stream ended because its caller's
-// key or grant may no longer read, with the refusal.
-type errRefusedWhileOpen struct{ err error }
-
-func (e errRefusedWhileOpen) Error() string { return e.err.Error() }
 
 // watchError returns the API's answer to the error a watch ended with: a
 // bound reached is resource exhausted; a cursor of another tenant's feed is

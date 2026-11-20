@@ -16,7 +16,7 @@ func peerUser(net.Conn) (string, error) {
 	return "", errors.New("the local socket's peer cannot be checked on this system")
 }
 
-// selfUser returns the server's own effective user id.
+// systemUser returns the server's own effective user id.
 func systemUser() string { return strconv.Itoa(os.Geteuid()) }
 
 // peerCheck says how the local socket's caller is checked on this system.

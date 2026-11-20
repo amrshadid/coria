@@ -1,17 +1,22 @@
 package access
 
+import (
+	"sync/atomic"
+
+	"github.com/amrshadid/coria/internal/secret"
+)
+
 // CountVerifications replaces a's comparison of secrets with one that counts
 // its calls and then compares as before, and returns the count so far. It is
 // the seam a test uses to show that a key with an unknown id costs the same
 // comparison as a wrong secret.
 func CountVerifications(a *Access) func() int {
-	n := 0
-	compare := a.verify
-	a.verify = func(secret string, stored []byte) bool {
-		n++
-		return compare(secret, stored)
+	var n atomic.Int64
+	a.seams.verify = func(sec string, stored []byte) bool {
+		n.Add(1)
+		return secret.VerifyAPISecret(sec, stored)
 	}
-	return func() int { return n }
+	return func() int { return int(n.Load()) }
 }
 
 // WaitForWorkersAfterCancel makes a's Close, when its deadline passes, wait
@@ -20,8 +25,12 @@ func CountVerifications(a *Access) func() int {
 // settles what it held first: the order in which a write cut short by Close
 // would be counted twice, or in another count, if Close counted wrongly.
 func WaitForWorkersAfterCancel(a *Access) {
-	a.afterCancel = func() {
+	a.seams.afterCancel = func() {
 		<-a.marksDone
 		<-a.auditDone
 	}
 }
+
+// ExpiryRounds returns how many rounds a's expiry worker has finished, so a
+// test can wait for rounds instead of for time.
+func ExpiryRounds(a *Access) int64 { return a.expiry.rounds.Load() }
