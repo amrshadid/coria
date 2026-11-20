@@ -12,7 +12,9 @@ import (
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/layout"
 	"github.com/amrshadid/coria/internal/core/manifest"
+	"github.com/amrshadid/coria/internal/core/naming"
 	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/receive/sidecar"
 	"github.com/amrshadid/coria/internal/tenant"
 )
@@ -242,7 +244,8 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		inManifest[mf.SOPInstanceUID] = true
 	}
 	p.at("archive.before-sidecar")
-	if err := p.putSidecar(ctx, store, metadataKey, puts, func(u string) bool { return !inManifest[u] || ours[u] }); err != nil {
+	var values tenant.ScanValues
+	if err := p.putSidecar(ctx, store, metadataKey, puts, func(u string) bool { return !inManifest[u] || ours[u] }, &values); err != nil {
 		return res, err
 	}
 	p.at("archive.before-manifest")
@@ -257,7 +260,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		c := tenant.ScanCommit{
 			ReceptionID: r.ID, StudyUID: r.StudyUID, SeriesUID: g.uid,
 			SubjectLabel: path.Subject, SessionLabel: path.Session, ScanLabel: path.Scan,
-			Storage: r.Storage, ManifestSHA256: manifestSum, At: p.now(), Fence: &fence,
+			Storage: r.Storage, ManifestSHA256: manifestSum, Values: values, At: p.now(), Fence: &fence,
 		}
 		for _, wr := range part {
 			c.Instances = append(c.Instances, tenant.ConfirmedInstance{
@@ -342,8 +345,11 @@ func readManifest(ctx context.Context, store blob.Store, key string) (manifest.M
 // putSidecar writes the scan's metadata sidecar: the sidecar the storage
 // holds, merged with this reception's instances, streamed to the storage as
 // it is made, each instance's header read from its incoming copy only when
-// its line is written.
-func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string, puts []written, drop func(string) bool) error {
+// its line is written. It sets values to what the first of those headers
+// says of the scan and its session (scanValues), which the commit gives
+// the catalog, so no header is read twice.
+func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string, puts []written, drop func(string) bool,
+	values *tenant.ScanValues) error {
 	var old io.ReadCloser
 	rc, err := store.Read(ctx, key, 0, -1)
 	switch {
@@ -363,6 +369,9 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 		h, err := p.readHeader(ctx, wr.f.Incoming)
 		if err != nil {
 			return sidecar.Instance{}, false, err
+		}
+		if i == 1 {
+			*values = scanValues(h)
 		}
 		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.f.Size, SHA256: hex.EncodeToString(wr.f.SHA256[:])}
 		if h.HasPixelData {
@@ -407,4 +416,28 @@ func storageError(err error, message string) error {
 		k = fault.Unavailable
 	}
 	return fault.Wrap(k, err, message+": "+safe(err))
+}
+
+// The attributes a scan's commit carries to the catalog (PS3.6 Table 6-1):
+// the session's Study Date and the scan's Modality, Series Description and
+// Series Number. Each is a study's or a series's attribute, the same in
+// every file of the scan by the standard (PS3.3 C.7.2.1, C.7.3.1), so one
+// file's header says it.
+var (
+	tagStudyDate         = naming.NewTag(0x0008, 0x0020)
+	tagModality          = naming.NewTag(0x0008, 0x0060)
+	tagSeriesDescription = naming.NewTag(0x0008, 0x103E)
+	tagSeriesNumber      = naming.NewTag(0x0020, 0x0011)
+)
+
+// scanValues returns what a file's header says of its scan and session, as
+// the catalog keeps it (tenant.ScanValuesOf): the values go-dicom decodes,
+// under the file's character set, with their padding removed; one absent
+// or not of its kind is left empty.
+func scanValues(h *header.Header) tenant.ScanValues {
+	text := func(t naming.Tag) string {
+		v, _ := h.Lookup(t)
+		return v
+	}
+	return tenant.ScanValuesOf(text(tagStudyDate), text(tagModality), text(tagSeriesDescription), text(tagSeriesNumber))
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand/v2"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,12 +27,15 @@ import (
 )
 
 // FileProfile is what a synthetic instance takes from a public test file:
-// its SOP class, its transfer syntax and its size. The catalog keeps no
-// other property of a file, so a tenant made from a few profiles has the
-// rows a tenant of real files of those kinds would have.
+// its SOP class, its transfer syntax, its size and its modality. The
+// catalog keeps no other property of a file but the header values a scan
+// carries, which the generator draws per scan, so a tenant made from a few
+// profiles has the rows a tenant of real files of those kinds would have.
 type FileProfile struct {
 	SOPClassUID, TransferSyntaxUID string
 	Size                           int64
+	// Modality is the file's Modality (0008,0060).
+	Modality string
 }
 
 // ProfileOf reads the profile of file, a whole Part 10 file, with the
@@ -44,7 +48,38 @@ func ProfileOf(t testing.TB, file []byte) FileProfile {
 		t.Fatal(err)
 	}
 	class, _ := h.UID(header.SOPClassUID)
-	return FileProfile{SOPClassUID: class, TransferSyntaxUID: h.TransferSyntaxUID, Size: int64(len(file))}
+	modality, _ := h.Lookup(naming.NewTag(0x0008, 0x0060))
+	return FileProfile{SOPClassUID: class, TransferSyntaxUID: h.TransferSyntaxUID, Size: int64(len(file)), Modality: modality}
+}
+
+// descriptions are the series descriptions a generated scan of a modality
+// is given, those of research protocols; a scan of another modality, and
+// one scan in twenty, has none, as files without one do.
+var descriptions = map[string][]string{
+	"MR": {"Localizer", "T1 MPRAGE", "T2 FLAIR", "T2 TSE axial", "DWI b1000", "ADC", "SWI", "fMRI rest run 1", "fMRI task run 2",
+		"Field map", "ASL perfusion", "DTI 64 directions"},
+	"CT": {"Scout", "Head 5mm", "Chest 1.25mm", "Abdomen Pelvis", "SmartScore - Gated 0.5 sec", "Angio 0.625mm", "Bone recon"},
+}
+
+// studyDate draws a study's date from r: a day in the ten years before
+// the tenant starts receiving, since an archive receives old studies as
+// well as new ones, or none for one study in fifty, as files without one.
+func studyDate(r *rand.Rand) string {
+	if r.IntN(50) == 0 {
+		return ""
+	}
+	return genEpoch.AddDate(0, 0, -r.IntN(3653)).Format("20060102")
+}
+
+// scanValues draws the header values of scan i of a study of that date,
+// from r: the profile's modality, a description of that modality and the
+// series number i+1.
+func scanValues(r *rand.Rand, date string, profile FileProfile, i int) tenant.ScanValues {
+	description := ""
+	if list := descriptions[profile.Modality]; len(list) > 0 && r.IntN(20) != 0 {
+		description = list[r.IntN(len(list))]
+	}
+	return tenant.ScanValuesOf(date, profile.Modality, description, strconv.Itoa(i+1))
 }
 
 // TenantShape says what GenerateTenant makes.
@@ -153,9 +188,13 @@ func planStudies(seed uint64, first int, n int64) []studyPlan {
 // as reception writes one: for each study a reception at GenReceiver that
 // records its received files in batches, is identified with the labels the
 // default naming rule gives, claims its instances, commits each scan in
-// parts of at most tenant.MaxScanCommit, and is archived, verified and
-// done. Labels have the default rule's shape (sub-, ses- and scan- with a
-// keyed hash of the patient ID, study UID and series UID), and UIDs are
+// parts of at most tenant.MaxScanCommit, one scan after another, so a
+// study's scans have ids in the order of its series and its instances are
+// written scan by scan, and is archived, verified and done. Each scan
+// carries its study's date (studyDate), its profile's modality, a series
+// description of that modality and its series number. Labels have the
+// default rule's shape (sub-, ses- and scan- with a keyed hash of the
+// patient ID, study UID and series UID), and UIDs are
 // UUID-derived (2.25 and a 128-bit number, PS3.5 B.2), the shape
 // de-identification gives them; no real UID can be one. It adds the
 // receiver and its storage when p lacks them. A failure of the store is
@@ -291,13 +330,16 @@ func (g gen) study(ctx context.Context, k int, plan studyPlan) (int64, error) {
 	type series struct {
 		uid, label string
 		profile    FileProfile
+		values     tenant.ScanValues
 		files      []tenant.ReceivedFile
 	}
 	all := make([]series, len(plan.scans))
 	var files []tenant.ReceivedFile
+	date := studyDate(r)
 	for i, n := range plan.scans {
 		s := series{uid: uid25(r), profile: g.shape.Profiles[r.IntN(len(g.shape.Profiles))]}
 		s.label = "scan-" + naming.HashText(g.key, []byte(s.uid))
+		s.values = scanValues(r, date, s.profile, i)
 		for range n {
 			uid := uid25(r)
 			in := hexOf(r, 16)
@@ -353,7 +395,7 @@ func (g gen) study(ctx context.Context, k int, plan studyPlan) (int64, error) {
 				return 0, err
 			}
 			c := tenant.ScanCommit{ReceptionID: rid, StudyUID: studyUID, SeriesUID: s.uid, SubjectLabel: subjectLabel,
-				SessionLabel: sessionLabel, ScanLabel: s.label, Storage: GenStorage, At: at,
+				SessionLabel: sessionLabel, ScanLabel: s.label, Storage: GenStorage, At: at, Values: s.values,
 				ManifestSHA256: tenant.SHA256(sha256.Sum256([]byte(s.uid)))}
 			for i, f := range part {
 				if k := answers[i].Kind; k != tenant.ClaimedNow && k != tenant.ClaimedBefore {

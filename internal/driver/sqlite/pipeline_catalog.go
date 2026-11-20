@@ -39,25 +39,24 @@ func instanceRowInTx(ctx context.Context, stmt *sql.Stmt, uid string) (*tenant.I
 
 // lockArchiving locks the row of a reception that has been identified and
 // not ended, in the statement that checks it, and returns its Study Instance
-// UID as received. A step that ends it (and releases its claims) is then
+// UID as received and its receiver. A step that ends it (and releases its claims) is then
 // ordered with a claim or a commit: on a database with several writers the
 // second waits for the first. It refuses a reception not there (NotFound) or
 // not archiving (a precondition).
-func lockArchiving(ctx context.Context, tx *sql.Tx, receptionID string) (string, error) {
-	var study string
-	err := tx.QueryRowContext(ctx, `UPDATE receptions SET step_at = step_at WHERE id = ? AND ended = 0 AND storage <> ''
-		RETURNING study_uid`, receptionID).Scan(&study)
+func lockArchiving(ctx context.Context, tx *sql.Tx, receptionID string) (study, receiver string, err error) {
+	err = tx.QueryRowContext(ctx, `UPDATE receptions SET step_at = step_at WHERE id = ? AND ended = 0 AND storage <> ''
+		RETURNING study_uid, receiver`, receptionID).Scan(&study, &receiver)
 	if err == nil || !errors.Is(err, sql.ErrNoRows) {
-		return study, err
+		return study, receiver, err
 	}
 	has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = ?`, receptionID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if !has {
-		return "", fault.New(fault.NotFound, "the tenant has no reception with this id")
+		return "", "", fault.New(fault.NotFound, "the tenant has no reception with this id")
 	}
-	return "", tenant.Precondition("the reception is not archiving: it has not been identified, or it has ended")
+	return "", "", tenant.Precondition("the reception is not archiving: it has not been identified, or it has ended")
 }
 
 // lockStorage takes a storage's row in the transaction, by an update that
@@ -106,7 +105,7 @@ func (t *Tenant) ClaimInstances(ctx context.Context, receptionID string, files [
 				return err
 			}
 		}
-		if _, err := lockArchiving(ctx, tx, receptionID); err != nil {
+		if _, _, err := lockArchiving(ctx, tx, receptionID); err != nil {
 			return err
 		}
 		read, insert := tx.StmtContext(ctx, s.instanceRow), tx.StmtContext(ctx, s.insertClaim)

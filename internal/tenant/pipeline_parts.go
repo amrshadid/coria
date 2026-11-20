@@ -223,4 +223,5 @@ type PipelineParts interface {
 	WorkClaims
 	WorkReclaim
 	ScanContents
+	CatalogReads
 }

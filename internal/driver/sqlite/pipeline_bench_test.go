@@ -103,11 +103,13 @@ func fillHeld(b *testing.B, path string) {
 	}
 	defer func() { _ = db.Close() }()
 	for _, stmt := range []string{
-		`INSERT INTO subjects VALUES (1, 'sub-01', 'sub-01', 0)`,
+		`INSERT INTO subjects (id, label, folded, created) VALUES (1, 'sub-01', 'sub-01', 0)`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000)
-		 INSERT INTO sessions SELECT i, '2.25.1.' || i, 1, 'ses-' || i, 'ses-' || i, 'store', 0 FROM n`,
+		 INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created)
+		 SELECT i, '2.25.1.' || i, 1, 'ses-' || i, 'ses-' || i, 'store', 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000)
-		 INSERT INTO scans SELECT i, i, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 1000, 524288000, NULL, 0, 0 FROM n`,
+		 INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated)
+		 SELECT i, i, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 1000, 524288000, NULL, 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 999999)
 		 INSERT INTO instances SELECT '2.25.3.' || (i + 1), '2.25.1.' || (i / 1000 + 1), '2.25.2.' || (i / 1000 + 1),
 		   'held', randomblob(32), 'held' || (i / 1000), i / 1000 + 1, 'store', 'k', 0, 524288, 524288, randomblob(32), 0, 0 FROM n`,

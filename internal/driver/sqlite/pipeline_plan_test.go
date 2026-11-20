@@ -44,11 +44,13 @@ func fillPipeline(tb testing.TB, path string) {
 		   '', '', '', 10, NULL, NULL, '', '2.25.3.' || i, '2.25.1.' || (i % 5000 + 1), '', '', '', 0, i * 1000000, NULL,
 		   '', '', '', '', '', '' FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 500)
-		 INSERT INTO subjects SELECT i, 'sub-' || i, 'sub-' || i, 0 FROM n`,
+		 INSERT INTO subjects (id, label, folded, created) SELECT i, 'sub-' || i, 'sub-' || i, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)
-		 INSERT INTO sessions SELECT i, '2.25.1.' || i, i % 500 + 1, 'ses-' || i, 'ses-' || i, 'store' || (i % 200 + 1), 0 FROM n`,
+		 INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created)
+		 SELECT i, '2.25.1.' || i, i % 500 + 1, 'ses-' || i, 'ses-' || i, 'store' || (i % 200 + 1), 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
-		 INSERT INTO scans SELECT i, i % 5000 + 1, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 5, 5000, NULL, 0, 0 FROM n`,
+		 INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated)
+		 SELECT i, i % 5000 + 1, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 5, 5000, NULL, 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.' || (i % 5000 + 1), '2.25.2.' || (i % 20000 + 1),
 		   CASE WHEN i % 100 = 0 THEN 'claimed' ELSE 'held' END, randomblob(32), 'rc' || (i % 10000 + 1),
@@ -277,7 +279,7 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 		"receptions_receiver_in_progress", "receptions_by_receiver_state", "receptions_by_study_state",
 		"quarantine_by_state_reason", "quarantine_by_state_receiver", "quarantine_by_receiver_reason",
 		"quarantine_by_state_receiver_reason", "quarantine_kept", "instances_claimed", "instances_on_storage",
-		"instances_held_by", "scans_by_session", "sessions_by_storage", "work_by_reception", "receptions_holding",
+		"instances_held_by", "scans_by_session_created", "sessions_by_storage", "work_by_reception", "receptions_holding",
 		"events_by_type", "events_by_key"} {
 		if !strings.Contains("\n"+indexes+"\n", "\n"+want+"\n") {
 			t.Errorf("sqlite3 shows no index %s", want)

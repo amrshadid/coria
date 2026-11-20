@@ -150,6 +150,7 @@ func TestShippedTenantMigrationsUnchanged(t *testing.T) {
 		"0005_tenant_secrets.sql " + shippedTenantSealedKeys,
 		"0006_event_checkpoints.sql " + shippedTenantCheckpoints,
 		"0007_storage_totals.sql " + shippedTenantStorageTotals,
+		"0008_catalog_reads.sql " + shippedTenantCatalogReads,
 	}
 	if tenantMigrationsErr != nil {
 		t.Fatal(tenantMigrationsErr)
@@ -290,3 +291,7 @@ func TestTenantRefusesMasterCursors(t *testing.T) {
 // shippedTenantStorageTotals is the SHA-256 of
 // migrations/tenant/0007_storage_totals.sql as this change ships it.
 const shippedTenantStorageTotals = "667329adb71f5ac6f5c9889ad3fd66ea871fea864504ab2d1973d7ea90f8d3d4"
+
+// shippedTenantCatalogReads is the SHA-256 of
+// migrations/tenant/0008_catalog_reads.sql as this change ships it.
+const shippedTenantCatalogReads = "aec825e134ca713bef17b52b824f3653c037f1ab4cad5c2f98f609e17601e943"

@@ -14,6 +14,7 @@ import (
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/layout"
 	"github.com/amrshadid/coria/internal/core/manifest"
+	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/receive/sidecar"
 	"github.com/amrshadid/coria/internal/tenant"
 )
@@ -103,6 +104,39 @@ func checkArchive(t *testing.T, e *env, r tenant.Reception, sent map[string][]by
 	}
 }
 
+// checkCatalogValues checks what the catalog keeps of the study of
+// studyFiles from the files' headers against the values pydicom reads in
+// those files (StudyDate 20010101, Modality CT; two series: "Scout",
+// number 4, two files, and "SmartScore - Gated 0.5 sec", number 5, five
+// files), and the receiver and totals the commits left.
+func checkCatalogValues(t *testing.T, e *env, r tenant.Reception) {
+	t.Helper()
+	ses, err := e.store.CatalogSession(e.ctx, r.SubjectLabel, r.SessionLabel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ses.StudyDate != "20010101" || len(ses.Modalities) != 1 || ses.Modalities[0] != "CT" || ses.Receiver != r.Receiver ||
+		ses.Scans != 2 || ses.Instances != 7 || ses.Bytes != r.Counts.BytesArchived {
+		t.Errorf("the session as the catalog keeps it: %+v", ses)
+	}
+	page, err := e.store.ListScans(e.ctx, tenant.ScanFilter{Order: tenant.OrderSeriesDescription}, master.Page{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []tenant.ScanValues{
+		{Modality: "CT", SeriesDescription: "Scout", SeriesNumber: 4, HasSeriesNumber: true},
+		{Modality: "CT", SeriesDescription: "SmartScore - Gated 0.5 sec", SeriesNumber: 5, HasSeriesNumber: true},
+	}
+	if len(page.Items) != len(want) {
+		t.Fatalf("scans by description: %+v", page.Items)
+	}
+	for i, sc := range page.Items {
+		if sc.Values != want[i] || sc.Instances != int64(2+3*i) || sc.Receiver != r.Receiver {
+			t.Errorf("scan %d: %+v, want values %+v", i, sc, want[i])
+		}
+	}
+}
+
 // sentMap returns the bytes of the named corpus files by SOP Instance UID.
 func sentMap(t *testing.T, names ...string) map[string][]byte {
 	out := map[string][]byte{}
@@ -139,6 +173,7 @@ func TestStudyIsArchivedByteForByte(t *testing.T) {
 	if totals != (tenant.CatalogCounts{Subjects: 1, Sessions: 1, Scans: 2, Instances: 7}) {
 		t.Fatalf("catalog totals %+v", totals)
 	}
+	checkCatalogValues(t, e, r)
 	if n := e.incomingFiles(); n != 0 {
 		t.Fatalf("the incoming area holds %d files after the reception is done", n)
 	}

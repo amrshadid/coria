@@ -8,6 +8,13 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- The catalog keeps what reading needs: each scan's modality, series
+  description and series number and each session's study date, read from the
+  files' headers; the receiver that first archived into each; running counts
+  of sessions, scans, instances and bytes on subjects and sessions; and an
+  index for every list order and filter, so a page of subjects, sessions,
+  scans or a scan's instances is read from one index at any size. Existing
+  catalogs are filled in when the database is upgraded.
 - A generated Python client, `coria` (`clients/python`): the API contract
   compiled with grpcio-tools and checked in, a thin `coria.Client` that sends
   the key, exposes each service's stub, pages through list calls by cursor and

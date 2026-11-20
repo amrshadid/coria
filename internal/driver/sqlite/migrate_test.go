@@ -16,6 +16,7 @@ import (
 
 	"github.com/amrshadid/coria/internal/driver/sqlkit"
 	"github.com/amrshadid/coria/internal/fault"
+	"github.com/amrshadid/coria/internal/tenant/tenanttest"
 )
 
 // testMigrations are migrations that fail if run twice: the first makes a
@@ -326,4 +327,53 @@ func TestMigrateHelperProcess(t *testing.T) {
 	if err != nil || v != 5 {
 		t.Fatalf("Migrate = %d, %v; want 5", v, err)
 	}
+}
+
+// TestCatalogReadsMigrationFillsRows guards the migration that gives the
+// catalog what its reads need, on a database that holds a catalog already
+// (the rows tenanttest.CheckMigratedCatalog describes):
+// each session and scan gets its parents' labels and its storage, the
+// receiver of the reception that confirmed its first instance, and running
+// totals equal to a count of the instances its scans hold; each subject
+// its sessions, instances, bytes and last update; and the lists by label,
+// which read those columns, answer the rows in their order.
+func TestCatalogReadsMigrationFillsRows(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenTenant(ctx, filepath.Join(t.TempDir(), "tenant.db"), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err := sqlkit.Migrate(ctx, s.p.write, dialect, tenantMigrations[:7]); err != nil {
+		t.Fatal(err)
+	}
+	reception := func(id, receiver, study string, arrival int) string {
+		return fmt.Sprintf(`INSERT INTO receptions VALUES ('%s', '%s', '%s', %d, 'done', 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			'', '', 'store', '', 0, 0, 0, 0, 0, '[]', 0, '', '', '', NULL)`, id, receiver, study, arrival)
+	}
+	held := func(uid, study, series, rc string, scan, size, at int) string {
+		return fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', randomblob(32), '%s', %d, 'store', 'k/%s', 0, %d, %d,
+			randomblob(32), %d, %d)`, uid, study, series, rc, scan, uid, size, size, at, at)
+	}
+	for _, stmt := range []string{
+		reception("rc1", "recv-x", "2.25.1.1", 1), reception("rc2", "recv-y", "2.25.1.2", 1), reception("rc3", "recv-y", "2.25.1.3", 1),
+		reception("rc4", "recv-z", "2.25.1.1", 2),
+		`INSERT INTO subjects VALUES (1, 'Sub-A', 'sub-a', 100), (2, 'sub-b', 'sub-b', 200), (3, 'sub-c', 'sub-c', 300)`,
+		`INSERT INTO sessions VALUES (1, '2.25.1.1', 1, 'ses-1', 'ses-1', 'store', 100), (2, '2.25.1.2', 1, 'ses-2', 'ses-2', 'store', 150),
+			(3, '2.25.1.3', 2, 'ses-1', 'ses-1', 'store', 200)`,
+		`INSERT INTO scans VALUES (1, 1, '2.25.2.1', 'scan-1', 'scan-1', 2, 30, NULL, 100, 120), (2, 1, '2.25.2.2', 'scan-2', 'scan-2', 1, 5, NULL, 110, 110),
+			(3, 2, '2.25.2.3', 'scan-1', 'scan-1', 1, 7, NULL, 150, 160), (4, 3, '2.25.2.4', 'scan-1', 'scan-1', 1, 9, NULL, 200, 200)`,
+		held("2.25.3.2", "2.25.1.1", "2.25.2.1", "rc4", 1, 20, 120), held("2.25.3.1", "2.25.1.1", "2.25.2.1", "rc1", 1, 10, 100),
+		held("2.25.3.3", "2.25.1.1", "2.25.2.2", "rc1", 2, 5, 110), held("2.25.3.4", "2.25.1.2", "2.25.2.3", "rc2", 3, 7, 150),
+		held("2.25.3.5", "2.25.1.3", "2.25.2.4", "rc3", 4, 9, 200),
+		`INSERT INTO instances VALUES ('2.25.3.9', '2.25.1.1', '2.25.2.1', 'claimed', randomblob(32), 'rc4', NULL, '', '', 0, 0, 0, NULL, 0, NULL)`,
+	} {
+		if _, err := s.p.write.ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tenanttest.CheckMigratedCatalog(t, s, fromMicros)
 }

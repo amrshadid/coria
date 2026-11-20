@@ -136,8 +136,8 @@ func TestPipelinePlansAtScale(t *testing.T) {
 		`INSERT INTO subjects (label, folded, created) SELECT 'sub-' || n, 'sub-' || n, now() FROM generate_series(1, 1000) n`,
 		`INSERT INTO sessions (study_uid, subject_id, label, folded, storage, created)
 		 SELECT '2.25.1.' || n, n % 1000 + 1, 'ses-' || n, 'ses-' || n, 'store', now() FROM generate_series(1, 2000) n`,
-		`INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated)
-		 SELECT n, '2.25.2.' || n, 'scan-1', 'scan-1', 1000, 1000000, NULL, now(), now() FROM generate_series(1, 2000) n`,
+		`INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated, session_label, session_folded)
+		 SELECT n, '2.25.2.' || n, 'scan-1', 'scan-1', 1000, 1000000, NULL, now(), now(), 'ses-' || n, 'ses-' || n FROM generate_series(1, 2000) n`,
 		`INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.' || (i / 1000 + 1), '2.25.2.' || (i / 1000 + 1), 'held',
 		   sha256(i::text::bytea), 'rc' || (i / 1000 + 1), i / 1000 + 1, 'store', 'k' || i, 0, 1000, 1000, sha256(i::text::bytea), now(), now()
 		 FROM generate_series(0, 1999999) i`,

@@ -324,10 +324,15 @@ type Pipeline interface {
 	// ErrSeriesElsewhere; labels or storage other than an existing
 	// session's or scan's own are a precondition failure. An instance
 	// confirmed again (a commit written again after a crash) is counted
-	// once. Each confirmed instance adds to the scan's counts, to the
-	// reception's archived counts, and to the catalog's totals, in the
-	// same transaction. A scan of more than MaxScanCommit instances is
-	// committed in several calls.
+	// once. Each confirmed instance adds to the scan's counts, to its
+	// session's and subject's running totals (a new scan to the session's,
+	// a new session to the subject's), to the reception's archived
+	// counts, and to the catalog's totals, in the same transaction, which
+	// moves the scan's, session's and subject's update time to the
+	// commit's. A scan and a session made take the commit's Values and the
+	// receiver of its reception; one already there fills only the values
+	// it holds empty (ScanValues). A scan of more than MaxScanCommit
+	// instances is committed in several calls.
 	CommitScan(ctx context.Context, c ScanCommit) (Scan, error)
 	// CatalogLabels returns the labels and storage of the study's session
 	// and the labels of those of its series that have scans, as the

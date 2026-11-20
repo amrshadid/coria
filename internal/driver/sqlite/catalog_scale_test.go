@@ -29,12 +29,18 @@ const letters = "abcdefghijklmnopqrstuvwxyz"
 // scaleProbes is how many times each catalog read is timed.
 const scaleProbes = 300
 
+// scaleStrictRows is the rows past which a catalog read of a table must be
+// a range of an index at scale (checkCatalogPlans).
+const scaleStrictRows = 10000
+
 // TestScaleCatalog builds a synthetic tenant of CORIA_SCALE_INSTANCES
 // instances through the port (testkit.GenerateTenant) and measures what a
 // catalog that large costs on SQLite: the rate of reception into an empty
-// tenant and into the large one, the size of each table and index, the plan
-// and the time (median, 99th percentile) of each read the catalog's
-// services will make (an instance by its UID alone, a scan's instances
+// tenant and into the large one, the size of each table and index, the
+// plan of every statement of the catalog's reads, every line checked
+// (checkCatalogPlans), and the time of each read through the port
+// (testkit.TimeCatalogReads), and the plan and the time (median, 99th
+// percentile) of each read the catalog's services will make (an instance by its UID alone, a scan's instances
 // paged, a study's instances, a session by study UID, a subject's
 // sessions and a session's scans by label, a page of subjects), and the
 // time of ANALYZE and VACUUM. A read that scans a large table whole fails
@@ -83,20 +89,32 @@ func TestScaleCatalog(t *testing.T) {
 	emptyRate, next := rate(0, min(slice, n), 1)
 	sum.Add("reception into an empty tenant", fmt.Sprintf("%.0f instances/s", emptyRate))
 	if n > slice {
+		// The bulk is written with commits not synced and a large page
+		// cache (setBulkWrites), and the settings openPools gives a server
+		// are back before anything is measured: the bulk only makes the
+		// tenant large, and a build synced commit by commit through a 2 MB
+		// cache takes hours at ten million instances.
+		if err := s.setBulkWrites(ctx, true, 1024); err != nil {
+			t.Fatal(err)
+		}
 		began := time.Now()
 		last := time.Now()
 		g, err := testkit.GenerateTenant(ctx, s, testkit.TenantShape{Instances: n - slice, Seed: 1, FirstStudy: next, Profiles: profiles, Workers: 4,
 			Progress: func(done int64) {
 				if time.Since(last) > time.Minute {
 					last = time.Now()
-					t.Logf("built %d of %d instances in %v", done+slice, n, time.Since(began).Round(time.Second))
+					t.Logf("built %d of %d instances in %v, %.0f instances/s", done+slice, n, time.Since(began).Round(time.Second),
+						float64(done)/time.Since(began).Seconds())
 				}
 			}})
 		if err != nil {
 			t.Fatal(err)
 		}
 		next = g.NextStudy
-		sum.Add("build", fmt.Sprintf("%d instances in %v (%.0f instances/s, 4 writers)", n, time.Since(began).Round(time.Second),
+		if err := s.setBulkWrites(ctx, false, 0); err != nil {
+			t.Fatal(err)
+		}
+		sum.Add("build (commits not synced, 1 GiB cache)", fmt.Sprintf("%d instances in %v (%.0f instances/s, 4 writers)", n, time.Since(began).Round(time.Second),
 			float64(g.Instances)/time.Since(began).Seconds()))
 	}
 	db, err := sql.Open("sqlite", path)
@@ -111,6 +129,16 @@ func TestScaleCatalog(t *testing.T) {
 	sum.Add("ANALYZE", time.Since(began).Round(time.Millisecond).String())
 	logSizes(t, db, sum)
 
+	// The catalog's reads as its services make them: the plan of every
+	// statement checked line by line, as this driver reads it and as the
+	// sqlite3 tool does, and the time of each read through the port.
+	toolAndPath := ""
+	if tool := sqlite3Tool(); tool != "" {
+		toolAndPath = tool + "\x00" + path
+	}
+	checkCatalogPlans(t, db, sampleCatalog(t, db), toolAndPath, scaleStrictRows)
+	testkit.TimeCatalogReads(t, s, catalogProbes(t, db), scaleProbes, sum, scaleListBound)
+
 	scans := sampleScans(t, db)
 	instances := sampleInstances(t, db, scans)
 	pick := func(r *rand.Rand) scanRow { return scans[r.IntN(len(scans))] }
@@ -123,7 +151,7 @@ func TestScaleCatalog(t *testing.T) {
 		{"a scan's page after a cursor", scanInstancesSQL, func(r *rand.Rand) []any { return []any{pick(r).series, "2.25.5", 1001} }},
 		{"a study's instances, first page", `SELECT s.series_uid, i.sop_instance_uid, i.storage_key, i.size
 			FROM sessions AS se JOIN scans AS s ON s.session_id = se.id JOIN instances AS i ON i.scan_id = s.id AND i.state = 'held'
-			WHERE se.study_uid = ? ORDER BY s.series_uid, i.sop_instance_uid LIMIT 1001`,
+			WHERE se.study_uid = ? ORDER BY s.id, i.sop_instance_uid LIMIT 1001`,
 			func(r *rand.Rand) []any { return []any{pick(r).study} }},
 		{"a session by study UID", sessionLabelsSQL, func(r *rand.Rand) []any { return []any{pick(r).study} }},
 		{"a scan by series UID", `SELECT label, instances, bytes FROM scans WHERE series_uid = ?`,
@@ -339,4 +367,33 @@ func literal(query string, args []any) string {
 		b.WriteRune(c)
 	}
 	return b.String()
+}
+
+// catalogProbes returns the labels of about a thousand scans spread over
+// the tenant, each with one instance it holds, for the timings.
+func catalogProbes(t *testing.T, db *sql.DB) []testkit.CatalogProbe {
+	t.Helper()
+	var n int64
+	if err := db.QueryRow(`SELECT count(*) FROM scans`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.Query(`SELECT c.subject_label, c.session_label, c.label,
+		(SELECT min(sop_instance_uid) FROM instances WHERE scan_id = c.id AND state = 'held') FROM scans AS c WHERE c.id % ? = 0`,
+		max(1, n/1000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []testkit.CatalogProbe
+	for rows.Next() {
+		var p testkit.CatalogProbe
+		if err := rows.Scan(&p.Path.Subject, &p.Path.Session, &p.Path.Scan, &p.UID); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

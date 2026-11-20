@@ -21,28 +21,28 @@ const claimTries = 8
 
 // lockArchiving locks the row of a reception that has been identified and
 // not ended, in the statement that checks it, with the lock given, and
-// returns its Study Instance UID as received. A step that ends it (and
+// returns its Study Instance UID as received and its receiver. A step that
+// ends it (and
 // releases its claims) takes the row FOR NO KEY UPDATE, so it and a claim
 // (FOR SHARE: claims of one reception do not wait for each other) or a
 // commit (FOR NO KEY UPDATE: it adds to the reception's counts) are
 // ordered; under read committed a lock that waited reads the row as the
 // other left it and tests the condition again. It refuses a reception not
 // there (NotFound) or not archiving (a precondition).
-func lockArchiving(ctx context.Context, tx pgx.Tx, receptionID, lock string) (string, error) {
-	var study string
-	err := tx.QueryRow(ctx, `SELECT study_uid FROM receptions WHERE id = $1 AND NOT ended AND storage <> '' `+lock,
-		receptionID).Scan(&study)
+func lockArchiving(ctx context.Context, tx pgx.Tx, receptionID, lock string) (study, receiver string, err error) {
+	err = tx.QueryRow(ctx, `SELECT study_uid, receiver FROM receptions WHERE id = $1 AND NOT ended AND storage <> '' `+lock,
+		receptionID).Scan(&study, &receiver)
 	if err == nil || !isNoRow(err) {
-		return study, err
+		return study, receiver, err
 	}
 	has, err := exists(ctx, tx, `SELECT 1 FROM receptions WHERE id = $1`, receptionID)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if !has {
-		return "", errNoReception()
+		return "", "", errNoReception()
 	}
-	return "", tenant.Precondition("the reception is not archiving: it has not been identified, or it has ended")
+	return "", "", tenant.Precondition("the reception is not archiving: it has not been identified, or it has ended")
 }
 
 // scanInstanceRow reads one row of instanceRowsSQL.
@@ -126,7 +126,7 @@ func (t *Tenant) ClaimInstances(ctx context.Context, receptionID string, files [
 				return err
 			}
 		}
-		if _, err := lockArchiving(ctx, tx, receptionID, "FOR SHARE"); err != nil {
+		if _, _, err := lockArchiving(ctx, tx, receptionID, "FOR SHARE"); err != nil {
 			return err
 		}
 		type asReceived struct{ study, series string }

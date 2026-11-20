@@ -38,8 +38,10 @@ const largeTable = 10000
 // instances through the port (testkit.GenerateTenant) and measures what a
 // catalog that large costs on Postgres, in one table per kind as the
 // schema has it: the rate of reception into an empty tenant and into the
-// large one, the size of each table and index, the plan Postgres makes for
-// the values used (EXPLAIN ANALYZE) and its generic plan, and the time
+// large one, the size of each table and index, both plans of every
+// statement of the catalog's reads (checkCatalogPlans) and the time of each
+// read through the port (testkit.TimeCatalogReads), the plan Postgres makes
+// for the values used (EXPLAIN ANALYZE) and its generic plan, and the time
 // (median, 99th percentile) of each read the catalog's services will make
 // (an instance by its UID alone, a scan's instances paged, a study's
 // instances, a session by study UID, a subject's sessions and a session's
@@ -86,7 +88,8 @@ func TestScaleCatalog(t *testing.T) {
 			Progress: func(done int64) {
 				if time.Since(last) > time.Minute {
 					last = time.Now()
-					t.Logf("built %d of %d instances in %v", done+slice, n, time.Since(began).Round(time.Second))
+					t.Logf("built %d of %d instances in %v, %.0f instances/s", done+slice, n, time.Since(began).Round(time.Second),
+						float64(done)/time.Since(began).Seconds())
 				}
 			}})
 		if err != nil {
@@ -104,6 +107,12 @@ func TestScaleCatalog(t *testing.T) {
 	mustExec(t, conn, `ANALYZE`)
 	logSizes(t, conn, sum)
 
+	// The catalog's reads as its services make them: both plans of every
+	// statement checked (checkCatalogPlans; a table under largeTable rows
+	// may be read whole), and the time of each read through the port.
+	checkCatalogPlans(t, conn, sampleCatalog(t, conn), largeTable)
+	testkit.TimeCatalogReads(t, s, catalogProbes(t, conn), scaleProbes, sum, scaleListBound)
+
 	scans := sampleScans(t, conn)
 	instances := sampleInstances(t, conn, scans)
 	pick := func(r *rand.Rand) scanRow { return scans[r.IntN(len(scans))] }
@@ -116,7 +125,7 @@ func TestScaleCatalog(t *testing.T) {
 		{"a scan's page after a cursor", scanInstancesSQL, func(r *rand.Rand) []any { return []any{pick(r).series, "2.25.5", 1001} }},
 		{"a study's instances, first page", `SELECT s.series_uid, i.sop_instance_uid, i.storage_key, i.size
 			FROM sessions AS se JOIN scans AS s ON s.session_id = se.id JOIN instances AS i ON i.scan_id = s.id AND i.state = 'held'
-			WHERE se.study_uid = $1 ORDER BY s.series_uid, i.sop_instance_uid LIMIT 1001`,
+			WHERE se.study_uid = $1 ORDER BY s.id, i.sop_instance_uid LIMIT 1001`,
 			func(r *rand.Rand) []any { return []any{pick(r).study} }},
 		{"a session by study UID", sessionLabelsSQL, func(r *rand.Rand) []any { return []any{pick(r).study} }},
 		{"a scan by series UID", `SELECT label, instances, bytes FROM scans WHERE series_uid = $1`,
@@ -284,4 +293,30 @@ func logSizes(t *testing.T, conn *pgx.Conn, sum *testkit.Summary) {
 		}
 	}
 	t.Logf("sizes (r table, i index):\n  %s", strings.Join(lines, "\n  "))
+}
+
+// catalogProbes returns the labels of about a thousand scans spread over
+// the tenant, each with one instance it holds, for the timings.
+func catalogProbes(t *testing.T, conn *pgx.Conn) []testkit.CatalogProbe {
+	t.Helper()
+	ctx := context.Background()
+	var n int64
+	if err := conn.QueryRow(ctx, `SELECT count(*) FROM scans`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := conn.Query(ctx, `SELECT c.subject_label, c.session_label, c.label,
+		(SELECT min(sop_instance_uid) FROM instances WHERE scan_id = c.id AND state = 'held') FROM scans AS c WHERE c.id % $1 = 0`,
+		max(1, n/1000))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (testkit.CatalogProbe, error) {
+		var p testkit.CatalogProbe
+		err := row.Scan(&p.Path.Subject, &p.Path.Session, &p.Path.Scan, &p.UID)
+		return p, err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

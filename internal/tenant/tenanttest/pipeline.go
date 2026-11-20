@@ -88,6 +88,13 @@ func runPipeline(t *testing.T, open OpenPipeline) {
 		{"ScanInstances", testScanInstances},
 		{"NewQuarantineReasons", testNewQuarantineReasons},
 		{"PipelineTenantsApart", testPipelineTenantsApart},
+		{"CatalogGets", testCatalogGets},
+		{"CatalogLists", testCatalogLists},
+		{"CatalogRefusals", testCatalogRefusals},
+		{"CatalogCursors", testCatalogCursors},
+		{"CatalogInstances", testCatalogInstances},
+		{"CatalogValuesKept", testCatalogValuesKept},
+		{"CatalogTotals", testCatalogTotals},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

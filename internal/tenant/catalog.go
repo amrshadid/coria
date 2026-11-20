@@ -64,6 +64,11 @@ type ScanCommit struct {
 	// ManifestSHA256 is the checksum of the scan's manifest as written
 	// with this commit; zero keeps the scan's.
 	ManifestSHA256 SHA256
+	// Values are what the scan's files say of it and of its session
+	// (ScanValues), read from one of them: a scan or session made by this
+	// commit takes them, and one already there fills only those it holds
+	// empty.
+	Values ScanValues
 	// Instances are the instances confirmed, at most MaxScanCommit.
 	Instances []ConfirmedInstance
 	// At is when the commit is made.
@@ -90,6 +95,9 @@ func (c ScanCommit) Validate() error {
 		return fault.Wrap(fault.Invalid, err, "a scan's labels are valid labels: "+err.Error())
 	}
 	if err := ValidateName("storage", c.Storage); err != nil {
+		return err
+	}
+	if err := c.Values.Validate(); err != nil {
 		return err
 	}
 	if len(c.Instances) == 0 {
