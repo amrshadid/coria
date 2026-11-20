@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -119,7 +120,7 @@ func BenchmarkStoreParallel(b *testing.B) {
 	})
 }
 
-// TestThousandTenants guards the registry at 1,000 tenants, a size an
+// TestScaleThousandTenants guards the registry at 1,000 tenants, a size an
 // installation can reach: every one is ready after Start, at most MaxOpening
 // were opened at once, getting one tenant's store costs the same as with 10,
 // and nothing is written to the master for tenants whose state did not
@@ -131,9 +132,12 @@ func BenchmarkStoreParallel(b *testing.B) {
 // registry, and made the race step a third longer; the 32-bit step leaves it
 // out for the same reason. The registry's concurrency is raced by the other
 // tests of this package.
-func TestThousandTenants(t *testing.T) {
+func TestScaleThousandTenants(t *testing.T) {
 	if testing.Short() {
 		t.Skip("1,000 tenants: skipped under -short")
+	}
+	if os.Getenv("CORIA_TEST_SCALE") == "" {
+		t.Skip("1,000 tenants: run by make test-scale, which sets CORIA_TEST_SCALE")
 	}
 	if raceDetector {
 		t.Skip("1,000 tenants: run without the race detector by make test-scale")

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -603,23 +604,35 @@ func runModel(t *testing.T, seed int64, shared bool) {
 // catalog's totals, each scan's counts, each reception's archived counts
 // and the count identity of each reception done equal the model's; no claim
 // is left by a reception that ended. Each operation is a synced commit, so a
-// seed takes about half a second: 20 seeds run here, and all 150 in
-// TestPipelineModelAllSeeds. Under the race detector, which slows each seed
+// seed takes about half a second: 8 seeds run here (four on one store, four
+// on two), and all 150 in TestPipelineModelAllSeeds. Under the race detector, which slows each seed
 // several times over, 6 run (three on one store, three on two): the detector
 // is there to see the two stores' goroutines, not to widen the model, and the
 // package has to fit the time a test run is given.
 func TestPipelineModel(t *testing.T) {
-	last := int64(20)
+	last := int64(8)
 	if raceDetector {
 		last = 6
 	}
 	runSeeds(t, 1, last)
 }
 
-// TestPipelineModelAllSeeds runs the model's 150 seeds, in the run made for
-// tests that take long (make test-scale).
+// allSeedsEnv is the variable that makes TestPipelineModelAllSeeds run.
+const allSeedsEnv = "CORIA_TEST_ALL_SEEDS"
+
+// TestPipelineModelAllSeeds runs the model's 150 seeds, which take minutes,
+// when allSeedsEnv is set (make test-scale sets it, and CI runs that). The
+// race detector slows each seed several times over, so the run is made
+// without it.
 func TestPipelineModelAllSeeds(t *testing.T) {
-	skipScale(t)
+	switch {
+	case testing.Short():
+		t.Skip("150 seeds: skipped under -short")
+	case os.Getenv(allSeedsEnv) == "":
+		t.Skip("150 seeds: set " + allSeedsEnv + "=1 (make test-scale does)")
+	case raceDetector:
+		t.Skip("150 seeds: run without the race detector")
+	}
 	runSeeds(t, 1, 150)
 }
 

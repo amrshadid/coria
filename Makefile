@@ -152,13 +152,16 @@ vuln: $(filter $(TOOLS)/%,$(GOVULNCHECK))
 test:
 	$(GO) test -race -count=1 ./...
 
-# The registry at 1,000 tenants (TestThousandTenants), without the race
-# detector, which the test skips: under it the test measured the detector
-# and made the race run a third longer. -v so its numbers are in the log.
+# The scale tests, which the everyday run skips unless CORIA_TEST_SCALE is
+# set: the registry at 1,000 tenants (TestScaleThousandTenants), the
+# drivers' tests at scale, and the pipeline model under every seed
+# (CORIA_TEST_ALL_SEEDS). Without the race detector, which these tests
+# skip: under it they measured the detector. -v so their numbers are in
+# the log.
 test-scale:
-	$(GO) test -count=1 -v -run '^TestThousandTenants$$' ./internal/registry
-	$(GO) test -count=1 -v -run '^(TestListFiltersAtScale$$|TestPipelineModelAllSeeds$$|TestScale)' ./internal/driver/sqlite
-	$(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres
+	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -run '^TestScaleThousandTenants$$' ./internal/registry
+	CORIA_TEST_SCALE=1 CORIA_TEST_ALL_SEEDS=1 $(GO) test -count=1 -v -timeout 30m -run '^(TestScale|TestPipelineModelAllSeeds$$)' ./internal/driver/sqlite
+	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -run '^TestScalePipelinePlans$$' ./internal/driver/postgres
 	CORIA_TEST_SCALE=1 $(GO) test -count=1 -v -timeout 30m -run '^TestScale' ./internal/receive
 
 # The event feed's speed: a step with its event, a page read from a feed of
@@ -866,7 +869,7 @@ ci:
 			skip "the Postgres driver as linux/386: 32-bit Linux binaries do not run on $$os/$$arch"; \
 		fi; \
 		echo; echo "==> query plans at millions of rows, Postgres $$v"; \
-		CORIA_TEST_POSTGRES='$(PG_URL)' CORIA_REQUIRE_POSTGRES=1 $(GO) test -count=1 -v -run '^TestPipelinePlansAtScale$$' ./internal/driver/postgres; \
+		CORIA_TEST_SCALE=1 CORIA_TEST_POSTGRES='$(PG_URL)' CORIA_REQUIRE_POSTGRES=1 $(GO) test -count=1 -v -run '^TestScalePipelinePlans$$' ./internal/driver/postgres; \
 		step outside-postgres; \
 	done; \
 	step pg-down; \

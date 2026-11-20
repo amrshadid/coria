@@ -290,7 +290,7 @@ jobs:
       # under the race detector and on 32 bits, where it would measure them,
       # so it has a run of its own.
       - name: Query plans at millions of rows
-        run: go test -count=1 -v -run '^TestPipelinePlansAtScale$' ./internal/driver/postgres
+        run: CORIA_TEST_SCALE=1 go test -count=1 -v -run '^TestScalePipelinePlans$' ./internal/driver/postgres
 
       - name: Outside check, the Postgres master read by psql and pg_dump
         run: |

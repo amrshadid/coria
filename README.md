@@ -150,7 +150,7 @@ locally passes there for the same reason.
 | `make lint` | golangci-lint with `.golangci.yml`, run for Linux, Windows and macOS so that files built for one system only are linted too, including the rule that `internal/core` imports only the standard library and itself, and from the standard library no database, network, file or system package |
 | `make vuln` | govulncheck: no known vulnerability reachable from the code |
 | `make test` | `go test -race -count=1 ./...`: always run, never a cached result |
-| `make test-scale` | the tenant registry at 1,000 tenants (`TestThousandTenants`), without the race detector, which that test skips; its time to ready, memory and open files are in the log |
+| `make test-scale` | the tenant registry at 1,000 tenants (`TestScaleThousandTenants`), the drivers' tests at scale and the pipeline model under every seed, without the race detector, which that test skips; its time to ready, memory and open files are in the log |
 | `make build` | static binaries for linux/amd64, linux/386, linux/arm64, darwin/arm64 and windows/amd64, in `bin/` |
 | `make size` | the size of each binary `make build` left, as a table |
 | `make proto-lint` | `buf lint` on the API contract in `api/proto` |

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -15,6 +16,9 @@ import (
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
+// scaleEnv is the variable that makes the scale tests run (docs/testing.md).
+const scaleEnv = "CORIA_TEST_SCALE"
+
 // skipScale skips a test at millions of rows except in the run made for it
 // (make test-scale): under -short, under the race detector (which it would
 // measure instead of the database), on 32 bits and on Windows, whose CI
@@ -24,6 +28,8 @@ func skipScale(t *testing.T) {
 	switch {
 	case testing.Short():
 		t.Skip("millions of rows: skipped under -short")
+	case os.Getenv(scaleEnv) == "":
+		t.Skip("millions of rows: run by make test-scale, which sets " + scaleEnv)
 	case raceDetector:
 		t.Skip("millions of rows: run without the race detector by make test-scale")
 	case runtime.GOARCH == "386":
@@ -39,7 +45,7 @@ func skipScale(t *testing.T) {
 // sizes, so the bound tells the two apart with room for a slow machine.
 const scaleListBound = 250 * time.Millisecond
 
-// TestListFiltersAtScale guards the receptions and quarantine lists at two
+// TestScaleListFilters guards the receptions and quarantine lists at two
 // million receptions and one million records, shaped as a tenant that has
 // worked for years: nearly all receptions ended and at one receiver,
 // nearly all records released. Every combination of filters the API
@@ -47,7 +53,7 @@ const scaleListBound = 250 * time.Millisecond
 // must be answered from an index whose leading columns are its filters:
 // the plan reads no table whole and sorts no rows outside a merge of
 // bounded parts, and the page takes less than scaleListBound.
-func TestListFiltersAtScale(t *testing.T) {
+func TestScaleListFilters(t *testing.T) {
 	skipScale(t)
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "tenant.db")

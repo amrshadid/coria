@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"runtime"
 	"slices"
@@ -20,6 +21,9 @@ import (
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
+// scaleEnv is the variable that makes the scale tests run (docs/testing.md).
+const scaleEnv = "CORIA_TEST_SCALE"
+
 // skipScale skips a test at millions of rows except in the run made for it
 // (go test -run with the test's name, without -short and without the race
 // detector): under -short, under the race detector (which it would measure
@@ -30,6 +34,8 @@ func skipScale(t *testing.T) {
 	switch {
 	case testing.Short():
 		t.Skip("millions of rows: skipped under -short")
+	case os.Getenv(scaleEnv) == "":
+		t.Skip("millions of rows: run by make test-scale, which sets " + scaleEnv)
 	case raceDetector:
 		t.Skip("millions of rows: run without the race detector")
 	case runtime.GOARCH == "386":
@@ -96,7 +102,7 @@ func (q connQuerier) Conn() *pgx.Conn { return q.c }
 // part of a second at these sizes.
 const scaleListBound = 250 * time.Millisecond
 
-// TestPipelinePlansAtScale guards that every list, claim and lookup of the
+// TestScalePipelinePlans guards that every list, claim and lookup of the
 // pipeline is answered from an index at the size of a tenant that has
 // worked for years: two million receptions (nearly all ended, at one
 // receiver), a million quarantine records (nearly all released), two
@@ -107,7 +113,7 @@ const scaleListBound = 250 * time.Millisecond
 // whole and sort no rows but those of a merge of parts each cut to its
 // limit; every combination of filters the API contract allows is listed, a
 // page of 50 in less than scaleListBound. The plans are logged.
-func TestPipelinePlansAtScale(t *testing.T) {
+func TestScalePipelinePlans(t *testing.T) {
 	skipScale(t)
 	ctx := context.Background()
 	address := newSchema(t)

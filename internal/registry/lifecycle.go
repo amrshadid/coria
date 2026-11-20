@@ -302,7 +302,7 @@ func (r *Registry) Close(ctx context.Context) error {
 // closeAll closes the store of every entry of m, MaxOpening at a time.
 // Closing a SQLite store checkpoints its log and syncs it, which is most of
 // a millisecond to tens of them; 1,000 of them one by one took 12 seconds on
-// a laptop (TestThousandTenants), so they are closed as they were opened.
+// a laptop (TestScaleThousandTenants), so they are closed as they were opened.
 func (r *Registry) closeAll(m map[string]*entry) error {
 	var (
 		wg    sync.WaitGroup
