@@ -45,9 +45,9 @@ with coria.Client("coria.example.org:8443", key) as client:
 - `timeout` is the deadline of a unary call, 60 seconds by default and `None`
   for none. A server stream (`monitor.Watch`) has no deadline unless you pass
   `timeout=` to that call.
-- One attribute per service: `access`, `audit`, `catalog`, `data`, `metadata`,
-  `monitor`, `profiles`, `quarantine`, `receivers`, `receptions`, `settings`,
-  `storages`, `tenants`. Each method takes the request message and returns the
+- One attribute per service: `access`, `audit`, `catalog`, `data`, `jobs`,
+  `metadata`, `monitor`, `profiles`, `quarantine`, `receivers`, `receptions`,
+  `senders`, `settings`, `storages`, `tenants`. Each method takes the request message and returns the
   response message; a server-streaming method returns an iterator of messages.
 - `client.pages(call, request, field)` yields the items of a list call across
   all its pages, following `next_page_token` until it is empty. A server that

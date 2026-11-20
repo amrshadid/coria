@@ -5,12 +5,14 @@ import { AccessService } from "./gen/coria/v1/access_pb.js";
 import { AuditService } from "./gen/coria/v1/audit_pb.js";
 import { CatalogService } from "./gen/coria/v1/catalog_pb.js";
 import { DataService } from "./gen/coria/v1/data_pb.js";
+import { JobService } from "./gen/coria/v1/job_pb.js";
 import { MetadataService } from "./gen/coria/v1/metadata_pb.js";
 import { MonitorService } from "./gen/coria/v1/monitor_pb.js";
 import { ProfileService } from "./gen/coria/v1/profile_pb.js";
 import { QuarantineService } from "./gen/coria/v1/quarantine_pb.js";
 import { ReceiverService } from "./gen/coria/v1/receiver_pb.js";
 import { ReceptionService } from "./gen/coria/v1/reception_pb.js";
+import { SenderService } from "./gen/coria/v1/sender_pb.js";
 import { SettingsService } from "./gen/coria/v1/settings_pb.js";
 import { StorageService } from "./gen/coria/v1/storage_pb.js";
 import { TenantService } from "./gen/coria/v1/tenant_pb.js";
@@ -26,6 +28,8 @@ export interface CoriaClients {
   readonly catalog: Client<typeof CatalogService>;
   /** Pixel and other bulk data of a tenant. */
   readonly data: Client<typeof DataService>;
+  /** Jobs of a tenant, such as sending a session to a sender, and their failures. */
+  readonly jobs: Client<typeof JobService>;
   /** DICOM metadata of a tenant. */
   readonly metadata: Client<typeof MetadataService>;
   /** Health and counters of the installation. */
@@ -38,6 +42,8 @@ export interface CoriaClients {
   readonly receivers: Client<typeof ReceiverService>;
   /** Receptions in progress or finished. */
   readonly receptions: Client<typeof ReceptionService>;
+  /** The senders of a tenant: the destinations its data may be sent to. */
+  readonly senders: Client<typeof SenderService>;
   /** Settings of the installation and of its tenants. */
   readonly settings: Client<typeof SettingsService>;
   /** The storages of a tenant. */
@@ -192,12 +198,14 @@ export function createClients(transport: Transport, options: ClientsOptions = {}
     audit: make(AuditService),
     catalog: make(CatalogService),
     data: make(DataService),
+    jobs: make(JobService),
     metadata: make(MetadataService),
     monitor: make(MonitorService),
     profiles: make(ProfileService),
     quarantine: make(QuarantineService),
     receivers: make(ReceiverService),
     receptions: make(ReceptionService),
+    senders: make(SenderService),
     settings: make(SettingsService),
     storages: make(StorageService),
     tenants: make(TenantService),

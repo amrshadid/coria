@@ -12,12 +12,14 @@ from coria.v1 import (
     audit_pb2_grpc,
     catalog_pb2_grpc,
     data_pb2_grpc,
+    job_pb2_grpc,
     metadata_pb2_grpc,
     monitor_pb2_grpc,
     profile_pb2_grpc,
     quarantine_pb2_grpc,
     receiver_pb2_grpc,
     reception_pb2_grpc,
+    sender_pb2_grpc,
     settings_pb2_grpc,
     storage_pb2_grpc,
     tenant_pb2_grpc,
@@ -177,12 +179,14 @@ class Client:
         self.audit = stub(audit_pb2_grpc, "AuditServiceStub")
         self.catalog = stub(catalog_pb2_grpc, "CatalogServiceStub")
         self.data = stub(data_pb2_grpc, "DataServiceStub")
+        self.jobs = stub(job_pb2_grpc, "JobServiceStub")
         self.metadata = stub(metadata_pb2_grpc, "MetadataServiceStub")
         self.monitor = stub(monitor_pb2_grpc, "MonitorServiceStub")
         self.profiles = stub(profile_pb2_grpc, "ProfileServiceStub")
         self.quarantine = stub(quarantine_pb2_grpc, "QuarantineServiceStub")
         self.receivers = stub(receiver_pb2_grpc, "ReceiverServiceStub")
         self.receptions = stub(reception_pb2_grpc, "ReceptionServiceStub")
+        self.senders = stub(sender_pb2_grpc, "SenderServiceStub")
         self.settings = stub(settings_pb2_grpc, "SettingsServiceStub")
         self.storages = stub(storage_pb2_grpc, "StorageServiceStub")
         self.tenants = stub(tenant_pb2_grpc, "TenantServiceStub")

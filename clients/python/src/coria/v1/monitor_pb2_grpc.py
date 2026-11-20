@@ -44,7 +44,9 @@ class MonitorServiceStub:
     them. A reception makes one event per step it reaches, with its counts,
     never one per file, and an accepted association makes none (a reception
     counts the associations that fed it); a quarantined file makes one event
-    per file, and so does the decision on it. Events carry labels, ids and
+    per file, and so does the decision on it; a job makes one event per state
+    it reaches and, while it runs, at most one of progress every 10 seconds,
+    never one per instance. Events carry labels, ids and
     counts; they never carry an attribute's value or a UID as such. A label is
     as identifying as the naming rule that made it (NamingRule). Events are
     kept for the setting events.retention, and then pruned, the period
@@ -92,7 +94,9 @@ class MonitorServiceServicer:
     them. A reception makes one event per step it reaches, with its counts,
     never one per file, and an accepted association makes none (a reception
     counts the associations that fed it); a quarantined file makes one event
-    per file, and so does the decision on it. Events carry labels, ids and
+    per file, and so does the decision on it; a job makes one event per state
+    it reaches and, while it runs, at most one of progress every 10 seconds,
+    never one per instance. Events carry labels, ids and
     counts; they never carry an attribute's value or a UID as such. A label is
     as identifying as the naming rule that made it (NamingRule). Events are
     kept for the setting events.retention, and then pruned, the period
@@ -230,7 +234,9 @@ class MonitorService:
     them. A reception makes one event per step it reaches, with its counts,
     never one per file, and an accepted association makes none (a reception
     counts the associations that fed it); a quarantined file makes one event
-    per file, and so does the decision on it. Events carry labels, ids and
+    per file, and so does the decision on it; a job makes one event per state
+    it reaches and, while it runs, at most one of progress every 10 seconds,
+    never one per instance. Events carry labels, ids and
     counts; they never carry an attribute's value or a UID as such. A label is
     as identifying as the naming rule that made it (NamingRule). Events are
     kept for the setting events.retention, and then pruned, the period

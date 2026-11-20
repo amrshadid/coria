@@ -12,6 +12,8 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Key } from "./access_pb.js";
 import { file_coria_v1_access } from "./access_pb.js";
+import type { JobCounts, JobState } from "./job_pb.js";
+import { file_coria_v1_job } from "./job_pb.js";
 import type { Caller, QuarantineReason, QuarantineState, ReleaseMode } from "./quarantine_pb.js";
 import { file_coria_v1_quarantine } from "./quarantine_pb.js";
 import type { ReceptionCounts, ReceptionStep } from "./reception_pb.js";
@@ -20,6 +22,8 @@ import type { ReceiverHealth } from "./receiver_pb.js";
 import { file_coria_v1_receiver } from "./receiver_pb.js";
 import type { Scope } from "./scope_pb.js";
 import { file_coria_v1_scope } from "./scope_pb.js";
+import type { SenderHealth } from "./sender_pb.js";
+import { file_coria_v1_sender } from "./sender_pb.js";
 import type { TenantState } from "./tenant_pb.js";
 import { file_coria_v1_tenant } from "./tenant_pb.js";
 import type { Message } from "@bufbuild/protobuf";
@@ -28,7 +32,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/monitor.proto.
  */
 export const file_coria_v1_monitor: GenFile = /*@__PURE__*/
-  fileDesc("ChZjb3JpYS92MS9tb25pdG9yLnByb3RvEghjb3JpYS52MSJPChJSZWNlcHRpb25TdGVwQ291bnQSJQoEc3RlcBgBIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASEgoKcmVjZXB0aW9ucxgCIAEoAyLgAQoMVGVuYW50Q291bnRzEhAKCHN1YmplY3RzGAEgASgDEhAKCHNlc3Npb25zGAIgASgDEg0KBXNjYW5zGAMgASgDEhEKCWluc3RhbmNlcxgEIAEoAxIZChFxdWFyYW50aW5lZF9maWxlcxgFIAEoAxIZChFxdWFyYW50aW5lZF9ieXRlcxgGIAEoAxI8ChZyZWNlcHRpb25zX2luX3Byb2dyZXNzGAcgAygLMhwuY29yaWEudjEuUmVjZXB0aW9uU3RlcENvdW50EhYKDmluY29taW5nX2J5dGVzGAggASgDIpgBCgpUaHJvdWdocHV0EiEKGWZpbGVzX3JlY2VpdmVkX3Blcl9zZWNvbmQYASABKAESIQoZYnl0ZXNfcmVjZWl2ZWRfcGVyX3NlY29uZBgCIAEoARIhChlmaWxlc19hcmNoaXZlZF9wZXJfc2Vjb25kGAMgASgBEiEKGWJ5dGVzX2FyY2hpdmVkX3Blcl9zZWNvbmQYBCABKAEiiQEKDVN0b3JhZ2VTdGF0dXMSDwoHc3RvcmFnZRgBIAEoCRISCgp1c2VkX2J5dGVzGAIgASgDEhcKCmZyZWVfYnl0ZXMYAyABKANIAIgBARIWCg5jYXBhY2l0eV9ieXRlcxgEIAEoAxITCgtuZWFybHlfZnVsbBgFIAEoCEINCgtfZnJlZV9ieXRlcyJgCg5SZWNlaXZlclN0YXR1cxIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aBISCgphbnlfY2FsbGVyGAMgASgIIuQCCgxUZW5hbnRTdGF0dXMSDgoGdGVuYW50GAEgASgJEi0KDmRhdGFiYXNlX3N0YXRlGAIgASgOMhUuY29yaWEudjEuVGVuYW50U3RhdGUSNwoTZGF0YWJhc2Vfc3RhdGVfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMZXZlbnRfY3Vyc29yGAQgASgJEiYKBmNvdW50cxgFIAEoCzIWLmNvcmlhLnYxLlRlbmFudENvdW50cxIoCgp0aHJvdWdocHV0GAYgASgLMhQuY29yaWEudjEuVGhyb3VnaHB1dBIpCghzdG9yYWdlcxgHIAMoCzIXLmNvcmlhLnYxLlN0b3JhZ2VTdGF0dXMSKwoJcmVjZWl2ZXJzGAggAygLMhguY29yaWEudjEuUmVjZWl2ZXJTdGF0dXMSHAoUaW5jb21pbmdfbGltaXRfYnl0ZXMYCSABKAMiWQoQR2V0U3RhdHVzUmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIqUBChFHZXRTdGF0dXNSZXNwb25zZRInCgd0ZW5hbnRzGAEgAygLMhYuY29yaWEudjEuVGVuYW50U3RhdHVzEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIkCg1leHBpcmluZ19rZXlzGAQgAygLMg0uY29yaWEudjEuS2V5IpQBChFBc3NvY2lhdGlvbkZhaWxlZBIQCghyZWNlaXZlchgBIAEoCRIgCgZjYWxsZXIYAiABKAsyEC5jb3JpYS52MS5DYWxsZXISLQoHZmFpbHVyZRgDIAEoDjIcLmNvcmlhLnYxLkFzc29jaWF0aW9uRmFpbHVyZRINCgVjb3VudBgEIAEoAxINCgVob3N0cxgFIAEoAyKOAgoUUmVjZXB0aW9uU3RlcFJlYWNoZWQSEQoJcmVjZXB0aW9uGAEgASgJEhAKCHJlY2VpdmVyGAIgASgJEg8KB2Fycml2YWwYAyABKAUSJQoEc3RlcBgEIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASLgoNcHJldmlvdXNfc3RlcBgJIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASKQoGY291bnRzGAUgASgLMhkuY29yaWEudjEuUmVjZXB0aW9uQ291bnRzEhUKDXN1YmplY3RfbGFiZWwYBiABKAkSFQoNc2Vzc2lvbl9sYWJlbBgHIAEoCRIQCghyZXRyeV9vZhgIIAEoCSKsAQoPRmlsZVF1YXJhbnRpbmVkEgwKBGZpbGUYASABKAkSEQoJcmVjZXB0aW9uGAIgASgJEhAKCHJlY2VpdmVyGAMgASgJEioKBnJlYXNvbhgEIAEoDjIaLmNvcmlhLnYxLlF1YXJhbnRpbmVSZWFzb24SEgoKc2l6ZV9ieXRlcxgFIAEoAxISCgpoZWxkX2ZpbGVzGAYgASgDEhIKCmhlbGRfYnl0ZXMYByABKAMiuwEKEVF1YXJhbnRpbmVEZWNpZGVkEgwKBGZpbGUYASABKAkSKAoFc3RhdGUYAiABKA4yGS5jb3JpYS52MS5RdWFyYW50aW5lU3RhdGUSKwoMcmVsZWFzZV9tb2RlGAMgASgOMhUuY29yaWEudjEuUmVsZWFzZU1vZGUSGQoRcmVsZWFzZV9yZWNlcHRpb24YBCABKAkSEgoKaGVsZF9maWxlcxgFIAEoAxISCgpoZWxkX2J5dGVzGAYgASgDIlMKFVJlY2VpdmVySGVhbHRoQ2hhbmdlZBIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aCKOAQoTU3RvcmFnZVNwYWNlQ2hhbmdlZBIPCgdzdG9yYWdlGAEgASgJEioKBXN0YXRlGAIgASgOMhsuY29yaWEudjEuU3RvcmFnZVNwYWNlU3RhdGUSEgoKdXNlZF9ieXRlcxgDIAEoAxIXCgpmcmVlX2J5dGVzGAQgASgDSACIAQFCDQoLX2ZyZWVfYnl0ZXMioAEKC0ZyYW1lc0FkZGVkEhUKDXN1YmplY3RfbGFiZWwYASABKAkSFQoNc2Vzc2lvbl9sYWJlbBgCIAEoCRISCgpzY2FuX2xhYmVsGAMgASgJEhEKCWluc3RhbmNlcxgEIAEoAxISCgpzY2Fuc19kb25lGAUgASgDEhYKDmluc3RhbmNlc19kb25lGAYgASgDEhAKCGZpbmlzaGVkGAcgASgIIokECgVFdmVudBIOCgZjdXJzb3IYASABKAkSKAoEdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGdGVuYW50GAMgASgJEiEKBHR5cGUYBCABKA4yEy5jb3JpYS52MS5FdmVudFR5cGUSOQoSYXNzb2NpYXRpb25fZmFpbGVkGAUgASgLMhsuY29yaWEudjEuQXNzb2NpYXRpb25GYWlsZWRIABI4Cg5yZWNlcHRpb25fc3RlcBgGIAEoCzIeLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXBSZWFjaGVkSAASNQoQZmlsZV9xdWFyYW50aW5lZBgHIAEoCzIZLmNvcmlhLnYxLkZpbGVRdWFyYW50aW5lZEgAEjkKEnF1YXJhbnRpbmVfZGVjaWRlZBgIIAEoCzIbLmNvcmlhLnYxLlF1YXJhbnRpbmVEZWNpZGVkSAASOgoPcmVjZWl2ZXJfaGVhbHRoGAkgASgLMh8uY29yaWEudjEuUmVjZWl2ZXJIZWFsdGhDaGFuZ2VkSAASNgoNc3RvcmFnZV9zcGFjZRgKIAEoCzIdLmNvcmlhLnYxLlN0b3JhZ2VTcGFjZUNoYW5nZWRIABItCgxmcmFtZXNfYWRkZWQYCyABKAsyFS5jb3JpYS52MS5GcmFtZXNBZGRlZEgAQgkKB3BheWxvYWQi7wEKDldhdGNoS2VlcEFsaXZlEigKBHRpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBmN1cnNvchgCIAEoCRJDCg50ZW5hbnRfY3Vyc29ycxgDIAMoCzIrLmNvcmlhLnYxLldhdGNoS2VlcEFsaXZlLlRlbmFudEN1cnNvcnNFbnRyeRIaChJ1bmFuc3dlcmVkX3RlbmFudHMYBCADKAkSDAoEZnVsbBgFIAEoCBo0ChJUZW5hbnRDdXJzb3JzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASLrAQoMV2F0Y2hSZXF1ZXN0Eh4KBXNjb3BlGAEgASgLMg8uY29yaWEudjEuU2NvcGUSDgoGY3Vyc29yGAIgASgJEiIKBXR5cGVzGAMgAygOMhMuY29yaWEudjEuRXZlbnRUeXBlEkEKDnRlbmFudF9jdXJzb3JzGAQgAygLMikuY29yaWEudjEuV2F0Y2hSZXF1ZXN0LlRlbmFudEN1cnNvcnNFbnRyeRIOCgZyZXN1bWUYBSABKAgaNAoSVGVuYW50Q3Vyc29yc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiaQoNV2F0Y2hSZXNwb25zZRIgCgVldmVudBgBIAEoCzIPLmNvcmlhLnYxLkV2ZW50SAASLgoKa2VlcF9hbGl2ZRgCIAEoCzIYLmNvcmlhLnYxLldhdGNoS2VlcEFsaXZlSABCBgoEa2luZCqIAgoJRXZlbnRUeXBlEhoKFkVWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIhCh1FVkVOVF9UWVBFX0FTU09DSUFUSU9OX0ZBSUxFRBABEh0KGUVWRU5UX1RZUEVfUkVDRVBUSU9OX1NURVAQAhIfChtFVkVOVF9UWVBFX0ZJTEVfUVVBUkFOVElORUQQAxIhCh1FVkVOVF9UWVBFX1FVQVJBTlRJTkVfREVDSURFRBAEEh4KGkVWRU5UX1RZUEVfUkVDRUlWRVJfSEVBTFRIEAUSHAoYRVZFTlRfVFlQRV9TVE9SQUdFX1NQQUNFEAYSGwoXRVZFTlRfVFlQRV9GUkFNRVNfQURERUQQByqPAwoSQXNzb2NpYXRpb25GYWlsdXJlEiMKH0FTU09DSUFUSU9OX0ZBSUxVUkVfVU5TUEVDSUZJRUQQABIqCiZBU1NPQ0lBVElPTl9GQUlMVVJFX0NBTExFUl9OT1RfQUxMT1dFRBABEjYKMkFTU09DSUFUSU9OX0ZBSUxVUkVfQ0FMTEVEX0FFX1RJVExFX05PVF9SRUNPR05JWkVEEAISLQopQVNTT0NJQVRJT05fRkFJTFVSRV9OT19BQ0NFUFRBQkxFX0NPTlRFWFQQAxIjCh9BU1NPQ0lBVElPTl9GQUlMVVJFX05FQVJMWV9GVUxMEAQSKAokQVNTT0NJQVRJT05fRkFJTFVSRV9URU5BTlRfTk9UX1JFQURZEAUSIgoeQVNTT0NJQVRJT05fRkFJTFVSRV9UTFNfRkFJTEVEEAYSJgoiQVNTT0NJQVRJT05fRkFJTFVSRV9QUk9UT0NPTF9FUlJPUhAHEiYKIkFTU09DSUFUSU9OX0ZBSUxVUkVfSU5DT01JTkdfTElNSVQQCCqAAQoRU3RvcmFnZVNwYWNlU3RhdGUSIwofU1RPUkFHRV9TUEFDRV9TVEFURV9VTlNQRUNJRklFRBAAEiMKH1NUT1JBR0VfU1BBQ0VfU1RBVEVfTkVBUkxZX0ZVTEwQARIhCh1TVE9SQUdFX1NQQUNFX1NUQVRFX1JFQ09WRVJFRBACMpwBCg5Nb25pdG9yU2VydmljZRJJCglHZXRTdGF0dXMSGi5jb3JpYS52MS5HZXRTdGF0dXNSZXF1ZXN0GhsuY29yaWEudjEuR2V0U3RhdHVzUmVzcG9uc2UiA5ACARI/CgVXYXRjaBIWLmNvcmlhLnYxLldhdGNoUmVxdWVzdBoXLmNvcmlhLnYxLldhdGNoUmVzcG9uc2UiA5ACATABYgZwcm90bzM", [file_google_protobuf_timestamp, file_coria_v1_access, file_coria_v1_quarantine, file_coria_v1_reception, file_coria_v1_receiver, file_coria_v1_scope, file_coria_v1_tenant]);
+  fileDesc("ChZjb3JpYS92MS9tb25pdG9yLnByb3RvEghjb3JpYS52MSJPChJSZWNlcHRpb25TdGVwQ291bnQSJQoEc3RlcBgBIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASEgoKcmVjZXB0aW9ucxgCIAEoAyKTAgoMVGVuYW50Q291bnRzEhAKCHN1YmplY3RzGAEgASgDEhAKCHNlc3Npb25zGAIgASgDEg0KBXNjYW5zGAMgASgDEhEKCWluc3RhbmNlcxgEIAEoAxIZChFxdWFyYW50aW5lZF9maWxlcxgFIAEoAxIZChFxdWFyYW50aW5lZF9ieXRlcxgGIAEoAxI8ChZyZWNlcHRpb25zX2luX3Byb2dyZXNzGAcgAygLMhwuY29yaWEudjEuUmVjZXB0aW9uU3RlcENvdW50EhYKDmluY29taW5nX2J5dGVzGAggASgDEjEKEGpvYnNfaW5fcHJvZ3Jlc3MYCSADKAsyFy5jb3JpYS52MS5Kb2JTdGF0ZUNvdW50IkAKDUpvYlN0YXRlQ291bnQSIQoFc3RhdGUYASABKA4yEi5jb3JpYS52MS5Kb2JTdGF0ZRIMCgRqb2JzGAIgASgDImEKDFNlbmRlclN0YXR1cxIOCgZzZW5kZXIYASABKAkSJgoGaGVhbHRoGAIgASgLMhYuY29yaWEudjEuU2VuZGVySGVhbHRoEhkKEW9wZW5fYXNzb2NpYXRpb25zGAMgASgFIpgBCgpUaHJvdWdocHV0EiEKGWZpbGVzX3JlY2VpdmVkX3Blcl9zZWNvbmQYASABKAESIQoZYnl0ZXNfcmVjZWl2ZWRfcGVyX3NlY29uZBgCIAEoARIhChlmaWxlc19hcmNoaXZlZF9wZXJfc2Vjb25kGAMgASgBEiEKGWJ5dGVzX2FyY2hpdmVkX3Blcl9zZWNvbmQYBCABKAEiiQEKDVN0b3JhZ2VTdGF0dXMSDwoHc3RvcmFnZRgBIAEoCRISCgp1c2VkX2J5dGVzGAIgASgDEhcKCmZyZWVfYnl0ZXMYAyABKANIAIgBARIWCg5jYXBhY2l0eV9ieXRlcxgEIAEoAxITCgtuZWFybHlfZnVsbBgFIAEoCEINCgtfZnJlZV9ieXRlcyJgCg5SZWNlaXZlclN0YXR1cxIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aBISCgphbnlfY2FsbGVyGAMgASgIIo0DCgxUZW5hbnRTdGF0dXMSDgoGdGVuYW50GAEgASgJEi0KDmRhdGFiYXNlX3N0YXRlGAIgASgOMhUuY29yaWEudjEuVGVuYW50U3RhdGUSNwoTZGF0YWJhc2Vfc3RhdGVfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMZXZlbnRfY3Vyc29yGAQgASgJEiYKBmNvdW50cxgFIAEoCzIWLmNvcmlhLnYxLlRlbmFudENvdW50cxIoCgp0aHJvdWdocHV0GAYgASgLMhQuY29yaWEudjEuVGhyb3VnaHB1dBIpCghzdG9yYWdlcxgHIAMoCzIXLmNvcmlhLnYxLlN0b3JhZ2VTdGF0dXMSKwoJcmVjZWl2ZXJzGAggAygLMhguY29yaWEudjEuUmVjZWl2ZXJTdGF0dXMSHAoUaW5jb21pbmdfbGltaXRfYnl0ZXMYCSABKAMSJwoHc2VuZGVycxgKIAMoCzIWLmNvcmlhLnYxLlNlbmRlclN0YXR1cyJZChBHZXRTdGF0dXNSZXF1ZXN0Eh4KBXNjb3BlGAEgASgLMg8uY29yaWEudjEuU2NvcGUSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkipQEKEUdldFN0YXR1c1Jlc3BvbnNlEicKB3RlbmFudHMYASADKAsyFi5jb3JpYS52MS5UZW5hbnRTdGF0dXMSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEigKBHRpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiQKDWV4cGlyaW5nX2tleXMYBCADKAsyDS5jb3JpYS52MS5LZXkilAEKEUFzc29jaWF0aW9uRmFpbGVkEhAKCHJlY2VpdmVyGAEgASgJEiAKBmNhbGxlchgCIAEoCzIQLmNvcmlhLnYxLkNhbGxlchItCgdmYWlsdXJlGAMgASgOMhwuY29yaWEudjEuQXNzb2NpYXRpb25GYWlsdXJlEg0KBWNvdW50GAQgASgDEg0KBWhvc3RzGAUgASgDIo4CChRSZWNlcHRpb25TdGVwUmVhY2hlZBIRCglyZWNlcHRpb24YASABKAkSEAoIcmVjZWl2ZXIYAiABKAkSDwoHYXJyaXZhbBgDIAEoBRIlCgRzdGVwGAQgASgOMhcuY29yaWEudjEuUmVjZXB0aW9uU3RlcBIuCg1wcmV2aW91c19zdGVwGAkgASgOMhcuY29yaWEudjEuUmVjZXB0aW9uU3RlcBIpCgZjb3VudHMYBSABKAsyGS5jb3JpYS52MS5SZWNlcHRpb25Db3VudHMSFQoNc3ViamVjdF9sYWJlbBgGIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAcgASgJEhAKCHJldHJ5X29mGAggASgJIqwBCg9GaWxlUXVhcmFudGluZWQSDAoEZmlsZRgBIAEoCRIRCglyZWNlcHRpb24YAiABKAkSEAoIcmVjZWl2ZXIYAyABKAkSKgoGcmVhc29uGAQgASgOMhouY29yaWEudjEuUXVhcmFudGluZVJlYXNvbhISCgpzaXplX2J5dGVzGAUgASgDEhIKCmhlbGRfZmlsZXMYBiABKAMSEgoKaGVsZF9ieXRlcxgHIAEoAyK7AQoRUXVhcmFudGluZURlY2lkZWQSDAoEZmlsZRgBIAEoCRIoCgVzdGF0ZRgCIAEoDjIZLmNvcmlhLnYxLlF1YXJhbnRpbmVTdGF0ZRIrCgxyZWxlYXNlX21vZGUYAyABKA4yFS5jb3JpYS52MS5SZWxlYXNlTW9kZRIZChFyZWxlYXNlX3JlY2VwdGlvbhgEIAEoCRISCgpoZWxkX2ZpbGVzGAUgASgDEhIKCmhlbGRfYnl0ZXMYBiABKAMiUwoVUmVjZWl2ZXJIZWFsdGhDaGFuZ2VkEhAKCHJlY2VpdmVyGAEgASgJEigKBmhlYWx0aBgCIAEoCzIYLmNvcmlhLnYxLlJlY2VpdmVySGVhbHRoIo4BChNTdG9yYWdlU3BhY2VDaGFuZ2VkEg8KB3N0b3JhZ2UYASABKAkSKgoFc3RhdGUYAiABKA4yGy5jb3JpYS52MS5TdG9yYWdlU3BhY2VTdGF0ZRISCgp1c2VkX2J5dGVzGAMgASgDEhcKCmZyZWVfYnl0ZXMYBCABKANIAIgBAUINCgtfZnJlZV9ieXRlcyKgAQoLRnJhbWVzQWRkZWQSFQoNc3ViamVjdF9sYWJlbBgBIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAIgASgJEhIKCnNjYW5fbGFiZWwYAyABKAkSEQoJaW5zdGFuY2VzGAQgASgDEhIKCnNjYW5zX2RvbmUYBSABKAMSFgoOaW5zdGFuY2VzX2RvbmUYBiABKAMSEAoIZmluaXNoZWQYByABKAgi6AEKDkpvYlN0ZXBSZWFjaGVkEgsKA2pvYhgBIAEoCRIhCgVzdGF0ZRgCIAEoDjISLmNvcmlhLnYxLkpvYlN0YXRlEioKDnByZXZpb3VzX3N0YXRlGAMgASgOMhIuY29yaWEudjEuSm9iU3RhdGUSIwoGY291bnRzGAQgASgLMhMuY29yaWEudjEuSm9iQ291bnRzEg4KBnNlbmRlchgFIAEoCRIQCghyZWNlaXZlchgGIAEoCRIRCglyZWNlcHRpb24YByABKAkSEAoIcmV0cnlfb2YYCCABKAkSDgoGcmVhc29uGAkgASgJIlEKDUpvYlByb2dyZXNzZWQSCwoDam9iGAEgASgJEiMKBmNvdW50cxgCIAEoCzITLmNvcmlhLnYxLkpvYkNvdW50cxIOCgZzZW5kZXIYAyABKAkiTQoTU2VuZGVySGVhbHRoQ2hhbmdlZBIOCgZzZW5kZXIYASABKAkSJgoGaGVhbHRoGAIgASgLMhYuY29yaWEudjEuU2VuZGVySGVhbHRoIqAFCgVFdmVudBIOCgZjdXJzb3IYASABKAkSKAoEdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGdGVuYW50GAMgASgJEiEKBHR5cGUYBCABKA4yEy5jb3JpYS52MS5FdmVudFR5cGUSOQoSYXNzb2NpYXRpb25fZmFpbGVkGAUgASgLMhsuY29yaWEudjEuQXNzb2NpYXRpb25GYWlsZWRIABI4Cg5yZWNlcHRpb25fc3RlcBgGIAEoCzIeLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXBSZWFjaGVkSAASNQoQZmlsZV9xdWFyYW50aW5lZBgHIAEoCzIZLmNvcmlhLnYxLkZpbGVRdWFyYW50aW5lZEgAEjkKEnF1YXJhbnRpbmVfZGVjaWRlZBgIIAEoCzIbLmNvcmlhLnYxLlF1YXJhbnRpbmVEZWNpZGVkSAASOgoPcmVjZWl2ZXJfaGVhbHRoGAkgASgLMh8uY29yaWEudjEuUmVjZWl2ZXJIZWFsdGhDaGFuZ2VkSAASNgoNc3RvcmFnZV9zcGFjZRgKIAEoCzIdLmNvcmlhLnYxLlN0b3JhZ2VTcGFjZUNoYW5nZWRIABItCgxmcmFtZXNfYWRkZWQYCyABKAsyFS5jb3JpYS52MS5GcmFtZXNBZGRlZEgAEiwKCGpvYl9zdGVwGAwgASgLMhguY29yaWEudjEuSm9iU3RlcFJlYWNoZWRIABIvCgxqb2JfcHJvZ3Jlc3MYDSABKAsyFy5jb3JpYS52MS5Kb2JQcm9ncmVzc2VkSAASNgoNc2VuZGVyX2hlYWx0aBgOIAEoCzIdLmNvcmlhLnYxLlNlbmRlckhlYWx0aENoYW5nZWRIAEIJCgdwYXlsb2FkIu8BCg5XYXRjaEtlZXBBbGl2ZRIoCgR0aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgZjdXJzb3IYAiABKAkSQwoOdGVuYW50X2N1cnNvcnMYAyADKAsyKy5jb3JpYS52MS5XYXRjaEtlZXBBbGl2ZS5UZW5hbnRDdXJzb3JzRW50cnkSGgoSdW5hbnN3ZXJlZF90ZW5hbnRzGAQgAygJEgwKBGZ1bGwYBSABKAgaNAoSVGVuYW50Q3Vyc29yc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi6wEKDFdhdGNoUmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEg4KBmN1cnNvchgCIAEoCRIiCgV0eXBlcxgDIAMoDjITLmNvcmlhLnYxLkV2ZW50VHlwZRJBCg50ZW5hbnRfY3Vyc29ycxgEIAMoCzIpLmNvcmlhLnYxLldhdGNoUmVxdWVzdC5UZW5hbnRDdXJzb3JzRW50cnkSDgoGcmVzdW1lGAUgASgIGjQKElRlbmFudEN1cnNvcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBImkKDVdhdGNoUmVzcG9uc2USIAoFZXZlbnQYASABKAsyDy5jb3JpYS52MS5FdmVudEgAEi4KCmtlZXBfYWxpdmUYAiABKAsyGC5jb3JpYS52MS5XYXRjaEtlZXBBbGl2ZUgAQgYKBGtpbmQq3AIKCUV2ZW50VHlwZRIaChZFVkVOVF9UWVBFX1VOU1BFQ0lGSUVEEAASIQodRVZFTlRfVFlQRV9BU1NPQ0lBVElPTl9GQUlMRUQQARIdChlFVkVOVF9UWVBFX1JFQ0VQVElPTl9TVEVQEAISHwobRVZFTlRfVFlQRV9GSUxFX1FVQVJBTlRJTkVEEAMSIQodRVZFTlRfVFlQRV9RVUFSQU5USU5FX0RFQ0lERUQQBBIeChpFVkVOVF9UWVBFX1JFQ0VJVkVSX0hFQUxUSBAFEhwKGEVWRU5UX1RZUEVfU1RPUkFHRV9TUEFDRRAGEhsKF0VWRU5UX1RZUEVfRlJBTUVTX0FEREVEEAcSFwoTRVZFTlRfVFlQRV9KT0JfU1RFUBAIEhsKF0VWRU5UX1RZUEVfSk9CX1BST0dSRVNTEAkSHAoYRVZFTlRfVFlQRV9TRU5ERVJfSEVBTFRIEAoqjwMKEkFzc29jaWF0aW9uRmFpbHVyZRIjCh9BU1NPQ0lBVElPTl9GQUlMVVJFX1VOU1BFQ0lGSUVEEAASKgomQVNTT0NJQVRJT05fRkFJTFVSRV9DQUxMRVJfTk9UX0FMTE9XRUQQARI2CjJBU1NPQ0lBVElPTl9GQUlMVVJFX0NBTExFRF9BRV9USVRMRV9OT1RfUkVDT0dOSVpFRBACEi0KKUFTU09DSUFUSU9OX0ZBSUxVUkVfTk9fQUNDRVBUQUJMRV9DT05URVhUEAMSIwofQVNTT0NJQVRJT05fRkFJTFVSRV9ORUFSTFlfRlVMTBAEEigKJEFTU09DSUFUSU9OX0ZBSUxVUkVfVEVOQU5UX05PVF9SRUFEWRAFEiIKHkFTU09DSUFUSU9OX0ZBSUxVUkVfVExTX0ZBSUxFRBAGEiYKIkFTU09DSUFUSU9OX0ZBSUxVUkVfUFJPVE9DT0xfRVJST1IQBxImCiJBU1NPQ0lBVElPTl9GQUlMVVJFX0lOQ09NSU5HX0xJTUlUEAgqgAEKEVN0b3JhZ2VTcGFjZVN0YXRlEiMKH1NUT1JBR0VfU1BBQ0VfU1RBVEVfVU5TUEVDSUZJRUQQABIjCh9TVE9SQUdFX1NQQUNFX1NUQVRFX05FQVJMWV9GVUxMEAESIQodU1RPUkFHRV9TUEFDRV9TVEFURV9SRUNPVkVSRUQQAjKcAQoOTW9uaXRvclNlcnZpY2USSQoJR2V0U3RhdHVzEhouY29yaWEudjEuR2V0U3RhdHVzUmVxdWVzdBobLmNvcmlhLnYxLkdldFN0YXR1c1Jlc3BvbnNlIgOQAgESPwoFV2F0Y2gSFi5jb3JpYS52MS5XYXRjaFJlcXVlc3QaFy5jb3JpYS52MS5XYXRjaFJlc3BvbnNlIgOQAgEwAWIGcHJvdG8z", [file_google_protobuf_timestamp, file_coria_v1_access, file_coria_v1_job, file_coria_v1_quarantine, file_coria_v1_reception, file_coria_v1_receiver, file_coria_v1_scope, file_coria_v1_sender, file_coria_v1_tenant]);
 
 /**
  * ReceptionStepCount is how many receptions are in one step.
@@ -126,6 +130,15 @@ export type TenantCounts = Message<"coria.v1.TenantCounts"> & {
    * @generated from field: int64 incoming_bytes = 8;
    */
   incomingBytes: bigint;
+
+  /**
+   * The jobs in progress, one entry per state that has any, in the order
+   * of the states. A state with none is left out. The ended states (done,
+   * partial, failed, canceled) are never listed.
+   *
+   * @generated from field: repeated coria.v1.JobStateCount jobs_in_progress = 9;
+   */
+  jobsInProgress: JobStateCount[];
 };
 
 /**
@@ -134,6 +147,69 @@ export type TenantCounts = Message<"coria.v1.TenantCounts"> & {
  */
 export const TenantCountsSchema: GenMessage<TenantCounts> = /*@__PURE__*/
   messageDesc(file_coria_v1_monitor, 1);
+
+/**
+ * JobStateCount is how many jobs are in one state.
+ *
+ * @generated from message coria.v1.JobStateCount
+ */
+export type JobStateCount = Message<"coria.v1.JobStateCount"> & {
+  /**
+   * The state.
+   *
+   * @generated from field: coria.v1.JobState state = 1;
+   */
+  state: JobState;
+
+  /**
+   * How many jobs of the tenant are in it now.
+   *
+   * @generated from field: int64 jobs = 2;
+   */
+  jobs: bigint;
+};
+
+/**
+ * Describes the message coria.v1.JobStateCount.
+ * Use `create(JobStateCountSchema)` to create a new message.
+ */
+export const JobStateCountSchema: GenMessage<JobStateCount> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 2);
+
+/**
+ * SenderStatus is a sender's state now.
+ *
+ * @generated from message coria.v1.SenderStatus
+ */
+export type SenderStatus = Message<"coria.v1.SenderStatus"> & {
+  /**
+   * The sender's name.
+   *
+   * @generated from field: string sender = 1;
+   */
+  sender: string;
+
+  /**
+   * Whether it reaches its peer, and why not.
+   *
+   * @generated from field: coria.v1.SenderHealth health = 2;
+   */
+  health?: SenderHealth | undefined;
+
+  /**
+   * Its associations (for a stow sender, requests) open now.
+   *
+   * @generated from field: int32 open_associations = 3;
+   */
+  openAssociations: number;
+};
+
+/**
+ * Describes the message coria.v1.SenderStatus.
+ * Use `create(SenderStatusSchema)` to create a new message.
+ */
+export const SenderStatusSchema: GenMessage<SenderStatus> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 3);
 
 /**
  * Throughput is how fast files move through a tenant now, measured by the
@@ -177,7 +253,7 @@ export type Throughput = Message<"coria.v1.Throughput"> & {
  * Use `create(ThroughputSchema)` to create a new message.
  */
 export const ThroughputSchema: GenMessage<Throughput> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 2);
+  messageDesc(file_coria_v1_monitor, 4);
 
 /**
  * StorageStatus is a storage's space now.
@@ -234,7 +310,7 @@ export type StorageStatus = Message<"coria.v1.StorageStatus"> & {
  * Use `create(StorageStatusSchema)` to create a new message.
  */
 export const StorageStatusSchema: GenMessage<StorageStatus> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 3);
+  messageDesc(file_coria_v1_monitor, 5);
 
 /**
  * ReceiverStatus is a receiver's state now.
@@ -270,7 +346,7 @@ export type ReceiverStatus = Message<"coria.v1.ReceiverStatus"> & {
  * Use `create(ReceiverStatusSchema)` to create a new message.
  */
 export const ReceiverStatusSchema: GenMessage<ReceiverStatus> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 4);
+  messageDesc(file_coria_v1_monitor, 6);
 
 /**
  * TenantStatus is one tenant's numbers now.
@@ -349,6 +425,14 @@ export type TenantStatus = Message<"coria.v1.TenantStatus"> & {
    * @generated from field: int64 incoming_limit_bytes = 9;
    */
   incomingLimitBytes: bigint;
+
+  /**
+   * Each of its senders, ordered by name, from the server's memory, so
+   * they are answered also when its database does not answer.
+   *
+   * @generated from field: repeated coria.v1.SenderStatus senders = 10;
+   */
+  senders: SenderStatus[];
 };
 
 /**
@@ -356,7 +440,7 @@ export type TenantStatus = Message<"coria.v1.TenantStatus"> & {
  * Use `create(TenantStatusSchema)` to create a new message.
  */
 export const TenantStatusSchema: GenMessage<TenantStatus> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 5);
+  messageDesc(file_coria_v1_monitor, 7);
 
 /**
  * GetStatusRequest asks for the status of one tenant or of every tenant.
@@ -396,7 +480,7 @@ export type GetStatusRequest = Message<"coria.v1.GetStatusRequest"> & {
  * Use `create(GetStatusRequestSchema)` to create a new message.
  */
 export const GetStatusRequestSchema: GenMessage<GetStatusRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 6);
+  messageDesc(file_coria_v1_monitor, 8);
 
 /**
  * GetStatusResponse is the status asked for.
@@ -443,7 +527,7 @@ export type GetStatusResponse = Message<"coria.v1.GetStatusResponse"> & {
  * Use `create(GetStatusResponseSchema)` to create a new message.
  */
 export const GetStatusResponseSchema: GenMessage<GetStatusResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 7);
+  messageDesc(file_coria_v1_monitor, 9);
 
 /**
  * AssociationFailed is a receiver turning callers away. Failures are grouped
@@ -503,7 +587,7 @@ export type AssociationFailed = Message<"coria.v1.AssociationFailed"> & {
  * Use `create(AssociationFailedSchema)` to create a new message.
  */
 export const AssociationFailedSchema: GenMessage<AssociationFailed> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 8);
+  messageDesc(file_coria_v1_monitor, 10);
 
 /**
  * ReceptionStepReached is a reception reaching a step.
@@ -586,7 +670,7 @@ export type ReceptionStepReached = Message<"coria.v1.ReceptionStepReached"> & {
  * Use `create(ReceptionStepReachedSchema)` to create a new message.
  */
 export const ReceptionStepReachedSchema: GenMessage<ReceptionStepReached> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 9);
+  messageDesc(file_coria_v1_monitor, 11);
 
 /**
  * FileQuarantined is one file quarantined.
@@ -650,7 +734,7 @@ export type FileQuarantined = Message<"coria.v1.FileQuarantined"> & {
  * Use `create(FileQuarantinedSchema)` to create a new message.
  */
 export const FileQuarantinedSchema: GenMessage<FileQuarantined> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 10);
+  messageDesc(file_coria_v1_monitor, 12);
 
 /**
  * QuarantineDecided is a quarantined file released or rejected.
@@ -707,7 +791,7 @@ export type QuarantineDecided = Message<"coria.v1.QuarantineDecided"> & {
  * Use `create(QuarantineDecidedSchema)` to create a new message.
  */
 export const QuarantineDecidedSchema: GenMessage<QuarantineDecided> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 11);
+  messageDesc(file_coria_v1_monitor, 13);
 
 /**
  * ReceiverHealthChanged is a receiver's state changing.
@@ -735,7 +819,7 @@ export type ReceiverHealthChanged = Message<"coria.v1.ReceiverHealthChanged"> & 
  * Use `create(ReceiverHealthChangedSchema)` to create a new message.
  */
 export const ReceiverHealthChangedSchema: GenMessage<ReceiverHealthChanged> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 12);
+  messageDesc(file_coria_v1_monitor, 14);
 
 /**
  * StorageSpaceChanged is a storage becoming nearly full or recovering.
@@ -777,7 +861,7 @@ export type StorageSpaceChanged = Message<"coria.v1.StorageSpaceChanged"> & {
  * Use `create(StorageSpaceChangedSchema)` to create a new message.
  */
 export const StorageSpaceChangedSchema: GenMessage<StorageSpaceChanged> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 13);
+  messageDesc(file_coria_v1_monitor, 15);
 
 /**
  * FramesAdded is the progress of the pass that gives frame tables (where
@@ -846,7 +930,154 @@ export type FramesAdded = Message<"coria.v1.FramesAdded"> & {
  * Use `create(FramesAddedSchema)` to create a new message.
  */
 export const FramesAddedSchema: GenMessage<FramesAdded> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 14);
+  messageDesc(file_coria_v1_monitor, 16);
+
+/**
+ * JobStepReached is a job made or reaching a state.
+ *
+ * @generated from message coria.v1.JobStepReached
+ */
+export type JobStepReached = Message<"coria.v1.JobStepReached"> & {
+  /**
+   * The job's id.
+   *
+   * @generated from field: string job = 1;
+   */
+  job: string;
+
+  /**
+   * The state it reached: queued for a job just made.
+   *
+   * @generated from field: coria.v1.JobState state = 2;
+   */
+  state: JobState;
+
+  /**
+   * The state it left: JOB_STATE_UNSPECIFIED for a job just made. With it
+   * a client keeps the jobs in progress by state (TenantCounts) from a
+   * status and the events after its cursor.
+   *
+   * @generated from field: coria.v1.JobState previous_state = 3;
+   */
+  previousState: JobState;
+
+  /**
+   * Its counts when it reached the state.
+   *
+   * @generated from field: coria.v1.JobCounts counts = 4;
+   */
+  counts?: JobCounts | undefined;
+
+  /**
+   * For a send job, the name of its sender.
+   *
+   * @generated from field: string sender = 5;
+   */
+  sender: string;
+
+  /**
+   * For a job a receiver's forward made, the receiver's name. Empty
+   * otherwise.
+   *
+   * @generated from field: string receiver = 6;
+   */
+  receiver: string;
+
+  /**
+   * For a job a receiver's forward made, the reception's id. Empty
+   * otherwise.
+   *
+   * @generated from field: string reception = 7;
+   */
+  reception: string;
+
+  /**
+   * The id of the ended job whose unsent instances it sends. Empty unless
+   * RetryJob made it.
+   *
+   * @generated from field: string retry_of = 8;
+   */
+  retryOf: string;
+
+  /**
+   * Why it is held back or why it ended as it did, as Job.reason.
+   *
+   * @generated from field: string reason = 9;
+   */
+  reason: string;
+};
+
+/**
+ * Describes the message coria.v1.JobStepReached.
+ * Use `create(JobStepReachedSchema)` to create a new message.
+ */
+export const JobStepReachedSchema: GenMessage<JobStepReached> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 17);
+
+/**
+ * JobProgressed is a running job's counts. At most one per job every 10
+ * seconds, and none when its counts did not change; its state's events
+ * carry the counts at each state.
+ *
+ * @generated from message coria.v1.JobProgressed
+ */
+export type JobProgressed = Message<"coria.v1.JobProgressed"> & {
+  /**
+   * The job's id.
+   *
+   * @generated from field: string job = 1;
+   */
+  job: string;
+
+  /**
+   * Its counts now.
+   *
+   * @generated from field: coria.v1.JobCounts counts = 2;
+   */
+  counts?: JobCounts | undefined;
+
+  /**
+   * For a send job, the name of its sender.
+   *
+   * @generated from field: string sender = 3;
+   */
+  sender: string;
+};
+
+/**
+ * Describes the message coria.v1.JobProgressed.
+ * Use `create(JobProgressedSchema)` to create a new message.
+ */
+export const JobProgressedSchema: GenMessage<JobProgressed> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 18);
+
+/**
+ * SenderHealthChanged is a sender's state changing.
+ *
+ * @generated from message coria.v1.SenderHealthChanged
+ */
+export type SenderHealthChanged = Message<"coria.v1.SenderHealthChanged"> & {
+  /**
+   * The sender's name.
+   *
+   * @generated from field: string sender = 1;
+   */
+  sender: string;
+
+  /**
+   * Its new state.
+   *
+   * @generated from field: coria.v1.SenderHealth health = 2;
+   */
+  health?: SenderHealth | undefined;
+};
+
+/**
+ * Describes the message coria.v1.SenderHealthChanged.
+ * Use `create(SenderHealthChangedSchema)` to create a new message.
+ */
+export const SenderHealthChangedSchema: GenMessage<SenderHealthChanged> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 19);
 
 /**
  * Event is one thing that happened in a tenant.
@@ -946,6 +1177,30 @@ export type Event = Message<"coria.v1.Event"> & {
      */
     value: FramesAdded;
     case: "framesAdded";
+  } | {
+    /**
+     * A job was made or reached a state.
+     *
+     * @generated from field: coria.v1.JobStepReached job_step = 12;
+     */
+    value: JobStepReached;
+    case: "jobStep";
+  } | {
+    /**
+     * A running job's counts.
+     *
+     * @generated from field: coria.v1.JobProgressed job_progress = 13;
+     */
+    value: JobProgressed;
+    case: "jobProgress";
+  } | {
+    /**
+     * A sender's state changed.
+     *
+     * @generated from field: coria.v1.SenderHealthChanged sender_health = 14;
+     */
+    value: SenderHealthChanged;
+    case: "senderHealth";
   } | { case: undefined; value?: undefined };
 };
 
@@ -954,7 +1209,7 @@ export type Event = Message<"coria.v1.Event"> & {
  * Use `create(EventSchema)` to create a new message.
  */
 export const EventSchema: GenMessage<Event> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 15);
+  messageDesc(file_coria_v1_monitor, 20);
 
 /**
  * WatchKeepAlive opens every stream, and is sent again when no event has
@@ -1023,7 +1278,7 @@ export type WatchKeepAlive = Message<"coria.v1.WatchKeepAlive"> & {
  * Use `create(WatchKeepAliveSchema)` to create a new message.
  */
 export const WatchKeepAliveSchema: GenMessage<WatchKeepAlive> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 16);
+  messageDesc(file_coria_v1_monitor, 21);
 
 /**
  * WatchRequest asks for a stream of events.
@@ -1086,7 +1341,7 @@ export type WatchRequest = Message<"coria.v1.WatchRequest"> & {
  * Use `create(WatchRequestSchema)` to create a new message.
  */
 export const WatchRequestSchema: GenMessage<WatchRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 17);
+  messageDesc(file_coria_v1_monitor, 22);
 
 /**
  * WatchResponse is one message of the stream: an event or a keep-alive.
@@ -1124,7 +1379,7 @@ export type WatchResponse = Message<"coria.v1.WatchResponse"> & {
  * Use `create(WatchResponseSchema)` to create a new message.
  */
 export const WatchResponseSchema: GenMessage<WatchResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 18);
+  messageDesc(file_coria_v1_monitor, 23);
 
 /**
  * EventType is the kind of an event. A type added in a later version is a
@@ -1190,6 +1445,27 @@ export enum EventType {
    * @generated from enum value: EVENT_TYPE_FRAMES_ADDED = 7;
    */
   FRAMES_ADDED = 7,
+
+  /**
+   * A job was made or reached a state.
+   *
+   * @generated from enum value: EVENT_TYPE_JOB_STEP = 8;
+   */
+  JOB_STEP = 8,
+
+  /**
+   * A running job's counts, at most once every 10 seconds per job.
+   *
+   * @generated from enum value: EVENT_TYPE_JOB_PROGRESS = 9;
+   */
+  JOB_PROGRESS = 9,
+
+  /**
+   * A sender went up or down, or down for another reason.
+   *
+   * @generated from enum value: EVENT_TYPE_SENDER_HEALTH = 10;
+   */
+  SENDER_HEALTH = 10,
 }
 
 /**
@@ -1346,7 +1622,9 @@ export const StorageSpaceStateSchema: GenEnum<StorageSpaceState> = /*@__PURE__*/
  * them. A reception makes one event per step it reaches, with its counts,
  * never one per file, and an accepted association makes none (a reception
  * counts the associations that fed it); a quarantined file makes one event
- * per file, and so does the decision on it. Events carry labels, ids and
+ * per file, and so does the decision on it; a job makes one event per state
+ * it reaches and, while it runs, at most one of progress every 10 seconds,
+ * never one per instance. Events carry labels, ids and
  * counts; they never carry an attribute's value or a UID as such. A label is
  * as identifying as the naming rule that made it (NamingRule). Events are
  * kept for the setting events.retention, and then pruned, the period

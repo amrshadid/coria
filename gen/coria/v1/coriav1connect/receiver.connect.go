@@ -100,9 +100,10 @@ type ReceiverServiceClient interface {
 	// tenant), conflict (the tenant has a receiver with that name, or a
 	// removed receiver of that name is still named by receptions or
 	// quarantined files), precondition (a storage the tenant does not have; a
-	// port outside the tenant's allotted ports; a bind address the
-	// installation does not list; another receiver of the tenant on the same
-	// port and an overlapping address), unavailable (the tenant's database
+	// sender in forward_to the tenant does not have; a port outside the
+	// tenant's allotted ports; a bind address the installation does not list;
+	// another receiver of the tenant on the same port and an overlapping
+	// address), unavailable (the tenant's database
 	// does not answer, or the tenant is not ready).
 	AddReceiver(context.Context, *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error)
 	// GetReceiver answers one receiver of a tenant, with its health now.
@@ -189,9 +190,10 @@ type ReceiverServiceHandler interface {
 	// tenant), conflict (the tenant has a receiver with that name, or a
 	// removed receiver of that name is still named by receptions or
 	// quarantined files), precondition (a storage the tenant does not have; a
-	// port outside the tenant's allotted ports; a bind address the
-	// installation does not list; another receiver of the tenant on the same
-	// port and an overlapping address), unavailable (the tenant's database
+	// sender in forward_to the tenant does not have; a port outside the
+	// tenant's allotted ports; a bind address the installation does not list;
+	// another receiver of the tenant on the same port and an overlapping
+	// address), unavailable (the tenant's database
 	// does not answer, or the tenant is not ready).
 	AddReceiver(context.Context, *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error)
 	// GetReceiver answers one receiver of a tenant, with its health now.

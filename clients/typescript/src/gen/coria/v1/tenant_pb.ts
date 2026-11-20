@@ -107,8 +107,8 @@ export type CreateTenantRequest = Message<"coria.v1.CreateTenantRequest"> & {
   /**
    * SECRET. The address of the tenant's Postgres database, with its login and
    * password, as a Postgres connection URI or keyword/value string; at most
-   * 4 KiB. This is one of the four fields through which a secret crosses the
-   * API, and it only comes in: the server seals it with the installation key
+   * 4 KiB. This is one of the fields through which a secret crosses the API
+   * (access.proto), and it only comes in: the server seals it with the installation key
    * and no answer, log or audit entry ever holds it. Required for
    * DATABASE_TYPE_POSTGRES; must be empty for DATABASE_TYPE_SQLITE. The
    * debug_redact mark is read by the server's redactor; the protobuf library

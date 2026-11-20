@@ -9,12 +9,14 @@ import { file_coria_v1_access, Role } from "../src/gen/coria/v1/access_pb.js";
 import { file_coria_v1_audit } from "../src/gen/coria/v1/audit_pb.js";
 import { file_coria_v1_catalog } from "../src/gen/coria/v1/catalog_pb.js";
 import { file_coria_v1_data } from "../src/gen/coria/v1/data_pb.js";
+import { file_coria_v1_job } from "../src/gen/coria/v1/job_pb.js";
 import { file_coria_v1_metadata } from "../src/gen/coria/v1/metadata_pb.js";
 import { file_coria_v1_monitor } from "../src/gen/coria/v1/monitor_pb.js";
 import { file_coria_v1_profile } from "../src/gen/coria/v1/profile_pb.js";
 import { file_coria_v1_quarantine } from "../src/gen/coria/v1/quarantine_pb.js";
 import { file_coria_v1_receiver } from "../src/gen/coria/v1/receiver_pb.js";
 import { file_coria_v1_reception } from "../src/gen/coria/v1/reception_pb.js";
+import { file_coria_v1_sender } from "../src/gen/coria/v1/sender_pb.js";
 import { file_coria_v1_settings, SettingSource } from "../src/gen/coria/v1/settings_pb.js";
 import { file_coria_v1_storage } from "../src/gen/coria/v1/storage_pb.js";
 import { DatabaseType, file_coria_v1_tenant, TenantState } from "../src/gen/coria/v1/tenant_pb.js";
@@ -26,12 +28,14 @@ const SERVICE_ATTRIBUTES: Record<string, string> = {
   AuditService: "audit",
   CatalogService: "catalog",
   DataService: "data",
+  JobService: "jobs",
   MetadataService: "metadata",
   MonitorService: "monitor",
   ProfileService: "profiles",
   QuarantineService: "quarantine",
   ReceiverService: "receivers",
   ReceptionService: "receptions",
+  SenderService: "senders",
   SettingsService: "settings",
   StorageService: "storages",
   TenantService: "tenants",
@@ -39,8 +43,9 @@ const SERVICE_ATTRIBUTES: Record<string, string> = {
 
 const FILES = [
   file_coria_v1_access, file_coria_v1_audit, file_coria_v1_catalog, file_coria_v1_data,
-  file_coria_v1_metadata, file_coria_v1_monitor, file_coria_v1_profile, file_coria_v1_quarantine, file_coria_v1_receiver,
-  file_coria_v1_reception, file_coria_v1_settings, file_coria_v1_storage, file_coria_v1_tenant,
+  file_coria_v1_job, file_coria_v1_metadata, file_coria_v1_monitor, file_coria_v1_profile,
+  file_coria_v1_quarantine, file_coria_v1_receiver, file_coria_v1_reception, file_coria_v1_sender,
+  file_coria_v1_settings, file_coria_v1_storage, file_coria_v1_tenant,
 ];
 const SERVICES = FILES.flatMap((f) => f.services);
 

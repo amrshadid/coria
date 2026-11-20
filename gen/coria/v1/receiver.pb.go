@@ -251,7 +251,25 @@ type Receiver struct {
 	CreateTime *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
 	// When its configuration last changed: its create_time until the first
 	// SetReceiver. Answered by the server; ignored in a request.
-	UpdateTime    *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
+	UpdateTime *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=update_time,json=updateTime,proto3" json:"update_time,omitempty"`
+	// The names of the tenant's senders (SenderService) that each reception
+	// of this receiver is forwarded to: when a reception reaches done, the
+	// server makes one send job per sender named (JobService), in the same
+	// transaction, for exactly the instances that reception archived, and
+	// never two for the same reception and sender. So a later arrival of a
+	// session is forwarded on its own, and the peer's session grows as the
+	// archive's did. A reception that ends quarantined or failed is not
+	// forwarded; one that RetryReception makes, or that a release from
+	// quarantine joins, is forwarded when it reaches done. Forwarding never
+	// delays a reception or changes how it ends: a sender that is down or
+	// disabled holds its jobs, not the reception. Empty, the default, for
+	// none. At most 16, each once; a sender the tenant does not have is a
+	// precondition failure, and a sender named here cannot be removed
+	// (SenderService.RemoveSender). A change applies to receptions that reach
+	// done from then on. Setting it needs what any change of a receiver
+	// needs, admin on the tenant, since it decides where the tenant's data
+	// goes.
+	ForwardTo     []string `protobuf:"bytes,13,rep,name=forward_to,json=forwardTo,proto3" json:"forward_to,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -377,6 +395,13 @@ func (x *Receiver) GetCreateTime() *timestamppb.Timestamp {
 func (x *Receiver) GetUpdateTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.UpdateTime
+	}
+	return nil
+}
+
+func (x *Receiver) GetForwardTo() []string {
+	if x != nil {
+		return x.ForwardTo
 	}
 	return nil
 }
@@ -1500,8 +1525,9 @@ type SetReceiverRequest struct {
 	// name is required and names the receiver to change; it is not itself
 	// changed. Fields the mask does not name are ignored.
 	Receiver *Receiver `protobuf:"bytes,2,opt,name=receiver,proto3" json:"receiver,omitempty"`
-	// The fields to change, as paths of Receiver, such as "quiet_period" or
-	// "naming" ("naming" with naming absent returns to the default rule), or
+	// The fields to change, as paths of Receiver, such as "quiet_period",
+	// "forward_to" or "naming" ("naming" with naming absent returns to the
+	// default rule), or
 	// a field of the receiver's type joined to it by a dot, such as
 	// "dimse.port", "dimse.tls.certificate_file" or "stow.key_ids". A path
 	// that names a type's whole message ("dimse", "stow") is refused: its
@@ -1721,7 +1747,7 @@ var File_coria_v1_receiver_proto protoreflect.FileDescriptor
 
 const file_coria_v1_receiver_proto_rawDesc = "" +
 	"\n" +
-	"\x17coria/v1/receiver.proto\x12\bcoria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb6\x04\n" +
+	"\x17coria/v1/receiver.proto\x12\bcoria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd5\x04\n" +
 	"\bReceiver\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12/\n" +
 	"\x05dimse\x18\x02 \x01(\v2\x17.coria.v1.DimseReceiverH\x00R\x05dimse\x12,\n" +
@@ -1737,7 +1763,9 @@ const file_coria_v1_receiver_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"createTime\x12;\n" +
 	"\vupdate_time\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"updateTimeB\x06\n" +
+	"updateTime\x12\x1d\n" +
+	"\n" +
+	"forward_to\x18\r \x03(\tR\tforwardToB\x06\n" +
 	"\x04type\"\xc9\x02\n" +
 	"\rDimseReceiver\x12\x12\n" +
 	"\x04port\x18\x01 \x01(\x05R\x04port\x12!\n" +

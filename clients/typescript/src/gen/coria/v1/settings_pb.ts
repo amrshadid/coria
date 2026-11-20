@@ -349,16 +349,20 @@ export const SettingSourceSchema: GenEnum<SettingSource> = /*@__PURE__*/
  *     overlaps another tenant's: the installation's admin may list every
  *     tenant, so it is told (precondition).
  *
- * A value that would take away what a tenant's receiver or storage uses (a
- * port, a bind address, a directory root, an S3 endpoint) is refused
+ * A value that would take away what a tenant's receiver, storage or sender
+ * uses (a port, a bind address, a directory root, an S3 endpoint, a
+ * destination) is refused
  * (precondition), and so is unsetting it; the receiver or storage is moved
  * or removed first.
  *
- * The settings a receiver, a storage or the event feed reads, with their
- * kinds, are named where they are used: receiver.ports,
+ * The settings a receiver, a storage, a sender, a job or the event feed
+ * reads, with their kinds, are named where they are used: receiver.ports,
  * receiver.bind-addresses, receiver.header-limit, incoming.limit and
- * storage.reserve (ReceiverService), storage.directory-roots and storage.s3-endpoints
- * (StorageService), and events.retention (MonitorService).
+ * storage.reserve (ReceiverService), storage.directory-roots and
+ * storage.s3-endpoints (StorageService), sender.destinations,
+ * sender.allow-plain-http, sender.max-associations and
+ * sender.tenant-max-associations (SenderService), job.failures-kept
+ * (JobService), and events.retention (MonitorService).
  *
  * @generated from service coria.v1.SettingsService
  */

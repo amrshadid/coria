@@ -49,19 +49,28 @@ const (
 	// The pass that gives frame tables to the metadata of scans archived
 	// before them rewrote a scan's metadata, or ended.
 	EventType_EVENT_TYPE_FRAMES_ADDED EventType = 7
+	// A job was made or reached a state.
+	EventType_EVENT_TYPE_JOB_STEP EventType = 8
+	// A running job's counts, at most once every 10 seconds per job.
+	EventType_EVENT_TYPE_JOB_PROGRESS EventType = 9
+	// A sender went up or down, or down for another reason.
+	EventType_EVENT_TYPE_SENDER_HEALTH EventType = 10
 )
 
 // Enum value maps for EventType.
 var (
 	EventType_name = map[int32]string{
-		0: "EVENT_TYPE_UNSPECIFIED",
-		1: "EVENT_TYPE_ASSOCIATION_FAILED",
-		2: "EVENT_TYPE_RECEPTION_STEP",
-		3: "EVENT_TYPE_FILE_QUARANTINED",
-		4: "EVENT_TYPE_QUARANTINE_DECIDED",
-		5: "EVENT_TYPE_RECEIVER_HEALTH",
-		6: "EVENT_TYPE_STORAGE_SPACE",
-		7: "EVENT_TYPE_FRAMES_ADDED",
+		0:  "EVENT_TYPE_UNSPECIFIED",
+		1:  "EVENT_TYPE_ASSOCIATION_FAILED",
+		2:  "EVENT_TYPE_RECEPTION_STEP",
+		3:  "EVENT_TYPE_FILE_QUARANTINED",
+		4:  "EVENT_TYPE_QUARANTINE_DECIDED",
+		5:  "EVENT_TYPE_RECEIVER_HEALTH",
+		6:  "EVENT_TYPE_STORAGE_SPACE",
+		7:  "EVENT_TYPE_FRAMES_ADDED",
+		8:  "EVENT_TYPE_JOB_STEP",
+		9:  "EVENT_TYPE_JOB_PROGRESS",
+		10: "EVENT_TYPE_SENDER_HEALTH",
 	}
 	EventType_value = map[string]int32{
 		"EVENT_TYPE_UNSPECIFIED":        0,
@@ -72,6 +81,9 @@ var (
 		"EVENT_TYPE_RECEIVER_HEALTH":    5,
 		"EVENT_TYPE_STORAGE_SPACE":      6,
 		"EVENT_TYPE_FRAMES_ADDED":       7,
+		"EVENT_TYPE_JOB_STEP":           8,
+		"EVENT_TYPE_JOB_PROGRESS":       9,
+		"EVENT_TYPE_SENDER_HEALTH":      10,
 	}
 )
 
@@ -332,8 +344,12 @@ type TenantCounts struct {
 	// and not yet archived, files of failed receptions not yet retried or
 	// discarded, and quarantined files held.
 	IncomingBytes int64 `protobuf:"varint,8,opt,name=incoming_bytes,json=incomingBytes,proto3" json:"incoming_bytes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The jobs in progress, one entry per state that has any, in the order
+	// of the states. A state with none is left out. The ended states (done,
+	// partial, failed, canceled) are never listed.
+	JobsInProgress []*JobStateCount `protobuf:"bytes,9,rep,name=jobs_in_progress,json=jobsInProgress,proto3" json:"jobs_in_progress,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *TenantCounts) Reset() {
@@ -422,6 +438,132 @@ func (x *TenantCounts) GetIncomingBytes() int64 {
 	return 0
 }
 
+func (x *TenantCounts) GetJobsInProgress() []*JobStateCount {
+	if x != nil {
+		return x.JobsInProgress
+	}
+	return nil
+}
+
+// JobStateCount is how many jobs are in one state.
+type JobStateCount struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The state.
+	State JobState `protobuf:"varint,1,opt,name=state,proto3,enum=coria.v1.JobState" json:"state,omitempty"`
+	// How many jobs of the tenant are in it now.
+	Jobs          int64 `protobuf:"varint,2,opt,name=jobs,proto3" json:"jobs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobStateCount) Reset() {
+	*x = JobStateCount{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobStateCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobStateCount) ProtoMessage() {}
+
+func (x *JobStateCount) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobStateCount.ProtoReflect.Descriptor instead.
+func (*JobStateCount) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *JobStateCount) GetState() JobState {
+	if x != nil {
+		return x.State
+	}
+	return JobState_JOB_STATE_UNSPECIFIED
+}
+
+func (x *JobStateCount) GetJobs() int64 {
+	if x != nil {
+		return x.Jobs
+	}
+	return 0
+}
+
+// SenderStatus is a sender's state now.
+type SenderStatus struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The sender's name.
+	Sender string `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
+	// Whether it reaches its peer, and why not.
+	Health *SenderHealth `protobuf:"bytes,2,opt,name=health,proto3" json:"health,omitempty"`
+	// Its associations (for a stow sender, requests) open now.
+	OpenAssociations int32 `protobuf:"varint,3,opt,name=open_associations,json=openAssociations,proto3" json:"open_associations,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *SenderStatus) Reset() {
+	*x = SenderStatus{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SenderStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SenderStatus) ProtoMessage() {}
+
+func (x *SenderStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SenderStatus.ProtoReflect.Descriptor instead.
+func (*SenderStatus) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SenderStatus) GetSender() string {
+	if x != nil {
+		return x.Sender
+	}
+	return ""
+}
+
+func (x *SenderStatus) GetHealth() *SenderHealth {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
+func (x *SenderStatus) GetOpenAssociations() int32 {
+	if x != nil {
+		return x.OpenAssociations
+	}
+	return 0
+}
+
 // Throughput is how fast files move through a tenant now, measured by the
 // server over the last 10 seconds. It is held in memory, not in the
 // database snapshot: after a restart it starts again from zero.
@@ -441,7 +583,7 @@ type Throughput struct {
 
 func (x *Throughput) Reset() {
 	*x = Throughput{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[2]
+	mi := &file_coria_v1_monitor_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -453,7 +595,7 @@ func (x *Throughput) String() string {
 func (*Throughput) ProtoMessage() {}
 
 func (x *Throughput) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[2]
+	mi := &file_coria_v1_monitor_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -466,7 +608,7 @@ func (x *Throughput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Throughput.ProtoReflect.Descriptor instead.
 func (*Throughput) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{2}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Throughput) GetFilesReceivedPerSecond() float64 {
@@ -524,7 +666,7 @@ type StorageStatus struct {
 
 func (x *StorageStatus) Reset() {
 	*x = StorageStatus{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[3]
+	mi := &file_coria_v1_monitor_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -536,7 +678,7 @@ func (x *StorageStatus) String() string {
 func (*StorageStatus) ProtoMessage() {}
 
 func (x *StorageStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[3]
+	mi := &file_coria_v1_monitor_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -549,7 +691,7 @@ func (x *StorageStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageStatus.ProtoReflect.Descriptor instead.
 func (*StorageStatus) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{3}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StorageStatus) GetStorage() string {
@@ -603,7 +745,7 @@ type ReceiverStatus struct {
 
 func (x *ReceiverStatus) Reset() {
 	*x = ReceiverStatus{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[4]
+	mi := &file_coria_v1_monitor_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -615,7 +757,7 @@ func (x *ReceiverStatus) String() string {
 func (*ReceiverStatus) ProtoMessage() {}
 
 func (x *ReceiverStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[4]
+	mi := &file_coria_v1_monitor_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -628,7 +770,7 @@ func (x *ReceiverStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiverStatus.ProtoReflect.Descriptor instead.
 func (*ReceiverStatus) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{4}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ReceiverStatus) GetReceiver() string {
@@ -682,13 +824,16 @@ type TenantStatus struct {
 	// the server's incoming area before its receivers refuse new
 	// associations. Zero for no limit of its own.
 	IncomingLimitBytes int64 `protobuf:"varint,9,opt,name=incoming_limit_bytes,json=incomingLimitBytes,proto3" json:"incoming_limit_bytes,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Each of its senders, ordered by name, from the server's memory, so
+	// they are answered also when its database does not answer.
+	Senders       []*SenderStatus `protobuf:"bytes,10,rep,name=senders,proto3" json:"senders,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TenantStatus) Reset() {
 	*x = TenantStatus{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[5]
+	mi := &file_coria_v1_monitor_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -700,7 +845,7 @@ func (x *TenantStatus) String() string {
 func (*TenantStatus) ProtoMessage() {}
 
 func (x *TenantStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[5]
+	mi := &file_coria_v1_monitor_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -713,7 +858,7 @@ func (x *TenantStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TenantStatus.ProtoReflect.Descriptor instead.
 func (*TenantStatus) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{5}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TenantStatus) GetTenant() string {
@@ -779,6 +924,13 @@ func (x *TenantStatus) GetIncomingLimitBytes() int64 {
 	return 0
 }
 
+func (x *TenantStatus) GetSenders() []*SenderStatus {
+	if x != nil {
+		return x.Senders
+	}
+	return nil
+}
+
 // GetStatusRequest asks for the status of one tenant or of every tenant.
 type GetStatusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -799,7 +951,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[6]
+	mi := &file_coria_v1_monitor_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -811,7 +963,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[6]
+	mi := &file_coria_v1_monitor_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -824,7 +976,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{6}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetStatusRequest) GetScope() *Scope {
@@ -870,7 +1022,7 @@ type GetStatusResponse struct {
 
 func (x *GetStatusResponse) Reset() {
 	*x = GetStatusResponse{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[7]
+	mi := &file_coria_v1_monitor_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -882,7 +1034,7 @@ func (x *GetStatusResponse) String() string {
 func (*GetStatusResponse) ProtoMessage() {}
 
 func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[7]
+	mi := &file_coria_v1_monitor_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -895,7 +1047,7 @@ func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{7}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetStatusResponse) GetTenants() []*TenantStatus {
@@ -956,7 +1108,7 @@ type AssociationFailed struct {
 
 func (x *AssociationFailed) Reset() {
 	*x = AssociationFailed{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[8]
+	mi := &file_coria_v1_monitor_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -968,7 +1120,7 @@ func (x *AssociationFailed) String() string {
 func (*AssociationFailed) ProtoMessage() {}
 
 func (x *AssociationFailed) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[8]
+	mi := &file_coria_v1_monitor_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -981,7 +1133,7 @@ func (x *AssociationFailed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssociationFailed.ProtoReflect.Descriptor instead.
 func (*AssociationFailed) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{8}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AssociationFailed) GetReceiver() string {
@@ -1052,7 +1204,7 @@ type ReceptionStepReached struct {
 
 func (x *ReceptionStepReached) Reset() {
 	*x = ReceptionStepReached{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[9]
+	mi := &file_coria_v1_monitor_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1064,7 +1216,7 @@ func (x *ReceptionStepReached) String() string {
 func (*ReceptionStepReached) ProtoMessage() {}
 
 func (x *ReceptionStepReached) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[9]
+	mi := &file_coria_v1_monitor_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1077,7 +1229,7 @@ func (x *ReceptionStepReached) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceptionStepReached.ProtoReflect.Descriptor instead.
 func (*ReceptionStepReached) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{9}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ReceptionStepReached) GetReception() string {
@@ -1167,7 +1319,7 @@ type FileQuarantined struct {
 
 func (x *FileQuarantined) Reset() {
 	*x = FileQuarantined{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[10]
+	mi := &file_coria_v1_monitor_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1179,7 +1331,7 @@ func (x *FileQuarantined) String() string {
 func (*FileQuarantined) ProtoMessage() {}
 
 func (x *FileQuarantined) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[10]
+	mi := &file_coria_v1_monitor_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1192,7 +1344,7 @@ func (x *FileQuarantined) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileQuarantined.ProtoReflect.Descriptor instead.
 func (*FileQuarantined) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{10}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FileQuarantined) GetFile() string {
@@ -1266,7 +1418,7 @@ type QuarantineDecided struct {
 
 func (x *QuarantineDecided) Reset() {
 	*x = QuarantineDecided{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[11]
+	mi := &file_coria_v1_monitor_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1278,7 +1430,7 @@ func (x *QuarantineDecided) String() string {
 func (*QuarantineDecided) ProtoMessage() {}
 
 func (x *QuarantineDecided) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[11]
+	mi := &file_coria_v1_monitor_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1291,7 +1443,7 @@ func (x *QuarantineDecided) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuarantineDecided.ProtoReflect.Descriptor instead.
 func (*QuarantineDecided) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{11}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *QuarantineDecided) GetFile() string {
@@ -1349,7 +1501,7 @@ type ReceiverHealthChanged struct {
 
 func (x *ReceiverHealthChanged) Reset() {
 	*x = ReceiverHealthChanged{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[12]
+	mi := &file_coria_v1_monitor_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1361,7 +1513,7 @@ func (x *ReceiverHealthChanged) String() string {
 func (*ReceiverHealthChanged) ProtoMessage() {}
 
 func (x *ReceiverHealthChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[12]
+	mi := &file_coria_v1_monitor_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1374,7 +1526,7 @@ func (x *ReceiverHealthChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiverHealthChanged.ProtoReflect.Descriptor instead.
 func (*ReceiverHealthChanged) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{12}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ReceiverHealthChanged) GetReceiver() string {
@@ -1408,7 +1560,7 @@ type StorageSpaceChanged struct {
 
 func (x *StorageSpaceChanged) Reset() {
 	*x = StorageSpaceChanged{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[13]
+	mi := &file_coria_v1_monitor_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1420,7 +1572,7 @@ func (x *StorageSpaceChanged) String() string {
 func (*StorageSpaceChanged) ProtoMessage() {}
 
 func (x *StorageSpaceChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[13]
+	mi := &file_coria_v1_monitor_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1433,7 +1585,7 @@ func (x *StorageSpaceChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageSpaceChanged.ProtoReflect.Descriptor instead.
 func (*StorageSpaceChanged) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{13}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *StorageSpaceChanged) GetStorage() string {
@@ -1493,7 +1645,7 @@ type FramesAdded struct {
 
 func (x *FramesAdded) Reset() {
 	*x = FramesAdded{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[14]
+	mi := &file_coria_v1_monitor_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1505,7 +1657,7 @@ func (x *FramesAdded) String() string {
 func (*FramesAdded) ProtoMessage() {}
 
 func (x *FramesAdded) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[14]
+	mi := &file_coria_v1_monitor_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1518,7 +1670,7 @@ func (x *FramesAdded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FramesAdded.ProtoReflect.Descriptor instead.
 func (*FramesAdded) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{14}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FramesAdded) GetSubjectLabel() string {
@@ -1570,6 +1722,250 @@ func (x *FramesAdded) GetFinished() bool {
 	return false
 }
 
+// JobStepReached is a job made or reaching a state.
+type JobStepReached struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The job's id.
+	Job string `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
+	// The state it reached: queued for a job just made.
+	State JobState `protobuf:"varint,2,opt,name=state,proto3,enum=coria.v1.JobState" json:"state,omitempty"`
+	// The state it left: JOB_STATE_UNSPECIFIED for a job just made. With it
+	// a client keeps the jobs in progress by state (TenantCounts) from a
+	// status and the events after its cursor.
+	PreviousState JobState `protobuf:"varint,3,opt,name=previous_state,json=previousState,proto3,enum=coria.v1.JobState" json:"previous_state,omitempty"`
+	// Its counts when it reached the state.
+	Counts *JobCounts `protobuf:"bytes,4,opt,name=counts,proto3" json:"counts,omitempty"`
+	// For a send job, the name of its sender.
+	Sender string `protobuf:"bytes,5,opt,name=sender,proto3" json:"sender,omitempty"`
+	// For a job a receiver's forward made, the receiver's name. Empty
+	// otherwise.
+	Receiver string `protobuf:"bytes,6,opt,name=receiver,proto3" json:"receiver,omitempty"`
+	// For a job a receiver's forward made, the reception's id. Empty
+	// otherwise.
+	Reception string `protobuf:"bytes,7,opt,name=reception,proto3" json:"reception,omitempty"`
+	// The id of the ended job whose unsent instances it sends. Empty unless
+	// RetryJob made it.
+	RetryOf string `protobuf:"bytes,8,opt,name=retry_of,json=retryOf,proto3" json:"retry_of,omitempty"`
+	// Why it is held back or why it ended as it did, as Job.reason.
+	Reason        string `protobuf:"bytes,9,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobStepReached) Reset() {
+	*x = JobStepReached{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobStepReached) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobStepReached) ProtoMessage() {}
+
+func (x *JobStepReached) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobStepReached.ProtoReflect.Descriptor instead.
+func (*JobStepReached) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *JobStepReached) GetJob() string {
+	if x != nil {
+		return x.Job
+	}
+	return ""
+}
+
+func (x *JobStepReached) GetState() JobState {
+	if x != nil {
+		return x.State
+	}
+	return JobState_JOB_STATE_UNSPECIFIED
+}
+
+func (x *JobStepReached) GetPreviousState() JobState {
+	if x != nil {
+		return x.PreviousState
+	}
+	return JobState_JOB_STATE_UNSPECIFIED
+}
+
+func (x *JobStepReached) GetCounts() *JobCounts {
+	if x != nil {
+		return x.Counts
+	}
+	return nil
+}
+
+func (x *JobStepReached) GetSender() string {
+	if x != nil {
+		return x.Sender
+	}
+	return ""
+}
+
+func (x *JobStepReached) GetReceiver() string {
+	if x != nil {
+		return x.Receiver
+	}
+	return ""
+}
+
+func (x *JobStepReached) GetReception() string {
+	if x != nil {
+		return x.Reception
+	}
+	return ""
+}
+
+func (x *JobStepReached) GetRetryOf() string {
+	if x != nil {
+		return x.RetryOf
+	}
+	return ""
+}
+
+func (x *JobStepReached) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+// JobProgressed is a running job's counts. At most one per job every 10
+// seconds, and none when its counts did not change; its state's events
+// carry the counts at each state.
+type JobProgressed struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The job's id.
+	Job string `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
+	// Its counts now.
+	Counts *JobCounts `protobuf:"bytes,2,opt,name=counts,proto3" json:"counts,omitempty"`
+	// For a send job, the name of its sender.
+	Sender        string `protobuf:"bytes,3,opt,name=sender,proto3" json:"sender,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobProgressed) Reset() {
+	*x = JobProgressed{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobProgressed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobProgressed) ProtoMessage() {}
+
+func (x *JobProgressed) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobProgressed.ProtoReflect.Descriptor instead.
+func (*JobProgressed) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *JobProgressed) GetJob() string {
+	if x != nil {
+		return x.Job
+	}
+	return ""
+}
+
+func (x *JobProgressed) GetCounts() *JobCounts {
+	if x != nil {
+		return x.Counts
+	}
+	return nil
+}
+
+func (x *JobProgressed) GetSender() string {
+	if x != nil {
+		return x.Sender
+	}
+	return ""
+}
+
+// SenderHealthChanged is a sender's state changing.
+type SenderHealthChanged struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The sender's name.
+	Sender string `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
+	// Its new state.
+	Health        *SenderHealth `protobuf:"bytes,2,opt,name=health,proto3" json:"health,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SenderHealthChanged) Reset() {
+	*x = SenderHealthChanged{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SenderHealthChanged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SenderHealthChanged) ProtoMessage() {}
+
+func (x *SenderHealthChanged) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SenderHealthChanged.ProtoReflect.Descriptor instead.
+func (*SenderHealthChanged) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *SenderHealthChanged) GetSender() string {
+	if x != nil {
+		return x.Sender
+	}
+	return ""
+}
+
+func (x *SenderHealthChanged) GetHealth() *SenderHealth {
+	if x != nil {
+		return x.Health
+	}
+	return nil
+}
+
 // Event is one thing that happened in a tenant.
 type Event struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1595,6 +1991,9 @@ type Event struct {
 	//	*Event_ReceiverHealth
 	//	*Event_StorageSpace
 	//	*Event_FramesAdded
+	//	*Event_JobStep
+	//	*Event_JobProgress
+	//	*Event_SenderHealth
 	Payload       isEvent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1602,7 +2001,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[15]
+	mi := &file_coria_v1_monitor_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1614,7 +2013,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[15]
+	mi := &file_coria_v1_monitor_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1627,7 +2026,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{15}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Event) GetCursor() string {
@@ -1728,6 +2127,33 @@ func (x *Event) GetFramesAdded() *FramesAdded {
 	return nil
 }
 
+func (x *Event) GetJobStep() *JobStepReached {
+	if x != nil {
+		if x, ok := x.Payload.(*Event_JobStep); ok {
+			return x.JobStep
+		}
+	}
+	return nil
+}
+
+func (x *Event) GetJobProgress() *JobProgressed {
+	if x != nil {
+		if x, ok := x.Payload.(*Event_JobProgress); ok {
+			return x.JobProgress
+		}
+	}
+	return nil
+}
+
+func (x *Event) GetSenderHealth() *SenderHealthChanged {
+	if x != nil {
+		if x, ok := x.Payload.(*Event_SenderHealth); ok {
+			return x.SenderHealth
+		}
+	}
+	return nil
+}
+
 type isEvent_Payload interface {
 	isEvent_Payload()
 }
@@ -1767,6 +2193,21 @@ type Event_FramesAdded struct {
 	FramesAdded *FramesAdded `protobuf:"bytes,11,opt,name=frames_added,json=framesAdded,proto3,oneof"`
 }
 
+type Event_JobStep struct {
+	// A job was made or reached a state.
+	JobStep *JobStepReached `protobuf:"bytes,12,opt,name=job_step,json=jobStep,proto3,oneof"`
+}
+
+type Event_JobProgress struct {
+	// A running job's counts.
+	JobProgress *JobProgressed `protobuf:"bytes,13,opt,name=job_progress,json=jobProgress,proto3,oneof"`
+}
+
+type Event_SenderHealth struct {
+	// A sender's state changed.
+	SenderHealth *SenderHealthChanged `protobuf:"bytes,14,opt,name=sender_health,json=senderHealth,proto3,oneof"`
+}
+
 func (*Event_AssociationFailed) isEvent_Payload() {}
 
 func (*Event_ReceptionStep) isEvent_Payload() {}
@@ -1780,6 +2221,12 @@ func (*Event_ReceiverHealth) isEvent_Payload() {}
 func (*Event_StorageSpace) isEvent_Payload() {}
 
 func (*Event_FramesAdded) isEvent_Payload() {}
+
+func (*Event_JobStep) isEvent_Payload() {}
+
+func (*Event_JobProgress) isEvent_Payload() {}
+
+func (*Event_SenderHealth) isEvent_Payload() {}
 
 // WatchKeepAlive opens every stream, and is sent again when no event has
 // been sent for 15 seconds.
@@ -1820,7 +2267,7 @@ type WatchKeepAlive struct {
 
 func (x *WatchKeepAlive) Reset() {
 	*x = WatchKeepAlive{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[16]
+	mi := &file_coria_v1_monitor_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1832,7 +2279,7 @@ func (x *WatchKeepAlive) String() string {
 func (*WatchKeepAlive) ProtoMessage() {}
 
 func (x *WatchKeepAlive) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[16]
+	mi := &file_coria_v1_monitor_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1845,7 +2292,7 @@ func (x *WatchKeepAlive) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchKeepAlive.ProtoReflect.Descriptor instead.
 func (*WatchKeepAlive) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{16}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *WatchKeepAlive) GetTime() *timestamppb.Timestamp {
@@ -1916,7 +2363,7 @@ type WatchRequest struct {
 
 func (x *WatchRequest) Reset() {
 	*x = WatchRequest{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[17]
+	mi := &file_coria_v1_monitor_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1928,7 +2375,7 @@ func (x *WatchRequest) String() string {
 func (*WatchRequest) ProtoMessage() {}
 
 func (x *WatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[17]
+	mi := &file_coria_v1_monitor_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1941,7 +2388,7 @@ func (x *WatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
 func (*WatchRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{17}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *WatchRequest) GetScope() *Scope {
@@ -1995,7 +2442,7 @@ type WatchResponse struct {
 
 func (x *WatchResponse) Reset() {
 	*x = WatchResponse{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[18]
+	mi := &file_coria_v1_monitor_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2007,7 +2454,7 @@ func (x *WatchResponse) String() string {
 func (*WatchResponse) ProtoMessage() {}
 
 func (x *WatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[18]
+	mi := &file_coria_v1_monitor_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2020,7 +2467,7 @@ func (x *WatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchResponse.ProtoReflect.Descriptor instead.
 func (*WatchResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{18}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *WatchResponse) GetKind() isWatchResponse_Kind {
@@ -2071,12 +2518,12 @@ var File_coria_v1_monitor_proto protoreflect.FileDescriptor
 
 const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\n" +
-	"\x16coria/v1/monitor.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15coria/v1/access.proto\x1a\x19coria/v1/quarantine.proto\x1a\x18coria/v1/reception.proto\x1a\x17coria/v1/receiver.proto\x1a\x14coria/v1/scope.proto\x1a\x15coria/v1/tenant.proto\"a\n" +
+	"\x16coria/v1/monitor.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15coria/v1/access.proto\x1a\x12coria/v1/job.proto\x1a\x19coria/v1/quarantine.proto\x1a\x18coria/v1/reception.proto\x1a\x17coria/v1/receiver.proto\x1a\x14coria/v1/scope.proto\x1a\x15coria/v1/sender.proto\x1a\x15coria/v1/tenant.proto\"a\n" +
 	"\x12ReceptionStepCount\x12+\n" +
 	"\x04step\x18\x01 \x01(\x0e2\x17.coria.v1.ReceptionStepR\x04step\x12\x1e\n" +
 	"\n" +
 	"receptions\x18\x02 \x01(\x03R\n" +
-	"receptions\"\xcf\x02\n" +
+	"receptions\"\x92\x03\n" +
 	"\fTenantCounts\x12\x1a\n" +
 	"\bsubjects\x18\x01 \x01(\x03R\bsubjects\x12\x1a\n" +
 	"\bsessions\x18\x02 \x01(\x03R\bsessions\x12\x14\n" +
@@ -2085,7 +2532,15 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\x11quarantined_files\x18\x05 \x01(\x03R\x10quarantinedFiles\x12+\n" +
 	"\x11quarantined_bytes\x18\x06 \x01(\x03R\x10quarantinedBytes\x12R\n" +
 	"\x16receptions_in_progress\x18\a \x03(\v2\x1c.coria.v1.ReceptionStepCountR\x14receptionsInProgress\x12%\n" +
-	"\x0eincoming_bytes\x18\b \x01(\x03R\rincomingBytes\"\xf8\x01\n" +
+	"\x0eincoming_bytes\x18\b \x01(\x03R\rincomingBytes\x12A\n" +
+	"\x10jobs_in_progress\x18\t \x03(\v2\x17.coria.v1.JobStateCountR\x0ejobsInProgress\"M\n" +
+	"\rJobStateCount\x12(\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x12.coria.v1.JobStateR\x05state\x12\x12\n" +
+	"\x04jobs\x18\x02 \x01(\x03R\x04jobs\"\x83\x01\n" +
+	"\fSenderStatus\x12\x16\n" +
+	"\x06sender\x18\x01 \x01(\tR\x06sender\x12.\n" +
+	"\x06health\x18\x02 \x01(\v2\x16.coria.v1.SenderHealthR\x06health\x12+\n" +
+	"\x11open_associations\x18\x03 \x01(\x05R\x10openAssociations\"\xf8\x01\n" +
 	"\n" +
 	"Throughput\x129\n" +
 	"\x19files_received_per_second\x18\x01 \x01(\x01R\x16filesReceivedPerSecond\x129\n" +
@@ -2106,7 +2561,7 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\breceiver\x18\x01 \x01(\tR\breceiver\x120\n" +
 	"\x06health\x18\x02 \x01(\v2\x18.coria.v1.ReceiverHealthR\x06health\x12\x1d\n" +
 	"\n" +
-	"any_caller\x18\x03 \x01(\bR\tanyCaller\"\xd8\x03\n" +
+	"any_caller\x18\x03 \x01(\bR\tanyCaller\"\x8a\x04\n" +
 	"\fTenantStatus\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12<\n" +
 	"\x0edatabase_state\x18\x02 \x01(\x0e2\x15.coria.v1.TenantStateR\rdatabaseState\x12J\n" +
@@ -2118,7 +2573,9 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"throughput\x123\n" +
 	"\bstorages\x18\a \x03(\v2\x17.coria.v1.StorageStatusR\bstorages\x126\n" +
 	"\treceivers\x18\b \x03(\v2\x18.coria.v1.ReceiverStatusR\treceivers\x120\n" +
-	"\x14incoming_limit_bytes\x18\t \x01(\x03R\x12incomingLimitBytes\"u\n" +
+	"\x14incoming_limit_bytes\x18\t \x01(\x03R\x12incomingLimitBytes\x120\n" +
+	"\asenders\x18\n" +
+	" \x03(\v2\x16.coria.v1.SenderStatusR\asenders\"u\n" +
 	"\x10GetStatusRequest\x12%\n" +
 	"\x05scope\x18\x01 \x01(\v2\x0f.coria.v1.ScopeR\x05scope\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
@@ -2185,7 +2642,24 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\n" +
 	"scans_done\x18\x05 \x01(\x03R\tscansDone\x12%\n" +
 	"\x0einstances_done\x18\x06 \x01(\x03R\rinstancesDone\x12\x1a\n" +
-	"\bfinished\x18\a \x01(\bR\bfinished\"\x96\x05\n" +
+	"\bfinished\x18\a \x01(\bR\bfinished\"\xb9\x02\n" +
+	"\x0eJobStepReached\x12\x10\n" +
+	"\x03job\x18\x01 \x01(\tR\x03job\x12(\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x12.coria.v1.JobStateR\x05state\x129\n" +
+	"\x0eprevious_state\x18\x03 \x01(\x0e2\x12.coria.v1.JobStateR\rpreviousState\x12+\n" +
+	"\x06counts\x18\x04 \x01(\v2\x13.coria.v1.JobCountsR\x06counts\x12\x16\n" +
+	"\x06sender\x18\x05 \x01(\tR\x06sender\x12\x1a\n" +
+	"\breceiver\x18\x06 \x01(\tR\breceiver\x12\x1c\n" +
+	"\treception\x18\a \x01(\tR\treception\x12\x19\n" +
+	"\bretry_of\x18\b \x01(\tR\aretryOf\x12\x16\n" +
+	"\x06reason\x18\t \x01(\tR\x06reason\"f\n" +
+	"\rJobProgressed\x12\x10\n" +
+	"\x03job\x18\x01 \x01(\tR\x03job\x12+\n" +
+	"\x06counts\x18\x02 \x01(\v2\x13.coria.v1.JobCountsR\x06counts\x12\x16\n" +
+	"\x06sender\x18\x03 \x01(\tR\x06sender\"]\n" +
+	"\x13SenderHealthChanged\x12\x16\n" +
+	"\x06sender\x18\x01 \x01(\tR\x06sender\x12.\n" +
+	"\x06health\x18\x02 \x01(\v2\x16.coria.v1.SenderHealthR\x06health\"\xd1\x06\n" +
 	"\x05Event\x12\x16\n" +
 	"\x06cursor\x18\x01 \x01(\tR\x06cursor\x12.\n" +
 	"\x04time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
@@ -2198,7 +2672,10 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\x0freceiver_health\x18\t \x01(\v2\x1f.coria.v1.ReceiverHealthChangedH\x00R\x0ereceiverHealth\x12D\n" +
 	"\rstorage_space\x18\n" +
 	" \x01(\v2\x1d.coria.v1.StorageSpaceChangedH\x00R\fstorageSpace\x12:\n" +
-	"\fframes_added\x18\v \x01(\v2\x15.coria.v1.FramesAddedH\x00R\vframesAddedB\t\n" +
+	"\fframes_added\x18\v \x01(\v2\x15.coria.v1.FramesAddedH\x00R\vframesAdded\x125\n" +
+	"\bjob_step\x18\f \x01(\v2\x18.coria.v1.JobStepReachedH\x00R\ajobStep\x12<\n" +
+	"\fjob_progress\x18\r \x01(\v2\x17.coria.v1.JobProgressedH\x00R\vjobProgress\x12D\n" +
+	"\rsender_health\x18\x0e \x01(\v2\x1d.coria.v1.SenderHealthChangedH\x00R\fsenderHealthB\t\n" +
 	"\apayload\"\xb1\x02\n" +
 	"\x0eWatchKeepAlive\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
@@ -2222,7 +2699,7 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\x05event\x18\x01 \x01(\v2\x0f.coria.v1.EventH\x00R\x05event\x129\n" +
 	"\n" +
 	"keep_alive\x18\x02 \x01(\v2\x18.coria.v1.WatchKeepAliveH\x00R\tkeepAliveB\x06\n" +
-	"\x04kind*\x88\x02\n" +
+	"\x04kind*\xdc\x02\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dEVENT_TYPE_ASSOCIATION_FAILED\x10\x01\x12\x1d\n" +
@@ -2231,7 +2708,11 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\x1dEVENT_TYPE_QUARANTINE_DECIDED\x10\x04\x12\x1e\n" +
 	"\x1aEVENT_TYPE_RECEIVER_HEALTH\x10\x05\x12\x1c\n" +
 	"\x18EVENT_TYPE_STORAGE_SPACE\x10\x06\x12\x1b\n" +
-	"\x17EVENT_TYPE_FRAMES_ADDED\x10\a*\x8f\x03\n" +
+	"\x17EVENT_TYPE_FRAMES_ADDED\x10\a\x12\x17\n" +
+	"\x13EVENT_TYPE_JOB_STEP\x10\b\x12\x1b\n" +
+	"\x17EVENT_TYPE_JOB_PROGRESS\x10\t\x12\x1c\n" +
+	"\x18EVENT_TYPE_SENDER_HEALTH\x10\n" +
+	"*\x8f\x03\n" +
 	"\x12AssociationFailure\x12#\n" +
 	"\x1fASSOCIATION_FAILURE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED\x10\x01\x126\n" +
@@ -2264,93 +2745,113 @@ func file_coria_v1_monitor_proto_rawDescGZIP() []byte {
 }
 
 var file_coria_v1_monitor_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_coria_v1_monitor_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_coria_v1_monitor_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_coria_v1_monitor_proto_goTypes = []any{
 	(EventType)(0),                // 0: coria.v1.EventType
 	(AssociationFailure)(0),       // 1: coria.v1.AssociationFailure
 	(StorageSpaceState)(0),        // 2: coria.v1.StorageSpaceState
 	(*ReceptionStepCount)(nil),    // 3: coria.v1.ReceptionStepCount
 	(*TenantCounts)(nil),          // 4: coria.v1.TenantCounts
-	(*Throughput)(nil),            // 5: coria.v1.Throughput
-	(*StorageStatus)(nil),         // 6: coria.v1.StorageStatus
-	(*ReceiverStatus)(nil),        // 7: coria.v1.ReceiverStatus
-	(*TenantStatus)(nil),          // 8: coria.v1.TenantStatus
-	(*GetStatusRequest)(nil),      // 9: coria.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),     // 10: coria.v1.GetStatusResponse
-	(*AssociationFailed)(nil),     // 11: coria.v1.AssociationFailed
-	(*ReceptionStepReached)(nil),  // 12: coria.v1.ReceptionStepReached
-	(*FileQuarantined)(nil),       // 13: coria.v1.FileQuarantined
-	(*QuarantineDecided)(nil),     // 14: coria.v1.QuarantineDecided
-	(*ReceiverHealthChanged)(nil), // 15: coria.v1.ReceiverHealthChanged
-	(*StorageSpaceChanged)(nil),   // 16: coria.v1.StorageSpaceChanged
-	(*FramesAdded)(nil),           // 17: coria.v1.FramesAdded
-	(*Event)(nil),                 // 18: coria.v1.Event
-	(*WatchKeepAlive)(nil),        // 19: coria.v1.WatchKeepAlive
-	(*WatchRequest)(nil),          // 20: coria.v1.WatchRequest
-	(*WatchResponse)(nil),         // 21: coria.v1.WatchResponse
-	nil,                           // 22: coria.v1.WatchKeepAlive.TenantCursorsEntry
-	nil,                           // 23: coria.v1.WatchRequest.TenantCursorsEntry
-	(ReceptionStep)(0),            // 24: coria.v1.ReceptionStep
-	(*ReceiverHealth)(nil),        // 25: coria.v1.ReceiverHealth
-	(TenantState)(0),              // 26: coria.v1.TenantState
-	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
-	(*Scope)(nil),                 // 28: coria.v1.Scope
-	(*Key)(nil),                   // 29: coria.v1.Key
-	(*Caller)(nil),                // 30: coria.v1.Caller
-	(*ReceptionCounts)(nil),       // 31: coria.v1.ReceptionCounts
-	(QuarantineReason)(0),         // 32: coria.v1.QuarantineReason
-	(QuarantineState)(0),          // 33: coria.v1.QuarantineState
-	(ReleaseMode)(0),              // 34: coria.v1.ReleaseMode
+	(*JobStateCount)(nil),         // 5: coria.v1.JobStateCount
+	(*SenderStatus)(nil),          // 6: coria.v1.SenderStatus
+	(*Throughput)(nil),            // 7: coria.v1.Throughput
+	(*StorageStatus)(nil),         // 8: coria.v1.StorageStatus
+	(*ReceiverStatus)(nil),        // 9: coria.v1.ReceiverStatus
+	(*TenantStatus)(nil),          // 10: coria.v1.TenantStatus
+	(*GetStatusRequest)(nil),      // 11: coria.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),     // 12: coria.v1.GetStatusResponse
+	(*AssociationFailed)(nil),     // 13: coria.v1.AssociationFailed
+	(*ReceptionStepReached)(nil),  // 14: coria.v1.ReceptionStepReached
+	(*FileQuarantined)(nil),       // 15: coria.v1.FileQuarantined
+	(*QuarantineDecided)(nil),     // 16: coria.v1.QuarantineDecided
+	(*ReceiverHealthChanged)(nil), // 17: coria.v1.ReceiverHealthChanged
+	(*StorageSpaceChanged)(nil),   // 18: coria.v1.StorageSpaceChanged
+	(*FramesAdded)(nil),           // 19: coria.v1.FramesAdded
+	(*JobStepReached)(nil),        // 20: coria.v1.JobStepReached
+	(*JobProgressed)(nil),         // 21: coria.v1.JobProgressed
+	(*SenderHealthChanged)(nil),   // 22: coria.v1.SenderHealthChanged
+	(*Event)(nil),                 // 23: coria.v1.Event
+	(*WatchKeepAlive)(nil),        // 24: coria.v1.WatchKeepAlive
+	(*WatchRequest)(nil),          // 25: coria.v1.WatchRequest
+	(*WatchResponse)(nil),         // 26: coria.v1.WatchResponse
+	nil,                           // 27: coria.v1.WatchKeepAlive.TenantCursorsEntry
+	nil,                           // 28: coria.v1.WatchRequest.TenantCursorsEntry
+	(ReceptionStep)(0),            // 29: coria.v1.ReceptionStep
+	(JobState)(0),                 // 30: coria.v1.JobState
+	(*SenderHealth)(nil),          // 31: coria.v1.SenderHealth
+	(*ReceiverHealth)(nil),        // 32: coria.v1.ReceiverHealth
+	(TenantState)(0),              // 33: coria.v1.TenantState
+	(*timestamppb.Timestamp)(nil), // 34: google.protobuf.Timestamp
+	(*Scope)(nil),                 // 35: coria.v1.Scope
+	(*Key)(nil),                   // 36: coria.v1.Key
+	(*Caller)(nil),                // 37: coria.v1.Caller
+	(*ReceptionCounts)(nil),       // 38: coria.v1.ReceptionCounts
+	(QuarantineReason)(0),         // 39: coria.v1.QuarantineReason
+	(QuarantineState)(0),          // 40: coria.v1.QuarantineState
+	(ReleaseMode)(0),              // 41: coria.v1.ReleaseMode
+	(*JobCounts)(nil),             // 42: coria.v1.JobCounts
 }
 var file_coria_v1_monitor_proto_depIdxs = []int32{
-	24, // 0: coria.v1.ReceptionStepCount.step:type_name -> coria.v1.ReceptionStep
+	29, // 0: coria.v1.ReceptionStepCount.step:type_name -> coria.v1.ReceptionStep
 	3,  // 1: coria.v1.TenantCounts.receptions_in_progress:type_name -> coria.v1.ReceptionStepCount
-	25, // 2: coria.v1.ReceiverStatus.health:type_name -> coria.v1.ReceiverHealth
-	26, // 3: coria.v1.TenantStatus.database_state:type_name -> coria.v1.TenantState
-	27, // 4: coria.v1.TenantStatus.database_state_time:type_name -> google.protobuf.Timestamp
-	4,  // 5: coria.v1.TenantStatus.counts:type_name -> coria.v1.TenantCounts
-	5,  // 6: coria.v1.TenantStatus.throughput:type_name -> coria.v1.Throughput
-	6,  // 7: coria.v1.TenantStatus.storages:type_name -> coria.v1.StorageStatus
-	7,  // 8: coria.v1.TenantStatus.receivers:type_name -> coria.v1.ReceiverStatus
-	28, // 9: coria.v1.GetStatusRequest.scope:type_name -> coria.v1.Scope
-	8,  // 10: coria.v1.GetStatusResponse.tenants:type_name -> coria.v1.TenantStatus
-	27, // 11: coria.v1.GetStatusResponse.time:type_name -> google.protobuf.Timestamp
-	29, // 12: coria.v1.GetStatusResponse.expiring_keys:type_name -> coria.v1.Key
-	30, // 13: coria.v1.AssociationFailed.caller:type_name -> coria.v1.Caller
-	1,  // 14: coria.v1.AssociationFailed.failure:type_name -> coria.v1.AssociationFailure
-	24, // 15: coria.v1.ReceptionStepReached.step:type_name -> coria.v1.ReceptionStep
-	24, // 16: coria.v1.ReceptionStepReached.previous_step:type_name -> coria.v1.ReceptionStep
-	31, // 17: coria.v1.ReceptionStepReached.counts:type_name -> coria.v1.ReceptionCounts
-	32, // 18: coria.v1.FileQuarantined.reason:type_name -> coria.v1.QuarantineReason
-	33, // 19: coria.v1.QuarantineDecided.state:type_name -> coria.v1.QuarantineState
-	34, // 20: coria.v1.QuarantineDecided.release_mode:type_name -> coria.v1.ReleaseMode
-	25, // 21: coria.v1.ReceiverHealthChanged.health:type_name -> coria.v1.ReceiverHealth
-	2,  // 22: coria.v1.StorageSpaceChanged.state:type_name -> coria.v1.StorageSpaceState
-	27, // 23: coria.v1.Event.time:type_name -> google.protobuf.Timestamp
-	0,  // 24: coria.v1.Event.type:type_name -> coria.v1.EventType
-	11, // 25: coria.v1.Event.association_failed:type_name -> coria.v1.AssociationFailed
-	12, // 26: coria.v1.Event.reception_step:type_name -> coria.v1.ReceptionStepReached
-	13, // 27: coria.v1.Event.file_quarantined:type_name -> coria.v1.FileQuarantined
-	14, // 28: coria.v1.Event.quarantine_decided:type_name -> coria.v1.QuarantineDecided
-	15, // 29: coria.v1.Event.receiver_health:type_name -> coria.v1.ReceiverHealthChanged
-	16, // 30: coria.v1.Event.storage_space:type_name -> coria.v1.StorageSpaceChanged
-	17, // 31: coria.v1.Event.frames_added:type_name -> coria.v1.FramesAdded
-	27, // 32: coria.v1.WatchKeepAlive.time:type_name -> google.protobuf.Timestamp
-	22, // 33: coria.v1.WatchKeepAlive.tenant_cursors:type_name -> coria.v1.WatchKeepAlive.TenantCursorsEntry
-	28, // 34: coria.v1.WatchRequest.scope:type_name -> coria.v1.Scope
-	0,  // 35: coria.v1.WatchRequest.types:type_name -> coria.v1.EventType
-	23, // 36: coria.v1.WatchRequest.tenant_cursors:type_name -> coria.v1.WatchRequest.TenantCursorsEntry
-	18, // 37: coria.v1.WatchResponse.event:type_name -> coria.v1.Event
-	19, // 38: coria.v1.WatchResponse.keep_alive:type_name -> coria.v1.WatchKeepAlive
-	9,  // 39: coria.v1.MonitorService.GetStatus:input_type -> coria.v1.GetStatusRequest
-	20, // 40: coria.v1.MonitorService.Watch:input_type -> coria.v1.WatchRequest
-	10, // 41: coria.v1.MonitorService.GetStatus:output_type -> coria.v1.GetStatusResponse
-	21, // 42: coria.v1.MonitorService.Watch:output_type -> coria.v1.WatchResponse
-	41, // [41:43] is the sub-list for method output_type
-	39, // [39:41] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	5,  // 2: coria.v1.TenantCounts.jobs_in_progress:type_name -> coria.v1.JobStateCount
+	30, // 3: coria.v1.JobStateCount.state:type_name -> coria.v1.JobState
+	31, // 4: coria.v1.SenderStatus.health:type_name -> coria.v1.SenderHealth
+	32, // 5: coria.v1.ReceiverStatus.health:type_name -> coria.v1.ReceiverHealth
+	33, // 6: coria.v1.TenantStatus.database_state:type_name -> coria.v1.TenantState
+	34, // 7: coria.v1.TenantStatus.database_state_time:type_name -> google.protobuf.Timestamp
+	4,  // 8: coria.v1.TenantStatus.counts:type_name -> coria.v1.TenantCounts
+	7,  // 9: coria.v1.TenantStatus.throughput:type_name -> coria.v1.Throughput
+	8,  // 10: coria.v1.TenantStatus.storages:type_name -> coria.v1.StorageStatus
+	9,  // 11: coria.v1.TenantStatus.receivers:type_name -> coria.v1.ReceiverStatus
+	6,  // 12: coria.v1.TenantStatus.senders:type_name -> coria.v1.SenderStatus
+	35, // 13: coria.v1.GetStatusRequest.scope:type_name -> coria.v1.Scope
+	10, // 14: coria.v1.GetStatusResponse.tenants:type_name -> coria.v1.TenantStatus
+	34, // 15: coria.v1.GetStatusResponse.time:type_name -> google.protobuf.Timestamp
+	36, // 16: coria.v1.GetStatusResponse.expiring_keys:type_name -> coria.v1.Key
+	37, // 17: coria.v1.AssociationFailed.caller:type_name -> coria.v1.Caller
+	1,  // 18: coria.v1.AssociationFailed.failure:type_name -> coria.v1.AssociationFailure
+	29, // 19: coria.v1.ReceptionStepReached.step:type_name -> coria.v1.ReceptionStep
+	29, // 20: coria.v1.ReceptionStepReached.previous_step:type_name -> coria.v1.ReceptionStep
+	38, // 21: coria.v1.ReceptionStepReached.counts:type_name -> coria.v1.ReceptionCounts
+	39, // 22: coria.v1.FileQuarantined.reason:type_name -> coria.v1.QuarantineReason
+	40, // 23: coria.v1.QuarantineDecided.state:type_name -> coria.v1.QuarantineState
+	41, // 24: coria.v1.QuarantineDecided.release_mode:type_name -> coria.v1.ReleaseMode
+	32, // 25: coria.v1.ReceiverHealthChanged.health:type_name -> coria.v1.ReceiverHealth
+	2,  // 26: coria.v1.StorageSpaceChanged.state:type_name -> coria.v1.StorageSpaceState
+	30, // 27: coria.v1.JobStepReached.state:type_name -> coria.v1.JobState
+	30, // 28: coria.v1.JobStepReached.previous_state:type_name -> coria.v1.JobState
+	42, // 29: coria.v1.JobStepReached.counts:type_name -> coria.v1.JobCounts
+	42, // 30: coria.v1.JobProgressed.counts:type_name -> coria.v1.JobCounts
+	31, // 31: coria.v1.SenderHealthChanged.health:type_name -> coria.v1.SenderHealth
+	34, // 32: coria.v1.Event.time:type_name -> google.protobuf.Timestamp
+	0,  // 33: coria.v1.Event.type:type_name -> coria.v1.EventType
+	13, // 34: coria.v1.Event.association_failed:type_name -> coria.v1.AssociationFailed
+	14, // 35: coria.v1.Event.reception_step:type_name -> coria.v1.ReceptionStepReached
+	15, // 36: coria.v1.Event.file_quarantined:type_name -> coria.v1.FileQuarantined
+	16, // 37: coria.v1.Event.quarantine_decided:type_name -> coria.v1.QuarantineDecided
+	17, // 38: coria.v1.Event.receiver_health:type_name -> coria.v1.ReceiverHealthChanged
+	18, // 39: coria.v1.Event.storage_space:type_name -> coria.v1.StorageSpaceChanged
+	19, // 40: coria.v1.Event.frames_added:type_name -> coria.v1.FramesAdded
+	20, // 41: coria.v1.Event.job_step:type_name -> coria.v1.JobStepReached
+	21, // 42: coria.v1.Event.job_progress:type_name -> coria.v1.JobProgressed
+	22, // 43: coria.v1.Event.sender_health:type_name -> coria.v1.SenderHealthChanged
+	34, // 44: coria.v1.WatchKeepAlive.time:type_name -> google.protobuf.Timestamp
+	27, // 45: coria.v1.WatchKeepAlive.tenant_cursors:type_name -> coria.v1.WatchKeepAlive.TenantCursorsEntry
+	35, // 46: coria.v1.WatchRequest.scope:type_name -> coria.v1.Scope
+	0,  // 47: coria.v1.WatchRequest.types:type_name -> coria.v1.EventType
+	28, // 48: coria.v1.WatchRequest.tenant_cursors:type_name -> coria.v1.WatchRequest.TenantCursorsEntry
+	23, // 49: coria.v1.WatchResponse.event:type_name -> coria.v1.Event
+	24, // 50: coria.v1.WatchResponse.keep_alive:type_name -> coria.v1.WatchKeepAlive
+	11, // 51: coria.v1.MonitorService.GetStatus:input_type -> coria.v1.GetStatusRequest
+	25, // 52: coria.v1.MonitorService.Watch:input_type -> coria.v1.WatchRequest
+	12, // 53: coria.v1.MonitorService.GetStatus:output_type -> coria.v1.GetStatusResponse
+	26, // 54: coria.v1.MonitorService.Watch:output_type -> coria.v1.WatchResponse
+	53, // [53:55] is the sub-list for method output_type
+	51, // [51:53] is the sub-list for method input_type
+	51, // [51:51] is the sub-list for extension type_name
+	51, // [51:51] is the sub-list for extension extendee
+	0,  // [0:51] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_monitor_proto_init() }
@@ -2359,14 +2860,16 @@ func file_coria_v1_monitor_proto_init() {
 		return
 	}
 	file_coria_v1_access_proto_init()
+	file_coria_v1_job_proto_init()
 	file_coria_v1_quarantine_proto_init()
 	file_coria_v1_reception_proto_init()
 	file_coria_v1_receiver_proto_init()
 	file_coria_v1_scope_proto_init()
+	file_coria_v1_sender_proto_init()
 	file_coria_v1_tenant_proto_init()
-	file_coria_v1_monitor_proto_msgTypes[3].OneofWrappers = []any{}
-	file_coria_v1_monitor_proto_msgTypes[13].OneofWrappers = []any{}
-	file_coria_v1_monitor_proto_msgTypes[15].OneofWrappers = []any{
+	file_coria_v1_monitor_proto_msgTypes[5].OneofWrappers = []any{}
+	file_coria_v1_monitor_proto_msgTypes[15].OneofWrappers = []any{}
+	file_coria_v1_monitor_proto_msgTypes[20].OneofWrappers = []any{
 		(*Event_AssociationFailed)(nil),
 		(*Event_ReceptionStep)(nil),
 		(*Event_FileQuarantined)(nil),
@@ -2374,8 +2877,11 @@ func file_coria_v1_monitor_proto_init() {
 		(*Event_ReceiverHealth)(nil),
 		(*Event_StorageSpace)(nil),
 		(*Event_FramesAdded)(nil),
+		(*Event_JobStep)(nil),
+		(*Event_JobProgress)(nil),
+		(*Event_SenderHealth)(nil),
 	}
-	file_coria_v1_monitor_proto_msgTypes[18].OneofWrappers = []any{
+	file_coria_v1_monitor_proto_msgTypes[23].OneofWrappers = []any{
 		(*WatchResponse_Event)(nil),
 		(*WatchResponse_KeepAlive)(nil),
 	}
@@ -2385,7 +2891,7 @@ func file_coria_v1_monitor_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_monitor_proto_rawDesc), len(file_coria_v1_monitor_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   21,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

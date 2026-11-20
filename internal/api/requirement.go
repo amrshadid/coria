@@ -362,6 +362,12 @@ var rules = map[string]rule{
 // needs only an authenticated caller. The object is the profile's name,
 // recorded only when it passes the name rule, since what a caller sends in
 // its place can be anything.
+//
+// SenderService: admin on the tenant to change or test a sender, reader to
+// read one; the object is the sender's name, recorded only when it passes
+// the rule of a sender's name. JobService: operator on the tenant to make,
+// cancel and retry a job, reader to read jobs and their failures; the
+// object is the job's id, recorded only when it has the form of one.
 var pendingRules = map[string]rule{
 	coriav1connect.ProfileServiceCreateProfileVersionProcedure: byMessage(func(r *v1.CreateProfileVersionRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: profileObject(r.GetName())}
@@ -380,6 +386,44 @@ var pendingRules = map[string]rule{
 	}),
 	// "Role: none; any caller the server authenticates."
 	coriav1connect.ProfileServiceListProfileBasesProcedure: fixed(access.Authenticated()),
+
+	coriav1connect.SenderServiceAddSenderProcedure: byMessage(func(r *v1.AddSenderRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: senderObject(r.GetSender().GetName()), Details: map[string]string{detailType: senderType(r.GetSender())}}
+	}),
+	coriav1connect.SenderServiceGetSenderProcedure: byMessage(func(r *v1.GetSenderRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: senderObject(r.GetName())}
+	}),
+	coriav1connect.SenderServiceListSendersProcedure: byMessage(func(r *v1.ListSendersRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{}
+	}),
+	coriav1connect.SenderServiceSetSenderProcedure: byMessage(func(r *v1.SetSenderRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: senderObject(r.GetSender().GetName()), Details: maskDetails(r.GetUpdateMask().GetPaths())}
+	}),
+	coriav1connect.SenderServiceRemoveSenderProcedure: byMessage(func(r *v1.RemoveSenderRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: senderObject(r.GetName()), Details: removeSenderDetails(r)}
+	}),
+	coriav1connect.SenderServiceTestSenderProcedure: byMessage(func(r *v1.TestSenderRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: senderObject(r.GetName())}
+	}),
+
+	coriav1connect.JobServiceCreateJobProcedure: byMessage(func(r *v1.CreateJobRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Details: createJobDetails(r)}
+	}),
+	coriav1connect.JobServiceGetJobProcedure: byMessage(func(r *v1.GetJobRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: jobObject(r.GetId())}
+	}),
+	coriav1connect.JobServiceListJobsProcedure: byMessage(func(r *v1.ListJobsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Details: jobFilterDetails(r)}
+	}),
+	coriav1connect.JobServiceCancelJobProcedure: byMessage(func(r *v1.CancelJobRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: jobObject(r.GetId())}
+	}),
+	coriav1connect.JobServiceRetryJobProcedure: byMessage(func(r *v1.RetryJobRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: jobObject(r.GetId())}
+	}),
+	coriav1connect.JobServiceListJobFailuresProcedure: byMessage(func(r *v1.ListJobFailuresRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: jobObject(r.GetId())}
+	}),
 }
 
 // detailVersion is the key of the version a request names, in the details

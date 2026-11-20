@@ -2,10 +2,12 @@ import datetime
 
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
 from coria.v1 import access_pb2 as _access_pb2
+from coria.v1 import job_pb2 as _job_pb2
 from coria.v1 import quarantine_pb2 as _quarantine_pb2
 from coria.v1 import reception_pb2 as _reception_pb2
 from coria.v1 import receiver_pb2 as _receiver_pb2
 from coria.v1 import scope_pb2 as _scope_pb2
+from coria.v1 import sender_pb2 as _sender_pb2
 from coria.v1 import tenant_pb2 as _tenant_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
@@ -26,6 +28,9 @@ class EventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     EVENT_TYPE_RECEIVER_HEALTH: _ClassVar[EventType]
     EVENT_TYPE_STORAGE_SPACE: _ClassVar[EventType]
     EVENT_TYPE_FRAMES_ADDED: _ClassVar[EventType]
+    EVENT_TYPE_JOB_STEP: _ClassVar[EventType]
+    EVENT_TYPE_JOB_PROGRESS: _ClassVar[EventType]
+    EVENT_TYPE_SENDER_HEALTH: _ClassVar[EventType]
 
 class AssociationFailure(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -52,6 +57,9 @@ EVENT_TYPE_QUARANTINE_DECIDED: EventType
 EVENT_TYPE_RECEIVER_HEALTH: EventType
 EVENT_TYPE_STORAGE_SPACE: EventType
 EVENT_TYPE_FRAMES_ADDED: EventType
+EVENT_TYPE_JOB_STEP: EventType
+EVENT_TYPE_JOB_PROGRESS: EventType
+EVENT_TYPE_SENDER_HEALTH: EventType
 ASSOCIATION_FAILURE_UNSPECIFIED: AssociationFailure
 ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED: AssociationFailure
 ASSOCIATION_FAILURE_CALLED_AE_TITLE_NOT_RECOGNIZED: AssociationFailure
@@ -74,7 +82,7 @@ class ReceptionStepCount(_message.Message):
     def __init__(self, step: _Optional[_Union[_reception_pb2.ReceptionStep, str]] = ..., receptions: _Optional[int] = ...) -> None: ...
 
 class TenantCounts(_message.Message):
-    __slots__ = ("subjects", "sessions", "scans", "instances", "quarantined_files", "quarantined_bytes", "receptions_in_progress", "incoming_bytes")
+    __slots__ = ("subjects", "sessions", "scans", "instances", "quarantined_files", "quarantined_bytes", "receptions_in_progress", "incoming_bytes", "jobs_in_progress")
     SUBJECTS_FIELD_NUMBER: _ClassVar[int]
     SESSIONS_FIELD_NUMBER: _ClassVar[int]
     SCANS_FIELD_NUMBER: _ClassVar[int]
@@ -83,6 +91,7 @@ class TenantCounts(_message.Message):
     QUARANTINED_BYTES_FIELD_NUMBER: _ClassVar[int]
     RECEPTIONS_IN_PROGRESS_FIELD_NUMBER: _ClassVar[int]
     INCOMING_BYTES_FIELD_NUMBER: _ClassVar[int]
+    JOBS_IN_PROGRESS_FIELD_NUMBER: _ClassVar[int]
     subjects: int
     sessions: int
     scans: int
@@ -91,7 +100,26 @@ class TenantCounts(_message.Message):
     quarantined_bytes: int
     receptions_in_progress: _containers.RepeatedCompositeFieldContainer[ReceptionStepCount]
     incoming_bytes: int
-    def __init__(self, subjects: _Optional[int] = ..., sessions: _Optional[int] = ..., scans: _Optional[int] = ..., instances: _Optional[int] = ..., quarantined_files: _Optional[int] = ..., quarantined_bytes: _Optional[int] = ..., receptions_in_progress: _Optional[_Iterable[_Union[ReceptionStepCount, _Mapping]]] = ..., incoming_bytes: _Optional[int] = ...) -> None: ...
+    jobs_in_progress: _containers.RepeatedCompositeFieldContainer[JobStateCount]
+    def __init__(self, subjects: _Optional[int] = ..., sessions: _Optional[int] = ..., scans: _Optional[int] = ..., instances: _Optional[int] = ..., quarantined_files: _Optional[int] = ..., quarantined_bytes: _Optional[int] = ..., receptions_in_progress: _Optional[_Iterable[_Union[ReceptionStepCount, _Mapping]]] = ..., incoming_bytes: _Optional[int] = ..., jobs_in_progress: _Optional[_Iterable[_Union[JobStateCount, _Mapping]]] = ...) -> None: ...
+
+class JobStateCount(_message.Message):
+    __slots__ = ("state", "jobs")
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    JOBS_FIELD_NUMBER: _ClassVar[int]
+    state: _job_pb2.JobState
+    jobs: int
+    def __init__(self, state: _Optional[_Union[_job_pb2.JobState, str]] = ..., jobs: _Optional[int] = ...) -> None: ...
+
+class SenderStatus(_message.Message):
+    __slots__ = ("sender", "health", "open_associations")
+    SENDER_FIELD_NUMBER: _ClassVar[int]
+    HEALTH_FIELD_NUMBER: _ClassVar[int]
+    OPEN_ASSOCIATIONS_FIELD_NUMBER: _ClassVar[int]
+    sender: str
+    health: _sender_pb2.SenderHealth
+    open_associations: int
+    def __init__(self, sender: _Optional[str] = ..., health: _Optional[_Union[_sender_pb2.SenderHealth, _Mapping]] = ..., open_associations: _Optional[int] = ...) -> None: ...
 
 class Throughput(_message.Message):
     __slots__ = ("files_received_per_second", "bytes_received_per_second", "files_archived_per_second", "bytes_archived_per_second")
@@ -130,7 +158,7 @@ class ReceiverStatus(_message.Message):
     def __init__(self, receiver: _Optional[str] = ..., health: _Optional[_Union[_receiver_pb2.ReceiverHealth, _Mapping]] = ..., any_caller: _Optional[bool] = ...) -> None: ...
 
 class TenantStatus(_message.Message):
-    __slots__ = ("tenant", "database_state", "database_state_time", "event_cursor", "counts", "throughput", "storages", "receivers", "incoming_limit_bytes")
+    __slots__ = ("tenant", "database_state", "database_state_time", "event_cursor", "counts", "throughput", "storages", "receivers", "incoming_limit_bytes", "senders")
     TENANT_FIELD_NUMBER: _ClassVar[int]
     DATABASE_STATE_FIELD_NUMBER: _ClassVar[int]
     DATABASE_STATE_TIME_FIELD_NUMBER: _ClassVar[int]
@@ -140,6 +168,7 @@ class TenantStatus(_message.Message):
     STORAGES_FIELD_NUMBER: _ClassVar[int]
     RECEIVERS_FIELD_NUMBER: _ClassVar[int]
     INCOMING_LIMIT_BYTES_FIELD_NUMBER: _ClassVar[int]
+    SENDERS_FIELD_NUMBER: _ClassVar[int]
     tenant: str
     database_state: _tenant_pb2.TenantState
     database_state_time: _timestamp_pb2.Timestamp
@@ -149,7 +178,8 @@ class TenantStatus(_message.Message):
     storages: _containers.RepeatedCompositeFieldContainer[StorageStatus]
     receivers: _containers.RepeatedCompositeFieldContainer[ReceiverStatus]
     incoming_limit_bytes: int
-    def __init__(self, tenant: _Optional[str] = ..., database_state: _Optional[_Union[_tenant_pb2.TenantState, str]] = ..., database_state_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., event_cursor: _Optional[str] = ..., counts: _Optional[_Union[TenantCounts, _Mapping]] = ..., throughput: _Optional[_Union[Throughput, _Mapping]] = ..., storages: _Optional[_Iterable[_Union[StorageStatus, _Mapping]]] = ..., receivers: _Optional[_Iterable[_Union[ReceiverStatus, _Mapping]]] = ..., incoming_limit_bytes: _Optional[int] = ...) -> None: ...
+    senders: _containers.RepeatedCompositeFieldContainer[SenderStatus]
+    def __init__(self, tenant: _Optional[str] = ..., database_state: _Optional[_Union[_tenant_pb2.TenantState, str]] = ..., database_state_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., event_cursor: _Optional[str] = ..., counts: _Optional[_Union[TenantCounts, _Mapping]] = ..., throughput: _Optional[_Union[Throughput, _Mapping]] = ..., storages: _Optional[_Iterable[_Union[StorageStatus, _Mapping]]] = ..., receivers: _Optional[_Iterable[_Union[ReceiverStatus, _Mapping]]] = ..., incoming_limit_bytes: _Optional[int] = ..., senders: _Optional[_Iterable[_Union[SenderStatus, _Mapping]]] = ...) -> None: ...
 
 class GetStatusRequest(_message.Message):
     __slots__ = ("scope", "page_size", "page_token")
@@ -281,8 +311,48 @@ class FramesAdded(_message.Message):
     finished: bool
     def __init__(self, subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., instances: _Optional[int] = ..., scans_done: _Optional[int] = ..., instances_done: _Optional[int] = ..., finished: _Optional[bool] = ...) -> None: ...
 
+class JobStepReached(_message.Message):
+    __slots__ = ("job", "state", "previous_state", "counts", "sender", "receiver", "reception", "retry_of", "reason")
+    JOB_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    PREVIOUS_STATE_FIELD_NUMBER: _ClassVar[int]
+    COUNTS_FIELD_NUMBER: _ClassVar[int]
+    SENDER_FIELD_NUMBER: _ClassVar[int]
+    RECEIVER_FIELD_NUMBER: _ClassVar[int]
+    RECEPTION_FIELD_NUMBER: _ClassVar[int]
+    RETRY_OF_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    job: str
+    state: _job_pb2.JobState
+    previous_state: _job_pb2.JobState
+    counts: _job_pb2.JobCounts
+    sender: str
+    receiver: str
+    reception: str
+    retry_of: str
+    reason: str
+    def __init__(self, job: _Optional[str] = ..., state: _Optional[_Union[_job_pb2.JobState, str]] = ..., previous_state: _Optional[_Union[_job_pb2.JobState, str]] = ..., counts: _Optional[_Union[_job_pb2.JobCounts, _Mapping]] = ..., sender: _Optional[str] = ..., receiver: _Optional[str] = ..., reception: _Optional[str] = ..., retry_of: _Optional[str] = ..., reason: _Optional[str] = ...) -> None: ...
+
+class JobProgressed(_message.Message):
+    __slots__ = ("job", "counts", "sender")
+    JOB_FIELD_NUMBER: _ClassVar[int]
+    COUNTS_FIELD_NUMBER: _ClassVar[int]
+    SENDER_FIELD_NUMBER: _ClassVar[int]
+    job: str
+    counts: _job_pb2.JobCounts
+    sender: str
+    def __init__(self, job: _Optional[str] = ..., counts: _Optional[_Union[_job_pb2.JobCounts, _Mapping]] = ..., sender: _Optional[str] = ...) -> None: ...
+
+class SenderHealthChanged(_message.Message):
+    __slots__ = ("sender", "health")
+    SENDER_FIELD_NUMBER: _ClassVar[int]
+    HEALTH_FIELD_NUMBER: _ClassVar[int]
+    sender: str
+    health: _sender_pb2.SenderHealth
+    def __init__(self, sender: _Optional[str] = ..., health: _Optional[_Union[_sender_pb2.SenderHealth, _Mapping]] = ...) -> None: ...
+
 class Event(_message.Message):
-    __slots__ = ("cursor", "time", "tenant", "type", "association_failed", "reception_step", "file_quarantined", "quarantine_decided", "receiver_health", "storage_space", "frames_added")
+    __slots__ = ("cursor", "time", "tenant", "type", "association_failed", "reception_step", "file_quarantined", "quarantine_decided", "receiver_health", "storage_space", "frames_added", "job_step", "job_progress", "sender_health")
     CURSOR_FIELD_NUMBER: _ClassVar[int]
     TIME_FIELD_NUMBER: _ClassVar[int]
     TENANT_FIELD_NUMBER: _ClassVar[int]
@@ -294,6 +364,9 @@ class Event(_message.Message):
     RECEIVER_HEALTH_FIELD_NUMBER: _ClassVar[int]
     STORAGE_SPACE_FIELD_NUMBER: _ClassVar[int]
     FRAMES_ADDED_FIELD_NUMBER: _ClassVar[int]
+    JOB_STEP_FIELD_NUMBER: _ClassVar[int]
+    JOB_PROGRESS_FIELD_NUMBER: _ClassVar[int]
+    SENDER_HEALTH_FIELD_NUMBER: _ClassVar[int]
     cursor: str
     time: _timestamp_pb2.Timestamp
     tenant: str
@@ -305,7 +378,10 @@ class Event(_message.Message):
     receiver_health: ReceiverHealthChanged
     storage_space: StorageSpaceChanged
     frames_added: FramesAdded
-    def __init__(self, cursor: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., tenant: _Optional[str] = ..., type: _Optional[_Union[EventType, str]] = ..., association_failed: _Optional[_Union[AssociationFailed, _Mapping]] = ..., reception_step: _Optional[_Union[ReceptionStepReached, _Mapping]] = ..., file_quarantined: _Optional[_Union[FileQuarantined, _Mapping]] = ..., quarantine_decided: _Optional[_Union[QuarantineDecided, _Mapping]] = ..., receiver_health: _Optional[_Union[ReceiverHealthChanged, _Mapping]] = ..., storage_space: _Optional[_Union[StorageSpaceChanged, _Mapping]] = ..., frames_added: _Optional[_Union[FramesAdded, _Mapping]] = ...) -> None: ...
+    job_step: JobStepReached
+    job_progress: JobProgressed
+    sender_health: SenderHealthChanged
+    def __init__(self, cursor: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., tenant: _Optional[str] = ..., type: _Optional[_Union[EventType, str]] = ..., association_failed: _Optional[_Union[AssociationFailed, _Mapping]] = ..., reception_step: _Optional[_Union[ReceptionStepReached, _Mapping]] = ..., file_quarantined: _Optional[_Union[FileQuarantined, _Mapping]] = ..., quarantine_decided: _Optional[_Union[QuarantineDecided, _Mapping]] = ..., receiver_health: _Optional[_Union[ReceiverHealthChanged, _Mapping]] = ..., storage_space: _Optional[_Union[StorageSpaceChanged, _Mapping]] = ..., frames_added: _Optional[_Union[FramesAdded, _Mapping]] = ..., job_step: _Optional[_Union[JobStepReached, _Mapping]] = ..., job_progress: _Optional[_Union[JobProgressed, _Mapping]] = ..., sender_health: _Optional[_Union[SenderHealthChanged, _Mapping]] = ...) -> None: ...
 
 class WatchKeepAlive(_message.Message):
     __slots__ = ("time", "cursor", "tenant_cursors", "unanswered_tenants", "full")

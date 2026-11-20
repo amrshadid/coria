@@ -117,6 +117,18 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- The contract of senders and jobs: SenderService adds, reads, changes,
+  removes and tests a tenant's senders, a DIMSE peer reached by C-STORE or a
+  DICOMweb service reached by STOW-RS, each with its TLS files named, at most
+  16 associations and an optional byte rate; a STOW credential is sealed and
+  never answered. JobService makes a job that sends a subject, a session or a
+  scan to a sender, lists, reads, cancels and retries jobs, and lists each
+  instance refused with its reason and the peer's status. A receiver can name
+  senders in forward_to. The event feed gains job steps, job progress and
+  sender health; a tenant's status gains its jobs in progress and its senders.
+  Where senders may send is the installation's (sender.destinations,
+  sender.allow-plain-http). The services are not served yet. Both clients
+  have them as `senders` and `jobs`.
 - The contract of de-identification profiles: ProfileService makes a
   profile's versions, reads and lists them, checks a document without storing
   it, and lists the bases a profile may build on. A profile is a document of

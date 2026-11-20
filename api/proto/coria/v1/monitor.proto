@@ -7,10 +7,12 @@ package coria.v1;
 
 import "google/protobuf/timestamp.proto";
 import "coria/v1/access.proto";
+import "coria/v1/job.proto";
 import "coria/v1/quarantine.proto";
 import "coria/v1/reception.proto";
 import "coria/v1/receiver.proto";
 import "coria/v1/scope.proto";
+import "coria/v1/sender.proto";
 import "coria/v1/tenant.proto";
 
 // MonitorService tells what a tenant is doing, in two forms: GetStatus, its
@@ -31,7 +33,9 @@ import "coria/v1/tenant.proto";
 // them. A reception makes one event per step it reaches, with its counts,
 // never one per file, and an accepted association makes none (a reception
 // counts the associations that fed it); a quarantined file makes one event
-// per file, and so does the decision on it. Events carry labels, ids and
+// per file, and so does the decision on it; a job makes one event per state
+// it reaches and, while it runs, at most one of progress every 10 seconds,
+// never one per instance. Events carry labels, ids and
 // counts; they never carry an attribute's value or a UID as such. A label is
 // as identifying as the naming rule that made it (NamingRule). Events are
 // kept for the setting events.retention, and then pruned, the period
@@ -166,6 +170,32 @@ message TenantCounts {
   // and not yet archived, files of failed receptions not yet retried or
   // discarded, and quarantined files held.
   int64 incoming_bytes = 8;
+
+  // The jobs in progress, one entry per state that has any, in the order
+  // of the states. A state with none is left out. The ended states (done,
+  // partial, failed, canceled) are never listed.
+  repeated JobStateCount jobs_in_progress = 9;
+}
+
+// JobStateCount is how many jobs are in one state.
+message JobStateCount {
+  // The state.
+  JobState state = 1;
+
+  // How many jobs of the tenant are in it now.
+  int64 jobs = 2;
+}
+
+// SenderStatus is a sender's state now.
+message SenderStatus {
+  // The sender's name.
+  string sender = 1;
+
+  // Whether it reaches its peer, and why not.
+  SenderHealth health = 2;
+
+  // Its associations (for a stow sender, requests) open now.
+  int32 open_associations = 3;
 }
 
 // Throughput is how fast files move through a tenant now, measured by the
@@ -261,6 +291,10 @@ message TenantStatus {
   // the server's incoming area before its receivers refuse new
   // associations. Zero for no limit of its own.
   int64 incoming_limit_bytes = 9;
+
+  // Each of its senders, ordered by name, from the server's memory, so
+  // they are answered also when its database does not answer.
+  repeated SenderStatus senders = 10;
 }
 
 // GetStatusRequest asks for the status of one tenant or of every tenant.
@@ -328,6 +362,15 @@ enum EventType {
   // The pass that gives frame tables to the metadata of scans archived
   // before them rewrote a scan's metadata, or ended.
   EVENT_TYPE_FRAMES_ADDED = 7;
+
+  // A job was made or reached a state.
+  EVENT_TYPE_JOB_STEP = 8;
+
+  // A running job's counts, at most once every 10 seconds per job.
+  EVENT_TYPE_JOB_PROGRESS = 9;
+
+  // A sender went up or down, or down for another reason.
+  EVENT_TYPE_SENDER_HEALTH = 10;
 }
 
 // AssociationFailure is why a DIMSE receiver turned a caller away. Each
@@ -557,6 +600,64 @@ message FramesAdded {
   bool finished = 7;
 }
 
+// JobStepReached is a job made or reaching a state.
+message JobStepReached {
+  // The job's id.
+  string job = 1;
+
+  // The state it reached: queued for a job just made.
+  JobState state = 2;
+
+  // The state it left: JOB_STATE_UNSPECIFIED for a job just made. With it
+  // a client keeps the jobs in progress by state (TenantCounts) from a
+  // status and the events after its cursor.
+  JobState previous_state = 3;
+
+  // Its counts when it reached the state.
+  JobCounts counts = 4;
+
+  // For a send job, the name of its sender.
+  string sender = 5;
+
+  // For a job a receiver's forward made, the receiver's name. Empty
+  // otherwise.
+  string receiver = 6;
+
+  // For a job a receiver's forward made, the reception's id. Empty
+  // otherwise.
+  string reception = 7;
+
+  // The id of the ended job whose unsent instances it sends. Empty unless
+  // RetryJob made it.
+  string retry_of = 8;
+
+  // Why it is held back or why it ended as it did, as Job.reason.
+  string reason = 9;
+}
+
+// JobProgressed is a running job's counts. At most one per job every 10
+// seconds, and none when its counts did not change; its state's events
+// carry the counts at each state.
+message JobProgressed {
+  // The job's id.
+  string job = 1;
+
+  // Its counts now.
+  JobCounts counts = 2;
+
+  // For a send job, the name of its sender.
+  string sender = 3;
+}
+
+// SenderHealthChanged is a sender's state changing.
+message SenderHealthChanged {
+  // The sender's name.
+  string sender = 1;
+
+  // Its new state.
+  SenderHealth health = 2;
+}
+
 // Event is one thing that happened in a tenant.
 message Event {
   // The event's cursor: a Watch of its tenant from it answers the events
@@ -596,6 +697,15 @@ message Event {
 
     // The pass of frame tables rewrote a scan's metadata, or ended.
     FramesAdded frames_added = 11;
+
+    // A job was made or reached a state.
+    JobStepReached job_step = 12;
+
+    // A running job's counts.
+    JobProgressed job_progress = 13;
+
+    // A sender's state changed.
+    SenderHealthChanged sender_health = 14;
   }
 }
 

@@ -17,3 +17,5 @@
 # until it is.
 
 coria.v1.ProfileService
+coria.v1.JobService
+coria.v1.SenderService

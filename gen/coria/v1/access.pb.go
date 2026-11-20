@@ -96,8 +96,9 @@
 // is marked NO_SIDE_EFFECTS, and the changes that may be repeated safely are
 // marked IDEMPOTENT. A read still writes an audit entry: that entry is the
 // server's record of the call, not a change to anything a read answers, and
-// repeating the read answers the same. CreateTenant, CreateKey, AddStorage and
-// AddReceiver are neither, as each call makes a new thing.
+// repeating the read answers the same. CreateTenant, CreateKey, AddStorage,
+// AddReceiver, AddSender and CreateJob are neither, as each call makes a new
+// thing.
 //
 // Limits. A message over 4 MB is refused. Every call has a deadline; when the
 // client sends none, the server applies 30 seconds, except to the stream of
@@ -116,7 +117,7 @@
 // event's cursor) has an id the server makes.
 //
 // Partial changes. A Set method that changes a configuration of several
-// fields (SetStorage, SetReceiver) takes a google.protobuf.FieldMask,
+// fields (SetStorage, SetReceiver, SetSender) takes a google.protobuf.FieldMask,
 // update_mask, naming the fields it changes; every other field keeps its
 // value. The mask is required and must not be empty or "*", so a call
 // changes only what it names. A named field takes the value given, its zero
@@ -124,14 +125,16 @@
 // secret is the exception, kept unless named and never set to empty. A field
 // the server answers is read-only, and naming it is invalid.
 //
-// Secrets cross the API in four fields only,
+// Secrets cross the API in five fields only,
 // CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
 // by AddStorage and SetStorage; always empty in an answer),
-// CreateKeyResponse.secret and RotateKeyResponse.secret (out, once). All four
-// are marked debug_redact. The mark is metadata, not protection: the
-// protobuf library prints such a field like any other (checked with
-// protobuf-go v1.36.12, in every text form). The server's own redactor reads
-// the mark and removes the four fields before anything is logged.
+// StowSender.credential (in, by AddSender and SetSender; always empty in an
+// answer), CreateKeyResponse.secret and RotateKeyResponse.secret (out,
+// once). All five are marked debug_redact. The mark is metadata, not
+// protection: the protobuf library prints such a field like any other
+// (checked with protobuf-go v1.36.12, in every text form). The server's own
+// redactor reads the mark and removes the five fields before anything is
+// logged.
 //
 // Where a request may come from. A request off the local socket must pass,
 // in this order: the installation's denied networks and allowed networks

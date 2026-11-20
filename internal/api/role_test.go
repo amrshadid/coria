@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -388,15 +389,18 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 // to their Audit lines: the object is the path of labels the request
 // names, a value that does not pass the label rule is recorded as
 // "invalid", and an instance id is recorded only as present, never as
-// given; and a profile method's object is the profile's name only when it
-// passes the name rule.
+// given; a profile method's object is the profile's name only when it
+// passes the name rule; a sender method's object is the sender's name only
+// when it passes the rule of one, 57 characters at most; a job method's
+// object is the job's id only when it has the form of one; and a new
+// job's target is recorded as its path of labels.
 func TestPendingRules(t *testing.T) {
 	notServed := readNotServed(t)
 	lines := roleLines(t)
 	var p api.Pending
 	procs := p.Procedures()
-	if len(procs) != 6 {
-		t.Errorf("the table of methods not served has %d lines; this test was written for 6, so look at what changed", len(procs))
+	if len(procs) != 18 {
+		t.Errorf("the table of methods not served has %d lines; this test was written for 18, so look at what changed", len(procs))
 	}
 	for _, proc := range procs {
 		if !inServices(notServed, proc) {
@@ -480,6 +484,42 @@ func TestPendingRules(t *testing.T) {
 	}
 	if _, f := p.Requirement(coriav1connect.ProfileServiceGetProfileVersionProcedure, &v1.GetProfileVersionRequest{Tenant: "lab1", Name: "research", Version: 2}); f.Details["version"] != "2" {
 		t.Errorf("GetProfileVersion's details are %v", f.Details)
+	}
+
+	// A sender's name and a job's id are recorded as given only when they
+	// pass their rules: a caller can send anything in their place.
+	long := strings.Repeat("a", 58)
+	for _, c := range []struct {
+		proc   string
+		msg    proto.Message
+		object string
+	}{
+		{coriav1connect.SenderServiceGetSenderProcedure, &v1.GetSenderRequest{Tenant: "lab1", Name: "orthanc"}, "orthanc"},
+		{coriav1connect.SenderServiceGetSenderProcedure, &v1.GetSenderRequest{Tenant: "lab1", Name: long}, "invalid"},
+		{coriav1connect.SenderServiceGetSenderProcedure, &v1.GetSenderRequest{Tenant: "lab1", Name: long[:57]}, long[:57]},
+		{coriav1connect.SenderServiceAddSenderProcedure, &v1.AddSenderRequest{Tenant: "lab1", Sender: &v1.Sender{Name: "Smith^John"}}, "invalid"},
+		{coriav1connect.SenderServiceRemoveSenderProcedure, &v1.RemoveSenderRequest{Tenant: "lab1", Name: "pacs2"}, "pacs2"},
+		{coriav1connect.JobServiceGetJobProcedure, &v1.GetJobRequest{Tenant: "lab1", Id: "01JD7Q8X3N"}, "01JD7Q8X3N"},
+		{coriav1connect.JobServiceCancelJobProcedure, &v1.CancelJobRequest{Tenant: "lab1", Id: "Smith^John"}, "invalid"},
+		{coriav1connect.JobServiceRetryJobProcedure, &v1.RetryJobRequest{Tenant: "lab1", Id: strings.Repeat("a", 65)}, "invalid"},
+		{coriav1connect.JobServiceListJobFailuresProcedure, &v1.ListJobFailuresRequest{Tenant: "lab1", Id: ""}, "invalid"},
+	} {
+		_, f := p.Requirement(c.proc, c.msg)
+		if f.Object != c.object {
+			t.Errorf("%s: the object is %q, want %q", c.proc, f.Object, c.object)
+		}
+	}
+	if _, f := p.Requirement(coriav1connect.SenderServiceAddSenderProcedure, &v1.AddSenderRequest{Tenant: "lab1", Sender: &v1.Sender{Name: "pacs2", Type: &v1.Sender_Stow{Stow: &v1.StowSender{Credential: "s3cr3t-token"}}}}); f.Details["type"] != "stow" || strings.Contains(fmt.Sprint(f), "s3cr3t-token") {
+		t.Errorf("AddSender's facts are %+v: want its type, and never its credential", f)
+	}
+	if _, f := p.Requirement(coriav1connect.SenderServiceRemoveSenderProcedure, &v1.RemoveSenderRequest{Tenant: "lab1", Name: "pacs2", CancelJobs: true}); f.Details["cancel_jobs"] != "true" {
+		t.Errorf("RemoveSender's details are %v", f.Details)
+	}
+	if _, f := p.Requirement(coriav1connect.JobServiceCreateJobProcedure, &v1.CreateJobRequest{Tenant: "lab1", Kind: &v1.CreateJobRequest_Send{Send: &v1.SendJob{Sender: "orthanc", SubjectLabel: "S01", SessionLabel: "Smith^John"}}}); f.Details["kind"] != "send" || f.Details["sender"] != "orthanc" || f.Details["target"] != "S01/invalid" || f.Object != "" {
+		t.Errorf("CreateJob's facts are %+v", f)
+	}
+	if _, f := p.Requirement(coriav1connect.JobServiceListJobsProcedure, &v1.ListJobsRequest{Tenant: "lab1", States: []v1.JobState{v1.JobState_JOB_STATE_RUNNING}, InProgress: true, Sender: "Smith^John"}); f.Details["states"] != "JOB_STATE_RUNNING" || f.Details["in_progress"] != "true" || f.Details["sender"] != "invalid" {
+		t.Errorf("ListJobs' details are %v", f.Details)
 	}
 
 	// The download over plain HTTP: reader on the tenant the path names,

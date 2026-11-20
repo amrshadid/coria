@@ -87,9 +87,10 @@ service ReceiverService {
   // tenant), conflict (the tenant has a receiver with that name, or a
   // removed receiver of that name is still named by receptions or
   // quarantined files), precondition (a storage the tenant does not have; a
-  // port outside the tenant's allotted ports; a bind address the
-  // installation does not list; another receiver of the tenant on the same
-  // port and an overlapping address), unavailable (the tenant's database
+  // sender in forward_to the tenant does not have; a port outside the
+  // tenant's allotted ports; a bind address the installation does not list;
+  // another receiver of the tenant on the same port and an overlapping
+  // address), unavailable (the tenant's database
   // does not answer, or the tenant is not ready).
   rpc AddReceiver(AddReceiverRequest) returns (AddReceiverResponse);
 
@@ -246,6 +247,25 @@ message Receiver {
   // When its configuration last changed: its create_time until the first
   // SetReceiver. Answered by the server; ignored in a request.
   google.protobuf.Timestamp update_time = 11;
+
+  // The names of the tenant's senders (SenderService) that each reception
+  // of this receiver is forwarded to: when a reception reaches done, the
+  // server makes one send job per sender named (JobService), in the same
+  // transaction, for exactly the instances that reception archived, and
+  // never two for the same reception and sender. So a later arrival of a
+  // session is forwarded on its own, and the peer's session grows as the
+  // archive's did. A reception that ends quarantined or failed is not
+  // forwarded; one that RetryReception makes, or that a release from
+  // quarantine joins, is forwarded when it reaches done. Forwarding never
+  // delays a reception or changes how it ends: a sender that is down or
+  // disabled holds its jobs, not the reception. Empty, the default, for
+  // none. At most 16, each once; a sender the tenant does not have is a
+  // precondition failure, and a sender named here cannot be removed
+  // (SenderService.RemoveSender). A change applies to receptions that reach
+  // done from then on. Setting it needs what any change of a receiver
+  // needs, admin on the tenant, since it decides where the tenant's data
+  // goes.
+  repeated string forward_to = 13;
 }
 
 // DimseReceiver is a DICOM listener on one port of the server.
@@ -694,8 +714,9 @@ message SetReceiverRequest {
   // changed. Fields the mask does not name are ignored.
   Receiver receiver = 2;
 
-  // The fields to change, as paths of Receiver, such as "quiet_period" or
-  // "naming" ("naming" with naming absent returns to the default rule), or
+  // The fields to change, as paths of Receiver, such as "quiet_period",
+  // "forward_to" or "naming" ("naming" with naming absent returns to the
+  // default rule), or
   // a field of the receiver's type joined to it by a dot, such as
   // "dimse.port", "dimse.tls.certificate_file" or "stow.key_ids". A path
   // that names a type's whole message ("dimse", "stow") is refused: its
