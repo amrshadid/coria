@@ -50,53 +50,8 @@ const (
 	maxCodeValueLength = 64
 )
 
-// The elements no rule may name, which the pipeline handles the same way
-// in every file. The file meta information is written anew for every
-// de-identified file (PS3.10 7.1); command elements and the directory
-// elements of group 0004 are not kept in an archived file; items and group
-// lengths are written with the file; group 7FE0 (pixel data and the tables
-// of its encoding) is changed only by pixel rules, so a rule cannot quietly
-// empty the image or break its frames.
-const (
-	groupCommand   = 0x0000
-	groupFileMeta  = 0x0002
-	groupDirectory = 0x0004
-	groupPixel     = 0x7FE0
-	groupItems     = 0xFFFE
-	tagSequenceVR  = "SQ"
-)
-
-// pipelineTags are elements the pipeline removes from every file, whatever
-// a profile says: they hold values as received, or cannot hold over a
-// changed data set (PS3.15 E.1.1, C.12.1), or are padding that may hold
-// anything (PS3.10 7.2).
-var pipelineTags = map[uint32]string{
-	0x04000561: "the Original Attributes Sequence, which holds values as received",
-	0x04000500: "the Encrypted Attributes Sequence, which holds values as received",
-	0x4FFE0001: "the MAC Parameters Sequence, which cannot hold over a changed data set",
-	0xFFFAFFFA: "the Digital Signatures Sequence, which cannot hold over a changed data set",
-	0xFFFCFFFC: "Data Set Trailing Padding, which may hold anything",
-}
-
-// tagSpecificCharacterSet is Specific Character Set (0008,0005), which the
-// pipeline writes itself in every de-identified file, for the text the
-// file holds once every rule has acted (PS3.5 6.1.2.3): a rule that
-// removed or changed it would make the file's text unreadable.
-const tagSpecificCharacterSet = 0x00080005
-
-// pipelineGroups are the groups whose every element the pipeline handles.
-var pipelineGroups = []uint16{groupCommand, groupFileMeta, groupDirectory, groupPixel, groupItems}
-
-// pipelineOwned reports whether the pipeline handles the element t in
-// every file, so that no selector selects it.
-func pipelineOwned(t uint32) bool {
-	g := group(t)
-	if t&0xFFFF == 0 || slices.Contains(pipelineGroups, g) {
-		return true
-	}
-	_, ok := pipelineTags[t]
-	return ok || t == tagSpecificCharacterSet
-}
+// tagSequenceVR is the VR of a sequence (PS3.5 7.5).
+const tagSequenceVR = "SQ"
 
 // isCreatorElement reports whether t is a private creator element
 // (gggg,0010-00FF), which reserves a block (PS3.5 7.8.1).
@@ -298,29 +253,13 @@ func checkStandard(a at, t uint32) bool {
 }
 
 // checkReserved refuses the elements no rule may name: those the pipeline
-// handles in every file.
+// handles in every file (Pipeline).
 func checkReserved(a at, t uint32) bool {
-	g := group(t)
-	why, removed := pipelineTags[t]
-	switch {
-	case g == groupFileMeta:
-		a.add(CodeReservedElement, "%s is file meta information, which is written anew for every de-identified file", formatTag(t))
-	case g == groupCommand || g == groupItems:
-		a.add(CodeReservedElement, "%s is not a data element of a data set", formatTag(t))
-	case g == groupDirectory:
-		a.add(CodeReservedElement, "%s is a directory element of a file-set, which an archived file does not keep", formatTag(t))
-	case t&0xFFFF == 0:
-		a.add(CodeReservedElement, "%s is a group length, which is written with the file", formatTag(t))
-	case g == groupPixel:
-		a.add(CodeReservedElement, "%s is pixel data or describes its encoding, which only pixel rules change", formatTag(t))
-	case removed:
-		a.add(CodeReservedElement, "%s is %s: it is removed from every file (PS3.15 E.1.1)", formatTag(t), why)
-	case t == tagSpecificCharacterSet:
-		a.add(CodeReservedElement, "%s is Specific Character Set, which is written for every de-identified file as its text needs (PS3.5 6.1.2.3)", formatTag(t))
-	default:
-		return true
+	if h, why := Pipeline(t); h != NotHandled {
+		a.add(CodeReservedElement, "%s is %s, which no rule may name", formatTag(t), why)
+		return false
 	}
-	return false
+	return true
 }
 
 // parseGroup reads a group of four hexadecimal digits, "x" standing for any
@@ -361,7 +300,7 @@ func parseGroup(a at, s string, withPrivate bool) (value, mask uint16, text stri
 		}
 	}
 	// A group of only elements the pipeline handles would select nothing.
-	if mask == 0xFFFF && (value == groupPixel || value == 0xFFFA || value == 0xFFFC) {
+	if mask == 0xFFFF && (value == groupPixel || value == groupSignatures || value == groupPadding) {
 		a.add(CodeReservedElement, "group %s holds only elements the pipeline handles in every file", b.String())
 		return 0, 0, "", false
 	}

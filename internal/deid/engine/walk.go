@@ -12,6 +12,7 @@ import (
 	"github.com/amrshadid/go-dicom/sequence"
 	"github.com/amrshadid/go-dicom/tag"
 
+	"github.com/amrshadid/coria/internal/core/naming"
 	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
@@ -110,7 +111,6 @@ type scope struct {
 const (
 	tagSpecificCharacterSet = 0x00080005
 	tagPatientID            = 0x00100020
-	tagIssuerOfPatientID    = 0x00100021
 	tagValueType            = 0x0040A040
 	tagConceptNameCode      = 0x0040A043
 	tagCodeValue            = 0x00080100
@@ -119,23 +119,6 @@ const (
 	tagDeidMethod           = 0x00120063
 	tagTemporalModified     = 0x00280303
 )
-
-// pixelTags are the pixel data elements (PS3.5 7.6.2.1 Float and Double
-// Float Pixel Data, PS3.3 C.7.6.3 Pixel Data), which only pixel rules
-// change and this engine keeps as they are.
-var pixelTags = map[uint32]bool{0x7FE00008: true, 0x7FE00009: true, 0x7FE00010: true}
-
-// strippedTags are removed from every file whatever the profile says:
-// trailing padding; the Original Attributes Sequence and the Encrypted Attributes Sequence hold
-// values as they were before a change, and a digital signature or its MAC
-// parameters cannot hold over a changed data set (PS3.15 E.1.1, C.12.1).
-var strippedTags = map[uint32]string{
-	0x04000561: "Original Attributes Sequence holds values as they were received (PS3.15 E.1.1)",
-	0x04000500: "Encrypted Attributes Sequence holds values as they were received (PS3.15 E.1.1)",
-	0xFFFAFFFA: "a digital signature cannot hold over a changed data set (PS3.15 E.1.1)",
-	0x4FFE0001: "MAC parameters cannot hold over a changed data set (PS3.15 C.12.1)",
-	0xFFFCFFFC: "data set trailing padding, which carries no information and may hold anything (PS3.10 7.2)",
-}
 
 // blockKey is a private block of a data set: its group and block number.
 type blockKey struct {
@@ -152,19 +135,7 @@ func (r *run) walk(ds *dataset.Dataset, seqs []uint32, path string, sc scope) er
 	}
 	tags := ds.Tags()
 	slices.Sort(tags)
-	// A private creator element (gggg,0010-00FF) reserves the block of its
-	// group (PS3.5 7.8.1); it is kept when an element of its block is.
-	creators := map[blockKey]string{}
-	for _, t := range tags {
-		if isCreator(t) {
-			if v, ok := elementText(ds, t); ok {
-				// A creator is compared without its padding, the space
-				// or NUL that makes its length even (PS3.5 6.2), and any
-				// surrounding space.
-				creators[blockKey{t.Group(), t.Element()}] = strings.Trim(v, " \x00")
-			}
-		}
-	}
+	creators := creatorsOf(ds, tags)
 	kept := map[blockKey]bool{}
 	creatorEntries := map[blockKey]int{}
 	for _, t := range tags {
@@ -181,27 +152,21 @@ func (r *run) walk(ds *dataset.Dataset, seqs []uint32, path string, sc scope) er
 		case isCreator(t):
 			creatorEntries[blockKey{t.Group(), t.Element()}] = len(r.record.Entries)
 			r.record.Entries = append(r.record.Entries, Entry{})
-		case t.Element() == 0 || t.Group() == 0x0002:
-			r.fixed(ds, t, elem, p, opRemove, "a group length or file meta information, which is written anew with the file (PS3.5 7.2, PS3.10 7.1)")
-		case uint32(t) == tagSpecificCharacterSet:
-			r.fixed(ds, t, elem, p, opRemove, "the character set, which the engine declares itself once every value is known: ISO_IR 192 when any text is outside the default repertoire, none otherwise (PS3.5 6.1.2.3)")
-		case pixelTags[uint32(t)]:
-			r.fixed(ds, t, elem, p, 0, "pixel data, which only pixel rules change; this engine changes no pixels")
-		case strippedTags[uint32(t)] != "":
+		case handled(t):
+			h, why := profile.Pipeline(uint32(t))
+			if h == profile.HandledKept {
+				r.fixed(ds, t, elem, p, 0, why)
+				break
+			}
 			if seq, isSeq := elem.GetValue().(*sequence.Sequence); isSeq {
-				if err := r.subtreeNeedles(seq, p, len(seqs)+1); err != nil {
+				if err := r.subtreeNeedles(seq, nil, p, len(seqs)+1, subtreeByTag); err != nil {
 					return err
 				}
 			}
-			r.fixed(ds, t, elem, p, opRemove, strippedTags[uint32(t)])
+			r.fixed(ds, t, elem, p, opRemove, why)
 		default:
 			private := t.Group()%2 == 1
-			var bk blockKey
-			creator := ""
-			if private && t.Element()>>8 >= 0x10 {
-				bk = blockKey{t.Group(), t.Element() >> 8}
-				creator = creators[bk]
-			}
+			bk, creator := privateCreator(t, creators)
 			removed, err := r.element(ds, t, elem, seqs, p, sc, creator)
 			if err != nil {
 				return err
@@ -223,6 +188,40 @@ func (r *run) walk(ds *dataset.Dataset, seqs []uint32, path string, sc scope) er
 		r.record.Entries[i] = e
 	}
 	return nil
+}
+
+// creatorsOf returns the private creators of a data set by block: a
+// private creator element (gggg,0010-00FF) reserves the block of its group
+// (PS3.5 7.8.1), and is compared without its padding, the space or NUL
+// that makes its length even (PS3.5 6.2), and any surrounding space.
+func creatorsOf(ds *dataset.Dataset, tags []tag.Tag) map[blockKey]string {
+	creators := map[blockKey]string{}
+	for _, t := range tags {
+		if isCreator(t) {
+			if v, ok := elementText(ds, t); ok {
+				creators[blockKey{t.Group(), t.Element()}] = strings.Trim(v, " \x00")
+			}
+		}
+	}
+	return creators
+}
+
+// handled reports whether the pipeline handles t in every file, whatever
+// the profile says (profile.Pipeline): the one list the profile language
+// refuses to name, so the engine and the language cannot drift apart.
+func handled(t tag.Tag) bool {
+	h, _ := profile.Pipeline(uint32(t))
+	return h != profile.NotHandled
+}
+
+// privateCreator returns the creator of the block a private data element
+// is in, "" for a standard element or one whose block has none.
+func privateCreator(t tag.Tag, creators map[blockKey]string) (blockKey, string) {
+	if t.Group()%2 == 1 && t.Element()>>8 >= 0x10 {
+		bk := blockKey{t.Group(), t.Element() >> 8}
+		return bk, creators[bk]
+	}
+	return blockKey{}, ""
 }
 
 // fixed records an element the engine treats by a fixed rule, and plans
@@ -250,7 +249,9 @@ func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement
 	}
 	dec := r.en.dec.Decide(loc, r.facts)
 	e := Entry{Path: path, Tag: uint32(t), VR: vr, Action: dec.Action.Kind.String(), Rule: dec.Rule, RuleName: dec.Name, Origin: dec.Origin, Reason: dec.Reason}
-	c := &target{ds: ds, tag: t, elem: elem, vr: vr, seqs: seqs, path: path, entry: len(r.record.Entries), sc: sc}
+	raw, _ := elementText(ds, t)
+	nvr := needleVR(t, vr, raw)
+	c := &target{ds: ds, tag: t, elem: elem, vr: vr, nvr: nvr, seqs: seqs, path: path, entry: len(r.record.Entries), sc: sc}
 	if dec.Rule >= 0 {
 		c.byRule = true
 		c.rule = dec.Name
@@ -259,7 +260,7 @@ func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement
 		}
 	}
 	act := dec.Action
-	if why := floorReason(uint32(t), vr); why != "" {
+	if why := floorReason(uint32(t), vr, nvr); why != "" {
 		c.floor = true
 		if fa, changed := floorAction(act, t.Group()%2 == 1); changed {
 			act = fa
@@ -322,10 +323,36 @@ func (r *run) items(seq *sequence.Sequence, seqs []uint32, t tag.Tag, path strin
 	return nil
 }
 
-// subtreeNeedles keeps as needles the text values of a sequence that is
-// removed or emptied, so the check after searches for them as for any
-// value removed.
-func (r *run) subtreeNeedles(seq *sequence.Sequence, path string, depth int) error {
+// subtreeMode is how subtreeNeedles takes the values of a sequence that
+// is removed or emptied.
+type subtreeMode int
+
+// The modes.
+const (
+	// subtreeAll: every text value, for a sequence the floor covers,
+	// which as a whole names or identifies the person (Other Patient IDs
+	// Sequence, Person Identification Code Sequence).
+	subtreeAll subtreeMode = iota + 1
+	// subtreeByPlace: each element decided at its place, for a sequence a
+	// rule removes or empties.
+	subtreeByPlace
+	// subtreeByTag: each element decided by its tag alone, for a sequence
+	// the pipeline removes that holds attributes as they were received
+	// (the Original Attributes Sequence: its Modified Attributes Sequence
+	// holds attributes of the data set, PS3.3 C.12.1.1.9).
+	subtreeByTag
+)
+
+// subtreeNeedles keeps as needles the values inside a sequence that is
+// removed or emptied. Under subtreeAll every text value is one. Otherwise
+// each element is decided as walk would decide it, at its place inside
+// seqs (the sequences above seq, seq's own tag last) or by its tag alone,
+// and its value is a needle when the floor covers it or a rule decides it,
+// and the action would remove or change it. Not every text: a description,
+// a code meaning or a reason the profile keeps where it stands ("CT HEAD")
+// would make clean cut it out of what the file keeps, and the check after
+// refuse the file for it.
+func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string, depth int, mode subtreeMode) error {
 	if depth > MaxDepth {
 		return &Failure{Cause: CauseTooDeep, Path: path}
 	}
@@ -337,37 +364,92 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, path string, depth int) err
 		base := path + "[" + strconv.Itoa(i) + "]/"
 		tags := item.Tags()
 		slices.Sort(tags)
+		creators := creatorsOf(item, tags)
+		concept, valueType := contentItemOf(item)
 		for _, t := range tags {
 			r.count++
 			if r.count > MaxElements {
 				return &Failure{Cause: CauseTooLarge}
 			}
 			elem, ok := item.Get(t)
-			if !ok {
+			if !ok || isCreator(t) || handled(t) {
 				continue
 			}
 			p := base + formatTag(uint32(t))
 			if inner, isSeq := elem.GetValue().(*sequence.Sequence); isSeq {
-				if err := r.subtreeNeedles(inner, p, depth+1); err != nil {
+				innerSeqs := seqs
+				if mode == subtreeByPlace {
+					innerSeqs = slices.Concat(seqs, []uint32{uint32(t)})
+				}
+				if err := r.subtreeNeedles(inner, innerSeqs, p, depth+1, mode); err != nil {
 					return err
 				}
 				continue
 			}
+			raw, ok := elementText(item, t)
+			if !ok {
+				continue
+			}
 			vr := effectiveVR(t, elem)
-			if v, ok := elementText(item, t); ok {
-				r.needle(vr, trimValue(vr, v), p)
+			value := naming.TrimValue(vr, raw)
+			if mode == subtreeAll {
+				r.needle(needleVR(t, vr, raw), value, p)
+				continue
+			}
+			_, creator := privateCreator(t, creators)
+			loc := profile.Location{Sequences: seqs, Tag: uint32(t), Creator: creator, VR: vr}
+			if valueType != "" {
+				loc.ContentItem, loc.ValueType = concept, valueType
+			}
+			dec := r.en.dec.Decide(loc, r.facts)
+			act, nvr := dec.Action, needleVR(t, vr, raw)
+			floor := floorReason(uint32(t), vr, nvr) != ""
+			if floor {
+				act, _ = floorAction(act, t.Group()%2 == 1)
+			}
+			if (floor || dec.Rule >= 0) && changesValue(act, vr, value) {
+				r.needle(nvr, value, p)
 			}
 		}
 	}
 	return nil
 }
 
+// changesValue reports whether an action removes or changes a value of VR
+// vr: every action but keep and clean (which leave what they do not
+// recognize), a generalization that leaves the value as it is (an age
+// under 90), and a constant equal to the value.
+func changesValue(a Action, vr, value string) bool {
+	switch a.Kind {
+	case ActKeep, ActClean:
+		return false
+	case ActGeneralize:
+		var out string
+		var err error
+		if vr == "AS" {
+			out, err = generalizeAge(value)
+		} else {
+			out, err = generalizeDate(value)
+		}
+		return err != nil || out != value
+	case ActReplace, ActSet:
+		return a.Template != "" || a.Constant != value
+	}
+	return true
+}
+
 // needle keeps a removed or replaced value for the check after: each value
 // of a multi-valued one, and the whole. A registered UID is not one: it
 // names a kind of object, stays wherever else it is, and is no trace of
-// the patient.
+// the patient. A value of VR UN is one when it reads as text (unknownText).
 func (r *run) needle(vr, value, path string) {
 	kind := needleKind(vr)
+	if vr == "UN" {
+		var ok bool
+		if value, ok = unknownText(value); !ok {
+			return
+		}
+	}
 	if kind == 0 || value == "" {
 		return
 	}
@@ -388,7 +470,10 @@ func (r *run) needle(vr, value, path string) {
 }
 
 // needleKind is the kind of a removed value of a VR, 0 for a VR that holds
-// no text.
+// no text. A value of VR UN (a private element of an implicit VR file, or
+// one a system without its dictionary passed on, PS3.5 6.2.2) is text: its
+// VR is not known, and searching for it as text is what finds a copy of
+// it in a description.
 func needleKind(vr string) NeedleKind {
 	switch vr {
 	case "PN":
@@ -397,7 +482,7 @@ func needleKind(vr string) NeedleKind {
 		return NeedleDate
 	case "UI":
 		return NeedleUID
-	case "AE", "AS", "CS", "DS", "IS", "LO", "LT", "SH", "ST", "TM", "UC", "UR", "UT":
+	case "AE", "AS", "CS", "DS", "IS", "LO", "LT", "SH", "ST", "TM", "UC", "UR", "UT", "UN":
 		return NeedleText
 	}
 	return 0
@@ -413,8 +498,7 @@ func (r *run) shiftDays(path, rule string) (int, error) {
 	if !ok || id == "" {
 		return 0, &Failure{Cause: CauseNoSubject, Path: path, Rule: rule}
 	}
-	issuer, _ := topText(r.top, tagIssuerOfPatientID)
-	r.shift = ShiftDays(r.en.keys.Date, issuer, id, r.en.dec.DateShiftDays())
+	r.shift = ShiftDays(r.en.keys.Date, id, r.en.dec.DateShiftDays())
 	return r.shift, nil
 }
 
@@ -436,5 +520,5 @@ func (r *run) text(ds *dataset.Dataset, t tag.Tag, vr string) (string, error) {
 	if !ok || len(b) > MaxValueLength {
 		return "", errNotText
 	}
-	return trimValue(vr, string(b)), nil
+	return naming.TrimValue(vr, string(b)), nil
 }

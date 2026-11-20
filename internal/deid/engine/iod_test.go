@@ -12,52 +12,6 @@ import (
 	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
-// TestEveryCodeResolvesByType guards PS3.15 E.1.1's resolution of each
-// code of Table E.1-1 by the attribute's Type, and toward keeping the
-// attribute present when its Type is not known.
-func TestEveryCodeResolvesByType(t *testing.T) {
-	const unknown = -1
-	cases := []struct {
-		code Code
-		typ  validate.AttributeType
-		want Resolution
-	}{
-		{CodeDummy, validate.Type3, ResolveDummy},
-		{CodeZero, validate.Type1, ResolveEmpty},
-		{CodeRemove, validate.Type1, ResolveRemove},
-		{CodeKeep, validate.Type3, ResolveKeep},
-		{CodeClean, validate.Type3, ResolveClean},
-		{CodeUID, validate.Type3, ResolveUID},
-		{CodeXZ, validate.Type3, ResolveRemove},
-		{CodeXZ, validate.Type2, ResolveEmpty},
-		{CodeXZ, validate.Type1, ResolveEmpty},
-		{CodeXZ, unknown, ResolveEmpty},
-		{CodeXD, validate.Type3, ResolveRemove},
-		{CodeXD, validate.Type2C, ResolveDummy},
-		{CodeXD, validate.Type1C, ResolveDummy},
-		{CodeZD, validate.Type2, ResolveEmpty},
-		{CodeZD, validate.Type3, ResolveEmpty},
-		{CodeZD, validate.Type1, ResolveDummy},
-		{CodeZD, unknown, ResolveDummy},
-		{CodeXZD, validate.Type3, ResolveRemove},
-		{CodeXZD, validate.Type2, ResolveEmpty},
-		{CodeXZD, validate.Type1, ResolveDummy},
-		{CodeXZD, unknown, ResolveDummy},
-		{CodeXZU, validate.Type3, ResolveRemove},
-		{CodeXZU, validate.Type2, ResolveEmpty},
-		{CodeXZU, validate.Type1, ResolveUID},
-	}
-	for _, c := range cases {
-		got, err := Resolve(c.code, c.typ, c.typ != unknown)
-		if err != nil || got != c.want {
-			t.Errorf("%s at Type %v: %v, %v; want %v", c.code, c.typ, got, err, c.want)
-		}
-	}
-	if _, err := Resolve("X/Y", validate.Type1, true); err == nil {
-		t.Error("an unknown code resolved")
-	}
-}
-
 // TestTypesComeFromTheLibrarysIODs guards IODTypes against attributes
 // whose Types PS3.3 states: in the CT Image IOD, Patient's Name is Type 2
 // (C.7.1.1), Study Instance UID and SOP Instance UID Type 1 (C.7.2.1,
@@ -93,32 +47,6 @@ func TestTypesComeFromTheLibrarysIODs(t *testing.T) {
 		}
 	}
 }
-
-// smallTable is a column of Table E.1-1 written in the test: CORIA ships
-// no copy of the standard's table.
-type smallTable map[uint32]Code
-
-func (s smallTable) Code(t uint32) (Code, bool) { c, ok := s[t]; return c, ok }
-
-// TestATableResolvesPerObject guards ResolveIn: a table's code resolved by
-// the Type the object's IOD gives the attribute, and false for an
-// attribute the table does not name.
-func TestATableResolvesPerObject(t *testing.T) {
-	table := smallTable{tPatientName: CodeZ, tStudyUID: CodeUID, tPatientComments: CodeXZD, tReferring: CodeXZD}
-	it := &IODTypes{}
-	for tg, want := range map[uint32]Resolution{tPatientName: ResolveEmpty, tStudyUID: ResolveUID, tPatientComments: ResolveRemove, tReferring: ResolveEmpty} {
-		got, ok, err := ResolveIn(table, it, ctImageStorage, nil, tg)
-		if err != nil || !ok || got != want {
-			t.Errorf("%08X: %v %v %v, want %v", tg, got, ok, err, want)
-		}
-	}
-	if _, ok, _ := ResolveIn(table, it, ctImageStorage, nil, tModality); ok {
-		t.Error("an attribute the table does not name resolved")
-	}
-}
-
-// CodeZ is Z, named apart so the table above reads like the standard's.
-const CodeZ = CodeZero
 
 // fakeDecider decides by tag, for the actions the language does not yet
 // write.

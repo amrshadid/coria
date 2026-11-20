@@ -248,3 +248,52 @@ func TestHashedPatientIDIsTheSubjectsCode(t *testing.T) {
 		}
 	}
 }
+
+// TestASubjectsLabelAndShiftAgree guards that the date shift is keyed by
+// exactly what the subject label is: files the default naming rule puts
+// under one subject (one Patient ID, its padding and leading spaces
+// aside, whatever the Issuer of Patient ID) get one shift, and a file of
+// another subject another label.
+func TestASubjectsLabelAndShiftAgree(t *testing.T) {
+	en := newTestEngine(t, testKeys, Options{}, rule("dates", vrSel("DA"), aShift))
+	hasher, err := naming.NewHasher(testKeys.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shifts := map[string]map[string]bool{}
+	for _, f := range []struct{ id, issuer string }{
+		{"PAT001", ""}, {" PAT001  ", "HOSPITAL A"}, {"PAT001", "HOSPITAL B"}, {"PAT002", "HOSPITAL A"},
+	} {
+		els := []el{
+			{tSOPClass, "UI", ctImageStorage}, {tSOPInstance, "UI", "1.2.3.4"},
+			{tStudyUID, "UI", "1.2.3"}, {0x0020000E, "UI", "1.2.3.5"},
+			{tStudyDate, "DA", "20200610"}, {tPatientID, "LO", f.id},
+		}
+		if f.issuer != "" {
+			els = append(els, el{0x00100021, "LO", f.issuer})
+		}
+		b := writeFile(t, build(t, els...))
+		h, err := header.Read(bytes.NewReader(b), int64(len(b)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		labels, err := naming.Default().Labels(h, hasher)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := readFile(t, b)
+		apply(t, en, got)
+		if shifts[labels.Subject] == nil {
+			shifts[labels.Subject] = map[string]bool{}
+		}
+		shifts[labels.Subject][mustText(t, got, tStudyDate)] = true
+	}
+	if len(shifts) != 2 {
+		t.Fatalf("%d subjects, want 2", len(shifts))
+	}
+	for subject, dates := range shifts {
+		if len(dates) != 1 {
+			t.Errorf("subject %s has %d shifts", subject, len(dates))
+		}
+	}
+}

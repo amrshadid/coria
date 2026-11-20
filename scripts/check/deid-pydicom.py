@@ -18,16 +18,24 @@ sources, so a mistake in one is caught by another:
     date and time, addresses and telephone numbers of persons), and of
     every element of VR PN, at any depth of sequences;
   - the values of the original's private elements, which a profile removes
-    unless a rule keeps them, when they are text and appear in no standard
-    element of the original (a value that does may be kept legitimately).
+    unless a rule keeps them, when they are text and are not the whole value
+    of a standard element of the original (a vendor's name in a private
+    element, equal to Manufacturer, may be kept legitimately; an identifier
+    copied into a description may not). A private value of unknown VR (every
+    private element of an implicit VR file) is read as text, and as a
+    person's name when it has a name's form (a "^" between letters).
 
 Each needle is searched for in several written forms: a person's name as
 DOE^JOHN, JOHN DOE, DOE JOHN, DOE, JOHN and DOE,JOHN, and each part; a date
 as 20240315, 2024-03-15, 2024/03/15, 2024.03.15, 15/03/2024, 03/15/2024,
-15.03.2024 and 15-03-2024. Letters in any case. A needle that is a number
-is matched only where no digit is next to it, so it is not found inside a
-longer number (a remapped UID is a long run of digits); a date may be
-followed by digits, as in a date and time.
+15.03.2024 and 15-03-2024. A date of only a year, or a year and month
+(a DT of 4 or 6 digits), as 2024, or 202403, 2024-03, 2024/03, 2024.03,
+03/2024, 03.2024 and 03-2024, matched only as a date of that precision:
+not next to a digit, nor to a date's separator with a digit beyond it, so
+the year of a full date is not taken for it. Letters in any case. A needle
+that is a number is matched only where no digit is next to it, so it is not
+found inside a longer number (a remapped UID is a long run of digits); a
+full date may be followed by digits, as in a date and time.
 
 Two searches of each result:
 
@@ -57,6 +65,7 @@ import unicodedata
 
 import pydicom
 from pydicom.charset import convert_encodings
+from pydicom.datadict import dictionary_VR
 from pydicom.uid import UID
 
 MIN_LENGTH = 4
@@ -113,6 +122,14 @@ class Needles:
                     return
             except Exception:  # not a UID pydicom knows how to name
                 pass
+        partial = re.match(r"^(\d{4})(\d{2})?(?!\d)", value) if kind == "date" else None
+        if partial:
+            y, m = partial.group(1), partial.group(2)
+            forms = [y] if m is None else [y + m, f"{y}-{m}", f"{y}/{m}", f"{y}.{m}",
+                                            f"{m}/{y}", f"{m}.{y}", f"{m}-{y}"]
+            for f in forms:
+                self.add_form(f, value, "partial-date")
+            return
         self.add_form(value, value, kind)
         if kind == "name":
             for group in value.split("="):
@@ -150,13 +167,30 @@ def values_of(elem):
     return out
 
 
-def kind_of(elem):
-    return {"PN": "name", "DA": "date", "DT": "date", "UI": "uid"}.get(elem.VR, "text")
+NAME_FORM = re.compile(r"^[^\W\d_][^\d\\]*\^[^\d\\]*[^\W\d_]")
+
+
+def kind_of(elem, value=""):
+    """The kind of an element's value: by the data dictionary's VR for a
+    standard element, whatever VR the file wrote it with (a person's name
+    written as LO is a name); a private value of unknown VR is a name when
+    it has a name's form."""
+    vr = elem.VR
+    if not elem.tag.is_private:
+        try:
+            vr = dictionary_VR(elem.tag)
+        except KeyError:
+            pass
+    elif vr == "UN" and NAME_FORM.match(value.strip(" \x00")):
+        return "name"
+    if "PN" in vr.split(" or "):
+        return "name"
+    return {"DA": "date", "DT": "date", "UI": "uid"}.get(vr, "text")
 
 
 def gather(orig, keywords, needles):
     """Needles pydicom reads from the original."""
-    standard_text = []
+    standard_values = set()
     private = []
     for elem in orig.iterall():
         if elem.VR == "SQ" or elem.tag in PIXEL_TAGS:
@@ -167,18 +201,17 @@ def gather(orig, keywords, needles):
             continue
         if elem.tag.is_private:
             if not elem.tag.is_private_creator and elem.VR in ("LO", "LT", "SH", "ST", "UT", "UC", "PN", "UN", "CS", "DA", "DT"):
-                private.extend(vals)
+                private.extend((kind_of(elem, s), s) for s in vals)
             continue
-        standard_text.extend(vals)
-        if elem.keyword in keywords or elem.keyword in FLOOR or elem.VR == "PN":
+        standard_values.update(s.strip(" \x00").lower() for s in vals)
+        if elem.keyword in keywords or elem.keyword in FLOOR or kind_of(elem) == "name":
             for s in vals:
                 needles.add(kind_of(elem), s)
-    hay = "\x00".join(standard_text).lower()
-    for s in private:
+    for kind, s in private:
         s = s.strip(" \x00")
-        if not s.isprintable() or s.lower() in hay:
+        if not s.isprintable() or s.lower() in standard_values:
             continue
-        needles.add("text", s)
+        needles.add(kind if kind == "name" else "text", s)
 
 
 def texts(ds):
@@ -200,10 +233,16 @@ def texts(ds):
 def pattern(form, kind):
     """A regular expression for a form (text or bytes): a form that begins
     with a digit must not follow one, and one that ends with a digit must
-    not be followed by one, but for a date, which a time may follow."""
+    not be followed by one, but for a full date, which a time may follow; a
+    partial date must not be next to a date's separator with a digit
+    beyond it either."""
     as_bytes = isinstance(form, bytes)
     text = form.decode("latin-1") if as_bytes else form
     body = re.escape(form)
+    if kind == "partial-date":
+        if as_bytes:
+            return re.compile(rb"(?<![0-9A-Za-z])(?<![0-9][-/.])" + body + rb"(?![0-9A-Za-z])(?![-/.][0-9])")
+        return re.compile(r"(?<![0-9\w])(?<![0-9][-/.])" + body + r"(?![0-9\w])(?![-/.][0-9])")
     if text[:1].isdigit():
         body = (rb"(?<![0-9])" if as_bytes else r"(?<![0-9])") + body
     if text[-1:].isdigit() and kind != "date":

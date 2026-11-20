@@ -22,11 +22,13 @@
 // as received, a regular expression whose compiled size passes its bound
 // or the document's budget, a document whose version would not fit one
 // answer, a base that is not available. The elements the pipeline handles
-// in every file are refused and never selected: the file meta information,
-// which is written anew for every file (PS3.10 7.1), command and directory
-// elements, items and group lengths, group 7FE0, which only pixel rules
-// change, and the sequences and padding removed from every file (PS3.15
-// E.1.1). There is no action that runs outside code or calls an address,
+// in every file are refused and never selected (Pipeline, the one list the
+// engine acts by too): the file meta information, which is written anew
+// for every file (PS3.10 7.1), command and directory elements, items and
+// group lengths, group 7FE0, whose pixel data only pixel rules change and
+// whose other elements are removed, Specific Character Set, written for
+// the text the file keeps, and the sequences and padding removed from
+// every file (PS3.15 E.1.1). There is no action that runs outside code or calls an address,
 // since each would be a way out for the values a profile removes.
 //
 // Warnings (Warnings) say what a valid document does that its author may
@@ -69,7 +71,14 @@
 // DICOM library holds. Until it exports them, each Annex E base is in the
 // catalog by name and refused as not available, rather than built from a
 // copy of the standard kept here, which would drift from the library's.
-// The composite bases built on them are refused for the same reason.
+// The composite bases built on them are refused for the same reason. How a
+// column of Table E.1-1 becomes a base's rules, each code its action, is
+// written once (annexe.go), so the table only has to be read in.
+//
+// A stored version's meaning is its expanded form together with the DICOM
+// library the engine runs it with: the engine reads the library's data
+// dictionary, IOD tables and UID registry as it processes a file, and
+// records the library's version in each file it makes.
 //
 // The package does no I/O and reads no clock and no random source, so a
 // profile means the same thing on every server and in every test.

@@ -11,21 +11,6 @@ import (
 	"github.com/amrshadid/coria/internal/core/naming"
 )
 
-// trimValue removes the padding PS3.5 6.2 says is not part of a value: the
-// trailing space or NUL that makes its length even, and for the VRs whose
-// leading spaces are not significant (AE, CS, DS, IS, LO, SH, the dates and
-// times, UI) the leading ones too. It is the trimming the naming rule's
-// attributes apply, so a value hashed here and the same value hashed into a
-// label give the same code.
-func trimValue(vr, s string) string {
-	s = strings.TrimRight(s, " \x00")
-	switch vr {
-	case "AE", "CS", "DS", "IS", "LO", "SH", "DA", "DT", "TM", "UI":
-		s = strings.TrimLeft(s, " ")
-	}
-	return s
-}
-
 // hashValue is the keyed hash of a value as the naming rule's {#...}
 // placeholders make it (naming.HashText), so a profile's hash of Patient ID
 // equals the subject's label code. A CS value holds only upper-case letters
@@ -123,6 +108,11 @@ type cleanTerm struct {
 	// word is set for a term matched only as a whole word: not preceded
 	// or followed by a letter or a digit.
 	word bool
+	// partial is set for a date of only a year, or a year and a month,
+	// matched only as a date of that precision: a whole word, and not
+	// part of a longer date (2024 in 2024-03-15, or 2024-03 in
+	// 2024-03-15), so the year of a date is not taken for it.
+	partial bool
 }
 
 // cleanTerms returns the terms clean removes for a file's needles: each
@@ -133,7 +123,7 @@ type cleanTerm struct {
 func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 	seen := map[string]bool{}
 	var out []cleanTerm
-	add := func(v string, part bool) {
+	add := func(v string, part, partial bool) {
 		v = strings.TrimSpace(v)
 		if v == "" {
 			return
@@ -143,8 +133,9 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 		if seen[key] {
 			return
 		}
-		t := cleanTerm{runes: runes}
+		t := cleanTerm{runes: runes, partial: partial}
 		switch {
+		case partial:
 		case unspaced(runes), len(runes) >= minCleanLength:
 		case part:
 			t.word = true
@@ -155,15 +146,23 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 		out = append(out, t)
 	}
 	for _, n := range needles {
-		add(n.Value, false)
+		if n.Kind == NeedleDate {
+			if forms := partialDateForms(n.Value); forms != nil {
+				for _, f := range forms {
+					add(f, false, true)
+				}
+				continue
+			}
+		}
+		add(n.Value, false, false)
 		switch n.Kind {
 		case NeedleName:
 			for _, p := range nameParts(n.Value) {
-				add(p, true)
+				add(p, true, false)
 			}
 		case NeedleDate:
 			for _, f := range dateForms(n.Value) {
-				add(f, false)
+				add(f, false, false)
 			}
 		}
 	}
@@ -214,6 +213,25 @@ func dateForms(v string) []string {
 		y + "-" + m + "-" + d, y + "/" + m + "/" + d, y + "." + m + "." + d,
 		d + "/" + m + "/" + y, m + "/" + d + "/" + y, d + "." + m + "." + y, d + "-" + m + "-" + y,
 	}
+}
+
+// partialDateForms returns the forms a DT value of only a year, or a year
+// and a month (PS3.5 6.2), is written in by people: 2024; 202403,
+// 2024-03, 2024/03, 2024.03, 03/2024, 03.2024 and 03-2024. Nil for a value
+// whose leading digits are not four or six, a full date among them.
+func partialDateForms(v string) []string {
+	digits := 0
+	for digits < len(v) && v[digits] >= '0' && v[digits] <= '9' {
+		digits++
+	}
+	switch digits {
+	case 4:
+		return []string{v[:4]}
+	case 6:
+		y, m := v[:4], v[4:6]
+		return []string{y + m, y + "-" + m, y + "/" + m, y + "." + m, m + "/" + y, m + "." + y, m + "-" + y}
+	}
+	return nil
 }
 
 // unspaced reports whether a term is in a script written without spaces
@@ -309,6 +327,9 @@ func (c *cleaner) clean(ctx context.Context, s string) (string, error) {
 				if t.word && (!wordEdge(folded, i-1) || !wordEdge(folded, i+m)) {
 					continue
 				}
+				if t.partial && (!dateEdge(folded, i-1, -1) || !dateEdge(folded, i+m, 1)) {
+					continue
+				}
 				for j := i; j < i+m; j++ {
 					cut[j] = true
 				}
@@ -332,6 +353,21 @@ func (c *cleaner) clean(ctx context.Context, s string) (string, error) {
 // its start, past its end, or not a letter or a digit.
 func wordEdge(runes []rune, i int) bool {
 	return i < 0 || i >= len(runes) || (!unicode.IsLetter(runes[i]) && !unicode.IsDigit(runes[i]))
+}
+
+// dateEdge reports whether position i of a text, on the side dir (-1
+// before a term, 1 after it), ends a date there: outside a word
+// (wordEdge), and not a date's separator ("-", "/", ".") with a digit
+// beyond it, which would make the term part of a longer date.
+func dateEdge(runes []rune, i, dir int) bool {
+	if !wordEdge(runes, i) {
+		return false
+	}
+	if i < 0 || i >= len(runes) || !strings.ContainsRune("-/.", runes[i]) {
+		return true
+	}
+	j := i + dir
+	return j < 0 || j >= len(runes) || !unicode.IsDigit(runes[j])
 }
 
 // isASCII reports whether s is only of the default character repertoire's

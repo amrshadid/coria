@@ -143,9 +143,10 @@ func (c *Catalog) Proto() []*v1.ProfileBase {
 
 // The bases of PS3.15 Annex E: the basic profile and its options (PS3.15
 // E.3, Table E.1-1). They are generated from the standard's tables, which
-// the DICOM library holds; until it exports them, each is known by name and
-// refused with this reason rather than built from a copy of the standard
-// kept here, which would drift from the library's.
+// the DICOM library holds, each column by annexEDocument; until the library
+// exports them, each is known by name and refused with this reason rather
+// than built from a copy of the standard kept here, which would drift from
+// the library's.
 const (
 	// AnnexEEdition is the edition of PS3.15 the Annex E bases follow.
 	AnnexEEdition = "2026c"

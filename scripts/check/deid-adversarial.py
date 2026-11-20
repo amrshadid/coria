@@ -21,6 +21,21 @@ Every value is made up. The files, written with pydicom:
   crafted-utf8.dcm  ISO_IR 192 text with letters whose lower case is longer
                     in bytes (İ), and an identifier cut in two by another,
                     which joins again once that one is removed
+  implicit-private.dcm  Implicit VR Little Endian, so its private elements
+                    have no VR (UN when read, PS3.5 6.2.2): a name and a
+                    record number in the block of creator "ACME 1.0", both
+                    repeated in the study's description
+  wrong-vr-name.dcm Referring Physician's Name and Operators' Name, VR PN in
+                    the data dictionary, written as LO, the referrer's name
+                    repeated in the description as "Given Family"
+  directory-elements.dcm  a file name made of the patient's name in
+                    Referenced File ID (0004,1500), the instance's UID in
+                    Referenced SOP Instance UID in File (0004,1511), and the
+                    name in the bytes of the retired Coefficients SDVN
+                    (7FE0,0020)
+  original-attributes.dcm  an Original Attributes Sequence holding a former
+                    name and identifier, and a former description the file
+                    still has as the start of its own
 
 Each holds a Patient ID, so a profile that shifts dates or hashes it can
 work, and SOP Class and Instance UIDs of a CT image.
@@ -32,7 +47,8 @@ import sys
 import pydicom
 from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.dataelem import DataElement
-from pydicom.uid import ExplicitVRLittleEndian
+from pydicom.uid import ExplicitVRLittleEndian, ImplicitVRLittleEndian
+from pydicom.sequence import Sequence
 
 CT = "1.2.840.10008.5.1.4.1.1.2"
 
@@ -50,17 +66,17 @@ def base(n, charset=None):
     return ds
 
 
-def save(ds, path):
+def save(ds, path, syntax=ExplicitVRLittleEndian):
     meta = FileMetaDataset()
     meta.MediaStorageSOPClassUID = ds.SOPClassUID
     meta.MediaStorageSOPInstanceUID = ds.SOPInstanceUID
-    meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    meta.TransferSyntaxUID = syntax
     ds.file_meta = meta
     # pydicom 3 asks for the file format by name; pydicom 2 by the encoding.
     if "enforce_file_format" in ds.save_as.__code__.co_varnames:
         ds.save_as(path, enforce_file_format=True)
     else:
-        ds.is_little_endian, ds.is_implicit_VR = True, False
+        ds.is_little_endian, ds.is_implicit_VR = True, syntax == ImplicitVRLittleEndian
         ds.save_as(path, write_like_original=False)
 
 
@@ -114,6 +130,46 @@ def main():
     ds.StudyDescription = "İNCE ÖMER, Ömer İnce, id CR-9CR-9001001"
     ds.ImageComments = "Ömer"
     save(ds, os.path.join(out, "crafted-utf8.dcm"))
+
+    ds = base(7)
+    ds.PatientName = "Implicit^Patient"
+    ds.PatientID = "IM-5150"
+    ds.add_new(0x00090010, "LO", "ACME 1.0")
+    ds.add_new(0x00091010, "PN", "Roe^Richard")
+    ds.add_new(0x00091011, "LO", "MRN998877")
+    ds.StudyDescription = "scan for Richard Roe MRN998877"
+    save(ds, os.path.join(out, "implicit-private.dcm"), ImplicitVRLittleEndian)
+
+    ds = base(8)
+    ds.PatientName = "Wrong^Vr"
+    ds.PatientID = "WV-6160"
+    ds.add(DataElement(0x00080090, "LO", "Smithson^Alicia"))
+    ds.add(DataElement(0x00081070, "LO", "Jonesy^Bobby"))
+    ds.StudyDescription = "referred by Alicia Smithson"
+    save(ds, os.path.join(out, "wrong-vr-name.dcm"))
+
+    ds = base(9)
+    ds.PatientName = "Doe^Johnathan"
+    ds.PatientID = "DIR-7170"
+    ds.add(DataElement(0x00041500, "CS", ["DOE_JOHNATHAN", "IMG0001"]))
+    ds.add(DataElement(0x00041511, "UI", ds.SOPInstanceUID))
+    ds.add(DataElement(0x7FE00020, "OW", b"DOE^JOHNATHAN "))
+    save(ds, os.path.join(out, "directory-elements.dcm"))
+
+    ds = base(10)
+    ds.PatientName = "Current^Name"
+    ds.PatientID = "OA-8180"
+    former = Dataset()
+    former.PatientName = "Former^Surname"
+    former.PatientID = "OLD-8181"
+    former.StudyDescription = "CT HEAD"
+    original = Dataset()
+    original.ModifiedAttributesSequence = Sequence([former])
+    original.ModifyingSystem = "PACSYS"
+    original.ReasonForTheAttributeModification = "CORRECT"
+    ds.OriginalAttributesSequence = Sequence([original])
+    ds.StudyDescription = "CT HEAD W"
+    save(ds, os.path.join(out, "original-attributes.dcm"))
 
 
 if __name__ == "__main__":

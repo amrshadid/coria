@@ -282,7 +282,7 @@ func (h *Header) Lookup(t naming.Tag) (string, bool) {
 	if e.ValueSkipped || len(e.Items) > 0 || e.VR == "SQ" {
 		return "", true
 	}
-	return trimValue(e.VR, filereader.DecodeText(e.VR, e.Value, h.encodings)), true
+	return naming.TrimValue(e.VR, filereader.DecodeText(e.VR, e.Value, h.encodings)), true
 }
 
 // The attributes the catalog keeps of a file's scan and session (PS3.6
@@ -328,19 +328,6 @@ func (h *Header) DICOMJSON() ([]byte, error) {
 // trimUID removes the padding of a UI value: a trailing NUL (PS3.5 6.2), and
 // the spaces some writers pad with instead.
 func trimUID(s string) string { return strings.TrimRight(s, "\x00 ") }
-
-// trimValue removes the padding PS3.5 6.2 says is not part of a value: the
-// trailing space or NUL that makes a value's length even, and for the
-// representations whose leading spaces are not significant (AE, CS, DS, IS,
-// LO, SH, and the dates and times) the leading ones too.
-func trimValue(vr, s string) string {
-	s = strings.TrimRight(s, " \x00")
-	switch vr {
-	case "AE", "CS", "DS", "IS", "LO", "SH", "DA", "DT", "TM", "UI":
-		s = strings.TrimLeft(s, " ")
-	}
-	return s
-}
 
 // countingReader counts where a read stopped and keeps the error of the
 // reader beneath, so Read can tell a file that is not DICOM from a disk that

@@ -16,23 +16,21 @@ var errBadDate = errors.New("not a date of its VR")
 
 // ShiftDays returns a subject's date shift under a tenant's date key: a
 // whole number of days from 1 to most, the same for every file of the
-// subject. The subject is its Patient ID (0010,0020) and the Issuer of
-// Patient ID (0010,0021), each as received without padding, so two patients
-// of one ID from two issuers get their own shifts. The bytes hashed are the
-// issuer's length as an unsigned varint, the issuer, then the ID, so no
-// issuer and ID can be read as another pair. The offset is the first 64
-// bits of HMAC-SHA-256 under the key, modulo most, plus one: never zero, so
-// no date is kept as it was; the bias of the modulo is below 2^-50 for any
-// most the profile allows.
+// subject. The subject is its Patient ID (0010,0020) as received, its
+// padding removed (naming.TrimValue), exactly the value the default naming
+// rule's subject label sub-{#PatientID} is the keyed hash of: so one
+// subject has one shift, and files under one subject label never get two.
+// The Issuer of Patient ID is not part of it, as it is not of the label;
+// two patients of one ID from two issuers are one subject to both. The
+// offset is the first 64 bits of HMAC-SHA-256 of the Patient ID under the
+// key, modulo most, plus one: never zero, so no date is kept as it was;
+// the bias of the modulo is below 2^-50 for any most the profile allows.
 //
 // The shift is never written into a file: Longitudinal Temporal
 // Information Modified (0028,0303) says dates were moved, and nothing says
 // by how much (PS3.15 E.3.6).
-func ShiftDays(key []byte, issuer, patientID string, most int32) int {
+func ShiftDays(key []byte, patientID string, most int32) int {
 	m := hmac.New(sha256.New, key)
-	var n [binary.MaxVarintLen64]byte
-	m.Write(n[:binary.PutUvarint(n[:], uint64(len(issuer)))])
-	m.Write([]byte(issuer))
 	m.Write([]byte(patientID))
 	sum := m.Sum(nil)
 	if most < 1 {
@@ -56,7 +54,10 @@ func shiftDA(value string, days int) (string, error) {
 // keeping the time of day, its fraction and its offset from UTC (PS3.5 6.2:
 // YYYY[MM[DD[HH[MM[SS[.F{1-6}]]]]]][&ZZXX], & a sign). A value of only a
 // year, or a year and month, is shifted as shiftDate says and written back
-// with the same precision. A value that is not a DT fails.
+// with the same precision; when the shift leaves it as it was (a shift
+// shorter than half the period), the value is emptied instead: kept, it
+// would be the original as received, which the shift exists to hide, and
+// which the check after finds. A value that is not a DT fails.
 func shiftDT(value string, days int) (string, error) {
 	return eachValue(value, func(v string) (string, error) {
 		if !validText("DT", v) {
@@ -70,6 +71,9 @@ func shiftDT(value string, days int) (string, error) {
 		shifted, err := shiftDate(datePart, days)
 		if err != nil {
 			return "", err
+		}
+		if digits < 8 && shifted == datePart {
+			return "", nil
 		}
 		return shifted + v[digits:], nil
 	})
@@ -146,16 +150,23 @@ func generalizeAge(value string) (string, error) {
 }
 
 // generalizeDate makes every date of a DA or DT value the first of January
-// of its year (DA YYYY0101; DT YYYY0101, its time of day dropped).
+// of its year (DA YYYY0101; DT YYYY0101, its time of day dropped). A DT of
+// only a year, or a year and month, becomes its year: written as the first
+// of January, it would claim a day it never had.
 func generalizeDate(value string) (string, error) {
 	return eachValue(value, func(v string) (string, error) {
 		if len(v) < 4 {
 			return "", errBadDate
 		}
-		for i := range 4 {
-			if v[i] < '0' || v[i] > '9' {
-				return "", errBadDate
-			}
+		digits := 0
+		for digits < len(v) && digits < 8 && v[digits] >= '0' && v[digits] <= '9' {
+			digits++
+		}
+		if digits < 4 {
+			return "", errBadDate
+		}
+		if digits < 8 {
+			return v[:4], nil
 		}
 		return v[:4] + "0101", nil
 	})

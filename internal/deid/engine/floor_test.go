@@ -37,6 +37,11 @@ func floorSample(t testing.TB) *dataset.Dataset {
 		)}},
 		el{0x00290010, "LO", "VENDOR"},
 		el{0x00291001, "PN", "Private^Person"},
+		el{0x00101090, "LO", "MRL-4411"},
+		el{0x00102150, "LO", "Freedonia"},
+		el{0x00102152, "LO", "Upper Region"},
+		el{0x00380400, "LO", "Ward Nine"},
+		el{0x00401101, "SQ", []*dataset.Dataset{build(t, el{0x00080100, "SH", "PID-55821"}, el{0x00080102, "SH", "LOCAL"})}},
 	)
 }
 
@@ -45,6 +50,7 @@ var floorValues = []string{
 	"Referrer Street 9", "555-0100", "Floor^Patient", "FLOOR-ID-1", "19611213", "081500", "OTHER-ID-7",
 	"Other^Name", "SEQ-ID-3", "Birth^Name", "Patient Road 12", "Mother^Maiden", "555-0199", "tel:555-0142",
 	"Person Lane 3", "555-0177", "mailto:x@example.org", "Requesting^Doctor", "Private^Person",
+	"MRL-4411", "Freedonia", "Upper Region", "Ward Nine", "PID-55821",
 }
 
 // TestTheFloorHoldsWhateverTheDeciderSays guards the floor: a decider that
@@ -88,7 +94,7 @@ func TestTheFloorHoldsWhateverTheDeciderSays(t *testing.T) {
 			}
 		}
 	}
-	if floorEntries < len(floorValues)-1 {
+	if floorEntries < len(floorValues)-2 {
 		t.Errorf("%d entries say the floor acted", floorEntries)
 	}
 }
@@ -120,4 +126,99 @@ func TestTheFloorLeavesWhatReplacesTheValue(t *testing.T) {
 	if v, ok := text(ds, 0x00101000); ok && v == "P2" {
 		t.Error("a clean of Other Patient IDs kept it")
 	}
+}
+
+// privateBlockSample is a data set with a private block of creator ACME:
+// a person's name, an identifier and a binary value, and a description
+// that repeats the name and the identifier.
+func privateBlockSample(t testing.TB) *dataset.Dataset {
+	return build(t,
+		el{tSOPClass, "UI", ctImageStorage}, el{tSOPInstance, "UI", "1.2.3.4"},
+		el{tPatientID, "LO", "PAT12345"},
+		el{tStudyDesc, "LO", "scan for ROE MRN998877"},
+		el{0x00090010, "LO", "ACME"},
+		el{0x00091010, "PN", "ROE^RICHARD"},
+		el{0x00091011, "LO", "MRN998877"},
+		el{0x00091012, "OB", []byte{0x01, 0x00, 0xFF, 0x7F}},
+	)
+}
+
+// TestAPrivateNameOfUnknownVRIsFloored guards the floor in a file that
+// gives private elements no VR (Implicit VR Little Endian, PS3.5 6.2.2): a
+// private value read as UN that has the form of a person's name is
+// removed though the profile keeps its block, and is a needle of a name;
+// the block's other values, which are not names, stay as the profile
+// says. The same block written with explicit VRs is floored by its VR PN.
+func TestAPrivateNameOfUnknownVRIsFloored(t *testing.T) {
+	en := newTestEngine(t, testKeys, Options{}, rule("vendor", privSel("ACME", "0009", "xx"), aKeep))
+	for _, ts := range []string{implicitVR, "1.2.840.10008.1.2.1"} {
+		ds := readFile(t, writeFileAs(t, privateBlockSample(t), ts))
+		if e, _ := ds.Get(tagOf(0x00091010)); ts == implicitVR && e.GetVR() != "" && e.GetVR() != "UN" {
+			t.Fatalf("an implicit VR file gave the private name VR %s", e.GetVR())
+		}
+		rec := apply(t, en, ds)
+		if v, ok := text(ds, 0x00091010); ok {
+			t.Errorf("%s: the private name stayed: %q", ts, v)
+		}
+		if v, _ := text(ds, 0x00091011); v != "MRN998877" {
+			t.Errorf("%s: the kept identifier became %q", ts, v)
+		}
+		if !hasNeedle(rec, NeedleName, "ROE^RICHARD") {
+			t.Errorf("%s: the private name is not a needle of a name", ts)
+		}
+	}
+}
+
+// TestAPersonsNameWrittenWithAnotherVRIsFloored guards that the floor
+// reads what an attribute is from the data dictionary, not from the VR the
+// file wrote: Referring Physician's Name and Operators' Name, VR PN in
+// PS3.6, written as LO, are not kept by a decider that keeps everything,
+// and their values are needles of names, so their parts are searched for.
+func TestAPersonsNameWrittenWithAnotherVRIsFloored(t *testing.T) {
+	en, err := newEngine(fakeDecider{}, testKeys, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := readFile(t, writeFile(t, build(t,
+		el{tSOPClass, "UI", ctImageStorage}, el{tSOPInstance, "UI", "1.2.3.4"},
+		el{tReferring, "LO", "SMITH^ALICE"}, el{0x00081070, "LO", "JONES^BOB"},
+	)))
+	rec := apply(t, en, ds)
+	for tg, v := range map[uint32]string{tReferring: "SMITH^ALICE", 0x00081070: "JONES^BOB"} {
+		if got, _ := text(ds, tg); strings.Contains(got, v) {
+			t.Errorf("%08X kept %q", tg, got)
+		}
+		if !hasNeedle(rec, NeedleName, v) {
+			t.Errorf("%q is not a needle of a name", v)
+		}
+	}
+}
+
+// TestNameShapes guards what a private value of unknown VR must look like
+// to be taken as a person's name, and how its bytes are read as text.
+func TestNameShapes(t *testing.T) {
+	for v, want := range map[string]bool{
+		"ROE^RICHARD": true, "Müller^Jürgen": true, "O'Neil^Ann-Marie": true, "Yamada^Tarou=山田^太郎": true,
+		"ROE^A\\DOE^B": true, "JOHN DOE": false, "1^2": false, "A^": false, "1.2.3^4": false, "CT^HEAD 5": false,
+	} {
+		if got := looksLikeName(v); got != want {
+			t.Errorf("looksLikeName(%q) = %v", v, got)
+		}
+	}
+	if v, ok := unknownText("M\xfcller^J"); !ok || v != "Müller^J" {
+		t.Errorf("ISO 8859-1 bytes read as %q, %v", v, ok)
+	}
+	if _, ok := unknownText("\x01\x00\xff\x7f"); ok {
+		t.Error("binary bytes read as text")
+	}
+}
+
+// hasNeedle reports whether rec holds value as a needle of kind.
+func hasNeedle(rec *Record, kind NeedleKind, value string) bool {
+	for _, n := range rec.Needles {
+		if n.Kind == kind && n.Value == value {
+			return true
+		}
+	}
+	return false
 }

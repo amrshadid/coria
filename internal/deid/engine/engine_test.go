@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -117,7 +118,9 @@ func sampleRules() []*v1.ProfileRule {
 // TestEachActionChangesItsElement guards what every action does to the
 // element it decides: the value written, the needle kept, the element
 // made, the private block kept with its creator and the one removed with
-// its creator, and the record of the method.
+// its creator, and the record of the method: the caller's text, then this
+// build's version and the DICOM library's, "unknown" in a test binary,
+// which records no dependencies (TestTheMethodNamesTheLibrarysVersion).
 func TestEachActionChangesItsElement(t *testing.T) {
 	lk := &mapLookups{codes: map[string]string{}}
 	en := newTestEngine(t, testKeys, Options{Lookups: lk, Method: "research@1"}, sampleRules()...)
@@ -125,7 +128,7 @@ func TestEachActionChangesItsElement(t *testing.T) {
 	rec := apply(t, en, ds)
 
 	hashID := naming.HashText(testKeys.Hash, []byte("PAT001"))
-	days := ShiftDays(testKeys.Date, "", "PAT001", 365)
+	days := ShiftDays(testKeys.Date, "PAT001", 365)
 	shifted, _ := shiftDate("20240315", days)
 	birth, _ := shiftDate("19500101", days)
 	want := map[uint32]string{
@@ -148,7 +151,7 @@ func TestEachActionChangesItsElement(t *testing.T) {
 		0x00111002:       "kept value",
 		0x00110010:       "KEEPME",
 		0x00120062:       "YES",
-		0x00120063:       "research@1",
+		0x00120063:       `research@1\CORIA unknown\go-dicom unknown`,
 		0x00280303:       "MODIFIED",
 	}
 	for tg, w := range want {
@@ -247,26 +250,22 @@ func TestEveryUIDRemappedIsValidAndKeyed(t *testing.T) {
 
 // TestDatesShiftConsistentlyPerSubject guards the date shift: one subject
 // gets one shift in every file, within the profile's bound and never zero;
-// a different issuer is a different subject; DT keeps its time, fraction
-// and offset; partial dates keep their precision and are shifted from
-// the middle of their period, so a year is not always the year before; an
-// impossible date fails; and a file without a Patient ID fails as
-// no_subject.
+// DT keeps its time, fraction and offset; partial dates keep their
+// precision and are shifted from the middle of their period, so a year is
+// not always the year before, and one the shift leaves as it was is
+// emptied rather than kept as received; an impossible date fails; and a
+// file without a Patient ID fails as no_subject.
 func TestDatesShiftConsistentlyPerSubject(t *testing.T) {
 	for _, most := range []int32{1, 7, 365, 3650} {
 		for i := range 500 {
-			d := ShiftDays(testKeys.Date, "", fmt.Sprint("P", i), most)
+			d := ShiftDays(testKeys.Date, fmt.Sprint("P", i), most)
 			if d < 1 || d > int(most) {
 				t.Fatalf("shift %d outside 1..%d", d, most)
 			}
 		}
 	}
-	if ShiftDays(testKeys.Date, "A", "BC", 3650) == ShiftDays(testKeys.Date, "AB", "C", 3650) &&
-		ShiftDays(testKeys.Date, "X", "BC", 3650) == ShiftDays(testKeys.Date, "XB", "C", 3650) {
-		t.Error("an issuer and an ID run together give one subject")
-	}
-	if ShiftDays(testKeys.Date, "", "P1", 3650) == ShiftDays(otherKeys.Date, "", "P1", 3650) &&
-		ShiftDays(testKeys.Date, "", "P2", 3650) == ShiftDays(otherKeys.Date, "", "P2", 3650) {
+	if ShiftDays(testKeys.Date, "P1", 3650) == ShiftDays(otherKeys.Date, "P1", 3650) &&
+		ShiftDays(testKeys.Date, "P2", 3650) == ShiftDays(otherKeys.Date, "P2", 3650) {
 		t.Error("two tenants' keys give one shift")
 	}
 	cases := []struct {
@@ -276,10 +275,10 @@ func TestDatesShiftConsistentlyPerSubject(t *testing.T) {
 	}{
 		{"20240301", 1, "20240229"},
 		{"20240101", 1, "20231231"},
-		{"2024", 1, "2024"},
+		{"2024", 1, ""},
 		{"2024", 184, "2023"},
-		{"2024", 183, "2024"},
-		{"202403", 1, "202403"},
+		{"2024", 183, ""},
+		{"202403", 1, ""},
 		{"202403", 15, "202402"},
 		{"20240301101500.5-0500", 1, "20240229101500.5-0500"},
 		{`20240301\\20240302`, 1, `20240229\\20240301`},
@@ -293,14 +292,15 @@ func TestDatesShiftConsistentlyPerSubject(t *testing.T) {
 			t.Errorf("shift %q by %d = %q, %v; want %q", c.in, c.days, got, err, c.want)
 		}
 	}
-	// A year is the year before for about half the shifts, never all: its
-	// original cannot be told from the result alone.
+	// A year is the year before for about half the shifts, and emptied for
+	// the others, never kept as received: its original cannot be told from
+	// the result alone.
 	years := map[string]int{}
 	for days := 1; days <= 365; days++ {
 		out, _ := shiftDT("2024", days)
 		years[out]++
 	}
-	if len(years) != 2 || years["2024"] < 150 || years["2023"] < 150 {
+	if len(years) != 2 || years[""] < 150 || years["2023"] < 150 {
 		t.Errorf("a year shifted by 1 to 365 days: %v", years)
 	}
 	for _, bad := range []string{"20240230", "2024-03-01", "0001010", "00010101", "2024030", "20240301101500.1234567"} {
@@ -507,3 +507,38 @@ func mustText(t testing.TB, ds *dataset.Dataset, tg uint32) string {
 
 // tagOf is a tag of the DICOM library.
 func tagOf(t uint32) tag.Tag { return tag.Tag(t) }
+
+// TestTheMethodNamesTheLibrarysVersion guards how the DICOM library's
+// version is read from build information for De-identification Method
+// (0012,0063): its module's version, the version that replaces it, and
+// "unknown" without one; and that a value too long for an LO, or not of
+// the default repertoire, is written as unknown.
+func TestTheMethodNamesTheLibrarysVersion(t *testing.T) {
+	lib := func(deps ...*debug.Module) *debug.BuildInfo { return &debug.BuildInfo{Deps: deps} }
+	for want, bi := range map[string]*debug.BuildInfo{
+		"v1.11.0": lib(&debug.Module{Path: "example.org/other", Version: "v9"}, &debug.Module{Path: dicomLibrary, Version: "v1.11.0"}),
+		"v1.12.0": lib(&debug.Module{Path: dicomLibrary, Version: "v1.11.0", Replace: &debug.Module{Path: "fork", Version: "v1.12.0"}}),
+		"unknown": lib(&debug.Module{Path: "example.org/other", Version: "v9"}),
+		"(devel)": lib(&debug.Module{Path: dicomLibrary, Version: "(devel)"}),
+	} {
+		if got := libraryVersion(bi); got != want {
+			t.Errorf("libraryVersion = %q, want %q", got, want)
+		}
+	}
+	if got := libraryVersion(nil); got != "unknown" {
+		t.Errorf("no build information: %q", got)
+	}
+	for in, want := range map[string]string{
+		"v1.11.0":               "go-dicom v1.11.0",
+		strings.Repeat("9", 60): "go-dicom unknown",
+		`v1\v2`:                 "go-dicom unknown",
+		"v1.0-é":                "go-dicom unknown",
+	} {
+		if got := methodValue("go-dicom", in); got != want {
+			t.Errorf("methodValue(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if v := buildVersions(); len(v) != 2 || !strings.HasPrefix(v[0], "CORIA ") || !strings.HasPrefix(v[1], "go-dicom ") {
+		t.Errorf("the versions written: %q", v)
+	}
+}

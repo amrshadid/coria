@@ -265,3 +265,22 @@ func TestDefaultHidesValues(t *testing.T) {
 		}
 	}
 }
+
+// TestTrimValueRemovesOnlyPadding guards the one trimming of a value
+// before it is hashed or keys a subject (PS3.5 6.2): trailing spaces and
+// NULs always, leading spaces only where the VR says they are not
+// significant, and nothing inside the value.
+func TestTrimValueRemovesOnlyPadding(t *testing.T) {
+	for _, c := range []struct{ vr, in, want string }{
+		{"LO", " PAT 001 \x00", "PAT 001"},
+		{"UI", "1.2.3\x00", "1.2.3"},
+		{"DA", " 20240315 ", "20240315"},
+		{"PN", " Doe^John  ", " Doe^John"},
+		{"LT", "  text\x00", "  text"},
+		{"UN", "AB\x00", "AB"},
+	} {
+		if got := TrimValue(c.vr, c.in); got != c.want {
+			t.Errorf("TrimValue(%s, %q) = %q, want %q", c.vr, c.in, got, c.want)
+		}
+	}
+}

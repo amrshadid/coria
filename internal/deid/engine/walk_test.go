@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
 // TestSequencesAndPrivateBlocks guards the walk: rules reach elements at
@@ -119,6 +120,63 @@ func TestFixedElements(t *testing.T) {
 	}
 	if len(rec.Needles) != 1 || rec.Needles[0].Value != "Doe^John" {
 		t.Errorf("the Original Attributes' values as needles: %v entries", len(rec.Needles))
+	}
+}
+
+// TestThePipelineHandlesWhatTheLanguageRefuses guards that the engine
+// treats every element the profile language refuses to name as that
+// language says (profile.Pipeline), whatever the profile decides: command
+// elements, the directory elements of group 0004 (a file name made of the
+// patient's name, the instance's own UID) and the elements of group 7FE0
+// that are not pixel data are removed, under a decider that keeps
+// everything and under a profile that remaps every UID, never kept by the
+// default; pixel data and the table of its frames stay; and each record
+// entry gives the reason the language gives.
+func TestThePipelineHandlesWhatTheLanguageRefuses(t *testing.T) {
+	sample := func() *dataset.Dataset {
+		return build(t,
+			el{0x00001000, "UI", "1.2.3.4.5.6.7.8"},
+			el{0x00041500, "CS", `DOE_JOHN\IMG0001`},
+			el{0x00041511, "UI", "1.2.3.4.5.6.7.8"},
+			el{tSOPClass, "UI", ctImageStorage}, el{tSOPInstance, "UI", "1.2.3.4.5.6.7.8"},
+			el{0x7FE00001, "OV", make([]byte, 8)},
+			el{0x7FE00002, "OV", make([]byte, 8)},
+			el{0x7FE00010, "OW", []byte{1, 2, 3, 4}},
+			el{0x7FE00020, "OW", []byte("DOE^JOHN")},
+		)
+	}
+	keepAll, err := newEngine(fakeDecider{}, testKeys, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, en := range map[string]*Engine{
+		"keep everything": keepAll,
+		"remap UIDs":      newTestEngine(t, testKeys, Options{}, rule("uids", vrSel("UI"), aUID)),
+	} {
+		ds := sample()
+		rec := apply(t, en, ds)
+		for _, e := range rec.Entries {
+			h, why := profile.Pipeline(e.Tag)
+			if h == profile.NotHandled {
+				continue
+			}
+			if e.Reason != why || e.Rule != -1 {
+				t.Errorf("%s: %s: rule %d, reason %q", name, e.Path, e.Rule, e.Reason)
+			}
+			if gone := !ds.Contains(tagOf(e.Tag)); gone != (h == profile.HandledRemoved) {
+				t.Errorf("%s: %s is removed %v, handled as %v", name, e.Path, gone, h)
+			}
+		}
+		for _, tg := range []uint32{0x00001000, 0x00041500, 0x00041511, 0x7FE00020} {
+			if ds.Contains(tagOf(tg)) {
+				t.Errorf("%s: %08X stayed", name, tg)
+			}
+		}
+		for _, tg := range []uint32{0x7FE00001, 0x7FE00002, 0x7FE00010} {
+			if !ds.Contains(tagOf(tg)) {
+				t.Errorf("%s: %08X was removed", name, tg)
+			}
+		}
 	}
 }
 

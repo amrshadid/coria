@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"errors"
+	"strings"
 )
 
 // HashLength is the length of a keyed hash's text: 80 bits in base32, 5 bits
@@ -42,6 +43,23 @@ func HashText(key, value []byte) string {
 	m := hmac.New(sha256.New, key)
 	m.Write(value)
 	return hashEncoding.EncodeToString(m.Sum(nil)[:HashLength*5/8])
+}
+
+// TrimValue removes from a value as text the padding PS3.5 6.2 says is not
+// part of it: the trailing spaces or NULs that make its length even, and,
+// for the representations whose leading spaces are not significant (AE,
+// CS, DS, IS, LO, SH, the dates and times, UI), the leading spaces too. It
+// is the one trimming of an attribute's value before HashText: the header
+// a label is made from and the de-identification engine that hashes or
+// keys a value both call it, so one value always gives one code and one
+// subject.
+func TrimValue(vr, s string) string {
+	s = strings.TrimRight(s, " \x00")
+	switch vr {
+	case "AE", "CS", "DS", "IS", "LO", "SH", "DA", "DT", "TM", "UI":
+		s = strings.TrimLeft(s, " ")
+	}
+	return s
 }
 
 // MinKeyLength is the shortest key NewHasher takes: the output size of

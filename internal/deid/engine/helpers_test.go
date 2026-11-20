@@ -170,6 +170,17 @@ func apply(t testing.TB, en *Engine, ds *dataset.Dataset) *Record {
 // its pixel data is encapsulated, and returns its bytes.
 func writeFile(t testing.TB, ds *dataset.Dataset) []byte {
 	t.Helper()
+	return writeFileAs(t, ds, filewriter.StorageTransferSyntax(ds))
+}
+
+// implicitVR is Implicit VR Little Endian (PS3.5 A.1), in which no
+// element carries its VR: a reader gives a private element none.
+const implicitVR = "1.2.840.10008.1.2"
+
+// writeFileAs writes ds as a Part 10 file in the transfer syntax ts and
+// returns its bytes.
+func writeFileAs(t testing.TB, ds *dataset.Dataset, ts string) []byte {
+	t.Helper()
 	sop, _ := text(ds, 0x00080016)
 	inst, _ := text(ds, 0x00080018)
 	path := filepath.Join(t.TempDir(), "out.dcm")
@@ -181,7 +192,7 @@ func writeFile(t testing.TB, ds *dataset.Dataset) []byte {
 	w.SetFileMetaInfo(&filewriter.FileMetaInfo{
 		MediaStorageSOPClassUID:    sop,
 		MediaStorageSOPInstanceUID: inst,
-		TransferSyntaxUID:          filewriter.StorageTransferSyntax(ds),
+		TransferSyntaxUID:          ts,
 	})
 	if err := w.AddDataElements(filewriter.ElementsFromDataset(ds)); err != nil {
 		t.Fatal(err)
@@ -240,7 +251,7 @@ func allText(ds *dataset.Dataset) []string {
 			}
 			continue
 		}
-		if pixelTags[uint32(t)] {
+		if h, _ := profile.Pipeline(uint32(t)); h == profile.HandledKept {
 			continue
 		}
 		if b, ok := elem.Bytes(); ok {

@@ -84,6 +84,10 @@ func corpusRules() []*v1.ProfileRule {
 		rules = append(rules, rule("clean-"+strings.ToLower(k), kw(k), aClean))
 	}
 	rules = append(rules, rule("clean-overlay-description", &v1.ProfileSelector{Kind: &v1.ProfileSelector_Tag{Tag: "60000022"}}, aClean))
+	// A vendor's block that holds a record number the description repeats
+	// (the synthetic implicit-private.dcm): removed by a rule, so its
+	// values are needles that clean takes out of free text.
+	rules = append(rules, rule("remove-acme", privSel("ACME 1.0", "0009", "xx"), aRemove))
 	return rules
 }
 
@@ -113,7 +117,9 @@ func corpusFiles(t *testing.T, dir string) []string {
 // set, pydicom first writes synthetic files that hide values where they
 // slip past a de-identifier (scripts/check/deid-adversarial.py: names in
 // ISO 2022 and Latin-1, CJK and two-letter names, a private sequence kept
-// as UN bytes, crafted UTF-8), which join the corpus; and then reads every
+// as UN bytes, crafted UTF-8, private values of an implicit VR file, names
+// written with another VR, directory elements and an Original Attributes
+// Sequence), which join the corpus; and then reads every
 // pair of original and result and finds none of the removed values in the
 // result, searching for the engine's needles, given in a file beside each
 // result and never in it, and for what it reads itself
@@ -135,7 +141,7 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 			t.Fatalf("writing the synthetic files: %v: %s", err, report)
 		}
 		adversarial = corpusFiles(t, dir)
-		if len(adversarial) < 6 {
+		if len(adversarial) < 10 {
 			t.Fatalf("%d synthetic files", len(adversarial))
 		}
 		files = append(files, adversarial...)
@@ -200,6 +206,11 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 			if !checked[n.Path[strings.LastIndexByte(n.Path, '/')+1:]] {
 				continue
 			}
+			// A date of only a year or a year and month is matched as a
+			// date of that precision by the outside check, not here.
+			if n.Kind == NeedleDate && len(n.Value) < 8 {
+				continue
+			}
 			if len(n.Value) >= 4 && strings.Contains(hay, strings.ToLower(n.Value)) {
 				t.Errorf("%s: a removed value of %s is in the result", path, n.Path)
 			}
@@ -249,7 +260,7 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 	if err == nil {
 		t.Fatalf("the check found nothing in files whose free text was not cleaned: %s", report)
 	}
-	for _, f := range []string{"cjk-iso2022", "cjk-utf8", "latin1", "short-names", "crafted-utf8"} {
+	for _, f := range []string{"cjk-iso2022", "cjk-utf8", "latin1", "short-names", "crafted-utf8", "implicit-private", "wrong-vr-name"} {
 		if !bytes.Contains(report, []byte(f+".dcm: ")) {
 			t.Errorf("the check did not find the names left in %s: %s", f, report)
 		}

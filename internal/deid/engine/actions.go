@@ -13,6 +13,8 @@ import (
 	"github.com/amrshadid/go-dicom/tag"
 	"github.com/amrshadid/go-dicom/validate"
 	"github.com/amrshadid/go-dicom/valuerep"
+
+	"github.com/amrshadid/coria/internal/core/naming"
 )
 
 // errNoLookups is a profile with a lookup action run with no lookup
@@ -44,7 +46,10 @@ type target struct {
 	elem *dataelem.DataElement
 	// vr is the element's VR: the file's, or the dictionary's for an
 	// element the file holds as UN.
-	vr   string
+	vr string
+	// nvr is the VR its values are taken as by the floor and as needles
+	// (needleVR): PN for a person's name whatever VR the file wrote.
+	nvr  string
 	seqs []uint32
 	path string
 	// entry is the element's record entry.
@@ -78,17 +83,22 @@ type assign struct {
 // check after would refuse files for them.
 func (r *run) needleAt(c *target, value, path string) {
 	if c.byRule || c.floor {
-		r.needle(c.vr, value, path)
+		r.needle(c.nvr, value, path)
 	}
 }
 
-// subtreeNeedlesAt keeps the values of a sequence an action removes or
-// empties as needles, when a rule decided it or the floor covers it.
+// subtreeNeedlesAt keeps as needles the values of a sequence an action
+// removes or empties: every text value of one the floor covers, and of one
+// a rule decided those the profile or the floor removes or changes where
+// they are (subtreeNeedles).
 func (r *run) subtreeNeedlesAt(c *target) error {
-	if !c.byRule && !c.floor {
-		return nil
+	switch {
+	case c.floor:
+		return r.subtreeNeedles(c.seq, nil, c.path, len(c.seqs)+1, subtreeAll)
+	case c.byRule:
+		return r.subtreeNeedles(c.seq, slices.Concat(c.seqs, []uint32{uint32(c.tag)}), c.path, len(c.seqs)+1, subtreeByPlace)
 	}
-	return r.subtreeNeedles(c.seq, c.path, len(c.seqs)+1)
+	return nil
 }
 
 // fail is a failure of the file at this element.
@@ -207,7 +217,7 @@ func (r *run) actRemove(c *target) bool {
 	r.record.Entries[c.entry].Changed = true
 	r.ops = append(r.ops, op{kind: opRemove, ds: c.ds, tag: c.tag})
 	if v, ok := elementText(c.ds, c.tag); ok {
-		r.needleAt(c, trimValue(c.vr, v), c.path)
+		r.needleAt(c, naming.TrimValue(c.vr, v), c.path)
 	}
 	return true
 }
@@ -219,7 +229,7 @@ func (r *run) actEmpty(c *target) error {
 		return nil
 	}
 	if ok {
-		r.needleAt(c, trimValue(c.vr, v), c.path)
+		r.needleAt(c, naming.TrimValue(c.vr, v), c.path)
 	}
 	r.record.Entries[c.entry].Changed = true
 	r.ops = append(r.ops, op{kind: opValue, ds: c.ds, tag: c.tag, value: []byte{}, vr: vrIfUN(c.elem, c.vr)})
@@ -233,7 +243,7 @@ func (r *run) actDummy(c *target) error {
 		return c.fail(CauseBadValue)
 	}
 	if v, ok := elementText(c.ds, c.tag); ok {
-		r.needleAt(c, trimValue(c.vr, v), c.path)
+		r.needleAt(c, naming.TrimValue(c.vr, v), c.path)
 	}
 	r.record.Entries[c.entry].Changed = true
 	r.ops = append(r.ops, op{kind: opValue, ds: c.ds, tag: c.tag, value: d, vr: vrIfUN(c.elem, c.vr)})
@@ -306,7 +316,7 @@ func (r *run) actReplace(c *target, a Action) error {
 		return c.fail(CauseBadValue)
 	}
 	if v, ok := elementText(c.ds, c.tag); ok {
-		v = trimValue(c.vr, v)
+		v = naming.TrimValue(c.vr, v)
 		if v == out {
 			return nil
 		}

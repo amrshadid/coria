@@ -19,21 +19,36 @@
 // item with a Value Type (0040,A040), wherever it sits, and its elements
 // carry its concept name and value type to the profile's content item
 // rules. Some elements are treated by fixed rules whatever the profile
-// says: group lengths and file meta information are removed (written anew
-// with the file); pixel data is kept, since only pixel rules change it and
-// this engine applies none; Original Attributes, Encrypted Attributes,
-// digital signatures, MAC parameters and trailing padding are removed
-// (PS3.15 E.1.1); and Specific Character Set (0008,0005) is removed at
-// every depth and written once at the top level after every change:
-// ISO_IR 192 when any text left is outside the default repertoire, none
-// otherwise. The library holds the text it decoded in UTF-8; text under
-// another declaration, or that is not UTF-8, refuses the file.
+// says, the ones the profile language refuses to name, from the one list
+// both read (profile.Pipeline): the file meta information, group lengths,
+// command elements (group 0000), the directory elements of group 0004,
+// items, digital signatures, trailing padding, the Original Attributes,
+// Encrypted Attributes and MAC Parameters Sequences, and every element of
+// group 7FE0 but the pixel data and the table of its frames are removed
+// (PS3.15 E.1.1); the pixel data is kept, since only pixel rules change it
+// and this engine applies none; and Specific Character Set (0008,0005) is
+// removed at every depth and written once at the top level after every
+// change: ISO_IR 192 when any text left is outside the default
+// repertoire, none otherwise. The library holds the text it decoded in
+// UTF-8; text under another declaration, or that is not UTF-8, refuses the
+// file.
 //
 // The floor (floor.go). The attributes that name or identify the person
-// (Patient's Name and ID, other IDs, birth date and time, addresses and
-// telephone numbers, and every element of VR PN) are never kept, whatever
-// the profile decides: an action that would keep one becomes
-// remove-unless-required with a dummy. Their values are always needles.
+// (Patient's Name and ID, other IDs, birth date and time, addresses,
+// residence and telephone numbers, and every person's name: an element of
+// VR PN, a standard attribute the data dictionary gives VR PN whatever VR
+// the file wrote, and a private value of unknown VR that reads as a name)
+// are never kept, whatever the profile decides: an action that would keep
+// one becomes remove-unless-required with a dummy. Their values are
+// needles whenever they are removed or changed.
+//
+// Needles. A value a rule removes or changes is a needle: kept in memory
+// for clean and the check after. A private value of VR UN (every private
+// element of an implicit VR file) is one as text when it reads as text. Of
+// a sequence removed whole, the values the profile or the floor would
+// remove where they are; every value of one the floor covers. A date of
+// only a year, or a year and month, is matched only as a date of that
+// precision, never as the year of a full date.
 //
 // Clean removes the file's needles from free text: each value, each part
 // of a name (of one or two letters only as a whole word; of a script
@@ -47,8 +62,10 @@
 // HMAC-SHA-256 of it under the tenant's UID key (RemapUID); a UID the
 // standard registers is kept (Registered). A date is moved back by the
 // subject's shift, from 1 to the profile's most days, keyed by the
-// tenant's date key over the Issuer of Patient ID and the Patient ID
-// (ShiftDays); the time of day is kept, and the shift is written nowhere.
+// tenant's date key over the Patient ID, exactly the value the subject
+// label's code is the keyed hash of (ShiftDays), so a subject has one
+// shift; the time of day is kept, and the shift is written nowhere. A
+// year, or a year and month, that the shift leaves as it was is emptied.
 // A hash and a template's "{#X}" are the naming rule's keyed hash of the
 // value (naming.HashText) under the tenant's naming key, so a hashed
 // Patient ID equals the subject's label code.
@@ -67,10 +84,19 @@
 // refuses the file. An element the file holds as UN is treated as the
 // data dictionary's VR for a standard tag.
 //
-// PS3.15 Table E.1-1's codes and their resolution by an attribute's Type
-// in the IOD of the file's SOP class are here (Resolve, Types, IODTypes);
-// the table itself comes from the DICOM library, and no copy of it is
-// kept in this package.
+// The action that removes an element unless its IOD requires it reads the
+// attribute's Type in the IOD of the file's SOP class from the DICOM
+// library's IOD tables (Types, IODTypes). PS3.15 Table E.1-1's codes are
+// not resolved here: the profile language turns them into actions when it
+// builds the Annex E bases, so there is one resolution of each.
+//
+// What a stored profile version does depends on its expanded form and on
+// the DICOM library the engine runs with: its data dictionary (the VR of
+// an element a file holds as UN, which attributes are names), its IOD
+// tables (remove-unless-required) and its UID registry (which UIDs stay).
+// So the library's version is part of what a version meant for a file,
+// and each file records it, with this build's, in De-identification
+// Method (0012,0063).
 //
 // The package does no I/O but through the Lookups the caller passes, reads
 // no clock and no random source: the same file under the same profile and

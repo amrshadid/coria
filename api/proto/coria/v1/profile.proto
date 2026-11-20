@@ -185,20 +185,27 @@ service ProfileService {
 // group, PS3.5 7.8) is removed; any other follows unnamed.
 //
 // Some elements are never decided by a profile, and no selector names or
-// selects them: the pipeline handles them the same way in every file. The
-// file meta information (group 0002, Media Storage SOP Instance UID
-// (0002,0003) among it) is written anew for every de-identified file
-// (PS3.10 7.1), with the remapped UID; command elements (group 0000) and
-// the directory elements of group 0004 (Referenced SOP Instance UID in
-// File (0004,1511) among them) are not kept in an archived file; items and
-// delimiters (group FFFE) and group lengths (element 0000) are written
-// with the file; the Original Attributes Sequence (0400,0561), the
-// Encrypted Attributes Sequence (0400,0500), the MAC Parameters Sequence
-// (4FFE,0001), the Digital Signatures Sequence (FFFA,FFFA) and Data Set
-// Trailing Padding (FFFC,FFFC) are removed from every file, since they
-// hold values as received or cannot hold over a changed data set (PS3.15
-// E.1.1); and the elements of group 7FE0 (pixel data and the tables that
-// describe its encoding) change only by pixel rules.
+// selects them: the pipeline handles them the same way in every file, and
+// the engine acts by the same list the language refuses. Removed: the file
+// meta information (group 0002, Media Storage SOP Instance UID (0002,0003)
+// among it), written anew for every de-identified file with the remapped
+// UID (PS3.10 7.1); every group length (element 0000), written with the
+// file; command elements (group 0000, Affected SOP Instance UID
+// (0000,1000) among them), which no stored data set holds; the directory
+// elements of group 0004 (Referenced File ID (0004,1500) and Referenced SOP
+// Instance UID in File (0004,1511) among them), which an archived file does
+// not keep; items and delimiters (group FFFE); the Digital Signatures
+// Sequence (group FFFA) and Data Set Trailing Padding (group FFFC); the
+// Original Attributes Sequence (0400,0561), the Encrypted Attributes
+// Sequence (0400,0500) and the MAC Parameters Sequence (4FFE,0001), since
+// they hold values as received or cannot hold over a changed data set
+// (PS3.15 E.1.1); and every element of group 7FE0 but those kept. Kept,
+// changed only by pixel rules: Pixel Data (7FE0,0010), Float and Double
+// Float Pixel Data (7FE0,0008), (7FE0,0009), the Extended Offset Table
+// (7FE0,0001) and its lengths (7FE0,0002). Written: Specific Character Set
+// (0008,0005), removed at every depth and written once for the text the
+// file holds after every rule has acted (ISO_IR 192 when any is outside the
+// default repertoire, PS3.5 6.1.2.3).
 message ProfileDocument {
   // The bases, in order: names answered by ListProfileBases, such as
   // "annex-e/basic:2026c". Each base's own bases come before its rules, and
@@ -286,10 +293,12 @@ message ProfileSelector {
     // such as "00100010". Not a private element (an odd group: use
     // private_element), not the file meta information (group 0002), not a
     // command element (group 0000), not an item or delimiter (group FFFE),
-    // not a group length (element 0000), not an element of groups 0004 or
-    // 7FE0, and not an element the pipeline removes from every file
-    // (04000561, 04000500, 4FFE0001, FFFAFFFA, FFFCFFFC). The digits may
-    // be in either case; the expanded form writes them in upper case.
+    // not a group length (element 0000), not an element of groups 0004,
+    // 7FE0, FFFA or FFFC, not Specific Character Set (00080005), and not
+    // an element the pipeline removes from every file (04000561, 04000500,
+    // 4FFE0001): none of the elements ProfileDocument lists as the
+    // pipeline's. The digits may be in either case; the expanded form
+    // writes them in upper case.
     string tag = 1;
 
     // One standard element, wherever it is, by its keyword in PS3.6, such
@@ -724,7 +733,8 @@ message QuarantineAction {}
 // element the IOD requires with a value (Type 1) stays valid. It has no
 // fields. The dummies, the same in every file:
 //
-//   AE, CS, LO, LT, PN, SH, ST, UC, UT  "DUMMY"
+//   AE, CS, LO, LT, PN, SH, ST, UC, UR, UT  "DUMMY" (for UR a relative
+//       reference, RFC 3986 4.2)
 //   AS  "000D"
 //   DA  "19000101"
 //   DT  "19000101000000"
@@ -733,7 +743,8 @@ message QuarantineAction {}
 //   UI  "2.25.0" (the UUID-derived root of PS3.5 B.2 with the nil UUID;
 //       uid, not dummy, keeps references between files)
 //   AT, FL, FD, SL, SS, SV, UL, US, UV  one value of zero
-//   OB, OD, OF, OL, OV, OW, UN, UR  empty (zero length)
+//   OD, OF, OL, OV  one value of zero
+//   OB, OW, UN  two zero bytes (an even length, PS3.5 7.1.1)
 //   SQ  no items. PS3.15 asks D for a value of non-zero length, but an
 //       item's dummy would need the attributes its macro requires, which
 //       are known only per IOD; a sequence emptied keeps nothing of the

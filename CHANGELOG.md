@@ -133,9 +133,16 @@ All notable changes to CORIA are written here. The form is
   offset (times kept, a year or month shifted from its middle, the shift
   written nowhere), keyed hashes equal to the subject labels' codes, dummy
   values of non-zero length valid for every VR, removal unless the object's
-  IOD requires the attribute, PS3.15 Table E.1-1 codes resolved by IOD Type.
-  The names, identifiers, birth date, addresses and telephone numbers of
-  persons are never kept, whatever the profile says. Clean removes the file's
+  IOD requires the attribute.
+  The names (any element of VR PN, a PN attribute written with another VR, a
+  private value of unknown VR shaped as a name), identifiers, birth date,
+  addresses, residence and telephone numbers of persons are never kept,
+  whatever the profile says. Command elements, directory elements (group
+  0004) and group 7FE0 apart from the pixel data and its frame table are
+  removed from every file, from the one list the profile language refuses to
+  name. A date shift is keyed by the Patient ID alone, as the subject label
+  is; a year or year-and-month the shift would leave unchanged is emptied.
+  De-identification Method records CORIA's and the DICOM library's versions. Clean removes the file's
   values, names in every script and dates in their written forms from free
   text, within a bound. Specific Character Set is the engine's: ISO_IR 192
   when text outside ASCII remains. A file the profile cannot process, text
