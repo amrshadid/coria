@@ -133,7 +133,11 @@ func (t *failureTable) count(who string, now time.Time, limit int, window time.D
 		c.start, c.count = now, 0
 	}
 	c.count++
-	if c.count >= 2*limit {
+	// Twice the limit, written so it cannot overflow an int on a 32-bit
+	// build whatever limit a caller passes (the setting is bounded far
+	// below, but a limit near the int's top would make 2*limit negative and
+	// block at the first refusal).
+	if c.count > limit && c.count-limit >= limit {
 		c.start, c.count = now, 0
 		return true, true
 	}

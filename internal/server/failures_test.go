@@ -1,6 +1,7 @@
 package server
 
 import (
+	"math"
 	"net/netip"
 	"sync"
 	"sync/atomic"
@@ -161,4 +162,18 @@ func BenchmarkBlockedDuringFlood(b *testing.B) {
 	b.StopTimer()
 	stop.Store(true)
 	wg.Wait()
+}
+
+// TestFailureTableHugeLimit guards the block at twice the limit against an
+// int overflow: on a 32-bit build 2 * (1 << 30) is negative, which blocked
+// a caller at its first refusal.
+func TestFailureTableHugeLimit(t *testing.T) {
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	tab := newFailureTable(3)
+	for _, limit := range []int{1 << 30, math.MaxInt} {
+		v := tab.fail("huge", now, limit, time.Minute, time.Hour)
+		if v.slow || v.blocked {
+			t.Errorf("limit %d: the first refusal gave %+v, want neither slowed nor blocked", limit, v)
+		}
+	}
 }
