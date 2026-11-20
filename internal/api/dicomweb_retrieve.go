@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/amrshadid/coria/internal/blob/readat"
+	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/dicomweb"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
@@ -78,12 +79,12 @@ func (s *webStream) end(err error, results int) error {
 		return x.c.failWith(x.d, x.st, facts, err)
 	case !refused:
 		reason := "the answer ended before its last byte: the client went away or stalled, or the server stopped"
-		if mismatched(err) || isFault(err) {
+		if checkedread.Mismatched(err) || isFault(err) {
 			reason = fault.Message(err)
 		}
 		x.c.record(x.d, x.st, master.OutcomeFailed, reason, facts)
 	}
-	if mismatched(err) {
+	if checkedread.Mismatched(err) {
 		x.c.log.Error("api: a DICOMweb answer was cut: an instance's bytes on its storage do not match its manifest",
 			"request_id", x.w.Header().Get(RequestIDHeader), "scan", x.object, "error", err.Error())
 	}
@@ -91,7 +92,7 @@ func (s *webStream) end(err error, results int) error {
 }
 
 // copyRange copies length bytes of the object key of the scan's storage
-// from offset to out through copyChecked, checked against sum when it is
+// from offset to out through checkedread.CopyChecked, checked against sum when it is
 // not nil. part, when not nil, is called before the first byte, so a part
 // of a multipart body starts only once its first piece is read and
 // checked.
@@ -112,7 +113,7 @@ func copyRange(ctx context.Context, sl *scanLines, key string, offset, length in
 		return err
 	}
 	chunk := min(max(length, 1), httpChunk)
-	return copyChecked(body, length, sum, [2][]byte{make([]byte, chunk), make([]byte, chunk)}, emit)
+	return checkedread.CopyChecked(body, length, sum, [2][]byte{make([]byte, chunk), make([]byte, chunk)}, emit)
 }
 
 // target is what a retrieve names, found in the catalog: the scans it

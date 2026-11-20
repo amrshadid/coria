@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
@@ -60,7 +61,7 @@ func (c *core) download(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		return c.failIn(d, st, err)
 	}
-	release, err := c.reads.take(ownerOf(d))
+	release, err := c.reads.Take(ownerOf(d))
 	if err != nil {
 		return c.failIn(d, st, err)
 	}
@@ -102,8 +103,8 @@ func (c *core) download(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	n := span.last - span.first + 1
 
 	stores := c.newReadStores(p, name)
-	defer stores.close()
-	store, err := stores.get(ctx, in.Storage)
+	defer stores.Close()
+	store, err := stores.Get(ctx, in.Storage)
 	if err != nil {
 		return c.failIn(d, st, err)
 	}
@@ -114,7 +115,7 @@ func (c *core) download(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		// data loss.
 		info, err := store.Stat(ctx, in.Key)
 		if err == nil && info.Size < in.Offset+in.Length {
-			err = errShort
+			err = checkedread.ErrShort
 		}
 		if err != nil {
 			return c.failIn(d, st, instanceFailure(err, path))
@@ -149,7 +150,7 @@ func (c *core) download(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		if err := ctx.Err(); err != nil {
 			return context.Cause(ctx)
 		}
-		// The status is written with the first piece, which copyChecked
+		// The status is written with the first piece, which checkedread.CopyChecked
 		// passes only once the piece after it is read: a body that fails
 		// within its first piece (every instance of up to httpChunk bytes,
 		// checked whole) is still answered with its error.
@@ -185,11 +186,11 @@ func (c *core) download(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		})
 		if err == nil {
 			var rest int64
-			rest, err = copyChecked(body, n-got, nil, bufs, emit)
+			rest, err = checkedread.CopyChecked(body, n-got, nil, bufs, emit)
 			got += rest
 		}
 	} else {
-		got, err = copyChecked(body, n, sum, bufs, emit)
+		got, err = checkedread.CopyChecked(body, n, sum, bufs, emit)
 	}
 	refusal, refused := refusedWhileOpen(ctx)
 	switch {
@@ -207,12 +208,12 @@ func (c *core) download(ctx context.Context, w http.ResponseWriter, r *http.Requ
 	case !refused:
 		// A refusal while open was recorded by Confirm.
 		reason := "the download ended before its last byte: the client went away or stalled, or the server stopped"
-		if mismatched(err) || isFault(err) {
+		if checkedread.Mismatched(err) || isFault(err) {
 			reason = fault.Message(instanceFailure(err, path))
 		}
 		c.record(d, st, master.OutcomeFailed, reason, sent(got))
 	}
-	if mismatched(err) {
+	if checkedread.Mismatched(err) {
 		c.log.Error("api: a download was cut: an instance's bytes on its storage do not match its manifest",
 			"request_id", w.Header().Get(RequestIDHeader), "scan", path.Subject+"/"+path.Session+"/"+path.Scan, "error", err.Error())
 	}
@@ -250,9 +251,9 @@ func sendsFiles(r *http.Request) bool {
 
 // sendRange writes all but the last httpChunk bytes of a range of n bytes
 // from s to w, in pieces of sendPiece, calling before ahead of each, and
-// returns how many it wrote. The last piece is left to copyChecked, so a
+// returns how many it wrote. The last piece is left to checkedread.CopyChecked, so a
 // range is never sent whole before its length is proven; a stream that
-// gives fewer bytes than asked is errShort. Only a range or a window is
+// gives fewer bytes than asked is checkedread.ErrShort. Only a range or a window is
 // sent this way: a whole instance is checked against its SHA-256, which
 // needs its bytes in this process.
 func sendRange(ctx context.Context, s fileSender, w io.Writer, n int64, before func()) (int64, error) {
@@ -270,7 +271,7 @@ func sendRange(ctx context.Context, s fileSender, w io.Writer, n int64, before f
 		case err != nil:
 			return sent, err
 		case k < want:
-			return sent, errShort
+			return sent, checkedread.ErrShort
 		}
 	}
 	return sent, nil

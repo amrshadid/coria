@@ -9,6 +9,7 @@ import (
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
+	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
@@ -185,7 +186,7 @@ func (s dataService) ReadFiles(ctx context.Context, req *v1.ReadFilesRequest, st
 	if err != nil {
 		return c.failIn(d, st, err)
 	}
-	release, err := c.reads.take(ownerOf(d))
+	release, err := c.reads.Take(ownerOf(d))
 	if err != nil {
 		return c.failIn(d, st, err)
 	}
@@ -196,7 +197,7 @@ func (s dataService) ReadFiles(ctx context.Context, req *v1.ReadFilesRequest, st
 	ctx, stop := c.watchKey(ctx, d)
 	defer stop()
 	stores := c.newReadStores(p, req.GetTenant())
-	defer stores.close()
+	defer stores.Close()
 
 	c.record(d, st, master.OutcomeDone, "", access.Facts{Details: withDetails(details, map[string]string{detailStream: "opened"})})
 	fr := &fileReader{p: p, q: q, stores: stores, send: stream.Send}
@@ -230,9 +231,9 @@ func (s dataService) ReadFiles(ctx context.Context, req *v1.ReadFilesRequest, st
 type fileReader struct {
 	p      tenant.Pipeline
 	q      readQuery
-	stores *readStores
+	stores *checkedread.Stores
 	send   func(*v1.ReadFilesResponse) error
-	// bufs are the two buffers of copyChecked; nil with announce_only.
+	// bufs are the two buffers of checkedread.CopyChecked; nil with announce_only.
 	bufs [2][]byte
 	// files and bytes count the instances sent whole and their bytes.
 	files, bytes int64
@@ -359,7 +360,7 @@ func (r *fileReader) instance(ctx context.Context, path label.Path, in tenant.Sc
 		r.files++
 		return nil
 	}
-	store, err := r.stores.get(ctx, in.Storage)
+	store, err := r.stores.Get(ctx, in.Storage)
 	if err != nil {
 		return err
 	}
@@ -370,7 +371,7 @@ func (r *fileReader) instance(ctx context.Context, path label.Path, in tenant.Sc
 	defer func() { _ = rc.Close() }() // Only read from.
 	var offset int64
 	sum := in.ArchivedSHA256
-	n, err := copyChecked(rc, in.Length, &sum, r.bufs, func(b []byte) error {
+	n, err := checkedread.CopyChecked(rc, in.Length, &sum, r.bufs, func(b []byte) error {
 		err := r.send(&v1.ReadFilesResponse{Part: &v1.ReadFilesResponse_Chunk{Chunk: &v1.FileChunk{Offset: offset, Data: b}}})
 		offset += int64(len(b))
 		return err
@@ -394,7 +395,7 @@ func instanceFailure(err error, path label.Path) error {
 	switch {
 	case fault.KindOf(err) == fault.NotFound:
 		return fault.Wrap(fault.DataLoss, err, "an instance of the scan "+scan+" is missing from its storage")
-	case mismatched(err):
+	case checkedread.Mismatched(err):
 		return fault.Wrap(fault.DataLoss, err, "an instance of the scan "+scan+" does not match the scan's manifest; the bytes of it already sent are not to be kept")
 	case isFault(err):
 		return storageFailure(err, "an instance of the scan "+scan+" cannot be read; resume after the last instance received whole")

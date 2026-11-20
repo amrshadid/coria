@@ -14,7 +14,7 @@ import (
 func HoldServerReads(h Handlers) func() {
 	var releases []func()
 	for i := range MaxServerReads {
-		release, err := h.c.reads.take("held/" + strconv.Itoa(i))
+		release, err := h.c.reads.Take("held/" + strconv.Itoa(i))
 		if err != nil {
 			break
 		}

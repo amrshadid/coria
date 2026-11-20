@@ -96,7 +96,7 @@ func (x *webRequest) holdRead() error {
 	if x.release != nil {
 		return nil
 	}
-	release, err := x.c.reads.take(ownerOf(x.d))
+	release, err := x.c.reads.Take(ownerOf(x.d))
 	if err != nil {
 		return err
 	}

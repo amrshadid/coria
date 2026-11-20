@@ -11,6 +11,7 @@ import (
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/api/codes"
+	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
@@ -237,7 +238,7 @@ type core struct {
 	stowReceivers *stow.Directory
 	// reads counts the streams of ReadFiles and the downloads open now,
 	// for their bounds.
-	reads openReads
+	reads checkedread.Slots
 	// places orders the changes that depend on where the installation lets
 	// data go (its roots, endpoints, ports and bind addresses) against the
 	// changes of those settings: a storage or a receiver is checked and

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/dicomweb"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/receive/sidecar"
@@ -94,7 +95,7 @@ func (x *webRequest) frames(ctx context.Context) error {
 		// The table counts from the instance's first byte, which lies at
 		// its offset in the object at its key.
 		body := &rangesReader{ctx: ctx, sl: sl, key: in.Key, base: in.Offset, ranges: p.ranges}
-		_, err := copyChecked(body, p.length, p.sum, bufs,
+		_, err := checkedread.CopyChecked(body, p.length, p.sum, bufs,
 			func(b []byte) error {
 				w, err := open()
 				if err != nil {
@@ -200,7 +201,7 @@ func (r *rangesReader) Read(p []byte) (int, error) {
 			}
 			// A storage that answers more than the range asked is cut to
 			// it; one that answers fewer leaves the frame short, which
-			// copyChecked reports.
+			// checkedread.CopyChecked reports.
 			r.cur = struct {
 				io.Reader
 				io.Closer

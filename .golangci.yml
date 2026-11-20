@@ -22,6 +22,24 @@ linters:
   settings:
     depguard:
       rules:
+        # Reading archived bytes is checked against the manifest and bounded,
+        # and knows no transport: callers (the API, senders) decide what a
+        # mismatch means.
+        checkedread:
+          files:
+            - "**/internal/checkedread/**"
+            - "!$test"
+          deny:
+            - pkg: net/http
+              desc: checkedread knows no transport
+            - pkg: google.golang.org/grpc
+              desc: checkedread knows no transport
+            - pkg: connectrpc.com
+              desc: checkedread knows no transport
+            - pkg: github.com/amrshadid/go-dicom
+              desc: checkedread passes bytes; it does not parse DICOM
+            - pkg: github.com/amrshadid/coria/internal/api
+              desc: the API imports checkedread, never the reverse
         # The live feed is handed readers (tenant.Events through
         # events.Reader, the tenants through events.Tenants); it never opens a
         # database or a connection itself, so it is tested with fakes and
