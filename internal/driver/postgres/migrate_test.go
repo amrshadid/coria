@@ -451,3 +451,64 @@ func TestCatalogReadsMigrationFillsRows(t *testing.T) {
 	}
 	tenanttest.CheckMigratedCatalog(t, s, microsTime)
 }
+
+// TestLeanCatalogMigrationKeepsRows guards the migration that moves claims
+// into their own table, writes held instances once without the key and
+// checksum other rows give, counts each reception's scans, and removes the
+// received files of receptions that ended done or quarantined, on a
+// database that holds each kind of row already (tenanttest.CheckLeanCatalog
+// describes them and reads them back).
+func TestLeanCatalogMigrationKeepsRows(t *testing.T) {
+	ctx := context.Background()
+	address := newSchema(t)
+	s, err := OpenTenant(ctx, address, "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.migrate(ctx, tenantMigrations[:8]); err != nil {
+		t.Fatal(err)
+	}
+	reception := func(id string, arrival int, state string, ended bool) string {
+		return fmt.Sprintf(`INSERT INTO receptions VALUES ('%s', 'recv', '%s', %d, '%s', %t, 1, 10, 0, 0, 0, 0, 0, 0, 0,
+			'Sub-A', 'ses-1', 'store', '', now(), now(), now(), %s, 0, '[]', false, '', '', '', NULL)`,
+			id, tenanttest.LeanStudy, arrival, state, ended, map[bool]string{true: "now()", false: "NULL"}[ended])
+	}
+	sum := func(uid string) string { return fmt.Sprintf("sha256('%s'::bytea)", uid) }
+	received := func(id string) string {
+		return fmt.Sprintf(`INSERT INTO received_files VALUES ('%s', '%s', %s, '%s', '%s', '1.2.840.10008.5.1.4.1.1.4', '1.2.840.10008.1.2.1',
+			10, 'in/%s', '', '', '', '', false, now())`, id, tenanttest.LeanReceivedUID, sum(tenanttest.LeanReceivedUID), tenanttest.LeanSeries,
+			tenanttest.LeanStudy, id)
+	}
+	mustExec(t, admin(t, address),
+		reception(tenanttest.LeanDone, 1, "done", true), reception(tenanttest.LeanQuarantined, 2, "quarantined", true),
+		reception(tenanttest.LeanFailed, 3, "failed", true), reception(tenanttest.LeanOpen, 4, "identified", false),
+		`INSERT INTO subjects (id, label, folded, created) OVERRIDING SYSTEM VALUE VALUES (1, 'Sub-A', 'sub-a', now())`,
+		`INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created, subject_label, subject_folded)
+			OVERRIDING SYSTEM VALUE VALUES (1, '`+tenanttest.LeanStudy+`', 1, 'ses-1', 'ses-1', 'store', now(), 'Sub-A', 'sub-a')`,
+		`INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated,
+			subject_label, subject_folded, session_label, session_folded, storage)
+			OVERRIDING SYSTEM VALUE VALUES (1, 1, '`+tenanttest.LeanSeries+`', 'scan-1', 'scan-1', 2, 30, NULL, now(), now(),
+			'Sub-A', 'sub-a', 'ses-1', 'ses-1', 'store')`,
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', %s, '%s', 1, 'store', 'data/Sub-A/ses-1/scan-1/%s.dcm', 0, 10, 10,
+			%s, now(), now())`, tenanttest.LeanLayoutUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanLayoutUID),
+			tenanttest.LeanDone, tenanttest.LeanLayoutUID, sum(tenanttest.LeanLayoutUID)),
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'held', %s, '%s', 1, 'store', '%s', 0, 20, 20, %s, now(), now())`,
+			tenanttest.LeanKeptUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanKeptUID), tenanttest.LeanDone,
+			tenanttest.LeanKeptKey, sum(tenanttest.LeanKeptUID+"x")),
+		fmt.Sprintf(`INSERT INTO instances VALUES ('%s', '%s', '%s', 'claimed', %s, '%s', NULL, '', '', 0, 0, 0, NULL, now(), NULL)`,
+			tenanttest.LeanClaimedUID, tenanttest.LeanStudy, tenanttest.LeanSeries, sum(tenanttest.LeanClaimedUID), tenanttest.LeanOpen),
+		received(tenanttest.LeanDone), received(tenanttest.LeanQuarantined), received(tenanttest.LeanFailed), received(tenanttest.LeanOpen))
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	tenanttest.CheckLeanCatalog(t, s)
+	var kept string
+	if err := admin(t, address).QueryRow(ctx, `SELECT string_agg(sop_instance_uid || ':' || storage_key || ':' ||
+		(archived_sha256 IS NULL), ' ' ORDER BY sop_instance_uid) FROM instances`).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if want := tenanttest.LeanLayoutUID + "::true " + tenanttest.LeanKeptUID + ":" + tenanttest.LeanKeptKey + ":false"; kept != want {
+		t.Errorf("the migrated rows keep %q, want %q: only a key and a checksum no other row gives", kept, want)
+	}
+}

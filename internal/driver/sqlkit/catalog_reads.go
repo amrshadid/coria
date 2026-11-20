@@ -102,14 +102,29 @@ func (c CatalogReader[T]) scanScan(row Row, r *scanRow) error {
 	return err
 }
 
-// scanHeld reads a row of HeldInstanceColumns.
+// scanHeld reads a row of HeldInstanceColumns, its key as the row keeps it.
 func (c CatalogReader[T]) scanHeld(row Row, in *tenant.ScanInstance) error {
 	var sum, archived []byte
 	var held T
-	err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Storage, &in.Key, &in.Offset, &in.Length, &in.Size,
-		&sum, &archived, &held)
+	err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Key, &in.Offset, &in.Length, &in.Size, &sum, &archived, &held)
 	in.SHA256, in.ArchivedSHA256, in.Held = ToSHA256(sum), ToSHA256(archived), c.Time(held)
 	return err
+}
+
+// placeHeld gives instances read by scanHeld from a scan their scan's
+// storage and their key (tenant.InstanceKey), made from the labels the scan
+// holds, which are those the instances were archived under.
+func placeHeld(scan tenant.CatalogScan, ins []tenant.ScanInstance) error {
+	p := label.Path{Subject: scan.SubjectLabel, Session: scan.SessionLabel, Scan: scan.Label}
+	storage := scan.Storage
+	for i := range ins {
+		key, err := tenant.InstanceKey(p, ins[i].SOPInstanceUID, ins[i].Key)
+		if err != nil {
+			return err
+		}
+		ins[i].Storage, ins[i].Key = storage, key
+	}
+	return nil
 }
 
 // rows runs q and reads each row with scan into a new element of the
@@ -407,6 +422,9 @@ func (c CatalogReader[T]) ListHeldInstances(ctx context.Context, p label.Path, p
 		return nil, "", err
 	}
 	out, err := rows(ctx, c.Run, "the scan's instances cannot be listed", c.SQL.HeldInstances(scan.key.ID, after, page.Limit+1), c.scanHeld)
+	if err == nil {
+		err = placeHeld(scan.s, out)
+	}
 	if err != nil {
 		return nil, "", err
 	}
@@ -429,6 +447,14 @@ func (c CatalogReader[T]) HeldInstance(ctx context.Context, p label.Path, uid st
 	if err != nil {
 		return tenant.ScanInstance{}, err
 	}
-	return one(ctx, c.Run, "the scan holds no instance with this SOP Instance UID", "the instance cannot be read",
+	in, err := one(ctx, c.Run, "the scan holds no instance with this SOP Instance UID", "the instance cannot be read",
 		c.SQL.HeldInstance(scan.key.ID, uid), c.scanHeld)
+	if err != nil {
+		return tenant.ScanInstance{}, err
+	}
+	got := []tenant.ScanInstance{in}
+	if err := placeHeld(scan.s, got); err != nil {
+		return tenant.ScanInstance{}, err
+	}
+	return got[0], nil
 }

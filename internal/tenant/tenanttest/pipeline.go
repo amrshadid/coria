@@ -53,6 +53,7 @@ func runPipeline(t *testing.T, open OpenPipeline) {
 		{"ReceivedBatchRepeated", testReceivedBatchRepeated},
 		{"ReceivedFilesClosed", testReceivedFilesClosed},
 		{"ReceivedBatchOrder", testReceivedBatchOrder},
+		{"ReceivedFilesAtEnd", testReceivedFilesAtEnd},
 		{"Claims", testClaims},
 		{"ClaimsOutliveTheirReception", testClaimsOutliveTheirReception},
 		{"CommitScan", testCommitScan},

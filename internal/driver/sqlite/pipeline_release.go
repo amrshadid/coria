@@ -52,7 +52,7 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 			// Released as it is, it would only be quarantined again while
 			// the tenant holds an instance under its UID; replacing that
 			// instance deletes archived data, which reception never does.
-			held, err := exists(ctx, tx, `SELECT 1 FROM instances WHERE sop_instance_uid = ? AND state = 'held'`, q.SOPInstanceUID)
+			held, err := exists(ctx, tx, `SELECT 1 FROM instances WHERE sop_instance_uid = ?`, q.SOPInstanceUID)
 			if err != nil {
 				return err
 			}

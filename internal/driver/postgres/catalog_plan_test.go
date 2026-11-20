@@ -18,7 +18,8 @@ import (
 // catalogIndexes are the names Postgres gives the catalog's unique
 // constraints, as the schema names them.
 var catalogIndexes = testkit.CatalogIndexes{SubjectsFolded: "subjects_folded_key", SessionsFolded: "sessions_folded_key",
-	ScansFolded: "scans_folded_key", InstancesKey: "instances_pkey"}
+	ScansFolded: "scans_folded_key", InstancesKey: "instances_pkey",
+	InstancesByScan: "instances_by_scan"}
 
 // fillCatalog writes a catalog of subjects subjects, five sessions each and
 // six scans a session with two instances each, straight through SQL into a
@@ -59,8 +60,8 @@ func fillCatalog(tb testing.TB, conn *pgx.Conn, subjects int) {
 		`UPDATE scans SET modality = '`+testkit.RareModality+`' WHERE id <= 10`,
 		`INSERT INTO session_modalities (session_id, modality, created)
 		 SELECT DISTINCT c.session_id, c.modality, s.created FROM scans AS c JOIN sessions AS s ON s.id = c.session_id`,
-		fmt.Sprintf(`INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.1', '2.25.2.1', 'held', sha256(i::text::bytea), 'rc', (i - 1) / 2 + 1,
-		   'store', 'k' || i, 0, 1000, 1000, sha256(i::text::bytea), now(), now() FROM generate_series(1::bigint, %d) i`, scans*2),
+		fmt.Sprintf(`INSERT INTO instances SELECT '2.25.3.' || i, (i - 1) / 2 + 1, 'rc', sha256(i::text::bytea), NULL, '', 0, 1000, 1000, now()
+		   FROM generate_series(1::bigint, %d) i`, scans*2),
 		`ANALYZE`)
 }
 
@@ -78,7 +79,7 @@ func sampleCatalog(tb testing.TB, conn *pgx.Conn) testkit.CatalogSample {
 	}
 	err := conn.QueryRow(ctx, `SELECT c.id, c.subject_label, c.session_label, c.label, c.subject_folded, c.session_folded, c.folded,
 		c.description_folded, c.created, c.modality, c.receiver, s.id, s.created, s.subject_id, s.study_date, s.folded, sub.created,
-		(SELECT min(sop_instance_uid) FROM instances WHERE scan_id = c.id AND state = 'held')
+		(SELECT min(sop_instance_uid) FROM instances WHERE scan_id = c.id)
 		FROM scans AS c JOIN sessions AS s ON s.id = c.session_id JOIN subjects AS sub ON sub.id = s.subject_id
 		WHERE c.id >= $1 AND c.modality <> '' AND s.study_date <> '' ORDER BY c.id LIMIT 1`, n/2).Scan(
 		&v.ScanID, &v.Scan.Subject, &v.Scan.Session, &v.Scan.Scan, &v.ScanKey.SubjectFolded, &v.ScanKey.SessionFolded, &v.ScanKey.Folded,

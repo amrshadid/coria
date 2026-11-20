@@ -314,7 +314,7 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 			return tenant.StateChanged()
 		}
 		if next.Ended() {
-			if err := releaseClaims(ctx, tx, step.ID); err != nil {
+			if err := endReception(ctx, tx, step.ID, next); err != nil {
 				return err
 			}
 		}
@@ -374,7 +374,7 @@ func giveUp(ctx context.Context, tx *sql.Tx, receptionID string, now time.Time) 
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return false, err
 	}
-	if err := releaseClaims(ctx, tx, receptionID); err != nil {
+	if err := endReception(ctx, tx, receptionID, next); err != nil {
 		return false, err
 	}
 	return true, writeStepEvent(ctx, tx, receptionID, reception.State(state))

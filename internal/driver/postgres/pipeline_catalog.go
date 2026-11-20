@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/driver/sqlkit"
 
 	"github.com/jackc/pgx/v5"
@@ -86,12 +87,21 @@ func instanceRows(ctx context.Context, q interface {
 // two claims that share UIDs wait for each other in UID order and never in a
 // cycle. A UID that meets a row is skipped (ON CONFLICT DO NOTHING); the
 // UIDs written are returned.
-const insertClaimsSQL = `INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, scan_id,
-
-	storage, storage_key, byte_offset, byte_length, size, archived_sha256, claimed_at, held_at)
-	SELECT u.uid, u.study, u.series, 'claimed', u.sha, $1, NULL, '', '', 0, 0, 0, NULL, $2, NULL
+const insertClaimsSQL = `INSERT INTO instance_claims (sop_instance_uid, study_uid, series_uid, sha256, reception_id, claimed_at)
+	SELECT u.uid, u.study, u.series, u.sha, $1, $2
 	FROM unnest($3::text[], $4::text[], $5::text[], $6::bytea[]) AS u(uid, study, series, sha)
 	ON CONFLICT DO NOTHING RETURNING sop_instance_uid`
+
+// heldAfterClaimSQL finds, among the UIDs a claim just wrote, those a
+// commit of another reception's claim moved into instances meanwhile: the
+// claim's insert waited for that commit, which removed the claim it met;
+// this statement, begun after, sees the held row. One probe of the
+// instances' primary key for each UID; the claims found are removed by
+// dropClaimsSQL, which a claim almost never needs.
+const heldAfterClaimSQL = `SELECT sop_instance_uid FROM instances WHERE sop_instance_uid = ANY($1::text[])`
+
+// dropClaimsSQL removes a reception's claims of the UIDs given.
+const dropClaimsSQL = `DELETE FROM instance_claims WHERE sop_instance_uid = ANY($1::text[]) AND reception_id = $2`
 
 // ClaimInstances implements tenant.Pipeline. Every file must be one of the
 // reception's received files, as received (one read of the received files'
@@ -202,6 +212,23 @@ func (t *Tenant) ClaimInstances(ctx context.Context, receptionID string, files [
 				for _, u := range insUIDs {
 					if !done[u] {
 						lost = append(lost, u)
+					}
+				}
+				if len(written) > 0 {
+					rows, err := tx.Query(ctx, heldAfterClaimSQL, written)
+					moved, err := collect(rows, err, func(row scanner) (string, error) {
+						var u string
+						err := row.Scan(&u)
+						return u, err
+					})
+					if err != nil {
+						return err
+					}
+					if len(moved) > 0 {
+						if _, err := tx.Exec(ctx, dropClaimsSQL, moved, receptionID); err != nil {
+							return err
+						}
+						lost = append(lost, moved...)
 					}
 				}
 			}
@@ -327,10 +354,11 @@ func (t *Tenant) ReceptionScans(ctx context.Context, receptionID string) ([]tena
 
 // scanInstancesSQL pages the instances held in the scan of a series: the
 // scans' unique key on series_uid, then instances_by_scan, in order of SOP
-// Instance UID.
-const scanInstancesSQL = `SELECT i.sop_instance_uid, i.reception_id, i.storage, i.storage_key, i.byte_offset, i.byte_length,
-	i.size, i.sha256, i.archived_sha256, i.held_at
-	FROM scans AS s JOIN instances AS i ON i.scan_id = s.id AND i.state = 'held'
+// Instance UID. The storage and the labels the key is made from are the
+// scan's (tenant.InstanceKey).
+const scanInstancesSQL = `SELECT i.sop_instance_uid, i.reception_id, s.storage, i.storage_key, s.subject_label, s.session_label, s.label,
+	i.byte_offset, i.byte_length, i.size, i.sha256, coalesce(i.archived_sha256, i.sha256), i.held_at
+	FROM scans AS s JOIN instances AS i ON i.scan_id = s.id
 	WHERE s.series_uid = $1 AND i.sop_instance_uid > $2 ORDER BY i.sop_instance_uid LIMIT $3`
 
 // ScanInstances implements tenant.ScanContents.
@@ -355,9 +383,15 @@ func (t *Tenant) ScanInstances(ctx context.Context, seriesUID string, page maste
 			var in tenant.ScanInstance
 			var sum, archived []byte
 			var held time.Time
-			err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Storage, &in.Key, &in.Offset, &in.Length, &in.Size,
-				&sum, &archived, &held)
+			var stored string
+			var p label.Path
+			err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Storage, &stored, &p.Subject, &p.Session, &p.Scan,
+				&in.Offset, &in.Length, &in.Size, &sum, &archived, &held)
+			if err != nil {
+				return in, err
+			}
 			in.SHA256, in.ArchivedSHA256, in.Held = sqlkit.ToSHA256(sum), sqlkit.ToSHA256(archived), held.UTC()
+			in.Key, err = tenant.InstanceKey(p, in.SOPInstanceUID, stored)
 			return in, err
 		})
 	if err != nil {

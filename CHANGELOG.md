@@ -6,6 +6,20 @@ All notable changes to CORIA are written here. The form is
 
 ## [Unreleased]
 
+### Changed
+
+- A tenant's catalog is leaner and faster to write. A claim on an instance
+  is a row of its own, removed by the commit that confirms it, so a held
+  instance is written once and never updated; it no longer repeats its
+  study, series, storage, key or an archived checksum equal to the received
+  one, and on SQLite a scan's instances are stored together. A reception that
+  ends done or quarantined no longer keeps its received files (a failed one
+  keeps them for its retry or discard), and a study's instances are read from
+  an index in order. At 200,000 synthetic instances SQLite receives 2.4 times
+  as fast into a full tenant, in a file 6 times smaller, and Postgres's
+  instance rows are 3.8 times smaller. Existing tenants are converted when
+  the database is upgraded.
+
 ### Added
 
 - The metadata service answers a scan's or an instance's header as DICOM

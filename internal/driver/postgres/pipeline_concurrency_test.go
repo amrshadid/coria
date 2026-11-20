@@ -361,7 +361,7 @@ func TestClaimRacesEnd(t *testing.T) {
 		if claim != nil && fault.KindOf(claim) != fault.Precondition {
 			t.Fatalf("round %d: the claim: %v, want success or a precondition failure", round, claim)
 		}
-		if n := e.scalar(`SELECT count(*) FROM instances WHERE reception_id = $1 AND state = 'claimed'`, r.ID); n != 0 {
+		if n := e.scalar(`SELECT count(*) FROM instance_claims WHERE reception_id = $1`, r.ID); n != 0 {
 			t.Fatalf("round %d: %d claims held by a reception that ended", round, n)
 		}
 	}
@@ -406,7 +406,7 @@ func TestCommitRacesEnd(t *testing.T) {
 		if commit != nil && fault.KindOf(commit) != fault.Precondition {
 			t.Fatalf("round %d: the commit: %v, want success or a precondition failure", round, commit)
 		}
-		held := e.scalar(`SELECT count(*) FROM instances WHERE reception_id = $1 AND state = 'held'`, r.ID)
+		held := e.scalar(`SELECT count(*) FROM instances WHERE reception_id = $1`, r.ID)
 		if (commit == nil && held != 100) || (commit != nil && held != 0) {
 			t.Fatalf("round %d: commit %v, and %d instances held", round, commit, held)
 		}

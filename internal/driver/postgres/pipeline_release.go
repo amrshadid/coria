@@ -55,7 +55,7 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 			// the tenant holds an instance under its UID; replacing that
 			// instance deletes archived data, which reception never does.
 			// A held instance is never removed, so a read is enough.
-			held, err := exists(ctx, tx, `SELECT 1 FROM instances WHERE sop_instance_uid = $1 AND state = 'held'`, q.SOPInstanceUID)
+			held, err := exists(ctx, tx, `SELECT 1 FROM instances WHERE sop_instance_uid = $1`, q.SOPInstanceUID)
 			if err != nil {
 				return err
 			}

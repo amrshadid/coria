@@ -208,7 +208,9 @@ type Pipeline interface {
 	// step the table refuses holds the *reception.Refusal (errors.As),
 	// Already among them. Both are Conflict. Identify's storage must be the
 	// tenant's (a precondition). A step to an end releases the claims the
-	// reception did not confirm, in the same transaction. hook, when not
+	// reception did not confirm, and removes the received files of one it
+	// ends done or quarantined (KeepsReceivedFiles), in the same
+	// transaction. hook, when not
 	// nil, runs inside the step's transaction after the reception is
 	// written and before the commit, with the reception as it was and as it
 	// is; an error from it undoes the step and is returned as it is. A
@@ -284,7 +286,9 @@ type Pipeline interface {
 	// study is Invalid when its reception is reached).
 	AddReceivedFiles(ctx context.Context, files []ReceivedFile, at time.Time) (int, error)
 	// ReceivedFiles returns a page of a reception's received files in order
-	// of SOP Instance UID, then checksum.
+	// of SOP Instance UID, then checksum. A reception that ended done or
+	// quarantined has none: the step that ends it removes them
+	// (KeepsReceivedFiles), as it releases its claims.
 	ReceivedFiles(ctx context.Context, receptionID string, page master.Page) ([]ReceivedFile, string, error)
 	// CheckDuplicates says for each file, in order, up to
 	// MaxDuplicateBatch, what the catalog holds or a reception claims under

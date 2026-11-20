@@ -49,14 +49,18 @@ func fillPipeline(tb testing.TB, path string) {
 		 INSERT INTO sessions (id, study_uid, subject_id, label, folded, storage, created)
 		 SELECT i, '2.25.1.' || i, i % 500 + 1, 'ses-' || i, 'ses-' || i, 'store' || (i % 200 + 1), 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
-		 INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated)
-		 SELECT i, i % 5000 + 1, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 5, 5000, NULL, 0, 0 FROM n`,
+		 INSERT INTO scans (id, session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated, storage, study_uid)
+		 SELECT i, i % 5000 + 1, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 5, 5000, NULL, 0, 0, 'store' || (i % 200 + 1),
+		   '2.25.1.' || (i % 5000 + 1) FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
-		 INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.' || (i % 5000 + 1), '2.25.2.' || (i % 20000 + 1),
-		   CASE WHEN i % 100 = 0 THEN 'claimed' ELSE 'held' END, randomblob(32), 'rc' || (i % 10000 + 1),
-		   CASE WHEN i % 100 = 0 THEN NULL ELSE i % 20000 + 1 END, CASE WHEN i % 100 = 0 THEN '' ELSE 'store' || (i % 200 + 1) END,
-		   CASE WHEN i % 100 = 0 THEN '' ELSE 'k' END, 0, 1000, 1000,
-		   CASE WHEN i % 100 = 0 THEN NULL ELSE randomblob(32) END, 0, CASE WHEN i % 100 = 0 THEN NULL ELSE 0 END FROM n`,
+		 INSERT INTO instances SELECT i % 20000 + 1, '2.25.3.' || i, 'rc' || (i % 10000 + 1), randomblob(32), NULL, '', 0, 1000, 1000, 0
+		 FROM n WHERE i % 100 <> 0`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		 INSERT INTO instance_claims SELECT '2.25.3.' || i, 'rc' || (i % 10000 + 1), '2.25.1.' || (i % 5000 + 1),
+		   '2.25.2.' || (i % 20000 + 1), randomblob(32), 0 FROM n WHERE i % 100 = 0`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		 INSERT INTO reception_scans SELECT 'rc' || (i % 10000 + 1), i % 20000 + 1, 1, 1000 FROM n WHERE i % 100 <> 0
+		 ON CONFLICT DO NOTHING`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO work SELECT 'w' || i, 'reception', 'rc' || i, 'rc' || i, NULL, 'done', i, 1, 10, '', '', 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100)
@@ -139,15 +143,17 @@ func TestPipelinePlans(t *testing.T) {
 		{"the next arrival", "receptions_arrival", nextArrivalSQL, []any{"2.25.1.5"}},
 		{"a study's arrivals", "receptions_arrival", arrivalsSQL, []any{"2.25.1.5", 100}},
 		{"ReceivedFiles", "PRIMARY KEY", listReceivedSQL, []any{"rc5", "", []byte{}, 101}},
-		{"CheckDuplicates", "PRIMARY KEY", duplicatesSQL, []any{`["2.25.3.5","2.25.3.6"]`}},
-		{"an instance's row, for a claim", "PRIMARY KEY", instanceRowSQL, []any{"2.25.3.5"}},
-		{"a claim confirmed", "PRIMARY KEY", confirmInstanceSQL, []any{1, "s", "k", 0, 0, 0, []byte{1}, 0, "2.25.3.5", "rc5", "2.25.1.5", "2.25.2.5"}},
-		{"a reception's claims released", "instances_claimed", releaseClaimedSQL, []any{"rc5"}},
+		{"CheckDuplicates, the held instances", "instances_by_uid", duplicatesSQL, []any{`["2.25.3.5","2.25.3.6"]`}},
+		{"CheckDuplicates, the claims", "PRIMARY KEY", duplicatesSQL, []any{`["2.25.3.5","2.25.3.6"]`}},
+		{"an instance's row, for a claim", "instances_by_uid", instanceRowSQL, []any{"2.25.3.5"}},
+		{"an instance's claim, for a claim", "PRIMARY KEY", instanceRowSQL, []any{"2.25.3.5"}},
+		{"a claim confirmed", "PRIMARY KEY", takeClaimSQL, []any{"2.25.3.5", "rc5", "2.25.1.5", "2.25.2.5"}},
+		{"a reception's claims released", "instance_claims_by_reception", releaseClaimedSQL, []any{"rc5"}},
 		{"a storage a session names", "sessions_by_storage", sessionsOnStorageSQL, []any{"store5"}},
 		{"ReceptionsWithoutWork", "receptions_in_progress", receptionsWithoutWorkSQL, []any{int64(-1), "", 101}},
 		{"ReceptionsWithoutWork, a reception's live unit", "work_by_reception", receptionsWithoutWorkSQL, []any{int64(-1), "", 101}},
-		{"a storage that holds data", "instances_on_storage", storageHoldsSQL, []any{"store5"}},
-		{"ReceptionScans", "instances_held_by", receptionScansSQL, []any{"rc5", 10001}},
+		{"a storage that holds data", "scans_by_storage", storageHoldsSQL, []any{"store5"}},
+		{"ReceptionScans", "PRIMARY KEY", receptionScansSQL, []any{"rc5", 10001}},
 		{"CatalogLabels, the session", "sqlite_autoindex_sessions_1", sessionLabelsSQL, []any{"2.25.1.5"}},
 		{"CatalogLabels, the scans", "sqlite_autoindex_scans_1", scanLabelsSQL, []any{`["2.25.2.5","2.25.2.6"]`}},
 		{"DiscardedFiles", "quarantine_kept", discardedSQL, []any{"rc5", "", []byte{}, 101}},
@@ -273,13 +279,13 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 	indexes := run(`SELECT name FROM sqlite_schema WHERE type = 'index' AND sql IS NOT NULL ORDER BY name`)
 	for _, want := range []string{"storages_by_root", "storages_by_bucket", "receivers_by_storage", "receivers_by_port",
 		"receptions_arrival", "receptions_open", "receptions_by_start", "receptions_by_receiver", "receptions_by_study",
-		"receptions_by_state", "receptions_in_progress", "receptions_by_storage", "received_by_instance", "quarantine_by_time",
+		"receptions_by_state", "receptions_in_progress", "receptions_by_storage", "quarantine_by_time",
 		"quarantine_by_state", "quarantine_by_reason", "quarantine_by_receiver", "quarantine_by_reception",
 		"quarantine_by_study", "quarantine_by_instance", "work_by_key", "work_claimable",
 		"receptions_receiver_in_progress", "receptions_by_receiver_state", "receptions_by_study_state",
 		"quarantine_by_state_reason", "quarantine_by_state_receiver", "quarantine_by_receiver_reason",
-		"quarantine_by_state_receiver_reason", "quarantine_kept", "instances_claimed", "instances_on_storage",
-		"instances_held_by", "scans_by_session_created", "sessions_by_storage", "work_by_reception", "receptions_holding",
+		"quarantine_by_state_receiver_reason", "quarantine_kept", "instance_claims_by_reception", "instances_by_uid",
+		"scans_by_storage", "scans_by_session_created", "sessions_by_storage", "work_by_reception", "receptions_holding",
 		"events_by_type", "events_by_key"} {
 		if !strings.Contains("\n"+indexes+"\n", "\n"+want+"\n") {
 			t.Errorf("sqlite3 shows no index %s", want)
@@ -296,16 +302,14 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 	for _, bad := range []string{
 		`UPDATE catalog_totals SET instances = -1`,
 		`UPDATE quarantine_totals SET files = -1`,
-		// A claim with no reception, a held row with no scan, a checksum of
-		// the wrong length, a state that is neither.
-		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, storage, storage_key,
-		 byte_offset, byte_length, size, claimed_at) VALUES ('1.2', '1.2', '1.2', 'claimed', zeroblob(32), '', '', '', 0, 0, 0, 0)`,
-		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, storage, storage_key,
-		 byte_offset, byte_length, size, claimed_at) VALUES ('1.2', '1.2', '1.2', 'held', zeroblob(32), 'rc', 's', 'k', 0, 0, 0, 0)`,
-		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, storage, storage_key,
-		 byte_offset, byte_length, size, claimed_at) VALUES ('1.2', '1.2', '1.2', 'claimed', x'00', 'rc', '', '', 0, 0, 0, 0)`,
-		`INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, storage, storage_key,
-		 byte_offset, byte_length, size, claimed_at) VALUES ('1.2', '1.2', '1.2', 'both', zeroblob(32), 'rc', '', '', 0, 0, 0, 0)`,
+		// A claim with no reception, a held row with no reception, a
+		// checksum of the wrong length in either, an archived checksum of
+		// the wrong length.
+		`INSERT INTO instance_claims VALUES ('1.2', '', '1.2', '1.2', zeroblob(32), 0)`,
+		`INSERT INTO instance_claims VALUES ('1.2', 'rc', '1.2', '1.2', x'00', 0)`,
+		`INSERT INTO instances VALUES (1, '1.2', '', zeroblob(32), NULL, '', 0, 0, 0, 0)`,
+		`INSERT INTO instances VALUES (1, '1.2', 'rc', x'00', NULL, '', 0, 0, 0, 0)`,
+		`INSERT INTO instances VALUES (1, '1.2', 'rc', zeroblob(32), x'00', '', 0, 0, 0, 0)`,
 	} {
 		out, err := exec.Command(tool, "-batch", path, bad).CombinedOutput() //nolint:gosec // G204, G702: the tool and the database are this test's own.
 		if err == nil || !strings.Contains(string(out), "CHECK constraint failed") {

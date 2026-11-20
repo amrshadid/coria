@@ -218,7 +218,7 @@ func runModel(t *testing.T, seed int64, shared bool) {
 		t.Helper()
 		var a, b, c, d string
 		_ = db.QueryRow(`SELECT subjects||','||sessions||','||scans||','||instances FROM catalog_totals`).Scan(&a)
-		_ = db.QueryRow(`SELECT (SELECT count(*) FROM subjects)||','||(SELECT count(*) FROM sessions)||','||(SELECT count(*) FROM scans)||','||(SELECT count(*) FROM instances WHERE state = 'held')`).Scan(&b)
+		_ = db.QueryRow(`SELECT (SELECT count(*) FROM subjects)||','||(SELECT count(*) FROM sessions)||','||(SELECT count(*) FROM scans)||','||(SELECT count(*) FROM instances)`).Scan(&b)
 		if a != b {
 			t.Fatalf("seed %d after %s: totals %s, rows %s", seed, op, a, b)
 		}
@@ -227,12 +227,13 @@ func runModel(t *testing.T, seed int64, shared bool) {
 		if c != "0" {
 			t.Fatalf("seed %d after %s: %s scans whose counts disagree with their rows", seed, op, c)
 		}
-		_ = db.QueryRow(`SELECT count(*) FROM instances i LEFT JOIN receptions r ON r.id = i.reception_id
-			WHERE i.state = 'claimed' AND (r.id IS NULL OR r.ended = 1 OR r.storage = '')`).Scan(&d)
+		_ = db.QueryRow(`SELECT count(*) FROM instance_claims i LEFT JOIN receptions r ON r.id = i.reception_id
+			WHERE r.id IS NULL OR r.ended = 1 OR r.storage = ''`).Scan(&d)
 		if d != "0" {
 			t.Fatalf("seed %d after %s: %s claims by ended or missing receptions", seed, op, d)
 		}
-		rows, err := db.Query(`SELECT sop_instance_uid, state, sha256, reception_id FROM instances`)
+		rows, err := db.Query(`SELECT sop_instance_uid, 'held', sha256, reception_id FROM instances
+			UNION ALL SELECT sop_instance_uid, 'claimed', sha256, reception_id FROM instance_claims`)
 		if err != nil {
 			t.Fatal(err)
 		}

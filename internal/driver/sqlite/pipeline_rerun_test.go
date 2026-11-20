@@ -216,28 +216,31 @@ func TestPipelineRandomizedAcrossInstances(t *testing.T) {
 		}
 	}
 	// A reception's received count is its received files and the files it
-	// held that have no received file; its quarantined count, its records
-	// less those released back into it.
+	// held that have no received file, while it keeps its received files
+	// (a reception ended done or quarantined has none left); its
+	// quarantined count, its records less those released back into it.
 	check("each reception's counts equal a count over its rows", `SELECT count(*) FROM receptions AS p WHERE
-		files_received <> (SELECT count(*) FROM received_files WHERE reception_id = p.id)
+		(p.state NOT IN ('done', 'quarantined') AND (files_received <> (SELECT count(*) FROM received_files WHERE reception_id = p.id)
 			+ (SELECT count(*) FROM quarantine AS q WHERE q.reception_id = p.id AND NOT EXISTS (SELECT 1 FROM received_files AS r
 				WHERE r.reception_id = p.id AND r.sop_instance_uid = q.sop_instance_uid AND r.sha256 = q.sha256))
-		OR files_released <> (SELECT count(*) FROM received_files WHERE reception_id = p.id AND released = 1)
+		OR files_released <> (SELECT count(*) FROM received_files WHERE reception_id = p.id AND released = 1)))
 		OR files_quarantined <> (SELECT count(*) FROM quarantine AS q WHERE q.reception_id = p.id
 			AND NOT (q.state = 'released' AND q.release_reception = p.id))
-		OR files_archived <> (SELECT count(*) FROM instances WHERE reception_id = p.id AND state = 'held')
+		OR files_archived <> (SELECT count(*) FROM instances WHERE reception_id = p.id)
 		OR associations <> (SELECT count(*) FROM reception_associations WHERE reception_id = p.id)`)
 	check("the quarantine's totals", `SELECT count(*) FROM quarantine_totals WHERE
 		files <> (SELECT count(*) FROM quarantine WHERE state = 'held')
 		OR bytes <> (SELECT coalesce(sum(size), 0) FROM quarantine WHERE state = 'held' AND content_kept = 1)`)
 	check("the catalog's totals", `SELECT count(*) FROM catalog_totals WHERE subjects <> (SELECT count(*) FROM subjects)
 		OR sessions <> (SELECT count(*) FROM sessions) OR scans <> (SELECT count(*) FROM scans)
-		OR instances <> (SELECT count(*) FROM instances WHERE state = 'held')`)
+		OR instances <> (SELECT count(*) FROM instances)`)
 	check("each scan's counts", `SELECT count(*) FROM scans AS s WHERE
 		instances <> (SELECT count(*) FROM instances WHERE scan_id = s.id)
 		OR bytes <> (SELECT coalesce(sum(size), 0) FROM instances WHERE scan_id = s.id)`)
-	check("no claim outlives its reception", `SELECT count(*) FROM instances AS i JOIN receptions AS p ON p.id = i.reception_id
-		WHERE i.state = 'claimed' AND p.ended = 1`)
+	check("no claim outlives its reception", `SELECT count(*) FROM instance_claims AS i JOIN receptions AS p ON p.id = i.reception_id
+		WHERE p.ended = 1`)
+	check("a reception that ended done or quarantined keeps no received file", `SELECT count(*) FROM received_files AS r
+		JOIN receptions AS p ON p.id = r.reception_id WHERE p.state IN ('done', 'quarantined')`)
 	check("arrivals unique", `SELECT count(*) FROM (SELECT study_uid, arrival FROM receptions GROUP BY 1, 2 HAVING count(*) > 1)`)
 	check("arrivals without gaps", `SELECT count(*) FROM (SELECT study_uid FROM receptions GROUP BY 1 HAVING max(arrival) <> count(*))`)
 	check("one open reception per receiver and study", `SELECT count(*) FROM (SELECT receiver, study_uid FROM receptions
@@ -258,7 +261,7 @@ func TestPipelineRandomizedAcrossInstances(t *testing.T) {
 	var receptions, held, instances int64
 	_ = db.QueryRow(`SELECT count(*) FROM receptions`).Scan(&receptions)
 	_ = db.QueryRow(`SELECT count(*) FROM quarantine`).Scan(&held)
-	_ = db.QueryRow(`SELECT count(*) FROM instances WHERE state = 'held'`).Scan(&instances)
+	_ = db.QueryRow(`SELECT count(*) FROM instances`).Scan(&instances)
 	t.Logf("%d receptions, %d quarantine records, %d instances held", receptions, held, instances)
 	if instances == 0 {
 		t.Error("no instance was archived, so the claims and commits were not tested")

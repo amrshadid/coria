@@ -31,8 +31,10 @@ type CatalogSample struct {
 type CatalogIndexes struct {
 	// SubjectsFolded is subjects (folded); SessionsFolded sessions
 	// (subject_id, folded); ScansFolded scans (session_id, folded);
-	// InstancesKey the instances' primary key.
-	SubjectsFolded, SessionsFolded, ScansFolded, InstancesKey string
+	// InstancesKey the index that finds an instance by its SOP Instance
+	// UID; InstancesByScan the one that holds a scan's instances in order
+	// of UID.
+	SubjectsFolded, SessionsFolded, ScansFolded, InstancesKey, InstancesByScan string
 }
 
 // The values of a list's filter that the plan checks try beside a common
@@ -155,11 +157,11 @@ func CatalogPlanCases(c sqlkit.CatalogSQL, v CatalogSample, ix CatalogIndexes, l
 	add("a session by its labels", "sessions_by_label", true, c.SessionByLabels(v.Session[0], v.Session[1]))
 	add("a scan by its labels", "scans_by_label", true, c.ScanByLabels(v.Scan))
 	add("an instance of a scan", ix.InstancesKey, true, c.HeldInstance(v.ScanID, v.UID))
-	// Found by its UID in the primary key, or by its scan and UID in the
-	// scan's index: a lookup of one row either way.
-	out[len(out)-1].Also = "instances_by_scan"
+	// Found by its UID, or by its scan and UID in the scan's index: a
+	// lookup of one row either way.
+	out[len(out)-1].Also = ix.InstancesByScan
 	column = "scan_id"
-	add("a scan's instances", "instances_by_scan", false, c.HeldInstances(v.ScanID, "", limit))
-	add("a scan's instances, after a cursor", "instances_by_scan", true, c.HeldInstances(v.ScanID, v.UID, limit))
+	add("a scan's instances", ix.InstancesByScan, false, c.HeldInstances(v.ScanID, "", limit))
+	add("a scan's instances, after a cursor", ix.InstancesByScan, true, c.HeldInstances(v.ScanID, v.UID, limit))
 	return out
 }

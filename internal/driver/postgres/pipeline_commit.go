@@ -141,11 +141,11 @@ func commitScanRow(ctx context.Context, tx pgx.Tx, c tenant.ScanCommit, sessionI
 	v := c.Values
 	n, err := rowsChanged(tx.Exec(ctx, `INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated,
 		subject_label, subject_folded, session_label, session_folded, storage, modality, series_description, description_folded,
-		series_number, receiver)
-		VALUES ($1, $2, $3, $4, 0, 0, NULL, $5, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) ON CONFLICT DO NOTHING`,
+		series_number, receiver, study_uid)
+		VALUES ($1, $2, $3, $4, 0, 0, NULL, $5, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) ON CONFLICT DO NOTHING`,
 		sessionID, c.SeriesUID, c.ScanLabel, label.Fold(c.ScanLabel), micros(c.At),
 		c.SubjectLabel, label.Fold(c.SubjectLabel), c.SessionLabel, label.Fold(c.SessionLabel), c.Storage,
-		v.Modality, v.SeriesDescription, tenant.FoldDescription(v.SeriesDescription), seriesNumber(v), receiver))
+		v.Modality, v.SeriesDescription, tenant.FoldDescription(v.SeriesDescription), seriesNumber(v), receiver, c.StudyUID))
 	if err != nil {
 		return 0, false, err
 	}
@@ -172,16 +172,23 @@ func commitScanRow(ctx context.Context, tx pgx.Tx, c tenant.ScanCommit, sessionI
 	return scanID, n == 1, nil
 }
 
-// confirmSQL turns a set of the reception's claims into held instances in
-// one statement, in the statement that checks each claim is still this
-// reception's, in the commit's study and series; the UIDs confirmed are
-// returned.
-const confirmSQL = `UPDATE instances AS i SET state = 'held', scan_id = $1, storage = $2, storage_key = u.key,
-
-	byte_offset = u.off, byte_length = u.len, size = u.size, archived_sha256 = u.sha, held_at = $3
-	FROM unnest($4::text[], $5::text[], $6::bigint[], $7::bigint[], $8::bigint[], $9::bytea[]) AS u(uid, key, off, len, size, sha)
-	WHERE i.sop_instance_uid = u.uid AND i.reception_id = $10 AND i.state = 'claimed' AND i.study_uid = $11 AND i.series_uid = $12
-	RETURNING i.sop_instance_uid`
+// confirmSQL moves a set of the reception's claims into held instances in
+// one statement: it removes each claim in the statement that checks the
+// claim is still this reception's, in the commit's study and series, and
+// inserts the held row with the checksum the claim was received with. The
+// key is the layout's (tenant.InstanceKey), so none is kept; the archived
+// checksum is kept only when it is not the received one. The UIDs confirmed
+// are returned.
+const confirmSQL = `WITH taken AS (
+	DELETE FROM instance_claims AS c WHERE c.sop_instance_uid = ANY($3::text[]) AND c.reception_id = $8
+		AND c.study_uid = $9 AND c.series_uid = $10
+	RETURNING c.sop_instance_uid, c.sha256)
+	INSERT INTO instances (sop_instance_uid, scan_id, reception_id, sha256, archived_sha256, storage_key, byte_offset, byte_length,
+		size, held_at)
+	SELECT u.uid, $1, $8, t.sha256, nullif(u.sha, t.sha256), '', u.off, u.len, u.size, $2
+	FROM unnest($3::text[], $4::bigint[], $5::bigint[], $6::bigint[], $7::bytea[]) WITH ORDINALITY AS u(uid, off, len, size, sha, n)
+	JOIN taken AS t ON t.sop_instance_uid = u.uid ORDER BY u.n
+	RETURNING sop_instance_uid`
 
 // CommitScan implements tenant.Pipeline. Its locks, in the package's order:
 // the unit of work (the fence), the reception FOR NO KEY UPDATE, the
@@ -226,11 +233,13 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		// the reception holds its row FOR SHARE, and a step that releases
 		// its claims FOR NO KEY UPDATE, both of which wait for this one.
 		type held struct {
-			state, by string
-			archived  tenant.SHA256
+			held, mine bool
+			archived   tenant.SHA256
 		}
-		rows, err := tx.Query(ctx, `SELECT sop_instance_uid, state, reception_id, archived_sha256 FROM instances
-			WHERE sop_instance_uid = ANY($1::text[])`, uids)
+		rows, err := tx.Query(ctx, `SELECT sop_instance_uid, true, reception_id = $2, coalesce(archived_sha256, sha256) FROM instances
+			WHERE sop_instance_uid = ANY($1::text[])
+			UNION ALL SELECT sop_instance_uid, false, reception_id = $2, sha256 FROM instance_claims
+			WHERE sop_instance_uid = ANY($1::text[])`, uids, c.ReceptionID)
 		got, err := collect(rows, err, func(row scanner) (struct {
 			uid string
 			h   held
@@ -240,7 +249,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 				h   held
 			}
 			var archived []byte
-			err := row.Scan(&r.uid, &r.h.state, &r.h.by, &archived)
+			err := row.Scan(&r.uid, &r.h.held, &r.h.mine, &archived)
 			r.h.archived = sqlkit.ToSHA256(archived)
 			return r, err
 		})
@@ -251,27 +260,26 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		for _, r := range got {
 			byUID[r.uid] = r.h
 		}
-		var keys []string
 		var offs, lens, sizes []int64
 		var sums [][]byte
 		var confirm []string
 		var newBytes int64
 		for _, in := range c.Instances {
 			h, found := byUID[in.SOPInstanceUID]
-			if found && h.state == "held" && h.by == c.ReceptionID && h.archived == in.ArchivedSHA256 {
+			if found && h.held && h.mine && h.archived == in.ArchivedSHA256 {
 				continue // confirmed by this reception before: a commit written again
 			}
-			if !found || h.state != "claimed" || h.by != c.ReceptionID {
+			if !found || h.held || !h.mine {
 				return tenant.Precondition("an instance confirmed is not claimed by this reception")
 			}
-			confirm, keys = append(confirm, in.SOPInstanceUID), append(keys, in.Key)
+			confirm = append(confirm, in.SOPInstanceUID)
 			offs, lens, sizes = append(offs, in.Offset), append(lens, in.Length), append(sizes, in.Size)
 			sums = append(sums, sumBytes(in.ArchivedSHA256))
 			newBytes += in.Size
 		}
 		var newInstances int64
 		if len(confirm) > 0 {
-			rows, err := tx.Query(ctx, confirmSQL, scanID, c.Storage, micros(c.At), confirm, keys, offs, lens, sizes, sums,
+			rows, err := tx.Query(ctx, confirmSQL, scanID, micros(c.At), confirm, offs, lens, sizes, sums,
 				c.ReceptionID, c.StudyUID, c.SeriesUID)
 			done, err := collect(rows, err, func(row scanner) (string, error) {
 				var u string
@@ -285,6 +293,11 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 				return tenant.Precondition("an instance confirmed was claimed in another study or series")
 			}
 			newInstances = int64(len(done))
+			if _, err := tx.Exec(ctx, `INSERT INTO reception_scans (reception_id, scan_id, instances, bytes) VALUES ($1, $2, $3, $4)
+				ON CONFLICT (reception_id, scan_id) DO UPDATE SET instances = reception_scans.instances + excluded.instances,
+				bytes = reception_scans.bytes + excluded.bytes`, c.ReceptionID, scanID, newInstances, newBytes); err != nil {
+				return err
+			}
 		}
 		if err := addToCatalog(ctx, tx, c, session, scanID, newScan, newInstances, newBytes); err != nil {
 			return err

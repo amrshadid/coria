@@ -16,6 +16,13 @@ import (
 	"github.com/amrshadid/coria/internal/testkit"
 )
 
+// studyInstancesSQL is the first page of a study's instances, scan by scan
+// in order of id, each scan's in order of SOP Instance UID: scans_by_study,
+// then instances_by_scan for each scan, so the page stops at its limit.
+const studyInstancesSQL = `SELECT s.series_uid, i.sop_instance_uid, i.storage_key, s.subject_label, s.session_label, s.label, i.size
+	FROM scans AS s JOIN instances AS i ON i.scan_id = s.id
+	WHERE s.study_uid = $1 ORDER BY s.id, i.sop_instance_uid LIMIT 1001`
+
 // catalogQuery is one read the catalog's services will make of a large
 // tenant, with how to draw its arguments from the tenant.
 type catalogQuery struct {
@@ -117,15 +124,13 @@ func TestScaleCatalog(t *testing.T) {
 	instances := sampleInstances(t, conn, scans)
 	pick := func(r *rand.Rand) scanRow { return scans[r.IntN(len(scans))] }
 	queries := []catalogQuery{
-		{"an instance by its UID alone", `SELECT i.storage, i.storage_key, i.byte_offset, i.byte_length, i.size, i.archived_sha256, s.series_uid, se.study_uid
-			FROM instances AS i JOIN scans AS s ON s.id = i.scan_id JOIN sessions AS se ON se.id = s.session_id
-			WHERE i.sop_instance_uid = $1 AND i.state = 'held'`,
+		{"an instance by its UID alone", `SELECT s.storage, i.storage_key, s.subject_label, s.session_label, s.label, i.byte_offset,
+			i.byte_length, i.size, coalesce(i.archived_sha256, i.sha256), s.series_uid, s.study_uid
+			FROM instances AS i JOIN scans AS s ON s.id = i.scan_id WHERE i.sop_instance_uid = $1`,
 			func(r *rand.Rand) []any { return []any{instances[r.IntN(len(instances))]} }},
 		{"a scan's first page of instances", scanInstancesSQL, func(r *rand.Rand) []any { return []any{pick(r).series, "", 1001} }},
 		{"a scan's page after a cursor", scanInstancesSQL, func(r *rand.Rand) []any { return []any{pick(r).series, "2.25.5", 1001} }},
-		{"a study's instances, first page", `SELECT s.series_uid, i.sop_instance_uid, i.storage_key, i.size
-			FROM sessions AS se JOIN scans AS s ON s.session_id = se.id JOIN instances AS i ON i.scan_id = s.id AND i.state = 'held'
-			WHERE se.study_uid = $1 ORDER BY s.id, i.sop_instance_uid LIMIT 1001`,
+		{"a study's instances, first page", studyInstancesSQL,
 			func(r *rand.Rand) []any { return []any{pick(r).study} }},
 		{"a session by study UID", sessionLabelsSQL, func(r *rand.Rand) []any { return []any{pick(r).study} }},
 		{"a scan by series UID", `SELECT label, instances, bytes FROM scans WHERE series_uid = $1`,
@@ -251,7 +256,7 @@ func sampleInstances(t *testing.T, conn *pgx.Conn, scans []scanRow) []string {
 	var out []string
 	for i := 0; i < len(scans); i += max(1, len(scans)/1000) {
 		rows, err := conn.Query(context.Background(), `SELECT i.sop_instance_uid FROM scans AS s JOIN instances AS i ON i.scan_id = s.id
-			AND i.state = 'held' WHERE s.series_uid = $1 ORDER BY i.sop_instance_uid LIMIT 2`, scans[i].series)
+			WHERE s.series_uid = $1 ORDER BY i.sop_instance_uid LIMIT 2`, scans[i].series)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -305,7 +310,7 @@ func catalogProbes(t *testing.T, conn *pgx.Conn) []testkit.CatalogProbe {
 		t.Fatal(err)
 	}
 	rows, err := conn.Query(ctx, `SELECT c.subject_label, c.session_label, c.label,
-		(SELECT min(sop_instance_uid) FROM instances WHERE scan_id = c.id AND state = 'held') FROM scans AS c WHERE c.id % $1 = 0`,
+		(SELECT min(sop_instance_uid) FROM instances WHERE scan_id = c.id) FROM scans AS c WHERE c.id % $1 = 0`,
 		max(1, n/1000))
 	if err != nil {
 		t.Fatal(err)

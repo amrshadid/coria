@@ -18,7 +18,8 @@ import (
 // constraints: the automatic index of each, in the order the table states
 // them.
 var catalogIndexes = testkit.CatalogIndexes{SubjectsFolded: "sqlite_autoindex_subjects_1",
-	SessionsFolded: "sqlite_autoindex_sessions_2", ScansFolded: "sqlite_autoindex_scans_2", InstancesKey: "PRIMARY KEY"}
+	SessionsFolded: "sqlite_autoindex_sessions_2", ScansFolded: "sqlite_autoindex_scans_2", InstancesKey: "instances_by_uid",
+	InstancesByScan: "PRIMARY KEY"}
 
 // fillCatalog writes a catalog of subjects subjects, five sessions each and
 // six scans a session with two instances each, straight through SQL into a
@@ -57,8 +58,7 @@ func fillCatalog(tb testing.TB, db *sql.DB, subjects int) {
 		`INSERT INTO session_modalities (session_id, modality, created)
 		 SELECT DISTINCT c.session_id, c.modality, s.created FROM scans AS c JOIN sessions AS s ON s.id = c.session_id`,
 		fmt.Sprintf(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < %d)
-		 INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.1', '2.25.2.1', 'held', randomblob(32), 'rc', (i - 1) / 2 + 1, 'store', 'k' || i,
-		   0, 1000, 1000, randomblob(32), 0, 0 FROM n`, scans*2),
+		 INSERT INTO instances SELECT (i - 1) / 2 + 1, '2.25.3.' || i, 'rc', randomblob(32), NULL, '', 0, 1000, 1000, 0 FROM n`, scans*2),
 		`ANALYZE`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
@@ -80,7 +80,7 @@ func sampleCatalog(tb testing.TB, db *sql.DB) testkit.CatalogSample {
 	}
 	err := db.QueryRow(`SELECT c.id, c.subject_label, c.session_label, c.label, c.subject_folded, c.session_folded, c.folded,
 		c.description_folded, c.created, c.modality, c.receiver, s.id, s.created, s.subject_id, s.study_date, s.folded, sub.created,
-		(SELECT min(sop_instance_uid) FROM instances WHERE scan_id = c.id AND state = 'held')
+		(SELECT min(sop_instance_uid) FROM instances WHERE scan_id = c.id)
 		FROM scans AS c JOIN sessions AS s ON s.id = c.session_id JOIN subjects AS sub ON sub.id = s.subject_id
 		WHERE c.id >= ? AND c.modality <> '' AND s.study_date <> '' ORDER BY c.id LIMIT 1`, n/2).Scan(
 		&v.ScanID, &v.Scan.Subject, &v.Scan.Session, &v.Scan.Scan, &v.ScanKey.SubjectFolded, &v.ScanKey.SessionFolded, &v.ScanKey.Folded,

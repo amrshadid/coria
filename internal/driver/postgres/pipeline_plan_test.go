@@ -136,13 +136,17 @@ func TestPipelinePlansAtScale(t *testing.T) {
 		`INSERT INTO subjects (label, folded, created) SELECT 'sub-' || n, 'sub-' || n, now() FROM generate_series(1, 1000) n`,
 		`INSERT INTO sessions (study_uid, subject_id, label, folded, storage, created)
 		 SELECT '2.25.1.' || n, n % 1000 + 1, 'ses-' || n, 'ses-' || n, 'store', now() FROM generate_series(1, 2000) n`,
-		`INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated, session_label, session_folded)
-		 SELECT n, '2.25.2.' || n, 'scan-1', 'scan-1', 1000, 1000000, NULL, now(), now(), 'ses-' || n, 'ses-' || n FROM generate_series(1, 2000) n`,
-		`INSERT INTO instances SELECT '2.25.3.' || i, '2.25.1.' || (i / 1000 + 1), '2.25.2.' || (i / 1000 + 1), 'held',
-		   sha256(i::text::bytea), 'rc' || (i / 1000 + 1), i / 1000 + 1, 'store', 'k' || i, 0, 1000, 1000, sha256(i::text::bytea), now(), now()
+		`INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated, session_label, session_folded,
+		   storage, study_uid)
+		 SELECT n, '2.25.2.' || n, 'scan-1', 'scan-1', 1000, 1000000, NULL, now(), now(), 'ses-' || n, 'ses-' || n, 'store', '2.25.1.' || n
+		 FROM generate_series(1, 2000) n`,
+		`INSERT INTO instances SELECT '2.25.3.' || i, i / 1000 + 1, 'rc' || (i / 1000 + 1), sha256(i::text::bytea), NULL, '', 0, 1000, 1000, now()
 		 FROM generate_series(0, 1999999) i`,
-		`INSERT INTO instances SELECT '2.25.4.' || i, '2.25.1.900000000', '2.25.2.900000000', 'claimed', sha256(i::text::bytea), 'claimer',
-		   NULL, '', '', 0, 0, 0, NULL, now(), NULL FROM generate_series(1, 100000) i`,
+		`INSERT INTO reception_scans SELECT 'rc' || n, n, 1000, 1000000 FROM generate_series(1, 2000) n`,
+		`INSERT INTO instance_claims SELECT '2.25.4.' || i, 'claimer', '2.25.1.900000000', '2.25.2.900000000', sha256(i::text::bytea), now()
+		 FROM generate_series(1, 100000) i`,
+		`INSERT INTO instance_claims SELECT '2.25.5.' || i, 'busy' || (i % 900), '2.25.1.' || (i % 900), '2.25.2.' || (i % 900),
+		   sha256(i::text::bytea), now() FROM generate_series(1, 900000) i`,
 		`INSERT INTO received_files SELECT 'rc' || (i / 1000 + 1), '2.25.3.' || i, sha256(i::text::bytea), '2.25.2.1', '2.25.1.1',
 		   '1.2.840.10008.5.1.4.1.1.4', '1.2.840.10008.1.2.1', 1000, 'in/' || i, '', '', '', '', false, now() FROM generate_series(0, 999999) i`,
 		`INSERT INTO received_files SELECT 'claimer', '2.25.4.' || i, sha256(i::text::bytea), '2.25.2.900000000', '2.25.1.900000000',
@@ -248,13 +252,14 @@ func TestPipelinePlansAtScale(t *testing.T) {
 		{"the next unit to claim", "work_claimable", claimNextSQL, []any{"archive", when}, false},
 		{"a study's session", "sessions_study_uid_key", sessionLabelsSQL, []any{"2.25.1.1500"}, false},
 		{"the scans of series", "scans_series_uid_key", scanLabelsSQL, []any{[]string{"2.25.2.5", "2.25.2.7"}}, false},
-		{"the scans a reception confirmed", "instances_held_by", receptionScansSQL, []any{"rc501", 10001}, true},
-		{"a storage holding no instance", "instances_on_storage", storageHoldsSQL, []any{"other"}, false},
+		{"the scans a reception confirmed", "reception_scans_pkey", receptionScansSQL, []any{"rc501", 10001}, true},
+		{"a storage holding no instance", "scans_by_storage", storageHoldsSQL, []any{"other"}, false},
 		{"a storage no session is on", "sessions_by_storage", sessionsOnStorageSQL, []any{"other"}, false},
 		// The receptions not ended are few by nature; whichever partial index of
 		// them is read, a sort of those few is allowed.
 		{"receptions without work", "receptions_in_progress|receptions_by_storage", receptionsWithoutWorkSQL, []any{time.Unix(0, 0).UTC(), "", 1001}, true},
-		{"a batch's instance rows", "instances_pkey", instanceRowsSQL, []any{uids}, false},
+		{"a batch's instance rows, held", "instances_pkey", instanceRowsSQL, []any{uids}, false},
+		{"a batch's instance rows, claimed", "instance_claims_pkey", instanceRowsSQL, []any{uids}, false},
 		{"the received files a claim names", "received_files_pkey", receivedOfClaimSQL, []any{"claimer", uids, sums}, false},
 		{"a page of events", "events_pkey", eventsAfterSQL, []any{int64(1500000), 1000}, false},
 		{"a page of a rare type of events", "events_by_type", eventsOfType(tenant.EventStorageSpace), []any{int64(1500000), 1000}, false},
@@ -295,14 +300,13 @@ func TestPipelinePlansAtScale(t *testing.T) {
 		studies[i], series[i] = "2.25.1.900000000", "2.25.2.900000000"
 	}
 	check("a claim's insert", tx, "", insertClaimsSQL, false, "claimer", when, newUIDs, studies, series, sums)
-	keys, offs, lens := make([]string, 1000), make([]int64, 1000), make([]int64, 1000)
-	for i := range keys {
-		keys[i] = "k"
-	}
-	check("a commit's confirmation", tx, "instances_pkey", confirmSQL, false, int64(1), "store", when, uids, keys, offs, lens, lens, sums,
+	check("a claim's check against what was held meanwhile", tx, "instances_pkey", heldAfterClaimSQL, false, newUIDs)
+	check("the claims dropped for what was held meanwhile", tx, "instance_claims_pkey", dropClaimsSQL, false, newUIDs, "claimer")
+	offs, lens := make([]int64, 1000), make([]int64, 1000)
+	check("a commit's confirmation", tx, "instance_claims_pkey", confirmSQL, false, int64(1), when, uids, offs, lens, lens, sums,
 		"claimer", "2.25.1.900000000", "2.25.2.900000000")
 	began := time.Now()
-	check("the release of 100,000 claims", tx, "instances_claimed", releaseClaimedSQL, false, "claimer")
+	check("the release of 100,000 claims", tx, "instance_claims_by_reception", releaseClaimedSQL, false, "claimer")
 	t.Logf("released 100,000 claims in %v", time.Since(began))
 	if err := tx.Rollback(ctx); err != nil {
 		t.Fatal(err)

@@ -69,12 +69,11 @@ func pipelineEntries(s *pipelineStatements, p *pools) []stmtEntry {
 			WHERE id = ? AND attempt = ? AND state IN ('queued', 'leased')`},
 		{&s.duplicates, r, duplicatesSQL},
 		{&s.instanceRow, w, instanceRowSQL},
-		// A new row, claimed; ON CONFLICT DO NOTHING so that a claim that
-		// meets another's row (committed meanwhile, on a database with
-		// several writers) reads that row and decides again.
-		{&s.insertClaim, w, `INSERT INTO instances (sop_instance_uid, study_uid, series_uid, state, sha256, reception_id, scan_id,
-			storage, storage_key, byte_offset, byte_length, size, archived_sha256, claimed_at, held_at)
-			VALUES (?, ?, ?, 'claimed', ?, ?, NULL, '', '', 0, 0, 0, NULL, ?, NULL) ON CONFLICT DO NOTHING`},
+		// A new claim; ON CONFLICT DO NOTHING so that a claim that meets
+		// another's (committed meanwhile, on a database with several
+		// writers) reads that row and decides again.
+		{&s.insertClaim, w, `INSERT INTO instance_claims (sop_instance_uid, study_uid, series_uid, sha256, reception_id, claimed_at)
+			VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`},
 		// The reception's received file a claim names: the received files'
 		// primary key.
 		{&s.receivedFile, w, `SELECT study_uid, series_uid FROM received_files WHERE reception_id = ? AND sop_instance_uid = ? AND sha256 = ?`},

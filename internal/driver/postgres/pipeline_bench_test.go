@@ -137,11 +137,11 @@ func fillHeld(b *testing.B, conn *pgx.Conn) {
 		`INSERT INTO subjects (label, folded, created) VALUES ('sub-01', 'sub-01', now())`,
 		`INSERT INTO sessions (study_uid, subject_id, label, folded, storage, created)
 		 SELECT '2.25.1.' || i, 1, 'ses-' || i, 'ses-' || i, 'store', now() FROM generate_series(1, 1000) i`,
-		`INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated)
-		 SELECT i, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 1000, 524288000, NULL, now(), now() FROM generate_series(1, 1000) i`,
-		`INSERT INTO instances SELECT '2.25.3.' || (i + 1), '2.25.1.' || (i / 1000 + 1), '2.25.2.' || (i / 1000 + 1), 'held',
-		   sha256(i::text::bytea), 'held' || (i / 1000), i / 1000 + 1, 'store', 'k', 0, 524288, 524288, sha256(i::text::bytea), now(), now()
-		 FROM generate_series(0, 999999) i`,
+		`INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated, storage, study_uid)
+		 SELECT i, '2.25.2.' || i, 'scan-' || i, 'scan-' || i, 1000, 524288000, NULL, now(), now(), 'store', '2.25.1.' || i
+		 FROM generate_series(1, 1000) i`,
+		`INSERT INTO instances SELECT '2.25.3.' || (i + 1), i / 1000 + 1, 'held' || (i / 1000), sha256(i::text::bytea), NULL, '', 0, 524288,
+		   524288, now() FROM generate_series(0, 999999) i`,
 		`UPDATE catalog_totals SET subjects = 1, sessions = 1000, scans = 1000, instances = 1000000`,
 		`INSERT INTO receptions SELECT 'claimer' || c, 'dimse', '2.25.1.' || (5000 + c), 1, 'identified', false, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		   'sub-01', 'ses-' || (5000 + c), 'store', '', now(), now(), now(), NULL, 0, '[]', false, '', '', '', NULL FROM generate_series(0, 15) c`,
@@ -256,7 +256,7 @@ func BenchmarkCommitScan(b *testing.B) {
 					FROM unnest($1::text[], $2::text[]) AS t(id, st)`, ids, rstudies); err != nil {
 					b.Fatal(err)
 				}
-				if _, err := conn.Exec(ctx, `INSERT INTO instances SELECT u, st, se, 'claimed', $5, r, NULL, '', '', 0, 0, 0, NULL, now(), NULL
+				if _, err := conn.Exec(ctx, `INSERT INTO instance_claims SELECT u, r, st, se, $5, now()
 					FROM unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS t(u, st, se, r)`,
 					uids, istudies, iseries, irecs, sumBytes(tenant.SHA256{2})); err != nil {
 					b.Fatal(err)

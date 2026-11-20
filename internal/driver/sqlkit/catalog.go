@@ -38,10 +38,13 @@ const (
 		instance_count, bytes, storage, receiver, updated`
 	ScanColumns = `id, created, subject_folded, session_folded, folded, description_folded, subject_label, session_label, label,
 		series_uid, modality, series_description, series_number, instances, bytes, storage, manifest_sha256, receiver, updated`
-	// HeldInstanceColumns are tenant.ScanInstance's columns, as the
-	// pipeline's ScanInstances reads them.
-	HeldInstanceColumns = `sop_instance_uid, reception_id, storage, storage_key, byte_offset, byte_length, size, sha256,
-		archived_sha256, held_at`
+	// HeldInstanceColumns are what an instance row keeps of
+	// tenant.ScanInstance, as the pipeline's ScanInstances reads them; the
+	// storage and the labels its key is made from are its scan's
+	// (tenant.InstanceKey), and its archived checksum is the received one
+	// when the row keeps none.
+	HeldInstanceColumns = `sop_instance_uid, reception_id, storage_key, byte_offset, byte_length, size, sha256,
+		coalesce(archived_sha256, sha256), held_at`
 )
 
 // The bounds of a newest-first range of keyRange with no time given. Every
@@ -396,11 +399,11 @@ func (c CatalogSQL) ModalitiesOf(ids []int64) (CatalogRead, error) {
 }
 
 // HeldInstances returns the page of a scan's held instances after the UID
-// after: instances_by_scan, in order of SOP Instance UID.
+// after: a range of the instances' primary key, (scan_id,
+// sop_instance_uid), in order of SOP Instance UID.
 func (c CatalogSQL) HeldInstances(scanID int64, after string, limit int) CatalogRead {
 	b := &builder{c: c}
 	b.where("scan_id = %s", scanID)
-	b.where("state = 'held'")
 	b.where("sop_instance_uid > %s", after)
 	return b.read(HeldInstanceColumns, "instances", "sop_instance_uid", limit)
 }
@@ -409,8 +412,7 @@ func (c CatalogSQL) HeldInstances(scanID int64, after string, limit int) Catalog
 // of id scanID: the instances' primary key.
 func (c CatalogSQL) HeldInstance(scanID int64, uid string) CatalogRead {
 	b := &builder{c: c}
-	b.where("sop_instance_uid = %s", uid)
-	b.where("state = 'held'")
 	b.where("scan_id = %s", scanID)
+	b.where("sop_instance_uid = %s", uid)
 	return b.one(HeldInstanceColumns, "instances")
 }

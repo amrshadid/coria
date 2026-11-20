@@ -47,7 +47,7 @@ want "the tenant file's mode" 600 "$(mode "$db")"
 echo
 echo "== tables"
 "$SQLITE3" -batch "$db" '.tables'
-want "tables" "audit catalog_totals event_checkpoints event_marks events instances quarantine quarantine_totals received_files receivers reception_associations reception_steps receptions scans schema_migrations sessions settings sqlite_sequence storage_totals storages subjects tenant_secrets work" \
+want "tables" "audit catalog_totals event_checkpoints event_marks events instance_claims instances quarantine quarantine_totals received_files receivers reception_associations reception_scans reception_steps receptions scans schema_migrations session_modalities sessions settings sqlite_sequence storage_totals storages subjects tenant_secrets work" \
 	"$(q "SELECT group_concat(name, ' ') FROM (SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name)")"
 
 show schema_migrations "SELECT version, name, hex(checksum) AS checksum, applied FROM schema_migrations"
@@ -55,7 +55,7 @@ show settings "SELECT * FROM settings"
 show audit "SELECT * FROM audit"
 echo
 
-want "schema_migrations rows" 7 "$(q 'SELECT count(*) FROM schema_migrations')"
+want "schema_migrations rows" 9 "$(q 'SELECT count(*) FROM schema_migrations')"
 want "settings rows" 2 "$(q 'SELECT count(*) FROM settings')"
 want "audit rows" 5 "$(q 'SELECT count(*) FROM audit')"
 want "integrity_check" ok "$(q 'PRAGMA integrity_check')"

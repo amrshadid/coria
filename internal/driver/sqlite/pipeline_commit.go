@@ -139,11 +139,11 @@ func commitScanRow(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, session
 	v := c.Values
 	res, err := tx.ExecContext(ctx, `INSERT INTO scans (session_id, series_uid, label, folded, instances, bytes, manifest_sha256, created, updated,
 		subject_label, subject_folded, session_label, session_folded, storage, modality, series_description, description_folded,
-		series_number, receiver)
-		VALUES (?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+		series_number, receiver, study_uid)
+		VALUES (?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 		sessionID, c.SeriesUID, c.ScanLabel, label.Fold(c.ScanLabel), micros(c.At), micros(c.At),
 		c.SubjectLabel, label.Fold(c.SubjectLabel), c.SessionLabel, label.Fold(c.SessionLabel), c.Storage,
-		v.Modality, v.SeriesDescription, tenant.FoldDescription(v.SeriesDescription), seriesNumber(v), receiver)
+		v.Modality, v.SeriesDescription, tenant.FoldDescription(v.SeriesDescription), seriesNumber(v), receiver, c.StudyUID)
 	if err != nil {
 		return 0, false, err
 	}
@@ -174,12 +174,18 @@ func commitScanRow(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, session
 	return scanID, n == 1, nil
 }
 
-// confirmInstanceSQL turns an instance's claim by the reception into the
-// held instance, in the statement that checks the claim is still this
-// reception's, in the commit's study and series.
-const confirmInstanceSQL = `UPDATE instances SET state = 'held', scan_id = ?, storage = ?, storage_key = ?, byte_offset = ?,
-	byte_length = ?, size = ?, archived_sha256 = ?, held_at = ?
-	WHERE sop_instance_uid = ? AND reception_id = ? AND state = 'claimed' AND study_uid = ? AND series_uid = ?`
+// takeClaimSQL removes an instance's claim by the reception, in the
+// statement that checks the claim is still this reception's, in the
+// commit's study and series, and returns the checksum it was received with,
+// which the held row keeps.
+const takeClaimSQL = `DELETE FROM instance_claims WHERE sop_instance_uid = ? AND reception_id = ? AND study_uid = ? AND series_uid = ?
+	RETURNING sha256`
+
+// insertHeldSQL writes a held instance, in its scan. Its key is the
+// layout's (tenant.InstanceKey), so none is kept; its archived checksum is
+// kept only when it is not the received one.
+const insertHeldSQL = `INSERT INTO instances (scan_id, sop_instance_uid, reception_id, sha256, archived_sha256, storage_key,
+	byte_offset, byte_length, size, held_at) VALUES (?1, ?2, ?3, ?4, CASE WHEN ?5 = ?4 THEN NULL ELSE ?5 END, '', ?6, ?7, ?8, ?9)`
 
 // CommitScan implements tenant.Pipeline.
 func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Scan, error) {
@@ -213,32 +219,48 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		}
 		var newInstances, newBytes int64
 		for _, in := range c.Instances {
-			var state, by string
+			var by string
 			var archived []byte
-			found, err := catalogID(ctx, tx, `SELECT state, reception_id, archived_sha256 FROM instances WHERE sop_instance_uid = ?`,
-				[]any{in.SOPInstanceUID}, &state, &by, &archived)
+			found, err := catalogID(ctx, tx, `SELECT reception_id, coalesce(archived_sha256, sha256) FROM instances
+				WHERE sop_instance_uid = ?`, []any{in.SOPInstanceUID}, &by, &archived)
 			if err != nil {
 				return err
 			}
-			if found && state == "held" && by == c.ReceptionID && sqlkit.ToSHA256(archived) == in.ArchivedSHA256 {
+			if found && by == c.ReceptionID && sqlkit.ToSHA256(archived) == in.ArchivedSHA256 {
 				continue // confirmed by this reception before: a commit written again
 			}
-			if !found || state != "claimed" || by != c.ReceptionID {
+			if found {
 				return tenant.Precondition("an instance confirmed is not claimed by this reception")
 			}
-			res, err := tx.ExecContext(ctx, confirmInstanceSQL, scanID, c.Storage, in.Key, in.Offset, in.Length, in.Size,
-				in.ArchivedSHA256[:], micros(c.At), in.SOPInstanceUID, c.ReceptionID, c.StudyUID, c.SeriesUID)
-			if err != nil {
-				return err
-			}
-			if n, err := res.RowsAffected(); err != nil || n != 1 {
+			var sum []byte
+			err = tx.QueryRowContext(ctx, takeClaimSQL, in.SOPInstanceUID, c.ReceptionID, c.StudyUID, c.SeriesUID).Scan(&sum)
+			if errors.Is(err, sql.ErrNoRows) {
+				mine, err := exists(ctx, tx, `SELECT 1 FROM instance_claims WHERE sop_instance_uid = ? AND reception_id = ?`,
+					in.SOPInstanceUID, c.ReceptionID)
 				if err != nil {
 					return err
 				}
-				return tenant.Precondition("an instance confirmed was claimed in another study or series")
+				if mine {
+					return tenant.Precondition("an instance confirmed was claimed in another study or series")
+				}
+				return tenant.Precondition("an instance confirmed is not claimed by this reception")
+			}
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, insertHeldSQL, scanID, in.SOPInstanceUID, c.ReceptionID, sum, in.ArchivedSHA256[:],
+				in.Offset, in.Length, in.Size, micros(c.At)); err != nil {
+				return err
 			}
 			newInstances++
 			newBytes += in.Size
+		}
+		if newInstances > 0 {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO reception_scans (reception_id, scan_id, instances, bytes) VALUES (?, ?, ?, ?)
+				ON CONFLICT (reception_id, scan_id) DO UPDATE SET instances = instances + excluded.instances, bytes = bytes + excluded.bytes`,
+				c.ReceptionID, scanID, newInstances, newBytes); err != nil {
+				return err
+			}
 		}
 		var manifest any
 		if !c.ManifestSHA256.IsZero() {
