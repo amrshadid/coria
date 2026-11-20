@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/profile.proto.
  */
 export const file_coria_v1_profile: GenFile = /*@__PURE__*/
-  fileDesc("ChZjb3JpYS92MS9wcm9maWxlLnByb3RvEghjb3JpYS52MSLKAQoPUHJvZmlsZURvY3VtZW50Eg0KBWJhc2VzGAEgAygJEiQKBXJ1bGVzGAIgAygLMhUuY29yaWEudjEuUHJvZmlsZVJ1bGUSKgoHdW5uYW1lZBgDIAEoDjIZLmNvcmlhLnYxLlVubmFtZWRFbGVtZW50cxIXCg9kYXRlX3NoaWZ0X2RheXMYBCABKAUSKAoLcGl4ZWxfcnVsZXMYBSADKAsyEy5jb3JpYS52MS5QaXhlbFJ1bGUSEwoLZGVzY3JpcHRpb24YBiABKAkiqwEKC1Byb2ZpbGVSdWxlEgwKBG5hbWUYASABKAkSKwoIc2VsZWN0b3IYAiABKAsyGS5jb3JpYS52MS5Qcm9maWxlU2VsZWN0b3ISKAoEd2hlbhgDIAMoCzIaLmNvcmlhLnYxLlByb2ZpbGVDb25kaXRpb24SJwoGYWN0aW9uGAQgASgLMhcuY29yaWEudjEuUHJvZmlsZUFjdGlvbhIOCgZyZWFzb24YBSABKAkizwEKD1Byb2ZpbGVTZWxlY3RvchINCgN0YWcYASABKAlIABIRCgdrZXl3b3JkGAIgASgJSAASDwoFZ3JvdXAYAyABKAlIABIMCgJ2chgEIAEoCUgAEjMKD3ByaXZhdGVfZWxlbWVudBgFIAEoCzIYLmNvcmlhLnYxLlByaXZhdGVFbGVtZW50SAASDgoEcGF0aBgGIAEoCUgAEi4KDGNvbnRlbnRfaXRlbRgHIAEoCzIWLmNvcmlhLnYxLkNvZGVkQ29uY2VwdEgAQgYKBGtpbmQiQQoOUHJpdmF0ZUVsZW1lbnQSDwoHY3JlYXRvchgBIAEoCRINCgVncm91cBgCIAEoCRIPCgdlbGVtZW50GAMgASgJIi0KDENvZGVkQ29uY2VwdBIOCgZzY2hlbWUYASABKAkSDQoFdmFsdWUYAiABKAkioQEKEFByb2ZpbGVDb25kaXRpb24SKwoHc3ViamVjdBgBIAEoDjIaLmNvcmlhLnYxLkNvbmRpdGlvblN1YmplY3QSEAoGZXF1YWxzGAIgASgJSAASEAoGcHJlZml4GAMgASgJSAASEQoHcGF0dGVybhgEIAEoCUgAEhEKB3ByZXNlbnQYBSABKAhIABIOCgZuZWdhdGUYBiABKAhCBgoEdGVzdCKHBAoNUHJvZmlsZUFjdGlvbhIkCgRrZWVwGAEgASgLMhQuY29yaWEudjEuS2VlcEFjdGlvbkgAEigKBnJlbW92ZRgCIAEoCzIWLmNvcmlhLnYxLlJlbW92ZUFjdGlvbkgAEiYKBWVtcHR5GAMgASgLMhUuY29yaWEudjEuRW1wdHlBY3Rpb25IABIqCgdyZXBsYWNlGAQgASgLMhcuY29yaWEudjEuUmVwbGFjZUFjdGlvbkgAEiIKA3NldBgFIAEoCzITLmNvcmlhLnYxLlNldEFjdGlvbkgAEiQKBGhhc2gYBiABKAsyFC5jb3JpYS52MS5IYXNoQWN0aW9uSAASIgoDdWlkGAcgASgLMhMuY29yaWEudjEuVWlkQWN0aW9uSAASJgoFc2hpZnQYCCABKAsyFS5jb3JpYS52MS5TaGlmdEFjdGlvbkgAEjAKCmdlbmVyYWxpemUYCSABKAsyGi5jb3JpYS52MS5HZW5lcmFsaXplQWN0aW9uSAASKAoGbG9va3VwGAogASgLMhYuY29yaWEudjEuTG9va3VwQWN0aW9uSAASJgoFY2xlYW4YCyABKAsyFS5jb3JpYS52MS5DbGVhbkFjdGlvbkgAEjAKCnF1YXJhbnRpbmUYDCABKAsyGi5jb3JpYS52MS5RdWFyYW50aW5lQWN0aW9uSABCBgoEa2luZCIMCgpLZWVwQWN0aW9uIg4KDFJlbW92ZUFjdGlvbiINCgtFbXB0eUFjdGlvbiJACg1SZXBsYWNlQWN0aW9uEhIKCGNvbnN0YW50GAEgASgJSAASEgoIdGVtcGxhdGUYAiABKAlIAEIHCgV2YWx1ZSI8CglTZXRBY3Rpb24SEgoIY29uc3RhbnQYASABKAlIABISCgh0ZW1wbGF0ZRgCIAEoCUgAQgcKBXZhbHVlIgwKCkhhc2hBY3Rpb24iCwoJVWlkQWN0aW9uIg0KC1NoaWZ0QWN0aW9uIhIKEEdlbmVyYWxpemVBY3Rpb24iSgoMTG9va3VwQWN0aW9uEg0KBXRhYmxlGAEgASgJEisKCm9uX21pc3NpbmcYAiABKA4yFy5jb3JpYS52MS5Mb29rdXBNaXNzaW5nIg0KC0NsZWFuQWN0aW9uIhIKEFF1YXJhbnRpbmVBY3Rpb24i+AEKCVBpeGVsUnVsZRIMCgRuYW1lGAEgASgJEigKBHdoZW4YAiADKAsyGi5jb3JpYS52MS5Qcm9maWxlQ29uZGl0aW9uEgwKBHJvd3MYAyABKAUSDwoHY29sdW1ucxgEIAEoBRIoCgZyZWRhY3QYBSABKAsyFi5jb3JpYS52MS5SZWRhY3RQaXhlbHNIABImCgZkZXRlY3QYBiABKAsyFC5jb3JpYS52MS5EZXRlY3RUZXh0SAASKAoGYWNjZXB0GAcgASgLMhYuY29yaWEudjEuQWNjZXB0UGl4ZWxzSAASDgoGcmVhc29uGAggASgJQggKBmFjdGlvbiI8CgxSZWRhY3RQaXhlbHMSLAoKcmVjdGFuZ2xlcxgBIAMoCzIYLmNvcmlhLnYxLlBpeGVsUmVjdGFuZ2xlIm4KDlBpeGVsUmVjdGFuZ2xlEgkKAXgYASABKAUSCQoBeRgCIAEoBRINCgV3aWR0aBgDIAEoBRIOCgZoZWlnaHQYBCABKAUSEgoKZnJvbV9yaWdodBgFIAEoCBITCgtmcm9tX2JvdHRvbRgGIAEoCCIMCgpEZXRlY3RUZXh0Ig4KDEFjY2VwdFBpeGVscyK+AQoPRXhwYW5kZWRQcm9maWxlEiUKBXJ1bGVzGAEgAygLMhYuY29yaWEudjEuRXhwYW5kZWRSdWxlEioKB3VubmFtZWQYAiABKA4yGS5jb3JpYS52MS5Vbm5hbWVkRWxlbWVudHMSFwoPZGF0ZV9zaGlmdF9kYXlzGAMgASgFEjAKC3BpeGVsX3J1bGVzGAQgAygLMhsuY29yaWEudjEuRXhwYW5kZWRQaXhlbFJ1bGUSDQoFYmFzZXMYBSADKAkiQwoMRXhwYW5kZWRSdWxlEiMKBHJ1bGUYASABKAsyFS5jb3JpYS52MS5Qcm9maWxlUnVsZRIOCgZvcmlnaW4YAiABKAkiRgoRRXhwYW5kZWRQaXhlbFJ1bGUSIQoEcnVsZRgBIAEoCzITLmNvcmlhLnYxLlBpeGVsUnVsZRIOCgZvcmlnaW4YAiABKAki9QEKDlByb2ZpbGVWZXJzaW9uEgwKBG5hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBRIQCghjaGVja3N1bRgDIAEoCRIvCgtjcmVhdGVfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGQoRY3JlYXRlZF9ieV9rZXlfaWQYBSABKAkSDAoEbm90ZRgGIAEoCRIrCghkb2N1bWVudBgHIAEoCzIZLmNvcmlhLnYxLlByb2ZpbGVEb2N1bWVudBIrCghleHBhbmRlZBgIIAEoCzIZLmNvcmlhLnYxLkV4cGFuZGVkUHJvZmlsZSJuCg5Qcm9maWxlU3VtbWFyeRIMCgRuYW1lGAEgASgJEhYKDmxhdGVzdF92ZXJzaW9uGAIgASgFEjYKEmxhdGVzdF9jcmVhdGVfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAicwoOUHJvZmlsZVByb2JsZW0SDAoEcnVsZRgBIAEoBRISCgpwaXhlbF9ydWxlGAIgASgFEhEKCXJ1bGVfbmFtZRgDIAEoCRINCgVmaWVsZBgEIAEoCRIMCgRjb2RlGAUgASgJEg8KB21lc3NhZ2UYBiABKAkijAEKC1Byb2ZpbGVCYXNlEgwKBG5hbWUYASABKAkSEQoJYXZhaWxhYmxlGAIgASgIEhoKEnVuYXZhaWxhYmxlX3JlYXNvbhgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIrCghkb2N1bWVudBgFIAEoCzIZLmNvcmlhLnYxLlByb2ZpbGVEb2N1bWVudCJ2ChtDcmVhdGVQcm9maWxlVmVyc2lvblJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkSKwoIZG9jdW1lbnQYAyABKAsyGS5jb3JpYS52MS5Qcm9maWxlRG9jdW1lbnQSDAoEbm90ZRgEIAEoCSJaChxDcmVhdGVQcm9maWxlVmVyc2lvblJlc3BvbnNlEikKB3ZlcnNpb24YASABKAsyGC5jb3JpYS52MS5Qcm9maWxlVmVyc2lvbhIPCgdjcmVhdGVkGAIgASgIIkkKGEdldFByb2ZpbGVWZXJzaW9uUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCRIPCgd2ZXJzaW9uGAMgASgFIkYKGUdldFByb2ZpbGVWZXJzaW9uUmVzcG9uc2USKQoHdmVyc2lvbhgBIAEoCzIYLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uIkwKE0xpc3RQcm9maWxlc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIlsKFExpc3RQcm9maWxlc1Jlc3BvbnNlEioKCHByb2ZpbGVzGAEgAygLMhguY29yaWEudjEuUHJvZmlsZVN1bW1hcnkSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJImEKGkxpc3RQcm9maWxlVmVyc2lvbnNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCXBhZ2Vfc2l6ZRgDIAEoBRISCgpwYWdlX3Rva2VuGAQgASgJImIKG0xpc3RQcm9maWxlVmVyc2lvbnNSZXNwb25zZRIqCgh2ZXJzaW9ucxgBIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJVChZWYWxpZGF0ZVByb2ZpbGVSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIrCghkb2N1bWVudBgCIAEoCzIZLmNvcmlhLnYxLlByb2ZpbGVEb2N1bWVudCKEAQoXVmFsaWRhdGVQcm9maWxlUmVzcG9uc2USKgoIcHJvYmxlbXMYASADKAsyGC5jb3JpYS52MS5Qcm9maWxlUHJvYmxlbRIrCghleHBhbmRlZBgCIAEoCzIZLmNvcmlhLnYxLkV4cGFuZGVkUHJvZmlsZRIQCghjaGVja3N1bRgDIAEoCSIZChdMaXN0UHJvZmlsZUJhc2VzUmVxdWVzdCJAChhMaXN0UHJvZmlsZUJhc2VzUmVzcG9uc2USJAoFYmFzZXMYASADKAsyFS5jb3JpYS52MS5Qcm9maWxlQmFzZSprCg9Vbm5hbWVkRWxlbWVudHMSIAocVU5OQU1FRF9FTEVNRU5UU19VTlNQRUNJRklFRBAAEhkKFVVOTkFNRURfRUxFTUVOVFNfS0VFUBABEhsKF1VOTkFNRURfRUxFTUVOVFNfUkVNT1ZFEAIq2AIKEENvbmRpdGlvblN1YmplY3QSIQodQ09ORElUSU9OX1NVQkpFQ1RfVU5TUEVDSUZJRUQQABIeChpDT05ESVRJT05fU1VCSkVDVF9NT0RBTElUWRABEiMKH0NPTkRJVElPTl9TVUJKRUNUX1NPUF9DTEFTU19VSUQQAhIiCh5DT05ESVRJT05fU1VCSkVDVF9NQU5VRkFDVFVSRVIQAxIgChxDT05ESVRJT05fU1VCSkVDVF9NT0RFTF9OQU1FEAQSJwojQ09ORElUSU9OX1NVQkpFQ1RfU09GVFdBUkVfVkVSU0lPTlMQBRIeChpDT05ESVRJT05fU1VCSkVDVF9SRUNFSVZFUhAGEiYKIkNPTkRJVElPTl9TVUJKRUNUX0NBTExJTkdfQUVfVElUTEUQBxIlCiFDT05ESVRJT05fU1VCSkVDVF9DQUxMRURfQUVfVElUTEUQCCppCg1Mb29rdXBNaXNzaW5nEh4KGkxPT0tVUF9NSVNTSU5HX1VOU1BFQ0lGSUVEEAASHQoZTE9PS1VQX01JU1NJTkdfUVVBUkFOVElORRABEhkKFUxPT0tVUF9NSVNTSU5HX0FTU0lHThACMtkECg5Qcm9maWxlU2VydmljZRJqChRDcmVhdGVQcm9maWxlVmVyc2lvbhIlLmNvcmlhLnYxLkNyZWF0ZVByb2ZpbGVWZXJzaW9uUmVxdWVzdBomLmNvcmlhLnYxLkNyZWF0ZVByb2ZpbGVWZXJzaW9uUmVzcG9uc2UiA5ACAhJhChFHZXRQcm9maWxlVmVyc2lvbhIiLmNvcmlhLnYxLkdldFByb2ZpbGVWZXJzaW9uUmVxdWVzdBojLmNvcmlhLnYxLkdldFByb2ZpbGVWZXJzaW9uUmVzcG9uc2UiA5ACARJSCgxMaXN0UHJvZmlsZXMSHS5jb3JpYS52MS5MaXN0UHJvZmlsZXNSZXF1ZXN0Gh4uY29yaWEudjEuTGlzdFByb2ZpbGVzUmVzcG9uc2UiA5ACARJnChNMaXN0UHJvZmlsZVZlcnNpb25zEiQuY29yaWEudjEuTGlzdFByb2ZpbGVWZXJzaW9uc1JlcXVlc3QaJS5jb3JpYS52MS5MaXN0UHJvZmlsZVZlcnNpb25zUmVzcG9uc2UiA5ACARJbCg9WYWxpZGF0ZVByb2ZpbGUSIC5jb3JpYS52MS5WYWxpZGF0ZVByb2ZpbGVSZXF1ZXN0GiEuY29yaWEudjEuVmFsaWRhdGVQcm9maWxlUmVzcG9uc2UiA5ACARJeChBMaXN0UHJvZmlsZUJhc2VzEiEuY29yaWEudjEuTGlzdFByb2ZpbGVCYXNlc1JlcXVlc3QaIi5jb3JpYS52MS5MaXN0UHJvZmlsZUJhc2VzUmVzcG9uc2UiA5ACAWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+  fileDesc("ChZjb3JpYS92MS9wcm9maWxlLnByb3RvEghjb3JpYS52MSLKAQoPUHJvZmlsZURvY3VtZW50Eg0KBWJhc2VzGAEgAygJEiQKBXJ1bGVzGAIgAygLMhUuY29yaWEudjEuUHJvZmlsZVJ1bGUSKgoHdW5uYW1lZBgDIAEoDjIZLmNvcmlhLnYxLlVubmFtZWRFbGVtZW50cxIXCg9kYXRlX3NoaWZ0X2RheXMYBCABKAUSKAoLcGl4ZWxfcnVsZXMYBSADKAsyEy5jb3JpYS52MS5QaXhlbFJ1bGUSEwoLZGVzY3JpcHRpb24YBiABKAkiqwEKC1Byb2ZpbGVSdWxlEgwKBG5hbWUYASABKAkSKwoIc2VsZWN0b3IYAiABKAsyGS5jb3JpYS52MS5Qcm9maWxlU2VsZWN0b3ISKAoEd2hlbhgDIAMoCzIaLmNvcmlhLnYxLlByb2ZpbGVDb25kaXRpb24SJwoGYWN0aW9uGAQgASgLMhcuY29yaWEudjEuUHJvZmlsZUFjdGlvbhIOCgZyZWFzb24YBSABKAki7wEKD1Byb2ZpbGVTZWxlY3RvchINCgN0YWcYASABKAlIABIRCgdrZXl3b3JkGAIgASgJSAASDwoFZ3JvdXAYAyABKAlIABIMCgJ2chgEIAEoCUgAEjMKD3ByaXZhdGVfZWxlbWVudBgFIAEoCzIYLmNvcmlhLnYxLlByaXZhdGVFbGVtZW50SAASDgoEcGF0aBgGIAEoCUgAEjUKDGNvbnRlbnRfaXRlbRgHIAEoCzIdLmNvcmlhLnYxLkNvbnRlbnRJdGVtU2VsZWN0b3JIABIXCg9pbmNsdWRlX3ByaXZhdGUYCCABKAhCBgoEa2luZCJBCg5Qcml2YXRlRWxlbWVudBIPCgdjcmVhdG9yGAEgASgJEg0KBWdyb3VwGAIgASgJEg8KB2VsZW1lbnQYAyABKAkiSAoTQ29udGVudEl0ZW1TZWxlY3RvchIOCgZzY2hlbWUYASABKAkSDQoFdmFsdWUYAiABKAkSEgoKdmFsdWVfdHlwZRgDIAEoCSKhAQoQUHJvZmlsZUNvbmRpdGlvbhIrCgdzdWJqZWN0GAEgASgOMhouY29yaWEudjEuQ29uZGl0aW9uU3ViamVjdBIQCgZlcXVhbHMYAiABKAlIABIQCgZwcmVmaXgYAyABKAlIABIRCgdwYXR0ZXJuGAQgASgJSAASEQoHcHJlc2VudBgFIAEoCEgAEg4KBm5lZ2F0ZRgGIAEoCEIGCgR0ZXN0IvcECg1Qcm9maWxlQWN0aW9uEiQKBGtlZXAYASABKAsyFC5jb3JpYS52MS5LZWVwQWN0aW9uSAASKAoGcmVtb3ZlGAIgASgLMhYuY29yaWEudjEuUmVtb3ZlQWN0aW9uSAASJgoFZW1wdHkYAyABKAsyFS5jb3JpYS52MS5FbXB0eUFjdGlvbkgAEioKB3JlcGxhY2UYBCABKAsyFy5jb3JpYS52MS5SZXBsYWNlQWN0aW9uSAASIgoDc2V0GAUgASgLMhMuY29yaWEudjEuU2V0QWN0aW9uSAASJAoEaGFzaBgGIAEoCzIULmNvcmlhLnYxLkhhc2hBY3Rpb25IABIiCgN1aWQYByABKAsyEy5jb3JpYS52MS5VaWRBY3Rpb25IABImCgVzaGlmdBgIIAEoCzIVLmNvcmlhLnYxLlNoaWZ0QWN0aW9uSAASMAoKZ2VuZXJhbGl6ZRgJIAEoCzIaLmNvcmlhLnYxLkdlbmVyYWxpemVBY3Rpb25IABIoCgZsb29rdXAYCiABKAsyFi5jb3JpYS52MS5Mb29rdXBBY3Rpb25IABImCgVjbGVhbhgLIAEoCzIVLmNvcmlhLnYxLkNsZWFuQWN0aW9uSAASMAoKcXVhcmFudGluZRgMIAEoCzIaLmNvcmlhLnYxLlF1YXJhbnRpbmVBY3Rpb25IABImCgVkdW1teRgNIAEoCzIVLmNvcmlhLnYxLkR1bW15QWN0aW9uSAASRgoWcmVtb3ZlX3VubGVzc19yZXF1aXJlZBgOIAEoCzIkLmNvcmlhLnYxLlJlbW92ZVVubGVzc1JlcXVpcmVkQWN0aW9uSABCBgoEa2luZCIMCgpLZWVwQWN0aW9uIg4KDFJlbW92ZUFjdGlvbiINCgtFbXB0eUFjdGlvbiJACg1SZXBsYWNlQWN0aW9uEhIKCGNvbnN0YW50GAEgASgJSAASEgoIdGVtcGxhdGUYAiABKAlIAEIHCgV2YWx1ZSI8CglTZXRBY3Rpb24SEgoIY29uc3RhbnQYASABKAlIABISCgh0ZW1wbGF0ZRgCIAEoCUgAQgcKBXZhbHVlIgwKCkhhc2hBY3Rpb24iCwoJVWlkQWN0aW9uIg0KC1NoaWZ0QWN0aW9uIhIKEEdlbmVyYWxpemVBY3Rpb24iSgoMTG9va3VwQWN0aW9uEg0KBXRhYmxlGAEgASgJEisKCm9uX21pc3NpbmcYAiABKA4yFy5jb3JpYS52MS5Mb29rdXBNaXNzaW5nIg0KC0NsZWFuQWN0aW9uIhIKEFF1YXJhbnRpbmVBY3Rpb24iDQoLRHVtbXlBY3Rpb24iSgoaUmVtb3ZlVW5sZXNzUmVxdWlyZWRBY3Rpb24SLAoIZmFsbGJhY2sYASABKA4yGi5jb3JpYS52MS5SZXF1aXJlZEZhbGxiYWNrIvgBCglQaXhlbFJ1bGUSDAoEbmFtZRgBIAEoCRIoCgR3aGVuGAIgAygLMhouY29yaWEudjEuUHJvZmlsZUNvbmRpdGlvbhIMCgRyb3dzGAMgASgFEg8KB2NvbHVtbnMYBCABKAUSKAoGcmVkYWN0GAUgASgLMhYuY29yaWEudjEuUmVkYWN0UGl4ZWxzSAASJgoGZGV0ZWN0GAYgASgLMhQuY29yaWEudjEuRGV0ZWN0VGV4dEgAEigKBmFjY2VwdBgHIAEoCzIWLmNvcmlhLnYxLkFjY2VwdFBpeGVsc0gAEg4KBnJlYXNvbhgIIAEoCUIICgZhY3Rpb24iPAoMUmVkYWN0UGl4ZWxzEiwKCnJlY3RhbmdsZXMYASADKAsyGC5jb3JpYS52MS5QaXhlbFJlY3RhbmdsZSJuCg5QaXhlbFJlY3RhbmdsZRIJCgF4GAEgASgFEgkKAXkYAiABKAUSDQoFd2lkdGgYAyABKAUSDgoGaGVpZ2h0GAQgASgFEhIKCmZyb21fcmlnaHQYBSABKAgSEwoLZnJvbV9ib3R0b20YBiABKAgiDAoKRGV0ZWN0VGV4dCIOCgxBY2NlcHRQaXhlbHMi2AEKD0V4cGFuZGVkUHJvZmlsZRIlCgVydWxlcxgBIAMoCzIWLmNvcmlhLnYxLkV4cGFuZGVkUnVsZRIqCgd1bm5hbWVkGAIgASgOMhkuY29yaWEudjEuVW5uYW1lZEVsZW1lbnRzEhcKD2RhdGVfc2hpZnRfZGF5cxgDIAEoBRIwCgtwaXhlbF9ydWxlcxgEIAMoCzIbLmNvcmlhLnYxLkV4cGFuZGVkUGl4ZWxSdWxlEg0KBWJhc2VzGAUgAygJEhgKEGxhbmd1YWdlX2VkaXRpb24YBiABKAUiUAoMRXhwYW5kZWRSdWxlEiMKBHJ1bGUYASABKAsyFS5jb3JpYS52MS5Qcm9maWxlUnVsZRIOCgZvcmlnaW4YAiABKAkSCwoDdnJzGAMgAygJIkYKEUV4cGFuZGVkUGl4ZWxSdWxlEiEKBHJ1bGUYASABKAsyEy5jb3JpYS52MS5QaXhlbFJ1bGUSDgoGb3JpZ2luGAIgASgJIvUBCg5Qcm9maWxlVmVyc2lvbhIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEAoIY2hlY2tzdW0YAyABKAkSLwoLY3JlYXRlX3RpbWUYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhkKEWNyZWF0ZWRfYnlfa2V5X2lkGAUgASgJEgwKBG5vdGUYBiABKAkSKwoIZG9jdW1lbnQYByABKAsyGS5jb3JpYS52MS5Qcm9maWxlRG9jdW1lbnQSKwoIZXhwYW5kZWQYCCABKAsyGS5jb3JpYS52MS5FeHBhbmRlZFByb2ZpbGUibgoOUHJvZmlsZVN1bW1hcnkSDAoEbmFtZRgBIAEoCRIWCg5sYXRlc3RfdmVyc2lvbhgCIAEoBRI2ChJsYXRlc3RfY3JlYXRlX3RpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInMKDlByb2ZpbGVQcm9ibGVtEgwKBHJ1bGUYASABKAUSEgoKcGl4ZWxfcnVsZRgCIAEoBRIRCglydWxlX25hbWUYAyABKAkSDQoFZmllbGQYBCABKAkSDAoEY29kZRgFIAEoCRIPCgdtZXNzYWdlGAYgASgJIj0KD1Byb2ZpbGVQcm9ibGVtcxIqCghwcm9ibGVtcxgBIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtIowBCgtQcm9maWxlQmFzZRIMCgRuYW1lGAEgASgJEhEKCWF2YWlsYWJsZRgCIAEoCBIaChJ1bmF2YWlsYWJsZV9yZWFzb24YAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSKwoIZG9jdW1lbnQYBSABKAsyGS5jb3JpYS52MS5Qcm9maWxlRG9jdW1lbnQi3QEKG0NyZWF0ZVByb2ZpbGVWZXJzaW9uUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCRIrCghkb2N1bWVudBgDIAEoCzIZLmNvcmlhLnYxLlByb2ZpbGVEb2N1bWVudBIMCgRub3RlGAQgASgJEiQKF2V4cGVjdGVkX2xhdGVzdF92ZXJzaW9uGAUgASgFSACIAQESIwoEdmlldxgGIAEoDjIVLmNvcmlhLnYxLlByb2ZpbGVWaWV3QhoKGF9leHBlY3RlZF9sYXRlc3RfdmVyc2lvbiKcAQocQ3JlYXRlUHJvZmlsZVZlcnNpb25SZXNwb25zZRIpCgd2ZXJzaW9uGAEgASgLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24SDwoHY3JlYXRlZBgCIAEoCBIqCgh3YXJuaW5ncxgDIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtEhQKDG5vdGVfZGlmZmVycxgEIAEoCCJuChhHZXRQcm9maWxlVmVyc2lvblJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkSDwoHdmVyc2lvbhgDIAEoBRIjCgR2aWV3GAQgASgOMhUuY29yaWEudjEuUHJvZmlsZVZpZXciRgoZR2V0UHJvZmlsZVZlcnNpb25SZXNwb25zZRIpCgd2ZXJzaW9uGAEgASgLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24iTAoTTGlzdFByb2ZpbGVzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkiWwoUTGlzdFByb2ZpbGVzUmVzcG9uc2USKgoIcHJvZmlsZXMYASADKAsyGC5jb3JpYS52MS5Qcm9maWxlU3VtbWFyeRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiYQoaTGlzdFByb2ZpbGVWZXJzaW9uc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkSEQoJcGFnZV9zaXplGAMgASgFEhIKCnBhZ2VfdG9rZW4YBCABKAkiYgobTGlzdFByb2ZpbGVWZXJzaW9uc1Jlc3BvbnNlEioKCHZlcnNpb25zGAEgAygLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJInoKFlZhbGlkYXRlUHJvZmlsZVJlcXVlc3QSDgoGdGVuYW50GAEgASgJEisKCGRvY3VtZW50GAIgASgLMhkuY29yaWEudjEuUHJvZmlsZURvY3VtZW50EiMKBHZpZXcYAyABKA4yFS5jb3JpYS52MS5Qcm9maWxlVmlldyKwAQoXVmFsaWRhdGVQcm9maWxlUmVzcG9uc2USKgoIcHJvYmxlbXMYASADKAsyGC5jb3JpYS52MS5Qcm9maWxlUHJvYmxlbRIrCghleHBhbmRlZBgCIAEoCzIZLmNvcmlhLnYxLkV4cGFuZGVkUHJvZmlsZRIQCghjaGVja3N1bRgDIAEoCRIqCgh3YXJuaW5ncxgEIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtIhkKF0xpc3RQcm9maWxlQmFzZXNSZXF1ZXN0IkAKGExpc3RQcm9maWxlQmFzZXNSZXNwb25zZRIkCgViYXNlcxgBIAMoCzIVLmNvcmlhLnYxLlByb2ZpbGVCYXNlKmsKD1VubmFtZWRFbGVtZW50cxIgChxVTk5BTUVEX0VMRU1FTlRTX1VOU1BFQ0lGSUVEEAASGQoVVU5OQU1FRF9FTEVNRU5UU19LRUVQEAESGwoXVU5OQU1FRF9FTEVNRU5UU19SRU1PVkUQAirYAgoQQ29uZGl0aW9uU3ViamVjdBIhCh1DT05ESVRJT05fU1VCSkVDVF9VTlNQRUNJRklFRBAAEh4KGkNPTkRJVElPTl9TVUJKRUNUX01PREFMSVRZEAESIwofQ09ORElUSU9OX1NVQkpFQ1RfU09QX0NMQVNTX1VJRBACEiIKHkNPTkRJVElPTl9TVUJKRUNUX01BTlVGQUNUVVJFUhADEiAKHENPTkRJVElPTl9TVUJKRUNUX01PREVMX05BTUUQBBInCiNDT05ESVRJT05fU1VCSkVDVF9TT0ZUV0FSRV9WRVJTSU9OUxAFEh4KGkNPTkRJVElPTl9TVUJKRUNUX1JFQ0VJVkVSEAYSJgoiQ09ORElUSU9OX1NVQkpFQ1RfQ0FMTElOR19BRV9USVRMRRAHEiUKIUNPTkRJVElPTl9TVUJKRUNUX0NBTExFRF9BRV9USVRMRRAIKmkKDUxvb2t1cE1pc3NpbmcSHgoaTE9PS1VQX01JU1NJTkdfVU5TUEVDSUZJRUQQABIdChlMT09LVVBfTUlTU0lOR19RVUFSQU5USU5FEAESGQoVTE9PS1VQX01JU1NJTkdfQVNTSUdOEAIqigEKEFJlcXVpcmVkRmFsbGJhY2sSIQodUkVRVUlSRURfRkFMTEJBQ0tfVU5TUEVDSUZJRUQQABIbChdSRVFVSVJFRF9GQUxMQkFDS19FTVBUWRABEhsKF1JFUVVJUkVEX0ZBTExCQUNLX0RVTU1ZEAISGQoVUkVRVUlSRURfRkFMTEJBQ0tfVUlEEAMqXQoLUHJvZmlsZVZpZXcSHAoYUFJPRklMRV9WSUVXX1VOU1BFQ0lGSUVEEAASGQoVUFJPRklMRV9WSUVXX0RPQ1VNRU5UEAESFQoRUFJPRklMRV9WSUVXX0ZVTEwQAjLZBAoOUHJvZmlsZVNlcnZpY2USagoUQ3JlYXRlUHJvZmlsZVZlcnNpb24SJS5jb3JpYS52MS5DcmVhdGVQcm9maWxlVmVyc2lvblJlcXVlc3QaJi5jb3JpYS52MS5DcmVhdGVQcm9maWxlVmVyc2lvblJlc3BvbnNlIgOQAgISYQoRR2V0UHJvZmlsZVZlcnNpb24SIi5jb3JpYS52MS5HZXRQcm9maWxlVmVyc2lvblJlcXVlc3QaIy5jb3JpYS52MS5HZXRQcm9maWxlVmVyc2lvblJlc3BvbnNlIgOQAgESUgoMTGlzdFByb2ZpbGVzEh0uY29yaWEudjEuTGlzdFByb2ZpbGVzUmVxdWVzdBoeLmNvcmlhLnYxLkxpc3RQcm9maWxlc1Jlc3BvbnNlIgOQAgESZwoTTGlzdFByb2ZpbGVWZXJzaW9ucxIkLmNvcmlhLnYxLkxpc3RQcm9maWxlVmVyc2lvbnNSZXF1ZXN0GiUuY29yaWEudjEuTGlzdFByb2ZpbGVWZXJzaW9uc1Jlc3BvbnNlIgOQAgESWwoPVmFsaWRhdGVQcm9maWxlEiAuY29yaWEudjEuVmFsaWRhdGVQcm9maWxlUmVxdWVzdBohLmNvcmlhLnYxLlZhbGlkYXRlUHJvZmlsZVJlc3BvbnNlIgOQAgESXgoQTGlzdFByb2ZpbGVCYXNlcxIhLmNvcmlhLnYxLkxpc3RQcm9maWxlQmFzZXNSZXF1ZXN0GiIuY29yaWEudjEuTGlzdFByb2ZpbGVCYXNlc1Jlc3BvbnNlIgOQAgFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * ProfileDocument is a de-identification profile as a person writes it: its
@@ -32,7 +32,9 @@ export const file_coria_v1_profile: GenFile = /*@__PURE__*/
  *
  *  1. The most specific selector wins, in this order: a path or a content
  *     item; a tag or a keyword; a private element; a private creator's
- *     block; a group; a VR.
+ *     block; a group; a VR. A group or a VR selector selects a private
+ *     element only when it says include_private, so the default below
+ *     holds for private elements unless a rule opts in.
  *  2. Between selectors equally specific, the later rule wins: the
  *     document's own rules over its bases', a later base over an earlier,
  *     and within one list a later rule over an earlier. (So an option of
@@ -41,6 +43,22 @@ export const file_coria_v1_profile: GenFile = /*@__PURE__*/
  *
  * An element no rule decides takes the default: a private element (an odd
  * group, PS3.5 7.8) is removed; any other follows unnamed.
+ *
+ * Some elements are never decided by a profile, and no selector names or
+ * selects them: the pipeline handles them the same way in every file. The
+ * file meta information (group 0002, Media Storage SOP Instance UID
+ * (0002,0003) among it) is written anew for every de-identified file
+ * (PS3.10 7.1), with the remapped UID; command elements (group 0000) and
+ * the directory elements of group 0004 (Referenced SOP Instance UID in
+ * File (0004,1511) among them) are not kept in an archived file; items and
+ * delimiters (group FFFE) and group lengths (element 0000) are written
+ * with the file; the Original Attributes Sequence (0400,0561), the
+ * Encrypted Attributes Sequence (0400,0500), the MAC Parameters Sequence
+ * (4FFE,0001), the Digital Signatures Sequence (FFFA,FFFA) and Data Set
+ * Trailing Padding (FFFC,FFFC) are removed from every file, since they
+ * hold values as received or cannot hold over a changed data set (PS3.15
+ * E.1.1); and the elements of group 7FE0 (pixel data and the tables that
+ * describe its encoding) change only by pixel rules.
  *
  * @generated from message coria.v1.ProfileDocument
  */
@@ -167,6 +185,14 @@ export const ProfileRuleSchema: GenMessage<ProfileRule> = /*@__PURE__*/
 /**
  * ProfileSelector is what a rule selects. Exactly one kind is set.
  *
+ * A selector never selects a private creator element (gggg,0010-00FF):
+ * one follows the elements of its block, kept while any of them is kept
+ * and removed otherwise (PS3.5 7.8.1). A private element's creator is the
+ * one that reserves its block in the data set the element is in (the top
+ * level or an item), compared exactly once its surrounding spaces are
+ * removed. No selector selects an element the pipeline handles
+ * (ProfileDocument says which).
+ *
  * @generated from message coria.v1.ProfileSelector
  */
 export type ProfileSelector = Message<"coria.v1.ProfileSelector"> & {
@@ -182,8 +208,9 @@ export type ProfileSelector = Message<"coria.v1.ProfileSelector"> & {
      * such as "00100010". Not a private element (an odd group: use
      * private_element), not the file meta information (group 0002), not a
      * command element (group 0000), not an item or delimiter (group FFFE),
-     * not a group length (element 0000), and not pixel data (7FE00008,
-     * 7FE00009, 7FE00010), which only pixel rules change. The digits may
+     * not a group length (element 0000), not an element of groups 0004 or
+     * 7FE0, and not an element the pipeline removes from every file
+     * (04000561, 04000500, 4FFE0001, FFFAFFFA, FFFCFFFC). The digits may
      * be in either case; the expanded form writes them in upper case.
      *
      * @generated from field: string tag = 1;
@@ -202,13 +229,19 @@ export type ProfileSelector = Message<"coria.v1.ProfileSelector"> & {
     case: "keyword";
   } | {
     /**
-     * Every element of a group, or of a family of groups: four hexadecimal
-     * digits, where "x" stands for any digit, such as "0010" or "60xx" (the
-     * overlay groups, PS3.5 7.6). Not "xxxx", which is what unnamed says,
-     * and nothing that could stand for group 0000, 0002 or FFFE. An odd
-     * group selects private elements whatever their creator. Since a group
-     * holds elements of many VRs, a group rule may only keep, remove, empty
-     * or quarantine.
+     * Every standard element of a group, or of a family of groups: four
+     * hexadecimal digits, where "x" stands for any digit, such as "0010",
+     * or "60xx" for the overlay groups (PS3.5 7.6: the even groups 6000 to
+     * 601E; the other even groups it covers hold no standard element). Not
+     * "xxxx", which is what unnamed says; nothing that could stand for
+     * group 0000, 0002, 0004 or FFFE; and not 7FE0, FFFA or FFFC, which
+     * hold only elements the pipeline handles. A group rule never selects
+     * those elements in a family that covers their group. With
+     * include_private it selects the private elements of the groups too,
+     * whatever their creator; without it, a group with an odd last digit
+     * would select nothing and is refused. Since a group holds elements of
+     * many VRs, a group rule may only use the actions that fit any VR
+     * (ProfileAction says which).
      *
      * @generated from field: string group = 3;
      */
@@ -216,8 +249,11 @@ export type ProfileSelector = Message<"coria.v1.ProfileSelector"> & {
     case: "group";
   } | {
     /**
-     * Every element of a value representation (PS3.5 6.2), such as "PN" or
-     * "DA".
+     * Every standard element of a value representation (PS3.5 6.2), such
+     * as "PN" or "DA", and with include_private every private element the
+     * file gives that VR too (an implicit VR file gives a private element
+     * VR UN, PS3.5 6.2.2). Never an element of group 7FE0 or one the
+     * pipeline handles.
      *
      * @generated from field: string vr = 4;
      */
@@ -255,16 +291,27 @@ export type ProfileSelector = Message<"coria.v1.ProfileSelector"> & {
     case: "path";
   } | {
     /**
-     * The value of every structured report content item (PS3.3 C.17.3)
-     * whose concept name is this code, wherever the item is, such as the
-     * name of a person observed (DCM 121008). The action applies to the
-     * item's value element; remove removes the whole item.
+     * The value element of every structured report content item (PS3.3
+     * C.17.3) whose concept name is this code, such as the name of a person
+     * observed (DCM 121008); ContentItemSelector says which element that
+     * is for each value type.
      *
-     * @generated from field: coria.v1.CodedConcept content_item = 7;
+     * @generated from field: coria.v1.ContentItemSelector content_item = 7;
      */
-    value: CodedConcept;
+    value: ContentItemSelector;
     case: "contentItem";
   } | { case: undefined; value?: undefined };
+
+  /**
+   * With a group or a vr selector, private elements are selected too (an
+   * odd group, PS3.5 7.8), such as every UI element for a uid action,
+   * private ones included. Refused with any other kind of selector:
+   * private_element names private elements by their creator, and tag,
+   * keyword, path and content_item name standard elements only.
+   *
+   * @generated from field: bool include_private = 8;
+   */
+  includePrivate: boolean;
 };
 
 /**
@@ -314,39 +361,87 @@ export const PrivateElementSchema: GenMessage<PrivateElement> = /*@__PURE__*/
   messageDesc(file_coria_v1_profile, 3);
 
 /**
- * CodedConcept is a code (PS3.3 8.8): the coding scheme and the code value.
+ * ContentItemSelector selects the value element of structured report
+ * content items (PS3.3 C.17.3) by their concept name, a code (PS3.3 8.8),
+ * and optionally their value type. A content item is an item of a Content
+ * Sequence (0040,A730), and its concept name is the first item of its
+ * Concept Name Code Sequence (0040,A043). The rule selects only the
+ * item's value element, the one its Value Type (0040,A040) holds its value
+ * in (PS3.3 Table C.17-5 and the macros of C.18):
  *
- * @generated from message coria.v1.CodedConcept
+ *   TEXT       Text Value (0040,A160), UT
+ *   NUM        Measured Value Sequence (0040,A300), and Numeric Value
+ *              Qualifier Code Sequence (0040,A301), SQ
+ *   CODE       Concept Code Sequence (0040,A168), SQ
+ *   DATE       Date (0040,A121), DA
+ *   TIME       Time (0040,A122), TM
+ *   DATETIME   DateTime (0040,A120), DT
+ *   PNAME      Person Name (0040,A123), PN
+ *   UIDREF     UID (0040,A124), UI
+ *   COMPOSITE, IMAGE, WAVEFORM
+ *              Referenced SOP Sequence (0008,1199), SQ
+ *   SCOORD, SCOORD3D
+ *              Graphic Data (0070,0022), FL
+ *   TCOORD     Referenced Sample Positions (0040,A132), UL; Referenced
+ *              Time Offsets (0040,A138), DS; Referenced DateTime
+ *              (0040,A13A), DT
+ *   TABLE      Tabulated Values Sequence (0040,A801), SQ
+ *   CONTAINER  none: its children are content items of their own.
+ *
+ * The item's other elements (its concept name, relationship, observation
+ * date and time, and the rest) follow the other rules, as any element
+ * does. An item of a value type not in this list has no value element a
+ * content item rule selects.
+ *
+ * @generated from message coria.v1.ContentItemSelector
  */
-export type CodedConcept = Message<"coria.v1.CodedConcept"> & {
+export type ContentItemSelector = Message<"coria.v1.ContentItemSelector"> & {
   /**
-   * The Coding Scheme Designator (0008,0102), such as "DCM". 1 to 16 bytes.
+   * The Coding Scheme Designator (0008,0102), such as "DCM". 1 to 16 bytes,
+   * no backslash, no control character, no surrounding space.
    *
    * @generated from field: string scheme = 1;
    */
   scheme: string;
 
   /**
-   * The Code Value (0008,0100), such as "121008". 1 to 64 bytes.
+   * The Code Value (0008,0100), such as "121008". 1 to 64 bytes, as for
+   * scheme.
    *
    * @generated from field: string value = 2;
    */
   value: string;
+
+  /**
+   * The value type, one of the list above, such as "PNAME"; empty for any.
+   * With a value type, the rule's action is checked against the VRs of
+   * that type's value elements, as for a tag; without one, the selector
+   * says nothing of the VR, and the rule may only use the actions that fit
+   * any VR.
+   *
+   * @generated from field: string value_type = 3;
+   */
+  valueType: string;
 };
 
 /**
- * Describes the message coria.v1.CodedConcept.
- * Use `create(CodedConceptSchema)` to create a new message.
+ * Describes the message coria.v1.ContentItemSelector.
+ * Use `create(ContentItemSelectorSchema)` to create a new message.
  */
-export const CodedConceptSchema: GenMessage<CodedConcept> = /*@__PURE__*/
+export const ContentItemSelectorSchema: GenMessage<ContentItemSelector> = /*@__PURE__*/
   messageDesc(file_coria_v1_profile, 4);
 
 /**
  * ProfileCondition is one condition on the file or its reception. A file's
- * value is read as received, before any rule changes it, from the top
- * level of the data set, even for an element inside a sequence. A value
- * with several parts (VM above 1) is matched as written, the parts joined
- * by "\".
+ * value is read once for each file, as received, before any rule changes
+ * it, from the top level of the data set, even for an element inside a
+ * sequence. Its padding is removed as PS3.5 6.2 allows: trailing spaces
+ * and NULs from every value, and leading spaces too from an AE, CS, DS,
+ * IS, LO, SH, DA, DT, TM or UI value; its case is kept. A value with
+ * several parts (VM above 1) is matched as written, the parts joined by
+ * "\". A value absent or empty is absent, so equals "" never holds. A
+ * reception's value (receiver, AE titles) is read with its surrounding
+ * spaces removed, and an empty one is absent.
  *
  * @generated from message coria.v1.ProfileCondition
  */
@@ -423,11 +518,40 @@ export const ProfileConditionSchema: GenMessage<ProfileCondition> = /*@__PURE__*
  * says of the element's VR, and a rule whose action does not fit is
  * refused: a tag, keyword or path has the VR the data dictionary gives it
  * (an action must fit each, where PS3.6 gives two, such as "US or SS"); a
- * vr selector, that VR; a group, a private element or a tag the dictionary
- * does not know say nothing of it and allow only keep, remove, empty and
- * quarantine. A content item's value has the VR its item gives, known only
- * in the file, so every kind but set is allowed and a value it does not fit
- * fails there, closed.
+ * vr selector, that VR; a content item with a value type, the VRs of its
+ * value elements. A group, a private element, a tag the dictionary does
+ * not know and a content item without a value type say nothing of it, and
+ * allow only the actions that fit any VR: keep, remove, empty, dummy,
+ * remove_unless_required with EMPTY or DUMMY, and quarantine. The VRs
+ * validation decided are stored with each rule of the expanded form
+ * (ExpandedRule.vrs), so a later data dictionary never changes them.
+ *
+ * A text a rule writes (a constant, a template's output, a hash code, a
+ * lookup code) is checked, when the rule is validated, against every VR
+ * it may be written into: its characters and its maximum length (PS3.5
+ * 6.2), a template with each placeholder at a code's full length. A
+ * constant and a template's own text are printable ASCII (0x20 to 0x7E,
+ * the default repertoire every character set of PS3.5 6.1 holds, so the
+ * value fits every file) without a backslash, so a written value is one
+ * value, never several.
+ *
+ * In the file, an element's VR is the one it is written with, and a
+ * standard element written as UN (PS3.5 6.2.2) is read as the VR the data
+ * dictionary gives it and written back with that VR. An action that reads
+ * or writes a value (all but keep, remove, empty, dummy, quarantine and
+ * remove_unless_required, which fit any VR) on an element whose VR in the
+ * file is not among the rule's VRs refuses the file, closed: it is
+ * quarantined. So does any action on a sequence other than keep, remove,
+ * empty, dummy, clean, quarantine and remove_unless_required. Every value
+ * written is checked again in the file against its VR, each value of
+ * several apart. A server that meets an action kind it does not know
+ * quarantines the file rather than guess.
+ *
+ * The value a hash, a template's placeholder or a lookup's key is made of
+ * is the element's value as received, as UTF-8 text, with its padding
+ * removed as for a condition (ProfileCondition), and whole: a PN keeps its
+ * "^" and "=", a value of several parts its "\".
+ *
  * There is no action that runs outside code or calls an address: each would
  * be a way out for the values a profile removes.
  *
@@ -441,7 +565,8 @@ export type ProfileAction = Message<"coria.v1.ProfileAction"> & {
    */
   kind: {
     /**
-     * The element stays as it is.
+     * The element stays as it is. Fits any VR. A sequence kept stays, and
+     * the elements of its items are each decided by the rules.
      *
      * @generated from field: coria.v1.KeepAction keep = 1;
      */
@@ -449,7 +574,8 @@ export type ProfileAction = Message<"coria.v1.ProfileAction"> & {
     case: "keep";
   } | {
     /**
-     * The element is removed.
+     * The element is removed. Fits any VR. A content item rule removes only
+     * the item's value element.
      *
      * @generated from field: coria.v1.RemoveAction remove = 2;
      */
@@ -457,7 +583,8 @@ export type ProfileAction = Message<"coria.v1.ProfileAction"> & {
     case: "remove";
   } | {
     /**
-     * The element stays with an empty value; a sequence, with no items.
+     * The element stays with an empty value (zero length); a sequence, with
+     * no items. Fits any VR.
      *
      * @generated from field: coria.v1.EmptyAction empty = 3;
      */
@@ -486,7 +613,7 @@ export type ProfileAction = Message<"coria.v1.ProfileAction"> & {
      * The value is replaced by its keyed hash: the same value always gives
      * the same code under one tenant, and nobody without the tenant's
      * secret can compute or reverse it. Text VRs only (AE, CS, LO, LT, PN,
-     * SH, ST, UC, UT).
+     * SH, ST, UC, UT). HashAction says the code's form.
      *
      * @generated from field: coria.v1.HashAction hash = 6;
      */
@@ -526,6 +653,7 @@ export type ProfileAction = Message<"coria.v1.ProfileAction"> & {
   } | {
     /**
      * A value is replaced by the code a table of the tenant assigns to it.
+     * Text VRs only, as for hash; LookupAction says the code's form.
      *
      * @generated from field: coria.v1.LookupAction lookup = 10;
      */
@@ -533,8 +661,8 @@ export type ProfileAction = Message<"coria.v1.ProfileAction"> & {
     case: "lookup";
   } | {
     /**
-     * Known names and identifiers of the file are removed from free text.
-     * VR LO, LT, SH, ST, UC or UT only.
+     * The value is cleaned: CleanAction says what that is for each VR.
+     * VR LO, LT, SH, ST, UC, UT, SQ, OB or OW only.
      *
      * @generated from field: coria.v1.CleanAction clean = 11;
      */
@@ -543,12 +671,31 @@ export type ProfileAction = Message<"coria.v1.ProfileAction"> & {
   } | {
     /**
      * The whole file is quarantined, with the rule's name as the reason,
-     * whenever the rule applies to an element present in it.
+     * whenever the rule applies to an element present in it. Fits any VR.
      *
      * @generated from field: coria.v1.QuarantineAction quarantine = 12;
      */
     value: QuarantineAction;
     case: "quarantine";
+  } | {
+    /**
+     * The value is replaced by a dummy of its VR (PS3.15 E.1.1, action D).
+     * Fits any VR; DummyAction says the values.
+     *
+     * @generated from field: coria.v1.DummyAction dummy = 13;
+     */
+    value: DummyAction;
+    case: "dummy";
+  } | {
+    /**
+     * The element is removed unless the IOD of the file's SOP class needs
+     * it (PS3.15 E.1.1, the combined actions X/Z, X/D, Z/D, X/Z/D and
+     * X/Z/U*). RemoveUnlessRequiredAction says how the IOD decides.
+     *
+     * @generated from field: coria.v1.RemoveUnlessRequiredAction remove_unless_required = 14;
+     */
+    value: RemoveUnlessRequiredAction;
+    case: "removeUnlessRequired";
   } | { case: undefined; value?: undefined };
 };
 
@@ -618,9 +765,10 @@ export type ReplaceAction = Message<"coria.v1.ReplaceAction"> & {
   value: {
     /**
      * A constant, written as the element's VR requires (PS3.5 6.2), and
-     * checked against it where the selector gives one VR. Only for an
-     * element whose VR holds text (AE, AS, CS, DA, DS, DT, IS, LO, LT, PN,
-     * SH, ST, TM, UC, UI, UR, UT). At most 1024 bytes.
+     * checked against each VR the selector gives. Only for an element whose
+     * VR holds text (AE, AS, CS, DA, DS, DT, IS, LO, LT, PN, SH, ST, TM, UC,
+     * UI, UR, UT). Printable ASCII without a backslash; at most 1024 bytes
+     * and the VR's maximum length.
      *
      * @generated from field: string constant = 1;
      */
@@ -630,10 +778,16 @@ export type ReplaceAction = Message<"coria.v1.ReplaceAction"> & {
     /**
      * Text with placeholders, for an element of a text VR (as for hash):
      * "{#Keyword}" or "{#GGGGEEEE}" is the keyed hash of that top-level
-     * element's value as received, as hash makes it, and the element must
-     * be of a text VR; "{{" and "}}" are a brace; nothing else is read from
-     * the file. Such as "SUBJ-{#PatientID}". At most 1024 bytes and 8
-     * placeholders. The expanded form writes each placeholder's tag.
+     * element's value as received, written as hash writes it for the
+     * target's VR, and the element must be of a text VR; "{{" and "}}" are
+     * a brace; nothing else is read from the file. Such as
+     * "SUBJ-{#PatientID}". A placeholder whose element is absent or empty
+     * in the file refuses the file, closed (the reason names the rule),
+     * rather than write a code of nothing. At most 1024 bytes and 8
+     * placeholders; its text
+     * printable ASCII without a backslash, and its longest output (each
+     * placeholder 16 characters) a valid value of each VR the selector
+     * gives. The expanded form writes each placeholder's tag.
      *
      * @generated from field: string template = 2;
      */
@@ -688,6 +842,14 @@ export const SetActionSchema: GenMessage<SetAction> = /*@__PURE__*/
 
 /**
  * HashAction replaces a value by its keyed hash. It has no fields.
+ *
+ * The code is the first 80 bits of the HMAC-SHA-256 (RFC 2104) of the
+ * value (ProfileAction says which text), under the tenant's naming key,
+ * the key of a label's "{#X}" code, in base32 (RFC 4648) without padding:
+ * 16 characters of a-z and 2-7. In a CS element the code is written in upper case
+ * (A-Z and 2-7), since CS holds no lower-case letter (PS3.5 6.2); in every
+ * other text VR, as it is. 16 characters fit every text VR, AE, CS and SH
+ * the shortest. A PN value is written as one component, its family name.
  *
  * @generated from message coria.v1.HashAction
  */
@@ -750,6 +912,12 @@ export const GeneralizeActionSchema: GenMessage<GeneralizeAction> = /*@__PURE__*
  * LookupAction replaces a value by the code a table of the tenant assigns.
  * The table is keyed by the keyed hash of the value, never the value.
  *
+ * A code is 1 to 16 characters of A-Z, 0-9 and "_", which fits every text
+ * VR (CS's repertoire is the narrowest, PS3.5 6.2); a table refuses a code
+ * outside that form when it is filled. A code the table assigns on first
+ * sight is the next number of the table, in decimal from 1. A PN value is
+ * written as one component, its family name.
+ *
  * @generated from message coria.v1.LookupAction
  */
 export type LookupAction = Message<"coria.v1.LookupAction"> & {
@@ -761,7 +929,8 @@ export type LookupAction = Message<"coria.v1.LookupAction"> & {
   table: string;
 
   /**
-   * What happens when the table has no code for the value.
+   * What happens when the table has no code for the value. The expanded
+   * form never holds unspecified: it writes quarantine for it.
    *
    * @generated from field: coria.v1.LookupMissing on_missing = 2;
    */
@@ -776,8 +945,22 @@ export const LookupActionSchema: GenMessage<LookupAction> = /*@__PURE__*/
   messageDesc(file_coria_v1_profile, 16);
 
 /**
- * CleanAction removes known names and identifiers from free text. It has
- * no fields.
+ * CleanAction cleans a value, keeping what does not identify (PS3.15
+ * E.1.1, action C). It has no fields. What it does depends on the VR:
+ *
+ *   LO, LT, SH, ST, UC, UT  the file's known names and identifiers (the
+ *                           values the profile removes or replaces) are
+ *                           removed from the text.
+ *   SQ                      the sequence is kept, and the elements of its
+ *                           items are each decided by the rules, as keep
+ *                           does: a sequence is cleaned by cleaning what it
+ *                           holds (the content item rules among them, for
+ *                           PS3.15 E.3.4).
+ *   OB, OW                  the element is removed: the bits of an overlay
+ *                           (60xx,3000) or a curve (50xx,3000) are not read
+ *                           for text, and removing them takes out no less
+ *                           than cleaning them would. The other elements of
+ *                           its group follow their own rules.
  *
  * @generated from message coria.v1.CleanAction
  */
@@ -805,6 +988,77 @@ export type QuarantineAction = Message<"coria.v1.QuarantineAction"> & {
  */
 export const QuarantineActionSchema: GenMessage<QuarantineAction> = /*@__PURE__*/
   messageDesc(file_coria_v1_profile, 18);
+
+/**
+ * DummyAction replaces a value by a dummy: a fixed value that says nothing
+ * of the original and is a valid value of its VR (PS3.5 6.2), so an
+ * element the IOD requires with a value (Type 1) stays valid. It has no
+ * fields. The dummies, the same in every file:
+ *
+ *   AE, CS, LO, LT, PN, SH, ST, UC, UT  "DUMMY"
+ *   AS  "000D"
+ *   DA  "19000101"
+ *   DT  "19000101000000"
+ *   TM  "000000"
+ *   DS, IS  "0"
+ *   UI  "2.25.0" (the UUID-derived root of PS3.5 B.2 with the nil UUID;
+ *       uid, not dummy, keeps references between files)
+ *   AT, FL, FD, SL, SS, SV, UL, US, UV  one value of zero
+ *   OB, OD, OF, OL, OV, OW, UN, UR  empty (zero length)
+ *   SQ  no items. PS3.15 asks D for a value of non-zero length, but an
+ *       item's dummy would need the attributes its macro requires, which
+ *       are known only per IOD; a sequence emptied keeps nothing of the
+ *       file, and a Type 1 sequence is better served by remove_unless_
+ *       required or by keep with rules for what its items hold.
+ *
+ * @generated from message coria.v1.DummyAction
+ */
+export type DummyAction = Message<"coria.v1.DummyAction"> & {
+};
+
+/**
+ * Describes the message coria.v1.DummyAction.
+ * Use `create(DummyActionSchema)` to create a new message.
+ */
+export const DummyActionSchema: GenMessage<DummyAction> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 19);
+
+/**
+ * RemoveUnlessRequiredAction removes an element unless the IOD of the
+ * file's SOP class (PS3.3) needs it, by the element's Type there, at its
+ * place in sequences (PS3.15 E.1.1, "X unless Z is required to maintain
+ * IOD conformance (Type 3 versus Type 2)", and so for each combined code):
+ *
+ *   Type 3, or an element the IOD does not list      removed
+ *   Type 2 or 2C                                     emptied, as empty
+ *   Type 1 or 1C                                     the fallback
+ *
+ * A SOP class the server does not know, or an element whose Type it cannot
+ * find, is taken as Type 1: the file stays valid whatever its IOD needs,
+ * and no value of the file stays. A conditional Type counts as its
+ * unconditional one, since its condition may read anything in the file.
+ * The combined codes of PS3.15 Table E.1-1 are written with it as X/Z:
+ * EMPTY; X/D and X/Z/D: DUMMY; X/Z/U*: UID. Z/D is written as DUMMY too:
+ * its Type 3 elements are removed rather than emptied, which takes out no
+ * less.
+ *
+ * @generated from message coria.v1.RemoveUnlessRequiredAction
+ */
+export type RemoveUnlessRequiredAction = Message<"coria.v1.RemoveUnlessRequiredAction"> & {
+  /**
+   * What a Type 1 element becomes. Required.
+   *
+   * @generated from field: coria.v1.RequiredFallback fallback = 1;
+   */
+  fallback: RequiredFallback;
+};
+
+/**
+ * Describes the message coria.v1.RemoveUnlessRequiredAction.
+ * Use `create(RemoveUnlessRequiredActionSchema)` to create a new message.
+ */
+export const RemoveUnlessRequiredActionSchema: GenMessage<RemoveUnlessRequiredAction> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 20);
 
 /**
  * PixelRule says what happens to an image whose pixels may carry burned-in
@@ -891,7 +1145,7 @@ export type PixelRule = Message<"coria.v1.PixelRule"> & {
  * Use `create(PixelRuleSchema)` to create a new message.
  */
 export const PixelRuleSchema: GenMessage<PixelRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 19);
+  messageDesc(file_coria_v1_profile, 21);
 
 /**
  * RedactPixels fills rectangles of an image.
@@ -912,7 +1166,7 @@ export type RedactPixels = Message<"coria.v1.RedactPixels"> & {
  * Use `create(RedactPixelsSchema)` to create a new message.
  */
 export const RedactPixelsSchema: GenMessage<RedactPixels> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 20);
+  messageDesc(file_coria_v1_profile, 22);
 
 /**
  * PixelRectangle is a rectangle of an image, in pixels, measured from the
@@ -972,7 +1226,7 @@ export type PixelRectangle = Message<"coria.v1.PixelRectangle"> & {
  * Use `create(PixelRectangleSchema)` to create a new message.
  */
 export const PixelRectangleSchema: GenMessage<PixelRectangle> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 21);
+  messageDesc(file_coria_v1_profile, 23);
 
 /**
  * DetectText fills text found by detection. It has no fields.
@@ -987,7 +1241,7 @@ export type DetectText = Message<"coria.v1.DetectText"> & {
  * Use `create(DetectTextSchema)` to create a new message.
  */
 export const DetectTextSchema: GenMessage<DetectText> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 22);
+  messageDesc(file_coria_v1_profile, 24);
 
 /**
  * AcceptPixels archives an image as it is. It has no fields.
@@ -1002,7 +1256,7 @@ export type AcceptPixels = Message<"coria.v1.AcceptPixels"> & {
  * Use `create(AcceptPixelsSchema)` to create a new message.
  */
 export const AcceptPixelsSchema: GenMessage<AcceptPixels> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 23);
+  messageDesc(file_coria_v1_profile, 25);
 
 /**
  * ExpandedProfile is a document with its bases copied in: what a version
@@ -1051,6 +1305,18 @@ export type ExpandedProfile = Message<"coria.v1.ExpandedProfile"> & {
    * @generated from field: repeated string bases = 5;
    */
   bases: string[];
+
+  /**
+   * The edition of the profile language whose meaning the version has:
+   * what each selector selects and each action does, as this file
+   * describes them. A server runs only a version of an edition it knows,
+   * and keeps the meaning of every edition it has shipped, so a stored
+   * version never changes what it does when the language grows. This
+   * edition is 1.
+   *
+   * @generated from field: int32 language_edition = 6;
+   */
+  languageEdition: number;
 };
 
 /**
@@ -1058,16 +1324,18 @@ export type ExpandedProfile = Message<"coria.v1.ExpandedProfile"> & {
  * Use `create(ExpandedProfileSchema)` to create a new message.
  */
 export const ExpandedProfileSchema: GenMessage<ExpandedProfile> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 24);
+  messageDesc(file_coria_v1_profile, 26);
 
 /**
- * ExpandedRule is a rule of an expanded profile and where it came from.
+ * ExpandedRule is a rule of an expanded profile, where it came from, and
+ * what validation decided of it.
  *
  * @generated from message coria.v1.ExpandedRule
  */
 export type ExpandedRule = Message<"coria.v1.ExpandedRule"> & {
   /**
-   * The rule.
+   * The rule, as validation normalized it: a keyword written as its tag,
+   * and every default written out.
    *
    * @generated from field: coria.v1.ProfileRule rule = 1;
    */
@@ -1079,6 +1347,18 @@ export type ExpandedRule = Message<"coria.v1.ExpandedRule"> & {
    * @generated from field: string origin = 2;
    */
   origin: string;
+
+  /**
+   * The VRs of what the selector selects, as validation decided them: the
+   * data dictionary's for a tag or a path (two where PS3.6 gives two), the
+   * VR of a vr selector, those of a content item's value elements for its
+   * value type; empty when the selector says nothing of it. A set rule has
+   * exactly one, the VR the element is made with. A stored version runs
+   * with these, never with a later dictionary's.
+   *
+   * @generated from field: repeated string vrs = 3;
+   */
+  vrs: string[];
 };
 
 /**
@@ -1086,7 +1366,7 @@ export type ExpandedRule = Message<"coria.v1.ExpandedRule"> & {
  * Use `create(ExpandedRuleSchema)` to create a new message.
  */
 export const ExpandedRuleSchema: GenMessage<ExpandedRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 25);
+  messageDesc(file_coria_v1_profile, 27);
 
 /**
  * ExpandedPixelRule is a pixel rule of an expanded profile and where it came
@@ -1115,7 +1395,7 @@ export type ExpandedPixelRule = Message<"coria.v1.ExpandedPixelRule"> & {
  * Use `create(ExpandedPixelRuleSchema)` to create a new message.
  */
 export const ExpandedPixelRuleSchema: GenMessage<ExpandedPixelRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 26);
+  messageDesc(file_coria_v1_profile, 28);
 
 /**
  * ProfileVersion is one version of a profile, as stored.
@@ -1174,7 +1454,7 @@ export type ProfileVersion = Message<"coria.v1.ProfileVersion"> & {
   document?: ProfileDocument | undefined;
 
   /**
-   * The expanded form. Absent in a list.
+   * The expanded form. Answered only with the view PROFILE_VIEW_FULL.
    *
    * @generated from field: coria.v1.ExpandedProfile expanded = 8;
    */
@@ -1186,7 +1466,7 @@ export type ProfileVersion = Message<"coria.v1.ProfileVersion"> & {
  * Use `create(ProfileVersionSchema)` to create a new message.
  */
 export const ProfileVersionSchema: GenMessage<ProfileVersion> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 27);
+  messageDesc(file_coria_v1_profile, 29);
 
 /**
  * ProfileSummary is a profile in a list.
@@ -1221,10 +1501,11 @@ export type ProfileSummary = Message<"coria.v1.ProfileSummary"> & {
  * Use `create(ProfileSummarySchema)` to create a new message.
  */
 export const ProfileSummarySchema: GenMessage<ProfileSummary> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 28);
+  messageDesc(file_coria_v1_profile, 30);
 
 /**
- * ProfileProblem is one thing wrong with a document.
+ * ProfileProblem is one thing wrong with a document, or one warning about
+ * it.
  *
  * @generated from message coria.v1.ProfileProblem
  */
@@ -1264,8 +1545,9 @@ export type ProfileProblem = Message<"coria.v1.ProfileProblem"> & {
 
   /**
    * What is wrong, as a fixed word a program can test, such as
-   * "unknown_keyword" or "action_vr". A later version may add words; a
-   * client shows one it does not know with the message.
+   * "unknown_keyword" or "action_vr"; for a warning, such as
+   * "shadowed_by_base" or "keeps_base_change". A later version may add
+   * words; a client shows one it does not know with the message.
    *
    * @generated from field: string code = 5;
    */
@@ -1284,7 +1566,29 @@ export type ProfileProblem = Message<"coria.v1.ProfileProblem"> & {
  * Use `create(ProfileProblemSchema)` to create a new message.
  */
 export const ProfileProblemSchema: GenMessage<ProfileProblem> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 29);
+  messageDesc(file_coria_v1_profile, 31);
+
+/**
+ * ProfileProblems is every problem of a document, in the order of the
+ * document: the detail of the error that refuses it.
+ *
+ * @generated from message coria.v1.ProfileProblems
+ */
+export type ProfileProblems = Message<"coria.v1.ProfileProblems"> & {
+  /**
+   * The problems.
+   *
+   * @generated from field: repeated coria.v1.ProfileProblem problems = 1;
+   */
+  problems: ProfileProblem[];
+};
+
+/**
+ * Describes the message coria.v1.ProfileProblems.
+ * Use `create(ProfileProblemsSchema)` to create a new message.
+ */
+export const ProfileProblemsSchema: GenMessage<ProfileProblems> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 32);
 
 /**
  * ProfileBase is a profile the server ships, which a document may name.
@@ -1335,7 +1639,7 @@ export type ProfileBase = Message<"coria.v1.ProfileBase"> & {
  * Use `create(ProfileBaseSchema)` to create a new message.
  */
 export const ProfileBaseSchema: GenMessage<ProfileBase> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 30);
+  messageDesc(file_coria_v1_profile, 33);
 
 /**
  * CreateProfileVersionRequest is a document to store as the next version
@@ -1371,6 +1675,24 @@ export type CreateProfileVersionRequest = Message<"coria.v1.CreateProfileVersion
    * @generated from field: string note = 4;
    */
   note: string;
+
+  /**
+   * The version the caller expects to be the profile's latest: 0 when it
+   * expects the profile not to exist yet. When given and the latest is
+   * another, the call is refused as a failed precondition and stores
+   * nothing, so two people who each read version 3 do not both store a
+   * version 4 unaware of each other. Absent: no expectation.
+   *
+   * @generated from field: optional int32 expected_latest_version = 5;
+   */
+  expectedLatestVersion?: number | undefined;
+
+  /**
+   * What the answer carries; the document by default.
+   *
+   * @generated from field: coria.v1.ProfileView view = 6;
+   */
+  view: ProfileView;
 };
 
 /**
@@ -1378,7 +1700,7 @@ export type CreateProfileVersionRequest = Message<"coria.v1.CreateProfileVersion
  * Use `create(CreateProfileVersionRequestSchema)` to create a new message.
  */
 export const CreateProfileVersionRequestSchema: GenMessage<CreateProfileVersionRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 31);
+  messageDesc(file_coria_v1_profile, 34);
 
 /**
  * CreateProfileVersionResponse is the version stored, or the latest when
@@ -1388,7 +1710,8 @@ export const CreateProfileVersionRequestSchema: GenMessage<CreateProfileVersionR
  */
 export type CreateProfileVersionResponse = Message<"coria.v1.CreateProfileVersionResponse"> & {
   /**
-   * The version, with its document and expanded form.
+   * The version, with its document, and its expanded form with the view
+   * PROFILE_VIEW_FULL.
    *
    * @generated from field: coria.v1.ProfileVersion version = 1;
    */
@@ -1401,6 +1724,21 @@ export type CreateProfileVersionResponse = Message<"coria.v1.CreateProfileVersio
    * @generated from field: bool created = 2;
    */
   created: boolean;
+
+  /**
+   * The warnings about the document, as ValidateProfile gives them.
+   *
+   * @generated from field: repeated coria.v1.ProfileProblem warnings = 3;
+   */
+  warnings: ProfileProblem[];
+
+  /**
+   * True when created is false and the request's note differs from the
+   * note stored with the version answered: the note given was not stored.
+   *
+   * @generated from field: bool note_differs = 4;
+   */
+  noteDiffers: boolean;
 };
 
 /**
@@ -1408,7 +1746,7 @@ export type CreateProfileVersionResponse = Message<"coria.v1.CreateProfileVersio
  * Use `create(CreateProfileVersionResponseSchema)` to create a new message.
  */
 export const CreateProfileVersionResponseSchema: GenMessage<CreateProfileVersionResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 32);
+  messageDesc(file_coria_v1_profile, 35);
 
 /**
  * GetProfileVersionRequest names a version of a profile.
@@ -1436,6 +1774,13 @@ export type GetProfileVersionRequest = Message<"coria.v1.GetProfileVersionReques
    * @generated from field: int32 version = 3;
    */
   version: number;
+
+  /**
+   * What the answer carries; the document by default.
+   *
+   * @generated from field: coria.v1.ProfileView view = 4;
+   */
+  view: ProfileView;
 };
 
 /**
@@ -1443,7 +1788,7 @@ export type GetProfileVersionRequest = Message<"coria.v1.GetProfileVersionReques
  * Use `create(GetProfileVersionRequestSchema)` to create a new message.
  */
 export const GetProfileVersionRequestSchema: GenMessage<GetProfileVersionRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 33);
+  messageDesc(file_coria_v1_profile, 36);
 
 /**
  * GetProfileVersionResponse is the version named.
@@ -1452,7 +1797,8 @@ export const GetProfileVersionRequestSchema: GenMessage<GetProfileVersionRequest
  */
 export type GetProfileVersionResponse = Message<"coria.v1.GetProfileVersionResponse"> & {
   /**
-   * The version, with its document and expanded form.
+   * The version, with its document, and its expanded form with the view
+   * PROFILE_VIEW_FULL.
    *
    * @generated from field: coria.v1.ProfileVersion version = 1;
    */
@@ -1464,7 +1810,7 @@ export type GetProfileVersionResponse = Message<"coria.v1.GetProfileVersionRespo
  * Use `create(GetProfileVersionResponseSchema)` to create a new message.
  */
 export const GetProfileVersionResponseSchema: GenMessage<GetProfileVersionResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 34);
+  messageDesc(file_coria_v1_profile, 37);
 
 /**
  * ListProfilesRequest asks for a page of a tenant's profiles.
@@ -1502,7 +1848,7 @@ export type ListProfilesRequest = Message<"coria.v1.ListProfilesRequest"> & {
  * Use `create(ListProfilesRequestSchema)` to create a new message.
  */
 export const ListProfilesRequestSchema: GenMessage<ListProfilesRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 35);
+  messageDesc(file_coria_v1_profile, 38);
 
 /**
  * ListProfilesResponse is a page of profiles.
@@ -1530,7 +1876,7 @@ export type ListProfilesResponse = Message<"coria.v1.ListProfilesResponse"> & {
  * Use `create(ListProfilesResponseSchema)` to create a new message.
  */
 export const ListProfilesResponseSchema: GenMessage<ListProfilesResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 36);
+  messageDesc(file_coria_v1_profile, 39);
 
 /**
  * ListProfileVersionsRequest asks for a page of a profile's versions.
@@ -1575,7 +1921,7 @@ export type ListProfileVersionsRequest = Message<"coria.v1.ListProfileVersionsRe
  * Use `create(ListProfileVersionsRequestSchema)` to create a new message.
  */
 export const ListProfileVersionsRequestSchema: GenMessage<ListProfileVersionsRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 37);
+  messageDesc(file_coria_v1_profile, 40);
 
 /**
  * ListProfileVersionsResponse is a page of versions.
@@ -1604,7 +1950,7 @@ export type ListProfileVersionsResponse = Message<"coria.v1.ListProfileVersionsR
  * Use `create(ListProfileVersionsResponseSchema)` to create a new message.
  */
 export const ListProfileVersionsResponseSchema: GenMessage<ListProfileVersionsResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 38);
+  messageDesc(file_coria_v1_profile, 41);
 
 /**
  * ValidateProfileRequest is a document to check.
@@ -1625,6 +1971,14 @@ export type ValidateProfileRequest = Message<"coria.v1.ValidateProfileRequest"> 
    * @generated from field: coria.v1.ProfileDocument document = 2;
    */
   document?: ProfileDocument | undefined;
+
+  /**
+   * What the answer carries: the expanded form only with
+   * PROFILE_VIEW_FULL.
+   *
+   * @generated from field: coria.v1.ProfileView view = 3;
+   */
+  view: ProfileView;
 };
 
 /**
@@ -1632,7 +1986,7 @@ export type ValidateProfileRequest = Message<"coria.v1.ValidateProfileRequest"> 
  * Use `create(ValidateProfileRequestSchema)` to create a new message.
  */
 export const ValidateProfileRequestSchema: GenMessage<ValidateProfileRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 39);
+  messageDesc(file_coria_v1_profile, 42);
 
 /**
  * ValidateProfileResponse is what the check found.
@@ -1648,7 +2002,8 @@ export type ValidateProfileResponse = Message<"coria.v1.ValidateProfileResponse"
   problems: ProfileProblem[];
 
   /**
-   * The expanded form; absent when there are problems.
+   * The expanded form; absent when there are problems, and unless the view
+   * is PROFILE_VIEW_FULL.
    *
    * @generated from field: coria.v1.ExpandedProfile expanded = 2;
    */
@@ -1660,6 +2015,19 @@ export type ValidateProfileResponse = Message<"coria.v1.ValidateProfileResponse"
    * @generated from field: string checksum = 3;
    */
   checksum: string;
+
+  /**
+   * What the document does that its author may not mean, though it is
+   * valid; empty when there are problems. A rule of the document's that a
+   * more specific rule of a base overrides for some elements
+   * ("shadowed_by_base"), and a rule that keeps what a base changes or
+   * removes ("keeps_base_change"), each named by the rule's position and
+   * name, the elements and the base's rule; at most 100, the last saying
+   * how many more there are ("more_warnings").
+   *
+   * @generated from field: repeated coria.v1.ProfileProblem warnings = 4;
+   */
+  warnings: ProfileProblem[];
 };
 
 /**
@@ -1667,7 +2035,7 @@ export type ValidateProfileResponse = Message<"coria.v1.ValidateProfileResponse"
  * Use `create(ValidateProfileResponseSchema)` to create a new message.
  */
 export const ValidateProfileResponseSchema: GenMessage<ValidateProfileResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 40);
+  messageDesc(file_coria_v1_profile, 43);
 
 /**
  * ListProfileBasesRequest asks for the bases the server knows. It has no
@@ -1683,7 +2051,7 @@ export type ListProfileBasesRequest = Message<"coria.v1.ListProfileBasesRequest"
  * Use `create(ListProfileBasesRequestSchema)` to create a new message.
  */
 export const ListProfileBasesRequestSchema: GenMessage<ListProfileBasesRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 41);
+  messageDesc(file_coria_v1_profile, 44);
 
 /**
  * ListProfileBasesResponse is every base the server knows.
@@ -1704,7 +2072,7 @@ export type ListProfileBasesResponse = Message<"coria.v1.ListProfileBasesRespons
  * Use `create(ListProfileBasesResponseSchema)` to create a new message.
  */
 export const ListProfileBasesResponseSchema: GenMessage<ListProfileBasesResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_profile, 42);
+  messageDesc(file_coria_v1_profile, 45);
 
 /**
  * UnnamedElements is what happens to an element no rule decides.
@@ -1829,7 +2197,7 @@ export const ConditionSubjectSchema: GenEnum<ConditionSubject> = /*@__PURE__*/
  */
 export enum LookupMissing {
   /**
-   * As quarantine.
+   * As quarantine, in a document; never in an expanded form.
    *
    * @generated from enum value: LOOKUP_MISSING_UNSPECIFIED = 0;
    */
@@ -1855,6 +2223,89 @@ export enum LookupMissing {
  */
 export const LookupMissingSchema: GenEnum<LookupMissing> = /*@__PURE__*/
   enumDesc(file_coria_v1_profile, 2);
+
+/**
+ * RequiredFallback is what remove_unless_required does to an element its
+ * IOD requires with a value.
+ *
+ * @generated from enum coria.v1.RequiredFallback
+ */
+export enum RequiredFallback {
+  /**
+   * Never valid.
+   *
+   * @generated from enum value: REQUIRED_FALLBACK_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The element is emptied, as empty does. Fits any VR.
+   *
+   * @generated from enum value: REQUIRED_FALLBACK_EMPTY = 1;
+   */
+  EMPTY = 1,
+
+  /**
+   * The value is replaced by a dummy, as dummy does. Fits any VR.
+   *
+   * @generated from enum value: REQUIRED_FALLBACK_DUMMY = 2;
+   */
+  DUMMY = 2,
+
+  /**
+   * A UID is replaced as uid does; a sequence is kept, and the elements of
+   * its items are each decided by the rules, whose rules for the UIDs it
+   * holds replace them (PS3.15 Table E.1-1 lists each with U). VR UI or SQ
+   * only.
+   *
+   * @generated from enum value: REQUIRED_FALLBACK_UID = 3;
+   */
+  UID = 3,
+}
+
+/**
+ * Describes the enum coria.v1.RequiredFallback.
+ */
+export const RequiredFallbackSchema: GenEnum<RequiredFallback> = /*@__PURE__*/
+  enumDesc(file_coria_v1_profile, 3);
+
+/**
+ * ProfileView is how much of a version an answer carries. A version's
+ * document and expanded form together always fit one answer: validation
+ * refuses a document whose canonical text and expanded text together pass
+ * 3.75 MiB (a JSON answer is at most that and one space for each comma),
+ * leaving the rest of the 4 MiB message for the other fields.
+ *
+ * @generated from enum coria.v1.ProfileView
+ */
+export enum ProfileView {
+  /**
+   * As PROFILE_VIEW_DOCUMENT.
+   *
+   * @generated from enum value: PROFILE_VIEW_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The document and the checksum, without the expanded form.
+   *
+   * @generated from enum value: PROFILE_VIEW_DOCUMENT = 1;
+   */
+  DOCUMENT = 1,
+
+  /**
+   * The document, the checksum and the expanded form.
+   *
+   * @generated from enum value: PROFILE_VIEW_FULL = 2;
+   */
+  FULL = 2,
+}
+
+/**
+ * Describes the enum coria.v1.ProfileView.
+ */
+export const ProfileViewSchema: GenEnum<ProfileView> = /*@__PURE__*/
+  enumDesc(file_coria_v1_profile, 4);
 
 /**
  * ProfileService keeps a tenant's de-identification profiles: versioned
@@ -1895,13 +2346,22 @@ export const ProfileService: GenService<{
    * CreateProfileVersion checks a document, expands it and stores it as the
    * next version of the profile named, version 1 for a name the tenant has
    * not used. A document whose every rule, selector, condition, action and
-   * base is valid is stored; any problem refuses the whole document, and
-   * the message names the first problem's rule and field (ValidateProfile
-   * answers every problem at once).
+   * base is valid is stored; any problem refuses the whole document: the
+   * message names the first problem's rule and field, and every problem is
+   * attached to the error as one ProfileProblems detail (ValidateProfile
+   * answers them the same way without an error). A stored version is
+   * answered with the warnings ValidateProfile would give.
    *
    * A document equal to the profile's latest version (the same document,
-   * field by field) makes no new version: the latest is answered, with
-   * created false, so a repeated call stores nothing more.
+   * field by field, compared in its canonical form) makes no new version:
+   * the latest is answered with created false, before
+   * expected_latest_version is checked, since the state the call asks for
+   * already holds. A note given with it is not stored (note_differs says
+   * when it differs from the stored one). This is what makes the call
+   * idempotent, and only this: the comparison is with the latest version
+   * alone, so a call repeated after another document was stored as a newer
+   * version stores its document again as the version after that. A client
+   * that must not do so sends expected_latest_version.
    *
    * Role: admin on the tenant.
    * Audit: one entry in the tenant's log, with the profile's name as its
@@ -1910,10 +2370,16 @@ export const ProfileService: GenService<{
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
    * does not exist, for a caller who may not list every tenant), invalid (a
    * malformed name, a missing document, a document with a problem, a note
-   * too long), not found (a tenant that does not exist, for a caller who may
-   * list every tenant), precondition (the profile already has the most
-   * versions a profile may have, 10000), unavailable (the tenant's database
-   * does not answer, or the tenant is not ready).
+   * too long, an unknown view, a negative expected_latest_version), not
+   * found (a tenant that does not exist, for a caller who may list every
+   * tenant), precondition (the profile's latest version is not
+   * expected_latest_version; the profile already has the most versions a
+   * profile may have, 10000), unavailable (the tenant's database does not
+   * answer, or the tenant is not ready).
+   *
+   * A version is stored as the exact bytes of the canonical texts its
+   * checksum covers, and answered from them, so its checksum can be checked
+   * on every read.
    *
    * @generated from rpc coria.v1.ProfileService.CreateProfileVersion
    */
@@ -1923,19 +2389,20 @@ export const ProfileService: GenService<{
     output: typeof CreateProfileVersionResponseSchema;
   },
   /**
-   * GetProfileVersion answers one version of a profile, its document as it
-   * was given and its expanded form. Its document is the profile's export:
-   * given back to CreateProfileVersion under any name, it expands to the
-   * same checksum.
+   * GetProfileVersion answers one version of a profile: its document as it
+   * was given, and its expanded form when view is PROFILE_VIEW_FULL. Its
+   * document is the profile's export: given back to CreateProfileVersion
+   * under any name, on a server of the same language edition, it expands
+   * to the same checksum.
    *
    * Role: operator on the tenant.
    * Audit: one entry in the tenant's log, with the profile's name as its
    * object and the version asked for in details.
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
-   * does not exist, for a caller who may not list every tenant), invalid,
-   * not found (the tenant has no profile of that name, or it has no such
-   * version; a tenant that does not exist, for a caller who may list every
-   * tenant), unavailable (the tenant's database does not answer, or the
+   * does not exist, for a caller who may not list every tenant), invalid
+   * (also an unknown view), not found (the tenant has no profile of that
+   * name, or it has no such version; a tenant that does not exist, for a
+   * caller who may list every tenant), unavailable (the tenant's database does not answer, or the
    * tenant is not ready).
    *
    * @generated from rpc coria.v1.ProfileService.GetProfileVersion
@@ -1989,14 +2456,15 @@ export const ProfileService: GenService<{
    * ValidateProfile checks a document as CreateProfileVersion would and
    * stores nothing. A document with problems is answered with every
    * problem, not refused: the call is valid, the document is not. A
-   * document with none is answered with its expanded form and checksum.
+   * document with none is answered with its checksum and its warnings, and
+   * with its expanded form when view is PROFILE_VIEW_FULL.
    *
    * Role: operator on the tenant.
    * Audit: one entry in the tenant's log, with the number of problems in
    * details.
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
    * does not exist, for a caller who may not list every tenant), invalid (a
-   * missing document), not found (a tenant that does not exist, for a caller
+   * missing document, an unknown view), not found (a tenant that does not exist, for a caller
    * who may list every tenant), unavailable (the tenant's database does not
    * answer, or the tenant is not ready).
    *

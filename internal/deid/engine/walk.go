@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/amrshadid/go-dicom/dataelem"
 	"github.com/amrshadid/go-dicom/dataset"
@@ -26,11 +27,13 @@ type run struct {
 	count    int
 	// shift is the subject's date shift in days, 0 until a date needs it.
 	shift int
-	// needUTF8 is set when a value outside the default repertoire is
-	// written into a data set that declares no character set: the top
-	// level then declares ISO_IR 192, of which the default repertoire is
-	// a part (PS3.5 6.1.2.3).
-	needUTF8 bool
+	// assigns are the lookups whose code the table assigns on first sight,
+	// asked for only once the whole plan has succeeded, so a file refused
+	// for another reason takes no code from a table.
+	assigns []assign
+	// undo restores what apply changed, last first, should it stop part
+	// way.
+	undo []func()
 }
 
 // opKind is what an op does.
@@ -49,6 +52,10 @@ const (
 	// opClean is opValue whose value is worked out once every needle is
 	// known; it then becomes opValue, or nothing when the text is clean.
 	opClean
+	// opAssign is opValue whose value is the code a lookup table assigns,
+	// asked for once the plan has succeeded; it then becomes opValue, or
+	// nothing when the code is the value.
+	opAssign
 )
 
 // op is one change of the plan.
@@ -80,7 +87,11 @@ const (
 	charsetAbsent charsetKind = iota + 1
 	// charsetUTF8: ISO_IR 192, the set the library decodes text into.
 	charsetUTF8
-	// charsetOther: another set, in which a UTF-8 value cannot be written.
+	// charsetOther: another set. The library declares ISO_IR 192 over
+	// every data set whose text it decoded into UTF-8, so text under
+	// another declaration is as the file wrote it, in a set this engine
+	// cannot search or clean: a value of it outside the default
+	// repertoire refuses the file.
 	charsetOther
 )
 
@@ -88,8 +99,11 @@ const (
 type scope struct {
 	charset charsetKind
 	// concept is the concept name of the structured report content item
-	// this data set is (PS3.3 C.17.3), nil when it is not one.
+	// this data set is (PS3.3 C.17.3), nil when it is not one or has none.
 	concept *profile.Concept
+	// valueType is the content item's Value Type (0040,A040) without its
+	// padding; empty when the data set is not a content item.
+	valueType string
 }
 
 // Tags the engine treats by fixed rules.
@@ -97,7 +111,7 @@ const (
 	tagSpecificCharacterSet = 0x00080005
 	tagPatientID            = 0x00100020
 	tagIssuerOfPatientID    = 0x00100021
-	tagContentSequence      = 0x0040A730
+	tagValueType            = 0x0040A040
 	tagConceptNameCode      = 0x0040A043
 	tagCodeValue            = 0x00080100
 	tagCodingScheme         = 0x00080102
@@ -123,20 +137,6 @@ var strippedTags = map[uint32]string{
 	0xFFFCFFFC: "data set trailing padding, which carries no information and may hold anything (PS3.10 7.2)",
 }
 
-// contentValueTags are the elements of a content item that hold its value
-// (PS3.3 C.17.3, Table C.17-5 and the macros of Table C.18), the ones a
-// content item selector selects.
-var contentValueTags = map[uint32]bool{
-	0x0040A160: true, // Text Value
-	0x0040A120: true, // DateTime
-	0x0040A121: true, // Date
-	0x0040A122: true, // Time
-	0x0040A123: true, // Person Name
-	0x0040A124: true, // UID
-	0x0040A168: true, // Concept Code Sequence
-	0x0040A300: true, // Measured Value Sequence
-}
-
 // blockKey is a private block of a data set: its group and block number.
 type blockKey struct {
 	group uint16
@@ -158,7 +158,10 @@ func (r *run) walk(ds *dataset.Dataset, seqs []uint32, path string, sc scope) er
 	for _, t := range tags {
 		if isCreator(t) {
 			if v, ok := elementText(ds, t); ok {
-				creators[blockKey{t.Group(), t.Element()}] = strings.TrimSpace(v)
+				// A creator is compared without its padding, the space
+				// or NUL that makes its length even (PS3.5 6.2), and any
+				// surrounding space.
+				creators[blockKey{t.Group(), t.Element()}] = strings.Trim(v, " \x00")
 			}
 		}
 	}
@@ -180,6 +183,8 @@ func (r *run) walk(ds *dataset.Dataset, seqs []uint32, path string, sc scope) er
 			r.record.Entries = append(r.record.Entries, Entry{})
 		case t.Element() == 0 || t.Group() == 0x0002:
 			r.fixed(ds, t, elem, p, opRemove, "a group length or file meta information, which is written anew with the file (PS3.5 7.2, PS3.10 7.1)")
+		case uint32(t) == tagSpecificCharacterSet:
+			r.fixed(ds, t, elem, p, opRemove, "the character set, which the engine declares itself once every value is known: ISO_IR 192 when any text is outside the default repertoire, none otherwise (PS3.5 6.1.2.3)")
 		case pixelTags[uint32(t)]:
 			r.fixed(ds, t, elem, p, 0, "pixel data, which only pixel rules change; this engine changes no pixels")
 		case strippedTags[uint32(t)] != "":
@@ -232,12 +237,16 @@ func (r *run) fixed(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement, 
 }
 
 // element plans the change to one element by the rule the profile's
-// precedence chooses, and reports whether the element is removed.
+// precedence chooses, or by the floor, and reports whether the element is
+// removed.
 func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement, seqs []uint32, path string, sc scope, creator string) (bool, error) {
 	vr := effectiveVR(t, elem)
+	if err := checkText(elem, vr, sc.charset); err != nil {
+		return false, &Failure{Cause: CauseBadValue, Path: path}
+	}
 	loc := profile.Location{Sequences: seqs, Tag: uint32(t), Creator: creator, VR: vr}
-	if sc.concept != nil && contentValueTags[uint32(t)] {
-		loc.ContentItem = sc.concept
+	if sc.valueType != "" {
+		loc.ContentItem, loc.ValueType = sc.concept, sc.valueType
 	}
 	dec := r.en.dec.Decide(loc, r.facts)
 	e := Entry{Path: path, Tag: uint32(t), VR: vr, Action: dec.Action.Kind.String(), Rule: dec.Rule, RuleName: dec.Name, Origin: dec.Origin, Reason: dec.Reason}
@@ -249,9 +258,45 @@ func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement
 			c.rule = "rule " + strconv.Itoa(dec.Rule+1)
 		}
 	}
+	act := dec.Action
+	if why := floorReason(uint32(t), vr); why != "" {
+		c.floor = true
+		if fa, changed := floorAction(act, t.Group()%2 == 1); changed {
+			act = fa
+			e.Action, e.Rule, e.RuleName, e.Origin = fa.Kind.String(), -1, "", ""
+			e.Reason = "the engine never keeps " + why + ", whatever the profile decides"
+			c.byRule, c.rule = false, ""
+		}
+	}
 	c.seq, _ = elem.GetValue().(*sequence.Sequence)
 	r.record.Entries = append(r.record.Entries, e)
-	return r.act(c, dec.Action, dec.VRs)
+	return r.act(c, act, dec.VRs)
+}
+
+// charsetVRs are the VRs whose value is text in the data set's character set
+// (PS3.5 6.1.2.3, 6.2): every one the library decodes into UTF-8.
+var charsetVRs = map[string]bool{
+	"AE": true, "AS": true, "CS": true, "DA": true, "DS": true, "DT": true, "IS": true, "LO": true, "LT": true,
+	"PN": true, "SH": true, "ST": true, "TM": true, "UC": true, "UI": true, "UR": true, "UT": true,
+}
+
+// checkText refuses a text value the engine could not search or clean
+// safely: one outside the default repertoire under a character set the
+// library did not decode it from, or one that is not valid UTF-8 where the
+// library decoded it into UTF-8. A needle taken from such a value, or a
+// clean of it, would compare bytes of different sets.
+func checkText(elem *dataelem.DataElement, vr string, cs charsetKind) error {
+	if !charsetVRs[vr] {
+		return nil
+	}
+	b, ok := elem.Bytes()
+	if !ok || isASCII(string(b)) {
+		return nil
+	}
+	if cs == charsetOther || !utf8.Valid(b) {
+		return errNotText
+	}
+	return nil
 }
 
 // items plans the changes inside a sequence's items.
@@ -268,7 +313,8 @@ func (r *run) items(seq *sequence.Sequence, seqs []uint32, t tag.Tag, path strin
 		if !ok {
 			return &Failure{Cause: CauseBadValue, Path: path}
 		}
-		isc := scope{charset: charsetOf(item, sc.charset), concept: conceptOf(uint32(t), item)}
+		isc := scope{charset: charsetOf(item, sc.charset)}
+		isc.concept, isc.valueType = contentItemOf(item)
 		if err := r.walk(item, inner, path+"["+strconv.Itoa(i)+"]/", isc); err != nil {
 			return err
 		}

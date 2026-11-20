@@ -248,8 +248,10 @@ func TestEveryUIDRemappedIsValidAndKeyed(t *testing.T) {
 // TestDatesShiftConsistentlyPerSubject guards the date shift: one subject
 // gets one shift in every file, within the profile's bound and never zero;
 // a different issuer is a different subject; DT keeps its time, fraction
-// and offset; partial dates keep their precision; an impossible date
-// fails; and a file without a Patient ID fails as no_subject.
+// and offset; partial dates keep their precision and are shifted from
+// the middle of their period, so a year is not always the year before; an
+// impossible date fails; and a file without a Patient ID fails as
+// no_subject.
 func TestDatesShiftConsistentlyPerSubject(t *testing.T) {
 	for _, most := range []int32{1, 7, 365, 3650} {
 		for i := range 500 {
@@ -267,22 +269,39 @@ func TestDatesShiftConsistentlyPerSubject(t *testing.T) {
 		ShiftDays(testKeys.Date, "", "P2", 3650) == ShiftDays(otherKeys.Date, "", "P2", 3650) {
 		t.Error("two tenants' keys give one shift")
 	}
-	cases := []struct{ in, want string }{
-		{"20240301", "20240229"},
-		{"20240101", "20231231"},
-		{"2024", "2023"},
-		{"202403", "202402"},
-		{"20240301101500.5-0500", "20240229101500.5-0500"},
-		{`20240301\\20240302`, `20240229\\20240301`},
+	cases := []struct {
+		in   string
+		days int
+		want string
+	}{
+		{"20240301", 1, "20240229"},
+		{"20240101", 1, "20231231"},
+		{"2024", 1, "2024"},
+		{"2024", 184, "2023"},
+		{"2024", 183, "2024"},
+		{"202403", 1, "202403"},
+		{"202403", 15, "202402"},
+		{"20240301101500.5-0500", 1, "20240229101500.5-0500"},
+		{`20240301\\20240302`, 1, `20240229\\20240301`},
 	}
 	for _, c := range cases {
 		f := shiftDT
 		if !strings.ContainsAny(c.in, ".-") && len(strings.Split(c.in, `\`)[0]) == 8 {
 			f = shiftDA
 		}
-		if got, err := f(c.in, 1); err != nil || got != c.want {
-			t.Errorf("shift %q by 1 = %q, %v; want %q", c.in, got, err, c.want)
+		if got, err := f(c.in, c.days); err != nil || got != c.want {
+			t.Errorf("shift %q by %d = %q, %v; want %q", c.in, c.days, got, err, c.want)
 		}
+	}
+	// A year is the year before for about half the shifts, never all: its
+	// original cannot be told from the result alone.
+	years := map[string]int{}
+	for days := 1; days <= 365; days++ {
+		out, _ := shiftDT("2024", days)
+		years[out]++
+	}
+	if len(years) != 2 || years["2024"] < 150 || years["2023"] < 150 {
+		t.Errorf("a year shifted by 1 to 365 days: %v", years)
 	}
 	for _, bad := range []string{"20240230", "2024-03-01", "0001010", "00010101", "2024030", "20240301101500.1234567"} {
 		if _, err := shiftDT(bad, 1); err == nil && len(bad) != 8 {
@@ -440,8 +459,8 @@ func TestLookupsGiveCodesOrFail(t *testing.T) {
 
 // TestCleanRemovesTheFilesValues guards clean: every value the profile
 // removes from the file, and each part of a removed name, is cut from free
-// text in any case, wherever the free text is in the walk; short parts
-// are left.
+// text in any case, wherever the free text is in the walk; a short part of
+// a name is cut only as a whole word ("Al", not the "al" of "Alpha").
 func TestCleanRemovesTheFilesValues(t *testing.T) {
 	en := newTestEngine(t, testKeys, Options{},
 		rule("desc", kw("StudyDescription"), aClean),
@@ -449,12 +468,12 @@ func TestCleanRemovesTheFilesValues(t *testing.T) {
 		rule("id", kw("PatientID"), aRemove),
 	)
 	ds := build(t,
-		el{tStudyDesc, "LO", "MRI of JOHN doe, id pat001, by Al"},
+		el{tStudyDesc, "LO", "MRI of JOHN doe, id pat001, by Al Alpha"},
 		el{tPatientName, "PN", "Doe^John^Al"},
 		el{tPatientID, "LO", "PAT001"},
 	)
 	apply(t, en, ds)
-	if got := mustText(t, ds, tStudyDesc); got != "MRI of  , id , by Al" {
+	if got := mustText(t, ds, tStudyDesc); got != "MRI of  , id , by  Alpha" {
 		t.Errorf("cleaned %q", got)
 	}
 }

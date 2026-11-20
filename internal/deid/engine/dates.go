@@ -55,9 +55,8 @@ func shiftDA(value string, days int) (string, error) {
 // shiftDT moves the date part of every value of a DT value back by days,
 // keeping the time of day, its fraction and its offset from UTC (PS3.5 6.2:
 // YYYY[MM[DD[HH[MM[SS[.F{1-6}]]]]]][&ZZXX], & a sign). A value of only a
-// year, or a year and month, is shifted from the first day of that period
-// and written back with the same precision. A value that is not a DT
-// fails.
+// year, or a year and month, is shifted as shiftDate says and written back
+// with the same precision. A value that is not a DT fails.
 func shiftDT(value string, days int) (string, error) {
 	return eachValue(value, func(v string) (string, error) {
 		if !validText("DT", v) {
@@ -77,17 +76,29 @@ func shiftDT(value string, days int) (string, error) {
 }
 
 // shiftDate moves a date of 4, 6 or 8 digits back by days and writes it
-// with the same number of digits; a year or a year and month is taken from
-// its first day.
+// with the same number of digits.
+//
+// A year, or a year and month, is shifted from its middle: a year from
+// its 2nd of July, a month from its 15th. Taken from its first day, a
+// year moved by any shift up to 365 days always became the year before,
+// so the original was the result plus one, exactly; from the middle, the
+// result is the original period or an earlier one depending on the
+// subject's shift, which is secret, and the shifted period holds the
+// shifted middle, as a full date of the period shifted by the same days
+// mostly falls in it.
 func shiftDate(v string, days int) (string, error) {
 	for i := range len(v) {
 		if v[i] < '0' || v[i] > '9' {
 			return "", errBadDate
 		}
 	}
+	if len(v) != 4 && len(v) != 6 && len(v) != 8 {
+		return "", errBadDate
+	}
 	year, _ := strconv.Atoi(v[:4])
-	month, day := 1, 1
+	month, day := 7, 2
 	if len(v) >= 6 {
+		day = 15
 		month, _ = strconv.Atoi(v[4:6])
 	}
 	if len(v) == 8 {

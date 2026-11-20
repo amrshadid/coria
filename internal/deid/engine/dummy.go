@@ -1,12 +1,14 @@
 package engine
 
-// dummies are the dummy values of PS3.15 E.1.1's action D: a value that
-// replaces the original, says nothing of it, and is a valid value of its VR
-// (PS3.5 6.2), so an attribute the IOD requires with a value (Type 1) stays
-// valid. Binary VRs that hold numbers take one value of zero, the least a
-// Type 1 attribute may hold; the others take a fixed text a reader sees as
-// a placeholder. A VR whose empty value is valid in every place (the OB,
-// OW family, UN, UR) is empty.
+// dummies are the dummy values of PS3.15 E.1.1's action D: "a non-zero
+// length value that may be a dummy value and consistent with the VR",
+// which replaces the original, says nothing of it, and is a valid value of
+// its VR (PS3.5 6.2), so an attribute the IOD requires with a value (Type
+// 1) stays valid. Binary VRs that hold numbers take one value of zero, the
+// least a Type 1 attribute may hold; the OB, OW family and UN one value of
+// zero of their width (two bytes for OB, OW and UN, so the length stays
+// even, PS3.5 7.1.1); the text VRs a fixed text a reader sees as a
+// placeholder.
 var dummies = map[string][]byte{
 	"AE": []byte("DUMMY"),
 	"AS": []byte("000D"),
@@ -20,12 +22,12 @@ var dummies = map[string][]byte{
 	"IS": []byte("0"),
 	"LO": []byte("DUMMY"),
 	"LT": []byte("DUMMY"),
-	"OB": {},
-	"OD": {},
-	"OF": {},
-	"OL": {},
-	"OV": {},
-	"OW": {},
+	"OB": {0, 0},
+	"OD": {0, 0, 0, 0, 0, 0, 0, 0},
+	"OF": {0, 0, 0, 0},
+	"OL": {0, 0, 0, 0},
+	"OV": {0, 0, 0, 0, 0, 0, 0, 0},
+	"OW": {0, 0},
 	"PN": []byte("DUMMY"),
 	"SH": []byte("DUMMY"),
 	"SL": {0, 0, 0, 0},
@@ -40,8 +42,9 @@ var dummies = map[string][]byte{
 	// derived UIDs with the nil UUID (PS3.5 B.2).
 	"UI": []byte("2.25.0"),
 	"UL": {0, 0, 0, 0},
-	"UN": {},
-	"UR": {},
+	"UN": {0, 0},
+	// A relative reference of RFC 3986 4.2, which UR takes (PS3.5 6.2).
+	"UR": []byte("DUMMY"),
 	"US": {0, 0},
 	"UT": []byte("DUMMY"),
 	"UV": {0, 0, 0, 0, 0, 0, 0, 0},

@@ -43,8 +43,8 @@ func pathSel(p string) *v1.ProfileSelector {
 func privSel(creator, group, elem string) *v1.ProfileSelector {
 	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_PrivateElement{PrivateElement: &v1.PrivateElement{Creator: creator, Group: group, Element: elem}}}
 }
-func itemSel(scheme, value string) *v1.ProfileSelector {
-	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_ContentItem{ContentItem: &v1.CodedConcept{Scheme: scheme, Value: value}}}
+func itemSel(scheme, value, valueType string) *v1.ProfileSelector {
+	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_ContentItem{ContentItem: &v1.ContentItemSelector{Scheme: scheme, Value: value, ValueType: valueType}}}
 }
 
 var (
@@ -57,7 +57,12 @@ var (
 	aGeneralize = &v1.ProfileAction{Kind: &v1.ProfileAction_Generalize{Generalize: &v1.GeneralizeAction{}}}
 	aClean      = &v1.ProfileAction{Kind: &v1.ProfileAction_Clean{Clean: &v1.CleanAction{}}}
 	aQuarantine = &v1.ProfileAction{Kind: &v1.ProfileAction_Quarantine{Quarantine: &v1.QuarantineAction{}}}
+	aDummy      = &v1.ProfileAction{Kind: &v1.ProfileAction_Dummy{Dummy: &v1.DummyAction{}}}
 )
+
+func aRemoveUnless(f v1.RequiredFallback) *v1.ProfileAction {
+	return &v1.ProfileAction{Kind: &v1.ProfileAction_RemoveUnlessRequired{RemoveUnlessRequired: &v1.RemoveUnlessRequiredAction{Fallback: f}}}
+}
 
 func aReplace(c string) *v1.ProfileAction {
 	return &v1.ProfileAction{Kind: &v1.ProfileAction_Replace{Replace: &v1.ReplaceAction{Value: &v1.ReplaceAction_Constant{Constant: c}}}}

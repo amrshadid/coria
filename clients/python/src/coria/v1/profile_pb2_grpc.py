@@ -133,13 +133,22 @@ class ProfileServiceServicer:
         """CreateProfileVersion checks a document, expands it and stores it as the
         next version of the profile named, version 1 for a name the tenant has
         not used. A document whose every rule, selector, condition, action and
-        base is valid is stored; any problem refuses the whole document, and
-        the message names the first problem's rule and field (ValidateProfile
-        answers every problem at once).
+        base is valid is stored; any problem refuses the whole document: the
+        message names the first problem's rule and field, and every problem is
+        attached to the error as one ProfileProblems detail (ValidateProfile
+        answers them the same way without an error). A stored version is
+        answered with the warnings ValidateProfile would give.
 
         A document equal to the profile's latest version (the same document,
-        field by field) makes no new version: the latest is answered, with
-        created false, so a repeated call stores nothing more.
+        field by field, compared in its canonical form) makes no new version:
+        the latest is answered with created false, before
+        expected_latest_version is checked, since the state the call asks for
+        already holds. A note given with it is not stored (note_differs says
+        when it differs from the stored one). This is what makes the call
+        idempotent, and only this: the comparison is with the latest version
+        alone, so a call repeated after another document was stored as a newer
+        version stores its document again as the version after that. A client
+        that must not do so sends expected_latest_version.
 
         Role: admin on the tenant.
         Audit: one entry in the tenant's log, with the profile's name as its
@@ -148,29 +157,36 @@ class ProfileServiceServicer:
         Errors: unauthenticated, permission denied (no grant; also a tenant that
         does not exist, for a caller who may not list every tenant), invalid (a
         malformed name, a missing document, a document with a problem, a note
-        too long), not found (a tenant that does not exist, for a caller who may
-        list every tenant), precondition (the profile already has the most
-        versions a profile may have, 10000), unavailable (the tenant's database
-        does not answer, or the tenant is not ready).
+        too long, an unknown view, a negative expected_latest_version), not
+        found (a tenant that does not exist, for a caller who may list every
+        tenant), precondition (the profile's latest version is not
+        expected_latest_version; the profile already has the most versions a
+        profile may have, 10000), unavailable (the tenant's database does not
+        answer, or the tenant is not ready).
+
+        A version is stored as the exact bytes of the canonical texts its
+        checksum covers, and answered from them, so its checksum can be checked
+        on every read.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def GetProfileVersion(self, request, context):
-        """GetProfileVersion answers one version of a profile, its document as it
-        was given and its expanded form. Its document is the profile's export:
-        given back to CreateProfileVersion under any name, it expands to the
-        same checksum.
+        """GetProfileVersion answers one version of a profile: its document as it
+        was given, and its expanded form when view is PROFILE_VIEW_FULL. Its
+        document is the profile's export: given back to CreateProfileVersion
+        under any name, on a server of the same language edition, it expands
+        to the same checksum.
 
         Role: operator on the tenant.
         Audit: one entry in the tenant's log, with the profile's name as its
         object and the version asked for in details.
         Errors: unauthenticated, permission denied (no grant; also a tenant that
-        does not exist, for a caller who may not list every tenant), invalid,
-        not found (the tenant has no profile of that name, or it has no such
-        version; a tenant that does not exist, for a caller who may list every
-        tenant), unavailable (the tenant's database does not answer, or the
+        does not exist, for a caller who may not list every tenant), invalid
+        (also an unknown view), not found (the tenant has no profile of that
+        name, or it has no such version; a tenant that does not exist, for a
+        caller who may list every tenant), unavailable (the tenant's database does not answer, or the
         tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -215,14 +231,15 @@ class ProfileServiceServicer:
         """ValidateProfile checks a document as CreateProfileVersion would and
         stores nothing. A document with problems is answered with every
         problem, not refused: the call is valid, the document is not. A
-        document with none is answered with its expanded form and checksum.
+        document with none is answered with its checksum and its warnings, and
+        with its expanded form when view is PROFILE_VIEW_FULL.
 
         Role: operator on the tenant.
         Audit: one entry in the tenant's log, with the number of problems in
         details.
         Errors: unauthenticated, permission denied (no grant; also a tenant that
         does not exist, for a caller who may not list every tenant), invalid (a
-        missing document), not found (a tenant that does not exist, for a caller
+        missing document, an unknown view), not found (a tenant that does not exist, for a caller
         who may list every tenant), unavailable (the tenant's database does not
         answer, or the tenant is not ready).
         """

@@ -166,7 +166,7 @@ func (ConditionSubject) EnumDescriptor() ([]byte, []int) {
 type LookupMissing int32
 
 const (
-	// As quarantine.
+	// As quarantine, in a document; never in an expanded form.
 	LookupMissing_LOOKUP_MISSING_UNSPECIFIED LookupMissing = 0
 	// The file is quarantined.
 	LookupMissing_LOOKUP_MISSING_QUARANTINE LookupMissing = 1
@@ -215,6 +215,124 @@ func (LookupMissing) EnumDescriptor() ([]byte, []int) {
 	return file_coria_v1_profile_proto_rawDescGZIP(), []int{2}
 }
 
+// RequiredFallback is what remove_unless_required does to an element its
+// IOD requires with a value.
+type RequiredFallback int32
+
+const (
+	// Never valid.
+	RequiredFallback_REQUIRED_FALLBACK_UNSPECIFIED RequiredFallback = 0
+	// The element is emptied, as empty does. Fits any VR.
+	RequiredFallback_REQUIRED_FALLBACK_EMPTY RequiredFallback = 1
+	// The value is replaced by a dummy, as dummy does. Fits any VR.
+	RequiredFallback_REQUIRED_FALLBACK_DUMMY RequiredFallback = 2
+	// A UID is replaced as uid does; a sequence is kept, and the elements of
+	// its items are each decided by the rules, whose rules for the UIDs it
+	// holds replace them (PS3.15 Table E.1-1 lists each with U). VR UI or SQ
+	// only.
+	RequiredFallback_REQUIRED_FALLBACK_UID RequiredFallback = 3
+)
+
+// Enum value maps for RequiredFallback.
+var (
+	RequiredFallback_name = map[int32]string{
+		0: "REQUIRED_FALLBACK_UNSPECIFIED",
+		1: "REQUIRED_FALLBACK_EMPTY",
+		2: "REQUIRED_FALLBACK_DUMMY",
+		3: "REQUIRED_FALLBACK_UID",
+	}
+	RequiredFallback_value = map[string]int32{
+		"REQUIRED_FALLBACK_UNSPECIFIED": 0,
+		"REQUIRED_FALLBACK_EMPTY":       1,
+		"REQUIRED_FALLBACK_DUMMY":       2,
+		"REQUIRED_FALLBACK_UID":         3,
+	}
+)
+
+func (x RequiredFallback) Enum() *RequiredFallback {
+	p := new(RequiredFallback)
+	*p = x
+	return p
+}
+
+func (x RequiredFallback) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RequiredFallback) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_profile_proto_enumTypes[3].Descriptor()
+}
+
+func (RequiredFallback) Type() protoreflect.EnumType {
+	return &file_coria_v1_profile_proto_enumTypes[3]
+}
+
+func (x RequiredFallback) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RequiredFallback.Descriptor instead.
+func (RequiredFallback) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{3}
+}
+
+// ProfileView is how much of a version an answer carries. A version's
+// document and expanded form together always fit one answer: validation
+// refuses a document whose canonical text and expanded text together pass
+// 3.75 MiB (a JSON answer is at most that and one space for each comma),
+// leaving the rest of the 4 MiB message for the other fields.
+type ProfileView int32
+
+const (
+	// As PROFILE_VIEW_DOCUMENT.
+	ProfileView_PROFILE_VIEW_UNSPECIFIED ProfileView = 0
+	// The document and the checksum, without the expanded form.
+	ProfileView_PROFILE_VIEW_DOCUMENT ProfileView = 1
+	// The document, the checksum and the expanded form.
+	ProfileView_PROFILE_VIEW_FULL ProfileView = 2
+)
+
+// Enum value maps for ProfileView.
+var (
+	ProfileView_name = map[int32]string{
+		0: "PROFILE_VIEW_UNSPECIFIED",
+		1: "PROFILE_VIEW_DOCUMENT",
+		2: "PROFILE_VIEW_FULL",
+	}
+	ProfileView_value = map[string]int32{
+		"PROFILE_VIEW_UNSPECIFIED": 0,
+		"PROFILE_VIEW_DOCUMENT":    1,
+		"PROFILE_VIEW_FULL":        2,
+	}
+)
+
+func (x ProfileView) Enum() *ProfileView {
+	p := new(ProfileView)
+	*p = x
+	return p
+}
+
+func (x ProfileView) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProfileView) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_profile_proto_enumTypes[4].Descriptor()
+}
+
+func (ProfileView) Type() protoreflect.EnumType {
+	return &file_coria_v1_profile_proto_enumTypes[4]
+}
+
+func (x ProfileView) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProfileView.Descriptor instead.
+func (ProfileView) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{4}
+}
+
 // ProfileDocument is a de-identification profile as a person writes it: its
 // bases, its own rules and its defaults. Its JSON is the profile's file
 // form; a field the message does not have is refused, so a misspelled field
@@ -228,7 +346,9 @@ func (LookupMissing) EnumDescriptor() ([]byte, []int) {
 //
 //  1. The most specific selector wins, in this order: a path or a content
 //     item; a tag or a keyword; a private element; a private creator's
-//     block; a group; a VR.
+//     block; a group; a VR. A group or a VR selector selects a private
+//     element only when it says include_private, so the default below
+//     holds for private elements unless a rule opts in.
 //  2. Between selectors equally specific, the later rule wins: the
 //     document's own rules over its bases', a later base over an earlier,
 //     and within one list a later rule over an earlier. (So an option of
@@ -237,6 +357,22 @@ func (LookupMissing) EnumDescriptor() ([]byte, []int) {
 //
 // An element no rule decides takes the default: a private element (an odd
 // group, PS3.5 7.8) is removed; any other follows unnamed.
+//
+// Some elements are never decided by a profile, and no selector names or
+// selects them: the pipeline handles them the same way in every file. The
+// file meta information (group 0002, Media Storage SOP Instance UID
+// (0002,0003) among it) is written anew for every de-identified file
+// (PS3.10 7.1), with the remapped UID; command elements (group 0000) and
+// the directory elements of group 0004 (Referenced SOP Instance UID in
+// File (0004,1511) among them) are not kept in an archived file; items and
+// delimiters (group FFFE) and group lengths (element 0000) are written
+// with the file; the Original Attributes Sequence (0400,0561), the
+// Encrypted Attributes Sequence (0400,0500), the MAC Parameters Sequence
+// (4FFE,0001), the Digital Signatures Sequence (FFFA,FFFA) and Data Set
+// Trailing Padding (FFFC,FFFC) are removed from every file, since they
+// hold values as received or cannot hold over a changed data set (PS3.15
+// E.1.1); and the elements of group 7FE0 (pixel data and the tables that
+// describe its encoding) change only by pixel rules.
 type ProfileDocument struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The bases, in order: names answered by ListProfileBases, such as
@@ -430,6 +566,14 @@ func (x *ProfileRule) GetReason() string {
 }
 
 // ProfileSelector is what a rule selects. Exactly one kind is set.
+//
+// A selector never selects a private creator element (gggg,0010-00FF):
+// one follows the elements of its block, kept while any of them is kept
+// and removed otherwise (PS3.5 7.8.1). A private element's creator is the
+// one that reserves its block in the data set the element is in (the top
+// level or an item), compared exactly once its surrounding spaces are
+// removed. No selector selects an element the pipeline handles
+// (ProfileDocument says which).
 type ProfileSelector struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The kind of selector.
@@ -443,9 +587,15 @@ type ProfileSelector struct {
 	//	*ProfileSelector_PrivateElement
 	//	*ProfileSelector_Path
 	//	*ProfileSelector_ContentItem
-	Kind          isProfileSelector_Kind `protobuf_oneof:"kind"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Kind isProfileSelector_Kind `protobuf_oneof:"kind"`
+	// With a group or a vr selector, private elements are selected too (an
+	// odd group, PS3.5 7.8), such as every UI element for a uid action,
+	// private ones included. Refused with any other kind of selector:
+	// private_element names private elements by their creator, and tag,
+	// keyword, path and content_item name standard elements only.
+	IncludePrivate bool `protobuf:"varint,8,opt,name=include_private,json=includePrivate,proto3" json:"include_private,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ProfileSelector) Reset() {
@@ -539,13 +689,20 @@ func (x *ProfileSelector) GetPath() string {
 	return ""
 }
 
-func (x *ProfileSelector) GetContentItem() *CodedConcept {
+func (x *ProfileSelector) GetContentItem() *ContentItemSelector {
 	if x != nil {
 		if x, ok := x.Kind.(*ProfileSelector_ContentItem); ok {
 			return x.ContentItem
 		}
 	}
 	return nil
+}
+
+func (x *ProfileSelector) GetIncludePrivate() bool {
+	if x != nil {
+		return x.IncludePrivate
+	}
+	return false
 }
 
 type isProfileSelector_Kind interface {
@@ -558,8 +715,9 @@ type ProfileSelector_Tag struct {
 	// such as "00100010". Not a private element (an odd group: use
 	// private_element), not the file meta information (group 0002), not a
 	// command element (group 0000), not an item or delimiter (group FFFE),
-	// not a group length (element 0000), and not pixel data (7FE00008,
-	// 7FE00009, 7FE00010), which only pixel rules change. The digits may
+	// not a group length (element 0000), not an element of groups 0004 or
+	// 7FE0, and not an element the pipeline removes from every file
+	// (04000561, 04000500, 4FFE0001, FFFAFFFA, FFFCFFFC). The digits may
 	// be in either case; the expanded form writes them in upper case.
 	Tag string `protobuf:"bytes,1,opt,name=tag,proto3,oneof"`
 }
@@ -572,19 +730,28 @@ type ProfileSelector_Keyword struct {
 }
 
 type ProfileSelector_Group struct {
-	// Every element of a group, or of a family of groups: four hexadecimal
-	// digits, where "x" stands for any digit, such as "0010" or "60xx" (the
-	// overlay groups, PS3.5 7.6). Not "xxxx", which is what unnamed says,
-	// and nothing that could stand for group 0000, 0002 or FFFE. An odd
-	// group selects private elements whatever their creator. Since a group
-	// holds elements of many VRs, a group rule may only keep, remove, empty
-	// or quarantine.
+	// Every standard element of a group, or of a family of groups: four
+	// hexadecimal digits, where "x" stands for any digit, such as "0010",
+	// or "60xx" for the overlay groups (PS3.5 7.6: the even groups 6000 to
+	// 601E; the other even groups it covers hold no standard element). Not
+	// "xxxx", which is what unnamed says; nothing that could stand for
+	// group 0000, 0002, 0004 or FFFE; and not 7FE0, FFFA or FFFC, which
+	// hold only elements the pipeline handles. A group rule never selects
+	// those elements in a family that covers their group. With
+	// include_private it selects the private elements of the groups too,
+	// whatever their creator; without it, a group with an odd last digit
+	// would select nothing and is refused. Since a group holds elements of
+	// many VRs, a group rule may only use the actions that fit any VR
+	// (ProfileAction says which).
 	Group string `protobuf:"bytes,3,opt,name=group,proto3,oneof"`
 }
 
 type ProfileSelector_Vr struct {
-	// Every element of a value representation (PS3.5 6.2), such as "PN" or
-	// "DA".
+	// Every standard element of a value representation (PS3.5 6.2), such
+	// as "PN" or "DA", and with include_private every private element the
+	// file gives that VR too (an implicit VR file gives a private element
+	// VR UN, PS3.5 6.2.2). Never an element of group 7FE0 or one the
+	// pipeline handles.
 	Vr string `protobuf:"bytes,4,opt,name=vr,proto3,oneof"`
 }
 
@@ -613,11 +780,11 @@ type ProfileSelector_Path struct {
 }
 
 type ProfileSelector_ContentItem struct {
-	// The value of every structured report content item (PS3.3 C.17.3)
-	// whose concept name is this code, wherever the item is, such as the
-	// name of a person observed (DCM 121008). The action applies to the
-	// item's value element; remove removes the whole item.
-	ContentItem *CodedConcept `protobuf:"bytes,7,opt,name=content_item,json=contentItem,proto3,oneof"`
+	// The value element of every structured report content item (PS3.3
+	// C.17.3) whose concept name is this code, such as the name of a person
+	// observed (DCM 121008); ContentItemSelector says which element that
+	// is for each value type.
+	ContentItem *ContentItemSelector `protobuf:"bytes,7,opt,name=content_item,json=contentItem,proto3,oneof"`
 }
 
 func (*ProfileSelector_Tag) isProfileSelector_Kind() {}
@@ -702,31 +869,69 @@ func (x *PrivateElement) GetElement() string {
 	return ""
 }
 
-// CodedConcept is a code (PS3.3 8.8): the coding scheme and the code value.
-type CodedConcept struct {
+// ContentItemSelector selects the value element of structured report
+// content items (PS3.3 C.17.3) by their concept name, a code (PS3.3 8.8),
+// and optionally their value type. A content item is an item of a Content
+// Sequence (0040,A730), and its concept name is the first item of its
+// Concept Name Code Sequence (0040,A043). The rule selects only the
+// item's value element, the one its Value Type (0040,A040) holds its value
+// in (PS3.3 Table C.17-5 and the macros of C.18):
+//
+//	TEXT       Text Value (0040,A160), UT
+//	NUM        Measured Value Sequence (0040,A300), and Numeric Value
+//	           Qualifier Code Sequence (0040,A301), SQ
+//	CODE       Concept Code Sequence (0040,A168), SQ
+//	DATE       Date (0040,A121), DA
+//	TIME       Time (0040,A122), TM
+//	DATETIME   DateTime (0040,A120), DT
+//	PNAME      Person Name (0040,A123), PN
+//	UIDREF     UID (0040,A124), UI
+//	COMPOSITE, IMAGE, WAVEFORM
+//	           Referenced SOP Sequence (0008,1199), SQ
+//	SCOORD, SCOORD3D
+//	           Graphic Data (0070,0022), FL
+//	TCOORD     Referenced Sample Positions (0040,A132), UL; Referenced
+//	           Time Offsets (0040,A138), DS; Referenced DateTime
+//	           (0040,A13A), DT
+//	TABLE      Tabulated Values Sequence (0040,A801), SQ
+//	CONTAINER  none: its children are content items of their own.
+//
+// The item's other elements (its concept name, relationship, observation
+// date and time, and the rest) follow the other rules, as any element
+// does. An item of a value type not in this list has no value element a
+// content item rule selects.
+type ContentItemSelector struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The Coding Scheme Designator (0008,0102), such as "DCM". 1 to 16 bytes.
+	// The Coding Scheme Designator (0008,0102), such as "DCM". 1 to 16 bytes,
+	// no backslash, no control character, no surrounding space.
 	Scheme string `protobuf:"bytes,1,opt,name=scheme,proto3" json:"scheme,omitempty"`
-	// The Code Value (0008,0100), such as "121008". 1 to 64 bytes.
-	Value         string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	// The Code Value (0008,0100), such as "121008". 1 to 64 bytes, as for
+	// scheme.
+	Value string `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	// The value type, one of the list above, such as "PNAME"; empty for any.
+	// With a value type, the rule's action is checked against the VRs of
+	// that type's value elements, as for a tag; without one, the selector
+	// says nothing of the VR, and the rule may only use the actions that fit
+	// any VR.
+	ValueType     string `protobuf:"bytes,3,opt,name=value_type,json=valueType,proto3" json:"value_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CodedConcept) Reset() {
-	*x = CodedConcept{}
+func (x *ContentItemSelector) Reset() {
+	*x = ContentItemSelector{}
 	mi := &file_coria_v1_profile_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CodedConcept) String() string {
+func (x *ContentItemSelector) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CodedConcept) ProtoMessage() {}
+func (*ContentItemSelector) ProtoMessage() {}
 
-func (x *CodedConcept) ProtoReflect() protoreflect.Message {
+func (x *ContentItemSelector) ProtoReflect() protoreflect.Message {
 	mi := &file_coria_v1_profile_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -738,30 +943,42 @@ func (x *CodedConcept) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CodedConcept.ProtoReflect.Descriptor instead.
-func (*CodedConcept) Descriptor() ([]byte, []int) {
+// Deprecated: Use ContentItemSelector.ProtoReflect.Descriptor instead.
+func (*ContentItemSelector) Descriptor() ([]byte, []int) {
 	return file_coria_v1_profile_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *CodedConcept) GetScheme() string {
+func (x *ContentItemSelector) GetScheme() string {
 	if x != nil {
 		return x.Scheme
 	}
 	return ""
 }
 
-func (x *CodedConcept) GetValue() string {
+func (x *ContentItemSelector) GetValue() string {
 	if x != nil {
 		return x.Value
 	}
 	return ""
 }
 
+func (x *ContentItemSelector) GetValueType() string {
+	if x != nil {
+		return x.ValueType
+	}
+	return ""
+}
+
 // ProfileCondition is one condition on the file or its reception. A file's
-// value is read as received, before any rule changes it, from the top
-// level of the data set, even for an element inside a sequence. A value
-// with several parts (VM above 1) is matched as written, the parts joined
-// by "\".
+// value is read once for each file, as received, before any rule changes
+// it, from the top level of the data set, even for an element inside a
+// sequence. Its padding is removed as PS3.5 6.2 allows: trailing spaces
+// and NULs from every value, and leading spaces too from an AE, CS, DS,
+// IS, LO, SH, DA, DT, TM or UI value; its case is kept. A value with
+// several parts (VM above 1) is matched as written, the parts joined by
+// "\". A value absent or empty is absent, so equals "" never holds. A
+// reception's value (receiver, AE titles) is read with its surrounding
+// spaces removed, and an empty one is absent.
 type ProfileCondition struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// What the condition reads. Required.
@@ -910,11 +1127,40 @@ func (*ProfileCondition_Present) isProfileCondition_Test() {}
 // says of the element's VR, and a rule whose action does not fit is
 // refused: a tag, keyword or path has the VR the data dictionary gives it
 // (an action must fit each, where PS3.6 gives two, such as "US or SS"); a
-// vr selector, that VR; a group, a private element or a tag the dictionary
-// does not know say nothing of it and allow only keep, remove, empty and
-// quarantine. A content item's value has the VR its item gives, known only
-// in the file, so every kind but set is allowed and a value it does not fit
-// fails there, closed.
+// vr selector, that VR; a content item with a value type, the VRs of its
+// value elements. A group, a private element, a tag the dictionary does
+// not know and a content item without a value type say nothing of it, and
+// allow only the actions that fit any VR: keep, remove, empty, dummy,
+// remove_unless_required with EMPTY or DUMMY, and quarantine. The VRs
+// validation decided are stored with each rule of the expanded form
+// (ExpandedRule.vrs), so a later data dictionary never changes them.
+//
+// A text a rule writes (a constant, a template's output, a hash code, a
+// lookup code) is checked, when the rule is validated, against every VR
+// it may be written into: its characters and its maximum length (PS3.5
+// 6.2), a template with each placeholder at a code's full length. A
+// constant and a template's own text are printable ASCII (0x20 to 0x7E,
+// the default repertoire every character set of PS3.5 6.1 holds, so the
+// value fits every file) without a backslash, so a written value is one
+// value, never several.
+//
+// In the file, an element's VR is the one it is written with, and a
+// standard element written as UN (PS3.5 6.2.2) is read as the VR the data
+// dictionary gives it and written back with that VR. An action that reads
+// or writes a value (all but keep, remove, empty, dummy, quarantine and
+// remove_unless_required, which fit any VR) on an element whose VR in the
+// file is not among the rule's VRs refuses the file, closed: it is
+// quarantined. So does any action on a sequence other than keep, remove,
+// empty, dummy, clean, quarantine and remove_unless_required. Every value
+// written is checked again in the file against its VR, each value of
+// several apart. A server that meets an action kind it does not know
+// quarantines the file rather than guess.
+//
+// The value a hash, a template's placeholder or a lookup's key is made of
+// is the element's value as received, as UTF-8 text, with its padding
+// removed as for a condition (ProfileCondition), and whole: a PN keeps its
+// "^" and "=", a value of several parts its "\".
+//
 // There is no action that runs outside code or calls an address: each would
 // be a way out for the values a profile removes.
 type ProfileAction struct {
@@ -935,6 +1181,8 @@ type ProfileAction struct {
 	//	*ProfileAction_Lookup
 	//	*ProfileAction_Clean
 	//	*ProfileAction_Quarantine
+	//	*ProfileAction_Dummy
+	//	*ProfileAction_RemoveUnlessRequired
 	Kind          isProfileAction_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1085,22 +1333,43 @@ func (x *ProfileAction) GetQuarantine() *QuarantineAction {
 	return nil
 }
 
+func (x *ProfileAction) GetDummy() *DummyAction {
+	if x != nil {
+		if x, ok := x.Kind.(*ProfileAction_Dummy); ok {
+			return x.Dummy
+		}
+	}
+	return nil
+}
+
+func (x *ProfileAction) GetRemoveUnlessRequired() *RemoveUnlessRequiredAction {
+	if x != nil {
+		if x, ok := x.Kind.(*ProfileAction_RemoveUnlessRequired); ok {
+			return x.RemoveUnlessRequired
+		}
+	}
+	return nil
+}
+
 type isProfileAction_Kind interface {
 	isProfileAction_Kind()
 }
 
 type ProfileAction_Keep struct {
-	// The element stays as it is.
+	// The element stays as it is. Fits any VR. A sequence kept stays, and
+	// the elements of its items are each decided by the rules.
 	Keep *KeepAction `protobuf:"bytes,1,opt,name=keep,proto3,oneof"`
 }
 
 type ProfileAction_Remove struct {
-	// The element is removed.
+	// The element is removed. Fits any VR. A content item rule removes only
+	// the item's value element.
 	Remove *RemoveAction `protobuf:"bytes,2,opt,name=remove,proto3,oneof"`
 }
 
 type ProfileAction_Empty struct {
-	// The element stays with an empty value; a sequence, with no items.
+	// The element stays with an empty value (zero length); a sequence, with
+	// no items. Fits any VR.
 	Empty *EmptyAction `protobuf:"bytes,3,opt,name=empty,proto3,oneof"`
 }
 
@@ -1120,7 +1389,7 @@ type ProfileAction_Hash struct {
 	// The value is replaced by its keyed hash: the same value always gives
 	// the same code under one tenant, and nobody without the tenant's
 	// secret can compute or reverse it. Text VRs only (AE, CS, LO, LT, PN,
-	// SH, ST, UC, UT).
+	// SH, ST, UC, UT). HashAction says the code's form.
 	Hash *HashAction `protobuf:"bytes,6,opt,name=hash,proto3,oneof"`
 }
 
@@ -1148,19 +1417,33 @@ type ProfileAction_Generalize struct {
 
 type ProfileAction_Lookup struct {
 	// A value is replaced by the code a table of the tenant assigns to it.
+	// Text VRs only, as for hash; LookupAction says the code's form.
 	Lookup *LookupAction `protobuf:"bytes,10,opt,name=lookup,proto3,oneof"`
 }
 
 type ProfileAction_Clean struct {
-	// Known names and identifiers of the file are removed from free text.
-	// VR LO, LT, SH, ST, UC or UT only.
+	// The value is cleaned: CleanAction says what that is for each VR.
+	// VR LO, LT, SH, ST, UC, UT, SQ, OB or OW only.
 	Clean *CleanAction `protobuf:"bytes,11,opt,name=clean,proto3,oneof"`
 }
 
 type ProfileAction_Quarantine struct {
 	// The whole file is quarantined, with the rule's name as the reason,
-	// whenever the rule applies to an element present in it.
+	// whenever the rule applies to an element present in it. Fits any VR.
 	Quarantine *QuarantineAction `protobuf:"bytes,12,opt,name=quarantine,proto3,oneof"`
+}
+
+type ProfileAction_Dummy struct {
+	// The value is replaced by a dummy of its VR (PS3.15 E.1.1, action D).
+	// Fits any VR; DummyAction says the values.
+	Dummy *DummyAction `protobuf:"bytes,13,opt,name=dummy,proto3,oneof"`
+}
+
+type ProfileAction_RemoveUnlessRequired struct {
+	// The element is removed unless the IOD of the file's SOP class needs
+	// it (PS3.15 E.1.1, the combined actions X/Z, X/D, Z/D, X/Z/D and
+	// X/Z/U*). RemoveUnlessRequiredAction says how the IOD decides.
+	RemoveUnlessRequired *RemoveUnlessRequiredAction `protobuf:"bytes,14,opt,name=remove_unless_required,json=removeUnlessRequired,proto3,oneof"`
 }
 
 func (*ProfileAction_Keep) isProfileAction_Kind() {}
@@ -1186,6 +1469,10 @@ func (*ProfileAction_Lookup) isProfileAction_Kind() {}
 func (*ProfileAction_Clean) isProfileAction_Kind() {}
 
 func (*ProfileAction_Quarantine) isProfileAction_Kind() {}
+
+func (*ProfileAction_Dummy) isProfileAction_Kind() {}
+
+func (*ProfileAction_RemoveUnlessRequired) isProfileAction_Kind() {}
 
 // KeepAction keeps an element as it is. It has no fields.
 type KeepAction struct {
@@ -1373,19 +1660,26 @@ type isReplaceAction_Value interface {
 
 type ReplaceAction_Constant struct {
 	// A constant, written as the element's VR requires (PS3.5 6.2), and
-	// checked against it where the selector gives one VR. Only for an
-	// element whose VR holds text (AE, AS, CS, DA, DS, DT, IS, LO, LT, PN,
-	// SH, ST, TM, UC, UI, UR, UT). At most 1024 bytes.
+	// checked against each VR the selector gives. Only for an element whose
+	// VR holds text (AE, AS, CS, DA, DS, DT, IS, LO, LT, PN, SH, ST, TM, UC,
+	// UI, UR, UT). Printable ASCII without a backslash; at most 1024 bytes
+	// and the VR's maximum length.
 	Constant string `protobuf:"bytes,1,opt,name=constant,proto3,oneof"`
 }
 
 type ReplaceAction_Template struct {
 	// Text with placeholders, for an element of a text VR (as for hash):
 	// "{#Keyword}" or "{#GGGGEEEE}" is the keyed hash of that top-level
-	// element's value as received, as hash makes it, and the element must
-	// be of a text VR; "{{" and "}}" are a brace; nothing else is read from
-	// the file. Such as "SUBJ-{#PatientID}". At most 1024 bytes and 8
-	// placeholders. The expanded form writes each placeholder's tag.
+	// element's value as received, written as hash writes it for the
+	// target's VR, and the element must be of a text VR; "{{" and "}}" are
+	// a brace; nothing else is read from the file. Such as
+	// "SUBJ-{#PatientID}". A placeholder whose element is absent or empty
+	// in the file refuses the file, closed (the reason names the rule),
+	// rather than write a code of nothing. At most 1024 bytes and 8
+	// placeholders; its text
+	// printable ASCII without a backslash, and its longest output (each
+	// placeholder 16 characters) a valid value of each VR the selector
+	// gives. The expanded form writes each placeholder's tag.
 	Template string `protobuf:"bytes,2,opt,name=template,proto3,oneof"`
 }
 
@@ -1481,6 +1775,14 @@ func (*SetAction_Constant) isSetAction_Value() {}
 func (*SetAction_Template) isSetAction_Value() {}
 
 // HashAction replaces a value by its keyed hash. It has no fields.
+//
+// The code is the first 80 bits of the HMAC-SHA-256 (RFC 2104) of the
+// value (ProfileAction says which text), under the tenant's naming key,
+// the key of a label's "{#X}" code, in base32 (RFC 4648) without padding:
+// 16 characters of a-z and 2-7. In a CS element the code is written in upper case
+// (A-Z and 2-7), since CS holds no lower-case letter (PS3.5 6.2); in every
+// other text VR, as it is. 16 characters fit every text VR, AE, CS and SH
+// the shortest. A PN value is written as one component, its family name.
 type HashAction struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1630,11 +1932,18 @@ func (*GeneralizeAction) Descriptor() ([]byte, []int) {
 
 // LookupAction replaces a value by the code a table of the tenant assigns.
 // The table is keyed by the keyed hash of the value, never the value.
+//
+// A code is 1 to 16 characters of A-Z, 0-9 and "_", which fits every text
+// VR (CS's repertoire is the narrowest, PS3.5 6.2); a table refuses a code
+// outside that form when it is filled. A code the table assigns on first
+// sight is the next number of the table, in decimal from 1. A PN value is
+// written as one component, its family name.
 type LookupAction struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The table's name, under the rule of a tenant's name. Required.
 	Table string `protobuf:"bytes,1,opt,name=table,proto3" json:"table,omitempty"`
-	// What happens when the table has no code for the value.
+	// What happens when the table has no code for the value. The expanded
+	// form never holds unspecified: it writes quarantine for it.
 	OnMissing     LookupMissing `protobuf:"varint,2,opt,name=on_missing,json=onMissing,proto3,enum=coria.v1.LookupMissing" json:"on_missing,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1684,8 +1993,22 @@ func (x *LookupAction) GetOnMissing() LookupMissing {
 	return LookupMissing_LOOKUP_MISSING_UNSPECIFIED
 }
 
-// CleanAction removes known names and identifiers from free text. It has
-// no fields.
+// CleanAction cleans a value, keeping what does not identify (PS3.15
+// E.1.1, action C). It has no fields. What it does depends on the VR:
+//
+//	LO, LT, SH, ST, UC, UT  the file's known names and identifiers (the
+//	                        values the profile removes or replaces) are
+//	                        removed from the text.
+//	SQ                      the sequence is kept, and the elements of its
+//	                        items are each decided by the rules, as keep
+//	                        does: a sequence is cleaned by cleaning what it
+//	                        holds (the content item rules among them, for
+//	                        PS3.15 E.3.4).
+//	OB, OW                  the element is removed: the bits of an overlay
+//	                        (60xx,3000) or a curve (50xx,3000) are not read
+//	                        for text, and removing them takes out no less
+//	                        than cleaning them would. The other elements of
+//	                        its group follow their own rules.
 type CleanAction struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1759,6 +2082,124 @@ func (*QuarantineAction) Descriptor() ([]byte, []int) {
 	return file_coria_v1_profile_proto_rawDescGZIP(), []int{18}
 }
 
+// DummyAction replaces a value by a dummy: a fixed value that says nothing
+// of the original and is a valid value of its VR (PS3.5 6.2), so an
+// element the IOD requires with a value (Type 1) stays valid. It has no
+// fields. The dummies, the same in every file:
+//
+//	AE, CS, LO, LT, PN, SH, ST, UC, UT  "DUMMY"
+//	AS  "000D"
+//	DA  "19000101"
+//	DT  "19000101000000"
+//	TM  "000000"
+//	DS, IS  "0"
+//	UI  "2.25.0" (the UUID-derived root of PS3.5 B.2 with the nil UUID;
+//	    uid, not dummy, keeps references between files)
+//	AT, FL, FD, SL, SS, SV, UL, US, UV  one value of zero
+//	OB, OD, OF, OL, OV, OW, UN, UR  empty (zero length)
+//	SQ  no items. PS3.15 asks D for a value of non-zero length, but an
+//	    item's dummy would need the attributes its macro requires, which
+//	    are known only per IOD; a sequence emptied keeps nothing of the
+//	    file, and a Type 1 sequence is better served by remove_unless_
+//	    required or by keep with rules for what its items hold.
+type DummyAction struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DummyAction) Reset() {
+	*x = DummyAction{}
+	mi := &file_coria_v1_profile_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DummyAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DummyAction) ProtoMessage() {}
+
+func (x *DummyAction) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DummyAction.ProtoReflect.Descriptor instead.
+func (*DummyAction) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{19}
+}
+
+// RemoveUnlessRequiredAction removes an element unless the IOD of the
+// file's SOP class (PS3.3) needs it, by the element's Type there, at its
+// place in sequences (PS3.15 E.1.1, "X unless Z is required to maintain
+// IOD conformance (Type 3 versus Type 2)", and so for each combined code):
+//
+//	Type 3, or an element the IOD does not list      removed
+//	Type 2 or 2C                                     emptied, as empty
+//	Type 1 or 1C                                     the fallback
+//
+// A SOP class the server does not know, or an element whose Type it cannot
+// find, is taken as Type 1: the file stays valid whatever its IOD needs,
+// and no value of the file stays. A conditional Type counts as its
+// unconditional one, since its condition may read anything in the file.
+// The combined codes of PS3.15 Table E.1-1 are written with it as X/Z:
+// EMPTY; X/D and X/Z/D: DUMMY; X/Z/U*: UID. Z/D is written as DUMMY too:
+// its Type 3 elements are removed rather than emptied, which takes out no
+// less.
+type RemoveUnlessRequiredAction struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What a Type 1 element becomes. Required.
+	Fallback      RequiredFallback `protobuf:"varint,1,opt,name=fallback,proto3,enum=coria.v1.RequiredFallback" json:"fallback,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveUnlessRequiredAction) Reset() {
+	*x = RemoveUnlessRequiredAction{}
+	mi := &file_coria_v1_profile_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveUnlessRequiredAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveUnlessRequiredAction) ProtoMessage() {}
+
+func (x *RemoveUnlessRequiredAction) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveUnlessRequiredAction.ProtoReflect.Descriptor instead.
+func (*RemoveUnlessRequiredAction) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RemoveUnlessRequiredAction) GetFallback() RequiredFallback {
+	if x != nil {
+		return x.Fallback
+	}
+	return RequiredFallback_REQUIRED_FALLBACK_UNSPECIFIED
+}
+
 // PixelRule says what happens to an image whose pixels may carry burned-in
 // text: one whose Burned In Annotation (0028,0301) is YES, or absent on a
 // kind of image commonly drawn on. Such an image no pixel rule covers is
@@ -1792,7 +2233,7 @@ type PixelRule struct {
 
 func (x *PixelRule) Reset() {
 	*x = PixelRule{}
-	mi := &file_coria_v1_profile_proto_msgTypes[19]
+	mi := &file_coria_v1_profile_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1804,7 +2245,7 @@ func (x *PixelRule) String() string {
 func (*PixelRule) ProtoMessage() {}
 
 func (x *PixelRule) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[19]
+	mi := &file_coria_v1_profile_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1817,7 +2258,7 @@ func (x *PixelRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PixelRule.ProtoReflect.Descriptor instead.
 func (*PixelRule) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{19}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PixelRule) GetName() string {
@@ -1926,7 +2367,7 @@ type RedactPixels struct {
 
 func (x *RedactPixels) Reset() {
 	*x = RedactPixels{}
-	mi := &file_coria_v1_profile_proto_msgTypes[20]
+	mi := &file_coria_v1_profile_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1938,7 +2379,7 @@ func (x *RedactPixels) String() string {
 func (*RedactPixels) ProtoMessage() {}
 
 func (x *RedactPixels) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[20]
+	mi := &file_coria_v1_profile_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1951,7 +2392,7 @@ func (x *RedactPixels) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RedactPixels.ProtoReflect.Descriptor instead.
 func (*RedactPixels) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{20}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RedactPixels) GetRectangles() []*PixelRectangle {
@@ -1986,7 +2427,7 @@ type PixelRectangle struct {
 
 func (x *PixelRectangle) Reset() {
 	*x = PixelRectangle{}
-	mi := &file_coria_v1_profile_proto_msgTypes[21]
+	mi := &file_coria_v1_profile_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1998,7 +2439,7 @@ func (x *PixelRectangle) String() string {
 func (*PixelRectangle) ProtoMessage() {}
 
 func (x *PixelRectangle) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[21]
+	mi := &file_coria_v1_profile_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2011,7 +2452,7 @@ func (x *PixelRectangle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PixelRectangle.ProtoReflect.Descriptor instead.
 func (*PixelRectangle) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{21}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PixelRectangle) GetX() int32 {
@@ -2065,7 +2506,7 @@ type DetectText struct {
 
 func (x *DetectText) Reset() {
 	*x = DetectText{}
-	mi := &file_coria_v1_profile_proto_msgTypes[22]
+	mi := &file_coria_v1_profile_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2077,7 +2518,7 @@ func (x *DetectText) String() string {
 func (*DetectText) ProtoMessage() {}
 
 func (x *DetectText) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[22]
+	mi := &file_coria_v1_profile_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2090,7 +2531,7 @@ func (x *DetectText) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DetectText.ProtoReflect.Descriptor instead.
 func (*DetectText) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{22}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{24}
 }
 
 // AcceptPixels archives an image as it is. It has no fields.
@@ -2102,7 +2543,7 @@ type AcceptPixels struct {
 
 func (x *AcceptPixels) Reset() {
 	*x = AcceptPixels{}
-	mi := &file_coria_v1_profile_proto_msgTypes[23]
+	mi := &file_coria_v1_profile_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2114,7 +2555,7 @@ func (x *AcceptPixels) String() string {
 func (*AcceptPixels) ProtoMessage() {}
 
 func (x *AcceptPixels) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[23]
+	mi := &file_coria_v1_profile_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2127,7 +2568,7 @@ func (x *AcceptPixels) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptPixels.ProtoReflect.Descriptor instead.
 func (*AcceptPixels) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{23}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{25}
 }
 
 // ExpandedProfile is a document with its bases copied in: what a version
@@ -2149,14 +2590,21 @@ type ExpandedProfile struct {
 	// Every pixel rule, in the order of rules.
 	PixelRules []*ExpandedPixelRule `protobuf:"bytes,4,rep,name=pixel_rules,json=pixelRules,proto3" json:"pixel_rules,omitempty"`
 	// Every base used, in the order its rules come, each once.
-	Bases         []string `protobuf:"bytes,5,rep,name=bases,proto3" json:"bases,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Bases []string `protobuf:"bytes,5,rep,name=bases,proto3" json:"bases,omitempty"`
+	// The edition of the profile language whose meaning the version has:
+	// what each selector selects and each action does, as this file
+	// describes them. A server runs only a version of an edition it knows,
+	// and keeps the meaning of every edition it has shipped, so a stored
+	// version never changes what it does when the language grows. This
+	// edition is 1.
+	LanguageEdition int32 `protobuf:"varint,6,opt,name=language_edition,json=languageEdition,proto3" json:"language_edition,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ExpandedProfile) Reset() {
 	*x = ExpandedProfile{}
-	mi := &file_coria_v1_profile_proto_msgTypes[24]
+	mi := &file_coria_v1_profile_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2168,7 +2616,7 @@ func (x *ExpandedProfile) String() string {
 func (*ExpandedProfile) ProtoMessage() {}
 
 func (x *ExpandedProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[24]
+	mi := &file_coria_v1_profile_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2181,7 +2629,7 @@ func (x *ExpandedProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpandedProfile.ProtoReflect.Descriptor instead.
 func (*ExpandedProfile) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{24}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ExpandedProfile) GetRules() []*ExpandedRule {
@@ -2219,20 +2667,36 @@ func (x *ExpandedProfile) GetBases() []string {
 	return nil
 }
 
-// ExpandedRule is a rule of an expanded profile and where it came from.
+func (x *ExpandedProfile) GetLanguageEdition() int32 {
+	if x != nil {
+		return x.LanguageEdition
+	}
+	return 0
+}
+
+// ExpandedRule is a rule of an expanded profile, where it came from, and
+// what validation decided of it.
 type ExpandedRule struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The rule.
+	// The rule, as validation normalized it: a keyword written as its tag,
+	// and every default written out.
 	Rule *ProfileRule `protobuf:"bytes,1,opt,name=rule,proto3" json:"rule,omitempty"`
 	// The base the rule came from; empty for the document's own rule.
-	Origin        string `protobuf:"bytes,2,opt,name=origin,proto3" json:"origin,omitempty"`
+	Origin string `protobuf:"bytes,2,opt,name=origin,proto3" json:"origin,omitempty"`
+	// The VRs of what the selector selects, as validation decided them: the
+	// data dictionary's for a tag or a path (two where PS3.6 gives two), the
+	// VR of a vr selector, those of a content item's value elements for its
+	// value type; empty when the selector says nothing of it. A set rule has
+	// exactly one, the VR the element is made with. A stored version runs
+	// with these, never with a later dictionary's.
+	Vrs           []string `protobuf:"bytes,3,rep,name=vrs,proto3" json:"vrs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ExpandedRule) Reset() {
 	*x = ExpandedRule{}
-	mi := &file_coria_v1_profile_proto_msgTypes[25]
+	mi := &file_coria_v1_profile_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2244,7 +2708,7 @@ func (x *ExpandedRule) String() string {
 func (*ExpandedRule) ProtoMessage() {}
 
 func (x *ExpandedRule) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[25]
+	mi := &file_coria_v1_profile_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2257,7 +2721,7 @@ func (x *ExpandedRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpandedRule.ProtoReflect.Descriptor instead.
 func (*ExpandedRule) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{25}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ExpandedRule) GetRule() *ProfileRule {
@@ -2274,6 +2738,13 @@ func (x *ExpandedRule) GetOrigin() string {
 	return ""
 }
 
+func (x *ExpandedRule) GetVrs() []string {
+	if x != nil {
+		return x.Vrs
+	}
+	return nil
+}
+
 // ExpandedPixelRule is a pixel rule of an expanded profile and where it came
 // from.
 type ExpandedPixelRule struct {
@@ -2288,7 +2759,7 @@ type ExpandedPixelRule struct {
 
 func (x *ExpandedPixelRule) Reset() {
 	*x = ExpandedPixelRule{}
-	mi := &file_coria_v1_profile_proto_msgTypes[26]
+	mi := &file_coria_v1_profile_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2300,7 +2771,7 @@ func (x *ExpandedPixelRule) String() string {
 func (*ExpandedPixelRule) ProtoMessage() {}
 
 func (x *ExpandedPixelRule) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[26]
+	mi := &file_coria_v1_profile_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2313,7 +2784,7 @@ func (x *ExpandedPixelRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExpandedPixelRule.ProtoReflect.Descriptor instead.
 func (*ExpandedPixelRule) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{26}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ExpandedPixelRule) GetRule() *PixelRule {
@@ -2348,7 +2819,7 @@ type ProfileVersion struct {
 	Note string `protobuf:"bytes,6,opt,name=note,proto3" json:"note,omitempty"`
 	// The document as it was given. Absent in a list.
 	Document *ProfileDocument `protobuf:"bytes,7,opt,name=document,proto3" json:"document,omitempty"`
-	// The expanded form. Absent in a list.
+	// The expanded form. Answered only with the view PROFILE_VIEW_FULL.
 	Expanded      *ExpandedProfile `protobuf:"bytes,8,opt,name=expanded,proto3" json:"expanded,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2356,7 +2827,7 @@ type ProfileVersion struct {
 
 func (x *ProfileVersion) Reset() {
 	*x = ProfileVersion{}
-	mi := &file_coria_v1_profile_proto_msgTypes[27]
+	mi := &file_coria_v1_profile_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2368,7 +2839,7 @@ func (x *ProfileVersion) String() string {
 func (*ProfileVersion) ProtoMessage() {}
 
 func (x *ProfileVersion) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[27]
+	mi := &file_coria_v1_profile_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2381,7 +2852,7 @@ func (x *ProfileVersion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileVersion.ProtoReflect.Descriptor instead.
 func (*ProfileVersion) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{27}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ProfileVersion) GetName() string {
@@ -2455,7 +2926,7 @@ type ProfileSummary struct {
 
 func (x *ProfileSummary) Reset() {
 	*x = ProfileSummary{}
-	mi := &file_coria_v1_profile_proto_msgTypes[28]
+	mi := &file_coria_v1_profile_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2467,7 +2938,7 @@ func (x *ProfileSummary) String() string {
 func (*ProfileSummary) ProtoMessage() {}
 
 func (x *ProfileSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[28]
+	mi := &file_coria_v1_profile_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2480,7 +2951,7 @@ func (x *ProfileSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileSummary.ProtoReflect.Descriptor instead.
 func (*ProfileSummary) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{28}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ProfileSummary) GetName() string {
@@ -2504,7 +2975,8 @@ func (x *ProfileSummary) GetLatestCreateTime() *timestamppb.Timestamp {
 	return nil
 }
 
-// ProfileProblem is one thing wrong with a document.
+// ProfileProblem is one thing wrong with a document, or one warning about
+// it.
 type ProfileProblem struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The rule's position among the document's rules, from 1; zero when the
@@ -2521,8 +2993,9 @@ type ProfileProblem struct {
 	// whole.
 	Field string `protobuf:"bytes,4,opt,name=field,proto3" json:"field,omitempty"`
 	// What is wrong, as a fixed word a program can test, such as
-	// "unknown_keyword" or "action_vr". A later version may add words; a
-	// client shows one it does not know with the message.
+	// "unknown_keyword" or "action_vr"; for a warning, such as
+	// "shadowed_by_base" or "keeps_base_change". A later version may add
+	// words; a client shows one it does not know with the message.
 	Code string `protobuf:"bytes,5,opt,name=code,proto3" json:"code,omitempty"`
 	// What is wrong, in a sentence for a person.
 	Message       string `protobuf:"bytes,6,opt,name=message,proto3" json:"message,omitempty"`
@@ -2532,7 +3005,7 @@ type ProfileProblem struct {
 
 func (x *ProfileProblem) Reset() {
 	*x = ProfileProblem{}
-	mi := &file_coria_v1_profile_proto_msgTypes[29]
+	mi := &file_coria_v1_profile_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2544,7 +3017,7 @@ func (x *ProfileProblem) String() string {
 func (*ProfileProblem) ProtoMessage() {}
 
 func (x *ProfileProblem) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[29]
+	mi := &file_coria_v1_profile_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2557,7 +3030,7 @@ func (x *ProfileProblem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileProblem.ProtoReflect.Descriptor instead.
 func (*ProfileProblem) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{29}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ProfileProblem) GetRule() int32 {
@@ -2602,6 +3075,53 @@ func (x *ProfileProblem) GetMessage() string {
 	return ""
 }
 
+// ProfileProblems is every problem of a document, in the order of the
+// document: the detail of the error that refuses it.
+type ProfileProblems struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The problems.
+	Problems      []*ProfileProblem `protobuf:"bytes,1,rep,name=problems,proto3" json:"problems,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileProblems) Reset() {
+	*x = ProfileProblems{}
+	mi := &file_coria_v1_profile_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileProblems) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileProblems) ProtoMessage() {}
+
+func (x *ProfileProblems) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileProblems.ProtoReflect.Descriptor instead.
+func (*ProfileProblems) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *ProfileProblems) GetProblems() []*ProfileProblem {
+	if x != nil {
+		return x.Problems
+	}
+	return nil
+}
+
 // ProfileBase is a profile the server ships, which a document may name.
 type ProfileBase struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2623,7 +3143,7 @@ type ProfileBase struct {
 
 func (x *ProfileBase) Reset() {
 	*x = ProfileBase{}
-	mi := &file_coria_v1_profile_proto_msgTypes[30]
+	mi := &file_coria_v1_profile_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2635,7 +3155,7 @@ func (x *ProfileBase) String() string {
 func (*ProfileBase) ProtoMessage() {}
 
 func (x *ProfileBase) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[30]
+	mi := &file_coria_v1_profile_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2648,7 +3168,7 @@ func (x *ProfileBase) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileBase.ProtoReflect.Descriptor instead.
 func (*ProfileBase) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{30}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ProfileBase) GetName() string {
@@ -2697,14 +3217,22 @@ type CreateProfileVersionRequest struct {
 	// The document. Required.
 	Document *ProfileDocument `protobuf:"bytes,3,opt,name=document,proto3" json:"document,omitempty"`
 	// A note on why this version was made. At most 1024 bytes.
-	Note          string `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	Note string `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	// The version the caller expects to be the profile's latest: 0 when it
+	// expects the profile not to exist yet. When given and the latest is
+	// another, the call is refused as a failed precondition and stores
+	// nothing, so two people who each read version 3 do not both store a
+	// version 4 unaware of each other. Absent: no expectation.
+	ExpectedLatestVersion *int32 `protobuf:"varint,5,opt,name=expected_latest_version,json=expectedLatestVersion,proto3,oneof" json:"expected_latest_version,omitempty"`
+	// What the answer carries; the document by default.
+	View          ProfileView `protobuf:"varint,6,opt,name=view,proto3,enum=coria.v1.ProfileView" json:"view,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateProfileVersionRequest) Reset() {
 	*x = CreateProfileVersionRequest{}
-	mi := &file_coria_v1_profile_proto_msgTypes[31]
+	mi := &file_coria_v1_profile_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2716,7 +3244,7 @@ func (x *CreateProfileVersionRequest) String() string {
 func (*CreateProfileVersionRequest) ProtoMessage() {}
 
 func (x *CreateProfileVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[31]
+	mi := &file_coria_v1_profile_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2729,7 +3257,7 @@ func (x *CreateProfileVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProfileVersionRequest.ProtoReflect.Descriptor instead.
 func (*CreateProfileVersionRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{31}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CreateProfileVersionRequest) GetTenant() string {
@@ -2760,22 +3288,42 @@ func (x *CreateProfileVersionRequest) GetNote() string {
 	return ""
 }
 
+func (x *CreateProfileVersionRequest) GetExpectedLatestVersion() int32 {
+	if x != nil && x.ExpectedLatestVersion != nil {
+		return *x.ExpectedLatestVersion
+	}
+	return 0
+}
+
+func (x *CreateProfileVersionRequest) GetView() ProfileView {
+	if x != nil {
+		return x.View
+	}
+	return ProfileView_PROFILE_VIEW_UNSPECIFIED
+}
+
 // CreateProfileVersionResponse is the version stored, or the latest when
 // the document was equal to it.
 type CreateProfileVersionResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The version, with its document and expanded form.
+	// The version, with its document, and its expanded form with the view
+	// PROFILE_VIEW_FULL.
 	Version *ProfileVersion `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
 	// True when this call made the version; false when the document was
 	// equal to the latest version, which is answered.
-	Created       bool `protobuf:"varint,2,opt,name=created,proto3" json:"created,omitempty"`
+	Created bool `protobuf:"varint,2,opt,name=created,proto3" json:"created,omitempty"`
+	// The warnings about the document, as ValidateProfile gives them.
+	Warnings []*ProfileProblem `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	// True when created is false and the request's note differs from the
+	// note stored with the version answered: the note given was not stored.
+	NoteDiffers   bool `protobuf:"varint,4,opt,name=note_differs,json=noteDiffers,proto3" json:"note_differs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateProfileVersionResponse) Reset() {
 	*x = CreateProfileVersionResponse{}
-	mi := &file_coria_v1_profile_proto_msgTypes[32]
+	mi := &file_coria_v1_profile_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2787,7 +3335,7 @@ func (x *CreateProfileVersionResponse) String() string {
 func (*CreateProfileVersionResponse) ProtoMessage() {}
 
 func (x *CreateProfileVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[32]
+	mi := &file_coria_v1_profile_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2800,7 +3348,7 @@ func (x *CreateProfileVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProfileVersionResponse.ProtoReflect.Descriptor instead.
 func (*CreateProfileVersionResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{32}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CreateProfileVersionResponse) GetVersion() *ProfileVersion {
@@ -2817,6 +3365,20 @@ func (x *CreateProfileVersionResponse) GetCreated() bool {
 	return false
 }
 
+func (x *CreateProfileVersionResponse) GetWarnings() []*ProfileProblem {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
+func (x *CreateProfileVersionResponse) GetNoteDiffers() bool {
+	if x != nil {
+		return x.NoteDiffers
+	}
+	return false
+}
+
 // GetProfileVersionRequest names a version of a profile.
 type GetProfileVersionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2825,14 +3387,16 @@ type GetProfileVersionRequest struct {
 	// The profile's name. Required.
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// The version; zero for the latest. Negative is invalid.
-	Version       int32 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	Version int32 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`
+	// What the answer carries; the document by default.
+	View          ProfileView `protobuf:"varint,4,opt,name=view,proto3,enum=coria.v1.ProfileView" json:"view,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetProfileVersionRequest) Reset() {
 	*x = GetProfileVersionRequest{}
-	mi := &file_coria_v1_profile_proto_msgTypes[33]
+	mi := &file_coria_v1_profile_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2844,7 +3408,7 @@ func (x *GetProfileVersionRequest) String() string {
 func (*GetProfileVersionRequest) ProtoMessage() {}
 
 func (x *GetProfileVersionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[33]
+	mi := &file_coria_v1_profile_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2857,7 +3421,7 @@ func (x *GetProfileVersionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProfileVersionRequest.ProtoReflect.Descriptor instead.
 func (*GetProfileVersionRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{33}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *GetProfileVersionRequest) GetTenant() string {
@@ -2881,10 +3445,18 @@ func (x *GetProfileVersionRequest) GetVersion() int32 {
 	return 0
 }
 
+func (x *GetProfileVersionRequest) GetView() ProfileView {
+	if x != nil {
+		return x.View
+	}
+	return ProfileView_PROFILE_VIEW_UNSPECIFIED
+}
+
 // GetProfileVersionResponse is the version named.
 type GetProfileVersionResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The version, with its document and expanded form.
+	// The version, with its document, and its expanded form with the view
+	// PROFILE_VIEW_FULL.
 	Version       *ProfileVersion `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2892,7 +3464,7 @@ type GetProfileVersionResponse struct {
 
 func (x *GetProfileVersionResponse) Reset() {
 	*x = GetProfileVersionResponse{}
-	mi := &file_coria_v1_profile_proto_msgTypes[34]
+	mi := &file_coria_v1_profile_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2904,7 +3476,7 @@ func (x *GetProfileVersionResponse) String() string {
 func (*GetProfileVersionResponse) ProtoMessage() {}
 
 func (x *GetProfileVersionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[34]
+	mi := &file_coria_v1_profile_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2917,7 +3489,7 @@ func (x *GetProfileVersionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProfileVersionResponse.ProtoReflect.Descriptor instead.
 func (*GetProfileVersionResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{34}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *GetProfileVersionResponse) GetVersion() *ProfileVersion {
@@ -2945,7 +3517,7 @@ type ListProfilesRequest struct {
 
 func (x *ListProfilesRequest) Reset() {
 	*x = ListProfilesRequest{}
-	mi := &file_coria_v1_profile_proto_msgTypes[35]
+	mi := &file_coria_v1_profile_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2957,7 +3529,7 @@ func (x *ListProfilesRequest) String() string {
 func (*ListProfilesRequest) ProtoMessage() {}
 
 func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[35]
+	mi := &file_coria_v1_profile_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2970,7 +3542,7 @@ func (x *ListProfilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesRequest.ProtoReflect.Descriptor instead.
 func (*ListProfilesRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{35}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ListProfilesRequest) GetTenant() string {
@@ -3007,7 +3579,7 @@ type ListProfilesResponse struct {
 
 func (x *ListProfilesResponse) Reset() {
 	*x = ListProfilesResponse{}
-	mi := &file_coria_v1_profile_proto_msgTypes[36]
+	mi := &file_coria_v1_profile_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3019,7 +3591,7 @@ func (x *ListProfilesResponse) String() string {
 func (*ListProfilesResponse) ProtoMessage() {}
 
 func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[36]
+	mi := &file_coria_v1_profile_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3032,7 +3604,7 @@ func (x *ListProfilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfilesResponse.ProtoReflect.Descriptor instead.
 func (*ListProfilesResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{36}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListProfilesResponse) GetProfiles() []*ProfileSummary {
@@ -3069,7 +3641,7 @@ type ListProfileVersionsRequest struct {
 
 func (x *ListProfileVersionsRequest) Reset() {
 	*x = ListProfileVersionsRequest{}
-	mi := &file_coria_v1_profile_proto_msgTypes[37]
+	mi := &file_coria_v1_profile_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3081,7 +3653,7 @@ func (x *ListProfileVersionsRequest) String() string {
 func (*ListProfileVersionsRequest) ProtoMessage() {}
 
 func (x *ListProfileVersionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[37]
+	mi := &file_coria_v1_profile_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3094,7 +3666,7 @@ func (x *ListProfileVersionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfileVersionsRequest.ProtoReflect.Descriptor instead.
 func (*ListProfileVersionsRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{37}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ListProfileVersionsRequest) GetTenant() string {
@@ -3139,7 +3711,7 @@ type ListProfileVersionsResponse struct {
 
 func (x *ListProfileVersionsResponse) Reset() {
 	*x = ListProfileVersionsResponse{}
-	mi := &file_coria_v1_profile_proto_msgTypes[38]
+	mi := &file_coria_v1_profile_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3151,7 +3723,7 @@ func (x *ListProfileVersionsResponse) String() string {
 func (*ListProfileVersionsResponse) ProtoMessage() {}
 
 func (x *ListProfileVersionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[38]
+	mi := &file_coria_v1_profile_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3164,7 +3736,7 @@ func (x *ListProfileVersionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfileVersionsResponse.ProtoReflect.Descriptor instead.
 func (*ListProfileVersionsResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{38}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ListProfileVersionsResponse) GetVersions() []*ProfileVersion {
@@ -3187,14 +3759,17 @@ type ValidateProfileRequest struct {
 	// The tenant, by name. Required.
 	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
 	// The document. Required.
-	Document      *ProfileDocument `protobuf:"bytes,2,opt,name=document,proto3" json:"document,omitempty"`
+	Document *ProfileDocument `protobuf:"bytes,2,opt,name=document,proto3" json:"document,omitempty"`
+	// What the answer carries: the expanded form only with
+	// PROFILE_VIEW_FULL.
+	View          ProfileView `protobuf:"varint,3,opt,name=view,proto3,enum=coria.v1.ProfileView" json:"view,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ValidateProfileRequest) Reset() {
 	*x = ValidateProfileRequest{}
-	mi := &file_coria_v1_profile_proto_msgTypes[39]
+	mi := &file_coria_v1_profile_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3206,7 +3781,7 @@ func (x *ValidateProfileRequest) String() string {
 func (*ValidateProfileRequest) ProtoMessage() {}
 
 func (x *ValidateProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[39]
+	mi := &file_coria_v1_profile_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3219,7 +3794,7 @@ func (x *ValidateProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateProfileRequest.ProtoReflect.Descriptor instead.
 func (*ValidateProfileRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{39}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ValidateProfileRequest) GetTenant() string {
@@ -3236,22 +3811,38 @@ func (x *ValidateProfileRequest) GetDocument() *ProfileDocument {
 	return nil
 }
 
+func (x *ValidateProfileRequest) GetView() ProfileView {
+	if x != nil {
+		return x.View
+	}
+	return ProfileView_PROFILE_VIEW_UNSPECIFIED
+}
+
 // ValidateProfileResponse is what the check found.
 type ValidateProfileResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Every problem, in the order of the document; empty when it is valid.
 	Problems []*ProfileProblem `protobuf:"bytes,1,rep,name=problems,proto3" json:"problems,omitempty"`
-	// The expanded form; absent when there are problems.
+	// The expanded form; absent when there are problems, and unless the view
+	// is PROFILE_VIEW_FULL.
 	Expanded *ExpandedProfile `protobuf:"bytes,2,opt,name=expanded,proto3" json:"expanded,omitempty"`
 	// The checksum the version would have; empty when there are problems.
-	Checksum      string `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	Checksum string `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	// What the document does that its author may not mean, though it is
+	// valid; empty when there are problems. A rule of the document's that a
+	// more specific rule of a base overrides for some elements
+	// ("shadowed_by_base"), and a rule that keeps what a base changes or
+	// removes ("keeps_base_change"), each named by the rule's position and
+	// name, the elements and the base's rule; at most 100, the last saying
+	// how many more there are ("more_warnings").
+	Warnings      []*ProfileProblem `protobuf:"bytes,4,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ValidateProfileResponse) Reset() {
 	*x = ValidateProfileResponse{}
-	mi := &file_coria_v1_profile_proto_msgTypes[40]
+	mi := &file_coria_v1_profile_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3263,7 +3854,7 @@ func (x *ValidateProfileResponse) String() string {
 func (*ValidateProfileResponse) ProtoMessage() {}
 
 func (x *ValidateProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[40]
+	mi := &file_coria_v1_profile_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3276,7 +3867,7 @@ func (x *ValidateProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateProfileResponse.ProtoReflect.Descriptor instead.
 func (*ValidateProfileResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{40}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ValidateProfileResponse) GetProblems() []*ProfileProblem {
@@ -3300,6 +3891,13 @@ func (x *ValidateProfileResponse) GetChecksum() string {
 	return ""
 }
 
+func (x *ValidateProfileResponse) GetWarnings() []*ProfileProblem {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
 // ListProfileBasesRequest asks for the bases the server knows. It has no
 // fields: the list is short and the same for every tenant.
 type ListProfileBasesRequest struct {
@@ -3310,7 +3908,7 @@ type ListProfileBasesRequest struct {
 
 func (x *ListProfileBasesRequest) Reset() {
 	*x = ListProfileBasesRequest{}
-	mi := &file_coria_v1_profile_proto_msgTypes[41]
+	mi := &file_coria_v1_profile_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3322,7 +3920,7 @@ func (x *ListProfileBasesRequest) String() string {
 func (*ListProfileBasesRequest) ProtoMessage() {}
 
 func (x *ListProfileBasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[41]
+	mi := &file_coria_v1_profile_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3335,7 +3933,7 @@ func (x *ListProfileBasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfileBasesRequest.ProtoReflect.Descriptor instead.
 func (*ListProfileBasesRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{41}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{44}
 }
 
 // ListProfileBasesResponse is every base the server knows.
@@ -3349,7 +3947,7 @@ type ListProfileBasesResponse struct {
 
 func (x *ListProfileBasesResponse) Reset() {
 	*x = ListProfileBasesResponse{}
-	mi := &file_coria_v1_profile_proto_msgTypes[42]
+	mi := &file_coria_v1_profile_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3361,7 +3959,7 @@ func (x *ListProfileBasesResponse) String() string {
 func (*ListProfileBasesResponse) ProtoMessage() {}
 
 func (x *ListProfileBasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[42]
+	mi := &file_coria_v1_profile_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3374,7 +3972,7 @@ func (x *ListProfileBasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListProfileBasesResponse.ProtoReflect.Descriptor instead.
 func (*ListProfileBasesResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{42}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ListProfileBasesResponse) GetBases() []*ProfileBase {
@@ -3402,23 +4000,26 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\bselector\x18\x02 \x01(\v2\x19.coria.v1.ProfileSelectorR\bselector\x12.\n" +
 	"\x04when\x18\x03 \x03(\v2\x1a.coria.v1.ProfileConditionR\x04when\x12/\n" +
 	"\x06action\x18\x04 \x01(\v2\x17.coria.v1.ProfileActionR\x06action\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\"\x8b\x02\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\"\xbb\x02\n" +
 	"\x0fProfileSelector\x12\x12\n" +
 	"\x03tag\x18\x01 \x01(\tH\x00R\x03tag\x12\x1a\n" +
 	"\akeyword\x18\x02 \x01(\tH\x00R\akeyword\x12\x16\n" +
 	"\x05group\x18\x03 \x01(\tH\x00R\x05group\x12\x10\n" +
 	"\x02vr\x18\x04 \x01(\tH\x00R\x02vr\x12C\n" +
 	"\x0fprivate_element\x18\x05 \x01(\v2\x18.coria.v1.PrivateElementH\x00R\x0eprivateElement\x12\x14\n" +
-	"\x04path\x18\x06 \x01(\tH\x00R\x04path\x12;\n" +
-	"\fcontent_item\x18\a \x01(\v2\x16.coria.v1.CodedConceptH\x00R\vcontentItemB\x06\n" +
+	"\x04path\x18\x06 \x01(\tH\x00R\x04path\x12B\n" +
+	"\fcontent_item\x18\a \x01(\v2\x1d.coria.v1.ContentItemSelectorH\x00R\vcontentItem\x12'\n" +
+	"\x0finclude_private\x18\b \x01(\bR\x0eincludePrivateB\x06\n" +
 	"\x04kind\"Z\n" +
 	"\x0ePrivateElement\x12\x18\n" +
 	"\acreator\x18\x01 \x01(\tR\acreator\x12\x14\n" +
 	"\x05group\x18\x02 \x01(\tR\x05group\x12\x18\n" +
-	"\aelement\x18\x03 \x01(\tR\aelement\"<\n" +
-	"\fCodedConcept\x12\x16\n" +
+	"\aelement\x18\x03 \x01(\tR\aelement\"b\n" +
+	"\x13ContentItemSelector\x12\x16\n" +
 	"\x06scheme\x18\x01 \x01(\tR\x06scheme\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"\xd4\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x1d\n" +
+	"\n" +
+	"value_type\x18\x03 \x01(\tR\tvalueType\"\xd4\x01\n" +
 	"\x10ProfileCondition\x124\n" +
 	"\asubject\x18\x01 \x01(\x0e2\x1a.coria.v1.ConditionSubjectR\asubject\x12\x18\n" +
 	"\x06equals\x18\x02 \x01(\tH\x00R\x06equals\x12\x18\n" +
@@ -3426,7 +4027,7 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\apattern\x18\x04 \x01(\tH\x00R\apattern\x12\x1a\n" +
 	"\apresent\x18\x05 \x01(\bH\x00R\apresent\x12\x16\n" +
 	"\x06negate\x18\x06 \x01(\bR\x06negateB\x06\n" +
-	"\x04test\"\xe3\x04\n" +
+	"\x04test\"\xf0\x05\n" +
 	"\rProfileAction\x12*\n" +
 	"\x04keep\x18\x01 \x01(\v2\x14.coria.v1.KeepActionH\x00R\x04keep\x120\n" +
 	"\x06remove\x18\x02 \x01(\v2\x16.coria.v1.RemoveActionH\x00R\x06remove\x12-\n" +
@@ -3444,7 +4045,9 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\x05clean\x18\v \x01(\v2\x15.coria.v1.CleanActionH\x00R\x05clean\x12<\n" +
 	"\n" +
 	"quarantine\x18\f \x01(\v2\x1a.coria.v1.QuarantineActionH\x00R\n" +
-	"quarantineB\x06\n" +
+	"quarantine\x12-\n" +
+	"\x05dummy\x18\r \x01(\v2\x15.coria.v1.DummyActionH\x00R\x05dummy\x12\\\n" +
+	"\x16remove_unless_required\x18\x0e \x01(\v2$.coria.v1.RemoveUnlessRequiredActionH\x00R\x14removeUnlessRequiredB\x06\n" +
 	"\x04kind\"\f\n" +
 	"\n" +
 	"KeepAction\"\x0e\n" +
@@ -3468,7 +4071,10 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\n" +
 	"on_missing\x18\x02 \x01(\x0e2\x17.coria.v1.LookupMissingR\tonMissing\"\r\n" +
 	"\vCleanAction\"\x12\n" +
-	"\x10QuarantineAction\"\xb3\x02\n" +
+	"\x10QuarantineAction\"\r\n" +
+	"\vDummyAction\"T\n" +
+	"\x1aRemoveUnlessRequiredAction\x126\n" +
+	"\bfallback\x18\x01 \x01(\x0e2\x1a.coria.v1.RequiredFallbackR\bfallback\"\xb3\x02\n" +
 	"\tPixelRule\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12.\n" +
 	"\x04when\x18\x02 \x03(\v2\x1a.coria.v1.ProfileConditionR\x04when\x12\x12\n" +
@@ -3494,17 +4100,19 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"fromBottom\"\f\n" +
 	"\n" +
 	"DetectText\"\x0e\n" +
-	"\fAcceptPixels\"\xf0\x01\n" +
+	"\fAcceptPixels\"\x9b\x02\n" +
 	"\x0fExpandedProfile\x12,\n" +
 	"\x05rules\x18\x01 \x03(\v2\x16.coria.v1.ExpandedRuleR\x05rules\x123\n" +
 	"\aunnamed\x18\x02 \x01(\x0e2\x19.coria.v1.UnnamedElementsR\aunnamed\x12&\n" +
 	"\x0fdate_shift_days\x18\x03 \x01(\x05R\rdateShiftDays\x12<\n" +
 	"\vpixel_rules\x18\x04 \x03(\v2\x1b.coria.v1.ExpandedPixelRuleR\n" +
 	"pixelRules\x12\x14\n" +
-	"\x05bases\x18\x05 \x03(\tR\x05bases\"Q\n" +
+	"\x05bases\x18\x05 \x03(\tR\x05bases\x12)\n" +
+	"\x10language_edition\x18\x06 \x01(\x05R\x0flanguageEdition\"c\n" +
 	"\fExpandedRule\x12)\n" +
 	"\x04rule\x18\x01 \x01(\v2\x15.coria.v1.ProfileRuleR\x04rule\x12\x16\n" +
-	"\x06origin\x18\x02 \x01(\tR\x06origin\"T\n" +
+	"\x06origin\x18\x02 \x01(\tR\x06origin\x12\x10\n" +
+	"\x03vrs\x18\x03 \x03(\tR\x03vrs\"T\n" +
 	"\x11ExpandedPixelRule\x12'\n" +
 	"\x04rule\x18\x01 \x01(\v2\x13.coria.v1.PixelRuleR\x04rule\x12\x16\n" +
 	"\x06origin\x18\x02 \x01(\tR\x06origin\"\xc4\x02\n" +
@@ -3529,25 +4137,33 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\trule_name\x18\x03 \x01(\tR\bruleName\x12\x14\n" +
 	"\x05field\x18\x04 \x01(\tR\x05field\x12\x12\n" +
 	"\x04code\x18\x05 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x06 \x01(\tR\amessage\"\xc7\x01\n" +
+	"\amessage\x18\x06 \x01(\tR\amessage\"G\n" +
+	"\x0fProfileProblems\x124\n" +
+	"\bproblems\x18\x01 \x03(\v2\x18.coria.v1.ProfileProblemR\bproblems\"\xc7\x01\n" +
 	"\vProfileBase\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
 	"\tavailable\x18\x02 \x01(\bR\tavailable\x12-\n" +
 	"\x12unavailable_reason\x18\x03 \x01(\tR\x11unavailableReason\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x125\n" +
-	"\bdocument\x18\x05 \x01(\v2\x19.coria.v1.ProfileDocumentR\bdocument\"\x94\x01\n" +
+	"\bdocument\x18\x05 \x01(\v2\x19.coria.v1.ProfileDocumentR\bdocument\"\x98\x02\n" +
 	"\x1bCreateProfileVersionRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x125\n" +
 	"\bdocument\x18\x03 \x01(\v2\x19.coria.v1.ProfileDocumentR\bdocument\x12\x12\n" +
-	"\x04note\x18\x04 \x01(\tR\x04note\"l\n" +
+	"\x04note\x18\x04 \x01(\tR\x04note\x12;\n" +
+	"\x17expected_latest_version\x18\x05 \x01(\x05H\x00R\x15expectedLatestVersion\x88\x01\x01\x12)\n" +
+	"\x04view\x18\x06 \x01(\x0e2\x15.coria.v1.ProfileViewR\x04viewB\x1a\n" +
+	"\x18_expected_latest_version\"\xc5\x01\n" +
 	"\x1cCreateProfileVersionResponse\x122\n" +
 	"\aversion\x18\x01 \x01(\v2\x18.coria.v1.ProfileVersionR\aversion\x12\x18\n" +
-	"\acreated\x18\x02 \x01(\bR\acreated\"`\n" +
+	"\acreated\x18\x02 \x01(\bR\acreated\x124\n" +
+	"\bwarnings\x18\x03 \x03(\v2\x18.coria.v1.ProfileProblemR\bwarnings\x12!\n" +
+	"\fnote_differs\x18\x04 \x01(\bR\vnoteDiffers\"\x8b\x01\n" +
 	"\x18GetProfileVersionRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\x05R\aversion\"O\n" +
+	"\aversion\x18\x03 \x01(\x05R\aversion\x12)\n" +
+	"\x04view\x18\x04 \x01(\x0e2\x15.coria.v1.ProfileViewR\x04view\"O\n" +
 	"\x19GetProfileVersionResponse\x122\n" +
 	"\aversion\x18\x01 \x01(\v2\x18.coria.v1.ProfileVersionR\aversion\"i\n" +
 	"\x13ListProfilesRequest\x12\x16\n" +
@@ -3566,14 +4182,16 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\"{\n" +
 	"\x1bListProfileVersionsResponse\x124\n" +
 	"\bversions\x18\x01 \x03(\v2\x18.coria.v1.ProfileVersionR\bversions\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"g\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x92\x01\n" +
 	"\x16ValidateProfileRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x125\n" +
-	"\bdocument\x18\x02 \x01(\v2\x19.coria.v1.ProfileDocumentR\bdocument\"\xa2\x01\n" +
+	"\bdocument\x18\x02 \x01(\v2\x19.coria.v1.ProfileDocumentR\bdocument\x12)\n" +
+	"\x04view\x18\x03 \x01(\x0e2\x15.coria.v1.ProfileViewR\x04view\"\xd8\x01\n" +
 	"\x17ValidateProfileResponse\x124\n" +
 	"\bproblems\x18\x01 \x03(\v2\x18.coria.v1.ProfileProblemR\bproblems\x125\n" +
 	"\bexpanded\x18\x02 \x01(\v2\x19.coria.v1.ExpandedProfileR\bexpanded\x12\x1a\n" +
-	"\bchecksum\x18\x03 \x01(\tR\bchecksum\"\x19\n" +
+	"\bchecksum\x18\x03 \x01(\tR\bchecksum\x124\n" +
+	"\bwarnings\x18\x04 \x03(\v2\x18.coria.v1.ProfileProblemR\bwarnings\"\x19\n" +
 	"\x17ListProfileBasesRequest\"G\n" +
 	"\x18ListProfileBasesResponse\x12+\n" +
 	"\x05bases\x18\x01 \x03(\v2\x15.coria.v1.ProfileBaseR\x05bases*k\n" +
@@ -3594,7 +4212,16 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\rLookupMissing\x12\x1e\n" +
 	"\x1aLOOKUP_MISSING_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19LOOKUP_MISSING_QUARANTINE\x10\x01\x12\x19\n" +
-	"\x15LOOKUP_MISSING_ASSIGN\x10\x022\xd9\x04\n" +
+	"\x15LOOKUP_MISSING_ASSIGN\x10\x02*\x8a\x01\n" +
+	"\x10RequiredFallback\x12!\n" +
+	"\x1dREQUIRED_FALLBACK_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17REQUIRED_FALLBACK_EMPTY\x10\x01\x12\x1b\n" +
+	"\x17REQUIRED_FALLBACK_DUMMY\x10\x02\x12\x19\n" +
+	"\x15REQUIRED_FALLBACK_UID\x10\x03*]\n" +
+	"\vProfileView\x12\x1c\n" +
+	"\x18PROFILE_VIEW_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15PROFILE_VIEW_DOCUMENT\x10\x01\x12\x15\n" +
+	"\x11PROFILE_VIEW_FULL\x10\x022\xd9\x04\n" +
 	"\x0eProfileService\x12j\n" +
 	"\x14CreateProfileVersion\x12%.coria.v1.CreateProfileVersionRequest\x1a&.coria.v1.CreateProfileVersionResponse\"\x03\x90\x02\x02\x12a\n" +
 	"\x11GetProfileVersion\x12\".coria.v1.GetProfileVersionRequest\x1a#.coria.v1.GetProfileVersionResponse\"\x03\x90\x02\x01\x12R\n" +
@@ -3616,121 +4243,135 @@ func file_coria_v1_profile_proto_rawDescGZIP() []byte {
 	return file_coria_v1_profile_proto_rawDescData
 }
 
-var file_coria_v1_profile_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_coria_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_coria_v1_profile_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_coria_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
 var file_coria_v1_profile_proto_goTypes = []any{
 	(UnnamedElements)(0),                 // 0: coria.v1.UnnamedElements
 	(ConditionSubject)(0),                // 1: coria.v1.ConditionSubject
 	(LookupMissing)(0),                   // 2: coria.v1.LookupMissing
-	(*ProfileDocument)(nil),              // 3: coria.v1.ProfileDocument
-	(*ProfileRule)(nil),                  // 4: coria.v1.ProfileRule
-	(*ProfileSelector)(nil),              // 5: coria.v1.ProfileSelector
-	(*PrivateElement)(nil),               // 6: coria.v1.PrivateElement
-	(*CodedConcept)(nil),                 // 7: coria.v1.CodedConcept
-	(*ProfileCondition)(nil),             // 8: coria.v1.ProfileCondition
-	(*ProfileAction)(nil),                // 9: coria.v1.ProfileAction
-	(*KeepAction)(nil),                   // 10: coria.v1.KeepAction
-	(*RemoveAction)(nil),                 // 11: coria.v1.RemoveAction
-	(*EmptyAction)(nil),                  // 12: coria.v1.EmptyAction
-	(*ReplaceAction)(nil),                // 13: coria.v1.ReplaceAction
-	(*SetAction)(nil),                    // 14: coria.v1.SetAction
-	(*HashAction)(nil),                   // 15: coria.v1.HashAction
-	(*UidAction)(nil),                    // 16: coria.v1.UidAction
-	(*ShiftAction)(nil),                  // 17: coria.v1.ShiftAction
-	(*GeneralizeAction)(nil),             // 18: coria.v1.GeneralizeAction
-	(*LookupAction)(nil),                 // 19: coria.v1.LookupAction
-	(*CleanAction)(nil),                  // 20: coria.v1.CleanAction
-	(*QuarantineAction)(nil),             // 21: coria.v1.QuarantineAction
-	(*PixelRule)(nil),                    // 22: coria.v1.PixelRule
-	(*RedactPixels)(nil),                 // 23: coria.v1.RedactPixels
-	(*PixelRectangle)(nil),               // 24: coria.v1.PixelRectangle
-	(*DetectText)(nil),                   // 25: coria.v1.DetectText
-	(*AcceptPixels)(nil),                 // 26: coria.v1.AcceptPixels
-	(*ExpandedProfile)(nil),              // 27: coria.v1.ExpandedProfile
-	(*ExpandedRule)(nil),                 // 28: coria.v1.ExpandedRule
-	(*ExpandedPixelRule)(nil),            // 29: coria.v1.ExpandedPixelRule
-	(*ProfileVersion)(nil),               // 30: coria.v1.ProfileVersion
-	(*ProfileSummary)(nil),               // 31: coria.v1.ProfileSummary
-	(*ProfileProblem)(nil),               // 32: coria.v1.ProfileProblem
-	(*ProfileBase)(nil),                  // 33: coria.v1.ProfileBase
-	(*CreateProfileVersionRequest)(nil),  // 34: coria.v1.CreateProfileVersionRequest
-	(*CreateProfileVersionResponse)(nil), // 35: coria.v1.CreateProfileVersionResponse
-	(*GetProfileVersionRequest)(nil),     // 36: coria.v1.GetProfileVersionRequest
-	(*GetProfileVersionResponse)(nil),    // 37: coria.v1.GetProfileVersionResponse
-	(*ListProfilesRequest)(nil),          // 38: coria.v1.ListProfilesRequest
-	(*ListProfilesResponse)(nil),         // 39: coria.v1.ListProfilesResponse
-	(*ListProfileVersionsRequest)(nil),   // 40: coria.v1.ListProfileVersionsRequest
-	(*ListProfileVersionsResponse)(nil),  // 41: coria.v1.ListProfileVersionsResponse
-	(*ValidateProfileRequest)(nil),       // 42: coria.v1.ValidateProfileRequest
-	(*ValidateProfileResponse)(nil),      // 43: coria.v1.ValidateProfileResponse
-	(*ListProfileBasesRequest)(nil),      // 44: coria.v1.ListProfileBasesRequest
-	(*ListProfileBasesResponse)(nil),     // 45: coria.v1.ListProfileBasesResponse
-	(*timestamppb.Timestamp)(nil),        // 46: google.protobuf.Timestamp
+	(RequiredFallback)(0),                // 3: coria.v1.RequiredFallback
+	(ProfileView)(0),                     // 4: coria.v1.ProfileView
+	(*ProfileDocument)(nil),              // 5: coria.v1.ProfileDocument
+	(*ProfileRule)(nil),                  // 6: coria.v1.ProfileRule
+	(*ProfileSelector)(nil),              // 7: coria.v1.ProfileSelector
+	(*PrivateElement)(nil),               // 8: coria.v1.PrivateElement
+	(*ContentItemSelector)(nil),          // 9: coria.v1.ContentItemSelector
+	(*ProfileCondition)(nil),             // 10: coria.v1.ProfileCondition
+	(*ProfileAction)(nil),                // 11: coria.v1.ProfileAction
+	(*KeepAction)(nil),                   // 12: coria.v1.KeepAction
+	(*RemoveAction)(nil),                 // 13: coria.v1.RemoveAction
+	(*EmptyAction)(nil),                  // 14: coria.v1.EmptyAction
+	(*ReplaceAction)(nil),                // 15: coria.v1.ReplaceAction
+	(*SetAction)(nil),                    // 16: coria.v1.SetAction
+	(*HashAction)(nil),                   // 17: coria.v1.HashAction
+	(*UidAction)(nil),                    // 18: coria.v1.UidAction
+	(*ShiftAction)(nil),                  // 19: coria.v1.ShiftAction
+	(*GeneralizeAction)(nil),             // 20: coria.v1.GeneralizeAction
+	(*LookupAction)(nil),                 // 21: coria.v1.LookupAction
+	(*CleanAction)(nil),                  // 22: coria.v1.CleanAction
+	(*QuarantineAction)(nil),             // 23: coria.v1.QuarantineAction
+	(*DummyAction)(nil),                  // 24: coria.v1.DummyAction
+	(*RemoveUnlessRequiredAction)(nil),   // 25: coria.v1.RemoveUnlessRequiredAction
+	(*PixelRule)(nil),                    // 26: coria.v1.PixelRule
+	(*RedactPixels)(nil),                 // 27: coria.v1.RedactPixels
+	(*PixelRectangle)(nil),               // 28: coria.v1.PixelRectangle
+	(*DetectText)(nil),                   // 29: coria.v1.DetectText
+	(*AcceptPixels)(nil),                 // 30: coria.v1.AcceptPixels
+	(*ExpandedProfile)(nil),              // 31: coria.v1.ExpandedProfile
+	(*ExpandedRule)(nil),                 // 32: coria.v1.ExpandedRule
+	(*ExpandedPixelRule)(nil),            // 33: coria.v1.ExpandedPixelRule
+	(*ProfileVersion)(nil),               // 34: coria.v1.ProfileVersion
+	(*ProfileSummary)(nil),               // 35: coria.v1.ProfileSummary
+	(*ProfileProblem)(nil),               // 36: coria.v1.ProfileProblem
+	(*ProfileProblems)(nil),              // 37: coria.v1.ProfileProblems
+	(*ProfileBase)(nil),                  // 38: coria.v1.ProfileBase
+	(*CreateProfileVersionRequest)(nil),  // 39: coria.v1.CreateProfileVersionRequest
+	(*CreateProfileVersionResponse)(nil), // 40: coria.v1.CreateProfileVersionResponse
+	(*GetProfileVersionRequest)(nil),     // 41: coria.v1.GetProfileVersionRequest
+	(*GetProfileVersionResponse)(nil),    // 42: coria.v1.GetProfileVersionResponse
+	(*ListProfilesRequest)(nil),          // 43: coria.v1.ListProfilesRequest
+	(*ListProfilesResponse)(nil),         // 44: coria.v1.ListProfilesResponse
+	(*ListProfileVersionsRequest)(nil),   // 45: coria.v1.ListProfileVersionsRequest
+	(*ListProfileVersionsResponse)(nil),  // 46: coria.v1.ListProfileVersionsResponse
+	(*ValidateProfileRequest)(nil),       // 47: coria.v1.ValidateProfileRequest
+	(*ValidateProfileResponse)(nil),      // 48: coria.v1.ValidateProfileResponse
+	(*ListProfileBasesRequest)(nil),      // 49: coria.v1.ListProfileBasesRequest
+	(*ListProfileBasesResponse)(nil),     // 50: coria.v1.ListProfileBasesResponse
+	(*timestamppb.Timestamp)(nil),        // 51: google.protobuf.Timestamp
 }
 var file_coria_v1_profile_proto_depIdxs = []int32{
-	4,  // 0: coria.v1.ProfileDocument.rules:type_name -> coria.v1.ProfileRule
+	6,  // 0: coria.v1.ProfileDocument.rules:type_name -> coria.v1.ProfileRule
 	0,  // 1: coria.v1.ProfileDocument.unnamed:type_name -> coria.v1.UnnamedElements
-	22, // 2: coria.v1.ProfileDocument.pixel_rules:type_name -> coria.v1.PixelRule
-	5,  // 3: coria.v1.ProfileRule.selector:type_name -> coria.v1.ProfileSelector
-	8,  // 4: coria.v1.ProfileRule.when:type_name -> coria.v1.ProfileCondition
-	9,  // 5: coria.v1.ProfileRule.action:type_name -> coria.v1.ProfileAction
-	6,  // 6: coria.v1.ProfileSelector.private_element:type_name -> coria.v1.PrivateElement
-	7,  // 7: coria.v1.ProfileSelector.content_item:type_name -> coria.v1.CodedConcept
+	26, // 2: coria.v1.ProfileDocument.pixel_rules:type_name -> coria.v1.PixelRule
+	7,  // 3: coria.v1.ProfileRule.selector:type_name -> coria.v1.ProfileSelector
+	10, // 4: coria.v1.ProfileRule.when:type_name -> coria.v1.ProfileCondition
+	11, // 5: coria.v1.ProfileRule.action:type_name -> coria.v1.ProfileAction
+	8,  // 6: coria.v1.ProfileSelector.private_element:type_name -> coria.v1.PrivateElement
+	9,  // 7: coria.v1.ProfileSelector.content_item:type_name -> coria.v1.ContentItemSelector
 	1,  // 8: coria.v1.ProfileCondition.subject:type_name -> coria.v1.ConditionSubject
-	10, // 9: coria.v1.ProfileAction.keep:type_name -> coria.v1.KeepAction
-	11, // 10: coria.v1.ProfileAction.remove:type_name -> coria.v1.RemoveAction
-	12, // 11: coria.v1.ProfileAction.empty:type_name -> coria.v1.EmptyAction
-	13, // 12: coria.v1.ProfileAction.replace:type_name -> coria.v1.ReplaceAction
-	14, // 13: coria.v1.ProfileAction.set:type_name -> coria.v1.SetAction
-	15, // 14: coria.v1.ProfileAction.hash:type_name -> coria.v1.HashAction
-	16, // 15: coria.v1.ProfileAction.uid:type_name -> coria.v1.UidAction
-	17, // 16: coria.v1.ProfileAction.shift:type_name -> coria.v1.ShiftAction
-	18, // 17: coria.v1.ProfileAction.generalize:type_name -> coria.v1.GeneralizeAction
-	19, // 18: coria.v1.ProfileAction.lookup:type_name -> coria.v1.LookupAction
-	20, // 19: coria.v1.ProfileAction.clean:type_name -> coria.v1.CleanAction
-	21, // 20: coria.v1.ProfileAction.quarantine:type_name -> coria.v1.QuarantineAction
-	2,  // 21: coria.v1.LookupAction.on_missing:type_name -> coria.v1.LookupMissing
-	8,  // 22: coria.v1.PixelRule.when:type_name -> coria.v1.ProfileCondition
-	23, // 23: coria.v1.PixelRule.redact:type_name -> coria.v1.RedactPixels
-	25, // 24: coria.v1.PixelRule.detect:type_name -> coria.v1.DetectText
-	26, // 25: coria.v1.PixelRule.accept:type_name -> coria.v1.AcceptPixels
-	24, // 26: coria.v1.RedactPixels.rectangles:type_name -> coria.v1.PixelRectangle
-	28, // 27: coria.v1.ExpandedProfile.rules:type_name -> coria.v1.ExpandedRule
-	0,  // 28: coria.v1.ExpandedProfile.unnamed:type_name -> coria.v1.UnnamedElements
-	29, // 29: coria.v1.ExpandedProfile.pixel_rules:type_name -> coria.v1.ExpandedPixelRule
-	4,  // 30: coria.v1.ExpandedRule.rule:type_name -> coria.v1.ProfileRule
-	22, // 31: coria.v1.ExpandedPixelRule.rule:type_name -> coria.v1.PixelRule
-	46, // 32: coria.v1.ProfileVersion.create_time:type_name -> google.protobuf.Timestamp
-	3,  // 33: coria.v1.ProfileVersion.document:type_name -> coria.v1.ProfileDocument
-	27, // 34: coria.v1.ProfileVersion.expanded:type_name -> coria.v1.ExpandedProfile
-	46, // 35: coria.v1.ProfileSummary.latest_create_time:type_name -> google.protobuf.Timestamp
-	3,  // 36: coria.v1.ProfileBase.document:type_name -> coria.v1.ProfileDocument
-	3,  // 37: coria.v1.CreateProfileVersionRequest.document:type_name -> coria.v1.ProfileDocument
-	30, // 38: coria.v1.CreateProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
-	30, // 39: coria.v1.GetProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
-	31, // 40: coria.v1.ListProfilesResponse.profiles:type_name -> coria.v1.ProfileSummary
-	30, // 41: coria.v1.ListProfileVersionsResponse.versions:type_name -> coria.v1.ProfileVersion
-	3,  // 42: coria.v1.ValidateProfileRequest.document:type_name -> coria.v1.ProfileDocument
-	32, // 43: coria.v1.ValidateProfileResponse.problems:type_name -> coria.v1.ProfileProblem
-	27, // 44: coria.v1.ValidateProfileResponse.expanded:type_name -> coria.v1.ExpandedProfile
-	33, // 45: coria.v1.ListProfileBasesResponse.bases:type_name -> coria.v1.ProfileBase
-	34, // 46: coria.v1.ProfileService.CreateProfileVersion:input_type -> coria.v1.CreateProfileVersionRequest
-	36, // 47: coria.v1.ProfileService.GetProfileVersion:input_type -> coria.v1.GetProfileVersionRequest
-	38, // 48: coria.v1.ProfileService.ListProfiles:input_type -> coria.v1.ListProfilesRequest
-	40, // 49: coria.v1.ProfileService.ListProfileVersions:input_type -> coria.v1.ListProfileVersionsRequest
-	42, // 50: coria.v1.ProfileService.ValidateProfile:input_type -> coria.v1.ValidateProfileRequest
-	44, // 51: coria.v1.ProfileService.ListProfileBases:input_type -> coria.v1.ListProfileBasesRequest
-	35, // 52: coria.v1.ProfileService.CreateProfileVersion:output_type -> coria.v1.CreateProfileVersionResponse
-	37, // 53: coria.v1.ProfileService.GetProfileVersion:output_type -> coria.v1.GetProfileVersionResponse
-	39, // 54: coria.v1.ProfileService.ListProfiles:output_type -> coria.v1.ListProfilesResponse
-	41, // 55: coria.v1.ProfileService.ListProfileVersions:output_type -> coria.v1.ListProfileVersionsResponse
-	43, // 56: coria.v1.ProfileService.ValidateProfile:output_type -> coria.v1.ValidateProfileResponse
-	45, // 57: coria.v1.ProfileService.ListProfileBases:output_type -> coria.v1.ListProfileBasesResponse
-	52, // [52:58] is the sub-list for method output_type
-	46, // [46:52] is the sub-list for method input_type
-	46, // [46:46] is the sub-list for extension type_name
-	46, // [46:46] is the sub-list for extension extendee
-	0,  // [0:46] is the sub-list for field type_name
+	12, // 9: coria.v1.ProfileAction.keep:type_name -> coria.v1.KeepAction
+	13, // 10: coria.v1.ProfileAction.remove:type_name -> coria.v1.RemoveAction
+	14, // 11: coria.v1.ProfileAction.empty:type_name -> coria.v1.EmptyAction
+	15, // 12: coria.v1.ProfileAction.replace:type_name -> coria.v1.ReplaceAction
+	16, // 13: coria.v1.ProfileAction.set:type_name -> coria.v1.SetAction
+	17, // 14: coria.v1.ProfileAction.hash:type_name -> coria.v1.HashAction
+	18, // 15: coria.v1.ProfileAction.uid:type_name -> coria.v1.UidAction
+	19, // 16: coria.v1.ProfileAction.shift:type_name -> coria.v1.ShiftAction
+	20, // 17: coria.v1.ProfileAction.generalize:type_name -> coria.v1.GeneralizeAction
+	21, // 18: coria.v1.ProfileAction.lookup:type_name -> coria.v1.LookupAction
+	22, // 19: coria.v1.ProfileAction.clean:type_name -> coria.v1.CleanAction
+	23, // 20: coria.v1.ProfileAction.quarantine:type_name -> coria.v1.QuarantineAction
+	24, // 21: coria.v1.ProfileAction.dummy:type_name -> coria.v1.DummyAction
+	25, // 22: coria.v1.ProfileAction.remove_unless_required:type_name -> coria.v1.RemoveUnlessRequiredAction
+	2,  // 23: coria.v1.LookupAction.on_missing:type_name -> coria.v1.LookupMissing
+	3,  // 24: coria.v1.RemoveUnlessRequiredAction.fallback:type_name -> coria.v1.RequiredFallback
+	10, // 25: coria.v1.PixelRule.when:type_name -> coria.v1.ProfileCondition
+	27, // 26: coria.v1.PixelRule.redact:type_name -> coria.v1.RedactPixels
+	29, // 27: coria.v1.PixelRule.detect:type_name -> coria.v1.DetectText
+	30, // 28: coria.v1.PixelRule.accept:type_name -> coria.v1.AcceptPixels
+	28, // 29: coria.v1.RedactPixels.rectangles:type_name -> coria.v1.PixelRectangle
+	32, // 30: coria.v1.ExpandedProfile.rules:type_name -> coria.v1.ExpandedRule
+	0,  // 31: coria.v1.ExpandedProfile.unnamed:type_name -> coria.v1.UnnamedElements
+	33, // 32: coria.v1.ExpandedProfile.pixel_rules:type_name -> coria.v1.ExpandedPixelRule
+	6,  // 33: coria.v1.ExpandedRule.rule:type_name -> coria.v1.ProfileRule
+	26, // 34: coria.v1.ExpandedPixelRule.rule:type_name -> coria.v1.PixelRule
+	51, // 35: coria.v1.ProfileVersion.create_time:type_name -> google.protobuf.Timestamp
+	5,  // 36: coria.v1.ProfileVersion.document:type_name -> coria.v1.ProfileDocument
+	31, // 37: coria.v1.ProfileVersion.expanded:type_name -> coria.v1.ExpandedProfile
+	51, // 38: coria.v1.ProfileSummary.latest_create_time:type_name -> google.protobuf.Timestamp
+	36, // 39: coria.v1.ProfileProblems.problems:type_name -> coria.v1.ProfileProblem
+	5,  // 40: coria.v1.ProfileBase.document:type_name -> coria.v1.ProfileDocument
+	5,  // 41: coria.v1.CreateProfileVersionRequest.document:type_name -> coria.v1.ProfileDocument
+	4,  // 42: coria.v1.CreateProfileVersionRequest.view:type_name -> coria.v1.ProfileView
+	34, // 43: coria.v1.CreateProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
+	36, // 44: coria.v1.CreateProfileVersionResponse.warnings:type_name -> coria.v1.ProfileProblem
+	4,  // 45: coria.v1.GetProfileVersionRequest.view:type_name -> coria.v1.ProfileView
+	34, // 46: coria.v1.GetProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
+	35, // 47: coria.v1.ListProfilesResponse.profiles:type_name -> coria.v1.ProfileSummary
+	34, // 48: coria.v1.ListProfileVersionsResponse.versions:type_name -> coria.v1.ProfileVersion
+	5,  // 49: coria.v1.ValidateProfileRequest.document:type_name -> coria.v1.ProfileDocument
+	4,  // 50: coria.v1.ValidateProfileRequest.view:type_name -> coria.v1.ProfileView
+	36, // 51: coria.v1.ValidateProfileResponse.problems:type_name -> coria.v1.ProfileProblem
+	31, // 52: coria.v1.ValidateProfileResponse.expanded:type_name -> coria.v1.ExpandedProfile
+	36, // 53: coria.v1.ValidateProfileResponse.warnings:type_name -> coria.v1.ProfileProblem
+	38, // 54: coria.v1.ListProfileBasesResponse.bases:type_name -> coria.v1.ProfileBase
+	39, // 55: coria.v1.ProfileService.CreateProfileVersion:input_type -> coria.v1.CreateProfileVersionRequest
+	41, // 56: coria.v1.ProfileService.GetProfileVersion:input_type -> coria.v1.GetProfileVersionRequest
+	43, // 57: coria.v1.ProfileService.ListProfiles:input_type -> coria.v1.ListProfilesRequest
+	45, // 58: coria.v1.ProfileService.ListProfileVersions:input_type -> coria.v1.ListProfileVersionsRequest
+	47, // 59: coria.v1.ProfileService.ValidateProfile:input_type -> coria.v1.ValidateProfileRequest
+	49, // 60: coria.v1.ProfileService.ListProfileBases:input_type -> coria.v1.ListProfileBasesRequest
+	40, // 61: coria.v1.ProfileService.CreateProfileVersion:output_type -> coria.v1.CreateProfileVersionResponse
+	42, // 62: coria.v1.ProfileService.GetProfileVersion:output_type -> coria.v1.GetProfileVersionResponse
+	44, // 63: coria.v1.ProfileService.ListProfiles:output_type -> coria.v1.ListProfilesResponse
+	46, // 64: coria.v1.ProfileService.ListProfileVersions:output_type -> coria.v1.ListProfileVersionsResponse
+	48, // 65: coria.v1.ProfileService.ValidateProfile:output_type -> coria.v1.ValidateProfileResponse
+	50, // 66: coria.v1.ProfileService.ListProfileBases:output_type -> coria.v1.ListProfileBasesResponse
+	61, // [61:67] is the sub-list for method output_type
+	55, // [55:61] is the sub-list for method input_type
+	55, // [55:55] is the sub-list for extension type_name
+	55, // [55:55] is the sub-list for extension extendee
+	0,  // [0:55] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_profile_proto_init() }
@@ -3766,6 +4407,8 @@ func file_coria_v1_profile_proto_init() {
 		(*ProfileAction_Lookup)(nil),
 		(*ProfileAction_Clean)(nil),
 		(*ProfileAction_Quarantine)(nil),
+		(*ProfileAction_Dummy)(nil),
+		(*ProfileAction_RemoveUnlessRequired)(nil),
 	}
 	file_coria_v1_profile_proto_msgTypes[10].OneofWrappers = []any{
 		(*ReplaceAction_Constant)(nil),
@@ -3775,18 +4418,19 @@ func file_coria_v1_profile_proto_init() {
 		(*SetAction_Constant)(nil),
 		(*SetAction_Template)(nil),
 	}
-	file_coria_v1_profile_proto_msgTypes[19].OneofWrappers = []any{
+	file_coria_v1_profile_proto_msgTypes[21].OneofWrappers = []any{
 		(*PixelRule_Redact)(nil),
 		(*PixelRule_Detect)(nil),
 		(*PixelRule_Accept)(nil),
 	}
+	file_coria_v1_profile_proto_msgTypes[34].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_profile_proto_rawDesc), len(file_coria_v1_profile_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   43,
+			NumEnums:      5,
+			NumMessages:   46,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

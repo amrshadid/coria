@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"errors"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/amrshadid/go-dicom/dataelem"
 	"github.com/amrshadid/go-dicom/dataset"
@@ -131,7 +134,7 @@ func charsetOf(ds *dataset.Dataset, inherited charsetKind) charsetKind {
 		return inherited
 	}
 	switch strings.Trim(v, " \x00") {
-	case "":
+	case "", "ISO_IR 6":
 		return charsetAbsent
 	case "ISO_IR 192":
 		return charsetUTF8
@@ -139,32 +142,37 @@ func charsetOf(ds *dataset.Dataset, inherited charsetKind) charsetKind {
 	return charsetOther
 }
 
-// conceptOf returns the concept name of an item of the Content Sequence
-// (PS3.3 C.17.3): the scheme and value of its Concept Name Code Sequence's
-// first item, each without padding; nil for an item of any other sequence
-// or without a concept name.
-func conceptOf(seqTag uint32, item *dataset.Dataset) *profile.Concept {
-	if seqTag != tagContentSequence {
-		return nil
+// contentItemOf returns, for a structured report content item, the
+// concept name and the Value Type (0040,A040), each without padding: the
+// scheme and value of the first item of its Concept Name Code Sequence
+// (0040,A043), nil when it has none. A content item is any item that has a
+// Value Type, wherever it sits: in a Content Sequence (0040,A730), and as
+// well in the Acquisition Context Sequence (0040,0555), a specimen's
+// preparation steps and the other sequences whose items PS3.3 C.17.3 and
+// C.4.10 build of content items. An item without one returns "".
+func contentItemOf(item *dataset.Dataset) (*profile.Concept, string) {
+	vt, ok := topText(item, tagValueType)
+	if !ok || vt == "" {
+		return nil, ""
 	}
 	elem, ok := item.Get(tagConceptNameCode)
 	if !ok {
-		return nil
+		return nil, vt
 	}
 	seq, ok := elem.GetValue().(*sequence.Sequence)
 	if !ok || seq.Length() == 0 {
-		return nil
+		return nil, vt
 	}
 	code, ok := seq.Items()[0].(*dataset.Dataset)
 	if !ok {
-		return nil
+		return nil, vt
 	}
 	scheme, _ := topText(code, tagCodingScheme)
 	value, _ := topText(code, tagCodeValue)
 	if scheme == "" || value == "" {
-		return nil
+		return nil, vt
 	}
-	return &profile.Concept{Scheme: scheme, Value: value}
+	return &profile.Concept{Scheme: scheme, Value: value}, vt
 }
 
 // planSets plans the elements set rules make: a set rule makes its element
@@ -185,6 +193,12 @@ func (r *run) planSets() error {
 			rule = "set rule"
 		}
 		path := formatTag(s.Tag)
+		// A set rule writes text, and makes its element with one VR that
+		// holds text; anything else ("US or SS", a binary VR) cannot be
+		// made from a constant.
+		if !slices.Contains(stringVRs, s.VR) {
+			return &Failure{Cause: CauseBadValue, Path: path, Rule: rule}
+		}
 		out := dec.Action.Constant
 		if dec.Action.Template != "" {
 			var ok bool
@@ -192,7 +206,7 @@ func (r *run) planSets() error {
 				return &Failure{Cause: CauseBadValue, Path: path, Rule: rule}
 			}
 		}
-		if !validText(s.VR, out) || !r.charsetTakes(charsetOf(r.top, charsetAbsent), out) {
+		if !validText(s.VR, out) || !utf8.ValidString(out) {
 			return &Failure{Cause: CauseBadValue, Path: path, Rule: rule}
 		}
 		r.ops = append(r.ops, op{kind: opPut, ds: r.top, tag: t, value: []byte(out), vr: dataelem.VR(s.VR)})
@@ -205,19 +219,44 @@ func (r *run) planSets() error {
 }
 
 // finishCleans works out each clean's text now that every needle of the
-// file is known.
+// file is known. The terms are made once for the file, and the work of
+// all its cleans together is bounded (maxCleanWork): a file past it is
+// refused as too large before any text is searched, or as soon as the
+// bound is reached, never left to run for minutes.
 func (r *run) finishCleans() error {
+	var cleans []int
+	total := 0
 	for i := range r.ops {
-		o := &r.ops[i]
-		if o.kind != opClean {
-			continue
+		if r.ops[i].kind == opClean {
+			cleans = append(cleans, i)
+			total += utf8.RuneCountInString(r.ops[i].text)
 		}
-		out := cleanText(o.text, r.record.Needles)
+	}
+	if len(cleans) == 0 {
+		return nil
+	}
+	terms, ok := cleanTerms(r.record.Needles)
+	if !ok {
+		return &Failure{Cause: CauseTooLarge, Path: r.ops[cleans[0]].path, Rule: r.ops[cleans[0]].rule}
+	}
+	cl := newCleaner(terms, maxCleanWork)
+	if !cl.affords(total) {
+		return &Failure{Cause: CauseTooLarge, Path: r.ops[cleans[0]].path, Rule: r.ops[cleans[0]].rule}
+	}
+	for _, i := range cleans {
+		o := &r.ops[i]
+		out, err := cl.clean(r.ctx, o.text)
+		if errors.Is(err, errCleanTooLarge) {
+			return &Failure{Cause: CauseTooLarge, Path: o.path, Rule: o.rule}
+		}
+		if err != nil {
+			return err
+		}
 		if out == o.text {
 			o.kind = 0
 			continue
 		}
-		if !r.charsetTakes(o.charset, out) {
+		if !utf8.ValidString(out) || (o.charset == charsetOther && !isASCII(out)) {
 			return &Failure{Cause: CauseBadValue, Path: o.path, Rule: o.rule}
 		}
 		o.kind, o.value = opValue, []byte(out)
@@ -226,53 +265,157 @@ func (r *run) finishCleans() error {
 	return nil
 }
 
+// finishAssigns asks the lookup tables for the codes they assign on first
+// sight, once the plan has succeeded, so that a file refused for any other
+// reason takes no code from a table. A value asked for twice in one file
+// is asked once.
+func (r *run) finishAssigns() error {
+	codes := map[[2]string]string{}
+	for _, a := range r.assigns {
+		k := [2]string{a.table, a.key}
+		code, done := codes[k]
+		if !done {
+			var err error
+			if code, err = r.en.lookups.Assign(r.ctx, a.table, a.key); err != nil {
+				return err
+			}
+			codes[k] = code
+		}
+		o := &r.ops[a.op]
+		if code == "" || !isASCII(code) || !validText(a.vr, code) {
+			return &Failure{Cause: CauseBadValue, Path: o.path, Rule: o.rule}
+		}
+		if code == o.text {
+			o.kind = 0
+			continue
+		}
+		o.kind, o.value = opValue, []byte(code)
+		r.record.Entries[o.entry].Changed = true
+	}
+	return nil
+}
+
 // planMethod plans the record of the de-identification in the data set
-// (PS3.15 E.1.1, E.3.6), and the character set declaration a value
-// outside the default repertoire needs.
+// (PS3.15 E.1.1, E.3.6).
 func (r *run) planMethod() {
-	put := func(t uint32, vr, value, reason string) {
-		r.ops = append(r.ops, op{kind: opPut, ds: r.top, tag: tag.Tag(t), value: []byte(value), vr: dataelem.VR(vr)})
-		r.record.Entries = append(r.record.Entries, Entry{Path: formatTag(t), Tag: t, VR: vr, Action: "set", Rule: -1, Reason: reason, Changed: true})
-	}
-	if r.needUTF8 {
-		put(tagSpecificCharacterSet, "CS", "ISO_IR 192", "a value written is outside the default repertoire, and the data set declared no character set (PS3.5 6.1.2.3)")
-	}
-	put(tagIdentityRemoved, "CS", "YES", "the file was de-identified (PS3.15 E.1.1)")
+	r.put(tagIdentityRemoved, "CS", "YES", "the file was de-identified (PS3.15 E.1.1)")
 	if r.en.method != "" {
-		put(tagDeidMethod, "LO", r.en.method, "the profile version that de-identified the file (PS3.15 E.1.1)")
+		r.put(tagDeidMethod, "LO", r.en.method, "the profile version that de-identified the file (PS3.15 E.1.1)")
 	}
 	if r.record.DatesShifted {
-		put(tagTemporalModified, "CS", "MODIFIED", "dates were shifted (PS3.15 E.3.6)")
+		r.put(tagTemporalModified, "CS", "MODIFIED", "dates were shifted (PS3.15 E.3.6)")
 	}
 }
 
-// apply makes every planned change. Nothing here can fail: every value
-// was worked out and checked before.
-func (r *run) apply() {
-	for _, o := range r.ops {
-		switch o.kind {
-		case opRemove:
-			o.ds.Remove(o.tag)
-		case opValue:
-			if elem, ok := o.ds.Get(o.tag); ok {
-				elem.SetValue(o.value)
-				if o.vr != "" {
-					elem.SetVR(o.vr)
+// put plans a top-level element the engine writes itself, with its record
+// entry.
+func (r *run) put(t uint32, vr, value, reason string) {
+	r.ops = append(r.ops, op{kind: opPut, ds: r.top, tag: tag.Tag(t), value: []byte(value), vr: dataelem.VR(vr)})
+	r.record.Entries = append(r.record.Entries, Entry{Path: formatTag(t), Tag: t, VR: vr, Action: "set", Rule: -1, Reason: reason, Changed: true})
+}
+
+// declareCharset writes Specific Character Set (0008,0005) at the top
+// level once every change is made: ISO_IR 192 when any text of the data
+// set, at any depth, is outside the default repertoire, and nothing
+// otherwise (PS3.5 6.1.2.3: the default repertoire needs no declaration).
+// The library holds every text it decoded in UTF-8, and every declaration
+// the file had, in any item, was removed by the walk, so the one written
+// here is true of every value. It is the engine's alone: no profile names
+// it.
+func (r *run) declareCharset() {
+	if !nonASCIIText(r.top) {
+		return
+	}
+	r.put(tagSpecificCharacterSet, "CS", "ISO_IR 192", "text outside the default repertoire is kept or written, and the data set's text is UTF-8 (PS3.5 6.1.2.3)")
+	r.applyOp(r.ops[len(r.ops)-1])
+}
+
+// nonASCIIText reports whether any text value of ds, at any depth, is
+// outside the default repertoire.
+func nonASCIIText(ds *dataset.Dataset) bool {
+	for _, t := range ds.Tags() {
+		elem, ok := ds.Get(t)
+		if !ok {
+			continue
+		}
+		if seq, isSeq := elem.GetValue().(*sequence.Sequence); isSeq {
+			for _, it := range seq.Items() {
+				if item, ok := it.(*dataset.Dataset); ok && nonASCIIText(item) {
+					return true
 				}
 			}
-		case opNoItems:
-			if elem, ok := o.ds.Get(o.tag); ok {
-				elem.SetValue(sequence.New())
-			}
-		case opPut:
-			if elem, ok := o.ds.Get(o.tag); ok {
-				elem.SetValue(o.value)
-				elem.SetVR(o.vr)
-			} else {
-				// Add fails only for a nil element or a tag that is not a
-				// tag.Tag, neither of which can be here.
-				_ = o.ds.Add(dataelem.NewDataElement(o.tag, o.vr, o.value))
-			}
+			continue
+		}
+		if !charsetVRs[effectiveVR(t, elem)] {
+			continue
+		}
+		if b, ok := elem.Bytes(); ok && !isASCII(string(b)) {
+			return true
 		}
 	}
+	return false
+}
+
+// apply makes every planned change. Nothing here should fail: every value
+// was worked out and checked before. Each change notes how to undo it, so
+// that a fault part way (a panic, which Apply recovers) leaves the data set
+// as it was.
+func (r *run) apply() {
+	for i, o := range r.ops {
+		if r.en.seams.beforeOp != nil {
+			r.en.seams.beforeOp(i)
+		}
+		r.applyOp(o)
+	}
+}
+
+// applyOp makes one change, noting how to undo it.
+func (r *run) applyOp(o op) {
+	switch o.kind {
+	case opRemove:
+		if elem, ok := o.ds.Get(o.tag); ok {
+			o.ds.Remove(o.tag)
+			r.undo = append(r.undo, func() { _ = o.ds.Add(elem) })
+		}
+	case opValue, opNoItems:
+		if elem, ok := o.ds.Get(o.tag); ok {
+			r.noteValue(elem)
+			if o.kind == opNoItems {
+				elem.SetValue(sequence.New())
+				return
+			}
+			elem.SetValue(o.value)
+			if o.vr != "" {
+				elem.SetVR(o.vr)
+			}
+		}
+	case opPut:
+		if elem, ok := o.ds.Get(o.tag); ok {
+			r.noteValue(elem)
+			elem.SetValue(o.value)
+			elem.SetVR(o.vr)
+			return
+		}
+		// Add fails only for a nil element or a tag that is not a tag.Tag,
+		// neither of which can be here.
+		_ = o.ds.Add(dataelem.NewDataElement(o.tag, o.vr, o.value))
+		r.undo = append(r.undo, func() { o.ds.Remove(o.tag) })
+	}
+}
+
+// noteValue notes how to give an element back its value and VR.
+func (r *run) noteValue(elem *dataelem.DataElement) {
+	value, vr := elem.GetValue(), elem.GetVR()
+	r.undo = append(r.undo, func() {
+		elem.SetValue(value)
+		elem.SetVR(vr)
+	})
+}
+
+// rollback undoes every change apply made, last first.
+func (r *run) rollback() {
+	for i := len(r.undo) - 1; i >= 0; i-- {
+		r.undo[i]()
+	}
+	r.undo = nil
 }

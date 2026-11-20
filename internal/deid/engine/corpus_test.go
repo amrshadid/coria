@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,6 +28,9 @@ const (
 	corpusEnv = "CORIA_PYDICOM_CORPUS"
 	// deidScript is the outside check, from this package's directory.
 	deidScript = "../../../scripts/check/deid-pydicom.py"
+	// adversarialScript writes the synthetic files that hide values where
+	// they slip past a de-identifier, from this package's directory.
+	adversarialScript = "../../../scripts/check/deid-adversarial.py"
 )
 
 // removedKeywords are the attributes the corpus profile removes or
@@ -72,10 +75,15 @@ func corpusRules() []*v1.ProfileRule {
 		"Manufacturer", "ManufacturerModelName"} {
 		rules = append(rules, rule("remove-"+strings.ToLower(k), kw(k), aRemove))
 	}
-	// A structure set's label can hold the study's ID (rtstruct: sep30).
-	for _, k := range []string{"StudyDescription", "SeriesDescription", "ImageComments", "PatientComments", "StructureSetLabel", "StructureSetName"} {
+	// A structure set's label can hold the study's ID (rtstruct: sep30); an
+	// overlay's description the vendor's name (examples_overlay), and the
+	// software versions the model's (examples_palette), which the profile
+	// removes.
+	for _, k := range []string{"StudyDescription", "SeriesDescription", "ImageComments", "PatientComments", "StructureSetLabel", "StructureSetName",
+		"SoftwareVersions"} {
 		rules = append(rules, rule("clean-"+strings.ToLower(k), kw(k), aClean))
 	}
+	rules = append(rules, rule("clean-overlay-description", &v1.ProfileSelector{Kind: &v1.ProfileSelector_Tag{Tag: "60000022"}}, aClean))
 	return rules
 }
 
@@ -102,26 +110,48 @@ func corpusFiles(t *testing.T, dir string) []string {
 // profile or refused with a Failure, never left half done; each result is
 // written, read back by the library, and holds none of the values the
 // profile removed; doing it again gives the same bytes. With pythonEnv
-// set, pydicom then reads every pair of original and result and finds none
-// of the removed values in the result (scripts/check/deid-pydicom.py).
+// set, pydicom first writes synthetic files that hide values where they
+// slip past a de-identifier (scripts/check/deid-adversarial.py: names in
+// ISO 2022 and Latin-1, CJK and two-letter names, a private sequence kept
+// as UN bytes, crafted UTF-8), which join the corpus; and then reads every
+// pair of original and result and finds none of the removed values in the
+// result, searching for the engine's needles, given in a file beside each
+// result and never in it, and for what it reads itself
+// (scripts/check/deid-pydicom.py).
 func TestCorpusFilesAreDeidentified(t *testing.T) {
 	files := corpusFiles(t, receiveTestdata)
 	if dir := os.Getenv(corpusEnv); dir != "" {
 		files = append(files, corpusFiles(t, dir)...)
 	}
+	py, asked := os.LookupEnv(pythonEnv)
+	if asked && py == "" {
+		t.Fatalf("%s is set to nothing: the check was asked for without an interpreter", pythonEnv)
+	}
+	var adversarial []string
+	if asked {
+		dir := t.TempDir()
+		cmd := exec.CommandContext(t.Context(), py, "-I", adversarialScript, dir) //nolint:gosec // G204: the interpreter is the test runner's own and the script the repository's.
+		if report, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("writing the synthetic files: %v: %s", err, report)
+		}
+		adversarial = corpusFiles(t, dir)
+		if len(adversarial) < 6 {
+			t.Fatalf("%d synthetic files", len(adversarial))
+		}
+		files = append(files, adversarial...)
+	}
 	en := newTestEngine(t, testKeys, Options{Method: "corpus@1"}, corpusRules()...)
 	out := t.TempDir()
-	type pair struct {
-		Original     string `json:"original"`
-		Deidentified string `json:"deidentified"`
-	}
-	var pairs []pair
+	var pairs []checkPair
 	// The needles searched for here are those of removedKeywords, as the
 	// outside check's: a vendor's or model's name, removed by the profile
 	// too, identifies no patient and recurs in what a file keeps.
 	checked := map[string]bool{}
 	for _, k := range removedKeywords {
 		checked[formatTag(uint32(tag.GlobalDictionary().GetByKeyword(k)))] = true
+	}
+	for t := range floorTags {
+		checked[formatTag(t)] = true
 	}
 	causes := map[Cause]int{}
 	unread := 0
@@ -144,6 +174,7 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 		var f *Failure
 		if errors.As(err, &f) {
 			causes[f.Cause]++
+			t.Logf("%s: refused, %s", filepath.Base(path), f.Error())
 			if after := writeFile(t, ds); !bytes.Equal(before, after) {
 				t.Errorf("%s: a refused file was changed", path)
 			}
@@ -173,11 +204,7 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 				t.Errorf("%s: a removed value of %s is in the result", path, n.Path)
 			}
 		}
-		name := filepath.Join(out, fmt.Sprintf("%03d-%s.dcm", i, filepath.Base(path)))
-		if err := os.WriteFile(name, b, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		pairs = append(pairs, pair{path, name})
+		pairs = append(pairs, writePair(t, out, fmt.Sprintf("%03d", i), path, b, rec))
 	}
 	t.Logf("%d files: %d de-identified, %d refused %v, %d not read or not written here", len(files), len(pairs), len(files)-len(pairs)-unread, causes, unread)
 	if len(pairs) < 10 {
@@ -188,28 +215,99 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 			t.Errorf("a refusal of cause %s", c)
 		}
 	}
-	py, asked := os.LookupEnv(pythonEnv)
 	if !asked {
 		return
 	}
-	if py == "" {
-		t.Fatalf("%s is set to nothing: the check was asked for without an interpreter", pythonEnv)
+	if report, err := runCheck(t, py, out, pairs); err != nil {
+		t.Fatalf("pydicom found removed values: %v: %s", err, report)
 	}
-	sort.Strings(removedKeywords)
-	spec, err := json.Marshal(map[string]any{"keywords": removedKeywords, "files": pairs})
+
+	// A control: the check must find what a profile leaves. The synthetic
+	// files de-identified without the rules that clean free text keep the
+	// names, birth dates and addresses written in it, in each script.
+	var noClean []*v1.ProfileRule
+	for _, r := range corpusRules() {
+		if !strings.HasPrefix(r.GetName(), "clean-") {
+			noClean = append(noClean, r)
+		}
+	}
+	leaky := newTestEngine(t, testKeys, Options{}, noClean...)
+	ctl := t.TempDir()
+	var leaks []checkPair
+	for i, path := range adversarial {
+		ds, err := readPath(t, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec, err := leaky.Apply(context.Background(), ds, Reception{})
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		leaks = append(leaks, writePair(t, ctl, fmt.Sprintf("%03d", i), path, writeFile(t, ds), rec))
+	}
+	report, err := runCheck(t, py, ctl, leaks)
+	if err == nil {
+		t.Fatalf("the check found nothing in files whose free text was not cleaned: %s", report)
+	}
+	for _, f := range []string{"cjk-iso2022", "cjk-utf8", "latin1", "short-names", "crafted-utf8"} {
+		if !bytes.Contains(report, []byte(f+".dcm: ")) {
+			t.Errorf("the check did not find the names left in %s: %s", f, report)
+		}
+	}
+}
+
+// checkPair is a file and its result, for the outside check, with the
+// file of the engine's needles: written beside the result, never in it.
+type checkPair struct {
+	Original     string `json:"original"`
+	Deidentified string `json:"deidentified"`
+	Needles      string `json:"needles"`
+}
+
+// writePair writes a result and its needles into dir, under a name made
+// of prefix and the original's.
+func writePair(t *testing.T, dir, prefix, original string, result []byte, rec *Record) checkPair {
+	t.Helper()
+	name := filepath.Join(dir, prefix+"-"+filepath.Base(original))
+	if err := os.WriteFile(name, result, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[NeedleKind]string{NeedleName: "name", NeedleDate: "date", NeedleUID: "uid", NeedleText: "text"}
+	type needle struct {
+		Kind  string `json:"kind"`
+		Value string `json:"value"`
+	}
+	list := make([]needle, 0, len(rec.Needles))
+	for _, n := range rec.Needles {
+		list = append(list, needle{kinds[n.Kind], n.Value})
+	}
+	side, err := json.Marshal(list)
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := filepath.Join(out, "manifest.json")
+	if err := os.WriteFile(name+".needles.json", side, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return checkPair{original, name, name + ".needles.json"}
+}
+
+// runCheck runs the outside check over pairs, its manifest written into
+// dir, and returns what it printed.
+func runCheck(t *testing.T, py, dir string, pairs []checkPair) ([]byte, error) {
+	t.Helper()
+	keywords := slices.Sorted(slices.Values(removedKeywords))
+	spec, err := json.Marshal(map[string]any{"keywords": keywords, "files": pairs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(dir, "manifest.json")
 	if err := os.WriteFile(manifest, spec, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.CommandContext(t.Context(), py, "-I", deidScript, manifest) //nolint:gosec // G204: the interpreter is the test runner's own and the script the repository's.
 	report, err := cmd.CombinedOutput()
 	t.Logf("pydicom: %s", report)
-	if err != nil {
-		t.Fatalf("pydicom found removed values: %v", err)
-	}
+	return report, err
 }
 
 // TestStudyKeepsItsLinksAcrossFiles guards that the files of one study,

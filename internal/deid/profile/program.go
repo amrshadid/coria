@@ -20,9 +20,13 @@ type Location struct {
 	// VR is the element's value representation.
 	VR string
 	// ContentItem is the concept name of the structured report content
-	// item whose value the element is (PS3.3 C.17.3); nil for any other
-	// element.
+	// item the element is directly in (PS3.3 C.17.3); nil for an element
+	// of any other data set. Only the item's value element is selected by
+	// a content item rule (IsContentValue).
 	ContentItem *Concept
+	// ValueType is that content item's Value Type (0040,A040), without
+	// padding; empty for an element of any other data set.
+	ValueType string
 }
 
 // Decision is what a profile does to one element: the rule that decides and
@@ -36,6 +40,10 @@ type Decision struct {
 	// Action is what happens to the element: the rule's action, or keep or
 	// remove by the default.
 	Action *v1.ProfileAction
+	// VRs are the VRs validation decided for the rule's selector, as the
+	// expanded form stores them; nil when the selector says nothing of
+	// the VR, and when no rule decides.
+	VRs []string
 }
 
 // Program is an expanded profile compiled for deciding, element by element,
@@ -68,30 +76,39 @@ var (
 )
 
 // Compile compiles an expanded profile, as Expand made it or as a stored
-// version holds it. An expanded profile that does not compile was not made
-// by Expand, or was changed after.
+// version holds it. It checks structure only and never reads the data
+// dictionary: the VRs each rule acts on are those validation stored with
+// it, so a later library cannot change what a stored version does. An
+// expanded profile that does not compile was not made by Expand, was
+// changed after, or is of a language edition this build does not know.
 func Compile(e *v1.ExpandedProfile) (*Program, error) {
 	if e == nil {
 		return nil, fmt.Errorf("profile: no expanded profile")
 	}
+	if ed := e.GetLanguageEdition(); ed != LanguageEdition {
+		return nil, fmt.Errorf("profile: %s: the expanded profile is of language edition %d, and this build runs edition %d", CodeBadEdition, ed, LanguageEdition)
+	}
 	if e.GetUnnamed() == v1.UnnamedElements_UNNAMED_ELEMENTS_UNSPECIFIED || e.GetDateShiftDays() < 1 || e.GetDateShiftDays() > MaxDateShiftDays {
 		return nil, fmt.Errorf("profile: an expanded profile states its defaults")
+	}
+	if _, known := v1.UnnamedElements_name[int32(e.GetUnnamed())]; !known {
+		return nil, fmt.Errorf("profile: an expanded profile's unnamed is not a value of UnnamedElements")
 	}
 	if len(e.GetRules()) > MaxExpandedRules {
 		return nil, fmt.Errorf("profile: an expanded profile has at most %d rules", MaxExpandedRules)
 	}
 	p := &Program{expanded: e, byTag: map[uint32][]int{}, privEl: map[privateKey][]int{}, block: map[privateKey][]int{}, byVR: map[string][]int{}}
+	chk := newChecker(true)
 	for i, er := range e.GetRules() {
-		var list Problems
 		r := er.GetRule()
-		a := at{list: &list, rule: i + 1, name: r.GetName()}
-		sel, _, ok := parseSelector(a.in("selector"), r.GetSelector())
+		a := at{c: chk, rule: i + 1, name: r.GetName()}
+		sel, _, ok := parseSelector(a.in("selector"), r.GetSelector(), er.GetVrs())
 		when := parseConditions(a, "when", r.GetWhen())
 		if ok {
 			checkAction(a, r.GetAction(), sel)
 		}
-		if len(list) > 0 {
-			return nil, fmt.Errorf("profile: the expanded profile: %w", list)
+		if len(chk.list) > 0 {
+			return nil, fmt.Errorf("profile: the expanded profile: %w", chk.list)
 		}
 		p.rules = append(p.rules, rule{sel: sel, when: when, action: r.GetAction(), norm: r, origin: er.GetOrigin()})
 		switch sel.tier {
@@ -112,11 +129,10 @@ func Compile(e *v1.ExpandedProfile) (*Program, error) {
 		}
 	}
 	for i, ep := range e.GetPixelRules() {
-		var list Problems
 		r := ep.GetRule()
-		c, ok := checkPixelRule(at{list: &list, pixelRule: i + 1, name: r.GetName()}, r, map[string]int{})
+		c, ok := checkPixelRule(at{c: chk, pixelRule: i + 1, name: r.GetName()}, r, map[string]int{})
 		if !ok {
-			return nil, fmt.Errorf("profile: the expanded profile: %w", list)
+			return nil, fmt.Errorf("profile: the expanded profile: %w", chk.list)
 		}
 		c.origin = ep.GetOrigin()
 		p.pixels = append(p.pixels, c)
@@ -153,7 +169,7 @@ func (p *Program) Decide(loc Location, f Facts) Decision {
 			i := candidates[j]
 			r := p.rules[i]
 			if r.sel.matches(loc) && allHold(r.when, f) {
-				return Decision{Index: i, Rule: p.expanded.GetRules()[i], Action: r.action}
+				return Decision{Index: i, Rule: p.expanded.GetRules()[i], Action: r.action, VRs: r.sel.vrs}
 			}
 		}
 	}
@@ -177,29 +193,39 @@ func (p *Program) Pixels(rows, columns int, f Facts) (r *v1.ExpandedPixelRule, o
 	return nil, false
 }
 
-// matches reports whether the selector selects the element at loc. A tag
-// or a path never selects a private element, which only its creator
-// identifies; a private selector selects a data element of a block, never
-// the creator element that reserves it.
+// matches reports whether the selector selects the element at loc. No
+// selector selects an element the pipeline handles, or a private creator
+// element, which follows its block. A tag, a path or a content item never
+// selects a private element, which only its creator identifies; a group or
+// a VR selects one only with include_private, so the default that removes
+// private elements holds unless a rule opts in; a private selector selects
+// a data element of a block, never the creator element that reserves it.
 func (s selector) matches(loc Location) bool {
-	standard := loc.Creator == "" && group(loc.Tag)%2 == 0
+	if pipelineOwned(loc.Tag) || isCreatorElement(loc.Tag) {
+		return false
+	}
+	// A creator on an even group is no element a file can hold; it is
+	// neither standard nor private, and nothing selects it.
+	private := group(loc.Tag)%2 == 1
+	standard := !private && loc.Creator == ""
 	switch s.tier {
 	case TierPlace:
 		if s.concept != nil {
-			return loc.ContentItem != nil && *loc.ContentItem == *s.concept
+			return standard && loc.ContentItem != nil && *loc.ContentItem == *s.concept &&
+				(s.valueType == "" || s.valueType == loc.ValueType) && IsContentValue(loc.ValueType, loc.Tag)
 		}
 		return standard && loc.Tag == s.tag && stepsMatch(s.steps, loc.Sequences)
 	case TierTag:
 		return standard && loc.Tag == s.tag
 	case TierPrivateElement, TierPrivateBlock:
-		if loc.Creator != s.creator || group(loc.Tag) != s.privGroup || loc.Tag&0xFF00 < 0x1000 {
+		if !private || loc.Creator != s.creator || group(loc.Tag) != s.privGroup || loc.Tag&0xFF00 < 0x1000 {
 			return false
 		}
 		return s.privElem < 0 || int(loc.Tag&0xFF) == s.privElem
 	case TierGroup:
-		return group(loc.Tag)&s.groupMask == s.groupValue
+		return (standard || private && s.includePrivate) && group(loc.Tag)&s.groupMask == s.groupValue
 	case TierVR:
-		return loc.VR == s.vr
+		return (standard || private && s.includePrivate) && loc.VR == s.vr
 	}
 	return false
 }

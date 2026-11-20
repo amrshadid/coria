@@ -73,6 +73,33 @@ const (
 	CodeBadTemplate Code = "bad_template"
 	// CodeBadRectangle: a pixel rectangle is empty or outside the image.
 	CodeBadRectangle Code = "bad_rectangle"
+	// CodeIncludePrivate: include_private on a selector that is not a
+	// group or a VR, or an odd group without it, which would select
+	// nothing.
+	CodeIncludePrivate Code = "include_private"
+	// CodeBadValueType: a content item's value type is not one of PS3.3
+	// C.17.3.
+	CodeBadValueType Code = "bad_value_type"
+	// CodeTooLarge: the document and its expanded form together are larger
+	// than one answer may carry.
+	CodeTooLarge Code = "too_large"
+	// CodeBadEdition: a stored expanded form is of a language edition this
+	// build does not know.
+	CodeBadEdition Code = "bad_edition"
+)
+
+// The codes of a warning: what a valid document does that its author may
+// not mean. Like the codes of a problem, part of the API's contract.
+const (
+	// CodeShadowedByBase: a more specific rule of a base decides some of
+	// the elements a rule of the document selects, with another action.
+	CodeShadowedByBase Code = "shadowed_by_base"
+	// CodeKeepsBaseChange: a rule of the document keeps elements a base
+	// changes or removes.
+	CodeKeepsBaseChange Code = "keeps_base_change"
+	// CodeMoreWarnings: the warnings stop at their bound; this one says how
+	// many more there are.
+	CodeMoreWarnings Code = "more_warnings"
 )
 
 // Problem is one thing wrong with a document: where it is, a fixed code and
@@ -144,10 +171,32 @@ func (ps Problems) Error() string {
 	return s
 }
 
+// checker is one check of a document, or of a stored expanded form: the
+// problems found, the regular expressions compiled so far (each distinct
+// text once), and their cost against the budget of one document.
+type checker struct {
+	list Problems
+	// stored is set when the check reads a stored expanded form: it checks
+	// structure only and never reads the data dictionary, so a later
+	// library cannot change what a stored version does or refuse it.
+	stored   bool
+	patterns map[string]compiledPattern
+	cost     int
+	// overBudget is set once the budget's problem is recorded, so it is
+	// recorded once.
+	overBudget bool
+}
+
+// newChecker returns a checker for a document, or for a stored expanded
+// form with stored set.
+func newChecker(stored bool) *checker {
+	return &checker{stored: stored, patterns: map[string]compiledPattern{}}
+}
+
 // at is where a check is: which rule, and the field prefix within it. The
-// checks append to the list it points to.
+// checks append to its checker's list.
 type at struct {
-	list      *Problems
+	c         *checker
 	rule      int
 	pixelRule int
 	name      string
@@ -170,7 +219,7 @@ func (a at) index(field string, i int) at {
 
 // add records a problem here.
 func (a at) add(code Code, format string, args ...any) {
-	*a.list = append(*a.list, Problem{
+	a.c.list = append(a.c.list, Problem{
 		Rule:      a.rule,
 		PixelRule: a.pixelRule,
 		RuleName:  a.name,

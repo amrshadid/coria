@@ -3,9 +3,6 @@ package engine
 import (
 	"fmt"
 	"strconv"
-	"strings"
-
-	"github.com/amrshadid/go-dicom/tag"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/deid/profile"
@@ -38,7 +35,8 @@ const (
 	ActGeneralize
 	// ActLookup replaces a value with the code of Table.
 	ActLookup
-	// ActClean removes the file's identifying values from free text.
+	// ActClean removes the file's identifying values from free text; a
+	// sequence is kept and its items walked, and OB or OW is removed.
 	ActClean
 	// ActQuarantine refuses the whole file.
 	ActQuarantine
@@ -136,7 +134,9 @@ type programDecider struct {
 	tmpls []string
 }
 
-// newProgramDecider compiles an expanded profile into a Decider.
+// newProgramDecider compiles an expanded profile into a Decider. A set
+// rule must carry exactly one VR, the one its element is made with, as
+// validation stores it.
 func newProgramDecider(e *v1.ExpandedProfile) (*programDecider, error) {
 	prog, err := profile.Compile(e)
 	if err != nil {
@@ -153,16 +153,21 @@ func newProgramDecider(e *v1.ExpandedProfile) (*programDecider, error) {
 			if err != nil {
 				return nil, fmt.Errorf("engine: rule %d: a set rule's selector is not a tag", i+1)
 			}
-			d.sets = append(d.sets, SetRule{Rule: i, Tag: uint32(t), VR: tag.Tag(uint32(t)).GetVR()})
+			if len(er.GetVrs()) != 1 {
+				return nil, fmt.Errorf("engine: rule %d: a set rule states %d VRs, and makes its element with exactly one", i+1, len(er.GetVrs()))
+			}
+			d.sets = append(d.sets, SetRule{Rule: i, Tag: uint32(t), VR: er.GetVrs()[0]})
 		}
 	}
 	return d, nil
 }
 
-// Decide implements Decider.
+// Decide implements Decider. The VRs are those validation stored with the
+// rule, never the data dictionary's of this build, so a stored version
+// acts on the same elements whatever library it runs with.
 func (d *programDecider) Decide(loc profile.Location, f profile.Facts) Decision {
 	pd := d.prog.Decide(loc, f)
-	out := Decision{Rule: pd.Index, Action: toAction(pd.Action)}
+	out := Decision{Rule: pd.Index, Action: toAction(pd.Action), VRs: pd.VRs}
 	if pd.Rule == nil {
 		switch {
 		case loc.Tag>>16%2 == 1:
@@ -176,22 +181,6 @@ func (d *programDecider) Decide(loc profile.Location, f profile.Facts) Decision 
 	}
 	r := pd.Rule.GetRule()
 	out.Name, out.Origin, out.Reason = r.GetName(), pd.Rule.GetOrigin(), r.GetReason()
-	// Until the expanded form stores the VRs its checks decided, a tag
-	// or path selector's VRs are the data dictionary's.
-	var t string
-	switch k := r.GetSelector().GetKind().(type) {
-	case *v1.ProfileSelector_Tag:
-		t = k.Tag
-	case *v1.ProfileSelector_Path:
-		t = k.Path[strings.LastIndexByte(k.Path, '/')+1:]
-	case *v1.ProfileSelector_Vr:
-		out.VRs = []string{k.Vr}
-	}
-	if n, err := strconv.ParseUint(t, 16, 32); err == nil && t != "" {
-		if v := tag.Tag(uint32(n)).GetVR(); v != "" {
-			out.VRs = strings.Split(v, " or ")
-		}
-	}
 	return out
 }
 
@@ -231,6 +220,17 @@ func toAction(a *v1.ProfileAction) Action {
 		return Action{Kind: ActClean}
 	case *v1.ProfileAction_Quarantine:
 		return Action{Kind: ActQuarantine}
+	case *v1.ProfileAction_Dummy:
+		return Action{Kind: ActDummy}
+	case *v1.ProfileAction_RemoveUnlessRequired:
+		switch k.RemoveUnlessRequired.GetFallback() {
+		case v1.RequiredFallback_REQUIRED_FALLBACK_EMPTY:
+			return Action{Kind: ActRemoveUnlessRequired, Fallback: FallbackEmpty}
+		case v1.RequiredFallback_REQUIRED_FALLBACK_DUMMY:
+			return Action{Kind: ActRemoveUnlessRequired, Fallback: FallbackDummy}
+		case v1.RequiredFallback_REQUIRED_FALLBACK_UID:
+			return Action{Kind: ActRemoveUnlessRequired, Fallback: FallbackUID}
+		}
 	}
 	// An action this build does not know refuses the file rather than
 	// guessing what it meant.

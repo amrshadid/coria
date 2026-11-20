@@ -26,8 +26,17 @@ func path(p string) *v1.ProfileSelector {
 func priv(creator, group, elem string) *v1.ProfileSelector {
 	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_PrivateElement{PrivateElement: &v1.PrivateElement{Creator: creator, Group: group, Element: elem}}}
 }
+func grpPrivate(g string) *v1.ProfileSelector {
+	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_Group{Group: g}, IncludePrivate: true}
+}
+func vrPrivate(v string) *v1.ProfileSelector {
+	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_Vr{Vr: v}, IncludePrivate: true}
+}
+func itemOf(scheme, value, valueType string) *v1.ProfileSelector {
+	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_ContentItem{ContentItem: &v1.ContentItemSelector{Scheme: scheme, Value: value, ValueType: valueType}}}
+}
 func item(scheme, value string) *v1.ProfileSelector {
-	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_ContentItem{ContentItem: &v1.CodedConcept{Scheme: scheme, Value: value}}}
+	return &v1.ProfileSelector{Kind: &v1.ProfileSelector_ContentItem{ContentItem: &v1.ContentItemSelector{Scheme: scheme, Value: value}}}
 }
 
 // Actions.
@@ -54,6 +63,12 @@ func generalize() *v1.ProfileAction {
 }
 func clean() *v1.ProfileAction {
 	return &v1.ProfileAction{Kind: &v1.ProfileAction_Clean{Clean: &v1.CleanAction{}}}
+}
+func dummy() *v1.ProfileAction {
+	return &v1.ProfileAction{Kind: &v1.ProfileAction_Dummy{Dummy: &v1.DummyAction{}}}
+}
+func unlessRequired(f v1.RequiredFallback) *v1.ProfileAction {
+	return &v1.ProfileAction{Kind: &v1.ProfileAction_RemoveUnlessRequired{RemoveUnlessRequired: &v1.RemoveUnlessRequiredAction{Fallback: f}}}
 }
 func quarantine() *v1.ProfileAction {
 	return &v1.ProfileAction{Kind: &v1.ProfileAction_Quarantine{Quarantine: &v1.QuarantineAction{}}}

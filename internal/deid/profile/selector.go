@@ -2,6 +2,7 @@ package profile
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -49,18 +50,59 @@ const (
 	maxCodeValueLength = 64
 )
 
-// The elements no rule may name. Pixel data is changed only by pixel rules,
-// so a rule cannot quietly empty the image; the file meta information is
-// written anew for every de-identified file (PS3.10 7.1).
+// The elements no rule may name, which the pipeline handles the same way
+// in every file. The file meta information is written anew for every
+// de-identified file (PS3.10 7.1); command elements and the directory
+// elements of group 0004 are not kept in an archived file; items and group
+// lengths are written with the file; group 7FE0 (pixel data and the tables
+// of its encoding) is changed only by pixel rules, so a rule cannot quietly
+// empty the image or break its frames.
 const (
-	groupCommand  = 0x0000
-	groupFileMeta = 0x0002
-	groupItems    = 0xFFFE
-	tagFloatPixel = 0x7FE00008
-	tagDoublePix  = 0x7FE00009
-	tagPixelData  = 0x7FE00010
-	tagSequenceVR = "SQ"
+	groupCommand   = 0x0000
+	groupFileMeta  = 0x0002
+	groupDirectory = 0x0004
+	groupPixel     = 0x7FE0
+	groupItems     = 0xFFFE
+	tagSequenceVR  = "SQ"
 )
+
+// pipelineTags are elements the pipeline removes from every file, whatever
+// a profile says: they hold values as received, or cannot hold over a
+// changed data set (PS3.15 E.1.1, C.12.1), or are padding that may hold
+// anything (PS3.10 7.2).
+var pipelineTags = map[uint32]string{
+	0x04000561: "the Original Attributes Sequence, which holds values as received",
+	0x04000500: "the Encrypted Attributes Sequence, which holds values as received",
+	0x4FFE0001: "the MAC Parameters Sequence, which cannot hold over a changed data set",
+	0xFFFAFFFA: "the Digital Signatures Sequence, which cannot hold over a changed data set",
+	0xFFFCFFFC: "Data Set Trailing Padding, which may hold anything",
+}
+
+// tagSpecificCharacterSet is Specific Character Set (0008,0005), which the
+// pipeline writes itself in every de-identified file, for the text the
+// file holds once every rule has acted (PS3.5 6.1.2.3): a rule that
+// removed or changed it would make the file's text unreadable.
+const tagSpecificCharacterSet = 0x00080005
+
+// pipelineGroups are the groups whose every element the pipeline handles.
+var pipelineGroups = []uint16{groupCommand, groupFileMeta, groupDirectory, groupPixel, groupItems}
+
+// pipelineOwned reports whether the pipeline handles the element t in
+// every file, so that no selector selects it.
+func pipelineOwned(t uint32) bool {
+	g := group(t)
+	if t&0xFFFF == 0 || slices.Contains(pipelineGroups, g) {
+		return true
+	}
+	_, ok := pipelineTags[t]
+	return ok || t == tagSpecificCharacterSet
+}
+
+// isCreatorElement reports whether t is a private creator element
+// (gggg,0010-00FF), which reserves a block (PS3.5 7.8.1).
+func isCreatorElement(t uint32) bool {
+	return group(t)%2 == 1 && t&0xFF00 == 0 && t&0xFF >= 0x10
+}
 
 // Concept is a coded concept (PS3.3 8.8): a coding scheme and a code value.
 type Concept struct {
@@ -96,46 +138,67 @@ type selector struct {
 	// every element of the block.
 	privElem int
 	concept  *Concept
+	// valueType is a content item's value type; empty for any.
+	valueType string
+	// includePrivate is a group or VR selector's opt-in to private
+	// elements.
+	includePrivate bool
 	// vrs is what the selector says of the VR of what it selects: the
 	// dictionary's VRs of a tag (several where PS3.6 lists "US or SS"), the
-	// VR of a VR selector; nil when it says nothing.
+	// VR of a VR selector, those of a content item's value elements; nil
+	// when it says nothing. A stored expanded form gives them.
 	vrs []string
 }
 
 // parseSelector compiles a selector and returns it with its normalized form,
 // in which a keyword is its tag and hexadecimal is upper case. ok is false
-// when a problem was recorded.
-func parseSelector(a at, s *v1.ProfileSelector) (selector, *v1.ProfileSelector, bool) {
-	before := len(*a.list)
+// when a problem was recorded. For a document, the VRs of what it selects
+// come from the data dictionary; for a stored expanded form (a.c.stored),
+// stored gives them, as validation decided them, and the dictionary is not
+// read.
+func parseSelector(a at, s *v1.ProfileSelector, stored []string) (selector, *v1.ProfileSelector, bool) {
+	before := len(a.c.list)
 	var sel selector
 	norm := &v1.ProfileSelector{}
+	vrsOf := func(t uint32) []string {
+		if a.c.stored {
+			return stored
+		}
+		return dictVRs(t)
+	}
 	switch k := s.GetKind().(type) {
 	case *v1.ProfileSelector_Tag:
 		a := a.in("tag")
 		t, good := parseTag(a, k.Tag)
 		if good && checkStandard(a, t) {
-			sel = selector{tier: TierTag, tag: t, vrs: dictVRs(t)}
+			sel = selector{tier: TierTag, tag: t, vrs: vrsOf(t)}
 			norm.Kind = &v1.ProfileSelector_Tag{Tag: formatTag(t)}
 		}
 	case *v1.ProfileSelector_Keyword:
 		a := a.in("keyword")
+		if a.c.stored {
+			a.add(CodeBadTag, "an expanded form names an element by its tag, never its keyword")
+			break
+		}
 		t, good := keywordTag(a, k.Keyword)
 		if good && checkStandard(a, t) {
-			sel = selector{tier: TierTag, tag: t, vrs: dictVRs(t)}
+			sel = selector{tier: TierTag, tag: t, vrs: vrsOf(t)}
 			norm.Kind = &v1.ProfileSelector_Tag{Tag: formatTag(t)}
 		}
 	case *v1.ProfileSelector_Group:
-		value, mask, text, good := parseGroup(a.in("group"), k.Group)
+		value, mask, text, good := parseGroup(a.in("group"), k.Group, s.GetIncludePrivate())
 		if good {
-			sel = selector{tier: TierGroup, groupValue: value, groupMask: mask}
+			sel = selector{tier: TierGroup, groupValue: value, groupMask: mask, includePrivate: s.GetIncludePrivate()}
 			norm.Kind = &v1.ProfileSelector_Group{Group: text}
+			norm.IncludePrivate = s.GetIncludePrivate()
 		}
 	case *v1.ProfileSelector_Vr:
 		if !validVR(k.Vr) {
 			a.in("vr").add(CodeBadVR, "%q is not a value representation of PS3.5 6.2", clipText(k.Vr))
 		} else {
-			sel = selector{tier: TierVR, vr: k.Vr, vrs: []string{k.Vr}}
+			sel = selector{tier: TierVR, vr: k.Vr, vrs: []string{k.Vr}, includePrivate: s.GetIncludePrivate()}
 			norm.Kind = &v1.ProfileSelector_Vr{Vr: k.Vr}
+			norm.IncludePrivate = s.GetIncludePrivate()
 		}
 	case *v1.ProfileSelector_PrivateElement:
 		var pe *v1.PrivateElement
@@ -148,18 +211,52 @@ func parseSelector(a at, s *v1.ProfileSelector) (selector, *v1.ProfileSelector, 
 		var good bool
 		sel, text, good = parsePath(a.in("path"), k.Path)
 		if good {
+			sel.vrs = vrsOf(sel.tag)
 			norm.Kind = &v1.ProfileSelector_Path{Path: text}
 		}
 	case *v1.ProfileSelector_ContentItem:
-		c, good := parseConcept(a.in("contentItem"), k.ContentItem)
+		c, vt, good := parseContentItem(a.in("contentItem"), k.ContentItem)
 		if good {
-			sel = selector{tier: TierPlace, concept: &c}
-			norm.Kind = &v1.ProfileSelector_ContentItem{ContentItem: &v1.CodedConcept{Scheme: c.Scheme, Value: c.Value}}
+			sel = selector{tier: TierPlace, concept: &c, valueType: vt, vrs: contentValueVRs(vt)}
+			norm.Kind = &v1.ProfileSelector_ContentItem{ContentItem: &v1.ContentItemSelector{Scheme: c.Scheme, Value: c.Value, ValueType: vt}}
 		}
 	default:
 		a.add(CodeRequired, "a rule needs a selector: one of tag, keyword, group, vr, privateElement, path or contentItem")
 	}
-	return sel, norm, len(*a.list) == before
+	if s.GetIncludePrivate() && sel.tier != TierGroup && sel.tier != TierVR && len(a.c.list) == before {
+		a.in("includePrivate").add(CodeIncludePrivate, "includePrivate goes with a group or a vr selector only: privateElement names private elements by their creator, and the other selectors name standard elements")
+	}
+	if a.c.stored && len(a.c.list) == before {
+		checkStoredVRs(a, sel, stored)
+	}
+	return sel, norm, len(a.c.list) == before
+}
+
+// checkStoredVRs checks that the VRs a stored rule holds agree with its
+// selector, so a changed expanded form cannot give a group a VR its
+// actions would then be checked against. The tag, path and content item
+// VRs were decided by validation and are taken as stored.
+func checkStoredVRs(a at, sel selector, stored []string) {
+	for _, v := range stored {
+		if !validVR(v) {
+			a.add(CodeBadVR, "the stored VR %q is not a value representation", clipText(v))
+			return
+		}
+	}
+	switch sel.tier {
+	case TierVR:
+		if len(stored) != 1 || stored[0] != sel.vr {
+			a.add(CodeBadVR, "a vr selector's stored VRs are its VR alone")
+		}
+	case TierGroup, TierPrivateBlock, TierPrivateElement:
+		if len(stored) != 0 {
+			a.add(CodeBadVR, "a group or a private selector says nothing of the VR, and stores none")
+		}
+	case TierPlace:
+		if sel.concept != nil && !slices.Equal(stored, contentValueVRs(sel.valueType)) {
+			a.add(CodeBadVR, "a content item's stored VRs are those of its value type")
+		}
+	}
 }
 
 // parseTag reads a tag written as eight hexadecimal digits, the form DICOM
@@ -200,18 +297,26 @@ func checkStandard(a at, t uint32) bool {
 	return checkReserved(a, t)
 }
 
-// checkReserved refuses the elements no rule may name.
+// checkReserved refuses the elements no rule may name: those the pipeline
+// handles in every file.
 func checkReserved(a at, t uint32) bool {
 	g := group(t)
+	why, removed := pipelineTags[t]
 	switch {
 	case g == groupFileMeta:
 		a.add(CodeReservedElement, "%s is file meta information, which is written anew for every de-identified file", formatTag(t))
 	case g == groupCommand || g == groupItems:
 		a.add(CodeReservedElement, "%s is not a data element of a data set", formatTag(t))
+	case g == groupDirectory:
+		a.add(CodeReservedElement, "%s is a directory element of a file-set, which an archived file does not keep", formatTag(t))
 	case t&0xFFFF == 0:
 		a.add(CodeReservedElement, "%s is a group length, which is written with the file", formatTag(t))
-	case t == tagPixelData || t == tagFloatPixel || t == tagDoublePix:
-		a.add(CodeReservedElement, "%s is pixel data, which only pixel rules change", formatTag(t))
+	case g == groupPixel:
+		a.add(CodeReservedElement, "%s is pixel data or describes its encoding, which only pixel rules change", formatTag(t))
+	case removed:
+		a.add(CodeReservedElement, "%s is %s: it is removed from every file (PS3.15 E.1.1)", formatTag(t), why)
+	case t == tagSpecificCharacterSet:
+		a.add(CodeReservedElement, "%s is Specific Character Set, which is written for every de-identified file as its text needs (PS3.5 6.1.2.3)", formatTag(t))
 	default:
 		return true
 	}
@@ -220,7 +325,9 @@ func checkReserved(a at, t uint32) bool {
 
 // parseGroup reads a group of four hexadecimal digits, "x" standing for any
 // digit, and returns its value and mask and its normalized text.
-func parseGroup(a at, s string) (value, mask uint16, text string, ok bool) {
+// withPrivate is the selector's include_private: without it, a group whose
+// last digit is odd would select nothing.
+func parseGroup(a at, s string, withPrivate bool) (value, mask uint16, text string, ok bool) {
 	if len(s) != 4 {
 		a.add(CodeBadGroup, "%q is not a group: four hexadecimal digits, x for any, such as 0010 or 60xx", clipText(s))
 		return 0, 0, "", false
@@ -247,11 +354,20 @@ func parseGroup(a at, s string) (value, mask uint16, text string, ok bool) {
 		a.add(CodeBadGroup, "xxxx would select every element: say what happens to elements no rule names with unnamed")
 		return 0, 0, "", false
 	}
-	for _, g := range []uint16{groupCommand, groupFileMeta, groupItems} {
+	for _, g := range []uint16{groupCommand, groupFileMeta, groupDirectory, groupItems} {
 		if g&mask == value {
 			a.add(CodeReservedElement, "%s would select group %04X, which no rule may change", b.String(), g)
 			return 0, 0, "", false
 		}
+	}
+	// A group of only elements the pipeline handles would select nothing.
+	if mask == 0xFFFF && (value == groupPixel || value == 0xFFFA || value == 0xFFFC) {
+		a.add(CodeReservedElement, "group %s holds only elements the pipeline handles in every file", b.String())
+		return 0, 0, "", false
+	}
+	if mask&0xF == 0xF && value%2 == 1 && !withPrivate {
+		a.add(CodeIncludePrivate, "%s is a private group, so a group rule without includePrivate would select nothing: name private elements by their creator with privateElement, or set includePrivate", b.String())
+		return 0, 0, "", false
 	}
 	return value, mask, b.String(), true
 }
@@ -259,7 +375,7 @@ func parseGroup(a at, s string) (value, mask uint16, text string, ok bool) {
 // parsePrivate reads a private element and returns it compiled and
 // normalized; the normalized form is nil when a problem was recorded.
 func parsePrivate(a at, p *v1.PrivateElement) (selector, *v1.PrivateElement) {
-	before := len(*a.list)
+	before := len(a.c.list)
 	creator := p.GetCreator()
 	switch {
 	case creator == "":
@@ -294,7 +410,7 @@ func parsePrivate(a at, p *v1.PrivateElement) (selector, *v1.PrivateElement) {
 	default:
 		a.in("element").add(CodeBadPrivate, "%q is not an element of a block: two hexadecimal digits, or xx for the whole block", clipText(es))
 	}
-	if len(*a.list) != before {
+	if len(a.c.list) != before {
 		return selector{}, nil
 	}
 	sel := selector{tier: TierPrivateElement, creator: creator, privGroup: g, privElem: elem}
@@ -307,7 +423,9 @@ func parsePrivate(a at, p *v1.PrivateElement) (selector, *v1.PrivateElement) {
 	return sel, &v1.PrivateElement{Creator: creator, Group: fmt.Sprintf("%04X", g), Element: text}
 }
 
-// parsePath reads a path and returns it compiled and normalized.
+// parsePath reads a path and returns it compiled and normalized, without
+// its VRs. A stored path is read without the data dictionary: its steps
+// were checked as sequences when it was validated.
 func parsePath(a at, s string) (selector, string, bool) {
 	if s == "" {
 		a.add(CodeRequired, "a path needs at least one step")
@@ -348,13 +466,12 @@ func parsePath(a at, s string) (selector, string, bool) {
 		if !ok {
 			return selector{}, "", false
 		}
-		if !last && tag.Tag(t).GetVR() != tagSequenceVR {
+		if !last && !a.c.stored && tag.Tag(t).GetVR() != tagSequenceVR {
 			a.add(CodeBadPath, "step %d, %s, is not a sequence in the data dictionary", i+1, formatTag(t))
 			return selector{}, "", false
 		}
 		if last {
 			sel.tag = t
-			sel.vrs = dictVRs(t)
 			norm = append(norm, formatTag(t))
 		} else {
 			sel.steps = append(sel.steps, step{tag: t})
@@ -368,12 +485,12 @@ func parsePath(a at, s string) (selector, string, bool) {
 	return sel, strings.Join(norm, "/"), true
 }
 
-// pathStepTag reads a step's element, a tag or a keyword, and refuses what a
-// path may not hold.
+// pathStepTag reads a step's element, a tag or a keyword (a tag only in a
+// stored form), and refuses what a path may not hold.
 func pathStepTag(a at, name string) (uint32, bool) {
 	var t uint32
 	var ok bool
-	if len(name) == 8 && isHex(name) {
+	if len(name) == 8 && isHex(name) || a.c.stored {
 		t, ok = parseTag(a, name)
 	} else {
 		t, ok = keywordTag(a, name)
@@ -384,12 +501,17 @@ func pathStepTag(a at, name string) (uint32, bool) {
 	return t, checkStandard(a, t)
 }
 
-// parseConcept reads a coded concept.
-func parseConcept(a at, c *v1.CodedConcept) (Concept, bool) {
-	before := len(*a.list)
+// parseContentItem reads a content item selector: its concept and its
+// value type.
+func parseContentItem(a at, c *v1.ContentItemSelector) (Concept, string, bool) {
+	before := len(a.c.list)
 	checkCodeText(a.in("scheme"), c.GetScheme(), maxSchemeLength)
 	checkCodeText(a.in("value"), c.GetValue(), maxCodeValueLength)
-	return Concept{Scheme: c.GetScheme(), Value: c.GetValue()}, len(*a.list) == before
+	vt := c.GetValueType()
+	if _, known := contentValues[vt]; vt != "" && !known {
+		a.in("valueType").add(CodeBadValueType, "%q is not a value type of a content item that has a value (PS3.3 C.17.3): one of %s", clipText(vt), strings.Join(ValueTypes(), ", "))
+	}
+	return Concept{Scheme: c.GetScheme(), Value: c.GetValue()}, vt, len(a.c.list) == before
 }
 
 // checkCodeText checks a part of a code.

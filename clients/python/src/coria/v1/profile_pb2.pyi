@@ -33,6 +33,19 @@ class LookupMissing(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     LOOKUP_MISSING_UNSPECIFIED: _ClassVar[LookupMissing]
     LOOKUP_MISSING_QUARANTINE: _ClassVar[LookupMissing]
     LOOKUP_MISSING_ASSIGN: _ClassVar[LookupMissing]
+
+class RequiredFallback(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    REQUIRED_FALLBACK_UNSPECIFIED: _ClassVar[RequiredFallback]
+    REQUIRED_FALLBACK_EMPTY: _ClassVar[RequiredFallback]
+    REQUIRED_FALLBACK_DUMMY: _ClassVar[RequiredFallback]
+    REQUIRED_FALLBACK_UID: _ClassVar[RequiredFallback]
+
+class ProfileView(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    PROFILE_VIEW_UNSPECIFIED: _ClassVar[ProfileView]
+    PROFILE_VIEW_DOCUMENT: _ClassVar[ProfileView]
+    PROFILE_VIEW_FULL: _ClassVar[ProfileView]
 UNNAMED_ELEMENTS_UNSPECIFIED: UnnamedElements
 UNNAMED_ELEMENTS_KEEP: UnnamedElements
 UNNAMED_ELEMENTS_REMOVE: UnnamedElements
@@ -48,6 +61,13 @@ CONDITION_SUBJECT_CALLED_AE_TITLE: ConditionSubject
 LOOKUP_MISSING_UNSPECIFIED: LookupMissing
 LOOKUP_MISSING_QUARANTINE: LookupMissing
 LOOKUP_MISSING_ASSIGN: LookupMissing
+REQUIRED_FALLBACK_UNSPECIFIED: RequiredFallback
+REQUIRED_FALLBACK_EMPTY: RequiredFallback
+REQUIRED_FALLBACK_DUMMY: RequiredFallback
+REQUIRED_FALLBACK_UID: RequiredFallback
+PROFILE_VIEW_UNSPECIFIED: ProfileView
+PROFILE_VIEW_DOCUMENT: ProfileView
+PROFILE_VIEW_FULL: ProfileView
 
 class ProfileDocument(_message.Message):
     __slots__ = ("bases", "rules", "unnamed", "date_shift_days", "pixel_rules", "description")
@@ -80,7 +100,7 @@ class ProfileRule(_message.Message):
     def __init__(self, name: _Optional[str] = ..., selector: _Optional[_Union[ProfileSelector, _Mapping]] = ..., when: _Optional[_Iterable[_Union[ProfileCondition, _Mapping]]] = ..., action: _Optional[_Union[ProfileAction, _Mapping]] = ..., reason: _Optional[str] = ...) -> None: ...
 
 class ProfileSelector(_message.Message):
-    __slots__ = ("tag", "keyword", "group", "vr", "private_element", "path", "content_item")
+    __slots__ = ("tag", "keyword", "group", "vr", "private_element", "path", "content_item", "include_private")
     TAG_FIELD_NUMBER: _ClassVar[int]
     KEYWORD_FIELD_NUMBER: _ClassVar[int]
     GROUP_FIELD_NUMBER: _ClassVar[int]
@@ -88,14 +108,16 @@ class ProfileSelector(_message.Message):
     PRIVATE_ELEMENT_FIELD_NUMBER: _ClassVar[int]
     PATH_FIELD_NUMBER: _ClassVar[int]
     CONTENT_ITEM_FIELD_NUMBER: _ClassVar[int]
+    INCLUDE_PRIVATE_FIELD_NUMBER: _ClassVar[int]
     tag: str
     keyword: str
     group: str
     vr: str
     private_element: PrivateElement
     path: str
-    content_item: CodedConcept
-    def __init__(self, tag: _Optional[str] = ..., keyword: _Optional[str] = ..., group: _Optional[str] = ..., vr: _Optional[str] = ..., private_element: _Optional[_Union[PrivateElement, _Mapping]] = ..., path: _Optional[str] = ..., content_item: _Optional[_Union[CodedConcept, _Mapping]] = ...) -> None: ...
+    content_item: ContentItemSelector
+    include_private: bool
+    def __init__(self, tag: _Optional[str] = ..., keyword: _Optional[str] = ..., group: _Optional[str] = ..., vr: _Optional[str] = ..., private_element: _Optional[_Union[PrivateElement, _Mapping]] = ..., path: _Optional[str] = ..., content_item: _Optional[_Union[ContentItemSelector, _Mapping]] = ..., include_private: _Optional[bool] = ...) -> None: ...
 
 class PrivateElement(_message.Message):
     __slots__ = ("creator", "group", "element")
@@ -107,13 +129,15 @@ class PrivateElement(_message.Message):
     element: str
     def __init__(self, creator: _Optional[str] = ..., group: _Optional[str] = ..., element: _Optional[str] = ...) -> None: ...
 
-class CodedConcept(_message.Message):
-    __slots__ = ("scheme", "value")
+class ContentItemSelector(_message.Message):
+    __slots__ = ("scheme", "value", "value_type")
     SCHEME_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
+    VALUE_TYPE_FIELD_NUMBER: _ClassVar[int]
     scheme: str
     value: str
-    def __init__(self, scheme: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    value_type: str
+    def __init__(self, scheme: _Optional[str] = ..., value: _Optional[str] = ..., value_type: _Optional[str] = ...) -> None: ...
 
 class ProfileCondition(_message.Message):
     __slots__ = ("subject", "equals", "prefix", "pattern", "present", "negate")
@@ -132,7 +156,7 @@ class ProfileCondition(_message.Message):
     def __init__(self, subject: _Optional[_Union[ConditionSubject, str]] = ..., equals: _Optional[str] = ..., prefix: _Optional[str] = ..., pattern: _Optional[str] = ..., present: _Optional[bool] = ..., negate: _Optional[bool] = ...) -> None: ...
 
 class ProfileAction(_message.Message):
-    __slots__ = ("keep", "remove", "empty", "replace", "set", "hash", "uid", "shift", "generalize", "lookup", "clean", "quarantine")
+    __slots__ = ("keep", "remove", "empty", "replace", "set", "hash", "uid", "shift", "generalize", "lookup", "clean", "quarantine", "dummy", "remove_unless_required")
     KEEP_FIELD_NUMBER: _ClassVar[int]
     REMOVE_FIELD_NUMBER: _ClassVar[int]
     EMPTY_FIELD_NUMBER: _ClassVar[int]
@@ -145,6 +169,8 @@ class ProfileAction(_message.Message):
     LOOKUP_FIELD_NUMBER: _ClassVar[int]
     CLEAN_FIELD_NUMBER: _ClassVar[int]
     QUARANTINE_FIELD_NUMBER: _ClassVar[int]
+    DUMMY_FIELD_NUMBER: _ClassVar[int]
+    REMOVE_UNLESS_REQUIRED_FIELD_NUMBER: _ClassVar[int]
     keep: KeepAction
     remove: RemoveAction
     empty: EmptyAction
@@ -157,7 +183,9 @@ class ProfileAction(_message.Message):
     lookup: LookupAction
     clean: CleanAction
     quarantine: QuarantineAction
-    def __init__(self, keep: _Optional[_Union[KeepAction, _Mapping]] = ..., remove: _Optional[_Union[RemoveAction, _Mapping]] = ..., empty: _Optional[_Union[EmptyAction, _Mapping]] = ..., replace: _Optional[_Union[ReplaceAction, _Mapping]] = ..., set: _Optional[_Union[SetAction, _Mapping]] = ..., hash: _Optional[_Union[HashAction, _Mapping]] = ..., uid: _Optional[_Union[UidAction, _Mapping]] = ..., shift: _Optional[_Union[ShiftAction, _Mapping]] = ..., generalize: _Optional[_Union[GeneralizeAction, _Mapping]] = ..., lookup: _Optional[_Union[LookupAction, _Mapping]] = ..., clean: _Optional[_Union[CleanAction, _Mapping]] = ..., quarantine: _Optional[_Union[QuarantineAction, _Mapping]] = ...) -> None: ...
+    dummy: DummyAction
+    remove_unless_required: RemoveUnlessRequiredAction
+    def __init__(self, keep: _Optional[_Union[KeepAction, _Mapping]] = ..., remove: _Optional[_Union[RemoveAction, _Mapping]] = ..., empty: _Optional[_Union[EmptyAction, _Mapping]] = ..., replace: _Optional[_Union[ReplaceAction, _Mapping]] = ..., set: _Optional[_Union[SetAction, _Mapping]] = ..., hash: _Optional[_Union[HashAction, _Mapping]] = ..., uid: _Optional[_Union[UidAction, _Mapping]] = ..., shift: _Optional[_Union[ShiftAction, _Mapping]] = ..., generalize: _Optional[_Union[GeneralizeAction, _Mapping]] = ..., lookup: _Optional[_Union[LookupAction, _Mapping]] = ..., clean: _Optional[_Union[CleanAction, _Mapping]] = ..., quarantine: _Optional[_Union[QuarantineAction, _Mapping]] = ..., dummy: _Optional[_Union[DummyAction, _Mapping]] = ..., remove_unless_required: _Optional[_Union[RemoveUnlessRequiredAction, _Mapping]] = ...) -> None: ...
 
 class KeepAction(_message.Message):
     __slots__ = ()
@@ -219,6 +247,16 @@ class QuarantineAction(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
+class DummyAction(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class RemoveUnlessRequiredAction(_message.Message):
+    __slots__ = ("fallback",)
+    FALLBACK_FIELD_NUMBER: _ClassVar[int]
+    fallback: RequiredFallback
+    def __init__(self, fallback: _Optional[_Union[RequiredFallback, str]] = ...) -> None: ...
+
 class PixelRule(_message.Message):
     __slots__ = ("name", "when", "rows", "columns", "redact", "detect", "accept", "reason")
     NAME_FIELD_NUMBER: _ClassVar[int]
@@ -270,26 +308,30 @@ class AcceptPixels(_message.Message):
     def __init__(self) -> None: ...
 
 class ExpandedProfile(_message.Message):
-    __slots__ = ("rules", "unnamed", "date_shift_days", "pixel_rules", "bases")
+    __slots__ = ("rules", "unnamed", "date_shift_days", "pixel_rules", "bases", "language_edition")
     RULES_FIELD_NUMBER: _ClassVar[int]
     UNNAMED_FIELD_NUMBER: _ClassVar[int]
     DATE_SHIFT_DAYS_FIELD_NUMBER: _ClassVar[int]
     PIXEL_RULES_FIELD_NUMBER: _ClassVar[int]
     BASES_FIELD_NUMBER: _ClassVar[int]
+    LANGUAGE_EDITION_FIELD_NUMBER: _ClassVar[int]
     rules: _containers.RepeatedCompositeFieldContainer[ExpandedRule]
     unnamed: UnnamedElements
     date_shift_days: int
     pixel_rules: _containers.RepeatedCompositeFieldContainer[ExpandedPixelRule]
     bases: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, rules: _Optional[_Iterable[_Union[ExpandedRule, _Mapping]]] = ..., unnamed: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days: _Optional[int] = ..., pixel_rules: _Optional[_Iterable[_Union[ExpandedPixelRule, _Mapping]]] = ..., bases: _Optional[_Iterable[str]] = ...) -> None: ...
+    language_edition: int
+    def __init__(self, rules: _Optional[_Iterable[_Union[ExpandedRule, _Mapping]]] = ..., unnamed: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days: _Optional[int] = ..., pixel_rules: _Optional[_Iterable[_Union[ExpandedPixelRule, _Mapping]]] = ..., bases: _Optional[_Iterable[str]] = ..., language_edition: _Optional[int] = ...) -> None: ...
 
 class ExpandedRule(_message.Message):
-    __slots__ = ("rule", "origin")
+    __slots__ = ("rule", "origin", "vrs")
     RULE_FIELD_NUMBER: _ClassVar[int]
     ORIGIN_FIELD_NUMBER: _ClassVar[int]
+    VRS_FIELD_NUMBER: _ClassVar[int]
     rule: ProfileRule
     origin: str
-    def __init__(self, rule: _Optional[_Union[ProfileRule, _Mapping]] = ..., origin: _Optional[str] = ...) -> None: ...
+    vrs: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, rule: _Optional[_Union[ProfileRule, _Mapping]] = ..., origin: _Optional[str] = ..., vrs: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ExpandedPixelRule(_message.Message):
     __slots__ = ("rule", "origin")
@@ -345,6 +387,12 @@ class ProfileProblem(_message.Message):
     message: str
     def __init__(self, rule: _Optional[int] = ..., pixel_rule: _Optional[int] = ..., rule_name: _Optional[str] = ..., field: _Optional[str] = ..., code: _Optional[str] = ..., message: _Optional[str] = ...) -> None: ...
 
+class ProfileProblems(_message.Message):
+    __slots__ = ("problems",)
+    PROBLEMS_FIELD_NUMBER: _ClassVar[int]
+    problems: _containers.RepeatedCompositeFieldContainer[ProfileProblem]
+    def __init__(self, problems: _Optional[_Iterable[_Union[ProfileProblem, _Mapping]]] = ...) -> None: ...
+
 class ProfileBase(_message.Message):
     __slots__ = ("name", "available", "unavailable_reason", "description", "document")
     NAME_FIELD_NUMBER: _ClassVar[int]
@@ -360,34 +408,44 @@ class ProfileBase(_message.Message):
     def __init__(self, name: _Optional[str] = ..., available: _Optional[bool] = ..., unavailable_reason: _Optional[str] = ..., description: _Optional[str] = ..., document: _Optional[_Union[ProfileDocument, _Mapping]] = ...) -> None: ...
 
 class CreateProfileVersionRequest(_message.Message):
-    __slots__ = ("tenant", "name", "document", "note")
+    __slots__ = ("tenant", "name", "document", "note", "expected_latest_version", "view")
     TENANT_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     DOCUMENT_FIELD_NUMBER: _ClassVar[int]
     NOTE_FIELD_NUMBER: _ClassVar[int]
+    EXPECTED_LATEST_VERSION_FIELD_NUMBER: _ClassVar[int]
+    VIEW_FIELD_NUMBER: _ClassVar[int]
     tenant: str
     name: str
     document: ProfileDocument
     note: str
-    def __init__(self, tenant: _Optional[str] = ..., name: _Optional[str] = ..., document: _Optional[_Union[ProfileDocument, _Mapping]] = ..., note: _Optional[str] = ...) -> None: ...
+    expected_latest_version: int
+    view: ProfileView
+    def __init__(self, tenant: _Optional[str] = ..., name: _Optional[str] = ..., document: _Optional[_Union[ProfileDocument, _Mapping]] = ..., note: _Optional[str] = ..., expected_latest_version: _Optional[int] = ..., view: _Optional[_Union[ProfileView, str]] = ...) -> None: ...
 
 class CreateProfileVersionResponse(_message.Message):
-    __slots__ = ("version", "created")
+    __slots__ = ("version", "created", "warnings", "note_differs")
     VERSION_FIELD_NUMBER: _ClassVar[int]
     CREATED_FIELD_NUMBER: _ClassVar[int]
+    WARNINGS_FIELD_NUMBER: _ClassVar[int]
+    NOTE_DIFFERS_FIELD_NUMBER: _ClassVar[int]
     version: ProfileVersion
     created: bool
-    def __init__(self, version: _Optional[_Union[ProfileVersion, _Mapping]] = ..., created: _Optional[bool] = ...) -> None: ...
+    warnings: _containers.RepeatedCompositeFieldContainer[ProfileProblem]
+    note_differs: bool
+    def __init__(self, version: _Optional[_Union[ProfileVersion, _Mapping]] = ..., created: _Optional[bool] = ..., warnings: _Optional[_Iterable[_Union[ProfileProblem, _Mapping]]] = ..., note_differs: _Optional[bool] = ...) -> None: ...
 
 class GetProfileVersionRequest(_message.Message):
-    __slots__ = ("tenant", "name", "version")
+    __slots__ = ("tenant", "name", "version", "view")
     TENANT_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     VERSION_FIELD_NUMBER: _ClassVar[int]
+    VIEW_FIELD_NUMBER: _ClassVar[int]
     tenant: str
     name: str
     version: int
-    def __init__(self, tenant: _Optional[str] = ..., name: _Optional[str] = ..., version: _Optional[int] = ...) -> None: ...
+    view: ProfileView
+    def __init__(self, tenant: _Optional[str] = ..., name: _Optional[str] = ..., version: _Optional[int] = ..., view: _Optional[_Union[ProfileView, str]] = ...) -> None: ...
 
 class GetProfileVersionResponse(_message.Message):
     __slots__ = ("version",)
@@ -434,22 +492,26 @@ class ListProfileVersionsResponse(_message.Message):
     def __init__(self, versions: _Optional[_Iterable[_Union[ProfileVersion, _Mapping]]] = ..., next_page_token: _Optional[str] = ...) -> None: ...
 
 class ValidateProfileRequest(_message.Message):
-    __slots__ = ("tenant", "document")
+    __slots__ = ("tenant", "document", "view")
     TENANT_FIELD_NUMBER: _ClassVar[int]
     DOCUMENT_FIELD_NUMBER: _ClassVar[int]
+    VIEW_FIELD_NUMBER: _ClassVar[int]
     tenant: str
     document: ProfileDocument
-    def __init__(self, tenant: _Optional[str] = ..., document: _Optional[_Union[ProfileDocument, _Mapping]] = ...) -> None: ...
+    view: ProfileView
+    def __init__(self, tenant: _Optional[str] = ..., document: _Optional[_Union[ProfileDocument, _Mapping]] = ..., view: _Optional[_Union[ProfileView, str]] = ...) -> None: ...
 
 class ValidateProfileResponse(_message.Message):
-    __slots__ = ("problems", "expanded", "checksum")
+    __slots__ = ("problems", "expanded", "checksum", "warnings")
     PROBLEMS_FIELD_NUMBER: _ClassVar[int]
     EXPANDED_FIELD_NUMBER: _ClassVar[int]
     CHECKSUM_FIELD_NUMBER: _ClassVar[int]
+    WARNINGS_FIELD_NUMBER: _ClassVar[int]
     problems: _containers.RepeatedCompositeFieldContainer[ProfileProblem]
     expanded: ExpandedProfile
     checksum: str
-    def __init__(self, problems: _Optional[_Iterable[_Union[ProfileProblem, _Mapping]]] = ..., expanded: _Optional[_Union[ExpandedProfile, _Mapping]] = ..., checksum: _Optional[str] = ...) -> None: ...
+    warnings: _containers.RepeatedCompositeFieldContainer[ProfileProblem]
+    def __init__(self, problems: _Optional[_Iterable[_Union[ProfileProblem, _Mapping]]] = ..., expanded: _Optional[_Union[ExpandedProfile, _Mapping]] = ..., checksum: _Optional[str] = ..., warnings: _Optional[_Iterable[_Union[ProfileProblem, _Mapping]]] = ...) -> None: ...
 
 class ListProfileBasesRequest(_message.Message):
     __slots__ = ()

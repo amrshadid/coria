@@ -7,6 +7,7 @@ import (
 
 	"github.com/amrshadid/go-dicom/dataset"
 
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/core/naming"
 )
 
@@ -78,12 +79,12 @@ func TestSequencesAndPrivateBlocks(t *testing.T) {
 // value of the structured report content item whose concept name it
 // names, at any depth of the content tree, and nothing else.
 func TestContentItemSelector(t *testing.T) {
-	en := newTestEngine(t, testKeys, Options{}, rule("finding", itemSel("DCM", "121071"), aReplace("removed")))
+	en := newTestEngine(t, testKeys, Options{}, rule("finding", itemSel("DCM", "121071", "TEXT"), aReplace("removed")))
 	concept := func(scheme, value string) []*dataset.Dataset {
 		return []*dataset.Dataset{build(t, el{0x00080100, "SH", value}, el{0x00080102, "SH", scheme})}
 	}
-	nested := build(t, el{0x0040A043, "SQ", concept("DCM", "121071")}, el{0x0040A160, "UT", "John has a finding"})
-	other := build(t, el{0x0040A043, "SQ", concept("DCM", "999999")}, el{0x0040A160, "UT", "kept text"})
+	nested := build(t, el{0x0040A040, "CS", "TEXT"}, el{0x0040A043, "SQ", concept("DCM", "121071")}, el{0x0040A160, "UT", "John has a finding"})
+	other := build(t, el{0x0040A040, "CS", "TEXT"}, el{0x0040A043, "SQ", concept("DCM", "999999")}, el{0x0040A160, "UT", "kept text"})
 	root := build(t, el{0x0040A730, "SQ", []*dataset.Dataset{nested, other}})
 	ds := build(t, el{0x0040A730, "SQ", []*dataset.Dataset{root}})
 	apply(t, en, ds)
@@ -141,24 +142,25 @@ func TestAVRTheRuleWasNotCheckedForFails(t *testing.T) {
 	apply(t, rm, build(t, el{tPatientID, "DA", "20240101"}))
 }
 
-// TestNonASCIIValuesNeedUTF8 guards the character set of values written:
-// a constant outside the default repertoire makes a data set that
-// declares none declare ISO_IR 192, and fails in one that declares
-// another set.
-func TestNonASCIIValuesNeedUTF8(t *testing.T) {
-	en := newTestEngine(t, testKeys, Options{}, rule("c", kw("PatientComments"), aReplace("Müller entfernt")))
-	ds := build(t, el{tPatientComments, "LT", "x"})
+// TestCleanOnASequenceAndOverlayBits guards what clean does beyond free
+// text: a sequence is kept and its items walked, each element by its own
+// rule, as keep does; the bits of an overlay (OB or OW) are removed, not
+// read for text.
+func TestCleanOnASequenceAndOverlayBits(t *testing.T) {
+	en := newTestEngine(t, testKeys, Options{},
+		rule("refs", kw("ReferencedStudySequence"), aClean),
+		rule("uids", vrSel("UI"), aUID),
+		rule("overlay", &v1.ProfileSelector{Kind: &v1.ProfileSelector_Tag{Tag: "60003000"}}, aClean),
+	)
+	ds := build(t,
+		el{tRefStudySeq, "SQ", []*dataset.Dataset{build(t, el{tRefSOPInstance, "UI", "1.2.3.9"})}},
+		el{0x60003000, "OW", []byte{1, 0, 2, 0}},
+	)
 	apply(t, en, ds)
-	if v, _ := text(ds, 0x00080005); v != "ISO_IR 192" {
-		t.Errorf("declared %q", v)
+	if v, _ := text(item(t, ds, tRefStudySeq, 0), tRefSOPInstance); v != RemapUID(testKeys.UID, "1.2.3.9") {
+		t.Errorf("a UID in a cleaned sequence: %q", v)
 	}
-	back := readFile(t, writeFile(t, ds))
-	if v, _ := text(back, tPatientComments); v != "Müller entfernt" {
-		t.Errorf("read back %q", v)
-	}
-	var f *Failure
-	latin := build(t, el{0x00080005, "CS", "ISO_IR 100"}, el{tPatientComments, "LT", "x"})
-	if _, err := en.Apply(context.Background(), latin, Reception{}); !errors.As(err, &f) || f.Cause != CauseBadValue {
-		t.Errorf("under ISO_IR 100: %v", err)
+	if ds.Contains(tagOf(0x60003000)) {
+		t.Error("the overlay's bits stayed")
 	}
 }

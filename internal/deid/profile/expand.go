@@ -1,9 +1,11 @@
 package profile
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"slices"
 
 	"google.golang.org/protobuf/proto"
 
@@ -23,8 +25,8 @@ func Expand(doc *v1.ProfileDocument, cat *Catalog) (*v1.ExpandedProfile, Problem
 	if doc == nil {
 		return nil, Problems{{Code: CodeRequired, Message: "a profile needs a document"}}
 	}
-	var list Problems
-	top := at{list: &list}
+	chk := newChecker(false)
+	top := at{c: chk}
 	if len(doc.GetBases()) > MaxBases {
 		top.in("bases").add(CodeTooMany, "a document names at most %d bases", MaxBases)
 	}
@@ -51,34 +53,82 @@ func Expand(doc *v1.ProfileDocument, cat *Catalog) (*v1.ExpandedProfile, Problem
 		named[n] = true
 		order = cat.flatten(cb, seen, order)
 	}
-	rules, pixels := checkDocument(&list, doc)
-	if len(list) > 0 {
-		return nil, list
+	rules, pixels := checkDocument(chk, doc)
+	if len(chk.list) > 0 {
+		return nil, chk.list
 	}
 
-	e := &v1.ExpandedProfile{Unnamed: v1.UnnamedElements_UNNAMED_ELEMENTS_KEEP, DateShiftDays: DefaultDateShiftDays}
+	e := &v1.ExpandedProfile{Unnamed: v1.UnnamedElements_UNNAMED_ELEMENTS_KEEP, DateShiftDays: DefaultDateShiftDays, LanguageEdition: LanguageEdition}
+	cost := chk.cost
 	for _, cb := range order {
 		e.Bases = append(e.Bases, cb.base.Name)
 		for _, r := range cb.rules {
-			e.Rules = append(e.Rules, &v1.ExpandedRule{Rule: cloneRule(r.norm), Origin: cb.base.Name})
+			e.Rules = append(e.Rules, expandedRule(r, cb.base.Name))
+			cost += r.cost
 		}
 		for _, p := range cb.pixels {
 			e.PixelRules = append(e.PixelRules, &v1.ExpandedPixelRule{Rule: clonePixelRule(p.norm), Origin: cb.base.Name})
+			cost += p.cost
 		}
 		takeDefaults(e, cb.base.Document)
 	}
 	for _, r := range rules {
-		e.Rules = append(e.Rules, &v1.ExpandedRule{Rule: cloneRule(r.norm)})
+		e.Rules = append(e.Rules, expandedRule(r, ""))
 	}
 	for _, p := range pixels {
 		e.PixelRules = append(e.PixelRules, &v1.ExpandedPixelRule{Rule: clonePixelRule(p.norm)})
 	}
 	takeDefaults(e, doc)
-	if len(e.Rules) > MaxExpandedRules {
+	switch {
+	case len(e.Rules) > MaxExpandedRules:
 		top.in("bases").add(CodeTooMany, "with its bases the profile has %d rules, more than %d", len(e.Rules), MaxExpandedRules)
-		return nil, list
+	case cost > MaxPatternBudget:
+		top.in("bases").add(CodeTooLarge, "with its bases the profile's regular expressions compile to %d instructions and ranges, more than %d", cost, MaxPatternBudget)
+	default:
+		if n, err := answerBytes(doc, e); err != nil || n > MaxVersionBytes {
+			top.add(CodeTooLarge, "the document and its expanded form come to %d bytes, more than the %d one answer may carry with them; make the document smaller", n, MaxVersionBytes)
+		}
+	}
+	if len(chk.list) > 0 {
+		return nil, chk.list
 	}
 	return e, nil
+}
+
+// LanguageEdition is the edition of the profile language this build
+// writes into an expanded form: what each selector selects and each
+// action does. A build runs only the editions it knows, and keeps the
+// meaning of every edition it has shipped, so a stored version never
+// changes what it does when the language grows.
+const LanguageEdition = 1
+
+// MaxVersionBytes is the bound of a version's document and expanded form
+// together, each as the most bytes its JSON may take in an answer: the
+// API's message limit of 4 MiB less 256 KiB for the other fields (a name,
+// a note, a checksum, the warnings). So a version the API accepts can
+// always be answered whole, in either codec.
+const MaxVersionBytes = 4<<20 - 256<<10
+
+// answerBytes returns the most bytes the document and the expanded form
+// take together in an answer: their canonical JSON, and one more byte for
+// each comma, since the protobuf JSON encoder may write a space after any
+// comma. Binary protobuf is never larger than the JSON.
+func answerBytes(doc *v1.ProfileDocument, e *v1.ExpandedProfile) (int, error) {
+	n := 0
+	for _, m := range []proto.Message{doc, e} {
+		c, err := Canonical(m)
+		if err != nil {
+			return 0, err
+		}
+		n += len(c) + bytes.Count(c, []byte{','})
+	}
+	return n, nil
+}
+
+// expandedRule returns a compiled rule as an expanded form holds it: the
+// normalized rule, where it came from, and the VRs validation decided.
+func expandedRule(r rule, origin string) *v1.ExpandedRule {
+	return &v1.ExpandedRule{Rule: cloneRule(r.norm), Origin: origin, Vrs: slices.Clone(r.sel.vrs)}
 }
 
 // takeDefaults sets what doc says of the defaults over what came before

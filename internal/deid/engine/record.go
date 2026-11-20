@@ -31,6 +31,11 @@ const (
 	// CauseRuleQuarantine: a rule whose action is quarantine applies to an
 	// element the file holds; Failure.Rule names it.
 	CauseRuleQuarantine Cause = "rule"
+	// CauseInternal: the engine itself failed on the file (a panic,
+	// recovered), and every change it had made was undone. The file is
+	// held like any other refusal, so a fault of the code is never a file
+	// archived half de-identified.
+	CauseInternal Cause = "internal"
 )
 
 // The reasons a quarantine records for a failure.
@@ -96,8 +101,10 @@ type Entry struct {
 	// VR is the element's value representation as the engine read it.
 	VR string
 	// Action is what was done: keep, remove, empty, replace, set, hash,
-	// uid, shift, generalize, lookup, clean, or create for an element a set
-	// rule made.
+	// uid, shift, generalize, lookup, clean, dummy, remove_unless_required,
+	// or create for an element a set rule made. An element the floor
+	// covers and the profile would have kept has Rule -1 and a Reason that
+	// says so.
 	Action string
 	// Rule is the position of the deciding rule in the expanded profile,
 	// from 0; -1 when no rule decided.

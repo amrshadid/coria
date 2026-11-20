@@ -17,17 +17,30 @@
 // sequence, a regular expression that does not compile, an action that
 // does not fit the VR its selector selects (a UID remapped in a date, a
 // date shifted in a name), a constant that is not a value of its VR (PS3.5
-// 6.2), a template that reads a value as received, a base that is not
-// available. The elements no rule may name are refused: the file meta
-// information, which is written anew for every file (PS3.10 7.1), items
-// and group lengths, and pixel data, which only pixel rules change. There
-// is no action that runs outside code or calls an address, since each would
-// be a way out for the values a profile removes.
+// 6.2), a constant or template whose text is not printable ASCII or whose
+// longest output is not a value of its VR, a template that reads a value
+// as received, a regular expression whose compiled size passes its bound
+// or the document's budget, a document whose version would not fit one
+// answer, a base that is not available. The elements the pipeline handles
+// in every file are refused and never selected: the file meta information,
+// which is written anew for every file (PS3.10 7.1), command and directory
+// elements, items and group lengths, group 7FE0, which only pixel rules
+// change, and the sequences and padding removed from every file (PS3.15
+// E.1.1). There is no action that runs outside code or calls an address,
+// since each would be a way out for the values a profile removes.
+//
+// Warnings (Warnings) say what a valid document does that its author may
+// not mean: a rule a more specific base rule overrides for some elements,
+// and a rule that keeps what a base changes or removes.
 //
 // Expansion. A version stores the document expanded: each base's rules
 // copied in, its own bases first, then the document's rules; every keyword,
 // in a selector, a path or a template, written as its tag; the defaults
-// made explicit. Its canonical text (Canonical) has a SHA-256, the version's
+// made explicit; with each rule the VRs validation decided for its
+// selector, and with the whole the language edition whose meaning it has.
+// Compile reads that form by its structure alone and never the data
+// dictionary, so a later library cannot change or refuse a stored
+// version. Its canonical text (Canonical) has a SHA-256, the version's
 // checksum. So a stored version never depends on what a later build ships:
 // a new edition of a base is a new base name, and the data dictionary of a
 // later library cannot change which element a stored rule names. The same
@@ -40,8 +53,11 @@
 // creator's block, a group, a VR); between equally specific ones the later
 // rule, so a document's rules win over its bases', and a later base over an
 // earlier, as an option of PS3.15 Annex E overrides the basic profile
-// (PS3.15 E.3). An element no rule decides is removed when it is private
-// (PS3.5 7.8), and otherwise follows the profile's unnamed default. Program
+// (PS3.15 E.3). A group or VR rule selects private elements only when it
+// says include_private, and a content item rule only its item's value
+// element (IsContentValue). An element no rule decides is removed when it
+// is private (PS3.5 7.8), and otherwise follows the profile's unnamed
+// default. Program
 // decides this for the engine; matching an element reads only a Location
 // and the Facts the conditions need, never a file.
 //

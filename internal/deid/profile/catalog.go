@@ -65,10 +65,10 @@ func NewCatalog(bases ...Base) (*Catalog, error) {
 		case b.Unavailable != "" && b.Document != nil:
 			return nil, fmt.Errorf("profile: the base %s has a document and is unavailable", b.Name)
 		case b.Document != nil:
-			var list Problems
-			cb.rules, cb.pixels = checkDocument(&list, b.Document)
-			if len(list) > 0 {
-				return nil, fmt.Errorf("profile: the base %s: %w", b.Name, list)
+			chk := newChecker(false)
+			cb.rules, cb.pixels = checkDocument(chk, b.Document)
+			if len(chk.list) > 0 {
+				return nil, fmt.Errorf("profile: the base %s: %w", b.Name, chk.list)
 			}
 			if len(b.Document.GetBases()) > MaxBases {
 				return nil, fmt.Errorf("profile: the base %s names more than %d bases", b.Name, MaxBases)

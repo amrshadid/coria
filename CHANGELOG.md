@@ -126,14 +126,23 @@ All notable changes to CORIA are written here. The form is
   Not served by the API yet.
 - The de-identification engine, not yet called by reception: a data set
   de-identified in place by an expanded profile version under a tenant's
-  keys, every element visited (sequences, items, private blocks), each by the
-  rule the profile's precedence chooses. UIDs remapped to 2.25 UUIDs keyed
+  keys, every element visited (sequences, items, private blocks, content
+  items wherever they sit), each by the rule the profile's precedence
+  chooses, with the VRs validation stored. UIDs remapped to 2.25 UUIDs keyed
   per tenant (registered UIDs kept), dates shifted per subject by a keyed
-  offset (times kept, the shift written nowhere), keyed hashes equal to the
-  labels' codes, dummy values valid for every VR, removal unless the object's
+  offset (times kept, a year or month shifted from its middle, the shift
+  written nowhere), keyed hashes equal to the subject labels' codes, dummy
+  values of non-zero length valid for every VR, removal unless the object's
   IOD requires the attribute, PS3.15 Table E.1-1 codes resolved by IOD Type.
-  A file the profile cannot process is refused with a fixed cause and left
-  unchanged; pixel data is never changed.
+  The names, identifiers, birth date, addresses and telephone numbers of
+  persons are never kept, whatever the profile says. Clean removes the file's
+  values, names in every script and dates in their written forms from free
+  text, within a bound. Specific Character Set is the engine's: ISO_IR 192
+  when text outside ASCII remains. A file the profile cannot process, text
+  that is not UTF-8, a UN value holding items that would be kept, or a fault
+  of the engine is refused with a fixed cause and left unchanged; a lookup
+  table assigns a code only for a file that succeeds; pixel data is never
+  changed.
 - The contract of senders and jobs: SenderService adds, reads, changes,
   removes and tests a tenant's senders, a DIMSE peer reached by C-STORE or a
   DICOMweb service reached by STOW-RS, each with its TLS files named, at most
@@ -151,12 +160,23 @@ All notable changes to CORIA are written here. The form is
   it, and lists the bases a profile may build on. A profile is a document of
   rules (selector, conditions, action) and pixel rules; its file form is the
   protobuf JSON of ProfileDocument. A version never changes: it is stored
-  expanded, its bases' rules copied in and every keyword written as its tag,
-  with the SHA-256 of that text. A document with problems is refused with
-  every problem, each naming the rule, the field and a fixed code. The bases
-  of PS3.15 Annex E are listed and refused as not yet available until the
-  DICOM library exports the standard's tables. The service is not served yet.
-  Both clients have it as `profiles`.
+  expanded, its bases' rules copied in, every keyword written as its tag,
+  every default written out, with the VRs validation decided and the language
+  edition whose meaning it has, and with the SHA-256 of that text; a stored
+  version runs without the data dictionary. A group or VR rule selects private
+  elements only when it says include_private, and a content item rule only
+  its item's value element. Actions include dummy and remove-unless-required
+  (PS3.15's combined codes, resolved by the IOD's Type); pixel data and the
+  elements the pipeline removes from every file cannot be named. Constants and
+  templates are checked against every VR they may be written into; regular
+  expressions are bounded by their compiled size. A document with problems is
+  refused with every problem; a valid one is answered with warnings where a
+  base's rule overrides or is overridden by its own. A version's expanded form
+  is answered on request, and every version fits one answer. Creating a
+  version can name the latest version it expects. The bases of PS3.15 Annex E
+  are listed and refused as not yet available until the DICOM library exports
+  the standard's tables. The service is not served yet. Both clients have it
+  as `profiles`.
 - `coria` and the interactive program can present a TLS client certificate
   (`--tls-client-cert`, `--tls-client-key`, or `CORIA_TLS_CLIENT_CERT` and
   `CORIA_TLS_CLIENT_KEY`), so a key limited to one can be used from the command

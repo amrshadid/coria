@@ -46,10 +46,13 @@ type rule struct {
 	action *v1.ProfileAction
 	norm   *v1.ProfileRule
 	origin string
+	// cost is the compiled size of its conditions' patterns.
+	cost int
 }
 
 // pixelRule is a compiled pixel rule.
 type pixelRule struct {
+	cost       int
 	when       []condition
 	rows, cols int32
 	norm       *v1.PixelRule
@@ -58,9 +61,9 @@ type pixelRule struct {
 
 // checkDocument checks every field of a document but its bases, and
 // compiles its rules. The rules are nil when there is a problem.
-func checkDocument(list *Problems, doc *v1.ProfileDocument) ([]rule, []pixelRule) {
-	before := len(*list)
-	top := at{list: list}
+func checkDocument(c *checker, doc *v1.ProfileDocument) ([]rule, []pixelRule) {
+	before := len(c.list)
+	top := at{c: c}
 	if len(doc.GetDescription()) > MaxDescriptionLength {
 		top.in("description").add(CodeTooLong, "a description is at most %d bytes", MaxDescriptionLength)
 	}
@@ -76,7 +79,7 @@ func checkDocument(list *Problems, doc *v1.ProfileDocument) ([]rule, []pixelRule
 	} else {
 		names := map[string]int{}
 		for i, r := range doc.GetRules() {
-			if c, ok := checkRule(at{list: list, rule: i + 1, name: r.GetName()}, r, names); ok {
+			if c, ok := checkRule(at{c: c, rule: i + 1, name: r.GetName()}, r, names); ok {
 				rules = append(rules, c)
 			}
 		}
@@ -87,12 +90,12 @@ func checkDocument(list *Problems, doc *v1.ProfileDocument) ([]rule, []pixelRule
 	} else {
 		names := map[string]int{}
 		for i, r := range doc.GetPixelRules() {
-			if c, ok := checkPixelRule(at{list: list, pixelRule: i + 1, name: r.GetName()}, r, names); ok {
+			if c, ok := checkPixelRule(at{c: c, pixelRule: i + 1, name: r.GetName()}, r, names); ok {
 				pixels = append(pixels, c)
 			}
 		}
 	}
-	if len(*list) != before {
+	if len(c.list) != before {
 		return nil, nil
 	}
 	return rules, pixels
@@ -116,13 +119,14 @@ func checkName(a at, name string, required bool, names map[string]int, pos int) 
 
 // checkRule checks and compiles one rule.
 func checkRule(a at, r *v1.ProfileRule, names map[string]int) (rule, bool) {
-	before := len(*a.list)
+	before := len(a.c.list)
+	costBefore := a.c.cost
 	_, quarantines := r.GetAction().GetKind().(*v1.ProfileAction_Quarantine)
 	checkName(a, r.GetName(), quarantines, names, a.rule)
 	if len(r.GetReason()) > MaxReasonLength {
 		a.in("reason").add(CodeTooLong, "a reason is at most %d bytes", MaxReasonLength)
 	}
-	sel, normSel, ok := parseSelector(a.in("selector"), r.GetSelector())
+	sel, normSel, ok := parseSelector(a.in("selector"), r.GetSelector(), nil)
 	when := parseConditions(a, "when", r.GetWhen())
 	var action *v1.ProfileAction
 	if ok {
@@ -130,18 +134,19 @@ func checkRule(a at, r *v1.ProfileRule, names map[string]int) (rule, bool) {
 	} else if r.GetAction().GetKind() == nil {
 		a.in("action").add(CodeRequired, "a rule needs an action")
 	}
-	if len(*a.list) != before {
+	if len(a.c.list) != before {
 		return rule{}, false
 	}
 	norm, _ := proto.Clone(r).(*v1.ProfileRule)
 	norm.Selector = normSel
 	norm.Action = action
-	return rule{sel: sel, when: when, action: action, norm: norm}, true
+	return rule{sel: sel, when: when, action: action, norm: norm, cost: a.c.cost - costBefore}, true
 }
 
 // checkPixelRule checks and compiles one pixel rule.
 func checkPixelRule(a at, r *v1.PixelRule, names map[string]int) (pixelRule, bool) {
-	before := len(*a.list)
+	before := len(a.c.list)
+	costBefore := a.c.cost
 	checkName(a, r.GetName(), true, names, a.pixelRule)
 	if len(r.GetReason()) > MaxReasonLength {
 		a.in("reason").add(CodeTooLong, "a reason is at most %d bytes", MaxReasonLength)
@@ -164,11 +169,11 @@ func checkPixelRule(a at, r *v1.PixelRule, names map[string]int) (pixelRule, boo
 	default:
 		a.add(CodeOneOf, "a pixel rule needs one action: redact, detect or accept")
 	}
-	if len(*a.list) != before {
+	if len(a.c.list) != before {
 		return pixelRule{}, false
 	}
 	norm, _ := proto.Clone(r).(*v1.PixelRule)
-	return pixelRule{when: when, rows: r.GetRows(), cols: r.GetColumns(), norm: norm}, true
+	return pixelRule{when: when, rows: r.GetRows(), cols: r.GetColumns(), norm: norm, cost: a.c.cost - costBefore}, true
 }
 
 // checkRectangles checks the rectangles of a redaction against the image

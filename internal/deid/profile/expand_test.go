@@ -16,7 +16,7 @@ import (
 // or in its canonical text, from this package or from the protobuf
 // library, fails this test instead of silently giving stored versions and
 // new ones different checksums for the same rules.
-const richChecksum = "31a1ab72bf308148eb45d6e2cef8d340c20062b2f522a04bcf14c9481e64d6cd"
+const richChecksum = "cacf66a3334eb960031317882fa6a7a1c80992c10e7f947f35e1c0ea4a040666"
 
 // TestExpansionIsDeterministic guards that one document always expands to
 // the same text and checksum: run after run, document copy after copy, and

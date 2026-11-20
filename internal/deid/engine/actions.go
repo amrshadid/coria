@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"bytes"
 	"errors"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/amrshadid/go-dicom/dataelem"
 	"github.com/amrshadid/go-dicom/dataset"
@@ -53,24 +55,37 @@ type target struct {
 	seq *sequence.Sequence
 	// byRule is set when a rule decided the element, not a default.
 	byRule bool
+	// floor is set when the element is one the floor covers, whose value
+	// is a needle whatever decided it.
+	floor bool
+}
+
+// assign is a lookup whose code the table assigns on first sight, asked
+// for once the plan has succeeded (finishAssigns).
+type assign struct {
+	table, key string
+	// vr is the element's VR, which the code must be a value of.
+	vr string
+	// op is the index of the opAssign it fills.
+	op int
 }
 
 // needleAt keeps a value an action removed or replaced as a needle, when a
-// rule decided the element. A value a default removed (a private element,
-// or any element under "unnamed: remove") is not one: the profile named it
-// as nothing identifying, and such values (a model name, 0.000000) are
-// common in what a file keeps, so the check after would refuse files for
-// them.
+// rule decided the element or the floor covers it. A value a default
+// removed (a private element, or any element under "unnamed: remove") is
+// not one otherwise: the profile named it as nothing identifying, and such
+// values (a model name, 0.000000) are common in what a file keeps, so the
+// check after would refuse files for them.
 func (r *run) needleAt(c *target, value, path string) {
-	if c.byRule {
+	if c.byRule || c.floor {
 		r.needle(c.vr, value, path)
 	}
 }
 
 // subtreeNeedlesAt keeps the values of a sequence an action removes or
-// empties as needles, when a rule decided it.
+// empties as needles, when a rule decided it or the floor covers it.
 func (r *run) subtreeNeedlesAt(c *target) error {
-	if !c.byRule {
+	if !c.byRule && !c.floor {
 		return nil
 	}
 	return r.subtreeNeedles(c.seq, c.path, len(c.seqs)+1)
@@ -87,7 +102,7 @@ func (r *run) act(c *target, a Action, vrs []string) (bool, error) {
 	}
 	switch a.Kind {
 	case ActKeep:
-		return false, nil
+		return false, r.actKeep(c)
 	case ActRemove:
 		return r.actRemove(c), nil
 	case ActEmpty:
@@ -98,6 +113,13 @@ func (r *run) act(c *target, a Action, vrs []string) (bool, error) {
 		return r.actRemoveUnlessRequired(c, a)
 	case ActQuarantine:
 		return false, c.fail(CauseRuleQuarantine)
+	case ActClean:
+		if c.vr == "OB" || c.vr == "OW" {
+			// The bits of an overlay or a curve are not read for text;
+			// removing them takes out no less than cleaning them would
+			// (PS3.15 E.3.3, the Clean Graphics option).
+			return r.actRemove(c), nil
+		}
 	}
 	// The actions below read or write the value: the element must be of a
 	// VR the rule's selector was checked for.
@@ -123,12 +145,14 @@ func (r *run) act(c *target, a Action, vrs []string) (bool, error) {
 	return false, c.fail(CauseBadValue)
 }
 
-// actSequence applies an action to a sequence: keep walks its items;
-// remove removes it; empty and dummy leave it with no items. Every other
-// action is a value's and refuses the file.
+// actSequence applies an action to a sequence: keep walks its items, and
+// so does clean, since a sequence is cleaned by cleaning what it holds
+// (PS3.15 E.3.4: each content item by its own rules); remove removes it;
+// empty and dummy leave it with no items. Every other action is a value's
+// and refuses the file.
 func (r *run) actSequence(c *target, a Action) (bool, error) {
 	switch a.Kind {
-	case ActKeep:
+	case ActKeep, ActClean:
 		return false, r.items(c.seq, c.seqs, c.tag, c.path, c.sc)
 	case ActRemove:
 		r.record.Entries[c.entry].Changed = true
@@ -153,6 +177,29 @@ func (r *run) actSequence(c *target, a Action) (bool, error) {
 		return false, c.fail(CauseRuleQuarantine)
 	}
 	return false, c.fail(CauseBadValue)
+}
+
+// itemTag is the first four bytes of an item, (FFFE,E000) in little endian
+// (PS3.5 7.5): a UN value that begins with them is a sequence the library
+// kept as bytes.
+var itemTag = []byte{0xFE, 0xFF, 0x00, 0xE0}
+
+// actKeep keeps an element, refusing a value of VR UN the engine cannot
+// see into: one that begins with an item, a sequence written as UN with a
+// defined length (PS3.5 6.2.2) whose items the library did not parse, and
+// one not in memory. Either could hold anything, a patient's name
+// included, and keeping it unread would pass what no rule looked at. The
+// DICOM library offers no call to parse such bytes as items; until it
+// does, the file is refused (bad_value) rather than read here.
+func (r *run) actKeep(c *target) error {
+	if c.vr != "UN" {
+		return nil
+	}
+	b, ok := c.elem.Bytes()
+	if !ok || bytes.HasPrefix(b, itemTag) {
+		return c.fail(CauseBadValue)
+	}
+	return nil
 }
 
 // actRemove removes an element.
@@ -388,11 +435,13 @@ func (r *run) actLookup(c *target, a Action) error {
 		if !a.AssignMissing {
 			return c.fail(CauseLookupMissing)
 		}
-		if code, err = r.en.lookups.Assign(r.ctx, a.Table, key); err != nil {
-			return err
-		}
+		r.needleAt(c, orig, c.path)
+		r.record.Entries[c.entry].Changed = true
+		r.assigns = append(r.assigns, assign{table: a.Table, key: key, vr: c.vr, op: len(r.ops)})
+		r.ops = append(r.ops, op{kind: opAssign, ds: c.ds, tag: c.tag, text: orig, entry: c.entry, path: c.path, rule: c.rule, vr: vrIfUN(c.elem, c.vr)})
+		return nil
 	}
-	if code == "" || !validText(c.vr, code) {
+	if code == "" || !isASCII(code) || !validText(c.vr, code) {
 		return c.fail(CauseBadValue)
 	}
 	r.needleAt(c, orig, c.path)
@@ -416,33 +465,17 @@ func (r *run) actClean(c *target) error {
 	return nil
 }
 
-// write plans an element's new text value. A value outside the default
-// repertoire needs a data set whose text is UTF-8: one that declares
-// ISO_IR 192, or declares nothing and so will.
+// write plans an element's new text value. Every value an action writes
+// is of the default repertoire or valid UTF-8 (a value kept from the file,
+// as clean leaves it), and the character set is declared once every value
+// is known (declareCharset).
 func (r *run) write(c *target, value string) error {
-	if !r.charsetTakes(c.sc.charset, value) {
+	if !utf8.ValidString(value) || (c.sc.charset == charsetOther && !isASCII(value)) {
 		return c.fail(CauseBadValue)
 	}
 	r.record.Entries[c.entry].Changed = true
 	r.ops = append(r.ops, op{kind: opValue, ds: c.ds, tag: c.tag, value: []byte(value), vr: vrIfUN(c.elem, c.vr)})
 	return nil
-}
-
-// charsetTakes reports whether value can be written under a character
-// set, noting that the top level must declare ISO_IR 192 when it declares
-// none and value is not of the default repertoire.
-func (r *run) charsetTakes(cs charsetKind, value string) bool {
-	if isASCII(value) {
-		return true
-	}
-	switch cs {
-	case charsetUTF8:
-		return true
-	case charsetAbsent:
-		r.needUTF8 = true
-		return true
-	}
-	return false
 }
 
 // validText reports whether value is a value of VR vr (PS3.5 6.2), by the

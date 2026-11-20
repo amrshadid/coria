@@ -8,6 +8,7 @@ import (
 	"github.com/amrshadid/go-dicom/validate"
 	"github.com/amrshadid/go-dicom/valuerep"
 
+	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
@@ -200,10 +201,12 @@ func TestRemoveUnlessRequiredAndDummy(t *testing.T) {
 
 // TestEveryDummyIsAValueOfItsVR guards the dummy table: every VR of PS3.5
 // 6.2 but SQ has one, each text one passes the DICOM library's check of
-// its VR, each binary one holds whole values of its width, and the slice
-// returned is the caller's.
+// its VR, each binary one holds one value of its width (PS3.15 E.1.1: D
+// is of non-zero length, so OB, OW and UN too), and the slice returned is
+// the caller's.
 func TestEveryDummyIsAValueOfItsVR(t *testing.T) {
-	widths := map[string]int{"AT": 4, "FD": 8, "FL": 4, "SL": 4, "SS": 2, "SV": 8, "UL": 4, "US": 2, "UV": 8}
+	widths := map[string]int{"AT": 4, "FD": 8, "FL": 4, "SL": 4, "SS": 2, "SV": 8, "UL": 4, "US": 2, "UV": 8,
+		"OB": 2, "OD": 8, "OF": 4, "OL": 4, "OV": 8, "OW": 2, "UN": 2}
 	for _, vr := range []string{"AE", "AS", "AT", "CS", "DA", "DS", "DT", "FD", "FL", "IS", "LO", "LT", "OB", "OD", "OF", "OL", "OV", "OW", "PN", "SH", "SL", "SS", "ST", "SV", "TM", "UC", "UI", "UL", "UN", "UR", "US", "UT", "UV"} {
 		d, ok := Dummy(vr)
 		if !ok {
@@ -216,13 +219,12 @@ func TestEveryDummyIsAValueOfItsVR(t *testing.T) {
 			}
 			continue
 		}
-		if len(d) > 0 {
-			if err := valuerep.ValidateValue(vr, string(d)); err != nil {
-				t.Errorf("%s dummy %q: %v", vr, d, err)
-			}
-		}
 		if len(d) == 0 {
+			t.Errorf("%s dummy is empty", vr)
 			continue
+		}
+		if err := valuerep.ValidateValue(vr, string(d)); err != nil {
+			t.Errorf("%s dummy %q: %v", vr, d, err)
 		}
 		d[0] = 'x'
 		if again, _ := Dummy(vr); again[0] == 'x' {
@@ -231,5 +233,38 @@ func TestEveryDummyIsAValueOfItsVR(t *testing.T) {
 	}
 	if _, ok := Dummy("SQ"); ok {
 		t.Error("SQ has a byte dummy")
+	}
+}
+
+// TestDummyAndRemoveUnlessRequiredFromTheLanguage guards that the profile
+// language's dummy and remove_unless_required reach the engine with their
+// fallbacks: in a CT image, a Type 3 element is removed, a Type 2 one
+// emptied, a Type 1 UID remapped, and a dummy date is the dummy.
+func TestDummyAndRemoveUnlessRequiredFromTheLanguage(t *testing.T) {
+	en := newTestEngine(t, testKeys, Options{},
+		rule("date", kw("StudyDate"), aDummy),
+		rule("comments", kw("PatientComments"), aRemoveUnless(v1.RequiredFallback_REQUIRED_FALLBACK_DUMMY)),
+		rule("referring", kw("ReferringPhysicianName"), aRemoveUnless(v1.RequiredFallback_REQUIRED_FALLBACK_EMPTY)),
+		rule("study", kw("StudyInstanceUID"), aRemoveUnless(v1.RequiredFallback_REQUIRED_FALLBACK_UID)),
+	)
+	ds := build(t,
+		el{tSOPClass, "UI", ctImageStorage},
+		el{tStudyDate, "DA", "20240101"},
+		el{tReferring, "PN", "Who^Doctor"},
+		el{tPatientComments, "LT", "a comment"},
+		el{tStudyUID, "UI", "1.2.3"},
+	)
+	apply(t, en, ds)
+	if v := mustText(t, ds, tStudyDate); v != "19000101" {
+		t.Errorf("dummy date %q", v)
+	}
+	if ds.Contains(tagOf(tPatientComments)) {
+		t.Error("a Type 3 element is present")
+	}
+	if v, ok := text(ds, tReferring); !ok || v != "" {
+		t.Errorf("a Type 2 element: %q %v", v, ok)
+	}
+	if v := mustText(t, ds, tStudyUID); v != RemapUID(testKeys.UID, "1.2.3") {
+		t.Errorf("a Type 1 UID: %q", v)
 	}
 }

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -97,12 +98,20 @@ type Engine struct {
 	method  string
 	// received are the top-level elements templates read, as received.
 	received []uint32
+	seams    engineSeams
+}
+
+// engineSeams are the points a test of this package reaches into an
+// Engine through; nil in every Engine New makes.
+type engineSeams struct {
+	// beforeOp is called before apply makes the change of index i.
+	beforeOp func(i int)
 }
 
 // New compiles an expanded profile, as profile.Expand made it or a stored
 // version holds it, for Apply. It refuses a profile with pixel rules
-// (ErrPixelRules), keys shorter than MinKeyLength, and a method that is not
-// an LO value of the default repertoire.
+// (ErrPixelRules), keys shorter than MinKeyLength or equal to one another,
+// and a method that is not an LO value of the default repertoire.
 func New(e *v1.ExpandedProfile, keys Keys, opts Options) (*Engine, error) {
 	if len(e.GetPixelRules()) > 0 {
 		return nil, ErrPixelRules
@@ -123,6 +132,12 @@ func newEngine(dec Decider, keys Keys, opts Options) (*Engine, error) {
 		if len(k.key) < MinKeyLength {
 			return nil, fmt.Errorf("engine: the %s key is shorter than %d bytes", k.name, MinKeyLength)
 		}
+	}
+	// Each key is its own secret: one given for another would let a code
+	// of one kind be checked against the other, and destroying one (when
+	// a data set is closed) would not end what it keys.
+	if bytes.Equal(keys.UID, keys.Date) || bytes.Equal(keys.UID, keys.Hash) || bytes.Equal(keys.Date, keys.Hash) {
+		return nil, errors.New("engine: two of the keys are equal; each must be its own secret")
 	}
 	if opts.Method != "" {
 		if len(opts.Method) > maxMethodLength || !isASCII(opts.Method) || valuerep.ValidateValue("LO", opts.Method) != nil {
@@ -158,22 +173,35 @@ var defaultTypes = &IODTypes{}
 // Apply de-identifies ds in place by the profile, and returns what it did
 // to each element. Every element is visited: the top level, every item of
 // every sequence, private blocks; each takes the action of the rule the
-// profile's precedence chooses, or the default. Then the elements set
-// rules make are added, and the de-identification is recorded in the data
-// set: Patient Identity Removed (0012,0062) YES, De-identification Method
-// (0012,0063) when Options.Method is set, Longitudinal Temporal Information
-// Modified (0028,0303) MODIFIED when a date was shifted (PS3.15 E.1.1,
-// E.3.6). Pixel data is never changed.
+// profile's precedence chooses, or the default, but that the floor
+// (floor.go) never lets one that names or identifies the person stay.
+// Then the elements set rules make are added, and the de-identification
+// is recorded in the data set: Patient Identity Removed (0012,0062) YES,
+// De-identification Method (0012,0063) when Options.Method is set,
+// Longitudinal Temporal Information Modified (0028,0303) MODIFIED when a
+// date was shifted (PS3.15 E.1.1, E.3.6), and Specific Character Set
+// (0008,0005) as the text that stays needs it. Pixel data is never
+// changed.
 //
 // Everything is worked out before the data set is changed. A file the
 // profile cannot process returns a *Failure and leaves ds as it was, never
-// half processed; any other error (a lookup table that does not answer, a
-// canceled ctx) says nothing of the file and leaves it as it was too.
-func (en *Engine) Apply(ctx context.Context, ds *dataset.Dataset, rec Reception) (*Record, error) {
+// half processed; so does a fault of the engine itself (a panic, recovered
+// as CauseInternal, the changes made so far undone). Any other error (a
+// lookup table that does not answer, a canceled ctx) says nothing of the
+// file and leaves it as it was too.
+func (en *Engine) Apply(ctx context.Context, ds *dataset.Dataset, rec Reception) (out *Record, err error) {
 	if ds == nil {
 		return nil, errors.New("engine: no data set")
 	}
 	r := &run{en: en, ctx: ctx, top: ds, record: &Record{PixelsUntouched: true}}
+	defer func() {
+		if p := recover(); p != nil {
+			r.rollback()
+			// The panic's value may hold a value of the file; it is not
+			// passed on.
+			out, err = nil, &Failure{Cause: CauseInternal}
+		}
+	}()
 	r.facts = readFacts(ds, rec)
 	r.received = map[uint32]string{}
 	for _, t := range en.received {
@@ -190,11 +218,18 @@ func (en *Engine) Apply(ctx context.Context, ds *dataset.Dataset, rec Reception)
 	if err := r.finishCleans(); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := r.finishAssigns(); err != nil {
+		return nil, err
+	}
 	r.planMethod()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	r.apply()
+	r.declareCharset()
 	return r.record, nil
 }
 
