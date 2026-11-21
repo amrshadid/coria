@@ -215,11 +215,19 @@ func (r *Registry) register(row master.Tenant) *entry {
 // unregister removes the entry named name when it is e, so a removal never
 // takes away an entry a later creation of the same name made.
 func (r *Registry) unregister(e *entry) {
+	if r.drop(e) && r.cfg.Unregistered != nil {
+		r.cfg.Unregistered(e.name)
+	}
+}
+
+// drop takes e out of the registry's entries, and reports whether it was
+// there.
+func (r *Registry) drop(e *entry) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	old := *r.entries.Load()
 	if old[e.name] != e {
-		return
+		return false
 	}
 	next := make(map[string]*entry, len(old))
 	for k, v := range old {
@@ -228,6 +236,7 @@ func (r *Registry) unregister(e *entry) {
 		}
 	}
 	r.entries.Store(&next)
+	return true
 }
 
 // retire ends an entry already unregistered: it ends the entry's open in

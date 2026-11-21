@@ -14,10 +14,18 @@ this machine is accepted (CORIA_INSECURE=1 says the server has none).
 
 import os
 import sys
+import time
 from typing import Iterator, Optional
+
+import grpc
 
 import coria
 from coria.v1 import job_pb2, monitor_pb2, scope_pb2
+
+# How long to wait before following the feed again after a stream ended
+# without the job ending, so a server that ends streams at once is not asked
+# in a tight loop.
+PAUSE = 1.0
 
 ENDED = (
     job_pb2.JOB_STATE_DONE,
@@ -51,7 +59,8 @@ def follow_job(
     that concerns it, the last time as it ended.
 
     The feed's position is taken before the job is made, so no event of the job is
-    missed; an event of another job is passed over. A stream the server ends is
+    missed; an event of another job is passed over. A stream the server ends,
+    cleanly or as UNAVAILABLE as it does when the stream's deadline passes, is
     followed again from the last event seen. ``deadline`` bounds each stream, in
     seconds, so a caller that must stop does.
     """
@@ -69,28 +78,39 @@ def follow_job(
     types = [monitor_pb2.EVENT_TYPE_JOB_STEP, monitor_pb2.EVENT_TYPE_JOB_PROGRESS]
     while job.state not in ENDED:
         request = monitor_pb2.WatchRequest(scope=scope, cursor=cursor, types=types)
-        for message in client.monitor.Watch(request, timeout=deadline):
-            kind = message.WhichOneof("kind")
-            if kind == "keep_alive":
-                # The position past events the filter left out.
-                cursor = message.keep_alive.cursor or cursor
-                continue
-            event = message.event
-            cursor = event.cursor
-            payload = event.WhichOneof("payload")
-            if payload == "job_step" and event.job_step.job == made.id:
-                job = job_pb2.Job(id=made.id, send=made.send, state=event.job_step.state,
-                                  counts=event.job_step.counts, reason=event.job_step.reason)
-            elif payload == "job_progress" and event.job_progress.job == made.id:
-                job = job_pb2.Job(id=made.id, send=made.send, state=job.state, counts=event.job_progress.counts)
-            else:
-                continue
-            yield job
-            if job.state in ENDED:
-                return
+        try:
+            for message in client.monitor.Watch(request, timeout=deadline):
+                kind = message.WhichOneof("kind")
+                if kind == "keep_alive":
+                    # The position past events the filter left out.
+                    cursor = message.keep_alive.cursor or cursor
+                    continue
+                event = message.event
+                cursor = event.cursor
+                payload = event.WhichOneof("payload")
+                if payload == "job_step" and event.job_step.job == made.id:
+                    job = job_pb2.Job(id=made.id, send=made.send, state=event.job_step.state,
+                                      counts=event.job_step.counts, reason=event.job_step.reason)
+                elif payload == "job_progress" and event.job_progress.job == made.id:
+                    job = job_pb2.Job(id=made.id, send=made.send, state=job.state, counts=event.job_progress.counts)
+                else:
+                    continue
+                yield job
+                if job.state in ENDED:
+                    return
+        except coria.Error as err:
+            # The server ends a stream at any time, and at the latest when its
+            # deadline passes (30 seconds unless the call sets one), answering
+            # UNAVAILABLE ("the stream ended; resume from its last cursors"); a
+            # connection that dropped is UNAVAILABLE too. Both are followed on
+            # from the last cursor. Any other failure is the caller's to see.
+            if err.code != grpc.StatusCode.UNAVAILABLE:
+                raise
         # The stream ended without the job ending: read the job, which may have
         # ended in an event the stream did not carry, and follow on.
         job = client.jobs.GetJob(job_pb2.GetJobRequest(tenant=tenant, id=made.id)).job
+        if job.state not in ENDED:
+            time.sleep(PAUSE)
 
 
 def main(argv: list) -> int:

@@ -200,11 +200,13 @@ service SenderService {
   // handshake when it has TLS, an association that proposes the
   // Verification SOP Class (PS3.4 Annex A), a C-ECHO, and the release. A
   // stow sender: its host resolved and checked, a connection, the TLS
-  // handshake for https, and a request that stores nothing (an HTTP OPTIONS
-  // of the URL's studies resource, which a DICOMweb service answers with
-  // what it supports, PS3.18), passed when the peer answers it with any
-  // status but 401, 403, 407 or a 5xx, so a peer that does not support the
-  // method still shows it is there and takes the credential. A sender that
+  // handshake for https, and a request that stores nothing: a search for
+  // studies, GET <url>/studies?limit=1 with Accept application/dicom+json
+  // (QIDO-RS, PS3.18 10.6), which a DICOMweb service answers 200 or 204. It
+  // passes only on a 2xx answer: a redirect fails it (it is not followed),
+  // 404 fails it as a URL that does not name a DICOMweb service, 401, 403
+  // and 407 as a credential the peer does not take, and a 5xx as a peer
+  // failing. The step's detail names the HTTP status. A sender that
   // fails a step is a result, not an error: the method succeeds and the
   // failed step says why, from a fixed list; the steps after it are
   // answered skipped, except the release, which is tried whenever an
@@ -357,7 +359,12 @@ message DimseSender {
 // credential: it refuses no instance, and is a connection that failed
 // (SENDER_FAULT_REJECTED), counted toward the sender's health like one
 // that could not be made, so a credential that is mended sends what was
-// held back.
+// held back. An answer of 404 says the URL names no DICOMweb service, and
+// a redirect is not followed: each is likewise a failure of the sender
+// (SENDER_FAULT_WRONG_ANSWER), never a refusal of the instances, so a
+// mistyped URL that is mended sends what was held back. Another 4xx
+// answer to the whole request, with no account of each instance, refuses
+// its instances as JOB_FAILURE_CODE_PEER_REFUSED with the HTTP status.
 message StowSender {
   // The base URL of the peer's DICOMweb service, such as
   // "https://pacs2.lab.example/dicom-web"; requests go to <url>/studies.
@@ -555,7 +562,8 @@ enum SenderFault {
 
   // The peer answered something the protocol does not allow, aborted the
   // association (A-ABORT, PS3.8 9.3.8), or, for a stow sender, answered a
-  // 5xx, a redirect or a body that is not what PS3.18 10.5.3 describes.
+  // 5xx, a redirect, 404 (the URL names no DICOMweb service) or a body that
+  // is not what PS3.18 10.5.3 describes.
   SENDER_FAULT_WRONG_ANSWER = 6;
 }
 

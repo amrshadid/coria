@@ -14,7 +14,10 @@
  */
 import { JobState, type Job } from "../src/gen/coria/v1/job_pb.js";
 import { EventType } from "../src/gen/coria/v1/monitor_pb.js";
-import { createCoriaClient } from "../src/node.js";
+import { Code, CoriaError, createCoriaClient } from "../src/node.js";
+
+/** How long to wait before following the feed again after a stream ended without the job ending. */
+const PAUSE_MS = 1000;
 
 /** The states a job never leaves. */
 const ENDED = new Set<JobState>([JobState.DONE, JobState.PARTIAL, JobState.FAILED, JobState.CANCELED]);
@@ -48,8 +51,9 @@ export function describe(job: Job): string {
  * feed that concerns it, the last time as it ended.
  *
  * The feed's position is taken before the job is made, so no event of the job
- * is missed; an event of another job is passed over. A stream the server ends
- * is followed again from the last event seen.
+ * is missed; an event of another job is passed over. A stream the server ends,
+ * cleanly or as UNAVAILABLE as it does when the stream's deadline passes, is
+ * followed again from the last event seen.
  */
 export async function* followJob(client: ReturnType<typeof createCoriaClient>, o: FollowOptions): AsyncGenerator<Job> {
   const scope = { kind: { case: "tenant", value: o.tenant } } as const;
@@ -68,29 +72,41 @@ export async function* followJob(client: ReturnType<typeof createCoriaClient>, o
       { scope, cursor, types: [EventType.JOB_STEP, EventType.JOB_PROGRESS] },
       { signal: o.signal },
     );
-    for await (const message of stream) {
-      if (message.kind.case === "keepAlive") {
-        // The position past events the filter left out.
-        cursor = message.kind.value.cursor || cursor;
-        continue;
+    try {
+      for await (const message of stream) {
+        if (message.kind.case === "keepAlive") {
+          // The position past events the filter left out.
+          cursor = message.kind.value.cursor || cursor;
+          continue;
+        }
+        if (message.kind.case !== "event") continue;
+        const event = message.kind.value;
+        cursor = event.cursor;
+        const p = event.payload;
+        if (p.case === "jobStep" && p.value.job === made!.id) {
+          job = { ...made!, state: p.value.state, counts: p.value.counts, reason: p.value.reason };
+        } else if (p.case === "jobProgress" && p.value.job === made!.id) {
+          job = { ...made!, state: job.state, counts: p.value.counts };
+        } else {
+          continue;
+        }
+        yield job;
+        if (hasEnded(job)) return;
       }
-      if (message.kind.case !== "event") continue;
-      const event = message.kind.value;
-      cursor = event.cursor;
-      const p = event.payload;
-      if (p.case === "jobStep" && p.value.job === made!.id) {
-        job = { ...made!, state: p.value.state, counts: p.value.counts, reason: p.value.reason };
-      } else if (p.case === "jobProgress" && p.value.job === made!.id) {
-        job = { ...made!, state: job.state, counts: p.value.counts };
-      } else {
-        continue;
-      }
-      yield job;
-      if (hasEnded(job)) return;
+    } catch (err) {
+      // The server ends a stream at any time, and at the latest when its
+      // deadline passes (30 seconds unless the call sets one), answering
+      // UNAVAILABLE ("the stream ended; resume from its last cursors"); a
+      // connection that dropped is UNAVAILABLE too. Both are followed on from
+      // the last cursor. Any other failure, or the caller's own abort, is the
+      // caller's to see.
+      if (o.signal?.aborted || !(err instanceof CoriaError) || err.code !== Code.Unavailable) throw err;
     }
     // The stream ended without the job ending: read the job, which may have
     // ended in an event the stream did not carry, and follow on.
     job = (await client.jobs.getJob({ tenant: o.tenant, id: made!.id })).job!;
+    // A pause, so a server that ends streams at once is not asked in a tight loop.
+    if (!hasEnded(job)) await new Promise((r) => setTimeout(r, PAUSE_MS));
   }
 }
 

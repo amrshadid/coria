@@ -12,6 +12,7 @@ import { findStorescu, STUDY } from "./archive.js";
 import { freePort, Server } from "./server.js";
 
 const TENANT = "sending";
+const STREAM_DEADLINE = 2;
 const storescu = findStorescu();
 
 /** The path of dcmtk's storescp, or undefined when it is not installed. */
@@ -54,7 +55,10 @@ describe.skipIf(!storescu || !storescp)("following a send job", () => {
   let subject = "";
 
   beforeAll(async () => {
-    server = await Server.start(inject("binary"));
+    // The server ends a stream whose call set no deadline after STREAM_DEADLINE
+    // seconds instead of the contract's 30, as it ends every stream at its
+    // deadline, so a job followed for longer crosses several streams in seconds.
+    server = await Server.start(inject("binary"), "--default-deadline", `${STREAM_DEADLINE}s`);
     roots = join(server.work, "roots");
     received = mkdtempSync(join(tmpdir(), "cor-ts-peer."));
     mkdirSync(roots);
@@ -125,6 +129,24 @@ describe.skipIf(!storescu || !storescp)("following a send job", () => {
     expect(sent.size).toBe(STUDY.length);
     for (const [uid, file] of sent) expect(readFileSync(file).equals(dataSetOf(stored.get(uid)!))).toBe(true);
   });
+
+  it("follows a job for longer than the stream's deadline, across the streams the server ends", async () => {
+    server.cli("sender", "set", TENANT, "peer", "--enabled=false");
+    // The job waits, queued, while its sender is stopped; it is started again
+    // after several stream deadlines have passed.
+    const enable = setTimeout(() => server.cli("sender", "set", TENANT, "peer", "--enabled"), 3 * STREAM_DEADLINE * 1000);
+    const started = Date.now();
+    const updates: Job[] = [];
+    try {
+      for await (const job of followJob(client, { tenant: TENANT, sender: "peer", subject })) updates.push(job);
+    } finally {
+      clearTimeout(enable);
+    }
+    expect(Date.now() - started).toBeGreaterThan(3 * STREAM_DEADLINE * 1000);
+    expect(updates[0]!.state).toBe(JobState.QUEUED);
+    expect(updates.at(-1)!.state).toBe(JobState.DONE);
+    expect(updates.at(-1)!.counts?.instancesSent).toBe(BigInt(STUDY.length));
+  }, 60_000);
 
   it("run as a program prints each step and ends zero; a target that is not one is refused", async () => {
     const lines: string[] = [];

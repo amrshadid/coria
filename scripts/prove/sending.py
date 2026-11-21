@@ -13,7 +13,8 @@ run ends with the numbers it measured and the counts, and exits 1 when one
 failed.
 
   sending.py --go GO --dcmtk DIR --orthanc URL --orthanc-dimse AET@HOST:PORT
-             [--orthanc-logs COMMAND] [--many N]                (make prove-sending)
+             [--orthanc-logs COMMAND] [--many N]
+             [--postgres URL --psql COMMAND]                    (make prove-sending)
 
 URL is Orthanc's REST API, such as http://127.0.0.1:8042, without
 authentication; its DICOMweb plugin must be on, and its DIMSE port must
@@ -30,6 +31,11 @@ orthanc": an instance sent twice is discarded by Orthanc and seen only
 there, so without it the checks of how many were sent twice are skipped.
 The proof sets Orthanc's log level to verbose for the run and puts it back.
 --many is the size of the session stopped midway (400 by default).
+--postgres (postgres://USER:PASSWORD@HOST:PORT/DB) and --psql (a command that
+runs psql against that server, such as "docker exec -i CONTAINER psql -U
+postgres") add a tenant on Postgres, in a database the proof makes and drops,
+whose send is killed with signal 9 midway; without them that check is skipped.
+openssl makes the throwaway authority of the check over TLS.
 
 Needs: Go, dcmtk's storescu (pynetdicom installs a program of the same
 name), and a Python with pydicom and pynetdicom
@@ -49,6 +55,8 @@ import time
 
 from pydicom import dcmread
 
+import sending_faults
+import sending_numbers
 import sendkit
 from sendkit import CT, OTHERS, Orthanc, Peer, archived, corpus_path, many, read_bytes, rewrite, split_part10
 
@@ -74,6 +82,7 @@ class Proof:
         self.bin = os.path.join(self.work, "coria")
         self.roots = os.path.join(self.work, "roots", "fast")
         self.server = None
+        self.api_port = 0  # the server's network listener, for the calls made with a key
         self.counts = {"ok": 0, "FAIL": 0, "skip": 0}
         self.numbers = []
 
@@ -108,7 +117,8 @@ class Proof:
 
     def serve(self):
         log = open(os.path.join(self.work, "serve.log"), "a")
-        self.server = subprocess.Popen([self.bin, "--data-dir", self.data, "serve"], stdout=log, stderr=log)
+        listen = ["--listen", "127.0.0.1:%d" % self.api_port] if self.api_port else []
+        self.server = subprocess.Popen([self.bin, "--data-dir", self.data, "serve", *listen], stdout=log, stderr=log)
         for _ in range(300):
             if self.server.poll() is not None:
                 raise SystemExit("the server exited at its start; see serve.log")
@@ -131,6 +141,9 @@ class Proof:
             except subprocess.TimeoutExpired:
                 self.server.kill()
                 self.server.wait()
+
+    def counts_of(self, j):
+        return counts(j)
 
     # ---- the archive ----
 
@@ -194,7 +207,7 @@ class Proof:
         return new
 
     def get(self, job):
-        return self.mj("job", "get", "lab", job)["job"]
+        return self.mj("job", "show", "lab", job)["job"]
 
     def wait_job(self, job, timeout=300, until=ENDED):
         deadline = time.time() + timeout
@@ -213,13 +226,6 @@ def free_ports(n):
     for s in socks:
         s.close()
     return ports
-
-
-def seconds(j):
-    """A job's time from its start to its end, by the times it answers."""
-    def t(v):
-        return time.mktime(time.strptime(v[:19], "%Y-%m-%dT%H:%M:%S")) + float("0." + (v[20:].rstrip("Z") or "0"))
-    return t(j["endTime"]) - t(j["startTime"])
 
 
 def counts(j):
@@ -281,23 +287,6 @@ def whole_session(p, orthanc, port):
              len({str(dcmread(f, stop_before_pixels=True).SeriesInstanceUID) for f in files})), flush=True)
     send_session(p, orthanc, "1 a whole session sent by DIMSE arrives in Orthanc complete and equal", "orthanc", held, labels)
     send_session(p, orthanc, "2 a whole session sent by STOW-RS arrives in Orthanc complete and equal", "web", held, labels)
-
-
-def bench(p, orthanc, port):
-    """The numbers: one session of 400 instances in 4 series, sent by each sender."""
-    files, study = many(os.path.join(sendkit.CORPUS, CT[0]), os.path.join(p.work, "studies", "bench"), 400, "PRV-SEND-BENCH", series=4)
-    held, labels = p.archive(port, files, study)
-    size = sum(len(b) for b in held.values())
-    for sender, how in (("orthanc", "DIMSE"), ("web", "STOW-RS")):
-        orthanc.clear()
-        j = p.wait_job(p.job(sender, "%s/%s" % labels))
-        took = seconds(j)
-        good = j["state"] == "JOB_STATE_DONE" and orthanc.count() == len(held)
-        p.result("B %s: instances per second" % how, good, "%d instances (%.1f MiB) in %.2f s from the job's start to its end: "
-                 "%.0f instances/s, %.2f MiB/s; Orthanc holds %d" % (len(held), size / 2**20, took, len(held) / took,
-                                                                    size / 2**20 / took, orthanc.count()))
-        p.numbers.append("%s, %d instances of %.1f KiB in 4 series, 2 associations (requests): %.0f instances/s, %.2f MiB/s"
-                         % (how, len(held), size / len(held) / 1024, len(held) / took, size / 2**20 / took))
 
 
 def restart(p, orthanc, port):
@@ -508,6 +497,8 @@ def main():
     ap.add_argument("--pydicom-corpus", default=os.environ.get("PYDICOM_TEST_FILES", ""),
                     help="pydicom's test files, for the files this repository's corpus lacks (default: the installed pydicom's)")
     ap.add_argument("--many", type=int, default=400)
+    ap.add_argument("--postgres", default="", help="a Postgres server's address, postgres://USER:PASSWORD@HOST:PORT/DB, for a tenant on Postgres")
+    ap.add_argument("--psql", default="", help='the command that runs psql against it, such as "docker exec -i CONTAINER psql -U postgres"')
     args = ap.parse_args()
     if not args.pydicom_corpus:
         from pydicom.data import get_testdata_file
@@ -523,7 +514,7 @@ def main():
     try:
         subprocess.run([args.go, "build", "-o", p.bin, os.path.join(sendkit.ROOT, "cmd", "coria")], check=True)
         orthanc.verbose()
-        scan_port, fwd_port, deid_port, peer_port = free_ports(4)
+        scan_port, fwd_port, deid_port, peer_port, tls_port, later_port, dmg_port, pg_port, p.api_port = free_ports(9)
         rest = args.orthanc.split("://", 1)[1].split("/", 1)[0]
         rest_port = rest.rpartition(":")[2] or "80"
         p.m("init")
@@ -532,16 +523,33 @@ def main():
         p.m("setting", "set", "storage.directory-roots", "fast=" + p.roots)
         p.m("tenant", "create", "lab")
         p.m("setting", "set", "receiver.ports", "%d,%d,%d" % (scan_port, fwd_port, deid_port), "--tenant", "lab")
+        # A server started again (by p.serve) listens on the network too, for
+        # the calls a key makes.
+        p.end(signal.SIGTERM)
+        p.serve()
         p.m("setting", "set", "receiver.allow-as-received", "true", "--tenant", "lab")
         p.m("storage", "add", "lab", "main", "--type", "dir", "--root", "fast", "--path", "main")
-        p.m("setting", "set", "sender.destinations", "%s ports=%s,%s,%d" % (o_host, o_port, rest_port, peer_port)
-            + ("" if o_host == "127.0.0.1" else "\n127.0.0.1 ports=%d" % peer_port))
+        local = "%d,%d,%d,%d" % (peer_port, tls_port, later_port, dmg_port)
+        p.m("setting", "set", "sender.destinations", ("%s ports=%s,%s,%s" % (o_host, o_port, rest_port, local)) if o_host == "127.0.0.1"
+            else "%s ports=%s,%s\n127.0.0.1 ports=%s" % (o_host, o_port, rest_port, local))
         p.m("setting", "set", "sender.allow-plain-http", "true")
         dimse = ["--type", "dimse", "--host", o_host, "--port", o_port, "--called-aet", aet, "--calling-aet", "CORIA", "--enabled"]
         p.m("sender", "add", "lab", "orthanc", *dimse)
         p.m("sender", "add", "lab", "slow", *dimse, "--max-associations", "1", "--max-bytes-per-second", "64KiB")
         p.m("sender", "add", "lab", "web", "--type", "stow", "--url", args.orthanc.rstrip("/") + "/dicom-web",
             "--authentication", "none", "--enabled")
+        for n in (1, 2, 4):
+            p.m("sender", "add", "lab", "o%d" % n, *dimse, "--max-associations", str(n))
+            p.m("sender", "add", "lab", "w%d" % n, "--type", "stow", "--url", args.orthanc.rstrip("/") + "/dicom-web",
+                "--authentication", "none", "--max-associations", str(n), "--enabled")
+        # A stow sender with a bearer token (Orthanc ignores it), whose
+        # credential is searched for everywhere at the end.
+        token = "prove-token-%d-not-a-real-secret" % os.getpid()
+        token_file = os.path.join(p.work, "token")
+        with open(os.open(token_file, os.O_WRONLY | os.O_CREAT, 0o600), "w") as f:
+            f.write(token + "\n")
+        p.m("sender", "add", "lab", "webauth", "--type", "stow", "--url", args.orthanc.rstrip("/") + "/dicom-web",
+            "--authentication", "bearer", "--credential-file", token_file, "--enabled")
         p.m("sender", "add", "lab", "peer", "--type", "dimse", "--host", "127.0.0.1", "--port", str(peer_port),
             "--called-aet", "PEER", "--calling-aet", "CORIA", "--enabled")
         for s in ("orthanc", "web"):
@@ -555,11 +563,23 @@ def main():
         peer = Peer(peer_port)
 
         whole_session(p, orthanc, scan_port)
-        bench(p, orthanc, scan_port)
+        sending_numbers.bench(p, orthanc, scan_port)
         held, labels = restart(p, orthanc, scan_port)
-        refusal(p, peer, *forwarding(p, orthanc, fwd_port))
+        fwd_held, fwd_labels = forwarding(p, orthanc, fwd_port)
+        refusal(p, peer, fwd_held, fwd_labels)
         cancel_retry(p, orthanc, held, labels)
         deidentified(p, orthanc, deid_port)
+        orthanc.clear()
+        sending_faults.over_tls(p, tls_port, fwd_held, fwd_labels)
+        sending_faults.down_then_up(p, later_port, fwd_held, fwd_labels)
+        sending_faults.damaged(p, dmg_port, scan_port)
+        sending_faults.resources_then_retry(p, peer, fwd_held, fwd_labels)
+        orthanc.clear()
+        j = p.wait_job(p.job("webauth", "%s/%s" % fwd_labels))
+        p.result("12 a stow sender with a bearer token sends", j["state"] == "JOB_STATE_DONE", "job %s (%s)" % (j["state"], counts(j)))
+        sending_faults.secrets(p, token)
+        sending_faults.refusals(p, p.api_port, fwd_labels)
+        sending_faults.on_postgres(p, orthanc, pg_port, aet, o_host, o_port)
     finally:
         p.stop()
         if peer:

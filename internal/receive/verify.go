@@ -78,6 +78,9 @@ func (p *Pipeline) verify(ctx context.Context, w tenant.Work) error {
 		if _, err := p.step(ctx, w, tenant.ReceptionStep{ID: r.ID, From: reception.Verified, Event: reception.Finish}); err != nil {
 			return err
 		}
+		if p.cfg.Forwarded != nil {
+			p.cfg.Forwarded()
+		}
 	}
 	p.at("verify.after-finish")
 	return p.complete(ctx, w, nil)

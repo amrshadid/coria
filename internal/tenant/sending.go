@@ -231,7 +231,9 @@ type JobWork interface {
 	// disabled, a read slot refused), so a peer down for a day fails no
 	// job. Its lease ends, and a later write of that lease is
 	// ErrLeaseLost; its cursor and counts are kept. FailWork is the
-	// release that spends one.
+	// release that spends one. A unit whose job has ended (canceled while
+	// it sent) is not queued again: it is completed and its scan ended,
+	// counted in the job's scans done, in the same transaction.
 	ReleaseJobUnit(ctx context.Context, fence WorkFence, due time.Time, reason string, now time.Time) error
 }
 

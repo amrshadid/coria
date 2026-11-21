@@ -430,7 +430,8 @@ message JobFailure {
 
   // The peer's code for it: a DIMSE peer's C-STORE status (PS3.7 Annex C),
   // or a stow peer's Failure Reason or Warning Reason; for a stow request
-  // refused whole, its HTTP status. Zero when the peer gave none.
+  // refused whole, its HTTP status, and then peer_status_http is true. Zero
+  // when the peer gave none.
   int32 peer_status = 6;
 
   // Its SOP Class UID (0008,0016), as received, so a class the peer does
@@ -448,6 +449,12 @@ message JobFailure {
 
   // When it was refused, or sent.
   google.protobuf.Timestamp time = 10;
+
+  // Whether peer_status is an HTTP status (RFC 9110 15), of a stow request
+  // the peer refused whole with no account of each instance, rather than a
+  // DICOM status. A client shows an HTTP status in decimal and a DICOM
+  // status in hexadecimal, so 404 is never read as 0194.
+  bool peer_status_http = 11;
 }
 
 // CreateJobRequest is the job to make.

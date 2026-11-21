@@ -41,16 +41,19 @@ type stowSite struct {
 	storage  string
 	child    *child
 	hc       *http.Client
+	// serveArgs are flags given to serve after the data directory and the
+	// address, such as a shorter default deadline.
+	serveArgs []string
 }
 
 // newSTOWSite starts serve on a new installation listening on loopback,
 // with tenant stow1, a directory storage, two keys with writer on the
 // tenant and a stow receiver that lists the first, whose largest file is
 // maxFile bytes and quiet period 5 seconds. It waits until the receiver
-// is up.
-func newSTOWSite(t *testing.T, maxFile int) *stowSite {
+// is up. serveArgs are given to serve as well.
+func newSTOWSite(t *testing.T, maxFile int, serveArgs ...string) *stowSite {
 	t.Helper()
-	s := &stowSite{t: t, dataDir: shortDir(t), tenant: "stow1"}
+	s := &stowSite{t: t, dataDir: shortDir(t), tenant: "stow1", serveArgs: serveArgs}
 	if _, err := run(t, nil, "init", "--data-dir", s.dataDir); err != nil {
 		t.Fatal(err)
 	}
@@ -84,13 +87,29 @@ func newSTOWSite(t *testing.T, maxFile int) *stowSite {
 // until it answers.
 func (s *stowSite) start() {
 	s.t.Helper()
-	s.child = startChildEnv(s.t, []string{childRealEnv + "=1"}, "serve", "--data-dir", s.dataDir, "--listen", s.listen)
+	s.child = startChildEnv(s.t, []string{childRealEnv + "=1"}, append([]string{"serve", "--data-dir", s.dataDir, "--listen", s.listen}, s.serveArgs...)...)
 	waitServing(s.t, s.dataDir, s.child)
 	if s.hc != nil {
 		s.hc.CloseIdleConnections()
 	}
 	s.hc = socketClient(s.dataDir)
+	if len(s.serveArgs) > 0 {
+		// A server given flags of its own may answer a call that sends no
+		// deadline sooner than the setup's calls take; they send one, as a
+		// client with a deadline does.
+		s.hc.Transport = withDeadline{s.hc.Transport}
+	}
 	s.t.Cleanup(s.hc.CloseIdleConnections)
+}
+
+// withDeadline sends every request with a Connect deadline of a minute.
+type withDeadline struct{ next http.RoundTripper }
+
+// RoundTrip implements http.RoundTripper.
+func (d withDeadline) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Connect-Timeout-Ms", "60000")
+	return d.next.RoundTrip(r)
 }
 
 // makeKey makes a key with writer on the site's tenant, as the local

@@ -205,6 +205,59 @@ func testJobReleased(e *senv) {
 	}
 }
 
+// testJobReleasedAfterItEnded guards a unit given back after its job ended
+// (canceled while the unit sent, as removing its sender with its jobs
+// canceled does): the release completes the unit and ends its scan, so the
+// job counts every scan done and no queued unit is left that nobody would
+// ever claim; a listing unit given back after a cancel is completed too.
+func testJobReleasedAfterItEnded(e *senv) {
+	_, target := e.setup("orthanc", 2, 2)
+	e.createJob("j1", "orthanc", target, at(3600))
+	e.list("orthanc", at(3600))
+	now := at(3700)
+	w := e.claim("orthanc", "w", now)
+	_, err := e.p.StartJobUnit(e.ctx, w.Fence(), now)
+	e.ok("StartJobUnit", err)
+	ins := e.instances(w, "")
+	_, err = e.p.RecordJobProgress(e.ctx, progress(w, "", ins[:1], 0, allSent, now))
+	e.ok("RecordJobProgress", err)
+	canceled, err := e.p.CancelJob(e.ctx, "j1", now.Add(time.Second), e.audit(), nil)
+	e.ok("CancelJob", err)
+	if canceled.Counts.ScansDone != 1 {
+		e.Fatalf("the cancel ended %d scans, want the one no worker held", canceled.Counts.ScansDone)
+	}
+	if err := e.p.ReleaseJobUnit(e.ctx, w.Fence(), now.Add(2*time.Second), "sender removed", now.Add(2*time.Second)); err != nil {
+		e.Fatalf("ReleaseJobUnit of a canceled job's unit: %v", err)
+	}
+	j, err := e.p.Job(e.ctx, "j1")
+	e.ok("Job", err)
+	if j.State != tenant.JobCanceled || j.Counts.ScansDone != j.Counts.Scans || j.Counts.InstancesSent != 1 {
+		e.Errorf("after the release the job reads %+v (%s), want canceled with scans 2 of 2 and its one sent kept", j.Counts, j.State)
+	}
+	got, err := e.p.Work(e.ctx, w.ID)
+	e.ok("Work", err)
+	if got.State != tenant.WorkDone {
+		e.Errorf("the unit given back after its job ended is %s, want done", got.State)
+	}
+	if left, err := e.p.ClaimWork(e.ctx, tenant.SendKind("orthanc"), "w", now.Add(time.Hour), time.Minute); fault.KindOf(err) != fault.NotFound {
+		e.Errorf("a unit of the canceled job is still claimed: %+v (%v)", left, err)
+	}
+
+	// A listing unit given back after its job was canceled.
+	e.createJob("j2", "orthanc", target, at(7200))
+	l := e.claim("orthanc", "lister", at(7300))
+	_, err = e.p.StartJobUnit(e.ctx, l.Fence(), at(7300))
+	e.ok("StartJobUnit of the listing", err)
+	_, err = e.p.CancelJob(e.ctx, "j2", at(7301), e.audit(), nil)
+	e.ok("CancelJob of j2", err)
+	if err := e.p.ReleaseJobUnit(e.ctx, l.Fence(), at(7302), "sender disabled", at(7302)); err != nil {
+		e.Fatalf("ReleaseJobUnit of a canceled job's listing: %v", err)
+	}
+	if got, err := e.p.Work(e.ctx, l.ID); err != nil || got.State != tenant.WorkDone {
+		e.Errorf("the listing given back after its job ended is %+v (%v), want done", got.State, err)
+	}
+}
+
 // testJobOwed guards an instance the peer leaves unaccounted: the cursor
 // moves past it and it is kept owed, so a crash after that write resends at
 // most the batch after the cursor, and the next attempt is told what it

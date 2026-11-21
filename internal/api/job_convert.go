@@ -53,7 +53,7 @@ func jobFailureMessage(f tenant.JobFailure) *v1.JobFailure {
 	return &v1.JobFailure{
 		InstanceId: f.SOPInstanceUID, SubjectLabel: f.Path.Subject, SessionLabel: f.Path.Session, ScanLabel: f.Path.Scan,
 		Code:       enumOf[v1.JobFailureCode](v1.JobFailureCode_value, "JOB_FAILURE_CODE_", string(f.Code)),
-		PeerStatus: f.PeerStatus, SopClassUid: f.SOPClassUID, TransferSyntaxUid: f.TransferSyntaxUID,
+		PeerStatus: f.PeerStatus, PeerStatusHttp: f.HTTPStatus(), SopClassUid: f.SOPClassUID, TransferSyntaxUid: f.TransferSyntaxUID,
 		Detail: f.Detail, Time: timestamp(f.Time),
 	}
 }

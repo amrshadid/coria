@@ -110,6 +110,8 @@ type envOptions struct {
 	headerLimit Limit
 	// deid, when set, makes the receiver de-identify (deid_helpers_test.go).
 	deid *deidOptions
+	// forwarded, when set, is the pipeline's Config.Forwarded.
+	forwarded func()
 }
 
 // newEnv makes a tenant, its storage and receiver, and a started pipeline.
@@ -180,6 +182,7 @@ func newEnvAt(t testing.TB, dataDir string, start time.Time, opts envOptions) *e
 		},
 		IncomingRoot: filepath.Join(e.dataDir, "incoming"), Workers: workers, Lease: 30 * time.Second,
 		PollInterval: 2 * time.Second, BatchInterval: 5 * time.Second, RetryInterval: 20 * time.Second,
+		Forwarded: opts.forwarded,
 	}
 	if opts.deid != nil {
 		e.setUpDeid(opts.deid)

@@ -137,6 +137,19 @@ func (h *health) probeDue(now time.Time) bool {
 	return true
 }
 
+// untilProbe returns how long after now the peer of a sender down for its
+// failures is due to be tried again, and false when no try is due: the
+// sender is not down for its failures, or a worker tries it now. A try
+// already due is zero.
+func (h *health) untilProbe(now time.Time) (time.Duration, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.probing || h.h.State != tenant.SenderDown || h.h.DownReason != tenant.SenderDownPeerFailing {
+		return 0, false
+	}
+	return max(h.h.NextTry.Sub(now), 0), true
+}
+
 // probed ends a try of the peer.
 func (h *health) probed() {
 	h.mu.Lock()

@@ -123,7 +123,7 @@ class Job(_message.Message):
     def __init__(self, id: _Optional[str] = ..., send: _Optional[_Union[SendJob, _Mapping]] = ..., state: _Optional[_Union[JobState, str]] = ..., counts: _Optional[_Union[JobCounts, _Mapping]] = ..., reason: _Optional[str] = ..., created_by_key_id: _Optional[str] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., state_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., end_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., retry_of: _Optional[str] = ..., retry_job: _Optional[str] = ..., failures_not_listed: _Optional[int] = ...) -> None: ...
 
 class JobFailure(_message.Message):
-    __slots__ = ("instance_id", "subject_label", "session_label", "scan_label", "code", "peer_status", "sop_class_uid", "transfer_syntax_uid", "detail", "time")
+    __slots__ = ("instance_id", "subject_label", "session_label", "scan_label", "code", "peer_status", "sop_class_uid", "transfer_syntax_uid", "detail", "time", "peer_status_http")
     INSTANCE_ID_FIELD_NUMBER: _ClassVar[int]
     SUBJECT_LABEL_FIELD_NUMBER: _ClassVar[int]
     SESSION_LABEL_FIELD_NUMBER: _ClassVar[int]
@@ -134,6 +134,7 @@ class JobFailure(_message.Message):
     TRANSFER_SYNTAX_UID_FIELD_NUMBER: _ClassVar[int]
     DETAIL_FIELD_NUMBER: _ClassVar[int]
     TIME_FIELD_NUMBER: _ClassVar[int]
+    PEER_STATUS_HTTP_FIELD_NUMBER: _ClassVar[int]
     instance_id: str
     subject_label: str
     session_label: str
@@ -144,7 +145,8 @@ class JobFailure(_message.Message):
     transfer_syntax_uid: str
     detail: str
     time: _timestamp_pb2.Timestamp
-    def __init__(self, instance_id: _Optional[str] = ..., subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., code: _Optional[_Union[JobFailureCode, str]] = ..., peer_status: _Optional[int] = ..., sop_class_uid: _Optional[str] = ..., transfer_syntax_uid: _Optional[str] = ..., detail: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+    peer_status_http: bool
+    def __init__(self, instance_id: _Optional[str] = ..., subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., code: _Optional[_Union[JobFailureCode, str]] = ..., peer_status: _Optional[int] = ..., sop_class_uid: _Optional[str] = ..., transfer_syntax_uid: _Optional[str] = ..., detail: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., peer_status_http: _Optional[bool] = ...) -> None: ...
 
 class CreateJobRequest(_message.Message):
     __slots__ = ("tenant", "send")

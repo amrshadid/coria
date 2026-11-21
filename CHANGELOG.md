@@ -8,6 +8,14 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- `job get` is now `job show` (`get` remains as an alias). The stow probe and
+  `sender test` send `GET <url>/studies?limit=1` (QIDO-RS) and pass only on
+  a 2xx answer; a redirect, 404 (the URL names no DICOMweb service),
+  401/403/407 and 5xx each fail it, and a whole STOW request answered 404
+  fails the sender instead of refusing its instances. `private-address` no
+  longer admits link-local addresses, and 169.254.169.254 and fd00:ec2::254
+  are never a destination. A credential file others may read is refused as
+  a credential file, not a key file.
 - An instance whose file meta information cannot be read, or that names
   another SOP class or instance than its data set, is refused with the new
   code `JOB_FAILURE_CODE_META_UNREADABLE` (`meta_unreadable`) instead of
@@ -61,6 +69,15 @@ All notable changes to CORIA are written here. The form is
   where a held instance is on another storage than its scan.
 
 ### Fixed
+
+- `job watch` and the Python and TypeScript follow-a-job examples no longer
+  stop when the server ends a stream at its 30-second deadline. A unit given
+  back after its job ended (a sender removed with `--cancel-jobs`, or a job
+  canceled then its sender disabled) is completed and its scan counted,
+  instead of staying queued with the job stuck one scan short. An idle
+  sender tries a down peer when its next try is due, and a forward made by a
+  reception and a tenant's removal reach the senders at once. `sender show`
+  prints no TLS line for an http:// stow sender.
 
 - A pipeline's start gives back only the work units of its own kinds that a
   stopped process left leased. It gave back every leased unit, including a
@@ -284,6 +301,16 @@ All notable changes to CORIA are written here. The form is
   share one bound of 256 open reads, of which the senders hold at most half;
   TestSender tries the peer; the senders take up a new, canceled or retried
   job at once.
+- `coria job create --wait` follows the job it makes, with the exit codes of
+  `job watch`; `coria tenant status <tenant>` shows receivers, storages, jobs
+  in progress and senders with their health; `coria watch <tenant> [--type
+  ...] [--cursor ...] [--count N]` follows a tenant's event feed.
+  `JobFailure.peer_status_http` says when a failure's status is an HTTP
+  status, which `job failures` prints as "HTTP 415" (a DICOM status in
+  hexadecimal). A `sender.destinations` line takes a `link-local` flag.
+  `BenchmarkSendScan` (`make bench-send`): 64 small instances on one
+  association to an in-process peer, about 935 instances/s by DIMSE and
+  1,080 by STOW-RS on an Apple Silicon laptop.
 - `ProfileService` is served: a tenant's de-identification profiles are made
   (admin), read, listed, exported and validated (operator) through the API,
   and `coria profile create|get|list|versions|export|validate|describe` with

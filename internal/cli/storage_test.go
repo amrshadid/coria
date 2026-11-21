@@ -157,7 +157,7 @@ func TestStorageSecretComesFromEnvOrFile(t *testing.T) {
 		want  string
 	}{
 		"unset variable":       {[]string{"--credential-env", "NOPE"}, "--credential-env names NOPE, which is not set or is empty"},
-		"file others can read": {[]string{"--credential-file", wide}, "make it private to"},
+		"file others can read": {[]string{"--credential-file", wide}, "the credential file " + wide + " may be opened by other users"},
 		"missing file":         {[]string{"--credential-file", filepath.Join(t.TempDir(), "none")}, "it does not exist"},
 		"empty file":           {[]string{"--credential-file", empty}, "is empty"},
 		"both":                 {[]string{"--credential-env", "S3SECRET", "--credential-file", empty}, "none of the others can be"},

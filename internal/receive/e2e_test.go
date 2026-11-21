@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"sync/atomic"
 	"testing"
 
 	"github.com/amrshadid/coria/internal/blob"
@@ -151,10 +152,12 @@ func sentMap(t *testing.T, names ...string) map[string][]byte {
 // SQLite driver and a directory storage: a study of public files handed in
 // ends done, every file is on the storage byte-identical, its manifest's
 // checksums match the objects, its sidecar points at each pixel data
-// element, the counts agree with what was sent, and the incoming area is
-// empty.
+// element, the counts agree with what was sent, the incoming area is
+// empty, and the step that made the reception done told the senders
+// (Config.Forwarded) once.
 func TestStudyIsArchivedByteForByte(t *testing.T) {
-	e := newEnv(t, envOptions{})
+	var forwarded atomic.Int64
+	e := newEnv(t, envOptions{forwarded: func() { forwarded.Add(1) }})
 	e.send(studyFiles...)
 	rs := e.settle(1)
 	if len(rs) != 1 || !done(rs[0]) {
@@ -179,5 +182,8 @@ func TestStudyIsArchivedByteForByte(t *testing.T) {
 	}
 	if len(e.held()) != 0 {
 		t.Fatalf("files were held: %+v", e.held())
+	}
+	if n := forwarded.Load(); n != 1 {
+		t.Errorf("the senders were told of %d finished receptions, want 1", n)
 	}
 }

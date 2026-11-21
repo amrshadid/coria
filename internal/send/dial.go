@@ -52,6 +52,7 @@ const (
 	phraseWrongAnswer     = "the peer answered what the protocol does not allow"
 	phraseServerError     = "the peer answered a server error"
 	phraseRedirect        = "the peer answered a redirect, which is not followed"
+	phraseNoService       = "the URL does not name a DICOMweb service"
 	phraseNoCredential    = "the sender's credential cannot be opened" //nolint:gosec // G101: a phrase for a person, not a credential.
 	phraseEchoNotAccepted = "the peer did not answer C-ECHO with success"
 )

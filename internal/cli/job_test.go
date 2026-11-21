@@ -55,11 +55,11 @@ func TestJobCommands(t *testing.T) {
 	}
 
 	r.fake.SetJob("lab1", "job_1", v1.JobState_JOB_STATE_RUNNING, counts(100, 40, 2, 3))
-	got := r.run("job", "get", "lab1", "job_1")
+	got := r.run("job", "show", "lab1", "job_1")
 	for label, want := range map[string]string{"State": "running", "Refused": "3, 2.9 KiB", "Remaining": "55, 53.7 KiB",
 		"Progress": "[=========>          ] 45 of 100 instances answered (45%): 40 sent, 2 with a warning, 3 refused; 55 remaining; scans 1 of 2 done"} {
 		if g := field(got.stdout, label); got.code != 0 || g != want {
-			t.Errorf("job get: %s is %q, want %q:\n%s", label, g, want, got.stdout)
+			t.Errorf("job show: %s is %q, want %q:\n%s", label, g, want, got.stdout)
 		}
 	}
 
@@ -122,8 +122,9 @@ func TestJobCommands(t *testing.T) {
 }
 
 // TestJobFailures guards the list of what a job did not send: each instance
-// with its labels, the reason in words and the peer's status in hexadecimal,
-// warnings only when asked for, and the document.
+// with its labels, the reason in words and the peer's status (a DICOM status
+// in hexadecimal, an HTTP status in decimal after "HTTP"), warnings only when
+// asked for, and the document.
 func TestJobFailures(t *testing.T) {
 	r := jobRig(t)
 	r.must("job", "create", "lab1", "--sender", "pacs", "sub-0017")
@@ -150,6 +151,15 @@ func TestJobFailures(t *testing.T) {
 	}
 	if res := r.run("job", "failures", "lab1", "job_99"); res.code != 4 {
 		t.Errorf("failures of a job that is not there: %+v", res)
+	}
+
+	// An HTTP status, of a stow request refused whole, is shown in decimal
+	// after "HTTP"; a DICOM status stays hexadecimal.
+	r.fake.AddJobFailure("lab1", "job_1", &v1.JobFailure{InstanceId: "i-3", SubjectLabel: "sub-0017", SessionLabel: "ses-1", ScanLabel: "scan-6",
+		Code: v1.JobFailureCode_JOB_FAILURE_CODE_PEER_REFUSED, PeerStatus: 415, PeerStatusHttp: true, Detail: "the peer refused the whole request", Time: at})
+	http := r.run("job", "failures", "lab1", "job_1")
+	if http.code != 0 || !strings.Contains(http.stdout, "HTTP 415") || strings.Contains(http.stdout, "019F") || !strings.Contains(http.stdout, "A900") {
+		t.Errorf("an HTTP status among the failures:\n%s", http.stdout)
 	}
 }
 

@@ -8,7 +8,8 @@ import (
 )
 
 // TestParseDestinations guards the form of sender.destinations: a host name
-// or a range with no host bits, then ports= and private-address each once,
+// or a range with no host bits, then ports=, private-address and link-local
+// each once; no line that names a cloud metadata address;
 // a flag only where it can mean something, and no line twice, so every
 // accepted value says exactly one thing.
 func TestParseDestinations(t *testing.T) {
@@ -23,6 +24,12 @@ func TestParseDestinations(t *testing.T) {
 		"192.0.2.7":                                              true,
 		"2001:db8::1 ports=104":                                  true,
 		"localhost private-address":                              true,
+		"meta.lab.example link-local":                            true,
+		"meta.lab.example private-address link-local ports=80":   true,
+		"meta.lab.example link-local link-local":                 false,
+		"169.254.0.0/16 link-local":                              false, // a range needs no flag
+		"169.254.169.254":                                        false, // the metadata address
+		"fd00:ec2::254":                                          false,
 		"10.20.0.1/24":                                           false, // host bits
 		"10.20.0.0/33":                                           false,
 		"::ffff:10.0.0.1":                                        false, // mapped
@@ -93,7 +100,9 @@ func TestParseDestinations(t *testing.T) {
 // TestDestinationsAllowed guards the check a sender is held to at the time
 // it is added and at every connection: a host is allowed by its name or, as
 // an address, by a range; a name that resolves to a special-purpose address
-// is refused unless its line says private-address; a port the line leaves
+// is refused unless its line says private-address (loopback, private) or
+// link-local (link-local); the cloud metadata addresses are refused
+// whatever a line says, a range's included; a port the line leaves
 // out is refused; an address spelled as an IPv4-mapped IPv6 address is the
 // IPv4 address it holds; and a range never admits a name.
 func TestDestinationsAllowed(t *testing.T) {
@@ -101,6 +110,10 @@ func TestDestinationsAllowed(t *testing.T) {
 		"pacs.lab.example ports=104,11112-11120",
 		"open.lab.example",
 		"local.lab.example private-address ports=4242",
+		"link.lab.example link-local",
+		"both.lab.example private-address link-local",
+		"169.254.0.0/16",
+		"fd00::/8",
 		"10.20.0.0/24 ports=104",
 		"192.0.2.7",
 		"2001:db8::/32",
@@ -140,8 +153,18 @@ func TestDestinationsAllowed(t *testing.T) {
 		{"an IPv6 address in a range", "2001:db8::5", netip.Addr{}, 104, nil},
 		{"a name is never allowed by a range", "pacs.net.example", ip("10.20.0.9"), 104, ErrDestinationNotListed},
 		{"private-address admits a shared-space address", "local.lab.example", ip("100.64.0.1"), 4242, nil},
-		{"private-address admits a link-local address", "local.lab.example", ip("169.254.169.254"), 4242, nil},
-		{"private-address admits an IPv6 link-local address", "local.lab.example", ip("fe80::1"), 4242, nil},
+		{"private-address does not admit a link-local address", "local.lab.example", ip("169.254.10.1"), 4242, ErrDestinationAddress},
+		{"private-address does not admit an IPv6 link-local address", "local.lab.example", ip("fe80::1"), 4242, ErrDestinationAddress},
+		{"private-address does not admit the IPv6 metadata address", "local.lab.example", ip("fd00:ec2::254"), 4242, ErrDestinationAddress},
+		{"link-local admits a link-local address", "link.lab.example", ip("169.254.10.1"), 80, nil},
+		{"link-local admits an IPv6 link-local address", "link.lab.example", ip("fe80::1"), 80, nil},
+		{"link-local does not admit a private address", "link.lab.example", ip("10.1.2.3"), 80, ErrDestinationAddress},
+		{"link-local never admits the metadata address", "link.lab.example", ip("169.254.169.254"), 80, ErrDestinationAddress},
+		{"link-local never admits an IPv4-mapped metadata address", "link.lab.example", ip("::ffff:169.254.169.254"), 80, ErrDestinationAddress},
+		{"both flags never admit the IPv6 metadata address", "both.lab.example", ip("fd00:ec2::254"), 80, ErrDestinationAddress},
+		{"a range never admits the metadata address", "169.254.169.254", netip.Addr{}, 80, ErrDestinationAddress},
+		{"a range admits its other link-local addresses", "169.254.1.1", netip.Addr{}, 80, nil},
+		{"a range never admits the IPv6 metadata address", "fd00:ec2::254", netip.Addr{}, 80, ErrDestinationAddress},
 		{"private-address admits a unique local address", "local.lab.example", ip("fd00::1"), 4242, nil},
 		{"private-address admits a private address", "local.lab.example", ip("192.168.1.1"), 4242, nil},
 		{"private-address admits a public address", "local.lab.example", ip("8.8.8.8"), 4242, nil},

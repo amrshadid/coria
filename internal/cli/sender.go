@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -157,9 +158,13 @@ func (a *app) senderDetails(w io.Writer, s *v1.Sender) error {
 		if st.GetHeaderName() != "" {
 			pairs = append(pairs, output.Pair{Label: "Header name", Value: st.GetHeaderName()})
 		}
+		pairs = append(pairs, output.Pair{Label: "Credential held", Value: yesNo(st.GetCredentialSet())})
+		// A plain http URL has no TLS to describe: a line naming roots
+		// would say it is checked when nothing is.
+		if !strings.HasPrefix(strings.ToLower(st.GetUrl()), "http://") {
+			pairs = append(pairs, output.Pair{Label: "TLS", Value: tlsText(st.GetTls(), "the system's roots")})
+		}
 		pairs = append(pairs,
-			output.Pair{Label: "Credential held", Value: yesNo(st.GetCredentialSet())},
-			output.Pair{Label: "TLS", Value: tlsText(st.GetTls(), "the system's roots")},
 			output.Pair{Label: "Max instances per request", Value: strconv.Itoa(int(st.GetMaxInstancesPerRequest()))},
 			output.Pair{Label: "Max request size", Value: output.Bytes(st.GetMaxRequestBytes())})
 	}
@@ -383,9 +388,11 @@ func (a *app) newSenderTest() *cobra.Command {
 sender: its host resolved and checked against the installation's destinations, a
 connection, the TLS handshake when it has TLS, an association that proposes the
 Verification SOP Class, a C-ECHO, and the release. A stow sender: the host
-resolved and checked, a connection, the TLS handshake, and a request that stores
-nothing (an HTTP OPTIONS of the studies resource), passed when the peer answers
-with any status but 401, 403, 407 or a 5xx.
+resolved and checked, a connection, the TLS handshake for https, and a request
+that stores nothing: a search for studies (GET <url>/studies?limit=1, QIDO-RS),
+which a DICOMweb service answers 200 or 204. Any other answer fails it: a
+redirect (not followed), 404 (the URL does not name a DICOMweb service), 401,
+403 or 407 (the credential is not taken), a 5xx (the peer is failing).
 
 The last line says in plain words what was found: that the peer accepted the
 association and answered, or the step that failed, why, and the peer's own

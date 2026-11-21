@@ -41,6 +41,7 @@ EXPECTED = {
     "tenant-create-postgres": None,
     "tenant-list": "tenants",
     "tenant-show": None,
+    "tenant-status": None,
     "tenant-remove": None,
     "key-create": None,
     "key-list": "keys",

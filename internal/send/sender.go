@@ -199,7 +199,7 @@ func (w *worker) run() {
 		case err != nil:
 			w.s.t.log.Warn("sender: looking for work failed", "sender", w.s.name, "reason", fault.Message(err))
 		}
-		t := time.NewTimer(wait)
+		t := time.NewTimer(w.idleWait(wait, sup.cfg.Now()))
 		select {
 		case <-w.quit:
 		case <-w.stop:
@@ -210,6 +210,18 @@ func (w *worker) run() {
 		}
 		t.Stop()
 	}
+}
+
+// idleWait returns how long an idle worker waits before it looks again:
+// wait, but no later than the sender's next try of a down peer (its
+// health's NextTry), so the try is made when it is due rather than up to
+// MaxPollInterval after; at least a millisecond, so a try due already is
+// not looked for in a tight loop while another worker makes it.
+func (w *worker) idleWait(wait time.Duration, now time.Time) time.Duration {
+	if d, ok := w.s.health.untilProbe(now); ok && d < wait {
+		return max(d, time.Millisecond)
+	}
+	return wait
 }
 
 // once tries the down peer when due, or claims and works one unit, and

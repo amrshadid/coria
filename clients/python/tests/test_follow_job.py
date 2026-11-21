@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 import pytest
@@ -25,6 +26,7 @@ sys.path.insert(0, str(REPO / "clients" / "python" / "examples"))
 import follow_job as example  # noqa: E402
 
 TENANT = "sending"
+STREAM_DEADLINE = 2
 
 
 def find_storescp() -> str:
@@ -57,7 +59,10 @@ def site(server, request):
     work = pathlib.Path(tempfile.mkdtemp(prefix="cor-sd."))
     # Registered before anything is started, so a setup that fails part way still stops what it started.
     request.addfinalizer(lambda: shutil.rmtree(work, ignore_errors=True))
-    srv = Server(server.binary, work)
+    # The server ends a stream whose call set no deadline after STREAM_DEADLINE
+    # seconds instead of the contract's 30, as it ends every stream at its
+    # deadline, so a job followed for longer crosses several streams in seconds.
+    srv = Server(server.binary, work, ("--default-deadline", f"{STREAM_DEADLINE}s"))
     request.addfinalizer(srv.stop)
     roots, received = work / "roots", work / "peer"
     roots.mkdir()
@@ -121,6 +126,26 @@ def test_the_example_follows_a_job_to_its_end_and_the_peer_holds_what_was_archiv
     assert len(sent) == len(STUDY) and sent.keys() == stored.keys()
     for uid, peer_file in sent.items():
         assert peer_file.read_bytes() == data_set_of(stored[uid])
+
+
+def test_the_example_follows_a_job_for_longer_than_the_streams_deadline(site):
+    """The server ends each stream as UNAVAILABLE when its deadline passes; the example follows on."""
+    srv = site["server"]
+    srv.cli("sender", "set", TENANT, "peer", "--enabled=false")
+    # The job waits, queued, while its sender is stopped; it is started again
+    # after several stream deadlines have passed.
+    enable = threading.Timer(3 * STREAM_DEADLINE, srv.cli, ("sender", "set", TENANT, "peer", "--enabled"))
+    started = time.monotonic()
+    enable.start()
+    try:
+        with coria.Client(f"127.0.0.1:{srv.port}", srv.key, tls=False) as c:
+            updates = list(example.follow_job(c, TENANT, "peer", site["subject"]))
+    finally:
+        enable.join()
+    assert time.monotonic() - started > 3 * STREAM_DEADLINE, "it followed the job across several streams"
+    assert updates[0].state == job_pb2.JOB_STATE_QUEUED
+    assert updates[-1].state == job_pb2.JOB_STATE_DONE
+    assert updates[-1].counts.instances_sent == len(STUDY)
 
 
 def test_the_example_run_from_the_command_line_prints_each_step_and_exits_zero(site):

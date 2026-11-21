@@ -527,7 +527,11 @@ func (k Sending) endQueuedUnits(ctx context.Context, tx SendingTx, r jobRow, rea
 
 // ReleaseJobUnit implements tenant.JobWork. The attempt the claim counted is
 // given back by allowing one more, never by lowering the attempt, which
-// fences every write: a lease released stays lost.
+// fences every write: a lease released stays lost. A unit whose job has
+// ended (canceled while the unit sent, as removing its sender with its jobs
+// canceled does) is completed instead, and its scan ended, in the same
+// transaction: queued again, it would be a unit nobody claims for a job
+// that never counts that scan done.
 func (k Sending) ReleaseJobUnit(ctx context.Context, fence tenant.WorkFence, due time.Time, reason string, now time.Time) error {
 	if err := fence.Validate(); err != nil {
 		return err
@@ -548,24 +552,55 @@ func (k Sending) ReleaseJobUnit(ctx context.Context, fence tenant.WorkFence, due
 		if err := tx.CheckFence(ctx, fence); err != nil {
 			return err
 		}
-		_, isScan, err := jobScanOf(ctx, tx, fence.ID, "")
+		scan, isScan, err := jobScanOf(ctx, tx, fence.ID, "")
 		if err != nil {
 			return err
 		}
+		jobID := scan.jobID
 		if !isScan {
-			jobID, err := listingJobOf(ctx, tx, fence.ID)
-			if err != nil {
+			if jobID, err = listingJobOf(ctx, tx, fence.ID); err != nil {
 				return err
 			}
 			if jobID == "" {
 				return errNotJobUnit()
 			}
 		}
+		// The job's row before its scan's, in the order of the locks.
+		r, err := jobInTx(ctx, tx, jobID, k.D.Lock)
+		if err != nil {
+			return err
+		}
+		if r.job.State.Ended() {
+			return k.endReleasedUnit(ctx, tx, fence, isScan, now)
+		}
 		_, err = tx.Exec(ctx, `UPDATE work SET state = 'queued', owner = '', due = ?, last_error = ?,
 			max_attempts = max_attempts + 1, updated = ? WHERE id = ? AND attempt = ?`,
 			k.D.Time(due), reason, k.D.Time(now), fence.ID, fence.Attempt)
 		return err
 	})
+}
+
+// endReleasedUnit completes a unit given back after its job ended, and
+// ends its scan when it is a scan's unit and the scan is still open, so the
+// ended job's scans_done counts it. The job has ended, so no event is due.
+func (k Sending) endReleasedUnit(ctx context.Context, tx SendingTx, fence tenant.WorkFence, isScan bool, now time.Time) error {
+	if err := k.completeUnit(ctx, tx, fence, now); err != nil {
+		return err
+	}
+	if !isScan {
+		return nil
+	}
+	s, _, err := jobScanOf(ctx, tx, fence.ID, k.D.lockOf("js"))
+	if err != nil || s.scan.Ended {
+		return err
+	}
+	n, err := tx.Exec(ctx, `UPDATE job_scans SET ended = ? WHERE job_id = ? AND scan_id = ? AND ended = ?`,
+		k.D.Bool(true), s.jobID, s.scanID, k.D.Bool(false))
+	if err != nil || n == 0 {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE jobs SET scans_done = scans_done + 1 WHERE id = ?`, s.jobID)
+	return err
 }
 
 // JobsInProgressSQL counts the jobs not ended by state, from

@@ -252,7 +252,8 @@ const (
 	SenderFault_SENDER_FAULT_NOT_ACCEPTED SenderFault = 5
 	// The peer answered something the protocol does not allow, aborted the
 	// association (A-ABORT, PS3.8 9.3.8), or, for a stow sender, answered a
-	// 5xx, a redirect or a body that is not what PS3.18 10.5.3 describes.
+	// 5xx, a redirect, 404 (the URL names no DICOMweb service) or a body that
+	// is not what PS3.18 10.5.3 describes.
 	SenderFault_SENDER_FAULT_WRONG_ANSWER SenderFault = 6
 )
 
@@ -759,7 +760,12 @@ func (x *DimseSender) GetTls() *SenderTls {
 // credential: it refuses no instance, and is a connection that failed
 // (SENDER_FAULT_REJECTED), counted toward the sender's health like one
 // that could not be made, so a credential that is mended sends what was
-// held back.
+// held back. An answer of 404 says the URL names no DICOMweb service, and
+// a redirect is not followed: each is likewise a failure of the sender
+// (SENDER_FAULT_WRONG_ANSWER), never a refusal of the instances, so a
+// mistyped URL that is mended sends what was held back. Another 4xx
+// answer to the whole request, with no account of each instance, refuses
+// its instances as JOB_FAILURE_CODE_PEER_REFUSED with the HTTP status.
 type StowSender struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The base URL of the peer's DICOMweb service, such as

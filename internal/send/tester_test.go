@@ -28,9 +28,12 @@ func stepsOf(steps []TestStep) string {
 // TestTestSender guards TestSender's steps (sender.proto): a DIMSE peer
 // passes resolve, connect, the association, the C-ECHO and the release,
 // with TLS skipped; one that listens nowhere fails at connect and skips the
-// rest; a stow peer passes with the OPTIONS request's HTTP status in its
-// detail, and one that refuses the credential fails it as rejected. The
-// health of the sender is not changed.
+// rest; a stow peer passes the search for studies (GET <url>/studies?limit=1
+// asking for DICOM JSON) with its HTTP status in the detail; one that
+// refuses the credential fails it as rejected; a URL that names no
+// DICOMweb service (404), one that answers a redirect, and one that
+// answers a server error each fail it, saying why. The health of the
+// sender is not changed.
 func TestTestSender(t *testing.T) {
 	f := newFixture(t)
 	f.inst.plain = true
@@ -38,7 +41,16 @@ func TestTestSender(t *testing.T) {
 	up := f.addDIMSE("up", startPeer(t, peer))
 	down := f.addDIMSE("down", freePort(t))
 	web := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodOptions || r.URL.Path != "/dicom-web/studies" {
+		switch r.URL.Path {
+		case "/moved/studies":
+			http.Redirect(w, r, "/dicom-web/studies", http.StatusMovedPermanently)
+			return
+		case "/broken/studies":
+			http.Error(w, "down", http.StatusBadGateway)
+			return
+		}
+		if r.Method != http.MethodGet || r.URL.Path != "/dicom-web/studies" || r.URL.RawQuery != "limit=1" ||
+			r.Header.Get("Accept") != "application/dicom+json" {
 			http.Error(w, "no", http.StatusNotFound)
 			return
 		}
@@ -46,11 +58,15 @@ func TestTestSender(t *testing.T) {
 			http.Error(w, "who", http.StatusUnauthorized)
 			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+		w.Header().Set("Content-Type", "application/dicom+json")
+		_, _ = w.Write([]byte("[]"))
 	}))
 	t.Cleanup(web.Close)
 	stow := f.addStow("stow", web.URL+"/dicom-web")
 	wrong := f.addStow("wrong", web.URL+"/dicom-web", func(s *tenant.Sender) { s.STOW.SealedCredential = []byte("other") })
+	typo := f.addStow("typo", web.URL+"/dicom-wbe")
+	moved := f.addStow("moved", web.URL+"/moved")
+	broken := f.addStow("broken", web.URL+"/broken")
 	s := f.start(f.config())
 	// The tenant's first reading registers its senders (after it gives
 	// back the send units a stopped process left, a write on the tenant's
@@ -70,8 +86,15 @@ func TestTestSender(t *testing.T) {
 	}{
 		{up, "resolve=passed connect=passed tls=skipped associate=passed request=passed release=passed", ""},
 		{down, "resolve=passed connect=failed(unreachable) tls=skipped associate=skipped request=skipped release=skipped", ""},
-		{stow, "resolve=passed connect=passed tls=skipped associate=skipped request=passed release=skipped", "HTTP 204"},
-		{wrong, "resolve=passed connect=passed tls=skipped associate=skipped request=failed(rejected) release=skipped", "HTTP 401"},
+		{stow, "resolve=passed connect=passed tls=skipped associate=skipped request=passed release=skipped", "HTTP 200"},
+		{wrong, "resolve=passed connect=passed tls=skipped associate=skipped request=failed(rejected) release=skipped",
+			"HTTP 401: " + phraseCredential},
+		{typo, "resolve=passed connect=passed tls=skipped associate=skipped request=failed(wrong_answer) release=skipped",
+			"HTTP 404: the URL does not name a DICOMweb service"},
+		{moved, "resolve=passed connect=passed tls=skipped associate=skipped request=failed(wrong_answer) release=skipped",
+			"HTTP 301: " + phraseRedirect},
+		{broken, "resolve=passed connect=passed tls=skipped associate=skipped request=failed(wrong_answer) release=skipped",
+			"HTTP 502: " + phraseServerError},
 	} {
 		steps, err := s.TestSender(ctx, "lab", tc.row)
 		if err != nil {

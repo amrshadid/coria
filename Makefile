@@ -367,7 +367,14 @@ PROVE_SEND_MANY     ?= 400
 .PHONY: prove-sending
 prove-sending:
 	"$(PYTHON)" scripts/prove/sending.py --go "$(GO)" --dcmtk "$(DCMTK)" --orthanc "$(PROVE_ORTHANC)" \
-		--orthanc-dimse "$(PROVE_ORTHANC_DIMSE)" --orthanc-logs "$(PROVE_ORTHANC_LOGS)" --many $(PROVE_SEND_MANY)
+		--orthanc-dimse "$(PROVE_ORTHANC_DIMSE)" --orthanc-logs "$(PROVE_ORTHANC_LOGS)" --many $(PROVE_SEND_MANY) \
+		$(if $(PROVE_POSTGRES),--postgres "$(PROVE_POSTGRES)" --psql "$(PROVE_PSQL)")
+
+# Sending's speed: a scan of 64 small instances to an in-process DIMSE and
+# STOW-RS peer, three runs of twenty jobs each.
+.PHONY: bench-send
+bench-send:
+	$(GO) test -count=3 -run '^$$' -bench '^BenchmarkSendScan$$' -benchtime 20x ./internal/send
 
 
 # The outside check of a tenant's SQLite database: the registry creates a

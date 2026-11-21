@@ -361,6 +361,19 @@ type JobFailure struct {
 	Time time.Time
 }
 
+// FailureDetailWholeRequest is the detail of an instance a stow peer
+// refused with the whole request it was in, answering an HTTP status and
+// no account of each instance (PS3.18 10.5.3): its PeerStatus is that HTTP
+// status, where every other failure's is a DICOM status. The phrase is the
+// one place the two are told apart, so a failure keeps no other field for it.
+const FailureDetailWholeRequest = "the peer refused the whole request"
+
+// HTTPStatus reports whether f's PeerStatus is an HTTP status (RFC 9110 15)
+// rather than a DICOM status (PS3.7 Annex C).
+func (f JobFailure) HTTPStatus() bool {
+	return f.Code == FailurePeerRefused && f.Detail == FailureDetailWholeRequest && f.PeerStatus != 0
+}
+
 // Validate returns an Invalid error unless f can be recorded.
 func (f JobFailure) Validate() error {
 	if err := ValidateInstanceUID(f.SOPInstanceUID); err != nil {

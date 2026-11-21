@@ -207,6 +207,9 @@ class Peer:
     def __init__(self, port, aet="PEER"):
         self.port = port
         self.statuses = {}
+        # once maps a SOP Instance UID to a status answered the first time it
+        # comes only, as a peer out of resources for a moment.
+        self.once = {}
         self.received = []
         self.lock = threading.Lock()
         ae = AE(ae_title=aet)
@@ -219,6 +222,8 @@ class Peer:
         uid = str(event.request.AffectedSOPInstanceUID)
         with self.lock:
             self.received.append(uid)
+            if uid in self.once:
+                return self.once.pop(uid)
             return self.statuses.get(uid, 0x0000)
 
     def stop(self):

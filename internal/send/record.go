@@ -46,7 +46,7 @@ const (
 	detailMetaDisagrees = "not sent: its file meta information and its data set name different SOP classes or instances"
 	detailNoMeta        = "not sent: its file meta information cannot be read, so what its data set is and where it starts are not known"
 	detailTooManyKinds  = "not sent: the scan holds more kinds of instance than one association proposes"
-	detailWholeRequest  = "the peer refused the whole request"
+	detailWholeRequest  = tenant.FailureDetailWholeRequest
 	detailWithoutStatus = "refused by the peer without a status"
 )
 

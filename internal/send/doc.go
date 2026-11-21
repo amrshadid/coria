@@ -65,7 +65,7 @@
 // after a connection that succeeded; down after three connections in a row
 // failed, with the fault of the last. While a sender is down none of its
 // units is claimed, so its jobs use none of their attempts; one worker tries
-// the peer again (C-ECHO, or an HTTP OPTIONS of the studies resource) after
+// the peer again (C-ECHO, or a QIDO-RS search of the studies resource) after
 // a wait that doubles from 10 seconds to an hour (tenant.RetryDelay). Each
 // change is a sender_health event the supervisor appends to the tenant's
 // feed.

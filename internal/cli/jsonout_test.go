@@ -67,6 +67,7 @@ func TestWriteJSONOutputs(t *testing.T) {
 		{"receiver-list", []string{"receiver", "list", "lab1"}},
 		{"receiver-show", []string{"receiver", "show", "lab1", "scanner1"}},
 		{"receiver-set", []string{"receiver", "set", "lab1", "scanner1", "--quiet-period", "5m"}},
+		{"tenant-status", []string{"tenant", "status", "lab1"}},
 		{"reception-list", []string{"reception", "list", "lab1"}},
 		{"reception-show", []string{"reception", "show", "lab1", "rcp-retry"}},
 		{"reception-retry", []string{"reception", "retry", "lab1", "rcp-retry"}},

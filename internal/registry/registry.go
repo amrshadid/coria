@@ -111,6 +111,12 @@ type Config struct {
 	// NewID makes the ids of the registry's audit entries. Nil uses 128
 	// random bits in hex.
 	NewID func() string
+	// Unregistered, when not nil, is called with a tenant's name each time
+	// the registry lets it go (it was removed, or the master no longer
+	// lists it), after it is gone from the registry and before its
+	// database is closed, so what runs for the tenant elsewhere (its
+	// sends) can stop at once. It must not block or call the registry.
+	Unregistered func(name string)
 }
 
 // State is a tenant's state as the registry sees it now.

@@ -191,11 +191,13 @@ type SenderServiceClient interface {
 	// handshake when it has TLS, an association that proposes the
 	// Verification SOP Class (PS3.4 Annex A), a C-ECHO, and the release. A
 	// stow sender: its host resolved and checked, a connection, the TLS
-	// handshake for https, and a request that stores nothing (an HTTP OPTIONS
-	// of the URL's studies resource, which a DICOMweb service answers with
-	// what it supports, PS3.18), passed when the peer answers it with any
-	// status but 401, 403, 407 or a 5xx, so a peer that does not support the
-	// method still shows it is there and takes the credential. A sender that
+	// handshake for https, and a request that stores nothing: a search for
+	// studies, GET <url>/studies?limit=1 with Accept application/dicom+json
+	// (QIDO-RS, PS3.18 10.6), which a DICOMweb service answers 200 or 204. It
+	// passes only on a 2xx answer: a redirect fails it (it is not followed),
+	// 404 fails it as a URL that does not name a DICOMweb service, 401, 403
+	// and 407 as a credential the peer does not take, and a 5xx as a peer
+	// failing. The step's detail names the HTTP status. A sender that
 	// fails a step is a result, not an error: the method succeeds and the
 	// failed step says why, from a fixed list; the steps after it are
 	// answered skipped, except the release, which is tried whenever an
@@ -322,11 +324,13 @@ type SenderServiceHandler interface {
 	// handshake when it has TLS, an association that proposes the
 	// Verification SOP Class (PS3.4 Annex A), a C-ECHO, and the release. A
 	// stow sender: its host resolved and checked, a connection, the TLS
-	// handshake for https, and a request that stores nothing (an HTTP OPTIONS
-	// of the URL's studies resource, which a DICOMweb service answers with
-	// what it supports, PS3.18), passed when the peer answers it with any
-	// status but 401, 403, 407 or a 5xx, so a peer that does not support the
-	// method still shows it is there and takes the credential. A sender that
+	// handshake for https, and a request that stores nothing: a search for
+	// studies, GET <url>/studies?limit=1 with Accept application/dicom+json
+	// (QIDO-RS, PS3.18 10.6), which a DICOMweb service answers 200 or 204. It
+	// passes only on a 2xx answer: a redirect fails it (it is not followed),
+	// 404 fails it as a URL that does not name a DICOMweb service, 401, 403
+	// and 407 as a credential the peer does not take, and a 5xx as a peer
+	// failing. The step's detail names the HTTP status. A sender that
 	// fails a step is a result, not an error: the method succeeds and the
 	// failed step says why, from a fixed list; the steps after it are
 	// answered skipped, except the release, which is tried whenever an

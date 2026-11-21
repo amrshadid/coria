@@ -16,7 +16,8 @@ import (
 const stowToken = "tok-4f9a1c7e2b8d3056-EXAMPLE-ONLY" //nolint:gosec // G101: a made-up value for a test
 
 // TestSenderCommands guards every sender command in both forms: what a
-// person reads of a DIMSE and of a stow sender, that a change names only what
+// person reads of a DIMSE and of a stow sender (a plain http one shows no
+// TLS line), that a change names only what
 // it changes, and that the credential of a stow sender is held by the server
 // and never shown.
 func TestSenderCommands(t *testing.T) {
@@ -93,6 +94,16 @@ func TestSenderCommands(t *testing.T) {
 		t.Errorf("the new credential is %q", got)
 	}
 
+	// A plain http URL has no TLS, so no TLS line describes one.
+	plain := r.run("sender", "add", "lab1", "lab-web", "--type", "stow", "--url", "http://web.lab.example/dicom-web", "--authentication", "none")
+	if plain.code != 0 || strings.Contains(plain.stdout, "TLS:") || !strings.Contains(plain.stdout, "http://web.lab.example/dicom-web") {
+		t.Errorf("add of a plain http stow sender: %+v", plain)
+	}
+	if show := r.run("sender", "show", "lab1", "lab-web"); show.code != 0 || strings.Contains(show.stdout, "TLS:") {
+		t.Errorf("show of a plain http stow sender names TLS: %+v", show)
+	}
+	r.must("sender", "remove", "lab1", "lab-web", "--yes")
+
 	expect(t, r.run("sender", "remove", "lab1", "archive2", "--yes"), 0, "sender archive2 of tenant lab1 removed; 0 jobs canceled; its jobs stay\n", "")
 	if res := r.run("sender", "show", "lab1", "archive2"); res.code != 4 {
 		t.Errorf("the sender is still there: %+v", res)
@@ -144,7 +155,7 @@ func TestSenderCredentialSources(t *testing.T) {
 		want  string
 	}{
 		"unset variable":       {"", []string{"--credential-env", "NOPE"}, "--credential-env names NOPE, which is not set or is empty"},
-		"file others can read": {"", []string{"--credential-file", wide}, "make it private to"},
+		"file others can read": {"", []string{"--credential-file", wide}, "the credential file " + wide + " may be opened by other users"},
 		"missing file":         {"", []string{"--credential-file", t.TempDir() + "/none"}, "it does not exist"},
 		"empty file":           {"", []string{"--credential-file", empty}, "is empty"},
 		"empty stdin":          {"\n", []string{"--credential-stdin"}, "standard input held no credential"},

@@ -85,7 +85,7 @@ func (h *dimsePeer) arrivals() int {
 
 // startPeer starts h as the AE "PEER" on a free loopback port, taking every
 // transfer syntax, and returns its address.
-func startPeer(t *testing.T, h *dimsePeer) string {
+func startPeer(t testing.TB, h *dimsePeer) string {
 	t.Helper()
 	h.data, h.sums, h.syntax, h.count = map[string][]byte{}, map[string][32]byte{}, map[string]string{}, map[string]int{}
 	srv, err := network.StartServer(context.Background(), network.SCPConfig{AETitle: "PEER", Port: 0, BindAddress: "127.0.0.1"}, h)

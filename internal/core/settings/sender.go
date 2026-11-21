@@ -50,14 +50,20 @@ const (
 	MaxFailuresKept = 1000000
 )
 
-// The flag a line of sender.destinations may carry, and the prefix of its
+// The flags a line of sender.destinations may carry, and the prefix of its
 // ports term.
 const (
 	// DestinationPrivateAddress allows a listed host name to resolve to a
-	// loopback, link-local or private address (RFC 1918, RFC 4193, RFC
-	// 6598).
+	// loopback or private address (RFC 1918, RFC 4193, RFC 6598).
 	DestinationPrivateAddress = "private-address"
-	destinationPortsPrefix    = "ports="
+	// DestinationLinkLocal allows a listed host name to resolve to a
+	// link-local address (RFC 3927, RFC 4291 2.5.6). It is a flag of its
+	// own because the link-local block is where cloud hosts answer their
+	// instance metadata, which a name a tenant's admin points a sender at
+	// must not reach by a DNS change; the metadata addresses themselves are
+	// never a destination (neverDestination).
+	DestinationLinkLocal   = "link-local"
+	destinationPortsPrefix = "ports="
 )
 
 // The reasons Destinations.Allowed refuses a destination. Each is a case
@@ -72,8 +78,8 @@ var (
 	// one out.
 	ErrDestinationPort = errors.New("the port is not among the ports sender.destinations lists for the host")
 	// ErrDestinationAddress: the address is never a destination (the
-	// unspecified, multicast and broadcast addresses, whatever the line
-	// says), or the host's name is listed and resolved to a special-purpose
+	// unspecified, multicast and broadcast addresses and the cloud metadata
+	// addresses, whatever the line says), or the host's name is listed and resolved to a special-purpose
 	// address its line does not admit (see Destination.PrivateAddress).
 	ErrDestinationAddress = errors.New("the host resolves to an address its entry in sender.destinations does not allow")
 )
@@ -90,11 +96,15 @@ type Destination struct {
 	Ports Ports
 	// PrivateAddress allows a host name to resolve to exactly these
 	// addresses besides global unicast ones: loopback (127.0.0.0/8, ::1),
-	// link-local (169.254.0.0/16, fe80::/10), private use (RFC 1918, and
-	// fc00::/7 of RFC 4193) and shared address space (100.64.0.0/10, RFC
-	// 6598). Any other special-purpose address stays refused. A range never
-	// carries it: it lists its addresses explicitly, those included.
+	// private use (RFC 1918, and fc00::/7 of RFC 4193) and shared address
+	// space (100.64.0.0/10, RFC 6598). Any other special-purpose address
+	// stays refused. A range never carries it: it lists its addresses
+	// explicitly, those included.
 	PrivateAddress bool
+	// LinkLocal allows a host name to resolve to a link-local address
+	// (169.254.0.0/16, fe80::/10), but for the cloud metadata addresses,
+	// which are never a destination. A range never carries it.
+	LinkLocal bool
 }
 
 // Destinations is the value of sender.destinations, in the order written.
@@ -117,6 +127,9 @@ func (d Destinations) String() string {
 		if e.PrivateAddress {
 			lines[i] += " " + DestinationPrivateAddress
 		}
+		if e.LinkLocal {
+			lines[i] += " " + DestinationLinkLocal
+		}
 	}
 	return strings.Join(lines, "\n")
 }
@@ -137,9 +150,11 @@ func (d Destinations) String() string {
 // each connection, so a name that later resolves elsewhere cannot carry a
 // connection into the server's own network. A host name's line without
 // private-address allows only a global unicast address (package
-// publicaddr); with it, also the addresses Destination.PrivateAddress
-// lists. Whatever the line says, the unspecified (0.0.0.0, ::), multicast
-// and IPv4 broadcast addresses are never a destination. The zero ip means the host is not resolved yet, as when a
+// publicaddr); with private-address, also the addresses
+// Destination.PrivateAddress lists; with link-local, the link-local
+// addresses. Whatever the line says, the unspecified (0.0.0.0, ::),
+// multicast, IPv4 broadcast and cloud metadata addresses (169.254.169.254,
+// fd00:ec2::254) are never a destination. The zero ip means the host is not resolved yet, as when a
 // sender is added or changed, and only the name, or the address host is,
 // and the port are checked; an address given as host is its own ip. An
 // IPv4-mapped IPv6 address is judged as the IPv4 address it holds.
@@ -168,7 +183,7 @@ func (d Destinations) Allowed(host string, ip netip.Addr, port int) error {
 		if neverDestination(ip) {
 			continue
 		}
-		if e.Host != "" && ip.IsValid() && !publicaddr.Is(ip) && (!e.PrivateAddress || !privateUse(ip)) {
+		if e.Host != "" && ip.IsValid() && !e.admits(ip) {
 			continue
 		}
 		addrOK = true
@@ -184,11 +199,16 @@ func (d Destinations) Allowed(host string, ip netip.Addr, port int) error {
 	return nil
 }
 
+// admits reports whether a host name's line admits ip as the address the
+// name resolved to: a global unicast address, or one its flags allow.
+func (e Destination) admits(ip netip.Addr) bool {
+	return publicaddr.Is(ip) || (e.PrivateAddress && privateUse(ip)) || (e.LinkLocal && linkLocal(ip))
+}
+
 // privateRanges are the addresses a line's private-address admits besides
 // global unicast ones.
 var privateRanges = []netip.Prefix{
 	netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128"),
-	netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("fe80::/10"),
 	netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("172.16.0.0/12"), netip.MustParsePrefix("192.168.0.0/16"),
 	netip.MustParsePrefix("fc00::/7"), netip.MustParsePrefix("100.64.0.0/10"),
 }
@@ -198,12 +218,29 @@ func privateUse(a netip.Addr) bool {
 	return slices.ContainsFunc(privateRanges, func(p netip.Prefix) bool { return p.Contains(a) })
 }
 
+// linkLocalRanges are the addresses a line's link-local admits.
+var linkLocalRanges = []netip.Prefix{netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("fe80::/10")}
+
+// linkLocal reports whether a is one of linkLocalRanges.
+func linkLocal(a netip.Addr) bool {
+	return slices.ContainsFunc(linkLocalRanges, func(p netip.Prefix) bool { return p.Contains(a) })
+}
+
+// metadataAddresses are where cloud hosts answer an instance's metadata,
+// credentials included: 169.254.169.254 (most clouds) and fd00:ec2::254
+// (the IPv6 one of AWS). A sender reaching one would hand a tenant's admin
+// the host's credentials, so no line allows them.
+var metadataAddresses = []netip.Addr{netip.MustParseAddr("169.254.169.254"), netip.MustParseAddr("fd00:ec2::254")}
+
 // neverDestination reports whether a is an address no sender may be
 // pointed at, whatever a line says: the unspecified addresses (0.0.0.0,
-// ::), which a connection reaches the local host by, the multicast blocks
-// and the IPv4 broadcast address. The zero address is not one.
+// ::), which a connection reaches the local host by, the multicast blocks,
+// the IPv4 broadcast address and the cloud metadata addresses. The zero
+// address is not one.
 func neverDestination(a netip.Addr) bool {
-	return a.IsValid() && (a.IsUnspecified() || a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255}))
+	a = a.Unmap().WithZone("")
+	return a.IsValid() && (a.IsUnspecified() || a.IsMulticast() || a == netip.AddrFrom4([4]byte{255, 255, 255, 255}) ||
+		slices.Contains(metadataAddresses, a))
 }
 
 // parseLiteral reads host as an address when it is one, in the one spelling
@@ -224,8 +261,9 @@ func parseLiteral(host string) (netip.Addr, bool) {
 // 4291, with no host bits set, or one address alone), then, each after one
 // space and each at most once, "ports=" and the ports allowed, as
 // ParsePorts reads them ("ports=104,11112-11120"; every port when left
-// out), and "private-address" (DestinationPrivateAddress), which only a
-// host name's line carries, since a range lists its addresses explicitly.
+// out), "private-address" (DestinationPrivateAddress) and "link-local"
+// (DestinationLinkLocal), which only a host name's line carries, since a
+// range lists its addresses explicitly.
 // A host name, or a range, is listed once.
 func ParseDestinations(v string) (Destinations, error) {
 	lines, err := splitLines(v, MaxDestinations, "destinations")
@@ -257,7 +295,7 @@ func clipDestination(s string) string {
 
 // parseDestination reads one line of sender.destinations.
 func parseDestination(line string) (Destination, error) {
-	bad := errors.New("is not a host name or a range of addresses, then ports= and private-address, each once after one space")
+	bad := errors.New("is not a host name or a range of addresses, then ports=, private-address and link-local, each once after one space")
 	fields := strings.Split(line, " ")
 	var e Destination
 	target := fields[0]
@@ -271,7 +309,7 @@ func parseDestination(line string) (Destination, error) {
 			return e, errors.New("is the whole address space, which would allow every host: list the ranges that are meant")
 		}
 		if neverDestination(p.Addr()) {
-			return e, errors.New("starts at an address that is never a destination (unspecified, multicast or broadcast)")
+			return e, errors.New("starts at an address that is never a destination (unspecified, multicast, broadcast or a cloud metadata address)")
 		}
 		e.Range = p
 	default:
@@ -280,7 +318,7 @@ func parseDestination(line string) (Destination, error) {
 				return e, errors.New("has an address that is not in its shortest form, IPv4 in dotted form, and not IPv4-mapped")
 			}
 			if neverDestination(a) {
-				return e, errors.New("has an address that is never a destination (unspecified, multicast or broadcast)")
+				return e, errors.New("has an address that is never a destination (unspecified, multicast, broadcast or a cloud metadata address)")
 			}
 			e.Range = netip.PrefixFrom(a, a.BitLen())
 			break
@@ -298,6 +336,11 @@ func parseDestination(line string) (Destination, error) {
 				return e, errors.New("gives private-address to a range, which lists its addresses explicitly and needs no such flag")
 			}
 			e.PrivateAddress = true
+		case f == DestinationLinkLocal && !e.LinkLocal:
+			if e.Range.IsValid() {
+				return e, errors.New("gives link-local to a range, which lists its addresses explicitly and needs no such flag")
+			}
+			e.LinkLocal = true
 		case strings.HasPrefix(f, destinationPortsPrefix) && e.Ports == nil:
 			ports, err := ParsePorts(strings.TrimPrefix(f, destinationPortsPrefix))
 			if err != nil || len(ports) == 0 {

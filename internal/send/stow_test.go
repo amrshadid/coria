@@ -22,7 +22,7 @@ import (
 // as they come, records each instance it received whole, and answers what
 // a test chooses for them (PS3.18 10.5.3).
 type webPeer struct {
-	t *testing.T
+	t testing.TB
 	// auth is the Authorization a request must carry; others are 401.
 	auth string
 	// answer gives the HTTP status and the body of a request whose
@@ -39,6 +39,11 @@ type webPeer struct {
 
 // ServeHTTP reads a store request and answers it.
 func (p *webPeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == "/dicom-web/studies" {
+		// The service probe, a search for studies (PS3.18 10.6): none.
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.Method != http.MethodPost || r.URL.Path != "/dicom-web/studies" {
 		http.Error(w, "not here", http.StatusNotFound)
 		return
@@ -92,7 +97,7 @@ func (p *webPeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // startWebPeer serves p and returns the base URL of its DICOMweb service.
-func startWebPeer(t *testing.T, p *webPeer) string {
+func startWebPeer(t testing.TB, p *webPeer) string {
 	t.Helper()
 	p.t, p.parts, p.count = t, map[string][]byte{}, map[string]int{}
 	srv := httptest.NewServer(p)
@@ -257,7 +262,9 @@ func TestStowReadsTheAnswerPerInstance(t *testing.T) {
 // TestStowFailuresOfTheWholeRequest guards the answers that are not per
 // instance: a 503 is a temporary failure, tried again after the wait, and
 // then sent; a 400 with no account refuses every instance of the request as
-// peer_refused with the status; a redirect is not followed; plain http
+// peer_refused with the status; a 404 (a URL that names no DICOMweb
+// service) fails the sender and refuses nothing; a redirect is not
+// followed; plain http
 // while the installation does not allow it reaches nothing.
 func TestStowFailuresOfTheWholeRequest(t *testing.T) {
 	t.Run("503 then stored", func(t *testing.T) {
@@ -305,6 +312,29 @@ func TestStowFailuresOfTheWholeRequest(t *testing.T) {
 			if fl.Code != tenant.FailurePeerRefused || fl.PeerStatus != http.StatusBadRequest {
 				t.Errorf("failure %+v, want peer_refused 400", fl)
 			}
+		}
+	})
+	t.Run("404 fails the sender, not the instances", func(t *testing.T) {
+		f := newFixture(t)
+		f.inst.plain = true
+		peer := &webPeer{answer: func([]string, map[string]int) (int, []byte) { return http.StatusNotFound, nil }}
+		url := startWebPeer(t, peer)
+		f.archive("ses-1", scanFiles{"mr", generated(t, 2, 256)})
+		f.addStow("pacs", url, func(s *tenant.Sender) { s.STOW.Authentication, s.STOW.SealedCredential = tenant.StowAuthNone, nil })
+		rec := f.record()
+		job := f.createJob("pacs", "ses-1")
+		s := f.start(f.config())
+		waitFor(t, 30*time.Second, "a failed request", func() bool {
+			h, _ := s.Health("lab", "pacs")
+			return h.Fault == tenant.SenderFaultWrongAnswer && h.Detail == phraseNoService
+		})
+		waitFor(t, 30*time.Second, "the unit given back", func() bool { released, failed := rec.counts(); return released+failed >= 1 })
+		j, err := f.p.Job(f.ctx, job.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if j.State.Ended() || j.Counts.InstancesRefused != 0 || len(f.failures(job.ID)) != 0 {
+			t.Errorf("job %s %+v after a 404, want it running with nothing refused", j.State, j.Counts)
 		}
 	})
 	t.Run("redirect not followed", func(t *testing.T) {

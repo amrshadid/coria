@@ -348,7 +348,7 @@ func TestUsageErrors(t *testing.T) {
 		"no command":     {nil, "coria: no command (usage: coria <noun> <verb> [flags], for example coria tenant list); try \"coria --help\"\n"},
 		"unknown":        {[]string{"nope"}, "coria: unknown command \"nope\" for \"coria\"; try \"coria --help\"\n"},
 		"terminal codes": {[]string{"\x1b[2J"}, "coria: unknown command \"\\x1b[2J\" for \"coria\"; try \"coria --help\"\n"},
-		"no verb":        {[]string{"tenant"}, "coria: tenant needs a verb: create, list, remove, show; try \"coria tenant --help\"\n"},
+		"no verb":        {[]string{"tenant"}, "coria: tenant needs a verb: create, list, remove, show, status; try \"coria tenant --help\"\n"},
 		"wrong verb":     {[]string{"tenant", "nope"}, "coria: unknown command \"nope\" for \"coria tenant\"; try \"coria tenant --help\"\n"},
 		"extra words":    {[]string{"version", "now"}, "coria: unknown command \"now\" for \"coria version\"; try \"coria version --help\"\n"},
 		"missing name":   {[]string{"tenant", "show"}, "coria: wrong number of arguments (want 1, got 0); usage: coria tenant show <name> [flags]; try \"coria tenant show --help\"\n"},
@@ -423,7 +423,7 @@ func TestGrammar(t *testing.T) {
 		"init": true, "serve": true,
 		"version": true, "whoami": true,
 		"context add": true, "context list": true, "context show": true, "context use": true, "context remove": true,
-		"tenant create": true, "tenant list": true, "tenant show": true, "tenant remove": true,
+		"tenant create": true, "tenant list": true, "tenant show": true, "tenant status": true, "tenant remove": true,
 		"key create": true, "key list": true, "key show": true, "key revoke": true, "key rotate": true, "key set": true,
 		"grant set": true, "grant list": true, "grant remove": true,
 		"setting get": true, "setting set": true, "setting unset": true, "setting list": true,
@@ -431,12 +431,13 @@ func TestGrammar(t *testing.T) {
 		"storage add": true, "storage list": true, "storage show": true, "storage set": true, "storage remove": true, "storage test": true,
 		"receiver add": true, "receiver list": true, "receiver show": true, "receiver set": true, "receiver remove": true,
 		"sender add": true, "sender list": true, "sender show": true, "sender set": true, "sender remove": true, "sender test": true,
-		"job create": true, "job get": true, "job list": true, "job watch": true, "job cancel": true, "job retry": true, "job failures": true,
+		"job create": true, "job show": true, "job list": true, "job watch": true, "job cancel": true, "job retry": true, "job failures": true,
 		"profile create": true, "profile get": true, "profile list": true, "profile versions": true, "profile export": true,
 		"profile validate": true, "profile describe": true, "profile try": true, "profile explain": true, "profile diff": true,
 		"reception list": true, "reception show": true, "reception retry": true, "reception discard": true,
 		"quarantine list": true, "quarantine show": true, "quarantine release": true, "quarantine reject": true,
 		"catalog subjects": true, "catalog sessions": true, "catalog scans": true, "scan show": true, "download": true,
+		"watch": true,
 	}
 	got := map[string]bool{}
 	for _, c := range cli.Command(cli.Env{}).Commands() {

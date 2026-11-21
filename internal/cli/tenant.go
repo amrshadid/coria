@@ -28,11 +28,12 @@ func (a *app) whenOr(ts *timestamppb.Timestamp, absent string) string {
 
 // newTenant builds the tenant noun.
 func (a *app) newTenant() *cobra.Command {
-	return group("tenant", "Create, list, show and remove tenants",
+	return group("tenant", "Create, list, show, check and remove tenants",
 		`A tenant is an independent archive inside an installation, with its own
 database. These commands need the admin role on the installation, except list
-and show, which need the reader role.`,
-		a.newTenantCreate(), a.newTenantList(), a.newTenantShow(), a.newTenantRemove())
+and show, which need the reader role, and status, which needs the reader role
+on the tenant.`,
+		a.newTenantCreate(), a.newTenantList(), a.newTenantShow(), a.newTenantStatus(), a.newTenantRemove())
 }
 
 // tenantDetails writes one tenant as labeled lines.

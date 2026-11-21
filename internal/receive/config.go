@@ -84,6 +84,11 @@ type Config struct {
 	// Wake is called after every commit that wrote an event of the tenant
 	// (events.Broadcaster.Wake with the tenant's name). Nil does nothing.
 	Wake func()
+	// Forwarded is called after a reception's step reached done, the step
+	// that makes a send job for each sender its receiver forwards to
+	// (tenant.Sending), so the senders look for that work at once rather
+	// than at their next poll. Nil does nothing.
+	Forwarded func()
 	// Clock is the pipeline's clock; nil is SystemClock.
 	Clock Clock
 	// Logger receives the pipeline's log lines: ids, labels, counts and

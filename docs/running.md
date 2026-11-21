@@ -109,6 +109,38 @@ was archived with `coria catalog subjects lab1` and `coria download`
 ([reading the archive](reading.md)), and follow a tenant with the interactive
 program (`coria`).
 
+## Send to another archive
+
+A tenant sends what it holds to a PACS or a DICOMweb service through a sender,
+to a destination the installation lists ([Sending](sending.md) has the steps):
+
+```sh
+coria setting set sender.destinations "pacs.lab.example ports=104"
+coria sender add lab1 pacs --type dimse --host pacs.lab.example --port 104 \
+    --called-aet ORTHANC --calling-aet CORIA --enabled
+coria sender test lab1 pacs
+coria job create lab1 --sender pacs sub-0017 --wait
+coria tenant status lab1
+```
+
+- **TLS files.** A sender's CA file, client certificate and key are named by
+  file name only, and read from `<data-dir>/tls/<tenant>/`, the directory a
+  receiver's TLS files are in, so a remote admin cannot point TLS at files
+  nobody placed there. Put them there (readable by the server's user only)
+  before naming them with `--tls-ca-file`, `--tls-certificate-file` and
+  `--tls-private-key-file`.
+- **A stop gives the work back.** At a stop signal each sender finishes the
+  instance it is sending, records what the peer answered, and gives its unit
+  back without spending an attempt; the next start takes it up from there,
+  sending again at most one batch (64 instances) per unit. The senders are
+  stopped with the receivers and the pipelines, before the API's requests are
+  drained, within their own bound of 90 seconds: `--drain` bounds only the
+  API's requests in flight, not the sends. A second signal exits at once, and
+  a unit cut short is taken up again once its lease runs out.
+- **Where to look.** `coria tenant status lab1` shows each sender's health and
+  the jobs in progress; `coria watch lab1 --type job-step --type sender-health`
+  follows them as they change.
+
 ## Choose what a receiver does with what it receives
 
 A receiver either de-identifies every file with a version of one of the

@@ -664,7 +664,8 @@ type JobFailure struct {
 	Code JobFailureCode `protobuf:"varint,5,opt,name=code,proto3,enum=coria.v1.JobFailureCode" json:"code,omitempty"`
 	// The peer's code for it: a DIMSE peer's C-STORE status (PS3.7 Annex C),
 	// or a stow peer's Failure Reason or Warning Reason; for a stow request
-	// refused whole, its HTTP status. Zero when the peer gave none.
+	// refused whole, its HTTP status, and then peer_status_http is true. Zero
+	// when the peer gave none.
 	PeerStatus int32 `protobuf:"varint,6,opt,name=peer_status,json=peerStatus,proto3" json:"peer_status,omitempty"`
 	// Its SOP Class UID (0008,0016), as received, so a class the peer does
 	// not take can be told; it names a kind of object, not a person.
@@ -677,9 +678,14 @@ type JobFailure struct {
 	// Never the peer's own text.
 	Detail string `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
 	// When it was refused, or sent.
-	Time          *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=time,proto3" json:"time,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Time *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=time,proto3" json:"time,omitempty"`
+	// Whether peer_status is an HTTP status (RFC 9110 15), of a stow request
+	// the peer refused whole with no account of each instance, rather than a
+	// DICOM status. A client shows an HTTP status in decimal and a DICOM
+	// status in hexadecimal, so 404 is never read as 0194.
+	PeerStatusHttp bool `protobuf:"varint,11,opt,name=peer_status_http,json=peerStatusHttp,proto3" json:"peer_status_http,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *JobFailure) Reset() {
@@ -780,6 +786,13 @@ func (x *JobFailure) GetTime() *timestamppb.Timestamp {
 		return x.Time
 	}
 	return nil
+}
+
+func (x *JobFailure) GetPeerStatusHttp() bool {
+	if x != nil {
+		return x.PeerStatusHttp
+	}
+	return false
 }
 
 // CreateJobRequest is the job to make.
@@ -1580,7 +1593,7 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\bretry_of\x18\v \x01(\tR\aretryOf\x12\x1b\n" +
 	"\tretry_job\x18\f \x01(\tR\bretryJob\x12.\n" +
 	"\x13failures_not_listed\x18\r \x01(\x03R\x11failuresNotListedB\x06\n" +
-	"\x04kind\"\x81\x03\n" +
+	"\x04kind\"\xab\x03\n" +
 	"\n" +
 	"JobFailure\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
@@ -1596,7 +1609,8 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\x13transfer_syntax_uid\x18\b \x01(\tR\x11transferSyntaxUid\x12\x16\n" +
 	"\x06detail\x18\t \x01(\tR\x06detail\x12.\n" +
 	"\x04time\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\x04time\"[\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12(\n" +
+	"\x10peer_status_http\x18\v \x01(\bR\x0epeerStatusHttp\"[\n" +
 	"\x10CreateJobRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12'\n" +
 	"\x04send\x18\x02 \x01(\v2\x11.coria.v1.SendJobH\x00R\x04sendB\x06\n" +

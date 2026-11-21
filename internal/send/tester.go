@@ -5,9 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"net/netip"
 	"net/url"
 	"strconv"
@@ -102,8 +100,8 @@ func (t *tester) skip(step string) {
 // TestSender tries the peer of the tenant's sender row as a send would
 // reach it, and reports each step (sender.proto, TestSender): resolve and
 // check, connect, TLS, then a DIMSE association proposing the Verification
-// SOP Class, a C-ECHO and the release, or a stow sender's OPTIONS of its
-// studies resource. It sends no instance and changes no health; the whole
+// SOP Class, a C-ECHO and the release, or a stow sender's search of its
+// studies (queryStudies). It sends no instance and changes no health; the whole
 // test is bounded by ctx. A failure of the server's own is an error.
 func (s *Supervisor) TestSender(ctx context.Context, tenantName string, row tenant.Sender) ([]TestStep, error) {
 	t := &tester{ctx: ctx}
@@ -218,9 +216,11 @@ func (s *Supervisor) testDIMSE(ctx context.Context, tenantName string, row tenan
 	t.failed = t.failed || failed
 }
 
-// testStowRequest sends a stow sender's OPTIONS of its studies resource
-// (PS3.18), passed by any status but 401, 403, 407 and a 5xx, and names
-// the status in the step's detail.
+// testStowRequest sends a stow sender's service probe, a QIDO-RS search
+// of its studies (queryStudies), passed only by a 2xx answer
+// (probeFailure), and names the status in the step's detail: "HTTP 200",
+// or the status and why it failed, such as "HTTP 404: the URL does not
+// name a DICOMweb service".
 func (s *Supervisor) testStowRequest(ctx context.Context, tenantName string, row tenant.Sender, t *tester) error {
 	st, err := s.cfg.Tenants.Store(tenantName)
 	if err != nil {
@@ -241,29 +241,14 @@ func (s *Supervisor) testStowRequest(ctx context.Context, tenantName string, row
 		return err
 	}
 	defer peer.close()
-	req, err := http.NewRequestWithContext(ctx, http.MethodOptions, peer.base.JoinPath("studies").String(), nil)
+	code, err := queryStudies(ctx, peer)
 	if err != nil {
-		return &connectError{fault: tenant.SenderFaultUnreachable, detail: phraseUnreachable, err: err}
+		return err
 	}
-	if peer.header != "" {
-		req.Header.Set(peer.header, peer.value)
-	}
-	resp, err := peer.http.Do(req)
-	if err != nil {
-		if ce := peer.conn.take(); ce != nil {
-			return ce
-		}
-		return transportFailure(err)
-	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
-	_ = resp.Body.Close()
-	detail := "HTTP " + strconv.Itoa(resp.StatusCode)
-	code := resp.StatusCode
-	if code == http.StatusUnauthorized || code == http.StatusForbidden || code == http.StatusProxyAuthRequired {
-		return &connectError{fault: tenant.SenderFaultRejected, detail: detail}
-	}
-	if code >= 500 {
-		return &connectError{fault: tenant.SenderFaultWrongAnswer, detail: detail}
+	detail := "HTTP " + strconv.Itoa(code)
+	if ce := probeFailure(code); ce != nil {
+		ce.detail = detail + ": " + ce.detail
+		return ce
 	}
 	t.note = detail
 	return nil

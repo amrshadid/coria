@@ -9,11 +9,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/cli/output"
-	"github.com/amrshadid/coria/internal/fault"
 )
 
 // jobStatePrefix is what every name of a job state starts with.
@@ -79,8 +77,9 @@ func (a *app) jobDetails(j *v1.Job) []output.Pair {
 // newJobCreate builds "job create".
 func (a *app) newJobCreate() *cobra.Command {
 	var sender string
+	var wait bool
 	cmd := &cobra.Command{
-		Use:   "create <tenant> --sender NAME <subject>[/<session>[/<scan>]]",
+		Use:   "create <tenant> --sender NAME <subject>[/<session>[/<scan>]] [--wait]",
 		Short: "Send a subject, a session or a scan to a sender",
 		Long: `Make a send job and queue its work. Name what to send by labels: a subject, a
 session of it (<subject>/<session>) or a scan of that
@@ -90,9 +89,13 @@ receiver's forward-to. The sender may be stopped: its jobs wait until it is
 enabled. A sender the tenant does not have, or a target the catalog does not
 hold, is refused.
 
-The answer is the job as queued. "job watch" follows it to its end.`,
+The answer is the job as queued. "job watch" follows it to its end; with --wait
+this command follows it itself, writing what "job watch" writes, and its exit
+code is that of "job watch": 0 when the job ended done, 1 when it ended partial,
+failed or canceled. Interrupting the wait stops only the watching, never the
+job.`,
 		Example: `  coria job create lab1 --sender pacs sub-0017
-  coria job create lab1 --sender archive2 sub-0017/ses-2026-03-02
+  coria job create lab1 --sender archive2 sub-0017/ses-2026-03-02 --wait
   coria job create lab1 --sender pacs sub-0017/ses-2026-03-02/scan-0004 --json`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
@@ -112,29 +115,44 @@ The answer is the job as queued. "job watch" follows it to its end.`,
 				return err
 			}
 			defer closeClient()
+			// With --wait the feed's position is read before the job is
+			// made, so none of its events can come before it.
+			cursor := ""
+			if wait {
+				if cursor, err = a.feedCursor(ctx, c, cmd, args[0]); err != nil {
+					return err
+				}
+			}
 			res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.CreateJobResponse, error) {
 				return c.Jobs.CreateJob(ctx, &v1.CreateJobRequest{Tenant: args[0], Kind: &v1.CreateJobRequest_Send{Send: job}})
 			})
 			if err != nil {
 				return err
 			}
+			if wait {
+				return a.followJob(ctx, c, cmd, args[0], res.GetJob().GetId(), cursor)
+			}
 			return messageOut(a, res, func(w io.Writer) error { return output.Details(w, a.style(), a.jobDetails(res.GetJob())) })
 		}),
 	}
+	cmd.Flags().BoolVar(&wait, "wait", false, `follow the job until it ends, as "job watch" does, with its exit codes`)
 	cmd.Flags().StringVar(&sender, "sender", "", "the name of the tenant's sender to send to (required)")
 	_ = cmd.MarkFlagRequired("sender")
 	return cmd
 }
 
-// newJobGet builds "job get".
+// newJobGet builds "job show", which "job get" also names, as every other
+// noun's command that shows one item is named show.
 func (a *app) newJobGet() *cobra.Command {
 	return &cobra.Command{
-		Use:   "get <tenant> <id>",
-		Short: "Show one job with its progress now",
+		Use:     "show <tenant> <id>",
+		Aliases: []string{"get"},
+		Short:   "Show one job with its progress now",
 		Long: `Show one job: what it sends and to which sender, its state and why, how many
 instances have been sent, sent with a warning or refused, how many remain, and
-its times. For a job a receiver's forward made it also says which reception.`,
-		Example: `  coria job get lab1 job_8Qm2`,
+its times. For a job a receiver's forward made it also says which reception.
+"job get" is the same command.`,
+		Example: `  coria job show lab1 job_8Qm2`,
 		Args:    exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			c, closeClient, err := a.open(cmd)
@@ -320,9 +338,14 @@ refused before they reached it (a class or transfer syntax the peer does not
 take, an instance whose stored bytes were not what was archived), each with the
 peer's status and a reason. --warnings adds the instances the peer kept with a
 warning, since it changed what it keeps. How many are kept is the setting
-job.failures-kept; past it each is still counted in "job get", and not listed.
-No identifier from a file is shown: an instance is named by its catalog id and
-its labels.`,
+job.failures-kept; past it each is still counted in "job show", and not listed.
+An instance is named by its catalog id (its SOP Instance UID) and its scan's
+labels; no other value from its file is shown.
+
+The peer's status is a DICOM status in hexadecimal (a DIMSE peer's C-STORE
+status, PS3.7 Annex C, or a stow peer's Failure or Warning Reason), or, for a
+stow request the peer refused whole, its HTTP status in decimal after "HTTP",
+such as "HTTP 415".`,
 		Example: `  coria job failures lab1 job_8Qm2
   coria job failures lab1 job_8Qm2 --warnings --all --json`,
 		Args: exactArgs(2),
@@ -350,10 +373,7 @@ its labels.`,
 			return listOut(a, "failures", failures, more, func() error {
 				rows := make([][]string, 0, len(failures))
 				for _, f := range failures {
-					status := "-"
-					if f.GetPeerStatus() != 0 {
-						status = fmt.Sprintf("%04X", f.GetPeerStatus())
-					}
+					status := peerStatus(f)
 					rows = append(rows, []string{
 						f.GetSubjectLabel() + "/" + f.GetSessionLabel() + "/" + f.GetScanLabel(), f.GetInstanceId(),
 						output.JobFailureCode(f.GetCode()), status, output.Dash(f.GetDetail()), a.when(f.GetTime()),
@@ -368,6 +388,19 @@ its labels.`,
 	cmd.Flags().BoolVar(&warnings, "warnings", false, "also list the instances the peer kept with a warning")
 	l.add(cmd)
 	return cmd
+}
+
+// peerStatus writes a failure's peer status as a person reads it: an HTTP
+// status in decimal after "HTTP" (RFC 9110 15), a DICOM status in
+// hexadecimal (PS3.7 Annex C), "-" for none.
+func peerStatus(f *v1.JobFailure) string {
+	switch {
+	case f.GetPeerStatus() == 0:
+		return "-"
+	case f.GetPeerStatusHttp():
+		return "HTTP " + strconv.Itoa(int(f.GetPeerStatus()))
+	}
+	return fmt.Sprintf("%04X", f.GetPeerStatus())
 }
 
 // watchPause is how long "job watch" waits before it follows the feed again
@@ -389,8 +422,10 @@ func (a *app) newJobWatch() *cobra.Command {
 line for each change of state and each report of progress the tenant's event feed
 carries for it (at most one every 10 seconds while it runs), and ends with the job
 as it finally stands. It reads the feed from the position the job was read at, so
-no change between the two is missed, and follows again from where it was if the
-server ends the stream.
+no change between the two is missed. The server ends a stream at the latest when
+its deadline passes (30 seconds), and the connection may drop: the command then
+reads the job again and follows on from where the stream was, for as long as
+the job runs.
 
 With --json each line is replaced by one JSON document of the job as the event
 reports it (state and counts), the last being the job as read at the end.
@@ -408,110 +443,13 @@ the watching, never the job.`,
 				return err
 			}
 			defer closeClient()
-			tenant, id := args[0], args[1]
 			// The cursor first, then the job: an event that happened between
 			// them is read again, never missed.
-			st, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.GetStatusResponse, error) {
-				return c.Monitor.GetStatus(ctx, &v1.GetStatusRequest{Scope: optionalScope(tenant)})
-			})
+			cursor, err := a.feedCursor(ctx, c, cmd, args[0])
 			if err != nil {
 				return err
 			}
-			cursor := ""
-			if len(st.GetTenants()) > 0 {
-				cursor = st.GetTenants()[0].GetEventCursor()
-			}
-			fetch := func() (*v1.Job, error) {
-				res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.GetJobResponse, error) {
-					return c.Jobs.GetJob(ctx, &v1.GetJobRequest{Tenant: tenant, Id: id})
-				})
-				if err != nil {
-					return nil, err
-				}
-				return res.GetJob(), nil
-			}
-			job, err := fetch()
-			if err != nil {
-				return err
-			}
-			if err := a.watchLine(job, a.when(timestamppb.New(a.env.Now()))); err != nil {
-				return err
-			}
-			last := job
-			for !output.JobEnded(last.GetState()) {
-				var ended bool
-				var writeErr error
-				werr := c.Watch(ctx, &v1.WatchRequest{
-					Scope: optionalScope(tenant), Cursor: cursor,
-					Types: []v1.EventType{v1.EventType_EVENT_TYPE_JOB_STEP, v1.EventType_EVENT_TYPE_JOB_PROGRESS},
-				}, func(m *v1.WatchResponse) bool {
-					if k := m.GetKeepAlive(); k != nil {
-						// The feed's position past events the filter left out.
-						if k.GetCursor() != "" {
-							cursor = k.GetCursor()
-						}
-						return true
-					}
-					e := m.GetEvent()
-					cursor = e.GetCursor()
-					j, ok := jobOfEvent(e, id, last)
-					if !ok {
-						return true
-					}
-					last = j
-					if err := a.watchLine(j, a.when(e.GetTime())); err != nil {
-						writeErr = err
-						return false
-					}
-					ended = output.JobEnded(j.GetState())
-					return !ended
-				})
-				if writeErr != nil {
-					return writeErr
-				}
-				if werr != nil {
-					return werr
-				}
-				if ctx.Err() != nil {
-					return fault.New(fault.Internal, "stopped watching; the job goes on")
-				}
-				if !ended {
-					// The server ended the stream, or it dropped: read the job
-					// again, so an end the stream did not carry is not waited
-					// for, then follow on.
-					if last, err = fetch(); err != nil {
-						return err
-					}
-					if !output.JobEnded(last.GetState()) {
-						select {
-						case <-ctx.Done():
-						case <-time.After(a.watchPause()):
-						}
-					}
-				}
-			}
-			// The job as it finally stands: its times and reason, which the
-			// events do not carry.
-			final, err := fetch()
-			if err != nil {
-				return err
-			}
-			if a.opts.json {
-				if err := a.write(func(w io.Writer) error { return output.JSONMessage(w, final) }); err != nil {
-					return err
-				}
-			} else if err := a.write(func(w io.Writer) error {
-				if _, err := fmt.Fprintln(w); err != nil {
-					return err
-				}
-				return output.Details(w, a.style(), a.jobDetails(final))
-			}); err != nil {
-				return err
-			}
-			if final.GetState() != v1.JobState_JOB_STATE_DONE {
-				return fault.New(fault.Internal, fmt.Sprintf("job %s ended %s", output.Clean(id), output.JobState(final.GetState())))
-			}
-			return nil
+			return a.followJob(ctx, c, cmd, args[0], args[1], cursor)
 		}),
 	}
 }

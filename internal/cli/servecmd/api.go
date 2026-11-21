@@ -3,6 +3,7 @@ package servecmd
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
@@ -15,6 +16,7 @@ import (
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/receive/stow"
 	"github.com/amrshadid/coria/internal/registry"
+	"github.com/amrshadid/coria/internal/send"
 	"github.com/amrshadid/coria/internal/server"
 	"github.com/amrshadid/coria/internal/settingvalue"
 )
@@ -66,6 +68,15 @@ const (
 // first seconds of every start, and would let a creation race the start's
 // own reading of the tenants.
 func APIServices(d Deps) (Built, error) {
+	// The senders are made after the registry and the receivers, which
+	// tell them of a tenant let go and of a reception that may have made
+	// forward jobs; until they are made there is nobody to tell.
+	var sending atomic.Pointer[send.Supervisor]
+	pokeSenders := func(name string) {
+		if s := sending.Load(); s != nil {
+			s.Poke(name)
+		}
+	}
 	reg, err := registry.New(registry.Config{
 		Master: d.Master,
 		Keys:   d.Keys,
@@ -80,6 +91,13 @@ func APIServices(d Deps) (Built, error) {
 		MaxOpening:  TenantMaxOpening,
 		Log:         d.Log,
 		NewID:       server.NewID,
+		// A tenant let go stops its sends at once, not at the senders'
+		// next reading of the tenants.
+		Unregistered: func(name string) {
+			if s := sending.Load(); s != nil {
+				s.TenantRemoved(name)
+			}
+		},
 	})
 	if err != nil {
 		return Built{}, err
@@ -104,7 +122,7 @@ func APIServices(d Deps) (Built, error) {
 	// The running stow receivers, which the supervisor starts and stops
 	// and the STOW-RS route finds by the caller's key.
 	stowReceivers := stow.NewDirectory()
-	sup, err := newReception(d, reg, feeds.Wake, stowReceivers)
+	sup, err := newReception(d, reg, feeds.Wake, pokeSenders, stowReceivers)
 	if err != nil {
 		_ = feeds.Close()
 		closeRegistry(reg)
@@ -119,6 +137,7 @@ func APIServices(d Deps) (Built, error) {
 		closeRegistry(reg)
 		return Built{}, err
 	}
+	sending.Store(senders)
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
 		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, Headers: heldHeaders{sup}, HeldFiles: heldHeaders{sup}, STOW: stowReceivers,
 		Reads: reads, SenderHealths: senderHealths{senders}, SenderTests: senderTests{senders}})

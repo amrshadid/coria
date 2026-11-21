@@ -31,14 +31,14 @@ def free_port() -> int:
 class Server:
     """A running server, the installation it serves and the admin key for it."""
 
-    def __init__(self, binary: pathlib.Path, work: pathlib.Path):
+    def __init__(self, binary: pathlib.Path, work: pathlib.Path, serve_args: tuple = ()):
         self.binary = binary
         self.data = work / "d"
         self.data.mkdir(mode=0o700)
         self.env = dict(os.environ, CORIA_DATA_DIR=str(self.data))
         self.cli("init")
         self.port = 0
-        self.process = self._start()
+        self.process = self._start(*serve_args)
         self.key = self.make_key("admin", admin=True)
 
     def cli(self, *args: str) -> str:

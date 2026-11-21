@@ -140,9 +140,9 @@ func basicAuth(user, password string) string {
 // close lets the client's idle connections go.
 func (p *stowPeer) close() { p.http.CloseIdleConnections() }
 
-// probeStow tries a stow sender's peer as TestSender does: an HTTP OPTIONS
-// of <url>/studies, passed by any status but 401, 403, 407, a redirect or a
-// 5xx.
+// probeStow tries a stow sender's peer as TestSender does: a QIDO-RS
+// search of its studies (queryStudies), passed only by a 2xx answer
+// (probeFailure).
 func (s *Supervisor) probeStow(ctx context.Context, tenantName string, p tenant.Pipeline, name string) error {
 	row, sealed, err := storedSender(ctx, p, name)
 	if err != nil {
@@ -153,25 +153,57 @@ func (s *Supervisor) probeStow(ctx context.Context, tenantName string, p tenant.
 		return err
 	}
 	defer peer.close()
-	target := peer.base.JoinPath("studies")
-	req, err := http.NewRequestWithContext(ctx, http.MethodOptions, target.String(), nil)
+	code, err := queryStudies(ctx, peer)
 	if err != nil {
-		return &connectError{fault: tenant.SenderFaultUnreachable, detail: phraseUnreachable, err: err}
+		return err
 	}
+	if ce := probeFailure(code); ce != nil {
+		return ce
+	}
+	return nil
+}
+
+// queryStudies sends the service probe of a stow sender's peer and returns
+// its HTTP status: GET <url>/studies?limit=1 with Accept
+// application/dicom+json, a search for studies (PS3.18 10.6, the
+// SearchForStudies transaction), which a DICOMweb service answers 200 with
+// at most one match or 204 with none. Unlike an OPTIONS request, which a
+// service need not serve (Orthanc answers it 404), it tells a URL that
+// names a DICOMweb service from one that names nothing (404). It reads no
+// more than 64 KiB of the answer.
+func queryStudies(ctx context.Context, peer *stowPeer) (int, error) {
+	target := peer.base.JoinPath("studies")
+	target.RawQuery = "limit=1"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return 0, &connectError{fault: tenant.SenderFaultUnreachable, detail: phraseUnreachable, err: err}
+	}
+	req.Header.Set("Accept", "application/dicom+json")
 	if peer.header != "" {
 		req.Header.Set(peer.header, peer.value)
 	}
 	resp, err := peer.http.Do(req)
 	if err != nil {
 		if ce := peer.conn.take(); ce != nil {
-			return ce
+			return 0, ce
 		}
-		return transportFailure(err)
+		return 0, transportFailure(err)
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	_ = resp.Body.Close()
-	if ce := statusFailure(resp.StatusCode); ce != nil {
+	return resp.StatusCode, nil
+}
+
+// probeFailure returns the connectError of a service probe's HTTP status,
+// or nil for a 2xx: the failures a request of instances has
+// (statusFailure), and any other status, which a DICOMweb service does not
+// answer a search for studies with.
+func probeFailure(code int) *connectError {
+	if ce := statusFailure(code); ce != nil {
 		return ce
+	}
+	if code < 200 || code > 299 {
+		return &connectError{fault: tenant.SenderFaultWrongAnswer, detail: phraseWrongAnswer}
 	}
 	return nil
 }
@@ -191,13 +223,16 @@ func transportFailure(err error) *connectError {
 
 // statusFailure returns the connectError of an HTTP answer that says the
 // peer is not usable now (401, 403 and 407: it does not take the
-// credential; a redirect; a 5xx), or nil.
+// credential; a redirect; 404: the URL names no DICOMweb service, so a
+// mistyped URL fails the sender, never the instances; a 5xx), or nil.
 func statusFailure(code int) *connectError {
 	switch {
 	case code == http.StatusUnauthorized || code == http.StatusForbidden || code == http.StatusProxyAuthRequired:
 		return &connectError{fault: tenant.SenderFaultRejected, detail: phraseCredential}
 	case code >= 300 && code < 400:
 		return &connectError{fault: tenant.SenderFaultWrongAnswer, detail: phraseRedirect}
+	case code == http.StatusNotFound:
+		return &connectError{fault: tenant.SenderFaultWrongAnswer, detail: phraseNoService}
 	case code >= 500:
 		return &connectError{fault: tenant.SenderFaultWrongAnswer, detail: phraseServerError}
 	}

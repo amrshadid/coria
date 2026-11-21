@@ -125,6 +125,18 @@ func (s *Supervisor) Poke(name string) {
 	}
 }
 
+// TenantRemoved makes the supervisor read the list of tenants at once, so
+// the sends of a tenant the registry has just let go stop now rather than
+// at the next Interval: each unit in flight is given back after its
+// instance in flight, while the tenant's database is still open to take
+// it. It never blocks.
+func (s *Supervisor) TenantRemoved(string) {
+	select {
+	case s.poke <- struct{}{}:
+	default:
+	}
+}
+
 // Health returns the health of the tenant's sender named sender, as the
 // contract's SenderHealth with the sender's name; false when the server
 // knows nothing of it yet (unknown, since the server started).

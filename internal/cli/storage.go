@@ -92,7 +92,7 @@ func (a *app) readCredential(env, file string) (string, error) {
 		// others can use.
 		f, err := secret.OpenPrivate(file)
 		if err != nil {
-			msg := strings.TrimPrefix(fault.Message(err), "secret: ")
+			msg := credentialFileRefusal(err)
 			if fault.KindOf(err) == fault.NotFound {
 				msg = "cannot read --credential-file " + file + ": it does not exist"
 			}

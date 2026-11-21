@@ -113,10 +113,17 @@ func (s tenantSettings) FailuresKept(context.Context) (int, error) { return s.ke
 type oneTenant struct {
 	p        tenant.Pipeline
 	notReady atomic.Bool
+	// gone makes the list of tenants empty, as after the tenant's removal.
+	gone atomic.Bool
 }
 
-// Names answers the one tenant.
-func (o *oneTenant) Names(context.Context) ([]string, error) { return []string{"lab"}, nil }
+// Names answers the one tenant, or none once it is gone.
+func (o *oneTenant) Names(context.Context) ([]string, error) {
+	if o.gone.Load() {
+		return nil, nil
+	}
+	return []string{"lab"}, nil
+}
 
 // Store answers its database, or an error while it is not ready.
 func (o *oneTenant) Store(string) (tenant.Store, error) {
@@ -138,7 +145,7 @@ func (storages) Close() {}
 // fixture is a tenant's SQLite database with a directory storage, archived
 // instances on it, and the parts of a supervisor over them.
 type fixture struct {
-	t     *testing.T
+	t     testing.TB
 	ctx   context.Context
 	dir   string
 	p     tenant.Pipeline
@@ -157,7 +164,7 @@ type fixture struct {
 }
 
 // newFixture makes the tenant "lab" with a storage "main" and a receiver.
-func newFixture(t *testing.T) *fixture {
+func newFixture(t testing.TB) *fixture {
 	t.Helper()
 	f := &fixture{t: t, ctx: context.Background(), dir: t.TempDir(), clock: &clock{},
 		inst: &installation{max: 32, dests: mustDestinations(t, "127.0.0.0/8\n::1/128")}, reads: &checkedread.Slots{},

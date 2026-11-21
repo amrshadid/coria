@@ -103,6 +103,13 @@ func (f *senderFlags) credentialGiven(cmd *cobra.Command) bool {
 	return fl.Changed("credential-env") || fl.Changed("credential-file") || fl.Changed("credential-stdin")
 }
 
+// credentialFileRefusal returns the message of a credential file refused
+// as others may open it, in the words of a credential file: the check is
+// the one the key file follows, whose message names a key file.
+func credentialFileRefusal(err error) string {
+	return strings.ReplaceAll(strings.TrimPrefix(fault.Message(err), "secret: "), "the key file ", "the credential file ")
+}
+
 // readCredential reads a stow sender's credential from the environment
 // variable, the private file or standard input the flags name, and from
 // nowhere else: never an argument, since arguments are visible to every user of
@@ -121,7 +128,7 @@ func (a *app) readStowCredential(f *senderFlags) (string, error) {
 		// others can use.
 		file, err := secret.OpenPrivate(f.credFile)
 		if err != nil {
-			msg := strings.TrimPrefix(fault.Message(err), "secret: ")
+			msg := credentialFileRefusal(err)
 			if fault.KindOf(err) == fault.NotFound {
 				msg = "cannot read --credential-file " + f.credFile + ": it does not exist"
 			}

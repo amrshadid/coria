@@ -42,6 +42,7 @@ func runSending(t *testing.T, open OpenEvents) {
 		{"JobRetryLateCommit", testJobRetryLateCommit},
 		{"JobListingGivesUp", testJobListingGivesUp},
 		{"JobReleased", testJobReleased},
+		{"JobReleasedAfterItEnded", testJobReleasedAfterItEnded},
 		{"JobOwed", testJobOwed},
 		{"Forward", testForward},
 		{"ForwardNothingArchived", testForwardNothingArchived},

@@ -191,3 +191,54 @@ func TestStowCredentialRefusedHoldsBack(t *testing.T) {
 		t.Errorf("job %s %+v with the peer holding %d, want done with the 2 held back sent", j.State, j.Counts, arrived)
 	}
 }
+
+// TestIdleWaitEndsAtTheNextTry guards the wait of an idle worker of a
+// sender down for its failures: it ends when the peer is due to be tried
+// again (NextTry), not up to the poll interval's bound later; a try due
+// already waits a millisecond; a sender that is not down waits the poll
+// interval as it stands.
+func TestIdleWaitEndsAtTheNextTry(t *testing.T) {
+	now := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
+	sr := &senderRun{name: "pacs", health: newHealth("pacs", now)}
+	w := &worker{s: sr}
+	if got := w.idleWait(MaxPollInterval, now); got != MaxPollInterval {
+		t.Errorf("a sender not down waits %s, want %s", got, MaxPollInterval)
+	}
+	for range DownAfter {
+		sr.health.failed(tenant.SenderFaultUnreachable, phraseUnreachable, now)
+	}
+	h := sr.health.get()
+	if h.State != tenant.SenderDown || !h.NextTry.After(now) {
+		t.Fatalf("health %+v, want down with a next try", h)
+	}
+	if got, want := w.idleWait(MaxPollInterval, now), h.NextTry.Sub(now); got != want || want >= MaxPollInterval {
+		t.Errorf("a down sender's worker waits %s, want %s (the next try)", got, want)
+	}
+	if got := w.idleWait(MaxPollInterval, h.NextTry.Add(time.Second)); got != time.Millisecond {
+		t.Errorf("a try due already waits %s, want 1ms", got)
+	}
+	if got := w.idleWait(time.Second, now); got != time.Second {
+		t.Errorf("a wait shorter than the next try is %s, want 1s", got)
+	}
+}
+
+// TestTenantRemovedStopsItsSendsAtOnce guards TenantRemoved: a tenant no
+// longer in the list of tenants is let go as soon as the registry says so,
+// long before the next reading of the list (an hour here).
+func TestTenantRemovedStopsItsSendsAtOnce(t *testing.T) {
+	f := newFixture(t)
+	f.addDIMSE("pacs", freePort(t))
+	cfg := f.config()
+	cfg.Interval = time.Hour
+	s := f.start(cfg)
+	waitFor(t, 10*time.Second, "the tenant's first reading of its senders", func() bool {
+		_, ok := s.Health("lab", "pacs")
+		return ok
+	})
+	f.ten.gone.Store(true)
+	s.TenantRemoved("lab")
+	waitFor(t, 5*time.Second, "the removed tenant to be let go", func() bool {
+		_, ok := s.Health("lab", "pacs")
+		return !ok
+	})
+}

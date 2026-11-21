@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/amrshadid/coria/internal/driver"
@@ -343,5 +344,31 @@ func TestCreateReportsItsEntry(t *testing.T) {
 	}
 	if _, ok := r.State("made"); !ok {
 		t.Error("Remove by a revoked key unregistered the tenant")
+	}
+}
+
+// TestUnregisteredIsToldOfARemoval guards Config.Unregistered: a removed
+// tenant's name is passed once, when the registry lets it go, so what runs
+// for it elsewhere can stop at once; a tenant made and kept is not.
+func TestUnregisteredIsToldOfARemoval(t *testing.T) {
+	e := newEnv(t)
+	var mu sync.Mutex
+	var told []string
+	cfg := e.config()
+	cfg.Unregistered = func(name string) {
+		mu.Lock()
+		told = append(told, name)
+		mu.Unlock()
+	}
+	r := e.newRegistry(cfg)
+	e.create(r, "id-lab", "lab", flakyDriver, flakyAddress("lab"))
+	e.create(r, "id-kept", "kept", flakyDriver, flakyAddress("kept"))
+	if _, err := r.Remove(context.Background(), "lab", e.audit("RemoveTenant"), master.LocalOperator()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(told, ",") != "lab" {
+		t.Errorf("told of %v, want [lab]", told)
 	}
 }
