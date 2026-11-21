@@ -14,7 +14,8 @@ import (
 
 const quarantineColumns = `id, reason, details, state, receiver, reception_id, calling_ae, called_ae, remote_addr, size,
 	sha256, kept_sha256, sop_class_uid, sop_instance_uid, study_uid, series_uid, transfer_syntax_uid, incoming,
-	content_kept, at, decided_at, release_mode, release_reception, release_receiver, reject_reason, released_from, release_reason`
+	content_kept, at, decided_at, release_mode, release_reception, release_receiver, reject_reason, released_from, release_reason,
+	deidentified`
 
 // scanQuarantined reads one row of quarantineColumns.
 func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFile, error) {
@@ -26,7 +27,7 @@ func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFil
 	if err := row.Scan(&q.ID, &reason, &details, &state, &q.Receiver, &q.ReceptionID, &q.Caller.CallingAETitle,
 		&q.Caller.CalledAETitle, &q.Caller.Address, &q.Size, &sum, &kept, &q.SOPClassUID, &q.SOPInstanceUID, &q.StudyUID,
 		&q.SeriesUID, &q.TransferSyntaxUID, &q.Incoming, &q.ContentKept, &at, &decided, &mode, &q.ReleaseReception,
-		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason); err != nil {
+		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified); err != nil {
 		return q, err
 	}
 	q.Reason, q.State, q.ReleaseMode = tenant.QuarantineReason(reason), tenant.QuarantineState(state), tenant.ReleaseMode(mode)
@@ -119,12 +120,12 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 				return err
 			}
 			res, err := tx.ExecContext(ctx, `INSERT INTO quarantine (`+quarantineColumns+`)
-				VALUES (?, ?, ?, 'held', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', '', '', ?, '')
+				VALUES (?, ?, ?, 'held', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', '', '', ?, '', ?)
 				ON CONFLICT (id) DO NOTHING`,
 				q.ID, string(q.Reason), details, q.Receiver, q.ReceptionID, q.Caller.CallingAETitle, q.Caller.CalledAETitle,
 				q.Caller.Address, q.Size, nullBlob(q.SHA256), nullBlob(q.KeptSHA256), q.SOPClassUID, q.SOPInstanceUID,
 				q.StudyUID, q.SeriesUID, q.TransferSyntaxUID, q.Incoming, boolInt(q.ContentKept), micros(q.Quarantined),
-				q.ReleasedFrom)
+				q.ReleasedFrom, boolInt(q.Deidentified))
 			if err != nil {
 				return err
 			}

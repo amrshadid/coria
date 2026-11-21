@@ -159,6 +159,8 @@ func archiveThroughServe(t *testing.T, scu string, c receptionCase, n int) {
 	port := freePort(t)
 	post(t, hc, "/coria.v1.SettingsService/SetSetting",
 		`{"setting":{"name":"receiver.ports","scope":{"tenant":"`+tenantName+`"},"value":"`+strconv.Itoa(port)+`"}}`)
+	post(t, hc, "/coria.v1.SettingsService/SetSetting",
+		`{"setting":{"name":"receiver.allow-as-received","scope":{"tenant":"`+tenantName+`"},"value":"true"}}`)
 
 	var open func() blob.Store
 	if c.s3 == "" {

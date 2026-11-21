@@ -33,6 +33,12 @@ type ReceivedFile struct {
 	Association string
 	// Released says it came from a quarantine release.
 	Released bool
+	// Deidentified says it was recorded at a receiver that de-identifies:
+	// its placing UIDs are the keyed remapping of the file's and its
+	// checksum is keyed, and the archive step de-identifies it. False, it
+	// was recorded as received and is archived as received; at a receiver
+	// that de-identifies now it is held instead.
+	Deidentified bool
 	// Received is when it was recorded. Answered by a store.
 	Received time.Time
 }

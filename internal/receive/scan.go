@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"os"
 
 	"github.com/amrshadid/coria/internal/blob"
 	"github.com/amrshadid/coria/internal/core/label"
@@ -35,6 +36,15 @@ type scanResult struct {
 type written struct {
 	f   tenant.ReceivedFile
 	key string
+	// size and sum are the size and SHA-256 of the bytes put: the file as
+	// received, or its de-identified copy when made.
+	size int64
+	sum  tenant.SHA256
+	// made says the bytes put are the de-identified copy beside the
+	// received file in the incoming area (incoming.Area.Derive), which
+	// profile made; false, the file as received.
+	made    bool
+	profile tenant.ProfileRef
 }
 
 // archiveScan archives the files of one series into its scan. A file is
@@ -161,9 +171,6 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	if err != nil {
 		return res, fault.Wrap(fault.Internal, err, "the scan's labels make no key")
 	}
-	unlock := p.lockScan(r.Storage, manifestKey)
-	defer unlock()
-
 	puts := make([]written, len(toWrite))
 	for i, f := range toWrite {
 		key, err := layout.InstanceKey(path, f.SOPInstanceUID)
@@ -172,23 +179,41 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		}
 		puts[i] = written{f: f, key: key}
 	}
+	// Every UID this reception claims and writes: its entries already on
+	// the storage are not the catalog's (no committed instance has a UID
+	// while a claim on it stands), whether its file reads back or not, and
+	// whether or not it is held before it is put.
+	ours := make(map[string]bool, len(puts))
+	for _, wr := range puts {
+		ours[wr.f.SOPInstanceUID] = true
+	}
+	// Each file is made ready to put before the scan is locked: as it was
+	// received, or de-identified and checked (prepare); one that cannot be
+	// is held now, and goes no further.
+	puts, unready, err := p.prepare(ctx, r, path, puts)
+	if err != nil {
+		return res, err
+	}
+	defer p.dropMade(puts)
+	if err := p.hold(ctx, w, unready); err != nil {
+		return res, err
+	}
+	if len(puts) == 0 {
+		return res, nil
+	}
+	unlock := p.lockScan(r.Storage, manifestKey)
+	defer unlock()
+
 	// Each instance has a key of its own, so its put waits on no other's;
 	// one after another, a series of hundreds of slices took that many
 	// storage round trips in a row (two syncs each on a directory, a
 	// request each on S3). Every put still ends before any read-back.
 	if err := parallel(ctx, len(puts), func(ctx context.Context, i int) error {
-		return p.putIncoming(ctx, store, puts[i].key, puts[i].f)
+		return p.putIncoming(ctx, store, puts[i])
 	}); err != nil {
 		return res, err
 	}
 
-	// Every UID this reception claims and writes: its entries already on
-	// the storage are not the catalog's (no committed instance has a UID
-	// while a claim on it stands), whether its file reads back or not.
-	ours := make(map[string]bool, len(puts))
-	for _, wr := range puts {
-		ours[wr.f.SOPInstanceUID] = true
-	}
 	sums := make([]tenant.SHA256, len(puts))
 	errs := make([]error, len(puts))
 	if err := parallel(ctx, len(puts), func(ctx context.Context, i int) error {
@@ -210,7 +235,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 			mismatched = append(mismatched, p.holdRecord(r, wr.f, tenant.QuarantineReadBackMismatch, map[string]string{"storage": r.Storage}))
 		case err != nil:
 			return res, err
-		case sum != wr.f.SHA256:
+		case sum != wr.sum:
 			mismatched = append(mismatched, p.holdRecord(r, wr.f, tenant.QuarantineReadBackMismatch,
 				map[string]string{"storage": r.Storage, "read_sha256": hex.EncodeToString(sum[:])}))
 			p.log.Warn("an archived file read back with another checksum; it is held, not committed, and its incoming copy kept",
@@ -229,7 +254,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	}
 	files := make([]manifest.File, len(puts))
 	for i, wr := range puts {
-		files[i] = manifest.File{Key: wr.key, Length: wr.f.Size, Size: wr.f.Size, SHA256: wr.f.SHA256.String(), SOPInstanceUID: wr.f.SOPInstanceUID}
+		files[i] = manifest.File{Key: wr.key, Length: wr.size, Size: wr.size, SHA256: wr.sum.String(), SOPInstanceUID: wr.f.SOPInstanceUID}
 	}
 	merged, err := p.scanManifest(ctx, g.uid, files)
 	if err != nil {
@@ -264,7 +289,8 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		}
 		for _, wr := range part {
 			c.Instances = append(c.Instances, tenant.ConfirmedInstance{
-				SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Length: wr.f.Size, Size: wr.f.Size, ArchivedSHA256: wr.f.SHA256,
+				SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Length: wr.size, Size: wr.size, ArchivedSHA256: wr.sum,
+				Profile: wr.profile,
 			})
 		}
 		p.at("archive.before-commit")
@@ -281,7 +307,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		p.wake()
 		var bytes int64
 		for _, wr := range part {
-			bytes += wr.f.Size
+			bytes += wr.size
 		}
 		p.meter.archived(p.cfg.Clock.Now(), int64(len(part)), bytes)
 		p.at("archive.after-commit")
@@ -302,25 +328,51 @@ func (p *Pipeline) holdWritten(ctx context.Context, w tenant.Work, r tenant.Rece
 	return p.hold(ctx, w, records)
 }
 
-// putIncoming puts a received file's incoming copy to key, and checks that
-// what the storage counted is what was received: a copy changed on the disk
-// since it landed is not archived.
-func (p *Pipeline) putIncoming(ctx context.Context, store blob.Store, key string, f tenant.ReceivedFile) error {
-	in, _, err := p.area.Open(f.Incoming)
+// putIncoming puts a file's bytes to its key: its incoming copy as
+// received, or the de-identified copy made from it (written.made). It
+// checks that what the storage counted is what was received, or what was
+// de-identified and checked: a copy changed on the disk since is not
+// archived.
+func (p *Pipeline) putIncoming(ctx context.Context, store blob.Store, wr written) error {
+	in, err := p.openPut(wr)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = in.Close() }()
+	// The bytes are compared with the row (the received file's checksum,
+	// or the de-identified copy's) before any of them is written: wrong
+	// bytes never reach the storage, and the handle compared is the one
+	// put. A file recorded de-identified keeps a keyed checksum in its row;
+	// its own was compared before it was de-identified (prepareOne), and
+	// what is put is the copy, whose checksum is wr.sum.
+	sum, n, err := sumAt(in, wr.size+1)
+	if err != nil {
+		return err
+	}
+	if n != wr.size || sum != wr.sum {
+		return fault.New(fault.Internal, "an incoming copy no longer has the checksum it was received or checked with; nothing of it is archived")
+	}
 	p.at("archive.before-put")
-	wr, err := store.Put(ctx, key, in)
+	got, err := store.Put(ctx, wr.key, io.NewSectionReader(in, 0, wr.size))
 	if err != nil {
 		return storageError(err, "a file cannot be written to the storage")
 	}
 	p.at("archive.after-put")
-	if wr.Size != f.Size || tenant.SHA256(wr.SHA256) != f.SHA256 {
-		return fault.New(fault.Internal, "an incoming copy no longer has the checksum it was received with; it is not archived")
+	if got.Size != wr.size || tenant.SHA256(got.SHA256) != wr.sum {
+		return fault.New(fault.Internal, "an incoming copy no longer has the checksum it was received or checked with; it is not archived")
 	}
 	return nil
+}
+
+// openPut opens the bytes a file puts: its incoming copy, or the
+// de-identified copy made from it.
+func (p *Pipeline) openPut(wr written) (*os.File, error) {
+	if wr.made {
+		f, _, err := p.area.OpenDerived(wr.f.Incoming)
+		return f, err
+	}
+	f, _, err := p.area.Open(wr.f.Incoming)
+	return f, err
 }
 
 // readManifest reads a scan's manifest from the storage, or an empty one
@@ -374,14 +426,14 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 		}
 		wr := puts[i]
 		i++
-		h, table, sums, err := p.readLine(ctx, wr.f.Incoming, wr.f.SHA256)
+		h, table, sums, err := p.readLine(ctx, wr)
 		if err != nil {
 			return sidecar.Instance{}, false, err
 		}
 		if i == 1 {
 			*values = scanValues(h)
 		}
-		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.f.Size, SHA256: hex.EncodeToString(wr.f.SHA256[:]),
+		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.size, SHA256: hex.EncodeToString(wr.sum[:]),
 			TransferSyntax: h.TransferSyntaxUID}
 		// A deflated data set's positions count inflated bytes (PS3.5 A.5),
 		// so the sidecar's check would refuse them as outside the file and
@@ -422,20 +474,27 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 	return nil
 }
 
-// readLine reads what a received file's sidecar line holds from its
-// incoming copy: its header, its frame table (frames.Table) and each
-// frame's checksum (frames.Checksums), from the same open file, whose
-// bytes are those written to the storage, so the table's offsets are
-// places in the archived file. The frames' checksums are read in one pass
-// with the file's own, which must be the one the file was received with:
-// a copy that changed since is never given checksums that are not of the
+// readLine reads what a file's sidecar line holds from the bytes it put
+// (its incoming copy, or the de-identified copy made from it): its header,
+// its frame table (frames.Table) and each frame's checksum
+// (frames.Checksums), from the same open file, whose bytes are those
+// written to the storage, so the table's offsets are places in the
+// archived file and the header is what the archive holds, never an
+// original a profile changed. The frames' checksums are read in one pass
+// with the file's own, which must be the one the bytes were put with: a
+// copy that changed since is never given checksums that are not of the
 // bytes archived.
-func (p *Pipeline) readLine(ctx context.Context, path string, sum [32]byte) (*header.Header, [][]sidecar.Range, []string, error) {
-	f, size, err := p.area.Open(path)
+func (p *Pipeline) readLine(ctx context.Context, wr written) (*header.Header, [][]sidecar.Range, []string, error) {
+	f, err := p.openPut(wr)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, nil, nil, fault.Wrap(fault.Unavailable, err, "a recorded file cannot be looked at")
+	}
+	size, sum := info.Size(), wr.sum
 	h, err := header.ReadWithin(f, size, p.headerLimit(ctx))
 	if err != nil {
 		return nil, nil, nil, fault.Wrap(fault.Internal, err, "a recorded file's header cannot be read")
@@ -445,6 +504,15 @@ func (p *Pipeline) readLine(ctx context.Context, path string, sum [32]byte) (*he
 		return nil, nil, nil, fault.Wrap(fault.Internal, err, "a recorded file's pixel data cannot be read")
 	}
 	if len(table) == 0 {
+		// No frames to checksum: the header read is still of the bytes
+		// put only when the file's checksum is theirs.
+		whole, n, err := sumAt(f, size)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if n != wr.size || whole != sum {
+			return nil, nil, nil, fault.New(fault.Internal, "a recorded file changed after it was put; its header is not written as the archive's")
+		}
 		return h, table, nil, nil
 	}
 	sums, whole, err := frames.Checksums(io.NewSectionReader(f, 0, size), table)

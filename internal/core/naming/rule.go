@@ -362,6 +362,32 @@ func (r *Rule) Hashes() bool {
 	return false
 }
 
+// Plain returns the placeholders of the rule that put a value in a label as
+// it is, not hashed, as they are written ("PatientID", or a pattern's part
+// "site of PatientComments"), each once, in the order of the labels: a rule
+// with any puts what the sender gave into labels, which a receiver that
+// de-identifies must not.
+func (r *Rule) Plain() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, t := range r.templates {
+		for _, p := range t.pieces {
+			if p.literal != "" || p.hash {
+				continue
+			}
+			name := p.attr
+			if p.part != "" {
+				name = p.part + " of " + r.patAttr
+			}
+			if !seen[name] {
+				seen[name] = true
+				out = append(out, name)
+			}
+		}
+	}
+	return out
+}
+
 // Labels returns the three labels the rule makes from a's attributes, or an
 // *Error naming the label, the attribute and the fault. h gives the keyed
 // hash of a value for each {#...} placeholder; it may be nil only for a rule

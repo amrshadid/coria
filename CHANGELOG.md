@@ -143,6 +143,30 @@ All notable changes to CORIA are written here. The form is
   reception that archived nothing makes no forward job. Adding a sender
   audits its type and destination, never its credential. Not served by the
   API yet.
+- A receiver de-identifies what it receives with a version of one of the
+  tenant's profiles, or archives it as received (`Receiver.deidentification`).
+  Each file is de-identified in the archive step, written beside its original,
+  checked again for every value the profile removed by a separate read, then
+  compared with its checksum, put on the storage and read back before its row
+  is committed; each instance records its profile version. At such a receiver
+  every row of the tenant (received files, receptions, claims, quarantine,
+  catalog) holds UIDs remapped by the tenant's UID key and a keyed received
+  checksum, and each row says how the file was recorded, which decides how it
+  is archived: a file recorded as received is never archived as it was at a
+  receiver that de-identifies (`deid_failed`, `recorded_as_received`; its
+  release lands it again, de-identified, through the receiver the release
+  names, also after a restart). A placing UID under the standard's own root
+  is held as `bad_uid`. The catalog values, sidecar and manifest come from the
+  de-identified file. A file that cannot be de-identified is quarantined with
+  `deid_failed`, `residual_value` or `profile_refused`, never archived as it
+  was. Such a receiver is refused a profile version with pixel rules (not
+  applied yet), one that keeps the UIDs a file is placed by (the Retain UIDs
+  option), and a naming rule that puts a value into a label unhashed. A new
+  tenant setting, `receiver.allow-as-received` (set by the installation's
+  admin, `false` by default; `true` for tenants that already had receivers),
+  decides whether a receiver may archive as received.
+- De-identification adds no needle for a date or time of only zeros, which
+  identifies no one and was found inside ordinary decimals.
 - The check after de-identification (`internal/deid/check`): reads a
   de-identified file with the codec-free reader and searches, in one pass
   each, every element's decoded text (values of VR UN and OB and the

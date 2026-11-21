@@ -228,6 +228,45 @@ enum QuarantineReason {
   // kept, and a release places it by its whole header. Details:
   // "attribute", the keyword of the first attribute that differs.
   QUARANTINE_REASON_UID_MISMATCH = 13;
+
+  // The receiver's de-identification profile cannot process the file, so
+  // it was never archived; its original bytes are kept. Details: "cause",
+  // a fixed word: "no_subject" (a date to shift and no Patient ID to find
+  // the subject's shift by), "lookup_missing" (a lookup table holds no
+  // code for a value and its rule says to quarantine), "bad_value" (a value
+  // the action reads or writes is not one of its VR, PS3.5 6.2),
+  // "too_deep", "too_large", "internal" (a fault of the server's own, every
+  // change undone), "no_profile" (the file arrived at a receiver that
+  // de-identifies and its receiver now names no profile),
+  // "recorded_as_received" (the file arrived while its receiver archived as
+  // received and its receiver de-identifies now; a release checks it again
+  // as a file that just arrived, so it is de-identified), "profile_unusable"
+  // (the profile version cannot run in this version of the server),
+  // "unreadable" or "unwritable" (the data set cannot be read, or written
+  // back, for de-identification), or "uid_not_remapped" (the profile
+  // leaves a Study, Series or SOP Instance UID other than the keyed
+  // remapping the server places the file by); "path", the element where it
+  // failed, as tags of eight hexadecimal digits with item numbers, such as
+  // "00081115[0]/0020000E", when there is one; and "rule", the rule's name
+  // (or "rule" and its position), when one decided. A release de-identifies
+  // the file again with its receiver's profile version then.
+  QUARANTINE_REASON_DEID_FAILED = 14;
+
+  // The check after de-identification, a separate read of the
+  // de-identified file, found a value the profile removed from the file
+  // still in it (or in a label made for it), so it was never archived.
+  // Details: "path", the element it was found in as for
+  // QUARANTINE_REASON_DEID_FAILED, and "kind", the kind of value found:
+  // "name", "date", "uid" or "text" (an identifier or any other text).
+  // Never the value. A release de-identifies the file again with its
+  // receiver's profile version then, so a profile changed to clean the
+  // value lets it through.
+  QUARANTINE_REASON_RESIDUAL_VALUE = 15;
+
+  // A rule of the receiver's profile whose action is quarantine applies to
+  // an element the file holds. Details: "rule", the rule's name (or "rule"
+  // and its position).
+  QUARANTINE_REASON_PROFILE_REFUSED = 16;
 }
 
 // QuarantineState is what has been decided about a quarantined file.

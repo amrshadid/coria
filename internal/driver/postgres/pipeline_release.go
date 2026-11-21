@@ -80,9 +80,17 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		if !has {
 			return tenant.Precondition("the tenant has no receiver named " + receiver)
 		}
+		var config string
+		if err := tx.QueryRow(ctx, `SELECT config FROM receivers WHERE name = $1`, via).Scan(&config); err != nil {
+			return err
+		}
+		deidentifies, err := sqlkit.ReceiverDeidentifies(config)
+		if err != nil {
+			return err
+		}
 		joined := ""
 		var events []tenant.EventRecord
-		if q.Receivable() {
+		if q.JoinsAt(deidentifies) {
 			r, openEvents, err := joinReception(ctx, tx, via, q.StudyUID, receptionID, now)
 			if err != nil {
 				return err
@@ -91,7 +99,7 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 			joined = r.ID
 			f := tenant.ReceivedFile{ReceptionID: r.ID, SOPInstanceUID: q.SOPInstanceUID, SHA256: q.SHA256, SeriesUID: q.SeriesUID,
 				StudyUID: q.StudyUID, SOPClassUID: q.SOPClassUID, TransferSyntaxUID: q.TransferSyntaxUID, Size: q.Size,
-				Incoming: q.Incoming, Caller: q.Caller, Released: true}
+				Incoming: q.Incoming, Caller: q.Caller, Released: true, Deidentified: q.Deidentified}
 			added, err := insertReceived(ctx, tx, []tenant.ReceivedFile{f}, now)
 			if err != nil {
 				return err

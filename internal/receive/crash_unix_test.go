@@ -36,6 +36,9 @@ const (
 	crashHitEnv    = "CORIA_RECEIVE_CRASH_HIT"
 	crashRunEnv    = "CORIA_RECEIVE_CRASH_RUN"
 	crashResendEnv = "CORIA_RECEIVE_CRASH_RESEND"
+	// crashDeidEnv, when set, makes the child's receiver de-identify
+	// (deid_crash_unix_test.go).
+	crashDeidEnv = "CORIA_RECEIVE_CRASH_DEID"
 )
 
 // crashPoints are the points, before and after every durable effect of
@@ -94,7 +97,11 @@ func TestReceiveCrashChild(t *testing.T) {
 			}
 		}
 	}
-	e := newEnvAt(t, dataDir, t0.Add(time.Duration(run)*time.Hour), envOptions{hook: kill})
+	opts := envOptions{hook: kill}
+	if os.Getenv(crashDeidEnv) != "" {
+		opts.deid = &deidOptions{}
+	}
+	e := newEnvAt(t, dataDir, t0.Add(time.Duration(run)*time.Hour), opts)
 	out := bufio.NewWriter(os.Stdout)
 	names := crashSend
 	if run > 1 {
@@ -184,11 +191,13 @@ func TestCrashMatrix(t *testing.T) {
 
 // runChild runs the crash child and returns its output and whether it was
 // killed.
-func runChild(t *testing.T, dataDir string, run int, point string, hit int, resend string) (string, bool) {
+// extra is more of the child's environment, each NAME=value.
+func runChild(t *testing.T, dataDir string, run int, point string, hit int, resend string, extra ...string) (string, bool) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestReceiveCrashChild$", "-test.count=1") // #nosec G204 G702 -- the test binary itself.
 	cmd.Env = append(os.Environ(), crashDirEnv+"="+dataDir, crashRunEnv+"="+strconv.Itoa(run),
 		crashPointEnv+"="+point, crashHitEnv+"="+strconv.Itoa(hit), crashResendEnv+"="+resend)
+	cmd.Env = append(cmd.Env, extra...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()

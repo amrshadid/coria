@@ -412,3 +412,20 @@ func FuzzPattern(f *testing.F) {
 		}
 	})
 }
+
+// TestPlain guards the list of placeholders that put a value in a label as
+// it is: none for the default rule, whose every placeholder is hashed; each
+// plain attribute once, and a pattern's part by its name and attribute.
+func TestPlain(t *testing.T) {
+	if got := Default().Plain(); len(got) != 0 {
+		t.Errorf("the default rule: %v", got)
+	}
+	r, err := Parse(Spec{Subject: "sub-{PatientID}", Session: "ses-{#StudyInstanceUID}-{PatientID}", Scan: "scan-{site}",
+		PatternAttribute: "PatientComments", Pattern: `(?P<site>[a-z]+)`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Plain(); len(got) != 2 || got[0] != "PatientID" || got[1] != "site of PatientComments" {
+		t.Errorf("plain placeholders %v", got)
+	}
+}

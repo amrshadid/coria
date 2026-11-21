@@ -90,6 +90,14 @@ type Receiver struct {
 	// MaxForwardTo, each once, each a sender the tenant has (the store's
 	// to check).
 	ForwardTo []string
+	// Profile is the de-identification profile version every file it
+	// receives is de-identified with before any byte of it reaches a
+	// storage; the zero ref archives what it receives as received. The
+	// version must be one the tenant has (the caller checks, since a
+	// version is never removed), and an as-received receiver may exist
+	// only where the tenant's setting receiver.allow-as-received allows it
+	// (the caller's to check too).
+	Profile ProfileRef
 	// Created is when it was added; Updated when it last changed.
 	Created, Updated time.Time
 }
@@ -246,12 +254,42 @@ const (
 	FieldSTOWKeys         ReceiverField = "stow.key_ids"
 	FieldSTOWMaxRequest   ReceiverField = "stow.max_request_bytes"
 	FieldForwardTo        ReceiverField = "forward_to"
-	maxReceiverFieldCount               = 19
+	// FieldDeidentification sets Profile: the profile version, or the zero
+	// ref for as received.
+	FieldDeidentification ReceiverField = "deidentification"
 )
 
+// maxReceiverFieldCount is how many fields a receiver has that a change
+// can name.
+const maxReceiverFieldCount = 20
+
+// Deidentifies reports whether the receiver de-identifies what it
+// receives, rather than archiving it as received.
+func (r Receiver) Deidentifies() bool { return !r.Profile.IsZero() }
+
+// PlainPlaceholders returns the placeholders of r's naming rule that put a
+// received value into a label as it is, not hashed (naming.Rule.Plain);
+// none for the default rule. A label is kept in the reception's row when
+// the reception is identified, before any file is de-identified, so a
+// receiver that de-identifies may have no such placeholder: the caller
+// refuses one that does. A rule that does not parse has none here, since
+// Validate refuses it.
+func (r Receiver) PlainPlaceholders() []string {
+	if r.Naming == nil {
+		return nil
+	}
+	rule, err := naming.Parse(*r.Naming)
+	if err != nil {
+		return nil
+	}
+	return rule.Plain()
+}
+
 // Validate returns an Invalid error unless r can be stored, by the
-// contract's rule of each field. Whether its storage exists and whether its
-// port is free are the store's to check, in its transaction.
+// contract's rule of each field, or a precondition failure for a receiver
+// that de-identifies whose naming rule puts a value into a label unhashed.
+// Whether its storage exists and whether its port is free are the store's
+// to check, in its transaction.
 func (r Receiver) Validate() error {
 	if err := ValidateName("receiver", r.Name); err != nil {
 		return err
@@ -282,9 +320,24 @@ func (r Receiver) Validate() error {
 			return invalid("a receiver names each sender it forwards to once")
 		}
 	}
+	if !r.Profile.IsZero() {
+		if err := r.Profile.Validate(); err != nil {
+			return err
+		}
+	}
 	if r.Naming != nil {
-		if _, err := naming.Parse(*r.Naming); err != nil {
+		rule, err := naming.Parse(*r.Naming)
+		if err != nil {
 			return fault.Wrap(fault.Invalid, err, "the naming rule is not valid: "+err.Error())
+		}
+		// A label is kept with its reception before any file of it is
+		// de-identified, so a receiver that de-identifies takes no value
+		// into a label unhashed. A precondition, not a malformed request:
+		// each field is valid, and the same rule is taken by a receiver
+		// that archives as received.
+		if plain := rule.Plain(); r.Deidentifies() && len(plain) > 0 {
+			return Precondition("receiver.naming: a receiver that de-identifies makes its labels from hashed values only, and the naming rule puts " +
+				strings.Join(plain, ", ") + " into a label as received; write each as {#...}")
 		}
 	}
 	switch r.Type {
@@ -468,6 +521,8 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 			out.STOW.MaxRequestBytes = change.STOW.MaxRequestBytes
 		case FieldForwardTo:
 			out.ForwardTo = slices.Clone(change.ForwardTo)
+		case FieldDeidentification:
+			out.Profile = change.Profile
 		default:
 			return stored, invalid("a change of a receiver names a field it does not have: " + strconv.Quote(string(f)))
 		}

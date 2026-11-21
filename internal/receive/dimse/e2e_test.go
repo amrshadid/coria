@@ -64,8 +64,10 @@ type archive struct {
 	row     tenant.Receiver
 }
 
-// newArchive makes the tenant, its storage and r, and starts a pipeline.
-func newArchive(t *testing.T, r tenant.Receiver) *archive {
+// newArchive makes the tenant, its storage and r, and starts a pipeline;
+// each of mods may change the tenant and the pipeline's configuration
+// before it starts.
+func newArchive(t *testing.T, r tenant.Receiver, mods ...func(*archive, *receive.Config)) *archive {
 	t.Helper()
 	if testing.Short() {
 		t.Skip("runs the reception pipeline on a database; left out under -short")
@@ -101,12 +103,16 @@ func newArchive(t *testing.T, r tenant.Receiver) *archive {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := receive.New(receive.Config{
+	cfg := receive.Config{
 		Tenant: "lab", Store: a.store, Hasher: hasher, Clock: a.clock,
 		OpenStorage:  func(context.Context, string) (blob.Store, error) { return a.storage, nil },
 		IncomingRoot: filepath.Join(a.dataDir, "incoming"), Workers: 2, Lease: 30 * time.Second,
 		PollInterval: 2 * time.Second, BatchInterval: 5 * time.Second, RetryInterval: 20 * time.Second,
-	})
+	}
+	for _, m := range mods {
+		m(a, &cfg)
+	}
+	p, err := receive.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

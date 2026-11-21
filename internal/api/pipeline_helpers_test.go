@@ -146,6 +146,9 @@ func newPlaceFixture(t *testing.T) *placeFixture {
 	f.lab2Admin, _ = f.key(f.onTenant("lab2", master.RoleAdmin))
 	f.setSetting(installation(), settings.StorageDirectoryRoots, "fast="+f.root)
 	f.setSetting(tenantScope("lab1"), settings.ReceiverPorts, "11112,11120-11129")
+	// The receivers of these tests archive as received, which a tenant made
+	// now allows only when the installation's admin says so.
+	f.setSetting(tenantScope("lab1"), settings.ReceiverAllowAsReceived, "true")
 	return f
 }
 

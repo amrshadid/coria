@@ -77,16 +77,30 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		if !has {
 			return tenant.Precondition("the tenant has no receiver named " + receiver)
 		}
+		var config string
+		if err := tx.QueryRowContext(ctx, `SELECT config FROM receivers WHERE name = ?`, via).Scan(&config); err != nil {
+			return err
+		}
+		deidentifies, err := sqlkit.ReceiverDeidentifies(config)
+		if err != nil {
+			return err
+		}
 		joined := ""
-		if q.Receivable() {
+		if q.JoinsAt(deidentifies) {
 			r, _, err := openReceptionInTx(ctx, tx, via, q.StudyUID, receptionID, now)
 			if err != nil {
 				return err
 			}
 			joined = r.ID
-			res, err := tx.StmtContext(ctx, st.insertReceived).ExecContext(ctx, r.ID, q.SOPInstanceUID, q.SHA256[:], q.SeriesUID,
+			args := []any{r.ID, q.SOPInstanceUID, q.SHA256[:], q.SeriesUID,
 				q.StudyUID, q.SOPClassUID, q.TransferSyntaxUID, q.Size, q.Incoming, q.Caller.CallingAETitle,
-				q.Caller.CalledAETitle, q.Caller.Address, "", 1, micros(now))
+				q.Caller.CalledAETitle, q.Caller.Address, "", 1, micros(now)}
+			var res sql.Result
+			if q.Deidentified {
+				res, err = tx.ExecContext(ctx, insertDeidentifiedReceivedSQL, args...)
+			} else {
+				res, err = tx.StmtContext(ctx, st.insertReceived).ExecContext(ctx, args...)
+			}
 			if err != nil {
 				return err
 			}

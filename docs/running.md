@@ -63,6 +63,24 @@ Keys, roles, networks a key may come from, and the audit log are described in
 [access](../internal/access/doc.go). The roles are reader, writer, operator and
 admin, on a tenant or on the installation.
 
+### Name the servers and keys you use
+
+A person who works with several installations, or with a key per tenant, saves
+each as a context instead of repeating flags. `coria context add` sends the key
+to the server first, saves only if the server accepts it, and prints who the key
+is and what it is granted:
+
+```sh
+coria context add prod --server https://archive.example.org:8443 --key-file ~/.coria/prod.key --ca-file ~/.coria/ca.pem
+coria context add lab1 --server https://archive.example.org:8443 --key-file ~/.coria/lab1.key --ca-file ~/.coria/ca.pem --tenant lab1
+coria --context lab1 setting list        # the tenant lab1, from the context's default tenant
+coria context use prod                   # the context commands use when none is named
+```
+
+The contexts are in a file only you can read, which holds the paths of the key
+and certificate files and never a key; see
+[Contexts](command-line.md#contexts).
+
 ## Make a tenant that receives
 
 The installation says where data and receivers may be; the tenant then uses them
@@ -73,6 +91,7 @@ The installation says where data and receivers may be; the tenant then uses them
 coria tenant create lab1
 coria setting set storage.directory-roots fast=/srv/archive
 coria setting set receiver.ports 11112 --tenant lab1
+coria setting set receiver.allow-as-received true --tenant lab1   # test data only, see below
 coria storage add lab1 main --type dir --root fast --path main
 coria storage test lab1 main
 coria receiver add lab1 scanner1 --storage main --port 11112 --aet CORIA \
@@ -90,5 +109,29 @@ was archived with `coria catalog subjects lab1` and `coria download`
 ([reading the archive](reading.md)), and follow a tenant with the interactive
 program (`coria`).
 
-CORIA does not de-identify yet: what a receiver gets is archived as it was sent,
-so use synthetic or public test data.
+## Choose what a receiver does with what it receives
+
+A receiver either de-identifies every file with a version of one of the
+tenant's de-identification profiles, or archives it as received. A tenant made
+now allows only the first: a receiver that archives as received, and so puts
+the names and identifiers the scanner sent into the archive, is refused until
+an admin on the installation sets `receiver.allow-as-received` to `true` on the
+tenant (as above, for test data). A tenant that had receivers before receivers
+could de-identify was given `true` when its database was upgraded, so its
+receivers go on as they did. See [Settings](settings.md).
+
+A receiver that de-identifies names its profile version (`"profile": {"name":
+"research", "version": 1}` in `AddReceiver` or `SetReceiver`, mask
+`deidentification`). Every file is de-identified before any byte of it reaches
+the storage, checked again by a separate read for every value the profile
+removed, and quarantined (`deid_failed`, `residual_value`, `profile_refused`)
+when it cannot be; the storage, the catalog and every list then hold only what
+the profile leaves, and UIDs remapped by the tenant's key. A profile version
+whose pixel rules this version cannot apply, one that keeps the UIDs a file is
+placed by (the Retain UIDs option), and a naming rule that puts a value into a
+label unhashed (`{PatientID}` rather than `{#PatientID}`) are refused for such a
+receiver. A file whose Study, Series or SOP Instance UID lies under the
+standard's own root (`1.2.840.10008.`) is held at such a receiver (`bad_uid`)
+and cannot be released into the archive. How it works, step by step: [the reception pipeline](../internal/receive/doc.go).
+Profile versions are made through `ProfileService`, which this version does not
+serve yet.

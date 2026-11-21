@@ -79,6 +79,9 @@ type env struct {
 	// between steps: a jump past a lease while a step runs would take its
 	// unit over, which is a test of its own, not of what is waited for.
 	running atomic.Int64
+	// check is the check after de-identification, when the receiver
+	// de-identifies (deid_helpers_test.go).
+	check *recordingCheck
 	// deadline bounds a wait in real time; 0 is a minute. A scale test,
 	// whose speed is the disk's, gives itself more.
 	deadline time.Duration
@@ -105,6 +108,8 @@ type envOptions struct {
 	// headerLimit, when set, is the pipeline's reading of the header bound
 	// (Config.HeaderLimit).
 	headerLimit Limit
+	// deid, when set, makes the receiver de-identify (deid_helpers_test.go).
+	deid *deidOptions
 }
 
 // newEnv makes a tenant, its storage and receiver, and a started pipeline.
@@ -175,6 +180,9 @@ func newEnvAt(t testing.TB, dataDir string, start time.Time, opts envOptions) *e
 		},
 		IncomingRoot: filepath.Join(e.dataDir, "incoming"), Workers: workers, Lease: 30 * time.Second,
 		PollInterval: 2 * time.Second, BatchInterval: 5 * time.Second, RetryInterval: 20 * time.Second,
+	}
+	if opts.deid != nil {
+		e.setUpDeid(opts.deid)
 	}
 	e.start()
 	return e

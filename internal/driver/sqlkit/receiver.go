@@ -25,6 +25,11 @@ type dimseConfig struct {
 	STOWKeys         []string           `json:"stow_key_ids,omitempty"`
 	MaxRequestBytes  int64              `json:"stow_max_request_bytes,omitempty"`
 	ForwardTo        []string           `json:"forward_to,omitempty"`
+	// DeidProfile and DeidVersion name the profile version the receiver
+	// de-identifies with; absent, as in every row written before
+	// receivers de-identified, the receiver archives as received.
+	DeidProfile string `json:"deid_profile,omitempty"`
+	DeidVersion int32  `json:"deid_version,omitempty"`
 }
 
 // callerRuleConfig is one caller a DIMSE receiver accepts.
@@ -53,7 +58,8 @@ type namingConfig struct {
 func ReceiverConfigText(r tenant.Receiver) (config, namingText string, err error) {
 	c := dimseConfig{AETitle: r.DIMSE.AETitle, AnyCaller: r.DIMSE.AnyCaller,
 		SOPClasses: r.DIMSE.SOPClasses, TransferSyntaxes: r.DIMSE.TransferSyntaxes,
-		STOWKeys: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes, ForwardTo: r.ForwardTo}
+		STOWKeys: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes, ForwardTo: r.ForwardTo,
+		DeidProfile: r.Profile.Name, DeidVersion: r.Profile.Version}
 	for _, cr := range r.DIMSE.Callers {
 		c.Callers = append(c.Callers, callerRuleConfig(cr))
 	}
@@ -83,6 +89,7 @@ func ReadReceiverConfig(r *tenant.Receiver, config, namingText string) error {
 	r.DIMSE.SOPClasses, r.DIMSE.TransferSyntaxes = c.SOPClasses, c.TransferSyntaxes
 	r.STOW = tenant.STOWReceiver{Keys: c.STOWKeys, MaxRequestBytes: c.MaxRequestBytes}
 	r.ForwardTo = c.ForwardTo
+	r.Profile = tenant.ProfileRef{Name: c.DeidProfile, Version: c.DeidVersion}
 	r.DIMSE.Callers = nil
 	for _, cr := range c.Callers {
 		r.DIMSE.Callers = append(r.DIMSE.Callers, tenant.CallerRule(cr))
@@ -102,4 +109,15 @@ func ReadReceiverConfig(r *tenant.Receiver, config, namingText string) error {
 		r.Naming = &spec
 	}
 	return nil
+}
+
+// ReceiverDeidentifies reports whether the receiver whose config column
+// holds config names a profile version, and so de-identifies what it
+// receives (tenant.Receiver.Deidentifies).
+func ReceiverDeidentifies(config string) (bool, error) {
+	var c dimseConfig
+	if err := FromJSON(config, &c); err != nil {
+		return false, err
+	}
+	return c.DeidProfile != "", nil
 }

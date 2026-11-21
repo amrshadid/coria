@@ -125,6 +125,42 @@ const (
 	// kept, and a release places it by its whole header. Details:
 	// "attribute", the keyword of the first attribute that differs.
 	QuarantineReason_QUARANTINE_REASON_UID_MISMATCH QuarantineReason = 13
+	// The receiver's de-identification profile cannot process the file, so
+	// it was never archived; its original bytes are kept. Details: "cause",
+	// a fixed word: "no_subject" (a date to shift and no Patient ID to find
+	// the subject's shift by), "lookup_missing" (a lookup table holds no
+	// code for a value and its rule says to quarantine), "bad_value" (a value
+	// the action reads or writes is not one of its VR, PS3.5 6.2),
+	// "too_deep", "too_large", "internal" (a fault of the server's own, every
+	// change undone), "no_profile" (the file arrived at a receiver that
+	// de-identifies and its receiver now names no profile),
+	// "recorded_as_received" (the file arrived while its receiver archived as
+	// received and its receiver de-identifies now; a release checks it again
+	// as a file that just arrived, so it is de-identified), "profile_unusable"
+	// (the profile version cannot run in this version of the server),
+	// "unreadable" or "unwritable" (the data set cannot be read, or written
+	// back, for de-identification), or "uid_not_remapped" (the profile
+	// leaves a Study, Series or SOP Instance UID other than the keyed
+	// remapping the server places the file by); "path", the element where it
+	// failed, as tags of eight hexadecimal digits with item numbers, such as
+	// "00081115[0]/0020000E", when there is one; and "rule", the rule's name
+	// (or "rule" and its position), when one decided. A release de-identifies
+	// the file again with its receiver's profile version then.
+	QuarantineReason_QUARANTINE_REASON_DEID_FAILED QuarantineReason = 14
+	// The check after de-identification, a separate read of the
+	// de-identified file, found a value the profile removed from the file
+	// still in it (or in a label made for it), so it was never archived.
+	// Details: "path", the element it was found in as for
+	// QUARANTINE_REASON_DEID_FAILED, and "kind", the kind of value found:
+	// "name", "date", "uid" or "text" (an identifier or any other text).
+	// Never the value. A release de-identifies the file again with its
+	// receiver's profile version then, so a profile changed to clean the
+	// value lets it through.
+	QuarantineReason_QUARANTINE_REASON_RESIDUAL_VALUE QuarantineReason = 15
+	// A rule of the receiver's profile whose action is quarantine applies to
+	// an element the file holds. Details: "rule", the rule's name (or "rule"
+	// and its position).
+	QuarantineReason_QUARANTINE_REASON_PROFILE_REFUSED QuarantineReason = 16
 )
 
 // Enum value maps for QuarantineReason.
@@ -144,6 +180,9 @@ var (
 		11: "QUARANTINE_REASON_HEADER_TOO_LARGE",
 		12: "QUARANTINE_REASON_INCOMING_LOST",
 		13: "QUARANTINE_REASON_UID_MISMATCH",
+		14: "QUARANTINE_REASON_DEID_FAILED",
+		15: "QUARANTINE_REASON_RESIDUAL_VALUE",
+		16: "QUARANTINE_REASON_PROFILE_REFUSED",
 	}
 	QuarantineReason_value = map[string]int32{
 		"QUARANTINE_REASON_UNSPECIFIED":            0,
@@ -160,6 +199,9 @@ var (
 		"QUARANTINE_REASON_HEADER_TOO_LARGE":       11,
 		"QUARANTINE_REASON_INCOMING_LOST":          12,
 		"QUARANTINE_REASON_UID_MISMATCH":           13,
+		"QUARANTINE_REASON_DEID_FAILED":            14,
+		"QUARANTINE_REASON_RESIDUAL_VALUE":         15,
+		"QUARANTINE_REASON_PROFILE_REFUSED":        16,
 	}
 )
 
@@ -1308,7 +1350,7 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"N\n" +
 	"\x1dRejectQuarantinedFileResponse\x12-\n" +
-	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file*\x98\x04\n" +
+	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file*\x88\x05\n" +
 	"\x10QuarantineReason\x12!\n" +
 	"\x1dQUARANTINE_REASON_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bQUARANTINE_REASON_NOT_DICOM\x10\x01\x12,\n" +
@@ -1324,7 +1366,10 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x12&\n" +
 	"\"QUARANTINE_REASON_HEADER_TOO_LARGE\x10\v\x12#\n" +
 	"\x1fQUARANTINE_REASON_INCOMING_LOST\x10\f\x12\"\n" +
-	"\x1eQUARANTINE_REASON_UID_MISMATCH\x10\r*\x8c\x01\n" +
+	"\x1eQUARANTINE_REASON_UID_MISMATCH\x10\r\x12!\n" +
+	"\x1dQUARANTINE_REASON_DEID_FAILED\x10\x0e\x12$\n" +
+	" QUARANTINE_REASON_RESIDUAL_VALUE\x10\x0f\x12%\n" +
+	"!QUARANTINE_REASON_PROFILE_REFUSED\x10\x10*\x8c\x01\n" +
 	"\x0fQuarantineState\x12 \n" +
 	"\x1cQUARANTINE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15QUARANTINE_STATE_HELD\x10\x01\x12\x1d\n" +

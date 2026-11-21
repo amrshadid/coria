@@ -2,7 +2,6 @@ package receive
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 
 	"github.com/amrshadid/coria/internal/blob"
@@ -155,6 +154,7 @@ func (p *Pipeline) checkWhole(ctx context.Context, r tenant.Reception) error {
 	type scanCheck struct {
 		path      label.Path
 		listed    map[string]manifest.File
+		held      map[string]tenant.ScanInstance
 		want      int64
 		confirmed int64
 	}
@@ -169,14 +169,14 @@ func (p *Pipeline) checkWhole(ctx context.Context, r tenant.Reception) error {
 		if err != nil {
 			return err
 		}
-		if err := p.manifestHeld(ctx, r.StudyUID, sc.SeriesUID, m.Files); err != nil {
-			return err
-		}
 		c := &scanCheck{path: path, listed: make(map[string]manifest.File, len(m.Files)), want: sc.Instances}
 		for _, f := range m.Files {
 			c.listed[f.SOPInstanceUID] = f
 		}
-		if err := p.scanListed(ctx, sc.SeriesUID, c.listed); err != nil {
+		if c.held, err = p.scanListed(ctx, sc.SeriesUID, c.listed); err != nil {
+			return err
+		}
+		if err := manifestHeld(m.Files, c.held); err != nil {
 			return err
 		}
 		bySeries[sc.SeriesUID] = c
@@ -200,8 +200,14 @@ func (p *Pipeline) checkWhole(ctx context.Context, r tenant.Reception) error {
 		if err != nil {
 			return fault.Wrap(fault.Internal, err, "a confirmed instance makes no key")
 		}
+		// The catalog's row of the instance, which the manifest lists as
+		// it is (scanListed), holds the checksum it was received with and
+		// that of what was archived, which differ for a file
+		// de-identified: the received file is matched by the one, the
+		// object on the storage by the other.
+		in, held := c.held[j.f.SOPInstanceUID]
 		e, ok := c.listed[j.f.SOPInstanceUID]
-		if !ok || e.Key != k || e.SHA256 != j.f.SHA256.String() || e.Size != j.f.Size {
+		if !ok || !held || e.Key != k || in.SHA256 != j.f.SHA256 || e.SHA256 != in.ArchivedSHA256.String() || e.Size != in.Size {
 			return notWhole("the scan's manifest does not list an instance this reception confirmed")
 		}
 		p.at("verify.before-stat")
@@ -211,7 +217,7 @@ func (p *Pipeline) checkWhole(ctx context.Context, r tenant.Reception) error {
 			return notWhole("an instance this reception confirmed is not on its storage")
 		case err != nil:
 			return storageError(err, "an archived file cannot be looked at")
-		case info.Size != j.f.Size:
+		case info.Size != in.Size:
 			return notWhole("an instance this reception confirmed has another size on its storage")
 		}
 		return nil
@@ -228,27 +234,15 @@ func (p *Pipeline) checkWhole(ctx context.Context, r tenant.Reception) error {
 }
 
 // manifestHeld checks that every entry of a scan's manifest is an instance
-// the catalog holds under that UID, in the scan's study and series, with
-// that checksum, asked in bounded batches.
-func (p *Pipeline) manifestHeld(ctx context.Context, study, series string, files []manifest.File) error {
-	for start := 0; start < len(files); start += tenant.MaxDuplicateBatch {
-		part := files[start:min(start+tenant.MaxDuplicateBatch, len(files))]
-		qs := make([]tenant.DuplicateQuery, len(part))
-		for i, f := range part {
-			var sum tenant.SHA256
-			if _, err := hex.Decode(sum[:], []byte(f.SHA256)); err != nil {
-				return notWhole("the scan's manifest holds a checksum that is not one")
-			}
-			qs[i] = tenant.DuplicateQuery{SOPInstanceUID: f.SOPInstanceUID, StudyUID: study, SeriesUID: series, SHA256: sum}
-		}
-		ds, err := p.store.CheckDuplicates(ctx, qs)
-		if err != nil {
-			return err
-		}
-		for _, d := range ds {
-			if d.Kind != tenant.SameFile {
-				return notWhole("the scan's manifest lists an instance the catalog does not hold as listed")
-			}
+// the catalog holds in the scan (held, as scanListed read it) with that
+// place, size and checksum of what was archived: with scanListed, which
+// checks the other way, the manifest and the catalog list the same
+// instances.
+func manifestHeld(files []manifest.File, held map[string]tenant.ScanInstance) error {
+	for _, f := range files {
+		in, ok := held[f.SOPInstanceUID]
+		if !ok || f != manifestFile(in) {
+			return notWhole("the scan's manifest lists an instance the catalog does not hold as listed")
 		}
 	}
 	return nil

@@ -205,6 +205,13 @@ func (t Tenant) IncomingLimit(ctx context.Context) (int64, error) {
 	return typed(settings.IncomingLimit, v, err, settings.ParseSize)
 }
 
+// AllowAsReceived returns receiver.allow-as-received as it applies on the
+// tenant: whether a receiver of it may archive as received.
+func (t Tenant) AllowAsReceived(ctx context.Context) (bool, error) {
+	v, err := t.r.Tenant(ctx, t.st, settings.ReceiverAllowAsReceived)
+	return typed(settings.ReceiverAllowAsReceived, v, err, settings.ParseBool)
+}
+
 // Networks returns the installation's value of a setting that lists
 // networks (access.trusted-proxies, access.allowed-networks,
 // access.denied-networks).

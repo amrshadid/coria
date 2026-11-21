@@ -52,7 +52,7 @@ type pipelineStatements struct {
 func pipelineEntries(s *pipelineStatements, p *pools) []stmtEntry {
 	r, w := p.read, p.write
 	return []stmtEntry{
-		{&s.insertReceived, w, `INSERT INTO received_files (` + receivedColumns + `)
+		{&s.insertReceived, w, `INSERT INTO received_files (` + receivedInsertColumns + `)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`},
 		{&s.insertAssociation, w, `INSERT INTO reception_associations (reception_id, association) VALUES (?, ?) ON CONFLICT DO NOTHING`},
 		// The reception's row, locked by an update whose condition is that

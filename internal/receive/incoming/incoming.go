@@ -42,6 +42,10 @@ const (
 	Landed
 	// Recorded is a file a row of the tenant's database names.
 	Recorded
+	// Made is a file made from a recorded one, such as its de-identified
+	// copy, or one being made (Derive): never owed, made again whenever
+	// it is needed.
+	Made
 )
 
 // String returns the state's name.
@@ -53,6 +57,8 @@ func (s State) String() string {
 		return "landed"
 	case Recorded:
 		return "recorded"
+	case Made:
+		return "made"
 	}
 	return "State(" + strconv.Itoa(int(s)) + ")"
 }
@@ -405,14 +411,15 @@ func (a *Area) Exists(path string) (bool, error) {
 	return false, nil
 }
 
-// Remove removes the file at a recorded path under both of its names. A file
-// that is not there is not an error. The removal is not synced: a file that
+// Remove removes the file at a recorded path under both of its names, and
+// the file made from it (Derive); one left half written is found and
+// removed at the next start. A file that is not there is not an error. The removal is not synced: a file that
 // comes back after a crash has no row, and is removed again at start.
 func (a *Area) Remove(path string) error {
 	if _, _, err := ParsePath(path); err != nil {
 		return err
 	}
-	for _, name := range []string{path, path + landedSuffix} {
+	for _, name := range []string{path, path + landedSuffix, path + derivedSuffix} {
 		if err := a.root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return unavailable("an incoming file cannot be removed", err)
 		}
@@ -432,11 +439,14 @@ type Entry struct {
 	State State
 	// Size is its size in bytes.
 	Size int64
+	// name is the file's name as found, which a made file's removal needs
+	// (RemoveMade).
+	name string
 }
 
 // Scan calls fn for every file in the area, one directory at a time, so its
 // memory follows the largest directory and not the area. A name that is not
-// one of the three forms is skipped and left alone, and counted in the
+// one of the forms is skipped and left alone, and counted in the
 // answer: something other than this server put it there.
 func (a *Area) Scan(fn func(Entry) error) (strangers int, err error) {
 	receivers, err := a.readDir(".")
@@ -519,6 +529,14 @@ func parseName(receiver, dir, name string) (Entry, bool) {
 	state := Recorded
 	id := name
 	switch {
+	// Before the temporary suffix, which a made file's name being written
+	// also ends with.
+	case strings.Contains(name, derivedSuffix):
+		id, _, _ = strings.Cut(name, derivedSuffix)
+		if !madeName(name, id) {
+			return Entry{}, false
+		}
+		state = Made
 	case strings.HasSuffix(name, tempSuffix):
 		state, id = Temp, strings.TrimSuffix(name, tempSuffix)
 	case strings.HasSuffix(name, landedSuffix):
@@ -527,7 +545,7 @@ func parseName(receiver, dir, name string) (Entry, bool) {
 	if !validID(id) || id[:2] != dir {
 		return Entry{}, false
 	}
-	return Entry{Receiver: receiver, ID: id, Path: receiver + "/" + dir + "/" + id, State: state}, true
+	return Entry{Receiver: receiver, ID: id, Path: receiver + "/" + dir + "/" + id, State: state, name: name}, true
 }
 
 // at runs the hook at a durable step.

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"slices"
 
 	"google.golang.org/protobuf/proto"
 
@@ -80,6 +81,9 @@ func (s receiverService) AddReceiver(ctx context.Context, req *v1.AddReceiverReq
 		return nil, c.failIn(d, st, err)
 	}
 	if err := c.checkReceiverPlace(ctx, st, in); err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	if err := c.checkDeidentification(ctx, p, st, in); err != nil {
 		return nil, c.failIn(d, st, err)
 	}
 	out, err := p.AddReceiver(ctx, in, c.now(), changeEntry(d, access.Facts{Details: receiverDetails(in, true)}), c.adminGuard(d))
@@ -171,8 +175,17 @@ func (s receiverService) SetReceiver(ctx context.Context, req *v1.SetReceiverReq
 	if err != nil {
 		return nil, c.failIn(d, st, err)
 	}
-	c.places.RLock()
-	defer c.places.RUnlock()
+	// A change of the naming rule or of the de-identification is checked
+	// against the other, as stored: taken alone, so two changes at once
+	// cannot each pass and together give a receiver that de-identifies a
+	// rule that puts values into labels (the store refuses that too).
+	if slices.Contains(fields, tenant.FieldNaming) || slices.Contains(fields, tenant.FieldDeidentification) {
+		c.places.Lock()
+		defer c.places.Unlock()
+	} else {
+		c.places.RLock()
+		defer c.places.RUnlock()
+	}
 	stored, err := lookupReceiver(ctx, p, in.GetName())
 	if err != nil {
 		return nil, c.failIn(d, st, err)
@@ -183,6 +196,15 @@ func (s receiverService) SetReceiver(ctx context.Context, req *v1.SetReceiverReq
 	}
 	if err := c.checkReceiverPlace(ctx, st, result); err != nil {
 		return nil, c.failIn(d, st, err)
+	}
+	// Only a change of the choice, or of the naming rule of a receiver that
+	// de-identifies, is checked: a receiver that archives as received keeps
+	// doing so, and can be changed otherwise, after the setting is turned
+	// off.
+	if slices.Contains(fields, tenant.FieldDeidentification) || (result.Deidentifies() && slices.Contains(fields, tenant.FieldNaming)) {
+		if err := c.checkDeidentification(ctx, p, st, result); err != nil {
+			return nil, c.failIn(d, st, err)
+		}
 	}
 	out, err := p.SetReceiver(ctx, change, fields, c.now(), changeEntry(d, access.Facts{}), c.adminGuard(d))
 	if err != nil {

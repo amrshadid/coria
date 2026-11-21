@@ -278,7 +278,8 @@ func tenantRole(name string, role master.Role, operator bool) access.Requirement
 // alone sets on a tenant: SetSetting and UnsetSetting of one need admin on
 // the installation, whatever the scope. Restated from the server's list of
 // settings, so the table stays test data and its test compares the two.
-var installationSet = map[string]bool{"receiver.ports": true, "incoming.limit": true, "sender.tenant-max-associations": true}
+var installationSet = map[string]bool{"receiver.ports": true, "incoming.limit": true, "sender.tenant-max-associations": true,
+	"receiver.allow-as-received": true}
 
 // settingChange is the requirement of a change of the setting named name
 // on scope.

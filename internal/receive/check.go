@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/amrshadid/coria/internal/core/uid"
+	"github.com/amrshadid/coria/internal/deid/engine"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/receive/header"
 	"github.com/amrshadid/coria/internal/receive/incoming"
@@ -49,6 +50,25 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 	if err != nil {
 		return decision{}, err
 	}
+	// At a receiver that de-identifies, every row this file gets holds its
+	// UIDs remapped and its checksum keyed (protect, below), so no list of
+	// the tenant holds what the original could be matched by. Without the
+	// keys the file waits, landed and owed: it is never recorded as
+	// received.
+	var keys engine.Keys
+	deidentifies := rcv.Deidentifies()
+	if deidentifies {
+		if keys, err = p.deidKeys(ctx); err != nil {
+			return decision{}, err
+		}
+	}
+	holdAtReceive := func(l landed, reason tenant.QuarantineReason, details map[string]string, h *header.Header) decision {
+		d := p.holdAtReceive(l, reason, details, h)
+		if deidentifies {
+			protect(d.hold, keys)
+		}
+		return d
+	}
 	f, size, err := p.area.Open(l.file.Path)
 	if err != nil {
 		return decision{}, err
@@ -64,16 +84,16 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 		// C.7.6.16), released once the installation raises
 		// receiver.header-limit. The bound it was read within is in the
 		// details.
-		return p.holdAtReceive(l, tenant.QuarantineHeaderTooLarge, map[string]string{"limit": strconv.FormatInt(big.Limit, 10)}, nil), nil
+		return holdAtReceive(l, tenant.QuarantineHeaderTooLarge, map[string]string{"limit": strconv.FormatInt(big.Limit, 10)}, nil), nil
 	}
 	if errors.As(err, &nd) {
-		return p.holdAtReceive(l, tenant.QuarantineNotDICOM, map[string]string{"offset": strconv.FormatInt(nd.Offset, 10)}, nil), nil
+		return holdAtReceive(l, tenant.QuarantineNotDICOM, map[string]string{"offset": strconv.FormatInt(nd.Offset, 10)}, nil), nil
 	}
 	if err != nil {
 		return decision{}, fault.Wrap(fault.Unavailable, err, "a received file's header cannot be read")
 	}
 	if uid.Check(h.TransferSyntaxUID) != nil {
-		return p.holdAtReceive(l, tenant.QuarantineNotDICOM, map[string]string{"offset": "132"}, h), nil
+		return holdAtReceive(l, tenant.QuarantineNotDICOM, map[string]string{"offset": "132"}, h), nil
 	}
 	for _, a := range []header.Attribute{header.SOPInstanceUID, header.SOPClassUID, header.StudyUID, header.SeriesUID} {
 		v, present := h.UID(a)
@@ -87,31 +107,46 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 			word = tenant.FaultBadUID
 		}
 		if word != "" {
-			return p.holdAtReceive(l, tenant.QuarantineBadUID, map[string]string{"attribute": string(a), "fault": word}, h), nil
+			return holdAtReceive(l, tenant.QuarantineBadUID, map[string]string{"attribute": string(a), "fault": word}, h), nil
+		}
+	}
+	if deidentifies {
+		// A placing UID under the standard's own root is no patient's
+		// study, series or instance; held as such, so the rows never need
+		// an exception that would let an original UID in.
+		for _, a := range []header.Attribute{header.SOPInstanceUID, header.StudyUID, header.SeriesUID} {
+			if v, _ := h.UID(a); underStandardRoot(v) {
+				return holdAtReceive(l, tenant.QuarantineBadUID, map[string]string{"attribute": string(a), "fault": tenant.FaultBadUID}, h), nil
+			}
 		}
 	}
 	if a := toldOtherwise(l.told, h); a != "" {
-		return p.holdAtReceive(l, tenant.QuarantineUIDMismatch, map[string]string{"attribute": string(a)}, h), nil
+		return holdAtReceive(l, tenant.QuarantineUIDMismatch, map[string]string{"attribute": string(a)}, h), nil
 	}
 	class, _ := h.UID(header.SOPClassUID)
 	// An empty list is the server's default set, which the listener applies
 	// when it negotiates (PS3.7 D.3.3.2); a file that reached here under it
 	// was negotiated, so every class is taken.
 	if list := rcv.DIMSE.SOPClasses; len(list) > 0 && !slices.Contains(list, class) {
-		return p.holdAtReceive(l, tenant.QuarantineSOPClassNotAccepted, map[string]string{"sop_class_uid": class}, h), nil
+		return holdAtReceive(l, tenant.QuarantineSOPClassNotAccepted, map[string]string{"sop_class_uid": class}, h), nil
 	}
 	study, _ := h.UID(header.StudyUID)
+	inst, _ := h.UID(header.SOPInstanceUID)
+	series, _ := h.UID(header.SeriesUID)
+	sum := tenant.SHA256(l.file.SHA256)
+	if deidentifies {
+		study, series, inst = remapPlacingUID(keys, study), remapPlacingUID(keys, series), remapPlacingUID(keys, inst)
+		sum = keyedSum(keys, sum)
+	}
 	receptionID, err := p.receptionFor(ctx, l.receiver, study)
 	if err != nil {
 		return decision{}, err
 	}
-	inst, _ := h.UID(header.SOPInstanceUID)
-	series, _ := h.UID(header.SeriesUID)
 	rf := &tenant.ReceivedFile{
 		ReceptionID: receptionID, SOPInstanceUID: inst, SeriesUID: series, StudyUID: study,
 		SOPClassUID: class, TransferSyntaxUID: h.TransferSyntaxUID, Size: l.file.Size,
-		SHA256: l.file.SHA256, Incoming: l.file.Path, Caller: l.caller, Association: l.association,
-		Released: l.releasedFrom != "",
+		SHA256: sum, Incoming: l.file.Path, Caller: l.caller, Association: l.association,
+		Released: l.releasedFrom != "", Deidentified: deidentifies,
 	}
 	return decision{received: rf}, nil
 }

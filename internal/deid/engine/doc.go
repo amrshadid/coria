@@ -48,7 +48,9 @@
 // a sequence removed whole, the values the profile or the floor would
 // remove where they are; every value of one the floor covers. A date of
 // only a year, or a year and month, is matched only as a date of that
-// precision, never as the year of a full date.
+// precision, never as the year of a full date. A date or time of only
+// zeros (a midnight of 000000) is removed as its rule says and is no
+// needle: it identifies no one, and is found inside ordinary decimals.
 //
 // Clean removes the file's needles from free text: each value, each part
 // of a name (of one or two letters only as a whole word; of a script

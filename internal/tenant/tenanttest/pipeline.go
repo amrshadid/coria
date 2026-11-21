@@ -38,6 +38,8 @@ func runPipeline(t *testing.T, open OpenPipeline) {
 		{"IdentifyStorage", testIdentifyStorage},
 		{"BindAddressClash", testBindAddressClash},
 		{"STOWReceivers", testSTOWReceivers},
+		{"ReceiverDeidentification", testReceiverDeidentification},
+		{"DeidentifiedRows", testDeidentifiedRows},
 		{"EndpointSpelling", testEndpointSpelling},
 		{"ConfigPagingWithDeletes", testConfigPagingWithDeletes},
 		{"OpenReception", testOpenReception},

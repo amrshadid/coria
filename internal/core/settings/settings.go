@@ -55,6 +55,14 @@ const (
 	// Installation-only: it bounds the server's memory, which tenants
 	// share.
 	ReceiverHeaderLimit = "receiver.header-limit"
+	// ReceiverAllowAsReceived is "true" when a receiver of the tenant may
+	// archive what it receives as received, without de-identifying it
+	// (ParseBool). Set on a tenant by the installation's admin only, and
+	// "false" by default, so a tenant holds identified data only where a
+	// person wrote down that it may; a tenant that had receivers before
+	// receivers de-identified was given "true" when its database was
+	// upgraded, so they keep doing what they did.
+	ReceiverAllowAsReceived = "receiver.allow-as-received"
 )
 
 // ReservedPrefix starts the names the system keeps for itself in the
@@ -195,6 +203,16 @@ func Builtin() []Definition {
 		Name:     ReceiverHeaderLimit,
 		Default:  "64MiB",
 		Validate: func(v string) error { _, err := ParseHeaderLimit(v); return err },
+	}, {
+		// Off by default: a receiver that archives identified data, and
+		// so puts identified and de-identified sessions side by side, is
+		// something the installation's admin writes down for a tenant.
+		// The installation's value is every tenant's default.
+		Name:                    ReceiverAllowAsReceived,
+		Default:                 "false",
+		TenantOverride:          true,
+		TenantSetByInstallation: true,
+		Validate:                func(v string) error { _, err := ParseBool(v); return err },
 	}, {
 		// Empty by default, so no page in a browser can read an answer of
 		// the API until the installation's admin lists its origin.

@@ -163,6 +163,8 @@ if [ "$real" = 1 ]; then
 	gwl() { gw -plaintext "$@"; }
 	r=$(gwa -d '{"setting":{"name":"receiver.ports","scope":{"tenant":"grpc1"},"value":"11200,11210-11219"}}' "127.0.0.1:$port" coria.v1.SettingsService/SetSetting)
 	echo "$r" | grep -q '"11200,11210-11219"' || fail "grpcurl receiver.ports: $r"; ok "grpcurl tls receiver.ports set on grpc1 by the installation's admin"
+	r=$(gwa -d '{"setting":{"name":"receiver.allow-as-received","scope":{"tenant":"grpc1"},"value":"true"}}' "127.0.0.1:$port" coria.v1.SettingsService/SetSetting)
+	echo "$r" | grep -q '"true"' || fail "grpcurl receiver.allow-as-received: $r"; ok "grpcurl tls receiver.allow-as-received set on grpc1 by the installation's admin"
 	r=$(gwa -d '{"tenant":"grpc1","storage":{"name":"main","directory":{"root":"fast","path":"mri"}}}' "127.0.0.1:$port" coria.v1.StorageService/AddStorage | flat)
 	[ "$r" = "$want_denied" ] || fail "grpcurl AddStorage by the installation's admin: $r"; ok "grpcurl tls AddStorage by the installation's admin, no role inside the tenant: $r"
 	r=$(gwl -d '{"tenant":"grpc1","storage":{"name":"main","directory":{"root":"fast","path":"mri"}}}' "unix://$sock" coria.v1.StorageService/AddStorage)

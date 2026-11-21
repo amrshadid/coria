@@ -1,10 +1,14 @@
 package receive
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/amrshadid/coria/internal/blob"
+	"github.com/amrshadid/coria/internal/core/label"
+	"github.com/amrshadid/coria/internal/receive/header"
+	"github.com/amrshadid/coria/internal/tenant"
 	"github.com/amrshadid/coria/internal/testkit"
 )
 
@@ -55,15 +59,36 @@ func benchReception(b *testing.B, be backend, files int, pixelBytes int64) {
 			total += size
 		}
 		e.clock.Advance(10 * time.Second)
-		e.settle(1)
+		e.settleFiles(files)
 		elapsed += time.Since(start)
 		b.StopTimer()
+		if held := e.held(); len(held) > 0 {
+			b.Fatalf("%d files held: %+v", len(held), held[0])
+		}
 		_ = e.p.Stop(e.ctx)
 		b.StartTimer()
 	}
 	sec := elapsed.Seconds()
 	b.ReportMetric(float64(files*b.N)/sec, "files/s")
 	b.ReportMetric(float64(total)/(1<<20)/sec, "MiB/s")
+}
+
+// settleFiles waits until every reception has ended and n files are
+// archived across them: a reception that went quiet while the files still
+// came ends before the rest are archived by the next arrival, so the end of
+// the first reception is not the end of the work.
+func (e *env) settleFiles(n int) {
+	e.t.Helper()
+	e.waitFor(fmt.Sprintf("%d files archived", n), 3*time.Second, func() bool {
+		archived := int64(0)
+		for _, r := range e.receptions() {
+			if !r.State.Ended() {
+				return false
+			}
+			archived += r.Counts.FilesArchived
+		}
+		return archived >= int64(n) && e.p.batch.idle()
+	})
 }
 
 // BenchmarkLandToVerified measures files and bytes a second from landing to
@@ -77,6 +102,16 @@ func BenchmarkLandToVerified(b *testing.B) {
 	}
 }
 
+// BenchmarkLandToVerifiedDeidentified is BenchmarkLandToVerified's slices
+// at a receiver that de-identifies, on SQLite and a directory: each file
+// de-identified beside its original, checked by the check after, put and
+// read back, so its cost beside the as-received case is what
+// de-identification at reception costs.
+func BenchmarkLandToVerifiedDeidentified(b *testing.B) {
+	be := backend{name: "sqlite-dir-deid", opts: func(*testing.B) envOptions { return envOptions{deid: &deidOptions{}} }}
+	b.Run(be.name+"/slices-256KiB", func(b *testing.B) { benchReception(b, be, 200, 256<<10) })
+}
+
 // BenchmarkLand measures the time a sender waits for each acknowledgement:
 // one file of 256 KiB landed, synced and answered.
 func BenchmarkLand(b *testing.B) {
@@ -87,5 +122,39 @@ func BenchmarkLand(b *testing.B) {
 		r, size := g.File(i%8000, 256<<10)
 		b.SetBytes(size)
 		e.sendReader(r)
+	}
+}
+
+// BenchmarkDeidentifyAFile measures the stage a receiver that
+// de-identifies adds to each file of the archive step, apart from the
+// fsyncs of landing and storing that dominate a reception: a public CT
+// slice's header read, the engine run over it, the de-identified copy
+// written beside it and the check after's read of it.
+func BenchmarkDeidentifyAFile(b *testing.B) {
+	e := newEnv(b, envOptions{deid: &deidOptions{}, manual: true})
+	b.Cleanup(func() { _ = e.p.area.Close() })
+	body := corpus(b, studyFiles[0])
+	f, err := e.p.area.Land(e.ctx, "dimse", bytesReader(body), 1<<30)
+	if err != nil {
+		b.Fatal(err)
+	}
+	inst := ""
+	if h, err := header.Read(bytesReader(body), int64(len(body))); err == nil {
+		inst, _ = h.UID(header.SOPInstanceUID)
+	}
+	st, se, _ := fileUIDsB(b, body)
+	wr := written{f: tenant.ReceivedFile{SOPInstanceUID: remapped(inst), StudyUID: remapped(st), SeriesUID: remapped(se),
+		Incoming: f.Path, Size: f.Size, SHA256: keyedSum(testDeidKeys, f.SHA256)}}
+	rcv, err := e.store.Receiver(e.ctx, "dimse")
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.SetBytes(f.Size)
+	b.ResetTimer()
+	for range b.N {
+		out, q, err := e.p.prepareOne(e.ctx, tenant.Reception{ID: "r", Receiver: "dimse"}, rcv, label.Path{Subject: "sub-a", Session: "ses-a", Scan: "scan-a"}, wr)
+		if err != nil || q != nil || !out.made {
+			b.Fatalf("prepared %+v, held %+v: %v", out, q, err)
+		}
 	}
 }

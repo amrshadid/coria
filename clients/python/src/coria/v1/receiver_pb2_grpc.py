@@ -83,6 +83,14 @@ class ReceiverServiceStub:
     percentage of the disk's size, or of a storage's capacity_bytes, such
     as "10%"; with two, the reserve is the larger. Installation-only, so
     no tenant can lower it. Built-in default "10%,10GiB".
+    - receiver.allow-as-received: "true" when a receiver of the tenant may
+    archive what it receives as received (Receiver.as_received), "false"
+    when every receiver must de-identify. Set on a tenant by the
+    installation's admin only; the installation's value is the default
+    for every tenant. Built-in default "false". A tenant that had
+    receivers before receivers could de-identify holds "true", so they
+    archive as they did. Turning it off does not change a receiver that
+    archives as received; it refuses a receiver added or changed to.
 
     A rule that depends on what the installation allows is answered
     "precondition" when it fails: the same request may succeed once the
@@ -184,6 +192,14 @@ class ReceiverServiceServicer:
     percentage of the disk's size, or of a storage's capacity_bytes, such
     as "10%"; with two, the reserve is the larger. Installation-only, so
     no tenant can lower it. Built-in default "10%,10GiB".
+    - receiver.allow-as-received: "true" when a receiver of the tenant may
+    archive what it receives as received (Receiver.as_received), "false"
+    when every receiver must de-identify. Set on a tenant by the
+    installation's admin only; the installation's value is the default
+    for every tenant. Built-in default "false". A tenant that had
+    receivers before receivers could de-identify holds "true", so they
+    archive as they did. Turning it off does not change a receiver that
+    archives as received; it refuses a receiver added or changed to.
 
     A rule that depends on what the installation allows is answered
     "precondition" when it fails: the same request may succeed once the
@@ -393,6 +409,14 @@ class ReceiverService:
     percentage of the disk's size, or of a storage's capacity_bytes, such
     as "10%"; with two, the reserve is the larger. Installation-only, so
     no tenant can lower it. Built-in default "10%,10GiB".
+    - receiver.allow-as-received: "true" when a receiver of the tenant may
+    archive what it receives as received (Receiver.as_received), "false"
+    when every receiver must de-identify. Set on a tenant by the
+    installation's admin only; the installation's value is the default
+    for every tenant. Built-in default "false". A tenant that had
+    receivers before receivers could de-identify holds "true", so they
+    archive as they did. Turning it off does not change a receiver that
+    archives as received; it refuses a receiver added or changed to.
 
     A rule that depends on what the installation allows is answered
     "precondition" when it fails: the same request may succeed once the

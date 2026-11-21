@@ -13,8 +13,20 @@ import (
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
-const receivedColumns = `reception_id, sop_instance_uid, sha256, series_uid, study_uid, sop_class_uid, transfer_syntax_uid,
+// receivedInsertColumns are the columns a received file recorded as
+// received is written with: those of every schema since the pipeline's,
+// so a database not yet migrated to the column deidentified takes it (a
+// file recorded de-identified is written by insertDeidentifiedReceivedSQL).
+const receivedInsertColumns = `reception_id, sop_instance_uid, sha256, series_uid, study_uid, sop_class_uid, transfer_syntax_uid,
 	size, incoming, calling_ae, called_ae, remote_addr, association, released, received`
+
+// receivedColumns are the columns a received file is read with.
+const receivedColumns = receivedInsertColumns + `, deidentified`
+
+// insertDeidentifiedReceivedSQL writes a received file recorded
+// de-identified, with its flag.
+const insertDeidentifiedReceivedSQL = `INSERT INTO received_files (` + receivedColumns + `)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1) ON CONFLICT DO NOTHING`
 
 // scanReceived reads one row of receivedColumns.
 func scanReceived(row interface{ Scan(...any) error }) (tenant.ReceivedFile, error) {
@@ -23,7 +35,7 @@ func scanReceived(row interface{ Scan(...any) error }) (tenant.ReceivedFile, err
 	var received int64
 	err := row.Scan(&f.ReceptionID, &f.SOPInstanceUID, &sum, &f.SeriesUID, &f.StudyUID, &f.SOPClassUID, &f.TransferSyntaxUID,
 		&f.Size, &f.Incoming, &f.Caller.CallingAETitle, &f.Caller.CalledAETitle, &f.Caller.Address, &f.Association,
-		&f.Released, &received)
+		&f.Released, &received, &f.Deidentified)
 	f.SHA256, f.Received = sqlkit.ToSHA256(sum), fromMicros(received)
 	return f, err
 }
@@ -90,9 +102,15 @@ func (t *Tenant) AddReceivedFilesFenced(ctx context.Context, files []tenant.Rece
 				if f.StudyUID != study {
 					return fault.New(fault.Invalid, "a received file's Study Instance UID is its reception's")
 				}
-				res, err := insert.ExecContext(ctx, f.ReceptionID, f.SOPInstanceUID, f.SHA256[:], f.SeriesUID, f.StudyUID,
+				args := []any{f.ReceptionID, f.SOPInstanceUID, f.SHA256[:], f.SeriesUID, f.StudyUID,
 					f.SOPClassUID, f.TransferSyntaxUID, f.Size, f.Incoming, f.Caller.CallingAETitle, f.Caller.CalledAETitle,
-					f.Caller.Address, f.Association, boolInt(f.Released), micros(at))
+					f.Caller.Address, f.Association, boolInt(f.Released), micros(at)}
+				var res sql.Result
+				if f.Deidentified {
+					res, err = tx.ExecContext(ctx, insertDeidentifiedReceivedSQL, args...)
+				} else {
+					res, err = insert.ExecContext(ctx, args...)
+				}
 				if err != nil {
 					return err
 				}

@@ -134,6 +134,7 @@ def cmd_setup(work, args):
             rk.cli_ok(state, "tenant", "create", name, *create)
             t["dimse_port"] = free_port()
             rk.cli_ok(state, "setting", "set", "receiver.ports", str(t["dimse_port"]), "--tenant", name)
+            rk.cli_ok(state, "setting", "set", "receiver.allow-as-received", "true", "--tenant", name)
             for storage in ("main", "web"):
                 rk.cli_ok(state, "storage", "add", name, storage, "--type", "dir", "--root", "fast", "--path", storage)
             rk.cli_ok(state, "receiver", "add", name, "scanner", "--storage", "main", "--port", str(t["dimse_port"]), "--aet", "ARCHIVE",

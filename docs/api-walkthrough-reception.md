@@ -62,7 +62,16 @@ POST /coria.v1.SettingsService/SetSetting
 POST /coria.v1.SettingsService/SetSetting
 {"setting": {"name": "receiver.ports", "scope": {"tenant": "lab"},
              "value": "11112,11120-11129"}}
+
+POST /coria.v1.SettingsService/SetSetting
+{"setting": {"name": "receiver.allow-as-received", "scope": {"tenant": "lab"},
+             "value": "true"}}
 ```
+
+The third lets the receivers below archive what they receive as received,
+which a tenant made now refuses (`FAILED_PRECONDITION`, naming the setting):
+this walk-through uses test data. A receiver for real data de-identifies
+instead; see "De-identify instead" below.
 
 The second is set on the tenant, but only an admin on the installation may
 set it: the tenant's own admin is answered `PERMISSION_DENIED`. A range that
@@ -141,9 +150,10 @@ What the answer shows:
   keyed hash of the value under a secret the tenant's server keeps, so no
   label (and so no list, event or directory name on the storage) carries what
   the scanner sent. A file's own name on the storage is its SOP Instance UID,
-  and the file holds everything the scanner sent: this version archives data
-  as received.
-  A site that writes `{PatientID}` into its own rule gets readable labels
+  and the file holds everything the scanner sent: this receiver archives data
+  as received (a receiver that de-identifies remaps those UIDs; below).
+  A site that writes `{PatientID}` into its own rule (refused for a receiver
+  that de-identifies) gets readable labels
   that are exactly as identifying as the patient's identifier.
 - `dimse.sopClasses` and `dimse.transferSyntaxes` empty: the server's default
   sets, every Storage SOP Class of PS3.4 Table B.5-1 and every transfer syntax
@@ -162,6 +172,32 @@ Things that are easy to get wrong, and what the contract does about them:
   inside it that another program on the server holds is not refused; the
   receiver is down with `RECEIVER_DOWN_REASON_ADDRESS_IN_USE`, and its
   `detail` is a fixed phrase, never the operating system's text.
+
+### De-identify instead
+
+A receiver that names a version of one of the tenant's profiles de-identifies
+every file before any byte of it reaches the storage, and needs no setting:
+
+```
+POST /coria.v1.ReceiverService/AddReceiver
+{"tenant": "lab",
+ "receiver": {"name": "scanner2", "enabled": true, "storage": "main",
+              "dimse": {"port": 11120, "aeTitle": "CORIA",
+                        "allowedCallers": {"rules": [{"callingAeTitle": "PRISMA1"}]}},
+              "profile": {"name": "research", "version": 1}}}
+```
+
+The answer carries `"profile"`; a receiver added without either member of the
+oneof is answered `"asReceived": {}`. `SetReceiver` changes the choice with the
+mask `deidentification`. Refused as `FAILED_PRECONDITION`, each with a message
+that says why: a version the tenant does not have; a version with pixel rules,
+which this version does not apply; a version that keeps the UIDs a file is
+placed by (the Retain UIDs option); and a naming rule with an unhashed
+placeholder such as `{PatientID}`, since labels are kept before any file is
+de-identified. What then happens to each file, and the three quarantine
+reasons it may end with (`deid_failed`, `residual_value`, `profile_refused`),
+are in [the reception pipeline](../internal/receive/doc.go) and
+`quarantine.proto`.
 
 ### Add a stow receiver
 

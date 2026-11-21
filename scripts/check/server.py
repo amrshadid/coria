@@ -176,6 +176,7 @@ def check_reception(tls_addr, creds, socket, admin, root):
     refused("use 1: receiver.ports by the tenant's own admin", settings.SetSetting, ports, lab_admin, grpc.StatusCode.PERMISSION_DENIED, DENIED)
     must("use 1: receiver.ports by the installation's admin", settings.SetSetting, ports, admin)
     ok("use 1: receiver.ports set on py1 by the installation's admin", "11112,11120-11129")
+    must("use 1: receiver.allow-as-received by the installation's admin", settings.SetSetting, setting("receiver.allow-as-received", "py1", "true"), admin)
     refused("use 1: py2's ports over py1's", settings.SetSetting, setting("receiver.ports", "py2", "11125-11130"), admin, grpc.StatusCode.FAILED_PRECONDITION)
     refused("use 1: receiver.ports on the installation", settings.SetSetting, setting("receiver.ports", "", "11112"), admin, grpc.StatusCode.INVALID_ARGUMENT)
 

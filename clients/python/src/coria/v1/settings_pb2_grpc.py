@@ -63,8 +63,8 @@ class SettingsServiceStub:
 
     The settings a receiver, a storage, a sender, a job or the event feed
     reads, with their kinds, are named where they are used: receiver.ports,
-    receiver.bind-addresses, receiver.header-limit, incoming.limit and
-    storage.reserve (ReceiverService), storage.directory-roots and
+    receiver.bind-addresses, receiver.header-limit, receiver.allow-as-received,
+    incoming.limit and storage.reserve (ReceiverService), storage.directory-roots and
     storage.s3-endpoints (StorageService), sender.destinations,
     sender.allow-plain-http, sender.max-associations and
     sender.tenant-max-associations (SenderService), job.failures-kept
@@ -137,8 +137,8 @@ class SettingsServiceServicer:
 
     The settings a receiver, a storage, a sender, a job or the event feed
     reads, with their kinds, are named where they are used: receiver.ports,
-    receiver.bind-addresses, receiver.header-limit, incoming.limit and
-    storage.reserve (ReceiverService), storage.directory-roots and
+    receiver.bind-addresses, receiver.header-limit, receiver.allow-as-received,
+    incoming.limit and storage.reserve (ReceiverService), storage.directory-roots and
     storage.s3-endpoints (StorageService), sender.destinations,
     sender.allow-plain-http, sender.max-associations and
     sender.tenant-max-associations (SenderService), job.failures-kept
@@ -301,8 +301,8 @@ class SettingsService:
 
     The settings a receiver, a storage, a sender, a job or the event feed
     reads, with their kinds, are named where they are used: receiver.ports,
-    receiver.bind-addresses, receiver.header-limit, incoming.limit and
-    storage.reserve (ReceiverService), storage.directory-roots and
+    receiver.bind-addresses, receiver.header-limit, receiver.allow-as-received,
+    incoming.limit and storage.reserve (ReceiverService), storage.directory-roots and
     storage.s3-endpoints (StorageService), sender.destinations,
     sender.allow-plain-http, sender.max-associations and
     sender.tenant-max-associations (SenderService), job.failures-kept

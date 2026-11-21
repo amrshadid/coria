@@ -70,6 +70,17 @@ type Config struct {
 	OpenStorage OpenStorage
 	// Hasher is the tenant's keyed hash for naming rules ({#...}).
 	Hasher naming.Hasher
+	// DeidKeys reads the tenant's keys of de-identification, for a
+	// receiver that de-identifies (tenant.Receiver.Profile): asked once,
+	// when such a receiver's first file comes. Nil, a file at such a
+	// receiver waits unrecorded, and is never recorded as received.
+	DeidKeys DeidKeys
+	// Check returns the check after de-identification for files of at
+	// most maxFileBytes (the receiver's largest file, with room for what
+	// the engine adds), run on every de-identified file before it is put
+	// on a storage. Nil, a de-identified file is never archived: its step
+	// fails and is tried again.
+	Check func(maxFileBytes int64) Checker
 	// Wake is called after every commit that wrote an event of the tenant
 	// (events.Broadcaster.Wake with the tenant's name). Nil does nothing.
 	Wake func()

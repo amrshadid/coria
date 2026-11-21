@@ -3,6 +3,7 @@ package tenant
 import (
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/amrshadid/coria/internal/core/naming"
@@ -40,7 +41,42 @@ const (
 	// placing attribute or gives one out of the order of tags. Its bytes
 	// are kept; a release places it by its whole header.
 	QuarantineUIDMismatch QuarantineReason = "uid_mismatch"
+	// QuarantineDeidFailed is a file its receiver's profile cannot
+	// de-identify: a fixed cause (DeidCauses) under "cause", with the
+	// element ("path") and rule ("rule") when there is one. Its original
+	// bytes are kept; a release de-identifies it again.
+	QuarantineDeidFailed QuarantineReason = "deid_failed"
+	// QuarantineResidualValue is a file in which the check after
+	// de-identification found a value the profile removed: the element,
+	// "preamble" or "file" for bytes outside every element, or the label
+	// ("subject", "session", "scan"), under "path", and the kind of value
+	// ("kind": ResidualKinds), never the value.
+	QuarantineResidualValue QuarantineReason = "residual_value"
+	// QuarantineProfileRefused is a file a rule of the profile quarantines
+	// (its action is quarantine): the rule's name under "rule".
+	QuarantineProfileRefused QuarantineReason = "profile_refused"
 )
+
+// DeidCauses are the causes a deid_failed record names: the
+// de-identification engine's fixed causes (a date to shift and no subject,
+// a lookup with no code, a value not of its VR, sequences too deep, a data
+// set too large, the engine's own fault), and those of the pipeline around
+// it: the file landed under a receiver that de-identifies and now names no
+// profile (no_profile), the file was recorded as received and its receiver
+// de-identifies now (recorded_as_received), the profile version cannot run in this build
+// (profile_unusable), the data set cannot be read or written for
+// de-identification (unreadable, unwritable), and a profile that leaves a
+// placing UID other than the keyed remapping the database holds
+// (uid_not_remapped); and those of the check after de-identification,
+// which could not judge the file: too large, too many values to search
+// for, or unreadable to its end (a deflated file among them).
+var DeidCauses = []string{"no_subject", "lookup_missing", "bad_value", "too_deep", "too_large", "internal",
+	"no_profile", "recorded_as_received", "profile_unusable", "unreadable", "unwritable", "uid_not_remapped",
+	"check_too_large", "check_too_many_needles", "check_unreadable"}
+
+// ResidualKinds are the kinds of value a residual_value record names: a
+// person's name, an identifier or any other text, a date, a UID.
+var ResidualKinds = []string{"name", "identifier", "date", "uid"}
 
 // The fault words a quarantine record's details carry under "fault", the API
 // contract's, each listed with the reasons that use it (the label conflict
@@ -98,6 +134,63 @@ var reasonDetails = map[QuarantineReason]map[string]func(string) bool{
 	QuarantineHeaderTooLarge:   {"limit": isNumber},
 	QuarantineIncomingLost:     {},
 	QuarantineUIDMismatch:      {"attribute": oneOf("SOPInstanceUID", "SOPClassUID", "StudyInstanceUID", "SeriesInstanceUID")},
+	QuarantineDeidFailed:       {"cause": oneOf(DeidCauses...), "path": isElementPath, "rule": isRuleName},
+	QuarantineResidualValue:    {"path": func(v string) bool { return isElementPath(v) || slices.Contains(rawPlaces, v) }, "kind": oneOf(ResidualKinds...)},
+	QuarantineProfileRefused:   {"rule": isRuleName},
+}
+
+// rawPlaces are where outside any element a residual value can be found,
+// as a residual_value record's "path" names them: a file's preamble, or
+// bytes between elements; or the label the file was to be archived under.
+var rawPlaces = []string{"preamble", "file", "subject", "session", "scan"}
+
+// ValidElementPath reports whether v is an element's path as a quarantine
+// record's detail takes it (isElementPath).
+func ValidElementPath(v string) bool { return isElementPath(v) || slices.Contains(rawPlaces, v) }
+
+// ValidRuleName reports whether v names a profile's rule as a quarantine
+// record's detail takes it (isRuleName).
+func ValidRuleName(v string) bool { return isRuleName(v) }
+
+// maxElementPath bounds an element's path in a detail: 64 sequences deep,
+// each a tag and an item number, with room.
+const maxElementPath = 2048
+
+// isElementPath reports whether v is where an element is in a data set as
+// the de-identification engine writes it: tags of eight upper-case
+// hexadecimal digits, each inside a sequence followed by its item number in
+// brackets and a slash, such as "00081115[0]/0020000E". Nothing of a value
+// can be written in that alphabet but hexadecimal digits, which a tag's
+// form bounds.
+func isElementPath(v string) bool {
+	if v == "" || len(v) > maxElementPath {
+		return false
+	}
+	for _, step := range strings.Split(v, "/") {
+		t, item, nested := strings.Cut(step, "[")
+		if len(t) != 8 || !allBytes(t, func(b byte) bool { return (b >= '0' && b <= '9') || (b >= 'A' && b <= 'F') }) {
+			return false
+		}
+		if nested && (!strings.HasSuffix(item, "]") || !isNumber(strings.TrimSuffix(item, "]"))) {
+			return false
+		}
+	}
+	return true
+}
+
+// isRuleName reports whether v names a rule of a profile: its name (1 to
+// 64 of a-z, 0-9, ".", "_" and "-", starting with a letter or digit), or
+// "rule " and its position for one without a name.
+func isRuleName(v string) bool {
+	if n, ok := strings.CutPrefix(v, "rule "); ok {
+		return isNumber(n)
+	}
+	if v == "" || len(v) > 64 || (v[0] < 'a' || v[0] > 'z') && (v[0] < '0' || v[0] > '9') {
+		return false
+	}
+	return allBytes(v, func(b byte) bool {
+		return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '.' || b == '_' || b == '-'
+	})
 }
 
 // oneOf returns a check that a value is one of words.
@@ -206,6 +299,11 @@ type QuarantinedFile struct {
 	ReleaseReason string
 	// ReleasedFrom names the record whose release quarantined it again.
 	ReleasedFrom string
+	// Deidentified says the record was made at a receiver that
+	// de-identifies: its placing UIDs are remapped and its checksum keyed
+	// (as a received file's, ReceivedFile.Deidentified), and only its bytes
+	// in the incoming area are the original's.
+	Deidentified bool
 }
 
 // Validate returns an Invalid error unless q can be recorded as a new held
@@ -314,6 +412,21 @@ func (q QuarantinedFile) Receivable() bool {
 		}
 	}
 	return !q.SHA256.IsZero() && q.Incoming != ""
+}
+
+// JoinsAt reports whether a release of q through a receiver that
+// de-identifies (deidentifies) or not puts it into a reception of its
+// study as a received file: when it is receivable, unless it was recorded
+// as received and the receiver de-identifies now. Such a record holds the
+// original's UIDs and checksum, which a row of a receiver that
+// de-identifies must never hold; it joins nothing, and the pipeline checks
+// its bytes again as a file that just arrived, which records it remapped
+// and keyed, and so de-identifies it. A record made de-identified joins
+// wherever it is released, with its flag: at a receiver that archives as
+// received now it is held (deid_failed, no_profile), never archived as it
+// was.
+func (q QuarantinedFile) JoinsAt(deidentifies bool) bool {
+	return q.Receivable() && (q.Deidentified || !deidentifies)
 }
 
 // HeldBytes is what a record adds to the quarantine's held bytes: its size

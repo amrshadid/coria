@@ -18,7 +18,8 @@ import (
 
 const quarantineColumns = `id, reason, details, state, receiver, reception_id, calling_ae, called_ae, remote_addr, size,
 	sha256, kept_sha256, sop_class_uid, sop_instance_uid, study_uid, series_uid, transfer_syntax_uid, incoming,
-	content_kept, at, decided_at, release_mode, release_reception, release_receiver, reject_reason, released_from, release_reason`
+	content_kept, at, decided_at, release_mode, release_reception, release_receiver, reject_reason, released_from, release_reason,
+	deidentified`
 
 // scanQuarantined reads one row of quarantineColumns.
 func scanQuarantined(row scanner) (tenant.QuarantinedFile, error) {
@@ -30,7 +31,7 @@ func scanQuarantined(row scanner) (tenant.QuarantinedFile, error) {
 	if err := row.Scan(&q.ID, &reason, &details, &state, &q.Receiver, &q.ReceptionID, &q.Caller.CallingAETitle,
 		&q.Caller.CalledAETitle, &q.Caller.Address, &q.Size, &sum, &kept, &q.SOPClassUID, &q.SOPInstanceUID, &q.StudyUID,
 		&q.SeriesUID, &q.TransferSyntaxUID, &q.Incoming, &q.ContentKept, &at, &decided, &mode, &q.ReleaseReception,
-		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason); err != nil {
+		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified); err != nil {
 		return q, err
 	}
 	q.Reason, q.State, q.ReleaseMode = tenant.QuarantineReason(reason), tenant.QuarantineState(state), tenant.ReleaseMode(mode)
@@ -68,12 +69,13 @@ func addTotals(ctx context.Context, tx pgx.Tx, files, bytes int64) error {
 const insertQuarantineSQL = `INSERT INTO quarantine (` + quarantineColumns + `)
 	SELECT id, reason, details, 'held', receiver, reception_id, calling_ae, called_ae, remote_addr, size, sha256, kept_sha256,
 		sop_class_uid, sop_instance_uid, study_uid, series_uid, transfer_syntax_uid, incoming, content_kept, at, NULL,
-		'', '', '', '', released_from, ''
+		'', '', '', '', released_from, '', deidentified
 	FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::bigint[],
 		$10::bytea[], $11::bytea[], $12::text[], $13::text[], $14::text[], $15::text[], $16::text[], $17::text[], $18::boolean[],
-		$19::timestamptz[], $20::text[])
+		$19::timestamptz[], $20::text[], $21::boolean[])
 		AS u(id, reason, details, receiver, reception_id, calling_ae, called_ae, remote_addr, size, sha256, kept_sha256,
-		sop_class_uid, sop_instance_uid, study_uid, series_uid, transfer_syntax_uid, incoming, content_kept, at, released_from)
+		sop_class_uid, sop_instance_uid, study_uid, series_uid, transfer_syntax_uid, incoming, content_kept, at, released_from,
+		deidentified)
 	ON CONFLICT (id) DO NOTHING RETURNING id`
 
 // HoldFiles implements tenant.Pipeline. It locks the receptions its records
@@ -128,7 +130,7 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 	classes, uids, studies, series, syntaxes, incoming, from := text(), text(), text(), text(), text(), text(), text()
 	sizes := make([]int64, 0, n)
 	sums, kept := make([][]byte, 0, n), make([][]byte, 0, n)
-	contentKept := make([]bool, 0, n)
+	contentKept, deidentified := make([]bool, 0, n), make([]bool, 0, n)
 	ats := make([]time.Time, 0, n)
 	for _, q := range batch {
 		d, err := sqlkit.EncodeDetails(q.Details)
@@ -148,6 +150,7 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 		classes, uids, studies = append(classes, q.SOPClassUID), append(uids, q.SOPInstanceUID), append(studies, q.StudyUID)
 		series, syntaxes, incoming = append(series, q.SeriesUID), append(syntaxes, q.TransferSyntaxUID), append(incoming, q.Incoming)
 		contentKept, ats, from = append(contentKept, q.ContentKept), append(ats, micros(q.Quarantined)), append(from, q.ReleasedFrom)
+		deidentified = append(deidentified, q.Deidentified)
 	}
 	var inserted int
 	err := t.pipe(ctx, "the quarantined files cannot be recorded", func(tx pgx.Tx) error {
@@ -171,7 +174,7 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 			}
 		}
 		rows, err := tx.Query(ctx, insertQuarantineSQL, ids, reasons, details, receivers, rids, calling, called, addrs, sizes,
-			sums, kept, classes, uids, studies, series, syntaxes, incoming, contentKept, ats, from)
+			sums, kept, classes, uids, studies, series, syntaxes, incoming, contentKept, ats, from, deidentified)
 		written, err := collect(rows, err, func(row scanner) (string, error) {
 			var id string
 			err := row.Scan(&id)

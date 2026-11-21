@@ -380,6 +380,7 @@ def manifests_of(p, tenant, study):
 def setup_tenant(p, tenant, port, callers=("STORESCU", "PYNETDICOM"), storage=None, create=()):
     p.m("tenant", "create", tenant, *create)
     p.m("setting", "set", "receiver.ports", str(port), "--tenant", tenant)
+    p.m("setting", "set", "receiver.allow-as-received", "true", "--tenant", tenant)
     p.m("storage", "add", tenant, "main", *(storage or ["--type", "dir", "--root", "fast", "--path", "main"]))
     args = ["receiver", "add", tenant, "scanner", "--storage", "main", "--port", str(port), "--aet", "ARCHIVE",
             "--quiet-period", "%ds" % QUIET, "--enabled"]

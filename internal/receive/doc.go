@@ -28,6 +28,35 @@
 //   - Release, Reject, Retry and Discard are the store's decisions with what
 //     the pipeline does around them to the bytes and the work queue.
 //
+// # De-identification at reception
+//
+// A receiver may name a profile version (tenant.Receiver.Profile). Its
+// files are then recorded at landing with their placing UIDs remapped by
+// the tenant's UID key, the engine's own remapping, and a received
+// checksum keyed by it (check, protect), so receptions, received files,
+// claims, quarantine records and the catalog hold nothing an original file
+// could be matched by. The archive step de-identifies each file it writes
+// (prepare, deidentify): the engine runs over the original's data set, the
+// result is written beside the original in the incoming area, the check
+// after (Checker) reads it, and only then is it put, read back and
+// committed with its profile version, its sidecar line read from the same
+// bytes. A file that cannot be is held with deid_failed, residual_value or
+// profile_refused, its original kept. Which way a file goes is decided by
+// its row, never by the receiver's choice now: each received file and
+// quarantine record says whether it was recorded de-identified
+// (tenant.ReceivedFile.Deidentified). One recorded as received at a
+// receiver that de-identifies now is held (recorded_as_received), and a
+// release of such a record through a receiver that de-identifies lands it
+// again, so it is recorded remapped and keyed and goes through the engine
+// and the check; one recorded de-identified at a receiver that no longer
+// names a profile is held (no_profile). A placing UID under the standard's
+// own root is held as bad_uid when it lands at such a receiver. Every byte
+// put is first compared with the row's checksum, or the copy's, through
+// the handle it is put from, so wrong bytes never reach the storage. The
+// de-identified copy is made again whenever it is needed and
+// is never owed: a step run again writes the same bytes, and Recover
+// removes one a crash left.
+//
 // # What makes a crash safe
 //
 // Every state the pipeline must not lose is in the tenant's database or in

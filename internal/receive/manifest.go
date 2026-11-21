@@ -68,11 +68,16 @@ func (p *Pipeline) scanManifest(ctx context.Context, series string, files []mani
 // manifest with its key, place, size and checksum: an instance missing
 // from a manifest is unreachable to a reader of the storage alone, whoever
 // archived it.
-func (p *Pipeline) scanListed(ctx context.Context, series string, listed map[string]manifest.File) error {
-	return p.eachScanInstance(ctx, series, func(in tenant.ScanInstance) error {
+// It returns the catalog's instances of the scan by UID, which the
+// verification reads again (manifestHeld, and each file confirmed).
+func (p *Pipeline) scanListed(ctx context.Context, series string, listed map[string]manifest.File) (map[string]tenant.ScanInstance, error) {
+	held := make(map[string]tenant.ScanInstance, len(listed))
+	err := p.eachScanInstance(ctx, series, func(in tenant.ScanInstance) error {
 		if e, ok := listed[in.SOPInstanceUID]; !ok || e != manifestFile(in) {
 			return notWhole("the scan's manifest does not list an instance the catalog holds in the scan")
 		}
+		held[in.SOPInstanceUID] = in
 		return nil
 	})
+	return held, err
 }

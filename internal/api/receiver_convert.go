@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,9 @@ import (
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/deid/engine"
+	"github.com/amrshadid/coria/internal/deid/profile"
+	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/place"
 	"github.com/amrshadid/coria/internal/tenant"
 )
@@ -24,7 +28,7 @@ var receiverMask = maskRules{
 		string(tenant.FieldDIMSECallers), string(tenant.FieldDIMSEAnyCaller), string(tenant.FieldDIMSETLS),
 		string(tenant.FieldDIMSETLSCert), string(tenant.FieldDIMSETLSKey), string(tenant.FieldDIMSESOPClasses),
 		string(tenant.FieldDIMSESyntaxes), string(tenant.FieldSTOWKeys), string(tenant.FieldSTOWMaxRequest),
-		string(tenant.FieldForwardTo),
+		string(tenant.FieldForwardTo), string(tenant.FieldDeidentification),
 	},
 	refused: map[string]string{
 		"dimse":       "names a type's whole message: name its fields one by one",
@@ -33,6 +37,8 @@ var receiverMask = maskRules{
 		"health":      "is answered by the server and cannot be set",
 		"create_time": "is answered by the server and cannot be set",
 		"update_time": "is answered by the server and cannot be set",
+		"as_received": "is a member of deidentification: name the oneof, \"deidentification\"",
+		"profile":     "is a member of deidentification: name the oneof, \"deidentification\"",
 	},
 }
 
@@ -80,6 +86,12 @@ func receiverValues(field string, m *v1.Receiver) (r tenant.Receiver, quiet, ope
 		}
 		r.Type = tenant.ReceiverSTOW
 		r.STOW = tenant.STOWReceiver{Keys: sm.GetKeyIds(), MaxRequestBytes: sm.GetMaxRequestBytes()}
+	}
+	if pv := m.GetProfile(); pv != nil {
+		r.Profile = tenant.ProfileRef{Name: pv.GetName(), Version: pv.GetVersion()}
+		if err := r.Profile.Validate(); err != nil {
+			return r, false, false, fieldOf(field+".profile", err)
+		}
 	}
 	if n := m.GetNaming(); n != nil {
 		spec := naming.Spec{Subject: n.GetSubject(), Session: n.GetSession(), Scan: n.GetScan()}
@@ -168,6 +180,58 @@ func (c *core) checkReceiverPlace(ctx context.Context, st tenant.Store, r tenant
 	return place.CheckReceiver(ctx, tenantReceiverValues{c: c, st: st}, r)
 }
 
+// checkDeidentification checks a receiver's choice of de-identification
+// against what exists and what the installation allows: a profile version
+// the tenant has (a version is never removed, so one found now stays), or,
+// for a receiver that archives as received, the tenant's setting
+// receiver.allow-as-received. Each failure is a precondition failure: the
+// same request may succeed once the version is made or the setting
+// allows it.
+func (c *core) checkDeidentification(ctx context.Context, p tenant.Pipeline, st tenant.Store, r tenant.Receiver) error {
+	if !r.Deidentifies() {
+		allowed, err := c.values().OnTenant(st).AllowAsReceived(ctx)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return fault.New(fault.Precondition, "receiver.as_received: the tenant's setting receiver.allow-as-received does not allow a receiver that archives as received; name a profile version")
+		}
+		return nil
+	}
+	profiles, ok := p.(tenant.Profiles)
+	if !ok {
+		return fault.New(fault.Internal, "the tenant's database keeps no profiles")
+	}
+	v, err := profiles.ProfileVersion(ctx, r.Profile.Name, r.Profile.Version)
+	if fault.KindOf(err) == fault.NotFound {
+		return fault.Wrap(fault.Precondition, err, "receiver.profile: the tenant has no profile version "+r.Profile.String())
+	}
+	if err != nil {
+		return err
+	}
+	loaded, err := profile.Load(v.Name, v.Version, v.Source, v.Expanded, v.Checksum)
+	if err != nil {
+		return fault.Wrap(fault.Internal, err, "receiver.profile: the stored profile version "+r.Profile.String()+" does not load")
+	}
+	if err := engine.ForReception(loaded.Expanded()); err != nil {
+		return fault.New(fault.Precondition, "receiver.profile: the profile version "+r.Profile.String()+" cannot de-identify a receiver's files: "+receptionRefusal(err))
+	}
+	return nil
+}
+
+// receptionRefusal says in plain words why a profile version cannot
+// de-identify a receiver's files (engine.ForReception).
+func receptionRefusal(err error) string {
+	switch {
+	case errors.Is(err, engine.ErrPixelRules):
+		return "it has pixel rules, which this version of the server does not apply, so they would leave pixels as received"
+	case errors.Is(err, engine.ErrKeepsPlacingUIDs):
+		return "it does not remap the UIDs a file is placed by (as the Retain UIDs option does), and a receiver places each file by their keyed remapping (" +
+			strings.TrimPrefix(err.Error(), engine.ErrKeepsPlacingUIDs.Error()+": ") + ")"
+	}
+	return strings.TrimPrefix(err.Error(), "engine: ")
+}
+
 // healthMessage returns a receiver's health as the contract writes it.
 func healthMessage(h Health) *v1.ReceiverHealth {
 	m := &v1.ReceiverHealth{Detail: h.Detail, Since: timestamp(h.Since)}
@@ -237,6 +301,11 @@ func receiverMessage(r tenant.Receiver, h Health) *v1.Receiver {
 	}
 	if r.Type == tenant.ReceiverSTOW {
 		m.Type = &v1.Receiver_Stow{Stow: &v1.StowReceiver{KeyIds: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes}}
+	}
+	if r.Deidentifies() {
+		m.Deidentification = &v1.Receiver_Profile{Profile: &v1.ProfileVersionRef{Name: r.Profile.Name, Version: r.Profile.Version}}
+	} else {
+		m.Deidentification = &v1.Receiver_AsReceived{AsReceived: &v1.AsReceived{}}
 	}
 	return m
 }

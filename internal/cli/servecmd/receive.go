@@ -11,6 +11,8 @@ import (
 	"github.com/amrshadid/coria/internal/api"
 	"github.com/amrshadid/coria/internal/blob"
 	"github.com/amrshadid/coria/internal/blob/dir"
+	"github.com/amrshadid/coria/internal/deid/check"
+	"github.com/amrshadid/coria/internal/deid/engine"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/place"
@@ -77,6 +79,12 @@ func newReception(d Deps, reg *registry.Registry, wake func(tenantName string), 
 				Tenant: name, Store: st, IncomingRoot: incomingRoot, Logger: log,
 				OpenStorage: storages.Open, Hasher: hasher, HeaderLimit: values.HeaderLimit,
 				LowDisk: g.LowDisk, OverLimit: g.OverLimit, Wake: func() { wake(name) },
+				// The keys of a receiver that de-identifies, read when its
+				// first file comes and kept by the pipeline; never logged.
+				DeidKeys: func(ctx context.Context) (engine.Keys, error) { return reg.DeidKeys(ctx, name) },
+				Check: func(maxFileBytes int64) receive.Checker {
+					return check.New(check.Options{MaxFileBytes: maxFileBytes})
+				},
 			})
 			if err != nil {
 				return nil, err

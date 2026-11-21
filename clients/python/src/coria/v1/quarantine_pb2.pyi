@@ -26,6 +26,9 @@ class QuarantineReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     QUARANTINE_REASON_HEADER_TOO_LARGE: _ClassVar[QuarantineReason]
     QUARANTINE_REASON_INCOMING_LOST: _ClassVar[QuarantineReason]
     QUARANTINE_REASON_UID_MISMATCH: _ClassVar[QuarantineReason]
+    QUARANTINE_REASON_DEID_FAILED: _ClassVar[QuarantineReason]
+    QUARANTINE_REASON_RESIDUAL_VALUE: _ClassVar[QuarantineReason]
+    QUARANTINE_REASON_PROFILE_REFUSED: _ClassVar[QuarantineReason]
 
 class QuarantineState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -52,6 +55,9 @@ QUARANTINE_REASON_READ_BACK_MISMATCH: QuarantineReason
 QUARANTINE_REASON_HEADER_TOO_LARGE: QuarantineReason
 QUARANTINE_REASON_INCOMING_LOST: QuarantineReason
 QUARANTINE_REASON_UID_MISMATCH: QuarantineReason
+QUARANTINE_REASON_DEID_FAILED: QuarantineReason
+QUARANTINE_REASON_RESIDUAL_VALUE: QuarantineReason
+QUARANTINE_REASON_PROFILE_REFUSED: QuarantineReason
 QUARANTINE_STATE_UNSPECIFIED: QuarantineState
 QUARANTINE_STATE_HELD: QuarantineState
 QUARANTINE_STATE_RELEASED: QuarantineState

@@ -65,6 +65,10 @@ func newSTOWSite(t *testing.T, maxFile int) *stowSite {
 	post(t, hc, "/coria.v1.SettingsService/SetSetting",
 		`{"setting":{"name":"storage.directory-roots","scope":{"installation":{}},"value":`+quoted("fast="+roots)+`}}`)
 	post(t, hc, "/coria.v1.TenantService/CreateTenant", `{"name":"`+s.tenant+`","databaseType":"DATABASE_TYPE_SQLITE"}`)
+	// The receiver archives as received, which a tenant made now allows
+	// only when the installation's admin says so.
+	post(t, hc, "/coria.v1.SettingsService/SetSetting",
+		`{"setting":{"name":"receiver.allow-as-received","scope":{"tenant":"`+s.tenant+`"},"value":"true"}}`)
 	post(t, hc, "/coria.v1.StorageService/AddStorage", `{"tenant":"`+s.tenant+`","storage":{"name":"main","directory":{"root":"fast","path":"main"}}}`)
 	s.key, s.keyID = s.makeKey()
 	s.unlisted, _ = s.makeKey()

@@ -71,7 +71,7 @@ func (p *Pipeline) Accept(ctx context.Context, a Arrival) Outcome {
 	f, err := p.area.Land(ctx, a.Receiver, a.Body, rcv.MaxFileBytes)
 	var tl *incoming.TooLargeError
 	if errors.As(err, &tl) {
-		p.holdTooLarge(ctx, a, tl)
+		p.holdTooLarge(ctx, a, tl, rcv)
 		return Outcome{Status: Failed, Reason: reasonTooLarge}
 	}
 	if err != nil {
@@ -101,9 +101,9 @@ func (p *Pipeline) intake(ctx context.Context, l landed) {
 }
 
 // holdTooLarge records a file refused for its size, without its bytes,
-// which were never kept. Its record is written at once rather than in a
+// which were never kept, at the receiver rcv. Its record is written at once rather than in a
 // batch: nothing on disk would bring it back after a crash.
-func (p *Pipeline) holdTooLarge(ctx context.Context, a Arrival, tl *incoming.TooLargeError) {
+func (p *Pipeline) holdTooLarge(ctx context.Context, a Arrival, tl *incoming.TooLargeError, rcv tenant.Receiver) {
 	q := tenant.QuarantinedFile{
 		ID: newID(), Reason: tenant.QuarantineTooLarge, Receiver: a.Receiver, Caller: a.Caller,
 		Details: map[string]string{"limit": itoa(tl.Limit)}, Size: tl.Read, Quarantined: p.now(),
@@ -116,6 +116,15 @@ func (p *Pipeline) holdTooLarge(ctx context.Context, a Arrival, tl *incoming.Too
 	} {
 		if validUID(s.v) {
 			*s.dst = s.v
+		}
+	}
+	if rcv.Deidentifies() {
+		// As for every row of a receiver that de-identifies, its UIDs are
+		// remapped; without the keys, the record names none.
+		if keys, err := p.deidKeys(ctx); err == nil {
+			protect(&q, keys)
+		} else {
+			q.SOPInstanceUID = ""
 		}
 	}
 	if _, err := p.store.HoldFiles(ctx, []tenant.QuarantinedFile{q}); err != nil {

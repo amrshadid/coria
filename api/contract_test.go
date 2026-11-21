@@ -344,6 +344,7 @@ var textFields = []string{
 
 	// profile.proto: a profile is configuration a person writes; no field
 	// carries a secret or a value read from a file.
+	"coria.v1.ProfileVersionRef.name",
 	"coria.v1.ProfileDocument.bases",
 	"coria.v1.ProfileDocument.description",
 	"coria.v1.ProfileRule.name",

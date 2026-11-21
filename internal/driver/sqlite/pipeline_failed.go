@@ -104,7 +104,7 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 		// reception's claim answers it SameFile.
 		if _, err := tx.ExecContext(ctx, `INSERT INTO received_files (`+receivedColumns+`)
 			SELECT ?, sop_instance_uid, sha256, series_uid, study_uid, sop_class_uid, transfer_syntax_uid, size, incoming,
-				calling_ae, called_ae, remote_addr, association, released, ?
+				calling_ae, called_ae, remote_addr, association, released, ?, deidentified
 			FROM received_files WHERE reception_id = ?`, newID, micros(now), f.ID); err != nil {
 			return err
 		}

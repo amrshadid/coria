@@ -20,6 +20,10 @@
 //	<receiver>/ab/<id>.new   landed: whole and synced, its sender told it was
 //	                         received, not yet recorded in the database
 //	<receiver>/ab/<id>       recorded: a row of the tenant's database names it
+//	<receiver>/ab/<id>.deid  made from the recorded file (its de-identified
+//	                         copy, <id>.deid-<random>.tmp while one writer
+//	                         writes it): never owed,
+//	                         made again whenever needed, removed at start
 //
 // A file is renamed from .new to its plain name only after the row that
 // names it has committed (Commit). So a plain name with no row is a file
@@ -60,7 +64,7 @@
 //
 // It must never build a path from anything but an id it drew and checked,
 // never follow a symbolic link, never remove a file whose name is not one of
-// its three forms, never remove a directory, and never let the area's path
+// its forms, never remove a directory, and never let the area's path
 // into an error's text. It knows nothing of the database: which files are
 // owed is the pipeline's to say (Scan lists, the caller decides).
 package incoming

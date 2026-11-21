@@ -205,6 +205,7 @@ func (p *Pipeline) holdRecord(r tenant.Reception, f tenant.ReceivedFile, reason 
 		Receiver: r.Receiver, ReceptionID: r.ID, Caller: f.Caller, Size: f.Size, SHA256: f.SHA256,
 		SOPClassUID: f.SOPClassUID, SOPInstanceUID: f.SOPInstanceUID, StudyUID: f.StudyUID, SeriesUID: f.SeriesUID,
 		TransferSyntaxUID: f.TransferSyntaxUID, Incoming: f.Incoming, ContentKept: true, Quarantined: p.now(),
+		Deidentified: f.Deidentified,
 	}
 }
 

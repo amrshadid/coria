@@ -496,7 +496,7 @@ func (r *run) needle(vr, value, path string) {
 	}
 	add := func(v string) {
 		v = strings.Trim(v, " \x00")
-		if v == "" || (kind == NeedleUID && Registered(v)) {
+		if v == "" || (kind == NeedleUID && Registered(v)) || (temporalVRs[vr] && allZeros(v)) {
 			return
 		}
 		r.record.Needles = append(r.record.Needles, Needle{Kind: kind, Value: v, Path: path})
@@ -562,4 +562,26 @@ func (r *run) text(ds *dataset.Dataset, t tag.Tag, vr string) (string, error) {
 		return "", errNotText
 	}
 	return naming.TrimValue(vr, string(b)), nil
+}
+
+// temporalVRs are the VRs of a date or a time (PS3.5 6.2).
+var temporalVRs = map[string]bool{"DA": true, "DT": true, "TM": true}
+
+// allZeros reports whether a date or time value holds no digit but zeros
+// (a time of midnight, 000000, a date never filled in, 00000000). It is
+// removed as the rule says, but is no needle: it identifies no one, and
+// as a run of zeros it is found inside ordinary numbers (a decimal string
+// such as 500.000000), which would hold every such file for nothing.
+func allZeros(v string) bool {
+	digit := false
+	for _, c := range v {
+		switch c {
+		case '0':
+			digit = true
+		case '.', ':', '+', '-', ' ':
+		default:
+			return false
+		}
+	}
+	return digit
 }

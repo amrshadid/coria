@@ -49,7 +49,7 @@ RECEIVER_DOWN_REASON_OTHER: ReceiverDownReason
 RECEIVER_DOWN_REASON_INCOMING_LIMIT: ReceiverDownReason
 
 class Receiver(_message.Message):
-    __slots__ = ("name", "dimse", "stow", "enabled", "storage", "naming", "quiet_period", "max_open_time", "max_file_bytes", "health", "create_time", "update_time", "forward_to")
+    __slots__ = ("name", "dimse", "stow", "enabled", "storage", "naming", "quiet_period", "max_open_time", "max_file_bytes", "health", "create_time", "update_time", "forward_to", "as_received", "profile")
     NAME_FIELD_NUMBER: _ClassVar[int]
     DIMSE_FIELD_NUMBER: _ClassVar[int]
     STOW_FIELD_NUMBER: _ClassVar[int]
@@ -63,6 +63,8 @@ class Receiver(_message.Message):
     CREATE_TIME_FIELD_NUMBER: _ClassVar[int]
     UPDATE_TIME_FIELD_NUMBER: _ClassVar[int]
     FORWARD_TO_FIELD_NUMBER: _ClassVar[int]
+    AS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_FIELD_NUMBER: _ClassVar[int]
     name: str
     dimse: DimseReceiver
     stow: StowReceiver
@@ -76,7 +78,21 @@ class Receiver(_message.Message):
     create_time: _timestamp_pb2.Timestamp
     update_time: _timestamp_pb2.Timestamp
     forward_to: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, name: _Optional[str] = ..., dimse: _Optional[_Union[DimseReceiver, _Mapping]] = ..., stow: _Optional[_Union[StowReceiver, _Mapping]] = ..., enabled: _Optional[bool] = ..., storage: _Optional[str] = ..., naming: _Optional[_Union[NamingRule, _Mapping]] = ..., quiet_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_open_time: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_file_bytes: _Optional[int] = ..., health: _Optional[_Union[ReceiverHealth, _Mapping]] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., forward_to: _Optional[_Iterable[str]] = ...) -> None: ...
+    as_received: AsReceived
+    profile: ProfileVersionRef
+    def __init__(self, name: _Optional[str] = ..., dimse: _Optional[_Union[DimseReceiver, _Mapping]] = ..., stow: _Optional[_Union[StowReceiver, _Mapping]] = ..., enabled: _Optional[bool] = ..., storage: _Optional[str] = ..., naming: _Optional[_Union[NamingRule, _Mapping]] = ..., quiet_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_open_time: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_file_bytes: _Optional[int] = ..., health: _Optional[_Union[ReceiverHealth, _Mapping]] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., forward_to: _Optional[_Iterable[str]] = ..., as_received: _Optional[_Union[AsReceived, _Mapping]] = ..., profile: _Optional[_Union[ProfileVersionRef, _Mapping]] = ...) -> None: ...
+
+class AsReceived(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class ProfileVersionRef(_message.Message):
+    __slots__ = ("name", "version")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    VERSION_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    version: int
+    def __init__(self, name: _Optional[str] = ..., version: _Optional[int] = ...) -> None: ...
 
 class DimseReceiver(_message.Message):
     __slots__ = ("port", "bind_address", "ae_title", "allowed_callers", "any_caller", "tls", "sop_classes", "transfer_syntaxes")

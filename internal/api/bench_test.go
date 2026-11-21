@@ -144,6 +144,7 @@ func newReadBench(b *testing.B, files [][]byte) *readBench {
 	}
 	e.setSetting(installation(), settings.StorageDirectoryRoots, "fast="+root)
 	e.setSetting(tenantScope("lab1"), settings.ReceiverPorts, "11112")
+	e.setSetting(tenantScope("lab1"), settings.ReceiverAllowAsReceived, "true")
 	for _, o := range []outcome{addStorage("lab1", dirStorage("main", "fast", "mri"))(e.as(local)), addReceiver("lab1", dimseReceiver("scanner1", "main", 11112))(e.as(local))} {
 		if o.err != nil {
 			b.Fatal(o.err)

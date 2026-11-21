@@ -15,6 +15,9 @@ import (
 type RecoverReport struct {
 	// Temp counts files being written when the process stopped, removed.
 	Temp int
+	// Made counts files made from a received one (its de-identified copy)
+	// that a step left, removed: each is made again when it is needed.
+	Made int
 	// Renamed counts recorded files that still had their landed name.
 	Renamed int
 	// Rechecked counts landed files with no row, checked and recorded or
@@ -50,7 +53,8 @@ type owed struct {
 //     retried nor discarded, and every file a held quarantine record keeps;
 //   - the disk's side, each file by the state its name says (package
 //     incoming): a file being written is removed, since its sender was
-//     never answered; a landed file the database names is given its
+//     never answered; a file made from a received one (its de-identified
+//     copy) is removed, since the step that needs it makes it again; a landed file the database names is given its
 //     recorded name, and one it does not name is checked and recorded or
 //     held, as if it had just arrived, since its sender was answered; a
 //     recorded file the database names stays, and one it does not is
@@ -58,7 +62,8 @@ type owed struct {
 //     why first;
 //   - a landed file with no row whose latest quarantine record was released
 //     into no reception (releasedRecord) is checked again as a release of
-//     that record: a release gives the file its landed name before the
+//     that record, by the rules of the receiver the release ran through: a
+//     release gives the file its landed name before the
 //     store records it (Release), so this is a release whose check had not
 //     been written when the process stopped. Its new record's id is made
 //     from the released record's, so it never meets the old one, which the
@@ -132,6 +137,12 @@ func (p *Pipeline) Recover(ctx context.Context) (RecoverReport, error) {
 		_, _ = hex.Decode(k[:], []byte(e.ID))
 		_, isKnown := known[k]
 		switch {
+		case e.State == incoming.Made:
+			// A de-identified copy is made again by the step that puts
+			// it, from the file it was made from, and never read after a
+			// restart: one a crash left is let go.
+			rep.Made++
+			return p.area.RemoveMade(e)
 		case e.State == incoming.Temp:
 			rep.Temp++
 			return p.area.RemoveTemp(e)
@@ -171,7 +182,7 @@ func (p *Pipeline) Recover(ctx context.Context) (RecoverReport, error) {
 	}
 	for _, e := range recheck {
 		rep.Rechecked++
-		from, err := p.releasedRecord(ctx, e.ID)
+		from, via, err := p.releasedRecord(ctx, e.ID)
 		if err != nil {
 			return rep, err
 		}
@@ -179,7 +190,13 @@ func (p *Pipeline) Recover(ctx context.Context) (RecoverReport, error) {
 		if err != nil {
 			return rep, err
 		}
-		p.intakeNow(ctx, landed{file: f, receiver: e.Receiver, releasedFrom: from})
+		// A release names the receiver whose rules the file runs by
+		// (afterRelease does the same): one that de-identifies lands it
+		// remapped and keyed, whichever receiver it first came to.
+		if via == "" {
+			via = e.Receiver
+		}
+		p.intakeNow(ctx, landed{file: f, receiver: via, releasedFrom: from})
 	}
 	return rep, nil
 }
@@ -196,9 +213,11 @@ const maxReleases = 64
 // derivedID("q", "receive", fileID); each check after a release holds it,
 // if it holds it again, under derivedID("q", "release", <the released
 // record>) (holdAtReceive). Following those ids needs nothing but the
-// database, so a restart reads what a release in progress left.
-func (p *Pipeline) releasedRecord(ctx context.Context, fileID string) (string, error) {
-	id := derivedID("q", "receive", fileID)
+// database, so a restart reads what a release in progress left. via is the
+// receiver that release ran through (QuarantinedFile.ReleaseReceiver),
+// empty when none is recorded.
+func (p *Pipeline) releasedRecord(ctx context.Context, fileID string) (id, via string, err error) {
+	id = derivedID("q", "receive", fileID)
 	var latest tenant.QuarantinedFile
 	for range maxReleases {
 		q, err := p.store.QuarantinedFile(ctx, id)
@@ -206,7 +225,7 @@ func (p *Pipeline) releasedRecord(ctx context.Context, fileID string) (string, e
 			break
 		}
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		latest = q
 		if q.State != tenant.QuarantineReleased {
@@ -215,9 +234,9 @@ func (p *Pipeline) releasedRecord(ctx context.Context, fileID string) (string, e
 		id = derivedID("q", "release", q.ID)
 	}
 	if latest.ID == "" || latest.State != tenant.QuarantineReleased || latest.ReleaseReception != "" {
-		return "", nil
+		return "", "", nil
 	}
-	return latest.ID, nil
+	return latest.ID, latest.ReleaseReceiver, nil
 }
 
 // heldElsewhere reports whether the catalog holds a file under its UID with

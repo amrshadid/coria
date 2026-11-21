@@ -188,7 +188,9 @@ func TestJudgeRow(t *testing.T) {
 
 // TestQuarantineDetailsClosed guards that a record's details are each from
 // a closed list or of a form no file's value can be written into: a name
-// in the shape of a word, or of a keyword, is refused.
+// in the shape of a word, or of a keyword, is refused; so is an element's
+// path that is not tags and item numbers, a rule's name that is not one,
+// and a kind of value or a cause not in the list.
 func TestQuarantineDetailsClosed(t *testing.T) {
 	base := QuarantinedFile{ID: "q1", Receiver: "a", Size: 1, Quarantined: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
 	for _, c := range []struct {
@@ -210,6 +212,20 @@ func TestQuarantineDetailsClosed(t *testing.T) {
 		{QuarantineStorageRefused, map[string]string{"storage": "store", "fault": "connection reset by peer"}, false},
 		{QuarantineNotDICOM, map[string]string{"offset": "128"}, true},
 		{QuarantineNotDICOM, map[string]string{"offset": "DOE"}, false},
+		{QuarantineDeidFailed, map[string]string{"cause": "no_subject", "path": "00081115[0]/00080023", "rule": "shift-dates"}, true},
+		{QuarantineDeidFailed, map[string]string{"cause": "bad_value", "rule": "rule 3"}, true},
+		{QuarantineDeidFailed, map[string]string{"cause": "check_unreadable"}, true},
+		{QuarantineDeidFailed, map[string]string{"cause": "Doe^John"}, false},
+		{QuarantineDeidFailed, map[string]string{"cause": "bad_value", "path": "00100010=DOE"}, false},
+		{QuarantineDeidFailed, map[string]string{"cause": "bad_value", "path": "0010001g"}, false},
+		{QuarantineDeidFailed, map[string]string{"cause": "bad_value", "path": "00081115[x]/00100010"}, false},
+		{QuarantineDeidFailed, map[string]string{"cause": "bad_value", "rule": "Doe John"}, false},
+		{QuarantineResidualValue, map[string]string{"path": "00100010", "kind": "name"}, true},
+		{QuarantineResidualValue, map[string]string{"path": "preamble", "kind": "identifier"}, true},
+		{QuarantineResidualValue, map[string]string{"path": "00100010", "kind": "DOE"}, false},
+		{QuarantineResidualValue, map[string]string{"path": "00100010", "kind": "name", "value": "DOE"}, false},
+		{QuarantineProfileRefused, map[string]string{"rule": "refuse-sr"}, true},
+		{QuarantineProfileRefused, map[string]string{"rule": "-refuse"}, false},
 	} {
 		q := base
 		q.Reason, q.Details = c.reason, c.details
