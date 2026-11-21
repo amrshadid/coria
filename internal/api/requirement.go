@@ -222,6 +222,22 @@ var rules = map[string]rule{
 		return onScope(r.GetScope(), master.RoleAdmin), access.Request{Details: auditFilterDetails(r)}
 	}),
 
+	// AuditSealService: admin on the log's scope, but the public keys,
+	// which any authenticated caller may read: they check a signature and
+	// cannot make one. The details are the scope and the range of seq as
+	// asked; a digest kept outside is recorded only as given.
+	coriav1connect.AuditSealServiceVerifyAuditProcedure: byMessage(func(r *v1.VerifyAuditRequest) (access.Requirement, access.Request) {
+		return onScope(r.GetScope(), master.RoleAdmin), access.Request{Details: verifyDetails(r)}
+	}),
+	coriav1connect.AuditSealServiceListAuditCheckpointsProcedure: byMessage(func(r *v1.ListAuditCheckpointsRequest) (access.Requirement, access.Request) {
+		return onScope(r.GetScope(), master.RoleAdmin), access.Request{Details: map[string]string{detailScope: scopeDetail(r.GetScope())}}
+	}),
+	coriav1connect.AuditSealServiceExportAuditProcedure: byMessage(func(r *v1.ExportAuditRequest) (access.Requirement, access.Request) {
+		return onScope(r.GetScope(), master.RoleAdmin), access.Request{Details: sealRangeDetails(r.GetScope(), r.GetFromSeq(), r.ToSeq)}
+	}),
+	// "Role: none; any caller the server authenticates."
+	coriav1connect.AuditSealServiceGetAuditPublicKeyProcedure: fixed(access.Authenticated()),
+
 	// MonitorService: reader on the tenant asked for, operator on the
 	// installation for every tenant.
 	coriav1connect.MonitorServiceGetStatusProcedure: byMessage(func(r *v1.GetStatusRequest) (access.Requirement, access.Request) {
@@ -470,9 +486,8 @@ var rules = map[string]rule{
 // change to a target is its path of labels, never an instance id, which
 // holds a SOP Instance UID as received; the handler records the
 // correction's id. The reason is not recorded by the requirement: the
-// handler writes it once it has passed its bounds. AuditSealService: admin
-// on the log's scope, but the public key, which any authenticated caller
-// may read. BackupService: admin on the installation. TenantService's
+// handler writes it once it has passed its bounds. BackupService: admin on
+// the installation. TenantService's
 // ReclaimTenant and AccessService's ReinstateKeys: admin on the
 // installation, further kept to the local operator by their handlers.
 // JobService's ListImportFiles and ListImportUnits: operator on the
@@ -513,18 +528,6 @@ var pendingRules = map[string]rule{
 	coriav1connect.CorrectionServiceResolveInstancesProcedure: byMessage(func(r *v1.ResolveInstancesRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Details: map[string]string{detailMembers: strconv.Itoa(len(r.GetMembers()))}}
 	}),
-
-	coriav1connect.AuditSealServiceVerifyAuditProcedure: byMessage(func(r *v1.VerifyAuditRequest) (access.Requirement, access.Request) {
-		return onScope(r.GetScope(), master.RoleAdmin), access.Request{}
-	}),
-	coriav1connect.AuditSealServiceListAuditCheckpointsProcedure: byMessage(func(r *v1.ListAuditCheckpointsRequest) (access.Requirement, access.Request) {
-		return onScope(r.GetScope(), master.RoleAdmin), access.Request{}
-	}),
-	coriav1connect.AuditSealServiceExportAuditProcedure: byMessage(func(r *v1.ExportAuditRequest) (access.Requirement, access.Request) {
-		return onScope(r.GetScope(), master.RoleAdmin), access.Request{}
-	}),
-	// "Role: none; any caller the server authenticates."
-	coriav1connect.AuditSealServiceGetAuditPublicKeyProcedure: fixed(access.Authenticated()),
 
 	coriav1connect.BackupServiceCreateBackupProcedure: fixed(installationAdmin),
 	coriav1connect.BackupServiceExportTenantProcedure: fixed(installationAdmin),

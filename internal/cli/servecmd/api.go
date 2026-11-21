@@ -164,9 +164,16 @@ func APIServices(d Deps) (Built, error) {
 		closeRegistry(reg)
 		return Built{}, err
 	}
+	installation, err := server.ReadInstallationID(d.DataDir)
+	if err != nil {
+		_ = feeds.Close()
+		closeRegistry(reg)
+		return Built{}, err
+	}
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
 		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, Headers: heldHeaders{sup}, HeldFiles: heldHeaders{sup}, STOW: stowReceivers,
-		Reads: reads, SenderHealths: senderHealths{s: senders, deid: deids}, SenderTests: senderTests{senders}, DeidMemory: deidMemory})
+		Reads: reads, SenderHealths: senderHealths{s: senders, deid: deids}, SenderTests: senderTests{senders}, DeidMemory: deidMemory,
+		Installation: installation})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err
@@ -204,7 +211,10 @@ func APIServices(d Deps) (Built, error) {
 		// bounded by its own row limits, so the route is long as a whole.
 		// A store by STOW-RS may send a whole study in one request; a client
 		// that stops sending is cut by the receiver's read stall bound.
-		LongMethods: []string{coriav1connect.DataServiceReadFilesProcedure, api.DownloadPattern, api.DICOMwebPattern, api.STOWPattern},
+		// An export of a long audit log streams for as long as it takes, as
+		// its contract says when the client sends no deadline.
+		LongMethods: []string{coriav1connect.DataServiceReadFilesProcedure, api.DownloadPattern, api.DICOMwebPattern, api.STOWPattern,
+			coriav1connect.AuditSealServiceExportAuditProcedure},
 		// Stopped last first: the event keeper, the deid jobs and the
 		// senders (each giving its unit back), then the receivers and
 		// pipelines, then the sealing pass's timer, then the feeds.

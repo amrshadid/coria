@@ -310,6 +310,7 @@ var contractFiles = []protoreflect.FileDescriptor{
 	coriav1.File_coria_v1_data_proto,
 	coriav1.File_coria_v1_profile_proto,
 	coriav1.File_coria_v1_deid_proto,
+	coriav1.File_coria_v1_audit_seal_proto,
 }
 
 // contractMethods returns every served method of the contract by procedure

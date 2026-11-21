@@ -427,7 +427,7 @@ func TestGrammar(t *testing.T) {
 		"key create": true, "key list": true, "key show": true, "key revoke": true, "key rotate": true, "key set": true,
 		"grant set": true, "grant list": true, "grant remove": true,
 		"setting get": true, "setting set": true, "setting unset": true, "setting list": true,
-		"audit list":  true,
+		"audit list": true, "audit verify": true, "audit checkpoints": true, "audit export": true, "audit public-key": true,
 		"storage add": true, "storage list": true, "storage show": true, "storage set": true, "storage remove": true, "storage test": true,
 		"receiver add": true, "receiver list": true, "receiver show": true, "receiver set": true, "receiver remove": true,
 		"receiver route list": true, "receiver route add": true, "receiver route set": true, "receiver route remove": true,

@@ -27,7 +27,7 @@ from coria.v1 import audit_pb2 as coria_dot_v1_dot_audit__pb2
 from coria.v1 import scope_pb2 as coria_dot_v1_dot_scope__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19\x63oria/v1/audit_seal.proto\x12\x08\x63oria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14\x63oria/v1/audit.proto\x1a\x14\x63oria/v1/scope.proto\"\xa8\x02\n\x0f\x41uditCheckpoint\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x10\n\x08\x66rom_seq\x18\x02 \x01(\x03\x12\x0e\n\x06to_seq\x18\x03 \x01(\x03\x12\x0f\n\x07\x65ntries\x18\x04 \x01(\x03\x12\x0c\n\x04head\x18\x05 \x01(\x0c\x12\x17\n\x0fprevious_digest\x18\x06 \x01(\x0c\x12\x0e\n\x06\x64igest\x18\x07 \x01(\x0c\x12(\n\x04time\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x13\n\x0bkey_version\x18\t \x01(\x05\x12\x11\n\tsignature\x18\n \x01(\x0c\x12\x13\n\x0bsigned_text\x18\x0b \x01(\x0c\x12\x17\n\x0finstallation_id\x18\x0c \x01(\t\x12\x0b\n\x03log\x18\r \x01(\t\x12\x0e\n\x06pruned\x18\x0e \x01(\x08\"{\n\x0e\x41uditPublicKey\x12\x13\n\x0bkey_version\x18\x01 \x01(\x05\x12\x12\n\npublic_key\x18\x02 \x01(\x0c\x12\x16\n\x0epublic_key_pem\x18\x03 \x01(\t\x12\x0f\n\x07\x63urrent\x18\x04 \x01(\x08\x12\x17\n\x0finstallation_id\x18\x05 \x01(\t\"a\n\x12\x41uditVerifyProblem\x12.\n\x04kind\x18\x01 \x01(\x0e\x32 .coria.v1.AuditVerifyProblemKind\x12\x0b\n\x03seq\x18\x02 \x01(\x03\x12\x0e\n\x06\x64\x65tail\x18\x03 \x01(\t\"\xbe\x01\n\x12VerifyAuditRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x10\n\x08\x66rom_seq\x18\x02 \x01(\x03\x12\x13\n\x06to_seq\x18\x05 \x01(\x03H\x00\x88\x01\x01\x12\x1d\n\x10\x65xpected_min_seq\x18\x03 \x01(\x03H\x01\x88\x01\x01\x12\"\n\x1a\x65xpected_checkpoint_digest\x18\x04 \x01(\x0c\x42\t\n\x07_to_seqB\x13\n\x11_expected_min_seq\"\xeb\x01\n\x13VerifyAuditResponse\x12\x0e\n\x06intact\x18\x01 \x01(\x08\x12\x17\n\x0f\x65ntries_checked\x18\x02 \x01(\x03\x12\x1b\n\x13\x63heckpoints_checked\x18\x03 \x01(\x03\x12\x18\n\x10unsealed_entries\x18\x04 \x01(\x03\x12\x10\n\x08next_seq\x18\x05 \x01(\x03\x12.\n\x08problems\x18\x06 \x03(\x0b\x32\x1c.coria.v1.AuditVerifyProblem\x12\x32\n\x0flast_checkpoint\x18\x07 \x01(\x0b\x32\x19.coria.v1.AuditCheckpoint\"d\n\x1bListAuditCheckpointsRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x11\n\tpage_size\x18\x02 \x01(\x05\x12\x12\n\npage_token\x18\x03 \x01(\t\"g\n\x1cListAuditCheckpointsResponse\x12.\n\x0b\x63heckpoints\x18\x01 \x03(\x0b\x32\x19.coria.v1.AuditCheckpoint\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\"f\n\x12\x45xportAuditRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x10\n\x08\x66rom_seq\x18\x02 \x01(\x03\x12\x13\n\x06to_seq\x18\x03 \x01(\x03H\x00\x88\x01\x01\x42\t\n\x07_to_seq\":\n\x0b\x41uditAnchor\x12\x0b\n\x03log\x18\x01 \x01(\t\x12\x0e\n\x06\x64igest\x18\x02 \x01(\x0c\x12\x0e\n\x06to_seq\x18\x03 \x01(\x03\"\xe2\x01\n\x11\x41uditExportHeader\x12\x17\n\x0finstallation_id\x18\x01 \x01(\t\x12\x0e\n\x06tenant\x18\x02 \x01(\t\x12-\n\x0bpublic_keys\x18\x03 \x03(\x0b\x32\x18.coria.v1.AuditPublicKey\x12\x14\n\x0c\x63hain_before\x18\x04 \x01(\x0c\x12\x18\n\x10\x65ncoding_version\x18\x05 \x01(\x05\x12\x0b\n\x03log\x18\x06 \x01(\t\x12&\n\x07\x61nchors\x18\x07 \x03(\x0b\x32\x15.coria.v1.AuditAnchor\x12\x10\n\x08\x66rom_seq\x18\x08 \x01(\x03\"d\n\x10SealedAuditEntry\x12\x0b\n\x03seq\x18\x01 \x01(\x03\x12#\n\x05\x65ntry\x18\x02 \x01(\x0b\x32\x14.coria.v1.AuditEntry\x12\x0f\n\x07\x65ncoded\x18\x03 \x01(\x0c\x12\r\n\x05\x63hain\x18\x04 \x01(\x0c\"\xaa\x01\n\x13\x45xportAuditResponse\x12-\n\x06header\x18\x01 \x01(\x0b\x32\x1b.coria.v1.AuditExportHeaderH\x00\x12+\n\x05\x65ntry\x18\x02 \x01(\x0b\x32\x1a.coria.v1.SealedAuditEntryH\x00\x12/\n\ncheckpoint\x18\x03 \x01(\x0b\x32\x19.coria.v1.AuditCheckpointH\x00\x42\x06\n\x04kind\"\x1a\n\x18GetAuditPublicKeyRequest\"c\n\x19GetAuditPublicKeyResponse\x12\x17\n\x0finstallation_id\x18\x01 \x01(\t\x12-\n\x0bpublic_keys\x18\x02 \x03(\x0b\x32\x18.coria.v1.AuditPublicKey\"\x86\x01\n\x0f\x41uditSealStatus\x12\x10\n\x08last_seq\x18\x01 \x01(\x03\x12\x32\n\x0elast_seal_time\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x13\n\x0blast_digest\x18\x03 \x01(\x0c\x12\x18\n\x10unsealed_entries\x18\x04 \x01(\x03*\x89\x03\n\x16\x41uditVerifyProblemKind\x12)\n%AUDIT_VERIFY_PROBLEM_KIND_UNSPECIFIED\x10\x00\x12*\n&AUDIT_VERIFY_PROBLEM_KIND_CHAIN_BROKEN\x10\x01\x12+\n\'AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING\x10\x02\x12+\n\'AUDIT_VERIFY_PROBLEM_KIND_BAD_SIGNATURE\x10\x03\x12\x34\n0AUDIT_VERIFY_PROBLEM_KIND_CHECKPOINT_OUT_OF_LINE\x10\x04\x12.\n*AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES\x10\x05\x12)\n%AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK\x10\x06\x12-\n)AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED\x10\x07\x32\x85\x03\n\x10\x41uditSealService\x12O\n\x0bVerifyAudit\x12\x1c.coria.v1.VerifyAuditRequest\x1a\x1d.coria.v1.VerifyAuditResponse\"\x03\x90\x02\x01\x12j\n\x14ListAuditCheckpoints\x12%.coria.v1.ListAuditCheckpointsRequest\x1a&.coria.v1.ListAuditCheckpointsResponse\"\x03\x90\x02\x01\x12Q\n\x0b\x45xportAudit\x12\x1c.coria.v1.ExportAuditRequest\x1a\x1d.coria.v1.ExportAuditResponse\"\x03\x90\x02\x01\x30\x01\x12\x61\n\x11GetAuditPublicKey\x12\".coria.v1.GetAuditPublicKeyRequest\x1a#.coria.v1.GetAuditPublicKeyResponse\"\x03\x90\x02\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19\x63oria/v1/audit_seal.proto\x12\x08\x63oria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14\x63oria/v1/audit.proto\x1a\x14\x63oria/v1/scope.proto\"\xa8\x02\n\x0f\x41uditCheckpoint\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x10\n\x08\x66rom_seq\x18\x02 \x01(\x03\x12\x0e\n\x06to_seq\x18\x03 \x01(\x03\x12\x0f\n\x07\x65ntries\x18\x04 \x01(\x03\x12\x0c\n\x04head\x18\x05 \x01(\x0c\x12\x17\n\x0fprevious_digest\x18\x06 \x01(\x0c\x12\x0e\n\x06\x64igest\x18\x07 \x01(\x0c\x12(\n\x04time\x18\x08 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x13\n\x0bkey_version\x18\t \x01(\x05\x12\x11\n\tsignature\x18\n \x01(\x0c\x12\x13\n\x0bsigned_text\x18\x0b \x01(\x0c\x12\x17\n\x0finstallation_id\x18\x0c \x01(\t\x12\x0b\n\x03log\x18\r \x01(\t\x12\x0e\n\x06pruned\x18\x0e \x01(\x08\"{\n\x0e\x41uditPublicKey\x12\x13\n\x0bkey_version\x18\x01 \x01(\x05\x12\x12\n\npublic_key\x18\x02 \x01(\x0c\x12\x16\n\x0epublic_key_pem\x18\x03 \x01(\t\x12\x0f\n\x07\x63urrent\x18\x04 \x01(\x08\x12\x17\n\x0finstallation_id\x18\x05 \x01(\t\"\x8b\x01\n\x12\x41uditVerifyProblem\x12.\n\x04kind\x18\x01 \x01(\x0e\x32 .coria.v1.AuditVerifyProblemKind\x12\x0b\n\x03seq\x18\x02 \x01(\x03\x12\x0e\n\x06\x64\x65tail\x18\x03 \x01(\t\x12(\n\x04time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\"\xbe\x01\n\x12VerifyAuditRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x10\n\x08\x66rom_seq\x18\x02 \x01(\x03\x12\x13\n\x06to_seq\x18\x05 \x01(\x03H\x00\x88\x01\x01\x12\x1d\n\x10\x65xpected_min_seq\x18\x03 \x01(\x03H\x01\x88\x01\x01\x12\"\n\x1a\x65xpected_checkpoint_digest\x18\x04 \x01(\x0c\x42\t\n\x07_to_seqB\x13\n\x11_expected_min_seq\"\xeb\x01\n\x13VerifyAuditResponse\x12\x0e\n\x06intact\x18\x01 \x01(\x08\x12\x17\n\x0f\x65ntries_checked\x18\x02 \x01(\x03\x12\x1b\n\x13\x63heckpoints_checked\x18\x03 \x01(\x03\x12\x18\n\x10unsealed_entries\x18\x04 \x01(\x03\x12\x10\n\x08next_seq\x18\x05 \x01(\x03\x12.\n\x08problems\x18\x06 \x03(\x0b\x32\x1c.coria.v1.AuditVerifyProblem\x12\x32\n\x0flast_checkpoint\x18\x07 \x01(\x0b\x32\x19.coria.v1.AuditCheckpoint\"d\n\x1bListAuditCheckpointsRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x11\n\tpage_size\x18\x02 \x01(\x05\x12\x12\n\npage_token\x18\x03 \x01(\t\"g\n\x1cListAuditCheckpointsResponse\x12.\n\x0b\x63heckpoints\x18\x01 \x03(\x0b\x32\x19.coria.v1.AuditCheckpoint\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\"f\n\x12\x45xportAuditRequest\x12\x1e\n\x05scope\x18\x01 \x01(\x0b\x32\x0f.coria.v1.Scope\x12\x10\n\x08\x66rom_seq\x18\x02 \x01(\x03\x12\x13\n\x06to_seq\x18\x03 \x01(\x03H\x00\x88\x01\x01\x42\t\n\x07_to_seq\":\n\x0b\x41uditAnchor\x12\x0b\n\x03log\x18\x01 \x01(\t\x12\x0e\n\x06\x64igest\x18\x02 \x01(\x0c\x12\x0e\n\x06to_seq\x18\x03 \x01(\x03\"\xe2\x01\n\x11\x41uditExportHeader\x12\x17\n\x0finstallation_id\x18\x01 \x01(\t\x12\x0e\n\x06tenant\x18\x02 \x01(\t\x12-\n\x0bpublic_keys\x18\x03 \x03(\x0b\x32\x18.coria.v1.AuditPublicKey\x12\x14\n\x0c\x63hain_before\x18\x04 \x01(\x0c\x12\x18\n\x10\x65ncoding_version\x18\x05 \x01(\x05\x12\x0b\n\x03log\x18\x06 \x01(\t\x12&\n\x07\x61nchors\x18\x07 \x03(\x0b\x32\x15.coria.v1.AuditAnchor\x12\x10\n\x08\x66rom_seq\x18\x08 \x01(\x03\"d\n\x10SealedAuditEntry\x12\x0b\n\x03seq\x18\x01 \x01(\x03\x12#\n\x05\x65ntry\x18\x02 \x01(\x0b\x32\x14.coria.v1.AuditEntry\x12\x0f\n\x07\x65ncoded\x18\x03 \x01(\x0c\x12\r\n\x05\x63hain\x18\x04 \x01(\x0c\"\xaa\x01\n\x13\x45xportAuditResponse\x12-\n\x06header\x18\x01 \x01(\x0b\x32\x1b.coria.v1.AuditExportHeaderH\x00\x12+\n\x05\x65ntry\x18\x02 \x01(\x0b\x32\x1a.coria.v1.SealedAuditEntryH\x00\x12/\n\ncheckpoint\x18\x03 \x01(\x0b\x32\x19.coria.v1.AuditCheckpointH\x00\x42\x06\n\x04kind\"\x1a\n\x18GetAuditPublicKeyRequest\"c\n\x19GetAuditPublicKeyResponse\x12\x17\n\x0finstallation_id\x18\x01 \x01(\t\x12-\n\x0bpublic_keys\x18\x02 \x03(\x0b\x32\x18.coria.v1.AuditPublicKey\"\x86\x01\n\x0f\x41uditSealStatus\x12\x10\n\x08last_seq\x18\x01 \x01(\x03\x12\x32\n\x0elast_seal_time\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x13\n\x0blast_digest\x18\x03 \x01(\x0c\x12\x18\n\x10unsealed_entries\x18\x04 \x01(\x03*\x89\x03\n\x16\x41uditVerifyProblemKind\x12)\n%AUDIT_VERIFY_PROBLEM_KIND_UNSPECIFIED\x10\x00\x12*\n&AUDIT_VERIFY_PROBLEM_KIND_CHAIN_BROKEN\x10\x01\x12+\n\'AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING\x10\x02\x12+\n\'AUDIT_VERIFY_PROBLEM_KIND_BAD_SIGNATURE\x10\x03\x12\x34\n0AUDIT_VERIFY_PROBLEM_KIND_CHECKPOINT_OUT_OF_LINE\x10\x04\x12.\n*AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES\x10\x05\x12)\n%AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK\x10\x06\x12-\n)AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED\x10\x07\x32\x85\x03\n\x10\x41uditSealService\x12O\n\x0bVerifyAudit\x12\x1c.coria.v1.VerifyAuditRequest\x1a\x1d.coria.v1.VerifyAuditResponse\"\x03\x90\x02\x01\x12j\n\x14ListAuditCheckpoints\x12%.coria.v1.ListAuditCheckpointsRequest\x1a&.coria.v1.ListAuditCheckpointsResponse\"\x03\x90\x02\x01\x12Q\n\x0b\x45xportAudit\x12\x1c.coria.v1.ExportAuditRequest\x1a\x1d.coria.v1.ExportAuditResponse\"\x03\x90\x02\x01\x30\x01\x12\x61\n\x11GetAuditPublicKey\x12\".coria.v1.GetAuditPublicKeyRequest\x1a#.coria.v1.GetAuditPublicKeyResponse\"\x03\x90\x02\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -42,38 +42,38 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_AUDITSEALSERVICE'].methods_by_name['ExportAudit']._serialized_options = b'\220\002\001'
   _globals['_AUDITSEALSERVICE'].methods_by_name['GetAuditPublicKey']._loaded_options = None
   _globals['_AUDITSEALSERVICE'].methods_by_name['GetAuditPublicKey']._serialized_options = b'\220\002\001'
-  _globals['_AUDITVERIFYPROBLEMKIND']._serialized_start=2212
-  _globals['_AUDITVERIFYPROBLEMKIND']._serialized_end=2605
+  _globals['_AUDITVERIFYPROBLEMKIND']._serialized_start=2255
+  _globals['_AUDITVERIFYPROBLEMKIND']._serialized_end=2648
   _globals['_AUDITCHECKPOINT']._serialized_start=117
   _globals['_AUDITCHECKPOINT']._serialized_end=413
   _globals['_AUDITPUBLICKEY']._serialized_start=415
   _globals['_AUDITPUBLICKEY']._serialized_end=538
-  _globals['_AUDITVERIFYPROBLEM']._serialized_start=540
-  _globals['_AUDITVERIFYPROBLEM']._serialized_end=637
-  _globals['_VERIFYAUDITREQUEST']._serialized_start=640
-  _globals['_VERIFYAUDITREQUEST']._serialized_end=830
-  _globals['_VERIFYAUDITRESPONSE']._serialized_start=833
-  _globals['_VERIFYAUDITRESPONSE']._serialized_end=1068
-  _globals['_LISTAUDITCHECKPOINTSREQUEST']._serialized_start=1070
-  _globals['_LISTAUDITCHECKPOINTSREQUEST']._serialized_end=1170
-  _globals['_LISTAUDITCHECKPOINTSRESPONSE']._serialized_start=1172
-  _globals['_LISTAUDITCHECKPOINTSRESPONSE']._serialized_end=1275
-  _globals['_EXPORTAUDITREQUEST']._serialized_start=1277
-  _globals['_EXPORTAUDITREQUEST']._serialized_end=1379
-  _globals['_AUDITANCHOR']._serialized_start=1381
-  _globals['_AUDITANCHOR']._serialized_end=1439
-  _globals['_AUDITEXPORTHEADER']._serialized_start=1442
-  _globals['_AUDITEXPORTHEADER']._serialized_end=1668
-  _globals['_SEALEDAUDITENTRY']._serialized_start=1670
-  _globals['_SEALEDAUDITENTRY']._serialized_end=1770
-  _globals['_EXPORTAUDITRESPONSE']._serialized_start=1773
-  _globals['_EXPORTAUDITRESPONSE']._serialized_end=1943
-  _globals['_GETAUDITPUBLICKEYREQUEST']._serialized_start=1945
-  _globals['_GETAUDITPUBLICKEYREQUEST']._serialized_end=1971
-  _globals['_GETAUDITPUBLICKEYRESPONSE']._serialized_start=1973
-  _globals['_GETAUDITPUBLICKEYRESPONSE']._serialized_end=2072
-  _globals['_AUDITSEALSTATUS']._serialized_start=2075
-  _globals['_AUDITSEALSTATUS']._serialized_end=2209
-  _globals['_AUDITSEALSERVICE']._serialized_start=2608
-  _globals['_AUDITSEALSERVICE']._serialized_end=2997
+  _globals['_AUDITVERIFYPROBLEM']._serialized_start=541
+  _globals['_AUDITVERIFYPROBLEM']._serialized_end=680
+  _globals['_VERIFYAUDITREQUEST']._serialized_start=683
+  _globals['_VERIFYAUDITREQUEST']._serialized_end=873
+  _globals['_VERIFYAUDITRESPONSE']._serialized_start=876
+  _globals['_VERIFYAUDITRESPONSE']._serialized_end=1111
+  _globals['_LISTAUDITCHECKPOINTSREQUEST']._serialized_start=1113
+  _globals['_LISTAUDITCHECKPOINTSREQUEST']._serialized_end=1213
+  _globals['_LISTAUDITCHECKPOINTSRESPONSE']._serialized_start=1215
+  _globals['_LISTAUDITCHECKPOINTSRESPONSE']._serialized_end=1318
+  _globals['_EXPORTAUDITREQUEST']._serialized_start=1320
+  _globals['_EXPORTAUDITREQUEST']._serialized_end=1422
+  _globals['_AUDITANCHOR']._serialized_start=1424
+  _globals['_AUDITANCHOR']._serialized_end=1482
+  _globals['_AUDITEXPORTHEADER']._serialized_start=1485
+  _globals['_AUDITEXPORTHEADER']._serialized_end=1711
+  _globals['_SEALEDAUDITENTRY']._serialized_start=1713
+  _globals['_SEALEDAUDITENTRY']._serialized_end=1813
+  _globals['_EXPORTAUDITRESPONSE']._serialized_start=1816
+  _globals['_EXPORTAUDITRESPONSE']._serialized_end=1986
+  _globals['_GETAUDITPUBLICKEYREQUEST']._serialized_start=1988
+  _globals['_GETAUDITPUBLICKEYREQUEST']._serialized_end=2014
+  _globals['_GETAUDITPUBLICKEYRESPONSE']._serialized_start=2016
+  _globals['_GETAUDITPUBLICKEYRESPONSE']._serialized_end=2115
+  _globals['_AUDITSEALSTATUS']._serialized_start=2118
+  _globals['_AUDITSEALSTATUS']._serialized_end=2252
+  _globals['_AUDITSEALSERVICE']._serialized_start=2651
+  _globals['_AUDITSEALSERVICE']._serialized_end=3040
 # @@protoc_insertion_point(module_scope)

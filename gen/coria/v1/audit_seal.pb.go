@@ -406,7 +406,11 @@ type AuditVerifyProblem struct {
 	Seq int64 `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
 	// More about it, in words for a person, from a fixed set of phrases the
 	// server has; at most 256 bytes. Never an entry's content.
-	Detail        string `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	Detail string `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	// For AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED, when the oldest entry
+	// not yet sealed was written, in whole microseconds: where the stall
+	// begins, never what the entry holds. Absent for every other kind.
+	Time          *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=time,proto3" json:"time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -460,6 +464,13 @@ func (x *AuditVerifyProblem) GetDetail() string {
 		return x.Detail
 	}
 	return ""
+}
+
+func (x *AuditVerifyProblem) GetTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Time
+	}
+	return nil
 }
 
 // VerifyAuditRequest names the log to verify and where to start.
@@ -1404,11 +1415,12 @@ const file_coria_v1_audit_seal_proto_rawDesc = "" +
 	"public_key\x18\x02 \x01(\fR\tpublicKey\x12$\n" +
 	"\x0epublic_key_pem\x18\x03 \x01(\tR\fpublicKeyPem\x12\x18\n" +
 	"\acurrent\x18\x04 \x01(\bR\acurrent\x12'\n" +
-	"\x0finstallation_id\x18\x05 \x01(\tR\x0einstallationId\"t\n" +
+	"\x0finstallation_id\x18\x05 \x01(\tR\x0einstallationId\"\xa4\x01\n" +
 	"\x12AuditVerifyProblem\x124\n" +
 	"\x04kind\x18\x01 \x01(\x0e2 .coria.v1.AuditVerifyProblemKindR\x04kind\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12\x16\n" +
-	"\x06detail\x18\x03 \x01(\tR\x06detail\"\xff\x01\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detail\x12.\n" +
+	"\x04time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\"\xff\x01\n" +
 	"\x12VerifyAuditRequest\x12%\n" +
 	"\x05scope\x18\x01 \x01(\v2\x0f.coria.v1.ScopeR\x05scope\x12\x19\n" +
 	"\bfrom_seq\x18\x02 \x01(\x03R\afromSeq\x12\x1a\n" +
@@ -1529,33 +1541,34 @@ var file_coria_v1_audit_seal_proto_goTypes = []any{
 var file_coria_v1_audit_seal_proto_depIdxs = []int32{
 	16, // 0: coria.v1.AuditCheckpoint.time:type_name -> google.protobuf.Timestamp
 	0,  // 1: coria.v1.AuditVerifyProblem.kind:type_name -> coria.v1.AuditVerifyProblemKind
-	17, // 2: coria.v1.VerifyAuditRequest.scope:type_name -> coria.v1.Scope
-	3,  // 3: coria.v1.VerifyAuditResponse.problems:type_name -> coria.v1.AuditVerifyProblem
-	1,  // 4: coria.v1.VerifyAuditResponse.last_checkpoint:type_name -> coria.v1.AuditCheckpoint
-	17, // 5: coria.v1.ListAuditCheckpointsRequest.scope:type_name -> coria.v1.Scope
-	1,  // 6: coria.v1.ListAuditCheckpointsResponse.checkpoints:type_name -> coria.v1.AuditCheckpoint
-	17, // 7: coria.v1.ExportAuditRequest.scope:type_name -> coria.v1.Scope
-	2,  // 8: coria.v1.AuditExportHeader.public_keys:type_name -> coria.v1.AuditPublicKey
-	9,  // 9: coria.v1.AuditExportHeader.anchors:type_name -> coria.v1.AuditAnchor
-	18, // 10: coria.v1.SealedAuditEntry.entry:type_name -> coria.v1.AuditEntry
-	10, // 11: coria.v1.ExportAuditResponse.header:type_name -> coria.v1.AuditExportHeader
-	11, // 12: coria.v1.ExportAuditResponse.entry:type_name -> coria.v1.SealedAuditEntry
-	1,  // 13: coria.v1.ExportAuditResponse.checkpoint:type_name -> coria.v1.AuditCheckpoint
-	2,  // 14: coria.v1.GetAuditPublicKeyResponse.public_keys:type_name -> coria.v1.AuditPublicKey
-	16, // 15: coria.v1.AuditSealStatus.last_seal_time:type_name -> google.protobuf.Timestamp
-	4,  // 16: coria.v1.AuditSealService.VerifyAudit:input_type -> coria.v1.VerifyAuditRequest
-	6,  // 17: coria.v1.AuditSealService.ListAuditCheckpoints:input_type -> coria.v1.ListAuditCheckpointsRequest
-	8,  // 18: coria.v1.AuditSealService.ExportAudit:input_type -> coria.v1.ExportAuditRequest
-	13, // 19: coria.v1.AuditSealService.GetAuditPublicKey:input_type -> coria.v1.GetAuditPublicKeyRequest
-	5,  // 20: coria.v1.AuditSealService.VerifyAudit:output_type -> coria.v1.VerifyAuditResponse
-	7,  // 21: coria.v1.AuditSealService.ListAuditCheckpoints:output_type -> coria.v1.ListAuditCheckpointsResponse
-	12, // 22: coria.v1.AuditSealService.ExportAudit:output_type -> coria.v1.ExportAuditResponse
-	14, // 23: coria.v1.AuditSealService.GetAuditPublicKey:output_type -> coria.v1.GetAuditPublicKeyResponse
-	20, // [20:24] is the sub-list for method output_type
-	16, // [16:20] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	16, // 2: coria.v1.AuditVerifyProblem.time:type_name -> google.protobuf.Timestamp
+	17, // 3: coria.v1.VerifyAuditRequest.scope:type_name -> coria.v1.Scope
+	3,  // 4: coria.v1.VerifyAuditResponse.problems:type_name -> coria.v1.AuditVerifyProblem
+	1,  // 5: coria.v1.VerifyAuditResponse.last_checkpoint:type_name -> coria.v1.AuditCheckpoint
+	17, // 6: coria.v1.ListAuditCheckpointsRequest.scope:type_name -> coria.v1.Scope
+	1,  // 7: coria.v1.ListAuditCheckpointsResponse.checkpoints:type_name -> coria.v1.AuditCheckpoint
+	17, // 8: coria.v1.ExportAuditRequest.scope:type_name -> coria.v1.Scope
+	2,  // 9: coria.v1.AuditExportHeader.public_keys:type_name -> coria.v1.AuditPublicKey
+	9,  // 10: coria.v1.AuditExportHeader.anchors:type_name -> coria.v1.AuditAnchor
+	18, // 11: coria.v1.SealedAuditEntry.entry:type_name -> coria.v1.AuditEntry
+	10, // 12: coria.v1.ExportAuditResponse.header:type_name -> coria.v1.AuditExportHeader
+	11, // 13: coria.v1.ExportAuditResponse.entry:type_name -> coria.v1.SealedAuditEntry
+	1,  // 14: coria.v1.ExportAuditResponse.checkpoint:type_name -> coria.v1.AuditCheckpoint
+	2,  // 15: coria.v1.GetAuditPublicKeyResponse.public_keys:type_name -> coria.v1.AuditPublicKey
+	16, // 16: coria.v1.AuditSealStatus.last_seal_time:type_name -> google.protobuf.Timestamp
+	4,  // 17: coria.v1.AuditSealService.VerifyAudit:input_type -> coria.v1.VerifyAuditRequest
+	6,  // 18: coria.v1.AuditSealService.ListAuditCheckpoints:input_type -> coria.v1.ListAuditCheckpointsRequest
+	8,  // 19: coria.v1.AuditSealService.ExportAudit:input_type -> coria.v1.ExportAuditRequest
+	13, // 20: coria.v1.AuditSealService.GetAuditPublicKey:input_type -> coria.v1.GetAuditPublicKeyRequest
+	5,  // 21: coria.v1.AuditSealService.VerifyAudit:output_type -> coria.v1.VerifyAuditResponse
+	7,  // 22: coria.v1.AuditSealService.ListAuditCheckpoints:output_type -> coria.v1.ListAuditCheckpointsResponse
+	12, // 23: coria.v1.AuditSealService.ExportAudit:output_type -> coria.v1.ExportAuditResponse
+	14, // 24: coria.v1.AuditSealService.GetAuditPublicKey:output_type -> coria.v1.GetAuditPublicKeyResponse
+	21, // [21:25] is the sub-list for method output_type
+	17, // [17:21] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_audit_seal_proto_init() }

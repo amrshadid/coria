@@ -363,7 +363,7 @@ func newEnvChecking(t testing.TB, interval time.Duration) *env {
 	}
 	t.Cleanup(func() { _ = feeds.Close() })
 	h, err := api.New(api.Config{Access: e.access, Registry: e.registry, Master: e.faulty, NewID: tenantID, Log: logger, Settings: e.known, Keys: e.keys, Now: e.now,
-		Incoming: e.parts, Headers: e.parts, HeldFiles: e.parts, Feeds: feeds})
+		Incoming: e.parts, Headers: e.parts, HeldFiles: e.parts, Feeds: feeds, Installation: testInstallation})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,6 +570,7 @@ type clients struct {
 	jobs       coriav1connect.JobServiceClient
 	profiles   coriav1connect.ProfileServiceClient
 	deid       coriav1connect.DeidServiceClient
+	auditSeal  coriav1connect.AuditSealServiceClient
 }
 
 // as returns clients that call as c.
@@ -605,6 +606,7 @@ func (e *env) as(c caller) clients {
 		jobs:       coriav1connect.NewJobServiceClient(cl),
 		profiles:   coriav1connect.NewProfileServiceClient(cl),
 		deid:       coriav1connect.NewDeidServiceClient(cl),
+		auditSeal:  coriav1connect.NewAuditSealServiceClient(cl),
 	}
 }
 

@@ -103,6 +103,10 @@ type Config struct {
 	// jobs, which a trial run takes its copies of a file from. Nil gives
 	// the API a bound of its own at deid.memory.
 	DeidMemory check.Memory
+	// Installation is the installation's id, which every audit checkpoint
+	// it signs names. Empty answers every AuditSealService call as an
+	// internal fault: a server always has one.
+	Installation string
 }
 
 // Handlers is the services of the contract this package serves, each an
@@ -141,6 +145,8 @@ type Handlers struct {
 	Profiles coriav1connect.ProfileServiceHandler
 	// Deid is DeidService.
 	Deid coriav1connect.DeidServiceHandler
+	// AuditSeal is AuditSealService.
+	AuditSeal coriav1connect.AuditSealServiceHandler
 
 	// c is what the services share, kept for the test seams
 	// (export_test.go).
@@ -166,6 +172,7 @@ func New(cfg Config) (Handlers, error) {
 		keys: cfg.Keys, now: cfg.Now, receivers: cfg.Receivers, incoming: cfg.Incoming, headers: cfg.Headers,
 		live: cfg.Live, feeds: cfg.Feeds, stowReceivers: cfg.STOW, senders: cfg.SenderHealths, senderTests: cfg.SenderTests,
 		reads: cfg.Reads, heldFiles: cfg.HeldFiles, trials: make(chan struct{}, MaxTrialsAtOnce), deidMemory: cfg.DeidMemory,
+		installation: cfg.Installation,
 	}
 	if c.deidMemory == nil {
 		c.deidMemory = check.NewBudget(c.values().DeidMemory, check.BoundInterval)
@@ -214,6 +221,7 @@ func New(cfg Config) (Handlers, error) {
 		Jobs:       jobService{c},
 		Profiles:   profileService{c},
 		Deid:       deidService{c},
+		AuditSeal:  auditSealService{c},
 		c:          c,
 	}, nil
 }
@@ -236,6 +244,7 @@ func (h Handlers) Register(srv *connect.Server) {
 	coriav1connect.RegisterJobServiceHandler(srv, h.Jobs)
 	coriav1connect.RegisterProfileServiceHandler(srv, h.Profiles)
 	coriav1connect.RegisterDeidServiceHandler(srv, h.Deid)
+	coriav1connect.RegisterAuditSealServiceHandler(srv, h.AuditSeal)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only
@@ -309,6 +318,8 @@ type core struct {
 	// deidMemory bounds what trial runs hold in memory, with the rest of
 	// de-identification's work (Config.DeidMemory).
 	deidMemory check.Memory
+	// installation is the installation's id (Config.Installation).
+	installation string
 	// places orders the changes that depend on where the installation lets
 	// data go (its roots, endpoints, ports and bind addresses) against the
 	// changes of those settings: a storage or a receiver is checked and

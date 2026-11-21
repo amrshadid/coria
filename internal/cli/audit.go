@@ -12,12 +12,19 @@ import (
 
 // newAudit builds the audit noun.
 func (a *app) newAudit() *cobra.Command {
-	return group("audit", "Read the audit log",
+	return group("audit", "Read, verify and export the audit log",
 		`Every request to the API writes one entry to an audit log, refused requests
 included. What concerns the installation is in the installation's log; what
 concerns a tenant is in that tenant's. Reading a log needs the admin role on its
-scope, and the reading is itself recorded.`,
-		a.newAuditList())
+scope, and the reading is itself recorded.
+
+The server seals every log every audit.seal-interval: each entry gets its seq,
+its place in a hash chain, and each pass ends in a checkpoint signed with a key
+derived from the installation key file. verify checks the chain and the
+signatures, checkpoints lists them, export writes a log with what checks it
+outside the server, and public-key writes the key that checks the signatures,
+to keep outside the installation.`,
+		a.newAuditList(), a.newAuditVerify(), a.newAuditCheckpoints(), a.newAuditExport(), a.newAuditPublicKey())
 }
 
 // methodText shortens a method's full name to "TenantService/CreateTenant".

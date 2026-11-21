@@ -27,6 +27,11 @@ func chainCheckpoint(c master.AuditCheckpoint) auditchain.Checkpoint {
 	}
 }
 
+// SignedText returns the bytes c's signature covers, rebuilt from its fields
+// (audit_seal.proto, AuditCheckpoint.signed_text), so an answer carries them
+// and a check outside needs no rule of its own to rebuild them.
+func SignedText(c master.AuditCheckpoint) ([]byte, error) { return chainCheckpoint(c).SignedText() }
+
 // storeCheckpoint returns a signed checkpoint as a store keeps it, with its
 // digest.
 func storeCheckpoint(c auditchain.Checkpoint, digest auditchain.Digest) master.AuditCheckpoint {

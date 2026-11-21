@@ -295,6 +295,20 @@ All notable changes to CORIA are written here. The form is
   scan's labels, series UID and study UID) and the owner record
   (`meta/.owner.json`) have a fixed, checked JSON form. Nothing writes them
   yet.
+- AuditSealService is served: VerifyAudit recomputes a log's hash chain and
+  checks each signed checkpoint with the public keys derived from the
+  installation key file, the anchors between the installation's log and
+  each tenant's, and the values kept outside (expected_min_seq,
+  expected_checkpoint_digest), at most a million entries a call;
+  ListAuditCheckpoints pages a log's checkpoints; ExportAudit streams a
+  log's sealed entries and checkpoints with what checks them outside the
+  server; GetAuditPublicKey answers the public keys to any authenticated
+  caller. AuditVerifyProblem.time tells when the oldest unsealed entry of a
+  stalled log was written. Commands `coria audit verify`, `audit
+  checkpoints`, `audit export` (JSON lines that
+  scripts/prove/audit_verify.py checks; never replaces a file) and `audit
+  public-key` (PEM). `make check-audit-export` checks the real program's
+  export with the public key alone and refuses a changed or removed entry.
 - The open reads are settings: `read.per-caller` (default 16, 1 to 1024)
   and `read.per-server` (default 256, 16 to 65536) bound the reads of
   archived bytes (downloads, ReadFiles, DICOMweb) one caller and the whole

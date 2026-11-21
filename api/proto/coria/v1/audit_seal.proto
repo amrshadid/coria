@@ -328,6 +328,11 @@ message AuditVerifyProblem {
   // More about it, in words for a person, from a fixed set of phrases the
   // server has; at most 256 bytes. Never an entry's content.
   string detail = 3;
+
+  // For AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED, when the oldest entry
+  // not yet sealed was written, in whole microseconds: where the stall
+  // begins, never what the entry holds. Absent for every other kind.
+  google.protobuf.Timestamp time = 4;
 }
 
 // VerifyAuditRequest names the log to verify and where to start.

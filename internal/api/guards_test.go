@@ -56,6 +56,16 @@ func everyMethod(f *fixture) map[string]func(clients) outcome {
 		"ListAuditEntries": func(c clients) outcome {
 			return call(c.audit.ListAuditEntries, &v1.ListAuditEntriesRequest{Scope: installation()})
 		},
+		"VerifyAudit": func(c clients) outcome {
+			return call(c.auditSeal.VerifyAudit, &v1.VerifyAuditRequest{Scope: installation()})
+		},
+		"ListAuditCheckpoints": func(c clients) outcome {
+			return call(c.auditSeal.ListAuditCheckpoints, &v1.ListAuditCheckpointsRequest{Scope: installation()})
+		},
+		"ExportAudit": func(c clients) outcome { return exportOnce(c, &v1.ExportAuditRequest{Scope: installation()}) },
+		"GetAuditPublicKey": func(c clients) outcome {
+			return call(c.auditSeal.GetAuditPublicKey, &v1.GetAuditPublicKeyRequest{})
+		},
 	}
 	for name, call := range tenantMethods("lab1") {
 		m[name] = call
@@ -244,8 +254,9 @@ func TestNoDecisionIsInternal(t *testing.T) {
 // method: with the master database closed, each answers UNAVAILABLE, never a
 // refusal or an internal error. The local operator calls, so the check reads
 // nothing for most methods and the handler meets the closed master itself;
-// WhoAmI and ListProfileBases are called with a key, since the local
-// operator's call of either reads nothing at all.
+// WhoAmI, ListProfileBases and GetAuditPublicKey are called with a key,
+// since the local operator's call of any of them reads nothing at all (the
+// audit public keys are derived from the key file).
 func TestEveryMethodWithTheMasterDown(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -254,7 +265,7 @@ func TestEveryMethodWithTheMasterDown(t *testing.T) {
 	}
 	for name, m := range everyMethod(f) {
 		as := local
-		if name == "WhoAmI" || name == "ListProfileBases" {
+		if name == "WhoAmI" || name == "ListProfileBases" || name == "GetAuditPublicKey" {
 			as = f.instAdmin
 		}
 		if o := m(f.as(as)); o.code() != connect.CodeUnavailable {

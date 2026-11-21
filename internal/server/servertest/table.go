@@ -171,6 +171,24 @@ func Contract() Table {
 			},
 		),
 
+		// AuditSealService: "admin on the scope asked for.", but the public
+		// keys: "none; any caller the server authenticates."
+		coriav1connect.AuditSealServiceVerifyAuditProcedure: byMessage(
+			func() *coriav1.VerifyAuditRequest { return &coriav1.VerifyAuditRequest{} },
+			func(m *coriav1.VerifyAuditRequest) access.Requirement { return onScope(m.GetScope(), master.RoleAdmin) },
+		),
+		coriav1connect.AuditSealServiceListAuditCheckpointsProcedure: byMessage(
+			func() *coriav1.ListAuditCheckpointsRequest { return &coriav1.ListAuditCheckpointsRequest{} },
+			func(m *coriav1.ListAuditCheckpointsRequest) access.Requirement {
+				return onScope(m.GetScope(), master.RoleAdmin)
+			},
+		),
+		coriav1connect.AuditSealServiceExportAuditProcedure: byMessage(
+			func() *coriav1.ExportAuditRequest { return &coriav1.ExportAuditRequest{} },
+			func(m *coriav1.ExportAuditRequest) access.Requirement { return onScope(m.GetScope(), master.RoleAdmin) },
+		),
+		coriav1connect.AuditSealServiceGetAuditPublicKeyProcedure: fixed(access.Authenticated()),
+
 		// StorageService: "admin on the tenant." to change, "reader on the
 		// tenant." to read.
 		coriav1connect.StorageServiceAddStorageProcedure:    onTenant(func() *coriav1.AddStorageRequest { return &coriav1.AddStorageRequest{} }, master.RoleAdmin),

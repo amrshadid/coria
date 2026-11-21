@@ -70,6 +70,7 @@ type Server struct {
 	read      readArchive
 	prof      profiles
 	deid      deid
+	seal      sealState
 }
 
 // keyRecord is a key and the secret it was made with.
@@ -185,6 +186,7 @@ func (s *Server) Register(srv *connect.Server) {
 	coriav1connect.RegisterAccessServiceHandler(srv, accessHandler{s})
 	coriav1connect.RegisterSettingsServiceHandler(srv, settingsHandler{s})
 	coriav1connect.RegisterAuditServiceHandler(srv, auditHandler{s})
+	coriav1connect.RegisterAuditSealServiceHandler(srv, auditSealHandler{s})
 	s.registerArchive(srv)
 	s.registerDeid(srv)
 	s.registerRead(srv)

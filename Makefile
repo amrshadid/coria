@@ -439,6 +439,17 @@ prove-viewer:
 		$(if $(PROVE_DOCKER_HOST),--docker-host "$(PROVE_DOCKER_HOST)") \
 		$(if $(PROVE_VIEWER_SHOTS),--keep-shots "$(PROVE_VIEWER_SHOTS)")
 
+# The outside check of an audit export through the real program: a server
+# seals its logs, the commands export them and write the public key, and
+# scripts/prove/audit_verify.py (hashlib and openssl, nothing of CORIA's)
+# accepts each export and refuses a changed one, naming the seq.
+.PHONY: check-audit-export
+check-audit-export:
+	@test -n "$(PYTHON)" || { echo "check-audit-export: PYTHON is empty; name a Python interpreter" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-audit-export: no interpreter $(PYTHON)" >&2; exit 1; }
+	@command -v "$(OPENSSL)" > /dev/null || { echo "check-audit-export: no openssl $(OPENSSL)" >&2; exit 1; }
+	CORIA_CHECK_AUDIT_EXPORT_PYTHON="$(PYTHON)" CORIA_CHECK_AUDIT_EXPORT_OPENSSL="$(OPENSSL)" $(GO) test -count=1 -v -run '^TestAuditExportChecksOutside$$' ./cmd/coria
+
 # The proof's outside tools check themselves against audit exports, catalogs
 # and backups they build and then break: audit_verify (an exported audit log's
 # chain and signatures, against public keys the auditor gives; OPENSSL 3.0 or

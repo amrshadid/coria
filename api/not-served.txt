@@ -21,7 +21,6 @@
 # A line is removed in the change that serves what it names; the tests fail
 # until it is.
 
-coria.v1.AuditSealService
 coria.v1.BackupService
 coria.v1.CorrectionService
 coria.v1.AccessService/ReinstateKeys

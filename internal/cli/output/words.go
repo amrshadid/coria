@@ -54,6 +54,15 @@ func Outcome(o v1.AuditOutcome) string {
 	return enumWord(o.String(), "AUDIT_OUTCOME_")
 }
 
+// AuditProblem is what an audit verification found wrong, as words with
+// hyphens, so AUDIT_VERIFY_PROBLEM_KIND_CHAIN_BROKEN is "chain-broken".
+func AuditProblem(k v1.AuditVerifyProblemKind) string {
+	if k == v1.AuditVerifyProblemKind_AUDIT_VERIFY_PROBLEM_KIND_UNSPECIFIED {
+		return "unknown"
+	}
+	return strings.ReplaceAll(enumWord(k.String(), "AUDIT_VERIFY_PROBLEM_KIND_"), "_", "-")
+}
+
 // Scope is a scope as words: "installation" or "tenant <name>".
 func Scope(sc *v1.Scope) string {
 	if t, ok := sc.GetKind().(*v1.Scope_Tenant); ok {

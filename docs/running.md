@@ -81,6 +81,42 @@ The contexts are in a file only you can read, which holds the paths of the key
 and certificate files and never a key; see
 [Contexts](command-line.md#contexts).
 
+### Check that the audit log was not changed
+
+Every request writes an entry to the audit log of its scope. The server seals
+every log every `audit.seal-interval` (ten minutes) and once more when it
+stops: each entry gets its seq, its place in a hash chain (SHA-256, FIPS
+180-4), and each pass ends in a checkpoint signed with Ed25519 (RFC 8032) by a
+key derived from the installation key file, never stored. The service is
+`AuditSealService` ([audit_seal.proto](../api/proto/coria/v1/audit_seal.proto)):
+verify, checkpoints and export need the admin role on the log's scope; the
+public key, any caller the server authenticates.
+
+```sh
+coria audit public-key > audit-key-1.pem      # keep it outside the installation
+coria audit verify                            # the installation's log
+coria audit verify --tenant lab1 --expect-seq 120344
+coria audit checkpoints --limit 5
+coria audit export --tenant lab1 --out lab1-audit.jsonl
+python3 scripts/prove/audit_verify.py lab1-audit.jsonl --public-key 1=audit-key-1.pem
+```
+
+`verify` recomputes the chain and checks each checkpoint's signature with the
+public keys of the key file, the anchors the installation's log and each
+tenant's keep of each other, and the values you kept outside the installation:
+`--expect-seq` (the last sealed seq) and `--expect-digest` (a checkpoint's
+digest, which `export` prints). A log with a problem is listed with each
+problem's kind and seq, and the command exits 1. A log whose unsealed entries
+waited more than two seal intervals is reported as stalled, with the time of the
+oldest. `export` writes the log as JSON lines that hashlib and openssl check
+without the server; `scripts/prove/audit_verify.py` is such a checker, given the
+public key you kept, never the one in the file. What a seal cannot show:
+someone who holds the key file and can write every database can seal a
+rewritten log again, and a rollback of every database together is consistent;
+only a public key, a seq or a digest kept outside the installation shows those.
+The keys answered are this installation's; a tenant brought from another
+installation, with that installation's keys, is not yet possible.
+
 ## Make a tenant that receives
 
 The installation says where data and receivers may be; the tenant then uses them

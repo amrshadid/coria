@@ -64,6 +64,8 @@ type Client struct {
 	Profiles coriav1connect.ProfileServiceClient
 	// Deid is the DeidService.
 	Deid coriav1connect.DeidServiceClient
+	// AuditSeal is the AuditSealService.
+	AuditSeal coriav1connect.AuditSealServiceClient
 
 	timeout time.Duration
 	target  string
@@ -159,6 +161,7 @@ func New(cfg Config) (*Client, error) {
 		Jobs:       coriav1connect.NewJobServiceClient(c),
 		Profiles:   coriav1connect.NewProfileServiceClient(c),
 		Deid:       coriav1connect.NewDeidServiceClient(c),
+		AuditSeal:  coriav1connect.NewAuditSealServiceClient(c),
 		base:       strings.TrimSuffix(base, "/"),
 		key:        bearerK,
 		timeout:    timeout,

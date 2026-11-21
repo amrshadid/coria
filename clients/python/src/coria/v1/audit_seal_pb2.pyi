@@ -78,14 +78,16 @@ class AuditPublicKey(_message.Message):
     def __init__(self, key_version: _Optional[int] = ..., public_key: _Optional[bytes] = ..., public_key_pem: _Optional[str] = ..., current: _Optional[bool] = ..., installation_id: _Optional[str] = ...) -> None: ...
 
 class AuditVerifyProblem(_message.Message):
-    __slots__ = ("kind", "seq", "detail")
+    __slots__ = ("kind", "seq", "detail", "time")
     KIND_FIELD_NUMBER: _ClassVar[int]
     SEQ_FIELD_NUMBER: _ClassVar[int]
     DETAIL_FIELD_NUMBER: _ClassVar[int]
+    TIME_FIELD_NUMBER: _ClassVar[int]
     kind: AuditVerifyProblemKind
     seq: int
     detail: str
-    def __init__(self, kind: _Optional[_Union[AuditVerifyProblemKind, str]] = ..., seq: _Optional[int] = ..., detail: _Optional[str] = ...) -> None: ...
+    time: _timestamp_pb2.Timestamp
+    def __init__(self, kind: _Optional[_Union[AuditVerifyProblemKind, str]] = ..., seq: _Optional[int] = ..., detail: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class VerifyAuditRequest(_message.Message):
     __slots__ = ("scope", "from_seq", "to_seq", "expected_min_seq", "expected_checkpoint_digest")
