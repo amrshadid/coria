@@ -79,8 +79,9 @@ type SettingsServiceClient interface {
 	// asked for: on the installation, the installation's value, else the
 	// built-in default; on a tenant, the tenant's override when it has one,
 	// else what applies on the installation. The answer's scope and source say
-	// where the value came from. The paths of storage.directory-roots are
-	// answered only to an admin on the installation; any other caller is
+	// where the value came from. The paths of storage.directory-roots and
+	// import.roots are answered only to an admin on the installation; any
+	// other caller is
 	// answered the roots' names alone, one per line.
 	//
 	// Role: reader on the scope asked for.
@@ -130,8 +131,9 @@ type SettingsServiceClient interface {
 	// ListSettings answers settings of one scope, ordered by name: on the
 	// installation, every setting the server knows with the value that applies
 	// there (the installation's, else the built-in default); on a tenant, only
-	// that tenant's overrides. The paths of storage.directory-roots are
-	// answered only to an admin on the installation; any other caller is
+	// that tenant's overrides. The paths of storage.directory-roots and
+	// import.roots are answered only to an admin on the installation; any
+	// other caller is
 	// answered the roots' names alone, one per line.
 	//
 	// Role: reader on the scope asked for.
@@ -156,8 +158,9 @@ type SettingsServiceHandler interface {
 	// asked for: on the installation, the installation's value, else the
 	// built-in default; on a tenant, the tenant's override when it has one,
 	// else what applies on the installation. The answer's scope and source say
-	// where the value came from. The paths of storage.directory-roots are
-	// answered only to an admin on the installation; any other caller is
+	// where the value came from. The paths of storage.directory-roots and
+	// import.roots are answered only to an admin on the installation; any
+	// other caller is
 	// answered the roots' names alone, one per line.
 	//
 	// Role: reader on the scope asked for.
@@ -207,8 +210,9 @@ type SettingsServiceHandler interface {
 	// ListSettings answers settings of one scope, ordered by name: on the
 	// installation, every setting the server knows with the value that applies
 	// there (the installation's, else the built-in default); on a tenant, only
-	// that tenant's overrides. The paths of storage.directory-roots are
-	// answered only to an admin on the installation; any other caller is
+	// that tenant's overrides. The paths of storage.directory-roots and
+	// import.roots are answered only to an admin on the installation; any
+	// other caller is
 	// answered the roots' names alone, one per line.
 	//
 	// Role: reader on the scope asked for.

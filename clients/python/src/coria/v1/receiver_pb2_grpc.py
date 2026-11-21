@@ -33,13 +33,50 @@ class ReceiverServiceStub:
     (ReceptionService), one per study and arrival, which are archived to its
     storage under labels its naming rule makes. Every type of receiver shares
     that part of its configuration; what belongs to its protocol is in its
-    type's message. This version has two types. A DIMSE receiver is a DICOM
+    type's message. This version has three types. A DIMSE receiver is a DICOM
     listener (PS3.8 upper layer, PS3.7 message exchange) on one port of the
     server, which accepts C-STORE requests (PS3.4 Annex B) for the SOP classes
     it accepts, answers C-ECHO (PS3.4 Annex A) to an admitted caller, and
     answers nothing else. A stow receiver takes the instances a key it lists
     stores over HTTP into the tenant's DICOMweb service (STOW-RS, PS3.18
-    10.5); it holds no port (StowReceiver).
+    10.5); it holds no port (StowReceiver). An import receiver never listens:
+    it takes the files an import job (JobService, ImportJob) reads from a
+    directory the installation names, and holds how their paths are read for
+    labels (ImportReceiver).
+
+    Where an import may read is the installation's, never a tenant's, so a
+    tenant's admin cannot make the server read any file of the machine it
+    runs on, or another tenant's tree. Two settings hold it:
+
+    - import.roots: the directories an import may read, one per line, each
+    "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+    to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
+    4096 bytes. At most 64 roots. Installation-only. Empty by default, so
+    no import reads anything until a root is named. A path is resolved
+    through its links when the value is set, and a value is refused when
+    a root, so resolved, is, contains or lies inside a root of
+    storage.directory-roots, the server's data directory, its incoming
+    area, the directory of the installation key file, or another import
+    root, so an import can never read the archive's own files or its
+    secrets. A job is refused when its root now resolves elsewhere than
+    when it was set, and a unit whose root does so, or cannot be opened,
+    fails with the reason "root unavailable"; everything under a root is
+    read without following any link. Its paths are answered only to an
+    admin on the installation; any other caller is answered the roots'
+    names alone, one per line, as for storage.directory-roots. Removing
+    or changing a root an import receiver names is refused
+    (precondition), as for every setting a receiver uses.
+    - import.allowed-roots: the names of the roots a tenant's import
+    receivers may read, separated by commas, such as "xnat". Set on a
+    tenant by the installation's admin only; it has no installation
+    value. Empty by default, so a tenant cannot add an import receiver
+    until a root is allotted to it. A root may be allotted to several
+    tenants: allotting it is the installation's decision that each may
+    read all of it. Taking back a root one of the tenant's import
+    receivers names is refused (precondition).
+
+    An import reads and never writes: nothing in a root is created, changed,
+    moved or deleted by the server.
 
     The server makes what listens match what is configured: a receiver added,
     changed or removed is started, restarted or stopped without a restart of
@@ -142,13 +179,50 @@ class ReceiverServiceServicer:
     (ReceptionService), one per study and arrival, which are archived to its
     storage under labels its naming rule makes. Every type of receiver shares
     that part of its configuration; what belongs to its protocol is in its
-    type's message. This version has two types. A DIMSE receiver is a DICOM
+    type's message. This version has three types. A DIMSE receiver is a DICOM
     listener (PS3.8 upper layer, PS3.7 message exchange) on one port of the
     server, which accepts C-STORE requests (PS3.4 Annex B) for the SOP classes
     it accepts, answers C-ECHO (PS3.4 Annex A) to an admitted caller, and
     answers nothing else. A stow receiver takes the instances a key it lists
     stores over HTTP into the tenant's DICOMweb service (STOW-RS, PS3.18
-    10.5); it holds no port (StowReceiver).
+    10.5); it holds no port (StowReceiver). An import receiver never listens:
+    it takes the files an import job (JobService, ImportJob) reads from a
+    directory the installation names, and holds how their paths are read for
+    labels (ImportReceiver).
+
+    Where an import may read is the installation's, never a tenant's, so a
+    tenant's admin cannot make the server read any file of the machine it
+    runs on, or another tenant's tree. Two settings hold it:
+
+    - import.roots: the directories an import may read, one per line, each
+    "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+    to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
+    4096 bytes. At most 64 roots. Installation-only. Empty by default, so
+    no import reads anything until a root is named. A path is resolved
+    through its links when the value is set, and a value is refused when
+    a root, so resolved, is, contains or lies inside a root of
+    storage.directory-roots, the server's data directory, its incoming
+    area, the directory of the installation key file, or another import
+    root, so an import can never read the archive's own files or its
+    secrets. A job is refused when its root now resolves elsewhere than
+    when it was set, and a unit whose root does so, or cannot be opened,
+    fails with the reason "root unavailable"; everything under a root is
+    read without following any link. Its paths are answered only to an
+    admin on the installation; any other caller is answered the roots'
+    names alone, one per line, as for storage.directory-roots. Removing
+    or changing a root an import receiver names is refused
+    (precondition), as for every setting a receiver uses.
+    - import.allowed-roots: the names of the roots a tenant's import
+    receivers may read, separated by commas, such as "xnat". Set on a
+    tenant by the installation's admin only; it has no installation
+    value. Empty by default, so a tenant cannot add an import receiver
+    until a root is allotted to it. A root may be allotted to several
+    tenants: allotting it is the installation's decision that each may
+    read all of it. Taking back a root one of the tenant's import
+    receivers names is refused (precondition).
+
+    An import reads and never writes: nothing in a root is created, changed,
+    moved or deleted by the server.
 
     The server makes what listens match what is configured: a receiver added,
     changed or removed is started, restarted or stopped without a restart of
@@ -216,13 +290,17 @@ class ReceiverServiceServicer:
 
         Role: admin on the tenant.
         Audit: one entry in the tenant's log, with the receiver's name as its
-        object, and its type, port, AE title and storage in details.
+        object, and its type, port, AE title and storage in details; for an
+        import receiver, its root's name and its layout, never a path.
         Errors: unauthenticated, permission denied (no grant; also a tenant that
-        does not exist, for a caller who may not list every tenant), invalid,
-        not found (a tenant that does not exist, for a caller who may list every
+        does not exist, for a caller who may not list every tenant), invalid
+        (also, for an import receiver, a naming template that uses a part
+        neither its layout, its map nor its naming pattern ever gives, and a
+        map file that breaks the path rule), not found (a tenant that does
+        not exist, for a caller who may list every
         tenant), conflict (the tenant has a receiver with that name, or a
-        removed receiver of that name is still named by receptions or
-        quarantined files), precondition (a storage the tenant does not have; a
+        removed receiver of that name is still named by receptions,
+        quarantined files or jobs), precondition (a storage the tenant does not have; a
         sender in forward_to the tenant does not have; a storage, a sender or a
         profile version a route names that the tenant does not have, or a
         profile version that cannot de-identify a receiver's files; a route
@@ -230,7 +308,10 @@ class ReceiverServiceServicer:
         a port outside the
         tenant's allotted ports; a bind address the installation does not list;
         another receiver of the tenant on the same port and an overlapping
-        address), unavailable (the tenant's database
+        address; a root import.roots does not name, or one import.allowed-roots
+        does not allot to the tenant; a map file with a layout that does not
+        give the parts project and session, or that gives a part subject),
+        unavailable (the tenant's database
         does not answer, or the tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -277,7 +358,10 @@ class ReceiverServiceServicer:
         classes, transfer syntaxes) restarts the listener; a change of the
         storage, the naming rule, the quiet period, the longest open time or
         the size bound applies to what arrives from then on, and the quiet
-        period and longest open time also to receptions still receiving.
+        period and longest open time also to receptions still receiving. The
+        fields of an import receiver (root, layout, pattern, unit depth, map
+        file) cannot change while one of its jobs is queued or running, since
+        the job's cursor and counts are read by them (precondition).
 
         Role: admin on the tenant.
         Audit: one entry in the tenant's log, with the receiver's name as its
@@ -290,7 +374,8 @@ class ReceiverServiceServicer:
         receiver with that name; a tenant that does not exist, for a caller who
         may list every tenant), precondition (every precondition AddReceiver
         checks; expected_update_time is not the receiver's update_time, as a
-        stale expected version is everywhere in this API), unavailable (the tenant's database does not answer, or the
+        stale expected version is everywhere in this API; a field of an import
+        receiver while one of its jobs is queued or running), unavailable (the tenant's database does not answer, or the
         tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -305,7 +390,10 @@ class ReceiverServiceServicer:
         name stays held, and cannot be given to a new receiver, while any
         reception or quarantined file names it, so a name in a record always
         means one receiver. A repeated call finds no receiver and is answered
-        NOT_FOUND; it removes nothing more.
+        NOT_FOUND; it removes nothing more. An import receiver is not removed
+        while one of its jobs is queued or running: the job is canceled first
+        (JobService.CancelJob), so no job is left handing files to a receiver
+        that is gone.
 
         Role: admin on the tenant.
         Audit: one entry in the tenant's log, with the receiver's name as its
@@ -313,7 +401,8 @@ class ReceiverServiceServicer:
         Errors: unauthenticated, permission denied (no grant; also a tenant that
         does not exist, for a caller who may not list every tenant), invalid,
         not found (the tenant has no receiver with that name; a tenant that does
-        not exist, for a caller who may list every tenant), unavailable (the
+        not exist, for a caller who may list every tenant), precondition (an
+        import receiver one of whose jobs is queued or running), unavailable (the
         tenant's database does not answer, or the tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -364,13 +453,50 @@ class ReceiverService:
     (ReceptionService), one per study and arrival, which are archived to its
     storage under labels its naming rule makes. Every type of receiver shares
     that part of its configuration; what belongs to its protocol is in its
-    type's message. This version has two types. A DIMSE receiver is a DICOM
+    type's message. This version has three types. A DIMSE receiver is a DICOM
     listener (PS3.8 upper layer, PS3.7 message exchange) on one port of the
     server, which accepts C-STORE requests (PS3.4 Annex B) for the SOP classes
     it accepts, answers C-ECHO (PS3.4 Annex A) to an admitted caller, and
     answers nothing else. A stow receiver takes the instances a key it lists
     stores over HTTP into the tenant's DICOMweb service (STOW-RS, PS3.18
-    10.5); it holds no port (StowReceiver).
+    10.5); it holds no port (StowReceiver). An import receiver never listens:
+    it takes the files an import job (JobService, ImportJob) reads from a
+    directory the installation names, and holds how their paths are read for
+    labels (ImportReceiver).
+
+    Where an import may read is the installation's, never a tenant's, so a
+    tenant's admin cannot make the server read any file of the machine it
+    runs on, or another tenant's tree. Two settings hold it:
+
+    - import.roots: the directories an import may read, one per line, each
+    "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+    to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
+    4096 bytes. At most 64 roots. Installation-only. Empty by default, so
+    no import reads anything until a root is named. A path is resolved
+    through its links when the value is set, and a value is refused when
+    a root, so resolved, is, contains or lies inside a root of
+    storage.directory-roots, the server's data directory, its incoming
+    area, the directory of the installation key file, or another import
+    root, so an import can never read the archive's own files or its
+    secrets. A job is refused when its root now resolves elsewhere than
+    when it was set, and a unit whose root does so, or cannot be opened,
+    fails with the reason "root unavailable"; everything under a root is
+    read without following any link. Its paths are answered only to an
+    admin on the installation; any other caller is answered the roots'
+    names alone, one per line, as for storage.directory-roots. Removing
+    or changing a root an import receiver names is refused
+    (precondition), as for every setting a receiver uses.
+    - import.allowed-roots: the names of the roots a tenant's import
+    receivers may read, separated by commas, such as "xnat". Set on a
+    tenant by the installation's admin only; it has no installation
+    value. Empty by default, so a tenant cannot add an import receiver
+    until a root is allotted to it. A root may be allotted to several
+    tenants: allotting it is the installation's decision that each may
+    read all of it. Taking back a root one of the tenant's import
+    receivers names is refused (precondition).
+
+    An import reads and never writes: nothing in a root is created, changed,
+    moved or deleted by the server.
 
     The server makes what listens match what is configured: a receiver added,
     changed or removed is started, restarted or stopped without a restart of

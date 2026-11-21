@@ -230,6 +230,26 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- API contract for importing a directory (defined, not yet served): an
+  import receiver type (`Receiver.importer`: a root the installation names
+  and allots to the tenant, the plain, XNAT or pattern layout, unit depth, a
+  map file) and an import job kind (`Job.import_job`: receiver, path under
+  the root, a map file inside the root or inline, subject from headers for
+  XNAT without a map). Two jobs of one receiver never read overlapping
+  paths at once. Each file's arrival is written with the unit's cursor, so
+  none is handed in twice, and the job's counts reconcile what the walk
+  found with what each file became (skipped by reason, handed in, archived,
+  already held at any revision, quarantined by reason, lost, failed,
+  discarded, still processing); the job stays "settling" until every file
+  has an outcome, and ends partial if that times out.
+  `JobService.ListImportFiles` and `ListImportUnits` (operator) list files
+  and units by path. Quarantined files name the import job and, to
+  operators, the source path. New settings import.roots (refused where it
+  would reach the archive's own directories or the key file),
+  import.allowed-roots, import.max-units, import.server-max-units and
+  import.max-dir-entries. Paths under an import root and inline maps are
+  redacted from logs and never appear in events or audit entries. Each new
+  method answers UNIMPLEMENTED.
 - `make prove-viewer`: OHIF Viewer and headless Chromium in containers open
   public studies (CT, MR, multi-frame, JPEG baseline, JPEG 2000, RLE)
   through DICOMweb with a reader key, and the harness reports blank

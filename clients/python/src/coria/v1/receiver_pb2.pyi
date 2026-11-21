@@ -13,12 +13,20 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class ImportLayout(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    IMPORT_LAYOUT_UNSPECIFIED: _ClassVar[ImportLayout]
+    IMPORT_LAYOUT_PLAIN: _ClassVar[ImportLayout]
+    IMPORT_LAYOUT_XNAT: _ClassVar[ImportLayout]
+    IMPORT_LAYOUT_PATTERN: _ClassVar[ImportLayout]
+
 class ReceiverState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     RECEIVER_STATE_UNSPECIFIED: _ClassVar[ReceiverState]
     RECEIVER_STATE_STARTING: _ClassVar[ReceiverState]
     RECEIVER_STATE_UP: _ClassVar[ReceiverState]
     RECEIVER_STATE_DOWN: _ClassVar[ReceiverState]
+    RECEIVER_STATE_IDLE: _ClassVar[ReceiverState]
 
 class ReceiverDownReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -33,10 +41,15 @@ class ReceiverDownReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     RECEIVER_DOWN_REASON_STOPPING: _ClassVar[ReceiverDownReason]
     RECEIVER_DOWN_REASON_OTHER: _ClassVar[ReceiverDownReason]
     RECEIVER_DOWN_REASON_INCOMING_LIMIT: _ClassVar[ReceiverDownReason]
+IMPORT_LAYOUT_UNSPECIFIED: ImportLayout
+IMPORT_LAYOUT_PLAIN: ImportLayout
+IMPORT_LAYOUT_XNAT: ImportLayout
+IMPORT_LAYOUT_PATTERN: ImportLayout
 RECEIVER_STATE_UNSPECIFIED: ReceiverState
 RECEIVER_STATE_STARTING: ReceiverState
 RECEIVER_STATE_UP: ReceiverState
 RECEIVER_STATE_DOWN: ReceiverState
+RECEIVER_STATE_IDLE: ReceiverState
 RECEIVER_DOWN_REASON_UNSPECIFIED: ReceiverDownReason
 RECEIVER_DOWN_REASON_DISABLED: ReceiverDownReason
 RECEIVER_DOWN_REASON_ADDRESS_IN_USE: ReceiverDownReason
@@ -50,10 +63,11 @@ RECEIVER_DOWN_REASON_OTHER: ReceiverDownReason
 RECEIVER_DOWN_REASON_INCOMING_LIMIT: ReceiverDownReason
 
 class Receiver(_message.Message):
-    __slots__ = ("name", "dimse", "stow", "enabled", "storage", "naming", "quiet_period", "max_open_time", "max_file_bytes", "health", "create_time", "update_time", "forward_to", "as_received", "profile", "routing")
+    __slots__ = ("name", "dimse", "stow", "importer", "enabled", "storage", "naming", "quiet_period", "max_open_time", "max_file_bytes", "health", "create_time", "update_time", "forward_to", "as_received", "profile", "routing")
     NAME_FIELD_NUMBER: _ClassVar[int]
     DIMSE_FIELD_NUMBER: _ClassVar[int]
     STOW_FIELD_NUMBER: _ClassVar[int]
+    IMPORTER_FIELD_NUMBER: _ClassVar[int]
     ENABLED_FIELD_NUMBER: _ClassVar[int]
     STORAGE_FIELD_NUMBER: _ClassVar[int]
     NAMING_FIELD_NUMBER: _ClassVar[int]
@@ -70,6 +84,7 @@ class Receiver(_message.Message):
     name: str
     dimse: DimseReceiver
     stow: StowReceiver
+    importer: ImportReceiver
     enabled: bool
     storage: str
     naming: NamingRule
@@ -83,7 +98,7 @@ class Receiver(_message.Message):
     as_received: AsReceived
     profile: ProfileVersionRef
     routing: ReceiverRouting
-    def __init__(self, name: _Optional[str] = ..., dimse: _Optional[_Union[DimseReceiver, _Mapping]] = ..., stow: _Optional[_Union[StowReceiver, _Mapping]] = ..., enabled: _Optional[bool] = ..., storage: _Optional[str] = ..., naming: _Optional[_Union[NamingRule, _Mapping]] = ..., quiet_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_open_time: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_file_bytes: _Optional[int] = ..., health: _Optional[_Union[ReceiverHealth, _Mapping]] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., forward_to: _Optional[_Iterable[str]] = ..., as_received: _Optional[_Union[AsReceived, _Mapping]] = ..., profile: _Optional[_Union[ProfileVersionRef, _Mapping]] = ..., routing: _Optional[_Union[ReceiverRouting, _Mapping]] = ...) -> None: ...
+    def __init__(self, name: _Optional[str] = ..., dimse: _Optional[_Union[DimseReceiver, _Mapping]] = ..., stow: _Optional[_Union[StowReceiver, _Mapping]] = ..., importer: _Optional[_Union[ImportReceiver, _Mapping]] = ..., enabled: _Optional[bool] = ..., storage: _Optional[str] = ..., naming: _Optional[_Union[NamingRule, _Mapping]] = ..., quiet_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_open_time: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_file_bytes: _Optional[int] = ..., health: _Optional[_Union[ReceiverHealth, _Mapping]] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., forward_to: _Optional[_Iterable[str]] = ..., as_received: _Optional[_Union[AsReceived, _Mapping]] = ..., profile: _Optional[_Union[ProfileVersionRef, _Mapping]] = ..., routing: _Optional[_Union[ReceiverRouting, _Mapping]] = ...) -> None: ...
 
 class ReceiverRouting(_message.Message):
     __slots__ = ("routes", "quarantine_unmatched")
@@ -152,6 +167,20 @@ class StowReceiver(_message.Message):
     key_ids: _containers.RepeatedScalarFieldContainer[str]
     max_request_bytes: int
     def __init__(self, key_ids: _Optional[_Iterable[str]] = ..., max_request_bytes: _Optional[int] = ...) -> None: ...
+
+class ImportReceiver(_message.Message):
+    __slots__ = ("root", "layout", "path_pattern", "unit_depth", "map_file")
+    ROOT_FIELD_NUMBER: _ClassVar[int]
+    LAYOUT_FIELD_NUMBER: _ClassVar[int]
+    PATH_PATTERN_FIELD_NUMBER: _ClassVar[int]
+    UNIT_DEPTH_FIELD_NUMBER: _ClassVar[int]
+    MAP_FILE_FIELD_NUMBER: _ClassVar[int]
+    root: str
+    layout: ImportLayout
+    path_pattern: str
+    unit_depth: int
+    map_file: str
+    def __init__(self, root: _Optional[str] = ..., layout: _Optional[_Union[ImportLayout, str]] = ..., path_pattern: _Optional[str] = ..., unit_depth: _Optional[int] = ..., map_file: _Optional[str] = ...) -> None: ...
 
 class AllowedCallers(_message.Message):
     __slots__ = ("rules",)

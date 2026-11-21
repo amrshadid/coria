@@ -26,3 +26,5 @@ coria.v1.BackupService
 coria.v1.CorrectionService
 coria.v1.AccessService/ReinstateKeys
 coria.v1.TenantService/ReclaimTenant
+coria.v1.JobService/ListImportFiles
+coria.v1.JobService/ListImportUnits

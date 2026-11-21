@@ -500,6 +500,21 @@ message QuarantinedFile {
   // (ReleaseQuarantinedFileRequest.profile). Unset unless it is released
   // and a version was named.
   ProfileVersionRef release_profile = 26;
+
+  // The id of the import job that handed the file in (JobService,
+  // ImportJob), so a held file can be traced to the job whose counts it is
+  // in. Empty for a file that arrived any other way; a file a release
+  // quarantines again keeps it. The job counts the file quarantined once,
+  // at its first decision; a release later changes this record, not the
+  // job's counts.
+  string import_job = 27;
+
+  // For a file an import job handed in, its path relative to the import
+  // receiver's root, its segments joined by "/", so a person can find the
+  // source. It can hold what identifies a person (a folder named after a
+  // patient): answered only to an operator or more on the tenant, empty to
+  // a reader, and never written to a log, an event or an audit entry.
+  string import_path = 28 [debug_redact = true];
 }
 
 // ListQuarantinedFilesRequest asks for a page of a tenant's quarantined

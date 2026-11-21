@@ -21,3 +21,13 @@ func (tenantHandler) ReclaimTenant(context.Context, *v1.ReclaimTenantRequest) (*
 func (accessHandler) ReinstateKeys(context.Context, *v1.ReinstateKeysRequest) (*v1.ReinstateKeysResponse, error) {
 	return nil, errNotServed
 }
+
+// ListImportFiles is not served yet by the real server, so not here either.
+func (jobHandler) ListImportFiles(context.Context, *v1.ListImportFilesRequest) (*v1.ListImportFilesResponse, error) {
+	return nil, errNotServed
+}
+
+// ListImportUnits is not served yet by the real server, so not here either.
+func (jobHandler) ListImportUnits(context.Context, *v1.ListImportUnitsRequest) (*v1.ListImportUnitsResponse, error) {
+	return nil, errNotServed
+}

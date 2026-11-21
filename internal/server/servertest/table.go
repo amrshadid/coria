@@ -66,6 +66,8 @@ func (t Table) Requirement(procedure string, msg proto.Message) (access.Requirem
 var pendingMethods = []string{
 	coriav1connect.TenantServiceReclaimTenantProcedure,
 	coriav1connect.AccessServiceReinstateKeysProcedure,
+	coriav1connect.JobServiceListImportFilesProcedure,
+	coriav1connect.JobServiceListImportUnitsProcedure,
 }
 
 // Pending reports whether procedure is one of pendingMethods, so the server

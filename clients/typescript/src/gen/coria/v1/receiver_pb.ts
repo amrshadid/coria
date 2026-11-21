@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/receiver.proto.
  */
 export const file_coria_v1_receiver: GenFile = /*@__PURE__*/
-  fileDesc("Chdjb3JpYS92MS9yZWNlaXZlci5wcm90bxIIY29yaWEudjEi8gQKCFJlY2VpdmVyEgwKBG5hbWUYASABKAkSKAoFZGltc2UYAiABKAsyFy5jb3JpYS52MS5EaW1zZVJlY2VpdmVySAASJgoEc3RvdxgMIAEoCzIWLmNvcmlhLnYxLlN0b3dSZWNlaXZlckgAEg8KB2VuYWJsZWQYAyABKAgSDwoHc3RvcmFnZRgEIAEoCRIkCgZuYW1pbmcYBSABKAsyFC5jb3JpYS52MS5OYW1pbmdSdWxlEi8KDHF1aWV0X3BlcmlvZBgGIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIwCg1tYXhfb3Blbl90aW1lGAcgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uEhYKDm1heF9maWxlX2J5dGVzGAggASgDEigKBmhlYWx0aBgJIAEoCzIYLmNvcmlhLnYxLlJlY2VpdmVySGVhbHRoEi8KC2NyZWF0ZV90aW1lGAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgt1cGRhdGVfdGltZRgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKZm9yd2FyZF90bxgNIAMoCRIrCgthc19yZWNlaXZlZBgOIAEoCzIULmNvcmlhLnYxLkFzUmVjZWl2ZWRIARIuCgdwcm9maWxlGA8gASgLMhsuY29yaWEudjEuUHJvZmlsZVZlcnNpb25SZWZIARIqCgdyb3V0aW5nGBAgASgLMhkuY29yaWEudjEuUmVjZWl2ZXJSb3V0aW5nQgYKBHR5cGVCEgoQZGVpZGVudGlmaWNhdGlvbiJQCg9SZWNlaXZlclJvdXRpbmcSHwoGcm91dGVzGAEgAygLMg8uY29yaWEudjEuUm91dGUSHAoUcXVhcmFudGluZV91bm1hdGNoZWQYAiABKAgisgEKBVJvdXRlEgwKBG5hbWUYASABKAkSLgoKY29uZGl0aW9ucxgCIAMoCzIaLmNvcmlhLnYxLlByb2ZpbGVDb25kaXRpb24SDwoHc3RvcmFnZRgDIAEoCRIsCgdwcm9maWxlGAQgASgLMhsuY29yaWEudjEuUHJvZmlsZVZlcnNpb25SZWYSLAoKZm9yd2FyZF90bxgFIAEoCzIYLmNvcmlhLnYxLlJvdXRlRm9yd2FyZFRvIiEKDlJvdXRlRm9yd2FyZFRvEg8KB3NlbmRlcnMYASADKAkiDAoKQXNSZWNlaXZlZCIyChFQcm9maWxlVmVyc2lvblJlZhIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUi7wEKDURpbXNlUmVjZWl2ZXISDAoEcG9ydBgBIAEoBRIUCgxiaW5kX2FkZHJlc3MYAiABKAkSEAoIYWVfdGl0bGUYAyABKAkSMwoPYWxsb3dlZF9jYWxsZXJzGAQgASgLMhguY29yaWEudjEuQWxsb3dlZENhbGxlcnNIABIUCgphbnlfY2FsbGVyGAUgASgISAASIgoDdGxzGAYgASgLMhUuY29yaWEudjEuUmVjZWl2ZXJUbHMSEwoLc29wX2NsYXNzZXMYByADKAkSGQoRdHJhbnNmZXJfc3ludGF4ZXMYCCADKAlCCQoHY2FsbGVycyI6CgxTdG93UmVjZWl2ZXISDwoHa2V5X2lkcxgBIAMoCRIZChFtYXhfcmVxdWVzdF9ieXRlcxgCIAEoAyI1Cg5BbGxvd2VkQ2FsbGVycxIjCgVydWxlcxgBIAMoCzIULmNvcmlhLnYxLkNhbGxlclJ1bGUiPQoKQ2FsbGVyUnVsZRIYChBjYWxsaW5nX2FlX3RpdGxlGAEgASgJEhUKDWFkZHJlc3NfcmFuZ2UYAiABKAkiQQoLUmVjZWl2ZXJUbHMSGAoQY2VydGlmaWNhdGVfZmlsZRgBIAEoCRIYChBwcml2YXRlX2tleV9maWxlGAIgASgJImYKCk5hbWluZ1J1bGUSDwoHc3ViamVjdBgBIAEoCRIPCgdzZXNzaW9uGAIgASgJEgwKBHNjYW4YAyABKAkSKAoHcGF0dGVybhgEIAEoCzIXLmNvcmlhLnYxLk5hbWluZ1BhdHRlcm4iNgoNTmFtaW5nUGF0dGVybhIRCglhdHRyaWJ1dGUYASABKAkSEgoKZXhwcmVzc2lvbhgCIAEoCSKmAQoOUmVjZWl2ZXJIZWFsdGgSJgoFc3RhdGUYASABKA4yFy5jb3JpYS52MS5SZWNlaXZlclN0YXRlEjEKC2Rvd25fcmVhc29uGAIgASgOMhwuY29yaWEudjEuUmVjZWl2ZXJEb3duUmVhc29uEg4KBmRldGFpbBgDIAEoCRIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiSgoSQWRkUmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIkCghyZWNlaXZlchgCIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIjsKE0FkZFJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlciIyChJHZXRSZWNlaXZlclJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkiOwoTR2V0UmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIk0KFExpc3RSZWNlaXZlcnNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIRCglwYWdlX3NpemUYAiABKAUSEgoKcGFnZV90b2tlbhgDIAEoCSJXChVMaXN0UmVjZWl2ZXJzUmVzcG9uc2USJQoJcmVjZWl2ZXJzGAEgAygLMhIuY29yaWEudjEuUmVjZWl2ZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIrUBChJTZXRSZWNlaXZlclJlcXVlc3QSDgoGdGVuYW50GAEgASgJEiQKCHJlY2VpdmVyGAIgASgLMhIuY29yaWEudjEuUmVjZWl2ZXISLwoLdXBkYXRlX21hc2sYAyABKAsyGi5nb29nbGUucHJvdG9idWYuRmllbGRNYXNrEjgKFGV4cGVjdGVkX3VwZGF0ZV90aW1lGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI7ChNTZXRSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiNQoVUmVtb3ZlUmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIMCgRuYW1lGAIgASgJIj4KFlJlbW92ZVJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlcip8Cg1SZWNlaXZlclN0YXRlEh4KGlJFQ0VJVkVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGwoXUkVDRUlWRVJfU1RBVEVfU1RBUlRJTkcQARIVChFSRUNFSVZFUl9TVEFURV9VUBACEhcKE1JFQ0VJVkVSX1NUQVRFX0RPV04QAyq9AwoSUmVjZWl2ZXJEb3duUmVhc29uEiQKIFJFQ0VJVkVSX0RPV05fUkVBU09OX1VOU1BFQ0lGSUVEEAASIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fRElTQUJMRUQQARInCiNSRUNFSVZFUl9ET1dOX1JFQVNPTl9BRERSRVNTX0lOX1VTRRACEioKJlJFQ0VJVkVSX0RPV05fUkVBU09OX1BFUk1JU1NJT05fREVOSUVEEAMSLgoqUkVDRUlWRVJfRE9XTl9SRUFTT05fQUREUkVTU19OT1RfQVZBSUxBQkxFEAQSHAoYUkVDRUlWRVJfRE9XTl9SRUFTT05fVExTEAUSJAogUkVDRUlWRVJfRE9XTl9SRUFTT05fTkVBUkxZX0ZVTEwQBhIpCiVSRUNFSVZFUl9ET1dOX1JFQVNPTl9URU5BTlRfTk9UX1JFQURZEAcSIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fU1RPUFBJTkcQCBIeChpSRUNFSVZFUl9ET1dOX1JFQVNPTl9PVEhFUhAJEicKI1JFQ0VJVkVSX0RPV05fUkVBU09OX0lOQ09NSU5HX0xJTUlUEAoysAMKD1JlY2VpdmVyU2VydmljZRJKCgtBZGRSZWNlaXZlchIcLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVxdWVzdBodLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVzcG9uc2USTwoLR2V0UmVjZWl2ZXISHC5jb3JpYS52MS5HZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5HZXRSZWNlaXZlclJlc3BvbnNlIgOQAgESVQoNTGlzdFJlY2VpdmVycxIeLmNvcmlhLnYxLkxpc3RSZWNlaXZlcnNSZXF1ZXN0Gh8uY29yaWEudjEuTGlzdFJlY2VpdmVyc1Jlc3BvbnNlIgOQAgESTwoLU2V0UmVjZWl2ZXISHC5jb3JpYS52MS5TZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5TZXRSZWNlaXZlclJlc3BvbnNlIgOQAgISWAoOUmVtb3ZlUmVjZWl2ZXISHy5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlcXVlc3QaIC5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp, file_coria_v1_profile]);
+  fileDesc("Chdjb3JpYS92MS9yZWNlaXZlci5wcm90bxIIY29yaWEudjEioAUKCFJlY2VpdmVyEgwKBG5hbWUYASABKAkSKAoFZGltc2UYAiABKAsyFy5jb3JpYS52MS5EaW1zZVJlY2VpdmVySAASJgoEc3RvdxgMIAEoCzIWLmNvcmlhLnYxLlN0b3dSZWNlaXZlckgAEiwKCGltcG9ydGVyGBEgASgLMhguY29yaWEudjEuSW1wb3J0UmVjZWl2ZXJIABIPCgdlbmFibGVkGAMgASgIEg8KB3N0b3JhZ2UYBCABKAkSJAoGbmFtaW5nGAUgASgLMhQuY29yaWEudjEuTmFtaW5nUnVsZRIvCgxxdWlldF9wZXJpb2QYBiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SMAoNbWF4X29wZW5fdGltZRgHIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIWCg5tYXhfZmlsZV9ieXRlcxgIIAEoAxIoCgZoZWFsdGgYCSABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aBIvCgtjcmVhdGVfdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLdXBkYXRlX3RpbWUYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmZvcndhcmRfdG8YDSADKAkSKwoLYXNfcmVjZWl2ZWQYDiABKAsyFC5jb3JpYS52MS5Bc1JlY2VpdmVkSAESLgoHcHJvZmlsZRgPIAEoCzIbLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uUmVmSAESKgoHcm91dGluZxgQIAEoCzIZLmNvcmlhLnYxLlJlY2VpdmVyUm91dGluZ0IGCgR0eXBlQhIKEGRlaWRlbnRpZmljYXRpb24iUAoPUmVjZWl2ZXJSb3V0aW5nEh8KBnJvdXRlcxgBIAMoCzIPLmNvcmlhLnYxLlJvdXRlEhwKFHF1YXJhbnRpbmVfdW5tYXRjaGVkGAIgASgIIrIBCgVSb3V0ZRIMCgRuYW1lGAEgASgJEi4KCmNvbmRpdGlvbnMYAiADKAsyGi5jb3JpYS52MS5Qcm9maWxlQ29uZGl0aW9uEg8KB3N0b3JhZ2UYAyABKAkSLAoHcHJvZmlsZRgEIAEoCzIbLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uUmVmEiwKCmZvcndhcmRfdG8YBSABKAsyGC5jb3JpYS52MS5Sb3V0ZUZvcndhcmRUbyIhCg5Sb3V0ZUZvcndhcmRUbxIPCgdzZW5kZXJzGAEgAygJIgwKCkFzUmVjZWl2ZWQiMgoRUHJvZmlsZVZlcnNpb25SZWYSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFIu8BCg1EaW1zZVJlY2VpdmVyEgwKBHBvcnQYASABKAUSFAoMYmluZF9hZGRyZXNzGAIgASgJEhAKCGFlX3RpdGxlGAMgASgJEjMKD2FsbG93ZWRfY2FsbGVycxgEIAEoCzIYLmNvcmlhLnYxLkFsbG93ZWRDYWxsZXJzSAASFAoKYW55X2NhbGxlchgFIAEoCEgAEiIKA3RscxgGIAEoCzIVLmNvcmlhLnYxLlJlY2VpdmVyVGxzEhMKC3NvcF9jbGFzc2VzGAcgAygJEhkKEXRyYW5zZmVyX3N5bnRheGVzGAggAygJQgkKB2NhbGxlcnMiOgoMU3Rvd1JlY2VpdmVyEg8KB2tleV9pZHMYASADKAkSGQoRbWF4X3JlcXVlc3RfYnl0ZXMYAiABKAMihwEKDkltcG9ydFJlY2VpdmVyEgwKBHJvb3QYASABKAkSJgoGbGF5b3V0GAIgASgOMhYuY29yaWEudjEuSW1wb3J0TGF5b3V0EhQKDHBhdGhfcGF0dGVybhgDIAEoCRISCgp1bml0X2RlcHRoGAQgASgFEhUKCG1hcF9maWxlGAUgASgJQgOAAQEiNQoOQWxsb3dlZENhbGxlcnMSIwoFcnVsZXMYASADKAsyFC5jb3JpYS52MS5DYWxsZXJSdWxlIj0KCkNhbGxlclJ1bGUSGAoQY2FsbGluZ19hZV90aXRsZRgBIAEoCRIVCg1hZGRyZXNzX3JhbmdlGAIgASgJIkEKC1JlY2VpdmVyVGxzEhgKEGNlcnRpZmljYXRlX2ZpbGUYASABKAkSGAoQcHJpdmF0ZV9rZXlfZmlsZRgCIAEoCSJmCgpOYW1pbmdSdWxlEg8KB3N1YmplY3QYASABKAkSDwoHc2Vzc2lvbhgCIAEoCRIMCgRzY2FuGAMgASgJEigKB3BhdHRlcm4YBCABKAsyFy5jb3JpYS52MS5OYW1pbmdQYXR0ZXJuIjYKDU5hbWluZ1BhdHRlcm4SEQoJYXR0cmlidXRlGAEgASgJEhIKCmV4cHJlc3Npb24YAiABKAkipgEKDlJlY2VpdmVySGVhbHRoEiYKBXN0YXRlGAEgASgOMhcuY29yaWEudjEuUmVjZWl2ZXJTdGF0ZRIxCgtkb3duX3JlYXNvbhgCIAEoDjIcLmNvcmlhLnYxLlJlY2VpdmVyRG93blJlYXNvbhIOCgZkZXRhaWwYAyABKAkSKQoFc2luY2UYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkoKEkFkZFJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSJAoIcmVjZWl2ZXIYAiABKAsyEi5jb3JpYS52MS5SZWNlaXZlciI7ChNBZGRSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiMgoSR2V0UmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIMCgRuYW1lGAIgASgJIjsKE0dldFJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlciJNChRMaXN0UmVjZWl2ZXJzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkiVwoVTGlzdFJlY2VpdmVyc1Jlc3BvbnNlEiUKCXJlY2VpdmVycxgBIAMoCzISLmNvcmlhLnYxLlJlY2VpdmVyEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSK1AQoSU2V0UmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIkCghyZWNlaXZlchgCIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyEi8KC3VwZGF0ZV9tYXNrGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLkZpZWxkTWFzaxI4ChRleHBlY3RlZF91cGRhdGVfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiOwoTU2V0UmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIjUKFVJlbW92ZVJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCSI+ChZSZW1vdmVSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIqeQoMSW1wb3J0TGF5b3V0Eh0KGUlNUE9SVF9MQVlPVVRfVU5TUEVDSUZJRUQQABIXChNJTVBPUlRfTEFZT1VUX1BMQUlOEAESFgoSSU1QT1JUX0xBWU9VVF9YTkFUEAISGQoVSU1QT1JUX0xBWU9VVF9QQVRURVJOEAMqlQEKDVJlY2VpdmVyU3RhdGUSHgoaUkVDRUlWRVJfU1RBVEVfVU5TUEVDSUZJRUQQABIbChdSRUNFSVZFUl9TVEFURV9TVEFSVElORxABEhUKEVJFQ0VJVkVSX1NUQVRFX1VQEAISFwoTUkVDRUlWRVJfU1RBVEVfRE9XThADEhcKE1JFQ0VJVkVSX1NUQVRFX0lETEUQBCq9AwoSUmVjZWl2ZXJEb3duUmVhc29uEiQKIFJFQ0VJVkVSX0RPV05fUkVBU09OX1VOU1BFQ0lGSUVEEAASIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fRElTQUJMRUQQARInCiNSRUNFSVZFUl9ET1dOX1JFQVNPTl9BRERSRVNTX0lOX1VTRRACEioKJlJFQ0VJVkVSX0RPV05fUkVBU09OX1BFUk1JU1NJT05fREVOSUVEEAMSLgoqUkVDRUlWRVJfRE9XTl9SRUFTT05fQUREUkVTU19OT1RfQVZBSUxBQkxFEAQSHAoYUkVDRUlWRVJfRE9XTl9SRUFTT05fVExTEAUSJAogUkVDRUlWRVJfRE9XTl9SRUFTT05fTkVBUkxZX0ZVTEwQBhIpCiVSRUNFSVZFUl9ET1dOX1JFQVNPTl9URU5BTlRfTk9UX1JFQURZEAcSIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fU1RPUFBJTkcQCBIeChpSRUNFSVZFUl9ET1dOX1JFQVNPTl9PVEhFUhAJEicKI1JFQ0VJVkVSX0RPV05fUkVBU09OX0lOQ09NSU5HX0xJTUlUEAoysAMKD1JlY2VpdmVyU2VydmljZRJKCgtBZGRSZWNlaXZlchIcLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVxdWVzdBodLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVzcG9uc2USTwoLR2V0UmVjZWl2ZXISHC5jb3JpYS52MS5HZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5HZXRSZWNlaXZlclJlc3BvbnNlIgOQAgESVQoNTGlzdFJlY2VpdmVycxIeLmNvcmlhLnYxLkxpc3RSZWNlaXZlcnNSZXF1ZXN0Gh8uY29yaWEudjEuTGlzdFJlY2VpdmVyc1Jlc3BvbnNlIgOQAgESTwoLU2V0UmVjZWl2ZXISHC5jb3JpYS52MS5TZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5TZXRSZWNlaXZlclJlc3BvbnNlIgOQAgISWAoOUmVtb3ZlUmVjZWl2ZXISHy5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlcXVlc3QaIC5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp, file_coria_v1_profile]);
 
 /**
  * Receiver is a way for data to arrive at a tenant, and how what arrives is
@@ -33,7 +33,7 @@ export type Receiver = Message<"coria.v1.Receiver"> & {
    * hyphens, starting with a letter, and none of the device names Windows
    * reserves (con, prn, aux, nul, com0 to com9, lpt0 to lpt9): the rule of a
    * tenant's name. A removed receiver's name is not given to another while
-   * a reception or a quarantined file names it.
+   * a reception, a quarantined file or a job names it.
    *
    * @generated from field: string name = 1;
    */
@@ -64,6 +64,16 @@ export type Receiver = Message<"coria.v1.Receiver"> & {
      */
     value: StowReceiver;
     case: "stow";
+  } | {
+    /**
+     * The files import jobs read from a directory under a root the
+     * installation names. Named importer, not import, since import is a
+     * keyword of Python, whose generated client could not name the field.
+     *
+     * @generated from field: coria.v1.ImportReceiver importer = 17;
+     */
+    value: ImportReceiver;
+    case: "importer";
   } | { case: undefined; value?: undefined };
 
   /**
@@ -706,6 +716,123 @@ export const StowReceiverSchema: GenMessage<StowReceiver> = /*@__PURE__*/
   messageDesc(file_coria_v1_receiver, 7);
 
 /**
+ * ImportReceiver is a receiver that never listens: import jobs
+ * (JobService, ImportJob) read the files of a directory under one of the
+ * installation's roots and hand each DICOM file to it, and from there each
+ * goes through the reception pipeline as a file a DIMSE receiver took:
+ * grouped into receptions by study, named by the receiver's naming rule,
+ * de-identified or archived as received as the receiver chooses, routed,
+ * quarantined for what the pipeline finds, with the same events. The
+ * receiver's quiet period completes each reception; its max_file_bytes
+ * bounds each file read, and a larger file is skipped, not copied. A
+ * route condition on an AE title (CONDITION_SUBJECT_CALLING_AE_TITLE,
+ * CONDITION_SUBJECT_CALLED_AE_TITLE) never holds for a file an import hands in, since none
+ * came by an association.
+ *
+ * Labels from a path. The layout reads each file's path, relative to the
+ * root, for named parts, which the naming rule's templates use as they use
+ * a NamingPattern's parts ({project}, {#session}); a receiver may have both,
+ * with no part name in both. The path and the map file only name: which
+ * session and scan a file belongs to is its Study and Series Instance
+ * UIDs, as for any reception, and a session already labelled keeps its
+ * label whatever a path says (counted as label_differs in the job's
+ * counts). Every label made still passes the label rule or the file is
+ * quarantined with QUARANTINE_REASON_BAD_LABEL, never cleaned. A file whose
+ * path the layout does not match is skipped as IMPORT_SKIP_CODE_OUTSIDE_LAYOUT.
+ *
+ * The map file. A CSV file, as XNAT exports its experiments, with a header
+ * row naming at least the columns project, label (the session's label) and
+ * subject_label, read when a job is made, at most 64 MiB (3 MiB given
+ * inline, ImportJob.map_csv), in UTF-8, and kept with the job as read
+ * then. It gives the part {subject} by (project, session). A map in which
+ * one (project, session) names two subjects is refused whole, and so is
+ * the job; a refusal names the line at fault by its number only, never a
+ * cell, the header or the file's path. A
+ * session folder the map does not list is skipped as
+ * IMPORT_SKIP_CODE_UNMAPPED_SESSION, so a folder left behind after XNAT
+ * deleted its session is not brought back.
+ *
+ * The naming rule a site importing several XNAT projects into one tenant
+ * writes puts the project before the subject and session labels, such as
+ * "{project}_{subject}" and "{project}_{session}", since XNAT's labels are
+ * unique only within a project; a site importing one project per tenant
+ * leaves it out.
+ *
+ * @generated from message coria.v1.ImportReceiver
+ */
+export type ImportReceiver = Message<"coria.v1.ImportReceiver"> & {
+  /**
+   * The name of the root, among those of the installation's setting
+   * import.roots, whose directory its jobs read. Required; a root
+   * import.roots does not name, or one import.allowed-roots does not allot
+   * to the tenant, is a precondition failure; and neither can be taken
+   * away while this receiver names the root. A root that now resolves to
+   * another directory than when it was set refuses a new job, and fails a
+   * running unit with the reason "root unavailable".
+   *
+   * @generated from field: string root = 1;
+   */
+  root: string;
+
+  /**
+   * How a file's path is read. Required.
+   *
+   * @generated from field: coria.v1.ImportLayout layout = 2;
+   */
+  layout: ImportLayout;
+
+  /**
+   * For IMPORT_LAYOUT_PATTERN, a regular expression in RE2 syntax over the
+   * file's path relative to the root, its segments joined by "/", with at
+   * least one named part, such as
+   * "^(?P<study>[^/]+)/(?P<subject>[^/]+)/(?P<session>[^/]+)/.+$". It must
+   * match the whole path: the server anchors it at both ends. Required for
+   * that layout and empty for the others; at most 1024 bytes; a part's name
+   * is a lowercase ASCII letter followed by lowercase letters, digits and
+   * "_", and is used once.
+   *
+   * @generated from field: string path_pattern = 3;
+   */
+  pathPattern: string;
+
+  /**
+   * For IMPORT_LAYOUT_PATTERN, how many segments from the root make a
+   * unit's folder: each folder at that depth is one unit of work, walked
+   * and resumed on its own. From 1 to 16; required for that layout and 0
+   * for the others, whose depths are fixed (1 for plain, 3 for XNAT).
+   *
+   * @generated from field: int32 unit_depth = 4;
+   */
+  unitDepth: number;
+
+  /**
+   * The map file its jobs read, by its path relative to the root, which
+   * it must be inside, under the same rules as ImportJob.path: segments of
+   * 1 to 255 bytes of UTF-8, none "." or "..", none holding "\", ":" or
+   * NUL; no empty segment, no leading or trailing "/"; at most 4096 bytes.
+   * A map needs a layout that gives the parts project and session and no
+   * part subject (the map gives it); otherwise AddReceiver and SetReceiver
+   * refuse it (precondition). Optional; a
+   * job may name another or give one inline (ImportJob.map_file,
+   * map_csv). Each segment is opened under the root without following a
+   * link. A path can hold what identifies
+   * a person, so it is answered only to an operator or more on the tenant,
+   * and empty to a reader, and never written to a log, an event or an
+   * audit entry.
+   *
+   * @generated from field: string map_file = 5;
+   */
+  mapFile: string;
+};
+
+/**
+ * Describes the message coria.v1.ImportReceiver.
+ * Use `create(ImportReceiverSchema)` to create a new message.
+ */
+export const ImportReceiverSchema: GenMessage<ImportReceiver> = /*@__PURE__*/
+  messageDesc(file_coria_v1_receiver, 8);
+
+/**
  * AllowedCallers is the list of callers a DIMSE receiver admits.
  *
  * @generated from message coria.v1.AllowedCallers
@@ -725,7 +852,7 @@ export type AllowedCallers = Message<"coria.v1.AllowedCallers"> & {
  * Use `create(AllowedCallersSchema)` to create a new message.
  */
 export const AllowedCallersSchema: GenMessage<AllowedCallers> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 8);
+  messageDesc(file_coria_v1_receiver, 9);
 
 /**
  * CallerRule admits callers by their calling AE title, their network
@@ -763,7 +890,7 @@ export type CallerRule = Message<"coria.v1.CallerRule"> & {
  * Use `create(CallerRuleSchema)` to create a new message.
  */
 export const CallerRuleSchema: GenMessage<CallerRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 9);
+  messageDesc(file_coria_v1_receiver, 10);
 
 /**
  * ReceiverTls is where a DIMSE receiver's TLS certificate and private key
@@ -798,7 +925,7 @@ export type ReceiverTls = Message<"coria.v1.ReceiverTls"> & {
  * Use `create(ReceiverTlsSchema)` to create a new message.
  */
 export const ReceiverTlsSchema: GenMessage<ReceiverTls> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 10);
+  messageDesc(file_coria_v1_receiver, 11);
 
 /**
  * NamingRule is how a receiver makes the labels of a new subject, session
@@ -889,7 +1016,7 @@ export type NamingRule = Message<"coria.v1.NamingRule"> & {
  * Use `create(NamingRuleSchema)` to create a new message.
  */
 export const NamingRuleSchema: GenMessage<NamingRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 11);
+  messageDesc(file_coria_v1_receiver, 12);
 
 /**
  * NamingPattern takes named parts out of one attribute, such as Patient
@@ -924,7 +1051,7 @@ export type NamingPattern = Message<"coria.v1.NamingPattern"> & {
  * Use `create(NamingPatternSchema)` to create a new message.
  */
 export const NamingPatternSchema: GenMessage<NamingPattern> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 12);
+  messageDesc(file_coria_v1_receiver, 13);
 
 /**
  * ReceiverHealth is whether a receiver accepts data now, and why not.
@@ -970,7 +1097,7 @@ export type ReceiverHealth = Message<"coria.v1.ReceiverHealth"> & {
  * Use `create(ReceiverHealthSchema)` to create a new message.
  */
 export const ReceiverHealthSchema: GenMessage<ReceiverHealth> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 13);
+  messageDesc(file_coria_v1_receiver, 14);
 
 /**
  * AddReceiverRequest is the receiver to add.
@@ -1000,7 +1127,7 @@ export type AddReceiverRequest = Message<"coria.v1.AddReceiverRequest"> & {
  * Use `create(AddReceiverRequestSchema)` to create a new message.
  */
 export const AddReceiverRequestSchema: GenMessage<AddReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 14);
+  messageDesc(file_coria_v1_receiver, 15);
 
 /**
  * AddReceiverResponse is the receiver added.
@@ -1022,7 +1149,7 @@ export type AddReceiverResponse = Message<"coria.v1.AddReceiverResponse"> & {
  * Use `create(AddReceiverResponseSchema)` to create a new message.
  */
 export const AddReceiverResponseSchema: GenMessage<AddReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 15);
+  messageDesc(file_coria_v1_receiver, 16);
 
 /**
  * GetReceiverRequest names a receiver.
@@ -1050,7 +1177,7 @@ export type GetReceiverRequest = Message<"coria.v1.GetReceiverRequest"> & {
  * Use `create(GetReceiverRequestSchema)` to create a new message.
  */
 export const GetReceiverRequestSchema: GenMessage<GetReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 16);
+  messageDesc(file_coria_v1_receiver, 17);
 
 /**
  * GetReceiverResponse is the receiver named.
@@ -1071,7 +1198,7 @@ export type GetReceiverResponse = Message<"coria.v1.GetReceiverResponse"> & {
  * Use `create(GetReceiverResponseSchema)` to create a new message.
  */
 export const GetReceiverResponseSchema: GenMessage<GetReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 17);
+  messageDesc(file_coria_v1_receiver, 18);
 
 /**
  * ListReceiversRequest asks for a page of a tenant's receivers.
@@ -1109,7 +1236,7 @@ export type ListReceiversRequest = Message<"coria.v1.ListReceiversRequest"> & {
  * Use `create(ListReceiversRequestSchema)` to create a new message.
  */
 export const ListReceiversRequestSchema: GenMessage<ListReceiversRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 18);
+  messageDesc(file_coria_v1_receiver, 19);
 
 /**
  * ListReceiversResponse is a page of receivers.
@@ -1137,7 +1264,7 @@ export type ListReceiversResponse = Message<"coria.v1.ListReceiversResponse"> & 
  * Use `create(ListReceiversResponseSchema)` to create a new message.
  */
 export const ListReceiversResponseSchema: GenMessage<ListReceiversResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 19);
+  messageDesc(file_coria_v1_receiver, 20);
 
 /**
  * SetReceiverRequest is the change to a receiver.
@@ -1168,8 +1295,9 @@ export type SetReceiverRequest = Message<"coria.v1.SetReceiverRequest"> & {
    * version; with neither set, as received), "routing" (replaced whole;
    * absent, no routing; its fields cannot be named one by one), or
    * a field of the receiver's type joined to it by a dot, such as
-   * "dimse.port", "dimse.tls.certificate_file" or "stow.key_ids". A path
-   * that names a type's whole message ("dimse", "stow") is refused: its
+   * "dimse.port", "dimse.tls.certificate_file", "stow.key_ids" or
+   * "importer.map_file". A path
+   * that names a type's whole message ("dimse", "stow", "importer") is refused: its
    * fields are named one by one; so is a field of another type than the
    * receiver's, since a receiver's type does not change. Required and not empty; "*" is refused, so every field a call
    * changes is named. A named field is set to the value given, its zero
@@ -1202,7 +1330,7 @@ export type SetReceiverRequest = Message<"coria.v1.SetReceiverRequest"> & {
  * Use `create(SetReceiverRequestSchema)` to create a new message.
  */
 export const SetReceiverRequestSchema: GenMessage<SetReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 20);
+  messageDesc(file_coria_v1_receiver, 21);
 
 /**
  * SetReceiverResponse is the receiver as changed.
@@ -1223,7 +1351,7 @@ export type SetReceiverResponse = Message<"coria.v1.SetReceiverResponse"> & {
  * Use `create(SetReceiverResponseSchema)` to create a new message.
  */
 export const SetReceiverResponseSchema: GenMessage<SetReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 21);
+  messageDesc(file_coria_v1_receiver, 22);
 
 /**
  * RemoveReceiverRequest names the receiver to remove.
@@ -1251,7 +1379,7 @@ export type RemoveReceiverRequest = Message<"coria.v1.RemoveReceiverRequest"> & 
  * Use `create(RemoveReceiverRequestSchema)` to create a new message.
  */
 export const RemoveReceiverRequestSchema: GenMessage<RemoveReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 22);
+  messageDesc(file_coria_v1_receiver, 23);
 
 /**
  * RemoveReceiverResponse is the configuration that was removed.
@@ -1272,7 +1400,61 @@ export type RemoveReceiverResponse = Message<"coria.v1.RemoveReceiverResponse"> 
  * Use `create(RemoveReceiverResponseSchema)` to create a new message.
  */
 export const RemoveReceiverResponseSchema: GenMessage<RemoveReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 23);
+  messageDesc(file_coria_v1_receiver, 24);
+
+/**
+ * ImportLayout is how an import receiver reads a file's path for labels.
+ * A layout added in a later version is a new value; a client shows a value
+ * it does not know as a layout it cannot name.
+ *
+ * @generated from enum coria.v1.ImportLayout
+ */
+export enum ImportLayout {
+  /**
+   * Never answered by the server; refused in AddReceiver.
+   *
+   * @generated from enum value: IMPORT_LAYOUT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The path is not read for labels: every file under the job's path is
+   * handed in, and its labels come from the receiver's naming rule over its
+   * headers alone (by default keyed hashes). A unit is one folder at the
+   * first level under the root.
+   *
+   * @generated from enum value: IMPORT_LAYOUT_PLAIN = 1;
+   */
+  PLAIN = 1,
+
+  /**
+   * XNAT's archive tree: <project>/arc<nnn>/<session>/SCANS/<scan>/DICOM/<file>,
+   * read by the fixed pattern
+   * ^(?P<project>[^/]+)/arc[0-9]{3}/(?P<session>[^/]+)/SCANS/(?P<scan>[^/]+)/DICOM/[^/]+$,
+   * with parts project, session and scan; XNAT keeps no subject folder,
+   * so {subject} comes from the map file (map_file) or, with
+   * ImportJob.subject_from_headers, from Patient Name (0010,0010) as XNAT's
+   * default anonymization script writes it. A unit is one session folder
+   * (unit depth 3). A file under a session's other folders (RESOURCES,
+   * ASSESSORS) does not match and is skipped as outside the layout.
+   *
+   * @generated from enum value: IMPORT_LAYOUT_XNAT = 2;
+   */
+  XNAT = 2,
+
+  /**
+   * The receiver's own pattern (path_pattern) and unit depth (unit_depth).
+   *
+   * @generated from enum value: IMPORT_LAYOUT_PATTERN = 3;
+   */
+  PATTERN = 3,
+}
+
+/**
+ * Describes the enum coria.v1.ImportLayout.
+ */
+export const ImportLayoutSchema: GenEnum<ImportLayout> = /*@__PURE__*/
+  enumDesc(file_coria_v1_receiver, 0);
 
 /**
  * ReceiverState is whether a receiver accepts data now.
@@ -1308,13 +1490,22 @@ export enum ReceiverState {
    * @generated from enum value: RECEIVER_STATE_DOWN = 3;
    */
   DOWN = 3,
+
+  /**
+   * It holds no listener and takes only what its jobs hand it: an import
+   * receiver that is enabled, whether a job of it runs now or not. A client
+   * that does not know this value shows it as up.
+   *
+   * @generated from enum value: RECEIVER_STATE_IDLE = 4;
+   */
+  IDLE = 4,
 }
 
 /**
  * Describes the enum coria.v1.ReceiverState.
  */
 export const ReceiverStateSchema: GenEnum<ReceiverState> = /*@__PURE__*/
-  enumDesc(file_coria_v1_receiver, 0);
+  enumDesc(file_coria_v1_receiver, 1);
 
 /**
  * ReceiverDownReason is why a receiver is down. A reason added in a later
@@ -1417,7 +1608,7 @@ export enum ReceiverDownReason {
  * Describes the enum coria.v1.ReceiverDownReason.
  */
 export const ReceiverDownReasonSchema: GenEnum<ReceiverDownReason> = /*@__PURE__*/
-  enumDesc(file_coria_v1_receiver, 1);
+  enumDesc(file_coria_v1_receiver, 2);
 
 /**
  * ReceiverService adds, reads, changes and removes a tenant's receivers. A
@@ -1427,13 +1618,50 @@ export const ReceiverDownReasonSchema: GenEnum<ReceiverDownReason> = /*@__PURE__
  * (ReceptionService), one per study and arrival, which are archived to its
  * storage under labels its naming rule makes. Every type of receiver shares
  * that part of its configuration; what belongs to its protocol is in its
- * type's message. This version has two types. A DIMSE receiver is a DICOM
+ * type's message. This version has three types. A DIMSE receiver is a DICOM
  * listener (PS3.8 upper layer, PS3.7 message exchange) on one port of the
  * server, which accepts C-STORE requests (PS3.4 Annex B) for the SOP classes
  * it accepts, answers C-ECHO (PS3.4 Annex A) to an admitted caller, and
  * answers nothing else. A stow receiver takes the instances a key it lists
  * stores over HTTP into the tenant's DICOMweb service (STOW-RS, PS3.18
- * 10.5); it holds no port (StowReceiver).
+ * 10.5); it holds no port (StowReceiver). An import receiver never listens:
+ * it takes the files an import job (JobService, ImportJob) reads from a
+ * directory the installation names, and holds how their paths are read for
+ * labels (ImportReceiver).
+ *
+ * Where an import may read is the installation's, never a tenant's, so a
+ * tenant's admin cannot make the server read any file of the machine it
+ * runs on, or another tenant's tree. Two settings hold it:
+ *
+ *   - import.roots: the directories an import may read, one per line, each
+ *     "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+ *     to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
+ *     4096 bytes. At most 64 roots. Installation-only. Empty by default, so
+ *     no import reads anything until a root is named. A path is resolved
+ *     through its links when the value is set, and a value is refused when
+ *     a root, so resolved, is, contains or lies inside a root of
+ *     storage.directory-roots, the server's data directory, its incoming
+ *     area, the directory of the installation key file, or another import
+ *     root, so an import can never read the archive's own files or its
+ *     secrets. A job is refused when its root now resolves elsewhere than
+ *     when it was set, and a unit whose root does so, or cannot be opened,
+ *     fails with the reason "root unavailable"; everything under a root is
+ *     read without following any link. Its paths are answered only to an
+ *     admin on the installation; any other caller is answered the roots'
+ *     names alone, one per line, as for storage.directory-roots. Removing
+ *     or changing a root an import receiver names is refused
+ *     (precondition), as for every setting a receiver uses.
+ *   - import.allowed-roots: the names of the roots a tenant's import
+ *     receivers may read, separated by commas, such as "xnat". Set on a
+ *     tenant by the installation's admin only; it has no installation
+ *     value. Empty by default, so a tenant cannot add an import receiver
+ *     until a root is allotted to it. A root may be allotted to several
+ *     tenants: allotting it is the installation's decision that each may
+ *     read all of it. Taking back a root one of the tenant's import
+ *     receivers names is refused (precondition).
+ *
+ * An import reads and never writes: nothing in a root is created, changed,
+ * moved or deleted by the server.
  *
  * The server makes what listens match what is configured: a receiver added,
  * changed or removed is started, restarted or stopped without a restart of
@@ -1503,13 +1731,17 @@ export const ReceiverService: GenService<{
    *
    * Role: admin on the tenant.
    * Audit: one entry in the tenant's log, with the receiver's name as its
-   * object, and its type, port, AE title and storage in details.
+   * object, and its type, port, AE title and storage in details; for an
+   * import receiver, its root's name and its layout, never a path.
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
-   * does not exist, for a caller who may not list every tenant), invalid,
-   * not found (a tenant that does not exist, for a caller who may list every
+   * does not exist, for a caller who may not list every tenant), invalid
+   * (also, for an import receiver, a naming template that uses a part
+   * neither its layout, its map nor its naming pattern ever gives, and a
+   * map file that breaks the path rule), not found (a tenant that does
+   * not exist, for a caller who may list every
    * tenant), conflict (the tenant has a receiver with that name, or a
-   * removed receiver of that name is still named by receptions or
-   * quarantined files), precondition (a storage the tenant does not have; a
+   * removed receiver of that name is still named by receptions,
+   * quarantined files or jobs), precondition (a storage the tenant does not have; a
    * sender in forward_to the tenant does not have; a storage, a sender or a
    * profile version a route names that the tenant does not have, or a
    * profile version that cannot de-identify a receiver's files; a route
@@ -1517,7 +1749,10 @@ export const ReceiverService: GenService<{
    * a port outside the
    * tenant's allotted ports; a bind address the installation does not list;
    * another receiver of the tenant on the same port and an overlapping
-   * address), unavailable (the tenant's database
+   * address; a root import.roots does not name, or one import.allowed-roots
+   * does not allot to the tenant; a map file with a layout that does not
+   * give the parts project and session, or that gives a part subject),
+   * unavailable (the tenant's database
    * does not answer, or the tenant is not ready).
    *
    * @generated from rpc coria.v1.ReceiverService.AddReceiver
@@ -1573,7 +1808,10 @@ export const ReceiverService: GenService<{
    * classes, transfer syntaxes) restarts the listener; a change of the
    * storage, the naming rule, the quiet period, the longest open time or
    * the size bound applies to what arrives from then on, and the quiet
-   * period and longest open time also to receptions still receiving.
+   * period and longest open time also to receptions still receiving. The
+   * fields of an import receiver (root, layout, pattern, unit depth, map
+   * file) cannot change while one of its jobs is queued or running, since
+   * the job's cursor and counts are read by them (precondition).
    *
    * Role: admin on the tenant.
    * Audit: one entry in the tenant's log, with the receiver's name as its
@@ -1586,7 +1824,8 @@ export const ReceiverService: GenService<{
    * receiver with that name; a tenant that does not exist, for a caller who
    * may list every tenant), precondition (every precondition AddReceiver
    * checks; expected_update_time is not the receiver's update_time, as a
-   * stale expected version is everywhere in this API), unavailable (the tenant's database does not answer, or the
+   * stale expected version is everywhere in this API; a field of an import
+   * receiver while one of its jobs is queued or running), unavailable (the tenant's database does not answer, or the
    * tenant is not ready).
    *
    * @generated from rpc coria.v1.ReceiverService.SetReceiver
@@ -1604,7 +1843,10 @@ export const ReceiverService: GenService<{
    * name stays held, and cannot be given to a new receiver, while any
    * reception or quarantined file names it, so a name in a record always
    * means one receiver. A repeated call finds no receiver and is answered
-   * NOT_FOUND; it removes nothing more.
+   * NOT_FOUND; it removes nothing more. An import receiver is not removed
+   * while one of its jobs is queued or running: the job is canceled first
+   * (JobService.CancelJob), so no job is left handing files to a receiver
+   * that is gone.
    *
    * Role: admin on the tenant.
    * Audit: one entry in the tenant's log, with the receiver's name as its
@@ -1612,7 +1854,8 @@ export const ReceiverService: GenService<{
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
    * does not exist, for a caller who may not list every tenant), invalid,
    * not found (the tenant has no receiver with that name; a tenant that does
-   * not exist, for a caller who may list every tenant), unavailable (the
+   * not exist, for a caller who may list every tenant), precondition (an
+   * import receiver one of whose jobs is queued or running), unavailable (the
    * tenant's database does not answer, or the tenant is not ready).
    *
    * @generated from rpc coria.v1.ReceiverService.RemoveReceiver

@@ -85,7 +85,7 @@ class Caller(_message.Message):
     def __init__(self, calling_ae_title: _Optional[str] = ..., called_ae_title: _Optional[str] = ..., address: _Optional[str] = ...) -> None: ...
 
 class QuarantinedFile(_message.Message):
-    __slots__ = ("id", "reason", "details", "state", "receiver", "reception", "caller", "size_bytes", "sha256", "kept_sha256", "sop_class_uid", "sop_instance_uid", "study_instance_uid", "series_instance_uid", "transfer_syntax_uid", "content_kept", "quarantine_time", "decide_time", "release_mode", "release_reception", "reject_reason", "released_from", "release_receiver", "release_reason", "release_storage", "release_profile")
+    __slots__ = ("id", "reason", "details", "state", "receiver", "reception", "caller", "size_bytes", "sha256", "kept_sha256", "sop_class_uid", "sop_instance_uid", "study_instance_uid", "series_instance_uid", "transfer_syntax_uid", "content_kept", "quarantine_time", "decide_time", "release_mode", "release_reception", "reject_reason", "released_from", "release_receiver", "release_reason", "release_storage", "release_profile", "import_job", "import_path")
     class DetailsEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -119,6 +119,8 @@ class QuarantinedFile(_message.Message):
     RELEASE_REASON_FIELD_NUMBER: _ClassVar[int]
     RELEASE_STORAGE_FIELD_NUMBER: _ClassVar[int]
     RELEASE_PROFILE_FIELD_NUMBER: _ClassVar[int]
+    IMPORT_JOB_FIELD_NUMBER: _ClassVar[int]
+    IMPORT_PATH_FIELD_NUMBER: _ClassVar[int]
     id: str
     reason: QuarantineReason
     details: _containers.ScalarMap[str, str]
@@ -145,7 +147,9 @@ class QuarantinedFile(_message.Message):
     release_reason: str
     release_storage: str
     release_profile: _receiver_pb2.ProfileVersionRef
-    def __init__(self, id: _Optional[str] = ..., reason: _Optional[_Union[QuarantineReason, str]] = ..., details: _Optional[_Mapping[str, str]] = ..., state: _Optional[_Union[QuarantineState, str]] = ..., receiver: _Optional[str] = ..., reception: _Optional[str] = ..., caller: _Optional[_Union[Caller, _Mapping]] = ..., size_bytes: _Optional[int] = ..., sha256: _Optional[str] = ..., kept_sha256: _Optional[str] = ..., sop_class_uid: _Optional[str] = ..., sop_instance_uid: _Optional[str] = ..., study_instance_uid: _Optional[str] = ..., series_instance_uid: _Optional[str] = ..., transfer_syntax_uid: _Optional[str] = ..., content_kept: _Optional[bool] = ..., quarantine_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., decide_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., release_mode: _Optional[_Union[ReleaseMode, str]] = ..., release_reception: _Optional[str] = ..., reject_reason: _Optional[str] = ..., released_from: _Optional[str] = ..., release_receiver: _Optional[str] = ..., release_reason: _Optional[str] = ..., release_storage: _Optional[str] = ..., release_profile: _Optional[_Union[_receiver_pb2.ProfileVersionRef, _Mapping]] = ...) -> None: ...
+    import_job: str
+    import_path: str
+    def __init__(self, id: _Optional[str] = ..., reason: _Optional[_Union[QuarantineReason, str]] = ..., details: _Optional[_Mapping[str, str]] = ..., state: _Optional[_Union[QuarantineState, str]] = ..., receiver: _Optional[str] = ..., reception: _Optional[str] = ..., caller: _Optional[_Union[Caller, _Mapping]] = ..., size_bytes: _Optional[int] = ..., sha256: _Optional[str] = ..., kept_sha256: _Optional[str] = ..., sop_class_uid: _Optional[str] = ..., sop_instance_uid: _Optional[str] = ..., study_instance_uid: _Optional[str] = ..., series_instance_uid: _Optional[str] = ..., transfer_syntax_uid: _Optional[str] = ..., content_kept: _Optional[bool] = ..., quarantine_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., decide_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., release_mode: _Optional[_Union[ReleaseMode, str]] = ..., release_reception: _Optional[str] = ..., reject_reason: _Optional[str] = ..., released_from: _Optional[str] = ..., release_receiver: _Optional[str] = ..., release_reason: _Optional[str] = ..., release_storage: _Optional[str] = ..., release_profile: _Optional[_Union[_receiver_pb2.ProfileVersionRef, _Mapping]] = ..., import_job: _Optional[str] = ..., import_path: _Optional[str] = ...) -> None: ...
 
 class ListQuarantinedFilesRequest(_message.Message):
     __slots__ = ("tenant", "state", "reason", "receiver", "reception", "start_time", "end_time", "page_size", "page_token", "study_instance_uid", "sop_instance_uid")

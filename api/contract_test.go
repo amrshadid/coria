@@ -34,9 +34,11 @@ var secretFields = []string{
 
 // patientDataFields are the fields through which a file's values cross the
 // API in a trial run of a profile: the caller's own data (a file it sent,
-// or a held file it may read), answered only to it. Each must be marked
-// debug_redact, so the server's redactor removes them before anything is
-// logged, as it removes a secret.
+// or a held file it may read), answered only to it; and the paths of an
+// import under its root and an import's inline map, since a folder or file
+// name in a tree a site kept, or a subject's label in its map, can be a
+// patient's name, and the contract answers them only to an operator. Each must be marked debug_redact, so the server's redactor
+// removes them before anything is logged, as it removes a secret.
 var patientDataFields = []string{
 	"coria.v1.TrialElement.after",
 	"coria.v1.TrialElement.before",
@@ -45,6 +47,13 @@ var patientDataFields = []string{
 	"coria.v1.CodeRequest.value",
 	"coria.v1.LookupEntry.value",
 	"coria.v1.TrialResult.name",
+	"coria.v1.ImportReceiver.map_file",
+	"coria.v1.ImportJob.path",
+	"coria.v1.ImportJob.map_file",
+	"coria.v1.ImportJob.map_csv",
+	"coria.v1.ImportFile.path",
+	"coria.v1.ImportUnit.folder",
+	"coria.v1.QuarantinedFile.import_path",
 }
 
 // textFields lists every field of the contract that carries free text: each
@@ -749,6 +758,37 @@ var textFields = []string{
 	"coria.v1.TenantStatus.event_history",
 	"coria.v1.WatchKeepAlive.event_history",
 	"coria.v1.WatchKeepAlive.tenant_event_histories",
+
+	// receiver.proto, job.proto and quarantine.proto, importing a
+	// directory: names, ids, a pattern a person writes and fixed phrases;
+	// and paths under an import root, which can hold a patient's name and
+	// are listed in patientDataFields too.
+	"coria.v1.ImportReceiver.root",
+	"coria.v1.ImportReceiver.path_pattern",
+	"coria.v1.ImportReceiver.map_file",
+	"coria.v1.ImportJob.receiver",
+	"coria.v1.ImportJob.path",
+	"coria.v1.ImportJob.map_file",
+	"coria.v1.ImportJob.map_csv",
+	"coria.v1.ImportFile.path",
+	"coria.v1.ImportFile.quarantined_file",
+	"coria.v1.ImportFile.reception",
+	"coria.v1.ImportFile.unit",
+	"coria.v1.ImportFile.detail",
+	"coria.v1.ImportUnit.id",
+	"coria.v1.ImportUnit.folder",
+	"coria.v1.ImportUnit.reason",
+	"coria.v1.ListImportFilesRequest.tenant",
+	"coria.v1.ListImportFilesRequest.id",
+	"coria.v1.ListImportFilesRequest.unit",
+	"coria.v1.ListImportFilesRequest.page_token",
+	"coria.v1.ListImportFilesResponse.next_page_token",
+	"coria.v1.ListImportUnitsRequest.tenant",
+	"coria.v1.ListImportUnitsRequest.id",
+	"coria.v1.ListImportUnitsRequest.page_token",
+	"coria.v1.ListImportUnitsResponse.next_page_token",
+	"coria.v1.QuarantinedFile.import_job",
+	"coria.v1.QuarantinedFile.import_path",
 }
 
 // TestOnlyTheNamedFieldsCarrySecrets guards where secrets may cross the

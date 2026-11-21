@@ -10,13 +10,15 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { QuarantineReason } from "./quarantine_pb.js";
+import { file_coria_v1_quarantine } from "./quarantine_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file coria/v1/job.proto.
  */
 export const file_coria_v1_job: GenFile = /*@__PURE__*/
-  fileDesc("ChJjb3JpYS92MS9qb2IucHJvdG8SCGNvcmlhLnYxIqQCCglKb2JDb3VudHMSEQoJaW5zdGFuY2VzGAEgASgDEg0KBWJ5dGVzGAIgASgDEhYKDmluc3RhbmNlc19zZW50GAMgASgDEhIKCmJ5dGVzX3NlbnQYBCABKAMSGAoQaW5zdGFuY2VzX3dhcm5lZBgFIAEoAxIUCgxieXRlc193YXJuZWQYBiABKAMSGQoRaW5zdGFuY2VzX3JlZnVzZWQYByABKAMSFQoNYnl0ZXNfcmVmdXNlZBgIIAEoAxIbChNpbnN0YW5jZXNfcmVtYWluaW5nGAkgASgDEhcKD2J5dGVzX3JlbWFpbmluZxgKIAEoAxINCgVzY2FucxgLIAEoAxISCgpzY2Fuc19kb25lGAwgASgDEg4KBmxpc3RlZBgNIAEoCCKAAQoHU2VuZEpvYhIOCgZzZW5kZXIYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSEQoJcmVjZXB0aW9uGAUgASgJEhAKCHJlY2VpdmVyGAYgASgJIpoBCgdEZWlkSm9iEiMKBG1vZGUYASABKA4yFS5jb3JpYS52MS5EZWlkSm9iTW9kZRIPCgdwcm9maWxlGAIgASgJEhcKD3Byb2ZpbGVfdmVyc2lvbhgDIAEoBRIVCg1zdWJqZWN0X2xhYmVsGAQgASgJEhUKDXNlc3Npb25fbGFiZWwYBSABKAkSEgoKc2Nhbl9sYWJlbBgGIAEoCSIuCghTY3J1YkpvYhIPCgdzdG9yYWdlGAEgASgJEhEKCXNjaGVkdWxlZBgCIAEoCCJMCgpSZWJ1aWxkSm9iEiYKBG1vZGUYASABKA4yGC5jb3JpYS52MS5SZWJ1aWxkSm9iTW9kZRIWCg5zY3JhdGNoX3NjaGVtYRgCIAEoCSImCghKb2JUYWxseRILCgNrZXkYASABKAkSDQoFY291bnQYAiABKAMixgQKA0pvYhIKCgJpZBgBIAEoCRIhCgRzZW5kGAIgASgLMhEuY29yaWEudjEuU2VuZEpvYkgAEiEKBGRlaWQYDiABKAsyES5jb3JpYS52MS5EZWlkSm9iSAASIwoFc2NydWIYECABKAsyEi5jb3JpYS52MS5TY3J1YkpvYkgAEicKB3JlYnVpbGQYESABKAsyFC5jb3JpYS52MS5SZWJ1aWxkSm9iSAASIQoFc3RhdGUYAyABKA4yEi5jb3JpYS52MS5Kb2JTdGF0ZRIjCgZjb3VudHMYBCABKAsyEy5jb3JpYS52MS5Kb2JDb3VudHMSDgoGcmVhc29uGAUgASgJEhkKEWNyZWF0ZWRfYnlfa2V5X2lkGAYgASgJEi8KC2NyZWF0ZV90aW1lGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzdGFydF90aW1lGAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzdGF0ZV90aW1lGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRfdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIcmV0cnlfb2YYCyABKAkSEQoJcmV0cnlfam9iGAwgASgJEhsKE2ZhaWx1cmVzX25vdF9saXN0ZWQYDSABKAMSIwoHdGFsbGllcxgPIAMoCzISLmNvcmlhLnYxLkpvYlRhbGx5QgYKBGtpbmQiugIKCkpvYkZhaWx1cmUSEwoLaW5zdGFuY2VfaWQYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSJgoEY29kZRgFIAEoDjIYLmNvcmlhLnYxLkpvYkZhaWx1cmVDb2RlEhMKC3BlZXJfc3RhdHVzGAYgASgFEhUKDXNvcF9jbGFzc191aWQYByABKAkSGwoTdHJhbnNmZXJfc3ludGF4X3VpZBgIIAEoCRIOCgZkZXRhaWwYCSABKAkSKAoEdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGAoQcGVlcl9zdGF0dXNfaHR0cBgLIAEoCBIQCghyZXZpc2lvbhgMIAEoBSK+AQoQQ3JlYXRlSm9iUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSIQoEc2VuZBgCIAEoCzIRLmNvcmlhLnYxLlNlbmRKb2JIABIhCgRkZWlkGAMgASgLMhEuY29yaWEudjEuRGVpZEpvYkgAEiMKBXNjcnViGAQgASgLMhIuY29yaWEudjEuU2NydWJKb2JIABInCgdyZWJ1aWxkGAUgASgLMhQuY29yaWEudjEuUmVidWlsZEpvYkgAQgYKBGtpbmQiLwoRQ3JlYXRlSm9iUmVzcG9uc2USGgoDam9iGAEgASgLMg0uY29yaWEudjEuSm9iIisKDUdldEpvYlJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJIiwKDkdldEpvYlJlc3BvbnNlEhoKA2pvYhgBIAEoCzINLmNvcmlhLnYxLkpvYiLvAQoPTGlzdEpvYnNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIiCgZzdGF0ZXMYAiADKA4yEi5jb3JpYS52MS5Kb2JTdGF0ZRITCgtpbl9wcm9ncmVzcxgDIAEoCBIOCgZzZW5kZXIYBCABKAkSLgoKc3RhcnRfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kX3RpbWUYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCXBhZ2Vfc2l6ZRgHIAEoBRISCgpwYWdlX3Rva2VuGAggASgJIkgKEExpc3RKb2JzUmVzcG9uc2USGwoEam9icxgBIAMoCzINLmNvcmlhLnYxLkpvYhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiLgoQQ2FuY2VsSm9iUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkiLwoRQ2FuY2VsSm9iUmVzcG9uc2USGgoDam9iGAEgASgLMg0uY29yaWEudjEuSm9iIi0KD1JldHJ5Sm9iUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkiTAoQUmV0cnlKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2ISHAoFcmV0cnkYAiABKAsyDS5jb3JpYS52MS5Kb2IidQoWTGlzdEpvYkZhaWx1cmVzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkSGAoQaW5jbHVkZV93YXJuaW5ncxgDIAEoCBIRCglwYWdlX3NpemUYBCABKAUSEgoKcGFnZV90b2tlbhgFIAEoCSJaChdMaXN0Sm9iRmFpbHVyZXNSZXNwb25zZRImCghmYWlsdXJlcxgBIAMoCzIULmNvcmlhLnYxLkpvYkZhaWx1cmUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJKqsBCghKb2JTdGF0ZRIZChVKT0JfU1RBVEVfVU5TUEVDSUZJRUQQABIUChBKT0JfU1RBVEVfUVVFVUVEEAESFQoRSk9CX1NUQVRFX1JVTk5JTkcQAhISCg5KT0JfU1RBVEVfRE9ORRADEhUKEUpPQl9TVEFURV9QQVJUSUFMEAQSFAoQSk9CX1NUQVRFX0ZBSUxFRBAFEhYKEkpPQl9TVEFURV9DQU5DRUxFRBAGKmAKC0RlaWRKb2JNb2RlEh0KGURFSURfSk9CX01PREVfVU5TUEVDSUZJRUQQABIZChVERUlEX0pPQl9NT0RFX0RSWV9SVU4QARIXChNERUlEX0pPQl9NT0RFX0NIRUNLEAIqbgoOUmVidWlsZEpvYk1vZGUSIAocUkVCVUlMRF9KT0JfTU9ERV9VTlNQRUNJRklFRBAAEhwKGFJFQlVJTERfSk9CX01PREVfQ09NUEFSRRABEhwKGFJFQlVJTERfSk9CX01PREVfUkVQTEFDRRACKrYECg5Kb2JGYWlsdXJlQ29kZRIgChxKT0JfRkFJTFVSRV9DT0RFX1VOU1BFQ0lGSUVEEAASIQodSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1JFRlVTRUQQARIhCh1KT0JfRkFJTFVSRV9DT0RFX1BFRVJfV0FSTklORxACEicKI0pPQl9GQUlMVVJFX0NPREVfQ0xBU1NfTk9UX0FDQ0VQVEVEEAMSKAokSk9CX0ZBSUxVUkVfQ09ERV9TWU5UQVhfTk9UX0FDQ0VQVEVEEAQSJQohSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1VOQUNDT1VOVEVEEAUSJwojSk9CX0ZBSUxVUkVfQ09ERV9EQU1BR0VEX0lOX1NUT1JBR0UQBhIkCiBKT0JfRkFJTFVSRV9DT0RFX01FVEFfVU5SRUFEQUJMRRAHEh8KG0pPQl9GQUlMVVJFX0NPREVfV09VTERfSE9MRBAIEiEKHUpPQl9GQUlMVVJFX0NPREVfQ0hFQ0tfRkFJTEVEEAkSHgoaSk9CX0ZBSUxVUkVfQ09ERV9VTkRFQ0lERUQQChIlCiFKT0JfRkFJTFVSRV9DT0RFX05PVF9ERUlERU5USUZJRUQQCxIeChpKT0JfRkFJTFVSRV9DT0RFX1RPT19MQVJHRRAMEicKI0pPQl9GQUlMVVJFX0NPREVfREVMRVRFRF9JTl9BUkNISVZFEA0SHwobSk9CX0ZBSUxVUkVfQ09ERV9OT1RfT05MSU5FEA4yzAMKCkpvYlNlcnZpY2USRAoJQ3JlYXRlSm9iEhouY29yaWEudjEuQ3JlYXRlSm9iUmVxdWVzdBobLmNvcmlhLnYxLkNyZWF0ZUpvYlJlc3BvbnNlEkAKBkdldEpvYhIXLmNvcmlhLnYxLkdldEpvYlJlcXVlc3QaGC5jb3JpYS52MS5HZXRKb2JSZXNwb25zZSIDkAIBEkYKCExpc3RKb2JzEhkuY29yaWEudjEuTGlzdEpvYnNSZXF1ZXN0GhouY29yaWEudjEuTGlzdEpvYnNSZXNwb25zZSIDkAIBEkkKCUNhbmNlbEpvYhIaLmNvcmlhLnYxLkNhbmNlbEpvYlJlcXVlc3QaGy5jb3JpYS52MS5DYW5jZWxKb2JSZXNwb25zZSIDkAICEkYKCFJldHJ5Sm9iEhkuY29yaWEudjEuUmV0cnlKb2JSZXF1ZXN0GhouY29yaWEudjEuUmV0cnlKb2JSZXNwb25zZSIDkAICElsKD0xpc3RKb2JGYWlsdXJlcxIgLmNvcmlhLnYxLkxpc3RKb2JGYWlsdXJlc1JlcXVlc3QaIS5jb3JpYS52MS5MaXN0Sm9iRmFpbHVyZXNSZXNwb25zZSIDkAIBYgZwcm90bzM", [file_google_protobuf_timestamp]);
+  fileDesc("ChJjb3JpYS92MS9qb2IucHJvdG8SCGNvcmlhLnYxIqQCCglKb2JDb3VudHMSEQoJaW5zdGFuY2VzGAEgASgDEg0KBWJ5dGVzGAIgASgDEhYKDmluc3RhbmNlc19zZW50GAMgASgDEhIKCmJ5dGVzX3NlbnQYBCABKAMSGAoQaW5zdGFuY2VzX3dhcm5lZBgFIAEoAxIUCgxieXRlc193YXJuZWQYBiABKAMSGQoRaW5zdGFuY2VzX3JlZnVzZWQYByABKAMSFQoNYnl0ZXNfcmVmdXNlZBgIIAEoAxIbChNpbnN0YW5jZXNfcmVtYWluaW5nGAkgASgDEhcKD2J5dGVzX3JlbWFpbmluZxgKIAEoAxINCgVzY2FucxgLIAEoAxISCgpzY2Fuc19kb25lGAwgASgDEg4KBmxpc3RlZBgNIAEoCCKAAQoHU2VuZEpvYhIOCgZzZW5kZXIYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSEQoJcmVjZXB0aW9uGAUgASgJEhAKCHJlY2VpdmVyGAYgASgJIpoBCgdEZWlkSm9iEiMKBG1vZGUYASABKA4yFS5jb3JpYS52MS5EZWlkSm9iTW9kZRIPCgdwcm9maWxlGAIgASgJEhcKD3Byb2ZpbGVfdmVyc2lvbhgDIAEoBRIVCg1zdWJqZWN0X2xhYmVsGAQgASgJEhUKDXNlc3Npb25fbGFiZWwYBSABKAkSEgoKc2Nhbl9sYWJlbBgGIAEoCSIuCghTY3J1YkpvYhIPCgdzdG9yYWdlGAEgASgJEhEKCXNjaGVkdWxlZBgCIAEoCCJMCgpSZWJ1aWxkSm9iEiYKBG1vZGUYASABKA4yGC5jb3JpYS52MS5SZWJ1aWxkSm9iTW9kZRIWCg5zY3JhdGNoX3NjaGVtYRgCIAEoCSKjAQoJSW1wb3J0Sm9iEhAKCHJlY2VpdmVyGAEgASgJEhEKBHBhdGgYAiABKAlCA4ABARIVCghtYXBfZmlsZRgDIAEoCUIDgAEBEhwKFHN1YmplY3RfZnJvbV9oZWFkZXJzGAQgASgIEiYKBmNvdW50cxgFIAEoCzIWLmNvcmlhLnYxLkltcG9ydENvdW50cxIUCgdtYXBfY3N2GAYgASgMQgOAAQEiSAoPSW1wb3J0U2tpcENvdW50EiYKBGNvZGUYASABKA4yGC5jb3JpYS52MS5JbXBvcnRTa2lwQ29kZRINCgVjb3VudBgCIAEoAyJSChVJbXBvcnRRdWFyYW50aW5lQ291bnQSKgoGcmVhc29uGAEgASgOMhouY29yaWEudjEuUXVhcmFudGluZVJlYXNvbhINCgVjb3VudBgCIAEoAyLUAwoMSW1wb3J0Q291bnRzEg0KBWZvdW5kGAEgASgDEioKB3NraXBwZWQYAiADKAsyGS5jb3JpYS52MS5JbXBvcnRTa2lwQ291bnQSEQoJaGFuZGVkX2luGAMgASgDEhQKDGhhbmRlZF9hZ2FpbhgEIAEoAxIQCghhcmNoaXZlZBgFIAEoAxIUCgxhbHJlYWR5X2hlbGQYBiABKAMSNAoLcXVhcmFudGluZWQYByADKAsyHy5jb3JpYS52MS5JbXBvcnRRdWFyYW50aW5lQ291bnQSDAoEbG9zdBgIIAEoAxISCgpwcm9jZXNzaW5nGAkgASgDEhcKD2J5dGVzX2hhbmRlZF9pbhgKIAEoAxIVCg1sYWJlbF9kaWZmZXJzGAsgASgDEhgKEGxpc3RlZF9ub3RfZm91bmQYDCABKAMSGAoQZm91bmRfbm90X2xpc3RlZBgNIAEoAxIWCg5kaWdlc3RfZGlmZmVycxgOIAEoAxINCgV1bml0cxgPIAEoAxIUCgx1bml0c193YWxrZWQYECABKAMSDgoGZmFpbGVkGBEgASgDEhEKCWRpc2NhcmRlZBgSIAEoAxIcChRjYXRhbG9nc19ub3RfY2hlY2tlZBgTIAEoAyImCghKb2JUYWxseRILCgNrZXkYASABKAkSDQoFY291bnQYAiABKAMi8QQKA0pvYhIKCgJpZBgBIAEoCRIhCgRzZW5kGAIgASgLMhEuY29yaWEudjEuU2VuZEpvYkgAEiEKBGRlaWQYDiABKAsyES5jb3JpYS52MS5EZWlkSm9iSAASIwoFc2NydWIYECABKAsyEi5jb3JpYS52MS5TY3J1YkpvYkgAEicKB3JlYnVpbGQYESABKAsyFC5jb3JpYS52MS5SZWJ1aWxkSm9iSAASKQoKaW1wb3J0X2pvYhgSIAEoCzITLmNvcmlhLnYxLkltcG9ydEpvYkgAEiEKBXN0YXRlGAMgASgOMhIuY29yaWEudjEuSm9iU3RhdGUSIwoGY291bnRzGAQgASgLMhMuY29yaWEudjEuSm9iQ291bnRzEg4KBnJlYXNvbhgFIAEoCRIZChFjcmVhdGVkX2J5X2tleV9pZBgGIAEoCRIvCgtjcmVhdGVfdGltZRgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKc3RhcnRfdGltZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKc3RhdGVfdGltZRgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kX3RpbWUYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCHJldHJ5X29mGAsgASgJEhEKCXJldHJ5X2pvYhgMIAEoCRIbChNmYWlsdXJlc19ub3RfbGlzdGVkGA0gASgDEiMKB3RhbGxpZXMYDyADKAsyEi5jb3JpYS52MS5Kb2JUYWxseUIGCgRraW5kIroCCgpKb2JGYWlsdXJlEhMKC2luc3RhbmNlX2lkGAEgASgJEhUKDXN1YmplY3RfbGFiZWwYAiABKAkSFQoNc2Vzc2lvbl9sYWJlbBgDIAEoCRISCgpzY2FuX2xhYmVsGAQgASgJEiYKBGNvZGUYBSABKA4yGC5jb3JpYS52MS5Kb2JGYWlsdXJlQ29kZRITCgtwZWVyX3N0YXR1cxgGIAEoBRIVCg1zb3BfY2xhc3NfdWlkGAcgASgJEhsKE3RyYW5zZmVyX3N5bnRheF91aWQYCCABKAkSDgoGZGV0YWlsGAkgASgJEigKBHRpbWUYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhgKEHBlZXJfc3RhdHVzX2h0dHAYCyABKAgSEAoIcmV2aXNpb24YDCABKAUi6QEKEENyZWF0ZUpvYlJlcXVlc3QSDgoGdGVuYW50GAEgASgJEiEKBHNlbmQYAiABKAsyES5jb3JpYS52MS5TZW5kSm9iSAASIQoEZGVpZBgDIAEoCzIRLmNvcmlhLnYxLkRlaWRKb2JIABIjCgVzY3J1YhgEIAEoCzISLmNvcmlhLnYxLlNjcnViSm9iSAASJwoHcmVidWlsZBgFIAEoCzIULmNvcmlhLnYxLlJlYnVpbGRKb2JIABIpCgppbXBvcnRfam9iGAYgASgLMhMuY29yaWEudjEuSW1wb3J0Sm9iSABCBgoEa2luZCIvChFDcmVhdGVKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2IiKwoNR2V0Sm9iUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkiLAoOR2V0Sm9iUmVzcG9uc2USGgoDam9iGAEgASgLMg0uY29yaWEudjEuSm9iIu8BCg9MaXN0Sm9ic1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEiIKBnN0YXRlcxgCIAMoDjISLmNvcmlhLnYxLkpvYlN0YXRlEhMKC2luX3Byb2dyZXNzGAMgASgIEg4KBnNlbmRlchgEIAEoCRIuCgpzdGFydF90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRfdGltZRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJcGFnZV9zaXplGAcgASgFEhIKCnBhZ2VfdG9rZW4YCCABKAkiSAoQTGlzdEpvYnNSZXNwb25zZRIbCgRqb2JzGAEgAygLMg0uY29yaWEudjEuSm9iEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIuChBDYW5jZWxKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCSIvChFDYW5jZWxKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2IiLQoPUmV0cnlKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCSJMChBSZXRyeUpvYlJlc3BvbnNlEhoKA2pvYhgBIAEoCzINLmNvcmlhLnYxLkpvYhIcCgVyZXRyeRgCIAEoCzINLmNvcmlhLnYxLkpvYiJ1ChZMaXN0Sm9iRmFpbHVyZXNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCRIYChBpbmNsdWRlX3dhcm5pbmdzGAMgASgIEhEKCXBhZ2Vfc2l6ZRgEIAEoBRISCgpwYWdlX3Rva2VuGAUgASgJIloKF0xpc3RKb2JGYWlsdXJlc1Jlc3BvbnNlEiYKCGZhaWx1cmVzGAEgAygLMhQuY29yaWEudjEuSm9iRmFpbHVyZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkitAIKCkltcG9ydEZpbGUSEQoEcGF0aBgBIAEoCUIDgAEBEiYKBGtpbmQYAiABKA4yGC5jb3JpYS52MS5JbXBvcnRGaWxlS2luZBIrCglza2lwX2NvZGUYAyABKA4yGC5jb3JpYS52MS5JbXBvcnRTa2lwQ29kZRIYChBxdWFyYW50aW5lZF9maWxlGAQgASgJEjUKEXF1YXJhbnRpbmVfcmVhc29uGAUgASgOMhouY29yaWEudjEuUXVhcmFudGluZVJlYXNvbhIMCgR1bml0GAYgASgJEhIKCnNpemVfYnl0ZXMYByABKAMSDgoGZGV0YWlsGAggASgJEigKBHRpbWUYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCXJlY2VwdGlvbhgKIAEoCSLUAQoKSW1wb3J0VW5pdBIKCgJpZBgBIAEoCRITCgZmb2xkZXIYAiABKAlCA4ABARIoCgVzdGF0ZRgDIAEoDjIZLmNvcmlhLnYxLkltcG9ydFVuaXRTdGF0ZRImCgZjb3VudHMYBCABKAsyFi5jb3JpYS52MS5JbXBvcnRDb3VudHMSDgoGcmVhc29uGAUgASgJEhAKCGF0dGVtcHRzGAYgASgFEjEKDXdhbGtfZW5kX3RpbWUYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIpIBChZMaXN0SW1wb3J0RmlsZXNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCRInCgVraW5kcxgDIAMoDjIYLmNvcmlhLnYxLkltcG9ydEZpbGVLaW5kEgwKBHVuaXQYBCABKAkSEQoJcGFnZV9zaXplGAUgASgFEhIKCnBhZ2VfdG9rZW4YBiABKAkiVwoXTGlzdEltcG9ydEZpbGVzUmVzcG9uc2USIwoFZmlsZXMYASADKAsyFC5jb3JpYS52MS5JbXBvcnRGaWxlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSKGAQoWTGlzdEltcG9ydFVuaXRzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkSKQoGc3RhdGVzGAMgAygOMhkuY29yaWEudjEuSW1wb3J0VW5pdFN0YXRlEhEKCXBhZ2Vfc2l6ZRgEIAEoBRISCgpwYWdlX3Rva2VuGAUgASgJIlcKF0xpc3RJbXBvcnRVbml0c1Jlc3BvbnNlEiMKBXVuaXRzGAEgAygLMhQuY29yaWEudjEuSW1wb3J0VW5pdBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkqqwEKCEpvYlN0YXRlEhkKFUpPQl9TVEFURV9VTlNQRUNJRklFRBAAEhQKEEpPQl9TVEFURV9RVUVVRUQQARIVChFKT0JfU1RBVEVfUlVOTklORxACEhIKDkpPQl9TVEFURV9ET05FEAMSFQoRSk9CX1NUQVRFX1BBUlRJQUwQBBIUChBKT0JfU1RBVEVfRkFJTEVEEAUSFgoSSk9CX1NUQVRFX0NBTkNFTEVEEAYqYAoLRGVpZEpvYk1vZGUSHQoZREVJRF9KT0JfTU9ERV9VTlNQRUNJRklFRBAAEhkKFURFSURfSk9CX01PREVfRFJZX1JVThABEhcKE0RFSURfSk9CX01PREVfQ0hFQ0sQAipuCg5SZWJ1aWxkSm9iTW9kZRIgChxSRUJVSUxEX0pPQl9NT0RFX1VOU1BFQ0lGSUVEEAASHAoYUkVCVUlMRF9KT0JfTU9ERV9DT01QQVJFEAESHAoYUkVCVUlMRF9KT0JfTU9ERV9SRVBMQUNFEAIqzgIKDkltcG9ydFNraXBDb2RlEiAKHElNUE9SVF9TS0lQX0NPREVfVU5TUEVDSUZJRUQQABIfChtJTVBPUlRfU0tJUF9DT0RFX05PVF9QQVJUMTAQARIjCh9JTVBPUlRfU0tJUF9DT0RFX09VVFNJREVfTEFZT1VUEAISJQohSU1QT1JUX1NLSVBfQ09ERV9VTk1BUFBFRF9TRVNTSU9OEAMSJwojSU1QT1JUX1NLSVBfQ09ERV9ESVJFQ1RPUllfVE9PX1dJREUQBBIfChtJTVBPUlRfU0tJUF9DT0RFX1VOUkVBREFCTEUQBRIgChxJTVBPUlRfU0tJUF9DT0RFX05PVF9SRUdVTEFSEAYSHgoaSU1QT1JUX1NLSVBfQ09ERV9UT09fTEFSR0UQBxIhCh1JTVBPUlRfU0tJUF9DT0RFX0NBVEFMT0dfRklMRRAIKrYECg5Kb2JGYWlsdXJlQ29kZRIgChxKT0JfRkFJTFVSRV9DT0RFX1VOU1BFQ0lGSUVEEAASIQodSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1JFRlVTRUQQARIhCh1KT0JfRkFJTFVSRV9DT0RFX1BFRVJfV0FSTklORxACEicKI0pPQl9GQUlMVVJFX0NPREVfQ0xBU1NfTk9UX0FDQ0VQVEVEEAMSKAokSk9CX0ZBSUxVUkVfQ09ERV9TWU5UQVhfTk9UX0FDQ0VQVEVEEAQSJQohSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1VOQUNDT1VOVEVEEAUSJwojSk9CX0ZBSUxVUkVfQ09ERV9EQU1BR0VEX0lOX1NUT1JBR0UQBhIkCiBKT0JfRkFJTFVSRV9DT0RFX01FVEFfVU5SRUFEQUJMRRAHEh8KG0pPQl9GQUlMVVJFX0NPREVfV09VTERfSE9MRBAIEiEKHUpPQl9GQUlMVVJFX0NPREVfQ0hFQ0tfRkFJTEVEEAkSHgoaSk9CX0ZBSUxVUkVfQ09ERV9VTkRFQ0lERUQQChIlCiFKT0JfRkFJTFVSRV9DT0RFX05PVF9ERUlERU5USUZJRUQQCxIeChpKT0JfRkFJTFVSRV9DT0RFX1RPT19MQVJHRRAMEicKI0pPQl9GQUlMVVJFX0NPREVfREVMRVRFRF9JTl9BUkNISVZFEA0SHwobSk9CX0ZBSUxVUkVfQ09ERV9OT1RfT05MSU5FEA4qvQIKDkltcG9ydEZpbGVLaW5kEiAKHElNUE9SVF9GSUxFX0tJTkRfVU5TUEVDSUZJRUQQABIcChhJTVBPUlRfRklMRV9LSU5EX1NLSVBQRUQQARIgChxJTVBPUlRfRklMRV9LSU5EX1FVQVJBTlRJTkVEEAISGQoVSU1QT1JUX0ZJTEVfS0lORF9MT1NUEAMSJQohSU1QT1JUX0ZJTEVfS0lORF9MSVNURURfTk9UX0ZPVU5EEAQSJQohSU1QT1JUX0ZJTEVfS0lORF9GT1VORF9OT1RfTElTVEVEEAUSIwofSU1QT1JUX0ZJTEVfS0lORF9ESUdFU1RfRElGRkVSUxAGEhsKF0lNUE9SVF9GSUxFX0tJTkRfRkFJTEVEEAcSHgoaSU1QT1JUX0ZJTEVfS0lORF9ESVNDQVJERUQQCCrpAQoPSW1wb3J0VW5pdFN0YXRlEiEKHUlNUE9SVF9VTklUX1NUQVRFX1VOU1BFQ0lGSUVEEAASHAoYSU1QT1JUX1VOSVRfU1RBVEVfUVVFVUVEEAESHQoZSU1QT1JUX1VOSVRfU1RBVEVfV0FMS0lORxACEhwKGElNUE9SVF9VTklUX1NUQVRFX1dBTEtFRBADEhoKFklNUE9SVF9VTklUX1NUQVRFX0RPTkUQBBIcChhJTVBPUlRfVU5JVF9TVEFURV9GQUlMRUQQBRIeChpJTVBPUlRfVU5JVF9TVEFURV9DQU5DRUxFRBAGMoYFCgpKb2JTZXJ2aWNlEkQKCUNyZWF0ZUpvYhIaLmNvcmlhLnYxLkNyZWF0ZUpvYlJlcXVlc3QaGy5jb3JpYS52MS5DcmVhdGVKb2JSZXNwb25zZRJACgZHZXRKb2ISFy5jb3JpYS52MS5HZXRKb2JSZXF1ZXN0GhguY29yaWEudjEuR2V0Sm9iUmVzcG9uc2UiA5ACARJGCghMaXN0Sm9icxIZLmNvcmlhLnYxLkxpc3RKb2JzUmVxdWVzdBoaLmNvcmlhLnYxLkxpc3RKb2JzUmVzcG9uc2UiA5ACARJJCglDYW5jZWxKb2ISGi5jb3JpYS52MS5DYW5jZWxKb2JSZXF1ZXN0GhsuY29yaWEudjEuQ2FuY2VsSm9iUmVzcG9uc2UiA5ACAhJGCghSZXRyeUpvYhIZLmNvcmlhLnYxLlJldHJ5Sm9iUmVxdWVzdBoaLmNvcmlhLnYxLlJldHJ5Sm9iUmVzcG9uc2UiA5ACAhJbCg9MaXN0Sm9iRmFpbHVyZXMSIC5jb3JpYS52MS5MaXN0Sm9iRmFpbHVyZXNSZXF1ZXN0GiEuY29yaWEudjEuTGlzdEpvYkZhaWx1cmVzUmVzcG9uc2UiA5ACARJbCg9MaXN0SW1wb3J0RmlsZXMSIC5jb3JpYS52MS5MaXN0SW1wb3J0RmlsZXNSZXF1ZXN0GiEuY29yaWEudjEuTGlzdEltcG9ydEZpbGVzUmVzcG9uc2UiA5ACARJbCg9MaXN0SW1wb3J0VW5pdHMSIC5jb3JpYS52MS5MaXN0SW1wb3J0VW5pdHNSZXF1ZXN0GiEuY29yaWEudjEuTGlzdEltcG9ydFVuaXRzUmVzcG9uc2UiA5ACAWIGcHJvdG8z", [file_google_protobuf_timestamp, file_coria_v1_quarantine]);
 
 /**
  * JobCounts are a job's instances and bytes so far. An instance counts in
@@ -26,6 +28,15 @@ export const file_coria_v1_job: GenFile = /*@__PURE__*/
  * for bytes. Bytes are those of the archived files: the DICOM file header
  * and the data set. The counts are totals, never changes since the last
  * answer, so a client that sees one event twice counts nothing twice.
+ *
+ * For an import job they count files met, from ImportCounts: instances is
+ * found plus handed_again (a file handed in twice counts twice);
+ * instances_sent is archived plus already_held; instances_refused is
+ * skipped plus quarantined plus lost plus failed plus discarded;
+ * instances_remaining is processing;
+ * instances_warned is 0; so the identity above holds at every answer. Its
+ * bytes are 0 (ImportCounts.bytes_handed_in has them); scans and
+ * scans_done count its units; listed says every unit is queued.
  *
  * @generated from message coria.v1.JobCounts
  */
@@ -337,6 +348,328 @@ export const RebuildJobSchema: GenMessage<RebuildJob> = /*@__PURE__*/
   messageDesc(file_coria_v1_job, 4);
 
 /**
+ * ImportJob is a job that hands the files of a directory under an import
+ * receiver's root to that receiver (ImportReceiver).
+ *
+ * @generated from message coria.v1.ImportJob
+ */
+export type ImportJob = Message<"coria.v1.ImportJob"> & {
+  /**
+   * The name of the tenant's import receiver the files are handed to.
+   * Required. A receiver removed later keeps its name here, and no other
+   * receiver is given that name while a job names it.
+   *
+   * @generated from field: string receiver = 1;
+   */
+  receiver: string;
+
+  /**
+   * The directory read, by its path relative to the receiver's root, its
+   * segments joined by "/": each 1 to 255 bytes of UTF-8, none "." or
+   * "..", none holding "\", ":" or NUL (a separator or a drive on another
+   * system); no empty segment, no leading or trailing "/"; at most 4096
+   * bytes; empty for the whole root. Each segment is opened under the root
+   * without following a link, and the last must be a directory. A path can
+   * hold what identifies a person, so it is answered only to an operator or
+   * more on the tenant, and empty to a reader, and never written to a log,
+   * an event or an audit entry.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * The map file, by its path relative to the receiver's root, under the
+   * rules of path; it must be inside that root. Empty, with map_csv empty,
+   * uses the receiver's (ImportReceiver.map_file), and none when it has
+   * none. At most one of map_file and map_csv is given. Answered and kept
+   * as path is.
+   *
+   * @generated from field: string map_file = 3;
+   */
+  mapFile: string;
+
+  /**
+   * For the XNAT layout with no map, whether to take {subject} from
+   * Patient Name (0010,0010) of each file as received, as XNAT's default
+   * anonymization script writes the subject there. False, the default,
+   * refuses an XNAT import with no map in CreateJob, since a site that
+   * changed that script would get labels made from whatever its headers
+   * say. True with a map (the job's or the receiver's), or with another
+   * layout, is refused as invalid: the subject would have two sources.
+   *
+   * @generated from field: bool subject_from_headers = 4;
+   */
+  subjectFromHeaders: boolean;
+
+  /**
+   * What became of the files it found so far. Answered by the server; must
+   * be absent in CreateJob.
+   *
+   * @generated from field: coria.v1.ImportCounts counts = 5;
+   */
+  counts?: ImportCounts | undefined;
+
+  /**
+   * The map itself, inline, in the form ImportReceiver describes, for a map
+   * that is not in the root: at most 3 MiB. Kept with the job as given.
+   * It holds subjects' labels as the source system kept them, which can be
+   * names, so it is answered only to an operator or more on the tenant, in
+   * GetJob alone (empty in every other answer, and to a reader), and never
+   * written to a log, an event or an audit entry.
+   *
+   * @generated from field: bytes map_csv = 6;
+   */
+  mapCsv: Uint8Array;
+};
+
+/**
+ * Describes the message coria.v1.ImportJob.
+ * Use `create(ImportJobSchema)` to create a new message.
+ */
+export const ImportJobSchema: GenMessage<ImportJob> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 5);
+
+/**
+ * ImportSkipCount is how many files an import job skipped for one reason.
+ *
+ * @generated from message coria.v1.ImportSkipCount
+ */
+export type ImportSkipCount = Message<"coria.v1.ImportSkipCount"> & {
+  /**
+   * The reason.
+   *
+   * @generated from field: coria.v1.ImportSkipCode code = 1;
+   */
+  code: ImportSkipCode;
+
+  /**
+   * How many.
+   *
+   * @generated from field: int64 count = 2;
+   */
+  count: bigint;
+};
+
+/**
+ * Describes the message coria.v1.ImportSkipCount.
+ * Use `create(ImportSkipCountSchema)` to create a new message.
+ */
+export const ImportSkipCountSchema: GenMessage<ImportSkipCount> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 6);
+
+/**
+ * ImportQuarantineCount is how many files an import job handed in were
+ * quarantined for one reason.
+ *
+ * @generated from message coria.v1.ImportQuarantineCount
+ */
+export type ImportQuarantineCount = Message<"coria.v1.ImportQuarantineCount"> & {
+  /**
+   * The reason.
+   *
+   * @generated from field: coria.v1.QuarantineReason reason = 1;
+   */
+  reason: QuarantineReason;
+
+  /**
+   * How many.
+   *
+   * @generated from field: int64 count = 2;
+   */
+  count: bigint;
+};
+
+/**
+ * Describes the message coria.v1.ImportQuarantineCount.
+ * Use `create(ImportQuarantineCountSchema)` to create a new message.
+ */
+export const ImportQuarantineCountSchema: GenMessage<ImportQuarantineCount> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 7);
+
+/**
+ * ImportCounts are what became of the files an import job, or one of its
+ * units, found so far. Totals, never changes since the last answer. They
+ * reconcile at every answer:
+ *
+ *   found + handed_again = skipped + handed_in
+ *   handed_in = archived + already_held + quarantined + lost + failed
+ *               + discarded + processing
+ *
+ * where skipped and quarantined are the sums of their counts by reason.
+ * The XNAT catalog counts (listed_not_found, found_not_listed,
+ * digest_differs, catalogs_not_checked) and label_differs stand beside
+ * these and are in none of the sums. found, skipped and handed_in are
+ * written with each file's record and the unit's cursor in one
+ * transaction, and each outcome in the transaction that decides it, so
+ * the identities hold at every answer, across a crash too.
+ *
+ * @generated from message coria.v1.ImportCounts
+ */
+export type ImportCounts = Message<"coria.v1.ImportCounts"> & {
+  /**
+   * The entries the walk met that it judged: each file, and each directory
+   * it skipped whole. Directories walked are not counted.
+   *
+   * @generated from field: int64 found = 1;
+   */
+  found: bigint;
+
+  /**
+   * The files skipped, by reason, most first; a reason with none is not
+   * listed.
+   *
+   * @generated from field: repeated coria.v1.ImportSkipCount skipped = 2;
+   */
+  skipped: ImportSkipCount[];
+
+  /**
+   * The files handed to the receiver, each landed in the incoming area.
+   *
+   * @generated from field: int64 handed_in = 3;
+   */
+  handedIn: bigint;
+
+  /**
+   * The files handed in a second time after a unit went on from its cursor
+   * following a crash or a lost lease. Always 0 in this version, which
+   * writes each hand-off with the cursor; kept so that a later version
+   * that batches those writes can count what it hands in again.
+   *
+   * @generated from field: int64 handed_again = 4;
+   */
+  handedAgain: bigint;
+
+  /**
+   * The files archived: a new instance in the catalog.
+   *
+   * @generated from field: int64 archived = 5;
+   */
+  archived: bigint;
+
+  /**
+   * The files the tenant already held: the same SOP Instance UID with the
+   * same checksum as received (for a receiver that de-identifies, the same
+   * keyed checksum) as the instance has or had at any revision, so nothing
+   * new was stored. One matching a revision a correction replaced is
+   * tallied "superseded_revision" in the job's tallies.
+   *
+   * @generated from field: int64 already_held = 6;
+   */
+  alreadyHeld: bigint;
+
+  /**
+   * The files quarantined, by reason, most first.
+   *
+   * @generated from field: repeated coria.v1.ImportQuarantineCount quarantined = 7;
+   */
+  quarantined: ImportQuarantineCount[];
+
+  /**
+   * The files whose copy in the incoming area was gone before the pipeline
+   * read it (QUARANTINE_REASON_INCOMING_LOST). The source in the root is
+   * untouched, so a retry hands it in again.
+   *
+   * @generated from field: int64 lost = 8;
+   */
+  lost: bigint;
+
+  /**
+   * The files handed in that the pipeline has not decided yet. The job
+   * ends only when it is zero, or settling times out.
+   *
+   * @generated from field: int64 processing = 9;
+   */
+  processing: bigint;
+
+  /**
+   * The bytes of the files handed in, as read from the root.
+   *
+   * @generated from field: int64 bytes_handed_in = 10;
+   */
+  bytesHandedIn: bigint;
+
+  /**
+   * The files archived or already held into a session whose label differs
+   * from the one their path would make: a session keeps the label it was
+   * first given.
+   *
+   * @generated from field: int64 label_differs = 11;
+   */
+  labelDiffers: bigint;
+
+  /**
+   * Entries an XNAT resource catalog file (*_catalog.xml, read bounded and
+   * used only as a check) lists that the walk did not find on disk.
+   *
+   * @generated from field: int64 listed_not_found = 12;
+   */
+  listedNotFound: bigint;
+
+  /**
+   * Files the walk found under a resource whose catalog file does not list
+   * them.
+   *
+   * @generated from field: int64 found_not_listed = 13;
+   */
+  foundNotListed: bigint;
+
+  /**
+   * Files whose digest in their catalog file differs from the one computed
+   * from their bytes.
+   *
+   * @generated from field: int64 digest_differs = 14;
+   */
+  digestDiffers: bigint;
+
+  /**
+   * The job's units: the listing unit, and one per folder at the layout's
+   * unit depth. For a unit's own counts, 1.
+   *
+   * @generated from field: int64 units = 15;
+   */
+  units: bigint;
+
+  /**
+   * The units whose walk has ended, whatever it found.
+   *
+   * @generated from field: int64 units_walked = 16;
+   */
+  unitsWalked: bigint;
+
+  /**
+   * The files whose reception failed (ReceptionService), their bytes kept
+   * in the incoming area. RetryReception moves them back to processing.
+   *
+   * @generated from field: int64 failed = 17;
+   */
+  failed: bigint;
+
+  /**
+   * The files whose reception a person discarded
+   * (ReceptionService.DiscardReception).
+   *
+   * @generated from field: int64 discarded = 18;
+   */
+  discarded: bigint;
+
+  /**
+   * The XNAT catalog files larger than the 16 MiB the server reads of one,
+   * which were therefore not checked against the files beside them.
+   *
+   * @generated from field: int64 catalogs_not_checked = 19;
+   */
+  catalogsNotChecked: bigint;
+};
+
+/**
+ * Describes the message coria.v1.ImportCounts.
+ * Use `create(ImportCountsSchema)` to create a new message.
+ */
+export const ImportCountsSchema: GenMessage<ImportCounts> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 8);
+
+/**
  * JobTally is one count of what a deid job found, under a key of fixed
  * words and the profile's names, never a value read from a file. A key is
  * its kind, then its parts, joined by "|":
@@ -379,7 +712,7 @@ export type JobTally = Message<"coria.v1.JobTally"> & {
  * Use `create(JobTallySchema)` to create a new message.
  */
 export const JobTallySchema: GenMessage<JobTally> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 5);
+  messageDesc(file_coria_v1_job, 9);
 
 /**
  * Job is one piece of work in a tenant, and how far it got.
@@ -435,6 +768,15 @@ export type Job = Message<"coria.v1.Job"> & {
      */
     value: RebuildJob;
     case: "rebuild";
+  } | {
+    /**
+     * The files of a directory handed to an import receiver. Named
+     * import_job, not import, since import is a keyword of Python.
+     *
+     * @generated from field: coria.v1.ImportJob import_job = 18;
+     */
+    value: ImportJob;
+    case: "importJob";
   } | { case: undefined; value?: undefined };
 
   /**
@@ -454,9 +796,12 @@ export type Job = Message<"coria.v1.Job"> & {
   /**
    * Why it is not moving, or why it ended as it did, in words for a
    * person, from a fixed set of phrases the server has, such as "sender
-   * down", "sender disabled" or "attempts ran out"; at most 256 bytes.
-   * Empty while nothing holds it back, and for a job done. It never holds
-   * a secret or the peer's own words.
+   * down", "sender disabled" or "attempts ran out"; for an import job
+   * also "receiver disabled", "root unavailable", "settling" (running,
+   * every walk ended, some files without an outcome yet) and "settling
+   * timed out" (ended partial with files still processing); at most 256
+   * bytes. Empty while nothing holds it back, and for a job done.
+   * It never holds a secret, a path or the peer's own words.
    *
    * @generated from field: string reason = 5;
    */
@@ -525,7 +870,8 @@ export type Job = Message<"coria.v1.Job"> & {
   /**
    * Its counts per rule, reason, finding or difference so far, most first
    * and then by key; at most 1001 (JobTally, and the tallies JobService
-   * names for a scrub, a rebuild, and a send's "superseded_during_send").
+   * names for a scrub, a rebuild, a send's "superseded_during_send" and an
+   * import's "superseded_revision").
    * Answered by GetJob alone; empty in every other answer.
    *
    * @generated from field: repeated coria.v1.JobTally tallies = 15;
@@ -538,7 +884,7 @@ export type Job = Message<"coria.v1.Job"> & {
  * Use `create(JobSchema)` to create a new message.
  */
 export const JobSchema: GenMessage<Job> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 6);
+  messageDesc(file_coria_v1_job, 10);
 
 /**
  * JobFailure is one instance of a job that was refused, or sent with a
@@ -649,7 +995,7 @@ export type JobFailure = Message<"coria.v1.JobFailure"> & {
  * Use `create(JobFailureSchema)` to create a new message.
  */
 export const JobFailureSchema: GenMessage<JobFailure> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 7);
+  messageDesc(file_coria_v1_job, 11);
 
 /**
  * CreateJobRequest is the job to make.
@@ -705,6 +1051,15 @@ export type CreateJobRequest = Message<"coria.v1.CreateJobRequest"> & {
      */
     value: RebuildJob;
     case: "rebuild";
+  } | {
+    /**
+     * Hand the files of a directory under an import receiver's root to
+     * it. Its counts must be absent.
+     *
+     * @generated from field: coria.v1.ImportJob import_job = 6;
+     */
+    value: ImportJob;
+    case: "importJob";
   } | { case: undefined; value?: undefined };
 };
 
@@ -713,7 +1068,7 @@ export type CreateJobRequest = Message<"coria.v1.CreateJobRequest"> & {
  * Use `create(CreateJobRequestSchema)` to create a new message.
  */
 export const CreateJobRequestSchema: GenMessage<CreateJobRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 8);
+  messageDesc(file_coria_v1_job, 12);
 
 /**
  * CreateJobResponse is the job made.
@@ -734,7 +1089,7 @@ export type CreateJobResponse = Message<"coria.v1.CreateJobResponse"> & {
  * Use `create(CreateJobResponseSchema)` to create a new message.
  */
 export const CreateJobResponseSchema: GenMessage<CreateJobResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 9);
+  messageDesc(file_coria_v1_job, 13);
 
 /**
  * GetJobRequest names a job.
@@ -762,7 +1117,7 @@ export type GetJobRequest = Message<"coria.v1.GetJobRequest"> & {
  * Use `create(GetJobRequestSchema)` to create a new message.
  */
 export const GetJobRequestSchema: GenMessage<GetJobRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 10);
+  messageDesc(file_coria_v1_job, 14);
 
 /**
  * GetJobResponse is the job named.
@@ -783,7 +1138,7 @@ export type GetJobResponse = Message<"coria.v1.GetJobResponse"> & {
  * Use `create(GetJobResponseSchema)` to create a new message.
  */
 export const GetJobResponseSchema: GenMessage<GetJobResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 11);
+  messageDesc(file_coria_v1_job, 15);
 
 /**
  * ListJobsRequest asks for a page of a tenant's jobs. Every filter given
@@ -860,7 +1215,7 @@ export type ListJobsRequest = Message<"coria.v1.ListJobsRequest"> & {
  * Use `create(ListJobsRequestSchema)` to create a new message.
  */
 export const ListJobsRequestSchema: GenMessage<ListJobsRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 12);
+  messageDesc(file_coria_v1_job, 16);
 
 /**
  * ListJobsResponse is a page of jobs.
@@ -888,7 +1243,7 @@ export type ListJobsResponse = Message<"coria.v1.ListJobsResponse"> & {
  * Use `create(ListJobsResponseSchema)` to create a new message.
  */
 export const ListJobsResponseSchema: GenMessage<ListJobsResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 13);
+  messageDesc(file_coria_v1_job, 17);
 
 /**
  * CancelJobRequest names the job to cancel.
@@ -916,7 +1271,7 @@ export type CancelJobRequest = Message<"coria.v1.CancelJobRequest"> & {
  * Use `create(CancelJobRequestSchema)` to create a new message.
  */
 export const CancelJobRequestSchema: GenMessage<CancelJobRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 14);
+  messageDesc(file_coria_v1_job, 18);
 
 /**
  * CancelJobResponse is the job canceled.
@@ -937,7 +1292,7 @@ export type CancelJobResponse = Message<"coria.v1.CancelJobResponse"> & {
  * Use `create(CancelJobResponseSchema)` to create a new message.
  */
 export const CancelJobResponseSchema: GenMessage<CancelJobResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 15);
+  messageDesc(file_coria_v1_job, 19);
 
 /**
  * RetryJobRequest names the ended job whose unsent instances to send.
@@ -965,7 +1320,7 @@ export type RetryJobRequest = Message<"coria.v1.RetryJobRequest"> & {
  * Use `create(RetryJobRequestSchema)` to create a new message.
  */
 export const RetryJobRequestSchema: GenMessage<RetryJobRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 16);
+  messageDesc(file_coria_v1_job, 20);
 
 /**
  * RetryJobResponse is the ended job and the one that sends what it did not.
@@ -993,7 +1348,7 @@ export type RetryJobResponse = Message<"coria.v1.RetryJobResponse"> & {
  * Use `create(RetryJobResponseSchema)` to create a new message.
  */
 export const RetryJobResponseSchema: GenMessage<RetryJobResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 17);
+  messageDesc(file_coria_v1_job, 21);
 
 /**
  * ListJobFailuresRequest asks for a page of a job's failures.
@@ -1046,7 +1401,7 @@ export type ListJobFailuresRequest = Message<"coria.v1.ListJobFailuresRequest"> 
  * Use `create(ListJobFailuresRequestSchema)` to create a new message.
  */
 export const ListJobFailuresRequestSchema: GenMessage<ListJobFailuresRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 18);
+  messageDesc(file_coria_v1_job, 22);
 
 /**
  * ListJobFailuresResponse is a page of a job's failures.
@@ -1074,7 +1429,343 @@ export type ListJobFailuresResponse = Message<"coria.v1.ListJobFailuresResponse"
  * Use `create(ListJobFailuresResponseSchema)` to create a new message.
  */
 export const ListJobFailuresResponseSchema: GenMessage<ListJobFailuresResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 19);
+  messageDesc(file_coria_v1_job, 23);
+
+/**
+ * ImportFile is one file of an import job that did not reach the archive,
+ * or that its XNAT catalog files disagree about.
+ *
+ * @generated from message coria.v1.ImportFile
+ */
+export type ImportFile = Message<"coria.v1.ImportFile"> & {
+  /**
+   * Its path relative to the receiver's root, its segments joined by "/".
+   * It can hold what identifies a person: answered only to an operator or
+   * more on the tenant, never written to a log, an event or an audit entry.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * What it is listed for.
+   *
+   * @generated from field: coria.v1.ImportFileKind kind = 2;
+   */
+  kind: ImportFileKind;
+
+  /**
+   * Why it was skipped, for IMPORT_FILE_KIND_SKIPPED;
+   * IMPORT_SKIP_CODE_UNSPECIFIED otherwise.
+   *
+   * @generated from field: coria.v1.ImportSkipCode skip_code = 3;
+   */
+  skipCode: ImportSkipCode;
+
+  /**
+   * The id of its quarantine record (QuarantineService), for
+   * IMPORT_FILE_KIND_QUARANTINED; empty otherwise.
+   *
+   * @generated from field: string quarantined_file = 4;
+   */
+  quarantinedFile: string;
+
+  /**
+   * Why it was quarantined, for IMPORT_FILE_KIND_QUARANTINED;
+   * QUARANTINE_REASON_UNSPECIFIED otherwise.
+   *
+   * @generated from field: coria.v1.QuarantineReason quarantine_reason = 5;
+   */
+  quarantineReason: QuarantineReason;
+
+  /**
+   * The id of the unit that found it (ImportUnit.id).
+   *
+   * @generated from field: string unit = 6;
+   */
+  unit: string;
+
+  /**
+   * Its size in bytes as the walk saw it; 0 when it was not read, as a
+   * directory skipped whole or a file listed and not found.
+   *
+   * @generated from field: int64 size_bytes = 7;
+   */
+  sizeBytes: bigint;
+
+  /**
+   * More about it, in words for a person, from a fixed set of phrases the
+   * server has, such as "import.max-dir-entries" for a directory too wide;
+   * at most 256 bytes. Never the operating system's own text, which can
+   * repeat a path.
+   *
+   * @generated from field: string detail = 8;
+   */
+  detail: string;
+
+  /**
+   * When it was listed.
+   *
+   * @generated from field: google.protobuf.Timestamp time = 9;
+   */
+  time?: Timestamp | undefined;
+
+  /**
+   * The id of the reception it was handed into (ReceptionService), for a
+   * file quarantined, failed or discarded, so a failed one can be retried
+   * there; empty otherwise.
+   *
+   * @generated from field: string reception = 10;
+   */
+  reception: string;
+};
+
+/**
+ * Describes the message coria.v1.ImportFile.
+ * Use `create(ImportFileSchema)` to create a new message.
+ */
+export const ImportFileSchema: GenMessage<ImportFile> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 24);
+
+/**
+ * ImportUnit is one unit of an import job: one folder, walked and resumed
+ * on its own.
+ *
+ * @generated from message coria.v1.ImportUnit
+ */
+export type ImportUnit = Message<"coria.v1.ImportUnit"> & {
+  /**
+   * The unit's id, made by the server, unique in the job. Opaque, at most
+   * 64 bytes; it names no path.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * Its folder relative to the receiver's root, its segments joined by "/".
+   * It can hold what identifies a person: answered only to an operator or
+   * more on the tenant, never written to a log, an event or an audit entry.
+   *
+   * @generated from field: string folder = 2;
+   */
+  folder: string;
+
+  /**
+   * Where it is.
+   *
+   * @generated from field: coria.v1.ImportUnitState state = 3;
+   */
+  state: ImportUnitState;
+
+  /**
+   * What became of the files it found so far; units is 1.
+   *
+   * @generated from field: coria.v1.ImportCounts counts = 4;
+   */
+  counts?: ImportCounts | undefined;
+
+  /**
+   * Why it is not moving, or why it failed, from the same fixed set of
+   * phrases as Job.reason; at most 256 bytes. Never a path.
+   *
+   * @generated from field: string reason = 5;
+   */
+  reason: string;
+
+  /**
+   * The attempts it has used, of 30.
+   *
+   * @generated from field: int32 attempts = 6;
+   */
+  attempts: number;
+
+  /**
+   * When its walk ended. Absent until then.
+   *
+   * @generated from field: google.protobuf.Timestamp walk_end_time = 7;
+   */
+  walkEndTime?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message coria.v1.ImportUnit.
+ * Use `create(ImportUnitSchema)` to create a new message.
+ */
+export const ImportUnitSchema: GenMessage<ImportUnit> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 25);
+
+/**
+ * ListImportFilesRequest asks for a page of an import job's files that did
+ * not reach the archive.
+ *
+ * @generated from message coria.v1.ListImportFilesRequest
+ */
+export type ListImportFilesRequest = Message<"coria.v1.ListImportFilesRequest"> & {
+  /**
+   * The tenant, by name. Required.
+   *
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * The job's id. Required; at most 64 bytes.
+   *
+   * @generated from field: string id = 2;
+   */
+  id: string;
+
+  /**
+   * Only the files of these kinds. Empty for every kind; at most 16
+   * values, none of them IMPORT_FILE_KIND_UNSPECIFIED.
+   *
+   * @generated from field: repeated coria.v1.ImportFileKind kinds = 3;
+   */
+  kinds: ImportFileKind[];
+
+  /**
+   * Only the files of the unit with this id. Empty for every unit.
+   *
+   * @generated from field: string unit = 4;
+   */
+  unit: string;
+
+  /**
+   * The most files to answer: zero means 100; at most 1000. A larger or
+   * negative value is invalid.
+   *
+   * @generated from field: int32 page_size = 5;
+   */
+  pageSize: number;
+
+  /**
+   * The next_page_token of the previous page, or empty for the first page.
+   * Opaque; a position it holds is sealed by the server, so a token a client
+   * logs shows no path; at most 1 KiB; refused as invalid with a tenant,
+   * job or filters other than those it was made with.
+   *
+   * @generated from field: string page_token = 6;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message coria.v1.ListImportFilesRequest.
+ * Use `create(ListImportFilesRequestSchema)` to create a new message.
+ */
+export const ListImportFilesRequestSchema: GenMessage<ListImportFilesRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 26);
+
+/**
+ * ListImportFilesResponse is a page of an import job's files.
+ *
+ * @generated from message coria.v1.ListImportFilesResponse
+ */
+export type ListImportFilesResponse = Message<"coria.v1.ListImportFilesResponse"> & {
+  /**
+   * The files of this page, by path.
+   *
+   * @generated from field: repeated coria.v1.ImportFile files = 1;
+   */
+  files: ImportFile[];
+
+  /**
+   * The page_token that asks for the next page. Empty on the last page.
+   *
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message coria.v1.ListImportFilesResponse.
+ * Use `create(ListImportFilesResponseSchema)` to create a new message.
+ */
+export const ListImportFilesResponseSchema: GenMessage<ListImportFilesResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 27);
+
+/**
+ * ListImportUnitsRequest asks for a page of an import job's units.
+ *
+ * @generated from message coria.v1.ListImportUnitsRequest
+ */
+export type ListImportUnitsRequest = Message<"coria.v1.ListImportUnitsRequest"> & {
+  /**
+   * The tenant, by name. Required.
+   *
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * The job's id. Required; at most 64 bytes.
+   *
+   * @generated from field: string id = 2;
+   */
+  id: string;
+
+  /**
+   * Only the units in one of these states. Empty for every state; at most
+   * 16 values, none of them IMPORT_UNIT_STATE_UNSPECIFIED.
+   *
+   * @generated from field: repeated coria.v1.ImportUnitState states = 3;
+   */
+  states: ImportUnitState[];
+
+  /**
+   * The most units to answer: zero means 100; at most 1000. A larger or
+   * negative value is invalid.
+   *
+   * @generated from field: int32 page_size = 4;
+   */
+  pageSize: number;
+
+  /**
+   * The next_page_token of the previous page, or empty for the first page.
+   * Opaque; a position it holds is sealed by the server, so a token a client
+   * logs shows no path; at most 1 KiB; refused as invalid with a tenant,
+   * job or states other than those it was made with.
+   *
+   * @generated from field: string page_token = 5;
+   */
+  pageToken: string;
+};
+
+/**
+ * Describes the message coria.v1.ListImportUnitsRequest.
+ * Use `create(ListImportUnitsRequestSchema)` to create a new message.
+ */
+export const ListImportUnitsRequestSchema: GenMessage<ListImportUnitsRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 28);
+
+/**
+ * ListImportUnitsResponse is a page of an import job's units.
+ *
+ * @generated from message coria.v1.ListImportUnitsResponse
+ */
+export type ListImportUnitsResponse = Message<"coria.v1.ListImportUnitsResponse"> & {
+  /**
+   * The units of this page, by folder.
+   *
+   * @generated from field: repeated coria.v1.ImportUnit units = 1;
+   */
+  units: ImportUnit[];
+
+  /**
+   * The page_token that asks for the next page. Empty on the last page.
+   *
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message coria.v1.ListImportUnitsResponse.
+ * Use `create(ListImportUnitsResponseSchema)` to create a new message.
+ */
+export const ListImportUnitsResponseSchema: GenMessage<ListImportUnitsResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 29);
 
 /**
  * JobState is where a job is. A job goes forward only; done, partial,
@@ -1094,14 +1785,18 @@ export enum JobState {
 
   /**
    * Made; none of its work has started yet, as while its sender is down or
-   * disabled, or the server's bounds on associations are taken.
+   * disabled, or the server's bounds on associations are taken; for an
+   * import, while its receiver is disabled or the bounds on import units
+   * are taken.
    *
    * @generated from enum value: JOB_STATE_QUEUED = 1;
    */
   QUEUED = 1,
 
   /**
-   * Some of its work has started.
+   * Some of its work has started. An import stays running, with the reason
+   * "settling", after its walks end until every file it handed in has an
+   * outcome.
    *
    * @generated from enum value: JOB_STATE_RUNNING = 2;
    */
@@ -1109,7 +1804,10 @@ export enum JobState {
 
   /**
    * Ended. Every instance was sent, some perhaps with a warning; for a
-   * deid job, every instance passed, some perhaps with a note.
+   * deid job, every instance passed, some perhaps with a note; for an
+   * import, every file found has an outcome and none was quarantined,
+   * lost, failed, discarded, or skipped for a cause that may hide DICOM
+   * (unreadable, too large, a directory too wide).
    *
    * @generated from enum value: JOB_STATE_DONE = 3;
    */
@@ -1117,7 +1815,9 @@ export enum JobState {
 
   /**
    * Ended. Some instances were refused; every other one was sent. For a
-   * deid job: some did not pass.
+   * deid job: some did not pass. For an import: some files were
+   * quarantined, lost, failed, discarded or skipped for such a cause, or
+   * settling timed out with files still processing.
    *
    * @generated from enum value: JOB_STATE_PARTIAL = 4;
    */
@@ -1125,7 +1825,9 @@ export enum JobState {
 
   /**
    * Ended without finishing: attempts ran out with instances not sent. The
-   * job's reason says why. RetryJob sends what it did not.
+   * job's reason says why. RetryJob sends what it did not. For an import:
+   * a unit's attempts ran out or its root was unavailable; what it handed
+   * in still goes on to its outcome, counted.
    *
    * @generated from enum value: JOB_STATE_FAILED = 5;
    */
@@ -1133,6 +1835,7 @@ export enum JobState {
 
   /**
    * Ended by CancelJob, or by the removal of its sender with cancel_jobs.
+   * An import's files already handed in are not withdrawn.
    *
    * @generated from enum value: JOB_STATE_CANCELED = 6;
    */
@@ -1219,6 +1922,95 @@ export enum RebuildJobMode {
  */
 export const RebuildJobModeSchema: GenEnum<RebuildJobMode> = /*@__PURE__*/
   enumDesc(file_coria_v1_job, 2);
+
+/**
+ * ImportSkipCode is why an import job did not hand a file in. A code added
+ * in a later version is a new value; a client shows a code it does not
+ * know as skipped for a reason it cannot name.
+ *
+ * @generated from enum coria.v1.ImportSkipCode
+ */
+export enum ImportSkipCode {
+  /**
+   * Never answered by the server.
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Its first 132 bytes are not a Part 10 preamble followed by "DICM"
+   * (PS3.10 7.1): not a DICOM file, or a data set written without its file
+   * header, which carries no transfer syntax to read it by.
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_NOT_PART10 = 1;
+   */
+  NOT_PART10 = 1,
+
+  /**
+   * Its path does not match the receiver's layout.
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_OUTSIDE_LAYOUT = 2;
+   */
+  OUTSIDE_LAYOUT = 2,
+
+  /**
+   * Its session folder is not listed by the job's map file.
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_UNMAPPED_SESSION = 3;
+   */
+  UNMAPPED_SESSION = 3,
+
+  /**
+   * A directory holding more entries than the setting
+   * import.max-dir-entries, skipped whole without reading its files; it
+   * counts once, as one entry found. Raising the setting and retrying the
+   * job imports it.
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE = 4;
+   */
+  DIRECTORY_TOO_WIDE = 4,
+
+  /**
+   * A file or directory the server could not open or read through (no
+   * permission, an input or output error, removed while the unit ran).
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_UNREADABLE = 5;
+   */
+  UNREADABLE = 5,
+
+  /**
+   * Not a regular file or directory: a symbolic link, which an import never
+   * follows, a device, a socket or a named pipe.
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_NOT_REGULAR = 6;
+   */
+  NOT_REGULAR = 6,
+
+  /**
+   * Larger than the receiver's max_file_bytes. It is not copied, so it does
+   * not take room in the incoming area or a quarantine record; it makes the
+   * job partial, since it may be DICOM the archive lacks.
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_TOO_LARGE = 7;
+   */
+  TOO_LARGE = 7,
+
+  /**
+   * An XNAT resource catalog file (a name ending "_catalog.xml"), read
+   * only to check the files beside it. Counted, not listed by
+   * ListImportFiles.
+   *
+   * @generated from enum value: IMPORT_SKIP_CODE_CATALOG_FILE = 8;
+   */
+  CATALOG_FILE = 8,
+}
+
+/**
+ * Describes the enum coria.v1.ImportSkipCode.
+ */
+export const ImportSkipCodeSchema: GenEnum<ImportSkipCode> = /*@__PURE__*/
+  enumDesc(file_coria_v1_job, 3);
 
 /**
  * JobFailureCode is why an instance of a job was refused, or that it was
@@ -1373,7 +2165,156 @@ export enum JobFailureCode {
  * Describes the enum coria.v1.JobFailureCode.
  */
 export const JobFailureCodeSchema: GenEnum<JobFailureCode> = /*@__PURE__*/
-  enumDesc(file_coria_v1_job, 3);
+  enumDesc(file_coria_v1_job, 4);
+
+/**
+ * ImportFileKind is what an import job's listed file is listed for. A kind
+ * added in a later version is a new value; a client shows a kind it does
+ * not know as a file that did not reach the archive.
+ *
+ * @generated from enum coria.v1.ImportFileKind
+ */
+export enum ImportFileKind {
+  /**
+   * Never answered by the server. As a filter, it is refused as invalid.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Not handed in; skip_code says why.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_SKIPPED = 1;
+   */
+  SKIPPED = 1,
+
+  /**
+   * Handed in and quarantined; quarantined_file and quarantine_reason say
+   * which record and why.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_QUARANTINED = 2;
+   */
+  QUARANTINED = 2,
+
+  /**
+   * Handed in, and its copy in the incoming area was gone before the
+   * pipeline read it.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_LOST = 3;
+   */
+  LOST = 3,
+
+  /**
+   * Listed by an XNAT resource catalog file and not found on disk; path is
+   * where the catalog says it is.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_LISTED_NOT_FOUND = 4;
+   */
+  LISTED_NOT_FOUND = 4,
+
+  /**
+   * Found on disk under a resource whose catalog file does not list it.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_FOUND_NOT_LISTED = 5;
+   */
+  FOUND_NOT_LISTED = 5,
+
+  /**
+   * Its digest in its catalog file differs from the one computed from its
+   * bytes.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_DIGEST_DIFFERS = 6;
+   */
+  DIGEST_DIFFERS = 6,
+
+  /**
+   * Handed in, and its reception failed; RetryReception tries it again.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_FAILED = 7;
+   */
+  FAILED = 7,
+
+  /**
+   * Handed in, and its reception was discarded by a person.
+   *
+   * @generated from enum value: IMPORT_FILE_KIND_DISCARDED = 8;
+   */
+  DISCARDED = 8,
+}
+
+/**
+ * Describes the enum coria.v1.ImportFileKind.
+ */
+export const ImportFileKindSchema: GenEnum<ImportFileKind> = /*@__PURE__*/
+  enumDesc(file_coria_v1_job, 5);
+
+/**
+ * ImportUnitState is where one unit of an import job is. A unit goes
+ * forward only; walked waits for outcomes, and done, failed and canceled
+ * are ends.
+ *
+ * @generated from enum coria.v1.ImportUnitState
+ */
+export enum ImportUnitState {
+  /**
+   * Never answered by the server.
+   *
+   * @generated from enum value: IMPORT_UNIT_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Queued; its walk has not started, as while the tenant runs
+   * import.max-units others or the server import.server-max-units.
+   *
+   * @generated from enum value: IMPORT_UNIT_STATE_QUEUED = 1;
+   */
+  QUEUED = 1,
+
+  /**
+   * Walking its folder and handing files in.
+   *
+   * @generated from enum value: IMPORT_UNIT_STATE_WALKING = 2;
+   */
+  WALKING = 2,
+
+  /**
+   * Its walk has ended; some files it handed in have no outcome yet.
+   *
+   * @generated from enum value: IMPORT_UNIT_STATE_WALKED = 3;
+   */
+  WALKED = 3,
+
+  /**
+   * Its walk has ended and every file it handed in has an outcome.
+   *
+   * @generated from enum value: IMPORT_UNIT_STATE_DONE = 4;
+   */
+  DONE = 4,
+
+  /**
+   * Its walk ended unfinished: its attempts ran out, or its root was
+   * unavailable ("root unavailable"); reason says which. What it handed in
+   * still goes on to its outcome and is counted.
+   *
+   * @generated from enum value: IMPORT_UNIT_STATE_FAILED = 5;
+   */
+  FAILED = 5,
+
+  /**
+   * Ended by CancelJob before its walk ended.
+   *
+   * @generated from enum value: IMPORT_UNIT_STATE_CANCELED = 6;
+   */
+  CANCELED = 6,
+}
+
+/**
+ * Describes the enum coria.v1.ImportUnitState.
+ */
+export const ImportUnitStateSchema: GenEnum<ImportUnitState> = /*@__PURE__*/
+  enumDesc(file_coria_v1_job, 6);
 
 /**
  * JobService makes, reads, cancels and retries a tenant's jobs. A job is a
@@ -1386,8 +2327,10 @@ export const JobFailureCodeSchema: GenEnum<JobFailureCode> = /*@__PURE__*/
  * profile version, changing nothing (DeidJob); scrub, every stored object of
  * the tenant read again and compared with what the catalog and the scan's
  * manifest say it should be (ScrubJob); or rebuild, the catalog made again
- * from what the tenant's storages hold (RebuildJob). A kind added later is a
- * new member of Job's kind, served by these same methods.
+ * from what the tenant's storages hold (RebuildJob); or import, the files of
+ * a directory under one of the installation's roots handed to an import
+ * receiver (ImportJob). A kind added later is a new member of Job's kind,
+ * served by these same methods.
  *
  * What a send job sends. The instances the catalog held for its target when
  * the job was made: each instance archived at or before the job's
@@ -1581,6 +2524,121 @@ export const JobFailureCodeSchema: GenEnum<JobFailureCode> = /*@__PURE__*/
  * "unresolved_correction", "series_on_two_storages", and "activated" once
  * a replace made its shadow the catalog in use.
  *
+ * What an import job does. It reads the directory its path names under its
+ * receiver's root (ImportReceiver) and hands each DICOM file in it to the
+ * receiver, one at a time, as a file that arrived; it never writes, moves
+ * or deletes anything in the root. Its work is a listing unit and one unit
+ * per folder. The listing unit lists the folders at the layout's unit depth
+ * under the job's path, a page at a time, and queues one unit per folder
+ * (one unit for a path at or below that depth); it also judges every file
+ * it meets above that depth (skipped as outside the layout, not DICOM and
+ * so on, or handed in when the layout matches it), and ListImportUnits
+ * shows it as a unit of its own, its folder the job's path. Each unit walks
+ * its folder one directory at a time, in the order of its paths compared
+ * segment by segment, each segment byte by byte, so a directory's whole
+ * subtree comes before the next name of that directory ("a/b/c" before
+ * "a/b.d", which plain byte order of whole paths would reverse, "/" being
+ * below "."); its cursor is a path in that order. A directory is read as
+ * names only, at most the installation's setting import.max-dir-entries of
+ * them (a whole number from 1000 to 10000000; installation-only, since it
+ * bounds the server's memory; built-in default "200000", about 20 MiB of
+ * names): the bound is on reading one directory, not on the walk, which
+ * holds one directory's names at a time. A directory with more is not read
+ * further and is skipped whole as IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE, so
+ * raising the setting (it applies at the next directory read, no restart)
+ * and retrying imports it. Each path segment is opened without following a
+ * link (no-follow open, the type read without following, as lstat does), so
+ * a link, wherever it is in the tree, is skipped as
+ * IMPORT_SKIP_CODE_NOT_REGULAR and nothing outside the root is ever opened.
+ * Before a file is handed in, its first 132 bytes are read: one without the
+ * Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
+ * IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
+ * notes, images and archives do not fill it. An XNAT resource catalog file
+ * (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
+ * not listed: it is read, at most 16 MiB of it, only to check the files
+ * beside it (a larger one is not checked, and counted in
+ * catalogs_not_checked).
+ *
+ * A unit writes each file's record (its arrival, or the row of its skip)
+ * in the same transaction as its cursor and its counts found, skipped and
+ * handed_in, fenced by its attempt. After a crash or a lost lease it goes
+ * on after its cursor, and no file is handed in twice, so handed_again is
+ * always 0 in this version; it is kept for a later version that batches
+ * these writes. The copy a hand-off lands in the incoming area is named by
+ * the arrival's id, never by its path, and the arrival's record carries
+ * the path, in the tenant's database. A unit stops with its place kept,
+ * using no attempt, while the receiver is disabled, the archive cannot
+ * take files (the incoming area or the storage below its reserve, the
+ * tenant at its incoming.limit or not ready), the tenant is restoring,
+ * moved or fenced, or a rebuild that replaces the catalog runs (whose
+ * receivers refuse new data); a tenant restored from a backup resumes each
+ * unit from the cursor the backup holds. The tenant runs at most its
+ * setting import.max-units of import units at once (a whole number from 1
+ * to 64; set on a tenant by the installation's admin only, whose
+ * installation value is the default for every tenant; built-in default
+ * "4"), and the server at most import.server-max-units of every tenant's
+ * together (a whole number from 1 to 256; installation-only; built-in
+ * default "8"), so an import never takes the pipeline from live receivers.
+ * A unit whose root no longer resolves to the directory it resolved to
+ * when the job was made (a link in its path changed), or cannot be opened,
+ * ends failed at once with the reason "root unavailable"; that is not a
+ * skip of any file.
+ *
+ * An import is done when every file it found has an outcome. A hand-off
+ * returns once the file is in the server's incoming area, before it is
+ * identified, de-identified, archived or quarantined; each file handed in
+ * carries the job and its unit as its arrival's source, kept with the
+ * received file and with any reception RetryReception makes for it, and
+ * the pipeline adds its outcome to the job's counts in the transaction
+ * that decides it: archived, already held, quarantined (by reason), lost,
+ * failed (its reception failed) or discarded (its reception discarded,
+ * ReceptionService.DiscardReception). RetryReception moves a failed file
+ * back to processing; a quarantined file later released keeps its first
+ * outcome, quarantined, and the release is the quarantine's record, not
+ * the job's. So the counts reconcile, per job and per unit (ImportCounts,
+ * ListImportUnits): found plus handed again equals skipped plus handed in,
+ * and handed in equals archived plus already held plus quarantined plus
+ * lost plus failed plus discarded plus processing.
+ *
+ * The archive as it is now decides a file's outcome. A file whose SOP
+ * Instance UID the tenant holds and whose received checksum equals that of
+ * any revision the instance has had counts already held (tallied
+ * "superseded_revision" when it is not the current one), so a tree read
+ * again after a correction does not bring an old version back. A file of a
+ * target deleted from the archive (CorrectionService.Delete) is
+ * quarantined as QUARANTINE_REASON_WAS_DELETED, as from any receiver, and
+ * makes the job partial. A route condition on an AE title never holds for
+ * a file an import hands in, since none came by association.
+ *
+ * After its last unit's walk the job stays running, with the reason
+ * "settling", until processing is zero, and only then ends. A job whose
+ * files are still in a reception an hour past the receiver's max_open_time
+ * after the last walk ended ends partial, with the reason "settling timed
+ * out" and the files left in processing counted. Its counts keep moving
+ * after it ended until processing is zero, and EVENT_TYPE_JOB_PROGRESS
+ * events go on for it until then; its state does not change. Its states:
+ * done, every file found has an outcome and none was quarantined, lost,
+ * failed or discarded, or skipped as unreadable, too large or as a
+ * directory too wide (files skipped by design, not DICOM, outside the
+ * layout, of an unmapped session, not regular files or catalog files,
+ * leave it done); partial, otherwise; failed, a unit's attempts ran out or
+ * its root was unavailable, with what it had handed in still counted and
+ * still settling; canceled, by CancelJob, which withdraws nothing already
+ * handed in: those files go on to their outcome and are counted. Each file
+ * skipped (but catalog files), quarantined, lost, failed or discarded is
+ * listed, with its path, to an operator by ListImportFiles, up to
+ * job.failures-kept. A job made again over the same tree finds the files
+ * added since as new and the others as already held. Events carry counts
+ * only (JobCounts), never a path; the audit records the receiver's root by
+ * name and the job's id.
+ *
+ * A path can hold what identifies a person (a folder named after a
+ * patient), so a path is kept only in the tenant's database (a unit's
+ * cursor and folder, a skipped file's row, an arrival's record, a
+ * quarantined file's record), answered only to an operator or more on the
+ * tenant, and never written to a log, an event or an audit entry; and so
+ * is a map, inline or read from a file.
+ *
  * A job meets the archive as it is now, before each instance: an instance
  * deleted since the job was made is counted refused
  * (JOB_FAILURE_CODE_DELETED_IN_ARCHIVE), one marked damaged fails as data
@@ -1609,24 +2667,55 @@ export const JobService: GenService<{
    * storage, or none for every storage. A rebuild job names its mode; one
    * that replaces the catalog also needs admin on the tenant, checked after
    * the requirement below, since it empties the catalog and fills it again,
-   * and is answered permission denied to an operator.
+   * and is answered permission denied to an operator. An import job names
+   * an import receiver of the tenant, a path under its root and optionally
+   * a map (a file under the root, or inline); the root is resolved, the
+   * path opened and the map read and checked before the job is made, so a
+   * tree that is not there or a map that names two subjects for one
+   * session is refused here, not found out later. The map is kept with the
+   * job as it was read then, so a map file changed later changes nothing
+   * of the job or of a retry of it. A refusal of a map names the line it
+   * found at fault by number only, never a cell, the header or a path. An
+   * import job of a disabled receiver is made and waits, its units queued,
+   * until the receiver is enabled, as a send job waits for its sender. Two
+   * import jobs of one receiver never read the same files at once: a job
+   * whose path equals, lies under or contains (segment by segment, so "a"
+   * contains "a/b" and not "ab") the path of a queued or running import job
+   * of the same receiver is refused.
    *
    * Role: operator on the tenant.
    * Audit: one entry in the tenant's log, with the new job's id as its
    * object, and its kind, its sender and the path of labels of its target
-   * in details; for a scrub, its storage; for a rebuild, its mode.
+   * in details; for a scrub, its storage; for a rebuild, its mode; for an
+   * import, its receiver and its root's name, never its path or map file.
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
    * does not exist, for a caller who may not list every tenant), invalid
    * (also no kind, a label that does not pass the label rule, a level named
    * without the one above it, and a reception given, which only the
-   * server sets), not found (the tenant holds no subject, session or scan
+   * server sets; for an import, a path or map file that breaks the path
+   * rule, both a map file and an inline map, an inline map past 3 MiB,
+   * counts given, which only the server sets, and subject_from_headers
+   * with a map, from the job or the receiver, or with a layout other than
+   * XNAT), not found (the tenant holds no subject, session or scan
    * with those labels; the tenant has no profile version of that name and
    * number; a tenant that does not exist, for a caller who may list every
    * tenant), precondition (a sender the tenant does not have; a scrub of a
    * storage the tenant does not have, or while another scrub of it is
    * queued or running; a rebuild while another rebuild is queued or
    * running, or whose scratch_schema does not exist, holds a table, is the
-   * tenant's own schema or is on its search_path), unavailable (the tenant's database does not answer, or the
+   * tenant's own schema or is on its search_path; for an import, a
+   * receiver the tenant does not have or that is not an import receiver,
+   * a root import.roots no longer names or import.allowed-roots no longer
+   * allots to the tenant, a root whose path now resolves to another
+   * directory than when it was set (a link in it changed), a path that is
+   * not a directory under the root, a map file that cannot be read, is
+   * larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
+   * for one (project, session), a map with a layout that does not give the
+   * parts project and session or that gives a part subject, an XNAT layout
+   * with no map and subject_from_headers false, or a queued or running
+   * import job of the same receiver whose path overlaps this one's by
+   * segment; for every kind, a tenant moved or fenced,
+   * with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
    * tenant is not ready).
    *
    * @generated from rpc coria.v1.JobService.CreateJob
@@ -1680,7 +2769,8 @@ export const JobService: GenService<{
    * within one batch (at most 64 instances or one second), and what the
    * peer answered for that batch is still counted, since the peer holds it.
    * A job already canceled is answered as it stands, so a repeated call
-   * ends nothing more.
+   * ends nothing more. An import job's walk stops within one file; what it
+   * already handed in is not withdrawn and goes on to its outcome, counted.
    *
    * Role: operator on the tenant.
    * Audit: one entry in the tenant's log, with the job's id as its object.
@@ -1688,7 +2778,8 @@ export const JobService: GenService<{
    * does not exist, for a caller who may not list every tenant), invalid,
    * not found (the tenant has no job with that id; a tenant that does not
    * exist, for a caller who may list every tenant), precondition (the job
-   * has ended done, partial or failed), unavailable (the tenant's database
+   * has ended done, partial or failed; a tenant moved or fenced, with
+   * ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database
    * does not answer, or the tenant is not ready).
    *
    * @generated from rpc coria.v1.JobService.CancelJob
@@ -1707,6 +2798,15 @@ export const JobService: GenService<{
    * instance archived since. A job already retried is answered as it
    * stands, so a repeated call starts nothing more.
    *
+   * For an import job, the new job has the same receiver, path, map (the
+   * one kept with the ended job, checked again) and subject_from_headers,
+   * and its units are the ended job's units that failed or were canceled,
+   * and those with a file lost, or skipped as unreadable, too large or in
+   * a directory too wide; each walks its folder again from the start, so
+   * what is already held counts as already held. A file quarantined,
+   * failed or discarded is not retried: it is released, retried or sent
+   * again through QuarantineService, ReceptionService or the source.
+   *
    * Role: operator on the tenant.
    * Audit: one entry in the tenant's log, with the ended job's id as its
    * object and the new job's id in details.
@@ -1715,7 +2815,11 @@ export const JobService: GenService<{
    * not found (the tenant has no job with that id; a tenant that does not
    * exist, for a caller who may list every tenant), precondition (the job
    * is queued or running, or ended done with nothing to send again; its
-   * sender has been removed), unavailable (the tenant's database does not
+   * sender has been removed; for an import, its receiver has been removed
+   * or its root, layout, path pattern or unit depth changed since the job
+   * was made, every precondition CreateJob checks of an import, or no unit
+   * to walk again; for every kind, a tenant moved or fenced, with ErrorInfo
+   * reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not
    * answer, or the tenant is not ready).
    *
    * @generated from rpc coria.v1.JobService.RetryJob
@@ -1731,7 +2835,9 @@ export const JobService: GenService<{
    * include_warnings, those sent with a warning. Ordered by subject label,
    * session label, scan label, then SOP Instance UID, each compared byte by
    * byte. At most job.failures-kept are kept per job; the job's
-   * failures_not_listed counts the others.
+   * failures_not_listed counts the others. An import job's files are listed
+   * by ListImportFiles, to an operator, since they are named by path; this
+   * method answers none for it.
    *
    * Role: reader on the tenant.
    * Audit: one entry in the tenant's log, with the job's id as its object.
@@ -1747,6 +2853,60 @@ export const JobService: GenService<{
     methodKind: "unary";
     input: typeof ListJobFailuresRequestSchema;
     output: typeof ListJobFailuresResponseSchema;
+  },
+  /**
+   * ListImportFiles answers the files of an import job that did not reach
+   * the archive, each by its path under the root, with why: those skipped
+   * (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+   * quarantined (with the quarantined file's id and reason), those lost,
+   * failed or discarded, and the differences the XNAT catalog files showed.
+   * Ordered by path in the walk's order (segment by segment, each byte by
+   * byte). At most job.failures-kept are kept per job; the job's
+   * failures_not_listed counts the others. A page never passes 4 MB, so it
+   * may hold fewer files than page_size, or none; only an empty
+   * next_page_token means the last page.
+   *
+   * Role: operator on the tenant.
+   * Audit: one entry in the tenant's log, with the job's id as its object;
+   * no path is recorded.
+   * Errors: unauthenticated, permission denied (no grant; also a tenant that
+   * does not exist, for a caller who may not list every tenant), invalid,
+   * not found (the tenant has no job with that id; a tenant that does not
+   * exist, for a caller who may list every tenant), precondition (the job is
+   * not an import job), unavailable (the tenant's database does not answer,
+   * or the tenant is not ready).
+   *
+   * @generated from rpc coria.v1.JobService.ListImportFiles
+   */
+  listImportFiles: {
+    methodKind: "unary";
+    input: typeof ListImportFilesRequestSchema;
+    output: typeof ListImportFilesResponseSchema;
+  },
+  /**
+   * ListImportUnits answers the units of an import job, each with its
+   * folder under the root, its state and its counts, so the job's
+   * reconciliation can be checked folder by folder; the listing unit is
+   * one of them, its folder the job's path. Ordered by folder in the walk's
+   * order. A page never passes 4 MB, so it may hold fewer units than
+   * page_size, or none; only an empty next_page_token means the last page.
+   *
+   * Role: operator on the tenant.
+   * Audit: one entry in the tenant's log, with the job's id as its object;
+   * no path is recorded.
+   * Errors: unauthenticated, permission denied (no grant; also a tenant that
+   * does not exist, for a caller who may not list every tenant), invalid,
+   * not found (the tenant has no job with that id; a tenant that does not
+   * exist, for a caller who may list every tenant), precondition (the job is
+   * not an import job), unavailable (the tenant's database does not answer,
+   * or the tenant is not ready).
+   *
+   * @generated from rpc coria.v1.JobService.ListImportUnits
+   */
+  listImportUnits: {
+    methodKind: "unary";
+    input: typeof ListImportUnitsRequestSchema;
+    output: typeof ListImportUnitsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_coria_v1_job, 0);

@@ -557,8 +557,21 @@ type QuarantinedFile struct {
 	// (ReleaseQuarantinedFileRequest.profile). Unset unless it is released
 	// and a version was named.
 	ReleaseProfile *ProfileVersionRef `protobuf:"bytes,26,opt,name=release_profile,json=releaseProfile,proto3" json:"release_profile,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The id of the import job that handed the file in (JobService,
+	// ImportJob), so a held file can be traced to the job whose counts it is
+	// in. Empty for a file that arrived any other way; a file a release
+	// quarantines again keeps it. The job counts the file quarantined once,
+	// at its first decision; a release later changes this record, not the
+	// job's counts.
+	ImportJob string `protobuf:"bytes,27,opt,name=import_job,json=importJob,proto3" json:"import_job,omitempty"`
+	// For a file an import job handed in, its path relative to the import
+	// receiver's root, its segments joined by "/", so a person can find the
+	// source. It can hold what identifies a person (a folder named after a
+	// patient): answered only to an operator or more on the tenant, empty to
+	// a reader, and never written to a log, an event or an audit entry.
+	ImportPath    string `protobuf:"bytes,28,opt,name=import_path,json=importPath,proto3" json:"import_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *QuarantinedFile) Reset() {
@@ -771,6 +784,20 @@ func (x *QuarantinedFile) GetReleaseProfile() *ProfileVersionRef {
 		return x.ReleaseProfile
 	}
 	return nil
+}
+
+func (x *QuarantinedFile) GetImportJob() string {
+	if x != nil {
+		return x.ImportJob
+	}
+	return ""
+}
+
+func (x *QuarantinedFile) GetImportPath() string {
+	if x != nil {
+		return x.ImportPath
+	}
+	return ""
 }
 
 // ListQuarantinedFilesRequest asks for a page of a tenant's quarantined
@@ -1410,7 +1437,7 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x06Caller\x12(\n" +
 	"\x10calling_ae_title\x18\x01 \x01(\tR\x0ecallingAeTitle\x12&\n" +
 	"\x0fcalled_ae_title\x18\x02 \x01(\tR\rcalledAeTitle\x12\x18\n" +
-	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xb3\t\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xf8\t\n" +
 	"\x0fQuarantinedFile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x122\n" +
 	"\x06reason\x18\x02 \x01(\x0e2\x1a.coria.v1.QuarantineReasonR\x06reason\x12@\n" +
@@ -1441,7 +1468,11 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x10release_receiver\x18\x17 \x01(\tR\x0freleaseReceiver\x12%\n" +
 	"\x0erelease_reason\x18\x18 \x01(\tR\rreleaseReason\x12'\n" +
 	"\x0frelease_storage\x18\x19 \x01(\tR\x0ereleaseStorage\x12D\n" +
-	"\x0frelease_profile\x18\x1a \x01(\v2\x1b.coria.v1.ProfileVersionRefR\x0ereleaseProfile\x1a:\n" +
+	"\x0frelease_profile\x18\x1a \x01(\v2\x1b.coria.v1.ProfileVersionRefR\x0ereleaseProfile\x12\x1d\n" +
+	"\n" +
+	"import_job\x18\x1b \x01(\tR\timportJob\x12$\n" +
+	"\vimport_path\x18\x1c \x01(\tB\x03\x80\x01\x01R\n" +
+	"importPath\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xda\x03\n" +

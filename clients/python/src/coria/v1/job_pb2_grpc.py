@@ -36,8 +36,10 @@ class JobServiceStub:
     profile version, changing nothing (DeidJob); scrub, every stored object of
     the tenant read again and compared with what the catalog and the scan's
     manifest say it should be (ScrubJob); or rebuild, the catalog made again
-    from what the tenant's storages hold (RebuildJob). A kind added later is a
-    new member of Job's kind, served by these same methods.
+    from what the tenant's storages hold (RebuildJob); or import, the files of
+    a directory under one of the installation's roots handed to an import
+    receiver (ImportJob). A kind added later is a new member of Job's kind,
+    served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -230,6 +232,121 @@ class JobServiceStub:
     "left_out|profile_unknown", "left_out|deleted",
     "unresolved_correction", "series_on_two_storages", and "activated" once
     a replace made its shadow the catalog in use.
+
+    What an import job does. It reads the directory its path names under its
+    receiver's root (ImportReceiver) and hands each DICOM file in it to the
+    receiver, one at a time, as a file that arrived; it never writes, moves
+    or deletes anything in the root. Its work is a listing unit and one unit
+    per folder. The listing unit lists the folders at the layout's unit depth
+    under the job's path, a page at a time, and queues one unit per folder
+    (one unit for a path at or below that depth); it also judges every file
+    it meets above that depth (skipped as outside the layout, not DICOM and
+    so on, or handed in when the layout matches it), and ListImportUnits
+    shows it as a unit of its own, its folder the job's path. Each unit walks
+    its folder one directory at a time, in the order of its paths compared
+    segment by segment, each segment byte by byte, so a directory's whole
+    subtree comes before the next name of that directory ("a/b/c" before
+    "a/b.d", which plain byte order of whole paths would reverse, "/" being
+    below "."); its cursor is a path in that order. A directory is read as
+    names only, at most the installation's setting import.max-dir-entries of
+    them (a whole number from 1000 to 10000000; installation-only, since it
+    bounds the server's memory; built-in default "200000", about 20 MiB of
+    names): the bound is on reading one directory, not on the walk, which
+    holds one directory's names at a time. A directory with more is not read
+    further and is skipped whole as IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE, so
+    raising the setting (it applies at the next directory read, no restart)
+    and retrying imports it. Each path segment is opened without following a
+    link (no-follow open, the type read without following, as lstat does), so
+    a link, wherever it is in the tree, is skipped as
+    IMPORT_SKIP_CODE_NOT_REGULAR and nothing outside the root is ever opened.
+    Before a file is handed in, its first 132 bytes are read: one without the
+    Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
+    IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
+    notes, images and archives do not fill it. An XNAT resource catalog file
+    (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
+    not listed: it is read, at most 16 MiB of it, only to check the files
+    beside it (a larger one is not checked, and counted in
+    catalogs_not_checked).
+
+    A unit writes each file's record (its arrival, or the row of its skip)
+    in the same transaction as its cursor and its counts found, skipped and
+    handed_in, fenced by its attempt. After a crash or a lost lease it goes
+    on after its cursor, and no file is handed in twice, so handed_again is
+    always 0 in this version; it is kept for a later version that batches
+    these writes. The copy a hand-off lands in the incoming area is named by
+    the arrival's id, never by its path, and the arrival's record carries
+    the path, in the tenant's database. A unit stops with its place kept,
+    using no attempt, while the receiver is disabled, the archive cannot
+    take files (the incoming area or the storage below its reserve, the
+    tenant at its incoming.limit or not ready), the tenant is restoring,
+    moved or fenced, or a rebuild that replaces the catalog runs (whose
+    receivers refuse new data); a tenant restored from a backup resumes each
+    unit from the cursor the backup holds. The tenant runs at most its
+    setting import.max-units of import units at once (a whole number from 1
+    to 64; set on a tenant by the installation's admin only, whose
+    installation value is the default for every tenant; built-in default
+    "4"), and the server at most import.server-max-units of every tenant's
+    together (a whole number from 1 to 256; installation-only; built-in
+    default "8"), so an import never takes the pipeline from live receivers.
+    A unit whose root no longer resolves to the directory it resolved to
+    when the job was made (a link in its path changed), or cannot be opened,
+    ends failed at once with the reason "root unavailable"; that is not a
+    skip of any file.
+
+    An import is done when every file it found has an outcome. A hand-off
+    returns once the file is in the server's incoming area, before it is
+    identified, de-identified, archived or quarantined; each file handed in
+    carries the job and its unit as its arrival's source, kept with the
+    received file and with any reception RetryReception makes for it, and
+    the pipeline adds its outcome to the job's counts in the transaction
+    that decides it: archived, already held, quarantined (by reason), lost,
+    failed (its reception failed) or discarded (its reception discarded,
+    ReceptionService.DiscardReception). RetryReception moves a failed file
+    back to processing; a quarantined file later released keeps its first
+    outcome, quarantined, and the release is the quarantine's record, not
+    the job's. So the counts reconcile, per job and per unit (ImportCounts,
+    ListImportUnits): found plus handed again equals skipped plus handed in,
+    and handed in equals archived plus already held plus quarantined plus
+    lost plus failed plus discarded plus processing.
+
+    The archive as it is now decides a file's outcome. A file whose SOP
+    Instance UID the tenant holds and whose received checksum equals that of
+    any revision the instance has had counts already held (tallied
+    "superseded_revision" when it is not the current one), so a tree read
+    again after a correction does not bring an old version back. A file of a
+    target deleted from the archive (CorrectionService.Delete) is
+    quarantined as QUARANTINE_REASON_WAS_DELETED, as from any receiver, and
+    makes the job partial. A route condition on an AE title never holds for
+    a file an import hands in, since none came by association.
+
+    After its last unit's walk the job stays running, with the reason
+    "settling", until processing is zero, and only then ends. A job whose
+    files are still in a reception an hour past the receiver's max_open_time
+    after the last walk ended ends partial, with the reason "settling timed
+    out" and the files left in processing counted. Its counts keep moving
+    after it ended until processing is zero, and EVENT_TYPE_JOB_PROGRESS
+    events go on for it until then; its state does not change. Its states:
+    done, every file found has an outcome and none was quarantined, lost,
+    failed or discarded, or skipped as unreadable, too large or as a
+    directory too wide (files skipped by design, not DICOM, outside the
+    layout, of an unmapped session, not regular files or catalog files,
+    leave it done); partial, otherwise; failed, a unit's attempts ran out or
+    its root was unavailable, with what it had handed in still counted and
+    still settling; canceled, by CancelJob, which withdraws nothing already
+    handed in: those files go on to their outcome and are counted. Each file
+    skipped (but catalog files), quarantined, lost, failed or discarded is
+    listed, with its path, to an operator by ListImportFiles, up to
+    job.failures-kept. A job made again over the same tree finds the files
+    added since as new and the others as already held. Events carry counts
+    only (JobCounts), never a path; the audit records the receiver's root by
+    name and the job's id.
+
+    A path can hold what identifies a person (a folder named after a
+    patient), so a path is kept only in the tenant's database (a unit's
+    cursor and folder, a skipped file's row, an arrival's record, a
+    quarantined file's record), answered only to an operator or more on the
+    tenant, and never written to a log, an event or an audit entry; and so
+    is a map, inline or read from a file.
 
     A job meets the archive as it is now, before each instance: an instance
     deleted since the job was made is counted refused
@@ -284,6 +401,16 @@ class JobServiceStub:
                 request_serializer=coria_dot_v1_dot_job__pb2.ListJobFailuresRequest.SerializeToString,
                 response_deserializer=coria_dot_v1_dot_job__pb2.ListJobFailuresResponse.FromString,
                 _registered_method=True)
+        self.ListImportFiles = channel.unary_unary(
+                '/coria.v1.JobService/ListImportFiles',
+                request_serializer=coria_dot_v1_dot_job__pb2.ListImportFilesRequest.SerializeToString,
+                response_deserializer=coria_dot_v1_dot_job__pb2.ListImportFilesResponse.FromString,
+                _registered_method=True)
+        self.ListImportUnits = channel.unary_unary(
+                '/coria.v1.JobService/ListImportUnits',
+                request_serializer=coria_dot_v1_dot_job__pb2.ListImportUnitsRequest.SerializeToString,
+                response_deserializer=coria_dot_v1_dot_job__pb2.ListImportUnitsResponse.FromString,
+                _registered_method=True)
 
 
 class JobServiceServicer:
@@ -297,8 +424,10 @@ class JobServiceServicer:
     profile version, changing nothing (DeidJob); scrub, every stored object of
     the tenant read again and compared with what the catalog and the scan's
     manifest say it should be (ScrubJob); or rebuild, the catalog made again
-    from what the tenant's storages hold (RebuildJob). A kind added later is a
-    new member of Job's kind, served by these same methods.
+    from what the tenant's storages hold (RebuildJob); or import, the files of
+    a directory under one of the installation's roots handed to an import
+    receiver (ImportJob). A kind added later is a new member of Job's kind,
+    served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -492,6 +621,121 @@ class JobServiceServicer:
     "unresolved_correction", "series_on_two_storages", and "activated" once
     a replace made its shadow the catalog in use.
 
+    What an import job does. It reads the directory its path names under its
+    receiver's root (ImportReceiver) and hands each DICOM file in it to the
+    receiver, one at a time, as a file that arrived; it never writes, moves
+    or deletes anything in the root. Its work is a listing unit and one unit
+    per folder. The listing unit lists the folders at the layout's unit depth
+    under the job's path, a page at a time, and queues one unit per folder
+    (one unit for a path at or below that depth); it also judges every file
+    it meets above that depth (skipped as outside the layout, not DICOM and
+    so on, or handed in when the layout matches it), and ListImportUnits
+    shows it as a unit of its own, its folder the job's path. Each unit walks
+    its folder one directory at a time, in the order of its paths compared
+    segment by segment, each segment byte by byte, so a directory's whole
+    subtree comes before the next name of that directory ("a/b/c" before
+    "a/b.d", which plain byte order of whole paths would reverse, "/" being
+    below "."); its cursor is a path in that order. A directory is read as
+    names only, at most the installation's setting import.max-dir-entries of
+    them (a whole number from 1000 to 10000000; installation-only, since it
+    bounds the server's memory; built-in default "200000", about 20 MiB of
+    names): the bound is on reading one directory, not on the walk, which
+    holds one directory's names at a time. A directory with more is not read
+    further and is skipped whole as IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE, so
+    raising the setting (it applies at the next directory read, no restart)
+    and retrying imports it. Each path segment is opened without following a
+    link (no-follow open, the type read without following, as lstat does), so
+    a link, wherever it is in the tree, is skipped as
+    IMPORT_SKIP_CODE_NOT_REGULAR and nothing outside the root is ever opened.
+    Before a file is handed in, its first 132 bytes are read: one without the
+    Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
+    IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
+    notes, images and archives do not fill it. An XNAT resource catalog file
+    (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
+    not listed: it is read, at most 16 MiB of it, only to check the files
+    beside it (a larger one is not checked, and counted in
+    catalogs_not_checked).
+
+    A unit writes each file's record (its arrival, or the row of its skip)
+    in the same transaction as its cursor and its counts found, skipped and
+    handed_in, fenced by its attempt. After a crash or a lost lease it goes
+    on after its cursor, and no file is handed in twice, so handed_again is
+    always 0 in this version; it is kept for a later version that batches
+    these writes. The copy a hand-off lands in the incoming area is named by
+    the arrival's id, never by its path, and the arrival's record carries
+    the path, in the tenant's database. A unit stops with its place kept,
+    using no attempt, while the receiver is disabled, the archive cannot
+    take files (the incoming area or the storage below its reserve, the
+    tenant at its incoming.limit or not ready), the tenant is restoring,
+    moved or fenced, or a rebuild that replaces the catalog runs (whose
+    receivers refuse new data); a tenant restored from a backup resumes each
+    unit from the cursor the backup holds. The tenant runs at most its
+    setting import.max-units of import units at once (a whole number from 1
+    to 64; set on a tenant by the installation's admin only, whose
+    installation value is the default for every tenant; built-in default
+    "4"), and the server at most import.server-max-units of every tenant's
+    together (a whole number from 1 to 256; installation-only; built-in
+    default "8"), so an import never takes the pipeline from live receivers.
+    A unit whose root no longer resolves to the directory it resolved to
+    when the job was made (a link in its path changed), or cannot be opened,
+    ends failed at once with the reason "root unavailable"; that is not a
+    skip of any file.
+
+    An import is done when every file it found has an outcome. A hand-off
+    returns once the file is in the server's incoming area, before it is
+    identified, de-identified, archived or quarantined; each file handed in
+    carries the job and its unit as its arrival's source, kept with the
+    received file and with any reception RetryReception makes for it, and
+    the pipeline adds its outcome to the job's counts in the transaction
+    that decides it: archived, already held, quarantined (by reason), lost,
+    failed (its reception failed) or discarded (its reception discarded,
+    ReceptionService.DiscardReception). RetryReception moves a failed file
+    back to processing; a quarantined file later released keeps its first
+    outcome, quarantined, and the release is the quarantine's record, not
+    the job's. So the counts reconcile, per job and per unit (ImportCounts,
+    ListImportUnits): found plus handed again equals skipped plus handed in,
+    and handed in equals archived plus already held plus quarantined plus
+    lost plus failed plus discarded plus processing.
+
+    The archive as it is now decides a file's outcome. A file whose SOP
+    Instance UID the tenant holds and whose received checksum equals that of
+    any revision the instance has had counts already held (tallied
+    "superseded_revision" when it is not the current one), so a tree read
+    again after a correction does not bring an old version back. A file of a
+    target deleted from the archive (CorrectionService.Delete) is
+    quarantined as QUARANTINE_REASON_WAS_DELETED, as from any receiver, and
+    makes the job partial. A route condition on an AE title never holds for
+    a file an import hands in, since none came by association.
+
+    After its last unit's walk the job stays running, with the reason
+    "settling", until processing is zero, and only then ends. A job whose
+    files are still in a reception an hour past the receiver's max_open_time
+    after the last walk ended ends partial, with the reason "settling timed
+    out" and the files left in processing counted. Its counts keep moving
+    after it ended until processing is zero, and EVENT_TYPE_JOB_PROGRESS
+    events go on for it until then; its state does not change. Its states:
+    done, every file found has an outcome and none was quarantined, lost,
+    failed or discarded, or skipped as unreadable, too large or as a
+    directory too wide (files skipped by design, not DICOM, outside the
+    layout, of an unmapped session, not regular files or catalog files,
+    leave it done); partial, otherwise; failed, a unit's attempts ran out or
+    its root was unavailable, with what it had handed in still counted and
+    still settling; canceled, by CancelJob, which withdraws nothing already
+    handed in: those files go on to their outcome and are counted. Each file
+    skipped (but catalog files), quarantined, lost, failed or discarded is
+    listed, with its path, to an operator by ListImportFiles, up to
+    job.failures-kept. A job made again over the same tree finds the files
+    added since as new and the others as already held. Events carry counts
+    only (JobCounts), never a path; the audit records the receiver's root by
+    name and the job's id.
+
+    A path can hold what identifies a person (a folder named after a
+    patient), so a path is kept only in the tenant's database (a unit's
+    cursor and folder, a skipped file's row, an arrival's record, a
+    quarantined file's record), answered only to an operator or more on the
+    tenant, and never written to a log, an event or an audit entry; and so
+    is a map, inline or read from a file.
+
     A job meets the archive as it is now, before each instance: an instance
     deleted since the job was made is counted refused
     (JOB_FAILURE_CODE_DELETED_IN_ARCHIVE), one marked damaged fails as data
@@ -518,24 +762,55 @@ class JobServiceServicer:
         storage, or none for every storage. A rebuild job names its mode; one
         that replaces the catalog also needs admin on the tenant, checked after
         the requirement below, since it empties the catalog and fills it again,
-        and is answered permission denied to an operator.
+        and is answered permission denied to an operator. An import job names
+        an import receiver of the tenant, a path under its root and optionally
+        a map (a file under the root, or inline); the root is resolved, the
+        path opened and the map read and checked before the job is made, so a
+        tree that is not there or a map that names two subjects for one
+        session is refused here, not found out later. The map is kept with the
+        job as it was read then, so a map file changed later changes nothing
+        of the job or of a retry of it. A refusal of a map names the line it
+        found at fault by number only, never a cell, the header or a path. An
+        import job of a disabled receiver is made and waits, its units queued,
+        until the receiver is enabled, as a send job waits for its sender. Two
+        import jobs of one receiver never read the same files at once: a job
+        whose path equals, lies under or contains (segment by segment, so "a"
+        contains "a/b" and not "ab") the path of a queued or running import job
+        of the same receiver is refused.
 
         Role: operator on the tenant.
         Audit: one entry in the tenant's log, with the new job's id as its
         object, and its kind, its sender and the path of labels of its target
-        in details; for a scrub, its storage; for a rebuild, its mode.
+        in details; for a scrub, its storage; for a rebuild, its mode; for an
+        import, its receiver and its root's name, never its path or map file.
         Errors: unauthenticated, permission denied (no grant; also a tenant that
         does not exist, for a caller who may not list every tenant), invalid
         (also no kind, a label that does not pass the label rule, a level named
         without the one above it, and a reception given, which only the
-        server sets), not found (the tenant holds no subject, session or scan
+        server sets; for an import, a path or map file that breaks the path
+        rule, both a map file and an inline map, an inline map past 3 MiB,
+        counts given, which only the server sets, and subject_from_headers
+        with a map, from the job or the receiver, or with a layout other than
+        XNAT), not found (the tenant holds no subject, session or scan
         with those labels; the tenant has no profile version of that name and
         number; a tenant that does not exist, for a caller who may list every
         tenant), precondition (a sender the tenant does not have; a scrub of a
         storage the tenant does not have, or while another scrub of it is
         queued or running; a rebuild while another rebuild is queued or
         running, or whose scratch_schema does not exist, holds a table, is the
-        tenant's own schema or is on its search_path), unavailable (the tenant's database does not answer, or the
+        tenant's own schema or is on its search_path; for an import, a
+        receiver the tenant does not have or that is not an import receiver,
+        a root import.roots no longer names or import.allowed-roots no longer
+        allots to the tenant, a root whose path now resolves to another
+        directory than when it was set (a link in it changed), a path that is
+        not a directory under the root, a map file that cannot be read, is
+        larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
+        for one (project, session), a map with a layout that does not give the
+        parts project and session or that gives a part subject, an XNAT layout
+        with no map and subject_from_headers false, or a queued or running
+        import job of the same receiver whose path overlaps this one's by
+        segment; for every kind, a tenant moved or fenced,
+        with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
         tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -580,7 +855,8 @@ class JobServiceServicer:
         within one batch (at most 64 instances or one second), and what the
         peer answered for that batch is still counted, since the peer holds it.
         A job already canceled is answered as it stands, so a repeated call
-        ends nothing more.
+        ends nothing more. An import job's walk stops within one file; what it
+        already handed in is not withdrawn and goes on to its outcome, counted.
 
         Role: operator on the tenant.
         Audit: one entry in the tenant's log, with the job's id as its object.
@@ -588,7 +864,8 @@ class JobServiceServicer:
         does not exist, for a caller who may not list every tenant), invalid,
         not found (the tenant has no job with that id; a tenant that does not
         exist, for a caller who may list every tenant), precondition (the job
-        has ended done, partial or failed), unavailable (the tenant's database
+        has ended done, partial or failed; a tenant moved or fenced, with
+        ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database
         does not answer, or the tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -604,6 +881,15 @@ class JobServiceServicer:
         instance archived since. A job already retried is answered as it
         stands, so a repeated call starts nothing more.
 
+        For an import job, the new job has the same receiver, path, map (the
+        one kept with the ended job, checked again) and subject_from_headers,
+        and its units are the ended job's units that failed or were canceled,
+        and those with a file lost, or skipped as unreadable, too large or in
+        a directory too wide; each walks its folder again from the start, so
+        what is already held counts as already held. A file quarantined,
+        failed or discarded is not retried: it is released, retried or sent
+        again through QuarantineService, ReceptionService or the source.
+
         Role: operator on the tenant.
         Audit: one entry in the tenant's log, with the ended job's id as its
         object and the new job's id in details.
@@ -612,7 +898,11 @@ class JobServiceServicer:
         not found (the tenant has no job with that id; a tenant that does not
         exist, for a caller who may list every tenant), precondition (the job
         is queued or running, or ended done with nothing to send again; its
-        sender has been removed), unavailable (the tenant's database does not
+        sender has been removed; for an import, its receiver has been removed
+        or its root, layout, path pattern or unit depth changed since the job
+        was made, every precondition CreateJob checks of an import, or no unit
+        to walk again; for every kind, a tenant moved or fenced, with ErrorInfo
+        reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not
         answer, or the tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -625,7 +915,9 @@ class JobServiceServicer:
         include_warnings, those sent with a warning. Ordered by subject label,
         session label, scan label, then SOP Instance UID, each compared byte by
         byte. At most job.failures-kept are kept per job; the job's
-        failures_not_listed counts the others.
+        failures_not_listed counts the others. An import job's files are listed
+        by ListImportFiles, to an operator, since they are named by path; this
+        method answers none for it.
 
         Role: reader on the tenant.
         Audit: one entry in the tenant's log, with the job's id as its object.
@@ -634,6 +926,54 @@ class JobServiceServicer:
         not found (the tenant has no job with that id; a tenant that does not
         exist, for a caller who may list every tenant), unavailable (the
         tenant's database does not answer, or the tenant is not ready).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListImportFiles(self, request, context):
+        """ListImportFiles answers the files of an import job that did not reach
+        the archive, each by its path under the root, with why: those skipped
+        (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+        quarantined (with the quarantined file's id and reason), those lost,
+        failed or discarded, and the differences the XNAT catalog files showed.
+        Ordered by path in the walk's order (segment by segment, each byte by
+        byte). At most job.failures-kept are kept per job; the job's
+        failures_not_listed counts the others. A page never passes 4 MB, so it
+        may hold fewer files than page_size, or none; only an empty
+        next_page_token means the last page.
+
+        Role: operator on the tenant.
+        Audit: one entry in the tenant's log, with the job's id as its object;
+        no path is recorded.
+        Errors: unauthenticated, permission denied (no grant; also a tenant that
+        does not exist, for a caller who may not list every tenant), invalid,
+        not found (the tenant has no job with that id; a tenant that does not
+        exist, for a caller who may list every tenant), precondition (the job is
+        not an import job), unavailable (the tenant's database does not answer,
+        or the tenant is not ready).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListImportUnits(self, request, context):
+        """ListImportUnits answers the units of an import job, each with its
+        folder under the root, its state and its counts, so the job's
+        reconciliation can be checked folder by folder; the listing unit is
+        one of them, its folder the job's path. Ordered by folder in the walk's
+        order. A page never passes 4 MB, so it may hold fewer units than
+        page_size, or none; only an empty next_page_token means the last page.
+
+        Role: operator on the tenant.
+        Audit: one entry in the tenant's log, with the job's id as its object;
+        no path is recorded.
+        Errors: unauthenticated, permission denied (no grant; also a tenant that
+        does not exist, for a caller who may not list every tenant), invalid,
+        not found (the tenant has no job with that id; a tenant that does not
+        exist, for a caller who may list every tenant), precondition (the job is
+        not an import job), unavailable (the tenant's database does not answer,
+        or the tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -672,6 +1012,16 @@ def add_JobServiceServicer_to_server(servicer, server):
                     request_deserializer=coria_dot_v1_dot_job__pb2.ListJobFailuresRequest.FromString,
                     response_serializer=coria_dot_v1_dot_job__pb2.ListJobFailuresResponse.SerializeToString,
             ),
+            'ListImportFiles': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListImportFiles,
+                    request_deserializer=coria_dot_v1_dot_job__pb2.ListImportFilesRequest.FromString,
+                    response_serializer=coria_dot_v1_dot_job__pb2.ListImportFilesResponse.SerializeToString,
+            ),
+            'ListImportUnits': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListImportUnits,
+                    request_deserializer=coria_dot_v1_dot_job__pb2.ListImportUnitsRequest.FromString,
+                    response_serializer=coria_dot_v1_dot_job__pb2.ListImportUnitsResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'coria.v1.JobService', rpc_method_handlers)
@@ -691,8 +1041,10 @@ class JobService:
     profile version, changing nothing (DeidJob); scrub, every stored object of
     the tenant read again and compared with what the catalog and the scan's
     manifest say it should be (ScrubJob); or rebuild, the catalog made again
-    from what the tenant's storages hold (RebuildJob). A kind added later is a
-    new member of Job's kind, served by these same methods.
+    from what the tenant's storages hold (RebuildJob); or import, the files of
+    a directory under one of the installation's roots handed to an import
+    receiver (ImportJob). A kind added later is a new member of Job's kind,
+    served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -885,6 +1237,121 @@ class JobService:
     "left_out|profile_unknown", "left_out|deleted",
     "unresolved_correction", "series_on_two_storages", and "activated" once
     a replace made its shadow the catalog in use.
+
+    What an import job does. It reads the directory its path names under its
+    receiver's root (ImportReceiver) and hands each DICOM file in it to the
+    receiver, one at a time, as a file that arrived; it never writes, moves
+    or deletes anything in the root. Its work is a listing unit and one unit
+    per folder. The listing unit lists the folders at the layout's unit depth
+    under the job's path, a page at a time, and queues one unit per folder
+    (one unit for a path at or below that depth); it also judges every file
+    it meets above that depth (skipped as outside the layout, not DICOM and
+    so on, or handed in when the layout matches it), and ListImportUnits
+    shows it as a unit of its own, its folder the job's path. Each unit walks
+    its folder one directory at a time, in the order of its paths compared
+    segment by segment, each segment byte by byte, so a directory's whole
+    subtree comes before the next name of that directory ("a/b/c" before
+    "a/b.d", which plain byte order of whole paths would reverse, "/" being
+    below "."); its cursor is a path in that order. A directory is read as
+    names only, at most the installation's setting import.max-dir-entries of
+    them (a whole number from 1000 to 10000000; installation-only, since it
+    bounds the server's memory; built-in default "200000", about 20 MiB of
+    names): the bound is on reading one directory, not on the walk, which
+    holds one directory's names at a time. A directory with more is not read
+    further and is skipped whole as IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE, so
+    raising the setting (it applies at the next directory read, no restart)
+    and retrying imports it. Each path segment is opened without following a
+    link (no-follow open, the type read without following, as lstat does), so
+    a link, wherever it is in the tree, is skipped as
+    IMPORT_SKIP_CODE_NOT_REGULAR and nothing outside the root is ever opened.
+    Before a file is handed in, its first 132 bytes are read: one without the
+    Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
+    IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
+    notes, images and archives do not fill it. An XNAT resource catalog file
+    (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
+    not listed: it is read, at most 16 MiB of it, only to check the files
+    beside it (a larger one is not checked, and counted in
+    catalogs_not_checked).
+
+    A unit writes each file's record (its arrival, or the row of its skip)
+    in the same transaction as its cursor and its counts found, skipped and
+    handed_in, fenced by its attempt. After a crash or a lost lease it goes
+    on after its cursor, and no file is handed in twice, so handed_again is
+    always 0 in this version; it is kept for a later version that batches
+    these writes. The copy a hand-off lands in the incoming area is named by
+    the arrival's id, never by its path, and the arrival's record carries
+    the path, in the tenant's database. A unit stops with its place kept,
+    using no attempt, while the receiver is disabled, the archive cannot
+    take files (the incoming area or the storage below its reserve, the
+    tenant at its incoming.limit or not ready), the tenant is restoring,
+    moved or fenced, or a rebuild that replaces the catalog runs (whose
+    receivers refuse new data); a tenant restored from a backup resumes each
+    unit from the cursor the backup holds. The tenant runs at most its
+    setting import.max-units of import units at once (a whole number from 1
+    to 64; set on a tenant by the installation's admin only, whose
+    installation value is the default for every tenant; built-in default
+    "4"), and the server at most import.server-max-units of every tenant's
+    together (a whole number from 1 to 256; installation-only; built-in
+    default "8"), so an import never takes the pipeline from live receivers.
+    A unit whose root no longer resolves to the directory it resolved to
+    when the job was made (a link in its path changed), or cannot be opened,
+    ends failed at once with the reason "root unavailable"; that is not a
+    skip of any file.
+
+    An import is done when every file it found has an outcome. A hand-off
+    returns once the file is in the server's incoming area, before it is
+    identified, de-identified, archived or quarantined; each file handed in
+    carries the job and its unit as its arrival's source, kept with the
+    received file and with any reception RetryReception makes for it, and
+    the pipeline adds its outcome to the job's counts in the transaction
+    that decides it: archived, already held, quarantined (by reason), lost,
+    failed (its reception failed) or discarded (its reception discarded,
+    ReceptionService.DiscardReception). RetryReception moves a failed file
+    back to processing; a quarantined file later released keeps its first
+    outcome, quarantined, and the release is the quarantine's record, not
+    the job's. So the counts reconcile, per job and per unit (ImportCounts,
+    ListImportUnits): found plus handed again equals skipped plus handed in,
+    and handed in equals archived plus already held plus quarantined plus
+    lost plus failed plus discarded plus processing.
+
+    The archive as it is now decides a file's outcome. A file whose SOP
+    Instance UID the tenant holds and whose received checksum equals that of
+    any revision the instance has had counts already held (tallied
+    "superseded_revision" when it is not the current one), so a tree read
+    again after a correction does not bring an old version back. A file of a
+    target deleted from the archive (CorrectionService.Delete) is
+    quarantined as QUARANTINE_REASON_WAS_DELETED, as from any receiver, and
+    makes the job partial. A route condition on an AE title never holds for
+    a file an import hands in, since none came by association.
+
+    After its last unit's walk the job stays running, with the reason
+    "settling", until processing is zero, and only then ends. A job whose
+    files are still in a reception an hour past the receiver's max_open_time
+    after the last walk ended ends partial, with the reason "settling timed
+    out" and the files left in processing counted. Its counts keep moving
+    after it ended until processing is zero, and EVENT_TYPE_JOB_PROGRESS
+    events go on for it until then; its state does not change. Its states:
+    done, every file found has an outcome and none was quarantined, lost,
+    failed or discarded, or skipped as unreadable, too large or as a
+    directory too wide (files skipped by design, not DICOM, outside the
+    layout, of an unmapped session, not regular files or catalog files,
+    leave it done); partial, otherwise; failed, a unit's attempts ran out or
+    its root was unavailable, with what it had handed in still counted and
+    still settling; canceled, by CancelJob, which withdraws nothing already
+    handed in: those files go on to their outcome and are counted. Each file
+    skipped (but catalog files), quarantined, lost, failed or discarded is
+    listed, with its path, to an operator by ListImportFiles, up to
+    job.failures-kept. A job made again over the same tree finds the files
+    added since as new and the others as already held. Events carry counts
+    only (JobCounts), never a path; the audit records the receiver's root by
+    name and the job's id.
+
+    A path can hold what identifies a person (a folder named after a
+    patient), so a path is kept only in the tenant's database (a unit's
+    cursor and folder, a skipped file's row, an arrival's record, a
+    quarantined file's record), answered only to an operator or more on the
+    tenant, and never written to a log, an event or an audit entry; and so
+    is a map, inline or read from a file.
 
     A job meets the archive as it is now, before each instance: an instance
     deleted since the job was made is counted refused
@@ -1055,6 +1522,60 @@ class JobService:
             '/coria.v1.JobService/ListJobFailures',
             coria_dot_v1_dot_job__pb2.ListJobFailuresRequest.SerializeToString,
             coria_dot_v1_dot_job__pb2.ListJobFailuresResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListImportFiles(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/coria.v1.JobService/ListImportFiles',
+            coria_dot_v1_dot_job__pb2.ListImportFilesRequest.SerializeToString,
+            coria_dot_v1_dot_job__pb2.ListImportFilesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListImportUnits(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/coria.v1.JobService/ListImportUnits',
+            coria_dot_v1_dot_job__pb2.ListImportUnitsRequest.SerializeToString,
+            coria_dot_v1_dot_job__pb2.ListImportUnitsResponse.FromString,
             options,
             channel_credentials,
             insecure,

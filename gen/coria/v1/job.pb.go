@@ -36,20 +36,32 @@ const (
 	// Never answered by the server. As a filter, it is refused as invalid.
 	JobState_JOB_STATE_UNSPECIFIED JobState = 0
 	// Made; none of its work has started yet, as while its sender is down or
-	// disabled, or the server's bounds on associations are taken.
+	// disabled, or the server's bounds on associations are taken; for an
+	// import, while its receiver is disabled or the bounds on import units
+	// are taken.
 	JobState_JOB_STATE_QUEUED JobState = 1
-	// Some of its work has started.
+	// Some of its work has started. An import stays running, with the reason
+	// "settling", after its walks end until every file it handed in has an
+	// outcome.
 	JobState_JOB_STATE_RUNNING JobState = 2
 	// Ended. Every instance was sent, some perhaps with a warning; for a
-	// deid job, every instance passed, some perhaps with a note.
+	// deid job, every instance passed, some perhaps with a note; for an
+	// import, every file found has an outcome and none was quarantined,
+	// lost, failed, discarded, or skipped for a cause that may hide DICOM
+	// (unreadable, too large, a directory too wide).
 	JobState_JOB_STATE_DONE JobState = 3
 	// Ended. Some instances were refused; every other one was sent. For a
-	// deid job: some did not pass.
+	// deid job: some did not pass. For an import: some files were
+	// quarantined, lost, failed, discarded or skipped for such a cause, or
+	// settling timed out with files still processing.
 	JobState_JOB_STATE_PARTIAL JobState = 4
 	// Ended without finishing: attempts ran out with instances not sent. The
-	// job's reason says why. RetryJob sends what it did not.
+	// job's reason says why. RetryJob sends what it did not. For an import:
+	// a unit's attempts ran out or its root was unavailable; what it handed
+	// in still goes on to its outcome, counted.
 	JobState_JOB_STATE_FAILED JobState = 5
 	// Ended by CancelJob, or by the removal of its sender with cancel_jobs.
+	// An import's files already handed in are not withdrawn.
 	JobState_JOB_STATE_CANCELED JobState = 6
 )
 
@@ -215,6 +227,96 @@ func (RebuildJobMode) EnumDescriptor() ([]byte, []int) {
 	return file_coria_v1_job_proto_rawDescGZIP(), []int{2}
 }
 
+// ImportSkipCode is why an import job did not hand a file in. A code added
+// in a later version is a new value; a client shows a code it does not
+// know as skipped for a reason it cannot name.
+type ImportSkipCode int32
+
+const (
+	// Never answered by the server.
+	ImportSkipCode_IMPORT_SKIP_CODE_UNSPECIFIED ImportSkipCode = 0
+	// Its first 132 bytes are not a Part 10 preamble followed by "DICM"
+	// (PS3.10 7.1): not a DICOM file, or a data set written without its file
+	// header, which carries no transfer syntax to read it by.
+	ImportSkipCode_IMPORT_SKIP_CODE_NOT_PART10 ImportSkipCode = 1
+	// Its path does not match the receiver's layout.
+	ImportSkipCode_IMPORT_SKIP_CODE_OUTSIDE_LAYOUT ImportSkipCode = 2
+	// Its session folder is not listed by the job's map file.
+	ImportSkipCode_IMPORT_SKIP_CODE_UNMAPPED_SESSION ImportSkipCode = 3
+	// A directory holding more entries than the setting
+	// import.max-dir-entries, skipped whole without reading its files; it
+	// counts once, as one entry found. Raising the setting and retrying the
+	// job imports it.
+	ImportSkipCode_IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE ImportSkipCode = 4
+	// A file or directory the server could not open or read through (no
+	// permission, an input or output error, removed while the unit ran).
+	ImportSkipCode_IMPORT_SKIP_CODE_UNREADABLE ImportSkipCode = 5
+	// Not a regular file or directory: a symbolic link, which an import never
+	// follows, a device, a socket or a named pipe.
+	ImportSkipCode_IMPORT_SKIP_CODE_NOT_REGULAR ImportSkipCode = 6
+	// Larger than the receiver's max_file_bytes. It is not copied, so it does
+	// not take room in the incoming area or a quarantine record; it makes the
+	// job partial, since it may be DICOM the archive lacks.
+	ImportSkipCode_IMPORT_SKIP_CODE_TOO_LARGE ImportSkipCode = 7
+	// An XNAT resource catalog file (a name ending "_catalog.xml"), read
+	// only to check the files beside it. Counted, not listed by
+	// ListImportFiles.
+	ImportSkipCode_IMPORT_SKIP_CODE_CATALOG_FILE ImportSkipCode = 8
+)
+
+// Enum value maps for ImportSkipCode.
+var (
+	ImportSkipCode_name = map[int32]string{
+		0: "IMPORT_SKIP_CODE_UNSPECIFIED",
+		1: "IMPORT_SKIP_CODE_NOT_PART10",
+		2: "IMPORT_SKIP_CODE_OUTSIDE_LAYOUT",
+		3: "IMPORT_SKIP_CODE_UNMAPPED_SESSION",
+		4: "IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE",
+		5: "IMPORT_SKIP_CODE_UNREADABLE",
+		6: "IMPORT_SKIP_CODE_NOT_REGULAR",
+		7: "IMPORT_SKIP_CODE_TOO_LARGE",
+		8: "IMPORT_SKIP_CODE_CATALOG_FILE",
+	}
+	ImportSkipCode_value = map[string]int32{
+		"IMPORT_SKIP_CODE_UNSPECIFIED":        0,
+		"IMPORT_SKIP_CODE_NOT_PART10":         1,
+		"IMPORT_SKIP_CODE_OUTSIDE_LAYOUT":     2,
+		"IMPORT_SKIP_CODE_UNMAPPED_SESSION":   3,
+		"IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE": 4,
+		"IMPORT_SKIP_CODE_UNREADABLE":         5,
+		"IMPORT_SKIP_CODE_NOT_REGULAR":        6,
+		"IMPORT_SKIP_CODE_TOO_LARGE":          7,
+		"IMPORT_SKIP_CODE_CATALOG_FILE":       8,
+	}
+)
+
+func (x ImportSkipCode) Enum() *ImportSkipCode {
+	p := new(ImportSkipCode)
+	*p = x
+	return p
+}
+
+func (x ImportSkipCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ImportSkipCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_job_proto_enumTypes[3].Descriptor()
+}
+
+func (ImportSkipCode) Type() protoreflect.EnumType {
+	return &file_coria_v1_job_proto_enumTypes[3]
+}
+
+func (x ImportSkipCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ImportSkipCode.Descriptor instead.
+func (ImportSkipCode) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{3}
+}
+
 // JobFailureCode is why an instance of a job was refused, or that it was
 // sent with a warning. A code added in a later version is a new value; a
 // client shows a code it does not know as refused for a reason it cannot
@@ -337,11 +439,11 @@ func (x JobFailureCode) String() string {
 }
 
 func (JobFailureCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_job_proto_enumTypes[3].Descriptor()
+	return file_coria_v1_job_proto_enumTypes[4].Descriptor()
 }
 
 func (JobFailureCode) Type() protoreflect.EnumType {
-	return &file_coria_v1_job_proto_enumTypes[3]
+	return &file_coria_v1_job_proto_enumTypes[4]
 }
 
 func (x JobFailureCode) Number() protoreflect.EnumNumber {
@@ -350,7 +452,164 @@ func (x JobFailureCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use JobFailureCode.Descriptor instead.
 func (JobFailureCode) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{3}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{4}
+}
+
+// ImportFileKind is what an import job's listed file is listed for. A kind
+// added in a later version is a new value; a client shows a kind it does
+// not know as a file that did not reach the archive.
+type ImportFileKind int32
+
+const (
+	// Never answered by the server. As a filter, it is refused as invalid.
+	ImportFileKind_IMPORT_FILE_KIND_UNSPECIFIED ImportFileKind = 0
+	// Not handed in; skip_code says why.
+	ImportFileKind_IMPORT_FILE_KIND_SKIPPED ImportFileKind = 1
+	// Handed in and quarantined; quarantined_file and quarantine_reason say
+	// which record and why.
+	ImportFileKind_IMPORT_FILE_KIND_QUARANTINED ImportFileKind = 2
+	// Handed in, and its copy in the incoming area was gone before the
+	// pipeline read it.
+	ImportFileKind_IMPORT_FILE_KIND_LOST ImportFileKind = 3
+	// Listed by an XNAT resource catalog file and not found on disk; path is
+	// where the catalog says it is.
+	ImportFileKind_IMPORT_FILE_KIND_LISTED_NOT_FOUND ImportFileKind = 4
+	// Found on disk under a resource whose catalog file does not list it.
+	ImportFileKind_IMPORT_FILE_KIND_FOUND_NOT_LISTED ImportFileKind = 5
+	// Its digest in its catalog file differs from the one computed from its
+	// bytes.
+	ImportFileKind_IMPORT_FILE_KIND_DIGEST_DIFFERS ImportFileKind = 6
+	// Handed in, and its reception failed; RetryReception tries it again.
+	ImportFileKind_IMPORT_FILE_KIND_FAILED ImportFileKind = 7
+	// Handed in, and its reception was discarded by a person.
+	ImportFileKind_IMPORT_FILE_KIND_DISCARDED ImportFileKind = 8
+)
+
+// Enum value maps for ImportFileKind.
+var (
+	ImportFileKind_name = map[int32]string{
+		0: "IMPORT_FILE_KIND_UNSPECIFIED",
+		1: "IMPORT_FILE_KIND_SKIPPED",
+		2: "IMPORT_FILE_KIND_QUARANTINED",
+		3: "IMPORT_FILE_KIND_LOST",
+		4: "IMPORT_FILE_KIND_LISTED_NOT_FOUND",
+		5: "IMPORT_FILE_KIND_FOUND_NOT_LISTED",
+		6: "IMPORT_FILE_KIND_DIGEST_DIFFERS",
+		7: "IMPORT_FILE_KIND_FAILED",
+		8: "IMPORT_FILE_KIND_DISCARDED",
+	}
+	ImportFileKind_value = map[string]int32{
+		"IMPORT_FILE_KIND_UNSPECIFIED":      0,
+		"IMPORT_FILE_KIND_SKIPPED":          1,
+		"IMPORT_FILE_KIND_QUARANTINED":      2,
+		"IMPORT_FILE_KIND_LOST":             3,
+		"IMPORT_FILE_KIND_LISTED_NOT_FOUND": 4,
+		"IMPORT_FILE_KIND_FOUND_NOT_LISTED": 5,
+		"IMPORT_FILE_KIND_DIGEST_DIFFERS":   6,
+		"IMPORT_FILE_KIND_FAILED":           7,
+		"IMPORT_FILE_KIND_DISCARDED":        8,
+	}
+)
+
+func (x ImportFileKind) Enum() *ImportFileKind {
+	p := new(ImportFileKind)
+	*p = x
+	return p
+}
+
+func (x ImportFileKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ImportFileKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_job_proto_enumTypes[5].Descriptor()
+}
+
+func (ImportFileKind) Type() protoreflect.EnumType {
+	return &file_coria_v1_job_proto_enumTypes[5]
+}
+
+func (x ImportFileKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ImportFileKind.Descriptor instead.
+func (ImportFileKind) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{5}
+}
+
+// ImportUnitState is where one unit of an import job is. A unit goes
+// forward only; walked waits for outcomes, and done, failed and canceled
+// are ends.
+type ImportUnitState int32
+
+const (
+	// Never answered by the server.
+	ImportUnitState_IMPORT_UNIT_STATE_UNSPECIFIED ImportUnitState = 0
+	// Queued; its walk has not started, as while the tenant runs
+	// import.max-units others or the server import.server-max-units.
+	ImportUnitState_IMPORT_UNIT_STATE_QUEUED ImportUnitState = 1
+	// Walking its folder and handing files in.
+	ImportUnitState_IMPORT_UNIT_STATE_WALKING ImportUnitState = 2
+	// Its walk has ended; some files it handed in have no outcome yet.
+	ImportUnitState_IMPORT_UNIT_STATE_WALKED ImportUnitState = 3
+	// Its walk has ended and every file it handed in has an outcome.
+	ImportUnitState_IMPORT_UNIT_STATE_DONE ImportUnitState = 4
+	// Its walk ended unfinished: its attempts ran out, or its root was
+	// unavailable ("root unavailable"); reason says which. What it handed in
+	// still goes on to its outcome and is counted.
+	ImportUnitState_IMPORT_UNIT_STATE_FAILED ImportUnitState = 5
+	// Ended by CancelJob before its walk ended.
+	ImportUnitState_IMPORT_UNIT_STATE_CANCELED ImportUnitState = 6
+)
+
+// Enum value maps for ImportUnitState.
+var (
+	ImportUnitState_name = map[int32]string{
+		0: "IMPORT_UNIT_STATE_UNSPECIFIED",
+		1: "IMPORT_UNIT_STATE_QUEUED",
+		2: "IMPORT_UNIT_STATE_WALKING",
+		3: "IMPORT_UNIT_STATE_WALKED",
+		4: "IMPORT_UNIT_STATE_DONE",
+		5: "IMPORT_UNIT_STATE_FAILED",
+		6: "IMPORT_UNIT_STATE_CANCELED",
+	}
+	ImportUnitState_value = map[string]int32{
+		"IMPORT_UNIT_STATE_UNSPECIFIED": 0,
+		"IMPORT_UNIT_STATE_QUEUED":      1,
+		"IMPORT_UNIT_STATE_WALKING":     2,
+		"IMPORT_UNIT_STATE_WALKED":      3,
+		"IMPORT_UNIT_STATE_DONE":        4,
+		"IMPORT_UNIT_STATE_FAILED":      5,
+		"IMPORT_UNIT_STATE_CANCELED":    6,
+	}
+)
+
+func (x ImportUnitState) Enum() *ImportUnitState {
+	p := new(ImportUnitState)
+	*p = x
+	return p
+}
+
+func (x ImportUnitState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ImportUnitState) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_job_proto_enumTypes[6].Descriptor()
+}
+
+func (ImportUnitState) Type() protoreflect.EnumType {
+	return &file_coria_v1_job_proto_enumTypes[6]
+}
+
+func (x ImportUnitState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ImportUnitState.Descriptor instead.
+func (ImportUnitState) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{6}
 }
 
 // JobCounts are a job's instances and bytes so far. An instance counts in
@@ -360,6 +619,15 @@ func (JobFailureCode) EnumDescriptor() ([]byte, []int) {
 // for bytes. Bytes are those of the archived files: the DICOM file header
 // and the data set. The counts are totals, never changes since the last
 // answer, so a client that sees one event twice counts nothing twice.
+//
+// For an import job they count files met, from ImportCounts: instances is
+// found plus handed_again (a file handed in twice counts twice);
+// instances_sent is archived plus already_held; instances_refused is
+// skipped plus quarantined plus lost plus failed plus discarded;
+// instances_remaining is processing;
+// instances_warned is 0; so the identity above holds at every answer. Its
+// bytes are 0 (ImportCounts.bytes_handed_in has them); scans and
+// scans_done count its units; listed says every unit is queued.
 type JobCounts struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The instances of the job's target. It grows while the job lists its
@@ -844,6 +1112,478 @@ func (x *RebuildJob) GetScratchSchema() string {
 	return ""
 }
 
+// ImportJob is a job that hands the files of a directory under an import
+// receiver's root to that receiver (ImportReceiver).
+type ImportJob struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The name of the tenant's import receiver the files are handed to.
+	// Required. A receiver removed later keeps its name here, and no other
+	// receiver is given that name while a job names it.
+	Receiver string `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
+	// The directory read, by its path relative to the receiver's root, its
+	// segments joined by "/": each 1 to 255 bytes of UTF-8, none "." or
+	// "..", none holding "\", ":" or NUL (a separator or a drive on another
+	// system); no empty segment, no leading or trailing "/"; at most 4096
+	// bytes; empty for the whole root. Each segment is opened under the root
+	// without following a link, and the last must be a directory. A path can
+	// hold what identifies a person, so it is answered only to an operator or
+	// more on the tenant, and empty to a reader, and never written to a log,
+	// an event or an audit entry.
+	Path string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// The map file, by its path relative to the receiver's root, under the
+	// rules of path; it must be inside that root. Empty, with map_csv empty,
+	// uses the receiver's (ImportReceiver.map_file), and none when it has
+	// none. At most one of map_file and map_csv is given. Answered and kept
+	// as path is.
+	MapFile string `protobuf:"bytes,3,opt,name=map_file,json=mapFile,proto3" json:"map_file,omitempty"`
+	// For the XNAT layout with no map, whether to take {subject} from
+	// Patient Name (0010,0010) of each file as received, as XNAT's default
+	// anonymization script writes the subject there. False, the default,
+	// refuses an XNAT import with no map in CreateJob, since a site that
+	// changed that script would get labels made from whatever its headers
+	// say. True with a map (the job's or the receiver's), or with another
+	// layout, is refused as invalid: the subject would have two sources.
+	SubjectFromHeaders bool `protobuf:"varint,4,opt,name=subject_from_headers,json=subjectFromHeaders,proto3" json:"subject_from_headers,omitempty"`
+	// What became of the files it found so far. Answered by the server; must
+	// be absent in CreateJob.
+	Counts *ImportCounts `protobuf:"bytes,5,opt,name=counts,proto3" json:"counts,omitempty"`
+	// The map itself, inline, in the form ImportReceiver describes, for a map
+	// that is not in the root: at most 3 MiB. Kept with the job as given.
+	// It holds subjects' labels as the source system kept them, which can be
+	// names, so it is answered only to an operator or more on the tenant, in
+	// GetJob alone (empty in every other answer, and to a reader), and never
+	// written to a log, an event or an audit entry.
+	MapCsv        []byte `protobuf:"bytes,6,opt,name=map_csv,json=mapCsv,proto3" json:"map_csv,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportJob) Reset() {
+	*x = ImportJob{}
+	mi := &file_coria_v1_job_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportJob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportJob) ProtoMessage() {}
+
+func (x *ImportJob) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportJob.ProtoReflect.Descriptor instead.
+func (*ImportJob) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ImportJob) GetReceiver() string {
+	if x != nil {
+		return x.Receiver
+	}
+	return ""
+}
+
+func (x *ImportJob) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ImportJob) GetMapFile() string {
+	if x != nil {
+		return x.MapFile
+	}
+	return ""
+}
+
+func (x *ImportJob) GetSubjectFromHeaders() bool {
+	if x != nil {
+		return x.SubjectFromHeaders
+	}
+	return false
+}
+
+func (x *ImportJob) GetCounts() *ImportCounts {
+	if x != nil {
+		return x.Counts
+	}
+	return nil
+}
+
+func (x *ImportJob) GetMapCsv() []byte {
+	if x != nil {
+		return x.MapCsv
+	}
+	return nil
+}
+
+// ImportSkipCount is how many files an import job skipped for one reason.
+type ImportSkipCount struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The reason.
+	Code ImportSkipCode `protobuf:"varint,1,opt,name=code,proto3,enum=coria.v1.ImportSkipCode" json:"code,omitempty"`
+	// How many.
+	Count         int64 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportSkipCount) Reset() {
+	*x = ImportSkipCount{}
+	mi := &file_coria_v1_job_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportSkipCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportSkipCount) ProtoMessage() {}
+
+func (x *ImportSkipCount) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportSkipCount.ProtoReflect.Descriptor instead.
+func (*ImportSkipCount) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ImportSkipCount) GetCode() ImportSkipCode {
+	if x != nil {
+		return x.Code
+	}
+	return ImportSkipCode_IMPORT_SKIP_CODE_UNSPECIFIED
+}
+
+func (x *ImportSkipCount) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+// ImportQuarantineCount is how many files an import job handed in were
+// quarantined for one reason.
+type ImportQuarantineCount struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The reason.
+	Reason QuarantineReason `protobuf:"varint,1,opt,name=reason,proto3,enum=coria.v1.QuarantineReason" json:"reason,omitempty"`
+	// How many.
+	Count         int64 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportQuarantineCount) Reset() {
+	*x = ImportQuarantineCount{}
+	mi := &file_coria_v1_job_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportQuarantineCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportQuarantineCount) ProtoMessage() {}
+
+func (x *ImportQuarantineCount) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportQuarantineCount.ProtoReflect.Descriptor instead.
+func (*ImportQuarantineCount) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ImportQuarantineCount) GetReason() QuarantineReason {
+	if x != nil {
+		return x.Reason
+	}
+	return QuarantineReason_QUARANTINE_REASON_UNSPECIFIED
+}
+
+func (x *ImportQuarantineCount) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+// ImportCounts are what became of the files an import job, or one of its
+// units, found so far. Totals, never changes since the last answer. They
+// reconcile at every answer:
+//
+//	found + handed_again = skipped + handed_in
+//	handed_in = archived + already_held + quarantined + lost + failed
+//	            + discarded + processing
+//
+// where skipped and quarantined are the sums of their counts by reason.
+// The XNAT catalog counts (listed_not_found, found_not_listed,
+// digest_differs, catalogs_not_checked) and label_differs stand beside
+// these and are in none of the sums. found, skipped and handed_in are
+// written with each file's record and the unit's cursor in one
+// transaction, and each outcome in the transaction that decides it, so
+// the identities hold at every answer, across a crash too.
+type ImportCounts struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The entries the walk met that it judged: each file, and each directory
+	// it skipped whole. Directories walked are not counted.
+	Found int64 `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	// The files skipped, by reason, most first; a reason with none is not
+	// listed.
+	Skipped []*ImportSkipCount `protobuf:"bytes,2,rep,name=skipped,proto3" json:"skipped,omitempty"`
+	// The files handed to the receiver, each landed in the incoming area.
+	HandedIn int64 `protobuf:"varint,3,opt,name=handed_in,json=handedIn,proto3" json:"handed_in,omitempty"`
+	// The files handed in a second time after a unit went on from its cursor
+	// following a crash or a lost lease. Always 0 in this version, which
+	// writes each hand-off with the cursor; kept so that a later version
+	// that batches those writes can count what it hands in again.
+	HandedAgain int64 `protobuf:"varint,4,opt,name=handed_again,json=handedAgain,proto3" json:"handed_again,omitempty"`
+	// The files archived: a new instance in the catalog.
+	Archived int64 `protobuf:"varint,5,opt,name=archived,proto3" json:"archived,omitempty"`
+	// The files the tenant already held: the same SOP Instance UID with the
+	// same checksum as received (for a receiver that de-identifies, the same
+	// keyed checksum) as the instance has or had at any revision, so nothing
+	// new was stored. One matching a revision a correction replaced is
+	// tallied "superseded_revision" in the job's tallies.
+	AlreadyHeld int64 `protobuf:"varint,6,opt,name=already_held,json=alreadyHeld,proto3" json:"already_held,omitempty"`
+	// The files quarantined, by reason, most first.
+	Quarantined []*ImportQuarantineCount `protobuf:"bytes,7,rep,name=quarantined,proto3" json:"quarantined,omitempty"`
+	// The files whose copy in the incoming area was gone before the pipeline
+	// read it (QUARANTINE_REASON_INCOMING_LOST). The source in the root is
+	// untouched, so a retry hands it in again.
+	Lost int64 `protobuf:"varint,8,opt,name=lost,proto3" json:"lost,omitempty"`
+	// The files handed in that the pipeline has not decided yet. The job
+	// ends only when it is zero, or settling times out.
+	Processing int64 `protobuf:"varint,9,opt,name=processing,proto3" json:"processing,omitempty"`
+	// The bytes of the files handed in, as read from the root.
+	BytesHandedIn int64 `protobuf:"varint,10,opt,name=bytes_handed_in,json=bytesHandedIn,proto3" json:"bytes_handed_in,omitempty"`
+	// The files archived or already held into a session whose label differs
+	// from the one their path would make: a session keeps the label it was
+	// first given.
+	LabelDiffers int64 `protobuf:"varint,11,opt,name=label_differs,json=labelDiffers,proto3" json:"label_differs,omitempty"`
+	// Entries an XNAT resource catalog file (*_catalog.xml, read bounded and
+	// used only as a check) lists that the walk did not find on disk.
+	ListedNotFound int64 `protobuf:"varint,12,opt,name=listed_not_found,json=listedNotFound,proto3" json:"listed_not_found,omitempty"`
+	// Files the walk found under a resource whose catalog file does not list
+	// them.
+	FoundNotListed int64 `protobuf:"varint,13,opt,name=found_not_listed,json=foundNotListed,proto3" json:"found_not_listed,omitempty"`
+	// Files whose digest in their catalog file differs from the one computed
+	// from their bytes.
+	DigestDiffers int64 `protobuf:"varint,14,opt,name=digest_differs,json=digestDiffers,proto3" json:"digest_differs,omitempty"`
+	// The job's units: the listing unit, and one per folder at the layout's
+	// unit depth. For a unit's own counts, 1.
+	Units int64 `protobuf:"varint,15,opt,name=units,proto3" json:"units,omitempty"`
+	// The units whose walk has ended, whatever it found.
+	UnitsWalked int64 `protobuf:"varint,16,opt,name=units_walked,json=unitsWalked,proto3" json:"units_walked,omitempty"`
+	// The files whose reception failed (ReceptionService), their bytes kept
+	// in the incoming area. RetryReception moves them back to processing.
+	Failed int64 `protobuf:"varint,17,opt,name=failed,proto3" json:"failed,omitempty"`
+	// The files whose reception a person discarded
+	// (ReceptionService.DiscardReception).
+	Discarded int64 `protobuf:"varint,18,opt,name=discarded,proto3" json:"discarded,omitempty"`
+	// The XNAT catalog files larger than the 16 MiB the server reads of one,
+	// which were therefore not checked against the files beside them.
+	CatalogsNotChecked int64 `protobuf:"varint,19,opt,name=catalogs_not_checked,json=catalogsNotChecked,proto3" json:"catalogs_not_checked,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
+}
+
+func (x *ImportCounts) Reset() {
+	*x = ImportCounts{}
+	mi := &file_coria_v1_job_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportCounts) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportCounts) ProtoMessage() {}
+
+func (x *ImportCounts) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportCounts.ProtoReflect.Descriptor instead.
+func (*ImportCounts) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ImportCounts) GetFound() int64 {
+	if x != nil {
+		return x.Found
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetSkipped() []*ImportSkipCount {
+	if x != nil {
+		return x.Skipped
+	}
+	return nil
+}
+
+func (x *ImportCounts) GetHandedIn() int64 {
+	if x != nil {
+		return x.HandedIn
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetHandedAgain() int64 {
+	if x != nil {
+		return x.HandedAgain
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetArchived() int64 {
+	if x != nil {
+		return x.Archived
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetAlreadyHeld() int64 {
+	if x != nil {
+		return x.AlreadyHeld
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetQuarantined() []*ImportQuarantineCount {
+	if x != nil {
+		return x.Quarantined
+	}
+	return nil
+}
+
+func (x *ImportCounts) GetLost() int64 {
+	if x != nil {
+		return x.Lost
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetProcessing() int64 {
+	if x != nil {
+		return x.Processing
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetBytesHandedIn() int64 {
+	if x != nil {
+		return x.BytesHandedIn
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetLabelDiffers() int64 {
+	if x != nil {
+		return x.LabelDiffers
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetListedNotFound() int64 {
+	if x != nil {
+		return x.ListedNotFound
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetFoundNotListed() int64 {
+	if x != nil {
+		return x.FoundNotListed
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetDigestDiffers() int64 {
+	if x != nil {
+		return x.DigestDiffers
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetUnits() int64 {
+	if x != nil {
+		return x.Units
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetUnitsWalked() int64 {
+	if x != nil {
+		return x.UnitsWalked
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetFailed() int64 {
+	if x != nil {
+		return x.Failed
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetDiscarded() int64 {
+	if x != nil {
+		return x.Discarded
+	}
+	return 0
+}
+
+func (x *ImportCounts) GetCatalogsNotChecked() int64 {
+	if x != nil {
+		return x.CatalogsNotChecked
+	}
+	return 0
+}
+
 // JobTally is one count of what a deid job found, under a key of fixed
 // words and the profile's names, never a value read from a file. A key is
 // its kind, then its parts, joined by "|":
@@ -874,7 +1614,7 @@ type JobTally struct {
 
 func (x *JobTally) Reset() {
 	*x = JobTally{}
-	mi := &file_coria_v1_job_proto_msgTypes[5]
+	mi := &file_coria_v1_job_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +1626,7 @@ func (x *JobTally) String() string {
 func (*JobTally) ProtoMessage() {}
 
 func (x *JobTally) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[5]
+	mi := &file_coria_v1_job_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +1639,7 @@ func (x *JobTally) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobTally.ProtoReflect.Descriptor instead.
 func (*JobTally) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{5}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *JobTally) GetKey() string {
@@ -932,6 +1672,7 @@ type Job struct {
 	//	*Job_Deid
 	//	*Job_Scrub
 	//	*Job_Rebuild
+	//	*Job_ImportJob
 	Kind isJob_Kind `protobuf_oneof:"kind"`
 	// Where it is.
 	State JobState `protobuf:"varint,3,opt,name=state,proto3,enum=coria.v1.JobState" json:"state,omitempty"`
@@ -939,9 +1680,12 @@ type Job struct {
 	Counts *JobCounts `protobuf:"bytes,4,opt,name=counts,proto3" json:"counts,omitempty"`
 	// Why it is not moving, or why it ended as it did, in words for a
 	// person, from a fixed set of phrases the server has, such as "sender
-	// down", "sender disabled" or "attempts ran out"; at most 256 bytes.
-	// Empty while nothing holds it back, and for a job done. It never holds
-	// a secret or the peer's own words.
+	// down", "sender disabled" or "attempts ran out"; for an import job
+	// also "receiver disabled", "root unavailable", "settling" (running,
+	// every walk ended, some files without an outcome yet) and "settling
+	// timed out" (ended partial with files still processing); at most 256
+	// bytes. Empty while nothing holds it back, and for a job done.
+	// It never holds a secret, a path or the peer's own words.
 	Reason string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
 	// The id of the key that made it; empty when the local operator or a
 	// receiver's forward_to did (SendJob.receiver says which).
@@ -965,7 +1709,8 @@ type Job struct {
 	FailuresNotListed int64 `protobuf:"varint,13,opt,name=failures_not_listed,json=failuresNotListed,proto3" json:"failures_not_listed,omitempty"`
 	// Its counts per rule, reason, finding or difference so far, most first
 	// and then by key; at most 1001 (JobTally, and the tallies JobService
-	// names for a scrub, a rebuild, and a send's "superseded_during_send").
+	// names for a scrub, a rebuild, a send's "superseded_during_send" and an
+	// import's "superseded_revision").
 	// Answered by GetJob alone; empty in every other answer.
 	Tallies       []*JobTally `protobuf:"bytes,15,rep,name=tallies,proto3" json:"tallies,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -974,7 +1719,7 @@ type Job struct {
 
 func (x *Job) Reset() {
 	*x = Job{}
-	mi := &file_coria_v1_job_proto_msgTypes[6]
+	mi := &file_coria_v1_job_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -986,7 +1731,7 @@ func (x *Job) String() string {
 func (*Job) ProtoMessage() {}
 
 func (x *Job) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[6]
+	mi := &file_coria_v1_job_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -999,7 +1744,7 @@ func (x *Job) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Job.ProtoReflect.Descriptor instead.
 func (*Job) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{6}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Job) GetId() string {
@@ -1047,6 +1792,15 @@ func (x *Job) GetRebuild() *RebuildJob {
 	if x != nil {
 		if x, ok := x.Kind.(*Job_Rebuild); ok {
 			return x.Rebuild
+		}
+	}
+	return nil
+}
+
+func (x *Job) GetImportJob() *ImportJob {
+	if x != nil {
+		if x, ok := x.Kind.(*Job_ImportJob); ok {
+			return x.ImportJob
 		}
 	}
 	return nil
@@ -1161,6 +1915,12 @@ type Job_Rebuild struct {
 	Rebuild *RebuildJob `protobuf:"bytes,17,opt,name=rebuild,proto3,oneof"`
 }
 
+type Job_ImportJob struct {
+	// The files of a directory handed to an import receiver. Named
+	// import_job, not import, since import is a keyword of Python.
+	ImportJob *ImportJob `protobuf:"bytes,18,opt,name=import_job,json=importJob,proto3,oneof"`
+}
+
 func (*Job_Send) isJob_Kind() {}
 
 func (*Job_Deid) isJob_Kind() {}
@@ -1168,6 +1928,8 @@ func (*Job_Deid) isJob_Kind() {}
 func (*Job_Scrub) isJob_Kind() {}
 
 func (*Job_Rebuild) isJob_Kind() {}
+
+func (*Job_ImportJob) isJob_Kind() {}
 
 // JobFailure is one instance of a job that was refused, or sent with a
 // warning.
@@ -1215,7 +1977,7 @@ type JobFailure struct {
 
 func (x *JobFailure) Reset() {
 	*x = JobFailure{}
-	mi := &file_coria_v1_job_proto_msgTypes[7]
+	mi := &file_coria_v1_job_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1227,7 +1989,7 @@ func (x *JobFailure) String() string {
 func (*JobFailure) ProtoMessage() {}
 
 func (x *JobFailure) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[7]
+	mi := &file_coria_v1_job_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1240,7 +2002,7 @@ func (x *JobFailure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobFailure.ProtoReflect.Descriptor instead.
 func (*JobFailure) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{7}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *JobFailure) GetInstanceId() string {
@@ -1340,6 +2102,7 @@ type CreateJobRequest struct {
 	//	*CreateJobRequest_Deid
 	//	*CreateJobRequest_Scrub
 	//	*CreateJobRequest_Rebuild
+	//	*CreateJobRequest_ImportJob
 	Kind          isCreateJobRequest_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1347,7 +2110,7 @@ type CreateJobRequest struct {
 
 func (x *CreateJobRequest) Reset() {
 	*x = CreateJobRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[8]
+	mi := &file_coria_v1_job_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1359,7 +2122,7 @@ func (x *CreateJobRequest) String() string {
 func (*CreateJobRequest) ProtoMessage() {}
 
 func (x *CreateJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[8]
+	mi := &file_coria_v1_job_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1372,7 +2135,7 @@ func (x *CreateJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateJobRequest.ProtoReflect.Descriptor instead.
 func (*CreateJobRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{8}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CreateJobRequest) GetTenant() string {
@@ -1425,6 +2188,15 @@ func (x *CreateJobRequest) GetRebuild() *RebuildJob {
 	return nil
 }
 
+func (x *CreateJobRequest) GetImportJob() *ImportJob {
+	if x != nil {
+		if x, ok := x.Kind.(*CreateJobRequest_ImportJob); ok {
+			return x.ImportJob
+		}
+	}
+	return nil
+}
+
 type isCreateJobRequest_Kind interface {
 	isCreateJobRequest_Kind()
 }
@@ -1453,6 +2225,12 @@ type CreateJobRequest_Rebuild struct {
 	Rebuild *RebuildJob `protobuf:"bytes,5,opt,name=rebuild,proto3,oneof"`
 }
 
+type CreateJobRequest_ImportJob struct {
+	// Hand the files of a directory under an import receiver's root to
+	// it. Its counts must be absent.
+	ImportJob *ImportJob `protobuf:"bytes,6,opt,name=import_job,json=importJob,proto3,oneof"`
+}
+
 func (*CreateJobRequest_Send) isCreateJobRequest_Kind() {}
 
 func (*CreateJobRequest_Deid) isCreateJobRequest_Kind() {}
@@ -1460,6 +2238,8 @@ func (*CreateJobRequest_Deid) isCreateJobRequest_Kind() {}
 func (*CreateJobRequest_Scrub) isCreateJobRequest_Kind() {}
 
 func (*CreateJobRequest_Rebuild) isCreateJobRequest_Kind() {}
+
+func (*CreateJobRequest_ImportJob) isCreateJobRequest_Kind() {}
 
 // CreateJobResponse is the job made.
 type CreateJobResponse struct {
@@ -1472,7 +2252,7 @@ type CreateJobResponse struct {
 
 func (x *CreateJobResponse) Reset() {
 	*x = CreateJobResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[9]
+	mi := &file_coria_v1_job_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1484,7 +2264,7 @@ func (x *CreateJobResponse) String() string {
 func (*CreateJobResponse) ProtoMessage() {}
 
 func (x *CreateJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[9]
+	mi := &file_coria_v1_job_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1497,7 +2277,7 @@ func (x *CreateJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateJobResponse.ProtoReflect.Descriptor instead.
 func (*CreateJobResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{9}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CreateJobResponse) GetJob() *Job {
@@ -1520,7 +2300,7 @@ type GetJobRequest struct {
 
 func (x *GetJobRequest) Reset() {
 	*x = GetJobRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[10]
+	mi := &file_coria_v1_job_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1532,7 +2312,7 @@ func (x *GetJobRequest) String() string {
 func (*GetJobRequest) ProtoMessage() {}
 
 func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[10]
+	mi := &file_coria_v1_job_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1545,7 +2325,7 @@ func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobRequest.ProtoReflect.Descriptor instead.
 func (*GetJobRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{10}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetJobRequest) GetTenant() string {
@@ -1573,7 +2353,7 @@ type GetJobResponse struct {
 
 func (x *GetJobResponse) Reset() {
 	*x = GetJobResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[11]
+	mi := &file_coria_v1_job_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1585,7 +2365,7 @@ func (x *GetJobResponse) String() string {
 func (*GetJobResponse) ProtoMessage() {}
 
 func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[11]
+	mi := &file_coria_v1_job_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1598,7 +2378,7 @@ func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobResponse.ProtoReflect.Descriptor instead.
 func (*GetJobResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{11}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetJobResponse) GetJob() *Job {
@@ -1640,7 +2420,7 @@ type ListJobsRequest struct {
 
 func (x *ListJobsRequest) Reset() {
 	*x = ListJobsRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[12]
+	mi := &file_coria_v1_job_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1652,7 +2432,7 @@ func (x *ListJobsRequest) String() string {
 func (*ListJobsRequest) ProtoMessage() {}
 
 func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[12]
+	mi := &file_coria_v1_job_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1665,7 +2445,7 @@ func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
 func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{12}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListJobsRequest) GetTenant() string {
@@ -1737,7 +2517,7 @@ type ListJobsResponse struct {
 
 func (x *ListJobsResponse) Reset() {
 	*x = ListJobsResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[13]
+	mi := &file_coria_v1_job_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1749,7 +2529,7 @@ func (x *ListJobsResponse) String() string {
 func (*ListJobsResponse) ProtoMessage() {}
 
 func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[13]
+	mi := &file_coria_v1_job_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1762,7 +2542,7 @@ func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
 func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{13}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListJobsResponse) GetJobs() []*Job {
@@ -1792,7 +2572,7 @@ type CancelJobRequest struct {
 
 func (x *CancelJobRequest) Reset() {
 	*x = CancelJobRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[14]
+	mi := &file_coria_v1_job_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1804,7 +2584,7 @@ func (x *CancelJobRequest) String() string {
 func (*CancelJobRequest) ProtoMessage() {}
 
 func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[14]
+	mi := &file_coria_v1_job_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1817,7 +2597,7 @@ func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
 func (*CancelJobRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{14}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CancelJobRequest) GetTenant() string {
@@ -1845,7 +2625,7 @@ type CancelJobResponse struct {
 
 func (x *CancelJobResponse) Reset() {
 	*x = CancelJobResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[15]
+	mi := &file_coria_v1_job_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1857,7 +2637,7 @@ func (x *CancelJobResponse) String() string {
 func (*CancelJobResponse) ProtoMessage() {}
 
 func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[15]
+	mi := &file_coria_v1_job_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1870,7 +2650,7 @@ func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobResponse.ProtoReflect.Descriptor instead.
 func (*CancelJobResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{15}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CancelJobResponse) GetJob() *Job {
@@ -1893,7 +2673,7 @@ type RetryJobRequest struct {
 
 func (x *RetryJobRequest) Reset() {
 	*x = RetryJobRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[16]
+	mi := &file_coria_v1_job_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1905,7 +2685,7 @@ func (x *RetryJobRequest) String() string {
 func (*RetryJobRequest) ProtoMessage() {}
 
 func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[16]
+	mi := &file_coria_v1_job_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1918,7 +2698,7 @@ func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobRequest.ProtoReflect.Descriptor instead.
 func (*RetryJobRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{16}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RetryJobRequest) GetTenant() string {
@@ -1948,7 +2728,7 @@ type RetryJobResponse struct {
 
 func (x *RetryJobResponse) Reset() {
 	*x = RetryJobResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[17]
+	mi := &file_coria_v1_job_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1960,7 +2740,7 @@ func (x *RetryJobResponse) String() string {
 func (*RetryJobResponse) ProtoMessage() {}
 
 func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[17]
+	mi := &file_coria_v1_job_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1973,7 +2753,7 @@ func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobResponse.ProtoReflect.Descriptor instead.
 func (*RetryJobResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{17}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RetryJobResponse) GetJob() *Job {
@@ -2013,7 +2793,7 @@ type ListJobFailuresRequest struct {
 
 func (x *ListJobFailuresRequest) Reset() {
 	*x = ListJobFailuresRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[18]
+	mi := &file_coria_v1_job_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2025,7 +2805,7 @@ func (x *ListJobFailuresRequest) String() string {
 func (*ListJobFailuresRequest) ProtoMessage() {}
 
 func (x *ListJobFailuresRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[18]
+	mi := &file_coria_v1_job_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2038,7 +2818,7 @@ func (x *ListJobFailuresRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobFailuresRequest.ProtoReflect.Descriptor instead.
 func (*ListJobFailuresRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{18}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListJobFailuresRequest) GetTenant() string {
@@ -2089,7 +2869,7 @@ type ListJobFailuresResponse struct {
 
 func (x *ListJobFailuresResponse) Reset() {
 	*x = ListJobFailuresResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[19]
+	mi := &file_coria_v1_job_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2101,7 +2881,7 @@ func (x *ListJobFailuresResponse) String() string {
 func (*ListJobFailuresResponse) ProtoMessage() {}
 
 func (x *ListJobFailuresResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[19]
+	mi := &file_coria_v1_job_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2114,7 +2894,7 @@ func (x *ListJobFailuresResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobFailuresResponse.ProtoReflect.Descriptor instead.
 func (*ListJobFailuresResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{19}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListJobFailuresResponse) GetFailures() []*JobFailure {
@@ -2131,11 +2911,549 @@ func (x *ListJobFailuresResponse) GetNextPageToken() string {
 	return ""
 }
 
+// ImportFile is one file of an import job that did not reach the archive,
+// or that its XNAT catalog files disagree about.
+type ImportFile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Its path relative to the receiver's root, its segments joined by "/".
+	// It can hold what identifies a person: answered only to an operator or
+	// more on the tenant, never written to a log, an event or an audit entry.
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// What it is listed for.
+	Kind ImportFileKind `protobuf:"varint,2,opt,name=kind,proto3,enum=coria.v1.ImportFileKind" json:"kind,omitempty"`
+	// Why it was skipped, for IMPORT_FILE_KIND_SKIPPED;
+	// IMPORT_SKIP_CODE_UNSPECIFIED otherwise.
+	SkipCode ImportSkipCode `protobuf:"varint,3,opt,name=skip_code,json=skipCode,proto3,enum=coria.v1.ImportSkipCode" json:"skip_code,omitempty"`
+	// The id of its quarantine record (QuarantineService), for
+	// IMPORT_FILE_KIND_QUARANTINED; empty otherwise.
+	QuarantinedFile string `protobuf:"bytes,4,opt,name=quarantined_file,json=quarantinedFile,proto3" json:"quarantined_file,omitempty"`
+	// Why it was quarantined, for IMPORT_FILE_KIND_QUARANTINED;
+	// QUARANTINE_REASON_UNSPECIFIED otherwise.
+	QuarantineReason QuarantineReason `protobuf:"varint,5,opt,name=quarantine_reason,json=quarantineReason,proto3,enum=coria.v1.QuarantineReason" json:"quarantine_reason,omitempty"`
+	// The id of the unit that found it (ImportUnit.id).
+	Unit string `protobuf:"bytes,6,opt,name=unit,proto3" json:"unit,omitempty"`
+	// Its size in bytes as the walk saw it; 0 when it was not read, as a
+	// directory skipped whole or a file listed and not found.
+	SizeBytes int64 `protobuf:"varint,7,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// More about it, in words for a person, from a fixed set of phrases the
+	// server has, such as "import.max-dir-entries" for a directory too wide;
+	// at most 256 bytes. Never the operating system's own text, which can
+	// repeat a path.
+	Detail string `protobuf:"bytes,8,opt,name=detail,proto3" json:"detail,omitempty"`
+	// When it was listed.
+	Time *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=time,proto3" json:"time,omitempty"`
+	// The id of the reception it was handed into (ReceptionService), for a
+	// file quarantined, failed or discarded, so a failed one can be retried
+	// there; empty otherwise.
+	Reception     string `protobuf:"bytes,10,opt,name=reception,proto3" json:"reception,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportFile) Reset() {
+	*x = ImportFile{}
+	mi := &file_coria_v1_job_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportFile) ProtoMessage() {}
+
+func (x *ImportFile) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportFile.ProtoReflect.Descriptor instead.
+func (*ImportFile) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ImportFile) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ImportFile) GetKind() ImportFileKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ImportFileKind_IMPORT_FILE_KIND_UNSPECIFIED
+}
+
+func (x *ImportFile) GetSkipCode() ImportSkipCode {
+	if x != nil {
+		return x.SkipCode
+	}
+	return ImportSkipCode_IMPORT_SKIP_CODE_UNSPECIFIED
+}
+
+func (x *ImportFile) GetQuarantinedFile() string {
+	if x != nil {
+		return x.QuarantinedFile
+	}
+	return ""
+}
+
+func (x *ImportFile) GetQuarantineReason() QuarantineReason {
+	if x != nil {
+		return x.QuarantineReason
+	}
+	return QuarantineReason_QUARANTINE_REASON_UNSPECIFIED
+}
+
+func (x *ImportFile) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *ImportFile) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *ImportFile) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+func (x *ImportFile) GetTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Time
+	}
+	return nil
+}
+
+func (x *ImportFile) GetReception() string {
+	if x != nil {
+		return x.Reception
+	}
+	return ""
+}
+
+// ImportUnit is one unit of an import job: one folder, walked and resumed
+// on its own.
+type ImportUnit struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The unit's id, made by the server, unique in the job. Opaque, at most
+	// 64 bytes; it names no path.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Its folder relative to the receiver's root, its segments joined by "/".
+	// It can hold what identifies a person: answered only to an operator or
+	// more on the tenant, never written to a log, an event or an audit entry.
+	Folder string `protobuf:"bytes,2,opt,name=folder,proto3" json:"folder,omitempty"`
+	// Where it is.
+	State ImportUnitState `protobuf:"varint,3,opt,name=state,proto3,enum=coria.v1.ImportUnitState" json:"state,omitempty"`
+	// What became of the files it found so far; units is 1.
+	Counts *ImportCounts `protobuf:"bytes,4,opt,name=counts,proto3" json:"counts,omitempty"`
+	// Why it is not moving, or why it failed, from the same fixed set of
+	// phrases as Job.reason; at most 256 bytes. Never a path.
+	Reason string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	// The attempts it has used, of 30.
+	Attempts int32 `protobuf:"varint,6,opt,name=attempts,proto3" json:"attempts,omitempty"`
+	// When its walk ended. Absent until then.
+	WalkEndTime   *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=walk_end_time,json=walkEndTime,proto3" json:"walk_end_time,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ImportUnit) Reset() {
+	*x = ImportUnit{}
+	mi := &file_coria_v1_job_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ImportUnit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ImportUnit) ProtoMessage() {}
+
+func (x *ImportUnit) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ImportUnit.ProtoReflect.Descriptor instead.
+func (*ImportUnit) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ImportUnit) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ImportUnit) GetFolder() string {
+	if x != nil {
+		return x.Folder
+	}
+	return ""
+}
+
+func (x *ImportUnit) GetState() ImportUnitState {
+	if x != nil {
+		return x.State
+	}
+	return ImportUnitState_IMPORT_UNIT_STATE_UNSPECIFIED
+}
+
+func (x *ImportUnit) GetCounts() *ImportCounts {
+	if x != nil {
+		return x.Counts
+	}
+	return nil
+}
+
+func (x *ImportUnit) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ImportUnit) GetAttempts() int32 {
+	if x != nil {
+		return x.Attempts
+	}
+	return 0
+}
+
+func (x *ImportUnit) GetWalkEndTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.WalkEndTime
+	}
+	return nil
+}
+
+// ListImportFilesRequest asks for a page of an import job's files that did
+// not reach the archive.
+type ListImportFilesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant, by name. Required.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The job's id. Required; at most 64 bytes.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// Only the files of these kinds. Empty for every kind; at most 16
+	// values, none of them IMPORT_FILE_KIND_UNSPECIFIED.
+	Kinds []ImportFileKind `protobuf:"varint,3,rep,packed,name=kinds,proto3,enum=coria.v1.ImportFileKind" json:"kinds,omitempty"`
+	// Only the files of the unit with this id. Empty for every unit.
+	Unit string `protobuf:"bytes,4,opt,name=unit,proto3" json:"unit,omitempty"`
+	// The most files to answer: zero means 100; at most 1000. A larger or
+	// negative value is invalid.
+	PageSize int32 `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// The next_page_token of the previous page, or empty for the first page.
+	// Opaque; a position it holds is sealed by the server, so a token a client
+	// logs shows no path; at most 1 KiB; refused as invalid with a tenant,
+	// job or filters other than those it was made with.
+	PageToken     string `protobuf:"bytes,6,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListImportFilesRequest) Reset() {
+	*x = ListImportFilesRequest{}
+	mi := &file_coria_v1_job_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListImportFilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListImportFilesRequest) ProtoMessage() {}
+
+func (x *ListImportFilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListImportFilesRequest.ProtoReflect.Descriptor instead.
+func (*ListImportFilesRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListImportFilesRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *ListImportFilesRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ListImportFilesRequest) GetKinds() []ImportFileKind {
+	if x != nil {
+		return x.Kinds
+	}
+	return nil
+}
+
+func (x *ListImportFilesRequest) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
+func (x *ListImportFilesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListImportFilesRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+// ListImportFilesResponse is a page of an import job's files.
+type ListImportFilesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The files of this page, by path.
+	Files []*ImportFile `protobuf:"bytes,1,rep,name=files,proto3" json:"files,omitempty"`
+	// The page_token that asks for the next page. Empty on the last page.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListImportFilesResponse) Reset() {
+	*x = ListImportFilesResponse{}
+	mi := &file_coria_v1_job_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListImportFilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListImportFilesResponse) ProtoMessage() {}
+
+func (x *ListImportFilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListImportFilesResponse.ProtoReflect.Descriptor instead.
+func (*ListImportFilesResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *ListImportFilesResponse) GetFiles() []*ImportFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *ListImportFilesResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+// ListImportUnitsRequest asks for a page of an import job's units.
+type ListImportUnitsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant, by name. Required.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The job's id. Required; at most 64 bytes.
+	Id string `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// Only the units in one of these states. Empty for every state; at most
+	// 16 values, none of them IMPORT_UNIT_STATE_UNSPECIFIED.
+	States []ImportUnitState `protobuf:"varint,3,rep,packed,name=states,proto3,enum=coria.v1.ImportUnitState" json:"states,omitempty"`
+	// The most units to answer: zero means 100; at most 1000. A larger or
+	// negative value is invalid.
+	PageSize int32 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// The next_page_token of the previous page, or empty for the first page.
+	// Opaque; a position it holds is sealed by the server, so a token a client
+	// logs shows no path; at most 1 KiB; refused as invalid with a tenant,
+	// job or states other than those it was made with.
+	PageToken     string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListImportUnitsRequest) Reset() {
+	*x = ListImportUnitsRequest{}
+	mi := &file_coria_v1_job_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListImportUnitsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListImportUnitsRequest) ProtoMessage() {}
+
+func (x *ListImportUnitsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListImportUnitsRequest.ProtoReflect.Descriptor instead.
+func (*ListImportUnitsRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *ListImportUnitsRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *ListImportUnitsRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ListImportUnitsRequest) GetStates() []ImportUnitState {
+	if x != nil {
+		return x.States
+	}
+	return nil
+}
+
+func (x *ListImportUnitsRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListImportUnitsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
+// ListImportUnitsResponse is a page of an import job's units.
+type ListImportUnitsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The units of this page, by folder.
+	Units []*ImportUnit `protobuf:"bytes,1,rep,name=units,proto3" json:"units,omitempty"`
+	// The page_token that asks for the next page. Empty on the last page.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListImportUnitsResponse) Reset() {
+	*x = ListImportUnitsResponse{}
+	mi := &file_coria_v1_job_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListImportUnitsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListImportUnitsResponse) ProtoMessage() {}
+
+func (x *ListImportUnitsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListImportUnitsResponse.ProtoReflect.Descriptor instead.
+func (*ListImportUnitsResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ListImportUnitsResponse) GetUnits() []*ImportUnit {
+	if x != nil {
+		return x.Units
+	}
+	return nil
+}
+
+func (x *ListImportUnitsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
 var File_coria_v1_job_proto protoreflect.FileDescriptor
 
 const file_coria_v1_job_proto_rawDesc = "" +
 	"\n" +
-	"\x12coria/v1/job.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xcc\x03\n" +
+	"\x12coria/v1/job.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19coria/v1/quarantine.proto\"\xcc\x03\n" +
 	"\tJobCounts\x12\x1c\n" +
 	"\tinstances\x18\x01 \x01(\x03R\tinstances\x12\x14\n" +
 	"\x05bytes\x18\x02 \x01(\x03R\x05bytes\x12%\n" +
@@ -2175,16 +3493,54 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\n" +
 	"RebuildJob\x12,\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x18.coria.v1.RebuildJobModeR\x04mode\x12%\n" +
-	"\x0escratch_schema\x18\x02 \x01(\tR\rscratchSchema\"2\n" +
+	"\x0escratch_schema\x18\x02 \x01(\tR\rscratchSchema\"\xe0\x01\n" +
+	"\tImportJob\x12\x1a\n" +
+	"\breceiver\x18\x01 \x01(\tR\breceiver\x12\x17\n" +
+	"\x04path\x18\x02 \x01(\tB\x03\x80\x01\x01R\x04path\x12\x1e\n" +
+	"\bmap_file\x18\x03 \x01(\tB\x03\x80\x01\x01R\amapFile\x120\n" +
+	"\x14subject_from_headers\x18\x04 \x01(\bR\x12subjectFromHeaders\x12.\n" +
+	"\x06counts\x18\x05 \x01(\v2\x16.coria.v1.ImportCountsR\x06counts\x12\x1c\n" +
+	"\amap_csv\x18\x06 \x01(\fB\x03\x80\x01\x01R\x06mapCsv\"U\n" +
+	"\x0fImportSkipCount\x12,\n" +
+	"\x04code\x18\x01 \x01(\x0e2\x18.coria.v1.ImportSkipCodeR\x04code\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"a\n" +
+	"\x15ImportQuarantineCount\x122\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x1a.coria.v1.QuarantineReasonR\x06reason\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"\xb8\x05\n" +
+	"\fImportCounts\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\x03R\x05found\x123\n" +
+	"\askipped\x18\x02 \x03(\v2\x19.coria.v1.ImportSkipCountR\askipped\x12\x1b\n" +
+	"\thanded_in\x18\x03 \x01(\x03R\bhandedIn\x12!\n" +
+	"\fhanded_again\x18\x04 \x01(\x03R\vhandedAgain\x12\x1a\n" +
+	"\barchived\x18\x05 \x01(\x03R\barchived\x12!\n" +
+	"\falready_held\x18\x06 \x01(\x03R\valreadyHeld\x12A\n" +
+	"\vquarantined\x18\a \x03(\v2\x1f.coria.v1.ImportQuarantineCountR\vquarantined\x12\x12\n" +
+	"\x04lost\x18\b \x01(\x03R\x04lost\x12\x1e\n" +
+	"\n" +
+	"processing\x18\t \x01(\x03R\n" +
+	"processing\x12&\n" +
+	"\x0fbytes_handed_in\x18\n" +
+	" \x01(\x03R\rbytesHandedIn\x12#\n" +
+	"\rlabel_differs\x18\v \x01(\x03R\flabelDiffers\x12(\n" +
+	"\x10listed_not_found\x18\f \x01(\x03R\x0elistedNotFound\x12(\n" +
+	"\x10found_not_listed\x18\r \x01(\x03R\x0efoundNotListed\x12%\n" +
+	"\x0edigest_differs\x18\x0e \x01(\x03R\rdigestDiffers\x12\x14\n" +
+	"\x05units\x18\x0f \x01(\x03R\x05units\x12!\n" +
+	"\funits_walked\x18\x10 \x01(\x03R\vunitsWalked\x12\x16\n" +
+	"\x06failed\x18\x11 \x01(\x03R\x06failed\x12\x1c\n" +
+	"\tdiscarded\x18\x12 \x01(\x03R\tdiscarded\x120\n" +
+	"\x14catalogs_not_checked\x18\x13 \x01(\x03R\x12catalogsNotChecked\"2\n" +
 	"\bJobTally\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x03R\x05count\"\xe7\x05\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"\x9d\x06\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
 	"\x04send\x18\x02 \x01(\v2\x11.coria.v1.SendJobH\x00R\x04send\x12'\n" +
 	"\x04deid\x18\x0e \x01(\v2\x11.coria.v1.DeidJobH\x00R\x04deid\x12*\n" +
 	"\x05scrub\x18\x10 \x01(\v2\x12.coria.v1.ScrubJobH\x00R\x05scrub\x120\n" +
-	"\arebuild\x18\x11 \x01(\v2\x14.coria.v1.RebuildJobH\x00R\arebuild\x12(\n" +
+	"\arebuild\x18\x11 \x01(\v2\x14.coria.v1.RebuildJobH\x00R\arebuild\x124\n" +
+	"\n" +
+	"import_job\x18\x12 \x01(\v2\x13.coria.v1.ImportJobH\x00R\timportJob\x12(\n" +
 	"\x05state\x18\x03 \x01(\x0e2\x12.coria.v1.JobStateR\x05state\x12+\n" +
 	"\x06counts\x18\x04 \x01(\v2\x13.coria.v1.JobCountsR\x06counts\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12)\n" +
@@ -2219,13 +3575,15 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\x04time\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12(\n" +
 	"\x10peer_status_http\x18\v \x01(\bR\x0epeerStatusHttp\x12\x1a\n" +
-	"\brevision\x18\f \x01(\x05R\brevision\"\xe2\x01\n" +
+	"\brevision\x18\f \x01(\x05R\brevision\"\x98\x02\n" +
 	"\x10CreateJobRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12'\n" +
 	"\x04send\x18\x02 \x01(\v2\x11.coria.v1.SendJobH\x00R\x04send\x12'\n" +
 	"\x04deid\x18\x03 \x01(\v2\x11.coria.v1.DeidJobH\x00R\x04deid\x12*\n" +
 	"\x05scrub\x18\x04 \x01(\v2\x12.coria.v1.ScrubJobH\x00R\x05scrub\x120\n" +
-	"\arebuild\x18\x05 \x01(\v2\x14.coria.v1.RebuildJobH\x00R\arebuildB\x06\n" +
+	"\arebuild\x18\x05 \x01(\v2\x14.coria.v1.RebuildJobH\x00R\arebuild\x124\n" +
+	"\n" +
+	"import_job\x18\x06 \x01(\v2\x13.coria.v1.ImportJobH\x00R\timportJobB\x06\n" +
 	"\x04kind\"4\n" +
 	"\x11CreateJobResponse\x12\x1f\n" +
 	"\x03job\x18\x01 \x01(\v2\r.coria.v1.JobR\x03job\"7\n" +
@@ -2269,6 +3627,50 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"page_token\x18\x05 \x01(\tR\tpageToken\"s\n" +
 	"\x17ListJobFailuresResponse\x120\n" +
 	"\bfailures\x18\x01 \x03(\v2\x14.coria.v1.JobFailureR\bfailures\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x97\x03\n" +
+	"\n" +
+	"ImportFile\x12\x17\n" +
+	"\x04path\x18\x01 \x01(\tB\x03\x80\x01\x01R\x04path\x12,\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x18.coria.v1.ImportFileKindR\x04kind\x125\n" +
+	"\tskip_code\x18\x03 \x01(\x0e2\x18.coria.v1.ImportSkipCodeR\bskipCode\x12)\n" +
+	"\x10quarantined_file\x18\x04 \x01(\tR\x0fquarantinedFile\x12G\n" +
+	"\x11quarantine_reason\x18\x05 \x01(\x0e2\x1a.coria.v1.QuarantineReasonR\x10quarantineReason\x12\x12\n" +
+	"\x04unit\x18\x06 \x01(\tR\x04unit\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\a \x01(\x03R\tsizeBytes\x12\x16\n" +
+	"\x06detail\x18\b \x01(\tR\x06detail\x12.\n" +
+	"\x04time\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x1c\n" +
+	"\treception\x18\n" +
+	" \x01(\tR\treception\"\x8e\x02\n" +
+	"\n" +
+	"ImportUnit\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\x06folder\x18\x02 \x01(\tB\x03\x80\x01\x01R\x06folder\x12/\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x19.coria.v1.ImportUnitStateR\x05state\x12.\n" +
+	"\x06counts\x18\x04 \x01(\v2\x16.coria.v1.ImportCountsR\x06counts\x12\x16\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\x12\x1a\n" +
+	"\battempts\x18\x06 \x01(\x05R\battempts\x12>\n" +
+	"\rwalk_end_time\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\vwalkEndTime\"\xc0\x01\n" +
+	"\x16ListImportFilesRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x12.\n" +
+	"\x05kinds\x18\x03 \x03(\x0e2\x18.coria.v1.ImportFileKindR\x05kinds\x12\x12\n" +
+	"\x04unit\x18\x04 \x01(\tR\x04unit\x12\x1b\n" +
+	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x06 \x01(\tR\tpageToken\"m\n" +
+	"\x17ListImportFilesResponse\x12*\n" +
+	"\x05files\x18\x01 \x03(\v2\x14.coria.v1.ImportFileR\x05files\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xaf\x01\n" +
+	"\x16ListImportUnitsRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\x121\n" +
+	"\x06states\x18\x03 \x03(\x0e2\x19.coria.v1.ImportUnitStateR\x06states\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x05 \x01(\tR\tpageToken\"m\n" +
+	"\x17ListImportUnitsResponse\x12*\n" +
+	"\x05units\x18\x01 \x03(\v2\x14.coria.v1.ImportUnitR\x05units\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\xab\x01\n" +
 	"\bJobState\x12\x19\n" +
 	"\x15JOB_STATE_UNSPECIFIED\x10\x00\x12\x14\n" +
@@ -2285,7 +3687,17 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\x0eRebuildJobMode\x12 \n" +
 	"\x1cREBUILD_JOB_MODE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18REBUILD_JOB_MODE_COMPARE\x10\x01\x12\x1c\n" +
-	"\x18REBUILD_JOB_MODE_REPLACE\x10\x02*\xb6\x04\n" +
+	"\x18REBUILD_JOB_MODE_REPLACE\x10\x02*\xce\x02\n" +
+	"\x0eImportSkipCode\x12 \n" +
+	"\x1cIMPORT_SKIP_CODE_UNSPECIFIED\x10\x00\x12\x1f\n" +
+	"\x1bIMPORT_SKIP_CODE_NOT_PART10\x10\x01\x12#\n" +
+	"\x1fIMPORT_SKIP_CODE_OUTSIDE_LAYOUT\x10\x02\x12%\n" +
+	"!IMPORT_SKIP_CODE_UNMAPPED_SESSION\x10\x03\x12'\n" +
+	"#IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE\x10\x04\x12\x1f\n" +
+	"\x1bIMPORT_SKIP_CODE_UNREADABLE\x10\x05\x12 \n" +
+	"\x1cIMPORT_SKIP_CODE_NOT_REGULAR\x10\x06\x12\x1e\n" +
+	"\x1aIMPORT_SKIP_CODE_TOO_LARGE\x10\a\x12!\n" +
+	"\x1dIMPORT_SKIP_CODE_CATALOG_FILE\x10\b*\xb6\x04\n" +
 	"\x0eJobFailureCode\x12 \n" +
 	"\x1cJOB_FAILURE_CODE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dJOB_FAILURE_CODE_PEER_REFUSED\x10\x01\x12!\n" +
@@ -2302,7 +3714,25 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"!JOB_FAILURE_CODE_NOT_DEIDENTIFIED\x10\v\x12\x1e\n" +
 	"\x1aJOB_FAILURE_CODE_TOO_LARGE\x10\f\x12'\n" +
 	"#JOB_FAILURE_CODE_DELETED_IN_ARCHIVE\x10\r\x12\x1f\n" +
-	"\x1bJOB_FAILURE_CODE_NOT_ONLINE\x10\x0e2\xcc\x03\n" +
+	"\x1bJOB_FAILURE_CODE_NOT_ONLINE\x10\x0e*\xbd\x02\n" +
+	"\x0eImportFileKind\x12 \n" +
+	"\x1cIMPORT_FILE_KIND_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18IMPORT_FILE_KIND_SKIPPED\x10\x01\x12 \n" +
+	"\x1cIMPORT_FILE_KIND_QUARANTINED\x10\x02\x12\x19\n" +
+	"\x15IMPORT_FILE_KIND_LOST\x10\x03\x12%\n" +
+	"!IMPORT_FILE_KIND_LISTED_NOT_FOUND\x10\x04\x12%\n" +
+	"!IMPORT_FILE_KIND_FOUND_NOT_LISTED\x10\x05\x12#\n" +
+	"\x1fIMPORT_FILE_KIND_DIGEST_DIFFERS\x10\x06\x12\x1b\n" +
+	"\x17IMPORT_FILE_KIND_FAILED\x10\a\x12\x1e\n" +
+	"\x1aIMPORT_FILE_KIND_DISCARDED\x10\b*\xe9\x01\n" +
+	"\x0fImportUnitState\x12!\n" +
+	"\x1dIMPORT_UNIT_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18IMPORT_UNIT_STATE_QUEUED\x10\x01\x12\x1d\n" +
+	"\x19IMPORT_UNIT_STATE_WALKING\x10\x02\x12\x1c\n" +
+	"\x18IMPORT_UNIT_STATE_WALKED\x10\x03\x12\x1a\n" +
+	"\x16IMPORT_UNIT_STATE_DONE\x10\x04\x12\x1c\n" +
+	"\x18IMPORT_UNIT_STATE_FAILED\x10\x05\x12\x1e\n" +
+	"\x1aIMPORT_UNIT_STATE_CANCELED\x10\x062\x86\x05\n" +
 	"\n" +
 	"JobService\x12D\n" +
 	"\tCreateJob\x12\x1a.coria.v1.CreateJobRequest\x1a\x1b.coria.v1.CreateJobResponse\x12@\n" +
@@ -2310,7 +3740,9 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\bListJobs\x12\x19.coria.v1.ListJobsRequest\x1a\x1a.coria.v1.ListJobsResponse\"\x03\x90\x02\x01\x12I\n" +
 	"\tCancelJob\x12\x1a.coria.v1.CancelJobRequest\x1a\x1b.coria.v1.CancelJobResponse\"\x03\x90\x02\x02\x12F\n" +
 	"\bRetryJob\x12\x19.coria.v1.RetryJobRequest\x1a\x1a.coria.v1.RetryJobResponse\"\x03\x90\x02\x02\x12[\n" +
-	"\x0fListJobFailures\x12 .coria.v1.ListJobFailuresRequest\x1a!.coria.v1.ListJobFailuresResponse\"\x03\x90\x02\x01B\x8a\x01\n" +
+	"\x0fListJobFailures\x12 .coria.v1.ListJobFailuresRequest\x1a!.coria.v1.ListJobFailuresResponse\"\x03\x90\x02\x01\x12[\n" +
+	"\x0fListImportFiles\x12 .coria.v1.ListImportFilesRequest\x1a!.coria.v1.ListImportFilesResponse\"\x03\x90\x02\x01\x12[\n" +
+	"\x0fListImportUnits\x12 .coria.v1.ListImportUnitsRequest\x1a!.coria.v1.ListImportUnitsResponse\"\x03\x90\x02\x01B\x8a\x01\n" +
 	"\fcom.coria.v1B\bJobProtoP\x01Z/github.com/amrshadid/coria/gen/coria/v1;coriav1\xa2\x02\x03CXX\xaa\x02\bCoria.V1\xca\x02\bCoria\\V1\xe2\x02\x14Coria\\V1\\GPBMetadata\xea\x02\tCoria::V1b\x06proto3"
 
 var (
@@ -2325,82 +3757,118 @@ func file_coria_v1_job_proto_rawDescGZIP() []byte {
 	return file_coria_v1_job_proto_rawDescData
 }
 
-var file_coria_v1_job_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_coria_v1_job_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_coria_v1_job_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_coria_v1_job_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_coria_v1_job_proto_goTypes = []any{
 	(JobState)(0),                   // 0: coria.v1.JobState
 	(DeidJobMode)(0),                // 1: coria.v1.DeidJobMode
 	(RebuildJobMode)(0),             // 2: coria.v1.RebuildJobMode
-	(JobFailureCode)(0),             // 3: coria.v1.JobFailureCode
-	(*JobCounts)(nil),               // 4: coria.v1.JobCounts
-	(*SendJob)(nil),                 // 5: coria.v1.SendJob
-	(*DeidJob)(nil),                 // 6: coria.v1.DeidJob
-	(*ScrubJob)(nil),                // 7: coria.v1.ScrubJob
-	(*RebuildJob)(nil),              // 8: coria.v1.RebuildJob
-	(*JobTally)(nil),                // 9: coria.v1.JobTally
-	(*Job)(nil),                     // 10: coria.v1.Job
-	(*JobFailure)(nil),              // 11: coria.v1.JobFailure
-	(*CreateJobRequest)(nil),        // 12: coria.v1.CreateJobRequest
-	(*CreateJobResponse)(nil),       // 13: coria.v1.CreateJobResponse
-	(*GetJobRequest)(nil),           // 14: coria.v1.GetJobRequest
-	(*GetJobResponse)(nil),          // 15: coria.v1.GetJobResponse
-	(*ListJobsRequest)(nil),         // 16: coria.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),        // 17: coria.v1.ListJobsResponse
-	(*CancelJobRequest)(nil),        // 18: coria.v1.CancelJobRequest
-	(*CancelJobResponse)(nil),       // 19: coria.v1.CancelJobResponse
-	(*RetryJobRequest)(nil),         // 20: coria.v1.RetryJobRequest
-	(*RetryJobResponse)(nil),        // 21: coria.v1.RetryJobResponse
-	(*ListJobFailuresRequest)(nil),  // 22: coria.v1.ListJobFailuresRequest
-	(*ListJobFailuresResponse)(nil), // 23: coria.v1.ListJobFailuresResponse
-	(*timestamppb.Timestamp)(nil),   // 24: google.protobuf.Timestamp
+	(ImportSkipCode)(0),             // 3: coria.v1.ImportSkipCode
+	(JobFailureCode)(0),             // 4: coria.v1.JobFailureCode
+	(ImportFileKind)(0),             // 5: coria.v1.ImportFileKind
+	(ImportUnitState)(0),            // 6: coria.v1.ImportUnitState
+	(*JobCounts)(nil),               // 7: coria.v1.JobCounts
+	(*SendJob)(nil),                 // 8: coria.v1.SendJob
+	(*DeidJob)(nil),                 // 9: coria.v1.DeidJob
+	(*ScrubJob)(nil),                // 10: coria.v1.ScrubJob
+	(*RebuildJob)(nil),              // 11: coria.v1.RebuildJob
+	(*ImportJob)(nil),               // 12: coria.v1.ImportJob
+	(*ImportSkipCount)(nil),         // 13: coria.v1.ImportSkipCount
+	(*ImportQuarantineCount)(nil),   // 14: coria.v1.ImportQuarantineCount
+	(*ImportCounts)(nil),            // 15: coria.v1.ImportCounts
+	(*JobTally)(nil),                // 16: coria.v1.JobTally
+	(*Job)(nil),                     // 17: coria.v1.Job
+	(*JobFailure)(nil),              // 18: coria.v1.JobFailure
+	(*CreateJobRequest)(nil),        // 19: coria.v1.CreateJobRequest
+	(*CreateJobResponse)(nil),       // 20: coria.v1.CreateJobResponse
+	(*GetJobRequest)(nil),           // 21: coria.v1.GetJobRequest
+	(*GetJobResponse)(nil),          // 22: coria.v1.GetJobResponse
+	(*ListJobsRequest)(nil),         // 23: coria.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),        // 24: coria.v1.ListJobsResponse
+	(*CancelJobRequest)(nil),        // 25: coria.v1.CancelJobRequest
+	(*CancelJobResponse)(nil),       // 26: coria.v1.CancelJobResponse
+	(*RetryJobRequest)(nil),         // 27: coria.v1.RetryJobRequest
+	(*RetryJobResponse)(nil),        // 28: coria.v1.RetryJobResponse
+	(*ListJobFailuresRequest)(nil),  // 29: coria.v1.ListJobFailuresRequest
+	(*ListJobFailuresResponse)(nil), // 30: coria.v1.ListJobFailuresResponse
+	(*ImportFile)(nil),              // 31: coria.v1.ImportFile
+	(*ImportUnit)(nil),              // 32: coria.v1.ImportUnit
+	(*ListImportFilesRequest)(nil),  // 33: coria.v1.ListImportFilesRequest
+	(*ListImportFilesResponse)(nil), // 34: coria.v1.ListImportFilesResponse
+	(*ListImportUnitsRequest)(nil),  // 35: coria.v1.ListImportUnitsRequest
+	(*ListImportUnitsResponse)(nil), // 36: coria.v1.ListImportUnitsResponse
+	(QuarantineReason)(0),           // 37: coria.v1.QuarantineReason
+	(*timestamppb.Timestamp)(nil),   // 38: google.protobuf.Timestamp
 }
 var file_coria_v1_job_proto_depIdxs = []int32{
 	1,  // 0: coria.v1.DeidJob.mode:type_name -> coria.v1.DeidJobMode
 	2,  // 1: coria.v1.RebuildJob.mode:type_name -> coria.v1.RebuildJobMode
-	5,  // 2: coria.v1.Job.send:type_name -> coria.v1.SendJob
-	6,  // 3: coria.v1.Job.deid:type_name -> coria.v1.DeidJob
-	7,  // 4: coria.v1.Job.scrub:type_name -> coria.v1.ScrubJob
-	8,  // 5: coria.v1.Job.rebuild:type_name -> coria.v1.RebuildJob
-	0,  // 6: coria.v1.Job.state:type_name -> coria.v1.JobState
-	4,  // 7: coria.v1.Job.counts:type_name -> coria.v1.JobCounts
-	24, // 8: coria.v1.Job.create_time:type_name -> google.protobuf.Timestamp
-	24, // 9: coria.v1.Job.start_time:type_name -> google.protobuf.Timestamp
-	24, // 10: coria.v1.Job.state_time:type_name -> google.protobuf.Timestamp
-	24, // 11: coria.v1.Job.end_time:type_name -> google.protobuf.Timestamp
-	9,  // 12: coria.v1.Job.tallies:type_name -> coria.v1.JobTally
-	3,  // 13: coria.v1.JobFailure.code:type_name -> coria.v1.JobFailureCode
-	24, // 14: coria.v1.JobFailure.time:type_name -> google.protobuf.Timestamp
-	5,  // 15: coria.v1.CreateJobRequest.send:type_name -> coria.v1.SendJob
-	6,  // 16: coria.v1.CreateJobRequest.deid:type_name -> coria.v1.DeidJob
-	7,  // 17: coria.v1.CreateJobRequest.scrub:type_name -> coria.v1.ScrubJob
-	8,  // 18: coria.v1.CreateJobRequest.rebuild:type_name -> coria.v1.RebuildJob
-	10, // 19: coria.v1.CreateJobResponse.job:type_name -> coria.v1.Job
-	10, // 20: coria.v1.GetJobResponse.job:type_name -> coria.v1.Job
-	0,  // 21: coria.v1.ListJobsRequest.states:type_name -> coria.v1.JobState
-	24, // 22: coria.v1.ListJobsRequest.start_time:type_name -> google.protobuf.Timestamp
-	24, // 23: coria.v1.ListJobsRequest.end_time:type_name -> google.protobuf.Timestamp
-	10, // 24: coria.v1.ListJobsResponse.jobs:type_name -> coria.v1.Job
-	10, // 25: coria.v1.CancelJobResponse.job:type_name -> coria.v1.Job
-	10, // 26: coria.v1.RetryJobResponse.job:type_name -> coria.v1.Job
-	10, // 27: coria.v1.RetryJobResponse.retry:type_name -> coria.v1.Job
-	11, // 28: coria.v1.ListJobFailuresResponse.failures:type_name -> coria.v1.JobFailure
-	12, // 29: coria.v1.JobService.CreateJob:input_type -> coria.v1.CreateJobRequest
-	14, // 30: coria.v1.JobService.GetJob:input_type -> coria.v1.GetJobRequest
-	16, // 31: coria.v1.JobService.ListJobs:input_type -> coria.v1.ListJobsRequest
-	18, // 32: coria.v1.JobService.CancelJob:input_type -> coria.v1.CancelJobRequest
-	20, // 33: coria.v1.JobService.RetryJob:input_type -> coria.v1.RetryJobRequest
-	22, // 34: coria.v1.JobService.ListJobFailures:input_type -> coria.v1.ListJobFailuresRequest
-	13, // 35: coria.v1.JobService.CreateJob:output_type -> coria.v1.CreateJobResponse
-	15, // 36: coria.v1.JobService.GetJob:output_type -> coria.v1.GetJobResponse
-	17, // 37: coria.v1.JobService.ListJobs:output_type -> coria.v1.ListJobsResponse
-	19, // 38: coria.v1.JobService.CancelJob:output_type -> coria.v1.CancelJobResponse
-	21, // 39: coria.v1.JobService.RetryJob:output_type -> coria.v1.RetryJobResponse
-	23, // 40: coria.v1.JobService.ListJobFailures:output_type -> coria.v1.ListJobFailuresResponse
-	35, // [35:41] is the sub-list for method output_type
-	29, // [29:35] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	15, // 2: coria.v1.ImportJob.counts:type_name -> coria.v1.ImportCounts
+	3,  // 3: coria.v1.ImportSkipCount.code:type_name -> coria.v1.ImportSkipCode
+	37, // 4: coria.v1.ImportQuarantineCount.reason:type_name -> coria.v1.QuarantineReason
+	13, // 5: coria.v1.ImportCounts.skipped:type_name -> coria.v1.ImportSkipCount
+	14, // 6: coria.v1.ImportCounts.quarantined:type_name -> coria.v1.ImportQuarantineCount
+	8,  // 7: coria.v1.Job.send:type_name -> coria.v1.SendJob
+	9,  // 8: coria.v1.Job.deid:type_name -> coria.v1.DeidJob
+	10, // 9: coria.v1.Job.scrub:type_name -> coria.v1.ScrubJob
+	11, // 10: coria.v1.Job.rebuild:type_name -> coria.v1.RebuildJob
+	12, // 11: coria.v1.Job.import_job:type_name -> coria.v1.ImportJob
+	0,  // 12: coria.v1.Job.state:type_name -> coria.v1.JobState
+	7,  // 13: coria.v1.Job.counts:type_name -> coria.v1.JobCounts
+	38, // 14: coria.v1.Job.create_time:type_name -> google.protobuf.Timestamp
+	38, // 15: coria.v1.Job.start_time:type_name -> google.protobuf.Timestamp
+	38, // 16: coria.v1.Job.state_time:type_name -> google.protobuf.Timestamp
+	38, // 17: coria.v1.Job.end_time:type_name -> google.protobuf.Timestamp
+	16, // 18: coria.v1.Job.tallies:type_name -> coria.v1.JobTally
+	4,  // 19: coria.v1.JobFailure.code:type_name -> coria.v1.JobFailureCode
+	38, // 20: coria.v1.JobFailure.time:type_name -> google.protobuf.Timestamp
+	8,  // 21: coria.v1.CreateJobRequest.send:type_name -> coria.v1.SendJob
+	9,  // 22: coria.v1.CreateJobRequest.deid:type_name -> coria.v1.DeidJob
+	10, // 23: coria.v1.CreateJobRequest.scrub:type_name -> coria.v1.ScrubJob
+	11, // 24: coria.v1.CreateJobRequest.rebuild:type_name -> coria.v1.RebuildJob
+	12, // 25: coria.v1.CreateJobRequest.import_job:type_name -> coria.v1.ImportJob
+	17, // 26: coria.v1.CreateJobResponse.job:type_name -> coria.v1.Job
+	17, // 27: coria.v1.GetJobResponse.job:type_name -> coria.v1.Job
+	0,  // 28: coria.v1.ListJobsRequest.states:type_name -> coria.v1.JobState
+	38, // 29: coria.v1.ListJobsRequest.start_time:type_name -> google.protobuf.Timestamp
+	38, // 30: coria.v1.ListJobsRequest.end_time:type_name -> google.protobuf.Timestamp
+	17, // 31: coria.v1.ListJobsResponse.jobs:type_name -> coria.v1.Job
+	17, // 32: coria.v1.CancelJobResponse.job:type_name -> coria.v1.Job
+	17, // 33: coria.v1.RetryJobResponse.job:type_name -> coria.v1.Job
+	17, // 34: coria.v1.RetryJobResponse.retry:type_name -> coria.v1.Job
+	18, // 35: coria.v1.ListJobFailuresResponse.failures:type_name -> coria.v1.JobFailure
+	5,  // 36: coria.v1.ImportFile.kind:type_name -> coria.v1.ImportFileKind
+	3,  // 37: coria.v1.ImportFile.skip_code:type_name -> coria.v1.ImportSkipCode
+	37, // 38: coria.v1.ImportFile.quarantine_reason:type_name -> coria.v1.QuarantineReason
+	38, // 39: coria.v1.ImportFile.time:type_name -> google.protobuf.Timestamp
+	6,  // 40: coria.v1.ImportUnit.state:type_name -> coria.v1.ImportUnitState
+	15, // 41: coria.v1.ImportUnit.counts:type_name -> coria.v1.ImportCounts
+	38, // 42: coria.v1.ImportUnit.walk_end_time:type_name -> google.protobuf.Timestamp
+	5,  // 43: coria.v1.ListImportFilesRequest.kinds:type_name -> coria.v1.ImportFileKind
+	31, // 44: coria.v1.ListImportFilesResponse.files:type_name -> coria.v1.ImportFile
+	6,  // 45: coria.v1.ListImportUnitsRequest.states:type_name -> coria.v1.ImportUnitState
+	32, // 46: coria.v1.ListImportUnitsResponse.units:type_name -> coria.v1.ImportUnit
+	19, // 47: coria.v1.JobService.CreateJob:input_type -> coria.v1.CreateJobRequest
+	21, // 48: coria.v1.JobService.GetJob:input_type -> coria.v1.GetJobRequest
+	23, // 49: coria.v1.JobService.ListJobs:input_type -> coria.v1.ListJobsRequest
+	25, // 50: coria.v1.JobService.CancelJob:input_type -> coria.v1.CancelJobRequest
+	27, // 51: coria.v1.JobService.RetryJob:input_type -> coria.v1.RetryJobRequest
+	29, // 52: coria.v1.JobService.ListJobFailures:input_type -> coria.v1.ListJobFailuresRequest
+	33, // 53: coria.v1.JobService.ListImportFiles:input_type -> coria.v1.ListImportFilesRequest
+	35, // 54: coria.v1.JobService.ListImportUnits:input_type -> coria.v1.ListImportUnitsRequest
+	20, // 55: coria.v1.JobService.CreateJob:output_type -> coria.v1.CreateJobResponse
+	22, // 56: coria.v1.JobService.GetJob:output_type -> coria.v1.GetJobResponse
+	24, // 57: coria.v1.JobService.ListJobs:output_type -> coria.v1.ListJobsResponse
+	26, // 58: coria.v1.JobService.CancelJob:output_type -> coria.v1.CancelJobResponse
+	28, // 59: coria.v1.JobService.RetryJob:output_type -> coria.v1.RetryJobResponse
+	30, // 60: coria.v1.JobService.ListJobFailures:output_type -> coria.v1.ListJobFailuresResponse
+	34, // 61: coria.v1.JobService.ListImportFiles:output_type -> coria.v1.ListImportFilesResponse
+	36, // 62: coria.v1.JobService.ListImportUnits:output_type -> coria.v1.ListImportUnitsResponse
+	55, // [55:63] is the sub-list for method output_type
+	47, // [47:55] is the sub-list for method input_type
+	47, // [47:47] is the sub-list for extension type_name
+	47, // [47:47] is the sub-list for extension extendee
+	0,  // [0:47] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_job_proto_init() }
@@ -2408,25 +3876,28 @@ func file_coria_v1_job_proto_init() {
 	if File_coria_v1_job_proto != nil {
 		return
 	}
-	file_coria_v1_job_proto_msgTypes[6].OneofWrappers = []any{
+	file_coria_v1_quarantine_proto_init()
+	file_coria_v1_job_proto_msgTypes[10].OneofWrappers = []any{
 		(*Job_Send)(nil),
 		(*Job_Deid)(nil),
 		(*Job_Scrub)(nil),
 		(*Job_Rebuild)(nil),
+		(*Job_ImportJob)(nil),
 	}
-	file_coria_v1_job_proto_msgTypes[8].OneofWrappers = []any{
+	file_coria_v1_job_proto_msgTypes[12].OneofWrappers = []any{
 		(*CreateJobRequest_Send)(nil),
 		(*CreateJobRequest_Deid)(nil),
 		(*CreateJobRequest_Scrub)(nil),
 		(*CreateJobRequest_Rebuild)(nil),
+		(*CreateJobRequest_ImportJob)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_job_proto_rawDesc), len(file_coria_v1_job_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   20,
+			NumEnums:      7,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

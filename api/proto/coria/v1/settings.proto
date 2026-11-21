@@ -36,8 +36,8 @@ import "coria/v1/scope.proto";
 //     tenant, so it is told (precondition).
 //
 // A value that would take away what a tenant's receiver, storage or sender
-// uses (a port, a bind address, a directory root, an S3 endpoint, a
-// destination) is refused
+// uses (a port, a bind address, a directory root, an import root or its
+// allotment to the tenant, an S3 endpoint, a destination) is refused
 // (precondition), and so is unsetting it; the receiver or storage is moved
 // or removed first.
 //
@@ -53,14 +53,27 @@ import "coria/v1/scope.proto";
 // scrub.interval (ordinary settings, a tenant may override them; JobService,
 // ScrubJob), delete.grace (an ordinary setting, a tenant may override it;
 // CorrectionService), and audit.seal-interval and audit.retention
-// (installation-only; AuditSealService).
+// (installation-only; AuditSealService). Those of importing a directory,
+// not yet in use by the server: import.roots (installation-only; built-in
+// default none) and import.allowed-roots (set on a tenant by the
+// installation's admin only, no installation value; built-in default none)
+// (ReceiverService), import.max-units (set on a tenant by the
+// installation's admin only, with an installation value; built-in default
+// "4"), import.server-max-units (installation-only; built-in default "8")
+// and import.max-dir-entries (installation-only; built-in default
+// "200000") (JobService).
+//
+// The paths of import.roots, like those of storage.directory-roots, are
+// answered only to an admin on the installation; any other caller is
+// answered the roots' names alone, one per line.
 service SettingsService {
   // GetSetting answers the value of one setting as it applies to the scope
   // asked for: on the installation, the installation's value, else the
   // built-in default; on a tenant, the tenant's override when it has one,
   // else what applies on the installation. The answer's scope and source say
-  // where the value came from. The paths of storage.directory-roots are
-  // answered only to an admin on the installation; any other caller is
+  // where the value came from. The paths of storage.directory-roots and
+  // import.roots are answered only to an admin on the installation; any
+  // other caller is
   // answered the roots' names alone, one per line.
   //
   // Role: reader on the scope asked for.
@@ -119,8 +132,9 @@ service SettingsService {
   // ListSettings answers settings of one scope, ordered by name: on the
   // installation, every setting the server knows with the value that applies
   // there (the installation's, else the built-in default); on a tenant, only
-  // that tenant's overrides. The paths of storage.directory-roots are
-  // answered only to an admin on the installation; any other caller is
+  // that tenant's overrides. The paths of storage.directory-roots and
+  // import.roots are answered only to an admin on the installation; any
+  // other caller is
   // answered the roots' names alone, one per line.
   //
   // Role: reader on the scope asked for.

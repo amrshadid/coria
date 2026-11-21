@@ -39,6 +39,10 @@ const (
 	JobServiceRetryJobProcedure = "/coria.v1.JobService/RetryJob"
 	// JobServiceListJobFailuresProcedure is the procedure name of the JobService's ListJobFailures RPC.
 	JobServiceListJobFailuresProcedure = "/coria.v1.JobService/ListJobFailures"
+	// JobServiceListImportFilesProcedure is the procedure name of the JobService's ListImportFiles RPC.
+	JobServiceListImportFilesProcedure = "/coria.v1.JobService/ListImportFiles"
+	// JobServiceListImportUnitsProcedure is the procedure name of the JobService's ListImportUnits RPC.
+	JobServiceListImportUnitsProcedure = "/coria.v1.JobService/ListImportUnits"
 )
 
 var (
@@ -89,6 +93,22 @@ var (
 			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
+	jobServiceListImportFilesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_job_proto.Services().ByName("JobService").Methods().ByName("ListImportFiles"),
+			Procedure:        JobServiceListImportFilesProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	jobServiceListImportUnitsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_job_proto.Services().ByName("JobService").Methods().ByName("ListImportUnits"),
+			Procedure:        JobServiceListImportUnitsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
 )
 
 // JobServiceClient is a client for the coria.v1.JobService service.
@@ -101,24 +121,55 @@ type JobServiceClient interface {
 	// storage, or none for every storage. A rebuild job names its mode; one
 	// that replaces the catalog also needs admin on the tenant, checked after
 	// the requirement below, since it empties the catalog and fills it again,
-	// and is answered permission denied to an operator.
+	// and is answered permission denied to an operator. An import job names
+	// an import receiver of the tenant, a path under its root and optionally
+	// a map (a file under the root, or inline); the root is resolved, the
+	// path opened and the map read and checked before the job is made, so a
+	// tree that is not there or a map that names two subjects for one
+	// session is refused here, not found out later. The map is kept with the
+	// job as it was read then, so a map file changed later changes nothing
+	// of the job or of a retry of it. A refusal of a map names the line it
+	// found at fault by number only, never a cell, the header or a path. An
+	// import job of a disabled receiver is made and waits, its units queued,
+	// until the receiver is enabled, as a send job waits for its sender. Two
+	// import jobs of one receiver never read the same files at once: a job
+	// whose path equals, lies under or contains (segment by segment, so "a"
+	// contains "a/b" and not "ab") the path of a queued or running import job
+	// of the same receiver is refused.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the new job's id as its
 	// object, and its kind, its sender and the path of labels of its target
-	// in details; for a scrub, its storage; for a rebuild, its mode.
+	// in details; for a scrub, its storage; for a rebuild, its mode; for an
+	// import, its receiver and its root's name, never its path or map file.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also no kind, a label that does not pass the label rule, a level named
 	// without the one above it, and a reception given, which only the
-	// server sets), not found (the tenant holds no subject, session or scan
+	// server sets; for an import, a path or map file that breaks the path
+	// rule, both a map file and an inline map, an inline map past 3 MiB,
+	// counts given, which only the server sets, and subject_from_headers
+	// with a map, from the job or the receiver, or with a layout other than
+	// XNAT), not found (the tenant holds no subject, session or scan
 	// with those labels; the tenant has no profile version of that name and
 	// number; a tenant that does not exist, for a caller who may list every
 	// tenant), precondition (a sender the tenant does not have; a scrub of a
 	// storage the tenant does not have, or while another scrub of it is
 	// queued or running; a rebuild while another rebuild is queued or
 	// running, or whose scratch_schema does not exist, holds a table, is the
-	// tenant's own schema or is on its search_path), unavailable (the tenant's database does not answer, or the
+	// tenant's own schema or is on its search_path; for an import, a
+	// receiver the tenant does not have or that is not an import receiver,
+	// a root import.roots no longer names or import.allowed-roots no longer
+	// allots to the tenant, a root whose path now resolves to another
+	// directory than when it was set (a link in it changed), a path that is
+	// not a directory under the root, a map file that cannot be read, is
+	// larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
+	// for one (project, session), a map with a layout that does not give the
+	// parts project and session or that gives a part subject, an XNAT layout
+	// with no map and subject_from_headers false, or a queued or running
+	// import job of the same receiver whose path overlaps this one's by
+	// segment; for every kind, a tenant moved or fenced,
+	// with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	CreateJob(context.Context, *v1.CreateJobRequest) (*v1.CreateJobResponse, error)
 	// GetJob answers one job, with its counts now and, for a deid job, its
@@ -148,7 +199,8 @@ type JobServiceClient interface {
 	// within one batch (at most 64 instances or one second), and what the
 	// peer answered for that batch is still counted, since the peer holds it.
 	// A job already canceled is answered as it stands, so a repeated call
-	// ends nothing more.
+	// ends nothing more. An import job's walk stops within one file; what it
+	// already handed in is not withdrawn and goes on to its outcome, counted.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.
@@ -156,7 +208,8 @@ type JobServiceClient interface {
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no job with that id; a tenant that does not
 	// exist, for a caller who may list every tenant), precondition (the job
-	// has ended done, partial or failed), unavailable (the tenant's database
+	// has ended done, partial or failed; a tenant moved or fenced, with
+	// ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database
 	// does not answer, or the tenant is not ready).
 	CancelJob(context.Context, *v1.CancelJobRequest) (*v1.CancelJobResponse, error)
 	// RetryJob sends again what an ended job did not send: its refused
@@ -167,6 +220,15 @@ type JobServiceClient interface {
 	// instance archived since. A job already retried is answered as it
 	// stands, so a repeated call starts nothing more.
 	//
+	// For an import job, the new job has the same receiver, path, map (the
+	// one kept with the ended job, checked again) and subject_from_headers,
+	// and its units are the ended job's units that failed or were canceled,
+	// and those with a file lost, or skipped as unreadable, too large or in
+	// a directory too wide; each walks its folder again from the start, so
+	// what is already held counts as already held. A file quarantined,
+	// failed or discarded is not retried: it is released, retried or sent
+	// again through QuarantineService, ReceptionService or the source.
+	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the ended job's id as its
 	// object and the new job's id in details.
@@ -175,7 +237,11 @@ type JobServiceClient interface {
 	// not found (the tenant has no job with that id; a tenant that does not
 	// exist, for a caller who may list every tenant), precondition (the job
 	// is queued or running, or ended done with nothing to send again; its
-	// sender has been removed), unavailable (the tenant's database does not
+	// sender has been removed; for an import, its receiver has been removed
+	// or its root, layout, path pattern or unit depth changed since the job
+	// was made, every precondition CreateJob checks of an import, or no unit
+	// to walk again; for every kind, a tenant moved or fenced, with ErrorInfo
+	// reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not
 	// answer, or the tenant is not ready).
 	RetryJob(context.Context, *v1.RetryJobRequest) (*v1.RetryJobResponse, error)
 	// ListJobFailures answers the instances a job's peer refused, or that
@@ -183,7 +249,9 @@ type JobServiceClient interface {
 	// include_warnings, those sent with a warning. Ordered by subject label,
 	// session label, scan label, then SOP Instance UID, each compared byte by
 	// byte. At most job.failures-kept are kept per job; the job's
-	// failures_not_listed counts the others.
+	// failures_not_listed counts the others. An import job's files are listed
+	// by ListImportFiles, to an operator, since they are named by path; this
+	// method answers none for it.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.
@@ -193,6 +261,44 @@ type JobServiceClient interface {
 	// exist, for a caller who may list every tenant), unavailable (the
 	// tenant's database does not answer, or the tenant is not ready).
 	ListJobFailures(context.Context, *v1.ListJobFailuresRequest) (*v1.ListJobFailuresResponse, error)
+	// ListImportFiles answers the files of an import job that did not reach
+	// the archive, each by its path under the root, with why: those skipped
+	// (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+	// quarantined (with the quarantined file's id and reason), those lost,
+	// failed or discarded, and the differences the XNAT catalog files showed.
+	// Ordered by path in the walk's order (segment by segment, each byte by
+	// byte). At most job.failures-kept are kept per job; the job's
+	// failures_not_listed counts the others. A page never passes 4 MB, so it
+	// may hold fewer files than page_size, or none; only an empty
+	// next_page_token means the last page.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the job's id as its object;
+	// no path is recorded.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (the tenant has no job with that id; a tenant that does not
+	// exist, for a caller who may list every tenant), precondition (the job is
+	// not an import job), unavailable (the tenant's database does not answer,
+	// or the tenant is not ready).
+	ListImportFiles(context.Context, *v1.ListImportFilesRequest) (*v1.ListImportFilesResponse, error)
+	// ListImportUnits answers the units of an import job, each with its
+	// folder under the root, its state and its counts, so the job's
+	// reconciliation can be checked folder by folder; the listing unit is
+	// one of them, its folder the job's path. Ordered by folder in the walk's
+	// order. A page never passes 4 MB, so it may hold fewer units than
+	// page_size, or none; only an empty next_page_token means the last page.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the job's id as its object;
+	// no path is recorded.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (the tenant has no job with that id; a tenant that does not
+	// exist, for a caller who may list every tenant), precondition (the job is
+	// not an import job), unavailable (the tenant's database does not answer,
+	// or the tenant is not ready).
+	ListImportUnits(context.Context, *v1.ListImportUnitsRequest) (*v1.ListImportUnitsResponse, error)
 }
 
 // NewJobServiceClient constructs a client for the coria.v1.JobService service. Multiple service
@@ -211,24 +317,55 @@ type JobServiceHandler interface {
 	// storage, or none for every storage. A rebuild job names its mode; one
 	// that replaces the catalog also needs admin on the tenant, checked after
 	// the requirement below, since it empties the catalog and fills it again,
-	// and is answered permission denied to an operator.
+	// and is answered permission denied to an operator. An import job names
+	// an import receiver of the tenant, a path under its root and optionally
+	// a map (a file under the root, or inline); the root is resolved, the
+	// path opened and the map read and checked before the job is made, so a
+	// tree that is not there or a map that names two subjects for one
+	// session is refused here, not found out later. The map is kept with the
+	// job as it was read then, so a map file changed later changes nothing
+	// of the job or of a retry of it. A refusal of a map names the line it
+	// found at fault by number only, never a cell, the header or a path. An
+	// import job of a disabled receiver is made and waits, its units queued,
+	// until the receiver is enabled, as a send job waits for its sender. Two
+	// import jobs of one receiver never read the same files at once: a job
+	// whose path equals, lies under or contains (segment by segment, so "a"
+	// contains "a/b" and not "ab") the path of a queued or running import job
+	// of the same receiver is refused.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the new job's id as its
 	// object, and its kind, its sender and the path of labels of its target
-	// in details; for a scrub, its storage; for a rebuild, its mode.
+	// in details; for a scrub, its storage; for a rebuild, its mode; for an
+	// import, its receiver and its root's name, never its path or map file.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also no kind, a label that does not pass the label rule, a level named
 	// without the one above it, and a reception given, which only the
-	// server sets), not found (the tenant holds no subject, session or scan
+	// server sets; for an import, a path or map file that breaks the path
+	// rule, both a map file and an inline map, an inline map past 3 MiB,
+	// counts given, which only the server sets, and subject_from_headers
+	// with a map, from the job or the receiver, or with a layout other than
+	// XNAT), not found (the tenant holds no subject, session or scan
 	// with those labels; the tenant has no profile version of that name and
 	// number; a tenant that does not exist, for a caller who may list every
 	// tenant), precondition (a sender the tenant does not have; a scrub of a
 	// storage the tenant does not have, or while another scrub of it is
 	// queued or running; a rebuild while another rebuild is queued or
 	// running, or whose scratch_schema does not exist, holds a table, is the
-	// tenant's own schema or is on its search_path), unavailable (the tenant's database does not answer, or the
+	// tenant's own schema or is on its search_path; for an import, a
+	// receiver the tenant does not have or that is not an import receiver,
+	// a root import.roots no longer names or import.allowed-roots no longer
+	// allots to the tenant, a root whose path now resolves to another
+	// directory than when it was set (a link in it changed), a path that is
+	// not a directory under the root, a map file that cannot be read, is
+	// larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
+	// for one (project, session), a map with a layout that does not give the
+	// parts project and session or that gives a part subject, an XNAT layout
+	// with no map and subject_from_headers false, or a queued or running
+	// import job of the same receiver whose path overlaps this one's by
+	// segment; for every kind, a tenant moved or fenced,
+	// with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	CreateJob(context.Context, *v1.CreateJobRequest) (*v1.CreateJobResponse, error)
 	// GetJob answers one job, with its counts now and, for a deid job, its
@@ -258,7 +395,8 @@ type JobServiceHandler interface {
 	// within one batch (at most 64 instances or one second), and what the
 	// peer answered for that batch is still counted, since the peer holds it.
 	// A job already canceled is answered as it stands, so a repeated call
-	// ends nothing more.
+	// ends nothing more. An import job's walk stops within one file; what it
+	// already handed in is not withdrawn and goes on to its outcome, counted.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.
@@ -266,7 +404,8 @@ type JobServiceHandler interface {
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no job with that id; a tenant that does not
 	// exist, for a caller who may list every tenant), precondition (the job
-	// has ended done, partial or failed), unavailable (the tenant's database
+	// has ended done, partial or failed; a tenant moved or fenced, with
+	// ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database
 	// does not answer, or the tenant is not ready).
 	CancelJob(context.Context, *v1.CancelJobRequest) (*v1.CancelJobResponse, error)
 	// RetryJob sends again what an ended job did not send: its refused
@@ -277,6 +416,15 @@ type JobServiceHandler interface {
 	// instance archived since. A job already retried is answered as it
 	// stands, so a repeated call starts nothing more.
 	//
+	// For an import job, the new job has the same receiver, path, map (the
+	// one kept with the ended job, checked again) and subject_from_headers,
+	// and its units are the ended job's units that failed or were canceled,
+	// and those with a file lost, or skipped as unreadable, too large or in
+	// a directory too wide; each walks its folder again from the start, so
+	// what is already held counts as already held. A file quarantined,
+	// failed or discarded is not retried: it is released, retried or sent
+	// again through QuarantineService, ReceptionService or the source.
+	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the ended job's id as its
 	// object and the new job's id in details.
@@ -285,7 +433,11 @@ type JobServiceHandler interface {
 	// not found (the tenant has no job with that id; a tenant that does not
 	// exist, for a caller who may list every tenant), precondition (the job
 	// is queued or running, or ended done with nothing to send again; its
-	// sender has been removed), unavailable (the tenant's database does not
+	// sender has been removed; for an import, its receiver has been removed
+	// or its root, layout, path pattern or unit depth changed since the job
+	// was made, every precondition CreateJob checks of an import, or no unit
+	// to walk again; for every kind, a tenant moved or fenced, with ErrorInfo
+	// reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not
 	// answer, or the tenant is not ready).
 	RetryJob(context.Context, *v1.RetryJobRequest) (*v1.RetryJobResponse, error)
 	// ListJobFailures answers the instances a job's peer refused, or that
@@ -293,7 +445,9 @@ type JobServiceHandler interface {
 	// include_warnings, those sent with a warning. Ordered by subject label,
 	// session label, scan label, then SOP Instance UID, each compared byte by
 	// byte. At most job.failures-kept are kept per job; the job's
-	// failures_not_listed counts the others.
+	// failures_not_listed counts the others. An import job's files are listed
+	// by ListImportFiles, to an operator, since they are named by path; this
+	// method answers none for it.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.
@@ -303,6 +457,44 @@ type JobServiceHandler interface {
 	// exist, for a caller who may list every tenant), unavailable (the
 	// tenant's database does not answer, or the tenant is not ready).
 	ListJobFailures(context.Context, *v1.ListJobFailuresRequest) (*v1.ListJobFailuresResponse, error)
+	// ListImportFiles answers the files of an import job that did not reach
+	// the archive, each by its path under the root, with why: those skipped
+	// (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+	// quarantined (with the quarantined file's id and reason), those lost,
+	// failed or discarded, and the differences the XNAT catalog files showed.
+	// Ordered by path in the walk's order (segment by segment, each byte by
+	// byte). At most job.failures-kept are kept per job; the job's
+	// failures_not_listed counts the others. A page never passes 4 MB, so it
+	// may hold fewer files than page_size, or none; only an empty
+	// next_page_token means the last page.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the job's id as its object;
+	// no path is recorded.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (the tenant has no job with that id; a tenant that does not
+	// exist, for a caller who may list every tenant), precondition (the job is
+	// not an import job), unavailable (the tenant's database does not answer,
+	// or the tenant is not ready).
+	ListImportFiles(context.Context, *v1.ListImportFilesRequest) (*v1.ListImportFilesResponse, error)
+	// ListImportUnits answers the units of an import job, each with its
+	// folder under the root, its state and its counts, so the job's
+	// reconciliation can be checked folder by folder; the listing unit is
+	// one of them, its folder the job's path. Ordered by folder in the walk's
+	// order. A page never passes 4 MB, so it may hold fewer units than
+	// page_size, or none; only an empty next_page_token means the last page.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the job's id as its object;
+	// no path is recorded.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant that
+	// does not exist, for a caller who may not list every tenant), invalid,
+	// not found (the tenant has no job with that id; a tenant that does not
+	// exist, for a caller who may list every tenant), precondition (the job is
+	// not an import job), unavailable (the tenant's database does not answer,
+	// or the tenant is not ready).
+	ListImportUnits(context.Context, *v1.ListImportUnitsRequest) (*v1.ListImportUnitsResponse, error)
 }
 
 // RegisterJobServiceHandler registers svc as the coria.v1.JobService implementation on server.
@@ -315,6 +507,8 @@ func RegisterJobServiceHandler(server *connect.Server, svc JobServiceHandler) {
 		connect.Method{Spec: jobServiceCancelJobSpec(), Handler: adapter.cancelJob},
 		connect.Method{Spec: jobServiceRetryJobSpec(), Handler: adapter.retryJob},
 		connect.Method{Spec: jobServiceListJobFailuresSpec(), Handler: adapter.listJobFailures},
+		connect.Method{Spec: jobServiceListImportFilesSpec(), Handler: adapter.listImportFiles},
+		connect.Method{Spec: jobServiceListImportUnitsSpec(), Handler: adapter.listImportUnits},
 	)
 }
 
@@ -343,6 +537,14 @@ func (UnimplementedJobServiceHandler) RetryJob(context.Context, *v1.RetryJobRequ
 
 func (UnimplementedJobServiceHandler) ListJobFailures(context.Context, *v1.ListJobFailuresRequest) (*v1.ListJobFailuresResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.JobService.ListJobFailures is not implemented")
+}
+
+func (UnimplementedJobServiceHandler) ListImportFiles(context.Context, *v1.ListImportFilesRequest) (*v1.ListImportFilesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.JobService.ListImportFiles is not implemented")
+}
+
+func (UnimplementedJobServiceHandler) ListImportUnits(context.Context, *v1.ListImportUnitsRequest) (*v1.ListImportUnitsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.JobService.ListImportUnits is not implemented")
 }
 
 type jobServiceClient struct {
@@ -392,6 +594,22 @@ func (c *jobServiceClient) RetryJob(ctx context.Context, req *v1.RetryJobRequest
 func (c *jobServiceClient) ListJobFailures(ctx context.Context, req *v1.ListJobFailuresRequest) (*v1.ListJobFailuresResponse, error) {
 	var res v1.ListJobFailuresResponse
 	if err := c.client.CallUnary(ctx, jobServiceListJobFailuresSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *jobServiceClient) ListImportFiles(ctx context.Context, req *v1.ListImportFilesRequest) (*v1.ListImportFilesResponse, error) {
+	var res v1.ListImportFilesResponse
+	if err := c.client.CallUnary(ctx, jobServiceListImportFilesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *jobServiceClient) ListImportUnits(ctx context.Context, req *v1.ListImportUnitsRequest) (*v1.ListImportUnitsResponse, error) {
+	var res v1.ListImportUnitsResponse
+	if err := c.client.CallUnary(ctx, jobServiceListImportUnitsSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -465,6 +683,30 @@ func (h jobServiceHandler) listJobFailures(ctx context.Context, _ connect.Spec, 
 		return err
 	}
 	res, err := h.svc.ListJobFailures(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h jobServiceHandler) listImportFiles(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListImportFilesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListImportFiles(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h jobServiceHandler) listImportUnits(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListImportUnitsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListImportUnits(ctx, &req)
 	if err != nil {
 		return err
 	}

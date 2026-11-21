@@ -93,13 +93,17 @@ type ReceiverServiceClient interface {
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
-	// object, and its type, port, AE title and storage in details.
+	// object, and its type, port, AE title and storage in details; for an
+	// import receiver, its root's name and its layout, never a path.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (a tenant that does not exist, for a caller who may list every
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also, for an import receiver, a naming template that uses a part
+	// neither its layout, its map nor its naming pattern ever gives, and a
+	// map file that breaks the path rule), not found (a tenant that does
+	// not exist, for a caller who may list every
 	// tenant), conflict (the tenant has a receiver with that name, or a
-	// removed receiver of that name is still named by receptions or
-	// quarantined files), precondition (a storage the tenant does not have; a
+	// removed receiver of that name is still named by receptions,
+	// quarantined files or jobs), precondition (a storage the tenant does not have; a
 	// sender in forward_to the tenant does not have; a storage, a sender or a
 	// profile version a route names that the tenant does not have, or a
 	// profile version that cannot de-identify a receiver's files; a route
@@ -107,7 +111,10 @@ type ReceiverServiceClient interface {
 	// a port outside the
 	// tenant's allotted ports; a bind address the installation does not list;
 	// another receiver of the tenant on the same port and an overlapping
-	// address), unavailable (the tenant's database
+	// address; a root import.roots does not name, or one import.allowed-roots
+	// does not allot to the tenant; a map file with a layout that does not
+	// give the parts project and session, or that gives a part subject),
+	// unavailable (the tenant's database
 	// does not answer, or the tenant is not ready).
 	AddReceiver(context.Context, *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error)
 	// GetReceiver answers one receiver of a tenant, with its health now.
@@ -139,7 +146,10 @@ type ReceiverServiceClient interface {
 	// classes, transfer syntaxes) restarts the listener; a change of the
 	// storage, the naming rule, the quiet period, the longest open time or
 	// the size bound applies to what arrives from then on, and the quiet
-	// period and longest open time also to receptions still receiving.
+	// period and longest open time also to receptions still receiving. The
+	// fields of an import receiver (root, layout, pattern, unit depth, map
+	// file) cannot change while one of its jobs is queued or running, since
+	// the job's cursor and counts are read by them (precondition).
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
@@ -152,7 +162,8 @@ type ReceiverServiceClient interface {
 	// receiver with that name; a tenant that does not exist, for a caller who
 	// may list every tenant), precondition (every precondition AddReceiver
 	// checks; expected_update_time is not the receiver's update_time, as a
-	// stale expected version is everywhere in this API), unavailable (the tenant's database does not answer, or the
+	// stale expected version is everywhere in this API; a field of an import
+	// receiver while one of its jobs is queued or running), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	SetReceiver(context.Context, *v1.SetReceiverRequest) (*v1.SetReceiverResponse, error)
 	// RemoveReceiver stops a receiver and removes its configuration. The
@@ -162,7 +173,10 @@ type ReceiverServiceClient interface {
 	// name stays held, and cannot be given to a new receiver, while any
 	// reception or quarantined file names it, so a name in a record always
 	// means one receiver. A repeated call finds no receiver and is answered
-	// NOT_FOUND; it removes nothing more.
+	// NOT_FOUND; it removes nothing more. An import receiver is not removed
+	// while one of its jobs is queued or running: the job is canceled first
+	// (JobService.CancelJob), so no job is left handing files to a receiver
+	// that is gone.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
@@ -170,7 +184,8 @@ type ReceiverServiceClient interface {
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no receiver with that name; a tenant that does
-	// not exist, for a caller who may list every tenant), unavailable (the
+	// not exist, for a caller who may list every tenant), precondition (an
+	// import receiver one of whose jobs is queued or running), unavailable (the
 	// tenant's database does not answer, or the tenant is not ready).
 	RemoveReceiver(context.Context, *v1.RemoveReceiverRequest) (*v1.RemoveReceiverResponse, error)
 }
@@ -188,13 +203,17 @@ type ReceiverServiceHandler interface {
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
-	// object, and its type, port, AE title and storage in details.
+	// object, and its type, port, AE title and storage in details; for an
+	// import receiver, its root's name and its layout, never a path.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
-	// does not exist, for a caller who may not list every tenant), invalid,
-	// not found (a tenant that does not exist, for a caller who may list every
+	// does not exist, for a caller who may not list every tenant), invalid
+	// (also, for an import receiver, a naming template that uses a part
+	// neither its layout, its map nor its naming pattern ever gives, and a
+	// map file that breaks the path rule), not found (a tenant that does
+	// not exist, for a caller who may list every
 	// tenant), conflict (the tenant has a receiver with that name, or a
-	// removed receiver of that name is still named by receptions or
-	// quarantined files), precondition (a storage the tenant does not have; a
+	// removed receiver of that name is still named by receptions,
+	// quarantined files or jobs), precondition (a storage the tenant does not have; a
 	// sender in forward_to the tenant does not have; a storage, a sender or a
 	// profile version a route names that the tenant does not have, or a
 	// profile version that cannot de-identify a receiver's files; a route
@@ -202,7 +221,10 @@ type ReceiverServiceHandler interface {
 	// a port outside the
 	// tenant's allotted ports; a bind address the installation does not list;
 	// another receiver of the tenant on the same port and an overlapping
-	// address), unavailable (the tenant's database
+	// address; a root import.roots does not name, or one import.allowed-roots
+	// does not allot to the tenant; a map file with a layout that does not
+	// give the parts project and session, or that gives a part subject),
+	// unavailable (the tenant's database
 	// does not answer, or the tenant is not ready).
 	AddReceiver(context.Context, *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error)
 	// GetReceiver answers one receiver of a tenant, with its health now.
@@ -234,7 +256,10 @@ type ReceiverServiceHandler interface {
 	// classes, transfer syntaxes) restarts the listener; a change of the
 	// storage, the naming rule, the quiet period, the longest open time or
 	// the size bound applies to what arrives from then on, and the quiet
-	// period and longest open time also to receptions still receiving.
+	// period and longest open time also to receptions still receiving. The
+	// fields of an import receiver (root, layout, pattern, unit depth, map
+	// file) cannot change while one of its jobs is queued or running, since
+	// the job's cursor and counts are read by them (precondition).
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
@@ -247,7 +272,8 @@ type ReceiverServiceHandler interface {
 	// receiver with that name; a tenant that does not exist, for a caller who
 	// may list every tenant), precondition (every precondition AddReceiver
 	// checks; expected_update_time is not the receiver's update_time, as a
-	// stale expected version is everywhere in this API), unavailable (the tenant's database does not answer, or the
+	// stale expected version is everywhere in this API; a field of an import
+	// receiver while one of its jobs is queued or running), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	SetReceiver(context.Context, *v1.SetReceiverRequest) (*v1.SetReceiverResponse, error)
 	// RemoveReceiver stops a receiver and removes its configuration. The
@@ -257,7 +283,10 @@ type ReceiverServiceHandler interface {
 	// name stays held, and cannot be given to a new receiver, while any
 	// reception or quarantined file names it, so a name in a record always
 	// means one receiver. A repeated call finds no receiver and is answered
-	// NOT_FOUND; it removes nothing more.
+	// NOT_FOUND; it removes nothing more. An import receiver is not removed
+	// while one of its jobs is queued or running: the job is canceled first
+	// (JobService.CancelJob), so no job is left handing files to a receiver
+	// that is gone.
 	//
 	// Role: admin on the tenant.
 	// Audit: one entry in the tenant's log, with the receiver's name as its
@@ -265,7 +294,8 @@ type ReceiverServiceHandler interface {
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid,
 	// not found (the tenant has no receiver with that name; a tenant that does
-	// not exist, for a caller who may list every tenant), unavailable (the
+	// not exist, for a caller who may list every tenant), precondition (an
+	// import receiver one of whose jobs is queued or running), unavailable (the
 	// tenant's database does not answer, or the tenant is not ready).
 	RemoveReceiver(context.Context, *v1.RemoveReceiverRequest) (*v1.RemoveReceiverResponse, error)
 }

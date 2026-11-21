@@ -24,3 +24,13 @@ func (tenantService) ReclaimTenant(context.Context, *v1.ReclaimTenantRequest) (*
 func (accessService) ReinstateKeys(context.Context, *v1.ReinstateKeysRequest) (*v1.ReinstateKeysResponse, error) {
 	return nil, errNotServed
 }
+
+// ListImportFiles is not served yet: JobService's other methods are.
+func (jobService) ListImportFiles(context.Context, *v1.ListImportFilesRequest) (*v1.ListImportFilesResponse, error) {
+	return nil, errNotServed
+}
+
+// ListImportUnits is not served yet: JobService's other methods are.
+func (jobService) ListImportUnits(context.Context, *v1.ListImportUnitsRequest) (*v1.ListImportUnitsResponse, error) {
+	return nil, errNotServed
+}

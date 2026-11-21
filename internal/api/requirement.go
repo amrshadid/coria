@@ -475,6 +475,9 @@ var rules = map[string]rule{
 // may read. BackupService: admin on the installation. TenantService's
 // ReclaimTenant and AccessService's ReinstateKeys: admin on the
 // installation, further kept to the local operator by their handlers.
+// JobService's ListImportFiles and ListImportUnits: operator on the
+// tenant, since they answer paths, which can name a person; the object is
+// the job's id, and no path is recorded.
 var pendingRules = map[string]rule{
 	coriav1connect.CorrectionServiceDeleteProcedure: byMessage(func(r *v1.DeleteRequest) (access.Requirement, access.Request) {
 		t := r.GetTarget()
@@ -529,6 +532,13 @@ var pendingRules = map[string]rule{
 	// every caller but the local operator, as the contract says.
 	coriav1connect.TenantServiceReclaimTenantProcedure: fixed(installationAdmin),
 	coriav1connect.AccessServiceReinstateKeysProcedure: fixed(installationAdmin),
+
+	coriav1connect.JobServiceListImportFilesProcedure: byMessage(func(r *v1.ListImportFilesRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: jobObject(r.GetId())}
+	}),
+	coriav1connect.JobServiceListImportUnitsProcedure: byMessage(func(r *v1.ListImportUnitsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: jobObject(r.GetId())}
+	}),
 }
 
 // The keys of the details of the correction methods' entries.
