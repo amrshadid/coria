@@ -205,7 +205,8 @@ type Needle struct {
 	// Edge is where the value is taken for itself when searched for and
 	// cleaned: EdgeAny for most, EdgeWord for a text a pattern took out
 	// that begins or ends with a letter, so a cut "Smith" is not found in
-	// "Smithson".
+	// "Smithson", and EdgeIdentifier for an identifier of words, not the
+	// patient's (IdentifierEdge, wordEdgeAllowed).
 	Edge Edge
 	// Whole is set for a value searched for only whole, never split into
 	// values at its backslashes: a text a pattern took out of one value,

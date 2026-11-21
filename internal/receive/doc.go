@@ -56,8 +56,16 @@
 // release of such a record through a receiver that de-identifies lands it
 // again, so it is recorded remapped and keyed and goes through the engine
 // and the check; one recorded de-identified at a receiver that no longer
-// names a profile is held (no_profile). A placing UID under the standard's
-// own root is held as bad_uid when it lands at such a receiver. Every byte
+// names a profile is held (no_profile). A record made de-identified is
+// released only through a receiver that de-identifies (the store's rule),
+// and one that lands again at a receiver changed meanwhile to archive as
+// received is held (no_profile), never archived identified. A placing UID
+// under the standard's own root is held as bad_uid when it lands at such a
+// receiver. The check after's copy of each file is taken from the server's
+// bound on de-identification's memory (Config.Check's checker, deid.memory):
+// a file that does not fit beside the others waits, and one larger than the
+// whole bound is held (deid_failed, check_too_large) and released once the
+// setting is raised. Every byte
 // put is first compared with the row's checksum, or the copy's, through
 // the handle it is put from, so wrong bytes never reach the storage. The
 // de-identified copy is made again whenever it is needed and
@@ -107,7 +115,9 @@
 // on another storage meanwhile (session_elsewhere) before any put. A study
 // the routing does not route is held as unrouted, and a run again finishes
 // that hold; a release naming a storage (tenant.Release.Storage) chooses
-// the storage, the routes still the profile and senders.
+// the storage, the routes still the profile and senders; a release naming
+// a profile version (tenant.Release.Profile) chooses the version for its
+// reception's files, before the route's and the receiver's.
 //
 // # What this package must never do
 //

@@ -569,6 +569,7 @@ type clients struct {
 	senders    coriav1connect.SenderServiceClient
 	jobs       coriav1connect.JobServiceClient
 	profiles   coriav1connect.ProfileServiceClient
+	deid       coriav1connect.DeidServiceClient
 }
 
 // as returns clients that call as c.
@@ -603,6 +604,7 @@ func (e *env) as(c caller) clients {
 		senders:    coriav1connect.NewSenderServiceClient(cl),
 		jobs:       coriav1connect.NewJobServiceClient(cl),
 		profiles:   coriav1connect.NewProfileServiceClient(cl),
+		deid:       coriav1connect.NewDeidServiceClient(cl),
 	}
 }
 

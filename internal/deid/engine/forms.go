@@ -39,7 +39,46 @@ const (
 	// EdgeDigits: a run of digits (a date written without separators, such
 	// as 05032024) is taken only with no digit beside it.
 	EdgeDigits
+	// EdgeIdentifier: an identifier of words (IdentifierEdge): letters and
+	// no digit, in a script written with spaces, of an attribute that
+	// does not identify the patient (an institution's or a station's
+	// name). On a side where it ends in a letter it is taken only at a
+	// word's edge: no letter of any script and no "_" beside it, since "_"
+	// joins words in the names devices write ("TOSHIBA_MEC" is a maker,
+	// not the institution "TOSHIBA"); a digit beside it does not join it.
+	// Any other side anywhere. A name of a person is not one: its own
+	// forms are taken as NameForms says.
+	EdgeIdentifier
 )
+
+// IdentifierEdge returns the edge an identifier's value is taken at by
+// its text alone: EdgeIdentifier for words (a letter at an end, no digit,
+// no letter of a script written without spaces), so an institution's or
+// a station's name is not found inside another word; else EdgeAny. A code
+// that holds a digit is not words: a copy of it glued to other text
+// ("MRNAB778812", "sub_AB778812") is how it leaks, so it is taken
+// anywhere. In a script written without spaces (Unspaced) no word has an
+// edge to find, so a name in it is taken anywhere too ("東京中央病院" in
+// "東京中央病院放射線科"). The engine gives no word edge to an attribute
+// that identifies the patient whatever its text (needles.go,
+// patientIdentifierTags).
+func IdentifierEdge(v string) Edge {
+	first, _ := utf8.DecodeRuneInString(v)
+	last, _ := utf8.DecodeLastRuneInString(v)
+	if !unicode.IsLetter(first) && !unicode.IsLetter(last) {
+		return EdgeAny
+	}
+	if Unspaced(v) || strings.ContainsFunc(v, unicode.IsDigit) {
+		return EdgeAny
+	}
+	return EdgeIdentifier
+}
+
+// IdentifierWordRune reports whether r continues a word beside an
+// identifier's letter (EdgeIdentifier): a letter of any script, or "_".
+func IdentifierWordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r)
+}
 
 // WrittenForm is one way people write a value in free text.
 type WrittenForm struct {

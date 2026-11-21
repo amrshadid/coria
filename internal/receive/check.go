@@ -41,10 +41,12 @@ type decision struct {
 
 // check reads a landed file's header and decides whether it is recorded as
 // received or held, and with which reason: not DICOM, a SOP class the
-// receiver does not take, a placing UID missing or not well formed. A file
-// that passes is given its reception, opened if need be. An error is a
-// failure to read the file or to reach the database, which decides nothing:
-// the file stays landed and is checked again.
+// receiver does not take, a placing UID missing or not well formed; and a
+// file whose release put it back in line, its released record made
+// de-identified, at a receiver that archives as received (deid_failed,
+// no_profile). A file that passes is given its reception, opened if need
+// be. An error is a failure to read the file or to reach the database,
+// which decides nothing: the file stays landed and is checked again.
 func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 	rcv, err := p.receivers.get(ctx, l.receiver)
 	if err != nil {
@@ -57,17 +59,34 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 	// received.
 	var keys engine.Keys
 	deidentifies := rcv.Deidentifies()
-	if deidentifies {
+	// A file a release put back in line: the released record says whether
+	// it was made de-identified, and what the release named.
+	var released tenant.QuarantinedFile
+	if l.releasedFrom != "" {
+		if released, err = p.store.QuarantinedFile(ctx, l.releasedFrom); err != nil {
+			return decision{}, err
+		}
+	}
+	if deidentifies || released.Deidentified {
 		if keys, err = p.deidKeys(ctx); err != nil {
 			return decision{}, err
 		}
 	}
 	holdAtReceive := func(l landed, reason tenant.QuarantineReason, details map[string]string, h *header.Header) decision {
 		d := p.holdAtReceive(l, reason, details, h)
-		if deidentifies {
+		if deidentifies || released.Deidentified {
 			protect(d.hold, keys)
 		}
 		return d
+	}
+	if released.Deidentified && !deidentifies {
+		// A file held at a receiver that de-identifies is never archived
+		// as received: released through a receiver that archives as
+		// received (which the store refuses, so here one changed between
+		// the release and this landing), it is held again, its record
+		// protected as the one it was released from, and released once a
+		// receiver that de-identifies is named.
+		return holdAtReceive(l, tenant.QuarantineDeidFailed, map[string]string{"cause": "no_profile"}, nil), nil
 	}
 	f, size, err := p.area.Open(l.file.Path)
 	if err != nil {
@@ -120,16 +139,10 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 		SHA256: sum, Incoming: l.file.Path, Caller: l.caller, Association: l.association,
 		Released: l.releasedFrom != "", Deidentified: deidentifies,
 	}
-	if l.releasedFrom != "" {
-		// A release that named a storage, of a file that joined no
-		// reception and lands again, still names it: the reception the
-		// file joins now keeps it.
-		q, err := p.store.QuarantinedFile(ctx, l.releasedFrom)
-		if err != nil {
-			return decision{}, err
-		}
-		rf.ReleasedStorage = q.ReleaseStorage
-	}
+	// A release that named a storage or a profile version, of a file that
+	// joined no reception and lands again, still names them: the
+	// reception the file joins now keeps them.
+	rf.ReleasedStorage, rf.ReleasedProfile = released.ReleaseStorage, released.ReleaseProfile
 	return decision{received: rf}, nil
 }
 

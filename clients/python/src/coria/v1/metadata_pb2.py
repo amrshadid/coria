@@ -22,9 +22,10 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from coria.v1 import profile_pb2 as coria_dot_v1_dot_profile__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17\x63oria/v1/metadata.proto\x12\x08\x63oria.v1\"\xa5\x01\n\x10InstanceMetadata\x12\x13\n\x0binstance_id\x18\x01 \x01(\t\x12\x18\n\x10sop_instance_uid\x18\x02 \x01(\t\x12\x12\n\ndicom_json\x18\x03 \x01(\t\x12\x16\n\x0ejson_too_large\x18\x04 \x01(\x08\x12\x1b\n\x13transfer_syntax_uid\x18\x05 \x01(\t\x12\x19\n\x11\x62ulk_data_omitted\x18\x06 \x01(\x08\"\x91\x01\n\x16GetScanMetadataRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x15\n\rsubject_label\x18\x02 \x01(\t\x12\x15\n\rsession_label\x18\x03 \x01(\t\x12\x12\n\nscan_label\x18\x04 \x01(\t\x12\x11\n\tpage_size\x18\x05 \x01(\x05\x12\x12\n\npage_token\x18\x06 \x01(\t\"z\n\x17GetScanMetadataResponse\x12-\n\tinstances\x18\x01 \x03(\x0b\x32\x1a.coria.v1.InstanceMetadata\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\x12\x17\n\x0fmanifest_sha256\x18\x03 \x01(\t\"\x83\x01\n\x1aGetInstanceMetadataRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x15\n\rsubject_label\x18\x02 \x01(\t\x12\x15\n\rsession_label\x18\x03 \x01(\t\x12\x12\n\nscan_label\x18\x04 \x01(\t\x12\x13\n\x0binstance_id\x18\x05 \x01(\t\"K\n\x1bGetInstanceMetadataResponse\x12,\n\x08instance\x18\x01 \x01(\x0b\x32\x1a.coria.v1.InstanceMetadata2\xd7\x01\n\x0fMetadataService\x12[\n\x0fGetScanMetadata\x12 .coria.v1.GetScanMetadataRequest\x1a!.coria.v1.GetScanMetadataResponse\"\x03\x90\x02\x01\x12g\n\x13GetInstanceMetadata\x12$.coria.v1.GetInstanceMetadataRequest\x1a%.coria.v1.GetInstanceMetadataResponse\"\x03\x90\x02\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17\x63oria/v1/metadata.proto\x12\x08\x63oria.v1\x1a\x16\x63oria/v1/profile.proto\"\xd4\x01\n\x10InstanceMetadata\x12\x13\n\x0binstance_id\x18\x01 \x01(\t\x12\x18\n\x10sop_instance_uid\x18\x02 \x01(\t\x12\x12\n\ndicom_json\x18\x03 \x01(\t\x12\x16\n\x0ejson_too_large\x18\x04 \x01(\x08\x12\x1b\n\x13transfer_syntax_uid\x18\x05 \x01(\t\x12\x19\n\x11\x62ulk_data_omitted\x18\x06 \x01(\x08\x12-\n\x07profile\x18\x07 \x01(\x0b\x32\x1c.coria.v1.ProfileVersionName\"\x91\x01\n\x16GetScanMetadataRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x15\n\rsubject_label\x18\x02 \x01(\t\x12\x15\n\rsession_label\x18\x03 \x01(\t\x12\x12\n\nscan_label\x18\x04 \x01(\t\x12\x11\n\tpage_size\x18\x05 \x01(\x05\x12\x12\n\npage_token\x18\x06 \x01(\t\"z\n\x17GetScanMetadataResponse\x12-\n\tinstances\x18\x01 \x03(\x0b\x32\x1a.coria.v1.InstanceMetadata\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\x12\x17\n\x0fmanifest_sha256\x18\x03 \x01(\t\"\x83\x01\n\x1aGetInstanceMetadataRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x15\n\rsubject_label\x18\x02 \x01(\t\x12\x15\n\rsession_label\x18\x03 \x01(\t\x12\x12\n\nscan_label\x18\x04 \x01(\t\x12\x13\n\x0binstance_id\x18\x05 \x01(\t\"K\n\x1bGetInstanceMetadataResponse\x12,\n\x08instance\x18\x01 \x01(\x0b\x32\x1a.coria.v1.InstanceMetadata2\xd7\x01\n\x0fMetadataService\x12[\n\x0fGetScanMetadata\x12 .coria.v1.GetScanMetadataRequest\x1a!.coria.v1.GetScanMetadataResponse\"\x03\x90\x02\x01\x12g\n\x13GetInstanceMetadata\x12$.coria.v1.GetInstanceMetadataRequest\x1a%.coria.v1.GetInstanceMetadataResponse\"\x03\x90\x02\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,16 +36,16 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_METADATASERVICE'].methods_by_name['GetScanMetadata']._serialized_options = b'\220\002\001'
   _globals['_METADATASERVICE'].methods_by_name['GetInstanceMetadata']._loaded_options = None
   _globals['_METADATASERVICE'].methods_by_name['GetInstanceMetadata']._serialized_options = b'\220\002\001'
-  _globals['_INSTANCEMETADATA']._serialized_start=38
-  _globals['_INSTANCEMETADATA']._serialized_end=203
-  _globals['_GETSCANMETADATAREQUEST']._serialized_start=206
-  _globals['_GETSCANMETADATAREQUEST']._serialized_end=351
-  _globals['_GETSCANMETADATARESPONSE']._serialized_start=353
-  _globals['_GETSCANMETADATARESPONSE']._serialized_end=475
-  _globals['_GETINSTANCEMETADATAREQUEST']._serialized_start=478
-  _globals['_GETINSTANCEMETADATAREQUEST']._serialized_end=609
-  _globals['_GETINSTANCEMETADATARESPONSE']._serialized_start=611
-  _globals['_GETINSTANCEMETADATARESPONSE']._serialized_end=686
-  _globals['_METADATASERVICE']._serialized_start=689
-  _globals['_METADATASERVICE']._serialized_end=904
+  _globals['_INSTANCEMETADATA']._serialized_start=62
+  _globals['_INSTANCEMETADATA']._serialized_end=274
+  _globals['_GETSCANMETADATAREQUEST']._serialized_start=277
+  _globals['_GETSCANMETADATAREQUEST']._serialized_end=422
+  _globals['_GETSCANMETADATARESPONSE']._serialized_start=424
+  _globals['_GETSCANMETADATARESPONSE']._serialized_end=546
+  _globals['_GETINSTANCEMETADATAREQUEST']._serialized_start=549
+  _globals['_GETINSTANCEMETADATAREQUEST']._serialized_end=680
+  _globals['_GETINSTANCEMETADATARESPONSE']._serialized_start=682
+  _globals['_GETINSTANCEMETADATARESPONSE']._serialized_end=757
+  _globals['_METADATASERVICE']._serialized_start=760
+  _globals['_METADATASERVICE']._serialized_end=975
 # @@protoc_insertion_point(module_scope)

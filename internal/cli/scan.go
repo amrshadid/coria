@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -61,12 +62,25 @@ func (a *app) scanDetails(s *v1.Scan) []output.Pair {
 // instanceJSON is one instance of "scan show --metadata --json": its DICOM
 // JSON is an object, not a string holding JSON.
 type instanceJSON struct {
-	InstanceID        string          `json:"instanceId"`
-	SOPInstanceUID    string          `json:"sopInstanceUid"`
-	TransferSyntaxUID string          `json:"transferSyntaxUid"`
-	JSONTooLarge      bool            `json:"jsonTooLarge"`
-	BulkDataOmitted   bool            `json:"bulkDataOmitted"`
-	DicomJSON         json.RawMessage `json:"dicomJson"`
+	InstanceID        string `json:"instanceId"`
+	SOPInstanceUID    string `json:"sopInstanceUid"`
+	TransferSyntaxUID string `json:"transferSyntaxUid"`
+	JSONTooLarge      bool   `json:"jsonTooLarge"`
+	BulkDataOmitted   bool   `json:"bulkDataOmitted"`
+	// Profile is the profile version that de-identified the instance,
+	// "name@version"; left out for one archived as received.
+	Profile   string          `json:"profile,omitempty"`
+	DicomJSON json.RawMessage `json:"dicomJson"`
+}
+
+// profileOf writes the profile version an instance names as
+// "name@version", or "" for none.
+func profileOf(in *v1.InstanceMetadata) string {
+	p := in.GetProfile()
+	if p == nil {
+		return ""
+	}
+	return p.GetName() + "@" + strconv.Itoa(int(p.GetVersion()))
 }
 
 // scanJSON is the document of "scan show --json".
@@ -146,7 +160,7 @@ included.`,
 						for _, in := range p.GetInstances() {
 							ij := instanceJSON{
 								InstanceID: in.GetInstanceId(), SOPInstanceUID: in.GetSopInstanceUid(), TransferSyntaxUID: in.GetTransferSyntaxUid(),
-								JSONTooLarge: in.GetJsonTooLarge(), BulkDataOmitted: in.GetBulkDataOmitted(), DicomJSON: json.RawMessage("null"),
+								JSONTooLarge: in.GetJsonTooLarge(), BulkDataOmitted: in.GetBulkDataOmitted(), Profile: profileOf(in), DicomJSON: json.RawMessage("null"),
 							}
 							if in.GetDicomJson() != "" {
 								ij.DicomJSON = json.RawMessage(in.GetDicomJson())
@@ -169,7 +183,11 @@ included.`,
 			return readPages(func(p *v1.GetScanMetadataResponse) error {
 				return a.write(func(w io.Writer) error {
 					for _, in := range p.GetInstances() {
-						if _, err := fmt.Fprintf(w, "\nInstance %s (transfer syntax %s)\n", output.Clean(in.GetInstanceId()), output.Clean(output.Dash(in.GetTransferSyntaxUid()))); err != nil {
+						made := ""
+						if p := profileOf(in); p != "" {
+							made = ", de-identified by " + output.Clean(p)
+						}
+						if _, err := fmt.Fprintf(w, "\nInstance %s (transfer syntax %s%s)\n", output.Clean(in.GetInstanceId()), output.Clean(output.Dash(in.GetTransferSyntaxUid())), made); err != nil {
 							return err
 						}
 						text := in.GetDicomJson()

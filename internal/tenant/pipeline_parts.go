@@ -122,6 +122,17 @@ type Release struct {
 	// reception keeps it when it lands again. A session that already has
 	// files on a storage keeps them there.
 	Storage string
+	// Profile, when not zero, is the profile version the reception the
+	// file joins is de-identified with, in place of the one its route or
+	// its receiver names (ReceptionRoute.ReleasedProfile): a file held by
+	// a profile that could not process it is released through a fixed
+	// version. Only through a receiver that de-identifies (a precondition
+	// failure otherwise); the version must be the one an earlier release
+	// into the same reception named, if any; it is kept with the record
+	// (QuarantinedFile.ReleaseProfile), so a file that joins no reception
+	// keeps it when it lands again. That the version exists and can
+	// de-identify a receiver's files is the caller's to check.
+	Profile ProfileRef
 	// Now is when the release is made.
 	Now time.Time
 }
@@ -133,6 +144,11 @@ func (r Release) Validate() error {
 	}
 	if r.Storage != "" {
 		if err := ValidateName("storage", r.Storage); err != nil {
+			return err
+		}
+	}
+	if !r.Profile.IsZero() {
+		if err := r.Profile.Validate(); err != nil {
 			return err
 		}
 	}
@@ -259,7 +275,8 @@ type ScanInstance struct {
 	Held time.Time
 	// Profile is the profile version that de-identified it; the zero ref
 	// for one archived as received. Answered by a job's stream
-	// (JobWork.JobScanInstances) alone; zero in every other read.
+	// (JobWork.JobScanInstances) and the catalog's reads of instances
+	// (InstanceReads); zero in the pipeline's own ScanInstances.
 	Profile ProfileRef
 }
 

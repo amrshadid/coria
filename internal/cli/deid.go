@@ -17,15 +17,19 @@ import (
 // newDeid builds the deid noun: the jobs that judge the archive against a
 // de-identification profile version, changing nothing.
 func (a *app) newDeid() *cobra.Command {
-	return group("deid", "Check the archive against its profile versions, or dry-run a version over it",
+	return group("deid", "Check the archive against its profile versions, dry-run a version, or find a value's codes",
 		`Judge archived instances against a de-identification profile version, changing
 nothing: no catalog row, no stored byte, no lookup table. Each is a job of the
 kind deid, which "job watch", "job show", "job failures", "job cancel" and "job
 retry" work on as on any job; "job show" adds its counts per rule and per
 reason. A target is a subject, a session of it (<subject>/<session>) or a scan
 of that (<subject>/<session>/<scan>); with none, the whole tenant. Both need the
-operator role on the tenant.`,
-		a.newDeidCheck(), a.newDeidDryRun())
+operator role on the tenant.
+
+"deid code" is the forward lookup: from a value a person has (a Patient ID) to
+the codes the archive gives it, such as the subject's label, for a withdrawal
+of consent. It needs the admin role.`,
+		a.newDeidCheck(), a.newDeidDryRun(), a.newDeidCode())
 }
 
 // parseTarget reads an optional target: none for the whole tenant, or a

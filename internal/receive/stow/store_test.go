@@ -72,6 +72,38 @@ func TestServeStoresEveryPartAsSent(t *testing.T) {
 	}
 }
 
+// TestServeAtAReceiverThatDeidentifiesAnswersNoRetrieveURL guards the
+// answer of a receiver that de-identifies: the instances are archived
+// under remapped UIDs, so neither an instance's Retrieve URL nor the
+// study's is given (a URL by the remapped UIDs would hand the sender the
+// mapping); each stored instance is still listed by the class and the SOP
+// Instance UID it was sent with, and the request is answered 200.
+func TestServeAtAReceiverThatDeidentifiesAnswersNoRetrieveURL(t *testing.T) {
+	r := newRig(t, 1<<20, 1<<24, func(c *Config) { c.Receiver.Profile = tenant.ProfileRef{Name: "research", Version: 1} })
+	var bodies [][]byte
+	for _, n := range ctFiles[:2] {
+		bodies = append(bodies, corpus(t, n))
+	}
+	body, ct := multipartBody(t, dicomParts(bodies...))
+	w, res := r.serve(ctStudy, body, ct)
+	if w.Code != http.StatusOK || res.Stored != 2 {
+		t.Fatalf("answer %d %+v: %s", w.Code, res, w.Body)
+	}
+	if bytes.Contains(w.Body.Bytes(), []byte(`"00081190"`)) || bytes.Contains(w.Body.Bytes(), []byte("/studies/")) {
+		t.Fatalf("the answer holds a Retrieve URL: %s", w.Body)
+	}
+	a := readAnswer(t, w.Body.Bytes())
+	if a.studyURL != "" || len(a.stored) != 2 {
+		t.Fatalf("answer %+v", a)
+	}
+	for i, b := range bodies {
+		class, instance, _ := uidsOf(t, b)
+		if want := (storedItem{class: class, instance: instance}); a.stored[i] != want {
+			t.Errorf("item %d: %+v, want %+v", i, a.stored[i], want)
+		}
+	}
+}
+
 // TestServeDecidesEachPart guards a request of good and bad parts into a
 // study: a part of another study is refused A900H, one larger than the
 // receiver's largest file A700H (handed to the pipeline, which refuses it

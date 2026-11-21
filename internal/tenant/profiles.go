@@ -295,7 +295,8 @@ type Profiles interface {
 // LookupTables keeps a tenant's lookup tables: from the keyed hash of a
 // value to the code that replaces it. A table is made by its first code.
 // Codes are assigned by the server's work, once per value; the work is
-// not a person's change, and writes no audit entry.
+// not a person's change, and writes no audit entry. A person's codes are
+// imported (LookupImports), each import a change with its audit entry.
 type LookupTables interface {
 	// LookupCode returns the code the table holds for the key, and
 	// whether it holds one.
@@ -312,4 +313,5 @@ type LookupTables interface {
 	// unique and without gaps whatever runs at once. now is when they are
 	// assigned.
 	AssignLookupCodes(ctx context.Context, keys []LookupKey, now time.Time) ([]string, error)
+	LookupImports
 }

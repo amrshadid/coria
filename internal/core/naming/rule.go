@@ -516,3 +516,37 @@ func checkValue(v string, isUID bool) *Error {
 	}
 	return nil
 }
+
+// HashedSubject returns the subject label the rule makes for a file whose
+// attribute t has the value v, and true, when the subject template holds
+// only literal text and keyed hashes of t ({#X} of t's keyword or tag);
+// and false when it reads anything else (another attribute, a pattern's
+// part, or a value as it is), whose label one value cannot decide. It is
+// the label Labels makes for such a file, so a person who knows a
+// subject's identifier finds the subject's label (the forward lookup),
+// while nothing in the archive leads back. An *Error names a value the
+// placeholder refuses, as Labels would.
+func (r *Rule) HashedSubject(t Tag, v string, h Hasher) (string, bool, error) {
+	tmpl := r.templates[0]
+	var b strings.Builder
+	for _, p := range tmpl.pieces {
+		switch {
+		case p.literal != "":
+			b.WriteString(p.literal)
+		case p.hash && p.part == "" && p.tag == t:
+			s, err := place(v, p, h)
+			if err != nil {
+				err.Level, err.Attribute = tmpl.level, p.attr
+				return "", true, err
+			}
+			b.WriteString(s)
+		default:
+			return "", false, nil
+		}
+	}
+	out := b.String()
+	if err := label.Check(out); err != nil {
+		return "", true, &Error{Level: tmpl.level, Attribute: t.String(), Fault: BadLabel, Err: err}
+	}
+	return out, true, nil
+}

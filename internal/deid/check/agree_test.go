@@ -248,8 +248,11 @@ func writeNeedles(t *testing.T, name string, needles engine.Needles) string {
 	list := make([]item, 0, len(needles))
 	for _, n := range needles {
 		it := item{Kind: kinds[n.Kind], Value: n.Value}
-		if n.Edge == engine.EdgeWord {
+		switch n.Edge {
+		case engine.EdgeWord:
 			it.Edge = "word"
+		case engine.EdgeIdentifier:
+			it.Edge = "ident"
 		}
 		list = append(list, it)
 	}

@@ -223,6 +223,9 @@ type trialInput struct {
 	received engine.Reception
 	// receiver is the receiver whose receiving checks run; nil for none.
 	receiver *tenant.Receiver
+	// study is the Study Instance UID a held file's record names, as the
+	// catalog would hold it; "" for a file sent with the request.
+	study string
 }
 
 // trialReception checks the reception a request gives its sent files.
@@ -300,7 +303,7 @@ func (c *core) heldInput(ctx context.Context, tenantName string, p tenant.Pipeli
 	if err != nil {
 		return trialInput{}, err
 	}
-	in := trialInput{record: f.ID, file: b, received: engine.Reception{
+	in := trialInput{record: f.ID, file: b, study: f.StudyUID, received: engine.Reception{
 		Receiver: f.Receiver, CallingAETitle: f.Caller.CallingAETitle, CalledAETitle: f.Caller.CalledAETitle}}
 	rcv, err := p.Receiver(ctx, f.Receiver)
 	switch {
@@ -424,7 +427,7 @@ func (c *core) tryProfile(ctx context.Context, req *v1.TryProfileRequest, pipe t
 	sum := newTrialSummary()
 	budget := trialAnswerBudget
 	newCheck := func(maxFileBytes int64) receive.Checker { return check.New(check.Options{MaxFileBytes: maxFileBytes}) }
-	routes := &trialRouting{p: p, target: target, en: en, keys: keys, unassigned: &unassigned, limit: limit,
+	routes := &trialRouting{p: p, catalog: pipe, target: target, en: en, keys: keys, unassigned: &unassigned, limit: limit,
 		routed: map[tenant.ProfileRef]routedEngine{}}
 	try := func(in trialInput) error {
 		unassigned = 0
@@ -432,7 +435,7 @@ func (c *core) tryProfile(ctx context.Context, req *v1.TryProfileRequest, pipe t
 		if err != nil {
 			return err
 		}
-		t, err := receive.TryFile(ctx, use.en, in.file, in.received, receive.TrialOptions{Keys: use.keys, HeaderLimit: limit, PixelLimit: pixelLimit, Receiver: in.receiver, Check: newCheck})
+		t, err := receive.TryFile(ctx, use.en, in.file, in.received, receive.TrialOptions{Keys: use.keys, HeaderLimit: limit, PixelLimit: pixelLimit, Receiver: in.receiver, Check: newCheck, Memory: c.deidMemory})
 		if err != nil {
 			return err
 		}

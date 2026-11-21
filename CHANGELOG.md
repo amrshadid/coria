@@ -8,6 +8,16 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- A STOW-RS receiver that de-identifies gives no Retrieve URLs in its
+  answer (they would hand the sender the mapping of its UIDs). A trial of a
+  held file whose study already has a session goes by the session's
+  recorded route and version. An identifier made of words alone (letters,
+  no digit, in a script written with spaces), such as an institution's
+  name, is searched for and cleaned only as a whole word; every other
+  identifier, and every one that identifies the patient, is found wherever
+  it stands, glued to other text included. Public coding-scheme UIDs (PS3.16
+  Table 8-1) are kept; any other Coding Scheme, Context, Mapping Resource or
+  Context Group Extension Creator UID is remapped.
 - A trial run's written file takes its room once instead of growing by
   doubling, lowering its peak memory (a 20 MiB file: 3.9 to 2.1 times its
   size beyond the file).
@@ -90,6 +100,14 @@ All notable changes to CORIA are written here. The form is
   where a held instance is on another storage than its scan.
 
 ### Fixed
+
+- A file held at a receiver that de-identifies, joining no reception when
+  released, could be released through a receiver that archives as received
+  and archived identified: such a release is refused, and a landing of it is
+  held. `coria deid check` and `dry-run` judge archives made by a profile
+  that shifts dates (a job identifies the subject by its label). The
+  metadata of a de-identified instance was refused as data loss: it was
+  compared with the checksum of the bytes received instead of those stored.
 
 - `job watch` and the Python and TypeScript follow-a-job examples no longer
   stop when the server ends a stream at its 30-second deadline. A unit given
@@ -332,6 +350,38 @@ All notable changes to CORIA are written here. The form is
   `BenchmarkSendScan` (`make bench-send`): 64 small instances on one
   association to an in-process peer, about 935 instances/s by DIMSE and
   1,080 by STOW-RS on an Apple Silicon laptop.
+- The forward lookup of a value's codes, for a withdrawal of consent:
+  `DeidService.Code` and `coria deid code <tenant> --patient-id -` (or
+  `--attribute A --value -`; `-` reads the value from standard input) answer
+  the keyed hash of the value under the tenant's naming key, the subject
+  label each receiver gives it and whether the catalog holds that subject,
+  and each lookup table's code. Admin only, one value per call, at most 60
+  calls a minute a key and 60 a minute a tenant, never served over HTTP GET;
+  every call is audited before its answer, with the key and the attribute,
+  never the value, and a call whose entry cannot be written is refused.
+- Lookup tables filled by a person: `DeidService.ImportLookupCodes` and
+  `coria profile lookup import <tenant> <table> FILE` (a CSV of value,code)
+  store each value as its keyed hash, all or nothing; entries that conflict
+  with the table are answered by their count only, never which, and a key
+  makes at most 10 imports an hour; every import is audited before its
+  answer. `lookup list` answers each table's count.
+- `ProfileService.DescribeProfile`; `coria profile describe` says in plain
+  words what each class of element gets and prints the method record a
+  Conformance Statement needs: the CID 7050 codes, the (0012,0063) text,
+  (0012,0062) and (0028,0303). `coria profile try --local` runs the engine
+  and the check after in the command itself, with no server, under keys made
+  for the run. `coria receiver route export|import` write a receiver's
+  routing to a file and back whole, refused when it changed since the export.
+  An instance's metadata and the scan's sidecar name the profile version
+  that de-identified it.
+- A release may name the profile version a file is de-identified with
+  (`coria quarantine release --profile NAME@VERSION`, admin); it applies to
+  the whole reception the file joins. The installation setting `deid.memory`
+  (default 2GiB) bounds the bytes de-identification holds in memory at once,
+  across every tenant, first come first served: the check after's copy of
+  each file, trial runs and dry runs; a file whose check alone needs more
+  than the whole bound is held (`check_too_large`) with its bytes and
+  archived by a release once the setting is raised.
 - Deid jobs: `coria deid check` verifies archived instances against the
   profile version each records, by what that version would leave of each
   element the archive holds (no element it removes, no private element it

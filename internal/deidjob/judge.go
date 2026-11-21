@@ -83,6 +83,16 @@ type judge struct {
 	headerLimit, pixelLimit int64
 	// tried is the test seam of the same name; nil for none.
 	tried func(t receive.Trial)
+	// subject is the subject label of the unit's scan, from the catalog,
+	// which the engine identifies each file's subject by
+	// (engine.Reception.Subject): an archived file no longer holds the
+	// Patient ID a date-shifting version keyed its shift by. In a dry run
+	// the keys are the unit's own, so the shift it gives is throwaway; a
+	// check compares no shifted value, only which elements remain. The
+	// label is never written into a file or a verdict.
+	subject string
+	// memory is Config.Memory.
+	memory check.Memory
 }
 
 // throwawayKeys makes three random keys of the unit's own, never a
@@ -187,6 +197,7 @@ func (j *judge) judgeFile(ctx context.Context, in tenant.ScanInstance, file []by
 	if err != nil {
 		return verdict{}, err
 	}
+	facts.rec.Subject = j.subject
 	if j.mode == tenant.DeidCheck {
 		err = j.check(ctx, in, file, h, herr, facts, &v)
 	} else {
@@ -253,7 +264,7 @@ func (j *judge) dryRun(ctx context.Context, in tenant.ScanInstance, file []byte,
 	}
 	newCheck := func(maxFileBytes int64) receive.Checker { return check.New(check.Options{MaxFileBytes: maxFileBytes}) }
 	t, err := receive.TryFile(ctx, en, file, facts.rec, receive.TrialOptions{Keys: j.keys, HeaderLimit: j.headerLimit,
-		PixelLimit: j.pixelLimit, Check: newCheck, NoValues: true})
+		PixelLimit: j.pixelLimit, Check: newCheck, NoValues: true, Memory: j.memory})
 	if err != nil {
 		return fault.New(fault.KindOf(err), fault.Message(err))
 	}

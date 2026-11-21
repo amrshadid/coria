@@ -71,6 +71,15 @@ const (
 	// is set by the installation's admin, since the work is the
 	// installation's processors and memory.
 	DeidPixelLimit = "deid.pixel-limit"
+	// DeidMemory is the most bytes the server's de-identification work
+	// holds in memory at once, across every tenant (ParseDeidMemory): the
+	// check after's copy of each file and a trial's or a deid job's
+	// copies. Work that does not fit beside the rest waits for room; a
+	// file whose check alone needs more is held with its bytes kept
+	// (deid_failed, check_too_large), and archived by a release once it is
+	// raised. Installation-only: the memory is the server's, which tenants
+	// share.
+	DeidMemory = "deid.memory"
 )
 
 // ReservedPrefix starts the names the system keeps for itself in the
@@ -234,6 +243,14 @@ func Builtin() []Definition {
 		TenantOverride:          true,
 		TenantSetByInstallation: true,
 		Validate:                func(v string) error { _, err := ParsePixelLimit(v); return err },
+	}, {
+		// 2 GiB holds the check after of eight files of 256 MiB at once,
+		// beside the server's other work, on a machine of 8 GiB; an
+		// installation that receives larger files, or many at once, on a
+		// larger machine raises it without a new release.
+		Name:     DeidMemory,
+		Default:  "2GiB",
+		Validate: func(v string) error { _, err := ParseDeidMemory(v); return err },
 	}, {
 		// Empty by default, so no page in a browser can read an answer of
 		// the API until the installation's admin lists its origin.

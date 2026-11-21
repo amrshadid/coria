@@ -154,10 +154,17 @@ class QuarantineServiceServicer:
         A file whose record is already released is answered as it stands, so a
         repeated call releases nothing more.
 
-        Role: operator on the tenant.
+        A file held at a receiver that de-identifies is released only through
+        a receiver that de-identifies: released through one that archives as
+        received, a file that joins no reception would land again there and be
+        archived identified.
+
+        Role: operator on the tenant; admin on the tenant to name a profile
+        version, since a version decides what leaves a file, as a receiver's
+        does.
         Audit: one entry in the tenant's log, with the file's id as its object,
-        and the mode, the receiver, the storage named and the reception it
-        joined in details.
+        and the mode, the receiver, the storage and profile version named and
+        the reception it joined in details.
         Errors: unauthenticated, permission denied (no grant; also a tenant that
         does not exist, for a caller who may not list every tenant), invalid
         (also a mode other than RELEASE_MODE_AS_IS), not found (the tenant has
@@ -166,7 +173,11 @@ class QuarantineServiceServicer:
         or its content was never kept; it is a different file and the tenant
         holds an instance under its SOP Instance UID; the receiver it came to
         has been removed and the request names none; the receiver named does
-        not exist; the storage named does not exist), unavailable (the tenant's database does not answer, or the
+        not exist; the storage named does not exist; the file was held at a
+        receiver that de-identifies and the receiver it runs by archives as
+        received; the profile version named does not exist, cannot
+        de-identify a receiver's files, or is named through a receiver that
+        archives as received), unavailable (the tenant's database does not answer, or the
         tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)

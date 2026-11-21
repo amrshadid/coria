@@ -292,7 +292,7 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 			// release named stays, so the record says why the storage is
 			// what it is.
 			chosen := step.Route
-			chosen.ReleasedStorage = before.Route.ReleasedStorage
+			chosen.ReleasedStorage, chosen.ReleasedProfile = before.Route.ReleasedStorage, before.Route.ReleasedProfile
 			if routeText, err = sqlkit.ReceptionRouteText(chosen); err != nil {
 				return err
 			}

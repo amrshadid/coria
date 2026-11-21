@@ -66,6 +66,9 @@ func fileMessage(f tenant.QuarantinedFile) *v1.QuarantinedFile {
 		ReleaseReception: f.ReleaseReception, RejectReason: f.RejectReason, ReleasedFrom: f.ReleasedFrom,
 		ReleaseReceiver: f.ReleaseReceiver, ReleaseReason: f.ReleaseReason, ReleaseStorage: f.ReleaseStorage,
 	}
+	if !f.ReleaseProfile.IsZero() {
+		m.ReleaseProfile = &v1.ProfileVersionRef{Name: f.ReleaseProfile.Name, Version: f.ReleaseProfile.Version}
+	}
 	if f.ReleaseMode == tenant.ReleaseAsIs {
 		m.ReleaseMode = v1.ReleaseMode_RELEASE_MODE_AS_IS
 	}
@@ -272,6 +275,18 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 			return nil, c.failIn(d, st, err)
 		}
 	}
+	profile, err := releaseProfile(req)
+	if err != nil {
+		return nil, c.failIn(d, st, err)
+	}
+	if !profile.IsZero() {
+		// The version a receiver may de-identify with, checked as a
+		// receiver's is; that the receiver the file runs by de-identifies
+		// is the store's to check, in the release's transaction.
+		if err := c.checkProfileVersion(ctx, p, "profile", profile); err != nil {
+			return nil, c.failIn(d, st, err)
+		}
+	}
 	// Read first for the receiver the release runs through when the request
 	// names none, which the entry records.
 	before, err := lookupFile(ctx, p, req.GetId())
@@ -284,7 +299,8 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 	}
 	facts := access.Facts{Details: releaseDetails(req, before.Receiver)}
 	f, err := c.incoming.Release(ctx, req.GetTenant(), p, tenant.Release{ID: req.GetId(), Mode: tenant.ReleaseAsIs, Receiver: req.GetReceiver(),
-		ReceptionID: receptionID, Reason: req.GetReason(), Storage: req.GetStorage(), Now: c.now()}, changeEntry(d, facts), c.roleGuard(d, master.RoleOperator))
+		ReceptionID: receptionID, Reason: req.GetReason(), Storage: req.GetStorage(), Profile: profile, Now: c.now()}, changeEntry(d, facts),
+		c.roleGuard(d, releaseRole(req)))
 	if fault.KindOf(err) == fault.NotFound {
 		err = fault.Wrap(fault.NotFound, err, messageNoFile)
 	}
@@ -294,13 +310,41 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 	return &v1.ReleaseQuarantinedFileResponse{File: fileMessage(f)}, nil
 }
 
+// releaseProfile returns the profile version a release names, the zero
+// version for none, or an Invalid error naming the field.
+func releaseProfile(req *v1.ReleaseQuarantinedFileRequest) (tenant.ProfileRef, error) {
+	pv := req.GetProfile()
+	if pv == nil {
+		return tenant.ProfileRef{}, nil
+	}
+	ref := tenant.ProfileRef{Name: pv.GetName(), Version: pv.GetVersion()}
+	if err := ref.Validate(); err != nil {
+		return tenant.ProfileRef{}, fieldOf("profile", err)
+	}
+	return ref, nil
+}
+
+// releaseRole is the role a release needs on the tenant: operator, or admin
+// when it names a profile version, which decides what leaves a file as a
+// receiver's version does, and a receiver's choice of version needs admin.
+func releaseRole(req *v1.ReleaseQuarantinedFileRequest) master.Role {
+	if req.GetProfile() != nil {
+		return master.RoleAdmin
+	}
+	return master.RoleOperator
+}
+
 // releaseDetails returns a release's audit details: its mode, the storage
-// it names when it names one, and the receiver it runs through, the one the
-// request names or else the one the file came to (first, when it is known).
+// and the profile version it names when it names them, and the receiver it
+// runs through, the one the request names or else the one the file came to
+// (first, when it is known).
 func releaseDetails(req *v1.ReleaseQuarantinedFileRequest, first string) map[string]string {
 	d := map[string]string{detailMode: req.GetMode().String()}
 	if req.GetStorage() != "" {
 		d[detailStorage] = clip(req.GetStorage(), 64)
+	}
+	if pv := req.GetProfile(); pv != nil {
+		d[detailProfile] = clip(tenant.ProfileRef{Name: pv.GetName(), Version: pv.GetVersion()}.String(), 80)
 	}
 	switch {
 	case req.GetReceiver() != "":

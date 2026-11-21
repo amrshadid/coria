@@ -12,6 +12,7 @@ from coria.v1 import (
     audit_pb2_grpc,
     catalog_pb2_grpc,
     data_pb2_grpc,
+    deid_pb2_grpc,
     job_pb2_grpc,
     metadata_pb2_grpc,
     monitor_pb2_grpc,
@@ -179,6 +180,7 @@ class Client:
         self.audit = stub(audit_pb2_grpc, "AuditServiceStub")
         self.catalog = stub(catalog_pb2_grpc, "CatalogServiceStub")
         self.data = stub(data_pb2_grpc, "DataServiceStub")
+        self.deid = stub(deid_pb2_grpc, "DeidServiceStub")
         self.jobs = stub(job_pb2_grpc, "JobServiceStub")
         self.metadata = stub(metadata_pb2_grpc, "MetadataServiceStub")
         self.monitor = stub(monitor_pb2_grpc, "MonitorServiceStub")

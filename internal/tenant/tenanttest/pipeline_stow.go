@@ -147,8 +147,10 @@ func testReceiverDeidentification(e *penv) {
 // copied to the files of a retry; a release of a record recorded as
 // received through a receiver that de-identifies joins no reception (the
 // pipeline lands it again, remapped and keyed), while one through a
-// receiver that archives as received joins with its flag, and a record
-// recorded de-identified joins with its flag wherever it is released.
+// receiver that archives as received joins with its flag; a record
+// recorded de-identified is refused through a receiver that archives as
+// received (a precondition failure, the record still held) and joins with
+// its flag through one that de-identifies.
 func testDeidentifiedRows(e *penv) {
 	e.addStorage("store")
 	e.addReceiver("plain", "store", 11112)
@@ -190,8 +192,13 @@ func testDeidentifiedRows(e *penv) {
 	if got.ReleaseReception != "" {
 		e.Errorf("a record as received released through a receiver that de-identifies joined %s", got.ReleaseReception)
 	}
-	got, err = pp.ReleaseFile(e.ctx, tenant.Release{ID: deidRecord.ID, Mode: tenant.ReleaseAsIs, Receiver: "plain", ReceptionID: "rel-b", Now: at(11)}, e.audit(), nil)
-	e.ok("ReleaseFile de-identified through a receiver that archives as received", err)
+	_, err = pp.ReleaseFile(e.ctx, tenant.Release{ID: deidRecord.ID, Mode: tenant.ReleaseAsIs, Receiver: "plain", ReceptionID: "rel-b", Now: at(11)}, e.audit(), nil)
+	e.wantKind("ReleaseFile de-identified through a receiver that archives as received", err, fault.Precondition)
+	if still, _ := e.p.QuarantinedFile(e.ctx, deidRecord.ID); still.State != tenant.QuarantineHeld || !still.ContentKept {
+		e.Errorf("after a refused release the record is %s, kept %v", still.State, still.ContentKept)
+	}
+	got, err = pp.ReleaseFile(e.ctx, tenant.Release{ID: deidRecord.ID, Mode: tenant.ReleaseAsIs, Receiver: "deid", ReceptionID: "rel-b", Now: at(11)}, e.audit(), nil)
+	e.ok("ReleaseFile de-identified through a receiver that de-identifies", err)
 	if got.ReleaseReception == "" {
 		e.Fatal("a record made de-identified joined no reception")
 	}

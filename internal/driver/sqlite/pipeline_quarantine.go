@@ -18,27 +18,30 @@ const quarantineColumns = `id, reason, details, state, receiver, reception_id, c
 	deidentified`
 
 // quarantineReadColumns are the columns a record is read with: those it
-// is written with and the storage its release named, which only a release
-// writes.
-const quarantineReadColumns = quarantineColumns + `, release_storage`
+// is written with and the storage and profile version its release named,
+// which only a release writes.
+const quarantineReadColumns = quarantineColumns + `, release_storage, release_profile`
 
 // scanQuarantined reads one row of quarantineReadColumns.
 func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFile, error) {
 	var q tenant.QuarantinedFile
-	var reason, details, state, mode string
+	var reason, details, state, mode, releaseProfile string
 	var sum, kept []byte
 	var at int64
 	var decided sql.NullInt64
 	if err := row.Scan(&q.ID, &reason, &details, &state, &q.Receiver, &q.ReceptionID, &q.Caller.CallingAETitle,
 		&q.Caller.CalledAETitle, &q.Caller.Address, &q.Size, &sum, &kept, &q.SOPClassUID, &q.SOPInstanceUID, &q.StudyUID,
 		&q.SeriesUID, &q.TransferSyntaxUID, &q.Incoming, &q.ContentKept, &at, &decided, &mode, &q.ReleaseReception,
-		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified, &q.ReleaseStorage); err != nil {
+		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified, &q.ReleaseStorage, &releaseProfile); err != nil {
 		return q, err
 	}
 	q.Reason, q.State, q.ReleaseMode = tenant.QuarantineReason(reason), tenant.QuarantineState(state), tenant.ReleaseMode(mode)
 	q.SHA256, q.KeptSHA256 = sqlkit.ToSHA256(sum), sqlkit.ToSHA256(kept)
 	q.Quarantined, q.Decided = fromMicros(at), fromNullMicros(decided)
 	var err error
+	if q.ReleaseProfile, err = sqlkit.ReadProfileRef(releaseProfile); err != nil {
+		return q, err
+	}
 	q.Details, err = sqlkit.DecodeDetails(details)
 	return q, err
 }

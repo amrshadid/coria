@@ -194,6 +194,33 @@ func TestQuarantineReleaseReason(t *testing.T) {
 	}
 }
 
+// TestQuarantineReleaseProfile guards --profile on a release: the version
+// named is sent with the request and "quarantine show" prints it with the
+// storage named; a version that is not NAME@VERSION is refused before
+// anything is sent (exit 2).
+func TestQuarantineReleaseProfile(t *testing.T) {
+	r := newArchiveRig(t)
+	seedQuarantine(r)
+	before := r.fake.Requests()
+	for _, bad := range []string{"research", "research@0", "Research@1"} {
+		if res := r.run("quarantine", "release", "lab1", "q-label", "--profile", bad); res.code != 2 || res.stdout != "" || !strings.Contains(res.stderr, "is not NAME@VERSION") {
+			t.Errorf("--profile %s: %+v", bad, res)
+		}
+	}
+	if got := r.fake.Requests(); got != before {
+		t.Errorf("%d requests were sent for a version not well formed", got-before)
+	}
+	r.must("quarantine", "release", "lab1", "q-label", "--profile", "research@2", "--storage", "lab-a")
+	show := r.run("quarantine", "show", "lab1", "q-label")
+	if !strings.Contains(show.stdout, "Release storage:  lab-a\nRelease profile:  research@2\n") {
+		t.Errorf("a record released through a version:\n%s", show.stdout)
+	}
+	doc := document(t, r.run("quarantine", "show", "lab1", "q-label", "--json"))
+	if pv, _ := doc["file"].(map[string]any)["releaseProfile"].(map[string]any); pv["name"] != "research" || pv["version"] != float64(2) {
+		t.Errorf("show --json: %v", doc["file"])
+	}
+}
+
 // TestQuarantineNewReasons guards the words, the filter, the choices in a usage
 // error and the shell completion for the reasons of a header past the bound
 // and of an incoming copy that was lost: a held header-too-large file can be

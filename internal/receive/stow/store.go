@@ -224,7 +224,11 @@ func (e *Endpoint) Serve(ctx context.Context, w http.ResponseWriter, r *http.Req
 	case refused > 0:
 		status = http.StatusAccepted
 	}
-	payload, err := answer(req.Base, req.Study, t.listed)
+	// A receiver that de-identifies answers no Retrieve URL: the archive
+	// holds each instance under its remapped UIDs only, and a URL naming
+	// them would hand the sender the mapping from the UIDs it sent to the
+	// archive's, which no answer of the API gives.
+	payload, err := answer(req.Base, req.Study, t.listed, !e.cfg.Receiver.Deidentifies())
 	if err != nil {
 		e.log.Error("receiver: the answer could not be written", "stored", stored, "refused", refused)
 		return Result{Status: http.StatusInternalServerError, Stored: stored, Refused: refused, Reason: "the answer could not be written"}

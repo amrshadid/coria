@@ -155,10 +155,27 @@ receivers go on as they did. See [Settings](settings.md).
 A receiver that de-identifies names its profile version (`"profile": {"name":
 "research", "version": 1}` in `AddReceiver` or `SetReceiver`, mask
 `deidentification`). Every file is de-identified before any byte of it reaches
-the storage, checked again by a separate read for every value the profile
-removed, and quarantined (`deid_failed`, `residual_value`, `profile_refused`,
-`burned_in_risk`) when it cannot be; the storage, the catalog and every list
-then hold only what the profile leaves, and UIDs remapped by the tenant's key.
+the storage, checked again by a separate read for the identifying values the
+profile removed or replaced (names, identifiers, dates and UIDs; not every
+removed value: a number or a description a profile removes is not searched
+for, though a name typed into it is, through the name; an identifier made of
+words alone, such as an institution's or a station's name, with no digit and
+in a script written with spaces, is found only as a whole word, `_` counted as
+part of a word, so "TOSHIBA" is not found in a kept maker's name
+"TOSHIBA_MEC"; every other identifier, and every one that identifies the
+patient (Patient ID, Accession Number, issuers and the like), is found
+wherever it stands, glued to other text included), and quarantined
+(`deid_failed`, `residual_value`, `profile_refused`, `burned_in_risk`) when it
+cannot be; the storage, the catalog and every list then hold only what the
+profile leaves, and UIDs remapped by the tenant's key. A file held at such a
+receiver is released only through a receiver that de-identifies (a release
+through one that archives as received is refused, `FAILED_PRECONDITION`), and
+one whose receiver was changed to archive as received after its release is
+held again (`deid_failed`, cause `no_profile`): it is never archived as
+received. A release may name the profile version it is de-identified with
+(`coria quarantine release lab1 q_7Zr2 --profile research@2`, admin; the
+version must pass the same checks as a receiver's), in place of the one its
+route or receiver names, for that reception's files.
 An image whose header says its pixels may carry burned-in text (Burned In
 Annotation `YES`; or not `NO` on a secondary capture, an ultrasound, a visible
 light (endoscopy, microscopy, photography) or ophthalmic image, or a modality
@@ -181,7 +198,15 @@ placed by (the Retain UIDs option), and a naming rule that puts a value into a
 label unhashed (`{PatientID}` rather than `{#PatientID}`) are refused for such a
 receiver. A file whose Study, Series or SOP Instance UID lies under the
 standard's own root (`1.2.840.10008.`) is held at such a receiver (`bad_uid`)
-and cannot be released into the archive. How it works, step by step: [the reception pipeline](../internal/receive/doc.go).
+and cannot be released into the archive. A file in the Deflated Explicit VR
+Little Endian transfer syntax is held at such a receiver (`deid_failed`, cause
+`check_unreadable`): the check after reads the bytes as written, which a
+deflated file holds compressed, so it cannot show the identifying values are
+gone. A STOW-RS receiver that
+de-identifies answers each stored instance by the SOP Instance UID it was sent
+with and gives no Retrieve URL, neither the instance's nor the study's: the
+archive holds it under remapped UIDs, and a URL by them would hand the sender
+the mapping. How it works, step by step: [the reception pipeline](../internal/receive/doc.go).
 
 ### Make a profile, try it, then point a receiver at it
 
@@ -214,7 +239,8 @@ would archive the file; without one the verdict is de-identification's alone.
 The audit entry keeps the counts per rule and reason as evidence the version
 was tried, never a value. At most two trials run at once on a server. `profile explain` shows, for one
 file, which rule or base decides each element and why the others do not, with
-no value; `profile describe` lists every rule a version runs with its origin;
+no value; `profile describe` says in plain words what a version does, with its
+method record and every rule it runs;
 `profile diff` shows what a new version changes. Trying needs the operator role
 (it answers the files' values, and can read held files); making a version needs
 admin. Every command takes `--json`.
@@ -248,6 +274,86 @@ letter, so a copy of a redacted MRN kept elsewhere in the file holds it.
 `profile explain` names the selector `value_pattern`. A version that uses
 either is of language edition 2; versions that do not keep their checksums.
 
+### Describe a version, and try it with no server
+
+`coria profile describe lab1 research@1` says what the version does in plain
+words: for each class of element (names of persons, identifiers and addresses,
+dates, times and ages, UIDs, private elements, pixels, the rest), which
+elements are removed, kept, emptied, remapped, shifted, hashed or looked up,
+those under a condition marked; the defaults and what is never kept whatever
+the rules say; and the method record every file it makes carries, the text a
+DICOM Conformance Statement needs (PS3.15 E.1.1, E.3): the PS3.16 CID 7050
+codes in De-identification Method Code Sequence (0012,0064) with their
+meanings, the values of De-identification Method (0012,0063) this server
+writes (the meanings, the version, CORIA's and go-dicom's versions), Patient
+Identity Removed (0012,0062) YES, and Longitudinal Temporal Information
+Modified (0028,0303). A version whose own rules keep what an Annex E base
+changes claims no code, and says why. Then every rule in order (`--no-rules`
+leaves them out); `--json` gives all of it. The classes are judged from each
+rule's selector and VRs, not from a file: an element's own decision is
+`profile explain`'s. Needs the operator role.
+
+`coria profile try --local --document draft.json ./samples/` runs the same
+trial as `profile try` inside the command, with no server and no tenant: the
+engine and the check after run in the process, under keys made for the run and
+thrown away, every lookup `UNASSIGNED`, nothing sent and nothing written. The
+document may be a version's export (`profile export`, or its `--json` answer,
+which names the version; one whose checksum this build does not reach is
+refused). Files are read one at a time, each up to 64 MiB, so a directory of
+any size can be tried; the verdict is de-identification's alone, with
+`receiver.header-limit` and `deid.pixel-limit` at their defaults. The answer
+and `--json` are those of a server's trial with no receiver.
+
+### Find a subject from its identifier, and fill lookup tables
+
+The archive keeps no map from a label or a code back to the identifier it
+replaces. When a person withdraws consent, an admin finds their data the
+forward way, from the identifier the site holds:
+
+```
+coria deid code lab1 --patient-id -          # reads the ID from standard input
+coria deid code lab1 --value - --json < id.txt
+```
+
+The answer is the keyed hash of the value under the tenant's naming key (what
+`{#PatientID}` writes into a label and a `hash` rule into a file), the subject
+label each receiver whose naming rule makes it from that hash alone gives the
+value, whether the catalog holds that subject now, and the code each lookup
+table holds for the value. `--attribute` names another attribute (a keyword or
+eight hexadecimal digits); the value's padding is removed as its VR says,
+exactly as at reception. It needs the admin role on the tenant, takes one value
+per call, at most 60 calls a minute a key and 60 a minute into one tenant (exit
+7 past either), and each call is in the tenant's audit log, written before the
+answer (a call whose entry cannot be written is refused), and in the server's
+log, with the key and the attribute, never the value. `--patient-id -` and
+`--value -` read the value from standard input, keeping it out of the shell's
+history and the process list. The call is never served over HTTP GET, so a
+value never travels in a URL.
+
+A `lookup` rule replaces a value by the code its table gives it. Codes are
+assigned in order on first sight (`"onMissing": "LOOKUP_MISSING_ASSIGN"`), or
+chosen by a person beforehand: then a file whose value has no code is held
+(`deid_failed`, `lookup_missing`), and the codes are imported from a CSV of
+value and code:
+
+```
+printf 'value,code\n98890234,SUBJ001\n' > cohort.csv
+coria profile lookup import lab1 subjects cohort.csv
+coria profile lookup list lab1
+```
+
+Each value is stored as its keyed hash, never as given (its padding removed as
+an LO value's). An import is all or nothing, at most 10000 entries: one value
+with two codes in the file, or one code for two values, refuses all of it,
+naming the entry; values the table gives another code, or codes it gives
+another value, refuse all of it too, answered by how many conflict and never
+which, so an import cannot be used to learn whether a person is in the table.
+An entry it already holds is counted unchanged. A code assigned later in order
+passes over every imported code. A key makes at most 10 imports an hour,
+stored or refused (exit 7 past it). Every import is audited before its answer,
+with counts and no value or code. Import needs admin; `lookup list` (each
+table's count, nothing else) needs operator.
+
 ### Check the archive, and dry-run a version over it
 
 ```
@@ -271,7 +377,10 @@ a UID the remapping itself made, as in de-identified data received again, is
 none). Only Study, Series and SOP Instance UIDs the catalog holds are
 recognized: an original Frame of Reference UID, or a Referenced UID of an
 instance never archived, is not. An instance archived as received passes with
-a note. `deid dry-run` runs a version (NAME alone is the latest, fixed when the
+a note. An archived file no longer holds the Patient ID a version that shifts
+dates keyed each subject's shift by, so both jobs give the engine the
+instance's subject label in its place; a check compares no shifted date, only
+which elements remain. `deid dry-run` runs a version (NAME alone is the latest, fixed when the
 job is made; `--own` runs each instance's own) over each archived file in
 memory, as `profile try` does: keys made for the job, never the tenant's; no
 lookup table read; the check after; no receiver's checks. It says what the
@@ -346,7 +455,10 @@ coria receiver route list lab1 scanner1
 - **Trials agree.** `coria profile try --receiver NAME` applies the receiver's
   routes: a file its route would de-identify with another version is tried
   with that version (the answer names the route and the version), and a file
-  it would not route is shown held as `unrouted`.
+  it would not route is shown held as `unrouted`. A held file (`--record`) of
+  a study that already has a session is tried by the session's recorded
+  choice, as its release would be, not by the routes as they are now. At a
+  receiver that archives as received no route's version is used.
 - **Limits.** 64 routes per receiver, 16 conditions per route, a pattern of 256
   bytes with no repetition above 100. A storage or a sender a route names
   cannot be removed while it names it.
@@ -356,3 +468,12 @@ coria receiver route list lab1 scanner1
   receiver's `routing`, replaced whole by `SetReceiver` with the mask
   `routing`, and `expected_update_time` makes the same check. Changing needs
   admin; reading, reader. Every change is in the tenant's audit log.
+- **Edit the routing as a file.** `coria receiver route export lab1 scanner1
+  --to routes.json` writes the receiver's name, the time it was last changed
+  (`updateTime`) and its whole routing (the API's `ReceiverRouting` as JSON);
+  `coria receiver route import lab1 scanner1 routes.json` writes it back
+  whole, only if the receiver was last changed at that time (exit 5 and no
+  change otherwise: export again and redo the edit). A file without an
+  `updateTime`, a file exported from another receiver, or
+  `--ignore-update-time`, is written over the receiver as it is when read; a
+  field the routing does not have is refused, never ignored.

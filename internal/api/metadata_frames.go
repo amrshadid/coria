@@ -96,11 +96,12 @@ func (f storedFrames) frame(n int) (StoredFrame, error) {
 // from its line of the scan's metadata file, in, or from its file when the
 // line holds no table: its header and its pixel data's item headers, read
 // once however many frames a request names. The line must be the
-// instance's: the same key, size and checksum the catalog holds. An
-// instance without pixel data is NotFound; frames that are not byte ranges
-// of the file are a precondition failure.
+// instance's: the same key, size and archived checksum the catalog holds
+// (of the bytes stored, which for a de-identified instance are not those
+// received). An instance without pixel data is NotFound; frames that are
+// not byte ranges of the file are a precondition failure.
 func (s *metaSource) framesOf(ctx context.Context, held tenant.ScanInstance, in sidecar.Instance) (storedFrames, error) {
-	if in.Key != held.Key || in.Size != held.Size || (!held.SHA256.IsZero() && in.SHA256 != held.SHA256.String()) {
+	if in.Key != held.Key || in.Size != held.Size || (!held.ArchivedSHA256.IsZero() && in.SHA256 != held.ArchivedSHA256.String()) {
 		return storedFrames{}, fault.New(fault.DataLoss, messageBadSidecar)
 	}
 	// A frame table counts from the instance's first byte (package

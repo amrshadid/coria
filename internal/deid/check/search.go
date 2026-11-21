@@ -5,6 +5,8 @@ import (
 	"errors"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/amrshadid/coria/internal/deid/engine"
 )
 
 // workBudget bounds the work of a check that does not grow with the file:
@@ -144,6 +146,10 @@ func edgesFit(text []byte, start, end int, m mode) bool {
 		return wordEdge(text, start, -1) && wordEdge(text, end, 1)
 	case modeDigits:
 		return (start == 0 || !isDigit(text[start-1])) && (end == len(text) || !isDigit(text[end]))
+	case modeIdentifier:
+		if !identifierEdge(text, start, end) {
+			return false
+		}
 	case modeUID:
 		if isDigit(text[start]) && start > 0 && (isDigit(text[start-1]) ||
 			(text[start-1] == '.' && start > 1 && isDigit(text[start-2]))) {
@@ -154,7 +160,7 @@ func edgesFit(text []byte, start, end int, m mode) bool {
 	if isDigit(text[start]) && start > 0 && isDigit(text[start-1]) {
 		return false
 	}
-	if m == modePlain && isDigit(text[end-1]) && end < len(text) && isDigit(text[end]) {
+	if (m == modePlain || m == modeIdentifier) && isDigit(text[end-1]) && end < len(text) && isDigit(text[end]) {
 		return false
 	}
 	return true
@@ -182,6 +188,27 @@ func runeAt(text []byte, i, dir int) (rune, int, bool) {
 func wordEdge(text []byte, i, dir int) bool {
 	r, _, ok := runeAt(text, i, dir)
 	return !ok || (!unicode.IsLetter(r) && !unicode.IsDigit(r))
+}
+
+// identifierEdge reports whether the match text[start:end] of an
+// identifier stands as engine.EdgeIdentifier says on each side where it
+// ends in a letter: no letter of any script and no "_" beside it
+// (engine.IdentifierWordRune).
+// Bytes that are not UTF-8 (a form in another character set) read as no
+// letter, so such a side is matched as plain: the search errs toward
+// finding.
+func identifierEdge(text []byte, start, end int) bool {
+	if first, _, _ := runeAt(text, start, 1); unicode.IsLetter(first) {
+		if r, _, ok := runeAt(text, start, -1); ok && engine.IdentifierWordRune(r) {
+			return false
+		}
+	}
+	if last, _, _ := runeAt(text, end, -1); unicode.IsLetter(last) {
+		if r, _, ok := runeAt(text, end, 1); ok && engine.IdentifierWordRune(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // dateEdge reports whether a date stands alone at position i of text on

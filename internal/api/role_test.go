@@ -108,6 +108,9 @@ const (
 	// monitorScope: reader on the tenant the request names, operator on
 	// the installation for every tenant.
 	monitorScope
+	// tenantOperatorOrAdmin: operator on the tenant, and admin on it when
+	// the request sets the message field adminWhen names for the line.
+	tenantOperatorOrAdmin
 )
 
 // rolePhrases is every Role line the contract has, with the shape it
@@ -135,6 +138,13 @@ var rolePhrases = map[string]roleShape{
 	"reader on the tenant; operator on the tenant to filter by a UID, since looking a file up by an identifier the caller already holds is a search for a person's data.":               tenantReaderOrOperator,
 	"reader on the tenant; operator on the tenant with include_header, since the header holds what the sender sent, identifying data included.":                                         tenantReaderOrOperator,
 	"reader on the tenant asked for; operator on the installation for every tenant.":                                                                                                    monitorScope,
+	"operator on the tenant; admin on the tenant to name a profile version, since a version decides what leaves a file, as a receiver's does.":                                          tenantOperatorOrAdmin,
+}
+
+// adminWhen names, for each Role line of the shape tenantOperatorOrAdmin,
+// the message field of the request whose presence needs admin.
+var adminWhen = map[string]string{
+	"operator on the tenant; admin on the tenant to name a profile version, since a version decides what leaves a file, as a receiver's does.": "profile",
 }
 
 // operatorWhen names, for each Role line of the shape tenantReaderOrOperator,
@@ -376,6 +386,19 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 			for _, f := range operatorWhen[text] {
 				checkTenantRole(t, proc+" with "+f, need, withField(t, msg, f, "2.25.1"), master.RoleOperator)
 			}
+		case tenantOperatorOrAdmin:
+			if msg == nil {
+				t.Fatalf("%s: the table does not read the request", proc)
+			}
+			checkTenantRole(t, proc, need, msg, master.RoleOperator)
+			with := proto.Clone(msg)
+			r := with.ProtoReflect()
+			fd := r.Descriptor().Fields().ByName(protoreflect.Name(adminWhen[text]))
+			if fd == nil || fd.Kind() != protoreflect.MessageKind {
+				t.Fatalf("%s: the request has no message field %q", proc, adminWhen[text])
+			}
+			r.Set(fd, r.NewField(fd))
+			checkTenantRole(t, proc+" with "+adminWhen[text], need, with, master.RoleAdmin)
 		}
 	}
 }

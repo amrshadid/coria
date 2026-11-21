@@ -349,13 +349,8 @@ func (k Deidentification) AssignLookupCodes(ctx context.Context, keys []tenant.L
 		out = make([]string, len(keys))
 		last := map[string]int64{}
 		for _, table := range tables {
-			if _, err := tx.Exec(ctx, `INSERT INTO lookup_counters (table_name, last_code) VALUES (?, 0)
-				ON CONFLICT (table_name) DO NOTHING`, table); err != nil {
-				return err
-			}
-			var n int64
-			if _, err := tx.QueryRow(ctx, `SELECT last_code FROM lookup_counters WHERE table_name = ?`+k.D.Lock,
-				[]any{table}, &n); err != nil {
+			n, err := k.lockCounter(ctx, tx, table)
+			if err != nil {
 				return err
 			}
 			last[table] = n

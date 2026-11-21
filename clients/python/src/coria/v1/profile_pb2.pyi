@@ -67,6 +67,17 @@ class ProfileChange(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     PROFILE_CHANGE_REMOVED: _ClassVar[ProfileChange]
     PROFILE_CHANGE_CHANGED: _ClassVar[ProfileChange]
     PROFILE_CHANGE_MOVED: _ClassVar[ProfileChange]
+
+class ProfileElementClass(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    PROFILE_ELEMENT_CLASS_UNSPECIFIED: _ClassVar[ProfileElementClass]
+    PROFILE_ELEMENT_CLASS_NAMES: _ClassVar[ProfileElementClass]
+    PROFILE_ELEMENT_CLASS_IDENTIFIERS: _ClassVar[ProfileElementClass]
+    PROFILE_ELEMENT_CLASS_DATES: _ClassVar[ProfileElementClass]
+    PROFILE_ELEMENT_CLASS_UIDS: _ClassVar[ProfileElementClass]
+    PROFILE_ELEMENT_CLASS_PRIVATE: _ClassVar[ProfileElementClass]
+    PROFILE_ELEMENT_CLASS_PIXELS: _ClassVar[ProfileElementClass]
+    PROFILE_ELEMENT_CLASS_OTHER: _ClassVar[ProfileElementClass]
 UNSEARCHED_SEGMENTS_UNSPECIFIED: UnsearchedSegments
 UNSEARCHED_SEGMENTS_HOLD: UnsearchedSegments
 UNSEARCHED_SEGMENTS_KEEP: UnsearchedSegments
@@ -101,6 +112,14 @@ PROFILE_CHANGE_ADDED: ProfileChange
 PROFILE_CHANGE_REMOVED: ProfileChange
 PROFILE_CHANGE_CHANGED: ProfileChange
 PROFILE_CHANGE_MOVED: ProfileChange
+PROFILE_ELEMENT_CLASS_UNSPECIFIED: ProfileElementClass
+PROFILE_ELEMENT_CLASS_NAMES: ProfileElementClass
+PROFILE_ELEMENT_CLASS_IDENTIFIERS: ProfileElementClass
+PROFILE_ELEMENT_CLASS_DATES: ProfileElementClass
+PROFILE_ELEMENT_CLASS_UIDS: ProfileElementClass
+PROFILE_ELEMENT_CLASS_PRIVATE: ProfileElementClass
+PROFILE_ELEMENT_CLASS_PIXELS: ProfileElementClass
+PROFILE_ELEMENT_CLASS_OTHER: ProfileElementClass
 
 class ProfileDocument(_message.Message):
     __slots__ = ("bases", "rules", "unnamed", "date_shift_days", "pixel_rules", "description", "unsearched_segments")
@@ -916,3 +935,68 @@ class ProfileEffectChange(_message.Message):
     to_position: int
     order_changed: bool
     def __init__(self, selector: _Optional[_Union[ProfileSelector, _Mapping]] = ..., when: _Optional[_Iterable[_Union[ProfileCondition, _Mapping]]] = ..., to: _Optional[_Union[ProfileAction, _Mapping]] = ..., from_position: _Optional[int] = ..., to_position: _Optional[int] = ..., order_changed: _Optional[bool] = ..., **kwargs) -> None: ...
+
+class DescribeProfileRequest(_message.Message):
+    __slots__ = ("tenant", "profile")
+    TENANT_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_FIELD_NUMBER: _ClassVar[int]
+    tenant: str
+    profile: TrialProfile
+    def __init__(self, tenant: _Optional[str] = ..., profile: _Optional[_Union[TrialProfile, _Mapping]] = ...) -> None: ...
+
+class DescribeProfileResponse(_message.Message):
+    __slots__ = ("version", "checksum", "classes", "notes", "method")
+    VERSION_FIELD_NUMBER: _ClassVar[int]
+    CHECKSUM_FIELD_NUMBER: _ClassVar[int]
+    CLASSES_FIELD_NUMBER: _ClassVar[int]
+    NOTES_FIELD_NUMBER: _ClassVar[int]
+    METHOD_FIELD_NUMBER: _ClassVar[int]
+    version: ProfileVersion
+    checksum: str
+    classes: _containers.RepeatedCompositeFieldContainer[ProfileClassEffects]
+    notes: _containers.RepeatedScalarFieldContainer[str]
+    method: ProfileMethod
+    def __init__(self, version: _Optional[_Union[ProfileVersion, _Mapping]] = ..., checksum: _Optional[str] = ..., classes: _Optional[_Iterable[_Union[ProfileClassEffects, _Mapping]]] = ..., notes: _Optional[_Iterable[str]] = ..., method: _Optional[_Union[ProfileMethod, _Mapping]] = ...) -> None: ...
+
+class ProfileClassEffects(_message.Message):
+    __slots__ = ("effects",)
+    CLASS_FIELD_NUMBER: _ClassVar[int]
+    EFFECTS_FIELD_NUMBER: _ClassVar[int]
+    effects: _containers.RepeatedCompositeFieldContainer[ProfileClassEffect]
+    def __init__(self, effects: _Optional[_Iterable[_Union[ProfileClassEffect, _Mapping]]] = ..., **kwargs) -> None: ...
+
+class ProfileClassEffect(_message.Message):
+    __slots__ = ("action", "elements", "elements_omitted", "conditional")
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    ELEMENTS_FIELD_NUMBER: _ClassVar[int]
+    ELEMENTS_OMITTED_FIELD_NUMBER: _ClassVar[int]
+    CONDITIONAL_FIELD_NUMBER: _ClassVar[int]
+    action: str
+    elements: _containers.RepeatedScalarFieldContainer[str]
+    elements_omitted: int
+    conditional: bool
+    def __init__(self, action: _Optional[str] = ..., elements: _Optional[_Iterable[str]] = ..., elements_omitted: _Optional[int] = ..., conditional: _Optional[bool] = ...) -> None: ...
+
+class ProfileMethod(_message.Message):
+    __slots__ = ("codes", "withheld", "method_values", "identity_removed", "temporal_modified")
+    CODES_FIELD_NUMBER: _ClassVar[int]
+    WITHHELD_FIELD_NUMBER: _ClassVar[int]
+    METHOD_VALUES_FIELD_NUMBER: _ClassVar[int]
+    IDENTITY_REMOVED_FIELD_NUMBER: _ClassVar[int]
+    TEMPORAL_MODIFIED_FIELD_NUMBER: _ClassVar[int]
+    codes: _containers.RepeatedCompositeFieldContainer[MethodCode]
+    withheld: str
+    method_values: _containers.RepeatedScalarFieldContainer[str]
+    identity_removed: str
+    temporal_modified: str
+    def __init__(self, codes: _Optional[_Iterable[_Union[MethodCode, _Mapping]]] = ..., withheld: _Optional[str] = ..., method_values: _Optional[_Iterable[str]] = ..., identity_removed: _Optional[str] = ..., temporal_modified: _Optional[str] = ...) -> None: ...
+
+class MethodCode(_message.Message):
+    __slots__ = ("value", "scheme", "meaning")
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    SCHEME_FIELD_NUMBER: _ClassVar[int]
+    MEANING_FIELD_NUMBER: _ClassVar[int]
+    value: str
+    scheme: str
+    meaning: str
+    def __init__(self, value: _Optional[str] = ..., scheme: _Optional[str] = ..., meaning: _Optional[str] = ...) -> None: ...

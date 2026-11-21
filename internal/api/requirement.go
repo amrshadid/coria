@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -296,7 +297,7 @@ var rules = map[string]rule{
 		return onTenantNamed(r.GetTenant(), role), access.Request{Object: r.GetId(), Details: headerDetails(r.GetIncludeHeader())}
 	}),
 	coriav1connect.QuarantineServiceReleaseQuarantinedFileProcedure: byMessage(func(r *v1.ReleaseQuarantinedFileRequest) (access.Requirement, access.Request) {
-		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId(), Details: releaseDetails(r, "")}
+		return onTenantNamed(r.GetTenant(), releaseRole(r)), access.Request{Object: r.GetId(), Details: releaseDetails(r, "")}
 	}),
 	coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure: byMessage(func(r *v1.RejectQuarantinedFileRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: r.GetId()}
@@ -422,6 +423,23 @@ var rules = map[string]rule{
 	coriav1connect.ProfileServiceDiffProfileVersionsProcedure: byMessage(func(r *v1.DiffProfileVersionsRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: profileObject(r.GetName()), Details: map[string]string{
 			detailFromVersion: strconv.Itoa(int(r.GetFromVersion())), detailToVersion: strconv.Itoa(int(r.GetToVersion())), detailToName: profileOrEmpty(r.GetToName())}}
+	}),
+
+	// DeidService: admin on the tenant for the forward lookup and for an
+	// import, each joining a value to its codes; operator to list the
+	// tables' sizes. The object is the attribute's tag, or the table's
+	// name, never a value.
+	coriav1connect.DeidServiceCodeProcedure: byMessage(func(r *v1.CodeRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: attributeObject(r.GetAttribute())}
+	}),
+	coriav1connect.DeidServiceImportLookupCodesProcedure: byMessage(func(r *v1.ImportLookupCodesRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: profileObject(r.GetTable())}
+	}),
+	coriav1connect.DeidServiceListLookupTablesProcedure: byMessage(func(r *v1.ListLookupTablesRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{}
+	}),
+	coriav1connect.ProfileServiceDescribeProfileProcedure: byMessage(func(r *v1.DescribeProfileRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: trialObject(r.GetProfile())}
 	}),
 }
 
@@ -678,4 +696,15 @@ func auditFilterDetails(r *v1.ListAuditEntriesRequest) map[string]string {
 		d[detailEnd] = r.GetEndTime().AsTime().UTC().Format(time.RFC3339Nano)
 	}
 	return d
+}
+
+// attributeObject returns the attribute a forward lookup names as an audit
+// entry's object: its tag in eight digits when it names a standard
+// element, "invalid" otherwise. The value is never an object.
+func attributeObject(attr string) string {
+	t, _, err := codeAttribute(attr)
+	if err != nil {
+		return invalidValue
+	}
+	return fmt.Sprintf("%08X", t)
 }

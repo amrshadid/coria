@@ -190,3 +190,33 @@ func TestReceiverRouteProfile(t *testing.T) {
 		t.Errorf("a route's profile on a receiver changed to archive as received gives %v, want none", got)
 	}
 }
+
+// TestReleasedProfileComesFirst guards the profile version a release named
+// for a reception: at a receiver that de-identifies it comes before the
+// route's and the receiver's; at one changed to archive as received none
+// applies; and a release naming one through a receiver that archives as
+// received, or of a record made de-identified through such a receiver, is
+// a precondition failure.
+func TestReleasedProfileComesFirst(t *testing.T) {
+	rcv := Receiver{Name: "recv", Profile: ProfileRef{Name: "basic", Version: 1}}
+	released, routed := ProfileRef{Name: "fixed", Version: 2}, ProfileRef{Name: "p", Version: 1}
+	if got := (ReceptionRoute{ReleasedProfile: released, Profile: routed}).ProfileFor(rcv); got != released {
+		t.Errorf("a released and a route's profile give %v, want the released", got)
+	}
+	if got := (ReceptionRoute{ReleasedProfile: released}).ProfileFor(Receiver{Name: "recv"}); !got.IsZero() {
+		t.Errorf("a released profile at a receiver that archives as received gives %v, want none", got)
+	}
+	if (ReceptionRoute{ReleasedProfile: released}).IsZero() {
+		t.Error("a reception route with only a released profile reads as zero")
+	}
+	rel := Release{Profile: released}
+	if err := ReleaseAllowed(QuarantinedFile{}, rel, false); fault.KindOf(err) != fault.Precondition {
+		t.Errorf("a profile named through a receiver that archives as received: %v", err)
+	}
+	if err := ReleaseAllowed(QuarantinedFile{Deidentified: true}, Release{}, false); fault.KindOf(err) != fault.Precondition {
+		t.Errorf("a record made de-identified through a receiver that archives as received: %v", err)
+	}
+	if err := ReleaseAllowed(QuarantinedFile{Deidentified: true}, rel, true); err != nil {
+		t.Errorf("a record made de-identified, a profile named, through a receiver that de-identifies: %v", err)
+	}
+}

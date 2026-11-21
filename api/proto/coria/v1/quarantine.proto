@@ -6,6 +6,7 @@ syntax = "proto3";
 package coria.v1;
 
 import "google/protobuf/timestamp.proto";
+import "coria/v1/receiver.proto";
 
 // QuarantineService reviews a tenant's quarantined files. A file the server
 // received and could not archive as it is (not DICOM, a label it cannot
@@ -80,10 +81,17 @@ service QuarantineService {
   // A file whose record is already released is answered as it stands, so a
   // repeated call releases nothing more.
   //
-  // Role: operator on the tenant.
+  // A file held at a receiver that de-identifies is released only through
+  // a receiver that de-identifies: released through one that archives as
+  // received, a file that joins no reception would land again there and be
+  // archived identified.
+  //
+  // Role: operator on the tenant; admin on the tenant to name a profile
+  // version, since a version decides what leaves a file, as a receiver's
+  // does.
   // Audit: one entry in the tenant's log, with the file's id as its object,
-  // and the mode, the receiver, the storage named and the reception it
-  // joined in details.
+  // and the mode, the receiver, the storage and profile version named and
+  // the reception it joined in details.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
   // (also a mode other than RELEASE_MODE_AS_IS), not found (the tenant has
@@ -92,7 +100,11 @@ service QuarantineService {
   // or its content was never kept; it is a different file and the tenant
   // holds an instance under its SOP Instance UID; the receiver it came to
   // has been removed and the request names none; the receiver named does
-  // not exist; the storage named does not exist), unavailable (the tenant's database does not answer, or the
+  // not exist; the storage named does not exist; the file was held at a
+  // receiver that de-identifies and the receiver it runs by archives as
+  // received; the profile version named does not exist, cannot
+  // de-identify a receiver's files, or is named through a receiver that
+  // archives as received), unavailable (the tenant's database does not answer, or the
   // tenant is not ready).
   rpc ReleaseQuarantinedFile(ReleaseQuarantinedFileRequest) returns (ReleaseQuarantinedFileResponse) {
     option idempotency_level = IDEMPOTENT;
@@ -460,6 +472,11 @@ message QuarantinedFile {
   // (ReleaseQuarantinedFileRequest.storage). Empty unless it is released
   // and a storage was named.
   string release_storage = 25;
+
+  // The profile version its release named
+  // (ReleaseQuarantinedFileRequest.profile). Unset unless it is released
+  // and a version was named.
+  ProfileVersionRef release_profile = 26;
 }
 
 // ListQuarantinedFilesRequest asks for a page of a tenant's quarantined
@@ -589,6 +606,23 @@ message ReleaseQuarantinedFileRequest {
   // is archived there. The storage is recorded with the record
   // (QuarantinedFile.release_storage) and in the release's audit entry.
   string storage = 6;
+
+  // The profile version the reception the file joins is de-identified
+  // with, in place of the one its route or its receiver names: a file a
+  // profile could not process (QUARANTINE_REASON_DEID_FAILED,
+  // QUARANTINE_REASON_PROFILE_REFUSED, QUARANTINE_REASON_RESIDUAL_VALUE)
+  // is released through a fixed version. Optional; when given, the
+  // request needs admin on the tenant (a version decides what leaves a
+  // file, as a receiver's does), the version must be one the tenant has
+  // and pass the checks a receiver's version passes, and the receiver the
+  // file runs by must de-identify; each is a precondition failure
+  // otherwise, and so is a version other than the one an earlier release
+  // into the same reception named. It applies to that reception's files
+  // only: a later arrival of the session goes by the session's choice. A
+  // file that joins no reception keeps it through its new landing. The
+  // version is recorded with the record (QuarantinedFile.release_profile)
+  // and in the release's audit entry.
+  ProfileVersionRef profile = 7;
 }
 
 // ReleaseQuarantinedFileResponse is the record after the release.

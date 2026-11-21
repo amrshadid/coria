@@ -39,6 +39,7 @@ func TestBuiltin(t *testing.T) {
 		ReceiverHeaderLimit:     {InstallationOnly, "64MiB", false},
 		ReceiverAllowAsReceived: {SetByInstallation, "false", false},
 		DeidPixelLimit:          {SetByInstallation, "1GiB", false},
+		DeidMemory:              {InstallationOnly, "2GiB", false},
 		APICORSOrigins:          {InstallationOnly, "", false},
 		AccessTrustedProxies:    {InstallationOnly, "", false},
 		AccessForwardedHeader:   {InstallationOnly, "x-forwarded-for", false},

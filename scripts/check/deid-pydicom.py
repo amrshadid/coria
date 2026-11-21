@@ -7,7 +7,8 @@ Input: the path of a JSON file:
               "needles": <path of a JSON list of the values the engine
                           removed or replaced: {"kind": "name" | "date" |
                           "uid" | "text", "value": ..., and "edge": "word"
-                          for one matched only as a whole word}>}]}
+                          for one matched only as a whole word, "ident"
+                          for an identifier of words}>}]}
 
 The values searched for in each result, its needles, come from three
 sources, so a mistake in one is caught by another:
@@ -62,7 +63,16 @@ letter of another script beside it does not join it ("1957年" is the year
 1957). Letters in any case. A needle that is a number is matched only where
 no digit is next to it, so it is not found inside a longer number (a
 remapped UID is a long run of digits); a full date may be followed by
-digits, as in a date and time.
+digits, as in a date and time. An identifier of words (a letter at an
+end, no digit, no letter of a script written without spaces) that is not an
+attribute identifying the patient (FLOOR, PATIENT_IDS, or inside a sequence
+covered whole) is matched on a letter side only where no letter and no "_"
+is beside it, as the engine's (EdgeIdentifier): an institution TOSHIBA is
+not found in the maker's name TOSHIBA_MEC. Every other identifier is
+matched anywhere but next to a digit on a digit side: a Patient ID
+AB778812 is found in MRNAB778812, an institution 東京中央病院 in
+東京中央病院放射線科. The side file names the engine's word edge "ident";
+when one form is both, it is matched anywhere.
 
 Two searches of each result:
 
@@ -116,6 +126,22 @@ FLOOR = {
 # The sequences whose every value is a needle when removed
 # (internal/deid/engine/needles.go, wholeTags); the first two are the
 # floor's and are searched whatever a profile decided.
+# The identifiers, besides FLOOR, that identify the patient or the
+# patient's encounter, order or study, never matched as whole words (the
+# engine's patientIdentifierTags).
+PATIENT_IDS = {
+    "AccessionNumber", "IssuerOfPatientID", "IssuerOfClinicalTrialProtocolID",
+    "IssuerOfClinicalTrialSiteID", "ClinicalTrialSubjectID",
+    "IssuerOfClinicalTrialSubjectID", "ClinicalTrialSubjectReadingID",
+    "IssuerOfClinicalTrialSubjectReadingID", "IssuerOfClinicalTrialTimePointID",
+    "IssuerOfClinicalTrialSeriesID", "StudyID", "StudyIDIssuer", "AdmissionID",
+    "IssuerOfAdmissionID", "ServiceEpisodeID", "IssuerOfServiceEpisodeID",
+    "ScheduledProcedureStepID", "PerformedProcedureStepID",
+    "SpecimenAccessionNumber", "RequestedProcedureID", "PlacerOrderNumberImagingServiceRequest",
+    "FillerOrderNumberImagingServiceRequest", "ResultsIDIssuer",
+    "InterpretationIDIssuer",
+}
+
 WHOLE_FLOOR = {"OtherPatientIDsSequence", "PersonIdentificationCodeSequence"}
 WHOLE = WHOLE_FLOOR | {
     "InstitutionCodeSequence", "ReferringPhysicianIdentificationSequence",
@@ -142,6 +168,13 @@ CODING = {0x00080102, 0x00080103, 0x00080105, 0x00080106, 0x00080107,
 # The VRs of a value inside a sequence covered whole that is a needle.
 WHOLE_VRS = {"AE", "LO", "LT", "SH", "ST", "UC", "UR", "UT", "PN", "DA",
              "DT", "UI", "UN"}
+
+
+def words(s):
+    """Whether an identifier is words: a letter at an end, no digit, no
+    letter of a script written without spaces."""
+    s = s.strip(" \x00")
+    return bool(s) and (s[0].isalpha() or s[-1].isalpha()) and not any(c.isdigit() for c in s) and not unspaced(s)
 
 
 def unspaced(s):
@@ -171,7 +204,11 @@ class Needles:
         elif len(form) < MIN_LENGTH:
             self.skipped += 1
             return
-        self.forms.setdefault(form.lower(), (needle, kind))
+        key = form.lower()
+        # A form that is a word for one source and not for another is
+        # matched anywhere: the stricter search.
+        if key not in self.forms or (self.forms[key][1] == "ident" and kind != "ident"):
+            self.forms[key] = (needle, kind)
 
     def add(self, kind, value):
         value = value.strip(" \x00")
@@ -345,6 +382,13 @@ def gather(orig, keywords, needles):
     """Needles pydicom reads from the original."""
     standard_values = set()
     private = []
+    # Elements inside a sequence that identifies the patient, which are
+    # never matched as whole words.
+    inside = set()
+    for elem in orig.iterall():
+        if elem.VR == "SQ" and (elem.keyword in FLOOR or elem.keyword in WHOLE or elem.keyword in PATIENT_IDS):
+            for item in elem.value:
+                inside.update(id(e) for e in item.iterall())
     for elem in orig.iterall():
         if elem.VR == "SQ" or elem.tag in PIXEL_TAGS:
             continue
@@ -358,8 +402,12 @@ def gather(orig, keywords, needles):
             continue
         standard_values.update(s.strip(" \x00").lower() for s in vals)
         if elem.keyword in keywords or elem.keyword in FLOOR or kind_of(elem) == "name":
+            patient = elem.keyword in FLOOR or elem.keyword in PATIENT_IDS or id(elem) in inside
             for s in vals:
-                needles.add(kind_of(elem), s)
+                kind = kind_of(elem)
+                if kind == "text" and not patient and words(s):
+                    kind = "ident"
+                needles.add(kind, s)
     for elem in orig.iterall():
         if elem.VR != "SQ" or not (elem.keyword in WHOLE_FLOOR or (elem.keyword in WHOLE and elem.keyword in keywords)):
             continue
@@ -401,7 +449,9 @@ def texts(ds):
 def pattern(form, kind):
     """A regular expression for a form (text or bytes): a form that begins
     with a digit must not follow one, and one that ends with a digit must
-    not be followed by one, but for a full date, which a time may follow; a
+    not be followed by one, but for a full date, which a time may follow; an
+    identifier of words' side that is a letter must have no letter or "_"
+    beside it; a
     bounded form must have no ASCII letter or digit beside it, nor a date's
     separator with a digit beyond it."""
     as_bytes = isinstance(form, bytes)
@@ -419,9 +469,17 @@ def pattern(form, kind):
         if as_bytes:
             return re.compile(rb"(?<![0-9A-Za-z])(?<![0-9][-/.])" + body + rb"(?![0-9A-Za-z])(?![-/.][0-9])")
         return re.compile(r"(?<![0-9A-Za-z])(?<![0-9][-/.])" + body + r"(?![0-9A-Za-z])(?![-/.][0-9])")
-    if text[:1].isdigit():
+    # In bytes only an ASCII letter is known for one: another byte may be
+    # part of a character of another set, so that side errs toward finding.
+    def letter(c):
+        return c.isalpha() and (c.isascii() or not as_bytes)
+    if kind == "ident" and letter(text[:1]):
+        body = (rb"(?<![A-Za-z_])" if as_bytes else r"(?<![^\W\d])") + body
+    elif text[:1].isdigit():
         body = (rb"(?<![0-9])" if as_bytes else r"(?<![0-9])") + body
-    if text[-1:].isdigit() and kind != "date":
+    if kind == "ident" and letter(text[-1:]):
+        body = body + (rb"(?![A-Za-z_])" if as_bytes else r"(?![^\W\d])")
+    elif text[-1:].isdigit() and kind != "date":
         body = body + (rb"(?![0-9])" if as_bytes else r"(?![0-9])")
     return re.compile(body)
 
@@ -469,7 +527,8 @@ def check_pair(pair, keywords):
     needles = Needles()
     with open(pair["needles"], encoding="utf-8") as f:
         for n in json.load(f):
-            needles.add("word" if n.get("edge") == "word" else n["kind"], n["value"])
+            edge = n.get("edge")
+            needles.add(edge if edge in ("word", "ident") else n["kind"], n["value"])
     gather(orig, keywords, needles)
     hay = texts(out)
     raw = raw_without_pixels(pair["deidentified"], out)

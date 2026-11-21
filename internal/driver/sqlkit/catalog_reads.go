@@ -106,7 +106,8 @@ func (c CatalogReader[T]) scanScan(row Row, r *scanRow) error {
 func (c CatalogReader[T]) scanHeld(row Row, in *tenant.ScanInstance) error {
 	var sum, archived []byte
 	var held T
-	err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Key, &in.Offset, &in.Length, &in.Size, &sum, &archived, &held)
+	err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Key, &in.Offset, &in.Length, &in.Size, &sum, &archived, &held,
+		&in.Profile.Name, &in.Profile.Version)
 	in.SHA256, in.ArchivedSHA256, in.Held = ToSHA256(sum), ToSHA256(archived), c.Time(held)
 	return err
 }

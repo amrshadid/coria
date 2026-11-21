@@ -410,6 +410,28 @@ func ParsePixelLimit(v string) (int64, error) {
 	return n, nil
 }
 
+// The bounds of deid.memory.
+const (
+	// MinDeidMemory is the smallest: below it the check after of an
+	// ordinary multi-frame file would be held.
+	MinDeidMemory = 256 << 20
+	// MaxDeidMemory is the largest, as deid.pixel-limit's.
+	MaxDeidMemory = 64 << 30
+)
+
+// ParseDeidMemory reads deid.memory: a size (ParseSize) from MinDeidMemory
+// to MaxDeidMemory.
+func ParseDeidMemory(v string) (int64, error) {
+	n, err := ParseSize(v)
+	if err != nil {
+		return 0, err
+	}
+	if n < MinDeidMemory || n > MaxDeidMemory {
+		return 0, errors.New("is a size from 256MiB to 64GiB")
+	}
+	return n, nil
+}
+
 // FormatSize writes a size in the largest unit that divides it, as
 // ParseSize reads it.
 func FormatSize(n int64) string {

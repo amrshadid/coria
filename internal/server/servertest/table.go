@@ -190,8 +190,20 @@ func Contract() Table {
 				return tenantRole(m.GetTenant(), master.RoleReader, m.GetIncludeHeader())
 			},
 		),
-		coriav1connect.QuarantineServiceReleaseQuarantinedFileProcedure: onTenant(func() *coriav1.ReleaseQuarantinedFileRequest { return &coriav1.ReleaseQuarantinedFileRequest{} }, master.RoleOperator),
-		coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure:  onTenant(func() *coriav1.RejectQuarantinedFileRequest { return &coriav1.RejectQuarantinedFileRequest{} }, master.RoleOperator),
+		coriav1connect.QuarantineServiceReleaseQuarantinedFileProcedure: byMessage(
+			func() *coriav1.ReleaseQuarantinedFileRequest { return &coriav1.ReleaseQuarantinedFileRequest{} },
+			func(m *coriav1.ReleaseQuarantinedFileRequest) access.Requirement {
+				role := master.RoleOperator
+				if m.GetProfile() != nil {
+					role = master.RoleAdmin
+				}
+				if m.GetTenant() == "" {
+					return access.OnInstallation(role)
+				}
+				return access.OnTenant(m.GetTenant(), role)
+			},
+		),
+		coriav1connect.QuarantineServiceRejectQuarantinedFileProcedure: onTenant(func() *coriav1.RejectQuarantinedFileRequest { return &coriav1.RejectQuarantinedFileRequest{} }, master.RoleOperator),
 
 		// MetadataService: reader on the tenant for a scan's or an
 		// instance's header.
@@ -238,6 +250,12 @@ func Contract() Table {
 		coriav1connect.ProfileServiceTryProfileProcedure:           onTenant(func() *coriav1.TryProfileRequest { return &coriav1.TryProfileRequest{} }, master.RoleOperator),
 		coriav1connect.ProfileServiceExplainProfileProcedure:       onTenant(func() *coriav1.ExplainProfileRequest { return &coriav1.ExplainProfileRequest{} }, master.RoleOperator),
 		coriav1connect.ProfileServiceDiffProfileVersionsProcedure:  onTenant(func() *coriav1.DiffProfileVersionsRequest { return &coriav1.DiffProfileVersionsRequest{} }, master.RoleOperator),
+		coriav1connect.ProfileServiceDescribeProfileProcedure:      onTenant(func() *coriav1.DescribeProfileRequest { return &coriav1.DescribeProfileRequest{} }, master.RoleOperator),
+		// DeidService: "admin on the tenant." for the forward lookup and an
+		// import, "operator on the tenant." to list the tables.
+		coriav1connect.DeidServiceCodeProcedure:              onTenant(func() *coriav1.CodeRequest { return &coriav1.CodeRequest{} }, master.RoleAdmin),
+		coriav1connect.DeidServiceImportLookupCodesProcedure: onTenant(func() *coriav1.ImportLookupCodesRequest { return &coriav1.ImportLookupCodesRequest{} }, master.RoleAdmin),
+		coriav1connect.DeidServiceListLookupTablesProcedure:  onTenant(func() *coriav1.ListLookupTablesRequest { return &coriav1.ListLookupTablesRequest{} }, master.RoleOperator),
 
 		// MonitorService: "reader on the tenant asked for; operator on the
 		// installation for every tenant."

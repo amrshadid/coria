@@ -98,11 +98,19 @@
 //
 // Keyed actions. A UID is remapped to "2.25." and a version 8 UUID from
 // HMAC-SHA-256 of it under the tenant's UID key (RemapUID); a UID the
-// standard registers is kept (Registered). A date is moved back by the
+// standard registers is kept (Registered), the public coding schemes of
+// PS3.16 Table 8-1 among them (SNOMED CT, LOINC, UCUM, RadLex). The UID
+// of a vocabulary (Coding Scheme UID, Context Group Extension Creator
+// UID, Context UID, Mapping Resource UID: vocabularyUIDTags) that is not
+// registered is local, mostly the institution's own root, so it is
+// remapped even where the profile would keep it. A date is moved back by the
 // subject's shift, from 1 to the profile's most days, keyed by the
 // tenant's date key over the Patient ID, exactly the value the subject
 // label's code is the keyed hash of (ShiftDays), so a subject has one
-// shift; the time of day is kept, and the shift is written nowhere. A
+// shift; the time of day is kept, and the shift is written nowhere. A job
+// over an archive, whose files no longer hold the Patient ID, gives the
+// subject itself (Reception.Subject, the instance's subject label), which
+// keys the shift in its place; a reception never does. A
 // year, or a year and month, that the shift leaves as it was is emptied.
 // A hash and a template's "{#X}" are the naming rule's keyed hash of the
 // value (naming.HashText) under the tenant's naming key, so a hashed

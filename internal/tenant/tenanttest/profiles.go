@@ -34,6 +34,8 @@ func runDeidentification(t *testing.T, open OpenPipeline) {
 		{"LookupCodes", testLookupCodes},
 		{"LookupRefusals", testLookupRefusals},
 		{"LookupAtOnce", testLookupAtOnce},
+		{"LookupImport", testLookupImport},
+		{"LookupImportRefusals", testLookupImportRefusals},
 		{"DeidentificationKeys", testDeidentificationKeys},
 	}
 	for _, tt := range tests {
@@ -344,7 +346,8 @@ func testProfileAtOnce(e *penv) {
 // records: one committed with a version is answered with it, one committed
 // as received with none, each its own in one commit of both kinds; a commit naming a version the tenant does not
 // have is a precondition failure that commits nothing; an instance not
-// held is NotFound.
+// held is NotFound; the catalog's reads of instances (ListHeldInstances,
+// HeldInstance) answer each instance's version as InstanceProfile does.
 func testInstanceProfile(e *penv) {
 	e.addStorage("store")
 	e.addReceiver("dicom", "store", 11112)
@@ -402,6 +405,25 @@ func testInstanceProfile(e *penv) {
 		if e.ok("InstanceProfile of a commit of both kinds", err); got != want {
 			e.Errorf("instance %d of a commit of both kinds records %v, want %v", i, got, want)
 		}
+	}
+	// The catalog's reads of instances answer the same.
+	path := e.labelsOf(r.StudyUID, files[0].SeriesUID)
+	held, _, err := e.p.ListHeldInstances(e.ctx, path, master.Page{Limit: 10})
+	e.ok("ListHeldInstances", err)
+	want := map[string]tenant.ProfileRef{files[0].SOPInstanceUID: v.Ref(), files[1].SOPInstanceUID: {},
+		files[3].SOPInstanceUID: {}, files[4].SOPInstanceUID: v.Ref()}
+	for _, in := range held {
+		if w, ok := want[in.SOPInstanceUID]; ok && in.Profile != w {
+			e.Errorf("ListHeldInstances: %s records %v, want %v", in.SOPInstanceUID, in.Profile, w)
+		}
+		delete(want, in.SOPInstanceUID)
+	}
+	if len(want) != 0 {
+		e.Errorf("ListHeldInstances left out %v", want)
+	}
+	one, err := e.p.HeldInstance(e.ctx, path, files[0].SOPInstanceUID)
+	if e.ok("HeldInstance", err); one.Profile != v.Ref() {
+		e.Errorf("HeldInstance records %v, want %v", one.Profile, v.Ref())
 	}
 }
 

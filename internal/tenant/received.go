@@ -38,6 +38,11 @@ type ReceivedFile struct {
 	// (ReceptionRoute.ReleasedStorage) unless that reception keeps one
 	// already. It is not kept with the file.
 	ReleasedStorage string
+	// ReleasedProfile, set only on a released file, is the profile version
+	// its release named (Release.Profile), kept by the reception it joins
+	// as ReleasedStorage is (ReceptionRoute.ReleasedProfile). It is not
+	// kept with the file.
+	ReleasedProfile ProfileRef
 	// Deidentified says it was recorded at a receiver that de-identifies:
 	// its placing UIDs are the keyed remapping of the file's and its
 	// checksum is keyed, and the archive step de-identifies it. False, it
@@ -81,6 +86,14 @@ func (f ReceivedFile) Validate() error {
 			return invalid("only a released file names the storage its release named")
 		}
 		if err := ValidateName("storage", f.ReleasedStorage); err != nil {
+			return err
+		}
+	}
+	if !f.ReleasedProfile.IsZero() {
+		if !f.Released {
+			return invalid("only a released file names the profile version its release named")
+		}
+		if err := f.ReleasedProfile.Validate(); err != nil {
 			return err
 		}
 	}

@@ -6,6 +6,7 @@ import (
 
 	"github.com/amrshadid/coria/internal/api"
 	"github.com/amrshadid/coria/internal/checkedread"
+	"github.com/amrshadid/coria/internal/deid/check"
 	"github.com/amrshadid/coria/internal/deidjob"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/place"
@@ -57,7 +58,7 @@ func newSending(d Deps, reg *registry.Registry, wake func(tenantName string), re
 // registry's tenants. Its reads of archived bytes count in reads, the
 // server's one count; storages are opened as the senders open them; a
 // check reads the tenant's UID key from the registry, as a reception does.
-func newDeidJobs(d Deps, reg *registry.Registry, wake func(tenantName string), reads *checkedread.Slots) (*deidjob.Supervisor, error) {
+func newDeidJobs(d Deps, reg *registry.Registry, wake func(tenantName string), reads *checkedread.Slots, memory check.Memory) (*deidjob.Supervisor, error) {
 	values := settingvalue.Reader{Master: d.Master}
 	opener := place.Opener{Values: values, Keys: d.Keys, StaleUploadAge: -1}
 	tenantID := func(ctx context.Context, name string) (string, error) {
@@ -73,6 +74,7 @@ func newDeidJobs(d Deps, reg *registry.Registry, wake func(tenantName string), r
 		},
 		UIDKey: reg.UIDKey,
 		Reads:  reads,
+		Memory: memory,
 		Wake:   wake,
 		Logger: d.Log,
 	})

@@ -1090,8 +1090,13 @@ func (*DimseReceiver_AnyCaller) isDimseReceiver_Callers() {}
 //
 // The answer is application/dicom+json (PS3.18 10.5.3): the Referenced SOP
 // Sequence (0008,1199) lists each instance stored with its Retrieve URL
-// (0008,1190), the instance's WADO-RS URL in the tenant's DICOMweb service;
-// the status is 200 when every part was stored, 202 when some were, 409
+// (0008,1190), the instance's WADO-RS URL in the tenant's DICOMweb service.
+// A stow receiver that de-identifies gives no Retrieve URL, neither an
+// instance's nor the study's: it archives each instance under remapped
+// UIDs, and a URL by them would hand the sender the mapping from the UIDs
+// it sent to the archive's, which no answer of the API gives; each instance
+// is listed by its class and the SOP Instance UID it was sent with. The
+// status is 200 when every part was stored, 202 when some were, 409
 // when none was. A request refused as a whole is answered in plain text:
 // 400 for a body that is not well-formed multipart, holds no part, ends
 // inside a part or has a part's header past 16 KiB; 413 for a request

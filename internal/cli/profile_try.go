@@ -5,9 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -92,121 +89,13 @@ func (f *trialProfileFlags) reception() *v1.TrialReception {
 	return &v1.TrialReception{Receiver: f.receiver, CallingAeTitle: f.calling, CalledAeTitle: f.called}
 }
 
-// collectFiles reads the files named by paths: a file as it is, a
-// directory (a link to one included) taken recursively: its regular files
-// that begin as a DICOM file does (PS3.10 7.1), in the order of their
-// names, links inside it not followed, at most maxWalkFiles looked at. The
-// count and sizes are held to the server's bounds, each size from the
-// file's information before it is read, so a file past the bound is never
-// loaded.
-func collectFiles(paths []string) ([]*v1.TrialFile, error) {
-	var out []*v1.TrialFile
-	total := 0
-	add := func(path string, size int64) error {
-		if len(out) >= maxTrialFiles {
-			return fault.New(fault.Invalid, fmt.Sprintf("more than %d files: a trial run takes at most %d at once; name fewer", maxTrialFiles, maxTrialFiles))
-		}
-		if size == 0 || size > maxTrialFileBytes {
-			return fault.New(fault.Invalid, fmt.Sprintf("%s is %s; a trial run takes files of 1 byte to 3MiB", path, output.Bytes(size)))
-		}
-		if total+int(size) > maxTrialSentBytes {
-			return fault.New(fault.Invalid, "the files together are larger than 3.5MiB, the most one trial run sends; name fewer")
-		}
-		b, err := readBounded(path, size)
-		if err != nil {
-			return err
-		}
-		total += len(b)
-		out = append(out, &v1.TrialFile{Name: path, Content: b})
-		return nil
-	}
-	for _, p := range paths {
-		info, err := os.Stat(p)
-		if err != nil {
-			return nil, fault.Wrap(fault.Invalid, err, "cannot read "+p)
-		}
-		if !info.IsDir() {
-			if err := add(p, info.Size()); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		// A link named here is the person's choice and is followed; the
-		// walk follows none inside it.
-		root, err := filepath.EvalSymlinks(p)
-		if err != nil {
-			return nil, fault.Wrap(fault.Invalid, err, "cannot read "+p)
-		}
-		looked := 0
-		err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if !d.Type().IsRegular() {
-				return nil
-			}
-			if looked++; looked > maxWalkFiles {
-				return fault.New(fault.Invalid, fmt.Sprintf("%s holds more than %d files; name a smaller directory", p, maxWalkFiles))
-			}
-			if !looksDICOM(path) {
-				return nil
-			}
-			fi, err := d.Info()
-			if err != nil {
-				return err
-			}
-			return add(path, fi.Size())
-		})
-		if err != nil {
-			if fault.KindOf(err) == fault.Invalid {
-				return nil, err
-			}
-			return nil, fault.Wrap(fault.Invalid, err, "cannot read "+p)
-		}
-	}
-	return out, nil
-}
-
-// readBounded reads a file whose information said size bytes, and no more
-// than that: a file that grew since is refused, never read past it.
-func readBounded(path string, size int64) ([]byte, error) {
-	f, err := os.Open(path) // #nosec G304 -- the person names the files to try.
-	if err != nil {
-		return nil, fault.Wrap(fault.Invalid, err, "cannot read "+path)
-	}
-	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, size+1))
-	if err != nil {
-		return nil, fault.Wrap(fault.Invalid, err, "cannot read "+path)
-	}
-	if int64(len(b)) != size {
-		return nil, fault.New(fault.Invalid, path+" changed while it was read")
-	}
-	return b, nil
-}
-
-// looksDICOM reports whether a file begins as a Part 10 file does: 128
-// bytes of preamble and "DICM" (PS3.10 7.1).
-func looksDICOM(path string) bool {
-	f, err := os.Open(path) // #nosec G304 -- a file under a directory the person named.
-	if err != nil {
-		return false
-	}
-	defer func() { _ = f.Close() }()
-	var b [132]byte
-	if _, err := io.ReadFull(f, b[:]); err != nil {
-		return false
-	}
-	return string(b[128:]) == "DICM"
-}
-
 // newProfileTry builds "profile try".
 func (a *app) newProfileTry() *cobra.Command {
 	var f trialProfileFlags
 	var records []string
-	var failOnHeld, changedOnly bool
+	var failOnHeld, changedOnly, local bool
 	cmd := &cobra.Command{
-		Use:   "try <tenant> (--profile NAME[@VERSION] | --document FILE|-) [FILE|DIR ...] [--record ID ...]",
+		Use:   "try (<tenant> (--profile NAME[@VERSION] | --document FILE|-) [FILE|DIR ...] [--record ID ...] | --local --document FILE|- FILE|DIR ...)",
 		Short: "Run a profile over sample files and show what it would do, storing nothing",
 		Long: `Run a profile over sample files exactly as a receiver naming it would: each file
 is de-identified, written in memory, checked after for every value the profile
@@ -232,12 +121,33 @@ tries the held file of a quarantine record instead (repeat for more).
 The values shown are the files' own and may identify a person: they go to this
 terminal only. --changed-only shows only the elements that change.
 --fail-on-held exits 5 when any file would be held or is undecided, or when no
-receiver could name the profile, for scripts and agents.`,
+receiver could name the profile, for scripts and agents.
+
+--local runs the engine and the check after in this command, with no server
+and no tenant: every argument is a file or a directory, and the profile is a
+document (--document), or a version's export ("profile export", or its --json
+answer, which names the version). The answer is the same as a server's for
+files tried with no receiver, under keys made for the run and thrown away, with
+every lookup UNASSIGNED; nothing is sent anywhere and nothing is written. A file
+of up to 64MiB is read at a time, so a directory of any number of files can be
+tried; receiver.header-limit and deid.pixel-limit take their defaults. For
+people and agents iterating on a profile offline.`,
 		Example: `  coria profile try lab1 --profile research@2 ./samples/
   coria profile try lab1 --document draft.json scan1.dcm --json
+  coria profile try --local --document draft.json ./samples/ --changed-only
   coria profile try lab1 --profile research --record 01J9Z3K4 --changed-only`,
 		Args: minimumArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			if local {
+				if f.version != "" || f.receiver != "" || len(records) > 0 {
+					return fault.New(fault.Invalid, "--local runs without a server: give --document, not --profile, --receiver or --record")
+				}
+				res, err := a.tryLocal(ctx, &f, args)
+				if err != nil {
+					return err
+				}
+				return a.trialOut(res, changedOnly, failOnHeld)
+			}
 			p, err := a.trialProfile(&f)
 			if err != nil {
 				return err
@@ -260,26 +170,35 @@ receiver could name the profile, for scripts and agents.`,
 			if err != nil {
 				return a.withProblems(err)
 			}
-			if err := messageOut(a, res, func(w io.Writer) error { return a.trialText(w, res, changedOnly) }); err != nil {
-				return err
-			}
-			if failOnHeld {
-				s := res.GetSummary()
-				switch {
-				case res.GetReceptionRefusal() != "":
-					return fault.New(fault.Precondition, "no receiver could name this profile: "+output.Clean(res.GetReceptionRefusal()))
-				case s.GetHeld() > 0 || s.GetUndecided() > 0:
-					return fault.New(fault.Precondition, fmt.Sprintf("%d of %d files would be held, and %d depend on a lookup table", s.GetHeld(), s.GetFiles(), s.GetUndecided()))
-				}
-			}
-			return nil
+			return a.trialOut(res, changedOnly, failOnHeld)
 		}),
 	}
 	f.add(cmd)
+	cmd.Flags().BoolVar(&local, "local", false, "run the engine and the check in this command, with no server: every argument is a file or directory, the profile a --document or a version's export")
 	cmd.Flags().StringArrayVar(&records, "record", nil, "the id of a quarantine record whose held file to try; repeat for more")
 	cmd.Flags().BoolVar(&failOnHeld, "fail-on-held", false, "exit 5 when any file would be held or is undecided, or no receiver could name the profile")
 	cmd.Flags().BoolVar(&changedOnly, "changed-only", false, "show only the elements whose value or presence changes")
 	return cmd
+}
+
+// trialOut writes a trial run's answer and, with failOnHeld, fails when a
+// file would be held or is undecided, or no receiver could name the
+// profile.
+func (a *app) trialOut(res *v1.TryProfileResponse, changedOnly, failOnHeld bool) error {
+	if err := messageOut(a, res, func(w io.Writer) error { return a.trialText(w, res, changedOnly) }); err != nil {
+		return err
+	}
+	if !failOnHeld {
+		return nil
+	}
+	s := res.GetSummary()
+	switch {
+	case res.GetReceptionRefusal() != "":
+		return fault.New(fault.Precondition, "no receiver could name this profile: "+output.Clean(res.GetReceptionRefusal()))
+	case s.GetHeld() > 0 || s.GetUndecided() > 0:
+		return fault.New(fault.Precondition, fmt.Sprintf("%d of %d files would be held, and %d depend on a lookup table", s.GetHeld(), s.GetFiles(), s.GetUndecided()))
+	}
+	return nil
 }
 
 // minimumArgs requires at least n positional arguments.

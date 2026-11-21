@@ -243,6 +243,7 @@ func (h quarantineHandler) ReleaseQuarantinedFile(_ context.Context, req *v1.Rel
 	}
 	f.State, f.ReleaseMode, f.ReleaseReceiver = v1.QuarantineState_QUARANTINE_STATE_RELEASED, req.GetMode(), receiver
 	f.ReleaseReception, f.ReleaseReason, f.DecideTime, f.ContentKept = "rec-released", req.GetReason(), timestamppb.New(s.now()), true
+	f.ReleaseStorage, f.ReleaseProfile = req.GetStorage(), req.GetProfile()
 	return &v1.ReleaseQuarantinedFileResponse{File: f}, nil
 }
 

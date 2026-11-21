@@ -264,6 +264,7 @@ var contractFiles = []protoreflect.FileDescriptor{
 	coriav1.File_coria_v1_job_proto,
 	coriav1.File_coria_v1_data_proto,
 	coriav1.File_coria_v1_profile_proto,
+	coriav1.File_coria_v1_deid_proto,
 }
 
 // contractMethods returns every method of the contract by procedure name.
@@ -427,6 +428,16 @@ func checkRole(t *testing.T, proc, role string, md protoreflect.MethodDescriptor
 		expectTenant(t, proc, md, master.RoleReader, []string{"study_instance_uid", "sop_instance_uid"})
 	case "reader on the tenant; operator on the tenant with include_header, since the header holds what the sender sent, identifying data included.":
 		expectTenant(t, proc, md, master.RoleReader, []string{"include_header"})
+	case "operator on the tenant; admin on the tenant to name a profile version, since a version decides what leaves a file, as a receiver's does.":
+		expectTenant(t, proc, md, master.RoleOperator, nil)
+		m := newRequest(md)
+		setString(m, "tenant", "lab")
+		r := m.ProtoReflect()
+		fd := r.Descriptor().Fields().ByName("profile")
+		r.Set(fd, r.NewField(fd))
+		if _, got, _ := ruleFor(proc, m); got != access.OnTenant("lab", master.RoleAdmin) {
+			t.Errorf("%s with a profile version: the requirement is not admin on the tenant", proc)
+		}
 	case "reader on the tenant asked for; operator on the installation for every tenant.":
 		expectMonitorScope(t, proc, md)
 	default:

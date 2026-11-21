@@ -35,6 +35,8 @@ EXPECTED = {
     "profile-create": None, "profile-get": None, "profile-list": "profiles", "profile-versions": "versions",
     "profile-export": None, "profile-validate": None, "profile-describe": None, "profile-try": None,
     "profile-explain": None, "profile-diff": None,
+    "profile-try-local": None, "profile-lookup-import": None, "profile-lookup-list": "tables",
+    "deid-code": None, "receiver-route-export": None, "receiver-route-import": None,
     "version": None,
     "whoami": None,
     "tenant-create": None,

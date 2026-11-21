@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/amrshadid/coria/internal/core/layout"
 	"github.com/amrshadid/coria/internal/core/uid"
+	"github.com/amrshadid/coria/internal/tenant"
 )
 
 // Version is the format version this package writes. It reads it and
@@ -136,6 +138,11 @@ type Instance struct {
 	// TransferSyntax is the Transfer Syntax UID of the instance's file,
 	// empty in a line written before the field existed.
 	TransferSyntax string `json:"transfer_syntax,omitempty"`
+	// Profile is the profile version that de-identified the instance,
+	// "name@version", as its catalog row records it; empty for one
+	// archived as received, and in a line written before the field
+	// existed.
+	Profile string `json:"profile,omitempty"`
 	// PixelData is where its pixel data is, nil when it has none or when the
 	// file's data set is deflated, where no offset in the file names it.
 	PixelData *PixelData `json:"pixel_data"`
@@ -257,6 +264,26 @@ func lowerHex(s string, n int) bool {
 	return true
 }
 
+// validProfile reports whether s is empty or a profile version as
+// tenant.ProfileRef writes it, "name@version": its name and version held to
+// ProfileRef's rule, and the version written without leading zeros, so a
+// line names a version one way only.
+func validProfile(s string) bool {
+	if s == "" {
+		return true
+	}
+	name, version, ok := strings.Cut(s, "@")
+	if !ok {
+		return false
+	}
+	n, err := strconv.ParseInt(version, 10, 32)
+	if err != nil {
+		return false
+	}
+	ref := tenant.ProfileRef{Name: name, Version: int32(n)}
+	return ref.Validate() == nil && ref.String() == s
+}
+
 // check returns nil if in may be written.
 func check(in Instance) error {
 	if err := uid.Check(in.SOPInstanceUID); err != nil {
@@ -273,6 +300,9 @@ func check(in Instance) error {
 		if err := uid.Check(in.TransferSyntax); err != nil {
 			return fmt.Errorf("%w: transfer_syntax: %w", ErrFormat, err)
 		}
+	}
+	if !validProfile(in.Profile) {
+		return fmt.Errorf("%w: profile is not name@version", ErrFormat)
 	}
 	if p := in.PixelData; p != nil && (p.Offset < 0 || p.Length < 0 || p.Offset+p.Length > in.Size) {
 		return fmt.Errorf("%w: pixel_data lies outside the file", ErrFormat)

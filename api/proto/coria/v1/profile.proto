@@ -268,6 +268,39 @@ service ProfileService {
   rpc DiffProfileVersions(DiffProfileVersionsRequest) returns (DiffProfileVersionsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+
+  // DescribeProfile says what a stored version (or an unsaved document)
+  // does, for a person and for the method section of a DICOM Conformance
+  // Statement (PS3.15 E.3.5, E.3.6, E.3.10): for each class of element
+  // (names, identifiers, dates and times, UIDs, private elements, pixels,
+  // the rest), which elements each action is given to, from the expanded
+  // rules; the sentences that hold for the whole profile (the default for
+  // an element no rule names, the largest date shift, what the engine
+  // never keeps whatever the rules say); and the record every file it
+  // makes carries: the PS3.16 CID 7050 codes the version claims in
+  // De-identification Method Code Sequence (0012,0064) with their
+  // meanings, the values of De-identification Method (0012,0063) this
+  // server writes for a file no pixel rule changed, Patient Identity
+  // Removed (0012,0062), and Longitudinal Temporal Information Modified
+  // (0028,0303) as the dates option sets it. The classes are judged from
+  // each rule's selector and VRs, not from a file: a rule over a group, a
+  // VR or a value pattern is listed by what it selects, and which rule
+  // decides one element of a file is ExplainProfile's answer.
+  //
+  // Role: operator on the tenant.
+  // Audit: one entry in the tenant's log, with the profile version (or the
+  // unsaved document's checksum) as its object.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant
+  // that does not exist, for a caller who may not list every tenant),
+  // invalid (no profile; a document with a problem, with every problem as
+  // a ProfileProblems detail; a malformed name, a negative version), not
+  // found (a profile or version the tenant does not have; a tenant that
+  // does not exist, for a caller who may list every tenant), precondition
+  // (a stored version this server cannot run), unavailable (the tenant's
+  // database does not answer, or the tenant is not ready).
+  rpc DescribeProfile(DescribeProfileRequest) returns (DescribeProfileResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
 }
 
 // ProfileDocument is a de-identification profile as a person writes it: its
@@ -2101,4 +2134,146 @@ message ProfileEffectChange {
   // meets more than one rule's conditions, another rule wins. when, from
   // and to are then empty.
   bool order_changed = 7;
+}
+
+// DescribeProfileRequest names the profile to describe.
+message DescribeProfileRequest {
+  // The tenant, by name. Required.
+  string tenant = 1;
+
+  // The profile: a stored version or an unsaved document. Required.
+  TrialProfile profile = 2;
+}
+
+// DescribeProfileResponse is what a profile does, in plain terms, and the
+// record of it each file carries.
+message DescribeProfileResponse {
+  // The stored version described, without its document and expanded
+  // form; absent for a document.
+  ProfileVersion version = 1;
+
+  // The checksum of the expanded form described.
+  string checksum = 2;
+
+  // For each class that any rule acts on, in the order of
+  // ProfileElementClass, what is done to its elements.
+  repeated ProfileClassEffects classes = 3;
+
+  // Sentences that hold for the whole profile, in plain words.
+  repeated string notes = 4;
+
+  // The record of the de-identification each file carries.
+  ProfileMethod method = 5;
+}
+
+// ProfileElementClass is a class of element a description groups the
+// rules by.
+enum ProfileElementClass {
+  // Never answered.
+  PROFILE_ELEMENT_CLASS_UNSPECIFIED = 0;
+
+  // Names of persons: elements of VR PN.
+  PROFILE_ELEMENT_CLASS_NAMES = 1;
+
+  // Identifiers, addresses and telephone numbers: the standard elements
+  // whose keyword names an ID, an identifier, a number given to a
+  // patient, study or request, an address or a telephone (such as
+  // PatientID, AccessionNumber, InstitutionAddress), other than PN and UI.
+  PROFILE_ELEMENT_CLASS_IDENTIFIERS = 2;
+
+  // Dates and times: elements of VR DA, DT and TM, and ages (AS).
+  PROFILE_ELEMENT_CLASS_DATES = 3;
+
+  // UIDs: elements of VR UI.
+  PROFILE_ELEMENT_CLASS_UIDS = 4;
+
+  // Private elements (an odd group, PS3.5 7.8).
+  PROFILE_ELEMENT_CLASS_PRIVATE = 5;
+
+  // The pixels: the pixel rules.
+  PROFILE_ELEMENT_CLASS_PIXELS = 6;
+
+  // Every other element a rule names or selects: descriptions, comments,
+  // device and protocol attributes, sequences.
+  PROFILE_ELEMENT_CLASS_OTHER = 7;
+}
+
+// ProfileClassEffects is what a profile does to one class of element.
+message ProfileClassEffects {
+  // The class.
+  ProfileElementClass class = 1;
+
+  // One entry for each action given to the class, in the order of
+  // ProfileAction's fields (pixel rules: redact, detect, accept).
+  repeated ProfileClassEffect effects = 2;
+}
+
+// ProfileClassEffect is one action and the elements of a class it is
+// given to.
+message ProfileClassEffect {
+  // The action, as ProfileAction's field names it ("remove", "keep",
+  // "uid", "shift", ...), or a pixel rule's ("redact", "detect",
+  // "accept").
+  string action = 1;
+
+  // What the action is given to, in the order of the rules: an element's
+  // keyword (its tag where it has none), or what a wider selector selects
+  // ("every DA element", "group 0010", "private 'SIEMENS CSA HEADER'
+  // 0010", "a value matching a pattern among PN, LO"), or a pixel rule's
+  // name (its position where it has none). At most 64; elements_omitted
+  // counts the rest.
+  repeated string elements = 2;
+
+  // How many more there are than elements holds.
+  int32 elements_omitted = 3;
+
+  // Whether a rule among these holds only under its conditions (a
+  // modality, a manufacturer, a receiver, ...), so the action is not given
+  // in every file.
+  bool conditional = 4;
+}
+
+// ProfileMethod is the record of the de-identification a profile's files
+// carry (PS3.15 E.1.1, E.3.6).
+message ProfileMethod {
+  // The PS3.16 CID 7050 codes the version claims, written in
+  // De-identification Method Code Sequence (0012,0064) of every file: one
+  // for each PS3.15 Annex E profile and option it is built on. Empty when
+  // it is built on none, or when withheld says why none is claimed. The
+  // Clean Pixel Data Option's code is added in a file a pixel rule filled,
+  // and only there.
+  repeated MethodCode codes = 1;
+
+  // Why no code is claimed though the version is built on an Annex E
+  // base: its own rules keep what a base changes or removes, so the codes
+  // would claim what its files are not. Empty otherwise.
+  string withheld = 2;
+
+  // The values of De-identification Method (0012,0063) this server writes
+  // in a file no pixel rule changed: the codes' meanings, then the profile
+  // version, then this server's version and its DICOM library's. A file a
+  // detect rule looked at carries one more value, after the meanings,
+  // saying the redaction was automatic and unverified.
+  repeated string method_values = 3;
+
+  // The value of Patient Identity Removed (0012,0062): YES.
+  string identity_removed = 4;
+
+  // The value of Longitudinal Temporal Information Modified (0028,0303)
+  // the dates option writes in every file (UNMODIFIED or MODIFIED); empty
+  // when the profile names no dates option, in which case MODIFIED is
+  // written only in a file where a date was shifted.
+  string temporal_modified = 5;
+}
+
+// MethodCode is one code of a coding scheme (PS3.3 8.8).
+message MethodCode {
+  // Code Value (0008,0100).
+  string value = 1;
+
+  // Coding Scheme Designator (0008,0102).
+  string scheme = 2;
+
+  // Code Meaning (0008,0104).
+  string meaning = 3;
 }

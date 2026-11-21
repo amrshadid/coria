@@ -28,6 +28,10 @@ type run struct {
 	count    int
 	// shift is the subject's date shift in days, 0 until a date needs it.
 	shift int
+	// subject is Reception.Subject: the subject a job over an archive
+	// gives, keying the shift in place of the Patient ID; empty for a
+	// reception.
+	subject string
 	// assigns are the lookups whose code the table assigns on first sight,
 	// asked for only once the whole plan has succeeded, so a file refused
 	// for another reason takes no code from a table.
@@ -305,6 +309,13 @@ func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement
 			c.byRule, c.rule = false, ""
 		}
 	}
+	// The floor goes first: what it covers it removes.
+	if ra, remapped := vocabularyRemap(uint32(t), act); remapped && !c.floor {
+		act = ra
+		e.Action, e.Rule, e.RuleName, e.Origin, e.PatternMatches = ra.Kind.String(), -1, "", "", 0
+		e.Reason = "a vocabulary's UID that is not public may name the institution, so it is remapped unless the standard registers it (PS3.16 8)"
+		c.byRule, c.rule = false, ""
+	}
 	c.seq, _ = elem.GetValue().(*sequence.Sequence)
 	c.unItems = unItems
 	if act.Kind == ActKeep && vr == "UN" && creator != "" && !c.floor {
@@ -491,6 +502,9 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 			if floor {
 				act, _ = floorAction(act, t.Group()%2 == 1)
 			}
+			if !floor {
+				act, _ = vocabularyRemap(uint32(t), act)
+			}
 			if (floor || dec.Rule >= 0) && changesValue(act, vr, value) {
 				r.needle(needleKindOf(uint32(t), nvr, basisOf(act)), nvr, value, p)
 			}
@@ -553,7 +567,10 @@ func (r *run) shiftDays(path, rule string) (int, error) {
 	if r.shift > 0 {
 		return r.shift, nil
 	}
-	id, ok := topText(r.top, tagPatientID)
+	id, ok := r.subject, r.subject != ""
+	if !ok {
+		id, ok = topText(r.top, tagPatientID)
+	}
 	if !ok || id == "" {
 		return 0, &Failure{Cause: CauseNoSubject, Path: path, Rule: rule}
 	}

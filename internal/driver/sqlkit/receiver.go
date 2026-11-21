@@ -3,8 +3,11 @@ package sqlkit
 import (
 	"context"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
@@ -64,6 +67,8 @@ type conditionConfig struct {
 // column holds it; the empty text for nothing of its own.
 type receptionRouteConfig struct {
 	ReleasedStorage   string   `json:"released_storage,omitempty"`
+	ReleasedProfile   string   `json:"released_profile,omitempty"`
+	ReleasedVersion   int32    `json:"released_version,omitempty"`
 	Route             string   `json:"route,omitempty"`
 	Profile           string   `json:"profile,omitempty"`
 	Version           int32    `json:"version,omitempty"`
@@ -77,7 +82,8 @@ func ReceptionRouteText(r tenant.ReceptionRoute) (string, error) {
 	if r.IsZero() {
 		return "", nil
 	}
-	return JSONText(receptionRouteConfig{ReleasedStorage: r.ReleasedStorage, Route: r.Route, Profile: r.Profile.Name,
+	return JSONText(receptionRouteConfig{ReleasedStorage: r.ReleasedStorage, ReleasedProfile: r.ReleasedProfile.Name,
+		ReleasedVersion: r.ReleasedProfile.Version, Route: r.Route, Profile: r.Profile.Name,
 		Version: r.Profile.Version, ReplacesForwardTo: r.ReplacesForwardTo, ForwardTo: r.ForwardTo})
 }
 
@@ -91,9 +97,67 @@ func ReadReceptionRoute(text string) (tenant.ReceptionRoute, error) {
 	if err := FromJSON(text, &c); err != nil {
 		return tenant.ReceptionRoute{}, err
 	}
-	return tenant.ReceptionRoute{ReleasedStorage: c.ReleasedStorage, Route: c.Route,
+	return tenant.ReceptionRoute{ReleasedStorage: c.ReleasedStorage,
+		ReleasedProfile: tenant.ProfileRef{Name: c.ReleasedProfile, Version: c.ReleasedVersion}, Route: c.Route,
 		Profile: tenant.ProfileRef{Name: c.Profile, Version: c.Version}, ReplacesForwardTo: c.ReplacesForwardTo,
 		ForwardTo: c.ForwardTo}, nil
+}
+
+// ReleasedRoute returns the route a reception still receiving keeps once a
+// release into it names storage and profile (tenant.Release), each "" or
+// zero for none, and whether it changed. A reception that keeps another
+// storage or profile version a release named is a precondition failure:
+// two people's decisions differ, and the later is not taken silently.
+func ReleasedRoute(r tenant.ReceptionRoute, storage string, profile tenant.ProfileRef) (tenant.ReceptionRoute, bool, error) {
+	changed := false
+	if storage != "" {
+		switch r.ReleasedStorage {
+		case storage:
+		case "":
+			r.ReleasedStorage, changed = storage, true
+		default:
+			return r, false, tenant.Precondition("a release into the reception this file joins named the storage " + r.ReleasedStorage +
+				"; release it naming the same storage, or none")
+		}
+	}
+	if !profile.IsZero() {
+		switch r.ReleasedProfile {
+		case profile:
+		case tenant.ProfileRef{}:
+			r.ReleasedProfile, changed = profile, true
+		default:
+			return r, false, tenant.Precondition("a release into the reception this file joins named the profile version " + r.ReleasedProfile.String() +
+				"; release it naming the same version, or none")
+		}
+	}
+	return r, changed, nil
+}
+
+// ProfileRefText returns the text a column holding one profile version
+// keeps: name@version, empty for the zero version.
+func ProfileRefText(r tenant.ProfileRef) string {
+	if r.IsZero() {
+		return ""
+	}
+	return r.String()
+}
+
+// ReadProfileRef returns the profile version a column's text holds, as
+// ProfileRefText wrote it.
+func ReadProfileRef(text string) (tenant.ProfileRef, error) {
+	if text == "" {
+		return tenant.ProfileRef{}, nil
+	}
+	name, num, ok := strings.Cut(text, "@")
+	n, err := strconv.ParseInt(num, 10, 32)
+	if !ok || err != nil {
+		return tenant.ProfileRef{}, fault.New(fault.Internal, "a stored profile version is not name@version")
+	}
+	r := tenant.ProfileRef{Name: name, Version: int32(n)}
+	if err := r.Validate(); err != nil {
+		return tenant.ProfileRef{}, fault.Wrap(fault.Internal, err, "a stored profile version is not valid")
+	}
+	return r, nil
 }
 
 // callerRuleConfig is one caller a DIMSE receiver accepts.

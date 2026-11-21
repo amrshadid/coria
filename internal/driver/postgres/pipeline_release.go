@@ -88,6 +88,9 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		if err != nil {
 			return err
 		}
+		if err := tenant.ReleaseAllowed(q, rel, deidentifies); err != nil {
+			return err
+		}
 		if rel.Storage != "" {
 			// The storage named is held to the commit, so its removal
 			// cannot pass the release unseen.
@@ -104,10 +107,8 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 			}
 			events = openEvents
 			joined = r.ID
-			if rel.Storage != "" {
-				if err := setReleasedStorage(ctx, tx, r, rel.Storage); err != nil {
-					return err
-				}
+			if err := setReleased(ctx, tx, r, rel.Storage, rel.Profile); err != nil {
+				return err
 			}
 			f := tenant.ReceivedFile{ReceptionID: r.ID, SOPInstanceUID: q.SOPInstanceUID, SHA256: q.SHA256, SeriesUID: q.SeriesUID,
 				StudyUID: q.StudyUID, SOPClassUID: q.SOPClassUID, TransferSyntaxUID: q.TransferSyntaxUID, Size: q.Size,
@@ -141,9 +142,9 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		// The record's state is in the statement that changes it, as well
 		// as locked above, so two decisions at once make one.
 		n, err := rowsChanged(tx.Exec(ctx, `UPDATE quarantine SET state = 'released', content_kept = false, decided_at = $1,
-			release_mode = $2, release_reception = $3, release_receiver = $4, release_reason = $5, release_storage = $7
-			WHERE id = $6 AND state = 'held'`,
-			micros(now), string(mode), joined, via, rel.Reason, id, rel.Storage))
+			release_mode = $2, release_reception = $3, release_receiver = $4, release_reason = $5, release_storage = $7,
+			release_profile = $8 WHERE id = $6 AND state = 'held'`,
+			micros(now), string(mode), joined, via, rel.Reason, id, rel.Storage, sqlkit.ProfileRefText(rel.Profile)))
 		if err != nil {
 			return err
 		}
@@ -269,21 +270,17 @@ func (t *Tenant) RejectQuarantined(ctx context.Context, id, reason string, now t
 	return out, nil
 }
 
-// setReleasedStorage keeps, with a reception still receiving, the storage a
-// release into it named (tenant.Release.Storage); its identify step
-// archives a new session there. A reception that keeps another storage a
-// release named is a precondition failure: two people's decisions differ,
-// and the later is not taken silently.
-func setReleasedStorage(ctx context.Context, tx pgx.Tx, r tenant.Reception, storage string) error {
-	switch r.Route.ReleasedStorage {
-	case storage:
-		return nil
-	case "":
-	default:
-		return tenant.Precondition("a release into the reception this file joins named the storage " + r.Route.ReleasedStorage +
-			"; release it naming the same storage, or none")
+// setReleased keeps, with a reception still receiving, the storage and the
+// profile version a release into it named (tenant.Release.Storage and
+// Profile); its identify step archives a new session on that storage, and
+// its archive step de-identifies with that version. One that keeps another
+// a release named is a precondition failure (sqlkit.ReleasedRoute).
+func setReleased(ctx context.Context, tx pgx.Tx, r tenant.Reception, storage string, profile tenant.ProfileRef) error {
+	route, changed, err := sqlkit.ReleasedRoute(r.Route, storage, profile)
+	if err != nil || !changed {
+		return err
 	}
-	text, err := sqlkit.ReceptionRouteText(tenant.ReceptionRoute{ReleasedStorage: storage})
+	text, err := sqlkit.ReceptionRouteText(route)
 	if err != nil {
 		return err
 	}
@@ -292,11 +289,12 @@ func setReleasedStorage(ctx context.Context, tx pgx.Tx, r tenant.Reception, stor
 	return err
 }
 
-// keepReleasedStorage keeps with a reception still receiving the storage
-// the release of a file that lands again named (tenant.ReceivedFile
-// .ReleasedStorage), unless it keeps one already.
-func keepReleasedStorage(ctx context.Context, tx pgx.Tx, receptionID, storage string) error {
-	text, err := sqlkit.ReceptionRouteText(tenant.ReceptionRoute{ReleasedStorage: storage})
+// keepReleased keeps with a reception still receiving the storage and the
+// profile version the release of a file that lands again named
+// (tenant.ReceivedFile.ReleasedStorage and ReleasedProfile), unless it
+// keeps a route already.
+func keepReleased(ctx context.Context, tx pgx.Tx, receptionID, storage string, profile tenant.ProfileRef) error {
+	text, err := sqlkit.ReceptionRouteText(tenant.ReceptionRoute{ReleasedStorage: storage, ReleasedProfile: profile})
 	if err != nil {
 		return err
 	}

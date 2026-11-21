@@ -148,6 +148,12 @@ func (r Reader) HeaderLimit(ctx context.Context) (int64, error) {
 	return typed(settings.ReceiverHeaderLimit, v, err, settings.ParseHeaderLimit)
 }
 
+// DeidMemory returns the installation's deid.memory in bytes.
+func (r Reader) DeidMemory(ctx context.Context) (int64, error) {
+	v, err := r.Installation(ctx, settings.DeidMemory)
+	return typed(settings.DeidMemory, v, err, settings.ParseDeidMemory)
+}
+
 // CORSOrigins returns the installation's api.cors-origins: the web origins
 // whose pages may call the API from a browser.
 func (r Reader) CORSOrigins(ctx context.Context) (settings.Origins, error) {

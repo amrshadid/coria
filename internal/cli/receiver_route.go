@@ -226,9 +226,12 @@ profile: a route replaces the profile, never turns de-identification off.
 
 Every change reads the receiver, changes its routes, and writes them back only
 if nobody changed the receiver meanwhile; otherwise it is refused (exit 5)
-and changes nothing, and is run again. Changing needs the admin role on the
+and changes nothing, and is run again. export writes the routing to a file
+with the time the receiver was last changed, and import writes such a file
+back whole, only if the receiver has not changed since the export. Changing needs the admin role on the
 tenant; list needs reader.`,
-		a.newRouteList(), a.newRouteAdd(), a.newRouteSet(), a.newRouteRemove(), a.newRouteMove(), a.newRouteDefault())
+		a.newRouteList(), a.newRouteAdd(), a.newRouteSet(), a.newRouteRemove(), a.newRouteMove(), a.newRouteDefault(),
+		a.newRouteExport(), a.newRouteImport())
 }
 
 // changeRouting reads a receiver, lets change edit its routing, and writes

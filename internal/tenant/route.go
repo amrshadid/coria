@@ -376,6 +376,12 @@ type ReceptionRoute struct {
 	// there; the routes still choose the profile and the senders. Empty
 	// when no release named one.
 	ReleasedStorage string
+	// ReleasedProfile is the profile version a release named for the
+	// reception's files (Release.Profile): it de-identifies them in place
+	// of the route's or the receiver's, while the receiver de-identifies
+	// (ProfileFor). Kept with the reception only, never taken by a later
+	// arrival of the session. Zero when no release named one.
+	ReleasedProfile ProfileRef
 	// Route names the route that chose, empty when none did.
 	Route string
 	// Profile, when not zero, is the profile version its files are
@@ -391,13 +397,18 @@ type ReceptionRoute struct {
 
 // IsZero reports whether the reception's routing chose nothing of its own.
 func (r ReceptionRoute) IsZero() bool {
-	return r.ReleasedStorage == "" && r.Route == "" && r.Profile.IsZero() && !r.ReplacesForwardTo && len(r.ForwardTo) == 0
+	return r.ReleasedStorage == "" && r.ReleasedProfile.IsZero() && r.Route == "" && r.Profile.IsZero() && !r.ReplacesForwardTo && len(r.ForwardTo) == 0
 }
 
 // Validate returns an Invalid error unless r can be stored.
 func (r ReceptionRoute) Validate() error {
 	if r.ReleasedStorage != "" {
 		if err := ValidateName("storage", r.ReleasedStorage); err != nil {
+			return err
+		}
+	}
+	if !r.ReleasedProfile.IsZero() {
+		if err := r.ReleasedProfile.Validate(); err != nil {
 			return err
 		}
 	}
@@ -444,12 +455,19 @@ func (r ReceptionRoute) Senders(rcv Receiver) []string {
 }
 
 // ProfileFor returns the profile version a reception's files are
-// de-identified with at receiver rcv: its route's, or the receiver's. A
-// route's profile applies only while the receiver de-identifies: a
-// receiver changed to archive as received meanwhile lands its files as
-// received, and a file landed so is never de-identified by a route.
+// de-identified with at receiver rcv: the one a release into it named, its
+// route's, or the receiver's. A released or a route's profile applies only
+// while the receiver de-identifies: a receiver changed to archive as
+// received meanwhile lands its files as received, and a file landed so is
+// never de-identified by a release or a route.
 func (r ReceptionRoute) ProfileFor(rcv Receiver) ProfileRef {
-	if !r.Profile.IsZero() && rcv.Deidentifies() {
+	if !rcv.Deidentifies() {
+		return rcv.Profile
+	}
+	if !r.ReleasedProfile.IsZero() {
+		return r.ReleasedProfile
+	}
+	if !r.Profile.IsZero() {
 		return r.Profile
 	}
 	return rcv.Profile

@@ -48,7 +48,9 @@ type Runner interface {
 // newReception returns the supervisor of every tenant's receivers and
 // reception pipeline, over the registry's tenants. forwarded is told of a
 // tenant whose reception reached done, which may have made forward jobs.
-func newReception(d Deps, reg *registry.Registry, wake, forwarded func(tenantName string), stowReceivers *stow.Directory) (*supervise.Supervisor, error) {
+// memory is the server's bound on de-identification's memory, which every
+// pipeline's check after takes its copy of a file from.
+func newReception(d Deps, reg *registry.Registry, wake, forwarded func(tenantName string), stowReceivers *stow.Directory, memory check.Memory) (*supervise.Supervisor, error) {
 	incomingRoot := filepath.Join(d.DataDir, IncomingDirName)
 	if err := os.MkdirAll(incomingRoot, 0o700); err != nil {
 		return nil, fault.Wrap(fault.Unavailable, err, "the incoming area cannot be made in the data directory")
@@ -93,7 +95,7 @@ func newReception(d Deps, reg *registry.Registry, wake, forwarded func(tenantNam
 				// first file comes and kept by the pipeline; never logged.
 				DeidKeys: func(ctx context.Context) (engine.Keys, error) { return reg.DeidKeys(ctx, name) },
 				Check: func(maxFileBytes int64) receive.Checker {
-					return check.New(check.Options{MaxFileBytes: maxFileBytes})
+					return check.New(check.Options{MaxFileBytes: maxFileBytes, Memory: memory})
 				},
 			})
 			if err != nil {

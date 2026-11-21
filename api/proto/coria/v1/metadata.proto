@@ -5,6 +5,8 @@ syntax = "proto3";
 // access.proto.
 package coria.v1;
 
+import "coria/v1/profile.proto";
+
 // MetadataService answers the DICOM headers of what a tenant holds: every
 // attribute of an instance but its bulk data, in the DICOM JSON model
 // (PS3.18 Annex F), the form DICOMweb's metadata answers take, so a client
@@ -152,6 +154,11 @@ message InstanceMetadata {
   // dicom_json, attribute and all, because its file is in the deflated
   // transfer syntax, where no offset names them.
   bool bulk_data_omitted = 6;
+
+  // The profile version that de-identified the instance, as its catalog
+  // row recorded it when it was archived; absent for an instance archived
+  // as received.
+  ProfileVersionName profile = 7;
 }
 
 // GetScanMetadataRequest names a scan and the page of its instances.

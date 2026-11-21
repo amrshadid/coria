@@ -331,6 +331,9 @@ type QuarantinedFile struct {
 	// ReleaseStorage is the storage its release named (Release.Storage),
 	// empty when it named none.
 	ReleaseStorage string
+	// ReleaseProfile is the profile version its release named
+	// (Release.Profile), zero when it named none.
+	ReleaseProfile ProfileRef
 	// RejectReason is why it was rejected.
 	RejectReason string
 	// ReleaseReason is why it was released, as the person gave it; empty
@@ -460,12 +463,43 @@ func (q QuarantinedFile) Receivable() bool {
 // original's UIDs and checksum, which a row of a receiver that
 // de-identifies must never hold; it joins nothing, and the pipeline checks
 // its bytes again as a file that just arrived, which records it remapped
-// and keyed, and so de-identifies it. A record made de-identified joins
-// wherever it is released, with its flag: at a receiver that archives as
-// received now it is held (deid_failed, no_profile), never archived as it
+// and keyed, and so de-identifies it. A record made de-identified is
+// released only through a receiver that de-identifies (ReleasableAt) and
+// joins with its flag; a receiver changed to archive as received after
+// the release holds it (deid_failed, no_profile), never archives it as it
 // was.
 func (q QuarantinedFile) JoinsAt(deidentifies bool) bool {
 	return q.Receivable() && (q.Deidentified || !deidentifies)
+}
+
+// ReleasableAt returns a precondition failure when q may not be released
+// through a receiver that de-identifies (deidentifies) or not, nil
+// otherwise: a record made at a receiver that de-identifies is released
+// only through one that does. Released through one that archives as
+// received, a file that joins no reception (a header past the bound, not
+// DICOM, a placing UID missing) would land again under it and be archived
+// as it was received, identified.
+func (q QuarantinedFile) ReleasableAt(deidentifies bool) error {
+	if q.Deidentified && !deidentifies {
+		return Precondition("a file held at a receiver that de-identifies is released only through one that does")
+	}
+	return nil
+}
+
+// ReleaseAllowed returns a precondition failure when rel may not release q
+// through a receiver that de-identifies (deidentifies) or not, nil
+// otherwise: q is not releasable there (QuarantinedFile.ReleasableAt), or
+// rel names a profile version and the receiver archives as received (a
+// version named replaces a profile; it never turns de-identification on,
+// since the receiver's choice decided how the file landed).
+func ReleaseAllowed(q QuarantinedFile, rel Release, deidentifies bool) error {
+	if err := q.ReleasableAt(deidentifies); err != nil {
+		return err
+	}
+	if !rel.Profile.IsZero() && !deidentifies {
+		return Precondition("a release names a profile version only through a receiver that de-identifies")
+	}
+	return nil
 }
 
 // HeldBytes is what a record adds to the quarantine's held bytes: its size

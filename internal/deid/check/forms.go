@@ -30,6 +30,10 @@ const (
 	// modeDigits: matched only with no digit beside it
 	// (engine.EdgeDigits).
 	modeDigits
+	// modeIdentifier: an identifier of words (engine.EdgeIdentifier,
+	// engine.IdentifierEdge): on a side where it ends in a letter, no
+	// letter or "_" beside it; on one where it ends in a digit, as plain.
+	modeIdentifier
 	// modeUID: as plain, and not preceded by a digit and a dot, which
 	// would make it the end of another UID. A dot and digits after it are
 	// a finding: a UID made by appending to the original shows the
@@ -150,6 +154,8 @@ func modeOf(e engine.Edge, anyMode mode) mode {
 		return modeWord
 	case engine.EdgeDigits:
 		return modeDigits
+	case engine.EdgeIdentifier:
+		return modeIdentifier
 	}
 	return anyMode
 }

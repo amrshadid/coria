@@ -40,6 +40,7 @@ func runPipeline(t *testing.T, open OpenPipeline) {
 		{"STOWReceivers", testSTOWReceivers},
 		{"ReceiverDeidentification", testReceiverDeidentification},
 		{"DeidentifiedRows", testDeidentifiedRows},
+		{"ReleasedProfile", testReleasedProfile},
 		{"EndpointSpelling", testEndpointSpelling},
 		{"ConfigPagingWithDeletes", testConfigPagingWithDeletes},
 		{"OpenReception", testOpenReception},

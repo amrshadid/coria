@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strconv"
 
 	connect "connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectproto"
@@ -286,4 +287,46 @@ func passThrough(err error) (*connect.Error, bool) {
 		return ce, true
 	}
 	return nil, false
+}
+
+// DescribeProfile describes a stored version or a document with the real
+// language; the method record holds the codes the version's bases claim,
+// with no software versions (the fake runs no engine).
+func (h profileHandler) DescribeProfile(_ context.Context, req *v1.DescribeProfileRequest) (*v1.DescribeProfileResponse, error) {
+	s := h.s
+	err := s.begin(req.GetTenant())
+	defer s.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	s.prof.ensure()
+	out := &v1.DescribeProfileResponse{}
+	var e *v1.ExpandedProfile
+	method := ""
+	switch k := req.GetProfile().GetKind().(type) {
+	case *v1.TrialProfile_Version:
+		v, err := s.version(req.GetTenant(), k.Version.GetName(), k.Version.GetVersion())
+		if err != nil {
+			return nil, err
+		}
+		e, out.Version, out.Checksum = v.GetExpanded(), shown(v, 0, false), v.GetChecksum()
+		method = v.GetName() + "@" + strconv.Itoa(int(v.GetVersion()))
+	case *v1.TrialProfile_Document:
+		var ps profile.Problems
+		if e, ps = profile.Expand(k.Document, profile.Shipped()); len(ps) > 0 {
+			return nil, problemsRefusal(ps)
+		}
+		_, out.Checksum, _ = profile.Checksum(e)
+		method = "unsaved " + out.Checksum[:16]
+	default:
+		return nil, fault.New(fault.Invalid, "profile: is required: a stored version or a document")
+	}
+	out.Classes, out.Notes = profile.Describe(e), profile.DescribeNotes(e)
+	out.Method = &v1.ProfileMethod{IdentityRemoved: "YES"}
+	for _, c := range profile.MethodCodes(e.GetBases()) {
+		out.Method.Codes = append(out.Method.Codes, &v1.MethodCode{Value: c.Value, Scheme: "DCM", Meaning: c.Meaning})
+		out.Method.MethodValues = append(out.Method.MethodValues, c.Meaning)
+	}
+	out.Method.MethodValues = append(out.Method.MethodValues, method)
+	return out, nil
 }

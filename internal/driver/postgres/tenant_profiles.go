@@ -57,3 +57,13 @@ func (t *Tenant) LookupCode(ctx context.Context, k tenant.LookupKey) (string, bo
 func (t *Tenant) AssignLookupCodes(ctx context.Context, keys []tenant.LookupKey, now time.Time) ([]string, error) {
 	return t.deidentification().AssignLookupCodes(ctx, keys, now)
 }
+
+// ImportLookupCodes implements tenant.LookupImports.
+func (t *Tenant) ImportLookupCodes(ctx context.Context, table string, entries []tenant.LookupEntry, now time.Time, audit master.AuditEntry, guard tenant.Guard) (tenant.LookupImport, error) {
+	return t.deidentification().ImportLookupCodes(ctx, table, entries, now, audit, guard)
+}
+
+// ListLookupTables implements tenant.LookupImports.
+func (t *Tenant) ListLookupTables(ctx context.Context, page master.Page) ([]tenant.LookupTableCount, string, error) {
+	return t.deidentification().ListLookupTables(ctx, page)
+}

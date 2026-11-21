@@ -1,3 +1,4 @@
+from coria.v1 import profile_pb2 as _profile_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
@@ -7,20 +8,22 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class InstanceMetadata(_message.Message):
-    __slots__ = ("instance_id", "sop_instance_uid", "dicom_json", "json_too_large", "transfer_syntax_uid", "bulk_data_omitted")
+    __slots__ = ("instance_id", "sop_instance_uid", "dicom_json", "json_too_large", "transfer_syntax_uid", "bulk_data_omitted", "profile")
     INSTANCE_ID_FIELD_NUMBER: _ClassVar[int]
     SOP_INSTANCE_UID_FIELD_NUMBER: _ClassVar[int]
     DICOM_JSON_FIELD_NUMBER: _ClassVar[int]
     JSON_TOO_LARGE_FIELD_NUMBER: _ClassVar[int]
     TRANSFER_SYNTAX_UID_FIELD_NUMBER: _ClassVar[int]
     BULK_DATA_OMITTED_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_FIELD_NUMBER: _ClassVar[int]
     instance_id: str
     sop_instance_uid: str
     dicom_json: str
     json_too_large: bool
     transfer_syntax_uid: str
     bulk_data_omitted: bool
-    def __init__(self, instance_id: _Optional[str] = ..., sop_instance_uid: _Optional[str] = ..., dicom_json: _Optional[str] = ..., json_too_large: _Optional[bool] = ..., transfer_syntax_uid: _Optional[str] = ..., bulk_data_omitted: _Optional[bool] = ...) -> None: ...
+    profile: _profile_pb2.ProfileVersionName
+    def __init__(self, instance_id: _Optional[str] = ..., sop_instance_uid: _Optional[str] = ..., dicom_json: _Optional[str] = ..., json_too_large: _Optional[bool] = ..., transfer_syntax_uid: _Optional[str] = ..., bulk_data_omitted: _Optional[bool] = ..., profile: _Optional[_Union[_profile_pb2.ProfileVersionName, _Mapping]] = ...) -> None: ...
 
 class GetScanMetadataRequest(_message.Message):
     __slots__ = ("tenant", "subject_label", "session_label", "scan_label", "page_size", "page_token")

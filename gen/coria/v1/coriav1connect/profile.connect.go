@@ -53,6 +53,9 @@ const (
 	// ProfileServiceDiffProfileVersionsProcedure is the procedure name of the ProfileService's
 	// DiffProfileVersions RPC.
 	ProfileServiceDiffProfileVersionsProcedure = "/coria.v1.ProfileService/DiffProfileVersions"
+	// ProfileServiceDescribeProfileProcedure is the procedure name of the ProfileService's
+	// DescribeProfile RPC.
+	ProfileServiceDescribeProfileProcedure = "/coria.v1.ProfileService/DescribeProfile"
 )
 
 var (
@@ -125,6 +128,14 @@ var (
 			StreamType:       connect.StreamTypeUnary,
 			Schema:           v1.File_coria_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("DiffProfileVersions"),
 			Procedure:        ProfileServiceDiffProfileVersionsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	profileServiceDescribeProfileSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("DescribeProfile"),
+			Procedure:        ProfileServiceDescribeProfileProcedure,
 			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
@@ -332,6 +343,36 @@ type ProfileServiceClient interface {
 	// a caller who may list every tenant), unavailable (the tenant's
 	// database does not answer, or the tenant is not ready).
 	DiffProfileVersions(context.Context, *v1.DiffProfileVersionsRequest) (*v1.DiffProfileVersionsResponse, error)
+	// DescribeProfile says what a stored version (or an unsaved document)
+	// does, for a person and for the method section of a DICOM Conformance
+	// Statement (PS3.15 E.3.5, E.3.6, E.3.10): for each class of element
+	// (names, identifiers, dates and times, UIDs, private elements, pixels,
+	// the rest), which elements each action is given to, from the expanded
+	// rules; the sentences that hold for the whole profile (the default for
+	// an element no rule names, the largest date shift, what the engine
+	// never keeps whatever the rules say); and the record every file it
+	// makes carries: the PS3.16 CID 7050 codes the version claims in
+	// De-identification Method Code Sequence (0012,0064) with their
+	// meanings, the values of De-identification Method (0012,0063) this
+	// server writes for a file no pixel rule changed, Patient Identity
+	// Removed (0012,0062), and Longitudinal Temporal Information Modified
+	// (0028,0303) as the dates option sets it. The classes are judged from
+	// each rule's selector and VRs, not from a file: a rule over a group, a
+	// VR or a value pattern is listed by what it selects, and which rule
+	// decides one element of a file is ExplainProfile's answer.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the profile version (or the
+	// unsaved document's checksum) as its object.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant
+	// that does not exist, for a caller who may not list every tenant),
+	// invalid (no profile; a document with a problem, with every problem as
+	// a ProfileProblems detail; a malformed name, a negative version), not
+	// found (a profile or version the tenant does not have; a tenant that
+	// does not exist, for a caller who may list every tenant), precondition
+	// (a stored version this server cannot run), unavailable (the tenant's
+	// database does not answer, or the tenant is not ready).
+	DescribeProfile(context.Context, *v1.DescribeProfileRequest) (*v1.DescribeProfileResponse, error)
 }
 
 // NewProfileServiceClient constructs a client for the coria.v1.ProfileService service. Multiple
@@ -542,6 +583,36 @@ type ProfileServiceHandler interface {
 	// a caller who may list every tenant), unavailable (the tenant's
 	// database does not answer, or the tenant is not ready).
 	DiffProfileVersions(context.Context, *v1.DiffProfileVersionsRequest) (*v1.DiffProfileVersionsResponse, error)
+	// DescribeProfile says what a stored version (or an unsaved document)
+	// does, for a person and for the method section of a DICOM Conformance
+	// Statement (PS3.15 E.3.5, E.3.6, E.3.10): for each class of element
+	// (names, identifiers, dates and times, UIDs, private elements, pixels,
+	// the rest), which elements each action is given to, from the expanded
+	// rules; the sentences that hold for the whole profile (the default for
+	// an element no rule names, the largest date shift, what the engine
+	// never keeps whatever the rules say); and the record every file it
+	// makes carries: the PS3.16 CID 7050 codes the version claims in
+	// De-identification Method Code Sequence (0012,0064) with their
+	// meanings, the values of De-identification Method (0012,0063) this
+	// server writes for a file no pixel rule changed, Patient Identity
+	// Removed (0012,0062), and Longitudinal Temporal Information Modified
+	// (0028,0303) as the dates option sets it. The classes are judged from
+	// each rule's selector and VRs, not from a file: a rule over a group, a
+	// VR or a value pattern is listed by what it selects, and which rule
+	// decides one element of a file is ExplainProfile's answer.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the profile version (or the
+	// unsaved document's checksum) as its object.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant
+	// that does not exist, for a caller who may not list every tenant),
+	// invalid (no profile; a document with a problem, with every problem as
+	// a ProfileProblems detail; a malformed name, a negative version), not
+	// found (a profile or version the tenant does not have; a tenant that
+	// does not exist, for a caller who may list every tenant), precondition
+	// (a stored version this server cannot run), unavailable (the tenant's
+	// database does not answer, or the tenant is not ready).
+	DescribeProfile(context.Context, *v1.DescribeProfileRequest) (*v1.DescribeProfileResponse, error)
 }
 
 // RegisterProfileServiceHandler registers svc as the coria.v1.ProfileService implementation on
@@ -558,6 +629,7 @@ func RegisterProfileServiceHandler(server *connect.Server, svc ProfileServiceHan
 		connect.Method{Spec: profileServiceTryProfileSpec(), Handler: adapter.tryProfile},
 		connect.Method{Spec: profileServiceExplainProfileSpec(), Handler: adapter.explainProfile},
 		connect.Method{Spec: profileServiceDiffProfileVersionsSpec(), Handler: adapter.diffProfileVersions},
+		connect.Method{Spec: profileServiceDescribeProfileSpec(), Handler: adapter.describeProfile},
 	)
 }
 
@@ -598,6 +670,10 @@ func (UnimplementedProfileServiceHandler) ExplainProfile(context.Context, *v1.Ex
 
 func (UnimplementedProfileServiceHandler) DiffProfileVersions(context.Context, *v1.DiffProfileVersionsRequest) (*v1.DiffProfileVersionsResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.ProfileService.DiffProfileVersions is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) DescribeProfile(context.Context, *v1.DescribeProfileRequest) (*v1.DescribeProfileResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.ProfileService.DescribeProfile is not implemented")
 }
 
 type profileServiceClient struct {
@@ -671,6 +747,14 @@ func (c *profileServiceClient) ExplainProfile(ctx context.Context, req *v1.Expla
 func (c *profileServiceClient) DiffProfileVersions(ctx context.Context, req *v1.DiffProfileVersionsRequest) (*v1.DiffProfileVersionsResponse, error) {
 	var res v1.DiffProfileVersionsResponse
 	if err := c.client.CallUnary(ctx, profileServiceDiffProfileVersionsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) DescribeProfile(ctx context.Context, req *v1.DescribeProfileRequest) (*v1.DescribeProfileResponse, error) {
+	var res v1.DescribeProfileResponse
+	if err := c.client.CallUnary(ctx, profileServiceDescribeProfileSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -780,6 +864,18 @@ func (h profileServiceHandler) diffProfileVersions(ctx context.Context, _ connec
 		return err
 	}
 	res, err := h.svc.DiffProfileVersions(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) describeProfile(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DescribeProfileRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DescribeProfile(ctx, &req)
 	if err != nil {
 		return err
 	}

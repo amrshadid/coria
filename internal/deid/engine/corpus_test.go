@@ -301,8 +301,11 @@ func writePair(t *testing.T, dir, prefix, original string, result []byte, rec *R
 	list := make([]needle, 0, len(rec.Needles))
 	for _, n := range rec.Needles {
 		nd := needle{Kind: kinds[n.Kind], Value: n.Value}
-		if n.Edge == EdgeWord {
+		switch n.Edge {
+		case EdgeWord:
 			nd.Edge = "word"
+		case EdgeIdentifier:
+			nd.Edge = "ident"
 		}
 		list = append(list, nd)
 	}

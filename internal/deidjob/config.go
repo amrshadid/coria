@@ -7,6 +7,7 @@ import (
 
 	"github.com/amrshadid/coria/internal/blob"
 	"github.com/amrshadid/coria/internal/checkedread"
+	"github.com/amrshadid/coria/internal/deid/check"
 	"github.com/amrshadid/coria/internal/deid/engine"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/receive"
@@ -117,6 +118,12 @@ type Config struct {
 	// with the API and the senders so one bound covers them all.
 	// Required.
 	Reads *checkedread.Slots
+	// Memory is the server's bound on de-identification's memory
+	// (deid.memory), shared with the reception pipelines and the API's
+	// trial runs: each instance a unit judges takes its copies from it
+	// (receive.TrialOptions.Memory). Nil bounds a unit by MaxFileBytes and
+	// MaxUnits alone.
+	Memory check.Memory
 	// Wake is called with a tenant's name after a write that may have
 	// written events of it; nil does nothing.
 	Wake func(tenantName string)

@@ -435,6 +435,9 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 		}
 		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.size, SHA256: hex.EncodeToString(wr.sum[:]),
 			TransferSyntax: h.TransferSyntaxUID}
+		if !wr.profile.IsZero() {
+			in.Profile = wr.profile.String()
+		}
 		// A deflated data set's positions count inflated bytes (PS3.5 A.5),
 		// so the sidecar's check would refuse them as outside the file and
 		// the scan could never be made; such a file has no place for its

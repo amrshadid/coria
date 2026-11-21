@@ -241,8 +241,8 @@ func (t *Tenant) AddReceivedFilesFenced(ctx context.Context, files []tenant.Rece
 				if f.Released {
 					nReleased++
 				}
-				if f.ReleasedStorage != "" {
-					if err := keepReleasedStorage(ctx, tx, id, f.ReleasedStorage); err != nil {
+				if f.ReleasedStorage != "" || !f.ReleasedProfile.IsZero() {
+					if err := keepReleased(ctx, tx, id, f.ReleasedStorage, f.ReleasedProfile); err != nil {
 						return err
 					}
 				}

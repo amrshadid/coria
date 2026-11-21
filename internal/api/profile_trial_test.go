@@ -174,10 +174,11 @@ func testTryProfile(t *testing.T) {
 	}
 
 	// A file the check after holds: residual_value, its kind and element,
-	// and the values before still answered; nothing after.
+	// and the values before still answered; nothing after. The MR's Study
+	// ID, which the profile keeps, is its Patient ID "4MR1".
 	mr := corpusFile(t, "MR_small.dcm")
-	if r := mustCall[*v1.TryProfileResponse](t, "residual", tryFiles(storedVersion("research", 1), mr)(f.as(f.lab1Operator))).GetResults()[0]; r.GetVerdict() != v1.TrialVerdict_TRIAL_VERDICT_HELD ||
-		r.GetReason() != "residual_value" || r.GetCause() != "identifier" || r.GetPath() != "00080070" ||
+	if r := mustCall[*v1.TryProfileResponse](t, "residual", tryFiles(unsaved(keepStudyID()), mr)(f.as(f.lab1Operator))).GetResults()[0]; r.GetVerdict() != v1.TrialVerdict_TRIAL_VERDICT_HELD ||
+		r.GetReason() != "residual_value" || r.GetCause() != "identifier" || r.GetPath() != "00200010" ||
 		elementAt(r, "00100010").GetBefore() != "CompressedSamples^MR1" || elementAt(r, "00100010").GetPresentAfter() {
 		t.Errorf("a residual value: %v", r)
 	}

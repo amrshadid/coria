@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // What a needle is made from. A needle is a value searched for after
 // de-identification, in the file and by clean in its free text; a value
@@ -178,6 +181,62 @@ var identifierTags = map[uint32]string{
 	0x00720071: "Selector UR Value",
 }
 
+// patientIdentifierTags are the identifiers, besides the floor's
+// (floorTags) and the sequences covered whole (wholeTags), that identify
+// the patient or the patient's encounter, order or study: the accession
+// and order numbers, the admission, service episode, procedure step,
+// study and trial subject IDs, and every issuer of an identifier. Such a
+// value is never given a word edge (wordEdgeAllowed), whatever its text:
+// a copy of it glued to other text ("MRN_SMITHJ") is how it leaks, and a
+// false hold costs less than a leak of it.
+var patientIdentifierTags = map[uint32]string{
+	0x00080050: "Accession Number",
+	0x00100021: "Issuer of Patient ID",
+	0x00120022: "Issuer of Clinical Trial Protocol ID",
+	0x00120032: "Issuer of Clinical Trial Site ID",
+	0x00120040: "Clinical Trial Subject ID",
+	0x00120041: "Issuer of Clinical Trial Subject ID",
+	0x00120042: "Clinical Trial Subject Reading ID",
+	0x00120043: "Issuer of Clinical Trial Subject Reading ID",
+	0x00120055: "Issuer of Clinical Trial Time Point ID",
+	0x00120073: "Issuer of Clinical Trial Series ID",
+	0x00200010: "Study ID",
+	0x00320012: "Study ID Issuer",
+	0x00380010: "Admission ID",
+	0x00380011: "Issuer of Admission ID",
+	0x00380060: "Service Episode ID",
+	0x00380061: "Issuer of Service Episode ID",
+	0x00400009: "Scheduled Procedure Step ID",
+	0x00400253: "Performed Procedure Step ID",
+	0x0040050A: "Specimen Accession Number",
+	0x00401001: "Requested Procedure ID",
+	0x00402016: "Placer Order Number / Imaging Service Request",
+	0x00402017: "Filler Order Number / Imaging Service Request",
+	0x40080042: "Results ID Issuer",
+	0x40080202: "Interpretation ID Issuer",
+}
+
+// wordEdgeAllowed reports whether an identifier at path (a record's path,
+// "00081115[0]/00100020") may be given a word edge: neither it nor any
+// sequence it is inside is a floor attribute, a sequence covered whole or
+// one of patientIdentifierTags.
+func wordEdgeAllowed(path string) bool {
+	for _, step := range strings.Split(path, "/") {
+		ts, _, _ := strings.Cut(step, "[")
+		t, err := strconv.ParseUint(ts, 16, 32)
+		if err != nil || len(ts) != 8 {
+			return false
+		}
+		_, floor := floorTags[uint32(t)]
+		_, whole := wholeTags[uint32(t)]
+		_, patient := patientIdentifierTags[uint32(t)]
+		if floor || whole || patient {
+			return false
+		}
+	}
+	return true
+}
+
 // coordinateTags are the GPS coordinates of PS3.15 Table E.1-1 (VR DS):
 // a latitude, a longitude or an altitude locates a place by itself, so
 // each is an identifier needle though its VR is numeric. The check after
@@ -314,7 +373,10 @@ func needleKindOf(t uint32, nvr string, basis needleBasis) NeedleKind {
 
 // needle keeps a removed or replaced value for the check after, as a
 // needle of kind (needleKindOf; 0 keeps nothing): each value of a
-// multi-valued one, and the whole. vr is the VR the value is taken as. A
+// multi-valued one, and the whole. An identifier that begins or ends with
+// words is taken only as a whole word (IdentifierEdge), unless it is, or
+// is inside, an attribute that identifies the patient (wordEdgeAllowed).
+// vr is the VR the value is taken as. A
 // registered UID is not one: it names a kind of object, stays wherever
 // else it is, and is no trace of the patient. A value of VR UN is one only
 // when it reads as text (unknownText).
@@ -333,7 +395,11 @@ func (r *run) needle(kind NeedleKind, vr, value, path string) {
 		if v == "" || (kind == NeedleUID && Registered(v)) || (temporalVRs[vr] && allZeros(v)) {
 			return
 		}
-		r.record.Needles = append(r.record.Needles, Needle{Kind: kind, Value: v, Path: path})
+		n := Needle{Kind: kind, Value: v, Path: path}
+		if kind == NeedleText && wordEdgeAllowed(path) {
+			n.Edge = IdentifierEdge(v)
+		}
+		r.record.Needles = append(r.record.Needles, n)
 	}
 	parts := strings.Split(value, `\`)
 	for _, p := range parts {

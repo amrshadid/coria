@@ -26,7 +26,13 @@ var (
 // 10.4.1); the Failed SOP Sequence (0008,1198), each refused part that has
 // UIDs to list with its Failure Reason; and the study's Retrieve URL when
 // what was stored is of one study, or of the study the request named.
-func answer(base, study string, outcomes []outcome) ([]byte, error) {
+// Without retrieve, no Retrieve URL is given, neither an instance's nor the
+// study's: a Retrieve URL says where an instance is retrieved by the UIDs
+// the answer lists (PS3.18 10.5.3), and an instance archived under remapped
+// UIDs is not retrieved by the ones the sender sent; a URL by the remapped
+// ones would hand the sender the mapping. The answer then lists each
+// stored instance by its class and the SOP Instance UID the sender sent.
+func answer(base, study string, outcomes []outcome, retrieve bool) ([]byte, error) {
 	stored, failed := sequence.New(), sequence.New()
 	studies := map[string]bool{}
 	for _, o := range outcomes {
@@ -50,6 +56,12 @@ func answer(base, study string, outcomes []outcome) ([]byte, error) {
 			continue
 		}
 		studies[o.study] = true
+		if !retrieve {
+			if err := stored.Append(item); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if err := add(item, tagRetrieveURL, dataelem.UR, base+"/studies/"+o.study+"/series/"+o.series+"/instances/"+o.instance); err != nil {
 			return nil, err
 		}
@@ -63,7 +75,7 @@ func answer(base, study string, outcomes []outcome) ([]byte, error) {
 			study = only
 		}
 	}
-	if study != "" && stored.Length() > 0 {
+	if retrieve && study != "" && stored.Length() > 0 {
 		if err := add(ds, tagRetrieveURL, dataelem.UR, base+"/studies/"+study); err != nil {
 			return nil, err
 		}

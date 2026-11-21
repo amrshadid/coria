@@ -528,6 +528,10 @@ type QuarantinedFile struct {
 	// (ReleaseQuarantinedFileRequest.storage). Empty unless it is released
 	// and a storage was named.
 	ReleaseStorage string `protobuf:"bytes,25,opt,name=release_storage,json=releaseStorage,proto3" json:"release_storage,omitempty"`
+	// The profile version its release named
+	// (ReleaseQuarantinedFileRequest.profile). Unset unless it is released
+	// and a version was named.
+	ReleaseProfile *ProfileVersionRef `protobuf:"bytes,26,opt,name=release_profile,json=releaseProfile,proto3" json:"release_profile,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -735,6 +739,13 @@ func (x *QuarantinedFile) GetReleaseStorage() string {
 		return x.ReleaseStorage
 	}
 	return ""
+}
+
+func (x *QuarantinedFile) GetReleaseProfile() *ProfileVersionRef {
+	if x != nil {
+		return x.ReleaseProfile
+	}
+	return nil
 }
 
 // ListQuarantinedFilesRequest asks for a page of a tenant's quarantined
@@ -1109,7 +1120,23 @@ type ReleaseQuarantinedFileRequest struct {
 	// keeps the storage through its new landing: the reception it joins then
 	// is archived there. The storage is recorded with the record
 	// (QuarantinedFile.release_storage) and in the release's audit entry.
-	Storage       string `protobuf:"bytes,6,opt,name=storage,proto3" json:"storage,omitempty"`
+	Storage string `protobuf:"bytes,6,opt,name=storage,proto3" json:"storage,omitempty"`
+	// The profile version the reception the file joins is de-identified
+	// with, in place of the one its route or its receiver names: a file a
+	// profile could not process (QUARANTINE_REASON_DEID_FAILED,
+	// QUARANTINE_REASON_PROFILE_REFUSED, QUARANTINE_REASON_RESIDUAL_VALUE)
+	// is released through a fixed version. Optional; when given, the
+	// request needs admin on the tenant (a version decides what leaves a
+	// file, as a receiver's does), the version must be one the tenant has
+	// and pass the checks a receiver's version passes, and the receiver the
+	// file runs by must de-identify; each is a precondition failure
+	// otherwise, and so is a version other than the one an earlier release
+	// into the same reception named. It applies to that reception's files
+	// only: a later arrival of the session goes by the session's choice. A
+	// file that joins no reception keeps it through its new landing. The
+	// version is recorded with the record (QuarantinedFile.release_profile)
+	// and in the release's audit entry.
+	Profile       *ProfileVersionRef `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1184,6 +1211,13 @@ func (x *ReleaseQuarantinedFileRequest) GetStorage() string {
 		return x.Storage
 	}
 	return ""
+}
+
+func (x *ReleaseQuarantinedFileRequest) GetProfile() *ProfileVersionRef {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
 }
 
 // ReleaseQuarantinedFileResponse is the record after the release.
@@ -1347,11 +1381,11 @@ var File_coria_v1_quarantine_proto protoreflect.FileDescriptor
 
 const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\n" +
-	"\x19coria/v1/quarantine.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"t\n" +
+	"\x19coria/v1/quarantine.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x17coria/v1/receiver.proto\"t\n" +
 	"\x06Caller\x12(\n" +
 	"\x10calling_ae_title\x18\x01 \x01(\tR\x0ecallingAeTitle\x12&\n" +
 	"\x0fcalled_ae_title\x18\x02 \x01(\tR\rcalledAeTitle\x12\x18\n" +
-	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xed\b\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xb3\t\n" +
 	"\x0fQuarantinedFile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x122\n" +
 	"\x06reason\x18\x02 \x01(\x0e2\x1a.coria.v1.QuarantineReasonR\x06reason\x12@\n" +
@@ -1381,7 +1415,8 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\rreleased_from\x18\x16 \x01(\tR\freleasedFrom\x12)\n" +
 	"\x10release_receiver\x18\x17 \x01(\tR\x0freleaseReceiver\x12%\n" +
 	"\x0erelease_reason\x18\x18 \x01(\tR\rreleaseReason\x12'\n" +
-	"\x0frelease_storage\x18\x19 \x01(\tR\x0ereleaseStorage\x1a:\n" +
+	"\x0frelease_storage\x18\x19 \x01(\tR\x0ereleaseStorage\x12D\n" +
+	"\x0frelease_profile\x18\x1a \x01(\v2\x1b.coria.v1.ProfileVersionRefR\x0ereleaseProfile\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xda\x03\n" +
@@ -1411,14 +1446,15 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file\x12\x1f\n" +
 	"\vheader_json\x18\x02 \x01(\tR\n" +
 	"headerJson\x12(\n" +
-	"\x10header_too_large\x18\x03 \x01(\bR\x0eheaderTooLarge\"\xc0\x01\n" +
+	"\x10header_too_large\x18\x03 \x01(\bR\x0eheaderTooLarge\"\xf7\x01\n" +
 	"\x1dReleaseQuarantinedFileRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12)\n" +
 	"\x04mode\x18\x03 \x01(\x0e2\x15.coria.v1.ReleaseModeR\x04mode\x12\x1a\n" +
 	"\breceiver\x18\x04 \x01(\tR\breceiver\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12\x18\n" +
-	"\astorage\x18\x06 \x01(\tR\astorage\"O\n" +
+	"\astorage\x18\x06 \x01(\tR\astorage\x125\n" +
+	"\aprofile\x18\a \x01(\v2\x1b.coria.v1.ProfileVersionRefR\aprofile\"O\n" +
 	"\x1eReleaseQuarantinedFileResponse\x12-\n" +
 	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file\"^\n" +
 	"\x1cRejectQuarantinedFileRequest\x12\x16\n" +
@@ -1493,6 +1529,7 @@ var file_coria_v1_quarantine_proto_goTypes = []any{
 	(*RejectQuarantinedFileResponse)(nil),  // 12: coria.v1.RejectQuarantinedFileResponse
 	nil,                                    // 13: coria.v1.QuarantinedFile.DetailsEntry
 	(*timestamppb.Timestamp)(nil),          // 14: google.protobuf.Timestamp
+	(*ProfileVersionRef)(nil),              // 15: coria.v1.ProfileVersionRef
 }
 var file_coria_v1_quarantine_proto_depIdxs = []int32{
 	0,  // 0: coria.v1.QuarantinedFile.reason:type_name -> coria.v1.QuarantineReason
@@ -1502,28 +1539,30 @@ var file_coria_v1_quarantine_proto_depIdxs = []int32{
 	14, // 4: coria.v1.QuarantinedFile.quarantine_time:type_name -> google.protobuf.Timestamp
 	14, // 5: coria.v1.QuarantinedFile.decide_time:type_name -> google.protobuf.Timestamp
 	2,  // 6: coria.v1.QuarantinedFile.release_mode:type_name -> coria.v1.ReleaseMode
-	1,  // 7: coria.v1.ListQuarantinedFilesRequest.state:type_name -> coria.v1.QuarantineState
-	0,  // 8: coria.v1.ListQuarantinedFilesRequest.reason:type_name -> coria.v1.QuarantineReason
-	14, // 9: coria.v1.ListQuarantinedFilesRequest.start_time:type_name -> google.protobuf.Timestamp
-	14, // 10: coria.v1.ListQuarantinedFilesRequest.end_time:type_name -> google.protobuf.Timestamp
-	4,  // 11: coria.v1.ListQuarantinedFilesResponse.files:type_name -> coria.v1.QuarantinedFile
-	4,  // 12: coria.v1.GetQuarantinedFileResponse.file:type_name -> coria.v1.QuarantinedFile
-	2,  // 13: coria.v1.ReleaseQuarantinedFileRequest.mode:type_name -> coria.v1.ReleaseMode
-	4,  // 14: coria.v1.ReleaseQuarantinedFileResponse.file:type_name -> coria.v1.QuarantinedFile
-	4,  // 15: coria.v1.RejectQuarantinedFileResponse.file:type_name -> coria.v1.QuarantinedFile
-	5,  // 16: coria.v1.QuarantineService.ListQuarantinedFiles:input_type -> coria.v1.ListQuarantinedFilesRequest
-	7,  // 17: coria.v1.QuarantineService.GetQuarantinedFile:input_type -> coria.v1.GetQuarantinedFileRequest
-	9,  // 18: coria.v1.QuarantineService.ReleaseQuarantinedFile:input_type -> coria.v1.ReleaseQuarantinedFileRequest
-	11, // 19: coria.v1.QuarantineService.RejectQuarantinedFile:input_type -> coria.v1.RejectQuarantinedFileRequest
-	6,  // 20: coria.v1.QuarantineService.ListQuarantinedFiles:output_type -> coria.v1.ListQuarantinedFilesResponse
-	8,  // 21: coria.v1.QuarantineService.GetQuarantinedFile:output_type -> coria.v1.GetQuarantinedFileResponse
-	10, // 22: coria.v1.QuarantineService.ReleaseQuarantinedFile:output_type -> coria.v1.ReleaseQuarantinedFileResponse
-	12, // 23: coria.v1.QuarantineService.RejectQuarantinedFile:output_type -> coria.v1.RejectQuarantinedFileResponse
-	20, // [20:24] is the sub-list for method output_type
-	16, // [16:20] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	15, // 7: coria.v1.QuarantinedFile.release_profile:type_name -> coria.v1.ProfileVersionRef
+	1,  // 8: coria.v1.ListQuarantinedFilesRequest.state:type_name -> coria.v1.QuarantineState
+	0,  // 9: coria.v1.ListQuarantinedFilesRequest.reason:type_name -> coria.v1.QuarantineReason
+	14, // 10: coria.v1.ListQuarantinedFilesRequest.start_time:type_name -> google.protobuf.Timestamp
+	14, // 11: coria.v1.ListQuarantinedFilesRequest.end_time:type_name -> google.protobuf.Timestamp
+	4,  // 12: coria.v1.ListQuarantinedFilesResponse.files:type_name -> coria.v1.QuarantinedFile
+	4,  // 13: coria.v1.GetQuarantinedFileResponse.file:type_name -> coria.v1.QuarantinedFile
+	2,  // 14: coria.v1.ReleaseQuarantinedFileRequest.mode:type_name -> coria.v1.ReleaseMode
+	15, // 15: coria.v1.ReleaseQuarantinedFileRequest.profile:type_name -> coria.v1.ProfileVersionRef
+	4,  // 16: coria.v1.ReleaseQuarantinedFileResponse.file:type_name -> coria.v1.QuarantinedFile
+	4,  // 17: coria.v1.RejectQuarantinedFileResponse.file:type_name -> coria.v1.QuarantinedFile
+	5,  // 18: coria.v1.QuarantineService.ListQuarantinedFiles:input_type -> coria.v1.ListQuarantinedFilesRequest
+	7,  // 19: coria.v1.QuarantineService.GetQuarantinedFile:input_type -> coria.v1.GetQuarantinedFileRequest
+	9,  // 20: coria.v1.QuarantineService.ReleaseQuarantinedFile:input_type -> coria.v1.ReleaseQuarantinedFileRequest
+	11, // 21: coria.v1.QuarantineService.RejectQuarantinedFile:input_type -> coria.v1.RejectQuarantinedFileRequest
+	6,  // 22: coria.v1.QuarantineService.ListQuarantinedFiles:output_type -> coria.v1.ListQuarantinedFilesResponse
+	8,  // 23: coria.v1.QuarantineService.GetQuarantinedFile:output_type -> coria.v1.GetQuarantinedFileResponse
+	10, // 24: coria.v1.QuarantineService.ReleaseQuarantinedFile:output_type -> coria.v1.ReleaseQuarantinedFileResponse
+	12, // 25: coria.v1.QuarantineService.RejectQuarantinedFile:output_type -> coria.v1.RejectQuarantinedFileResponse
+	22, // [22:26] is the sub-list for method output_type
+	18, // [18:22] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_quarantine_proto_init() }
@@ -1531,6 +1570,7 @@ func file_coria_v1_quarantine_proto_init() {
 	if File_coria_v1_quarantine_proto != nil {
 		return
 	}
+	file_coria_v1_receiver_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

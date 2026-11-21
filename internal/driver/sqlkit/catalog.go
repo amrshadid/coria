@@ -42,9 +42,13 @@ const (
 	// tenant.ScanInstance, as the pipeline's ScanInstances reads them; the
 	// storage and the labels its key is made from are its scan's
 	// (tenant.InstanceKey), and its archived checksum is the received one
-	// when the row keeps none.
+	// when the row keeps none. The profile version that de-identified it
+	// is read by the primary key of profile_versions, '' and 0 for one
+	// archived as received.
 	HeldInstanceColumns = `sop_instance_uid, reception_id, storage_key, byte_offset, byte_length, size, sha256,
-		coalesce(archived_sha256, sha256), held_at`
+		coalesce(archived_sha256, sha256), held_at,
+		coalesce((SELECT pv.name FROM profile_versions AS pv WHERE pv.id = instances.profile_version_id), ''),
+		coalesce((SELECT pv.version FROM profile_versions AS pv WHERE pv.id = instances.profile_version_id), 0)`
 )
 
 // The bounds of a newest-first range of keyRange with no time given. Every

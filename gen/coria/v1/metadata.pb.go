@@ -51,8 +51,12 @@ type InstanceMetadata struct {
 	// dicom_json, attribute and all, because its file is in the deflated
 	// transfer syntax, where no offset names them.
 	BulkDataOmitted bool `protobuf:"varint,6,opt,name=bulk_data_omitted,json=bulkDataOmitted,proto3" json:"bulk_data_omitted,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// The profile version that de-identified the instance, as its catalog
+	// row recorded it when it was archived; absent for an instance archived
+	// as received.
+	Profile       *ProfileVersionName `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InstanceMetadata) Reset() {
@@ -125,6 +129,13 @@ func (x *InstanceMetadata) GetBulkDataOmitted() bool {
 		return x.BulkDataOmitted
 	}
 	return false
+}
+
+func (x *InstanceMetadata) GetProfile() *ProfileVersionName {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
 }
 
 // GetScanMetadataRequest names a scan and the page of its instances.
@@ -424,7 +435,7 @@ var File_coria_v1_metadata_proto protoreflect.FileDescriptor
 
 const file_coria_v1_metadata_proto_rawDesc = "" +
 	"\n" +
-	"\x17coria/v1/metadata.proto\x12\bcoria.v1\"\xfe\x01\n" +
+	"\x17coria/v1/metadata.proto\x12\bcoria.v1\x1a\x16coria/v1/profile.proto\"\xb6\x02\n" +
 	"\x10InstanceMetadata\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12(\n" +
@@ -433,7 +444,8 @@ const file_coria_v1_metadata_proto_rawDesc = "" +
 	"dicom_json\x18\x03 \x01(\tR\tdicomJson\x12$\n" +
 	"\x0ejson_too_large\x18\x04 \x01(\bR\fjsonTooLarge\x12.\n" +
 	"\x13transfer_syntax_uid\x18\x05 \x01(\tR\x11transferSyntaxUid\x12*\n" +
-	"\x11bulk_data_omitted\x18\x06 \x01(\bR\x0fbulkDataOmitted\"\xd5\x01\n" +
+	"\x11bulk_data_omitted\x18\x06 \x01(\bR\x0fbulkDataOmitted\x126\n" +
+	"\aprofile\x18\a \x01(\v2\x1c.coria.v1.ProfileVersionNameR\aprofile\"\xd5\x01\n" +
 	"\x16GetScanMetadataRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12#\n" +
 	"\rsubject_label\x18\x02 \x01(\tR\fsubjectLabel\x12#\n" +
@@ -481,19 +493,21 @@ var file_coria_v1_metadata_proto_goTypes = []any{
 	(*GetScanMetadataResponse)(nil),     // 2: coria.v1.GetScanMetadataResponse
 	(*GetInstanceMetadataRequest)(nil),  // 3: coria.v1.GetInstanceMetadataRequest
 	(*GetInstanceMetadataResponse)(nil), // 4: coria.v1.GetInstanceMetadataResponse
+	(*ProfileVersionName)(nil),          // 5: coria.v1.ProfileVersionName
 }
 var file_coria_v1_metadata_proto_depIdxs = []int32{
-	0, // 0: coria.v1.GetScanMetadataResponse.instances:type_name -> coria.v1.InstanceMetadata
-	0, // 1: coria.v1.GetInstanceMetadataResponse.instance:type_name -> coria.v1.InstanceMetadata
-	1, // 2: coria.v1.MetadataService.GetScanMetadata:input_type -> coria.v1.GetScanMetadataRequest
-	3, // 3: coria.v1.MetadataService.GetInstanceMetadata:input_type -> coria.v1.GetInstanceMetadataRequest
-	2, // 4: coria.v1.MetadataService.GetScanMetadata:output_type -> coria.v1.GetScanMetadataResponse
-	4, // 5: coria.v1.MetadataService.GetInstanceMetadata:output_type -> coria.v1.GetInstanceMetadataResponse
-	4, // [4:6] is the sub-list for method output_type
-	2, // [2:4] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	5, // 0: coria.v1.InstanceMetadata.profile:type_name -> coria.v1.ProfileVersionName
+	0, // 1: coria.v1.GetScanMetadataResponse.instances:type_name -> coria.v1.InstanceMetadata
+	0, // 2: coria.v1.GetInstanceMetadataResponse.instance:type_name -> coria.v1.InstanceMetadata
+	1, // 3: coria.v1.MetadataService.GetScanMetadata:input_type -> coria.v1.GetScanMetadataRequest
+	3, // 4: coria.v1.MetadataService.GetInstanceMetadata:input_type -> coria.v1.GetInstanceMetadataRequest
+	2, // 5: coria.v1.MetadataService.GetScanMetadata:output_type -> coria.v1.GetScanMetadataResponse
+	4, // 6: coria.v1.MetadataService.GetInstanceMetadata:output_type -> coria.v1.GetInstanceMetadataResponse
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_metadata_proto_init() }
@@ -501,6 +515,7 @@ func file_coria_v1_metadata_proto_init() {
 	if File_coria_v1_metadata_proto != nil {
 		return
 	}
+	file_coria_v1_profile_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

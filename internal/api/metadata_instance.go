@@ -61,9 +61,10 @@ func (s *metaSource) uriFor(uid string) func(offset, length int64) string {
 
 // instance answers the header of the instance held, whose line of the
 // metadata file is in. The line must be the instance's: the same key, size
-// and checksum the catalog holds.
+// and archived checksum the catalog holds (of the bytes stored, which for a
+// de-identified instance are not those received).
 func (s *metaSource) instance(ctx context.Context, held tenant.ScanInstance, in sidecar.Instance) (*v1.InstanceMetadata, error) {
-	if in.Key != held.Key || in.Size != held.Size || (!held.SHA256.IsZero() && in.SHA256 != held.SHA256.String()) {
+	if in.Key != held.Key || in.Size != held.Size || (!held.ArchivedSHA256.IsZero() && in.SHA256 != held.ArchivedSHA256.String()) {
 		return nil, fault.New(fault.DataLoss, messageBadSidecar)
 	}
 	ra := readat.New(ctx, s.store, held.Key, held.Size)
@@ -78,6 +79,9 @@ func (s *metaSource) instance(ctx context.Context, held tenant.ScanInstance, in 
 	}
 	var err error
 	m := &v1.InstanceMetadata{InstanceId: held.SOPInstanceUID, SopInstanceUid: held.SOPInstanceUID, TransferSyntaxUid: ts}
+	if !held.Profile.IsZero() {
+		m.Profile = &v1.ProfileVersionName{Name: held.Profile.Name, Version: held.Profile.Version}
+	}
 	deflated := ts == transferSyntaxDeflated
 	m.BulkDataOmitted = deflated
 	var js []byte

@@ -73,6 +73,15 @@ type Reception struct {
 	// default repertoire, and a file with any other is refused where the
 	// text would be kept.
 	CharacterSet *string
+	// Subject, when set, identifies the file's subject for its date shift
+	// (ShiftDays) in place of its Patient ID (0010,0020). It is for a job
+	// over an archive, whose files no longer hold the Patient ID the
+	// profile emptied: the job gives the instance's subject label from the
+	// catalog, used only as the shift's key and never written into the
+	// file or its record. A reception never sets it: a file received
+	// without a Patient ID has no subject, and a date to shift refuses it
+	// (CauseNoSubject).
+	Subject string
 }
 
 // Lookups reaches a tenant's lookup tables. A table is keyed by the keyed
@@ -304,7 +313,7 @@ func (en *Engine) apply(ctx context.Context, ds *dataset.Dataset, rec Reception,
 		return nil, errNoDataset
 	}
 	r := &run{en: en, ctx: ctx, top: ds, record: &Record{}, source: sourceFrom(rec.CharacterSet),
-		rawSources: map[*dataset.Dataset]textSource{}, locs: locs}
+		rawSources: map[*dataset.Dataset]textSource{}, locs: locs, subject: rec.Subject}
 	defer func() {
 		if p := recover(); p != nil {
 			r.rollback()

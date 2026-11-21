@@ -13,6 +13,8 @@ import (
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/deid/profile"
+	"github.com/amrshadid/coria/internal/fault"
 )
 
 // Every name of a quarantine reason and of a quarantine state starts with one
@@ -76,6 +78,12 @@ func (a *app) quarantineDetails(f *v1.QuarantinedFile) []output.Pair {
 		pairs = append(pairs,
 			output.Pair{Label: "Released at", Value: f.GetReleaseReceiver()},
 			output.Pair{Label: "Released into", Value: output.Dash(f.GetReleaseReception())})
+		if f.GetReleaseStorage() != "" {
+			pairs = append(pairs, output.Pair{Label: "Release storage", Value: f.GetReleaseStorage()})
+		}
+		if pv := f.GetReleaseProfile(); pv != nil {
+			pairs = append(pairs, output.Pair{Label: "Release profile", Value: pv.GetName() + "@" + strconv.Itoa(int(pv.GetVersion()))})
+		}
 		if f.GetReleaseReason() != "" {
 			pairs = append(pairs, output.Pair{Label: "Release reason", Value: f.GetReleaseReason()})
 		}
@@ -240,9 +248,9 @@ read, or it is longer than 1 MiB; the output says which.`,
 
 // newQuarantineRelease builds "quarantine release".
 func (a *app) newQuarantineRelease() *cobra.Command {
-	var receiver, reason, storage string
+	var receiver, reason, storage, profileArg string
 	cmd := &cobra.Command{
-		Use:   "release <tenant> <id> [--receiver NAME] [--storage NAME] [--reason TEXT]",
+		Use:   "release <tenant> <id> [--receiver NAME] [--storage NAME] [--profile NAME@VERSION] [--reason TEXT]",
 		Short: "Run a held file through the pipeline again",
 		Long: `Run a held file through the pipeline again, as if it arrived now at the
 receiver it first came to, or at the one --receiver names, which is needed when
@@ -264,16 +272,35 @@ later, as a rejection's reason does. It is optional, and when given it is 1 to
 --storage names the storage the study is archived to, in place of the storage
 the receiver's routes choose; the routes still choose the profile and the
 senders. A file held as unrouted is released so. A study whose session is
-already on a storage stays there.`,
+already on a storage stays there.
+
+--profile names the profile version the reception the file joins is
+de-identified with, in place of the one its route or receiver names: a file the
+receiver's version could not process is released through a fixed version. It
+needs admin on the tenant; the version must be one the tenant has and pass the
+checks a receiver's version passes, and the receiver must de-identify (exit 5
+otherwise). Try the version on the held file first ("profile try --record").
+
+A file held at a receiver that de-identifies is released only through a
+receiver that de-identifies (exit 5): it is never archived as received.`,
 		Example: `  coria quarantine release lab1 q_41Ab
   coria quarantine release lab1 q_41Ab --receiver scanner2 --reason "naming rule fixed"
-  coria quarantine release lab1 q_7Zr2 --storage lab-a --reason "study from lab A, sent from a new AE title"`,
+  coria quarantine release lab1 q_7Zr2 --storage lab-a --reason "study from lab A, sent from a new AE title"
+  coria quarantine release lab1 q_9Kc4 --profile research@2 --reason "version 2 removes the scanner's private tags"`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("reason") {
 				if err := checkReason(reason); err != nil {
 					return err
 				}
+			}
+			var version *v1.ProfileVersionRef
+			if cmd.Flags().Changed("profile") {
+				ref, err := profile.ParseRef(profileArg)
+				if err != nil || ref.Version == 0 {
+					return fault.New(fault.Invalid, fmt.Sprintf("--profile %q is not NAME@VERSION, such as research@3: a release names the exact version it runs", output.Clean(profileArg)))
+				}
+				version = &v1.ProfileVersionRef{Name: ref.Name, Version: ref.Version}
 			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {
@@ -283,6 +310,7 @@ already on a storage stays there.`,
 			res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.ReleaseQuarantinedFileResponse, error) {
 				return c.Quarantine.ReleaseQuarantinedFile(ctx, &v1.ReleaseQuarantinedFileRequest{
 					Tenant: args[0], Id: args[1], Mode: v1.ReleaseMode_RELEASE_MODE_AS_IS, Receiver: receiver, Reason: reason, Storage: storage,
+					Profile: version,
 				})
 			})
 			if err != nil {
@@ -299,6 +327,7 @@ already on a storage stays there.`,
 	cmd.Flags().StringVar(&receiver, "receiver", "", "the receiver whose storage and naming rule the file runs by (default: the receiver it first came to)")
 	cmd.Flags().StringVar(&reason, "reason", "", "why the file is released, kept with its record (1 to 1024 bytes, not only spaces)")
 	cmd.Flags().StringVar(&storage, "storage", "", "the storage the study is archived to, in place of what the receiver's routes choose")
+	cmd.Flags().StringVar(&profileArg, "profile", "", "the profile version, NAME@VERSION, the file is de-identified with, in place of its route's or receiver's (admin); it applies to the whole reception the file joins, files still arriving included")
 	return cmd
 }
 

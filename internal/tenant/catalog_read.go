@@ -513,7 +513,8 @@ type InstanceReads interface {
 	// with these labels, in order of SOP Instance UID, whichever reception
 	// confirmed each; a claim not confirmed is never listed. A scan the
 	// tenant does not have is NotFound. The cursor is bound to the scan's
-	// labels and the tenant.
+	// labels and the tenant. Each instance carries the profile version
+	// that de-identified it (ScanInstance.Profile).
 	ListHeldInstances(ctx context.Context, path label.Path, page master.Page) ([]ScanInstance, string, error)
 	// HeldInstance returns the instance held under the SOP Instance UID in
 	// the scan with these labels, or NotFound: a UID the tenant holds in

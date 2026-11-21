@@ -11,14 +11,19 @@
 // A sidecar is JSON, written in one form only:
 //
 //	{"version":2,"instances":[
-//	{"sop_instance_uid":"1.2.3","key":"data/S/E/C/1.2.3.dcm","size":1234,"sha256":"<64 hex>","transfer_syntax":"1.2.840.10008.1.2.4.50","pixel_data":{"offset":1100,"length":134},"frames":[[[1120,60]],[[1188,30],[1226,8]]],"frame_sha256":["<64 hex>","<64 hex>"],"dataset":{...}},
+//	{"sop_instance_uid":"1.2.3","key":"data/S/E/C/1.2.3.dcm","size":1234,"sha256":"<64 hex>","transfer_syntax":"1.2.840.10008.1.2.4.50","profile":"research@3","pixel_data":{"offset":1100,"length":134},"frames":[[[1120,60]],[[1188,30],[1226,8]]],"frame_sha256":["<64 hex>","<64 hex>"],"dataset":{...}},
 //	...
 //	]}
 //
 // one instance per line, its fields in that order, the instances sorted by
 // SOP Instance UID with each UID once, and a final newline. transfer_syntax
 // is the file's Transfer Syntax UID and is left out of a line written before
-// it existed. pixel_data is null for an instance without pixel data and for
+// it existed. profile, between transfer_syntax and pixel_data, is the
+// profile version that de-identified the instance, "name@version", and is
+// left out for an instance archived as received and of a line written
+// before it existed; like transfer_syntax it was added without a new
+// version, since a reader of version 2 that knows it reads every line
+// written before it. pixel_data is null for an instance without pixel data and for
 // one whose data set is deflated (PS3.5 A.5), where an offset counted in the
 // inflated bytes is not a place in the file; its offset is the first byte of
 // the element's tag in the file and its length runs to the first byte after

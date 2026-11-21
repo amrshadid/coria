@@ -81,7 +81,17 @@ type TrialOptions struct {
 	// after reads within its bound. Nil tries de-identification alone.
 	Receiver *tenant.Receiver
 	// Check makes the check after for a file bound, as Config.Check does.
+	// Its checker takes nothing from Memory: the trial takes the check's
+	// copy with its own, at once, so a trial never holds part of the bound
+	// while it waits for more.
 	Check func(maxFileBytes int64) Checker
+	// Memory, when not nil, is the server's bound on de-identification's
+	// memory: the trial takes from it, before the engine runs, the bytes of
+	// the copies it holds (the file, the written file, the check's copy),
+	// waits for room until ctx ends, and gives them back when it returns.
+	// A file whose copies need more than the whole bound is held
+	// (deid_failed, check_too_large), as at reception.
+	Memory check.Memory
 	// NoValues, for a caller that answers verdicts and counts and never a
 	// value (a job over the archive), builds neither Before nor After and
 	// drops Written once checked: a second and a third copy of the file's
@@ -165,10 +175,26 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 		dsUID(ds, dsSeriesUID) != remapPlacingUID(o.Keys, series) {
 		return held(tenant.QuarantineDeidFailed, map[string]string{"cause": "uid_not_remapped"})
 	}
-	// The written file is about the size of the received one: its room is
-	// taken once, so the copy never grows by doubling, which held up to
-	// two more copies of the file at its peak.
-	mem := &memFile{b: make([]byte, 0, len(file)+trialWriteHeadroom)}
+	// The copies are taken from the server's bound once the engine has
+	// said how large the written file may be (its pixels decoded, when a
+	// rule filled a compressed image), and before any is made: until then
+	// the trial holds the data sets of the header only, the pixel data
+	// staying in the file, and a frame at a time of pixel work.
+	written := int64(len(file)) + grown(record) + trialWriteHeadroom
+	if o.Memory != nil {
+		release, err := o.Memory.Reserve(ctx, trialBytes(len(file), grown(record)))
+		if reason, details, isHold := checkHold(err); isHold {
+			t.Record, t.Pixels = nil, nil
+			return held(reason, details)
+		} else if err != nil {
+			return t, fault.New(fault.Unavailable, "a file could not be tried now")
+		}
+		defer release()
+	}
+	// The written file's room is taken once, at its largest, so the copy
+	// never grows by doubling, which held up to two more copies of the
+	// file at its peak.
+	mem := &memFile{b: make([]byte, 0, written)}
 	err = writeDataset(mem, ds, writtenSyntax(h.TransferSyntaxUID, ds, record), source, littleEndian)
 	var we errWrite
 	if errors.Is(err, engine.ErrPixelsUndecodable) {
@@ -268,6 +294,21 @@ func ExplainFile(ctx context.Context, en *engine.Engine, file []byte, rec engine
 // TrialCauseLookupTable is the cause of a trial whose verdict depends on a
 // lookup table it does not read.
 const TrialCauseLookupTable = "lookup_table"
+
+// trialBytes is what a trial of a file of n bytes takes from the server's
+// bound on de-identification's memory, grown the bytes its pixels decoded
+// add (grown): the file, the written file at its largest (the file, grown
+// and trialWriteHeadroom) and the check's copy of it, and an eighth of the
+// file more for what the check and the data sets hold beside the copies.
+// Measured (TestATrialsPeakIsWithinWhatItTakes): the heap's peak over a
+// trial of a 20 MiB native image is 3.01 to 3.07 times the file (the
+// estimate 3.13), of an RLE image of 6 MiB decoded to 20 MiB 9.3 to 9.8
+// times (the estimate 10.1). The header's data sets, parsed before the
+// copies are taken, are bounded by receiver.header-limit, not here.
+func trialBytes(n int, grown int64) int64 {
+	written := int64(n) + grown + trialWriteHeadroom
+	return int64(n) + 2*written + int64(n)/8
+}
 
 // trialWriteHeadroom is the room a trial's written file is given past the
 // received file's size, for what the engine adds (the method record, a

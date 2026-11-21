@@ -13,6 +13,7 @@ import (
 	"github.com/amrshadid/coria/internal/api/codes"
 	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/deid/check"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/place"
@@ -97,6 +98,11 @@ type Config struct {
 	// the API's streams and downloads and the instances senders read. Nil
 	// gives the API a count of its own.
 	Reads *checkedread.Slots
+	// DeidMemory is the server's bound on de-identification's memory
+	// (deid.memory), shared with the reception pipelines and the deid
+	// jobs, which a trial run takes its copies of a file from. Nil gives
+	// the API a bound of its own at deid.memory.
+	DeidMemory check.Memory
 }
 
 // Handlers is the services of the contract this package serves, each an
@@ -133,6 +139,8 @@ type Handlers struct {
 	Jobs coriav1connect.JobServiceHandler
 	// Profiles is ProfileService.
 	Profiles coriav1connect.ProfileServiceHandler
+	// Deid is DeidService.
+	Deid coriav1connect.DeidServiceHandler
 
 	// c is what the services share, kept for the test seams
 	// (export_test.go).
@@ -157,7 +165,10 @@ func New(cfg Config) (Handlers, error) {
 		access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known,
 		keys: cfg.Keys, now: cfg.Now, receivers: cfg.Receivers, incoming: cfg.Incoming, headers: cfg.Headers,
 		live: cfg.Live, feeds: cfg.Feeds, stowReceivers: cfg.STOW, senders: cfg.SenderHealths, senderTests: cfg.SenderTests,
-		reads: cfg.Reads, heldFiles: cfg.HeldFiles, trials: make(chan struct{}, MaxTrialsAtOnce),
+		reads: cfg.Reads, heldFiles: cfg.HeldFiles, trials: make(chan struct{}, MaxTrialsAtOnce), deidMemory: cfg.DeidMemory,
+	}
+	if c.deidMemory == nil {
+		c.deidMemory = check.NewBudget(c.values().DeidMemory, check.BoundInterval)
 	}
 	if c.heldFiles == nil {
 		c.heldFiles = noHeldFiles{}
@@ -202,6 +213,7 @@ func New(cfg Config) (Handlers, error) {
 		Senders:    senderService{c},
 		Jobs:       jobService{c},
 		Profiles:   profileService{c},
+		Deid:       deidService{c},
 		c:          c,
 	}, nil
 }
@@ -223,6 +235,7 @@ func (h Handlers) Register(srv *connect.Server) {
 	coriav1connect.RegisterSenderServiceHandler(srv, h.Senders)
 	coriav1connect.RegisterJobServiceHandler(srv, h.Jobs)
 	coriav1connect.RegisterProfileServiceHandler(srv, h.Profiles)
+	coriav1connect.RegisterDeidServiceHandler(srv, h.Deid)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only
@@ -277,6 +290,9 @@ type core struct {
 	headers Headers
 	// heldFiles reads a quarantined file's bytes.
 	heldFiles HeldFiles
+	// bounds holds the buckets that bound forward lookups and lookup
+	// imports (DeidService).
+	bounds rateBuckets
 	// trials holds a place for each trial run or explanation running, at
 	// most MaxTrialsAtOnce, since each holds its files in memory.
 	trials chan struct{}
@@ -290,6 +306,9 @@ type core struct {
 	// for their bounds, in the server's one count, which the senders'
 	// reads share (Config.Reads).
 	reads *checkedread.Slots
+	// deidMemory bounds what trial runs hold in memory, with the rest of
+	// de-identification's work (Config.DeidMemory).
+	deidMemory check.Memory
 	// places orders the changes that depend on where the installation lets
 	// data go (its roots, endpoints, ports and bind addresses) against the
 	// changes of those settings: a storage or a receiver is checked and

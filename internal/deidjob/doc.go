@@ -28,9 +28,21 @@
 // of 40 frames (TestDryRunMemoryOfAMultiFrameFile), it holds about 2.1
 // times the file beyond the file itself, so about 3 times in all; a pixel
 // rule adds the image it decodes, within the lower of the tenant's
-// deid.pixel-limit and MaxPixelBytes.
+// deid.pixel-limit and MaxPixelBytes. A dry run's copies are taken from
+// the server's bound on de-identification's memory (Config.Memory,
+// deid.memory), shared with the reception pipelines and the trial runs; a
+// file whose copies pass the whole bound is reported as held,
+// deid_failed/check_too_large, as a reception would hold it.
 //
 // # What a unit judges
+//
+// An archived file no longer holds the Patient ID a version that shifts
+// dates keyed its shift by, so in both modes the engine identifies each
+// file's subject by its scan's subject label from the catalog
+// (engine.Reception.Subject), used as the shift's key alone and written
+// nowhere: a dry run's keys are the unit's own, so the shift is
+// throwaway, and a check compares no shifted value, only which elements
+// remain.
 //
 // A rule's conditions read the instance's reception (receptionFacts): its
 // receiver, its calling AE title when its files came with exactly one, and

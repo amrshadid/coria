@@ -116,6 +116,10 @@ type cleanTerm struct {
 	// digits is set for a run of digits matched only with no digit
 	// beside it.
 	digits bool
+	// ident is set for an identifier of words (EdgeIdentifier), matched on each such side only at a word's edge,
+	// "_" part of a word; a side ending in a digit is matched anywhere, so
+	// clean removes at least what the check after looks for.
+	ident bool
 }
 
 // cleanTerms returns the terms clean removes for a file's needles: each
@@ -136,7 +140,8 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 		if seen[key] {
 			return
 		}
-		t := cleanTerm{runes: runes, word: edge == EdgeWord, partial: edge == EdgeDate, digits: edge == EdgeDigits}
+		t := cleanTerm{runes: runes, word: edge == EdgeWord, partial: edge == EdgeDate, digits: edge == EdgeDigits,
+			ident: edge == EdgeIdentifier}
 		switch {
 		case t.partial, t.word, t.digits:
 		case Unspaced(v), len(runes) >= minCleanLength:
@@ -250,6 +255,9 @@ func (c *cleaner) clean(ctx context.Context, s string) (string, error) {
 				if t.digits && (digitAt(folded, i-1) || digitAt(folded, i+m)) {
 					continue
 				}
+				if t.ident && !identEdges(folded, i, i+m) {
+					continue
+				}
 				for j := i; j < i+m; j++ {
 					cut[j] = true
 				}
@@ -273,6 +281,16 @@ func (c *cleaner) clean(ctx context.Context, s string) (string, error) {
 // its start, past its end, or not a letter or a digit.
 func wordEdge(runes []rune, i int) bool {
 	return i < 0 || i >= len(runes) || (!unicode.IsLetter(runes[i]) && !unicode.IsDigit(runes[i]))
+}
+
+// identEdges reports whether the match runes[start:end] of an identifier
+// stands as EdgeIdentifier says on the sides where it ends in a letter:
+// no letter or "_" beside it there (IdentifierWordRune).
+func identEdges(runes []rune, start, end int) bool {
+	if unicode.IsLetter(runes[start]) && start > 0 && IdentifierWordRune(runes[start-1]) {
+		return false
+	}
+	return !unicode.IsLetter(runes[end-1]) || end >= len(runes) || !IdentifierWordRune(runes[end])
 }
 
 // dateEdge reports whether position i of a text, on the side dir (-1

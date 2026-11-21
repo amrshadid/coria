@@ -113,6 +113,11 @@ class ProfileServiceStub:
                 request_serializer=coria_dot_v1_dot_profile__pb2.DiffProfileVersionsRequest.SerializeToString,
                 response_deserializer=coria_dot_v1_dot_profile__pb2.DiffProfileVersionsResponse.FromString,
                 _registered_method=True)
+        self.DescribeProfile = channel.unary_unary(
+                '/coria.v1.ProfileService/DescribeProfile',
+                request_serializer=coria_dot_v1_dot_profile__pb2.DescribeProfileRequest.SerializeToString,
+                response_deserializer=coria_dot_v1_dot_profile__pb2.DescribeProfileResponse.FromString,
+                _registered_method=True)
 
 
 class ProfileServiceServicer:
@@ -397,6 +402,41 @@ class ProfileServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def DescribeProfile(self, request, context):
+        """DescribeProfile says what a stored version (or an unsaved document)
+        does, for a person and for the method section of a DICOM Conformance
+        Statement (PS3.15 E.3.5, E.3.6, E.3.10): for each class of element
+        (names, identifiers, dates and times, UIDs, private elements, pixels,
+        the rest), which elements each action is given to, from the expanded
+        rules; the sentences that hold for the whole profile (the default for
+        an element no rule names, the largest date shift, what the engine
+        never keeps whatever the rules say); and the record every file it
+        makes carries: the PS3.16 CID 7050 codes the version claims in
+        De-identification Method Code Sequence (0012,0064) with their
+        meanings, the values of De-identification Method (0012,0063) this
+        server writes for a file no pixel rule changed, Patient Identity
+        Removed (0012,0062), and Longitudinal Temporal Information Modified
+        (0028,0303) as the dates option sets it. The classes are judged from
+        each rule's selector and VRs, not from a file: a rule over a group, a
+        VR or a value pattern is listed by what it selects, and which rule
+        decides one element of a file is ExplainProfile's answer.
+
+        Role: operator on the tenant.
+        Audit: one entry in the tenant's log, with the profile version (or the
+        unsaved document's checksum) as its object.
+        Errors: unauthenticated, permission denied (no grant; also a tenant
+        that does not exist, for a caller who may not list every tenant),
+        invalid (no profile; a document with a problem, with every problem as
+        a ProfileProblems detail; a malformed name, a negative version), not
+        found (a profile or version the tenant does not have; a tenant that
+        does not exist, for a caller who may list every tenant), precondition
+        (a stored version this server cannot run), unavailable (the tenant's
+        database does not answer, or the tenant is not ready).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ProfileServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -444,6 +484,11 @@ def add_ProfileServiceServicer_to_server(servicer, server):
                     servicer.DiffProfileVersions,
                     request_deserializer=coria_dot_v1_dot_profile__pb2.DiffProfileVersionsRequest.FromString,
                     response_serializer=coria_dot_v1_dot_profile__pb2.DiffProfileVersionsResponse.SerializeToString,
+            ),
+            'DescribeProfile': grpc.unary_unary_rpc_method_handler(
+                    servicer.DescribeProfile,
+                    request_deserializer=coria_dot_v1_dot_profile__pb2.DescribeProfileRequest.FromString,
+                    response_serializer=coria_dot_v1_dot_profile__pb2.DescribeProfileResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -723,6 +768,33 @@ class ProfileService:
             '/coria.v1.ProfileService/DiffProfileVersions',
             coria_dot_v1_dot_profile__pb2.DiffProfileVersionsRequest.SerializeToString,
             coria_dot_v1_dot_profile__pb2.DiffProfileVersionsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DescribeProfile(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/coria.v1.ProfileService/DescribeProfile',
+            coria_dot_v1_dot_profile__pb2.DescribeProfileRequest.SerializeToString,
+            coria_dot_v1_dot_profile__pb2.DescribeProfileResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -67,6 +67,13 @@ type Options struct {
 	// MaxFormBytes is the most bytes of written forms searched for, as
 	// text and in every encoding together.
 	MaxFormBytes int
+	// Memory, when not nil, is the server's bound on de-identification's
+	// memory, which the copy of the file the check reads is taken from
+	// before it is read, and given back when the check returns: a file
+	// larger than the whole bound is refused (CauseTooLarge), and one that
+	// does not fit beside the others waits for room until ctx ends. Nil
+	// bounds each file by MaxFileBytes alone.
+	Memory Memory
 }
 
 // withDefaults returns o with every zero field set to its default.
@@ -195,8 +202,8 @@ type Cause string
 
 // The causes of a refusal.
 const (
-	// CauseTooLarge: the file is larger than MaxFileBytes, or holds a
-	// value longer than MaxValueBytes, sequences nested deeper than the
+	// CauseTooLarge: the file is larger than MaxFileBytes or than the
+	// whole of Options.Memory, or holds a value longer than MaxValueBytes, sequences nested deeper than the
 	// check walks, or forms ending on one another so densely that the
 	// search would pass its budget of work.
 	CauseTooLarge Cause = "check_too_large"
@@ -268,6 +275,16 @@ func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needle
 		return rep, err
 	}
 	rep.Searched, rep.Skipped = len(set.forms), set.skipped
+	if size < 0 || size > c.opts.MaxFileBytes {
+		return rep, &Refusal{Cause: CauseTooLarge}
+	}
+	if c.opts.Memory != nil {
+		release, err := c.opts.Memory.Reserve(ctx, size)
+		if err != nil {
+			return rep, err
+		}
+		defer release()
+	}
 	data, err := c.readBounded(src, size)
 	if err != nil {
 		return rep, err

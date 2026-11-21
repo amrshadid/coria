@@ -11,6 +11,7 @@ import (
 	"github.com/amrshadid/coria/internal/api"
 	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/deid/check"
 	"github.com/amrshadid/coria/internal/deidjob"
 	"github.com/amrshadid/coria/internal/driver"
 	"github.com/amrshadid/coria/internal/events"
@@ -127,7 +128,11 @@ func APIServices(d Deps) (Built, error) {
 	// The running stow receivers, which the supervisor starts and stops
 	// and the STOW-RS route finds by the caller's key.
 	stowReceivers := stow.NewDirectory()
-	sup, err := newReception(d, reg, feeds.Wake, pokeSenders, stowReceivers)
+	// One bound on de-identification's memory (deid.memory) for the whole
+	// server: every tenant's reception pipeline and the API's trial runs
+	// take from it.
+	deidMemory := check.NewBudget(settingvalue.Reader{Master: d.Master}.DeidMemory, check.BoundInterval)
+	sup, err := newReception(d, reg, feeds.Wake, pokeSenders, stowReceivers, deidMemory)
 	if err != nil {
 		_ = feeds.Close()
 		closeRegistry(reg)
@@ -144,7 +149,7 @@ func APIServices(d Deps) (Built, error) {
 	}
 	sending.Store(senders)
 	// The deid jobs, which read archived bytes under the same count.
-	deids, err := newDeidJobs(d, reg, feeds.Wake, reads)
+	deids, err := newDeidJobs(d, reg, feeds.Wake, reads, deidMemory)
 	if err != nil {
 		_ = feeds.Close()
 		closeRegistry(reg)
@@ -153,7 +158,7 @@ func APIServices(d Deps) (Built, error) {
 	deidJobs.Store(deids)
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
 		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, Headers: heldHeaders{sup}, HeldFiles: heldHeaders{sup}, STOW: stowReceivers,
-		Reads: reads, SenderHealths: senderHealths{s: senders, deid: deids}, SenderTests: senderTests{senders}})
+		Reads: reads, SenderHealths: senderHealths{s: senders, deid: deids}, SenderTests: senderTests{senders}, DeidMemory: deidMemory})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err

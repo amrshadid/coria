@@ -220,11 +220,16 @@ func runs(r tenant.Receiver) bool {
 
 // sameListener reports whether two rows make the same listener: the same
 // type and configuration of it, and the same largest file, which bounds
-// what the listener reads of a data set. A change of anything else is read
-// by the pipeline from the row and needs no restart.
+// what the listener reads of a data set; for a stow receiver, whether it
+// de-identifies too, which decides whether its answers give Retrieve URLs
+// (a restart of one costs no port). A change of anything else is read by
+// the pipeline from the row and needs no restart.
 func sameListener(a, b tenant.Receiver) bool {
 	da, db := a.DIMSE, b.DIMSE
 	if a.Type != b.Type || a.STOW.MaxRequestBytes != b.STOW.MaxRequestBytes || !slices.Equal(a.STOW.Keys, b.STOW.Keys) {
+		return false
+	}
+	if a.Type == tenant.ReceiverSTOW && a.Deidentifies() != b.Deidentifies() {
 		return false
 	}
 	if a.Name != b.Name || a.MaxFileBytes != b.MaxFileBytes || da.Port != db.Port || da.BindAddress != db.BindAddress ||

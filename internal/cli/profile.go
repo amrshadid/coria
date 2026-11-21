@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
@@ -40,7 +39,7 @@ Every command takes the tenant first. create needs the admin role on the
 tenant; the others need the operator role (a trial run answers the values of
 the files it is given, and can read held files). Every command takes --json.`,
 		a.newProfileCreate(), a.newProfileGet(), a.newProfileList(), a.newProfileVersions(), a.newProfileExport(),
-		a.newProfileValidate(), a.newProfileDescribe(), a.newProfileTry(), a.newProfileExplain(), a.newProfileDiff())
+		a.newProfileValidate(), a.newProfileDescribe(), a.newProfileTry(), a.newProfileExplain(), a.newProfileDiff(), a.newProfileLookup())
 }
 
 // documentFlag is the flag that names a document: a file, or "-" for
@@ -136,11 +135,11 @@ func (a *app) versionDetails(w io.Writer, v *v1.ProfileVersion) error {
 
 // newProfileCreate builds "profile create".
 func (a *app) newProfileCreate() *cobra.Command {
-	var document, note string
+	var document, from, note string
 	var expect int
 	var full bool
 	cmd := &cobra.Command{
-		Use:   "create <tenant> <name> --document FILE|- [--note TEXT] [--expect-latest N]",
+		Use:   "create <tenant> <name> (--document|--from) FILE|- [--note TEXT] [--expect-latest N]",
 		Short: "Store a document as the next version of a profile",
 		Long: `Check a document, expand it (its bases copied in, every keyword resolved to its
 tag, every default written out) and store it as the next version of the
@@ -151,11 +150,17 @@ that version.
 
 --expect-latest N stores the version only when the profile's latest is N (0
 for a profile that does not exist yet), so two people who each read version 3
-do not both store a version 4 unaware of each other (exit 5 otherwise).`,
+do not both store a version 4 unaware of each other (exit 5 otherwise).
+
+--from is the same as --document.`,
 		Example: `  coria profile create lab1 research --document research.json --note "basic profile, study id kept"
+  coria profile create lab1 research --from research.json
   coria profile create lab1 research --document research-2.json --expect-latest 1`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			if from != "" {
+				document = from
+			}
 			doc, err := a.readDocument(document)
 			if err != nil {
 				return err
@@ -192,10 +197,12 @@ do not both store a version 4 unaware of each other (exit 5 otherwise).`,
 		}),
 	}
 	cmd.Flags().StringVar(&document, documentFlag, "", "the document's file, or - to read it from standard input")
+	cmd.Flags().StringVar(&from, "from", "", "the same as --document")
+	cmd.MarkFlagsMutuallyExclusive(documentFlag, "from")
+	cmd.MarkFlagsOneRequired(documentFlag, "from")
 	cmd.Flags().StringVar(&note, "note", "", "why this version is made, at most 1024 bytes")
 	cmd.Flags().IntVar(&expect, "expect-latest", 0, "store only when the profile's latest version is this one (0: the profile does not exist yet)")
 	cmd.Flags().BoolVar(&full, "full", false, "answer the expanded form too (with --json)")
-	_ = cmd.MarkFlagRequired(documentFlag)
 	return cmd
 }
 
@@ -475,112 +482,4 @@ func oneofText(m proto.Message) string {
 		}
 	}
 	return output.Clean(strings.Join(parts, " "))
-}
-
-// describeDoc is the JSON document of "profile describe".
-type describeDoc struct {
-	Name     string          `json:"name,omitempty"`
-	Version  int32           `json:"version,omitempty"`
-	Checksum string          `json:"checksum"`
-	Expanded json.RawMessage `json:"expanded"`
-	Warnings json.RawMessage `json:"warnings"`
-}
-
-// newProfileDescribe builds "profile describe".
-func (a *app) newProfileDescribe() *cobra.Command {
-	var document string
-	cmd := &cobra.Command{
-		Use:   "describe <tenant> (<name>[@<version>] | --document FILE|-)",
-		Short: "List the expanded rules of a version or a document, each with its origin",
-		Long: `List every rule a version (or an unsaved document) runs, in order: the rules of
-its bases as they were copied in, then its own, each with its origin (the base
-it came from, or "own"), its selector, its action and its reason. The rule that
-decides an element is the most specific selector's (a path or content item; a
-tag or keyword; a private element; a private creator's block; a group; a value
-pattern; a VR), and between equally specific ones the later. "profile explain" shows the
-decision for each element of a file.`,
-		Example: `  coria profile describe lab1 research@2
-  coria profile describe lab1 --document research.json --json`,
-		Args: rangeArgs(1, 2),
-		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
-			var expanded *v1.ExpandedProfile
-			var warnings []*v1.ProfileProblem
-			doc := describeDoc{}
-			switch {
-			case len(args) == 2 && document == "":
-				ref, err := parseVersionArg(args[1])
-				if err != nil {
-					return err
-				}
-				res, err := a.getVersion(ctx, cmd, args[0], ref, true)
-				if err != nil {
-					return err
-				}
-				v := res.GetVersion()
-				expanded, doc.Name, doc.Version, doc.Checksum = v.GetExpanded(), v.GetName(), v.GetVersion(), v.GetChecksum()
-			case len(args) == 1 && document != "":
-				in, err := a.readDocument(document)
-				if err != nil {
-					return err
-				}
-				res, err := a.validate(ctx, cmd, args[0], in, true)
-				if err != nil {
-					return err
-				}
-				if len(res.GetProblems()) > 0 {
-					_ = a.write(func(w io.Writer) error { return problemsTable(w, a, res.GetProblems()) })
-					return fault.New(fault.Invalid, fmt.Sprintf("the document has %d problem(s)", len(res.GetProblems())))
-				}
-				expanded, warnings, doc.Checksum = res.GetExpanded(), res.GetWarnings(), res.GetChecksum()
-			default:
-				return fault.New(fault.Invalid, "name a version (NAME or NAME@VERSION) or give --document, one of the two")
-			}
-			if a.opts.json {
-				var err error
-				if doc.Expanded, err = protojson.Marshal(expanded); err != nil {
-					return fault.Wrap(fault.Internal, err, "writing the answer: "+err.Error())
-				}
-				doc.Warnings = json.RawMessage("[]")
-				if len(warnings) > 0 {
-					raw, err := protojson.Marshal(&v1.ProfileProblems{Problems: warnings})
-					if err != nil {
-						return fault.Wrap(fault.Internal, err, "writing the answer: "+err.Error())
-					}
-					var wrap struct {
-						Problems json.RawMessage `json:"problems"`
-					}
-					_ = json.Unmarshal(raw, &wrap)
-					doc.Warnings = wrap.Problems
-				}
-				return a.write(func(w io.Writer) error { return output.JSONValue(w, doc) })
-			}
-			rows := make([][]string, 0, len(expanded.GetRules()))
-			for i, er := range expanded.GetRules() {
-				r := er.GetRule()
-				origin := er.GetOrigin()
-				if origin == "" {
-					origin = "own"
-				}
-				when := ""
-				if n := len(r.GetWhen()); n > 0 {
-					when = strconv.Itoa(n) + " condition(s)"
-				}
-				rows = append(rows, []string{strconv.Itoa(i + 1), origin, output.Dash(r.GetName()), oneofText(r.GetSelector()), oneofText(r.GetAction()), output.Dash(when), output.Dash(output.Clean(r.GetReason()))})
-			}
-			return a.write(func(w io.Writer) error {
-				if err := output.Details(w, a.style(), []output.Pair{
-					{Label: "Checksum", Value: doc.Checksum},
-					{Label: "Bases", Value: output.Dash(strings.Join(expanded.GetBases(), ", "))},
-					{Label: "Unnamed elements", Value: strings.ToLower(strings.TrimPrefix(expanded.GetUnnamed().String(), "UNNAMED_ELEMENTS_"))},
-					{Label: "Largest date shift", Value: strconv.Itoa(int(expanded.GetDateShiftDays())) + " days"},
-				}); err != nil {
-					return err
-				}
-				_, _ = fmt.Fprintln(w)
-				return output.Table(w, a.style(), []string{"#", "ORIGIN", "NAME", "SELECTOR", "ACTION", "WHEN", "REASON"}, rows)
-			})
-		}),
-	}
-	cmd.Flags().StringVar(&document, documentFlag, "", "an unsaved document's file, or - to read it from standard input")
-	return cmd
 }

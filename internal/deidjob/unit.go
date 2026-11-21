@@ -97,7 +97,8 @@ func (t *tenantRun) work(p tenant.Pipeline, st tenant.Store, w tenant.Work) {
 	j := &judge{mode: start.Job.Mode, profile: start.Job.Profile, p: p, engines: map[tenant.ProfileRef]*engine.Engine{},
 		rules: map[tenant.ProfileRef][]*v1.ExpandedRule{}, receptions: map[string]receptionFacts{},
 		unusable: map[tenant.ProfileRef]bool{}, headerLimit: headerLimit, pixelLimit: min(pixelLimit, MaxPixelBytes),
-		tried: sup.cfg.seams.tried}
+		tried: sup.cfg.seams.tried, subject: start.Scan.Path.Subject,
+		memory: sup.cfg.Memory}
 	makeKeys := throwawayKeys
 	if sup.cfg.seams.keys != nil {
 		makeKeys = sup.cfg.seams.keys

@@ -69,6 +69,7 @@ type Server struct {
 	arch      archive
 	read      readArchive
 	prof      profiles
+	deid      deid
 }
 
 // keyRecord is a key and the secret it was made with.
@@ -185,6 +186,7 @@ func (s *Server) Register(srv *connect.Server) {
 	coriav1connect.RegisterSettingsServiceHandler(srv, settingsHandler{s})
 	coriav1connect.RegisterAuditServiceHandler(srv, auditHandler{s})
 	s.registerArchive(srv)
+	s.registerDeid(srv)
 	s.registerRead(srv)
 }
 

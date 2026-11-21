@@ -193,6 +193,18 @@ func tenantMethods(name string) map[string]func(clients) outcome {
 		"DiffProfileVersions": func(c clients) outcome {
 			return call(c.profiles.DiffProfileVersions, &v1.DiffProfileVersionsRequest{Tenant: name, Name: "research"})
 		},
+		"DescribeProfile": func(c clients) outcome {
+			return call(c.profiles.DescribeProfile, &v1.DescribeProfileRequest{Tenant: name, Profile: &v1.TrialProfile{Kind: &v1.TrialProfile_Document{Document: &v1.ProfileDocument{}}}})
+		},
+		"Code": func(c clients) outcome {
+			return call(c.deid.Code, &v1.CodeRequest{Tenant: name, Value: "ID-1"})
+		},
+		"ImportLookupCodes": func(c clients) outcome {
+			return call(c.deid.ImportLookupCodes, &v1.ImportLookupCodesRequest{Tenant: name, Table: "t", Entries: []*v1.LookupEntry{{Value: "a", Code: "A"}}})
+		},
+		"ListLookupTables": func(c clients) outcome {
+			return call(c.deid.ListLookupTables, &v1.ListLookupTablesRequest{Tenant: name})
+		},
 	}
 }
 

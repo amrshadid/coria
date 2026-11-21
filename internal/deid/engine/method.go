@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 
@@ -174,4 +175,42 @@ func withCleanPixelData(codes []anonymize.MethodCode) []anonymize.MethodCode {
 	}
 	out = append(append(append(out, codes[:at]...), clean), codes[at:]...)
 	return out
+}
+
+// MethodRecord is the record of the de-identification every file an
+// Engine makes carries when no pixel rule changed it: what a DICOM
+// Conformance Statement says of the method (PS3.15 E.1.1, E.3.6).
+type MethodRecord struct {
+	// Codes are the PS3.16 CID 7050 codes written in De-identification
+	// Method Code Sequence (0012,0064); none when the profile is built on
+	// no Annex E base or its own rules keep what a base changes.
+	Codes []anonymize.MethodCode
+	// Values are the values of De-identification Method (0012,0063): the
+	// codes' meanings as the DICOM library writes them, then the method
+	// the Engine was given and the versions of this build and its DICOM
+	// library.
+	Values []string
+	// Temporal is Longitudinal Temporal Information Modified (0028,0303)
+	// as the profile's dates option writes it, empty for none.
+	Temporal string
+}
+
+// Method returns the record planMethod writes in a file no pixel rule
+// changed, worked out as it works it out, so a description of a profile
+// says exactly what its files carry.
+func (en *Engine) Method() (MethodRecord, error) {
+	out := MethodRecord{Codes: slices.Clone(en.codes), Temporal: en.temporal}
+	if len(en.codes) > 0 {
+		scratch := dataset.NewDataset()
+		if err := anonymize.RecordDeidentificationMethod(scratch, en.codes, anonymize.MethodRecord{IdentityRemoved: true}); err != nil {
+			return MethodRecord{}, fmt.Errorf("engine: recording the de-identification method: %w", err)
+		}
+		if v, ok := elementText(scratch, tag.Tag(tagDeidMethod)); ok && v != "" {
+			out.Values = strings.Split(v, `\`)
+		}
+	}
+	if en.method != "" {
+		out.Values = append(append(out.Values, en.method), buildVersions()...)
+	}
+	return out, nil
 }

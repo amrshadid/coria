@@ -47,6 +47,9 @@ func TestWriteJSONOutputs(t *testing.T) {
 	r.fake.SetTrialAnswer(&v1.TryProfileResponse{Checksum: "c", Results: []*v1.TrialResult{{Name: dcm, Verdict: v1.TrialVerdict_TRIAL_VERDICT_PASSED, DeidentificationOnly: true}},
 		Summary: &v1.TrialSummary{Files: 1, Passed: 1}})
 	r.fake.SetExplainAnswer(&v1.ExplainProfileResponse{Checksum: "c"})
+	r.fake.SetCodeAnswer(&v1.CodeResponse{Attribute: "00100020", Code: "abcdefghijklmnop"})
+	codes := writeFile(t, work, "codes.csv", "PID-0001,P001\n")
+	routes := filepath.Join(work, "routes.json")
 	steps := []struct {
 		name string
 		args []string
@@ -67,6 +70,8 @@ func TestWriteJSONOutputs(t *testing.T) {
 		{"receiver-list", []string{"receiver", "list", "lab1"}},
 		{"receiver-show", []string{"receiver", "show", "lab1", "scanner1"}},
 		{"receiver-set", []string{"receiver", "set", "lab1", "scanner1", "--quiet-period", "5m"}},
+		{"receiver-route-export", []string{"receiver", "route", "export", "lab1", "scanner1", "--to", routes}},
+		{"receiver-route-import", []string{"receiver", "route", "import", "lab1", "scanner1", routes}},
 		{"tenant-status", []string{"tenant", "status", "lab1"}},
 		{"reception-list", []string{"reception", "list", "lab1"}},
 		{"reception-show", []string{"reception", "show", "lab1", "rcp-retry"}},
@@ -100,6 +105,10 @@ func TestWriteJSONOutputs(t *testing.T) {
 		{"profile-try", []string{"profile", "try", "lab1", "--profile", "research", dcm}},
 		{"profile-explain", []string{"profile", "explain", "lab1", "--profile", "research", dcm}},
 		{"profile-diff", []string{"profile", "diff", "lab1", "research@1", "research@1"}},
+		{"profile-try-local", []string{"profile", "try", "--local", "--document", doc, dcm}},
+		{"profile-lookup-import", []string{"profile", "lookup", "import", "lab1", "subjects", codes}},
+		{"profile-lookup-list", []string{"profile", "lookup", "list", "lab1"}},
+		{"deid-code", []string{"deid", "code", "lab1", "--patient-id", "PID-0001"}},
 		{"tenant-remove", []string{"tenant", "remove", "lab1", "--yes"}},
 	}
 	for _, s := range steps {
