@@ -243,10 +243,15 @@ func writeNeedles(t *testing.T, name string, needles engine.Needles) string {
 	type item struct {
 		Kind  string `json:"kind"`
 		Value string `json:"value"`
+		Edge  string `json:"edge,omitempty"`
 	}
 	list := make([]item, 0, len(needles))
 	for _, n := range needles {
-		list = append(list, item{kinds[n.Kind], n.Value})
+		it := item{Kind: kinds[n.Kind], Value: n.Value}
+		if n.Edge == engine.EdgeWord {
+			it.Edge = "word"
+		}
+		list = append(list, it)
 	}
 	b, err := json.Marshal(list)
 	if err != nil {

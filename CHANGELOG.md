@@ -329,6 +329,25 @@ All notable changes to CORIA are written here. The form is
   `BenchmarkSendScan` (`make bench-send`): 64 small instances on one
   association to an in-process peer, about 935 instances/s by DIMSE and
   1,080 by STOW-RS on an Apple Silicon laptop.
+- De-identification profiles can choose elements by their value and cut
+  only part of a value (language edition 2). A `valuePattern` selector (RE2,
+  at most 256 bytes; whole value by default, anywhere with `search`, longest
+  match at each place; exact case and Unicode form) selects SH, LO, UC, ST,
+  LT, UT and PN elements whose text matches, each value trimmed, at any
+  depth; it ranks below tag, path, private and group rules and above VR
+  rules. The `redact` action cuts the matches of a pattern out of a text
+  value (a fixed replacement or none). Nothing is passed unread or half
+  done: a file is held when a value a pattern would read is over 64 KiB
+  (`too_large`) or unreadable (`bad_value`), when a pattern finds more than
+  256 distinct texts in a value (`too_many_matches`), when a cut would leave
+  a value invalid for its VR or its length field (`redact_invalid`), or when
+  its patterns would pass their bound of work (`too_large`). Every distinct
+  text a pattern rule removes or cuts is searched for by the check after,
+  whole and as a whole word when it begins or ends with a letter. A
+  person's name is never partly kept: redact on a PN removes it. TryProfile
+  answers `redactions` and `patternMatches`; Explain names the selector
+  `value_pattern`. Profiles that use neither keep their edition and
+  checksum.
 - De-identification works on pixels. A profile's pixel rules fill
   rectangles (redact), or what the text detector finds (detect, opt-in and
   slow), in every frame of the images they match, decoded a frame at a time

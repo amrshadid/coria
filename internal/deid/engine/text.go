@@ -163,7 +163,7 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 				add(f.Text, true, f.Edge)
 			}
 		default:
-			add(n.Value, false, EdgeAny)
+			add(n.Value, false, n.Edge)
 		}
 	}
 	slices.SortFunc(out, func(a, b cleanTerm) int {

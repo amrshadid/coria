@@ -162,6 +162,8 @@ func (r *run) act(c *target, a Action, vrs []string) (bool, error) {
 		return false, r.actLookup(c, a)
 	case ActClean:
 		return false, r.actClean(c)
+	case ActRedact:
+		return false, r.actRedact(c, a)
 	}
 	return false, c.fail(CauseBadValue)
 }

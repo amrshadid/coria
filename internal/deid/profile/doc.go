@@ -52,12 +52,16 @@
 // Precedence. Of the rules whose selector matches an element and whose
 // conditions all hold, the most specific selector decides (Tier: a path or
 // a content item, then a tag or keyword, a private element, a private
-// creator's block, a group, a VR); between equally specific ones the later
-// rule, so a document's rules win over its bases', and a later base over an
-// earlier, as an option of PS3.15 Annex E overrides the basic profile
-// (PS3.15 E.3). A group or VR rule selects private elements only when it
-// says include_private, and a content item rule only its item's value
-// element (IsContentValue). An element no rule decides is removed when it
+// creator's block, a group, a value pattern, a VR); between equally
+// specific ones the later rule, so a document's rules win over its bases',
+// and a later base over an earlier, as an option of PS3.15 Annex E
+// overrides the basic profile (PS3.15 E.3). A group, value pattern or VR
+// rule selects private elements only when it says include_private, and a
+// content item rule only its item's value element (IsContentValue). A
+// value pattern reads the element's text (Location.Value), up to
+// MaxPatternValue bytes; redact cuts its matches out of a value and keeps
+// the rest. Both belong to language edition 2; a profile that uses
+// neither is written as edition 1, as before either existed. An element no rule decides is removed when it
 // is private (PS3.5 7.8), and otherwise follows the profile's unnamed
 // default. Program
 // decides this for the engine; matching an element reads only a Location

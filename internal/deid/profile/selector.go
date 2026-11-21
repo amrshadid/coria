@@ -21,6 +21,12 @@ type Tier int
 const (
 	// TierVR: every element of a VR.
 	TierVR Tier = iota + 1
+	// TierValue: every element of a few text VRs whose value matches a
+	// pattern. It names no element, so every selector that names one by
+	// where it is (a group, a private block, a tag, a path) is more
+	// specific; it chooses among the values of a few VRs, so it is more
+	// specific than a whole VR.
+	TierValue
 	// TierGroup: every element of a group or family of groups.
 	TierGroup
 	// TierPrivateBlock: every element of a private creator's block.
@@ -95,8 +101,10 @@ type selector struct {
 	concept  *Concept
 	// valueType is a content item's value type; empty for any.
 	valueType string
-	// includePrivate is a group or VR selector's opt-in to private
-	// elements.
+	// value is a value pattern's compiled pattern.
+	value valuePattern
+	// includePrivate is a group, value pattern or VR selector's opt-in to
+	// private elements.
 	includePrivate bool
 	// vrs is what the selector says of the VR of what it selects: the
 	// dictionary's VRs of a tag (several where PS3.6 lists "US or SS"), the
@@ -175,11 +183,18 @@ func parseSelector(a at, s *v1.ProfileSelector, stored []string) (selector, *v1.
 			sel = selector{tier: TierPlace, concept: &c, valueType: vt, vrs: contentValueVRs(vt)}
 			norm.Kind = &v1.ProfileSelector_ContentItem{ContentItem: &v1.ContentItemSelector{Scheme: c.Scheme, Value: c.Value, ValueType: vt}}
 		}
+	case *v1.ProfileSelector_ValuePattern:
+		vp, nv, vrs, good := parseValuePattern(a.in("valuePattern"), k.ValuePattern)
+		if good {
+			sel = selector{tier: TierValue, value: vp, vrs: vrs, includePrivate: s.GetIncludePrivate()}
+			norm.Kind = &v1.ProfileSelector_ValuePattern{ValuePattern: nv}
+			norm.IncludePrivate = s.GetIncludePrivate()
+		}
 	default:
-		a.add(CodeRequired, "a rule needs a selector: one of tag, keyword, group, vr, privateElement, path or contentItem")
+		a.add(CodeRequired, "a rule needs a selector: one of tag, keyword, group, vr, privateElement, path, contentItem or valuePattern")
 	}
-	if s.GetIncludePrivate() && sel.tier != TierGroup && sel.tier != TierVR && len(a.c.list) == before {
-		a.in("includePrivate").add(CodeIncludePrivate, "includePrivate goes with a group or a vr selector only: privateElement names private elements by their creator, and the other selectors name standard elements")
+	if s.GetIncludePrivate() && sel.tier != TierGroup && sel.tier != TierVR && sel.tier != TierValue && len(a.c.list) == before {
+		a.in("includePrivate").add(CodeIncludePrivate, "includePrivate goes with a group, a vr or a valuePattern selector only: privateElement names private elements by their creator, and the other selectors name standard elements")
 	}
 	if a.c.stored && len(a.c.list) == before {
 		checkStoredVRs(a, sel, stored)
@@ -202,6 +217,10 @@ func checkStoredVRs(a at, sel selector, stored []string) {
 	case TierVR:
 		if len(stored) != 1 || stored[0] != sel.vr {
 			a.add(CodeBadVR, "a vr selector's stored VRs are its VR alone")
+		}
+	case TierValue:
+		if !slices.Equal(stored, sel.vrs) {
+			a.add(CodeBadVR, "a value pattern's stored VRs are those it reads")
 		}
 	case TierGroup, TierPrivateBlock, TierPrivateElement:
 		if len(stored) != 0 {

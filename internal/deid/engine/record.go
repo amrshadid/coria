@@ -26,7 +26,8 @@ const (
 	// CauseTooDeep: sequences nest deeper than MaxDepth.
 	CauseTooDeep Cause = "too_deep"
 	// CauseTooLarge: the data set holds more than MaxElements elements,
-	// sequences' items included.
+	// sequences' items included; or its cleans, or its value patterns and
+	// redacts, would pass their work's bound for one file.
 	CauseTooLarge Cause = "too_large"
 	// CauseRuleQuarantine: a rule whose action is quarantine applies to an
 	// element the file holds; Failure.Rule names it.
@@ -62,6 +63,14 @@ const (
 	// CauseDetectImplausible: the detector found regions covering more of
 	// the picture than text does (anonymize.ErrImplausibleRedaction).
 	CauseDetectImplausible Cause = "detect_implausible"
+	// CauseTooManyMatches: a redact rule would cut, or a value pattern
+	// match, more than profile.MaxRedactMatches distinct texts in one
+	// value: more needles than the bound, none of which may be dropped.
+	CauseTooManyMatches Cause = "too_many_matches"
+	// CauseRedactInvalid: the value a redact rule leaves is not a value of
+	// its VR (PS3.5 6.2), such as a replacement making it too long. The
+	// file is refused rather than the element removed, which no rule said.
+	CauseRedactInvalid Cause = "redact_invalid"
 )
 
 // The reasons a quarantine records for a failure.
@@ -141,7 +150,7 @@ type Entry struct {
 	VR string
 	// Action is what was done: keep, remove, empty, replace, set, hash,
 	// uid, shift, generalize, lookup, clean, dummy, remove_unless_required,
-	// or create for an element a set rule made. An element the floor
+	// redact, or create for an element a set rule made. An element the floor
 	// covers and the profile would have kept has Rule -1 and a Reason that
 	// says so.
 	Action string
@@ -159,6 +168,12 @@ type Entry struct {
 	Reason string
 	// Changed reports whether the element's value or presence changed.
 	Changed bool
+	// Redactions is the number of parts a redact action cut from the
+	// value; zero for any other action.
+	Redactions int
+	// PatternMatches is the number of matches the deciding rule's value
+	// pattern found in the value; zero when it has none.
+	PatternMatches int
 }
 
 // NeedleKind is what a removed value was, which says how a later search
@@ -187,6 +202,15 @@ type Needle struct {
 	Value string
 	// Path is the element it was removed from.
 	Path string
+	// Edge is where the value is taken for itself when searched for and
+	// cleaned: EdgeAny for most, EdgeWord for a text a pattern took out
+	// that begins or ends with a letter, so a cut "Smith" is not found in
+	// "Smithson".
+	Edge Edge
+	// Whole is set for a value searched for only whole, never split into
+	// values at its backslashes: a text a pattern took out of one value,
+	// in which a backslash is text (ST, LT, UT) or absent.
+	Whole bool
 }
 
 // Needles is the values a profile removed from a file. It holds patient

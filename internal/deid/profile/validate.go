@@ -44,9 +44,12 @@ type rule struct {
 	sel    selector
 	when   []condition
 	action *v1.ProfileAction
+	// redact is a redact action's pattern, compiled for a search.
+	redact *regexp.Regexp
 	norm   *v1.ProfileRule
 	origin string
-	// cost is the compiled size of its conditions' patterns.
+	// cost is the compiled size of its patterns: its conditions', its
+	// value pattern's and its redact's.
 	cost int
 }
 
@@ -132,8 +135,9 @@ func checkRule(a at, r *v1.ProfileRule, names map[string]int) (rule, bool) {
 	sel, normSel, ok := parseSelector(a.in("selector"), r.GetSelector(), nil)
 	when := parseConditions(a, "when", r.GetWhen())
 	var action *v1.ProfileAction
+	var redact *regexp.Regexp
 	if ok {
-		action = checkAction(a, r.GetAction(), sel)
+		action, redact = checkAction(a, r.GetAction(), sel)
 	} else if r.GetAction().GetKind() == nil {
 		a.in("action").add(CodeRequired, "a rule needs an action")
 	}
@@ -143,7 +147,7 @@ func checkRule(a at, r *v1.ProfileRule, names map[string]int) (rule, bool) {
 	norm, _ := proto.Clone(r).(*v1.ProfileRule)
 	norm.Selector = normSel
 	norm.Action = action
-	return rule{sel: sel, when: when, action: action, norm: norm, cost: a.c.cost - costBefore}, true
+	return rule{sel: sel, when: when, action: action, redact: redact, norm: norm, cost: a.c.cost - costBefore}, true
 }
 
 // checkPixelRule checks and compiles one pixel rule.

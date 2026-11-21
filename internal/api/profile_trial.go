@@ -40,6 +40,7 @@ func trialResult(t receive.Trial, budget *int) *v1.TrialResult {
 		el := &v1.TrialElement{
 			Path: e.Path, Keyword: keywordOf(e.Tag), Vr: e.VR, Action: e.Action, Rule: int32(e.Rule + 1), //nolint:gosec // G115: a position under profile.MaxExpandedRules.
 			RuleName: e.RuleName, Origin: e.Origin, Reason: e.Reason, Changed: e.Changed,
+			Redactions: int32(e.Redactions), PatternMatches: int32(e.PatternMatches), //nolint:gosec // G115: at most profile.MaxRedactMatches.
 		}
 		el.Before, _ = valueAt(t.Before, e.Path)
 		if t.After != nil {

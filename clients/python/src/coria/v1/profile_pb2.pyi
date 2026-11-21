@@ -135,7 +135,7 @@ class ProfileRule(_message.Message):
     def __init__(self, name: _Optional[str] = ..., selector: _Optional[_Union[ProfileSelector, _Mapping]] = ..., when: _Optional[_Iterable[_Union[ProfileCondition, _Mapping]]] = ..., action: _Optional[_Union[ProfileAction, _Mapping]] = ..., reason: _Optional[str] = ...) -> None: ...
 
 class ProfileSelector(_message.Message):
-    __slots__ = ("tag", "keyword", "group", "vr", "private_element", "path", "content_item", "include_private")
+    __slots__ = ("tag", "keyword", "group", "vr", "private_element", "path", "content_item", "value_pattern", "include_private")
     TAG_FIELD_NUMBER: _ClassVar[int]
     KEYWORD_FIELD_NUMBER: _ClassVar[int]
     GROUP_FIELD_NUMBER: _ClassVar[int]
@@ -143,6 +143,7 @@ class ProfileSelector(_message.Message):
     PRIVATE_ELEMENT_FIELD_NUMBER: _ClassVar[int]
     PATH_FIELD_NUMBER: _ClassVar[int]
     CONTENT_ITEM_FIELD_NUMBER: _ClassVar[int]
+    VALUE_PATTERN_FIELD_NUMBER: _ClassVar[int]
     INCLUDE_PRIVATE_FIELD_NUMBER: _ClassVar[int]
     tag: str
     keyword: str
@@ -151,8 +152,19 @@ class ProfileSelector(_message.Message):
     private_element: PrivateElement
     path: str
     content_item: ContentItemSelector
+    value_pattern: ValuePatternSelector
     include_private: bool
-    def __init__(self, tag: _Optional[str] = ..., keyword: _Optional[str] = ..., group: _Optional[str] = ..., vr: _Optional[str] = ..., private_element: _Optional[_Union[PrivateElement, _Mapping]] = ..., path: _Optional[str] = ..., content_item: _Optional[_Union[ContentItemSelector, _Mapping]] = ..., include_private: _Optional[bool] = ...) -> None: ...
+    def __init__(self, tag: _Optional[str] = ..., keyword: _Optional[str] = ..., group: _Optional[str] = ..., vr: _Optional[str] = ..., private_element: _Optional[_Union[PrivateElement, _Mapping]] = ..., path: _Optional[str] = ..., content_item: _Optional[_Union[ContentItemSelector, _Mapping]] = ..., value_pattern: _Optional[_Union[ValuePatternSelector, _Mapping]] = ..., include_private: _Optional[bool] = ...) -> None: ...
+
+class ValuePatternSelector(_message.Message):
+    __slots__ = ("pattern", "search", "vr")
+    PATTERN_FIELD_NUMBER: _ClassVar[int]
+    SEARCH_FIELD_NUMBER: _ClassVar[int]
+    VR_FIELD_NUMBER: _ClassVar[int]
+    pattern: str
+    search: bool
+    vr: str
+    def __init__(self, pattern: _Optional[str] = ..., search: _Optional[bool] = ..., vr: _Optional[str] = ...) -> None: ...
 
 class PrivateElement(_message.Message):
     __slots__ = ("creator", "group", "element")
@@ -191,7 +203,7 @@ class ProfileCondition(_message.Message):
     def __init__(self, subject: _Optional[_Union[ConditionSubject, str]] = ..., equals: _Optional[str] = ..., prefix: _Optional[str] = ..., pattern: _Optional[str] = ..., present: _Optional[bool] = ..., negate: _Optional[bool] = ...) -> None: ...
 
 class ProfileAction(_message.Message):
-    __slots__ = ("keep", "remove", "empty", "replace", "set", "hash", "uid", "shift", "generalize", "lookup", "clean", "quarantine", "dummy", "remove_unless_required")
+    __slots__ = ("keep", "remove", "empty", "replace", "set", "hash", "uid", "shift", "generalize", "lookup", "clean", "quarantine", "dummy", "remove_unless_required", "redact")
     KEEP_FIELD_NUMBER: _ClassVar[int]
     REMOVE_FIELD_NUMBER: _ClassVar[int]
     EMPTY_FIELD_NUMBER: _ClassVar[int]
@@ -206,6 +218,7 @@ class ProfileAction(_message.Message):
     QUARANTINE_FIELD_NUMBER: _ClassVar[int]
     DUMMY_FIELD_NUMBER: _ClassVar[int]
     REMOVE_UNLESS_REQUIRED_FIELD_NUMBER: _ClassVar[int]
+    REDACT_FIELD_NUMBER: _ClassVar[int]
     keep: KeepAction
     remove: RemoveAction
     empty: EmptyAction
@@ -220,7 +233,8 @@ class ProfileAction(_message.Message):
     quarantine: QuarantineAction
     dummy: DummyAction
     remove_unless_required: RemoveUnlessRequiredAction
-    def __init__(self, keep: _Optional[_Union[KeepAction, _Mapping]] = ..., remove: _Optional[_Union[RemoveAction, _Mapping]] = ..., empty: _Optional[_Union[EmptyAction, _Mapping]] = ..., replace: _Optional[_Union[ReplaceAction, _Mapping]] = ..., set: _Optional[_Union[SetAction, _Mapping]] = ..., hash: _Optional[_Union[HashAction, _Mapping]] = ..., uid: _Optional[_Union[UidAction, _Mapping]] = ..., shift: _Optional[_Union[ShiftAction, _Mapping]] = ..., generalize: _Optional[_Union[GeneralizeAction, _Mapping]] = ..., lookup: _Optional[_Union[LookupAction, _Mapping]] = ..., clean: _Optional[_Union[CleanAction, _Mapping]] = ..., quarantine: _Optional[_Union[QuarantineAction, _Mapping]] = ..., dummy: _Optional[_Union[DummyAction, _Mapping]] = ..., remove_unless_required: _Optional[_Union[RemoveUnlessRequiredAction, _Mapping]] = ...) -> None: ...
+    redact: RedactAction
+    def __init__(self, keep: _Optional[_Union[KeepAction, _Mapping]] = ..., remove: _Optional[_Union[RemoveAction, _Mapping]] = ..., empty: _Optional[_Union[EmptyAction, _Mapping]] = ..., replace: _Optional[_Union[ReplaceAction, _Mapping]] = ..., set: _Optional[_Union[SetAction, _Mapping]] = ..., hash: _Optional[_Union[HashAction, _Mapping]] = ..., uid: _Optional[_Union[UidAction, _Mapping]] = ..., shift: _Optional[_Union[ShiftAction, _Mapping]] = ..., generalize: _Optional[_Union[GeneralizeAction, _Mapping]] = ..., lookup: _Optional[_Union[LookupAction, _Mapping]] = ..., clean: _Optional[_Union[CleanAction, _Mapping]] = ..., quarantine: _Optional[_Union[QuarantineAction, _Mapping]] = ..., dummy: _Optional[_Union[DummyAction, _Mapping]] = ..., remove_unless_required: _Optional[_Union[RemoveUnlessRequiredAction, _Mapping]] = ..., redact: _Optional[_Union[RedactAction, _Mapping]] = ...) -> None: ...
 
 class KeepAction(_message.Message):
     __slots__ = ()
@@ -285,6 +299,14 @@ class QuarantineAction(_message.Message):
 class DummyAction(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
+
+class RedactAction(_message.Message):
+    __slots__ = ("pattern", "replacement")
+    PATTERN_FIELD_NUMBER: _ClassVar[int]
+    REPLACEMENT_FIELD_NUMBER: _ClassVar[int]
+    pattern: str
+    replacement: str
+    def __init__(self, pattern: _Optional[str] = ..., replacement: _Optional[str] = ...) -> None: ...
 
 class RemoveUnlessRequiredAction(_message.Message):
     __slots__ = ("fallback",)
@@ -685,7 +707,7 @@ class TrialPixels(_message.Message):
     def __init__(self, at_risk: _Optional[bool] = ..., risk_cause: _Optional[str] = ..., rule: _Optional[str] = ..., origin: _Optional[str] = ..., action: _Optional[str] = ..., regions: _Optional[_Iterable[_Union[PixelRectangle, _Mapping]]] = ..., frames: _Optional[int] = ..., decoded_bytes: _Optional[int] = ..., decoded: _Optional[bool] = ..., segments_removed: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class TrialElement(_message.Message):
-    __slots__ = ("path", "keyword", "vr", "action", "rule", "rule_name", "origin", "reason", "changed", "before", "after", "present_after")
+    __slots__ = ("path", "keyword", "vr", "action", "rule", "rule_name", "origin", "reason", "changed", "before", "after", "present_after", "redactions", "pattern_matches")
     PATH_FIELD_NUMBER: _ClassVar[int]
     KEYWORD_FIELD_NUMBER: _ClassVar[int]
     VR_FIELD_NUMBER: _ClassVar[int]
@@ -698,6 +720,8 @@ class TrialElement(_message.Message):
     BEFORE_FIELD_NUMBER: _ClassVar[int]
     AFTER_FIELD_NUMBER: _ClassVar[int]
     PRESENT_AFTER_FIELD_NUMBER: _ClassVar[int]
+    REDACTIONS_FIELD_NUMBER: _ClassVar[int]
+    PATTERN_MATCHES_FIELD_NUMBER: _ClassVar[int]
     path: str
     keyword: str
     vr: str
@@ -710,7 +734,9 @@ class TrialElement(_message.Message):
     before: str
     after: str
     present_after: bool
-    def __init__(self, path: _Optional[str] = ..., keyword: _Optional[str] = ..., vr: _Optional[str] = ..., action: _Optional[str] = ..., rule: _Optional[int] = ..., rule_name: _Optional[str] = ..., origin: _Optional[str] = ..., reason: _Optional[str] = ..., changed: _Optional[bool] = ..., before: _Optional[str] = ..., after: _Optional[str] = ..., present_after: _Optional[bool] = ...) -> None: ...
+    redactions: int
+    pattern_matches: int
+    def __init__(self, path: _Optional[str] = ..., keyword: _Optional[str] = ..., vr: _Optional[str] = ..., action: _Optional[str] = ..., rule: _Optional[int] = ..., rule_name: _Optional[str] = ..., origin: _Optional[str] = ..., reason: _Optional[str] = ..., changed: _Optional[bool] = ..., before: _Optional[str] = ..., after: _Optional[str] = ..., present_after: _Optional[bool] = ..., redactions: _Optional[int] = ..., pattern_matches: _Optional[int] = ...) -> None: ...
 
 class TrialSummary(_message.Message):
     __slots__ = ("files", "passed", "held", "by_rule", "by_reason", "undecided")

@@ -296,10 +296,15 @@ func writePair(t *testing.T, dir, prefix, original string, result []byte, rec *R
 	type needle struct {
 		Kind  string `json:"kind"`
 		Value string `json:"value"`
+		Edge  string `json:"edge,omitempty"`
 	}
 	list := make([]needle, 0, len(rec.Needles))
 	for _, n := range rec.Needles {
-		list = append(list, needle{kinds[n.Kind], n.Value})
+		nd := needle{Kind: kinds[n.Kind], Value: n.Value}
+		if n.Edge == EdgeWord {
+			nd.Edge = "word"
+		}
+		list = append(list, nd)
 	}
 	side, err := json.Marshal(list)
 	if err != nil {

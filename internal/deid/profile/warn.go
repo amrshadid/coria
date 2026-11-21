@@ -65,7 +65,7 @@ func Warnings(e *v1.ExpandedProfile) (Problems, error) {
 			switch {
 			case b.sel.tier > r.sel.tier && bk != rk:
 				shadowed = append(shadowed, fmt.Sprintf("%s (%s, %s)", describe(b), b.origin, bk))
-			case b.sel.tier <= r.sel.tier && rk == "keep" && bk != "keep" && bk != "quarantine":
+			case b.sel.tier <= r.sel.tier && (rk == "keep" || rk == "redact") && bk != "keep" && bk != "quarantine":
 				overridden = append(overridden, fmt.Sprintf("%s (%s, %s)", describe(b), b.origin, bk))
 			}
 		}
@@ -78,9 +78,12 @@ func Warnings(e *v1.ExpandedProfile) (Problems, error) {
 		}
 		if len(overridden) > 0 {
 			w := where
-			w.Field = "action.keep"
+			w.Field = "action." + actionKind(r.action)
 			w.Code = CodeKeepsBaseChange
 			w.Message = fmt.Sprintf("this rule keeps elements a base changes or removes: %s", listNamed(overridden))
+			if actionKind(r.action) == "redact" {
+				w.Message = fmt.Sprintf("this rule keeps what it does not cut of elements a base changes or removes: %s", listNamed(overridden))
+			}
 			add(w)
 		}
 	}
@@ -113,6 +116,8 @@ func describe(r rule) string {
 		return fmt.Sprintf("%q %s,xx%s", pe.GetCreator(), pe.GetGroup(), pe.GetElement())
 	case s.tier == TierGroup:
 		return "group " + r.norm.GetSelector().GetGroup()
+	case s.tier == TierValue:
+		return fmt.Sprintf("the value pattern %q", clipText(r.norm.GetSelector().GetValuePattern().GetPattern()))
 	case s.tier == TierVR:
 		return "VR " + s.vr
 	}
@@ -150,6 +155,8 @@ func actionKind(a *v1.ProfileAction) string {
 		return "dummy"
 	case *v1.ProfileAction_RemoveUnlessRequired:
 		return "remove unless required"
+	case *v1.ProfileAction_Redact:
+		return "redact"
 	}
 	return "unknown"
 }
@@ -172,10 +179,25 @@ func overlap(x, y selector) bool {
 			return x.creator == y.creator && x.privGroup == y.privGroup && (x.privElem < 0 || y.privElem < 0 || x.privElem == y.privElem)
 		case TierGroup:
 			return y.includePrivate && x.privGroup&y.groupMask == y.groupValue
+		case TierValue:
+			// The file gives a private element its VR, which may be one a
+			// value pattern reads.
+			return y.includePrivate
 		}
 	case x.tier == TierGroup && y.tier == TierGroup:
 		common := x.groupMask & y.groupMask
 		return (x.groupValue^y.groupValue)&common == 0
+	case x.tier == TierGroup && y.tier == TierValue:
+		// A group holds elements of many VRs; one of them may be text a
+		// value pattern reads.
+		return true
+	case x.tier == TierValue:
+		// Which values a pattern matches is not known from the selectors,
+		// so two of them, or one and a VR it reads, may meet.
+		if y.tier == TierVR {
+			return slices.Contains(x.vrs, y.vr)
+		}
+		return slices.ContainsFunc(x.vrs, func(v string) bool { return slices.Contains(y.vrs, v) })
 	case x.tier == TierVR && y.tier == TierVR:
 		return x.vr == y.vr
 	}
@@ -196,6 +218,8 @@ func overlapStandard(t uint32, vrs []string, y selector) bool {
 		return y.tag == t
 	case TierGroup:
 		return group(t)&y.groupMask == y.groupValue
+	case TierValue:
+		return slices.ContainsFunc(vrs, func(v string) bool { return slices.Contains(y.vrs, v) })
 	case TierVR:
 		return slices.Contains(vrs, y.vr)
 	}

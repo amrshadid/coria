@@ -2,6 +2,8 @@ package profile
 
 import (
 	"fmt"
+	"regexp"
+	"slices"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 )
@@ -27,6 +29,17 @@ type Location struct {
 	// ValueType is that content item's Value Type (0040,A040), without
 	// padding; empty for an element of any other data set.
 	ValueType string
+	// Value is the element's value as text, decoded from the file's
+	// character set and its padding removed, which a value pattern reads;
+	// the engine gives it for the VRs a value pattern reads, and leaves it
+	// empty for any other element and for a value it could not read.
+	Value string
+	// ValueUnread reports a text value the engine could not give a value
+	// pattern: longer than MaxPatternValue, not in memory, or holding an
+	// escape no decoder turned into UTF-8. No value pattern selects it,
+	// and the decision says one would have read it (PatternUnread), so
+	// the engine refuses the file rather than pass it unread.
+	ValueUnread bool
 }
 
 // Decision is what a profile does to one element: the rule that decides and
@@ -44,6 +57,20 @@ type Decision struct {
 	// expanded form stores them; nil when the selector says nothing of
 	// the VR, and when no rule decides.
 	VRs []string
+	// PatternMatches are what the deciding rule's value pattern matched in
+	// the value (each whole part, or each text a search found), each text
+	// once, at most MaxRedactMatches; nil when the deciding rule has no
+	// value pattern.
+	PatternMatches []string
+	// PatternOver reports that the deciding rule's value pattern matched
+	// more than MaxRedactMatches distinct texts.
+	PatternOver bool
+	// PatternUnread reports that a value pattern would have read the
+	// element's value, and could not (Location.ValueUnread).
+	PatternUnread bool
+	// Redact is a redact action's pattern, compiled for a search; nil for
+	// any other action.
+	Redact *regexp.Regexp
 }
 
 // Program is an expanded profile compiled for deciding, element by element,
@@ -60,6 +87,7 @@ type Program struct {
 	privEl map[privateKey][]int
 	block  map[privateKey][]int
 	groups []int
+	values []int
 	byVR   map[string][]int
 }
 
@@ -85,8 +113,9 @@ func Compile(e *v1.ExpandedProfile) (*Program, error) {
 	if e == nil {
 		return nil, fmt.Errorf("profile: no expanded profile")
 	}
-	if ed := e.GetLanguageEdition(); ed != LanguageEdition {
-		return nil, fmt.Errorf("profile: %s: the expanded profile is of language edition %d, and this build runs edition %d", CodeBadEdition, ed, LanguageEdition)
+	ed := e.GetLanguageEdition()
+	if ed < 1 || ed > LanguageEdition {
+		return nil, fmt.Errorf("profile: %s: the expanded profile is of language edition %d, and this build runs editions 1 to %d", CodeBadEdition, ed, LanguageEdition)
 	}
 	if e.GetUnnamed() == v1.UnnamedElements_UNNAMED_ELEMENTS_UNSPECIFIED || e.GetDateShiftDays() < 1 || e.GetDateShiftDays() > MaxDateShiftDays {
 		return nil, fmt.Errorf("profile: an expanded profile states its defaults")
@@ -105,15 +134,19 @@ func Compile(e *v1.ExpandedProfile) (*Program, error) {
 	for i, er := range e.GetRules() {
 		r := er.GetRule()
 		a := at{c: chk, rule: i + 1, name: r.GetName()}
+		if ed < valuePatternEdition && usesValuePatterns(r) {
+			return nil, fmt.Errorf("profile: %s: rule %d has a value pattern or redact, which language edition %d does not have", CodeBadEdition, i+1, ed)
+		}
 		sel, _, ok := parseSelector(a.in("selector"), r.GetSelector(), er.GetVrs())
 		when := parseConditions(a, "when", r.GetWhen())
+		var redact *regexp.Regexp
 		if ok {
-			checkAction(a, r.GetAction(), sel)
+			_, redact = checkAction(a, r.GetAction(), sel)
 		}
 		if len(chk.list) > 0 {
 			return nil, fmt.Errorf("profile: the expanded profile: %w", chk.list)
 		}
-		p.rules = append(p.rules, rule{sel: sel, when: when, action: r.GetAction(), norm: r, origin: er.GetOrigin()})
+		p.rules = append(p.rules, rule{sel: sel, when: when, action: r.GetAction(), redact: redact, norm: r, origin: er.GetOrigin()})
 		switch sel.tier {
 		case TierPlace:
 			p.places = append(p.places, i)
@@ -127,6 +160,8 @@ func Compile(e *v1.ExpandedProfile) (*Program, error) {
 			p.block[k] = append(p.block[k], i)
 		case TierGroup:
 			p.groups = append(p.groups, i)
+		case TierValue:
+			p.values = append(p.values, i)
 		case TierVR:
 			p.byVR[sel.vr] = append(p.byVR[sel.vr], i)
 		}
@@ -163,32 +198,66 @@ func (p *Program) HoldsUnsearchedSegments() bool {
 // whose conditions all hold, the one of the highest tier decides, and
 // between rules of one tier the later. With none, a private element (an
 // odd group) is removed and any other follows Unnamed.
+//
+// A value pattern reads loc.Value, in one pass for each value pattern
+// rule; one that would have read a value the engine could not read
+// (loc.ValueUnread) does not select it, and the decision says so
+// (PatternUnread).
 func (p *Program) Decide(loc Location, f Facts) Decision {
-	pk := privateKey{loc.Creator, group(loc.Tag)}
-	// One list per tier, from the most specific.
-	for _, candidates := range [][]int{
-		p.places,
-		p.byTag[loc.Tag],
-		p.privEl[pk],
-		p.block[pk],
-		p.groups,
-		p.byVR[loc.VR],
-	} {
+	unread := false
+	for _, candidates := range p.tiers(loc) {
 		// The rules of a tier are in order, so the last that applies is
 		// the later rule.
 		for j := len(candidates) - 1; j >= 0; j-- {
 			i := candidates[j]
 			r := p.rules[i]
-			if r.sel.matches(loc) && allHold(r.when, f) {
-				return Decision{Index: i, Rule: p.expanded.GetRules()[i], Action: r.action, VRs: r.sel.vrs}
+			var matches []string
+			var over bool
+			if r.sel.tier == TierValue {
+				if !r.sel.readsValueOf(loc) {
+					continue
+				}
+				if loc.ValueUnread {
+					unread = true
+					continue
+				}
+				if !allHold(r.when, f) {
+					continue
+				}
+				if matches, over = r.sel.value.find(loc.VR, loc.Value); len(matches) == 0 {
+					continue
+				}
+			} else if !r.sel.matches(loc) || !allHold(r.when, f) {
+				continue
 			}
+			return Decision{Index: i, Rule: p.expanded.GetRules()[i], Action: r.action, VRs: r.sel.vrs,
+				PatternMatches: matches, PatternOver: over, PatternUnread: unread, Redact: r.redact}
 		}
 	}
 	if group(loc.Tag)%2 == 1 || p.Unnamed() == v1.UnnamedElements_UNNAMED_ELEMENTS_REMOVE {
-		return Decision{Index: -1, Action: removeAction}
+		return Decision{Index: -1, Action: removeAction, PatternUnread: unread}
 	}
-	return Decision{Index: -1, Action: keepAction}
+	return Decision{Index: -1, Action: keepAction, PatternUnread: unread}
 }
+
+// tiers returns the rules that could select the element at loc, one list
+// per tier, from the most specific.
+func (p *Program) tiers(loc Location) [][]int {
+	pk := privateKey{loc.Creator, group(loc.Tag)}
+	return [][]int{
+		p.places,
+		p.byTag[loc.Tag],
+		p.privEl[pk],
+		p.block[pk],
+		p.groups,
+		p.values,
+		p.byVR[loc.VR],
+	}
+}
+
+// ReadsValues reports whether any rule has a value pattern, so the engine
+// needs to give each element's value in its Location.
+func (p *Program) ReadsValues() bool { return len(p.values) > 0 }
 
 // Pixels returns the pixel rule that decides for an image of rows and
 // columns, given the file's and the reception's facts: the last that
@@ -237,8 +306,24 @@ func (s selector) matches(loc Location) bool {
 		return (standard || private && s.includePrivate) && group(loc.Tag)&s.groupMask == s.groupValue
 	case TierVR:
 		return (standard || private && s.includePrivate) && loc.VR == s.vr
+	case TierValue:
+		if !s.readsValueOf(loc) || loc.ValueUnread {
+			return false
+		}
+		m, _ := s.value.find(loc.VR, loc.Value)
+		return len(m) > 0
 	}
 	return false
+}
+
+// readsValueOf reports whether a value pattern reads the value of the
+// element at loc: a standard element, or a private one with
+// include_private, of one of its VRs. The caller has already refused the
+// elements no selector selects.
+func (s selector) readsValueOf(loc Location) bool {
+	private := group(loc.Tag)%2 == 1
+	standard := !private && loc.Creator == ""
+	return (standard || private && s.includePrivate) && slices.Contains(s.vrs, loc.VR) && !pipelineOwned(loc.Tag) && !isCreatorElement(loc.Tag)
 }
 
 // stepsMatch reports whether a path's steps above its element match the

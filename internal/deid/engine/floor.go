@@ -13,8 +13,8 @@ import (
 
 // The floor: attributes that name or identify the person, which the engine
 // never keeps, at any depth, whatever the profile decides. A profile that
-// would keep one (keep, or clean, which leaves what it does not recognize)
-// gets remove-unless-required with a dummy instead, so the file stays valid
+// would keep one (keep; clean, which leaves what it does not recognize;
+// redact, which keeps what it does not cut) gets remove-unless-required with a dummy instead, so the file stays valid
 // by its IOD and no original value stays; an action that replaces the value
 // (hash, lookup, replace, shift, generalize, dummy, empty, remove) is left
 // as the profile says. Each one's original value is a needle whenever it is
@@ -181,7 +181,8 @@ func floorAction(a Action, private bool) (Action, bool) {
 		instead = Action{Kind: ActRemove}
 	}
 	switch a.Kind {
-	case ActKeep, ActClean:
+	case ActKeep, ActClean, ActRedact:
+		// Each leaves what it does not recognize or cut.
 		return instead, true
 	case ActRemoveUnlessRequired:
 		// A UID fallback keeps a sequence for the UIDs inside, which for

@@ -44,6 +44,9 @@ type run struct {
 	// locs, when not nil, receives the location of each element a rule
 	// was asked about, by its entry's index, for an explanation (Explain).
 	locs map[int]profile.Location
+	// patternWork is what the file's value patterns and redacts have
+	// spent of maxPatternWork.
+	patternWork int64
 }
 
 // opKind is what an op does.
@@ -276,24 +279,28 @@ func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement
 	if sc.valueType != "" {
 		loc.ContentItem, loc.ValueType = sc.concept, sc.valueType
 	}
+	unread, err := r.withValue(&loc, elem, path)
+	if err != nil {
+		return false, err
+	}
 	dec := r.en.dec.Decide(loc, r.facts)
-	e := Entry{Path: path, Tag: uint32(t), VR: vr, Action: dec.Action.Kind.String(), Rule: dec.Rule, RuleName: dec.Name, Origin: dec.Origin, Reason: dec.Reason}
+	if err := patternFailure(dec, unread, path, ruleLabel(dec)); err != nil {
+		return false, err
+	}
+	e := Entry{Path: path, Tag: uint32(t), VR: vr, Action: dec.Action.Kind.String(), Rule: dec.Rule, RuleName: dec.Name, Origin: dec.Origin, Reason: dec.Reason, PatternMatches: len(dec.PatternMatches)}
 	raw, _ := elementText(ds, t)
 	nvr := needleVR(t, vr, raw)
 	c := &target{ds: ds, tag: t, elem: elem, vr: vr, nvr: nvr, seqs: seqs, path: path, entry: len(r.record.Entries), sc: sc}
 	if dec.Rule >= 0 {
 		c.byRule = true
-		c.rule = dec.Name
-		if c.rule == "" {
-			c.rule = "rule " + strconv.Itoa(dec.Rule+1)
-		}
+		c.rule = ruleLabel(dec)
 	}
 	act := dec.Action
 	if why := floorReason(uint32(t), vr, nvr); why != "" {
 		c.floor = true
 		if fa, changed := floorAction(act, t.Group()%2 == 1); changed {
 			act = fa
-			e.Action, e.Rule, e.RuleName, e.Origin = fa.Kind.String(), -1, "", ""
+			e.Action, e.Rule, e.RuleName, e.Origin, e.PatternMatches = fa.Kind.String(), -1, "", "", 0
 			e.Reason = "the engine never keeps " + why + ", whatever the profile decides"
 			c.byRule, c.rule = false, ""
 		}
@@ -307,6 +314,7 @@ func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement
 		r.locs[len(r.record.Entries)] = loc
 	}
 	r.record.Entries = append(r.record.Entries, e)
+	r.patternNeedles(dec, act, vr, loc.Value, path)
 	return r.act(c, act, dec.VRs)
 }
 
@@ -439,11 +447,27 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 				continue
 			}
 			raw, ok := elementText(item, t)
-			if !ok {
-				continue
-			}
 			vr := effectiveVR(t, elem)
 			_, creator := privateCreator(t, creators)
+			if !ok {
+				// A value not read here goes with the sequence; but one a
+				// value pattern would have read refuses the file, as where
+				// it stands (withValue).
+				if mode != subtreeAll {
+					loc := profile.Location{Sequences: seqs, Tag: uint32(t), Creator: creator, VR: vr}
+					if valueType != "" {
+						loc.ContentItem, loc.ValueType = concept, valueType
+					}
+					unread, err := r.withValue(&loc, elem, p)
+					if err != nil {
+						return err
+					}
+					if err := patternFailure(r.en.dec.Decide(loc, r.facts), unread, p, ""); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			value := naming.TrimValue(vr, raw)
 			if mode == subtreeAll {
 				nvr := needleVR(t, vr, raw)
@@ -454,7 +478,14 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 			if valueType != "" {
 				loc.ContentItem, loc.ValueType = concept, valueType
 			}
+			unread, err := r.withValue(&loc, elem, p)
+			if err != nil {
+				return err
+			}
 			dec := r.en.dec.Decide(loc, r.facts)
+			if err := patternFailure(dec, unread, p, ruleLabel(dec)); err != nil {
+				return err
+			}
 			act, nvr := dec.Action, needleVR(t, vr, raw)
 			floor := floorReason(uint32(t), vr, nvr) != ""
 			if floor {
@@ -462,6 +493,10 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 			}
 			if (floor || dec.Rule >= 0) && changesValue(act, vr, value) {
 				r.needle(needleKindOf(uint32(t), nvr, basisOf(act)), nvr, value, p)
+			}
+			r.patternNeedles(dec, act, vr, loc.Value, p)
+			if err := r.redactNeedles(act, vr, value, p); err != nil {
+				return err
 			}
 		}
 	}
@@ -490,11 +525,12 @@ func (r *run) removedWhole(t tag.Tag, seqs []uint32, concept *profile.Concept, v
 
 // changesValue reports whether an action removes or changes a value of VR
 // vr: every action but keep and clean (which leave what they do not
-// recognize), a generalization that leaves the value as it is (an age
-// under 90), and a constant equal to the value.
+// recognize) and redact (which keeps what it does not cut, its cuts being
+// needles of their own), a generalization that leaves the value as it is
+// (an age under 90), and a constant equal to the value.
 func changesValue(a Action, vr, value string) bool {
 	switch a.Kind {
-	case ActKeep, ActClean:
+	case ActKeep, ActClean, ActRedact:
 		return false
 	case ActGeneralize:
 		var out string

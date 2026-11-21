@@ -496,8 +496,8 @@ func (a *app) newProfileDescribe() *cobra.Command {
 its bases as they were copied in, then its own, each with its origin (the base
 it came from, or "own"), its selector, its action and its reason. The rule that
 decides an element is the most specific selector's (a path or content item; a
-tag or keyword; a private element; a private creator's block; a group; a VR),
-and between equally specific ones the later. "profile explain" shows the
+tag or keyword; a private element; a private creator's block; a group; a value
+pattern; a VR), and between equally specific ones the later. "profile explain" shows the
 decision for each element of a file.`,
 		Example: `  coria profile describe lab1 research@2
   coria profile describe lab1 --document research.json --json`,

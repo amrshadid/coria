@@ -18,16 +18,8 @@ type Match struct {
 // chooses; the rest are why the element is not treated otherwise, which an
 // explanation of a file shows. It reads nothing but the compiled rules.
 func (p *Program) Matches(loc Location, f Facts) []Match {
-	pk := privateKey{loc.Creator, group(loc.Tag)}
 	var out []Match
-	for _, candidates := range [][]int{
-		p.places,
-		p.byTag[loc.Tag],
-		p.privEl[pk],
-		p.block[pk],
-		p.groups,
-		p.byVR[loc.VR],
-	} {
+	for _, candidates := range p.tiers(loc) {
 		for j := len(candidates) - 1; j >= 0; j-- {
 			i := candidates[j]
 			r := p.rules[i]
@@ -40,7 +32,7 @@ func (p *Program) Matches(loc Location, f Facts) []Match {
 }
 
 // String returns the tier as the word an explanation names it by: place,
-// tag, private_element, private_block, group or vr.
+// tag, private_element, private_block, group, value_pattern or vr.
 func (t Tier) String() string {
 	switch t {
 	case TierPlace:
@@ -53,6 +45,8 @@ func (t Tier) String() string {
 		return "private_block"
 	case TierGroup:
 		return "group"
+	case TierValue:
+		return "value_pattern"
 	case TierVR:
 		return "vr"
 	}

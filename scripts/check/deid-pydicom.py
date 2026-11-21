@@ -6,7 +6,8 @@ Input: the path of a JSON file:
               "deidentified": <path of the same file de-identified>,
               "needles": <path of a JSON list of the values the engine
                           removed or replaced: {"kind": "name" | "date" |
-                          "uid" | "text", "value": ...}>}]}
+                          "uid" | "text", "value": ..., and "edge": "word"
+                          for one matched only as a whole word}>}]}
 
 The values searched for in each result, its needles, come from three
 sources, so a mistake in one is caught by another:
@@ -468,7 +469,7 @@ def check_pair(pair, keywords):
     needles = Needles()
     with open(pair["needles"], encoding="utf-8") as f:
         for n in json.load(f):
-            needles.add(n["kind"], n["value"])
+            needles.add("word" if n.get("edge") == "word" else n["kind"], n["value"])
     gather(orig, keywords, needles)
     hay = texts(out)
     raw = raw_without_pixels(pair["deidentified"], out)

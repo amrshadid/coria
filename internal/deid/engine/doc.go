@@ -61,6 +61,20 @@
 // month, is matched only as a date of that precision, never as the year of
 // a full date. A date of only zeros is removed as its rule says and is no
 // needle: it identifies no one, and is found inside ordinary decimals.
+// What a person's rule chose by a pattern is an identifier needle too: each
+// distinct text a value pattern matched in a value its rule removes or
+// changes, and each distinct text redact cuts (redact.go), searched for
+// whole, and as a whole word when it begins or ends with a letter, so a
+// copy of a redacted MRN kept elsewhere in the file holds it. A value a
+// value pattern would read and cannot (too long, not in memory, holding
+// an undecoded escape), and one with more distinct matches than the bound,
+// refuse the file: none is passed unread or with a needle dropped.
+//
+// Redact (redact.go) cuts the matches of its pattern out of a text value,
+// part by part and a name component by component, again until none is
+// left, and refuses the file when the value left is not one of its VR or
+// the matches pass their bound. On an element the floor covers it is
+// lowered like keep, since it keeps what it does not cut.
 //
 // Clean removes the file's needles from free text: each value, each part
 // of a name (of one or two letters only as a whole word; of a script

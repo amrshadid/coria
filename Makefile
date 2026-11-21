@@ -266,7 +266,7 @@ check-dicomweb:
 check-deid:
 	@test -n "$(PYTHON)" || { echo "check-deid: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-deid: no interpreter $(PYTHON)" >&2; exit 1; }
-	CORIA_CHECK_DEID_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestCorpusFilesAreDeidentified$$' ./internal/deid/engine
+	CORIA_CHECK_DEID_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^(TestCorpusFilesAreDeidentified|TestValuePatternsAgreeWithPydicom)$$' ./internal/deid/engine
 	CORIA_CHECK_DEID_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestAgreesWithPydicom$$' ./internal/deid/check
 
 check-stow:

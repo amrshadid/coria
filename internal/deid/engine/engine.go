@@ -136,6 +136,10 @@ type Engine struct {
 	temporal string
 	// received are the top-level elements templates read, as received.
 	received []uint32
+	// valueCost is the compiled size of the value patterns together, zero
+	// when the profile has none; a value pattern then reads the value of
+	// each text element (Location.Value), each byte at that cost.
+	valueCost int64
 	// pixels decides the pixel rules; nil for an Engine over a Decider
 	// of a test, which matches none.
 	pixels pixelRules
@@ -227,6 +231,9 @@ func newEngine(dec Decider, keys Keys, opts Options) (*Engine, error) {
 	}
 	if en.types == nil {
 		en.types = defaultTypes
+	}
+	if vr, ok := dec.(valueReader); ok {
+		en.valueCost = vr.ValueCost()
 	}
 	seen := map[uint32]bool{}
 	for _, tmpl := range dec.Templates() {

@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 
@@ -45,10 +46,12 @@ var (
 
 // checkAction checks an action against what the selector says of the
 // elements it selects, and returns its normalized form, in which a
-// template's keywords are their tags.
-func checkAction(a at, act *v1.ProfileAction, sel selector) *v1.ProfileAction {
+// template's keywords are their tags, and for redact its pattern compiled
+// for a search.
+func checkAction(a at, act *v1.ProfileAction, sel selector) (*v1.ProfileAction, *regexp.Regexp) {
 	a = a.in("action")
 	norm, _ := proto.Clone(act).(*v1.ProfileAction)
+	var redact *regexp.Regexp
 	switch k := norm.GetKind().(type) {
 	case nil:
 		a.add(CodeRequired, "a rule needs an action")
@@ -73,11 +76,11 @@ func checkAction(a at, act *v1.ProfileAction, sel selector) *v1.ProfileAction {
 	case *v1.ProfileAction_Set:
 		if sel.tier != TierTag {
 			a.in("set").add(CodeActionSelector, "set makes an element where it is absent, so it needs one place: a tag or keyword selector")
-			return norm
+			return norm, nil
 		}
 		if len(sel.vrs) != 1 {
 			a.in("set").add(CodeActionVR, "set makes an element, so the data dictionary must give it one VR; %s has %q", formatTag(sel.tag), strings.Join(sel.vrs, " or "))
-			return norm
+			return norm, nil
 		}
 		if t, ok := checkValue(a.in("set"), sel, k.Set.GetConstant(), k.Set.GetTemplate(), k.Set.GetValue() != nil, isTemplate(k.Set.GetValue())); ok {
 			k.Set.Value = &v1.SetAction_Template{Template: t}
@@ -92,6 +95,8 @@ func checkAction(a at, act *v1.ProfileAction, sel selector) *v1.ProfileAction {
 		fits(a.in("generalize"), sel, coarseVRs, "generalize")
 	case *v1.ProfileAction_Clean:
 		fits(a.in("clean"), sel, cleanVRs, "clean")
+	case *v1.ProfileAction_Redact:
+		redact = checkRedact(a, k.Redact, sel)
 	case *v1.ProfileAction_Lookup:
 		a := a.in("lookup")
 		fits(a, sel, textVRs, "lookup")
@@ -112,7 +117,7 @@ func checkAction(a at, act *v1.ProfileAction, sel selector) *v1.ProfileAction {
 	default:
 		a.add(CodeBadEnum, "an action this version does not know")
 	}
-	return norm
+	return norm, redact
 }
 
 // isTemplate reports whether a value choice is a template.

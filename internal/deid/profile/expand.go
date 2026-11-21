@@ -79,6 +79,7 @@ func Expand(doc *v1.ProfileDocument, cat *Catalog) (*v1.ExpandedProfile, Problem
 		e.PixelRules = append(e.PixelRules, &v1.ExpandedPixelRule{Rule: clonePixelRule(p.norm)})
 	}
 	takeDefaults(e, doc)
+	e.LanguageEdition = editionOf(e)
 	switch {
 	case len(e.Rules) > MaxExpandedRules:
 		top.in("bases").add(CodeTooMany, "with its bases the profile has %d rules, more than %d", len(e.Rules), MaxExpandedRules)
@@ -100,7 +101,23 @@ func Expand(doc *v1.ProfileDocument, cat *Catalog) (*v1.ExpandedProfile, Problem
 // action does. A build runs only the editions it knows, and keeps the
 // meaning of every edition it has shipped, so a stored version never
 // changes what it does when the language grows.
-const LanguageEdition = 1
+//
+// Edition 2 adds value patterns and redact. A profile that uses neither,
+// its bases included, is written as edition 1, so its expanded text and
+// checksum are what they were before edition 2 existed, and a build of
+// edition 1 still runs it.
+const LanguageEdition = 2
+
+// editionOf returns the oldest language edition that has everything an
+// expanded profile's rules use.
+func editionOf(e *v1.ExpandedProfile) int32 {
+	for _, er := range e.GetRules() {
+		if usesValuePatterns(er.GetRule()) {
+			return valuePatternEdition
+		}
+	}
+	return 1
+}
 
 // MaxVersionBytes is the bound of a version's document and expanded form
 // together, each as the most bytes its JSON may take in an answer: the

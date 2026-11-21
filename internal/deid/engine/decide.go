@@ -2,9 +2,11 @@ package engine
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/core/repattern"
 	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
@@ -47,6 +49,9 @@ const (
 	// file's SOP class requires it: Type 2 empties it, Type 1 applies
 	// Fallback (PS3.15 E.1.1's combined actions).
 	ActRemoveUnlessRequired
+	// ActRedact cuts the matches of Pattern out of a text value and keeps
+	// the rest (redact.go).
+	ActRedact
 )
 
 // Fallback is what ActRemoveUnlessRequired does to an element the IOD
@@ -80,6 +85,13 @@ type Action struct {
 	AssignMissing bool
 	// Fallback is ActRemoveUnlessRequired's.
 	Fallback Fallback
+	// Pattern is ActRedact's pattern, compiled for a search; Replacement
+	// what each match becomes; PatternCost its compiled size
+	// (repattern.Measure), which each pass over a value spends times the
+	// value's length from the file's budget (maxPatternWork).
+	Pattern     *regexp.Regexp
+	Replacement string
+	PatternCost int64
 }
 
 // Decision is what a profile does to one element.
@@ -97,6 +109,16 @@ type Decision struct {
 	// VR in the file is not one of them is refused when the action reads
 	// or writes its value.
 	VRs []string
+	// PatternMatches are what the deciding rule's value pattern matched in
+	// the value, each text once; nil when the deciding rule has none.
+	PatternMatches []string
+	// PatternOver reports more distinct matches than
+	// profile.MaxRedactMatches; the file is refused.
+	PatternOver bool
+	// PatternUnread reports that a value pattern would have read a value
+	// the engine could not give it (profile.Location.ValueUnread); the
+	// file is refused.
+	PatternUnread bool
 }
 
 // SetRule is a set rule: it makes the element Tag, of VR VR, at the top
@@ -132,6 +154,11 @@ type programDecider struct {
 	rules []*v1.ExpandedRule
 	sets  []SetRule
 	tmpls []string
+	// valueCost is the compiled size of every value pattern together,
+	// what reading one byte of a text value may cost; redactCost each
+	// redact rule's, by position.
+	valueCost  int64
+	redactCost map[int]int64
 }
 
 // newProgramDecider compiles an expanded profile into a Decider. A set
@@ -142,8 +169,18 @@ func newProgramDecider(e *v1.ExpandedProfile) (*programDecider, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &programDecider{prog: prog, rules: e.GetRules()}
+	d := &programDecider{prog: prog, rules: e.GetRules(), redactCost: map[int]int64{}}
 	for i, er := range d.rules {
+		// The patterns compiled with the program, so they are within the
+		// bounds and Measure cannot fail here.
+		if vp := er.GetRule().GetSelector().GetValuePattern(); vp != nil {
+			c, _ := repattern.Measure(vp.GetPattern())
+			d.valueCost += int64(c)
+		}
+		if rd := er.GetRule().GetAction().GetRedact(); rd != nil {
+			c, _ := repattern.Measure(rd.GetPattern())
+			d.redactCost[i] = int64(c)
+		}
 		a := toAction(er.GetRule().GetAction())
 		if a.Template != "" {
 			d.tmpls = append(d.tmpls, a.Template)
@@ -167,7 +204,16 @@ func newProgramDecider(e *v1.ExpandedProfile) (*programDecider, error) {
 // acts on the same elements whatever library it runs with.
 func (d *programDecider) Decide(loc profile.Location, f profile.Facts) Decision {
 	pd := d.prog.Decide(loc, f)
-	out := Decision{Rule: pd.Index, Action: toAction(pd.Action), VRs: pd.VRs}
+	out := Decision{Rule: pd.Index, Action: toAction(pd.Action), VRs: pd.VRs, PatternMatches: pd.PatternMatches, PatternOver: pd.PatternOver, PatternUnread: pd.PatternUnread}
+	if out.Action.Kind == ActRedact {
+		if pd.Redact == nil {
+			// A redact whose pattern did not compile cannot cut; the file
+			// is refused rather than kept as it is.
+			out.Action = Action{Kind: ActQuarantine}
+		}
+		out.Action.Pattern = pd.Redact
+		out.Action.PatternCost = d.redactCost[pd.Index]
+	}
 	if pd.Rule == nil {
 		switch {
 		case loc.Tag>>16%2 == 1:
@@ -184,6 +230,18 @@ func (d *programDecider) Decide(loc profile.Location, f profile.Facts) Decision 
 	return out
 }
 
+// ruleLabel names a decision's rule as a failure does: its name, or its
+// position ("rule 3") when it has none; empty for a default.
+func ruleLabel(d Decision) string {
+	switch {
+	case d.Rule < 0:
+		return ""
+	case d.Name != "":
+		return d.Name
+	}
+	return "rule " + strconv.Itoa(d.Rule+1)
+}
+
 // Sets implements Decider.
 func (d *programDecider) Sets() []SetRule { return d.sets }
 
@@ -192,6 +250,16 @@ func (d *programDecider) Templates() []string { return d.tmpls }
 
 // DateShiftDays implements Decider.
 func (d *programDecider) DateShiftDays() int32 { return d.prog.DateShiftDays() }
+
+// ValueCost implements valueReader.
+func (d *programDecider) ValueCost() int64 { return d.valueCost }
+
+// valueReader is a Decider whose rules may read an element's value: its
+// value patterns' compiled size together, zero when it has none. A
+// Decider that is not one is given no value.
+type valueReader interface {
+	ValueCost() int64
+}
 
 // toAction converts the language's action.
 func toAction(a *v1.ProfileAction) Action {
@@ -222,6 +290,9 @@ func toAction(a *v1.ProfileAction) Action {
 		return Action{Kind: ActQuarantine}
 	case *v1.ProfileAction_Dummy:
 		return Action{Kind: ActDummy}
+	case *v1.ProfileAction_Redact:
+		// The pattern is the compiled program's (programDecider.Decide).
+		return Action{Kind: ActRedact, Replacement: k.Redact.GetReplacement()}
 	case *v1.ProfileAction_RemoveUnlessRequired:
 		switch k.RemoveUnlessRequired.GetFallback() {
 		case v1.RequiredFallback_REQUIRED_FALLBACK_EMPTY:
@@ -239,7 +310,7 @@ func toAction(a *v1.ProfileAction) Action {
 
 // String is the action's name in a record entry.
 func (k ActionKind) String() string {
-	names := [...]string{"", "keep", "remove", "empty", "replace", "set", "hash", "uid", "shift", "generalize", "lookup", "clean", "quarantine", "dummy", "remove_unless_required"}
+	names := [...]string{"", "keep", "remove", "empty", "replace", "set", "hash", "uid", "shift", "generalize", "lookup", "clean", "quarantine", "dummy", "remove_unless_required", "redact"}
 	if int(k) > 0 && int(k) < len(names) {
 		return names[k]
 	}

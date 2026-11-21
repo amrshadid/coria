@@ -101,6 +101,9 @@ func (c *Checker) forms(needles engine.Needles) (formSet, error) {
 		}
 		kind := kindOf(n.Kind)
 		values := strings.Split(n.Value, `\`)
+		if n.Whole {
+			values = []string{n.Value}
+		}
 		if len(values) > 1 {
 			add(n.Value, kind, modePlain)
 		}
@@ -127,7 +130,7 @@ func (c *Checker) forms(needles engine.Needles) (formSet, error) {
 					add(f.Text, kind, modeOf(f.Edge, modeFullDate))
 				}
 			default:
-				add(v, kind, modePlain)
+				add(v, kind, modeOf(n.Edge, modePlain))
 			}
 		}
 		if set.bytes > c.opts.MaxFormBytes {

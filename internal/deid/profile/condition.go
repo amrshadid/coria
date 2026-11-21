@@ -2,11 +2,10 @@ package profile
 
 import (
 	"regexp"
-	"regexp/syntax"
-	"strconv"
 	"strings"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/core/repattern"
 )
 
 // Bounds of a condition.
@@ -14,17 +13,17 @@ const (
 	// MaxConditions is the most conditions of a rule.
 	MaxConditions = 16
 	// MaxPatternLength is the bound of a regular expression's text.
-	MaxPatternLength = 256
+	MaxPatternLength = repattern.MaxLength
 	// MaxPatternRepeat is the largest count of a repetition, such as
 	// {100}. A count is the bound that matters: the text of x{999} is
 	// short, and its compiled form a thousand copies of x.
-	MaxPatternRepeat = 100
+	MaxPatternRepeat = repattern.MaxRepeat
 	// MaxPatternCost is the bound of one regular expression's compiled
 	// size: its instructions and the ranges of its character classes. A
 	// class such as \pL holds hundreds of ranges, so the ranges are
 	// counted with the instructions, which alone would let \pL{100}
 	// through at a hundred.
-	MaxPatternCost = 10000
+	MaxPatternCost = repattern.MaxCost
 	// MaxPatternBudget is the bound of the compiled size of every regular
 	// expression of a document, or of an expanded profile, counted once
 	// for each condition that has one: what one check compiles and what
@@ -145,7 +144,6 @@ func parseCondition(a at, c *v1.ProfileCondition) (condition, bool) {
 type compiledPattern struct {
 	re      *regexp.Regexp
 	cost    int
-	problem Code
 	message string
 }
 
@@ -157,70 +155,47 @@ type compiledPattern struct {
 // The pattern is parsed alone first, so it is known to be whole (a pattern
 // such as "a)|(b" would otherwise escape the anchors around it), and its
 // size is measured on its compiled program before the regexp package
-// compiles it, once for each distinct text in a check: a size bound on the
-// text alone let short patterns compile to megabytes. RE2 then runs in
-// time linear in the value.
-func compilePattern(a at, p string) *regexp.Regexp {
-	cp, seen := a.c.patterns[p]
-	if !seen {
-		cp = measurePattern(p)
-		if cp.problem == "" {
-			// Within the bounds just measured, compiling cannot fail.
-			cp.re = regexp.MustCompile(`\A(?:` + p + `)\z`)
-		}
-		a.c.patterns[p] = cp
+// compiles it (repattern), once for each distinct text in a check: a size
+// bound on the text alone let short patterns compile to megabytes. RE2
+// then runs in time linear in the value.
+func compilePattern(a at, p string) *regexp.Regexp { return boundPattern(a, p, false) }
+
+// compileSearch compiles a pattern to find its matches anywhere in a
+// value, within the bounds and the budget of compilePattern.
+func compileSearch(a at, p string) *regexp.Regexp { return boundPattern(a, p, true) }
+
+// boundPattern compiles a pattern whole or for a search, once for each
+// distinct text and form in a check, and counts its size against the
+// check's budget at each use.
+func boundPattern(a at, p string, search bool) *regexp.Regexp {
+	key := "whole\x00" + p
+	if search {
+		key = "search\x00" + p
 	}
-	if cp.problem != "" {
-		a.add(cp.problem, "%s", cp.message)
+	cp, seen := a.c.patterns[key]
+	if !seen {
+		var err error
+		if search {
+			cp.re, cp.cost, err = repattern.CompileSearch(p)
+		} else {
+			cp.re, cp.cost, err = repattern.Compile(p)
+		}
+		if err != nil {
+			cp = compiledPattern{message: "\"" + clipText(p) + "\": " + err.Error()}
+		}
+		a.c.patterns[key] = cp
+	}
+	if cp.re == nil {
+		a.add(CodeBadPattern, "%s", cp.message)
 		return nil
 	}
 	a.c.cost += cp.cost
 	if a.c.cost > MaxPatternBudget {
 		if !a.c.overBudget {
 			a.c.overBudget = true
-			a.add(CodeTooLarge, "the regular expressions of the profile compile to more than %d instructions and ranges, counted once for each condition", MaxPatternBudget)
+			a.add(CodeTooLarge, "the regular expressions of the profile compile to more than %d instructions and ranges, counted once for each use", MaxPatternBudget)
 		}
 		return nil
 	}
 	return cp.re
-}
-
-// measurePattern parses a pattern and measures its compiled size, without
-// the regexp package's own compilation, whose cost is what is bounded.
-func measurePattern(p string) compiledPattern {
-	if len(p) > MaxPatternLength {
-		return compiledPattern{problem: CodeBadPattern, message: "a pattern is at most " + strconv.Itoa(MaxPatternLength) + " bytes"}
-	}
-	re, err := syntax.Parse(p, syntax.Perl)
-	if err != nil {
-		return compiledPattern{problem: CodeBadPattern, message: "\"" + clipText(p) + "\" is not a regular expression of RE2: " + err.Error()}
-	}
-	if n := largestRepeat(re); n > MaxPatternRepeat {
-		return compiledPattern{problem: CodeBadPattern, message: "a repetition counts at most " + strconv.Itoa(MaxPatternRepeat) + ", and this one " + strconv.Itoa(n)}
-	}
-	prog, err := syntax.Compile(re.Simplify())
-	if err != nil {
-		return compiledPattern{problem: CodeBadPattern, message: "\"" + clipText(p) + "\" does not compile: " + err.Error()}
-	}
-	cost := len(prog.Inst)
-	for _, in := range prog.Inst {
-		cost += len(in.Rune) / 2
-	}
-	if cost > MaxPatternCost {
-		return compiledPattern{problem: CodeBadPattern, message: "the pattern compiles to " + strconv.Itoa(cost) + " instructions and ranges, more than " + strconv.Itoa(MaxPatternCost)}
-	}
-	return compiledPattern{cost: cost}
-}
-
-// largestRepeat returns the largest count of a repetition in re, such as
-// 999 for x{2,999}.
-func largestRepeat(re *syntax.Regexp) int {
-	n := 0
-	if re.Op == syntax.OpRepeat {
-		n = max(re.Min, re.Max)
-	}
-	for _, sub := range re.Sub {
-		n = max(n, largestRepeat(sub))
-	}
-	return n
 }

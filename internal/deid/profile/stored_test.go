@@ -41,7 +41,9 @@ func TestExpandedFormStoresWhatValidationDecided(t *testing.T) {
 	if got := e.GetRules()[8].GetRule().GetAction().GetLookup().GetOnMissing(); got != v1.LookupMissing_LOOKUP_MISSING_QUARANTINE {
 		t.Errorf("a lookup's default is %v in the expanded form", got)
 	}
-	if e.GetLanguageEdition() != profile.LanguageEdition || profile.LanguageEdition != 1 {
+	// A document that uses nothing of a later edition is written as
+	// edition 1, as it was before any later edition existed.
+	if e.GetLanguageEdition() != 1 || profile.LanguageEdition != 2 {
 		t.Errorf("language edition %d", e.GetLanguageEdition())
 	}
 	p, err := profile.Compile(e)
