@@ -219,6 +219,87 @@ no value; `profile describe` lists every rule a version runs with its origin;
 (it answers the files' values, and can read held files); making a version needs
 admin. Every command takes `--json`.
 
+A rule can also choose elements by their value, and cut only part of a value.
+A `valuePattern` selector (an RE2 pattern of at most 256 bytes; the whole value
+by default, anywhere in it with `"search": true`) selects the SH, LO, UC, ST,
+LT, UT and PN elements whose text matches, at any depth, each value of a
+multi-valued element apart with its padding removed. Matching is exact: case
+counts unless the pattern says `(?i)`, and an accented letter written composed
+differs from the same letter written decomposed. A search takes the longest
+match at each place, so `MRN|MRN\d+` finds the whole MRN. A rule naming an
+element by its tag, path, private creator or group wins over it, and it wins
+over a rule of a whole VR. The `redact` action cuts the matches of its pattern
+out of a text value and keeps the rest: with `{"redact": {"pattern":
+"MRN\\d{6}"}}` on Study Description, `Head CT MRN123456 follow-up` becomes
+`Head CT  follow-up`. A name component is cut apart from the others, so a name
+keeps its `^` and `=`; but a person's name is never partly kept, so redact on a
+PN removes it as keep would.
+
+Neither ever passes a value unread or half done: the file is held when a value
+a pattern would read is longer than 64 KiB (`too_large`) or cannot be read as
+text (`bad_value`), when a pattern finds more than 256 distinct texts in one
+value (`too_many_matches`), when the value left after a cut would not be valid
+for its VR or would not fit its element (`redact_invalid`), and when a file's
+patterns would run past their bound of work (`too_large`: the bytes each reads
+times its compiled size). Every distinct text a pattern rule removes or cuts is
+searched for by the check after, as a whole word when it begins or ends with a
+letter, so a copy of a redacted MRN kept elsewhere in the file holds it.
+`profile try` shows each element's `redactions` and `patternMatches`, and
+`profile explain` names the selector `value_pattern`. A version that uses
+either is of language edition 2; versions that do not keep their checksums.
+
+### Check the archive, and dry-run a version over it
+
+```
+coria deid check lab1 --wait
+coria deid dry-run lab1 research@2 sub-0017 --wait
+coria job failures lab1 <job id> --warnings
+```
+
+Both are jobs of the kind deid that change nothing: no catalog row, no stored
+byte, no lookup table. `deid check` verifies each archived instance against the
+profile version its catalog row records, by what that version would leave of
+each element the archive holds: no element it removes (a private element it
+does not keep among them), no value in an element it empties
+(`kept_value`), nothing but what the IOD keeps of an element it removes or
+empties unless required; Patient Identity Removed (0012,0062) YES;
+De-identification Method (0012,0063) naming the version; and no UID outside the
+standard's registry that a file the tenant received carried, found by
+remapping the file's UIDs with the tenant's UID key, as the reception did, and
+looking them up in the catalog (the lookup answers only whether one was found;
+a UID the remapping itself made, as in de-identified data received again, is
+none). Only Study, Series and SOP Instance UIDs the catalog holds are
+recognized: an original Frame of Reference UID, or a Referenced UID of an
+instance never archived, is not. An instance archived as received passes with
+a note. `deid dry-run` runs a version (NAME alone is the latest, fixed when the
+job is made; `--own` runs each instance's own) over each archived file in
+memory, as `profile try` does: keys made for the job, never the tenant's; no
+lookup table read; the check after; no receiver's checks. It says what the
+version would archive and what it would hold and why.
+
+A rule's conditions read the instance's reception: its receiver, its calling AE
+title when its files came with exactly one, and its receiver's called AE title
+as configured now. A condition on Modality, SOP Class UID, Manufacturer, Model
+Name or Software Versions reads the archived file, which says what the file
+said only where the archiving version kept that element. In a check, an element
+whose decision rests on such a condition, or on a reception fact not known, is
+a note (`check|undecidable|<tag>`), not a finding; in a dry run, the version
+decides on what the archive says.
+
+With no target a job judges the whole tenant. `job watch`, `show`, `failures`,
+`cancel` and `retry` work on them as on send jobs: a unit per scan, progress
+recorded every 64 instances or second, a cancel seen within one batch, a
+restart judging again at most one batch per unit. `job show` adds the counts
+per rule and per reason (`rule|<rule>|<action>`, `hold|<reason>|<cause>`,
+`check|<finding>|<tag>`, `class|<SOP class>|passed`), names and tags only,
+never a value read from a file; `--json` gives them as `tallies`. A file larger
+than 64 MiB is not read and passes with a note (`too_large`); one whose bytes
+differ from the catalog's checksum is `damaged_in_storage`. A dry run holds
+about three times the file it judges, and a pixel rule's image within the
+lower of `deid.pixel-limit` and 256 MiB. The server works at most two units of deid
+jobs at once, one per tenant, and their reads count in the same bound as the
+API's and the senders'. Both need the operator role.
+
 ### Route each study by where it comes from
 
 A receiver's routes choose, for each study, the storage it is archived to, and

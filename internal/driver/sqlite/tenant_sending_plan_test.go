@@ -13,7 +13,7 @@ import (
 // made at i seconds, one in a hundred of sender s1 and one in a hundred
 // failed, a tenth running; 20,000
 // scans of jobs; 20,000 failures, half of them of job j1, one in seven
-// refused; 20,000 instances owed.
+// refused; 20,000 instances owed; 20,000 tallies of 200 jobs.
 func fillSending(tb testing.TB, path string) {
 	tb.Helper()
 	db, err := sql.Open("sqlite", path)
@@ -26,7 +26,9 @@ func fillSending(tb testing.TB, path string) {
 		 INSERT INTO jobs SELECT 'j' || i, 'send', CASE i % 100 WHEN 7 THEN 's1' ELSE 's' || (i % 50 + 2) END, 'sub-1', 'ses-1', '', '', '',
 		   NULL, CASE WHEN i % 100 = 5 THEN 'failed' WHEN i % 100 = 9 THEN 'queued' WHEN i % 10 = 3 THEN 'running' ELSE 'done' END,
 		   CASE WHEN i % 100 <> 9 AND i % 10 <> 3 THEN 1 ELSE 0 END, '', '', i * 1000000, NULL, i * 1000000, NULL,
-		   i * 1000000, '', '', 'l' || i, 1, 1, 1, 0, '', '', 0, 1, 1, 10, 100, 10, 100, 0, 0, 0, 0, 0, 0, NULL, 0 FROM n`,
+		   i * 1000000, '', '', 'l' || i, 1, 1, 1, 0, '', '', 0, 1, 1, 10, 100, 10, 100, 0, 0, 0, 0, 0, 0, NULL, 0, '', '', 0 FROM n`,
+		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
+		 INSERT INTO job_tallies SELECT 'j' || (i % 200 + 1), 'rule|r' || i || '|remove', i FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO job_scans SELECT 'j' || (i % 2000 + 1), i, 'u' || i, '', '', 10, 100, 0, 0, 0, 0, 0, 0, 0, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)

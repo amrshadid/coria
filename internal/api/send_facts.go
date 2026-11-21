@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/deid/profile"
 	"github.com/amrshadid/coria/internal/master"
 )
 
@@ -15,6 +16,7 @@ const (
 	detailTarget     = "target"
 	detailStates     = "states"
 	detailCancelJobs = "cancel_jobs"
+	detailProfile    = "profile"
 )
 
 // maxSenderName is the longest name a sender may have: the rule of a
@@ -65,6 +67,18 @@ func jobObject(id string) string {
 // does not pass its rule recorded as "invalid". The new job's id, its
 // object, is the handler's to record once it is made.
 func createJobDetails(r *v1.CreateJobRequest) map[string]string {
+	if dj := r.GetDeid(); dj != nil {
+		d := map[string]string{detailKind: "deid", detailMode: strings.ToLower(strings.TrimPrefix(dj.GetMode().String(), "DEID_JOB_MODE_")),
+			detailTarget: labelPath(dj.GetSubjectLabel(), dj.GetSessionLabel(), dj.GetScanLabel())}
+		if dj.GetProfile() != "" {
+			name := dj.GetProfile()
+			if !profile.ValidName(name) {
+				name = invalidValue
+			}
+			d[detailProfile] = name
+		}
+		return d
+	}
 	send := r.GetSend()
 	if send == nil {
 		return map[string]string{detailKind: "none"}

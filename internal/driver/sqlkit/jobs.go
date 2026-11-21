@@ -24,7 +24,7 @@ const jobColumns = `id, kind, sender, subject_label, session_label, scan_label, 
 	created_by_key, created, started, state_at, ended_at, retry_of, retry_job, listed, scans, scans_done, instances, bytes,
 	sent, sent_bytes, warned, warned_bytes, refused, refused_bytes, failures_not_listed,
 	bound_at, list_work, retry_listed, target_listed, retry_after, list_session, list_scan, list_id, failures_listed,
-	progress_at, progress_mark`
+	progress_at, progress_mark, deid_mode, profile_name, profile_version`
 
 // jobRow is a job as its row holds it: what a read answers, and how far its
 // listing got.
@@ -48,15 +48,15 @@ func scanJob(row Row) (jobRow, error) {
 	var r jobRow
 	j := &r.job
 	c := &j.Counts
-	var kind, state string
+	var kind, state, mode string
 	var created, started, stateAt, endedAt, bound, progressAt DBTime
 	err := row.Scan(&j.ID, &kind, &j.Sender, &j.Target.SubjectLabel, &j.Target.SessionLabel, &j.Target.ScanLabel,
 		&j.ReceptionID, &j.Receiver, &state, &j.Reason, &j.CreatedByKeyID, &created, &started, &stateAt, &endedAt,
 		&j.RetryOf, &j.RetryJob, &c.Listed, &c.Scans, &c.ScansDone, &c.Instances, &c.Bytes, &c.InstancesSent, &c.BytesSent,
 		&c.InstancesWarned, &c.BytesWarned, &c.InstancesRefused, &c.BytesRefused, &j.FailuresNotListed,
 		&bound, &r.listWork, &r.retryListed, &r.targetListed, &r.retryAfter, &r.listSession, &r.listScan, &r.listID,
-		&r.listed, &progressAt, &r.progressMark)
-	j.Kind, j.State = tenant.JobKind(kind), tenant.JobState(state)
+		&r.listed, &progressAt, &r.progressMark, &mode, &j.Profile.Name, &j.Profile.Version)
+	j.Kind, j.State, j.Mode = tenant.JobKind(kind), tenant.JobState(state), tenant.DeidMode(mode)
 	j.Created, j.Started, j.StateTime, j.Ended = created.T, started.T, stateAt.T, endedAt.T
 	r.bound, r.progressAt = bound.T, progressAt.T
 	return r, err
@@ -84,6 +84,9 @@ func jobInTx(ctx context.Context, tx SendingTx, id, lock string) (jobRow, error)
 
 // newJob is a job to insert, queued.
 type newJob struct {
+	kind                      tenant.JobKind
+	mode                      tenant.DeidMode
+	profile                   tenant.ProfileRef
 	id, sender, keyID         string
 	target                    tenant.JobTarget
 	receptionID, receiver     string
@@ -108,16 +111,17 @@ func (k Sending) insertJob(ctx context.Context, tx SendingTx, n newJob) (tenant.
 		receiver, unique_key, state, ended, reason, created_by_key, created, started, state_at, ended_at, bound_at, retry_of,
 		retry_job, list_work, listed, retry_listed, target_listed, retry_after, list_session, list_scan, list_id, scans,
 		scans_done, instances, bytes, sent, sent_bytes, warned, warned_bytes, refused, refused_bytes, failures_listed,
-		failures_not_listed, progress_at, progress_mark)
-		VALUES (?, 'send', ?, ?, ?, ?, ?, ?, ?, 'queued', ?, '', ?, ?, NULL, ?, NULL, ?, ?, '', ?, ?, ?, ?, 0, ?, ?, ?,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, 0) ON CONFLICT (unique_key) DO NOTHING`,
-		n.id, n.sender, n.target.SubjectLabel, n.target.SessionLabel, n.target.ScanLabel, n.receptionID, n.receiver, key,
+		failures_not_listed, progress_at, progress_mark, deid_mode, profile_name, profile_version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, '', ?, ?, NULL, ?, NULL, ?, ?, '', ?, ?, ?, ?, 0, ?, ?, ?,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL, 0, ?, ?, ?) ON CONFLICT (unique_key) DO NOTHING`,
+		n.id, string(n.kind), n.sender, n.target.SubjectLabel, n.target.SessionLabel, n.target.ScanLabel, n.receptionID, n.receiver, key,
 		k.D.Bool(false), n.keyID, k.D.Time(n.created), k.D.Time(n.created), k.D.Time(n.bound), n.retryOf, listWork,
-		k.D.Bool(false), k.D.Bool(n.retryListed), k.D.Bool(n.targetListed), n.listSession, n.listScan, n.listID)
+		k.D.Bool(false), k.D.Bool(n.retryListed), k.D.Bool(n.targetListed), n.listSession, n.listScan, n.listID,
+		string(n.mode), n.profile.Name, n.profile.Version)
 	if err != nil || changed == 0 {
 		return tenant.Job{}, nil, err
 	}
-	if _, _, err := tx.Enqueue(ctx, tenant.Work{ID: listWork, Kind: tenant.SendKind(n.sender), Subject: n.id,
+	if _, _, err := tx.Enqueue(ctx, tenant.Work{ID: listWork, Kind: tenant.JobWorkKind(n.kind, n.sender), Subject: n.id,
 		UniqueKey: tenant.JobListKey(n.id), Due: n.created, MaxAttempts: tenant.JobUnitAttempts}, n.created); err != nil {
 		return tenant.Job{}, nil, err
 	}
@@ -143,6 +147,8 @@ func (k Sending) lockSender(ctx context.Context, tx SendingTx, name string) (boo
 // labels then compared exactly.
 func targetExists(ctx context.Context, tx SendingTx, t tenant.JobTarget) (bool, error) {
 	switch {
+	case t.Whole():
+		return true, nil
 	case t.ScanLabel != "":
 		return exists(ctx, tx, `SELECT 1 FROM scans WHERE subject_folded = ? AND session_folded = ? AND folded = ?
 			AND subject_label = ? AND session_label = ? AND label = ?`, label.Fold(t.SubjectLabel), label.Fold(t.SessionLabel),
@@ -163,13 +169,24 @@ func (k Sending) CreateJob(ctx context.Context, j tenant.NewJob, audit master.Au
 		return tenant.Job{}, err
 	}
 	var out tenant.Job
+	kind := j.KindOrSend()
 	err := k.Host.Write(ctx, "the job cannot be made", func(tx SendingTx) error {
-		has, err := k.lockSender(ctx, tx, j.Sender)
-		if err != nil {
-			return err
-		}
-		if !has {
-			return tenant.Precondition("the tenant has no sender named " + j.Sender)
+		if kind == tenant.JobSend {
+			has, err := k.lockSender(ctx, tx, j.Sender)
+			if err != nil {
+				return err
+			}
+			if !has {
+				return tenant.Precondition("the tenant has no sender named " + j.Sender)
+			}
+		} else if !j.Profile.IsZero() {
+			has, err := exists(ctx, tx, `SELECT 1 FROM profile_versions WHERE name = ? AND version = ?`, j.Profile.Name, j.Profile.Version)
+			if err != nil {
+				return err
+			}
+			if !has {
+				return notFound("the tenant has no profile version " + j.Profile.String())
+			}
 		}
 		taken, err := exists(ctx, tx, `SELECT 1 FROM jobs WHERE id = ?`, j.ID)
 		if err != nil {
@@ -184,8 +201,8 @@ func (k Sending) CreateJob(ctx context.Context, j tenant.NewJob, audit master.Au
 			}
 			return notFound("the tenant holds no " + targetLevel(j.Target) + " with these labels")
 		}
-		job, e, err := k.insertJob(ctx, tx, newJob{id: j.ID, sender: j.Sender, keyID: audit.KeyID, target: j.Target,
-			created: j.Created, bound: j.Created, retryListed: true})
+		job, e, err := k.insertJob(ctx, tx, newJob{kind: kind, mode: j.Mode, profile: j.Profile, id: j.ID, sender: j.Sender,
+			keyID: audit.KeyID, target: j.Target, created: j.Created, bound: j.Created, retryListed: true})
 		if err != nil {
 			return err
 		}
@@ -419,9 +436,11 @@ func (k Sending) RetryJob(ctx context.Context, id, newID string, now time.Time, 
 		if err != nil {
 			return err
 		}
-		has, err := k.lockSender(ctx, tx, first.job.Sender)
-		if err != nil {
-			return err
+		has := true
+		if first.job.Kind == tenant.JobSend {
+			if has, err = k.lockSender(ctx, tx, first.job.Sender); err != nil {
+				return err
+			}
 		}
 		old, err := jobInTx(ctx, tx, id, k.D.Lock)
 		if err != nil {
@@ -456,7 +475,8 @@ func (k Sending) RetryJob(ctx context.Context, id, newID string, now time.Time, 
 		if taken {
 			return fault.New(fault.Conflict, "a job with this id exists")
 		}
-		job, e, err := k.insertJob(ctx, tx, newJob{id: newID, sender: old.job.Sender, keyID: audit.KeyID,
+		job, e, err := k.insertJob(ctx, tx, newJob{kind: old.job.Kind, mode: old.job.Mode, profile: old.job.Profile,
+			id: newID, sender: old.job.Sender, keyID: audit.KeyID,
 			target: old.job.Target, receptionID: old.job.ReceptionID, receiver: old.job.Receiver, created: now,
 			bound: old.bound, retryOf: id, targetListed: c.Listed, listSession: old.listSession, listScan: old.listScan,
 			listID: old.listID})

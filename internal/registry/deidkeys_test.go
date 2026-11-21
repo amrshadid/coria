@@ -60,3 +60,24 @@ func TestDeidKeysAreTheTenantsSecrets(t *testing.T) {
 		t.Errorf("the keys after a start again differ (%v)", err)
 	}
 }
+
+// TestUIDKeyIsTheUIDKeyAlone guards the key a check of the archive reads:
+// the tenant's UID key, the same DeidKeys answers, and nothing of the
+// others; a tenant not known is NotFound.
+func TestUIDKeyIsTheUIDKeyAlone(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t)
+	r := e.newRegistry(e.config())
+	e.create(r, "id-lab", "lab", driver.SQLiteDriver, "")
+	k, err := r.DeidKeys(ctx, "lab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := r.UIDKey(ctx, "lab")
+	if err != nil || !bytes.Equal(u, k.UID) || bytes.Equal(u, k.Date) || bytes.Equal(u, k.Hash) {
+		t.Errorf("UIDKey = %d bytes, %v; not the UID key alone", len(u), err)
+	}
+	if _, err := r.UIDKey(ctx, "nobody"); fault.KindOf(err) != fault.NotFound {
+		t.Errorf("a tenant not known: %v", err)
+	}
+}

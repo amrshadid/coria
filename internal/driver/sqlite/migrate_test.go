@@ -526,3 +526,61 @@ func TestSendingMigrationKeepsData(t *testing.T) {
 	}
 	tenanttest.CheckAfterSending(t, s)
 }
+
+// TestDeidJobsMigrationKeepsJobs guards the migration that lets a job be
+// of the kind deid, which rebuilds jobs in SQLite to widen its kind's
+// check: send jobs written through the port at the schema before it
+// (tenanttest.FillBeforeDeidJobs, the new columns lent for the port and
+// taken back) read exactly as before and go on working after it
+// (tenanttest.CheckAfterDeidJobs); every index of jobs is there again; and
+// the checks hold: a kind other than send or deid, and a send job with a
+// mode, are refused.
+func TestDeidJobsMigrationKeepsJobs(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenTenant(ctx, filepath.Join(t.TempDir(), "tenant.db"), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if _, err := sqlkit.Migrate(ctx, s.p.write, dialect, tenantMigrations[:14]); err != nil {
+		t.Fatal(err)
+	}
+	lent := []string{"deid_mode TEXT NOT NULL DEFAULT ''", "profile_name TEXT NOT NULL DEFAULT ''", "profile_version INTEGER NOT NULL DEFAULT 0"}
+	for _, c := range lent {
+		if _, err := s.p.write.ExecContext(ctx, `ALTER TABLE jobs ADD COLUMN `+c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.p.write.ExecContext(ctx, `CREATE TABLE job_tallies (job_id TEXT, tally TEXT, count INTEGER)`); err != nil {
+		t.Fatal(err)
+	}
+	before := tenanttest.FillBeforeDeidJobs(t, s)
+	for _, c := range lent {
+		if _, err := s.p.write.ExecContext(ctx, `ALTER TABLE jobs DROP COLUMN `+strings.Fields(c)[0]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.p.write.ExecContext(ctx, `DROP TABLE job_tallies`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var indexes string
+	if err := s.p.read.QueryRowContext(ctx, `SELECT group_concat(name, ',') FROM (SELECT name FROM sqlite_master
+		WHERE type = 'index' AND tbl_name = 'jobs' AND name NOT LIKE 'sqlite_%' ORDER BY name)`).Scan(&indexes); err != nil {
+		t.Fatal(err)
+	}
+	if indexes != "jobs_by_created,jobs_by_key,jobs_by_sender,jobs_by_state,jobs_in_progress,jobs_of_sender_in_progress" {
+		t.Errorf("the indexes of jobs after the migration: %s", indexes)
+	}
+	for _, stmt := range []string{
+		`UPDATE jobs SET kind = 'other' WHERE id = 'j-queued'`,
+		`UPDATE jobs SET deid_mode = 'check' WHERE id = 'j-queued'`,
+	} {
+		if _, err := s.p.write.ExecContext(ctx, stmt); err == nil {
+			t.Errorf("the migrated jobs take %s", stmt)
+		}
+	}
+	tenanttest.CheckAfterDeidJobs(t, s, before)
+}

@@ -29,10 +29,12 @@ class JobServiceStub:
     """JobService makes, reads, cancels and retries a tenant's jobs. A job is a
     piece of work a person or a rule asks for, kept in the tenant's database
     until it ends, so it survives a restart of the server midway and goes on
-    from where it was. A job has a kind; this version has one, send: the
-    archived instances of a subject, a session or a scan sent to one of the
-    tenant's senders (SenderService). A kind added later is a new member of
-    Job's kind, served by these same methods.
+    from where it was. A job has a kind: send, the archived instances of a
+    subject, a session or a scan sent to one of the tenant's senders
+    (SenderService); or deid, the archived instances of a subject, a session,
+    a scan or the whole tenant read and judged against a de-identification
+    profile version, changing nothing (DeidJob). A kind added later is a new
+    member of Job's kind, served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -102,6 +104,63 @@ class JobServiceStub:
     may override for the tenant; built-in default "10000". Past it, each is
     still counted, in the job's counts and failures_not_listed, and not
     listed.
+
+    What a deid job does. Its work is the same as a send job's: a listing
+    unit, then one unit per scan, each reading the scan's instances in the
+    catalog's order after its cursor, every byte checked against the length
+    and SHA-256 the catalog holds as a send reads it, and recording how far
+    it got in batches of at most 64 instances or one second; a cancel takes
+    effect within one batch, a crash judges again at most one batch per unit,
+    and RetryJob judges again what was refused or never judged. Its counts
+    read: sent, the instances that passed; warned, those that passed with a
+    note (JobFailureCode says which); refused, those that did not pass. A
+    deid job's attempts, states and events are a send job's, and its
+    failures are listed by ListJobFailures. It changes nothing: no catalog
+    row, no stored byte, no lookup table, no reception. A deid job never
+    waits for a sender; the server runs at most 2 of its units at once, and
+    at most 1 of one tenant's, each holding one file of at most 64 MiB in
+    memory with its de-identified copy (a larger file is not judged and
+    passes with the note JOB_FAILURE_CODE_TOO_LARGE), and its reads count in
+    the server's bound on reads of archived bytes. Its counts per rule and per reason are answered
+    by GetJob (Job.tallies): names of rules, actions, reasons, causes,
+    element tags and SOP classes, never a value read from a file. The modes:
+
+    A rule's conditions read the instance's reception as kept: its receiver,
+    its calling AE title when its files came with exactly one, and the
+    called AE title of its receiver as configured now. A condition on an
+    element of the file (Modality, SOP Class UID, Manufacturer, Model Name,
+    Software Versions) reads the archived file, which says what the file
+    said only where the version that archived it kept the element.
+
+    - A dry run (DEID_JOB_MODE_DRY_RUN) runs a profile version over each
+    archived file in memory, as a trial run does (ProfileService
+    TryProfile): the engine under keys made for the job and never the
+    tenant's, its lookups answering every value unassigned, then the
+    check after; it answers what the version would archive and what it
+    would hold and why. It judges de-identification alone: no
+    receiver's checks run. An image a pixel rule decodes is bounded by
+    the lower of the tenant's deid.pixel-limit and 256 MiB.
+    - A check (DEID_JOB_MODE_CHECK) verifies each archived file against
+    the profile version the catalog records for it, by what that version
+    would leave of each element of the archived file: no element it
+    removes (a private element it does not keep among them); no value in
+    an element it empties; for an element it removes or empties unless
+    the IOD requires it, nothing but what the IOD keeps (the element as
+    it is, or the version's dummy); Patient Identity Removed (0012,0062)
+    YES; De-identification Method (0012,0063) naming the version; and no
+    UID outside the standard's registry that is a Study, Series or SOP
+    Instance UID the catalog holds for an archived file as received, or
+    the tenant's keyed remapping of one it holds de-identified (a lookup
+    that answers only whether it was found; a UID the remapping itself
+    made, as in de-identified data received again, is no finding). Only
+    those UIDs are recognized: an original Frame of Reference UID, or a
+    Referenced UID of an instance never archived, is not. An element
+    whose decision rests on a condition the archive cannot answer (a
+    fact of the reception not known, or an element the version removed
+    or changed) is no finding: the file passes with the note
+    JOB_FAILURE_CODE_UNDECIDED, tallied check|undecidable|<tag>. An
+    instance archived as received records no version and is passed with
+    a note (JOB_FAILURE_CODE_NOT_DEIDENTIFIED).
 
     Every method acts inside one tenant, named by the request's tenant field,
     so a request into a tenant that is not ready is answered UNAVAILABLE. No
@@ -150,10 +209,12 @@ class JobServiceServicer:
     """JobService makes, reads, cancels and retries a tenant's jobs. A job is a
     piece of work a person or a rule asks for, kept in the tenant's database
     until it ends, so it survives a restart of the server midway and goes on
-    from where it was. A job has a kind; this version has one, send: the
-    archived instances of a subject, a session or a scan sent to one of the
-    tenant's senders (SenderService). A kind added later is a new member of
-    Job's kind, served by these same methods.
+    from where it was. A job has a kind: send, the archived instances of a
+    subject, a session or a scan sent to one of the tenant's senders
+    (SenderService); or deid, the archived instances of a subject, a session,
+    a scan or the whole tenant read and judged against a de-identification
+    profile version, changing nothing (DeidJob). A kind added later is a new
+    member of Job's kind, served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -224,6 +285,63 @@ class JobServiceServicer:
     still counted, in the job's counts and failures_not_listed, and not
     listed.
 
+    What a deid job does. Its work is the same as a send job's: a listing
+    unit, then one unit per scan, each reading the scan's instances in the
+    catalog's order after its cursor, every byte checked against the length
+    and SHA-256 the catalog holds as a send reads it, and recording how far
+    it got in batches of at most 64 instances or one second; a cancel takes
+    effect within one batch, a crash judges again at most one batch per unit,
+    and RetryJob judges again what was refused or never judged. Its counts
+    read: sent, the instances that passed; warned, those that passed with a
+    note (JobFailureCode says which); refused, those that did not pass. A
+    deid job's attempts, states and events are a send job's, and its
+    failures are listed by ListJobFailures. It changes nothing: no catalog
+    row, no stored byte, no lookup table, no reception. A deid job never
+    waits for a sender; the server runs at most 2 of its units at once, and
+    at most 1 of one tenant's, each holding one file of at most 64 MiB in
+    memory with its de-identified copy (a larger file is not judged and
+    passes with the note JOB_FAILURE_CODE_TOO_LARGE), and its reads count in
+    the server's bound on reads of archived bytes. Its counts per rule and per reason are answered
+    by GetJob (Job.tallies): names of rules, actions, reasons, causes,
+    element tags and SOP classes, never a value read from a file. The modes:
+
+    A rule's conditions read the instance's reception as kept: its receiver,
+    its calling AE title when its files came with exactly one, and the
+    called AE title of its receiver as configured now. A condition on an
+    element of the file (Modality, SOP Class UID, Manufacturer, Model Name,
+    Software Versions) reads the archived file, which says what the file
+    said only where the version that archived it kept the element.
+
+    - A dry run (DEID_JOB_MODE_DRY_RUN) runs a profile version over each
+    archived file in memory, as a trial run does (ProfileService
+    TryProfile): the engine under keys made for the job and never the
+    tenant's, its lookups answering every value unassigned, then the
+    check after; it answers what the version would archive and what it
+    would hold and why. It judges de-identification alone: no
+    receiver's checks run. An image a pixel rule decodes is bounded by
+    the lower of the tenant's deid.pixel-limit and 256 MiB.
+    - A check (DEID_JOB_MODE_CHECK) verifies each archived file against
+    the profile version the catalog records for it, by what that version
+    would leave of each element of the archived file: no element it
+    removes (a private element it does not keep among them); no value in
+    an element it empties; for an element it removes or empties unless
+    the IOD requires it, nothing but what the IOD keeps (the element as
+    it is, or the version's dummy); Patient Identity Removed (0012,0062)
+    YES; De-identification Method (0012,0063) naming the version; and no
+    UID outside the standard's registry that is a Study, Series or SOP
+    Instance UID the catalog holds for an archived file as received, or
+    the tenant's keyed remapping of one it holds de-identified (a lookup
+    that answers only whether it was found; a UID the remapping itself
+    made, as in de-identified data received again, is no finding). Only
+    those UIDs are recognized: an original Frame of Reference UID, or a
+    Referenced UID of an instance never archived, is not. An element
+    whose decision rests on a condition the archive cannot answer (a
+    fact of the reception not known, or an element the version removed
+    or changed) is no finding: the file passes with the note
+    JOB_FAILURE_CODE_UNDECIDED, tallied check|undecidable|<tag>. An
+    instance archived as received records no version and is passed with
+    a note (JOB_FAILURE_CODE_NOT_DEIDENTIFIED).
+
     Every method acts inside one tenant, named by the request's tenant field,
     so a request into a tenant that is not ready is answered UNAVAILABLE. No
     answer of this service speaks of another tenant.
@@ -232,7 +350,9 @@ class JobServiceServicer:
     def CreateJob(self, request, context):
         """CreateJob makes a job and queues its work. A send job names a sender
         the tenant has, enabled or not (a disabled sender's jobs wait), and a
-        subject, a session of it or a scan of that, by labels.
+        subject, a session of it or a scan of that, by labels. A deid job names
+        its mode, a profile version for a dry run, and a subject, a session of
+        it, a scan of that, or none for the whole tenant.
 
         Role: operator on the tenant.
         Audit: one entry in the tenant's log, with the new job's id as its
@@ -243,8 +363,9 @@ class JobServiceServicer:
         (also no kind, a label that does not pass the label rule, a level named
         without the one above it, and a reception given, which only the
         server sets), not found (the tenant holds no subject, session or scan
-        with those labels; a tenant that does not exist, for a caller who may
-        list every tenant), precondition (a sender the tenant does not have),
+        with those labels; the tenant has no profile version of that name and
+        number; a tenant that does not exist, for a caller who may list every
+        tenant), precondition (a sender the tenant does not have),
         unavailable (the tenant's database does not answer, or the tenant is
         not ready).
         """
@@ -253,7 +374,8 @@ class JobServiceServicer:
         raise NotImplementedError('Method not implemented!')
 
     def GetJob(self, request, context):
-        """GetJob answers one job, with its counts now.
+        """GetJob answers one job, with its counts now and, for a deid job, its
+        tallies.
 
         Role: reader on the tenant.
         Audit: one entry in the tenant's log, with the job's id as its object.
@@ -393,10 +515,12 @@ class JobService:
     """JobService makes, reads, cancels and retries a tenant's jobs. A job is a
     piece of work a person or a rule asks for, kept in the tenant's database
     until it ends, so it survives a restart of the server midway and goes on
-    from where it was. A job has a kind; this version has one, send: the
-    archived instances of a subject, a session or a scan sent to one of the
-    tenant's senders (SenderService). A kind added later is a new member of
-    Job's kind, served by these same methods.
+    from where it was. A job has a kind: send, the archived instances of a
+    subject, a session or a scan sent to one of the tenant's senders
+    (SenderService); or deid, the archived instances of a subject, a session,
+    a scan or the whole tenant read and judged against a de-identification
+    profile version, changing nothing (DeidJob). A kind added later is a new
+    member of Job's kind, served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -466,6 +590,63 @@ class JobService:
     may override for the tenant; built-in default "10000". Past it, each is
     still counted, in the job's counts and failures_not_listed, and not
     listed.
+
+    What a deid job does. Its work is the same as a send job's: a listing
+    unit, then one unit per scan, each reading the scan's instances in the
+    catalog's order after its cursor, every byte checked against the length
+    and SHA-256 the catalog holds as a send reads it, and recording how far
+    it got in batches of at most 64 instances or one second; a cancel takes
+    effect within one batch, a crash judges again at most one batch per unit,
+    and RetryJob judges again what was refused or never judged. Its counts
+    read: sent, the instances that passed; warned, those that passed with a
+    note (JobFailureCode says which); refused, those that did not pass. A
+    deid job's attempts, states and events are a send job's, and its
+    failures are listed by ListJobFailures. It changes nothing: no catalog
+    row, no stored byte, no lookup table, no reception. A deid job never
+    waits for a sender; the server runs at most 2 of its units at once, and
+    at most 1 of one tenant's, each holding one file of at most 64 MiB in
+    memory with its de-identified copy (a larger file is not judged and
+    passes with the note JOB_FAILURE_CODE_TOO_LARGE), and its reads count in
+    the server's bound on reads of archived bytes. Its counts per rule and per reason are answered
+    by GetJob (Job.tallies): names of rules, actions, reasons, causes,
+    element tags and SOP classes, never a value read from a file. The modes:
+
+    A rule's conditions read the instance's reception as kept: its receiver,
+    its calling AE title when its files came with exactly one, and the
+    called AE title of its receiver as configured now. A condition on an
+    element of the file (Modality, SOP Class UID, Manufacturer, Model Name,
+    Software Versions) reads the archived file, which says what the file
+    said only where the version that archived it kept the element.
+
+    - A dry run (DEID_JOB_MODE_DRY_RUN) runs a profile version over each
+    archived file in memory, as a trial run does (ProfileService
+    TryProfile): the engine under keys made for the job and never the
+    tenant's, its lookups answering every value unassigned, then the
+    check after; it answers what the version would archive and what it
+    would hold and why. It judges de-identification alone: no
+    receiver's checks run. An image a pixel rule decodes is bounded by
+    the lower of the tenant's deid.pixel-limit and 256 MiB.
+    - A check (DEID_JOB_MODE_CHECK) verifies each archived file against
+    the profile version the catalog records for it, by what that version
+    would leave of each element of the archived file: no element it
+    removes (a private element it does not keep among them); no value in
+    an element it empties; for an element it removes or empties unless
+    the IOD requires it, nothing but what the IOD keeps (the element as
+    it is, or the version's dummy); Patient Identity Removed (0012,0062)
+    YES; De-identification Method (0012,0063) naming the version; and no
+    UID outside the standard's registry that is a Study, Series or SOP
+    Instance UID the catalog holds for an archived file as received, or
+    the tenant's keyed remapping of one it holds de-identified (a lookup
+    that answers only whether it was found; a UID the remapping itself
+    made, as in de-identified data received again, is no finding). Only
+    those UIDs are recognized: an original Frame of Reference UID, or a
+    Referenced UID of an instance never archived, is not. An element
+    whose decision rests on a condition the archive cannot answer (a
+    fact of the reception not known, or an element the version removed
+    or changed) is no finding: the file passes with the note
+    JOB_FAILURE_CODE_UNDECIDED, tallied check|undecidable|<tag>. An
+    instance archived as received records no version and is passed with
+    a note (JOB_FAILURE_CODE_NOT_DEIDENTIFIED).
 
     Every method acts inside one tenant, named by the request's tenant field,
     so a request into a tenant that is not ready is answered UNAVAILABLE. No

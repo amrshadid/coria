@@ -95,7 +95,9 @@ var (
 type JobServiceClient interface {
 	// CreateJob makes a job and queues its work. A send job names a sender
 	// the tenant has, enabled or not (a disabled sender's jobs wait), and a
-	// subject, a session of it or a scan of that, by labels.
+	// subject, a session of it or a scan of that, by labels. A deid job names
+	// its mode, a profile version for a dry run, and a subject, a session of
+	// it, a scan of that, or none for the whole tenant.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the new job's id as its
@@ -106,12 +108,14 @@ type JobServiceClient interface {
 	// (also no kind, a label that does not pass the label rule, a level named
 	// without the one above it, and a reception given, which only the
 	// server sets), not found (the tenant holds no subject, session or scan
-	// with those labels; a tenant that does not exist, for a caller who may
-	// list every tenant), precondition (a sender the tenant does not have),
+	// with those labels; the tenant has no profile version of that name and
+	// number; a tenant that does not exist, for a caller who may list every
+	// tenant), precondition (a sender the tenant does not have),
 	// unavailable (the tenant's database does not answer, or the tenant is
 	// not ready).
 	CreateJob(context.Context, *v1.CreateJobRequest) (*v1.CreateJobResponse, error)
-	// GetJob answers one job, with its counts now.
+	// GetJob answers one job, with its counts now and, for a deid job, its
+	// tallies.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.
@@ -194,7 +198,9 @@ func NewJobServiceClient(client *connect.Client) JobServiceClient {
 type JobServiceHandler interface {
 	// CreateJob makes a job and queues its work. A send job names a sender
 	// the tenant has, enabled or not (a disabled sender's jobs wait), and a
-	// subject, a session of it or a scan of that, by labels.
+	// subject, a session of it or a scan of that, by labels. A deid job names
+	// its mode, a profile version for a dry run, and a subject, a session of
+	// it, a scan of that, or none for the whole tenant.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the new job's id as its
@@ -205,12 +211,14 @@ type JobServiceHandler interface {
 	// (also no kind, a label that does not pass the label rule, a level named
 	// without the one above it, and a reception given, which only the
 	// server sets), not found (the tenant holds no subject, session or scan
-	// with those labels; a tenant that does not exist, for a caller who may
-	// list every tenant), precondition (a sender the tenant does not have),
+	// with those labels; the tenant has no profile version of that name and
+	// number; a tenant that does not exist, for a caller who may list every
+	// tenant), precondition (a sender the tenant does not have),
 	// unavailable (the tenant's database does not answer, or the tenant is
 	// not ready).
 	CreateJob(context.Context, *v1.CreateJobRequest) (*v1.CreateJobResponse, error)
-	// GetJob answers one job, with its counts now.
+	// GetJob answers one job, with its counts now and, for a deid job, its
+	// tallies.
 	//
 	// Role: reader on the tenant.
 	// Audit: one entry in the tenant's log, with the job's id as its object.

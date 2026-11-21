@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/job.proto.
  */
 export const file_coria_v1_job: GenFile = /*@__PURE__*/
-  fileDesc("ChJjb3JpYS92MS9qb2IucHJvdG8SCGNvcmlhLnYxIqQCCglKb2JDb3VudHMSEQoJaW5zdGFuY2VzGAEgASgDEg0KBWJ5dGVzGAIgASgDEhYKDmluc3RhbmNlc19zZW50GAMgASgDEhIKCmJ5dGVzX3NlbnQYBCABKAMSGAoQaW5zdGFuY2VzX3dhcm5lZBgFIAEoAxIUCgxieXRlc193YXJuZWQYBiABKAMSGQoRaW5zdGFuY2VzX3JlZnVzZWQYByABKAMSFQoNYnl0ZXNfcmVmdXNlZBgIIAEoAxIbChNpbnN0YW5jZXNfcmVtYWluaW5nGAkgASgDEhcKD2J5dGVzX3JlbWFpbmluZxgKIAEoAxINCgVzY2FucxgLIAEoAxISCgpzY2Fuc19kb25lGAwgASgDEg4KBmxpc3RlZBgNIAEoCCKAAQoHU2VuZEpvYhIOCgZzZW5kZXIYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSEQoJcmVjZXB0aW9uGAUgASgJEhAKCHJlY2VpdmVyGAYgASgJIrADCgNKb2ISCgoCaWQYASABKAkSIQoEc2VuZBgCIAEoCzIRLmNvcmlhLnYxLlNlbmRKb2JIABIhCgVzdGF0ZRgDIAEoDjISLmNvcmlhLnYxLkpvYlN0YXRlEiMKBmNvdW50cxgEIAEoCzITLmNvcmlhLnYxLkpvYkNvdW50cxIOCgZyZWFzb24YBSABKAkSGQoRY3JlYXRlZF9ieV9rZXlfaWQYBiABKAkSLwoLY3JlYXRlX3RpbWUYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnN0YXJ0X3RpbWUYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnN0YXRlX3RpbWUYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZF90aW1lGAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIQCghyZXRyeV9vZhgLIAEoCRIRCglyZXRyeV9qb2IYDCABKAkSGwoTZmFpbHVyZXNfbm90X2xpc3RlZBgNIAEoA0IGCgRraW5kIqgCCgpKb2JGYWlsdXJlEhMKC2luc3RhbmNlX2lkGAEgASgJEhUKDXN1YmplY3RfbGFiZWwYAiABKAkSFQoNc2Vzc2lvbl9sYWJlbBgDIAEoCRISCgpzY2FuX2xhYmVsGAQgASgJEiYKBGNvZGUYBSABKA4yGC5jb3JpYS52MS5Kb2JGYWlsdXJlQ29kZRITCgtwZWVyX3N0YXR1cxgGIAEoBRIVCg1zb3BfY2xhc3NfdWlkGAcgASgJEhsKE3RyYW5zZmVyX3N5bnRheF91aWQYCCABKAkSDgoGZGV0YWlsGAkgASgJEigKBHRpbWUYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhgKEHBlZXJfc3RhdHVzX2h0dHAYCyABKAgiTQoQQ3JlYXRlSm9iUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSIQoEc2VuZBgCIAEoCzIRLmNvcmlhLnYxLlNlbmRKb2JIAEIGCgRraW5kIi8KEUNyZWF0ZUpvYlJlc3BvbnNlEhoKA2pvYhgBIAEoCzINLmNvcmlhLnYxLkpvYiIrCg1HZXRKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCSIsCg5HZXRKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2Ii7wEKD0xpc3RKb2JzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSIgoGc3RhdGVzGAIgAygOMhIuY29yaWEudjEuSm9iU3RhdGUSEwoLaW5fcHJvZ3Jlc3MYAyABKAgSDgoGc2VuZGVyGAQgASgJEi4KCnN0YXJ0X3RpbWUYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZF90aW1lGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwYWdlX3NpemUYByABKAUSEgoKcGFnZV90b2tlbhgIIAEoCSJIChBMaXN0Sm9ic1Jlc3BvbnNlEhsKBGpvYnMYASADKAsyDS5jb3JpYS52MS5Kb2ISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIi4KEENhbmNlbEpvYlJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJIi8KEUNhbmNlbEpvYlJlc3BvbnNlEhoKA2pvYhgBIAEoCzINLmNvcmlhLnYxLkpvYiItCg9SZXRyeUpvYlJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJIkwKEFJldHJ5Sm9iUmVzcG9uc2USGgoDam9iGAEgASgLMg0uY29yaWEudjEuSm9iEhwKBXJldHJ5GAIgASgLMg0uY29yaWEudjEuSm9iInUKFkxpc3RKb2JGYWlsdXJlc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJEhgKEGluY2x1ZGVfd2FybmluZ3MYAyABKAgSEQoJcGFnZV9zaXplGAQgASgFEhIKCnBhZ2VfdG9rZW4YBSABKAkiWgoXTGlzdEpvYkZhaWx1cmVzUmVzcG9uc2USJgoIZmFpbHVyZXMYASADKAsyFC5jb3JpYS52MS5Kb2JGYWlsdXJlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSqrAQoISm9iU3RhdGUSGQoVSk9CX1NUQVRFX1VOU1BFQ0lGSUVEEAASFAoQSk9CX1NUQVRFX1FVRVVFRBABEhUKEUpPQl9TVEFURV9SVU5OSU5HEAISEgoOSk9CX1NUQVRFX0RPTkUQAxIVChFKT0JfU1RBVEVfUEFSVElBTBAEEhQKEEpPQl9TVEFURV9GQUlMRUQQBRIWChJKT0JfU1RBVEVfQ0FOQ0VMRUQQBirBAgoOSm9iRmFpbHVyZUNvZGUSIAocSk9CX0ZBSUxVUkVfQ09ERV9VTlNQRUNJRklFRBAAEiEKHUpPQl9GQUlMVVJFX0NPREVfUEVFUl9SRUZVU0VEEAESIQodSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1dBUk5JTkcQAhInCiNKT0JfRkFJTFVSRV9DT0RFX0NMQVNTX05PVF9BQ0NFUFRFRBADEigKJEpPQl9GQUlMVVJFX0NPREVfU1lOVEFYX05PVF9BQ0NFUFRFRBAEEiUKIUpPQl9GQUlMVVJFX0NPREVfUEVFUl9VTkFDQ09VTlRFRBAFEicKI0pPQl9GQUlMVVJFX0NPREVfREFNQUdFRF9JTl9TVE9SQUdFEAYSJAogSk9CX0ZBSUxVUkVfQ09ERV9NRVRBX1VOUkVBREFCTEUQBzLMAwoKSm9iU2VydmljZRJECglDcmVhdGVKb2ISGi5jb3JpYS52MS5DcmVhdGVKb2JSZXF1ZXN0GhsuY29yaWEudjEuQ3JlYXRlSm9iUmVzcG9uc2USQAoGR2V0Sm9iEhcuY29yaWEudjEuR2V0Sm9iUmVxdWVzdBoYLmNvcmlhLnYxLkdldEpvYlJlc3BvbnNlIgOQAgESRgoITGlzdEpvYnMSGS5jb3JpYS52MS5MaXN0Sm9ic1JlcXVlc3QaGi5jb3JpYS52MS5MaXN0Sm9ic1Jlc3BvbnNlIgOQAgESSQoJQ2FuY2VsSm9iEhouY29yaWEudjEuQ2FuY2VsSm9iUmVxdWVzdBobLmNvcmlhLnYxLkNhbmNlbEpvYlJlc3BvbnNlIgOQAgISRgoIUmV0cnlKb2ISGS5jb3JpYS52MS5SZXRyeUpvYlJlcXVlc3QaGi5jb3JpYS52MS5SZXRyeUpvYlJlc3BvbnNlIgOQAgISWwoPTGlzdEpvYkZhaWx1cmVzEiAuY29yaWEudjEuTGlzdEpvYkZhaWx1cmVzUmVxdWVzdBohLmNvcmlhLnYxLkxpc3RKb2JGYWlsdXJlc1Jlc3BvbnNlIgOQAgFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChJjb3JpYS92MS9qb2IucHJvdG8SCGNvcmlhLnYxIqQCCglKb2JDb3VudHMSEQoJaW5zdGFuY2VzGAEgASgDEg0KBWJ5dGVzGAIgASgDEhYKDmluc3RhbmNlc19zZW50GAMgASgDEhIKCmJ5dGVzX3NlbnQYBCABKAMSGAoQaW5zdGFuY2VzX3dhcm5lZBgFIAEoAxIUCgxieXRlc193YXJuZWQYBiABKAMSGQoRaW5zdGFuY2VzX3JlZnVzZWQYByABKAMSFQoNYnl0ZXNfcmVmdXNlZBgIIAEoAxIbChNpbnN0YW5jZXNfcmVtYWluaW5nGAkgASgDEhcKD2J5dGVzX3JlbWFpbmluZxgKIAEoAxINCgVzY2FucxgLIAEoAxISCgpzY2Fuc19kb25lGAwgASgDEg4KBmxpc3RlZBgNIAEoCCKAAQoHU2VuZEpvYhIOCgZzZW5kZXIYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSEQoJcmVjZXB0aW9uGAUgASgJEhAKCHJlY2VpdmVyGAYgASgJIpoBCgdEZWlkSm9iEiMKBG1vZGUYASABKA4yFS5jb3JpYS52MS5EZWlkSm9iTW9kZRIPCgdwcm9maWxlGAIgASgJEhcKD3Byb2ZpbGVfdmVyc2lvbhgDIAEoBRIVCg1zdWJqZWN0X2xhYmVsGAQgASgJEhUKDXNlc3Npb25fbGFiZWwYBSABKAkSEgoKc2Nhbl9sYWJlbBgGIAEoCSImCghKb2JUYWxseRILCgNrZXkYASABKAkSDQoFY291bnQYAiABKAMi+AMKA0pvYhIKCgJpZBgBIAEoCRIhCgRzZW5kGAIgASgLMhEuY29yaWEudjEuU2VuZEpvYkgAEiEKBGRlaWQYDiABKAsyES5jb3JpYS52MS5EZWlkSm9iSAASIQoFc3RhdGUYAyABKA4yEi5jb3JpYS52MS5Kb2JTdGF0ZRIjCgZjb3VudHMYBCABKAsyEy5jb3JpYS52MS5Kb2JDb3VudHMSDgoGcmVhc29uGAUgASgJEhkKEWNyZWF0ZWRfYnlfa2V5X2lkGAYgASgJEi8KC2NyZWF0ZV90aW1lGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzdGFydF90aW1lGAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzdGF0ZV90aW1lGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRfdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIcmV0cnlfb2YYCyABKAkSEQoJcmV0cnlfam9iGAwgASgJEhsKE2ZhaWx1cmVzX25vdF9saXN0ZWQYDSABKAMSIwoHdGFsbGllcxgPIAMoCzISLmNvcmlhLnYxLkpvYlRhbGx5QgYKBGtpbmQiqAIKCkpvYkZhaWx1cmUSEwoLaW5zdGFuY2VfaWQYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSJgoEY29kZRgFIAEoDjIYLmNvcmlhLnYxLkpvYkZhaWx1cmVDb2RlEhMKC3BlZXJfc3RhdHVzGAYgASgFEhUKDXNvcF9jbGFzc191aWQYByABKAkSGwoTdHJhbnNmZXJfc3ludGF4X3VpZBgIIAEoCRIOCgZkZXRhaWwYCSABKAkSKAoEdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGAoQcGVlcl9zdGF0dXNfaHR0cBgLIAEoCCJwChBDcmVhdGVKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIhCgRzZW5kGAIgASgLMhEuY29yaWEudjEuU2VuZEpvYkgAEiEKBGRlaWQYAyABKAsyES5jb3JpYS52MS5EZWlkSm9iSABCBgoEa2luZCIvChFDcmVhdGVKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2IiKwoNR2V0Sm9iUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkiLAoOR2V0Sm9iUmVzcG9uc2USGgoDam9iGAEgASgLMg0uY29yaWEudjEuSm9iIu8BCg9MaXN0Sm9ic1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEiIKBnN0YXRlcxgCIAMoDjISLmNvcmlhLnYxLkpvYlN0YXRlEhMKC2luX3Byb2dyZXNzGAMgASgIEg4KBnNlbmRlchgEIAEoCRIuCgpzdGFydF90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRfdGltZRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJcGFnZV9zaXplGAcgASgFEhIKCnBhZ2VfdG9rZW4YCCABKAkiSAoQTGlzdEpvYnNSZXNwb25zZRIbCgRqb2JzGAEgAygLMg0uY29yaWEudjEuSm9iEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIuChBDYW5jZWxKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCSIvChFDYW5jZWxKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2IiLQoPUmV0cnlKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCSJMChBSZXRyeUpvYlJlc3BvbnNlEhoKA2pvYhgBIAEoCzINLmNvcmlhLnYxLkpvYhIcCgVyZXRyeRgCIAEoCzINLmNvcmlhLnYxLkpvYiJ1ChZMaXN0Sm9iRmFpbHVyZXNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCRIYChBpbmNsdWRlX3dhcm5pbmdzGAMgASgIEhEKCXBhZ2Vfc2l6ZRgEIAEoBRISCgpwYWdlX3Rva2VuGAUgASgJIloKF0xpc3RKb2JGYWlsdXJlc1Jlc3BvbnNlEiYKCGZhaWx1cmVzGAEgAygLMhQuY29yaWEudjEuSm9iRmFpbHVyZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkqqwEKCEpvYlN0YXRlEhkKFUpPQl9TVEFURV9VTlNQRUNJRklFRBAAEhQKEEpPQl9TVEFURV9RVUVVRUQQARIVChFKT0JfU1RBVEVfUlVOTklORxACEhIKDkpPQl9TVEFURV9ET05FEAMSFQoRSk9CX1NUQVRFX1BBUlRJQUwQBBIUChBKT0JfU1RBVEVfRkFJTEVEEAUSFgoSSk9CX1NUQVRFX0NBTkNFTEVEEAYqYAoLRGVpZEpvYk1vZGUSHQoZREVJRF9KT0JfTU9ERV9VTlNQRUNJRklFRBAAEhkKFURFSURfSk9CX01PREVfRFJZX1JVThABEhcKE0RFSURfSk9CX01PREVfQ0hFQ0sQAirsAwoOSm9iRmFpbHVyZUNvZGUSIAocSk9CX0ZBSUxVUkVfQ09ERV9VTlNQRUNJRklFRBAAEiEKHUpPQl9GQUlMVVJFX0NPREVfUEVFUl9SRUZVU0VEEAESIQodSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1dBUk5JTkcQAhInCiNKT0JfRkFJTFVSRV9DT0RFX0NMQVNTX05PVF9BQ0NFUFRFRBADEigKJEpPQl9GQUlMVVJFX0NPREVfU1lOVEFYX05PVF9BQ0NFUFRFRBAEEiUKIUpPQl9GQUlMVVJFX0NPREVfUEVFUl9VTkFDQ09VTlRFRBAFEicKI0pPQl9GQUlMVVJFX0NPREVfREFNQUdFRF9JTl9TVE9SQUdFEAYSJAogSk9CX0ZBSUxVUkVfQ09ERV9NRVRBX1VOUkVBREFCTEUQBxIfChtKT0JfRkFJTFVSRV9DT0RFX1dPVUxEX0hPTEQQCBIhCh1KT0JfRkFJTFVSRV9DT0RFX0NIRUNLX0ZBSUxFRBAJEh4KGkpPQl9GQUlMVVJFX0NPREVfVU5ERUNJREVEEAoSJQohSk9CX0ZBSUxVUkVfQ09ERV9OT1RfREVJREVOVElGSUVEEAsSHgoaSk9CX0ZBSUxVUkVfQ09ERV9UT09fTEFSR0UQDDLMAwoKSm9iU2VydmljZRJECglDcmVhdGVKb2ISGi5jb3JpYS52MS5DcmVhdGVKb2JSZXF1ZXN0GhsuY29yaWEudjEuQ3JlYXRlSm9iUmVzcG9uc2USQAoGR2V0Sm9iEhcuY29yaWEudjEuR2V0Sm9iUmVxdWVzdBoYLmNvcmlhLnYxLkdldEpvYlJlc3BvbnNlIgOQAgESRgoITGlzdEpvYnMSGS5jb3JpYS52MS5MaXN0Sm9ic1JlcXVlc3QaGi5jb3JpYS52MS5MaXN0Sm9ic1Jlc3BvbnNlIgOQAgESSQoJQ2FuY2VsSm9iEhouY29yaWEudjEuQ2FuY2VsSm9iUmVxdWVzdBobLmNvcmlhLnYxLkNhbmNlbEpvYlJlc3BvbnNlIgOQAgISRgoIUmV0cnlKb2ISGS5jb3JpYS52MS5SZXRyeUpvYlJlcXVlc3QaGi5jb3JpYS52MS5SZXRyeUpvYlJlc3BvbnNlIgOQAgISWwoPTGlzdEpvYkZhaWx1cmVzEiAuY29yaWEudjEuTGlzdEpvYkZhaWx1cmVzUmVxdWVzdBohLmNvcmlhLnYxLkxpc3RKb2JGYWlsdXJlc1Jlc3BvbnNlIgOQAgFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * JobCounts are a job's instances and bytes so far. An instance counts in
@@ -200,6 +200,116 @@ export const SendJobSchema: GenMessage<SendJob> = /*@__PURE__*/
   messageDesc(file_coria_v1_job, 1);
 
 /**
+ * DeidJob is a job that judges archived instances against a
+ * de-identification profile version, changing nothing: those of a subject,
+ * of a session of it, of a scan of that, or of the whole tenant.
+ *
+ * @generated from message coria.v1.DeidJob
+ */
+export type DeidJob = Message<"coria.v1.DeidJob"> & {
+  /**
+   * What it does. Required.
+   *
+   * @generated from field: coria.v1.DeidJobMode mode = 1;
+   */
+  mode: DeidJobMode;
+
+  /**
+   * For a dry run, the name of the tenant's profile whose version it runs;
+   * empty runs over each instance the version the catalog records for it,
+   * and passes one archived as received with a note. Empty for a check,
+   * which always verifies against the version each instance records.
+   *
+   * @generated from field: string profile = 2;
+   */
+  profile: string;
+
+  /**
+   * The version of profile: 0 in CreateJob for its latest, which the job
+   * fixes when it is made and answers here. 0 when profile is empty.
+   *
+   * @generated from field: int32 profile_version = 3;
+   */
+  profileVersion: number;
+
+  /**
+   * The label of the subject whose instances it judges. Empty, with the
+   * session and scan empty, for every instance of the tenant.
+   *
+   * @generated from field: string subject_label = 4;
+   */
+  subjectLabel: string;
+
+  /**
+   * The label of the session of the subject whose instances it judges.
+   * Empty for every session of the subject.
+   *
+   * @generated from field: string session_label = 5;
+   */
+  sessionLabel: string;
+
+  /**
+   * The label of the scan of the session whose instances it judges. Empty
+   * for every scan of the session; needs session_label.
+   *
+   * @generated from field: string scan_label = 6;
+   */
+  scanLabel: string;
+};
+
+/**
+ * Describes the message coria.v1.DeidJob.
+ * Use `create(DeidJobSchema)` to create a new message.
+ */
+export const DeidJobSchema: GenMessage<DeidJob> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 2);
+
+/**
+ * JobTally is one count of what a deid job found, under a key of fixed
+ * words and the profile's names, never a value read from a file. A key is
+ * its kind, then its parts, joined by "|":
+ *
+ *   - "rule|<rule>|<action>": the elements a rule of the version decided
+ *     with that action, in a dry run; <rule> is the rule's name, or "rule
+ *     <n>" for one without a name (its position from 1), or "default".
+ *   - "hold|<reason>|<cause>": the files the version would hold for that
+ *     quarantine reason and cause, in a dry run.
+ *   - "class|<SOP Class UID>|passed" and "class|<SOP Class UID>|refused":
+ *     the files of a class that passed and that did not.
+ *   - "check|<finding>" and "check|<finding>|<tag>": the files a check
+ *     found that in, and the elements by tag (eight hexadecimal digits),
+ *     such as "check|removed_element|00100030". The findings:
+ *     removed_element, private_element, kept_value, identity_not_removed,
+ *     method_missing, received_uid, engine_refused, unreadable; and the
+ *     notes check|undecidable, check|as_received, check|too_large.
+ *   - "other": the counts of keys past the 1000 a job keeps.
+ *
+ * @generated from message coria.v1.JobTally
+ */
+export type JobTally = Message<"coria.v1.JobTally"> & {
+  /**
+   * The key.
+   *
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * How many.
+   *
+   * @generated from field: int64 count = 2;
+   */
+  count: bigint;
+};
+
+/**
+ * Describes the message coria.v1.JobTally.
+ * Use `create(JobTallySchema)` to create a new message.
+ */
+export const JobTallySchema: GenMessage<JobTally> = /*@__PURE__*/
+  messageDesc(file_coria_v1_job, 3);
+
+/**
  * Job is one piece of work in a tenant, and how far it got.
  *
  * @generated from message coria.v1.Job
@@ -228,6 +338,15 @@ export type Job = Message<"coria.v1.Job"> & {
      */
     value: SendJob;
     case: "send";
+  } | {
+    /**
+     * Archived instances judged against a de-identification profile
+     * version.
+     *
+     * @generated from field: coria.v1.DeidJob deid = 14;
+     */
+    value: DeidJob;
+    case: "deid";
   } | { case: undefined; value?: undefined };
 
   /**
@@ -314,6 +433,15 @@ export type Job = Message<"coria.v1.Job"> & {
    * @generated from field: int64 failures_not_listed = 13;
    */
   failuresNotListed: bigint;
+
+  /**
+   * For a deid job, its counts per rule and per reason so far, most first
+   * and then by key; at most 1001 (JobTally). Answered by GetJob alone;
+   * empty in every other answer, and for a send job.
+   *
+   * @generated from field: repeated coria.v1.JobTally tallies = 15;
+   */
+  tallies: JobTally[];
 };
 
 /**
@@ -321,7 +449,7 @@ export type Job = Message<"coria.v1.Job"> & {
  * Use `create(JobSchema)` to create a new message.
  */
 export const JobSchema: GenMessage<Job> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 2);
+  messageDesc(file_coria_v1_job, 4);
 
 /**
  * JobFailure is one instance of a job that was refused, or sent with a
@@ -423,7 +551,7 @@ export type JobFailure = Message<"coria.v1.JobFailure"> & {
  * Use `create(JobFailureSchema)` to create a new message.
  */
 export const JobFailureSchema: GenMessage<JobFailure> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 3);
+  messageDesc(file_coria_v1_job, 5);
 
 /**
  * CreateJobRequest is the job to make.
@@ -452,6 +580,15 @@ export type CreateJobRequest = Message<"coria.v1.CreateJobRequest"> & {
      */
     value: SendJob;
     case: "send";
+  } | {
+    /**
+     * Judge a subject, a session, a scan or the whole tenant against a
+     * de-identification profile version. Role: operator, as every job.
+     *
+     * @generated from field: coria.v1.DeidJob deid = 3;
+     */
+    value: DeidJob;
+    case: "deid";
   } | { case: undefined; value?: undefined };
 };
 
@@ -460,7 +597,7 @@ export type CreateJobRequest = Message<"coria.v1.CreateJobRequest"> & {
  * Use `create(CreateJobRequestSchema)` to create a new message.
  */
 export const CreateJobRequestSchema: GenMessage<CreateJobRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 4);
+  messageDesc(file_coria_v1_job, 6);
 
 /**
  * CreateJobResponse is the job made.
@@ -481,7 +618,7 @@ export type CreateJobResponse = Message<"coria.v1.CreateJobResponse"> & {
  * Use `create(CreateJobResponseSchema)` to create a new message.
  */
 export const CreateJobResponseSchema: GenMessage<CreateJobResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 5);
+  messageDesc(file_coria_v1_job, 7);
 
 /**
  * GetJobRequest names a job.
@@ -509,7 +646,7 @@ export type GetJobRequest = Message<"coria.v1.GetJobRequest"> & {
  * Use `create(GetJobRequestSchema)` to create a new message.
  */
 export const GetJobRequestSchema: GenMessage<GetJobRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 6);
+  messageDesc(file_coria_v1_job, 8);
 
 /**
  * GetJobResponse is the job named.
@@ -530,7 +667,7 @@ export type GetJobResponse = Message<"coria.v1.GetJobResponse"> & {
  * Use `create(GetJobResponseSchema)` to create a new message.
  */
 export const GetJobResponseSchema: GenMessage<GetJobResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 7);
+  messageDesc(file_coria_v1_job, 9);
 
 /**
  * ListJobsRequest asks for a page of a tenant's jobs. Every filter given
@@ -607,7 +744,7 @@ export type ListJobsRequest = Message<"coria.v1.ListJobsRequest"> & {
  * Use `create(ListJobsRequestSchema)` to create a new message.
  */
 export const ListJobsRequestSchema: GenMessage<ListJobsRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 8);
+  messageDesc(file_coria_v1_job, 10);
 
 /**
  * ListJobsResponse is a page of jobs.
@@ -635,7 +772,7 @@ export type ListJobsResponse = Message<"coria.v1.ListJobsResponse"> & {
  * Use `create(ListJobsResponseSchema)` to create a new message.
  */
 export const ListJobsResponseSchema: GenMessage<ListJobsResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 9);
+  messageDesc(file_coria_v1_job, 11);
 
 /**
  * CancelJobRequest names the job to cancel.
@@ -663,7 +800,7 @@ export type CancelJobRequest = Message<"coria.v1.CancelJobRequest"> & {
  * Use `create(CancelJobRequestSchema)` to create a new message.
  */
 export const CancelJobRequestSchema: GenMessage<CancelJobRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 10);
+  messageDesc(file_coria_v1_job, 12);
 
 /**
  * CancelJobResponse is the job canceled.
@@ -684,7 +821,7 @@ export type CancelJobResponse = Message<"coria.v1.CancelJobResponse"> & {
  * Use `create(CancelJobResponseSchema)` to create a new message.
  */
 export const CancelJobResponseSchema: GenMessage<CancelJobResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 11);
+  messageDesc(file_coria_v1_job, 13);
 
 /**
  * RetryJobRequest names the ended job whose unsent instances to send.
@@ -712,7 +849,7 @@ export type RetryJobRequest = Message<"coria.v1.RetryJobRequest"> & {
  * Use `create(RetryJobRequestSchema)` to create a new message.
  */
 export const RetryJobRequestSchema: GenMessage<RetryJobRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 12);
+  messageDesc(file_coria_v1_job, 14);
 
 /**
  * RetryJobResponse is the ended job and the one that sends what it did not.
@@ -740,7 +877,7 @@ export type RetryJobResponse = Message<"coria.v1.RetryJobResponse"> & {
  * Use `create(RetryJobResponseSchema)` to create a new message.
  */
 export const RetryJobResponseSchema: GenMessage<RetryJobResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 13);
+  messageDesc(file_coria_v1_job, 15);
 
 /**
  * ListJobFailuresRequest asks for a page of a job's failures.
@@ -793,7 +930,7 @@ export type ListJobFailuresRequest = Message<"coria.v1.ListJobFailuresRequest"> 
  * Use `create(ListJobFailuresRequestSchema)` to create a new message.
  */
 export const ListJobFailuresRequestSchema: GenMessage<ListJobFailuresRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 14);
+  messageDesc(file_coria_v1_job, 16);
 
 /**
  * ListJobFailuresResponse is a page of a job's failures.
@@ -821,7 +958,7 @@ export type ListJobFailuresResponse = Message<"coria.v1.ListJobFailuresResponse"
  * Use `create(ListJobFailuresResponseSchema)` to create a new message.
  */
 export const ListJobFailuresResponseSchema: GenMessage<ListJobFailuresResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_job, 15);
+  messageDesc(file_coria_v1_job, 17);
 
 /**
  * JobState is where a job is. A job goes forward only; done, partial,
@@ -855,14 +992,16 @@ export enum JobState {
   RUNNING = 2,
 
   /**
-   * Ended. Every instance was sent, some perhaps with a warning.
+   * Ended. Every instance was sent, some perhaps with a warning; for a
+   * deid job, every instance passed, some perhaps with a note.
    *
    * @generated from enum value: JOB_STATE_DONE = 3;
    */
   DONE = 3,
 
   /**
-   * Ended. Some instances were refused; every other one was sent.
+   * Ended. Some instances were refused; every other one was sent. For a
+   * deid job: some did not pass.
    *
    * @generated from enum value: JOB_STATE_PARTIAL = 4;
    */
@@ -889,6 +1028,43 @@ export enum JobState {
  */
 export const JobStateSchema: GenEnum<JobState> = /*@__PURE__*/
   enumDesc(file_coria_v1_job, 0);
+
+/**
+ * DeidJobMode is what a deid job does with each archived instance.
+ *
+ * @generated from enum coria.v1.DeidJobMode
+ */
+export enum DeidJobMode {
+  /**
+   * Never answered by the server; refused in CreateJob.
+   *
+   * @generated from enum value: DEID_JOB_MODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Run a profile version over each archived file in memory, under keys
+   * made for the job, and judge what it would archive and what it would
+   * hold and why.
+   *
+   * @generated from enum value: DEID_JOB_MODE_DRY_RUN = 1;
+   */
+  DRY_RUN = 1,
+
+  /**
+   * Verify each archived file against the profile version the catalog
+   * records for it.
+   *
+   * @generated from enum value: DEID_JOB_MODE_CHECK = 2;
+   */
+  CHECK = 2,
+}
+
+/**
+ * Describes the enum coria.v1.DeidJobMode.
+ */
+export const DeidJobModeSchema: GenEnum<DeidJobMode> = /*@__PURE__*/
+  enumDesc(file_coria_v1_job, 1);
 
 /**
  * JobFailureCode is why an instance of a job was refused, or that it was
@@ -972,22 +1148,68 @@ export enum JobFailureCode {
    * @generated from enum value: JOB_FAILURE_CODE_META_UNREADABLE = 7;
    */
   META_UNREADABLE = 7,
+
+  /**
+   * A deid job's dry run: the version would hold the file. The detail is
+   * the quarantine reason and its cause, "<reason>/<cause>".
+   *
+   * @generated from enum value: JOB_FAILURE_CODE_WOULD_HOLD = 8;
+   */
+  WOULD_HOLD = 8,
+
+  /**
+   * A deid job's check: the archived file does not hold to the version it
+   * records. The detail is the first finding (JobTally's check findings).
+   *
+   * @generated from enum value: JOB_FAILURE_CODE_CHECK_FAILED = 9;
+   */
+  CHECK_FAILED = 9,
+
+  /**
+   * A deid job passed the file with a note: a dry run's verdict depends on
+   * a lookup table, which a dry run never reads; or a check could not
+   * judge an element, its decision resting on a condition the archive
+   * cannot answer. Listed only with include_warnings.
+   *
+   * @generated from enum value: JOB_FAILURE_CODE_UNDECIDED = 10;
+   */
+  UNDECIDED = 10,
+
+  /**
+   * A deid job passed the file with a note: it was archived as received,
+   * so it records no profile version to judge it by. Listed only with
+   * include_warnings.
+   *
+   * @generated from enum value: JOB_FAILURE_CODE_NOT_DEIDENTIFIED = 11;
+   */
+  NOT_DEIDENTIFIED = 11,
+
+  /**
+   * A deid job passed the file with a note, not judging it: it is larger
+   * than the 64 MiB a deid job reads into memory. Listed only with
+   * include_warnings.
+   *
+   * @generated from enum value: JOB_FAILURE_CODE_TOO_LARGE = 12;
+   */
+  TOO_LARGE = 12,
 }
 
 /**
  * Describes the enum coria.v1.JobFailureCode.
  */
 export const JobFailureCodeSchema: GenEnum<JobFailureCode> = /*@__PURE__*/
-  enumDesc(file_coria_v1_job, 1);
+  enumDesc(file_coria_v1_job, 2);
 
 /**
  * JobService makes, reads, cancels and retries a tenant's jobs. A job is a
  * piece of work a person or a rule asks for, kept in the tenant's database
  * until it ends, so it survives a restart of the server midway and goes on
- * from where it was. A job has a kind; this version has one, send: the
- * archived instances of a subject, a session or a scan sent to one of the
- * tenant's senders (SenderService). A kind added later is a new member of
- * Job's kind, served by these same methods.
+ * from where it was. A job has a kind: send, the archived instances of a
+ * subject, a session or a scan sent to one of the tenant's senders
+ * (SenderService); or deid, the archived instances of a subject, a session,
+ * a scan or the whole tenant read and judged against a de-identification
+ * profile version, changing nothing (DeidJob). A kind added later is a new
+ * member of Job's kind, served by these same methods.
  *
  * What a send job sends. The instances the catalog held for its target when
  * the job was made: each instance archived at or before the job's
@@ -1058,6 +1280,63 @@ export const JobFailureCodeSchema: GenEnum<JobFailureCode> = /*@__PURE__*/
  * still counted, in the job's counts and failures_not_listed, and not
  * listed.
  *
+ * What a deid job does. Its work is the same as a send job's: a listing
+ * unit, then one unit per scan, each reading the scan's instances in the
+ * catalog's order after its cursor, every byte checked against the length
+ * and SHA-256 the catalog holds as a send reads it, and recording how far
+ * it got in batches of at most 64 instances or one second; a cancel takes
+ * effect within one batch, a crash judges again at most one batch per unit,
+ * and RetryJob judges again what was refused or never judged. Its counts
+ * read: sent, the instances that passed; warned, those that passed with a
+ * note (JobFailureCode says which); refused, those that did not pass. A
+ * deid job's attempts, states and events are a send job's, and its
+ * failures are listed by ListJobFailures. It changes nothing: no catalog
+ * row, no stored byte, no lookup table, no reception. A deid job never
+ * waits for a sender; the server runs at most 2 of its units at once, and
+ * at most 1 of one tenant's, each holding one file of at most 64 MiB in
+ * memory with its de-identified copy (a larger file is not judged and
+ * passes with the note JOB_FAILURE_CODE_TOO_LARGE), and its reads count in
+ * the server's bound on reads of archived bytes. Its counts per rule and per reason are answered
+ * by GetJob (Job.tallies): names of rules, actions, reasons, causes,
+ * element tags and SOP classes, never a value read from a file. The modes:
+ *
+ * A rule's conditions read the instance's reception as kept: its receiver,
+ * its calling AE title when its files came with exactly one, and the
+ * called AE title of its receiver as configured now. A condition on an
+ * element of the file (Modality, SOP Class UID, Manufacturer, Model Name,
+ * Software Versions) reads the archived file, which says what the file
+ * said only where the version that archived it kept the element.
+ *
+ *   - A dry run (DEID_JOB_MODE_DRY_RUN) runs a profile version over each
+ *     archived file in memory, as a trial run does (ProfileService
+ *     TryProfile): the engine under keys made for the job and never the
+ *     tenant's, its lookups answering every value unassigned, then the
+ *     check after; it answers what the version would archive and what it
+ *     would hold and why. It judges de-identification alone: no
+ *     receiver's checks run. An image a pixel rule decodes is bounded by
+ *     the lower of the tenant's deid.pixel-limit and 256 MiB.
+ *   - A check (DEID_JOB_MODE_CHECK) verifies each archived file against
+ *     the profile version the catalog records for it, by what that version
+ *     would leave of each element of the archived file: no element it
+ *     removes (a private element it does not keep among them); no value in
+ *     an element it empties; for an element it removes or empties unless
+ *     the IOD requires it, nothing but what the IOD keeps (the element as
+ *     it is, or the version's dummy); Patient Identity Removed (0012,0062)
+ *     YES; De-identification Method (0012,0063) naming the version; and no
+ *     UID outside the standard's registry that is a Study, Series or SOP
+ *     Instance UID the catalog holds for an archived file as received, or
+ *     the tenant's keyed remapping of one it holds de-identified (a lookup
+ *     that answers only whether it was found; a UID the remapping itself
+ *     made, as in de-identified data received again, is no finding). Only
+ *     those UIDs are recognized: an original Frame of Reference UID, or a
+ *     Referenced UID of an instance never archived, is not. An element
+ *     whose decision rests on a condition the archive cannot answer (a
+ *     fact of the reception not known, or an element the version removed
+ *     or changed) is no finding: the file passes with the note
+ *     JOB_FAILURE_CODE_UNDECIDED, tallied check|undecidable|<tag>. An
+ *     instance archived as received records no version and is passed with
+ *     a note (JOB_FAILURE_CODE_NOT_DEIDENTIFIED).
+ *
  * Every method acts inside one tenant, named by the request's tenant field,
  * so a request into a tenant that is not ready is answered UNAVAILABLE. No
  * answer of this service speaks of another tenant.
@@ -1068,7 +1347,9 @@ export const JobService: GenService<{
   /**
    * CreateJob makes a job and queues its work. A send job names a sender
    * the tenant has, enabled or not (a disabled sender's jobs wait), and a
-   * subject, a session of it or a scan of that, by labels.
+   * subject, a session of it or a scan of that, by labels. A deid job names
+   * its mode, a profile version for a dry run, and a subject, a session of
+   * it, a scan of that, or none for the whole tenant.
    *
    * Role: operator on the tenant.
    * Audit: one entry in the tenant's log, with the new job's id as its
@@ -1079,8 +1360,9 @@ export const JobService: GenService<{
    * (also no kind, a label that does not pass the label rule, a level named
    * without the one above it, and a reception given, which only the
    * server sets), not found (the tenant holds no subject, session or scan
-   * with those labels; a tenant that does not exist, for a caller who may
-   * list every tenant), precondition (a sender the tenant does not have),
+   * with those labels; the tenant has no profile version of that name and
+   * number; a tenant that does not exist, for a caller who may list every
+   * tenant), precondition (a sender the tenant does not have),
    * unavailable (the tenant's database does not answer, or the tenant is
    * not ready).
    *
@@ -1092,7 +1374,8 @@ export const JobService: GenService<{
     output: typeof CreateJobResponseSchema;
   },
   /**
-   * GetJob answers one job, with its counts now.
+   * GetJob answers one job, with its counts now and, for a deid job, its
+   * tallies.
    *
    * Role: reader on the tenant.
    * Audit: one entry in the tenant's log, with the job's id as its object.

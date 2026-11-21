@@ -179,6 +179,16 @@ func (t *Tenant) ListJobFailures(ctx context.Context, id string, includeWarnings
 	return t.sending().ListJobFailures(ctx, id, includeWarnings, page)
 }
 
+// JobTallies implements tenant.Jobs.
+func (t *Tenant) JobTallies(ctx context.Context, id string) ([]tenant.JobTally, error) {
+	return t.sending().JobTallies(ctx, id)
+}
+
+// SeenUIDs implements tenant.JobWork.
+func (t *Tenant) SeenUIDs(ctx context.Context, keyed, plain []string) (tenant.UIDsSeen, error) {
+	return t.sending().SeenUIDs(ctx, keyed, plain)
+}
+
 // StartJobUnit implements tenant.JobWork.
 func (t *Tenant) StartJobUnit(ctx context.Context, fence tenant.WorkFence, now time.Time) (tenant.JobUnit, error) {
 	return t.sending().StartJobUnit(ctx, fence, now)

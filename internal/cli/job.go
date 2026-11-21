@@ -24,6 +24,8 @@ func (a *app) newJob() *cobra.Command {
 survives a restart of the server midway. A send job sends the archived instances
 of a subject, a session or a scan to one of the tenant's senders; a receiver that
 lists a sender in its forward-to makes one for each reception it completes. A
+deid job judges archived instances against a de-identification profile version
+and changes nothing ("deid check", "deid dry-run"). A
 job ends done (every instance sent), partial (some refused, the others sent),
 failed (some not sent because the attempts ran out) or canceled.
 Every command takes the tenant first. Creating, canceling and retrying need the
@@ -37,6 +39,12 @@ func (a *app) jobDetails(j *v1.Job) []output.Pair {
 	pairs := []output.Pair{
 		{Label: "ID", Value: j.GetId()},
 		{Label: "State", Value: output.JobState(j.GetState())},
+	}
+	if d := j.GetDeid(); d != nil {
+		pairs = append(pairs,
+			output.Pair{Label: "Judges", Value: deidTarget(d)},
+			output.Pair{Label: "Mode", Value: deidMode(d.GetMode())},
+			output.Pair{Label: "Version", Value: deidVersion(d)})
 	}
 	if s := j.GetSend(); s != nil {
 		pairs = append(pairs,
@@ -132,7 +140,7 @@ job.`,
 			if wait {
 				return a.followJob(ctx, c, cmd, args[0], res.GetJob().GetId(), cursor)
 			}
-			return messageOut(a, res, func(w io.Writer) error { return output.Details(w, a.style(), a.jobDetails(res.GetJob())) })
+			return messageOut(a, res, func(w io.Writer) error { return a.jobOut(w, res.GetJob()) })
 		}),
 	}
 	cmd.Flags().BoolVar(&wait, "wait", false, `follow the job until it ends, as "job watch" does, with its exit codes`)
@@ -166,7 +174,7 @@ its times. For a job a receiver's forward made it also says which reception.
 			if err != nil {
 				return err
 			}
-			return messageOut(a, res, func(w io.Writer) error { return output.Details(w, a.style(), a.jobDetails(res.GetJob())) })
+			return messageOut(a, res, func(w io.Writer) error { return a.jobOut(w, res.GetJob()) })
 		}),
 	}
 }
@@ -233,8 +241,9 @@ is inclusive and --until is exclusive.`,
 				rows := make([][]string, 0, len(jobs))
 				for _, j := range jobs {
 					cn := j.GetCounts()
+					by, what := jobKindText(j)
 					rows = append(rows, []string{
-						j.GetId(), j.GetSend().GetSender(), output.JobTarget(j.GetSend()), output.JobState(j.GetState()),
+						j.GetId(), by, what, output.JobState(j.GetState()),
 						strconv.Itoa(output.JobPercent(cn)) + "%",
 						strconv.FormatInt(cn.GetInstancesSent()+cn.GetInstancesWarned(), 10), strconv.FormatInt(cn.GetInstancesRefused(), 10), strconv.FormatInt(cn.GetInstancesRemaining(), 10),
 						a.when(j.GetCreateTime()),

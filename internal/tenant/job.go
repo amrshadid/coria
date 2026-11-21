@@ -15,9 +15,14 @@ import (
 // Its text is what a store keeps.
 type JobKind string
 
-// JobSend is the one kind of this version: archived instances sent to a
-// sender.
-const JobSend JobKind = "send"
+// The kinds.
+const (
+	// JobSend is archived instances sent to a sender.
+	JobSend JobKind = "send"
+	// JobDeid is archived instances judged against a de-identification
+	// profile version, changing nothing (job_deid.go).
+	JobDeid JobKind = "deid"
+)
 
 // JobState is where a job is, the contract's JobState in lowercase without
 // its prefix. A job goes forward only; done, partial, failed and canceled
@@ -107,6 +112,10 @@ const (
 type JobTarget struct {
 	SubjectLabel, SessionLabel, ScanLabel string
 }
+
+// Whole reports whether t names no label: the whole tenant, which only a
+// deid job judges.
+func (t JobTarget) Whole() bool { return t == JobTarget{} }
 
 // Validate returns an Invalid error unless t names a subject, a session of
 // it or a scan of that, each by a valid label.
@@ -213,12 +222,18 @@ func (c JobCounts) BytesRemaining() int64 {
 type Job struct {
 	// ID names it, given by the caller (master.ValidateID).
 	ID string
-	// Kind is what it does: JobSend.
+	// Kind is what it does: JobSend or JobDeid.
 	Kind JobKind
 	// Sender names the sender a send job sends to; kept when the sender
-	// is removed.
+	// is removed. Empty for a deid job.
 	Sender string
-	// Target is what it sends.
+	// Mode is what a deid job does; empty for a send job.
+	Mode DeidMode
+	// Profile is the version a deid job's dry run runs; zero for a check,
+	// and for a dry run that runs each instance's own version.
+	Profile ProfileRef
+	// Target is what it sends, or judges; Whole for a deid job of the
+	// whole tenant.
 	Target JobTarget
 	// ReceptionID and Receiver name the reception whose archived
 	// instances a forward sends, and its receiver; empty for a job a
@@ -248,13 +263,22 @@ type Job struct {
 	FailuresNotListed int64
 }
 
-// NewJob is a send job a person asks for (Jobs.CreateJob).
+// NewJob is a job a person asks for (Jobs.CreateJob).
 type NewJob struct {
 	// ID is its id, given by the caller.
 	ID string
-	// Sender names the sender it sends to.
+	// Kind is what it does; empty is JobSend.
+	Kind JobKind
+	// Sender names the sender a send job sends to; empty for a deid job.
 	Sender string
-	// Target is what it sends.
+	// Mode is what a deid job does; empty for a send job.
+	Mode DeidMode
+	// Profile is the version a deid job's dry run runs, which the tenant
+	// must have; zero for a check, and for a dry run of each instance's
+	// own version.
+	Profile ProfileRef
+	// Target is what it sends, or judges; a deid job may name the whole
+	// tenant (JobTarget.Whole).
 	Target JobTarget
 	// Created is when it is made, and the moment whose catalog it sends.
 	Created time.Time
@@ -265,13 +289,38 @@ func (j NewJob) Validate() error {
 	if err := master.ValidateID("job id", j.ID); err != nil {
 		return err
 	}
-	if err := ValidateSenderName(j.Sender); err != nil {
-		return err
-	}
-	if err := j.Target.Validate(); err != nil {
-		return err
+	switch j.Kind {
+	case JobSend, "":
+		if j.Mode != "" || !j.Profile.IsZero() {
+			return invalid("a send job has no mode and no profile")
+		}
+		if err := ValidateSenderName(j.Sender); err != nil {
+			return err
+		}
+		if err := j.Target.Validate(); err != nil {
+			return err
+		}
+	case JobDeid:
+		if err := validateDeidJob(j.Sender, j.Mode, j.Profile); err != nil {
+			return err
+		}
+		if !j.Target.Whole() {
+			if err := j.Target.Validate(); err != nil {
+				return err
+			}
+		}
+	default:
+		return invalid("a job's kind is send or deid")
 	}
 	return master.ValidateTime("job time", j.Created)
+}
+
+// KindOrSend returns the job's kind, JobSend when it names none.
+func (j NewJob) KindOrSend() JobKind {
+	if j.Kind == "" {
+		return JobSend
+	}
+	return j.Kind
 }
 
 // JobFilter keeps the jobs a list answers; every filter given must hold.
@@ -331,15 +380,25 @@ const (
 	FailurePeerUnaccounted   JobFailureCode = "peer_unaccounted"
 	FailureDamagedInStorage  JobFailureCode = "damaged_in_storage"
 	FailureMetaUnreadable    JobFailureCode = "meta_unreadable"
+	// The codes of a deid job (job_deid.go).
+	FailureWouldHold       JobFailureCode = "would_hold"
+	FailureCheckFailed     JobFailureCode = "check_failed"
+	FailureUndecided       JobFailureCode = "undecided"
+	FailureNotDeidentified JobFailureCode = "not_deidentified"
+	FailureTooLarge        JobFailureCode = "too_large"
 )
 
 // jobFailureCodes is the closed list of codes.
 var jobFailureCodes = []JobFailureCode{FailurePeerRefused, FailurePeerWarning, FailureClassNotAccepted,
-	FailureSyntaxNotAccepted, FailurePeerUnaccounted, FailureDamagedInStorage, FailureMetaUnreadable}
+	FailureSyntaxNotAccepted, FailurePeerUnaccounted, FailureDamagedInStorage, FailureMetaUnreadable,
+	FailureWouldHold, FailureCheckFailed, FailureUndecided, FailureNotDeidentified, FailureTooLarge}
 
 // Refused reports whether an instance with code c was refused, not sent
-// with a warning.
-func (c JobFailureCode) Refused() bool { return c != FailurePeerWarning }
+// with a warning (for a deid job: did not pass, rather than passed with a
+// note; a file too large to read was not judged, so it is a note).
+func (c JobFailureCode) Refused() bool {
+	return c != FailurePeerWarning && c != FailureUndecided && c != FailureNotDeidentified && c != FailureTooLarge
+}
 
 // JobFailure is one instance of a job that was refused, or sent with a
 // warning.
@@ -380,7 +439,7 @@ func (f JobFailure) Validate() error {
 		return err
 	}
 	if !slices.Contains(jobFailureCodes, f.Code) {
-		return invalid("a job failure's code is one of peer_refused, peer_warning, class_not_accepted, syntax_not_accepted, peer_unaccounted, damaged_in_storage, meta_unreadable")
+		return invalid("a job failure's code is one of peer_refused, peer_warning, class_not_accepted, syntax_not_accepted, peer_unaccounted, damaged_in_storage, meta_unreadable, would_hold, check_failed, undecided, not_deidentified, too_large")
 	}
 	if f.SOPClassUID != "" {
 		if err := validateUID("SOP Class UID", f.SOPClassUID); err != nil {

@@ -257,6 +257,10 @@ type ScanInstance struct {
 	SHA256, ArchivedSHA256 SHA256
 	// Held is when its reception confirmed it.
 	Held time.Time
+	// Profile is the profile version that de-identified it; the zero ref
+	// for one archived as received. Answered by a job's stream
+	// (JobWork.JobScanInstances) alone; zero in every other read.
+	Profile ProfileRef
 }
 
 // ScanValueFill gives the catalog the header values a scan was archived

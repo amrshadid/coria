@@ -178,6 +178,10 @@ type Jobs interface {
 	// of subject label, session label, scan label, then SOP Instance UID.
 	// A job not there is NotFound.
 	ListJobFailures(ctx context.Context, id string, includeWarnings bool, page master.Page) ([]JobFailure, string, error)
+	// JobTallies returns a deid job's tallies (JobProgress.Tallies), in
+	// SortTallies' order: at most MaxJobTallies and TallyOther. A send
+	// job has none; a job not there is NotFound.
+	JobTallies(ctx context.Context, id string) ([]JobTally, error)
 }
 
 // JobWork is the work of a job's units, each write fenced by the unit's
@@ -236,6 +240,18 @@ type JobWork interface {
 	// it sent) is not queued again: it is completed and its scan ended,
 	// counted in the job's scans done, in the same transaction.
 	ReleaseJobUnit(ctx context.Context, fence WorkFence, due time.Time, reason string, now time.Time) error
+	// SeenUIDs looks up UIDs among the catalog's Study Instance UIDs of
+	// sessions, Series Instance UIDs of scans and SOP Instance UIDs of
+	// instances, at most MaxSeenUIDs of each list, each answered once: which
+	// of keyed it holds at all, and which of plain it holds for an instance
+	// archived as received (one that records no profile version) and for
+	// an instance archived de-identified (UIDsSeen). A deid job's check
+	// passes in keyed the tenant's keyed remapping of an archived file's
+	// UIDs: the catalog holds a de-identified file's UIDs remapped, so one
+	// found is a UID some received file carried, unless the UID is itself
+	// one the remapping made (plain, found de-identified), which a file
+	// sent back in carries. It reads; it is not fenced.
+	SeenUIDs(ctx context.Context, keyed, plain []string) (UIDsSeen, error)
 }
 
 // JobUnit is what a leased unit of a job is.
@@ -298,6 +314,12 @@ type JobProgress struct {
 	// FailuresKept is the setting job.failures-kept, the most failures
 	// the job lists.
 	FailuresKept int
+	// Tallies are what a deid job's unit found among the instances the
+	// write counts, added to the job's (JobTally), at most
+	// MaxJobTallyBatch keys; empty for a send job. They are added only
+	// when the write moves the cursor or settles, so a write sent again
+	// counts nothing twice.
+	Tallies map[string]int64
 	// Now is when they were recorded.
 	Now time.Time
 }
@@ -387,6 +409,12 @@ func (p JobProgress) Validate() error {
 	}
 	if p.FailuresKept < MinFailuresKept || p.FailuresKept > MaxFailuresKept {
 		return invalid("a job keeps 100 to 1000000 failures")
+	}
+	if err := validateTallies(p.Tallies); err != nil {
+		return err
+	}
+	if len(p.Tallies) > 0 && p.From == p.To && len(p.Settled) == 0 {
+		return invalid("a progress write that counts no instance adds to no tally")
 	}
 	return master.ValidateTime("progress time", p.Now)
 }

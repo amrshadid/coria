@@ -59,7 +59,7 @@ type JobStepReached struct {
 	PreviousState JobState `json:"previous_state"`
 	// Counts are its counts when it reached the state.
 	Counts EventJobCounts `json:"counts"`
-	// Sender names its sender.
+	// Sender names a send job's sender; empty for a deid job.
 	Sender string `json:"sender"`
 	// Receiver and Reception name the receiver and reception of a
 	// forward; empty otherwise.
@@ -82,8 +82,10 @@ func (p *JobStepReached) validate() error {
 	if !p.State.Valid() || (p.PreviousState != "" && !p.PreviousState.Valid()) {
 		return invalid("a job's state is one of queued, running, done, partial, failed, canceled")
 	}
-	if err := ValidateSenderName(p.Sender); err != nil {
-		return err
+	if p.Sender != "" {
+		if err := ValidateSenderName(p.Sender); err != nil {
+			return err
+		}
 	}
 	if p.Receiver != "" {
 		if err := ValidateName("receiver", p.Receiver); err != nil {
@@ -106,6 +108,9 @@ func (p *JobStepReached) validate() error {
 // JobStepEvent returns the event of job j as it is after reaching its state
 // from previous (empty for a job just made), at the time given.
 func JobStepEvent(previous JobState, j Job, at time.Time) (EventRecord, error) {
+	if err := eventSender(j); err != nil {
+		return EventRecord{}, err
+	}
 	return NewEvent(&JobStepReached{Job: j.ID, State: j.State, PreviousState: previous, Counts: eventJobCounts(j.Counts),
 		Sender: j.Sender, Receiver: j.Receiver, Reception: j.ReceptionID, RetryOf: j.RetryOf, Reason: j.Reason}, at)
 }
@@ -117,7 +122,7 @@ type JobProgressed struct {
 	Job string `json:"job"`
 	// Counts are its counts now.
 	Counts EventJobCounts `json:"counts"`
-	// Sender names its sender.
+	// Sender names a send job's sender; empty for a deid job.
 	Sender string `json:"sender"`
 }
 
@@ -128,8 +133,10 @@ func (p *JobProgressed) validate() error {
 	if err := master.ValidateID("job id", p.Job); err != nil {
 		return err
 	}
-	if err := ValidateSenderName(p.Sender); err != nil {
-		return err
+	if p.Sender != "" {
+		if err := ValidateSenderName(p.Sender); err != nil {
+			return err
+		}
 	}
 	return p.Counts.validate()
 }
@@ -137,7 +144,23 @@ func (p *JobProgressed) validate() error {
 // JobProgressEvent returns the event of job j's counts now, at the time
 // given.
 func JobProgressEvent(j Job, at time.Time) (EventRecord, error) {
+	if err := eventSender(j); err != nil {
+		return EventRecord{}, err
+	}
 	return NewEvent(&JobProgressed{Job: j.ID, Counts: eventJobCounts(j.Counts), Sender: j.Sender}, at)
+}
+
+// eventSender returns an Invalid error unless j names a sender as its kind
+// says: a send job its sender, a deid job none. A payload alone cannot
+// tell, since the contract's events carry no kind.
+func eventSender(j Job) error {
+	switch {
+	case j.Kind == JobDeid && j.Sender != "":
+		return invalid("a deid job's event names no sender")
+	case j.Kind != JobDeid && j.Sender == "":
+		return invalid("a send job's event names its sender")
+	}
+	return nil
 }
 
 // storedTime returns t as a store keeps it: in UTC, to the microsecond; the

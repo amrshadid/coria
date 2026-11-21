@@ -39,10 +39,17 @@ func jobMessage(j tenant.Job, held string) *v1.Job {
 	if m.Reason == "" && !j.State.Ended() {
 		m.Reason = held
 	}
-	if j.Kind == tenant.JobSend {
+	switch j.Kind {
+	case tenant.JobSend:
 		m.Kind = &v1.Job_Send{Send: &v1.SendJob{
 			Sender: j.Sender, SubjectLabel: j.Target.SubjectLabel, SessionLabel: j.Target.SessionLabel,
 			ScanLabel: j.Target.ScanLabel, Reception: j.ReceptionID, Receiver: j.Receiver,
+		}}
+	case tenant.JobDeid:
+		m.Kind = &v1.Job_Deid{Deid: &v1.DeidJob{
+			Mode:    enumOf[v1.DeidJobMode](v1.DeidJobMode_value, "DEID_JOB_MODE_", string(j.Mode)),
+			Profile: j.Profile.Name, ProfileVersion: j.Profile.Version, SubjectLabel: j.Target.SubjectLabel,
+			SessionLabel: j.Target.SessionLabel, ScanLabel: j.Target.ScanLabel,
 		}}
 	}
 	return m

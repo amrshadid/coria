@@ -188,7 +188,8 @@ func streamInstances(ctx context.Context, tx SendingTx, s jobScanRow, query stri
 		var in tenant.ScanInstance
 		var sum, archived []byte
 		var held DBTime
-		err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Key, &in.Offset, &in.Length, &in.Size, &sum, &archived, &held)
+		err := row.Scan(&in.SOPInstanceUID, &in.ReceptionID, &in.Key, &in.Offset, &in.Length, &in.Size, &sum, &archived, &held,
+			&in.Profile.Name, &in.Profile.Version)
 		in.SHA256, in.ArchivedSHA256, in.Held = ToSHA256(sum), ToSHA256(archived), held.T
 		out = append(out, in)
 		return err
@@ -334,6 +335,9 @@ func (k Sending) recordInTx(ctx context.Context, tx SendingTx, p tenant.JobProgr
 			return tenant.Job{}, jobScanRow{}, nil, err
 		}
 		listed++
+	}
+	if err := k.addTallies(ctx, tx, r.job.ID, p.Tallies); err != nil {
+		return tenant.Job{}, jobScanRow{}, nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE job_scans SET cursor = ?, instances = instances + ?, bytes = bytes + ?, sent = sent + ?,
 		sent_bytes = sent_bytes + ?, warned = warned + ?, warned_bytes = warned_bytes + ?, refused = refused + ?,

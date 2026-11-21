@@ -127,8 +127,9 @@ func (k Sending) ListJobScans(ctx context.Context, fence tenant.WorkFence, now t
 }
 
 // listTarget lists the next page of what the job's target holds: a
-// reception's scans for a forward, by reception_scans' key; a scan, a
-// session's scans or a subject's scans of the catalog by scans_by_label,
+// reception's scans for a forward, by reception_scans' key; every scan of
+// the tenant for a deid job of the whole tenant, by the scans' key; a
+// scan, a session's scans or a subject's scans of the catalog by scans_by_label,
 // each with the instances held at or before the job's bound. full says the
 // page was full, so more may follow.
 func (k Sending) listTarget(ctx context.Context, tx SendingTx, r jobRow) ([]listedScan, bool, error) {
@@ -159,6 +160,8 @@ func (k Sending) listTarget(ctx context.Context, tx SendingTx, r jobRow) ([]list
 	}
 	var err error
 	switch {
+	case t.Whole():
+		err = tx.Query(ctx, tenantScansSQL, []any{r.listID, tenant.JobListPage}, scanRow)
 	case t.ScanLabel != "":
 		if r.listScan == "" {
 			err = tx.Query(ctx, targetScanSQL, []any{label.Fold(t.SubjectLabel), label.Fold(t.SessionLabel),
@@ -248,7 +251,7 @@ func (k Sending) addJobScan(ctx context.Context, tx SendingTx, r jobRow, s liste
 		k.D.Bool(false)); err != nil {
 		return false, 0, 0, err
 	}
-	if _, _, err := tx.Enqueue(ctx, tenant.Work{ID: workID, Kind: tenant.SendKind(j.Sender), Subject: j.ID + "/" + part,
+	if _, _, err := tx.Enqueue(ctx, tenant.Work{ID: workID, Kind: tenant.JobWorkKind(j.Kind, j.Sender), Subject: j.ID + "/" + part,
 		UniqueKey: tenant.JobScanKey(j.ID, part), Due: now, MaxAttempts: tenant.JobUnitAttempts}, now); err != nil {
 		return false, 0, 0, err
 	}

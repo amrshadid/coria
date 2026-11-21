@@ -434,6 +434,7 @@ func TestGrammar(t *testing.T) {
 		"receiver route move": true, "receiver route default": true,
 		"sender add": true, "sender list": true, "sender show": true, "sender set": true, "sender remove": true, "sender test": true,
 		"job create": true, "job show": true, "job list": true, "job watch": true, "job cancel": true, "job retry": true, "job failures": true,
+		"deid check": true, "deid dry-run": true,
 		"profile create": true, "profile get": true, "profile list": true, "profile versions": true, "profile export": true,
 		"profile validate": true, "profile describe": true, "profile try": true, "profile explain": true, "profile diff": true,
 		"reception list": true, "reception show": true, "reception retry": true, "reception discard": true,

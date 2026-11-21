@@ -11,6 +11,7 @@ import (
 	"github.com/amrshadid/coria/internal/api"
 	"github.com/amrshadid/coria/internal/checkedread"
 	"github.com/amrshadid/coria/internal/core/settings"
+	"github.com/amrshadid/coria/internal/deidjob"
 	"github.com/amrshadid/coria/internal/driver"
 	"github.com/amrshadid/coria/internal/events"
 	"github.com/amrshadid/coria/internal/master"
@@ -72,6 +73,7 @@ func APIServices(d Deps) (Built, error) {
 	// tell them of a tenant let go and of a reception that may have made
 	// forward jobs; until they are made there is nobody to tell.
 	var sending atomic.Pointer[send.Supervisor]
+	var deidJobs atomic.Pointer[deidjob.Supervisor]
 	pokeSenders := func(name string) {
 		if s := sending.Load(); s != nil {
 			s.Poke(name)
@@ -95,6 +97,9 @@ func APIServices(d Deps) (Built, error) {
 		// next reading of the tenants.
 		Unregistered: func(name string) {
 			if s := sending.Load(); s != nil {
+				s.TenantRemoved(name)
+			}
+			if s := deidJobs.Load(); s != nil {
 				s.TenantRemoved(name)
 			}
 		},
@@ -138,9 +143,17 @@ func APIServices(d Deps) (Built, error) {
 		return Built{}, err
 	}
 	sending.Store(senders)
+	// The deid jobs, which read archived bytes under the same count.
+	deids, err := newDeidJobs(d, reg, feeds.Wake, reads)
+	if err != nil {
+		_ = feeds.Close()
+		closeRegistry(reg)
+		return Built{}, err
+	}
+	deidJobs.Store(deids)
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
 		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, Headers: heldHeaders{sup}, HeldFiles: heldHeaders{sup}, STOW: stowReceivers,
-		Reads: reads, SenderHealths: senderHealths{senders}, SenderTests: senderTests{senders}})
+		Reads: reads, SenderHealths: senderHealths{s: senders, deid: deids}, SenderTests: senderTests{senders}})
 	if err != nil {
 		closeRegistry(reg)
 		return Built{}, err
@@ -179,9 +192,10 @@ func APIServices(d Deps) (Built, error) {
 		// A store by STOW-RS may send a whole study in one request; a client
 		// that stops sending is cut by the receiver's read stall bound.
 		LongMethods: []string{coriav1connect.DataServiceReadFilesProcedure, api.DownloadPattern, api.DICOMwebPattern, api.STOWPattern},
-		// Stopped last first: the event keeper, the senders (each giving its
-		// unit back), then the receivers and pipelines, then the feeds.
-		Reception: runners{closer{feeds}, sup, senders, events.NewKeeper(events.KeeperConfig{
+		// Stopped last first: the event keeper, the deid jobs and the
+		// senders (each giving its unit back), then the receivers and
+		// pipelines, then the feeds.
+		Reception: runners{closer{feeds}, sup, senders, deids, events.NewKeeper(events.KeeperConfig{
 			Tenants: keptFeeds{tenants: registryTenants{master: d.Master, registry: reg}, registry: reg, values: settingvalue.Reader{Master: d.Master}},
 			Logger:  d.Log,
 		})},

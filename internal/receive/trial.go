@@ -82,6 +82,13 @@ type TrialOptions struct {
 	Receiver *tenant.Receiver
 	// Check makes the check after for a file bound, as Config.Check does.
 	Check func(maxFileBytes int64) Checker
+	// NoValues, for a caller that answers verdicts and counts and never a
+	// value (a job over the archive), builds neither Before nor After and
+	// drops Written once checked: a second and a third copy of the file's
+	// data set in memory that such a caller never reads. The written file
+	// is still read back by the header reader, so one it cannot read is
+	// still held (after_unreadable).
+	NoValues bool
 }
 
 // TryFile de-identifies file in memory by en as a receiver that names en's
@@ -125,7 +132,9 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 	}
 	// A second read of the same bytes, for the values before: the engine
 	// changes ds in place.
-	t.Before, _, _, _ = h.Dataset(bytes.NewReader(file))
+	if !o.NoValues {
+		t.Before, _, _, _ = h.Dataset(bytes.NewReader(file))
+	}
 	rec.CharacterSet = h.CharacterSet()
 	limit := o.PixelLimit
 	if limit <= 0 {
@@ -156,7 +165,10 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 		dsUID(ds, dsSeriesUID) != remapPlacingUID(o.Keys, series) {
 		return held(tenant.QuarantineDeidFailed, map[string]string{"cause": "uid_not_remapped"})
 	}
-	mem := &memFile{}
+	// The written file is about the size of the received one: its room is
+	// taken once, so the copy never grows by doubling, which held up to
+	// two more copies of the file at its peak.
+	mem := &memFile{b: make([]byte, 0, len(file)+trialWriteHeadroom)}
 	err = writeDataset(mem, ds, writtenSyntax(h.TransferSyntaxUID, ds, record), source, littleEndian)
 	var we errWrite
 	if errors.Is(err, engine.ErrPixelsUndecodable) {
@@ -181,8 +193,11 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 	}
 	t.Written = out
 	after, err := header.ReadWithin(bytes.NewReader(out), int64(len(out)), int64(len(out))+o.HeaderLimit)
-	if err == nil {
+	if err == nil && !o.NoValues {
 		t.After, _, _, err = after.Dataset(bytes.NewReader(out))
+	}
+	if o.NoValues {
+		t.Written = nil
 	}
 	if err != nil {
 		// The check after read it, by a reader of its own; this reader
@@ -253,6 +268,11 @@ func ExplainFile(ctx context.Context, en *engine.Engine, file []byte, rec engine
 // TrialCauseLookupTable is the cause of a trial whose verdict depends on a
 // lookup table it does not read.
 const TrialCauseLookupTable = "lookup_table"
+
+// trialWriteHeadroom is the room a trial's written file is given past the
+// received file's size, for what the engine adds (the method record, a
+// shifted or longer value).
+const trialWriteHeadroom = 64 << 10
 
 // memFile is an io.WriteSeeker over memory, which the writer writes a
 // tried file into: it seeks back to fill in a length it learns late.

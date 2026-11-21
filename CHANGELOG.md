@@ -8,6 +8,9 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- A trial run's written file takes its room once instead of growing by
+  doubling, lowering its peak memory (a 20 MiB file: 3.9 to 2.1 times its
+  size beyond the file).
 - The check after de-identification searches only for values that can
   identify someone by themselves: names; identifiers (the attributes of
   PS3.15 Table E.1-1 that identify a person, place, device, order or study,
@@ -329,6 +332,23 @@ All notable changes to CORIA are written here. The form is
   `BenchmarkSendScan` (`make bench-send`): 64 small instances on one
   association to an in-process peer, about 935 instances/s by DIMSE and
   1,080 by STOW-RS on an Apple Silicon laptop.
+- Deid jobs: `coria deid check` verifies archived instances against the
+  profile version each records, by what that version would leave of each
+  element the archive holds (no element it removes, no private element it
+  does not keep, no value in an element it empties, only what the IOD keeps
+  of one it removes unless required), Patient Identity Removed YES, the
+  method naming the version, and no Study, Series or SOP Instance UID a
+  received file carried (only UIDs the catalog holds are recognized); an
+  element whose decision rests on a condition the archive cannot answer is
+  a note. `coria deid dry-run` runs a profile version over archived
+  instances in memory under keys made for the job and says what it would
+  hold and why. Both are jobs of a new kind, `deid`, over a subject,
+  session, scan or the whole tenant; they change nothing, run a unit per
+  scan with fenced progress, cancel, retry and the job events, read through
+  checked reads within the server's read slots, use only the tenant's UID
+  key and only for a check, and answer their counts per rule and per reason
+  in `Job.tallies`. Tenant migration 0015 adds the job's mode and profile
+  columns and `job_tallies`.
 - De-identification profiles can choose elements by their value and cut
   only part of a value (language edition 2). A `valuePattern` selector (RE2,
   at most 256 bytes; whole value by default, anywhere with `search`, longest

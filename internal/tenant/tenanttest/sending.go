@@ -59,6 +59,9 @@ func runSending(t *testing.T, open OpenEvents) {
 		{"CancelRacesUnit", testCancelRacesUnit},
 		{"CrashResumes", testCrashResumes},
 		{"JobsInStatus", testJobsInStatus},
+		{"DeidJobs", testDeidJobs},
+		{"DeidJobTallies", testDeidJobTallies},
+		{"SeenUIDs", testSeenUIDs},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -81,7 +84,12 @@ func runSendingShared(t *testing.T, open OpenEventsPair) {
 }
 
 // senv is a sending test's store and its helpers; it has eenv's too.
-type senv struct{ *eenv }
+type senv struct {
+	*eenv
+	// profile is the profile version archive records for each instance
+	// it commits; zero archives as received.
+	profile tenant.ProfileRef
+}
 
 // sealed is the stand-in for a credential sealed by the caller: the store
 // keeps such bytes as they are, and the suite only checks they come back.
@@ -170,7 +178,7 @@ func (e *senv) archiveRouted(receiver string, study, scans, per, base int, when 
 			key, err := layout.InstanceKey(p, f.SOPInstanceUID)
 			e.ok("InstanceKey", err)
 			c.Instances = append(c.Instances, tenant.ConfirmedInstance{SOPInstanceUID: f.SOPInstanceUID, Key: key,
-				Length: f.Size, Size: f.Size, ArchivedSHA256: f.SHA256})
+				Length: f.Size, Size: f.Size, ArchivedSHA256: f.SHA256, Profile: e.profile})
 		}
 		_, err := e.p.CommitScan(e.ctx, c)
 		e.ok("CommitScan", err)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/amrshadid/coria/internal/api"
 	"github.com/amrshadid/coria/internal/checkedread"
+	"github.com/amrshadid/coria/internal/deidjob"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/place"
 	"github.com/amrshadid/coria/internal/registry"
@@ -52,10 +53,38 @@ func newSending(d Deps, reg *registry.Registry, wake func(tenantName string), re
 	})
 }
 
+// newDeidJobs returns the supervisor of every tenant's deid jobs, over the
+// registry's tenants. Its reads of archived bytes count in reads, the
+// server's one count; storages are opened as the senders open them; a
+// check reads the tenant's UID key from the registry, as a reception does.
+func newDeidJobs(d Deps, reg *registry.Registry, wake func(tenantName string), reads *checkedread.Slots) (*deidjob.Supervisor, error) {
+	values := settingvalue.Reader{Master: d.Master}
+	opener := place.Opener{Values: values, Keys: d.Keys, StaleUploadAge: -1}
+	tenantID := func(ctx context.Context, name string) (string, error) {
+		row, err := d.Master.TenantByName(ctx, name)
+		return row.ID, err
+	}
+	return deidjob.New(deidjob.Config{
+		Tenants:        registryTenants{master: d.Master, registry: reg},
+		Installation:   values,
+		TenantSettings: func(st tenant.Store) deidjob.TenantSettings { return values.OnTenant(st) },
+		OpenStorages: func(name string, p tenant.Pipeline) deidjob.Storages {
+			return checkedread.NewStores(opener, tenantID, p, name)
+		},
+		UIDKey: reg.UIDKey,
+		Reads:  reads,
+		Wake:   wake,
+		Logger: d.Log,
+	})
+}
+
 // senderHealths answers the API's question of a sender's health from the
 // send supervisor, and passes the API's notice of a change of a tenant's
-// senders or jobs to it.
-type senderHealths struct{ s *send.Supervisor }
+// senders or jobs to it and to the supervisor of deid jobs.
+type senderHealths struct {
+	s    *send.Supervisor
+	deid *deidjob.Supervisor
+}
 
 var (
 	_ api.SenderHealths = senderHealths{}
@@ -64,8 +93,14 @@ var (
 )
 
 // SendersChanged makes the supervisor read the tenant's senders, and its
-// idle workers look for work, at once.
-func (h senderHealths) SendersChanged(tenantName string) { h.s.Poke(tenantName) }
+// idle workers look for work, at once; and the tenant's deid jobs be
+// looked for at once.
+func (h senderHealths) SendersChanged(tenantName string) {
+	h.s.Poke(tenantName)
+	if h.deid != nil {
+		h.deid.Poke(tenantName)
+	}
+}
 
 // SenderHealth returns the supervisor's health of the sender. One the
 // supervisor has not read yet (just added, or its tenant just ready) is

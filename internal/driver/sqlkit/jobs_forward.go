@@ -48,7 +48,7 @@ func (k Sending) Forward(ctx context.Context, tx SendingTx, r tenant.Reception) 
 		if !has {
 			continue
 		}
-		_, e, err := k.insertJob(ctx, tx, newJob{id: tenant.ForwardJobID(r.ID, sender), sender: sender,
+		_, e, err := k.insertJob(ctx, tx, newJob{kind: tenant.JobSend, id: tenant.ForwardJobID(r.ID, sender), sender: sender,
 			target: tenant.JobTarget{SubjectLabel: r.SubjectLabel, SessionLabel: r.SessionLabel}, receptionID: r.ID,
 			receiver: r.Receiver, uniqueKey: tenant.ForwardKey(r.ID, sender), created: r.StepTime, bound: r.StepTime,
 			retryListed: true})

@@ -10,10 +10,12 @@ import "google/protobuf/timestamp.proto";
 // JobService makes, reads, cancels and retries a tenant's jobs. A job is a
 // piece of work a person or a rule asks for, kept in the tenant's database
 // until it ends, so it survives a restart of the server midway and goes on
-// from where it was. A job has a kind; this version has one, send: the
-// archived instances of a subject, a session or a scan sent to one of the
-// tenant's senders (SenderService). A kind added later is a new member of
-// Job's kind, served by these same methods.
+// from where it was. A job has a kind: send, the archived instances of a
+// subject, a session or a scan sent to one of the tenant's senders
+// (SenderService); or deid, the archived instances of a subject, a session,
+// a scan or the whole tenant read and judged against a de-identification
+// profile version, changing nothing (DeidJob). A kind added later is a new
+// member of Job's kind, served by these same methods.
 //
 // What a send job sends. The instances the catalog held for its target when
 // the job was made: each instance archived at or before the job's
@@ -84,13 +86,72 @@ import "google/protobuf/timestamp.proto";
 // still counted, in the job's counts and failures_not_listed, and not
 // listed.
 //
+// What a deid job does. Its work is the same as a send job's: a listing
+// unit, then one unit per scan, each reading the scan's instances in the
+// catalog's order after its cursor, every byte checked against the length
+// and SHA-256 the catalog holds as a send reads it, and recording how far
+// it got in batches of at most 64 instances or one second; a cancel takes
+// effect within one batch, a crash judges again at most one batch per unit,
+// and RetryJob judges again what was refused or never judged. Its counts
+// read: sent, the instances that passed; warned, those that passed with a
+// note (JobFailureCode says which); refused, those that did not pass. A
+// deid job's attempts, states and events are a send job's, and its
+// failures are listed by ListJobFailures. It changes nothing: no catalog
+// row, no stored byte, no lookup table, no reception. A deid job never
+// waits for a sender; the server runs at most 2 of its units at once, and
+// at most 1 of one tenant's, each holding one file of at most 64 MiB in
+// memory with its de-identified copy (a larger file is not judged and
+// passes with the note JOB_FAILURE_CODE_TOO_LARGE), and its reads count in
+// the server's bound on reads of archived bytes. Its counts per rule and per reason are answered
+// by GetJob (Job.tallies): names of rules, actions, reasons, causes,
+// element tags and SOP classes, never a value read from a file. The modes:
+//
+// A rule's conditions read the instance's reception as kept: its receiver,
+// its calling AE title when its files came with exactly one, and the
+// called AE title of its receiver as configured now. A condition on an
+// element of the file (Modality, SOP Class UID, Manufacturer, Model Name,
+// Software Versions) reads the archived file, which says what the file
+// said only where the version that archived it kept the element.
+//
+//   - A dry run (DEID_JOB_MODE_DRY_RUN) runs a profile version over each
+//     archived file in memory, as a trial run does (ProfileService
+//     TryProfile): the engine under keys made for the job and never the
+//     tenant's, its lookups answering every value unassigned, then the
+//     check after; it answers what the version would archive and what it
+//     would hold and why. It judges de-identification alone: no
+//     receiver's checks run. An image a pixel rule decodes is bounded by
+//     the lower of the tenant's deid.pixel-limit and 256 MiB.
+//   - A check (DEID_JOB_MODE_CHECK) verifies each archived file against
+//     the profile version the catalog records for it, by what that version
+//     would leave of each element of the archived file: no element it
+//     removes (a private element it does not keep among them); no value in
+//     an element it empties; for an element it removes or empties unless
+//     the IOD requires it, nothing but what the IOD keeps (the element as
+//     it is, or the version's dummy); Patient Identity Removed (0012,0062)
+//     YES; De-identification Method (0012,0063) naming the version; and no
+//     UID outside the standard's registry that is a Study, Series or SOP
+//     Instance UID the catalog holds for an archived file as received, or
+//     the tenant's keyed remapping of one it holds de-identified (a lookup
+//     that answers only whether it was found; a UID the remapping itself
+//     made, as in de-identified data received again, is no finding). Only
+//     those UIDs are recognized: an original Frame of Reference UID, or a
+//     Referenced UID of an instance never archived, is not. An element
+//     whose decision rests on a condition the archive cannot answer (a
+//     fact of the reception not known, or an element the version removed
+//     or changed) is no finding: the file passes with the note
+//     JOB_FAILURE_CODE_UNDECIDED, tallied check|undecidable|<tag>. An
+//     instance archived as received records no version and is passed with
+//     a note (JOB_FAILURE_CODE_NOT_DEIDENTIFIED).
+//
 // Every method acts inside one tenant, named by the request's tenant field,
 // so a request into a tenant that is not ready is answered UNAVAILABLE. No
 // answer of this service speaks of another tenant.
 service JobService {
   // CreateJob makes a job and queues its work. A send job names a sender
   // the tenant has, enabled or not (a disabled sender's jobs wait), and a
-  // subject, a session of it or a scan of that, by labels.
+  // subject, a session of it or a scan of that, by labels. A deid job names
+  // its mode, a profile version for a dry run, and a subject, a session of
+  // it, a scan of that, or none for the whole tenant.
   //
   // Role: operator on the tenant.
   // Audit: one entry in the tenant's log, with the new job's id as its
@@ -101,13 +162,15 @@ service JobService {
   // (also no kind, a label that does not pass the label rule, a level named
   // without the one above it, and a reception given, which only the
   // server sets), not found (the tenant holds no subject, session or scan
-  // with those labels; a tenant that does not exist, for a caller who may
-  // list every tenant), precondition (a sender the tenant does not have),
+  // with those labels; the tenant has no profile version of that name and
+  // number; a tenant that does not exist, for a caller who may list every
+  // tenant), precondition (a sender the tenant does not have),
   // unavailable (the tenant's database does not answer, or the tenant is
   // not ready).
   rpc CreateJob(CreateJobRequest) returns (CreateJobResponse);
 
-  // GetJob answers one job, with its counts now.
+  // GetJob answers one job, with its counts now and, for a deid job, its
+  // tallies.
   //
   // Role: reader on the tenant.
   // Audit: one entry in the tenant's log, with the job's id as its object.
@@ -209,10 +272,12 @@ enum JobState {
   // Some of its work has started.
   JOB_STATE_RUNNING = 2;
 
-  // Ended. Every instance was sent, some perhaps with a warning.
+  // Ended. Every instance was sent, some perhaps with a warning; for a
+  // deid job, every instance passed, some perhaps with a note.
   JOB_STATE_DONE = 3;
 
-  // Ended. Some instances were refused; every other one was sent.
+  // Ended. Some instances were refused; every other one was sent. For a
+  // deid job: some did not pass.
   JOB_STATE_PARTIAL = 4;
 
   // Ended without finishing: attempts ran out with instances not sent. The
@@ -306,6 +371,77 @@ message SendJob {
   string receiver = 6;
 }
 
+// DeidJobMode is what a deid job does with each archived instance.
+enum DeidJobMode {
+  // Never answered by the server; refused in CreateJob.
+  DEID_JOB_MODE_UNSPECIFIED = 0;
+
+  // Run a profile version over each archived file in memory, under keys
+  // made for the job, and judge what it would archive and what it would
+  // hold and why.
+  DEID_JOB_MODE_DRY_RUN = 1;
+
+  // Verify each archived file against the profile version the catalog
+  // records for it.
+  DEID_JOB_MODE_CHECK = 2;
+}
+
+// DeidJob is a job that judges archived instances against a
+// de-identification profile version, changing nothing: those of a subject,
+// of a session of it, of a scan of that, or of the whole tenant.
+message DeidJob {
+  // What it does. Required.
+  DeidJobMode mode = 1;
+
+  // For a dry run, the name of the tenant's profile whose version it runs;
+  // empty runs over each instance the version the catalog records for it,
+  // and passes one archived as received with a note. Empty for a check,
+  // which always verifies against the version each instance records.
+  string profile = 2;
+
+  // The version of profile: 0 in CreateJob for its latest, which the job
+  // fixes when it is made and answers here. 0 when profile is empty.
+  int32 profile_version = 3;
+
+  // The label of the subject whose instances it judges. Empty, with the
+  // session and scan empty, for every instance of the tenant.
+  string subject_label = 4;
+
+  // The label of the session of the subject whose instances it judges.
+  // Empty for every session of the subject.
+  string session_label = 5;
+
+  // The label of the scan of the session whose instances it judges. Empty
+  // for every scan of the session; needs session_label.
+  string scan_label = 6;
+}
+
+// JobTally is one count of what a deid job found, under a key of fixed
+// words and the profile's names, never a value read from a file. A key is
+// its kind, then its parts, joined by "|":
+//
+//   - "rule|<rule>|<action>": the elements a rule of the version decided
+//     with that action, in a dry run; <rule> is the rule's name, or "rule
+//     <n>" for one without a name (its position from 1), or "default".
+//   - "hold|<reason>|<cause>": the files the version would hold for that
+//     quarantine reason and cause, in a dry run.
+//   - "class|<SOP Class UID>|passed" and "class|<SOP Class UID>|refused":
+//     the files of a class that passed and that did not.
+//   - "check|<finding>" and "check|<finding>|<tag>": the files a check
+//     found that in, and the elements by tag (eight hexadecimal digits),
+//     such as "check|removed_element|00100030". The findings:
+//     removed_element, private_element, kept_value, identity_not_removed,
+//     method_missing, received_uid, engine_refused, unreadable; and the
+//     notes check|undecidable, check|as_received, check|too_large.
+//   - "other": the counts of keys past the 1000 a job keeps.
+message JobTally {
+  // The key.
+  string key = 1;
+
+  // How many.
+  int64 count = 2;
+}
+
 // Job is one piece of work in a tenant, and how far it got.
 message Job {
   // The job's id, made by the server, unique in the tenant. Opaque, at most
@@ -318,6 +454,10 @@ message Job {
   oneof kind {
     // Archived instances sent to a sender.
     SendJob send = 2;
+
+    // Archived instances judged against a de-identification profile
+    // version.
+    DeidJob deid = 14;
   }
 
   // Where it is.
@@ -360,6 +500,11 @@ message Job {
   // The refused instances, and those sent with a warning, that are counted
   // and not listed by ListJobFailures, past the setting job.failures-kept.
   int64 failures_not_listed = 13;
+
+  // For a deid job, its counts per rule and per reason so far, most first
+  // and then by key; at most 1001 (JobTally). Answered by GetJob alone;
+  // empty in every other answer, and for a send job.
+  repeated JobTally tallies = 15;
 }
 
 // JobFailureCode is why an instance of a job was refused, or that it was
@@ -408,6 +553,30 @@ enum JobFailureCode {
   // known; or it names another SOP class or instance than the data set's
   // own (0008,0016) and (0008,0018). Its bytes are what was archived.
   JOB_FAILURE_CODE_META_UNREADABLE = 7;
+
+  // A deid job's dry run: the version would hold the file. The detail is
+  // the quarantine reason and its cause, "<reason>/<cause>".
+  JOB_FAILURE_CODE_WOULD_HOLD = 8;
+
+  // A deid job's check: the archived file does not hold to the version it
+  // records. The detail is the first finding (JobTally's check findings).
+  JOB_FAILURE_CODE_CHECK_FAILED = 9;
+
+  // A deid job passed the file with a note: a dry run's verdict depends on
+  // a lookup table, which a dry run never reads; or a check could not
+  // judge an element, its decision resting on a condition the archive
+  // cannot answer. Listed only with include_warnings.
+  JOB_FAILURE_CODE_UNDECIDED = 10;
+
+  // A deid job passed the file with a note: it was archived as received,
+  // so it records no profile version to judge it by. Listed only with
+  // include_warnings.
+  JOB_FAILURE_CODE_NOT_DEIDENTIFIED = 11;
+
+  // A deid job passed the file with a note, not judging it: it is larger
+  // than the 64 MiB a deid job reads into memory. Listed only with
+  // include_warnings.
+  JOB_FAILURE_CODE_TOO_LARGE = 12;
 }
 
 // JobFailure is one instance of a job that was refused, or sent with a
@@ -467,6 +636,10 @@ message CreateJobRequest {
     // Send a subject, a session or a scan to a sender. Its reception and
     // receiver must be empty.
     SendJob send = 2;
+
+    // Judge a subject, a session, a scan or the whole tenant against a
+    // de-identification profile version. Role: operator, as every job.
+    DeidJob deid = 3;
   }
 }
 

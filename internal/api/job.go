@@ -70,7 +70,8 @@ func (v *jobViews) message(ctx context.Context, j tenant.Job) *v1.Job {
 }
 
 // CreateJob makes a send job of a subject, a session or a scan, by labels,
-// to a sender the tenant has. The server makes its id.
+// to a sender the tenant has; or a deid job of a subject, a session, a scan
+// or the whole tenant. The server makes its id.
 func (s jobService) CreateJob(ctx context.Context, req *v1.CreateJobRequest) (*v1.CreateJobResponse, error) {
 	c := s.c
 	d, err := c.changing(ctx, coriav1connect.JobServiceCreateJobProcedure)
@@ -81,9 +82,12 @@ func (s jobService) CreateJob(ctx context.Context, req *v1.CreateJobRequest) (*v
 	if err != nil {
 		return nil, err
 	}
+	if req.GetDeid() != nil {
+		return s.createDeidJob(ctx, d, p, st, req)
+	}
 	send := req.GetSend()
 	if send == nil {
-		return nil, c.failIn(d, st, invalid("send", "is required: the kind of the job"))
+		return nil, c.failIn(d, st, invalid("send", "is required: the kind of the job, send or deid"))
 	}
 	if send.GetReception() != "" || send.GetReceiver() != "" {
 		return nil, c.failIn(d, st, invalid("send.reception", "and send.receiver are set by the server for a forward, and are empty here"))
@@ -131,8 +135,18 @@ func (s jobService) GetJob(ctx context.Context, req *v1.GetJobRequest) (*v1.GetJ
 	if err != nil {
 		return nil, c.failIn(d, st, err)
 	}
+	var tallies []tenant.JobTally
+	if out.Kind == tenant.JobDeid {
+		if tallies, err = p.JobTallies(ctx, out.ID); err != nil {
+			return nil, c.failIn(d, st, err)
+		}
+	}
 	c.done(d, st)
-	return &v1.GetJobResponse{Job: c.newJobViews(p, req.GetTenant()).message(ctx, out)}, nil
+	m := c.newJobViews(p, req.GetTenant()).message(ctx, out)
+	for _, t := range tallies {
+		m.Tallies = append(m.Tallies, &v1.JobTally{Key: t.Key, Count: t.Count})
+	}
+	return &v1.GetJobResponse{Job: m}, nil
 }
 
 // jobFilter returns the filter a listing asks for, checked.

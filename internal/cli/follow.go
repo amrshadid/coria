@@ -134,7 +134,7 @@ func (a *app) followJob(ctx context.Context, c *client.Client, cmd *cobra.Comman
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
-		return output.Details(w, a.style(), a.jobDetails(final))
+		return a.jobOut(w, final)
 	}); err != nil {
 		return err
 	}

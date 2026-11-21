@@ -19,6 +19,9 @@ const (
 		ORDER BY scan_id LIMIT ?`
 	// targetScansColumns are what a listing reads of a scan of the catalog.
 	targetScansColumns = `SELECT id, instances, bytes, session_folded, folded, updated FROM scans WHERE `
+	// tenantScansSQL lists the tenant's scans after one, for a deid job of
+	// the whole tenant: a range of the scans' key.
+	tenantScansSQL = targetScansColumns + `id > ? ORDER BY id LIMIT ?`
 	// targetScanSQL reads one scan by its labels: scans_by_label.
 	targetScanSQL = targetScansColumns + `subject_folded = ? AND session_folded = ? AND folded = ? AND subject_label = ?
 		AND session_label = ? AND label = ?`
@@ -40,8 +43,10 @@ const (
 	// streamCountSQL and streamPageSQL count and read a scan's stream,
 	// before its condition (SendingDialect.stream): the instances' key.
 	streamCountSQL = `SELECT count(*), CAST(coalesce(sum(i.size), 0) AS BIGINT) FROM instances AS i WHERE `
-	streamPageSQL  = `SELECT i.sop_instance_uid, i.reception_id, i.storage_key, i.byte_offset, i.byte_length, i.size,
-		i.sha256, coalesce(i.archived_sha256, i.sha256), i.held_at FROM instances AS i WHERE `
+	// The profile version an instance records is read by its key.
+	streamPageSQL = `SELECT i.sop_instance_uid, i.reception_id, i.storage_key, i.byte_offset, i.byte_length, i.size,
+		i.sha256, coalesce(i.archived_sha256, i.sha256), i.held_at, coalesce(pv.name, ''), coalesce(pv.version, 0)
+		FROM instances AS i LEFT JOIN profile_versions AS pv ON pv.id = i.profile_version_id WHERE `
 	// scanRefusedSQL reads the instances an ended job's scan refused, by
 	// the scan's key: job_failures_by_scan.
 	scanRefusedSQL = `SELECT scan_id, sop_instance_uid FROM job_failures WHERE job_id = ? AND scan_id = ? AND warning = ?`
@@ -116,6 +121,17 @@ func (d SendingDialect) Plans() []SendingPlan {
 	return append(out,
 		q("the scan a unit sends", "job_scans_by_work", jobScanByWorkSQL, []any{"u77"}),
 		q("a forward's scans", "", forwardScansSQL, []any{"rc5", int64(0), tenant.JobListPage}),
+		q("the tenant's scans", "", tenantScansSQL, []any{int64(0), tenant.JobListPage}),
+		q("a check's series", "", seenSeriesSQL+"?)", []any{"2.25.2.7"}),
+		q("a check's studies", "scans_by_study", seenStudySQL+"?)", []any{"2.25.1.7"}),
+		q("a check's instances", "instances_", seenInstanceSQL+"?)", []any{"2.25.3.7"}),
+		q("a check's instances as received", "instances_", plainInstanceSQL+"?)", []any{"2.25.3.7"}),
+		q("a check's series as received", "", plainSeriesSQL+"?)", []any{"2.25.2.7"}),
+		q("a check's studies as received", "scans_by_study", plainStudySQL+"?)", []any{"2.25.1.7"}),
+		q("a check's instances de-identified", "instances_", deidInstanceSQL+"?)", []any{"2.25.3.7"}),
+		q("a check's series de-identified", "", deidSeriesSQL+"?)", []any{"2.25.2.7"}),
+		q("a check's studies de-identified", "scans_by_study", deidStudySQL+"?)", []any{"2.25.1.7"}),
+		q("a job's tallies", "", jobTalliesSQL, []any{"j1", tenant.MaxJobTallies + 1}),
 		q("a session's scans", "scans_by_label", sessionScansSQL, []any{"sub-1", "ses-1", "sub-1", "ses-1", "", tenant.JobListPage}),
 		q("a subject's scans", "scans_by_label", subjectScansSQL, []any{"sub-1", "sub-1", "", "", tenant.JobListPage}),
 		q("a scan's instances by a time", "", heldByCountSQL, []any{int64(77), d.Time(at)}),

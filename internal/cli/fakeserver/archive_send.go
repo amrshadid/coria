@@ -96,6 +96,16 @@ func (s *Server) SetJob(tenant, id string, state v1.JobState, counts *v1.JobCoun
 	}
 }
 
+// SetJobTallies gives a deid job of the tenant the tallies GetJob answers.
+func (s *Server) SetJobTallies(tenant, id string, tallies ...*v1.JobTally) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.arch.ensure()
+	if j := s.arch.jobs[key(tenant, id)]; j != nil {
+		j.Tallies = tallies
+	}
+}
+
 // senderHealthOf is the health the fake answers for a sender: down while
 // disabled, else unknown, unless a test set one.
 func (s *Server) senderHealthOf(tenant string, sd *v1.Sender) *v1.SenderHealth {
@@ -435,6 +445,19 @@ func (h jobHandler) CreateJob(_ context.Context, req *v1.CreateJobRequest) (*v1.
 	defer s.mu.Unlock()
 	if err != nil {
 		return nil, err
+	}
+	if dj := req.GetDeid(); dj != nil {
+		if dj.GetMode() == v1.DeidJobMode_DEID_JOB_MODE_UNSPECIFIED {
+			return nil, fault.New(fault.Invalid, "deid.mode: is required")
+		}
+		d := proto.Clone(dj).(*v1.DeidJob)
+		if d.GetProfile() != "" && d.GetProfileVersion() == 0 {
+			d.ProfileVersion = 1
+		}
+		j := &v1.Job{Id: s.newJobID(req.GetTenant()), Kind: &v1.Job_Deid{Deid: d}, State: v1.JobState_JOB_STATE_QUEUED,
+			Counts: &v1.JobCounts{}, CreateTime: timestamppb.New(s.now()), StateTime: timestamppb.New(s.now())}
+		s.arch.jobs[key(req.GetTenant(), j.GetId())] = j
+		return &v1.CreateJobResponse{Job: proto.Clone(j).(*v1.Job)}, nil
 	}
 	in := req.GetSend()
 	if in == nil {

@@ -40,9 +40,11 @@ const (
 	JobState_JOB_STATE_QUEUED JobState = 1
 	// Some of its work has started.
 	JobState_JOB_STATE_RUNNING JobState = 2
-	// Ended. Every instance was sent, some perhaps with a warning.
+	// Ended. Every instance was sent, some perhaps with a warning; for a
+	// deid job, every instance passed, some perhaps with a note.
 	JobState_JOB_STATE_DONE JobState = 3
-	// Ended. Some instances were refused; every other one was sent.
+	// Ended. Some instances were refused; every other one was sent. For a
+	// deid job: some did not pass.
 	JobState_JOB_STATE_PARTIAL JobState = 4
 	// Ended without finishing: attempts ran out with instances not sent. The
 	// job's reason says why. RetryJob sends what it did not.
@@ -100,6 +102,62 @@ func (JobState) EnumDescriptor() ([]byte, []int) {
 	return file_coria_v1_job_proto_rawDescGZIP(), []int{0}
 }
 
+// DeidJobMode is what a deid job does with each archived instance.
+type DeidJobMode int32
+
+const (
+	// Never answered by the server; refused in CreateJob.
+	DeidJobMode_DEID_JOB_MODE_UNSPECIFIED DeidJobMode = 0
+	// Run a profile version over each archived file in memory, under keys
+	// made for the job, and judge what it would archive and what it would
+	// hold and why.
+	DeidJobMode_DEID_JOB_MODE_DRY_RUN DeidJobMode = 1
+	// Verify each archived file against the profile version the catalog
+	// records for it.
+	DeidJobMode_DEID_JOB_MODE_CHECK DeidJobMode = 2
+)
+
+// Enum value maps for DeidJobMode.
+var (
+	DeidJobMode_name = map[int32]string{
+		0: "DEID_JOB_MODE_UNSPECIFIED",
+		1: "DEID_JOB_MODE_DRY_RUN",
+		2: "DEID_JOB_MODE_CHECK",
+	}
+	DeidJobMode_value = map[string]int32{
+		"DEID_JOB_MODE_UNSPECIFIED": 0,
+		"DEID_JOB_MODE_DRY_RUN":     1,
+		"DEID_JOB_MODE_CHECK":       2,
+	}
+)
+
+func (x DeidJobMode) Enum() *DeidJobMode {
+	p := new(DeidJobMode)
+	*p = x
+	return p
+}
+
+func (x DeidJobMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeidJobMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_job_proto_enumTypes[1].Descriptor()
+}
+
+func (DeidJobMode) Type() protoreflect.EnumType {
+	return &file_coria_v1_job_proto_enumTypes[1]
+}
+
+func (x DeidJobMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeidJobMode.Descriptor instead.
+func (DeidJobMode) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{1}
+}
+
 // JobFailureCode is why an instance of a job was refused, or that it was
 // sent with a warning. A code added in a later version is a new value; a
 // client shows a code it does not know as refused for a reason it cannot
@@ -141,19 +199,43 @@ const (
 	// known; or it names another SOP class or instance than the data set's
 	// own (0008,0016) and (0008,0018). Its bytes are what was archived.
 	JobFailureCode_JOB_FAILURE_CODE_META_UNREADABLE JobFailureCode = 7
+	// A deid job's dry run: the version would hold the file. The detail is
+	// the quarantine reason and its cause, "<reason>/<cause>".
+	JobFailureCode_JOB_FAILURE_CODE_WOULD_HOLD JobFailureCode = 8
+	// A deid job's check: the archived file does not hold to the version it
+	// records. The detail is the first finding (JobTally's check findings).
+	JobFailureCode_JOB_FAILURE_CODE_CHECK_FAILED JobFailureCode = 9
+	// A deid job passed the file with a note: a dry run's verdict depends on
+	// a lookup table, which a dry run never reads; or a check could not
+	// judge an element, its decision resting on a condition the archive
+	// cannot answer. Listed only with include_warnings.
+	JobFailureCode_JOB_FAILURE_CODE_UNDECIDED JobFailureCode = 10
+	// A deid job passed the file with a note: it was archived as received,
+	// so it records no profile version to judge it by. Listed only with
+	// include_warnings.
+	JobFailureCode_JOB_FAILURE_CODE_NOT_DEIDENTIFIED JobFailureCode = 11
+	// A deid job passed the file with a note, not judging it: it is larger
+	// than the 64 MiB a deid job reads into memory. Listed only with
+	// include_warnings.
+	JobFailureCode_JOB_FAILURE_CODE_TOO_LARGE JobFailureCode = 12
 )
 
 // Enum value maps for JobFailureCode.
 var (
 	JobFailureCode_name = map[int32]string{
-		0: "JOB_FAILURE_CODE_UNSPECIFIED",
-		1: "JOB_FAILURE_CODE_PEER_REFUSED",
-		2: "JOB_FAILURE_CODE_PEER_WARNING",
-		3: "JOB_FAILURE_CODE_CLASS_NOT_ACCEPTED",
-		4: "JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED",
-		5: "JOB_FAILURE_CODE_PEER_UNACCOUNTED",
-		6: "JOB_FAILURE_CODE_DAMAGED_IN_STORAGE",
-		7: "JOB_FAILURE_CODE_META_UNREADABLE",
+		0:  "JOB_FAILURE_CODE_UNSPECIFIED",
+		1:  "JOB_FAILURE_CODE_PEER_REFUSED",
+		2:  "JOB_FAILURE_CODE_PEER_WARNING",
+		3:  "JOB_FAILURE_CODE_CLASS_NOT_ACCEPTED",
+		4:  "JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED",
+		5:  "JOB_FAILURE_CODE_PEER_UNACCOUNTED",
+		6:  "JOB_FAILURE_CODE_DAMAGED_IN_STORAGE",
+		7:  "JOB_FAILURE_CODE_META_UNREADABLE",
+		8:  "JOB_FAILURE_CODE_WOULD_HOLD",
+		9:  "JOB_FAILURE_CODE_CHECK_FAILED",
+		10: "JOB_FAILURE_CODE_UNDECIDED",
+		11: "JOB_FAILURE_CODE_NOT_DEIDENTIFIED",
+		12: "JOB_FAILURE_CODE_TOO_LARGE",
 	}
 	JobFailureCode_value = map[string]int32{
 		"JOB_FAILURE_CODE_UNSPECIFIED":         0,
@@ -164,6 +246,11 @@ var (
 		"JOB_FAILURE_CODE_PEER_UNACCOUNTED":    5,
 		"JOB_FAILURE_CODE_DAMAGED_IN_STORAGE":  6,
 		"JOB_FAILURE_CODE_META_UNREADABLE":     7,
+		"JOB_FAILURE_CODE_WOULD_HOLD":          8,
+		"JOB_FAILURE_CODE_CHECK_FAILED":        9,
+		"JOB_FAILURE_CODE_UNDECIDED":           10,
+		"JOB_FAILURE_CODE_NOT_DEIDENTIFIED":    11,
+		"JOB_FAILURE_CODE_TOO_LARGE":           12,
 	}
 )
 
@@ -178,11 +265,11 @@ func (x JobFailureCode) String() string {
 }
 
 func (JobFailureCode) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_job_proto_enumTypes[1].Descriptor()
+	return file_coria_v1_job_proto_enumTypes[2].Descriptor()
 }
 
 func (JobFailureCode) Type() protoreflect.EnumType {
-	return &file_coria_v1_job_proto_enumTypes[1]
+	return &file_coria_v1_job_proto_enumTypes[2]
 }
 
 func (x JobFailureCode) Number() protoreflect.EnumNumber {
@@ -191,7 +278,7 @@ func (x JobFailureCode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use JobFailureCode.Descriptor instead.
 func (JobFailureCode) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{1}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{2}
 }
 
 // JobCounts are a job's instances and bytes so far. An instance counts in
@@ -459,6 +546,178 @@ func (x *SendJob) GetReceiver() string {
 	return ""
 }
 
+// DeidJob is a job that judges archived instances against a
+// de-identification profile version, changing nothing: those of a subject,
+// of a session of it, of a scan of that, or of the whole tenant.
+type DeidJob struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What it does. Required.
+	Mode DeidJobMode `protobuf:"varint,1,opt,name=mode,proto3,enum=coria.v1.DeidJobMode" json:"mode,omitempty"`
+	// For a dry run, the name of the tenant's profile whose version it runs;
+	// empty runs over each instance the version the catalog records for it,
+	// and passes one archived as received with a note. Empty for a check,
+	// which always verifies against the version each instance records.
+	Profile string `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	// The version of profile: 0 in CreateJob for its latest, which the job
+	// fixes when it is made and answers here. 0 when profile is empty.
+	ProfileVersion int32 `protobuf:"varint,3,opt,name=profile_version,json=profileVersion,proto3" json:"profile_version,omitempty"`
+	// The label of the subject whose instances it judges. Empty, with the
+	// session and scan empty, for every instance of the tenant.
+	SubjectLabel string `protobuf:"bytes,4,opt,name=subject_label,json=subjectLabel,proto3" json:"subject_label,omitempty"`
+	// The label of the session of the subject whose instances it judges.
+	// Empty for every session of the subject.
+	SessionLabel string `protobuf:"bytes,5,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
+	// The label of the scan of the session whose instances it judges. Empty
+	// for every scan of the session; needs session_label.
+	ScanLabel     string `protobuf:"bytes,6,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeidJob) Reset() {
+	*x = DeidJob{}
+	mi := &file_coria_v1_job_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeidJob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeidJob) ProtoMessage() {}
+
+func (x *DeidJob) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeidJob.ProtoReflect.Descriptor instead.
+func (*DeidJob) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *DeidJob) GetMode() DeidJobMode {
+	if x != nil {
+		return x.Mode
+	}
+	return DeidJobMode_DEID_JOB_MODE_UNSPECIFIED
+}
+
+func (x *DeidJob) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *DeidJob) GetProfileVersion() int32 {
+	if x != nil {
+		return x.ProfileVersion
+	}
+	return 0
+}
+
+func (x *DeidJob) GetSubjectLabel() string {
+	if x != nil {
+		return x.SubjectLabel
+	}
+	return ""
+}
+
+func (x *DeidJob) GetSessionLabel() string {
+	if x != nil {
+		return x.SessionLabel
+	}
+	return ""
+}
+
+func (x *DeidJob) GetScanLabel() string {
+	if x != nil {
+		return x.ScanLabel
+	}
+	return ""
+}
+
+// JobTally is one count of what a deid job found, under a key of fixed
+// words and the profile's names, never a value read from a file. A key is
+// its kind, then its parts, joined by "|":
+//
+//   - "rule|<rule>|<action>": the elements a rule of the version decided
+//     with that action, in a dry run; <rule> is the rule's name, or "rule
+//     <n>" for one without a name (its position from 1), or "default".
+//   - "hold|<reason>|<cause>": the files the version would hold for that
+//     quarantine reason and cause, in a dry run.
+//   - "class|<SOP Class UID>|passed" and "class|<SOP Class UID>|refused":
+//     the files of a class that passed and that did not.
+//   - "check|<finding>" and "check|<finding>|<tag>": the files a check
+//     found that in, and the elements by tag (eight hexadecimal digits),
+//     such as "check|removed_element|00100030". The findings:
+//     removed_element, private_element, kept_value, identity_not_removed,
+//     method_missing, received_uid, engine_refused, unreadable; and the
+//     notes check|undecidable, check|as_received, check|too_large.
+//   - "other": the counts of keys past the 1000 a job keeps.
+type JobTally struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The key.
+	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// How many.
+	Count         int64 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobTally) Reset() {
+	*x = JobTally{}
+	mi := &file_coria_v1_job_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobTally) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobTally) ProtoMessage() {}
+
+func (x *JobTally) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_job_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobTally.ProtoReflect.Descriptor instead.
+func (*JobTally) Descriptor() ([]byte, []int) {
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *JobTally) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *JobTally) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
 // Job is one piece of work in a tenant, and how far it got.
 type Job struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -472,6 +731,7 @@ type Job struct {
 	// Types that are valid to be assigned to Kind:
 	//
 	//	*Job_Send
+	//	*Job_Deid
 	Kind isJob_Kind `protobuf_oneof:"kind"`
 	// Where it is.
 	State JobState `protobuf:"varint,3,opt,name=state,proto3,enum=coria.v1.JobState" json:"state,omitempty"`
@@ -503,13 +763,17 @@ type Job struct {
 	// The refused instances, and those sent with a warning, that are counted
 	// and not listed by ListJobFailures, past the setting job.failures-kept.
 	FailuresNotListed int64 `protobuf:"varint,13,opt,name=failures_not_listed,json=failuresNotListed,proto3" json:"failures_not_listed,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// For a deid job, its counts per rule and per reason so far, most first
+	// and then by key; at most 1001 (JobTally). Answered by GetJob alone;
+	// empty in every other answer, and for a send job.
+	Tallies       []*JobTally `protobuf:"bytes,15,rep,name=tallies,proto3" json:"tallies,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Job) Reset() {
 	*x = Job{}
-	mi := &file_coria_v1_job_proto_msgTypes[2]
+	mi := &file_coria_v1_job_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -521,7 +785,7 @@ func (x *Job) String() string {
 func (*Job) ProtoMessage() {}
 
 func (x *Job) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[2]
+	mi := &file_coria_v1_job_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -534,7 +798,7 @@ func (x *Job) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Job.ProtoReflect.Descriptor instead.
 func (*Job) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{2}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Job) GetId() string {
@@ -555,6 +819,15 @@ func (x *Job) GetSend() *SendJob {
 	if x != nil {
 		if x, ok := x.Kind.(*Job_Send); ok {
 			return x.Send
+		}
+	}
+	return nil
+}
+
+func (x *Job) GetDeid() *DeidJob {
+	if x != nil {
+		if x, ok := x.Kind.(*Job_Deid); ok {
+			return x.Deid
 		}
 	}
 	return nil
@@ -637,6 +910,13 @@ func (x *Job) GetFailuresNotListed() int64 {
 	return 0
 }
 
+func (x *Job) GetTallies() []*JobTally {
+	if x != nil {
+		return x.Tallies
+	}
+	return nil
+}
+
 type isJob_Kind interface {
 	isJob_Kind()
 }
@@ -646,7 +926,15 @@ type Job_Send struct {
 	Send *SendJob `protobuf:"bytes,2,opt,name=send,proto3,oneof"`
 }
 
+type Job_Deid struct {
+	// Archived instances judged against a de-identification profile
+	// version.
+	Deid *DeidJob `protobuf:"bytes,14,opt,name=deid,proto3,oneof"`
+}
+
 func (*Job_Send) isJob_Kind() {}
+
+func (*Job_Deid) isJob_Kind() {}
 
 // JobFailure is one instance of a job that was refused, or sent with a
 // warning.
@@ -690,7 +978,7 @@ type JobFailure struct {
 
 func (x *JobFailure) Reset() {
 	*x = JobFailure{}
-	mi := &file_coria_v1_job_proto_msgTypes[3]
+	mi := &file_coria_v1_job_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +990,7 @@ func (x *JobFailure) String() string {
 func (*JobFailure) ProtoMessage() {}
 
 func (x *JobFailure) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[3]
+	mi := &file_coria_v1_job_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +1003,7 @@ func (x *JobFailure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobFailure.ProtoReflect.Descriptor instead.
 func (*JobFailure) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{3}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *JobFailure) GetInstanceId() string {
@@ -805,6 +1093,7 @@ type CreateJobRequest struct {
 	// Types that are valid to be assigned to Kind:
 	//
 	//	*CreateJobRequest_Send
+	//	*CreateJobRequest_Deid
 	Kind          isCreateJobRequest_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -812,7 +1101,7 @@ type CreateJobRequest struct {
 
 func (x *CreateJobRequest) Reset() {
 	*x = CreateJobRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[4]
+	mi := &file_coria_v1_job_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -824,7 +1113,7 @@ func (x *CreateJobRequest) String() string {
 func (*CreateJobRequest) ProtoMessage() {}
 
 func (x *CreateJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[4]
+	mi := &file_coria_v1_job_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -837,7 +1126,7 @@ func (x *CreateJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateJobRequest.ProtoReflect.Descriptor instead.
 func (*CreateJobRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{4}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CreateJobRequest) GetTenant() string {
@@ -863,6 +1152,15 @@ func (x *CreateJobRequest) GetSend() *SendJob {
 	return nil
 }
 
+func (x *CreateJobRequest) GetDeid() *DeidJob {
+	if x != nil {
+		if x, ok := x.Kind.(*CreateJobRequest_Deid); ok {
+			return x.Deid
+		}
+	}
+	return nil
+}
+
 type isCreateJobRequest_Kind interface {
 	isCreateJobRequest_Kind()
 }
@@ -873,7 +1171,15 @@ type CreateJobRequest_Send struct {
 	Send *SendJob `protobuf:"bytes,2,opt,name=send,proto3,oneof"`
 }
 
+type CreateJobRequest_Deid struct {
+	// Judge a subject, a session, a scan or the whole tenant against a
+	// de-identification profile version. Role: operator, as every job.
+	Deid *DeidJob `protobuf:"bytes,3,opt,name=deid,proto3,oneof"`
+}
+
 func (*CreateJobRequest_Send) isCreateJobRequest_Kind() {}
+
+func (*CreateJobRequest_Deid) isCreateJobRequest_Kind() {}
 
 // CreateJobResponse is the job made.
 type CreateJobResponse struct {
@@ -886,7 +1192,7 @@ type CreateJobResponse struct {
 
 func (x *CreateJobResponse) Reset() {
 	*x = CreateJobResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[5]
+	mi := &file_coria_v1_job_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -898,7 +1204,7 @@ func (x *CreateJobResponse) String() string {
 func (*CreateJobResponse) ProtoMessage() {}
 
 func (x *CreateJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[5]
+	mi := &file_coria_v1_job_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -911,7 +1217,7 @@ func (x *CreateJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateJobResponse.ProtoReflect.Descriptor instead.
 func (*CreateJobResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{5}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateJobResponse) GetJob() *Job {
@@ -934,7 +1240,7 @@ type GetJobRequest struct {
 
 func (x *GetJobRequest) Reset() {
 	*x = GetJobRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[6]
+	mi := &file_coria_v1_job_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -946,7 +1252,7 @@ func (x *GetJobRequest) String() string {
 func (*GetJobRequest) ProtoMessage() {}
 
 func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[6]
+	mi := &file_coria_v1_job_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -959,7 +1265,7 @@ func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobRequest.ProtoReflect.Descriptor instead.
 func (*GetJobRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{6}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetJobRequest) GetTenant() string {
@@ -987,7 +1293,7 @@ type GetJobResponse struct {
 
 func (x *GetJobResponse) Reset() {
 	*x = GetJobResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[7]
+	mi := &file_coria_v1_job_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -999,7 +1305,7 @@ func (x *GetJobResponse) String() string {
 func (*GetJobResponse) ProtoMessage() {}
 
 func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[7]
+	mi := &file_coria_v1_job_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1012,7 +1318,7 @@ func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobResponse.ProtoReflect.Descriptor instead.
 func (*GetJobResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{7}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetJobResponse) GetJob() *Job {
@@ -1054,7 +1360,7 @@ type ListJobsRequest struct {
 
 func (x *ListJobsRequest) Reset() {
 	*x = ListJobsRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[8]
+	mi := &file_coria_v1_job_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1066,7 +1372,7 @@ func (x *ListJobsRequest) String() string {
 func (*ListJobsRequest) ProtoMessage() {}
 
 func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[8]
+	mi := &file_coria_v1_job_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1079,7 +1385,7 @@ func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
 func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{8}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListJobsRequest) GetTenant() string {
@@ -1151,7 +1457,7 @@ type ListJobsResponse struct {
 
 func (x *ListJobsResponse) Reset() {
 	*x = ListJobsResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[9]
+	mi := &file_coria_v1_job_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1163,7 +1469,7 @@ func (x *ListJobsResponse) String() string {
 func (*ListJobsResponse) ProtoMessage() {}
 
 func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[9]
+	mi := &file_coria_v1_job_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1176,7 +1482,7 @@ func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
 func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{9}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ListJobsResponse) GetJobs() []*Job {
@@ -1206,7 +1512,7 @@ type CancelJobRequest struct {
 
 func (x *CancelJobRequest) Reset() {
 	*x = CancelJobRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[10]
+	mi := &file_coria_v1_job_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1218,7 +1524,7 @@ func (x *CancelJobRequest) String() string {
 func (*CancelJobRequest) ProtoMessage() {}
 
 func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[10]
+	mi := &file_coria_v1_job_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1231,7 +1537,7 @@ func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
 func (*CancelJobRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{10}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CancelJobRequest) GetTenant() string {
@@ -1259,7 +1565,7 @@ type CancelJobResponse struct {
 
 func (x *CancelJobResponse) Reset() {
 	*x = CancelJobResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[11]
+	mi := &file_coria_v1_job_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1271,7 +1577,7 @@ func (x *CancelJobResponse) String() string {
 func (*CancelJobResponse) ProtoMessage() {}
 
 func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[11]
+	mi := &file_coria_v1_job_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1284,7 +1590,7 @@ func (x *CancelJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobResponse.ProtoReflect.Descriptor instead.
 func (*CancelJobResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{11}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CancelJobResponse) GetJob() *Job {
@@ -1307,7 +1613,7 @@ type RetryJobRequest struct {
 
 func (x *RetryJobRequest) Reset() {
 	*x = RetryJobRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[12]
+	mi := &file_coria_v1_job_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1319,7 +1625,7 @@ func (x *RetryJobRequest) String() string {
 func (*RetryJobRequest) ProtoMessage() {}
 
 func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[12]
+	mi := &file_coria_v1_job_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1332,7 +1638,7 @@ func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobRequest.ProtoReflect.Descriptor instead.
 func (*RetryJobRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{12}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RetryJobRequest) GetTenant() string {
@@ -1362,7 +1668,7 @@ type RetryJobResponse struct {
 
 func (x *RetryJobResponse) Reset() {
 	*x = RetryJobResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[13]
+	mi := &file_coria_v1_job_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1374,7 +1680,7 @@ func (x *RetryJobResponse) String() string {
 func (*RetryJobResponse) ProtoMessage() {}
 
 func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[13]
+	mi := &file_coria_v1_job_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1387,7 +1693,7 @@ func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobResponse.ProtoReflect.Descriptor instead.
 func (*RetryJobResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{13}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RetryJobResponse) GetJob() *Job {
@@ -1427,7 +1733,7 @@ type ListJobFailuresRequest struct {
 
 func (x *ListJobFailuresRequest) Reset() {
 	*x = ListJobFailuresRequest{}
-	mi := &file_coria_v1_job_proto_msgTypes[14]
+	mi := &file_coria_v1_job_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1439,7 +1745,7 @@ func (x *ListJobFailuresRequest) String() string {
 func (*ListJobFailuresRequest) ProtoMessage() {}
 
 func (x *ListJobFailuresRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[14]
+	mi := &file_coria_v1_job_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1452,7 +1758,7 @@ func (x *ListJobFailuresRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobFailuresRequest.ProtoReflect.Descriptor instead.
 func (*ListJobFailuresRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{14}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ListJobFailuresRequest) GetTenant() string {
@@ -1503,7 +1809,7 @@ type ListJobFailuresResponse struct {
 
 func (x *ListJobFailuresResponse) Reset() {
 	*x = ListJobFailuresResponse{}
-	mi := &file_coria_v1_job_proto_msgTypes[15]
+	mi := &file_coria_v1_job_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1515,7 +1821,7 @@ func (x *ListJobFailuresResponse) String() string {
 func (*ListJobFailuresResponse) ProtoMessage() {}
 
 func (x *ListJobFailuresResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_job_proto_msgTypes[15]
+	mi := &file_coria_v1_job_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1528,7 +1834,7 @@ func (x *ListJobFailuresResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobFailuresResponse.ProtoReflect.Descriptor instead.
 func (*ListJobFailuresResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_job_proto_rawDescGZIP(), []int{15}
+	return file_coria_v1_job_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListJobFailuresResponse) GetFailures() []*JobFailure {
@@ -1574,10 +1880,22 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\n" +
 	"scan_label\x18\x04 \x01(\tR\tscanLabel\x12\x1c\n" +
 	"\treception\x18\x05 \x01(\tR\treception\x12\x1a\n" +
-	"\breceiver\x18\x06 \x01(\tR\breceiver\"\xb2\x04\n" +
+	"\breceiver\x18\x06 \x01(\tR\breceiver\"\xe0\x01\n" +
+	"\aDeidJob\x12)\n" +
+	"\x04mode\x18\x01 \x01(\x0e2\x15.coria.v1.DeidJobModeR\x04mode\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\x12'\n" +
+	"\x0fprofile_version\x18\x03 \x01(\x05R\x0eprofileVersion\x12#\n" +
+	"\rsubject_label\x18\x04 \x01(\tR\fsubjectLabel\x12#\n" +
+	"\rsession_label\x18\x05 \x01(\tR\fsessionLabel\x12\x1d\n" +
+	"\n" +
+	"scan_label\x18\x06 \x01(\tR\tscanLabel\"2\n" +
+	"\bJobTally\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"\x89\x05\n" +
 	"\x03Job\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12'\n" +
-	"\x04send\x18\x02 \x01(\v2\x11.coria.v1.SendJobH\x00R\x04send\x12(\n" +
+	"\x04send\x18\x02 \x01(\v2\x11.coria.v1.SendJobH\x00R\x04send\x12'\n" +
+	"\x04deid\x18\x0e \x01(\v2\x11.coria.v1.DeidJobH\x00R\x04deid\x12(\n" +
 	"\x05state\x18\x03 \x01(\x0e2\x12.coria.v1.JobStateR\x05state\x12+\n" +
 	"\x06counts\x18\x04 \x01(\v2\x13.coria.v1.JobCountsR\x06counts\x12\x16\n" +
 	"\x06reason\x18\x05 \x01(\tR\x06reason\x12)\n" +
@@ -1592,7 +1910,8 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x12\x19\n" +
 	"\bretry_of\x18\v \x01(\tR\aretryOf\x12\x1b\n" +
 	"\tretry_job\x18\f \x01(\tR\bretryJob\x12.\n" +
-	"\x13failures_not_listed\x18\r \x01(\x03R\x11failuresNotListedB\x06\n" +
+	"\x13failures_not_listed\x18\r \x01(\x03R\x11failuresNotListed\x12,\n" +
+	"\atallies\x18\x0f \x03(\v2\x12.coria.v1.JobTallyR\atalliesB\x06\n" +
 	"\x04kind\"\xab\x03\n" +
 	"\n" +
 	"JobFailure\x12\x1f\n" +
@@ -1610,10 +1929,11 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\x06detail\x18\t \x01(\tR\x06detail\x12.\n" +
 	"\x04time\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12(\n" +
-	"\x10peer_status_http\x18\v \x01(\bR\x0epeerStatusHttp\"[\n" +
+	"\x10peer_status_http\x18\v \x01(\bR\x0epeerStatusHttp\"\x84\x01\n" +
 	"\x10CreateJobRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12'\n" +
-	"\x04send\x18\x02 \x01(\v2\x11.coria.v1.SendJobH\x00R\x04sendB\x06\n" +
+	"\x04send\x18\x02 \x01(\v2\x11.coria.v1.SendJobH\x00R\x04send\x12'\n" +
+	"\x04deid\x18\x03 \x01(\v2\x11.coria.v1.DeidJobH\x00R\x04deidB\x06\n" +
 	"\x04kind\"4\n" +
 	"\x11CreateJobResponse\x12\x1f\n" +
 	"\x03job\x18\x01 \x01(\v2\r.coria.v1.JobR\x03job\"7\n" +
@@ -1665,7 +1985,11 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\x0eJOB_STATE_DONE\x10\x03\x12\x15\n" +
 	"\x11JOB_STATE_PARTIAL\x10\x04\x12\x14\n" +
 	"\x10JOB_STATE_FAILED\x10\x05\x12\x16\n" +
-	"\x12JOB_STATE_CANCELED\x10\x06*\xc1\x02\n" +
+	"\x12JOB_STATE_CANCELED\x10\x06*`\n" +
+	"\vDeidJobMode\x12\x1d\n" +
+	"\x19DEID_JOB_MODE_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15DEID_JOB_MODE_DRY_RUN\x10\x01\x12\x17\n" +
+	"\x13DEID_JOB_MODE_CHECK\x10\x02*\xec\x03\n" +
 	"\x0eJobFailureCode\x12 \n" +
 	"\x1cJOB_FAILURE_CODE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dJOB_FAILURE_CODE_PEER_REFUSED\x10\x01\x12!\n" +
@@ -1674,7 +1998,13 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"$JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED\x10\x04\x12%\n" +
 	"!JOB_FAILURE_CODE_PEER_UNACCOUNTED\x10\x05\x12'\n" +
 	"#JOB_FAILURE_CODE_DAMAGED_IN_STORAGE\x10\x06\x12$\n" +
-	" JOB_FAILURE_CODE_META_UNREADABLE\x10\a2\xcc\x03\n" +
+	" JOB_FAILURE_CODE_META_UNREADABLE\x10\a\x12\x1f\n" +
+	"\x1bJOB_FAILURE_CODE_WOULD_HOLD\x10\b\x12!\n" +
+	"\x1dJOB_FAILURE_CODE_CHECK_FAILED\x10\t\x12\x1e\n" +
+	"\x1aJOB_FAILURE_CODE_UNDECIDED\x10\n" +
+	"\x12%\n" +
+	"!JOB_FAILURE_CODE_NOT_DEIDENTIFIED\x10\v\x12\x1e\n" +
+	"\x1aJOB_FAILURE_CODE_TOO_LARGE\x10\f2\xcc\x03\n" +
 	"\n" +
 	"JobService\x12D\n" +
 	"\tCreateJob\x12\x1a.coria.v1.CreateJobRequest\x1a\x1b.coria.v1.CreateJobResponse\x12@\n" +
@@ -1697,67 +2027,74 @@ func file_coria_v1_job_proto_rawDescGZIP() []byte {
 	return file_coria_v1_job_proto_rawDescData
 }
 
-var file_coria_v1_job_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_coria_v1_job_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_coria_v1_job_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_coria_v1_job_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_coria_v1_job_proto_goTypes = []any{
 	(JobState)(0),                   // 0: coria.v1.JobState
-	(JobFailureCode)(0),             // 1: coria.v1.JobFailureCode
-	(*JobCounts)(nil),               // 2: coria.v1.JobCounts
-	(*SendJob)(nil),                 // 3: coria.v1.SendJob
-	(*Job)(nil),                     // 4: coria.v1.Job
-	(*JobFailure)(nil),              // 5: coria.v1.JobFailure
-	(*CreateJobRequest)(nil),        // 6: coria.v1.CreateJobRequest
-	(*CreateJobResponse)(nil),       // 7: coria.v1.CreateJobResponse
-	(*GetJobRequest)(nil),           // 8: coria.v1.GetJobRequest
-	(*GetJobResponse)(nil),          // 9: coria.v1.GetJobResponse
-	(*ListJobsRequest)(nil),         // 10: coria.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),        // 11: coria.v1.ListJobsResponse
-	(*CancelJobRequest)(nil),        // 12: coria.v1.CancelJobRequest
-	(*CancelJobResponse)(nil),       // 13: coria.v1.CancelJobResponse
-	(*RetryJobRequest)(nil),         // 14: coria.v1.RetryJobRequest
-	(*RetryJobResponse)(nil),        // 15: coria.v1.RetryJobResponse
-	(*ListJobFailuresRequest)(nil),  // 16: coria.v1.ListJobFailuresRequest
-	(*ListJobFailuresResponse)(nil), // 17: coria.v1.ListJobFailuresResponse
-	(*timestamppb.Timestamp)(nil),   // 18: google.protobuf.Timestamp
+	(DeidJobMode)(0),                // 1: coria.v1.DeidJobMode
+	(JobFailureCode)(0),             // 2: coria.v1.JobFailureCode
+	(*JobCounts)(nil),               // 3: coria.v1.JobCounts
+	(*SendJob)(nil),                 // 4: coria.v1.SendJob
+	(*DeidJob)(nil),                 // 5: coria.v1.DeidJob
+	(*JobTally)(nil),                // 6: coria.v1.JobTally
+	(*Job)(nil),                     // 7: coria.v1.Job
+	(*JobFailure)(nil),              // 8: coria.v1.JobFailure
+	(*CreateJobRequest)(nil),        // 9: coria.v1.CreateJobRequest
+	(*CreateJobResponse)(nil),       // 10: coria.v1.CreateJobResponse
+	(*GetJobRequest)(nil),           // 11: coria.v1.GetJobRequest
+	(*GetJobResponse)(nil),          // 12: coria.v1.GetJobResponse
+	(*ListJobsRequest)(nil),         // 13: coria.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),        // 14: coria.v1.ListJobsResponse
+	(*CancelJobRequest)(nil),        // 15: coria.v1.CancelJobRequest
+	(*CancelJobResponse)(nil),       // 16: coria.v1.CancelJobResponse
+	(*RetryJobRequest)(nil),         // 17: coria.v1.RetryJobRequest
+	(*RetryJobResponse)(nil),        // 18: coria.v1.RetryJobResponse
+	(*ListJobFailuresRequest)(nil),  // 19: coria.v1.ListJobFailuresRequest
+	(*ListJobFailuresResponse)(nil), // 20: coria.v1.ListJobFailuresResponse
+	(*timestamppb.Timestamp)(nil),   // 21: google.protobuf.Timestamp
 }
 var file_coria_v1_job_proto_depIdxs = []int32{
-	3,  // 0: coria.v1.Job.send:type_name -> coria.v1.SendJob
-	0,  // 1: coria.v1.Job.state:type_name -> coria.v1.JobState
-	2,  // 2: coria.v1.Job.counts:type_name -> coria.v1.JobCounts
-	18, // 3: coria.v1.Job.create_time:type_name -> google.protobuf.Timestamp
-	18, // 4: coria.v1.Job.start_time:type_name -> google.protobuf.Timestamp
-	18, // 5: coria.v1.Job.state_time:type_name -> google.protobuf.Timestamp
-	18, // 6: coria.v1.Job.end_time:type_name -> google.protobuf.Timestamp
-	1,  // 7: coria.v1.JobFailure.code:type_name -> coria.v1.JobFailureCode
-	18, // 8: coria.v1.JobFailure.time:type_name -> google.protobuf.Timestamp
-	3,  // 9: coria.v1.CreateJobRequest.send:type_name -> coria.v1.SendJob
-	4,  // 10: coria.v1.CreateJobResponse.job:type_name -> coria.v1.Job
-	4,  // 11: coria.v1.GetJobResponse.job:type_name -> coria.v1.Job
-	0,  // 12: coria.v1.ListJobsRequest.states:type_name -> coria.v1.JobState
-	18, // 13: coria.v1.ListJobsRequest.start_time:type_name -> google.protobuf.Timestamp
-	18, // 14: coria.v1.ListJobsRequest.end_time:type_name -> google.protobuf.Timestamp
-	4,  // 15: coria.v1.ListJobsResponse.jobs:type_name -> coria.v1.Job
-	4,  // 16: coria.v1.CancelJobResponse.job:type_name -> coria.v1.Job
-	4,  // 17: coria.v1.RetryJobResponse.job:type_name -> coria.v1.Job
-	4,  // 18: coria.v1.RetryJobResponse.retry:type_name -> coria.v1.Job
-	5,  // 19: coria.v1.ListJobFailuresResponse.failures:type_name -> coria.v1.JobFailure
-	6,  // 20: coria.v1.JobService.CreateJob:input_type -> coria.v1.CreateJobRequest
-	8,  // 21: coria.v1.JobService.GetJob:input_type -> coria.v1.GetJobRequest
-	10, // 22: coria.v1.JobService.ListJobs:input_type -> coria.v1.ListJobsRequest
-	12, // 23: coria.v1.JobService.CancelJob:input_type -> coria.v1.CancelJobRequest
-	14, // 24: coria.v1.JobService.RetryJob:input_type -> coria.v1.RetryJobRequest
-	16, // 25: coria.v1.JobService.ListJobFailures:input_type -> coria.v1.ListJobFailuresRequest
-	7,  // 26: coria.v1.JobService.CreateJob:output_type -> coria.v1.CreateJobResponse
-	9,  // 27: coria.v1.JobService.GetJob:output_type -> coria.v1.GetJobResponse
-	11, // 28: coria.v1.JobService.ListJobs:output_type -> coria.v1.ListJobsResponse
-	13, // 29: coria.v1.JobService.CancelJob:output_type -> coria.v1.CancelJobResponse
-	15, // 30: coria.v1.JobService.RetryJob:output_type -> coria.v1.RetryJobResponse
-	17, // 31: coria.v1.JobService.ListJobFailures:output_type -> coria.v1.ListJobFailuresResponse
-	26, // [26:32] is the sub-list for method output_type
-	20, // [20:26] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	1,  // 0: coria.v1.DeidJob.mode:type_name -> coria.v1.DeidJobMode
+	4,  // 1: coria.v1.Job.send:type_name -> coria.v1.SendJob
+	5,  // 2: coria.v1.Job.deid:type_name -> coria.v1.DeidJob
+	0,  // 3: coria.v1.Job.state:type_name -> coria.v1.JobState
+	3,  // 4: coria.v1.Job.counts:type_name -> coria.v1.JobCounts
+	21, // 5: coria.v1.Job.create_time:type_name -> google.protobuf.Timestamp
+	21, // 6: coria.v1.Job.start_time:type_name -> google.protobuf.Timestamp
+	21, // 7: coria.v1.Job.state_time:type_name -> google.protobuf.Timestamp
+	21, // 8: coria.v1.Job.end_time:type_name -> google.protobuf.Timestamp
+	6,  // 9: coria.v1.Job.tallies:type_name -> coria.v1.JobTally
+	2,  // 10: coria.v1.JobFailure.code:type_name -> coria.v1.JobFailureCode
+	21, // 11: coria.v1.JobFailure.time:type_name -> google.protobuf.Timestamp
+	4,  // 12: coria.v1.CreateJobRequest.send:type_name -> coria.v1.SendJob
+	5,  // 13: coria.v1.CreateJobRequest.deid:type_name -> coria.v1.DeidJob
+	7,  // 14: coria.v1.CreateJobResponse.job:type_name -> coria.v1.Job
+	7,  // 15: coria.v1.GetJobResponse.job:type_name -> coria.v1.Job
+	0,  // 16: coria.v1.ListJobsRequest.states:type_name -> coria.v1.JobState
+	21, // 17: coria.v1.ListJobsRequest.start_time:type_name -> google.protobuf.Timestamp
+	21, // 18: coria.v1.ListJobsRequest.end_time:type_name -> google.protobuf.Timestamp
+	7,  // 19: coria.v1.ListJobsResponse.jobs:type_name -> coria.v1.Job
+	7,  // 20: coria.v1.CancelJobResponse.job:type_name -> coria.v1.Job
+	7,  // 21: coria.v1.RetryJobResponse.job:type_name -> coria.v1.Job
+	7,  // 22: coria.v1.RetryJobResponse.retry:type_name -> coria.v1.Job
+	8,  // 23: coria.v1.ListJobFailuresResponse.failures:type_name -> coria.v1.JobFailure
+	9,  // 24: coria.v1.JobService.CreateJob:input_type -> coria.v1.CreateJobRequest
+	11, // 25: coria.v1.JobService.GetJob:input_type -> coria.v1.GetJobRequest
+	13, // 26: coria.v1.JobService.ListJobs:input_type -> coria.v1.ListJobsRequest
+	15, // 27: coria.v1.JobService.CancelJob:input_type -> coria.v1.CancelJobRequest
+	17, // 28: coria.v1.JobService.RetryJob:input_type -> coria.v1.RetryJobRequest
+	19, // 29: coria.v1.JobService.ListJobFailures:input_type -> coria.v1.ListJobFailuresRequest
+	10, // 30: coria.v1.JobService.CreateJob:output_type -> coria.v1.CreateJobResponse
+	12, // 31: coria.v1.JobService.GetJob:output_type -> coria.v1.GetJobResponse
+	14, // 32: coria.v1.JobService.ListJobs:output_type -> coria.v1.ListJobsResponse
+	16, // 33: coria.v1.JobService.CancelJob:output_type -> coria.v1.CancelJobResponse
+	18, // 34: coria.v1.JobService.RetryJob:output_type -> coria.v1.RetryJobResponse
+	20, // 35: coria.v1.JobService.ListJobFailures:output_type -> coria.v1.ListJobFailuresResponse
+	30, // [30:36] is the sub-list for method output_type
+	24, // [24:30] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_job_proto_init() }
@@ -1765,19 +2102,21 @@ func file_coria_v1_job_proto_init() {
 	if File_coria_v1_job_proto != nil {
 		return
 	}
-	file_coria_v1_job_proto_msgTypes[2].OneofWrappers = []any{
-		(*Job_Send)(nil),
-	}
 	file_coria_v1_job_proto_msgTypes[4].OneofWrappers = []any{
+		(*Job_Send)(nil),
+		(*Job_Deid)(nil),
+	}
+	file_coria_v1_job_proto_msgTypes[6].OneofWrappers = []any{
 		(*CreateJobRequest_Send)(nil),
+		(*CreateJobRequest_Deid)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_job_proto_rawDesc), len(file_coria_v1_job_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   16,
+			NumEnums:      3,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

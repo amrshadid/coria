@@ -17,28 +17,9 @@ import (
 // no secrets, or whose secrets do not open with this key file, is
 // Internal.
 func (r *Registry) DeidKeys(ctx context.Context, name string) (engine.Keys, error) {
-	st, err := r.Store(name)
+	open, err := r.secretOpener(ctx, name)
 	if err != nil {
 		return engine.Keys{}, err
-	}
-	e := (*r.entries.Load())[name]
-	if e == nil {
-		return engine.Keys{}, fault.New(fault.NotFound, "no such tenant")
-	}
-	ks, ok := st.(tenant.Secrets)
-	if !ok {
-		return engine.Keys{}, errNoSecrets
-	}
-	open := func(n tenant.SecretName) ([]byte, error) {
-		sealed, err := ks.TenantSecret(ctx, n)
-		if err != nil {
-			return nil, err
-		}
-		key, err := r.cfg.Keys.Open(SecretContext(e.id, n), sealed)
-		if err != nil {
-			return nil, fault.Wrap(fault.Internal, err, "registry: the tenant's "+string(n)+" key does not open with this key file")
-		}
-		return key, nil
 	}
 	var keys engine.Keys
 	if keys.UID, err = open(tenant.SecretUID); err != nil {
@@ -51,4 +32,44 @@ func (r *Registry) DeidKeys(ctx context.Context, name string) (engine.Keys, erro
 		return engine.Keys{}, err
 	}
 	return keys, nil
+}
+
+// UIDKey returns the tenant's UID key alone, opened as DeidKeys opens it,
+// for a reader that only remaps UIDs (a check of the archive): the date
+// and naming keys are never read for it. The caller zeroes it when done.
+func (r *Registry) UIDKey(ctx context.Context, name string) ([]byte, error) {
+	open, err := r.secretOpener(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return open(tenant.SecretUID)
+}
+
+// secretOpener returns the function that reads one of the tenant's sealed
+// secrets from its database and opens it with the installation key; a
+// tenant not ready is Unavailable, one not known NotFound.
+func (r *Registry) secretOpener(ctx context.Context, name string) (func(tenant.SecretName) ([]byte, error), error) {
+	st, err := r.Store(name)
+	if err != nil {
+		return nil, err
+	}
+	e := (*r.entries.Load())[name]
+	if e == nil {
+		return nil, fault.New(fault.NotFound, "no such tenant")
+	}
+	ks, ok := st.(tenant.Secrets)
+	if !ok {
+		return nil, errNoSecrets
+	}
+	return func(n tenant.SecretName) ([]byte, error) {
+		sealed, err := ks.TenantSecret(ctx, n)
+		if err != nil {
+			return nil, err
+		}
+		key, err := r.cfg.Keys.Open(SecretContext(e.id, n), sealed)
+		if err != nil {
+			return nil, fault.Wrap(fault.Internal, err, "registry: the tenant's "+string(n)+" key does not open with this key file")
+		}
+		return key, nil
+	}, nil
 }

@@ -204,3 +204,22 @@ func TestExplainFile(t *testing.T) {
 		t.Errorf("not DICOM: %+v %v", hold, err)
 	}
 }
+
+// TestTryFileWithoutValues guards a trial for a caller that answers no
+// value: the same verdict and record, and neither the data set before,
+// nor the one after, nor the written bytes kept.
+func TestTryFileWithoutValues(t *testing.T) {
+	en := trialEngine(t)
+	b, err := os.ReadFile(filepath.Join("testdata", "ct5n-2062.dcm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := TrialOptions{Keys: testDeidKeys, HeaderLimit: header.MaxHeader, Check: func(int64) Checker { return &recordingCheck{} }, NoValues: true}
+	tr, err := TryFile(t.Context(), en, b, engine.Reception{}, o)
+	if err != nil || tr.Hold != nil || tr.Record == nil || len(tr.Record.Entries) == 0 {
+		t.Fatalf("without values: %+v %v", tr.Hold, err)
+	}
+	if tr.Before != nil || tr.After != nil || tr.Written != nil {
+		t.Errorf("a trial without values kept the data set before %v, after %v, or %d written bytes", tr.Before != nil, tr.After != nil, len(tr.Written))
+	}
+}

@@ -591,3 +591,64 @@ func TestSendingMigrationKeepsData(t *testing.T) {
 	}
 	tenanttest.CheckAfterSending(t, s)
 }
+
+// TestDeidJobsMigrationKeepsJobs guards the migration that lets a job be
+// of the kind deid: send jobs written through the port at the schema
+// before it (tenanttest.FillBeforeDeidJobs, the new columns lent for the
+// port and taken back) read exactly as before and go on working after it
+// (tenanttest.CheckAfterDeidJobs); the indexes of jobs are as they were;
+// and the checks hold: a kind other than send or deid, and a send job with
+// a mode, are refused.
+func TestDeidJobsMigrationKeepsJobs(t *testing.T) {
+	ctx := context.Background()
+	s, err := OpenTenant(ctx, newSchema(t), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.migrate(ctx, tenantMigrations[:14]); err != nil {
+		t.Fatal(err)
+	}
+	lent := []string{"deid_mode text NOT NULL DEFAULT ''", "profile_name text NOT NULL DEFAULT ''", "profile_version integer NOT NULL DEFAULT 0"}
+	for _, c := range lent {
+		if _, err := s.pool.Exec(ctx, `ALTER TABLE jobs ADD COLUMN `+c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.pool.Exec(ctx, `CREATE TABLE job_tallies (job_id text, tally text, count bigint)`); err != nil {
+		t.Fatal(err)
+	}
+	before := tenanttest.FillBeforeDeidJobs(t, s)
+	for _, c := range lent {
+		if _, err := s.pool.Exec(ctx, `ALTER TABLE jobs DROP COLUMN `+strings.Fields(c)[0]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.pool.Exec(ctx, `DROP TABLE job_tallies`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The pool's connections keep the plans of statements the fill ran on
+	// the lent columns; a server migrates before it serves, so they are
+	// dropped here as a new start would have none.
+	s.pool.Reset()
+	var indexes string
+	if err := s.pool.QueryRow(ctx, `SELECT string_agg(indexname, ',' ORDER BY indexname) FROM pg_indexes
+		WHERE schemaname = current_schema() AND tablename = 'jobs'`).Scan(&indexes); err != nil {
+		t.Fatal(err)
+	}
+	if indexes != "jobs_by_created,jobs_by_sender,jobs_by_state,jobs_in_progress,jobs_key,jobs_of_sender_in_progress,jobs_pkey" {
+		t.Errorf("the indexes of jobs after the migration: %s", indexes)
+	}
+	for _, stmt := range []string{
+		`UPDATE jobs SET kind = 'other' WHERE id = 'j-queued'`,
+		`UPDATE jobs SET deid_mode = 'check' WHERE id = 'j-queued'`,
+	} {
+		if _, err := s.pool.Exec(ctx, stmt); err == nil {
+			t.Errorf("the migrated jobs take %s", stmt)
+		}
+	}
+	tenanttest.CheckAfterDeidJobs(t, s, before)
+}

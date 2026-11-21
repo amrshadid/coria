@@ -20,6 +20,12 @@ class JobState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     JOB_STATE_FAILED: _ClassVar[JobState]
     JOB_STATE_CANCELED: _ClassVar[JobState]
 
+class DeidJobMode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    DEID_JOB_MODE_UNSPECIFIED: _ClassVar[DeidJobMode]
+    DEID_JOB_MODE_DRY_RUN: _ClassVar[DeidJobMode]
+    DEID_JOB_MODE_CHECK: _ClassVar[DeidJobMode]
+
 class JobFailureCode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     JOB_FAILURE_CODE_UNSPECIFIED: _ClassVar[JobFailureCode]
@@ -30,6 +36,11 @@ class JobFailureCode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     JOB_FAILURE_CODE_PEER_UNACCOUNTED: _ClassVar[JobFailureCode]
     JOB_FAILURE_CODE_DAMAGED_IN_STORAGE: _ClassVar[JobFailureCode]
     JOB_FAILURE_CODE_META_UNREADABLE: _ClassVar[JobFailureCode]
+    JOB_FAILURE_CODE_WOULD_HOLD: _ClassVar[JobFailureCode]
+    JOB_FAILURE_CODE_CHECK_FAILED: _ClassVar[JobFailureCode]
+    JOB_FAILURE_CODE_UNDECIDED: _ClassVar[JobFailureCode]
+    JOB_FAILURE_CODE_NOT_DEIDENTIFIED: _ClassVar[JobFailureCode]
+    JOB_FAILURE_CODE_TOO_LARGE: _ClassVar[JobFailureCode]
 JOB_STATE_UNSPECIFIED: JobState
 JOB_STATE_QUEUED: JobState
 JOB_STATE_RUNNING: JobState
@@ -37,6 +48,9 @@ JOB_STATE_DONE: JobState
 JOB_STATE_PARTIAL: JobState
 JOB_STATE_FAILED: JobState
 JOB_STATE_CANCELED: JobState
+DEID_JOB_MODE_UNSPECIFIED: DeidJobMode
+DEID_JOB_MODE_DRY_RUN: DeidJobMode
+DEID_JOB_MODE_CHECK: DeidJobMode
 JOB_FAILURE_CODE_UNSPECIFIED: JobFailureCode
 JOB_FAILURE_CODE_PEER_REFUSED: JobFailureCode
 JOB_FAILURE_CODE_PEER_WARNING: JobFailureCode
@@ -45,6 +59,11 @@ JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED: JobFailureCode
 JOB_FAILURE_CODE_PEER_UNACCOUNTED: JobFailureCode
 JOB_FAILURE_CODE_DAMAGED_IN_STORAGE: JobFailureCode
 JOB_FAILURE_CODE_META_UNREADABLE: JobFailureCode
+JOB_FAILURE_CODE_WOULD_HOLD: JobFailureCode
+JOB_FAILURE_CODE_CHECK_FAILED: JobFailureCode
+JOB_FAILURE_CODE_UNDECIDED: JobFailureCode
+JOB_FAILURE_CODE_NOT_DEIDENTIFIED: JobFailureCode
+JOB_FAILURE_CODE_TOO_LARGE: JobFailureCode
 
 class JobCounts(_message.Message):
     __slots__ = ("instances", "bytes", "instances_sent", "bytes_sent", "instances_warned", "bytes_warned", "instances_refused", "bytes_refused", "instances_remaining", "bytes_remaining", "scans", "scans_done", "listed")
@@ -92,10 +111,35 @@ class SendJob(_message.Message):
     receiver: str
     def __init__(self, sender: _Optional[str] = ..., subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., reception: _Optional[str] = ..., receiver: _Optional[str] = ...) -> None: ...
 
+class DeidJob(_message.Message):
+    __slots__ = ("mode", "profile", "profile_version", "subject_label", "session_label", "scan_label")
+    MODE_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_VERSION_FIELD_NUMBER: _ClassVar[int]
+    SUBJECT_LABEL_FIELD_NUMBER: _ClassVar[int]
+    SESSION_LABEL_FIELD_NUMBER: _ClassVar[int]
+    SCAN_LABEL_FIELD_NUMBER: _ClassVar[int]
+    mode: DeidJobMode
+    profile: str
+    profile_version: int
+    subject_label: str
+    session_label: str
+    scan_label: str
+    def __init__(self, mode: _Optional[_Union[DeidJobMode, str]] = ..., profile: _Optional[str] = ..., profile_version: _Optional[int] = ..., subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ...) -> None: ...
+
+class JobTally(_message.Message):
+    __slots__ = ("key", "count")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    COUNT_FIELD_NUMBER: _ClassVar[int]
+    key: str
+    count: int
+    def __init__(self, key: _Optional[str] = ..., count: _Optional[int] = ...) -> None: ...
+
 class Job(_message.Message):
-    __slots__ = ("id", "send", "state", "counts", "reason", "created_by_key_id", "create_time", "start_time", "state_time", "end_time", "retry_of", "retry_job", "failures_not_listed")
+    __slots__ = ("id", "send", "deid", "state", "counts", "reason", "created_by_key_id", "create_time", "start_time", "state_time", "end_time", "retry_of", "retry_job", "failures_not_listed", "tallies")
     ID_FIELD_NUMBER: _ClassVar[int]
     SEND_FIELD_NUMBER: _ClassVar[int]
+    DEID_FIELD_NUMBER: _ClassVar[int]
     STATE_FIELD_NUMBER: _ClassVar[int]
     COUNTS_FIELD_NUMBER: _ClassVar[int]
     REASON_FIELD_NUMBER: _ClassVar[int]
@@ -107,8 +151,10 @@ class Job(_message.Message):
     RETRY_OF_FIELD_NUMBER: _ClassVar[int]
     RETRY_JOB_FIELD_NUMBER: _ClassVar[int]
     FAILURES_NOT_LISTED_FIELD_NUMBER: _ClassVar[int]
+    TALLIES_FIELD_NUMBER: _ClassVar[int]
     id: str
     send: SendJob
+    deid: DeidJob
     state: JobState
     counts: JobCounts
     reason: str
@@ -120,7 +166,8 @@ class Job(_message.Message):
     retry_of: str
     retry_job: str
     failures_not_listed: int
-    def __init__(self, id: _Optional[str] = ..., send: _Optional[_Union[SendJob, _Mapping]] = ..., state: _Optional[_Union[JobState, str]] = ..., counts: _Optional[_Union[JobCounts, _Mapping]] = ..., reason: _Optional[str] = ..., created_by_key_id: _Optional[str] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., state_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., end_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., retry_of: _Optional[str] = ..., retry_job: _Optional[str] = ..., failures_not_listed: _Optional[int] = ...) -> None: ...
+    tallies: _containers.RepeatedCompositeFieldContainer[JobTally]
+    def __init__(self, id: _Optional[str] = ..., send: _Optional[_Union[SendJob, _Mapping]] = ..., deid: _Optional[_Union[DeidJob, _Mapping]] = ..., state: _Optional[_Union[JobState, str]] = ..., counts: _Optional[_Union[JobCounts, _Mapping]] = ..., reason: _Optional[str] = ..., created_by_key_id: _Optional[str] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., start_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., state_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., end_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., retry_of: _Optional[str] = ..., retry_job: _Optional[str] = ..., failures_not_listed: _Optional[int] = ..., tallies: _Optional[_Iterable[_Union[JobTally, _Mapping]]] = ...) -> None: ...
 
 class JobFailure(_message.Message):
     __slots__ = ("instance_id", "subject_label", "session_label", "scan_label", "code", "peer_status", "sop_class_uid", "transfer_syntax_uid", "detail", "time", "peer_status_http")
@@ -149,12 +196,14 @@ class JobFailure(_message.Message):
     def __init__(self, instance_id: _Optional[str] = ..., subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., code: _Optional[_Union[JobFailureCode, str]] = ..., peer_status: _Optional[int] = ..., sop_class_uid: _Optional[str] = ..., transfer_syntax_uid: _Optional[str] = ..., detail: _Optional[str] = ..., time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., peer_status_http: _Optional[bool] = ...) -> None: ...
 
 class CreateJobRequest(_message.Message):
-    __slots__ = ("tenant", "send")
+    __slots__ = ("tenant", "send", "deid")
     TENANT_FIELD_NUMBER: _ClassVar[int]
     SEND_FIELD_NUMBER: _ClassVar[int]
+    DEID_FIELD_NUMBER: _ClassVar[int]
     tenant: str
     send: SendJob
-    def __init__(self, tenant: _Optional[str] = ..., send: _Optional[_Union[SendJob, _Mapping]] = ...) -> None: ...
+    deid: DeidJob
+    def __init__(self, tenant: _Optional[str] = ..., send: _Optional[_Union[SendJob, _Mapping]] = ..., deid: _Optional[_Union[DeidJob, _Mapping]] = ...) -> None: ...
 
 class CreateJobResponse(_message.Message):
     __slots__ = ("job",)
