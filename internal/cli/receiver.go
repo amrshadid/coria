@@ -59,11 +59,16 @@ also hold writer or more on the tenant. One added with no key takes nothing. A
 key is listed by one stow receiver of a tenant at most. Each part is bounded by
 --max-file-size and each request by --max-request-size.
 
+--forward-to names a sender of the tenant (repeat for more): when a reception
+is complete and archived, the server makes a send job for it to each, so what
+arrives is passed on without anyone asking. It never delays a reception.
+
 The answer says whether the receiver could start: its health is up, or down
 with the reason, such as a port the server could not take.`,
 		Example: `  coria storage add lab1 main --type dir --root fast
   coria receiver add lab1 scanner1 --storage main --port 11112 --aet CORIA \
       --allow-aet PRISMA1 --allow-from 10.20.0.0/24 --enabled
+  coria receiver add lab1 forwarded --storage main --port 11114 --aet FWD --allow-aet PRISMA1 --forward-to pacs
   coria receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller
   coria receiver add lab1 web --type stow --storage main --allow-key 7QmXc2LpZ4 --enabled`,
 		Args: exactArgs(2),
@@ -202,7 +207,11 @@ func (a *app) receiverDetails(w io.Writer, r *v1.Receiver) error {
 		output.Pair{Label: "Naming", Value: namingText(r.GetNaming())},
 		output.Pair{Label: "Quiet period", Value: spanText(r.GetQuietPeriod())},
 		output.Pair{Label: "Max open time", Value: spanText(r.GetMaxOpenTime())},
-		output.Pair{Label: "Max file size", Value: output.Bytes(r.GetMaxFileBytes())},
+		output.Pair{Label: "Max file size", Value: output.Bytes(r.GetMaxFileBytes())})
+	if len(r.GetForwardTo()) > 0 {
+		pairs = append(pairs, output.Pair{Label: "Forwards to", Value: strings.Join(r.GetForwardTo(), ", ")})
+	}
+	pairs = append(pairs,
 		output.Pair{Label: "Created", Value: a.when(r.GetCreateTime())},
 		output.Pair{Label: "Updated", Value: a.when(r.GetUpdateTime())})
 	return output.Details(w, a.style(), pairs)
@@ -304,11 +313,13 @@ the list, --any-caller opens the receiver to everyone, and --no-callers closes
 it. --sop-class "" and --transfer-syntax "" return to the server's default
 set. A stow receiver's keys are replaced whole by --allow-key, and --no-keys
 closes it. The three naming templates are given together, and --default-naming
-returns to the default rule. --enabled=false stops a receiver without removing
-it.`,
+returns to the default rule. --forward-to replaces the list of senders each
+reception is sent to when it is archived, and --forward-to "" stops forwarding.
+--enabled=false stops a receiver without removing it.`,
 		Example: `  coria receiver set lab1 scanner1 --quiet-period 5m
   coria receiver set lab1 scanner1 --allow-aet PRISMA1 --allow-aet SKYRA2
   coria receiver set lab1 scanner1 --enabled=false
+  coria receiver set lab1 scanner1 --forward-to pacs --forward-to archive2
   coria receiver set lab1 web --allow-key 7QmXc2LpZ4 --allow-key 9FvTb8RkW3`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {

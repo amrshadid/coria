@@ -116,6 +116,8 @@ func runWith(env map[string]string, args ...string) result {
 		Getenv:   func(k string) string { return env[k] },
 		Now:      func() time.Time { return fixedNow },
 		Location: zone,
+		// A watch that has to follow again does so at once.
+		WatchPause: time.Millisecond,
 	})
 	return result{stdout: stdout.String(), stderr: stderr.String(), code: code}
 }

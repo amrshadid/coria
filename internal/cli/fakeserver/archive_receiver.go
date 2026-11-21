@@ -51,6 +51,9 @@ func (h receiverHandler) AddReceiver(_ context.Context, req *v1.AddReceiverReque
 	if _, ok := s.arch.storages[key(req.GetTenant(), in.GetStorage())]; !ok {
 		return nil, fault.New(fault.Precondition, "the tenant has no storage with that name")
 	}
+	if err := s.forwardable(req.GetTenant(), in.GetForwardTo()); err != nil {
+		return nil, err
+	}
 	k := key(req.GetTenant(), in.GetName())
 	if _, ok := s.arch.receivers[k]; ok {
 		return nil, fault.New(fault.Conflict, "the tenant has a receiver with that name")
@@ -137,6 +140,11 @@ func (h receiverHandler) SetReceiver(_ context.Context, req *v1.SetReceiverReque
 			next.Storage = in.GetStorage()
 		case "naming":
 			next.Naming = in.GetNaming()
+		case "forward_to":
+			if err := s.forwardable(req.GetTenant(), in.GetForwardTo()); err != nil {
+				return nil, err
+			}
+			next.ForwardTo = in.GetForwardTo()
 		case "quiet_period":
 			if in.GetQuietPeriod() == nil {
 				return nil, fault.New(fault.Invalid, "quiet_period: is required when named")
@@ -200,4 +208,15 @@ func (h receiverHandler) RemoveReceiver(_ context.Context, req *v1.RemoveReceive
 	out := s.answered(req.GetTenant(), r)
 	out.Health = &v1.ReceiverHealth{State: v1.ReceiverState_RECEIVER_STATE_DOWN, DownReason: v1.ReceiverDownReason_RECEIVER_DOWN_REASON_DISABLED}
 	return &v1.RemoveReceiverResponse{Receiver: out}, nil
+}
+
+// forwardable refuses, as a precondition, a list of senders to forward to that
+// names one the tenant does not have.
+func (s *Server) forwardable(tenant string, senders []string) error {
+	for _, name := range senders {
+		if _, ok := s.arch.senders[key(tenant, name)]; !ok {
+			return fault.New(fault.Precondition, "forward_to: the tenant has no sender named "+name)
+		}
+	}
+	return nil
 }

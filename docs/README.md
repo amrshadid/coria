@@ -14,6 +14,7 @@ copying them.
 |---|---|
 | [Running CORIA](running.md) | Make an installation, run the server, make the first key, set a tenant up to receive |
 | [The command line](command-line.md) | Every command, how it connects, its output and exit codes, and the interactive program |
+| [Sending data on](sending.md) | Senders and jobs: send a subject, a session or a scan to a PACS or a DICOMweb service, or forward each reception, and follow it to its end |
 | [Settings](settings.md) | Every setting with its default, who may set it, and whether a change needs a restart |
 
 ## If you build on its API

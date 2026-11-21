@@ -12,7 +12,7 @@ import (
 	"github.com/amrshadid/coria/internal/fault"
 )
 
-// archive is what the fake keeps for the four services of a tenant's
+// archive is what the fake keeps for the services of a tenant's
 // archive: storages, receivers, receptions and quarantined files, each kept
 // under its tenant. Its zero value is empty and ready.
 type archive struct {
@@ -29,6 +29,14 @@ type archive struct {
 	// counts the counts its status answers (archive_monitor.go).
 	events map[string][]*v1.Event
 	counts map[string]*v1.TenantCounts
+	// senders, jobs and what goes with them (archive_send.go).
+	senders       map[string]*v1.Sender
+	senderSecrets map[string]string
+	senderHealth  map[string]*v1.SenderHealth
+	senderTests   map[string][]*v1.SenderTestResult
+	jobs          map[string]*v1.Job
+	failures      map[string][]*v1.JobFailure
+	nextJob       int
 }
 
 // key joins a tenant and an item's name into the key of the tables above.
@@ -58,6 +66,12 @@ func (a *archive) ensure() {
 		a.files = map[string]*v1.QuarantinedFile{}
 		a.headers = map[string]string{}
 		a.health = map[string]*v1.ReceiverHealth{}
+		a.senders = map[string]*v1.Sender{}
+		a.senderSecrets = map[string]string{}
+		a.senderHealth = map[string]*v1.SenderHealth{}
+		a.senderTests = map[string][]*v1.SenderTestResult{}
+		a.jobs = map[string]*v1.Job{}
+		a.failures = map[string][]*v1.JobFailure{}
 	}
 }
 
@@ -152,6 +166,8 @@ func (s *Server) registerArchive(srv *connect.Server) {
 	coriav1connect.RegisterReceptionServiceHandler(srv, receptionHandler{s})
 	coriav1connect.RegisterQuarantineServiceHandler(srv, quarantineHandler{s})
 	coriav1connect.RegisterMonitorServiceHandler(srv, monitorHandler{s})
+	coriav1connect.RegisterSenderServiceHandler(srv, senderHandler{s})
+	coriav1connect.RegisterJobServiceHandler(srv, jobHandler{s})
 }
 
 // begin takes the lock, makes the tables and checks the tenant: what every

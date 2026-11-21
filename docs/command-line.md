@@ -21,7 +21,9 @@ that make and run an installation ([internal/cli/servecmd](../internal/cli/serve
 | `coria setting` | `get`, `set <name> <value>`, `unset`, `list`, each with `[--tenant NAME]`. The names are in [Settings](settings.md) |
 | `coria audit list` | Filters `--tenant`, `--key-id`, `--outcome done\|refused\|failed`, `--since`, `--until` |
 | `coria storage` | `add <tenant> <name> --type dir\|s3 ...`, `list`, `show`, `set`, `remove --yes`, `test` |
-| `coria receiver` | `add <tenant> <name> [--type dimse\|stow] ...`, `list`, `show`, `set`, `remove --yes` |
+| `coria receiver` | `add <tenant> <name> [--type dimse\|stow] ...`, `list`, `show`, `set`, `remove --yes`; `--forward-to SENDER` (repeat for more) sends each reception on when it is archived |
+| `coria sender` | `add <tenant> <name> --type dimse --host H --port N --called-aet T --calling-aet T`, or `--type stow --url URL --authentication none\|basic\|bearer\|header` with the credential from `--credential-file`, `--credential-stdin` or `--credential-env`; `list`, `show`, `set`, `remove --yes [--cancel-jobs]`, `test` (exits 1 when the peer is not reached). See [Sending data on](sending.md) |
+| `coria job` | `create <tenant> --sender NAME <subject>[/<session>[/<scan>]]`, `get`, `list` (filters `--state`, `--in-progress`, `--sender`, `--since`, `--until`), `watch` (follows the event feed until the job ends; exits 0 only for done), `cancel`, `retry`, `failures [--warnings]` |
 | `coria reception` | `list` (filters `--receiver`, `--step`, `--in-progress`, `--since`, `--until`, `--study-uid`), `show`, `retry`, `discard --reason TEXT` |
 | `coria quarantine` | `list` (filters `--state`, `--reason`, `--receiver`, `--reception`, `--sop-uid`, `--study-uid`, `--since`, `--until`), `show [--header]`, `release`, `reject --reason TEXT` |
 | `coria catalog` | `subjects <tenant>`, `sessions <tenant> [<subject>]`, `scans <tenant> [<subject> [<session>]]`, with filters and `--order` |
@@ -76,15 +78,18 @@ A command that removes or discards something says what it would do and exits
 `coria` with no arguments, when standard input and output are both a terminal,
 opens a program with a menu, lists that scroll and detail screens: tenants (with
 each tenant's grants, settings and audit log, its status that follows its events,
-and its storages, receivers, receptions and quarantine, where a held file is
-released or rejected), the subjects, sessions and scans of a tenant with a scan's
+and its storages, receivers, senders with their health and a test of the peer,
+jobs with a progress bar that follows the events, a job's failures, with cancel
+and retry, receptions and quarantine, where a held file is released or
+rejected), the subjects, sessions and scans of a tenant with a scan's
 headers and a download of what is shown, keys, settings and the audit log. It
 finds the server with the same flags and environment as the commands and is a
 client of the same API ([internal/tui](../internal/tui/doc.go)). With any
 argument, or with either end not a terminal, `coria` prints the usage line and
 exits 2.
 
-- **Keys.** Arrows or `j`/`k`, page up and down, enter to open, esc to go back
+- **Keys.** On a tenant, `n` opens its senders and `w` its jobs; on a job, `f`
+  its failures, `c` cancels it and `r` retries it. Arrows or `j`/`k`, page up and down, enter to open, esc to go back
   (or to cancel a call that is waiting), `/` to filter the loaded rows, `?` for
   the keys of the screen, `q` to quit. A list loads 100 rows and the next 100
   when the cursor nears the end.

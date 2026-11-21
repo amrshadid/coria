@@ -56,6 +56,10 @@ type Client struct {
 	Metadata coriav1connect.MetadataServiceClient
 	// Data is the DataService.
 	Data coriav1connect.DataServiceClient
+	// Senders is the SenderService.
+	Senders coriav1connect.SenderServiceClient
+	// Jobs is the JobService.
+	Jobs coriav1connect.JobServiceClient
 
 	timeout time.Duration
 	target  string
@@ -147,6 +151,8 @@ func New(cfg Config) (*Client, error) {
 		Catalog:    coriav1connect.NewCatalogServiceClient(c),
 		Metadata:   coriav1connect.NewMetadataServiceClient(c),
 		Data:       coriav1connect.NewDataServiceClient(c),
+		Senders:    coriav1connect.NewSenderServiceClient(c),
+		Jobs:       coriav1connect.NewJobServiceClient(c),
 		base:       strings.TrimSuffix(base, "/"),
 		key:        bearerK,
 		timeout:    timeout,

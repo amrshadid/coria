@@ -241,6 +241,21 @@ All notable changes to CORIA are written here. The form is
   share one bound of 256 open reads, of which the senders hold at most half;
   TestSender tries the peer; the senders take up a new, canceled or retried
   job at once.
+- `coria sender add|list|show|set|remove|test` and `coria job
+  create|get|list|watch|cancel|retry|failures`: a tenant's senders and jobs
+  on the command line. A stow sender's credential is read from a private
+  file, standard input or a variable, never an argument; `sender test` says
+  in plain words what the peer answered; `job watch` follows the event feed
+  until the job ends and exits 0 only when it ended done. `coria receiver
+  add|set --forward-to SENDER` sends each archived reception on. The
+  interactive program lists a tenant's senders with their health and a test
+  of the peer (`n`), and its jobs with progress bars that follow the event
+  feed, a job's failures, and cancel and retry that ask for the id typed
+  (`w`). A Python and a TypeScript example make a send job and follow its
+  events until it ends; `docs/sending.md` explains sending.
+- Watch answers job step, job progress and sender health events with their
+  payload: they came with their type alone, so a client could not tell
+  which job moved, how far it was, or why a sender was down.
 - Settings `sender.destinations` (the hosts and address ranges, with
   optional ports, that senders may reach; none by default),
   `sender.allow-plain-http`, `sender.max-associations`,

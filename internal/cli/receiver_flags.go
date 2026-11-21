@@ -42,6 +42,7 @@ type receiverFlags struct {
 	quietPeriod      string
 	maxOpenTime      string
 	maxFileSize      string
+	forwardTo        []string
 }
 
 // add registers the flags on a command. The flags that only make sense when
@@ -74,6 +75,7 @@ func (f *receiverFlags) add(cmd *cobra.Command, forSet bool) {
 	fl.StringVar(&f.namingExpression, "naming-expression", "", "the RE2 pattern with named parts that the templates may use, such as (?P<project>[^^]+)\\^(?P<subject>[^^]+)")
 	fl.StringVar(&f.quietPeriod, "quiet-period", "", "how long without a file for a study before its reception is complete: a number and s, m or h, from 5s to 1h (default 60s)")
 	fl.StringVar(&f.maxOpenTime, "max-open-time", "", "the longest a reception stays receiving: a number and s, m or h, from 1m to 24h, not less than the quiet period (default 1h)")
+	fl.StringArrayVar(&f.forwardTo, "forward-to", nil, "the name of a sender of the tenant to send each reception to when it is archived; repeat for more senders, and --forward-to \"\" on set stops forwarding")
 	fl.StringVar(&f.maxFileSize, "max-file-size", "", "the largest file it accepts, a size such as 4GiB, from 1KiB to 256GiB (default 4GiB)")
 	if forSet {
 		fl.BoolVar(&f.noKeys, "no-keys", false, "stow: take requests from no key; the receiver stays closed until keys are listed again")
@@ -258,6 +260,9 @@ func (f *receiverFlags) receiver(cmd *cobra.Command, name string) (*v1.Receiver,
 		if r.MaxOpenTime, err = parseDuration("max-open-time", f.maxOpenTime); err != nil {
 			return nil, nil, err
 		}
+	}
+	if touch("forward-to", "forward_to") {
+		r.ForwardTo = nonEmpty(f.forwardTo)
 	}
 	if touch("max-file-size", "max_file_bytes") {
 		if r.MaxFileBytes, err = parseSize("max-file-size", f.maxFileSize); err != nil {

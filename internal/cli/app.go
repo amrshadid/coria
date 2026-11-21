@@ -43,6 +43,10 @@ type Env struct {
 	// Interactive runs the interactive program; tui.Run when nil. A test sets
 	// it to see that the program was, or was not, opened.
 	Interactive func(ctx context.Context, o tui.Options) error
+	// WatchPause is how long "job watch" waits before it follows the event
+	// feed again after the server ended a stream that did not end the job; one
+	// second when zero. A test sets it short.
+	WatchPause time.Duration
 }
 
 // withDefaults fills what a caller left unset.
@@ -231,7 +235,7 @@ func flagOrEnv(changed bool, flag, env string) string {
 func (a *app) newRoot() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "coria",
-		Short: "Operate a CORIA installation: tenants, keys, grants, settings, the audit log, and a tenant's storages, receivers, receptions and quarantine",
+		Short: "Operate a CORIA installation: tenants, keys, grants, settings, the audit log, and a tenant's storages, receivers, senders, jobs, receptions and quarantine",
 		Long: `coria operates a CORIA installation through its API.
 
 By default it reaches the server on the local socket in the data directory
@@ -295,6 +299,8 @@ that can no longer be answered, 7 a bound of the server reached.`,
 		a.newStorage(),
 		a.newReceiver(),
 		a.newReception(),
+		a.newSender(),
+		a.newJob(),
 		a.newQuarantine(),
 		a.newCatalog(),
 		a.newScan(),

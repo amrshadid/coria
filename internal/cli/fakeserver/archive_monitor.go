@@ -16,7 +16,8 @@ type monitorHandler struct{ s *Server }
 
 var _ coriav1connect.MonitorServiceHandler = monitorHandler{}
 
-// QueueEvent queues an event of tenant for the next stream of it.
+// QueueEvent queues an event of tenant for the next stream of it. A job_step
+// event moves the job it names to its state and counts when it is sent.
 func (s *Server) QueueEvent(tenant string, e *v1.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -65,6 +66,9 @@ func (h monitorHandler) GetStatus(_ context.Context, req *v1.GetStatusRequest) (
 		r := s.arch.receivers[k]
 		st.Receivers = append(st.Receivers, &v1.ReceiverStatus{Receiver: r.GetName(), Health: s.arch.health[k], AnyCaller: r.GetDimse().GetAnyCaller()})
 	}
+	for _, k := range forTenant(s.arch.senders, name) {
+		st.Senders = append(st.Senders, &v1.SenderStatus{Sender: s.arch.senders[k].GetName(), Health: s.senderHealthOf(name, s.arch.senders[k])})
+	}
 	return &v1.GetStatusResponse{Tenants: []*v1.TenantStatus{st}}, nil
 }
 
@@ -80,6 +84,13 @@ func (h monitorHandler) Watch(_ context.Context, req *v1.WatchRequest, stream co
 	var next *v1.Event
 	if err == nil && len(s.arch.events[name]) > 0 {
 		next, s.arch.events[name] = s.arch.events[name][0], s.arch.events[name][1:]
+		// An event that moves a job is the job moving: the job a later call
+		// reads is as the event left it.
+		if js := next.GetJobStep(); js != nil {
+			if j := s.arch.jobs[key(name, js.GetJob())]; j != nil {
+				j.State, j.Counts, j.Reason = js.GetState(), js.GetCounts(), js.GetReason()
+			}
+		}
 	}
 	s.mu.Unlock()
 	if err != nil {

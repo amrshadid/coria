@@ -16,7 +16,8 @@ import (
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 // tenantActions are the keys of a tenant's screen that open what it holds:
-// its status, storages, receivers, receptions and quarantined files.
+// its status, storages, receivers, senders, jobs, receptions and quarantined
+// files. The key for jobs is not j: on a detail screen j scrolls.
 func tenantActions(name string) []action {
 	open := func(make func(c *ctx, tenant string) (screen, tea.Cmd)) func(c *ctx, _ screen, _ any) tea.Cmd {
 		return func(c *ctx, _ screen, _ any) tea.Cmd {
@@ -28,6 +29,8 @@ func tenantActions(name string) []action {
 		{key: "t", help: "status", do: open(newStatus)},
 		{key: "o", help: "storages", do: open(newStorageList)},
 		{key: "r", help: "receivers", do: open(newReceiverList)},
+		{key: "n", help: "senders", do: open(newSenderList)},
+		{key: "w", help: "jobs", do: open(newJobList)},
 		{key: "e", help: "receptions", do: open(newReceptionList)},
 		{key: "h", help: "quarantine", do: open(newQuarantineList)},
 		{key: "c", help: "catalog", do: open(newSubjectList)},
@@ -143,6 +146,9 @@ func statusPairs(c *ctx, ref any) []pair {
 			v += ", admits any caller"
 		}
 		ps = append(ps, pair{"Receiver " + r.GetReceiver(), v})
+	}
+	for _, s := range st.GetSenders() {
+		ps = append(ps, pair{"Sender " + s.GetSender(), output.SenderHealth(s.GetHealth())})
 	}
 	return ps
 }
