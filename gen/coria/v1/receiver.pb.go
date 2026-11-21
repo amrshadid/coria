@@ -41,16 +41,6 @@ const (
 	// headers alone (by default keyed hashes). A unit is one folder at the
 	// first level under the root.
 	ImportLayout_IMPORT_LAYOUT_PLAIN ImportLayout = 1
-	// XNAT's archive tree: <project>/arc<nnn>/<session>/SCANS/<scan>/DICOM/<file>,
-	// read by the fixed pattern
-	// ^(?P<project>[^/]+)/arc[0-9]{3}/(?P<session>[^/]+)/SCANS/(?P<scan>[^/]+)/DICOM/[^/]+$,
-	// with parts project, session and scan; XNAT keeps no subject folder,
-	// so {subject} comes from the map file (map_file) or, with
-	// ImportJob.subject_from_headers, from Patient Name (0010,0010) as XNAT's
-	// default anonymization script writes it. A unit is one session folder
-	// (unit depth 3). A file under a session's other folders (RESOURCES,
-	// ASSESSORS) does not match and is skipped as outside the layout.
-	ImportLayout_IMPORT_LAYOUT_XNAT ImportLayout = 2
 	// The receiver's own pattern (path_pattern) and unit depth (unit_depth).
 	ImportLayout_IMPORT_LAYOUT_PATTERN ImportLayout = 3
 )
@@ -60,13 +50,11 @@ var (
 	ImportLayout_name = map[int32]string{
 		0: "IMPORT_LAYOUT_UNSPECIFIED",
 		1: "IMPORT_LAYOUT_PLAIN",
-		2: "IMPORT_LAYOUT_XNAT",
 		3: "IMPORT_LAYOUT_PATTERN",
 	}
 	ImportLayout_value = map[string]int32{
 		"IMPORT_LAYOUT_UNSPECIFIED": 0,
 		"IMPORT_LAYOUT_PLAIN":       1,
-		"IMPORT_LAYOUT_XNAT":        2,
 		"IMPORT_LAYOUT_PATTERN":     3,
 	}
 )
@@ -1312,23 +1300,35 @@ func (x *StowReceiver) GetMaxRequestBytes() int64 {
 // quarantined with QUARANTINE_REASON_BAD_LABEL, never cleaned. A file whose
 // path the layout does not match is skipped as IMPORT_SKIP_CODE_OUTSIDE_LAYOUT.
 //
-// The map file. A CSV file, as XNAT exports its experiments, with a header
-// row naming at least the columns project, label (the session's label) and
-// subject_label, read when a job is made, at most 64 MiB (3 MiB given
-// inline, ImportJob.map_csv), in UTF-8, and kept with the job as read
-// then. It gives the part {subject} by (project, session). A map in which
-// one (project, session) names two subjects is refused whole, and so is
-// the job; a refusal names the line at fault by its number only, never a
-// cell, the header or the file's path. A
-// session folder the map does not list is skipped as
-// IMPORT_SKIP_CODE_UNMAPPED_SESSION, so a folder left behind after XNAT
-// deleted its session is not brought back.
+// The map. A tree often names its sessions but not their subjects, which
+// the system that wrote it kept elsewhere. A map is a CSV file (RFC 4180),
+// in UTF-8, whose first row names its columns, that fills one part
+// (map_gives, such as "subject") for each file from the values of other
+// parts: the file's values of the parts map_key_parts names, in order,
+// are looked up in the columns map_key_columns names, in the same order,
+// and the row found gives the value of map_value_column. For example, a
+// tree <project>/<session>/<file> read by
+// "^(?P<project>[^/]+)/(?P<session>[^/]+)/[^/]+$" and a map with the
+// columns proj, visit and participant, configured as map_key_columns
+// ["proj", "visit"], map_key_parts ["project", "session"],
+// map_value_column "participant" and map_gives "subject", gives each file
+// the {subject} of the row whose proj and visit are the file's project
+// and session. A map is read when a job is made, at most 64 MiB from a
+// file (3 MiB given inline, ImportJob.map_csv), and kept with the job as
+// read then. A map in which one key names two values, or that lacks a
+// configured column, is refused whole, and so is the job; a refusal names
+// the line at fault by its number only, never a cell, the header or the
+// file's path. A file whose key is not a row of the map is skipped as
+// IMPORT_SKIP_CODE_UNMAPPED_SESSION, so a folder its source system had
+// deleted from its records is not brought back.
 //
-// The naming rule a site importing several XNAT projects into one tenant
-// writes puts the project before the subject and session labels, such as
-// "{project}_{subject}" and "{project}_{session}", since XNAT's labels are
-// unique only within a project; a site importing one project per tenant
-// leaves it out.
+// A label from a file's header (Patient Name, say) needs nothing here: it
+// is the naming rule's, a template such as "{project}_{PatientName}".
+//
+// Labels unique only within a part of the tree (a session label unique
+// within a project, say) collide when two such parts land in one tenant;
+// a naming rule that puts that part first, such as "{project}_{subject}"
+// and "{project}_{session}", keeps them apart.
 type ImportReceiver struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The name of the root, among those of the installation's setting
@@ -1346,29 +1346,44 @@ type ImportReceiver struct {
 	// least one named part, such as
 	// "^(?P<study>[^/]+)/(?P<subject>[^/]+)/(?P<session>[^/]+)/.+$". It must
 	// match the whole path: the server anchors it at both ends. Required for
-	// that layout and empty for the others; at most 1024 bytes; a part's name
-	// is a lowercase ASCII letter followed by lowercase letters, digits and
-	// "_", and is used once.
+	// that layout and empty for plain, which takes no pattern; at most 1024
+	// bytes; a part's name is a lowercase ASCII letter followed by lowercase
+	// letters, digits and "_", and is used once.
 	PathPattern string `protobuf:"bytes,3,opt,name=path_pattern,json=pathPattern,proto3" json:"path_pattern,omitempty"`
 	// For IMPORT_LAYOUT_PATTERN, how many segments from the root make a
 	// unit's folder: each folder at that depth is one unit of work, walked
-	// and resumed on its own. From 1 to 16; required for that layout and 0
-	// for the others, whose depths are fixed (1 for plain, 3 for XNAT).
+	// and resumed on its own. From 1 to 16; required for that layout. Plain's
+	// depth is fixed at 1: 0 or 1 is taken for it, and 1 is answered.
 	UnitDepth int32 `protobuf:"varint,4,opt,name=unit_depth,json=unitDepth,proto3" json:"unit_depth,omitempty"`
 	// The map file its jobs read, by its path relative to the root, which
 	// it must be inside, under the same rules as ImportJob.path: segments of
 	// 1 to 255 bytes of UTF-8, none "." or "..", none holding "\", ":" or
 	// NUL; no empty segment, no leading or trailing "/"; at most 4096 bytes.
-	// A map needs a layout that gives the parts project and session and no
-	// part subject (the map gives it); otherwise AddReceiver and SetReceiver
-	// refuse it (precondition). Optional; a
+	// A map needs the map configuration below. Optional; a
 	// job may name another or give one inline (ImportJob.map_file,
 	// map_csv). Each segment is opened under the root without following a
 	// link. A path can hold what identifies
 	// a person, so it is answered only to an operator or more on the tenant,
 	// and empty to a reader, and never written to a log, an event or an
 	// audit entry.
-	MapFile       string `protobuf:"bytes,5,opt,name=map_file,json=mapFile,proto3" json:"map_file,omitempty"`
+	MapFile string `protobuf:"bytes,5,opt,name=map_file,json=mapFile,proto3" json:"map_file,omitempty"`
+	// The map's key columns: names of columns of its first row, matched byte
+	// for byte, each once, 1 to 8 of them. Empty for no map; the four map
+	// fields are given together or not at all. A job may give its own four
+	// (ImportJob), which replace these whole.
+	MapKeyColumns []string `protobuf:"bytes,6,rep,name=map_key_columns,json=mapKeyColumns,proto3" json:"map_key_columns,omitempty"`
+	// The map's column whose value fills the part map_gives. Required with
+	// map_key_columns; not one of them.
+	MapValueColumn string `protobuf:"bytes,7,opt,name=map_value_column,json=mapValueColumn,proto3" json:"map_value_column,omitempty"`
+	// The layout's parts whose values form a file's key, as path_pattern
+	// names them: as many as map_key_columns, in the same order, each once.
+	// A part the layout does not give is a precondition failure.
+	MapKeyParts []string `protobuf:"bytes,8,rep,name=map_key_parts,json=mapKeyParts,proto3" json:"map_key_parts,omitempty"`
+	// The part the map fills, such as "subject", which the naming rule's
+	// templates use as {subject} or {#subject}; under the rule of a part's
+	// name. Refused (precondition) when the layout already gives it, and
+	// (invalid) when the naming pattern does, so no part has two sources.
+	MapGives      string `protobuf:"bytes,9,opt,name=map_gives,json=mapGives,proto3" json:"map_gives,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1434,6 +1449,34 @@ func (x *ImportReceiver) GetUnitDepth() int32 {
 func (x *ImportReceiver) GetMapFile() string {
 	if x != nil {
 		return x.MapFile
+	}
+	return ""
+}
+
+func (x *ImportReceiver) GetMapKeyColumns() []string {
+	if x != nil {
+		return x.MapKeyColumns
+	}
+	return nil
+}
+
+func (x *ImportReceiver) GetMapValueColumn() string {
+	if x != nil {
+		return x.MapValueColumn
+	}
+	return ""
+}
+
+func (x *ImportReceiver) GetMapKeyParts() []string {
+	if x != nil {
+		return x.MapKeyParts
+	}
+	return nil
+}
+
+func (x *ImportReceiver) GetMapGives() string {
+	if x != nil {
+		return x.MapGives
 	}
 	return ""
 }
@@ -2507,14 +2550,18 @@ const file_coria_v1_receiver_proto_rawDesc = "" +
 	"\acallers\"S\n" +
 	"\fStowReceiver\x12\x17\n" +
 	"\akey_ids\x18\x01 \x03(\tR\x06keyIds\x12*\n" +
-	"\x11max_request_bytes\x18\x02 \x01(\x03R\x0fmaxRequestBytes\"\xb6\x01\n" +
+	"\x11max_request_bytes\x18\x02 \x01(\x03R\x0fmaxRequestBytes\"\xc9\x02\n" +
 	"\x0eImportReceiver\x12\x12\n" +
 	"\x04root\x18\x01 \x01(\tR\x04root\x12.\n" +
 	"\x06layout\x18\x02 \x01(\x0e2\x16.coria.v1.ImportLayoutR\x06layout\x12!\n" +
 	"\fpath_pattern\x18\x03 \x01(\tR\vpathPattern\x12\x1d\n" +
 	"\n" +
 	"unit_depth\x18\x04 \x01(\x05R\tunitDepth\x12\x1e\n" +
-	"\bmap_file\x18\x05 \x01(\tB\x03\x80\x01\x01R\amapFile\"<\n" +
+	"\bmap_file\x18\x05 \x01(\tB\x03\x80\x01\x01R\amapFile\x12&\n" +
+	"\x0fmap_key_columns\x18\x06 \x03(\tR\rmapKeyColumns\x12(\n" +
+	"\x10map_value_column\x18\a \x01(\tR\x0emapValueColumn\x12\"\n" +
+	"\rmap_key_parts\x18\b \x03(\tR\vmapKeyParts\x12\x1b\n" +
+	"\tmap_gives\x18\t \x01(\tR\bmapGives\"<\n" +
 	"\x0eAllowedCallers\x12*\n" +
 	"\x05rules\x18\x01 \x03(\v2\x14.coria.v1.CallerRuleR\x05rules\"[\n" +
 	"\n" +
@@ -2571,12 +2618,11 @@ const file_coria_v1_receiver_proto_rawDesc = "" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"H\n" +
 	"\x16RemoveReceiverResponse\x12.\n" +
-	"\breceiver\x18\x01 \x01(\v2\x12.coria.v1.ReceiverR\breceiver*y\n" +
+	"\breceiver\x18\x01 \x01(\v2\x12.coria.v1.ReceiverR\breceiver*g\n" +
 	"\fImportLayout\x12\x1d\n" +
 	"\x19IMPORT_LAYOUT_UNSPECIFIED\x10\x00\x12\x17\n" +
-	"\x13IMPORT_LAYOUT_PLAIN\x10\x01\x12\x16\n" +
-	"\x12IMPORT_LAYOUT_XNAT\x10\x02\x12\x19\n" +
-	"\x15IMPORT_LAYOUT_PATTERN\x10\x03*\x95\x01\n" +
+	"\x13IMPORT_LAYOUT_PLAIN\x10\x01\x12\x19\n" +
+	"\x15IMPORT_LAYOUT_PATTERN\x10\x03\"\x04\b\x02\x10\x02*\x95\x01\n" +
 	"\rReceiverState\x12\x1e\n" +
 	"\x1aRECEIVER_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17RECEIVER_STATE_STARTING\x10\x01\x12\x15\n" +

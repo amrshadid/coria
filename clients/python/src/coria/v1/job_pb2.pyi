@@ -43,7 +43,6 @@ class ImportSkipCode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     IMPORT_SKIP_CODE_UNREADABLE: _ClassVar[ImportSkipCode]
     IMPORT_SKIP_CODE_NOT_REGULAR: _ClassVar[ImportSkipCode]
     IMPORT_SKIP_CODE_TOO_LARGE: _ClassVar[ImportSkipCode]
-    IMPORT_SKIP_CODE_CATALOG_FILE: _ClassVar[ImportSkipCode]
 
 class JobFailureCode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -69,9 +68,6 @@ class ImportFileKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     IMPORT_FILE_KIND_SKIPPED: _ClassVar[ImportFileKind]
     IMPORT_FILE_KIND_QUARANTINED: _ClassVar[ImportFileKind]
     IMPORT_FILE_KIND_LOST: _ClassVar[ImportFileKind]
-    IMPORT_FILE_KIND_LISTED_NOT_FOUND: _ClassVar[ImportFileKind]
-    IMPORT_FILE_KIND_FOUND_NOT_LISTED: _ClassVar[ImportFileKind]
-    IMPORT_FILE_KIND_DIGEST_DIFFERS: _ClassVar[ImportFileKind]
     IMPORT_FILE_KIND_FAILED: _ClassVar[ImportFileKind]
     IMPORT_FILE_KIND_DISCARDED: _ClassVar[ImportFileKind]
 
@@ -105,7 +101,6 @@ IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE: ImportSkipCode
 IMPORT_SKIP_CODE_UNREADABLE: ImportSkipCode
 IMPORT_SKIP_CODE_NOT_REGULAR: ImportSkipCode
 IMPORT_SKIP_CODE_TOO_LARGE: ImportSkipCode
-IMPORT_SKIP_CODE_CATALOG_FILE: ImportSkipCode
 JOB_FAILURE_CODE_UNSPECIFIED: JobFailureCode
 JOB_FAILURE_CODE_PEER_REFUSED: JobFailureCode
 JOB_FAILURE_CODE_PEER_WARNING: JobFailureCode
@@ -125,9 +120,6 @@ IMPORT_FILE_KIND_UNSPECIFIED: ImportFileKind
 IMPORT_FILE_KIND_SKIPPED: ImportFileKind
 IMPORT_FILE_KIND_QUARANTINED: ImportFileKind
 IMPORT_FILE_KIND_LOST: ImportFileKind
-IMPORT_FILE_KIND_LISTED_NOT_FOUND: ImportFileKind
-IMPORT_FILE_KIND_FOUND_NOT_LISTED: ImportFileKind
-IMPORT_FILE_KIND_DIGEST_DIFFERS: ImportFileKind
 IMPORT_FILE_KIND_FAILED: ImportFileKind
 IMPORT_FILE_KIND_DISCARDED: ImportFileKind
 IMPORT_UNIT_STATE_UNSPECIFIED: ImportUnitState
@@ -217,20 +209,26 @@ class RebuildJob(_message.Message):
     def __init__(self, mode: _Optional[_Union[RebuildJobMode, str]] = ..., scratch_schema: _Optional[str] = ...) -> None: ...
 
 class ImportJob(_message.Message):
-    __slots__ = ("receiver", "path", "map_file", "subject_from_headers", "counts", "map_csv")
+    __slots__ = ("receiver", "path", "map_file", "counts", "map_csv", "map_key_columns", "map_value_column", "map_key_parts", "map_gives")
     RECEIVER_FIELD_NUMBER: _ClassVar[int]
     PATH_FIELD_NUMBER: _ClassVar[int]
     MAP_FILE_FIELD_NUMBER: _ClassVar[int]
-    SUBJECT_FROM_HEADERS_FIELD_NUMBER: _ClassVar[int]
     COUNTS_FIELD_NUMBER: _ClassVar[int]
     MAP_CSV_FIELD_NUMBER: _ClassVar[int]
+    MAP_KEY_COLUMNS_FIELD_NUMBER: _ClassVar[int]
+    MAP_VALUE_COLUMN_FIELD_NUMBER: _ClassVar[int]
+    MAP_KEY_PARTS_FIELD_NUMBER: _ClassVar[int]
+    MAP_GIVES_FIELD_NUMBER: _ClassVar[int]
     receiver: str
     path: str
     map_file: str
-    subject_from_headers: bool
     counts: ImportCounts
     map_csv: bytes
-    def __init__(self, receiver: _Optional[str] = ..., path: _Optional[str] = ..., map_file: _Optional[str] = ..., subject_from_headers: _Optional[bool] = ..., counts: _Optional[_Union[ImportCounts, _Mapping]] = ..., map_csv: _Optional[bytes] = ...) -> None: ...
+    map_key_columns: _containers.RepeatedScalarFieldContainer[str]
+    map_value_column: str
+    map_key_parts: _containers.RepeatedScalarFieldContainer[str]
+    map_gives: str
+    def __init__(self, receiver: _Optional[str] = ..., path: _Optional[str] = ..., map_file: _Optional[str] = ..., counts: _Optional[_Union[ImportCounts, _Mapping]] = ..., map_csv: _Optional[bytes] = ..., map_key_columns: _Optional[_Iterable[str]] = ..., map_value_column: _Optional[str] = ..., map_key_parts: _Optional[_Iterable[str]] = ..., map_gives: _Optional[str] = ...) -> None: ...
 
 class ImportSkipCount(_message.Message):
     __slots__ = ("code", "count")
@@ -249,7 +247,7 @@ class ImportQuarantineCount(_message.Message):
     def __init__(self, reason: _Optional[_Union[_quarantine_pb2.QuarantineReason, str]] = ..., count: _Optional[int] = ...) -> None: ...
 
 class ImportCounts(_message.Message):
-    __slots__ = ("found", "skipped", "handed_in", "handed_again", "archived", "already_held", "quarantined", "lost", "processing", "bytes_handed_in", "label_differs", "listed_not_found", "found_not_listed", "digest_differs", "units", "units_walked", "failed", "discarded", "catalogs_not_checked")
+    __slots__ = ("found", "skipped", "handed_in", "handed_again", "archived", "already_held", "quarantined", "lost", "processing", "bytes_handed_in", "label_differs", "units", "units_walked", "failed", "discarded")
     FOUND_FIELD_NUMBER: _ClassVar[int]
     SKIPPED_FIELD_NUMBER: _ClassVar[int]
     HANDED_IN_FIELD_NUMBER: _ClassVar[int]
@@ -261,14 +259,10 @@ class ImportCounts(_message.Message):
     PROCESSING_FIELD_NUMBER: _ClassVar[int]
     BYTES_HANDED_IN_FIELD_NUMBER: _ClassVar[int]
     LABEL_DIFFERS_FIELD_NUMBER: _ClassVar[int]
-    LISTED_NOT_FOUND_FIELD_NUMBER: _ClassVar[int]
-    FOUND_NOT_LISTED_FIELD_NUMBER: _ClassVar[int]
-    DIGEST_DIFFERS_FIELD_NUMBER: _ClassVar[int]
     UNITS_FIELD_NUMBER: _ClassVar[int]
     UNITS_WALKED_FIELD_NUMBER: _ClassVar[int]
     FAILED_FIELD_NUMBER: _ClassVar[int]
     DISCARDED_FIELD_NUMBER: _ClassVar[int]
-    CATALOGS_NOT_CHECKED_FIELD_NUMBER: _ClassVar[int]
     found: int
     skipped: _containers.RepeatedCompositeFieldContainer[ImportSkipCount]
     handed_in: int
@@ -280,15 +274,11 @@ class ImportCounts(_message.Message):
     processing: int
     bytes_handed_in: int
     label_differs: int
-    listed_not_found: int
-    found_not_listed: int
-    digest_differs: int
     units: int
     units_walked: int
     failed: int
     discarded: int
-    catalogs_not_checked: int
-    def __init__(self, found: _Optional[int] = ..., skipped: _Optional[_Iterable[_Union[ImportSkipCount, _Mapping]]] = ..., handed_in: _Optional[int] = ..., handed_again: _Optional[int] = ..., archived: _Optional[int] = ..., already_held: _Optional[int] = ..., quarantined: _Optional[_Iterable[_Union[ImportQuarantineCount, _Mapping]]] = ..., lost: _Optional[int] = ..., processing: _Optional[int] = ..., bytes_handed_in: _Optional[int] = ..., label_differs: _Optional[int] = ..., listed_not_found: _Optional[int] = ..., found_not_listed: _Optional[int] = ..., digest_differs: _Optional[int] = ..., units: _Optional[int] = ..., units_walked: _Optional[int] = ..., failed: _Optional[int] = ..., discarded: _Optional[int] = ..., catalogs_not_checked: _Optional[int] = ...) -> None: ...
+    def __init__(self, found: _Optional[int] = ..., skipped: _Optional[_Iterable[_Union[ImportSkipCount, _Mapping]]] = ..., handed_in: _Optional[int] = ..., handed_again: _Optional[int] = ..., archived: _Optional[int] = ..., already_held: _Optional[int] = ..., quarantined: _Optional[_Iterable[_Union[ImportQuarantineCount, _Mapping]]] = ..., lost: _Optional[int] = ..., processing: _Optional[int] = ..., bytes_handed_in: _Optional[int] = ..., label_differs: _Optional[int] = ..., units: _Optional[int] = ..., units_walked: _Optional[int] = ..., failed: _Optional[int] = ..., discarded: _Optional[int] = ...) -> None: ...
 
 class JobTally(_message.Message):
     __slots__ = ("key", "count")

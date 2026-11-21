@@ -236,7 +236,15 @@ class JobServiceStub:
     What an import job does. It reads the directory its path names under its
     receiver's root (ImportReceiver) and hands each DICOM file in it to the
     receiver, one at a time, as a file that arrived; it never writes, moves
-    or deletes anything in the root. Its work is a listing unit and one unit
+    or deletes anything in the root. For example, a tree kept as
+    <study>/<session>/series/<scan>/<file>, with a map from (study, session)
+    to subject, is read by an import receiver with the pattern layout
+    "^(?P<study>[^/]+)/(?P<session>[^/]+)/series/(?P<scan>[^/]+)/[^/]+$",
+    unit depth 2 (one unit per session folder), map_key_columns naming the
+    map's study and session columns, map_key_parts ["study", "session"],
+    map_value_column its subject column and map_gives "subject", and the
+    naming rule "{study}_{subject}", "{study}_{session}",
+    "{scan}". Its work is a listing unit and one unit
     per folder. The listing unit lists the folders at the layout's unit depth
     under the job's path, a page at a time, and queues one unit per folder
     (one unit for a path at or below that depth); it also judges every file
@@ -262,11 +270,7 @@ class JobServiceStub:
     Before a file is handed in, its first 132 bytes are read: one without the
     Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
     IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
-    notes, images and archives do not fill it. An XNAT resource catalog file
-    (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
-    not listed: it is read, at most 16 MiB of it, only to check the files
-    beside it (a larger one is not checked, and counted in
-    catalogs_not_checked).
+    notes, images, archives and index files do not fill it.
 
     A unit writes each file's record (its arrival, or the row of its skip)
     in the same transaction as its cursor and its counts found, skipped and
@@ -329,12 +333,12 @@ class JobServiceStub:
     done, every file found has an outcome and none was quarantined, lost,
     failed or discarded, or skipped as unreadable, too large or as a
     directory too wide (files skipped by design, not DICOM, outside the
-    layout, of an unmapped session, not regular files or catalog files,
+    layout, of an unmapped session, or not regular files,
     leave it done); partial, otherwise; failed, a unit's attempts ran out or
     its root was unavailable, with what it had handed in still counted and
     still settling; canceled, by CancelJob, which withdraws nothing already
     handed in: those files go on to their outcome and are counted. Each file
-    skipped (but catalog files), quarantined, lost, failed or discarded is
+    skipped, quarantined, lost, failed or discarded is
     listed, with its path, to an operator by ListImportFiles, up to
     job.failures-kept. A job made again over the same tree finds the files
     added since as new and the others as already held. Events carry counts
@@ -624,7 +628,15 @@ class JobServiceServicer:
     What an import job does. It reads the directory its path names under its
     receiver's root (ImportReceiver) and hands each DICOM file in it to the
     receiver, one at a time, as a file that arrived; it never writes, moves
-    or deletes anything in the root. Its work is a listing unit and one unit
+    or deletes anything in the root. For example, a tree kept as
+    <study>/<session>/series/<scan>/<file>, with a map from (study, session)
+    to subject, is read by an import receiver with the pattern layout
+    "^(?P<study>[^/]+)/(?P<session>[^/]+)/series/(?P<scan>[^/]+)/[^/]+$",
+    unit depth 2 (one unit per session folder), map_key_columns naming the
+    map's study and session columns, map_key_parts ["study", "session"],
+    map_value_column its subject column and map_gives "subject", and the
+    naming rule "{study}_{subject}", "{study}_{session}",
+    "{scan}". Its work is a listing unit and one unit
     per folder. The listing unit lists the folders at the layout's unit depth
     under the job's path, a page at a time, and queues one unit per folder
     (one unit for a path at or below that depth); it also judges every file
@@ -650,11 +662,7 @@ class JobServiceServicer:
     Before a file is handed in, its first 132 bytes are read: one without the
     Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
     IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
-    notes, images and archives do not fill it. An XNAT resource catalog file
-    (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
-    not listed: it is read, at most 16 MiB of it, only to check the files
-    beside it (a larger one is not checked, and counted in
-    catalogs_not_checked).
+    notes, images, archives and index files do not fill it.
 
     A unit writes each file's record (its arrival, or the row of its skip)
     in the same transaction as its cursor and its counts found, skipped and
@@ -717,12 +725,12 @@ class JobServiceServicer:
     done, every file found has an outcome and none was quarantined, lost,
     failed or discarded, or skipped as unreadable, too large or as a
     directory too wide (files skipped by design, not DICOM, outside the
-    layout, of an unmapped session, not regular files or catalog files,
+    layout, of an unmapped session, or not regular files,
     leave it done); partial, otherwise; failed, a unit's attempts ran out or
     its root was unavailable, with what it had handed in still counted and
     still settling; canceled, by CancelJob, which withdraws nothing already
     handed in: those files go on to their outcome and are counted. Each file
-    skipped (but catalog files), quarantined, lost, failed or discarded is
+    skipped, quarantined, lost, failed or discarded is
     listed, with its path, to an operator by ListImportFiles, up to
     job.failures-kept. A job made again over the same tree finds the files
     added since as new and the others as already held. Events carry counts
@@ -766,8 +774,8 @@ class JobServiceServicer:
         an import receiver of the tenant, a path under its root and optionally
         a map (a file under the root, or inline); the root is resolved, the
         path opened and the map read and checked before the job is made, so a
-        tree that is not there or a map that names two subjects for one
-        session is refused here, not found out later. The map is kept with the
+        tree that is not there or a map that names two values for one key is
+        refused here, not found out later. The map is kept with the
         job as it was read then, so a map file changed later changes nothing
         of the job or of a retry of it. A refusal of a map names the line it
         found at fault by number only, never a cell, the header or a path. An
@@ -789,9 +797,8 @@ class JobServiceServicer:
         without the one above it, and a reception given, which only the
         server sets; for an import, a path or map file that breaks the path
         rule, both a map file and an inline map, an inline map past 3 MiB,
-        counts given, which only the server sets, and subject_from_headers
-        with a map, from the job or the receiver, or with a layout other than
-        XNAT), not found (the tenant holds no subject, session or scan
+        counts given, which only the server sets, and a map configuration
+        given in part or that breaks its rule), not found (the tenant holds no subject, session or scan
         with those labels; the tenant has no profile version of that name and
         number; a tenant that does not exist, for a caller who may list every
         tenant), precondition (a sender the tenant does not have; a scrub of a
@@ -804,10 +811,11 @@ class JobServiceServicer:
         allots to the tenant, a root whose path now resolves to another
         directory than when it was set (a link in it changed), a path that is
         not a directory under the root, a map file that cannot be read, is
-        larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
-        for one (project, session), a map with a layout that does not give the
-        parts project and session or that gives a part subject, an XNAT layout
-        with no map and subject_from_headers false, or a queued or running
+        larger than 64 MiB, is not UTF-8, lacks a configured column or names
+        two values for one key, a map with no map configuration (the job's or
+        the receiver's), a map key part the layout does not give or a
+        map_gives part it already gives, a receiver whose naming rule uses the
+        part a map gives with no map, or a queued or running
         import job of the same receiver whose path overlaps this one's by
         segment; for every kind, a tenant moved or fenced,
         with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
@@ -882,7 +890,7 @@ class JobServiceServicer:
         stands, so a repeated call starts nothing more.
 
         For an import job, the new job has the same receiver, path, map (the
-        one kept with the ended job, checked again) and subject_from_headers,
+        one kept with the ended job, checked again) and map configuration,
         and its units are the ended job's units that failed or were canceled,
         and those with a file lost, or skipped as unreadable, too large or in
         a directory too wide; each walks its folder again from the start, so
@@ -934,10 +942,9 @@ class JobServiceServicer:
     def ListImportFiles(self, request, context):
         """ListImportFiles answers the files of an import job that did not reach
         the archive, each by its path under the root, with why: those skipped
-        (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+        (by IMPORT_SKIP_CODE), those
         quarantined (with the quarantined file's id and reason), those lost,
-        failed or discarded, and the differences the XNAT catalog files showed.
-        Ordered by path in the walk's order (segment by segment, each byte by
+        failed or discarded. Ordered by path in the walk's order (segment by segment, each byte by
         byte). At most job.failures-kept are kept per job; the job's
         failures_not_listed counts the others. A page never passes 4 MB, so it
         may hold fewer files than page_size, or none; only an empty
@@ -1241,7 +1248,15 @@ class JobService:
     What an import job does. It reads the directory its path names under its
     receiver's root (ImportReceiver) and hands each DICOM file in it to the
     receiver, one at a time, as a file that arrived; it never writes, moves
-    or deletes anything in the root. Its work is a listing unit and one unit
+    or deletes anything in the root. For example, a tree kept as
+    <study>/<session>/series/<scan>/<file>, with a map from (study, session)
+    to subject, is read by an import receiver with the pattern layout
+    "^(?P<study>[^/]+)/(?P<session>[^/]+)/series/(?P<scan>[^/]+)/[^/]+$",
+    unit depth 2 (one unit per session folder), map_key_columns naming the
+    map's study and session columns, map_key_parts ["study", "session"],
+    map_value_column its subject column and map_gives "subject", and the
+    naming rule "{study}_{subject}", "{study}_{session}",
+    "{scan}". Its work is a listing unit and one unit
     per folder. The listing unit lists the folders at the layout's unit depth
     under the job's path, a page at a time, and queues one unit per folder
     (one unit for a path at or below that depth); it also judges every file
@@ -1267,11 +1282,7 @@ class JobService:
     Before a file is handed in, its first 132 bytes are read: one without the
     Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
     IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
-    notes, images and archives do not fill it. An XNAT resource catalog file
-    (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
-    not listed: it is read, at most 16 MiB of it, only to check the files
-    beside it (a larger one is not checked, and counted in
-    catalogs_not_checked).
+    notes, images, archives and index files do not fill it.
 
     A unit writes each file's record (its arrival, or the row of its skip)
     in the same transaction as its cursor and its counts found, skipped and
@@ -1334,12 +1345,12 @@ class JobService:
     done, every file found has an outcome and none was quarantined, lost,
     failed or discarded, or skipped as unreadable, too large or as a
     directory too wide (files skipped by design, not DICOM, outside the
-    layout, of an unmapped session, not regular files or catalog files,
+    layout, of an unmapped session, or not regular files,
     leave it done); partial, otherwise; failed, a unit's attempts ran out or
     its root was unavailable, with what it had handed in still counted and
     still settling; canceled, by CancelJob, which withdraws nothing already
     handed in: those files go on to their outcome and are counted. Each file
-    skipped (but catalog files), quarantined, lost, failed or discarded is
+    skipped, quarantined, lost, failed or discarded is
     listed, with its path, to an operator by ListImportFiles, up to
     job.failures-kept. A job made again over the same tree finds the files
     added since as new and the others as already held. Events carry counts

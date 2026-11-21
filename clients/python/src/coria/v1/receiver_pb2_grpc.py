@@ -49,7 +49,7 @@ class ReceiverServiceStub:
     runs on, or another tenant's tree. Two settings hold it:
 
     - import.roots: the directories an import may read, one per line, each
-    "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+    "name=/absolute/path", such as "old=/mnt/old-archive"; a name is 1
     to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
     4096 bytes. At most 64 roots. Installation-only. Empty by default, so
     no import reads anything until a root is named. A path is resolved
@@ -67,7 +67,7 @@ class ReceiverServiceStub:
     or changing a root an import receiver names is refused
     (precondition), as for every setting a receiver uses.
     - import.allowed-roots: the names of the roots a tenant's import
-    receivers may read, separated by commas, such as "xnat". Set on a
+    receivers may read, separated by commas, such as "old". Set on a
     tenant by the installation's admin only; it has no installation
     value. Empty by default, so a tenant cannot add an import receiver
     until a root is allotted to it. A root may be allotted to several
@@ -195,7 +195,7 @@ class ReceiverServiceServicer:
     runs on, or another tenant's tree. Two settings hold it:
 
     - import.roots: the directories an import may read, one per line, each
-    "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+    "name=/absolute/path", such as "old=/mnt/old-archive"; a name is 1
     to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
     4096 bytes. At most 64 roots. Installation-only. Empty by default, so
     no import reads anything until a root is named. A path is resolved
@@ -213,7 +213,7 @@ class ReceiverServiceServicer:
     or changing a root an import receiver names is refused
     (precondition), as for every setting a receiver uses.
     - import.allowed-roots: the names of the roots a tenant's import
-    receivers may read, separated by commas, such as "xnat". Set on a
+    receivers may read, separated by commas, such as "old". Set on a
     tenant by the installation's admin only; it has no installation
     value. Empty by default, so a tenant cannot add an import receiver
     until a root is allotted to it. A root may be allotted to several
@@ -295,8 +295,9 @@ class ReceiverServiceServicer:
         Errors: unauthenticated, permission denied (no grant; also a tenant that
         does not exist, for a caller who may not list every tenant), invalid
         (also, for an import receiver, a naming template that uses a part
-        neither its layout, its map nor its naming pattern ever gives, and a
-        map file that breaks the path rule), not found (a tenant that does
+        neither its naming pattern nor its layout or map gives, or a part both
+        would fill; a pattern, a map file or a map configuration that breaks
+        its rule), not found (a tenant that does
         not exist, for a caller who may list every
         tenant), conflict (the tenant has a receiver with that name, or a
         removed receiver of that name is still named by receptions,
@@ -309,8 +310,8 @@ class ReceiverServiceServicer:
         tenant's allotted ports; a bind address the installation does not list;
         another receiver of the tenant on the same port and an overlapping
         address; a root import.roots does not name, or one import.allowed-roots
-        does not allot to the tenant; a map file with a layout that does not
-        give the parts project and session, or that gives a part subject),
+        does not allot to the tenant; a map key part the layout does not give,
+        or a map_gives part the layout already gives),
         unavailable (the tenant's database
         does not answer, or the tenant is not ready).
         """
@@ -469,7 +470,7 @@ class ReceiverService:
     runs on, or another tenant's tree. Two settings hold it:
 
     - import.roots: the directories an import may read, one per line, each
-    "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+    "name=/absolute/path", such as "old=/mnt/old-archive"; a name is 1
     to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
     4096 bytes. At most 64 roots. Installation-only. Empty by default, so
     no import reads anything until a root is named. A path is resolved
@@ -487,7 +488,7 @@ class ReceiverService:
     or changing a root an import receiver names is refused
     (precondition), as for every setting a receiver uses.
     - import.allowed-roots: the names of the roots a tenant's import
-    receivers may read, separated by commas, such as "xnat". Set on a
+    receivers may read, separated by commas, such as "old". Set on a
     tenant by the installation's admin only; it has no installation
     value. Empty by default, so a tenant cannot add an import receiver
     until a root is allotted to it. A root may be allotted to several

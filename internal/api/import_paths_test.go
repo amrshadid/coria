@@ -68,7 +68,11 @@ func TestReaderAnswersCarryNoImportPaths(t *testing.T) {
 		Type: &v1.Receiver_Importer{Importer: &v1.ImportReceiver{
 			Root: "src", Layout: v1.ImportLayout_IMPORT_LAYOUT_PATTERN,
 			PathPattern: `^(?P<project>[^/]+)/(?P<session>[^/]+)/[^/]+$`, UnitDepth: 1,
-			MapFile: importFolder + "/map.csv",
+			MapFile:        importFolder + "/map.csv",
+			MapKeyColumns:  []string{"project", "label"},
+			MapKeyParts:    []string{"project", "session"},
+			MapValueColumn: "subject_label",
+			MapGives:       "subject",
 		}},
 		Deidentification: &v1.Receiver_AsReceived{AsReceived: &v1.AsReceived{}},
 	})(f.as(local)))

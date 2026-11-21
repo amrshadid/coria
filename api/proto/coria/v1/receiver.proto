@@ -33,7 +33,7 @@ import "coria/v1/profile.proto";
 // runs on, or another tenant's tree. Two settings hold it:
 //
 //   - import.roots: the directories an import may read, one per line, each
-//     "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+//     "name=/absolute/path", such as "old=/mnt/old-archive"; a name is 1
 //     to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
 //     4096 bytes. At most 64 roots. Installation-only. Empty by default, so
 //     no import reads anything until a root is named. A path is resolved
@@ -51,7 +51,7 @@ import "coria/v1/profile.proto";
 //     or changing a root an import receiver names is refused
 //     (precondition), as for every setting a receiver uses.
 //   - import.allowed-roots: the names of the roots a tenant's import
-//     receivers may read, separated by commas, such as "xnat". Set on a
+//     receivers may read, separated by commas, such as "old". Set on a
 //     tenant by the installation's admin only; it has no installation
 //     value. Empty by default, so a tenant cannot add an import receiver
 //     until a root is allotted to it. A root may be allotted to several
@@ -131,8 +131,9 @@ service ReceiverService {
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
   // (also, for an import receiver, a naming template that uses a part
-  // neither its layout, its map nor its naming pattern ever gives, and a
-  // map file that breaks the path rule), not found (a tenant that does
+  // neither its naming pattern nor its layout or map gives, or a part both
+  // would fill; a pattern, a map file or a map configuration that breaks
+  // its rule), not found (a tenant that does
   // not exist, for a caller who may list every
   // tenant), conflict (the tenant has a receiver with that name, or a
   // removed receiver of that name is still named by receptions,
@@ -145,8 +146,8 @@ service ReceiverService {
   // tenant's allotted ports; a bind address the installation does not list;
   // another receiver of the tenant on the same port and an overlapping
   // address; a root import.roots does not name, or one import.allowed-roots
-  // does not allot to the tenant; a map file with a layout that does not
-  // give the parts project and session, or that gives a part subject),
+  // does not allot to the tenant; a map key part the layout does not give,
+  // or a map_gives part the layout already gives),
   // unavailable (the tenant's database
   // does not answer, or the tenant is not ready).
   rpc AddReceiver(AddReceiverRequest) returns (AddReceiverResponse);
@@ -687,16 +688,10 @@ enum ImportLayout {
   // first level under the root.
   IMPORT_LAYOUT_PLAIN = 1;
 
-  // XNAT's archive tree: <project>/arc<nnn>/<session>/SCANS/<scan>/DICOM/<file>,
-  // read by the fixed pattern
-  // ^(?P<project>[^/]+)/arc[0-9]{3}/(?P<session>[^/]+)/SCANS/(?P<scan>[^/]+)/DICOM/[^/]+$,
-  // with parts project, session and scan; XNAT keeps no subject folder,
-  // so {subject} comes from the map file (map_file) or, with
-  // ImportJob.subject_from_headers, from Patient Name (0010,0010) as XNAT's
-  // default anonymization script writes it. A unit is one session folder
-  // (unit depth 3). A file under a session's other folders (RESOURCES,
-  // ASSESSORS) does not match and is skipped as outside the layout.
-  IMPORT_LAYOUT_XNAT = 2;
+  // Number 2 was a fixed layout for one other system's archive tree. It is
+  // removed: a tree of any shape is read by the pattern layout, with that
+  // system's pattern given as configuration. The number is not used again.
+  reserved 2;
 
   // The receiver's own pattern (path_pattern) and unit depth (unit_depth).
   IMPORT_LAYOUT_PATTERN = 3;
@@ -726,23 +721,35 @@ enum ImportLayout {
 // quarantined with QUARANTINE_REASON_BAD_LABEL, never cleaned. A file whose
 // path the layout does not match is skipped as IMPORT_SKIP_CODE_OUTSIDE_LAYOUT.
 //
-// The map file. A CSV file, as XNAT exports its experiments, with a header
-// row naming at least the columns project, label (the session's label) and
-// subject_label, read when a job is made, at most 64 MiB (3 MiB given
-// inline, ImportJob.map_csv), in UTF-8, and kept with the job as read
-// then. It gives the part {subject} by (project, session). A map in which
-// one (project, session) names two subjects is refused whole, and so is
-// the job; a refusal names the line at fault by its number only, never a
-// cell, the header or the file's path. A
-// session folder the map does not list is skipped as
-// IMPORT_SKIP_CODE_UNMAPPED_SESSION, so a folder left behind after XNAT
-// deleted its session is not brought back.
+// The map. A tree often names its sessions but not their subjects, which
+// the system that wrote it kept elsewhere. A map is a CSV file (RFC 4180),
+// in UTF-8, whose first row names its columns, that fills one part
+// (map_gives, such as "subject") for each file from the values of other
+// parts: the file's values of the parts map_key_parts names, in order,
+// are looked up in the columns map_key_columns names, in the same order,
+// and the row found gives the value of map_value_column. For example, a
+// tree <project>/<session>/<file> read by
+// "^(?P<project>[^/]+)/(?P<session>[^/]+)/[^/]+$" and a map with the
+// columns proj, visit and participant, configured as map_key_columns
+// ["proj", "visit"], map_key_parts ["project", "session"],
+// map_value_column "participant" and map_gives "subject", gives each file
+// the {subject} of the row whose proj and visit are the file's project
+// and session. A map is read when a job is made, at most 64 MiB from a
+// file (3 MiB given inline, ImportJob.map_csv), and kept with the job as
+// read then. A map in which one key names two values, or that lacks a
+// configured column, is refused whole, and so is the job; a refusal names
+// the line at fault by its number only, never a cell, the header or the
+// file's path. A file whose key is not a row of the map is skipped as
+// IMPORT_SKIP_CODE_UNMAPPED_SESSION, so a folder its source system had
+// deleted from its records is not brought back.
 //
-// The naming rule a site importing several XNAT projects into one tenant
-// writes puts the project before the subject and session labels, such as
-// "{project}_{subject}" and "{project}_{session}", since XNAT's labels are
-// unique only within a project; a site importing one project per tenant
-// leaves it out.
+// A label from a file's header (Patient Name, say) needs nothing here: it
+// is the naming rule's, a template such as "{project}_{PatientName}".
+//
+// Labels unique only within a part of the tree (a session label unique
+// within a project, say) collide when two such parts land in one tenant;
+// a naming rule that puts that part first, such as "{project}_{subject}"
+// and "{project}_{session}", keeps them apart.
 message ImportReceiver {
   // The name of the root, among those of the installation's setting
   // import.roots, whose directory its jobs read. Required; a root
@@ -761,24 +768,22 @@ message ImportReceiver {
   // least one named part, such as
   // "^(?P<study>[^/]+)/(?P<subject>[^/]+)/(?P<session>[^/]+)/.+$". It must
   // match the whole path: the server anchors it at both ends. Required for
-  // that layout and empty for the others; at most 1024 bytes; a part's name
-  // is a lowercase ASCII letter followed by lowercase letters, digits and
-  // "_", and is used once.
+  // that layout and empty for plain, which takes no pattern; at most 1024
+  // bytes; a part's name is a lowercase ASCII letter followed by lowercase
+  // letters, digits and "_", and is used once.
   string path_pattern = 3;
 
   // For IMPORT_LAYOUT_PATTERN, how many segments from the root make a
   // unit's folder: each folder at that depth is one unit of work, walked
-  // and resumed on its own. From 1 to 16; required for that layout and 0
-  // for the others, whose depths are fixed (1 for plain, 3 for XNAT).
+  // and resumed on its own. From 1 to 16; required for that layout. Plain's
+  // depth is fixed at 1: 0 or 1 is taken for it, and 1 is answered.
   int32 unit_depth = 4;
 
   // The map file its jobs read, by its path relative to the root, which
   // it must be inside, under the same rules as ImportJob.path: segments of
   // 1 to 255 bytes of UTF-8, none "." or "..", none holding "\", ":" or
   // NUL; no empty segment, no leading or trailing "/"; at most 4096 bytes.
-  // A map needs a layout that gives the parts project and session and no
-  // part subject (the map gives it); otherwise AddReceiver and SetReceiver
-  // refuse it (precondition). Optional; a
+  // A map needs the map configuration below. Optional; a
   // job may name another or give one inline (ImportJob.map_file,
   // map_csv). Each segment is opened under the root without following a
   // link. A path can hold what identifies
@@ -786,6 +791,27 @@ message ImportReceiver {
   // and empty to a reader, and never written to a log, an event or an
   // audit entry.
   string map_file = 5 [debug_redact = true];
+
+  // The map's key columns: names of columns of its first row, matched byte
+  // for byte, each once, 1 to 8 of them. Empty for no map; the four map
+  // fields are given together or not at all. A job may give its own four
+  // (ImportJob), which replace these whole.
+  repeated string map_key_columns = 6;
+
+  // The map's column whose value fills the part map_gives. Required with
+  // map_key_columns; not one of them.
+  string map_value_column = 7;
+
+  // The layout's parts whose values form a file's key, as path_pattern
+  // names them: as many as map_key_columns, in the same order, each once.
+  // A part the layout does not give is a precondition failure.
+  repeated string map_key_parts = 8;
+
+  // The part the map fills, such as "subject", which the naming rule's
+  // templates use as {subject} or {#subject}; under the rule of a part's
+  // name. Refused (precondition) when the layout already gives it, and
+  // (invalid) when the naming pattern does, so no part has two sources.
+  string map_gives = 9;
 }
 
 // AllowedCallers is the list of callers a DIMSE receiver admits.

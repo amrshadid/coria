@@ -239,10 +239,12 @@ All notable changes to CORIA are written here. The form is
 
 - API contract for importing a directory (defined, not yet served): an
   import receiver type (`Receiver.importer`: a root the installation names
-  and allots to the tenant, the plain, XNAT or pattern layout, unit depth, a
-  map file) and an import job kind (`Job.import_job`: receiver, path under
-  the root, a map file inside the root or inline, subject from headers for
-  XNAT without a map). Two jobs of one receiver never read overlapping
+  and allots to the tenant; the plain layout, or a pattern of named path
+  parts with a unit depth; an optional CSV map that fills one part, such as
+  the subject, from key columns matched to path parts) and an import job
+  kind (`Job.import_job`: receiver, path under the root, a map file inside
+  the root or inline, and its own map configuration). Two jobs of one
+  receiver never read overlapping
   paths at once. Each file's arrival is written with the unit's cursor, so
   none is handed in twice, and the job's counts reconcile what the walk
   found with what each file became (skipped by reason, handed in, archived,

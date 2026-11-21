@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/receiver.proto.
  */
 export const file_coria_v1_receiver: GenFile = /*@__PURE__*/
-  fileDesc("Chdjb3JpYS92MS9yZWNlaXZlci5wcm90bxIIY29yaWEudjEioAUKCFJlY2VpdmVyEgwKBG5hbWUYASABKAkSKAoFZGltc2UYAiABKAsyFy5jb3JpYS52MS5EaW1zZVJlY2VpdmVySAASJgoEc3RvdxgMIAEoCzIWLmNvcmlhLnYxLlN0b3dSZWNlaXZlckgAEiwKCGltcG9ydGVyGBEgASgLMhguY29yaWEudjEuSW1wb3J0UmVjZWl2ZXJIABIPCgdlbmFibGVkGAMgASgIEg8KB3N0b3JhZ2UYBCABKAkSJAoGbmFtaW5nGAUgASgLMhQuY29yaWEudjEuTmFtaW5nUnVsZRIvCgxxdWlldF9wZXJpb2QYBiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SMAoNbWF4X29wZW5fdGltZRgHIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIWCg5tYXhfZmlsZV9ieXRlcxgIIAEoAxIoCgZoZWFsdGgYCSABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aBIvCgtjcmVhdGVfdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLdXBkYXRlX3RpbWUYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmZvcndhcmRfdG8YDSADKAkSKwoLYXNfcmVjZWl2ZWQYDiABKAsyFC5jb3JpYS52MS5Bc1JlY2VpdmVkSAESLgoHcHJvZmlsZRgPIAEoCzIbLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uUmVmSAESKgoHcm91dGluZxgQIAEoCzIZLmNvcmlhLnYxLlJlY2VpdmVyUm91dGluZ0IGCgR0eXBlQhIKEGRlaWRlbnRpZmljYXRpb24iUAoPUmVjZWl2ZXJSb3V0aW5nEh8KBnJvdXRlcxgBIAMoCzIPLmNvcmlhLnYxLlJvdXRlEhwKFHF1YXJhbnRpbmVfdW5tYXRjaGVkGAIgASgIIrIBCgVSb3V0ZRIMCgRuYW1lGAEgASgJEi4KCmNvbmRpdGlvbnMYAiADKAsyGi5jb3JpYS52MS5Qcm9maWxlQ29uZGl0aW9uEg8KB3N0b3JhZ2UYAyABKAkSLAoHcHJvZmlsZRgEIAEoCzIbLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uUmVmEiwKCmZvcndhcmRfdG8YBSABKAsyGC5jb3JpYS52MS5Sb3V0ZUZvcndhcmRUbyIhCg5Sb3V0ZUZvcndhcmRUbxIPCgdzZW5kZXJzGAEgAygJIgwKCkFzUmVjZWl2ZWQiMgoRUHJvZmlsZVZlcnNpb25SZWYSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFIu8BCg1EaW1zZVJlY2VpdmVyEgwKBHBvcnQYASABKAUSFAoMYmluZF9hZGRyZXNzGAIgASgJEhAKCGFlX3RpdGxlGAMgASgJEjMKD2FsbG93ZWRfY2FsbGVycxgEIAEoCzIYLmNvcmlhLnYxLkFsbG93ZWRDYWxsZXJzSAASFAoKYW55X2NhbGxlchgFIAEoCEgAEiIKA3RscxgGIAEoCzIVLmNvcmlhLnYxLlJlY2VpdmVyVGxzEhMKC3NvcF9jbGFzc2VzGAcgAygJEhkKEXRyYW5zZmVyX3N5bnRheGVzGAggAygJQgkKB2NhbGxlcnMiOgoMU3Rvd1JlY2VpdmVyEg8KB2tleV9pZHMYASADKAkSGQoRbWF4X3JlcXVlc3RfYnl0ZXMYAiABKAMihwEKDkltcG9ydFJlY2VpdmVyEgwKBHJvb3QYASABKAkSJgoGbGF5b3V0GAIgASgOMhYuY29yaWEudjEuSW1wb3J0TGF5b3V0EhQKDHBhdGhfcGF0dGVybhgDIAEoCRISCgp1bml0X2RlcHRoGAQgASgFEhUKCG1hcF9maWxlGAUgASgJQgOAAQEiNQoOQWxsb3dlZENhbGxlcnMSIwoFcnVsZXMYASADKAsyFC5jb3JpYS52MS5DYWxsZXJSdWxlIj0KCkNhbGxlclJ1bGUSGAoQY2FsbGluZ19hZV90aXRsZRgBIAEoCRIVCg1hZGRyZXNzX3JhbmdlGAIgASgJIkEKC1JlY2VpdmVyVGxzEhgKEGNlcnRpZmljYXRlX2ZpbGUYASABKAkSGAoQcHJpdmF0ZV9rZXlfZmlsZRgCIAEoCSJmCgpOYW1pbmdSdWxlEg8KB3N1YmplY3QYASABKAkSDwoHc2Vzc2lvbhgCIAEoCRIMCgRzY2FuGAMgASgJEigKB3BhdHRlcm4YBCABKAsyFy5jb3JpYS52MS5OYW1pbmdQYXR0ZXJuIjYKDU5hbWluZ1BhdHRlcm4SEQoJYXR0cmlidXRlGAEgASgJEhIKCmV4cHJlc3Npb24YAiABKAkipgEKDlJlY2VpdmVySGVhbHRoEiYKBXN0YXRlGAEgASgOMhcuY29yaWEudjEuUmVjZWl2ZXJTdGF0ZRIxCgtkb3duX3JlYXNvbhgCIAEoDjIcLmNvcmlhLnYxLlJlY2VpdmVyRG93blJlYXNvbhIOCgZkZXRhaWwYAyABKAkSKQoFc2luY2UYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkoKEkFkZFJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSJAoIcmVjZWl2ZXIYAiABKAsyEi5jb3JpYS52MS5SZWNlaXZlciI7ChNBZGRSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiMgoSR2V0UmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIMCgRuYW1lGAIgASgJIjsKE0dldFJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlciJNChRMaXN0UmVjZWl2ZXJzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkiVwoVTGlzdFJlY2VpdmVyc1Jlc3BvbnNlEiUKCXJlY2VpdmVycxgBIAMoCzISLmNvcmlhLnYxLlJlY2VpdmVyEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSK1AQoSU2V0UmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIkCghyZWNlaXZlchgCIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyEi8KC3VwZGF0ZV9tYXNrGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLkZpZWxkTWFzaxI4ChRleHBlY3RlZF91cGRhdGVfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiOwoTU2V0UmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIjUKFVJlbW92ZVJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCSI+ChZSZW1vdmVSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIqeQoMSW1wb3J0TGF5b3V0Eh0KGUlNUE9SVF9MQVlPVVRfVU5TUEVDSUZJRUQQABIXChNJTVBPUlRfTEFZT1VUX1BMQUlOEAESFgoSSU1QT1JUX0xBWU9VVF9YTkFUEAISGQoVSU1QT1JUX0xBWU9VVF9QQVRURVJOEAMqlQEKDVJlY2VpdmVyU3RhdGUSHgoaUkVDRUlWRVJfU1RBVEVfVU5TUEVDSUZJRUQQABIbChdSRUNFSVZFUl9TVEFURV9TVEFSVElORxABEhUKEVJFQ0VJVkVSX1NUQVRFX1VQEAISFwoTUkVDRUlWRVJfU1RBVEVfRE9XThADEhcKE1JFQ0VJVkVSX1NUQVRFX0lETEUQBCq9AwoSUmVjZWl2ZXJEb3duUmVhc29uEiQKIFJFQ0VJVkVSX0RPV05fUkVBU09OX1VOU1BFQ0lGSUVEEAASIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fRElTQUJMRUQQARInCiNSRUNFSVZFUl9ET1dOX1JFQVNPTl9BRERSRVNTX0lOX1VTRRACEioKJlJFQ0VJVkVSX0RPV05fUkVBU09OX1BFUk1JU1NJT05fREVOSUVEEAMSLgoqUkVDRUlWRVJfRE9XTl9SRUFTT05fQUREUkVTU19OT1RfQVZBSUxBQkxFEAQSHAoYUkVDRUlWRVJfRE9XTl9SRUFTT05fVExTEAUSJAogUkVDRUlWRVJfRE9XTl9SRUFTT05fTkVBUkxZX0ZVTEwQBhIpCiVSRUNFSVZFUl9ET1dOX1JFQVNPTl9URU5BTlRfTk9UX1JFQURZEAcSIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fU1RPUFBJTkcQCBIeChpSRUNFSVZFUl9ET1dOX1JFQVNPTl9PVEhFUhAJEicKI1JFQ0VJVkVSX0RPV05fUkVBU09OX0lOQ09NSU5HX0xJTUlUEAoysAMKD1JlY2VpdmVyU2VydmljZRJKCgtBZGRSZWNlaXZlchIcLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVxdWVzdBodLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVzcG9uc2USTwoLR2V0UmVjZWl2ZXISHC5jb3JpYS52MS5HZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5HZXRSZWNlaXZlclJlc3BvbnNlIgOQAgESVQoNTGlzdFJlY2VpdmVycxIeLmNvcmlhLnYxLkxpc3RSZWNlaXZlcnNSZXF1ZXN0Gh8uY29yaWEudjEuTGlzdFJlY2VpdmVyc1Jlc3BvbnNlIgOQAgESTwoLU2V0UmVjZWl2ZXISHC5jb3JpYS52MS5TZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5TZXRSZWNlaXZlclJlc3BvbnNlIgOQAgISWAoOUmVtb3ZlUmVjZWl2ZXISHy5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlcXVlc3QaIC5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp, file_coria_v1_profile]);
+  fileDesc("Chdjb3JpYS92MS9yZWNlaXZlci5wcm90bxIIY29yaWEudjEioAUKCFJlY2VpdmVyEgwKBG5hbWUYASABKAkSKAoFZGltc2UYAiABKAsyFy5jb3JpYS52MS5EaW1zZVJlY2VpdmVySAASJgoEc3RvdxgMIAEoCzIWLmNvcmlhLnYxLlN0b3dSZWNlaXZlckgAEiwKCGltcG9ydGVyGBEgASgLMhguY29yaWEudjEuSW1wb3J0UmVjZWl2ZXJIABIPCgdlbmFibGVkGAMgASgIEg8KB3N0b3JhZ2UYBCABKAkSJAoGbmFtaW5nGAUgASgLMhQuY29yaWEudjEuTmFtaW5nUnVsZRIvCgxxdWlldF9wZXJpb2QYBiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24SMAoNbWF4X29wZW5fdGltZRgHIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIWCg5tYXhfZmlsZV9ieXRlcxgIIAEoAxIoCgZoZWFsdGgYCSABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aBIvCgtjcmVhdGVfdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLdXBkYXRlX3RpbWUYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCmZvcndhcmRfdG8YDSADKAkSKwoLYXNfcmVjZWl2ZWQYDiABKAsyFC5jb3JpYS52MS5Bc1JlY2VpdmVkSAESLgoHcHJvZmlsZRgPIAEoCzIbLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uUmVmSAESKgoHcm91dGluZxgQIAEoCzIZLmNvcmlhLnYxLlJlY2VpdmVyUm91dGluZ0IGCgR0eXBlQhIKEGRlaWRlbnRpZmljYXRpb24iUAoPUmVjZWl2ZXJSb3V0aW5nEh8KBnJvdXRlcxgBIAMoCzIPLmNvcmlhLnYxLlJvdXRlEhwKFHF1YXJhbnRpbmVfdW5tYXRjaGVkGAIgASgIIrIBCgVSb3V0ZRIMCgRuYW1lGAEgASgJEi4KCmNvbmRpdGlvbnMYAiADKAsyGi5jb3JpYS52MS5Qcm9maWxlQ29uZGl0aW9uEg8KB3N0b3JhZ2UYAyABKAkSLAoHcHJvZmlsZRgEIAEoCzIbLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uUmVmEiwKCmZvcndhcmRfdG8YBSABKAsyGC5jb3JpYS52MS5Sb3V0ZUZvcndhcmRUbyIhCg5Sb3V0ZUZvcndhcmRUbxIPCgdzZW5kZXJzGAEgAygJIgwKCkFzUmVjZWl2ZWQiMgoRUHJvZmlsZVZlcnNpb25SZWYSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFIu8BCg1EaW1zZVJlY2VpdmVyEgwKBHBvcnQYASABKAUSFAoMYmluZF9hZGRyZXNzGAIgASgJEhAKCGFlX3RpdGxlGAMgASgJEjMKD2FsbG93ZWRfY2FsbGVycxgEIAEoCzIYLmNvcmlhLnYxLkFsbG93ZWRDYWxsZXJzSAASFAoKYW55X2NhbGxlchgFIAEoCEgAEiIKA3RscxgGIAEoCzIVLmNvcmlhLnYxLlJlY2VpdmVyVGxzEhMKC3NvcF9jbGFzc2VzGAcgAygJEhkKEXRyYW5zZmVyX3N5bnRheGVzGAggAygJQgkKB2NhbGxlcnMiOgoMU3Rvd1JlY2VpdmVyEg8KB2tleV9pZHMYASADKAkSGQoRbWF4X3JlcXVlc3RfYnl0ZXMYAiABKAMi5AEKDkltcG9ydFJlY2VpdmVyEgwKBHJvb3QYASABKAkSJgoGbGF5b3V0GAIgASgOMhYuY29yaWEudjEuSW1wb3J0TGF5b3V0EhQKDHBhdGhfcGF0dGVybhgDIAEoCRISCgp1bml0X2RlcHRoGAQgASgFEhUKCG1hcF9maWxlGAUgASgJQgOAAQESFwoPbWFwX2tleV9jb2x1bW5zGAYgAygJEhgKEG1hcF92YWx1ZV9jb2x1bW4YByABKAkSFQoNbWFwX2tleV9wYXJ0cxgIIAMoCRIRCgltYXBfZ2l2ZXMYCSABKAkiNQoOQWxsb3dlZENhbGxlcnMSIwoFcnVsZXMYASADKAsyFC5jb3JpYS52MS5DYWxsZXJSdWxlIj0KCkNhbGxlclJ1bGUSGAoQY2FsbGluZ19hZV90aXRsZRgBIAEoCRIVCg1hZGRyZXNzX3JhbmdlGAIgASgJIkEKC1JlY2VpdmVyVGxzEhgKEGNlcnRpZmljYXRlX2ZpbGUYASABKAkSGAoQcHJpdmF0ZV9rZXlfZmlsZRgCIAEoCSJmCgpOYW1pbmdSdWxlEg8KB3N1YmplY3QYASABKAkSDwoHc2Vzc2lvbhgCIAEoCRIMCgRzY2FuGAMgASgJEigKB3BhdHRlcm4YBCABKAsyFy5jb3JpYS52MS5OYW1pbmdQYXR0ZXJuIjYKDU5hbWluZ1BhdHRlcm4SEQoJYXR0cmlidXRlGAEgASgJEhIKCmV4cHJlc3Npb24YAiABKAkipgEKDlJlY2VpdmVySGVhbHRoEiYKBXN0YXRlGAEgASgOMhcuY29yaWEudjEuUmVjZWl2ZXJTdGF0ZRIxCgtkb3duX3JlYXNvbhgCIAEoDjIcLmNvcmlhLnYxLlJlY2VpdmVyRG93blJlYXNvbhIOCgZkZXRhaWwYAyABKAkSKQoFc2luY2UYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkoKEkFkZFJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSJAoIcmVjZWl2ZXIYAiABKAsyEi5jb3JpYS52MS5SZWNlaXZlciI7ChNBZGRSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiMgoSR2V0UmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIMCgRuYW1lGAIgASgJIjsKE0dldFJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlciJNChRMaXN0UmVjZWl2ZXJzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkiVwoVTGlzdFJlY2VpdmVyc1Jlc3BvbnNlEiUKCXJlY2VpdmVycxgBIAMoCzISLmNvcmlhLnYxLlJlY2VpdmVyEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSK1AQoSU2V0UmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIkCghyZWNlaXZlchgCIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyEi8KC3VwZGF0ZV9tYXNrGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLkZpZWxkTWFzaxI4ChRleHBlY3RlZF91cGRhdGVfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiOwoTU2V0UmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIjUKFVJlbW92ZVJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCSI+ChZSZW1vdmVSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIqZwoMSW1wb3J0TGF5b3V0Eh0KGUlNUE9SVF9MQVlPVVRfVU5TUEVDSUZJRUQQABIXChNJTVBPUlRfTEFZT1VUX1BMQUlOEAESGQoVSU1QT1JUX0xBWU9VVF9QQVRURVJOEAMiBAgCEAIqlQEKDVJlY2VpdmVyU3RhdGUSHgoaUkVDRUlWRVJfU1RBVEVfVU5TUEVDSUZJRUQQABIbChdSRUNFSVZFUl9TVEFURV9TVEFSVElORxABEhUKEVJFQ0VJVkVSX1NUQVRFX1VQEAISFwoTUkVDRUlWRVJfU1RBVEVfRE9XThADEhcKE1JFQ0VJVkVSX1NUQVRFX0lETEUQBCq9AwoSUmVjZWl2ZXJEb3duUmVhc29uEiQKIFJFQ0VJVkVSX0RPV05fUkVBU09OX1VOU1BFQ0lGSUVEEAASIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fRElTQUJMRUQQARInCiNSRUNFSVZFUl9ET1dOX1JFQVNPTl9BRERSRVNTX0lOX1VTRRACEioKJlJFQ0VJVkVSX0RPV05fUkVBU09OX1BFUk1JU1NJT05fREVOSUVEEAMSLgoqUkVDRUlWRVJfRE9XTl9SRUFTT05fQUREUkVTU19OT1RfQVZBSUxBQkxFEAQSHAoYUkVDRUlWRVJfRE9XTl9SRUFTT05fVExTEAUSJAogUkVDRUlWRVJfRE9XTl9SRUFTT05fTkVBUkxZX0ZVTEwQBhIpCiVSRUNFSVZFUl9ET1dOX1JFQVNPTl9URU5BTlRfTk9UX1JFQURZEAcSIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fU1RPUFBJTkcQCBIeChpSRUNFSVZFUl9ET1dOX1JFQVNPTl9PVEhFUhAJEicKI1JFQ0VJVkVSX0RPV05fUkVBU09OX0lOQ09NSU5HX0xJTUlUEAoysAMKD1JlY2VpdmVyU2VydmljZRJKCgtBZGRSZWNlaXZlchIcLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVxdWVzdBodLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVzcG9uc2USTwoLR2V0UmVjZWl2ZXISHC5jb3JpYS52MS5HZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5HZXRSZWNlaXZlclJlc3BvbnNlIgOQAgESVQoNTGlzdFJlY2VpdmVycxIeLmNvcmlhLnYxLkxpc3RSZWNlaXZlcnNSZXF1ZXN0Gh8uY29yaWEudjEuTGlzdFJlY2VpdmVyc1Jlc3BvbnNlIgOQAgESTwoLU2V0UmVjZWl2ZXISHC5jb3JpYS52MS5TZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5TZXRSZWNlaXZlclJlc3BvbnNlIgOQAgISWAoOUmVtb3ZlUmVjZWl2ZXISHy5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlcXVlc3QaIC5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp, file_coria_v1_profile]);
 
 /**
  * Receiver is a way for data to arrive at a tenant, and how what arrives is
@@ -740,23 +740,35 @@ export const StowReceiverSchema: GenMessage<StowReceiver> = /*@__PURE__*/
  * quarantined with QUARANTINE_REASON_BAD_LABEL, never cleaned. A file whose
  * path the layout does not match is skipped as IMPORT_SKIP_CODE_OUTSIDE_LAYOUT.
  *
- * The map file. A CSV file, as XNAT exports its experiments, with a header
- * row naming at least the columns project, label (the session's label) and
- * subject_label, read when a job is made, at most 64 MiB (3 MiB given
- * inline, ImportJob.map_csv), in UTF-8, and kept with the job as read
- * then. It gives the part {subject} by (project, session). A map in which
- * one (project, session) names two subjects is refused whole, and so is
- * the job; a refusal names the line at fault by its number only, never a
- * cell, the header or the file's path. A
- * session folder the map does not list is skipped as
- * IMPORT_SKIP_CODE_UNMAPPED_SESSION, so a folder left behind after XNAT
- * deleted its session is not brought back.
+ * The map. A tree often names its sessions but not their subjects, which
+ * the system that wrote it kept elsewhere. A map is a CSV file (RFC 4180),
+ * in UTF-8, whose first row names its columns, that fills one part
+ * (map_gives, such as "subject") for each file from the values of other
+ * parts: the file's values of the parts map_key_parts names, in order,
+ * are looked up in the columns map_key_columns names, in the same order,
+ * and the row found gives the value of map_value_column. For example, a
+ * tree <project>/<session>/<file> read by
+ * "^(?P<project>[^/]+)/(?P<session>[^/]+)/[^/]+$" and a map with the
+ * columns proj, visit and participant, configured as map_key_columns
+ * ["proj", "visit"], map_key_parts ["project", "session"],
+ * map_value_column "participant" and map_gives "subject", gives each file
+ * the {subject} of the row whose proj and visit are the file's project
+ * and session. A map is read when a job is made, at most 64 MiB from a
+ * file (3 MiB given inline, ImportJob.map_csv), and kept with the job as
+ * read then. A map in which one key names two values, or that lacks a
+ * configured column, is refused whole, and so is the job; a refusal names
+ * the line at fault by its number only, never a cell, the header or the
+ * file's path. A file whose key is not a row of the map is skipped as
+ * IMPORT_SKIP_CODE_UNMAPPED_SESSION, so a folder its source system had
+ * deleted from its records is not brought back.
  *
- * The naming rule a site importing several XNAT projects into one tenant
- * writes puts the project before the subject and session labels, such as
- * "{project}_{subject}" and "{project}_{session}", since XNAT's labels are
- * unique only within a project; a site importing one project per tenant
- * leaves it out.
+ * A label from a file's header (Patient Name, say) needs nothing here: it
+ * is the naming rule's, a template such as "{project}_{PatientName}".
+ *
+ * Labels unique only within a part of the tree (a session label unique
+ * within a project, say) collide when two such parts land in one tenant;
+ * a naming rule that puts that part first, such as "{project}_{subject}"
+ * and "{project}_{session}", keeps them apart.
  *
  * @generated from message coria.v1.ImportReceiver
  */
@@ -787,9 +799,9 @@ export type ImportReceiver = Message<"coria.v1.ImportReceiver"> & {
    * least one named part, such as
    * "^(?P<study>[^/]+)/(?P<subject>[^/]+)/(?P<session>[^/]+)/.+$". It must
    * match the whole path: the server anchors it at both ends. Required for
-   * that layout and empty for the others; at most 1024 bytes; a part's name
-   * is a lowercase ASCII letter followed by lowercase letters, digits and
-   * "_", and is used once.
+   * that layout and empty for plain, which takes no pattern; at most 1024
+   * bytes; a part's name is a lowercase ASCII letter followed by lowercase
+   * letters, digits and "_", and is used once.
    *
    * @generated from field: string path_pattern = 3;
    */
@@ -798,8 +810,8 @@ export type ImportReceiver = Message<"coria.v1.ImportReceiver"> & {
   /**
    * For IMPORT_LAYOUT_PATTERN, how many segments from the root make a
    * unit's folder: each folder at that depth is one unit of work, walked
-   * and resumed on its own. From 1 to 16; required for that layout and 0
-   * for the others, whose depths are fixed (1 for plain, 3 for XNAT).
+   * and resumed on its own. From 1 to 16; required for that layout. Plain's
+   * depth is fixed at 1: 0 or 1 is taken for it, and 1 is answered.
    *
    * @generated from field: int32 unit_depth = 4;
    */
@@ -810,9 +822,7 @@ export type ImportReceiver = Message<"coria.v1.ImportReceiver"> & {
    * it must be inside, under the same rules as ImportJob.path: segments of
    * 1 to 255 bytes of UTF-8, none "." or "..", none holding "\", ":" or
    * NUL; no empty segment, no leading or trailing "/"; at most 4096 bytes.
-   * A map needs a layout that gives the parts project and session and no
-   * part subject (the map gives it); otherwise AddReceiver and SetReceiver
-   * refuse it (precondition). Optional; a
+   * A map needs the map configuration below. Optional; a
    * job may name another or give one inline (ImportJob.map_file,
    * map_csv). Each segment is opened under the root without following a
    * link. A path can hold what identifies
@@ -823,6 +833,43 @@ export type ImportReceiver = Message<"coria.v1.ImportReceiver"> & {
    * @generated from field: string map_file = 5;
    */
   mapFile: string;
+
+  /**
+   * The map's key columns: names of columns of its first row, matched byte
+   * for byte, each once, 1 to 8 of them. Empty for no map; the four map
+   * fields are given together or not at all. A job may give its own four
+   * (ImportJob), which replace these whole.
+   *
+   * @generated from field: repeated string map_key_columns = 6;
+   */
+  mapKeyColumns: string[];
+
+  /**
+   * The map's column whose value fills the part map_gives. Required with
+   * map_key_columns; not one of them.
+   *
+   * @generated from field: string map_value_column = 7;
+   */
+  mapValueColumn: string;
+
+  /**
+   * The layout's parts whose values form a file's key, as path_pattern
+   * names them: as many as map_key_columns, in the same order, each once.
+   * A part the layout does not give is a precondition failure.
+   *
+   * @generated from field: repeated string map_key_parts = 8;
+   */
+  mapKeyParts: string[];
+
+  /**
+   * The part the map fills, such as "subject", which the naming rule's
+   * templates use as {subject} or {#subject}; under the rule of a part's
+   * name. Refused (precondition) when the layout already gives it, and
+   * (invalid) when the naming pattern does, so no part has two sources.
+   *
+   * @generated from field: string map_gives = 9;
+   */
+  mapGives: string;
 };
 
 /**
@@ -1428,21 +1475,6 @@ export enum ImportLayout {
   PLAIN = 1,
 
   /**
-   * XNAT's archive tree: <project>/arc<nnn>/<session>/SCANS/<scan>/DICOM/<file>,
-   * read by the fixed pattern
-   * ^(?P<project>[^/]+)/arc[0-9]{3}/(?P<session>[^/]+)/SCANS/(?P<scan>[^/]+)/DICOM/[^/]+$,
-   * with parts project, session and scan; XNAT keeps no subject folder,
-   * so {subject} comes from the map file (map_file) or, with
-   * ImportJob.subject_from_headers, from Patient Name (0010,0010) as XNAT's
-   * default anonymization script writes it. A unit is one session folder
-   * (unit depth 3). A file under a session's other folders (RESOURCES,
-   * ASSESSORS) does not match and is skipped as outside the layout.
-   *
-   * @generated from enum value: IMPORT_LAYOUT_XNAT = 2;
-   */
-  XNAT = 2,
-
-  /**
    * The receiver's own pattern (path_pattern) and unit depth (unit_depth).
    *
    * @generated from enum value: IMPORT_LAYOUT_PATTERN = 3;
@@ -1634,7 +1666,7 @@ export const ReceiverDownReasonSchema: GenEnum<ReceiverDownReason> = /*@__PURE__
  * runs on, or another tenant's tree. Two settings hold it:
  *
  *   - import.roots: the directories an import may read, one per line, each
- *     "name=/absolute/path", such as "xnat=/mnt/xnat/archive"; a name is 1
+ *     "name=/absolute/path", such as "old=/mnt/old-archive"; a name is 1
  *     to 63 of a-z, 0-9 and "-", starting with a letter, and a path at most
  *     4096 bytes. At most 64 roots. Installation-only. Empty by default, so
  *     no import reads anything until a root is named. A path is resolved
@@ -1652,7 +1684,7 @@ export const ReceiverDownReasonSchema: GenEnum<ReceiverDownReason> = /*@__PURE__
  *     or changing a root an import receiver names is refused
  *     (precondition), as for every setting a receiver uses.
  *   - import.allowed-roots: the names of the roots a tenant's import
- *     receivers may read, separated by commas, such as "xnat". Set on a
+ *     receivers may read, separated by commas, such as "old". Set on a
  *     tenant by the installation's admin only; it has no installation
  *     value. Empty by default, so a tenant cannot add an import receiver
  *     until a root is allotted to it. A root may be allotted to several
@@ -1736,8 +1768,9 @@ export const ReceiverService: GenService<{
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
    * does not exist, for a caller who may not list every tenant), invalid
    * (also, for an import receiver, a naming template that uses a part
-   * neither its layout, its map nor its naming pattern ever gives, and a
-   * map file that breaks the path rule), not found (a tenant that does
+   * neither its naming pattern nor its layout or map gives, or a part both
+   * would fill; a pattern, a map file or a map configuration that breaks
+   * its rule), not found (a tenant that does
    * not exist, for a caller who may list every
    * tenant), conflict (the tenant has a receiver with that name, or a
    * removed receiver of that name is still named by receptions,
@@ -1750,8 +1783,8 @@ export const ReceiverService: GenService<{
    * tenant's allotted ports; a bind address the installation does not list;
    * another receiver of the tenant on the same port and an overlapping
    * address; a root import.roots does not name, or one import.allowed-roots
-   * does not allot to the tenant; a map file with a layout that does not
-   * give the parts project and session, or that gives a part subject),
+   * does not allot to the tenant; a map key part the layout does not give,
+   * or a map_gives part the layout already gives),
    * unavailable (the tenant's database
    * does not answer, or the tenant is not ready).
    *

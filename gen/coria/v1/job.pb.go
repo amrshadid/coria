@@ -241,7 +241,8 @@ const (
 	ImportSkipCode_IMPORT_SKIP_CODE_NOT_PART10 ImportSkipCode = 1
 	// Its path does not match the receiver's layout.
 	ImportSkipCode_IMPORT_SKIP_CODE_OUTSIDE_LAYOUT ImportSkipCode = 2
-	// Its session folder is not listed by the job's map file.
+	// Its key (its values of the parts map_key_parts names) is not a row of
+	// the job's map; most often a session folder its source no longer lists.
 	ImportSkipCode_IMPORT_SKIP_CODE_UNMAPPED_SESSION ImportSkipCode = 3
 	// A directory holding more entries than the setting
 	// import.max-dir-entries, skipped whole without reading its files; it
@@ -258,10 +259,6 @@ const (
 	// not take room in the incoming area or a quarantine record; it makes the
 	// job partial, since it may be DICOM the archive lacks.
 	ImportSkipCode_IMPORT_SKIP_CODE_TOO_LARGE ImportSkipCode = 7
-	// An XNAT resource catalog file (a name ending "_catalog.xml"), read
-	// only to check the files beside it. Counted, not listed by
-	// ListImportFiles.
-	ImportSkipCode_IMPORT_SKIP_CODE_CATALOG_FILE ImportSkipCode = 8
 )
 
 // Enum value maps for ImportSkipCode.
@@ -275,7 +272,6 @@ var (
 		5: "IMPORT_SKIP_CODE_UNREADABLE",
 		6: "IMPORT_SKIP_CODE_NOT_REGULAR",
 		7: "IMPORT_SKIP_CODE_TOO_LARGE",
-		8: "IMPORT_SKIP_CODE_CATALOG_FILE",
 	}
 	ImportSkipCode_value = map[string]int32{
 		"IMPORT_SKIP_CODE_UNSPECIFIED":        0,
@@ -286,7 +282,6 @@ var (
 		"IMPORT_SKIP_CODE_UNREADABLE":         5,
 		"IMPORT_SKIP_CODE_NOT_REGULAR":        6,
 		"IMPORT_SKIP_CODE_TOO_LARGE":          7,
-		"IMPORT_SKIP_CODE_CATALOG_FILE":       8,
 	}
 )
 
@@ -471,14 +466,6 @@ const (
 	// Handed in, and its copy in the incoming area was gone before the
 	// pipeline read it.
 	ImportFileKind_IMPORT_FILE_KIND_LOST ImportFileKind = 3
-	// Listed by an XNAT resource catalog file and not found on disk; path is
-	// where the catalog says it is.
-	ImportFileKind_IMPORT_FILE_KIND_LISTED_NOT_FOUND ImportFileKind = 4
-	// Found on disk under a resource whose catalog file does not list it.
-	ImportFileKind_IMPORT_FILE_KIND_FOUND_NOT_LISTED ImportFileKind = 5
-	// Its digest in its catalog file differs from the one computed from its
-	// bytes.
-	ImportFileKind_IMPORT_FILE_KIND_DIGEST_DIFFERS ImportFileKind = 6
 	// Handed in, and its reception failed; RetryReception tries it again.
 	ImportFileKind_IMPORT_FILE_KIND_FAILED ImportFileKind = 7
 	// Handed in, and its reception was discarded by a person.
@@ -492,22 +479,16 @@ var (
 		1: "IMPORT_FILE_KIND_SKIPPED",
 		2: "IMPORT_FILE_KIND_QUARANTINED",
 		3: "IMPORT_FILE_KIND_LOST",
-		4: "IMPORT_FILE_KIND_LISTED_NOT_FOUND",
-		5: "IMPORT_FILE_KIND_FOUND_NOT_LISTED",
-		6: "IMPORT_FILE_KIND_DIGEST_DIFFERS",
 		7: "IMPORT_FILE_KIND_FAILED",
 		8: "IMPORT_FILE_KIND_DISCARDED",
 	}
 	ImportFileKind_value = map[string]int32{
-		"IMPORT_FILE_KIND_UNSPECIFIED":      0,
-		"IMPORT_FILE_KIND_SKIPPED":          1,
-		"IMPORT_FILE_KIND_QUARANTINED":      2,
-		"IMPORT_FILE_KIND_LOST":             3,
-		"IMPORT_FILE_KIND_LISTED_NOT_FOUND": 4,
-		"IMPORT_FILE_KIND_FOUND_NOT_LISTED": 5,
-		"IMPORT_FILE_KIND_DIGEST_DIFFERS":   6,
-		"IMPORT_FILE_KIND_FAILED":           7,
-		"IMPORT_FILE_KIND_DISCARDED":        8,
+		"IMPORT_FILE_KIND_UNSPECIFIED": 0,
+		"IMPORT_FILE_KIND_SKIPPED":     1,
+		"IMPORT_FILE_KIND_QUARANTINED": 2,
+		"IMPORT_FILE_KIND_LOST":        3,
+		"IMPORT_FILE_KIND_FAILED":      7,
+		"IMPORT_FILE_KIND_DISCARDED":   8,
 	}
 )
 
@@ -1136,14 +1117,6 @@ type ImportJob struct {
 	// none. At most one of map_file and map_csv is given. Answered and kept
 	// as path is.
 	MapFile string `protobuf:"bytes,3,opt,name=map_file,json=mapFile,proto3" json:"map_file,omitempty"`
-	// For the XNAT layout with no map, whether to take {subject} from
-	// Patient Name (0010,0010) of each file as received, as XNAT's default
-	// anonymization script writes the subject there. False, the default,
-	// refuses an XNAT import with no map in CreateJob, since a site that
-	// changed that script would get labels made from whatever its headers
-	// say. True with a map (the job's or the receiver's), or with another
-	// layout, is refused as invalid: the subject would have two sources.
-	SubjectFromHeaders bool `protobuf:"varint,4,opt,name=subject_from_headers,json=subjectFromHeaders,proto3" json:"subject_from_headers,omitempty"`
 	// What became of the files it found so far. Answered by the server; must
 	// be absent in CreateJob.
 	Counts *ImportCounts `protobuf:"bytes,5,opt,name=counts,proto3" json:"counts,omitempty"`
@@ -1153,7 +1126,21 @@ type ImportJob struct {
 	// names, so it is answered only to an operator or more on the tenant, in
 	// GetJob alone (empty in every other answer, and to a reader), and never
 	// written to a log, an event or an audit entry.
-	MapCsv        []byte `protobuf:"bytes,6,opt,name=map_csv,json=mapCsv,proto3" json:"map_csv,omitempty"`
+	MapCsv []byte `protobuf:"bytes,6,opt,name=map_csv,json=mapCsv,proto3" json:"map_csv,omitempty"`
+	// The map configuration for this job's map, under the rules of
+	// ImportReceiver's fields of the same names, replacing the receiver's
+	// whole: the four are given together or not at all (invalid otherwise),
+	// and empty uses the receiver's. map_gives must be the part the
+	// receiver's naming rule takes from a map, since the rule was checked
+	// against it when the receiver was set.
+	MapKeyColumns []string `protobuf:"bytes,7,rep,name=map_key_columns,json=mapKeyColumns,proto3" json:"map_key_columns,omitempty"`
+	// The map's column whose value fills map_gives (ImportReceiver).
+	MapValueColumn string `protobuf:"bytes,8,opt,name=map_value_column,json=mapValueColumn,proto3" json:"map_value_column,omitempty"`
+	// The layout's parts whose values form a file's key, in the order of
+	// map_key_columns (ImportReceiver).
+	MapKeyParts []string `protobuf:"bytes,9,rep,name=map_key_parts,json=mapKeyParts,proto3" json:"map_key_parts,omitempty"`
+	// The part the map fills (ImportReceiver).
+	MapGives      string `protobuf:"bytes,10,opt,name=map_gives,json=mapGives,proto3" json:"map_gives,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1209,13 +1196,6 @@ func (x *ImportJob) GetMapFile() string {
 	return ""
 }
 
-func (x *ImportJob) GetSubjectFromHeaders() bool {
-	if x != nil {
-		return x.SubjectFromHeaders
-	}
-	return false
-}
-
 func (x *ImportJob) GetCounts() *ImportCounts {
 	if x != nil {
 		return x.Counts
@@ -1228,6 +1208,34 @@ func (x *ImportJob) GetMapCsv() []byte {
 		return x.MapCsv
 	}
 	return nil
+}
+
+func (x *ImportJob) GetMapKeyColumns() []string {
+	if x != nil {
+		return x.MapKeyColumns
+	}
+	return nil
+}
+
+func (x *ImportJob) GetMapValueColumn() string {
+	if x != nil {
+		return x.MapValueColumn
+	}
+	return ""
+}
+
+func (x *ImportJob) GetMapKeyParts() []string {
+	if x != nil {
+		return x.MapKeyParts
+	}
+	return nil
+}
+
+func (x *ImportJob) GetMapGives() string {
+	if x != nil {
+		return x.MapGives
+	}
+	return ""
 }
 
 // ImportSkipCount is how many files an import job skipped for one reason.
@@ -1350,9 +1358,8 @@ func (x *ImportQuarantineCount) GetCount() int64 {
 //	            + discarded + processing
 //
 // where skipped and quarantined are the sums of their counts by reason.
-// The XNAT catalog counts (listed_not_found, found_not_listed,
-// digest_differs, catalogs_not_checked) and label_differs stand beside
-// these and are in none of the sums. found, skipped and handed_in are
+// label_differs stands beside these and is in none of the sums. found,
+// skipped and handed_in are
 // written with each file's record and the unit's cursor in one
 // transaction, and each outcome in the transaction that decides it, so
 // the identities hold at every answer, across a crash too.
@@ -1394,15 +1401,6 @@ type ImportCounts struct {
 	// from the one their path would make: a session keeps the label it was
 	// first given.
 	LabelDiffers int64 `protobuf:"varint,11,opt,name=label_differs,json=labelDiffers,proto3" json:"label_differs,omitempty"`
-	// Entries an XNAT resource catalog file (*_catalog.xml, read bounded and
-	// used only as a check) lists that the walk did not find on disk.
-	ListedNotFound int64 `protobuf:"varint,12,opt,name=listed_not_found,json=listedNotFound,proto3" json:"listed_not_found,omitempty"`
-	// Files the walk found under a resource whose catalog file does not list
-	// them.
-	FoundNotListed int64 `protobuf:"varint,13,opt,name=found_not_listed,json=foundNotListed,proto3" json:"found_not_listed,omitempty"`
-	// Files whose digest in their catalog file differs from the one computed
-	// from their bytes.
-	DigestDiffers int64 `protobuf:"varint,14,opt,name=digest_differs,json=digestDiffers,proto3" json:"digest_differs,omitempty"`
 	// The job's units: the listing unit, and one per folder at the layout's
 	// unit depth. For a unit's own counts, 1.
 	Units int64 `protobuf:"varint,15,opt,name=units,proto3" json:"units,omitempty"`
@@ -1413,12 +1411,9 @@ type ImportCounts struct {
 	Failed int64 `protobuf:"varint,17,opt,name=failed,proto3" json:"failed,omitempty"`
 	// The files whose reception a person discarded
 	// (ReceptionService.DiscardReception).
-	Discarded int64 `protobuf:"varint,18,opt,name=discarded,proto3" json:"discarded,omitempty"`
-	// The XNAT catalog files larger than the 16 MiB the server reads of one,
-	// which were therefore not checked against the files beside them.
-	CatalogsNotChecked int64 `protobuf:"varint,19,opt,name=catalogs_not_checked,json=catalogsNotChecked,proto3" json:"catalogs_not_checked,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	Discarded     int64 `protobuf:"varint,18,opt,name=discarded,proto3" json:"discarded,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ImportCounts) Reset() {
@@ -1528,27 +1523,6 @@ func (x *ImportCounts) GetLabelDiffers() int64 {
 	return 0
 }
 
-func (x *ImportCounts) GetListedNotFound() int64 {
-	if x != nil {
-		return x.ListedNotFound
-	}
-	return 0
-}
-
-func (x *ImportCounts) GetFoundNotListed() int64 {
-	if x != nil {
-		return x.FoundNotListed
-	}
-	return 0
-}
-
-func (x *ImportCounts) GetDigestDiffers() int64 {
-	if x != nil {
-		return x.DigestDiffers
-	}
-	return 0
-}
-
 func (x *ImportCounts) GetUnits() int64 {
 	if x != nil {
 		return x.Units
@@ -1573,13 +1547,6 @@ func (x *ImportCounts) GetFailed() int64 {
 func (x *ImportCounts) GetDiscarded() int64 {
 	if x != nil {
 		return x.Discarded
-	}
-	return 0
-}
-
-func (x *ImportCounts) GetCatalogsNotChecked() int64 {
-	if x != nil {
-		return x.CatalogsNotChecked
 	}
 	return 0
 }
@@ -2911,8 +2878,7 @@ func (x *ListJobFailuresResponse) GetNextPageToken() string {
 	return ""
 }
 
-// ImportFile is one file of an import job that did not reach the archive,
-// or that its XNAT catalog files disagree about.
+// ImportFile is one file of an import job that did not reach the archive.
 type ImportFile struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Its path relative to the receiver's root, its segments joined by "/".
@@ -2933,7 +2899,7 @@ type ImportFile struct {
 	// The id of the unit that found it (ImportUnit.id).
 	Unit string `protobuf:"bytes,6,opt,name=unit,proto3" json:"unit,omitempty"`
 	// Its size in bytes as the walk saw it; 0 when it was not read, as a
-	// directory skipped whole or a file listed and not found.
+	// directory skipped whole.
 	SizeBytes int64 `protobuf:"varint,7,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	// More about it, in words for a person, from a fixed set of phrases the
 	// server has, such as "import.max-dir-entries" for a directory too wide;
@@ -3493,20 +3459,24 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\n" +
 	"RebuildJob\x12,\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x18.coria.v1.RebuildJobModeR\x04mode\x12%\n" +
-	"\x0escratch_schema\x18\x02 \x01(\tR\rscratchSchema\"\xe0\x01\n" +
+	"\x0escratch_schema\x18\x02 \x01(\tR\rscratchSchema\"\xdd\x02\n" +
 	"\tImportJob\x12\x1a\n" +
 	"\breceiver\x18\x01 \x01(\tR\breceiver\x12\x17\n" +
 	"\x04path\x18\x02 \x01(\tB\x03\x80\x01\x01R\x04path\x12\x1e\n" +
-	"\bmap_file\x18\x03 \x01(\tB\x03\x80\x01\x01R\amapFile\x120\n" +
-	"\x14subject_from_headers\x18\x04 \x01(\bR\x12subjectFromHeaders\x12.\n" +
+	"\bmap_file\x18\x03 \x01(\tB\x03\x80\x01\x01R\amapFile\x12.\n" +
 	"\x06counts\x18\x05 \x01(\v2\x16.coria.v1.ImportCountsR\x06counts\x12\x1c\n" +
-	"\amap_csv\x18\x06 \x01(\fB\x03\x80\x01\x01R\x06mapCsv\"U\n" +
+	"\amap_csv\x18\x06 \x01(\fB\x03\x80\x01\x01R\x06mapCsv\x12&\n" +
+	"\x0fmap_key_columns\x18\a \x03(\tR\rmapKeyColumns\x12(\n" +
+	"\x10map_value_column\x18\b \x01(\tR\x0emapValueColumn\x12\"\n" +
+	"\rmap_key_parts\x18\t \x03(\tR\vmapKeyParts\x12\x1b\n" +
+	"\tmap_gives\x18\n" +
+	" \x01(\tR\bmapGivesJ\x04\b\x04\x10\x05R\x14subject_from_headers\"U\n" +
 	"\x0fImportSkipCount\x12,\n" +
 	"\x04code\x18\x01 \x01(\x0e2\x18.coria.v1.ImportSkipCodeR\x04code\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\"a\n" +
 	"\x15ImportQuarantineCount\x122\n" +
 	"\x06reason\x18\x01 \x01(\x0e2\x1a.coria.v1.QuarantineReasonR\x06reason\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x03R\x05count\"\xb8\x05\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"\xed\x04\n" +
 	"\fImportCounts\x12\x14\n" +
 	"\x05found\x18\x01 \x01(\x03R\x05found\x123\n" +
 	"\askipped\x18\x02 \x03(\v2\x19.coria.v1.ImportSkipCountR\askipped\x12\x1b\n" +
@@ -3521,15 +3491,11 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"processing\x12&\n" +
 	"\x0fbytes_handed_in\x18\n" +
 	" \x01(\x03R\rbytesHandedIn\x12#\n" +
-	"\rlabel_differs\x18\v \x01(\x03R\flabelDiffers\x12(\n" +
-	"\x10listed_not_found\x18\f \x01(\x03R\x0elistedNotFound\x12(\n" +
-	"\x10found_not_listed\x18\r \x01(\x03R\x0efoundNotListed\x12%\n" +
-	"\x0edigest_differs\x18\x0e \x01(\x03R\rdigestDiffers\x12\x14\n" +
+	"\rlabel_differs\x18\v \x01(\x03R\flabelDiffers\x12\x14\n" +
 	"\x05units\x18\x0f \x01(\x03R\x05units\x12!\n" +
 	"\funits_walked\x18\x10 \x01(\x03R\vunitsWalked\x12\x16\n" +
 	"\x06failed\x18\x11 \x01(\x03R\x06failed\x12\x1c\n" +
-	"\tdiscarded\x18\x12 \x01(\x03R\tdiscarded\x120\n" +
-	"\x14catalogs_not_checked\x18\x13 \x01(\x03R\x12catalogsNotChecked\"2\n" +
+	"\tdiscarded\x18\x12 \x01(\x03R\tdiscardedJ\x04\b\f\x10\rJ\x04\b\r\x10\x0eJ\x04\b\x0e\x10\x0fJ\x04\b\x13\x10\x14R\x10listed_not_foundR\x10found_not_listedR\x0edigest_differsR\x14catalogs_not_checked\"2\n" +
 	"\bJobTally\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\"\x9d\x06\n" +
@@ -3687,7 +3653,7 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\x0eRebuildJobMode\x12 \n" +
 	"\x1cREBUILD_JOB_MODE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18REBUILD_JOB_MODE_COMPARE\x10\x01\x12\x1c\n" +
-	"\x18REBUILD_JOB_MODE_REPLACE\x10\x02*\xce\x02\n" +
+	"\x18REBUILD_JOB_MODE_REPLACE\x10\x02*\xd0\x02\n" +
 	"\x0eImportSkipCode\x12 \n" +
 	"\x1cIMPORT_SKIP_CODE_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bIMPORT_SKIP_CODE_NOT_PART10\x10\x01\x12#\n" +
@@ -3696,8 +3662,7 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"#IMPORT_SKIP_CODE_DIRECTORY_TOO_WIDE\x10\x04\x12\x1f\n" +
 	"\x1bIMPORT_SKIP_CODE_UNREADABLE\x10\x05\x12 \n" +
 	"\x1cIMPORT_SKIP_CODE_NOT_REGULAR\x10\x06\x12\x1e\n" +
-	"\x1aIMPORT_SKIP_CODE_TOO_LARGE\x10\a\x12!\n" +
-	"\x1dIMPORT_SKIP_CODE_CATALOG_FILE\x10\b*\xb6\x04\n" +
+	"\x1aIMPORT_SKIP_CODE_TOO_LARGE\x10\a\"\x04\b\b\x10\b*\x1dIMPORT_SKIP_CODE_CATALOG_FILE*\xb6\x04\n" +
 	"\x0eJobFailureCode\x12 \n" +
 	"\x1cJOB_FAILURE_CODE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dJOB_FAILURE_CODE_PEER_REFUSED\x10\x01\x12!\n" +
@@ -3714,17 +3679,14 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"!JOB_FAILURE_CODE_NOT_DEIDENTIFIED\x10\v\x12\x1e\n" +
 	"\x1aJOB_FAILURE_CODE_TOO_LARGE\x10\f\x12'\n" +
 	"#JOB_FAILURE_CODE_DELETED_IN_ARCHIVE\x10\r\x12\x1f\n" +
-	"\x1bJOB_FAILURE_CODE_NOT_ONLINE\x10\x0e*\xbd\x02\n" +
+	"\x1bJOB_FAILURE_CODE_NOT_ONLINE\x10\x0e*\xc3\x02\n" +
 	"\x0eImportFileKind\x12 \n" +
 	"\x1cIMPORT_FILE_KIND_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18IMPORT_FILE_KIND_SKIPPED\x10\x01\x12 \n" +
 	"\x1cIMPORT_FILE_KIND_QUARANTINED\x10\x02\x12\x19\n" +
-	"\x15IMPORT_FILE_KIND_LOST\x10\x03\x12%\n" +
-	"!IMPORT_FILE_KIND_LISTED_NOT_FOUND\x10\x04\x12%\n" +
-	"!IMPORT_FILE_KIND_FOUND_NOT_LISTED\x10\x05\x12#\n" +
-	"\x1fIMPORT_FILE_KIND_DIGEST_DIFFERS\x10\x06\x12\x1b\n" +
+	"\x15IMPORT_FILE_KIND_LOST\x10\x03\x12\x1b\n" +
 	"\x17IMPORT_FILE_KIND_FAILED\x10\a\x12\x1e\n" +
-	"\x1aIMPORT_FILE_KIND_DISCARDED\x10\b*\xe9\x01\n" +
+	"\x1aIMPORT_FILE_KIND_DISCARDED\x10\b\"\x04\b\x04\x10\x04\"\x04\b\x05\x10\x05\"\x04\b\x06\x10\x06*!IMPORT_FILE_KIND_LISTED_NOT_FOUND*!IMPORT_FILE_KIND_FOUND_NOT_LISTED*\x1fIMPORT_FILE_KIND_DIGEST_DIFFERS*\xe9\x01\n" +
 	"\x0fImportUnitState\x12!\n" +
 	"\x1dIMPORT_UNIT_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18IMPORT_UNIT_STATE_QUEUED\x10\x01\x12\x1d\n" +

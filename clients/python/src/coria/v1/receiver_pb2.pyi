@@ -17,7 +17,6 @@ class ImportLayout(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     IMPORT_LAYOUT_UNSPECIFIED: _ClassVar[ImportLayout]
     IMPORT_LAYOUT_PLAIN: _ClassVar[ImportLayout]
-    IMPORT_LAYOUT_XNAT: _ClassVar[ImportLayout]
     IMPORT_LAYOUT_PATTERN: _ClassVar[ImportLayout]
 
 class ReceiverState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
@@ -43,7 +42,6 @@ class ReceiverDownReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     RECEIVER_DOWN_REASON_INCOMING_LIMIT: _ClassVar[ReceiverDownReason]
 IMPORT_LAYOUT_UNSPECIFIED: ImportLayout
 IMPORT_LAYOUT_PLAIN: ImportLayout
-IMPORT_LAYOUT_XNAT: ImportLayout
 IMPORT_LAYOUT_PATTERN: ImportLayout
 RECEIVER_STATE_UNSPECIFIED: ReceiverState
 RECEIVER_STATE_STARTING: ReceiverState
@@ -169,18 +167,26 @@ class StowReceiver(_message.Message):
     def __init__(self, key_ids: _Optional[_Iterable[str]] = ..., max_request_bytes: _Optional[int] = ...) -> None: ...
 
 class ImportReceiver(_message.Message):
-    __slots__ = ("root", "layout", "path_pattern", "unit_depth", "map_file")
+    __slots__ = ("root", "layout", "path_pattern", "unit_depth", "map_file", "map_key_columns", "map_value_column", "map_key_parts", "map_gives")
     ROOT_FIELD_NUMBER: _ClassVar[int]
     LAYOUT_FIELD_NUMBER: _ClassVar[int]
     PATH_PATTERN_FIELD_NUMBER: _ClassVar[int]
     UNIT_DEPTH_FIELD_NUMBER: _ClassVar[int]
     MAP_FILE_FIELD_NUMBER: _ClassVar[int]
+    MAP_KEY_COLUMNS_FIELD_NUMBER: _ClassVar[int]
+    MAP_VALUE_COLUMN_FIELD_NUMBER: _ClassVar[int]
+    MAP_KEY_PARTS_FIELD_NUMBER: _ClassVar[int]
+    MAP_GIVES_FIELD_NUMBER: _ClassVar[int]
     root: str
     layout: ImportLayout
     path_pattern: str
     unit_depth: int
     map_file: str
-    def __init__(self, root: _Optional[str] = ..., layout: _Optional[_Union[ImportLayout, str]] = ..., path_pattern: _Optional[str] = ..., unit_depth: _Optional[int] = ..., map_file: _Optional[str] = ...) -> None: ...
+    map_key_columns: _containers.RepeatedScalarFieldContainer[str]
+    map_value_column: str
+    map_key_parts: _containers.RepeatedScalarFieldContainer[str]
+    map_gives: str
+    def __init__(self, root: _Optional[str] = ..., layout: _Optional[_Union[ImportLayout, str]] = ..., path_pattern: _Optional[str] = ..., unit_depth: _Optional[int] = ..., map_file: _Optional[str] = ..., map_key_columns: _Optional[_Iterable[str]] = ..., map_value_column: _Optional[str] = ..., map_key_parts: _Optional[_Iterable[str]] = ..., map_gives: _Optional[str] = ...) -> None: ...
 
 class AllowedCallers(_message.Message):
     __slots__ = ("rules",)

@@ -125,8 +125,8 @@ type JobServiceClient interface {
 	// an import receiver of the tenant, a path under its root and optionally
 	// a map (a file under the root, or inline); the root is resolved, the
 	// path opened and the map read and checked before the job is made, so a
-	// tree that is not there or a map that names two subjects for one
-	// session is refused here, not found out later. The map is kept with the
+	// tree that is not there or a map that names two values for one key is
+	// refused here, not found out later. The map is kept with the
 	// job as it was read then, so a map file changed later changes nothing
 	// of the job or of a retry of it. A refusal of a map names the line it
 	// found at fault by number only, never a cell, the header or a path. An
@@ -148,9 +148,8 @@ type JobServiceClient interface {
 	// without the one above it, and a reception given, which only the
 	// server sets; for an import, a path or map file that breaks the path
 	// rule, both a map file and an inline map, an inline map past 3 MiB,
-	// counts given, which only the server sets, and subject_from_headers
-	// with a map, from the job or the receiver, or with a layout other than
-	// XNAT), not found (the tenant holds no subject, session or scan
+	// counts given, which only the server sets, and a map configuration
+	// given in part or that breaks its rule), not found (the tenant holds no subject, session or scan
 	// with those labels; the tenant has no profile version of that name and
 	// number; a tenant that does not exist, for a caller who may list every
 	// tenant), precondition (a sender the tenant does not have; a scrub of a
@@ -163,10 +162,11 @@ type JobServiceClient interface {
 	// allots to the tenant, a root whose path now resolves to another
 	// directory than when it was set (a link in it changed), a path that is
 	// not a directory under the root, a map file that cannot be read, is
-	// larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
-	// for one (project, session), a map with a layout that does not give the
-	// parts project and session or that gives a part subject, an XNAT layout
-	// with no map and subject_from_headers false, or a queued or running
+	// larger than 64 MiB, is not UTF-8, lacks a configured column or names
+	// two values for one key, a map with no map configuration (the job's or
+	// the receiver's), a map key part the layout does not give or a
+	// map_gives part it already gives, a receiver whose naming rule uses the
+	// part a map gives with no map, or a queued or running
 	// import job of the same receiver whose path overlaps this one's by
 	// segment; for every kind, a tenant moved or fenced,
 	// with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
@@ -221,7 +221,7 @@ type JobServiceClient interface {
 	// stands, so a repeated call starts nothing more.
 	//
 	// For an import job, the new job has the same receiver, path, map (the
-	// one kept with the ended job, checked again) and subject_from_headers,
+	// one kept with the ended job, checked again) and map configuration,
 	// and its units are the ended job's units that failed or were canceled,
 	// and those with a file lost, or skipped as unreadable, too large or in
 	// a directory too wide; each walks its folder again from the start, so
@@ -263,10 +263,9 @@ type JobServiceClient interface {
 	ListJobFailures(context.Context, *v1.ListJobFailuresRequest) (*v1.ListJobFailuresResponse, error)
 	// ListImportFiles answers the files of an import job that did not reach
 	// the archive, each by its path under the root, with why: those skipped
-	// (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+	// (by IMPORT_SKIP_CODE), those
 	// quarantined (with the quarantined file's id and reason), those lost,
-	// failed or discarded, and the differences the XNAT catalog files showed.
-	// Ordered by path in the walk's order (segment by segment, each byte by
+	// failed or discarded. Ordered by path in the walk's order (segment by segment, each byte by
 	// byte). At most job.failures-kept are kept per job; the job's
 	// failures_not_listed counts the others. A page never passes 4 MB, so it
 	// may hold fewer files than page_size, or none; only an empty
@@ -321,8 +320,8 @@ type JobServiceHandler interface {
 	// an import receiver of the tenant, a path under its root and optionally
 	// a map (a file under the root, or inline); the root is resolved, the
 	// path opened and the map read and checked before the job is made, so a
-	// tree that is not there or a map that names two subjects for one
-	// session is refused here, not found out later. The map is kept with the
+	// tree that is not there or a map that names two values for one key is
+	// refused here, not found out later. The map is kept with the
 	// job as it was read then, so a map file changed later changes nothing
 	// of the job or of a retry of it. A refusal of a map names the line it
 	// found at fault by number only, never a cell, the header or a path. An
@@ -344,9 +343,8 @@ type JobServiceHandler interface {
 	// without the one above it, and a reception given, which only the
 	// server sets; for an import, a path or map file that breaks the path
 	// rule, both a map file and an inline map, an inline map past 3 MiB,
-	// counts given, which only the server sets, and subject_from_headers
-	// with a map, from the job or the receiver, or with a layout other than
-	// XNAT), not found (the tenant holds no subject, session or scan
+	// counts given, which only the server sets, and a map configuration
+	// given in part or that breaks its rule), not found (the tenant holds no subject, session or scan
 	// with those labels; the tenant has no profile version of that name and
 	// number; a tenant that does not exist, for a caller who may list every
 	// tenant), precondition (a sender the tenant does not have; a scrub of a
@@ -359,10 +357,11 @@ type JobServiceHandler interface {
 	// allots to the tenant, a root whose path now resolves to another
 	// directory than when it was set (a link in it changed), a path that is
 	// not a directory under the root, a map file that cannot be read, is
-	// larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
-	// for one (project, session), a map with a layout that does not give the
-	// parts project and session or that gives a part subject, an XNAT layout
-	// with no map and subject_from_headers false, or a queued or running
+	// larger than 64 MiB, is not UTF-8, lacks a configured column or names
+	// two values for one key, a map with no map configuration (the job's or
+	// the receiver's), a map key part the layout does not give or a
+	// map_gives part it already gives, a receiver whose naming rule uses the
+	// part a map gives with no map, or a queued or running
 	// import job of the same receiver whose path overlaps this one's by
 	// segment; for every kind, a tenant moved or fenced,
 	// with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
@@ -417,7 +416,7 @@ type JobServiceHandler interface {
 	// stands, so a repeated call starts nothing more.
 	//
 	// For an import job, the new job has the same receiver, path, map (the
-	// one kept with the ended job, checked again) and subject_from_headers,
+	// one kept with the ended job, checked again) and map configuration,
 	// and its units are the ended job's units that failed or were canceled,
 	// and those with a file lost, or skipped as unreadable, too large or in
 	// a directory too wide; each walks its folder again from the start, so
@@ -459,10 +458,9 @@ type JobServiceHandler interface {
 	ListJobFailures(context.Context, *v1.ListJobFailuresRequest) (*v1.ListJobFailuresResponse, error)
 	// ListImportFiles answers the files of an import job that did not reach
 	// the archive, each by its path under the root, with why: those skipped
-	// (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+	// (by IMPORT_SKIP_CODE), those
 	// quarantined (with the quarantined file's id and reason), those lost,
-	// failed or discarded, and the differences the XNAT catalog files showed.
-	// Ordered by path in the walk's order (segment by segment, each byte by
+	// failed or discarded. Ordered by path in the walk's order (segment by segment, each byte by
 	// byte). At most job.failures-kept are kept per job; the job's
 	// failures_not_listed counts the others. A page never passes 4 MB, so it
 	// may hold fewer files than page_size, or none; only an empty

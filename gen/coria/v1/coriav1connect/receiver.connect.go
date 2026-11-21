@@ -98,8 +98,9 @@ type ReceiverServiceClient interface {
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also, for an import receiver, a naming template that uses a part
-	// neither its layout, its map nor its naming pattern ever gives, and a
-	// map file that breaks the path rule), not found (a tenant that does
+	// neither its naming pattern nor its layout or map gives, or a part both
+	// would fill; a pattern, a map file or a map configuration that breaks
+	// its rule), not found (a tenant that does
 	// not exist, for a caller who may list every
 	// tenant), conflict (the tenant has a receiver with that name, or a
 	// removed receiver of that name is still named by receptions,
@@ -112,8 +113,8 @@ type ReceiverServiceClient interface {
 	// tenant's allotted ports; a bind address the installation does not list;
 	// another receiver of the tenant on the same port and an overlapping
 	// address; a root import.roots does not name, or one import.allowed-roots
-	// does not allot to the tenant; a map file with a layout that does not
-	// give the parts project and session, or that gives a part subject),
+	// does not allot to the tenant; a map key part the layout does not give,
+	// or a map_gives part the layout already gives),
 	// unavailable (the tenant's database
 	// does not answer, or the tenant is not ready).
 	AddReceiver(context.Context, *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error)
@@ -208,8 +209,9 @@ type ReceiverServiceHandler interface {
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also, for an import receiver, a naming template that uses a part
-	// neither its layout, its map nor its naming pattern ever gives, and a
-	// map file that breaks the path rule), not found (a tenant that does
+	// neither its naming pattern nor its layout or map gives, or a part both
+	// would fill; a pattern, a map file or a map configuration that breaks
+	// its rule), not found (a tenant that does
 	// not exist, for a caller who may list every
 	// tenant), conflict (the tenant has a receiver with that name, or a
 	// removed receiver of that name is still named by receptions,
@@ -222,8 +224,8 @@ type ReceiverServiceHandler interface {
 	// tenant's allotted ports; a bind address the installation does not list;
 	// another receiver of the tenant on the same port and an overlapping
 	// address; a root import.roots does not name, or one import.allowed-roots
-	// does not allot to the tenant; a map file with a layout that does not
-	// give the parts project and session, or that gives a part subject),
+	// does not allot to the tenant; a map key part the layout does not give,
+	// or a map_gives part the layout already gives),
 	// unavailable (the tenant's database
 	// does not answer, or the tenant is not ready).
 	AddReceiver(context.Context, *v1.AddReceiverRequest) (*v1.AddReceiverResponse, error)

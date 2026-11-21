@@ -218,7 +218,15 @@ import "coria/v1/quarantine.proto";
 // What an import job does. It reads the directory its path names under its
 // receiver's root (ImportReceiver) and hands each DICOM file in it to the
 // receiver, one at a time, as a file that arrived; it never writes, moves
-// or deletes anything in the root. Its work is a listing unit and one unit
+// or deletes anything in the root. For example, a tree kept as
+// <study>/<session>/series/<scan>/<file>, with a map from (study, session)
+// to subject, is read by an import receiver with the pattern layout
+// "^(?P<study>[^/]+)/(?P<session>[^/]+)/series/(?P<scan>[^/]+)/[^/]+$",
+// unit depth 2 (one unit per session folder), map_key_columns naming the
+// map's study and session columns, map_key_parts ["study", "session"],
+// map_value_column its subject column and map_gives "subject", and the
+// naming rule "{study}_{subject}", "{study}_{session}",
+// "{scan}". Its work is a listing unit and one unit
 // per folder. The listing unit lists the folders at the layout's unit depth
 // under the job's path, a page at a time, and queues one unit per folder
 // (one unit for a path at or below that depth); it also judges every file
@@ -244,11 +252,7 @@ import "coria/v1/quarantine.proto";
 // Before a file is handed in, its first 132 bytes are read: one without the
 // Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
 // IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
-// notes, images and archives do not fill it. An XNAT resource catalog file
-// (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
-// not listed: it is read, at most 16 MiB of it, only to check the files
-// beside it (a larger one is not checked, and counted in
-// catalogs_not_checked).
+// notes, images, archives and index files do not fill it.
 //
 // A unit writes each file's record (its arrival, or the row of its skip)
 // in the same transaction as its cursor and its counts found, skipped and
@@ -311,12 +315,12 @@ import "coria/v1/quarantine.proto";
 // done, every file found has an outcome and none was quarantined, lost,
 // failed or discarded, or skipped as unreadable, too large or as a
 // directory too wide (files skipped by design, not DICOM, outside the
-// layout, of an unmapped session, not regular files or catalog files,
+// layout, of an unmapped session, or not regular files,
 // leave it done); partial, otherwise; failed, a unit's attempts ran out or
 // its root was unavailable, with what it had handed in still counted and
 // still settling; canceled, by CancelJob, which withdraws nothing already
 // handed in: those files go on to their outcome and are counted. Each file
-// skipped (but catalog files), quarantined, lost, failed or discarded is
+// skipped, quarantined, lost, failed or discarded is
 // listed, with its path, to an operator by ListImportFiles, up to
 // job.failures-kept. A job made again over the same tree finds the files
 // added since as new and the others as already held. Events carry counts
@@ -358,8 +362,8 @@ service JobService {
   // an import receiver of the tenant, a path under its root and optionally
   // a map (a file under the root, or inline); the root is resolved, the
   // path opened and the map read and checked before the job is made, so a
-  // tree that is not there or a map that names two subjects for one
-  // session is refused here, not found out later. The map is kept with the
+  // tree that is not there or a map that names two values for one key is
+  // refused here, not found out later. The map is kept with the
   // job as it was read then, so a map file changed later changes nothing
   // of the job or of a retry of it. A refusal of a map names the line it
   // found at fault by number only, never a cell, the header or a path. An
@@ -381,9 +385,8 @@ service JobService {
   // without the one above it, and a reception given, which only the
   // server sets; for an import, a path or map file that breaks the path
   // rule, both a map file and an inline map, an inline map past 3 MiB,
-  // counts given, which only the server sets, and subject_from_headers
-  // with a map, from the job or the receiver, or with a layout other than
-  // XNAT), not found (the tenant holds no subject, session or scan
+  // counts given, which only the server sets, and a map configuration
+  // given in part or that breaks its rule), not found (the tenant holds no subject, session or scan
   // with those labels; the tenant has no profile version of that name and
   // number; a tenant that does not exist, for a caller who may list every
   // tenant), precondition (a sender the tenant does not have; a scrub of a
@@ -396,10 +399,11 @@ service JobService {
   // allots to the tenant, a root whose path now resolves to another
   // directory than when it was set (a link in it changed), a path that is
   // not a directory under the root, a map file that cannot be read, is
-  // larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
-  // for one (project, session), a map with a layout that does not give the
-  // parts project and session or that gives a part subject, an XNAT layout
-  // with no map and subject_from_headers false, or a queued or running
+  // larger than 64 MiB, is not UTF-8, lacks a configured column or names
+  // two values for one key, a map with no map configuration (the job's or
+  // the receiver's), a map key part the layout does not give or a
+  // map_gives part it already gives, a receiver whose naming rule uses the
+  // part a map gives with no map, or a queued or running
   // import job of the same receiver whose path overlaps this one's by
   // segment; for every kind, a tenant moved or fenced,
   // with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
@@ -464,7 +468,7 @@ service JobService {
   // stands, so a repeated call starts nothing more.
   //
   // For an import job, the new job has the same receiver, path, map (the
-  // one kept with the ended job, checked again) and subject_from_headers,
+  // one kept with the ended job, checked again) and map configuration,
   // and its units are the ended job's units that failed or were canceled,
   // and those with a file lost, or skipped as unreadable, too large or in
   // a directory too wide; each walks its folder again from the start, so
@@ -512,10 +516,9 @@ service JobService {
 
   // ListImportFiles answers the files of an import job that did not reach
   // the archive, each by its path under the root, with why: those skipped
-  // (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+  // (by IMPORT_SKIP_CODE), those
   // quarantined (with the quarantined file's id and reason), those lost,
-  // failed or discarded, and the differences the XNAT catalog files showed.
-  // Ordered by path in the walk's order (segment by segment, each byte by
+  // failed or discarded. Ordered by path in the walk's order (segment by segment, each byte by
   // byte). At most job.failures-kept are kept per job; the job's
   // failures_not_listed counts the others. A page never passes 4 MB, so it
   // may hold fewer files than page_size, or none; only an empty
@@ -811,14 +814,12 @@ message ImportJob {
   // as path is.
   string map_file = 3 [debug_redact = true];
 
-  // For the XNAT layout with no map, whether to take {subject} from
-  // Patient Name (0010,0010) of each file as received, as XNAT's default
-  // anonymization script writes the subject there. False, the default,
-  // refuses an XNAT import with no map in CreateJob, since a site that
-  // changed that script would get labels made from whatever its headers
-  // say. True with a map (the job's or the receiver's), or with another
-  // layout, is refused as invalid: the subject would have two sources.
-  bool subject_from_headers = 4;
+  // Number 4 was a switch that took the subject from one fixed attribute
+  // for one fixed layout. A label from a file's header is the naming
+  // rule's (a template such as "{project}_{PatientName}"), so nothing
+  // replaces it here.
+  reserved 4;
+  reserved "subject_from_headers";
 
   // What became of the files it found so far. Answered by the server; must
   // be absent in CreateJob.
@@ -831,6 +832,24 @@ message ImportJob {
   // GetJob alone (empty in every other answer, and to a reader), and never
   // written to a log, an event or an audit entry.
   bytes map_csv = 6 [debug_redact = true];
+
+  // The map configuration for this job's map, under the rules of
+  // ImportReceiver's fields of the same names, replacing the receiver's
+  // whole: the four are given together or not at all (invalid otherwise),
+  // and empty uses the receiver's. map_gives must be the part the
+  // receiver's naming rule takes from a map, since the rule was checked
+  // against it when the receiver was set.
+  repeated string map_key_columns = 7;
+
+  // The map's column whose value fills map_gives (ImportReceiver).
+  string map_value_column = 8;
+
+  // The layout's parts whose values form a file's key, in the order of
+  // map_key_columns (ImportReceiver).
+  repeated string map_key_parts = 9;
+
+  // The part the map fills (ImportReceiver).
+  string map_gives = 10;
 }
 
 // ImportSkipCode is why an import job did not hand a file in. A code added
@@ -848,7 +867,8 @@ enum ImportSkipCode {
   // Its path does not match the receiver's layout.
   IMPORT_SKIP_CODE_OUTSIDE_LAYOUT = 2;
 
-  // Its session folder is not listed by the job's map file.
+  // Its key (its values of the parts map_key_parts names) is not a row of
+  // the job's map; most often a session folder its source no longer lists.
   IMPORT_SKIP_CODE_UNMAPPED_SESSION = 3;
 
   // A directory holding more entries than the setting
@@ -870,10 +890,12 @@ enum ImportSkipCode {
   // job partial, since it may be DICOM the archive lacks.
   IMPORT_SKIP_CODE_TOO_LARGE = 7;
 
-  // An XNAT resource catalog file (a name ending "_catalog.xml"), read
-  // only to check the files beside it. Counted, not listed by
-  // ListImportFiles.
-  IMPORT_SKIP_CODE_CATALOG_FILE = 8;
+  // Number 8 was one other system's index file, read as a check; the check
+  // is removed, and such a file is skipped as IMPORT_SKIP_CODE_NOT_PART10
+  // like any file that is not DICOM. The number and name are not used
+  // again.
+  reserved 8;
+  reserved "IMPORT_SKIP_CODE_CATALOG_FILE";
 }
 
 // ImportSkipCount is how many files an import job skipped for one reason.
@@ -904,9 +926,8 @@ message ImportQuarantineCount {
 //               + discarded + processing
 //
 // where skipped and quarantined are the sums of their counts by reason.
-// The XNAT catalog counts (listed_not_found, found_not_listed,
-// digest_differs, catalogs_not_checked) and label_differs stand beside
-// these and are in none of the sums. found, skipped and handed_in are
+// label_differs stands beside these and is in none of the sums. found,
+// skipped and handed_in are
 // written with each file's record and the unit's cursor in one
 // transaction, and each outcome in the transaction that decides it, so
 // the identities hold at every answer, across a crash too.
@@ -958,17 +979,10 @@ message ImportCounts {
   // first given.
   int64 label_differs = 11;
 
-  // Entries an XNAT resource catalog file (*_catalog.xml, read bounded and
-  // used only as a check) lists that the walk did not find on disk.
-  int64 listed_not_found = 12;
-
-  // Files the walk found under a resource whose catalog file does not list
-  // them.
-  int64 found_not_listed = 13;
-
-  // Files whose digest in their catalog file differs from the one computed
-  // from their bytes.
-  int64 digest_differs = 14;
+  // Numbers 12, 13, 14 and 19 counted a check against one other system's
+  // index files, which is removed; they are not used again.
+  reserved 12, 13, 14, 19;
+  reserved "listed_not_found", "found_not_listed", "digest_differs", "catalogs_not_checked";
 
   // The job's units: the listing unit, and one per folder at the layout's
   // unit depth. For a unit's own counts, 1.
@@ -984,10 +998,6 @@ message ImportCounts {
   // The files whose reception a person discarded
   // (ReceptionService.DiscardReception).
   int64 discarded = 18;
-
-  // The XNAT catalog files larger than the 16 MiB the server reads of one,
-  // which were therefore not checked against the files beside them.
-  int64 catalogs_not_checked = 19;
 }
 
 // JobTally is one count of what a deid job found, under a key of fixed
@@ -1408,16 +1418,10 @@ enum ImportFileKind {
   // pipeline read it.
   IMPORT_FILE_KIND_LOST = 3;
 
-  // Listed by an XNAT resource catalog file and not found on disk; path is
-  // where the catalog says it is.
-  IMPORT_FILE_KIND_LISTED_NOT_FOUND = 4;
-
-  // Found on disk under a resource whose catalog file does not list it.
-  IMPORT_FILE_KIND_FOUND_NOT_LISTED = 5;
-
-  // Its digest in its catalog file differs from the one computed from its
-  // bytes.
-  IMPORT_FILE_KIND_DIGEST_DIFFERS = 6;
+  // Numbers 4, 5 and 6 were the findings of a check against one other
+  // system's index files, which is removed; they are not used again.
+  reserved 4, 5, 6;
+  reserved "IMPORT_FILE_KIND_LISTED_NOT_FOUND", "IMPORT_FILE_KIND_FOUND_NOT_LISTED", "IMPORT_FILE_KIND_DIGEST_DIFFERS";
 
   // Handed in, and its reception failed; RetryReception tries it again.
   IMPORT_FILE_KIND_FAILED = 7;
@@ -1426,8 +1430,7 @@ enum ImportFileKind {
   IMPORT_FILE_KIND_DISCARDED = 8;
 }
 
-// ImportFile is one file of an import job that did not reach the archive,
-// or that its XNAT catalog files disagree about.
+// ImportFile is one file of an import job that did not reach the archive.
 message ImportFile {
   // Its path relative to the receiver's root, its segments joined by "/".
   // It can hold what identifies a person: answered only to an operator or
@@ -1453,7 +1456,7 @@ message ImportFile {
   string unit = 6;
 
   // Its size in bytes as the walk saw it; 0 when it was not read, as a
-  // directory skipped whole or a file listed and not found.
+  // directory skipped whole.
   int64 size_bytes = 7;
 
   // More about it, in words for a person, from a fixed set of phrases the

@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/job.proto.
  */
 export const file_coria_v1_job: GenFile = /*@__PURE__*/
-  fileDesc("ChJjb3JpYS92MS9qb2IucHJvdG8SCGNvcmlhLnYxIqQCCglKb2JDb3VudHMSEQoJaW5zdGFuY2VzGAEgASgDEg0KBWJ5dGVzGAIgASgDEhYKDmluc3RhbmNlc19zZW50GAMgASgDEhIKCmJ5dGVzX3NlbnQYBCABKAMSGAoQaW5zdGFuY2VzX3dhcm5lZBgFIAEoAxIUCgxieXRlc193YXJuZWQYBiABKAMSGQoRaW5zdGFuY2VzX3JlZnVzZWQYByABKAMSFQoNYnl0ZXNfcmVmdXNlZBgIIAEoAxIbChNpbnN0YW5jZXNfcmVtYWluaW5nGAkgASgDEhcKD2J5dGVzX3JlbWFpbmluZxgKIAEoAxINCgVzY2FucxgLIAEoAxISCgpzY2Fuc19kb25lGAwgASgDEg4KBmxpc3RlZBgNIAEoCCKAAQoHU2VuZEpvYhIOCgZzZW5kZXIYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSEQoJcmVjZXB0aW9uGAUgASgJEhAKCHJlY2VpdmVyGAYgASgJIpoBCgdEZWlkSm9iEiMKBG1vZGUYASABKA4yFS5jb3JpYS52MS5EZWlkSm9iTW9kZRIPCgdwcm9maWxlGAIgASgJEhcKD3Byb2ZpbGVfdmVyc2lvbhgDIAEoBRIVCg1zdWJqZWN0X2xhYmVsGAQgASgJEhUKDXNlc3Npb25fbGFiZWwYBSABKAkSEgoKc2Nhbl9sYWJlbBgGIAEoCSIuCghTY3J1YkpvYhIPCgdzdG9yYWdlGAEgASgJEhEKCXNjaGVkdWxlZBgCIAEoCCJMCgpSZWJ1aWxkSm9iEiYKBG1vZGUYASABKA4yGC5jb3JpYS52MS5SZWJ1aWxkSm9iTW9kZRIWCg5zY3JhdGNoX3NjaGVtYRgCIAEoCSKjAQoJSW1wb3J0Sm9iEhAKCHJlY2VpdmVyGAEgASgJEhEKBHBhdGgYAiABKAlCA4ABARIVCghtYXBfZmlsZRgDIAEoCUIDgAEBEhwKFHN1YmplY3RfZnJvbV9oZWFkZXJzGAQgASgIEiYKBmNvdW50cxgFIAEoCzIWLmNvcmlhLnYxLkltcG9ydENvdW50cxIUCgdtYXBfY3N2GAYgASgMQgOAAQEiSAoPSW1wb3J0U2tpcENvdW50EiYKBGNvZGUYASABKA4yGC5jb3JpYS52MS5JbXBvcnRTa2lwQ29kZRINCgVjb3VudBgCIAEoAyJSChVJbXBvcnRRdWFyYW50aW5lQ291bnQSKgoGcmVhc29uGAEgASgOMhouY29yaWEudjEuUXVhcmFudGluZVJlYXNvbhINCgVjb3VudBgCIAEoAyLUAwoMSW1wb3J0Q291bnRzEg0KBWZvdW5kGAEgASgDEioKB3NraXBwZWQYAiADKAsyGS5jb3JpYS52MS5JbXBvcnRTa2lwQ291bnQSEQoJaGFuZGVkX2luGAMgASgDEhQKDGhhbmRlZF9hZ2FpbhgEIAEoAxIQCghhcmNoaXZlZBgFIAEoAxIUCgxhbHJlYWR5X2hlbGQYBiABKAMSNAoLcXVhcmFudGluZWQYByADKAsyHy5jb3JpYS52MS5JbXBvcnRRdWFyYW50aW5lQ291bnQSDAoEbG9zdBgIIAEoAxISCgpwcm9jZXNzaW5nGAkgASgDEhcKD2J5dGVzX2hhbmRlZF9pbhgKIAEoAxIVCg1sYWJlbF9kaWZmZXJzGAsgASgDEhgKEGxpc3RlZF9ub3RfZm91bmQYDCABKAMSGAoQZm91bmRfbm90X2xpc3RlZBgNIAEoAxIWCg5kaWdlc3RfZGlmZmVycxgOIAEoAxINCgV1bml0cxgPIAEoAxIUCgx1bml0c193YWxrZWQYECABKAMSDgoGZmFpbGVkGBEgASgDEhEKCWRpc2NhcmRlZBgSIAEoAxIcChRjYXRhbG9nc19ub3RfY2hlY2tlZBgTIAEoAyImCghKb2JUYWxseRILCgNrZXkYASABKAkSDQoFY291bnQYAiABKAMi8QQKA0pvYhIKCgJpZBgBIAEoCRIhCgRzZW5kGAIgASgLMhEuY29yaWEudjEuU2VuZEpvYkgAEiEKBGRlaWQYDiABKAsyES5jb3JpYS52MS5EZWlkSm9iSAASIwoFc2NydWIYECABKAsyEi5jb3JpYS52MS5TY3J1YkpvYkgAEicKB3JlYnVpbGQYESABKAsyFC5jb3JpYS52MS5SZWJ1aWxkSm9iSAASKQoKaW1wb3J0X2pvYhgSIAEoCzITLmNvcmlhLnYxLkltcG9ydEpvYkgAEiEKBXN0YXRlGAMgASgOMhIuY29yaWEudjEuSm9iU3RhdGUSIwoGY291bnRzGAQgASgLMhMuY29yaWEudjEuSm9iQ291bnRzEg4KBnJlYXNvbhgFIAEoCRIZChFjcmVhdGVkX2J5X2tleV9pZBgGIAEoCRIvCgtjcmVhdGVfdGltZRgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKc3RhcnRfdGltZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKc3RhdGVfdGltZRgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kX3RpbWUYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCHJldHJ5X29mGAsgASgJEhEKCXJldHJ5X2pvYhgMIAEoCRIbChNmYWlsdXJlc19ub3RfbGlzdGVkGA0gASgDEiMKB3RhbGxpZXMYDyADKAsyEi5jb3JpYS52MS5Kb2JUYWxseUIGCgRraW5kIroCCgpKb2JGYWlsdXJlEhMKC2luc3RhbmNlX2lkGAEgASgJEhUKDXN1YmplY3RfbGFiZWwYAiABKAkSFQoNc2Vzc2lvbl9sYWJlbBgDIAEoCRISCgpzY2FuX2xhYmVsGAQgASgJEiYKBGNvZGUYBSABKA4yGC5jb3JpYS52MS5Kb2JGYWlsdXJlQ29kZRITCgtwZWVyX3N0YXR1cxgGIAEoBRIVCg1zb3BfY2xhc3NfdWlkGAcgASgJEhsKE3RyYW5zZmVyX3N5bnRheF91aWQYCCABKAkSDgoGZGV0YWlsGAkgASgJEigKBHRpbWUYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhgKEHBlZXJfc3RhdHVzX2h0dHAYCyABKAgSEAoIcmV2aXNpb24YDCABKAUi6QEKEENyZWF0ZUpvYlJlcXVlc3QSDgoGdGVuYW50GAEgASgJEiEKBHNlbmQYAiABKAsyES5jb3JpYS52MS5TZW5kSm9iSAASIQoEZGVpZBgDIAEoCzIRLmNvcmlhLnYxLkRlaWRKb2JIABIjCgVzY3J1YhgEIAEoCzISLmNvcmlhLnYxLlNjcnViSm9iSAASJwoHcmVidWlsZBgFIAEoCzIULmNvcmlhLnYxLlJlYnVpbGRKb2JIABIpCgppbXBvcnRfam9iGAYgASgLMhMuY29yaWEudjEuSW1wb3J0Sm9iSABCBgoEa2luZCIvChFDcmVhdGVKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2IiKwoNR2V0Sm9iUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkiLAoOR2V0Sm9iUmVzcG9uc2USGgoDam9iGAEgASgLMg0uY29yaWEudjEuSm9iIu8BCg9MaXN0Sm9ic1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEiIKBnN0YXRlcxgCIAMoDjISLmNvcmlhLnYxLkpvYlN0YXRlEhMKC2luX3Byb2dyZXNzGAMgASgIEg4KBnNlbmRlchgEIAEoCRIuCgpzdGFydF90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRfdGltZRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJcGFnZV9zaXplGAcgASgFEhIKCnBhZ2VfdG9rZW4YCCABKAkiSAoQTGlzdEpvYnNSZXNwb25zZRIbCgRqb2JzGAEgAygLMg0uY29yaWEudjEuSm9iEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIuChBDYW5jZWxKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCSIvChFDYW5jZWxKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2IiLQoPUmV0cnlKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCSJMChBSZXRyeUpvYlJlc3BvbnNlEhoKA2pvYhgBIAEoCzINLmNvcmlhLnYxLkpvYhIcCgVyZXRyeRgCIAEoCzINLmNvcmlhLnYxLkpvYiJ1ChZMaXN0Sm9iRmFpbHVyZXNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCRIYChBpbmNsdWRlX3dhcm5pbmdzGAMgASgIEhEKCXBhZ2Vfc2l6ZRgEIAEoBRISCgpwYWdlX3Rva2VuGAUgASgJIloKF0xpc3RKb2JGYWlsdXJlc1Jlc3BvbnNlEiYKCGZhaWx1cmVzGAEgAygLMhQuY29yaWEudjEuSm9iRmFpbHVyZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkitAIKCkltcG9ydEZpbGUSEQoEcGF0aBgBIAEoCUIDgAEBEiYKBGtpbmQYAiABKA4yGC5jb3JpYS52MS5JbXBvcnRGaWxlS2luZBIrCglza2lwX2NvZGUYAyABKA4yGC5jb3JpYS52MS5JbXBvcnRTa2lwQ29kZRIYChBxdWFyYW50aW5lZF9maWxlGAQgASgJEjUKEXF1YXJhbnRpbmVfcmVhc29uGAUgASgOMhouY29yaWEudjEuUXVhcmFudGluZVJlYXNvbhIMCgR1bml0GAYgASgJEhIKCnNpemVfYnl0ZXMYByABKAMSDgoGZGV0YWlsGAggASgJEigKBHRpbWUYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCXJlY2VwdGlvbhgKIAEoCSLUAQoKSW1wb3J0VW5pdBIKCgJpZBgBIAEoCRITCgZmb2xkZXIYAiABKAlCA4ABARIoCgVzdGF0ZRgDIAEoDjIZLmNvcmlhLnYxLkltcG9ydFVuaXRTdGF0ZRImCgZjb3VudHMYBCABKAsyFi5jb3JpYS52MS5JbXBvcnRDb3VudHMSDgoGcmVhc29uGAUgASgJEhAKCGF0dGVtcHRzGAYgASgFEjEKDXdhbGtfZW5kX3RpbWUYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIpIBChZMaXN0SW1wb3J0RmlsZXNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCRInCgVraW5kcxgDIAMoDjIYLmNvcmlhLnYxLkltcG9ydEZpbGVLaW5kEgwKBHVuaXQYBCABKAkSEQoJcGFnZV9zaXplGAUgASgFEhIKCnBhZ2VfdG9rZW4YBiABKAkiVwoXTGlzdEltcG9ydEZpbGVzUmVzcG9uc2USIwoFZmlsZXMYASADKAsyFC5jb3JpYS52MS5JbXBvcnRGaWxlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSKGAQoWTGlzdEltcG9ydFVuaXRzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkSKQoGc3RhdGVzGAMgAygOMhkuY29yaWEudjEuSW1wb3J0VW5pdFN0YXRlEhEKCXBhZ2Vfc2l6ZRgEIAEoBRISCgpwYWdlX3Rva2VuGAUgASgJIlcKF0xpc3RJbXBvcnRVbml0c1Jlc3BvbnNlEiMKBXVuaXRzGAEgAygLMhQuY29yaWEudjEuSW1wb3J0VW5pdBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkqqwEKCEpvYlN0YXRlEhkKFUpPQl9TVEFURV9VTlNQRUNJRklFRBAAEhQKEEpPQl9TVEFURV9RVUVVRUQQARIVChFKT0JfU1RBVEVfUlVOTklORxACEhIKDkpPQl9TVEFURV9ET05FEAMSFQoRSk9CX1NUQVRFX1BBUlRJQUwQBBIUChBKT0JfU1RBVEVfRkFJTEVEEAUSFgoSSk9CX1NUQVRFX0NBTkNFTEVEEAYqYAoLRGVpZEpvYk1vZGUSHQoZREVJRF9KT0JfTU9ERV9VTlNQRUNJRklFRBAAEhkKFURFSURfSk9CX01PREVfRFJZX1JVThABEhcKE0RFSURfSk9CX01PREVfQ0hFQ0sQAipuCg5SZWJ1aWxkSm9iTW9kZRIgChxSRUJVSUxEX0pPQl9NT0RFX1VOU1BFQ0lGSUVEEAASHAoYUkVCVUlMRF9KT0JfTU9ERV9DT01QQVJFEAESHAoYUkVCVUlMRF9KT0JfTU9ERV9SRVBMQUNFEAIqzgIKDkltcG9ydFNraXBDb2RlEiAKHElNUE9SVF9TS0lQX0NPREVfVU5TUEVDSUZJRUQQABIfChtJTVBPUlRfU0tJUF9DT0RFX05PVF9QQVJUMTAQARIjCh9JTVBPUlRfU0tJUF9DT0RFX09VVFNJREVfTEFZT1VUEAISJQohSU1QT1JUX1NLSVBfQ09ERV9VTk1BUFBFRF9TRVNTSU9OEAMSJwojSU1QT1JUX1NLSVBfQ09ERV9ESVJFQ1RPUllfVE9PX1dJREUQBBIfChtJTVBPUlRfU0tJUF9DT0RFX1VOUkVBREFCTEUQBRIgChxJTVBPUlRfU0tJUF9DT0RFX05PVF9SRUdVTEFSEAYSHgoaSU1QT1JUX1NLSVBfQ09ERV9UT09fTEFSR0UQBxIhCh1JTVBPUlRfU0tJUF9DT0RFX0NBVEFMT0dfRklMRRAIKrYECg5Kb2JGYWlsdXJlQ29kZRIgChxKT0JfRkFJTFVSRV9DT0RFX1VOU1BFQ0lGSUVEEAASIQodSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1JFRlVTRUQQARIhCh1KT0JfRkFJTFVSRV9DT0RFX1BFRVJfV0FSTklORxACEicKI0pPQl9GQUlMVVJFX0NPREVfQ0xBU1NfTk9UX0FDQ0VQVEVEEAMSKAokSk9CX0ZBSUxVUkVfQ09ERV9TWU5UQVhfTk9UX0FDQ0VQVEVEEAQSJQohSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1VOQUNDT1VOVEVEEAUSJwojSk9CX0ZBSUxVUkVfQ09ERV9EQU1BR0VEX0lOX1NUT1JBR0UQBhIkCiBKT0JfRkFJTFVSRV9DT0RFX01FVEFfVU5SRUFEQUJMRRAHEh8KG0pPQl9GQUlMVVJFX0NPREVfV09VTERfSE9MRBAIEiEKHUpPQl9GQUlMVVJFX0NPREVfQ0hFQ0tfRkFJTEVEEAkSHgoaSk9CX0ZBSUxVUkVfQ09ERV9VTkRFQ0lERUQQChIlCiFKT0JfRkFJTFVSRV9DT0RFX05PVF9ERUlERU5USUZJRUQQCxIeChpKT0JfRkFJTFVSRV9DT0RFX1RPT19MQVJHRRAMEicKI0pPQl9GQUlMVVJFX0NPREVfREVMRVRFRF9JTl9BUkNISVZFEA0SHwobSk9CX0ZBSUxVUkVfQ09ERV9OT1RfT05MSU5FEA4qvQIKDkltcG9ydEZpbGVLaW5kEiAKHElNUE9SVF9GSUxFX0tJTkRfVU5TUEVDSUZJRUQQABIcChhJTVBPUlRfRklMRV9LSU5EX1NLSVBQRUQQARIgChxJTVBPUlRfRklMRV9LSU5EX1FVQVJBTlRJTkVEEAISGQoVSU1QT1JUX0ZJTEVfS0lORF9MT1NUEAMSJQohSU1QT1JUX0ZJTEVfS0lORF9MSVNURURfTk9UX0ZPVU5EEAQSJQohSU1QT1JUX0ZJTEVfS0lORF9GT1VORF9OT1RfTElTVEVEEAUSIwofSU1QT1JUX0ZJTEVfS0lORF9ESUdFU1RfRElGRkVSUxAGEhsKF0lNUE9SVF9GSUxFX0tJTkRfRkFJTEVEEAcSHgoaSU1QT1JUX0ZJTEVfS0lORF9ESVNDQVJERUQQCCrpAQoPSW1wb3J0VW5pdFN0YXRlEiEKHUlNUE9SVF9VTklUX1NUQVRFX1VOU1BFQ0lGSUVEEAASHAoYSU1QT1JUX1VOSVRfU1RBVEVfUVVFVUVEEAESHQoZSU1QT1JUX1VOSVRfU1RBVEVfV0FMS0lORxACEhwKGElNUE9SVF9VTklUX1NUQVRFX1dBTEtFRBADEhoKFklNUE9SVF9VTklUX1NUQVRFX0RPTkUQBBIcChhJTVBPUlRfVU5JVF9TVEFURV9GQUlMRUQQBRIeChpJTVBPUlRfVU5JVF9TVEFURV9DQU5DRUxFRBAGMoYFCgpKb2JTZXJ2aWNlEkQKCUNyZWF0ZUpvYhIaLmNvcmlhLnYxLkNyZWF0ZUpvYlJlcXVlc3QaGy5jb3JpYS52MS5DcmVhdGVKb2JSZXNwb25zZRJACgZHZXRKb2ISFy5jb3JpYS52MS5HZXRKb2JSZXF1ZXN0GhguY29yaWEudjEuR2V0Sm9iUmVzcG9uc2UiA5ACARJGCghMaXN0Sm9icxIZLmNvcmlhLnYxLkxpc3RKb2JzUmVxdWVzdBoaLmNvcmlhLnYxLkxpc3RKb2JzUmVzcG9uc2UiA5ACARJJCglDYW5jZWxKb2ISGi5jb3JpYS52MS5DYW5jZWxKb2JSZXF1ZXN0GhsuY29yaWEudjEuQ2FuY2VsSm9iUmVzcG9uc2UiA5ACAhJGCghSZXRyeUpvYhIZLmNvcmlhLnYxLlJldHJ5Sm9iUmVxdWVzdBoaLmNvcmlhLnYxLlJldHJ5Sm9iUmVzcG9uc2UiA5ACAhJbCg9MaXN0Sm9iRmFpbHVyZXMSIC5jb3JpYS52MS5MaXN0Sm9iRmFpbHVyZXNSZXF1ZXN0GiEuY29yaWEudjEuTGlzdEpvYkZhaWx1cmVzUmVzcG9uc2UiA5ACARJbCg9MaXN0SW1wb3J0RmlsZXMSIC5jb3JpYS52MS5MaXN0SW1wb3J0RmlsZXNSZXF1ZXN0GiEuY29yaWEudjEuTGlzdEltcG9ydEZpbGVzUmVzcG9uc2UiA5ACARJbCg9MaXN0SW1wb3J0VW5pdHMSIC5jb3JpYS52MS5MaXN0SW1wb3J0VW5pdHNSZXF1ZXN0GiEuY29yaWEudjEuTGlzdEltcG9ydFVuaXRzUmVzcG9uc2UiA5ACAWIGcHJvdG8z", [file_google_protobuf_timestamp, file_coria_v1_quarantine]);
+  fileDesc("ChJjb3JpYS92MS9qb2IucHJvdG8SCGNvcmlhLnYxIqQCCglKb2JDb3VudHMSEQoJaW5zdGFuY2VzGAEgASgDEg0KBWJ5dGVzGAIgASgDEhYKDmluc3RhbmNlc19zZW50GAMgASgDEhIKCmJ5dGVzX3NlbnQYBCABKAMSGAoQaW5zdGFuY2VzX3dhcm5lZBgFIAEoAxIUCgxieXRlc193YXJuZWQYBiABKAMSGQoRaW5zdGFuY2VzX3JlZnVzZWQYByABKAMSFQoNYnl0ZXNfcmVmdXNlZBgIIAEoAxIbChNpbnN0YW5jZXNfcmVtYWluaW5nGAkgASgDEhcKD2J5dGVzX3JlbWFpbmluZxgKIAEoAxINCgVzY2FucxgLIAEoAxISCgpzY2Fuc19kb25lGAwgASgDEg4KBmxpc3RlZBgNIAEoCCKAAQoHU2VuZEpvYhIOCgZzZW5kZXIYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSEQoJcmVjZXB0aW9uGAUgASgJEhAKCHJlY2VpdmVyGAYgASgJIpoBCgdEZWlkSm9iEiMKBG1vZGUYASABKA4yFS5jb3JpYS52MS5EZWlkSm9iTW9kZRIPCgdwcm9maWxlGAIgASgJEhcKD3Byb2ZpbGVfdmVyc2lvbhgDIAEoBRIVCg1zdWJqZWN0X2xhYmVsGAQgASgJEhUKDXNlc3Npb25fbGFiZWwYBSABKAkSEgoKc2Nhbl9sYWJlbBgGIAEoCSIuCghTY3J1YkpvYhIPCgdzdG9yYWdlGAEgASgJEhEKCXNjaGVkdWxlZBgCIAEoCCJMCgpSZWJ1aWxkSm9iEiYKBG1vZGUYASABKA4yGC5jb3JpYS52MS5SZWJ1aWxkSm9iTW9kZRIWCg5zY3JhdGNoX3NjaGVtYRgCIAEoCSL+AQoJSW1wb3J0Sm9iEhAKCHJlY2VpdmVyGAEgASgJEhEKBHBhdGgYAiABKAlCA4ABARIVCghtYXBfZmlsZRgDIAEoCUIDgAEBEiYKBmNvdW50cxgFIAEoCzIWLmNvcmlhLnYxLkltcG9ydENvdW50cxIUCgdtYXBfY3N2GAYgASgMQgOAAQESFwoPbWFwX2tleV9jb2x1bW5zGAcgAygJEhgKEG1hcF92YWx1ZV9jb2x1bW4YCCABKAkSFQoNbWFwX2tleV9wYXJ0cxgJIAMoCRIRCgltYXBfZ2l2ZXMYCiABKAlKBAgEEAVSFHN1YmplY3RfZnJvbV9oZWFkZXJzIkgKD0ltcG9ydFNraXBDb3VudBImCgRjb2RlGAEgASgOMhguY29yaWEudjEuSW1wb3J0U2tpcENvZGUSDQoFY291bnQYAiABKAMiUgoVSW1wb3J0UXVhcmFudGluZUNvdW50EioKBnJlYXNvbhgBIAEoDjIaLmNvcmlhLnYxLlF1YXJhbnRpbmVSZWFzb24SDQoFY291bnQYAiABKAMizAMKDEltcG9ydENvdW50cxINCgVmb3VuZBgBIAEoAxIqCgdza2lwcGVkGAIgAygLMhkuY29yaWEudjEuSW1wb3J0U2tpcENvdW50EhEKCWhhbmRlZF9pbhgDIAEoAxIUCgxoYW5kZWRfYWdhaW4YBCABKAMSEAoIYXJjaGl2ZWQYBSABKAMSFAoMYWxyZWFkeV9oZWxkGAYgASgDEjQKC3F1YXJhbnRpbmVkGAcgAygLMh8uY29yaWEudjEuSW1wb3J0UXVhcmFudGluZUNvdW50EgwKBGxvc3QYCCABKAMSEgoKcHJvY2Vzc2luZxgJIAEoAxIXCg9ieXRlc19oYW5kZWRfaW4YCiABKAMSFQoNbGFiZWxfZGlmZmVycxgLIAEoAxINCgV1bml0cxgPIAEoAxIUCgx1bml0c193YWxrZWQYECABKAMSDgoGZmFpbGVkGBEgASgDEhEKCWRpc2NhcmRlZBgSIAEoA0oECAwQDUoECA0QDkoECA4QD0oECBMQFFIQbGlzdGVkX25vdF9mb3VuZFIQZm91bmRfbm90X2xpc3RlZFIOZGlnZXN0X2RpZmZlcnNSFGNhdGFsb2dzX25vdF9jaGVja2VkIiYKCEpvYlRhbGx5EgsKA2tleRgBIAEoCRINCgVjb3VudBgCIAEoAyLxBAoDSm9iEgoKAmlkGAEgASgJEiEKBHNlbmQYAiABKAsyES5jb3JpYS52MS5TZW5kSm9iSAASIQoEZGVpZBgOIAEoCzIRLmNvcmlhLnYxLkRlaWRKb2JIABIjCgVzY3J1YhgQIAEoCzISLmNvcmlhLnYxLlNjcnViSm9iSAASJwoHcmVidWlsZBgRIAEoCzIULmNvcmlhLnYxLlJlYnVpbGRKb2JIABIpCgppbXBvcnRfam9iGBIgASgLMhMuY29yaWEudjEuSW1wb3J0Sm9iSAASIQoFc3RhdGUYAyABKA4yEi5jb3JpYS52MS5Kb2JTdGF0ZRIjCgZjb3VudHMYBCABKAsyEy5jb3JpYS52MS5Kb2JDb3VudHMSDgoGcmVhc29uGAUgASgJEhkKEWNyZWF0ZWRfYnlfa2V5X2lkGAYgASgJEi8KC2NyZWF0ZV90aW1lGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzdGFydF90aW1lGAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzdGF0ZV90aW1lGAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRfdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEAoIcmV0cnlfb2YYCyABKAkSEQoJcmV0cnlfam9iGAwgASgJEhsKE2ZhaWx1cmVzX25vdF9saXN0ZWQYDSABKAMSIwoHdGFsbGllcxgPIAMoCzISLmNvcmlhLnYxLkpvYlRhbGx5QgYKBGtpbmQiugIKCkpvYkZhaWx1cmUSEwoLaW5zdGFuY2VfaWQYASABKAkSFQoNc3ViamVjdF9sYWJlbBgCIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAMgASgJEhIKCnNjYW5fbGFiZWwYBCABKAkSJgoEY29kZRgFIAEoDjIYLmNvcmlhLnYxLkpvYkZhaWx1cmVDb2RlEhMKC3BlZXJfc3RhdHVzGAYgASgFEhUKDXNvcF9jbGFzc191aWQYByABKAkSGwoTdHJhbnNmZXJfc3ludGF4X3VpZBgIIAEoCRIOCgZkZXRhaWwYCSABKAkSKAoEdGltZRgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGAoQcGVlcl9zdGF0dXNfaHR0cBgLIAEoCBIQCghyZXZpc2lvbhgMIAEoBSLpAQoQQ3JlYXRlSm9iUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSIQoEc2VuZBgCIAEoCzIRLmNvcmlhLnYxLlNlbmRKb2JIABIhCgRkZWlkGAMgASgLMhEuY29yaWEudjEuRGVpZEpvYkgAEiMKBXNjcnViGAQgASgLMhIuY29yaWEudjEuU2NydWJKb2JIABInCgdyZWJ1aWxkGAUgASgLMhQuY29yaWEudjEuUmVidWlsZEpvYkgAEikKCmltcG9ydF9qb2IYBiABKAsyEy5jb3JpYS52MS5JbXBvcnRKb2JIAEIGCgRraW5kIi8KEUNyZWF0ZUpvYlJlc3BvbnNlEhoKA2pvYhgBIAEoCzINLmNvcmlhLnYxLkpvYiIrCg1HZXRKb2JSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCSIsCg5HZXRKb2JSZXNwb25zZRIaCgNqb2IYASABKAsyDS5jb3JpYS52MS5Kb2Ii7wEKD0xpc3RKb2JzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSIgoGc3RhdGVzGAIgAygOMhIuY29yaWEudjEuSm9iU3RhdGUSEwoLaW5fcHJvZ3Jlc3MYAyABKAgSDgoGc2VuZGVyGAQgASgJEi4KCnN0YXJ0X3RpbWUYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZF90aW1lGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwYWdlX3NpemUYByABKAUSEgoKcGFnZV90b2tlbhgIIAEoCSJIChBMaXN0Sm9ic1Jlc3BvbnNlEhsKBGpvYnMYASADKAsyDS5jb3JpYS52MS5Kb2ISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIi4KEENhbmNlbEpvYlJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJIi8KEUNhbmNlbEpvYlJlc3BvbnNlEhoKA2pvYhgBIAEoCzINLmNvcmlhLnYxLkpvYiItCg9SZXRyeUpvYlJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJIkwKEFJldHJ5Sm9iUmVzcG9uc2USGgoDam9iGAEgASgLMg0uY29yaWEudjEuSm9iEhwKBXJldHJ5GAIgASgLMg0uY29yaWEudjEuSm9iInUKFkxpc3RKb2JGYWlsdXJlc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJEhgKEGluY2x1ZGVfd2FybmluZ3MYAyABKAgSEQoJcGFnZV9zaXplGAQgASgFEhIKCnBhZ2VfdG9rZW4YBSABKAkiWgoXTGlzdEpvYkZhaWx1cmVzUmVzcG9uc2USJgoIZmFpbHVyZXMYASADKAsyFC5jb3JpYS52MS5Kb2JGYWlsdXJlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSK0AgoKSW1wb3J0RmlsZRIRCgRwYXRoGAEgASgJQgOAAQESJgoEa2luZBgCIAEoDjIYLmNvcmlhLnYxLkltcG9ydEZpbGVLaW5kEisKCXNraXBfY29kZRgDIAEoDjIYLmNvcmlhLnYxLkltcG9ydFNraXBDb2RlEhgKEHF1YXJhbnRpbmVkX2ZpbGUYBCABKAkSNQoRcXVhcmFudGluZV9yZWFzb24YBSABKA4yGi5jb3JpYS52MS5RdWFyYW50aW5lUmVhc29uEgwKBHVuaXQYBiABKAkSEgoKc2l6ZV9ieXRlcxgHIAEoAxIOCgZkZXRhaWwYCCABKAkSKAoEdGltZRgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEQoJcmVjZXB0aW9uGAogASgJItQBCgpJbXBvcnRVbml0EgoKAmlkGAEgASgJEhMKBmZvbGRlchgCIAEoCUIDgAEBEigKBXN0YXRlGAMgASgOMhkuY29yaWEudjEuSW1wb3J0VW5pdFN0YXRlEiYKBmNvdW50cxgEIAEoCzIWLmNvcmlhLnYxLkltcG9ydENvdW50cxIOCgZyZWFzb24YBSABKAkSEAoIYXR0ZW1wdHMYBiABKAUSMQoNd2Fsa19lbmRfdGltZRgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAikgEKFkxpc3RJbXBvcnRGaWxlc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJEicKBWtpbmRzGAMgAygOMhguY29yaWEudjEuSW1wb3J0RmlsZUtpbmQSDAoEdW5pdBgEIAEoCRIRCglwYWdlX3NpemUYBSABKAUSEgoKcGFnZV90b2tlbhgGIAEoCSJXChdMaXN0SW1wb3J0RmlsZXNSZXNwb25zZRIjCgVmaWxlcxgBIAMoCzIULmNvcmlhLnYxLkltcG9ydEZpbGUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIoYBChZMaXN0SW1wb3J0VW5pdHNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCRIpCgZzdGF0ZXMYAyADKA4yGS5jb3JpYS52MS5JbXBvcnRVbml0U3RhdGUSEQoJcGFnZV9zaXplGAQgASgFEhIKCnBhZ2VfdG9rZW4YBSABKAkiVwoXTGlzdEltcG9ydFVuaXRzUmVzcG9uc2USIwoFdW5pdHMYASADKAsyFC5jb3JpYS52MS5JbXBvcnRVbml0EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSqrAQoISm9iU3RhdGUSGQoVSk9CX1NUQVRFX1VOU1BFQ0lGSUVEEAASFAoQSk9CX1NUQVRFX1FVRVVFRBABEhUKEUpPQl9TVEFURV9SVU5OSU5HEAISEgoOSk9CX1NUQVRFX0RPTkUQAxIVChFKT0JfU1RBVEVfUEFSVElBTBAEEhQKEEpPQl9TVEFURV9GQUlMRUQQBRIWChJKT0JfU1RBVEVfQ0FOQ0VMRUQQBipgCgtEZWlkSm9iTW9kZRIdChlERUlEX0pPQl9NT0RFX1VOU1BFQ0lGSUVEEAASGQoVREVJRF9KT0JfTU9ERV9EUllfUlVOEAESFwoTREVJRF9KT0JfTU9ERV9DSEVDSxACKm4KDlJlYnVpbGRKb2JNb2RlEiAKHFJFQlVJTERfSk9CX01PREVfVU5TUEVDSUZJRUQQABIcChhSRUJVSUxEX0pPQl9NT0RFX0NPTVBBUkUQARIcChhSRUJVSUxEX0pPQl9NT0RFX1JFUExBQ0UQAirQAgoOSW1wb3J0U2tpcENvZGUSIAocSU1QT1JUX1NLSVBfQ09ERV9VTlNQRUNJRklFRBAAEh8KG0lNUE9SVF9TS0lQX0NPREVfTk9UX1BBUlQxMBABEiMKH0lNUE9SVF9TS0lQX0NPREVfT1VUU0lERV9MQVlPVVQQAhIlCiFJTVBPUlRfU0tJUF9DT0RFX1VOTUFQUEVEX1NFU1NJT04QAxInCiNJTVBPUlRfU0tJUF9DT0RFX0RJUkVDVE9SWV9UT09fV0lERRAEEh8KG0lNUE9SVF9TS0lQX0NPREVfVU5SRUFEQUJMRRAFEiAKHElNUE9SVF9TS0lQX0NPREVfTk9UX1JFR1VMQVIQBhIeChpJTVBPUlRfU0tJUF9DT0RFX1RPT19MQVJHRRAHIgQICBAIKh1JTVBPUlRfU0tJUF9DT0RFX0NBVEFMT0dfRklMRSq2BAoOSm9iRmFpbHVyZUNvZGUSIAocSk9CX0ZBSUxVUkVfQ09ERV9VTlNQRUNJRklFRBAAEiEKHUpPQl9GQUlMVVJFX0NPREVfUEVFUl9SRUZVU0VEEAESIQodSk9CX0ZBSUxVUkVfQ09ERV9QRUVSX1dBUk5JTkcQAhInCiNKT0JfRkFJTFVSRV9DT0RFX0NMQVNTX05PVF9BQ0NFUFRFRBADEigKJEpPQl9GQUlMVVJFX0NPREVfU1lOVEFYX05PVF9BQ0NFUFRFRBAEEiUKIUpPQl9GQUlMVVJFX0NPREVfUEVFUl9VTkFDQ09VTlRFRBAFEicKI0pPQl9GQUlMVVJFX0NPREVfREFNQUdFRF9JTl9TVE9SQUdFEAYSJAogSk9CX0ZBSUxVUkVfQ09ERV9NRVRBX1VOUkVBREFCTEUQBxIfChtKT0JfRkFJTFVSRV9DT0RFX1dPVUxEX0hPTEQQCBIhCh1KT0JfRkFJTFVSRV9DT0RFX0NIRUNLX0ZBSUxFRBAJEh4KGkpPQl9GQUlMVVJFX0NPREVfVU5ERUNJREVEEAoSJQohSk9CX0ZBSUxVUkVfQ09ERV9OT1RfREVJREVOVElGSUVEEAsSHgoaSk9CX0ZBSUxVUkVfQ09ERV9UT09fTEFSR0UQDBInCiNKT0JfRkFJTFVSRV9DT0RFX0RFTEVURURfSU5fQVJDSElWRRANEh8KG0pPQl9GQUlMVVJFX0NPREVfTk9UX09OTElORRAOKsMCCg5JbXBvcnRGaWxlS2luZBIgChxJTVBPUlRfRklMRV9LSU5EX1VOU1BFQ0lGSUVEEAASHAoYSU1QT1JUX0ZJTEVfS0lORF9TS0lQUEVEEAESIAocSU1QT1JUX0ZJTEVfS0lORF9RVUFSQU5USU5FRBACEhkKFUlNUE9SVF9GSUxFX0tJTkRfTE9TVBADEhsKF0lNUE9SVF9GSUxFX0tJTkRfRkFJTEVEEAcSHgoaSU1QT1JUX0ZJTEVfS0lORF9ESVNDQVJERUQQCCIECAQQBCIECAUQBSIECAYQBiohSU1QT1JUX0ZJTEVfS0lORF9MSVNURURfTk9UX0ZPVU5EKiFJTVBPUlRfRklMRV9LSU5EX0ZPVU5EX05PVF9MSVNURUQqH0lNUE9SVF9GSUxFX0tJTkRfRElHRVNUX0RJRkZFUlMq6QEKD0ltcG9ydFVuaXRTdGF0ZRIhCh1JTVBPUlRfVU5JVF9TVEFURV9VTlNQRUNJRklFRBAAEhwKGElNUE9SVF9VTklUX1NUQVRFX1FVRVVFRBABEh0KGUlNUE9SVF9VTklUX1NUQVRFX1dBTEtJTkcQAhIcChhJTVBPUlRfVU5JVF9TVEFURV9XQUxLRUQQAxIaChZJTVBPUlRfVU5JVF9TVEFURV9ET05FEAQSHAoYSU1QT1JUX1VOSVRfU1RBVEVfRkFJTEVEEAUSHgoaSU1QT1JUX1VOSVRfU1RBVEVfQ0FOQ0VMRUQQBjKGBQoKSm9iU2VydmljZRJECglDcmVhdGVKb2ISGi5jb3JpYS52MS5DcmVhdGVKb2JSZXF1ZXN0GhsuY29yaWEudjEuQ3JlYXRlSm9iUmVzcG9uc2USQAoGR2V0Sm9iEhcuY29yaWEudjEuR2V0Sm9iUmVxdWVzdBoYLmNvcmlhLnYxLkdldEpvYlJlc3BvbnNlIgOQAgESRgoITGlzdEpvYnMSGS5jb3JpYS52MS5MaXN0Sm9ic1JlcXVlc3QaGi5jb3JpYS52MS5MaXN0Sm9ic1Jlc3BvbnNlIgOQAgESSQoJQ2FuY2VsSm9iEhouY29yaWEudjEuQ2FuY2VsSm9iUmVxdWVzdBobLmNvcmlhLnYxLkNhbmNlbEpvYlJlc3BvbnNlIgOQAgISRgoIUmV0cnlKb2ISGS5jb3JpYS52MS5SZXRyeUpvYlJlcXVlc3QaGi5jb3JpYS52MS5SZXRyeUpvYlJlc3BvbnNlIgOQAgISWwoPTGlzdEpvYkZhaWx1cmVzEiAuY29yaWEudjEuTGlzdEpvYkZhaWx1cmVzUmVxdWVzdBohLmNvcmlhLnYxLkxpc3RKb2JGYWlsdXJlc1Jlc3BvbnNlIgOQAgESWwoPTGlzdEltcG9ydEZpbGVzEiAuY29yaWEudjEuTGlzdEltcG9ydEZpbGVzUmVxdWVzdBohLmNvcmlhLnYxLkxpc3RJbXBvcnRGaWxlc1Jlc3BvbnNlIgOQAgESWwoPTGlzdEltcG9ydFVuaXRzEiAuY29yaWEudjEuTGlzdEltcG9ydFVuaXRzUmVxdWVzdBohLmNvcmlhLnYxLkxpc3RJbXBvcnRVbml0c1Jlc3BvbnNlIgOQAgFiBnByb3RvMw", [file_google_protobuf_timestamp, file_coria_v1_quarantine]);
 
 /**
  * JobCounts are a job's instances and bytes so far. An instance counts in
@@ -390,19 +390,6 @@ export type ImportJob = Message<"coria.v1.ImportJob"> & {
   mapFile: string;
 
   /**
-   * For the XNAT layout with no map, whether to take {subject} from
-   * Patient Name (0010,0010) of each file as received, as XNAT's default
-   * anonymization script writes the subject there. False, the default,
-   * refuses an XNAT import with no map in CreateJob, since a site that
-   * changed that script would get labels made from whatever its headers
-   * say. True with a map (the job's or the receiver's), or with another
-   * layout, is refused as invalid: the subject would have two sources.
-   *
-   * @generated from field: bool subject_from_headers = 4;
-   */
-  subjectFromHeaders: boolean;
-
-  /**
    * What became of the files it found so far. Answered by the server; must
    * be absent in CreateJob.
    *
@@ -421,6 +408,40 @@ export type ImportJob = Message<"coria.v1.ImportJob"> & {
    * @generated from field: bytes map_csv = 6;
    */
   mapCsv: Uint8Array;
+
+  /**
+   * The map configuration for this job's map, under the rules of
+   * ImportReceiver's fields of the same names, replacing the receiver's
+   * whole: the four are given together or not at all (invalid otherwise),
+   * and empty uses the receiver's. map_gives must be the part the
+   * receiver's naming rule takes from a map, since the rule was checked
+   * against it when the receiver was set.
+   *
+   * @generated from field: repeated string map_key_columns = 7;
+   */
+  mapKeyColumns: string[];
+
+  /**
+   * The map's column whose value fills map_gives (ImportReceiver).
+   *
+   * @generated from field: string map_value_column = 8;
+   */
+  mapValueColumn: string;
+
+  /**
+   * The layout's parts whose values form a file's key, in the order of
+   * map_key_columns (ImportReceiver).
+   *
+   * @generated from field: repeated string map_key_parts = 9;
+   */
+  mapKeyParts: string[];
+
+  /**
+   * The part the map fills (ImportReceiver).
+   *
+   * @generated from field: string map_gives = 10;
+   */
+  mapGives: string;
 };
 
 /**
@@ -497,9 +518,8 @@ export const ImportQuarantineCountSchema: GenMessage<ImportQuarantineCount> = /*
  *               + discarded + processing
  *
  * where skipped and quarantined are the sums of their counts by reason.
- * The XNAT catalog counts (listed_not_found, found_not_listed,
- * digest_differs, catalogs_not_checked) and label_differs stand beside
- * these and are in none of the sums. found, skipped and handed_in are
+ * label_differs stands beside these and is in none of the sums. found,
+ * skipped and handed_in are
  * written with each file's record and the unit's cursor in one
  * transaction, and each outcome in the transaction that decides it, so
  * the identities hold at every answer, across a crash too.
@@ -599,30 +619,6 @@ export type ImportCounts = Message<"coria.v1.ImportCounts"> & {
   labelDiffers: bigint;
 
   /**
-   * Entries an XNAT resource catalog file (*_catalog.xml, read bounded and
-   * used only as a check) lists that the walk did not find on disk.
-   *
-   * @generated from field: int64 listed_not_found = 12;
-   */
-  listedNotFound: bigint;
-
-  /**
-   * Files the walk found under a resource whose catalog file does not list
-   * them.
-   *
-   * @generated from field: int64 found_not_listed = 13;
-   */
-  foundNotListed: bigint;
-
-  /**
-   * Files whose digest in their catalog file differs from the one computed
-   * from their bytes.
-   *
-   * @generated from field: int64 digest_differs = 14;
-   */
-  digestDiffers: bigint;
-
-  /**
    * The job's units: the listing unit, and one per folder at the layout's
    * unit depth. For a unit's own counts, 1.
    *
@@ -652,14 +648,6 @@ export type ImportCounts = Message<"coria.v1.ImportCounts"> & {
    * @generated from field: int64 discarded = 18;
    */
   discarded: bigint;
-
-  /**
-   * The XNAT catalog files larger than the 16 MiB the server reads of one,
-   * which were therefore not checked against the files beside them.
-   *
-   * @generated from field: int64 catalogs_not_checked = 19;
-   */
-  catalogsNotChecked: bigint;
 };
 
 /**
@@ -1432,8 +1420,7 @@ export const ListJobFailuresResponseSchema: GenMessage<ListJobFailuresResponse> 
   messageDesc(file_coria_v1_job, 23);
 
 /**
- * ImportFile is one file of an import job that did not reach the archive,
- * or that its XNAT catalog files disagree about.
+ * ImportFile is one file of an import job that did not reach the archive.
  *
  * @generated from message coria.v1.ImportFile
  */
@@ -1487,7 +1474,7 @@ export type ImportFile = Message<"coria.v1.ImportFile"> & {
 
   /**
    * Its size in bytes as the walk saw it; 0 when it was not read, as a
-   * directory skipped whole or a file listed and not found.
+   * directory skipped whole.
    *
    * @generated from field: int64 size_bytes = 7;
    */
@@ -1955,7 +1942,8 @@ export enum ImportSkipCode {
   OUTSIDE_LAYOUT = 2,
 
   /**
-   * Its session folder is not listed by the job's map file.
+   * Its key (its values of the parts map_key_parts names) is not a row of
+   * the job's map; most often a session folder its source no longer lists.
    *
    * @generated from enum value: IMPORT_SKIP_CODE_UNMAPPED_SESSION = 3;
    */
@@ -1995,15 +1983,6 @@ export enum ImportSkipCode {
    * @generated from enum value: IMPORT_SKIP_CODE_TOO_LARGE = 7;
    */
   TOO_LARGE = 7,
-
-  /**
-   * An XNAT resource catalog file (a name ending "_catalog.xml"), read
-   * only to check the files beside it. Counted, not listed by
-   * ListImportFiles.
-   *
-   * @generated from enum value: IMPORT_SKIP_CODE_CATALOG_FILE = 8;
-   */
-  CATALOG_FILE = 8,
 }
 
 /**
@@ -2204,29 +2183,6 @@ export enum ImportFileKind {
    * @generated from enum value: IMPORT_FILE_KIND_LOST = 3;
    */
   LOST = 3,
-
-  /**
-   * Listed by an XNAT resource catalog file and not found on disk; path is
-   * where the catalog says it is.
-   *
-   * @generated from enum value: IMPORT_FILE_KIND_LISTED_NOT_FOUND = 4;
-   */
-  LISTED_NOT_FOUND = 4,
-
-  /**
-   * Found on disk under a resource whose catalog file does not list it.
-   *
-   * @generated from enum value: IMPORT_FILE_KIND_FOUND_NOT_LISTED = 5;
-   */
-  FOUND_NOT_LISTED = 5,
-
-  /**
-   * Its digest in its catalog file differs from the one computed from its
-   * bytes.
-   *
-   * @generated from enum value: IMPORT_FILE_KIND_DIGEST_DIFFERS = 6;
-   */
-  DIGEST_DIFFERS = 6,
 
   /**
    * Handed in, and its reception failed; RetryReception tries it again.
@@ -2527,7 +2483,15 @@ export const ImportUnitStateSchema: GenEnum<ImportUnitState> = /*@__PURE__*/
  * What an import job does. It reads the directory its path names under its
  * receiver's root (ImportReceiver) and hands each DICOM file in it to the
  * receiver, one at a time, as a file that arrived; it never writes, moves
- * or deletes anything in the root. Its work is a listing unit and one unit
+ * or deletes anything in the root. For example, a tree kept as
+ * <study>/<session>/series/<scan>/<file>, with a map from (study, session)
+ * to subject, is read by an import receiver with the pattern layout
+ * "^(?P<study>[^/]+)/(?P<session>[^/]+)/series/(?P<scan>[^/]+)/[^/]+$",
+ * unit depth 2 (one unit per session folder), map_key_columns naming the
+ * map's study and session columns, map_key_parts ["study", "session"],
+ * map_value_column its subject column and map_gives "subject", and the
+ * naming rule "{study}_{subject}", "{study}_{session}",
+ * "{scan}". Its work is a listing unit and one unit
  * per folder. The listing unit lists the folders at the layout's unit depth
  * under the job's path, a page at a time, and queues one unit per folder
  * (one unit for a path at or below that depth); it also judges every file
@@ -2553,11 +2517,7 @@ export const ImportUnitStateSchema: GenEnum<ImportUnitState> = /*@__PURE__*/
  * Before a file is handed in, its first 132 bytes are read: one without the
  * Part 10 preamble and "DICM" (PS3.10 7.1) is skipped as
  * IMPORT_SKIP_CODE_NOT_PART10 and never reaches quarantine, so a tree's
- * notes, images and archives do not fill it. An XNAT resource catalog file
- * (*_catalog.xml) is skipped as IMPORT_SKIP_CODE_CATALOG_FILE, counted and
- * not listed: it is read, at most 16 MiB of it, only to check the files
- * beside it (a larger one is not checked, and counted in
- * catalogs_not_checked).
+ * notes, images, archives and index files do not fill it.
  *
  * A unit writes each file's record (its arrival, or the row of its skip)
  * in the same transaction as its cursor and its counts found, skipped and
@@ -2620,12 +2580,12 @@ export const ImportUnitStateSchema: GenEnum<ImportUnitState> = /*@__PURE__*/
  * done, every file found has an outcome and none was quarantined, lost,
  * failed or discarded, or skipped as unreadable, too large or as a
  * directory too wide (files skipped by design, not DICOM, outside the
- * layout, of an unmapped session, not regular files or catalog files,
+ * layout, of an unmapped session, or not regular files,
  * leave it done); partial, otherwise; failed, a unit's attempts ran out or
  * its root was unavailable, with what it had handed in still counted and
  * still settling; canceled, by CancelJob, which withdraws nothing already
  * handed in: those files go on to their outcome and are counted. Each file
- * skipped (but catalog files), quarantined, lost, failed or discarded is
+ * skipped, quarantined, lost, failed or discarded is
  * listed, with its path, to an operator by ListImportFiles, up to
  * job.failures-kept. A job made again over the same tree finds the files
  * added since as new and the others as already held. Events carry counts
@@ -2671,8 +2631,8 @@ export const JobService: GenService<{
    * an import receiver of the tenant, a path under its root and optionally
    * a map (a file under the root, or inline); the root is resolved, the
    * path opened and the map read and checked before the job is made, so a
-   * tree that is not there or a map that names two subjects for one
-   * session is refused here, not found out later. The map is kept with the
+   * tree that is not there or a map that names two values for one key is
+   * refused here, not found out later. The map is kept with the
    * job as it was read then, so a map file changed later changes nothing
    * of the job or of a retry of it. A refusal of a map names the line it
    * found at fault by number only, never a cell, the header or a path. An
@@ -2694,9 +2654,8 @@ export const JobService: GenService<{
    * without the one above it, and a reception given, which only the
    * server sets; for an import, a path or map file that breaks the path
    * rule, both a map file and an inline map, an inline map past 3 MiB,
-   * counts given, which only the server sets, and subject_from_headers
-   * with a map, from the job or the receiver, or with a layout other than
-   * XNAT), not found (the tenant holds no subject, session or scan
+   * counts given, which only the server sets, and a map configuration
+   * given in part or that breaks its rule), not found (the tenant holds no subject, session or scan
    * with those labels; the tenant has no profile version of that name and
    * number; a tenant that does not exist, for a caller who may list every
    * tenant), precondition (a sender the tenant does not have; a scrub of a
@@ -2709,10 +2668,11 @@ export const JobService: GenService<{
    * allots to the tenant, a root whose path now resolves to another
    * directory than when it was set (a link in it changed), a path that is
    * not a directory under the root, a map file that cannot be read, is
-   * larger than 64 MiB, is not UTF-8, lacks a column or names two subjects
-   * for one (project, session), a map with a layout that does not give the
-   * parts project and session or that gives a part subject, an XNAT layout
-   * with no map and subject_from_headers false, or a queued or running
+   * larger than 64 MiB, is not UTF-8, lacks a configured column or names
+   * two values for one key, a map with no map configuration (the job's or
+   * the receiver's), a map key part the layout does not give or a
+   * map_gives part it already gives, a receiver whose naming rule uses the
+   * part a map gives with no map, or a queued or running
    * import job of the same receiver whose path overlaps this one's by
    * segment; for every kind, a tenant moved or fenced,
    * with ErrorInfo reason TENANT_MOVED or TENANT_FENCED), unavailable (the tenant's database does not answer, or the
@@ -2799,7 +2759,7 @@ export const JobService: GenService<{
    * stands, so a repeated call starts nothing more.
    *
    * For an import job, the new job has the same receiver, path, map (the
-   * one kept with the ended job, checked again) and subject_from_headers,
+   * one kept with the ended job, checked again) and map configuration,
    * and its units are the ended job's units that failed or were canceled,
    * and those with a file lost, or skipped as unreadable, too large or in
    * a directory too wide; each walks its folder again from the start, so
@@ -2857,10 +2817,9 @@ export const JobService: GenService<{
   /**
    * ListImportFiles answers the files of an import job that did not reach
    * the archive, each by its path under the root, with why: those skipped
-   * (by IMPORT_SKIP_CODE, but catalog files, which are only counted), those
+   * (by IMPORT_SKIP_CODE), those
    * quarantined (with the quarantined file's id and reason), those lost,
-   * failed or discarded, and the differences the XNAT catalog files showed.
-   * Ordered by path in the walk's order (segment by segment, each byte by
+   * failed or discarded. Ordered by path in the walk's order (segment by segment, each byte by
    * byte). At most job.failures-kept are kept per job; the job's
    * failures_not_listed counts the others. A page never passes 4 MB, so it
    * may hold fewer files than page_size, or none; only an empty
