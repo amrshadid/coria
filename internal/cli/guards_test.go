@@ -422,6 +422,7 @@ func TestGrammar(t *testing.T) {
 	want := map[string]bool{
 		"init": true, "serve": true,
 		"version": true, "whoami": true,
+		"context add": true, "context list": true, "context show": true, "context use": true, "context remove": true,
 		"tenant create": true, "tenant list": true, "tenant show": true, "tenant remove": true,
 		"key create": true, "key list": true, "key show": true, "key revoke": true, "key rotate": true, "key set": true,
 		"grant set": true, "grant list": true, "grant remove": true,

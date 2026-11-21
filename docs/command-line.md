@@ -14,6 +14,7 @@ that make and run an installation ([internal/cli/servecmd](../internal/cli/serve
 | Command | Verbs and what they do |
 |---|---|
 | `coria init`, `coria serve` | Make an installation; run its server. See [Running CORIA](running.md) |
+| `coria context` | `add <name> --server URL --key-file PATH [--ca-file PATH] [--tls-client-cert PATH --tls-client-key PATH] [--tenant NAME] [--replace]`, `list`, `show <name>`, `use <name>`, `remove <name>`. See [Contexts](#contexts) |
 | `coria version`, `coria whoami` | The build; who the server takes the caller to be and what it may do |
 | `coria tenant` | `create <name> [--db-env VAR \| --db-file PATH]`, `list`, `show`, `remove <name> --yes` |
 | `coria key` | `create --holder TEXT [--expires 90d \| --no-expiry] [--network CIDR]... [--client-cert FILE \| --client-cert-sha256 HEX]`, `list`, `show`, `rotate <id> [--overlap 24h]`, `set <id>` (networks, client certificate), `revoke <id> [--with-successors]` |
@@ -41,6 +42,9 @@ A command that removes or discards something says what it would do and exits
   connects over TLS with the key from `CORIA_KEY` or the file named by
   `--key-file`. `http://` is accepted only for loopback hosts. A call is
   bounded by `--timeout` (30 seconds).
+- **Contexts.** `--context NAME` (or `CORIA_CONTEXT`, or the current context)
+  takes the server, the key file and the TLS files from a saved context; see
+  [Contexts](#contexts).
 - **A secret is never an argument.** No flag takes a key, a password or a
   database address: a tenant's Postgres address is read from the variable named
   by `--db-env` or the file named by `--db-file`, an S3 storage's secret access
@@ -72,6 +76,61 @@ A command that removes or discards something says what it would do and exits
   each written as `.part` and renamed only once its SHA-256 matches the one the
   server announced. Run again, a download skips what is complete and resumes a
   `.part` by range ([internal/cli/download](../internal/cli/download/doc.go)).
+
+## Contexts
+
+A context names one way to reach one installation: the server's address, the
+file that holds a key, the certificate authorities and client certificate files
+for it, and optionally a default tenant. Contexts are kept in
+`$XDG_CONFIG_HOME/coria/contexts.json` (`~/.config/coria/contexts.json` when that
+is unset, on macOS too; `%AppData%\coria\contexts.json` on Windows), or in the
+file named by `CORIA_CONFIG`. The file holds paths, never a key or any other
+secret, and a file with a field this program does not know is refused.
+
+- **The file is private.** On Unix it is read only when its mode is 0600 and it
+  is yours, as `--key-file` is, and when its directory is yours, not writable by
+  others and without a macOS access list entry; the default directory, which
+  `coria` makes 0700, must also not be readable by others. A `CORIA_CONFIG` file
+  must be in a private directory of your own, not a shared one such as `/tmp`. On
+  Windows the file's owner and access list are checked (the directory's are not).
+  It is written whole to a private temporary file in the same directory, flushed
+  and renamed over the old one, and a save is refused (exit 5) when the file
+  changed since the command read it.
+- **A hand-edited file cannot leak.** Loading refuses a server with a user name or
+  password, a path that is not absolute, a value that is a key (starting
+  `cor_k`), an invalid tenant name and a field it does not know, and no message
+  quotes a value.
+- **`add`** takes the flags every command takes (`--server`, `--key-file`,
+  `--ca-file`, `--tls-client-cert`, `--tls-client-key`) and `--tenant` for the
+  default tenant. Only those flags are used, not the environment, so what is
+  checked with a `WhoAmI` call is what is saved. A name that exists is refused
+  (exit 5) unless `--replace` is given; the first context saved becomes the
+  current one. Paths are saved as absolute paths.
+- **Which context.** `--context NAME`, else `CORIA_CONTEXT`, else the current
+  context (`context use`). A name that is not in the file is exit 4, naming the
+  context and the file. A context and a server named another way do not mix:
+  `--context` or `CORIA_CONTEXT` together with `--server`, `--data-dir`,
+  `CORIA_SERVER` or `CORIA_DATA_DIR` is a usage error (exit 2) naming both. The
+  current context applies only when none of those is given; with no context and
+  none of those, a command is a usage error as before.
+- **The key.** A context's key file is sent only to the context's own server.
+  `--key-file` overrides it. When `CORIA_KEY` is set, a command that uses a context
+  is refused (exit 2), so an exported key never travels to whichever context is
+  current. `--ca-file`, `--tls-client-cert` and `--tls-client-key` and their
+  variables override the context's files.
+- **The default tenant** fills `--tenant` only where it is optional: `setting get`,
+  `set`, `unset` and `list`, and `audit list`. Without `--tenant` those act on the
+  installation, so with a default tenant they act on the tenant instead, which
+  the command says on standard error ("using tenant lab1 from context prod");
+  `--tenant ""` says the installation. A command that takes the tenant as an
+  argument (`storage list <tenant>`) is unchanged.
+
+```sh
+coria context add lab1 --server https://archive.example.org:8443 \
+    --key-file ~/.coria/lab1.key --ca-file ~/.coria/ca.pem --tenant lab1
+coria context list
+coria --context lab1 tenant list
+```
 
 ## The interactive program
 

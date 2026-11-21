@@ -204,3 +204,52 @@ func TestLoadMissingDirectory(t *testing.T) {
 		t.Errorf("LoadKeyFile in a missing directory: %v, want NotFound", err)
 	}
 }
+
+// TestCreatePrivateTempIsPrivate guards that a temporary file made for a
+// private credential has mode 0600 from creation, passes the same check as a
+// key file, and that its directory is checked for other users' access.
+func TestCreatePrivateTempIsPrivate(t *testing.T) {
+	dir := privateDir(t)
+	f, err := CreatePrivateTemp(dir, ".x-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := f.Name()
+	_ = f.Close()
+	if !strings.HasPrefix(filepath.Base(name), ".x-") {
+		t.Errorf("name %q does not follow the pattern", name)
+	}
+	if info, err := os.Stat(name); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+	g, err := OpenPrivate(name)
+	if err != nil {
+		t.Fatalf("OpenPrivate refused the file: %v", err)
+	}
+	_ = g.Close()
+}
+
+// TestCheckPrivateDir guards the directory rule: other users writing is
+// refused, other users reading only with noRead, a missing one is NotFound.
+func TestCheckPrivateDir(t *testing.T) {
+	dir := privateDir(t)
+	if err := CheckPrivateDir(dir, true); err != nil {
+		t.Fatalf("a private directory: %v", err)
+	}
+	for _, c := range []struct {
+		mode    os.FileMode
+		noRead  bool
+		refused bool
+	}{{0o755, false, false}, {0o755, true, true}, {0o770, false, true}, {0o702, false, true}, {0o750, true, true}} {
+		if err := os.Chmod(dir, c.mode); err != nil { //nolint:gosec // G302: a test of the refusal of an open directory.
+			t.Fatal(err)
+		}
+		if err := CheckPrivateDir(dir, c.noRead); (err != nil) != c.refused {
+			t.Errorf("mode %04o noRead %v: %v, refused want %v", c.mode, c.noRead, err, c.refused)
+		}
+	}
+	_ = os.Chmod(dir, 0o700) //nolint:gosec // G302: put back.
+	if err := CheckPrivateDir(filepath.Join(dir, "none"), false); fault.KindOf(err) != fault.NotFound {
+		t.Errorf("a missing directory: %v", err)
+	}
+}

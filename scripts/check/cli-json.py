@@ -51,6 +51,11 @@ EXPECTED = {
     "setting-unset": None,
     "setting-list": "settings",
     "audit-list": "entries",
+    "context-add": None,
+    "context-list": "contexts",
+    "context-show": None,
+    "context-use": None,
+    "context-remove": None,
 }
 
 

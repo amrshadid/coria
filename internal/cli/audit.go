@@ -49,6 +49,10 @@ zone with the offset.`,
 			if err := l.check(); err != nil {
 				return err
 			}
+			tenant, err := a.defaultTenant(cmd, tenant)
+			if err != nil {
+				return err
+			}
 			req := &v1.ListAuditEntriesRequest{Scope: optionalScope(tenant), KeyId: keyID}
 			if cmd.Flags().Changed("key-id") {
 				if err := checkKeyID(keyID); err != nil {
@@ -62,7 +66,6 @@ zone with the offset.`,
 				}
 				req.Outcome = o
 			}
-			var err error
 			if req.StartTime, req.EndTime, err = a.timeRange(since, until); err != nil {
 				return err
 			}

@@ -109,3 +109,18 @@ func TestParseACLReplyMalformed(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckPrivateDirRefusesPermitACL guards that a directory of mode 0700
+// with an access list entry that grants access is refused, as a key file's is.
+func TestCheckPrivateDirRefusesPermitACL(t *testing.T) {
+	dir := privateDir(t)
+	chmodACL(t, "+a", "everyone allow list,add_file,search", dir)
+	t.Logf("%s", lsACL(dir))
+	if err := CheckPrivateDir(dir, false); err == nil || !strings.Contains(err.Error(), "access list") {
+		t.Errorf("a directory with a permitting entry: %v", err)
+	}
+	chmodACL(t, "-N", dir)
+	if err := CheckPrivateDir(dir, false); err != nil {
+		t.Errorf("after removing the list: %v", err)
+	}
+}

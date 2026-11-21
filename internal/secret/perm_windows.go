@@ -296,3 +296,8 @@ func renderCommands(cmds [][]string) string {
 func syncDir(string) error {
 	return nil
 }
+
+// checkPrivateDir does not check the directory on Windows: its access list is
+// not read here, and a file made by CreatePrivateTemp carries its own,
+// protected, access list that checkPrivate verifies.
+func (fileSystem) checkPrivateDir(string, bool) error { return nil }

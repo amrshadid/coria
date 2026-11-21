@@ -153,3 +153,45 @@ func syncDir(dir string) error {
 	}
 	return d.Close()
 }
+
+// checkPrivateDir refuses a directory that another user could use to replace
+// a private file in it: one owned by someone else, one the group or other
+// users can write, with noRead also one they can read or enter, and on macOS
+// one with an access list entry that grants anything. A missing directory is
+// NotFound. The messages state the problem only; the caller knows what the
+// directory is and how to fix it.
+func (fsys fileSystem) checkPrivateDir(dir string, noRead bool) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fault.Wrap(fault.NotFound, err, "secret: the directory "+dir+" does not exist")
+		}
+		return fault.Wrap(fault.Internal, err, "secret: the directory "+dir+" cannot be checked")
+	}
+	if !info.IsDir() {
+		return fault.New(fault.Invalid, "secret: "+dir+" is not a directory")
+	}
+	if err := checkOwner(info, dir, "directory", "chown", fsys.euid()); err != nil {
+		return err
+	}
+	mask := fs.FileMode(0o022)
+	if noRead {
+		mask = 0o077
+	}
+	if perm := info.Mode().Perm(); perm&mask != 0 {
+		return fault.New(fault.Invalid, fmt.Sprintf("secret: the directory %s can be reached by other users (mode %04o)", dir, perm))
+	}
+	d, err := os.Open(dir) //nolint:gosec // G304: the directory of the person's own file.
+	if err != nil {
+		return fault.Wrap(fault.Internal, err, "secret: the directory "+dir+" cannot be checked")
+	}
+	defer func() { _ = d.Close() }()
+	permit, err := permitACL(d)
+	if err != nil {
+		return fault.Wrap(fault.Internal, err, "secret: the access list of the directory "+dir+" cannot be read")
+	}
+	if permit {
+		return fault.New(fault.Invalid, "secret: the directory "+dir+" has an access list entry that grants access beyond its mode")
+	}
+	return nil
+}

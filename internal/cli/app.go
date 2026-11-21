@@ -72,9 +72,12 @@ func (e Env) withDefaults() Env {
 // app is one run of the command line: its environment, the options every
 // command shares, and the client the first call makes.
 type app struct {
-	env  Env
-	opts struct {
+	env Env
+	// picked caches the context this run uses, found once.
+	picked *pick
+	opts   struct {
 		dataDir string
+		context string
 		server  string
 		keyFile string
 		caFile  string
@@ -198,6 +201,10 @@ func (a *app) client(cmd *cobra.Command) (*client.Client, error) {
 	if serverFlag && dataFlag {
 		return nil, fault.New(fault.Invalid, "give --server or --data-dir, not both")
 	}
+	sel, err := a.selectContext(cmd)
+	if err != nil {
+		return nil, err
+	}
 	cfg := client.Config{
 		KeyFile: a.opts.keyFile,
 		Getenv:  a.env.Getenv,
@@ -207,6 +214,7 @@ func (a *app) client(cmd *cobra.Command) (*client.Client, error) {
 	cfg.ClientCert = flagOrEnv(flags.Changed("tls-client-cert"), a.opts.clientCert, a.env.Getenv(client.EnvClientCert))
 	cfg.ClientKey = flagOrEnv(flags.Changed("tls-client-key"), a.opts.clientKey, a.env.Getenv(client.EnvClientKey))
 	envServer, envData := a.env.Getenv(client.EnvServer), a.env.Getenv(client.EnvDataDir)
+	fromContext := false
 	switch {
 	case serverFlag:
 		cfg.Server = a.opts.server
@@ -214,12 +222,35 @@ func (a *app) client(cmd *cobra.Command) (*client.Client, error) {
 		cfg.DataDir = a.opts.dataDir
 	case envServer != "":
 		cfg.Server = envServer
+	case sel != nil:
+		// A context is selected only when nothing else named the server, so
+		// its key, files and tenant go to its own server. An exported key
+		// would otherwise travel to whichever context is current, so it is
+		// refused; --key-file is the explicit override.
+		fromContext = true
+		cfg.Server = sel.Server
+		if cfg.KeyFile == "" {
+			if a.env.Getenv(client.EnvKey) != "" {
+				return nil, fault.New(fault.Invalid, client.EnvKey+" is set; it would be sent to the server of context "+shown(sel.name)+": unset it or pass --key-file")
+			}
+			cfg.KeyFile = sel.KeyFile
+		}
+		if cfg.CAFile == "" {
+			cfg.CAFile = sel.CAFile
+		}
+		if cfg.ClientCert == "" && cfg.ClientKey == "" {
+			cfg.ClientCert, cfg.ClientKey = sel.TLSClientCert, sel.TLSClientKey
+		}
 	case envData != "":
 		cfg.DataDir = envData
 	default:
-		return nil, fault.New(fault.Invalid, "do not know where the server is: give --data-dir (or set "+client.EnvDataDir+") for the local socket, or --server (or set "+client.EnvServer+") for the network")
+		return nil, fault.New(fault.Invalid, "do not know where the server is: give --data-dir (or set "+client.EnvDataDir+") for the local socket, --server (or set "+client.EnvServer+") for the network, or --context (or set "+EnvContext+") for a saved context")
 	}
-	return client.New(cfg)
+	c, err := client.New(cfg)
+	if err != nil && fromContext {
+		return nil, fault.Wrap(fault.KindOf(err), err, "context "+shown(sel.name)+" ("+sel.path+"): "+fault.Message(err))
+	}
+	return c, err
 }
 
 // flagOrEnv returns a flag's value when the flag was given, else the
@@ -244,7 +275,9 @@ server, with no key. With --server (or CORIA_SERVER) it reaches a server on
 the network over TLS, with the key read from CORIA_KEY or from the file named
 by --key-file. A key is never an argument: arguments are visible to every user
 of the machine and are kept in shell history. A key that works only with a TLS
-client certificate is used with --tls-client-cert and --tls-client-key.
+client certificate is used with --tls-client-cert and --tls-client-key. A
+context (coria context --help) saves a server with its key file and TLS files
+under a name: --context NAME, CORIA_CONTEXT, or the current context.
 
 Output is a table for a person. With --json it is one JSON document with a
 "schemaVersion" field, for a program. An error is one line on standard error.
@@ -274,6 +307,7 @@ that can no longer be answered, 7 a bound of the server reached.`,
 	root.SetVersionTemplate("{{.Version}}\n")
 
 	f := root.PersistentFlags()
+	f.StringVar(&a.opts.context, "context", "", "name of a saved context, a server with its key and files (default: "+EnvContext+", then the current context; see coria context --help)")
 	f.StringVar(&a.opts.dataDir, "data-dir", "", "the installation's data directory; the server is reached on its local socket, run/coria.sock (default: "+client.EnvDataDir+")")
 	f.StringVar(&a.opts.server, "server", "", "address of a server on the network, https://host:port (http:// only for a loopback host); needs a key (default: "+client.EnvServer+")")
 	f.StringVar(&a.opts.keyFile, "key-file", "", "path of a file holding the key to send with --server (default: the "+client.EnvKey+" variable); the key itself is never an argument")
@@ -291,6 +325,7 @@ that can no longer be answered, 7 a bound of the server reached.`,
 		a.newVersion(),
 		a.own(servecmd.Init(serveOpts)), a.own(servecmd.Serve(serveOpts)),
 		a.newWhoami(),
+		a.newContext(),
 		a.newTenant(),
 		a.newKey(),
 		a.newGrant(),

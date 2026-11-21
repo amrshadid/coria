@@ -8,6 +8,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/internal/cli/client"
+	"github.com/amrshadid/coria/internal/cli/fakeserver"
 )
 
 // jsonDirEnv names the directory TestWriteJSONOutputs writes into. The test
@@ -85,6 +87,30 @@ func TestWriteJSONOutputs(t *testing.T) {
 			t.Fatalf("coria %v: exit %d, standard error %q", s.args, res.code, res.stderr)
 		}
 		// The directory is the one make check-json made for this run.
+		if err := os.WriteFile(filepath.Join(dir, s.name+".json"), []byte(res.stdout), 0o600); err != nil { //nolint:gosec // dir is the test's own scratch directory
+			t.Fatal(err)
+		}
+	}
+	// The contexts need a server that asks for a key, so they run against a
+	// network fake of their own, with a file of contexts in the test's
+	// private directory.
+	n := newNetworkRig(t)
+	keyFile := fakeserver.PrivateFile(t, testKey+"\n")
+	cfgEnv := map[string]string{"CORIA_CONFIG": filepath.Join(t.TempDir(), "contexts.json")}
+	for _, s := range []struct {
+		name string
+		args []string
+	}{
+		{"context-add", []string{"context", "add", "prod", "--server", n.env[client.EnvServer], "--key-file", keyFile, "--ca-file", n.env[client.EnvCAFile]}},
+		{"context-list", []string{"context", "list"}},
+		{"context-show", []string{"context", "show", "prod"}},
+		{"context-use", []string{"context", "use", "prod"}},
+		{"context-remove", []string{"context", "remove", "prod"}},
+	} {
+		res := runWith(cfgEnv, append(s.args, "--json")...)
+		if res.code != 0 || res.stderr != "" {
+			t.Fatalf("coria %v: exit %d, standard error %q", s.args, res.code, res.stderr)
+		}
 		if err := os.WriteFile(filepath.Join(dir, s.name+".json"), []byte(res.stdout), 0o600); err != nil { //nolint:gosec // dir is the test's own scratch directory
 			t.Fatal(err)
 		}

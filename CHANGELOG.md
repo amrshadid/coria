@@ -246,6 +246,20 @@ All notable changes to CORIA are written here. The form is
   share one bound of 256 open reads, of which the senders hold at most half;
   TestSender tries the peer; the senders take up a new, canceled or retried
   job at once.
+- `coria context add|list|show|use|remove` saves named client contexts
+  (server address, CA and TLS client certificate paths, key file path,
+  optional default tenant) in a file only the user can read, in a directory
+  only the user can change (`$XDG_CONFIG_HOME/coria/contexts.json`,
+  `~/.config/coria/contexts.json`, `%AppData%\coria\contexts.json`, or
+  `CORIA_CONFIG`). `add` checks the key with WhoAmI first and prints what it
+  is granted. `--context NAME`, `CORIA_CONTEXT` or the current context picks
+  one; a named context cannot be combined with `--server`, `--data-dir`,
+  `CORIA_SERVER` or `CORIA_DATA_DIR`, and a set `CORIA_KEY` is refused so it
+  never travels to a context's server (`--key-file` overrides). A context's
+  default tenant fills `--tenant` of `setting get|set|unset|list` and `audit
+  list` when it is not given, and says so on standard error. The file is
+  refused when it holds a key, user information in a URL or a relative path,
+  and a save is refused when the file changed since it was read.
 - `coria sender add|list|show|set|remove|test` and `coria job
   create|get|list|watch|cancel|retry|failures`: a tenant's senders and jobs
   on the command line. A stow sender's credential is read from a private

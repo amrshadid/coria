@@ -50,6 +50,10 @@ default. The answer says which of the three the value came from.`,
   coria setting get key.default-lifetime --tenant lab1`,
 		Args: exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			tenant, err := a.defaultTenant(cmd, tenant)
+			if err != nil {
+				return err
+			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {
 				return err
@@ -81,6 +85,10 @@ does not accept, and --tenant for a setting set on the installation only.`,
 		Example: `  coria setting set key.default-lifetime 30d`,
 		Args:    exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			tenant, err := a.defaultTenant(cmd, tenant)
+			if err != nil {
+				return err
+			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {
 				return err
@@ -112,6 +120,10 @@ is not set changes nothing and succeeds.`,
 		Example: `  coria setting unset key.default-lifetime`,
 		Args:    exactArgs(1),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
+			tenant, err := a.defaultTenant(cmd, tenant)
+			if err != nil {
+				return err
+			}
 			c, closeClient, err := a.open(cmd)
 			if err != nil {
 				return err
@@ -153,6 +165,10 @@ a tenant, only that tenant's overrides.`,
 		Args: exactArgs(0),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, _ []string) error {
 			if err := l.check(); err != nil {
+				return err
+			}
+			tenant, err := a.defaultTenant(cmd, tenant)
+			if err != nil {
 				return err
 			}
 			c, closeClient, err := a.open(cmd)
