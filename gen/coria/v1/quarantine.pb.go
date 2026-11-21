@@ -139,9 +139,20 @@ const (
 	// as a file that just arrived, so it is de-identified), "profile_unusable"
 	// (the profile version cannot run in this version of the server),
 	// "unreadable" or "unwritable" (the data set cannot be read, or written
-	// back, for de-identification), or "uid_not_remapped" (the profile
+	// back, for de-identification), "uid_not_remapped" (the profile
 	// leaves a Study, Series or SOP Instance UID other than the keyed
-	// remapping the server places the file by); "path", the element where it
+	// remapping the server places the file by), "pixels_too_large" (the
+	// image needs work on its pixels and decoded is larger than the setting
+	// deid.pixel-limit; a release once the setting is raised archives it),
+	// "pixels_unsupported" (a pixel rule cannot fill an image of its
+	// layout), "pixels_undecodable" (its frames, or its JPEG segments, do
+	// not decode), "frames_mismatch" (its native pixels hold more bytes than
+	// its stated frames), "pixel_region_outside" (a pixel rule's rectangle lies
+	// wholly outside the image), "pixel_text_unsearched" (its compressed
+	// pixel data has segments that are not searched, such as JPEG 2000's,
+	// and the profile holds such images) or "detect_implausible" (the
+	// detector found regions covering more of the picture than text does);
+	// "path", the element where it
 	// failed, as tags of eight hexadecimal digits with item numbers, such as
 	// "00081115[0]/0020000E", when there is one; and "rule", the rule's name
 	// (or "rule" and its position), when one decided. A release de-identifies
@@ -161,6 +172,31 @@ const (
 	// an element the file holds. Details: "rule", the rule's name (or "rule"
 	// and its position).
 	QuarantineReason_QUARANTINE_REASON_PROFILE_REFUSED QuarantineReason = 16
+	// The study's receiver routes each study by its routes, and this one was
+	// not routed: no route chose it and the routing holds what none chooses
+	// (Receiver.routing), a route could not be evaluated, or another
+	// reception of the study made its session on another storage while this
+	// one was in flight. Every file of the reception is held, its bytes
+	// kept. Details: "cause", "no_match", "route_unusable" or
+	// "session_elsewhere", and "route", the route's name, for
+	// "route_unusable". A release may name the storage the study goes to
+	// (ReleaseQuarantinedFileRequest.storage); without one the routes run
+	// again.
+	QuarantineReason_QUARANTINE_REASON_UNROUTED QuarantineReason = 17
+	// The image's pixels may carry burned-in text and no pixel rule of the
+	// receiver's profile matches it, so it was never archived; its original
+	// bytes are kept. Details: "cause", why it is at risk, read from the
+	// image as received: "burned_in_annotation" (Burned In Annotation
+	// (0028,0301) is YES), "secondary_capture" (a Secondary Capture Image
+	// Storage SOP class, and Burned In Annotation is not NO), "sop_class" (a
+	// SOP class commonly drawn on: ultrasound, visible light, ophthalmic,
+	// and Burned In Annotation is not NO), "modality" (a modality commonly
+	// drawn on: US, IVUS, ES, GM, XC, SC, OT, XA, RF, OP, SM, PX, IO, and
+	// Burned In Annotation is not NO) or "slide_label" (a whole slide's
+	// label or overview image). A release de-identifies the file
+	// again with its receiver's profile version then, so a profile given a
+	// pixel rule for such images lets it through.
+	QuarantineReason_QUARANTINE_REASON_BURNED_IN_RISK QuarantineReason = 18
 )
 
 // Enum value maps for QuarantineReason.
@@ -183,6 +219,8 @@ var (
 		14: "QUARANTINE_REASON_DEID_FAILED",
 		15: "QUARANTINE_REASON_RESIDUAL_VALUE",
 		16: "QUARANTINE_REASON_PROFILE_REFUSED",
+		17: "QUARANTINE_REASON_UNROUTED",
+		18: "QUARANTINE_REASON_BURNED_IN_RISK",
 	}
 	QuarantineReason_value = map[string]int32{
 		"QUARANTINE_REASON_UNSPECIFIED":            0,
@@ -202,6 +240,8 @@ var (
 		"QUARANTINE_REASON_DEID_FAILED":            14,
 		"QUARANTINE_REASON_RESIDUAL_VALUE":         15,
 		"QUARANTINE_REASON_PROFILE_REFUSED":        16,
+		"QUARANTINE_REASON_UNROUTED":               17,
+		"QUARANTINE_REASON_BURNED_IN_RISK":         18,
 	}
 )
 
@@ -484,8 +524,12 @@ type QuarantinedFile struct {
 	// Why it was released, as given to ReleaseQuarantinedFile. Empty unless it
 	// is released and a reason was given.
 	ReleaseReason string `protobuf:"bytes,24,opt,name=release_reason,json=releaseReason,proto3" json:"release_reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The name of the storage its release named
+	// (ReleaseQuarantinedFileRequest.storage). Empty unless it is released
+	// and a storage was named.
+	ReleaseStorage string `protobuf:"bytes,25,opt,name=release_storage,json=releaseStorage,proto3" json:"release_storage,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *QuarantinedFile) Reset() {
@@ -682,6 +726,13 @@ func (x *QuarantinedFile) GetReleaseReceiver() string {
 func (x *QuarantinedFile) GetReleaseReason() string {
 	if x != nil {
 		return x.ReleaseReason
+	}
+	return ""
+}
+
+func (x *QuarantinedFile) GetReleaseStorage() string {
+	if x != nil {
+		return x.ReleaseStorage
 	}
 	return ""
 }
@@ -1042,7 +1093,23 @@ type ReleaseQuarantinedFileRequest struct {
 	// release is a decision, kept with the record as a rejection's reason is.
 	// Optional; when given, 1 to 1024 bytes of UTF-8, not only spaces. A
 	// file already released keeps the reason of its first release.
-	Reason        string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	Reason string `protobuf:"bytes,5,opt,name=reason,proto3" json:"reason,omitempty"`
+	// The name of the tenant's storage the reception the file joins is
+	// archived to, in place of the storage the receiver's routing would
+	// choose: a file held as QUARANTINE_REASON_UNROUTED is released naming
+	// one. It chooses the storage only: the profile version and the senders
+	// are still those of the route that holds for the study, or the
+	// receiver's when none does, and the routing's default does not hold it
+	// again. Optional; empty lets the routing choose again. A storage the
+	// tenant does not have is a precondition failure, and so is a storage
+	// other than the one an earlier release into the same reception named.
+	// A study whose session the archive already holds stays on that
+	// session's storage. A file that joins no reception (it lands again, as
+	// a file recorded as received at a receiver that de-identifies now does)
+	// keeps the storage through its new landing: the reception it joins then
+	// is archived there. The storage is recorded with the record
+	// (QuarantinedFile.release_storage) and in the release's audit entry.
+	Storage       string `protobuf:"bytes,6,opt,name=storage,proto3" json:"storage,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1108,6 +1175,13 @@ func (x *ReleaseQuarantinedFileRequest) GetReceiver() string {
 func (x *ReleaseQuarantinedFileRequest) GetReason() string {
 	if x != nil {
 		return x.Reason
+	}
+	return ""
+}
+
+func (x *ReleaseQuarantinedFileRequest) GetStorage() string {
+	if x != nil {
+		return x.Storage
 	}
 	return ""
 }
@@ -1277,7 +1351,7 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x06Caller\x12(\n" +
 	"\x10calling_ae_title\x18\x01 \x01(\tR\x0ecallingAeTitle\x12&\n" +
 	"\x0fcalled_ae_title\x18\x02 \x01(\tR\rcalledAeTitle\x12\x18\n" +
-	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xc4\b\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\"\xed\b\n" +
 	"\x0fQuarantinedFile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x122\n" +
 	"\x06reason\x18\x02 \x01(\x0e2\x1a.coria.v1.QuarantineReasonR\x06reason\x12@\n" +
@@ -1306,7 +1380,8 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\rreject_reason\x18\x15 \x01(\tR\frejectReason\x12#\n" +
 	"\rreleased_from\x18\x16 \x01(\tR\freleasedFrom\x12)\n" +
 	"\x10release_receiver\x18\x17 \x01(\tR\x0freleaseReceiver\x12%\n" +
-	"\x0erelease_reason\x18\x18 \x01(\tR\rreleaseReason\x1a:\n" +
+	"\x0erelease_reason\x18\x18 \x01(\tR\rreleaseReason\x12'\n" +
+	"\x0frelease_storage\x18\x19 \x01(\tR\x0ereleaseStorage\x1a:\n" +
 	"\fDetailsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xda\x03\n" +
@@ -1336,13 +1411,14 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file\x12\x1f\n" +
 	"\vheader_json\x18\x02 \x01(\tR\n" +
 	"headerJson\x12(\n" +
-	"\x10header_too_large\x18\x03 \x01(\bR\x0eheaderTooLarge\"\xa6\x01\n" +
+	"\x10header_too_large\x18\x03 \x01(\bR\x0eheaderTooLarge\"\xc0\x01\n" +
 	"\x1dReleaseQuarantinedFileRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12)\n" +
 	"\x04mode\x18\x03 \x01(\x0e2\x15.coria.v1.ReleaseModeR\x04mode\x12\x1a\n" +
 	"\breceiver\x18\x04 \x01(\tR\breceiver\x12\x16\n" +
-	"\x06reason\x18\x05 \x01(\tR\x06reason\"O\n" +
+	"\x06reason\x18\x05 \x01(\tR\x06reason\x12\x18\n" +
+	"\astorage\x18\x06 \x01(\tR\astorage\"O\n" +
 	"\x1eReleaseQuarantinedFileResponse\x12-\n" +
 	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file\"^\n" +
 	"\x1cRejectQuarantinedFileRequest\x12\x16\n" +
@@ -1350,7 +1426,7 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"N\n" +
 	"\x1dRejectQuarantinedFileResponse\x12-\n" +
-	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file*\x88\x05\n" +
+	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file*\xce\x05\n" +
 	"\x10QuarantineReason\x12!\n" +
 	"\x1dQUARANTINE_REASON_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bQUARANTINE_REASON_NOT_DICOM\x10\x01\x12,\n" +
@@ -1369,7 +1445,9 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x1eQUARANTINE_REASON_UID_MISMATCH\x10\r\x12!\n" +
 	"\x1dQUARANTINE_REASON_DEID_FAILED\x10\x0e\x12$\n" +
 	" QUARANTINE_REASON_RESIDUAL_VALUE\x10\x0f\x12%\n" +
-	"!QUARANTINE_REASON_PROFILE_REFUSED\x10\x10*\x8c\x01\n" +
+	"!QUARANTINE_REASON_PROFILE_REFUSED\x10\x10\x12\x1e\n" +
+	"\x1aQUARANTINE_REASON_UNROUTED\x10\x11\x12$\n" +
+	" QUARANTINE_REASON_BURNED_IN_RISK\x10\x12*\x8c\x01\n" +
 	"\x0fQuarantineState\x12 \n" +
 	"\x1cQUARANTINE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15QUARANTINE_STATE_HELD\x10\x01\x12\x1d\n" +

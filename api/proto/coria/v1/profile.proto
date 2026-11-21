@@ -310,10 +310,14 @@ service ProfileService {
 // Original Attributes Sequence (0400,0561), the Encrypted Attributes
 // Sequence (0400,0500) and the MAC Parameters Sequence (4FFE,0001), since
 // they hold values as received or cannot hold over a changed data set
-// (PS3.15 E.1.1); and every element of group 7FE0 but those kept. Kept,
-// changed only by pixel rules: Pixel Data (7FE0,0010), Float and Double
-// Float Pixel Data (7FE0,0008), (7FE0,0009), the Extended Offset Table
-// (7FE0,0001) and its lengths (7FE0,0002). Written: Specific Character Set
+// (PS3.15 E.1.1); the Icon Image Sequence (0088,0200), a thumbnail no
+// pixel rule fills; and every element of group 7FE0 but those kept. Kept
+// at the top level, changed only by pixel rules: Pixel Data (7FE0,0010),
+// Float and Double Float Pixel Data (7FE0,0008), (7FE0,0009), the Extended
+// Offset Table (7FE0,0001) and its lengths (7FE0,0002); inside a sequence
+// item they are removed, being an image no pixel rule fills. An image
+// with only Float or Double Float Pixel Data is not judged by the
+// burned-in gate. Written: Specific Character Set
 // (0008,0005), removed at every depth and written once for the text the
 // file holds after every rule has acted (ISO_IR 192 when any is outside the
 // default repertoire, PS3.5 6.1.2.3).
@@ -347,6 +351,34 @@ message ProfileDocument {
   // does not change what the profile does, and is not part of the expanded
   // form.
   string description = 6;
+
+  // What happens to an image whose pixel data stays compressed in a
+  // transfer syntax whose comment and application segments are not
+  // searched (JPEG 2000 and the others that are neither the JPEG family
+  // nor RLE): text there travels with the file, unseen by the check
+  // after. Unspecified takes it from the last base that says, and holds
+  // such an image when none does. The comment and application segments of
+  // the JPEG family (Baseline, Extended, Lossless, JPEG-LS) are always
+  // removed, the image data copied byte for byte (PS3.5 A.4); a frame then
+  // holding any segment beyond those a decoder needs at their defined
+  // length (JFIF without a thumbnail, Adobe's 12 bytes, the JPEG-LS color
+  // transform, table and header segments at the length their contents
+  // need) is held as pixel_text_unsearched. An image a pixel rule fills is
+  // written native and has no segments.
+  UnsearchedSegments unsearched_segments = 7;
+}
+
+// UnsearchedSegments is what happens to an image whose compressed pixel
+// data may carry text in segments that are not searched.
+enum UnsearchedSegments {
+  // Taken from the bases; hold when none says.
+  UNSEARCHED_SEGMENTS_UNSPECIFIED = 0;
+
+  // The image is held: deid_failed, cause "pixel_text_unsearched".
+  UNSEARCHED_SEGMENTS_HOLD = 1;
+
+  // The image is archived with its segments as received.
+  UNSEARCHED_SEGMENTS_KEEP = 2;
 }
 
 // UnnamedElements is what happens to an element no rule decides.
@@ -904,11 +936,28 @@ enum RequiredFallback {
   REQUIRED_FALLBACK_UID = 3;
 }
 
-// PixelRule says what happens to an image whose pixels may carry burned-in
-// text: one whose Burned In Annotation (0028,0301) is YES, or absent on a
-// kind of image commonly drawn on. Such an image no pixel rule covers is
-// quarantined. Of the pixel rules that match an image, the last in the
-// expanded order decides.
+// PixelRule says what happens to the pixels of an image it matches: any
+// image with Pixel Data (7FE0,0010) whose size and conditions it matches,
+// so a rule also reaches a device known to draw text while writing Burned
+// In Annotation (0028,0301) NO. An image whose pixels may carry burned-in
+// text that no pixel rule matches is quarantined, burned_in_risk: its
+// Burned In Annotation is YES; or it is not NO and the image is a
+// secondary capture, of a SOP class commonly drawn on (ultrasound, the
+// visible light family of endoscopy, microscopy and photography, still
+// and video, ophthalmic photography and tomography) or of a modality
+// commonly drawn on (US, IVUS, ES, GM, XC, SC, OT, XA, RF, OP, SM, PX,
+// IO); or it is a whole slide's label or overview image (Image Type LABEL
+// or OVERVIEW), whatever Burned In Annotation says. DX and CR are not at
+// risk by kind: a radiograph's markers are rarely the person. The facts are
+// read from the image as received, so no rule of the profile changes
+// whether it is at risk. Of the pixel rules that match an image, the last
+// in the expanded order decides.
+//
+// Work on pixels is bounded by the setting deid.pixel-limit, the bytes of
+// the image decoded: an image a redact or detect rule matches, or whose
+// JPEG segments are removed, past it is held (deid_failed, cause
+// "pixels_too_large"), its bytes kept, and released once the setting is
+// raised.
 message PixelRule {
   // The rule's name, under the rule of ProfileRule.name; unique among the
   // document's pixel rules. Required.
@@ -926,11 +975,32 @@ message PixelRule {
 
   // What happens to a matching image. Exactly one is set.
   oneof action {
-    // Rectangles of the image are filled, in every frame.
+    // Rectangles of the image are filled with black (the lowest sample,
+    // the highest under MONOCHROME1), in every frame, decoded a frame at a
+    // time. A compressed image is written native (Explicit VR Little
+    // Endian), so nothing is encoded again; Lossy Image Compression
+    // (0028,2110) stays as received, and is written 01 with its method
+    // when the image was JPEG Baseline or Extended and did not say
+    // (PS3.3 C.7.6.1.1.5). Burned In Annotation (0028,0301) is written NO
+    // and the Clean Pixel Data Option's code (113101) recorded in
+    // De-identification Method Code Sequence (0012,0064) (PS3.15 E.3.1).
+    // Not recorded while the file holds Float or Double Float Pixel Data
+    // beside the image filled. A rectangle wholly outside the image holds
+    // it (deid_failed, cause "pixel_region_outside"), and so does an image
+    // whose layout cannot be filled ("pixels_unsupported"), whose frames
+    // do not decode ("pixels_undecodable"), or whose native pixels hold
+    // more bytes than its stated frames ("frames_mismatch").
     RedactPixels redact = 5;
 
-    // Text found in the pixels by detection is filled, and the file records
-    // that redaction was automatic and unverified.
+    // Text found in the pixels by the DICOM library's detector is filled,
+    // as redact fills, and De-identification Method (0012,0063) records
+    // "Burned-in text redacted where detected, unverified"; Burned In
+    // Annotation is left as received and no code is recorded, since a
+    // detector can miss. Opt-in, and costly: every frame is decoded and
+    // searched at several scales. Found regions covering more of the
+    // picture than text does hold the image ("detect_implausible"). A
+    // detector that finds nothing changes nothing and records "Burned-in
+    // text detector found none, unverified".
     DetectText detect = 6;
 
     // The image is archived as it is. The rule's reason is required.
@@ -1009,6 +1079,12 @@ message ExpandedProfile {
   // version never changes what it does when the language grows. This
   // edition is 1.
   int32 language_edition = 6;
+
+  // What happens to an image whose compressed pixel data has segments
+  // that are not searched: keep, or unspecified, which holds such an
+  // image. Hold is written as unspecified, so a document that says hold
+  // and one that says nothing have one expanded form and one checksum.
+  UnsearchedSegments unsearched_segments = 7;
 }
 
 // ExpandedRule is a rule of an expanded profile, where it came from, and
@@ -1441,16 +1517,18 @@ message TrialResult {
 
   // For a held file, the quarantine reason it would be held with, as
   // Quarantine's reasons are written: "deid_failed", "residual_value",
-  // "profile_refused", and with a receiver "not_dicom",
-  // "header_too_large", "bad_uid", "sop_class_not_accepted" and
-  // "bad_label".
+  // "profile_refused", "burned_in_risk", and with a receiver "not_dicom",
+  // "header_too_large", "bad_uid", "sop_class_not_accepted", "bad_label"
+  // and "unrouted".
   string reason = 4;
 
   // For a held file, the fixed cause: the engine's (such as "bad_value",
   // "lookup_missing", "too_large", "no_subject", "uid_not_remapped",
   // "unreadable", "after_unreadable": the file the check passed could not
-  // be read back to answer its values) or the check's
-  // ("check_unreadable", "check_too_large"), for residual_value the kind
+  // be read back to answer its values, "pixels_too_large" and the other
+  // causes of the work on pixels), for burned_in_risk why the image is at
+  // risk ("burned_in_annotation", "secondary_capture", "modality"), the
+  // check's ("check_unreadable", "check_too_large"), for residual_value the kind
   // of value found ("name", "identifier", "date", "uid"), for bad_uid and
   // bad_label the fault ("missing", "empty", "bad_uid", ...), and
   // "lookup_table" for an undecided verdict. Never a value.
@@ -1489,6 +1567,64 @@ message TrialResult {
   // True when no receiver's checks ran: the verdict is
   // de-identification's alone.
   bool deidentification_only = 14;
+
+  // What was done, or would be, to the file's pixels; absent when the
+  // file has no Pixel Data or was held before the pixels were judged.
+  TrialPixels pixels = 15;
+
+  // With a receiver that routes (Receiver.routing), the route its routing
+  // would choose for the file, tried as the first file of a new session;
+  // empty when none would, or with no receiver. A file the routing would
+  // not route is held, reason "unrouted", cause "no_match" or
+  // "route_unusable".
+  string route = 16;
+
+  // The profile version the file was tried with when the route chosen
+  // names one other than the profile tried: the receiver would
+  // de-identify the file with it, so the trial does too. Absent when the
+  // profile tried was used.
+  ProfileVersionName routed_profile = 17;
+}
+
+// TrialPixels is the work on one file's pixels: where it was decided, what
+// was filled and how much, never a value of the file.
+message TrialPixels {
+  // Whether the image may carry burned-in text, as its header says.
+  bool at_risk = 1;
+
+  // Why it may: "burned_in_annotation" (Burned In Annotation (0028,0301)
+  // is YES), "secondary_capture", "sop_class", "modality" or
+  // "slide_label"; empty when not at risk.
+  string risk_cause = 2;
+
+  // The pixel rule that decided, by name; empty when none matched.
+  string rule = 3;
+
+  // The base the rule came from; empty for the profile's own rule.
+  string origin = 4;
+
+  // What the rule does: "redact", "detect" or "accept"; empty when none
+  // matched.
+  string action = 5;
+
+  // The rectangles filled in every frame, in the image's own pixels from
+  // its top left corner, a rule's measured from the edges it names; for
+  // detect, those the detector found.
+  repeated PixelRectangle regions = 6;
+
+  // The image's frames.
+  int32 frames = 7;
+
+  // The bytes of the image decoded, which deid.pixel-limit bounds.
+  int64 decoded_bytes = 8;
+
+  // Whether compressed pixels are written native, decoded.
+  bool decoded = 9;
+
+  // The JPEG comment and application segments removed, by marker name
+  // ("COM", "APP1", ..., "trailing data"), each with the frame it was in
+  // counted once per name; what they held is never answered.
+  repeated string segments_removed = 10;
 }
 
 // TrialElement is what happened to one element of a tried file, and why.
@@ -1758,6 +1894,14 @@ message DiffProfileVersionsResponse {
   // defaults, shows why: the expanded forms differ in what this
   // comparison does not itemize (TryProfile over files shows the effect).
   bool unlisted_change = 16;
+
+  // What each version does with an image whose compressed pixel data has
+  // segments that are not searched, as its expanded form says it:
+  // unspecified holds.
+  UnsearchedSegments unsearched_segments_from = 17;
+
+  // See unsearched_segments_from.
+  UnsearchedSegments unsearched_segments_to = 18;
 }
 
 // ProfileChange is how a rule differs between two versions.

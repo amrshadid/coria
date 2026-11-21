@@ -59,6 +59,10 @@ const (
 // is read again: a setting read once a second at most, not once a file.
 const HeaderLimitInterval = time.Second
 
+// DefaultPixelLimit is the pixel bound when none can be read: the setting
+// deid.pixel-limit's default.
+const DefaultPixelLimit = 1 << 30
+
 // Config is what one tenant's pipeline is handed. Every port is given, none
 // is opened here.
 type Config struct {
@@ -109,6 +113,13 @@ type Config struct {
 	// HeaderLimitInterval, so a raised bound applies without a restart. Nil,
 	// or a read that fails before any has succeeded, is header.MaxHeader.
 	HeaderLimit Limit
+	// PixelLimit reads the most bytes of an image decoded that
+	// de-identification works on the pixels of (the setting
+	// deid.pixel-limit, as it applies on the tenant); read again at most
+	// every HeaderLimitInterval, so a raised bound applies without a
+	// restart. Nil, or a read that fails before any has succeeded, is
+	// DefaultPixelLimit.
+	PixelLimit Limit
 	// Workers is the most steps run at once; 0 is DefaultWorkers.
 	Workers int
 	// Lease is how long a worker holds a unit between renewals; 0 is

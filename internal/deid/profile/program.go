@@ -94,6 +94,9 @@ func Compile(e *v1.ExpandedProfile) (*Program, error) {
 	if _, known := v1.UnnamedElements_name[int32(e.GetUnnamed())]; !known {
 		return nil, fmt.Errorf("profile: an expanded profile's unnamed is not a value of UnnamedElements")
 	}
+	if _, known := v1.UnsearchedSegments_name[int32(e.GetUnsearchedSegments())]; !known {
+		return nil, fmt.Errorf("profile: an expanded profile's unsearched segments is not a value of UnsearchedSegments")
+	}
 	if len(e.GetRules()) > MaxExpandedRules {
 		return nil, fmt.Errorf("profile: an expanded profile has at most %d rules", MaxExpandedRules)
 	}
@@ -146,6 +149,14 @@ func (p *Program) Unnamed() v1.UnnamedElements { return p.expanded.GetUnnamed() 
 
 // DateShiftDays returns the largest date shift, in days.
 func (p *Program) DateShiftDays() int32 { return p.expanded.GetDateShiftDays() }
+
+// HoldsUnsearchedSegments reports whether an image whose compressed pixel
+// data has segments that are not searched is held: unless the version says
+// keep. A version stored before it said either holds, the side that never
+// archives text unseen.
+func (p *Program) HoldsUnsearchedSegments() bool {
+	return p.expanded.GetUnsearchedSegments() != v1.UnsearchedSegments_UNSEARCHED_SEGMENTS_KEEP
+}
 
 // Decide returns what the profile does to the element at loc, given the
 // file's and the reception's facts. Of the rules whose selector matches and

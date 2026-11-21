@@ -10,6 +10,12 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class UnsearchedSegments(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    UNSEARCHED_SEGMENTS_UNSPECIFIED: _ClassVar[UnsearchedSegments]
+    UNSEARCHED_SEGMENTS_HOLD: _ClassVar[UnsearchedSegments]
+    UNSEARCHED_SEGMENTS_KEEP: _ClassVar[UnsearchedSegments]
+
 class UnnamedElements(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     UNNAMED_ELEMENTS_UNSPECIFIED: _ClassVar[UnnamedElements]
@@ -61,6 +67,9 @@ class ProfileChange(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     PROFILE_CHANGE_REMOVED: _ClassVar[ProfileChange]
     PROFILE_CHANGE_CHANGED: _ClassVar[ProfileChange]
     PROFILE_CHANGE_MOVED: _ClassVar[ProfileChange]
+UNSEARCHED_SEGMENTS_UNSPECIFIED: UnsearchedSegments
+UNSEARCHED_SEGMENTS_HOLD: UnsearchedSegments
+UNSEARCHED_SEGMENTS_KEEP: UnsearchedSegments
 UNNAMED_ELEMENTS_UNSPECIFIED: UnnamedElements
 UNNAMED_ELEMENTS_KEEP: UnnamedElements
 UNNAMED_ELEMENTS_REMOVE: UnnamedElements
@@ -94,20 +103,22 @@ PROFILE_CHANGE_CHANGED: ProfileChange
 PROFILE_CHANGE_MOVED: ProfileChange
 
 class ProfileDocument(_message.Message):
-    __slots__ = ("bases", "rules", "unnamed", "date_shift_days", "pixel_rules", "description")
+    __slots__ = ("bases", "rules", "unnamed", "date_shift_days", "pixel_rules", "description", "unsearched_segments")
     BASES_FIELD_NUMBER: _ClassVar[int]
     RULES_FIELD_NUMBER: _ClassVar[int]
     UNNAMED_FIELD_NUMBER: _ClassVar[int]
     DATE_SHIFT_DAYS_FIELD_NUMBER: _ClassVar[int]
     PIXEL_RULES_FIELD_NUMBER: _ClassVar[int]
     DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    UNSEARCHED_SEGMENTS_FIELD_NUMBER: _ClassVar[int]
     bases: _containers.RepeatedScalarFieldContainer[str]
     rules: _containers.RepeatedCompositeFieldContainer[ProfileRule]
     unnamed: UnnamedElements
     date_shift_days: int
     pixel_rules: _containers.RepeatedCompositeFieldContainer[PixelRule]
     description: str
-    def __init__(self, bases: _Optional[_Iterable[str]] = ..., rules: _Optional[_Iterable[_Union[ProfileRule, _Mapping]]] = ..., unnamed: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days: _Optional[int] = ..., pixel_rules: _Optional[_Iterable[_Union[PixelRule, _Mapping]]] = ..., description: _Optional[str] = ...) -> None: ...
+    unsearched_segments: UnsearchedSegments
+    def __init__(self, bases: _Optional[_Iterable[str]] = ..., rules: _Optional[_Iterable[_Union[ProfileRule, _Mapping]]] = ..., unnamed: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days: _Optional[int] = ..., pixel_rules: _Optional[_Iterable[_Union[PixelRule, _Mapping]]] = ..., description: _Optional[str] = ..., unsearched_segments: _Optional[_Union[UnsearchedSegments, str]] = ...) -> None: ...
 
 class ProfileRule(_message.Message):
     __slots__ = ("name", "selector", "when", "action", "reason")
@@ -332,20 +343,22 @@ class AcceptPixels(_message.Message):
     def __init__(self) -> None: ...
 
 class ExpandedProfile(_message.Message):
-    __slots__ = ("rules", "unnamed", "date_shift_days", "pixel_rules", "bases", "language_edition")
+    __slots__ = ("rules", "unnamed", "date_shift_days", "pixel_rules", "bases", "language_edition", "unsearched_segments")
     RULES_FIELD_NUMBER: _ClassVar[int]
     UNNAMED_FIELD_NUMBER: _ClassVar[int]
     DATE_SHIFT_DAYS_FIELD_NUMBER: _ClassVar[int]
     PIXEL_RULES_FIELD_NUMBER: _ClassVar[int]
     BASES_FIELD_NUMBER: _ClassVar[int]
     LANGUAGE_EDITION_FIELD_NUMBER: _ClassVar[int]
+    UNSEARCHED_SEGMENTS_FIELD_NUMBER: _ClassVar[int]
     rules: _containers.RepeatedCompositeFieldContainer[ExpandedRule]
     unnamed: UnnamedElements
     date_shift_days: int
     pixel_rules: _containers.RepeatedCompositeFieldContainer[ExpandedPixelRule]
     bases: _containers.RepeatedScalarFieldContainer[str]
     language_edition: int
-    def __init__(self, rules: _Optional[_Iterable[_Union[ExpandedRule, _Mapping]]] = ..., unnamed: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days: _Optional[int] = ..., pixel_rules: _Optional[_Iterable[_Union[ExpandedPixelRule, _Mapping]]] = ..., bases: _Optional[_Iterable[str]] = ..., language_edition: _Optional[int] = ...) -> None: ...
+    unsearched_segments: UnsearchedSegments
+    def __init__(self, rules: _Optional[_Iterable[_Union[ExpandedRule, _Mapping]]] = ..., unnamed: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days: _Optional[int] = ..., pixel_rules: _Optional[_Iterable[_Union[ExpandedPixelRule, _Mapping]]] = ..., bases: _Optional[_Iterable[str]] = ..., language_edition: _Optional[int] = ..., unsearched_segments: _Optional[_Union[UnsearchedSegments, str]] = ...) -> None: ...
 
 class ExpandedRule(_message.Message):
     __slots__ = ("rule", "origin", "vrs")
@@ -610,7 +623,7 @@ class TryProfileResponse(_message.Message):
     def __init__(self, version: _Optional[_Union[ProfileVersion, _Mapping]] = ..., checksum: _Optional[str] = ..., reception_refusal: _Optional[str] = ..., results: _Optional[_Iterable[_Union[TrialResult, _Mapping]]] = ..., summary: _Optional[_Union[TrialSummary, _Mapping]] = ...) -> None: ...
 
 class TrialResult(_message.Message):
-    __slots__ = ("name", "quarantine_record", "verdict", "reason", "cause", "path", "rule", "elements", "elements_omitted", "values_searched", "values_skipped", "lookups_unassigned", "receiver", "deidentification_only")
+    __slots__ = ("name", "quarantine_record", "verdict", "reason", "cause", "path", "rule", "elements", "elements_omitted", "values_searched", "values_skipped", "lookups_unassigned", "receiver", "deidentification_only", "pixels", "route", "routed_profile")
     NAME_FIELD_NUMBER: _ClassVar[int]
     QUARANTINE_RECORD_FIELD_NUMBER: _ClassVar[int]
     VERDICT_FIELD_NUMBER: _ClassVar[int]
@@ -625,6 +638,9 @@ class TrialResult(_message.Message):
     LOOKUPS_UNASSIGNED_FIELD_NUMBER: _ClassVar[int]
     RECEIVER_FIELD_NUMBER: _ClassVar[int]
     DEIDENTIFICATION_ONLY_FIELD_NUMBER: _ClassVar[int]
+    PIXELS_FIELD_NUMBER: _ClassVar[int]
+    ROUTE_FIELD_NUMBER: _ClassVar[int]
+    ROUTED_PROFILE_FIELD_NUMBER: _ClassVar[int]
     name: str
     quarantine_record: str
     verdict: TrialVerdict
@@ -639,7 +655,34 @@ class TrialResult(_message.Message):
     lookups_unassigned: int
     receiver: str
     deidentification_only: bool
-    def __init__(self, name: _Optional[str] = ..., quarantine_record: _Optional[str] = ..., verdict: _Optional[_Union[TrialVerdict, str]] = ..., reason: _Optional[str] = ..., cause: _Optional[str] = ..., path: _Optional[str] = ..., rule: _Optional[str] = ..., elements: _Optional[_Iterable[_Union[TrialElement, _Mapping]]] = ..., elements_omitted: _Optional[int] = ..., values_searched: _Optional[int] = ..., values_skipped: _Optional[int] = ..., lookups_unassigned: _Optional[int] = ..., receiver: _Optional[str] = ..., deidentification_only: _Optional[bool] = ...) -> None: ...
+    pixels: TrialPixels
+    route: str
+    routed_profile: ProfileVersionName
+    def __init__(self, name: _Optional[str] = ..., quarantine_record: _Optional[str] = ..., verdict: _Optional[_Union[TrialVerdict, str]] = ..., reason: _Optional[str] = ..., cause: _Optional[str] = ..., path: _Optional[str] = ..., rule: _Optional[str] = ..., elements: _Optional[_Iterable[_Union[TrialElement, _Mapping]]] = ..., elements_omitted: _Optional[int] = ..., values_searched: _Optional[int] = ..., values_skipped: _Optional[int] = ..., lookups_unassigned: _Optional[int] = ..., receiver: _Optional[str] = ..., deidentification_only: _Optional[bool] = ..., pixels: _Optional[_Union[TrialPixels, _Mapping]] = ..., route: _Optional[str] = ..., routed_profile: _Optional[_Union[ProfileVersionName, _Mapping]] = ...) -> None: ...
+
+class TrialPixels(_message.Message):
+    __slots__ = ("at_risk", "risk_cause", "rule", "origin", "action", "regions", "frames", "decoded_bytes", "decoded", "segments_removed")
+    AT_RISK_FIELD_NUMBER: _ClassVar[int]
+    RISK_CAUSE_FIELD_NUMBER: _ClassVar[int]
+    RULE_FIELD_NUMBER: _ClassVar[int]
+    ORIGIN_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    REGIONS_FIELD_NUMBER: _ClassVar[int]
+    FRAMES_FIELD_NUMBER: _ClassVar[int]
+    DECODED_BYTES_FIELD_NUMBER: _ClassVar[int]
+    DECODED_FIELD_NUMBER: _ClassVar[int]
+    SEGMENTS_REMOVED_FIELD_NUMBER: _ClassVar[int]
+    at_risk: bool
+    risk_cause: str
+    rule: str
+    origin: str
+    action: str
+    regions: _containers.RepeatedCompositeFieldContainer[PixelRectangle]
+    frames: int
+    decoded_bytes: int
+    decoded: bool
+    segments_removed: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, at_risk: _Optional[bool] = ..., risk_cause: _Optional[str] = ..., rule: _Optional[str] = ..., origin: _Optional[str] = ..., action: _Optional[str] = ..., regions: _Optional[_Iterable[_Union[PixelRectangle, _Mapping]]] = ..., frames: _Optional[int] = ..., decoded_bytes: _Optional[int] = ..., decoded: _Optional[bool] = ..., segments_removed: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class TrialElement(_message.Message):
     __slots__ = ("path", "keyword", "vr", "action", "rule", "rule_name", "origin", "reason", "changed", "before", "after", "present_after")
@@ -778,7 +821,7 @@ class DiffProfileVersionsRequest(_message.Message):
     def __init__(self, tenant: _Optional[str] = ..., name: _Optional[str] = ..., from_version: _Optional[int] = ..., to_version: _Optional[int] = ..., to_name: _Optional[str] = ...) -> None: ...
 
 class DiffProfileVersionsResponse(_message.Message):
-    __slots__ = ("to", "same_effect", "bases_added", "bases_removed", "unnamed_from", "unnamed_to", "date_shift_days_from", "date_shift_days_to", "rules", "rules_omitted", "effects", "effects_omitted", "pixel_rules_changed", "bases_reordered", "unlisted_change")
+    __slots__ = ("to", "same_effect", "bases_added", "bases_removed", "unnamed_from", "unnamed_to", "date_shift_days_from", "date_shift_days_to", "rules", "rules_omitted", "effects", "effects_omitted", "pixel_rules_changed", "bases_reordered", "unlisted_change", "unsearched_segments_from", "unsearched_segments_to")
     FROM_FIELD_NUMBER: _ClassVar[int]
     TO_FIELD_NUMBER: _ClassVar[int]
     SAME_EFFECT_FIELD_NUMBER: _ClassVar[int]
@@ -795,6 +838,8 @@ class DiffProfileVersionsResponse(_message.Message):
     PIXEL_RULES_CHANGED_FIELD_NUMBER: _ClassVar[int]
     BASES_REORDERED_FIELD_NUMBER: _ClassVar[int]
     UNLISTED_CHANGE_FIELD_NUMBER: _ClassVar[int]
+    UNSEARCHED_SEGMENTS_FROM_FIELD_NUMBER: _ClassVar[int]
+    UNSEARCHED_SEGMENTS_TO_FIELD_NUMBER: _ClassVar[int]
     to: ProfileVersion
     same_effect: bool
     bases_added: _containers.RepeatedScalarFieldContainer[str]
@@ -810,7 +855,9 @@ class DiffProfileVersionsResponse(_message.Message):
     pixel_rules_changed: int
     bases_reordered: bool
     unlisted_change: bool
-    def __init__(self, to: _Optional[_Union[ProfileVersion, _Mapping]] = ..., same_effect: _Optional[bool] = ..., bases_added: _Optional[_Iterable[str]] = ..., bases_removed: _Optional[_Iterable[str]] = ..., unnamed_from: _Optional[_Union[UnnamedElements, str]] = ..., unnamed_to: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days_from: _Optional[int] = ..., date_shift_days_to: _Optional[int] = ..., rules: _Optional[_Iterable[_Union[ProfileRuleChange, _Mapping]]] = ..., rules_omitted: _Optional[int] = ..., effects: _Optional[_Iterable[_Union[ProfileEffectChange, _Mapping]]] = ..., effects_omitted: _Optional[int] = ..., pixel_rules_changed: _Optional[int] = ..., bases_reordered: _Optional[bool] = ..., unlisted_change: _Optional[bool] = ..., **kwargs) -> None: ...
+    unsearched_segments_from: UnsearchedSegments
+    unsearched_segments_to: UnsearchedSegments
+    def __init__(self, to: _Optional[_Union[ProfileVersion, _Mapping]] = ..., same_effect: _Optional[bool] = ..., bases_added: _Optional[_Iterable[str]] = ..., bases_removed: _Optional[_Iterable[str]] = ..., unnamed_from: _Optional[_Union[UnnamedElements, str]] = ..., unnamed_to: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days_from: _Optional[int] = ..., date_shift_days_to: _Optional[int] = ..., rules: _Optional[_Iterable[_Union[ProfileRuleChange, _Mapping]]] = ..., rules_omitted: _Optional[int] = ..., effects: _Optional[_Iterable[_Union[ProfileEffectChange, _Mapping]]] = ..., effects_omitted: _Optional[int] = ..., pixel_rules_changed: _Optional[int] = ..., bases_reordered: _Optional[bool] = ..., unlisted_change: _Optional[bool] = ..., unsearched_segments_from: _Optional[_Union[UnsearchedSegments, str]] = ..., unsearched_segments_to: _Optional[_Union[UnsearchedSegments, str]] = ..., **kwargs) -> None: ...
 
 class ProfileRuleChange(_message.Message):
     __slots__ = ("change", "origin", "from_position", "to_position", "to")

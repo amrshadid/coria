@@ -19,16 +19,21 @@
 //   - the text: every element's value decoded under its data set's
 //     Specific Character Set as the library decodes it (an item without
 //     one takes its parent's): the file meta information, private
-//     elements and every item of every sequence at any depth, Pixel Data
-//     excepted; a value that may be text the file did not say was text
+//     elements and every item of every sequence at any depth, the top
+//     level's Pixel Data excepted; a value that may be text the file did not say was text
 //     (VR UN, OB, or none) and the preamble also as UTF-8 and under the
 //     character set the file was received in;
-//   - the raw bytes of the whole file but the value of Pixel Data, Float
-//     Pixel Data and Double Float Pixel Data at any depth (the preamble and
-//     the file meta information included), for each written form encoded
-//     in UTF-8 and in the received character set (all of it, and each of
-//     its character sets alone), its ISO 2022 escape sequences taken out:
-//     what a parser could miss, such as text in a binary value.
+//   - the raw bytes of the whole file but the value of the top level's
+//     Pixel Data, Float Pixel Data and Double Float Pixel Data (the
+//     preamble and the file meta information included), for each written
+//     form encoded in UTF-8 and in the received character set (all of it,
+//     and each of its character sets alone), its ISO 2022 escape sequences
+//     taken out: what a parser could miss, such as text in a binary value.
+//
+// An element of group 7FE0 inside a sequence item is a finding whatever
+// it holds (an identifier, raw): de-identification removes pixels there
+// (an icon, a vendor's thumbnail), an image no pixel rule filled, so one
+// found is never passed.
 //
 // Each needle is searched for in the forms people write it in, the ones
 // the engine's clean removes (engine.NameForms, engine.DateForms), so the

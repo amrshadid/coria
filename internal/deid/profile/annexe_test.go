@@ -242,7 +242,7 @@ func TestSafePrivateBaseIsTheTable(t *testing.T) {
 // meaning; a new edition is a new name.
 func TestAnnexEBasesAreFrozen(t *testing.T) {
 	want := map[string]string{
-		"basic":                              "d04ec215f3f3b50a3a8d29b091e599c5ea48f88e5caff51c75b1a00213ff74c8",
+		"basic":                              "984ee921c82e391244d4f8d1b98eb39e5f287f23ddb95af4e3493514a833f4d9",
 		"clean-graphics":                     "488105a6b472678f9c2e0b4b67f917ac0832d16ff282e31a6f0f261e5fb4585c",
 		"clean-structured-content":           "ba3cefd1c61854a8d2c896b246d2204f649d05dc9064d0d4b4b63389d26ebc49",
 		"clean-descriptors":                  "fe81bc1f2a1b0c92d7847c16c8af937fec2c5c8869a8593973f90132b3801b9f",
@@ -255,7 +255,7 @@ func TestAnnexEBasesAreFrozen(t *testing.T) {
 		"retain-institution-identity":        "b7e6c779ea254e0a3a21121adf1616b81d5c2620bc06b0583bf2406ff282ccb5",
 	}
 	for _, b := range annexE {
-		if b.kind == annexEPixels {
+		if b.kind == annexEVisualFeatures || b.kind == annexECleanPixels {
 			continue
 		}
 		v, err := New("frozen", 1, &v1.ProfileDocument{Bases: []string{AnnexE(b.name)}}, Shipped())

@@ -105,6 +105,15 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 		if !inserted {
 			return fault.New(fault.Unavailable, "receptions of the study kept opening at the same moment; try again")
 		}
+		// What the failed reception's routing chose, or the storage a
+		// release into it named, goes with its files.
+		routeText, err := sqlkit.ReceptionRouteText(f.Route)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE receptions SET route = $1 WHERE id = $2`, routeText, newID); err != nil {
+			return err
+		}
 		// The failed reception's files, as they are in the incoming area,
 		// become the new one's, with the counts in the same statement's
 		// transaction; a file it confirmed is held, and the new reception's

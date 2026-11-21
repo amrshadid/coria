@@ -90,7 +90,8 @@ import (
 //     change since the last.
 //
 // A forward is made by StepReception itself: a step that reaches done makes,
-// in its transaction, one job per sender its receiver's ForwardTo names
+// in its transaction, one job per sender its receiver's ForwardTo names, or
+// its route's when the route chosen names its own (ReceptionRoute.Senders)
 // (ForwardJobID, ForwardKey), so a step run again makes nothing twice and a
 // caller cannot take the step without it.
 //
@@ -130,7 +131,7 @@ type Senders interface {
 	SetSender(ctx context.Context, s Sender, fields []SenderField, now time.Time, audit master.AuditEntry, guard Guard) (Sender, error)
 	// RemoveSender removes the sender and its credential and returns it as
 	// it was, with how many of its jobs it canceled. A receiver that
-	// forwards to it is a precondition failure; so is a job to it that is
+	// forwards to it, itself or by a route, is a precondition failure; so is a job to it that is
 	// queued or running, unless cancelJobs, which cancels them in the same
 	// transaction as CancelJob does (with JobReasonSenderRemoved). Its
 	// jobs stay, naming it. The store adds the details DetailSenderType

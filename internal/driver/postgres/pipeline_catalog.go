@@ -310,7 +310,12 @@ func (t *Tenant) CatalogLabels(ctx context.Context, studyUID string, seriesUIDs 
 	sessions, err := readRows(ctx, t, "the catalog's labels cannot be read", sessionLabelsSQL, []any{studyUID},
 		func(row scanner) (tenant.SessionLabels, error) {
 			var l tenant.SessionLabels
-			err := row.Scan(&l.SubjectLabel, &l.SessionLabel, &l.Storage)
+			var route string
+			if err := row.Scan(&l.SubjectLabel, &l.SessionLabel, &l.Storage, &route); err != nil {
+				return l, err
+			}
+			var err error
+			l.Route, err = sqlkit.ReadReceptionRoute(route)
 			return l, err
 		})
 	if err != nil {

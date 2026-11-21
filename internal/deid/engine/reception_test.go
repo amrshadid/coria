@@ -14,7 +14,7 @@ import (
 // option, and an own rule that keeps SOP Instance UID, are refused with
 // ErrKeepsPlacingUIDs naming the attribute and what decided; a rule with a
 // condition is not taken for one that always applies; and a profile with
-// pixel rules is refused with ErrPixelRules.
+// pixel rules is taken.
 func TestForReception(t *testing.T) {
 	expand := func(doc *v1.ProfileDocument) *v1.ExpandedProfile {
 		t.Helper()
@@ -40,9 +40,10 @@ func TestForReception(t *testing.T) {
 	if err := ForReception(expand(&v1.ProfileDocument{Bases: basic, Rules: []*v1.ProfileRule{rule("keep-ct", kw("SOPInstanceUID"), aKeep, ct)}})); err != nil {
 		t.Errorf("a rule with a condition: %v", err)
 	}
-	e := expand(&v1.ProfileDocument{Bases: basic})
-	e.PixelRules = []*v1.ExpandedPixelRule{{}}
-	if err := ForReception(e); !errors.Is(err, ErrPixelRules) {
+	withPixels := expand(&v1.ProfileDocument{Bases: basic, PixelRules: []*v1.PixelRule{{
+		Name: "accept", Action: &v1.PixelRule_Accept{Accept: &v1.AcceptPixels{}}, Reason: "reviewed later",
+	}}})
+	if err := ForReception(withPixels); err != nil {
 		t.Errorf("pixel rules: %v", err)
 	}
 }

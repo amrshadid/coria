@@ -85,6 +85,10 @@ type env struct {
 	// deadline bounds a wait in real time; 0 is a minute. A scale test,
 	// whose speed is the disk's, gives itself more.
 	deadline time.Duration
+	// others are the storages of names other than "main", each a
+	// directory of its own, opened when first asked for (storageNamed).
+	othersMu sync.Mutex
+	others   map[string]blob.Store
 }
 
 // envOptions change what newEnv sets up.
@@ -112,6 +116,10 @@ type envOptions struct {
 	deid *deidOptions
 	// forwarded, when set, is the pipeline's Config.Forwarded.
 	forwarded func()
+	// routing, when set, is the receiver's routing, set before the
+	// pipeline starts, with the storages and senders it names added
+	// (route_test.go).
+	routing *tenant.Routing
 }
 
 // newEnv makes a tenant, its storage and receiver, and a started pipeline.
@@ -150,6 +158,13 @@ func newEnvAt(t testing.TB, dataDir string, start time.Time, opts envOptions) *e
 	}
 	e.storage = ds
 	t.Cleanup(func() { _ = ds.Close() })
+	t.Cleanup(func() {
+		e.othersMu.Lock()
+		defer e.othersMu.Unlock()
+		for _, o := range e.others {
+			_ = o.Close()
+		}
+	})
 	if _, err := e.store.AddStorage(e.ctx, tenant.Storage{Name: "main", Type: tenant.StorageDirectory,
 		Directory: tenant.DirectoryStorage{Root: "archive"}}, t0, e.audit(), nil); err != nil && fault.KindOf(err) != fault.Conflict {
 		t.Fatal(err)
@@ -175,10 +190,17 @@ func newEnvAt(t testing.TB, dataDir string, start time.Time, opts envOptions) *e
 	e.cfg = Config{
 		Tenant: "lab", Store: e.store, Hasher: hasher, Clock: e.clock, HeaderLimit: opts.headerLimit,
 		OpenStorage: func(_ context.Context, name string) (blob.Store, error) {
-			if e.wrap != nil {
-				return e.wrap(e.storage), nil
+			s := e.storage
+			if name != "main" {
+				var err error
+				if s, err = e.storageNamed(name); err != nil {
+					return nil, err
+				}
 			}
-			return e.storage, nil
+			if e.wrap != nil {
+				return e.wrap(s), nil
+			}
+			return s, nil
 		},
 		IncomingRoot: filepath.Join(e.dataDir, "incoming"), Workers: workers, Lease: 30 * time.Second,
 		PollInterval: 2 * time.Second, BatchInterval: 5 * time.Second, RetryInterval: 20 * time.Second,
@@ -187,8 +209,35 @@ func newEnvAt(t testing.TB, dataDir string, start time.Time, opts envOptions) *e
 	if opts.deid != nil {
 		e.setUpDeid(opts.deid)
 	}
+	if opts.routing != nil {
+		e.setRouting(*opts.routing)
+	}
 	e.start()
 	return e
+}
+
+// storageNamed returns the storage of a name other than "main": a
+// directory of its own beside main's, opened once. It is called from the
+// pipeline's workers, so it returns its error rather than failing the test.
+func (e *env) storageNamed(name string) (blob.Store, error) {
+	e.othersMu.Lock()
+	defer e.othersMu.Unlock()
+	if s, ok := e.others[name]; ok {
+		return s, nil
+	}
+	root := filepath.Join(e.dataDir, "storage-"+name)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return nil, err
+	}
+	s, err := dir.Open(root)
+	if err != nil {
+		return nil, err
+	}
+	if e.others == nil {
+		e.others = map[string]blob.Store{}
+	}
+	e.others[name] = s
+	return s, nil
 }
 
 // openStore opens the tenant's SQLite database through the driver package.

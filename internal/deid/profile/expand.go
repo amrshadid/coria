@@ -141,6 +141,15 @@ func takeDefaults(e *v1.ExpandedProfile, doc *v1.ProfileDocument) {
 	if d := doc.GetDateShiftDays(); d != 0 {
 		e.DateShiftDays = d
 	}
+	// Holding is written as unspecified, which holds, so the expanded form
+	// of a document that says nothing, or says hold, is what it was before
+	// the field existed, and so is its checksum.
+	switch doc.GetUnsearchedSegments() {
+	case v1.UnsearchedSegments_UNSEARCHED_SEGMENTS_HOLD:
+		e.UnsearchedSegments = v1.UnsearchedSegments_UNSEARCHED_SEGMENTS_UNSPECIFIED
+	case v1.UnsearchedSegments_UNSEARCHED_SEGMENTS_KEEP:
+		e.UnsearchedSegments = v1.UnsearchedSegments_UNSEARCHED_SEGMENTS_KEEP
+	}
 }
 
 // flatten appends cb to order after the bases it is built on, each base

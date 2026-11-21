@@ -98,7 +98,14 @@ type Receiver struct {
 	// only where the tenant's setting receiver.allow-as-received allows it
 	// (the caller's to check too).
 	Profile ProfileRef
-	// Created is when it was added; Updated when it last changed.
+	// Routing chooses, for each study, the storage, the profile version
+	// and the senders in place of Storage, Profile and ForwardTo; its zero
+	// value chooses nothing, and every study goes as those say.
+	Routing Routing
+	// Created is when it was added; Updated when it last changed. In a
+	// change given to ApplyReceiver, an Updated not zero is the time the
+	// caller read: the change is made only while the stored receiver
+	// still has it.
 	Created, Updated time.Time
 }
 
@@ -257,11 +264,13 @@ const (
 	// FieldDeidentification sets Profile: the profile version, or the zero
 	// ref for as received.
 	FieldDeidentification ReceiverField = "deidentification"
+	// FieldRouting sets Routing, replaced whole.
+	FieldRouting ReceiverField = "routing"
 )
 
 // maxReceiverFieldCount is how many fields a receiver has that a change
 // can name.
-const maxReceiverFieldCount = 20
+const maxReceiverFieldCount = 21
 
 // Deidentifies reports whether the receiver de-identifies what it
 // receives, rather than archiving it as received.
@@ -287,9 +296,11 @@ func (r Receiver) PlainPlaceholders() []string {
 
 // Validate returns an Invalid error unless r can be stored, by the
 // contract's rule of each field, or a precondition failure for a receiver
-// that de-identifies whose naming rule puts a value into a label unhashed.
-// Whether its storage exists and whether its port is free are the store's
-// to check, in its transaction.
+// that de-identifies whose naming rule puts a value into a label unhashed,
+// or for a receiver that archives as received one of whose routes names a
+// profile version.
+// Whether its storage, and its routes' storages and senders, exist and
+// whether its port is free are the store's to check, in its transaction.
 func (r Receiver) Validate() error {
 	if err := ValidateName("receiver", r.Name); err != nil {
 		return err
@@ -323,6 +334,22 @@ func (r Receiver) Validate() error {
 	if !r.Profile.IsZero() {
 		if err := r.Profile.Validate(); err != nil {
 			return err
+		}
+	}
+	if err := r.Routing.Validate(); err != nil {
+		return err
+	}
+	if !r.Deidentifies() {
+		for _, rt := range r.Routing.Routes {
+			// The receiver's choice decides how a file lands, its UIDs
+			// remapped and its checksum keyed or not, before any route is
+			// chosen; a route cannot make a file landed as received into
+			// one de-identified. A precondition: the same route is taken
+			// once the receiver de-identifies.
+			if !rt.Profile.IsZero() {
+				return Precondition("receiver.routing: route " + rt.Name + " names a profile version, and the receiver archives as received; " +
+					"a route's profile replaces the profile of a receiver that de-identifies, so make the receiver de-identify first")
+			}
 		}
 	}
 	if r.Naming != nil {
@@ -438,12 +465,16 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 	if len(fields) > maxReceiverFieldCount {
 		return stored, invalid("a change of a receiver names each field once")
 	}
+	if !change.Updated.IsZero() && !change.Updated.Equal(stored.Updated) {
+		return stored, Precondition("the receiver changed after it was read; read it again and make the change on what it holds now")
+	}
 	out := stored
 	out.DIMSE.Callers = slices.Clone(stored.DIMSE.Callers)
 	out.DIMSE.SOPClasses = slices.Clone(stored.DIMSE.SOPClasses)
 	out.DIMSE.TransferSyntaxes = slices.Clone(stored.DIMSE.TransferSyntaxes)
 	out.STOW.Keys = slices.Clone(stored.STOW.Keys)
 	out.ForwardTo = slices.Clone(stored.ForwardTo)
+	out.Routing = stored.Routing.clone()
 	if stored.DIMSE.TLS != nil {
 		t := *stored.DIMSE.TLS
 		out.DIMSE.TLS = &t
@@ -523,6 +554,8 @@ func ApplyReceiver(stored, change Receiver, fields []ReceiverField) (Receiver, e
 			out.ForwardTo = slices.Clone(change.ForwardTo)
 		case FieldDeidentification:
 			out.Profile = change.Profile
+		case FieldRouting:
+			out.Routing = change.Routing.clone()
 		default:
 			return stored, invalid("a change of a receiver names a field it does not have: " + strconv.Quote(string(f)))
 		}

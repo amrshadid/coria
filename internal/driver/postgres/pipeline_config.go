@@ -278,6 +278,12 @@ func (t *Tenant) RemoveStorage(ctx context.Context, name string, audit master.Au
 		if !isNoRow(err) {
 			return err
 		}
+		if receiver, err = sqlkit.ReceiverRoutingTo(ctx, sendingTx{tx: tx}, name); err != nil || receiver != "" {
+			if err != nil {
+				return err
+			}
+			return tenant.Precondition("a route of the receiver " + receiver + " archives to this storage")
+		}
 		if why, err := storageInUse(ctx, tx, name); err != nil || why != "" {
 			if err != nil {
 				return err
@@ -374,8 +380,20 @@ func checkReceiver(ctx context.Context, tx pgx.Tx, r tenant.Receiver) error {
 	if !has {
 		return tenant.Precondition("the tenant has no storage named " + r.Storage)
 	}
+	for _, s := range r.Routing.Storages() {
+		has, err := exists(ctx, tx, `SELECT 1 FROM storages WHERE name = $1`, s)
+		if err != nil {
+			return err
+		}
+		if !has {
+			return tenant.Precondition("receiver.routing: the tenant has no storage named " + s)
+		}
+	}
 	if err := checkForwardTo(ctx, tx, r.ForwardTo); err != nil {
 		return err
+	}
+	if err := checkForwardTo(ctx, tx, r.Routing.Senders()); err != nil {
+		return fault.Wrap(fault.KindOf(err), err, "receiver.routing: "+fault.Message(err))
 	}
 	rows, err := tx.Query(ctx, receiversOnPortSQL, r.DIMSE.Port, r.Name)
 	others, err := collect(rows, err, scanReceiver)

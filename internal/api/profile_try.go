@@ -403,6 +403,10 @@ func (c *core) tryProfile(ctx context.Context, req *v1.TryProfileRequest, pipe t
 	if err != nil {
 		return nil, nil, "", err
 	}
+	pixelLimit, err := c.values().OnTenant(st).PixelLimit(ctx)
+	if err != nil {
+		return nil, nil, "", err
+	}
 	leave, err := c.enterTrial(ctx)
 	if err != nil {
 		return nil, nil, "", err
@@ -420,13 +424,21 @@ func (c *core) tryProfile(ctx context.Context, req *v1.TryProfileRequest, pipe t
 	sum := newTrialSummary()
 	budget := trialAnswerBudget
 	newCheck := func(maxFileBytes int64) receive.Checker { return check.New(check.Options{MaxFileBytes: maxFileBytes}) }
+	routes := &trialRouting{p: p, target: target, en: en, keys: keys, unassigned: &unassigned, limit: limit,
+		routed: map[tenant.ProfileRef]routedEngine{}}
 	try := func(in trialInput) error {
 		unassigned = 0
-		t, err := receive.TryFile(ctx, en, in.file, in.received, receive.TrialOptions{Keys: keys, HeaderLimit: limit, Receiver: in.receiver, Check: newCheck})
+		use, err := routes.of(ctx, in)
 		if err != nil {
 			return err
 		}
+		t, err := receive.TryFile(ctx, use.en, in.file, in.received, receive.TrialOptions{Keys: use.keys, HeaderLimit: limit, PixelLimit: pixelLimit, Receiver: in.receiver, Check: newCheck})
+		if err != nil {
+			return err
+		}
+		use.hold(&t)
 		r := trialResult(t, &budget)
+		use.mark(r)
 		r.Name, r.QuarantineRecord, r.LookupsUnassigned = in.name, in.record, int32(unassigned) //nolint:gosec // G115: at most engine.MaxLookups per file.
 		sum.add(t, r)
 		out.Results = append(out.Results, r)

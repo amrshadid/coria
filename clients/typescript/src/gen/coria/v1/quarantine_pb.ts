@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/quarantine.proto.
  */
 export const file_coria_v1_quarantine: GenFile = /*@__PURE__*/
-  fileDesc("Chljb3JpYS92MS9xdWFyYW50aW5lLnByb3RvEghjb3JpYS52MSJMCgZDYWxsZXISGAoQY2FsbGluZ19hZV90aXRsZRgBIAEoCRIXCg9jYWxsZWRfYWVfdGl0bGUYAiABKAkSDwoHYWRkcmVzcxgDIAEoCSKHBgoPUXVhcmFudGluZWRGaWxlEgoKAmlkGAEgASgJEioKBnJlYXNvbhgCIAEoDjIaLmNvcmlhLnYxLlF1YXJhbnRpbmVSZWFzb24SNwoHZGV0YWlscxgDIAMoCzImLmNvcmlhLnYxLlF1YXJhbnRpbmVkRmlsZS5EZXRhaWxzRW50cnkSKAoFc3RhdGUYBCABKA4yGS5jb3JpYS52MS5RdWFyYW50aW5lU3RhdGUSEAoIcmVjZWl2ZXIYBSABKAkSEQoJcmVjZXB0aW9uGAYgASgJEiAKBmNhbGxlchgHIAEoCzIQLmNvcmlhLnYxLkNhbGxlchISCgpzaXplX2J5dGVzGAggASgDEg4KBnNoYTI1NhgJIAEoCRITCgtrZXB0X3NoYTI1NhgKIAEoCRIVCg1zb3BfY2xhc3NfdWlkGAsgASgJEhgKEHNvcF9pbnN0YW5jZV91aWQYDCABKAkSGgoSc3R1ZHlfaW5zdGFuY2VfdWlkGA0gASgJEhsKE3Nlcmllc19pbnN0YW5jZV91aWQYDiABKAkSGwoTdHJhbnNmZXJfc3ludGF4X3VpZBgPIAEoCRIUCgxjb250ZW50X2tlcHQYECABKAgSMwoPcXVhcmFudGluZV90aW1lGBEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtkZWNpZGVfdGltZRgSIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoMcmVsZWFzZV9tb2RlGBMgASgOMhUuY29yaWEudjEuUmVsZWFzZU1vZGUSGQoRcmVsZWFzZV9yZWNlcHRpb24YFCABKAkSFQoNcmVqZWN0X3JlYXNvbhgVIAEoCRIVCg1yZWxlYXNlZF9mcm9tGBYgASgJEhgKEHJlbGVhc2VfcmVjZWl2ZXIYFyABKAkSFgoOcmVsZWFzZV9yZWFzb24YGCABKAkaLgoMRGV0YWlsc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi4wIKG0xpc3RRdWFyYW50aW5lZEZpbGVzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSKAoFc3RhdGUYAiABKA4yGS5jb3JpYS52MS5RdWFyYW50aW5lU3RhdGUSKgoGcmVhc29uGAMgASgOMhouY29yaWEudjEuUXVhcmFudGluZVJlYXNvbhIQCghyZWNlaXZlchgEIAEoCRIRCglyZWNlcHRpb24YBSABKAkSLgoKc3RhcnRfdGltZRgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kX3RpbWUYByABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCXBhZ2Vfc2l6ZRgIIAEoBRISCgpwYWdlX3Rva2VuGAkgASgJEhoKEnN0dWR5X2luc3RhbmNlX3VpZBgKIAEoCRIYChBzb3BfaW5zdGFuY2VfdWlkGAsgASgJImEKHExpc3RRdWFyYW50aW5lZEZpbGVzUmVzcG9uc2USKAoFZmlsZXMYASADKAsyGS5jb3JpYS52MS5RdWFyYW50aW5lZEZpbGUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIk8KGUdldFF1YXJhbnRpbmVkRmlsZVJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJEhYKDmluY2x1ZGVfaGVhZGVyGAMgASgIInQKGkdldFF1YXJhbnRpbmVkRmlsZVJlc3BvbnNlEicKBGZpbGUYASABKAsyGS5jb3JpYS52MS5RdWFyYW50aW5lZEZpbGUSEwoLaGVhZGVyX2pzb24YAiABKAkSGAoQaGVhZGVyX3Rvb19sYXJnZRgDIAEoCCKCAQodUmVsZWFzZVF1YXJhbnRpbmVkRmlsZVJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgoKAmlkGAIgASgJEiMKBG1vZGUYAyABKA4yFS5jb3JpYS52MS5SZWxlYXNlTW9kZRIQCghyZWNlaXZlchgEIAEoCRIOCgZyZWFzb24YBSABKAkiSQoeUmVsZWFzZVF1YXJhbnRpbmVkRmlsZVJlc3BvbnNlEicKBGZpbGUYASABKAsyGS5jb3JpYS52MS5RdWFyYW50aW5lZEZpbGUiSgocUmVqZWN0UXVhcmFudGluZWRGaWxlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkSDgoGcmVhc29uGAMgASgJIkgKHVJlamVjdFF1YXJhbnRpbmVkRmlsZVJlc3BvbnNlEicKBGZpbGUYASABKAsyGS5jb3JpYS52MS5RdWFyYW50aW5lZEZpbGUqiAUKEFF1YXJhbnRpbmVSZWFzb24SIQodUVVBUkFOVElORV9SRUFTT05fVU5TUEVDSUZJRUQQABIfChtRVUFSQU5USU5FX1JFQVNPTl9OT1RfRElDT00QARIsCihRVUFSQU5USU5FX1JFQVNPTl9TT1BfQ0xBU1NfTk9UX0FDQ0VQVEVEEAISHwobUVVBUkFOVElORV9SRUFTT05fVE9PX0xBUkdFEAMSHQoZUVVBUkFOVElORV9SRUFTT05fQkFEX1VJRBAEEh8KG1FVQVJBTlRJTkVfUkVBU09OX0JBRF9MQUJFTBAFEiQKIFFVQVJBTlRJTkVfUkVBU09OX0xBQkVMX0NPTkZMSUNUEAYSJAogUVVBUkFOVElORV9SRUFTT05fRElGRkVSRU5UX0ZJTEUQBxIjCh9RVUFSQU5USU5FX1JFQVNPTl9VSURfRUxTRVdIRVJFEAgSJQohUVVBUkFOVElORV9SRUFTT05fU1RPUkFHRV9SRUZVU0VEEAkSKAokUVVBUkFOVElORV9SRUFTT05fUkVBRF9CQUNLX01JU01BVENIEAoSJgoiUVVBUkFOVElORV9SRUFTT05fSEVBREVSX1RPT19MQVJHRRALEiMKH1FVQVJBTlRJTkVfUkVBU09OX0lOQ09NSU5HX0xPU1QQDBIiCh5RVUFSQU5USU5FX1JFQVNPTl9VSURfTUlTTUFUQ0gQDRIhCh1RVUFSQU5USU5FX1JFQVNPTl9ERUlEX0ZBSUxFRBAOEiQKIFFVQVJBTlRJTkVfUkVBU09OX1JFU0lEVUFMX1ZBTFVFEA8SJQohUVVBUkFOVElORV9SRUFTT05fUFJPRklMRV9SRUZVU0VEEBAqjAEKD1F1YXJhbnRpbmVTdGF0ZRIgChxRVUFSQU5USU5FX1NUQVRFX1VOU1BFQ0lGSUVEEAASGQoVUVVBUkFOVElORV9TVEFURV9IRUxEEAESHQoZUVVBUkFOVElORV9TVEFURV9SRUxFQVNFRBACEh0KGVFVQVJBTlRJTkVfU1RBVEVfUkVKRUNURUQQAyphCgtSZWxlYXNlTW9kZRIcChhSRUxFQVNFX01PREVfVU5TUEVDSUZJRUQQABIWChJSRUxFQVNFX01PREVfQVNfSVMQASIECAIQAioWUkVMRUFTRV9NT0RFX09WRVJXUklURTLGAwoRUXVhcmFudGluZVNlcnZpY2USagoUTGlzdFF1YXJhbnRpbmVkRmlsZXMSJS5jb3JpYS52MS5MaXN0UXVhcmFudGluZWRGaWxlc1JlcXVlc3QaJi5jb3JpYS52MS5MaXN0UXVhcmFudGluZWRGaWxlc1Jlc3BvbnNlIgOQAgESZAoSR2V0UXVhcmFudGluZWRGaWxlEiMuY29yaWEudjEuR2V0UXVhcmFudGluZWRGaWxlUmVxdWVzdBokLmNvcmlhLnYxLkdldFF1YXJhbnRpbmVkRmlsZVJlc3BvbnNlIgOQAgEScAoWUmVsZWFzZVF1YXJhbnRpbmVkRmlsZRInLmNvcmlhLnYxLlJlbGVhc2VRdWFyYW50aW5lZEZpbGVSZXF1ZXN0GiguY29yaWEudjEuUmVsZWFzZVF1YXJhbnRpbmVkRmlsZVJlc3BvbnNlIgOQAgISbQoVUmVqZWN0UXVhcmFudGluZWRGaWxlEiYuY29yaWEudjEuUmVqZWN0UXVhcmFudGluZWRGaWxlUmVxdWVzdBonLmNvcmlhLnYxLlJlamVjdFF1YXJhbnRpbmVkRmlsZVJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Chljb3JpYS92MS9xdWFyYW50aW5lLnByb3RvEghjb3JpYS52MSJMCgZDYWxsZXISGAoQY2FsbGluZ19hZV90aXRsZRgBIAEoCRIXCg9jYWxsZWRfYWVfdGl0bGUYAiABKAkSDwoHYWRkcmVzcxgDIAEoCSKgBgoPUXVhcmFudGluZWRGaWxlEgoKAmlkGAEgASgJEioKBnJlYXNvbhgCIAEoDjIaLmNvcmlhLnYxLlF1YXJhbnRpbmVSZWFzb24SNwoHZGV0YWlscxgDIAMoCzImLmNvcmlhLnYxLlF1YXJhbnRpbmVkRmlsZS5EZXRhaWxzRW50cnkSKAoFc3RhdGUYBCABKA4yGS5jb3JpYS52MS5RdWFyYW50aW5lU3RhdGUSEAoIcmVjZWl2ZXIYBSABKAkSEQoJcmVjZXB0aW9uGAYgASgJEiAKBmNhbGxlchgHIAEoCzIQLmNvcmlhLnYxLkNhbGxlchISCgpzaXplX2J5dGVzGAggASgDEg4KBnNoYTI1NhgJIAEoCRITCgtrZXB0X3NoYTI1NhgKIAEoCRIVCg1zb3BfY2xhc3NfdWlkGAsgASgJEhgKEHNvcF9pbnN0YW5jZV91aWQYDCABKAkSGgoSc3R1ZHlfaW5zdGFuY2VfdWlkGA0gASgJEhsKE3Nlcmllc19pbnN0YW5jZV91aWQYDiABKAkSGwoTdHJhbnNmZXJfc3ludGF4X3VpZBgPIAEoCRIUCgxjb250ZW50X2tlcHQYECABKAgSMwoPcXVhcmFudGluZV90aW1lGBEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtkZWNpZGVfdGltZRgSIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoMcmVsZWFzZV9tb2RlGBMgASgOMhUuY29yaWEudjEuUmVsZWFzZU1vZGUSGQoRcmVsZWFzZV9yZWNlcHRpb24YFCABKAkSFQoNcmVqZWN0X3JlYXNvbhgVIAEoCRIVCg1yZWxlYXNlZF9mcm9tGBYgASgJEhgKEHJlbGVhc2VfcmVjZWl2ZXIYFyABKAkSFgoOcmVsZWFzZV9yZWFzb24YGCABKAkSFwoPcmVsZWFzZV9zdG9yYWdlGBkgASgJGi4KDERldGFpbHNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBIuMCChtMaXN0UXVhcmFudGluZWRGaWxlc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEigKBXN0YXRlGAIgASgOMhkuY29yaWEudjEuUXVhcmFudGluZVN0YXRlEioKBnJlYXNvbhgDIAEoDjIaLmNvcmlhLnYxLlF1YXJhbnRpbmVSZWFzb24SEAoIcmVjZWl2ZXIYBCABKAkSEQoJcmVjZXB0aW9uGAUgASgJEi4KCnN0YXJ0X3RpbWUYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZF90aW1lGAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglwYWdlX3NpemUYCCABKAUSEgoKcGFnZV90b2tlbhgJIAEoCRIaChJzdHVkeV9pbnN0YW5jZV91aWQYCiABKAkSGAoQc29wX2luc3RhbmNlX3VpZBgLIAEoCSJhChxMaXN0UXVhcmFudGluZWRGaWxlc1Jlc3BvbnNlEigKBWZpbGVzGAEgAygLMhkuY29yaWEudjEuUXVhcmFudGluZWRGaWxlEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJPChlHZXRRdWFyYW50aW5lZEZpbGVSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCRIWCg5pbmNsdWRlX2hlYWRlchgDIAEoCCJ0ChpHZXRRdWFyYW50aW5lZEZpbGVSZXNwb25zZRInCgRmaWxlGAEgASgLMhkuY29yaWEudjEuUXVhcmFudGluZWRGaWxlEhMKC2hlYWRlcl9qc29uGAIgASgJEhgKEGhlYWRlcl90b29fbGFyZ2UYAyABKAgikwEKHVJlbGVhc2VRdWFyYW50aW5lZEZpbGVSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIKCgJpZBgCIAEoCRIjCgRtb2RlGAMgASgOMhUuY29yaWEudjEuUmVsZWFzZU1vZGUSEAoIcmVjZWl2ZXIYBCABKAkSDgoGcmVhc29uGAUgASgJEg8KB3N0b3JhZ2UYBiABKAkiSQoeUmVsZWFzZVF1YXJhbnRpbmVkRmlsZVJlc3BvbnNlEicKBGZpbGUYASABKAsyGS5jb3JpYS52MS5RdWFyYW50aW5lZEZpbGUiSgocUmVqZWN0UXVhcmFudGluZWRGaWxlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSCgoCaWQYAiABKAkSDgoGcmVhc29uGAMgASgJIkgKHVJlamVjdFF1YXJhbnRpbmVkRmlsZVJlc3BvbnNlEicKBGZpbGUYASABKAsyGS5jb3JpYS52MS5RdWFyYW50aW5lZEZpbGUqzgUKEFF1YXJhbnRpbmVSZWFzb24SIQodUVVBUkFOVElORV9SRUFTT05fVU5TUEVDSUZJRUQQABIfChtRVUFSQU5USU5FX1JFQVNPTl9OT1RfRElDT00QARIsCihRVUFSQU5USU5FX1JFQVNPTl9TT1BfQ0xBU1NfTk9UX0FDQ0VQVEVEEAISHwobUVVBUkFOVElORV9SRUFTT05fVE9PX0xBUkdFEAMSHQoZUVVBUkFOVElORV9SRUFTT05fQkFEX1VJRBAEEh8KG1FVQVJBTlRJTkVfUkVBU09OX0JBRF9MQUJFTBAFEiQKIFFVQVJBTlRJTkVfUkVBU09OX0xBQkVMX0NPTkZMSUNUEAYSJAogUVVBUkFOVElORV9SRUFTT05fRElGRkVSRU5UX0ZJTEUQBxIjCh9RVUFSQU5USU5FX1JFQVNPTl9VSURfRUxTRVdIRVJFEAgSJQohUVVBUkFOVElORV9SRUFTT05fU1RPUkFHRV9SRUZVU0VEEAkSKAokUVVBUkFOVElORV9SRUFTT05fUkVBRF9CQUNLX01JU01BVENIEAoSJgoiUVVBUkFOVElORV9SRUFTT05fSEVBREVSX1RPT19MQVJHRRALEiMKH1FVQVJBTlRJTkVfUkVBU09OX0lOQ09NSU5HX0xPU1QQDBIiCh5RVUFSQU5USU5FX1JFQVNPTl9VSURfTUlTTUFUQ0gQDRIhCh1RVUFSQU5USU5FX1JFQVNPTl9ERUlEX0ZBSUxFRBAOEiQKIFFVQVJBTlRJTkVfUkVBU09OX1JFU0lEVUFMX1ZBTFVFEA8SJQohUVVBUkFOVElORV9SRUFTT05fUFJPRklMRV9SRUZVU0VEEBASHgoaUVVBUkFOVElORV9SRUFTT05fVU5ST1VURUQQERIkCiBRVUFSQU5USU5FX1JFQVNPTl9CVVJORURfSU5fUklTSxASKowBCg9RdWFyYW50aW5lU3RhdGUSIAocUVVBUkFOVElORV9TVEFURV9VTlNQRUNJRklFRBAAEhkKFVFVQVJBTlRJTkVfU1RBVEVfSEVMRBABEh0KGVFVQVJBTlRJTkVfU1RBVEVfUkVMRUFTRUQQAhIdChlRVUFSQU5USU5FX1NUQVRFX1JFSkVDVEVEEAMqYQoLUmVsZWFzZU1vZGUSHAoYUkVMRUFTRV9NT0RFX1VOU1BFQ0lGSUVEEAASFgoSUkVMRUFTRV9NT0RFX0FTX0lTEAEiBAgCEAIqFlJFTEVBU0VfTU9ERV9PVkVSV1JJVEUyxgMKEVF1YXJhbnRpbmVTZXJ2aWNlEmoKFExpc3RRdWFyYW50aW5lZEZpbGVzEiUuY29yaWEudjEuTGlzdFF1YXJhbnRpbmVkRmlsZXNSZXF1ZXN0GiYuY29yaWEudjEuTGlzdFF1YXJhbnRpbmVkRmlsZXNSZXNwb25zZSIDkAIBEmQKEkdldFF1YXJhbnRpbmVkRmlsZRIjLmNvcmlhLnYxLkdldFF1YXJhbnRpbmVkRmlsZVJlcXVlc3QaJC5jb3JpYS52MS5HZXRRdWFyYW50aW5lZEZpbGVSZXNwb25zZSIDkAIBEnAKFlJlbGVhc2VRdWFyYW50aW5lZEZpbGUSJy5jb3JpYS52MS5SZWxlYXNlUXVhcmFudGluZWRGaWxlUmVxdWVzdBooLmNvcmlhLnYxLlJlbGVhc2VRdWFyYW50aW5lZEZpbGVSZXNwb25zZSIDkAICEm0KFVJlamVjdFF1YXJhbnRpbmVkRmlsZRImLmNvcmlhLnYxLlJlamVjdFF1YXJhbnRpbmVkRmlsZVJlcXVlc3QaJy5jb3JpYS52MS5SZWplY3RRdWFyYW50aW5lZEZpbGVSZXNwb25zZSIDkAICYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * Caller is who sent data to a receiver.
@@ -254,6 +254,15 @@ export type QuarantinedFile = Message<"coria.v1.QuarantinedFile"> & {
    * @generated from field: string release_reason = 24;
    */
   releaseReason: string;
+
+  /**
+   * The name of the storage its release named
+   * (ReleaseQuarantinedFileRequest.storage). Empty unless it is released
+   * and a storage was named.
+   *
+   * @generated from field: string release_storage = 25;
+   */
+  releaseStorage: string;
 };
 
 /**
@@ -517,6 +526,27 @@ export type ReleaseQuarantinedFileRequest = Message<"coria.v1.ReleaseQuarantined
    * @generated from field: string reason = 5;
    */
   reason: string;
+
+  /**
+   * The name of the tenant's storage the reception the file joins is
+   * archived to, in place of the storage the receiver's routing would
+   * choose: a file held as QUARANTINE_REASON_UNROUTED is released naming
+   * one. It chooses the storage only: the profile version and the senders
+   * are still those of the route that holds for the study, or the
+   * receiver's when none does, and the routing's default does not hold it
+   * again. Optional; empty lets the routing choose again. A storage the
+   * tenant does not have is a precondition failure, and so is a storage
+   * other than the one an earlier release into the same reception named.
+   * A study whose session the archive already holds stays on that
+   * session's storage. A file that joins no reception (it lands again, as
+   * a file recorded as received at a receiver that de-identifies now does)
+   * keeps the storage through its new landing: the reception it joins then
+   * is archived there. The storage is recorded with the record
+   * (QuarantinedFile.release_storage) and in the release's audit entry.
+   *
+   * @generated from field: string storage = 6;
+   */
+  storage: string;
 };
 
 /**
@@ -790,9 +820,20 @@ export enum QuarantineReason {
    * as a file that just arrived, so it is de-identified), "profile_unusable"
    * (the profile version cannot run in this version of the server),
    * "unreadable" or "unwritable" (the data set cannot be read, or written
-   * back, for de-identification), or "uid_not_remapped" (the profile
+   * back, for de-identification), "uid_not_remapped" (the profile
    * leaves a Study, Series or SOP Instance UID other than the keyed
-   * remapping the server places the file by); "path", the element where it
+   * remapping the server places the file by), "pixels_too_large" (the
+   * image needs work on its pixels and decoded is larger than the setting
+   * deid.pixel-limit; a release once the setting is raised archives it),
+   * "pixels_unsupported" (a pixel rule cannot fill an image of its
+   * layout), "pixels_undecodable" (its frames, or its JPEG segments, do
+   * not decode), "frames_mismatch" (its native pixels hold more bytes than
+   * its stated frames), "pixel_region_outside" (a pixel rule's rectangle lies
+   * wholly outside the image), "pixel_text_unsearched" (its compressed
+   * pixel data has segments that are not searched, such as JPEG 2000's,
+   * and the profile holds such images) or "detect_implausible" (the
+   * detector found regions covering more of the picture than text does);
+   * "path", the element where it
    * failed, as tags of eight hexadecimal digits with item numbers, such as
    * "00081115[0]/0020000E", when there is one; and "rule", the rule's name
    * (or "rule" and its position), when one decided. A release de-identifies
@@ -825,6 +866,41 @@ export enum QuarantineReason {
    * @generated from enum value: QUARANTINE_REASON_PROFILE_REFUSED = 16;
    */
   PROFILE_REFUSED = 16,
+
+  /**
+   * The study's receiver routes each study by its routes, and this one was
+   * not routed: no route chose it and the routing holds what none chooses
+   * (Receiver.routing), a route could not be evaluated, or another
+   * reception of the study made its session on another storage while this
+   * one was in flight. Every file of the reception is held, its bytes
+   * kept. Details: "cause", "no_match", "route_unusable" or
+   * "session_elsewhere", and "route", the route's name, for
+   * "route_unusable". A release may name the storage the study goes to
+   * (ReleaseQuarantinedFileRequest.storage); without one the routes run
+   * again.
+   *
+   * @generated from enum value: QUARANTINE_REASON_UNROUTED = 17;
+   */
+  UNROUTED = 17,
+
+  /**
+   * The image's pixels may carry burned-in text and no pixel rule of the
+   * receiver's profile matches it, so it was never archived; its original
+   * bytes are kept. Details: "cause", why it is at risk, read from the
+   * image as received: "burned_in_annotation" (Burned In Annotation
+   * (0028,0301) is YES), "secondary_capture" (a Secondary Capture Image
+   * Storage SOP class, and Burned In Annotation is not NO), "sop_class" (a
+   * SOP class commonly drawn on: ultrasound, visible light, ophthalmic,
+   * and Burned In Annotation is not NO), "modality" (a modality commonly
+   * drawn on: US, IVUS, ES, GM, XC, SC, OT, XA, RF, OP, SM, PX, IO, and
+   * Burned In Annotation is not NO) or "slide_label" (a whole slide's
+   * label or overview image). A release de-identifies the file
+   * again with its receiver's profile version then, so a profile given a
+   * pixel rule for such images lets it through.
+   *
+   * @generated from enum value: QUARANTINE_REASON_BURNED_IN_RISK = 18;
+   */
+  BURNED_IN_RISK = 18,
 }
 
 /**
@@ -994,7 +1070,8 @@ export const QuarantineService: GenService<{
    *
    * Role: operator on the tenant.
    * Audit: one entry in the tenant's log, with the file's id as its object,
-   * and the mode, the receiver and the reception it joined in details.
+   * and the mode, the receiver, the storage named and the reception it
+   * joined in details.
    * Errors: unauthenticated, permission denied (no grant; also a tenant that
    * does not exist, for a caller who may not list every tenant), invalid
    * (also a mode other than RELEASE_MODE_AS_IS), not found (the tenant has
@@ -1003,7 +1080,7 @@ export const QuarantineService: GenService<{
    * or its content was never kept; it is a different file and the tenant
    * holds an instance under its SOP Instance UID; the receiver it came to
    * has been removed and the request names none; the receiver named does
-   * not exist), unavailable (the tenant's database does not answer, or the
+   * not exist; the storage named does not exist), unavailable (the tenant's database does not answer, or the
    * tenant is not ready).
    *
    * @generated from rpc coria.v1.QuarantineService.ReleaseQuarantinedFile

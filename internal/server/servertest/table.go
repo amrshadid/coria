@@ -292,7 +292,7 @@ func tenantRole(name string, role master.Role, operator bool) access.Requirement
 // the installation, whatever the scope. Restated from the server's list of
 // settings, so the table stays test data and its test compares the two.
 var installationSet = map[string]bool{"receiver.ports": true, "incoming.limit": true, "sender.tenant-max-associations": true,
-	"receiver.allow-as-received": true}
+	"receiver.allow-as-received": true, "deid.pixel-limit": true}
 
 // settingChange is the requirement of a change of the setting named name
 // on scope.

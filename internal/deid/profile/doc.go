@@ -71,9 +71,12 @@
 // DICOM library holds and CORIA does not copy: each column of Table E.1-1
 // (anonymize.ProfileTable) is read by the one adapter that turns its codes
 // into actions (annexe.go), and the Retain Safe Private option is Table
-// E.3.10-1 (anonymize.SafePrivateEntries). The two options that change
-// pixels have no rules, and are refused as not available, as is the
-// composite base built on one of them. Each base's name carries the
+// E.3.10-1 (anonymize.SafePrivateEntries). Clean Pixel Data has no rules:
+// its work is the pixel rules and the gate that holds an image at risk of
+// burned-in text no pixel rule matches, which every profile has, so the
+// base is accepted and adds nothing. Clean Recognizable Visual Features
+// removes faces, which this build does not do, and is refused as not
+// available. Each base's name carries the
 // edition of its tables (AnnexEEdition), and the package's tests hold each
 // base's checksum, so a base of one name never changes meaning.
 //

@@ -31,6 +31,9 @@ type Reception struct {
 	// SubjectLabel, SessionLabel and Storage are set when it is
 	// identified.
 	SubjectLabel, SessionLabel, Storage string
+	// Route is what its receiver's routing chose when it was identified,
+	// or, before, the storage a release into it named.
+	Route ReceptionRoute
 	// Failure is why it failed, a phrase for a person; empty unless failed.
 	Failure string
 	// Started is when its first file arrived; LastFile when its latest
@@ -118,6 +121,11 @@ type ReceptionStep struct {
 	// SubjectLabel, SessionLabel and Storage are required with Identify
 	// and ignored otherwise; the storage must be the tenant's.
 	SubjectLabel, SessionLabel, Storage string
+	// Route is what the routing chose, kept with Identify and ignored
+	// otherwise; the zero value chose nothing of its own. A storage a
+	// release named (ReceptionRoute.ReleasedStorage) is kept whatever the
+	// step gives.
+	Route ReceptionRoute
 	// Failure is required with Fail, a phrase for a person of at most
 	// MaxFailureLength bytes, and ignored otherwise.
 	Failure string
@@ -152,6 +160,9 @@ func (s ReceptionStep) Validate() error {
 			return fault.Wrap(fault.Invalid, err, "an identified reception has valid subject and session labels: "+err.Error())
 		}
 		if err := ValidateName("storage", s.Storage); err != nil {
+			return err
+		}
+		if err := s.Route.Validate(); err != nil {
 			return err
 		}
 	case reception.Fail:

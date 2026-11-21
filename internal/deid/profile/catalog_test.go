@@ -11,8 +11,9 @@ import (
 // TestShippedCatalog guards the bases the binary ships: the catalog is
 // made without error; every base of PS3.15 Annex E is known by name, of
 // this edition; those with attributes to change are built from the DICOM
-// library's tables and expand, and the two that change pixels are refused
-// with their reason, and so is the composite built on one of them; a name
+// library's tables and expand, Clean Pixel Data expands to no rules (its
+// work is the pixel rules), Clean Recognizable Visual Features is refused
+// with its reason; a name
 // of an earlier edition is refused as unknown; and the catalog lists each
 // base as available or not.
 func TestShippedCatalog(t *testing.T) {
@@ -31,9 +32,7 @@ func TestShippedCatalog(t *testing.T) {
 		t.Fatalf("bases %v, want %v", names, want)
 	}
 	refused := map[string]string{
-		"annex-e/clean-pixel-data:2026d":                   "pixels",
-		"annex-e/clean-recognizable-visual-features:2026d": "pixels",
-		"coria/longitudinal:1":                             "annex-e/clean-pixel-data:2026d",
+		"annex-e/clean-recognizable-visual-features:2026d": "faces",
 	}
 	for _, n := range names {
 		b, unavailable, found := cat.Lookup(n)

@@ -92,10 +92,13 @@ func commitSession(ctx context.Context, tx *sql.Tx, c tenant.ScanCommit, receive
 		row.newSubjects = int64(boolInt(made))
 		// The session is made unless its study's row or its label is
 		// there; which one, the reads after say.
+		// The session keeps what the routing chose for the reception that
+		// makes it, so every later arrival goes by the same choice.
 		res, err := tx.ExecContext(ctx, `INSERT INTO sessions (study_uid, subject_id, label, folded, storage, created,
-			subject_label, subject_folded, study_date, receiver, updated)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, c.StudyUID, subjectID, c.SessionLabel, label.Fold(c.SessionLabel),
-			c.Storage, micros(c.At), c.SubjectLabel, label.Fold(c.SubjectLabel), c.Values.StudyDate, receiver, micros(c.At))
+			subject_label, subject_folded, study_date, receiver, updated, route)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT route FROM receptions WHERE id = ?)) ON CONFLICT DO NOTHING`,
+			c.StudyUID, subjectID, c.SessionLabel, label.Fold(c.SessionLabel),
+			c.Storage, micros(c.At), c.SubjectLabel, label.Fold(c.SubjectLabel), c.Values.StudyDate, receiver, micros(c.At), c.ReceptionID)
 		if err != nil {
 			return row, err
 		}

@@ -2,6 +2,7 @@ package sqlkit
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"time"
 
@@ -389,27 +390,11 @@ func (k Sending) RemoveSender(ctx context.Context, name string, cancelJobs bool,
 }
 
 // receiverForwardingTo returns the name of a receiver that forwards to the
-// sender, or "": the receivers are read whole, since a receiver's senders
-// are in its configuration's text and a tenant's receivers are few.
+// sender, itself or by one of its routes, or "".
 func receiverForwardingTo(ctx context.Context, tx SendingTx, sender string) (string, error) {
-	found := ""
-	err := tx.Query(ctx, `SELECT name, config FROM receivers ORDER BY name`, nil, func(r Row) error {
-		var name, config string
-		if err := r.Scan(&name, &config); err != nil {
-			return err
-		}
-		var c dimseConfig
-		if err := FromJSON(config, &c); err != nil {
-			return err
-		}
-		for _, s := range c.ForwardTo {
-			if s == sender && found == "" {
-				found = name
-			}
-		}
-		return nil
+	return receiverWhose(ctx, tx, func(c dimseConfig) bool {
+		return slices.Contains(c.ForwardTo, sender) || slices.Contains(routingOf(c).Senders(), sender)
 	})
-	return found, err
 }
 
 // CheckForwardTo refuses a receiver's ForwardTo that names a sender the

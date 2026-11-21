@@ -40,8 +40,15 @@
 // result is written beside the original in the incoming area, the check
 // after (Checker) reads it, and only then is it put, read back and
 // committed with its profile version, its sidecar line read from the same
-// bytes. A file that cannot be is held with deid_failed, residual_value or
-// profile_refused, its original kept. Which way a file goes is decided by
+// bytes. The engine judges the pixels too (engine.ApplyImage): an image
+// at risk of burned-in text no pixel rule matches is held as
+// burned_in_risk; a rule's rectangles are filled, and a compressed image
+// decoded, a frame at a time as the writer copies the pixels, so memory
+// does not follow the image; JPEG segments are removed; an image whose
+// decoded size passes deid.pixel-limit is held (deid_failed,
+// pixels_too_large) and released once the setting is raised. A file that
+// cannot be is held with deid_failed, residual_value, profile_refused or
+// burned_in_risk, its original kept. Which way a file goes is decided by
 // its row, never by the receiver's choice now: each received file and
 // quarantine record says whether it was recorded de-identified
 // (tenant.ReceivedFile.Deidentified). One recorded as received at a
@@ -82,6 +89,25 @@
 // server's lock on its data directory ensures; with two, a manifest can
 // miss an instance the other confirmed meanwhile (never the catalog), which
 // verify finds and the scan's next manifest lists.
+//
+// # Routing
+//
+// A study is routed once, for its session. The identify step of the first
+// reception of a new session evaluates the receiver's routes
+// (tenant.Routing) over the file its naming rule reads first, as received
+// (route): the first route whose conditions hold gives the storage, and may
+// give a profile version and senders in place of the receiver's. What was
+// chosen is kept with the identify step (tenant.ReceptionStep.Route) and,
+// at its first commit, with the session (tenant.SessionLabels.Route); a
+// later arrival, and a reception of a study another reception in flight
+// was routed for (routedInFlight), go by it. So the archive step
+// de-identifies with the chosen version (receiverFor) and the done step
+// forwards to the chosen senders, whatever the routes say by then. The
+// archive step holds the files of a reception whose session another made
+// on another storage meanwhile (session_elsewhere) before any put. A study
+// the routing does not route is held as unrouted, and a run again finishes
+// that hold; a release naming a storage (tenant.Release.Storage) chooses
+// the storage, the routes still the profile and senders.
 //
 // # What this package must never do
 //

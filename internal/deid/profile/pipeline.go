@@ -53,7 +53,14 @@ var pipelineTags = map[uint32]string{
 	0x04000561: "the Original Attributes Sequence, which holds values as received (PS3.15 E.1.1)",
 	0x04000500: "the Encrypted Attributes Sequence, which holds values as received (PS3.15 E.1.1)",
 	0x4FFE0001: "the MAC Parameters Sequence, which cannot hold over a changed data set (PS3.15 C.12.1)",
+	0x00880200: "the Icon Image Sequence, a thumbnail of the image whose pixels no pixel rule fills and which may carry the same burned-in text (PS3.3 C.7.6.1.1.6)",
 }
+
+// NestedPixelReason is why an element of group 7FE0 inside a sequence item
+// is removed: pixels there (an icon, a vendor's thumbnail) are an image no
+// pixel rule fills and the check after does not search, so only the top
+// level's are ever kept.
+const NestedPixelReason = "pixel data inside a sequence item, an image no pixel rule fills and no check searches, which only the top level keeps (PS3.3 C.7.6.3)"
 
 // Pipeline returns how the pipeline handles the element t in every file,
 // and why, in words that complete "the element is ...". A private creator
@@ -69,8 +76,9 @@ var pipelineTags = map[uint32]string{
 // 7.5); the Digital Signatures Sequence (group FFFA) and Data Set Trailing
 // Padding (group FFFC, PS3.10 7.2); the Original Attributes, Encrypted
 // Attributes and MAC Parameters Sequences; and every element of group 7FE0
-// but those pixelKept names. Kept: pixelKept. Written: Specific Character
-// Set.
+// but those pixelKept names; the Icon Image Sequence. Kept: pixelKept, at
+// the top level only (NestedPixelReason: the engine removes them inside an
+// item). Written: Specific Character Set.
 func Pipeline(t uint32) (Handling, string) {
 	g := group(t)
 	switch {

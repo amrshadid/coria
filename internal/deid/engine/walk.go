@@ -177,7 +177,9 @@ func (r *run) walk(ds *dataset.Dataset, seqs []uint32, path string, sc scope) er
 			r.record.Entries = append(r.record.Entries, Entry{})
 		case handled(t):
 			h, why := profile.Pipeline(uint32(t))
-			if h == profile.HandledKept {
+			if h == profile.HandledKept && len(seqs) > 0 {
+				why = profile.NestedPixelReason
+			} else if h == profile.HandledKept {
 				r.fixed(ds, t, elem, p, 0, why)
 				break
 			}

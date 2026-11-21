@@ -20,19 +20,19 @@ const receptionColumns = `id, receiver, study_uid, arrival, state, files_receive
 
 	bytes_archived, files_duplicate, bytes_duplicate, files_quarantined, bytes_quarantined, files_released,
 	subject_label, session_label, storage, failure, started, last_file, step_at, ended_at, associations,
-	calling_ae_titles, calling_truncated, retry_of, retry_reception, discard_reason, discard_at`
+	calling_ae_titles, calling_truncated, retry_of, retry_reception, discard_reason, discard_at, route`
 
 // scanReception reads one row of receptionColumns.
 func scanReception(row scanner) (tenant.Reception, error) {
 	var r tenant.Reception
-	var state, titles string
+	var state, titles, route string
 	var started, lastFile, stepAt time.Time
 	var endedAt, discardAt *time.Time
 	c := &r.Counts
 	if err := row.Scan(&r.ID, &r.Receiver, &r.StudyUID, &r.Arrival, &state, &c.FilesReceived, &c.BytesReceived,
 		&c.FilesArchived, &c.BytesArchived, &c.FilesDuplicate, &c.BytesDuplicate, &c.FilesQuarantined, &c.BytesQuarantined,
 		&c.FilesReleased, &r.SubjectLabel, &r.SessionLabel, &r.Storage, &r.Failure, &started, &lastFile, &stepAt, &endedAt,
-		&r.Associations, &titles, &r.CallingAETitlesTruncated, &r.RetryOf, &r.RetryReception, &r.DiscardReason, &discardAt); err != nil {
+		&r.Associations, &titles, &r.CallingAETitlesTruncated, &r.RetryOf, &r.RetryReception, &r.DiscardReason, &discardAt, &route); err != nil {
 		return r, err
 	}
 	r.State = reception.State(state)
@@ -44,7 +44,9 @@ func scanReception(row scanner) (tenant.Reception, error) {
 	if len(r.CallingAETitles) == 0 {
 		r.CallingAETitles = nil
 	}
-	return r, nil
+	var err error
+	r.Route, err = sqlkit.ReadReceptionRoute(route)
+	return r, err
 }
 
 // errNoReception is the NotFound of a reception the tenant does not have.
@@ -298,11 +300,23 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 			c.FilesDuplicate, c.BytesDuplicate = step.Counts.FilesDuplicate, step.Counts.BytesDuplicate
 		}
 		subject, session, storage, failure := before.SubjectLabel, before.SessionLabel, before.Storage, before.Failure
+		routeText, err := sqlkit.ReceptionRouteText(before.Route)
+		if err != nil {
+			return err
+		}
 		if step.Event == reception.Identify {
 			if err := lockStorageShared(ctx, tx, step.Storage); err != nil {
 				return err
 			}
 			subject, session, storage = step.SubjectLabel, step.SessionLabel, step.Storage
+			// The routing's choice is kept with the step; a storage a
+			// release named stays, so the record says why the storage is
+			// what it is.
+			chosen := step.Route
+			chosen.ReleasedStorage = before.Route.ReleasedStorage
+			if routeText, err = sqlkit.ReceptionRouteText(chosen); err != nil {
+				return err
+			}
 		}
 		if step.Event == reception.Fail {
 			failure = step.Failure
@@ -312,10 +326,10 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 			endedAt = micros(step.At)
 		}
 		n, err := rowsChanged(tx.Exec(ctx, `UPDATE receptions SET state = $1, ended = $2, step_at = $3, ended_at = $4,
-			files_duplicate = $5, bytes_duplicate = $6, subject_label = $7, session_label = $8, storage = $9, failure = $10
-			WHERE id = $11 AND state = $12`,
+			files_duplicate = $5, bytes_duplicate = $6, subject_label = $7, session_label = $8, storage = $9, failure = $10,
+			route = $13 WHERE id = $11 AND state = $12`,
 			string(next), next.Ended(), micros(step.At), endedAt, c.FilesDuplicate, c.BytesDuplicate,
-			subject, session, storage, failure, step.ID, string(step.From)))
+			subject, session, storage, failure, step.ID, string(step.From), routeText))
 		if err != nil {
 			return err
 		}

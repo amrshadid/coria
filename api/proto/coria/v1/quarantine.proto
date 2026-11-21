@@ -82,7 +82,8 @@ service QuarantineService {
   //
   // Role: operator on the tenant.
   // Audit: one entry in the tenant's log, with the file's id as its object,
-  // and the mode, the receiver and the reception it joined in details.
+  // and the mode, the receiver, the storage named and the reception it
+  // joined in details.
   // Errors: unauthenticated, permission denied (no grant; also a tenant that
   // does not exist, for a caller who may not list every tenant), invalid
   // (also a mode other than RELEASE_MODE_AS_IS), not found (the tenant has
@@ -91,7 +92,7 @@ service QuarantineService {
   // or its content was never kept; it is a different file and the tenant
   // holds an instance under its SOP Instance UID; the receiver it came to
   // has been removed and the request names none; the receiver named does
-  // not exist), unavailable (the tenant's database does not answer, or the
+  // not exist; the storage named does not exist), unavailable (the tenant's database does not answer, or the
   // tenant is not ready).
   rpc ReleaseQuarantinedFile(ReleaseQuarantinedFileRequest) returns (ReleaseQuarantinedFileResponse) {
     option idempotency_level = IDEMPOTENT;
@@ -243,9 +244,20 @@ enum QuarantineReason {
   // as a file that just arrived, so it is de-identified), "profile_unusable"
   // (the profile version cannot run in this version of the server),
   // "unreadable" or "unwritable" (the data set cannot be read, or written
-  // back, for de-identification), or "uid_not_remapped" (the profile
+  // back, for de-identification), "uid_not_remapped" (the profile
   // leaves a Study, Series or SOP Instance UID other than the keyed
-  // remapping the server places the file by); "path", the element where it
+  // remapping the server places the file by), "pixels_too_large" (the
+  // image needs work on its pixels and decoded is larger than the setting
+  // deid.pixel-limit; a release once the setting is raised archives it),
+  // "pixels_unsupported" (a pixel rule cannot fill an image of its
+  // layout), "pixels_undecodable" (its frames, or its JPEG segments, do
+  // not decode), "frames_mismatch" (its native pixels hold more bytes than
+  // its stated frames), "pixel_region_outside" (a pixel rule's rectangle lies
+  // wholly outside the image), "pixel_text_unsearched" (its compressed
+  // pixel data has segments that are not searched, such as JPEG 2000's,
+  // and the profile holds such images) or "detect_implausible" (the
+  // detector found regions covering more of the picture than text does);
+  // "path", the element where it
   // failed, as tags of eight hexadecimal digits with item numbers, such as
   // "00081115[0]/0020000E", when there is one; and "rule", the rule's name
   // (or "rule" and its position), when one decided. A release de-identifies
@@ -267,6 +279,33 @@ enum QuarantineReason {
   // an element the file holds. Details: "rule", the rule's name (or "rule"
   // and its position).
   QUARANTINE_REASON_PROFILE_REFUSED = 16;
+
+  // The study's receiver routes each study by its routes, and this one was
+  // not routed: no route chose it and the routing holds what none chooses
+  // (Receiver.routing), a route could not be evaluated, or another
+  // reception of the study made its session on another storage while this
+  // one was in flight. Every file of the reception is held, its bytes
+  // kept. Details: "cause", "no_match", "route_unusable" or
+  // "session_elsewhere", and "route", the route's name, for
+  // "route_unusable". A release may name the storage the study goes to
+  // (ReleaseQuarantinedFileRequest.storage); without one the routes run
+  // again.
+  QUARANTINE_REASON_UNROUTED = 17;
+
+  // The image's pixels may carry burned-in text and no pixel rule of the
+  // receiver's profile matches it, so it was never archived; its original
+  // bytes are kept. Details: "cause", why it is at risk, read from the
+  // image as received: "burned_in_annotation" (Burned In Annotation
+  // (0028,0301) is YES), "secondary_capture" (a Secondary Capture Image
+  // Storage SOP class, and Burned In Annotation is not NO), "sop_class" (a
+  // SOP class commonly drawn on: ultrasound, visible light, ophthalmic,
+  // and Burned In Annotation is not NO), "modality" (a modality commonly
+  // drawn on: US, IVUS, ES, GM, XC, SC, OT, XA, RF, OP, SM, PX, IO, and
+  // Burned In Annotation is not NO) or "slide_label" (a whole slide's
+  // label or overview image). A release de-identifies the file
+  // again with its receiver's profile version then, so a profile given a
+  // pixel rule for such images lets it through.
+  QUARANTINE_REASON_BURNED_IN_RISK = 18;
 }
 
 // QuarantineState is what has been decided about a quarantined file.
@@ -416,6 +455,11 @@ message QuarantinedFile {
   // Why it was released, as given to ReleaseQuarantinedFile. Empty unless it
   // is released and a reason was given.
   string release_reason = 24;
+
+  // The name of the storage its release named
+  // (ReleaseQuarantinedFileRequest.storage). Empty unless it is released
+  // and a storage was named.
+  string release_storage = 25;
 }
 
 // ListQuarantinedFilesRequest asks for a page of a tenant's quarantined
@@ -528,6 +572,23 @@ message ReleaseQuarantinedFileRequest {
   // Optional; when given, 1 to 1024 bytes of UTF-8, not only spaces. A
   // file already released keeps the reason of its first release.
   string reason = 5;
+
+  // The name of the tenant's storage the reception the file joins is
+  // archived to, in place of the storage the receiver's routing would
+  // choose: a file held as QUARANTINE_REASON_UNROUTED is released naming
+  // one. It chooses the storage only: the profile version and the senders
+  // are still those of the route that holds for the study, or the
+  // receiver's when none does, and the routing's default does not hold it
+  // again. Optional; empty lets the routing choose again. A storage the
+  // tenant does not have is a precondition failure, and so is a storage
+  // other than the one an earlier release into the same reception named.
+  // A study whose session the archive already holds stays on that
+  // session's storage. A file that joins no reception (it lands again, as
+  // a file recorded as received at a receiver that de-identifies now does)
+  // keeps the storage through its new landing: the reception it joins then
+  // is archived there. The storage is recorded with the record
+  // (QuarantinedFile.release_storage) and in the release's audit entry.
+  string storage = 6;
 }
 
 // ReleaseQuarantinedFileResponse is the record after the release.

@@ -29,8 +29,7 @@ type noFacts struct{}
 func (noFacts) Value(v1.ConditionSubject) (string, bool) { return "", false }
 
 // ForReception returns why an expanded profile cannot de-identify the files
-// of a receiver, or nil: it has pixel rules, which this engine does not
-// apply (ErrPixelRules); it is built on Annex E bases of another edition
+// of a receiver, or nil: it is built on Annex E bases of another edition
 // than this build's; or a rule that applies whatever the file says keeps,
 // removes or changes a placing UID other than by remapping it
 // (ErrKeepsPlacingUIDs, the rule named), such as the Retain UIDs option. A
@@ -38,9 +37,6 @@ func (noFacts) Value(v1.ConditionSubject) (string, bool) { return "", false }
 // hold for; one that does hold is refused when the file is archived, as
 // uid_not_remapped.
 func ForReception(e *v1.ExpandedProfile) error {
-	if len(e.GetPixelRules()) > 0 {
-		return ErrPixelRules
-	}
 	for _, b := range e.GetBases() {
 		if _, edition, ok := profile.AnnexEName(b); ok && edition != profile.AnnexEEdition {
 			return fmt.Errorf("engine: the profile is built on %s, and this build runs the Annex E bases of edition %s only", b, profile.AnnexEEdition)

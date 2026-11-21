@@ -60,7 +60,7 @@ func (en *Engine) Explain(ctx context.Context, ds *dataset.Dataset, rec Receptio
 	// before the engine changes it, as Apply reads them.
 	f := readFacts(ds, rec)
 	locs := map[int]profile.Location{}
-	record, err := en.apply(ctx, ds, rec, locs)
+	record, err := en.apply(ctx, ds, rec, Image{}, locs)
 	if err != nil {
 		return nil, err
 	}

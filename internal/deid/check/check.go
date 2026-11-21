@@ -292,6 +292,9 @@ func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needle
 		c.seams.afterParse()
 	}
 	fs := newFindings(c.opts.MaxFindings)
+	if f.nestedPixels != "" {
+		fs.add(Finding{Path: f.nestedPixels, Kind: KindIdentifier, Raw: true})
+	}
 	if err := search(ctx, quiet, f, set, enc, c.opts, fs, c.seams); err != nil {
 		return rep, err
 	}

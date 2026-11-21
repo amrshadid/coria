@@ -34,7 +34,7 @@ func fillPipeline(tb testing.TB, path string) {
 		   CASE i % 50 WHEN 0 THEN 'receiving' WHEN 1 THEN 'complete' WHEN 2 THEN 'archived' WHEN 3 THEN 'failed' ELSE 'done' END,
 		   CASE WHEN i % 50 >= 3 THEN 1 ELSE 0 END,
 		   0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', CASE WHEN i % 50 >= 2 THEN 'store' || (i % 200 + 1) ELSE '' END, '',
-		   i * 1000000, i * 1000000, i * 1000000, NULL, 0, '[]', 0, '', '', '', NULL FROM n`,
+		   i * 1000000, i * 1000000, i * 1000000, NULL, 0, '[]', 0, '', '', '', NULL, '' FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000)
 		 INSERT INTO received_files SELECT 'rc' || (i % 20000 + 1), '2.25.3.' || i, randomblob(32), '2.25.2.1', '2.25.1.1',
 		   '1.2.840.10008.5.1.4.1.1.4', '1.2.840.10008.1.2.1', 1000, 'x/' || i, '', '', '', '', 0, 0, 0 FROM n`,
@@ -42,7 +42,7 @@ func fillPipeline(tb testing.TB, path string) {
 		 INSERT INTO quarantine SELECT 'q' || i, CASE i % 3 WHEN 0 THEN 'not_dicom' WHEN 1 THEN 'bad_uid' ELSE 'different_file' END,
 		   '{}', CASE i % 4 WHEN 0 THEN 'held' WHEN 1 THEN 'released' ELSE 'rejected' END, 'recv' || (i % 200 + 1), 'rc' || i,
 		   '', '', '', 10, NULL, NULL, '', '2.25.3.' || i, '2.25.1.' || (i % 5000 + 1), '', '', '', 0, i * 1000000, NULL,
-		   '', '', '', '', '', '', 0 FROM n`,
+		   '', '', '', '', '', '', 0, '' FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 500)
 		 INSERT INTO subjects (id, label, folded, created) SELECT i, 'sub-' || i, 'sub-' || i, 0 FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)
@@ -320,9 +320,9 @@ func TestPipelineSchemaWithSQLite(t *testing.T) {
 	// itself writes: an insert counts its state, a change of state moves
 	// the count, a delete removes it.
 	run(`INSERT INTO receptions VALUES ('rc1', 'r', '2.25.1.1', 1, 'receiving', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '',
-		0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL)`)
+		0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL, '')`)
 	run(`INSERT INTO receptions VALUES ('rc2', 'r', '2.25.1.2', 1, 'receiving', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '',
-		0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL)`)
+		0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL, '')`)
 	run(`UPDATE receptions SET state = 'complete' WHERE id = 'rc1'`)
 	steps := `SELECT group_concat(state || ' ' || receptions, ', ') FROM (SELECT * FROM reception_steps ORDER BY state)`
 	if got := run(steps); got != "complete 1, receiving 1" {

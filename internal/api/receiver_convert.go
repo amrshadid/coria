@@ -28,17 +28,19 @@ var receiverMask = maskRules{
 		string(tenant.FieldDIMSECallers), string(tenant.FieldDIMSEAnyCaller), string(tenant.FieldDIMSETLS),
 		string(tenant.FieldDIMSETLSCert), string(tenant.FieldDIMSETLSKey), string(tenant.FieldDIMSESOPClasses),
 		string(tenant.FieldDIMSESyntaxes), string(tenant.FieldSTOWKeys), string(tenant.FieldSTOWMaxRequest),
-		string(tenant.FieldForwardTo), string(tenant.FieldDeidentification),
+		string(tenant.FieldForwardTo), string(tenant.FieldDeidentification), string(tenant.FieldRouting),
 	},
 	refused: map[string]string{
-		"dimse":       "names a type's whole message: name its fields one by one",
-		"stow":        "names a type's whole message: name its fields one by one",
-		"name":        "is the receiver's name, which does not change",
-		"health":      "is answered by the server and cannot be set",
-		"create_time": "is answered by the server and cannot be set",
-		"update_time": "is answered by the server and cannot be set",
-		"as_received": "is a member of deidentification: name the oneof, \"deidentification\"",
-		"profile":     "is a member of deidentification: name the oneof, \"deidentification\"",
+		"dimse":                        "names a type's whole message: name its fields one by one",
+		"stow":                         "names a type's whole message: name its fields one by one",
+		"name":                         "is the receiver's name, which does not change",
+		"health":                       "is answered by the server and cannot be set",
+		"create_time":                  "is answered by the server and cannot be set",
+		"update_time":                  "is answered by the server and cannot be set",
+		"as_received":                  "is a member of deidentification: name the oneof, \"deidentification\"",
+		"profile":                      "is a member of deidentification: name the oneof, \"deidentification\"",
+		"routing.routes":               "is part of routing, which is replaced whole: name \"routing\"",
+		"routing.quarantine_unmatched": "is part of routing, which is replaced whole: name \"routing\"",
 	},
 }
 
@@ -91,6 +93,11 @@ func receiverValues(field string, m *v1.Receiver) (r tenant.Receiver, quiet, ope
 		r.Profile = tenant.ProfileRef{Name: pv.GetName(), Version: pv.GetVersion()}
 		if err := r.Profile.Validate(); err != nil {
 			return r, false, false, fieldOf(field+".profile", err)
+		}
+	}
+	if rm := m.GetRouting(); rm != nil {
+		if r.Routing, err = routingValues(field+".routing", rm); err != nil {
+			return r, false, false, err
 		}
 	}
 	if n := m.GetNaming(); n != nil {
@@ -198,23 +205,32 @@ func (c *core) checkDeidentification(ctx context.Context, p tenant.Pipeline, st 
 		}
 		return nil
 	}
+	return c.checkProfileVersion(ctx, p, "receiver.profile", r.Profile)
+}
+
+// checkProfileVersion checks a profile version a receiver or one of its
+// routes de-identifies with: one the tenant has, which loads and can
+// de-identify a receiver's files (engine.ForReception). Each failure but a
+// version that does not load is a precondition failure, its message
+// starting with field.
+func (c *core) checkProfileVersion(ctx context.Context, p tenant.Pipeline, field string, ref tenant.ProfileRef) error {
 	profiles, ok := p.(tenant.Profiles)
 	if !ok {
-		return fault.New(fault.Internal, "the tenant's database keeps no profiles")
+		return errNoProfiles
 	}
-	v, err := profiles.ProfileVersion(ctx, r.Profile.Name, r.Profile.Version)
+	v, err := profiles.ProfileVersion(ctx, ref.Name, ref.Version)
 	if fault.KindOf(err) == fault.NotFound {
-		return fault.Wrap(fault.Precondition, err, "receiver.profile: the tenant has no profile version "+r.Profile.String())
+		return fault.Wrap(fault.Precondition, err, field+": the tenant has no profile version "+ref.String())
 	}
 	if err != nil {
 		return err
 	}
 	loaded, err := profile.Load(v.Name, v.Version, v.Source, v.Expanded, v.Checksum)
 	if err != nil {
-		return fault.Wrap(fault.Internal, err, "receiver.profile: the stored profile version "+r.Profile.String()+" does not load")
+		return fault.Wrap(fault.Internal, err, field+": the stored profile version "+ref.String()+" does not load")
 	}
 	if err := engine.ForReception(loaded.Expanded()); err != nil {
-		return fault.New(fault.Precondition, "receiver.profile: the profile version "+r.Profile.String()+" cannot de-identify a receiver's files: "+receptionRefusal(err))
+		return fault.New(fault.Precondition, field+": the profile version "+ref.String()+" cannot de-identify a receiver's files: "+receptionRefusal(err))
 	}
 	return nil
 }
@@ -223,8 +239,6 @@ func (c *core) checkDeidentification(ctx context.Context, p tenant.Pipeline, st 
 // de-identify a receiver's files (engine.ForReception).
 func receptionRefusal(err error) string {
 	switch {
-	case errors.Is(err, engine.ErrPixelRules):
-		return "it has pixel rules, which this version of the server does not apply, so they would leave pixels as received"
 	case errors.Is(err, engine.ErrKeepsPlacingUIDs):
 		return "it does not remap the UIDs a file is placed by (as the Retain UIDs option does), and a receiver places each file by their keyed remapping (" +
 			strings.TrimPrefix(err.Error(), engine.ErrKeepsPlacingUIDs.Error()+": ") + ")"
@@ -302,6 +316,7 @@ func receiverMessage(r tenant.Receiver, h Health) *v1.Receiver {
 	if r.Type == tenant.ReceiverSTOW {
 		m.Type = &v1.Receiver_Stow{Stow: &v1.StowReceiver{KeyIds: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes}}
 	}
+	m.Routing = routingMessage(r.Routing)
 	if r.Deidentifies() {
 		m.Deidentification = &v1.Receiver_Profile{Profile: &v1.ProfileVersionRef{Name: r.Profile.Name, Version: r.Profile.Version}}
 	} else {

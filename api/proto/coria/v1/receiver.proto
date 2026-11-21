@@ -8,6 +8,7 @@ package coria.v1;
 import "google/protobuf/duration.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "coria/v1/profile.proto";
 
 // ReceiverService adds, reads, changes and removes a tenant's receivers. A
 // receiver is a way for data to arrive at a tenant: it admits the senders
@@ -95,7 +96,11 @@ service ReceiverService {
   // tenant), conflict (the tenant has a receiver with that name, or a
   // removed receiver of that name is still named by receptions or
   // quarantined files), precondition (a storage the tenant does not have; a
-  // sender in forward_to the tenant does not have; a port outside the
+  // sender in forward_to the tenant does not have; a storage, a sender or a
+  // profile version a route names that the tenant does not have, or a
+  // profile version that cannot de-identify a receiver's files; a route
+  // that names a profile version on a receiver that archives as received;
+  // a port outside the
   // tenant's allotted ports; a bind address the installation does not list;
   // another receiver of the tenant on the same port and an overlapping
   // address), unavailable (the tenant's database
@@ -149,7 +154,8 @@ service ReceiverService {
   // every rule AddReceiver checks on a field), not found (the tenant has no
   // receiver with that name; a tenant that does not exist, for a caller who
   // may list every tenant), precondition (every precondition AddReceiver
-  // checks), unavailable (the tenant's database does not answer, or the
+  // checks; expected_update_time is not the receiver's update_time, as a
+  // stale expected version is everywhere in this API), unavailable (the tenant's database does not answer, or the
   // tenant is not ready).
   rpc SetReceiver(SetReceiverRequest) returns (SetReceiverResponse) {
     option idempotency_level = IDEMPOTENT;
@@ -307,6 +313,115 @@ message Receiver {
     // decides about it.
     ProfileVersionRef profile = 15;
   }
+
+  // How each study is routed: the storage, the profile version and the
+  // senders chosen for it in place of storage, the profile and forward_to.
+  // Absent, or with no route and the default storage, every study goes as
+  // those fields say, which is what every receiver did before routing
+  // existed. A change applies to receptions identified from then on; one
+  // identified keeps what was chosen for it. Setting it needs what any
+  // change of a receiver needs, admin on the tenant, since it decides
+  // where the tenant's data goes and how it is de-identified; reading it,
+  // what reading a receiver needs, reader.
+  ReceiverRouting routing = 16;
+}
+
+// ReceiverRouting is a receiver's routes, in order, and what happens to a
+// study none of them chooses. A study is routed once, for its session: the
+// routes are evaluated for the first reception of a new session (the files
+// of one study arriving at the receiver), when it is complete, over the
+// first file its naming rule reads (the first, by SOP Instance UID, of its
+// first series, by Series Instance UID), as received, before any byte of
+// it is de-identified; the first route whose conditions all hold chooses.
+// What it chose (the storage, the profile version and the senders) is kept
+// with the reception and, when its first scan is archived, with the
+// session, so the reception's later steps, a step run again after a
+// restart, and every later arrival of the session go by it, whatever the
+// routes say by then and whichever AE title the later arrival comes from.
+// A reception of a study whose first reception is still being archived
+// goes by what was chosen for that one; one that arrives while the first is
+// being identified waits for it. Should two receptions of a study be
+// routed apart all the same (they arrived at two receivers at the same
+// moment), the second to archive finds the session on another storage and
+// its files are held as QUARANTINE_REASON_UNROUTED (cause
+// "session_elsewhere") before any is stored.
+//
+// A route that cannot be evaluated (one stored by a later version of the
+// server with a condition this one does not know, or a condition whose
+// value in the file is longer than 1024 bytes) holds the study as
+// QUARANTINE_REASON_UNROUTED, whatever routes come after it, so a study is
+// never sent where a later route would send it only because an earlier
+// one is broken.
+//
+// A release naming a storage (ReleaseQuarantinedFileRequest.storage)
+// chooses the storage only: the profile version and the senders are still
+// the route's, or the receiver's when no route holds, and
+// quarantine_unmatched does not hold the study again.
+message ReceiverRouting {
+  // The routes, in order; the first that holds chooses. At most 64, each
+  // name once.
+  repeated Route routes = 1;
+
+  // What happens to a new session no route chooses. False, the default:
+  // it goes as the receiver says, to its storage, with its profile and its
+  // forward_to. True: every file of the study is held as
+  // QUARANTINE_REASON_UNROUTED, and a person decides where it goes, by
+  // releasing its files naming a storage.
+  bool quarantine_unmatched = 2;
+}
+
+// Route is one rule of a receiver's routing.
+message Route {
+  // The route's name, unique in the receiver, under the rule of a tenant's
+  // name. Required. It names the route in a quarantine record that names
+  // it.
+  string name = 1;
+
+  // The conditions, all of which must hold; none holds for every study.
+  // At most 16. Each reads one of the subjects of ProfileCondition other
+  // than CONDITION_SUBJECT_RECEIVER (a route belongs to one receiver), by
+  // the same rule: a value read from the top level of the data set as
+  // received, without its padding (PS3.5 6.2), its case kept, an absent or
+  // empty value absent; an AE title as the association gave it, absent
+  // for a file not received by DIMSE. A value longer than 1024 bytes
+  // is not tested: the route cannot be evaluated (ReceiverRouting), as
+  // no value of these subjects is that long (PS3.5 6.2). An equals or prefix text is at most
+  // 1024 bytes; a pattern (RE2, matched against the whole value) at most
+  // 256 bytes, with no repetition counted above 100, and compiling to at
+  // most 10000 instructions and ranges; the patterns of a receiver's
+  // routes together to at most 200000.
+  repeated ProfileCondition conditions = 2;
+
+  // The name of the tenant's storage a new session this route chooses is
+  // archived to. Required; a storage the tenant does not have is a
+  // precondition failure, and a storage a route names cannot be removed.
+  string storage = 3;
+
+  // The profile version the files of a study this route chooses are
+  // de-identified with, in place of the receiver's. Optional; absent keeps
+  // the receiver's. Only a receiver that de-identifies (Receiver.profile)
+  // may have a route that names one, since the receiver's choice decides
+  // how each file lands (its UIDs remapped and its checksum keyed, or not)
+  // before any route is chosen: a route can replace the profile, never
+  // turn de-identification off or on. A route that names one on a
+  // receiver that archives as received, and a change of a receiver to
+  // as_received while a route names one, are precondition failures. The
+  // version must be the tenant's and pass every check a receiver's profile
+  // version passes, else a precondition failure.
+  ProfileVersionRef profile = 4;
+
+  // The senders a reception this route chooses is forwarded to when it
+  // reaches done, in place of the receiver's forward_to. Optional; absent
+  // keeps the receiver's; present with no sender forwards to none. At
+  // most 16, each once; a sender the tenant does not have is a
+  // precondition failure, and a sender a route names cannot be removed.
+  RouteForwardTo forward_to = 5;
+}
+
+// RouteForwardTo names the senders a route forwards to.
+message RouteForwardTo {
+  // The senders' names.
+  repeated string senders = 1;
 }
 
 // AsReceived is a receiver's choice to archive what it receives as it was
@@ -773,7 +888,8 @@ message SetReceiverRequest {
   // The fields to change, as paths of Receiver, such as "quiet_period",
   // "forward_to" or "naming" ("naming" with naming absent returns to the
   // default rule), "deidentification" (the oneof: as_received or a profile
-  // version; with neither set, as received), or
+  // version; with neither set, as received), "routing" (replaced whole;
+  // absent, no routing; its fields cannot be named one by one), or
   // a field of the receiver's type joined to it by a dot, such as
   // "dimse.port", "dimse.tls.certificate_file" or "stow.key_ids". A path
   // that names a type's whole message ("dimse", "stow") is refused: its
@@ -787,6 +903,14 @@ message SetReceiverRequest {
   // other. A duration or size named with no value is refused as invalid; it
   // is not reset to the default.
   google.protobuf.FieldMask update_mask = 3;
+
+  // When set, the change is made only while the receiver's update_time is
+  // this one, the update_time of the receiver as the caller read it, and
+  // is otherwise refused as a precondition failure: a caller that reads a
+  // receiver, changes a part of it (one route of its routing) and writes it
+  // back loses no change another made meanwhile. Absent changes whatever is
+  // stored.
+  google.protobuf.Timestamp expected_update_time = 4;
 }
 
 // SetReceiverResponse is the receiver as changed.

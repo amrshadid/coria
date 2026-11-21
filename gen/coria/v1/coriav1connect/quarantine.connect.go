@@ -128,7 +128,8 @@ type QuarantineServiceClient interface {
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the file's id as its object,
-	// and the mode, the receiver and the reception it joined in details.
+	// and the mode, the receiver, the storage named and the reception it
+	// joined in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also a mode other than RELEASE_MODE_AS_IS), not found (the tenant has
@@ -137,7 +138,7 @@ type QuarantineServiceClient interface {
 	// or its content was never kept; it is a different file and the tenant
 	// holds an instance under its SOP Instance UID; the receiver it came to
 	// has been removed and the request names none; the receiver named does
-	// not exist), unavailable (the tenant's database does not answer, or the
+	// not exist; the storage named does not exist), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	ReleaseQuarantinedFile(context.Context, *v1.ReleaseQuarantinedFileRequest) (*v1.ReleaseQuarantinedFileResponse, error)
 	// RejectQuarantinedFile removes a held file's bytes from the server, for
@@ -217,7 +218,8 @@ type QuarantineServiceHandler interface {
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the file's id as its object,
-	// and the mode, the receiver and the reception it joined in details.
+	// and the mode, the receiver, the storage named and the reception it
+	// joined in details.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also a mode other than RELEASE_MODE_AS_IS), not found (the tenant has
@@ -226,7 +228,7 @@ type QuarantineServiceHandler interface {
 	// or its content was never kept; it is a different file and the tenant
 	// holds an instance under its SOP Instance UID; the receiver it came to
 	// has been removed and the request names none; the receiver named does
-	// not exist), unavailable (the tenant's database does not answer, or the
+	// not exist; the storage named does not exist), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	ReleaseQuarantinedFile(context.Context, *v1.ReleaseQuarantinedFileRequest) (*v1.ReleaseQuarantinedFileResponse, error)
 	// RejectQuarantinedFile removes a held file's bytes from the server, for

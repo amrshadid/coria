@@ -79,6 +79,14 @@ func newReception(d Deps, reg *registry.Registry, wake, forwarded func(tenantNam
 			p, err := receive.New(receive.Config{
 				Tenant: name, Store: st, IncomingRoot: incomingRoot, Logger: log,
 				OpenStorage: storages.Open, Hasher: hasher, HeaderLimit: values.HeaderLimit,
+				// deid.pixel-limit as it applies on the tenant, read live.
+				PixelLimit: func(ctx context.Context) (int64, error) {
+					src, ok := st.(settingvalue.Source)
+					if !ok {
+						return 0, fault.New(fault.Internal, "the tenant's database keeps no settings")
+					}
+					return values.OnTenant(src).PixelLimit(ctx)
+				},
 				LowDisk: g.LowDisk, OverLimit: g.OverLimit, Wake: func() { wake(name) },
 				Forwarded: func() { forwarded(name) },
 				// The keys of a receiver that de-identifies, read when its

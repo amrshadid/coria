@@ -29,9 +29,10 @@ const checkHeadroom = 1 << 20
 // is held (deid_failed, recorded_as_received: a file in flight at the
 // switch is never archived identified under a receiver that de-identifies;
 // its release lands it again, remapped and keyed); a file recorded
-// de-identified goes de-identified by the profile version its receiver
-// names now, or is held when the receiver names none any more (deid_failed,
-// no_profile).
+// de-identified goes de-identified by the profile version the route chosen
+// for its reception names, else the one its receiver names now
+// (receiverFor), or is held when the receiver names none any more
+// (deid_failed, no_profile).
 //
 // A file de-identified (deidentify) is written beside its original in the
 // incoming area, checked by the check after, and only then put, so the
@@ -43,11 +44,8 @@ const checkHeadroom = 1 << 20
 // writing the same bytes, since the engine reads no clock and no random
 // source.
 func (p *Pipeline) prepare(ctx context.Context, r tenant.Reception, path label.Path, files []written) ([]written, []tenant.QuarantinedFile, error) {
-	rcv, err := p.receivers.get(ctx, r.Receiver)
-	switch {
-	case fault.KindOf(err) == fault.NotFound:
-		rcv = tenant.Receiver{}
-	case err != nil:
+	rcv, err := p.receiverFor(ctx, r)
+	if err != nil {
 		return nil, nil, err
 	}
 	out := make([]written, len(files))
@@ -132,14 +130,19 @@ func sumAt(r io.ReaderAt, size int64) (tenant.SHA256, int64, error) {
 // it, in this order:
 //
 //  1. The engine runs over the file's data set, its bulk values left in the
-//     file. A file the profile cannot process is held (deid_failed, with
-//     the engine's fixed cause, or profile_refused for a rule whose action
-//     is quarantine).
+//     file, and judges its pixels (engine.ApplyImage) within the tenant's
+//     deid.pixel-limit. A file the profile cannot process is held
+//     (deid_failed, with the engine's fixed cause, pixels_too_large among
+//     them; burned_in_risk for an image at risk no pixel rule matches; or
+//     profile_refused for a rule whose action is quarantine).
 //  2. The de-identified data set must hold the keyed remapping of the
 //     received UIDs, which its rows hold; one that does not is held
 //     (uid_not_remapped).
 //  3. It is written beside the original in the incoming area, its pixel
-//     data copied from the original, never held whole (incoming.Derive).
+//     data copied from the original, never held whole (incoming.Derive),
+//     filled and decoded a frame at a time when a pixel rule fills it; a
+//     frame that does not decode then holds it (deid_failed,
+//     pixels_undecodable).
 //  3. A label the receiver's naming rule makes from a value as received,
 //     not hashed, is searched for the needles: such a rule is refused for a
 //     receiver that de-identifies, so this holds only one stored past that
@@ -172,10 +175,10 @@ func (p *Pipeline) deidentify(ctx context.Context, r tenant.Reception, rcv tenan
 	if err != nil {
 		return hold(tenant.QuarantineDeidFailed, map[string]string{"cause": "unreadable"})
 	}
-	rec, err := en.Apply(ctx, ds, engine.Reception{
+	rec, err := en.ApplyImage(ctx, ds, engine.Reception{
 		Receiver: r.Receiver, CallingAETitle: wr.f.Caller.CallingAETitle, CalledAETitle: wr.f.Caller.CalledAETitle,
 		CharacterSet: h.CharacterSet(),
-	})
+	}, image(h, in, source, p.pixelLimit(ctx)))
 	var failure *engine.Failure
 	if errors.As(err, &failure) {
 		return hold(engineHold(failure))
@@ -191,9 +194,12 @@ func (p *Pipeline) deidentify(ctx context.Context, r tenant.Reception, rcv tenan
 	}
 	p.at("archive.before-deid")
 	made, err := p.area.Derive(wr.f.Incoming, func(w io.WriteSeeker) error {
-		return writeDataset(w, ds, h.TransferSyntaxUID, source, littleEndian)
+		return writeDataset(w, ds, writtenSyntax(h.TransferSyntaxUID, ds, rec), source, littleEndian)
 	})
 	var we errWrite
+	if errors.Is(err, engine.ErrPixelsUndecodable) {
+		return hold(tenant.QuarantineDeidFailed, pixelHold)
+	}
 	if errors.As(err, &we) {
 		return hold(tenant.QuarantineDeidFailed, map[string]string{"cause": "unwritable"})
 	}
@@ -210,7 +216,7 @@ func (p *Pipeline) deidentify(ctx context.Context, r tenant.Reception, rcv tenan
 	if size != wr.size {
 		return wr, nil, fault.New(fault.Internal, "a de-identified file changed after it was written")
 	}
-	_, err = p.cfg.Check(rcv.MaxFileBytes+checkHeadroom).Check(ctx, out, size, rec.Needles, h.CharacterSet())
+	_, err = p.cfg.Check(rcv.MaxFileBytes+checkHeadroom+grown(rec)).Check(ctx, out, size, rec.Needles, h.CharacterSet())
 	if reason, details, held := checkHold(err); held {
 		wr.made = false
 		_ = p.area.RemoveDerived(wr.f.Incoming)
@@ -231,11 +237,15 @@ func (p *Pipeline) deidentify(ctx context.Context, r tenant.Reception, rcv tenan
 
 // engineHold returns the reason and the details a file the engine refused
 // is held with: profile_refused, with the rule, for a rule whose action is
-// quarantine; deid_failed, with the engine's fixed cause, the element and
+// quarantine; burned_in_risk, with why, for an image at risk no pixel rule
+// matches; deid_failed, with the engine's fixed cause, the element and
 // the rule, for any other.
 func engineHold(failure *engine.Failure) (tenant.QuarantineReason, map[string]string) {
-	if failure.Cause == engine.CauseRuleQuarantine {
+	switch failure.Cause {
+	case engine.CauseRuleQuarantine:
 		return tenant.QuarantineProfileRefused, ruleDetail(nil, failure.Rule)
+	case engine.CauseBurnedInRisk:
+		return burnedInHold(failure)
 	}
 	details := map[string]string{"cause": string(failure.Cause)}
 	if failure.Path != "" {

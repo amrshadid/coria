@@ -430,6 +430,8 @@ func TestGrammar(t *testing.T) {
 		"audit list":  true,
 		"storage add": true, "storage list": true, "storage show": true, "storage set": true, "storage remove": true, "storage test": true,
 		"receiver add": true, "receiver list": true, "receiver show": true, "receiver set": true, "receiver remove": true,
+		"receiver route list": true, "receiver route add": true, "receiver route set": true, "receiver route remove": true,
+		"receiver route move": true, "receiver route default": true,
 		"sender add": true, "sender list": true, "sender show": true, "sender set": true, "sender remove": true, "sender test": true,
 		"job create": true, "job show": true, "job list": true, "job watch": true, "job cancel": true, "job retry": true, "job failures": true,
 		"profile create": true, "profile get": true, "profile list": true, "profile versions": true, "profile export": true,
@@ -449,7 +451,14 @@ func TestGrammar(t *testing.T) {
 			got[c.Name()] = true
 		}
 		for _, v := range c.Commands() {
-			got[c.Name()+" "+v.Name()] = true
+			// A part of a noun with verbs of its own (a receiver's
+			// routes) is listed by its verbs.
+			if len(v.Commands()) == 0 {
+				got[c.Name()+" "+v.Name()] = true
+			}
+			for _, w := range v.Commands() {
+				got[c.Name()+" "+v.Name()+" "+w.Name()] = true
+			}
 		}
 	}
 	for k := range want {

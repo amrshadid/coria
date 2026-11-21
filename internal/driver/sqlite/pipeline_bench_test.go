@@ -115,7 +115,7 @@ func fillHeld(b *testing.B, path string) {
 		 FROM n`,
 		`UPDATE catalog_totals SET subjects = 1, sessions = 1000, scans = 1000, instances = 1000000`,
 		`INSERT INTO receptions SELECT 'claimer', 'dimse', '2.25.1.5000', 1, 'identified', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		   'sub-01', 'ses-5000', 'store', '', 0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL`,
+		   'sub-01', 'ses-5000', 'store', '', 0, 0, 0, NULL, 0, '[]', 0, '', '', '', NULL, ''`,
 		`ANALYZE`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {

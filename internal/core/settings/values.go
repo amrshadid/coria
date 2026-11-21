@@ -387,6 +387,29 @@ func ParseHeaderLimit(v string) (int64, error) {
 	return n, nil
 }
 
+// The bounds of deid.pixel-limit.
+const (
+	// MinPixelLimit is the smallest: below it a single ordinary
+	// ultrasound frame would be held.
+	MinPixelLimit = 1 << 20
+	// MaxPixelLimit is the largest: past it a de-identified file, which
+	// the check after reads whole, would pass any memory a server has.
+	MaxPixelLimit = 64 << 30
+)
+
+// ParsePixelLimit reads deid.pixel-limit: a size (ParseSize) from
+// MinPixelLimit to MaxPixelLimit.
+func ParsePixelLimit(v string) (int64, error) {
+	n, err := ParseSize(v)
+	if err != nil {
+		return 0, err
+	}
+	if n < MinPixelLimit || n > MaxPixelLimit {
+		return 0, errors.New("is a size from 1MiB to 64GiB")
+	}
+	return n, nil
+}
+
 // FormatSize writes a size in the largest unit that divides it, as
 // ParseSize reads it.
 func FormatSize(n int64) string {

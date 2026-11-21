@@ -40,11 +40,6 @@ const (
 	maxMethodLength = 64
 )
 
-// ErrPixelRules is returned by New for a profile with pixel rules: the
-// engine changes no pixels, and a profile that says how pixels are cleaned
-// must not run where they would silently stay as they are.
-var ErrPixelRules = errors.New("engine: the profile has pixel rules, and this engine does not apply them; pixel data is never changed here")
-
 // Keys are a tenant's secrets the actions are keyed with, as bytes; the
 // engine keeps its own copies.
 type Keys struct {
@@ -141,7 +136,10 @@ type Engine struct {
 	temporal string
 	// received are the top-level elements templates read, as received.
 	received []uint32
-	seams    engineSeams
+	// pixels decides the pixel rules; nil for an Engine over a Decider
+	// of a test, which matches none.
+	pixels pixelRules
+	seams  engineSeams
 }
 
 // engineSeams are the points a test of this package reaches into an
@@ -152,13 +150,10 @@ type engineSeams struct {
 }
 
 // New compiles an expanded profile, as profile.Expand made it or a stored
-// version holds it, for Apply. It refuses a profile with pixel rules
-// (ErrPixelRules), keys shorter than MinKeyLength or equal to one another,
-// and a method that is not an LO value of the default repertoire.
+// version holds it, for Apply. It refuses keys shorter than MinKeyLength
+// or equal to one another, and a method that is not an LO value of the
+// default repertoire.
 func New(e *v1.ExpandedProfile, keys Keys, opts Options) (*Engine, error) {
-	if len(e.GetPixelRules()) > 0 {
-		return nil, ErrPixelRules
-	}
 	dec, err := newProgramDecider(e)
 	if err != nil {
 		return nil, err
@@ -177,6 +172,7 @@ func New(e *v1.ExpandedProfile, keys Keys, opts Options) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
+	en.pixels = programPixels{dec.prog}
 	weakened, err := profile.KeepsBaseChange(e)
 	if err != nil {
 		return nil, err
@@ -259,8 +255,9 @@ var defaultTypes = &IODTypes{}
 // the codes of the Annex E bases the profile is built on, De-identification
 // Method (0012,0063) with their meanings and Options.Method, Longitudinal Temporal Information Modified (0028,0303) MODIFIED when a
 // date was shifted (PS3.15 E.1.1, E.3.6), and Specific Character Set
-// (0008,0005) as the text that stays needs it. Pixel data is never
-// changed.
+// (0008,0005) as the text that stays needs it. The pixels are worked on as
+// ApplyImage says, with an Image of no source, no frame reader and no
+// bound: for a data set that holds its Pixel Data in memory.
 //
 // Everything is worked out before the data set is changed. A file the
 // profile cannot process returns a *Failure and leaves ds as it was, never
@@ -269,16 +266,37 @@ var defaultTypes = &IODTypes{}
 // lookup table that does not answer, a canceled ctx) says nothing of the
 // file and leaves it as it was too.
 func (en *Engine) Apply(ctx context.Context, ds *dataset.Dataset, rec Reception) (out *Record, err error) {
-	return en.apply(ctx, ds, rec, nil)
+	return en.apply(ctx, ds, rec, Image{}, nil)
 }
 
-// apply is Apply, recording into locs, when not nil, the location of each
-// element a rule was asked about.
-func (en *Engine) apply(ctx context.Context, ds *dataset.Dataset, rec Reception, locs map[int]profile.Location) (out *Record, err error) {
+// ApplyImage is Apply for a data set whose Pixel Data may be left in the
+// file, with what the work on its pixels reads (Image). The pixels are
+// judged by the header as received: an image at risk of burned-in text
+// (anonymize.BurnedInRisk) no pixel rule matches is refused
+// (CauseBurnedInRisk); the last pixel rule that matches decides, filling
+// rectangles it names (redact) or the detector finds (detect), or leaving
+// the pixels (accept); pixels left compressed lose the comment and
+// application segments of the JPEG family, and a syntax whose segments
+// are not searched is refused as the profile says. A filled image records
+// Burned In Annotation (0028,0301) NO and the Clean Pixel Data Option's
+// code; a detected one "Burned-in text redacted where detected,
+// unverified" in De-identification Method (PS3.15 E.3.1). Record.Pixels
+// says what was done. Pixel Data left in the file is filled, and decoded,
+// as a writer copies it (dataset.Dataset.DecompressRedactingRegions), a
+// frame at a time, so memory does not grow with the image; a frame that
+// will not decode is then the writer's error, wrapping
+// ErrPixelsUndecodable.
+func (en *Engine) ApplyImage(ctx context.Context, ds *dataset.Dataset, rec Reception, img Image) (*Record, error) {
+	return en.apply(ctx, ds, rec, img, nil)
+}
+
+// apply is ApplyImage, recording into locs, when not nil, the location of
+// each element a rule was asked about.
+func (en *Engine) apply(ctx context.Context, ds *dataset.Dataset, rec Reception, img Image, locs map[int]profile.Location) (out *Record, err error) {
 	if ds == nil {
 		return nil, errNoDataset
 	}
-	r := &run{en: en, ctx: ctx, top: ds, record: &Record{PixelsUntouched: true}, source: sourceFrom(rec.CharacterSet),
+	r := &run{en: en, ctx: ctx, top: ds, record: &Record{}, source: sourceFrom(rec.CharacterSet),
 		rawSources: map[*dataset.Dataset]textSource{}, locs: locs}
 	defer func() {
 		if p := recover(); p != nil {
@@ -304,6 +322,12 @@ func (en *Engine) apply(ctx context.Context, ds *dataset.Dataset, rec Reception,
 	if err := r.finishCleans(); err != nil {
 		return nil, err
 	}
+	if locs == nil {
+		// An explanation judges elements, never pixels.
+		if err := r.planPixels(img); err != nil {
+			return nil, err
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -318,6 +342,7 @@ func (en *Engine) apply(ctx context.Context, ds *dataset.Dataset, rec Reception,
 	}
 	r.apply()
 	r.declareCharset()
+	r.applyPixels()
 	return r.record, nil
 }
 

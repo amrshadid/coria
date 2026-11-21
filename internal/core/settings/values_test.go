@@ -156,6 +156,21 @@ func TestParseHeaderLimit(t *testing.T) {
 	}
 }
 
+// TestParsePixelLimit guards deid.pixel-limit: a size from 1 MiB to
+// 64 GiB, nothing else.
+func TestParsePixelLimit(t *testing.T) {
+	for v, want := range map[string]int64{"1MiB": 1 << 20, "1GiB": 1 << 30, "64GiB": 64 << 30, "1048576": 1 << 20} {
+		if got, err := ParsePixelLimit(v); err != nil || got != want {
+			t.Errorf("%q: %d, %v; want %d", v, got, err, want)
+		}
+	}
+	for _, v := range []string{"", "0", "1048575", "65GiB", "1GB", "-1MiB"} {
+		if _, err := ParsePixelLimit(v); err == nil {
+			t.Errorf("%q: accepted", v)
+		}
+	}
+}
+
 // TestParseReserve guards storage.reserve: one or two terms, one of each
 // kind, and that the larger applies.
 func TestParseReserve(t *testing.T) {

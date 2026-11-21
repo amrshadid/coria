@@ -58,6 +58,8 @@ type deid struct {
 	mu      sync.Mutex
 	keys    *engine.Keys
 	engines map[tenant.ProfileRef]*engine.Engine
+	// pixelLimit is the pixel bound last read and when (pixelLimit).
+	pixelLimit liveLimit
 }
 
 // deidKeys returns the tenant's keys of de-identification, read once.

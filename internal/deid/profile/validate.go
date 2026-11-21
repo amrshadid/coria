@@ -73,6 +73,9 @@ func checkDocument(c *checker, doc *v1.ProfileDocument) ([]rule, []pixelRule) {
 	if _, known := v1.UnnamedElements_name[int32(doc.GetUnnamed())]; !known {
 		top.in("unnamed").add(CodeBadEnum, "%d is not a value of UnnamedElements", doc.GetUnnamed())
 	}
+	if _, known := v1.UnsearchedSegments_name[int32(doc.GetUnsearchedSegments())]; !known {
+		top.in("unsearchedSegments").add(CodeBadEnum, "%d is not a value of UnsearchedSegments", doc.GetUnsearchedSegments())
+	}
 	var rules []rule
 	if len(doc.GetRules()) > MaxRules {
 		top.in("rules").add(CodeTooMany, "a document has at most %d rules", MaxRules)

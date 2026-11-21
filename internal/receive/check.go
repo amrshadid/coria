@@ -120,6 +120,16 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 		SHA256: sum, Incoming: l.file.Path, Caller: l.caller, Association: l.association,
 		Released: l.releasedFrom != "", Deidentified: deidentifies,
 	}
+	if l.releasedFrom != "" {
+		// A release that named a storage, of a file that joined no
+		// reception and lands again, still names it: the reception the
+		// file joins now keeps it.
+		q, err := p.store.QuarantinedFile(ctx, l.releasedFrom)
+		if err != nil {
+			return decision{}, err
+		}
+		rf.ReleasedStorage = q.ReleaseStorage
+	}
 	return decision{received: rf}, nil
 }
 

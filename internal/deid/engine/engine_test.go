@@ -177,8 +177,8 @@ func TestEachActionChangesItsElement(t *testing.T) {
 	if got, _ := text(ref, tRefSOPClass); got != ctImageStorage {
 		t.Errorf("a registered UID in an item was changed: %q", got)
 	}
-	if !rec.DatesShifted || !rec.PixelsUntouched {
-		t.Errorf("record: dates shifted %v, pixels untouched %v", rec.DatesShifted, rec.PixelsUntouched)
+	if !rec.DatesShifted {
+		t.Errorf("record: dates shifted %v", rec.DatesShifted)
 	}
 	if days < 1 || days > 365 {
 		t.Errorf("the shift is %d days", days)
@@ -492,16 +492,16 @@ func TestCleanRemovesTheFilesValues(t *testing.T) {
 	}
 }
 
-// TestPixelRulesAreRefused guards that a profile with pixel rules is not
-// run by an engine that applies none.
-func TestPixelRulesAreRefused(t *testing.T) {
+// TestPixelRulesAreTaken guards that a profile with pixel rules makes an
+// engine, and that a short key is still refused.
+func TestPixelRulesAreTaken(t *testing.T) {
 	e, problems := profile.Expand(&v1.ProfileDocument{PixelRules: []*v1.PixelRule{{
 		Name: "accept", Action: &v1.PixelRule_Accept{Accept: &v1.AcceptPixels{}}, Reason: "reviewed later",
 	}}}, profile.Shipped())
 	if problems != nil {
 		t.Fatal(problems)
 	}
-	if _, err := New(e, testKeys, Options{}); !errors.Is(err, ErrPixelRules) {
+	if _, err := New(e, testKeys, Options{}); err != nil {
 		t.Errorf("pixel rules: %v", err)
 	}
 	if _, err := New(e, Keys{UID: []byte("short"), Date: key(1), Hash: key(2)}, Options{}); err == nil {

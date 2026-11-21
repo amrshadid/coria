@@ -36,6 +36,32 @@ const (
 	// held like any other refusal, so a fault of the code is never a file
 	// archived half de-identified.
 	CauseInternal Cause = "internal"
+	// CauseBurnedInRisk: the image may carry burned-in text, by its header
+	// as received, and no pixel rule matches it; Failure.RiskCause says
+	// why it is at risk. Its reason is ReasonBurnedIn.
+	CauseBurnedInRisk Cause = "burned_in_risk"
+	// CausePixelsTooLarge: the image needs work on its pixels and its
+	// decoded size passes Image.Limit.
+	CausePixelsTooLarge Cause = "pixels_too_large"
+	// CausePixelsUnsupported: a pixel rule cannot fill an image of its
+	// layout (dataset.Dataset.RedactPixelRegions says which it refuses).
+	CausePixelsUnsupported Cause = "pixels_unsupported"
+	// CausePixelsUndecodable: a frame of the image, or a JPEG segment of
+	// it, does not decode; for an image filled as it is written, the
+	// writer's error wraps ErrPixelsUndecodable instead.
+	CausePixelsUndecodable Cause = "pixels_undecodable"
+	// CausePixelRegionOutside: a redact rule's rectangle lies wholly
+	// outside the image.
+	CausePixelRegionOutside Cause = "pixel_region_outside"
+	// CausePixelTextUnsearched: the image stays compressed in a syntax
+	// whose segments are not searched, and the profile holds such images.
+	CausePixelTextUnsearched Cause = "pixel_text_unsearched"
+	// CauseFramesMismatch: native pixels hold more bytes than the frames
+	// the data set states, so a fill would leave some frames as they are.
+	CauseFramesMismatch Cause = "frames_mismatch"
+	// CauseDetectImplausible: the detector found regions covering more of
+	// the picture than text does (anonymize.ErrImplausibleRedaction).
+	CauseDetectImplausible Cause = "detect_implausible"
 )
 
 // The reasons a quarantine records for a failure.
@@ -44,6 +70,9 @@ const (
 	ReasonFailed = "deid_failed"
 	// ReasonRefused is the reason of a rule's quarantine.
 	ReasonRefused = "profile_refused"
+	// ReasonBurnedIn is the reason of an image at risk of burned-in text
+	// no pixel rule matches.
+	ReasonBurnedIn = "burned_in_risk"
 )
 
 // Failure is a file the profile cannot process. It is never a fault of the
@@ -59,6 +88,9 @@ type Failure struct {
 	// Rule is the name of the rule whose action failed or quarantined,
 	// or its position ("rule 3") when it has no name; empty for a default.
 	Rule string
+	// RiskCause is why an image refused with CauseBurnedInRisk is at risk:
+	// "burned_in_annotation", "secondary_capture" or "modality".
+	RiskCause string
 }
 
 // Error says what failed, where and by which rule.
@@ -75,17 +107,24 @@ func (f *Failure) Error() string {
 
 // Reason returns the quarantine reason of the failure.
 func (f *Failure) Reason() string {
-	if f.Cause == CauseRuleQuarantine {
+	switch f.Cause {
+	case CauseRuleQuarantine:
 		return ReasonRefused
+	case CauseBurnedInRisk:
+		return ReasonBurnedIn
 	}
 	return ReasonFailed
 }
 
 // Detail returns the quarantine detail: the rule's name for a rule's
-// quarantine, the cause otherwise.
+// quarantine, why the image is at risk for burned-in text, the cause
+// otherwise.
 func (f *Failure) Detail() string {
-	if f.Cause == CauseRuleQuarantine {
+	switch f.Cause {
+	case CauseRuleQuarantine:
 		return f.Rule
+	case CauseBurnedInRisk:
+		return f.RiskCause
 	}
 	return string(f.Cause)
 }
@@ -176,10 +215,9 @@ type Record struct {
 	// DatesShifted reports whether any date was moved by the subject's
 	// shift. The shift itself is in no field: it is a secret of the subject.
 	DatesShifted bool
-	// PixelsUntouched is always true here: the engine changes no pixel
-	// data. Whether an image may carry burned-in text is decided by the
-	// pipeline's gate, not by this record.
-	PixelsUntouched bool
+	// Pixels is what was done to the file's pixels, and why; nil when the
+	// file has no Pixel Data (7FE0,0010).
+	Pixels *PixelWork
 }
 
 // formatTag writes a tag as eight upper-case hexadecimal digits, the form a

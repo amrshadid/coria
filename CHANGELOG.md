@@ -329,6 +329,54 @@ All notable changes to CORIA are written here. The form is
   `BenchmarkSendScan` (`make bench-send`): 64 small instances on one
   association to an in-process peer, about 935 instances/s by DIMSE and
   1,080 by STOW-RS on an Apple Silicon laptop.
+- De-identification works on pixels. A profile's pixel rules fill
+  rectangles (redact), or what the text detector finds (detect, opt-in and
+  slow), in every frame of the images they match, decoded a frame at a time
+  as the file is written, so memory does not grow with the image; a filled
+  image is written uncompressed and records Burned In Annotation NO and the
+  Clean Pixel Data code (PS3.15 E.3.1), unless the file holds Float Pixel
+  Data left unfilled; a detector that finds nothing says so in
+  De-identification Method. An image whose header says it may carry
+  burned-in text (Burned In Annotation YES; a secondary capture, ultrasound,
+  visible light or ophthalmic image, or modality XA, RF, OP, SM, PX, IO and
+  the like, unless Burned In Annotation is NO; a whole slide's label or
+  overview image) and that no pixel rule matches is quarantined with the new
+  reason `burned_in_risk`. Native pixels holding more bytes than their stated
+  frames are held (`frames_mismatch`), never filled in part. Pixel data
+  inside a sequence item and the Icon Image Sequence are always removed, and
+  the check after holds a file in which any is found. Comment and
+  application segments of JPEG pixel data are removed, and a frame left with
+  any segment beyond those a decoder needs at their defined length is held;
+  an image left in JPEG 2000, whose segments are not searched, is held unless
+  the profile says `unsearched_segments: KEEP`. The bases
+  `annex-e/clean-pixel-data:2026d` and `coria/longitudinal:1` are available.
+  `TryProfile` answers each file's pixel work. New setting `deid.pixel-limit`
+  (default 1GiB) bounds the decoded image and, at 8 times their length,
+  compressed pixels read to remove their segments: an image past it is held
+  as `deid_failed`/`pixels_too_large`, its bytes kept, and released once the
+  setting is raised.
+- A receiver can route each study. A study is routed once, for its session:
+  the routes are tried in order on the first file of its first reception, as
+  received. A route's conditions read the calling or called AE title,
+  Modality, SOP Class UID, Manufacturer, Manufacturer's Model Name or
+  Software Versions (a value longer than 1024 bytes is not tested, and the
+  study is held), testing equals, starts with, an RE2 pattern or present,
+  optionally negated. The first route that holds chooses the storage, and can
+  name a profile version that replaces the receiver's (only on a receiver
+  that de-identifies: a route never turns de-identification off) and the
+  senders a reception is forwarded to in place of `forward_to`. What was
+  chosen is kept with the reception and the session; every later arrival of
+  the session, and a reception of a study whose first reception is still in
+  flight, go by that choice, and should two receptions be routed apart all
+  the same, the second's files are held before any is stored. A study no
+  route chooses goes to the receiver's storage or, if the routing says so, is
+  held as `unrouted`; a release can name the storage (`coria quarantine
+  release --storage`), choosing the storage only. The routes are the
+  receiver's `routing` field; `expected_update_time` refuses a change to a
+  receiver that changed since it was read. `coria profile try --receiver`
+  applies the routes. Limits: 64 routes per receiver, 16 conditions per
+  route, patterns of at most 256 bytes. New commands: `coria receiver route
+  list|add|set|remove|move|default`.
 - `ProfileService` is served: a tenant's de-identification profiles are made
   (admin), read, listed, exported and validated (operator) through the API,
   and `coria profile create|get|list|versions|export|validate|describe` with

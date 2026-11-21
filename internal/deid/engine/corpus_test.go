@@ -148,7 +148,14 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 		}
 		files = append(files, adversarial...)
 	}
-	en := newTestEngine(t, testKeys, Options{Method: "corpus@1"}, corpusRules()...)
+	// The attributes are what this test judges: every image is accepted
+	// as it is, and segments that are not searched are kept, so no file
+	// is held for its pixels (pixel_test.go judges them).
+	en := newDocEngine(t, testKeys, Options{Method: "corpus@1"}, &v1.ProfileDocument{
+		Rules:              corpusRules(),
+		PixelRules:         []*v1.PixelRule{{Name: "accept-all", Action: &v1.PixelRule_Accept{Accept: &v1.AcceptPixels{}}, Reason: "the attributes are judged here"}},
+		UnsearchedSegments: v1.UnsearchedSegments_UNSEARCHED_SEGMENTS_KEEP,
+	})
 	out := t.TempDir()
 	var pairs []checkPair
 	// The needles searched for here are those of removedKeywords, as the

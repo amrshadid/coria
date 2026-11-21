@@ -240,9 +240,9 @@ read, or it is longer than 1 MiB; the output says which.`,
 
 // newQuarantineRelease builds "quarantine release".
 func (a *app) newQuarantineRelease() *cobra.Command {
-	var receiver, reason string
+	var receiver, reason, storage string
 	cmd := &cobra.Command{
-		Use:   "release <tenant> <id> [--receiver NAME] [--reason TEXT]",
+		Use:   "release <tenant> <id> [--receiver NAME] [--storage NAME] [--reason TEXT]",
 		Short: "Run a held file through the pipeline again",
 		Long: `Run a held file through the pipeline again, as if it arrived now at the
 receiver it first came to, or at the one --receiver names, which is needed when
@@ -259,9 +259,15 @@ keeps the reason of its first release.
 
 --reason says why the file is released, in words for whoever reads the record
 later, as a rejection's reason does. It is optional, and when given it is 1 to
-1024 bytes, not only spaces. "quarantine show" prints it.`,
+1024 bytes, not only spaces. "quarantine show" prints it.
+
+--storage names the storage the study is archived to, in place of the storage
+the receiver's routes choose; the routes still choose the profile and the
+senders. A file held as unrouted is released so. A study whose session is
+already on a storage stays there.`,
 		Example: `  coria quarantine release lab1 q_41Ab
-  coria quarantine release lab1 q_41Ab --receiver scanner2 --reason "naming rule fixed"`,
+  coria quarantine release lab1 q_41Ab --receiver scanner2 --reason "naming rule fixed"
+  coria quarantine release lab1 q_7Zr2 --storage lab-a --reason "study from lab A, sent from a new AE title"`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("reason") {
@@ -276,7 +282,7 @@ later, as a rejection's reason does. It is optional, and when given it is 1 to
 			defer closeClient()
 			res, err := call(ctx, c, cmd, func(ctx context.Context) (*v1.ReleaseQuarantinedFileResponse, error) {
 				return c.Quarantine.ReleaseQuarantinedFile(ctx, &v1.ReleaseQuarantinedFileRequest{
-					Tenant: args[0], Id: args[1], Mode: v1.ReleaseMode_RELEASE_MODE_AS_IS, Receiver: receiver, Reason: reason,
+					Tenant: args[0], Id: args[1], Mode: v1.ReleaseMode_RELEASE_MODE_AS_IS, Receiver: receiver, Reason: reason, Storage: storage,
 				})
 			})
 			if err != nil {
@@ -292,6 +298,7 @@ later, as a rejection's reason does. It is optional, and when given it is 1 to
 	}
 	cmd.Flags().StringVar(&receiver, "receiver", "", "the receiver whose storage and naming rule the file runs by (default: the receiver it first came to)")
 	cmd.Flags().StringVar(&reason, "reason", "", "why the file is released, kept with its record (1 to 1024 bytes, not only spaces)")
+	cmd.Flags().StringVar(&storage, "storage", "", "the storage the study is archived to, in place of what the receiver's routes choose")
 	return cmd
 }
 

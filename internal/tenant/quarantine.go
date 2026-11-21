@@ -55,6 +55,21 @@ const (
 	// QuarantineProfileRefused is a file a rule of the profile quarantines
 	// (its action is quarantine): the rule's name under "rule".
 	QuarantineProfileRefused QuarantineReason = "profile_refused"
+	// QuarantineBurnedInRisk is an image whose pixels may carry burned-in
+	// text, by its header as received, that no pixel rule of its
+	// receiver's profile matches: why it is at risk under "cause"
+	// (BurnedInCauses). Its original bytes are kept; a release
+	// de-identifies it again.
+	QuarantineBurnedInRisk QuarantineReason = "burned_in_risk"
+	// QuarantineUnrouted is a file of a study its receiver's routing did
+	// not route: no route chose it and the routing holds what none
+	// chooses ("cause" no_match), a route could not be evaluated ("cause"
+	// route_unusable, "route" its name), or another reception of the study
+	// made its session on another storage meanwhile ("cause"
+	// session_elsewhere). Its bytes are kept; a
+	// release names the storage (Release.Storage), or runs the routes
+	// again.
+	QuarantineUnrouted QuarantineReason = "unrouted"
 )
 
 // DeidCauses are the causes a deid_failed record names: the
@@ -67,12 +82,31 @@ const (
 // (profile_unusable), the data set cannot be read or written for
 // de-identification (unreadable, unwritable), and a profile that leaves a
 // placing UID other than the keyed remapping the database holds
-// (uid_not_remapped); and those of the check after de-identification,
+// (uid_not_remapped); those of the work on pixels (the decoded image past
+// deid.pixel-limit, a layout that cannot be filled, frames that do not
+// decode, more bytes of native pixels than the frames stated, a pixel
+// rule's rectangle wholly outside the image, compressed
+// segments that are not searched under a profile that holds them, a
+// detector finding more than text covers); and those of the check after de-identification,
 // which could not judge the file: too large, too many values to search
 // for, or unreadable to its end (a deflated file among them).
 var DeidCauses = []string{"no_subject", "lookup_missing", "bad_value", "too_deep", "too_large", "internal",
 	"no_profile", "recorded_as_received", "profile_unusable", "unreadable", "unwritable", "uid_not_remapped",
-	"check_too_large", "check_too_many_needles", "check_unreadable"}
+	"check_too_large", "check_too_many_needles", "check_unreadable",
+	"pixels_too_large", "pixels_unsupported", "pixels_undecodable", "pixel_region_outside", "pixel_text_unsearched",
+	"detect_implausible", "frames_mismatch"}
+
+// BurnedInCauses are the causes a burned_in_risk record names: Burned In
+// Annotation (0028,0301) is YES; the image is a secondary capture, of a
+// SOP class or a modality commonly drawn on, and Burned In Annotation is
+// not NO; or it is the label or overview image of a whole slide.
+var BurnedInCauses = []string{"burned_in_annotation", "secondary_capture", "modality", "sop_class", "slide_label"}
+
+// UnroutedCauses are the causes an unrouted record names: no route chose
+// the study and the routing holds what none chooses, a route could not be
+// evaluated, or another reception of the study made its session on another
+// storage while this one was in flight.
+var UnroutedCauses = []string{"no_match", "route_unusable", "session_elsewhere"}
 
 // ResidualKinds are the kinds of value a residual_value record names: a
 // person's name, an identifier or any other text, a date, a UID.
@@ -137,6 +171,8 @@ var reasonDetails = map[QuarantineReason]map[string]func(string) bool{
 	QuarantineDeidFailed:       {"cause": oneOf(DeidCauses...), "path": isElementPath, "rule": isRuleName},
 	QuarantineResidualValue:    {"path": func(v string) bool { return isElementPath(v) || slices.Contains(rawPlaces, v) }, "kind": oneOf(ResidualKinds...)},
 	QuarantineProfileRefused:   {"rule": isRuleName},
+	QuarantineBurnedInRisk:     {"cause": oneOf(BurnedInCauses...)},
+	QuarantineUnrouted:         {"cause": oneOf(UnroutedCauses...), "route": isName},
 }
 
 // rawPlaces are where outside any element a residual value can be found,
@@ -292,6 +328,9 @@ type QuarantinedFile struct {
 	ReleaseReception string
 	// ReleaseReceiver is the receiver its release ran through.
 	ReleaseReceiver string
+	// ReleaseStorage is the storage its release named (Release.Storage),
+	// empty when it named none.
+	ReleaseStorage string
 	// RejectReason is why it was rejected.
 	RejectReason string
 	// ReleaseReason is why it was released, as the person gave it; empty

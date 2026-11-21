@@ -22,7 +22,7 @@ import (
 // received, or changed to it, is a precondition failure naming the
 // setting, while a receiver that archives as received keeps doing so and
 // can still be changed otherwise; a profile version that keeps the placing
-// UIDs (Retain UIDs) or has pixel rules, and a naming rule that puts a value
+// UIDs (Retain UIDs), and a naming rule that puts a value
 // into a label unhashed, are precondition failures saying why; and a mask
 // may name only the oneof.
 func TestReceiverDeidentification(t *testing.T) {
@@ -51,13 +51,10 @@ func TestReceiverDeidentification(t *testing.T) {
 	basic := []string{profile.AnnexE("basic")}
 	store("research", &v1.ProfileDocument{Bases: basic})
 	store("keeps-uids", &v1.ProfileDocument{Bases: append(basic, profile.AnnexE("retain-uids"))})
-	store("pixels", &v1.ProfileDocument{Bases: basic,
-		PixelRules: []*v1.PixelRule{{Name: "detect", Action: &v1.PixelRule_Detect{Detect: &v1.DetectText{}}}}})
 	for _, c := range []struct {
 		profile, want string
 	}{
 		{"keeps-uids", "it does not remap the UIDs a file is placed by (as the Retain UIDs option does)"},
-		{"pixels", "it has pixel rules, which this version of the server does not apply"},
 	} {
 		r := withProfile("refused", 11123)
 		r.GetProfile().Name = c.profile

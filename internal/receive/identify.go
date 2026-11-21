@@ -28,17 +28,23 @@ import (
 //     cannot be made, or every file when the subject or session label cannot
 //     be. A record's id is made from the reception and the file, so a run
 //     again writes nothing new.
-//  5. Take the identify step with the labels and the storage (the session's
-//     own when it has one, else the receiver's), or the quarantine step when
-//     no file can go on.
-//  6. Complete the unit with the archive unit, in one transaction. A crash
-//     between 5 and 6 is taken up by 1.
+//  5. Route the study: a session the catalog holds gives its storage and
+//     what was chosen for it; else another reception of the study in
+//     flight, already identified, gives what was chosen for it (one not
+//     yet identified that arrived first is waited for: the step is tried
+//     again later); else the receiver's routing is evaluated (route), and
+//     every file is held as unrouted when it does not route the study. A
+//     run that finds files held as unrouted before finishes that hold.
+//  6. Take the identify step with the labels, the storage and what was
+//     chosen, or the quarantine step when no file can go on.
+//  7. Complete the unit with the archive unit, in one transaction. A crash
+//     between 6 and 7 is taken up by 1.
 //
 // A label that collides with one the catalog holds for another study or
 // series is found by the archive step's commit, which holds those files
 // then: the catalog decides that in its own transaction.
 func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
-	r, _, err := p.store.Reception(ctx, w.ReceptionID)
+	r, arrivals, err := p.store.Reception(ctx, w.ReceptionID)
 	if err != nil {
 		return err
 	}
@@ -58,12 +64,26 @@ func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
 	if len(groups) == 0 {
 		return p.quarantineAll(ctx, w, r)
 	}
+	// A run before held files as unrouted: that decision was made, and is
+	// finished as it was made, whatever the routes say now, so a study is
+	// never part held and part archived.
+	if details, err := p.unroutedBefore(ctx, r.ID); err != nil || details != nil {
+		if err != nil {
+			return err
+		}
+		return p.holdUnrouted(ctx, w, r, groups, details)
+	}
 	catalog, err := p.catalogLabels(ctx, r.StudyUID, groups)
 	if err != nil {
 		return err
 	}
 	rule, err := p.ruleFor(ctx, r.Receiver)
 	if err != nil {
+		return err
+	}
+	rcv, err := p.receivers.get(ctx, r.Receiver)
+	removed := fault.KindOf(err) == fault.NotFound
+	if err != nil && !removed {
 		return err
 	}
 	var subject, session, storage string
@@ -96,14 +116,34 @@ func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
 			}
 			return p.quarantineAll(ctx, w, r)
 		}
-		rcv, err := p.receivers.get(ctx, r.Receiver)
-		if err != nil {
-			if fault.KindOf(err) == fault.NotFound {
-				return fault.Wrap(fault.Conflict, err, "the reception's receiver was removed, and its study has no session to name a storage")
-			}
+	}
+	// A study is routed once, for its session: a later arrival goes by
+	// what was chosen for the session, a reception of a study another
+	// reception in flight was routed for goes by that, and only the first
+	// reception of a new session evaluates the routes. What is chosen is
+	// kept with the step, so a step run again after the step finds it
+	// taken, and the steps after go by it.
+	var way routed
+	if s := catalog.Session; s != nil {
+		way = routed{choice: s.Route, storage: s.Storage}
+	} else {
+		sibling, found, err := p.routedInFlight(ctx, r, arrivals)
+		switch {
+		case err != nil:
 			return err
+		case found:
+			way = routed{choice: sibling.Route, storage: sibling.Storage}
+		case removed && r.Route.ReleasedStorage == "":
+			return fault.New(fault.Conflict, "the reception's receiver was removed, and its study has no session to name a storage")
+		default:
+			if way, err = p.route(ctx, r, rcv, groups); err != nil {
+				return err
+			}
 		}
-		storage = rcv.Storage
+		storage = way.storage
+	}
+	if way.unrouted != nil {
+		return p.holdUnrouted(ctx, w, r, groups, way.unrouted)
 	}
 	left, err := p.holdBadScans(ctx, w, r, groups, catalog, rule)
 	if err != nil {
@@ -114,7 +154,7 @@ func (p *Pipeline) identify(ctx context.Context, w tenant.Work) error {
 	}
 	p.at("identify.before-step")
 	if _, err := p.step(ctx, w, tenant.ReceptionStep{ID: r.ID, From: reception.Complete, Event: reception.Identify,
-		SubjectLabel: subject, SessionLabel: session, Storage: storage}); err != nil {
+		SubjectLabel: subject, SessionLabel: session, Storage: storage, Route: way.choice}); err != nil {
 		return err
 	}
 	p.at("identify.after-step")

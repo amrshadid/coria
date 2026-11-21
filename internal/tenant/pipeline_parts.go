@@ -112,6 +112,16 @@ type Release struct {
 	ReceptionID string
 	// Reason is the person's reason, or empty for none.
 	Reason string
+	// Storage, when not empty, is the storage the reception the file
+	// joins is archived to, in place of the storage its receiver's routing
+	// would choose (the routing still chooses the profile and the
+	// senders): a file held as unrouted is released naming one. It must be
+	// the tenant's, and the one an earlier release into the same reception
+	// named, if any (a precondition failure otherwise). It is kept with the
+	// record (QuarantinedFile.ReleaseStorage), so a file that joins no
+	// reception keeps it when it lands again. A session that already has
+	// files on a storage keeps them there.
+	Storage string
 	// Now is when the release is made.
 	Now time.Time
 }
@@ -120,6 +130,11 @@ type Release struct {
 func (r Release) Validate() error {
 	if err := ValidateRelease(r.ID, r.Mode, r.Receiver, r.ReceptionID, r.Now); err != nil {
 		return err
+	}
+	if r.Storage != "" {
+		if err := ValidateName("storage", r.Storage); err != nil {
+			return err
+		}
 	}
 	if r.Reason != "" {
 		return validateReason("release reason", r.Reason)

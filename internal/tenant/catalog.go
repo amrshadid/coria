@@ -171,6 +171,11 @@ type CatalogLabels struct {
 // SessionLabels are a session's labels and storage.
 type SessionLabels struct {
 	SubjectLabel, SessionLabel, Storage string
+	// Route is what the routing chose for the session, as the reception
+	// whose commit made it kept it (Reception.Route): every later arrival
+	// of the session goes by it. Zero for a session made before routing,
+	// or by a reception that chose nothing of its own.
+	Route ReceptionRoute
 }
 
 // CatalogCounts are the catalog's running totals, kept in the transaction

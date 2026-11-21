@@ -61,6 +61,9 @@ type deidOptions struct {
 	doc *v1.ProfileDocument
 	// check is the check after; nil is a new recordingCheck.
 	check *recordingCheck
+	// pixelLimit, when set, is the pipeline's reading of deid.pixel-limit
+	// (Config.PixelLimit).
+	pixelLimit Limit
 	// asReceived leaves the env's receiver archiving as received: the
 	// profile is stored and the pipeline given the keys and the check, for
 	// a test that adds a receiver that de-identifies of its own.
@@ -79,6 +82,7 @@ func (e *env) setUpDeid(o *deidOptions) {
 		o.check = &recordingCheck{}
 	}
 	e.storeProfile(testProfile, doc)
+	e.cfg.PixelLimit = o.pixelLimit
 	if o.asReceived {
 		e.cfg.DeidKeys = func(context.Context) (engine.Keys, error) { return testDeidKeys, nil }
 		e.cfg.Check = func(int64) Checker { return o.check }

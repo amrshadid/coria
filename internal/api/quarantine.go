@@ -41,6 +41,8 @@ var reasons = map[tenant.QuarantineReason]v1.QuarantineReason{
 	tenant.QuarantineDeidFailed:          v1.QuarantineReason_QUARANTINE_REASON_DEID_FAILED,
 	tenant.QuarantineResidualValue:       v1.QuarantineReason_QUARANTINE_REASON_RESIDUAL_VALUE,
 	tenant.QuarantineProfileRefused:      v1.QuarantineReason_QUARANTINE_REASON_PROFILE_REFUSED,
+	tenant.QuarantineUnrouted:            v1.QuarantineReason_QUARANTINE_REASON_UNROUTED,
+	tenant.QuarantineBurnedInRisk:        v1.QuarantineReason_QUARANTINE_REASON_BURNED_IN_RISK,
 }
 
 // quarantineStates pairs each state the store keeps with the contract's.
@@ -62,7 +64,7 @@ func fileMessage(f tenant.QuarantinedFile) *v1.QuarantinedFile {
 		SeriesInstanceUid: f.SeriesUID, TransferSyntaxUid: f.TransferSyntaxUID, ContentKept: f.ContentKept,
 		QuarantineTime: timestamp(f.Quarantined), DecideTime: timestamp(f.Decided),
 		ReleaseReception: f.ReleaseReception, RejectReason: f.RejectReason, ReleasedFrom: f.ReleasedFrom,
-		ReleaseReceiver: f.ReleaseReceiver, ReleaseReason: f.ReleaseReason,
+		ReleaseReceiver: f.ReleaseReceiver, ReleaseReason: f.ReleaseReason, ReleaseStorage: f.ReleaseStorage,
 	}
 	if f.ReleaseMode == tenant.ReleaseAsIs {
 		m.ReleaseMode = v1.ReleaseMode_RELEASE_MODE_AS_IS
@@ -265,6 +267,11 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 			return nil, c.failIn(d, st, fieldOf("reason", err))
 		}
 	}
+	if req.GetStorage() != "" {
+		if err := itemName("storage", req.GetStorage()); err != nil {
+			return nil, c.failIn(d, st, err)
+		}
+	}
 	// Read first for the receiver the release runs through when the request
 	// names none, which the entry records.
 	before, err := lookupFile(ctx, p, req.GetId())
@@ -277,7 +284,7 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 	}
 	facts := access.Facts{Details: releaseDetails(req, before.Receiver)}
 	f, err := c.incoming.Release(ctx, req.GetTenant(), p, tenant.Release{ID: req.GetId(), Mode: tenant.ReleaseAsIs, Receiver: req.GetReceiver(),
-		ReceptionID: receptionID, Reason: req.GetReason(), Now: c.now()}, changeEntry(d, facts), c.roleGuard(d, master.RoleOperator))
+		ReceptionID: receptionID, Reason: req.GetReason(), Storage: req.GetStorage(), Now: c.now()}, changeEntry(d, facts), c.roleGuard(d, master.RoleOperator))
 	if fault.KindOf(err) == fault.NotFound {
 		err = fault.Wrap(fault.NotFound, err, messageNoFile)
 	}
@@ -287,11 +294,14 @@ func (s quarantineService) ReleaseQuarantinedFile(ctx context.Context, req *v1.R
 	return &v1.ReleaseQuarantinedFileResponse{File: fileMessage(f)}, nil
 }
 
-// releaseDetails returns a release's audit details: its mode, and the
-// receiver it runs through, the one the request names or else the one the
-// file came to (first, when it is known).
+// releaseDetails returns a release's audit details: its mode, the storage
+// it names when it names one, and the receiver it runs through, the one the
+// request names or else the one the file came to (first, when it is known).
 func releaseDetails(req *v1.ReleaseQuarantinedFileRequest, first string) map[string]string {
 	d := map[string]string{detailMode: req.GetMode().String()}
+	if req.GetStorage() != "" {
+		d[detailStorage] = clip(req.GetStorage(), 64)
+	}
 	switch {
 	case req.GetReceiver() != "":
 		d[detailReceiver] = clip(req.GetReceiver(), 64)

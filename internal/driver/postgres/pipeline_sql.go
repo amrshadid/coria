@@ -49,7 +49,7 @@ const (
 		WHERE kind = $1 AND state IN ('queued', 'leased') AND due <= $2 ORDER BY due, id LIMIT 1 FOR NO KEY UPDATE SKIP LOCKED`
 	// sessionLabelsSQL reads a study's session's labels and storage: the
 	// sessions' unique index on study_uid, and the subjects' primary key.
-	sessionLabelsSQL = `SELECT sub.label, s.label, s.storage FROM sessions AS s
+	sessionLabelsSQL = `SELECT sub.label, s.label, s.storage, s.route FROM sessions AS s
 		JOIN subjects AS sub ON sub.id = s.subject_id WHERE s.study_uid = $1`
 	// scanLabelsSQL reads the labels of the scans of a list of series: the
 	// scans' unique index on series_uid.

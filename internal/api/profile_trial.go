@@ -12,6 +12,7 @@ import (
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/deid/engine"
 	"github.com/amrshadid/coria/internal/master"
 	"github.com/amrshadid/coria/internal/receive"
 )
@@ -31,6 +32,7 @@ func trialResult(t receive.Trial, budget *int) *v1.TrialResult {
 	}
 	r.ValuesSearched = int32(t.Report.Searched) //nolint:gosec // G115: bounded by the check's needles.
 	r.ValuesSkipped = int32(t.Report.Skipped)   //nolint:gosec // G115: bounded by the check's needles.
+	r.Pixels = trialPixels(t.Pixels)
 	if t.Record == nil {
 		return r
 	}
@@ -52,6 +54,25 @@ func trialResult(t receive.Trial, budget *int) *v1.TrialResult {
 		r.Elements = append(r.Elements, el)
 	}
 	return r
+}
+
+// trialPixels returns the work on a file's pixels as the API answers it:
+// positions, counts and names, never a value of the file; nil for none.
+func trialPixels(w *engine.PixelWork) *v1.TrialPixels {
+	if w == nil {
+		return nil
+	}
+	out := &v1.TrialPixels{
+		AtRisk: w.AtRisk, RiskCause: w.RiskCause, Rule: w.Rule, Origin: w.Origin, Action: w.Action,
+		Frames: int32(w.Frames), DecodedBytes: w.DecodedBytes, Decoded: w.Decoded, //nolint:gosec // G115: frames are an IS of the file, bounded by its size.
+		SegmentsRemoved: slices.Clone(w.SegmentsRemoved),
+	}
+	for _, g := range w.Regions {
+		out.Regions = append(out.Regions, &v1.PixelRectangle{
+			X: int32(g.X), Y: int32(g.Y), Width: int32(g.Width), Height: int32(g.Height), //nolint:gosec // G115: inside an image of at most 65535 a side.
+		})
+	}
+	return out
 }
 
 // holdCause is the fixed cause of a hold: the record's cause, or for a

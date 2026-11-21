@@ -208,12 +208,18 @@ func TestGrantsOfATenantSetByKeyID(t *testing.T) {
 // TestSettingsSetAndUnset guards the settings screens: the installation's
 // list with where each value comes from, a tenant's overrides, set with a
 // name and a value, and unset with the name typed, on a tenant and on the
-// installation.
+// installation. Each row is found by the list's filter, so the test holds
+// whatever the number of settings and the height of the screen.
 func TestSettingsSetAndUnset(t *testing.T) {
-	// Tall enough for every setting of the installation on one screen.
 	r := newRig(t, 100, 32, func(f *fakeserver.Server) { addTenants(f, 1) })
 	r.key("3")
-	r.expect("Settings of the installation", "key.default-lifetime", "90d", "built-in default", "test.retention", "365d")
+	r.expect("Settings of the installation")
+	for _, row := range [][]string{{"key.default-lifetime", "90d"}, {"test.retention", "365d"}} {
+		r.key("/")
+		r.typeText(row[0])
+		r.expect(row[0], row[1], "built-in default")
+		r.key("enter", "esc")
+	}
 	r.key("esc", "1", "enter", "s")
 	r.key("s")
 	r.typeText("test.retention")

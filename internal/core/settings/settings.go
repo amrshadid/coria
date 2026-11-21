@@ -63,6 +63,14 @@ const (
 	// receivers de-identified was given "true" when its database was
 	// upgraded, so they keep doing what they did.
 	ReceiverAllowAsReceived = "receiver.allow-as-received"
+	// DeidPixelLimit is the most bytes of an image decoded that
+	// de-identification works on (ParsePixelLimit): an image a pixel rule
+	// fills, or whose JPEG segments are removed, larger than it is held
+	// with its bytes kept, never lost, and released once it is raised.
+	// The installation's value is every tenant's default; a tenant's own
+	// is set by the installation's admin, since the work is the
+	// installation's processors and memory.
+	DeidPixelLimit = "deid.pixel-limit"
 )
 
 // ReservedPrefix starts the names the system keeps for itself in the
@@ -213,6 +221,19 @@ func Builtin() []Definition {
 		TenantOverride:          true,
 		TenantSetByInstallation: true,
 		Validate:                func(v string) error { _, err := ParseBool(v); return err },
+	}, {
+		// 1 GiB decoded holds a 2,000-frame 512 by 512 CT of 16 bits, or
+		// an ultrasound cine of 700 color frames of 800 by 600. Filling
+		// is done a frame at a time as the file is written, so memory does
+		// not follow it, but the de-identified file is checked whole and a
+		// JPEG image's compressed pixels are read whole to remove their
+		// segments; an installation that receives larger images raises it
+		// without a new release.
+		Name:                    DeidPixelLimit,
+		Default:                 "1GiB",
+		TenantOverride:          true,
+		TenantSetByInstallation: true,
+		Validate:                func(v string) error { _, err := ParsePixelLimit(v); return err },
 	}, {
 		// Empty by default, so no page in a browser can read an answer of
 		// the API until the installation's admin lists its origin.

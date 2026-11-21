@@ -12,6 +12,7 @@ import (
 	"github.com/amrshadid/go-dicom/tag"
 	"github.com/amrshadid/go-dicom/valuerep"
 
+	"github.com/amrshadid/coria/internal/deid/profile"
 	"github.com/amrshadid/coria/internal/version"
 )
 
@@ -34,6 +35,16 @@ import (
 // the file is not. It then writes no code sequence, and (0012,0063) only
 // when the caller names a method.
 //
+// Of the pixels (PS3.15 E.3.1): a file a redact rule filled records the
+// Clean Pixel Data Option's code beside the others, alone when there are
+// none, and Burned In Annotation (0028,0301) NO, since a person said where
+// the text is; a file the detector filled records
+// anonymize.AutomaticRedactionNote in (0012,0063), one the detector found
+// nothing in detectorFoundNone, and each leaves (0028,0301) as received,
+// since a detector can miss. No other file records the code, whatever
+// bases the profile names, nor one that holds Float or Double Float Pixel
+// Data beside the image filled.
+//
 // The library writes into a data set of its own here, and each element it
 // wrote is planned like every other change, so a file refused later is
 // left as it was.
@@ -43,9 +54,20 @@ func (r *run) planMethod() error {
 		temporal = "MODIFIED"
 	}
 	var meanings []string
-	if len(r.en.codes) > 0 {
+	codes := r.en.codes
+	px := r.record.Pixels
+	// The code and Burned In Annotation NO claim the file's images are
+	// clean: never while an image of it, Float or Double Float Pixel Data
+	// beside the one filled, stays as received.
+	redacted := px != nil && px.Action == pixelRedact && len(px.Regions) > 0 && !otherImage(r.top)
+	detected := px != nil && px.Action == pixelDetect && len(px.Regions) > 0
+	foundNone := px != nil && px.Action == pixelDetect && len(px.Regions) == 0
+	if redacted {
+		codes = withCleanPixelData(codes)
+	}
+	if len(codes) > 0 {
 		scratch := dataset.NewDataset()
-		if err := anonymize.RecordDeidentificationMethod(scratch, r.en.codes, anonymize.MethodRecord{IdentityRemoved: true}); err != nil {
+		if err := anonymize.RecordDeidentificationMethod(scratch, codes, anonymize.MethodRecord{IdentityRemoved: true}); err != nil {
 			return fmt.Errorf("engine: recording the de-identification method: %w", err)
 		}
 		seq, ok := scratch.Get(tag.Tag(tagDeidMethodCodes))
@@ -61,8 +83,17 @@ func (r *run) planMethod() error {
 	}
 	r.put(tagIdentityRemoved, "CS", "YES", "the file was de-identified (PS3.15 E.1.1)")
 	values := meanings
+	switch {
+	case detected:
+		values = append(values, anonymize.AutomaticRedactionNote)
+	case foundNone:
+		values = append(values, detectorFoundNone)
+	}
 	if r.en.method != "" {
 		values = append(append(values, r.en.method), buildVersions()...)
+	}
+	if redacted {
+		r.put(tagBurnedInAnnotation, "CS", "NO", "the pixel rule's rectangles, which a person placed over the text, were filled (PS3.15 E.3.1)")
 	}
 	if len(values) > 0 {
 		r.put(tagDeidMethod, "LO", strings.Join(values, `\`),
@@ -116,4 +147,31 @@ func methodValue(name, v string) string {
 		return name + " unknown"
 	}
 	return s
+}
+
+// detectorFoundNone is what De-identification Method (0012,0063) says of
+// an image a detect rule looked at and found no text in: a detector can
+// miss, so it is said, and Burned In Annotation is left as received.
+const detectorFoundNone = "Burned-in text detector found none, unverified"
+
+// otherImage reports whether ds holds an image no pixel rule fills: Float
+// or Double Float Pixel Data at its top level (PS3.3 C.7.6.24).
+func otherImage(ds *dataset.Dataset) bool {
+	_, f := ds.Get(tag.Tag(tagFloatPixelData))
+	_, d := ds.Get(tag.Tag(tagDoubleFloatPixelData))
+	return f || d
+}
+
+// withCleanPixelData returns codes with the Clean Pixel Data Option's code,
+// in the order profile.MethodCodes lists them: after the basic profile's,
+// or first when there is none.
+func withCleanPixelData(codes []anonymize.MethodCode) []anonymize.MethodCode {
+	clean := profile.CleanPixelDataCode()
+	out := make([]anonymize.MethodCode, 0, len(codes)+1)
+	at := 0
+	if len(codes) > 0 && codes[0].Value == anonymize.MethodBasicProfile.Code().Value {
+		at = 1
+	}
+	out = append(append(append(out, codes[:at]...), clean), codes[at:]...)
+	return out
 }

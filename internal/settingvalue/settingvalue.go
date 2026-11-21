@@ -212,6 +212,13 @@ func (t Tenant) AllowAsReceived(ctx context.Context) (bool, error) {
 	return typed(settings.ReceiverAllowAsReceived, v, err, settings.ParseBool)
 }
 
+// PixelLimit returns deid.pixel-limit as it applies on the tenant, in
+// bytes of an image decoded.
+func (t Tenant) PixelLimit(ctx context.Context) (int64, error) {
+	v, err := t.r.Tenant(ctx, t.st, settings.DeidPixelLimit)
+	return typed(settings.DeidPixelLimit, v, err, settings.ParsePixelLimit)
+}
+
 // Networks returns the installation's value of a setting that lists
 // networks (access.trusted-proxies, access.allowed-networks,
 // access.denied-networks).

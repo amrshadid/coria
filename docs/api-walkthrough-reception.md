@@ -190,12 +190,12 @@ POST /coria.v1.ReceiverService/AddReceiver
 The answer carries `"profile"`; a receiver added without either member of the
 oneof is answered `"asReceived": {}`. `SetReceiver` changes the choice with the
 mask `deidentification`. Refused as `FAILED_PRECONDITION`, each with a message
-that says why: a version the tenant does not have; a version with pixel rules,
-which this version does not apply; a version that keeps the UIDs a file is
+that says why: a version the tenant does not have; a version that keeps the UIDs a file is
 placed by (the Retain UIDs option); and a naming rule with an unhashed
 placeholder such as `{PatientID}`, since labels are kept before any file is
-de-identified. What then happens to each file, and the three quarantine
-reasons it may end with (`deid_failed`, `residual_value`, `profile_refused`),
+de-identified. What then happens to each file, and the four quarantine
+reasons it may end with (`deid_failed`, `residual_value`, `profile_refused`,
+`burned_in_risk`),
 are in [the reception pipeline](../internal/receive/doc.go) and
 `quarantine.proto`.
 

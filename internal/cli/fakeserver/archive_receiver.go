@@ -127,6 +127,9 @@ func (h receiverHandler) SetReceiver(_ context.Context, req *v1.SetReceiverReque
 	if !ok {
 		return nil, fault.New(fault.NotFound, "the tenant has no receiver with that name")
 	}
+	if t := req.GetExpectedUpdateTime(); t != nil && !t.AsTime().Equal(cur.GetUpdateTime().AsTime()) {
+		return nil, fault.New(fault.Precondition, "the receiver changed after it was read; read it again and make the change on what it holds now")
+	}
 	in := req.GetReceiver()
 	next := proto.Clone(cur).(*v1.Receiver)
 	for _, p := range paths {
@@ -159,6 +162,16 @@ func (h receiverHandler) SetReceiver(_ context.Context, req *v1.SetReceiverReque
 			next.MaxFileBytes = in.GetMaxFileBytes()
 		case "deidentification":
 			next.Deidentification = in.GetDeidentification()
+		case "routing":
+			for _, rt := range in.GetRouting().GetRoutes() {
+				if _, ok := s.arch.storages[key(req.GetTenant(), rt.GetStorage())]; !ok {
+					return nil, fault.New(fault.Precondition, "receiver.routing: the tenant has no storage named "+rt.GetStorage())
+				}
+				if err := s.forwardable(req.GetTenant(), rt.GetForwardTo().GetSenders()); err != nil {
+					return nil, err
+				}
+			}
+			next.Routing = in.GetRouting()
 		case "dimse.port":
 			next.GetDimse().Port = in.GetDimse().GetPort()
 		case "dimse.bind_address":

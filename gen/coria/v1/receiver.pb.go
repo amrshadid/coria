@@ -282,8 +282,18 @@ type Receiver struct {
 	//	*Receiver_AsReceived
 	//	*Receiver_Profile
 	Deidentification isReceiver_Deidentification `protobuf_oneof:"deidentification"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// How each study is routed: the storage, the profile version and the
+	// senders chosen for it in place of storage, the profile and forward_to.
+	// Absent, or with no route and the default storage, every study goes as
+	// those fields say, which is what every receiver did before routing
+	// existed. A change applies to receptions identified from then on; one
+	// identified keeps what was chosen for it. Setting it needs what any
+	// change of a receiver needs, admin on the tenant, since it decides
+	// where the tenant's data goes and how it is de-identified; reading it,
+	// what reading a receiver needs, reader.
+	Routing       *ReceiverRouting `protobuf:"bytes,16,opt,name=routing,proto3" json:"routing,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Receiver) Reset() {
@@ -443,6 +453,13 @@ func (x *Receiver) GetProfile() *ProfileVersionRef {
 	return nil
 }
 
+func (x *Receiver) GetRouting() *ReceiverRouting {
+	if x != nil {
+		return x.Routing
+	}
+	return nil
+}
+
 type isReceiver_Type interface {
 	isReceiver_Type()
 }
@@ -498,6 +515,254 @@ func (*Receiver_AsReceived) isReceiver_Deidentification() {}
 
 func (*Receiver_Profile) isReceiver_Deidentification() {}
 
+// ReceiverRouting is a receiver's routes, in order, and what happens to a
+// study none of them chooses. A study is routed once, for its session: the
+// routes are evaluated for the first reception of a new session (the files
+// of one study arriving at the receiver), when it is complete, over the
+// first file its naming rule reads (the first, by SOP Instance UID, of its
+// first series, by Series Instance UID), as received, before any byte of
+// it is de-identified; the first route whose conditions all hold chooses.
+// What it chose (the storage, the profile version and the senders) is kept
+// with the reception and, when its first scan is archived, with the
+// session, so the reception's later steps, a step run again after a
+// restart, and every later arrival of the session go by it, whatever the
+// routes say by then and whichever AE title the later arrival comes from.
+// A reception of a study whose first reception is still being archived
+// goes by what was chosen for that one; one that arrives while the first is
+// being identified waits for it. Should two receptions of a study be
+// routed apart all the same (they arrived at two receivers at the same
+// moment), the second to archive finds the session on another storage and
+// its files are held as QUARANTINE_REASON_UNROUTED (cause
+// "session_elsewhere") before any is stored.
+//
+// A route that cannot be evaluated (one stored by a later version of the
+// server with a condition this one does not know, or a condition whose
+// value in the file is longer than 1024 bytes) holds the study as
+// QUARANTINE_REASON_UNROUTED, whatever routes come after it, so a study is
+// never sent where a later route would send it only because an earlier
+// one is broken.
+//
+// A release naming a storage (ReleaseQuarantinedFileRequest.storage)
+// chooses the storage only: the profile version and the senders are still
+// the route's, or the receiver's when no route holds, and
+// quarantine_unmatched does not hold the study again.
+type ReceiverRouting struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The routes, in order; the first that holds chooses. At most 64, each
+	// name once.
+	Routes []*Route `protobuf:"bytes,1,rep,name=routes,proto3" json:"routes,omitempty"`
+	// What happens to a new session no route chooses. False, the default:
+	// it goes as the receiver says, to its storage, with its profile and its
+	// forward_to. True: every file of the study is held as
+	// QUARANTINE_REASON_UNROUTED, and a person decides where it goes, by
+	// releasing its files naming a storage.
+	QuarantineUnmatched bool `protobuf:"varint,2,opt,name=quarantine_unmatched,json=quarantineUnmatched,proto3" json:"quarantine_unmatched,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *ReceiverRouting) Reset() {
+	*x = ReceiverRouting{}
+	mi := &file_coria_v1_receiver_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReceiverRouting) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReceiverRouting) ProtoMessage() {}
+
+func (x *ReceiverRouting) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_receiver_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReceiverRouting.ProtoReflect.Descriptor instead.
+func (*ReceiverRouting) Descriptor() ([]byte, []int) {
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ReceiverRouting) GetRoutes() []*Route {
+	if x != nil {
+		return x.Routes
+	}
+	return nil
+}
+
+func (x *ReceiverRouting) GetQuarantineUnmatched() bool {
+	if x != nil {
+		return x.QuarantineUnmatched
+	}
+	return false
+}
+
+// Route is one rule of a receiver's routing.
+type Route struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The route's name, unique in the receiver, under the rule of a tenant's
+	// name. Required. It names the route in a quarantine record that names
+	// it.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The conditions, all of which must hold; none holds for every study.
+	// At most 16. Each reads one of the subjects of ProfileCondition other
+	// than CONDITION_SUBJECT_RECEIVER (a route belongs to one receiver), by
+	// the same rule: a value read from the top level of the data set as
+	// received, without its padding (PS3.5 6.2), its case kept, an absent or
+	// empty value absent; an AE title as the association gave it, absent
+	// for a file not received by DIMSE. A value longer than 1024 bytes
+	// is not tested: the route cannot be evaluated (ReceiverRouting), as
+	// no value of these subjects is that long (PS3.5 6.2). An equals or prefix text is at most
+	// 1024 bytes; a pattern (RE2, matched against the whole value) at most
+	// 256 bytes, with no repetition counted above 100, and compiling to at
+	// most 10000 instructions and ranges; the patterns of a receiver's
+	// routes together to at most 200000.
+	Conditions []*ProfileCondition `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	// The name of the tenant's storage a new session this route chooses is
+	// archived to. Required; a storage the tenant does not have is a
+	// precondition failure, and a storage a route names cannot be removed.
+	Storage string `protobuf:"bytes,3,opt,name=storage,proto3" json:"storage,omitempty"`
+	// The profile version the files of a study this route chooses are
+	// de-identified with, in place of the receiver's. Optional; absent keeps
+	// the receiver's. Only a receiver that de-identifies (Receiver.profile)
+	// may have a route that names one, since the receiver's choice decides
+	// how each file lands (its UIDs remapped and its checksum keyed, or not)
+	// before any route is chosen: a route can replace the profile, never
+	// turn de-identification off or on. A route that names one on a
+	// receiver that archives as received, and a change of a receiver to
+	// as_received while a route names one, are precondition failures. The
+	// version must be the tenant's and pass every check a receiver's profile
+	// version passes, else a precondition failure.
+	Profile *ProfileVersionRef `protobuf:"bytes,4,opt,name=profile,proto3" json:"profile,omitempty"`
+	// The senders a reception this route chooses is forwarded to when it
+	// reaches done, in place of the receiver's forward_to. Optional; absent
+	// keeps the receiver's; present with no sender forwards to none. At
+	// most 16, each once; a sender the tenant does not have is a
+	// precondition failure, and a sender a route names cannot be removed.
+	ForwardTo     *RouteForwardTo `protobuf:"bytes,5,opt,name=forward_to,json=forwardTo,proto3" json:"forward_to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Route) Reset() {
+	*x = Route{}
+	mi := &file_coria_v1_receiver_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Route) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Route) ProtoMessage() {}
+
+func (x *Route) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_receiver_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Route.ProtoReflect.Descriptor instead.
+func (*Route) Descriptor() ([]byte, []int) {
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Route) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Route) GetConditions() []*ProfileCondition {
+	if x != nil {
+		return x.Conditions
+	}
+	return nil
+}
+
+func (x *Route) GetStorage() string {
+	if x != nil {
+		return x.Storage
+	}
+	return ""
+}
+
+func (x *Route) GetProfile() *ProfileVersionRef {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+func (x *Route) GetForwardTo() *RouteForwardTo {
+	if x != nil {
+		return x.ForwardTo
+	}
+	return nil
+}
+
+// RouteForwardTo names the senders a route forwards to.
+type RouteForwardTo struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The senders' names.
+	Senders       []string `protobuf:"bytes,1,rep,name=senders,proto3" json:"senders,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RouteForwardTo) Reset() {
+	*x = RouteForwardTo{}
+	mi := &file_coria_v1_receiver_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RouteForwardTo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RouteForwardTo) ProtoMessage() {}
+
+func (x *RouteForwardTo) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_receiver_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RouteForwardTo.ProtoReflect.Descriptor instead.
+func (*RouteForwardTo) Descriptor() ([]byte, []int) {
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *RouteForwardTo) GetSenders() []string {
+	if x != nil {
+		return x.Senders
+	}
+	return nil
+}
+
 // AsReceived is a receiver's choice to archive what it receives as it was
 // received. It has no fields.
 type AsReceived struct {
@@ -508,7 +773,7 @@ type AsReceived struct {
 
 func (x *AsReceived) Reset() {
 	*x = AsReceived{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[1]
+	mi := &file_coria_v1_receiver_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -520,7 +785,7 @@ func (x *AsReceived) String() string {
 func (*AsReceived) ProtoMessage() {}
 
 func (x *AsReceived) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[1]
+	mi := &file_coria_v1_receiver_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -533,7 +798,7 @@ func (x *AsReceived) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AsReceived.ProtoReflect.Descriptor instead.
 func (*AsReceived) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{1}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{4}
 }
 
 // ProfileVersionRef names one version of one of the tenant's profiles.
@@ -551,7 +816,7 @@ type ProfileVersionRef struct {
 
 func (x *ProfileVersionRef) Reset() {
 	*x = ProfileVersionRef{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[2]
+	mi := &file_coria_v1_receiver_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -563,7 +828,7 @@ func (x *ProfileVersionRef) String() string {
 func (*ProfileVersionRef) ProtoMessage() {}
 
 func (x *ProfileVersionRef) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[2]
+	mi := &file_coria_v1_receiver_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -576,7 +841,7 @@ func (x *ProfileVersionRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileVersionRef.ProtoReflect.Descriptor instead.
 func (*ProfileVersionRef) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{2}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ProfileVersionRef) GetName() string {
@@ -662,7 +927,7 @@ type DimseReceiver struct {
 
 func (x *DimseReceiver) Reset() {
 	*x = DimseReceiver{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[3]
+	mi := &file_coria_v1_receiver_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -674,7 +939,7 @@ func (x *DimseReceiver) String() string {
 func (*DimseReceiver) ProtoMessage() {}
 
 func (x *DimseReceiver) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[3]
+	mi := &file_coria_v1_receiver_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -687,7 +952,7 @@ func (x *DimseReceiver) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DimseReceiver.ProtoReflect.Descriptor instead.
 func (*DimseReceiver) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{3}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DimseReceiver) GetPort() int32 {
@@ -881,7 +1146,7 @@ type StowReceiver struct {
 
 func (x *StowReceiver) Reset() {
 	*x = StowReceiver{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[4]
+	mi := &file_coria_v1_receiver_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -893,7 +1158,7 @@ func (x *StowReceiver) String() string {
 func (*StowReceiver) ProtoMessage() {}
 
 func (x *StowReceiver) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[4]
+	mi := &file_coria_v1_receiver_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -906,7 +1171,7 @@ func (x *StowReceiver) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StowReceiver.ProtoReflect.Descriptor instead.
 func (*StowReceiver) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{4}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *StowReceiver) GetKeyIds() []string {
@@ -935,7 +1200,7 @@ type AllowedCallers struct {
 
 func (x *AllowedCallers) Reset() {
 	*x = AllowedCallers{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[5]
+	mi := &file_coria_v1_receiver_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -947,7 +1212,7 @@ func (x *AllowedCallers) String() string {
 func (*AllowedCallers) ProtoMessage() {}
 
 func (x *AllowedCallers) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[5]
+	mi := &file_coria_v1_receiver_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -960,7 +1225,7 @@ func (x *AllowedCallers) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AllowedCallers.ProtoReflect.Descriptor instead.
 func (*AllowedCallers) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{5}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AllowedCallers) GetRules() []*CallerRule {
@@ -993,7 +1258,7 @@ type CallerRule struct {
 
 func (x *CallerRule) Reset() {
 	*x = CallerRule{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[6]
+	mi := &file_coria_v1_receiver_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1005,7 +1270,7 @@ func (x *CallerRule) String() string {
 func (*CallerRule) ProtoMessage() {}
 
 func (x *CallerRule) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[6]
+	mi := &file_coria_v1_receiver_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1018,7 +1283,7 @@ func (x *CallerRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CallerRule.ProtoReflect.Descriptor instead.
 func (*CallerRule) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{6}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CallerRule) GetCallingAeTitle() string {
@@ -1055,7 +1320,7 @@ type ReceiverTls struct {
 
 func (x *ReceiverTls) Reset() {
 	*x = ReceiverTls{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[7]
+	mi := &file_coria_v1_receiver_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1067,7 +1332,7 @@ func (x *ReceiverTls) String() string {
 func (*ReceiverTls) ProtoMessage() {}
 
 func (x *ReceiverTls) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[7]
+	mi := &file_coria_v1_receiver_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1080,7 +1345,7 @@ func (x *ReceiverTls) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiverTls.ProtoReflect.Descriptor instead.
 func (*ReceiverTls) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{7}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ReceiverTls) GetCertificateFile() string {
@@ -1163,7 +1428,7 @@ type NamingRule struct {
 
 func (x *NamingRule) Reset() {
 	*x = NamingRule{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[8]
+	mi := &file_coria_v1_receiver_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1175,7 +1440,7 @@ func (x *NamingRule) String() string {
 func (*NamingRule) ProtoMessage() {}
 
 func (x *NamingRule) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[8]
+	mi := &file_coria_v1_receiver_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1188,7 +1453,7 @@ func (x *NamingRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamingRule.ProtoReflect.Descriptor instead.
 func (*NamingRule) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{8}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *NamingRule) GetSubject() string {
@@ -1239,7 +1504,7 @@ type NamingPattern struct {
 
 func (x *NamingPattern) Reset() {
 	*x = NamingPattern{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[9]
+	mi := &file_coria_v1_receiver_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1251,7 +1516,7 @@ func (x *NamingPattern) String() string {
 func (*NamingPattern) ProtoMessage() {}
 
 func (x *NamingPattern) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[9]
+	mi := &file_coria_v1_receiver_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1264,7 +1529,7 @@ func (x *NamingPattern) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamingPattern.ProtoReflect.Descriptor instead.
 func (*NamingPattern) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{9}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *NamingPattern) GetAttribute() string {
@@ -1302,7 +1567,7 @@ type ReceiverHealth struct {
 
 func (x *ReceiverHealth) Reset() {
 	*x = ReceiverHealth{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[10]
+	mi := &file_coria_v1_receiver_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1314,7 +1579,7 @@ func (x *ReceiverHealth) String() string {
 func (*ReceiverHealth) ProtoMessage() {}
 
 func (x *ReceiverHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[10]
+	mi := &file_coria_v1_receiver_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1327,7 +1592,7 @@ func (x *ReceiverHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiverHealth.ProtoReflect.Descriptor instead.
 func (*ReceiverHealth) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{10}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ReceiverHealth) GetState() ReceiverState {
@@ -1373,7 +1638,7 @@ type AddReceiverRequest struct {
 
 func (x *AddReceiverRequest) Reset() {
 	*x = AddReceiverRequest{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[11]
+	mi := &file_coria_v1_receiver_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1385,7 +1650,7 @@ func (x *AddReceiverRequest) String() string {
 func (*AddReceiverRequest) ProtoMessage() {}
 
 func (x *AddReceiverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[11]
+	mi := &file_coria_v1_receiver_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1398,7 +1663,7 @@ func (x *AddReceiverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddReceiverRequest.ProtoReflect.Descriptor instead.
 func (*AddReceiverRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{11}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *AddReceiverRequest) GetTenant() string {
@@ -1427,7 +1692,7 @@ type AddReceiverResponse struct {
 
 func (x *AddReceiverResponse) Reset() {
 	*x = AddReceiverResponse{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[12]
+	mi := &file_coria_v1_receiver_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1439,7 +1704,7 @@ func (x *AddReceiverResponse) String() string {
 func (*AddReceiverResponse) ProtoMessage() {}
 
 func (x *AddReceiverResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[12]
+	mi := &file_coria_v1_receiver_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1452,7 +1717,7 @@ func (x *AddReceiverResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddReceiverResponse.ProtoReflect.Descriptor instead.
 func (*AddReceiverResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{12}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *AddReceiverResponse) GetReceiver() *Receiver {
@@ -1475,7 +1740,7 @@ type GetReceiverRequest struct {
 
 func (x *GetReceiverRequest) Reset() {
 	*x = GetReceiverRequest{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[13]
+	mi := &file_coria_v1_receiver_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1487,7 +1752,7 @@ func (x *GetReceiverRequest) String() string {
 func (*GetReceiverRequest) ProtoMessage() {}
 
 func (x *GetReceiverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[13]
+	mi := &file_coria_v1_receiver_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1500,7 +1765,7 @@ func (x *GetReceiverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetReceiverRequest.ProtoReflect.Descriptor instead.
 func (*GetReceiverRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{13}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetReceiverRequest) GetTenant() string {
@@ -1528,7 +1793,7 @@ type GetReceiverResponse struct {
 
 func (x *GetReceiverResponse) Reset() {
 	*x = GetReceiverResponse{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[14]
+	mi := &file_coria_v1_receiver_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1540,7 +1805,7 @@ func (x *GetReceiverResponse) String() string {
 func (*GetReceiverResponse) ProtoMessage() {}
 
 func (x *GetReceiverResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[14]
+	mi := &file_coria_v1_receiver_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1553,7 +1818,7 @@ func (x *GetReceiverResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetReceiverResponse.ProtoReflect.Descriptor instead.
 func (*GetReceiverResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{14}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetReceiverResponse) GetReceiver() *Receiver {
@@ -1581,7 +1846,7 @@ type ListReceiversRequest struct {
 
 func (x *ListReceiversRequest) Reset() {
 	*x = ListReceiversRequest{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[15]
+	mi := &file_coria_v1_receiver_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1593,7 +1858,7 @@ func (x *ListReceiversRequest) String() string {
 func (*ListReceiversRequest) ProtoMessage() {}
 
 func (x *ListReceiversRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[15]
+	mi := &file_coria_v1_receiver_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1606,7 +1871,7 @@ func (x *ListReceiversRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReceiversRequest.ProtoReflect.Descriptor instead.
 func (*ListReceiversRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{15}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ListReceiversRequest) GetTenant() string {
@@ -1643,7 +1908,7 @@ type ListReceiversResponse struct {
 
 func (x *ListReceiversResponse) Reset() {
 	*x = ListReceiversResponse{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[16]
+	mi := &file_coria_v1_receiver_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1655,7 +1920,7 @@ func (x *ListReceiversResponse) String() string {
 func (*ListReceiversResponse) ProtoMessage() {}
 
 func (x *ListReceiversResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[16]
+	mi := &file_coria_v1_receiver_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1668,7 +1933,7 @@ func (x *ListReceiversResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReceiversResponse.ProtoReflect.Descriptor instead.
 func (*ListReceiversResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{16}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListReceiversResponse) GetReceivers() []*Receiver {
@@ -1697,7 +1962,8 @@ type SetReceiverRequest struct {
 	// The fields to change, as paths of Receiver, such as "quiet_period",
 	// "forward_to" or "naming" ("naming" with naming absent returns to the
 	// default rule), "deidentification" (the oneof: as_received or a profile
-	// version; with neither set, as received), or
+	// version; with neither set, as received), "routing" (replaced whole;
+	// absent, no routing; its fields cannot be named one by one), or
 	// a field of the receiver's type joined to it by a dot, such as
 	// "dimse.port", "dimse.tls.certificate_file" or "stow.key_ids". A path
 	// that names a type's whole message ("dimse", "stow") is refused: its
@@ -1710,14 +1976,21 @@ type SetReceiverRequest struct {
 	// "dimse.any_caller" sets that member of the callers and clears the
 	// other. A duration or size named with no value is refused as invalid; it
 	// is not reset to the default.
-	UpdateMask    *fieldmaskpb.FieldMask `protobuf:"bytes,3,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	UpdateMask *fieldmaskpb.FieldMask `protobuf:"bytes,3,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
+	// When set, the change is made only while the receiver's update_time is
+	// this one, the update_time of the receiver as the caller read it, and
+	// is otherwise refused as a precondition failure: a caller that reads a
+	// receiver, changes a part of it (one route of its routing) and writes it
+	// back loses no change another made meanwhile. Absent changes whatever is
+	// stored.
+	ExpectedUpdateTime *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expected_update_time,json=expectedUpdateTime,proto3" json:"expected_update_time,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *SetReceiverRequest) Reset() {
 	*x = SetReceiverRequest{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[17]
+	mi := &file_coria_v1_receiver_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1729,7 +2002,7 @@ func (x *SetReceiverRequest) String() string {
 func (*SetReceiverRequest) ProtoMessage() {}
 
 func (x *SetReceiverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[17]
+	mi := &file_coria_v1_receiver_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1742,7 +2015,7 @@ func (x *SetReceiverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetReceiverRequest.ProtoReflect.Descriptor instead.
 func (*SetReceiverRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{17}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *SetReceiverRequest) GetTenant() string {
@@ -1766,6 +2039,13 @@ func (x *SetReceiverRequest) GetUpdateMask() *fieldmaskpb.FieldMask {
 	return nil
 }
 
+func (x *SetReceiverRequest) GetExpectedUpdateTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpectedUpdateTime
+	}
+	return nil
+}
+
 // SetReceiverResponse is the receiver as changed.
 type SetReceiverResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1777,7 +2057,7 @@ type SetReceiverResponse struct {
 
 func (x *SetReceiverResponse) Reset() {
 	*x = SetReceiverResponse{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[18]
+	mi := &file_coria_v1_receiver_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1789,7 +2069,7 @@ func (x *SetReceiverResponse) String() string {
 func (*SetReceiverResponse) ProtoMessage() {}
 
 func (x *SetReceiverResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[18]
+	mi := &file_coria_v1_receiver_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1802,7 +2082,7 @@ func (x *SetReceiverResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetReceiverResponse.ProtoReflect.Descriptor instead.
 func (*SetReceiverResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{18}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SetReceiverResponse) GetReceiver() *Receiver {
@@ -1825,7 +2105,7 @@ type RemoveReceiverRequest struct {
 
 func (x *RemoveReceiverRequest) Reset() {
 	*x = RemoveReceiverRequest{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[19]
+	mi := &file_coria_v1_receiver_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1837,7 +2117,7 @@ func (x *RemoveReceiverRequest) String() string {
 func (*RemoveReceiverRequest) ProtoMessage() {}
 
 func (x *RemoveReceiverRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[19]
+	mi := &file_coria_v1_receiver_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1850,7 +2130,7 @@ func (x *RemoveReceiverRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveReceiverRequest.ProtoReflect.Descriptor instead.
 func (*RemoveReceiverRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{19}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RemoveReceiverRequest) GetTenant() string {
@@ -1878,7 +2158,7 @@ type RemoveReceiverResponse struct {
 
 func (x *RemoveReceiverResponse) Reset() {
 	*x = RemoveReceiverResponse{}
-	mi := &file_coria_v1_receiver_proto_msgTypes[20]
+	mi := &file_coria_v1_receiver_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1890,7 +2170,7 @@ func (x *RemoveReceiverResponse) String() string {
 func (*RemoveReceiverResponse) ProtoMessage() {}
 
 func (x *RemoveReceiverResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_receiver_proto_msgTypes[20]
+	mi := &file_coria_v1_receiver_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1903,7 +2183,7 @@ func (x *RemoveReceiverResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveReceiverResponse.ProtoReflect.Descriptor instead.
 func (*RemoveReceiverResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{20}
+	return file_coria_v1_receiver_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RemoveReceiverResponse) GetReceiver() *Receiver {
@@ -1917,7 +2197,7 @@ var File_coria_v1_receiver_proto protoreflect.FileDescriptor
 
 const file_coria_v1_receiver_proto_rawDesc = "" +
 	"\n" +
-	"\x17coria/v1/receiver.proto\x12\bcoria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdb\x05\n" +
+	"\x17coria/v1/receiver.proto\x12\bcoria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x16coria/v1/profile.proto\"\x90\x06\n" +
 	"\bReceiver\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12/\n" +
 	"\x05dimse\x18\x02 \x01(\v2\x17.coria.v1.DimseReceiverH\x00R\x05dimse\x12,\n" +
@@ -1938,9 +2218,24 @@ const file_coria_v1_receiver_proto_rawDesc = "" +
 	"forward_to\x18\r \x03(\tR\tforwardTo\x127\n" +
 	"\vas_received\x18\x0e \x01(\v2\x14.coria.v1.AsReceivedH\x01R\n" +
 	"asReceived\x127\n" +
-	"\aprofile\x18\x0f \x01(\v2\x1b.coria.v1.ProfileVersionRefH\x01R\aprofileB\x06\n" +
+	"\aprofile\x18\x0f \x01(\v2\x1b.coria.v1.ProfileVersionRefH\x01R\aprofile\x123\n" +
+	"\arouting\x18\x10 \x01(\v2\x19.coria.v1.ReceiverRoutingR\aroutingB\x06\n" +
 	"\x04typeB\x12\n" +
-	"\x10deidentification\"\f\n" +
+	"\x10deidentification\"m\n" +
+	"\x0fReceiverRouting\x12'\n" +
+	"\x06routes\x18\x01 \x03(\v2\x0f.coria.v1.RouteR\x06routes\x121\n" +
+	"\x14quarantine_unmatched\x18\x02 \x01(\bR\x13quarantineUnmatched\"\xe1\x01\n" +
+	"\x05Route\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12:\n" +
+	"\n" +
+	"conditions\x18\x02 \x03(\v2\x1a.coria.v1.ProfileConditionR\n" +
+	"conditions\x12\x18\n" +
+	"\astorage\x18\x03 \x01(\tR\astorage\x125\n" +
+	"\aprofile\x18\x04 \x01(\v2\x1b.coria.v1.ProfileVersionRefR\aprofile\x127\n" +
+	"\n" +
+	"forward_to\x18\x05 \x01(\v2\x18.coria.v1.RouteForwardToR\tforwardTo\"*\n" +
+	"\x0eRouteForwardTo\x12\x18\n" +
+	"\asenders\x18\x01 \x03(\tR\asenders\"\f\n" +
 	"\n" +
 	"AsReceived\"A\n" +
 	"\x11ProfileVersionRef\x12\x12\n" +
@@ -2004,12 +2299,13 @@ const file_coria_v1_receiver_proto_rawDesc = "" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\"q\n" +
 	"\x15ListReceiversResponse\x120\n" +
 	"\treceivers\x18\x01 \x03(\v2\x12.coria.v1.ReceiverR\treceivers\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x99\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xe7\x01\n" +
 	"\x12SetReceiverRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12.\n" +
 	"\breceiver\x18\x02 \x01(\v2\x12.coria.v1.ReceiverR\breceiver\x12;\n" +
 	"\vupdate_mask\x18\x03 \x01(\v2\x1a.google.protobuf.FieldMaskR\n" +
-	"updateMask\"E\n" +
+	"updateMask\x12L\n" +
+	"\x14expected_update_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\x12expectedUpdateTime\"E\n" +
 	"\x13SetReceiverResponse\x12.\n" +
 	"\breceiver\x18\x01 \x01(\v2\x12.coria.v1.ReceiverR\breceiver\"C\n" +
 	"\x15RemoveReceiverRequest\x12\x16\n" +
@@ -2056,76 +2352,86 @@ func file_coria_v1_receiver_proto_rawDescGZIP() []byte {
 }
 
 var file_coria_v1_receiver_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_coria_v1_receiver_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_coria_v1_receiver_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_coria_v1_receiver_proto_goTypes = []any{
 	(ReceiverState)(0),             // 0: coria.v1.ReceiverState
 	(ReceiverDownReason)(0),        // 1: coria.v1.ReceiverDownReason
 	(*Receiver)(nil),               // 2: coria.v1.Receiver
-	(*AsReceived)(nil),             // 3: coria.v1.AsReceived
-	(*ProfileVersionRef)(nil),      // 4: coria.v1.ProfileVersionRef
-	(*DimseReceiver)(nil),          // 5: coria.v1.DimseReceiver
-	(*StowReceiver)(nil),           // 6: coria.v1.StowReceiver
-	(*AllowedCallers)(nil),         // 7: coria.v1.AllowedCallers
-	(*CallerRule)(nil),             // 8: coria.v1.CallerRule
-	(*ReceiverTls)(nil),            // 9: coria.v1.ReceiverTls
-	(*NamingRule)(nil),             // 10: coria.v1.NamingRule
-	(*NamingPattern)(nil),          // 11: coria.v1.NamingPattern
-	(*ReceiverHealth)(nil),         // 12: coria.v1.ReceiverHealth
-	(*AddReceiverRequest)(nil),     // 13: coria.v1.AddReceiverRequest
-	(*AddReceiverResponse)(nil),    // 14: coria.v1.AddReceiverResponse
-	(*GetReceiverRequest)(nil),     // 15: coria.v1.GetReceiverRequest
-	(*GetReceiverResponse)(nil),    // 16: coria.v1.GetReceiverResponse
-	(*ListReceiversRequest)(nil),   // 17: coria.v1.ListReceiversRequest
-	(*ListReceiversResponse)(nil),  // 18: coria.v1.ListReceiversResponse
-	(*SetReceiverRequest)(nil),     // 19: coria.v1.SetReceiverRequest
-	(*SetReceiverResponse)(nil),    // 20: coria.v1.SetReceiverResponse
-	(*RemoveReceiverRequest)(nil),  // 21: coria.v1.RemoveReceiverRequest
-	(*RemoveReceiverResponse)(nil), // 22: coria.v1.RemoveReceiverResponse
-	(*durationpb.Duration)(nil),    // 23: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),  // 24: google.protobuf.Timestamp
-	(*fieldmaskpb.FieldMask)(nil),  // 25: google.protobuf.FieldMask
+	(*ReceiverRouting)(nil),        // 3: coria.v1.ReceiverRouting
+	(*Route)(nil),                  // 4: coria.v1.Route
+	(*RouteForwardTo)(nil),         // 5: coria.v1.RouteForwardTo
+	(*AsReceived)(nil),             // 6: coria.v1.AsReceived
+	(*ProfileVersionRef)(nil),      // 7: coria.v1.ProfileVersionRef
+	(*DimseReceiver)(nil),          // 8: coria.v1.DimseReceiver
+	(*StowReceiver)(nil),           // 9: coria.v1.StowReceiver
+	(*AllowedCallers)(nil),         // 10: coria.v1.AllowedCallers
+	(*CallerRule)(nil),             // 11: coria.v1.CallerRule
+	(*ReceiverTls)(nil),            // 12: coria.v1.ReceiverTls
+	(*NamingRule)(nil),             // 13: coria.v1.NamingRule
+	(*NamingPattern)(nil),          // 14: coria.v1.NamingPattern
+	(*ReceiverHealth)(nil),         // 15: coria.v1.ReceiverHealth
+	(*AddReceiverRequest)(nil),     // 16: coria.v1.AddReceiverRequest
+	(*AddReceiverResponse)(nil),    // 17: coria.v1.AddReceiverResponse
+	(*GetReceiverRequest)(nil),     // 18: coria.v1.GetReceiverRequest
+	(*GetReceiverResponse)(nil),    // 19: coria.v1.GetReceiverResponse
+	(*ListReceiversRequest)(nil),   // 20: coria.v1.ListReceiversRequest
+	(*ListReceiversResponse)(nil),  // 21: coria.v1.ListReceiversResponse
+	(*SetReceiverRequest)(nil),     // 22: coria.v1.SetReceiverRequest
+	(*SetReceiverResponse)(nil),    // 23: coria.v1.SetReceiverResponse
+	(*RemoveReceiverRequest)(nil),  // 24: coria.v1.RemoveReceiverRequest
+	(*RemoveReceiverResponse)(nil), // 25: coria.v1.RemoveReceiverResponse
+	(*durationpb.Duration)(nil),    // 26: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),  // 27: google.protobuf.Timestamp
+	(*ProfileCondition)(nil),       // 28: coria.v1.ProfileCondition
+	(*fieldmaskpb.FieldMask)(nil),  // 29: google.protobuf.FieldMask
 }
 var file_coria_v1_receiver_proto_depIdxs = []int32{
-	5,  // 0: coria.v1.Receiver.dimse:type_name -> coria.v1.DimseReceiver
-	6,  // 1: coria.v1.Receiver.stow:type_name -> coria.v1.StowReceiver
-	10, // 2: coria.v1.Receiver.naming:type_name -> coria.v1.NamingRule
-	23, // 3: coria.v1.Receiver.quiet_period:type_name -> google.protobuf.Duration
-	23, // 4: coria.v1.Receiver.max_open_time:type_name -> google.protobuf.Duration
-	12, // 5: coria.v1.Receiver.health:type_name -> coria.v1.ReceiverHealth
-	24, // 6: coria.v1.Receiver.create_time:type_name -> google.protobuf.Timestamp
-	24, // 7: coria.v1.Receiver.update_time:type_name -> google.protobuf.Timestamp
-	3,  // 8: coria.v1.Receiver.as_received:type_name -> coria.v1.AsReceived
-	4,  // 9: coria.v1.Receiver.profile:type_name -> coria.v1.ProfileVersionRef
-	7,  // 10: coria.v1.DimseReceiver.allowed_callers:type_name -> coria.v1.AllowedCallers
-	9,  // 11: coria.v1.DimseReceiver.tls:type_name -> coria.v1.ReceiverTls
-	8,  // 12: coria.v1.AllowedCallers.rules:type_name -> coria.v1.CallerRule
-	11, // 13: coria.v1.NamingRule.pattern:type_name -> coria.v1.NamingPattern
-	0,  // 14: coria.v1.ReceiverHealth.state:type_name -> coria.v1.ReceiverState
-	1,  // 15: coria.v1.ReceiverHealth.down_reason:type_name -> coria.v1.ReceiverDownReason
-	24, // 16: coria.v1.ReceiverHealth.since:type_name -> google.protobuf.Timestamp
-	2,  // 17: coria.v1.AddReceiverRequest.receiver:type_name -> coria.v1.Receiver
-	2,  // 18: coria.v1.AddReceiverResponse.receiver:type_name -> coria.v1.Receiver
-	2,  // 19: coria.v1.GetReceiverResponse.receiver:type_name -> coria.v1.Receiver
-	2,  // 20: coria.v1.ListReceiversResponse.receivers:type_name -> coria.v1.Receiver
-	2,  // 21: coria.v1.SetReceiverRequest.receiver:type_name -> coria.v1.Receiver
-	25, // 22: coria.v1.SetReceiverRequest.update_mask:type_name -> google.protobuf.FieldMask
-	2,  // 23: coria.v1.SetReceiverResponse.receiver:type_name -> coria.v1.Receiver
-	2,  // 24: coria.v1.RemoveReceiverResponse.receiver:type_name -> coria.v1.Receiver
-	13, // 25: coria.v1.ReceiverService.AddReceiver:input_type -> coria.v1.AddReceiverRequest
-	15, // 26: coria.v1.ReceiverService.GetReceiver:input_type -> coria.v1.GetReceiverRequest
-	17, // 27: coria.v1.ReceiverService.ListReceivers:input_type -> coria.v1.ListReceiversRequest
-	19, // 28: coria.v1.ReceiverService.SetReceiver:input_type -> coria.v1.SetReceiverRequest
-	21, // 29: coria.v1.ReceiverService.RemoveReceiver:input_type -> coria.v1.RemoveReceiverRequest
-	14, // 30: coria.v1.ReceiverService.AddReceiver:output_type -> coria.v1.AddReceiverResponse
-	16, // 31: coria.v1.ReceiverService.GetReceiver:output_type -> coria.v1.GetReceiverResponse
-	18, // 32: coria.v1.ReceiverService.ListReceivers:output_type -> coria.v1.ListReceiversResponse
-	20, // 33: coria.v1.ReceiverService.SetReceiver:output_type -> coria.v1.SetReceiverResponse
-	22, // 34: coria.v1.ReceiverService.RemoveReceiver:output_type -> coria.v1.RemoveReceiverResponse
-	30, // [30:35] is the sub-list for method output_type
-	25, // [25:30] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	8,  // 0: coria.v1.Receiver.dimse:type_name -> coria.v1.DimseReceiver
+	9,  // 1: coria.v1.Receiver.stow:type_name -> coria.v1.StowReceiver
+	13, // 2: coria.v1.Receiver.naming:type_name -> coria.v1.NamingRule
+	26, // 3: coria.v1.Receiver.quiet_period:type_name -> google.protobuf.Duration
+	26, // 4: coria.v1.Receiver.max_open_time:type_name -> google.protobuf.Duration
+	15, // 5: coria.v1.Receiver.health:type_name -> coria.v1.ReceiverHealth
+	27, // 6: coria.v1.Receiver.create_time:type_name -> google.protobuf.Timestamp
+	27, // 7: coria.v1.Receiver.update_time:type_name -> google.protobuf.Timestamp
+	6,  // 8: coria.v1.Receiver.as_received:type_name -> coria.v1.AsReceived
+	7,  // 9: coria.v1.Receiver.profile:type_name -> coria.v1.ProfileVersionRef
+	3,  // 10: coria.v1.Receiver.routing:type_name -> coria.v1.ReceiverRouting
+	4,  // 11: coria.v1.ReceiverRouting.routes:type_name -> coria.v1.Route
+	28, // 12: coria.v1.Route.conditions:type_name -> coria.v1.ProfileCondition
+	7,  // 13: coria.v1.Route.profile:type_name -> coria.v1.ProfileVersionRef
+	5,  // 14: coria.v1.Route.forward_to:type_name -> coria.v1.RouteForwardTo
+	10, // 15: coria.v1.DimseReceiver.allowed_callers:type_name -> coria.v1.AllowedCallers
+	12, // 16: coria.v1.DimseReceiver.tls:type_name -> coria.v1.ReceiverTls
+	11, // 17: coria.v1.AllowedCallers.rules:type_name -> coria.v1.CallerRule
+	14, // 18: coria.v1.NamingRule.pattern:type_name -> coria.v1.NamingPattern
+	0,  // 19: coria.v1.ReceiverHealth.state:type_name -> coria.v1.ReceiverState
+	1,  // 20: coria.v1.ReceiverHealth.down_reason:type_name -> coria.v1.ReceiverDownReason
+	27, // 21: coria.v1.ReceiverHealth.since:type_name -> google.protobuf.Timestamp
+	2,  // 22: coria.v1.AddReceiverRequest.receiver:type_name -> coria.v1.Receiver
+	2,  // 23: coria.v1.AddReceiverResponse.receiver:type_name -> coria.v1.Receiver
+	2,  // 24: coria.v1.GetReceiverResponse.receiver:type_name -> coria.v1.Receiver
+	2,  // 25: coria.v1.ListReceiversResponse.receivers:type_name -> coria.v1.Receiver
+	2,  // 26: coria.v1.SetReceiverRequest.receiver:type_name -> coria.v1.Receiver
+	29, // 27: coria.v1.SetReceiverRequest.update_mask:type_name -> google.protobuf.FieldMask
+	27, // 28: coria.v1.SetReceiverRequest.expected_update_time:type_name -> google.protobuf.Timestamp
+	2,  // 29: coria.v1.SetReceiverResponse.receiver:type_name -> coria.v1.Receiver
+	2,  // 30: coria.v1.RemoveReceiverResponse.receiver:type_name -> coria.v1.Receiver
+	16, // 31: coria.v1.ReceiverService.AddReceiver:input_type -> coria.v1.AddReceiverRequest
+	18, // 32: coria.v1.ReceiverService.GetReceiver:input_type -> coria.v1.GetReceiverRequest
+	20, // 33: coria.v1.ReceiverService.ListReceivers:input_type -> coria.v1.ListReceiversRequest
+	22, // 34: coria.v1.ReceiverService.SetReceiver:input_type -> coria.v1.SetReceiverRequest
+	24, // 35: coria.v1.ReceiverService.RemoveReceiver:input_type -> coria.v1.RemoveReceiverRequest
+	17, // 36: coria.v1.ReceiverService.AddReceiver:output_type -> coria.v1.AddReceiverResponse
+	19, // 37: coria.v1.ReceiverService.GetReceiver:output_type -> coria.v1.GetReceiverResponse
+	21, // 38: coria.v1.ReceiverService.ListReceivers:output_type -> coria.v1.ListReceiversResponse
+	23, // 39: coria.v1.ReceiverService.SetReceiver:output_type -> coria.v1.SetReceiverResponse
+	25, // 40: coria.v1.ReceiverService.RemoveReceiver:output_type -> coria.v1.RemoveReceiverResponse
+	36, // [36:41] is the sub-list for method output_type
+	31, // [31:36] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_receiver_proto_init() }
@@ -2133,13 +2439,14 @@ func file_coria_v1_receiver_proto_init() {
 	if File_coria_v1_receiver_proto != nil {
 		return
 	}
+	file_coria_v1_profile_proto_init()
 	file_coria_v1_receiver_proto_msgTypes[0].OneofWrappers = []any{
 		(*Receiver_Dimse)(nil),
 		(*Receiver_Stow)(nil),
 		(*Receiver_AsReceived)(nil),
 		(*Receiver_Profile)(nil),
 	}
-	file_coria_v1_receiver_proto_msgTypes[3].OneofWrappers = []any{
+	file_coria_v1_receiver_proto_msgTypes[6].OneofWrappers = []any{
 		(*DimseReceiver_AllowedCallers)(nil),
 		(*DimseReceiver_AnyCaller)(nil),
 	}
@@ -2149,7 +2456,7 @@ func file_coria_v1_receiver_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_receiver_proto_rawDesc), len(file_coria_v1_receiver_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   21,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

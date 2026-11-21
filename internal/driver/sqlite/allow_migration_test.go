@@ -35,7 +35,8 @@ func TestAllowAsReceivedMigration(t *testing.T) {
 		}
 		return s
 	}
-	before := len(tenantMigrations) - 1
+	// The migration that adds the setting is the thirteenth.
+	before := 12
 	used := open("used", before)
 	if _, err := used.AddStorage(ctx, tenant.Storage{Name: "main", Type: tenant.StorageDirectory,
 		Directory: tenant.DirectoryStorage{Root: "archive"}}, at, audit("a1"), nil); err != nil {

@@ -40,6 +40,7 @@ func Diff(from, to *v1.ExpandedProfile) *v1.DiffProfileVersionsResponse {
 	out := &v1.DiffProfileVersionsResponse{
 		UnnamedFrom: from.GetUnnamed(), UnnamedTo: to.GetUnnamed(),
 		DateShiftDaysFrom: from.GetDateShiftDays(), DateShiftDaysTo: to.GetDateShiftDays(),
+		UnsearchedSegmentsFrom: from.GetUnsearchedSegments(), UnsearchedSegmentsTo: to.GetUnsearchedSegments(),
 	}
 	fromText, _ := Canonical(from)
 	toText, _ := Canonical(to)
@@ -68,7 +69,8 @@ func Diff(from, to *v1.ExpandedProfile) *v1.DiffProfileVersionsResponse {
 	out.PixelRulesChanged = int32(pixelChanges(from.GetPixelRules(), to.GetPixelRules())) //nolint:gosec // G115: at most twice MaxPixelRules.
 	listed := len(out.Rules) > 0 || out.RulesOmitted > 0 || len(out.Effects) > 0 || out.EffectsOmitted > 0 ||
 		len(out.BasesAdded) > 0 || len(out.BasesRemoved) > 0 || out.BasesReordered || out.PixelRulesChanged > 0 ||
-		out.UnnamedFrom != out.UnnamedTo || out.DateShiftDaysFrom != out.DateShiftDaysTo
+		out.UnnamedFrom != out.UnnamedTo || out.DateShiftDaysFrom != out.DateShiftDaysTo ||
+		out.UnsearchedSegmentsFrom != out.UnsearchedSegmentsTo
 	out.UnlistedChange = !out.SameEffect && !listed
 	return out
 }

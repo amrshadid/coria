@@ -10,13 +10,15 @@ import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobu
 import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Duration, FieldMask, Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { ProfileCondition } from "./profile_pb.js";
+import { file_coria_v1_profile } from "./profile_pb.js";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file coria/v1/receiver.proto.
  */
 export const file_coria_v1_receiver: GenFile = /*@__PURE__*/
-  fileDesc("Chdjb3JpYS92MS9yZWNlaXZlci5wcm90bxIIY29yaWEudjEixgQKCFJlY2VpdmVyEgwKBG5hbWUYASABKAkSKAoFZGltc2UYAiABKAsyFy5jb3JpYS52MS5EaW1zZVJlY2VpdmVySAASJgoEc3RvdxgMIAEoCzIWLmNvcmlhLnYxLlN0b3dSZWNlaXZlckgAEg8KB2VuYWJsZWQYAyABKAgSDwoHc3RvcmFnZRgEIAEoCRIkCgZuYW1pbmcYBSABKAsyFC5jb3JpYS52MS5OYW1pbmdSdWxlEi8KDHF1aWV0X3BlcmlvZBgGIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIwCg1tYXhfb3Blbl90aW1lGAcgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uEhYKDm1heF9maWxlX2J5dGVzGAggASgDEigKBmhlYWx0aBgJIAEoCzIYLmNvcmlhLnYxLlJlY2VpdmVySGVhbHRoEi8KC2NyZWF0ZV90aW1lGAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgt1cGRhdGVfdGltZRgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKZm9yd2FyZF90bxgNIAMoCRIrCgthc19yZWNlaXZlZBgOIAEoCzIULmNvcmlhLnYxLkFzUmVjZWl2ZWRIARIuCgdwcm9maWxlGA8gASgLMhsuY29yaWEudjEuUHJvZmlsZVZlcnNpb25SZWZIAUIGCgR0eXBlQhIKEGRlaWRlbnRpZmljYXRpb24iDAoKQXNSZWNlaXZlZCIyChFQcm9maWxlVmVyc2lvblJlZhIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUi7wEKDURpbXNlUmVjZWl2ZXISDAoEcG9ydBgBIAEoBRIUCgxiaW5kX2FkZHJlc3MYAiABKAkSEAoIYWVfdGl0bGUYAyABKAkSMwoPYWxsb3dlZF9jYWxsZXJzGAQgASgLMhguY29yaWEudjEuQWxsb3dlZENhbGxlcnNIABIUCgphbnlfY2FsbGVyGAUgASgISAASIgoDdGxzGAYgASgLMhUuY29yaWEudjEuUmVjZWl2ZXJUbHMSEwoLc29wX2NsYXNzZXMYByADKAkSGQoRdHJhbnNmZXJfc3ludGF4ZXMYCCADKAlCCQoHY2FsbGVycyI6CgxTdG93UmVjZWl2ZXISDwoHa2V5X2lkcxgBIAMoCRIZChFtYXhfcmVxdWVzdF9ieXRlcxgCIAEoAyI1Cg5BbGxvd2VkQ2FsbGVycxIjCgVydWxlcxgBIAMoCzIULmNvcmlhLnYxLkNhbGxlclJ1bGUiPQoKQ2FsbGVyUnVsZRIYChBjYWxsaW5nX2FlX3RpdGxlGAEgASgJEhUKDWFkZHJlc3NfcmFuZ2UYAiABKAkiQQoLUmVjZWl2ZXJUbHMSGAoQY2VydGlmaWNhdGVfZmlsZRgBIAEoCRIYChBwcml2YXRlX2tleV9maWxlGAIgASgJImYKCk5hbWluZ1J1bGUSDwoHc3ViamVjdBgBIAEoCRIPCgdzZXNzaW9uGAIgASgJEgwKBHNjYW4YAyABKAkSKAoHcGF0dGVybhgEIAEoCzIXLmNvcmlhLnYxLk5hbWluZ1BhdHRlcm4iNgoNTmFtaW5nUGF0dGVybhIRCglhdHRyaWJ1dGUYASABKAkSEgoKZXhwcmVzc2lvbhgCIAEoCSKmAQoOUmVjZWl2ZXJIZWFsdGgSJgoFc3RhdGUYASABKA4yFy5jb3JpYS52MS5SZWNlaXZlclN0YXRlEjEKC2Rvd25fcmVhc29uGAIgASgOMhwuY29yaWEudjEuUmVjZWl2ZXJEb3duUmVhc29uEg4KBmRldGFpbBgDIAEoCRIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiSgoSQWRkUmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIkCghyZWNlaXZlchgCIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIjsKE0FkZFJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlciIyChJHZXRSZWNlaXZlclJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkiOwoTR2V0UmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIk0KFExpc3RSZWNlaXZlcnNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIRCglwYWdlX3NpemUYAiABKAUSEgoKcGFnZV90b2tlbhgDIAEoCSJXChVMaXN0UmVjZWl2ZXJzUmVzcG9uc2USJQoJcmVjZWl2ZXJzGAEgAygLMhIuY29yaWEudjEuUmVjZWl2ZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJInsKElNldFJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSJAoIcmVjZWl2ZXIYAiABKAsyEi5jb3JpYS52MS5SZWNlaXZlchIvCgt1cGRhdGVfbWFzaxgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5GaWVsZE1hc2siOwoTU2V0UmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIjUKFVJlbW92ZVJlY2VpdmVyUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCSI+ChZSZW1vdmVSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIqfAoNUmVjZWl2ZXJTdGF0ZRIeChpSRUNFSVZFUl9TVEFURV9VTlNQRUNJRklFRBAAEhsKF1JFQ0VJVkVSX1NUQVRFX1NUQVJUSU5HEAESFQoRUkVDRUlWRVJfU1RBVEVfVVAQAhIXChNSRUNFSVZFUl9TVEFURV9ET1dOEAMqvQMKElJlY2VpdmVyRG93blJlYXNvbhIkCiBSRUNFSVZFUl9ET1dOX1JFQVNPTl9VTlNQRUNJRklFRBAAEiEKHVJFQ0VJVkVSX0RPV05fUkVBU09OX0RJU0FCTEVEEAESJwojUkVDRUlWRVJfRE9XTl9SRUFTT05fQUREUkVTU19JTl9VU0UQAhIqCiZSRUNFSVZFUl9ET1dOX1JFQVNPTl9QRVJNSVNTSU9OX0RFTklFRBADEi4KKlJFQ0VJVkVSX0RPV05fUkVBU09OX0FERFJFU1NfTk9UX0FWQUlMQUJMRRAEEhwKGFJFQ0VJVkVSX0RPV05fUkVBU09OX1RMUxAFEiQKIFJFQ0VJVkVSX0RPV05fUkVBU09OX05FQVJMWV9GVUxMEAYSKQolUkVDRUlWRVJfRE9XTl9SRUFTT05fVEVOQU5UX05PVF9SRUFEWRAHEiEKHVJFQ0VJVkVSX0RPV05fUkVBU09OX1NUT1BQSU5HEAgSHgoaUkVDRUlWRVJfRE9XTl9SRUFTT05fT1RIRVIQCRInCiNSRUNFSVZFUl9ET1dOX1JFQVNPTl9JTkNPTUlOR19MSU1JVBAKMrADCg9SZWNlaXZlclNlcnZpY2USSgoLQWRkUmVjZWl2ZXISHC5jb3JpYS52MS5BZGRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5BZGRSZWNlaXZlclJlc3BvbnNlEk8KC0dldFJlY2VpdmVyEhwuY29yaWEudjEuR2V0UmVjZWl2ZXJSZXF1ZXN0Gh0uY29yaWEudjEuR2V0UmVjZWl2ZXJSZXNwb25zZSIDkAIBElUKDUxpc3RSZWNlaXZlcnMSHi5jb3JpYS52MS5MaXN0UmVjZWl2ZXJzUmVxdWVzdBofLmNvcmlhLnYxLkxpc3RSZWNlaXZlcnNSZXNwb25zZSIDkAIBEk8KC1NldFJlY2VpdmVyEhwuY29yaWEudjEuU2V0UmVjZWl2ZXJSZXF1ZXN0Gh0uY29yaWEudjEuU2V0UmVjZWl2ZXJSZXNwb25zZSIDkAICElgKDlJlbW92ZVJlY2VpdmVyEh8uY29yaWEudjEuUmVtb3ZlUmVjZWl2ZXJSZXF1ZXN0GiAuY29yaWEudjEuUmVtb3ZlUmVjZWl2ZXJSZXNwb25zZSIDkAICYgZwcm90bzM", [file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp]);
+  fileDesc("Chdjb3JpYS92MS9yZWNlaXZlci5wcm90bxIIY29yaWEudjEi8gQKCFJlY2VpdmVyEgwKBG5hbWUYASABKAkSKAoFZGltc2UYAiABKAsyFy5jb3JpYS52MS5EaW1zZVJlY2VpdmVySAASJgoEc3RvdxgMIAEoCzIWLmNvcmlhLnYxLlN0b3dSZWNlaXZlckgAEg8KB2VuYWJsZWQYAyABKAgSDwoHc3RvcmFnZRgEIAEoCRIkCgZuYW1pbmcYBSABKAsyFC5jb3JpYS52MS5OYW1pbmdSdWxlEi8KDHF1aWV0X3BlcmlvZBgGIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbhIwCg1tYXhfb3Blbl90aW1lGAcgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uEhYKDm1heF9maWxlX2J5dGVzGAggASgDEigKBmhlYWx0aBgJIAEoCzIYLmNvcmlhLnYxLlJlY2VpdmVySGVhbHRoEi8KC2NyZWF0ZV90aW1lGAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgt1cGRhdGVfdGltZRgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKZm9yd2FyZF90bxgNIAMoCRIrCgthc19yZWNlaXZlZBgOIAEoCzIULmNvcmlhLnYxLkFzUmVjZWl2ZWRIARIuCgdwcm9maWxlGA8gASgLMhsuY29yaWEudjEuUHJvZmlsZVZlcnNpb25SZWZIARIqCgdyb3V0aW5nGBAgASgLMhkuY29yaWEudjEuUmVjZWl2ZXJSb3V0aW5nQgYKBHR5cGVCEgoQZGVpZGVudGlmaWNhdGlvbiJQCg9SZWNlaXZlclJvdXRpbmcSHwoGcm91dGVzGAEgAygLMg8uY29yaWEudjEuUm91dGUSHAoUcXVhcmFudGluZV91bm1hdGNoZWQYAiABKAgisgEKBVJvdXRlEgwKBG5hbWUYASABKAkSLgoKY29uZGl0aW9ucxgCIAMoCzIaLmNvcmlhLnYxLlByb2ZpbGVDb25kaXRpb24SDwoHc3RvcmFnZRgDIAEoCRIsCgdwcm9maWxlGAQgASgLMhsuY29yaWEudjEuUHJvZmlsZVZlcnNpb25SZWYSLAoKZm9yd2FyZF90bxgFIAEoCzIYLmNvcmlhLnYxLlJvdXRlRm9yd2FyZFRvIiEKDlJvdXRlRm9yd2FyZFRvEg8KB3NlbmRlcnMYASADKAkiDAoKQXNSZWNlaXZlZCIyChFQcm9maWxlVmVyc2lvblJlZhIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUi7wEKDURpbXNlUmVjZWl2ZXISDAoEcG9ydBgBIAEoBRIUCgxiaW5kX2FkZHJlc3MYAiABKAkSEAoIYWVfdGl0bGUYAyABKAkSMwoPYWxsb3dlZF9jYWxsZXJzGAQgASgLMhguY29yaWEudjEuQWxsb3dlZENhbGxlcnNIABIUCgphbnlfY2FsbGVyGAUgASgISAASIgoDdGxzGAYgASgLMhUuY29yaWEudjEuUmVjZWl2ZXJUbHMSEwoLc29wX2NsYXNzZXMYByADKAkSGQoRdHJhbnNmZXJfc3ludGF4ZXMYCCADKAlCCQoHY2FsbGVycyI6CgxTdG93UmVjZWl2ZXISDwoHa2V5X2lkcxgBIAMoCRIZChFtYXhfcmVxdWVzdF9ieXRlcxgCIAEoAyI1Cg5BbGxvd2VkQ2FsbGVycxIjCgVydWxlcxgBIAMoCzIULmNvcmlhLnYxLkNhbGxlclJ1bGUiPQoKQ2FsbGVyUnVsZRIYChBjYWxsaW5nX2FlX3RpdGxlGAEgASgJEhUKDWFkZHJlc3NfcmFuZ2UYAiABKAkiQQoLUmVjZWl2ZXJUbHMSGAoQY2VydGlmaWNhdGVfZmlsZRgBIAEoCRIYChBwcml2YXRlX2tleV9maWxlGAIgASgJImYKCk5hbWluZ1J1bGUSDwoHc3ViamVjdBgBIAEoCRIPCgdzZXNzaW9uGAIgASgJEgwKBHNjYW4YAyABKAkSKAoHcGF0dGVybhgEIAEoCzIXLmNvcmlhLnYxLk5hbWluZ1BhdHRlcm4iNgoNTmFtaW5nUGF0dGVybhIRCglhdHRyaWJ1dGUYASABKAkSEgoKZXhwcmVzc2lvbhgCIAEoCSKmAQoOUmVjZWl2ZXJIZWFsdGgSJgoFc3RhdGUYASABKA4yFy5jb3JpYS52MS5SZWNlaXZlclN0YXRlEjEKC2Rvd25fcmVhc29uGAIgASgOMhwuY29yaWEudjEuUmVjZWl2ZXJEb3duUmVhc29uEg4KBmRldGFpbBgDIAEoCRIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiSgoSQWRkUmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIkCghyZWNlaXZlchgCIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIjsKE0FkZFJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlciIyChJHZXRSZWNlaXZlclJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkiOwoTR2V0UmVjZWl2ZXJSZXNwb25zZRIkCghyZWNlaXZlchgBIAEoCzISLmNvcmlhLnYxLlJlY2VpdmVyIk0KFExpc3RSZWNlaXZlcnNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIRCglwYWdlX3NpemUYAiABKAUSEgoKcGFnZV90b2tlbhgDIAEoCSJXChVMaXN0UmVjZWl2ZXJzUmVzcG9uc2USJQoJcmVjZWl2ZXJzGAEgAygLMhIuY29yaWEudjEuUmVjZWl2ZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIrUBChJTZXRSZWNlaXZlclJlcXVlc3QSDgoGdGVuYW50GAEgASgJEiQKCHJlY2VpdmVyGAIgASgLMhIuY29yaWEudjEuUmVjZWl2ZXISLwoLdXBkYXRlX21hc2sYAyABKAsyGi5nb29nbGUucHJvdG9idWYuRmllbGRNYXNrEjgKFGV4cGVjdGVkX3VwZGF0ZV90aW1lGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI7ChNTZXRSZWNlaXZlclJlc3BvbnNlEiQKCHJlY2VpdmVyGAEgASgLMhIuY29yaWEudjEuUmVjZWl2ZXIiNQoVUmVtb3ZlUmVjZWl2ZXJSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIMCgRuYW1lGAIgASgJIj4KFlJlbW92ZVJlY2VpdmVyUmVzcG9uc2USJAoIcmVjZWl2ZXIYASABKAsyEi5jb3JpYS52MS5SZWNlaXZlcip8Cg1SZWNlaXZlclN0YXRlEh4KGlJFQ0VJVkVSX1NUQVRFX1VOU1BFQ0lGSUVEEAASGwoXUkVDRUlWRVJfU1RBVEVfU1RBUlRJTkcQARIVChFSRUNFSVZFUl9TVEFURV9VUBACEhcKE1JFQ0VJVkVSX1NUQVRFX0RPV04QAyq9AwoSUmVjZWl2ZXJEb3duUmVhc29uEiQKIFJFQ0VJVkVSX0RPV05fUkVBU09OX1VOU1BFQ0lGSUVEEAASIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fRElTQUJMRUQQARInCiNSRUNFSVZFUl9ET1dOX1JFQVNPTl9BRERSRVNTX0lOX1VTRRACEioKJlJFQ0VJVkVSX0RPV05fUkVBU09OX1BFUk1JU1NJT05fREVOSUVEEAMSLgoqUkVDRUlWRVJfRE9XTl9SRUFTT05fQUREUkVTU19OT1RfQVZBSUxBQkxFEAQSHAoYUkVDRUlWRVJfRE9XTl9SRUFTT05fVExTEAUSJAogUkVDRUlWRVJfRE9XTl9SRUFTT05fTkVBUkxZX0ZVTEwQBhIpCiVSRUNFSVZFUl9ET1dOX1JFQVNPTl9URU5BTlRfTk9UX1JFQURZEAcSIQodUkVDRUlWRVJfRE9XTl9SRUFTT05fU1RPUFBJTkcQCBIeChpSRUNFSVZFUl9ET1dOX1JFQVNPTl9PVEhFUhAJEicKI1JFQ0VJVkVSX0RPV05fUkVBU09OX0lOQ09NSU5HX0xJTUlUEAoysAMKD1JlY2VpdmVyU2VydmljZRJKCgtBZGRSZWNlaXZlchIcLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVxdWVzdBodLmNvcmlhLnYxLkFkZFJlY2VpdmVyUmVzcG9uc2USTwoLR2V0UmVjZWl2ZXISHC5jb3JpYS52MS5HZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5HZXRSZWNlaXZlclJlc3BvbnNlIgOQAgESVQoNTGlzdFJlY2VpdmVycxIeLmNvcmlhLnYxLkxpc3RSZWNlaXZlcnNSZXF1ZXN0Gh8uY29yaWEudjEuTGlzdFJlY2VpdmVyc1Jlc3BvbnNlIgOQAgESTwoLU2V0UmVjZWl2ZXISHC5jb3JpYS52MS5TZXRSZWNlaXZlclJlcXVlc3QaHS5jb3JpYS52MS5TZXRSZWNlaXZlclJlc3BvbnNlIgOQAgISWAoOUmVtb3ZlUmVjZWl2ZXISHy5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlcXVlc3QaIC5jb3JpYS52MS5SZW1vdmVSZWNlaXZlclJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_duration, file_google_protobuf_field_mask, file_google_protobuf_timestamp, file_coria_v1_profile]);
 
 /**
  * Receiver is a way for data to arrive at a tenant, and how what arrives is
@@ -224,6 +226,21 @@ export type Receiver = Message<"coria.v1.Receiver"> & {
     value: ProfileVersionRef;
     case: "profile";
   } | { case: undefined; value?: undefined };
+
+  /**
+   * How each study is routed: the storage, the profile version and the
+   * senders chosen for it in place of storage, the profile and forward_to.
+   * Absent, or with no route and the default storage, every study goes as
+   * those fields say, which is what every receiver did before routing
+   * existed. A change applies to receptions identified from then on; one
+   * identified keeps what was chosen for it. Setting it needs what any
+   * change of a receiver needs, admin on the tenant, since it decides
+   * where the tenant's data goes and how it is de-identified; reading it,
+   * what reading a receiver needs, reader.
+   *
+   * @generated from field: coria.v1.ReceiverRouting routing = 16;
+   */
+  routing?: ReceiverRouting | undefined;
 };
 
 /**
@@ -232,6 +249,169 @@ export type Receiver = Message<"coria.v1.Receiver"> & {
  */
 export const ReceiverSchema: GenMessage<Receiver> = /*@__PURE__*/
   messageDesc(file_coria_v1_receiver, 0);
+
+/**
+ * ReceiverRouting is a receiver's routes, in order, and what happens to a
+ * study none of them chooses. A study is routed once, for its session: the
+ * routes are evaluated for the first reception of a new session (the files
+ * of one study arriving at the receiver), when it is complete, over the
+ * first file its naming rule reads (the first, by SOP Instance UID, of its
+ * first series, by Series Instance UID), as received, before any byte of
+ * it is de-identified; the first route whose conditions all hold chooses.
+ * What it chose (the storage, the profile version and the senders) is kept
+ * with the reception and, when its first scan is archived, with the
+ * session, so the reception's later steps, a step run again after a
+ * restart, and every later arrival of the session go by it, whatever the
+ * routes say by then and whichever AE title the later arrival comes from.
+ * A reception of a study whose first reception is still being archived
+ * goes by what was chosen for that one; one that arrives while the first is
+ * being identified waits for it. Should two receptions of a study be
+ * routed apart all the same (they arrived at two receivers at the same
+ * moment), the second to archive finds the session on another storage and
+ * its files are held as QUARANTINE_REASON_UNROUTED (cause
+ * "session_elsewhere") before any is stored.
+ *
+ * A route that cannot be evaluated (one stored by a later version of the
+ * server with a condition this one does not know, or a condition whose
+ * value in the file is longer than 1024 bytes) holds the study as
+ * QUARANTINE_REASON_UNROUTED, whatever routes come after it, so a study is
+ * never sent where a later route would send it only because an earlier
+ * one is broken.
+ *
+ * A release naming a storage (ReleaseQuarantinedFileRequest.storage)
+ * chooses the storage only: the profile version and the senders are still
+ * the route's, or the receiver's when no route holds, and
+ * quarantine_unmatched does not hold the study again.
+ *
+ * @generated from message coria.v1.ReceiverRouting
+ */
+export type ReceiverRouting = Message<"coria.v1.ReceiverRouting"> & {
+  /**
+   * The routes, in order; the first that holds chooses. At most 64, each
+   * name once.
+   *
+   * @generated from field: repeated coria.v1.Route routes = 1;
+   */
+  routes: Route[];
+
+  /**
+   * What happens to a new session no route chooses. False, the default:
+   * it goes as the receiver says, to its storage, with its profile and its
+   * forward_to. True: every file of the study is held as
+   * QUARANTINE_REASON_UNROUTED, and a person decides where it goes, by
+   * releasing its files naming a storage.
+   *
+   * @generated from field: bool quarantine_unmatched = 2;
+   */
+  quarantineUnmatched: boolean;
+};
+
+/**
+ * Describes the message coria.v1.ReceiverRouting.
+ * Use `create(ReceiverRoutingSchema)` to create a new message.
+ */
+export const ReceiverRoutingSchema: GenMessage<ReceiverRouting> = /*@__PURE__*/
+  messageDesc(file_coria_v1_receiver, 1);
+
+/**
+ * Route is one rule of a receiver's routing.
+ *
+ * @generated from message coria.v1.Route
+ */
+export type Route = Message<"coria.v1.Route"> & {
+  /**
+   * The route's name, unique in the receiver, under the rule of a tenant's
+   * name. Required. It names the route in a quarantine record that names
+   * it.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * The conditions, all of which must hold; none holds for every study.
+   * At most 16. Each reads one of the subjects of ProfileCondition other
+   * than CONDITION_SUBJECT_RECEIVER (a route belongs to one receiver), by
+   * the same rule: a value read from the top level of the data set as
+   * received, without its padding (PS3.5 6.2), its case kept, an absent or
+   * empty value absent; an AE title as the association gave it, absent
+   * for a file not received by DIMSE. A value longer than 1024 bytes
+   * is not tested: the route cannot be evaluated (ReceiverRouting), as
+   * no value of these subjects is that long (PS3.5 6.2). An equals or prefix text is at most
+   * 1024 bytes; a pattern (RE2, matched against the whole value) at most
+   * 256 bytes, with no repetition counted above 100, and compiling to at
+   * most 10000 instructions and ranges; the patterns of a receiver's
+   * routes together to at most 200000.
+   *
+   * @generated from field: repeated coria.v1.ProfileCondition conditions = 2;
+   */
+  conditions: ProfileCondition[];
+
+  /**
+   * The name of the tenant's storage a new session this route chooses is
+   * archived to. Required; a storage the tenant does not have is a
+   * precondition failure, and a storage a route names cannot be removed.
+   *
+   * @generated from field: string storage = 3;
+   */
+  storage: string;
+
+  /**
+   * The profile version the files of a study this route chooses are
+   * de-identified with, in place of the receiver's. Optional; absent keeps
+   * the receiver's. Only a receiver that de-identifies (Receiver.profile)
+   * may have a route that names one, since the receiver's choice decides
+   * how each file lands (its UIDs remapped and its checksum keyed, or not)
+   * before any route is chosen: a route can replace the profile, never
+   * turn de-identification off or on. A route that names one on a
+   * receiver that archives as received, and a change of a receiver to
+   * as_received while a route names one, are precondition failures. The
+   * version must be the tenant's and pass every check a receiver's profile
+   * version passes, else a precondition failure.
+   *
+   * @generated from field: coria.v1.ProfileVersionRef profile = 4;
+   */
+  profile?: ProfileVersionRef | undefined;
+
+  /**
+   * The senders a reception this route chooses is forwarded to when it
+   * reaches done, in place of the receiver's forward_to. Optional; absent
+   * keeps the receiver's; present with no sender forwards to none. At
+   * most 16, each once; a sender the tenant does not have is a
+   * precondition failure, and a sender a route names cannot be removed.
+   *
+   * @generated from field: coria.v1.RouteForwardTo forward_to = 5;
+   */
+  forwardTo?: RouteForwardTo | undefined;
+};
+
+/**
+ * Describes the message coria.v1.Route.
+ * Use `create(RouteSchema)` to create a new message.
+ */
+export const RouteSchema: GenMessage<Route> = /*@__PURE__*/
+  messageDesc(file_coria_v1_receiver, 2);
+
+/**
+ * RouteForwardTo names the senders a route forwards to.
+ *
+ * @generated from message coria.v1.RouteForwardTo
+ */
+export type RouteForwardTo = Message<"coria.v1.RouteForwardTo"> & {
+  /**
+   * The senders' names.
+   *
+   * @generated from field: repeated string senders = 1;
+   */
+  senders: string[];
+};
+
+/**
+ * Describes the message coria.v1.RouteForwardTo.
+ * Use `create(RouteForwardToSchema)` to create a new message.
+ */
+export const RouteForwardToSchema: GenMessage<RouteForwardTo> = /*@__PURE__*/
+  messageDesc(file_coria_v1_receiver, 3);
 
 /**
  * AsReceived is a receiver's choice to archive what it receives as it was
@@ -247,7 +427,7 @@ export type AsReceived = Message<"coria.v1.AsReceived"> & {
  * Use `create(AsReceivedSchema)` to create a new message.
  */
 export const AsReceivedSchema: GenMessage<AsReceived> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 1);
+  messageDesc(file_coria_v1_receiver, 4);
 
 /**
  * ProfileVersionRef names one version of one of the tenant's profiles.
@@ -277,7 +457,7 @@ export type ProfileVersionRef = Message<"coria.v1.ProfileVersionRef"> & {
  * Use `create(ProfileVersionRefSchema)` to create a new message.
  */
 export const ProfileVersionRefSchema: GenMessage<ProfileVersionRef> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 2);
+  messageDesc(file_coria_v1_receiver, 5);
 
 /**
  * DimseReceiver is a DICOM listener on one port of the server.
@@ -400,7 +580,7 @@ export type DimseReceiver = Message<"coria.v1.DimseReceiver"> & {
  * Use `create(DimseReceiverSchema)` to create a new message.
  */
 export const DimseReceiverSchema: GenMessage<DimseReceiver> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 3);
+  messageDesc(file_coria_v1_receiver, 6);
 
 /**
  * StowReceiver takes the instances stored over HTTP into the tenant's
@@ -518,7 +698,7 @@ export type StowReceiver = Message<"coria.v1.StowReceiver"> & {
  * Use `create(StowReceiverSchema)` to create a new message.
  */
 export const StowReceiverSchema: GenMessage<StowReceiver> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 4);
+  messageDesc(file_coria_v1_receiver, 7);
 
 /**
  * AllowedCallers is the list of callers a DIMSE receiver admits.
@@ -540,7 +720,7 @@ export type AllowedCallers = Message<"coria.v1.AllowedCallers"> & {
  * Use `create(AllowedCallersSchema)` to create a new message.
  */
 export const AllowedCallersSchema: GenMessage<AllowedCallers> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 5);
+  messageDesc(file_coria_v1_receiver, 8);
 
 /**
  * CallerRule admits callers by their calling AE title, their network
@@ -578,7 +758,7 @@ export type CallerRule = Message<"coria.v1.CallerRule"> & {
  * Use `create(CallerRuleSchema)` to create a new message.
  */
 export const CallerRuleSchema: GenMessage<CallerRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 6);
+  messageDesc(file_coria_v1_receiver, 9);
 
 /**
  * ReceiverTls is where a DIMSE receiver's TLS certificate and private key
@@ -613,7 +793,7 @@ export type ReceiverTls = Message<"coria.v1.ReceiverTls"> & {
  * Use `create(ReceiverTlsSchema)` to create a new message.
  */
 export const ReceiverTlsSchema: GenMessage<ReceiverTls> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 7);
+  messageDesc(file_coria_v1_receiver, 10);
 
 /**
  * NamingRule is how a receiver makes the labels of a new subject, session
@@ -704,7 +884,7 @@ export type NamingRule = Message<"coria.v1.NamingRule"> & {
  * Use `create(NamingRuleSchema)` to create a new message.
  */
 export const NamingRuleSchema: GenMessage<NamingRule> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 8);
+  messageDesc(file_coria_v1_receiver, 11);
 
 /**
  * NamingPattern takes named parts out of one attribute, such as Patient
@@ -739,7 +919,7 @@ export type NamingPattern = Message<"coria.v1.NamingPattern"> & {
  * Use `create(NamingPatternSchema)` to create a new message.
  */
 export const NamingPatternSchema: GenMessage<NamingPattern> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 9);
+  messageDesc(file_coria_v1_receiver, 12);
 
 /**
  * ReceiverHealth is whether a receiver accepts data now, and why not.
@@ -785,7 +965,7 @@ export type ReceiverHealth = Message<"coria.v1.ReceiverHealth"> & {
  * Use `create(ReceiverHealthSchema)` to create a new message.
  */
 export const ReceiverHealthSchema: GenMessage<ReceiverHealth> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 10);
+  messageDesc(file_coria_v1_receiver, 13);
 
 /**
  * AddReceiverRequest is the receiver to add.
@@ -815,7 +995,7 @@ export type AddReceiverRequest = Message<"coria.v1.AddReceiverRequest"> & {
  * Use `create(AddReceiverRequestSchema)` to create a new message.
  */
 export const AddReceiverRequestSchema: GenMessage<AddReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 11);
+  messageDesc(file_coria_v1_receiver, 14);
 
 /**
  * AddReceiverResponse is the receiver added.
@@ -837,7 +1017,7 @@ export type AddReceiverResponse = Message<"coria.v1.AddReceiverResponse"> & {
  * Use `create(AddReceiverResponseSchema)` to create a new message.
  */
 export const AddReceiverResponseSchema: GenMessage<AddReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 12);
+  messageDesc(file_coria_v1_receiver, 15);
 
 /**
  * GetReceiverRequest names a receiver.
@@ -865,7 +1045,7 @@ export type GetReceiverRequest = Message<"coria.v1.GetReceiverRequest"> & {
  * Use `create(GetReceiverRequestSchema)` to create a new message.
  */
 export const GetReceiverRequestSchema: GenMessage<GetReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 13);
+  messageDesc(file_coria_v1_receiver, 16);
 
 /**
  * GetReceiverResponse is the receiver named.
@@ -886,7 +1066,7 @@ export type GetReceiverResponse = Message<"coria.v1.GetReceiverResponse"> & {
  * Use `create(GetReceiverResponseSchema)` to create a new message.
  */
 export const GetReceiverResponseSchema: GenMessage<GetReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 14);
+  messageDesc(file_coria_v1_receiver, 17);
 
 /**
  * ListReceiversRequest asks for a page of a tenant's receivers.
@@ -924,7 +1104,7 @@ export type ListReceiversRequest = Message<"coria.v1.ListReceiversRequest"> & {
  * Use `create(ListReceiversRequestSchema)` to create a new message.
  */
 export const ListReceiversRequestSchema: GenMessage<ListReceiversRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 15);
+  messageDesc(file_coria_v1_receiver, 18);
 
 /**
  * ListReceiversResponse is a page of receivers.
@@ -952,7 +1132,7 @@ export type ListReceiversResponse = Message<"coria.v1.ListReceiversResponse"> & 
  * Use `create(ListReceiversResponseSchema)` to create a new message.
  */
 export const ListReceiversResponseSchema: GenMessage<ListReceiversResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 16);
+  messageDesc(file_coria_v1_receiver, 19);
 
 /**
  * SetReceiverRequest is the change to a receiver.
@@ -980,7 +1160,8 @@ export type SetReceiverRequest = Message<"coria.v1.SetReceiverRequest"> & {
    * The fields to change, as paths of Receiver, such as "quiet_period",
    * "forward_to" or "naming" ("naming" with naming absent returns to the
    * default rule), "deidentification" (the oneof: as_received or a profile
-   * version; with neither set, as received), or
+   * version; with neither set, as received), "routing" (replaced whole;
+   * absent, no routing; its fields cannot be named one by one), or
    * a field of the receiver's type joined to it by a dot, such as
    * "dimse.port", "dimse.tls.certificate_file" or "stow.key_ids". A path
    * that names a type's whole message ("dimse", "stow") is refused: its
@@ -997,6 +1178,18 @@ export type SetReceiverRequest = Message<"coria.v1.SetReceiverRequest"> & {
    * @generated from field: google.protobuf.FieldMask update_mask = 3;
    */
   updateMask?: FieldMask | undefined;
+
+  /**
+   * When set, the change is made only while the receiver's update_time is
+   * this one, the update_time of the receiver as the caller read it, and
+   * is otherwise refused as a precondition failure: a caller that reads a
+   * receiver, changes a part of it (one route of its routing) and writes it
+   * back loses no change another made meanwhile. Absent changes whatever is
+   * stored.
+   *
+   * @generated from field: google.protobuf.Timestamp expected_update_time = 4;
+   */
+  expectedUpdateTime?: Timestamp | undefined;
 };
 
 /**
@@ -1004,7 +1197,7 @@ export type SetReceiverRequest = Message<"coria.v1.SetReceiverRequest"> & {
  * Use `create(SetReceiverRequestSchema)` to create a new message.
  */
 export const SetReceiverRequestSchema: GenMessage<SetReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 17);
+  messageDesc(file_coria_v1_receiver, 20);
 
 /**
  * SetReceiverResponse is the receiver as changed.
@@ -1025,7 +1218,7 @@ export type SetReceiverResponse = Message<"coria.v1.SetReceiverResponse"> & {
  * Use `create(SetReceiverResponseSchema)` to create a new message.
  */
 export const SetReceiverResponseSchema: GenMessage<SetReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 18);
+  messageDesc(file_coria_v1_receiver, 21);
 
 /**
  * RemoveReceiverRequest names the receiver to remove.
@@ -1053,7 +1246,7 @@ export type RemoveReceiverRequest = Message<"coria.v1.RemoveReceiverRequest"> & 
  * Use `create(RemoveReceiverRequestSchema)` to create a new message.
  */
 export const RemoveReceiverRequestSchema: GenMessage<RemoveReceiverRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 19);
+  messageDesc(file_coria_v1_receiver, 22);
 
 /**
  * RemoveReceiverResponse is the configuration that was removed.
@@ -1074,7 +1267,7 @@ export type RemoveReceiverResponse = Message<"coria.v1.RemoveReceiverResponse"> 
  * Use `create(RemoveReceiverResponseSchema)` to create a new message.
  */
 export const RemoveReceiverResponseSchema: GenMessage<RemoveReceiverResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_receiver, 20);
+  messageDesc(file_coria_v1_receiver, 23);
 
 /**
  * ReceiverState is whether a receiver accepts data now.
@@ -1312,7 +1505,11 @@ export const ReceiverService: GenService<{
    * tenant), conflict (the tenant has a receiver with that name, or a
    * removed receiver of that name is still named by receptions or
    * quarantined files), precondition (a storage the tenant does not have; a
-   * sender in forward_to the tenant does not have; a port outside the
+   * sender in forward_to the tenant does not have; a storage, a sender or a
+   * profile version a route names that the tenant does not have, or a
+   * profile version that cannot de-identify a receiver's files; a route
+   * that names a profile version on a receiver that archives as received;
+   * a port outside the
    * tenant's allotted ports; a bind address the installation does not list;
    * another receiver of the tenant on the same port and an overlapping
    * address), unavailable (the tenant's database
@@ -1383,7 +1580,8 @@ export const ReceiverService: GenService<{
    * every rule AddReceiver checks on a field), not found (the tenant has no
    * receiver with that name; a tenant that does not exist, for a caller who
    * may list every tenant), precondition (every precondition AddReceiver
-   * checks), unavailable (the tenant's database does not answer, or the
+   * checks; expected_update_time is not the receiver's update_time, as a
+   * stale expected version is everywhere in this API), unavailable (the tenant's database does not answer, or the
    * tenant is not ready).
    *
    * @generated from rpc coria.v1.ReceiverService.SetReceiver

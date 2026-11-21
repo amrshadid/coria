@@ -246,7 +246,7 @@ func testListSettings(t *testing.T) {
 			check: func(t *testing.T, o outcome) {
 				want := "access.allowed-networks=@/BUILT_IN,access.block-time=15m@/BUILT_IN,access.denied-networks=@/BUILT_IN,access.failure-limit=10@/BUILT_IN," +
 					"access.failure-window=1m@/BUILT_IN,access.forwarded-header=x-forwarded-for@/BUILT_IN,access.tenant-networks=@/BUILT_IN,access.trusted-proxies=@/BUILT_IN," +
-					"api.cors-origins=@/BUILT_IN,events.retention=90d@/BUILT_IN,incoming.limit=0@/BUILT_IN,job.failures-kept=10000@/BUILT_IN,key.default-lifetime=90d@/BUILT_IN," +
+					"api.cors-origins=@/BUILT_IN,deid.pixel-limit=1GiB@/BUILT_IN,events.retention=90d@/BUILT_IN,incoming.limit=0@/BUILT_IN,job.failures-kept=10000@/BUILT_IN,key.default-lifetime=90d@/BUILT_IN," +
 					"key.expiry-warning=7d@/BUILT_IN,key.max-lifetime=3650d@/BUILT_IN,receiver.allow-as-received=false@/BUILT_IN," +
 					"receiver.bind-addresses=@/BUILT_IN,receiver.header-limit=64MiB@/BUILT_IN,receiver.ports=@/BUILT_IN,sender.allow-plain-http=false@/BUILT_IN," +
 					"sender.destinations=@/BUILT_IN,sender.max-associations=32@/BUILT_IN,sender.tenant-max-associations=8@/BUILT_IN,storage.directory-roots=@/BUILT_IN," +
@@ -255,7 +255,7 @@ func testListSettings(t *testing.T) {
 					t.Errorf("got %q, want %q", got, want)
 				}
 			}},
-		{name: "installation, a page of 14", as: f.instReader, call: list(installation(), 14, ""),
+		{name: "installation, a page of 15", as: f.instReader, call: list(installation(), 15, ""),
 			check: func(t *testing.T, o outcome) {
 				token = o.res.(*v1.ListSettingsResponse).GetNextPageToken()
 				if got := names(o); !strings.HasPrefix(got, "access.allowed-networks=") || !strings.HasSuffix(got, "key.expiry-warning=7d@/BUILT_IN") || token == "" {

@@ -165,9 +165,10 @@ func (c *Catalog) Proto() []*v1.ProfileBase {
 const (
 	// AnnexEEdition is the edition of PS3.15 the Annex E bases follow.
 	AnnexEEdition = "2026d"
-	// reasonPixels is why the options that change pixels, which have no
-	// column in Table E.1-1, are not available as bases.
-	reasonPixels = "it changes pixels, not attributes, and this build applies no pixel rules"
+	// reasonVisualFeatures is why Clean Recognizable Visual Features is
+	// not available as a base: it removes faces from the pixels (defacing),
+	// which this build does not do.
+	reasonVisualFeatures = "it removes recognizable visual features such as faces from the pixels, which this build does not do"
 )
 
 // annexEKind is where an Annex E base's rules come from.
@@ -179,8 +180,15 @@ const (
 	annexEColumn annexEKind = iota + 1
 	// annexESafePrivate: Table E.3.10-1.
 	annexESafePrivate
-	// annexEPixels: an option that changes pixels, which has no rules.
-	annexEPixels
+	// annexECleanPixels: Clean Pixel Data, which has no column in Table
+	// E.1-1 and so no rules: its work is the profile's pixel rules and the
+	// gate that holds an image at risk no pixel rule matches, which every
+	// profile has. Its code is recorded only in a file whose pixels a
+	// pixel rule filled, by the engine, never for the base alone.
+	annexECleanPixels
+	// annexEVisualFeatures: Clean Recognizable Visual Features, not
+	// available (reasonVisualFeatures).
+	annexEVisualFeatures
 )
 
 // annexE lists each Annex E base: its name without the edition, what it
@@ -194,8 +202,8 @@ var annexE = []struct {
 	code              anonymize.MethodCodeValue
 }{
 	{"basic", "PS3.15 E.2, the Basic Application Level Confidentiality Profile: the actions of Table E.1-1's basic column.", annexEColumn, anonymize.ColumnBasic, anonymize.MethodBasicProfile},
-	{"clean-pixel-data", "PS3.15 E.3.1, Clean Pixel Data: burned-in identifying information is removed from the pixels.", annexEPixels, 0, anonymize.MethodCleanPixelData},
-	{"clean-recognizable-visual-features", "PS3.15 E.3.2, Clean Recognizable Visual Features.", annexEPixels, 0, anonymize.MethodCleanRecognizableVisualFeatures},
+	{"clean-pixel-data", "PS3.15 E.3.1, Clean Pixel Data: burned-in identifying information is removed from the pixels.", annexECleanPixels, 0, anonymize.MethodCleanPixelData},
+	{"clean-recognizable-visual-features", "PS3.15 E.3.2, Clean Recognizable Visual Features.", annexEVisualFeatures, 0, anonymize.MethodCleanRecognizableVisualFeatures},
 	{"clean-graphics", "PS3.15 E.3.3, Clean Graphics: identifying text in graphics and overlays is removed.", annexEColumn, anonymize.ColumnCleanGraphics, anonymize.MethodCleanGraphics},
 	{"clean-structured-content", "PS3.15 E.3.4, Clean Structured Content: identifying content items of structured reports are cleaned.", annexEColumn, anonymize.ColumnCleanStructuredContent, anonymize.MethodCleanStructuredContent},
 	{"clean-descriptors", "PS3.15 E.3.5, Clean Descriptors: free-text descriptions are cleaned rather than kept or removed.", annexEColumn, anonymize.ColumnCleanDescriptors, anonymize.MethodCleanDescriptors},
@@ -230,7 +238,10 @@ func AnnexEName(name string) (option, edition string, ok bool) {
 // by its option, whatever edition its stored name carries, so what a
 // stored version records never depends on the edition this build ships. A
 // base of another family has none. The engine records them in
-// De-identification Method Code Sequence (0012,0064) (PS3.15 E.1.1).
+// De-identification Method Code Sequence (0012,0064) (PS3.15 E.1.1). Clean
+// Pixel Data's code is not among them: it says the pixels of the file were
+// cleaned, which is true only of a file a pixel rule filled, and the engine
+// adds it to that file alone (CleanPixelDataCode).
 func MethodCodes(bases []string) []anonymize.MethodCode {
 	have := map[string]bool{}
 	for _, b := range bases {
@@ -240,12 +251,17 @@ func MethodCodes(bases []string) []anonymize.MethodCode {
 	}
 	var out []anonymize.MethodCode
 	for _, b := range annexE {
-		if have[b.name] {
+		if have[b.name] && b.kind != annexECleanPixels {
 			out = append(out, b.code.Code())
 		}
 	}
 	return out
 }
+
+// CleanPixelDataCode is the PS3.16 CID 7050 code of the Clean Pixel Data
+// Option (PS3.15 E.3.1), which the engine records in a file whose pixels a
+// pixel rule filled.
+func CleanPixelDataCode() anonymize.MethodCode { return anonymize.MethodCleanPixelData.Code() }
 
 // KeepsBaseChange reports whether a rule of a version's own keeps elements
 // a base of it changes or removes (Warnings, CodeKeepsBaseChange), or
@@ -270,8 +286,11 @@ func KeepsBaseChange(e *v1.ExpandedProfile) (bool, error) {
 func annexEBase(name, description string, kind annexEKind, column anonymize.ProfileColumn, modifiedDates bool) Base {
 	b := Base{Name: AnnexE(name), Description: description}
 	switch {
-	case kind == annexEPixels:
-		b.Unavailable = reasonPixels
+	case kind == annexEVisualFeatures:
+		b.Unavailable = reasonVisualFeatures
+		return b
+	case kind == annexECleanPixels:
+		b.Document = &v1.ProfileDocument{}
 		return b
 	case anonymize.ProfileTableEdition != AnnexEEdition:
 		b.Unavailable = fmt.Sprintf("the DICOM library's Table E.1-1 is of edition %s, not %s", anonymize.ProfileTableEdition, AnnexEEdition)

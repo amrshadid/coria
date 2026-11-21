@@ -129,15 +129,15 @@ func TestScalePipelinePlans(t *testing.T) {
 		   CASE WHEN i % 100000 = 0 THEN 'receiving' WHEN i % 50000 = 1 THEN 'failed' WHEN i % 70000 = 2 THEN 'quarantined' ELSE 'done' END,
 		   i % 100000 <> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', CASE WHEN i % 100000 = 0 THEN '' ELSE 'store' END, '',
 		   timestamptz 'epoch' + i * interval '1 second', timestamptz 'epoch' + i * interval '1 second', timestamptz 'epoch' + i * interval '1 second',
-		   CASE WHEN i % 100000 = 0 THEN NULL ELSE timestamptz 'epoch' + i * interval '1 second' END, 0, '[]', false, '', '', '', NULL
+		   CASE WHEN i % 100000 = 0 THEN NULL ELSE timestamptz 'epoch' + i * interval '1 second' END, 0, '[]', false, '', '', '', NULL, ''
 		 FROM generate_series(1, 2000000) i`,
 		`INSERT INTO receptions SELECT 'claimer', 'busy', '2.25.1.900000000', 1, 'identified', false, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		   'sub-01', 'ses-1', 'store', '', now(), now(), now(), NULL, 0, '[]', false, '', '', '', NULL`,
+		   'sub-01', 'ses-1', 'store', '', now(), now(), now(), NULL, 0, '[]', false, '', '', '', NULL, ''`,
 		`INSERT INTO quarantine SELECT 'q' || i, CASE WHEN i % 3 = 0 THEN 'not_dicom' ELSE 'different_file' END, '{}',
 		   CASE WHEN i % 10000 = 0 THEN 'held' ELSE 'released' END, CASE WHEN i % 100 = 0 THEN 'other' ELSE 'busy' END, 'rc' || i,
 		   '', '', '', 10, NULL, NULL, '', '2.25.3.' || i, '2.25.1.' || (i / 4), '', '', 'quarantine/q' || i, i % 10000 = 0,
 		   timestamptz 'epoch' + i * interval '1 second', CASE WHEN i % 10000 = 0 THEN NULL ELSE now() END,
-		   CASE WHEN i % 10000 = 0 THEN '' ELSE 'as_is' END, '', '', '', '', '', false
+		   CASE WHEN i % 10000 = 0 THEN '' ELSE 'as_is' END, '', '', '', '', '', false, ''
 		 FROM generate_series(1, 1000000) i`,
 		`INSERT INTO subjects (label, folded, created) SELECT 'sub-' || n, 'sub-' || n, now() FROM generate_series(1, 1000) n`,
 		`INSERT INTO sessions (study_uid, subject_id, label, folded, storage, created)

@@ -47,6 +47,14 @@ func runSending(t *testing.T, open OpenEvents) {
 		{"Forward", testForward},
 		{"ForwardNothingArchived", testForwardNothingArchived},
 		{"SenderRemovedWhileForwarding", testSenderRemovedWhileForwarding},
+		{"Routing", testRouting},
+		{"RoutingNamesWhatExists", testRoutingNamesWhatExists},
+		{"ForwardByRoute", testForwardByRoute},
+		{"ReleaseNamesStorage", testReleaseNamesStorage},
+		{"SessionKeepsRoute", testSessionKeepsRoute},
+		{"RetryKeepsRoute", testRetryKeepsRoute},
+		{"ForwardAfterReceiverRemoved", testForwardAfterReceiverRemoved},
+		{"ReleasedStorageKept", testReleasedStorageKept},
 		{"JobUnitsAtOnce", testJobUnitsAtOnce},
 		{"CancelRacesUnit", testCancelRacesUnit},
 		{"CrashResumes", testCrashResumes},
@@ -114,6 +122,13 @@ type archived struct {
 // s is uidOf(3, base+1000*s+n), so base keeps two calls apart.
 func (e *senv) archive(receiver string, study, scans, per, base int, when time.Time, session string) archived {
 	e.Helper()
+	return e.archiveRouted(receiver, study, scans, per, base, when, session, tenant.ReceptionRoute{})
+}
+
+// archiveRouted is archive with what the routing chose kept with the
+// identify step.
+func (e *senv) archiveRouted(receiver string, study, scans, per, base int, when time.Time, session string, route tenant.ReceptionRoute) archived {
+	e.Helper()
 	r, _, err := e.p.OpenReception(e.ctx, receiver, uidOf(1, study), e.id("rc"), when)
 	e.ok("OpenReception", err)
 	var files []tenant.ReceivedFile
@@ -133,7 +148,7 @@ func (e *senv) archive(receiver string, study, scans, per, base int, when time.T
 		e.Helper()
 		st := tenant.ReceptionStep{ID: r.ID, From: from, Event: ev, At: r.StepTime.Add(time.Minute)}
 		if ev == reception.Identify {
-			st.SubjectLabel, st.SessionLabel, st.Storage = "sub-01", session, "store"
+			st.SubjectLabel, st.SessionLabel, st.Storage, st.Route = "sub-01", session, "store", route
 		}
 		r, err = e.p.StepReception(e.ctx, st, nil)
 		e.ok("StepReception "+string(ev), err)

@@ -76,12 +76,12 @@ func TestScaleListFilters(t *testing.T) {
 		 INSERT INTO receptions SELECT 'rc' || i, CASE WHEN i % 100 = 0 THEN 'other' ELSE 'busy' END, '2.25.1.' || (i / 4), i % 4 + 1,
 		   CASE WHEN i % 100000 = 0 THEN 'receiving' WHEN i % 50000 = 1 THEN 'failed' WHEN i % 70000 = 2 THEN 'quarantined' ELSE 'done' END,
 		   CASE WHEN i % 100000 = 0 THEN 0 ELSE 1 END,
-		   0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', i * 1000000, i * 1000000, i * 1000000, NULL, 0, '[]', 0, '', '', '', NULL FROM n`,
+		   0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', i * 1000000, i * 1000000, i * 1000000, NULL, 0, '[]', 0, '', '', '', NULL, '' FROM n`,
 		`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000000)
 		 INSERT INTO quarantine SELECT 'q' || i, CASE WHEN i % 3 = 0 THEN 'not_dicom' ELSE 'different_file' END, '{}',
 		   CASE WHEN i % 10000 = 0 THEN 'held' ELSE 'released' END, CASE WHEN i % 100 = 0 THEN 'other' ELSE 'busy' END, 'rc' || i,
 		   '', '', '', 10, NULL, NULL, '', '2.25.3.' || i, '2.25.1.' || (i / 4), '', '', '', 0, i * 1000000, NULL,
-		   '', '', '', '', '', '', 0 FROM n`,
+		   '', '', '', '', '', '', 0, '' FROM n`,
 		`ANALYZE`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {

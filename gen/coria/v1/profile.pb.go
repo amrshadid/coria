@@ -26,6 +26,60 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// UnsearchedSegments is what happens to an image whose compressed pixel
+// data may carry text in segments that are not searched.
+type UnsearchedSegments int32
+
+const (
+	// Taken from the bases; hold when none says.
+	UnsearchedSegments_UNSEARCHED_SEGMENTS_UNSPECIFIED UnsearchedSegments = 0
+	// The image is held: deid_failed, cause "pixel_text_unsearched".
+	UnsearchedSegments_UNSEARCHED_SEGMENTS_HOLD UnsearchedSegments = 1
+	// The image is archived with its segments as received.
+	UnsearchedSegments_UNSEARCHED_SEGMENTS_KEEP UnsearchedSegments = 2
+)
+
+// Enum value maps for UnsearchedSegments.
+var (
+	UnsearchedSegments_name = map[int32]string{
+		0: "UNSEARCHED_SEGMENTS_UNSPECIFIED",
+		1: "UNSEARCHED_SEGMENTS_HOLD",
+		2: "UNSEARCHED_SEGMENTS_KEEP",
+	}
+	UnsearchedSegments_value = map[string]int32{
+		"UNSEARCHED_SEGMENTS_UNSPECIFIED": 0,
+		"UNSEARCHED_SEGMENTS_HOLD":        1,
+		"UNSEARCHED_SEGMENTS_KEEP":        2,
+	}
+)
+
+func (x UnsearchedSegments) Enum() *UnsearchedSegments {
+	p := new(UnsearchedSegments)
+	*p = x
+	return p
+}
+
+func (x UnsearchedSegments) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UnsearchedSegments) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_profile_proto_enumTypes[0].Descriptor()
+}
+
+func (UnsearchedSegments) Type() protoreflect.EnumType {
+	return &file_coria_v1_profile_proto_enumTypes[0]
+}
+
+func (x UnsearchedSegments) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UnsearchedSegments.Descriptor instead.
+func (UnsearchedSegments) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{0}
+}
+
 // UnnamedElements is what happens to an element no rule decides.
 type UnnamedElements int32
 
@@ -63,11 +117,11 @@ func (x UnnamedElements) String() string {
 }
 
 func (UnnamedElements) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_profile_proto_enumTypes[0].Descriptor()
+	return file_coria_v1_profile_proto_enumTypes[1].Descriptor()
 }
 
 func (UnnamedElements) Type() protoreflect.EnumType {
-	return &file_coria_v1_profile_proto_enumTypes[0]
+	return &file_coria_v1_profile_proto_enumTypes[1]
 }
 
 func (x UnnamedElements) Number() protoreflect.EnumNumber {
@@ -76,7 +130,7 @@ func (x UnnamedElements) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use UnnamedElements.Descriptor instead.
 func (UnnamedElements) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{0}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{1}
 }
 
 // ConditionSubject is what a condition reads. The list is closed on
@@ -145,11 +199,11 @@ func (x ConditionSubject) String() string {
 }
 
 func (ConditionSubject) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_profile_proto_enumTypes[1].Descriptor()
+	return file_coria_v1_profile_proto_enumTypes[2].Descriptor()
 }
 
 func (ConditionSubject) Type() protoreflect.EnumType {
-	return &file_coria_v1_profile_proto_enumTypes[1]
+	return &file_coria_v1_profile_proto_enumTypes[2]
 }
 
 func (x ConditionSubject) Number() protoreflect.EnumNumber {
@@ -158,7 +212,7 @@ func (x ConditionSubject) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConditionSubject.Descriptor instead.
 func (ConditionSubject) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{1}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{2}
 }
 
 // LookupMissing is what a lookup does when its table has no code for a
@@ -199,11 +253,11 @@ func (x LookupMissing) String() string {
 }
 
 func (LookupMissing) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_profile_proto_enumTypes[2].Descriptor()
+	return file_coria_v1_profile_proto_enumTypes[3].Descriptor()
 }
 
 func (LookupMissing) Type() protoreflect.EnumType {
-	return &file_coria_v1_profile_proto_enumTypes[2]
+	return &file_coria_v1_profile_proto_enumTypes[3]
 }
 
 func (x LookupMissing) Number() protoreflect.EnumNumber {
@@ -212,7 +266,7 @@ func (x LookupMissing) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LookupMissing.Descriptor instead.
 func (LookupMissing) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{2}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{3}
 }
 
 // RequiredFallback is what remove_unless_required does to an element its
@@ -260,11 +314,11 @@ func (x RequiredFallback) String() string {
 }
 
 func (RequiredFallback) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_profile_proto_enumTypes[3].Descriptor()
+	return file_coria_v1_profile_proto_enumTypes[4].Descriptor()
 }
 
 func (RequiredFallback) Type() protoreflect.EnumType {
-	return &file_coria_v1_profile_proto_enumTypes[3]
+	return &file_coria_v1_profile_proto_enumTypes[4]
 }
 
 func (x RequiredFallback) Number() protoreflect.EnumNumber {
@@ -273,7 +327,7 @@ func (x RequiredFallback) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RequiredFallback.Descriptor instead.
 func (RequiredFallback) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{3}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{4}
 }
 
 // ProfileView is how much of a version an answer carries. A version's
@@ -317,11 +371,11 @@ func (x ProfileView) String() string {
 }
 
 func (ProfileView) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_profile_proto_enumTypes[4].Descriptor()
+	return file_coria_v1_profile_proto_enumTypes[5].Descriptor()
 }
 
 func (ProfileView) Type() protoreflect.EnumType {
-	return &file_coria_v1_profile_proto_enumTypes[4]
+	return &file_coria_v1_profile_proto_enumTypes[5]
 }
 
 func (x ProfileView) Number() protoreflect.EnumNumber {
@@ -330,7 +384,7 @@ func (x ProfileView) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProfileView.Descriptor instead.
 func (ProfileView) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{4}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{5}
 }
 
 // TrialVerdict is what a receiver would do with a file.
@@ -376,11 +430,11 @@ func (x TrialVerdict) String() string {
 }
 
 func (TrialVerdict) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_profile_proto_enumTypes[5].Descriptor()
+	return file_coria_v1_profile_proto_enumTypes[6].Descriptor()
 }
 
 func (TrialVerdict) Type() protoreflect.EnumType {
-	return &file_coria_v1_profile_proto_enumTypes[5]
+	return &file_coria_v1_profile_proto_enumTypes[6]
 }
 
 func (x TrialVerdict) Number() protoreflect.EnumNumber {
@@ -389,7 +443,7 @@ func (x TrialVerdict) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TrialVerdict.Descriptor instead.
 func (TrialVerdict) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{5}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{6}
 }
 
 // ProfileChange is how a rule differs between two versions.
@@ -438,11 +492,11 @@ func (x ProfileChange) String() string {
 }
 
 func (ProfileChange) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_profile_proto_enumTypes[6].Descriptor()
+	return file_coria_v1_profile_proto_enumTypes[7].Descriptor()
 }
 
 func (ProfileChange) Type() protoreflect.EnumType {
-	return &file_coria_v1_profile_proto_enumTypes[6]
+	return &file_coria_v1_profile_proto_enumTypes[7]
 }
 
 func (x ProfileChange) Number() protoreflect.EnumNumber {
@@ -451,7 +505,7 @@ func (x ProfileChange) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProfileChange.Descriptor instead.
 func (ProfileChange) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{6}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{7}
 }
 
 // ProfileDocument is a de-identification profile as a person writes it: its
@@ -494,10 +548,14 @@ func (ProfileChange) EnumDescriptor() ([]byte, []int) {
 // Original Attributes Sequence (0400,0561), the Encrypted Attributes
 // Sequence (0400,0500) and the MAC Parameters Sequence (4FFE,0001), since
 // they hold values as received or cannot hold over a changed data set
-// (PS3.15 E.1.1); and every element of group 7FE0 but those kept. Kept,
-// changed only by pixel rules: Pixel Data (7FE0,0010), Float and Double
-// Float Pixel Data (7FE0,0008), (7FE0,0009), the Extended Offset Table
-// (7FE0,0001) and its lengths (7FE0,0002). Written: Specific Character Set
+// (PS3.15 E.1.1); the Icon Image Sequence (0088,0200), a thumbnail no
+// pixel rule fills; and every element of group 7FE0 but those kept. Kept
+// at the top level, changed only by pixel rules: Pixel Data (7FE0,0010),
+// Float and Double Float Pixel Data (7FE0,0008), (7FE0,0009), the Extended
+// Offset Table (7FE0,0001) and its lengths (7FE0,0002); inside a sequence
+// item they are removed, being an image no pixel rule fills. An image
+// with only Float or Double Float Pixel Data is not judged by the
+// burned-in gate. Written: Specific Character Set
 // (0008,0005), removed at every depth and written once for the text the
 // file holds after every rule has acted (ISO_IR 192 when any is outside the
 // default repertoire, PS3.5 6.1.2.3).
@@ -526,9 +584,23 @@ type ProfileDocument struct {
 	// What the profile is for, in a person's words. At most 4096 bytes. It
 	// does not change what the profile does, and is not part of the expanded
 	// form.
-	Description   string `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Description string `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	// What happens to an image whose pixel data stays compressed in a
+	// transfer syntax whose comment and application segments are not
+	// searched (JPEG 2000 and the others that are neither the JPEG family
+	// nor RLE): text there travels with the file, unseen by the check
+	// after. Unspecified takes it from the last base that says, and holds
+	// such an image when none does. The comment and application segments of
+	// the JPEG family (Baseline, Extended, Lossless, JPEG-LS) are always
+	// removed, the image data copied byte for byte (PS3.5 A.4); a frame then
+	// holding any segment beyond those a decoder needs at their defined
+	// length (JFIF without a thumbnail, Adobe's 12 bytes, the JPEG-LS color
+	// transform, table and header segments at the length their contents
+	// need) is held as pixel_text_unsearched. An image a pixel rule fills is
+	// written native and has no segments.
+	UnsearchedSegments UnsearchedSegments `protobuf:"varint,7,opt,name=unsearched_segments,json=unsearchedSegments,proto3,enum=coria.v1.UnsearchedSegments" json:"unsearched_segments,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ProfileDocument) Reset() {
@@ -601,6 +673,13 @@ func (x *ProfileDocument) GetDescription() string {
 		return x.Description
 	}
 	return ""
+}
+
+func (x *ProfileDocument) GetUnsearchedSegments() UnsearchedSegments {
+	if x != nil {
+		return x.UnsearchedSegments
+	}
+	return UnsearchedSegments_UNSEARCHED_SEGMENTS_UNSPECIFIED
 }
 
 // ProfileRule is one rule: what it selects, when it applies, and what it
@@ -2332,11 +2411,28 @@ func (x *RemoveUnlessRequiredAction) GetFallback() RequiredFallback {
 	return RequiredFallback_REQUIRED_FALLBACK_UNSPECIFIED
 }
 
-// PixelRule says what happens to an image whose pixels may carry burned-in
-// text: one whose Burned In Annotation (0028,0301) is YES, or absent on a
-// kind of image commonly drawn on. Such an image no pixel rule covers is
-// quarantined. Of the pixel rules that match an image, the last in the
-// expanded order decides.
+// PixelRule says what happens to the pixels of an image it matches: any
+// image with Pixel Data (7FE0,0010) whose size and conditions it matches,
+// so a rule also reaches a device known to draw text while writing Burned
+// In Annotation (0028,0301) NO. An image whose pixels may carry burned-in
+// text that no pixel rule matches is quarantined, burned_in_risk: its
+// Burned In Annotation is YES; or it is not NO and the image is a
+// secondary capture, of a SOP class commonly drawn on (ultrasound, the
+// visible light family of endoscopy, microscopy and photography, still
+// and video, ophthalmic photography and tomography) or of a modality
+// commonly drawn on (US, IVUS, ES, GM, XC, SC, OT, XA, RF, OP, SM, PX,
+// IO); or it is a whole slide's label or overview image (Image Type LABEL
+// or OVERVIEW), whatever Burned In Annotation says. DX and CR are not at
+// risk by kind: a radiograph's markers are rarely the person. The facts are
+// read from the image as received, so no rule of the profile changes
+// whether it is at risk. Of the pixel rules that match an image, the last
+// in the expanded order decides.
+//
+// Work on pixels is bounded by the setting deid.pixel-limit, the bytes of
+// the image decoded: an image a redact or detect rule matches, or whose
+// JPEG segments are removed, past it is held (deid_failed, cause
+// "pixels_too_large"), its bytes kept, and released once the setting is
+// raised.
 type PixelRule struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The rule's name, under the rule of ProfileRule.name; unique among the
@@ -2467,13 +2563,34 @@ type isPixelRule_Action interface {
 }
 
 type PixelRule_Redact struct {
-	// Rectangles of the image are filled, in every frame.
+	// Rectangles of the image are filled with black (the lowest sample,
+	// the highest under MONOCHROME1), in every frame, decoded a frame at a
+	// time. A compressed image is written native (Explicit VR Little
+	// Endian), so nothing is encoded again; Lossy Image Compression
+	// (0028,2110) stays as received, and is written 01 with its method
+	// when the image was JPEG Baseline or Extended and did not say
+	// (PS3.3 C.7.6.1.1.5). Burned In Annotation (0028,0301) is written NO
+	// and the Clean Pixel Data Option's code (113101) recorded in
+	// De-identification Method Code Sequence (0012,0064) (PS3.15 E.3.1).
+	// Not recorded while the file holds Float or Double Float Pixel Data
+	// beside the image filled. A rectangle wholly outside the image holds
+	// it (deid_failed, cause "pixel_region_outside"), and so does an image
+	// whose layout cannot be filled ("pixels_unsupported"), whose frames
+	// do not decode ("pixels_undecodable"), or whose native pixels hold
+	// more bytes than its stated frames ("frames_mismatch").
 	Redact *RedactPixels `protobuf:"bytes,5,opt,name=redact,proto3,oneof"`
 }
 
 type PixelRule_Detect struct {
-	// Text found in the pixels by detection is filled, and the file records
-	// that redaction was automatic and unverified.
+	// Text found in the pixels by the DICOM library's detector is filled,
+	// as redact fills, and De-identification Method (0012,0063) records
+	// "Burned-in text redacted where detected, unverified"; Burned In
+	// Annotation is left as received and no code is recorded, since a
+	// detector can miss. Opt-in, and costly: every frame is decoded and
+	// searched at several scales. Found regions covering more of the
+	// picture than text does hold the image ("detect_implausible"). A
+	// detector that finds nothing changes nothing and records "Burned-in
+	// text detector found none, unverified".
 	Detect *DetectText `protobuf:"bytes,6,opt,name=detect,proto3,oneof"`
 }
 
@@ -2730,8 +2847,13 @@ type ExpandedProfile struct {
 	// version never changes what it does when the language grows. This
 	// edition is 1.
 	LanguageEdition int32 `protobuf:"varint,6,opt,name=language_edition,json=languageEdition,proto3" json:"language_edition,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// What happens to an image whose compressed pixel data has segments
+	// that are not searched: keep, or unspecified, which holds such an
+	// image. Hold is written as unspecified, so a document that says hold
+	// and one that says nothing have one expanded form and one checksum.
+	UnsearchedSegments UnsearchedSegments `protobuf:"varint,7,opt,name=unsearched_segments,json=unsearchedSegments,proto3,enum=coria.v1.UnsearchedSegments" json:"unsearched_segments,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ExpandedProfile) Reset() {
@@ -2804,6 +2926,13 @@ func (x *ExpandedProfile) GetLanguageEdition() int32 {
 		return x.LanguageEdition
 	}
 	return 0
+}
+
+func (x *ExpandedProfile) GetUnsearchedSegments() UnsearchedSegments {
+	if x != nil {
+		return x.UnsearchedSegments
+	}
+	return UnsearchedSegments_UNSEARCHED_SEGMENTS_UNSPECIFIED
 }
 
 // ExpandedRule is a rule of an expanded profile, where it came from, and
@@ -4566,15 +4695,17 @@ type TrialResult struct {
 	Verdict TrialVerdict `protobuf:"varint,3,opt,name=verdict,proto3,enum=coria.v1.TrialVerdict" json:"verdict,omitempty"`
 	// For a held file, the quarantine reason it would be held with, as
 	// Quarantine's reasons are written: "deid_failed", "residual_value",
-	// "profile_refused", and with a receiver "not_dicom",
-	// "header_too_large", "bad_uid", "sop_class_not_accepted" and
-	// "bad_label".
+	// "profile_refused", "burned_in_risk", and with a receiver "not_dicom",
+	// "header_too_large", "bad_uid", "sop_class_not_accepted", "bad_label"
+	// and "unrouted".
 	Reason string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
 	// For a held file, the fixed cause: the engine's (such as "bad_value",
 	// "lookup_missing", "too_large", "no_subject", "uid_not_remapped",
 	// "unreadable", "after_unreadable": the file the check passed could not
-	// be read back to answer its values) or the check's
-	// ("check_unreadable", "check_too_large"), for residual_value the kind
+	// be read back to answer its values, "pixels_too_large" and the other
+	// causes of the work on pixels), for burned_in_risk why the image is at
+	// risk ("burned_in_annotation", "secondary_capture", "modality"), the
+	// check's ("check_unreadable", "check_too_large"), for residual_value the kind
 	// of value found ("name", "identifier", "date", "uid"), for bad_uid and
 	// bad_label the fault ("missing", "empty", "bad_uid", ...), and
 	// "lookup_table" for an undecided verdict. Never a value.
@@ -4604,8 +4735,22 @@ type TrialResult struct {
 	// True when no receiver's checks ran: the verdict is
 	// de-identification's alone.
 	DeidentificationOnly bool `protobuf:"varint,14,opt,name=deidentification_only,json=deidentificationOnly,proto3" json:"deidentification_only,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// What was done, or would be, to the file's pixels; absent when the
+	// file has no Pixel Data or was held before the pixels were judged.
+	Pixels *TrialPixels `protobuf:"bytes,15,opt,name=pixels,proto3" json:"pixels,omitempty"`
+	// With a receiver that routes (Receiver.routing), the route its routing
+	// would choose for the file, tried as the first file of a new session;
+	// empty when none would, or with no receiver. A file the routing would
+	// not route is held, reason "unrouted", cause "no_match" or
+	// "route_unusable".
+	Route string `protobuf:"bytes,16,opt,name=route,proto3" json:"route,omitempty"`
+	// The profile version the file was tried with when the route chosen
+	// names one other than the profile tried: the receiver would
+	// de-identify the file with it, so the trial does too. Absent when the
+	// profile tried was used.
+	RoutedProfile *ProfileVersionName `protobuf:"bytes,17,opt,name=routed_profile,json=routedProfile,proto3" json:"routed_profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TrialResult) Reset() {
@@ -4736,6 +4881,162 @@ func (x *TrialResult) GetDeidentificationOnly() bool {
 	return false
 }
 
+func (x *TrialResult) GetPixels() *TrialPixels {
+	if x != nil {
+		return x.Pixels
+	}
+	return nil
+}
+
+func (x *TrialResult) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
+}
+
+func (x *TrialResult) GetRoutedProfile() *ProfileVersionName {
+	if x != nil {
+		return x.RoutedProfile
+	}
+	return nil
+}
+
+// TrialPixels is the work on one file's pixels: where it was decided, what
+// was filled and how much, never a value of the file.
+type TrialPixels struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whether the image may carry burned-in text, as its header says.
+	AtRisk bool `protobuf:"varint,1,opt,name=at_risk,json=atRisk,proto3" json:"at_risk,omitempty"`
+	// Why it may: "burned_in_annotation" (Burned In Annotation (0028,0301)
+	// is YES), "secondary_capture", "sop_class", "modality" or
+	// "slide_label"; empty when not at risk.
+	RiskCause string `protobuf:"bytes,2,opt,name=risk_cause,json=riskCause,proto3" json:"risk_cause,omitempty"`
+	// The pixel rule that decided, by name; empty when none matched.
+	Rule string `protobuf:"bytes,3,opt,name=rule,proto3" json:"rule,omitempty"`
+	// The base the rule came from; empty for the profile's own rule.
+	Origin string `protobuf:"bytes,4,opt,name=origin,proto3" json:"origin,omitempty"`
+	// What the rule does: "redact", "detect" or "accept"; empty when none
+	// matched.
+	Action string `protobuf:"bytes,5,opt,name=action,proto3" json:"action,omitempty"`
+	// The rectangles filled in every frame, in the image's own pixels from
+	// its top left corner, a rule's measured from the edges it names; for
+	// detect, those the detector found.
+	Regions []*PixelRectangle `protobuf:"bytes,6,rep,name=regions,proto3" json:"regions,omitempty"`
+	// The image's frames.
+	Frames int32 `protobuf:"varint,7,opt,name=frames,proto3" json:"frames,omitempty"`
+	// The bytes of the image decoded, which deid.pixel-limit bounds.
+	DecodedBytes int64 `protobuf:"varint,8,opt,name=decoded_bytes,json=decodedBytes,proto3" json:"decoded_bytes,omitempty"`
+	// Whether compressed pixels are written native, decoded.
+	Decoded bool `protobuf:"varint,9,opt,name=decoded,proto3" json:"decoded,omitempty"`
+	// The JPEG comment and application segments removed, by marker name
+	// ("COM", "APP1", ..., "trailing data"), each with the frame it was in
+	// counted once per name; what they held is never answered.
+	SegmentsRemoved []string `protobuf:"bytes,10,rep,name=segments_removed,json=segmentsRemoved,proto3" json:"segments_removed,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *TrialPixels) Reset() {
+	*x = TrialPixels{}
+	mi := &file_coria_v1_profile_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrialPixels) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrialPixels) ProtoMessage() {}
+
+func (x *TrialPixels) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrialPixels.ProtoReflect.Descriptor instead.
+func (*TrialPixels) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *TrialPixels) GetAtRisk() bool {
+	if x != nil {
+		return x.AtRisk
+	}
+	return false
+}
+
+func (x *TrialPixels) GetRiskCause() string {
+	if x != nil {
+		return x.RiskCause
+	}
+	return ""
+}
+
+func (x *TrialPixels) GetRule() string {
+	if x != nil {
+		return x.Rule
+	}
+	return ""
+}
+
+func (x *TrialPixels) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *TrialPixels) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *TrialPixels) GetRegions() []*PixelRectangle {
+	if x != nil {
+		return x.Regions
+	}
+	return nil
+}
+
+func (x *TrialPixels) GetFrames() int32 {
+	if x != nil {
+		return x.Frames
+	}
+	return 0
+}
+
+func (x *TrialPixels) GetDecodedBytes() int64 {
+	if x != nil {
+		return x.DecodedBytes
+	}
+	return 0
+}
+
+func (x *TrialPixels) GetDecoded() bool {
+	if x != nil {
+		return x.Decoded
+	}
+	return false
+}
+
+func (x *TrialPixels) GetSegmentsRemoved() []string {
+	if x != nil {
+		return x.SegmentsRemoved
+	}
+	return nil
+}
+
 // TrialElement is what happened to one element of a tried file, and why.
 type TrialElement struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -4782,7 +5083,7 @@ type TrialElement struct {
 
 func (x *TrialElement) Reset() {
 	*x = TrialElement{}
-	mi := &file_coria_v1_profile_proto_msgTypes[53]
+	mi := &file_coria_v1_profile_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4794,7 +5095,7 @@ func (x *TrialElement) String() string {
 func (*TrialElement) ProtoMessage() {}
 
 func (x *TrialElement) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[53]
+	mi := &file_coria_v1_profile_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4807,7 +5108,7 @@ func (x *TrialElement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrialElement.ProtoReflect.Descriptor instead.
 func (*TrialElement) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{53}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *TrialElement) GetPath() string {
@@ -4918,7 +5219,7 @@ type TrialSummary struct {
 
 func (x *TrialSummary) Reset() {
 	*x = TrialSummary{}
-	mi := &file_coria_v1_profile_proto_msgTypes[54]
+	mi := &file_coria_v1_profile_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4930,7 +5231,7 @@ func (x *TrialSummary) String() string {
 func (*TrialSummary) ProtoMessage() {}
 
 func (x *TrialSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[54]
+	mi := &file_coria_v1_profile_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4943,7 +5244,7 @@ func (x *TrialSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrialSummary.ProtoReflect.Descriptor instead.
 func (*TrialSummary) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{54}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *TrialSummary) GetFiles() int32 {
@@ -5001,7 +5302,7 @@ type TrialCount struct {
 
 func (x *TrialCount) Reset() {
 	*x = TrialCount{}
-	mi := &file_coria_v1_profile_proto_msgTypes[55]
+	mi := &file_coria_v1_profile_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5013,7 +5314,7 @@ func (x *TrialCount) String() string {
 func (*TrialCount) ProtoMessage() {}
 
 func (x *TrialCount) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[55]
+	mi := &file_coria_v1_profile_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5026,7 +5327,7 @@ func (x *TrialCount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrialCount.ProtoReflect.Descriptor instead.
 func (*TrialCount) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{55}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *TrialCount) GetKey() string {
@@ -5062,7 +5363,7 @@ type ExplainProfileRequest struct {
 
 func (x *ExplainProfileRequest) Reset() {
 	*x = ExplainProfileRequest{}
-	mi := &file_coria_v1_profile_proto_msgTypes[56]
+	mi := &file_coria_v1_profile_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5074,7 +5375,7 @@ func (x *ExplainProfileRequest) String() string {
 func (*ExplainProfileRequest) ProtoMessage() {}
 
 func (x *ExplainProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[56]
+	mi := &file_coria_v1_profile_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5087,7 +5388,7 @@ func (x *ExplainProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainProfileRequest.ProtoReflect.Descriptor instead.
 func (*ExplainProfileRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{56}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ExplainProfileRequest) GetTenant() string {
@@ -5149,7 +5450,7 @@ type ExplainProfileResponse struct {
 
 func (x *ExplainProfileResponse) Reset() {
 	*x = ExplainProfileResponse{}
-	mi := &file_coria_v1_profile_proto_msgTypes[57]
+	mi := &file_coria_v1_profile_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5161,7 +5462,7 @@ func (x *ExplainProfileResponse) String() string {
 func (*ExplainProfileResponse) ProtoMessage() {}
 
 func (x *ExplainProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[57]
+	mi := &file_coria_v1_profile_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5174,7 +5475,7 @@ func (x *ExplainProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainProfileResponse.ProtoReflect.Descriptor instead.
 func (*ExplainProfileResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{57}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *ExplainProfileResponse) GetVersion() *ProfileVersion {
@@ -5256,7 +5557,7 @@ type ExplainedElement struct {
 
 func (x *ExplainedElement) Reset() {
 	*x = ExplainedElement{}
-	mi := &file_coria_v1_profile_proto_msgTypes[58]
+	mi := &file_coria_v1_profile_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5268,7 +5569,7 @@ func (x *ExplainedElement) String() string {
 func (*ExplainedElement) ProtoMessage() {}
 
 func (x *ExplainedElement) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[58]
+	mi := &file_coria_v1_profile_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5281,7 +5582,7 @@ func (x *ExplainedElement) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainedElement.ProtoReflect.Descriptor instead.
 func (*ExplainedElement) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{58}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ExplainedElement) GetPath() string {
@@ -5384,7 +5685,7 @@ type ExplainedCandidate struct {
 
 func (x *ExplainedCandidate) Reset() {
 	*x = ExplainedCandidate{}
-	mi := &file_coria_v1_profile_proto_msgTypes[59]
+	mi := &file_coria_v1_profile_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5396,7 +5697,7 @@ func (x *ExplainedCandidate) String() string {
 func (*ExplainedCandidate) ProtoMessage() {}
 
 func (x *ExplainedCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[59]
+	mi := &file_coria_v1_profile_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5409,7 +5710,7 @@ func (x *ExplainedCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainedCandidate.ProtoReflect.Descriptor instead.
 func (*ExplainedCandidate) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{59}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *ExplainedCandidate) GetRule() int32 {
@@ -5467,7 +5768,7 @@ type DiffProfileVersionsRequest struct {
 
 func (x *DiffProfileVersionsRequest) Reset() {
 	*x = DiffProfileVersionsRequest{}
-	mi := &file_coria_v1_profile_proto_msgTypes[60]
+	mi := &file_coria_v1_profile_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5479,7 +5780,7 @@ func (x *DiffProfileVersionsRequest) String() string {
 func (*DiffProfileVersionsRequest) ProtoMessage() {}
 
 func (x *DiffProfileVersionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[60]
+	mi := &file_coria_v1_profile_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5492,7 +5793,7 @@ func (x *DiffProfileVersionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiffProfileVersionsRequest.ProtoReflect.Descriptor instead.
 func (*DiffProfileVersionsRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{60}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *DiffProfileVersionsRequest) GetTenant() string {
@@ -5573,13 +5874,19 @@ type DiffProfileVersionsResponse struct {
 	// defaults, shows why: the expanded forms differ in what this
 	// comparison does not itemize (TryProfile over files shows the effect).
 	UnlistedChange bool `protobuf:"varint,16,opt,name=unlisted_change,json=unlistedChange,proto3" json:"unlisted_change,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// What each version does with an image whose compressed pixel data has
+	// segments that are not searched, as its expanded form says it:
+	// unspecified holds.
+	UnsearchedSegmentsFrom UnsearchedSegments `protobuf:"varint,17,opt,name=unsearched_segments_from,json=unsearchedSegmentsFrom,proto3,enum=coria.v1.UnsearchedSegments" json:"unsearched_segments_from,omitempty"`
+	// See unsearched_segments_from.
+	UnsearchedSegmentsTo UnsearchedSegments `protobuf:"varint,18,opt,name=unsearched_segments_to,json=unsearchedSegmentsTo,proto3,enum=coria.v1.UnsearchedSegments" json:"unsearched_segments_to,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *DiffProfileVersionsResponse) Reset() {
 	*x = DiffProfileVersionsResponse{}
-	mi := &file_coria_v1_profile_proto_msgTypes[61]
+	mi := &file_coria_v1_profile_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5591,7 +5898,7 @@ func (x *DiffProfileVersionsResponse) String() string {
 func (*DiffProfileVersionsResponse) ProtoMessage() {}
 
 func (x *DiffProfileVersionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[61]
+	mi := &file_coria_v1_profile_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5604,7 +5911,7 @@ func (x *DiffProfileVersionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiffProfileVersionsResponse.ProtoReflect.Descriptor instead.
 func (*DiffProfileVersionsResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{61}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *DiffProfileVersionsResponse) GetFrom() *ProfileVersion {
@@ -5719,6 +6026,20 @@ func (x *DiffProfileVersionsResponse) GetUnlistedChange() bool {
 	return false
 }
 
+func (x *DiffProfileVersionsResponse) GetUnsearchedSegmentsFrom() UnsearchedSegments {
+	if x != nil {
+		return x.UnsearchedSegmentsFrom
+	}
+	return UnsearchedSegments_UNSEARCHED_SEGMENTS_UNSPECIFIED
+}
+
+func (x *DiffProfileVersionsResponse) GetUnsearchedSegmentsTo() UnsearchedSegments {
+	if x != nil {
+		return x.UnsearchedSegmentsTo
+	}
+	return UnsearchedSegments_UNSEARCHED_SEGMENTS_UNSPECIFIED
+}
+
 // ProfileRuleChange is one rule that differs.
 type ProfileRuleChange struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -5740,7 +6061,7 @@ type ProfileRuleChange struct {
 
 func (x *ProfileRuleChange) Reset() {
 	*x = ProfileRuleChange{}
-	mi := &file_coria_v1_profile_proto_msgTypes[62]
+	mi := &file_coria_v1_profile_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5752,7 +6073,7 @@ func (x *ProfileRuleChange) String() string {
 func (*ProfileRuleChange) ProtoMessage() {}
 
 func (x *ProfileRuleChange) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[62]
+	mi := &file_coria_v1_profile_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5765,7 +6086,7 @@ func (x *ProfileRuleChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileRuleChange.ProtoReflect.Descriptor instead.
 func (*ProfileRuleChange) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{62}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ProfileRuleChange) GetChange() ProfileChange {
@@ -5839,7 +6160,7 @@ type ProfileEffectChange struct {
 
 func (x *ProfileEffectChange) Reset() {
 	*x = ProfileEffectChange{}
-	mi := &file_coria_v1_profile_proto_msgTypes[63]
+	mi := &file_coria_v1_profile_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5851,7 +6172,7 @@ func (x *ProfileEffectChange) String() string {
 func (*ProfileEffectChange) ProtoMessage() {}
 
 func (x *ProfileEffectChange) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_profile_proto_msgTypes[63]
+	mi := &file_coria_v1_profile_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5864,7 +6185,7 @@ func (x *ProfileEffectChange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileEffectChange.ProtoReflect.Descriptor instead.
 func (*ProfileEffectChange) Descriptor() ([]byte, []int) {
-	return file_coria_v1_profile_proto_rawDescGZIP(), []int{63}
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ProfileEffectChange) GetSelector() *ProfileSelector {
@@ -5920,7 +6241,7 @@ var File_coria_v1_profile_proto protoreflect.FileDescriptor
 
 const file_coria_v1_profile_proto_rawDesc = "" +
 	"\n" +
-	"\x16coria/v1/profile.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x89\x02\n" +
+	"\x16coria/v1/profile.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd8\x02\n" +
 	"\x0fProfileDocument\x12\x14\n" +
 	"\x05bases\x18\x01 \x03(\tR\x05bases\x12+\n" +
 	"\x05rules\x18\x02 \x03(\v2\x15.coria.v1.ProfileRuleR\x05rules\x123\n" +
@@ -5928,7 +6249,8 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\x0fdate_shift_days\x18\x04 \x01(\x05R\rdateShiftDays\x124\n" +
 	"\vpixel_rules\x18\x05 \x03(\v2\x13.coria.v1.PixelRuleR\n" +
 	"pixelRules\x12 \n" +
-	"\vdescription\x18\x06 \x01(\tR\vdescription\"\xd1\x01\n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12M\n" +
+	"\x13unsearched_segments\x18\a \x01(\x0e2\x1c.coria.v1.UnsearchedSegmentsR\x12unsearchedSegments\"\xd1\x01\n" +
 	"\vProfileRule\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x125\n" +
 	"\bselector\x18\x02 \x01(\v2\x19.coria.v1.ProfileSelectorR\bselector\x12.\n" +
@@ -6034,7 +6356,7 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"fromBottom\"\f\n" +
 	"\n" +
 	"DetectText\"\x0e\n" +
-	"\fAcceptPixels\"\x9b\x02\n" +
+	"\fAcceptPixels\"\xea\x02\n" +
 	"\x0fExpandedProfile\x12,\n" +
 	"\x05rules\x18\x01 \x03(\v2\x16.coria.v1.ExpandedRuleR\x05rules\x123\n" +
 	"\aunnamed\x18\x02 \x01(\x0e2\x19.coria.v1.UnnamedElementsR\aunnamed\x12&\n" +
@@ -6042,7 +6364,8 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\vpixel_rules\x18\x04 \x03(\v2\x1b.coria.v1.ExpandedPixelRuleR\n" +
 	"pixelRules\x12\x14\n" +
 	"\x05bases\x18\x05 \x03(\tR\x05bases\x12)\n" +
-	"\x10language_edition\x18\x06 \x01(\x05R\x0flanguageEdition\"c\n" +
+	"\x10language_edition\x18\x06 \x01(\x05R\x0flanguageEdition\x12M\n" +
+	"\x13unsearched_segments\x18\a \x01(\x0e2\x1c.coria.v1.UnsearchedSegmentsR\x12unsearchedSegments\"c\n" +
 	"\fExpandedRule\x12)\n" +
 	"\x04rule\x18\x01 \x01(\v2\x15.coria.v1.ProfileRuleR\x04rule\x12\x16\n" +
 	"\x06origin\x18\x02 \x01(\tR\x06origin\x12\x10\n" +
@@ -6154,7 +6477,7 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\bchecksum\x18\x02 \x01(\tR\bchecksum\x12+\n" +
 	"\x11reception_refusal\x18\x03 \x01(\tR\x10receptionRefusal\x12/\n" +
 	"\aresults\x18\x04 \x03(\v2\x15.coria.v1.TrialResultR\aresults\x120\n" +
-	"\asummary\x18\x05 \x01(\v2\x16.coria.v1.TrialSummaryR\asummary\"\x8a\x04\n" +
+	"\asummary\x18\x05 \x01(\v2\x16.coria.v1.TrialSummaryR\asummary\"\x94\x05\n" +
 	"\vTrialResult\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\x80\x01\x01R\x04name\x12+\n" +
 	"\x11quarantine_record\x18\x02 \x01(\tR\x10quarantineRecord\x120\n" +
@@ -6170,7 +6493,23 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\x0evalues_skipped\x18\v \x01(\x05R\rvaluesSkipped\x12-\n" +
 	"\x12lookups_unassigned\x18\f \x01(\x05R\x11lookupsUnassigned\x12\x1a\n" +
 	"\breceiver\x18\r \x01(\tR\breceiver\x123\n" +
-	"\x15deidentification_only\x18\x0e \x01(\bR\x14deidentificationOnly\"\xbc\x02\n" +
+	"\x15deidentification_only\x18\x0e \x01(\bR\x14deidentificationOnly\x12-\n" +
+	"\x06pixels\x18\x0f \x01(\v2\x15.coria.v1.TrialPixelsR\x06pixels\x12\x14\n" +
+	"\x05route\x18\x10 \x01(\tR\x05route\x12C\n" +
+	"\x0erouted_profile\x18\x11 \x01(\v2\x1c.coria.v1.ProfileVersionNameR\rroutedProfile\"\xbf\x02\n" +
+	"\vTrialPixels\x12\x17\n" +
+	"\aat_risk\x18\x01 \x01(\bR\x06atRisk\x12\x1d\n" +
+	"\n" +
+	"risk_cause\x18\x02 \x01(\tR\triskCause\x12\x12\n" +
+	"\x04rule\x18\x03 \x01(\tR\x04rule\x12\x16\n" +
+	"\x06origin\x18\x04 \x01(\tR\x06origin\x12\x16\n" +
+	"\x06action\x18\x05 \x01(\tR\x06action\x122\n" +
+	"\aregions\x18\x06 \x03(\v2\x18.coria.v1.PixelRectangleR\aregions\x12\x16\n" +
+	"\x06frames\x18\a \x01(\x05R\x06frames\x12#\n" +
+	"\rdecoded_bytes\x18\b \x01(\x03R\fdecodedBytes\x12\x18\n" +
+	"\adecoded\x18\t \x01(\bR\adecoded\x12)\n" +
+	"\x10segments_removed\x18\n" +
+	" \x03(\tR\x0fsegmentsRemoved\"\xbc\x02\n" +
 	"\fTrialElement\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
 	"\akeyword\x18\x02 \x01(\tR\akeyword\x12\x0e\n" +
@@ -6236,7 +6575,7 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\ffrom_version\x18\x03 \x01(\x05R\vfromVersion\x12\x1d\n" +
 	"\n" +
 	"to_version\x18\x04 \x01(\x05R\ttoVersion\x12\x17\n" +
-	"\ato_name\x18\x05 \x01(\tR\x06toName\"\xee\x05\n" +
+	"\ato_name\x18\x05 \x01(\tR\x06toName\"\x9a\a\n" +
 	"\x1bDiffProfileVersionsResponse\x12,\n" +
 	"\x04from\x18\x01 \x01(\v2\x18.coria.v1.ProfileVersionR\x04from\x12(\n" +
 	"\x02to\x18\x02 \x01(\v2\x18.coria.v1.ProfileVersionR\x02to\x12\x1f\n" +
@@ -6257,7 +6596,9 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\x0feffects_omitted\x18\r \x01(\x05R\x0eeffectsOmitted\x12.\n" +
 	"\x13pixel_rules_changed\x18\x0e \x01(\x05R\x11pixelRulesChanged\x12'\n" +
 	"\x0fbases_reordered\x18\x0f \x01(\bR\x0ebasesReordered\x12'\n" +
-	"\x0funlisted_change\x18\x10 \x01(\bR\x0eunlistedChange\"\xf4\x01\n" +
+	"\x0funlisted_change\x18\x10 \x01(\bR\x0eunlistedChange\x12V\n" +
+	"\x18unsearched_segments_from\x18\x11 \x01(\x0e2\x1c.coria.v1.UnsearchedSegmentsR\x16unsearchedSegmentsFrom\x12R\n" +
+	"\x16unsearched_segments_to\x18\x12 \x01(\x0e2\x1c.coria.v1.UnsearchedSegmentsR\x14unsearchedSegmentsTo\"\xf4\x01\n" +
 	"\x11ProfileRuleChange\x12/\n" +
 	"\x06change\x18\x01 \x01(\x0e2\x17.coria.v1.ProfileChangeR\x06change\x12\x16\n" +
 	"\x06origin\x18\x02 \x01(\tR\x06origin\x12#\n" +
@@ -6274,7 +6615,11 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\rfrom_position\x18\x05 \x01(\x05R\ffromPosition\x12\x1f\n" +
 	"\vto_position\x18\x06 \x01(\x05R\n" +
 	"toPosition\x12#\n" +
-	"\rorder_changed\x18\a \x01(\bR\forderChanged*k\n" +
+	"\rorder_changed\x18\a \x01(\bR\forderChanged*u\n" +
+	"\x12UnsearchedSegments\x12#\n" +
+	"\x1fUNSEARCHED_SEGMENTS_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18UNSEARCHED_SEGMENTS_HOLD\x10\x01\x12\x1c\n" +
+	"\x18UNSEARCHED_SEGMENTS_KEEP\x10\x02*k\n" +
 	"\x0fUnnamedElements\x12 \n" +
 	"\x1cUNNAMED_ELEMENTS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15UNNAMED_ELEMENTS_KEEP\x10\x01\x12\x1b\n" +
@@ -6338,192 +6683,201 @@ func file_coria_v1_profile_proto_rawDescGZIP() []byte {
 	return file_coria_v1_profile_proto_rawDescData
 }
 
-var file_coria_v1_profile_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_coria_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
+var file_coria_v1_profile_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
+var file_coria_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
 var file_coria_v1_profile_proto_goTypes = []any{
-	(UnnamedElements)(0),                 // 0: coria.v1.UnnamedElements
-	(ConditionSubject)(0),                // 1: coria.v1.ConditionSubject
-	(LookupMissing)(0),                   // 2: coria.v1.LookupMissing
-	(RequiredFallback)(0),                // 3: coria.v1.RequiredFallback
-	(ProfileView)(0),                     // 4: coria.v1.ProfileView
-	(TrialVerdict)(0),                    // 5: coria.v1.TrialVerdict
-	(ProfileChange)(0),                   // 6: coria.v1.ProfileChange
-	(*ProfileDocument)(nil),              // 7: coria.v1.ProfileDocument
-	(*ProfileRule)(nil),                  // 8: coria.v1.ProfileRule
-	(*ProfileSelector)(nil),              // 9: coria.v1.ProfileSelector
-	(*PrivateElement)(nil),               // 10: coria.v1.PrivateElement
-	(*ContentItemSelector)(nil),          // 11: coria.v1.ContentItemSelector
-	(*ProfileCondition)(nil),             // 12: coria.v1.ProfileCondition
-	(*ProfileAction)(nil),                // 13: coria.v1.ProfileAction
-	(*KeepAction)(nil),                   // 14: coria.v1.KeepAction
-	(*RemoveAction)(nil),                 // 15: coria.v1.RemoveAction
-	(*EmptyAction)(nil),                  // 16: coria.v1.EmptyAction
-	(*ReplaceAction)(nil),                // 17: coria.v1.ReplaceAction
-	(*SetAction)(nil),                    // 18: coria.v1.SetAction
-	(*HashAction)(nil),                   // 19: coria.v1.HashAction
-	(*UidAction)(nil),                    // 20: coria.v1.UidAction
-	(*ShiftAction)(nil),                  // 21: coria.v1.ShiftAction
-	(*GeneralizeAction)(nil),             // 22: coria.v1.GeneralizeAction
-	(*LookupAction)(nil),                 // 23: coria.v1.LookupAction
-	(*CleanAction)(nil),                  // 24: coria.v1.CleanAction
-	(*QuarantineAction)(nil),             // 25: coria.v1.QuarantineAction
-	(*DummyAction)(nil),                  // 26: coria.v1.DummyAction
-	(*RemoveUnlessRequiredAction)(nil),   // 27: coria.v1.RemoveUnlessRequiredAction
-	(*PixelRule)(nil),                    // 28: coria.v1.PixelRule
-	(*RedactPixels)(nil),                 // 29: coria.v1.RedactPixels
-	(*PixelRectangle)(nil),               // 30: coria.v1.PixelRectangle
-	(*DetectText)(nil),                   // 31: coria.v1.DetectText
-	(*AcceptPixels)(nil),                 // 32: coria.v1.AcceptPixels
-	(*ExpandedProfile)(nil),              // 33: coria.v1.ExpandedProfile
-	(*ExpandedRule)(nil),                 // 34: coria.v1.ExpandedRule
-	(*ExpandedPixelRule)(nil),            // 35: coria.v1.ExpandedPixelRule
-	(*ProfileVersion)(nil),               // 36: coria.v1.ProfileVersion
-	(*ProfileSummary)(nil),               // 37: coria.v1.ProfileSummary
-	(*ProfileProblem)(nil),               // 38: coria.v1.ProfileProblem
-	(*ProfileProblems)(nil),              // 39: coria.v1.ProfileProblems
-	(*ProfileBase)(nil),                  // 40: coria.v1.ProfileBase
-	(*CreateProfileVersionRequest)(nil),  // 41: coria.v1.CreateProfileVersionRequest
-	(*CreateProfileVersionResponse)(nil), // 42: coria.v1.CreateProfileVersionResponse
-	(*GetProfileVersionRequest)(nil),     // 43: coria.v1.GetProfileVersionRequest
-	(*GetProfileVersionResponse)(nil),    // 44: coria.v1.GetProfileVersionResponse
-	(*ListProfilesRequest)(nil),          // 45: coria.v1.ListProfilesRequest
-	(*ListProfilesResponse)(nil),         // 46: coria.v1.ListProfilesResponse
-	(*ListProfileVersionsRequest)(nil),   // 47: coria.v1.ListProfileVersionsRequest
-	(*ListProfileVersionsResponse)(nil),  // 48: coria.v1.ListProfileVersionsResponse
-	(*ValidateProfileRequest)(nil),       // 49: coria.v1.ValidateProfileRequest
-	(*ValidateProfileResponse)(nil),      // 50: coria.v1.ValidateProfileResponse
-	(*ListProfileBasesRequest)(nil),      // 51: coria.v1.ListProfileBasesRequest
-	(*ListProfileBasesResponse)(nil),     // 52: coria.v1.ListProfileBasesResponse
-	(*TrialProfile)(nil),                 // 53: coria.v1.TrialProfile
-	(*ProfileVersionName)(nil),           // 54: coria.v1.ProfileVersionName
-	(*TrialFile)(nil),                    // 55: coria.v1.TrialFile
-	(*TrialReception)(nil),               // 56: coria.v1.TrialReception
-	(*TryProfileRequest)(nil),            // 57: coria.v1.TryProfileRequest
-	(*TryProfileResponse)(nil),           // 58: coria.v1.TryProfileResponse
-	(*TrialResult)(nil),                  // 59: coria.v1.TrialResult
-	(*TrialElement)(nil),                 // 60: coria.v1.TrialElement
-	(*TrialSummary)(nil),                 // 61: coria.v1.TrialSummary
-	(*TrialCount)(nil),                   // 62: coria.v1.TrialCount
-	(*ExplainProfileRequest)(nil),        // 63: coria.v1.ExplainProfileRequest
-	(*ExplainProfileResponse)(nil),       // 64: coria.v1.ExplainProfileResponse
-	(*ExplainedElement)(nil),             // 65: coria.v1.ExplainedElement
-	(*ExplainedCandidate)(nil),           // 66: coria.v1.ExplainedCandidate
-	(*DiffProfileVersionsRequest)(nil),   // 67: coria.v1.DiffProfileVersionsRequest
-	(*DiffProfileVersionsResponse)(nil),  // 68: coria.v1.DiffProfileVersionsResponse
-	(*ProfileRuleChange)(nil),            // 69: coria.v1.ProfileRuleChange
-	(*ProfileEffectChange)(nil),          // 70: coria.v1.ProfileEffectChange
-	(*timestamppb.Timestamp)(nil),        // 71: google.protobuf.Timestamp
+	(UnsearchedSegments)(0),              // 0: coria.v1.UnsearchedSegments
+	(UnnamedElements)(0),                 // 1: coria.v1.UnnamedElements
+	(ConditionSubject)(0),                // 2: coria.v1.ConditionSubject
+	(LookupMissing)(0),                   // 3: coria.v1.LookupMissing
+	(RequiredFallback)(0),                // 4: coria.v1.RequiredFallback
+	(ProfileView)(0),                     // 5: coria.v1.ProfileView
+	(TrialVerdict)(0),                    // 6: coria.v1.TrialVerdict
+	(ProfileChange)(0),                   // 7: coria.v1.ProfileChange
+	(*ProfileDocument)(nil),              // 8: coria.v1.ProfileDocument
+	(*ProfileRule)(nil),                  // 9: coria.v1.ProfileRule
+	(*ProfileSelector)(nil),              // 10: coria.v1.ProfileSelector
+	(*PrivateElement)(nil),               // 11: coria.v1.PrivateElement
+	(*ContentItemSelector)(nil),          // 12: coria.v1.ContentItemSelector
+	(*ProfileCondition)(nil),             // 13: coria.v1.ProfileCondition
+	(*ProfileAction)(nil),                // 14: coria.v1.ProfileAction
+	(*KeepAction)(nil),                   // 15: coria.v1.KeepAction
+	(*RemoveAction)(nil),                 // 16: coria.v1.RemoveAction
+	(*EmptyAction)(nil),                  // 17: coria.v1.EmptyAction
+	(*ReplaceAction)(nil),                // 18: coria.v1.ReplaceAction
+	(*SetAction)(nil),                    // 19: coria.v1.SetAction
+	(*HashAction)(nil),                   // 20: coria.v1.HashAction
+	(*UidAction)(nil),                    // 21: coria.v1.UidAction
+	(*ShiftAction)(nil),                  // 22: coria.v1.ShiftAction
+	(*GeneralizeAction)(nil),             // 23: coria.v1.GeneralizeAction
+	(*LookupAction)(nil),                 // 24: coria.v1.LookupAction
+	(*CleanAction)(nil),                  // 25: coria.v1.CleanAction
+	(*QuarantineAction)(nil),             // 26: coria.v1.QuarantineAction
+	(*DummyAction)(nil),                  // 27: coria.v1.DummyAction
+	(*RemoveUnlessRequiredAction)(nil),   // 28: coria.v1.RemoveUnlessRequiredAction
+	(*PixelRule)(nil),                    // 29: coria.v1.PixelRule
+	(*RedactPixels)(nil),                 // 30: coria.v1.RedactPixels
+	(*PixelRectangle)(nil),               // 31: coria.v1.PixelRectangle
+	(*DetectText)(nil),                   // 32: coria.v1.DetectText
+	(*AcceptPixels)(nil),                 // 33: coria.v1.AcceptPixels
+	(*ExpandedProfile)(nil),              // 34: coria.v1.ExpandedProfile
+	(*ExpandedRule)(nil),                 // 35: coria.v1.ExpandedRule
+	(*ExpandedPixelRule)(nil),            // 36: coria.v1.ExpandedPixelRule
+	(*ProfileVersion)(nil),               // 37: coria.v1.ProfileVersion
+	(*ProfileSummary)(nil),               // 38: coria.v1.ProfileSummary
+	(*ProfileProblem)(nil),               // 39: coria.v1.ProfileProblem
+	(*ProfileProblems)(nil),              // 40: coria.v1.ProfileProblems
+	(*ProfileBase)(nil),                  // 41: coria.v1.ProfileBase
+	(*CreateProfileVersionRequest)(nil),  // 42: coria.v1.CreateProfileVersionRequest
+	(*CreateProfileVersionResponse)(nil), // 43: coria.v1.CreateProfileVersionResponse
+	(*GetProfileVersionRequest)(nil),     // 44: coria.v1.GetProfileVersionRequest
+	(*GetProfileVersionResponse)(nil),    // 45: coria.v1.GetProfileVersionResponse
+	(*ListProfilesRequest)(nil),          // 46: coria.v1.ListProfilesRequest
+	(*ListProfilesResponse)(nil),         // 47: coria.v1.ListProfilesResponse
+	(*ListProfileVersionsRequest)(nil),   // 48: coria.v1.ListProfileVersionsRequest
+	(*ListProfileVersionsResponse)(nil),  // 49: coria.v1.ListProfileVersionsResponse
+	(*ValidateProfileRequest)(nil),       // 50: coria.v1.ValidateProfileRequest
+	(*ValidateProfileResponse)(nil),      // 51: coria.v1.ValidateProfileResponse
+	(*ListProfileBasesRequest)(nil),      // 52: coria.v1.ListProfileBasesRequest
+	(*ListProfileBasesResponse)(nil),     // 53: coria.v1.ListProfileBasesResponse
+	(*TrialProfile)(nil),                 // 54: coria.v1.TrialProfile
+	(*ProfileVersionName)(nil),           // 55: coria.v1.ProfileVersionName
+	(*TrialFile)(nil),                    // 56: coria.v1.TrialFile
+	(*TrialReception)(nil),               // 57: coria.v1.TrialReception
+	(*TryProfileRequest)(nil),            // 58: coria.v1.TryProfileRequest
+	(*TryProfileResponse)(nil),           // 59: coria.v1.TryProfileResponse
+	(*TrialResult)(nil),                  // 60: coria.v1.TrialResult
+	(*TrialPixels)(nil),                  // 61: coria.v1.TrialPixels
+	(*TrialElement)(nil),                 // 62: coria.v1.TrialElement
+	(*TrialSummary)(nil),                 // 63: coria.v1.TrialSummary
+	(*TrialCount)(nil),                   // 64: coria.v1.TrialCount
+	(*ExplainProfileRequest)(nil),        // 65: coria.v1.ExplainProfileRequest
+	(*ExplainProfileResponse)(nil),       // 66: coria.v1.ExplainProfileResponse
+	(*ExplainedElement)(nil),             // 67: coria.v1.ExplainedElement
+	(*ExplainedCandidate)(nil),           // 68: coria.v1.ExplainedCandidate
+	(*DiffProfileVersionsRequest)(nil),   // 69: coria.v1.DiffProfileVersionsRequest
+	(*DiffProfileVersionsResponse)(nil),  // 70: coria.v1.DiffProfileVersionsResponse
+	(*ProfileRuleChange)(nil),            // 71: coria.v1.ProfileRuleChange
+	(*ProfileEffectChange)(nil),          // 72: coria.v1.ProfileEffectChange
+	(*timestamppb.Timestamp)(nil),        // 73: google.protobuf.Timestamp
 }
 var file_coria_v1_profile_proto_depIdxs = []int32{
-	8,  // 0: coria.v1.ProfileDocument.rules:type_name -> coria.v1.ProfileRule
-	0,  // 1: coria.v1.ProfileDocument.unnamed:type_name -> coria.v1.UnnamedElements
-	28, // 2: coria.v1.ProfileDocument.pixel_rules:type_name -> coria.v1.PixelRule
-	9,  // 3: coria.v1.ProfileRule.selector:type_name -> coria.v1.ProfileSelector
-	12, // 4: coria.v1.ProfileRule.when:type_name -> coria.v1.ProfileCondition
-	13, // 5: coria.v1.ProfileRule.action:type_name -> coria.v1.ProfileAction
-	10, // 6: coria.v1.ProfileSelector.private_element:type_name -> coria.v1.PrivateElement
-	11, // 7: coria.v1.ProfileSelector.content_item:type_name -> coria.v1.ContentItemSelector
-	1,  // 8: coria.v1.ProfileCondition.subject:type_name -> coria.v1.ConditionSubject
-	14, // 9: coria.v1.ProfileAction.keep:type_name -> coria.v1.KeepAction
-	15, // 10: coria.v1.ProfileAction.remove:type_name -> coria.v1.RemoveAction
-	16, // 11: coria.v1.ProfileAction.empty:type_name -> coria.v1.EmptyAction
-	17, // 12: coria.v1.ProfileAction.replace:type_name -> coria.v1.ReplaceAction
-	18, // 13: coria.v1.ProfileAction.set:type_name -> coria.v1.SetAction
-	19, // 14: coria.v1.ProfileAction.hash:type_name -> coria.v1.HashAction
-	20, // 15: coria.v1.ProfileAction.uid:type_name -> coria.v1.UidAction
-	21, // 16: coria.v1.ProfileAction.shift:type_name -> coria.v1.ShiftAction
-	22, // 17: coria.v1.ProfileAction.generalize:type_name -> coria.v1.GeneralizeAction
-	23, // 18: coria.v1.ProfileAction.lookup:type_name -> coria.v1.LookupAction
-	24, // 19: coria.v1.ProfileAction.clean:type_name -> coria.v1.CleanAction
-	25, // 20: coria.v1.ProfileAction.quarantine:type_name -> coria.v1.QuarantineAction
-	26, // 21: coria.v1.ProfileAction.dummy:type_name -> coria.v1.DummyAction
-	27, // 22: coria.v1.ProfileAction.remove_unless_required:type_name -> coria.v1.RemoveUnlessRequiredAction
-	2,  // 23: coria.v1.LookupAction.on_missing:type_name -> coria.v1.LookupMissing
-	3,  // 24: coria.v1.RemoveUnlessRequiredAction.fallback:type_name -> coria.v1.RequiredFallback
-	12, // 25: coria.v1.PixelRule.when:type_name -> coria.v1.ProfileCondition
-	29, // 26: coria.v1.PixelRule.redact:type_name -> coria.v1.RedactPixels
-	31, // 27: coria.v1.PixelRule.detect:type_name -> coria.v1.DetectText
-	32, // 28: coria.v1.PixelRule.accept:type_name -> coria.v1.AcceptPixels
-	30, // 29: coria.v1.RedactPixels.rectangles:type_name -> coria.v1.PixelRectangle
-	34, // 30: coria.v1.ExpandedProfile.rules:type_name -> coria.v1.ExpandedRule
-	0,  // 31: coria.v1.ExpandedProfile.unnamed:type_name -> coria.v1.UnnamedElements
-	35, // 32: coria.v1.ExpandedProfile.pixel_rules:type_name -> coria.v1.ExpandedPixelRule
-	8,  // 33: coria.v1.ExpandedRule.rule:type_name -> coria.v1.ProfileRule
-	28, // 34: coria.v1.ExpandedPixelRule.rule:type_name -> coria.v1.PixelRule
-	71, // 35: coria.v1.ProfileVersion.create_time:type_name -> google.protobuf.Timestamp
-	7,  // 36: coria.v1.ProfileVersion.document:type_name -> coria.v1.ProfileDocument
-	33, // 37: coria.v1.ProfileVersion.expanded:type_name -> coria.v1.ExpandedProfile
-	71, // 38: coria.v1.ProfileSummary.latest_create_time:type_name -> google.protobuf.Timestamp
-	38, // 39: coria.v1.ProfileProblems.problems:type_name -> coria.v1.ProfileProblem
-	7,  // 40: coria.v1.ProfileBase.document:type_name -> coria.v1.ProfileDocument
-	7,  // 41: coria.v1.CreateProfileVersionRequest.document:type_name -> coria.v1.ProfileDocument
-	4,  // 42: coria.v1.CreateProfileVersionRequest.view:type_name -> coria.v1.ProfileView
-	36, // 43: coria.v1.CreateProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
-	38, // 44: coria.v1.CreateProfileVersionResponse.warnings:type_name -> coria.v1.ProfileProblem
-	4,  // 45: coria.v1.GetProfileVersionRequest.view:type_name -> coria.v1.ProfileView
-	36, // 46: coria.v1.GetProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
-	37, // 47: coria.v1.ListProfilesResponse.profiles:type_name -> coria.v1.ProfileSummary
-	36, // 48: coria.v1.ListProfileVersionsResponse.versions:type_name -> coria.v1.ProfileVersion
-	7,  // 49: coria.v1.ValidateProfileRequest.document:type_name -> coria.v1.ProfileDocument
-	4,  // 50: coria.v1.ValidateProfileRequest.view:type_name -> coria.v1.ProfileView
-	38, // 51: coria.v1.ValidateProfileResponse.problems:type_name -> coria.v1.ProfileProblem
-	33, // 52: coria.v1.ValidateProfileResponse.expanded:type_name -> coria.v1.ExpandedProfile
-	38, // 53: coria.v1.ValidateProfileResponse.warnings:type_name -> coria.v1.ProfileProblem
-	40, // 54: coria.v1.ListProfileBasesResponse.bases:type_name -> coria.v1.ProfileBase
-	54, // 55: coria.v1.TrialProfile.version:type_name -> coria.v1.ProfileVersionName
-	7,  // 56: coria.v1.TrialProfile.document:type_name -> coria.v1.ProfileDocument
-	53, // 57: coria.v1.TryProfileRequest.profile:type_name -> coria.v1.TrialProfile
-	55, // 58: coria.v1.TryProfileRequest.files:type_name -> coria.v1.TrialFile
-	56, // 59: coria.v1.TryProfileRequest.reception:type_name -> coria.v1.TrialReception
-	36, // 60: coria.v1.TryProfileResponse.version:type_name -> coria.v1.ProfileVersion
-	59, // 61: coria.v1.TryProfileResponse.results:type_name -> coria.v1.TrialResult
-	61, // 62: coria.v1.TryProfileResponse.summary:type_name -> coria.v1.TrialSummary
-	5,  // 63: coria.v1.TrialResult.verdict:type_name -> coria.v1.TrialVerdict
-	60, // 64: coria.v1.TrialResult.elements:type_name -> coria.v1.TrialElement
-	62, // 65: coria.v1.TrialSummary.by_rule:type_name -> coria.v1.TrialCount
-	62, // 66: coria.v1.TrialSummary.by_reason:type_name -> coria.v1.TrialCount
-	53, // 67: coria.v1.ExplainProfileRequest.profile:type_name -> coria.v1.TrialProfile
-	55, // 68: coria.v1.ExplainProfileRequest.file:type_name -> coria.v1.TrialFile
-	56, // 69: coria.v1.ExplainProfileRequest.reception:type_name -> coria.v1.TrialReception
-	36, // 70: coria.v1.ExplainProfileResponse.version:type_name -> coria.v1.ProfileVersion
-	65, // 71: coria.v1.ExplainProfileResponse.elements:type_name -> coria.v1.ExplainedElement
-	66, // 72: coria.v1.ExplainedElement.others:type_name -> coria.v1.ExplainedCandidate
-	36, // 73: coria.v1.DiffProfileVersionsResponse.from:type_name -> coria.v1.ProfileVersion
-	36, // 74: coria.v1.DiffProfileVersionsResponse.to:type_name -> coria.v1.ProfileVersion
-	0,  // 75: coria.v1.DiffProfileVersionsResponse.unnamed_from:type_name -> coria.v1.UnnamedElements
-	0,  // 76: coria.v1.DiffProfileVersionsResponse.unnamed_to:type_name -> coria.v1.UnnamedElements
-	69, // 77: coria.v1.DiffProfileVersionsResponse.rules:type_name -> coria.v1.ProfileRuleChange
-	70, // 78: coria.v1.DiffProfileVersionsResponse.effects:type_name -> coria.v1.ProfileEffectChange
-	6,  // 79: coria.v1.ProfileRuleChange.change:type_name -> coria.v1.ProfileChange
-	8,  // 80: coria.v1.ProfileRuleChange.from:type_name -> coria.v1.ProfileRule
-	8,  // 81: coria.v1.ProfileRuleChange.to:type_name -> coria.v1.ProfileRule
-	9,  // 82: coria.v1.ProfileEffectChange.selector:type_name -> coria.v1.ProfileSelector
-	12, // 83: coria.v1.ProfileEffectChange.when:type_name -> coria.v1.ProfileCondition
-	13, // 84: coria.v1.ProfileEffectChange.from:type_name -> coria.v1.ProfileAction
-	13, // 85: coria.v1.ProfileEffectChange.to:type_name -> coria.v1.ProfileAction
-	41, // 86: coria.v1.ProfileService.CreateProfileVersion:input_type -> coria.v1.CreateProfileVersionRequest
-	43, // 87: coria.v1.ProfileService.GetProfileVersion:input_type -> coria.v1.GetProfileVersionRequest
-	45, // 88: coria.v1.ProfileService.ListProfiles:input_type -> coria.v1.ListProfilesRequest
-	47, // 89: coria.v1.ProfileService.ListProfileVersions:input_type -> coria.v1.ListProfileVersionsRequest
-	49, // 90: coria.v1.ProfileService.ValidateProfile:input_type -> coria.v1.ValidateProfileRequest
-	51, // 91: coria.v1.ProfileService.ListProfileBases:input_type -> coria.v1.ListProfileBasesRequest
-	57, // 92: coria.v1.ProfileService.TryProfile:input_type -> coria.v1.TryProfileRequest
-	63, // 93: coria.v1.ProfileService.ExplainProfile:input_type -> coria.v1.ExplainProfileRequest
-	67, // 94: coria.v1.ProfileService.DiffProfileVersions:input_type -> coria.v1.DiffProfileVersionsRequest
-	42, // 95: coria.v1.ProfileService.CreateProfileVersion:output_type -> coria.v1.CreateProfileVersionResponse
-	44, // 96: coria.v1.ProfileService.GetProfileVersion:output_type -> coria.v1.GetProfileVersionResponse
-	46, // 97: coria.v1.ProfileService.ListProfiles:output_type -> coria.v1.ListProfilesResponse
-	48, // 98: coria.v1.ProfileService.ListProfileVersions:output_type -> coria.v1.ListProfileVersionsResponse
-	50, // 99: coria.v1.ProfileService.ValidateProfile:output_type -> coria.v1.ValidateProfileResponse
-	52, // 100: coria.v1.ProfileService.ListProfileBases:output_type -> coria.v1.ListProfileBasesResponse
-	58, // 101: coria.v1.ProfileService.TryProfile:output_type -> coria.v1.TryProfileResponse
-	64, // 102: coria.v1.ProfileService.ExplainProfile:output_type -> coria.v1.ExplainProfileResponse
-	68, // 103: coria.v1.ProfileService.DiffProfileVersions:output_type -> coria.v1.DiffProfileVersionsResponse
-	95, // [95:104] is the sub-list for method output_type
-	86, // [86:95] is the sub-list for method input_type
-	86, // [86:86] is the sub-list for extension type_name
-	86, // [86:86] is the sub-list for extension extendee
-	0,  // [0:86] is the sub-list for field type_name
+	9,   // 0: coria.v1.ProfileDocument.rules:type_name -> coria.v1.ProfileRule
+	1,   // 1: coria.v1.ProfileDocument.unnamed:type_name -> coria.v1.UnnamedElements
+	29,  // 2: coria.v1.ProfileDocument.pixel_rules:type_name -> coria.v1.PixelRule
+	0,   // 3: coria.v1.ProfileDocument.unsearched_segments:type_name -> coria.v1.UnsearchedSegments
+	10,  // 4: coria.v1.ProfileRule.selector:type_name -> coria.v1.ProfileSelector
+	13,  // 5: coria.v1.ProfileRule.when:type_name -> coria.v1.ProfileCondition
+	14,  // 6: coria.v1.ProfileRule.action:type_name -> coria.v1.ProfileAction
+	11,  // 7: coria.v1.ProfileSelector.private_element:type_name -> coria.v1.PrivateElement
+	12,  // 8: coria.v1.ProfileSelector.content_item:type_name -> coria.v1.ContentItemSelector
+	2,   // 9: coria.v1.ProfileCondition.subject:type_name -> coria.v1.ConditionSubject
+	15,  // 10: coria.v1.ProfileAction.keep:type_name -> coria.v1.KeepAction
+	16,  // 11: coria.v1.ProfileAction.remove:type_name -> coria.v1.RemoveAction
+	17,  // 12: coria.v1.ProfileAction.empty:type_name -> coria.v1.EmptyAction
+	18,  // 13: coria.v1.ProfileAction.replace:type_name -> coria.v1.ReplaceAction
+	19,  // 14: coria.v1.ProfileAction.set:type_name -> coria.v1.SetAction
+	20,  // 15: coria.v1.ProfileAction.hash:type_name -> coria.v1.HashAction
+	21,  // 16: coria.v1.ProfileAction.uid:type_name -> coria.v1.UidAction
+	22,  // 17: coria.v1.ProfileAction.shift:type_name -> coria.v1.ShiftAction
+	23,  // 18: coria.v1.ProfileAction.generalize:type_name -> coria.v1.GeneralizeAction
+	24,  // 19: coria.v1.ProfileAction.lookup:type_name -> coria.v1.LookupAction
+	25,  // 20: coria.v1.ProfileAction.clean:type_name -> coria.v1.CleanAction
+	26,  // 21: coria.v1.ProfileAction.quarantine:type_name -> coria.v1.QuarantineAction
+	27,  // 22: coria.v1.ProfileAction.dummy:type_name -> coria.v1.DummyAction
+	28,  // 23: coria.v1.ProfileAction.remove_unless_required:type_name -> coria.v1.RemoveUnlessRequiredAction
+	3,   // 24: coria.v1.LookupAction.on_missing:type_name -> coria.v1.LookupMissing
+	4,   // 25: coria.v1.RemoveUnlessRequiredAction.fallback:type_name -> coria.v1.RequiredFallback
+	13,  // 26: coria.v1.PixelRule.when:type_name -> coria.v1.ProfileCondition
+	30,  // 27: coria.v1.PixelRule.redact:type_name -> coria.v1.RedactPixels
+	32,  // 28: coria.v1.PixelRule.detect:type_name -> coria.v1.DetectText
+	33,  // 29: coria.v1.PixelRule.accept:type_name -> coria.v1.AcceptPixels
+	31,  // 30: coria.v1.RedactPixels.rectangles:type_name -> coria.v1.PixelRectangle
+	35,  // 31: coria.v1.ExpandedProfile.rules:type_name -> coria.v1.ExpandedRule
+	1,   // 32: coria.v1.ExpandedProfile.unnamed:type_name -> coria.v1.UnnamedElements
+	36,  // 33: coria.v1.ExpandedProfile.pixel_rules:type_name -> coria.v1.ExpandedPixelRule
+	0,   // 34: coria.v1.ExpandedProfile.unsearched_segments:type_name -> coria.v1.UnsearchedSegments
+	9,   // 35: coria.v1.ExpandedRule.rule:type_name -> coria.v1.ProfileRule
+	29,  // 36: coria.v1.ExpandedPixelRule.rule:type_name -> coria.v1.PixelRule
+	73,  // 37: coria.v1.ProfileVersion.create_time:type_name -> google.protobuf.Timestamp
+	8,   // 38: coria.v1.ProfileVersion.document:type_name -> coria.v1.ProfileDocument
+	34,  // 39: coria.v1.ProfileVersion.expanded:type_name -> coria.v1.ExpandedProfile
+	73,  // 40: coria.v1.ProfileSummary.latest_create_time:type_name -> google.protobuf.Timestamp
+	39,  // 41: coria.v1.ProfileProblems.problems:type_name -> coria.v1.ProfileProblem
+	8,   // 42: coria.v1.ProfileBase.document:type_name -> coria.v1.ProfileDocument
+	8,   // 43: coria.v1.CreateProfileVersionRequest.document:type_name -> coria.v1.ProfileDocument
+	5,   // 44: coria.v1.CreateProfileVersionRequest.view:type_name -> coria.v1.ProfileView
+	37,  // 45: coria.v1.CreateProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
+	39,  // 46: coria.v1.CreateProfileVersionResponse.warnings:type_name -> coria.v1.ProfileProblem
+	5,   // 47: coria.v1.GetProfileVersionRequest.view:type_name -> coria.v1.ProfileView
+	37,  // 48: coria.v1.GetProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
+	38,  // 49: coria.v1.ListProfilesResponse.profiles:type_name -> coria.v1.ProfileSummary
+	37,  // 50: coria.v1.ListProfileVersionsResponse.versions:type_name -> coria.v1.ProfileVersion
+	8,   // 51: coria.v1.ValidateProfileRequest.document:type_name -> coria.v1.ProfileDocument
+	5,   // 52: coria.v1.ValidateProfileRequest.view:type_name -> coria.v1.ProfileView
+	39,  // 53: coria.v1.ValidateProfileResponse.problems:type_name -> coria.v1.ProfileProblem
+	34,  // 54: coria.v1.ValidateProfileResponse.expanded:type_name -> coria.v1.ExpandedProfile
+	39,  // 55: coria.v1.ValidateProfileResponse.warnings:type_name -> coria.v1.ProfileProblem
+	41,  // 56: coria.v1.ListProfileBasesResponse.bases:type_name -> coria.v1.ProfileBase
+	55,  // 57: coria.v1.TrialProfile.version:type_name -> coria.v1.ProfileVersionName
+	8,   // 58: coria.v1.TrialProfile.document:type_name -> coria.v1.ProfileDocument
+	54,  // 59: coria.v1.TryProfileRequest.profile:type_name -> coria.v1.TrialProfile
+	56,  // 60: coria.v1.TryProfileRequest.files:type_name -> coria.v1.TrialFile
+	57,  // 61: coria.v1.TryProfileRequest.reception:type_name -> coria.v1.TrialReception
+	37,  // 62: coria.v1.TryProfileResponse.version:type_name -> coria.v1.ProfileVersion
+	60,  // 63: coria.v1.TryProfileResponse.results:type_name -> coria.v1.TrialResult
+	63,  // 64: coria.v1.TryProfileResponse.summary:type_name -> coria.v1.TrialSummary
+	6,   // 65: coria.v1.TrialResult.verdict:type_name -> coria.v1.TrialVerdict
+	62,  // 66: coria.v1.TrialResult.elements:type_name -> coria.v1.TrialElement
+	61,  // 67: coria.v1.TrialResult.pixels:type_name -> coria.v1.TrialPixels
+	55,  // 68: coria.v1.TrialResult.routed_profile:type_name -> coria.v1.ProfileVersionName
+	31,  // 69: coria.v1.TrialPixels.regions:type_name -> coria.v1.PixelRectangle
+	64,  // 70: coria.v1.TrialSummary.by_rule:type_name -> coria.v1.TrialCount
+	64,  // 71: coria.v1.TrialSummary.by_reason:type_name -> coria.v1.TrialCount
+	54,  // 72: coria.v1.ExplainProfileRequest.profile:type_name -> coria.v1.TrialProfile
+	56,  // 73: coria.v1.ExplainProfileRequest.file:type_name -> coria.v1.TrialFile
+	57,  // 74: coria.v1.ExplainProfileRequest.reception:type_name -> coria.v1.TrialReception
+	37,  // 75: coria.v1.ExplainProfileResponse.version:type_name -> coria.v1.ProfileVersion
+	67,  // 76: coria.v1.ExplainProfileResponse.elements:type_name -> coria.v1.ExplainedElement
+	68,  // 77: coria.v1.ExplainedElement.others:type_name -> coria.v1.ExplainedCandidate
+	37,  // 78: coria.v1.DiffProfileVersionsResponse.from:type_name -> coria.v1.ProfileVersion
+	37,  // 79: coria.v1.DiffProfileVersionsResponse.to:type_name -> coria.v1.ProfileVersion
+	1,   // 80: coria.v1.DiffProfileVersionsResponse.unnamed_from:type_name -> coria.v1.UnnamedElements
+	1,   // 81: coria.v1.DiffProfileVersionsResponse.unnamed_to:type_name -> coria.v1.UnnamedElements
+	71,  // 82: coria.v1.DiffProfileVersionsResponse.rules:type_name -> coria.v1.ProfileRuleChange
+	72,  // 83: coria.v1.DiffProfileVersionsResponse.effects:type_name -> coria.v1.ProfileEffectChange
+	0,   // 84: coria.v1.DiffProfileVersionsResponse.unsearched_segments_from:type_name -> coria.v1.UnsearchedSegments
+	0,   // 85: coria.v1.DiffProfileVersionsResponse.unsearched_segments_to:type_name -> coria.v1.UnsearchedSegments
+	7,   // 86: coria.v1.ProfileRuleChange.change:type_name -> coria.v1.ProfileChange
+	9,   // 87: coria.v1.ProfileRuleChange.from:type_name -> coria.v1.ProfileRule
+	9,   // 88: coria.v1.ProfileRuleChange.to:type_name -> coria.v1.ProfileRule
+	10,  // 89: coria.v1.ProfileEffectChange.selector:type_name -> coria.v1.ProfileSelector
+	13,  // 90: coria.v1.ProfileEffectChange.when:type_name -> coria.v1.ProfileCondition
+	14,  // 91: coria.v1.ProfileEffectChange.from:type_name -> coria.v1.ProfileAction
+	14,  // 92: coria.v1.ProfileEffectChange.to:type_name -> coria.v1.ProfileAction
+	42,  // 93: coria.v1.ProfileService.CreateProfileVersion:input_type -> coria.v1.CreateProfileVersionRequest
+	44,  // 94: coria.v1.ProfileService.GetProfileVersion:input_type -> coria.v1.GetProfileVersionRequest
+	46,  // 95: coria.v1.ProfileService.ListProfiles:input_type -> coria.v1.ListProfilesRequest
+	48,  // 96: coria.v1.ProfileService.ListProfileVersions:input_type -> coria.v1.ListProfileVersionsRequest
+	50,  // 97: coria.v1.ProfileService.ValidateProfile:input_type -> coria.v1.ValidateProfileRequest
+	52,  // 98: coria.v1.ProfileService.ListProfileBases:input_type -> coria.v1.ListProfileBasesRequest
+	58,  // 99: coria.v1.ProfileService.TryProfile:input_type -> coria.v1.TryProfileRequest
+	65,  // 100: coria.v1.ProfileService.ExplainProfile:input_type -> coria.v1.ExplainProfileRequest
+	69,  // 101: coria.v1.ProfileService.DiffProfileVersions:input_type -> coria.v1.DiffProfileVersionsRequest
+	43,  // 102: coria.v1.ProfileService.CreateProfileVersion:output_type -> coria.v1.CreateProfileVersionResponse
+	45,  // 103: coria.v1.ProfileService.GetProfileVersion:output_type -> coria.v1.GetProfileVersionResponse
+	47,  // 104: coria.v1.ProfileService.ListProfiles:output_type -> coria.v1.ListProfilesResponse
+	49,  // 105: coria.v1.ProfileService.ListProfileVersions:output_type -> coria.v1.ListProfileVersionsResponse
+	51,  // 106: coria.v1.ProfileService.ValidateProfile:output_type -> coria.v1.ValidateProfileResponse
+	53,  // 107: coria.v1.ProfileService.ListProfileBases:output_type -> coria.v1.ListProfileBasesResponse
+	59,  // 108: coria.v1.ProfileService.TryProfile:output_type -> coria.v1.TryProfileResponse
+	66,  // 109: coria.v1.ProfileService.ExplainProfile:output_type -> coria.v1.ExplainProfileResponse
+	70,  // 110: coria.v1.ProfileService.DiffProfileVersions:output_type -> coria.v1.DiffProfileVersionsResponse
+	102, // [102:111] is the sub-list for method output_type
+	93,  // [93:102] is the sub-list for method input_type
+	93,  // [93:93] is the sub-list for extension type_name
+	93,  // [93:93] is the sub-list for extension extendee
+	0,   // [0:93] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_profile_proto_init() }
@@ -6585,8 +6939,8 @@ func file_coria_v1_profile_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_profile_proto_rawDesc), len(file_coria_v1_profile_proto_rawDesc)),
-			NumEnums:      7,
-			NumMessages:   64,
+			NumEnums:      8,
+			NumMessages:   65,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

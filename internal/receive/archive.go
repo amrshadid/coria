@@ -29,6 +29,9 @@ var errClaimedElsewhere = fault.New(fault.Unavailable, "another reception in fli
 //     files are held with the label reason when it cannot be made: identify
 //     held them already, and the record's id makes the second hold
 //     nothing); then the scan is archived (archiveScan).
+//     A session the catalog holds on another storage than the
+//     reception's (another reception of the study made it meanwhile)
+//     holds every file as unrouted, session_elsewhere, before any put.
 //  3. When an instance is claimed by another reception, the step fails
 //     here, after every other scan is archived, and is tried again after
 //     the unit's retry delay; the scans done stay done (their claims answer
@@ -69,6 +72,12 @@ func (p *Pipeline) archive(ctx context.Context, w tenant.Work) error {
 	catalog, err := p.catalogLabels(ctx, r.StudyUID, groups)
 	if err != nil {
 		return err
+	}
+	if c := catalog.Session; c != nil && c.Storage != r.Storage {
+		// Another reception of the study made its session on another
+		// storage while this one was in flight: its files are held before
+		// any is put, rather than put where the session is not.
+		return p.holdUnrouted(ctx, w, r, groups, map[string]string{"cause": "session_elsewhere"})
 	}
 	rule, err := p.ruleFor(ctx, r.Receiver)
 	if err != nil {

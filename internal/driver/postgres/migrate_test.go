@@ -567,7 +567,22 @@ func TestSendingMigrationKeepsData(t *testing.T) {
 	if _, err := s.migrate(ctx, tenantMigrations[:10]); err != nil {
 		t.Fatal(err)
 	}
+	// The port of this version reads and writes columns a later migration
+	// adds (a reception's and a session's route, a release's storage);
+	// they are lent for the fill, which writes through the port, and taken
+	// back before the migrations run.
+	lent := []string{"receptions ADD COLUMN route", "sessions ADD COLUMN route", "quarantine ADD COLUMN release_storage"}
+	for _, c := range lent {
+		if _, err := s.pool.Exec(ctx, `ALTER TABLE `+c+` text NOT NULL DEFAULT ''`); err != nil {
+			t.Fatal(err)
+		}
+	}
 	tenanttest.FillBeforeSending(t, s)
+	for _, c := range lent {
+		if _, err := s.pool.Exec(ctx, `ALTER TABLE `+strings.Replace(c, "ADD", "DROP", 1)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}

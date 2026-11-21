@@ -90,7 +90,14 @@ func rule(name string, sel *v1.ProfileSelector, act *v1.ProfileAction, when ...*
 // keys, failing the test when either is refused.
 func newTestEngine(t testing.TB, keys Keys, opts Options, rules ...*v1.ProfileRule) *Engine {
 	t.Helper()
-	e, problems := profile.Expand(&v1.ProfileDocument{Rules: rules}, profile.Shipped())
+	return newDocEngine(t, keys, opts, &v1.ProfileDocument{Rules: rules})
+}
+
+// newDocEngine returns an Engine over a document, expanded over the
+// shipped bases.
+func newDocEngine(t testing.TB, keys Keys, opts Options, doc *v1.ProfileDocument) *Engine {
+	t.Helper()
+	e, problems := profile.Expand(doc, profile.Shipped())
 	if problems != nil {
 		t.Fatalf("expanding the test profile: %v", problems)
 	}

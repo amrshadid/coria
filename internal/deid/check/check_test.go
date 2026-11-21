@@ -151,14 +151,15 @@ var imageElements = []el{
 	{0x00280102, "US", []uint16{7}}, {0x00280103, "US", []uint16{0}},
 }
 
-// TestPixelDataIsNotSearched guards that the bytes of Pixel Data are left
-// out of both searches, at the top level and in an item of a sequence
-// (an icon image, PS3.3 C.7.6.1.1.6): an image whose bytes happen to
-// spell a needle passes.
+// TestPixelDataIsNotSearched guards that the bytes of the top level's
+// Pixel Data are left out of both searches (an image whose bytes happen
+// to spell a needle passes), and that Pixel Data in an item of a sequence
+// (an icon image, PS3.3 C.7.6.1.1.6), which de-identification never keeps,
+// is a finding whatever it holds, at its path.
 func TestPixelDataIsNotSearched(t *testing.T) {
 	px := []byte(strings.Repeat("MRN-778812", 8))
 	n := needle(engine.NeedleText, "MRN-778812")
 	mustPass(t, writeFile(t, append(imageElements, el{0x7FE00010, "OB", px})...), n)
-	icon := build(t, append(imageElements, el{0x7FE00010, "OB", px})...)
-	mustPass(t, writeFile(t, el{0x00880200, "SQ", []*dataset.Dataset{icon}}), n)
+	icon := build(t, append(imageElements, el{0x7FE00010, "OB", []byte("plain pixels")})...)
+	mustFind(t, writeFile(t, el{0x00880200, "SQ", []*dataset.Dataset{icon}}), KindIdentifier, "00880200[0]/7FE00010", n)
 }

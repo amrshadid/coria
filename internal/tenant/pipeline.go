@@ -160,7 +160,7 @@ type Pipeline interface {
 	// spells it.
 	SetStorage(ctx context.Context, s Storage, fields []StorageField, now time.Time, audit master.AuditEntry, guard Guard) (Storage, error)
 	// RemoveStorage removes the storage and returns it as it was. A storage
-	// a receiver names, or that is in use (it holds an instance, a session
+	// a receiver or one of its routes names, or that is in use (it holds an instance, a session
 	// names it, so every later arrival of the session goes to it, or a
 	// reception that has not ended names it), is a precondition failure
 	// whose message says which. A storage not there is NotFound.
@@ -170,8 +170,9 @@ type Pipeline interface {
 	// name taken by a receiver, or still named by a reception or a
 	// quarantined file of a receiver removed, is Conflict, so a name in a
 	// record always means one receiver. A storage the tenant does not have,
-	// and another receiver that would contend for the same port
-	// (ReceiversClash), are precondition failures.
+	// its own or a route's, a sender a route forwards to that the tenant
+	// does not have, and another receiver that would contend for the same
+	// port (ReceiversClash), are precondition failures.
 	AddReceiver(ctx context.Context, r Receiver, now time.Time, audit master.AuditEntry, guard Guard) (Receiver, error)
 	// Receiver returns the receiver of that name, or NotFound.
 	Receiver(ctx context.Context, name string) (Receiver, error)
@@ -179,7 +180,9 @@ type Pipeline interface {
 	ListReceivers(ctx context.Context, page master.Page) ([]Receiver, string, error)
 	// SetReceiver changes the fields named in fields to their values in r,
 	// whose Name names the receiver; Updated becomes now. The rules of
-	// AddReceiver apply to the result.
+	// AddReceiver apply to the result. An r.Updated not zero is the time the
+	// caller read the receiver: a stored receiver changed since is a
+	// precondition failure (ApplyReceiver).
 	SetReceiver(ctx context.Context, r Receiver, fields []ReceiverField, now time.Time, audit master.AuditEntry, guard Guard) (Receiver, error)
 	// RemoveReceiver removes the receiver and returns it as it was. Its
 	// receptions and quarantined files stay, naming it.

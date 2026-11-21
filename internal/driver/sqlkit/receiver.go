@@ -1,6 +1,9 @@
 package sqlkit
 
 import (
+	"context"
+	"slices"
+
 	"github.com/amrshadid/coria/internal/core/naming"
 	"github.com/amrshadid/coria/internal/tenant"
 )
@@ -30,6 +33,67 @@ type dimseConfig struct {
 	// receivers de-identified, the receiver archives as received.
 	DeidProfile string `json:"deid_profile,omitempty"`
 	DeidVersion int32  `json:"deid_version,omitempty"`
+	// Routes and RoutesQuarantineUnmatched are the receiver's routing;
+	// absent, as in every row written before receivers routed, it has
+	// none.
+	Routes                    []routeConfig `json:"routes,omitempty"`
+	RoutesQuarantineUnmatched bool          `json:"routes_quarantine_unmatched,omitempty"`
+}
+
+// routeConfig is one route of a receiver's routing.
+type routeConfig struct {
+	Name              string            `json:"name"`
+	Conditions        []conditionConfig `json:"conditions,omitempty"`
+	Storage           string            `json:"storage"`
+	Profile           string            `json:"profile,omitempty"`
+	Version           int32             `json:"version,omitempty"`
+	ReplacesForwardTo bool              `json:"replaces_forward_to,omitempty"`
+	ForwardTo         []string          `json:"forward_to,omitempty"`
+}
+
+// conditionConfig is one condition of a route.
+type conditionConfig struct {
+	Subject string `json:"subject"`
+	Test    string `json:"test"`
+	Value   string `json:"value,omitempty"`
+	Present bool   `json:"present,omitempty"`
+	Negate  bool   `json:"negate,omitempty"`
+}
+
+// receptionRouteConfig is what a reception's routing chose, as its route
+// column holds it; the empty text for nothing of its own.
+type receptionRouteConfig struct {
+	ReleasedStorage   string   `json:"released_storage,omitempty"`
+	Route             string   `json:"route,omitempty"`
+	Profile           string   `json:"profile,omitempty"`
+	Version           int32    `json:"version,omitempty"`
+	ReplacesForwardTo bool     `json:"replaces_forward_to,omitempty"`
+	ForwardTo         []string `json:"forward_to,omitempty"`
+}
+
+// ReceptionRouteText returns the text of a reception's route column: empty
+// for a route that chose nothing of its own.
+func ReceptionRouteText(r tenant.ReceptionRoute) (string, error) {
+	if r.IsZero() {
+		return "", nil
+	}
+	return JSONText(receptionRouteConfig{ReleasedStorage: r.ReleasedStorage, Route: r.Route, Profile: r.Profile.Name,
+		Version: r.Profile.Version, ReplacesForwardTo: r.ReplacesForwardTo, ForwardTo: r.ForwardTo})
+}
+
+// ReadReceptionRoute returns the route a reception's route column holds,
+// as ReceptionRouteText wrote it.
+func ReadReceptionRoute(text string) (tenant.ReceptionRoute, error) {
+	if text == "" {
+		return tenant.ReceptionRoute{}, nil
+	}
+	var c receptionRouteConfig
+	if err := FromJSON(text, &c); err != nil {
+		return tenant.ReceptionRoute{}, err
+	}
+	return tenant.ReceptionRoute{ReleasedStorage: c.ReleasedStorage, Route: c.Route,
+		Profile: tenant.ProfileRef{Name: c.Profile, Version: c.Version}, ReplacesForwardTo: c.ReplacesForwardTo,
+		ForwardTo: c.ForwardTo}, nil
 }
 
 // callerRuleConfig is one caller a DIMSE receiver accepts.
@@ -59,7 +123,17 @@ func ReceiverConfigText(r tenant.Receiver) (config, namingText string, err error
 	c := dimseConfig{AETitle: r.DIMSE.AETitle, AnyCaller: r.DIMSE.AnyCaller,
 		SOPClasses: r.DIMSE.SOPClasses, TransferSyntaxes: r.DIMSE.TransferSyntaxes,
 		STOWKeys: r.STOW.Keys, MaxRequestBytes: r.STOW.MaxRequestBytes, ForwardTo: r.ForwardTo,
-		DeidProfile: r.Profile.Name, DeidVersion: r.Profile.Version}
+		DeidProfile: r.Profile.Name, DeidVersion: r.Profile.Version,
+		RoutesQuarantineUnmatched: r.Routing.QuarantineUnmatched}
+	for _, rt := range r.Routing.Routes {
+		rc := routeConfig{Name: rt.Name, Storage: rt.Storage, Profile: rt.Profile.Name, Version: rt.Profile.Version,
+			ReplacesForwardTo: rt.ReplacesForwardTo, ForwardTo: rt.ForwardTo}
+		for _, cd := range rt.Conditions {
+			rc.Conditions = append(rc.Conditions, conditionConfig{Subject: string(cd.Subject), Test: string(cd.Test),
+				Value: cd.Value, Present: cd.Present, Negate: cd.Negate})
+		}
+		c.Routes = append(c.Routes, rc)
+	}
 	for _, cr := range r.DIMSE.Callers {
 		c.Callers = append(c.Callers, callerRuleConfig(cr))
 	}
@@ -90,6 +164,7 @@ func ReadReceiverConfig(r *tenant.Receiver, config, namingText string) error {
 	r.STOW = tenant.STOWReceiver{Keys: c.STOWKeys, MaxRequestBytes: c.MaxRequestBytes}
 	r.ForwardTo = c.ForwardTo
 	r.Profile = tenant.ProfileRef{Name: c.DeidProfile, Version: c.DeidVersion}
+	r.Routing = routingOf(c)
 	r.DIMSE.Callers = nil
 	for _, cr := range c.Callers {
 		r.DIMSE.Callers = append(r.DIMSE.Callers, tenant.CallerRule(cr))
@@ -120,4 +195,51 @@ func ReceiverDeidentifies(config string) (bool, error) {
 		return false, err
 	}
 	return c.DeidProfile != "", nil
+}
+
+// routingOf returns the routing a receiver's config column holds.
+func routingOf(c dimseConfig) tenant.Routing {
+	out := tenant.Routing{QuarantineUnmatched: c.RoutesQuarantineUnmatched}
+	for _, rc := range c.Routes {
+		rt := tenant.Route{Name: rc.Name, Storage: rc.Storage, Profile: tenant.ProfileRef{Name: rc.Profile, Version: rc.Version},
+			ReplacesForwardTo: rc.ReplacesForwardTo, ForwardTo: rc.ForwardTo}
+		for _, cd := range rc.Conditions {
+			rt.Conditions = append(rt.Conditions, tenant.RouteCondition{Subject: tenant.RouteSubject(cd.Subject),
+				Test: tenant.RouteTest(cd.Test), Value: cd.Value, Present: cd.Present, Negate: cd.Negate})
+		}
+		out.Routes = append(out.Routes, rt)
+	}
+	return out
+}
+
+// ReceiverRoutingTo returns the name of a receiver one of whose routes
+// archives to the storage, or "": the receivers are read whole, since a
+// receiver's routes are in its configuration's text and a tenant's
+// receivers are few. A driver calls it in the transaction that removes a
+// storage, beside its check of the receivers' own storage.
+func ReceiverRoutingTo(ctx context.Context, tx SendingTx, storage string) (string, error) {
+	return receiverWhose(ctx, tx, func(c dimseConfig) bool {
+		return slices.Contains(routingOf(c).Storages(), storage)
+	})
+}
+
+// receiverWhose returns the name of the first receiver, by name, whose
+// configuration ok holds for, or "".
+func receiverWhose(ctx context.Context, tx SendingTx, ok func(dimseConfig) bool) (string, error) {
+	found := ""
+	err := tx.Query(ctx, `SELECT name, config FROM receivers ORDER BY name`, nil, func(r Row) error {
+		var name, config string
+		if err := r.Scan(&name, &config); err != nil {
+			return err
+		}
+		var c dimseConfig
+		if err := FromJSON(config, &c); err != nil {
+			return err
+		}
+		if found == "" && ok(c) {
+			found = name
+		}
+		return nil
+	})
+	return found, err
 }

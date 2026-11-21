@@ -88,6 +88,13 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		if err != nil {
 			return err
 		}
+		if rel.Storage != "" {
+			// The storage named is held to the commit, so its removal
+			// cannot pass the release unseen.
+			if err := lockStorageShared(ctx, tx, rel.Storage); err != nil {
+				return err
+			}
+		}
 		joined := ""
 		var events []tenant.EventRecord
 		if q.JoinsAt(deidentifies) {
@@ -97,6 +104,11 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 			}
 			events = openEvents
 			joined = r.ID
+			if rel.Storage != "" {
+				if err := setReleasedStorage(ctx, tx, r, rel.Storage); err != nil {
+					return err
+				}
+			}
 			f := tenant.ReceivedFile{ReceptionID: r.ID, SOPInstanceUID: q.SOPInstanceUID, SHA256: q.SHA256, SeriesUID: q.SeriesUID,
 				StudyUID: q.StudyUID, SOPClassUID: q.SOPClassUID, TransferSyntaxUID: q.TransferSyntaxUID, Size: q.Size,
 				Incoming: q.Incoming, Caller: q.Caller, Released: true, Deidentified: q.Deidentified}
@@ -129,8 +141,9 @@ func (t *Tenant) ReleaseFile(ctx context.Context, rel tenant.Release, audit mast
 		// The record's state is in the statement that changes it, as well
 		// as locked above, so two decisions at once make one.
 		n, err := rowsChanged(tx.Exec(ctx, `UPDATE quarantine SET state = 'released', content_kept = false, decided_at = $1,
-			release_mode = $2, release_reception = $3, release_receiver = $4, release_reason = $5 WHERE id = $6 AND state = 'held'`,
-			micros(now), string(mode), joined, via, rel.Reason, id))
+			release_mode = $2, release_reception = $3, release_receiver = $4, release_reason = $5, release_storage = $7
+			WHERE id = $6 AND state = 'held'`,
+			micros(now), string(mode), joined, via, rel.Reason, id, rel.Storage))
 		if err != nil {
 			return err
 		}
@@ -254,4 +267,39 @@ func (t *Tenant) RejectQuarantined(ctx context.Context, id, reason string, now t
 		return tenant.QuarantinedFile{}, err
 	}
 	return out, nil
+}
+
+// setReleasedStorage keeps, with a reception still receiving, the storage a
+// release into it named (tenant.Release.Storage); its identify step
+// archives a new session there. A reception that keeps another storage a
+// release named is a precondition failure: two people's decisions differ,
+// and the later is not taken silently.
+func setReleasedStorage(ctx context.Context, tx pgx.Tx, r tenant.Reception, storage string) error {
+	switch r.Route.ReleasedStorage {
+	case storage:
+		return nil
+	case "":
+	default:
+		return tenant.Precondition("a release into the reception this file joins named the storage " + r.Route.ReleasedStorage +
+			"; release it naming the same storage, or none")
+	}
+	text, err := sqlkit.ReceptionRouteText(tenant.ReceptionRoute{ReleasedStorage: storage})
+	if err != nil {
+		return err
+	}
+	receptionID := r.ID
+	_, err = tx.Exec(ctx, `UPDATE receptions SET route = $1 WHERE id = $2`, text, receptionID)
+	return err
+}
+
+// keepReleasedStorage keeps with a reception still receiving the storage
+// the release of a file that lands again named (tenant.ReceivedFile
+// .ReleasedStorage), unless it keeps one already.
+func keepReleasedStorage(ctx context.Context, tx pgx.Tx, receptionID, storage string) error {
+	text, err := sqlkit.ReceptionRouteText(tenant.ReceptionRoute{ReleasedStorage: storage})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE receptions SET route = $1 WHERE id = $2 AND route = ''`, text, receptionID)
+	return err
 }

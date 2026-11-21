@@ -156,10 +156,27 @@ A receiver that de-identifies names its profile version (`"profile": {"name":
 "research", "version": 1}` in `AddReceiver` or `SetReceiver`, mask
 `deidentification`). Every file is de-identified before any byte of it reaches
 the storage, checked again by a separate read for every value the profile
-removed, and quarantined (`deid_failed`, `residual_value`, `profile_refused`)
-when it cannot be; the storage, the catalog and every list then hold only what
-the profile leaves, and UIDs remapped by the tenant's key. A profile version
-whose pixel rules this version cannot apply, one that keeps the UIDs a file is
+removed, and quarantined (`deid_failed`, `residual_value`, `profile_refused`,
+`burned_in_risk`) when it cannot be; the storage, the catalog and every list
+then hold only what the profile leaves, and UIDs remapped by the tenant's key.
+An image whose header says its pixels may carry burned-in text (Burned In
+Annotation `YES`; or not `NO` on a secondary capture, an ultrasound, a visible
+light (endoscopy, microscopy, photography) or ophthalmic image, or a modality
+such as XA, RF, OP, SM, PX or IO; or a whole slide's label or overview image) is
+held as `burned_in_risk` unless one of the profile's pixel rules matches it.
+Radiographs (DX, CR) are not held by kind: their markers are rarely the person,
+and a profile writes a pixel rule for a device known to stamp identity. An image
+with only Float or Double Float Pixel Data is not judged by the gate. Pixel data
+inside a sequence item, and the Icon Image Sequence, are always removed. A pixel
+rule: `redact` fills rectangles in every frame
+(the image is then written uncompressed), `detect` fills what the text detector
+finds (opt-in, and slow: every frame is decoded and searched), `accept`
+archives it as it is, with a reason. Comment and application segments of JPEG
+pixel data are always removed, and a frame then holding any segment beyond those
+a decoder needs at their defined length is held (`pixel_text_unsearched`); an image left in JPEG 2000, whose segments are
+not searched, is held unless the profile says `"unsearchedSegments":
+"UNSEARCHED_SEGMENTS_KEEP"`. Work on pixels is bounded by `deid.pixel-limit`
+([Settings](settings.md)). A profile version that keeps the UIDs a file is
 placed by (the Retain UIDs option), and a naming rule that puts a value into a
 label unhashed (`{PatientID}` rather than `{#PatientID}`) are refused for such a
 receiver. A file whose Study, Series or SOP Instance UID lies under the
@@ -201,3 +218,60 @@ no value; `profile describe` lists every rule a version runs with its origin;
 `profile diff` shows what a new version changes. Trying needs the operator role
 (it answers the files' values, and can read held files); making a version needs
 admin. Every command takes `--json`.
+
+### Route each study by where it comes from
+
+A receiver's routes choose, for each study, the storage it is archived to, and
+optionally a profile version that de-identifies it in place of the receiver's
+and the senders it is forwarded to in place of the receiver's `--forward-to`.
+A study is routed once, for its session: the routes are tried in order on the
+first file of its first reception, as received (the first, by SOP Instance UID,
+of its first series), and the first whose conditions all hold chooses. A
+condition reads the calling or called AE title, or the file's Modality, SOP
+Class UID, Manufacturer, Manufacturer's Model Name or Software Versions: never
+a patient's name or identifier. It tests equals, starts with, a pattern (RE2,
+the whole value) or present, and may be negated.
+
+```sh
+coria storage add lab1 lab-a --type dir --root fast
+coria storage add lab1 lab-b --type dir --root fast
+coria receiver route add lab1 scanner1 lab-a --storage lab-a --equals calling-aet=LAB_A
+coria receiver route add lab1 scanner1 lab-b --storage lab-b --equals calling-aet=LAB_B \
+    --profile strict@2 --forward-to pacs
+coria receiver route default lab1 scanner1 quarantine
+coria receiver route list lab1 scanner1
+```
+
+- **What is chosen is kept, for the session.** The route that chose, its
+  profile version and its senders are kept with the reception when it is
+  identified and with the session when its first scan is archived. Every later
+  arrival of the session goes by that choice, from whatever AE title it comes;
+  a restart, or a change of the routes afterwards, changes nothing for it. A
+  reception of a study whose first reception is still being archived goes by
+  the first's choice. Should two receptions of a study be routed apart all the
+  same (two receivers at the same moment), the files of the second to archive
+  are held as `unrouted` (`session_elsewhere`) before any is stored.
+- **A route only replaces a profile.** Only a receiver that de-identifies may
+  have a route that names a profile version, and the version must pass the
+  same checks as a receiver's; a route can never turn de-identification off.
+- **A study no route chooses** goes to the receiver's storage with its own
+  profile and senders, or, after `route default ... quarantine`, every file of
+  it is held as `unrouted`; release them naming the storage:
+  `coria quarantine release lab1 q_7Zr2 --storage lab-a`. The release chooses
+  the storage only: the routes (mended since, perhaps) still choose the
+  profile and senders. A route that cannot be evaluated (one written by a
+  later version of the server, or a value in the file longer than 1024 bytes)
+  holds the study as `unrouted` too, whatever routes come after it.
+- **Trials agree.** `coria profile try --receiver NAME` applies the receiver's
+  routes: a file its route would de-identify with another version is tried
+  with that version (the answer names the route and the version), and a file
+  it would not route is shown held as `unrouted`.
+- **Limits.** 64 routes per receiver, 16 conditions per route, a pattern of 256
+  bytes with no repetition above 100. A storage or a sender a route names
+  cannot be removed while it names it.
+- **Changes.** Each `route` command reads the receiver, changes its routes and
+  writes them back only if nobody changed the receiver meanwhile; otherwise it
+  is refused (exit 5) and changes nothing. In the API the routes are the
+  receiver's `routing`, replaced whole by `SetReceiver` with the mask
+  `routing`, and `expected_update_time` makes the same check. Changing needs
+  admin; reading, reader. Every change is in the tenant's audit log.

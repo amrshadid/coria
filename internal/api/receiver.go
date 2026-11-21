@@ -86,6 +86,9 @@ func (s receiverService) AddReceiver(ctx context.Context, req *v1.AddReceiverReq
 	if err := c.checkDeidentification(ctx, p, st, in); err != nil {
 		return nil, c.failIn(d, st, err)
 	}
+	if err := c.checkRouteProfiles(ctx, p, in); err != nil {
+		return nil, c.failIn(d, st, err)
+	}
 	out, err := p.AddReceiver(ctx, in, c.now(), changeEntry(d, access.Facts{Details: receiverDetails(in, true)}), c.adminGuard(d))
 	if err != nil {
 		return nil, c.failIn(d, st, fieldOf("receiver", err))
@@ -175,11 +178,23 @@ func (s receiverService) SetReceiver(ctx context.Context, req *v1.SetReceiverReq
 	if err != nil {
 		return nil, c.failIn(d, st, err)
 	}
-	// A change of the naming rule or of the de-identification is checked
-	// against the other, as stored: taken alone, so two changes at once
-	// cannot each pass and together give a receiver that de-identifies a
-	// rule that puts values into labels (the store refuses that too).
-	if slices.Contains(fields, tenant.FieldNaming) || slices.Contains(fields, tenant.FieldDeidentification) {
+	if t := req.GetExpectedUpdateTime(); t != nil {
+		if t.CheckValid() != nil {
+			return nil, c.failIn(d, st, invalid("expected_update_time", "is a valid time"))
+		}
+		// A change with Updated set is made only while the stored
+		// receiver has it (tenant.ApplyReceiver), in the store's
+		// transaction.
+		change.Updated = t.AsTime()
+	}
+	// A change of the naming rule, the de-identification or the routing is
+	// checked against the others, as stored: taken alone, so two changes
+	// at once cannot each pass and together give a receiver that
+	// de-identifies a rule that puts values into labels, or routes that
+	// name a profile on a receiver that archives as received (the store
+	// refuses both too).
+	if slices.Contains(fields, tenant.FieldNaming) || slices.Contains(fields, tenant.FieldDeidentification) ||
+		slices.Contains(fields, tenant.FieldRouting) {
 		c.places.Lock()
 		defer c.places.Unlock()
 	} else {
@@ -203,6 +218,11 @@ func (s receiverService) SetReceiver(ctx context.Context, req *v1.SetReceiverReq
 	// off.
 	if slices.Contains(fields, tenant.FieldDeidentification) || (result.Deidentifies() && slices.Contains(fields, tenant.FieldNaming)) {
 		if err := c.checkDeidentification(ctx, p, st, result); err != nil {
+			return nil, c.failIn(d, st, err)
+		}
+	}
+	if slices.Contains(fields, tenant.FieldRouting) {
+		if err := c.checkRouteProfiles(ctx, p, result); err != nil {
 			return nil, c.failIn(d, st, err)
 		}
 	}

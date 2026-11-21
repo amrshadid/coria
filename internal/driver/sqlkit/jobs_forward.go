@@ -8,7 +8,9 @@ import (
 )
 
 // Forward makes, in the transaction of a reception's step that reached
-// done, one job per sender its receiver forwards to (tenant.Sending), and
+// done, one job per sender its receiver forwards to (tenant.Sending), or
+// its route when the route chosen names its own senders (even when the
+// receiver was removed meanwhile), and
 // returns their events, which the driver writes with the step's. A sender
 // removed meanwhile is skipped; one forwarded to already is not made twice
 // (tenant.ForwardKey). A reception not done, or one that archived nothing
@@ -23,15 +25,22 @@ func (k Sending) Forward(ctx context.Context, tx SendingTx, r tenant.Reception) 
 	}
 	var config string
 	found, err := tx.QueryRow(ctx, `SELECT config FROM receivers WHERE name = ?`, []any{r.Receiver}, &config)
-	if err != nil || !found {
+	if err != nil {
 		return nil, err
 	}
+	// A receiver removed meanwhile forwards to none of its own senders;
+	// a route chosen for the reception still names its own, which were
+	// chosen for this reception's study when it was identified.
 	var c dimseConfig
-	if err := FromJSON(config, &c); err != nil {
-		return nil, err
+	if found {
+		if err := FromJSON(config, &c); err != nil {
+			return nil, err
+		}
+	} else if !r.Route.ReplacesForwardTo {
+		return nil, nil
 	}
 	var events []tenant.EventRecord
-	for _, sender := range c.ForwardTo {
+	for _, sender := range r.Route.Senders(tenant.Receiver{ForwardTo: c.ForwardTo}) {
 		has, err := k.lockSender(ctx, tx, sender)
 		if err != nil {
 			return nil, err

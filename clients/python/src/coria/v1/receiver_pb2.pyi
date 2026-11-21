@@ -3,6 +3,7 @@ import datetime
 from google.protobuf import duration_pb2 as _duration_pb2
 from google.protobuf import field_mask_pb2 as _field_mask_pb2
 from google.protobuf import timestamp_pb2 as _timestamp_pb2
+from coria.v1 import profile_pb2 as _profile_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
@@ -49,7 +50,7 @@ RECEIVER_DOWN_REASON_OTHER: ReceiverDownReason
 RECEIVER_DOWN_REASON_INCOMING_LIMIT: ReceiverDownReason
 
 class Receiver(_message.Message):
-    __slots__ = ("name", "dimse", "stow", "enabled", "storage", "naming", "quiet_period", "max_open_time", "max_file_bytes", "health", "create_time", "update_time", "forward_to", "as_received", "profile")
+    __slots__ = ("name", "dimse", "stow", "enabled", "storage", "naming", "quiet_period", "max_open_time", "max_file_bytes", "health", "create_time", "update_time", "forward_to", "as_received", "profile", "routing")
     NAME_FIELD_NUMBER: _ClassVar[int]
     DIMSE_FIELD_NUMBER: _ClassVar[int]
     STOW_FIELD_NUMBER: _ClassVar[int]
@@ -65,6 +66,7 @@ class Receiver(_message.Message):
     FORWARD_TO_FIELD_NUMBER: _ClassVar[int]
     AS_RECEIVED_FIELD_NUMBER: _ClassVar[int]
     PROFILE_FIELD_NUMBER: _ClassVar[int]
+    ROUTING_FIELD_NUMBER: _ClassVar[int]
     name: str
     dimse: DimseReceiver
     stow: StowReceiver
@@ -80,7 +82,36 @@ class Receiver(_message.Message):
     forward_to: _containers.RepeatedScalarFieldContainer[str]
     as_received: AsReceived
     profile: ProfileVersionRef
-    def __init__(self, name: _Optional[str] = ..., dimse: _Optional[_Union[DimseReceiver, _Mapping]] = ..., stow: _Optional[_Union[StowReceiver, _Mapping]] = ..., enabled: _Optional[bool] = ..., storage: _Optional[str] = ..., naming: _Optional[_Union[NamingRule, _Mapping]] = ..., quiet_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_open_time: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_file_bytes: _Optional[int] = ..., health: _Optional[_Union[ReceiverHealth, _Mapping]] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., forward_to: _Optional[_Iterable[str]] = ..., as_received: _Optional[_Union[AsReceived, _Mapping]] = ..., profile: _Optional[_Union[ProfileVersionRef, _Mapping]] = ...) -> None: ...
+    routing: ReceiverRouting
+    def __init__(self, name: _Optional[str] = ..., dimse: _Optional[_Union[DimseReceiver, _Mapping]] = ..., stow: _Optional[_Union[StowReceiver, _Mapping]] = ..., enabled: _Optional[bool] = ..., storage: _Optional[str] = ..., naming: _Optional[_Union[NamingRule, _Mapping]] = ..., quiet_period: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_open_time: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., max_file_bytes: _Optional[int] = ..., health: _Optional[_Union[ReceiverHealth, _Mapping]] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., forward_to: _Optional[_Iterable[str]] = ..., as_received: _Optional[_Union[AsReceived, _Mapping]] = ..., profile: _Optional[_Union[ProfileVersionRef, _Mapping]] = ..., routing: _Optional[_Union[ReceiverRouting, _Mapping]] = ...) -> None: ...
+
+class ReceiverRouting(_message.Message):
+    __slots__ = ("routes", "quarantine_unmatched")
+    ROUTES_FIELD_NUMBER: _ClassVar[int]
+    QUARANTINE_UNMATCHED_FIELD_NUMBER: _ClassVar[int]
+    routes: _containers.RepeatedCompositeFieldContainer[Route]
+    quarantine_unmatched: bool
+    def __init__(self, routes: _Optional[_Iterable[_Union[Route, _Mapping]]] = ..., quarantine_unmatched: _Optional[bool] = ...) -> None: ...
+
+class Route(_message.Message):
+    __slots__ = ("name", "conditions", "storage", "profile", "forward_to")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    CONDITIONS_FIELD_NUMBER: _ClassVar[int]
+    STORAGE_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_FIELD_NUMBER: _ClassVar[int]
+    FORWARD_TO_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    conditions: _containers.RepeatedCompositeFieldContainer[_profile_pb2.ProfileCondition]
+    storage: str
+    profile: ProfileVersionRef
+    forward_to: RouteForwardTo
+    def __init__(self, name: _Optional[str] = ..., conditions: _Optional[_Iterable[_Union[_profile_pb2.ProfileCondition, _Mapping]]] = ..., storage: _Optional[str] = ..., profile: _Optional[_Union[ProfileVersionRef, _Mapping]] = ..., forward_to: _Optional[_Union[RouteForwardTo, _Mapping]] = ...) -> None: ...
+
+class RouteForwardTo(_message.Message):
+    __slots__ = ("senders",)
+    SENDERS_FIELD_NUMBER: _ClassVar[int]
+    senders: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, senders: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class AsReceived(_message.Message):
     __slots__ = ()
@@ -223,14 +254,16 @@ class ListReceiversResponse(_message.Message):
     def __init__(self, receivers: _Optional[_Iterable[_Union[Receiver, _Mapping]]] = ..., next_page_token: _Optional[str] = ...) -> None: ...
 
 class SetReceiverRequest(_message.Message):
-    __slots__ = ("tenant", "receiver", "update_mask")
+    __slots__ = ("tenant", "receiver", "update_mask", "expected_update_time")
     TENANT_FIELD_NUMBER: _ClassVar[int]
     RECEIVER_FIELD_NUMBER: _ClassVar[int]
     UPDATE_MASK_FIELD_NUMBER: _ClassVar[int]
+    EXPECTED_UPDATE_TIME_FIELD_NUMBER: _ClassVar[int]
     tenant: str
     receiver: Receiver
     update_mask: _field_mask_pb2.FieldMask
-    def __init__(self, tenant: _Optional[str] = ..., receiver: _Optional[_Union[Receiver, _Mapping]] = ..., update_mask: _Optional[_Union[_field_mask_pb2.FieldMask, _Mapping]] = ...) -> None: ...
+    expected_update_time: _timestamp_pb2.Timestamp
+    def __init__(self, tenant: _Optional[str] = ..., receiver: _Optional[_Union[Receiver, _Mapping]] = ..., update_mask: _Optional[_Union[_field_mask_pb2.FieldMask, _Mapping]] = ..., expected_update_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class SetReceiverResponse(_message.Message):
     __slots__ = ("receiver",)

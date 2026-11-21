@@ -100,7 +100,11 @@ type ReceiverServiceClient interface {
 	// tenant), conflict (the tenant has a receiver with that name, or a
 	// removed receiver of that name is still named by receptions or
 	// quarantined files), precondition (a storage the tenant does not have; a
-	// sender in forward_to the tenant does not have; a port outside the
+	// sender in forward_to the tenant does not have; a storage, a sender or a
+	// profile version a route names that the tenant does not have, or a
+	// profile version that cannot de-identify a receiver's files; a route
+	// that names a profile version on a receiver that archives as received;
+	// a port outside the
 	// tenant's allotted ports; a bind address the installation does not list;
 	// another receiver of the tenant on the same port and an overlapping
 	// address), unavailable (the tenant's database
@@ -147,7 +151,8 @@ type ReceiverServiceClient interface {
 	// every rule AddReceiver checks on a field), not found (the tenant has no
 	// receiver with that name; a tenant that does not exist, for a caller who
 	// may list every tenant), precondition (every precondition AddReceiver
-	// checks), unavailable (the tenant's database does not answer, or the
+	// checks; expected_update_time is not the receiver's update_time, as a
+	// stale expected version is everywhere in this API), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	SetReceiver(context.Context, *v1.SetReceiverRequest) (*v1.SetReceiverResponse, error)
 	// RemoveReceiver stops a receiver and removes its configuration. The
@@ -190,7 +195,11 @@ type ReceiverServiceHandler interface {
 	// tenant), conflict (the tenant has a receiver with that name, or a
 	// removed receiver of that name is still named by receptions or
 	// quarantined files), precondition (a storage the tenant does not have; a
-	// sender in forward_to the tenant does not have; a port outside the
+	// sender in forward_to the tenant does not have; a storage, a sender or a
+	// profile version a route names that the tenant does not have, or a
+	// profile version that cannot de-identify a receiver's files; a route
+	// that names a profile version on a receiver that archives as received;
+	// a port outside the
 	// tenant's allotted ports; a bind address the installation does not list;
 	// another receiver of the tenant on the same port and an overlapping
 	// address), unavailable (the tenant's database
@@ -237,7 +246,8 @@ type ReceiverServiceHandler interface {
 	// every rule AddReceiver checks on a field), not found (the tenant has no
 	// receiver with that name; a tenant that does not exist, for a caller who
 	// may list every tenant), precondition (every precondition AddReceiver
-	// checks), unavailable (the tenant's database does not answer, or the
+	// checks; expected_update_time is not the receiver's update_time, as a
+	// stale expected version is everywhere in this API), unavailable (the tenant's database does not answer, or the
 	// tenant is not ready).
 	SetReceiver(context.Context, *v1.SetReceiverRequest) (*v1.SetReceiverResponse, error)
 	// RemoveReceiver stops a receiver and removes its configuration. The

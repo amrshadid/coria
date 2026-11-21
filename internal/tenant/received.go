@@ -33,6 +33,11 @@ type ReceivedFile struct {
 	Association string
 	// Released says it came from a quarantine release.
 	Released bool
+	// ReleasedStorage, set only on a released file, is the storage its
+	// release named (Release.Storage): the reception it joins keeps it
+	// (ReceptionRoute.ReleasedStorage) unless that reception keeps one
+	// already. It is not kept with the file.
+	ReleasedStorage string
 	// Deidentified says it was recorded at a receiver that de-identifies:
 	// its placing UIDs are the keyed remapping of the file's and its
 	// checksum is keyed, and the archive step de-identifies it. False, it
@@ -70,6 +75,14 @@ func (f ReceivedFile) Validate() error {
 	}
 	if err := f.Caller.Validate(); err != nil {
 		return err
+	}
+	if f.ReleasedStorage != "" {
+		if !f.Released {
+			return invalid("only a released file names the storage its release named")
+		}
+		if err := ValidateName("storage", f.ReleasedStorage); err != nil {
+			return err
+		}
 	}
 	if f.Association != "" {
 		return master.ValidateID("association id", f.Association)

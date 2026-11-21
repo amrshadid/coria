@@ -144,7 +144,7 @@ func fillHeld(b *testing.B, conn *pgx.Conn) {
 		   524288, now() FROM generate_series(0, 999999) i`,
 		`UPDATE catalog_totals SET subjects = 1, sessions = 1000, scans = 1000, instances = 1000000`,
 		`INSERT INTO receptions SELECT 'claimer' || c, 'dimse', '2.25.1.' || (5000 + c), 1, 'identified', false, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		   'sub-01', 'ses-' || (5000 + c), 'store', '', now(), now(), now(), NULL, 0, '[]', false, '', '', '', NULL FROM generate_series(0, 15) c`,
+		   'sub-01', 'ses-' || (5000 + c), 'store', '', now(), now(), now(), NULL, 0, '[]', false, '', '', '', NULL, '' FROM generate_series(0, 15) c`,
 		`ANALYZE`)
 }
 
@@ -252,7 +252,7 @@ func BenchmarkCommitScan(b *testing.B) {
 					ids, rstudies = append(ids, id), append(rstudies, study)
 				}
 				if _, err := conn.Exec(ctx, `INSERT INTO receptions SELECT id, 'dimse', st, 1, 'identified', false, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-					'sub-01', 'ses', 'store', '', now(), now(), now(), NULL, 0, '[]', false, '', '', '', NULL
+					'sub-01', 'ses', 'store', '', now(), now(), now(), NULL, 0, '[]', false, '', '', '', NULL, ''
 					FROM unnest($1::text[], $2::text[]) AS t(id, st)`, ids, rstudies); err != nil {
 					b.Fatal(err)
 				}
@@ -281,7 +281,7 @@ func BenchmarkReceptionStep(b *testing.B) {
 			s, conn := benchTenant(b)
 			ctx := context.Background()
 			if _, err := conn.Exec(ctx, `INSERT INTO receptions SELECT 'rc' || i, 'dimse', '2.25.1.' || i, 1, 'receiving', false,
-				0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', $1, $1, $1, NULL, 0, '[]', false, '', '', '', NULL
+				0, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', '', $1, $1, $1, NULL, 0, '[]', false, '', '', '', NULL, ''
 				FROM generate_series(0, $2::int - 1) i`, benchTime, b.N); err != nil {
 				b.Fatal(err)
 			}

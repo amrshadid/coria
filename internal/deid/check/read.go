@@ -50,6 +50,11 @@ type parsed struct {
 	// characters, each from just after the escape sequence that shifted
 	// into it, in order.
 	shifted [][2]int64
+	// nestedPixels is the path of the first element of group 7FE0 inside
+	// a sequence item, or "": de-identification keeps pixel data at the
+	// top level only, so one found deeper is an image no pixel rule
+	// filled and no search reads (a residual, whatever it holds).
+	nestedPixels string
 }
 
 // parse reads data with the codec-free reader and builds what the search
@@ -177,7 +182,10 @@ func (w walker) walk(elements []*attributes.DataElementValue, inherited []string
 	for _, e := range elements {
 		path := prefix + fmt.Sprintf("%08X", uint32(e.Tag))
 		pos := e.Position
-		if pixelTags[e.Tag] {
+		if depth > 0 && e.Tag.Group() == 0x7FE0 && w.p.nestedPixels == "" {
+			w.p.nestedPixels = path
+		}
+		if pixelTags[e.Tag] && depth == 0 {
 			if pos.End > pos.ValueOffset {
 				*cut = append(*cut, [2]int64{pos.ValueOffset, pos.End})
 			}

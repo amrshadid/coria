@@ -48,6 +48,9 @@ type Trial struct {
 	// Receiver is the receiver whose receiving checks ran; empty when
 	// none did and the verdict is de-identification's only.
 	Receiver string
+	// Pixels is what was done to the file's pixels (Record.Pixels); nil
+	// when it has none or was held before the engine finished.
+	Pixels *engine.PixelWork
 }
 
 // TrialHold is why a receiver would hold a file: the quarantine reason and
@@ -69,6 +72,9 @@ type TrialOptions struct {
 	Keys engine.Keys
 	// HeaderLimit bounds the header, as receiver.header-limit does.
 	HeaderLimit int64
+	// PixelLimit bounds an image decoded that the work on pixels takes,
+	// as deid.pixel-limit does; zero or less is DefaultPixelLimit.
+	PixelLimit int64
 	// Receiver, when not nil, is the receiver the file is tried as
 	// arriving at: its receiving checks (headerHold, classHold), its
 	// naming rule and the label check run as at reception, and the check
@@ -121,7 +127,11 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 	// changes ds in place.
 	t.Before, _, _, _ = h.Dataset(bytes.NewReader(file))
 	rec.CharacterSet = h.CharacterSet()
-	record, err := en.Apply(ctx, ds, rec)
+	limit := o.PixelLimit
+	if limit <= 0 {
+		limit = DefaultPixelLimit
+	}
+	record, err := en.ApplyImage(ctx, ds, rec, image(h, bytes.NewReader(file), source, limit))
 	var failure *engine.Failure
 	if errors.As(err, &failure) {
 		if failure.Cause == engine.CauseLookupMissing {
@@ -133,7 +143,7 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 	if err != nil {
 		return t, fault.New(fault.Unavailable, "a file could not be de-identified now")
 	}
-	t.Record = record
+	t.Record, t.Pixels = record, record.Pixels
 	if o.Receiver != nil {
 		if level, kind := labelResidual(*o.Receiver, path.path, record.Needles); level != "" {
 			return held(tenant.QuarantineResidualValue, map[string]string{"path": level, "kind": kind})
@@ -147,8 +157,11 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 		return held(tenant.QuarantineDeidFailed, map[string]string{"cause": "uid_not_remapped"})
 	}
 	mem := &memFile{}
-	err = writeDataset(mem, ds, h.TransferSyntaxUID, source, littleEndian)
+	err = writeDataset(mem, ds, writtenSyntax(h.TransferSyntaxUID, ds, record), source, littleEndian)
 	var we errWrite
+	if errors.Is(err, engine.ErrPixelsUndecodable) {
+		return held(tenant.QuarantineDeidFailed, pixelHold)
+	}
 	if errors.As(err, &we) {
 		return held(tenant.QuarantineDeidFailed, map[string]string{"cause": "unwritable"})
 	}
@@ -156,9 +169,9 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 		return t, fault.New(fault.Internal, "a de-identified file could not be written to memory")
 	}
 	out := mem.b
-	bound := 2*int64(len(file)) + o.HeaderLimit
+	bound := 2*int64(len(file)) + o.HeaderLimit + grown(record)
 	if o.Receiver != nil {
-		bound = o.Receiver.MaxFileBytes + checkHeadroom
+		bound = o.Receiver.MaxFileBytes + checkHeadroom + grown(record)
 	}
 	t.Report, err = o.Check(bound).Check(ctx, bytes.NewReader(out), int64(len(out)), record.Needles, h.CharacterSet())
 	if reason, details, isHold := checkHold(err); isHold {

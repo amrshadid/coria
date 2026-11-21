@@ -14,6 +14,7 @@ of a real patient.
 | `MR_small.dcm` | `MR_small.dcm` | MR, explicit VR little endian |
 | `MR_small_RLE.dcm` | `MR_small_RLE.dcm` | the same instance, RLE compressed: same SOP Instance UID, other bytes |
 | `MR_small_jp2klossless.dcm` | `MR_small_jp2klossless.dcm` | the same instance, JPEG 2000 lossless |
+| `MR_small_jpeg_ls_lossless.dcm` | `MR_small_jpeg_ls_lossless.dcm` | the same instance, JPEG-LS lossless |
 | `MR_truncated.dcm` | `MR_truncated.dcm` | MR_small cut short |
 | `liver_1frame.dcm` | `liver_1frame.dcm` | a segmentation, an enhanced multi-frame image with functional groups |
 | `SC_rgb_rle_2frame.dcm` | `SC_rgb_rle_2frame.dcm` | RLE, two frames of one fragment each, with a Basic Offset Table |

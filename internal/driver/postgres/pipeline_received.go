@@ -241,6 +241,11 @@ func (t *Tenant) AddReceivedFilesFenced(ctx context.Context, files []tenant.Rece
 				if f.Released {
 					nReleased++
 				}
+				if f.ReleasedStorage != "" {
+					if err := keepReleasedStorage(ctx, tx, id, f.ReleasedStorage); err != nil {
+						return err
+					}
+				}
 				if f.Association != "" && !slices.Contains(assocs, f.Association) {
 					assocs = append(assocs, f.Association)
 				}

@@ -17,7 +17,12 @@ const quarantineColumns = `id, reason, details, state, receiver, reception_id, c
 	content_kept, at, decided_at, release_mode, release_reception, release_receiver, reject_reason, released_from, release_reason,
 	deidentified`
 
-// scanQuarantined reads one row of quarantineColumns.
+// quarantineReadColumns are the columns a record is read with: those it
+// is written with and the storage its release named, which only a release
+// writes.
+const quarantineReadColumns = quarantineColumns + `, release_storage`
+
+// scanQuarantined reads one row of quarantineReadColumns.
 func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFile, error) {
 	var q tenant.QuarantinedFile
 	var reason, details, state, mode string
@@ -27,7 +32,7 @@ func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFil
 	if err := row.Scan(&q.ID, &reason, &details, &state, &q.Receiver, &q.ReceptionID, &q.Caller.CallingAETitle,
 		&q.Caller.CalledAETitle, &q.Caller.Address, &q.Size, &sum, &kept, &q.SOPClassUID, &q.SOPInstanceUID, &q.StudyUID,
 		&q.SeriesUID, &q.TransferSyntaxUID, &q.Incoming, &q.ContentKept, &at, &decided, &mode, &q.ReleaseReception,
-		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified); err != nil {
+		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified, &q.ReleaseStorage); err != nil {
 		return q, err
 	}
 	q.Reason, q.State, q.ReleaseMode = tenant.QuarantineReason(reason), tenant.QuarantineState(state), tenant.ReleaseMode(mode)
@@ -40,7 +45,7 @@ func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFil
 
 // quarantinedInTx reads a record inside a change's transaction, or NotFound.
 func quarantinedInTx(ctx context.Context, tx *sql.Tx, id string) (tenant.QuarantinedFile, error) {
-	q, err := scanQuarantined(tx.QueryRowContext(ctx, `SELECT `+quarantineColumns+` FROM quarantine WHERE id = ?`, id))
+	q, err := scanQuarantined(tx.QueryRowContext(ctx, `SELECT `+quarantineReadColumns+` FROM quarantine WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return q, fault.New(fault.NotFound, "the tenant has no quarantined file with this id")
 	}
@@ -194,7 +199,7 @@ func (t *Tenant) QuarantinedFile(ctx context.Context, id string) (tenant.Quarant
 		return tenant.QuarantinedFile{}, err
 	}
 	return readOne(ctx, t, "the tenant has no quarantined file with this id", "the quarantined file cannot be read",
-		`SELECT `+quarantineColumns+` FROM quarantine WHERE id = ?`, []any{id}, scanQuarantined)
+		`SELECT `+quarantineReadColumns+` FROM quarantine WHERE id = ?`, []any{id}, scanQuarantined)
 }
 
 // ListQuarantined implements tenant.Pipeline.
@@ -256,7 +261,7 @@ func quarantineQuery(filter tenant.QuarantineFilter, after []any, limit int) (st
 	if after != nil {
 		where, args = append(where, "(at, id) < (?, ?)"), append(args, after...)
 	}
-	query := "SELECT " + quarantineColumns + " FROM quarantine"
+	query := "SELECT " + quarantineReadColumns + " FROM quarantine"
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ") // #nosec G202 -- every fragment is a constant above; values are parameters.
 	}

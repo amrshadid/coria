@@ -444,6 +444,13 @@ var textFields = []string{
 	"coria.v1.TrialElement.reason",
 	"coria.v1.TrialElement.before",
 	"coria.v1.TrialElement.after",
+	// A file's pixel work: fixed words (risk cause, action, JPEG marker
+	// names) and a profile's rule and base names, never a file's value.
+	"coria.v1.TrialPixels.risk_cause",
+	"coria.v1.TrialPixels.rule",
+	"coria.v1.TrialPixels.origin",
+	"coria.v1.TrialPixels.action",
+	"coria.v1.TrialPixels.segments_removed",
 	"coria.v1.TrialCount.key",
 	"coria.v1.ExplainProfileRequest.tenant",
 	"coria.v1.ExplainProfileRequest.quarantine_record",
@@ -535,6 +542,16 @@ var textFields = []string{
 
 	// receiver.proto: the senders a receiver forwards to, by name.
 	"coria.v1.Receiver.forward_to",
+
+	// receiver.proto and quarantine.proto: a receiver's routes name a
+	// route, a storage and senders; a release names a storage. The
+	// conditions' texts are ProfileCondition's, listed with profile.proto.
+	"coria.v1.Route.name",
+	"coria.v1.Route.storage",
+	"coria.v1.RouteForwardTo.senders",
+	"coria.v1.ReleaseQuarantinedFileRequest.storage",
+	"coria.v1.QuarantinedFile.release_storage",
+	"coria.v1.TrialResult.route",
 
 	// monitor.proto: the events and status of jobs and senders carry ids,
 	// names and fixed phrases.
