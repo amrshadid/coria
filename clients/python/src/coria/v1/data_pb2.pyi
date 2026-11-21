@@ -20,7 +20,7 @@ class ScanMarker(_message.Message):
     def __init__(self, subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., manifest_sha256: _Optional[str] = ..., instance_count: _Optional[int] = ...) -> None: ...
 
 class ArchivedFile(_message.Message):
-    __slots__ = ("instance_id", "sop_instance_uid", "subject_label", "session_label", "scan_label", "key", "offset", "length", "sha256")
+    __slots__ = ("instance_id", "sop_instance_uid", "subject_label", "session_label", "scan_label", "key", "offset", "length", "sha256", "revision")
     INSTANCE_ID_FIELD_NUMBER: _ClassVar[int]
     SOP_INSTANCE_UID_FIELD_NUMBER: _ClassVar[int]
     SUBJECT_LABEL_FIELD_NUMBER: _ClassVar[int]
@@ -30,6 +30,7 @@ class ArchivedFile(_message.Message):
     OFFSET_FIELD_NUMBER: _ClassVar[int]
     LENGTH_FIELD_NUMBER: _ClassVar[int]
     SHA256_FIELD_NUMBER: _ClassVar[int]
+    REVISION_FIELD_NUMBER: _ClassVar[int]
     instance_id: str
     sop_instance_uid: str
     subject_label: str
@@ -39,7 +40,8 @@ class ArchivedFile(_message.Message):
     offset: int
     length: int
     sha256: str
-    def __init__(self, instance_id: _Optional[str] = ..., sop_instance_uid: _Optional[str] = ..., subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., key: _Optional[str] = ..., offset: _Optional[int] = ..., length: _Optional[int] = ..., sha256: _Optional[str] = ...) -> None: ...
+    revision: int
+    def __init__(self, instance_id: _Optional[str] = ..., sop_instance_uid: _Optional[str] = ..., subject_label: _Optional[str] = ..., session_label: _Optional[str] = ..., scan_label: _Optional[str] = ..., key: _Optional[str] = ..., offset: _Optional[int] = ..., length: _Optional[int] = ..., sha256: _Optional[str] = ..., revision: _Optional[int] = ...) -> None: ...
 
 class FileChunk(_message.Message):
     __slots__ = ("offset", "data")

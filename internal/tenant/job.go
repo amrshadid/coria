@@ -386,12 +386,21 @@ const (
 	FailureUndecided       JobFailureCode = "undecided"
 	FailureNotDeidentified JobFailureCode = "not_deidentified"
 	FailureTooLarge        JobFailureCode = "too_large"
+	// FailureDeletedInArchive is an instance a correction deleted after
+	// the job was made: a job never sends or reads data a person asked to
+	// delete, so the unit counts it refused and goes on.
+	FailureDeletedInArchive JobFailureCode = "deleted_in_archive"
+	// FailureNotOnline is an instance the storage answered as held in a
+	// tier it cannot read at once: tried again later, then listed, never
+	// reported as data loss.
+	FailureNotOnline JobFailureCode = "not_online"
 )
 
 // jobFailureCodes is the closed list of codes.
 var jobFailureCodes = []JobFailureCode{FailurePeerRefused, FailurePeerWarning, FailureClassNotAccepted,
 	FailureSyntaxNotAccepted, FailurePeerUnaccounted, FailureDamagedInStorage, FailureMetaUnreadable,
-	FailureWouldHold, FailureCheckFailed, FailureUndecided, FailureNotDeidentified, FailureTooLarge}
+	FailureWouldHold, FailureCheckFailed, FailureUndecided, FailureNotDeidentified, FailureTooLarge,
+	FailureDeletedInArchive, FailureNotOnline}
 
 // Refused reports whether an instance with code c was refused, not sent
 // with a warning (for a deid job: did not pass, rather than passed with a

@@ -197,6 +197,27 @@ const (
 	// again with its receiver's profile version then, so a profile given a
 	// pixel rule for such images lets it through.
 	QuarantineReason_QUARANTINE_REASON_BURNED_IN_RISK QuarantineReason = 18
+	// The file belongs to data a person deleted from the archive
+	// (CorrectionService.Delete): its SOP Instance UID is that of a deleted
+	// instance, its Series Instance UID that of a deleted scan, its Study
+	// Instance UID that of a deleted session, or, after a subject was
+	// deleted, the naming rule gave it that subject's label. It is held, not
+	// archived, so that a consent withdrawn
+	// is not undone by the next time a scanner or a peer sends the study
+	// again. The C-STORE was answered success, so the sender does not send it
+	// again and again. It is released only once an admin allows the deleted
+	// target to arrive again. Details: "correction", the id of the deletion
+	// it matched.
+	QuarantineReason_QUARANTINE_REASON_WAS_DELETED QuarantineReason = 19
+	// The file repairs an archived instance a scrub marked damaged
+	// (ScrubJob): its SOP Instance UID is that instance's and its SHA-256 as
+	// received is the one the instance was received with, so it is the same
+	// file sent again. It is held rather than archived, since the instance's
+	// UID is held, and an admin puts it in place with
+	// CorrectionService.Replace, which clears the damage mark. The C-STORE
+	// was answered success. Details: "finding", the id of the scrub finding
+	// it matches.
+	QuarantineReason_QUARANTINE_REASON_REPAIRS_DAMAGED QuarantineReason = 20
 )
 
 // Enum value maps for QuarantineReason.
@@ -221,6 +242,8 @@ var (
 		16: "QUARANTINE_REASON_PROFILE_REFUSED",
 		17: "QUARANTINE_REASON_UNROUTED",
 		18: "QUARANTINE_REASON_BURNED_IN_RISK",
+		19: "QUARANTINE_REASON_WAS_DELETED",
+		20: "QUARANTINE_REASON_REPAIRS_DAMAGED",
 	}
 	QuarantineReason_value = map[string]int32{
 		"QUARANTINE_REASON_UNSPECIFIED":            0,
@@ -242,6 +265,8 @@ var (
 		"QUARANTINE_REASON_PROFILE_REFUSED":        16,
 		"QUARANTINE_REASON_UNROUTED":               17,
 		"QUARANTINE_REASON_BURNED_IN_RISK":         18,
+		"QUARANTINE_REASON_WAS_DELETED":            19,
+		"QUARANTINE_REASON_REPAIRS_DAMAGED":        20,
 	}
 )
 
@@ -1462,7 +1487,7 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\"N\n" +
 	"\x1dRejectQuarantinedFileResponse\x12-\n" +
-	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file*\xce\x05\n" +
+	"\x04file\x18\x01 \x01(\v2\x19.coria.v1.QuarantinedFileR\x04file*\x98\x06\n" +
 	"\x10QuarantineReason\x12!\n" +
 	"\x1dQUARANTINE_REASON_UNSPECIFIED\x10\x00\x12\x1f\n" +
 	"\x1bQUARANTINE_REASON_NOT_DICOM\x10\x01\x12,\n" +
@@ -1483,7 +1508,9 @@ const file_coria_v1_quarantine_proto_rawDesc = "" +
 	" QUARANTINE_REASON_RESIDUAL_VALUE\x10\x0f\x12%\n" +
 	"!QUARANTINE_REASON_PROFILE_REFUSED\x10\x10\x12\x1e\n" +
 	"\x1aQUARANTINE_REASON_UNROUTED\x10\x11\x12$\n" +
-	" QUARANTINE_REASON_BURNED_IN_RISK\x10\x12*\x8c\x01\n" +
+	" QUARANTINE_REASON_BURNED_IN_RISK\x10\x12\x12!\n" +
+	"\x1dQUARANTINE_REASON_WAS_DELETED\x10\x13\x12%\n" +
+	"!QUARANTINE_REASON_REPAIRS_DAMAGED\x10\x14*\x8c\x01\n" +
 	"\x0fQuarantineState\x12 \n" +
 	"\x1cQUARANTINE_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15QUARANTINE_STATE_HELD\x10\x01\x12\x1d\n" +

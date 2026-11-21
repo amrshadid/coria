@@ -159,6 +159,10 @@ message InstanceMetadata {
   // row recorded it when it was archived; absent for an instance archived
   // as received.
   ProfileVersionName profile = 7;
+
+  // The instance's revision these metadata describe: 1 as first archived,
+  // one more each time a correction replaced it, as ArchivedFile.revision.
+  int32 revision = 8;
 }
 
 // GetScanMetadataRequest names a scan and the page of its instances.

@@ -517,8 +517,16 @@ type S3Storage struct {
 	// Whether the server holds a secret access key for this storage. Answered
 	// by the server; ignored in a request.
 	SecretAccessKeySet bool `protobuf:"varint,8,opt,name=secret_access_key_set,json=secretAccessKeySet,proto3" json:"secret_access_key_set,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Whether a purge of a correction on a versioned bucket also deletes
+	// every older version of each object, delete markers included, by its
+	// version id, so the bytes are gone and not only hidden behind a delete
+	// marker. Absent means true. Off, or without the permission to list and
+	// delete versions, a purge on a versioned bucket leaves the older
+	// versions and says so (ObjectDisposition HIDDEN). A bucket's object
+	// lock may still retain a version whatever this says (RETAINED).
+	PurgeVersions *bool `protobuf:"varint,9,opt,name=purge_versions,json=purgeVersions,proto3,oneof" json:"purge_versions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *S3Storage) Reset() {
@@ -603,6 +611,13 @@ func (x *S3Storage) GetSecretAccessKey() string {
 func (x *S3Storage) GetSecretAccessKeySet() bool {
 	if x != nil {
 		return x.SecretAccessKeySet
+	}
+	return false
+}
+
+func (x *S3Storage) GetPurgeVersions() bool {
+	if x != nil && x.PurgeVersions != nil {
+		return *x.PurgeVersions
 	}
 	return false
 }
@@ -1357,7 +1372,7 @@ const file_coria_v1_storage_proto_rawDesc = "" +
 	"\x04type\":\n" +
 	"\x10DirectoryStorage\x12\x12\n" +
 	"\x04root\x18\x01 \x01(\tR\x04root\x12\x12\n" +
-	"\x04path\x18\x02 \x01(\tR\x04path\"\x96\x02\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"\xd5\x02\n" +
 	"\tS3Storage\x12\x1a\n" +
 	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x16\n" +
 	"\x06region\x18\x02 \x01(\tR\x06region\x12\x16\n" +
@@ -1367,7 +1382,9 @@ const file_coria_v1_storage_proto_rawDesc = "" +
 	"path_style\x18\x05 \x01(\bR\tpathStyle\x12\"\n" +
 	"\raccess_key_id\x18\x06 \x01(\tR\vaccessKeyId\x12/\n" +
 	"\x11secret_access_key\x18\a \x01(\tB\x03\x80\x01\x01R\x0fsecretAccessKey\x121\n" +
-	"\x15secret_access_key_set\x18\b \x01(\bR\x12secretAccessKeySet\"\xdf\x01\n" +
+	"\x15secret_access_key_set\x18\b \x01(\bR\x12secretAccessKeySet\x12*\n" +
+	"\x0epurge_versions\x18\t \x01(\bH\x00R\rpurgeVersions\x88\x01\x01B\x11\n" +
+	"\x0f_purge_versions\"\xdf\x01\n" +
 	"\x11StorageTestResult\x12-\n" +
 	"\x04step\x18\x01 \x01(\x0e2\x19.coria.v1.StorageTestStepR\x04step\x126\n" +
 	"\aoutcome\x18\x02 \x01(\x0e2\x1c.coria.v1.StorageTestOutcomeR\aoutcome\x125\n" +
@@ -1524,6 +1541,7 @@ func file_coria_v1_storage_proto_init() {
 		(*Storage_Directory)(nil),
 		(*Storage_S3)(nil),
 	}
+	file_coria_v1_storage_proto_msgTypes[2].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

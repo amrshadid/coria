@@ -33,8 +33,11 @@ class JobServiceStub:
     subject, a session or a scan sent to one of the tenant's senders
     (SenderService); or deid, the archived instances of a subject, a session,
     a scan or the whole tenant read and judged against a de-identification
-    profile version, changing nothing (DeidJob). A kind added later is a new
-    member of Job's kind, served by these same methods.
+    profile version, changing nothing (DeidJob); scrub, every stored object of
+    the tenant read again and compared with what the catalog and the scan's
+    manifest say it should be (ScrubJob); or rebuild, the catalog made again
+    from what the tenant's storages hold (RebuildJob). A kind added later is a
+    new member of Job's kind, served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -161,6 +164,84 @@ class JobServiceStub:
     JOB_FAILURE_CODE_UNDECIDED, tallied check|undecidable|<tag>. An
     instance archived as received records no version and is passed with
     a note (JOB_FAILURE_CODE_NOT_DEIDENTIFIED).
+
+    What a scrub job does. A storage is the archive's truth, and a byte can
+    change on it without anyone writing it (a failing disk, an operator's
+    mistake, a bucket edited by hand); a scrub finds such a change before a
+    reader does. Its work is a unit per scan, which reads each instance of
+    the scan in full and compares its length and SHA-256 (FIPS 180-4) with
+    the catalog's, and the manifest's SHA-256 with the one the catalog holds
+    and its lines with the catalog's rows; and units that list the storage's
+    keys one level at a time, for objects no scan names. A scan with a
+    correction (CorrectionService) not yet purged is checked against its
+    correction record, so what the correction is doing (a new revision, a
+    relabel's new tree, objects waiting for their purge) is never called an
+    orphan or damaged. An object the storage answers as not online (held in
+    a tier it cannot read at once) is tallied "unreadable|not_online", never
+    a finding and never a mark: not readable now is not missing. Every
+    difference is read a second time before it is
+    believed, then recorded as a finding (ListScrubFindings) of one of five
+    kinds (ScrubFindingKind), with an EVENT_TYPE_SCRUB_FINDING event; a
+    damaged or missing instance is marked so that every read of it answers
+    data loss at once instead of streaming bytes that are not what was
+    archived. A finding read good by a later scrub is cleared, and the
+    clearing is recorded. A scrub reports and marks only: it never deletes,
+    moves, rewrites or repairs a stored object. Repair is a replace from a
+    file sent again (CorrectionService.Replace). It reads at most the
+    tenant's setting scrub.rate per storage (bytes per second, such as
+    "64MiB"; built-in default "64MiB"), and its reads count in the server's
+    bound on reads of archived bytes, behind reception. It also verifies the
+    tenant's audit log (AuditSealService.VerifyAudit), and a log that does
+    not verify is a tally of the job. The server makes one by itself every
+    scrub.interval (a period such as "30d", from "1d" to "3650d", or "0" for
+    never; a tenant setting; built-in default "30d"), and a person makes one
+    with CreateJob. Its counts read: sent, the instances read good; refused,
+    those with a finding; and its tallies, "finding|<kind>" for the findings
+    recorded, "cleared" for those cleared, "orphan_objects" for the objects
+    no scan names, "unreadable|not_online" for the objects not online, and
+    "audit|not_verified" when the log did not verify.
+
+    What a rebuild job does. It reads the correction records on each of the
+    tenant's storages first, then lists their "meta/" keys and reads each
+    scan's manifest and metadata, and opens no DICOM file. In both modes it
+    builds a shadow catalog, in a scratch database of the tenant's database
+    type, scan by scan, each write fenced by its unit's attempt, so a crash
+    or a lost lease goes on from the last scan written to the shadow
+    (RetryJob likewise) and the catalog in use is never touched while it is
+    built: it keeps answering reads and sends. A scan under a committed
+    delete is left out and tallied; a correction record whose row the
+    tenant's database lacks is applied fail-closed (a delete as committed)
+    and tallied, and the correction listed as unresolved for an admin; a
+    scan whose metadata names a profile version the tenant does not have is
+    left out and tallied, never cataloged as archived as received; two
+    storages holding one Series Instance UID is a tally, not a choice the
+    job makes, except a relabel's two trees, which its record resolves. In
+    compare mode it tallies each difference from the catalog in use and
+    drops the shadow. In replace mode the tenant's receivers refuse new data
+    while the shadow is built (a transient refusal the sender tries again,
+    as when a storage is nearly full), so nothing lands that the shadow
+    would miss, and corrections are refused; once the build is complete
+    (every key listed, every manifest read, the counts adding up) one
+    transaction makes the shadow the catalog in use, with an
+    EVENT_TYPE_CATALOG_REBUILT event, so every read sees the whole old
+    catalog or the whole new one, never part of either. Its counts read:
+    sent, the instances cataloged (or compared); refused, those left out.
+    Its tallies: "differs|<table>|<added|removed|changed>",
+    "left_out|profile_unknown", "left_out|deleted",
+    "unresolved_correction", "series_on_two_storages", and "activated" once
+    a replace made its shadow the catalog in use.
+
+    A job meets the archive as it is now, before each instance: an instance
+    deleted since the job was made is counted refused
+    (JOB_FAILURE_CODE_DELETED_IN_ARCHIVE), one marked damaged fails as data
+    loss, and a replaced one is sent or read at its current revision, which
+    its outcome records. An instance whose transfer had started when a
+    correction committed finishes, since a store cannot be taken back, and
+    is tallied "superseded_during_send". A job belongs to the tenant, not to
+    the key that made it: revoking that key does not stop it; CancelJob
+    does. While the tenant is restoring, moved or fenced, its units stop
+    with their place kept, and the job's reason says "tenant restoring",
+    "tenant moved" or "tenant fenced".
 
     Every method acts inside one tenant, named by the request's tenant field,
     so a request into a tenant that is not ready is answered UNAVAILABLE. No
@@ -213,8 +294,11 @@ class JobServiceServicer:
     subject, a session or a scan sent to one of the tenant's senders
     (SenderService); or deid, the archived instances of a subject, a session,
     a scan or the whole tenant read and judged against a de-identification
-    profile version, changing nothing (DeidJob). A kind added later is a new
-    member of Job's kind, served by these same methods.
+    profile version, changing nothing (DeidJob); scrub, every stored object of
+    the tenant read again and compared with what the catalog and the scan's
+    manifest say it should be (ScrubJob); or rebuild, the catalog made again
+    from what the tenant's storages hold (RebuildJob). A kind added later is a
+    new member of Job's kind, served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -342,6 +426,84 @@ class JobServiceServicer:
     instance archived as received records no version and is passed with
     a note (JOB_FAILURE_CODE_NOT_DEIDENTIFIED).
 
+    What a scrub job does. A storage is the archive's truth, and a byte can
+    change on it without anyone writing it (a failing disk, an operator's
+    mistake, a bucket edited by hand); a scrub finds such a change before a
+    reader does. Its work is a unit per scan, which reads each instance of
+    the scan in full and compares its length and SHA-256 (FIPS 180-4) with
+    the catalog's, and the manifest's SHA-256 with the one the catalog holds
+    and its lines with the catalog's rows; and units that list the storage's
+    keys one level at a time, for objects no scan names. A scan with a
+    correction (CorrectionService) not yet purged is checked against its
+    correction record, so what the correction is doing (a new revision, a
+    relabel's new tree, objects waiting for their purge) is never called an
+    orphan or damaged. An object the storage answers as not online (held in
+    a tier it cannot read at once) is tallied "unreadable|not_online", never
+    a finding and never a mark: not readable now is not missing. Every
+    difference is read a second time before it is
+    believed, then recorded as a finding (ListScrubFindings) of one of five
+    kinds (ScrubFindingKind), with an EVENT_TYPE_SCRUB_FINDING event; a
+    damaged or missing instance is marked so that every read of it answers
+    data loss at once instead of streaming bytes that are not what was
+    archived. A finding read good by a later scrub is cleared, and the
+    clearing is recorded. A scrub reports and marks only: it never deletes,
+    moves, rewrites or repairs a stored object. Repair is a replace from a
+    file sent again (CorrectionService.Replace). It reads at most the
+    tenant's setting scrub.rate per storage (bytes per second, such as
+    "64MiB"; built-in default "64MiB"), and its reads count in the server's
+    bound on reads of archived bytes, behind reception. It also verifies the
+    tenant's audit log (AuditSealService.VerifyAudit), and a log that does
+    not verify is a tally of the job. The server makes one by itself every
+    scrub.interval (a period such as "30d", from "1d" to "3650d", or "0" for
+    never; a tenant setting; built-in default "30d"), and a person makes one
+    with CreateJob. Its counts read: sent, the instances read good; refused,
+    those with a finding; and its tallies, "finding|<kind>" for the findings
+    recorded, "cleared" for those cleared, "orphan_objects" for the objects
+    no scan names, "unreadable|not_online" for the objects not online, and
+    "audit|not_verified" when the log did not verify.
+
+    What a rebuild job does. It reads the correction records on each of the
+    tenant's storages first, then lists their "meta/" keys and reads each
+    scan's manifest and metadata, and opens no DICOM file. In both modes it
+    builds a shadow catalog, in a scratch database of the tenant's database
+    type, scan by scan, each write fenced by its unit's attempt, so a crash
+    or a lost lease goes on from the last scan written to the shadow
+    (RetryJob likewise) and the catalog in use is never touched while it is
+    built: it keeps answering reads and sends. A scan under a committed
+    delete is left out and tallied; a correction record whose row the
+    tenant's database lacks is applied fail-closed (a delete as committed)
+    and tallied, and the correction listed as unresolved for an admin; a
+    scan whose metadata names a profile version the tenant does not have is
+    left out and tallied, never cataloged as archived as received; two
+    storages holding one Series Instance UID is a tally, not a choice the
+    job makes, except a relabel's two trees, which its record resolves. In
+    compare mode it tallies each difference from the catalog in use and
+    drops the shadow. In replace mode the tenant's receivers refuse new data
+    while the shadow is built (a transient refusal the sender tries again,
+    as when a storage is nearly full), so nothing lands that the shadow
+    would miss, and corrections are refused; once the build is complete
+    (every key listed, every manifest read, the counts adding up) one
+    transaction makes the shadow the catalog in use, with an
+    EVENT_TYPE_CATALOG_REBUILT event, so every read sees the whole old
+    catalog or the whole new one, never part of either. Its counts read:
+    sent, the instances cataloged (or compared); refused, those left out.
+    Its tallies: "differs|<table>|<added|removed|changed>",
+    "left_out|profile_unknown", "left_out|deleted",
+    "unresolved_correction", "series_on_two_storages", and "activated" once
+    a replace made its shadow the catalog in use.
+
+    A job meets the archive as it is now, before each instance: an instance
+    deleted since the job was made is counted refused
+    (JOB_FAILURE_CODE_DELETED_IN_ARCHIVE), one marked damaged fails as data
+    loss, and a replaced one is sent or read at its current revision, which
+    its outcome records. An instance whose transfer had started when a
+    correction committed finishes, since a store cannot be taken back, and
+    is tallied "superseded_during_send". A job belongs to the tenant, not to
+    the key that made it: revoking that key does not stop it; CancelJob
+    does. While the tenant is restoring, moved or fenced, its units stop
+    with their place kept, and the job's reason says "tenant restoring",
+    "tenant moved" or "tenant fenced".
+
     Every method acts inside one tenant, named by the request's tenant field,
     so a request into a tenant that is not ready is answered UNAVAILABLE. No
     answer of this service speaks of another tenant.
@@ -352,12 +514,16 @@ class JobServiceServicer:
         the tenant has, enabled or not (a disabled sender's jobs wait), and a
         subject, a session of it or a scan of that, by labels. A deid job names
         its mode, a profile version for a dry run, and a subject, a session of
-        it, a scan of that, or none for the whole tenant.
+        it, a scan of that, or none for the whole tenant. A scrub job names a
+        storage, or none for every storage. A rebuild job names its mode; one
+        that replaces the catalog also needs admin on the tenant, checked after
+        the requirement below, since it empties the catalog and fills it again,
+        and is answered permission denied to an operator.
 
         Role: operator on the tenant.
         Audit: one entry in the tenant's log, with the new job's id as its
         object, and its kind, its sender and the path of labels of its target
-        in details.
+        in details; for a scrub, its storage; for a rebuild, its mode.
         Errors: unauthenticated, permission denied (no grant; also a tenant that
         does not exist, for a caller who may not list every tenant), invalid
         (also no kind, a label that does not pass the label rule, a level named
@@ -365,9 +531,12 @@ class JobServiceServicer:
         server sets), not found (the tenant holds no subject, session or scan
         with those labels; the tenant has no profile version of that name and
         number; a tenant that does not exist, for a caller who may list every
-        tenant), precondition (a sender the tenant does not have),
-        unavailable (the tenant's database does not answer, or the tenant is
-        not ready).
+        tenant), precondition (a sender the tenant does not have; a scrub of a
+        storage the tenant does not have, or while another scrub of it is
+        queued or running; a rebuild while another rebuild is queued or
+        running, or whose scratch_schema does not exist, holds a table, is the
+        tenant's own schema or is on its search_path), unavailable (the tenant's database does not answer, or the
+        tenant is not ready).
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -519,8 +688,11 @@ class JobService:
     subject, a session or a scan sent to one of the tenant's senders
     (SenderService); or deid, the archived instances of a subject, a session,
     a scan or the whole tenant read and judged against a de-identification
-    profile version, changing nothing (DeidJob). A kind added later is a new
-    member of Job's kind, served by these same methods.
+    profile version, changing nothing (DeidJob); scrub, every stored object of
+    the tenant read again and compared with what the catalog and the scan's
+    manifest say it should be (ScrubJob); or rebuild, the catalog made again
+    from what the tenant's storages hold (RebuildJob). A kind added later is a
+    new member of Job's kind, served by these same methods.
 
     What a send job sends. The instances the catalog held for its target when
     the job was made: each instance archived at or before the job's
@@ -647,6 +819,84 @@ class JobService:
     JOB_FAILURE_CODE_UNDECIDED, tallied check|undecidable|<tag>. An
     instance archived as received records no version and is passed with
     a note (JOB_FAILURE_CODE_NOT_DEIDENTIFIED).
+
+    What a scrub job does. A storage is the archive's truth, and a byte can
+    change on it without anyone writing it (a failing disk, an operator's
+    mistake, a bucket edited by hand); a scrub finds such a change before a
+    reader does. Its work is a unit per scan, which reads each instance of
+    the scan in full and compares its length and SHA-256 (FIPS 180-4) with
+    the catalog's, and the manifest's SHA-256 with the one the catalog holds
+    and its lines with the catalog's rows; and units that list the storage's
+    keys one level at a time, for objects no scan names. A scan with a
+    correction (CorrectionService) not yet purged is checked against its
+    correction record, so what the correction is doing (a new revision, a
+    relabel's new tree, objects waiting for their purge) is never called an
+    orphan or damaged. An object the storage answers as not online (held in
+    a tier it cannot read at once) is tallied "unreadable|not_online", never
+    a finding and never a mark: not readable now is not missing. Every
+    difference is read a second time before it is
+    believed, then recorded as a finding (ListScrubFindings) of one of five
+    kinds (ScrubFindingKind), with an EVENT_TYPE_SCRUB_FINDING event; a
+    damaged or missing instance is marked so that every read of it answers
+    data loss at once instead of streaming bytes that are not what was
+    archived. A finding read good by a later scrub is cleared, and the
+    clearing is recorded. A scrub reports and marks only: it never deletes,
+    moves, rewrites or repairs a stored object. Repair is a replace from a
+    file sent again (CorrectionService.Replace). It reads at most the
+    tenant's setting scrub.rate per storage (bytes per second, such as
+    "64MiB"; built-in default "64MiB"), and its reads count in the server's
+    bound on reads of archived bytes, behind reception. It also verifies the
+    tenant's audit log (AuditSealService.VerifyAudit), and a log that does
+    not verify is a tally of the job. The server makes one by itself every
+    scrub.interval (a period such as "30d", from "1d" to "3650d", or "0" for
+    never; a tenant setting; built-in default "30d"), and a person makes one
+    with CreateJob. Its counts read: sent, the instances read good; refused,
+    those with a finding; and its tallies, "finding|<kind>" for the findings
+    recorded, "cleared" for those cleared, "orphan_objects" for the objects
+    no scan names, "unreadable|not_online" for the objects not online, and
+    "audit|not_verified" when the log did not verify.
+
+    What a rebuild job does. It reads the correction records on each of the
+    tenant's storages first, then lists their "meta/" keys and reads each
+    scan's manifest and metadata, and opens no DICOM file. In both modes it
+    builds a shadow catalog, in a scratch database of the tenant's database
+    type, scan by scan, each write fenced by its unit's attempt, so a crash
+    or a lost lease goes on from the last scan written to the shadow
+    (RetryJob likewise) and the catalog in use is never touched while it is
+    built: it keeps answering reads and sends. A scan under a committed
+    delete is left out and tallied; a correction record whose row the
+    tenant's database lacks is applied fail-closed (a delete as committed)
+    and tallied, and the correction listed as unresolved for an admin; a
+    scan whose metadata names a profile version the tenant does not have is
+    left out and tallied, never cataloged as archived as received; two
+    storages holding one Series Instance UID is a tally, not a choice the
+    job makes, except a relabel's two trees, which its record resolves. In
+    compare mode it tallies each difference from the catalog in use and
+    drops the shadow. In replace mode the tenant's receivers refuse new data
+    while the shadow is built (a transient refusal the sender tries again,
+    as when a storage is nearly full), so nothing lands that the shadow
+    would miss, and corrections are refused; once the build is complete
+    (every key listed, every manifest read, the counts adding up) one
+    transaction makes the shadow the catalog in use, with an
+    EVENT_TYPE_CATALOG_REBUILT event, so every read sees the whole old
+    catalog or the whole new one, never part of either. Its counts read:
+    sent, the instances cataloged (or compared); refused, those left out.
+    Its tallies: "differs|<table>|<added|removed|changed>",
+    "left_out|profile_unknown", "left_out|deleted",
+    "unresolved_correction", "series_on_two_storages", and "activated" once
+    a replace made its shadow the catalog in use.
+
+    A job meets the archive as it is now, before each instance: an instance
+    deleted since the job was made is counted refused
+    (JOB_FAILURE_CODE_DELETED_IN_ARCHIVE), one marked damaged fails as data
+    loss, and a replaced one is sent or read at its current revision, which
+    its outcome records. An instance whose transfer had started when a
+    correction committed finishes, since a store cannot be taken back, and
+    is tallied "superseded_during_send". A job belongs to the tenant, not to
+    the key that made it: revoking that key does not stop it; CancelJob
+    does. While the tenant is restoring, moved or fenced, its units stop
+    with their place kept, and the job's reason says "tenant restoring",
+    "tenant moved" or "tenant fenced".
 
     Every method acts inside one tenant, named by the request's tenant field,
     so a request into a tenant that is not ready is answered UNAVAILABLE. No

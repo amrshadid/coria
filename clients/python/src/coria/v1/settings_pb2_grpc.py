@@ -68,7 +68,12 @@ class SettingsServiceStub:
     storage.s3-endpoints (StorageService), sender.destinations,
     sender.allow-plain-http, sender.max-associations and
     sender.tenant-max-associations (SenderService), job.failures-kept
-    (JobService), and events.retention (MonitorService).
+    (JobService), and events.retention (MonitorService). Those of keeping
+    the archive whole, not yet in use by the server: scrub.rate and
+    scrub.interval (ordinary settings, a tenant may override them; JobService,
+    ScrubJob), delete.grace (an ordinary setting, a tenant may override it;
+    CorrectionService), and audit.seal-interval and audit.retention
+    (installation-only; AuditSealService).
     """
 
     def __init__(self, channel):
@@ -142,7 +147,12 @@ class SettingsServiceServicer:
     storage.s3-endpoints (StorageService), sender.destinations,
     sender.allow-plain-http, sender.max-associations and
     sender.tenant-max-associations (SenderService), job.failures-kept
-    (JobService), and events.retention (MonitorService).
+    (JobService), and events.retention (MonitorService). Those of keeping
+    the archive whole, not yet in use by the server: scrub.rate and
+    scrub.interval (ordinary settings, a tenant may override them; JobService,
+    ScrubJob), delete.grace (an ordinary setting, a tenant may override it;
+    CorrectionService), and audit.seal-interval and audit.retention
+    (installation-only; AuditSealService).
     """
 
     def GetSetting(self, request, context):
@@ -306,7 +316,12 @@ class SettingsService:
     storage.s3-endpoints (StorageService), sender.destinations,
     sender.allow-plain-http, sender.max-associations and
     sender.tenant-max-associations (SenderService), job.failures-kept
-    (JobService), and events.retention (MonitorService).
+    (JobService), and events.retention (MonitorService). Those of keeping
+    the archive whole, not yet in use by the server: scrub.rate and
+    scrub.interval (ordinary settings, a tenant may override them; JobService,
+    ScrubJob), delete.grace (an ordinary setting, a tenant may override it;
+    CorrectionService), and audit.seal-interval and audit.retention
+    (installation-only; AuditSealService).
     """
 
     @staticmethod

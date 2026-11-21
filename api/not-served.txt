@@ -1,18 +1,28 @@
-# The services of the API contract (api/proto) that the server does not
-# serve yet, one full service name per line; "#" starts a comment.
+# The parts of the API contract (api/proto) that the server does not serve
+# yet, one per line; "#" starts a comment. A line is a full service name,
+# for a service none of whose methods is served, or a full service name, a
+# "/" and a method's name, for one method of a service whose other methods
+# are served.
 #
 # A contract is merged and reviewed as a contract before its handlers are
-# written, so for a while a service is in the proto files with nothing behind
-# it. Until a handler exists the server answers each of its methods
-# UNIMPLEMENTED to an authenticated caller, as it answers any service it does
-# not have.
+# written, so for a while a service, or a method added to a served service,
+# is in the proto files with nothing behind it. Until a handler exists the
+# server answers each such method UNIMPLEMENTED to an authenticated caller,
+# as it answers any method it does not have: it leaves a listed method of a
+# served service out of its routes.
 #
-# Read by the Go tests of internal/api and internal/server/servertest and by
-# scripts/prove/steps.py, which check each name the other way round: a listed
-# service must be defined by a proto file, must have no method in the
-# server's table, and must answer UNIMPLEMENTED; every service not listed is
-# held to its Role lines and to every check of a served method.
+# Read by the Go tests of internal/api, internal/server and
+# internal/server/servertest and by scripts/prove/steps.py, which check each
+# line the other way round: a listed service or method must be defined by a
+# proto file, must have no method in the server's table, and must answer
+# UNIMPLEMENTED; every method not listed is held to its Role line and to
+# every check of a served method.
 #
-# A line is removed in the change that serves its service; the tests fail
+# A line is removed in the change that serves what it names; the tests fail
 # until it is.
 
+coria.v1.AuditSealService
+coria.v1.BackupService
+coria.v1.CorrectionService
+coria.v1.AccessService/ReinstateKeys
+coria.v1.TenantService/ReclaimTenant

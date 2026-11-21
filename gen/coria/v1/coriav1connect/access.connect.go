@@ -40,13 +40,17 @@
 //     rule stated on its fields, or exceeds a limit below. Sending it again
 //     unchanged fails again.
 //   - unauthenticated: UNAUTHENTICATED (HTTP 401). No key, a key the server
-//     does not know, a wrong secret, an expired key and a revoked key all get
-//     this one answer, with the same message, so a caller cannot tell them
-//     apart.
+//     does not know, a wrong secret, an expired key, a revoked key and a
+//     suspended key (Key.suspended) all get this one answer, with the same
+//     message, so a caller cannot tell them apart.
 //   - permission denied: PERMISSION_DENIED (HTTP 403). The key is good but
 //     holds no grant with the role the method needs.
 //   - not found: NOT_FOUND (HTTP 404). The thing named does not exist, and
-//     the caller may know that it does not.
+//     the caller may know that it does not. A subject, session or scan
+//     asked for by a label a relabel moved (CorrectionService.Relabel) is
+//     answered so with the reason RELABELED, its metadata "correction" (the
+//     relabel's id) and "to_label" (the label it has now), so a client
+//     that holds old labels finds the data.
 //   - conflict: ALREADY_EXISTS (HTTP 409). The change would collide with what
 //     exists, such as a second tenant with the same name.
 //   - precondition: FAILED_PRECONDITION (HTTP 400). What the request names
@@ -54,26 +58,44 @@
 //     that holds files, releasing a file already rejected, or using a port
 //     the installation has not allotted to the tenant. The message says
 //     which. Sending it again unchanged fails again until that state
-//     changes.
+//     changes. A change to a tenant that is read only carries the reason
+//     TENANT_MOVED (an export handed it to another installation) or
+//     TENANT_FENCED (its storages' owner record names another installation
+//     or a later generation).
 //   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs does
 //     not answer, or a tenant is not ready. Sending it again later may
-//     succeed.
+//     succeed. With the reason TENANT_RESTORING, the tenant is being
+//     reconciled after a restore; with NOT_ONLINE, the storage holds the
+//     object in a tier it cannot read at once (never answered as not found
+//     or data loss: the bytes are not missing).
 //   - cursor expired: OUT_OF_RANGE (HTTP 400). Only MonitorService.Watch
-//     answers it: the cursor it was given points before the oldest event
-//     kept, so the events after it can no longer all be answered. Sending
-//     it again fails again; the client starts over from a status.
+//     answers it, with one of two reasons: CURSOR_EXPIRED, the cursor points
+//     before the oldest event kept, so the events after it can no longer all
+//     be answered; or EVENT_HISTORY_CHANGED, the cursor belongs to another
+//     history of the tenant's feed (its database was restored, imported or
+//     loaded, which starts a new history), or points past the newest event.
+//     Sending it again fails again; the client starts over from a status.
 //   - data loss: DATA_LOSS (HTTP 500). An archived file, or a file the
 //     server keeps beside it, is missing from its storage or is not what
 //     was archived: its bytes do not match the SHA-256 its scan's manifest
-//     holds. Answered only where archived files are read
+//     holds, or a scrub found it so (ScrubJob) and marked it. Answered
+//     only where archived files are read
 //     (MetadataService, DataService and its plain HTTP download, where it
 //     is HTTP 500); the message names the scan, and the cause is in the
 //     server's log. Sending it again fails again until the
 //     file is mended from another copy.
 //
+// Where a kind above names a reason, it travels as a google.rpc.ErrorInfo
+// detail (google/rpc/error_details.proto) of the error, with the domain
+// "coria", that reason, and the metadata the kind names. A client that does
+// not read details still has the code and the message; the reasons are
+// fixed words, and a reason added later is one a client does not know.
+//
 // Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
-// RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch and
-// DataService.ReadFiles, for too many open streams and downloads), and DEADLINE_EXCEEDED when its deadline passes.
+// RESOURCE_EXHAUSTED for a message over the size limit (and for too many
+// open streams and downloads, for Watch, DataService.ReadFiles,
+// AuditSealService.ExportAudit, and one backup or export at a time for
+// BackupService), and DEADLINE_EXCEEDED when its deadline passes.
 // The message of an INTERNAL answer says nothing about the cause; the cause
 // is in the server's log and the audit entry, under the request's id.
 //
@@ -96,13 +118,23 @@
 // server's record of the call, not a change to anything a read answers, and
 // repeating the read answers the same. CreateTenant, CreateKey, AddStorage,
 // AddReceiver, AddSender and CreateJob are neither, as each call makes a new
-// thing.
+// thing. Four changes are not repeated plainly, and say what a repeat
+// does: CorrectionService.Delete (a Delete carrying a confirm token
+// already used answers the correction that token made),
+// CorrectionService.Replace (a Replace of a quarantined file already used
+// answers the correction it made), CorrectionService.Relabel (a Relabel
+// with the same target and new label as a correction not abandoned answers
+// that correction), each marked IDEMPOTENT for that reason; and
+// BackupService.ExportTenant, whose repeat is refused, since the tenant is
+// then handed off.
 //
 // Limits. A message over 4 MB is refused. Every call has a deadline; when the
 // client sends none, the server applies 30 seconds, except to the stream of
-// MonitorService.Watch, which stays open until either side ends it, and to
+// MonitorService.Watch, which stays open until either side ends it, to
 // the stream of DataService.ReadFiles, which may carry a subject's files
-// for hours (its comment says how a stalled one ends). A list
+// for hours (its comment says how a stalled one ends), and to the streams
+// of AuditSealService.ExportAudit, BackupService.CreateBackup and
+// BackupService.ExportTenant, which carry a whole log or database. A list
 // answers 100 items unless page_size asks for another number, and at most
 // 1000; a larger page_size is invalid.
 //
@@ -123,15 +155,16 @@
 // secret is the exception, kept unless named and never set to empty. A field
 // the server answers is read-only, and naming it is invalid.
 //
-// Secrets cross the API in five fields only,
+// Secrets cross the API in six fields only,
 // CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
 // by AddStorage and SetStorage; always empty in an answer),
 // StowSender.credential (in, by AddSender and SetSender; always empty in an
-// answer), CreateKeyResponse.secret and RotateKeyResponse.secret (out,
-// once). All five are marked debug_redact. The mark is metadata, not
+// answer), CreateKeyResponse.secret, RotateKeyResponse.secret and
+// TenantExportSummary.transfer_key (out, once). All six are marked
+// debug_redact. The mark is metadata, not
 // protection: the protobuf library prints such a field like any other
 // (checked with protobuf-go v1.36.12, in every text form). The server's own
-// redactor reads the mark and removes the five fields before anything is
+// redactor reads the mark and removes the six fields before anything is
 // logged.
 //
 // Where a request may come from. A request off the local socket must pass,
@@ -202,6 +235,9 @@ const (
 	AccessServiceRotateKeyProcedure = "/coria.v1.AccessService/RotateKey"
 	// AccessServiceSetKeyRulesProcedure is the procedure name of the AccessService's SetKeyRules RPC.
 	AccessServiceSetKeyRulesProcedure = "/coria.v1.AccessService/SetKeyRules"
+	// AccessServiceReinstateKeysProcedure is the procedure name of the AccessService's ReinstateKeys
+	// RPC.
+	AccessServiceReinstateKeysProcedure = "/coria.v1.AccessService/ReinstateKeys"
 )
 
 var (
@@ -280,6 +316,14 @@ var (
 			StreamType:       connect.StreamTypeUnary,
 			Schema:           v1.File_coria_v1_access_proto.Services().ByName("AccessService").Methods().ByName("SetKeyRules"),
 			Procedure:        AccessServiceSetKeyRulesProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
+		}
+	})
+	accessServiceReinstateKeysSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_access_proto.Services().ByName("AccessService").Methods().ByName("ReinstateKeys"),
+			Procedure:        AccessServiceReinstateKeysProcedure,
 			IdempotencyLevel: connect.IdempotencyIdempotent,
 		}
 	})
@@ -407,6 +451,22 @@ type AccessServiceClient interface {
 	// has that id), conflict (the key is revoked), unavailable (the master
 	// database does not answer).
 	SetKeyRules(context.Context, *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error)
+	// ReinstateKeys lets suspended keys work again off the local socket
+	// (Key.suspended). A restore suspends every key it brings back, since a
+	// key revoked, or a grant removed, after the backup was made would
+	// otherwise work again; a person reviews the keys and reinstates those
+	// that should work, by id or all at once. Only the local operator may
+	// call it: a key is answered permission denied whatever its grants, as
+	// every key may be suspended. A key not suspended is left as it is.
+	//
+	// Role: admin on the installation.
+	// Audit: one entry per key reinstated in the installation's log, with
+	// the key's id as its object.
+	// Errors: unauthenticated, permission denied (also any caller but the
+	// local operator), invalid (also both key_ids and all, or neither; more
+	// than 1000 ids), not found (a key id the installation does not have),
+	// unavailable (the master database does not answer).
+	ReinstateKeys(context.Context, *v1.ReinstateKeysRequest) (*v1.ReinstateKeysResponse, error)
 }
 
 // NewAccessServiceClient constructs a client for the coria.v1.AccessService service. Multiple
@@ -537,6 +597,22 @@ type AccessServiceHandler interface {
 	// has that id), conflict (the key is revoked), unavailable (the master
 	// database does not answer).
 	SetKeyRules(context.Context, *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error)
+	// ReinstateKeys lets suspended keys work again off the local socket
+	// (Key.suspended). A restore suspends every key it brings back, since a
+	// key revoked, or a grant removed, after the backup was made would
+	// otherwise work again; a person reviews the keys and reinstates those
+	// that should work, by id or all at once. Only the local operator may
+	// call it: a key is answered permission denied whatever its grants, as
+	// every key may be suspended. A key not suspended is left as it is.
+	//
+	// Role: admin on the installation.
+	// Audit: one entry per key reinstated in the installation's log, with
+	// the key's id as its object.
+	// Errors: unauthenticated, permission denied (also any caller but the
+	// local operator), invalid (also both key_ids and all, or neither; more
+	// than 1000 ids), not found (a key id the installation does not have),
+	// unavailable (the master database does not answer).
+	ReinstateKeys(context.Context, *v1.ReinstateKeysRequest) (*v1.ReinstateKeysResponse, error)
 }
 
 // RegisterAccessServiceHandler registers svc as the coria.v1.AccessService implementation on
@@ -554,6 +630,7 @@ func RegisterAccessServiceHandler(server *connect.Server, svc AccessServiceHandl
 		connect.Method{Spec: accessServiceWhoAmISpec(), Handler: adapter.whoAmI},
 		connect.Method{Spec: accessServiceRotateKeySpec(), Handler: adapter.rotateKey},
 		connect.Method{Spec: accessServiceSetKeyRulesSpec(), Handler: adapter.setKeyRules},
+		connect.Method{Spec: accessServiceReinstateKeysSpec(), Handler: adapter.reinstateKeys},
 	)
 }
 
@@ -598,6 +675,10 @@ func (UnimplementedAccessServiceHandler) RotateKey(context.Context, *v1.RotateKe
 
 func (UnimplementedAccessServiceHandler) SetKeyRules(context.Context, *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.AccessService.SetKeyRules is not implemented")
+}
+
+func (UnimplementedAccessServiceHandler) ReinstateKeys(context.Context, *v1.ReinstateKeysRequest) (*v1.ReinstateKeysResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.AccessService.ReinstateKeys is not implemented")
 }
 
 type accessServiceClient struct {
@@ -679,6 +760,14 @@ func (c *accessServiceClient) RotateKey(ctx context.Context, req *v1.RotateKeyRe
 func (c *accessServiceClient) SetKeyRules(ctx context.Context, req *v1.SetKeyRulesRequest) (*v1.SetKeyRulesResponse, error) {
 	var res v1.SetKeyRulesResponse
 	if err := c.client.CallUnary(ctx, accessServiceSetKeyRulesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *accessServiceClient) ReinstateKeys(ctx context.Context, req *v1.ReinstateKeysRequest) (*v1.ReinstateKeysResponse, error) {
+	var res v1.ReinstateKeysResponse
+	if err := c.client.CallUnary(ctx, accessServiceReinstateKeysSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -800,6 +889,18 @@ func (h accessServiceHandler) setKeyRules(ctx context.Context, _ connect.Spec, s
 		return err
 	}
 	res, err := h.svc.SetKeyRules(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h accessServiceHandler) reinstateKeys(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ReinstateKeysRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ReinstateKeys(ctx, &req)
 	if err != nil {
 		return err
 	}

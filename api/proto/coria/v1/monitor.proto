@@ -7,6 +7,8 @@ package coria.v1;
 
 import "google/protobuf/timestamp.proto";
 import "coria/v1/access.proto";
+import "coria/v1/audit_seal.proto";
+import "coria/v1/correction.proto";
 import "coria/v1/job.proto";
 import "coria/v1/quarantine.proto";
 import "coria/v1/reception.proto";
@@ -112,11 +114,13 @@ service MonitorService {
   // (also a cursor not made by a Watch or status of the tenant it is given
   // for, cursor with every tenant or tenant_cursors with one tenant), not
   // found (a tenant that does not exist, for a caller who may list every
-  // tenant), cursor expired (a cursor points before the oldest event its
-  // tenant keeps, or after the newest event it holds, as after its database
-  // was restored from an older backup; the message names the tenant; the
-  // client reads that tenant's status again and watches from its
-  // event_cursor), unavailable
+  // tenant), cursor expired (reason CURSOR_EXPIRED: a cursor points before
+  // the oldest event its tenant keeps; reason EVENT_HISTORY_CHANGED: a
+  // cursor belongs to another history of its tenant's feed, as after its
+  // database was restored, imported or loaded, or points after the newest
+  // event it holds; the message names the tenant; the client reads that
+  // tenant's status again, resynchronizes from the catalog for a new
+  // history, and watches from its event_cursor), unavailable
   // (with one tenant, its database does not answer or it is not ready, when
   // the stream opens or while it is open; the client resumes later from its
   // last cursor), resource exhausted (the caller, a key or the local
@@ -239,6 +243,43 @@ message StorageStatus {
   // receivers refuse new associations until space returns. False when its
   // free space is unknown.
   bool nearly_full = 5;
+
+  // For an S3 storage, the bucket's versioning, read when the storage was
+  // opened, so a person sees what a purge can claim: on a versioned bucket
+  // a removed object's older versions stay unless purge_versions deletes
+  // them. STORAGE_VERSIONING_DIRECTORY for a directory.
+  StorageVersioning versioning = 6;
+
+  // For an S3 storage, whether the bucket has object lock enabled, read
+  // when the storage was opened: a locked version cannot be removed before
+  // its retention ends, and a purge reports it retained.
+  bool object_lock = 7;
+}
+
+// StorageVersioning is an S3 bucket's versioning, as the bucket answered
+// it (GetBucketVersioning).
+enum StorageVersioning {
+  // Never answered by the server.
+  STORAGE_VERSIONING_UNSPECIFIED = 0;
+
+  // A directory storage: it keeps no versions, and a removal removes the
+  // bytes.
+  STORAGE_VERSIONING_DIRECTORY = 1;
+
+  // The bucket was never versioned: a removal removes the bytes.
+  STORAGE_VERSIONING_OFF = 2;
+
+  // The bucket keeps every version: a removal by key only hides the bytes
+  // behind a delete marker.
+  STORAGE_VERSIONING_ENABLED = 3;
+
+  // Versioning was turned off after being on: versions made before stay.
+  STORAGE_VERSIONING_SUSPENDED = 4;
+
+  // The server could not read it, for want of permission or because the
+  // store does not answer the question; a purge reports what it could not
+  // prove as unknown.
+  STORAGE_VERSIONING_UNKNOWN = 5;
 }
 
 // ReceiverStatus is a receiver's state now.
@@ -295,6 +336,73 @@ message TenantStatus {
   // Each of its senders, ordered by name, from the server's memory, so
   // they are answered also when its database does not answer.
   repeated SenderStatus senders = 10;
+
+  // Its last scrub, so a person sees when its stored bytes were last
+  // proven. Absent when no scrub has run, and when its database did not
+  // answer.
+  ScrubSummary last_scrub = 11;
+
+  // The scrub findings that hold now, one entry per kind that has any, in
+  // the order of the kinds, whatever scrub found them. Empty when there
+  // are none, and when its database did not answer.
+  repeated ScrubFindingCount open_findings = 12;
+
+  // How far its audit log is sealed (AuditSealService). Absent when its
+  // database did not answer.
+  AuditSealStatus audit_seal = 13;
+
+  // Its deletes committed and not yet purged: hidden, their bytes kept
+  // until their purge time and still undone by UndoCorrection; and those
+  // purging. Zero when its database did not answer.
+  int64 pending_deletions = 14;
+
+  // The bytes those deletes keep on its storages until they are purged.
+  int64 pending_deletion_bytes = 15;
+
+  // The id of its event feed's history (WatchKeepAlive.event_history): a
+  // restore, an import or a load of its database begins a new one, and a
+  // cursor of another history is refused. Opaque; at most 64 bytes. Empty
+  // when its database did not answer.
+  string event_history = 16;
+
+  // The generation this tenant holds in the owner record on its storages:
+  // one more each time an import or a restore took them over, so a server
+  // whose generation is lower knows it no longer owns them and fences the
+  // tenant (TENANT_STATE_FENCED). Zero when its database did not answer.
+  int64 owner_generation = 17;
+
+  // Its corrections found by a rebuild or a restore as a record on a
+  // storage with no row in its database, applied fail-closed and waiting
+  // for an admin to undo or purge them (Correction.unresolved). Zero when
+  // its database did not answer.
+  int64 unresolved_corrections = 18;
+}
+
+// ScrubSummary is a tenant's last scrub, for a status.
+message ScrubSummary {
+  // The scrub job's id (JobService).
+  string job = 1;
+
+  // Where it is.
+  JobState state = 2;
+
+  // When its first work started. Absent while it is queued.
+  google.protobuf.Timestamp start_time = 3;
+
+  // When it ended. Absent while it is queued or running.
+  google.protobuf.Timestamp end_time = 4;
+
+  // The findings it recorded, one entry per kind that has any.
+  repeated ScrubFindingCount findings = 5;
+}
+
+// ScrubFindingCount is how many scrub findings are of one kind.
+message ScrubFindingCount {
+  // The kind.
+  ScrubFindingKind kind = 1;
+
+  // How many.
+  int64 findings = 2;
 }
 
 // GetStatusRequest asks for the status of one tenant or of every tenant.
@@ -332,6 +440,11 @@ message GetStatusResponse {
   // oldest first, on every page; empty with a tenant. Each such key is also
   // reported once a day in the server's log of access events.
   repeated Key expiring_keys = 4;
+
+  // With the installation, how far the installation's own audit log is
+  // sealed, on every page; absent with a tenant, whose log's seal is its
+  // TenantStatus.audit_seal.
+  AuditSealStatus installation_audit_seal = 5;
 }
 
 // EventType is the kind of an event. A type added in a later version is a
@@ -371,6 +484,17 @@ enum EventType {
 
   // A sender went up or down, or down for another reason.
   EVENT_TYPE_SENDER_HEALTH = 10;
+
+  // A scrub recorded a finding, or cleared one.
+  EVENT_TYPE_SCRUB_FINDING = 11;
+
+  // A correction changed what the catalog shows: a delete committed, undone
+  // or purged; a relabel or a replace published.
+  EVENT_TYPE_CATALOG_CHANGED = 12;
+
+  // A rebuild made a new catalog the one in use, or a restore or an import
+  // rebuilt it; the first event of a new history.
+  EVENT_TYPE_CATALOG_REBUILT = 13;
 }
 
 // AssociationFailure is why a DIMSE receiver turned a caller away. Each
@@ -658,6 +782,83 @@ message SenderHealthChanged {
   SenderHealth health = 2;
 }
 
+// ScrubFindingChanged is a scrub finding recorded or cleared. It names the
+// scan by labels, never the object's key or the instance's id, which hold
+// a UID as received.
+message ScrubFindingChanged {
+  // The finding's id (ListScrubFindings).
+  string finding = 1;
+
+  // What was found.
+  ScrubFindingKind kind = 2;
+
+  // The name of the storage it is on.
+  string storage = 3;
+
+  // The label of the subject of the scan it belongs to; empty for an
+  // orphan that names no scan.
+  string subject_label = 4;
+
+  // The label of that scan's session; empty as subject_label.
+  string session_label = 5;
+
+  // The label of that scan; empty as subject_label.
+  string scan_label = 6;
+
+  // Set when a later scrub read it good again and cleared it.
+  bool cleared = 7;
+
+  // The id of the scrub job.
+  string job = 8;
+}
+
+// CatalogChanged is a correction changing what the catalog shows.
+message CatalogChanged {
+  // The correction's id (CorrectionService).
+  string correction = 1;
+
+  // What it does.
+  CorrectionKind kind = 2;
+
+  // The state it reached.
+  CorrectionState state = 3;
+
+  // The label of the subject it acts on.
+  string subject_label = 4;
+
+  // The label of the session it acts on; empty for a whole subject.
+  string session_label = 5;
+
+  // The label of the scan it acts on; empty for a whole session.
+  string scan_label = 6;
+
+  // For a relabel, the new label of the target's level.
+  string to_label = 7;
+
+  // The instances the change covers.
+  int64 instances = 8;
+
+  // For a replace, the instance's new revision; 0 otherwise.
+  int32 revision = 9;
+}
+
+// CatalogRebuilt is a catalog made again from the storages and put in use
+// in one transaction. When it begins a new history (after a restore, an
+// import or a load), it is that history's first event, and a consumer that
+// sees it reads the catalog again from a status and lists rather than
+// trusting what it built from the old feed.
+message CatalogRebuilt {
+  // The rebuild job's id (JobService); empty for one a restore or an
+  // import ran.
+  string job = 1;
+
+  // The instances the new catalog holds.
+  int64 instances = 2;
+
+  // Whether it begins a new history of the feed.
+  bool new_history = 3;
+}
+
 // Event is one thing that happened in a tenant.
 message Event {
   // The event's cursor: a Watch of its tenant from it answers the events
@@ -706,6 +907,15 @@ message Event {
 
     // A sender's state changed.
     SenderHealthChanged sender_health = 14;
+
+    // A scrub finding was recorded or cleared.
+    ScrubFindingChanged scrub_finding = 15;
+
+    // A correction changed what the catalog shows.
+    CatalogChanged catalog_changed = 16;
+
+    // A catalog was made again and put in use.
+    CatalogRebuilt catalog_rebuilt = 17;
   }
 }
 
@@ -745,6 +955,17 @@ message WatchKeepAlive {
   // only those whose position changed, so a mostly idle stream's keep-alive
   // is a few bytes, not the whole map. Always false with one tenant.
   bool full = 5;
+
+  // With one tenant, the id of its feed's history (TenantStatus has it
+  // too). A consumer keys what it has seen by (history, cursor), so the
+  // same cursor in a new history is never taken for one already read.
+  // Empty with every tenant. Opaque; at most 64 bytes.
+  string event_history = 6;
+
+  // With every tenant, the history id of each tenant named in
+  // tenant_cursors, by tenant name, in the same full or changed-only way.
+  // Empty with one tenant. Each id opaque, at most 64 bytes.
+  map<string, string> tenant_event_histories = 7;
 }
 
 // WatchRequest asks for a stream of events.

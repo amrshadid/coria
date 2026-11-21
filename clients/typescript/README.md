@@ -69,7 +69,8 @@ try {
 ## What it offers
 
 - `createCoriaClient({ baseUrl, key, transport?, timeoutMs?, allowInsecure? })` returns one
-  client per service: `access`, `audit`, `catalog`, `data`, `jobs`,
+  client per service: `access`, `audit`, `auditSeal`, `backups`, `catalog`,
+  `corrections`, `data`, `jobs`,
   `metadata`, `monitor`, `profiles`, `quarantine`, `receivers`, `receptions`,
   `senders`, `settings`, `storages`, `tenants`. Each method takes the request (a plain object of its
   fields) and returns the response message; a server-streaming method returns

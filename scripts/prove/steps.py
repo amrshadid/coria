@@ -145,23 +145,29 @@ def contract_methods(proto_dir):
 
 
 def not_served(path, methods):
-    """The services the list at path names, and the problems with it: a line
-    that is not a full service name, a name given twice, a name no proto file
-    defines."""
+    """The lines of the list at path, and the problems with it: a line that is
+    neither a full service name nor a full service name, "/" and a method's
+    name, a line given twice, a name no proto file defines."""
     names, problems = [], []
-    defined = {m[0] for m in methods}
+    defined = {m[0] for m in methods} | {"%s/%s" % (m[0], m[1]) for m in methods}
     with open(path) as f:
         for n, line in enumerate(f, 1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            if not re.fullmatch(r"[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*", line) or line in names:
-                problems.append("line %d: %r is not a full service name given once" % (n, line))
+            if not re.fullmatch(r"[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*(/[A-Z][A-Za-z0-9]*)?", line) or line in names:
+                problems.append("line %d: %r is not a full service or method name given once" % (n, line))
                 continue
             names.append(line)
             if line not in defined:
                 problems.append("%s is listed as not served, and no proto file defines it" % line)
     return names, problems
+
+
+def listed(method, names):
+    """Whether the list's lines name a method (service, name, file, streaming):
+    its service whole, or the method itself."""
+    return method[0] in names or "%s/%s" % (method[0], method[1]) in names
 
 
 def ns_body(svc, tenant):
@@ -453,19 +459,19 @@ STANDIN_PROTO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "testda
 def cmd_refusals(work, args):
     every = contract_methods(args.proto)
     names, problems = not_served(args.not_served, every)
-    served = [x[:3] for x in every if x[0] not in names]
+    served = [x[:3] for x in every if not listed(x, names)]
     # A server-streaming method is called the streaming way, apart
     # (streaming): called as a unary method by curl it is refused for its
     # content type before any check, which says nothing about the check.
-    methods = [x[:3] for x in every if x[0] not in names and not x[3]]
-    streaming = [x[:3] for x in every if x[0] not in names and x[3]]
-    unserved = [x[:3] for x in every if x[0] in names] or [STANDIN[:3]]
+    methods = [x[:3] for x in every if not listed(x, names) and not x[3]]
+    streaming = [x[:3] for x in every if not listed(x, names) and x[3]]
+    unserved = [x[:3] for x in every if listed(x, names)] or [STANDIN[:3]]
     cl = Clients(work, args)
     try:
         if args.mode == "walk":
-            work.result("2.5 the services not served yet: named in api/not-served.txt, each defined by a proto file",
+            work.result("2.5 the services and methods not served yet: named in api/not-served.txt, each defined by a proto file",
                         not problems,
-                        "%d methods in the proto files: %d served, of them %d streaming; %d service(s) not served: %s"
+                        "%d methods in the proto files: %d served, of them %d streaming; %d service(s) or method(s) not served: %s"
                         % (len(every), len(served), len(streaming), len(names),
                            ", ".join(n.split(".")[-1] for n in names) or "none, so a service outside the contract stands for one ("
                            + STANDIN[0] + ")"),

@@ -141,7 +141,8 @@ export type ProfileDocument = Message<"coria.v1.ProfileDocument"> & {
    * none does. The comment and application segments of the JPEG family
    * (Baseline, Extended, Lossless, JPEG-LS), and the comment segments of
    * JPEG 2000 and HTJ2K (in the main header and every tile-part header,
-   * the tile-part's length and TLM entry lowered to match), are always
+   * the tile-part's length and TLM entry lowered to match) with their main
+   * header's CPF and CRG segments, are always
    * removed, the image data copied byte for byte (PS3.5 A.4); a frame then
    * holding any segment beyond those a decoder needs at their defined
    * length (JFIF without a thumbnail, Adobe's 12 bytes, the JPEG-LS color
@@ -2813,8 +2814,8 @@ export type TrialPixels = Message<"coria.v1.TrialPixels"> & {
 
   /**
    * The JPEG comment and application segments removed, by marker name
-   * ("COM", "APP1", ..., "trailing data"), and the JPEG 2000 comment
-   * segments ("COM"), each with the frame it was in counted once per
+   * ("COM", "APP1", ..., "trailing data"), and the JPEG 2000 segments
+   * removed ("COM", "CPF", "CRG"), each with the frame it was in counted once per
    * name; what they held is never answered.
    *
    * @generated from field: repeated string segments_removed = 10;

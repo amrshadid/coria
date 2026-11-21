@@ -32,6 +32,8 @@ class QuarantineReason(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     QUARANTINE_REASON_PROFILE_REFUSED: _ClassVar[QuarantineReason]
     QUARANTINE_REASON_UNROUTED: _ClassVar[QuarantineReason]
     QUARANTINE_REASON_BURNED_IN_RISK: _ClassVar[QuarantineReason]
+    QUARANTINE_REASON_WAS_DELETED: _ClassVar[QuarantineReason]
+    QUARANTINE_REASON_REPAIRS_DAMAGED: _ClassVar[QuarantineReason]
 
 class QuarantineState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -63,6 +65,8 @@ QUARANTINE_REASON_RESIDUAL_VALUE: QuarantineReason
 QUARANTINE_REASON_PROFILE_REFUSED: QuarantineReason
 QUARANTINE_REASON_UNROUTED: QuarantineReason
 QUARANTINE_REASON_BURNED_IN_RISK: QuarantineReason
+QUARANTINE_REASON_WAS_DELETED: QuarantineReason
+QUARANTINE_REASON_REPAIRS_DAMAGED: QuarantineReason
 QUARANTINE_STATE_UNSPECIFIED: QuarantineState
 QUARANTINE_STATE_HELD: QuarantineState
 QUARANTINE_STATE_RELEASED: QuarantineState

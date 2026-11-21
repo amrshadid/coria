@@ -64,6 +64,11 @@ class TenantServiceStub:
                 request_serializer=coria_dot_v1_dot_tenant__pb2.RemoveTenantRequest.SerializeToString,
                 response_deserializer=coria_dot_v1_dot_tenant__pb2.RemoveTenantResponse.FromString,
                 _registered_method=True)
+        self.ReclaimTenant = channel.unary_unary(
+                '/coria.v1.TenantService/ReclaimTenant',
+                request_serializer=coria_dot_v1_dot_tenant__pb2.ReclaimTenantRequest.SerializeToString,
+                response_deserializer=coria_dot_v1_dot_tenant__pb2.ReclaimTenantResponse.FromString,
+                _registered_method=True)
 
 
 class TenantServiceServicer:
@@ -150,6 +155,32 @@ class TenantServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ReclaimTenant(self, request, context):
+        """ReclaimTenant undoes a hand-off whose import never happened
+        (BackupService.ExportTenant): a moved tenant becomes ready again here,
+        and writes again. It is allowed only while the owner record on each of
+        the tenant's storages still names this installation and the
+        generation this tenant holds, so a tenant another installation has
+        taken over is never reclaimed. Only the local operator may call it: a
+        key is answered permission denied whatever its grants, since taking a
+        tenant back is a decision for whoever runs the installation's host,
+        who knows whether the import went ahead. A tenant already ready is
+        answered as it stands.
+
+        Role: admin on the installation.
+        Audit: one entry in the installation's log, with the tenant's name as
+        its object and the generation in details.
+        Errors: unauthenticated, permission denied (also any caller but the
+        local operator), invalid, not found (no tenant has that name),
+        precondition (the tenant is not moved; an owner record names another
+        installation or a later generation), unavailable (the tenant's
+        database or a storage does not answer, or an owner record cannot be
+        read).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_TenantServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -172,6 +203,11 @@ def add_TenantServiceServicer_to_server(servicer, server):
                     servicer.RemoveTenant,
                     request_deserializer=coria_dot_v1_dot_tenant__pb2.RemoveTenantRequest.FromString,
                     response_serializer=coria_dot_v1_dot_tenant__pb2.RemoveTenantResponse.SerializeToString,
+            ),
+            'ReclaimTenant': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReclaimTenant,
+                    request_deserializer=coria_dot_v1_dot_tenant__pb2.ReclaimTenantRequest.FromString,
+                    response_serializer=coria_dot_v1_dot_tenant__pb2.ReclaimTenantResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -292,6 +328,33 @@ class TenantService:
             '/coria.v1.TenantService/RemoveTenant',
             coria_dot_v1_dot_tenant__pb2.RemoveTenantRequest.SerializeToString,
             coria_dot_v1_dot_tenant__pb2.RemoveTenantResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReclaimTenant(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/coria.v1.TenantService/ReclaimTenant',
+            coria_dot_v1_dot_tenant__pb2.ReclaimTenantRequest.SerializeToString,
+            coria_dot_v1_dot_tenant__pb2.ReclaimTenantResponse.FromString,
             options,
             channel_credentials,
             insecure,

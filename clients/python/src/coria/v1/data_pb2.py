@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13\x63oria/v1/data.proto\x12\x08\x63oria.v1\"\x7f\n\nScanMarker\x12\x15\n\rsubject_label\x18\x01 \x01(\t\x12\x15\n\rsession_label\x18\x02 \x01(\t\x12\x12\n\nscan_label\x18\x03 \x01(\t\x12\x17\n\x0fmanifest_sha256\x18\x04 \x01(\t\x12\x16\n\x0einstance_count\x18\x05 \x01(\x03\"\xbc\x01\n\x0c\x41rchivedFile\x12\x13\n\x0binstance_id\x18\x01 \x01(\t\x12\x18\n\x10sop_instance_uid\x18\x02 \x01(\t\x12\x15\n\rsubject_label\x18\x03 \x01(\t\x12\x15\n\rsession_label\x18\x04 \x01(\t\x12\x12\n\nscan_label\x18\x05 \x01(\t\x12\x0b\n\x03key\x18\x06 \x01(\t\x12\x0e\n\x06offset\x18\x07 \x01(\x03\x12\x0e\n\x06length\x18\x08 \x01(\x03\x12\x0e\n\x06sha256\x18\t \x01(\t\")\n\tFileChunk\x12\x0e\n\x06offset\x18\x01 \x01(\x03\x12\x0c\n\x04\x64\x61ta\x18\x02 \x01(\x0c\"N\n\x0cReadPosition\x12\x15\n\rsession_label\x18\x01 \x01(\t\x12\x12\n\nscan_label\x18\x02 \x01(\t\x12\x13\n\x0binstance_id\x18\x03 \x01(\t\"\xbd\x01\n\x10ReadFilesRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x15\n\rsubject_label\x18\x02 \x01(\t\x12\x15\n\rsession_label\x18\x03 \x01(\t\x12\x12\n\nscan_label\x18\x04 \x01(\t\x12\x13\n\x0binstance_id\x18\x05 \x01(\t\x12+\n\x0bstart_after\x18\x06 \x01(\x0b\x32\x16.coria.v1.ReadPosition\x12\x15\n\rannounce_only\x18\x07 \x01(\x08\"\x8f\x01\n\x11ReadFilesResponse\x12&\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x16.coria.v1.ArchivedFileH\x00\x12$\n\x05\x63hunk\x18\x02 \x01(\x0b\x32\x13.coria.v1.FileChunkH\x00\x12$\n\x04scan\x18\x03 \x01(\x0b\x32\x14.coria.v1.ScanMarkerH\x00\x42\x06\n\x04part2Z\n\x0b\x44\x61taService\x12K\n\tReadFiles\x12\x1a.coria.v1.ReadFilesRequest\x1a\x1b.coria.v1.ReadFilesResponse\"\x03\x90\x02\x01\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x13\x63oria/v1/data.proto\x12\x08\x63oria.v1\"\x7f\n\nScanMarker\x12\x15\n\rsubject_label\x18\x01 \x01(\t\x12\x15\n\rsession_label\x18\x02 \x01(\t\x12\x12\n\nscan_label\x18\x03 \x01(\t\x12\x17\n\x0fmanifest_sha256\x18\x04 \x01(\t\x12\x16\n\x0einstance_count\x18\x05 \x01(\x03\"\xce\x01\n\x0c\x41rchivedFile\x12\x13\n\x0binstance_id\x18\x01 \x01(\t\x12\x18\n\x10sop_instance_uid\x18\x02 \x01(\t\x12\x15\n\rsubject_label\x18\x03 \x01(\t\x12\x15\n\rsession_label\x18\x04 \x01(\t\x12\x12\n\nscan_label\x18\x05 \x01(\t\x12\x0b\n\x03key\x18\x06 \x01(\t\x12\x0e\n\x06offset\x18\x07 \x01(\x03\x12\x0e\n\x06length\x18\x08 \x01(\x03\x12\x0e\n\x06sha256\x18\t \x01(\t\x12\x10\n\x08revision\x18\n \x01(\x05\")\n\tFileChunk\x12\x0e\n\x06offset\x18\x01 \x01(\x03\x12\x0c\n\x04\x64\x61ta\x18\x02 \x01(\x0c\"N\n\x0cReadPosition\x12\x15\n\rsession_label\x18\x01 \x01(\t\x12\x12\n\nscan_label\x18\x02 \x01(\t\x12\x13\n\x0binstance_id\x18\x03 \x01(\t\"\xbd\x01\n\x10ReadFilesRequest\x12\x0e\n\x06tenant\x18\x01 \x01(\t\x12\x15\n\rsubject_label\x18\x02 \x01(\t\x12\x15\n\rsession_label\x18\x03 \x01(\t\x12\x12\n\nscan_label\x18\x04 \x01(\t\x12\x13\n\x0binstance_id\x18\x05 \x01(\t\x12+\n\x0bstart_after\x18\x06 \x01(\x0b\x32\x16.coria.v1.ReadPosition\x12\x15\n\rannounce_only\x18\x07 \x01(\x08\"\x8f\x01\n\x11ReadFilesResponse\x12&\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x16.coria.v1.ArchivedFileH\x00\x12$\n\x05\x63hunk\x18\x02 \x01(\x0b\x32\x13.coria.v1.FileChunkH\x00\x12$\n\x04scan\x18\x03 \x01(\x0b\x32\x14.coria.v1.ScanMarkerH\x00\x42\x06\n\x04part2Z\n\x0b\x44\x61taService\x12K\n\tReadFiles\x12\x1a.coria.v1.ReadFilesRequest\x1a\x1b.coria.v1.ReadFilesResponse\"\x03\x90\x02\x01\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,15 +36,15 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_SCANMARKER']._serialized_start=33
   _globals['_SCANMARKER']._serialized_end=160
   _globals['_ARCHIVEDFILE']._serialized_start=163
-  _globals['_ARCHIVEDFILE']._serialized_end=351
-  _globals['_FILECHUNK']._serialized_start=353
-  _globals['_FILECHUNK']._serialized_end=394
-  _globals['_READPOSITION']._serialized_start=396
-  _globals['_READPOSITION']._serialized_end=474
-  _globals['_READFILESREQUEST']._serialized_start=477
-  _globals['_READFILESREQUEST']._serialized_end=666
-  _globals['_READFILESRESPONSE']._serialized_start=669
-  _globals['_READFILESRESPONSE']._serialized_end=812
-  _globals['_DATASERVICE']._serialized_start=814
-  _globals['_DATASERVICE']._serialized_end=904
+  _globals['_ARCHIVEDFILE']._serialized_end=369
+  _globals['_FILECHUNK']._serialized_start=371
+  _globals['_FILECHUNK']._serialized_end=412
+  _globals['_READPOSITION']._serialized_start=414
+  _globals['_READPOSITION']._serialized_end=492
+  _globals['_READFILESREQUEST']._serialized_start=495
+  _globals['_READFILESREQUEST']._serialized_end=684
+  _globals['_READFILESRESPONSE']._serialized_start=687
+  _globals['_READFILESRESPONSE']._serialized_end=830
+  _globals['_DATASERVICE']._serialized_start=832
+  _globals['_DATASERVICE']._serialized_end=922
 # @@protoc_insertion_point(module_scope)

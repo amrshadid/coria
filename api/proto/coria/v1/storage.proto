@@ -343,6 +343,15 @@ message S3Storage {
   // Whether the server holds a secret access key for this storage. Answered
   // by the server; ignored in a request.
   bool secret_access_key_set = 8;
+
+  // Whether a purge of a correction on a versioned bucket also deletes
+  // every older version of each object, delete markers included, by its
+  // version id, so the bytes are gone and not only hidden behind a delete
+  // marker. Absent means true. Off, or without the permission to list and
+  // delete versions, a purge on a versioned bucket leaves the older
+  // versions and says so (ObjectDisposition HIDDEN). A bucket's object
+  // lock may still retain a version whatever this says (RETAINED).
+  optional bool purge_versions = 9;
 }
 
 // StorageTestStep is one step of TestStorage.

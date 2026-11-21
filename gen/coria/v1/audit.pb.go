@@ -99,13 +99,15 @@ type AuditEntry struct {
 	// read, and for the local operator.
 	KeyId string `protobuf:"bytes,3,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
 	// The operating system's id of the local operator, for a request on the
-	// local socket. Empty for a request over the network.
+	// local socket; "server" for an entry the server made itself (the
+	// service's comment says which). Empty for a request over the network.
 	LocalUserId string `protobuf:"bytes,4,opt,name=local_user_id,json=localUserId,proto3" json:"local_user_id,omitempty"`
 	// The network address and port the request came from. Empty for a request
 	// on the local socket.
 	ClientAddress string `protobuf:"bytes,5,opt,name=client_address,json=clientAddress,proto3" json:"client_address,omitempty"`
 	// The full name of the method called, such as
-	// "/coria.v1.TenantService/CreateTenant".
+	// "/coria.v1.TenantService/CreateTenant"; for an entry the server made
+	// itself, "server/<action>".
 	Method string `protobuf:"bytes,6,opt,name=method,proto3" json:"method,omitempty"`
 	// The name of the tenant as the request gave it. Kept after the tenant is
 	// removed, and present also when no tenant had that name. Empty when the
@@ -119,6 +121,7 @@ type AuditEntry struct {
 	// The id the server made for the request: the same as in the response
 	// header Coria-Request-Id and in the server's log, so an entry, the
 	// answer and the log lines of one request can be found from each other.
+	// For an entry the server made itself, the id of that piece of work.
 	RequestId string `protobuf:"bytes,10,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	// What each method's comment says it records, beside the object: a
 	// database type, a scope, a previous and a new role, the filters of a

@@ -97,12 +97,16 @@ type JobServiceClient interface {
 	// the tenant has, enabled or not (a disabled sender's jobs wait), and a
 	// subject, a session of it or a scan of that, by labels. A deid job names
 	// its mode, a profile version for a dry run, and a subject, a session of
-	// it, a scan of that, or none for the whole tenant.
+	// it, a scan of that, or none for the whole tenant. A scrub job names a
+	// storage, or none for every storage. A rebuild job names its mode; one
+	// that replaces the catalog also needs admin on the tenant, checked after
+	// the requirement below, since it empties the catalog and fills it again,
+	// and is answered permission denied to an operator.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the new job's id as its
 	// object, and its kind, its sender and the path of labels of its target
-	// in details.
+	// in details; for a scrub, its storage; for a rebuild, its mode.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also no kind, a label that does not pass the label rule, a level named
@@ -110,9 +114,12 @@ type JobServiceClient interface {
 	// server sets), not found (the tenant holds no subject, session or scan
 	// with those labels; the tenant has no profile version of that name and
 	// number; a tenant that does not exist, for a caller who may list every
-	// tenant), precondition (a sender the tenant does not have),
-	// unavailable (the tenant's database does not answer, or the tenant is
-	// not ready).
+	// tenant), precondition (a sender the tenant does not have; a scrub of a
+	// storage the tenant does not have, or while another scrub of it is
+	// queued or running; a rebuild while another rebuild is queued or
+	// running, or whose scratch_schema does not exist, holds a table, is the
+	// tenant's own schema or is on its search_path), unavailable (the tenant's database does not answer, or the
+	// tenant is not ready).
 	CreateJob(context.Context, *v1.CreateJobRequest) (*v1.CreateJobResponse, error)
 	// GetJob answers one job, with its counts now and, for a deid job, its
 	// tallies.
@@ -200,12 +207,16 @@ type JobServiceHandler interface {
 	// the tenant has, enabled or not (a disabled sender's jobs wait), and a
 	// subject, a session of it or a scan of that, by labels. A deid job names
 	// its mode, a profile version for a dry run, and a subject, a session of
-	// it, a scan of that, or none for the whole tenant.
+	// it, a scan of that, or none for the whole tenant. A scrub job names a
+	// storage, or none for every storage. A rebuild job names its mode; one
+	// that replaces the catalog also needs admin on the tenant, checked after
+	// the requirement below, since it empties the catalog and fills it again,
+	// and is answered permission denied to an operator.
 	//
 	// Role: operator on the tenant.
 	// Audit: one entry in the tenant's log, with the new job's id as its
 	// object, and its kind, its sender and the path of labels of its target
-	// in details.
+	// in details; for a scrub, its storage; for a rebuild, its mode.
 	// Errors: unauthenticated, permission denied (no grant; also a tenant that
 	// does not exist, for a caller who may not list every tenant), invalid
 	// (also no kind, a label that does not pass the label rule, a level named
@@ -213,9 +224,12 @@ type JobServiceHandler interface {
 	// server sets), not found (the tenant holds no subject, session or scan
 	// with those labels; the tenant has no profile version of that name and
 	// number; a tenant that does not exist, for a caller who may list every
-	// tenant), precondition (a sender the tenant does not have),
-	// unavailable (the tenant's database does not answer, or the tenant is
-	// not ready).
+	// tenant), precondition (a sender the tenant does not have; a scrub of a
+	// storage the tenant does not have, or while another scrub of it is
+	// queued or running; a rebuild while another rebuild is queued or
+	// running, or whose scratch_schema does not exist, holds a table, is the
+	// tenant's own schema or is on its search_path), unavailable (the tenant's database does not answer, or the
+	// tenant is not ready).
 	CreateJob(context.Context, *v1.CreateJobRequest) (*v1.CreateJobResponse, error)
 	// GetJob answers one job, with its counts now and, for a deid job, its
 	// tallies.

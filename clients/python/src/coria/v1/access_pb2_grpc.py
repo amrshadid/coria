@@ -87,6 +87,11 @@ class AccessServiceStub:
                 request_serializer=coria_dot_v1_dot_access__pb2.SetKeyRulesRequest.SerializeToString,
                 response_deserializer=coria_dot_v1_dot_access__pb2.SetKeyRulesResponse.FromString,
                 _registered_method=True)
+        self.ReinstateKeys = channel.unary_unary(
+                '/coria.v1.AccessService/ReinstateKeys',
+                request_serializer=coria_dot_v1_dot_access__pb2.ReinstateKeysRequest.SerializeToString,
+                response_deserializer=coria_dot_v1_dot_access__pb2.ReinstateKeysResponse.FromString,
+                _registered_method=True)
 
 
 class AccessServiceServicer:
@@ -265,6 +270,27 @@ class AccessServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ReinstateKeys(self, request, context):
+        """ReinstateKeys lets suspended keys work again off the local socket
+        (Key.suspended). A restore suspends every key it brings back, since a
+        key revoked, or a grant removed, after the backup was made would
+        otherwise work again; a person reviews the keys and reinstates those
+        that should work, by id or all at once. Only the local operator may
+        call it: a key is answered permission denied whatever its grants, as
+        every key may be suspended. A key not suspended is left as it is.
+
+        Role: admin on the installation.
+        Audit: one entry per key reinstated in the installation's log, with
+        the key's id as its object.
+        Errors: unauthenticated, permission denied (also any caller but the
+        local operator), invalid (also both key_ids and all, or neither; more
+        than 1000 ids), not found (a key id the installation does not have),
+        unavailable (the master database does not answer).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AccessServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -317,6 +343,11 @@ def add_AccessServiceServicer_to_server(servicer, server):
                     servicer.SetKeyRules,
                     request_deserializer=coria_dot_v1_dot_access__pb2.SetKeyRulesRequest.FromString,
                     response_serializer=coria_dot_v1_dot_access__pb2.SetKeyRulesResponse.SerializeToString,
+            ),
+            'ReinstateKeys': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReinstateKeys,
+                    request_deserializer=coria_dot_v1_dot_access__pb2.ReinstateKeysRequest.FromString,
+                    response_serializer=coria_dot_v1_dot_access__pb2.ReinstateKeysResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -592,6 +623,33 @@ class AccessService:
             '/coria.v1.AccessService/SetKeyRules',
             coria_dot_v1_dot_access__pb2.SetKeyRulesRequest.SerializeToString,
             coria_dot_v1_dot_access__pb2.SetKeyRulesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReinstateKeys(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/coria.v1.AccessService/ReinstateKeys',
+            coria_dot_v1_dot_access__pb2.ReinstateKeysRequest.SerializeToString,
+            coria_dot_v1_dot_access__pb2.ReinstateKeysResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -101,8 +102,17 @@ var methodTests = map[string]func(t *testing.T){
 
 // contractMethods returns the full procedure name and descriptor of every
 // method of the services this package serves, read from the generated
-// descriptors.
+// descriptors, but those api/not-served.txt names (a method added to a
+// served service, not served yet), which TestNotServedServices holds.
 func contractMethods() map[string]protoreflect.MethodDescriptor {
+	b, err := os.ReadFile(notServedFile)
+	if err != nil {
+		panic("the list of services not served: " + err.Error())
+	}
+	notServed, err := parseNotServed(string(b))
+	if err != nil {
+		panic(notServedFile + ": " + err.Error())
+	}
 	out := map[string]protoreflect.MethodDescriptor{}
 	for _, f := range []protoreflect.FileDescriptor{
 		v1.File_coria_v1_access_proto, v1.File_coria_v1_tenant_proto,
@@ -119,7 +129,10 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 			s := f.Services().Get(i)
 			for j := 0; j < s.Methods().Len(); j++ {
 				m := s.Methods().Get(j)
-				out["/"+string(s.FullName())+"/"+string(m.Name())] = m
+				proc := "/" + string(s.FullName()) + "/" + string(m.Name())
+				if !inServices(notServed, proc) {
+					out[proc] = m
+				}
 			}
 		}
 	}

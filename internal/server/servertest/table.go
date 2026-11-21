@@ -1,6 +1,8 @@
 package servertest
 
 import (
+	"slices"
+
 	"google.golang.org/protobuf/proto"
 
 	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
@@ -57,6 +59,25 @@ func (t Table) Requirement(procedure string, msg proto.Message) (access.Requirem
 	}
 	return e.Need(msg), access.Request{}
 }
+
+// pendingMethods are the methods of services otherwise served that the
+// contract defines and no handler serves yet: the method lines of
+// api/not-served.txt, which a test compares with this list.
+var pendingMethods = []string{
+	coriav1connect.TenantServiceReclaimTenantProcedure,
+	coriav1connect.AccessServiceReinstateKeysProcedure,
+}
+
+// Pending reports whether procedure is one of pendingMethods, so the server
+// leaves it out of its routes as the binary's server does
+// (server.PendingMethods).
+func (Table) Pending(procedure string) bool {
+	return slices.Contains(pendingMethods, procedure)
+}
+
+// PendingMethods returns pendingMethods, for the test that compares it with
+// api/not-served.txt.
+func PendingMethods() []string { return slices.Clone(pendingMethods) }
 
 // fixed is an entry with a requirement that does not depend on the request.
 func fixed(req access.Requirement) Entry { return Entry{Fixed: req} }

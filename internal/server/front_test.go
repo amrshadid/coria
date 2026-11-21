@@ -32,10 +32,12 @@ import (
 	"github.com/amrshadid/coria/internal/server/servertest"
 )
 
-// notServedMethod returns a method of the first service api/not-served.txt
-// lists, read from the generated descriptors, so the matrix asks for a
-// method of the contract that no handler serves whichever service that is;
-// when the list is empty, a method of a service the contract lacks.
+// notServedMethod returns the method the first line of api/not-served.txt
+// names: the first method of a service it names whole, or the one method
+// it names of a service otherwise served, read from the generated
+// descriptors, so the matrix asks for a method of the contract that no
+// handler serves whichever it is; when the list is empty, a method of a
+// service the contract lacks.
 func notServedMethod(t *testing.T) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", "api", "not-served.txt"))
@@ -47,10 +49,17 @@ func notServedMethod(t *testing.T) string {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(line))
+		svc, method, isMethod := strings.Cut(line, "/")
+		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(svc))
 		sd, ok := d.(protoreflect.ServiceDescriptor)
 		if err != nil || !ok || sd.Methods().Len() == 0 {
-			t.Fatalf("%s is not a service with methods: %v", line, err)
+			t.Fatalf("%s is not a service with methods: %v", svc, err)
+		}
+		if isMethod {
+			if sd.Methods().ByName(protoreflect.Name(method)) == nil {
+				t.Fatalf("%s has no method %s", svc, method)
+			}
+			return "/" + line
 		}
 		return "/" + line + "/" + string(sd.Methods().Get(0).Name())
 	}

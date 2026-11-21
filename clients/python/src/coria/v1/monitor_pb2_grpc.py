@@ -177,11 +177,13 @@ class MonitorServiceServicer:
         (also a cursor not made by a Watch or status of the tenant it is given
         for, cursor with every tenant or tenant_cursors with one tenant), not
         found (a tenant that does not exist, for a caller who may list every
-        tenant), cursor expired (a cursor points before the oldest event its
-        tenant keeps, or after the newest event it holds, as after its database
-        was restored from an older backup; the message names the tenant; the
-        client reads that tenant's status again and watches from its
-        event_cursor), unavailable
+        tenant), cursor expired (reason CURSOR_EXPIRED: a cursor points before
+        the oldest event its tenant keeps; reason EVENT_HISTORY_CHANGED: a
+        cursor belongs to another history of its tenant's feed, as after its
+        database was restored, imported or loaded, or points after the newest
+        event it holds; the message names the tenant; the client reads that
+        tenant's status again, resynchronizes from the catalog for a new
+        history, and watches from its event_cursor), unavailable
         (with one tenant, its database does not answer or it is not ready, when
         the stream opens or while it is open; the client resumes later from its
         last cursor), resource exhausted (the caller, a key or the local

@@ -8,7 +8,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class InstanceMetadata(_message.Message):
-    __slots__ = ("instance_id", "sop_instance_uid", "dicom_json", "json_too_large", "transfer_syntax_uid", "bulk_data_omitted", "profile")
+    __slots__ = ("instance_id", "sop_instance_uid", "dicom_json", "json_too_large", "transfer_syntax_uid", "bulk_data_omitted", "profile", "revision")
     INSTANCE_ID_FIELD_NUMBER: _ClassVar[int]
     SOP_INSTANCE_UID_FIELD_NUMBER: _ClassVar[int]
     DICOM_JSON_FIELD_NUMBER: _ClassVar[int]
@@ -16,6 +16,7 @@ class InstanceMetadata(_message.Message):
     TRANSFER_SYNTAX_UID_FIELD_NUMBER: _ClassVar[int]
     BULK_DATA_OMITTED_FIELD_NUMBER: _ClassVar[int]
     PROFILE_FIELD_NUMBER: _ClassVar[int]
+    REVISION_FIELD_NUMBER: _ClassVar[int]
     instance_id: str
     sop_instance_uid: str
     dicom_json: str
@@ -23,7 +24,8 @@ class InstanceMetadata(_message.Message):
     transfer_syntax_uid: str
     bulk_data_omitted: bool
     profile: _profile_pb2.ProfileVersionName
-    def __init__(self, instance_id: _Optional[str] = ..., sop_instance_uid: _Optional[str] = ..., dicom_json: _Optional[str] = ..., json_too_large: _Optional[bool] = ..., transfer_syntax_uid: _Optional[str] = ..., bulk_data_omitted: _Optional[bool] = ..., profile: _Optional[_Union[_profile_pb2.ProfileVersionName, _Mapping]] = ...) -> None: ...
+    revision: int
+    def __init__(self, instance_id: _Optional[str] = ..., sop_instance_uid: _Optional[str] = ..., dicom_json: _Optional[str] = ..., json_too_large: _Optional[bool] = ..., transfer_syntax_uid: _Optional[str] = ..., bulk_data_omitted: _Optional[bool] = ..., profile: _Optional[_Union[_profile_pb2.ProfileVersionName, _Mapping]] = ..., revision: _Optional[int] = ...) -> None: ...
 
 class GetScanMetadataRequest(_message.Message):
     __slots__ = ("tenant", "subject_label", "session_label", "scan_label", "page_size", "page_token")

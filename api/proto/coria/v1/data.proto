@@ -257,7 +257,10 @@ message ArchivedFile {
   string scan_label = 5;
 
   // The storage key of the object that holds it: opaque, at most 1024
-  // bytes, the same on every storage of the tenant.
+  // bytes, the same on every storage of the tenant. A key is written once:
+  // a replaced instance's later revision lies at a key of its own (in this
+  // version one ending ".r<n>.dcm"), never over the bytes a reader may
+  // still be reading.
   string key = 6;
 
   // Where its bytes start in that object. 0 in this version.
@@ -269,6 +272,14 @@ message ArchivedFile {
 
   // The SHA-256 of its bytes, in lowercase hexadecimal, 64 characters.
   string sha256 = 9;
+
+  // Its revision: 1 as first archived, one more each time a correction
+  // replaced it (CorrectionService.Replace). With sha256 it names these
+  // exact bytes, so a client that keeps (instance_id, revision, sha256)
+  // can ask later whether they are still current
+  // (CorrectionService.ResolveInstances). The plain HTTP download's ETag
+  // is the SHA-256, so it differs per revision.
+  int32 revision = 10;
 }
 
 // FileChunk is a part of the bytes of the instance last announced.

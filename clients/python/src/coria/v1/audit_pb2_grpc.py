@@ -49,6 +49,15 @@ class AuditServiceStub:
     killed may lose those of its last moment.
 
     No entry holds a key's secret, a database's address or a setting's value.
+
+    Entries the server makes itself. Some changes are made by the server, not
+    by a request: a naming key made, a forward job, a sealing pass, a purge
+    at the end of its grace period, a correction abandoned at start. Their
+    entries have local_user_id "server", no key id and no client address;
+    their method names what the server did, as "server/<action>" (such as
+    "server/purge" or "server/seal"), never an API method; and their
+    request_id is the id the server made for that piece of work, which its
+    log lines carry too.
     """
 
     def __init__(self, channel):
@@ -88,6 +97,15 @@ class AuditServiceServicer:
     killed may lose those of its last moment.
 
     No entry holds a key's secret, a database's address or a setting's value.
+
+    Entries the server makes itself. Some changes are made by the server, not
+    by a request: a naming key made, a forward job, a sealing pass, a purge
+    at the end of its grace period, a correction abandoned at start. Their
+    entries have local_user_id "server", no key id and no client address;
+    their method names what the server did, as "server/<action>" (such as
+    "server/purge" or "server/seal"), never an API method; and their
+    request_id is the id the server made for that piece of work, which its
+    log lines carry too.
     """
 
     def ListAuditEntries(self, request, context):
@@ -147,6 +165,15 @@ class AuditService:
     killed may lose those of its last moment.
 
     No entry holds a key's secret, a database's address or a setting's value.
+
+    Entries the server makes itself. Some changes are made by the server, not
+    by a request: a naming key made, a forward job, a sealing pass, a purge
+    at the end of its grace period, a correction abandoned at start. Their
+    entries have local_user_id "server", no key id and no client address;
+    their method names what the server did, as "server/<action>" (such as
+    "server/purge" or "server/seal"), never an API method; and their
+    request_id is the id the server made for that piece of work, which its
+    log lines carry too.
     """
 
     @staticmethod

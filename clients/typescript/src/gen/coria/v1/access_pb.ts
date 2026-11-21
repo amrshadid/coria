@@ -40,13 +40,17 @@
 //     rule stated on its fields, or exceeds a limit below. Sending it again
 //     unchanged fails again.
 //   - unauthenticated: UNAUTHENTICATED (HTTP 401). No key, a key the server
-//     does not know, a wrong secret, an expired key and a revoked key all get
-//     this one answer, with the same message, so a caller cannot tell them
-//     apart.
+//     does not know, a wrong secret, an expired key, a revoked key and a
+//     suspended key (Key.suspended) all get this one answer, with the same
+//     message, so a caller cannot tell them apart.
 //   - permission denied: PERMISSION_DENIED (HTTP 403). The key is good but
 //     holds no grant with the role the method needs.
 //   - not found: NOT_FOUND (HTTP 404). The thing named does not exist, and
-//     the caller may know that it does not.
+//     the caller may know that it does not. A subject, session or scan
+//     asked for by a label a relabel moved (CorrectionService.Relabel) is
+//     answered so with the reason RELABELED, its metadata "correction" (the
+//     relabel's id) and "to_label" (the label it has now), so a client
+//     that holds old labels finds the data.
 //   - conflict: ALREADY_EXISTS (HTTP 409). The change would collide with what
 //     exists, such as a second tenant with the same name.
 //   - precondition: FAILED_PRECONDITION (HTTP 400). What the request names
@@ -54,26 +58,44 @@
 //     that holds files, releasing a file already rejected, or using a port
 //     the installation has not allotted to the tenant. The message says
 //     which. Sending it again unchanged fails again until that state
-//     changes.
+//     changes. A change to a tenant that is read only carries the reason
+//     TENANT_MOVED (an export handed it to another installation) or
+//     TENANT_FENCED (its storages' owner record names another installation
+//     or a later generation).
 //   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs does
 //     not answer, or a tenant is not ready. Sending it again later may
-//     succeed.
+//     succeed. With the reason TENANT_RESTORING, the tenant is being
+//     reconciled after a restore; with NOT_ONLINE, the storage holds the
+//     object in a tier it cannot read at once (never answered as not found
+//     or data loss: the bytes are not missing).
 //   - cursor expired: OUT_OF_RANGE (HTTP 400). Only MonitorService.Watch
-//     answers it: the cursor it was given points before the oldest event
-//     kept, so the events after it can no longer all be answered. Sending
-//     it again fails again; the client starts over from a status.
+//     answers it, with one of two reasons: CURSOR_EXPIRED, the cursor points
+//     before the oldest event kept, so the events after it can no longer all
+//     be answered; or EVENT_HISTORY_CHANGED, the cursor belongs to another
+//     history of the tenant's feed (its database was restored, imported or
+//     loaded, which starts a new history), or points past the newest event.
+//     Sending it again fails again; the client starts over from a status.
 //   - data loss: DATA_LOSS (HTTP 500). An archived file, or a file the
 //     server keeps beside it, is missing from its storage or is not what
 //     was archived: its bytes do not match the SHA-256 its scan's manifest
-//     holds. Answered only where archived files are read
+//     holds, or a scrub found it so (ScrubJob) and marked it. Answered
+//     only where archived files are read
 //     (MetadataService, DataService and its plain HTTP download, where it
 //     is HTTP 500); the message names the scan, and the cause is in the
 //     server's log. Sending it again fails again until the
 //     file is mended from another copy.
 //
+// Where a kind above names a reason, it travels as a google.rpc.ErrorInfo
+// detail (google/rpc/error_details.proto) of the error, with the domain
+// "coria", that reason, and the metadata the kind names. A client that does
+// not read details still has the code and the message; the reasons are
+// fixed words, and a reason added later is one a client does not know.
+//
 // Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
-// RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch and
-// DataService.ReadFiles, for too many open streams and downloads), and DEADLINE_EXCEEDED when its deadline passes.
+// RESOURCE_EXHAUSTED for a message over the size limit (and for too many
+// open streams and downloads, for Watch, DataService.ReadFiles,
+// AuditSealService.ExportAudit, and one backup or export at a time for
+// BackupService), and DEADLINE_EXCEEDED when its deadline passes.
 // The message of an INTERNAL answer says nothing about the cause; the cause
 // is in the server's log and the audit entry, under the request's id.
 //
@@ -96,13 +118,23 @@
 // server's record of the call, not a change to anything a read answers, and
 // repeating the read answers the same. CreateTenant, CreateKey, AddStorage,
 // AddReceiver, AddSender and CreateJob are neither, as each call makes a new
-// thing.
+// thing. Four changes are not repeated plainly, and say what a repeat
+// does: CorrectionService.Delete (a Delete carrying a confirm token
+// already used answers the correction that token made),
+// CorrectionService.Replace (a Replace of a quarantined file already used
+// answers the correction it made), CorrectionService.Relabel (a Relabel
+// with the same target and new label as a correction not abandoned answers
+// that correction), each marked IDEMPOTENT for that reason; and
+// BackupService.ExportTenant, whose repeat is refused, since the tenant is
+// then handed off.
 //
 // Limits. A message over 4 MB is refused. Every call has a deadline; when the
 // client sends none, the server applies 30 seconds, except to the stream of
-// MonitorService.Watch, which stays open until either side ends it, and to
+// MonitorService.Watch, which stays open until either side ends it, to
 // the stream of DataService.ReadFiles, which may carry a subject's files
-// for hours (its comment says how a stalled one ends). A list
+// for hours (its comment says how a stalled one ends), and to the streams
+// of AuditSealService.ExportAudit, BackupService.CreateBackup and
+// BackupService.ExportTenant, which carry a whole log or database. A list
 // answers 100 items unless page_size asks for another number, and at most
 // 1000; a larger page_size is invalid.
 //
@@ -123,15 +155,16 @@
 // secret is the exception, kept unless named and never set to empty. A field
 // the server answers is read-only, and naming it is invalid.
 //
-// Secrets cross the API in five fields only,
+// Secrets cross the API in six fields only,
 // CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
 // by AddStorage and SetStorage; always empty in an answer),
 // StowSender.credential (in, by AddSender and SetSender; always empty in an
-// answer), CreateKeyResponse.secret and RotateKeyResponse.secret (out,
-// once). All five are marked debug_redact. The mark is metadata, not
+// answer), CreateKeyResponse.secret, RotateKeyResponse.secret and
+// TenantExportSummary.transfer_key (out, once). All six are marked
+// debug_redact. The mark is metadata, not
 // protection: the protobuf library prints such a field like any other
 // (checked with protobuf-go v1.36.12, in every text form). The server's own
-// redactor reads the mark and removes the five fields before anything is
+// redactor reads the mark and removes the six fields before anything is
 // logged.
 //
 // Where a request may come from. A request off the local socket must pass,
@@ -173,7 +206,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/access.proto.
  */
 export const file_coria_v1_access: GenFile = /*@__PURE__*/
-  fileDesc("ChVjb3JpYS92MS9hY2Nlc3MucHJvdG8SCGNvcmlhLnYxIsUCCgNLZXkSCgoCaWQYASABKAkSDgoGaG9sZGVyGAIgASgJEi8KC2NyZWF0ZV90aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtleHBpcmVfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoNbGFzdF91c2VfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLcmV2b2tlX3RpbWUYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCG5ldHdvcmtzGAcgAygJEhoKEmNsaWVudF9jZXJ0X3NoYTI1NhgIIAEoCRIYChBsYXN0X3VzZV9hZGRyZXNzGAkgASgJEhQKDHN1Y2Nlc3Nvcl9pZBgKIAEoCSJVCgVHcmFudBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZRIcCgRyb2xlGAMgASgOMg4uY29yaWEudjEuUm9sZSKHAQoJUHJpbmNpcGFsEhwKA2tleRgBIAEoCzINLmNvcmlhLnYxLktleUgAEjEKDmxvY2FsX29wZXJhdG9yGAIgASgLMhcuY29yaWEudjEuTG9jYWxPcGVyYXRvckgAEh8KBmdyYW50cxgDIAMoCzIPLmNvcmlhLnYxLkdyYW50QggKBmNhbGxlciIgCg1Mb2NhbE9wZXJhdG9yEg8KB3VzZXJfaWQYASABKAkipQEKEENyZWF0ZUtleVJlcXVlc3QSDgoGaG9sZGVyGAEgASgJEjEKDGV4cGlyZV9hZnRlchgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbkgAEhYKDG5ldmVyX2V4cGlyZRgDIAEoCEgAEhAKCG5ldHdvcmtzGAQgAygJEhoKEmNsaWVudF9jZXJ0X3NoYTI1NhgFIAEoCUIICgZleHBpcnkiRAoRQ3JlYXRlS2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5EhMKBnNlY3JldBgCIAEoCUIDgAEBIhsKDUdldEtleVJlcXVlc3QSCgoCaWQYASABKAkiLAoOR2V0S2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5IjgKD0xpc3RLZXlzUmVxdWVzdBIRCglwYWdlX3NpemUYASABKAUSEgoKcGFnZV90b2tlbhgCIAEoCSJIChBMaXN0S2V5c1Jlc3BvbnNlEhsKBGtleXMYASADKAsyDS5jb3JpYS52MS5LZXkSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIh4KEFJldm9rZUtleVJlcXVlc3QSCgoCaWQYASABKAkiLwoRUmV2b2tlS2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5Il8KD1NldEdyYW50UmVxdWVzdBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZRIcCgRyb2xlGAMgASgOMg4uY29yaWEudjEuUm9sZSJZChBTZXRHcmFudFJlc3BvbnNlEh4KBWdyYW50GAEgASgLMg8uY29yaWEudjEuR3JhbnQSJQoNcHJldmlvdXNfcm9sZRgCIAEoDjIOLmNvcmlhLnYxLlJvbGUieAoRTGlzdEdyYW50c1JlcXVlc3QSEAoGa2V5X2lkGAEgASgJSAASIAoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZUgAEhEKCXBhZ2Vfc2l6ZRgDIAEoBRISCgpwYWdlX3Rva2VuGAQgASgJQggKBmZpbHRlciJOChJMaXN0R3JhbnRzUmVzcG9uc2USHwoGZ3JhbnRzGAEgAygLMg8uY29yaWEudjEuR3JhbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIkQKElJlbW92ZUdyYW50UmVxdWVzdBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZSI8ChNSZW1vdmVHcmFudFJlc3BvbnNlEiUKDXByZXZpb3VzX3JvbGUYASABKA4yDi5jb3JpYS52MS5Sb2xlIg8KDVdob0FtSVJlcXVlc3QiOAoOV2hvQW1JUmVzcG9uc2USJgoJcHJpbmNpcGFsGAEgASgLMhMuY29yaWEudjEuUHJpbmNpcGFsIkoKEFJvdGF0ZUtleVJlcXVlc3QSCgoCaWQYASABKAkSKgoHb3ZlcmxhcBgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiJkChFSb3RhdGVLZXlSZXNwb25zZRIaCgNrZXkYASABKAsyDS5jb3JpYS52MS5LZXkSEwoGc2VjcmV0GAIgASgJQgOAAQESHgoHcm90YXRlZBgDIAEoCzINLmNvcmlhLnYxLktleSJOChJTZXRLZXlSdWxlc1JlcXVlc3QSCgoCaWQYASABKAkSEAoIbmV0d29ya3MYAiADKAkSGgoSY2xpZW50X2NlcnRfc2hhMjU2GAMgASgJIjEKE1NldEtleVJ1bGVzUmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5KmEKBFJvbGUSFAoQUk9MRV9VTlNQRUNJRklFRBAAEg8KC1JPTEVfUkVBREVSEAESDwoLUk9MRV9XUklURVIQAhIRCg1ST0xFX09QRVJBVE9SEAMSDgoKUk9MRV9BRE1JThAEMuoFCg1BY2Nlc3NTZXJ2aWNlEkQKCUNyZWF0ZUtleRIaLmNvcmlhLnYxLkNyZWF0ZUtleVJlcXVlc3QaGy5jb3JpYS52MS5DcmVhdGVLZXlSZXNwb25zZRJACgZHZXRLZXkSFy5jb3JpYS52MS5HZXRLZXlSZXF1ZXN0GhguY29yaWEudjEuR2V0S2V5UmVzcG9uc2UiA5ACARJGCghMaXN0S2V5cxIZLmNvcmlhLnYxLkxpc3RLZXlzUmVxdWVzdBoaLmNvcmlhLnYxLkxpc3RLZXlzUmVzcG9uc2UiA5ACARJJCglSZXZva2VLZXkSGi5jb3JpYS52MS5SZXZva2VLZXlSZXF1ZXN0GhsuY29yaWEudjEuUmV2b2tlS2V5UmVzcG9uc2UiA5ACAhJGCghTZXRHcmFudBIZLmNvcmlhLnYxLlNldEdyYW50UmVxdWVzdBoaLmNvcmlhLnYxLlNldEdyYW50UmVzcG9uc2UiA5ACAhJMCgpMaXN0R3JhbnRzEhsuY29yaWEudjEuTGlzdEdyYW50c1JlcXVlc3QaHC5jb3JpYS52MS5MaXN0R3JhbnRzUmVzcG9uc2UiA5ACARJPCgtSZW1vdmVHcmFudBIcLmNvcmlhLnYxLlJlbW92ZUdyYW50UmVxdWVzdBodLmNvcmlhLnYxLlJlbW92ZUdyYW50UmVzcG9uc2UiA5ACAhJACgZXaG9BbUkSFy5jb3JpYS52MS5XaG9BbUlSZXF1ZXN0GhguY29yaWEudjEuV2hvQW1JUmVzcG9uc2UiA5ACARJECglSb3RhdGVLZXkSGi5jb3JpYS52MS5Sb3RhdGVLZXlSZXF1ZXN0GhsuY29yaWEudjEuUm90YXRlS2V5UmVzcG9uc2USTwoLU2V0S2V5UnVsZXMSHC5jb3JpYS52MS5TZXRLZXlSdWxlc1JlcXVlc3QaHS5jb3JpYS52MS5TZXRLZXlSdWxlc1Jlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_duration, file_google_protobuf_timestamp, file_coria_v1_scope]);
+  fileDesc("ChVjb3JpYS92MS9hY2Nlc3MucHJvdG8SCGNvcmlhLnYxIooDCgNLZXkSCgoCaWQYASABKAkSDgoGaG9sZGVyGAIgASgJEi8KC2NyZWF0ZV90aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIvCgtleHBpcmVfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoNbGFzdF91c2VfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLcmV2b2tlX3RpbWUYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhAKCG5ldHdvcmtzGAcgAygJEhoKEmNsaWVudF9jZXJ0X3NoYTI1NhgIIAEoCRIYChBsYXN0X3VzZV9hZGRyZXNzGAkgASgJEhQKDHN1Y2Nlc3Nvcl9pZBgKIAEoCRIRCglzdXNwZW5kZWQYCyABKAgSMAoMc3VzcGVuZF90aW1lGAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJVCgVHcmFudBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZRIcCgRyb2xlGAMgASgOMg4uY29yaWEudjEuUm9sZSKHAQoJUHJpbmNpcGFsEhwKA2tleRgBIAEoCzINLmNvcmlhLnYxLktleUgAEjEKDmxvY2FsX29wZXJhdG9yGAIgASgLMhcuY29yaWEudjEuTG9jYWxPcGVyYXRvckgAEh8KBmdyYW50cxgDIAMoCzIPLmNvcmlhLnYxLkdyYW50QggKBmNhbGxlciIgCg1Mb2NhbE9wZXJhdG9yEg8KB3VzZXJfaWQYASABKAkipQEKEENyZWF0ZUtleVJlcXVlc3QSDgoGaG9sZGVyGAEgASgJEjEKDGV4cGlyZV9hZnRlchgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbkgAEhYKDG5ldmVyX2V4cGlyZRgDIAEoCEgAEhAKCG5ldHdvcmtzGAQgAygJEhoKEmNsaWVudF9jZXJ0X3NoYTI1NhgFIAEoCUIICgZleHBpcnkiRAoRQ3JlYXRlS2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5EhMKBnNlY3JldBgCIAEoCUIDgAEBIhsKDUdldEtleVJlcXVlc3QSCgoCaWQYASABKAkiLAoOR2V0S2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5IjgKD0xpc3RLZXlzUmVxdWVzdBIRCglwYWdlX3NpemUYASABKAUSEgoKcGFnZV90b2tlbhgCIAEoCSJIChBMaXN0S2V5c1Jlc3BvbnNlEhsKBGtleXMYASADKAsyDS5jb3JpYS52MS5LZXkSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIh4KEFJldm9rZUtleVJlcXVlc3QSCgoCaWQYASABKAkiLwoRUmV2b2tlS2V5UmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5Il8KD1NldEdyYW50UmVxdWVzdBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZRIcCgRyb2xlGAMgASgOMg4uY29yaWEudjEuUm9sZSJZChBTZXRHcmFudFJlc3BvbnNlEh4KBWdyYW50GAEgASgLMg8uY29yaWEudjEuR3JhbnQSJQoNcHJldmlvdXNfcm9sZRgCIAEoDjIOLmNvcmlhLnYxLlJvbGUieAoRTGlzdEdyYW50c1JlcXVlc3QSEAoGa2V5X2lkGAEgASgJSAASIAoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZUgAEhEKCXBhZ2Vfc2l6ZRgDIAEoBRISCgpwYWdlX3Rva2VuGAQgASgJQggKBmZpbHRlciJOChJMaXN0R3JhbnRzUmVzcG9uc2USHwoGZ3JhbnRzGAEgAygLMg8uY29yaWEudjEuR3JhbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIkQKElJlbW92ZUdyYW50UmVxdWVzdBIOCgZrZXlfaWQYASABKAkSHgoFc2NvcGUYAiABKAsyDy5jb3JpYS52MS5TY29wZSI8ChNSZW1vdmVHcmFudFJlc3BvbnNlEiUKDXByZXZpb3VzX3JvbGUYASABKA4yDi5jb3JpYS52MS5Sb2xlIg8KDVdob0FtSVJlcXVlc3QiOAoOV2hvQW1JUmVzcG9uc2USJgoJcHJpbmNpcGFsGAEgASgLMhMuY29yaWEudjEuUHJpbmNpcGFsIkoKEFJvdGF0ZUtleVJlcXVlc3QSCgoCaWQYASABKAkSKgoHb3ZlcmxhcBgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiJkChFSb3RhdGVLZXlSZXNwb25zZRIaCgNrZXkYASABKAsyDS5jb3JpYS52MS5LZXkSEwoGc2VjcmV0GAIgASgJQgOAAQESHgoHcm90YXRlZBgDIAEoCzINLmNvcmlhLnYxLktleSJOChJTZXRLZXlSdWxlc1JlcXVlc3QSCgoCaWQYASABKAkSEAoIbmV0d29ya3MYAiADKAkSGgoSY2xpZW50X2NlcnRfc2hhMjU2GAMgASgJIjEKE1NldEtleVJ1bGVzUmVzcG9uc2USGgoDa2V5GAEgASgLMg0uY29yaWEudjEuS2V5IjQKFFJlaW5zdGF0ZUtleXNSZXF1ZXN0Eg8KB2tleV9pZHMYASADKAkSCwoDYWxsGAIgASgIIkgKFVJlaW5zdGF0ZUtleXNSZXNwb25zZRIbCgRrZXlzGAEgAygLMg0uY29yaWEudjEuS2V5EhIKCnJlaW5zdGF0ZWQYAiABKAMqYQoEUm9sZRIUChBST0xFX1VOU1BFQ0lGSUVEEAASDwoLUk9MRV9SRUFERVIQARIPCgtST0xFX1dSSVRFUhACEhEKDVJPTEVfT1BFUkFUT1IQAxIOCgpST0xFX0FETUlOEAQywQYKDUFjY2Vzc1NlcnZpY2USRAoJQ3JlYXRlS2V5EhouY29yaWEudjEuQ3JlYXRlS2V5UmVxdWVzdBobLmNvcmlhLnYxLkNyZWF0ZUtleVJlc3BvbnNlEkAKBkdldEtleRIXLmNvcmlhLnYxLkdldEtleVJlcXVlc3QaGC5jb3JpYS52MS5HZXRLZXlSZXNwb25zZSIDkAIBEkYKCExpc3RLZXlzEhkuY29yaWEudjEuTGlzdEtleXNSZXF1ZXN0GhouY29yaWEudjEuTGlzdEtleXNSZXNwb25zZSIDkAIBEkkKCVJldm9rZUtleRIaLmNvcmlhLnYxLlJldm9rZUtleVJlcXVlc3QaGy5jb3JpYS52MS5SZXZva2VLZXlSZXNwb25zZSIDkAICEkYKCFNldEdyYW50EhkuY29yaWEudjEuU2V0R3JhbnRSZXF1ZXN0GhouY29yaWEudjEuU2V0R3JhbnRSZXNwb25zZSIDkAICEkwKCkxpc3RHcmFudHMSGy5jb3JpYS52MS5MaXN0R3JhbnRzUmVxdWVzdBocLmNvcmlhLnYxLkxpc3RHcmFudHNSZXNwb25zZSIDkAIBEk8KC1JlbW92ZUdyYW50EhwuY29yaWEudjEuUmVtb3ZlR3JhbnRSZXF1ZXN0Gh0uY29yaWEudjEuUmVtb3ZlR3JhbnRSZXNwb25zZSIDkAICEkAKBldob0FtSRIXLmNvcmlhLnYxLldob0FtSVJlcXVlc3QaGC5jb3JpYS52MS5XaG9BbUlSZXNwb25zZSIDkAIBEkQKCVJvdGF0ZUtleRIaLmNvcmlhLnYxLlJvdGF0ZUtleVJlcXVlc3QaGy5jb3JpYS52MS5Sb3RhdGVLZXlSZXNwb25zZRJPCgtTZXRLZXlSdWxlcxIcLmNvcmlhLnYxLlNldEtleVJ1bGVzUmVxdWVzdBodLmNvcmlhLnYxLlNldEtleVJ1bGVzUmVzcG9uc2UiA5ACAhJVCg1SZWluc3RhdGVLZXlzEh4uY29yaWEudjEuUmVpbnN0YXRlS2V5c1JlcXVlc3QaHy5jb3JpYS52MS5SZWluc3RhdGVLZXlzUmVzcG9uc2UiA5ACAmIGcHJvdG8z", [file_google_protobuf_duration, file_google_protobuf_timestamp, file_coria_v1_scope]);
 
 /**
  * Key is a credential held by a person or a system. It never carries its
@@ -264,6 +297,24 @@ export type Key = Message<"coria.v1.Key"> & {
    * @generated from field: string successor_id = 10;
    */
   successorId: string;
+
+  /**
+   * Whether the key is suspended: refused off the local socket, as a key
+   * that is no good, until the local operator reinstates it
+   * (ReinstateKeys). A restore suspends every key it brings
+   * back, since a key revoked, or a grant removed, after the backup was
+   * made would otherwise work again.
+   *
+   * @generated from field: bool suspended = 11;
+   */
+  suspended: boolean;
+
+  /**
+   * When it was suspended. Absent while it is not.
+   *
+   * @generated from field: google.protobuf.Timestamp suspend_time = 12;
+   */
+  suspendTime?: Timestamp | undefined;
 };
 
 /**
@@ -978,6 +1029,65 @@ export const SetKeyRulesResponseSchema: GenMessage<SetKeyRulesResponse> = /*@__P
   messageDesc(file_coria_v1_access, 23);
 
 /**
+ * ReinstateKeysRequest names the suspended keys to reinstate: by id, or
+ * all of them.
+ *
+ * @generated from message coria.v1.ReinstateKeysRequest
+ */
+export type ReinstateKeysRequest = Message<"coria.v1.ReinstateKeysRequest"> & {
+  /**
+   * The ids of the keys: 1 to 1000. Empty with all.
+   *
+   * @generated from field: repeated string key_ids = 1;
+   */
+  keyIds: string[];
+
+  /**
+   * Reinstate every suspended key, after a review. False with key_ids.
+   *
+   * @generated from field: bool all = 2;
+   */
+  all: boolean;
+};
+
+/**
+ * Describes the message coria.v1.ReinstateKeysRequest.
+ * Use `create(ReinstateKeysRequestSchema)` to create a new message.
+ */
+export const ReinstateKeysRequestSchema: GenMessage<ReinstateKeysRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_access, 24);
+
+/**
+ * ReinstateKeysResponse is what was reinstated.
+ *
+ * @generated from message coria.v1.ReinstateKeysResponse
+ */
+export type ReinstateKeysResponse = Message<"coria.v1.ReinstateKeysResponse"> & {
+  /**
+   * With key_ids, the keys reinstated by this call, ordered by id; a key
+   * named that was not suspended is not listed. Empty with all, which
+   * answers only the count, since every key may have been suspended.
+   *
+   * @generated from field: repeated coria.v1.Key keys = 1;
+   */
+  keys: Key[];
+
+  /**
+   * How many keys this call reinstated.
+   *
+   * @generated from field: int64 reinstated = 2;
+   */
+  reinstated: bigint;
+};
+
+/**
+ * Describes the message coria.v1.ReinstateKeysResponse.
+ * Use `create(ReinstateKeysResponseSchema)` to create a new message.
+ */
+export const ReinstateKeysResponseSchema: GenMessage<ReinstateKeysResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_access, 25);
+
+/**
  * Role is what a grant allows. Each role includes every role listed before it.
  * On a tenant, a role acts on that tenant only; on the installation, it acts
  * on the installation's own objects, not on what is inside a tenant. The local
@@ -1245,6 +1355,30 @@ export const AccessService: GenService<{
     methodKind: "unary";
     input: typeof SetKeyRulesRequestSchema;
     output: typeof SetKeyRulesResponseSchema;
+  },
+  /**
+   * ReinstateKeys lets suspended keys work again off the local socket
+   * (Key.suspended). A restore suspends every key it brings back, since a
+   * key revoked, or a grant removed, after the backup was made would
+   * otherwise work again; a person reviews the keys and reinstates those
+   * that should work, by id or all at once. Only the local operator may
+   * call it: a key is answered permission denied whatever its grants, as
+   * every key may be suspended. A key not suspended is left as it is.
+   *
+   * Role: admin on the installation.
+   * Audit: one entry per key reinstated in the installation's log, with
+   * the key's id as its object.
+   * Errors: unauthenticated, permission denied (also any caller but the
+   * local operator), invalid (also both key_ids and all, or neither; more
+   * than 1000 ids), not found (a key id the installation does not have),
+   * unavailable (the master database does not answer).
+   *
+   * @generated from rpc coria.v1.AccessService.ReinstateKeys
+   */
+  reinstateKeys: {
+    methodKind: "unary";
+    input: typeof ReinstateKeysRequestSchema;
+    output: typeof ReinstateKeysResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_coria_v1_access, 0);

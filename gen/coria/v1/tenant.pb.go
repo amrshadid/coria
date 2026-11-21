@@ -27,7 +27,9 @@ const (
 
 // TenantState is whether a tenant can serve requests. The server checks each
 // tenant when it starts and again on a timer. A request into a tenant that is
-// not ready is answered UNAVAILABLE; the other tenants keep working.
+// not ready is answered UNAVAILABLE, with two exceptions: a moved or fenced
+// tenant serves reads, and answers every change FAILED_PRECONDITION with the
+// reason TENANT_MOVED or TENANT_FENCED. The other tenants keep working.
 type TenantState int32
 
 const (
@@ -44,6 +46,26 @@ const (
 	// An upgrade or a check failed in a way a retry does not mend; a person
 	// must act. The tenant's state_reason says why.
 	TenantState_TENANT_STATE_FAILED TenantState = 4
+	// A restore is reconciling the tenant with its storages (their owner
+	// records taken, corrections newer than the backup applied, the catalog
+	// rebuilt, a new event history begun). Every request into it is answered
+	// unavailable (TENANT_RESTORING), its receivers refuse and its jobs wait,
+	// until it is ready.
+	TenantState_TENANT_STATE_RESTORING TenantState = 5
+	// An export handed the tenant to another installation
+	// (BackupService.ExportTenant): read only, so nothing is written after
+	// the export's snapshot. Reads are served; a change is refused as
+	// FAILED_PRECONDITION with the reason TENANT_MOVED, its receivers refuse
+	// and its jobs stop with their place kept. ReclaimTenant undoes it while
+	// the import has not happened.
+	TenantState_TENANT_STATE_MOVED TenantState = 6
+	// The owner record on one of the tenant's storages names another
+	// installation, or a later generation than this tenant's database holds:
+	// another installation has taken the storage over, by an import or a
+	// restore. Read only as moved: reads served, a change refused as
+	// FAILED_PRECONDITION with the reason TENANT_FENCED, so two installations
+	// never write one storage. The tenant's state_reason names the storage.
+	TenantState_TENANT_STATE_FENCED TenantState = 7
 )
 
 // Enum value maps for TenantState.
@@ -54,6 +76,9 @@ var (
 		2: "TENANT_STATE_UNREACHABLE",
 		3: "TENANT_STATE_UPGRADING",
 		4: "TENANT_STATE_FAILED",
+		5: "TENANT_STATE_RESTORING",
+		6: "TENANT_STATE_MOVED",
+		7: "TENANT_STATE_FENCED",
 	}
 	TenantState_value = map[string]int32{
 		"TENANT_STATE_UNSPECIFIED": 0,
@@ -61,6 +86,9 @@ var (
 		"TENANT_STATE_UNREACHABLE": 2,
 		"TENANT_STATE_UPGRADING":   3,
 		"TENANT_STATE_FAILED":      4,
+		"TENANT_STATE_RESTORING":   5,
+		"TENANT_STATE_MOVED":       6,
+		"TENANT_STATE_FENCED":      7,
 	}
 )
 
@@ -681,6 +709,99 @@ func (x *RemoveTenantResponse) GetDataLocation() string {
 	return ""
 }
 
+// ReclaimTenantRequest names the moved tenant to take back.
+type ReclaimTenantRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant's name, as the other methods of this service name it.
+	// Required.
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReclaimTenantRequest) Reset() {
+	*x = ReclaimTenantRequest{}
+	mi := &file_coria_v1_tenant_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReclaimTenantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReclaimTenantRequest) ProtoMessage() {}
+
+func (x *ReclaimTenantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_tenant_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReclaimTenantRequest.ProtoReflect.Descriptor instead.
+func (*ReclaimTenantRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_tenant_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ReclaimTenantRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// ReclaimTenantResponse is the tenant taken back.
+type ReclaimTenantResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant, ready.
+	Tenant        *Tenant `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReclaimTenantResponse) Reset() {
+	*x = ReclaimTenantResponse{}
+	mi := &file_coria_v1_tenant_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReclaimTenantResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReclaimTenantResponse) ProtoMessage() {}
+
+func (x *ReclaimTenantResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_tenant_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReclaimTenantResponse.ProtoReflect.Descriptor instead.
+func (*ReclaimTenantResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_tenant_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ReclaimTenantResponse) GetTenant() *Tenant {
+	if x != nil {
+		return x.Tenant
+	}
+	return nil
+}
+
 var File_coria_v1_tenant_proto protoreflect.FileDescriptor
 
 const file_coria_v1_tenant_proto_rawDesc = "" +
@@ -717,22 +838,30 @@ const file_coria_v1_tenant_proto_rawDesc = "" +
 	"\fconfirm_name\x18\x02 \x01(\tR\vconfirmName\"x\n" +
 	"\x14RemoveTenantResponse\x12;\n" +
 	"\rdatabase_type\x18\x01 \x01(\x0e2\x16.coria.v1.DatabaseTypeR\fdatabaseType\x12#\n" +
-	"\rdata_location\x18\x02 \x01(\tR\fdataLocation*\x96\x01\n" +
+	"\rdata_location\x18\x02 \x01(\tR\fdataLocation\"*\n" +
+	"\x14ReclaimTenantRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"A\n" +
+	"\x15ReclaimTenantResponse\x12(\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x10.coria.v1.TenantR\x06tenant*\xe3\x01\n" +
 	"\vTenantState\x12\x1c\n" +
 	"\x18TENANT_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12TENANT_STATE_READY\x10\x01\x12\x1c\n" +
 	"\x18TENANT_STATE_UNREACHABLE\x10\x02\x12\x1a\n" +
 	"\x16TENANT_STATE_UPGRADING\x10\x03\x12\x17\n" +
-	"\x13TENANT_STATE_FAILED\x10\x04*c\n" +
+	"\x13TENANT_STATE_FAILED\x10\x04\x12\x1a\n" +
+	"\x16TENANT_STATE_RESTORING\x10\x05\x12\x16\n" +
+	"\x12TENANT_STATE_MOVED\x10\x06\x12\x17\n" +
+	"\x13TENANT_STATE_FENCED\x10\a*c\n" +
 	"\fDatabaseType\x12\x1d\n" +
 	"\x19DATABASE_TYPE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14DATABASE_TYPE_SQLITE\x10\x01\x12\x1a\n" +
-	"\x16DATABASE_TYPE_POSTGRES\x10\x022\xce\x02\n" +
+	"\x16DATABASE_TYPE_POSTGRES\x10\x022\xa5\x03\n" +
 	"\rTenantService\x12M\n" +
 	"\fCreateTenant\x12\x1d.coria.v1.CreateTenantRequest\x1a\x1e.coria.v1.CreateTenantResponse\x12I\n" +
 	"\tGetTenant\x12\x1a.coria.v1.GetTenantRequest\x1a\x1b.coria.v1.GetTenantResponse\"\x03\x90\x02\x01\x12O\n" +
 	"\vListTenants\x12\x1c.coria.v1.ListTenantsRequest\x1a\x1d.coria.v1.ListTenantsResponse\"\x03\x90\x02\x01\x12R\n" +
-	"\fRemoveTenant\x12\x1d.coria.v1.RemoveTenantRequest\x1a\x1e.coria.v1.RemoveTenantResponse\"\x03\x90\x02\x02B\x8d\x01\n" +
+	"\fRemoveTenant\x12\x1d.coria.v1.RemoveTenantRequest\x1a\x1e.coria.v1.RemoveTenantResponse\"\x03\x90\x02\x02\x12U\n" +
+	"\rReclaimTenant\x12\x1e.coria.v1.ReclaimTenantRequest\x1a\x1f.coria.v1.ReclaimTenantResponse\"\x03\x90\x02\x02B\x8d\x01\n" +
 	"\fcom.coria.v1B\vTenantProtoP\x01Z/github.com/amrshadid/coria/gen/coria/v1;coriav1\xa2\x02\x03CXX\xaa\x02\bCoria.V1\xca\x02\bCoria\\V1\xe2\x02\x14Coria\\V1\\GPBMetadata\xea\x02\tCoria::V1b\x06proto3"
 
 var (
@@ -748,7 +877,7 @@ func file_coria_v1_tenant_proto_rawDescGZIP() []byte {
 }
 
 var file_coria_v1_tenant_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_coria_v1_tenant_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_coria_v1_tenant_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_coria_v1_tenant_proto_goTypes = []any{
 	(TenantState)(0),              // 0: coria.v1.TenantState
 	(DatabaseType)(0),             // 1: coria.v1.DatabaseType
@@ -761,31 +890,36 @@ var file_coria_v1_tenant_proto_goTypes = []any{
 	(*ListTenantsResponse)(nil),   // 8: coria.v1.ListTenantsResponse
 	(*RemoveTenantRequest)(nil),   // 9: coria.v1.RemoveTenantRequest
 	(*RemoveTenantResponse)(nil),  // 10: coria.v1.RemoveTenantResponse
-	(*timestamppb.Timestamp)(nil), // 11: google.protobuf.Timestamp
+	(*ReclaimTenantRequest)(nil),  // 11: coria.v1.ReclaimTenantRequest
+	(*ReclaimTenantResponse)(nil), // 12: coria.v1.ReclaimTenantResponse
+	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
 }
 var file_coria_v1_tenant_proto_depIdxs = []int32{
 	1,  // 0: coria.v1.Tenant.database_type:type_name -> coria.v1.DatabaseType
 	0,  // 1: coria.v1.Tenant.state:type_name -> coria.v1.TenantState
-	11, // 2: coria.v1.Tenant.create_time:type_name -> google.protobuf.Timestamp
-	11, // 3: coria.v1.Tenant.state_time:type_name -> google.protobuf.Timestamp
+	13, // 2: coria.v1.Tenant.create_time:type_name -> google.protobuf.Timestamp
+	13, // 3: coria.v1.Tenant.state_time:type_name -> google.protobuf.Timestamp
 	1,  // 4: coria.v1.CreateTenantRequest.database_type:type_name -> coria.v1.DatabaseType
 	2,  // 5: coria.v1.CreateTenantResponse.tenant:type_name -> coria.v1.Tenant
 	2,  // 6: coria.v1.GetTenantResponse.tenant:type_name -> coria.v1.Tenant
 	2,  // 7: coria.v1.ListTenantsResponse.tenants:type_name -> coria.v1.Tenant
 	1,  // 8: coria.v1.RemoveTenantResponse.database_type:type_name -> coria.v1.DatabaseType
-	3,  // 9: coria.v1.TenantService.CreateTenant:input_type -> coria.v1.CreateTenantRequest
-	5,  // 10: coria.v1.TenantService.GetTenant:input_type -> coria.v1.GetTenantRequest
-	7,  // 11: coria.v1.TenantService.ListTenants:input_type -> coria.v1.ListTenantsRequest
-	9,  // 12: coria.v1.TenantService.RemoveTenant:input_type -> coria.v1.RemoveTenantRequest
-	4,  // 13: coria.v1.TenantService.CreateTenant:output_type -> coria.v1.CreateTenantResponse
-	6,  // 14: coria.v1.TenantService.GetTenant:output_type -> coria.v1.GetTenantResponse
-	8,  // 15: coria.v1.TenantService.ListTenants:output_type -> coria.v1.ListTenantsResponse
-	10, // 16: coria.v1.TenantService.RemoveTenant:output_type -> coria.v1.RemoveTenantResponse
-	13, // [13:17] is the sub-list for method output_type
-	9,  // [9:13] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	2,  // 9: coria.v1.ReclaimTenantResponse.tenant:type_name -> coria.v1.Tenant
+	3,  // 10: coria.v1.TenantService.CreateTenant:input_type -> coria.v1.CreateTenantRequest
+	5,  // 11: coria.v1.TenantService.GetTenant:input_type -> coria.v1.GetTenantRequest
+	7,  // 12: coria.v1.TenantService.ListTenants:input_type -> coria.v1.ListTenantsRequest
+	9,  // 13: coria.v1.TenantService.RemoveTenant:input_type -> coria.v1.RemoveTenantRequest
+	11, // 14: coria.v1.TenantService.ReclaimTenant:input_type -> coria.v1.ReclaimTenantRequest
+	4,  // 15: coria.v1.TenantService.CreateTenant:output_type -> coria.v1.CreateTenantResponse
+	6,  // 16: coria.v1.TenantService.GetTenant:output_type -> coria.v1.GetTenantResponse
+	8,  // 17: coria.v1.TenantService.ListTenants:output_type -> coria.v1.ListTenantsResponse
+	10, // 18: coria.v1.TenantService.RemoveTenant:output_type -> coria.v1.RemoveTenantResponse
+	12, // 19: coria.v1.TenantService.ReclaimTenant:output_type -> coria.v1.ReclaimTenantResponse
+	15, // [15:20] is the sub-list for method output_type
+	10, // [10:15] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_tenant_proto_init() }
@@ -799,7 +933,7 @@ func file_coria_v1_tenant_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_tenant_proto_rawDesc), len(file_coria_v1_tenant_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

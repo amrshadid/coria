@@ -1,10 +1,12 @@
 // Package redact hides the fields of a protobuf message that the contract
 // marks as secret, so the message can be logged.
 //
-// The API contract marks its five secret fields with the field option
+// The API contract marks its six secret fields with the field option
 // debug_redact (CreateTenantRequest.database_address,
 // CreateKeyResponse.secret, RotateKeyResponse.secret,
-// S3Storage.secret_access_key and StowSender.credential). The mark is metadata only: protobuf-go prints a
+// S3Storage.secret_access_key, StowSender.credential and
+// TenantExportSummary.transfer_key), and the fields of a trial run that
+// carry a file's values. The mark is metadata only: protobuf-go prints a
 // marked field like any other, in every text form (TestUnredactedPrintsSecret
 // shows it with the pinned library). This package reads the mark from each
 // field's descriptor and blanks the field in a copy of the message, walking

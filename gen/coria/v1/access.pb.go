@@ -42,13 +42,17 @@
 //     rule stated on its fields, or exceeds a limit below. Sending it again
 //     unchanged fails again.
 //   - unauthenticated: UNAUTHENTICATED (HTTP 401). No key, a key the server
-//     does not know, a wrong secret, an expired key and a revoked key all get
-//     this one answer, with the same message, so a caller cannot tell them
-//     apart.
+//     does not know, a wrong secret, an expired key, a revoked key and a
+//     suspended key (Key.suspended) all get this one answer, with the same
+//     message, so a caller cannot tell them apart.
 //   - permission denied: PERMISSION_DENIED (HTTP 403). The key is good but
 //     holds no grant with the role the method needs.
 //   - not found: NOT_FOUND (HTTP 404). The thing named does not exist, and
-//     the caller may know that it does not.
+//     the caller may know that it does not. A subject, session or scan
+//     asked for by a label a relabel moved (CorrectionService.Relabel) is
+//     answered so with the reason RELABELED, its metadata "correction" (the
+//     relabel's id) and "to_label" (the label it has now), so a client
+//     that holds old labels finds the data.
 //   - conflict: ALREADY_EXISTS (HTTP 409). The change would collide with what
 //     exists, such as a second tenant with the same name.
 //   - precondition: FAILED_PRECONDITION (HTTP 400). What the request names
@@ -56,26 +60,44 @@
 //     that holds files, releasing a file already rejected, or using a port
 //     the installation has not allotted to the tenant. The message says
 //     which. Sending it again unchanged fails again until that state
-//     changes.
+//     changes. A change to a tenant that is read only carries the reason
+//     TENANT_MOVED (an export handed it to another installation) or
+//     TENANT_FENCED (its storages' owner record names another installation
+//     or a later generation).
 //   - unavailable: UNAVAILABLE (HTTP 503). A database the request needs does
 //     not answer, or a tenant is not ready. Sending it again later may
-//     succeed.
+//     succeed. With the reason TENANT_RESTORING, the tenant is being
+//     reconciled after a restore; with NOT_ONLINE, the storage holds the
+//     object in a tier it cannot read at once (never answered as not found
+//     or data loss: the bytes are not missing).
 //   - cursor expired: OUT_OF_RANGE (HTTP 400). Only MonitorService.Watch
-//     answers it: the cursor it was given points before the oldest event
-//     kept, so the events after it can no longer all be answered. Sending
-//     it again fails again; the client starts over from a status.
+//     answers it, with one of two reasons: CURSOR_EXPIRED, the cursor points
+//     before the oldest event kept, so the events after it can no longer all
+//     be answered; or EVENT_HISTORY_CHANGED, the cursor belongs to another
+//     history of the tenant's feed (its database was restored, imported or
+//     loaded, which starts a new history), or points past the newest event.
+//     Sending it again fails again; the client starts over from a status.
 //   - data loss: DATA_LOSS (HTTP 500). An archived file, or a file the
 //     server keeps beside it, is missing from its storage or is not what
 //     was archived: its bytes do not match the SHA-256 its scan's manifest
-//     holds. Answered only where archived files are read
+//     holds, or a scrub found it so (ScrubJob) and marked it. Answered
+//     only where archived files are read
 //     (MetadataService, DataService and its plain HTTP download, where it
 //     is HTTP 500); the message names the scan, and the cause is in the
 //     server's log. Sending it again fails again until the
 //     file is mended from another copy.
 //
+// Where a kind above names a reason, it travels as a google.rpc.ErrorInfo
+// detail (google/rpc/error_details.proto) of the error, with the domain
+// "coria", that reason, and the metadata the kind names. A client that does
+// not read details still has the code and the message; the reasons are
+// fixed words, and a reason added later is one a client does not know.
+//
 // Any method can also answer INTERNAL (HTTP 500) for a fault of the server,
-// RESOURCE_EXHAUSTED for a message over the size limit (and, for Watch and
-// DataService.ReadFiles, for too many open streams and downloads), and DEADLINE_EXCEEDED when its deadline passes.
+// RESOURCE_EXHAUSTED for a message over the size limit (and for too many
+// open streams and downloads, for Watch, DataService.ReadFiles,
+// AuditSealService.ExportAudit, and one backup or export at a time for
+// BackupService), and DEADLINE_EXCEEDED when its deadline passes.
 // The message of an INTERNAL answer says nothing about the cause; the cause
 // is in the server's log and the audit entry, under the request's id.
 //
@@ -98,13 +120,23 @@
 // server's record of the call, not a change to anything a read answers, and
 // repeating the read answers the same. CreateTenant, CreateKey, AddStorage,
 // AddReceiver, AddSender and CreateJob are neither, as each call makes a new
-// thing.
+// thing. Four changes are not repeated plainly, and say what a repeat
+// does: CorrectionService.Delete (a Delete carrying a confirm token
+// already used answers the correction that token made),
+// CorrectionService.Replace (a Replace of a quarantined file already used
+// answers the correction it made), CorrectionService.Relabel (a Relabel
+// with the same target and new label as a correction not abandoned answers
+// that correction), each marked IDEMPOTENT for that reason; and
+// BackupService.ExportTenant, whose repeat is refused, since the tenant is
+// then handed off.
 //
 // Limits. A message over 4 MB is refused. Every call has a deadline; when the
 // client sends none, the server applies 30 seconds, except to the stream of
-// MonitorService.Watch, which stays open until either side ends it, and to
+// MonitorService.Watch, which stays open until either side ends it, to
 // the stream of DataService.ReadFiles, which may carry a subject's files
-// for hours (its comment says how a stalled one ends). A list
+// for hours (its comment says how a stalled one ends), and to the streams
+// of AuditSealService.ExportAudit, BackupService.CreateBackup and
+// BackupService.ExportTenant, which carry a whole log or database. A list
 // answers 100 items unless page_size asks for another number, and at most
 // 1000; a larger page_size is invalid.
 //
@@ -125,15 +157,16 @@
 // secret is the exception, kept unless named and never set to empty. A field
 // the server answers is read-only, and naming it is invalid.
 //
-// Secrets cross the API in five fields only,
+// Secrets cross the API in six fields only,
 // CreateTenantRequest.database_address (in), S3Storage.secret_access_key (in,
 // by AddStorage and SetStorage; always empty in an answer),
 // StowSender.credential (in, by AddSender and SetSender; always empty in an
-// answer), CreateKeyResponse.secret and RotateKeyResponse.secret (out,
-// once). All five are marked debug_redact. The mark is metadata, not
+// answer), CreateKeyResponse.secret, RotateKeyResponse.secret and
+// TenantExportSummary.transfer_key (out, once). All six are marked
+// debug_redact. The mark is metadata, not
 // protection: the protobuf library prints such a field like any other
 // (checked with protobuf-go v1.36.12, in every text form). The server's own
-// redactor reads the mark and removes the five fields before anything is
+// redactor reads the mark and removes the six fields before anything is
 // logged.
 //
 // Where a request may come from. A request off the local socket must pass,
@@ -292,7 +325,15 @@ type Key struct {
 	LastUseAddress string `protobuf:"bytes,9,opt,name=last_use_address,json=lastUseAddress,proto3" json:"last_use_address,omitempty"`
 	// The id of the key a rotation replaced this one with; empty when it was
 	// never rotated.
-	SuccessorId   string `protobuf:"bytes,10,opt,name=successor_id,json=successorId,proto3" json:"successor_id,omitempty"`
+	SuccessorId string `protobuf:"bytes,10,opt,name=successor_id,json=successorId,proto3" json:"successor_id,omitempty"`
+	// Whether the key is suspended: refused off the local socket, as a key
+	// that is no good, until the local operator reinstates it
+	// (ReinstateKeys). A restore suspends every key it brings
+	// back, since a key revoked, or a grant removed, after the backup was
+	// made would otherwise work again.
+	Suspended bool `protobuf:"varint,11,opt,name=suspended,proto3" json:"suspended,omitempty"`
+	// When it was suspended. Absent while it is not.
+	SuspendTime   *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=suspend_time,json=suspendTime,proto3" json:"suspend_time,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -395,6 +436,20 @@ func (x *Key) GetSuccessorId() string {
 		return x.SuccessorId
 	}
 	return ""
+}
+
+func (x *Key) GetSuspended() bool {
+	if x != nil {
+		return x.Suspended
+	}
+	return false
+}
+
+func (x *Key) GetSuspendTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.SuspendTime
+	}
+	return nil
 }
 
 // Grant gives one key one role on one scope.
@@ -1790,11 +1845,124 @@ func (x *SetKeyRulesResponse) GetKey() *Key {
 	return nil
 }
 
+// ReinstateKeysRequest names the suspended keys to reinstate: by id, or
+// all of them.
+type ReinstateKeysRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The ids of the keys: 1 to 1000. Empty with all.
+	KeyIds []string `protobuf:"bytes,1,rep,name=key_ids,json=keyIds,proto3" json:"key_ids,omitempty"`
+	// Reinstate every suspended key, after a review. False with key_ids.
+	All           bool `protobuf:"varint,2,opt,name=all,proto3" json:"all,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReinstateKeysRequest) Reset() {
+	*x = ReinstateKeysRequest{}
+	mi := &file_coria_v1_access_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReinstateKeysRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReinstateKeysRequest) ProtoMessage() {}
+
+func (x *ReinstateKeysRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_access_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReinstateKeysRequest.ProtoReflect.Descriptor instead.
+func (*ReinstateKeysRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_access_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ReinstateKeysRequest) GetKeyIds() []string {
+	if x != nil {
+		return x.KeyIds
+	}
+	return nil
+}
+
+func (x *ReinstateKeysRequest) GetAll() bool {
+	if x != nil {
+		return x.All
+	}
+	return false
+}
+
+// ReinstateKeysResponse is what was reinstated.
+type ReinstateKeysResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// With key_ids, the keys reinstated by this call, ordered by id; a key
+	// named that was not suspended is not listed. Empty with all, which
+	// answers only the count, since every key may have been suspended.
+	Keys []*Key `protobuf:"bytes,1,rep,name=keys,proto3" json:"keys,omitempty"`
+	// How many keys this call reinstated.
+	Reinstated    int64 `protobuf:"varint,2,opt,name=reinstated,proto3" json:"reinstated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReinstateKeysResponse) Reset() {
+	*x = ReinstateKeysResponse{}
+	mi := &file_coria_v1_access_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReinstateKeysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReinstateKeysResponse) ProtoMessage() {}
+
+func (x *ReinstateKeysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_access_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReinstateKeysResponse.ProtoReflect.Descriptor instead.
+func (*ReinstateKeysResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_access_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ReinstateKeysResponse) GetKeys() []*Key {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+func (x *ReinstateKeysResponse) GetReinstated() int64 {
+	if x != nil {
+		return x.Reinstated
+	}
+	return 0
+}
+
 var File_coria_v1_access_proto protoreflect.FileDescriptor
 
 const file_coria_v1_access_proto_rawDesc = "" +
 	"\n" +
-	"\x15coria/v1/access.proto\x12\bcoria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14coria/v1/scope.proto\"\xbb\x03\n" +
+	"\x15coria/v1/access.proto\x12\bcoria.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14coria/v1/scope.proto\"\x98\x04\n" +
 	"\x03Key\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06holder\x18\x02 \x01(\tR\x06holder\x12;\n" +
@@ -1809,7 +1977,9 @@ const file_coria_v1_access_proto_rawDesc = "" +
 	"\x12client_cert_sha256\x18\b \x01(\tR\x10clientCertSha256\x12(\n" +
 	"\x10last_use_address\x18\t \x01(\tR\x0elastUseAddress\x12!\n" +
 	"\fsuccessor_id\x18\n" +
-	" \x01(\tR\vsuccessorId\"i\n" +
+	" \x01(\tR\vsuccessorId\x12\x1c\n" +
+	"\tsuspended\x18\v \x01(\bR\tsuspended\x12=\n" +
+	"\fsuspend_time\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\vsuspendTime\"i\n" +
 	"\x05Grant\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12%\n" +
 	"\x05scope\x18\x02 \x01(\v2\x0f.coria.v1.ScopeR\x05scope\x12\"\n" +
@@ -1883,14 +2053,22 @@ const file_coria_v1_access_proto_rawDesc = "" +
 	"\bnetworks\x18\x02 \x03(\tR\bnetworks\x12,\n" +
 	"\x12client_cert_sha256\x18\x03 \x01(\tR\x10clientCertSha256\"6\n" +
 	"\x13SetKeyRulesResponse\x12\x1f\n" +
-	"\x03key\x18\x01 \x01(\v2\r.coria.v1.KeyR\x03key*a\n" +
+	"\x03key\x18\x01 \x01(\v2\r.coria.v1.KeyR\x03key\"A\n" +
+	"\x14ReinstateKeysRequest\x12\x17\n" +
+	"\akey_ids\x18\x01 \x03(\tR\x06keyIds\x12\x10\n" +
+	"\x03all\x18\x02 \x01(\bR\x03all\"Z\n" +
+	"\x15ReinstateKeysResponse\x12!\n" +
+	"\x04keys\x18\x01 \x03(\v2\r.coria.v1.KeyR\x04keys\x12\x1e\n" +
+	"\n" +
+	"reinstated\x18\x02 \x01(\x03R\n" +
+	"reinstated*a\n" +
 	"\x04Role\x12\x14\n" +
 	"\x10ROLE_UNSPECIFIED\x10\x00\x12\x0f\n" +
 	"\vROLE_READER\x10\x01\x12\x0f\n" +
 	"\vROLE_WRITER\x10\x02\x12\x11\n" +
 	"\rROLE_OPERATOR\x10\x03\x12\x0e\n" +
 	"\n" +
-	"ROLE_ADMIN\x10\x042\xea\x05\n" +
+	"ROLE_ADMIN\x10\x042\xc1\x06\n" +
 	"\rAccessService\x12D\n" +
 	"\tCreateKey\x12\x1a.coria.v1.CreateKeyRequest\x1a\x1b.coria.v1.CreateKeyResponse\x12@\n" +
 	"\x06GetKey\x12\x17.coria.v1.GetKeyRequest\x1a\x18.coria.v1.GetKeyResponse\"\x03\x90\x02\x01\x12F\n" +
@@ -1902,7 +2080,8 @@ const file_coria_v1_access_proto_rawDesc = "" +
 	"\vRemoveGrant\x12\x1c.coria.v1.RemoveGrantRequest\x1a\x1d.coria.v1.RemoveGrantResponse\"\x03\x90\x02\x02\x12@\n" +
 	"\x06WhoAmI\x12\x17.coria.v1.WhoAmIRequest\x1a\x18.coria.v1.WhoAmIResponse\"\x03\x90\x02\x01\x12D\n" +
 	"\tRotateKey\x12\x1a.coria.v1.RotateKeyRequest\x1a\x1b.coria.v1.RotateKeyResponse\x12O\n" +
-	"\vSetKeyRules\x12\x1c.coria.v1.SetKeyRulesRequest\x1a\x1d.coria.v1.SetKeyRulesResponse\"\x03\x90\x02\x02B\x8d\x01\n" +
+	"\vSetKeyRules\x12\x1c.coria.v1.SetKeyRulesRequest\x1a\x1d.coria.v1.SetKeyRulesResponse\"\x03\x90\x02\x02\x12U\n" +
+	"\rReinstateKeys\x12\x1e.coria.v1.ReinstateKeysRequest\x1a\x1f.coria.v1.ReinstateKeysResponse\"\x03\x90\x02\x02B\x8d\x01\n" +
 	"\fcom.coria.v1B\vAccessProtoP\x01Z/github.com/amrshadid/coria/gen/coria/v1;coriav1\xa2\x02\x03CXX\xaa\x02\bCoria.V1\xca\x02\bCoria\\V1\xe2\x02\x14Coria\\V1\\GPBMetadata\xea\x02\tCoria::V1b\x06proto3"
 
 var (
@@ -1918,7 +2097,7 @@ func file_coria_v1_access_proto_rawDescGZIP() []byte {
 }
 
 var file_coria_v1_access_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_coria_v1_access_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_coria_v1_access_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_coria_v1_access_proto_goTypes = []any{
 	(Role)(0),                     // 0: coria.v1.Role
 	(*Key)(nil),                   // 1: coria.v1.Key
@@ -1945,63 +2124,69 @@ var file_coria_v1_access_proto_goTypes = []any{
 	(*RotateKeyResponse)(nil),     // 22: coria.v1.RotateKeyResponse
 	(*SetKeyRulesRequest)(nil),    // 23: coria.v1.SetKeyRulesRequest
 	(*SetKeyRulesResponse)(nil),   // 24: coria.v1.SetKeyRulesResponse
-	(*timestamppb.Timestamp)(nil), // 25: google.protobuf.Timestamp
-	(*Scope)(nil),                 // 26: coria.v1.Scope
-	(*durationpb.Duration)(nil),   // 27: google.protobuf.Duration
+	(*ReinstateKeysRequest)(nil),  // 25: coria.v1.ReinstateKeysRequest
+	(*ReinstateKeysResponse)(nil), // 26: coria.v1.ReinstateKeysResponse
+	(*timestamppb.Timestamp)(nil), // 27: google.protobuf.Timestamp
+	(*Scope)(nil),                 // 28: coria.v1.Scope
+	(*durationpb.Duration)(nil),   // 29: google.protobuf.Duration
 }
 var file_coria_v1_access_proto_depIdxs = []int32{
-	25, // 0: coria.v1.Key.create_time:type_name -> google.protobuf.Timestamp
-	25, // 1: coria.v1.Key.expire_time:type_name -> google.protobuf.Timestamp
-	25, // 2: coria.v1.Key.last_use_time:type_name -> google.protobuf.Timestamp
-	25, // 3: coria.v1.Key.revoke_time:type_name -> google.protobuf.Timestamp
-	26, // 4: coria.v1.Grant.scope:type_name -> coria.v1.Scope
-	0,  // 5: coria.v1.Grant.role:type_name -> coria.v1.Role
-	1,  // 6: coria.v1.Principal.key:type_name -> coria.v1.Key
-	4,  // 7: coria.v1.Principal.local_operator:type_name -> coria.v1.LocalOperator
-	2,  // 8: coria.v1.Principal.grants:type_name -> coria.v1.Grant
-	27, // 9: coria.v1.CreateKeyRequest.expire_after:type_name -> google.protobuf.Duration
-	1,  // 10: coria.v1.CreateKeyResponse.key:type_name -> coria.v1.Key
-	1,  // 11: coria.v1.GetKeyResponse.key:type_name -> coria.v1.Key
-	1,  // 12: coria.v1.ListKeysResponse.keys:type_name -> coria.v1.Key
-	1,  // 13: coria.v1.RevokeKeyResponse.key:type_name -> coria.v1.Key
-	26, // 14: coria.v1.SetGrantRequest.scope:type_name -> coria.v1.Scope
-	0,  // 15: coria.v1.SetGrantRequest.role:type_name -> coria.v1.Role
-	2,  // 16: coria.v1.SetGrantResponse.grant:type_name -> coria.v1.Grant
-	0,  // 17: coria.v1.SetGrantResponse.previous_role:type_name -> coria.v1.Role
-	26, // 18: coria.v1.ListGrantsRequest.scope:type_name -> coria.v1.Scope
-	2,  // 19: coria.v1.ListGrantsResponse.grants:type_name -> coria.v1.Grant
-	26, // 20: coria.v1.RemoveGrantRequest.scope:type_name -> coria.v1.Scope
-	0,  // 21: coria.v1.RemoveGrantResponse.previous_role:type_name -> coria.v1.Role
-	3,  // 22: coria.v1.WhoAmIResponse.principal:type_name -> coria.v1.Principal
-	27, // 23: coria.v1.RotateKeyRequest.overlap:type_name -> google.protobuf.Duration
-	1,  // 24: coria.v1.RotateKeyResponse.key:type_name -> coria.v1.Key
-	1,  // 25: coria.v1.RotateKeyResponse.rotated:type_name -> coria.v1.Key
-	1,  // 26: coria.v1.SetKeyRulesResponse.key:type_name -> coria.v1.Key
-	5,  // 27: coria.v1.AccessService.CreateKey:input_type -> coria.v1.CreateKeyRequest
-	7,  // 28: coria.v1.AccessService.GetKey:input_type -> coria.v1.GetKeyRequest
-	9,  // 29: coria.v1.AccessService.ListKeys:input_type -> coria.v1.ListKeysRequest
-	11, // 30: coria.v1.AccessService.RevokeKey:input_type -> coria.v1.RevokeKeyRequest
-	13, // 31: coria.v1.AccessService.SetGrant:input_type -> coria.v1.SetGrantRequest
-	15, // 32: coria.v1.AccessService.ListGrants:input_type -> coria.v1.ListGrantsRequest
-	17, // 33: coria.v1.AccessService.RemoveGrant:input_type -> coria.v1.RemoveGrantRequest
-	19, // 34: coria.v1.AccessService.WhoAmI:input_type -> coria.v1.WhoAmIRequest
-	21, // 35: coria.v1.AccessService.RotateKey:input_type -> coria.v1.RotateKeyRequest
-	23, // 36: coria.v1.AccessService.SetKeyRules:input_type -> coria.v1.SetKeyRulesRequest
-	6,  // 37: coria.v1.AccessService.CreateKey:output_type -> coria.v1.CreateKeyResponse
-	8,  // 38: coria.v1.AccessService.GetKey:output_type -> coria.v1.GetKeyResponse
-	10, // 39: coria.v1.AccessService.ListKeys:output_type -> coria.v1.ListKeysResponse
-	12, // 40: coria.v1.AccessService.RevokeKey:output_type -> coria.v1.RevokeKeyResponse
-	14, // 41: coria.v1.AccessService.SetGrant:output_type -> coria.v1.SetGrantResponse
-	16, // 42: coria.v1.AccessService.ListGrants:output_type -> coria.v1.ListGrantsResponse
-	18, // 43: coria.v1.AccessService.RemoveGrant:output_type -> coria.v1.RemoveGrantResponse
-	20, // 44: coria.v1.AccessService.WhoAmI:output_type -> coria.v1.WhoAmIResponse
-	22, // 45: coria.v1.AccessService.RotateKey:output_type -> coria.v1.RotateKeyResponse
-	24, // 46: coria.v1.AccessService.SetKeyRules:output_type -> coria.v1.SetKeyRulesResponse
-	37, // [37:47] is the sub-list for method output_type
-	27, // [27:37] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	27, // 0: coria.v1.Key.create_time:type_name -> google.protobuf.Timestamp
+	27, // 1: coria.v1.Key.expire_time:type_name -> google.protobuf.Timestamp
+	27, // 2: coria.v1.Key.last_use_time:type_name -> google.protobuf.Timestamp
+	27, // 3: coria.v1.Key.revoke_time:type_name -> google.protobuf.Timestamp
+	27, // 4: coria.v1.Key.suspend_time:type_name -> google.protobuf.Timestamp
+	28, // 5: coria.v1.Grant.scope:type_name -> coria.v1.Scope
+	0,  // 6: coria.v1.Grant.role:type_name -> coria.v1.Role
+	1,  // 7: coria.v1.Principal.key:type_name -> coria.v1.Key
+	4,  // 8: coria.v1.Principal.local_operator:type_name -> coria.v1.LocalOperator
+	2,  // 9: coria.v1.Principal.grants:type_name -> coria.v1.Grant
+	29, // 10: coria.v1.CreateKeyRequest.expire_after:type_name -> google.protobuf.Duration
+	1,  // 11: coria.v1.CreateKeyResponse.key:type_name -> coria.v1.Key
+	1,  // 12: coria.v1.GetKeyResponse.key:type_name -> coria.v1.Key
+	1,  // 13: coria.v1.ListKeysResponse.keys:type_name -> coria.v1.Key
+	1,  // 14: coria.v1.RevokeKeyResponse.key:type_name -> coria.v1.Key
+	28, // 15: coria.v1.SetGrantRequest.scope:type_name -> coria.v1.Scope
+	0,  // 16: coria.v1.SetGrantRequest.role:type_name -> coria.v1.Role
+	2,  // 17: coria.v1.SetGrantResponse.grant:type_name -> coria.v1.Grant
+	0,  // 18: coria.v1.SetGrantResponse.previous_role:type_name -> coria.v1.Role
+	28, // 19: coria.v1.ListGrantsRequest.scope:type_name -> coria.v1.Scope
+	2,  // 20: coria.v1.ListGrantsResponse.grants:type_name -> coria.v1.Grant
+	28, // 21: coria.v1.RemoveGrantRequest.scope:type_name -> coria.v1.Scope
+	0,  // 22: coria.v1.RemoveGrantResponse.previous_role:type_name -> coria.v1.Role
+	3,  // 23: coria.v1.WhoAmIResponse.principal:type_name -> coria.v1.Principal
+	29, // 24: coria.v1.RotateKeyRequest.overlap:type_name -> google.protobuf.Duration
+	1,  // 25: coria.v1.RotateKeyResponse.key:type_name -> coria.v1.Key
+	1,  // 26: coria.v1.RotateKeyResponse.rotated:type_name -> coria.v1.Key
+	1,  // 27: coria.v1.SetKeyRulesResponse.key:type_name -> coria.v1.Key
+	1,  // 28: coria.v1.ReinstateKeysResponse.keys:type_name -> coria.v1.Key
+	5,  // 29: coria.v1.AccessService.CreateKey:input_type -> coria.v1.CreateKeyRequest
+	7,  // 30: coria.v1.AccessService.GetKey:input_type -> coria.v1.GetKeyRequest
+	9,  // 31: coria.v1.AccessService.ListKeys:input_type -> coria.v1.ListKeysRequest
+	11, // 32: coria.v1.AccessService.RevokeKey:input_type -> coria.v1.RevokeKeyRequest
+	13, // 33: coria.v1.AccessService.SetGrant:input_type -> coria.v1.SetGrantRequest
+	15, // 34: coria.v1.AccessService.ListGrants:input_type -> coria.v1.ListGrantsRequest
+	17, // 35: coria.v1.AccessService.RemoveGrant:input_type -> coria.v1.RemoveGrantRequest
+	19, // 36: coria.v1.AccessService.WhoAmI:input_type -> coria.v1.WhoAmIRequest
+	21, // 37: coria.v1.AccessService.RotateKey:input_type -> coria.v1.RotateKeyRequest
+	23, // 38: coria.v1.AccessService.SetKeyRules:input_type -> coria.v1.SetKeyRulesRequest
+	25, // 39: coria.v1.AccessService.ReinstateKeys:input_type -> coria.v1.ReinstateKeysRequest
+	6,  // 40: coria.v1.AccessService.CreateKey:output_type -> coria.v1.CreateKeyResponse
+	8,  // 41: coria.v1.AccessService.GetKey:output_type -> coria.v1.GetKeyResponse
+	10, // 42: coria.v1.AccessService.ListKeys:output_type -> coria.v1.ListKeysResponse
+	12, // 43: coria.v1.AccessService.RevokeKey:output_type -> coria.v1.RevokeKeyResponse
+	14, // 44: coria.v1.AccessService.SetGrant:output_type -> coria.v1.SetGrantResponse
+	16, // 45: coria.v1.AccessService.ListGrants:output_type -> coria.v1.ListGrantsResponse
+	18, // 46: coria.v1.AccessService.RemoveGrant:output_type -> coria.v1.RemoveGrantResponse
+	20, // 47: coria.v1.AccessService.WhoAmI:output_type -> coria.v1.WhoAmIResponse
+	22, // 48: coria.v1.AccessService.RotateKey:output_type -> coria.v1.RotateKeyResponse
+	24, // 49: coria.v1.AccessService.SetKeyRules:output_type -> coria.v1.SetKeyRulesResponse
+	26, // 50: coria.v1.AccessService.ReinstateKeys:output_type -> coria.v1.ReinstateKeysResponse
+	40, // [40:51] is the sub-list for method output_type
+	29, // [29:40] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_access_proto_init() }
@@ -2028,7 +2213,7 @@ func file_coria_v1_access_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_access_proto_rawDesc), len(file_coria_v1_access_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   24,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

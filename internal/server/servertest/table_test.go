@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 
 	coriav1 "github.com/amrshadid/coria/gen/coria/v1"
+	"github.com/amrshadid/coria/gen/coria/v1/coriav1connect"
 	"github.com/amrshadid/coria/internal/access"
 	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/driver/sqlite"
@@ -38,12 +39,11 @@ import (
 var notServedFile = filepath.Join("..", "..", "..", "api", "not-served.txt")
 
 // notServedName is the form of a line of notServedFile: a full service
-// name.
-var notServedName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*$`)
+// name, or a full service name, "/" and a method's name.
+var notServedName = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*\.[A-Z][A-Za-z0-9]*(/[A-Z][A-Za-z0-9]*)?$`)
 
-// readNotServed returns the services notServedFile names, in its order. A
-// line that is not a full service name, or a name given twice, fails the
-// test.
+// readNotServed returns the lines of notServedFile, in its order. A line of
+// neither form, or a line given twice, fails the test.
 func readNotServed(t testing.TB) []string {
 	t.Helper()
 	b, err := os.ReadFile(notServedFile)
@@ -57,17 +57,35 @@ func readNotServed(t testing.TB) []string {
 			continue
 		}
 		if !notServedName.MatchString(line) || slices.Contains(out, line) {
-			t.Fatalf("%s:%d: %q is not a full service name given once", notServedFile, i+1, line)
+			t.Fatalf("%s:%d: %q is not a full service or method name given once", notServedFile, i+1, line)
 		}
 		out = append(out, line)
 	}
 	return out
 }
 
-// inServices reports whether proc, a full procedure name, is a method of
-// one of services.
-func inServices(services []string, proc string) bool {
-	return slices.ContainsFunc(services, func(s string) bool { return strings.HasPrefix(proc, "/"+s+"/") })
+// inServices reports whether proc, a full procedure name, is named by one
+// of entries: a method of a service an entry names whole, or the method an
+// entry names.
+func inServices(entries []string, proc string) bool {
+	return slices.ContainsFunc(entries, func(e string) bool {
+		if strings.Contains(e, "/") {
+			return proc == "/"+e
+		}
+		return strings.HasPrefix(proc, "/"+e+"/")
+	})
+}
+
+// methodLines returns the lines of entries that name one method, as full
+// procedure names.
+func methodLines(entries []string) []string {
+	var out []string
+	for _, e := range entries {
+		if strings.Contains(e, "/") {
+			out = append(out, "/"+e)
+		}
+	}
+	return out
 }
 
 // fileRPCs returns the full procedure name of every rpc of the contract's
@@ -100,15 +118,15 @@ func fileRPCs(t *testing.T) []string {
 	return out
 }
 
-// notServedProblems compares a list of services not served with the rpcs of
-// the proto files and the table's procedures: each listed service must have
-// at least one rpc in the files and none in the table.
-func notServedProblems(services, rpcs, procs []string) []string {
+// notServedProblems compares a list of what is not served with the rpcs of
+// the proto files and the table's procedures: each entry must name at
+// least one rpc of the files and none in the table.
+func notServedProblems(entries, rpcs, procs []string) []string {
 	var problems []string
-	for _, s := range services {
+	for _, s := range entries {
 		n := 0
 		for _, p := range rpcs {
-			if !strings.HasPrefix(p, "/"+s+"/") {
+			if !inServices([]string{s}, p) {
 				continue
 			}
 			n++
@@ -124,14 +142,17 @@ func notServedProblems(services, rpcs, procs []string) []string {
 	return problems
 }
 
-// TestNotServedServices guards the list of services not served yet, so it
-// cannot hide a method that is served: every listed service is in the proto
-// files and the generated descriptors, none of its methods is in the
-// table, and a call to each of its methods over a real server, as the
-// local operator, is answered UNIMPLEMENTED with "no such method", the
-// answer to any procedure no handler serves, after the caller is
-// authenticated. It also shows the check itself reports a served service put on
-// the list and a listed service no file defines.
+// TestNotServedServices guards the list of what is not served yet, so it
+// cannot hide a method that is served: every listed service or method is
+// in the proto files and the generated descriptors, none of the methods it
+// names is in the table, the method lines are exactly the stand-in
+// table's pending methods, and a call to each named method over a real
+// server, as the local operator, is answered UNIMPLEMENTED with "no such
+// method", the answer to any procedure no handler serves, after the
+// caller is authenticated, while the other methods of such a service are
+// still routed to their handlers. It also shows the check itself reports a
+// served service or method put on the list and a listed service no file
+// defines.
 func TestNotServedServices(t *testing.T) {
 	notServed := readNotServed(t)
 	rpcs, procs := fileRPCs(t), tableProcs()
@@ -142,22 +163,36 @@ func TestNotServedServices(t *testing.T) {
 	if len(served) == 0 || !strings.Contains(served[0], "AccessService") {
 		t.Errorf("a served service on the list was not reported: %v", served)
 	}
+	servedMethod := notServedProblems(append(slices.Clone(notServed), "coria.v1.AccessService/WhoAmI"), rpcs, procs)
+	if len(servedMethod) != 1 || !strings.Contains(servedMethod[0], "WhoAmI") {
+		t.Errorf("a served method on the list was not reported: %v", servedMethod)
+	}
 	missing := notServedProblems(append(slices.Clone(notServed), "coria.v1.NoSuchService"), rpcs, procs)
 	if len(missing) != 1 || !strings.Contains(missing[0], "NoSuchService") {
 		t.Errorf("a listed service no file defines was not reported: %v", missing)
 	}
+	lines, pending := methodLines(notServed), servertest.PendingMethods()
+	slices.Sort(lines)
+	slices.Sort(pending)
+	if !slices.Equal(lines, pending) {
+		t.Errorf("the method lines of the list are %q, the stand-in table's pending methods %q", lines, pending)
+	}
 
 	cl := localClient(t)
 	for _, s := range notServed {
-		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(s))
+		svc, method, isMethod := strings.Cut(s, "/")
+		d, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(svc))
 		sd, ok := d.(protoreflect.ServiceDescriptor)
 		if err != nil || !ok {
-			t.Errorf("%s is not a service of the generated descriptors: %v", s, err)
+			t.Errorf("%s is not a service of the generated descriptors: %v", svc, err)
 			continue
 		}
 		for i := range sd.Methods().Len() {
 			md := sd.Methods().Get(i)
-			proc := "/" + s + "/" + string(md.Name())
+			if isMethod && string(md.Name()) != method {
+				continue
+			}
+			proc := "/" + svc + "/" + string(md.Name())
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			req, res := dynamicpb.NewMessage(md.Input()), dynamicpb.NewMessage(md.Output())
 			var err error
@@ -177,6 +212,16 @@ func TestNotServedServices(t *testing.T) {
 				t.Errorf("%s: %v, want UNIMPLEMENTED, no such method", proc, err)
 			}
 		}
+	}
+
+	// A served method of a service one of whose methods is listed is still
+	// routed: WhoAmI answers the local operator.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var who coriav1.WhoAmIResponse
+	if err := cl.CallUnary(ctx, connect.Spec{StreamType: connect.StreamTypeUnary, Procedure: coriav1connect.AccessServiceWhoAmIProcedure},
+		&coriav1.WhoAmIRequest{}, &who); err != nil {
+		t.Errorf("WhoAmI beside a listed method of its service: %v", err)
 	}
 }
 
@@ -267,15 +312,22 @@ var contractFiles = []protoreflect.FileDescriptor{
 	coriav1.File_coria_v1_deid_proto,
 }
 
-// contractMethods returns every method of the contract by procedure name.
+// contractMethods returns every served method of the contract by procedure
+// name: the methods of contractFiles but the pending ones of served
+// services (servertest.PendingMethods, which TestNotServedServices holds
+// to the list).
 func contractMethods() map[string]protoreflect.MethodDescriptor {
 	out := map[string]protoreflect.MethodDescriptor{}
+	pending := servertest.PendingMethods()
 	for _, f := range contractFiles {
 		for i := range f.Services().Len() {
 			svc := f.Services().Get(i)
 			for j := range svc.Methods().Len() {
 				m := svc.Methods().Get(j)
-				out["/"+string(svc.FullName())+"/"+string(m.Name())] = m
+				proc := "/" + string(svc.FullName()) + "/" + string(m.Name())
+				if !slices.Contains(pending, proc) {
+					out[proc] = m
+				}
 			}
 		}
 	}

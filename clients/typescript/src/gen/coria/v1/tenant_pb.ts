@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/tenant.proto.
  */
 export const file_coria_v1_tenant: GenFile = /*@__PURE__*/
-  fileDesc("ChVjb3JpYS92MS90ZW5hbnQucHJvdG8SCGNvcmlhLnYxIuIBCgZUZW5hbnQSDAoEbmFtZRgBIAEoCRItCg1kYXRhYmFzZV90eXBlGAIgASgOMhYuY29yaWEudjEuRGF0YWJhc2VUeXBlEiQKBXN0YXRlGAMgASgOMhUuY29yaWEudjEuVGVuYW50U3RhdGUSFAoMc3RhdGVfcmVhc29uGAQgASgJEi8KC2NyZWF0ZV90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzdGF0ZV90aW1lGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJxChNDcmVhdGVUZW5hbnRSZXF1ZXN0EgwKBG5hbWUYASABKAkSLQoNZGF0YWJhc2VfdHlwZRgCIAEoDjIWLmNvcmlhLnYxLkRhdGFiYXNlVHlwZRIdChBkYXRhYmFzZV9hZGRyZXNzGAMgASgJQgOAAQEiOAoUQ3JlYXRlVGVuYW50UmVzcG9uc2USIAoGdGVuYW50GAEgASgLMhAuY29yaWEudjEuVGVuYW50IiAKEEdldFRlbmFudFJlcXVlc3QSDAoEbmFtZRgBIAEoCSI1ChFHZXRUZW5hbnRSZXNwb25zZRIgCgZ0ZW5hbnQYASABKAsyEC5jb3JpYS52MS5UZW5hbnQiOwoSTGlzdFRlbmFudHNSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoBRISCgpwYWdlX3Rva2VuGAIgASgJIlEKE0xpc3RUZW5hbnRzUmVzcG9uc2USIQoHdGVuYW50cxgBIAMoCzIQLmNvcmlhLnYxLlRlbmFudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiOQoTUmVtb3ZlVGVuYW50UmVxdWVzdBIMCgRuYW1lGAEgASgJEhQKDGNvbmZpcm1fbmFtZRgCIAEoCSJcChRSZW1vdmVUZW5hbnRSZXNwb25zZRItCg1kYXRhYmFzZV90eXBlGAEgASgOMhYuY29yaWEudjEuRGF0YWJhc2VUeXBlEhUKDWRhdGFfbG9jYXRpb24YAiABKAkqlgEKC1RlbmFudFN0YXRlEhwKGFRFTkFOVF9TVEFURV9VTlNQRUNJRklFRBAAEhYKElRFTkFOVF9TVEFURV9SRUFEWRABEhwKGFRFTkFOVF9TVEFURV9VTlJFQUNIQUJMRRACEhoKFlRFTkFOVF9TVEFURV9VUEdSQURJTkcQAxIXChNURU5BTlRfU1RBVEVfRkFJTEVEEAQqYwoMRGF0YWJhc2VUeXBlEh0KGURBVEFCQVNFX1RZUEVfVU5TUEVDSUZJRUQQABIYChREQVRBQkFTRV9UWVBFX1NRTElURRABEhoKFkRBVEFCQVNFX1RZUEVfUE9TVEdSRVMQAjLOAgoNVGVuYW50U2VydmljZRJNCgxDcmVhdGVUZW5hbnQSHS5jb3JpYS52MS5DcmVhdGVUZW5hbnRSZXF1ZXN0Gh4uY29yaWEudjEuQ3JlYXRlVGVuYW50UmVzcG9uc2USSQoJR2V0VGVuYW50EhouY29yaWEudjEuR2V0VGVuYW50UmVxdWVzdBobLmNvcmlhLnYxLkdldFRlbmFudFJlc3BvbnNlIgOQAgESTwoLTGlzdFRlbmFudHMSHC5jb3JpYS52MS5MaXN0VGVuYW50c1JlcXVlc3QaHS5jb3JpYS52MS5MaXN0VGVuYW50c1Jlc3BvbnNlIgOQAgESUgoMUmVtb3ZlVGVuYW50Eh0uY29yaWEudjEuUmVtb3ZlVGVuYW50UmVxdWVzdBoeLmNvcmlhLnYxLlJlbW92ZVRlbmFudFJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChVjb3JpYS92MS90ZW5hbnQucHJvdG8SCGNvcmlhLnYxIuIBCgZUZW5hbnQSDAoEbmFtZRgBIAEoCRItCg1kYXRhYmFzZV90eXBlGAIgASgOMhYuY29yaWEudjEuRGF0YWJhc2VUeXBlEiQKBXN0YXRlGAMgASgOMhUuY29yaWEudjEuVGVuYW50U3RhdGUSFAoMc3RhdGVfcmVhc29uGAQgASgJEi8KC2NyZWF0ZV90aW1lGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpzdGF0ZV90aW1lGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJxChNDcmVhdGVUZW5hbnRSZXF1ZXN0EgwKBG5hbWUYASABKAkSLQoNZGF0YWJhc2VfdHlwZRgCIAEoDjIWLmNvcmlhLnYxLkRhdGFiYXNlVHlwZRIdChBkYXRhYmFzZV9hZGRyZXNzGAMgASgJQgOAAQEiOAoUQ3JlYXRlVGVuYW50UmVzcG9uc2USIAoGdGVuYW50GAEgASgLMhAuY29yaWEudjEuVGVuYW50IiAKEEdldFRlbmFudFJlcXVlc3QSDAoEbmFtZRgBIAEoCSI1ChFHZXRUZW5hbnRSZXNwb25zZRIgCgZ0ZW5hbnQYASABKAsyEC5jb3JpYS52MS5UZW5hbnQiOwoSTGlzdFRlbmFudHNSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoBRISCgpwYWdlX3Rva2VuGAIgASgJIlEKE0xpc3RUZW5hbnRzUmVzcG9uc2USIQoHdGVuYW50cxgBIAMoCzIQLmNvcmlhLnYxLlRlbmFudBIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiOQoTUmVtb3ZlVGVuYW50UmVxdWVzdBIMCgRuYW1lGAEgASgJEhQKDGNvbmZpcm1fbmFtZRgCIAEoCSJcChRSZW1vdmVUZW5hbnRSZXNwb25zZRItCg1kYXRhYmFzZV90eXBlGAEgASgOMhYuY29yaWEudjEuRGF0YWJhc2VUeXBlEhUKDWRhdGFfbG9jYXRpb24YAiABKAkiJAoUUmVjbGFpbVRlbmFudFJlcXVlc3QSDAoEbmFtZRgBIAEoCSI5ChVSZWNsYWltVGVuYW50UmVzcG9uc2USIAoGdGVuYW50GAEgASgLMhAuY29yaWEudjEuVGVuYW50KuMBCgtUZW5hbnRTdGF0ZRIcChhURU5BTlRfU1RBVEVfVU5TUEVDSUZJRUQQABIWChJURU5BTlRfU1RBVEVfUkVBRFkQARIcChhURU5BTlRfU1RBVEVfVU5SRUFDSEFCTEUQAhIaChZURU5BTlRfU1RBVEVfVVBHUkFESU5HEAMSFwoTVEVOQU5UX1NUQVRFX0ZBSUxFRBAEEhoKFlRFTkFOVF9TVEFURV9SRVNUT1JJTkcQBRIWChJURU5BTlRfU1RBVEVfTU9WRUQQBhIXChNURU5BTlRfU1RBVEVfRkVOQ0VEEAcqYwoMRGF0YWJhc2VUeXBlEh0KGURBVEFCQVNFX1RZUEVfVU5TUEVDSUZJRUQQABIYChREQVRBQkFTRV9UWVBFX1NRTElURRABEhoKFkRBVEFCQVNFX1RZUEVfUE9TVEdSRVMQAjKlAwoNVGVuYW50U2VydmljZRJNCgxDcmVhdGVUZW5hbnQSHS5jb3JpYS52MS5DcmVhdGVUZW5hbnRSZXF1ZXN0Gh4uY29yaWEudjEuQ3JlYXRlVGVuYW50UmVzcG9uc2USSQoJR2V0VGVuYW50EhouY29yaWEudjEuR2V0VGVuYW50UmVxdWVzdBobLmNvcmlhLnYxLkdldFRlbmFudFJlc3BvbnNlIgOQAgESTwoLTGlzdFRlbmFudHMSHC5jb3JpYS52MS5MaXN0VGVuYW50c1JlcXVlc3QaHS5jb3JpYS52MS5MaXN0VGVuYW50c1Jlc3BvbnNlIgOQAgESUgoMUmVtb3ZlVGVuYW50Eh0uY29yaWEudjEuUmVtb3ZlVGVuYW50UmVxdWVzdBoeLmNvcmlhLnYxLlJlbW92ZVRlbmFudFJlc3BvbnNlIgOQAgISVQoNUmVjbGFpbVRlbmFudBIeLmNvcmlhLnYxLlJlY2xhaW1UZW5hbnRSZXF1ZXN0Gh8uY29yaWEudjEuUmVjbGFpbVRlbmFudFJlc3BvbnNlIgOQAgJiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * Tenant is an independent archive of the installation. It never carries its
@@ -307,9 +307,54 @@ export const RemoveTenantResponseSchema: GenMessage<RemoveTenantResponse> = /*@_
   messageDesc(file_coria_v1_tenant, 8);
 
 /**
+ * ReclaimTenantRequest names the moved tenant to take back.
+ *
+ * @generated from message coria.v1.ReclaimTenantRequest
+ */
+export type ReclaimTenantRequest = Message<"coria.v1.ReclaimTenantRequest"> & {
+  /**
+   * The tenant's name, as the other methods of this service name it.
+   * Required.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message coria.v1.ReclaimTenantRequest.
+ * Use `create(ReclaimTenantRequestSchema)` to create a new message.
+ */
+export const ReclaimTenantRequestSchema: GenMessage<ReclaimTenantRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_tenant, 9);
+
+/**
+ * ReclaimTenantResponse is the tenant taken back.
+ *
+ * @generated from message coria.v1.ReclaimTenantResponse
+ */
+export type ReclaimTenantResponse = Message<"coria.v1.ReclaimTenantResponse"> & {
+  /**
+   * The tenant, ready.
+   *
+   * @generated from field: coria.v1.Tenant tenant = 1;
+   */
+  tenant?: Tenant | undefined;
+};
+
+/**
+ * Describes the message coria.v1.ReclaimTenantResponse.
+ * Use `create(ReclaimTenantResponseSchema)` to create a new message.
+ */
+export const ReclaimTenantResponseSchema: GenMessage<ReclaimTenantResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_tenant, 10);
+
+/**
  * TenantState is whether a tenant can serve requests. The server checks each
  * tenant when it starts and again on a timer. A request into a tenant that is
- * not ready is answered UNAVAILABLE; the other tenants keep working.
+ * not ready is answered UNAVAILABLE, with two exceptions: a moved or fenced
+ * tenant serves reads, and answers every change FAILED_PRECONDITION with the
+ * reason TENANT_MOVED or TENANT_FENCED. The other tenants keep working.
  *
  * @generated from enum coria.v1.TenantState
  */
@@ -351,6 +396,41 @@ export enum TenantState {
    * @generated from enum value: TENANT_STATE_FAILED = 4;
    */
   FAILED = 4,
+
+  /**
+   * A restore is reconciling the tenant with its storages (their owner
+   * records taken, corrections newer than the backup applied, the catalog
+   * rebuilt, a new event history begun). Every request into it is answered
+   * unavailable (TENANT_RESTORING), its receivers refuse and its jobs wait,
+   * until it is ready.
+   *
+   * @generated from enum value: TENANT_STATE_RESTORING = 5;
+   */
+  RESTORING = 5,
+
+  /**
+   * An export handed the tenant to another installation
+   * (BackupService.ExportTenant): read only, so nothing is written after
+   * the export's snapshot. Reads are served; a change is refused as
+   * FAILED_PRECONDITION with the reason TENANT_MOVED, its receivers refuse
+   * and its jobs stop with their place kept. ReclaimTenant undoes it while
+   * the import has not happened.
+   *
+   * @generated from enum value: TENANT_STATE_MOVED = 6;
+   */
+  MOVED = 6,
+
+  /**
+   * The owner record on one of the tenant's storages names another
+   * installation, or a later generation than this tenant's database holds:
+   * another installation has taken the storage over, by an import or a
+   * restore. Read only as moved: reads served, a change refused as
+   * FAILED_PRECONDITION with the reason TENANT_FENCED, so two installations
+   * never write one storage. The tenant's state_reason names the storage.
+   *
+   * @generated from enum value: TENANT_STATE_FENCED = 7;
+   */
+  FENCED = 7,
 }
 
 /**
@@ -491,6 +571,35 @@ export const TenantService: GenService<{
     methodKind: "unary";
     input: typeof RemoveTenantRequestSchema;
     output: typeof RemoveTenantResponseSchema;
+  },
+  /**
+   * ReclaimTenant undoes a hand-off whose import never happened
+   * (BackupService.ExportTenant): a moved tenant becomes ready again here,
+   * and writes again. It is allowed only while the owner record on each of
+   * the tenant's storages still names this installation and the
+   * generation this tenant holds, so a tenant another installation has
+   * taken over is never reclaimed. Only the local operator may call it: a
+   * key is answered permission denied whatever its grants, since taking a
+   * tenant back is a decision for whoever runs the installation's host,
+   * who knows whether the import went ahead. A tenant already ready is
+   * answered as it stands.
+   *
+   * Role: admin on the installation.
+   * Audit: one entry in the installation's log, with the tenant's name as
+   * its object and the generation in details.
+   * Errors: unauthenticated, permission denied (also any caller but the
+   * local operator), invalid, not found (no tenant has that name),
+   * precondition (the tenant is not moved; an owner record names another
+   * installation or a later generation), unavailable (the tenant's
+   * database or a storage does not answer, or an owner record cannot be
+   * read).
+   *
+   * @generated from rpc coria.v1.TenantService.ReclaimTenant
+   */
+  reclaimTenant: {
+    methodKind: "unary";
+    input: typeof ReclaimTenantRequestSchema;
+    output: typeof ReclaimTenantResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_coria_v1_tenant, 0);

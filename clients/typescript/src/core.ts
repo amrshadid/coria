@@ -3,7 +3,10 @@ import { createClient, type CallOptions, type Client, type Interceptor, type Tra
 
 import { AccessService } from "./gen/coria/v1/access_pb.js";
 import { AuditService } from "./gen/coria/v1/audit_pb.js";
+import { AuditSealService } from "./gen/coria/v1/audit_seal_pb.js";
+import { BackupService } from "./gen/coria/v1/backup_pb.js";
 import { CatalogService } from "./gen/coria/v1/catalog_pb.js";
+import { CorrectionService } from "./gen/coria/v1/correction_pb.js";
 import { DataService } from "./gen/coria/v1/data_pb.js";
 import { DeidService } from "./gen/coria/v1/deid_pb.js";
 import { JobService } from "./gen/coria/v1/job_pb.js";
@@ -25,8 +28,14 @@ export interface CoriaClients {
   readonly access: Client<typeof AccessService>;
   /** The audit log. */
   readonly audit: Client<typeof AuditService>;
+  /** The audit log's signed checkpoints: verify, export, the public key. */
+  readonly auditSeal: Client<typeof AuditSealService>;
+  /** Encrypted backups of the installation and exports of a tenant. */
+  readonly backups: Client<typeof BackupService>;
   /** Subjects, sessions and scans of a tenant. */
   readonly catalog: Client<typeof CatalogService>;
+  /** Deletes, relabels and replaces of archived data, and scrub findings. */
+  readonly corrections: Client<typeof CorrectionService>;
   /** Pixel and other bulk data of a tenant. */
   readonly data: Client<typeof DataService>;
   /** The forward lookup of a value's codes, and the lookup tables of a tenant. */
@@ -199,7 +208,10 @@ export function createClients(transport: Transport, options: ClientsOptions = {}
   return {
     access: make(AccessService),
     audit: make(AuditService),
+    auditSeal: make(AuditSealService),
+    backups: make(BackupService),
     catalog: make(CatalogService),
+    corrections: make(CorrectionService),
     data: make(DataService),
     deid: make(DeidService),
     jobs: make(JobService),

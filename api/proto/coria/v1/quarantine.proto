@@ -318,6 +318,29 @@ enum QuarantineReason {
   // again with its receiver's profile version then, so a profile given a
   // pixel rule for such images lets it through.
   QUARANTINE_REASON_BURNED_IN_RISK = 18;
+
+  // The file belongs to data a person deleted from the archive
+  // (CorrectionService.Delete): its SOP Instance UID is that of a deleted
+  // instance, its Series Instance UID that of a deleted scan, its Study
+  // Instance UID that of a deleted session, or, after a subject was
+  // deleted, the naming rule gave it that subject's label. It is held, not
+  // archived, so that a consent withdrawn
+  // is not undone by the next time a scanner or a peer sends the study
+  // again. The C-STORE was answered success, so the sender does not send it
+  // again and again. It is released only once an admin allows the deleted
+  // target to arrive again. Details: "correction", the id of the deletion
+  // it matched.
+  QUARANTINE_REASON_WAS_DELETED = 19;
+
+  // The file repairs an archived instance a scrub marked damaged
+  // (ScrubJob): its SOP Instance UID is that instance's and its SHA-256 as
+  // received is the one the instance was received with, so it is the same
+  // file sent again. It is held rather than archived, since the instance's
+  // UID is held, and an admin puts it in place with
+  // CorrectionService.Replace, which clears the damage mark. The C-STORE
+  // was answered success. Details: "finding", the id of the scrub finding
+  // it matches.
+  QUARANTINE_REASON_REPAIRS_DAMAGED = 20;
 }
 
 // QuarantineState is what has been decided about a quarantined file.

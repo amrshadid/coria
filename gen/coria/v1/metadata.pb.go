@@ -54,7 +54,10 @@ type InstanceMetadata struct {
 	// The profile version that de-identified the instance, as its catalog
 	// row recorded it when it was archived; absent for an instance archived
 	// as received.
-	Profile       *ProfileVersionName `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`
+	Profile *ProfileVersionName `protobuf:"bytes,7,opt,name=profile,proto3" json:"profile,omitempty"`
+	// The instance's revision these metadata describe: 1 as first archived,
+	// one more each time a correction replaced it, as ArchivedFile.revision.
+	Revision      int32 `protobuf:"varint,8,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -136,6 +139,13 @@ func (x *InstanceMetadata) GetProfile() *ProfileVersionName {
 		return x.Profile
 	}
 	return nil
+}
+
+func (x *InstanceMetadata) GetRevision() int32 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
 }
 
 // GetScanMetadataRequest names a scan and the page of its instances.
@@ -435,7 +445,7 @@ var File_coria_v1_metadata_proto protoreflect.FileDescriptor
 
 const file_coria_v1_metadata_proto_rawDesc = "" +
 	"\n" +
-	"\x17coria/v1/metadata.proto\x12\bcoria.v1\x1a\x16coria/v1/profile.proto\"\xb6\x02\n" +
+	"\x17coria/v1/metadata.proto\x12\bcoria.v1\x1a\x16coria/v1/profile.proto\"\xd2\x02\n" +
 	"\x10InstanceMetadata\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12(\n" +
@@ -445,7 +455,8 @@ const file_coria_v1_metadata_proto_rawDesc = "" +
 	"\x0ejson_too_large\x18\x04 \x01(\bR\fjsonTooLarge\x12.\n" +
 	"\x13transfer_syntax_uid\x18\x05 \x01(\tR\x11transferSyntaxUid\x12*\n" +
 	"\x11bulk_data_omitted\x18\x06 \x01(\bR\x0fbulkDataOmitted\x126\n" +
-	"\aprofile\x18\a \x01(\v2\x1c.coria.v1.ProfileVersionNameR\aprofile\"\xd5\x01\n" +
+	"\aprofile\x18\a \x01(\v2\x1c.coria.v1.ProfileVersionNameR\aprofile\x12\x1a\n" +
+	"\brevision\x18\b \x01(\x05R\brevision\"\xd5\x01\n" +
 	"\x16GetScanMetadataRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12#\n" +
 	"\rsubject_label\x18\x02 \x01(\tR\fsubjectLabel\x12#\n" +

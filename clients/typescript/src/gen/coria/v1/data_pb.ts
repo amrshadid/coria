@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/data.proto.
  */
 export const file_coria_v1_data: GenFile = /*@__PURE__*/
-  fileDesc("ChNjb3JpYS92MS9kYXRhLnByb3RvEghjb3JpYS52MSJ/CgpTY2FuTWFya2VyEhUKDXN1YmplY3RfbGFiZWwYASABKAkSFQoNc2Vzc2lvbl9sYWJlbBgCIAEoCRISCgpzY2FuX2xhYmVsGAMgASgJEhcKD21hbmlmZXN0X3NoYTI1NhgEIAEoCRIWCg5pbnN0YW5jZV9jb3VudBgFIAEoAyK8AQoMQXJjaGl2ZWRGaWxlEhMKC2luc3RhbmNlX2lkGAEgASgJEhgKEHNvcF9pbnN0YW5jZV91aWQYAiABKAkSFQoNc3ViamVjdF9sYWJlbBgDIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAQgASgJEhIKCnNjYW5fbGFiZWwYBSABKAkSCwoDa2V5GAYgASgJEg4KBm9mZnNldBgHIAEoAxIOCgZsZW5ndGgYCCABKAMSDgoGc2hhMjU2GAkgASgJIikKCUZpbGVDaHVuaxIOCgZvZmZzZXQYASABKAMSDAoEZGF0YRgCIAEoDCJOCgxSZWFkUG9zaXRpb24SFQoNc2Vzc2lvbl9sYWJlbBgBIAEoCRISCgpzY2FuX2xhYmVsGAIgASgJEhMKC2luc3RhbmNlX2lkGAMgASgJIr0BChBSZWFkRmlsZXNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIVCg1zdWJqZWN0X2xhYmVsGAIgASgJEhUKDXNlc3Npb25fbGFiZWwYAyABKAkSEgoKc2Nhbl9sYWJlbBgEIAEoCRITCgtpbnN0YW5jZV9pZBgFIAEoCRIrCgtzdGFydF9hZnRlchgGIAEoCzIWLmNvcmlhLnYxLlJlYWRQb3NpdGlvbhIVCg1hbm5vdW5jZV9vbmx5GAcgASgIIo8BChFSZWFkRmlsZXNSZXNwb25zZRImCgRmaWxlGAEgASgLMhYuY29yaWEudjEuQXJjaGl2ZWRGaWxlSAASJAoFY2h1bmsYAiABKAsyEy5jb3JpYS52MS5GaWxlQ2h1bmtIABIkCgRzY2FuGAMgASgLMhQuY29yaWEudjEuU2Nhbk1hcmtlckgAQgYKBHBhcnQyWgoLRGF0YVNlcnZpY2USSwoJUmVhZEZpbGVzEhouY29yaWEudjEuUmVhZEZpbGVzUmVxdWVzdBobLmNvcmlhLnYxLlJlYWRGaWxlc1Jlc3BvbnNlIgOQAgEwAWIGcHJvdG8z");
+  fileDesc("ChNjb3JpYS92MS9kYXRhLnByb3RvEghjb3JpYS52MSJ/CgpTY2FuTWFya2VyEhUKDXN1YmplY3RfbGFiZWwYASABKAkSFQoNc2Vzc2lvbl9sYWJlbBgCIAEoCRISCgpzY2FuX2xhYmVsGAMgASgJEhcKD21hbmlmZXN0X3NoYTI1NhgEIAEoCRIWCg5pbnN0YW5jZV9jb3VudBgFIAEoAyLOAQoMQXJjaGl2ZWRGaWxlEhMKC2luc3RhbmNlX2lkGAEgASgJEhgKEHNvcF9pbnN0YW5jZV91aWQYAiABKAkSFQoNc3ViamVjdF9sYWJlbBgDIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAQgASgJEhIKCnNjYW5fbGFiZWwYBSABKAkSCwoDa2V5GAYgASgJEg4KBm9mZnNldBgHIAEoAxIOCgZsZW5ndGgYCCABKAMSDgoGc2hhMjU2GAkgASgJEhAKCHJldmlzaW9uGAogASgFIikKCUZpbGVDaHVuaxIOCgZvZmZzZXQYASABKAMSDAoEZGF0YRgCIAEoDCJOCgxSZWFkUG9zaXRpb24SFQoNc2Vzc2lvbl9sYWJlbBgBIAEoCRISCgpzY2FuX2xhYmVsGAIgASgJEhMKC2luc3RhbmNlX2lkGAMgASgJIr0BChBSZWFkRmlsZXNSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIVCg1zdWJqZWN0X2xhYmVsGAIgASgJEhUKDXNlc3Npb25fbGFiZWwYAyABKAkSEgoKc2Nhbl9sYWJlbBgEIAEoCRITCgtpbnN0YW5jZV9pZBgFIAEoCRIrCgtzdGFydF9hZnRlchgGIAEoCzIWLmNvcmlhLnYxLlJlYWRQb3NpdGlvbhIVCg1hbm5vdW5jZV9vbmx5GAcgASgIIo8BChFSZWFkRmlsZXNSZXNwb25zZRImCgRmaWxlGAEgASgLMhYuY29yaWEudjEuQXJjaGl2ZWRGaWxlSAASJAoFY2h1bmsYAiABKAsyEy5jb3JpYS52MS5GaWxlQ2h1bmtIABIkCgRzY2FuGAMgASgLMhQuY29yaWEudjEuU2Nhbk1hcmtlckgAQgYKBHBhcnQyWgoLRGF0YVNlcnZpY2USSwoJUmVhZEZpbGVzEhouY29yaWEudjEuUmVhZEZpbGVzUmVxdWVzdBobLmNvcmlhLnYxLlJlYWRGaWxlc1Jlc3BvbnNlIgOQAgEwAWIGcHJvdG8z");
 
 /**
  * ScanMarker opens the instances of one scan in a stream of ReadFiles.
@@ -117,7 +117,10 @@ export type ArchivedFile = Message<"coria.v1.ArchivedFile"> & {
 
   /**
    * The storage key of the object that holds it: opaque, at most 1024
-   * bytes, the same on every storage of the tenant.
+   * bytes, the same on every storage of the tenant. A key is written once:
+   * a replaced instance's later revision lies at a key of its own (in this
+   * version one ending ".r<n>.dcm"), never over the bytes a reader may
+   * still be reading.
    *
    * @generated from field: string key = 6;
    */
@@ -144,6 +147,18 @@ export type ArchivedFile = Message<"coria.v1.ArchivedFile"> & {
    * @generated from field: string sha256 = 9;
    */
   sha256: string;
+
+  /**
+   * Its revision: 1 as first archived, one more each time a correction
+   * replaced it (CorrectionService.Replace). With sha256 it names these
+   * exact bytes, so a client that keeps (instance_id, revision, sha256)
+   * can ask later whether they are still current
+   * (CorrectionService.ResolveInstances). The plain HTTP download's ETag
+   * is the SHA-256, so it differs per revision.
+   *
+   * @generated from field: int32 revision = 10;
+   */
+  revision: number;
 };
 
 /**

@@ -230,6 +230,44 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- The contract, defined and not yet served, for keeping the archive whole:
+  scrub and rebuild jobs (JobService; a rebuild always builds a shadow
+  catalog in a scratch schema that must be empty and apart from the
+  tenant's own, and, to replace, makes it live in one transaction; failure
+  codes deleted_in_archive and not_online; each failure names the revision
+  it concerns); CorrectionService to delete a subject, session, scan or
+  instance with a required reason and a single-use confirm token from a
+  preview that also says what each storage will do with a removed object,
+  a grace period fixed at commit, undo, purge and allowing a deleted target
+  to arrive again, to relabel a whole target in one switch, to replace an
+  instance at a new revision from its quarantined corrected file or a
+  re-sent copy of a damaged one, to list scrub findings and to resolve
+  (instance, revision) pairs as current, superseded, deleted or unknown;
+  every correction has a time-ordered operation id, moves through prepared,
+  committed, purging, purged, undone or abandoned, reports per storage
+  whether objects were removed, hidden, retained or unknown, and a repeated
+  Delete, Relabel or Replace answers the correction it made;
+  AuditSealService to verify an audit log's signed hash chain over a range
+  of positions (optionally against an anchor kept outside), list its
+  checkpoints, export it with the public keys and anchors that check it
+  outside the server, across a tenant's move between installations, and
+  read the Ed25519 public keys; BackupService to stream an encrypted backup
+  with a recovery point per database and no catalog, and to hand a tenant
+  to another installation with a one-time transfer key;
+  TenantService.ReclaimTenant to undo a hand-off that did not go ahead;
+  AccessService.ReinstateKeys for keys a restore suspended. Archived files
+  and metadata name their revision; tenants gain the restoring, moved and
+  fenced states; keys can be suspended; errors carry reasons as
+  google.rpc.ErrorInfo; an S3 storage gains purge_versions and its status
+  its versioning and object lock; a tenant's status gains its last scrub,
+  open findings, audit seal, pending deletions, event history and owner
+  generation; the event feed gains scrub findings, catalog changes and
+  catalog rebuilds, and its cursors are bound to a history
+  (EVENT_HISTORY_CHANGED); a file matching deleted data is quarantined as
+  was_deleted, and one repairing a damaged instance as repairs_damaged.
+  Both clients expose the new services and methods; each new method
+  answers UNIMPLEMENTED until it is served, including the two new methods
+  of served services.
 - Keys derived from the installation key with HKDF-SHA-256 (RFC 5869), one
   fixed label per purpose (`coria/audit-seal/v1`, `coria/backup/v1`), from
   any key version, and an Ed25519 signer (RFC 8032) from the audit seed;

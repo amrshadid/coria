@@ -130,7 +130,10 @@ type ArchivedFile struct {
 	// The label of its scan.
 	ScanLabel string `protobuf:"bytes,5,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
 	// The storage key of the object that holds it: opaque, at most 1024
-	// bytes, the same on every storage of the tenant.
+	// bytes, the same on every storage of the tenant. A key is written once:
+	// a replaced instance's later revision lies at a key of its own (in this
+	// version one ending ".r<n>.dcm"), never over the bytes a reader may
+	// still be reading.
 	Key string `protobuf:"bytes,6,opt,name=key,proto3" json:"key,omitempty"`
 	// Where its bytes start in that object. 0 in this version.
 	Offset int64 `protobuf:"varint,7,opt,name=offset,proto3" json:"offset,omitempty"`
@@ -138,7 +141,14 @@ type ArchivedFile struct {
 	// archived. The stream sends this many bytes of it.
 	Length int64 `protobuf:"varint,8,opt,name=length,proto3" json:"length,omitempty"`
 	// The SHA-256 of its bytes, in lowercase hexadecimal, 64 characters.
-	Sha256        string `protobuf:"bytes,9,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	Sha256 string `protobuf:"bytes,9,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	// Its revision: 1 as first archived, one more each time a correction
+	// replaced it (CorrectionService.Replace). With sha256 it names these
+	// exact bytes, so a client that keeps (instance_id, revision, sha256)
+	// can ask later whether they are still current
+	// (CorrectionService.ResolveInstances). The plain HTTP download's ETag
+	// is the SHA-256, so it differs per revision.
+	Revision      int32 `protobuf:"varint,10,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -234,6 +244,13 @@ func (x *ArchivedFile) GetSha256() string {
 		return x.Sha256
 	}
 	return ""
+}
+
+func (x *ArchivedFile) GetRevision() int32 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
 }
 
 // FileChunk is a part of the bytes of the instance last announced.
@@ -587,7 +604,7 @@ const file_coria_v1_data_proto_rawDesc = "" +
 	"\n" +
 	"scan_label\x18\x03 \x01(\tR\tscanLabel\x12'\n" +
 	"\x0fmanifest_sha256\x18\x04 \x01(\tR\x0emanifestSha256\x12%\n" +
-	"\x0einstance_count\x18\x05 \x01(\x03R\rinstanceCount\"\x9c\x02\n" +
+	"\x0einstance_count\x18\x05 \x01(\x03R\rinstanceCount\"\xb8\x02\n" +
 	"\fArchivedFile\x12\x1f\n" +
 	"\vinstance_id\x18\x01 \x01(\tR\n" +
 	"instanceId\x12(\n" +
@@ -599,7 +616,9 @@ const file_coria_v1_data_proto_rawDesc = "" +
 	"\x03key\x18\x06 \x01(\tR\x03key\x12\x16\n" +
 	"\x06offset\x18\a \x01(\x03R\x06offset\x12\x16\n" +
 	"\x06length\x18\b \x01(\x03R\x06length\x12\x16\n" +
-	"\x06sha256\x18\t \x01(\tR\x06sha256\"7\n" +
+	"\x06sha256\x18\t \x01(\tR\x06sha256\x12\x1a\n" +
+	"\brevision\x18\n" +
+	" \x01(\x05R\brevision\"7\n" +
 	"\tFileChunk\x12\x16\n" +
 	"\x06offset\x18\x01 \x01(\x03R\x06offset\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\"s\n" +

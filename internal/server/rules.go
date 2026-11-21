@@ -43,6 +43,24 @@ type Methods interface {
 	Requirement(procedure string, msg proto.Message) (access.Requirement, access.Request)
 }
 
+// PendingMethods is what a Methods table may also do: say which methods
+// the contract defines and no handler serves yet. A service whose other
+// methods are served still has every method in its generated interface, so
+// its registration carries such a method too; the server leaves it out of
+// the routes, and a call to it is answered as one to any method nothing
+// serves (UNIMPLEMENTED, "no such method"), never by the handler's body
+// and never refused at start as a method without a requirement.
+type PendingMethods interface {
+	// Pending reports whether procedure is such a method.
+	Pending(procedure string) bool
+}
+
+// pending reports whether the table says procedure is not served yet.
+func (s *Server) pending(procedure string) bool {
+	p, ok := s.methods.(PendingMethods)
+	return ok && p.Pending(procedure)
+}
+
 // WithDecision puts the access check's Decision in the context the handler
 // receives, through package internal/api's typed accessor, so a handler
 // hands it to the access operations that act for the caller.

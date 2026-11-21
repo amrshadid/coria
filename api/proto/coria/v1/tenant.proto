@@ -77,11 +77,37 @@ service TenantService {
   rpc RemoveTenant(RemoveTenantRequest) returns (RemoveTenantResponse) {
     option idempotency_level = IDEMPOTENT;
   }
+
+  // ReclaimTenant undoes a hand-off whose import never happened
+  // (BackupService.ExportTenant): a moved tenant becomes ready again here,
+  // and writes again. It is allowed only while the owner record on each of
+  // the tenant's storages still names this installation and the
+  // generation this tenant holds, so a tenant another installation has
+  // taken over is never reclaimed. Only the local operator may call it: a
+  // key is answered permission denied whatever its grants, since taking a
+  // tenant back is a decision for whoever runs the installation's host,
+  // who knows whether the import went ahead. A tenant already ready is
+  // answered as it stands.
+  //
+  // Role: admin on the installation.
+  // Audit: one entry in the installation's log, with the tenant's name as
+  // its object and the generation in details.
+  // Errors: unauthenticated, permission denied (also any caller but the
+  // local operator), invalid, not found (no tenant has that name),
+  // precondition (the tenant is not moved; an owner record names another
+  // installation or a later generation), unavailable (the tenant's
+  // database or a storage does not answer, or an owner record cannot be
+  // read).
+  rpc ReclaimTenant(ReclaimTenantRequest) returns (ReclaimTenantResponse) {
+    option idempotency_level = IDEMPOTENT;
+  }
 }
 
 // TenantState is whether a tenant can serve requests. The server checks each
 // tenant when it starts and again on a timer. A request into a tenant that is
-// not ready is answered UNAVAILABLE; the other tenants keep working.
+// not ready is answered UNAVAILABLE, with two exceptions: a moved or fenced
+// tenant serves reads, and answers every change FAILED_PRECONDITION with the
+// reason TENANT_MOVED or TENANT_FENCED. The other tenants keep working.
 enum TenantState {
   // Never answered by the server. A client that reads it was built against an
   // older contract than the server's.
@@ -100,6 +126,29 @@ enum TenantState {
   // An upgrade or a check failed in a way a retry does not mend; a person
   // must act. The tenant's state_reason says why.
   TENANT_STATE_FAILED = 4;
+
+  // A restore is reconciling the tenant with its storages (their owner
+  // records taken, corrections newer than the backup applied, the catalog
+  // rebuilt, a new event history begun). Every request into it is answered
+  // unavailable (TENANT_RESTORING), its receivers refuse and its jobs wait,
+  // until it is ready.
+  TENANT_STATE_RESTORING = 5;
+
+  // An export handed the tenant to another installation
+  // (BackupService.ExportTenant): read only, so nothing is written after
+  // the export's snapshot. Reads are served; a change is refused as
+  // FAILED_PRECONDITION with the reason TENANT_MOVED, its receivers refuse
+  // and its jobs stop with their place kept. ReclaimTenant undoes it while
+  // the import has not happened.
+  TENANT_STATE_MOVED = 6;
+
+  // The owner record on one of the tenant's storages names another
+  // installation, or a later generation than this tenant's database holds:
+  // another installation has taken the storage over, by an import or a
+  // restore. Read only as moved: reads served, a change refused as
+  // FAILED_PRECONDITION with the reason TENANT_FENCED, so two installations
+  // never write one storage. The tenant's state_reason names the storage.
+  TENANT_STATE_FENCED = 7;
 }
 
 // DatabaseType is the kind of database a tenant's data lives in.
@@ -223,4 +272,17 @@ message RemoveTenantResponse {
   // Where the data is. For SQLite, the path of the file on the server. For
   // Postgres, host:port/database, with no user and no password. Not a secret.
   string data_location = 2;
+}
+
+// ReclaimTenantRequest names the moved tenant to take back.
+message ReclaimTenantRequest {
+  // The tenant's name, as the other methods of this service name it.
+  // Required.
+  string name = 1;
+}
+
+// ReclaimTenantResponse is the tenant taken back.
+message ReclaimTenantResponse {
+  // The tenant, ready.
+  Tenant tenant = 1;
 }

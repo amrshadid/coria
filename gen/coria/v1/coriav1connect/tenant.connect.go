@@ -34,6 +34,9 @@ const (
 	TenantServiceListTenantsProcedure = "/coria.v1.TenantService/ListTenants"
 	// TenantServiceRemoveTenantProcedure is the procedure name of the TenantService's RemoveTenant RPC.
 	TenantServiceRemoveTenantProcedure = "/coria.v1.TenantService/RemoveTenant"
+	// TenantServiceReclaimTenantProcedure is the procedure name of the TenantService's ReclaimTenant
+	// RPC.
+	TenantServiceReclaimTenantProcedure = "/coria.v1.TenantService/ReclaimTenant"
 )
 
 var (
@@ -65,6 +68,14 @@ var (
 			StreamType:       connect.StreamTypeUnary,
 			Schema:           v1.File_coria_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("RemoveTenant"),
 			Procedure:        TenantServiceRemoveTenantProcedure,
+			IdempotencyLevel: connect.IdempotencyIdempotent,
+		}
+	})
+	tenantServiceReclaimTenantSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_tenant_proto.Services().ByName("TenantService").Methods().ByName("ReclaimTenant"),
+			Procedure:        TenantServiceReclaimTenantProcedure,
 			IdempotencyLevel: connect.IdempotencyIdempotent,
 		}
 	})
@@ -123,6 +134,27 @@ type TenantServiceClient interface {
 	// has that name: a caller who passes the role check may list every tenant,
 	// so it is told), unavailable (the master database does not answer).
 	RemoveTenant(context.Context, *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error)
+	// ReclaimTenant undoes a hand-off whose import never happened
+	// (BackupService.ExportTenant): a moved tenant becomes ready again here,
+	// and writes again. It is allowed only while the owner record on each of
+	// the tenant's storages still names this installation and the
+	// generation this tenant holds, so a tenant another installation has
+	// taken over is never reclaimed. Only the local operator may call it: a
+	// key is answered permission denied whatever its grants, since taking a
+	// tenant back is a decision for whoever runs the installation's host,
+	// who knows whether the import went ahead. A tenant already ready is
+	// answered as it stands.
+	//
+	// Role: admin on the installation.
+	// Audit: one entry in the installation's log, with the tenant's name as
+	// its object and the generation in details.
+	// Errors: unauthenticated, permission denied (also any caller but the
+	// local operator), invalid, not found (no tenant has that name),
+	// precondition (the tenant is not moved; an owner record names another
+	// installation or a later generation), unavailable (the tenant's
+	// database or a storage does not answer, or an owner record cannot be
+	// read).
+	ReclaimTenant(context.Context, *v1.ReclaimTenantRequest) (*v1.ReclaimTenantResponse, error)
 }
 
 // NewTenantServiceClient constructs a client for the coria.v1.TenantService service. Multiple
@@ -184,6 +216,27 @@ type TenantServiceHandler interface {
 	// has that name: a caller who passes the role check may list every tenant,
 	// so it is told), unavailable (the master database does not answer).
 	RemoveTenant(context.Context, *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error)
+	// ReclaimTenant undoes a hand-off whose import never happened
+	// (BackupService.ExportTenant): a moved tenant becomes ready again here,
+	// and writes again. It is allowed only while the owner record on each of
+	// the tenant's storages still names this installation and the
+	// generation this tenant holds, so a tenant another installation has
+	// taken over is never reclaimed. Only the local operator may call it: a
+	// key is answered permission denied whatever its grants, since taking a
+	// tenant back is a decision for whoever runs the installation's host,
+	// who knows whether the import went ahead. A tenant already ready is
+	// answered as it stands.
+	//
+	// Role: admin on the installation.
+	// Audit: one entry in the installation's log, with the tenant's name as
+	// its object and the generation in details.
+	// Errors: unauthenticated, permission denied (also any caller but the
+	// local operator), invalid, not found (no tenant has that name),
+	// precondition (the tenant is not moved; an owner record names another
+	// installation or a later generation), unavailable (the tenant's
+	// database or a storage does not answer, or an owner record cannot be
+	// read).
+	ReclaimTenant(context.Context, *v1.ReclaimTenantRequest) (*v1.ReclaimTenantResponse, error)
 }
 
 // RegisterTenantServiceHandler registers svc as the coria.v1.TenantService implementation on
@@ -195,6 +248,7 @@ func RegisterTenantServiceHandler(server *connect.Server, svc TenantServiceHandl
 		connect.Method{Spec: tenantServiceGetTenantSpec(), Handler: adapter.getTenant},
 		connect.Method{Spec: tenantServiceListTenantsSpec(), Handler: adapter.listTenants},
 		connect.Method{Spec: tenantServiceRemoveTenantSpec(), Handler: adapter.removeTenant},
+		connect.Method{Spec: tenantServiceReclaimTenantSpec(), Handler: adapter.reclaimTenant},
 	)
 }
 
@@ -215,6 +269,10 @@ func (UnimplementedTenantServiceHandler) ListTenants(context.Context, *v1.ListTe
 
 func (UnimplementedTenantServiceHandler) RemoveTenant(context.Context, *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.TenantService.RemoveTenant is not implemented")
+}
+
+func (UnimplementedTenantServiceHandler) ReclaimTenant(context.Context, *v1.ReclaimTenantRequest) (*v1.ReclaimTenantResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.TenantService.ReclaimTenant is not implemented")
 }
 
 type tenantServiceClient struct {
@@ -248,6 +306,14 @@ func (c *tenantServiceClient) ListTenants(ctx context.Context, req *v1.ListTenan
 func (c *tenantServiceClient) RemoveTenant(ctx context.Context, req *v1.RemoveTenantRequest) (*v1.RemoveTenantResponse, error) {
 	var res v1.RemoveTenantResponse
 	if err := c.client.CallUnary(ctx, tenantServiceRemoveTenantSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *tenantServiceClient) ReclaimTenant(ctx context.Context, req *v1.ReclaimTenantRequest) (*v1.ReclaimTenantResponse, error) {
+	var res v1.ReclaimTenantResponse
+	if err := c.client.CallUnary(ctx, tenantServiceReclaimTenantSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -297,6 +363,18 @@ func (h tenantServiceHandler) removeTenant(ctx context.Context, _ connect.Spec, 
 		return err
 	}
 	res, err := h.svc.RemoveTenant(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h tenantServiceHandler) reclaimTenant(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ReclaimTenantRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ReclaimTenant(ctx, &req)
 	if err != nil {
 		return err
 	}

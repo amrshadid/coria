@@ -51,7 +51,8 @@ export type AuditEntry = Message<"coria.v1.AuditEntry"> & {
 
   /**
    * The operating system's id of the local operator, for a request on the
-   * local socket. Empty for a request over the network.
+   * local socket; "server" for an entry the server made itself (the
+   * service's comment says which). Empty for a request over the network.
    *
    * @generated from field: string local_user_id = 4;
    */
@@ -67,7 +68,8 @@ export type AuditEntry = Message<"coria.v1.AuditEntry"> & {
 
   /**
    * The full name of the method called, such as
-   * "/coria.v1.TenantService/CreateTenant".
+   * "/coria.v1.TenantService/CreateTenant"; for an entry the server made
+   * itself, "server/<action>".
    *
    * @generated from field: string method = 6;
    */
@@ -101,6 +103,7 @@ export type AuditEntry = Message<"coria.v1.AuditEntry"> & {
    * The id the server made for the request: the same as in the response
    * header Coria-Request-Id and in the server's log, so an entry, the
    * answer and the log lines of one request can be found from each other.
+   * For an entry the server made itself, the id of that piece of work.
    *
    * @generated from field: string request_id = 10;
    */
@@ -301,6 +304,15 @@ export const AuditOutcomeSchema: GenEnum<AuditOutcome> = /*@__PURE__*/
  * killed may lose those of its last moment.
  *
  * No entry holds a key's secret, a database's address or a setting's value.
+ *
+ * Entries the server makes itself. Some changes are made by the server, not
+ * by a request: a naming key made, a forward job, a sealing pass, a purge
+ * at the end of its grace period, a correction abandoned at start. Their
+ * entries have local_user_id "server", no key id and no client address;
+ * their method names what the server did, as "server/<action>" (such as
+ * "server/purge" or "server/seal"), never an API method; and their
+ * request_id is the id the server made for that piece of work, which its
+ * log lines carry too.
  *
  * @generated from service coria.v1.AuditService
  */

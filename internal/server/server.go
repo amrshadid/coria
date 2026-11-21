@@ -359,7 +359,7 @@ func (s *Server) buildRoutes() error {
 	s.cfg.Register(rpc)
 	var missing []string
 	for spec := range rpc.Specs() {
-		if _, ok := s.ruleFor(spec.Procedure); !ok {
+		if _, ok := s.ruleFor(spec.Procedure); !ok && !s.pending(spec.Procedure) {
 			missing = append(missing, spec.Procedure)
 		}
 	}
@@ -421,9 +421,10 @@ func (s *Server) uncompressedLong(spec connect.Spec) []connecthttp.Option {
 type procedureMux struct{ s *Server }
 
 // Handle keeps h as the handler of the procedure pattern, or drops it when
-// pattern is a subtree.
+// pattern is a subtree or a method the table says is not served yet
+// (PendingMethods), whose calls notServed answers.
 func (m procedureMux) Handle(pattern string, h http.Handler) {
-	if strings.HasSuffix(pattern, "/") {
+	if strings.HasSuffix(pattern, "/") || m.s.pending(pattern) {
 		return
 	}
 	m.s.procs[pattern] = h

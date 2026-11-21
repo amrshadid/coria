@@ -12,6 +12,10 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Key } from "./access_pb.js";
 import { file_coria_v1_access } from "./access_pb.js";
+import type { AuditSealStatus } from "./audit_seal_pb.js";
+import { file_coria_v1_audit_seal } from "./audit_seal_pb.js";
+import type { CorrectionKind, CorrectionState, ScrubFindingKind } from "./correction_pb.js";
+import { file_coria_v1_correction } from "./correction_pb.js";
 import type { JobCounts, JobState } from "./job_pb.js";
 import { file_coria_v1_job } from "./job_pb.js";
 import type { Caller, QuarantineReason, QuarantineState, ReleaseMode } from "./quarantine_pb.js";
@@ -32,7 +36,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/monitor.proto.
  */
 export const file_coria_v1_monitor: GenFile = /*@__PURE__*/
-  fileDesc("ChZjb3JpYS92MS9tb25pdG9yLnByb3RvEghjb3JpYS52MSJPChJSZWNlcHRpb25TdGVwQ291bnQSJQoEc3RlcBgBIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASEgoKcmVjZXB0aW9ucxgCIAEoAyKTAgoMVGVuYW50Q291bnRzEhAKCHN1YmplY3RzGAEgASgDEhAKCHNlc3Npb25zGAIgASgDEg0KBXNjYW5zGAMgASgDEhEKCWluc3RhbmNlcxgEIAEoAxIZChFxdWFyYW50aW5lZF9maWxlcxgFIAEoAxIZChFxdWFyYW50aW5lZF9ieXRlcxgGIAEoAxI8ChZyZWNlcHRpb25zX2luX3Byb2dyZXNzGAcgAygLMhwuY29yaWEudjEuUmVjZXB0aW9uU3RlcENvdW50EhYKDmluY29taW5nX2J5dGVzGAggASgDEjEKEGpvYnNfaW5fcHJvZ3Jlc3MYCSADKAsyFy5jb3JpYS52MS5Kb2JTdGF0ZUNvdW50IkAKDUpvYlN0YXRlQ291bnQSIQoFc3RhdGUYASABKA4yEi5jb3JpYS52MS5Kb2JTdGF0ZRIMCgRqb2JzGAIgASgDImEKDFNlbmRlclN0YXR1cxIOCgZzZW5kZXIYASABKAkSJgoGaGVhbHRoGAIgASgLMhYuY29yaWEudjEuU2VuZGVySGVhbHRoEhkKEW9wZW5fYXNzb2NpYXRpb25zGAMgASgFIpgBCgpUaHJvdWdocHV0EiEKGWZpbGVzX3JlY2VpdmVkX3Blcl9zZWNvbmQYASABKAESIQoZYnl0ZXNfcmVjZWl2ZWRfcGVyX3NlY29uZBgCIAEoARIhChlmaWxlc19hcmNoaXZlZF9wZXJfc2Vjb25kGAMgASgBEiEKGWJ5dGVzX2FyY2hpdmVkX3Blcl9zZWNvbmQYBCABKAEiiQEKDVN0b3JhZ2VTdGF0dXMSDwoHc3RvcmFnZRgBIAEoCRISCgp1c2VkX2J5dGVzGAIgASgDEhcKCmZyZWVfYnl0ZXMYAyABKANIAIgBARIWCg5jYXBhY2l0eV9ieXRlcxgEIAEoAxITCgtuZWFybHlfZnVsbBgFIAEoCEINCgtfZnJlZV9ieXRlcyJgCg5SZWNlaXZlclN0YXR1cxIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aBISCgphbnlfY2FsbGVyGAMgASgIIo0DCgxUZW5hbnRTdGF0dXMSDgoGdGVuYW50GAEgASgJEi0KDmRhdGFiYXNlX3N0YXRlGAIgASgOMhUuY29yaWEudjEuVGVuYW50U3RhdGUSNwoTZGF0YWJhc2Vfc3RhdGVfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMZXZlbnRfY3Vyc29yGAQgASgJEiYKBmNvdW50cxgFIAEoCzIWLmNvcmlhLnYxLlRlbmFudENvdW50cxIoCgp0aHJvdWdocHV0GAYgASgLMhQuY29yaWEudjEuVGhyb3VnaHB1dBIpCghzdG9yYWdlcxgHIAMoCzIXLmNvcmlhLnYxLlN0b3JhZ2VTdGF0dXMSKwoJcmVjZWl2ZXJzGAggAygLMhguY29yaWEudjEuUmVjZWl2ZXJTdGF0dXMSHAoUaW5jb21pbmdfbGltaXRfYnl0ZXMYCSABKAMSJwoHc2VuZGVycxgKIAMoCzIWLmNvcmlhLnYxLlNlbmRlclN0YXR1cyJZChBHZXRTdGF0dXNSZXF1ZXN0Eh4KBXNjb3BlGAEgASgLMg8uY29yaWEudjEuU2NvcGUSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkipQEKEUdldFN0YXR1c1Jlc3BvbnNlEicKB3RlbmFudHMYASADKAsyFi5jb3JpYS52MS5UZW5hbnRTdGF0dXMSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEigKBHRpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiQKDWV4cGlyaW5nX2tleXMYBCADKAsyDS5jb3JpYS52MS5LZXkilAEKEUFzc29jaWF0aW9uRmFpbGVkEhAKCHJlY2VpdmVyGAEgASgJEiAKBmNhbGxlchgCIAEoCzIQLmNvcmlhLnYxLkNhbGxlchItCgdmYWlsdXJlGAMgASgOMhwuY29yaWEudjEuQXNzb2NpYXRpb25GYWlsdXJlEg0KBWNvdW50GAQgASgDEg0KBWhvc3RzGAUgASgDIo4CChRSZWNlcHRpb25TdGVwUmVhY2hlZBIRCglyZWNlcHRpb24YASABKAkSEAoIcmVjZWl2ZXIYAiABKAkSDwoHYXJyaXZhbBgDIAEoBRIlCgRzdGVwGAQgASgOMhcuY29yaWEudjEuUmVjZXB0aW9uU3RlcBIuCg1wcmV2aW91c19zdGVwGAkgASgOMhcuY29yaWEudjEuUmVjZXB0aW9uU3RlcBIpCgZjb3VudHMYBSABKAsyGS5jb3JpYS52MS5SZWNlcHRpb25Db3VudHMSFQoNc3ViamVjdF9sYWJlbBgGIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAcgASgJEhAKCHJldHJ5X29mGAggASgJIqwBCg9GaWxlUXVhcmFudGluZWQSDAoEZmlsZRgBIAEoCRIRCglyZWNlcHRpb24YAiABKAkSEAoIcmVjZWl2ZXIYAyABKAkSKgoGcmVhc29uGAQgASgOMhouY29yaWEudjEuUXVhcmFudGluZVJlYXNvbhISCgpzaXplX2J5dGVzGAUgASgDEhIKCmhlbGRfZmlsZXMYBiABKAMSEgoKaGVsZF9ieXRlcxgHIAEoAyK7AQoRUXVhcmFudGluZURlY2lkZWQSDAoEZmlsZRgBIAEoCRIoCgVzdGF0ZRgCIAEoDjIZLmNvcmlhLnYxLlF1YXJhbnRpbmVTdGF0ZRIrCgxyZWxlYXNlX21vZGUYAyABKA4yFS5jb3JpYS52MS5SZWxlYXNlTW9kZRIZChFyZWxlYXNlX3JlY2VwdGlvbhgEIAEoCRISCgpoZWxkX2ZpbGVzGAUgASgDEhIKCmhlbGRfYnl0ZXMYBiABKAMiUwoVUmVjZWl2ZXJIZWFsdGhDaGFuZ2VkEhAKCHJlY2VpdmVyGAEgASgJEigKBmhlYWx0aBgCIAEoCzIYLmNvcmlhLnYxLlJlY2VpdmVySGVhbHRoIo4BChNTdG9yYWdlU3BhY2VDaGFuZ2VkEg8KB3N0b3JhZ2UYASABKAkSKgoFc3RhdGUYAiABKA4yGy5jb3JpYS52MS5TdG9yYWdlU3BhY2VTdGF0ZRISCgp1c2VkX2J5dGVzGAMgASgDEhcKCmZyZWVfYnl0ZXMYBCABKANIAIgBAUINCgtfZnJlZV9ieXRlcyKgAQoLRnJhbWVzQWRkZWQSFQoNc3ViamVjdF9sYWJlbBgBIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAIgASgJEhIKCnNjYW5fbGFiZWwYAyABKAkSEQoJaW5zdGFuY2VzGAQgASgDEhIKCnNjYW5zX2RvbmUYBSABKAMSFgoOaW5zdGFuY2VzX2RvbmUYBiABKAMSEAoIZmluaXNoZWQYByABKAgi6AEKDkpvYlN0ZXBSZWFjaGVkEgsKA2pvYhgBIAEoCRIhCgVzdGF0ZRgCIAEoDjISLmNvcmlhLnYxLkpvYlN0YXRlEioKDnByZXZpb3VzX3N0YXRlGAMgASgOMhIuY29yaWEudjEuSm9iU3RhdGUSIwoGY291bnRzGAQgASgLMhMuY29yaWEudjEuSm9iQ291bnRzEg4KBnNlbmRlchgFIAEoCRIQCghyZWNlaXZlchgGIAEoCRIRCglyZWNlcHRpb24YByABKAkSEAoIcmV0cnlfb2YYCCABKAkSDgoGcmVhc29uGAkgASgJIlEKDUpvYlByb2dyZXNzZWQSCwoDam9iGAEgASgJEiMKBmNvdW50cxgCIAEoCzITLmNvcmlhLnYxLkpvYkNvdW50cxIOCgZzZW5kZXIYAyABKAkiTQoTU2VuZGVySGVhbHRoQ2hhbmdlZBIOCgZzZW5kZXIYASABKAkSJgoGaGVhbHRoGAIgASgLMhYuY29yaWEudjEuU2VuZGVySGVhbHRoIqAFCgVFdmVudBIOCgZjdXJzb3IYASABKAkSKAoEdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGdGVuYW50GAMgASgJEiEKBHR5cGUYBCABKA4yEy5jb3JpYS52MS5FdmVudFR5cGUSOQoSYXNzb2NpYXRpb25fZmFpbGVkGAUgASgLMhsuY29yaWEudjEuQXNzb2NpYXRpb25GYWlsZWRIABI4Cg5yZWNlcHRpb25fc3RlcBgGIAEoCzIeLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXBSZWFjaGVkSAASNQoQZmlsZV9xdWFyYW50aW5lZBgHIAEoCzIZLmNvcmlhLnYxLkZpbGVRdWFyYW50aW5lZEgAEjkKEnF1YXJhbnRpbmVfZGVjaWRlZBgIIAEoCzIbLmNvcmlhLnYxLlF1YXJhbnRpbmVEZWNpZGVkSAASOgoPcmVjZWl2ZXJfaGVhbHRoGAkgASgLMh8uY29yaWEudjEuUmVjZWl2ZXJIZWFsdGhDaGFuZ2VkSAASNgoNc3RvcmFnZV9zcGFjZRgKIAEoCzIdLmNvcmlhLnYxLlN0b3JhZ2VTcGFjZUNoYW5nZWRIABItCgxmcmFtZXNfYWRkZWQYCyABKAsyFS5jb3JpYS52MS5GcmFtZXNBZGRlZEgAEiwKCGpvYl9zdGVwGAwgASgLMhguY29yaWEudjEuSm9iU3RlcFJlYWNoZWRIABIvCgxqb2JfcHJvZ3Jlc3MYDSABKAsyFy5jb3JpYS52MS5Kb2JQcm9ncmVzc2VkSAASNgoNc2VuZGVyX2hlYWx0aBgOIAEoCzIdLmNvcmlhLnYxLlNlbmRlckhlYWx0aENoYW5nZWRIAEIJCgdwYXlsb2FkIu8BCg5XYXRjaEtlZXBBbGl2ZRIoCgR0aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgZjdXJzb3IYAiABKAkSQwoOdGVuYW50X2N1cnNvcnMYAyADKAsyKy5jb3JpYS52MS5XYXRjaEtlZXBBbGl2ZS5UZW5hbnRDdXJzb3JzRW50cnkSGgoSdW5hbnN3ZXJlZF90ZW5hbnRzGAQgAygJEgwKBGZ1bGwYBSABKAgaNAoSVGVuYW50Q3Vyc29yc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi6wEKDFdhdGNoUmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEg4KBmN1cnNvchgCIAEoCRIiCgV0eXBlcxgDIAMoDjITLmNvcmlhLnYxLkV2ZW50VHlwZRJBCg50ZW5hbnRfY3Vyc29ycxgEIAMoCzIpLmNvcmlhLnYxLldhdGNoUmVxdWVzdC5UZW5hbnRDdXJzb3JzRW50cnkSDgoGcmVzdW1lGAUgASgIGjQKElRlbmFudEN1cnNvcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBImkKDVdhdGNoUmVzcG9uc2USIAoFZXZlbnQYASABKAsyDy5jb3JpYS52MS5FdmVudEgAEi4KCmtlZXBfYWxpdmUYAiABKAsyGC5jb3JpYS52MS5XYXRjaEtlZXBBbGl2ZUgAQgYKBGtpbmQq3AIKCUV2ZW50VHlwZRIaChZFVkVOVF9UWVBFX1VOU1BFQ0lGSUVEEAASIQodRVZFTlRfVFlQRV9BU1NPQ0lBVElPTl9GQUlMRUQQARIdChlFVkVOVF9UWVBFX1JFQ0VQVElPTl9TVEVQEAISHwobRVZFTlRfVFlQRV9GSUxFX1FVQVJBTlRJTkVEEAMSIQodRVZFTlRfVFlQRV9RVUFSQU5USU5FX0RFQ0lERUQQBBIeChpFVkVOVF9UWVBFX1JFQ0VJVkVSX0hFQUxUSBAFEhwKGEVWRU5UX1RZUEVfU1RPUkFHRV9TUEFDRRAGEhsKF0VWRU5UX1RZUEVfRlJBTUVTX0FEREVEEAcSFwoTRVZFTlRfVFlQRV9KT0JfU1RFUBAIEhsKF0VWRU5UX1RZUEVfSk9CX1BST0dSRVNTEAkSHAoYRVZFTlRfVFlQRV9TRU5ERVJfSEVBTFRIEAoqjwMKEkFzc29jaWF0aW9uRmFpbHVyZRIjCh9BU1NPQ0lBVElPTl9GQUlMVVJFX1VOU1BFQ0lGSUVEEAASKgomQVNTT0NJQVRJT05fRkFJTFVSRV9DQUxMRVJfTk9UX0FMTE9XRUQQARI2CjJBU1NPQ0lBVElPTl9GQUlMVVJFX0NBTExFRF9BRV9USVRMRV9OT1RfUkVDT0dOSVpFRBACEi0KKUFTU09DSUFUSU9OX0ZBSUxVUkVfTk9fQUNDRVBUQUJMRV9DT05URVhUEAMSIwofQVNTT0NJQVRJT05fRkFJTFVSRV9ORUFSTFlfRlVMTBAEEigKJEFTU09DSUFUSU9OX0ZBSUxVUkVfVEVOQU5UX05PVF9SRUFEWRAFEiIKHkFTU09DSUFUSU9OX0ZBSUxVUkVfVExTX0ZBSUxFRBAGEiYKIkFTU09DSUFUSU9OX0ZBSUxVUkVfUFJPVE9DT0xfRVJST1IQBxImCiJBU1NPQ0lBVElPTl9GQUlMVVJFX0lOQ09NSU5HX0xJTUlUEAgqgAEKEVN0b3JhZ2VTcGFjZVN0YXRlEiMKH1NUT1JBR0VfU1BBQ0VfU1RBVEVfVU5TUEVDSUZJRUQQABIjCh9TVE9SQUdFX1NQQUNFX1NUQVRFX05FQVJMWV9GVUxMEAESIQodU1RPUkFHRV9TUEFDRV9TVEFURV9SRUNPVkVSRUQQAjKcAQoOTW9uaXRvclNlcnZpY2USSQoJR2V0U3RhdHVzEhouY29yaWEudjEuR2V0U3RhdHVzUmVxdWVzdBobLmNvcmlhLnYxLkdldFN0YXR1c1Jlc3BvbnNlIgOQAgESPwoFV2F0Y2gSFi5jb3JpYS52MS5XYXRjaFJlcXVlc3QaFy5jb3JpYS52MS5XYXRjaFJlc3BvbnNlIgOQAgEwAWIGcHJvdG8z", [file_google_protobuf_timestamp, file_coria_v1_access, file_coria_v1_job, file_coria_v1_quarantine, file_coria_v1_reception, file_coria_v1_receiver, file_coria_v1_scope, file_coria_v1_sender, file_coria_v1_tenant]);
+  fileDesc("ChZjb3JpYS92MS9tb25pdG9yLnByb3RvEghjb3JpYS52MSJPChJSZWNlcHRpb25TdGVwQ291bnQSJQoEc3RlcBgBIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASEgoKcmVjZXB0aW9ucxgCIAEoAyKTAgoMVGVuYW50Q291bnRzEhAKCHN1YmplY3RzGAEgASgDEhAKCHNlc3Npb25zGAIgASgDEg0KBXNjYW5zGAMgASgDEhEKCWluc3RhbmNlcxgEIAEoAxIZChFxdWFyYW50aW5lZF9maWxlcxgFIAEoAxIZChFxdWFyYW50aW5lZF9ieXRlcxgGIAEoAxI8ChZyZWNlcHRpb25zX2luX3Byb2dyZXNzGAcgAygLMhwuY29yaWEudjEuUmVjZXB0aW9uU3RlcENvdW50EhYKDmluY29taW5nX2J5dGVzGAggASgDEjEKEGpvYnNfaW5fcHJvZ3Jlc3MYCSADKAsyFy5jb3JpYS52MS5Kb2JTdGF0ZUNvdW50IkAKDUpvYlN0YXRlQ291bnQSIQoFc3RhdGUYASABKA4yEi5jb3JpYS52MS5Kb2JTdGF0ZRIMCgRqb2JzGAIgASgDImEKDFNlbmRlclN0YXR1cxIOCgZzZW5kZXIYASABKAkSJgoGaGVhbHRoGAIgASgLMhYuY29yaWEudjEuU2VuZGVySGVhbHRoEhkKEW9wZW5fYXNzb2NpYXRpb25zGAMgASgFIpgBCgpUaHJvdWdocHV0EiEKGWZpbGVzX3JlY2VpdmVkX3Blcl9zZWNvbmQYASABKAESIQoZYnl0ZXNfcmVjZWl2ZWRfcGVyX3NlY29uZBgCIAEoARIhChlmaWxlc19hcmNoaXZlZF9wZXJfc2Vjb25kGAMgASgBEiEKGWJ5dGVzX2FyY2hpdmVkX3Blcl9zZWNvbmQYBCABKAEizwEKDVN0b3JhZ2VTdGF0dXMSDwoHc3RvcmFnZRgBIAEoCRISCgp1c2VkX2J5dGVzGAIgASgDEhcKCmZyZWVfYnl0ZXMYAyABKANIAIgBARIWCg5jYXBhY2l0eV9ieXRlcxgEIAEoAxITCgtuZWFybHlfZnVsbBgFIAEoCBIvCgp2ZXJzaW9uaW5nGAYgASgOMhsuY29yaWEudjEuU3RvcmFnZVZlcnNpb25pbmcSEwoLb2JqZWN0X2xvY2sYByABKAhCDQoLX2ZyZWVfYnl0ZXMiYAoOUmVjZWl2ZXJTdGF0dXMSEAoIcmVjZWl2ZXIYASABKAkSKAoGaGVhbHRoGAIgASgLMhguY29yaWEudjEuUmVjZWl2ZXJIZWFsdGgSEgoKYW55X2NhbGxlchgDIAEoCCKoBQoMVGVuYW50U3RhdHVzEg4KBnRlbmFudBgBIAEoCRItCg5kYXRhYmFzZV9zdGF0ZRgCIAEoDjIVLmNvcmlhLnYxLlRlbmFudFN0YXRlEjcKE2RhdGFiYXNlX3N0YXRlX3RpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDGV2ZW50X2N1cnNvchgEIAEoCRImCgZjb3VudHMYBSABKAsyFi5jb3JpYS52MS5UZW5hbnRDb3VudHMSKAoKdGhyb3VnaHB1dBgGIAEoCzIULmNvcmlhLnYxLlRocm91Z2hwdXQSKQoIc3RvcmFnZXMYByADKAsyFy5jb3JpYS52MS5TdG9yYWdlU3RhdHVzEisKCXJlY2VpdmVycxgIIAMoCzIYLmNvcmlhLnYxLlJlY2VpdmVyU3RhdHVzEhwKFGluY29taW5nX2xpbWl0X2J5dGVzGAkgASgDEicKB3NlbmRlcnMYCiADKAsyFi5jb3JpYS52MS5TZW5kZXJTdGF0dXMSKgoKbGFzdF9zY3J1YhgLIAEoCzIWLmNvcmlhLnYxLlNjcnViU3VtbWFyeRIyCg1vcGVuX2ZpbmRpbmdzGAwgAygLMhsuY29yaWEudjEuU2NydWJGaW5kaW5nQ291bnQSLQoKYXVkaXRfc2VhbBgNIAEoCzIZLmNvcmlhLnYxLkF1ZGl0U2VhbFN0YXR1cxIZChFwZW5kaW5nX2RlbGV0aW9ucxgOIAEoAxIeChZwZW5kaW5nX2RlbGV0aW9uX2J5dGVzGA8gASgDEhUKDWV2ZW50X2hpc3RvcnkYECABKAkSGAoQb3duZXJfZ2VuZXJhdGlvbhgRIAEoAxIeChZ1bnJlc29sdmVkX2NvcnJlY3Rpb25zGBIgASgDIssBCgxTY3J1YlN1bW1hcnkSCwoDam9iGAEgASgJEiEKBXN0YXRlGAIgASgOMhIuY29yaWEudjEuSm9iU3RhdGUSLgoKc3RhcnRfdGltZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kX3RpbWUYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi0KCGZpbmRpbmdzGAUgAygLMhsuY29yaWEudjEuU2NydWJGaW5kaW5nQ291bnQiTwoRU2NydWJGaW5kaW5nQ291bnQSKAoEa2luZBgBIAEoDjIaLmNvcmlhLnYxLlNjcnViRmluZGluZ0tpbmQSEAoIZmluZGluZ3MYAiABKAMiWQoQR2V0U3RhdHVzUmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIuEBChFHZXRTdGF0dXNSZXNwb25zZRInCgd0ZW5hbnRzGAEgAygLMhYuY29yaWEudjEuVGVuYW50U3RhdHVzEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIkCg1leHBpcmluZ19rZXlzGAQgAygLMg0uY29yaWEudjEuS2V5EjoKF2luc3RhbGxhdGlvbl9hdWRpdF9zZWFsGAUgASgLMhkuY29yaWEudjEuQXVkaXRTZWFsU3RhdHVzIpQBChFBc3NvY2lhdGlvbkZhaWxlZBIQCghyZWNlaXZlchgBIAEoCRIgCgZjYWxsZXIYAiABKAsyEC5jb3JpYS52MS5DYWxsZXISLQoHZmFpbHVyZRgDIAEoDjIcLmNvcmlhLnYxLkFzc29jaWF0aW9uRmFpbHVyZRINCgVjb3VudBgEIAEoAxINCgVob3N0cxgFIAEoAyKOAgoUUmVjZXB0aW9uU3RlcFJlYWNoZWQSEQoJcmVjZXB0aW9uGAEgASgJEhAKCHJlY2VpdmVyGAIgASgJEg8KB2Fycml2YWwYAyABKAUSJQoEc3RlcBgEIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASLgoNcHJldmlvdXNfc3RlcBgJIAEoDjIXLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXASKQoGY291bnRzGAUgASgLMhkuY29yaWEudjEuUmVjZXB0aW9uQ291bnRzEhUKDXN1YmplY3RfbGFiZWwYBiABKAkSFQoNc2Vzc2lvbl9sYWJlbBgHIAEoCRIQCghyZXRyeV9vZhgIIAEoCSKsAQoPRmlsZVF1YXJhbnRpbmVkEgwKBGZpbGUYASABKAkSEQoJcmVjZXB0aW9uGAIgASgJEhAKCHJlY2VpdmVyGAMgASgJEioKBnJlYXNvbhgEIAEoDjIaLmNvcmlhLnYxLlF1YXJhbnRpbmVSZWFzb24SEgoKc2l6ZV9ieXRlcxgFIAEoAxISCgpoZWxkX2ZpbGVzGAYgASgDEhIKCmhlbGRfYnl0ZXMYByABKAMiuwEKEVF1YXJhbnRpbmVEZWNpZGVkEgwKBGZpbGUYASABKAkSKAoFc3RhdGUYAiABKA4yGS5jb3JpYS52MS5RdWFyYW50aW5lU3RhdGUSKwoMcmVsZWFzZV9tb2RlGAMgASgOMhUuY29yaWEudjEuUmVsZWFzZU1vZGUSGQoRcmVsZWFzZV9yZWNlcHRpb24YBCABKAkSEgoKaGVsZF9maWxlcxgFIAEoAxISCgpoZWxkX2J5dGVzGAYgASgDIlMKFVJlY2VpdmVySGVhbHRoQ2hhbmdlZBIQCghyZWNlaXZlchgBIAEoCRIoCgZoZWFsdGgYAiABKAsyGC5jb3JpYS52MS5SZWNlaXZlckhlYWx0aCKOAQoTU3RvcmFnZVNwYWNlQ2hhbmdlZBIPCgdzdG9yYWdlGAEgASgJEioKBXN0YXRlGAIgASgOMhsuY29yaWEudjEuU3RvcmFnZVNwYWNlU3RhdGUSEgoKdXNlZF9ieXRlcxgDIAEoAxIXCgpmcmVlX2J5dGVzGAQgASgDSACIAQFCDQoLX2ZyZWVfYnl0ZXMioAEKC0ZyYW1lc0FkZGVkEhUKDXN1YmplY3RfbGFiZWwYASABKAkSFQoNc2Vzc2lvbl9sYWJlbBgCIAEoCRISCgpzY2FuX2xhYmVsGAMgASgJEhEKCWluc3RhbmNlcxgEIAEoAxISCgpzY2Fuc19kb25lGAUgASgDEhYKDmluc3RhbmNlc19kb25lGAYgASgDEhAKCGZpbmlzaGVkGAcgASgIIugBCg5Kb2JTdGVwUmVhY2hlZBILCgNqb2IYASABKAkSIQoFc3RhdGUYAiABKA4yEi5jb3JpYS52MS5Kb2JTdGF0ZRIqCg5wcmV2aW91c19zdGF0ZRgDIAEoDjISLmNvcmlhLnYxLkpvYlN0YXRlEiMKBmNvdW50cxgEIAEoCzITLmNvcmlhLnYxLkpvYkNvdW50cxIOCgZzZW5kZXIYBSABKAkSEAoIcmVjZWl2ZXIYBiABKAkSEQoJcmVjZXB0aW9uGAcgASgJEhAKCHJldHJ5X29mGAggASgJEg4KBnJlYXNvbhgJIAEoCSJRCg1Kb2JQcm9ncmVzc2VkEgsKA2pvYhgBIAEoCRIjCgZjb3VudHMYAiABKAsyEy5jb3JpYS52MS5Kb2JDb3VudHMSDgoGc2VuZGVyGAMgASgJIk0KE1NlbmRlckhlYWx0aENoYW5nZWQSDgoGc2VuZGVyGAEgASgJEiYKBmhlYWx0aBgCIAEoCzIWLmNvcmlhLnYxLlNlbmRlckhlYWx0aCLBAQoTU2NydWJGaW5kaW5nQ2hhbmdlZBIPCgdmaW5kaW5nGAEgASgJEigKBGtpbmQYAiABKA4yGi5jb3JpYS52MS5TY3J1YkZpbmRpbmdLaW5kEg8KB3N0b3JhZ2UYAyABKAkSFQoNc3ViamVjdF9sYWJlbBgEIAEoCRIVCg1zZXNzaW9uX2xhYmVsGAUgASgJEhIKCnNjYW5fbGFiZWwYBiABKAkSDwoHY2xlYXJlZBgHIAEoCBILCgNqb2IYCCABKAki7wEKDkNhdGFsb2dDaGFuZ2VkEhIKCmNvcnJlY3Rpb24YASABKAkSJgoEa2luZBgCIAEoDjIYLmNvcmlhLnYxLkNvcnJlY3Rpb25LaW5kEigKBXN0YXRlGAMgASgOMhkuY29yaWEudjEuQ29ycmVjdGlvblN0YXRlEhUKDXN1YmplY3RfbGFiZWwYBCABKAkSFQoNc2Vzc2lvbl9sYWJlbBgFIAEoCRISCgpzY2FuX2xhYmVsGAYgASgJEhAKCHRvX2xhYmVsGAcgASgJEhEKCWluc3RhbmNlcxgIIAEoAxIQCghyZXZpc2lvbhgJIAEoBSJFCg5DYXRhbG9nUmVidWlsdBILCgNqb2IYASABKAkSEQoJaW5zdGFuY2VzGAIgASgDEhMKC25ld19oaXN0b3J5GAMgASgIIsIGCgVFdmVudBIOCgZjdXJzb3IYASABKAkSKAoEdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGdGVuYW50GAMgASgJEiEKBHR5cGUYBCABKA4yEy5jb3JpYS52MS5FdmVudFR5cGUSOQoSYXNzb2NpYXRpb25fZmFpbGVkGAUgASgLMhsuY29yaWEudjEuQXNzb2NpYXRpb25GYWlsZWRIABI4Cg5yZWNlcHRpb25fc3RlcBgGIAEoCzIeLmNvcmlhLnYxLlJlY2VwdGlvblN0ZXBSZWFjaGVkSAASNQoQZmlsZV9xdWFyYW50aW5lZBgHIAEoCzIZLmNvcmlhLnYxLkZpbGVRdWFyYW50aW5lZEgAEjkKEnF1YXJhbnRpbmVfZGVjaWRlZBgIIAEoCzIbLmNvcmlhLnYxLlF1YXJhbnRpbmVEZWNpZGVkSAASOgoPcmVjZWl2ZXJfaGVhbHRoGAkgASgLMh8uY29yaWEudjEuUmVjZWl2ZXJIZWFsdGhDaGFuZ2VkSAASNgoNc3RvcmFnZV9zcGFjZRgKIAEoCzIdLmNvcmlhLnYxLlN0b3JhZ2VTcGFjZUNoYW5nZWRIABItCgxmcmFtZXNfYWRkZWQYCyABKAsyFS5jb3JpYS52MS5GcmFtZXNBZGRlZEgAEiwKCGpvYl9zdGVwGAwgASgLMhguY29yaWEudjEuSm9iU3RlcFJlYWNoZWRIABIvCgxqb2JfcHJvZ3Jlc3MYDSABKAsyFy5jb3JpYS52MS5Kb2JQcm9ncmVzc2VkSAASNgoNc2VuZGVyX2hlYWx0aBgOIAEoCzIdLmNvcmlhLnYxLlNlbmRlckhlYWx0aENoYW5nZWRIABI2Cg1zY3J1Yl9maW5kaW5nGA8gASgLMh0uY29yaWEudjEuU2NydWJGaW5kaW5nQ2hhbmdlZEgAEjMKD2NhdGFsb2dfY2hhbmdlZBgQIAEoCzIYLmNvcmlhLnYxLkNhdGFsb2dDaGFuZ2VkSAASMwoPY2F0YWxvZ19yZWJ1aWx0GBEgASgLMhguY29yaWEudjEuQ2F0YWxvZ1JlYnVpbHRIAEIJCgdwYXlsb2FkIpcDCg5XYXRjaEtlZXBBbGl2ZRIoCgR0aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgZjdXJzb3IYAiABKAkSQwoOdGVuYW50X2N1cnNvcnMYAyADKAsyKy5jb3JpYS52MS5XYXRjaEtlZXBBbGl2ZS5UZW5hbnRDdXJzb3JzRW50cnkSGgoSdW5hbnN3ZXJlZF90ZW5hbnRzGAQgAygJEgwKBGZ1bGwYBSABKAgSFQoNZXZlbnRfaGlzdG9yeRgGIAEoCRJSChZ0ZW5hbnRfZXZlbnRfaGlzdG9yaWVzGAcgAygLMjIuY29yaWEudjEuV2F0Y2hLZWVwQWxpdmUuVGVuYW50RXZlbnRIaXN0b3JpZXNFbnRyeRo0ChJUZW5hbnRDdXJzb3JzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ARo7ChlUZW5hbnRFdmVudEhpc3Rvcmllc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEi6wEKDFdhdGNoUmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEg4KBmN1cnNvchgCIAEoCRIiCgV0eXBlcxgDIAMoDjITLmNvcmlhLnYxLkV2ZW50VHlwZRJBCg50ZW5hbnRfY3Vyc29ycxgEIAMoCzIpLmNvcmlhLnYxLldhdGNoUmVxdWVzdC5UZW5hbnRDdXJzb3JzRW50cnkSDgoGcmVzdW1lGAUgASgIGjQKElRlbmFudEN1cnNvcnNFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBImkKDVdhdGNoUmVzcG9uc2USIAoFZXZlbnQYASABKAsyDy5jb3JpYS52MS5FdmVudEgAEi4KCmtlZXBfYWxpdmUYAiABKAsyGC5jb3JpYS52MS5XYXRjaEtlZXBBbGl2ZUgAQgYKBGtpbmQq1wEKEVN0b3JhZ2VWZXJzaW9uaW5nEiIKHlNUT1JBR0VfVkVSU0lPTklOR19VTlNQRUNJRklFRBAAEiAKHFNUT1JBR0VfVkVSU0lPTklOR19ESVJFQ1RPUlkQARIaChZTVE9SQUdFX1ZFUlNJT05JTkdfT0ZGEAISHgoaU1RPUkFHRV9WRVJTSU9OSU5HX0VOQUJMRUQQAxIgChxTVE9SQUdFX1ZFUlNJT05JTkdfU1VTUEVOREVEEAQSHgoaU1RPUkFHRV9WRVJTSU9OSU5HX1VOS05PV04QBSq6AwoJRXZlbnRUeXBlEhoKFkVWRU5UX1RZUEVfVU5TUEVDSUZJRUQQABIhCh1FVkVOVF9UWVBFX0FTU09DSUFUSU9OX0ZBSUxFRBABEh0KGUVWRU5UX1RZUEVfUkVDRVBUSU9OX1NURVAQAhIfChtFVkVOVF9UWVBFX0ZJTEVfUVVBUkFOVElORUQQAxIhCh1FVkVOVF9UWVBFX1FVQVJBTlRJTkVfREVDSURFRBAEEh4KGkVWRU5UX1RZUEVfUkVDRUlWRVJfSEVBTFRIEAUSHAoYRVZFTlRfVFlQRV9TVE9SQUdFX1NQQUNFEAYSGwoXRVZFTlRfVFlQRV9GUkFNRVNfQURERUQQBxIXChNFVkVOVF9UWVBFX0pPQl9TVEVQEAgSGwoXRVZFTlRfVFlQRV9KT0JfUFJPR1JFU1MQCRIcChhFVkVOVF9UWVBFX1NFTkRFUl9IRUFMVEgQChIcChhFVkVOVF9UWVBFX1NDUlVCX0ZJTkRJTkcQCxIeChpFVkVOVF9UWVBFX0NBVEFMT0dfQ0hBTkdFRBAMEh4KGkVWRU5UX1RZUEVfQ0FUQUxPR19SRUJVSUxUEA0qjwMKEkFzc29jaWF0aW9uRmFpbHVyZRIjCh9BU1NPQ0lBVElPTl9GQUlMVVJFX1VOU1BFQ0lGSUVEEAASKgomQVNTT0NJQVRJT05fRkFJTFVSRV9DQUxMRVJfTk9UX0FMTE9XRUQQARI2CjJBU1NPQ0lBVElPTl9GQUlMVVJFX0NBTExFRF9BRV9USVRMRV9OT1RfUkVDT0dOSVpFRBACEi0KKUFTU09DSUFUSU9OX0ZBSUxVUkVfTk9fQUNDRVBUQUJMRV9DT05URVhUEAMSIwofQVNTT0NJQVRJT05fRkFJTFVSRV9ORUFSTFlfRlVMTBAEEigKJEFTU09DSUFUSU9OX0ZBSUxVUkVfVEVOQU5UX05PVF9SRUFEWRAFEiIKHkFTU09DSUFUSU9OX0ZBSUxVUkVfVExTX0ZBSUxFRBAGEiYKIkFTU09DSUFUSU9OX0ZBSUxVUkVfUFJPVE9DT0xfRVJST1IQBxImCiJBU1NPQ0lBVElPTl9GQUlMVVJFX0lOQ09NSU5HX0xJTUlUEAgqgAEKEVN0b3JhZ2VTcGFjZVN0YXRlEiMKH1NUT1JBR0VfU1BBQ0VfU1RBVEVfVU5TUEVDSUZJRUQQABIjCh9TVE9SQUdFX1NQQUNFX1NUQVRFX05FQVJMWV9GVUxMEAESIQodU1RPUkFHRV9TUEFDRV9TVEFURV9SRUNPVkVSRUQQAjKcAQoOTW9uaXRvclNlcnZpY2USSQoJR2V0U3RhdHVzEhouY29yaWEudjEuR2V0U3RhdHVzUmVxdWVzdBobLmNvcmlhLnYxLkdldFN0YXR1c1Jlc3BvbnNlIgOQAgESPwoFV2F0Y2gSFi5jb3JpYS52MS5XYXRjaFJlcXVlc3QaFy5jb3JpYS52MS5XYXRjaFJlc3BvbnNlIgOQAgEwAWIGcHJvdG8z", [file_google_protobuf_timestamp, file_coria_v1_access, file_coria_v1_audit_seal, file_coria_v1_correction, file_coria_v1_job, file_coria_v1_quarantine, file_coria_v1_reception, file_coria_v1_receiver, file_coria_v1_scope, file_coria_v1_sender, file_coria_v1_tenant]);
 
 /**
  * ReceptionStepCount is how many receptions are in one step.
@@ -303,6 +307,25 @@ export type StorageStatus = Message<"coria.v1.StorageStatus"> & {
    * @generated from field: bool nearly_full = 5;
    */
   nearlyFull: boolean;
+
+  /**
+   * For an S3 storage, the bucket's versioning, read when the storage was
+   * opened, so a person sees what a purge can claim: on a versioned bucket
+   * a removed object's older versions stay unless purge_versions deletes
+   * them. STORAGE_VERSIONING_DIRECTORY for a directory.
+   *
+   * @generated from field: coria.v1.StorageVersioning versioning = 6;
+   */
+  versioning: StorageVersioning;
+
+  /**
+   * For an S3 storage, whether the bucket has object lock enabled, read
+   * when the storage was opened: a locked version cannot be removed before
+   * its retention ends, and a purge reports it retained.
+   *
+   * @generated from field: bool object_lock = 7;
+   */
+  objectLock: boolean;
 };
 
 /**
@@ -433,6 +456,78 @@ export type TenantStatus = Message<"coria.v1.TenantStatus"> & {
    * @generated from field: repeated coria.v1.SenderStatus senders = 10;
    */
   senders: SenderStatus[];
+
+  /**
+   * Its last scrub, so a person sees when its stored bytes were last
+   * proven. Absent when no scrub has run, and when its database did not
+   * answer.
+   *
+   * @generated from field: coria.v1.ScrubSummary last_scrub = 11;
+   */
+  lastScrub?: ScrubSummary | undefined;
+
+  /**
+   * The scrub findings that hold now, one entry per kind that has any, in
+   * the order of the kinds, whatever scrub found them. Empty when there
+   * are none, and when its database did not answer.
+   *
+   * @generated from field: repeated coria.v1.ScrubFindingCount open_findings = 12;
+   */
+  openFindings: ScrubFindingCount[];
+
+  /**
+   * How far its audit log is sealed (AuditSealService). Absent when its
+   * database did not answer.
+   *
+   * @generated from field: coria.v1.AuditSealStatus audit_seal = 13;
+   */
+  auditSeal?: AuditSealStatus | undefined;
+
+  /**
+   * Its deletes committed and not yet purged: hidden, their bytes kept
+   * until their purge time and still undone by UndoCorrection; and those
+   * purging. Zero when its database did not answer.
+   *
+   * @generated from field: int64 pending_deletions = 14;
+   */
+  pendingDeletions: bigint;
+
+  /**
+   * The bytes those deletes keep on its storages until they are purged.
+   *
+   * @generated from field: int64 pending_deletion_bytes = 15;
+   */
+  pendingDeletionBytes: bigint;
+
+  /**
+   * The id of its event feed's history (WatchKeepAlive.event_history): a
+   * restore, an import or a load of its database begins a new one, and a
+   * cursor of another history is refused. Opaque; at most 64 bytes. Empty
+   * when its database did not answer.
+   *
+   * @generated from field: string event_history = 16;
+   */
+  eventHistory: string;
+
+  /**
+   * The generation this tenant holds in the owner record on its storages:
+   * one more each time an import or a restore took them over, so a server
+   * whose generation is lower knows it no longer owns them and fences the
+   * tenant (TENANT_STATE_FENCED). Zero when its database did not answer.
+   *
+   * @generated from field: int64 owner_generation = 17;
+   */
+  ownerGeneration: bigint;
+
+  /**
+   * Its corrections found by a rebuild or a restore as a record on a
+   * storage with no row in its database, applied fail-closed and waiting
+   * for an admin to undo or purge them (Correction.unresolved). Zero when
+   * its database did not answer.
+   *
+   * @generated from field: int64 unresolved_corrections = 18;
+   */
+  unresolvedCorrections: bigint;
 };
 
 /**
@@ -441,6 +536,83 @@ export type TenantStatus = Message<"coria.v1.TenantStatus"> & {
  */
 export const TenantStatusSchema: GenMessage<TenantStatus> = /*@__PURE__*/
   messageDesc(file_coria_v1_monitor, 7);
+
+/**
+ * ScrubSummary is a tenant's last scrub, for a status.
+ *
+ * @generated from message coria.v1.ScrubSummary
+ */
+export type ScrubSummary = Message<"coria.v1.ScrubSummary"> & {
+  /**
+   * The scrub job's id (JobService).
+   *
+   * @generated from field: string job = 1;
+   */
+  job: string;
+
+  /**
+   * Where it is.
+   *
+   * @generated from field: coria.v1.JobState state = 2;
+   */
+  state: JobState;
+
+  /**
+   * When its first work started. Absent while it is queued.
+   *
+   * @generated from field: google.protobuf.Timestamp start_time = 3;
+   */
+  startTime?: Timestamp | undefined;
+
+  /**
+   * When it ended. Absent while it is queued or running.
+   *
+   * @generated from field: google.protobuf.Timestamp end_time = 4;
+   */
+  endTime?: Timestamp | undefined;
+
+  /**
+   * The findings it recorded, one entry per kind that has any.
+   *
+   * @generated from field: repeated coria.v1.ScrubFindingCount findings = 5;
+   */
+  findings: ScrubFindingCount[];
+};
+
+/**
+ * Describes the message coria.v1.ScrubSummary.
+ * Use `create(ScrubSummarySchema)` to create a new message.
+ */
+export const ScrubSummarySchema: GenMessage<ScrubSummary> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 8);
+
+/**
+ * ScrubFindingCount is how many scrub findings are of one kind.
+ *
+ * @generated from message coria.v1.ScrubFindingCount
+ */
+export type ScrubFindingCount = Message<"coria.v1.ScrubFindingCount"> & {
+  /**
+   * The kind.
+   *
+   * @generated from field: coria.v1.ScrubFindingKind kind = 1;
+   */
+  kind: ScrubFindingKind;
+
+  /**
+   * How many.
+   *
+   * @generated from field: int64 findings = 2;
+   */
+  findings: bigint;
+};
+
+/**
+ * Describes the message coria.v1.ScrubFindingCount.
+ * Use `create(ScrubFindingCountSchema)` to create a new message.
+ */
+export const ScrubFindingCountSchema: GenMessage<ScrubFindingCount> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 9);
 
 /**
  * GetStatusRequest asks for the status of one tenant or of every tenant.
@@ -480,7 +652,7 @@ export type GetStatusRequest = Message<"coria.v1.GetStatusRequest"> & {
  * Use `create(GetStatusRequestSchema)` to create a new message.
  */
 export const GetStatusRequestSchema: GenMessage<GetStatusRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 8);
+  messageDesc(file_coria_v1_monitor, 10);
 
 /**
  * GetStatusResponse is the status asked for.
@@ -520,6 +692,15 @@ export type GetStatusResponse = Message<"coria.v1.GetStatusResponse"> & {
    * @generated from field: repeated coria.v1.Key expiring_keys = 4;
    */
   expiringKeys: Key[];
+
+  /**
+   * With the installation, how far the installation's own audit log is
+   * sealed, on every page; absent with a tenant, whose log's seal is its
+   * TenantStatus.audit_seal.
+   *
+   * @generated from field: coria.v1.AuditSealStatus installation_audit_seal = 5;
+   */
+  installationAuditSeal?: AuditSealStatus | undefined;
 };
 
 /**
@@ -527,7 +708,7 @@ export type GetStatusResponse = Message<"coria.v1.GetStatusResponse"> & {
  * Use `create(GetStatusResponseSchema)` to create a new message.
  */
 export const GetStatusResponseSchema: GenMessage<GetStatusResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 9);
+  messageDesc(file_coria_v1_monitor, 11);
 
 /**
  * AssociationFailed is a receiver turning callers away. Failures are grouped
@@ -587,7 +768,7 @@ export type AssociationFailed = Message<"coria.v1.AssociationFailed"> & {
  * Use `create(AssociationFailedSchema)` to create a new message.
  */
 export const AssociationFailedSchema: GenMessage<AssociationFailed> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 10);
+  messageDesc(file_coria_v1_monitor, 12);
 
 /**
  * ReceptionStepReached is a reception reaching a step.
@@ -670,7 +851,7 @@ export type ReceptionStepReached = Message<"coria.v1.ReceptionStepReached"> & {
  * Use `create(ReceptionStepReachedSchema)` to create a new message.
  */
 export const ReceptionStepReachedSchema: GenMessage<ReceptionStepReached> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 11);
+  messageDesc(file_coria_v1_monitor, 13);
 
 /**
  * FileQuarantined is one file quarantined.
@@ -734,7 +915,7 @@ export type FileQuarantined = Message<"coria.v1.FileQuarantined"> & {
  * Use `create(FileQuarantinedSchema)` to create a new message.
  */
 export const FileQuarantinedSchema: GenMessage<FileQuarantined> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 12);
+  messageDesc(file_coria_v1_monitor, 14);
 
 /**
  * QuarantineDecided is a quarantined file released or rejected.
@@ -791,7 +972,7 @@ export type QuarantineDecided = Message<"coria.v1.QuarantineDecided"> & {
  * Use `create(QuarantineDecidedSchema)` to create a new message.
  */
 export const QuarantineDecidedSchema: GenMessage<QuarantineDecided> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 13);
+  messageDesc(file_coria_v1_monitor, 15);
 
 /**
  * ReceiverHealthChanged is a receiver's state changing.
@@ -819,7 +1000,7 @@ export type ReceiverHealthChanged = Message<"coria.v1.ReceiverHealthChanged"> & 
  * Use `create(ReceiverHealthChangedSchema)` to create a new message.
  */
 export const ReceiverHealthChangedSchema: GenMessage<ReceiverHealthChanged> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 14);
+  messageDesc(file_coria_v1_monitor, 16);
 
 /**
  * StorageSpaceChanged is a storage becoming nearly full or recovering.
@@ -861,7 +1042,7 @@ export type StorageSpaceChanged = Message<"coria.v1.StorageSpaceChanged"> & {
  * Use `create(StorageSpaceChangedSchema)` to create a new message.
  */
 export const StorageSpaceChangedSchema: GenMessage<StorageSpaceChanged> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 15);
+  messageDesc(file_coria_v1_monitor, 17);
 
 /**
  * FramesAdded is the progress of the pass that gives frame tables (where
@@ -930,7 +1111,7 @@ export type FramesAdded = Message<"coria.v1.FramesAdded"> & {
  * Use `create(FramesAddedSchema)` to create a new message.
  */
 export const FramesAddedSchema: GenMessage<FramesAdded> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 16);
+  messageDesc(file_coria_v1_monitor, 18);
 
 /**
  * JobStepReached is a job made or reaching a state.
@@ -1012,7 +1193,7 @@ export type JobStepReached = Message<"coria.v1.JobStepReached"> & {
  * Use `create(JobStepReachedSchema)` to create a new message.
  */
 export const JobStepReachedSchema: GenMessage<JobStepReached> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 17);
+  messageDesc(file_coria_v1_monitor, 19);
 
 /**
  * JobProgressed is a running job's counts. At most one per job every 10
@@ -1049,7 +1230,7 @@ export type JobProgressed = Message<"coria.v1.JobProgressed"> & {
  * Use `create(JobProgressedSchema)` to create a new message.
  */
 export const JobProgressedSchema: GenMessage<JobProgressed> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 18);
+  messageDesc(file_coria_v1_monitor, 20);
 
 /**
  * SenderHealthChanged is a sender's state changing.
@@ -1077,7 +1258,197 @@ export type SenderHealthChanged = Message<"coria.v1.SenderHealthChanged"> & {
  * Use `create(SenderHealthChangedSchema)` to create a new message.
  */
 export const SenderHealthChangedSchema: GenMessage<SenderHealthChanged> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 19);
+  messageDesc(file_coria_v1_monitor, 21);
+
+/**
+ * ScrubFindingChanged is a scrub finding recorded or cleared. It names the
+ * scan by labels, never the object's key or the instance's id, which hold
+ * a UID as received.
+ *
+ * @generated from message coria.v1.ScrubFindingChanged
+ */
+export type ScrubFindingChanged = Message<"coria.v1.ScrubFindingChanged"> & {
+  /**
+   * The finding's id (ListScrubFindings).
+   *
+   * @generated from field: string finding = 1;
+   */
+  finding: string;
+
+  /**
+   * What was found.
+   *
+   * @generated from field: coria.v1.ScrubFindingKind kind = 2;
+   */
+  kind: ScrubFindingKind;
+
+  /**
+   * The name of the storage it is on.
+   *
+   * @generated from field: string storage = 3;
+   */
+  storage: string;
+
+  /**
+   * The label of the subject of the scan it belongs to; empty for an
+   * orphan that names no scan.
+   *
+   * @generated from field: string subject_label = 4;
+   */
+  subjectLabel: string;
+
+  /**
+   * The label of that scan's session; empty as subject_label.
+   *
+   * @generated from field: string session_label = 5;
+   */
+  sessionLabel: string;
+
+  /**
+   * The label of that scan; empty as subject_label.
+   *
+   * @generated from field: string scan_label = 6;
+   */
+  scanLabel: string;
+
+  /**
+   * Set when a later scrub read it good again and cleared it.
+   *
+   * @generated from field: bool cleared = 7;
+   */
+  cleared: boolean;
+
+  /**
+   * The id of the scrub job.
+   *
+   * @generated from field: string job = 8;
+   */
+  job: string;
+};
+
+/**
+ * Describes the message coria.v1.ScrubFindingChanged.
+ * Use `create(ScrubFindingChangedSchema)` to create a new message.
+ */
+export const ScrubFindingChangedSchema: GenMessage<ScrubFindingChanged> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 22);
+
+/**
+ * CatalogChanged is a correction changing what the catalog shows.
+ *
+ * @generated from message coria.v1.CatalogChanged
+ */
+export type CatalogChanged = Message<"coria.v1.CatalogChanged"> & {
+  /**
+   * The correction's id (CorrectionService).
+   *
+   * @generated from field: string correction = 1;
+   */
+  correction: string;
+
+  /**
+   * What it does.
+   *
+   * @generated from field: coria.v1.CorrectionKind kind = 2;
+   */
+  kind: CorrectionKind;
+
+  /**
+   * The state it reached.
+   *
+   * @generated from field: coria.v1.CorrectionState state = 3;
+   */
+  state: CorrectionState;
+
+  /**
+   * The label of the subject it acts on.
+   *
+   * @generated from field: string subject_label = 4;
+   */
+  subjectLabel: string;
+
+  /**
+   * The label of the session it acts on; empty for a whole subject.
+   *
+   * @generated from field: string session_label = 5;
+   */
+  sessionLabel: string;
+
+  /**
+   * The label of the scan it acts on; empty for a whole session.
+   *
+   * @generated from field: string scan_label = 6;
+   */
+  scanLabel: string;
+
+  /**
+   * For a relabel, the new label of the target's level.
+   *
+   * @generated from field: string to_label = 7;
+   */
+  toLabel: string;
+
+  /**
+   * The instances the change covers.
+   *
+   * @generated from field: int64 instances = 8;
+   */
+  instances: bigint;
+
+  /**
+   * For a replace, the instance's new revision; 0 otherwise.
+   *
+   * @generated from field: int32 revision = 9;
+   */
+  revision: number;
+};
+
+/**
+ * Describes the message coria.v1.CatalogChanged.
+ * Use `create(CatalogChangedSchema)` to create a new message.
+ */
+export const CatalogChangedSchema: GenMessage<CatalogChanged> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 23);
+
+/**
+ * CatalogRebuilt is a catalog made again from the storages and put in use
+ * in one transaction. When it begins a new history (after a restore, an
+ * import or a load), it is that history's first event, and a consumer that
+ * sees it reads the catalog again from a status and lists rather than
+ * trusting what it built from the old feed.
+ *
+ * @generated from message coria.v1.CatalogRebuilt
+ */
+export type CatalogRebuilt = Message<"coria.v1.CatalogRebuilt"> & {
+  /**
+   * The rebuild job's id (JobService); empty for one a restore or an
+   * import ran.
+   *
+   * @generated from field: string job = 1;
+   */
+  job: string;
+
+  /**
+   * The instances the new catalog holds.
+   *
+   * @generated from field: int64 instances = 2;
+   */
+  instances: bigint;
+
+  /**
+   * Whether it begins a new history of the feed.
+   *
+   * @generated from field: bool new_history = 3;
+   */
+  newHistory: boolean;
+};
+
+/**
+ * Describes the message coria.v1.CatalogRebuilt.
+ * Use `create(CatalogRebuiltSchema)` to create a new message.
+ */
+export const CatalogRebuiltSchema: GenMessage<CatalogRebuilt> = /*@__PURE__*/
+  messageDesc(file_coria_v1_monitor, 24);
 
 /**
  * Event is one thing that happened in a tenant.
@@ -1201,6 +1572,30 @@ export type Event = Message<"coria.v1.Event"> & {
      */
     value: SenderHealthChanged;
     case: "senderHealth";
+  } | {
+    /**
+     * A scrub finding was recorded or cleared.
+     *
+     * @generated from field: coria.v1.ScrubFindingChanged scrub_finding = 15;
+     */
+    value: ScrubFindingChanged;
+    case: "scrubFinding";
+  } | {
+    /**
+     * A correction changed what the catalog shows.
+     *
+     * @generated from field: coria.v1.CatalogChanged catalog_changed = 16;
+     */
+    value: CatalogChanged;
+    case: "catalogChanged";
+  } | {
+    /**
+     * A catalog was made again and put in use.
+     *
+     * @generated from field: coria.v1.CatalogRebuilt catalog_rebuilt = 17;
+     */
+    value: CatalogRebuilt;
+    case: "catalogRebuilt";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1209,7 +1604,7 @@ export type Event = Message<"coria.v1.Event"> & {
  * Use `create(EventSchema)` to create a new message.
  */
 export const EventSchema: GenMessage<Event> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 20);
+  messageDesc(file_coria_v1_monitor, 25);
 
 /**
  * WatchKeepAlive opens every stream, and is sent again when no event has
@@ -1271,6 +1666,25 @@ export type WatchKeepAlive = Message<"coria.v1.WatchKeepAlive"> & {
    * @generated from field: bool full = 5;
    */
   full: boolean;
+
+  /**
+   * With one tenant, the id of its feed's history (TenantStatus has it
+   * too). A consumer keys what it has seen by (history, cursor), so the
+   * same cursor in a new history is never taken for one already read.
+   * Empty with every tenant. Opaque; at most 64 bytes.
+   *
+   * @generated from field: string event_history = 6;
+   */
+  eventHistory: string;
+
+  /**
+   * With every tenant, the history id of each tenant named in
+   * tenant_cursors, by tenant name, in the same full or changed-only way.
+   * Empty with one tenant. Each id opaque, at most 64 bytes.
+   *
+   * @generated from field: map<string, string> tenant_event_histories = 7;
+   */
+  tenantEventHistories: { [key: string]: string };
 };
 
 /**
@@ -1278,7 +1692,7 @@ export type WatchKeepAlive = Message<"coria.v1.WatchKeepAlive"> & {
  * Use `create(WatchKeepAliveSchema)` to create a new message.
  */
 export const WatchKeepAliveSchema: GenMessage<WatchKeepAlive> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 21);
+  messageDesc(file_coria_v1_monitor, 26);
 
 /**
  * WatchRequest asks for a stream of events.
@@ -1341,7 +1755,7 @@ export type WatchRequest = Message<"coria.v1.WatchRequest"> & {
  * Use `create(WatchRequestSchema)` to create a new message.
  */
 export const WatchRequestSchema: GenMessage<WatchRequest> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 22);
+  messageDesc(file_coria_v1_monitor, 27);
 
 /**
  * WatchResponse is one message of the stream: an event or a keep-alive.
@@ -1379,7 +1793,67 @@ export type WatchResponse = Message<"coria.v1.WatchResponse"> & {
  * Use `create(WatchResponseSchema)` to create a new message.
  */
 export const WatchResponseSchema: GenMessage<WatchResponse> = /*@__PURE__*/
-  messageDesc(file_coria_v1_monitor, 23);
+  messageDesc(file_coria_v1_monitor, 28);
+
+/**
+ * StorageVersioning is an S3 bucket's versioning, as the bucket answered
+ * it (GetBucketVersioning).
+ *
+ * @generated from enum coria.v1.StorageVersioning
+ */
+export enum StorageVersioning {
+  /**
+   * Never answered by the server.
+   *
+   * @generated from enum value: STORAGE_VERSIONING_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * A directory storage: it keeps no versions, and a removal removes the
+   * bytes.
+   *
+   * @generated from enum value: STORAGE_VERSIONING_DIRECTORY = 1;
+   */
+  DIRECTORY = 1,
+
+  /**
+   * The bucket was never versioned: a removal removes the bytes.
+   *
+   * @generated from enum value: STORAGE_VERSIONING_OFF = 2;
+   */
+  OFF = 2,
+
+  /**
+   * The bucket keeps every version: a removal by key only hides the bytes
+   * behind a delete marker.
+   *
+   * @generated from enum value: STORAGE_VERSIONING_ENABLED = 3;
+   */
+  ENABLED = 3,
+
+  /**
+   * Versioning was turned off after being on: versions made before stay.
+   *
+   * @generated from enum value: STORAGE_VERSIONING_SUSPENDED = 4;
+   */
+  SUSPENDED = 4,
+
+  /**
+   * The server could not read it, for want of permission or because the
+   * store does not answer the question; a purge reports what it could not
+   * prove as unknown.
+   *
+   * @generated from enum value: STORAGE_VERSIONING_UNKNOWN = 5;
+   */
+  UNKNOWN = 5,
+}
+
+/**
+ * Describes the enum coria.v1.StorageVersioning.
+ */
+export const StorageVersioningSchema: GenEnum<StorageVersioning> = /*@__PURE__*/
+  enumDesc(file_coria_v1_monitor, 0);
 
 /**
  * EventType is the kind of an event. A type added in a later version is a
@@ -1466,13 +1940,36 @@ export enum EventType {
    * @generated from enum value: EVENT_TYPE_SENDER_HEALTH = 10;
    */
   SENDER_HEALTH = 10,
+
+  /**
+   * A scrub recorded a finding, or cleared one.
+   *
+   * @generated from enum value: EVENT_TYPE_SCRUB_FINDING = 11;
+   */
+  SCRUB_FINDING = 11,
+
+  /**
+   * A correction changed what the catalog shows: a delete committed, undone
+   * or purged; a relabel or a replace published.
+   *
+   * @generated from enum value: EVENT_TYPE_CATALOG_CHANGED = 12;
+   */
+  CATALOG_CHANGED = 12,
+
+  /**
+   * A rebuild made a new catalog the one in use, or a restore or an import
+   * rebuilt it; the first event of a new history.
+   *
+   * @generated from enum value: EVENT_TYPE_CATALOG_REBUILT = 13;
+   */
+  CATALOG_REBUILT = 13,
 }
 
 /**
  * Describes the enum coria.v1.EventType.
  */
 export const EventTypeSchema: GenEnum<EventType> = /*@__PURE__*/
-  enumDesc(file_coria_v1_monitor, 0);
+  enumDesc(file_coria_v1_monitor, 1);
 
 /**
  * AssociationFailure is why a DIMSE receiver turned a caller away. Each
@@ -1566,7 +2063,7 @@ export enum AssociationFailure {
  * Describes the enum coria.v1.AssociationFailure.
  */
 export const AssociationFailureSchema: GenEnum<AssociationFailure> = /*@__PURE__*/
-  enumDesc(file_coria_v1_monitor, 1);
+  enumDesc(file_coria_v1_monitor, 2);
 
 /**
  * StorageSpaceState is whether a storage has room.
@@ -1601,7 +2098,7 @@ export enum StorageSpaceState {
  * Describes the enum coria.v1.StorageSpaceState.
  */
 export const StorageSpaceStateSchema: GenEnum<StorageSpaceState> = /*@__PURE__*/
-  enumDesc(file_coria_v1_monitor, 2);
+  enumDesc(file_coria_v1_monitor, 3);
 
 /**
  * MonitorService tells what a tenant is doing, in two forms: GetStatus, its
@@ -1710,11 +2207,13 @@ export const MonitorService: GenService<{
    * (also a cursor not made by a Watch or status of the tenant it is given
    * for, cursor with every tenant or tenant_cursors with one tenant), not
    * found (a tenant that does not exist, for a caller who may list every
-   * tenant), cursor expired (a cursor points before the oldest event its
-   * tenant keeps, or after the newest event it holds, as after its database
-   * was restored from an older backup; the message names the tenant; the
-   * client reads that tenant's status again and watches from its
-   * event_cursor), unavailable
+   * tenant), cursor expired (reason CURSOR_EXPIRED: a cursor points before
+   * the oldest event its tenant keeps; reason EVENT_HISTORY_CHANGED: a
+   * cursor belongs to another history of its tenant's feed, as after its
+   * database was restored, imported or loaded, or points after the newest
+   * event it holds; the message names the tenant; the client reads that
+   * tenant's status again, resynchronizes from the catalog for a new
+   * history, and watches from its event_cursor), unavailable
    * (with one tenant, its database does not answer or it is not ready, when
    * the stream opens or while it is open; the client resumes later from its
    * last cursor), resource exhausted (the caller, a key or the local

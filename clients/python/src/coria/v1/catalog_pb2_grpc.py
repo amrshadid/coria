@@ -41,7 +41,11 @@ class CatalogServiceStub:
     and its own, unique in the session. A label is 1 to 128 bytes of A-Z,
     a-z, 0-9, ".", "_" and "-", and is compared exactly: two labels at one
     level never differ only in the case of their letters, so a label asked
-    for in another case is not found rather than taken as another's.
+    for in another case is not found rather than taken as another's. A
+    label can change, by a relabel (CorrectionService.Relabel); the UIDs
+    never do. A Get by a label a relabel moved is answered not found with
+    the reason RELABELED, naming the relabel and the label the data has now
+    (access.proto, the error kinds).
 
     What a reader reads. Until a later version de-identifies files at
     reception, the archive holds what the senders sent, and a reader of a
@@ -129,7 +133,11 @@ class CatalogServiceServicer:
     and its own, unique in the session. A label is 1 to 128 bytes of A-Z,
     a-z, 0-9, ".", "_" and "-", and is compared exactly: two labels at one
     level never differ only in the case of their letters, so a label asked
-    for in another case is not found rather than taken as another's.
+    for in another case is not found rather than taken as another's. A
+    label can change, by a relabel (CorrectionService.Relabel); the UIDs
+    never do. A Get by a label a relabel moved is answered not found with
+    the reason RELABELED, naming the relabel and the label the data has now
+    (access.proto, the error kinds).
 
     What a reader reads. Until a later version de-identifies files at
     reception, the archive holds what the senders sent, and a reader of a
@@ -333,7 +341,11 @@ class CatalogService:
     and its own, unique in the session. A label is 1 to 128 bytes of A-Z,
     a-z, 0-9, ".", "_" and "-", and is compared exactly: two labels at one
     level never differ only in the case of their letters, so a label asked
-    for in another case is not found rather than taken as another's.
+    for in another case is not found rather than taken as another's. A
+    label can change, by a relabel (CorrectionService.Relabel); the UIDs
+    never do. A Get by a label a relabel moved is answered not found with
+    the reason RELABELED, naming the relabel and the label the data has now
+    (access.proto, the error kinds).
 
     What a reader reads. Until a later version de-identifies files at
     reception, the archive holds what the senders sent, and a reader of a

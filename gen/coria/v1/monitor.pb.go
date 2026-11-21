@@ -26,6 +26,76 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// StorageVersioning is an S3 bucket's versioning, as the bucket answered
+// it (GetBucketVersioning).
+type StorageVersioning int32
+
+const (
+	// Never answered by the server.
+	StorageVersioning_STORAGE_VERSIONING_UNSPECIFIED StorageVersioning = 0
+	// A directory storage: it keeps no versions, and a removal removes the
+	// bytes.
+	StorageVersioning_STORAGE_VERSIONING_DIRECTORY StorageVersioning = 1
+	// The bucket was never versioned: a removal removes the bytes.
+	StorageVersioning_STORAGE_VERSIONING_OFF StorageVersioning = 2
+	// The bucket keeps every version: a removal by key only hides the bytes
+	// behind a delete marker.
+	StorageVersioning_STORAGE_VERSIONING_ENABLED StorageVersioning = 3
+	// Versioning was turned off after being on: versions made before stay.
+	StorageVersioning_STORAGE_VERSIONING_SUSPENDED StorageVersioning = 4
+	// The server could not read it, for want of permission or because the
+	// store does not answer the question; a purge reports what it could not
+	// prove as unknown.
+	StorageVersioning_STORAGE_VERSIONING_UNKNOWN StorageVersioning = 5
+)
+
+// Enum value maps for StorageVersioning.
+var (
+	StorageVersioning_name = map[int32]string{
+		0: "STORAGE_VERSIONING_UNSPECIFIED",
+		1: "STORAGE_VERSIONING_DIRECTORY",
+		2: "STORAGE_VERSIONING_OFF",
+		3: "STORAGE_VERSIONING_ENABLED",
+		4: "STORAGE_VERSIONING_SUSPENDED",
+		5: "STORAGE_VERSIONING_UNKNOWN",
+	}
+	StorageVersioning_value = map[string]int32{
+		"STORAGE_VERSIONING_UNSPECIFIED": 0,
+		"STORAGE_VERSIONING_DIRECTORY":   1,
+		"STORAGE_VERSIONING_OFF":         2,
+		"STORAGE_VERSIONING_ENABLED":     3,
+		"STORAGE_VERSIONING_SUSPENDED":   4,
+		"STORAGE_VERSIONING_UNKNOWN":     5,
+	}
+)
+
+func (x StorageVersioning) Enum() *StorageVersioning {
+	p := new(StorageVersioning)
+	*p = x
+	return p
+}
+
+func (x StorageVersioning) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (StorageVersioning) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_monitor_proto_enumTypes[0].Descriptor()
+}
+
+func (StorageVersioning) Type() protoreflect.EnumType {
+	return &file_coria_v1_monitor_proto_enumTypes[0]
+}
+
+func (x StorageVersioning) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use StorageVersioning.Descriptor instead.
+func (StorageVersioning) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{0}
+}
+
 // EventType is the kind of an event. A type added in a later version is a
 // new value with a new payload: a client skips an event of a type it does
 // not know, and takes its cursor.
@@ -55,6 +125,14 @@ const (
 	EventType_EVENT_TYPE_JOB_PROGRESS EventType = 9
 	// A sender went up or down, or down for another reason.
 	EventType_EVENT_TYPE_SENDER_HEALTH EventType = 10
+	// A scrub recorded a finding, or cleared one.
+	EventType_EVENT_TYPE_SCRUB_FINDING EventType = 11
+	// A correction changed what the catalog shows: a delete committed, undone
+	// or purged; a relabel or a replace published.
+	EventType_EVENT_TYPE_CATALOG_CHANGED EventType = 12
+	// A rebuild made a new catalog the one in use, or a restore or an import
+	// rebuilt it; the first event of a new history.
+	EventType_EVENT_TYPE_CATALOG_REBUILT EventType = 13
 )
 
 // Enum value maps for EventType.
@@ -71,6 +149,9 @@ var (
 		8:  "EVENT_TYPE_JOB_STEP",
 		9:  "EVENT_TYPE_JOB_PROGRESS",
 		10: "EVENT_TYPE_SENDER_HEALTH",
+		11: "EVENT_TYPE_SCRUB_FINDING",
+		12: "EVENT_TYPE_CATALOG_CHANGED",
+		13: "EVENT_TYPE_CATALOG_REBUILT",
 	}
 	EventType_value = map[string]int32{
 		"EVENT_TYPE_UNSPECIFIED":        0,
@@ -84,6 +165,9 @@ var (
 		"EVENT_TYPE_JOB_STEP":           8,
 		"EVENT_TYPE_JOB_PROGRESS":       9,
 		"EVENT_TYPE_SENDER_HEALTH":      10,
+		"EVENT_TYPE_SCRUB_FINDING":      11,
+		"EVENT_TYPE_CATALOG_CHANGED":    12,
+		"EVENT_TYPE_CATALOG_REBUILT":    13,
 	}
 )
 
@@ -98,11 +182,11 @@ func (x EventType) String() string {
 }
 
 func (EventType) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_monitor_proto_enumTypes[0].Descriptor()
+	return file_coria_v1_monitor_proto_enumTypes[1].Descriptor()
 }
 
 func (EventType) Type() protoreflect.EnumType {
-	return &file_coria_v1_monitor_proto_enumTypes[0]
+	return &file_coria_v1_monitor_proto_enumTypes[1]
 }
 
 func (x EventType) Number() protoreflect.EnumNumber {
@@ -111,7 +195,7 @@ func (x EventType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use EventType.Descriptor instead.
 func (EventType) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{0}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{1}
 }
 
 // AssociationFailure is why a DIMSE receiver turned a caller away. Each
@@ -193,11 +277,11 @@ func (x AssociationFailure) String() string {
 }
 
 func (AssociationFailure) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_monitor_proto_enumTypes[1].Descriptor()
+	return file_coria_v1_monitor_proto_enumTypes[2].Descriptor()
 }
 
 func (AssociationFailure) Type() protoreflect.EnumType {
-	return &file_coria_v1_monitor_proto_enumTypes[1]
+	return &file_coria_v1_monitor_proto_enumTypes[2]
 }
 
 func (x AssociationFailure) Number() protoreflect.EnumNumber {
@@ -206,7 +290,7 @@ func (x AssociationFailure) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AssociationFailure.Descriptor instead.
 func (AssociationFailure) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{1}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{2}
 }
 
 // StorageSpaceState is whether a storage has room.
@@ -247,11 +331,11 @@ func (x StorageSpaceState) String() string {
 }
 
 func (StorageSpaceState) Descriptor() protoreflect.EnumDescriptor {
-	return file_coria_v1_monitor_proto_enumTypes[2].Descriptor()
+	return file_coria_v1_monitor_proto_enumTypes[3].Descriptor()
 }
 
 func (StorageSpaceState) Type() protoreflect.EnumType {
-	return &file_coria_v1_monitor_proto_enumTypes[2]
+	return &file_coria_v1_monitor_proto_enumTypes[3]
 }
 
 func (x StorageSpaceState) Number() protoreflect.EnumNumber {
@@ -260,7 +344,7 @@ func (x StorageSpaceState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use StorageSpaceState.Descriptor instead.
 func (StorageSpaceState) EnumDescriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{2}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{3}
 }
 
 // ReceptionStepCount is how many receptions are in one step.
@@ -659,7 +743,16 @@ type StorageStatus struct {
 	// storage.reserve, ReceiverService), so its
 	// receivers refuse new associations until space returns. False when its
 	// free space is unknown.
-	NearlyFull    bool `protobuf:"varint,5,opt,name=nearly_full,json=nearlyFull,proto3" json:"nearly_full,omitempty"`
+	NearlyFull bool `protobuf:"varint,5,opt,name=nearly_full,json=nearlyFull,proto3" json:"nearly_full,omitempty"`
+	// For an S3 storage, the bucket's versioning, read when the storage was
+	// opened, so a person sees what a purge can claim: on a versioned bucket
+	// a removed object's older versions stay unless purge_versions deletes
+	// them. STORAGE_VERSIONING_DIRECTORY for a directory.
+	Versioning StorageVersioning `protobuf:"varint,6,opt,name=versioning,proto3,enum=coria.v1.StorageVersioning" json:"versioning,omitempty"`
+	// For an S3 storage, whether the bucket has object lock enabled, read
+	// when the storage was opened: a locked version cannot be removed before
+	// its retention ends, and a purge reports it retained.
+	ObjectLock    bool `protobuf:"varint,7,opt,name=object_lock,json=objectLock,proto3" json:"object_lock,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -725,6 +818,20 @@ func (x *StorageStatus) GetCapacityBytes() int64 {
 func (x *StorageStatus) GetNearlyFull() bool {
 	if x != nil {
 		return x.NearlyFull
+	}
+	return false
+}
+
+func (x *StorageStatus) GetVersioning() StorageVersioning {
+	if x != nil {
+		return x.Versioning
+	}
+	return StorageVersioning_STORAGE_VERSIONING_UNSPECIFIED
+}
+
+func (x *StorageStatus) GetObjectLock() bool {
+	if x != nil {
+		return x.ObjectLock
 	}
 	return false
 }
@@ -826,9 +933,41 @@ type TenantStatus struct {
 	IncomingLimitBytes int64 `protobuf:"varint,9,opt,name=incoming_limit_bytes,json=incomingLimitBytes,proto3" json:"incoming_limit_bytes,omitempty"`
 	// Each of its senders, ordered by name, from the server's memory, so
 	// they are answered also when its database does not answer.
-	Senders       []*SenderStatus `protobuf:"bytes,10,rep,name=senders,proto3" json:"senders,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Senders []*SenderStatus `protobuf:"bytes,10,rep,name=senders,proto3" json:"senders,omitempty"`
+	// Its last scrub, so a person sees when its stored bytes were last
+	// proven. Absent when no scrub has run, and when its database did not
+	// answer.
+	LastScrub *ScrubSummary `protobuf:"bytes,11,opt,name=last_scrub,json=lastScrub,proto3" json:"last_scrub,omitempty"`
+	// The scrub findings that hold now, one entry per kind that has any, in
+	// the order of the kinds, whatever scrub found them. Empty when there
+	// are none, and when its database did not answer.
+	OpenFindings []*ScrubFindingCount `protobuf:"bytes,12,rep,name=open_findings,json=openFindings,proto3" json:"open_findings,omitempty"`
+	// How far its audit log is sealed (AuditSealService). Absent when its
+	// database did not answer.
+	AuditSeal *AuditSealStatus `protobuf:"bytes,13,opt,name=audit_seal,json=auditSeal,proto3" json:"audit_seal,omitempty"`
+	// Its deletes committed and not yet purged: hidden, their bytes kept
+	// until their purge time and still undone by UndoCorrection; and those
+	// purging. Zero when its database did not answer.
+	PendingDeletions int64 `protobuf:"varint,14,opt,name=pending_deletions,json=pendingDeletions,proto3" json:"pending_deletions,omitempty"`
+	// The bytes those deletes keep on its storages until they are purged.
+	PendingDeletionBytes int64 `protobuf:"varint,15,opt,name=pending_deletion_bytes,json=pendingDeletionBytes,proto3" json:"pending_deletion_bytes,omitempty"`
+	// The id of its event feed's history (WatchKeepAlive.event_history): a
+	// restore, an import or a load of its database begins a new one, and a
+	// cursor of another history is refused. Opaque; at most 64 bytes. Empty
+	// when its database did not answer.
+	EventHistory string `protobuf:"bytes,16,opt,name=event_history,json=eventHistory,proto3" json:"event_history,omitempty"`
+	// The generation this tenant holds in the owner record on its storages:
+	// one more each time an import or a restore took them over, so a server
+	// whose generation is lower knows it no longer owns them and fences the
+	// tenant (TENANT_STATE_FENCED). Zero when its database did not answer.
+	OwnerGeneration int64 `protobuf:"varint,17,opt,name=owner_generation,json=ownerGeneration,proto3" json:"owner_generation,omitempty"`
+	// Its corrections found by a rebuild or a restore as a record on a
+	// storage with no row in its database, applied fail-closed and waiting
+	// for an admin to undo or purge them (Correction.unresolved). Zero when
+	// its database did not answer.
+	UnresolvedCorrections int64 `protobuf:"varint,18,opt,name=unresolved_corrections,json=unresolvedCorrections,proto3" json:"unresolved_corrections,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *TenantStatus) Reset() {
@@ -931,6 +1070,199 @@ func (x *TenantStatus) GetSenders() []*SenderStatus {
 	return nil
 }
 
+func (x *TenantStatus) GetLastScrub() *ScrubSummary {
+	if x != nil {
+		return x.LastScrub
+	}
+	return nil
+}
+
+func (x *TenantStatus) GetOpenFindings() []*ScrubFindingCount {
+	if x != nil {
+		return x.OpenFindings
+	}
+	return nil
+}
+
+func (x *TenantStatus) GetAuditSeal() *AuditSealStatus {
+	if x != nil {
+		return x.AuditSeal
+	}
+	return nil
+}
+
+func (x *TenantStatus) GetPendingDeletions() int64 {
+	if x != nil {
+		return x.PendingDeletions
+	}
+	return 0
+}
+
+func (x *TenantStatus) GetPendingDeletionBytes() int64 {
+	if x != nil {
+		return x.PendingDeletionBytes
+	}
+	return 0
+}
+
+func (x *TenantStatus) GetEventHistory() string {
+	if x != nil {
+		return x.EventHistory
+	}
+	return ""
+}
+
+func (x *TenantStatus) GetOwnerGeneration() int64 {
+	if x != nil {
+		return x.OwnerGeneration
+	}
+	return 0
+}
+
+func (x *TenantStatus) GetUnresolvedCorrections() int64 {
+	if x != nil {
+		return x.UnresolvedCorrections
+	}
+	return 0
+}
+
+// ScrubSummary is a tenant's last scrub, for a status.
+type ScrubSummary struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The scrub job's id (JobService).
+	Job string `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
+	// Where it is.
+	State JobState `protobuf:"varint,2,opt,name=state,proto3,enum=coria.v1.JobState" json:"state,omitempty"`
+	// When its first work started. Absent while it is queued.
+	StartTime *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	// When it ended. Absent while it is queued or running.
+	EndTime *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	// The findings it recorded, one entry per kind that has any.
+	Findings      []*ScrubFindingCount `protobuf:"bytes,5,rep,name=findings,proto3" json:"findings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScrubSummary) Reset() {
+	*x = ScrubSummary{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScrubSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScrubSummary) ProtoMessage() {}
+
+func (x *ScrubSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScrubSummary.ProtoReflect.Descriptor instead.
+func (*ScrubSummary) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ScrubSummary) GetJob() string {
+	if x != nil {
+		return x.Job
+	}
+	return ""
+}
+
+func (x *ScrubSummary) GetState() JobState {
+	if x != nil {
+		return x.State
+	}
+	return JobState_JOB_STATE_UNSPECIFIED
+}
+
+func (x *ScrubSummary) GetStartTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StartTime
+	}
+	return nil
+}
+
+func (x *ScrubSummary) GetEndTime() *timestamppb.Timestamp {
+	if x != nil {
+		return x.EndTime
+	}
+	return nil
+}
+
+func (x *ScrubSummary) GetFindings() []*ScrubFindingCount {
+	if x != nil {
+		return x.Findings
+	}
+	return nil
+}
+
+// ScrubFindingCount is how many scrub findings are of one kind.
+type ScrubFindingCount struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The kind.
+	Kind ScrubFindingKind `protobuf:"varint,1,opt,name=kind,proto3,enum=coria.v1.ScrubFindingKind" json:"kind,omitempty"`
+	// How many.
+	Findings      int64 `protobuf:"varint,2,opt,name=findings,proto3" json:"findings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScrubFindingCount) Reset() {
+	*x = ScrubFindingCount{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScrubFindingCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScrubFindingCount) ProtoMessage() {}
+
+func (x *ScrubFindingCount) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScrubFindingCount.ProtoReflect.Descriptor instead.
+func (*ScrubFindingCount) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ScrubFindingCount) GetKind() ScrubFindingKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ScrubFindingKind_SCRUB_FINDING_KIND_UNSPECIFIED
+}
+
+func (x *ScrubFindingCount) GetFindings() int64 {
+	if x != nil {
+		return x.Findings
+	}
+	return 0
+}
+
 // GetStatusRequest asks for the status of one tenant or of every tenant.
 type GetStatusRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -951,7 +1283,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[8]
+	mi := &file_coria_v1_monitor_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -963,7 +1295,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[8]
+	mi := &file_coria_v1_monitor_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -976,7 +1308,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{8}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetStatusRequest) GetScope() *Scope {
@@ -1015,14 +1347,18 @@ type GetStatusResponse struct {
 	// installation's setting key.expiry-warning (built-in default 7 days),
 	// oldest first, on every page; empty with a tenant. Each such key is also
 	// reported once a day in the server's log of access events.
-	ExpiringKeys  []*Key `protobuf:"bytes,4,rep,name=expiring_keys,json=expiringKeys,proto3" json:"expiring_keys,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ExpiringKeys []*Key `protobuf:"bytes,4,rep,name=expiring_keys,json=expiringKeys,proto3" json:"expiring_keys,omitempty"`
+	// With the installation, how far the installation's own audit log is
+	// sealed, on every page; absent with a tenant, whose log's seal is its
+	// TenantStatus.audit_seal.
+	InstallationAuditSeal *AuditSealStatus `protobuf:"bytes,5,opt,name=installation_audit_seal,json=installationAuditSeal,proto3" json:"installation_audit_seal,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *GetStatusResponse) Reset() {
 	*x = GetStatusResponse{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[9]
+	mi := &file_coria_v1_monitor_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1034,7 +1370,7 @@ func (x *GetStatusResponse) String() string {
 func (*GetStatusResponse) ProtoMessage() {}
 
 func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[9]
+	mi := &file_coria_v1_monitor_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1047,7 +1383,7 @@ func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{9}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetStatusResponse) GetTenants() []*TenantStatus {
@@ -1074,6 +1410,13 @@ func (x *GetStatusResponse) GetTime() *timestamppb.Timestamp {
 func (x *GetStatusResponse) GetExpiringKeys() []*Key {
 	if x != nil {
 		return x.ExpiringKeys
+	}
+	return nil
+}
+
+func (x *GetStatusResponse) GetInstallationAuditSeal() *AuditSealStatus {
+	if x != nil {
+		return x.InstallationAuditSeal
 	}
 	return nil
 }
@@ -1108,7 +1451,7 @@ type AssociationFailed struct {
 
 func (x *AssociationFailed) Reset() {
 	*x = AssociationFailed{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[10]
+	mi := &file_coria_v1_monitor_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1120,7 +1463,7 @@ func (x *AssociationFailed) String() string {
 func (*AssociationFailed) ProtoMessage() {}
 
 func (x *AssociationFailed) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[10]
+	mi := &file_coria_v1_monitor_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1133,7 +1476,7 @@ func (x *AssociationFailed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssociationFailed.ProtoReflect.Descriptor instead.
 func (*AssociationFailed) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{10}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AssociationFailed) GetReceiver() string {
@@ -1204,7 +1547,7 @@ type ReceptionStepReached struct {
 
 func (x *ReceptionStepReached) Reset() {
 	*x = ReceptionStepReached{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[11]
+	mi := &file_coria_v1_monitor_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1216,7 +1559,7 @@ func (x *ReceptionStepReached) String() string {
 func (*ReceptionStepReached) ProtoMessage() {}
 
 func (x *ReceptionStepReached) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[11]
+	mi := &file_coria_v1_monitor_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1229,7 +1572,7 @@ func (x *ReceptionStepReached) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceptionStepReached.ProtoReflect.Descriptor instead.
 func (*ReceptionStepReached) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{11}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ReceptionStepReached) GetReception() string {
@@ -1319,7 +1662,7 @@ type FileQuarantined struct {
 
 func (x *FileQuarantined) Reset() {
 	*x = FileQuarantined{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[12]
+	mi := &file_coria_v1_monitor_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1331,7 +1674,7 @@ func (x *FileQuarantined) String() string {
 func (*FileQuarantined) ProtoMessage() {}
 
 func (x *FileQuarantined) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[12]
+	mi := &file_coria_v1_monitor_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1344,7 +1687,7 @@ func (x *FileQuarantined) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileQuarantined.ProtoReflect.Descriptor instead.
 func (*FileQuarantined) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{12}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *FileQuarantined) GetFile() string {
@@ -1418,7 +1761,7 @@ type QuarantineDecided struct {
 
 func (x *QuarantineDecided) Reset() {
 	*x = QuarantineDecided{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[13]
+	mi := &file_coria_v1_monitor_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1430,7 +1773,7 @@ func (x *QuarantineDecided) String() string {
 func (*QuarantineDecided) ProtoMessage() {}
 
 func (x *QuarantineDecided) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[13]
+	mi := &file_coria_v1_monitor_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1443,7 +1786,7 @@ func (x *QuarantineDecided) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuarantineDecided.ProtoReflect.Descriptor instead.
 func (*QuarantineDecided) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{13}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *QuarantineDecided) GetFile() string {
@@ -1501,7 +1844,7 @@ type ReceiverHealthChanged struct {
 
 func (x *ReceiverHealthChanged) Reset() {
 	*x = ReceiverHealthChanged{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[14]
+	mi := &file_coria_v1_monitor_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1513,7 +1856,7 @@ func (x *ReceiverHealthChanged) String() string {
 func (*ReceiverHealthChanged) ProtoMessage() {}
 
 func (x *ReceiverHealthChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[14]
+	mi := &file_coria_v1_monitor_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1526,7 +1869,7 @@ func (x *ReceiverHealthChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiverHealthChanged.ProtoReflect.Descriptor instead.
 func (*ReceiverHealthChanged) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{14}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReceiverHealthChanged) GetReceiver() string {
@@ -1560,7 +1903,7 @@ type StorageSpaceChanged struct {
 
 func (x *StorageSpaceChanged) Reset() {
 	*x = StorageSpaceChanged{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[15]
+	mi := &file_coria_v1_monitor_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1572,7 +1915,7 @@ func (x *StorageSpaceChanged) String() string {
 func (*StorageSpaceChanged) ProtoMessage() {}
 
 func (x *StorageSpaceChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[15]
+	mi := &file_coria_v1_monitor_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1585,7 +1928,7 @@ func (x *StorageSpaceChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StorageSpaceChanged.ProtoReflect.Descriptor instead.
 func (*StorageSpaceChanged) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{15}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *StorageSpaceChanged) GetStorage() string {
@@ -1645,7 +1988,7 @@ type FramesAdded struct {
 
 func (x *FramesAdded) Reset() {
 	*x = FramesAdded{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[16]
+	mi := &file_coria_v1_monitor_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1657,7 +2000,7 @@ func (x *FramesAdded) String() string {
 func (*FramesAdded) ProtoMessage() {}
 
 func (x *FramesAdded) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[16]
+	mi := &file_coria_v1_monitor_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1670,7 +2013,7 @@ func (x *FramesAdded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FramesAdded.ProtoReflect.Descriptor instead.
 func (*FramesAdded) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{16}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *FramesAdded) GetSubjectLabel() string {
@@ -1754,7 +2097,7 @@ type JobStepReached struct {
 
 func (x *JobStepReached) Reset() {
 	*x = JobStepReached{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[17]
+	mi := &file_coria_v1_monitor_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1766,7 +2109,7 @@ func (x *JobStepReached) String() string {
 func (*JobStepReached) ProtoMessage() {}
 
 func (x *JobStepReached) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[17]
+	mi := &file_coria_v1_monitor_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1779,7 +2122,7 @@ func (x *JobStepReached) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobStepReached.ProtoReflect.Descriptor instead.
 func (*JobStepReached) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{17}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *JobStepReached) GetJob() string {
@@ -1862,7 +2205,7 @@ type JobProgressed struct {
 
 func (x *JobProgressed) Reset() {
 	*x = JobProgressed{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[18]
+	mi := &file_coria_v1_monitor_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1874,7 +2217,7 @@ func (x *JobProgressed) String() string {
 func (*JobProgressed) ProtoMessage() {}
 
 func (x *JobProgressed) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[18]
+	mi := &file_coria_v1_monitor_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1887,7 +2230,7 @@ func (x *JobProgressed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobProgressed.ProtoReflect.Descriptor instead.
 func (*JobProgressed) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{18}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *JobProgressed) GetJob() string {
@@ -1924,7 +2267,7 @@ type SenderHealthChanged struct {
 
 func (x *SenderHealthChanged) Reset() {
 	*x = SenderHealthChanged{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[19]
+	mi := &file_coria_v1_monitor_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1936,7 +2279,7 @@ func (x *SenderHealthChanged) String() string {
 func (*SenderHealthChanged) ProtoMessage() {}
 
 func (x *SenderHealthChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[19]
+	mi := &file_coria_v1_monitor_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1949,7 +2292,7 @@ func (x *SenderHealthChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SenderHealthChanged.ProtoReflect.Descriptor instead.
 func (*SenderHealthChanged) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{19}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SenderHealthChanged) GetSender() string {
@@ -1964,6 +2307,305 @@ func (x *SenderHealthChanged) GetHealth() *SenderHealth {
 		return x.Health
 	}
 	return nil
+}
+
+// ScrubFindingChanged is a scrub finding recorded or cleared. It names the
+// scan by labels, never the object's key or the instance's id, which hold
+// a UID as received.
+type ScrubFindingChanged struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The finding's id (ListScrubFindings).
+	Finding string `protobuf:"bytes,1,opt,name=finding,proto3" json:"finding,omitempty"`
+	// What was found.
+	Kind ScrubFindingKind `protobuf:"varint,2,opt,name=kind,proto3,enum=coria.v1.ScrubFindingKind" json:"kind,omitempty"`
+	// The name of the storage it is on.
+	Storage string `protobuf:"bytes,3,opt,name=storage,proto3" json:"storage,omitempty"`
+	// The label of the subject of the scan it belongs to; empty for an
+	// orphan that names no scan.
+	SubjectLabel string `protobuf:"bytes,4,opt,name=subject_label,json=subjectLabel,proto3" json:"subject_label,omitempty"`
+	// The label of that scan's session; empty as subject_label.
+	SessionLabel string `protobuf:"bytes,5,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
+	// The label of that scan; empty as subject_label.
+	ScanLabel string `protobuf:"bytes,6,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
+	// Set when a later scrub read it good again and cleared it.
+	Cleared bool `protobuf:"varint,7,opt,name=cleared,proto3" json:"cleared,omitempty"`
+	// The id of the scrub job.
+	Job           string `protobuf:"bytes,8,opt,name=job,proto3" json:"job,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScrubFindingChanged) Reset() {
+	*x = ScrubFindingChanged{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScrubFindingChanged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScrubFindingChanged) ProtoMessage() {}
+
+func (x *ScrubFindingChanged) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScrubFindingChanged.ProtoReflect.Descriptor instead.
+func (*ScrubFindingChanged) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ScrubFindingChanged) GetFinding() string {
+	if x != nil {
+		return x.Finding
+	}
+	return ""
+}
+
+func (x *ScrubFindingChanged) GetKind() ScrubFindingKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ScrubFindingKind_SCRUB_FINDING_KIND_UNSPECIFIED
+}
+
+func (x *ScrubFindingChanged) GetStorage() string {
+	if x != nil {
+		return x.Storage
+	}
+	return ""
+}
+
+func (x *ScrubFindingChanged) GetSubjectLabel() string {
+	if x != nil {
+		return x.SubjectLabel
+	}
+	return ""
+}
+
+func (x *ScrubFindingChanged) GetSessionLabel() string {
+	if x != nil {
+		return x.SessionLabel
+	}
+	return ""
+}
+
+func (x *ScrubFindingChanged) GetScanLabel() string {
+	if x != nil {
+		return x.ScanLabel
+	}
+	return ""
+}
+
+func (x *ScrubFindingChanged) GetCleared() bool {
+	if x != nil {
+		return x.Cleared
+	}
+	return false
+}
+
+func (x *ScrubFindingChanged) GetJob() string {
+	if x != nil {
+		return x.Job
+	}
+	return ""
+}
+
+// CatalogChanged is a correction changing what the catalog shows.
+type CatalogChanged struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The correction's id (CorrectionService).
+	Correction string `protobuf:"bytes,1,opt,name=correction,proto3" json:"correction,omitempty"`
+	// What it does.
+	Kind CorrectionKind `protobuf:"varint,2,opt,name=kind,proto3,enum=coria.v1.CorrectionKind" json:"kind,omitempty"`
+	// The state it reached.
+	State CorrectionState `protobuf:"varint,3,opt,name=state,proto3,enum=coria.v1.CorrectionState" json:"state,omitempty"`
+	// The label of the subject it acts on.
+	SubjectLabel string `protobuf:"bytes,4,opt,name=subject_label,json=subjectLabel,proto3" json:"subject_label,omitempty"`
+	// The label of the session it acts on; empty for a whole subject.
+	SessionLabel string `protobuf:"bytes,5,opt,name=session_label,json=sessionLabel,proto3" json:"session_label,omitempty"`
+	// The label of the scan it acts on; empty for a whole session.
+	ScanLabel string `protobuf:"bytes,6,opt,name=scan_label,json=scanLabel,proto3" json:"scan_label,omitempty"`
+	// For a relabel, the new label of the target's level.
+	ToLabel string `protobuf:"bytes,7,opt,name=to_label,json=toLabel,proto3" json:"to_label,omitempty"`
+	// The instances the change covers.
+	Instances int64 `protobuf:"varint,8,opt,name=instances,proto3" json:"instances,omitempty"`
+	// For a replace, the instance's new revision; 0 otherwise.
+	Revision      int32 `protobuf:"varint,9,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CatalogChanged) Reset() {
+	*x = CatalogChanged{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CatalogChanged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CatalogChanged) ProtoMessage() {}
+
+func (x *CatalogChanged) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CatalogChanged.ProtoReflect.Descriptor instead.
+func (*CatalogChanged) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *CatalogChanged) GetCorrection() string {
+	if x != nil {
+		return x.Correction
+	}
+	return ""
+}
+
+func (x *CatalogChanged) GetKind() CorrectionKind {
+	if x != nil {
+		return x.Kind
+	}
+	return CorrectionKind_CORRECTION_KIND_UNSPECIFIED
+}
+
+func (x *CatalogChanged) GetState() CorrectionState {
+	if x != nil {
+		return x.State
+	}
+	return CorrectionState_CORRECTION_STATE_UNSPECIFIED
+}
+
+func (x *CatalogChanged) GetSubjectLabel() string {
+	if x != nil {
+		return x.SubjectLabel
+	}
+	return ""
+}
+
+func (x *CatalogChanged) GetSessionLabel() string {
+	if x != nil {
+		return x.SessionLabel
+	}
+	return ""
+}
+
+func (x *CatalogChanged) GetScanLabel() string {
+	if x != nil {
+		return x.ScanLabel
+	}
+	return ""
+}
+
+func (x *CatalogChanged) GetToLabel() string {
+	if x != nil {
+		return x.ToLabel
+	}
+	return ""
+}
+
+func (x *CatalogChanged) GetInstances() int64 {
+	if x != nil {
+		return x.Instances
+	}
+	return 0
+}
+
+func (x *CatalogChanged) GetRevision() int32 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+// CatalogRebuilt is a catalog made again from the storages and put in use
+// in one transaction. When it begins a new history (after a restore, an
+// import or a load), it is that history's first event, and a consumer that
+// sees it reads the catalog again from a status and lists rather than
+// trusting what it built from the old feed.
+type CatalogRebuilt struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The rebuild job's id (JobService); empty for one a restore or an
+	// import ran.
+	Job string `protobuf:"bytes,1,opt,name=job,proto3" json:"job,omitempty"`
+	// The instances the new catalog holds.
+	Instances int64 `protobuf:"varint,2,opt,name=instances,proto3" json:"instances,omitempty"`
+	// Whether it begins a new history of the feed.
+	NewHistory    bool `protobuf:"varint,3,opt,name=new_history,json=newHistory,proto3" json:"new_history,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CatalogRebuilt) Reset() {
+	*x = CatalogRebuilt{}
+	mi := &file_coria_v1_monitor_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CatalogRebuilt) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CatalogRebuilt) ProtoMessage() {}
+
+func (x *CatalogRebuilt) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_monitor_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CatalogRebuilt.ProtoReflect.Descriptor instead.
+func (*CatalogRebuilt) Descriptor() ([]byte, []int) {
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *CatalogRebuilt) GetJob() string {
+	if x != nil {
+		return x.Job
+	}
+	return ""
+}
+
+func (x *CatalogRebuilt) GetInstances() int64 {
+	if x != nil {
+		return x.Instances
+	}
+	return 0
+}
+
+func (x *CatalogRebuilt) GetNewHistory() bool {
+	if x != nil {
+		return x.NewHistory
+	}
+	return false
 }
 
 // Event is one thing that happened in a tenant.
@@ -1994,6 +2636,9 @@ type Event struct {
 	//	*Event_JobStep
 	//	*Event_JobProgress
 	//	*Event_SenderHealth
+	//	*Event_ScrubFinding
+	//	*Event_CatalogChanged
+	//	*Event_CatalogRebuilt
 	Payload       isEvent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2001,7 +2646,7 @@ type Event struct {
 
 func (x *Event) Reset() {
 	*x = Event{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[20]
+	mi := &file_coria_v1_monitor_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2013,7 +2658,7 @@ func (x *Event) String() string {
 func (*Event) ProtoMessage() {}
 
 func (x *Event) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[20]
+	mi := &file_coria_v1_monitor_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2026,7 +2671,7 @@ func (x *Event) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Event.ProtoReflect.Descriptor instead.
 func (*Event) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{20}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Event) GetCursor() string {
@@ -2154,6 +2799,33 @@ func (x *Event) GetSenderHealth() *SenderHealthChanged {
 	return nil
 }
 
+func (x *Event) GetScrubFinding() *ScrubFindingChanged {
+	if x != nil {
+		if x, ok := x.Payload.(*Event_ScrubFinding); ok {
+			return x.ScrubFinding
+		}
+	}
+	return nil
+}
+
+func (x *Event) GetCatalogChanged() *CatalogChanged {
+	if x != nil {
+		if x, ok := x.Payload.(*Event_CatalogChanged); ok {
+			return x.CatalogChanged
+		}
+	}
+	return nil
+}
+
+func (x *Event) GetCatalogRebuilt() *CatalogRebuilt {
+	if x != nil {
+		if x, ok := x.Payload.(*Event_CatalogRebuilt); ok {
+			return x.CatalogRebuilt
+		}
+	}
+	return nil
+}
+
 type isEvent_Payload interface {
 	isEvent_Payload()
 }
@@ -2208,6 +2880,21 @@ type Event_SenderHealth struct {
 	SenderHealth *SenderHealthChanged `protobuf:"bytes,14,opt,name=sender_health,json=senderHealth,proto3,oneof"`
 }
 
+type Event_ScrubFinding struct {
+	// A scrub finding was recorded or cleared.
+	ScrubFinding *ScrubFindingChanged `protobuf:"bytes,15,opt,name=scrub_finding,json=scrubFinding,proto3,oneof"`
+}
+
+type Event_CatalogChanged struct {
+	// A correction changed what the catalog shows.
+	CatalogChanged *CatalogChanged `protobuf:"bytes,16,opt,name=catalog_changed,json=catalogChanged,proto3,oneof"`
+}
+
+type Event_CatalogRebuilt struct {
+	// A catalog was made again and put in use.
+	CatalogRebuilt *CatalogRebuilt `protobuf:"bytes,17,opt,name=catalog_rebuilt,json=catalogRebuilt,proto3,oneof"`
+}
+
 func (*Event_AssociationFailed) isEvent_Payload() {}
 
 func (*Event_ReceptionStep) isEvent_Payload() {}
@@ -2227,6 +2914,12 @@ func (*Event_JobStep) isEvent_Payload() {}
 func (*Event_JobProgress) isEvent_Payload() {}
 
 func (*Event_SenderHealth) isEvent_Payload() {}
+
+func (*Event_ScrubFinding) isEvent_Payload() {}
+
+func (*Event_CatalogChanged) isEvent_Payload() {}
+
+func (*Event_CatalogRebuilt) isEvent_Payload() {}
 
 // WatchKeepAlive opens every stream, and is sent again when no event has
 // been sent for 15 seconds.
@@ -2260,14 +2953,23 @@ type WatchKeepAlive struct {
 	// tenant_cursors name every tenant followed; a later keep-alive names
 	// only those whose position changed, so a mostly idle stream's keep-alive
 	// is a few bytes, not the whole map. Always false with one tenant.
-	Full          bool `protobuf:"varint,5,opt,name=full,proto3" json:"full,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Full bool `protobuf:"varint,5,opt,name=full,proto3" json:"full,omitempty"`
+	// With one tenant, the id of its feed's history (TenantStatus has it
+	// too). A consumer keys what it has seen by (history, cursor), so the
+	// same cursor in a new history is never taken for one already read.
+	// Empty with every tenant. Opaque; at most 64 bytes.
+	EventHistory string `protobuf:"bytes,6,opt,name=event_history,json=eventHistory,proto3" json:"event_history,omitempty"`
+	// With every tenant, the history id of each tenant named in
+	// tenant_cursors, by tenant name, in the same full or changed-only way.
+	// Empty with one tenant. Each id opaque, at most 64 bytes.
+	TenantEventHistories map[string]string `protobuf:"bytes,7,rep,name=tenant_event_histories,json=tenantEventHistories,proto3" json:"tenant_event_histories,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *WatchKeepAlive) Reset() {
 	*x = WatchKeepAlive{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[21]
+	mi := &file_coria_v1_monitor_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2279,7 +2981,7 @@ func (x *WatchKeepAlive) String() string {
 func (*WatchKeepAlive) ProtoMessage() {}
 
 func (x *WatchKeepAlive) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[21]
+	mi := &file_coria_v1_monitor_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2292,7 +2994,7 @@ func (x *WatchKeepAlive) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchKeepAlive.ProtoReflect.Descriptor instead.
 func (*WatchKeepAlive) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{21}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *WatchKeepAlive) GetTime() *timestamppb.Timestamp {
@@ -2330,6 +3032,20 @@ func (x *WatchKeepAlive) GetFull() bool {
 	return false
 }
 
+func (x *WatchKeepAlive) GetEventHistory() string {
+	if x != nil {
+		return x.EventHistory
+	}
+	return ""
+}
+
+func (x *WatchKeepAlive) GetTenantEventHistories() map[string]string {
+	if x != nil {
+		return x.TenantEventHistories
+	}
+	return nil
+}
+
 // WatchRequest asks for a stream of events.
 type WatchRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2363,7 +3079,7 @@ type WatchRequest struct {
 
 func (x *WatchRequest) Reset() {
 	*x = WatchRequest{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[22]
+	mi := &file_coria_v1_monitor_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2375,7 +3091,7 @@ func (x *WatchRequest) String() string {
 func (*WatchRequest) ProtoMessage() {}
 
 func (x *WatchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[22]
+	mi := &file_coria_v1_monitor_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2388,7 +3104,7 @@ func (x *WatchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchRequest.ProtoReflect.Descriptor instead.
 func (*WatchRequest) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{22}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *WatchRequest) GetScope() *Scope {
@@ -2442,7 +3158,7 @@ type WatchResponse struct {
 
 func (x *WatchResponse) Reset() {
 	*x = WatchResponse{}
-	mi := &file_coria_v1_monitor_proto_msgTypes[23]
+	mi := &file_coria_v1_monitor_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2454,7 +3170,7 @@ func (x *WatchResponse) String() string {
 func (*WatchResponse) ProtoMessage() {}
 
 func (x *WatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_coria_v1_monitor_proto_msgTypes[23]
+	mi := &file_coria_v1_monitor_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2467,7 +3183,7 @@ func (x *WatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchResponse.ProtoReflect.Descriptor instead.
 func (*WatchResponse) Descriptor() ([]byte, []int) {
-	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{23}
+	return file_coria_v1_monitor_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *WatchResponse) GetKind() isWatchResponse_Kind {
@@ -2518,7 +3234,7 @@ var File_coria_v1_monitor_proto protoreflect.FileDescriptor
 
 const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\n" +
-	"\x16coria/v1/monitor.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15coria/v1/access.proto\x1a\x12coria/v1/job.proto\x1a\x19coria/v1/quarantine.proto\x1a\x18coria/v1/reception.proto\x1a\x17coria/v1/receiver.proto\x1a\x14coria/v1/scope.proto\x1a\x15coria/v1/sender.proto\x1a\x15coria/v1/tenant.proto\"a\n" +
+	"\x16coria/v1/monitor.proto\x12\bcoria.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15coria/v1/access.proto\x1a\x19coria/v1/audit_seal.proto\x1a\x19coria/v1/correction.proto\x1a\x12coria/v1/job.proto\x1a\x19coria/v1/quarantine.proto\x1a\x18coria/v1/reception.proto\x1a\x17coria/v1/receiver.proto\x1a\x14coria/v1/scope.proto\x1a\x15coria/v1/sender.proto\x1a\x15coria/v1/tenant.proto\"a\n" +
 	"\x12ReceptionStepCount\x12+\n" +
 	"\x04step\x18\x01 \x01(\x0e2\x17.coria.v1.ReceptionStepR\x04step\x12\x1e\n" +
 	"\n" +
@@ -2546,7 +3262,7 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\x19files_received_per_second\x18\x01 \x01(\x01R\x16filesReceivedPerSecond\x129\n" +
 	"\x19bytes_received_per_second\x18\x02 \x01(\x01R\x16bytesReceivedPerSecond\x129\n" +
 	"\x19files_archived_per_second\x18\x03 \x01(\x01R\x16filesArchivedPerSecond\x129\n" +
-	"\x19bytes_archived_per_second\x18\x04 \x01(\x01R\x16bytesArchivedPerSecond\"\xc3\x01\n" +
+	"\x19bytes_archived_per_second\x18\x04 \x01(\x01R\x16bytesArchivedPerSecond\"\xa1\x02\n" +
 	"\rStorageStatus\x12\x18\n" +
 	"\astorage\x18\x01 \x01(\tR\astorage\x12\x1d\n" +
 	"\n" +
@@ -2555,13 +3271,18 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"free_bytes\x18\x03 \x01(\x03H\x00R\tfreeBytes\x88\x01\x01\x12%\n" +
 	"\x0ecapacity_bytes\x18\x04 \x01(\x03R\rcapacityBytes\x12\x1f\n" +
 	"\vnearly_full\x18\x05 \x01(\bR\n" +
-	"nearlyFullB\r\n" +
+	"nearlyFull\x12;\n" +
+	"\n" +
+	"versioning\x18\x06 \x01(\x0e2\x1b.coria.v1.StorageVersioningR\n" +
+	"versioning\x12\x1f\n" +
+	"\vobject_lock\x18\a \x01(\bR\n" +
+	"objectLockB\r\n" +
 	"\v_free_bytes\"}\n" +
 	"\x0eReceiverStatus\x12\x1a\n" +
 	"\breceiver\x18\x01 \x01(\tR\breceiver\x120\n" +
 	"\x06health\x18\x02 \x01(\v2\x18.coria.v1.ReceiverHealthR\x06health\x12\x1d\n" +
 	"\n" +
-	"any_caller\x18\x03 \x01(\bR\tanyCaller\"\x8a\x04\n" +
+	"any_caller\x18\x03 \x01(\bR\tanyCaller\"\xa7\a\n" +
 	"\fTenantStatus\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12<\n" +
 	"\x0edatabase_state\x18\x02 \x01(\x0e2\x15.coria.v1.TenantStateR\rdatabaseState\x12J\n" +
@@ -2575,17 +3296,38 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\treceivers\x18\b \x03(\v2\x18.coria.v1.ReceiverStatusR\treceivers\x120\n" +
 	"\x14incoming_limit_bytes\x18\t \x01(\x03R\x12incomingLimitBytes\x120\n" +
 	"\asenders\x18\n" +
-	" \x03(\v2\x16.coria.v1.SenderStatusR\asenders\"u\n" +
+	" \x03(\v2\x16.coria.v1.SenderStatusR\asenders\x125\n" +
+	"\n" +
+	"last_scrub\x18\v \x01(\v2\x16.coria.v1.ScrubSummaryR\tlastScrub\x12@\n" +
+	"\ropen_findings\x18\f \x03(\v2\x1b.coria.v1.ScrubFindingCountR\fopenFindings\x128\n" +
+	"\n" +
+	"audit_seal\x18\r \x01(\v2\x19.coria.v1.AuditSealStatusR\tauditSeal\x12+\n" +
+	"\x11pending_deletions\x18\x0e \x01(\x03R\x10pendingDeletions\x124\n" +
+	"\x16pending_deletion_bytes\x18\x0f \x01(\x03R\x14pendingDeletionBytes\x12#\n" +
+	"\revent_history\x18\x10 \x01(\tR\feventHistory\x12)\n" +
+	"\x10owner_generation\x18\x11 \x01(\x03R\x0fownerGeneration\x125\n" +
+	"\x16unresolved_corrections\x18\x12 \x01(\x03R\x15unresolvedCorrections\"\xf5\x01\n" +
+	"\fScrubSummary\x12\x10\n" +
+	"\x03job\x18\x01 \x01(\tR\x03job\x12(\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x12.coria.v1.JobStateR\x05state\x129\n" +
+	"\n" +
+	"start_time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x125\n" +
+	"\bend_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\aendTime\x127\n" +
+	"\bfindings\x18\x05 \x03(\v2\x1b.coria.v1.ScrubFindingCountR\bfindings\"_\n" +
+	"\x11ScrubFindingCount\x12.\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x1a.coria.v1.ScrubFindingKindR\x04kind\x12\x1a\n" +
+	"\bfindings\x18\x02 \x01(\x03R\bfindings\"u\n" +
 	"\x10GetStatusRequest\x12%\n" +
 	"\x05scope\x18\x01 \x01(\v2\x0f.coria.v1.ScopeR\x05scope\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x03 \x01(\tR\tpageToken\"\xd1\x01\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\xa4\x02\n" +
 	"\x11GetStatusResponse\x120\n" +
 	"\atenants\x18\x01 \x03(\v2\x16.coria.v1.TenantStatusR\atenants\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12.\n" +
 	"\x04time\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x122\n" +
-	"\rexpiring_keys\x18\x04 \x03(\v2\r.coria.v1.KeyR\fexpiringKeys\"\xbd\x01\n" +
+	"\rexpiring_keys\x18\x04 \x03(\v2\r.coria.v1.KeyR\fexpiringKeys\x12Q\n" +
+	"\x17installation_audit_seal\x18\x05 \x01(\v2\x19.coria.v1.AuditSealStatusR\x15installationAuditSeal\"\xbd\x01\n" +
 	"\x11AssociationFailed\x12\x1a\n" +
 	"\breceiver\x18\x01 \x01(\tR\breceiver\x12(\n" +
 	"\x06caller\x18\x02 \x01(\v2\x10.coria.v1.CallerR\x06caller\x126\n" +
@@ -2659,7 +3401,35 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\x06sender\x18\x03 \x01(\tR\x06sender\"]\n" +
 	"\x13SenderHealthChanged\x12\x16\n" +
 	"\x06sender\x18\x01 \x01(\tR\x06sender\x12.\n" +
-	"\x06health\x18\x02 \x01(\v2\x16.coria.v1.SenderHealthR\x06health\"\xd1\x06\n" +
+	"\x06health\x18\x02 \x01(\v2\x16.coria.v1.SenderHealthR\x06health\"\x8e\x02\n" +
+	"\x13ScrubFindingChanged\x12\x18\n" +
+	"\afinding\x18\x01 \x01(\tR\afinding\x12.\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1a.coria.v1.ScrubFindingKindR\x04kind\x12\x18\n" +
+	"\astorage\x18\x03 \x01(\tR\astorage\x12#\n" +
+	"\rsubject_label\x18\x04 \x01(\tR\fsubjectLabel\x12#\n" +
+	"\rsession_label\x18\x05 \x01(\tR\fsessionLabel\x12\x1d\n" +
+	"\n" +
+	"scan_label\x18\x06 \x01(\tR\tscanLabel\x12\x18\n" +
+	"\acleared\x18\a \x01(\bR\acleared\x12\x10\n" +
+	"\x03job\x18\b \x01(\tR\x03job\"\xcd\x02\n" +
+	"\x0eCatalogChanged\x12\x1e\n" +
+	"\n" +
+	"correction\x18\x01 \x01(\tR\n" +
+	"correction\x12,\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x18.coria.v1.CorrectionKindR\x04kind\x12/\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x19.coria.v1.CorrectionStateR\x05state\x12#\n" +
+	"\rsubject_label\x18\x04 \x01(\tR\fsubjectLabel\x12#\n" +
+	"\rsession_label\x18\x05 \x01(\tR\fsessionLabel\x12\x1d\n" +
+	"\n" +
+	"scan_label\x18\x06 \x01(\tR\tscanLabel\x12\x19\n" +
+	"\bto_label\x18\a \x01(\tR\atoLabel\x12\x1c\n" +
+	"\tinstances\x18\b \x01(\x03R\tinstances\x12\x1a\n" +
+	"\brevision\x18\t \x01(\x05R\brevision\"a\n" +
+	"\x0eCatalogRebuilt\x12\x10\n" +
+	"\x03job\x18\x01 \x01(\tR\x03job\x12\x1c\n" +
+	"\tinstances\x18\x02 \x01(\x03R\tinstances\x12\x1f\n" +
+	"\vnew_history\x18\x03 \x01(\bR\n" +
+	"newHistory\"\xa1\b\n" +
 	"\x05Event\x12\x16\n" +
 	"\x06cursor\x18\x01 \x01(\tR\x06cursor\x12.\n" +
 	"\x04time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
@@ -2675,15 +3445,23 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\fframes_added\x18\v \x01(\v2\x15.coria.v1.FramesAddedH\x00R\vframesAdded\x125\n" +
 	"\bjob_step\x18\f \x01(\v2\x18.coria.v1.JobStepReachedH\x00R\ajobStep\x12<\n" +
 	"\fjob_progress\x18\r \x01(\v2\x17.coria.v1.JobProgressedH\x00R\vjobProgress\x12D\n" +
-	"\rsender_health\x18\x0e \x01(\v2\x1d.coria.v1.SenderHealthChangedH\x00R\fsenderHealthB\t\n" +
-	"\apayload\"\xb1\x02\n" +
+	"\rsender_health\x18\x0e \x01(\v2\x1d.coria.v1.SenderHealthChangedH\x00R\fsenderHealth\x12D\n" +
+	"\rscrub_finding\x18\x0f \x01(\v2\x1d.coria.v1.ScrubFindingChangedH\x00R\fscrubFinding\x12C\n" +
+	"\x0fcatalog_changed\x18\x10 \x01(\v2\x18.coria.v1.CatalogChangedH\x00R\x0ecatalogChanged\x12C\n" +
+	"\x0fcatalog_rebuilt\x18\x11 \x01(\v2\x18.coria.v1.CatalogRebuiltH\x00R\x0ecatalogRebuiltB\t\n" +
+	"\apayload\"\x89\x04\n" +
 	"\x0eWatchKeepAlive\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x16\n" +
 	"\x06cursor\x18\x02 \x01(\tR\x06cursor\x12R\n" +
 	"\x0etenant_cursors\x18\x03 \x03(\v2+.coria.v1.WatchKeepAlive.TenantCursorsEntryR\rtenantCursors\x12-\n" +
 	"\x12unanswered_tenants\x18\x04 \x03(\tR\x11unansweredTenants\x12\x12\n" +
-	"\x04full\x18\x05 \x01(\bR\x04full\x1a@\n" +
+	"\x04full\x18\x05 \x01(\bR\x04full\x12#\n" +
+	"\revent_history\x18\x06 \x01(\tR\feventHistory\x12h\n" +
+	"\x16tenant_event_histories\x18\a \x03(\v22.coria.v1.WatchKeepAlive.TenantEventHistoriesEntryR\x14tenantEventHistories\x1a@\n" +
 	"\x12TenantCursorsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aG\n" +
+	"\x19TenantEventHistoriesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa4\x02\n" +
 	"\fWatchRequest\x12%\n" +
@@ -2699,7 +3477,14 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\x05event\x18\x01 \x01(\v2\x0f.coria.v1.EventH\x00R\x05event\x129\n" +
 	"\n" +
 	"keep_alive\x18\x02 \x01(\v2\x18.coria.v1.WatchKeepAliveH\x00R\tkeepAliveB\x06\n" +
-	"\x04kind*\xdc\x02\n" +
+	"\x04kind*\xd7\x01\n" +
+	"\x11StorageVersioning\x12\"\n" +
+	"\x1eSTORAGE_VERSIONING_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cSTORAGE_VERSIONING_DIRECTORY\x10\x01\x12\x1a\n" +
+	"\x16STORAGE_VERSIONING_OFF\x10\x02\x12\x1e\n" +
+	"\x1aSTORAGE_VERSIONING_ENABLED\x10\x03\x12 \n" +
+	"\x1cSTORAGE_VERSIONING_SUSPENDED\x10\x04\x12\x1e\n" +
+	"\x1aSTORAGE_VERSIONING_UNKNOWN\x10\x05*\xba\x03\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dEVENT_TYPE_ASSOCIATION_FAILED\x10\x01\x12\x1d\n" +
@@ -2712,7 +3497,10 @@ const file_coria_v1_monitor_proto_rawDesc = "" +
 	"\x13EVENT_TYPE_JOB_STEP\x10\b\x12\x1b\n" +
 	"\x17EVENT_TYPE_JOB_PROGRESS\x10\t\x12\x1c\n" +
 	"\x18EVENT_TYPE_SENDER_HEALTH\x10\n" +
-	"*\x8f\x03\n" +
+	"\x12\x1c\n" +
+	"\x18EVENT_TYPE_SCRUB_FINDING\x10\v\x12\x1e\n" +
+	"\x1aEVENT_TYPE_CATALOG_CHANGED\x10\f\x12\x1e\n" +
+	"\x1aEVENT_TYPE_CATALOG_REBUILT\x10\r*\x8f\x03\n" +
 	"\x12AssociationFailure\x12#\n" +
 	"\x1fASSOCIATION_FAILURE_UNSPECIFIED\x10\x00\x12*\n" +
 	"&ASSOCIATION_FAILURE_CALLER_NOT_ALLOWED\x10\x01\x126\n" +
@@ -2744,114 +3532,142 @@ func file_coria_v1_monitor_proto_rawDescGZIP() []byte {
 	return file_coria_v1_monitor_proto_rawDescData
 }
 
-var file_coria_v1_monitor_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_coria_v1_monitor_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_coria_v1_monitor_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_coria_v1_monitor_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_coria_v1_monitor_proto_goTypes = []any{
-	(EventType)(0),                // 0: coria.v1.EventType
-	(AssociationFailure)(0),       // 1: coria.v1.AssociationFailure
-	(StorageSpaceState)(0),        // 2: coria.v1.StorageSpaceState
-	(*ReceptionStepCount)(nil),    // 3: coria.v1.ReceptionStepCount
-	(*TenantCounts)(nil),          // 4: coria.v1.TenantCounts
-	(*JobStateCount)(nil),         // 5: coria.v1.JobStateCount
-	(*SenderStatus)(nil),          // 6: coria.v1.SenderStatus
-	(*Throughput)(nil),            // 7: coria.v1.Throughput
-	(*StorageStatus)(nil),         // 8: coria.v1.StorageStatus
-	(*ReceiverStatus)(nil),        // 9: coria.v1.ReceiverStatus
-	(*TenantStatus)(nil),          // 10: coria.v1.TenantStatus
-	(*GetStatusRequest)(nil),      // 11: coria.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),     // 12: coria.v1.GetStatusResponse
-	(*AssociationFailed)(nil),     // 13: coria.v1.AssociationFailed
-	(*ReceptionStepReached)(nil),  // 14: coria.v1.ReceptionStepReached
-	(*FileQuarantined)(nil),       // 15: coria.v1.FileQuarantined
-	(*QuarantineDecided)(nil),     // 16: coria.v1.QuarantineDecided
-	(*ReceiverHealthChanged)(nil), // 17: coria.v1.ReceiverHealthChanged
-	(*StorageSpaceChanged)(nil),   // 18: coria.v1.StorageSpaceChanged
-	(*FramesAdded)(nil),           // 19: coria.v1.FramesAdded
-	(*JobStepReached)(nil),        // 20: coria.v1.JobStepReached
-	(*JobProgressed)(nil),         // 21: coria.v1.JobProgressed
-	(*SenderHealthChanged)(nil),   // 22: coria.v1.SenderHealthChanged
-	(*Event)(nil),                 // 23: coria.v1.Event
-	(*WatchKeepAlive)(nil),        // 24: coria.v1.WatchKeepAlive
-	(*WatchRequest)(nil),          // 25: coria.v1.WatchRequest
-	(*WatchResponse)(nil),         // 26: coria.v1.WatchResponse
-	nil,                           // 27: coria.v1.WatchKeepAlive.TenantCursorsEntry
-	nil,                           // 28: coria.v1.WatchRequest.TenantCursorsEntry
-	(ReceptionStep)(0),            // 29: coria.v1.ReceptionStep
-	(JobState)(0),                 // 30: coria.v1.JobState
-	(*SenderHealth)(nil),          // 31: coria.v1.SenderHealth
-	(*ReceiverHealth)(nil),        // 32: coria.v1.ReceiverHealth
-	(TenantState)(0),              // 33: coria.v1.TenantState
-	(*timestamppb.Timestamp)(nil), // 34: google.protobuf.Timestamp
-	(*Scope)(nil),                 // 35: coria.v1.Scope
-	(*Key)(nil),                   // 36: coria.v1.Key
-	(*Caller)(nil),                // 37: coria.v1.Caller
-	(*ReceptionCounts)(nil),       // 38: coria.v1.ReceptionCounts
-	(QuarantineReason)(0),         // 39: coria.v1.QuarantineReason
-	(QuarantineState)(0),          // 40: coria.v1.QuarantineState
-	(ReleaseMode)(0),              // 41: coria.v1.ReleaseMode
-	(*JobCounts)(nil),             // 42: coria.v1.JobCounts
+	(StorageVersioning)(0),        // 0: coria.v1.StorageVersioning
+	(EventType)(0),                // 1: coria.v1.EventType
+	(AssociationFailure)(0),       // 2: coria.v1.AssociationFailure
+	(StorageSpaceState)(0),        // 3: coria.v1.StorageSpaceState
+	(*ReceptionStepCount)(nil),    // 4: coria.v1.ReceptionStepCount
+	(*TenantCounts)(nil),          // 5: coria.v1.TenantCounts
+	(*JobStateCount)(nil),         // 6: coria.v1.JobStateCount
+	(*SenderStatus)(nil),          // 7: coria.v1.SenderStatus
+	(*Throughput)(nil),            // 8: coria.v1.Throughput
+	(*StorageStatus)(nil),         // 9: coria.v1.StorageStatus
+	(*ReceiverStatus)(nil),        // 10: coria.v1.ReceiverStatus
+	(*TenantStatus)(nil),          // 11: coria.v1.TenantStatus
+	(*ScrubSummary)(nil),          // 12: coria.v1.ScrubSummary
+	(*ScrubFindingCount)(nil),     // 13: coria.v1.ScrubFindingCount
+	(*GetStatusRequest)(nil),      // 14: coria.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),     // 15: coria.v1.GetStatusResponse
+	(*AssociationFailed)(nil),     // 16: coria.v1.AssociationFailed
+	(*ReceptionStepReached)(nil),  // 17: coria.v1.ReceptionStepReached
+	(*FileQuarantined)(nil),       // 18: coria.v1.FileQuarantined
+	(*QuarantineDecided)(nil),     // 19: coria.v1.QuarantineDecided
+	(*ReceiverHealthChanged)(nil), // 20: coria.v1.ReceiverHealthChanged
+	(*StorageSpaceChanged)(nil),   // 21: coria.v1.StorageSpaceChanged
+	(*FramesAdded)(nil),           // 22: coria.v1.FramesAdded
+	(*JobStepReached)(nil),        // 23: coria.v1.JobStepReached
+	(*JobProgressed)(nil),         // 24: coria.v1.JobProgressed
+	(*SenderHealthChanged)(nil),   // 25: coria.v1.SenderHealthChanged
+	(*ScrubFindingChanged)(nil),   // 26: coria.v1.ScrubFindingChanged
+	(*CatalogChanged)(nil),        // 27: coria.v1.CatalogChanged
+	(*CatalogRebuilt)(nil),        // 28: coria.v1.CatalogRebuilt
+	(*Event)(nil),                 // 29: coria.v1.Event
+	(*WatchKeepAlive)(nil),        // 30: coria.v1.WatchKeepAlive
+	(*WatchRequest)(nil),          // 31: coria.v1.WatchRequest
+	(*WatchResponse)(nil),         // 32: coria.v1.WatchResponse
+	nil,                           // 33: coria.v1.WatchKeepAlive.TenantCursorsEntry
+	nil,                           // 34: coria.v1.WatchKeepAlive.TenantEventHistoriesEntry
+	nil,                           // 35: coria.v1.WatchRequest.TenantCursorsEntry
+	(ReceptionStep)(0),            // 36: coria.v1.ReceptionStep
+	(JobState)(0),                 // 37: coria.v1.JobState
+	(*SenderHealth)(nil),          // 38: coria.v1.SenderHealth
+	(*ReceiverHealth)(nil),        // 39: coria.v1.ReceiverHealth
+	(TenantState)(0),              // 40: coria.v1.TenantState
+	(*timestamppb.Timestamp)(nil), // 41: google.protobuf.Timestamp
+	(*AuditSealStatus)(nil),       // 42: coria.v1.AuditSealStatus
+	(ScrubFindingKind)(0),         // 43: coria.v1.ScrubFindingKind
+	(*Scope)(nil),                 // 44: coria.v1.Scope
+	(*Key)(nil),                   // 45: coria.v1.Key
+	(*Caller)(nil),                // 46: coria.v1.Caller
+	(*ReceptionCounts)(nil),       // 47: coria.v1.ReceptionCounts
+	(QuarantineReason)(0),         // 48: coria.v1.QuarantineReason
+	(QuarantineState)(0),          // 49: coria.v1.QuarantineState
+	(ReleaseMode)(0),              // 50: coria.v1.ReleaseMode
+	(*JobCounts)(nil),             // 51: coria.v1.JobCounts
+	(CorrectionKind)(0),           // 52: coria.v1.CorrectionKind
+	(CorrectionState)(0),          // 53: coria.v1.CorrectionState
 }
 var file_coria_v1_monitor_proto_depIdxs = []int32{
-	29, // 0: coria.v1.ReceptionStepCount.step:type_name -> coria.v1.ReceptionStep
-	3,  // 1: coria.v1.TenantCounts.receptions_in_progress:type_name -> coria.v1.ReceptionStepCount
-	5,  // 2: coria.v1.TenantCounts.jobs_in_progress:type_name -> coria.v1.JobStateCount
-	30, // 3: coria.v1.JobStateCount.state:type_name -> coria.v1.JobState
-	31, // 4: coria.v1.SenderStatus.health:type_name -> coria.v1.SenderHealth
-	32, // 5: coria.v1.ReceiverStatus.health:type_name -> coria.v1.ReceiverHealth
-	33, // 6: coria.v1.TenantStatus.database_state:type_name -> coria.v1.TenantState
-	34, // 7: coria.v1.TenantStatus.database_state_time:type_name -> google.protobuf.Timestamp
-	4,  // 8: coria.v1.TenantStatus.counts:type_name -> coria.v1.TenantCounts
-	7,  // 9: coria.v1.TenantStatus.throughput:type_name -> coria.v1.Throughput
-	8,  // 10: coria.v1.TenantStatus.storages:type_name -> coria.v1.StorageStatus
-	9,  // 11: coria.v1.TenantStatus.receivers:type_name -> coria.v1.ReceiverStatus
-	6,  // 12: coria.v1.TenantStatus.senders:type_name -> coria.v1.SenderStatus
-	35, // 13: coria.v1.GetStatusRequest.scope:type_name -> coria.v1.Scope
-	10, // 14: coria.v1.GetStatusResponse.tenants:type_name -> coria.v1.TenantStatus
-	34, // 15: coria.v1.GetStatusResponse.time:type_name -> google.protobuf.Timestamp
-	36, // 16: coria.v1.GetStatusResponse.expiring_keys:type_name -> coria.v1.Key
-	37, // 17: coria.v1.AssociationFailed.caller:type_name -> coria.v1.Caller
-	1,  // 18: coria.v1.AssociationFailed.failure:type_name -> coria.v1.AssociationFailure
-	29, // 19: coria.v1.ReceptionStepReached.step:type_name -> coria.v1.ReceptionStep
-	29, // 20: coria.v1.ReceptionStepReached.previous_step:type_name -> coria.v1.ReceptionStep
-	38, // 21: coria.v1.ReceptionStepReached.counts:type_name -> coria.v1.ReceptionCounts
-	39, // 22: coria.v1.FileQuarantined.reason:type_name -> coria.v1.QuarantineReason
-	40, // 23: coria.v1.QuarantineDecided.state:type_name -> coria.v1.QuarantineState
-	41, // 24: coria.v1.QuarantineDecided.release_mode:type_name -> coria.v1.ReleaseMode
-	32, // 25: coria.v1.ReceiverHealthChanged.health:type_name -> coria.v1.ReceiverHealth
-	2,  // 26: coria.v1.StorageSpaceChanged.state:type_name -> coria.v1.StorageSpaceState
-	30, // 27: coria.v1.JobStepReached.state:type_name -> coria.v1.JobState
-	30, // 28: coria.v1.JobStepReached.previous_state:type_name -> coria.v1.JobState
-	42, // 29: coria.v1.JobStepReached.counts:type_name -> coria.v1.JobCounts
-	42, // 30: coria.v1.JobProgressed.counts:type_name -> coria.v1.JobCounts
-	31, // 31: coria.v1.SenderHealthChanged.health:type_name -> coria.v1.SenderHealth
-	34, // 32: coria.v1.Event.time:type_name -> google.protobuf.Timestamp
-	0,  // 33: coria.v1.Event.type:type_name -> coria.v1.EventType
-	13, // 34: coria.v1.Event.association_failed:type_name -> coria.v1.AssociationFailed
-	14, // 35: coria.v1.Event.reception_step:type_name -> coria.v1.ReceptionStepReached
-	15, // 36: coria.v1.Event.file_quarantined:type_name -> coria.v1.FileQuarantined
-	16, // 37: coria.v1.Event.quarantine_decided:type_name -> coria.v1.QuarantineDecided
-	17, // 38: coria.v1.Event.receiver_health:type_name -> coria.v1.ReceiverHealthChanged
-	18, // 39: coria.v1.Event.storage_space:type_name -> coria.v1.StorageSpaceChanged
-	19, // 40: coria.v1.Event.frames_added:type_name -> coria.v1.FramesAdded
-	20, // 41: coria.v1.Event.job_step:type_name -> coria.v1.JobStepReached
-	21, // 42: coria.v1.Event.job_progress:type_name -> coria.v1.JobProgressed
-	22, // 43: coria.v1.Event.sender_health:type_name -> coria.v1.SenderHealthChanged
-	34, // 44: coria.v1.WatchKeepAlive.time:type_name -> google.protobuf.Timestamp
-	27, // 45: coria.v1.WatchKeepAlive.tenant_cursors:type_name -> coria.v1.WatchKeepAlive.TenantCursorsEntry
-	35, // 46: coria.v1.WatchRequest.scope:type_name -> coria.v1.Scope
-	0,  // 47: coria.v1.WatchRequest.types:type_name -> coria.v1.EventType
-	28, // 48: coria.v1.WatchRequest.tenant_cursors:type_name -> coria.v1.WatchRequest.TenantCursorsEntry
-	23, // 49: coria.v1.WatchResponse.event:type_name -> coria.v1.Event
-	24, // 50: coria.v1.WatchResponse.keep_alive:type_name -> coria.v1.WatchKeepAlive
-	11, // 51: coria.v1.MonitorService.GetStatus:input_type -> coria.v1.GetStatusRequest
-	25, // 52: coria.v1.MonitorService.Watch:input_type -> coria.v1.WatchRequest
-	12, // 53: coria.v1.MonitorService.GetStatus:output_type -> coria.v1.GetStatusResponse
-	26, // 54: coria.v1.MonitorService.Watch:output_type -> coria.v1.WatchResponse
-	53, // [53:55] is the sub-list for method output_type
-	51, // [51:53] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	36, // 0: coria.v1.ReceptionStepCount.step:type_name -> coria.v1.ReceptionStep
+	4,  // 1: coria.v1.TenantCounts.receptions_in_progress:type_name -> coria.v1.ReceptionStepCount
+	6,  // 2: coria.v1.TenantCounts.jobs_in_progress:type_name -> coria.v1.JobStateCount
+	37, // 3: coria.v1.JobStateCount.state:type_name -> coria.v1.JobState
+	38, // 4: coria.v1.SenderStatus.health:type_name -> coria.v1.SenderHealth
+	0,  // 5: coria.v1.StorageStatus.versioning:type_name -> coria.v1.StorageVersioning
+	39, // 6: coria.v1.ReceiverStatus.health:type_name -> coria.v1.ReceiverHealth
+	40, // 7: coria.v1.TenantStatus.database_state:type_name -> coria.v1.TenantState
+	41, // 8: coria.v1.TenantStatus.database_state_time:type_name -> google.protobuf.Timestamp
+	5,  // 9: coria.v1.TenantStatus.counts:type_name -> coria.v1.TenantCounts
+	8,  // 10: coria.v1.TenantStatus.throughput:type_name -> coria.v1.Throughput
+	9,  // 11: coria.v1.TenantStatus.storages:type_name -> coria.v1.StorageStatus
+	10, // 12: coria.v1.TenantStatus.receivers:type_name -> coria.v1.ReceiverStatus
+	7,  // 13: coria.v1.TenantStatus.senders:type_name -> coria.v1.SenderStatus
+	12, // 14: coria.v1.TenantStatus.last_scrub:type_name -> coria.v1.ScrubSummary
+	13, // 15: coria.v1.TenantStatus.open_findings:type_name -> coria.v1.ScrubFindingCount
+	42, // 16: coria.v1.TenantStatus.audit_seal:type_name -> coria.v1.AuditSealStatus
+	37, // 17: coria.v1.ScrubSummary.state:type_name -> coria.v1.JobState
+	41, // 18: coria.v1.ScrubSummary.start_time:type_name -> google.protobuf.Timestamp
+	41, // 19: coria.v1.ScrubSummary.end_time:type_name -> google.protobuf.Timestamp
+	13, // 20: coria.v1.ScrubSummary.findings:type_name -> coria.v1.ScrubFindingCount
+	43, // 21: coria.v1.ScrubFindingCount.kind:type_name -> coria.v1.ScrubFindingKind
+	44, // 22: coria.v1.GetStatusRequest.scope:type_name -> coria.v1.Scope
+	11, // 23: coria.v1.GetStatusResponse.tenants:type_name -> coria.v1.TenantStatus
+	41, // 24: coria.v1.GetStatusResponse.time:type_name -> google.protobuf.Timestamp
+	45, // 25: coria.v1.GetStatusResponse.expiring_keys:type_name -> coria.v1.Key
+	42, // 26: coria.v1.GetStatusResponse.installation_audit_seal:type_name -> coria.v1.AuditSealStatus
+	46, // 27: coria.v1.AssociationFailed.caller:type_name -> coria.v1.Caller
+	2,  // 28: coria.v1.AssociationFailed.failure:type_name -> coria.v1.AssociationFailure
+	36, // 29: coria.v1.ReceptionStepReached.step:type_name -> coria.v1.ReceptionStep
+	36, // 30: coria.v1.ReceptionStepReached.previous_step:type_name -> coria.v1.ReceptionStep
+	47, // 31: coria.v1.ReceptionStepReached.counts:type_name -> coria.v1.ReceptionCounts
+	48, // 32: coria.v1.FileQuarantined.reason:type_name -> coria.v1.QuarantineReason
+	49, // 33: coria.v1.QuarantineDecided.state:type_name -> coria.v1.QuarantineState
+	50, // 34: coria.v1.QuarantineDecided.release_mode:type_name -> coria.v1.ReleaseMode
+	39, // 35: coria.v1.ReceiverHealthChanged.health:type_name -> coria.v1.ReceiverHealth
+	3,  // 36: coria.v1.StorageSpaceChanged.state:type_name -> coria.v1.StorageSpaceState
+	37, // 37: coria.v1.JobStepReached.state:type_name -> coria.v1.JobState
+	37, // 38: coria.v1.JobStepReached.previous_state:type_name -> coria.v1.JobState
+	51, // 39: coria.v1.JobStepReached.counts:type_name -> coria.v1.JobCounts
+	51, // 40: coria.v1.JobProgressed.counts:type_name -> coria.v1.JobCounts
+	38, // 41: coria.v1.SenderHealthChanged.health:type_name -> coria.v1.SenderHealth
+	43, // 42: coria.v1.ScrubFindingChanged.kind:type_name -> coria.v1.ScrubFindingKind
+	52, // 43: coria.v1.CatalogChanged.kind:type_name -> coria.v1.CorrectionKind
+	53, // 44: coria.v1.CatalogChanged.state:type_name -> coria.v1.CorrectionState
+	41, // 45: coria.v1.Event.time:type_name -> google.protobuf.Timestamp
+	1,  // 46: coria.v1.Event.type:type_name -> coria.v1.EventType
+	16, // 47: coria.v1.Event.association_failed:type_name -> coria.v1.AssociationFailed
+	17, // 48: coria.v1.Event.reception_step:type_name -> coria.v1.ReceptionStepReached
+	18, // 49: coria.v1.Event.file_quarantined:type_name -> coria.v1.FileQuarantined
+	19, // 50: coria.v1.Event.quarantine_decided:type_name -> coria.v1.QuarantineDecided
+	20, // 51: coria.v1.Event.receiver_health:type_name -> coria.v1.ReceiverHealthChanged
+	21, // 52: coria.v1.Event.storage_space:type_name -> coria.v1.StorageSpaceChanged
+	22, // 53: coria.v1.Event.frames_added:type_name -> coria.v1.FramesAdded
+	23, // 54: coria.v1.Event.job_step:type_name -> coria.v1.JobStepReached
+	24, // 55: coria.v1.Event.job_progress:type_name -> coria.v1.JobProgressed
+	25, // 56: coria.v1.Event.sender_health:type_name -> coria.v1.SenderHealthChanged
+	26, // 57: coria.v1.Event.scrub_finding:type_name -> coria.v1.ScrubFindingChanged
+	27, // 58: coria.v1.Event.catalog_changed:type_name -> coria.v1.CatalogChanged
+	28, // 59: coria.v1.Event.catalog_rebuilt:type_name -> coria.v1.CatalogRebuilt
+	41, // 60: coria.v1.WatchKeepAlive.time:type_name -> google.protobuf.Timestamp
+	33, // 61: coria.v1.WatchKeepAlive.tenant_cursors:type_name -> coria.v1.WatchKeepAlive.TenantCursorsEntry
+	34, // 62: coria.v1.WatchKeepAlive.tenant_event_histories:type_name -> coria.v1.WatchKeepAlive.TenantEventHistoriesEntry
+	44, // 63: coria.v1.WatchRequest.scope:type_name -> coria.v1.Scope
+	1,  // 64: coria.v1.WatchRequest.types:type_name -> coria.v1.EventType
+	35, // 65: coria.v1.WatchRequest.tenant_cursors:type_name -> coria.v1.WatchRequest.TenantCursorsEntry
+	29, // 66: coria.v1.WatchResponse.event:type_name -> coria.v1.Event
+	30, // 67: coria.v1.WatchResponse.keep_alive:type_name -> coria.v1.WatchKeepAlive
+	14, // 68: coria.v1.MonitorService.GetStatus:input_type -> coria.v1.GetStatusRequest
+	31, // 69: coria.v1.MonitorService.Watch:input_type -> coria.v1.WatchRequest
+	15, // 70: coria.v1.MonitorService.GetStatus:output_type -> coria.v1.GetStatusResponse
+	32, // 71: coria.v1.MonitorService.Watch:output_type -> coria.v1.WatchResponse
+	70, // [70:72] is the sub-list for method output_type
+	68, // [68:70] is the sub-list for method input_type
+	68, // [68:68] is the sub-list for extension type_name
+	68, // [68:68] is the sub-list for extension extendee
+	0,  // [0:68] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_monitor_proto_init() }
@@ -2860,6 +3676,8 @@ func file_coria_v1_monitor_proto_init() {
 		return
 	}
 	file_coria_v1_access_proto_init()
+	file_coria_v1_audit_seal_proto_init()
+	file_coria_v1_correction_proto_init()
 	file_coria_v1_job_proto_init()
 	file_coria_v1_quarantine_proto_init()
 	file_coria_v1_reception_proto_init()
@@ -2868,8 +3686,8 @@ func file_coria_v1_monitor_proto_init() {
 	file_coria_v1_sender_proto_init()
 	file_coria_v1_tenant_proto_init()
 	file_coria_v1_monitor_proto_msgTypes[5].OneofWrappers = []any{}
-	file_coria_v1_monitor_proto_msgTypes[15].OneofWrappers = []any{}
-	file_coria_v1_monitor_proto_msgTypes[20].OneofWrappers = []any{
+	file_coria_v1_monitor_proto_msgTypes[17].OneofWrappers = []any{}
+	file_coria_v1_monitor_proto_msgTypes[25].OneofWrappers = []any{
 		(*Event_AssociationFailed)(nil),
 		(*Event_ReceptionStep)(nil),
 		(*Event_FileQuarantined)(nil),
@@ -2880,8 +3698,11 @@ func file_coria_v1_monitor_proto_init() {
 		(*Event_JobStep)(nil),
 		(*Event_JobProgress)(nil),
 		(*Event_SenderHealth)(nil),
+		(*Event_ScrubFinding)(nil),
+		(*Event_CatalogChanged)(nil),
+		(*Event_CatalogRebuilt)(nil),
 	}
-	file_coria_v1_monitor_proto_msgTypes[23].OneofWrappers = []any{
+	file_coria_v1_monitor_proto_msgTypes[28].OneofWrappers = []any{
 		(*WatchResponse_Event)(nil),
 		(*WatchResponse_KeepAlive)(nil),
 	}
@@ -2890,8 +3711,8 @@ func file_coria_v1_monitor_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_monitor_proto_rawDesc), len(file_coria_v1_monitor_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   26,
+			NumEnums:      4,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

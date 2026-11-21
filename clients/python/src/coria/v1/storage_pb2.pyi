@@ -78,7 +78,7 @@ class DirectoryStorage(_message.Message):
     def __init__(self, root: _Optional[str] = ..., path: _Optional[str] = ...) -> None: ...
 
 class S3Storage(_message.Message):
-    __slots__ = ("endpoint", "region", "bucket", "prefix", "path_style", "access_key_id", "secret_access_key", "secret_access_key_set")
+    __slots__ = ("endpoint", "region", "bucket", "prefix", "path_style", "access_key_id", "secret_access_key", "secret_access_key_set", "purge_versions")
     ENDPOINT_FIELD_NUMBER: _ClassVar[int]
     REGION_FIELD_NUMBER: _ClassVar[int]
     BUCKET_FIELD_NUMBER: _ClassVar[int]
@@ -87,6 +87,7 @@ class S3Storage(_message.Message):
     ACCESS_KEY_ID_FIELD_NUMBER: _ClassVar[int]
     SECRET_ACCESS_KEY_FIELD_NUMBER: _ClassVar[int]
     SECRET_ACCESS_KEY_SET_FIELD_NUMBER: _ClassVar[int]
+    PURGE_VERSIONS_FIELD_NUMBER: _ClassVar[int]
     endpoint: str
     region: str
     bucket: str
@@ -95,7 +96,8 @@ class S3Storage(_message.Message):
     access_key_id: str
     secret_access_key: str
     secret_access_key_set: bool
-    def __init__(self, endpoint: _Optional[str] = ..., region: _Optional[str] = ..., bucket: _Optional[str] = ..., prefix: _Optional[str] = ..., path_style: _Optional[bool] = ..., access_key_id: _Optional[str] = ..., secret_access_key: _Optional[str] = ..., secret_access_key_set: _Optional[bool] = ...) -> None: ...
+    purge_versions: bool
+    def __init__(self, endpoint: _Optional[str] = ..., region: _Optional[str] = ..., bucket: _Optional[str] = ..., prefix: _Optional[str] = ..., path_style: _Optional[bool] = ..., access_key_id: _Optional[str] = ..., secret_access_key: _Optional[str] = ..., secret_access_key_set: _Optional[bool] = ..., purge_versions: _Optional[bool] = ...) -> None: ...
 
 class StorageTestResult(_message.Message):
     __slots__ = ("step", "outcome", "duration", "fault")

@@ -26,7 +26,7 @@ ROLE_OPERATOR: Role
 ROLE_ADMIN: Role
 
 class Key(_message.Message):
-    __slots__ = ("id", "holder", "create_time", "expire_time", "last_use_time", "revoke_time", "networks", "client_cert_sha256", "last_use_address", "successor_id")
+    __slots__ = ("id", "holder", "create_time", "expire_time", "last_use_time", "revoke_time", "networks", "client_cert_sha256", "last_use_address", "successor_id", "suspended", "suspend_time")
     ID_FIELD_NUMBER: _ClassVar[int]
     HOLDER_FIELD_NUMBER: _ClassVar[int]
     CREATE_TIME_FIELD_NUMBER: _ClassVar[int]
@@ -37,6 +37,8 @@ class Key(_message.Message):
     CLIENT_CERT_SHA256_FIELD_NUMBER: _ClassVar[int]
     LAST_USE_ADDRESS_FIELD_NUMBER: _ClassVar[int]
     SUCCESSOR_ID_FIELD_NUMBER: _ClassVar[int]
+    SUSPENDED_FIELD_NUMBER: _ClassVar[int]
+    SUSPEND_TIME_FIELD_NUMBER: _ClassVar[int]
     id: str
     holder: str
     create_time: _timestamp_pb2.Timestamp
@@ -47,7 +49,9 @@ class Key(_message.Message):
     client_cert_sha256: str
     last_use_address: str
     successor_id: str
-    def __init__(self, id: _Optional[str] = ..., holder: _Optional[str] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., expire_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_use_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., revoke_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., networks: _Optional[_Iterable[str]] = ..., client_cert_sha256: _Optional[str] = ..., last_use_address: _Optional[str] = ..., successor_id: _Optional[str] = ...) -> None: ...
+    suspended: bool
+    suspend_time: _timestamp_pb2.Timestamp
+    def __init__(self, id: _Optional[str] = ..., holder: _Optional[str] = ..., create_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., expire_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., last_use_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., revoke_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., networks: _Optional[_Iterable[str]] = ..., client_cert_sha256: _Optional[str] = ..., last_use_address: _Optional[str] = ..., successor_id: _Optional[str] = ..., suspended: _Optional[bool] = ..., suspend_time: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class Grant(_message.Message):
     __slots__ = ("key_id", "scope", "role")
@@ -232,3 +236,19 @@ class SetKeyRulesResponse(_message.Message):
     KEY_FIELD_NUMBER: _ClassVar[int]
     key: Key
     def __init__(self, key: _Optional[_Union[Key, _Mapping]] = ...) -> None: ...
+
+class ReinstateKeysRequest(_message.Message):
+    __slots__ = ("key_ids", "all")
+    KEY_IDS_FIELD_NUMBER: _ClassVar[int]
+    ALL_FIELD_NUMBER: _ClassVar[int]
+    key_ids: _containers.RepeatedScalarFieldContainer[str]
+    all: bool
+    def __init__(self, key_ids: _Optional[_Iterable[str]] = ..., all: _Optional[bool] = ...) -> None: ...
+
+class ReinstateKeysResponse(_message.Message):
+    __slots__ = ("keys", "reinstated")
+    KEYS_FIELD_NUMBER: _ClassVar[int]
+    REINSTATED_FIELD_NUMBER: _ClassVar[int]
+    keys: _containers.RepeatedCompositeFieldContainer[Key]
+    reinstated: int
+    def __init__(self, keys: _Optional[_Iterable[_Union[Key, _Mapping]]] = ..., reinstated: _Optional[int] = ...) -> None: ...

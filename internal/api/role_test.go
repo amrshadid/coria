@@ -259,9 +259,9 @@ func TestRequirementsFollowTheRoleLines(t *testing.T) {
 	for proc, text := range lines {
 		var m requirementTable = api.Methods{}
 		if inServices(notServed, proc) {
-			// A service not served is not among the files contractMethods
-			// reads, which are the served ones; its descriptor is looked up
-			// by name.
+			// What is not served is left out of contractMethods, which
+			// holds the served methods; its descriptor is looked up by
+			// name.
 			m = api.Pending{}
 			if _, err := protoregistry.GlobalFiles.FindDescriptorByName(protoreflect.FullName(strings.ReplaceAll(strings.TrimPrefix(proc, "/"), "/", "."))); err != nil {
 				t.Errorf("%s is an rpc of the files but not in the descriptors: %v", proc, err)
@@ -423,8 +423,8 @@ func TestPendingRules(t *testing.T) {
 	lines := roleLines(t)
 	var p api.Pending
 	procs := p.Procedures()
-	if len(procs) != 0 {
-		t.Errorf("the table of methods not served has %d lines; this test was written for 0, so look at what changed", len(procs))
+	if len(procs) != 18 {
+		t.Errorf("the table of methods not served has %d lines; this test was written for 18, so look at what changed", len(procs))
 	}
 	for _, proc := range procs {
 		if !inServices(notServed, proc) {

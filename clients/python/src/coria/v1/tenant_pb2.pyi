@@ -17,6 +17,9 @@ class TenantState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     TENANT_STATE_UNREACHABLE: _ClassVar[TenantState]
     TENANT_STATE_UPGRADING: _ClassVar[TenantState]
     TENANT_STATE_FAILED: _ClassVar[TenantState]
+    TENANT_STATE_RESTORING: _ClassVar[TenantState]
+    TENANT_STATE_MOVED: _ClassVar[TenantState]
+    TENANT_STATE_FENCED: _ClassVar[TenantState]
 
 class DatabaseType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -28,6 +31,9 @@ TENANT_STATE_READY: TenantState
 TENANT_STATE_UNREACHABLE: TenantState
 TENANT_STATE_UPGRADING: TenantState
 TENANT_STATE_FAILED: TenantState
+TENANT_STATE_RESTORING: TenantState
+TENANT_STATE_MOVED: TenantState
+TENANT_STATE_FENCED: TenantState
 DATABASE_TYPE_UNSPECIFIED: DatabaseType
 DATABASE_TYPE_SQLITE: DatabaseType
 DATABASE_TYPE_POSTGRES: DatabaseType
@@ -107,3 +113,15 @@ class RemoveTenantResponse(_message.Message):
     database_type: DatabaseType
     data_location: str
     def __init__(self, database_type: _Optional[_Union[DatabaseType, str]] = ..., data_location: _Optional[str] = ...) -> None: ...
+
+class ReclaimTenantRequest(_message.Message):
+    __slots__ = ("name",)
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    def __init__(self, name: _Optional[str] = ...) -> None: ...
+
+class ReclaimTenantResponse(_message.Message):
+    __slots__ = ("tenant",)
+    TENANT_FIELD_NUMBER: _ClassVar[int]
+    tenant: Tenant
+    def __init__(self, tenant: _Optional[_Union[Tenant, _Mapping]] = ...) -> None: ...

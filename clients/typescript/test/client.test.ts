@@ -7,7 +7,10 @@ import { Code, CoriaError, coriaInterceptors, createCoriaClient as createBrowser
 import { createCoriaClient as createNodeClient } from "../src/node.js";
 import { file_coria_v1_access, Role } from "../src/gen/coria/v1/access_pb.js";
 import { file_coria_v1_audit } from "../src/gen/coria/v1/audit_pb.js";
+import { file_coria_v1_audit_seal } from "../src/gen/coria/v1/audit_seal_pb.js";
+import { file_coria_v1_backup } from "../src/gen/coria/v1/backup_pb.js";
 import { file_coria_v1_catalog } from "../src/gen/coria/v1/catalog_pb.js";
+import { file_coria_v1_correction } from "../src/gen/coria/v1/correction_pb.js";
 import { file_coria_v1_data } from "../src/gen/coria/v1/data_pb.js";
 import { file_coria_v1_deid } from "../src/gen/coria/v1/deid_pb.js";
 import { file_coria_v1_job } from "../src/gen/coria/v1/job_pb.js";
@@ -27,7 +30,10 @@ import { freePort, Server, silentServer } from "./server.js";
 const SERVICE_ATTRIBUTES: Record<string, string> = {
   AccessService: "access",
   AuditService: "audit",
+  AuditSealService: "auditSeal",
+  BackupService: "backups",
   CatalogService: "catalog",
+  CorrectionService: "corrections",
   DataService: "data",
   DeidService: "deid",
   JobService: "jobs",
@@ -44,7 +50,8 @@ const SERVICE_ATTRIBUTES: Record<string, string> = {
 };
 
 const FILES = [
-  file_coria_v1_access, file_coria_v1_audit, file_coria_v1_catalog, file_coria_v1_data, file_coria_v1_deid,
+  file_coria_v1_access, file_coria_v1_audit, file_coria_v1_audit_seal, file_coria_v1_backup,
+  file_coria_v1_catalog, file_coria_v1_correction, file_coria_v1_data, file_coria_v1_deid,
   file_coria_v1_job, file_coria_v1_metadata, file_coria_v1_monitor, file_coria_v1_profile,
   file_coria_v1_quarantine, file_coria_v1_receiver, file_coria_v1_reception, file_coria_v1_sender,
   file_coria_v1_settings, file_coria_v1_storage, file_coria_v1_tenant,

@@ -10,7 +10,10 @@ import grpc
 from coria.v1 import (
     access_pb2_grpc,
     audit_pb2_grpc,
+    audit_seal_pb2_grpc,
+    backup_pb2_grpc,
     catalog_pb2_grpc,
+    correction_pb2_grpc,
     data_pb2_grpc,
     deid_pb2_grpc,
     job_pb2_grpc,
@@ -178,7 +181,10 @@ class Client:
 
         self.access = stub(access_pb2_grpc, "AccessServiceStub")
         self.audit = stub(audit_pb2_grpc, "AuditServiceStub")
+        self.audit_seal = stub(audit_seal_pb2_grpc, "AuditSealServiceStub")
+        self.backups = stub(backup_pb2_grpc, "BackupServiceStub")
         self.catalog = stub(catalog_pb2_grpc, "CatalogServiceStub")
+        self.corrections = stub(correction_pb2_grpc, "CorrectionServiceStub")
         self.data = stub(data_pb2_grpc, "DataServiceStub")
         self.deid = stub(deid_pb2_grpc, "DeidServiceStub")
         self.jobs = stub(job_pb2_grpc, "JobServiceStub")

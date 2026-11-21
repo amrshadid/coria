@@ -61,6 +61,15 @@ func (Methods) Requirement(procedure string, msg proto.Message) (access.Requirem
 	return requirementIn(rules, procedure, msg)
 }
 
+// Pending reports whether procedure is a method the contract defines and no
+// handler serves yet (pendingRules). The server does not mount such a
+// method even when the rest of its service is served, so a call to it is
+// answered as one to any method the server does not serve.
+func (Methods) Pending(procedure string) bool {
+	_, ok := pendingRules[procedure]
+	return ok
+}
+
 // requestFor is RequestFor over table.
 func requestFor(table map[string]rule, procedure string) (proto.Message, bool) {
 	r, ok := table[procedure]
@@ -443,16 +452,95 @@ var rules = map[string]rule{
 	}),
 }
 
-// pendingRules is the table of the methods whose service the contract
-// defines and no handler serves yet: the services api/not-served.txt
-// names. Methods does not consult it, so the server answers each of these
-// methods as one it does not serve, after the caller is authenticated, and
-// a listed service can never be served by mistake with no handler behind
-// it. Each line is written with its method's contract and checked against
-// its Role line now; the change that serves a service moves its lines
-// into rules and its name off the list, and the tests fail until both are
-// done.
-var pendingRules = map[string]rule{}
+// pendingRules is the table of the methods the contract defines and no
+// handler serves yet: those of the services api/not-served.txt names, and
+// the single methods it names of services otherwise served. Methods does
+// not consult it for a requirement, and the server does not mount a method
+// it holds (Pending), so the server answers each of these methods as one
+// it does not serve, after the caller is authenticated, and none can be
+// served by mistake with no handler behind it. Each line is written with
+// its method's contract and checked against its Role line now; the change
+// that serves a method moves its line into rules and its name off the
+// list, and the tests fail until both are done.
+//
+// CorrectionService: admin on the tenant for every change (delete,
+// relabel, replace, undo, purge, allowing arrivals), operator to read the
+// corrections, whose reasons are a person's words about a subject, and
+// reader for the scrub findings and to resolve revisions. The object of a
+// change to a target is its path of labels, never an instance id, which
+// holds a SOP Instance UID as received; the handler records the
+// correction's id. The reason is not recorded by the requirement: the
+// handler writes it once it has passed its bounds. AuditSealService: admin
+// on the log's scope, but the public key, which any authenticated caller
+// may read. BackupService: admin on the installation. TenantService's
+// ReclaimTenant and AccessService's ReinstateKeys: admin on the
+// installation, further kept to the local operator by their handlers.
+var pendingRules = map[string]rule{
+	coriav1connect.CorrectionServiceDeleteProcedure: byMessage(func(r *v1.DeleteRequest) (access.Requirement, access.Request) {
+		t := r.GetTarget()
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: labelPath(t.GetSubjectLabel(), t.GetSessionLabel(), t.GetScanLabel()),
+			Details: map[string]string{detailValidateOnly: strconv.FormatBool(r.GetValidateOnly())}}
+	}),
+	coriav1connect.CorrectionServiceRelabelProcedure: byMessage(func(r *v1.RelabelRequest) (access.Requirement, access.Request) {
+		t := r.GetTarget()
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: labelPath(t.GetSubjectLabel(), t.GetSessionLabel(), t.GetScanLabel()),
+			Details: map[string]string{detailToLabel: labelPath(r.GetToLabel())}}
+	}),
+	coriav1connect.CorrectionServiceReplaceProcedure: byMessage(func(r *v1.ReplaceRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: jobObject(r.GetQuarantinedFile())}
+	}),
+	coriav1connect.CorrectionServiceListCorrectionsProcedure: byMessage(func(r *v1.ListCorrectionsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{}
+	}),
+	coriav1connect.CorrectionServiceGetCorrectionProcedure: byMessage(func(r *v1.GetCorrectionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: jobObject(r.GetId())}
+	}),
+	coriav1connect.CorrectionServiceUndoCorrectionProcedure: byMessage(func(r *v1.UndoCorrectionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: jobObject(r.GetId())}
+	}),
+	coriav1connect.CorrectionServicePurgeCorrectionProcedure: byMessage(func(r *v1.PurgeCorrectionRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: jobObject(r.GetId())}
+	}),
+	coriav1connect.CorrectionServiceAllowArrivalsProcedure: byMessage(func(r *v1.AllowArrivalsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: jobObject(r.GetId())}
+	}),
+	coriav1connect.CorrectionServiceListScrubFindingsProcedure: byMessage(func(r *v1.ListScrubFindingsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{}
+	}),
+	coriav1connect.CorrectionServiceResolveInstancesProcedure: byMessage(func(r *v1.ResolveInstancesRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Details: map[string]string{detailMembers: strconv.Itoa(len(r.GetMembers()))}}
+	}),
+
+	coriav1connect.AuditSealServiceVerifyAuditProcedure: byMessage(func(r *v1.VerifyAuditRequest) (access.Requirement, access.Request) {
+		return onScope(r.GetScope(), master.RoleAdmin), access.Request{}
+	}),
+	coriav1connect.AuditSealServiceListAuditCheckpointsProcedure: byMessage(func(r *v1.ListAuditCheckpointsRequest) (access.Requirement, access.Request) {
+		return onScope(r.GetScope(), master.RoleAdmin), access.Request{}
+	}),
+	coriav1connect.AuditSealServiceExportAuditProcedure: byMessage(func(r *v1.ExportAuditRequest) (access.Requirement, access.Request) {
+		return onScope(r.GetScope(), master.RoleAdmin), access.Request{}
+	}),
+	// "Role: none; any caller the server authenticates."
+	coriav1connect.AuditSealServiceGetAuditPublicKeyProcedure: fixed(access.Authenticated()),
+
+	coriav1connect.BackupServiceCreateBackupProcedure: fixed(installationAdmin),
+	coriav1connect.BackupServiceExportTenantProcedure: fixed(installationAdmin),
+	// Admin on the installation by the table; the handler then refuses
+	// every caller but the local operator, as the contract says.
+	coriav1connect.TenantServiceReclaimTenantProcedure: fixed(installationAdmin),
+	coriav1connect.AccessServiceReinstateKeysProcedure: fixed(installationAdmin),
+}
+
+// The keys of the details of the correction methods' entries.
+const (
+	// detailValidateOnly says whether a delete asked for a preview only.
+	detailValidateOnly = "validate_only"
+	// detailToLabel is the new label a relabel names.
+	detailToLabel = "to_label"
+	// detailMembers is how many (instance, revision) pairs a resolve asks
+	// about; never the instance ids, which hold UIDs as received.
+	detailMembers = "members"
+)
 
 // The keys of the details of the profile methods' entries.
 const (
