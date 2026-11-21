@@ -2,10 +2,12 @@
 // values de-identification took out of it. It is a verdict, never an edit:
 // it reads the file and changes nothing.
 //
-// The values searched for are the engine's needles (engine.Needles): every
-// value a profile removed or replaced, and the values of the attributes
-// that name or identify the person, which the engine never keeps (PS3.15
-// Table E.1-1). The file is read by the DICOM library's codec-free reader
+// The values searched for are the engine's needles (engine.Needles): the
+// values a profile removed or replaced that can identify someone by
+// themselves (names, identifiers, dates, UIDs; never a time of day, a
+// number but a GPS coordinate, a coded string or a description), and the
+// values of the attributes that name or identify the person, which the
+// engine never keeps (PS3.15 Table E.1-1). The file is read by the DICOM library's codec-free reader
 // (filereader/attributes), a different path from the data set the engine
 // changed, so a value one reader hides from the other is still seen. A
 // file the reader did not read whole (truncated, a sequence or item cut

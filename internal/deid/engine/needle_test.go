@@ -8,26 +8,29 @@ import (
 	"github.com/amrshadid/go-dicom/dataset"
 )
 
-// TestARemovedValueOfUnknownVRIsANeedle guards the needles of a file that
-// gives private elements no VR (Implicit VR Little Endian): an identifier
-// a rule removes from a private block, read as UN, is a needle of text,
-// so clean takes its copy out of a description, as it does the private
-// name the floor removes; a binary value removed is no needle.
-func TestARemovedValueOfUnknownVRIsANeedle(t *testing.T) {
+// TestARemovedPrivateValueOfUnknownKindIsNoNeedle guards the needles of
+// a file that gives private elements no VR (Implicit VR Little Endian): a
+// private value a rule removes is a needle only when it has a name's form
+// (a name, which the floor covers), since a private element's meaning is
+// not known and its values are mostly a vendor's settings. So the
+// private name is a needle and clean takes its copy out of a
+// description; the private identifier, of no known kind, is no needle and
+// its copy stays; a binary value removed is no needle either.
+func TestARemovedPrivateValueOfUnknownKindIsNoNeedle(t *testing.T) {
 	en := newTestEngine(t, testKeys, Options{},
 		rule("vendor", privSel("ACME", "0009", "xx"), aRemove),
 		rule("desc", kw("StudyDescription"), aClean))
 	ds := readFile(t, writeFileAs(t, privateBlockSample(t), implicitVR))
 	rec := apply(t, en, ds)
-	if !hasNeedle(rec, NeedleText, "MRN998877") {
-		t.Error("the removed private identifier is not a needle of text")
+	if !hasNeedle(rec, NeedleName, "ROE^RICHARD") {
+		t.Error("the removed private name is not a needle of a name")
 	}
-	if got := mustText(t, ds, tStudyDesc); strings.Contains(got, "MRN998877") || strings.Contains(got, "ROE") {
-		t.Errorf("clean left %q", got)
+	if got := mustText(t, ds, tStudyDesc); strings.Contains(got, "ROE") || !strings.Contains(got, "MRN998877") {
+		t.Errorf("clean left %q, want the name cut and the private identifier kept", got)
 	}
 	for _, n := range rec.Needles {
-		if strings.HasSuffix(n.Path, "00091012") {
-			t.Errorf("a binary value is a needle: %q", n.Value)
+		if strings.HasSuffix(n.Path, "00091012") || strings.HasSuffix(n.Path, "00091011") {
+			t.Errorf("a private value of unknown kind is a needle: %q", n.Value)
 		}
 	}
 }

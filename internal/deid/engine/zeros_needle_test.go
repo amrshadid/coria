@@ -19,20 +19,21 @@ import (
 	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
-// TestATimeOfZerosIsNoNeedle guards a time of midnight that the basic
-// profile removes (Study Time 000000): it is removed, but is no needle, so
-// the check after does not find it inside an ordinary decimal the file
-// keeps (Data Collection Diameter 500.000000) and hold the file for
-// nothing; a time that is not all zeros is still a needle.
-func TestATimeOfZerosIsNoNeedle(t *testing.T) {
+// TestATimeIsNoNeedle guards the times the basic profile removes (Study
+// Time, Series Time): they are removed, but a time of day identifies no
+// one alone and is no needle, so the check after does not find a midnight
+// (000000) inside an ordinary decimal the file keeps (Data Collection
+// Diameter 500.000000), nor a Series Time of 1200 in an Exposure Time of
+// 1200, and hold the file for nothing.
+func TestATimeIsNoNeedle(t *testing.T) {
 	ds := dataset.NewDataset()
 	for _, e := range []struct {
 		g, el uint16
 		vr, v string
 	}{
 		{0x0008, 0x0016, "UI", "1.2.840.10008.5.1.4.1.1.2"}, {0x0008, 0x0018, "UI", "2.25.1234"},
-		{0x0008, 0x0030, "TM", "000000"}, {0x0008, 0x0031, "TM", "101530"},
-		{0x0010, 0x0020, "LO", "PID12345"}, {0x0018, 0x0090, "DS", "500.000000"},
+		{0x0008, 0x0030, "TM", "000000"}, {0x0008, 0x0031, "TM", "1200"},
+		{0x0010, 0x0020, "LO", "PID12345"}, {0x0018, 0x0090, "DS", "500.000000"}, {0x0018, 0x1150, "IS", "1200"},
 	} {
 		if err := ds.Add(dataelem.NewDataElement(tag.New(e.g, e.el), dataelem.VR(e.vr), []byte(e.v))); err != nil {
 			t.Fatal(err)
@@ -58,17 +59,10 @@ func TestATimeOfZerosIsNoNeedle(t *testing.T) {
 			}
 		}
 	}
-	other := false
 	for _, n := range rec.Needles {
-		if n.Value == "000000" {
-			t.Errorf("a time of zeros is a needle (from %s)", n.Path)
+		if n.Value == "000000" || n.Value == "1200" {
+			t.Errorf("a time is a needle (from %s)", n.Path)
 		}
-		if n.Value == "101530" {
-			other = true
-		}
-	}
-	if !other {
-		t.Error("a time that is not all zeros is no needle")
 	}
 	path := filepath.Join(t.TempDir(), "out.dcm")
 	f, err := os.Create(path) // #nosec G304 -- the test's own temporary file.
@@ -88,8 +82,8 @@ func TestATimeOfZerosIsNoNeedle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(b, []byte("500.000000")) {
-		t.Fatal("the file does not keep the decimal the test needs")
+	if !bytes.Contains(b, []byte("500.000000")) || !bytes.Contains(b, []byte("1200")) {
+		t.Fatal("the file does not keep the numbers the test needs")
 	}
 	if _, err := check.New(check.Options{}).Check(context.Background(), bytes.NewReader(b), int64(len(b)), rec.Needles, nil); err != nil {
 		t.Errorf("the check after holds the file: %v", err)

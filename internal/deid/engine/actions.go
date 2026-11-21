@@ -81,24 +81,27 @@ type assign struct {
 }
 
 // needleAt keeps a value an action removed or replaced as a needle, when a
-// rule decided the element or the floor covers it. A value a default
+// rule decided the element or the floor covers it, and the value is one
+// that identifies by itself (needleKindOf, under basis). A value a default
 // removed (a private element, or any element under "unnamed: remove") is
 // not one otherwise: the profile named it as nothing identifying, and such
 // values (a model name, 0.000000) are common in what a file keeps, so the
 // check after would refuse files for them.
-func (r *run) needleAt(c *target, value, path string) {
+func (r *run) needleAt(c *target, value, path string, basis needleBasis) {
 	if c.byRule || c.floor {
-		r.needle(c.nvr, value, path)
+		r.needle(needleKindOf(uint32(c.tag), c.nvr, basis), c.nvr, value, path)
 	}
 }
 
 // subtreeNeedlesAt keeps as needles the values of a sequence an action
-// removes or empties: every text value of one the floor covers, and of one
-// a rule decided those the profile or the floor removes or changes where
-// they are (subtreeNeedles).
+// removes or empties: every value of one the floor covers, or of one
+// covered whole (wholeTags) a rule decided, but numbers, codes and times;
+// and of any other a rule decided, those the profile or the floor removes
+// or changes where they are (subtreeNeedles).
 func (r *run) subtreeNeedlesAt(c *target) error {
+	_, whole := wholeTags[uint32(c.tag)]
 	switch {
-	case c.floor:
+	case c.floor, c.byRule && whole:
 		return r.subtreeNeedles(c.seq, nil, c.path, len(c.seqs)+1, subtreeAll)
 	case c.byRule:
 		return r.subtreeNeedles(c.seq, slices.Concat(c.seqs, []uint32{uint32(c.tag)}), c.path, len(c.seqs)+1, subtreeByPlace)
@@ -231,7 +234,7 @@ func (r *run) actRemove(c *target) bool {
 	r.record.Entries[c.entry].Changed = true
 	r.ops = append(r.ops, op{kind: opRemove, ds: c.ds, tag: c.tag})
 	if v, ok := elementText(c.ds, c.tag); ok {
-		r.needleAt(c, naming.TrimValue(c.vr, v), c.path)
+		r.needleAt(c, naming.TrimValue(c.vr, v), c.path, basisPlace)
 	}
 	return true
 }
@@ -243,7 +246,7 @@ func (r *run) actEmpty(c *target) error {
 		return nil
 	}
 	if ok {
-		r.needleAt(c, naming.TrimValue(c.vr, v), c.path)
+		r.needleAt(c, naming.TrimValue(c.vr, v), c.path, basisPlace)
 	}
 	r.record.Entries[c.entry].Changed = true
 	r.ops = append(r.ops, op{kind: opValue, ds: c.ds, tag: c.tag, value: []byte{}, vr: vrIfUN(c.elem, c.vr)})
@@ -257,7 +260,7 @@ func (r *run) actDummy(c *target) error {
 		return c.fail(CauseBadValue)
 	}
 	if v, ok := elementText(c.ds, c.tag); ok {
-		r.needleAt(c, naming.TrimValue(c.vr, v), c.path)
+		r.needleAt(c, naming.TrimValue(c.vr, v), c.path, basisPlace)
 	}
 	r.record.Entries[c.entry].Changed = true
 	r.ops = append(r.ops, op{kind: opValue, ds: c.ds, tag: c.tag, value: d, vr: vrIfUN(c.elem, c.vr)})
@@ -334,7 +337,7 @@ func (r *run) actReplace(c *target, a Action) error {
 		if v == out {
 			return nil
 		}
-		r.needleAt(c, v, c.path)
+		r.needleAt(c, v, c.path, basisPlace)
 	}
 	return r.write(c, out)
 }
@@ -355,7 +358,7 @@ func (r *run) actHash(c *target) error {
 	if !validText(c.vr, out) {
 		return c.fail(CauseBadValue)
 	}
-	r.needleAt(c, orig, c.path)
+	r.needleAt(c, orig, c.path, basisPseudonym)
 	return r.write(c, out)
 }
 
@@ -373,7 +376,7 @@ func (r *run) actUID(c *target) error {
 		return nil
 	}
 	for _, u := range replaced {
-		r.needleAt(c, u, c.path)
+		r.needleAt(c, u, c.path, basisPlace)
 	}
 	return r.write(c, out)
 }
@@ -405,7 +408,7 @@ func (r *run) actShift(c *target) error {
 		return c.fail(CauseBadValue)
 	}
 	r.record.DatesShifted = true
-	r.needleAt(c, orig, c.path)
+	r.needleAt(c, orig, c.path, basisPlace)
 	return r.write(c, out)
 }
 
@@ -430,7 +433,7 @@ func (r *run) actGeneralize(c *target) error {
 	if out == orig {
 		return nil
 	}
-	r.needleAt(c, orig, c.path)
+	r.needleAt(c, orig, c.path, basisPlace)
 	return r.write(c, out)
 }
 
@@ -459,7 +462,7 @@ func (r *run) actLookup(c *target, a Action) error {
 		if !a.AssignMissing {
 			return c.fail(CauseLookupMissing)
 		}
-		r.needleAt(c, orig, c.path)
+		r.needleAt(c, orig, c.path, basisPseudonym)
 		r.record.Entries[c.entry].Changed = true
 		r.assigns = append(r.assigns, assign{table: a.Table, key: key, vr: c.vr, op: len(r.ops)})
 		r.ops = append(r.ops, op{kind: opAssign, ds: c.ds, tag: c.tag, text: orig, entry: c.entry, path: c.path, rule: c.rule, vr: vrIfUN(c.elem, c.vr)})
@@ -468,7 +471,7 @@ func (r *run) actLookup(c *target, a Action) error {
 	if code == "" || !isASCII(code) || !validText(c.vr, code) {
 		return c.fail(CauseBadValue)
 	}
-	r.needleAt(c, orig, c.path)
+	r.needleAt(c, orig, c.path, basisPseudonym)
 	if code == orig {
 		return nil
 	}

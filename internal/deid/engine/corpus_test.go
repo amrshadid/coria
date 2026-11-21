@@ -84,9 +84,11 @@ func corpusRules() []*v1.ProfileRule {
 		rules = append(rules, rule("clean-"+strings.ToLower(k), kw(k), aClean))
 	}
 	rules = append(rules, rule("clean-overlay-description", &v1.ProfileSelector{Kind: &v1.ProfileSelector_Tag{Tag: "60000022"}}, aClean))
-	// A vendor's block that holds a record number the description repeats
-	// (the synthetic implicit-private.dcm): removed by a rule, so its
-	// values are needles that clean takes out of free text.
+	// A vendor's block that holds a name and a record number the
+	// description repeats (the synthetic implicit-private.dcm): removed by
+	// a rule. Its name is a needle, which clean takes out of the
+	// description; its record number, a private value of no known kind,
+	// is not, and stays in the description.
 	rules = append(rules, rule("remove-acme", privSel("ACME 1.0", "0009", "xx"), aRemove))
 	return rules
 }

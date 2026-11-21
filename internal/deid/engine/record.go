@@ -128,7 +128,7 @@ type NeedleKind int
 
 // The kinds of value.
 const (
-	// NeedleText is any other text: an identifier, a description.
+	// NeedleText is an identifier, as text.
 	NeedleText NeedleKind = iota + 1
 	// NeedleName is a person's name (VR PN), or one of its parts.
 	NeedleName
@@ -138,8 +138,9 @@ const (
 	NeedleUID
 )
 
-// Needle is a value the profile removed or replaced, kept in memory so the
-// check after can search the de-identified file for it.
+// Needle is a value the profile removed or replaced that can identify
+// someone by itself (needles.go), kept in memory so the check after can
+// search the de-identified file for it.
 type Needle struct {
 	// Kind is what the value was.
 	Kind NeedleKind

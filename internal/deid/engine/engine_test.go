@@ -120,7 +120,8 @@ func sampleRules() []*v1.ProfileRule {
 }
 
 // TestEachActionChangesItsElement guards what every action does to the
-// element it decides: the value written, the needle kept, the element
+// element it decides: the value written, the needle kept (and none of a
+// comment replaced), the element
 // made, the private block kept with its creator and the one removed with
 // its creator, and the record of the method: the caller's text, then this
 // build's version and the DICOM library's, "unknown" in a test binary,
@@ -186,10 +187,15 @@ func TestEachActionChangesItsElement(t *testing.T) {
 	for _, n := range rec.Needles {
 		values[n.Value] = true
 	}
-	for _, v := range []string{"Doe^John", "PAT001", "ACC12345", "General Hospital", "Who^Doctor", "1.2.3.4.5", "1.2.3.4.9", "20240315", "19500101", "comments"} {
+	for _, v := range []string{"Doe^John", "PAT001", "ACC12345", "General Hospital", "Who^Doctor", "1.2.3.4.5", "1.2.3.4.9", "20240315", "19500101"} {
 		if !values[v] {
 			t.Errorf("the needles lack %q", v)
 		}
+	}
+	// Patient Comments is free text, replaced only because it might hold
+	// an identifier: its value identifies no one by itself.
+	if values["comments"] {
+		t.Error("a replaced comment is a needle")
 	}
 	if values[ctImageStorage] {
 		t.Error("a registered UID is a needle")

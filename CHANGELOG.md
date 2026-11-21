@@ -8,6 +8,24 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- The check after de-identification searches only for values that can
+  identify someone by themselves: names; identifiers (the attributes of
+  PS3.15 Table E.1-1 that identify a person, place, device, order or study,
+  GPS coordinates, attributes the data dictionary does not know, and any
+  text a rule hashes or looks up); dates; and UIDs the standard does not
+  register. Every value of a removed identification code sequence, issuer
+  sequence, Other Patient IDs Sequence or Person Identification Code
+  Sequence is searched for, at any depth, but numbers, codes, times and
+  coding scheme names. Times of day, numbers, coded strings, descriptions
+  and comments, and private values but names, dates and UIDs, are still
+  removed as the profile says but are no longer searched for, so ordinary
+  files are no longer held for a removed weight of 0.000000 found in a
+  gantry tilt, a removed series description "Scout" found in "SCOUT MODE",
+  or a removed study time of 1200 found in an exposure time; a name typed
+  into a description is still found through the name itself. A test fails
+  when a row of Table E.1-1 is neither searched for nor listed as no
+  identifier. Of pydicom's public corpus, a receiver under the basic profile
+  archives 27 files instead of 24, none held for a residual value.
 - `job get` is now `job show` (`get` remains as an alias). The stow probe and
   `sender test` send `GET <url>/studies?limit=1` (QIDO-RS) and pass only on
   a 2xx answer; a redirect, 404 (the URL names no DICOMweb service),

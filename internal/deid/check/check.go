@@ -105,7 +105,7 @@ type Kind string
 const (
 	// KindName is a person's name or a part of it.
 	KindName Kind = "name"
-	// KindIdentifier is an identifier or any other text.
+	// KindIdentifier is an identifier.
 	KindIdentifier Kind = "identifier"
 	// KindDate is a date, or a date and time.
 	KindDate Kind = "date"

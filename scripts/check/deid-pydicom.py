@@ -17,13 +17,29 @@ sources, so a mistake in one is caught by another:
     whatever a profile says (FLOOR below: the names, identifiers, birth
     date and time, addresses and telephone numbers of persons), and of
     every element of VR PN, at any depth of sequences;
-  - the values of the original's private elements, which a profile removes
-    unless a rule keeps them, when they are text and are not the whole value
-    of a standard element of the original (a vendor's name in a private
-    element, equal to Manufacturer, may be kept legitimately; an identifier
-    copied into a description may not). A private value of unknown VR (every
-    private element of an implicit VR file) is read as text, and as a
-    person's name when it has a name's form (a "^" between letters).
+  - the values of the original's private elements that are a person's
+    name, which the engine never keeps whatever a profile says: one of VR
+    PN, and one of unknown VR (every private element of an implicit VR
+    file) that has a name's form (a "^" between letters), when it is not
+    the whole value of a standard element of the original. Other private
+    values are not searched for: a private element's meaning is not known,
+    its values are mostly a vendor's settings, and the engine makes no
+    needle of them unless they are names.
+
+  - every value inside a sequence covered whole (WHOLE below): Other
+    Patient IDs Sequence and Person Identification Code Sequence at any
+    depth whatever a profile says, and the identification and issuer
+    sequences when their keyword is given (the profile removes them); but
+    a number, a coded string, a time, and the attributes that name a coding
+    scheme (CODING below), as the engine.
+
+Only values that can identify by themselves are needles, as the engine's
+(internal/deid/engine/needles.go): names, identifiers, dates and UIDs. The
+keywords given are expected to be such attributes; a time, a value of a
+numeric VR, a coded string or a description is not one. Where this script
+differs from the engine: it reads no GPS coordinate and no attribute its
+data dictionary does not know unless a keyword names it, and no value a
+rule hashed; those come only from the engine's needles.
 
 Each needle is searched for in the written forms the engine's clean
 removes (internal/deid/engine/forms.go): a person's name as DOE^JOHN, JOHN
@@ -91,7 +107,40 @@ FLOOR = {
     "PatientTelephoneNumbers", "PatientTelecomInformation", "PersonAddress",
     "PersonTelephoneNumbers", "PersonTelecomInformation",
     "ReferringPhysicianAddress", "ReferringPhysicianTelephoneNumbers",
+    "CountryOfResidence", "RegionOfResidence", "MedicalRecordLocator",
+    "PatientInstitutionResidence", "PersonIdentificationCodeSequence",
 }
+
+
+# The sequences whose every value is a needle when removed
+# (internal/deid/engine/needles.go, wholeTags); the first two are the
+# floor's and are searched whatever a profile decided.
+WHOLE_FLOOR = {"OtherPatientIDsSequence", "PersonIdentificationCodeSequence"}
+WHOLE = WHOLE_FLOOR | {
+    "InstitutionCodeSequence", "ReferringPhysicianIdentificationSequence",
+    "ConsultingPhysicianIdentificationSequence",
+    "PhysiciansOfRecordIdentificationSequence",
+    "PerformingPhysicianIdentificationSequence",
+    "PhysiciansReadingStudyIdentificationSequence",
+    "OperatorIdentificationSequence",
+    "ScheduledPerformingPhysicianIdentificationSequence",
+    "IntendedRecipientsOfResultsIdentificationSequence",
+    "VerifyingObserverIdentificationCodeSequence",
+    "VerbalSourceIdentifierCodeSequenceTrial",
+    "ContentCreatorIdentificationCodeSequence",
+    "IssuerOfAdmissionIDSequence", "IssuerOfServiceEpisodeIDSequence",
+    "IssuerOfTheContainerIdentifierSequence",
+    "IssuerOfTheSpecimenIdentifierSequence",
+}
+
+# The attributes that name a coding scheme or a context group, the same in
+# every file that uses it: no needle inside a sequence covered whole.
+CODING = {0x00080102, 0x00080103, 0x00080105, 0x00080106, 0x00080107,
+          0x0008010B, 0x0008010D, 0x0008010F, 0x00080117}
+
+# The VRs of a value inside a sequence covered whole that is a needle.
+WHOLE_VRS = {"AE", "LO", "LT", "SH", "ST", "UC", "UR", "UT", "PN", "DA",
+             "DT", "UI", "UN"}
 
 
 def unspaced(s):
@@ -303,18 +352,33 @@ def gather(orig, keywords, needles):
         except Exception:  # a value pydicom cannot convert
             continue
         if elem.tag.is_private:
-            if not elem.tag.is_private_creator and elem.VR in ("LO", "LT", "SH", "ST", "UT", "UC", "PN", "UN", "CS", "DA", "DT"):
+            if not elem.tag.is_private_creator and elem.VR in ("PN", "UN"):
                 private.extend((kind_of(elem, s), s) for s in vals)
             continue
         standard_values.update(s.strip(" \x00").lower() for s in vals)
         if elem.keyword in keywords or elem.keyword in FLOOR or kind_of(elem) == "name":
             for s in vals:
                 needles.add(kind_of(elem), s)
+    for elem in orig.iterall():
+        if elem.VR != "SQ" or not (elem.keyword in WHOLE_FLOOR or (elem.keyword in WHOLE and elem.keyword in keywords)):
+            continue
+        for item in elem.value:
+            for inner in item.iterall():
+                if inner.VR not in WHOLE_VRS or inner.tag in CODING or inner.tag.is_private_creator:
+                    continue
+                try:
+                    vals = values_of(inner)
+                except Exception:  # a value pydicom cannot convert
+                    continue
+                for v in vals:
+                    if inner.VR == "UN" and not v.strip(" \x00").isprintable():
+                        continue
+                    needles.add(kind_of(inner, v), v)
     for kind, s in private:
         s = s.strip(" \x00")
-        if not s.isprintable() or s.lower() in standard_values:
+        if kind != "name" or not s.isprintable() or s.lower() in standard_values:
             continue
-        needles.add(kind if kind == "name" else "text", s)
+        needles.add("name", s)
 
 
 def texts(ds):

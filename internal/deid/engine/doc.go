@@ -42,14 +42,24 @@
 // one becomes remove-unless-required with a dummy. Their values are
 // needles whenever they are removed or changed.
 //
-// Needles. A value a rule removes or changes is a needle: kept in memory
-// for clean and the check after. A private value of VR UN (every private
-// element of an implicit VR file) is one as text when it reads as text. Of
-// a sequence removed whole, the values the profile or the floor would
-// remove where they are; every value of one the floor covers. A date of
-// only a year, or a year and month, is matched only as a date of that
-// precision, never as the year of a full date. A date or time of only
-// zeros (a midnight of 000000) is removed as its rule says and is no
+// Needles (needles.go). A value a rule removes or changes is a needle,
+// kept in memory for clean and the check after, only when it can identify
+// someone by itself: a person's name, an identifier (an attribute of the
+// floor, or of the rows of PS3.15 Table E.1-1 whose value identifies a
+// person, a place, a device, an order or a study; a GPS coordinate; an
+// attribute the data dictionary does not know; any text a rule hashes or
+// looks up), a date, a UID the standard does not register. A time of day,
+// a number, a coded string, a description or comment, and a private value
+// but a name, a date or a UID, are removed as the profile says and are no
+// needle: a needle that identifies no one makes false holds on ordinary
+// words and numbers, and a name typed into a description is found through
+// the name's own needle. Of a sequence removed whole, the values the
+// profile or the floor would remove where they are, by the same classes;
+// of one covered whole (the floor's, the identification code sequences,
+// the issuers' sequences), at any depth, every value but a number, a code,
+// a time or a coding scheme's name. A date of only a year, or a year and
+// month, is matched only as a date of that precision, never as the year of
+// a full date. A date of only zeros is removed as its rule says and is no
 // needle: it identifies no one, and is found inside ordinary decimals.
 //
 // Clean removes the file's needles from free text: each value, each part

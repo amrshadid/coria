@@ -31,7 +31,12 @@ const (
 // or replaces, whose values pydicom must find in no archived file.
 var deidRemovedKeywords = []string{"PatientName", "PatientID", "PatientBirthDate", "StudyInstanceUID", "SeriesInstanceUID",
 	"SOPInstanceUID", "StudyDate", "SeriesDate", "AcquisitionDate", "ContentDate", "AccessionNumber", "StudyID",
-	"InstitutionName", "ReferringPhysicianName", "OperatorsName", "StationName"}
+	"InstitutionName", "ReferringPhysicianName", "OperatorsName", "StationName",
+	// Sequences the profile removes whose every value identifies: pydicom
+	// searches for all they held.
+	"InstitutionCodeSequence", "ReferringPhysicianIdentificationSequence", "PerformingPhysicianIdentificationSequence",
+	"OperatorIdentificationSequence", "PhysiciansReadingStudyIdentificationSequence", "ContentCreatorIdentificationCodeSequence",
+	"VerifyingObserverIdentificationCodeSequence", "IssuerOfAdmissionIDSequence", "IssuerOfServiceEpisodeIDSequence"}
 
 // TestCorpusThroughADeidentifyingReceiver is the outside check of
 // de-identification at reception, run when deidCorpusEnv and deidPythonEnv

@@ -424,11 +424,14 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 				}
 			}
 			if isSeq {
-				innerSeqs := seqs
+				innerSeqs, innerMode := seqs, mode
 				if mode == subtreeByPlace {
 					innerSeqs = slices.Concat(seqs, []uint32{uint32(t)})
 				}
-				if err := r.subtreeNeedles(inner, innerSeqs, p, depth+1, mode); err != nil {
+				if mode != subtreeAll && r.removedWhole(t, seqs, concept, valueType) {
+					innerMode = subtreeAll
+				}
+				if err := r.subtreeNeedles(inner, innerSeqs, p, depth+1, innerMode); err != nil {
 					return err
 				}
 				continue
@@ -441,7 +444,8 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 			_, creator := privateCreator(t, creators)
 			value := naming.TrimValue(vr, raw)
 			if mode == subtreeAll {
-				r.needle(needleVR(t, vr, raw), value, p)
+				nvr := needleVR(t, vr, raw)
+				r.needle(needleKindOf(uint32(t), nvr, basisWhole), nvr, value, p)
 				continue
 			}
 			loc := profile.Location{Sequences: seqs, Tag: uint32(t), Creator: creator, VR: vr}
@@ -455,11 +459,31 @@ func (r *run) subtreeNeedles(seq *sequence.Sequence, seqs []uint32, path string,
 				act, _ = floorAction(act, t.Group()%2 == 1)
 			}
 			if (floor || dec.Rule >= 0) && changesValue(act, vr, value) {
-				r.needle(nvr, value, p)
+				r.needle(needleKindOf(uint32(t), nvr, basisOf(act)), nvr, value, p)
 			}
 		}
 	}
 	return nil
+}
+
+// removedWhole reports whether a sequence of tag t met inside a removed
+// sequence, at its place inside seqs, is one covered whole (wholeTags) that
+// would be removed or emptied where it stands: always for one the floor
+// covers, otherwise when a rule decides it and does not keep it. Its
+// values are then needles as a whole, at whatever depth it is.
+func (r *run) removedWhole(t tag.Tag, seqs []uint32, concept *profile.Concept, valueType string) bool {
+	if _, ok := wholeTags[uint32(t)]; !ok {
+		return false
+	}
+	if _, ok := floorTags[uint32(t)]; ok {
+		return true
+	}
+	loc := profile.Location{Sequences: seqs, Tag: uint32(t), VR: "SQ"}
+	if valueType != "" {
+		loc.ContentItem, loc.ValueType = concept, valueType
+	}
+	dec := r.en.dec.Decide(loc, r.facts)
+	return dec.Rule >= 0 && dec.Action.Kind != ActKeep && dec.Action.Kind != ActClean
 }
 
 // changesValue reports whether an action removes or changes a value of VR
@@ -483,56 +507,6 @@ func changesValue(a Action, vr, value string) bool {
 		return a.Template != "" || a.Constant != value
 	}
 	return true
-}
-
-// needle keeps a removed or replaced value for the check after: each value
-// of a multi-valued one, and the whole. A registered UID is not one: it
-// names a kind of object, stays wherever else it is, and is no trace of
-// the patient. A value of VR UN is one when it reads as text (unknownText).
-func (r *run) needle(vr, value, path string) {
-	kind := needleKind(vr)
-	if vr == "UN" {
-		var ok bool
-		if value, ok = unknownText(value); !ok {
-			return
-		}
-	}
-	if kind == 0 || value == "" {
-		return
-	}
-	add := func(v string) {
-		v = strings.Trim(v, " \x00")
-		if v == "" || (kind == NeedleUID && Registered(v)) || (temporalVRs[vr] && allZeros(v)) {
-			return
-		}
-		r.record.Needles = append(r.record.Needles, Needle{Kind: kind, Value: v, Path: path})
-	}
-	parts := strings.Split(value, `\`)
-	for _, p := range parts {
-		add(p)
-	}
-	if len(parts) > 1 {
-		add(value)
-	}
-}
-
-// needleKind is the kind of a removed value of a VR, 0 for a VR that holds
-// no text. A value of VR UN (a private element of an implicit VR file, or
-// one a system without its dictionary passed on, PS3.5 6.2.2) is text: its
-// VR is not known, and searching for it as text is what finds a copy of
-// it in a description.
-func needleKind(vr string) NeedleKind {
-	switch vr {
-	case "PN":
-		return NeedleName
-	case "DA", "DT":
-		return NeedleDate
-	case "UI":
-		return NeedleUID
-	case "AE", "AS", "CS", "DS", "IS", "LO", "LT", "SH", "ST", "TM", "UC", "UR", "UT", "UN":
-		return NeedleText
-	}
-	return 0
 }
 
 // shiftDays returns the subject's date shift, working it out the first
@@ -568,26 +542,4 @@ func (r *run) text(ds *dataset.Dataset, t tag.Tag, vr string) (string, error) {
 		return "", errNotText
 	}
 	return naming.TrimValue(vr, string(b)), nil
-}
-
-// temporalVRs are the VRs of a date or a time (PS3.5 6.2).
-var temporalVRs = map[string]bool{"DA": true, "DT": true, "TM": true}
-
-// allZeros reports whether a date or time value holds no digit but zeros
-// (a time of midnight, 000000, a date never filled in, 00000000). It is
-// removed as the rule says, but is no needle: it identifies no one, and
-// as a run of zeros it is found inside ordinary numbers (a decimal string
-// such as 500.000000), which would hold every such file for nothing.
-func allZeros(v string) bool {
-	digit := false
-	for _, c := range v {
-		switch c {
-		case '0':
-			digit = true
-		case '.', ':', '+', '-', ' ':
-		default:
-			return false
-		}
-	}
-	return digit
 }
