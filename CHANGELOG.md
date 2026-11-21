@@ -230,6 +230,10 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- `make prove-viewer`: OHIF Viewer and headless Chromium in containers open
+  public studies (CT, MR, multi-frame, JPEG baseline, JPEG 2000, RLE)
+  through DICOMweb with a reader key, and the harness reports blank
+  pictures, failed requests and the most reads kept open at once.
 - The contract, defined and not yet served, for keeping the archive whole:
   scrub and rebuild jobs (JobService; a rebuild always builds a shadow
   catalog in a scratch schema that must be empty and apart from the

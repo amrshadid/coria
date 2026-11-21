@@ -420,6 +420,24 @@ prove-deid:
 		$(if $(PYDICOM_CORPUS),--pydicom-corpus "$(PYDICOM_CORPUS)") \
 		$(if $(PROVE_DEID_ORTHANC),--orthanc "$(PROVE_ORTHANC)" --orthanc-dimse "$(PROVE_ORTHANC_DIMSE)")
 
+# The viewer harness (scripts/prove/viewer.py): the real program built, served
+# and set up with its own commands, public studies (CT, MR, multi-frame, JPEG
+# baseline, JPEG 2000, RLE) archived from dcmtk's storescu; OHIF Viewer (the
+# ohif/app image, pinned) and headless Chromium (the Playwright image, pinned)
+# run in containers, open each study, and the script prints whether each
+# picture is blank, every request that failed (path, status, Accept) and the
+# most reads the viewer kept open at once. Needs Docker (PROVE_DOCKER_HOST, a
+# DOCKER_HOST value), dcmtk (DCMTK=dir), and a PYTHON with
+# scripts/requirements/prove-reading.txt. PROVE_VIEWER_SHOTS names a directory
+# for the screenshots and result.json.
+PROVE_DOCKER_HOST   ?=
+PROVE_VIEWER_SHOTS  ?=
+.PHONY: prove-viewer
+prove-viewer:
+	"$(PYTHON)" scripts/prove/viewer.py --go "$(GO)" --dcmtk "$(DCMTK)" \
+		$(if $(PROVE_DOCKER_HOST),--docker-host "$(PROVE_DOCKER_HOST)") \
+		$(if $(PROVE_VIEWER_SHOTS),--keep-shots "$(PROVE_VIEWER_SHOTS)")
+
 # Sending's speed: a scan of 64 small instances to an in-process DIMSE and
 # STOW-RS peer, three runs of twenty jobs each.
 .PHONY: bench-send
