@@ -346,6 +346,16 @@ type QuarantinedFile struct {
 	// (as a received file's, ReceivedFile.Deidentified), and only its bytes
 	// in the incoming area are the original's.
 	Deidentified bool
+	// Import, when not nil, is the import unit that handed in a file held
+	// as it arrived (it never became a received file) and its path: the
+	// store writes the arrival, decided quarantined, with the record
+	// (Importing). Written only; a read answers nil.
+	Import *ImportArrival
+	// ImportJob and ImportPath name the import job that handed the file in
+	// and its path under the root, empty for a file that came any other
+	// way. Answered by a store, which sets them (Importing); ignored in a
+	// write.
+	ImportJob, ImportPath string
 }
 
 // Validate returns an Invalid error unless q can be recorded as a new held
@@ -422,6 +432,14 @@ func (q QuarantinedFile) Validate() error {
 	}
 	if q.ReleasedFrom != "" {
 		if err := master.ValidateID("released-from id", q.ReleasedFrom); err != nil {
+			return err
+		}
+	}
+	if q.Import != nil {
+		if q.ReleasedFrom != "" {
+			return invalid("a file an import hands in is not a released one")
+		}
+		if err := q.Import.Validate(); err != nil {
 			return err
 		}
 	}

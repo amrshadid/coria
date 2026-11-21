@@ -151,13 +151,14 @@ func JobProgressEvent(j Job, at time.Time) (EventRecord, error) {
 }
 
 // eventSender returns an Invalid error unless j names a sender as its kind
-// says: a send job its sender, a deid job none. A payload alone cannot
-// tell, since the contract's events carry no kind.
+// says: a send job its sender, a deid or an import job none. A payload
+// alone cannot tell, since the contract's events carry no kind.
 func eventSender(j Job) error {
+	noSender := j.Kind == JobDeid || j.Kind == JobImport
 	switch {
-	case j.Kind == JobDeid && j.Sender != "":
-		return invalid("a deid job's event names no sender")
-	case j.Kind != JobDeid && j.Sender == "":
+	case noSender && j.Sender != "":
+		return invalid("a deid or import job's event names no sender")
+	case !noSender && j.Sender == "":
 		return invalid("a send job's event names its sender")
 	}
 	return nil

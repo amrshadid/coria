@@ -287,6 +287,9 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 		var offs, lens, sizes, pvs []int64
 		var sums [][]byte
 		var confirm []string
+		// Each instance confirmed with its received checksum, the claim's,
+		// the key of the received file an import's arrival names.
+		var confirmed []sqlkit.ArchivedFile
 		var newBytes int64
 		for _, in := range c.Instances {
 			h, found := byUID[in.SOPInstanceUID]
@@ -297,6 +300,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 				return tenant.Precondition("an instance confirmed is not claimed by this reception")
 			}
 			confirm = append(confirm, in.SOPInstanceUID)
+			confirmed = append(confirmed, sqlkit.ArchivedFile{UID: in.SOPInstanceUID, Sum: h.archived})
 			offs, lens, sizes = append(offs, in.Offset), append(lens, in.Length), append(sizes, in.Size)
 			sums = append(sums, sumBytes(in.ArchivedSHA256))
 			pvs = append(pvs, profiles[in.Profile])
@@ -327,6 +331,12 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 				bytes = reception_scans.bytes + excluded.bytes`, c.ReceptionID, scanID, newInstances, newBytes); err != nil {
 				return err
 			}
+		}
+		// The outcome of an import's files among those confirmed, in this
+		// transaction (tenant.Importing); its events are written last.
+		importEvents, err := importSending().ImportArchived(ctx, sendingTx{tx: tx}, c.ReceptionID, confirmed, c.At)
+		if err != nil {
+			return err
 		}
 		if err := addToCatalog(ctx, tx, c, session, scanID, newScan, newInstances, newBytes); err != nil {
 			return err
@@ -362,7 +372,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			return err
 		}
 		out.ManifestSHA256 = sqlkit.ToSHA256(sum)
-		return nil
+		return writeEvents(ctx, tx, importEvents...)
 	})
 	if err != nil {
 		return tenant.Scan{}, err

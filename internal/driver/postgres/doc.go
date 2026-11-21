@@ -103,7 +103,9 @@
 //  3. a quarantine record's row;
 //  4. receptions' rows, several in order of id;
 //  5. a sender's row (FOR KEY SHARE by what makes a job for it, FOR
-//     UPDATE by its removal), then a job's row, then a job's scan's;
+//     UPDATE by its removal), an import job's units' rows (in order of job,
+//     then unit), then the import job's row, then a job's row, then a
+//     job's scan's;
 //  6. a storage's row;
 //  7. the catalog's subject, session and scan, in that order, as their
 //     inserts meet them;
@@ -115,6 +117,12 @@
 // AssignLookupCodes, which locks nothing else, the tables of a batch in
 // order of name. A commit reads the profile versions its instances name
 // without a lock: a version is never changed or removed.
+//
+// CommitScan gives an import's files their outcome after its instance rows,
+// so it takes rows of 5 after rows of 7 and 8: no change that holds a row of
+// 5 ever locks a catalog or instance row, so that order closes no cycle. A
+// cancel of an import job locks its queued units of work with SKIP LOCKED,
+// then their import units, the import job and the job, in 5's order.
 //
 // A cancel of a job (CancelJob, RemoveSender) holds the job's row and then
 // ends the job's queued units with SKIP LOCKED: it never waits for a

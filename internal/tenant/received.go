@@ -49,6 +49,11 @@ type ReceivedFile struct {
 	// was recorded as received and is archived as received; at a receiver
 	// that de-identifies now it is held instead.
 	Deidentified bool
+	// Import, when not nil, is the import unit that handed the file in and
+	// its path (Importing): the store writes the arrival, the unit's
+	// cursor and its counts with the file's row. Written only; a read
+	// answers nil.
+	Import *ImportArrival
 	// Received is when it was recorded. Answered by a store.
 	Received time.Time
 }
@@ -94,6 +99,14 @@ func (f ReceivedFile) Validate() error {
 			return invalid("only a released file names the profile version its release named")
 		}
 		if err := f.ReleasedProfile.Validate(); err != nil {
+			return err
+		}
+	}
+	if f.Import != nil {
+		if f.Released || f.Association != "" {
+			return invalid("a file an import hands in came by no association and no release")
+		}
+		if err := f.Import.Validate(); err != nil {
 			return err
 		}
 	}

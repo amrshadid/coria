@@ -487,6 +487,25 @@ func TestLeanCatalogMigrationRefusesAMismatchedStorage(t *testing.T) {
 	}
 }
 
+// lendImportArrivals lends a schema before the import's the table every
+// deciding transaction of the port probes for an import's files (empty, so
+// it finds none), for a fill that writes through the port.
+func lendImportArrivals(t *testing.T, s *Tenant) {
+	t.Helper()
+	if _, err := s.p.write.ExecContext(context.Background(), `CREATE TABLE import_arrivals (reception_id TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// takeBackImportArrivals drops the table lendImportArrivals lent, before
+// the migrations run.
+func takeBackImportArrivals(t *testing.T, s *Tenant) {
+	t.Helper()
+	if _, err := s.p.write.ExecContext(context.Background(), `DROP TABLE import_arrivals`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestSendingMigrationKeepsData guards the migration that adds senders and
 // jobs on a database that holds data: a tenant filled through the port at
 // the schema before it (tenanttest.FillBeforeSending) reads the same after
@@ -507,18 +526,20 @@ func TestSendingMigrationKeepsData(t *testing.T) {
 	// they are lent for the fill, which writes through the port, and taken
 	// back before the migrations run.
 	lent := []string{"receptions ADD COLUMN route", "sessions ADD COLUMN route", "quarantine ADD COLUMN release_storage",
-		"quarantine ADD COLUMN release_profile"}
+		"quarantine ADD COLUMN release_profile", "quarantine ADD COLUMN import_job", "quarantine ADD COLUMN import_path"}
 	for _, c := range lent {
 		if _, err := s.p.write.ExecContext(ctx, `ALTER TABLE `+c+` TEXT NOT NULL DEFAULT ''`); err != nil {
 			t.Fatal(err)
 		}
 	}
+	lendImportArrivals(t, s)
 	tenanttest.FillBeforeSending(t, s)
 	for _, c := range lent {
 		if _, err := s.p.write.ExecContext(ctx, `ALTER TABLE `+strings.Replace(c, "ADD", "DROP", 1)); err != nil {
 			t.Fatal(err)
 		}
 	}
+	takeBackImportArrivals(t, s)
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +576,9 @@ func TestDeidJobsMigrationKeepsJobs(t *testing.T) {
 	if _, err := s.p.write.ExecContext(ctx, `CREATE TABLE job_tallies (job_id TEXT, tally TEXT, count INTEGER)`); err != nil {
 		t.Fatal(err)
 	}
+	lendImportArrivals(t, s)
 	before := tenanttest.FillBeforeDeidJobs(t, s)
+	takeBackImportArrivals(t, s)
 	for _, c := range lent {
 		if _, err := s.p.write.ExecContext(ctx, `ALTER TABLE jobs DROP COLUMN `+strings.Fields(c)[0]); err != nil {
 			t.Fatal(err)

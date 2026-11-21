@@ -234,6 +234,7 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			return err
 		}
 		var newInstances, newBytes int64
+		var confirmed []sqlkit.ArchivedFile
 		for _, in := range c.Instances {
 			var by string
 			var archived []byte
@@ -274,6 +275,14 @@ func (t *Tenant) CommitScan(ctx context.Context, c tenant.ScanCommit) (tenant.Sc
 			}
 			newInstances++
 			newBytes += in.Size
+			confirmed = append(confirmed, sqlkit.ArchivedFile{UID: in.SOPInstanceUID, Sum: sqlkit.ToSHA256(sum)})
+		}
+		// The outcome of an import's files among those confirmed, in this
+		// transaction (tenant.Importing).
+		if err := importInTx(ctx, tx, func(k sqlkit.Sending, x sqlkit.SendingTx) ([]tenant.EventRecord, error) {
+			return k.ImportArchived(ctx, x, c.ReceptionID, confirmed, c.At)
+		}); err != nil {
+			return err
 		}
 		if newInstances > 0 {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO reception_scans (reception_id, scan_id, instances, bytes) VALUES (?, ?, ?, ?)

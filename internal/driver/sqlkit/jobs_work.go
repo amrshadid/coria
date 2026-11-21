@@ -462,6 +462,10 @@ func (k Sending) endJob(ctx context.Context, tx SendingTx, j tenant.Job, state t
 // driver writes; a unit of no job changes nothing. A driver calls it where
 // a unit is held as failed (FailWork, a claim).
 func (k Sending) GiveUpJobUnit(ctx context.Context, tx SendingTx, workID string, now time.Time) ([]tenant.EventRecord, error) {
+	// An import job's unit ends its walk failed (giveUpImportUnit).
+	if isImport, events, err := k.giveUpImportUnit(ctx, tx, workID, now); err != nil || isImport {
+		return events, err
+	}
 	s, found, err := jobScanOf(ctx, tx, workID, "")
 	if err != nil {
 		return nil, err

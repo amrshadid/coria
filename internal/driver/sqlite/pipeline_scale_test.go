@@ -81,7 +81,7 @@ func TestScaleListFilters(t *testing.T) {
 		 INSERT INTO quarantine SELECT 'q' || i, CASE WHEN i % 3 = 0 THEN 'not_dicom' ELSE 'different_file' END, '{}',
 		   CASE WHEN i % 10000 = 0 THEN 'held' ELSE 'released' END, CASE WHEN i % 100 = 0 THEN 'other' ELSE 'busy' END, 'rc' || i,
 		   '', '', '', 10, NULL, NULL, '', '2.25.3.' || i, '2.25.1.' || (i / 4), '', '', '', 0, i * 1000000, NULL,
-		   '', '', '', '', '', '', 0, '', '' FROM n`,
+		   '', '', '', '', '', '', 0, '', '', '', '' FROM n`,
 		`ANALYZE`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {

@@ -90,11 +90,18 @@ func releaseClaims(ctx context.Context, tx *sql.Tx, receptionID string) error {
 }
 
 // endReception does what a step to an end does besides writing the
-// reception's row: it releases the claims the reception did not confirm and,
-// for an end that is not a failure, removes its received files
-// (tenant.Pipeline's ReceivedFiles says why), in the step's transaction.
-func endReception(ctx context.Context, tx *sql.Tx, receptionID string, state reception.State) error {
+// reception's row: it releases the claims the reception did not confirm,
+// gives the import's files still processing in it their outcome
+// (tenant.Importing) and, for an end that is not a failure, removes its
+// received files (tenant.Pipeline's ReceivedFiles says why), in the step's
+// transaction, at now.
+func endReception(ctx context.Context, tx *sql.Tx, receptionID string, state reception.State, now time.Time) error {
 	if err := releaseClaims(ctx, tx, receptionID); err != nil {
+		return err
+	}
+	if err := importInTx(ctx, tx, func(k sqlkit.Sending, x sqlkit.SendingTx) ([]tenant.EventRecord, error) {
+		return k.ImportEnded(ctx, x, receptionID, state == reception.Failed, now)
+	}); err != nil {
 		return err
 	}
 	if !tenant.KeepsReceivedFiles(state) {

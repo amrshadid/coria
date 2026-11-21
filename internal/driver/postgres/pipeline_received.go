@@ -195,6 +195,12 @@ func (t *Tenant) AddReceivedFilesFenced(ctx context.Context, files []tenant.Rece
 				return err
 			}
 		}
+		// An import unit's row before any reception's, as every fenced
+		// write locks its unit first.
+		x := sendingTx{tx: tx}
+		if err := sqlkit.CheckImportFences(ctx, x, sqlkit.ReceivedArrivals(files)); err != nil {
+			return err
+		}
 		held, err := lockBatchReceptions(ctx, tx, order)
 		if err != nil {
 			return err
@@ -290,6 +296,18 @@ func (t *Tenant) AddReceivedFilesFenced(ctx context.Context, files []tenant.Rece
 				return err
 			}
 			total += int(nFiles)
+		}
+		// Each file an import handed in, with its unit's cursor, in this
+		// transaction, in the batch's order: a copy whose received file
+		// was there already is still an arrival of its own path
+		// (tenant.Importing).
+		for _, f := range files {
+			if f.Import == nil {
+				continue
+			}
+			if err := importSending().RecordImportArrival(ctx, x, *f.Import, f.ReceptionID, f.SOPInstanceUID, f.SHA256, at); err != nil {
+				return err
+			}
 		}
 		inserted = total
 		return nil

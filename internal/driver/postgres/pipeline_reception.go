@@ -336,8 +336,9 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		if n != 1 {
 			return tenant.StateChanged()
 		}
+		var ended []tenant.EventRecord
 		if next.Ended() {
-			if err := endReception(ctx, tx, step.ID, next); err != nil {
+			if ended, err = endReception(ctx, tx, step.ID, next, step.At); err != nil {
 				return err
 			}
 		}
@@ -365,7 +366,7 @@ func (t *Tenant) StepReception(ctx context.Context, step tenant.ReceptionStep, h
 		if err != nil {
 			return err
 		}
-		if err := writeEvents(ctx, tx, append([]tenant.EventRecord{e}, forwards...)...); err != nil {
+		if err := writeEvents(ctx, tx, append(append([]tenant.EventRecord{e}, forwards...), ended...)...); err != nil {
 			return err
 		}
 		out = after
@@ -408,7 +409,8 @@ func giveUp(ctx context.Context, tx pgx.Tx, receptionID string, now time.Time) (
 	if err != nil || n != 1 {
 		return false, err
 	}
-	if err := endReception(ctx, tx, receptionID, next); err != nil {
+	ended, err := endReception(ctx, tx, receptionID, next, now)
+	if err != nil {
 		return false, err
 	}
 	// The step's event, last: both callers only read after giving up.
@@ -416,7 +418,7 @@ func giveUp(ctx context.Context, tx pgx.Tx, receptionID string, now time.Time) (
 	if err != nil {
 		return false, err
 	}
-	return true, writeEvents(ctx, tx, e)
+	return true, writeEvents(ctx, tx, append([]tenant.EventRecord{e}, ended...)...)
 }
 
 // ReceptionsWithoutWork implements tenant.Pipeline.
@@ -536,16 +538,23 @@ func releaseClaims(ctx context.Context, tx pgx.Tx, receptionID string) error {
 }
 
 // endReception does what a step to an end does besides writing the
-// reception's row: it releases the claims the reception did not confirm and,
-// for an end that is not a failure, removes its received files
-// (tenant.Pipeline's ReceivedFiles says why), in the step's transaction.
-func endReception(ctx context.Context, tx pgx.Tx, receptionID string, state reception.State) error {
+// reception's row: it releases the claims the reception did not confirm,
+// gives the import's files still processing in it their outcome
+// (tenant.Importing) and, for an end that is not a failure, removes its
+// received files (tenant.Pipeline's ReceivedFiles says why), in the step's
+// transaction, at now. It returns the events of the import jobs that
+// ended, which the step writes last with its own.
+func endReception(ctx context.Context, tx pgx.Tx, receptionID string, state reception.State, now time.Time) ([]tenant.EventRecord, error) {
 	if err := releaseClaims(ctx, tx, receptionID); err != nil {
-		return err
+		return nil, err
+	}
+	events, err := importSending().ImportEnded(ctx, sendingTx{tx: tx}, receptionID, state == reception.Failed, now)
+	if err != nil {
+		return nil, err
 	}
 	if !tenant.KeepsReceivedFiles(state) {
 		_, err := tx.Exec(ctx, `DELETE FROM received_files WHERE reception_id = $1`, receptionID)
-		return err
+		return events, err
 	}
-	return nil
+	return events, nil
 }

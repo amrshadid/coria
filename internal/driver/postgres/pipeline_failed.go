@@ -129,6 +129,12 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 			WHERE p.id = $1`, newID); err != nil {
 			return err
 		}
+		// An import's files that failed with it go back to processing,
+		// with their files, into the new reception (tenant.Importing).
+		importEvents, err := importSending().ImportRetried(ctx, sendingTx{tx: tx}, f.ID, newID, now)
+		if err != nil {
+			return err
+		}
 		if failed, err = receptionInTx(ctx, tx, f.ID, ""); err != nil {
 			return err
 		}
@@ -141,7 +147,7 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 		if err != nil {
 			return err
 		}
-		if err := writeEvents(ctx, tx, e); err != nil {
+		if err := writeEvents(ctx, tx, append([]tenant.EventRecord{e}, importEvents...)...); err != nil {
 			return err
 		}
 		a, err := sqlkit.AddDetails(audit, tenant.DetailRetryReception, newID)
@@ -195,8 +201,17 @@ func (t *Tenant) DiscardReception(ctx context.Context, id, reason string, now ti
 		if err := releaseClaims(ctx, tx, id); err != nil {
 			return err
 		}
+		// An import's files that failed with it are discarded with it
+		// (tenant.Importing).
+		importEvents, err := importSending().ImportDiscarded(ctx, sendingTx{tx: tx}, id, now)
+		if err != nil {
+			return err
+		}
 		var files, bytes int64
 		if err := tx.QueryRow(ctx, discardCountSQL, id).Scan(&files, &bytes); err != nil {
+			return err
+		}
+		if err := writeEvents(ctx, tx, importEvents...); err != nil {
 			return err
 		}
 		a, err := sqlkit.AddDetails(audit, tenant.DetailFiles, strconv.FormatInt(files, 10), tenant.DetailBytes, strconv.FormatInt(bytes, 10))

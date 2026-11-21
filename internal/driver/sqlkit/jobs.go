@@ -79,7 +79,7 @@ func jobInTx(ctx context.Context, tx SendingTx, id, lock string) (jobRow, error)
 	if !found {
 		return out, notFound("the tenant has no job with this id")
 	}
-	return out, nil
+	return out, fillImport(ctx, tx, &out.job)
 }
 
 // newJob is a job to insert, queued.
@@ -324,11 +324,19 @@ func (k Sending) ListJobs(ctx context.Context, filter tenant.JobFilter, page mas
 		if query == "" {
 			return nil
 		}
-		return tx.Query(ctx, query, args, func(r Row) error {
+		if err := tx.Query(ctx, query, args, func(r Row) error {
 			j, err := scanJob(r)
 			out = append(out, j.job)
 			return err
-		})
+		}); err != nil {
+			return err
+		}
+		for i := range out {
+			if err := fillImport(ctx, tx, &out[i]); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, "", err
@@ -353,7 +361,13 @@ func (k Sending) CancelJob(ctx context.Context, id string, now time.Time, audit 
 	}
 	var out tenant.Job
 	err := k.Host.Write(ctx, "the job cannot be canceled", func(tx SendingTx) error {
-		job, e, err := k.cancelInTx(ctx, tx, id, tenant.JobReasonCanceled, now)
+		cancel := k.cancelInTx
+		if kind, err := jobKind(ctx, tx, id); err != nil {
+			return err
+		} else if kind == tenant.JobImport {
+			cancel = k.cancelImportInTx
+		}
+		job, e, err := cancel(ctx, tx, id, tenant.JobReasonCanceled, now)
 		if err != nil {
 			return err
 		}
@@ -369,6 +383,20 @@ func (k Sending) CancelJob(ctx context.Context, id string, now time.Time, audit 
 		return tenant.Job{}, err
 	}
 	return out, nil
+}
+
+// jobKind reads a job's kind, which never changes, without a lock; NotFound
+// when the tenant has no job of that id.
+func jobKind(ctx context.Context, tx SendingTx, id string) (tenant.JobKind, error) {
+	var kind string
+	found, err := tx.QueryRow(ctx, `SELECT kind FROM jobs WHERE id = ?`, []any{id}, &kind)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", notFound("the tenant has no job with this id")
+	}
+	return tenant.JobKind(kind), nil
 }
 
 // cancelInTx ends a job as canceled with the reason, and the units of it
@@ -435,6 +463,9 @@ func (k Sending) RetryJob(ctx context.Context, id, newID string, now time.Time, 
 		first, err := jobInTx(ctx, tx, id, "")
 		if err != nil {
 			return err
+		}
+		if first.job.Kind == tenant.JobImport {
+			return tenant.Precondition("an import job is not retried by this store; a new job over the same path counts what is held as already held")
 		}
 		has := true
 		if first.job.Kind == tenant.JobSend {

@@ -322,4 +322,5 @@ type PipelineParts interface {
 	ScanValueFill
 	Sending
 	Deidentification
+	Importing
 }

@@ -55,4 +55,10 @@ func Run(t *testing.T, d Driver) {
 	t.Run("SendingShared", func(t *testing.T) {
 		runSendingShared(t, func(tb testing.TB, id string) (EventStore, EventStore) { return d.OpenPair(tb, id) })
 	})
+	t.Run("Importing", func(t *testing.T) {
+		runImporting(t, func(tb testing.TB, id string) EventStore { return d.Open(tb, id) })
+	})
+	t.Run("ImportingShared", func(t *testing.T) {
+		runImportingShared(t, func(tb testing.TB, id string) (EventStore, EventStore) { return d.OpenPair(tb, id) })
+	})
 }

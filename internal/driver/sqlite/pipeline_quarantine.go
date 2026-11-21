@@ -18,9 +18,10 @@ const quarantineColumns = `id, reason, details, state, receiver, reception_id, c
 	deidentified`
 
 // quarantineReadColumns are the columns a record is read with: those it
-// is written with and the storage and profile version its release named,
-// which only a release writes.
-const quarantineReadColumns = quarantineColumns + `, release_storage, release_profile`
+// is written with, the storage and profile version its release named,
+// which only a release writes, and the import job and path of a file an
+// import handed in, which the store writes (sqlkit.ImportHeld).
+const quarantineReadColumns = quarantineColumns + `, release_storage, release_profile, import_job, import_path`
 
 // scanQuarantined reads one row of quarantineReadColumns.
 func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFile, error) {
@@ -32,7 +33,8 @@ func scanQuarantined(row interface{ Scan(...any) error }) (tenant.QuarantinedFil
 	if err := row.Scan(&q.ID, &reason, &details, &state, &q.Receiver, &q.ReceptionID, &q.Caller.CallingAETitle,
 		&q.Caller.CalledAETitle, &q.Caller.Address, &q.Size, &sum, &kept, &q.SOPClassUID, &q.SOPInstanceUID, &q.StudyUID,
 		&q.SeriesUID, &q.TransferSyntaxUID, &q.Incoming, &q.ContentKept, &at, &decided, &mode, &q.ReleaseReception,
-		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified, &q.ReleaseStorage, &releaseProfile); err != nil {
+		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified, &q.ReleaseStorage, &releaseProfile,
+		&q.ImportJob, &q.ImportPath); err != nil {
 		return q, err
 	}
 	q.Reason, q.State, q.ReleaseMode = tenant.QuarantineReason(reason), tenant.QuarantineState(state), tenant.ReleaseMode(mode)
@@ -89,6 +91,9 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 			if err := checkFence(ctx, tx, *fence); err != nil {
 				return err
 			}
+		}
+		if err := sqlkit.CheckImportFences(ctx, sendingTx{tx: tx}, sqlkit.HeldArrivals(files)); err != nil {
+			return err
 		}
 		n := 0
 		var heldFiles, heldBytes int64
@@ -152,6 +157,13 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 				return err
 			}
 			if _, err := writeEvent(ctx, tx, e, nil); err != nil {
+				return err
+			}
+			// What the record decides of an import's file, in its
+			// transaction (tenant.Importing).
+			if err := importInTx(ctx, tx, func(k sqlkit.Sending, x sqlkit.SendingTx) ([]tenant.EventRecord, error) {
+				return k.ImportHeld(ctx, x, q, q.Quarantined)
+			}); err != nil {
 				return err
 			}
 			if q.ReceptionID != "" {

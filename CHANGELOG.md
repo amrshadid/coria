@@ -295,6 +295,16 @@ All notable changes to CORIA are written here. The form is
   scan's labels, series UID and study UID) and the owner record
   (`meta/.owner.json`) have a fixed, checked JSON form. Nothing writes them
   yet.
+- Import jobs are kept in the tenant's database (migration 0018): an
+  import job's units with their cursors, the files it skipped, the files it
+  handed in and what became of each. Each file's arrival is written with
+  its unit's cursor and counts in one transaction, so no file is handed in
+  twice, and the reception pipeline writes each file's outcome in the
+  transaction that decides it (archived, already held, quarantined, lost,
+  failed, discarded); the database checks both count identities on every
+  write. A job whose walks have ended stays "settling" until nothing is
+  processing. Paths are kept only in the tenant's database, never in an
+  error or a page token. Not yet used by a served import.
 - AuditSealService is served: VerifyAudit recomputes a log's hash chain and
   checks each signed checkpoint with the public keys derived from the
   installation key file, the anchors between the installation's log and

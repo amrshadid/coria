@@ -22,9 +22,10 @@ const quarantineColumns = `id, reason, details, state, receiver, reception_id, c
 	deidentified`
 
 // quarantineReadColumns are the columns a record is read with: those it
-// is written with and the storage and profile version its release named,
-// which only a release writes.
-const quarantineReadColumns = quarantineColumns + `, release_storage, release_profile`
+// is written with, the storage and profile version its release named,
+// which only a release writes, and the import job and path of a file an
+// import handed in, which the store writes (sqlkit.ImportHeld).
+const quarantineReadColumns = quarantineColumns + `, release_storage, release_profile, import_job, import_path`
 
 // scanQuarantined reads one row of quarantineReadColumns.
 func scanQuarantined(row scanner) (tenant.QuarantinedFile, error) {
@@ -36,7 +37,8 @@ func scanQuarantined(row scanner) (tenant.QuarantinedFile, error) {
 	if err := row.Scan(&q.ID, &reason, &details, &state, &q.Receiver, &q.ReceptionID, &q.Caller.CallingAETitle,
 		&q.Caller.CalledAETitle, &q.Caller.Address, &q.Size, &sum, &kept, &q.SOPClassUID, &q.SOPInstanceUID, &q.StudyUID,
 		&q.SeriesUID, &q.TransferSyntaxUID, &q.Incoming, &q.ContentKept, &at, &decided, &mode, &q.ReleaseReception,
-		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified, &q.ReleaseStorage, &releaseProfile); err != nil {
+		&q.ReleaseReceiver, &q.RejectReason, &q.ReleasedFrom, &q.ReleaseReason, &q.Deidentified, &q.ReleaseStorage, &releaseProfile,
+		&q.ImportJob, &q.ImportPath); err != nil {
 		return q, err
 	}
 	q.Reason, q.State, q.ReleaseMode = tenant.QuarantineReason(reason), tenant.QuarantineState(state), tenant.ReleaseMode(mode)
@@ -167,6 +169,9 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 				return err
 			}
 		}
+		if err := sqlkit.CheckImportFences(ctx, sendingTx{tx: tx}, sqlkit.HeldArrivals(batch)); err != nil {
+			return err
+		}
 		if len(receptions) > 0 {
 			rows, err := tx.Query(ctx, `SELECT id FROM receptions WHERE id = ANY($1::text[]) ORDER BY id FOR NO KEY UPDATE`, receptions)
 			locked, err := collect(rows, err, func(row scanner) (string, error) {
@@ -260,6 +265,21 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 				return err
 			}
 		}
+		// What each record decides of an import's files, before the
+		// totals' row, the last a change locks (tenant.Importing), in the
+		// caller's order, which is a unit's walk's for the files it hands
+		// in held.
+		var importEvents []tenant.EventRecord
+		for _, q := range given {
+			if !added[q.ID] {
+				continue
+			}
+			more, err := importSending().ImportHeld(ctx, sendingTx{tx: tx}, q, q.Quarantined)
+			if err != nil {
+				return err
+			}
+			importEvents = append(importEvents, more...)
+		}
 		if err := addTotals(ctx, tx, heldFiles, heldBytes); err != nil {
 			return err
 		}
@@ -282,7 +302,7 @@ func (t *Tenant) HoldFilesFenced(ctx context.Context, files []tenant.Quarantined
 			}
 			events = append(events, e)
 		}
-		if err := writeEvents(ctx, tx, events...); err != nil {
+		if err := writeEvents(ctx, tx, append(events, importEvents...)...); err != nil {
 			return err
 		}
 		inserted = len(written)

@@ -222,7 +222,7 @@ func (c JobCounts) BytesRemaining() int64 {
 type Job struct {
 	// ID names it, given by the caller (master.ValidateID).
 	ID string
-	// Kind is what it does: JobSend or JobDeid.
+	// Kind is what it does: JobSend, JobDeid or JobImport.
 	Kind JobKind
 	// Sender names the sender a send job sends to; kept when the sender
 	// is removed. Empty for a deid job.
@@ -237,8 +237,11 @@ type Job struct {
 	Target JobTarget
 	// ReceptionID and Receiver name the reception whose archived
 	// instances a forward sends, and its receiver; empty for a job a
-	// person made.
+	// person made. An import job's Receiver is its import receiver.
 	ReceptionID, Receiver string
+	// Import is what an import job reads and what became of its files;
+	// nil for every other kind. Its Counts give the job's (JobCounts).
+	Import *ImportJob
 	// State is where it is.
 	State JobState
 	// Counts are its instances and bytes so far.

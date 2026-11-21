@@ -123,6 +123,13 @@ func (t *Tenant) RetryReception(ctx context.Context, id, newID, receiver string,
 			WHERE id = ?1`, newID); err != nil {
 			return err
 		}
+		// An import's files that failed with it go back to processing,
+		// with their files, into the new reception (tenant.Importing).
+		if err := importInTx(ctx, tx, func(k sqlkit.Sending, x sqlkit.SendingTx) ([]tenant.EventRecord, error) {
+			return k.ImportRetried(ctx, x, f.ID, newID, now)
+		}); err != nil {
+			return err
+		}
 		if failed, err = receptionInTx(ctx, tx, f.ID); err != nil {
 			return err
 		}
@@ -190,6 +197,13 @@ func (t *Tenant) DiscardReception(ctx context.Context, id, reason string, now ti
 			}
 		}
 		if err := releaseClaims(ctx, tx, id); err != nil {
+			return err
+		}
+		// An import's files that failed with it are discarded with it
+		// (tenant.Importing).
+		if err := importInTx(ctx, tx, func(k sqlkit.Sending, x sqlkit.SendingTx) ([]tenant.EventRecord, error) {
+			return k.ImportDiscarded(ctx, x, id, now)
+		}); err != nil {
 			return err
 		}
 		var files, bytes int64
