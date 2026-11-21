@@ -52,6 +52,15 @@ func TestTestSender(t *testing.T) {
 	stow := f.addStow("stow", web.URL+"/dicom-web")
 	wrong := f.addStow("wrong", web.URL+"/dicom-web", func(s *tenant.Sender) { s.STOW.SealedCredential = []byte("other") })
 	s := f.start(f.config())
+	// The tenant's first reading registers its senders (after it gives
+	// back the send units a stopped process left, a write on the tenant's
+	// database); a health read before it has no sender to answer for, so
+	// "a test does not change the health" is only checked once it has one.
+	waitFor(t, 10*time.Second, "the tenant's first reading of its senders", func() bool {
+		_, okUp := s.Health("lab", "up")
+		_, okDown := s.Health("lab", "down")
+		return okUp && okDown
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	for _, tc := range []struct {
@@ -79,7 +88,7 @@ func TestTestSender(t *testing.T) {
 		t.Errorf("a test sent %d instances", peer.arrivals())
 	}
 	for _, name := range []string{"up", "down"} {
-		if h, _ := s.Health("lab", name); h.State != tenant.SenderUnknown {
+		if h, ok := s.Health("lab", name); !ok || h.State != tenant.SenderUnknown {
 			t.Errorf("%s: health %+v after a test, want unknown", name, h)
 		}
 	}

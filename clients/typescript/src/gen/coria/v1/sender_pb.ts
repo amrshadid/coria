@@ -237,6 +237,12 @@ export const DimseSenderSchema: GenMessage<DimseSender> = /*@__PURE__*/
  * connection cut or a timeout is a failure of the whole request, tried
  * again later (JobService).
  *
+ * An answer of 401, 403 or 407 says the peer does not take the
+ * credential: it refuses no instance, and is a connection that failed
+ * (SENDER_FAULT_REJECTED), counted toward the sender's health like one
+ * that could not be made, so a credential that is mended sends what was
+ * held back.
+ *
  * @generated from message coria.v1.StowSender
  */
 export type StowSender = Message<"coria.v1.StowSender"> & {

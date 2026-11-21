@@ -330,11 +330,12 @@ const (
 	FailureSyntaxNotAccepted JobFailureCode = "syntax_not_accepted"
 	FailurePeerUnaccounted   JobFailureCode = "peer_unaccounted"
 	FailureDamagedInStorage  JobFailureCode = "damaged_in_storage"
+	FailureMetaUnreadable    JobFailureCode = "meta_unreadable"
 )
 
 // jobFailureCodes is the closed list of codes.
 var jobFailureCodes = []JobFailureCode{FailurePeerRefused, FailurePeerWarning, FailureClassNotAccepted,
-	FailureSyntaxNotAccepted, FailurePeerUnaccounted, FailureDamagedInStorage}
+	FailureSyntaxNotAccepted, FailurePeerUnaccounted, FailureDamagedInStorage, FailureMetaUnreadable}
 
 // Refused reports whether an instance with code c was refused, not sent
 // with a warning.
@@ -366,7 +367,7 @@ func (f JobFailure) Validate() error {
 		return err
 	}
 	if !slices.Contains(jobFailureCodes, f.Code) {
-		return invalid("a job failure's code is one of peer_refused, peer_warning, class_not_accepted, syntax_not_accepted, peer_unaccounted, damaged_in_storage")
+		return invalid("a job failure's code is one of peer_refused, peer_warning, class_not_accepted, syntax_not_accepted, peer_unaccounted, damaged_in_storage, meta_unreadable")
 	}
 	if f.SOPClassUID != "" {
 		if err := validateUID("SOP Class UID", f.SOPClassUID); err != nil {

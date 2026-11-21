@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -145,7 +146,7 @@ func (t *tenantRun) reconcile() {
 		t.log.Warn("senders: the tenant's senders could not be read; nothing changes", "reason", fault.Message(err))
 		return
 	}
-	t.reclaim(ctx, st, rows, now)
+	t.reclaim(ctx, p, rows, now)
 	seen := make(map[string]bool, len(rows))
 	for _, row := range rows {
 		seen[row.Name] = true
@@ -194,37 +195,32 @@ func credentialDigest(ctx context.Context, p tenant.Pipeline, row tenant.Sender)
 	return sha256.Sum256(sealed), nil
 }
 
-// kindReclaimer gives back the units of the kinds named that a process
-// that is gone held: tenant.WorkReclaim's method, narrowed to kinds, so
-// that the senders and the reception pipeline each reclaim only their own
-// work and never a unit the other's live workers hold.
-type kindReclaimer interface {
-	ReclaimWorkOfKinds(ctx context.Context, kinds []string, now time.Time) (int, error)
-}
-
 // reclaim gives back, once per process and before any worker of the tenant
 // claims, the send units a server that is gone left leased, so they are
-// taken up at once rather than when their lease runs out. A store that
-// cannot reclaim by kind is left to the leases.
-func (t *tenantRun) reclaim(ctx context.Context, st tenant.Store, rows []tenant.Sender, now time.Time) {
+// taken up at once rather than when their lease runs out. Only the kinds of
+// the tenant's senders (tenant.WorkReclaim.ReclaimWorkOfKinds), so a unit
+// the reception pipeline's live workers hold is never touched; a tenant
+// with more senders than one call names is reclaimed in several.
+func (t *tenantRun) reclaim(ctx context.Context, p tenant.Pipeline, rows []tenant.Sender, now time.Time) {
 	if t.reclaimed {
 		return
 	}
 	t.reclaimed = true
-	rk, ok := st.(kindReclaimer)
-	if !ok || len(rows) == 0 {
-		return
-	}
 	kinds := make([]string, len(rows))
 	for i, row := range rows {
 		kinds[i] = tenant.SendKind(row.Name)
 	}
-	n, err := rk.ReclaimWorkOfKinds(ctx, kinds, now)
-	switch {
-	case err != nil:
-		t.log.Warn("senders: the units a stopped process held could not be taken back; their leases run out", "reason", fault.Message(err))
-	case n > 0:
-		t.log.Info("senders: units a stopped process held were taken back", "units", n)
+	total := 0
+	for chunk := range slices.Chunk(kinds, tenant.MaxReclaimKinds) {
+		n, err := p.ReclaimWorkOfKinds(ctx, chunk, now)
+		if err != nil {
+			t.log.Warn("senders: the units a stopped process held could not be taken back; their leases run out", "reason", fault.Message(err))
+			return
+		}
+		total += n
+	}
+	if total > 0 {
+		t.log.Info("senders: units a stopped process held were taken back", "units", total)
 	}
 }
 

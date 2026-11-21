@@ -29,6 +29,7 @@ class JobFailureCode(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED: _ClassVar[JobFailureCode]
     JOB_FAILURE_CODE_PEER_UNACCOUNTED: _ClassVar[JobFailureCode]
     JOB_FAILURE_CODE_DAMAGED_IN_STORAGE: _ClassVar[JobFailureCode]
+    JOB_FAILURE_CODE_META_UNREADABLE: _ClassVar[JobFailureCode]
 JOB_STATE_UNSPECIFIED: JobState
 JOB_STATE_QUEUED: JobState
 JOB_STATE_RUNNING: JobState
@@ -43,6 +44,7 @@ JOB_FAILURE_CODE_CLASS_NOT_ACCEPTED: JobFailureCode
 JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED: JobFailureCode
 JOB_FAILURE_CODE_PEER_UNACCOUNTED: JobFailureCode
 JOB_FAILURE_CODE_DAMAGED_IN_STORAGE: JobFailureCode
+JOB_FAILURE_CODE_META_UNREADABLE: JobFailureCode
 
 class JobCounts(_message.Message):
     __slots__ = ("instances", "bytes", "instances_sent", "bytes_sent", "instances_warned", "bytes_warned", "instances_refused", "bytes_refused", "instances_remaining", "bytes_remaining", "scans", "scans_done", "listed")

@@ -754,6 +754,12 @@ func (x *DimseSender) GetTls() *SenderTls {
 // refused as JOB_FAILURE_CODE_PEER_UNACCOUNTED. A 5xx answer, 408, 429, a
 // connection cut or a timeout is a failure of the whole request, tried
 // again later (JobService).
+//
+// An answer of 401, 403 or 407 says the peer does not take the
+// credential: it refuses no instance, and is a connection that failed
+// (SENDER_FAULT_REJECTED), counted toward the sender's health like one
+// that could not be made, so a credential that is mended sends what was
+// held back.
 type StowSender struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The base URL of the peer's DICOMweb service, such as

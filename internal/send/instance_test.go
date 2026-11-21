@@ -89,8 +89,8 @@ func TestMetaTheReadCannotPlace(t *testing.T) {
 	}
 	for _, b := range [][]byte{long, bad} {
 		fl := byUID[uidOf(t, b)]
-		if fl.Code == tenant.FailureDamagedInStorage || fl.Detail != detailNoMeta {
-			t.Errorf("failure %+v, want refused for its meta (%q), not as damaged", fl, detailNoMeta)
+		if fl.Code != tenant.FailureMetaUnreadable || fl.Detail != detailNoMeta {
+			t.Errorf("failure %+v, want refused as %s (%q), not as damaged or a syntax not accepted", fl, tenant.FailureMetaUnreadable, detailNoMeta)
 		}
 		peer.mu.Lock()
 		n := peer.count[uidOf(t, b)]
@@ -135,8 +135,8 @@ func TestSOPClassIsTheDataSets(t *testing.T) {
 	if j.State != tenant.JobPartial || j.Counts.InstancesSent != 1 || j.Counts.InstancesRefused != 1 {
 		t.Fatalf("job %s %+v, want partial with 1 sent and 1 refused", j.State, j.Counts)
 	}
-	if fl := f.failures(job.ID); len(fl) != 1 || fl[0].Detail != detailMetaDisagrees || fl[0].SOPInstanceUID != uidOf(t, odd) {
-		t.Errorf("failures %+v, want the changed file refused with %q", fl, detailMetaDisagrees)
+	if fl := f.failures(job.ID); len(fl) != 1 || fl[0].Code != tenant.FailureMetaUnreadable || fl[0].Detail != detailMetaDisagrees || fl[0].SOPInstanceUID != uidOf(t, odd) {
+		t.Errorf("failures %+v, want the changed file refused as %s with %q", fl, tenant.FailureMetaUnreadable, detailMetaDisagrees)
 	}
 	if peer.arrivals() != 1 {
 		t.Errorf("the peer received %d, want only the other instance", peer.arrivals())

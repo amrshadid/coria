@@ -113,7 +113,7 @@ const (
 	// status, in peer_status (PS3.4 B.2.3); a stow peer listed it in the
 	// Failed SOP Sequence, its Failure Reason (0008,1197) in peer_status
 	// (PS3.18 Table I.2-2), or refused the whole request with a 4xx other
-	// than 408 and 429.
+	// than 401, 403, 407, 408 and 429.
 	JobFailureCode_JOB_FAILURE_CODE_PEER_REFUSED JobFailureCode = 1
 	// Sent, and the peer kept it with a warning: a DIMSE peer answered
 	// B000, B006 or B007 in peer_status; a stow peer gave a Warning Reason
@@ -136,6 +136,11 @@ const (
 	// never held a whole instance. Reported as data loss, as a read of it
 	// reports it (DataService).
 	JobFailureCode_JOB_FAILURE_CODE_DAMAGED_IN_STORAGE JobFailureCode = 6
+	// Not sent: its file meta information (PS3.10 7.1) cannot be read, so the
+	// transfer syntax of its data set, or where the data set begins, is not
+	// known; or it names another SOP class or instance than the data set's
+	// own (0008,0016) and (0008,0018). Its bytes are what was archived.
+	JobFailureCode_JOB_FAILURE_CODE_META_UNREADABLE JobFailureCode = 7
 )
 
 // Enum value maps for JobFailureCode.
@@ -148,6 +153,7 @@ var (
 		4: "JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED",
 		5: "JOB_FAILURE_CODE_PEER_UNACCOUNTED",
 		6: "JOB_FAILURE_CODE_DAMAGED_IN_STORAGE",
+		7: "JOB_FAILURE_CODE_META_UNREADABLE",
 	}
 	JobFailureCode_value = map[string]int32{
 		"JOB_FAILURE_CODE_UNSPECIFIED":         0,
@@ -157,6 +163,7 @@ var (
 		"JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED": 4,
 		"JOB_FAILURE_CODE_PEER_UNACCOUNTED":    5,
 		"JOB_FAILURE_CODE_DAMAGED_IN_STORAGE":  6,
+		"JOB_FAILURE_CODE_META_UNREADABLE":     7,
 	}
 )
 
@@ -1644,7 +1651,7 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"\x0eJOB_STATE_DONE\x10\x03\x12\x15\n" +
 	"\x11JOB_STATE_PARTIAL\x10\x04\x12\x14\n" +
 	"\x10JOB_STATE_FAILED\x10\x05\x12\x16\n" +
-	"\x12JOB_STATE_CANCELED\x10\x06*\x9b\x02\n" +
+	"\x12JOB_STATE_CANCELED\x10\x06*\xc1\x02\n" +
 	"\x0eJobFailureCode\x12 \n" +
 	"\x1cJOB_FAILURE_CODE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dJOB_FAILURE_CODE_PEER_REFUSED\x10\x01\x12!\n" +
@@ -1652,7 +1659,8 @@ const file_coria_v1_job_proto_rawDesc = "" +
 	"#JOB_FAILURE_CODE_CLASS_NOT_ACCEPTED\x10\x03\x12(\n" +
 	"$JOB_FAILURE_CODE_SYNTAX_NOT_ACCEPTED\x10\x04\x12%\n" +
 	"!JOB_FAILURE_CODE_PEER_UNACCOUNTED\x10\x05\x12'\n" +
-	"#JOB_FAILURE_CODE_DAMAGED_IN_STORAGE\x10\x062\xcc\x03\n" +
+	"#JOB_FAILURE_CODE_DAMAGED_IN_STORAGE\x10\x06\x12$\n" +
+	" JOB_FAILURE_CODE_META_UNREADABLE\x10\a2\xcc\x03\n" +
 	"\n" +
 	"JobService\x12D\n" +
 	"\tCreateJob\x12\x1a.coria.v1.CreateJobRequest\x1a\x1b.coria.v1.CreateJobResponse\x12@\n" +

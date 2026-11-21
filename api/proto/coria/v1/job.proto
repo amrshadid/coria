@@ -374,7 +374,7 @@ enum JobFailureCode {
   // status, in peer_status (PS3.4 B.2.3); a stow peer listed it in the
   // Failed SOP Sequence, its Failure Reason (0008,1197) in peer_status
   // (PS3.18 Table I.2-2), or refused the whole request with a 4xx other
-  // than 408 and 429.
+  // than 401, 403, 407, 408 and 429.
   JOB_FAILURE_CODE_PEER_REFUSED = 1;
 
   // Sent, and the peer kept it with a warning: a DIMSE peer answered
@@ -402,6 +402,12 @@ enum JobFailureCode {
   // never held a whole instance. Reported as data loss, as a read of it
   // reports it (DataService).
   JOB_FAILURE_CODE_DAMAGED_IN_STORAGE = 6;
+
+  // Not sent: its file meta information (PS3.10 7.1) cannot be read, so the
+  // transfer syntax of its data set, or where the data set begins, is not
+  // known; or it names another SOP class or instance than the data set's
+  // own (0008,0016) and (0008,0018). Its bytes are what was archived.
+  JOB_FAILURE_CODE_META_UNREADABLE = 7;
 }
 
 // JobFailure is one instance of a job that was refused, or sent with a

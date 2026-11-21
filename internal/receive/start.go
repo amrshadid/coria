@@ -44,13 +44,17 @@ func (p *Pipeline) start(ctx context.Context) (RecoverReport, error) {
 	if err := p.repairWork(ctx); err != nil {
 		return rep, err
 	}
-	// A unit still leased now was held by a process that is gone: one
-	// server serves an installation (it holds the data directory's lock),
-	// and this pipeline's workers have not started. Given back now, it is
-	// taken up at once rather than when its lease runs out, which kept a
-	// restarted server from archiving for up to a lease after a crash.
+	// A unit of the pipeline's kinds still leased now was held by a process
+	// that is gone: one server serves an installation (it holds the data
+	// directory's lock), and this pipeline's workers have not started.
+	// Given back now, it is taken up at once rather than when its lease
+	// runs out, which kept a restarted server from archiving for up to a
+	// lease after a crash. Only the pipeline's own kinds: a send unit may
+	// be held live by the same server's senders, and giving it back would
+	// end its fence while its batch is in flight, so the batch could be
+	// sent twice and an attempt spent at every start of a pipeline.
 	if rw, ok := p.store.(tenant.WorkReclaim); ok {
-		n, err := rw.ReclaimWork(ctx, p.now())
+		n, err := rw.ReclaimWorkOfKinds(ctx, claimOrder, p.now())
 		if err != nil {
 			return rep, err
 		}

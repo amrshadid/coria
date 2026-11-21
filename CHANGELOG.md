@@ -8,6 +8,13 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- An instance whose file meta information cannot be read, or that names
+  another SOP class or instance than its data set, is refused with the new
+  code `JOB_FAILURE_CODE_META_UNREADABLE` (`meta_unreadable`) instead of
+  `syntax_not_accepted`. The contract states that a STOW-RS answer of 401,
+  403 or 407 refuses no instance: it is a failed connection
+  (`SENDER_FAULT_REJECTED`) counted toward the sender's health, and what was
+  held back is sent once the credential is fixed.
 - De-identification's clean removes dates in more written forms (no
   leading zeros, two-digit years, "Mar. 5", ordinals, compact 05032024,
   2024年3月5日, 2024년 3월 5일, "2024. 3. 5."), a date with an unknown month or
@@ -54,6 +61,13 @@ All notable changes to CORIA are written here. The form is
   where a held instance is on another storage than its scan.
 
 ### Fixed
+
+- A pipeline's start gives back only the work units of its own kinds that a
+  stopped process left leased. It gave back every leased unit, including a
+  send unit the server's senders held live: that unit lost its fence, a
+  batch could be sent twice, and an attempt was spent at every start of a
+  tenant's pipeline. The senders give back only their own kinds, the same
+  way.
 
 - `GetQuarantinedFile` with `include_header` returns the held file's header
   on a real server, read from the incoming area within the receiver's header

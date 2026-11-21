@@ -2,6 +2,7 @@ package tenanttest
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -351,31 +352,44 @@ func testNewQuarantineReasons(e *penv) {
 	e.wantPrecondition("ReleaseQuarantined of a file whose incoming copy is lost", err)
 }
 
-// testReclaimWork guards ReclaimWork: every unit leased is queued again at
-// once, with no owner; a unit queued or done is left as it is; the next
+// testReclaimWorkOfKinds guards ReclaimWorkOfKinds: every unit of a kind
+// named that is leased is queued again at once, with no owner; a unit
+// leased of a kind not named stays leased by its owner (another part of the
+// same server may be working it); a unit queued is left as it is; the next
 // claim takes the unit with its next attempt, and the fence of the lease
-// that was given back can no longer renew it.
-func testReclaimWork(e *penv) {
+// that was given back can no longer renew it; the kinds are bounded.
+func testReclaimWorkOfKinds(e *penv) {
 	pp := e.parts()
 	held := e.enqueue("w1", at(0))
 	e.enqueue("w2", at(0))
 	waiting := e.enqueue("w3", at(100))
+	_, _, err := e.p.EnqueueWork(e.ctx, tenant.Work{ID: "live", Kind: "send-peer", Due: at(0)}, T0)
+	e.ok("EnqueueWork of another kind", err)
 	leased, err := e.p.ClaimWork(e.ctx, "reception", "dead-1", at(1), time.Hour)
 	e.ok("ClaimWork", err)
 	second, err := e.p.ClaimWork(e.ctx, "reception", "dead-2", at(1), time.Hour)
 	e.ok("ClaimWork", err)
-	n, err := pp.ReclaimWork(e.ctx, at(2))
-	e.ok("ReclaimWork", err)
+	live, err := e.p.ClaimWork(e.ctx, "send-peer", "alive-sender", at(1), time.Hour)
+	e.ok("ClaimWork of another kind", err)
+	n, err := pp.ReclaimWorkOfKinds(e.ctx, []string{"reception", "scrub", "reception"}, at(2))
+	e.ok("ReclaimWorkOfKinds", err)
 	if n != 2 {
-		e.Errorf("ReclaimWork gave back %d units, want the 2 leased", n)
+		e.Errorf("ReclaimWorkOfKinds gave back %d units, want the 2 leased of the kind named", n)
 	}
 	for _, id := range []string{leased.ID, second.ID} {
 		w, err := e.p.Work(e.ctx, id)
 		e.ok("Work", err)
-		if w.State != tenant.WorkQueued || w.Owner != "" || !w.Due.Equal(at(2)) {
-			e.Errorf("a unit given back is %s, owner %q, due %v; want queued, no owner, due at the reclaim", w.State, w.Owner, w.Due)
+		if w.State != tenant.WorkQueued || w.Owner != "" || !w.Due.Equal(at(2)) || w.Attempt != leased.Attempt {
+			e.Errorf("a unit given back is %s, owner %q, due %v, attempt %d; want queued, no owner, due at the reclaim, attempt %d kept",
+				w.State, w.Owner, w.Due, w.Attempt, leased.Attempt)
 		}
 	}
+	if w, _ := e.p.Work(e.ctx, live.ID); w.State != tenant.WorkLeased || w.Owner != "alive-sender" || w.Attempt != live.Attempt {
+		e.Errorf("a unit of a kind not named is %s, owner %q, attempt %d; want still leased by alive-sender, attempt %d",
+			w.State, w.Owner, w.Attempt, live.Attempt)
+	}
+	_, err = e.p.RenewWork(e.ctx, tenant.WorkFence{ID: live.ID, Attempt: live.Attempt}, at(2), time.Hour)
+	e.ok("RenewWork of a unit of a kind not named", err)
 	if w, _ := e.p.Work(e.ctx, waiting.ID); w.State != tenant.WorkQueued || !w.Due.Equal(at(100)) {
 		e.Errorf("a unit queued was changed: %s due %v", w.State, w.Due)
 	}
@@ -386,4 +400,29 @@ func testReclaimWork(e *penv) {
 	}
 	_, err = e.p.RenewWork(e.ctx, tenant.WorkFence{ID: leased.ID, Attempt: leased.Attempt}, at(4), time.Minute)
 	e.wantIs("RenewWork with the fence of a lease given back", err, tenant.ErrLeaseLost, fault.Conflict)
+
+	most := make([]string, tenant.MaxReclaimKinds)
+	for i := range most {
+		most[i] = "kind-" + strconv.Itoa(i)
+	}
+	most[0] = "send-peer"
+	n, err = pp.ReclaimWorkOfKinds(e.ctx, most, at(5))
+	e.ok("ReclaimWorkOfKinds of the most kinds", err)
+	if w, _ := e.p.Work(e.ctx, live.ID); n != 1 || w.State != tenant.WorkQueued {
+		e.Errorf("ReclaimWorkOfKinds of the most kinds gave back %d units, the live one %s; want 1, queued", n, w.State)
+	}
+	for _, c := range []struct {
+		name  string
+		kinds []string
+	}{
+		{"no kind", nil},
+		{"too many kinds", append(most, "one-more")},
+		{"a kind that is not a name", []string{"reception", "Not A Name"}},
+		{"an empty kind", []string{""}},
+	} {
+		_, err := pp.ReclaimWorkOfKinds(e.ctx, c.kinds, at(6))
+		e.wantKind("ReclaimWorkOfKinds of "+c.name, err, fault.Invalid)
+	}
+	_, err = pp.ReclaimWorkOfKinds(e.ctx, []string{"reception"}, time.Time{})
+	e.wantKind("ReclaimWorkOfKinds at the zero time", err, fault.Invalid)
 }

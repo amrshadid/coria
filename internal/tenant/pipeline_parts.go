@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 )
 
@@ -151,16 +152,36 @@ type WorkClaims interface {
 
 // WorkReclaim gives back the work a dead process held.
 type WorkReclaim interface {
-	// ReclaimWork queues again, due at now, every unit leased now, and
-	// returns how many: their owner is a process that is gone. A unit
-	// keeps its attempts, so the next claim takes its next one and the
-	// fence of the lease that ended can no longer write. Only a process
-	// that holds the tenant alone may call it, at the start of its work
-	// and before its own workers run: a server holds its installation's
-	// data directory's lock, so any lease there when it starts belongs to
-	// one that ended without letting go. A unit otherwise waits out its
-	// lease before another worker takes it.
-	ReclaimWork(ctx context.Context, now time.Time) (int, error)
+	// ReclaimWorkOfKinds queues again, due at now, every unit of one of
+	// kinds (1 to MaxReclaimKinds names, each a work kind) leased now, and
+	// returns how many: their owner is a process that is gone. A unit keeps
+	// its attempts, so the next claim takes its next one and the fence of
+	// the lease that ended can no longer write. Only the part of a process
+	// that works those kinds alone may call it, at the start of its work
+	// and before its own workers of those kinds run: a server holds its
+	// installation's data directory's lock, so any lease of those kinds
+	// there when that part starts belongs to one that ended without
+	// letting go; the units of other kinds, which other parts of the same
+	// server may hold live, are not touched.
+	ReclaimWorkOfKinds(ctx context.Context, kinds []string, now time.Time) (int, error)
+}
+
+// MaxReclaimKinds bounds the kinds one ReclaimWorkOfKinds names.
+const MaxReclaimKinds = 1000
+
+// ValidateReclaimKinds returns an Invalid error unless kinds holds 1 to
+// MaxReclaimKinds names, each a work kind (ValidateName), as
+// WorkReclaim.ReclaimWorkOfKinds takes them.
+func ValidateReclaimKinds(kinds []string) error {
+	if len(kinds) == 0 || len(kinds) > MaxReclaimKinds {
+		return fault.New(fault.Invalid, "a reclaim names 1 to "+strconv.Itoa(MaxReclaimKinds)+" kinds of work")
+	}
+	for _, k := range kinds {
+		if err := ValidateName("work kind", k); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // WorkClaim is the answer of ClaimNextWork.

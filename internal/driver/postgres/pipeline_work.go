@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -153,15 +154,21 @@ func (t *Tenant) ClaimWork(ctx context.Context, kind, owner string, now time.Tim
 	return c.Work, nil
 }
 
-// ReclaimWork implements tenant.WorkReclaim: one statement, every leased
-// unit queued again at now with no owner, its attempts kept.
-func (t *Tenant) ReclaimWork(ctx context.Context, now time.Time) (int, error) {
+// ReclaimWorkOfKinds implements tenant.WorkReclaim: one statement
+// (sqlkit.ReclaimKinds), every leased unit of the kinds queued again at now
+// with no owner, its attempts kept.
+func (t *Tenant) ReclaimWorkOfKinds(ctx context.Context, kinds []string, now time.Time) (int, error) {
 	if err := master.ValidateTime("time", now); err != nil {
 		return 0, err
 	}
+	query, kindArgs, err := sqlkit.ReclaimKinds(kinds, func(i int) string { return "$" + strconv.Itoa(i) })
+	if err != nil {
+		return 0, err
+	}
+	args := append([]any{micros(now), micros(now)}, kindArgs...)
 	var n int64
-	err := t.pipe(ctx, "the leased work cannot be reclaimed", func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE work SET state = 'queued', owner = '', due = $1, updated = $1 WHERE state = 'leased'`, micros(now))
+	err = t.pipe(ctx, "the leased work cannot be reclaimed", func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, query, args...)
 		n = tag.RowsAffected()
 		return err
 	})

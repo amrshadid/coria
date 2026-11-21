@@ -141,3 +141,53 @@ func TestDamagedBytesNeverReachThePeerWhole(t *testing.T) {
 		t.Errorf("the peer saw %d data sets cut short, want the changed one", peer.cut)
 	}
 }
+
+// TestStowCredentialRefusedHoldsBack guards a stow peer that answers 401
+// (RFC 9110 15.5.2): the answer refuses no instance; each is a connection
+// that failed with the fault rejected, counted toward the sender's health,
+// so after three in a row the sender is down and its unit is held back
+// without spending its attempts; once the credential is mended the job
+// sends what was held back and ends done.
+func TestStowCredentialRefusedHoldsBack(t *testing.T) {
+	f := newFixture(t)
+	f.inst.plain = true
+	peer := &webPeer{auth: "Bearer token-right"}
+	url := startWebPeer(t, peer)
+	f.archive("ses-1", scanFiles{"mr", generated(t, 2, 256)})
+	row := f.addStow("pacs", url)
+	rec := f.record()
+	job := f.createJob("pacs", "ses-1")
+	s := f.start(f.config())
+	f.stepOnEach(s, "the sender's going down", time.Minute, 2*time.Minute, failedConnections(s, "pacs"), func() bool {
+		h, _ := s.Health("lab", "pacs")
+		return h.State == tenant.SenderDown
+	})
+	if h, _ := s.Health("lab", "pacs"); h.DownReason != tenant.SenderDownPeerFailing || h.Fault != tenant.SenderFaultRejected || h.FailedConnections < DownAfter {
+		t.Errorf("health %+v, want down for peer_failing with the fault rejected", h)
+	}
+	if fl := f.failures(job.ID); len(fl) != 0 {
+		t.Errorf("failures %+v while the peer refused the credential, want none", fl)
+	}
+	if j, _ := f.p.Job(f.ctx, job.ID); j.State.Ended() || j.Counts.InstancesRefused != 0 {
+		t.Fatalf("job %s %+v while the peer refused the credential, want not ended with nothing refused", j.State, j.Counts)
+	}
+	// The unit whose connection made the sender down is given back after
+	// the health changes.
+	waitFor(t, 10*time.Second, "the unit to be given back", func() bool { released, _ := rec.counts(); return released >= 1 })
+	if released, failed := rec.counts(); failed > DownAfter-1 || released < 1 {
+		t.Errorf("given back %d times with an attempt and %d without, want at most %d and at least 1", failed, released, DownAfter-1)
+	}
+	row.STOW.SealedCredential = []byte("token-right")
+	if _, err := f.p.SetSender(f.ctx, row, []tenant.SenderField{tenant.FieldSTOWCredential}, f.clock.Now(), f.audit(), nil); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.add(2 * time.Hour)
+	s.Poke("lab")
+	j := f.waitJob(s, job.ID, 30*time.Second, ended)
+	peer.mu.Lock()
+	arrived := len(peer.parts)
+	peer.mu.Unlock()
+	if j.State != tenant.JobDone || j.Counts.InstancesSent != 2 || arrived != 2 {
+		t.Errorf("job %s %+v with the peer holding %d, want done with the 2 held back sent", j.State, j.Counts, arrived)
+	}
+}

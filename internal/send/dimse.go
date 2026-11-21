@@ -147,8 +147,9 @@ func (s *dimseSession) send(in tenant.ScanInstance) (result, *outcome) {
 
 // readEnded returns what became of an instance whose read ended before it
 // was sent whole, once its copy has ended: refused as damaged in storage
-// for a mismatch or a meta group that cannot be read, and the unit failed
-// for now for a storage that did not answer.
+// for a mismatch, refused as meta_unreadable for a meta group (PS3.10 7.1)
+// that cannot be read or that names another instance than its data set,
+// and the unit failed for now for a storage that did not answer.
 func (s *dimseSession) readEnded(st *stream, err error) (result, *outcome) {
 	u := s.u
 	switch {
@@ -160,10 +161,10 @@ func (s *dimseSession) readEnded(st *stream, err error) (result, *outcome) {
 		// failed): the file is refused for what it holds, not as data
 		// loss.
 		u.log.Info("sender: an instance is not sent: its file meta information cannot be read")
-		return refused(tenant.FailureSyntaxNotAccepted, 0, detailNoMeta), nil
+		return refused(tenant.FailureMetaUnreadable, 0, detailNoMeta), nil
 	case errors.Is(err, errMetaDisagrees):
 		u.log.Info("sender: an instance is not sent: its file meta information and its data set disagree")
-		return refused(tenant.FailureSyntaxNotAccepted, 0, detailMetaDisagrees), nil
+		return refused(tenant.FailureMetaUnreadable, 0, detailMetaDisagrees), nil
 	}
 	if fe := st.failed(); fe != nil {
 		err = fe

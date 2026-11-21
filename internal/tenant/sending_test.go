@@ -148,7 +148,8 @@ func TestJobProgressValidate(t *testing.T) {
 		},
 	}
 	good := map[string]func(*JobProgress){
-		"an instance owed": func(p *JobProgress) { p.Owed = []string{"2.25.35"} },
+		"an instance owed":                         func(p *JobProgress) { p.Owed = []string{"2.25.35"} },
+		"a refusal for a meta that cannot be read": func(p *JobProgress) { p.Failures[0].Code = FailureMetaUnreadable },
 		"a move past only owed instances": func(p *JobProgress) {
 			p.Sent, p.Refused, p.Warned, p.Failures, p.Owed = 0, 0, 0, nil, []string{"2.25.2"}
 		},
