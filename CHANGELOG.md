@@ -274,6 +274,12 @@ All notable changes to CORIA are written here. The form is
   scan's labels, series UID and study UID) and the owner record
   (`meta/.owner.json`) have a fixed, checked JSON form. Nothing writes them
   yet.
+- Outside tools for checking an archive without CORIA (`make
+  check-prove-tools`): `audit_verify` (an exported audit log's chain and
+  signatures, against public keys the auditor gives), `catalog_dump` (a
+  tenant catalog from SQLite or Postgres as canonical JSON, to compare a
+  live and a rebuilt catalog) and `backup_open` (a backup opened and checked
+  with the key file, its plaintext staged until every chunk opens).
 - `make prove-viewer`: OHIF Viewer and headless Chromium in containers open
   public studies (CT, MR, multi-frame, JPEG baseline, JPEG 2000, RLE)
   through DICOMweb with a reader key, and the harness reports blank

@@ -36,26 +36,17 @@ error.
 writes one backup, for a test that needs a fixed file made outside Go.
 """
 
-import base64
 import binascii
 import hashlib
-import hmac
 import os
 import struct
 import sys
 
-from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-MAGIC = b"CORIA-BK"
-FORMAT = 0x01
-HEADER = 49
-TAG = 16
-PREFIX = "coria-key-v1"
-
-
-class Refused(Exception):
-    """The file does not open."""
+# The format is in scripts/lib; -I leaves the script's own directory off the
+# path, so it is added by hand.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from backup_format import HEADER, TAG, KeyFileError, Refused, make_backup, open_backup  # noqa: E402
+from backup_format import read_keys as read_key_file  # noqa: E402
 
 
 def fail(reason):
@@ -64,77 +55,10 @@ def fail(reason):
 
 
 def read_keys(path):
-    """Read a key file: one "coria-key-v1 <version> <base64 key>" per line."""
-    keys = {}
-    with open(path, "rb") as f:
-        text = f.read().decode("ascii")
-    for number, line in enumerate(text.splitlines(), 1):
-        fields = line.split(" ")
-        if len(fields) != 3 or fields[0] != PREFIX:
-            fail("key file line %d is not in the documented format" % number)
-        key = base64.b64decode(fields[2], validate=True)
-        if len(key) != 32:
-            fail("key file line %d does not hold a 32-byte key" % number)
-        keys[int(fields[1])] = key
-    return keys
-
-
-def hkdf(ikm, salt, info):
-    """HKDF-SHA-256 with 32 bytes of output (RFC 5869 2.2, 2.3)."""
-    prk = hmac.new(salt if salt else b"\x00" * 32, ikm, hashlib.sha256).digest()
-    return hmac.new(prk, info + b"\x01", hashlib.sha256).digest()
-
-
-def file_key(keys, header):
-    version = struct.unpack(">I", header[9:13])[0]
-    if version not in keys:
-        raise Refused("key version %d is not in the key file" % version)
-    backup = hkdf(keys[version], None, b"coria/backup/v1")
-    return hkdf(backup, header[17:HEADER], b"coria/backup/v1/file")
-
-
-def nonce_ad(header, index, last):
-    flag = b"\x01" if last else b"\x00"
-    return struct.pack(">Q", index) + b"\x00\x00\x00" + flag, header + struct.pack(">Q", index) + flag
-
-
-def open_backup(keys, data):
-    if len(data) < HEADER or data[:8] != MAGIC or data[8] != FORMAT:
-        raise Refused("not a backup")
-    header = data[:HEADER]
-    size = struct.unpack(">I", header[13:17])[0]
-    if not 1 <= size <= 1 << 20:
-        raise Refused("chunk size")
-    aead = AESGCM(file_key(keys, header))
-    out = []
-    pos, index = HEADER, 0
-    while True:
-        chunk = data[pos:pos + size + TAG]
-        if len(chunk) == 0:
-            raise Refused("the last chunk is missing")
-        pos += len(chunk)
-        last = pos == len(data)
-        if len(chunk) < TAG:
-            raise Refused("a chunk shorter than its tag")
-        nonce, ad = nonce_ad(header, index, last)
-        try:
-            out.append(aead.decrypt(nonce, chunk, ad))
-        except InvalidTag:
-            raise Refused("chunk %d does not open" % index)
-        if last:
-            return b"".join(out)
-        index += 1
-
-
-def make_backup(keys, version, size, plaintext):
-    header = MAGIC + bytes([FORMAT]) + struct.pack(">II", version, size) + os.urandom(32)
-    aead = AESGCM(file_key(keys, header))
-    pieces = [plaintext[i:i + size] for i in range(0, len(plaintext), size)] or [b""]
-    out = [header]
-    for index, piece in enumerate(pieces):
-        nonce, ad = nonce_ad(header, index, index == len(pieces) - 1)
-        out.append(aead.encrypt(nonce, piece, ad))
-    return b"".join(out)
+    try:
+        return read_key_file(path)
+    except KeyFileError as e:
+        fail(str(e))
 
 
 def expect_refused(keys, data, what):

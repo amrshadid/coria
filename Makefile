@@ -438,6 +438,19 @@ prove-viewer:
 		$(if $(PROVE_DOCKER_HOST),--docker-host "$(PROVE_DOCKER_HOST)") \
 		$(if $(PROVE_VIEWER_SHOTS),--keep-shots "$(PROVE_VIEWER_SHOTS)")
 
+# The proof's outside tools check themselves against audit exports, catalogs
+# and backups they build and then break: audit_verify (an exported audit log's
+# chain and signatures, against public keys the auditor gives; OPENSSL 3.0 or
+# later), backup_open (a backup opened with the key file, plaintext staged
+# until every chunk opens; PYTHON with the cryptography package) and
+# catalog_dump (a tenant catalog as canonical JSON; with CORIA_TEST_POSTGRES
+# and PSQL it also compares a Postgres catalog with SQLite's).
+.PHONY: check-prove-tools
+check-prove-tools:
+	OPENSSL="$(OPENSSL)" "$(PYTHON)" scripts/prove/audit_verify.py --self-test
+	"$(PYTHON)" scripts/prove/backup_open.py --self-test
+	"$(PYTHON)" scripts/prove/catalog_dump.py --self-test
+
 # Sending's speed: a scan of 64 small instances to an in-process DIMSE and
 # STOW-RS peer, three runs of twenty jobs each.
 .PHONY: bench-send

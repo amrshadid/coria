@@ -39,59 +39,17 @@ and a reason on standard error.
 import hashlib
 import json
 import os
-import struct
-import subprocess
 import sys
-import tempfile
+
+# The formats are in scripts/lib; -I leaves the script's own directory off the
+# path, so it is added by hand.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+from audit_format import encode_entry as encode, openssl_verifies, signed_text  # noqa: E402
 
 
 def fail(reason):
     print("check-auditchain: " + reason, file=sys.stderr)
     sys.exit(1)
-
-
-def field(b):
-    return struct.pack(">I", len(b)) + b
-
-
-def text(s):
-    return field(s.encode("utf-8"))
-
-
-def encode(e):
-    out = [field(b"coria/audit-entry/v1"), field(struct.pack(">Q", e["seq"])), text(e["id"]),
-           field(struct.pack(">q", e["at_us"]))]
-    for name in ("key_id", "local_user", "remote_addr", "method", "tenant_name", "object",
-                 "outcome", "reason"):
-        out.append(text(e[name]))
-    details = sorted((k.encode("utf-8"), v.encode("utf-8")) for k, v in e["details"].items())
-    out.append(struct.pack(">I", len(details)))
-    for k, v in details:
-        out.append(field(k) + field(v))
-    out.append(text(e["request_id"]))
-    return b"".join(out)
-
-
-def signed_text(c):
-    return b"".join([
-        field(b"coria/audit-checkpoint/v1"), text(c["installation"]), text(c["log"]),
-        field(struct.pack(">Q", c["from"])), field(struct.pack(">Q", c["to"])),
-        field(bytes.fromhex(c["head"])), field(bytes.fromhex(c["previous"])),
-        field(struct.pack(">q", c["time_us"])), field(struct.pack(">I", c["key_version"])),
-    ])
-
-
-def openssl_verifies(openssl, pem, message, signature):
-    with tempfile.TemporaryDirectory() as tmp:
-        msg = os.path.join(tmp, "message")
-        sig = os.path.join(tmp, "signature")
-        with open(msg, "wb") as f:
-            f.write(message)
-        with open(sig, "wb") as f:
-            f.write(signature)
-        run = subprocess.run([openssl, "pkeyutl", "-verify", "-pubin", "-inkey", pem, "-rawin",
-                              "-in", msg, "-sigfile", sig], capture_output=True, text=True)
-        return run.returncode == 0 and "Signature Verified Successfully" in run.stdout
 
 
 def read_lines(path):
