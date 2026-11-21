@@ -15,6 +15,7 @@ copying them.
 | [Running CORIA](running.md) | Make an installation, run the server, make the first key, set a tenant up to receive |
 | [The command line](command-line.md) | Every command, how it connects, its output and exit codes, and the interactive program |
 | [Sending data on](sending.md) | Senders and jobs: send a subject, a session or a scan to a PACS or a DICOMweb service, or forward each reception, and follow it to its end |
+| [Importing a directory](importing.md) | How a directory of DICOM files will be imported (defined in the API, not yet served): roots, layouts, the map file, counts, and a recipe for an XNAT archive |
 | [Settings](settings.md) | Every setting with its default, who may set it, and whether a change needs a restart |
 
 ## If you build on its API
