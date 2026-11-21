@@ -2,8 +2,6 @@ package naming
 
 import (
 	"regexp"
-	"regexp/syntax"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -91,7 +89,8 @@ type piece struct {
 	attr    string // the attribute as written, for an attribute placeholder
 	tag     Tag
 	uid     bool   // the attribute's value must also be a UID
-	part    string // the pattern's part, for a part placeholder
+	part    string // the part's name, for a part placeholder
+	given   bool   // the part is given from outside the attributes, not the pattern's
 	hash    bool   // the placeholder gives the keyed hash of the value
 }
 
@@ -144,9 +143,23 @@ func (e *SyntaxError) Error() string {
 // Parse returns the rule written as s, or a *SyntaxError. Everything that
 // can be checked without a file is checked here, so a rule that parses
 // fails on a file only because of that file's values.
-func Parse(s Spec) (*Rule, error) {
+func Parse(s Spec) (*Rule, error) { return ParseWithParts(s, nil) }
+
+// ParseWithParts is Parse for a rule whose templates may also use parts
+// given from outside the file's attributes, named by given: the parts an
+// import's layout takes from a file's path, and the one its map gives.
+// A template part is then the pattern's when the pattern has a group of
+// that name, else a given one; a name both the pattern and given hold is
+// refused, since one placeholder would have two sources, and so is a
+// template part neither has. That is how a rule that uses a part its
+// receiver's layout never gives is refused when it is set, not on a file.
+func ParseWithParts(s Spec, given []string) (*Rule, error) {
 	r := &Rule{spec: s}
 	parts, err := r.parsePattern(s.PatternAttribute, s.Pattern)
+	if err != nil {
+		return nil, err
+	}
+	gave, err := givenSet(given, parts)
 	if err != nil {
 		return nil, err
 	}
@@ -158,16 +171,20 @@ func Parse(s Spec) (*Rule, error) {
 		if err != nil {
 			return nil, err
 		}
-		for _, p := range t.pieces {
+		for j, p := range t.pieces {
 			if p.part == "" {
+				continue
+			}
+			if gave[p.part] {
+				t.pieces[j].given = true
 				continue
 			}
 			if r.pattern == nil {
 				return nil, &SyntaxError{Field: f.level, Offset: -1, Msg: "{" + p.part +
-					"} names a part of a pattern, and the rule has none (part names start with a lower case letter; attribute keywords with an upper case one)"}
+					"} names a part of a pattern, and the rule has none (part names start with a lower case letter; attribute keywords with an upper case one)" + givenHint(given)}
 			}
 			if !parts[p.part] {
-				return nil, &SyntaxError{Field: f.level, Offset: -1, Msg: "{" + p.part + "} is not a named group of the pattern"}
+				return nil, &SyntaxError{Field: f.level, Offset: -1, Msg: "{" + p.part + "} is not a named group of the pattern" + givenHint(given)}
 			}
 			used = true
 		}
@@ -196,43 +213,13 @@ func (r *Rule) parsePattern(attr, pattern string) (map[string]bool, error) {
 	if err != nil {
 		return nil, fail(-1, "attribute "+strconv.Quote(attr)+" "+err.Error())
 	}
-	// Compiled as written first, so its errors are the ones a person
-	// writing a Go regular expression expects.
-	re, err := regexp.Compile(pattern)
+	full, names, err := CompilePattern(pattern)
 	if err != nil {
 		return nil, fail(-1, err.Error())
 	}
 	parts := map[string]bool{}
-	for _, n := range re.SubexpNames()[1:] {
-		switch {
-		case n == "":
-			continue
-		case !partName(n):
-			return nil, fail(-1, "group name "+strconv.Quote(n)+" is not a lower case letter followed by lower case letters, digits and '_'")
-		case parts[n]:
-			return nil, fail(-1, "group name "+strconv.Quote(n)+" is used twice")
-		}
+	for _, n := range names {
 		parts[n] = true
-	}
-	if len(parts) == 0 {
-		return nil, fail(-1, "has no named group (?P<name>...)")
-	}
-	// The anchors are added to the parsed tree, not to the text: joined as
-	// text, a pattern ending in \Q would quote them and one such as
-	// "a)|(b" would escape them. \A and \z, not ^ and $, so a flag such as
-	// (?m) inside the pattern cannot turn them into line anchors. The tree
-	// is parsed with the flags regexp.Compile uses, and the result must
-	// have the same groups as the pattern alone, or it is refused.
-	tree, err := syntax.Parse(pattern, syntax.Perl)
-	if err != nil {
-		return nil, fail(-1, err.Error())
-	}
-	anchored := &syntax.Regexp{Op: syntax.OpConcat, Sub: []*syntax.Regexp{
-		{Op: syntax.OpBeginText}, tree, {Op: syntax.OpEndText},
-	}}
-	full, err := regexp.Compile(anchored.String())
-	if err != nil || !slices.Equal(full.SubexpNames(), re.SubexpNames()) {
-		return nil, fail(-1, "cannot be made to match a whole value")
 	}
 	r.pattern = full
 	r.patAttr, r.patTag = attr, tag
@@ -376,7 +363,10 @@ func (r *Rule) Plain() []string {
 				continue
 			}
 			name := p.attr
-			if p.part != "" {
+			switch {
+			case p.given:
+				name = p.part + " of " + GivenSource
+			case p.part != "":
 				name = p.part + " of " + r.patAttr
 			}
 			if !seen[name] {
@@ -395,6 +385,14 @@ func (r *Rule) Plain() []string {
 // error: a value is never put in a label unhashed because the hash was not
 // at hand.
 func (r *Rule) Labels(a Attributes, h Hasher) (label.Path, error) {
+	return r.LabelsWithParts(a, nil, h)
+}
+
+// LabelsWithParts is Labels for a rule parsed by ParseWithParts: given
+// holds the value of each given part, by name. A given part the rule uses
+// and given lacks is an *Error with the fault Missing; its value is held to
+// the same rules as an attribute's.
+func (r *Rule) LabelsWithParts(a Attributes, given map[string]string, h Hasher) (label.Path, error) {
 	var parts []string // the pattern's submatches, read once
 	var out [3]string
 	for i, t := range r.templates {
@@ -404,6 +402,18 @@ func (r *Rule) Labels(a Attributes, h Hasher) (label.Path, error) {
 			switch {
 			case p.literal != "":
 				b.WriteString(p.literal)
+			case p.given:
+				v, ok := given[p.part]
+				if !ok {
+					return label.Path{}, &Error{Level: t.level, Attribute: GivenSource, Part: p.part, Fault: Missing}
+				}
+				v, err := place(v, p, h)
+				if err != nil {
+					err.Level, err.Attribute, err.Part = t.level, GivenSource, p.part
+					return label.Path{}, err
+				}
+				b.WriteString(v)
+				from = append(from, p.part+" of "+GivenSource)
 			case p.part != "":
 				if parts == nil {
 					var err error

@@ -495,6 +495,10 @@ FUZZ_TARGETS := \
 	internal/access:FuzzCheckSQLite \
 	internal/secret:FuzzOpen \
 	internal/secret:FuzzBackupReader \
+	internal/core/importpath:FuzzCompare \
+	internal/core/importpath:FuzzCheck \
+	internal/core/importpath:FuzzResolve \
+	internal/dirimport/mapping:FuzzParse \
 	internal/secret:FuzzParseAPIKey \
 	internal/secret:FuzzParseKeyFile \
 	internal/core/settings:FuzzParsePorts \

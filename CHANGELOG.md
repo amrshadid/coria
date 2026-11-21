@@ -274,6 +274,19 @@ All notable changes to CORIA are written here. The form is
   scan's labels, series UID and study UID) and the owner record
   (`meta/.owner.json`) have a fixed, checked JSON form. Nothing writes them
   yet.
+- Import paths and layouts: the rule of a path under an import root
+  (segments of 1 to 255 bytes of UTF-8, none "." or "..", none holding "\",
+  ":" or NUL, at most 4096 bytes), the walk order (segment by segment, a
+  directory's subtree before its next name), when two jobs' paths overlap,
+  and layouts that read named parts from a file's path with an anchored RE2
+  pattern and a unit depth; a path the layout does not match is skipped as
+  outside_layout. Map files: a CSV table whose configured key columns give
+  one more part (such as a session's subject by project and session),
+  strict UTF-8, at most 3 MiB inline or 64 MiB from a file, one value per
+  key, refusals naming a line by number, never a cell, the header or a
+  path. Naming rules may use parts a layout and map give; a rule using a
+  part nothing gives, or one two sources would fill, is refused when set.
+  Not yet used by a served import.
 - Outside tools for checking an archive without CORIA (`make
   check-prove-tools`): `audit_verify` (an exported audit log's chain and
   signatures, against public keys the auditor gives), `catalog_dump` (a

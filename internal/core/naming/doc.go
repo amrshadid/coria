@@ -30,6 +30,13 @@
 // ^(?P<project>[^^]+)\^(?P<subject>[^^]+)\^(?P<visit>[^^]+)$ gives three
 // parts the templates use. The pattern must match the whole value.
 //
+// Parts may also be given from outside the file's attributes: an import
+// reads named parts from each file's path, and its map may give one more
+// (ParseWithParts, LabelsWithParts). A rule names the parts it may be
+// given when it is parsed, so a template using a part nobody gives, or a
+// part both the pattern and the import would fill, is refused when the
+// rule is set.
+//
 // The default rule is subject sub-{#PatientID}, session
 // ses-{#StudyInstanceUID}, scan scan-{#SeriesInstanceUID}: by default no
 // label, and so no storage key, list or event, carries an identifier the
