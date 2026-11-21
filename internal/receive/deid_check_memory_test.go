@@ -148,7 +148,10 @@ func TestATrialsPeakIsWithinWhatItTakes(t *testing.T) {
 			}
 			n := int64(len(c.b))
 			held := n + int64(peak) - int64(base.HeapAlloc) //nolint:gosec // G115: heap sizes of a test, far below 2^63.
-			want := trialBytes(len(c.b), grown(tr.Record))
+			// The headers of these files hold no text value past a few
+			// hundred bytes, within the slack.
+			written := n + grown(tr.Record) + trialWriteHeadroom
+			want := trialBytes(len(c.b), grown(tr.Record), check.Reservation(t.Context(), written, 0, tr.Record.Needles, nil))
 			t.Logf("%s (values %v): %d bytes, peak %.2f times the file, estimate %.2f times", c.name, !noValues, n,
 				float64(held)/float64(n), float64(want)/float64(n))
 			if held > want+trialSlack {

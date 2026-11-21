@@ -1,12 +1,15 @@
 package check
 
 import (
-	"context"
 	"errors"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/amrshadid/go-dicom/filereader/attributes"
+
 	"github.com/amrshadid/coria/internal/deid/engine"
+	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
 // workBudget bounds the work of a check that does not grow with the file:
@@ -19,76 +22,73 @@ import (
 // size, and is refused as too large rather than searched for minutes.
 const workBudget = 1 << 25
 
-// search finds the forms in p: in one pass over the text, then one pass
-// over each raw range for the forms the text did not hold. It adds at most
-// one finding per form to fs.
-func search(ctx, quiet context.Context, p *parsed, set formSet, source []string, opts Options, fs *findings, sm seams) error {
-	forms := set.forms
-	budget := int64(workBudget)
-	if sm.work != nil {
-		defer func() { sm.work(workBudget - budget) }()
+// search finds the forms in p: in one pass over the text of each element,
+// then one pass over the raw bytes outside the image data, a window at a
+// time, for the forms the text did not hold. It adds at most one finding
+// per form to fs. The raw forms are written first (encodeRaw), so the
+// caller can take the memory of their automaton before either pass.
+func (s *searcher) search() error {
+	if err := s.text(); err != nil {
+		return err
 	}
-	done := make([]bool, len(forms))
+	return s.raw()
+}
 
-	// The text: one pattern per distinct folded form.
-	index := map[string]int{}
-	var patterns [][]byte
-	var targets [][]int
-	for i, f := range forms {
-		at, ok := index[f.folded]
-		if !ok {
-			at = len(patterns)
-			index[f.folded] = at
-			patterns = append(patterns, []byte(f.folded))
-			targets = append(targets, nil)
-		}
-		targets[at] = append(targets[at], i)
-	}
-	m := newMatcher(patterns)
-	at, err := m.scan(ctx, p.hay, &budget, func(pat, end int) {
-		start := end - m.lens[pat]
-		for _, i := range targets[pat] {
-			if !done[i] && edgesFit(p.hay, start, end, forms[i].mode) {
-				done[i] = true
-				fs.add(Finding{Path: p.pathAt(start), Kind: forms[i].kind})
-			}
-		}
-	})
-	if err != nil {
-		if sm.refusedAt != nil {
-			sm.refusedAt(at)
-		}
-		return budgetRefusal(err)
-	}
-	m = nil
+// rawTarget is a form a raw pattern is a byte form of.
+type rawTarget struct {
+	form      int
+	short, g0 bool
+}
 
-	// The raw bytes: every byte form of every form not found yet, the
-	// bytes of all forms within MaxFormBytes.
-	type rawTarget struct {
-		form      int
-		short, g0 bool
-	}
-	rawIndex := map[string]int{}
-	var rawPatterns [][]byte
-	var rawTargets [][]rawTarget
-	total := set.bytes
-	enc := newEncoder(quiet, source, &budget)
-	enc.library = sm.library
-	for i, f := range forms {
-		if done[i] {
-			continue
-		}
-		raws, err := f.encodings(enc, opts.MinLength)
+// encodeRaw writes the raw forms of every form (form.encodings), each
+// rune checked against a character set charged to the budget, and keeps
+// them for raw, with the bytes of the distinct ones together (rawBytes)
+// and the longest (rawLongest), which the check's reservation counts.
+func (s *searcher) encodeRaw() error {
+	s.raws, s.rawBytes, s.rawLongest = make([][]rawForm, len(s.set.forms)), 0, 0
+	enc := newEncoder(s.quiet, s.source, &s.budget)
+	enc.library = s.seams.library
+	seen := map[string]bool{}
+	for i, f := range s.set.forms {
+		raws, err := f.encodings(enc, s.opts.MinLength)
 		if err != nil {
 			return err
 		}
-		if budget < 0 {
+		if s.budget < 0 {
 			return &Refusal{Cause: CauseTooLarge}
 		}
+		s.raws[i] = raws
 		for _, r := range raws {
+			if !seen[string(r.bytes)] {
+				seen[string(r.bytes)] = true
+				s.rawBytes += len(r.bytes)
+				s.rawLongest = max(s.rawLongest, len(r.bytes))
+			}
+		}
+	}
+	return nil
+}
+
+// raw searches the raw bytes outside the image data for every byte form of
+// every form not found yet, the bytes of all forms within MaxFormBytes.
+// Each range is read a window at a time (scanStream), its ASCII letters
+// upper-cased as read; a match across the edge between two windows is in
+// the second whole.
+func (s *searcher) raw() error {
+	forms := s.set.forms
+	rawIndex := map[string]int{}
+	var rawPatterns [][]byte
+	var rawTargets [][]rawTarget
+	total := s.set.bytes
+	anyG0 := false
+	for i := range forms {
+		if s.done[i] {
+			continue
+		}
+		for _, r := range s.raws[i] {
 			at, ok := rawIndex[string(r.bytes)]
 			if !ok {
-				if total += len(r.bytes); total > opts.MaxFormBytes {
+				if total += len(r.bytes); total > s.opts.MaxFormBytes {
 					return &Refusal{Cause: CauseTooManyNeedles}
 				}
 				at = len(rawPatterns)
@@ -97,32 +97,90 @@ func search(ctx, quiet context.Context, p *parsed, set formSet, source []string,
 				rawTargets = append(rawTargets, nil)
 			}
 			rawTargets[at] = append(rawTargets[at], rawTarget{form: i, short: r.short, g0: r.g0})
+			anyG0 = anyG0 || r.g0
 		}
 	}
 	if len(rawPatterns) == 0 {
 		return nil
 	}
 	rm := newMatcher(rawPatterns)
-	for _, seg := range p.segs {
-		text := p.data[seg[0]:seg[1]]
-		_, err := rm.scan(ctx, text, &budget, func(pat, end int) {
-			start := end - rm.lens[pat]
-			off := seg[0] + int64(start)
+	for _, seg := range s.p.segs {
+		// A run of two-byte characters never crosses the image data: the
+		// tag after it begins with a byte that is not such a character
+		// (group 7FE0 and later), so each range is followed from its start.
+		var sh *shifter
+		if anyG0 {
+			sh = newShifter()
+		}
+		prepare := func(win []byte, fresh, from, to int, base int64) {
+			upperASCII(win[fresh:])
+			if sh != nil {
+				sh.feed(win[from:to], seg[0]+base+int64(from))
+			}
+		}
+		found := func(win []byte, pat, start, end int, base int64) {
+			off := seg[0] + base + int64(start)
 			for _, t := range rawTargets[pat] {
-				if done[t.form] || (t.short && p.inBinary(off)) || (t.g0 && !p.inShifted(off, seg[0]+int64(end))) ||
-					!edgesFit(text, start, end, forms[t.form].mode) {
+				if s.done[t.form] || (t.short && s.p.inBinary(off)) || (t.g0 && !sh.in(off, seg[0]+base+int64(end))) ||
+					!edgesFit(win, start, end, forms[t.form].mode) || s.composesAfter(win, start, end) {
 					continue
 				}
-				done[t.form] = true
-				fs.add(Finding{Path: p.locate(off), Kind: forms[t.form].kind, Raw: true})
+				s.done[t.form] = true
+				s.fs.add(Finding{Path: s.p.locate(off), Kind: forms[t.form].kind, Raw: true})
 			}
-		})
+		}
+		var err error
+		s.buf, _, err = scanStream(s.ctx, rm, sectionOf(s.p.src, seg[0], seg[1]), s.window(seg[1]-seg[0]), s.buf, &s.budget, prepare, found)
 		if err != nil {
 			return budgetRefusal(err)
 		}
 	}
 	return nil
 }
+
+// composesAfter reports whether the raw match win[start:end] is joined by
+// Unicode composition (UAX #15) to what follows it, so that the text there,
+// in NFC, no longer begins with the match: "RENE" followed by U+0301 (a
+// combining acute, Unicode category M, which edgesFit reads as no letter)
+// is "RENÉ" in NFC. Clean compares text in NFC, so it leaves such a text,
+// and the check, which must agree with it, does not count it as a copy.
+// The bytes are read in every character set the file was received in
+// (UTF-8 byte by byte, any other by the library's decoder), and the edge
+// is closed only when every reading composes: a byte that one set reads
+// as a combining mark and another as a letter of its own is still a
+// finding, as is any following byte below 0x80 (an ASCII character
+// composes with nothing before it).
+//
+// This opens no leak. What it lets go is a text whose NFC form is a
+// different word from the form searched for: "RENÉ" is not "RENE" to
+// clean, to the text search, or to anyone reading the value, and an
+// accented name is its own needle. When the patient's name is "René", the
+// needle is "René": its composed bytes and its decomposed ones ("RENE",
+// U+0301, encodings) are raw forms of their own, and the text search finds
+// it in NFC however it was written. A mark that composes with nothing
+// ("X" then U+0301 stays two characters in NFC) leaves the match standing
+// in NFC, so it is found, as clean cuts it.
+func (s *searcher) composesAfter(win []byte, start, end int) bool {
+	if end >= len(win) || win[end] < utf8.RuneSelf {
+		return false
+	}
+	after := win[end:min(len(win), end+edgeRoom)]
+	for _, enc := range s.source {
+		match, next := string(win[start:end]), string(after)
+		if enc != utf8Encoding {
+			match = attributes.DecodeTextWithContext(s.quiet, "LO", win[start:end], []string{enc})
+			next = attributes.DecodeTextWithContext(s.quiet, "LO", after, []string{enc})
+		}
+		if strings.HasPrefix(profile.NFC(match+next), profile.NFC(match)) {
+			return false
+		}
+	}
+	return len(s.source) > 0
+}
+
+// utf8Encoding is the library's name of the encoding of ISO_IR 192
+// (PS3.3 C.12.1.1.2), read here without its decoder.
+const utf8Encoding = "UTF-8"
 
 // budgetRefusal turns a pass past its budget into the refusal too_large,
 // and returns any other error as it is.

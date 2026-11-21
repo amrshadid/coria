@@ -8,6 +8,32 @@ All notable changes to CORIA are written here. The form is
 
 ### Changed
 
+- The check after de-identification searches each written file as a stream,
+  in overlapping windows, instead of holding it whole: its memory is set by
+  the window and the needles, not the file (a 128 MiB file: about 1 MiB
+  allocated, where it took 128 MiB). Its reservation counts decoded text at
+  up to three bytes of UTF-8 per byte received (a 4 MiB TIS 620 text
+  reserves 59 MiB against a measured peak of 25 MiB, where it reserved
+  13 MiB) and the automata of the raw forms as built; a trial counts the
+  longest text value and the needles of the check it runs.
+- Text is compared in Unicode NFC (UAX #15) by clean, the check after, value
+  patterns and redact: a name written decomposed (`u` and a combining
+  diaeresis) is found and cut as its composed letter. A value or redact
+  pattern not written in NFC is refused as `bad_pattern`; before, it matched
+  nothing and redact cut nothing. The check no longer reports a raw match
+  that a following combining mark composes into another letter ("RENE"
+  followed by U+0301 is "RENÉ"), agreeing with clean; a mark that composes
+  with nothing, or a reading in another received character set, is still a
+  finding.
+- JPEG 2000 and HTJ2K pixel data no longer need `unsearched_segments: KEEP`:
+  a marker walk removes comment segments from the main header and from every
+  tile-part header (the tile-part's Psot and TLM entry lowered to match),
+  and the main header's CPF and CRG segments, whose words are free. A CAP is
+  taken only when it names Part 15 alone with no reserved Ccap15 bit set.
+  A frame holding a marker the walk does not know, PPM or PPT, packet
+  lengths that do not add up, or a JP2 wrapper is held. What the walk
+  leaves decodes with OpenJPEG to the samples received (`make check-j2k`).
+
 - A STOW-RS receiver that de-identifies gives no Retrieve URLs in its
   answer (they would hand the sender the mapping of its UIDs). A trial of a
   held file whose study already has a session goes by the session's

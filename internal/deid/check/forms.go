@@ -10,6 +10,7 @@ import (
 	"github.com/amrshadid/go-dicom/config"
 
 	"github.com/amrshadid/coria/internal/deid/engine"
+	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
 // mode is how a form's edges are matched.
@@ -160,26 +161,38 @@ func modeOf(e engine.Edge, anyMode mode) mode {
 	return anyMode
 }
 
-// foldText returns s with every rune folded (engine.Fold: case, and
-// full-width ASCII) and every run of white space made one space, so
-// "MRN  778812" and "MRN 778812" are one text. Bytes that are not UTF-8
-// become U+FFFD, which no form holds.
+// foldText returns s in NFC (profile.NFC: a letter written with combining
+// marks as its composed character) with every rune folded (engine.Fold:
+// case, and full-width ASCII) and every run of white space made one space,
+// so "MRN  778812" and "MRN 778812" are one text, and "Müller" is one text
+// however its "ü" was written. Bytes that are not UTF-8 become U+FFFD,
+// which no form holds. Forms and texts are folded alike.
 func foldText(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
 	space := false
+	return string(foldString(make([]byte, 0, len(s)), profile.NFC(s), &space))
+}
+
+// foldString appends s, already in NFC, to dst folded as foldText folds
+// it; *space says whether what was appended before ended in white space.
+func foldString(dst []byte, s string, space *bool) []byte {
 	for _, r := range s {
-		if unicode.IsSpace(r) {
-			if !space {
-				b.WriteByte(' ')
-			}
-			space = true
-			continue
-		}
-		space = false
-		b.WriteRune(engine.Fold(r))
+		dst = foldRune(dst, r, space)
 	}
-	return b.String()
+	return dst
+}
+
+// foldRune appends r folded: one space for a run of white space, *space
+// saying whether the rune before was white space.
+func foldRune(dst []byte, r rune, space *bool) []byte {
+	if unicode.IsSpace(r) {
+		if !*space {
+			dst = append(dst, ' ')
+		}
+		*space = true
+		return dst
+	}
+	*space = false
+	return utf8.AppendRune(dst, engine.Fold(r))
 }
 
 // sourceEncodings returns the encodings of the character set a file was
@@ -329,9 +342,11 @@ func (e *encoder) encodeRuns(text string, only string) (out []byte, g0, ok bool,
 // encodings returns the raw forms of f: its text in upper case, lower case
 // and as written (the raw bytes' ASCII letters are upper-cased, but no
 // other letter: "müller" and "MÜLLER" are two byte strings), each in UTF-8
-// and in the source encodings, across all of them (a run in each) and in
-// each alone, escape sequences taken out, ASCII letters in upper case. A
-// form under minBytes is kept only when it is unspaced, as short.
+// as given, composed (NFC) and decomposed (NFD: raw bytes are not
+// normalized, so a "ü" may be there as "u" and a combining mark), and
+// composed in the source encodings, across all of them (a run in each) and
+// in each alone, escape sequences taken out, ASCII letters in upper case.
+// A form under minBytes is kept only when it is unspaced, as short.
 func (f form) encodings(e *encoder, minBytes int) ([]rawForm, error) {
 	var out []rawForm
 	seen := map[string]bool{}
@@ -346,6 +361,9 @@ func (f form) encodings(e *encoder, minBytes int) ([]rawForm, error) {
 		}
 	}
 	for _, v := range []string{strings.ToUpper(f.text), strings.ToLower(f.text), f.text} {
+		put([]byte(v), false)
+		put([]byte(profile.NFD(v)), false)
+		v = profile.NFC(v)
 		put([]byte(v), false)
 		alone := []string{""}
 		if len(e.source) > 1 {

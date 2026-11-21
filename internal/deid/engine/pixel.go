@@ -88,7 +88,8 @@ type PixelWork struct {
 	// Decoded reports that compressed pixels are written native.
 	Decoded bool
 	// SegmentsRemoved are the names of the JPEG segments removed
-	// (anonymize.JPEGSegment.Name), once for each segment.
+	// (anonymize.JPEGSegment.Name), and "COM", "CPF" or "CRG" for a
+	// JPEG 2000 segment, once for each segment.
 	SegmentsRemoved []string
 
 	// pixel is the Pixel Data element as the work leaves it, with the
@@ -129,8 +130,10 @@ type pixelRules interface {
 //     filled; a detect rule's detector is run and what it finds filled
 //     (PS3.15 E.3.1). Each is bounded by Image.Limit first.
 //  3. Pixels left compressed have the comment and application segments of
-//     the JPEG family removed (anonymize.RemoveJPEGText); a syntax whose
-//     segments are not searched is refused when the profile says so.
+//     the JPEG family removed (anonymize.RemoveJPEGText), or the comment
+//     segments of JPEG 2000 and High-Throughput JPEG 2000 (removeJ2KText);
+//     a syntax whose segments are not searched is refused when the profile
+//     says so.
 func (r *run) planPixels(img Image) error {
 	ds := r.top
 	elem, ok := ds.Get(tag.Tag(tagPixelData))
@@ -358,9 +361,12 @@ func (r *run) fill(w *PixelWork, elem *dataelem.DataElement) error {
 }
 
 // planSegments removes the comment and application segments of pixels left
-// compressed in the JPEG family, or refuses an image whose compressed
-// segments are not searched when the profile holds such images. Pixel Data
-// left in the file is read into memory for it, within Image.Limit.
+// compressed in the JPEG family, and the comment segments of JPEG 2000
+// (pixel_j2k.go), or refuses an image whose compressed segments are not
+// searched when the profile holds such images: the other encapsulated
+// syntaxes but RLE (JPEG 2000 Part 2, the video syntaxes, JPEG XL, Deflated
+// Image Frame Compression, any added later). Pixel Data left in the file is
+// read into memory for it, within Image.Limit.
 func (r *run) planSegments(w *PixelWork, elem *dataelem.DataElement, img Image) error {
 	ref, inFile := elem.GetValue().(dataelem.ValueInFile)
 	syntax := r.top.TransferSyntaxUID()
@@ -369,15 +375,18 @@ func (r *run) planSegments(w *PixelWork, elem *dataelem.DataElement, img Image) 
 		// hold no text (PS3.5 G.3).
 		return nil
 	}
-	_, err := anonymize.JPEGSegmentText(imageScratch(r.top))
-	switch {
-	case errors.Is(err, anonymize.ErrJPEGSegmentsNotSearched):
-		if r.en.pixels == nil || r.en.pixels.HoldsUnsearchedSegments() {
-			return &Failure{Cause: CausePixelTextUnsearched, Path: formatTag(tagPixelData)}
+	j2k := j2kSyntax(syntax)
+	if !j2k {
+		_, err := anonymize.JPEGSegmentText(imageScratch(r.top))
+		switch {
+		case errors.Is(err, anonymize.ErrJPEGSegmentsNotSearched):
+			if r.en.pixels == nil || r.en.pixels.HoldsUnsearchedSegments() {
+				return &Failure{Cause: CausePixelTextUnsearched, Path: formatTag(tagPixelData)}
+			}
+			return nil
+		case err != nil && !inFile:
+			return &Failure{Cause: CausePixelsUndecodable, Path: formatTag(tagPixelData)}
 		}
-		return nil
-	case err != nil && !inFile:
-		return &Failure{Cause: CausePixelsUndecodable, Path: formatTag(tagPixelData)}
 	}
 	if err := r.withinLimit(w, img, ""); err != nil {
 		return err
@@ -396,6 +405,16 @@ func (r *run) planSegments(w *PixelWork, elem *dataelem.DataElement, img Image) 
 		}
 		held, _ := scratch.Get(tag.Tag(tagPixelData))
 		held.SetValue(b)
+	}
+	if j2k {
+		removed, err := removeJ2KText(scratch)
+		if err != nil || len(removed) == 0 {
+			return err
+		}
+		w.SegmentsRemoved = append(w.SegmentsRemoved, removed...)
+		w.pixel, _ = scratch.Get(tag.Tag(tagPixelData))
+		w.syntax = syntax
+		return nil
 	}
 	removed, err := anonymize.RemoveJPEGText(scratch)
 	if err != nil {

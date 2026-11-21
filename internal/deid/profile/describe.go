@@ -131,10 +131,14 @@ func DescribeNotes(e *v1.ExpandedProfile) []string {
 	}
 	out = append(out, "An image at risk of burned-in text (Burned In Annotation YES, or absent on a modality or SOP class commonly "+
 		"drawn on) is held unless a pixel rule covers it.")
+	out = append(out, "Comment and application segments of JPEG, and comment segments of JPEG 2000 and HTJ2K, are removed from "+
+		"compressed pixel data; a frame holding any other segment that could carry text is held.")
 	if e.GetUnsearchedSegments() == v1.UnsearchedSegments_UNSEARCHED_SEGMENTS_KEEP {
-		out = append(out, "Compressed pixel data whose segments are not searched for text (JPEG 2000) is kept as received.")
+		out = append(out, "Compressed pixel data whose segments are not searched for text (JPEG 2000 Part 2, MPEG-2, H.264, HEVC, "+
+			"JPEG XL) is kept as received.")
 	} else {
-		out = append(out, "Compressed pixel data whose segments are not searched for text (JPEG 2000) is held.")
+		out = append(out, "Compressed pixel data whose segments are not searched for text (JPEG 2000 Part 2, MPEG-2, H.264, HEVC, "+
+			"JPEG XL) is held.")
 	}
 	return out
 }

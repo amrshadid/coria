@@ -3,6 +3,8 @@ package engine
 import (
 	"strconv"
 	"strings"
+
+	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
 // What a needle is made from. A needle is a value searched for after
@@ -379,7 +381,9 @@ func needleKindOf(t uint32, nvr string, basis needleBasis) NeedleKind {
 // vr is the VR the value is taken as. A
 // registered UID is not one: it names a kind of object, stays wherever
 // else it is, and is no trace of the patient. A value of VR UN is one only
-// when it reads as text (unknownText).
+// when it reads as text (unknownText). A needle is kept in NFC
+// (profile.NFC), the form its edge is judged in: a name ending in a
+// combining accent ends in a letter once composed.
 func (r *run) needle(kind NeedleKind, vr, value, path string) {
 	if vr == "UN" {
 		var ok bool
@@ -391,7 +395,7 @@ func (r *run) needle(kind NeedleKind, vr, value, path string) {
 		return
 	}
 	add := func(v string) {
-		v = strings.Trim(v, " \x00")
+		v = profile.NFC(strings.Trim(v, " \x00"))
 		if v == "" || (kind == NeedleUID && Registered(v)) || (temporalVRs[vr] && allZeros(v)) {
 			return
 		}

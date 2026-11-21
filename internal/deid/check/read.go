@@ -1,10 +1,9 @@
 package check
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sort"
 
@@ -23,53 +22,56 @@ var pixelTags = map[tag.Tag]bool{0x7FE00008: true, 0x7FE00009: true, 0x7FE00010:
 // 7.1).
 const preambleLength = 128
 
-// span is the folded text of one element, or of the preamble, in the
-// haystack.
-type span struct {
-	start, end int
-	path       string
-}
+// heldBinary is the longest value of a binary VR (or of no VR) the reader
+// of the elements holds: a longer one stays in the file, and one that may
+// be text (VR UN, OB, or none) is read from the file when its text is
+// searched, one value at a time. It is the header reader's bound, so the
+// elements held are about the header the engine held.
+const heldBinary = 1024
 
-// parsed is a file read for the search.
+// parsed is a file's elements, read for the search with their values in
+// place: the image data and every binary value past heldBinary are left in
+// the file.
 type parsed struct {
-	// data is the file, its ASCII letters upper-cased once the text was
-	// read, for the raw search.
-	data []byte
+	src  io.ReaderAt
+	size int64
 	file *attributes.File
-	// hay is the folded text of every element, separated by NUL, which no
-	// form holds; spans say whose text is where, in order.
-	hay   []byte
-	spans []span
-	// segs are the ranges of data outside the image data, in order.
+	// segs are the ranges of the file outside the image data, in order.
 	segs [][2]int64
 	// binary are the ranges of the values of standard elements of a binary
 	// VR (a LUT, an overlay, an encapsulated document), in order, where a
 	// short raw form is not taken.
 	binary [][2]int64
-	// shifted are the runs of data written in a 7-bit set of two-byte
-	// characters, each from just after the escape sequence that shifted
-	// into it, in order.
-	shifted [][2]int64
 	// nestedPixels is the path of the first element of group 7FE0 inside
 	// a sequence item, or "": de-identification keeps pixel data at the
 	// top level only, so one found deeper is an image no pixel rule
 	// filled and no search reads (a residual, whatever it holds).
 	nestedPixels string
+	// largestText is the longest text value the text search decodes, in
+	// bytes of UTF-8 at most (textSpread), and largestLoose the longest
+	// value of unknown kind it reads whole (at most looseMax), in bytes
+	// read: what the check holds of one value.
+	largestText, largestLoose int64
+	// streams is set when a value of unknown kind is read as a stream.
+	streams bool
 }
 
-// parse reads data with the codec-free reader and builds what the search
-// needs: values within MaxValueBytes, image data left unread. The text of
-// every element is decoded under its data set's character set; a value
-// that may be text the file did not say was text (VR UN, OB, or none),
-// and the preamble, also as UTF-8 and under source, the character set the
-// file was received in.
-func (c *Checker) parse(ctx context.Context, data []byte, source []string) (*parsed, error) {
-	f, err := attributes.Read(filebase.NewFileReader(bytes.NewReader(data)), attributes.ReadOptions{
+// parse reads the elements of the size bytes of src with the codec-free
+// reader: text values within MaxValueBytes held, binary values past
+// heldBinary and the image data left in the file. It refuses a file the
+// reader did not read whole or whose sequences are not well formed.
+func (c *Checker) parse(src io.ReaderAt, size int64) (*parsed, error) {
+	fr := newFileReader(src, size)
+	f, err := attributes.Read(filebase.NewFileReader(fr), attributes.ReadOptions{
 		SkipBulkData:      true,
-		BulkDataThreshold: c.opts.MaxValueBytes,
+		BulkDataThreshold: heldBinary,
 		MaxValueLength:    c.opts.MaxValueBytes,
 		Logger:            slog.New(slog.DiscardHandler),
 	})
+	if fr.err != nil {
+		// The source failed, which says nothing of the file.
+		return nil, fmt.Errorf("deid check: %w", fr.err)
+	}
 	if err != nil {
 		if errors.Is(err, attributes.ErrValueTooLong) {
 			return nil, &Refusal{Cause: CauseTooLarge}
@@ -82,29 +84,75 @@ func (c *Checker) parse(ctx context.Context, data []byte, source []string) (*par
 		// a parser misses could not be searched for.
 		return nil, &Refusal{Cause: CauseUnreadable}
 	}
-	if !wholeRead(f, int64(len(data))) || !wellFormed(f.MetaElements) || !wellFormed(f.DataElements) {
+	if fr.size != size || !wholeRead(f, size) || !wellFormed(f.MetaElements) || !wellFormed(f.DataElements) {
 		return nil, &Refusal{Cause: CauseUnreadable}
 	}
-	p := &parsed{data: data, file: f}
-	w := walker{ctx: ctx, p: p, source: source}
-	if f.HasPreamble && len(data) >= preambleLength {
-		w.addText("preamble", w.loose(data[:preambleLength], nil))
-	}
+	p := &parsed{src: src, size: size, file: f}
 	var cut [][2]int64
-	if err := w.walk(f.MetaElements, nil, "", 0, &cut); err != nil {
+	if err := p.survey(f.MetaElements, "", 0, &cut, c.opts.MaxValueBytes); err != nil {
 		return nil, err
 	}
-	if err := w.walk(f.DataElements, nil, "", 0, &cut); err != nil {
+	if err := p.survey(f.DataElements, "", 0, &cut, c.opts.MaxValueBytes); err != nil {
 		return nil, err
 	}
-	// The text is read; the raw search compares ASCII letters in upper
-	// case, in place, so the file is held once.
-	upperASCII(data)
-	p.segs = outside(cut, int64(len(data)))
-	p.shifted = shiftedRuns(data)
+	p.segs = outside(cut, size)
 	sort.Slice(p.binary, func(i, j int) bool { return p.binary[i][0] < p.binary[j][0] })
 	return p, nil
 }
+
+// survey records, for elements at depth under prefix, the ranges of image
+// data to cut from the raw search, the ranges of standard binary values,
+// the first pixel data nested in an item, and the longest values the text
+// search will hold.
+func (p *parsed) survey(elements []*attributes.DataElementValue, prefix string, depth int, cut *[][2]int64, maxValue uint32) error {
+	if depth > maxDepth {
+		return &Refusal{Cause: CauseTooLarge}
+	}
+	for _, e := range elements {
+		pos := e.Position
+		if depth > 0 && e.Tag.Group() == 0x7FE0 && p.nestedPixels == "" {
+			p.nestedPixels = prefix + fmt.Sprintf("%08X", uint32(e.Tag))
+		}
+		if pixelTags[e.Tag] && depth == 0 {
+			if pos.End > pos.ValueOffset {
+				*cut = append(*cut, [2]int64{pos.ValueOffset, pos.End})
+			}
+			continue
+		}
+		if e.VR == "SQ" || e.Items != nil {
+			for i, it := range e.Items {
+				path := prefix + fmt.Sprintf("%08X[%d]/", uint32(e.Tag), i)
+				if err := p.survey(it.Elements, path, depth+1, cut, maxValue); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		text := dataelem.IsTextVR(dataelem.VR(e.VR))
+		if !text && e.VR != "UN" && e.VR != "" && !e.Tag.IsPrivate() && pos.End > pos.ValueOffset {
+			p.binary = append(p.binary, [2]int64{pos.ValueOffset, pos.End})
+		}
+		switch {
+		case text:
+			// Counted as the text the search holds: decoded into UTF-8, up
+			// to textSpread bytes a byte that is not ASCII.
+			n := int64(len(e.Value))
+			if !plainASCII(e.Value) {
+				n *= textSpread
+			}
+			p.largestText = max(p.largestText, n)
+		case looseVR(e.VR) && e.Length <= maxValue && e.Length > looseMax:
+			p.streams = true
+		case looseVR(e.VR) && e.Length <= looseMax:
+			p.largestLoose = max(p.largestLoose, int64(e.Length))
+		}
+	}
+	return nil
+}
+
+// looseVR reports whether a value of VR vr may be text the file did not
+// say was text (PS3.5 6.2.2): UN, OB, or no VR.
+func looseVR(vr string) bool { return vr == "UN" || vr == "OB" || vr == "" }
 
 // wholeRead reports whether the reader read the file to its end. The
 // reader keeps what it read of a truncated file, and of one whose
@@ -160,112 +208,6 @@ func wellFormed(elements []*attributes.DataElementValue) bool {
 	return true
 }
 
-// walker walks the elements of a file into the haystack.
-type walker struct {
-	ctx    context.Context
-	p      *parsed
-	source []string
-}
-
-// walk adds the text of elements, at depth, under prefix, decoded by the
-// encodings in force for their data set (PS3.3 C.12.1.1.2: an item without
-// its own Specific Character Set takes its parent's), and the ranges of
-// image data to cut.
-func (w walker) walk(elements []*attributes.DataElementValue, inherited []string, prefix string, depth int, cut *[][2]int64) error {
-	if depth > maxDepth {
-		return &Refusal{Cause: CauseTooLarge}
-	}
-	if err := w.ctx.Err(); err != nil {
-		return err
-	}
-	encodings := attributes.TextEncodingsWithContext(w.ctx, elements, inherited)
-	for _, e := range elements {
-		path := prefix + fmt.Sprintf("%08X", uint32(e.Tag))
-		pos := e.Position
-		if depth > 0 && e.Tag.Group() == 0x7FE0 && w.p.nestedPixels == "" {
-			w.p.nestedPixels = path
-		}
-		if pixelTags[e.Tag] && depth == 0 {
-			if pos.End > pos.ValueOffset {
-				*cut = append(*cut, [2]int64{pos.ValueOffset, pos.End})
-			}
-			continue
-		}
-		if e.VR == "SQ" || e.Items != nil {
-			for i, it := range e.Items {
-				if err := w.walk(it.Elements, encodings, fmt.Sprintf("%s[%d]/", path, i), depth+1, cut); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		text := dataelem.IsTextVR(dataelem.VR(e.VR))
-		if !text && e.VR != "UN" && e.VR != "" && !e.Tag.IsPrivate() && pos.End > pos.ValueOffset {
-			w.p.binary = append(w.p.binary, [2]int64{pos.ValueOffset, pos.End})
-		}
-		if e.ValueSkipped || len(e.Value) == 0 {
-			continue
-		}
-		switch {
-		case text:
-			w.addText(path, []string{attributes.DecodeTextWithContext(w.ctx, e.VR, e.Value, encodings)})
-		case e.VR == "UN" || e.VR == "OB" || e.VR == "":
-			w.addText(path, w.loose(e.Value, encodings))
-		}
-	}
-	return nil
-}
-
-// looseMax is the longest value of unknown kind decoded under a character
-// set: the library's decoder is slow on long binary values (some 90 ms a
-// megabyte, against a few for the search), and a longer value is searched
-// as UTF-8 and in its raw bytes, in every received encoding, all the same.
-const looseMax = 256 << 10
-
-// loose returns the texts a value of unknown kind may be (PS3.5 6.2.2): as
-// UTF-8, and as LO under the data set's encodings and under the character
-// set the file was received in; each once. A value of ASCII without an
-// escape reads the same in all of them, and one past looseMax is taken as
-// UTF-8 only.
-func (w walker) loose(value []byte, encodings []string) []string {
-	out := []string{string(value)}
-	if len(value) > looseMax || plainASCII(value) {
-		return out
-	}
-	for _, enc := range [][]string{encodings, w.source} {
-		if enc == nil {
-			continue
-		}
-		s := attributes.DecodeTextWithContext(w.ctx, "LO", value, enc)
-		if s != out[0] && (len(out) < 2 || s != out[1]) {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// plainASCII reports whether b is ASCII without the escape that begins an
-// ISO 2022 code extension (PS3.5 6.1.2.5.3).
-func plainASCII(b []byte) bool {
-	for _, c := range b {
-		if c >= 0x80 || c == 0x1B {
-			return false
-		}
-	}
-	return true
-}
-
-// addText adds texts of path to the haystack, each folded and followed by
-// a NUL.
-func (w walker) addText(path string, texts []string) {
-	for _, t := range texts {
-		start := len(w.p.hay)
-		w.p.hay = append(w.p.hay, foldText(t)...)
-		w.p.spans = append(w.p.spans, span{start: start, end: len(w.p.hay), path: path})
-		w.p.hay = append(w.p.hay, 0)
-	}
-}
-
 // outside returns the ranges of [0, n) outside cut.
 func outside(cut [][2]int64, n int64) [][2]int64 {
 	sort.Slice(cut, func(i, j int) bool { return cut[i][0] < cut[j][0] })
@@ -281,53 +223,6 @@ func outside(cut [][2]int64, n int64) [][2]int64 {
 		out = append(out, [2]int64{at, n})
 	}
 	return out
-}
-
-// pathAt returns the path of the text at position at of the haystack.
-func (p *parsed) pathAt(at int) string {
-	i := sort.Search(len(p.spans), func(i int) bool { return p.spans[i].end > at })
-	if i < len(p.spans) {
-		return p.spans[i].path
-	}
-	return "file"
-}
-
-// shiftedRuns returns the runs of data a file wrote in a 7-bit set of
-// two-byte characters (PS3.5 6.1.2.5.3: JIS X 0208 after ESC $ B or ESC $
-// @, JIS X 0212 after ESC $ ( D): from the byte after the escape sequence
-// to the first byte that is not a character of such a set (0x21 to 0x7E),
-// the next escape among them.
-func shiftedRuns(data []byte) [][2]int64 {
-	var out [][2]int64
-	for i := 0; i+2 < len(data); i++ {
-		if data[i] != 0x1B || data[i+1] != '$' {
-			continue
-		}
-		j := i + 2
-		if data[j] == '(' || data[j] == ')' {
-			j++
-		}
-		if j >= len(data) || data[j] < 0x40 || data[j] > 0x7E {
-			continue
-		}
-		start := j + 1
-		end := start
-		for end < len(data) && data[end] >= 0x21 && data[end] <= 0x7E {
-			end++
-		}
-		if end > start {
-			out = append(out, [2]int64{int64(start), int64(end)})
-		}
-		i = end - 1
-	}
-	return out
-}
-
-// inShifted reports whether [off, end) lies in one shifted run, at an even
-// distance from its start, so a match falls on whole two-byte characters.
-func (p *parsed) inShifted(off, end int64) bool {
-	i := sort.Search(len(p.shifted), func(i int) bool { return p.shifted[i][1] > off })
-	return i < len(p.shifted) && p.shifted[i][0] <= off && end <= p.shifted[i][1] && (off-p.shifted[i][0])%2 == 0
 }
 
 // inBinary reports whether offset is in the value of a standard binary
@@ -370,4 +265,79 @@ func locateIn(elements []*attributes.DataElementValue, off int64, prefix string)
 		return path, true
 	}
 	return "", false
+}
+
+// shifter follows a stream of raw bytes, one byte at a time, for the runs
+// a file wrote in a 7-bit set of two-byte characters (PS3.5 6.1.2.5.3: JIS
+// X 0208 after ESC $ B or ESC $ @, JIS X 0212 after ESC $ ( D): from the
+// byte after the escape sequence to the first byte that is not a character
+// of such a set (0x21 to 0x7E), the next escape among them. Its state
+// carries from one window to the next, so a run longer than a window is
+// still one run from its start.
+type shifter struct {
+	// esc is how much of an escape sequence was read: 1 after ESC, 2
+	// after ESC $, 3 after ESC $ ( or ESC $ ).
+	esc int
+	// start is the offset of the run in progress, or -1.
+	start int64
+	// runs are the runs that ended in the bytes fed since the last reset,
+	// and the run in progress, to the last byte fed.
+	runs [][2]int64
+}
+
+// newShifter returns a shifter at the start of a stream.
+func newShifter() *shifter { return &shifter{start: -1} }
+
+// feed follows b, whose first byte is at offset base, and sets runs to
+// the runs that ended in b and the run in progress at its end.
+func (s *shifter) feed(b []byte, base int64) {
+	s.runs = s.runs[:0]
+	for i, c := range b {
+		off := base + int64(i)
+		if s.start >= 0 {
+			if c >= 0x21 && c <= 0x7E {
+				continue
+			}
+			if off > s.start {
+				s.runs = append(s.runs, [2]int64{s.start, off})
+			}
+			s.start = -1
+		}
+		switch {
+		case s.esc == 2 && (c == '(' || c == ')'):
+			s.esc = 3
+		case (s.esc == 2 || s.esc == 3) && c >= 0x40 && c <= 0x7E:
+			s.esc, s.start = 0, off+1
+		case s.esc == 1 && c == '$':
+			s.esc = 2
+		case c == 0x1B:
+			s.esc = 1
+		default:
+			s.esc = 0
+		}
+	}
+	if end := base + int64(len(b)); s.start >= 0 && end > s.start {
+		s.runs = append(s.runs, [2]int64{s.start, end})
+	}
+}
+
+// in reports whether [off, end) lies in one run, at an even distance from
+// its start, so a match falls on whole two-byte characters.
+func (s *shifter) in(off, end int64) bool {
+	i := sort.Search(len(s.runs), func(i int) bool { return s.runs[i][1] > off })
+	return i < len(s.runs) && s.runs[i][0] <= off && end <= s.runs[i][1] && (off-s.runs[i][0])%2 == 0
+}
+
+// readValue reads the value of e from the file into buf, grown when it is
+// too small, and returns it.
+func (p *parsed) readValue(e *attributes.DataElementValue, buf []byte) ([]byte, error) {
+	n := int(e.Length)
+	if cap(buf) < n {
+		buf = make([]byte, n)
+	}
+	buf = buf[:n]
+	if _, err := io.ReadFull(sectionOf(p.src, e.Position.ValueOffset, e.Position.ValueOffset+int64(n)), buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }

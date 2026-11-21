@@ -84,6 +84,12 @@ Two searches of each result:
     Specific Character Set, as Python's codecs write it), for what a parser
     could miss.
 
+Text is compared in Unicode Normalization Form C (unicodedata.normalize
+with "NFC"), forms and decoded values alike, so a name written with
+combining marks ("u" and U+0308) is the name written composed ("ü"); the
+raw bytes, which nothing normalized, are searched for each form composed
+and decomposed (NFD).
+
 Values shorter than 4 characters are not searched for (they match inside
 ordinary text), and nor is one character of a script written without
 spaces (Han, kana, Hangul), whose two or more characters are searched
@@ -170,6 +176,11 @@ WHOLE_VRS = {"AE", "LO", "LT", "SH", "ST", "UC", "UR", "UT", "PN", "DA",
              "DT", "UI", "UN"}
 
 
+def nfc(s):
+    """s in Unicode Normalization Form C, the one form text is compared in."""
+    return unicodedata.normalize("NFC", s)
+
+
 def words(s):
     """Whether an identifier is words: a letter at an end, no digit, no
     letter of a script written without spaces."""
@@ -194,7 +205,7 @@ class Needles:
         self.skipped = 0
 
     def add_form(self, form, needle, kind):
-        form = form.strip(" \x00")
+        form = nfc(form.strip(" \x00"))
         if not form:
             return
         if unspaced(form):
@@ -400,7 +411,7 @@ def gather(orig, keywords, needles):
             if not elem.tag.is_private_creator and elem.VR in ("PN", "UN"):
                 private.extend((kind_of(elem, s), s) for s in vals)
             continue
-        standard_values.update(s.strip(" \x00").lower() for s in vals)
+        standard_values.update(nfc(s.strip(" \x00")).lower() for s in vals)
         if elem.keyword in keywords or elem.keyword in FLOOR or kind_of(elem) == "name":
             patient = elem.keyword in FLOOR or elem.keyword in PATIENT_IDS or id(elem) in inside
             for s in vals:
@@ -425,7 +436,7 @@ def gather(orig, keywords, needles):
                     needles.add(kind_of(inner, v), v)
     for kind, s in private:
         s = s.strip(" \x00")
-        if kind != "name" or not s.isprintable() or s.lower() in standard_values:
+        if kind != "name" or not s.isprintable() or nfc(s).lower() in standard_values:
             continue
         needles.add("name", s)
 
@@ -440,7 +451,7 @@ def texts(ds):
             continue
         try:
             for s in values_of(elem):
-                out.append((str(elem.tag), s.lower()))
+                out.append((str(elem.tag), nfc(s).lower()))
         except Exception:  # a value pydicom cannot convert is read as bytes
             out.append((str(elem.tag), repr(getattr(elem, "value", b"")).lower()))
     return out
@@ -538,8 +549,9 @@ def check_pair(pair, keywords):
         hits = [where for where, s in hay if rx.search(s)]
         if not hits:
             raws = set()
-            for variant in (form, form.upper()):
+            for variant in (nfc(form), nfc(form.upper())):
                 raws.add(variant.encode("utf-8").lower())
+                raws.add(unicodedata.normalize("NFD", variant).encode("utf-8").lower())
                 raws.update(e.lower() for e in (encoded(variant, c) for c in codecs) if e)
             hits = ["raw bytes" for b in sorted(raws) if pattern(b, kind).search(raw)]
         if hits:

@@ -171,7 +171,13 @@ func (r *run) actRedact(c *target, a Action) error {
 // count is every match cut.
 // Each pass over a piece first asks spend for its length, and refuses
 // (CauseTooLarge) when spend says the file's budget is gone.
+//
+// The value is cut in NFC (profile.NFC), the form value patterns match: a
+// name written with combining marks is cut by a pattern that writes it
+// composed, and what is left is written in NFC. A value with nothing cut
+// is not written (count is 0), so it stays as it came.
 func redactValue(re *regexp.Regexp, repl, vr, value string, spend func(n int) bool) (out string, cuts []string, count int, cause Cause) {
+	value = profile.NFC(value)
 	seen := map[string]bool{}
 	var over bool
 	cut := func(s string) (string, bool) {

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 
+	"github.com/amrshadid/go-dicom/dataelem"
 	"github.com/amrshadid/go-dicom/dataset"
+	"github.com/amrshadid/go-dicom/sequence"
 
 	"github.com/amrshadid/coria/internal/core/label"
 	"github.com/amrshadid/coria/internal/core/naming"
@@ -81,13 +83,14 @@ type TrialOptions struct {
 	// after reads within its bound. Nil tries de-identification alone.
 	Receiver *tenant.Receiver
 	// Check makes the check after for a file bound, as Config.Check does.
-	// Its checker takes nothing from Memory: the trial takes the check's
-	// copy with its own, at once, so a trial never holds part of the bound
-	// while it waits for more.
+	// Its checker takes nothing from Memory: the trial takes what the
+	// check holds with its own copies, at once, so a trial never holds
+	// part of the bound while it waits for more.
 	Check func(maxFileBytes int64) Checker
 	// Memory, when not nil, is the server's bound on de-identification's
 	// memory: the trial takes from it, before the engine runs, the bytes of
-	// the copies it holds (the file, the written file, the check's copy),
+	// the copies it holds (the file, the written file, what the check
+	// holds),
 	// waits for room until ctx ends, and gives them back when it returns.
 	// A file whose copies need more than the whole bound is held
 	// (deid_failed, check_too_large), as at reception.
@@ -182,7 +185,8 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 	// staying in the file, and a frame at a time of pixel work.
 	written := int64(len(file)) + grown(record) + trialWriteHeadroom
 	if o.Memory != nil {
-		release, err := o.Memory.Reserve(ctx, trialBytes(len(file), grown(record)))
+		release, err := o.Memory.Reserve(ctx, trialBytes(len(file), grown(record),
+			check.Reservation(ctx, written, largestText(ds), record.Needles, h.CharacterSet())))
 		if reason, details, isHold := checkHold(err); isHold {
 			t.Record, t.Pixels = nil, nil
 			return held(reason, details)
@@ -298,16 +302,51 @@ const TrialCauseLookupTable = "lookup_table"
 // trialBytes is what a trial of a file of n bytes takes from the server's
 // bound on de-identification's memory, grown the bytes its pixels decoded
 // add (grown): the file, the written file at its largest (the file, grown
-// and trialWriteHeadroom) and the check's copy of it, and an eighth of the
-// file more for what the check and the data sets hold beside the copies.
-// Measured (TestATrialsPeakIsWithinWhatItTakes): the heap's peak over a
-// trial of a 20 MiB native image is 3.01 to 3.07 times the file (the
-// estimate 3.13), of an RLE image of 6 MiB decoded to 20 MiB 9.3 to 9.8
-// times (the estimate 10.1). The header's data sets, parsed before the
-// copies are taken, are bounded by receiver.header-limit, not here.
-func trialBytes(n int, grown int64) int64 {
+// and trialWriteHeadroom), what the check after holds while it reads the
+// written file (checkBytes, as check.Reservation answers for it: a window
+// of it, one value of unknown kind, the longest text value decoded and
+// the automata of the needles' forms, never a copy of the file), and an
+// eighth of the file more for what the data sets hold
+// beside the copies; and when a rule decoded its pixels, the room of a
+// second written file, for the frames decoded and filled as the written
+// file is made (measured at up to about half the decoded bytes, on top of
+// the written file). Measured (TestATrialsPeakIsWithinWhatItTakes), each
+// peak against the estimate logged there: a 20 MiB native image peaks at
+// about 2.0 times the file (the estimate 2.26); an RLE image of 6 MiB
+// decoded to 20 MiB at 6.3 to 7.4 times (the estimate 10.6). The header's
+// data sets, parsed before the copies are taken, and the elements of the
+// written header the check reads, are bounded by receiver.header-limit,
+// not here.
+func trialBytes(n int, grown, checkBytes int64) int64 {
 	written := int64(n) + grown + trialWriteHeadroom
-	return int64(n) + 2*written + int64(n)/8
+	out := int64(n) + written + checkBytes + int64(n)/8
+	if grown > 0 {
+		out += written
+	}
+	return out
+}
+
+// largestText is the longest text value in ds and its items, in bytes:
+// the check after decodes each text value of the written file whole, and
+// what it holds of one grows with the longest (check.Reservation).
+func largestText(ds *dataset.Dataset) int64 {
+	var n int64
+	for _, e := range ds.Filter(func(*dataelem.DataElement) bool { return true }) {
+		if seq, ok := e.GetValue().(*sequence.Sequence); ok {
+			for _, it := range seq.Items() {
+				if item, ok := it.(*dataset.Dataset); ok {
+					n = max(n, largestText(item))
+				}
+			}
+			continue
+		}
+		if dataelem.IsTextVR(e.GetVR()) {
+			if b, ok := e.Bytes(); ok {
+				n = max(n, int64(len(b)))
+			}
+		}
+	}
+	return n
 }
 
 // trialWriteHeadroom is the room a trial's written file is given past the

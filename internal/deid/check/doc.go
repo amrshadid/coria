@@ -67,10 +67,14 @@
 // bytes are ASCII letters (林 is "NS"), is matched in the raw bytes only
 // inside a run the file shifted into the set by its escape sequence.
 //
-// Unicode normalization is not applied: a value received precomposed
-// ("é" as one code point) is found precomposed, and a copy written
-// decomposed (an "e" and a combining accent) is not found. Normalizing
-// needs the Unicode tables of golang.org/x/text/unicode/norm.
+// Text is compared in Unicode Normalization Form C (UAX #15, profile.NFC),
+// as the engine's clean and value patterns compare it: a name written with
+// a combining mark ("e" and U+0301) is found for a needle written composed
+// ("é"), and the reverse. In the raw bytes, which no reader normalized,
+// each form is searched for in UTF-8 both composed and decomposed (NFD).
+// A match in the raw bytes that a following combining mark composes with
+// in every received character set ("RENE" then U+0301, "RENÉ" in NFC) is
+// another word in NFC, as clean judges it, and is not a finding.
 //
 // The result names where a value was found (the element's path, as the
 // engine's record writes it: tags as eight hexadecimal digits, item
@@ -88,8 +92,23 @@
 // at a position, and for each rune of a form checked against a received
 // character set before it is written in it (the library's encoder takes
 // the square of a text's length when it cannot write it); past the
-// budget, a second or two of work, the file is refused as too large. The
-// memory is the file, held once (its ASCII letters upper-cased in place
-// once its text is read), its decoded text, and the automata, some 28
-// bytes for each byte of the forms: about 55 MB at the default bound.
+// budget, a second or two of work, the file is refused as too large.
+//
+// The file is never held whole. The reader holds its elements with their
+// values in place (text values, and binary values of at most 1 KiB; the
+// image data and longer binary values stay in the file), about the header
+// the engine held. The text is searched one value at a time; a value of
+// unknown kind longer than the 256 KiB decoded under a character set is
+// read as a stream of UTF-8. The raw bytes are read a window of 1 MiB at a
+// time, each window beginning with the end of the one before (the longest
+// raw form and a few bytes for its edges), so a form across the edge
+// between two windows is found whole in the second, and an ISO 2022 run is
+// followed from one window into the next. The memory of a check is a
+// window, one value (at most Options.MaxValueBytes, a few copies of it as
+// it is decoded and folded, counted at up to three bytes of UTF-8 for each
+// byte that is not ASCII), and the automata, counted at 64 bytes for each
+// byte of the folded forms and of the raw forms as written (together at
+// most MaxFormBytes): about 1.1 MiB for an image whatever its size.
+// Options.Memory is charged that (Checker.reservation), once the raw forms
+// are written.
 package check

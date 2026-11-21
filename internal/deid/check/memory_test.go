@@ -3,12 +3,17 @@ package check
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/amrshadid/coria/internal/deid/engine"
+	"github.com/amrshadid/coria/internal/testkit"
 )
 
 // fixedLimit is a Budget's bound read from v.
@@ -108,12 +113,12 @@ func TestBudgetReadsItsBoundLive(t *testing.T) {
 }
 
 // TestTheCheckTakesItsCopyFromTheBudget guards the check after under the
-// server's bound: a file larger than the whole bound is refused as
-// check_too_large before anything is read (a border: its bytes stay held
-// and a release once the bound is raised checks it), a file within it is
-// checked with its bytes taken from the bound while it is read and given
-// back after, and a check that waits for room ends with its context, which
-// is no verdict on the file.
+// server's bound: a file whose search needs more than the whole bound is
+// refused as check_too_large before it is searched (a border: its bytes
+// stay held and a release once the bound is raised checks it), a file
+// within it is checked with what it holds taken from the bound while it is
+// searched and given back after, and a check that waits for room ends with
+// its context, which is no verdict on the file.
 func TestTheCheckTakesItsCopyFromTheBudget(t *testing.T) {
 	p := writeFile(t, el{0x00204000, "LT", strings.Repeat("x", 3000)})
 	n := needle(engine.NeedleText, "MRN-778812")
@@ -142,6 +147,82 @@ func TestTheCheckTakesItsCopyFromTheBudget(t *testing.T) {
 	var r *Refusal
 	if !errors.Is(err, context.DeadlineExceeded) || errors.As(err, &r) {
 		t.Fatalf("a check waiting for room past its context answered %v, want the context's error", err)
+	}
+}
+
+// TestReservationCoversDecodedText guards the reservation against the heap
+// the check holds while it searches (from the end of parsing to its
+// answer, sampled every 2 ms, collected often so the heap read is close
+// to what is live): a text of 4 MiB in
+// TIS 620 (ISO_IR 166), each byte of which the library decodes to three
+// bytes of UTF-8, a value of unknown kind of 256 KiB in it read under two
+// character sets, and many needles whose raw forms in the received sets
+// make the raw automaton larger than the text's. Each is
+// within what the check reserved, and within Reservation, which a caller
+// that takes the check's memory itself takes.
+func TestReservationCoversDecodedText(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race detector's own memory hides the heap's")
+	}
+	thai := func(n int) []byte {
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = 0xA1 + byte(i%46) //nolint:gosec // G115: below 0xCF.
+			if i%9 == 8 {
+				b[i] = ' '
+			}
+		}
+		return b
+	}
+	var needles engine.Needles
+	for i := range 300 {
+		needles = append(needles, needle(engine.NeedleName, fmt.Sprintf("กขฃคฅฆง%03d^SOMCHAI%03d", i, i)))
+	}
+	cs := "ISO_IR 166"
+	for _, c := range []struct {
+		name string
+		els  []el
+	}{
+		{"text", []el{{0x00080005, "CS", cs}, {0x00204000, "UT", thai(4 << 20)}}},
+		{"unknown kind", []el{{0x00080005, "CS", cs}, {0x00110010, "LO", "ACME 1.0"}, {0x00111002, "UN", thai(looseMax)}}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p := writeFile(t, c.els...)
+			st, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := NewBudget(func(context.Context) (int64, error) { return 1 << 30, nil }, 0)
+			ch := New(Options{Memory: b})
+			var reserved int64
+			var base runtime.MemStats
+			var stop func() uint64
+			ch.seams.afterParse = func() {
+				reserved = b.Used()
+				runtime.GC()
+				runtime.ReadMemStats(&base)
+				stop = testkit.HeapPeak()
+			}
+			// A low GC target keeps the heap read near what is live, not
+			// garbage waiting for a collection.
+			defer debug.SetGCPercent(debug.SetGCPercent(5))
+			if _, err := ch.checkPath(t, context.Background(), p, needles, &cs); err != nil {
+				t.Fatal(err)
+			}
+			held := int64(stop()) - int64(base.HeapAlloc) //nolint:gosec // G115: heap sizes of a test, far below 2^63.
+			largest := int64(0)
+			for _, e := range c.els {
+				if v, ok := e.value.([]byte); ok && e.vr == "UT" {
+					largest = int64(len(v))
+				}
+			}
+			outside := Reservation(context.Background(), st.Size(), largest, needles, &cs)
+			t.Logf("held at most %.1f MiB; reserved %.1f MiB; Reservation %.1f MiB",
+				float64(held)/(1<<20), float64(reserved)/(1<<20), float64(outside)/(1<<20))
+			if reserved < held || outside < held {
+				t.Errorf("held %d bytes, reserved %d, Reservation %d", held, reserved, outside)
+			}
+		})
 	}
 }
 

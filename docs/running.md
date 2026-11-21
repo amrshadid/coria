@@ -189,10 +189,16 @@ rule: `redact` fills rectangles in every frame
 (the image is then written uncompressed), `detect` fills what the text detector
 finds (opt-in, and slow: every frame is decoded and searched), `accept`
 archives it as it is, with a reason. Comment and application segments of JPEG
-pixel data are always removed, and a frame then holding any segment beyond those
-a decoder needs at their defined length is held (`pixel_text_unsearched`); an image left in JPEG 2000, whose segments are
-not searched, is held unless the profile says `"unsearchedSegments":
-"UNSEARCHED_SEGMENTS_KEEP"`. Work on pixels is bounded by `deid.pixel-limit`
+pixel data, and comment segments of JPEG 2000 and HTJ2K pixel data (in the main
+header and in every tile-part header, the tile-part's length and its TLM entry
+lowered to match) and the main header's CPF and CRG segments, are always removed, the image data copied byte for byte; a
+frame then holding any segment beyond those a decoder needs at their defined
+length, a marker the walk does not know, a JP2 file instead of a bare
+codestream, or anything but padding after its end, is held
+(`pixel_text_unsearched`), whatever the profile says. An image left in a syntax
+whose segments are not searched (JPEG 2000 Part 2, MPEG-2, H.264, HEVC, JPEG
+XL, Deflated Image Frame Compression) is held unless the profile says
+`"unsearchedSegments": "UNSEARCHED_SEGMENTS_KEEP"`. Work on pixels is bounded by `deid.pixel-limit`
 ([Settings](settings.md)). A profile version that keeps the UIDs a file is
 placed by (the Retain UIDs option), and a naming rule that puts a value into a
 label unhashed (`{PatientID}` rather than `{#PatientID}`) are refused for such a
@@ -250,8 +256,12 @@ A `valuePattern` selector (an RE2 pattern of at most 256 bytes; the whole value
 by default, anywhere in it with `"search": true`) selects the SH, LO, UC, ST,
 LT, UT and PN elements whose text matches, at any depth, each value of a
 multi-valued element apart with its padding removed. Matching is exact: case
-counts unless the pattern says `(?i)`, and an accented letter written composed
-differs from the same letter written decomposed. A search takes the longest
+counts unless the pattern says `(?i)`. A value is matched in Unicode NFC: an
+accented letter the file wrote decomposed (`u` and a combining diaeresis) is
+matched as its composed letter (`ü`), so a pattern writes accented letters
+composed, as editors do (a pattern written decomposed is refused as
+`bad_pattern`); redact writes what it keeps in NFC. Clean and the
+check after compare names in the same form. A search takes the longest
 match at each place, so `MRN|MRN\d+` finds the whole MRN. A rule naming an
 element by its tag, path, private creator or group wins over it, and it wins
 over a rule of a whole VR. The `redact` action cuts the matches of its pattern

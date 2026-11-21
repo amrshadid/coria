@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/amrshadid/coria/internal/core/naming"
+	"github.com/amrshadid/coria/internal/deid/profile"
 )
 
 // hashValue is the keyed hash of a value as the naming rule's {#...}
@@ -180,9 +181,11 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 	return out, len(out) <= maxCleanTerms
 }
 
-// foldString returns the runes of s, each folded (Fold).
+// foldString returns the runes of s in NFC (profile.NFC), each folded
+// (Fold), so a term written with combining marks is the term written
+// composed.
 func foldString(s string) []rune {
-	runes := []rune(s)
+	runes := []rune(profile.NFC(s))
 	for i, r := range runes {
 		runes[i] = Fold(r)
 	}
@@ -221,11 +224,17 @@ func (c *cleaner) affords(n int) bool {
 // around it into another occurrence ("PAPAT001T001" holds "PAT001" again
 // once it is cut), so the passes repeat until one removes nothing. Every
 // pass is charged to the budget; ctx is read each pass.
+//
+// The text is searched in NFC (profile.NFC), as the terms are, so a name
+// written with combining marks is removed as its composed form is; a text
+// from which something is removed is returned in NFC, one from which
+// nothing is removed as it came.
 func (c *cleaner) clean(ctx context.Context, s string) (string, error) {
 	if len(c.terms) == 0 {
 		return s, nil
 	}
-	runes := []rune(s)
+	runes := []rune(profile.NFC(s))
+	cutAny := false
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -265,8 +274,12 @@ func (c *cleaner) clean(ctx context.Context, s string) (string, error) {
 			}
 		}
 		if !found {
+			if !cutAny {
+				return string([]rune(s)), nil
+			}
 			return string(runes), nil
 		}
+		cutAny = true
 		kept := runes[:0]
 		for i, r := range runes {
 			if !cut[i] {

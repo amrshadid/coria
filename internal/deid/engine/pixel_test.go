@@ -288,11 +288,13 @@ func TestPixelRefusals(t *testing.T) {
 }
 
 // TestUnsearchedSegmentsFollowTheProfile guards compressed pixels whose
-// segments are not searched (JPEG 2000): held as pixel_text_unsearched by
-// default and by a document that says hold, archived by one that says
-// keep; and the two documents that hold have one checksum.
+// segments are not searched (here JPEG 2000 Part 2, a JPEG 2000 file
+// relabeled): held as pixel_text_unsearched by default and by a document
+// that says hold, archived by one that says keep; and the two documents
+// that hold have one checksum.
 func TestUnsearchedSegmentsFollowTheProfile(t *testing.T) {
 	path := receiveTestdata + "/MR_small_jp2klossless.dcm"
+	const part2 = "1.2.840.10008.1.2.4.92" // JPEG 2000 Part 2 Multi-component Image Compression (Lossless Only)
 	for _, c := range []struct {
 		name string
 		say  v1.UnsearchedSegments
@@ -307,6 +309,7 @@ func TestUnsearchedSegmentsFollowTheProfile(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		ds.SetTransferSyntaxUID(part2)
 		_, err = en.Apply(context.Background(), ds, Reception{})
 		var f *Failure
 		if got := errors.As(err, &f) && f.Cause == CausePixelTextUnsearched; got != c.held {

@@ -100,15 +100,18 @@ func TestNestedPixelsAreRemoved(t *testing.T) {
 }
 
 // jpegImage returns an 8 by 8 MR image compressed by the DICOM library in
-// syntax (JPEG Baseline or JPEG-LS lossless), with change applied to its
-// one frame's codestream.
+// syntax (JPEG Baseline, JPEG-LS lossless or JPEG 2000 lossless), with
+// change applied to its one frame's codestream.
 func jpegImage(t *testing.T, syntax string, change func([]byte) []byte) *dataset.Dataset {
 	t.Helper()
 	ds := image(t, "MR", "1.2.840.10008.5.1.4.1.1.4", "", 8, 8, 1)
 	var err error
-	if syntax == compress.JPEGBaseline {
+	switch syntax {
+	case compress.JPEGBaseline:
 		err = ds.CompressJPEGBaselineInPlace(90)
-	} else {
+	case compress.JPEG2000Lossless:
+		err = ds.CompressJPEG2000LosslessInPlace()
+	default:
 		err = ds.CompressJPEGLSLosslessInPlace()
 	}
 	if err != nil {

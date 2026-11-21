@@ -149,12 +149,13 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 		files = append(files, adversarial...)
 	}
 	// The attributes are what this test judges: every image is accepted
-	// as it is, and segments that are not searched are kept, so no file
-	// is held for its pixels (pixel_test.go judges them).
+	// as it is, so no file is held for burned-in text (pixel_test.go
+	// judges pixels). The corpus holds no syntax whose segments are not
+	// searched; its JPEG and JPEG 2000 frames are walked, and only the two
+	// JPEG 2000 files of heldJ2KCorpus are held for theirs.
 	en := newDocEngine(t, testKeys, Options{Method: "corpus@1"}, &v1.ProfileDocument{
-		Rules:              corpusRules(),
-		PixelRules:         []*v1.PixelRule{{Name: "accept-all", Action: &v1.PixelRule_Accept{Accept: &v1.AcceptPixels{}}, Reason: "the attributes are judged here"}},
-		UnsearchedSegments: v1.UnsearchedSegments_UNSEARCHED_SEGMENTS_KEEP,
+		Rules:      corpusRules(),
+		PixelRules: []*v1.PixelRule{{Name: "accept-all", Action: &v1.PixelRule_Accept{Accept: &v1.AcceptPixels{}}, Reason: "the attributes are judged here"}},
 	})
 	out := t.TempDir()
 	var pairs []checkPair
@@ -188,7 +189,9 @@ func TestCorpusFilesAreDeidentified(t *testing.T) {
 		rec, err := en.Apply(context.Background(), ds, Reception{})
 		var f *Failure
 		if errors.As(err, &f) {
-			causes[f.Cause]++
+			if _, held := heldJ2KCorpus[filepath.Base(path)]; !held || f.Cause != CausePixelTextUnsearched {
+				causes[f.Cause]++
+			}
 			t.Logf("%s: refused, %s", filepath.Base(path), f.Error())
 			if after := writeFile(t, ds); !bytes.Equal(before, after) {
 				t.Errorf("%s: a refused file was changed", path)

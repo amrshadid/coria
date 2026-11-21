@@ -2,13 +2,112 @@ package check
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/amrshadid/go-dicom/config"
+
+	"github.com/amrshadid/coria/internal/deid/engine"
 )
 
+// What a check holds beside the elements it read, for its reservation.
+// The copies are counted in bytes of the decoded text at its largest
+// (textSpread times the bytes read), and were measured against the heap
+// the search holds at its peak (TestReservationCoversDecodedText).
+const (
+	// textSpread is the most bytes of UTF-8 a byte of text becomes once
+	// decoded: three for a byte of a single-byte set outside ASCII (TIS
+	// 620's Thai letters, U+0E01 and on, are three bytes of UTF-8 each),
+	// and no more for the two bytes of a character of a multi-byte set;
+	// NFC (UAX #15) grows a text of UTF-8 by at most three times too. A
+	// text of ASCII is decoded as it is.
+	textSpread = 3
+	// textCopies is how many times its decoded bytes a text value is held
+	// while it is searched: as the library's decoder builds it and as the
+	// string it returns, in NFC when it was not, and folded. Measured for a
+	// text of 4 MiB in TIS 620 (12 MiB decoded): at most 26 MiB held, a
+	// little over two copies, without an NFC copy.
+	textCopies = 4
+	// looseCopies is how many times its bytes, read, a value of unknown
+	// kind read whole (at most looseMax) is held: as read and as UTF-8,
+	// and under two character sets and folded, each of those up to
+	// textSpread times its bytes, with the decoder's own copies.
+	looseCopies = 16
+	// streamRoom is what reading a long value as a text stream holds
+	// beside the window: the reader's buffers, folded.
+	streamRoom = 160 << 10
+	// automatonBytes is the memory of an automaton a byte of its patterns
+	// at most (a node a byte): 19 bytes a node (matcher), in slices that
+	// grow by doubling and so hold up to three times that while one is
+	// copied, and the patterns and their index beside it.
+	automatonBytes = 64
+)
+
+// reservation is what a check of the size bytes of p, for set, takes from
+// Options.Memory, once the raw forms are written (rawBytes of distinct
+// forms, the longest rawLongest): a window of the raw bytes and the
+// longest raw form on top of it (at most the file), the reader's buffer,
+// the longest text value textCopies times and the longest value of
+// unknown kind read whole looseCopies times (each at most MaxValueBytes,
+// the text counted decoded, textSpread times a byte not ASCII),
+// streamRoom when a value is read as a stream, and the automata
+// (formBytes). It does not grow with the file: a 128 MiB image with a
+// header of a few kilobytes takes some 1.1 MiB. The elements read (the
+// file's header, no value past heldBinary of a binary VR) are not in it:
+// they are bounded as the engine's own data set of the header is, by the
+// receiver's header limit.
+func (c *Checker) reservation(size int64, p *parsed, set formSet, rawBytes, rawLongest int) int64 {
+	n := min(size, window) + int64(rawLongest+2*edgeRoom) + min(size, readerBuffer)
+	n += textCopies*p.largestText + looseCopies*p.largestLoose + c.formBytes(set, rawBytes)
+	if p.streams {
+		n += streamRoom
+	}
+	return n
+}
+
+// formBytes is what the two automata of set hold, automatonBytes a byte of
+// their patterns: the text's, of the folded forms, and the raw bytes', of
+// the rawBytes of distinct raw forms, never more than the bound on the
+// forms' bytes together, past which the raw search refuses the file
+// before it builds its automaton.
+func (c *Checker) formBytes(set formSet, rawBytes int) int64 {
+	return automatonBytes * int64(set.bytes+min(rawBytes, c.opts.MaxFormBytes))
+}
+
+// Reservation is what a check with the default options takes from the
+// server's bound at most, for a file of size bytes whose longest text value
+// is largestText bytes as written, for needles, the file received in
+// characterSet: a window of its raw bytes, the reader's buffer, a value of
+// unknown kind read whole or as a stream, the longest text decoded
+// (textSpread) textCopies times, and the automata of the needles' forms,
+// written as the check writes them. A caller that takes the check's memory
+// itself, for a file it holds, takes this. Needles the check would refuse,
+// or whose forms pass its budget, count nothing: the check refuses them
+// before it holds anything. ctx is read as the forms are written.
+func Reservation(ctx context.Context, size, largestText int64, needles engine.Needles, characterSet *string) int64 {
+	n := min(size, window) + min(size, readerBuffer) + looseCopies*min(size, looseMax)
+	if size > looseMax {
+		n += streamRoom
+	}
+	n += textCopies * textSpread * min(largestText, DefaultMaxValueBytes)
+	c := New(Options{})
+	set, err := c.forms(needles)
+	if err != nil {
+		return n
+	}
+	quiet := config.WithLogger(ctx, slog.New(slog.DiscardHandler))
+	s := newSearcher(ctx, quiet, nil, set, sourceEncodings(characterSet), c.opts, nil, seams{})
+	if s.encodeRaw() != nil {
+		return n
+	}
+	return n + int64(s.rawLongest+2*edgeRoom) + c.formBytes(set, s.rawBytes)
+}
+
 // Memory is a bound on the bytes the server's de-identification work holds
-// in memory at once, across every tenant and every worker: the check's copy
-// of each file, and a trial's or a job's copies. Budget is one.
+// in memory at once, across every tenant and every worker: what each
+// check after holds (a window of the file, one value), and a trial's or a
+// job's copies. Budget is one.
 type Memory interface {
 	// Reserve takes n bytes of the bound and returns the function that
 	// gives them back, which may be called more than once. It waits while

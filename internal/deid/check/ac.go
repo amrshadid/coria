@@ -33,8 +33,9 @@ type matcher struct {
 	// root is the full transition table of the root, the node most
 	// visited.
 	root [256]int32
-	// lens is each pattern's length in bytes.
-	lens []int
+	// lens is each pattern's length in bytes, longest the longest.
+	lens    []int
+	longest int
 }
 
 // child returns the child of node n by b, or -1.
@@ -65,6 +66,7 @@ func newMatcher(patterns [][]byte) *matcher {
 	order := make([]int32, len(patterns))
 	for i, p := range patterns {
 		m.lens[i] = len(p)
+		m.longest = max(m.longest, len(p))
 		order[i] = int32(i) //nolint:gosec // G115: the patterns are bounded by the forms' bound.
 	}
 	slices.SortFunc(order, func(a, b int32) int { return bytes.Compare(patterns[a], patterns[b]) })
@@ -146,8 +148,16 @@ const ctxEvery = 64 << 10
 // not charged: there are at most two a byte. ctx is read every ctxEvery
 // bytes.
 func (m *matcher) scan(ctx context.Context, text []byte, budget *int64, found func(pat, end int)) (int, error) {
+	return m.scanRange(ctx, text, 0, len(text), budget, found)
+}
+
+// scanRange is scan over text[:to] that reports, and charges, only the
+// patterns ending past from: the bytes before from are read for the state
+// of the automaton, as a window's overlap with the one before is, whose
+// matches that window reported.
+func (m *matcher) scanRange(ctx context.Context, text []byte, from, to int, budget *int64, found func(pat, end int)) (int, error) {
 	cur := int32(0)
-	for i, b := range text {
+	for i, b := range text[:to] {
 		if i%ctxEvery == 0 {
 			if err := ctx.Err(); err != nil {
 				return i, err
@@ -164,6 +174,9 @@ func (m *matcher) scan(ctx context.Context, text []byte, budget *int64, found fu
 			}
 			cur = m.fail[cur]
 		}
+		if i < from {
+			continue
+		}
 		n := cur
 		if m.pat[n] < 0 {
 			n = m.dict[n]
@@ -177,5 +190,5 @@ func (m *matcher) scan(ctx context.Context, text []byte, budget *int64, found fu
 			return i + 1, errBudget{}
 		}
 	}
-	return len(text), nil
+	return to, nil
 }

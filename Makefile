@@ -238,7 +238,7 @@ check-seal:
 PYDICOM_CORPUS ?=
 CHECK_READING_ENV = $(if $(PYDICOM_CORPUS),CORIA_PYDICOM_CORPUS="$(PYDICOM_CORPUS)")
 
-.PHONY: check-metadata check-catalog check-frames check-dicomweb check-stow check-deid check-send
+.PHONY: check-metadata check-catalog check-frames check-dicomweb check-stow check-deid check-j2k check-send
 
 check-metadata:
 	@test -n "$(PYTHON)" || { echo "check-metadata: PYTHON is empty; name an interpreter that has pydicom" >&2; exit 1; }
@@ -268,6 +268,13 @@ check-deid:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-deid: no interpreter $(PYTHON)" >&2; exit 1; }
 	CORIA_CHECK_DEID_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^(TestCorpusFilesAreDeidentified|TestValuePatternsAgreeWithPydicom)$$' ./internal/deid/engine
 	CORIA_CHECK_DEID_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^TestAgreesWithPydicom$$' ./internal/deid/check
+
+# The JPEG 2000 walk against OpenJPEG (OPENJPEG=<dir> holding opj_compress,
+# opj_decompress and opj_dump): what the walk leaves decodes to the samples
+# received, and pydicom decodes the de-identified files alike.
+check-j2k:
+	@test -n "$(OPENJPEG)" || { echo "check-j2k: OPENJPEG is empty; name the directory holding opj_compress, opj_decompress and opj_dump" >&2; exit 1; }
+	CORIA_CHECK_J2K_OPENJPEG="$(OPENJPEG)" CORIA_CHECK_DEID_PYTHON="$(PYTHON)" $(CHECK_READING_ENV) $(GO) test -count=1 -v -run '^(TestJ2KRewriteDecodesAlikeWithOpenJPEG|TestJ2KFreeWordsDecodeAlikeWithOpenJPEG)$$' ./internal/deid/engine
 
 check-stow:
 	@test -n "$(PYTHON)" || { echo "check-stow: PYTHON is empty; name an interpreter that has dicomweb-client and pydicom" >&2; exit 1; }
@@ -338,6 +345,7 @@ prove:
 # that reaches it) adds a tenant on Postgres whose catalog psql reads.
 # Without them those checks skip.
 DCMTK              ?=
+OPENJPEG           ?=
 PROVE_CRASH_ROUNDS ?= 2
 PROVE_S3           ?=
 PROVE_POSTGRES     ?=

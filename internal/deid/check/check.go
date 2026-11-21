@@ -2,7 +2,6 @@ package check
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -68,11 +67,13 @@ type Options struct {
 	// text and in every encoding together.
 	MaxFormBytes int
 	// Memory, when not nil, is the server's bound on de-identification's
-	// memory, which the copy of the file the check reads is taken from
-	// before it is read, and given back when the check returns: a file
-	// larger than the whole bound is refused (CauseTooLarge), and one that
-	// does not fit beside the others waits for room until ctx ends. Nil
-	// bounds each file by MaxFileBytes alone.
+	// memory, which what the search holds (Checker.reservation: a window
+	// of the file, one value, the automata) is taken from once the file's
+	// elements are read and before it is searched, and given back when the
+	// check returns: a file that needs more than the whole bound is
+	// refused (CauseTooLarge), and one that does not fit beside the others
+	// waits for room until ctx ends. Nil bounds each file by MaxFileBytes
+	// alone.
 	Memory Memory
 }
 
@@ -202,8 +203,9 @@ type Cause string
 
 // The causes of a refusal.
 const (
-	// CauseTooLarge: the file is larger than MaxFileBytes or than the
-	// whole of Options.Memory, or holds a value longer than MaxValueBytes, sequences nested deeper than the
+	// CauseTooLarge: the file is larger than MaxFileBytes, its search
+	// needs more than the whole of Options.Memory, or it holds a value
+	// longer than MaxValueBytes, sequences nested deeper than the
 	// check walks, or forms ending on one another so densely that the
 	// search would pass its budget of work.
 	CauseTooLarge Cause = "check_too_large"
@@ -252,6 +254,10 @@ type seams struct {
 	refusedAt func(at int)
 	// library is told the encodings of each call to the library's encoder.
 	library func(encodings []string)
+	// window, when not zero, is the bytes of a stream read and searched at
+	// a time in place of the window constant, so a small file has edges
+	// between windows to put a match across.
+	window int
 }
 
 // New returns a Checker bounded by opts.
@@ -278,17 +284,6 @@ func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needle
 	if size < 0 || size > c.opts.MaxFileBytes {
 		return rep, &Refusal{Cause: CauseTooLarge}
 	}
-	if c.opts.Memory != nil {
-		release, err := c.opts.Memory.Reserve(ctx, size)
-		if err != nil {
-			return rep, err
-		}
-		defer release()
-	}
-	data, err := c.readBounded(src, size)
-	if err != nil {
-		return rep, err
-	}
 	defer func() {
 		// The reader works on hostile input; a panic of it is a file it
 		// cannot read, never a pass and never a crash of the server.
@@ -297,22 +292,37 @@ func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needle
 			err = &Refusal{Cause: CauseUnreadable}
 		}
 	}()
-	enc := sourceEncodings(characterSet)
+	f, err := c.parse(src, size)
+	if err != nil {
+		return rep, err
+	}
 	// The library logs a declaration it cannot read and a form a
 	// character set cannot write; per file, that would be noise.
 	quiet := config.WithLogger(ctx, slog.New(slog.DiscardHandler))
-	f, err := c.parse(quiet, data, enc)
-	if err != nil {
+	fs := newFindings(c.opts.MaxFindings)
+	s := newSearcher(ctx, quiet, f, set, sourceEncodings(characterSet), c.opts, fs, c.seams)
+	if c.seams.work != nil {
+		defer func() { c.seams.work(workBudget - s.budget) }()
+	}
+	// The raw forms are written before the memory is taken, so what is
+	// taken counts their automaton as built, not a guess of it.
+	if err := s.encodeRaw(); err != nil {
 		return rep, err
+	}
+	if c.opts.Memory != nil {
+		release, err := c.opts.Memory.Reserve(ctx, c.reservation(size, f, set, s.rawBytes, s.rawLongest))
+		if err != nil {
+			return rep, err
+		}
+		defer release()
 	}
 	if c.seams.afterParse != nil {
 		c.seams.afterParse()
 	}
-	fs := newFindings(c.opts.MaxFindings)
 	if f.nestedPixels != "" {
 		fs.add(Finding{Path: f.nestedPixels, Kind: KindIdentifier, Raw: true})
 	}
-	if err := search(ctx, quiet, f, set, enc, c.opts, fs, c.seams); err != nil {
+	if err := s.search(); err != nil {
 		return rep, err
 	}
 	rep.Findings, rep.Total = fs.list, fs.total
@@ -320,23 +330,6 @@ func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needle
 		return rep, &Residual{First: fs.list[0], Total: fs.total}
 	}
 	return rep, nil
-}
-
-// readBounded reads size bytes of src, refusing a size past MaxFileBytes
-// before reading anything, and a source that holds fewer bytes than said.
-func (c *Checker) readBounded(src io.ReaderAt, size int64) ([]byte, error) {
-	if size < 0 || size > c.opts.MaxFileBytes {
-		return nil, &Refusal{Cause: CauseTooLarge}
-	}
-	data := make([]byte, size)
-	n, err := io.ReadFull(io.NewSectionReader(src, 0, size), data)
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("deid check: %w", err)
-	}
-	if int64(n) != size {
-		return nil, &Refusal{Cause: CauseUnreadable}
-	}
-	return data, nil
 }
 
 // findings collects the findings of a file, one per path and kind.

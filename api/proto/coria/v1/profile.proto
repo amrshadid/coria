@@ -389,18 +389,25 @@ message ProfileDocument {
   string description = 6;
 
   // What happens to an image whose pixel data stays compressed in a
-  // transfer syntax whose comment and application segments are not
-  // searched (JPEG 2000 and the others that are neither the JPEG family
-  // nor RLE): text there travels with the file, unseen by the check
-  // after. Unspecified takes it from the last base that says, and holds
-  // such an image when none does. The comment and application segments of
-  // the JPEG family (Baseline, Extended, Lossless, JPEG-LS) are always
+  // transfer syntax whose segments are not searched (JPEG 2000 Part 2,
+  // MPEG-2, H.264, HEVC, JPEG XL, Deflated Image Frame Compression, and any
+  // other that is neither the JPEG family, JPEG 2000, HTJ2K nor RLE): text
+  // there travels with the file, unseen by the check after. Unspecified
+  // takes it from the last base that says, and holds such an image when
+  // none does. The comment and application segments of the JPEG family
+  // (Baseline, Extended, Lossless, JPEG-LS), and the comment segments of
+  // JPEG 2000 and HTJ2K (in the main header and every tile-part header,
+  // the tile-part's length and TLM entry lowered to match) with their main
+  // header's CPF and CRG segments, are always
   // removed, the image data copied byte for byte (PS3.5 A.4); a frame then
   // holding any segment beyond those a decoder needs at their defined
   // length (JFIF without a thumbnail, Adobe's 12 bytes, the JPEG-LS color
-  // transform, table and header segments at the length their contents
-  // need) is held as pixel_text_unsearched. An image a pixel rule fills is
-  // written native and has no segments.
+  // transform, table, header, coding and quantization segments at the
+  // length their contents need, TLM and packet lengths that match the
+  // data), a marker the walk does not know, a JP2 file instead of a bare
+  // codestream, or anything but padding after its end, is held as
+  // pixel_text_unsearched whatever this says. An image a pixel rule fills
+  // is written native and has no segments.
   UnsearchedSegments unsearched_segments = 7;
 }
 
@@ -1775,8 +1782,9 @@ message TrialPixels {
   bool decoded = 9;
 
   // The JPEG comment and application segments removed, by marker name
-  // ("COM", "APP1", ..., "trailing data"), each with the frame it was in
-  // counted once per name; what they held is never answered.
+  // ("COM", "APP1", ..., "trailing data"), and the JPEG 2000 segments
+  // removed ("COM", "CPF", "CRG"), each with the frame it was in counted once per
+  // name; what they held is never answered.
   repeated string segments_removed = 10;
 }
 

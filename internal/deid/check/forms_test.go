@@ -111,9 +111,8 @@ func TestUIDAndIdentifierEdges(t *testing.T) {
 // TestFolding guards that letters match in any case beyond ASCII,
 // precomposed (É and é, the Kelvin sign and K), that full-width letters and
 // digits are their ASCII ones, and that runs of white space are one space;
-// and that a decomposed é (e and a combining accent) is not the
-// precomposed one, without Unicode normalization, which the package does
-// not do.
+// and that a decomposed é (e and a combining accent) is the precomposed
+// one, as both are compared in NFC.
 func TestFolding(t *testing.T) {
 	mustFind(t, lt(t, "émile"), KindName, "00204000", needle(engine.NeedleName, "ÉMILE^DUPONT"))
 	mustFind(t, lt(t, "id K1234"), KindIdentifier, "00204000", needle(engine.NeedleText, "k1234"))
@@ -121,7 +120,7 @@ func TestFolding(t *testing.T) {
 	mustFind(t, lt(t, "受付１２３４５６７８"), KindIdentifier, "00204000", needle(engine.NeedleText, "12345678"))
 	mustFind(t, lt(t, "MRN  \t778812"), KindIdentifier, "00204000", needle(engine.NeedleText, "MRN 778812"))
 	mustFind(t, lt(t, "MRN 778812"), KindIdentifier, "00204000", needle(engine.NeedleText, "MRN   778812"))
-	mustPass(t, lt(t, "émile"), needle(engine.NeedleName, "ÉMILE^XY"))
+	mustFind(t, lt(t, "émile"), KindName, "00204000", needle(engine.NeedleName, "ÉMILE^XY"))
 }
 
 // TestMultiValuedNeedle guards that a needle of several values is found

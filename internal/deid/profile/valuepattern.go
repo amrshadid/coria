@@ -1,13 +1,37 @@
 package profile
 
 import (
+	"io"
 	"regexp"
 	"slices"
 	"strings"
 
+	"golang.org/x/text/unicode/norm"
+
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/core/naming"
 )
+
+// NFC returns s in Unicode Normalization Form C (Unicode Standard Annex
+// #15): each letter written with combining marks ("u" and U+0308) as its
+// composed character ("ü") where Unicode has one. De-identification
+// compares text in this one form, the form most systems write: a value
+// pattern matches it, redact cuts it, clean removes the terms of a file
+// from it, and the check after searches it, so a name received decomposed
+// is found and removed as its composed form is. Text already in the form,
+// as all ASCII is, is returned as it is. Bytes that are not UTF-8 are kept
+// as they are.
+func NFC(s string) string { return norm.NFC.String(s) }
+
+// NFCReader returns a reader of r's text in NFC, as NFC gives it, for a
+// text too long to hold whole.
+func NFCReader(r io.Reader) io.Reader { return norm.NFC.Reader(r) }
+
+// NFD returns s in Unicode Normalization Form D: each composed character
+// written as its letter and combining marks. The check after searches the
+// raw bytes of a file for a name in this form as well as in NFC, since
+// bytes no reader decoded are not normalized.
+func NFD(s string) string { return norm.NFD.String(s) }
 
 // Bounds of a value pattern and of redact.
 const (
@@ -64,6 +88,7 @@ func parseValuePattern(a at, v *v1.ValuePatternSelector) (valuePattern, *v1.Valu
 	switch {
 	case v.GetPattern() == "":
 		pa.add(CodeRequired, "a value pattern needs its pattern")
+	case !patternInNFC(pa, v.GetPattern()):
 	case v.GetSearch():
 		if re = compileSearch(pa, v.GetPattern()); re != nil && re.MatchString("") {
 			pa.add(CodeBadPattern, "a search for a pattern that matches the empty string would match every value")
@@ -108,7 +133,12 @@ func matchParts(vr, value string) []string {
 // more than MaxRedactMatches distinct texts; the caller then refuses the
 // file rather than keep only some as needles. Each part is searched in
 // one pass, linear in its length.
+//
+// The value is put in NFC first: a pattern matches the composed form of
+// what it reads, so "Müller" written with a combining mark is matched by
+// a pattern that writes it composed, and the texts it answers are in NFC.
 func (p valuePattern) find(vr, value string) (matches []string, over bool) {
+	value = NFC(value)
 	seen := map[string]bool{}
 	add := func(m string) bool {
 		if m == "" || seen[m] {
@@ -140,6 +170,23 @@ func (p valuePattern) find(vr, value string) (matches []string, over bool) {
 	return matches, false
 }
 
+// patternInNFC reports whether a value pattern or redact pattern is written
+// in NFC, and refuses it (bad_pattern) when it is not. Both run over the
+// NFC form of a value (find, the engine's redact), so a pattern written
+// decomposed ("u" then U+0308) would never match what it reads: the rule
+// would select nothing and redact would cut nothing, silently, and no
+// needle would exist for the check after to find a copy by. An escape such
+// as \x{308} is ASCII and stays allowed; it is the writer's own choice of
+// code points. A replacement needs no such check: it is printable ASCII
+// (checkLiteral), which is always in NFC.
+func patternInNFC(a at, p string) bool {
+	if norm.NFC.IsNormalString(p) {
+		return true
+	}
+	a.add(CodeBadPattern, "the pattern is matched against values in Unicode NFC (composed) form, so it must be written in NFC too: write each accented letter as its composed character (\"ü\", not \"u\" followed by a combining mark)")
+	return false
+}
+
 // checkRedact checks a redact action against its selector and compiles
 // its pattern for a search.
 func checkRedact(a at, r *v1.RedactAction, sel selector) *regexp.Regexp {
@@ -149,6 +196,8 @@ func checkRedact(a at, r *v1.RedactAction, sel selector) *regexp.Regexp {
 	var re *regexp.Regexp
 	if r.GetPattern() == "" {
 		pa.add(CodeRequired, "redact needs the pattern of what it cuts")
+	} else if !patternInNFC(pa, r.GetPattern()) {
+		re = nil
 	} else if re = compileSearch(pa, r.GetPattern()); re != nil && re.MatchString("") {
 		pa.add(CodeBadPattern, "the pattern matches the empty string, so it would match everywhere and cut nothing")
 		re = nil
