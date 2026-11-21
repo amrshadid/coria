@@ -36,8 +36,8 @@ func TestErrorsCarryNoSecret(t *testing.T) {
 			[]byte(hex.EncodeToString(s)))
 	}
 	// The keys' 32-bit words in decimal too, as fmt would print a key
-	// schedule. Not for the all-ones key: its word, 4294967295, is also the
-	// highest version number, which a refusal names on purpose.
+	// schedule. Not for the all-ones key: its word, 4294967295, is the
+	// largest uint32 and may be named by a message for reasons of its own.
 	needles = append(needles, keyForms(key1)...)
 	needles = append(needles, keyForms(key2)...)
 	// A truncated key in a refused line must not be quoted either.

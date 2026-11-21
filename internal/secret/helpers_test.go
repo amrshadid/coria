@@ -5,11 +5,25 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
+
+// derivedBytes returns a copy of d's key bytes, for a test to compare or
+// search for.
+func derivedBytes(d *DerivedKey) []byte {
+	return bytes.Clone(d.d.key[:])
+}
+
+// signerPrivate returns a copy of s's 64-byte Ed25519 private key, for a test
+// to search for.
+func signerPrivate(s *Signer) []byte {
+	return bytes.Clone(s.s.private[:])
+}
 
 // testKey returns a fixed, synthetic 32-byte key that differs for each seed,
 // so a test knows the key bytes it later searches for.
@@ -75,16 +89,23 @@ func mustSeal(t *testing.T, keys *Keys, context string, plaintext []byte) []byte
 }
 
 // keyForms returns the forms in which a key could leak into printed text:
-// its raw bytes, base64 (standard, unpadded and URL), hex, and each of its
+// its raw bytes, base64 (standard, unpadded and URL), hex, its bytes as fmt
+// lists them in decimal (%v, %d) and in Go syntax (%#v), and each of its
 // eight 32-bit words in decimal, read in both byte orders, which is how fmt
 // prints the uint32 words of an AES key schedule.
 func keyForms(key []byte) [][]byte {
+	goSyntax := make([]string, len(key))
+	for i, b := range key {
+		goSyntax[i] = fmt.Sprintf("%#x", b)
+	}
 	forms := [][]byte{
 		key,
 		[]byte(base64.StdEncoding.EncodeToString(key)),
 		[]byte(base64.RawStdEncoding.EncodeToString(key)),
 		[]byte(base64.URLEncoding.EncodeToString(key)),
 		[]byte(hex.EncodeToString(key)),
+		decimalList(key),
+		[]byte(strings.Join(goSyntax, ", ")),
 	}
 	for i := 0; i+4 <= len(key); i += 4 {
 		forms = append(forms,
@@ -92,6 +113,19 @@ func keyForms(key []byte) [][]byte {
 			[]byte(strconv.FormatUint(uint64(binary.LittleEndian.Uint32(key[i:])), 10)))
 	}
 	return forms
+}
+
+// decimalList returns b's bytes in decimal, separated by spaces, as fmt
+// lists a byte slice or array under %v and %d.
+func decimalList(b []byte) []byte {
+	out := make([]byte, 0, 4*len(b))
+	for i, c := range b {
+		if i > 0 {
+			out = append(out, ' ')
+		}
+		out = strconv.AppendUint(out, uint64(c), 10)
+	}
+	return out
 }
 
 // privateDir returns a new directory that only the current user may change,

@@ -27,6 +27,10 @@ const keyLinePrefix = "coria-key-v1"
 // keySize is the length of a key in bytes: AES-256 takes a 256-bit key.
 const keySize = 32
 
+// MaxKeyVersion is the highest key version a key file may hold, 2^31-1, the
+// largest a protobuf int32 carries.
+const MaxKeyVersion = 1<<31 - 1
+
 // maxKeyFileSize bounds how much of a key file is read. A real one holds a
 // line of 63 bytes per key version; a file larger than this is not a key file,
 // and reading it whole would let a mistaken path exhaust memory.
@@ -44,20 +48,29 @@ const maxKeyFileSize = 64 << 10
 // the highest version, which seals. Its zero value, and a nil *Keys, hold no
 // key and seal and open nothing.
 //
-// The keys are held behind a pointer to an unexported type, so whatever
-// prints a Keys finds no key material in it: formatted directly, or as an
-// exported field of another value, it prints a fixed text (Format); as an
-// unexported field, where fmt cannot call its methods and reads its fields
-// instead, it prints a pointer address. Without the pointer, fmt reached the
-// cipher's expanded key through an unexported field and printed it in
-// decimal under verbs such as %s and %q.
+// Formatted directly, or as an exported field of another value, a Keys
+// prints a fixed text (Format). As an unexported field fmt cannot call its
+// methods and reads its fields instead, so every secret sits two pointers
+// deep. One pointer is not enough: under a verb that does not fit a pointer
+// (%s, %q, %t, %f and others) fmt prints the pointer again with %v from depth
+// 0, and at depth 0 it follows a pointer into what it points to. After that
+// one restart every verb is %v, and at any depth past 0 %v prints a pointer
+// as an address. So Keys points to a keyring, and inside the keyring each
+// secret (the AEAD's expanded key, each pseudorandom key) is behind a
+// pointer of its own.
 type Keys struct {
 	r *keyring
 }
 
-// keyring is what Keys points to.
+// keyring is what Keys points to. Its fields hold no secret by value; see
+// Keys.
 type keyring struct {
-	aeads       map[uint32]cipher.AEAD
+	aeads map[uint32]cipher.AEAD
+	// prks holds, per version, the HKDF pseudorandom key extracted from that
+	// version's key (RFC 5869 2.2), from which Derive expands every derived
+	// key. Keeping the extract rather than the key itself means the only
+	// copy of the key that can open a sealed value stays inside its AEAD.
+	prks        map[uint32]*[derivedSize]byte
 	sealVersion uint32
 }
 
@@ -334,7 +347,10 @@ func parseKeyFile(data []byte) (*Keys, error) {
 	if len(lines[len(lines)-1]) == 0 {
 		lines = lines[:len(lines)-1]
 	}
-	ring := &keyring{aeads: make(map[uint32]cipher.AEAD, len(lines))}
+	ring := &keyring{
+		aeads: make(map[uint32]cipher.AEAD, len(lines)),
+		prks:  make(map[uint32]*[derivedSize]byte, len(lines)),
+	}
 	var key [keySize]byte
 	defer clear(key[:])
 	for i, line := range lines {
@@ -346,11 +362,20 @@ func parseKeyFile(data []byte) (*Keys, error) {
 			return nil, fault.New(fault.Invalid, "line "+strconv.Itoa(i+1)+": version "+strconv.FormatUint(uint64(version), 10)+" appears twice")
 		}
 		aead, err := newAEAD(key[:])
+		if err != nil {
+			clear(key[:])
+			return nil, fault.Wrap(fault.Internal, err, "line "+strconv.Itoa(i+1)+": the key cannot be used")
+		}
+		out, err := extract(key[:])
 		clear(key[:])
 		if err != nil {
 			return nil, fault.Wrap(fault.Internal, err, "line "+strconv.Itoa(i+1)+": the key cannot be used")
 		}
+		prk := new([derivedSize]byte)
+		copy(prk[:], out)
+		clear(out)
 		ring.aeads[version] = aead
+		ring.prks[version] = prk
 		ring.sealVersion = max(ring.sealVersion, version)
 	}
 	return &Keys{r: ring}, nil
@@ -373,11 +398,14 @@ func parseKeyLine(line []byte, key *[keySize]byte) (uint32, error) {
 	if !bytes.Equal(fields[0], []byte(keyLinePrefix)) {
 		return 0, fault.New(fault.Invalid, "a line must start with \""+keyLinePrefix+"\"")
 	}
-	// The version is not secret, so a string copy of it is harmless.
+	// The version is not secret, so a string copy of it is harmless. It is
+	// bounded to 2^31-1, not 2^32-1: the API carries a key version as a
+	// protobuf int32, and a version above that would be stored, signed and
+	// named in a backup's header, yet could not be asked about.
 	version := string(fields[1])
-	v, err := strconv.ParseUint(version, 10, 32)
+	v, err := strconv.ParseUint(version, 10, 31)
 	if err != nil || v == 0 || strconv.FormatUint(v, 10) != version {
-		return 0, fault.New(fault.Invalid, "the version must be a whole number from 1 to 4294967295, without leading zeros")
+		return 0, fault.New(fault.Invalid, "the version must be a whole number from 1 to "+strconv.Itoa(MaxKeyVersion)+", without leading zeros")
 	}
 	badKey := fault.New(fault.Invalid, "the key must be "+strconv.Itoa(keySize)+" bytes in standard base64 with padding")
 	field := fields[2]

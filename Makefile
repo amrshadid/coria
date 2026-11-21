@@ -224,6 +224,27 @@ check-seal:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-seal: no interpreter $(PYTHON)" >&2; exit 1; }
 	CORIA_CHECK_SEAL_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestSealOpensInPython$$' ./internal/secret
 
+# The outside check of internal/secret's backup format:
+# scripts/check/backup-cipher.py derives the keys with hmac and hashlib,
+# opens a backup Go wrote with the cryptography package, refuses it cut,
+# reordered, changed and extended, and writes one that Go then opens.
+.PHONY: check-backup-cipher check-auditchain
+check-backup-cipher:
+	@test -n "$(PYTHON)" || { echo "check-backup-cipher: PYTHON is empty; name an interpreter that has the cryptography package" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-backup-cipher: no interpreter $(PYTHON)" >&2; exit 1; }
+	CORIA_CHECK_BACKUP_PYTHON="$(PYTHON)" $(GO) test -count=1 -v -run '^TestBackupOpensInPython$$' ./internal/secret
+
+# The outside check of internal/core/auditchain: scripts/check/auditchain.py
+# recomputes the entry encoding and the chain with hashlib and has openssl
+# verify each checkpoint's Ed25519 signature with pkeyutl -rawin. OPENSSL
+# must be OpenSSL 3.0 or later; the macOS system LibreSSL has no Ed25519.
+OPENSSL ?= openssl
+check-auditchain:
+	@test -n "$(PYTHON)" || { echo "check-auditchain: PYTHON is empty; name a Python interpreter" >&2; exit 1; }
+	@command -v "$(PYTHON)" > /dev/null || { echo "check-auditchain: no interpreter $(PYTHON)" >&2; exit 1; }
+	@command -v "$(OPENSSL)" > /dev/null || { echo "check-auditchain: no openssl $(OPENSSL)" >&2; exit 1; }
+	CORIA_CHECK_AUDITCHAIN_PYTHON="$(PYTHON)" CORIA_CHECK_AUDITCHAIN_OPENSSL="$(OPENSSL)" $(GO) test -count=1 -v -run '^TestChainChecksInPython$$' ./internal/core/auditchain
+
 # The outside checks of reading the archive, each the Go test that runs a
 # script of scripts/check against what the server answers: the Metadata
 # service against pydicom's to_json_dict, the Catalog service against what
@@ -442,6 +463,7 @@ FUZZ_TARGETS := \
 	internal/access:FuzzCheck \
 	internal/access:FuzzCheckSQLite \
 	internal/secret:FuzzOpen \
+	internal/secret:FuzzBackupReader \
 	internal/secret:FuzzParseAPIKey \
 	internal/secret:FuzzParseKeyFile \
 	internal/core/settings:FuzzParsePorts \

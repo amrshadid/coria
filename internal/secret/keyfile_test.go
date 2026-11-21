@@ -153,7 +153,7 @@ func TestParseKeyFileAccepts(t *testing.T) {
 		{"no final line feed", strings.TrimSuffix(keyLine(1, 1), "\n"), 1, 1},
 		{"crlf", strings.ReplaceAll(keyLine(1, 1)+keyLine(2, 2), "\n", "\r\n"), 2, 2},
 		{"out of order", keyLine(3, 3) + keyLine(1, 1) + keyLine(2, 2), 3, 3},
-		{"largest version", keyLine(4294967295, 1), 1, 4294967295},
+		{"largest version", keyLine(MaxKeyVersion, 1), 1, MaxKeyVersion},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -195,6 +195,8 @@ func malformedKeyFiles() map[string]string {
 		"plus sign":           "coria-key-v1 +1 " + b64 + "\n",
 		"negative version":    "coria-key-v1 -1 " + b64 + "\n",
 		"version too large":   "coria-key-v1 4294967296 " + b64 + "\n",
+		"version over int32":  "coria-key-v1 2147483648 " + b64 + "\n",
+		"version 2^32-1":      "coria-key-v1 4294967295 " + b64 + "\n",
 		"version not number":  "coria-key-v1 one " + b64 + "\n",
 		"key 31 bytes":        "coria-key-v1 1 " + b64Short + "\n",
 		"key 33 bytes":        "coria-key-v1 1 " + b64Long + "\n",
@@ -233,6 +235,22 @@ func TestParseKeyFileNamesLine(t *testing.T) {
 	_, err = parseKeyFile([]byte(keyLine(5, 1) + keyLine(5, 2)))
 	if err == nil || !strings.Contains(fault.Message(err), "line 2: version 5 appears twice") {
 		t.Fatalf("error %v does not name the repeated version on line 2", err)
+	}
+}
+
+// TestParseKeyFileBoundsVersion guards that a key version above 2^31-1 is
+// refused with a message naming the bound: the API carries a key version as
+// an int32, so a larger one could be used to seal and sign yet never be
+// named back through it.
+func TestParseKeyFileBoundsVersion(t *testing.T) {
+	for _, v := range []uint32{MaxKeyVersion + 1, 1<<32 - 1} {
+		_, err := parseKeyFile([]byte(keyLine(v, 1)))
+		if fault.KindOf(err) != fault.Invalid || !strings.Contains(fault.Message(err), "from 1 to 2147483647") {
+			t.Errorf("version %d: err = %v, want Invalid naming 2147483647", v, err)
+		}
+	}
+	if _, err := parseKeyFile([]byte(keyLine(MaxKeyVersion, 1))); err != nil {
+		t.Errorf("version %d: %v", MaxKeyVersion, err)
 	}
 }
 

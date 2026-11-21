@@ -230,6 +230,28 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- Keys derived from the installation key with HKDF-SHA-256 (RFC 5869), one
+  fixed label per purpose (`coria/audit-seal/v1`, `coria/backup/v1`), from
+  any key version, and an Ed25519 signer (RFC 8032) from the audit seed;
+  neither prints its key under any fmt verb, log/slog or encoding/json,
+  held by value or by pointer, in an exported or an unexported field. A key
+  file's versions run from 1 to 2147483647, the largest the API's int32
+  carries.
+- A chunked backup cipher: AES-256-GCM (NIST SP 800-38D) over 64 KiB chunks
+  with a per-file key from a random salt, the chunk index and a last-chunk
+  flag in nonce and associated data, so a cut, reordered, changed or
+  extended file does not open; streamed in bounded memory, and the reader
+  and writer print a fixed text, never a key or plaintext. Checked against
+  Python's cryptography package (`make check-backup-cipher`) and fuzzed.
+- A canonical, length-prefixed audit entry encoding, the SHA-256 hash chain
+  over sealed entries, Ed25519-signed checkpoints of the chain's head, a
+  streaming verifier that names the position and kind of any change, and
+  the public key as PEM (PKIX). Along a log a checkpoint's key version and
+  time never go down, so a retired key cannot append after its successor;
+  a checkpoint kept outside the databases (an anchor) finds a tail deleted
+  from them. Checked with Python's hashlib and `openssl pkeyutl -verify
+  -rawin` (`make check-auditchain`).
+
 - `make prove-deid`: the proof of de-identification from outside, driving
   the built program through its API and command line and reading the
   archive with pydicom, dcmtk and sqlite3. It looks for planted values in
