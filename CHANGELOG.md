@@ -276,6 +276,14 @@ All notable changes to CORIA are written here. The form is
   scan's labels, series UID and study UID) and the owner record
   (`meta/.owner.json`) have a fixed, checked JSON form. Nothing writes them
   yet.
+- The open reads are settings: `read.per-caller` (default 16, 1 to 1024)
+  and `read.per-server` (default 256, 16 to 65536) bound the reads of
+  archived bytes (downloads, ReadFiles, DICOMweb) one caller and the whole
+  server hold open. Both are read live, so a change applies to the next
+  read within a second, and reads already open keep their place when a
+  limit is lowered. A read past a limit is still refused, never queued
+  (resource exhausted; HTTP 429 with Retry-After). A change that would put
+  per-caller above per-server is refused, naming the setting.
 - The audit logs are sealed: every `audit.seal-interval` (default 10m) and
   when the server stops, a pass gives each unsealed entry of the
   installation's log and of every tenant's its place in a SHA-256 hash chain

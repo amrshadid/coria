@@ -39,8 +39,10 @@
 // # Slots
 //
 // Slots counts the reads of archived bytes open now, per owner (a key, or the
-// local operator) and in all. Its zero value is ready to use. A read past
-// MaxOpenReads for its owner, or past MaxServerReads for the server, is refused
+// local operator) and in all. Its zero value is ready to use, with the bounds
+// MaxOpenReads and MaxServerReads; the server sets Limits to read the
+// installation's read.per-caller and read.per-server live. A read past the
+// bound for its owner, or past the server's, is refused
 // with fault.Exhausted and is not queued: a client that asks again later gets
 // its read, and one that waits in line would hold a connection while it waits.
 // The count is in memory, which is the whole server's count, since one process

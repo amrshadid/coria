@@ -215,6 +215,9 @@ func (s settingsService) SetSetting(ctx context.Context, req *v1.SetSettingReque
 	if err := checkSettingValue("setting.value", name, value); err != nil {
 		return nil, c.failWith(d, st, facts, err)
 	}
+	if err := c.checkReadBounds(ctx, name, value); err != nil {
+		return nil, c.failWith(d, st, facts, err)
+	}
 	if placeSettings[name] {
 		c.places.Lock()
 		defer c.places.Unlock()
@@ -323,6 +326,9 @@ func (s settingsService) UnsetSetting(ctx context.Context, req *v1.UnsetSettingR
 	def, err := c.settingToChange(d, scope, "", name, nil)
 	if err != nil {
 		return nil, c.failWith(d, refusalSink(err, st), facts, err)
+	}
+	if err := c.checkReadBounds(ctx, name, def.Default); err != nil {
+		return nil, c.failWith(d, st, facts, err)
 	}
 	if placeSettings[name] {
 		c.places.Lock()

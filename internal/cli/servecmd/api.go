@@ -140,7 +140,7 @@ func APIServices(d Deps) (Built, error) {
 	}
 	// The senders, which read archived bytes under the same count of reads
 	// open as the API, so one bound covers both.
-	reads := &checkedread.Slots{}
+	reads := &checkedread.Slots{Limits: readLimits(settingvalue.Reader{Master: d.Master}, time.Now)}
 	senders, err := newSending(d, reg, feeds.Wake, reads)
 	if err != nil {
 		_ = feeds.Close()

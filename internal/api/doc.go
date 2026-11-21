@@ -86,9 +86,11 @@
 // reads the storage. A DICOMweb request holds its read from its first read to
 // its last byte (holdRead), so a request that does not stream cannot pass the
 // bound by asking for what does not stream. A read past the bound is refused,
-// never queued, with fault.Exhausted: checkedread.MaxOpenReads (16) for one
-// caller and checkedread.MaxServerReads (256) for the server
-// (checkedread.Slots).
+// never queued, with fault.Exhausted: the installation's read.per-caller (16
+// by default, checkedread.MaxOpenReads) for one caller and read.per-server
+// (256 by default, checkedread.MaxServerReads) for the server
+// (checkedread.Slots). Both are read live: a change applies to the next
+// read, and reads already open keep their place.
 //
 // Each check is made as the bytes go out (checkedread.CopyChecked), so a
 // mismatch cuts the answer, which the client sees as a body short of its

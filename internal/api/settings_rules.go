@@ -58,6 +58,34 @@ func checkSettingValue(field, name, value string) error {
 	return err
 }
 
+// checkReadBounds refuses, as a precondition naming the setting, a value of
+// read.per-caller or read.per-server after which one caller could hold more
+// reads open than the server does. value is what would apply after the
+// change; the other setting is read as it applies now. Any other name
+// passes.
+func (c *core) checkReadBounds(ctx context.Context, name, value string) error {
+	if name != settings.ReadPerCaller && name != settings.ReadPerServer {
+		return nil
+	}
+	perCaller, perServer, err := c.values().ReadLimits(ctx)
+	if err != nil {
+		return err
+	}
+	var perr error
+	if name == settings.ReadPerCaller {
+		perCaller, perr = settings.ParseReadPerCaller(value)
+	} else {
+		perServer, perr = settings.ParseReadPerServer(value)
+	}
+	if perr != nil {
+		return invalid("setting.value", perr.Error())
+	}
+	if perCaller > perServer {
+		return precondition(name + ": " + settings.ReadPerCaller + " (" + strconv.Itoa(perCaller) + ") may not exceed " + settings.ReadPerServer + " (" + strconv.Itoa(perServer) + "); change the other one first")
+	}
+	return nil
+}
+
 // takenAway refuses, as a precondition, a value of a place setting that
 // would take away what a tenant's storage or receiver uses, or a tenant's
 // ports that overlap another tenant's; value is what would apply on scope

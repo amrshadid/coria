@@ -159,6 +159,19 @@ func testSetSetting(t *testing.T) {
 		{name: "value at 64 KiB", as: f.instAdmin, call: setSetting(testText, installation(), strings.Repeat("v", 64<<10))},
 		{name: "value at 64 KiB and one", as: f.instAdmin, call: setSetting(testText, installation(), strings.Repeat("v", 64<<10+1)), code: connect.CodeInvalidArgument, msg: "setting.value"},
 		{name: "an empty value the setting takes", as: f.instAdmin, call: setSetting(testText, installation(), ""), check: wantSetting(testText, "installation", "", fromInst)},
+		{name: "reads per caller at 1", as: f.instAdmin, call: setSetting("read.per-caller", installation(), "1")},
+		{name: "reads per caller at 1024 above the server's", as: f.instAdmin, call: setSetting("read.per-caller", installation(), "1024"), code: connect.CodeFailedPrecondition, msg: "read.per-caller"},
+		{name: "reads per caller at 1025", as: f.instAdmin, call: setSetting("read.per-caller", installation(), "1025"), code: connect.CodeInvalidArgument, msg: "setting.value"},
+		{name: "reads per caller at 0", as: f.instAdmin, call: setSetting("read.per-caller", installation(), "0"), code: connect.CodeInvalidArgument, msg: "setting.value"},
+		{name: "reads per server at 15", as: f.instAdmin, call: setSetting("read.per-server", installation(), "15"), code: connect.CodeInvalidArgument, msg: "setting.value"},
+		{name: "reads per server at 65537", as: f.instAdmin, call: setSetting("read.per-server", installation(), "65537"), code: connect.CodeInvalidArgument, msg: "setting.value"},
+		{name: "reads per server at 65536", as: f.instAdmin, call: setSetting("read.per-server", installation(), "65536")},
+		{name: "reads per caller at 1024 within the server's", as: f.instAdmin, call: setSetting("read.per-caller", installation(), "1024")},
+		{name: "reads per server below the caller's", as: f.instAdmin, call: setSetting("read.per-server", installation(), "1023"), code: connect.CodeFailedPrecondition, msg: "read.per-server"},
+		{name: "reads per server unset below the caller's", as: f.instAdmin, call: unsetSetting("read.per-server", installation()), code: connect.CodeFailedPrecondition, msg: "read.per-server"},
+		{name: "reads per caller unset", as: f.instAdmin, call: unsetSetting("read.per-caller", installation()), check: wantSetting("read.per-caller", "installation", "16", builtIn)},
+		{name: "reads per server unset", as: f.instAdmin, call: unsetSetting("read.per-server", installation()), check: wantSetting("read.per-server", "installation", "256", builtIn)},
+		{name: "reads per caller on a tenant", as: f.lab1Admin, call: setSetting("read.per-caller", tenantScope("lab1"), "8"), code: connect.CodeInvalidArgument, msg: "setting.scope", audit: inTenant("lab1", master.OutcomeFailed)},
 		{name: "no setting", as: f.instAdmin, call: func(c clients) outcome { return call(c.settings.SetSetting, &v1.SetSettingRequest{}) }, code: connect.CodeInvalidArgument, msg: "setting"},
 		{name: "a malformed name", as: f.instAdmin, call: setSetting("A", installation(), "1"), code: connect.CodeInvalidArgument, msg: "setting.name"},
 		{name: "no scope", as: f.instAdmin, call: setSetting(lifetime, nil, "1d"), code: connect.CodeInvalidArgument, msg: "setting.scope"},
@@ -247,7 +260,7 @@ func testListSettings(t *testing.T) {
 				want := "access.allowed-networks=@/BUILT_IN,access.block-time=15m@/BUILT_IN,access.denied-networks=@/BUILT_IN,access.failure-limit=10@/BUILT_IN," +
 					"access.failure-window=1m@/BUILT_IN,access.forwarded-header=x-forwarded-for@/BUILT_IN,access.tenant-networks=@/BUILT_IN,access.trusted-proxies=@/BUILT_IN," +
 					"api.cors-origins=@/BUILT_IN,audit.retention=0@/BUILT_IN,audit.seal-interval=10m@/BUILT_IN,deid.memory=2GiB@/BUILT_IN,deid.pixel-limit=1GiB@/BUILT_IN,events.retention=90d@/BUILT_IN,incoming.limit=0@/BUILT_IN,job.failures-kept=10000@/BUILT_IN,key.default-lifetime=90d@/BUILT_IN," +
-					"key.expiry-warning=7d@/BUILT_IN,key.max-lifetime=3650d@/BUILT_IN,receiver.allow-as-received=false@/BUILT_IN," +
+					"key.expiry-warning=7d@/BUILT_IN,key.max-lifetime=3650d@/BUILT_IN,read.per-caller=16@/BUILT_IN,read.per-server=256@/BUILT_IN,receiver.allow-as-received=false@/BUILT_IN," +
 					"receiver.bind-addresses=@/BUILT_IN,receiver.header-limit=64MiB@/BUILT_IN,receiver.ports=@/BUILT_IN,sender.allow-plain-http=false@/BUILT_IN," +
 					"sender.destinations=@/BUILT_IN,sender.max-associations=32@/BUILT_IN,sender.tenant-max-associations=8@/BUILT_IN,storage.directory-roots=@/BUILT_IN," +
 					"storage.reserve=10%,10GiB@/BUILT_IN,storage.s3-endpoints=@/BUILT_IN,test.allotted=@/BUILT_IN,test.retention=100d@/INSTALLATION,test.text=@/BUILT_IN"
@@ -265,11 +278,10 @@ func testListSettings(t *testing.T) {
 		{name: "installation, the next page", as: f.instReader, call: func(c clients) outcome { return list(installation(), 15, token)(c) },
 			check: func(t *testing.T, o outcome) {
 				if got, next := names(o), o.res.(*v1.ListSettingsResponse).GetNextPageToken(); got != "job.failures-kept=10000@/BUILT_IN,key.default-lifetime=90d@/BUILT_IN,"+
-					"key.expiry-warning=7d@/BUILT_IN,key.max-lifetime=3650d@/BUILT_IN,"+
+					"key.expiry-warning=7d@/BUILT_IN,key.max-lifetime=3650d@/BUILT_IN,read.per-caller=16@/BUILT_IN,read.per-server=256@/BUILT_IN,"+
 					"receiver.allow-as-received=false@/BUILT_IN,"+
 					"receiver.bind-addresses=@/BUILT_IN,receiver.header-limit=64MiB@/BUILT_IN,receiver.ports=@/BUILT_IN,sender.allow-plain-http=false@/BUILT_IN,"+
-					"sender.destinations=@/BUILT_IN,sender.max-associations=32@/BUILT_IN,sender.tenant-max-associations=8@/BUILT_IN,storage.directory-roots=@/BUILT_IN,"+
-					"storage.reserve=10%,10GiB@/BUILT_IN,storage.s3-endpoints=@/BUILT_IN" || next == "" {
+					"sender.destinations=@/BUILT_IN,sender.max-associations=32@/BUILT_IN,sender.tenant-max-associations=8@/BUILT_IN,storage.directory-roots=@/BUILT_IN" || next == "" {
 					t.Errorf("got %q, token %q", got, next)
 				}
 			}},

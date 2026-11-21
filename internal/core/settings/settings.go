@@ -262,7 +262,7 @@ func Builtin() []Definition {
 		Default:        "90d",
 		TenantOverride: true,
 		Validate:       func(v string) error { _, err := ParseRetention(v); return err },
-	}}, append(append(accessDefinitions(), senderDefinitions()...), auditDefinitions()...)...)
+	}}, append(append(append(accessDefinitions(), senderDefinitions()...), auditDefinitions()...), readDefinitions()...)...)
 }
 
 // New returns a table of defs. It refuses a name that is not valid or given

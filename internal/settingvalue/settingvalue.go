@@ -182,6 +182,21 @@ func (r Reader) MaxAssociations(ctx context.Context) (int, error) {
 	return typed(settings.SenderMaxAssociations, v, err, settings.ParseAssociations)
 }
 
+// ReadLimits returns the installation's read.per-caller and
+// read.per-server: the most reads of archived bytes one caller, and the
+// whole server, hold open at once.
+func (r Reader) ReadLimits(ctx context.Context) (perCaller, perServer int, err error) {
+	v, err := r.Installation(ctx, settings.ReadPerCaller)
+	if perCaller, err = typed(settings.ReadPerCaller, v, err, settings.ParseReadPerCaller); err != nil {
+		return 0, 0, err
+	}
+	v, err = r.Installation(ctx, settings.ReadPerServer)
+	if perServer, err = typed(settings.ReadPerServer, v, err, settings.ParseReadPerServer); err != nil {
+		return 0, 0, err
+	}
+	return perCaller, perServer, nil
+}
+
 // AuditSealInterval returns the installation's audit.seal-interval.
 func (r Reader) AuditSealInterval(ctx context.Context) (time.Duration, error) {
 	v, err := r.Installation(ctx, settings.AuditSealInterval)

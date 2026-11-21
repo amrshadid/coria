@@ -60,6 +60,9 @@ func TestBuiltin(t *testing.T) {
 
 		AuditSealInterval: {InstallationOnly, "10m", false},
 		AuditRetention:    {InstallationOnly, "0", false},
+
+		ReadPerCaller: {InstallationOnly, "16", false},
+		ReadPerServer: {InstallationOnly, "256", false},
 	}
 	if got := tab.Names(); len(got) != len(want) {
 		t.Errorf("names %v, want the %d this test knows", got, len(want))

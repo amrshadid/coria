@@ -34,6 +34,8 @@ fixed list, with each default, bound and scope, is
 | `sender.max-associations` | installation only | admin on the installation | `32` | `1` to `1024`: the most associations (stow requests) all senders of all tenants hold open at once |
 | `sender.tenant-max-associations` | installation (the default for every tenant) and each tenant | admin on the installation only | `8` | `1` to `1024`: the most associations (stow requests) one tenant's senders hold open at once |
 | `job.failures-kept` | installation, and each tenant may override | admin on the installation; the tenant's admin for the tenant | `10000` | `100` to `1000000`: how many refused instances (and instances sent with a warning) a job lists; the rest are counted, not listed |
+| `read.per-caller` | installation only | admin on the installation | `16` | `1` to `1024`: the most reads of archived bytes (a download, a `ReadFiles` stream, a DICOMweb retrieve or search that reads a storage) one caller, a key or the local operator, holds open at once. A viewer keeps about three open, so the default leaves room for several windows; raise it for a viewer that opens more. A read past it is refused, never queued (`resource_exhausted`; HTTP 429 with `Retry-After`). It may not exceed `read.per-server`: a change that would make it so is refused, naming the setting |
+| `read.per-server` | installation only | admin on the installation | `256` | `16` to `65536`: the most reads the server holds open at once, for every caller and the senders together. Each holds a storage's connection or file and two buffers of 1 MiB, so memory is about 2 MiB a read. A read past it is refused as above |
 
 ## Where a key may be used from, and how long it lives
 
@@ -58,8 +60,8 @@ A period is a whole number followed by `s`, `m`, `h` or `d`.
 
 | Setting | Scope | Who sets it | Default | Form |
 |---|---|---|---|---|
-| `audit.seal-interval` | installation only | admin on the installation | `10m` | a period, `1m` to `1d`: how often the server seals every audit log (and once more when it stops); an entry not yet sealed can be removed without a trace for at most this long. Read again after each pass |
-| `audit.retention` | installation only | admin on the installation | `0`: keep every entry | `0`, or a period, `1d` to `36500d`: whole sealed checkpoints older than it lose their entries at the next pass; every checkpoint stays, so the chain is still checked across them, and each pruning writes its own entry. Export the log before setting it: what is pruned is gone |
+| `audit.seal-interval` | installation only | admin on the installation | `10m` | a period, `1m` to `1d`: how often the server seals every audit log (and once more when it stops, after the requests in flight and the audit entries held in memory are written); an entry not yet sealed can be removed without a trace for at most this long. Read again after each pass |
+| `audit.retention` | installation only | admin on the installation | `0`: keep every entry | `0`, or a period, `90d` to `36500d`: whole sealed checkpoints older than it lose their entries at the next pass; every checkpoint stays, so the chain is still checked across them, and each pruning writes its own entry, sealed in the same pass. The age is counted back from the earlier of the clock and the log's latest checkpoint, so a clock set forward does not prune early. A verification accepts a pruned checkpoint only when it is older than 90 days, follows only pruned ones, and lies in the range of a pruning's entry sealed after it. Export the log before setting it: what is pruned is gone |
 
 ## Which changes take effect without a restart
 
@@ -82,6 +84,7 @@ server reads when it starts do not change until it is started again.
 | `receiver.allow-as-received` | At the next `AddReceiver`, or `SetReceiver` that changes the receiver's de-identification; a receiver that archives as received keeps doing so when it is turned off |
 | `api.cors-origins` | Within ten seconds: the server keeps the value it read for that long |
 | `sender.destinations`, `sender.allow-plain-http` | At the next `AddSender` or `SetSender` that changes a destination; a sender that is configured already is checked again when the value is changed |
+| `read.per-caller`, `read.per-server` | Within a second, for the next read: a read already open keeps its place, so a lowered value refuses new reads until enough have ended and cuts none |
 | `key.default-lifetime` | At the next key made without an expiry; keys already made keep theirs |
 | `key.max-lifetime` | At the next key made or rotated; keys already made keep theirs |
 | `key.expiry-warning` | At the next status, and within an hour for the report in the log |
