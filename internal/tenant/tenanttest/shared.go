@@ -9,6 +9,7 @@ import (
 
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/master/mastertest"
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
@@ -34,6 +35,11 @@ func runStoreShared(t *testing.T, open OpenPair) {
 			tt.fn(&env{T: t, s: first, ctx: context.Background()}, second)
 		})
 	}
+	// The audit seal's rules are the master's, so the master's tests run
+	// here unchanged.
+	t.Run("AuditSeal", func(t *testing.T) {
+		mastertest.RunAuditSealShared(t, func(tb testing.TB) (mastertest.SealLog, mastertest.SealLog) { return open(tb, SuiteTenant) })
+	})
 }
 
 // testWritesSeenShared guards that what one instance commits the other reads

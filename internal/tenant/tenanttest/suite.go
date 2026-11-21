@@ -69,6 +69,11 @@ func runStore(t *testing.T, open Open) {
 			tt.fn(&env{T: t, s: open(t, SuiteTenant), open: open, ctx: context.Background()})
 		})
 	}
+	// The audit seal's rules are the master's, so the master's tests run
+	// here unchanged, on the tenant's log.
+	t.Run("AuditSeal", func(t *testing.T) {
+		mastertest.RunAuditSeal(t, func(tb testing.TB) mastertest.SealLog { return open(tb, SuiteTenant) })
+	})
 }
 
 // env is one test's store and the helpers that make its data.

@@ -28,12 +28,27 @@ func insertAudit(ctx context.Context, tx *sql.Tx, s *statements, e master.AuditE
 // The audit table's only unique key is the id, so a unique violation here is
 // a duplicate id: master.ErrDuplicateAuditID, never a Conflict.
 func execAudit(ctx context.Context, stmt *sql.Stmt, e master.AuditEntry) error {
-	details, err := sqlkit.EncodeDetails(e.Details)
+	args, err := auditArgs(e)
 	if err != nil {
 		return err
 	}
-	_, err = stmt.ExecContext(ctx, e.ID, micros(e.Time), e.KeyID, e.LocalUser, e.RemoteAddress,
-		e.Method, e.TenantName, e.Object, string(e.Outcome), e.Reason, details, e.RequestID)
+	_, err = stmt.ExecContext(ctx, args...)
+	return duplicateAudit(err)
+}
+
+// auditArgs returns e's values in the order of auditColumns.
+func auditArgs(e master.AuditEntry) ([]any, error) {
+	details, err := sqlkit.EncodeDetails(e.Details)
+	if err != nil {
+		return nil, err
+	}
+	return []any{e.ID, micros(e.Time), e.KeyID, e.LocalUser, e.RemoteAddress,
+		e.Method, e.TenantName, e.Object, string(e.Outcome), e.Reason, details, e.RequestID}, nil
+}
+
+// duplicateAudit turns a unique violation of an audit insert into
+// master.ErrDuplicateAuditID (Internal) and passes any other error through.
+func duplicateAudit(err error) error {
 	if isUniqueViolation(err) {
 		return fault.Wrap(fault.Internal, errors.Join(master.ErrDuplicateAuditID, err), "an audit entry with this id exists")
 	}

@@ -82,6 +82,9 @@ func Run(t *testing.T, open Open) {
 			tt.fn(&env{T: t, s: open(t), ctx: context.Background()})
 		})
 	}
+	t.Run("AuditSeal", func(t *testing.T) {
+		RunAuditSeal(t, func(tb testing.TB) SealLog { return open(tb) })
+	})
 }
 
 // env is one test's store and the helpers that make its data.

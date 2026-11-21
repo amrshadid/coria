@@ -244,6 +244,7 @@ check-auditchain:
 	@command -v "$(PYTHON)" > /dev/null || { echo "check-auditchain: no interpreter $(PYTHON)" >&2; exit 1; }
 	@command -v "$(OPENSSL)" > /dev/null || { echo "check-auditchain: no openssl $(OPENSSL)" >&2; exit 1; }
 	CORIA_CHECK_AUDITCHAIN_PYTHON="$(PYTHON)" CORIA_CHECK_AUDITCHAIN_OPENSSL="$(OPENSSL)" $(GO) test -count=1 -v -run '^TestChainChecksInPython$$' ./internal/core/auditchain
+	CORIA_CHECK_AUDITCHAIN_PYTHON="$(PYTHON)" CORIA_CHECK_AUDITCHAIN_OPENSSL="$(OPENSSL)" $(GO) test -count=1 -v -run '^TestSealChecksOutside$$' ./internal/auditseal
 
 # The outside checks of reading the archive, each the Go test that runs a
 # script of scripts/check against what the server answers: the Metadata

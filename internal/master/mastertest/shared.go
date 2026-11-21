@@ -35,6 +35,9 @@ func RunShared(t *testing.T, open OpenPair) {
 			tt.fn(&env{T: t, s: first, ctx: context.Background()}, second)
 		})
 	}
+	t.Run("AuditSeal", func(t *testing.T) {
+		RunAuditSealShared(t, func(tb testing.TB) (SealLog, SealLog) { return open(tb) })
+	})
 }
 
 // testTenantNameRaceShared guards the unique tenant name between two

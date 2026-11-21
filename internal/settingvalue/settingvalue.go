@@ -182,6 +182,19 @@ func (r Reader) MaxAssociations(ctx context.Context) (int, error) {
 	return typed(settings.SenderMaxAssociations, v, err, settings.ParseAssociations)
 }
 
+// AuditSealInterval returns the installation's audit.seal-interval.
+func (r Reader) AuditSealInterval(ctx context.Context) (time.Duration, error) {
+	v, err := r.Installation(ctx, settings.AuditSealInterval)
+	return typed(settings.AuditSealInterval, v, err, settings.ParseSealInterval)
+}
+
+// AuditRetention returns the installation's audit.retention; 0 keeps every
+// entry.
+func (r Reader) AuditRetention(ctx context.Context) (time.Duration, error) {
+	v, err := r.Installation(ctx, settings.AuditRetention)
+	return typed(settings.AuditRetention, v, err, settings.ParseAuditRetention)
+}
+
 // OnTenant returns the reader of the settings that apply on the tenant
 // whose store is st.
 func (r Reader) OnTenant(st Source) Tenant { return Tenant{r: r, st: st} }

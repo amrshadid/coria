@@ -155,10 +155,16 @@ func TestDrainMustBePositive(t *testing.T) {
 }
 
 // firstSchemaUndo turns a master made by init back into the schema its first
-// migration made: the index the third added and the columns the second
-// added to api_keys dropped, and the records of those migrations removed, as
-// an installation made before them holds.
+// migration made: the audit seal's tables, indexes and column the fourth
+// added, the index the third added and the columns the second added to
+// api_keys dropped, and the records of those migrations removed, as an
+// installation made before them holds.
 var firstSchemaUndo = []string{
+	"DROP TABLE audit_anchors",
+	"DROP TABLE audit_checkpoints",
+	"DROP INDEX audit_unsealed",
+	"DROP INDEX audit_by_seq",
+	"ALTER TABLE audit DROP COLUMN seq",
 	"DROP INDEX api_keys_by_successor",
 	"ALTER TABLE api_keys DROP COLUMN networks",
 	"ALTER TABLE api_keys DROP COLUMN client_cert",

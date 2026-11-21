@@ -156,6 +156,13 @@ func APIServices(d Deps) (Built, error) {
 		return Built{}, err
 	}
 	deidJobs.Store(deids)
+	// The sealing pass of every audit log.
+	sealer, err := newSealer(d, reg)
+	if err != nil {
+		_ = feeds.Close()
+		closeRegistry(reg)
+		return Built{}, err
+	}
 	h, err := api.New(api.Config{Access: d.Access, Registry: reg, Master: d.Master, NewID: server.NewID, Log: d.Log, Keys: d.Keys, Now: time.Now,
 		Receivers: receiverHealth{sup}, Live: receiverHealth{sup}, Feeds: feeds, Incoming: pipelineDecisions{sup}, Headers: heldHeaders{sup}, HeldFiles: heldHeaders{sup}, STOW: stowReceivers,
 		Reads: reads, SenderHealths: senderHealths{s: senders, deid: deids}, SenderTests: senderTests{senders}, DeidMemory: deidMemory})
@@ -199,8 +206,9 @@ func APIServices(d Deps) (Built, error) {
 		LongMethods: []string{coriav1connect.DataServiceReadFilesProcedure, api.DownloadPattern, api.DICOMwebPattern, api.STOWPattern},
 		// Stopped last first: the event keeper, the deid jobs and the
 		// senders (each giving its unit back), then the receivers and
-		// pipelines, then the feeds.
-		Reception: runners{closer{feeds}, sup, senders, deids, events.NewKeeper(events.KeeperConfig{
+		// pipelines, then the sealing pass, whose last pass at stop seals
+		// what they wrote, then the feeds.
+		Reception: runners{closer{feeds}, sealer, sup, senders, deids, events.NewKeeper(events.KeeperConfig{
 			Tenants: keptFeeds{tenants: registryTenants{master: d.Master, registry: reg}, registry: reg, values: settingvalue.Reader{Master: d.Master}},
 			Logger:  d.Log,
 		})},

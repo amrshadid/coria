@@ -54,6 +54,13 @@ fixed list, with each default, bound and scope, is
 A request on the local socket is never refused by a network rule or a limit.
 A period is a whole number followed by `s`, `m`, `h` or `d`.
 
+## How the audit is sealed and how long it is kept
+
+| Setting | Scope | Who sets it | Default | Form |
+|---|---|---|---|---|
+| `audit.seal-interval` | installation only | admin on the installation | `10m` | a period, `1m` to `1d`: how often the server seals every audit log (and once more when it stops); an entry not yet sealed can be removed without a trace for at most this long. Read again after each pass |
+| `audit.retention` | installation only | admin on the installation | `0`: keep every entry | `0`, or a period, `1d` to `36500d`: whole sealed checkpoints older than it lose their entries at the next pass; every checkpoint stays, so the chain is still checked across them, and each pruning writes its own entry. Export the log before setting it: what is pruned is gone |
+
 ## Which changes take effect without a restart
 
 The settings listed here are read from the master database each time they are

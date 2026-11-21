@@ -206,4 +206,8 @@ type Store interface {
 	// first: by time, then by id, both descending. The tenant name is
 	// matched exactly, byte for byte.
 	ListAudit(ctx context.Context, filter AuditFilter, page Page) ([]AuditEntry, string, error)
+
+	// AuditSeals is the seal of the master's audit log (auditseal.go). Its
+	// changes are the server's own and take no Actor.
+	AuditSeals
 }

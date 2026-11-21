@@ -413,6 +413,8 @@ func TestSettingCommands(t *testing.T) {
 			"access.tenant-networks                           built-in default\n"+
 			"access.trusted-proxies                           built-in default\n"+
 			"api.cors-origins                                 built-in default\n"+
+			"audit.retention                 0                built-in default\n"+
+			"audit.seal-interval             10m              built-in default\n"+
 			"deid.memory                     2GiB             built-in default\n"+
 			"deid.pixel-limit                1GiB             built-in default\n"+
 			"events.retention                90d              built-in default\n"+
@@ -444,7 +446,7 @@ func TestSettingCommands(t *testing.T) {
 		t.Errorf("get --json: %v", doc)
 	}
 	document(t, r.run("setting", "set", "key.default-lifetime", "30d", "--json"))
-	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 29 {
+	if ss := document(t, r.run("setting", "list", "--json"))["settings"].([]any); len(ss) != 31 {
 		t.Errorf("list --json: %v", ss)
 	}
 	document(t, r.run("setting", "unset", "test.retention", "--tenant", "lab1", "--json"))

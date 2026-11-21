@@ -276,6 +276,19 @@ All notable changes to CORIA are written here. The form is
   scan's labels, series UID and study UID) and the owner record
   (`meta/.owner.json`) have a fixed, checked JSON form. Nothing writes them
   yet.
+- The audit logs are sealed: every `audit.seal-interval` (default 10m) and
+  when the server stops, a pass gives each unsealed entry of the
+  installation's log and of every tenant's its place in a SHA-256 hash chain
+  and signs a checkpoint with an Ed25519 key derived from the key file. The
+  installation's log keeps each tenant's latest checkpoint and each tenant's
+  log the installation's, so a log rewritten whole disagrees with the other.
+  Verification and export are in place for the API, which does not serve
+  them yet; `make check-auditchain` checks a sealed SQLite and Postgres log
+  with hashlib and openssl. `audit.retention` (default 0: keep every entry)
+  prunes whole sealed checkpoints older than it, keeping every checkpoint so
+  the chain is still checked across what was pruned, each pruning writing
+  its own entry made by the server. Migrations: master `0004_audit_seal`,
+  tenant `0017_audit_seal`.
 - Import paths and layouts: the rule of a path under an import root
   (segments of 1 to 255 bytes of UTF-8, none "." or "..", none holding "\",
   ":" or NUL, at most 4096 bytes), the walk order (segment by segment, a

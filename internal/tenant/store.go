@@ -91,6 +91,11 @@ type Store interface {
 	// matched exactly, byte for byte. An entry present throughout a listing
 	// is returned exactly once, whatever is appended meanwhile.
 	ListAudit(ctx context.Context, filter master.AuditFilter, page master.Page) ([]master.AuditEntry, string, error)
+
+	// AuditSeals is the seal of the tenant's audit log, with the master's
+	// rules (master.AuditSeals). Its changes are the server's own and take
+	// no Guard.
+	master.AuditSeals
 }
 
 // Guard is the check a change makes of who makes it, run by the store last
