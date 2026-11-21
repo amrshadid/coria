@@ -219,13 +219,13 @@ func receiveArchiveVia(t *testing.T, f *placeFixture, files [][]byte, wrap func(
 	if err != nil {
 		t.Fatal(err)
 	}
-	clock := &fakeClock{now: time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)}
+	wait := newSettle()
 	given := p
 	if wrap != nil {
 		given = wrap(p)
 	}
 	pipe, err := receive.New(receive.Config{
-		Tenant: "lab1", Store: given, Hasher: hasher, Clock: clock, IncomingRoot: filepath.Join(f.dir, "incoming"),
+		Tenant: "lab1", Store: given, Hasher: hasher, Clock: wait.clock, Wake: wait.Wake, IncomingRoot: filepath.Join(f.dir, "incoming"),
 		OpenStorage: func(context.Context, string) (blob.Store, error) { return store, nil },
 		Lease:       10 * time.Minute,
 	})
@@ -250,30 +250,8 @@ func receiveArchiveVia(t *testing.T, f *placeFixture, files [][]byte, wrap func(
 			t.Fatalf("a file was %v (%s), want received", out.Status, out.Reason)
 		}
 	}
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		totals, err := p.CatalogTotals(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if totals.Instances == int64(len(files)) {
-			return a
-		}
-		if time.Now().After(deadline) {
-			held, _, _ := p.ListQuarantined(context.Background(), tenant.QuarantineFilter{}, master.Page{Limit: 20})
-			var why []string
-			for _, q := range held {
-				why = append(why, string(q.Reason)+" "+q.TransferSyntaxUID)
-			}
-			rs, _, _ := p.ListReceptions(context.Background(), tenant.ReceptionFilter{}, master.Page{Limit: 20})
-			for _, r := range rs {
-				why = append(why, "reception "+string(r.State)+" "+r.Failure)
-			}
-			t.Fatalf("lab1 holds %d of %d instances after the wait; quarantined and receptions: %v", totals.Instances, len(files), why)
-		}
-		clock.advance(time.Second)
-		time.Sleep(10 * time.Millisecond)
-	}
+	wait.await(t, pipe, p, len(files))
+	return a
 }
 
 // scans returns the paths of lab1's scans, by label.

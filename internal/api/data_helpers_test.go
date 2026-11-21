@@ -282,9 +282,9 @@ func receiveInto(tb testing.TB, e *env, dir string, files [][]byte) tenant.Pipel
 	if err != nil {
 		tb.Fatal(err)
 	}
-	clock := &fakeClock{now: time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)}
+	wait := newSettle()
 	pipe, err := receive.New(receive.Config{
-		Tenant: "lab1", Store: p, Hasher: hasher, Clock: clock, IncomingRoot: filepath.Join(e.dir, "incoming"),
+		Tenant: "lab1", Store: p, Hasher: hasher, Clock: wait.clock, Wake: wait.Wake, IncomingRoot: filepath.Join(e.dir, "incoming"),
 		OpenStorage: func(context.Context, string) (blob.Store, error) { return store, nil },
 		Lease:       10 * time.Minute,
 	})
@@ -302,20 +302,8 @@ func receiveInto(tb testing.TB, e *env, dir string, files [][]byte) tenant.Pipel
 			tb.Fatalf("a file was %v (%s), want received", out.Status, out.Reason)
 		}
 	}
-	for deadline := time.Now().Add(30 * time.Second); ; {
-		totals, err := p.CatalogTotals(context.Background())
-		if err != nil {
-			tb.Fatal(err)
-		}
-		if totals.Instances == int64(len(files)) {
-			return p
-		}
-		if time.Now().After(deadline) {
-			tb.Fatalf("lab1 holds %d of %d instances after the wait", totals.Instances, len(files))
-		}
-		clock.advance(time.Second)
-		time.Sleep(10 * time.Millisecond)
-	}
+	wait.await(tb, pipe, p, len(files))
+	return p
 }
 
 // readFilesOnce opens a stream of ReadFiles with req and returns its first

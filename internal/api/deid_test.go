@@ -50,9 +50,9 @@ func receiveWithTenantKey(t *testing.T, f *placeFixture, receiver string, files 
 		t.Fatal(err)
 	}
 	p := f.pipelineOf("lab1")
-	clock := &fakeClock{now: time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)}
+	wait := newSettle()
 	pipe, err := receive.New(receive.Config{
-		Tenant: "lab1", Store: p, Hasher: hasher, Clock: clock, IncomingRoot: filepath.Join(f.dir, "incoming"),
+		Tenant: "lab1", Store: p, Hasher: hasher, Clock: wait.clock, Wake: wait.Wake, IncomingRoot: filepath.Join(f.dir, "incoming"),
 		OpenStorage: func(context.Context, string) (blob.Store, error) { return store, nil }, Lease: 10 * time.Minute,
 		DeidKeys: func(ctx context.Context) (engine.Keys, error) { return f.registry.DeidKeys(ctx, "lab1") },
 		Check:    newCheck,
@@ -71,21 +71,7 @@ func receiveWithTenantKey(t *testing.T, f *placeFixture, receiver string, files 
 			t.Fatalf("a file was %v (%s), want received", out.Status, out.Reason)
 		}
 	}
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		totals, err := p.CatalogTotals(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if totals.Instances == int64(len(files)) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("lab1 holds %d of %d instances after the wait", totals.Instances, len(files))
-		}
-		clock.advance(time.Second)
-		time.Sleep(10 * time.Millisecond)
-	}
+	wait.await(t, pipe, p, len(files))
 }
 
 // testCode guards the forward lookup: admin on the tenant only; an
