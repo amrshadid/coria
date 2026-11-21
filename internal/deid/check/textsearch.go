@@ -90,7 +90,8 @@ func (s *searcher) text() error {
 // walk searches the text of elements, at depth, under prefix, decoded by
 // the encodings in force for their data set (PS3.3 C.12.1.1.2: an item
 // without its own Specific Character Set takes its parent's). The top
-// level's image data is not text.
+// level's image data is not text, and the record of the de-identification
+// the engine wrote (parsed.written) is not searched.
 func (s *searcher) walk(elements []*attributes.DataElementValue, inherited []string, prefix string, depth int) error {
 	if err := s.ctx.Err(); err != nil {
 		return err
@@ -98,7 +99,7 @@ func (s *searcher) walk(elements []*attributes.DataElementValue, inherited []str
 	encodings := attributes.TextEncodingsWithContext(s.quiet, elements, inherited)
 	for _, e := range elements {
 		path := prefix + fmt.Sprintf("%08X", uint32(e.Tag))
-		if pixelTags[e.Tag] && depth == 0 {
+		if (pixelTags[e.Tag] && depth == 0) || s.p.written[e] {
 			continue
 		}
 		if e.VR == "SQ" || e.Items != nil {

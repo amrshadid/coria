@@ -31,10 +31,12 @@ import (
 // *check.Refusal as deid_failed; any other error says nothing of the file,
 // and the step is tried again.
 type Checker interface {
-	// Check reads the de-identified file, size bytes of src, for needles;
-	// characterSet is the received file's Specific Character Set, as the
-	// engine was given it.
-	Check(ctx context.Context, src io.ReaderAt, size int64, needles engine.Needles, characterSet *string) (check.Report, error)
+	// CheckWritten reads the de-identified file, size bytes of src, for
+	// needles; written is the record of the de-identification the same
+	// run of the engine wrote (engine.Record.Written), not searched where
+	// the file holds exactly it; characterSet is the received file's
+	// Specific Character Set, as the engine was given it.
+	CheckWritten(ctx context.Context, src io.ReaderAt, size int64, needles engine.Needles, written engine.Written, characterSet *string) (check.Report, error)
 }
 
 // DeidKeys returns the tenant's keys of de-identification: its UID key,

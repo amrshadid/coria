@@ -378,6 +378,27 @@ prove-sending:
 		--orthanc-dimse "$(PROVE_ORTHANC_DIMSE)" --orthanc-logs "$(PROVE_ORTHANC_LOGS)" --many $(PROVE_SEND_MANY) \
 		$(if $(PROVE_POSTGRES),--postgres "$(PROVE_POSTGRES)" --psql "$(PROVE_PSQL)")
 
+# The proof of de-identification (scripts/prove/deid.py): the real program
+# built, served and set up with its own commands; public corpus files and
+# files built with pydicom, with identifying values planted where they hide
+# (names in every script, dates written many ways, private elements, JPEG
+# and JPEG 2000 comments, burned-in pixels), go through de-identifying
+# receivers. pydicom, dcmdump, dcmdjpeg, sqlite3 and a byte search check that
+# none survives, that every failure holds the file with its reason, that
+# releases archive it, and that the server killed with signal 9 loses
+# nothing. PYDICOM_CORPUS names pydicom's whole test_files directory (the
+# installed pydicom lacks some files). The whole proof runs several minutes;
+# PROVE_DEID_ONLY (groups: faults rules trial check crash numbers more memory
+# forward nowhere) runs a part. PROVE_DEID_ORTHANC=1 adds the last step, a
+# session read back from the empty Orthanc of PROVE_ORTHANC.
+PROVE_DEID_ONLY    ?=
+PROVE_DEID_ORTHANC ?=
+.PHONY: prove-deid
+prove-deid:
+	"$(PYTHON)" scripts/prove/deid.py --go "$(GO)" --dcmtk "$(DCMTK)" --only "$(PROVE_DEID_ONLY)" \
+		$(if $(PYDICOM_CORPUS),--pydicom-corpus "$(PYDICOM_CORPUS)") \
+		$(if $(PROVE_DEID_ORTHANC),--orthanc "$(PROVE_ORTHANC)" --orthanc-dimse "$(PROVE_ORTHANC_DIMSE)")
+
 # Sending's speed: a scan of 64 small instances to an in-process DIMSE and
 # STOW-RS peer, three runs of twenty jobs each.
 .PHONY: bench-send

@@ -9,7 +9,9 @@ import (
 	"sync"
 
 	"github.com/amrshadid/go-dicom/anonymize"
+	"github.com/amrshadid/go-dicom/dataelem"
 	"github.com/amrshadid/go-dicom/dataset"
+	"github.com/amrshadid/go-dicom/sequence"
 	"github.com/amrshadid/go-dicom/tag"
 	"github.com/amrshadid/go-dicom/valuerep"
 
@@ -76,6 +78,7 @@ func (r *run) planMethod() error {
 			return errors.New("engine: the DICOM library wrote no de-identification method code sequence")
 		}
 		r.ops = append(r.ops, op{kind: opElement, ds: r.top, tag: tag.Tag(tagDeidMethodCodes), elem: seq})
+		r.record.Written.MethodCodes = writtenCodes(seq)
 		r.record.Entries = append(r.record.Entries, Entry{Path: formatTag(tagDeidMethodCodes), Tag: tagDeidMethodCodes, VR: "SQ", Action: "set", Rule: -1,
 			Reason: "the PS3.16 CID 7050 codes of the PS3.15 Annex E profile and options the profile version is built on (PS3.15 E.1.1)", Changed: true})
 		if v, ok := elementText(scratch, tag.Tag(tagDeidMethod)); ok && v != "" {
@@ -97,7 +100,8 @@ func (r *run) planMethod() error {
 		r.put(tagBurnedInAnnotation, "CS", "NO", "the pixel rule's rectangles, which a person placed over the text, were filled (PS3.15 E.3.1)")
 	}
 	if len(values) > 0 {
-		r.put(tagDeidMethod, "LO", strings.Join(values, `\`),
+		r.record.Written.Method = strings.Join(values, `\`)
+		r.put(tagDeidMethod, "LO", r.record.Written.Method,
 			"the profile and options the file was de-identified by, the profile version, and the versions of the software that applied it (PS3.15 E.1.1)")
 	}
 	if temporal != "" {
@@ -105,6 +109,36 @@ func (r *run) planMethod() error {
 	}
 	return nil
 }
+
+// writtenCodes reads back the codes of the De-identification Method Code
+// Sequence the DICOM library wrote, as its items hold them, so the record
+// says exactly what the file carries (a Coding Scheme Designator the
+// library filled in included), not what was asked of the library. An item
+// that is not a data set, or a value that is not text, reads as empty: the
+// check after then finds the sequence unlike what it holds and searches it.
+func writtenCodes(seq *dataelem.DataElement) []anonymize.MethodCode {
+	items, _ := seq.GetValue().(*sequence.Sequence)
+	if items == nil {
+		return nil
+	}
+	out := make([]anonymize.MethodCode, 0, items.Length())
+	for i := range items.Length() {
+		var c anonymize.MethodCode
+		if it, err := items.Get(i); err == nil {
+			if ds, ok := it.(*dataset.Dataset); ok {
+				c.Value, _ = elementText(ds, tag.Tag(tagCodeValue))
+				c.Scheme, _ = elementText(ds, tag.Tag(tagCodingScheme))
+				c.Meaning, _ = elementText(ds, tag.Tag(tagCodeMeaning))
+			}
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// tagCodeMeaning is Code Meaning, of an item of a code sequence (PS3.3
+// 8.8).
+const tagCodeMeaning = 0x00080104
 
 // dicomLibrary is the module path of the DICOM library.
 const dicomLibrary = "github.com/amrshadid/go-dicom"

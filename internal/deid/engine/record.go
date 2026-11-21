@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"strconv"
+
+	"github.com/amrshadid/go-dicom/anonymize"
 )
 
 // Cause is the fixed reason a file could not be de-identified. A program
@@ -243,6 +245,25 @@ type Record struct {
 	// Pixels is what was done to the file's pixels, and why; nil when the
 	// file has no Pixel Data (7FE0,0010).
 	Pixels *PixelWork
+	// Written is the record of the de-identification the engine wrote at
+	// the data set's top level in this run, none of it read from the file.
+	Written Written
+}
+
+// Written is the record of the de-identification (PS3.15 E.1.1, E.3.6) an
+// Engine wrote into one data set, exactly as it wrote it: the check after
+// de-identification is told it so that the words of the record (a code
+// meaning, the method's name, a version) are not taken for a removed value
+// they happen to equal, as a patient named "Coria" or "Basic" would be in
+// every file.
+type Written struct {
+	// Method is the value written in De-identification Method (0012,0063),
+	// its values joined by backslashes; empty when none was written.
+	Method string
+	// MethodCodes are the codes written in De-identification Method Code
+	// Sequence (0012,0064), one item each, in order, each with its Coding
+	// Scheme Designator as written; nil when no sequence was written.
+	MethodCodes []anonymize.MethodCode
 }
 
 // formatTag writes a tag as eight upper-case hexadecimal digits, the form a

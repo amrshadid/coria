@@ -274,7 +274,21 @@ func New(opts Options) *Checker { return &Checker{opts: opts.withDefaults()} }
 // *Refusal when the file or the needles pass a bound or the file cannot be
 // read, an error of src, or ctx's error. The Report is filled in every
 // case as far as the check got.
-func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needles engine.Needles, characterSet *string) (rep Report, err error) {
+//
+// Every element is searched, the record of the de-identification
+// included; CheckWritten is the check of a file the engine just made.
+func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needles engine.Needles, characterSet *string) (Report, error) {
+	return c.CheckWritten(ctx, src, size, needles, engine.Written{}, characterSet)
+}
+
+// CheckWritten is Check of a file the engine made in the run whose record
+// gave needles and written (engine.Record.Written): the record of the
+// de-identification at the file's top level, where it holds exactly what
+// written says, is not searched, so a word of it (a code meaning, the
+// method's name, a version) is not taken for a removed value it equals
+// (writtenElements says why that lets no received value through). Every
+// other element is searched as Check searches it.
+func (c *Checker) CheckWritten(ctx context.Context, src io.ReaderAt, size int64, needles engine.Needles, written engine.Written, characterSet *string) (rep Report, err error) {
 	rep.Needles = len(needles)
 	set, err := c.forms(needles)
 	if err != nil {
@@ -292,7 +306,7 @@ func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needle
 			err = &Refusal{Cause: CauseUnreadable}
 		}
 	}()
-	f, err := c.parse(src, size)
+	f, err := c.parse(src, size, written)
 	if err != nil {
 		return rep, err
 	}

@@ -11,6 +11,8 @@ import (
 	"github.com/amrshadid/go-dicom/filebase"
 	"github.com/amrshadid/go-dicom/filereader/attributes"
 	"github.com/amrshadid/go-dicom/tag"
+
+	"github.com/amrshadid/coria/internal/deid/engine"
 )
 
 // pixelTags are the elements whose value is image data, never searched:
@@ -54,13 +56,20 @@ type parsed struct {
 	largestText, largestLoose int64
 	// streams is set when a value of unknown kind is read as a stream.
 	streams bool
+	// written are the elements of the top level that hold the record of
+	// the de-identification exactly as the engine wrote it in this run
+	// (writtenElements): neither their text nor their value's raw bytes
+	// are searched.
+	written map[*attributes.DataElementValue]bool
 }
 
 // parse reads the elements of the size bytes of src with the codec-free
 // reader: text values within MaxValueBytes held, binary values past
 // heldBinary and the image data left in the file. It refuses a file the
-// reader did not read whole or whose sequences are not well formed.
-func (c *Checker) parse(src io.ReaderAt, size int64) (*parsed, error) {
+// reader did not read whole or whose sequences are not well formed. The
+// elements of the top level that hold exactly what written says the engine
+// wrote (writtenElements) are kept out of both searches.
+func (c *Checker) parse(src io.ReaderAt, size int64, written engine.Written) (*parsed, error) {
 	fr := newFileReader(src, size)
 	f, err := attributes.Read(filebase.NewFileReader(fr), attributes.ReadOptions{
 		SkipBulkData:      true,
@@ -94,6 +103,12 @@ func (c *Checker) parse(src io.ReaderAt, size int64) (*parsed, error) {
 	}
 	if err := p.survey(f.DataElements, "", 0, &cut, c.opts.MaxValueBytes); err != nil {
 		return nil, err
+	}
+	p.written = writtenElements(f.DataElements, written)
+	for e := range p.written {
+		if pos := e.Position; pos.End > pos.ValueOffset {
+			cut = append(cut, [2]int64{pos.ValueOffset, pos.End})
+		}
 	}
 	p.segs = outside(cut, size)
 	sort.Slice(p.binary, func(i, j int) bool { return p.binary[i][0] < p.binary[j][0] })

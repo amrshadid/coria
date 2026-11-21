@@ -216,7 +216,7 @@ func (p *Pipeline) deidentify(ctx context.Context, r tenant.Reception, rcv tenan
 	if size != wr.size {
 		return wr, nil, fault.New(fault.Internal, "a de-identified file changed after it was written")
 	}
-	_, err = p.cfg.Check(rcv.MaxFileBytes+checkHeadroom+grown(rec)).Check(ctx, out, size, rec.Needles, h.CharacterSet())
+	_, err = p.cfg.Check(rcv.MaxFileBytes+checkHeadroom+grown(rec)).CheckWritten(ctx, out, size, rec.Needles, rec.Written, h.CharacterSet())
 	if reason, details, held := checkHold(err); held {
 		wr.made = false
 		_ = p.area.RemoveDerived(wr.f.Incoming)

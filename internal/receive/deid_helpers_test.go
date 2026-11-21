@@ -136,8 +136,8 @@ type recordingCheck struct {
 	during func(src io.ReaderAt)
 }
 
-// Check implements Checker.
-func (c *recordingCheck) Check(ctx context.Context, src io.ReaderAt, size int64, needles engine.Needles, characterSet *string) (check.Report, error) {
+// CheckWritten implements Checker.
+func (c *recordingCheck) CheckWritten(ctx context.Context, src io.ReaderAt, size int64, needles engine.Needles, written engine.Written, characterSet *string) (check.Report, error) {
 	h, err := header.Read(src, size)
 	if err != nil {
 		return check.Report{}, err
@@ -160,7 +160,7 @@ func (c *recordingCheck) Check(ctx context.Context, src io.ReaderAt, size int64,
 			return check.Report{Total: r.Total}, r
 		}
 	}
-	rep, err := real.Check(ctx, src, size, needles, characterSet)
+	rep, err := real.CheckWritten(ctx, src, size, needles, written, characterSet)
 	if during != nil {
 		during(src)
 	}

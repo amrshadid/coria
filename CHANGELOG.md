@@ -127,6 +127,12 @@ All notable changes to CORIA are written here. The form is
 
 ### Fixed
 
+- A patient whose name is a word of the record of the de-identification
+  (the software's name "Coria", or "Basic", "Profile" from a code meaning)
+  is no longer held as residual_value: the check after skips De-identification
+  Method (0012,0063) and its code sequence (0012,0064) at the top level only
+  where they hold exactly what the engine wrote in the same run; any other
+  value there, or the same value inside a sequence, is searched as before.
 - A file held at a receiver that de-identifies, joining no reception when
   released, could be released through a receiver that archives as received
   and archived identified: such a release is refused, and a landing of it is
@@ -224,6 +230,14 @@ All notable changes to CORIA are written here. The form is
 
 ### Added
 
+- `make prove-deid`: the proof of de-identification from outside, driving
+  the built program through its API and command line and reading the
+  archive with pydicom, dcmtk and sqlite3. It looks for planted values in
+  every archived file, manifest, database and log, and covers every way a
+  file is held and its release, pixel rules, routing, value patterns, JPEG
+  and JPEG 2000 comment segments, names written decomposed, the forward
+  lookup, `profile try --local`, `deid.memory`, and the server killed while
+  archiving. `make check-j2k` checks the JPEG 2000 walk against OpenJPEG.
 - A tenant's senders and jobs are kept in its database (both database
   types, migration 11): senders with their sealed credential, send jobs of a
   subject, a session or a scan, each made of one unit of work per scan with a

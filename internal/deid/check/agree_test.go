@@ -138,6 +138,7 @@ type pair struct {
 	Needles      string `json:"needles"`
 	charset      *string
 	needles      engine.Needles
+	written      engine.Written
 }
 
 // listFiles returns the files of dir that are not directories or notes.
@@ -188,7 +189,7 @@ func deidentify(t *testing.T, en *engine.Engine, files []string, dir string) []p
 		name := filepath.Join(dir, fmt.Sprintf("%03d-%s", i, filepath.Base(path)))
 		writeResult(t, ds, name)
 		out = append(out, pair{Original: path, Deidentified: name, Needles: writeNeedles(t, name, rec.Needles),
-			charset: receivedCharset(b), needles: rec.Needles})
+			charset: receivedCharset(b), needles: rec.Needles, written: rec.Written})
 	}
 	return out
 }
@@ -268,13 +269,18 @@ func writeNeedles(t *testing.T, name string, needles engine.Needles) string {
 }
 
 // ours returns the originals whose results this package finds a needle
-// in, and fails on a refusal.
+// in, checked as the pipeline checks them (with the run's record of the
+// method), and fails on a refusal.
 func ours(t *testing.T, pairs []pair) []string {
 	t.Helper()
 	c := New(Options{})
 	var found []string
 	for _, p := range pairs {
-		_, err := c.checkPath(t, context.Background(), p.Deidentified, p.needles, p.charset)
+		b, err := os.ReadFile(p.Deidentified) //nolint:gosec // G304: the test's own temporary file.
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = c.CheckWritten(context.Background(), bytes.NewReader(b), int64(len(b)), p.needles, p.written, p.charset)
 		var res *Residual
 		switch {
 		case err == nil:

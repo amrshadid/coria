@@ -215,7 +215,14 @@ func TryFile(ctx context.Context, en *engine.Engine, file []byte, rec engine.Rec
 	if o.Receiver != nil {
 		bound = o.Receiver.MaxFileBytes + checkHeadroom + grown(record)
 	}
-	t.Report, err = o.Check(bound).Check(ctx, bytes.NewReader(out), int64(len(out)), record.Needles, h.CharacterSet())
+	// The engine ran over this file here, so the record of the
+	// de-identification the file holds is this run's whenever the engine
+	// wrote one (it replaces what an archived file carried from the run
+	// that archived it), and is skipped only where it equals what this
+	// run wrote. A profile that writes none leaves what the file carried,
+	// which record.Written does not name, so it is searched as any kept
+	// value.
+	t.Report, err = o.Check(bound).CheckWritten(ctx, bytes.NewReader(out), int64(len(out)), record.Needles, record.Written, h.CharacterSet())
 	if reason, details, isHold := checkHold(err); isHold {
 		return held(reason, details)
 	} else if err != nil {
