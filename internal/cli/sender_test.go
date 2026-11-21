@@ -265,7 +265,7 @@ func TestSenderRemoveRefusals(t *testing.T) {
 		t.Errorf("a job is in progress: %+v", res)
 	}
 	expect(t, r.run("sender", "remove", "lab1", "pacs", "--yes", "--cancel-jobs"), 0, "sender pacs of tenant lab1 removed; 1 jobs canceled; its jobs stay\n", "")
-	if res := r.run("receiver", "add", "lab1", "r2", "--storage", "main", "--port", "11115", "--aet", "R2", "--forward-to", "gone"); res.code != 5 || !strings.Contains(res.stderr, "no sender named gone") {
+	if res := r.run("receiver", "add", "lab1", "r2", "--storage", "main", "--port", "11115", "--aet", "RECV2", "--forward-to", "gone"); res.code != 5 || !strings.Contains(res.stderr, "no sender named gone") {
 		t.Errorf("forward to a sender that is not there: %+v", res)
 	}
 }
