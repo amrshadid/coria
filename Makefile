@@ -347,6 +347,28 @@ prove-reception:
 	"$(PYTHON)" scripts/prove/reception.py --go "$(GO)" --dcmtk "$(DCMTK)" --crash-rounds $(PROVE_CRASH_ROUNDS) \
 		--s3 "$(PROVE_S3)" --postgres "$(PROVE_POSTGRES)" --psql "$(PROVE_PSQL)"
 
+# The proof of sending (scripts/prove/sending.py): the real program built,
+# served and set up with its own commands; public and synthetic studies
+# archived from dcmtk's storescu are sent to an Orthanc by DIMSE and by
+# STOW-RS, and Orthanc's REST API and pydicom check each instance against the
+# archived file; the server stopped by SIGTERM and by SIGKILL midway, a job
+# canceled and retried, a receiver's forward-to, a pynetdicom peer refusing
+# some instances, and a de-identifying receiver whose data reaches Orthanc
+# with no original value; then instances per second by each way. Needs an
+# Orthanc with its DICOMweb plugin that holds nothing (PROVE_ORTHANC its REST
+# API, PROVE_ORTHANC_DIMSE its AET@HOST:PORT), dcmtk (DCMTK=dir), and a PYTHON
+# with scripts/requirements/prove-reception.txt. PROVE_ORTHANC_LOGS, a command
+# that prints Orthanc's log, counts what was sent twice; without it that
+# check skips. PROVE_SEND_MANY is the size of the session stopped midway.
+PROVE_ORTHANC       ?= http://127.0.0.1:8042
+PROVE_ORTHANC_DIMSE ?= ORTHANC@127.0.0.1:4242
+PROVE_ORTHANC_LOGS  ?=
+PROVE_SEND_MANY     ?= 400
+.PHONY: prove-sending
+prove-sending:
+	"$(PYTHON)" scripts/prove/sending.py --go "$(GO)" --dcmtk "$(DCMTK)" --orthanc "$(PROVE_ORTHANC)" \
+		--orthanc-dimse "$(PROVE_ORTHANC_DIMSE)" --orthanc-logs "$(PROVE_ORTHANC_LOGS)" --many $(PROVE_SEND_MANY)
+
 
 # The outside check of a tenant's SQLite database: the registry creates a
 # tenant on SQLite, and the sqlite3 tool reads its file and the master's row.

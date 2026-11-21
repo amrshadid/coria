@@ -284,6 +284,12 @@ All notable changes to CORIA are written here. The form is
   share one bound of 256 open reads, of which the senders hold at most half;
   TestSender tries the peer; the senders take up a new, canceled or retried
   job at once.
+- `make prove-sending`: the proof of sending, from outside the binary.
+  Studies archived from dcmtk's storescu are sent to an Orthanc by DIMSE and
+  STOW-RS and checked against the archive with Orthanc's REST API and
+  pydicom: a restart midway by SIGTERM and SIGKILL, cancel and retry,
+  forwarding, a peer that refuses some instances, de-identified data sent as
+  archived, and instances per second by each way.
 - `coria context add|list|show|use|remove` saves named client contexts
   (server address, CA and TLS client certificate paths, key file path,
   optional default tenant) in a file only the user can read, in a directory
