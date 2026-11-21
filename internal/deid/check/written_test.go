@@ -3,7 +3,9 @@ package check
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -185,6 +187,109 @@ func TestOnlyTheExactRecordIsSkipped(t *testing.T) {
 				}
 			}
 			t.Fatalf("no finding at %s (raw %v): %+v", tc.want, tc.raw, rep.Findings)
+		})
+	}
+}
+
+// recordBytes is the record of the de-identification writtenOf names,
+// encoded by hand in Explicit VR Little Endian (PS3.5 7.1.2, 7.5.2): the
+// method, then its code sequence of undefined length with one item of
+// undefined length. itemEnd and seqEnd are the 4-byte lengths of the Item
+// and Sequence Delimitation Items (zero in a well-made file); un, when not
+// nil, writes the Code Value as UN with these two reserved bytes and a
+// 4-byte length, as an intermediary that did not know the tag would.
+func recordBytes(t *testing.T, itemEnd, seqEnd, un []byte) []byte {
+	t.Helper()
+	var b []byte
+	head := func(group, elem uint16, vr string) {
+		b = binary.LittleEndian.AppendUint16(b, group)
+		b = binary.LittleEndian.AppendUint16(b, elem)
+		b = append(b, vr...)
+	}
+	// length is the length of v, which fits the 2-byte length field of a
+	// short explicit VR (PS3.5 7.1.2).
+	length := func(v string) uint16 {
+		n := len(v)
+		if n < 0 || n > math.MaxUint16 {
+			t.Fatalf("a value of %d bytes", n)
+			return 0
+		}
+		return uint16(n)
+	}
+	short := func(group, elem uint16, vr, v string) {
+		if len(v)%2 == 1 {
+			v += " "
+		}
+		head(group, elem, vr)
+		b = binary.LittleEndian.AppendUint16(b, length(v))
+		b = append(b, v...)
+	}
+	delim := func(elem uint16, n []byte) {
+		head(0xFFFE, elem, "")
+		b = append(b, n...)
+	}
+	c := writtenOf.MethodCodes[0]
+	short(0x0012, 0x0063, "LO", writtenOf.Method)
+	head(0x0012, 0x0064, "SQ")
+	b = append(b, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF)
+	delim(0xE000, []byte{0xFF, 0xFF, 0xFF, 0xFF})
+	if un != nil {
+		head(0x0008, 0x0100, "UN")
+		b = append(b, un...)
+		b = binary.LittleEndian.AppendUint32(b, uint32(length(c.Value)))
+		b = append(b, c.Value...)
+	} else {
+		short(0x0008, 0x0100, "SH", c.Value)
+	}
+	short(0x0008, 0x0102, "SH", c.Scheme)
+	short(0x0008, 0x0104, "LO", c.Meaning)
+	delim(0xE00D, itemEnd)
+	delim(0xE0DD, seqEnd)
+	return b
+}
+
+// TestOnlyTheComparedValuesLeaveTheRawSearch guards the bytes of the code
+// sequence (0012,0064) that were never compared with what the engine
+// wrote: the lengths of its Item and Sequence Delimitation Items, and the
+// header of a Code Value written as UN with its reserved bytes, are each
+// searched raw with the run's record given, and a Code Value written as
+// UN is not taken for the one the engine wrote (SH), so the item's text is
+// searched too. The well-made record, the control, passes for a word of
+// its code meaning.
+func TestOnlyTheComparedValuesLeaveTheRawSearch(t *testing.T) {
+	zero := []byte{0, 0, 0, 0}
+	cases := []struct {
+		name   string
+		record []byte
+		needle engine.Needle
+		want   bool
+	}{
+		// A word of the code meaning: the record is taken for the run's,
+		// or the control would be found too.
+		{"the record well made", recordBytes(t, zero, zero, nil), needle(engine.NeedleName, "Basic^Ann"), false},
+		{"an item delimiter's length", recordBytes(t, []byte("4711"), zero, nil), needle(engine.NeedleText, "4711"), true},
+		{"the sequence delimiter's length", recordBytes(t, zero, []byte("4711"), nil), needle(engine.NeedleText, "4711"), true},
+		{"a code value as UN, its reserved bytes", recordBytes(t, zero, zero, []byte("12")), needle(engine.NeedleText, "UN12"), true},
+		{"a code value as UN, the item's text", recordBytes(t, zero, zero, []byte{0, 0}), needle(engine.NeedleName, "Basic^Ann"), true},
+	}
+	head := readBytes(t, writeFile(t))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b := append(append([]byte{}, head...), tc.record...)
+			rep, err := New(Options{}).CheckWritten(context.Background(), bytes.NewReader(b), int64(len(b)), engine.Needles{tc.needle}, writtenOf, nil)
+			if !tc.want {
+				if err != nil {
+					t.Fatalf("want a pass, got %v: %+v", err, rep.Findings)
+				}
+				return
+			}
+			var res *Residual
+			if !errors.As(err, &res) {
+				t.Fatalf("want a residual with the record given, got %v: %+v", err, rep.Findings)
+			}
+			if p := res.First.Path; !strings.HasPrefix(p, "00120064") {
+				t.Errorf("found at %s, want in the code sequence", p)
+			}
 		})
 	}
 }

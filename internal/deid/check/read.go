@@ -58,8 +58,8 @@ type parsed struct {
 	streams bool
 	// written are the elements of the top level that hold the record of
 	// the de-identification exactly as the engine wrote it in this run
-	// (writtenElements): neither their text nor their value's raw bytes
-	// are searched.
+	// (writtenElements): their text is not searched, nor the raw bytes of
+	// the values compared (writtenValues).
 	written map[*attributes.DataElementValue]bool
 }
 
@@ -105,11 +105,7 @@ func (c *Checker) parse(src io.ReaderAt, size int64, written engine.Written) (*p
 		return nil, err
 	}
 	p.written = writtenElements(f.DataElements, written)
-	for e := range p.written {
-		if pos := e.Position; pos.End > pos.ValueOffset {
-			cut = append(cut, [2]int64{pos.ValueOffset, pos.End})
-		}
-	}
+	cut = append(cut, writtenValues(p.written)...)
 	p.segs = outside(cut, size)
 	sort.Slice(p.binary, func(i, j int) bool { return p.binary[i][0] < p.binary[j][0] })
 	return p, nil
