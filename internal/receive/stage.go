@@ -178,14 +178,7 @@ func (p *Pipeline) deidentify(ctx context.Context, r tenant.Reception, rcv tenan
 	})
 	var failure *engine.Failure
 	if errors.As(err, &failure) {
-		if failure.Cause == engine.CauseRuleQuarantine {
-			return hold(tenant.QuarantineProfileRefused, ruleDetail(nil, failure.Rule))
-		}
-		details := map[string]string{"cause": string(failure.Cause)}
-		if failure.Path != "" {
-			details["path"] = failure.Path
-		}
-		return hold(tenant.QuarantineDeidFailed, ruleDetail(details, failure.Rule))
+		return hold(engineHold(failure))
 	}
 	if err != nil {
 		return wr, nil, fault.Wrap(fault.Unavailable, err, "a file could not be de-identified now")
@@ -218,22 +211,11 @@ func (p *Pipeline) deidentify(ctx context.Context, r tenant.Reception, rcv tenan
 		return wr, nil, fault.New(fault.Internal, "a de-identified file changed after it was written")
 	}
 	_, err = p.cfg.Check(rcv.MaxFileBytes+checkHeadroom).Check(ctx, out, size, rec.Needles, h.CharacterSet())
-	var residual *check.Residual
-	var refusal *check.Refusal
-	switch {
-	case errors.As(err, &residual):
-		details := map[string]string{"kind": string(residual.First.Kind)}
-		if tenant.ValidElementPath(residual.First.Path) {
-			details["path"] = residual.First.Path
-		}
+	if reason, details, held := checkHold(err); held {
 		wr.made = false
 		_ = p.area.RemoveDerived(wr.f.Incoming)
-		return hold(tenant.QuarantineResidualValue, details)
-	case errors.As(err, &refusal):
-		wr.made = false
-		_ = p.area.RemoveDerived(wr.f.Incoming)
-		return hold(tenant.QuarantineDeidFailed, map[string]string{"cause": refusal.Detail()})
-	case err != nil:
+		return hold(reason, details)
+	} else if err != nil {
 		return wr, nil, fault.Wrap(fault.Unavailable, err, "a de-identified file could not be checked now")
 	}
 	// The bytes the check read, through this handle, are the bytes written
@@ -245,6 +227,42 @@ func (p *Pipeline) deidentify(ctx context.Context, r tenant.Reception, rcv tenan
 		return wr, nil, fault.New(fault.Internal, "a de-identified file changed while it was checked; it is not archived")
 	}
 	return wr, nil, nil
+}
+
+// engineHold returns the reason and the details a file the engine refused
+// is held with: profile_refused, with the rule, for a rule whose action is
+// quarantine; deid_failed, with the engine's fixed cause, the element and
+// the rule, for any other.
+func engineHold(failure *engine.Failure) (tenant.QuarantineReason, map[string]string) {
+	if failure.Cause == engine.CauseRuleQuarantine {
+		return tenant.QuarantineProfileRefused, ruleDetail(nil, failure.Rule)
+	}
+	details := map[string]string{"cause": string(failure.Cause)}
+	if failure.Path != "" {
+		details["path"] = failure.Path
+	}
+	return tenant.QuarantineDeidFailed, ruleDetail(details, failure.Rule)
+}
+
+// checkHold returns the reason and the details a file is held with for
+// the check after's err, and true; or false when err says nothing of the
+// file (nil, or a failure to check it now). A value found is
+// residual_value, with its kind and element, never the value; a file the
+// check cannot judge is deid_failed, with the check's cause.
+func checkHold(err error) (tenant.QuarantineReason, map[string]string, bool) {
+	var residual *check.Residual
+	var refusal *check.Refusal
+	switch {
+	case errors.As(err, &residual):
+		details := map[string]string{"kind": string(residual.First.Kind)}
+		if tenant.ValidElementPath(residual.First.Path) {
+			details["path"] = residual.First.Path
+		}
+		return tenant.QuarantineResidualValue, details, true
+	case errors.As(err, &refusal):
+		return tenant.QuarantineDeidFailed, map[string]string{"cause": refusal.Detail()}, true
+	}
+	return "", nil, false
 }
 
 // ruleDetail adds a rule's name to details, when it has the form a

@@ -284,6 +284,29 @@ All notable changes to CORIA are written here. The form is
   share one bound of 256 open reads, of which the senders hold at most half;
   TestSender tries the peer; the senders take up a new, canceled or retried
   job at once.
+- `ProfileService` is served: a tenant's de-identification profiles are made
+  (admin), read, listed, exported and validated (operator) through the API,
+  and `coria profile create|get|list|versions|export|validate|describe` with
+  `--json`. A document with a problem is refused with every problem in a
+  `ProfileProblems` error detail.
+- Trial runs: `TryProfile` and `coria profile try` run a profile version, or
+  an unsaved document, over sample files or held files as a receiver would,
+  in memory, and answer each element's value before and after with the rule
+  or base that decided it, and whether the file would be archived, held (and
+  why) or undecided (it depends on a lookup table). With a receiver named,
+  and for held files, the receiver's own checks run too (placing UIDs, SOP
+  classes, naming rule and labels); otherwise the answer says the verdict is
+  de-identification's alone. Nothing is stored and no secret of the tenant is
+  used: each run has keys of its own, so its remapped UIDs, hashes, shifted
+  dates and codes never equal the archive's, and it reads no lookup table. At
+  most two trials run at once, and held files are bounded per request. The
+  audit entry keeps the counts per rule and reason, never a value.
+  `ExplainProfile` and `coria profile explain` show which rule decides each
+  element of a file and why the others do not; `DiffProfileVersions` and
+  `coria profile diff` show what changes between two versions: rules added,
+  removed, changed or moved, the effect per selector, bases reordered, and a
+  change no list shows.
+- `coria receiver add|set --profile NAME@VERSION | --as-received`.
 - `make prove-sending`: the proof of sending, from outside the binary.
   Studies archived from dcmtk's storescu are sent to an Orthanc by DIMSE and
   STOW-RS and checked against the archive with Orthanc's REST API and

@@ -173,6 +173,9 @@ func (t *tenantRun) runDeferred(d Decisions) {
 type Held interface {
 	// ReadHeld reads the header of the file at path (receive.Pipeline.ReadHeld).
 	ReadHeld(ctx context.Context, path string) (*header.Header, error)
+	// ReadHeldFile reads the bytes of the file at path, at most limit
+	// (receive.Pipeline.ReadHeldFile).
+	ReadHeldFile(ctx context.Context, path string, limit int64) ([]byte, error)
 }
 
 // The reception pipeline reads held files.
@@ -197,4 +200,24 @@ func (s *Supervisor) HeldHeader(ctx context.Context, name, path string) (h *head
 	}
 	h, err = held.ReadHeld(ctx, path)
 	return h, true, err
+}
+
+// HeldFile reads the bytes of the held file at path in the incoming area of
+// the tenant named name, at most limit, through its running pipeline. ok is
+// false when none runs; the errors are ReadHeldFile's.
+func (s *Supervisor) HeldFile(ctx context.Context, name, path string, limit int64) (b []byte, ok bool, err error) {
+	t := s.tenant(name)
+	if t == nil {
+		return nil, false, nil
+	}
+	v := t.view.Load()
+	if v == nil || v.pipeline == nil {
+		return nil, false, nil
+	}
+	held, ok := v.pipeline.(Held)
+	if !ok {
+		return nil, false, nil
+	}
+	b, err = held.ReadHeldFile(ctx, path, limit)
+	return b, true, err
 }

@@ -116,6 +116,9 @@ type Options struct {
 	Method string
 }
 
+// errNoDataset is Apply or Explain given no data set.
+var errNoDataset = errors.New("engine: no data set")
+
 // Engine applies one expanded profile version under one tenant's keys. It
 // does no I/O but through Lookups, reads no clock and no random source,
 // and is never changed after New, so one Engine serves every file at once
@@ -266,11 +269,17 @@ var defaultTypes = &IODTypes{}
 // lookup table that does not answer, a canceled ctx) says nothing of the
 // file and leaves it as it was too.
 func (en *Engine) Apply(ctx context.Context, ds *dataset.Dataset, rec Reception) (out *Record, err error) {
+	return en.apply(ctx, ds, rec, nil)
+}
+
+// apply is Apply, recording into locs, when not nil, the location of each
+// element a rule was asked about.
+func (en *Engine) apply(ctx context.Context, ds *dataset.Dataset, rec Reception, locs map[int]profile.Location) (out *Record, err error) {
 	if ds == nil {
-		return nil, errors.New("engine: no data set")
+		return nil, errNoDataset
 	}
 	r := &run{en: en, ctx: ctx, top: ds, record: &Record{PixelsUntouched: true}, source: sourceFrom(rec.CharacterSet),
-		rawSources: map[*dataset.Dataset]textSource{}}
+		rawSources: map[*dataset.Dataset]textSource{}, locs: locs}
 	defer func() {
 		if p := recover(); p != nil {
 			r.rollback()

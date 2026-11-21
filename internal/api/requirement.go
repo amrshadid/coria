@@ -389,24 +389,13 @@ var rules = map[string]rule{
 	coriav1connect.JobServiceListJobFailuresProcedure: byMessage(func(r *v1.ListJobFailuresRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleReader), access.Request{Object: jobObject(r.GetId())}
 	}),
-}
 
-// pendingRules is the table of the methods whose service the contract
-// defines and no handler serves yet: the services api/not-served.txt
-// names. Methods does not consult it, so the server answers each of these
-// methods as one it does not serve, after the caller is authenticated, and
-// a listed service can never be served by mistake with no handler behind
-// it. Each line is written with its method's contract and checked against
-// its Role line now; the change that serves a service moves its lines
-// into rules and its name off the list, and the tests fail until both are
-// done.
-//
-// ProfileService: operator on the tenant to read profiles and to check a
-// document, admin to make a version; the list of bases is the server's and
-// needs only an authenticated caller. The object is the profile's name,
-// recorded only when it passes the name rule, since what a caller sends in
-// its place can be anything.
-var pendingRules = map[string]rule{
+	// ProfileService: operator on the tenant to read profiles, to check a
+	// document and to try, explain and compare versions (trying reads held
+	// files, as reading a held header does); admin to make a version. The
+	// list of bases is the server's and needs only an authenticated caller.
+	// The object is the profile's name, recorded only when it passes the
+	// name rule, since what a caller sends in its place can be anything.
 	coriav1connect.ProfileServiceCreateProfileVersionProcedure: byMessage(func(r *v1.CreateProfileVersionRequest) (access.Requirement, access.Request) {
 		return onTenantNamed(r.GetTenant(), master.RoleAdmin), access.Request{Object: profileObject(r.GetName())}
 	}),
@@ -424,11 +413,68 @@ var pendingRules = map[string]rule{
 	}),
 	// "Role: none; any caller the server authenticates."
 	coriav1connect.ProfileServiceListProfileBasesProcedure: fixed(access.Authenticated()),
+	coriav1connect.ProfileServiceTryProfileProcedure: byMessage(func(r *v1.TryProfileRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: trialObject(r.GetProfile())}
+	}),
+	coriav1connect.ProfileServiceExplainProfileProcedure: byMessage(func(r *v1.ExplainProfileRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: trialObject(r.GetProfile())}
+	}),
+	coriav1connect.ProfileServiceDiffProfileVersionsProcedure: byMessage(func(r *v1.DiffProfileVersionsRequest) (access.Requirement, access.Request) {
+		return onTenantNamed(r.GetTenant(), master.RoleOperator), access.Request{Object: profileObject(r.GetName()), Details: map[string]string{
+			detailFromVersion: strconv.Itoa(int(r.GetFromVersion())), detailToVersion: strconv.Itoa(int(r.GetToVersion())), detailToName: profileOrEmpty(r.GetToName())}}
+	}),
 }
 
-// detailVersion is the key of the version a request names, in the details
-// of a profile method's entry.
-const detailVersion = "version"
+// pendingRules is the table of the methods whose service the contract
+// defines and no handler serves yet: the services api/not-served.txt
+// names. Methods does not consult it, so the server answers each of these
+// methods as one it does not serve, after the caller is authenticated, and
+// a listed service can never be served by mistake with no handler behind
+// it. Each line is written with its method's contract and checked against
+// its Role line now; the change that serves a service moves its lines
+// into rules and its name off the list, and the tests fail until both are
+// done.
+var pendingRules = map[string]rule{}
+
+// The keys of the details of the profile methods' entries.
+const (
+	// detailVersion is the version a request names.
+	detailVersion = "version"
+	// detailFromVersion and detailToVersion are the versions a comparison
+	// names; detailToName the other profile it names, when it names one.
+	detailFromVersion = "from_version"
+	detailToVersion   = "to_version"
+	detailToName      = "to_name"
+)
+
+// profileOrEmpty is profileObject that leaves an empty name empty.
+func profileOrEmpty(name string) string {
+	if name == "" {
+		return ""
+	}
+	return profileObject(name)
+}
+
+// trialObject returns the profile a trial run, an explanation or a check
+// names, as an audit entry's object: "name@version" ("name@latest" for
+// version 0) when the name passes the name rule, "document" for an unsaved
+// document (whose checksum the handler adds), "invalid" otherwise.
+func trialObject(p *v1.TrialProfile) string {
+	switch k := p.GetKind().(type) {
+	case *v1.TrialProfile_Version:
+		name, version := k.Version.GetName(), k.Version.GetVersion()
+		if !profile.ValidName(name) || version < 0 {
+			return invalidValue
+		}
+		if version == 0 {
+			return name + "@latest"
+		}
+		return name + "@" + strconv.Itoa(int(version))
+	case *v1.TrialProfile_Document:
+		return "document"
+	}
+	return invalidValue
+}
 
 // profileObject returns a profile's name as an audit entry's object: as
 // given when it passes the name rule, and "invalid" otherwise.

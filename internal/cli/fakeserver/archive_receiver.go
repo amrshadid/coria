@@ -157,6 +157,8 @@ func (h receiverHandler) SetReceiver(_ context.Context, req *v1.SetReceiverReque
 			next.MaxOpenTime = in.GetMaxOpenTime()
 		case "max_file_bytes":
 			next.MaxFileBytes = in.GetMaxFileBytes()
+		case "deidentification":
+			next.Deidentification = in.GetDeidentification()
 		case "dimse.port":
 			next.GetDimse().Port = in.GetDimse().GetPort()
 		case "dimse.bind_address":

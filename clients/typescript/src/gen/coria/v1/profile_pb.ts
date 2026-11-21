@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/profile.proto.
  */
 export const file_coria_v1_profile: GenFile = /*@__PURE__*/
-  fileDesc("ChZjb3JpYS92MS9wcm9maWxlLnByb3RvEghjb3JpYS52MSLKAQoPUHJvZmlsZURvY3VtZW50Eg0KBWJhc2VzGAEgAygJEiQKBXJ1bGVzGAIgAygLMhUuY29yaWEudjEuUHJvZmlsZVJ1bGUSKgoHdW5uYW1lZBgDIAEoDjIZLmNvcmlhLnYxLlVubmFtZWRFbGVtZW50cxIXCg9kYXRlX3NoaWZ0X2RheXMYBCABKAUSKAoLcGl4ZWxfcnVsZXMYBSADKAsyEy5jb3JpYS52MS5QaXhlbFJ1bGUSEwoLZGVzY3JpcHRpb24YBiABKAkiqwEKC1Byb2ZpbGVSdWxlEgwKBG5hbWUYASABKAkSKwoIc2VsZWN0b3IYAiABKAsyGS5jb3JpYS52MS5Qcm9maWxlU2VsZWN0b3ISKAoEd2hlbhgDIAMoCzIaLmNvcmlhLnYxLlByb2ZpbGVDb25kaXRpb24SJwoGYWN0aW9uGAQgASgLMhcuY29yaWEudjEuUHJvZmlsZUFjdGlvbhIOCgZyZWFzb24YBSABKAki7wEKD1Byb2ZpbGVTZWxlY3RvchINCgN0YWcYASABKAlIABIRCgdrZXl3b3JkGAIgASgJSAASDwoFZ3JvdXAYAyABKAlIABIMCgJ2chgEIAEoCUgAEjMKD3ByaXZhdGVfZWxlbWVudBgFIAEoCzIYLmNvcmlhLnYxLlByaXZhdGVFbGVtZW50SAASDgoEcGF0aBgGIAEoCUgAEjUKDGNvbnRlbnRfaXRlbRgHIAEoCzIdLmNvcmlhLnYxLkNvbnRlbnRJdGVtU2VsZWN0b3JIABIXCg9pbmNsdWRlX3ByaXZhdGUYCCABKAhCBgoEa2luZCJBCg5Qcml2YXRlRWxlbWVudBIPCgdjcmVhdG9yGAEgASgJEg0KBWdyb3VwGAIgASgJEg8KB2VsZW1lbnQYAyABKAkiSAoTQ29udGVudEl0ZW1TZWxlY3RvchIOCgZzY2hlbWUYASABKAkSDQoFdmFsdWUYAiABKAkSEgoKdmFsdWVfdHlwZRgDIAEoCSKhAQoQUHJvZmlsZUNvbmRpdGlvbhIrCgdzdWJqZWN0GAEgASgOMhouY29yaWEudjEuQ29uZGl0aW9uU3ViamVjdBIQCgZlcXVhbHMYAiABKAlIABIQCgZwcmVmaXgYAyABKAlIABIRCgdwYXR0ZXJuGAQgASgJSAASEQoHcHJlc2VudBgFIAEoCEgAEg4KBm5lZ2F0ZRgGIAEoCEIGCgR0ZXN0IvcECg1Qcm9maWxlQWN0aW9uEiQKBGtlZXAYASABKAsyFC5jb3JpYS52MS5LZWVwQWN0aW9uSAASKAoGcmVtb3ZlGAIgASgLMhYuY29yaWEudjEuUmVtb3ZlQWN0aW9uSAASJgoFZW1wdHkYAyABKAsyFS5jb3JpYS52MS5FbXB0eUFjdGlvbkgAEioKB3JlcGxhY2UYBCABKAsyFy5jb3JpYS52MS5SZXBsYWNlQWN0aW9uSAASIgoDc2V0GAUgASgLMhMuY29yaWEudjEuU2V0QWN0aW9uSAASJAoEaGFzaBgGIAEoCzIULmNvcmlhLnYxLkhhc2hBY3Rpb25IABIiCgN1aWQYByABKAsyEy5jb3JpYS52MS5VaWRBY3Rpb25IABImCgVzaGlmdBgIIAEoCzIVLmNvcmlhLnYxLlNoaWZ0QWN0aW9uSAASMAoKZ2VuZXJhbGl6ZRgJIAEoCzIaLmNvcmlhLnYxLkdlbmVyYWxpemVBY3Rpb25IABIoCgZsb29rdXAYCiABKAsyFi5jb3JpYS52MS5Mb29rdXBBY3Rpb25IABImCgVjbGVhbhgLIAEoCzIVLmNvcmlhLnYxLkNsZWFuQWN0aW9uSAASMAoKcXVhcmFudGluZRgMIAEoCzIaLmNvcmlhLnYxLlF1YXJhbnRpbmVBY3Rpb25IABImCgVkdW1teRgNIAEoCzIVLmNvcmlhLnYxLkR1bW15QWN0aW9uSAASRgoWcmVtb3ZlX3VubGVzc19yZXF1aXJlZBgOIAEoCzIkLmNvcmlhLnYxLlJlbW92ZVVubGVzc1JlcXVpcmVkQWN0aW9uSABCBgoEa2luZCIMCgpLZWVwQWN0aW9uIg4KDFJlbW92ZUFjdGlvbiINCgtFbXB0eUFjdGlvbiJACg1SZXBsYWNlQWN0aW9uEhIKCGNvbnN0YW50GAEgASgJSAASEgoIdGVtcGxhdGUYAiABKAlIAEIHCgV2YWx1ZSI8CglTZXRBY3Rpb24SEgoIY29uc3RhbnQYASABKAlIABISCgh0ZW1wbGF0ZRgCIAEoCUgAQgcKBXZhbHVlIgwKCkhhc2hBY3Rpb24iCwoJVWlkQWN0aW9uIg0KC1NoaWZ0QWN0aW9uIhIKEEdlbmVyYWxpemVBY3Rpb24iSgoMTG9va3VwQWN0aW9uEg0KBXRhYmxlGAEgASgJEisKCm9uX21pc3NpbmcYAiABKA4yFy5jb3JpYS52MS5Mb29rdXBNaXNzaW5nIg0KC0NsZWFuQWN0aW9uIhIKEFF1YXJhbnRpbmVBY3Rpb24iDQoLRHVtbXlBY3Rpb24iSgoaUmVtb3ZlVW5sZXNzUmVxdWlyZWRBY3Rpb24SLAoIZmFsbGJhY2sYASABKA4yGi5jb3JpYS52MS5SZXF1aXJlZEZhbGxiYWNrIvgBCglQaXhlbFJ1bGUSDAoEbmFtZRgBIAEoCRIoCgR3aGVuGAIgAygLMhouY29yaWEudjEuUHJvZmlsZUNvbmRpdGlvbhIMCgRyb3dzGAMgASgFEg8KB2NvbHVtbnMYBCABKAUSKAoGcmVkYWN0GAUgASgLMhYuY29yaWEudjEuUmVkYWN0UGl4ZWxzSAASJgoGZGV0ZWN0GAYgASgLMhQuY29yaWEudjEuRGV0ZWN0VGV4dEgAEigKBmFjY2VwdBgHIAEoCzIWLmNvcmlhLnYxLkFjY2VwdFBpeGVsc0gAEg4KBnJlYXNvbhgIIAEoCUIICgZhY3Rpb24iPAoMUmVkYWN0UGl4ZWxzEiwKCnJlY3RhbmdsZXMYASADKAsyGC5jb3JpYS52MS5QaXhlbFJlY3RhbmdsZSJuCg5QaXhlbFJlY3RhbmdsZRIJCgF4GAEgASgFEgkKAXkYAiABKAUSDQoFd2lkdGgYAyABKAUSDgoGaGVpZ2h0GAQgASgFEhIKCmZyb21fcmlnaHQYBSABKAgSEwoLZnJvbV9ib3R0b20YBiABKAgiDAoKRGV0ZWN0VGV4dCIOCgxBY2NlcHRQaXhlbHMi2AEKD0V4cGFuZGVkUHJvZmlsZRIlCgVydWxlcxgBIAMoCzIWLmNvcmlhLnYxLkV4cGFuZGVkUnVsZRIqCgd1bm5hbWVkGAIgASgOMhkuY29yaWEudjEuVW5uYW1lZEVsZW1lbnRzEhcKD2RhdGVfc2hpZnRfZGF5cxgDIAEoBRIwCgtwaXhlbF9ydWxlcxgEIAMoCzIbLmNvcmlhLnYxLkV4cGFuZGVkUGl4ZWxSdWxlEg0KBWJhc2VzGAUgAygJEhgKEGxhbmd1YWdlX2VkaXRpb24YBiABKAUiUAoMRXhwYW5kZWRSdWxlEiMKBHJ1bGUYASABKAsyFS5jb3JpYS52MS5Qcm9maWxlUnVsZRIOCgZvcmlnaW4YAiABKAkSCwoDdnJzGAMgAygJIkYKEUV4cGFuZGVkUGl4ZWxSdWxlEiEKBHJ1bGUYASABKAsyEy5jb3JpYS52MS5QaXhlbFJ1bGUSDgoGb3JpZ2luGAIgASgJIvUBCg5Qcm9maWxlVmVyc2lvbhIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEAoIY2hlY2tzdW0YAyABKAkSLwoLY3JlYXRlX3RpbWUYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhkKEWNyZWF0ZWRfYnlfa2V5X2lkGAUgASgJEgwKBG5vdGUYBiABKAkSKwoIZG9jdW1lbnQYByABKAsyGS5jb3JpYS52MS5Qcm9maWxlRG9jdW1lbnQSKwoIZXhwYW5kZWQYCCABKAsyGS5jb3JpYS52MS5FeHBhbmRlZFByb2ZpbGUibgoOUHJvZmlsZVN1bW1hcnkSDAoEbmFtZRgBIAEoCRIWCg5sYXRlc3RfdmVyc2lvbhgCIAEoBRI2ChJsYXRlc3RfY3JlYXRlX3RpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInMKDlByb2ZpbGVQcm9ibGVtEgwKBHJ1bGUYASABKAUSEgoKcGl4ZWxfcnVsZRgCIAEoBRIRCglydWxlX25hbWUYAyABKAkSDQoFZmllbGQYBCABKAkSDAoEY29kZRgFIAEoCRIPCgdtZXNzYWdlGAYgASgJIj0KD1Byb2ZpbGVQcm9ibGVtcxIqCghwcm9ibGVtcxgBIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtIowBCgtQcm9maWxlQmFzZRIMCgRuYW1lGAEgASgJEhEKCWF2YWlsYWJsZRgCIAEoCBIaChJ1bmF2YWlsYWJsZV9yZWFzb24YAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSKwoIZG9jdW1lbnQYBSABKAsyGS5jb3JpYS52MS5Qcm9maWxlRG9jdW1lbnQi3QEKG0NyZWF0ZVByb2ZpbGVWZXJzaW9uUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCRIrCghkb2N1bWVudBgDIAEoCzIZLmNvcmlhLnYxLlByb2ZpbGVEb2N1bWVudBIMCgRub3RlGAQgASgJEiQKF2V4cGVjdGVkX2xhdGVzdF92ZXJzaW9uGAUgASgFSACIAQESIwoEdmlldxgGIAEoDjIVLmNvcmlhLnYxLlByb2ZpbGVWaWV3QhoKGF9leHBlY3RlZF9sYXRlc3RfdmVyc2lvbiKcAQocQ3JlYXRlUHJvZmlsZVZlcnNpb25SZXNwb25zZRIpCgd2ZXJzaW9uGAEgASgLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24SDwoHY3JlYXRlZBgCIAEoCBIqCgh3YXJuaW5ncxgDIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtEhQKDG5vdGVfZGlmZmVycxgEIAEoCCJuChhHZXRQcm9maWxlVmVyc2lvblJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkSDwoHdmVyc2lvbhgDIAEoBRIjCgR2aWV3GAQgASgOMhUuY29yaWEudjEuUHJvZmlsZVZpZXciRgoZR2V0UHJvZmlsZVZlcnNpb25SZXNwb25zZRIpCgd2ZXJzaW9uGAEgASgLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24iTAoTTGlzdFByb2ZpbGVzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkiWwoUTGlzdFByb2ZpbGVzUmVzcG9uc2USKgoIcHJvZmlsZXMYASADKAsyGC5jb3JpYS52MS5Qcm9maWxlU3VtbWFyeRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiYQoaTGlzdFByb2ZpbGVWZXJzaW9uc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkSEQoJcGFnZV9zaXplGAMgASgFEhIKCnBhZ2VfdG9rZW4YBCABKAkiYgobTGlzdFByb2ZpbGVWZXJzaW9uc1Jlc3BvbnNlEioKCHZlcnNpb25zGAEgAygLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJInoKFlZhbGlkYXRlUHJvZmlsZVJlcXVlc3QSDgoGdGVuYW50GAEgASgJEisKCGRvY3VtZW50GAIgASgLMhkuY29yaWEudjEuUHJvZmlsZURvY3VtZW50EiMKBHZpZXcYAyABKA4yFS5jb3JpYS52MS5Qcm9maWxlVmlldyKwAQoXVmFsaWRhdGVQcm9maWxlUmVzcG9uc2USKgoIcHJvYmxlbXMYASADKAsyGC5jb3JpYS52MS5Qcm9maWxlUHJvYmxlbRIrCghleHBhbmRlZBgCIAEoCzIZLmNvcmlhLnYxLkV4cGFuZGVkUHJvZmlsZRIQCghjaGVja3N1bRgDIAEoCRIqCgh3YXJuaW5ncxgEIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtIhkKF0xpc3RQcm9maWxlQmFzZXNSZXF1ZXN0IkAKGExpc3RQcm9maWxlQmFzZXNSZXNwb25zZRIkCgViYXNlcxgBIAMoCzIVLmNvcmlhLnYxLlByb2ZpbGVCYXNlKmsKD1VubmFtZWRFbGVtZW50cxIgChxVTk5BTUVEX0VMRU1FTlRTX1VOU1BFQ0lGSUVEEAASGQoVVU5OQU1FRF9FTEVNRU5UU19LRUVQEAESGwoXVU5OQU1FRF9FTEVNRU5UU19SRU1PVkUQAirYAgoQQ29uZGl0aW9uU3ViamVjdBIhCh1DT05ESVRJT05fU1VCSkVDVF9VTlNQRUNJRklFRBAAEh4KGkNPTkRJVElPTl9TVUJKRUNUX01PREFMSVRZEAESIwofQ09ORElUSU9OX1NVQkpFQ1RfU09QX0NMQVNTX1VJRBACEiIKHkNPTkRJVElPTl9TVUJKRUNUX01BTlVGQUNUVVJFUhADEiAKHENPTkRJVElPTl9TVUJKRUNUX01PREVMX05BTUUQBBInCiNDT05ESVRJT05fU1VCSkVDVF9TT0ZUV0FSRV9WRVJTSU9OUxAFEh4KGkNPTkRJVElPTl9TVUJKRUNUX1JFQ0VJVkVSEAYSJgoiQ09ORElUSU9OX1NVQkpFQ1RfQ0FMTElOR19BRV9USVRMRRAHEiUKIUNPTkRJVElPTl9TVUJKRUNUX0NBTExFRF9BRV9USVRMRRAIKmkKDUxvb2t1cE1pc3NpbmcSHgoaTE9PS1VQX01JU1NJTkdfVU5TUEVDSUZJRUQQABIdChlMT09LVVBfTUlTU0lOR19RVUFSQU5USU5FEAESGQoVTE9PS1VQX01JU1NJTkdfQVNTSUdOEAIqigEKEFJlcXVpcmVkRmFsbGJhY2sSIQodUkVRVUlSRURfRkFMTEJBQ0tfVU5TUEVDSUZJRUQQABIbChdSRVFVSVJFRF9GQUxMQkFDS19FTVBUWRABEhsKF1JFUVVJUkVEX0ZBTExCQUNLX0RVTU1ZEAISGQoVUkVRVUlSRURfRkFMTEJBQ0tfVUlEEAMqXQoLUHJvZmlsZVZpZXcSHAoYUFJPRklMRV9WSUVXX1VOU1BFQ0lGSUVEEAASGQoVUFJPRklMRV9WSUVXX0RPQ1VNRU5UEAESFQoRUFJPRklMRV9WSUVXX0ZVTEwQAjLZBAoOUHJvZmlsZVNlcnZpY2USagoUQ3JlYXRlUHJvZmlsZVZlcnNpb24SJS5jb3JpYS52MS5DcmVhdGVQcm9maWxlVmVyc2lvblJlcXVlc3QaJi5jb3JpYS52MS5DcmVhdGVQcm9maWxlVmVyc2lvblJlc3BvbnNlIgOQAgISYQoRR2V0UHJvZmlsZVZlcnNpb24SIi5jb3JpYS52MS5HZXRQcm9maWxlVmVyc2lvblJlcXVlc3QaIy5jb3JpYS52MS5HZXRQcm9maWxlVmVyc2lvblJlc3BvbnNlIgOQAgESUgoMTGlzdFByb2ZpbGVzEh0uY29yaWEudjEuTGlzdFByb2ZpbGVzUmVxdWVzdBoeLmNvcmlhLnYxLkxpc3RQcm9maWxlc1Jlc3BvbnNlIgOQAgESZwoTTGlzdFByb2ZpbGVWZXJzaW9ucxIkLmNvcmlhLnYxLkxpc3RQcm9maWxlVmVyc2lvbnNSZXF1ZXN0GiUuY29yaWEudjEuTGlzdFByb2ZpbGVWZXJzaW9uc1Jlc3BvbnNlIgOQAgESWwoPVmFsaWRhdGVQcm9maWxlEiAuY29yaWEudjEuVmFsaWRhdGVQcm9maWxlUmVxdWVzdBohLmNvcmlhLnYxLlZhbGlkYXRlUHJvZmlsZVJlc3BvbnNlIgOQAgESXgoQTGlzdFByb2ZpbGVCYXNlcxIhLmNvcmlhLnYxLkxpc3RQcm9maWxlQmFzZXNSZXF1ZXN0GiIuY29yaWEudjEuTGlzdFByb2ZpbGVCYXNlc1Jlc3BvbnNlIgOQAgFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChZjb3JpYS92MS9wcm9maWxlLnByb3RvEghjb3JpYS52MSLKAQoPUHJvZmlsZURvY3VtZW50Eg0KBWJhc2VzGAEgAygJEiQKBXJ1bGVzGAIgAygLMhUuY29yaWEudjEuUHJvZmlsZVJ1bGUSKgoHdW5uYW1lZBgDIAEoDjIZLmNvcmlhLnYxLlVubmFtZWRFbGVtZW50cxIXCg9kYXRlX3NoaWZ0X2RheXMYBCABKAUSKAoLcGl4ZWxfcnVsZXMYBSADKAsyEy5jb3JpYS52MS5QaXhlbFJ1bGUSEwoLZGVzY3JpcHRpb24YBiABKAkiqwEKC1Byb2ZpbGVSdWxlEgwKBG5hbWUYASABKAkSKwoIc2VsZWN0b3IYAiABKAsyGS5jb3JpYS52MS5Qcm9maWxlU2VsZWN0b3ISKAoEd2hlbhgDIAMoCzIaLmNvcmlhLnYxLlByb2ZpbGVDb25kaXRpb24SJwoGYWN0aW9uGAQgASgLMhcuY29yaWEudjEuUHJvZmlsZUFjdGlvbhIOCgZyZWFzb24YBSABKAki7wEKD1Byb2ZpbGVTZWxlY3RvchINCgN0YWcYASABKAlIABIRCgdrZXl3b3JkGAIgASgJSAASDwoFZ3JvdXAYAyABKAlIABIMCgJ2chgEIAEoCUgAEjMKD3ByaXZhdGVfZWxlbWVudBgFIAEoCzIYLmNvcmlhLnYxLlByaXZhdGVFbGVtZW50SAASDgoEcGF0aBgGIAEoCUgAEjUKDGNvbnRlbnRfaXRlbRgHIAEoCzIdLmNvcmlhLnYxLkNvbnRlbnRJdGVtU2VsZWN0b3JIABIXCg9pbmNsdWRlX3ByaXZhdGUYCCABKAhCBgoEa2luZCJBCg5Qcml2YXRlRWxlbWVudBIPCgdjcmVhdG9yGAEgASgJEg0KBWdyb3VwGAIgASgJEg8KB2VsZW1lbnQYAyABKAkiSAoTQ29udGVudEl0ZW1TZWxlY3RvchIOCgZzY2hlbWUYASABKAkSDQoFdmFsdWUYAiABKAkSEgoKdmFsdWVfdHlwZRgDIAEoCSKhAQoQUHJvZmlsZUNvbmRpdGlvbhIrCgdzdWJqZWN0GAEgASgOMhouY29yaWEudjEuQ29uZGl0aW9uU3ViamVjdBIQCgZlcXVhbHMYAiABKAlIABIQCgZwcmVmaXgYAyABKAlIABIRCgdwYXR0ZXJuGAQgASgJSAASEQoHcHJlc2VudBgFIAEoCEgAEg4KBm5lZ2F0ZRgGIAEoCEIGCgR0ZXN0IvcECg1Qcm9maWxlQWN0aW9uEiQKBGtlZXAYASABKAsyFC5jb3JpYS52MS5LZWVwQWN0aW9uSAASKAoGcmVtb3ZlGAIgASgLMhYuY29yaWEudjEuUmVtb3ZlQWN0aW9uSAASJgoFZW1wdHkYAyABKAsyFS5jb3JpYS52MS5FbXB0eUFjdGlvbkgAEioKB3JlcGxhY2UYBCABKAsyFy5jb3JpYS52MS5SZXBsYWNlQWN0aW9uSAASIgoDc2V0GAUgASgLMhMuY29yaWEudjEuU2V0QWN0aW9uSAASJAoEaGFzaBgGIAEoCzIULmNvcmlhLnYxLkhhc2hBY3Rpb25IABIiCgN1aWQYByABKAsyEy5jb3JpYS52MS5VaWRBY3Rpb25IABImCgVzaGlmdBgIIAEoCzIVLmNvcmlhLnYxLlNoaWZ0QWN0aW9uSAASMAoKZ2VuZXJhbGl6ZRgJIAEoCzIaLmNvcmlhLnYxLkdlbmVyYWxpemVBY3Rpb25IABIoCgZsb29rdXAYCiABKAsyFi5jb3JpYS52MS5Mb29rdXBBY3Rpb25IABImCgVjbGVhbhgLIAEoCzIVLmNvcmlhLnYxLkNsZWFuQWN0aW9uSAASMAoKcXVhcmFudGluZRgMIAEoCzIaLmNvcmlhLnYxLlF1YXJhbnRpbmVBY3Rpb25IABImCgVkdW1teRgNIAEoCzIVLmNvcmlhLnYxLkR1bW15QWN0aW9uSAASRgoWcmVtb3ZlX3VubGVzc19yZXF1aXJlZBgOIAEoCzIkLmNvcmlhLnYxLlJlbW92ZVVubGVzc1JlcXVpcmVkQWN0aW9uSABCBgoEa2luZCIMCgpLZWVwQWN0aW9uIg4KDFJlbW92ZUFjdGlvbiINCgtFbXB0eUFjdGlvbiJACg1SZXBsYWNlQWN0aW9uEhIKCGNvbnN0YW50GAEgASgJSAASEgoIdGVtcGxhdGUYAiABKAlIAEIHCgV2YWx1ZSI8CglTZXRBY3Rpb24SEgoIY29uc3RhbnQYASABKAlIABISCgh0ZW1wbGF0ZRgCIAEoCUgAQgcKBXZhbHVlIgwKCkhhc2hBY3Rpb24iCwoJVWlkQWN0aW9uIg0KC1NoaWZ0QWN0aW9uIhIKEEdlbmVyYWxpemVBY3Rpb24iSgoMTG9va3VwQWN0aW9uEg0KBXRhYmxlGAEgASgJEisKCm9uX21pc3NpbmcYAiABKA4yFy5jb3JpYS52MS5Mb29rdXBNaXNzaW5nIg0KC0NsZWFuQWN0aW9uIhIKEFF1YXJhbnRpbmVBY3Rpb24iDQoLRHVtbXlBY3Rpb24iSgoaUmVtb3ZlVW5sZXNzUmVxdWlyZWRBY3Rpb24SLAoIZmFsbGJhY2sYASABKA4yGi5jb3JpYS52MS5SZXF1aXJlZEZhbGxiYWNrIvgBCglQaXhlbFJ1bGUSDAoEbmFtZRgBIAEoCRIoCgR3aGVuGAIgAygLMhouY29yaWEudjEuUHJvZmlsZUNvbmRpdGlvbhIMCgRyb3dzGAMgASgFEg8KB2NvbHVtbnMYBCABKAUSKAoGcmVkYWN0GAUgASgLMhYuY29yaWEudjEuUmVkYWN0UGl4ZWxzSAASJgoGZGV0ZWN0GAYgASgLMhQuY29yaWEudjEuRGV0ZWN0VGV4dEgAEigKBmFjY2VwdBgHIAEoCzIWLmNvcmlhLnYxLkFjY2VwdFBpeGVsc0gAEg4KBnJlYXNvbhgIIAEoCUIICgZhY3Rpb24iPAoMUmVkYWN0UGl4ZWxzEiwKCnJlY3RhbmdsZXMYASADKAsyGC5jb3JpYS52MS5QaXhlbFJlY3RhbmdsZSJuCg5QaXhlbFJlY3RhbmdsZRIJCgF4GAEgASgFEgkKAXkYAiABKAUSDQoFd2lkdGgYAyABKAUSDgoGaGVpZ2h0GAQgASgFEhIKCmZyb21fcmlnaHQYBSABKAgSEwoLZnJvbV9ib3R0b20YBiABKAgiDAoKRGV0ZWN0VGV4dCIOCgxBY2NlcHRQaXhlbHMi2AEKD0V4cGFuZGVkUHJvZmlsZRIlCgVydWxlcxgBIAMoCzIWLmNvcmlhLnYxLkV4cGFuZGVkUnVsZRIqCgd1bm5hbWVkGAIgASgOMhkuY29yaWEudjEuVW5uYW1lZEVsZW1lbnRzEhcKD2RhdGVfc2hpZnRfZGF5cxgDIAEoBRIwCgtwaXhlbF9ydWxlcxgEIAMoCzIbLmNvcmlhLnYxLkV4cGFuZGVkUGl4ZWxSdWxlEg0KBWJhc2VzGAUgAygJEhgKEGxhbmd1YWdlX2VkaXRpb24YBiABKAUiUAoMRXhwYW5kZWRSdWxlEiMKBHJ1bGUYASABKAsyFS5jb3JpYS52MS5Qcm9maWxlUnVsZRIOCgZvcmlnaW4YAiABKAkSCwoDdnJzGAMgAygJIkYKEUV4cGFuZGVkUGl4ZWxSdWxlEiEKBHJ1bGUYASABKAsyEy5jb3JpYS52MS5QaXhlbFJ1bGUSDgoGb3JpZ2luGAIgASgJIvUBCg5Qcm9maWxlVmVyc2lvbhIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEAoIY2hlY2tzdW0YAyABKAkSLwoLY3JlYXRlX3RpbWUYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhkKEWNyZWF0ZWRfYnlfa2V5X2lkGAUgASgJEgwKBG5vdGUYBiABKAkSKwoIZG9jdW1lbnQYByABKAsyGS5jb3JpYS52MS5Qcm9maWxlRG9jdW1lbnQSKwoIZXhwYW5kZWQYCCABKAsyGS5jb3JpYS52MS5FeHBhbmRlZFByb2ZpbGUibgoOUHJvZmlsZVN1bW1hcnkSDAoEbmFtZRgBIAEoCRIWCg5sYXRlc3RfdmVyc2lvbhgCIAEoBRI2ChJsYXRlc3RfY3JlYXRlX3RpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wInMKDlByb2ZpbGVQcm9ibGVtEgwKBHJ1bGUYASABKAUSEgoKcGl4ZWxfcnVsZRgCIAEoBRIRCglydWxlX25hbWUYAyABKAkSDQoFZmllbGQYBCABKAkSDAoEY29kZRgFIAEoCRIPCgdtZXNzYWdlGAYgASgJIj0KD1Byb2ZpbGVQcm9ibGVtcxIqCghwcm9ibGVtcxgBIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtIowBCgtQcm9maWxlQmFzZRIMCgRuYW1lGAEgASgJEhEKCWF2YWlsYWJsZRgCIAEoCBIaChJ1bmF2YWlsYWJsZV9yZWFzb24YAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSKwoIZG9jdW1lbnQYBSABKAsyGS5jb3JpYS52MS5Qcm9maWxlRG9jdW1lbnQi3QEKG0NyZWF0ZVByb2ZpbGVWZXJzaW9uUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCRIrCghkb2N1bWVudBgDIAEoCzIZLmNvcmlhLnYxLlByb2ZpbGVEb2N1bWVudBIMCgRub3RlGAQgASgJEiQKF2V4cGVjdGVkX2xhdGVzdF92ZXJzaW9uGAUgASgFSACIAQESIwoEdmlldxgGIAEoDjIVLmNvcmlhLnYxLlByb2ZpbGVWaWV3QhoKGF9leHBlY3RlZF9sYXRlc3RfdmVyc2lvbiKcAQocQ3JlYXRlUHJvZmlsZVZlcnNpb25SZXNwb25zZRIpCgd2ZXJzaW9uGAEgASgLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24SDwoHY3JlYXRlZBgCIAEoCBIqCgh3YXJuaW5ncxgDIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtEhQKDG5vdGVfZGlmZmVycxgEIAEoCCJuChhHZXRQcm9maWxlVmVyc2lvblJlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkSDwoHdmVyc2lvbhgDIAEoBRIjCgR2aWV3GAQgASgOMhUuY29yaWEudjEuUHJvZmlsZVZpZXciRgoZR2V0UHJvZmlsZVZlcnNpb25SZXNwb25zZRIpCgd2ZXJzaW9uGAEgASgLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24iTAoTTGlzdFByb2ZpbGVzUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSEQoJcGFnZV9zaXplGAIgASgFEhIKCnBhZ2VfdG9rZW4YAyABKAkiWwoUTGlzdFByb2ZpbGVzUmVzcG9uc2USKgoIcHJvZmlsZXMYASADKAsyGC5jb3JpYS52MS5Qcm9maWxlU3VtbWFyeRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkiYQoaTGlzdFByb2ZpbGVWZXJzaW9uc1JlcXVlc3QSDgoGdGVuYW50GAEgASgJEgwKBG5hbWUYAiABKAkSEQoJcGFnZV9zaXplGAMgASgFEhIKCnBhZ2VfdG9rZW4YBCABKAkiYgobTGlzdFByb2ZpbGVWZXJzaW9uc1Jlc3BvbnNlEioKCHZlcnNpb25zGAEgAygLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJInoKFlZhbGlkYXRlUHJvZmlsZVJlcXVlc3QSDgoGdGVuYW50GAEgASgJEisKCGRvY3VtZW50GAIgASgLMhkuY29yaWEudjEuUHJvZmlsZURvY3VtZW50EiMKBHZpZXcYAyABKA4yFS5jb3JpYS52MS5Qcm9maWxlVmlldyKwAQoXVmFsaWRhdGVQcm9maWxlUmVzcG9uc2USKgoIcHJvYmxlbXMYASADKAsyGC5jb3JpYS52MS5Qcm9maWxlUHJvYmxlbRIrCghleHBhbmRlZBgCIAEoCzIZLmNvcmlhLnYxLkV4cGFuZGVkUHJvZmlsZRIQCghjaGVja3N1bRgDIAEoCRIqCgh3YXJuaW5ncxgEIAMoCzIYLmNvcmlhLnYxLlByb2ZpbGVQcm9ibGVtIhkKF0xpc3RQcm9maWxlQmFzZXNSZXF1ZXN0IkAKGExpc3RQcm9maWxlQmFzZXNSZXNwb25zZRIkCgViYXNlcxgBIAMoCzIVLmNvcmlhLnYxLlByb2ZpbGVCYXNlInYKDFRyaWFsUHJvZmlsZRIvCgd2ZXJzaW9uGAEgASgLMhwuY29yaWEudjEuUHJvZmlsZVZlcnNpb25OYW1lSAASLQoIZG9jdW1lbnQYAiABKAsyGS5jb3JpYS52MS5Qcm9maWxlRG9jdW1lbnRIAEIGCgRraW5kIjMKElByb2ZpbGVWZXJzaW9uTmFtZRIMCgRuYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUiNAoJVHJpYWxGaWxlEhEKBG5hbWUYASABKAlCA4ABARIUCgdjb250ZW50GAIgASgMQgOAAQEiVQoOVHJpYWxSZWNlcHRpb24SEAoIcmVjZWl2ZXIYASABKAkSGAoQY2FsbGluZ19hZV90aXRsZRgCIAEoCRIXCg9jYWxsZWRfYWVfdGl0bGUYAyABKAkiuQEKEVRyeVByb2ZpbGVSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRInCgdwcm9maWxlGAIgASgLMhYuY29yaWEudjEuVHJpYWxQcm9maWxlEiIKBWZpbGVzGAMgAygLMhMuY29yaWEudjEuVHJpYWxGaWxlEhoKEnF1YXJhbnRpbmVfcmVjb3JkcxgEIAMoCRIrCglyZWNlcHRpb24YBSABKAsyGC5jb3JpYS52MS5UcmlhbFJlY2VwdGlvbiK9AQoSVHJ5UHJvZmlsZVJlc3BvbnNlEikKB3ZlcnNpb24YASABKAsyGC5jb3JpYS52MS5Qcm9maWxlVmVyc2lvbhIQCghjaGVja3N1bRgCIAEoCRIZChFyZWNlcHRpb25fcmVmdXNhbBgDIAEoCRImCgdyZXN1bHRzGAQgAygLMhUuY29yaWEudjEuVHJpYWxSZXN1bHQSJwoHc3VtbWFyeRgFIAEoCzIWLmNvcmlhLnYxLlRyaWFsU3VtbWFyeSLhAgoLVHJpYWxSZXN1bHQSEQoEbmFtZRgBIAEoCUIDgAEBEhkKEXF1YXJhbnRpbmVfcmVjb3JkGAIgASgJEicKB3ZlcmRpY3QYAyABKA4yFi5jb3JpYS52MS5UcmlhbFZlcmRpY3QSDgoGcmVhc29uGAQgASgJEg0KBWNhdXNlGAUgASgJEgwKBHBhdGgYBiABKAkSDAoEcnVsZRgHIAEoCRIoCghlbGVtZW50cxgIIAMoCzIWLmNvcmlhLnYxLlRyaWFsRWxlbWVudBIYChBlbGVtZW50c19vbWl0dGVkGAkgASgFEhcKD3ZhbHVlc19zZWFyY2hlZBgKIAEoBRIWCg52YWx1ZXNfc2tpcHBlZBgLIAEoBRIaChJsb29rdXBzX3VuYXNzaWduZWQYDCABKAUSEAoIcmVjZWl2ZXIYDSABKAkSHQoVZGVpZGVudGlmaWNhdGlvbl9vbmx5GA4gASgIItsBCgxUcmlhbEVsZW1lbnQSDAoEcGF0aBgBIAEoCRIPCgdrZXl3b3JkGAIgASgJEgoKAnZyGAMgASgJEg4KBmFjdGlvbhgEIAEoCRIMCgRydWxlGAUgASgFEhEKCXJ1bGVfbmFtZRgGIAEoCRIOCgZvcmlnaW4YByABKAkSDgoGcmVhc29uGAggASgJEg8KB2NoYW5nZWQYCSABKAgSEwoGYmVmb3JlGAogASgJQgOAAQESEgoFYWZ0ZXIYCyABKAlCA4ABARIVCg1wcmVzZW50X2FmdGVyGAwgASgIIp4BCgxUcmlhbFN1bW1hcnkSDQoFZmlsZXMYASABKAUSDgoGcGFzc2VkGAIgASgFEgwKBGhlbGQYAyABKAUSJQoHYnlfcnVsZRgEIAMoCzIULmNvcmlhLnYxLlRyaWFsQ291bnQSJwoJYnlfcmVhc29uGAUgAygLMhQuY29yaWEudjEuVHJpYWxDb3VudBIRCgl1bmRlY2lkZWQYBiABKAUiKAoKVHJpYWxDb3VudBILCgNrZXkYASABKAkSDQoFY291bnQYAiABKAUiuwEKFUV4cGxhaW5Qcm9maWxlUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSJwoHcHJvZmlsZRgCIAEoCzIWLmNvcmlhLnYxLlRyaWFsUHJvZmlsZRIhCgRmaWxlGAMgASgLMhMuY29yaWEudjEuVHJpYWxGaWxlEhkKEXF1YXJhbnRpbmVfcmVjb3JkGAQgASgJEisKCXJlY2VwdGlvbhgFIAEoCzIYLmNvcmlhLnYxLlRyaWFsUmVjZXB0aW9uIsQBChZFeHBsYWluUHJvZmlsZVJlc3BvbnNlEikKB3ZlcnNpb24YASABKAsyGC5jb3JpYS52MS5Qcm9maWxlVmVyc2lvbhIQCghjaGVja3N1bRgCIAEoCRIsCghlbGVtZW50cxgDIAMoCzIaLmNvcmlhLnYxLkV4cGxhaW5lZEVsZW1lbnQSGAoQZWxlbWVudHNfb21pdHRlZBgEIAEoBRIPCgdyZWZ1c2FsGAUgASgJEhQKDHJlZnVzYWxfcGF0aBgGIAEoCSLpAQoQRXhwbGFpbmVkRWxlbWVudBIMCgRwYXRoGAEgASgJEg8KB2tleXdvcmQYAiABKAkSCgoCdnIYAyABKAkSDgoGYWN0aW9uGAQgASgJEgwKBHJ1bGUYBSABKAUSEQoJcnVsZV9uYW1lGAYgASgJEg4KBm9yaWdpbhgHIAEoCRIOCgZyZWFzb24YCCABKAkSEwoLc2VsZWN0ZWRfYnkYCSABKAkSLAoGb3RoZXJzGAogAygLMhwuY29yaWEudjEuRXhwbGFpbmVkQ2FuZGlkYXRlEhYKDm90aGVyc19vbWl0dGVkGAsgASgFImsKEkV4cGxhaW5lZENhbmRpZGF0ZRIMCgRydWxlGAEgASgFEhEKCXJ1bGVfbmFtZRgCIAEoCRIOCgZvcmlnaW4YAyABKAkSEwoLc2VsZWN0ZWRfYnkYBCABKAkSDwoHd2h5X25vdBgFIAEoCSJ1ChpEaWZmUHJvZmlsZVZlcnNpb25zUmVxdWVzdBIOCgZ0ZW5hbnQYASABKAkSDAoEbmFtZRgCIAEoCRIUCgxmcm9tX3ZlcnNpb24YAyABKAUSEgoKdG9fdmVyc2lvbhgEIAEoBRIPCgd0b19uYW1lGAUgASgJIqEEChtEaWZmUHJvZmlsZVZlcnNpb25zUmVzcG9uc2USJgoEZnJvbRgBIAEoCzIYLmNvcmlhLnYxLlByb2ZpbGVWZXJzaW9uEiQKAnRvGAIgASgLMhguY29yaWEudjEuUHJvZmlsZVZlcnNpb24SEwoLc2FtZV9lZmZlY3QYAyABKAgSEwoLYmFzZXNfYWRkZWQYBCADKAkSFQoNYmFzZXNfcmVtb3ZlZBgFIAMoCRIvCgx1bm5hbWVkX2Zyb20YBiABKA4yGS5jb3JpYS52MS5Vbm5hbWVkRWxlbWVudHMSLQoKdW5uYW1lZF90bxgHIAEoDjIZLmNvcmlhLnYxLlVubmFtZWRFbGVtZW50cxIcChRkYXRlX3NoaWZ0X2RheXNfZnJvbRgIIAEoBRIaChJkYXRlX3NoaWZ0X2RheXNfdG8YCSABKAUSKgoFcnVsZXMYCiADKAsyGy5jb3JpYS52MS5Qcm9maWxlUnVsZUNoYW5nZRIVCg1ydWxlc19vbWl0dGVkGAsgASgFEi4KB2VmZmVjdHMYDCADKAsyHS5jb3JpYS52MS5Qcm9maWxlRWZmZWN0Q2hhbmdlEhcKD2VmZmVjdHNfb21pdHRlZBgNIAEoBRIbChNwaXhlbF9ydWxlc19jaGFuZ2VkGA4gASgFEhcKD2Jhc2VzX3Jlb3JkZXJlZBgPIAEoCBIXCg91bmxpc3RlZF9jaGFuZ2UYECABKAgiwAEKEVByb2ZpbGVSdWxlQ2hhbmdlEicKBmNoYW5nZRgBIAEoDjIXLmNvcmlhLnYxLlByb2ZpbGVDaGFuZ2USDgoGb3JpZ2luGAIgASgJEhUKDWZyb21fcG9zaXRpb24YAyABKAUSEwoLdG9fcG9zaXRpb24YBCABKAUSIwoEZnJvbRgFIAEoCzIVLmNvcmlhLnYxLlByb2ZpbGVSdWxlEiEKAnRvGAYgASgLMhUuY29yaWEudjEuUHJvZmlsZVJ1bGUi+wEKE1Byb2ZpbGVFZmZlY3RDaGFuZ2USKwoIc2VsZWN0b3IYASABKAsyGS5jb3JpYS52MS5Qcm9maWxlU2VsZWN0b3ISKAoEd2hlbhgCIAMoCzIaLmNvcmlhLnYxLlByb2ZpbGVDb25kaXRpb24SJQoEZnJvbRgDIAEoCzIXLmNvcmlhLnYxLlByb2ZpbGVBY3Rpb24SIwoCdG8YBCABKAsyFy5jb3JpYS52MS5Qcm9maWxlQWN0aW9uEhUKDWZyb21fcG9zaXRpb24YBSABKAUSEwoLdG9fcG9zaXRpb24YBiABKAUSFQoNb3JkZXJfY2hhbmdlZBgHIAEoCCprCg9Vbm5hbWVkRWxlbWVudHMSIAocVU5OQU1FRF9FTEVNRU5UU19VTlNQRUNJRklFRBAAEhkKFVVOTkFNRURfRUxFTUVOVFNfS0VFUBABEhsKF1VOTkFNRURfRUxFTUVOVFNfUkVNT1ZFEAIq2AIKEENvbmRpdGlvblN1YmplY3QSIQodQ09ORElUSU9OX1NVQkpFQ1RfVU5TUEVDSUZJRUQQABIeChpDT05ESVRJT05fU1VCSkVDVF9NT0RBTElUWRABEiMKH0NPTkRJVElPTl9TVUJKRUNUX1NPUF9DTEFTU19VSUQQAhIiCh5DT05ESVRJT05fU1VCSkVDVF9NQU5VRkFDVFVSRVIQAxIgChxDT05ESVRJT05fU1VCSkVDVF9NT0RFTF9OQU1FEAQSJwojQ09ORElUSU9OX1NVQkpFQ1RfU09GVFdBUkVfVkVSU0lPTlMQBRIeChpDT05ESVRJT05fU1VCSkVDVF9SRUNFSVZFUhAGEiYKIkNPTkRJVElPTl9TVUJKRUNUX0NBTExJTkdfQUVfVElUTEUQBxIlCiFDT05ESVRJT05fU1VCSkVDVF9DQUxMRURfQUVfVElUTEUQCCppCg1Mb29rdXBNaXNzaW5nEh4KGkxPT0tVUF9NSVNTSU5HX1VOU1BFQ0lGSUVEEAASHQoZTE9PS1VQX01JU1NJTkdfUVVBUkFOVElORRABEhkKFUxPT0tVUF9NSVNTSU5HX0FTU0lHThACKooBChBSZXF1aXJlZEZhbGxiYWNrEiEKHVJFUVVJUkVEX0ZBTExCQUNLX1VOU1BFQ0lGSUVEEAASGwoXUkVRVUlSRURfRkFMTEJBQ0tfRU1QVFkQARIbChdSRVFVSVJFRF9GQUxMQkFDS19EVU1NWRACEhkKFVJFUVVJUkVEX0ZBTExCQUNLX1VJRBADKl0KC1Byb2ZpbGVWaWV3EhwKGFBST0ZJTEVfVklFV19VTlNQRUNJRklFRBAAEhkKFVBST0ZJTEVfVklFV19ET0NVTUVOVBABEhUKEVBST0ZJTEVfVklFV19GVUxMEAIqfAoMVHJpYWxWZXJkaWN0Eh0KGVRSSUFMX1ZFUkRJQ1RfVU5TUEVDSUZJRUQQABIYChRUUklBTF9WRVJESUNUX1BBU1NFRBABEhYKElRSSUFMX1ZFUkRJQ1RfSEVMRBACEhsKF1RSSUFMX1ZFUkRJQ1RfVU5ERUNJREVEEAMqmwEKDVByb2ZpbGVDaGFuZ2USHgoaUFJPRklMRV9DSEFOR0VfVU5TUEVDSUZJRUQQABIYChRQUk9GSUxFX0NIQU5HRV9BRERFRBABEhoKFlBST0ZJTEVfQ0hBTkdFX1JFTU9WRUQQAhIaChZQUk9GSUxFX0NIQU5HRV9DSEFOR0VEEAMSGAoUUFJPRklMRV9DSEFOR0VfTU9WRUQQBDLqBgoOUHJvZmlsZVNlcnZpY2USagoUQ3JlYXRlUHJvZmlsZVZlcnNpb24SJS5jb3JpYS52MS5DcmVhdGVQcm9maWxlVmVyc2lvblJlcXVlc3QaJi5jb3JpYS52MS5DcmVhdGVQcm9maWxlVmVyc2lvblJlc3BvbnNlIgOQAgISYQoRR2V0UHJvZmlsZVZlcnNpb24SIi5jb3JpYS52MS5HZXRQcm9maWxlVmVyc2lvblJlcXVlc3QaIy5jb3JpYS52MS5HZXRQcm9maWxlVmVyc2lvblJlc3BvbnNlIgOQAgESUgoMTGlzdFByb2ZpbGVzEh0uY29yaWEudjEuTGlzdFByb2ZpbGVzUmVxdWVzdBoeLmNvcmlhLnYxLkxpc3RQcm9maWxlc1Jlc3BvbnNlIgOQAgESZwoTTGlzdFByb2ZpbGVWZXJzaW9ucxIkLmNvcmlhLnYxLkxpc3RQcm9maWxlVmVyc2lvbnNSZXF1ZXN0GiUuY29yaWEudjEuTGlzdFByb2ZpbGVWZXJzaW9uc1Jlc3BvbnNlIgOQAgESWwoPVmFsaWRhdGVQcm9maWxlEiAuY29yaWEudjEuVmFsaWRhdGVQcm9maWxlUmVxdWVzdBohLmNvcmlhLnYxLlZhbGlkYXRlUHJvZmlsZVJlc3BvbnNlIgOQAgESXgoQTGlzdFByb2ZpbGVCYXNlcxIhLmNvcmlhLnYxLkxpc3RQcm9maWxlQmFzZXNSZXF1ZXN0GiIuY29yaWEudjEuTGlzdFByb2ZpbGVCYXNlc1Jlc3BvbnNlIgOQAgESTAoKVHJ5UHJvZmlsZRIbLmNvcmlhLnYxLlRyeVByb2ZpbGVSZXF1ZXN0GhwuY29yaWEudjEuVHJ5UHJvZmlsZVJlc3BvbnNlIgOQAgESWAoORXhwbGFpblByb2ZpbGUSHy5jb3JpYS52MS5FeHBsYWluUHJvZmlsZVJlcXVlc3QaIC5jb3JpYS52MS5FeHBsYWluUHJvZmlsZVJlc3BvbnNlIgOQAgESZwoTRGlmZlByb2ZpbGVWZXJzaW9ucxIkLmNvcmlhLnYxLkRpZmZQcm9maWxlVmVyc2lvbnNSZXF1ZXN0GiUuY29yaWEudjEuRGlmZlByb2ZpbGVWZXJzaW9uc1Jlc3BvbnNlIgOQAgFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * ProfileDocument is a de-identification profile as a person writes it: its
@@ -2086,6 +2086,1143 @@ export const ListProfileBasesResponseSchema: GenMessage<ListProfileBasesResponse
   messageDesc(file_coria_v1_profile, 45);
 
 /**
+ * TrialProfile is the profile a trial run, an explanation or a check runs:
+ * a stored version, or a document not stored. Exactly one kind is set.
+ *
+ * @generated from message coria.v1.TrialProfile
+ */
+export type TrialProfile = Message<"coria.v1.TrialProfile"> & {
+  /**
+   * The kind of profile.
+   *
+   * @generated from oneof coria.v1.TrialProfile.kind
+   */
+  kind: {
+    /**
+     * A stored version of one of the tenant's profiles.
+     *
+     * @generated from field: coria.v1.ProfileVersionName version = 1;
+     */
+    value: ProfileVersionName;
+    case: "version";
+  } | {
+    /**
+     * A document, checked and expanded as ValidateProfile does and run as
+     * a version of it would be; nothing of it is stored.
+     *
+     * @generated from field: coria.v1.ProfileDocument document = 2;
+     */
+    value: ProfileDocument;
+    case: "document";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message coria.v1.TrialProfile.
+ * Use `create(TrialProfileSchema)` to create a new message.
+ */
+export const TrialProfileSchema: GenMessage<TrialProfile> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 46);
+
+/**
+ * ProfileVersionName names a stored version of a profile.
+ *
+ * @generated from message coria.v1.ProfileVersionName
+ */
+export type ProfileVersionName = Message<"coria.v1.ProfileVersionName"> & {
+  /**
+   * The profile's name. Required.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * The version; zero for the latest. Negative is invalid.
+   *
+   * @generated from field: int32 version = 2;
+   */
+  version: number;
+};
+
+/**
+ * Describes the message coria.v1.ProfileVersionName.
+ * Use `create(ProfileVersionNameSchema)` to create a new message.
+ */
+export const ProfileVersionNameSchema: GenMessage<ProfileVersionName> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 47);
+
+/**
+ * TrialFile is a file a caller sends to be tried.
+ *
+ * @generated from message coria.v1.TrialFile
+ */
+export type TrialFile = Message<"coria.v1.TrialFile"> & {
+  /**
+   * A name the caller gives the file, answered back with its result so a
+   * caller can tell its files apart, such as the file's path on the
+   * caller's side; at most 1024 bytes of UTF-8. It is the caller's text and
+   * may say anything, so it is redacted wherever the server logs.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * The file's bytes: a DICOM file (PS3.10), at most 3 MiB.
+   *
+   * @generated from field: bytes content = 2;
+   */
+  content: Uint8Array;
+};
+
+/**
+ * Describes the message coria.v1.TrialFile.
+ * Use `create(TrialFileSchema)` to create a new message.
+ */
+export const TrialFileSchema: GenMessage<TrialFile> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 48);
+
+/**
+ * TrialReception is what the reception of the tried files would say of
+ * them, which a profile's conditions on the receiver and the AE titles
+ * read. Each field is optional; one not given is absent, as for a file
+ * with no such fact. A held file is tried with its own reception's facts,
+ * and these are not used for it.
+ *
+ * @generated from message coria.v1.TrialReception
+ */
+export type TrialReception = Message<"coria.v1.TrialReception"> & {
+  /**
+   * The name of one of the tenant's receivers. Given, the receiver must
+   * exist, and its receiving checks run too (TryProfile); absent, the
+   * verdict is de-identification's alone.
+   *
+   * @generated from field: string receiver = 1;
+   */
+  receiver: string;
+
+  /**
+   * The sender's AE title (PS3.8 9.3.2), at most 16 characters.
+   *
+   * @generated from field: string calling_ae_title = 2;
+   */
+  callingAeTitle: string;
+
+  /**
+   * The AE title the sender called, at most 16 characters.
+   *
+   * @generated from field: string called_ae_title = 3;
+   */
+  calledAeTitle: string;
+};
+
+/**
+ * Describes the message coria.v1.TrialReception.
+ * Use `create(TrialReceptionSchema)` to create a new message.
+ */
+export const TrialReceptionSchema: GenMessage<TrialReception> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 49);
+
+/**
+ * TryProfileRequest names a profile and the files to try it on.
+ *
+ * @generated from message coria.v1.TryProfileRequest
+ */
+export type TryProfileRequest = Message<"coria.v1.TryProfileRequest"> & {
+  /**
+   * The tenant, by name. Required.
+   *
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * The profile to try. Required.
+   *
+   * @generated from field: coria.v1.TrialProfile profile = 2;
+   */
+  profile?: TrialProfile | undefined;
+
+  /**
+   * Files sent with the request. With quarantine_records, 1 to 32 in all.
+   *
+   * @generated from field: repeated coria.v1.TrialFile files = 3;
+   */
+  files: TrialFile[];
+
+  /**
+   * Ids of the tenant's quarantine records whose held files to try. Each
+   * at most 64 bytes.
+   *
+   * @generated from field: repeated string quarantine_records = 4;
+   */
+  quarantineRecords: string[];
+
+  /**
+   * The reception the sent files are tried as coming from.
+   *
+   * @generated from field: coria.v1.TrialReception reception = 5;
+   */
+  reception?: TrialReception | undefined;
+};
+
+/**
+ * Describes the message coria.v1.TryProfileRequest.
+ * Use `create(TryProfileRequestSchema)` to create a new message.
+ */
+export const TryProfileRequestSchema: GenMessage<TryProfileRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 50);
+
+/**
+ * TryProfileResponse is the result of each file, in the order of the
+ * request (its files, then its records), and a summary.
+ *
+ * @generated from message coria.v1.TryProfileResponse
+ */
+export type TryProfileResponse = Message<"coria.v1.TryProfileResponse"> & {
+  /**
+   * The version tried, without its document; absent for a document.
+   *
+   * @generated from field: coria.v1.ProfileVersion version = 1;
+   */
+  version?: ProfileVersion | undefined;
+
+  /**
+   * The checksum of the expanded form tried.
+   *
+   * @generated from field: string checksum = 2;
+   */
+  checksum: string;
+
+  /**
+   * Why a receiver could not name the profile as it is, in plain words
+   * (for example, it does not remap the UIDs a file is placed by); empty
+   * when one can.
+   *
+   * @generated from field: string reception_refusal = 3;
+   */
+  receptionRefusal: string;
+
+  /**
+   * Each file's result.
+   *
+   * @generated from field: repeated coria.v1.TrialResult results = 4;
+   */
+  results: TrialResult[];
+
+  /**
+   * The counts over every file.
+   *
+   * @generated from field: coria.v1.TrialSummary summary = 5;
+   */
+  summary?: TrialSummary | undefined;
+};
+
+/**
+ * Describes the message coria.v1.TryProfileResponse.
+ * Use `create(TryProfileResponseSchema)` to create a new message.
+ */
+export const TryProfileResponseSchema: GenMessage<TryProfileResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 51);
+
+/**
+ * TrialResult is what the profile does to one file.
+ *
+ * @generated from message coria.v1.TrialResult
+ */
+export type TrialResult = Message<"coria.v1.TrialResult"> & {
+  /**
+   * The name the caller gave a sent file; empty for a held file.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * The quarantine record a held file was read from; empty for a sent
+   * file.
+   *
+   * @generated from field: string quarantine_record = 2;
+   */
+  quarantineRecord: string;
+
+  /**
+   * What a receiver would do with it.
+   *
+   * @generated from field: coria.v1.TrialVerdict verdict = 3;
+   */
+  verdict: TrialVerdict;
+
+  /**
+   * For a held file, the quarantine reason it would be held with, as
+   * Quarantine's reasons are written: "deid_failed", "residual_value",
+   * "profile_refused", and with a receiver "not_dicom",
+   * "header_too_large", "bad_uid", "sop_class_not_accepted" and
+   * "bad_label".
+   *
+   * @generated from field: string reason = 4;
+   */
+  reason: string;
+
+  /**
+   * For a held file, the fixed cause: the engine's (such as "bad_value",
+   * "lookup_missing", "too_large", "no_subject", "uid_not_remapped",
+   * "unreadable", "after_unreadable": the file the check passed could not
+   * be read back to answer its values) or the check's
+   * ("check_unreadable", "check_too_large"), for residual_value the kind
+   * of value found ("name", "identifier", "date", "uid"), for bad_uid and
+   * bad_label the fault ("missing", "empty", "bad_uid", ...), and
+   * "lookup_table" for an undecided verdict. Never a value.
+   *
+   * @generated from field: string cause = 5;
+   */
+  cause: string;
+
+  /**
+   * The element the cause names, as a path; empty when none does.
+   *
+   * @generated from field: string path = 6;
+   */
+  path: string;
+
+  /**
+   * The name of the rule that refused the file (a quarantine action), or
+   * whose action could not be applied; empty when none.
+   *
+   * @generated from field: string rule = 7;
+   */
+  rule: string;
+
+  /**
+   * Each element, in the order the engine visits them (the top level and
+   * every item, then each element a set rule made); empty when the engine
+   * refused the file before it changed it.
+   *
+   * @generated from field: repeated coria.v1.TrialElement elements = 8;
+   */
+  elements: TrialElement[];
+
+  /**
+   * Elements left out to keep the answer within its bound (2,000 per file
+   * and about 3 MiB of values in all), counted.
+   *
+   * @generated from field: int32 elements_omitted = 9;
+   */
+  elementsOmitted: number;
+
+  /**
+   * The number of values the profile removed or changed that the check
+   * after searched for, and of those it skipped as too short.
+   *
+   * @generated from field: int32 values_searched = 10;
+   */
+  valuesSearched: number;
+
+  /**
+   * See values_searched.
+   *
+   * @generated from field: int32 values_skipped = 11;
+   */
+  valuesSkipped: number;
+
+  /**
+   * The number of lookups answered UNASSIGNED: a value its table has no
+   * code for, which a receiver would assign the table's next code.
+   *
+   * @generated from field: int32 lookups_unassigned = 12;
+   */
+  lookupsUnassigned: number;
+
+  /**
+   * The receiver whose receiving checks ran; empty when none did.
+   *
+   * @generated from field: string receiver = 13;
+   */
+  receiver: string;
+
+  /**
+   * True when no receiver's checks ran: the verdict is
+   * de-identification's alone.
+   *
+   * @generated from field: bool deidentification_only = 14;
+   */
+  deidentificationOnly: boolean;
+};
+
+/**
+ * Describes the message coria.v1.TrialResult.
+ * Use `create(TrialResultSchema)` to create a new message.
+ */
+export const TrialResultSchema: GenMessage<TrialResult> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 52);
+
+/**
+ * TrialElement is what happened to one element of a tried file, and why.
+ *
+ * @generated from message coria.v1.TrialElement
+ */
+export type TrialElement = Message<"coria.v1.TrialElement"> & {
+  /**
+   * Where the element is: its tag as eight hexadecimal digits after the
+   * sequences and item numbers it is inside, such as
+   * "00081115[0]/0020000E".
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * The element's keyword in the data dictionary; empty for a private or
+   * unknown element.
+   *
+   * @generated from field: string keyword = 2;
+   */
+  keyword: string;
+
+  /**
+   * The VR the engine read it as.
+   *
+   * @generated from field: string vr = 3;
+   */
+  vr: string;
+
+  /**
+   * What was done: keep, remove, empty, replace, set, hash, uid, shift,
+   * generalize, lookup, clean, dummy, remove_unless_required, or create
+   * for an element a set rule made.
+   *
+   * @generated from field: string action = 4;
+   */
+  action: string;
+
+  /**
+   * The position of the deciding rule among the expanded form's rules,
+   * from 1; zero when no rule decided (a default, a fixed rule of the
+   * pipeline, or the floor).
+   *
+   * @generated from field: int32 rule = 5;
+   */
+  rule: number;
+
+  /**
+   * The deciding rule's name, when it has one.
+   *
+   * @generated from field: string rule_name = 6;
+   */
+  ruleName: string;
+
+  /**
+   * The base the deciding rule came from; empty for the profile's own
+   * rule and for no rule.
+   *
+   * @generated from field: string origin = 7;
+   */
+  origin: string;
+
+  /**
+   * The rule's reason, or why the default, the floor or a fixed rule
+   * applied.
+   *
+   * @generated from field: string reason = 8;
+   */
+  reason: string;
+
+  /**
+   * Whether the element's value or presence changed.
+   *
+   * @generated from field: bool changed = 9;
+   */
+  changed: boolean;
+
+  /**
+   * The value before, as text, its padding removed; empty for a value
+   * that is not text (a sequence, binary data) and for an element the
+   * received data set does not hold at this path.
+   *
+   * @generated from field: string before = 10;
+   */
+  before: string;
+
+  /**
+   * The value after, read back from the de-identified file as written;
+   * empty when it is not text or the element is not in that file, and for
+   * every element of a file that was held before it was written.
+   *
+   * @generated from field: string after = 11;
+   */
+  after: string;
+
+  /**
+   * Whether the de-identified file holds the element.
+   *
+   * @generated from field: bool present_after = 12;
+   */
+  presentAfter: boolean;
+};
+
+/**
+ * Describes the message coria.v1.TrialElement.
+ * Use `create(TrialElementSchema)` to create a new message.
+ */
+export const TrialElementSchema: GenMessage<TrialElement> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 53);
+
+/**
+ * TrialSummary is the counts of a trial run, with no value.
+ *
+ * @generated from message coria.v1.TrialSummary
+ */
+export type TrialSummary = Message<"coria.v1.TrialSummary"> & {
+  /**
+   * The files tried.
+   *
+   * @generated from field: int32 files = 1;
+   */
+  files: number;
+
+  /**
+   * Of them, those that would be archived.
+   *
+   * @generated from field: int32 passed = 2;
+   */
+  passed: number;
+
+  /**
+   * Of them, those that would be held.
+   *
+   * @generated from field: int32 held = 3;
+   */
+  held: number;
+
+  /**
+   * How many elements each rule decided, over every file, by the rule's
+   * name or "rule N" (its position, from 1), with "default" for elements
+   * no rule decided; by count, most first.
+   *
+   * @generated from field: repeated coria.v1.TrialCount by_rule = 4;
+   */
+  byRule: TrialCount[];
+
+  /**
+   * How many files were held for each reason, by
+   * "<reason>/<cause>"; by count, most first.
+   *
+   * @generated from field: repeated coria.v1.TrialCount by_reason = 5;
+   */
+  byReason: TrialCount[];
+
+  /**
+   * Of them, those whose verdict depends on a lookup table.
+   *
+   * @generated from field: int32 undecided = 6;
+   */
+  undecided: number;
+};
+
+/**
+ * Describes the message coria.v1.TrialSummary.
+ * Use `create(TrialSummarySchema)` to create a new message.
+ */
+export const TrialSummarySchema: GenMessage<TrialSummary> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 54);
+
+/**
+ * TrialCount is one count of a summary.
+ *
+ * @generated from message coria.v1.TrialCount
+ */
+export type TrialCount = Message<"coria.v1.TrialCount"> & {
+  /**
+   * What is counted.
+   *
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * How many.
+   *
+   * @generated from field: int32 count = 2;
+   */
+  count: number;
+};
+
+/**
+ * Describes the message coria.v1.TrialCount.
+ * Use `create(TrialCountSchema)` to create a new message.
+ */
+export const TrialCountSchema: GenMessage<TrialCount> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 55);
+
+/**
+ * ExplainProfileRequest names a profile and one file.
+ *
+ * @generated from message coria.v1.ExplainProfileRequest
+ */
+export type ExplainProfileRequest = Message<"coria.v1.ExplainProfileRequest"> & {
+  /**
+   * The tenant, by name. Required.
+   *
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * The profile. Required.
+   *
+   * @generated from field: coria.v1.TrialProfile profile = 2;
+   */
+  profile?: TrialProfile | undefined;
+
+  /**
+   * The file, sent; or quarantine_record. Exactly one.
+   *
+   * @generated from field: coria.v1.TrialFile file = 3;
+   */
+  file?: TrialFile | undefined;
+
+  /**
+   * The id of a quarantine record whose held file to explain.
+   *
+   * @generated from field: string quarantine_record = 4;
+   */
+  quarantineRecord: string;
+
+  /**
+   * The reception a sent file is explained as coming from.
+   *
+   * @generated from field: coria.v1.TrialReception reception = 5;
+   */
+  reception?: TrialReception | undefined;
+};
+
+/**
+ * Describes the message coria.v1.ExplainProfileRequest.
+ * Use `create(ExplainProfileRequestSchema)` to create a new message.
+ */
+export const ExplainProfileRequestSchema: GenMessage<ExplainProfileRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 56);
+
+/**
+ * ExplainProfileResponse is the decision for each element of the file.
+ *
+ * @generated from message coria.v1.ExplainProfileResponse
+ */
+export type ExplainProfileResponse = Message<"coria.v1.ExplainProfileResponse"> & {
+  /**
+   * The version explained, without its document; absent for a document.
+   *
+   * @generated from field: coria.v1.ProfileVersion version = 1;
+   */
+  version?: ProfileVersion | undefined;
+
+  /**
+   * The checksum of the expanded form.
+   *
+   * @generated from field: string checksum = 2;
+   */
+  checksum: string;
+
+  /**
+   * Each element, in the order the engine visits them; empty when the
+   * engine refused the file before it decided every element, and then
+   * refusal says why.
+   *
+   * @generated from field: repeated coria.v1.ExplainedElement elements = 3;
+   */
+  elements: ExplainedElement[];
+
+  /**
+   * Elements left out past 5,000, counted.
+   *
+   * @generated from field: int32 elements_omitted = 4;
+   */
+  elementsOmitted: number;
+
+  /**
+   * When the engine refused the file: the fixed cause, as
+   * TrialResult.cause. Empty otherwise.
+   *
+   * @generated from field: string refusal = 5;
+   */
+  refusal: string;
+
+  /**
+   * The element the refusal names; empty when none.
+   *
+   * @generated from field: string refusal_path = 6;
+   */
+  refusalPath: string;
+};
+
+/**
+ * Describes the message coria.v1.ExplainProfileResponse.
+ * Use `create(ExplainProfileResponseSchema)` to create a new message.
+ */
+export const ExplainProfileResponseSchema: GenMessage<ExplainProfileResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 57);
+
+/**
+ * ExplainedElement is why one element is treated as it is. It holds no
+ * value.
+ *
+ * @generated from message coria.v1.ExplainedElement
+ */
+export type ExplainedElement = Message<"coria.v1.ExplainedElement"> & {
+  /**
+   * Where the element is, as TrialElement.path.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * The element's keyword; empty for a private or unknown element.
+   *
+   * @generated from field: string keyword = 2;
+   */
+  keyword: string;
+
+  /**
+   * The VR the engine read it as.
+   *
+   * @generated from field: string vr = 3;
+   */
+  vr: string;
+
+  /**
+   * What is done to it, as TrialElement.action.
+   *
+   * @generated from field: string action = 4;
+   */
+  action: string;
+
+  /**
+   * The deciding rule's position among the expanded form's rules, from 1;
+   * zero when no rule decides.
+   *
+   * @generated from field: int32 rule = 5;
+   */
+  rule: number;
+
+  /**
+   * The deciding rule's name.
+   *
+   * @generated from field: string rule_name = 6;
+   */
+  ruleName: string;
+
+  /**
+   * The base the deciding rule came from; empty for the profile's own.
+   *
+   * @generated from field: string origin = 7;
+   */
+  origin: string;
+
+  /**
+   * Why: the rule's reason, or why the default, the floor or a fixed rule
+   * applies.
+   *
+   * @generated from field: string reason = 8;
+   */
+  reason: string;
+
+  /**
+   * How the deciding rule selects the element: "place", "tag",
+   * "private_element", "private_block", "group" or "vr" (from the most
+   * specific); empty when no rule decides.
+   *
+   * @generated from field: string selected_by = 9;
+   */
+  selectedBy: string;
+
+  /**
+   * The other rules whose selector matches the element, by precedence:
+   * each does not decide, and says why. At most 16.
+   *
+   * @generated from field: repeated coria.v1.ExplainedCandidate others = 10;
+   */
+  others: ExplainedCandidate[];
+
+  /**
+   * Other rules past 16, counted.
+   *
+   * @generated from field: int32 others_omitted = 11;
+   */
+  othersOmitted: number;
+};
+
+/**
+ * Describes the message coria.v1.ExplainedElement.
+ * Use `create(ExplainedElementSchema)` to create a new message.
+ */
+export const ExplainedElementSchema: GenMessage<ExplainedElement> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 58);
+
+/**
+ * ExplainedCandidate is a rule whose selector matches an element and that
+ * does not decide it.
+ *
+ * @generated from message coria.v1.ExplainedCandidate
+ */
+export type ExplainedCandidate = Message<"coria.v1.ExplainedCandidate"> & {
+  /**
+   * The rule's position among the expanded form's rules, from 1.
+   *
+   * @generated from field: int32 rule = 1;
+   */
+  rule: number;
+
+  /**
+   * The rule's name.
+   *
+   * @generated from field: string rule_name = 2;
+   */
+  ruleName: string;
+
+  /**
+   * The base it came from; empty for the profile's own.
+   *
+   * @generated from field: string origin = 3;
+   */
+  origin: string;
+
+  /**
+   * How it selects the element, as ExplainedElement.selected_by.
+   *
+   * @generated from field: string selected_by = 4;
+   */
+  selectedBy: string;
+
+  /**
+   * Why it does not decide: "conditions" (its conditions do not hold for
+   * this file), "less_specific" (a rule of a more specific selector
+   * decides), "earlier" (a later rule of an equally specific selector
+   * decides), or "floor" (the engine's floor overrides every rule here).
+   *
+   * @generated from field: string why_not = 5;
+   */
+  whyNot: string;
+};
+
+/**
+ * Describes the message coria.v1.ExplainedCandidate.
+ * Use `create(ExplainedCandidateSchema)` to create a new message.
+ */
+export const ExplainedCandidateSchema: GenMessage<ExplainedCandidate> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 59);
+
+/**
+ * DiffProfileVersionsRequest names two versions to compare.
+ *
+ * @generated from message coria.v1.DiffProfileVersionsRequest
+ */
+export type DiffProfileVersionsRequest = Message<"coria.v1.DiffProfileVersionsRequest"> & {
+  /**
+   * The tenant, by name. Required.
+   *
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * The profile's name. Required.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * The version compared from; zero for the latest.
+   *
+   * @generated from field: int32 from_version = 3;
+   */
+  fromVersion: number;
+
+  /**
+   * The version compared to; zero for the latest.
+   *
+   * @generated from field: int32 to_version = 4;
+   */
+  toVersion: number;
+
+  /**
+   * The profile of to_version, when it is another profile than name;
+   * empty for the same.
+   *
+   * @generated from field: string to_name = 5;
+   */
+  toName: string;
+};
+
+/**
+ * Describes the message coria.v1.DiffProfileVersionsRequest.
+ * Use `create(DiffProfileVersionsRequestSchema)` to create a new message.
+ */
+export const DiffProfileVersionsRequestSchema: GenMessage<DiffProfileVersionsRequest> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 60);
+
+/**
+ * DiffProfileVersionsResponse is what changes from one version to the
+ * other.
+ *
+ * @generated from message coria.v1.DiffProfileVersionsResponse
+ */
+export type DiffProfileVersionsResponse = Message<"coria.v1.DiffProfileVersionsResponse"> & {
+  /**
+   * The version compared from, without its document.
+   *
+   * @generated from field: coria.v1.ProfileVersion from = 1;
+   */
+  from?: ProfileVersion | undefined;
+
+  /**
+   * The version compared to, without its document.
+   *
+   * @generated from field: coria.v1.ProfileVersion to = 2;
+   */
+  to?: ProfileVersion | undefined;
+
+  /**
+   * True when the checksums are equal: every file is treated alike.
+   *
+   * @generated from field: bool same_effect = 3;
+   */
+  sameEffect: boolean;
+
+  /**
+   * The bases of to that from does not have, in to's order.
+   *
+   * @generated from field: repeated string bases_added = 4;
+   */
+  basesAdded: string[];
+
+  /**
+   * The bases of from that to does not have, in from's order.
+   *
+   * @generated from field: repeated string bases_removed = 5;
+   */
+  basesRemoved: string[];
+
+  /**
+   * What happens to an element no rule decides, in each.
+   *
+   * @generated from field: coria.v1.UnnamedElements unnamed_from = 6;
+   */
+  unnamedFrom: UnnamedElements;
+
+  /**
+   * See unnamed_from.
+   *
+   * @generated from field: coria.v1.UnnamedElements unnamed_to = 7;
+   */
+  unnamedTo: UnnamedElements;
+
+  /**
+   * The largest date shift in days, in each.
+   *
+   * @generated from field: int32 date_shift_days_from = 8;
+   */
+  dateShiftDaysFrom: number;
+
+  /**
+   * See date_shift_days_from.
+   *
+   * @generated from field: int32 date_shift_days_to = 9;
+   */
+  dateShiftDaysTo: number;
+
+  /**
+   * Each rule added, removed or changed, in to's order and then the
+   * removed in from's; at most 1,000.
+   *
+   * @generated from field: repeated coria.v1.ProfileRuleChange rules = 10;
+   */
+  rules: ProfileRuleChange[];
+
+  /**
+   * Rules past 1,000, counted.
+   *
+   * @generated from field: int32 rules_omitted = 11;
+   */
+  rulesOmitted: number;
+
+  /**
+   * Each change of effect, in to's order and then those only in from;
+   * at most 1,000.
+   *
+   * @generated from field: repeated coria.v1.ProfileEffectChange effects = 12;
+   */
+  effects: ProfileEffectChange[];
+
+  /**
+   * Changes of effect past 1,000, counted.
+   *
+   * @generated from field: int32 effects_omitted = 13;
+   */
+  effectsOmitted: number;
+
+  /**
+   * The pixel rules one version has and the other does not, each
+   * compared whole with its origin, counted (a rule changed counts once in
+   * each).
+   *
+   * @generated from field: int32 pixel_rules_changed = 14;
+   */
+  pixelRulesChanged: number;
+
+  /**
+   * True when both have the same bases in another order: a later base's
+   * rule wins over an earlier's between equals.
+   *
+   * @generated from field: bool bases_reordered = 15;
+   */
+  basesReordered: boolean;
+
+  /**
+   * True when same_effect is false and none of the lists above, nor the
+   * defaults, shows why: the expanded forms differ in what this
+   * comparison does not itemize (TryProfile over files shows the effect).
+   *
+   * @generated from field: bool unlisted_change = 16;
+   */
+  unlistedChange: boolean;
+};
+
+/**
+ * Describes the message coria.v1.DiffProfileVersionsResponse.
+ * Use `create(DiffProfileVersionsResponseSchema)` to create a new message.
+ */
+export const DiffProfileVersionsResponseSchema: GenMessage<DiffProfileVersionsResponse> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 61);
+
+/**
+ * ProfileRuleChange is one rule that differs.
+ *
+ * @generated from message coria.v1.ProfileRuleChange
+ */
+export type ProfileRuleChange = Message<"coria.v1.ProfileRuleChange"> & {
+  /**
+   * How.
+   *
+   * @generated from field: coria.v1.ProfileChange change = 1;
+   */
+  change: ProfileChange;
+
+  /**
+   * The base it comes from; empty for the profile's own rule.
+   *
+   * @generated from field: string origin = 2;
+   */
+  origin: string;
+
+  /**
+   * Its position among from's expanded rules, from 1; zero when added.
+   *
+   * @generated from field: int32 from_position = 3;
+   */
+  fromPosition: number;
+
+  /**
+   * Its position among to's expanded rules, from 1; zero when removed.
+   *
+   * @generated from field: int32 to_position = 4;
+   */
+  toPosition: number;
+
+  /**
+   * The rule in from; absent when added.
+   *
+   * @generated from field: coria.v1.ProfileRule from = 5;
+   */
+  from?: ProfileRule | undefined;
+
+  /**
+   * The rule in to; absent when removed.
+   *
+   * @generated from field: coria.v1.ProfileRule to = 6;
+   */
+  to?: ProfileRule | undefined;
+};
+
+/**
+ * Describes the message coria.v1.ProfileRuleChange.
+ * Use `create(ProfileRuleChangeSchema)` to create a new message.
+ */
+export const ProfileRuleChangeSchema: GenMessage<ProfileRuleChange> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 62);
+
+/**
+ * ProfileEffectChange is a selector, with its conditions, whose winning
+ * action differs; or a selector whose rules of different conditions are
+ * in another order (order_changed).
+ *
+ * @generated from message coria.v1.ProfileEffectChange
+ */
+export type ProfileEffectChange = Message<"coria.v1.ProfileEffectChange"> & {
+  /**
+   * The selector.
+   *
+   * @generated from field: coria.v1.ProfileSelector selector = 1;
+   */
+  selector?: ProfileSelector | undefined;
+
+  /**
+   * The conditions.
+   *
+   * @generated from field: repeated coria.v1.ProfileCondition when = 2;
+   */
+  when: ProfileCondition[];
+
+  /**
+   * The action that wins in from; absent when no rule there has this
+   * selector and these conditions.
+   *
+   * @generated from field: coria.v1.ProfileAction from = 3;
+   */
+  from?: ProfileAction | undefined;
+
+  /**
+   * The action that wins in to; absent likewise.
+   *
+   * @generated from field: coria.v1.ProfileAction to = 4;
+   */
+  to?: ProfileAction | undefined;
+
+  /**
+   * The winning rule's position in from, from 1; zero when absent.
+   *
+   * @generated from field: int32 from_position = 5;
+   */
+  fromPosition: number;
+
+  /**
+   * The winning rule's position in to, from 1; zero when absent.
+   *
+   * @generated from field: int32 to_position = 6;
+   */
+  toPosition: number;
+
+  /**
+   * True when the change is of the order among the rules with this
+   * selector and different conditions, not of an action: for a file that
+   * meets more than one rule's conditions, another rule wins. when, from
+   * and to are then empty.
+   *
+   * @generated from field: bool order_changed = 7;
+   */
+  orderChanged: boolean;
+};
+
+/**
+ * Describes the message coria.v1.ProfileEffectChange.
+ * Use `create(ProfileEffectChangeSchema)` to create a new message.
+ */
+export const ProfileEffectChangeSchema: GenMessage<ProfileEffectChange> = /*@__PURE__*/
+  messageDesc(file_coria_v1_profile, 63);
+
+/**
  * UnnamedElements is what happens to an element no rule decides.
  *
  * @generated from enum coria.v1.UnnamedElements
@@ -2319,6 +3456,98 @@ export const ProfileViewSchema: GenEnum<ProfileView> = /*@__PURE__*/
   enumDesc(file_coria_v1_profile, 4);
 
 /**
+ * TrialVerdict is what a receiver would do with a file.
+ *
+ * @generated from enum coria.v1.TrialVerdict
+ */
+export enum TrialVerdict {
+  /**
+   * Never answered.
+   *
+   * @generated from enum value: TRIAL_VERDICT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The file would be archived, de-identified as the elements say.
+   *
+   * @generated from enum value: TRIAL_VERDICT_PASSED = 1;
+   */
+  PASSED = 1,
+
+  /**
+   * The file would be held, with the reason and cause given.
+   *
+   * @generated from enum value: TRIAL_VERDICT_HELD = 2;
+   */
+  HELD = 2,
+
+  /**
+   * Whether the file would be held depends on a lookup table the trial
+   * does not read: a lookup rule holds a file whose value has no code
+   * (cause "lookup_table").
+   *
+   * @generated from enum value: TRIAL_VERDICT_UNDECIDED = 3;
+   */
+  UNDECIDED = 3,
+}
+
+/**
+ * Describes the enum coria.v1.TrialVerdict.
+ */
+export const TrialVerdictSchema: GenEnum<TrialVerdict> = /*@__PURE__*/
+  enumDesc(file_coria_v1_profile, 5);
+
+/**
+ * ProfileChange is how a rule differs between two versions.
+ *
+ * @generated from enum coria.v1.ProfileChange
+ */
+export enum ProfileChange {
+  /**
+   * Never answered.
+   *
+   * @generated from enum value: PROFILE_CHANGE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Only in the version compared to.
+   *
+   * @generated from enum value: PROFILE_CHANGE_ADDED = 1;
+   */
+  ADDED = 1,
+
+  /**
+   * Only in the version compared from.
+   *
+   * @generated from enum value: PROFILE_CHANGE_REMOVED = 2;
+   */
+  REMOVED = 2,
+
+  /**
+   * In both, with a difference.
+   *
+   * @generated from enum value: PROFILE_CHANGE_CHANGED = 3;
+   */
+  CHANGED = 3,
+
+  /**
+   * In both, the same, but in another order among the rules with its
+   * selector, so which of them wins can differ.
+   *
+   * @generated from enum value: PROFILE_CHANGE_MOVED = 4;
+   */
+  MOVED = 4,
+}
+
+/**
+ * Describes the enum coria.v1.ProfileChange.
+ */
+export const ProfileChangeSchema: GenEnum<ProfileChange> = /*@__PURE__*/
+  enumDesc(file_coria_v1_profile, 6);
+
+/**
  * ProfileService keeps a tenant's de-identification profiles: versioned
  * documents of rules that say, for every element of a DICOM file, what is
  * kept, removed, emptied, replaced or changed before the file is archived.
@@ -2343,8 +3572,12 @@ export const ProfileViewSchema: GenEnum<ProfileView> = /*@__PURE__*/
  * touches a file already archived.
  *
  * A profile is configuration, not patient data: no field of this service
- * ever carries a value read from a file. A rule's constant is text a person
- * wrote, and is kept and answered as written.
+ * carries a value read from a file but those of a trial run
+ * (TryProfileRequest's files, TrialElement's before and after), which hold
+ * the caller's own data: files it sent, or held files it may read. Each is
+ * marked debug_redact, and no log line, audit entry or event carries one. A
+ * rule's constant is text a person wrote, and is kept and answered as
+ * written.
  *
  * Every method but ListProfileBases acts inside one tenant, named by the
  * request's tenant field, so a request into a tenant that is not ready is
@@ -2502,6 +3735,128 @@ export const ProfileService: GenService<{
     methodKind: "unary";
     input: typeof ListProfileBasesRequestSchema;
     output: typeof ListProfileBasesResponseSchema;
+  },
+  /**
+   * TryProfile runs a profile over sample files as a receiver would, and
+   * stores nothing: each file is de-identified by the engine, written in
+   * memory, checked after by the separate read that searches it for every
+   * value the profile removed, and answered element by element with its
+   * value before and after, the action, and the rule (or base) that
+   * decided it and why, with the verdict a receiver would reach: passed,
+   * or held with the quarantine reason and its fixed cause. The profile is
+   * a stored version or an unsaved document, checked as ValidateProfile
+   * checks one (a document with a problem is refused with every problem as
+   * a ProfileProblems detail). The files are given in the request, or
+   * named by quarantine record ids of the tenant, whose held bytes (as the
+   * sender sent them) are read where the server keeps them.
+   *
+   * Nothing is stored and nothing is changed, and nothing of the tenant's
+   * secrets is used: each request runs under keys made for it alone (for
+   * UIDs, dates and hashes) and thrown away after, and reads no lookup
+   * table. So a trial's keyed values (remapped UIDs, hashes, shifted
+   * dates, lookup codes) are never those the archive holds, and cannot be
+   * matched with it; only their form and the verdict carry over. Every
+   * lookup is answered with the code UNASSIGNED, and counted; a lookup
+   * whose missing value a receiver would hold the file for makes the
+   * verdict TRIAL_VERDICT_UNDECIDED. No file is written to a storage and
+   * no record is made. The before values are the caller's own data, and
+   * are answered; no log line, audit entry or event carries one.
+   *
+   * A sent file tried with a receiver named (TrialReception.receiver), and
+   * a held file (with the receiver that held it, while it exists), runs
+   * that receiver's receiving checks too, as the receiver runs them: the
+   * header read within receiver.header-limit, the placing UIDs present,
+   * well formed and not under the standard's root, its SOP classes, its
+   * naming rule and the search of its labels for removed values, and the
+   * check after within its file bound; "passed" then means that receiver
+   * would archive the file. With no receiver the verdict is
+   * de-identification's alone (TrialResult.deidentification_only): the
+   * receiving checks, the receiver's labels and an association's own
+   * checks (its AE titles, a file's size against the receiver's bound, the
+   * UIDs a C-STORE announced) are left out.
+   *
+   * Reading a held file needs what reading its header needs: operator.
+   *
+   * Role: operator on the tenant.
+   * Audit: one entry in the tenant's log, with the profile version tried
+   * (or the unsaved document's checksum) as its object and, in details,
+   * the number of files, how many passed and were held, and the counts
+   * per rule and per reason: the evidence that the version was tried,
+   * never a value.
+   * Errors: unauthenticated, permission denied (no grant; also a tenant
+   * that does not exist, for a caller who may not list every tenant),
+   * invalid (no profile, or both kinds; a document with a problem; no file
+   * and no record, or more than 32 of them together; a file empty or
+   * larger than 3 MiB, or files together larger than 3.5 MiB; a malformed
+   * record id), not found (a profile or version the tenant does not have;
+   * a quarantine record it does not have; a receiver named that it does
+   * not have; a tenant that does not exist, for a caller who may list
+   * every tenant), precondition (a stored version this server cannot run;
+   * a record whose bytes are not kept, or are larger than 64 MiB; held
+   * files together larger than 128 MiB), exhausted (as many trial runs and
+   * explanations as the server runs at once, 2, are running; try again),
+   * unavailable (the tenant's database does not answer, the tenant is not
+   * ready, or a held file cannot be read now).
+   *
+   * @generated from rpc coria.v1.ProfileService.TryProfile
+   */
+  tryProfile: {
+    methodKind: "unary";
+    input: typeof TryProfileRequestSchema;
+    output: typeof TryProfileResponseSchema;
+  },
+  /**
+   * ExplainProfile answers, for one file, which rule or base decides each
+   * element and why, without answering any value: for each element its
+   * path, VR and the action, the deciding rule with its origin and reason
+   * (or the default, or the engine's floor), and every other rule whose
+   * selector matches it, each with why it does not decide (a more specific
+   * or a later rule decides, or its conditions do not hold). The file is
+   * processed as TryProfile processes it, in memory, and nothing is
+   * stored, under keys made for the request as TryProfile's.
+   *
+   * Role: operator on the tenant.
+   * Audit: one entry in the tenant's log, with the profile version (or the
+   * unsaved document's checksum) as its object.
+   * Errors: as TryProfile, for one file or one record.
+   *
+   * @generated from rpc coria.v1.ProfileService.ExplainProfile
+   */
+  explainProfile: {
+    methodKind: "unary";
+    input: typeof ExplainProfileRequestSchema;
+    output: typeof ExplainProfileResponseSchema;
+  },
+  /**
+   * DiffProfileVersions answers what changes between two versions: their
+   * bases, their defaults, their rules one by one (a rule is the same rule
+   * in both when it comes from the same origin and has the same name, or,
+   * unnamed, the same selector and conditions), and the effect on the
+   * expanded form: for each selector and set of conditions, the action
+   * that wins between the rules that have exactly that selector, before
+   * and after. The rules of a base present in only one version are not
+   * listed one by one: the base is. Equal checksums mean equal effect on
+   * every file, and then no effect is listed. The effect is judged rule
+   * against rule, not element against element: a rule whose selector is
+   * more specific than another's takes elements from it in both versions
+   * alike, and TryProfile over sample files shows the effect on them.
+   *
+   * Role: operator on the tenant.
+   * Audit: one entry in the tenant's log, with the profile's name as its
+   * object and both versions in details.
+   * Errors: unauthenticated, permission denied (no grant; also a tenant
+   * that does not exist, for a caller who may not list every tenant),
+   * invalid (a malformed name, a negative version), not found (a profile
+   * or version the tenant does not have; a tenant that does not exist, for
+   * a caller who may list every tenant), unavailable (the tenant's
+   * database does not answer, or the tenant is not ready).
+   *
+   * @generated from rpc coria.v1.ProfileService.DiffProfileVersions
+   */
+  diffProfileVersions: {
+    methodKind: "unary";
+    input: typeof DiffProfileVersionsRequestSchema;
+    output: typeof DiffProfileVersionsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_coria_v1_profile, 0);

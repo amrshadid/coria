@@ -37,6 +37,16 @@ func TestWriteJSONOutputs(t *testing.T) {
 	for _, id := range []string{"q-release", "q-reject"} {
 		r.fake.AddQuarantined("lab1", &v1.QuarantinedFile{Id: id, Reason: v1.QuarantineReason_QUARANTINE_REASON_BAD_LABEL, State: v1.QuarantineState_QUARANTINE_STATE_HELD, Receiver: "scanner1", ContentKept: true, QuarantineTime: timestamppb.New(fixedNow)}, `{}`)
 	}
+	work := t.TempDir()
+	doc := writeFile(t, work, "research.json", basicJSON)
+	ct, err := os.ReadFile(filepath.Join("..", "receive", "testdata", "ct5n-2062.dcm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dcm := writeFile(t, work, "one.dcm", string(ct))
+	r.fake.SetTrialAnswer(&v1.TryProfileResponse{Checksum: "c", Results: []*v1.TrialResult{{Name: dcm, Verdict: v1.TrialVerdict_TRIAL_VERDICT_PASSED, DeidentificationOnly: true}},
+		Summary: &v1.TrialSummary{Files: 1, Passed: 1}})
+	r.fake.SetExplainAnswer(&v1.ExplainProfileResponse{Checksum: "c"})
 	steps := []struct {
 		name string
 		args []string
@@ -79,6 +89,16 @@ func TestWriteJSONOutputs(t *testing.T) {
 		{"setting-list", []string{"setting", "list", "--tenant", "lab1"}},
 		{"setting-unset", []string{"setting", "unset", "test.retention", "--tenant", "lab1"}},
 		{"audit-list", []string{"audit", "list"}},
+		{"profile-create", []string{"profile", "create", "lab1", "research", "--document", doc}},
+		{"profile-get", []string{"profile", "get", "lab1", "research"}},
+		{"profile-list", []string{"profile", "list", "lab1"}},
+		{"profile-versions", []string{"profile", "versions", "lab1", "research"}},
+		{"profile-export", []string{"profile", "export", "lab1", "research@1"}},
+		{"profile-validate", []string{"profile", "validate", "lab1", "--document", doc}},
+		{"profile-describe", []string{"profile", "describe", "lab1", "research"}},
+		{"profile-try", []string{"profile", "try", "lab1", "--profile", "research", dcm}},
+		{"profile-explain", []string{"profile", "explain", "lab1", "--profile", "research", dcm}},
+		{"profile-diff", []string{"profile", "diff", "lab1", "research@1", "research@1"}},
 		{"tenant-remove", []string{"tenant", "remove", "lab1", "--yes"}},
 	}
 	for _, s := range steps {

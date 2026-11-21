@@ -400,8 +400,8 @@ func TestPendingRules(t *testing.T) {
 	lines := roleLines(t)
 	var p api.Pending
 	procs := p.Procedures()
-	if len(procs) != 6 {
-		t.Errorf("the table of methods not served has %d lines; this test was written for 6, so look at what changed", len(procs))
+	if len(procs) != 0 {
+		t.Errorf("the table of methods not served has %d lines; this test was written for 0, so look at what changed", len(procs))
 	}
 	for _, proc := range procs {
 		if !inServices(notServed, proc) {
@@ -477,13 +477,20 @@ func TestPendingRules(t *testing.T) {
 		{coriav1connect.ProfileServiceGetProfileVersionProcedure, &v1.GetProfileVersionRequest{Tenant: "lab1", Name: "Smith^John"}, "invalid"},
 		{coriav1connect.ProfileServiceCreateProfileVersionProcedure, &v1.CreateProfileVersionRequest{Tenant: "lab1", Name: "Smith^John"}, "invalid"},
 		{coriav1connect.ProfileServiceListProfileVersionsProcedure, &v1.ListProfileVersionsRequest{Tenant: "lab1", Name: "research"}, "research"},
+		{coriav1connect.ProfileServiceTryProfileProcedure, &v1.TryProfileRequest{Tenant: "lab1", Profile: &v1.TrialProfile{Kind: &v1.TrialProfile_Version{Version: &v1.ProfileVersionName{Name: "research", Version: 3}}}}, "research@3"},
+		{coriav1connect.ProfileServiceTryProfileProcedure, &v1.TryProfileRequest{Tenant: "lab1", Profile: &v1.TrialProfile{Kind: &v1.TrialProfile_Version{Version: &v1.ProfileVersionName{Name: "Smith^John"}}}}, "invalid"},
+		{coriav1connect.ProfileServiceExplainProfileProcedure, &v1.ExplainProfileRequest{Tenant: "lab1", Profile: &v1.TrialProfile{Kind: &v1.TrialProfile_Document{Document: &v1.ProfileDocument{}}}}, "document"},
+		{coriav1connect.ProfileServiceDiffProfileVersionsProcedure, &v1.DiffProfileVersionsRequest{Tenant: "lab1", Name: "Smith^John"}, "invalid"},
 	} {
-		_, f := p.Requirement(c.proc, c.msg)
+		_, f := api.Methods{}.Requirement(c.proc, c.msg)
 		if f.Object != c.object {
 			t.Errorf("%s: the object is %q, want %q", c.proc, f.Object, c.object)
 		}
 	}
-	if _, f := p.Requirement(coriav1connect.ProfileServiceGetProfileVersionProcedure, &v1.GetProfileVersionRequest{Tenant: "lab1", Name: "research", Version: 2}); f.Details["version"] != "2" {
+	if _, f := (api.Methods{}).Requirement(coriav1connect.ProfileServiceDiffProfileVersionsProcedure, &v1.DiffProfileVersionsRequest{Tenant: "lab1", Name: "research", ToName: "Smith^John"}); f.Details["to_name"] != "invalid" {
+		t.Errorf("DiffProfileVersions's details are %v", f.Details)
+	}
+	if _, f := (api.Methods{}).Requirement(coriav1connect.ProfileServiceGetProfileVersionProcedure, &v1.GetProfileVersionRequest{Tenant: "lab1", Name: "research", Version: 2}); f.Details["version"] != "2" {
 		t.Errorf("GetProfileVersion's details are %v", f.Details)
 	}
 

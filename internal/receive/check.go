@@ -92,44 +92,16 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 	if err != nil {
 		return decision{}, fault.Wrap(fault.Unavailable, err, "a received file's header cannot be read")
 	}
-	if uid.Check(h.TransferSyntaxUID) != nil {
-		return holdAtReceive(l, tenant.QuarantineNotDICOM, map[string]string{"offset": "132"}, h), nil
-	}
-	for _, a := range []header.Attribute{header.SOPInstanceUID, header.SOPClassUID, header.StudyUID, header.SeriesUID} {
-		v, present := h.UID(a)
-		word := ""
-		switch {
-		case !present:
-			word = tenant.FaultMissing
-		case v == "":
-			word = tenant.FaultEmpty
-		case uid.Check(v) != nil:
-			word = tenant.FaultBadUID
-		}
-		if word != "" {
-			return holdAtReceive(l, tenant.QuarantineBadUID, map[string]string{"attribute": string(a), "fault": word}, h), nil
-		}
-	}
-	if deidentifies {
-		// A placing UID under the standard's own root is no patient's
-		// study, series or instance; held as such, so the rows never need
-		// an exception that would let an original UID in.
-		for _, a := range []header.Attribute{header.SOPInstanceUID, header.StudyUID, header.SeriesUID} {
-			if v, _ := h.UID(a); underStandardRoot(v) {
-				return holdAtReceive(l, tenant.QuarantineBadUID, map[string]string{"attribute": string(a), "fault": tenant.FaultBadUID}, h), nil
-			}
-		}
+	if reason, details := headerHold(h, deidentifies); reason != "" {
+		return holdAtReceive(l, reason, details, h), nil
 	}
 	if a := toldOtherwise(l.told, h); a != "" {
 		return holdAtReceive(l, tenant.QuarantineUIDMismatch, map[string]string{"attribute": string(a)}, h), nil
 	}
-	class, _ := h.UID(header.SOPClassUID)
-	// An empty list is the server's default set, which the listener applies
-	// when it negotiates (PS3.7 D.3.3.2); a file that reached here under it
-	// was negotiated, so every class is taken.
-	if list := rcv.DIMSE.SOPClasses; len(list) > 0 && !slices.Contains(list, class) {
-		return holdAtReceive(l, tenant.QuarantineSOPClassNotAccepted, map[string]string{"sop_class_uid": class}, h), nil
+	if reason, details := classHold(rcv, h); reason != "" {
+		return holdAtReceive(l, reason, details, h), nil
 	}
+	class, _ := h.UID(header.SOPClassUID)
 	study, _ := h.UID(header.StudyUID)
 	inst, _ := h.UID(header.SOPInstanceUID)
 	series, _ := h.UID(header.SeriesUID)
@@ -149,6 +121,55 @@ func (p *Pipeline) check(ctx context.Context, l landed) (decision, error) {
 		Released: l.releasedFrom != "", Deidentified: deidentifies,
 	}
 	return decision{received: rf}, nil
+}
+
+// headerHold returns why a receiver holds a file by its header alone, and
+// the record's details, or "" when it does not: a transfer syntax that is
+// not a UID (not_dicom); a placing UID missing, empty or not well formed
+// (bad_uid); and at a receiver that de-identifies, a placing UID under the
+// standard's own root (bad_uid), which is no patient's study, series or
+// instance, held so the rows never need an exception that would let an
+// original UID in. A trial run of a profile asks the same.
+func headerHold(h *header.Header, deidentifies bool) (tenant.QuarantineReason, map[string]string) {
+	if uid.Check(h.TransferSyntaxUID) != nil {
+		return tenant.QuarantineNotDICOM, map[string]string{"offset": "132"}
+	}
+	for _, a := range []header.Attribute{header.SOPInstanceUID, header.SOPClassUID, header.StudyUID, header.SeriesUID} {
+		v, present := h.UID(a)
+		word := ""
+		switch {
+		case !present:
+			word = tenant.FaultMissing
+		case v == "":
+			word = tenant.FaultEmpty
+		case uid.Check(v) != nil:
+			word = tenant.FaultBadUID
+		}
+		if word != "" {
+			return tenant.QuarantineBadUID, map[string]string{"attribute": string(a), "fault": word}
+		}
+	}
+	if deidentifies {
+		for _, a := range []header.Attribute{header.SOPInstanceUID, header.StudyUID, header.SeriesUID} {
+			if v, _ := h.UID(a); underStandardRoot(v) {
+				return tenant.QuarantineBadUID, map[string]string{"attribute": string(a), "fault": tenant.FaultBadUID}
+			}
+		}
+	}
+	return "", nil
+}
+
+// classHold returns sop_class_not_accepted, with the class, for a file of
+// a SOP class the receiver does not list, or "". An empty list is the
+// server's default set, which the listener applies when it negotiates
+// (PS3.7 D.3.3.2); a file that reached the check under it was negotiated,
+// so every class is taken.
+func classHold(rcv tenant.Receiver, h *header.Header) (tenant.QuarantineReason, map[string]string) {
+	class, _ := h.UID(header.SOPClassUID)
+	if list := rcv.DIMSE.SOPClasses; len(list) > 0 && !slices.Contains(list, class) {
+		return tenant.QuarantineSOPClassNotAccepted, map[string]string{"sop_class_uid": class}
+	}
+	return "", nil
 }
 
 // toldOtherwise returns the first placing attribute whose value in the

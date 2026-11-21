@@ -176,6 +176,29 @@ func (noHeaders) Header(context.Context, string, tenant.QuarantinedFile, int) (s
 	return "", false, ErrNoHeader
 }
 
+// ErrNoHeldFile is what HeldFiles answers for a held file whose bytes
+// cannot be read: they are not kept, or nothing on this server reads them.
+var ErrNoHeldFile = errors.New("the held file's bytes cannot be read")
+
+// HeldFiles reads a held file's bytes, as the sender sent them, for a
+// trial run of a profile over it.
+type HeldFiles interface {
+	// HeldFile returns the bytes of the held file f of the tenant named
+	// tenantName, at most limit bytes: a longer file is an error, never a
+	// part of one. It returns ErrNoHeldFile for a file whose bytes cannot
+	// be read, and any other error for a failure.
+	HeldFile(ctx context.Context, tenantName string, f tenant.QuarantinedFile, limit int64) ([]byte, error)
+}
+
+// noHeldFiles is the HeldFiles of a server whose reception pipeline does
+// not run: no held file can be read.
+type noHeldFiles struct{}
+
+// HeldFile returns ErrNoHeldFile.
+func (noHeldFiles) HeldFile(context.Context, string, tenant.QuarantinedFile, int64) ([]byte, error) {
+	return nil, ErrNoHeldFile
+}
+
 // Live answers what the server holds in memory of a tenant, for a status
 // that must answer also when the tenant's database does not.
 type Live interface {

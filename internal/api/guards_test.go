@@ -22,10 +22,11 @@ import (
 // request the local operator may make on the fixture.
 func everyMethod(f *fixture) map[string]func(clients) outcome {
 	m := map[string]func(clients) outcome{
-		"CreateKey": createKey(&v1.CreateKeyRequest{Holder: "a"}),
-		"GetKey":    func(c clients) outcome { return call(c.access.GetKey, &v1.GetKeyRequest{Id: f.noGrantID}) },
-		"ListKeys":  func(c clients) outcome { return call(c.access.ListKeys, &v1.ListKeysRequest{}) },
-		"RevokeKey": func(c clients) outcome { return call(c.access.RevokeKey, &v1.RevokeKeyRequest{Id: f.noGrantID}) },
+		"CreateKey":        createKey(&v1.CreateKeyRequest{Holder: "a"}),
+		"GetKey":           func(c clients) outcome { return call(c.access.GetKey, &v1.GetKeyRequest{Id: f.noGrantID}) },
+		"ListKeys":         func(c clients) outcome { return call(c.access.ListKeys, &v1.ListKeysRequest{}) },
+		"ListProfileBases": func(c clients) outcome { return call(c.profiles.ListProfileBases, &v1.ListProfileBasesRequest{}) },
+		"RevokeKey":        func(c clients) outcome { return call(c.access.RevokeKey, &v1.RevokeKeyRequest{Id: f.noGrantID}) },
 		"SetGrant": func(c clients) outcome {
 			return call(c.access.SetGrant, &v1.SetGrantRequest{KeyId: f.noGrantID, Scope: installation(), Role: v1.Role_ROLE_READER})
 		},
@@ -170,6 +171,28 @@ func tenantMethods(name string) map[string]func(clients) outcome {
 			return call(c.jobs.ListJobFailures, &v1.ListJobFailuresRequest{Tenant: name, Id: "j1"})
 		},
 		"Watch": func(c clients) outcome { return watchOnce(c, &v1.WatchRequest{Scope: tenantScope(name)}) },
+		"CreateProfileVersion": func(c clients) outcome {
+			return call(c.profiles.CreateProfileVersion, &v1.CreateProfileVersionRequest{Tenant: name, Name: "research", Document: &v1.ProfileDocument{}})
+		},
+		"GetProfileVersion": func(c clients) outcome {
+			return call(c.profiles.GetProfileVersion, &v1.GetProfileVersionRequest{Tenant: name, Name: "research"})
+		},
+		"ListProfiles": func(c clients) outcome { return call(c.profiles.ListProfiles, &v1.ListProfilesRequest{Tenant: name}) },
+		"ListProfileVersions": func(c clients) outcome {
+			return call(c.profiles.ListProfileVersions, &v1.ListProfileVersionsRequest{Tenant: name, Name: "research"})
+		},
+		"ValidateProfile": func(c clients) outcome {
+			return call(c.profiles.ValidateProfile, &v1.ValidateProfileRequest{Tenant: name, Document: &v1.ProfileDocument{}})
+		},
+		"TryProfile": func(c clients) outcome {
+			return call(c.profiles.TryProfile, &v1.TryProfileRequest{Tenant: name, Profile: &v1.TrialProfile{Kind: &v1.TrialProfile_Document{Document: &v1.ProfileDocument{}}}})
+		},
+		"ExplainProfile": func(c clients) outcome {
+			return call(c.profiles.ExplainProfile, &v1.ExplainProfileRequest{Tenant: name, Profile: &v1.TrialProfile{Kind: &v1.TrialProfile_Document{Document: &v1.ProfileDocument{}}}})
+		},
+		"DiffProfileVersions": func(c clients) outcome {
+			return call(c.profiles.DiffProfileVersions, &v1.DiffProfileVersionsRequest{Tenant: name, Name: "research"})
+		},
 	}
 }
 
@@ -209,8 +232,8 @@ func TestNoDecisionIsInternal(t *testing.T) {
 // method: with the master database closed, each answers UNAVAILABLE, never a
 // refusal or an internal error. The local operator calls, so the check reads
 // nothing for most methods and the handler meets the closed master itself;
-// WhoAmI is called with a key, since the local operator's WhoAmI reads
-// nothing at all.
+// WhoAmI and ListProfileBases are called with a key, since the local
+// operator's call of either reads nothing at all.
 func TestEveryMethodWithTheMasterDown(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
@@ -219,7 +242,7 @@ func TestEveryMethodWithTheMasterDown(t *testing.T) {
 	}
 	for name, m := range everyMethod(f) {
 		as := local
-		if name == "WhoAmI" {
+		if name == "WhoAmI" || name == "ListProfileBases" {
 			as = f.instAdmin
 		}
 		if o := m(f.as(as)); o.code() != connect.CodeUnavailable {

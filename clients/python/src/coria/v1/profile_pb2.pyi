@@ -46,6 +46,21 @@ class ProfileView(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     PROFILE_VIEW_UNSPECIFIED: _ClassVar[ProfileView]
     PROFILE_VIEW_DOCUMENT: _ClassVar[ProfileView]
     PROFILE_VIEW_FULL: _ClassVar[ProfileView]
+
+class TrialVerdict(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    TRIAL_VERDICT_UNSPECIFIED: _ClassVar[TrialVerdict]
+    TRIAL_VERDICT_PASSED: _ClassVar[TrialVerdict]
+    TRIAL_VERDICT_HELD: _ClassVar[TrialVerdict]
+    TRIAL_VERDICT_UNDECIDED: _ClassVar[TrialVerdict]
+
+class ProfileChange(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    PROFILE_CHANGE_UNSPECIFIED: _ClassVar[ProfileChange]
+    PROFILE_CHANGE_ADDED: _ClassVar[ProfileChange]
+    PROFILE_CHANGE_REMOVED: _ClassVar[ProfileChange]
+    PROFILE_CHANGE_CHANGED: _ClassVar[ProfileChange]
+    PROFILE_CHANGE_MOVED: _ClassVar[ProfileChange]
 UNNAMED_ELEMENTS_UNSPECIFIED: UnnamedElements
 UNNAMED_ELEMENTS_KEEP: UnnamedElements
 UNNAMED_ELEMENTS_REMOVE: UnnamedElements
@@ -68,6 +83,15 @@ REQUIRED_FALLBACK_UID: RequiredFallback
 PROFILE_VIEW_UNSPECIFIED: ProfileView
 PROFILE_VIEW_DOCUMENT: ProfileView
 PROFILE_VIEW_FULL: ProfileView
+TRIAL_VERDICT_UNSPECIFIED: TrialVerdict
+TRIAL_VERDICT_PASSED: TrialVerdict
+TRIAL_VERDICT_HELD: TrialVerdict
+TRIAL_VERDICT_UNDECIDED: TrialVerdict
+PROFILE_CHANGE_UNSPECIFIED: ProfileChange
+PROFILE_CHANGE_ADDED: ProfileChange
+PROFILE_CHANGE_REMOVED: ProfileChange
+PROFILE_CHANGE_CHANGED: ProfileChange
+PROFILE_CHANGE_MOVED: ProfileChange
 
 class ProfileDocument(_message.Message):
     __slots__ = ("bases", "rules", "unnamed", "date_shift_days", "pixel_rules", "description")
@@ -522,3 +546,300 @@ class ListProfileBasesResponse(_message.Message):
     BASES_FIELD_NUMBER: _ClassVar[int]
     bases: _containers.RepeatedCompositeFieldContainer[ProfileBase]
     def __init__(self, bases: _Optional[_Iterable[_Union[ProfileBase, _Mapping]]] = ...) -> None: ...
+
+class TrialProfile(_message.Message):
+    __slots__ = ("version", "document")
+    VERSION_FIELD_NUMBER: _ClassVar[int]
+    DOCUMENT_FIELD_NUMBER: _ClassVar[int]
+    version: ProfileVersionName
+    document: ProfileDocument
+    def __init__(self, version: _Optional[_Union[ProfileVersionName, _Mapping]] = ..., document: _Optional[_Union[ProfileDocument, _Mapping]] = ...) -> None: ...
+
+class ProfileVersionName(_message.Message):
+    __slots__ = ("name", "version")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    VERSION_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    version: int
+    def __init__(self, name: _Optional[str] = ..., version: _Optional[int] = ...) -> None: ...
+
+class TrialFile(_message.Message):
+    __slots__ = ("name", "content")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    content: bytes
+    def __init__(self, name: _Optional[str] = ..., content: _Optional[bytes] = ...) -> None: ...
+
+class TrialReception(_message.Message):
+    __slots__ = ("receiver", "calling_ae_title", "called_ae_title")
+    RECEIVER_FIELD_NUMBER: _ClassVar[int]
+    CALLING_AE_TITLE_FIELD_NUMBER: _ClassVar[int]
+    CALLED_AE_TITLE_FIELD_NUMBER: _ClassVar[int]
+    receiver: str
+    calling_ae_title: str
+    called_ae_title: str
+    def __init__(self, receiver: _Optional[str] = ..., calling_ae_title: _Optional[str] = ..., called_ae_title: _Optional[str] = ...) -> None: ...
+
+class TryProfileRequest(_message.Message):
+    __slots__ = ("tenant", "profile", "files", "quarantine_records", "reception")
+    TENANT_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_FIELD_NUMBER: _ClassVar[int]
+    FILES_FIELD_NUMBER: _ClassVar[int]
+    QUARANTINE_RECORDS_FIELD_NUMBER: _ClassVar[int]
+    RECEPTION_FIELD_NUMBER: _ClassVar[int]
+    tenant: str
+    profile: TrialProfile
+    files: _containers.RepeatedCompositeFieldContainer[TrialFile]
+    quarantine_records: _containers.RepeatedScalarFieldContainer[str]
+    reception: TrialReception
+    def __init__(self, tenant: _Optional[str] = ..., profile: _Optional[_Union[TrialProfile, _Mapping]] = ..., files: _Optional[_Iterable[_Union[TrialFile, _Mapping]]] = ..., quarantine_records: _Optional[_Iterable[str]] = ..., reception: _Optional[_Union[TrialReception, _Mapping]] = ...) -> None: ...
+
+class TryProfileResponse(_message.Message):
+    __slots__ = ("version", "checksum", "reception_refusal", "results", "summary")
+    VERSION_FIELD_NUMBER: _ClassVar[int]
+    CHECKSUM_FIELD_NUMBER: _ClassVar[int]
+    RECEPTION_REFUSAL_FIELD_NUMBER: _ClassVar[int]
+    RESULTS_FIELD_NUMBER: _ClassVar[int]
+    SUMMARY_FIELD_NUMBER: _ClassVar[int]
+    version: ProfileVersion
+    checksum: str
+    reception_refusal: str
+    results: _containers.RepeatedCompositeFieldContainer[TrialResult]
+    summary: TrialSummary
+    def __init__(self, version: _Optional[_Union[ProfileVersion, _Mapping]] = ..., checksum: _Optional[str] = ..., reception_refusal: _Optional[str] = ..., results: _Optional[_Iterable[_Union[TrialResult, _Mapping]]] = ..., summary: _Optional[_Union[TrialSummary, _Mapping]] = ...) -> None: ...
+
+class TrialResult(_message.Message):
+    __slots__ = ("name", "quarantine_record", "verdict", "reason", "cause", "path", "rule", "elements", "elements_omitted", "values_searched", "values_skipped", "lookups_unassigned", "receiver", "deidentification_only")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    QUARANTINE_RECORD_FIELD_NUMBER: _ClassVar[int]
+    VERDICT_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    CAUSE_FIELD_NUMBER: _ClassVar[int]
+    PATH_FIELD_NUMBER: _ClassVar[int]
+    RULE_FIELD_NUMBER: _ClassVar[int]
+    ELEMENTS_FIELD_NUMBER: _ClassVar[int]
+    ELEMENTS_OMITTED_FIELD_NUMBER: _ClassVar[int]
+    VALUES_SEARCHED_FIELD_NUMBER: _ClassVar[int]
+    VALUES_SKIPPED_FIELD_NUMBER: _ClassVar[int]
+    LOOKUPS_UNASSIGNED_FIELD_NUMBER: _ClassVar[int]
+    RECEIVER_FIELD_NUMBER: _ClassVar[int]
+    DEIDENTIFICATION_ONLY_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    quarantine_record: str
+    verdict: TrialVerdict
+    reason: str
+    cause: str
+    path: str
+    rule: str
+    elements: _containers.RepeatedCompositeFieldContainer[TrialElement]
+    elements_omitted: int
+    values_searched: int
+    values_skipped: int
+    lookups_unassigned: int
+    receiver: str
+    deidentification_only: bool
+    def __init__(self, name: _Optional[str] = ..., quarantine_record: _Optional[str] = ..., verdict: _Optional[_Union[TrialVerdict, str]] = ..., reason: _Optional[str] = ..., cause: _Optional[str] = ..., path: _Optional[str] = ..., rule: _Optional[str] = ..., elements: _Optional[_Iterable[_Union[TrialElement, _Mapping]]] = ..., elements_omitted: _Optional[int] = ..., values_searched: _Optional[int] = ..., values_skipped: _Optional[int] = ..., lookups_unassigned: _Optional[int] = ..., receiver: _Optional[str] = ..., deidentification_only: _Optional[bool] = ...) -> None: ...
+
+class TrialElement(_message.Message):
+    __slots__ = ("path", "keyword", "vr", "action", "rule", "rule_name", "origin", "reason", "changed", "before", "after", "present_after")
+    PATH_FIELD_NUMBER: _ClassVar[int]
+    KEYWORD_FIELD_NUMBER: _ClassVar[int]
+    VR_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    RULE_FIELD_NUMBER: _ClassVar[int]
+    RULE_NAME_FIELD_NUMBER: _ClassVar[int]
+    ORIGIN_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    CHANGED_FIELD_NUMBER: _ClassVar[int]
+    BEFORE_FIELD_NUMBER: _ClassVar[int]
+    AFTER_FIELD_NUMBER: _ClassVar[int]
+    PRESENT_AFTER_FIELD_NUMBER: _ClassVar[int]
+    path: str
+    keyword: str
+    vr: str
+    action: str
+    rule: int
+    rule_name: str
+    origin: str
+    reason: str
+    changed: bool
+    before: str
+    after: str
+    present_after: bool
+    def __init__(self, path: _Optional[str] = ..., keyword: _Optional[str] = ..., vr: _Optional[str] = ..., action: _Optional[str] = ..., rule: _Optional[int] = ..., rule_name: _Optional[str] = ..., origin: _Optional[str] = ..., reason: _Optional[str] = ..., changed: _Optional[bool] = ..., before: _Optional[str] = ..., after: _Optional[str] = ..., present_after: _Optional[bool] = ...) -> None: ...
+
+class TrialSummary(_message.Message):
+    __slots__ = ("files", "passed", "held", "by_rule", "by_reason", "undecided")
+    FILES_FIELD_NUMBER: _ClassVar[int]
+    PASSED_FIELD_NUMBER: _ClassVar[int]
+    HELD_FIELD_NUMBER: _ClassVar[int]
+    BY_RULE_FIELD_NUMBER: _ClassVar[int]
+    BY_REASON_FIELD_NUMBER: _ClassVar[int]
+    UNDECIDED_FIELD_NUMBER: _ClassVar[int]
+    files: int
+    passed: int
+    held: int
+    by_rule: _containers.RepeatedCompositeFieldContainer[TrialCount]
+    by_reason: _containers.RepeatedCompositeFieldContainer[TrialCount]
+    undecided: int
+    def __init__(self, files: _Optional[int] = ..., passed: _Optional[int] = ..., held: _Optional[int] = ..., by_rule: _Optional[_Iterable[_Union[TrialCount, _Mapping]]] = ..., by_reason: _Optional[_Iterable[_Union[TrialCount, _Mapping]]] = ..., undecided: _Optional[int] = ...) -> None: ...
+
+class TrialCount(_message.Message):
+    __slots__ = ("key", "count")
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    COUNT_FIELD_NUMBER: _ClassVar[int]
+    key: str
+    count: int
+    def __init__(self, key: _Optional[str] = ..., count: _Optional[int] = ...) -> None: ...
+
+class ExplainProfileRequest(_message.Message):
+    __slots__ = ("tenant", "profile", "file", "quarantine_record", "reception")
+    TENANT_FIELD_NUMBER: _ClassVar[int]
+    PROFILE_FIELD_NUMBER: _ClassVar[int]
+    FILE_FIELD_NUMBER: _ClassVar[int]
+    QUARANTINE_RECORD_FIELD_NUMBER: _ClassVar[int]
+    RECEPTION_FIELD_NUMBER: _ClassVar[int]
+    tenant: str
+    profile: TrialProfile
+    file: TrialFile
+    quarantine_record: str
+    reception: TrialReception
+    def __init__(self, tenant: _Optional[str] = ..., profile: _Optional[_Union[TrialProfile, _Mapping]] = ..., file: _Optional[_Union[TrialFile, _Mapping]] = ..., quarantine_record: _Optional[str] = ..., reception: _Optional[_Union[TrialReception, _Mapping]] = ...) -> None: ...
+
+class ExplainProfileResponse(_message.Message):
+    __slots__ = ("version", "checksum", "elements", "elements_omitted", "refusal", "refusal_path")
+    VERSION_FIELD_NUMBER: _ClassVar[int]
+    CHECKSUM_FIELD_NUMBER: _ClassVar[int]
+    ELEMENTS_FIELD_NUMBER: _ClassVar[int]
+    ELEMENTS_OMITTED_FIELD_NUMBER: _ClassVar[int]
+    REFUSAL_FIELD_NUMBER: _ClassVar[int]
+    REFUSAL_PATH_FIELD_NUMBER: _ClassVar[int]
+    version: ProfileVersion
+    checksum: str
+    elements: _containers.RepeatedCompositeFieldContainer[ExplainedElement]
+    elements_omitted: int
+    refusal: str
+    refusal_path: str
+    def __init__(self, version: _Optional[_Union[ProfileVersion, _Mapping]] = ..., checksum: _Optional[str] = ..., elements: _Optional[_Iterable[_Union[ExplainedElement, _Mapping]]] = ..., elements_omitted: _Optional[int] = ..., refusal: _Optional[str] = ..., refusal_path: _Optional[str] = ...) -> None: ...
+
+class ExplainedElement(_message.Message):
+    __slots__ = ("path", "keyword", "vr", "action", "rule", "rule_name", "origin", "reason", "selected_by", "others", "others_omitted")
+    PATH_FIELD_NUMBER: _ClassVar[int]
+    KEYWORD_FIELD_NUMBER: _ClassVar[int]
+    VR_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    RULE_FIELD_NUMBER: _ClassVar[int]
+    RULE_NAME_FIELD_NUMBER: _ClassVar[int]
+    ORIGIN_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    SELECTED_BY_FIELD_NUMBER: _ClassVar[int]
+    OTHERS_FIELD_NUMBER: _ClassVar[int]
+    OTHERS_OMITTED_FIELD_NUMBER: _ClassVar[int]
+    path: str
+    keyword: str
+    vr: str
+    action: str
+    rule: int
+    rule_name: str
+    origin: str
+    reason: str
+    selected_by: str
+    others: _containers.RepeatedCompositeFieldContainer[ExplainedCandidate]
+    others_omitted: int
+    def __init__(self, path: _Optional[str] = ..., keyword: _Optional[str] = ..., vr: _Optional[str] = ..., action: _Optional[str] = ..., rule: _Optional[int] = ..., rule_name: _Optional[str] = ..., origin: _Optional[str] = ..., reason: _Optional[str] = ..., selected_by: _Optional[str] = ..., others: _Optional[_Iterable[_Union[ExplainedCandidate, _Mapping]]] = ..., others_omitted: _Optional[int] = ...) -> None: ...
+
+class ExplainedCandidate(_message.Message):
+    __slots__ = ("rule", "rule_name", "origin", "selected_by", "why_not")
+    RULE_FIELD_NUMBER: _ClassVar[int]
+    RULE_NAME_FIELD_NUMBER: _ClassVar[int]
+    ORIGIN_FIELD_NUMBER: _ClassVar[int]
+    SELECTED_BY_FIELD_NUMBER: _ClassVar[int]
+    WHY_NOT_FIELD_NUMBER: _ClassVar[int]
+    rule: int
+    rule_name: str
+    origin: str
+    selected_by: str
+    why_not: str
+    def __init__(self, rule: _Optional[int] = ..., rule_name: _Optional[str] = ..., origin: _Optional[str] = ..., selected_by: _Optional[str] = ..., why_not: _Optional[str] = ...) -> None: ...
+
+class DiffProfileVersionsRequest(_message.Message):
+    __slots__ = ("tenant", "name", "from_version", "to_version", "to_name")
+    TENANT_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    FROM_VERSION_FIELD_NUMBER: _ClassVar[int]
+    TO_VERSION_FIELD_NUMBER: _ClassVar[int]
+    TO_NAME_FIELD_NUMBER: _ClassVar[int]
+    tenant: str
+    name: str
+    from_version: int
+    to_version: int
+    to_name: str
+    def __init__(self, tenant: _Optional[str] = ..., name: _Optional[str] = ..., from_version: _Optional[int] = ..., to_version: _Optional[int] = ..., to_name: _Optional[str] = ...) -> None: ...
+
+class DiffProfileVersionsResponse(_message.Message):
+    __slots__ = ("to", "same_effect", "bases_added", "bases_removed", "unnamed_from", "unnamed_to", "date_shift_days_from", "date_shift_days_to", "rules", "rules_omitted", "effects", "effects_omitted", "pixel_rules_changed", "bases_reordered", "unlisted_change")
+    FROM_FIELD_NUMBER: _ClassVar[int]
+    TO_FIELD_NUMBER: _ClassVar[int]
+    SAME_EFFECT_FIELD_NUMBER: _ClassVar[int]
+    BASES_ADDED_FIELD_NUMBER: _ClassVar[int]
+    BASES_REMOVED_FIELD_NUMBER: _ClassVar[int]
+    UNNAMED_FROM_FIELD_NUMBER: _ClassVar[int]
+    UNNAMED_TO_FIELD_NUMBER: _ClassVar[int]
+    DATE_SHIFT_DAYS_FROM_FIELD_NUMBER: _ClassVar[int]
+    DATE_SHIFT_DAYS_TO_FIELD_NUMBER: _ClassVar[int]
+    RULES_FIELD_NUMBER: _ClassVar[int]
+    RULES_OMITTED_FIELD_NUMBER: _ClassVar[int]
+    EFFECTS_FIELD_NUMBER: _ClassVar[int]
+    EFFECTS_OMITTED_FIELD_NUMBER: _ClassVar[int]
+    PIXEL_RULES_CHANGED_FIELD_NUMBER: _ClassVar[int]
+    BASES_REORDERED_FIELD_NUMBER: _ClassVar[int]
+    UNLISTED_CHANGE_FIELD_NUMBER: _ClassVar[int]
+    to: ProfileVersion
+    same_effect: bool
+    bases_added: _containers.RepeatedScalarFieldContainer[str]
+    bases_removed: _containers.RepeatedScalarFieldContainer[str]
+    unnamed_from: UnnamedElements
+    unnamed_to: UnnamedElements
+    date_shift_days_from: int
+    date_shift_days_to: int
+    rules: _containers.RepeatedCompositeFieldContainer[ProfileRuleChange]
+    rules_omitted: int
+    effects: _containers.RepeatedCompositeFieldContainer[ProfileEffectChange]
+    effects_omitted: int
+    pixel_rules_changed: int
+    bases_reordered: bool
+    unlisted_change: bool
+    def __init__(self, to: _Optional[_Union[ProfileVersion, _Mapping]] = ..., same_effect: _Optional[bool] = ..., bases_added: _Optional[_Iterable[str]] = ..., bases_removed: _Optional[_Iterable[str]] = ..., unnamed_from: _Optional[_Union[UnnamedElements, str]] = ..., unnamed_to: _Optional[_Union[UnnamedElements, str]] = ..., date_shift_days_from: _Optional[int] = ..., date_shift_days_to: _Optional[int] = ..., rules: _Optional[_Iterable[_Union[ProfileRuleChange, _Mapping]]] = ..., rules_omitted: _Optional[int] = ..., effects: _Optional[_Iterable[_Union[ProfileEffectChange, _Mapping]]] = ..., effects_omitted: _Optional[int] = ..., pixel_rules_changed: _Optional[int] = ..., bases_reordered: _Optional[bool] = ..., unlisted_change: _Optional[bool] = ..., **kwargs) -> None: ...
+
+class ProfileRuleChange(_message.Message):
+    __slots__ = ("change", "origin", "from_position", "to_position", "to")
+    CHANGE_FIELD_NUMBER: _ClassVar[int]
+    ORIGIN_FIELD_NUMBER: _ClassVar[int]
+    FROM_POSITION_FIELD_NUMBER: _ClassVar[int]
+    TO_POSITION_FIELD_NUMBER: _ClassVar[int]
+    FROM_FIELD_NUMBER: _ClassVar[int]
+    TO_FIELD_NUMBER: _ClassVar[int]
+    change: ProfileChange
+    origin: str
+    from_position: int
+    to_position: int
+    to: ProfileRule
+    def __init__(self, change: _Optional[_Union[ProfileChange, str]] = ..., origin: _Optional[str] = ..., from_position: _Optional[int] = ..., to_position: _Optional[int] = ..., to: _Optional[_Union[ProfileRule, _Mapping]] = ..., **kwargs) -> None: ...
+
+class ProfileEffectChange(_message.Message):
+    __slots__ = ("selector", "when", "to", "from_position", "to_position", "order_changed")
+    SELECTOR_FIELD_NUMBER: _ClassVar[int]
+    WHEN_FIELD_NUMBER: _ClassVar[int]
+    FROM_FIELD_NUMBER: _ClassVar[int]
+    TO_FIELD_NUMBER: _ClassVar[int]
+    FROM_POSITION_FIELD_NUMBER: _ClassVar[int]
+    TO_POSITION_FIELD_NUMBER: _ClassVar[int]
+    ORDER_CHANGED_FIELD_NUMBER: _ClassVar[int]
+    selector: ProfileSelector
+    when: _containers.RepeatedCompositeFieldContainer[ProfileCondition]
+    to: ProfileAction
+    from_position: int
+    to_position: int
+    order_changed: bool
+    def __init__(self, selector: _Optional[_Union[ProfileSelector, _Mapping]] = ..., when: _Optional[_Iterable[_Union[ProfileCondition, _Mapping]]] = ..., to: _Optional[_Union[ProfileAction, _Mapping]] = ..., from_position: _Optional[int] = ..., to_position: _Optional[int] = ..., order_changed: _Optional[bool] = ..., **kwargs) -> None: ...

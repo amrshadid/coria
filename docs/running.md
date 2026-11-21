@@ -133,5 +133,39 @@ label unhashed (`{PatientID}` rather than `{#PatientID}`) are refused for such a
 receiver. A file whose Study, Series or SOP Instance UID lies under the
 standard's own root (`1.2.840.10008.`) is held at such a receiver (`bad_uid`)
 and cannot be released into the archive. How it works, step by step: [the reception pipeline](../internal/receive/doc.go).
-Profile versions are made through `ProfileService`, which this version does not
-serve yet.
+
+### Make a profile, try it, then point a receiver at it
+
+A profile is a JSON document: its bases (the profiles the server ships, listed
+by `ProfileService.ListProfileBases`, such as `annex-e/basic:2026d`) and its
+own rules. A version never changes; each document stored under a name makes its
+next version.
+
+```
+cat > research.json <<'DOC'
+{"bases": ["annex-e/basic:2026d"],
+ "rules": [{"name": "keep-weight", "selector": {"keyword": "PatientWeight"},
+            "action": {"keep": {}}, "reason": "dose calculations need the weight"}]}
+DOC
+coria profile create lab1 research --document research.json --note "basic, weight kept"
+coria profile try lab1 --profile research@1 ./samples/ --changed-only
+coria profile explain lab1 --profile research@1 ./samples/one.dcm
+coria receiver set lab1 scanner1 --profile research@1
+```
+
+`profile try` runs the version over sample files (or held files, `--record`)
+exactly as a receiver would, in memory, and shows each element's value before
+and after with the rule that decided it, and whether the file would be archived
+or held and why. Nothing is stored and no secret of the tenant is used: each
+run has keys of its own, so its remapped UIDs, hashes, shifted dates and codes
+never equal what the archive holds (only their form carries over), and it reads
+no lookup table (every lookup shows `UNASSIGNED`). With `--receiver`, and for
+held files, the receiver's own checks run too, so "passed" means that receiver
+would archive the file; without one the verdict is de-identification's alone.
+The audit entry keeps the counts per rule and reason as evidence the version
+was tried, never a value. At most two trials run at once on a server. `profile explain` shows, for one
+file, which rule or base decides each element and why the others do not, with
+no value; `profile describe` lists every rule a version runs with its origin;
+`profile diff` shows what a new version changes. Trying needs the operator role
+(it answers the files' values, and can read held files); making a version needs
+admin. Every command takes `--json`.

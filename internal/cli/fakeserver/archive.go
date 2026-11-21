@@ -168,6 +168,7 @@ func (s *Server) registerArchive(srv *connect.Server) {
 	coriav1connect.RegisterMonitorServiceHandler(srv, monitorHandler{s})
 	coriav1connect.RegisterSenderServiceHandler(srv, senderHandler{s})
 	coriav1connect.RegisterJobServiceHandler(srv, jobHandler{s})
+	coriav1connect.RegisterProfileServiceHandler(srv, profileHandler{s})
 }
 
 // begin takes the lock, makes the tables and checks the tenant: what every

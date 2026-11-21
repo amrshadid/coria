@@ -60,6 +60,8 @@ type Client struct {
 	Senders coriav1connect.SenderServiceClient
 	// Jobs is the JobService.
 	Jobs coriav1connect.JobServiceClient
+	// Profiles is the ProfileService.
+	Profiles coriav1connect.ProfileServiceClient
 
 	timeout time.Duration
 	target  string
@@ -153,6 +155,7 @@ func New(cfg Config) (*Client, error) {
 		Data:       coriav1connect.NewDataServiceClient(c),
 		Senders:    coriav1connect.NewSenderServiceClient(c),
 		Jobs:       coriav1connect.NewJobServiceClient(c),
+		Profiles:   coriav1connect.NewProfileServiceClient(c),
 		base:       strings.TrimSuffix(base, "/"),
 		key:        bearerK,
 		timeout:    timeout,

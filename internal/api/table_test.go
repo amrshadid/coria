@@ -84,6 +84,15 @@ var methodTests = map[string]func(t *testing.T){
 	coriav1connect.JobServiceCancelJobProcedure:                     testCancelJob,
 	coriav1connect.JobServiceRetryJobProcedure:                      testRetryJob,
 	coriav1connect.JobServiceListJobFailuresProcedure:               testListJobFailures,
+	coriav1connect.ProfileServiceCreateProfileVersionProcedure:      testCreateProfileVersion,
+	coriav1connect.ProfileServiceGetProfileVersionProcedure:         testGetProfileVersion,
+	coriav1connect.ProfileServiceListProfilesProcedure:              testListProfiles,
+	coriav1connect.ProfileServiceListProfileVersionsProcedure:       testListProfileVersions,
+	coriav1connect.ProfileServiceValidateProfileProcedure:           testValidateProfile,
+	coriav1connect.ProfileServiceListProfileBasesProcedure:          testListProfileBases,
+	coriav1connect.ProfileServiceTryProfileProcedure:                testTryProfile,
+	coriav1connect.ProfileServiceExplainProfileProcedure:            testExplainProfile,
+	coriav1connect.ProfileServiceDiffProfileVersionsProcedure:       testDiffProfileVersions,
 }
 
 // contractMethods returns the full procedure name and descriptor of every
@@ -99,6 +108,7 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 		v1.File_coria_v1_monitor_proto, v1.File_coria_v1_metadata_proto,
 		v1.File_coria_v1_catalog_proto, v1.File_coria_v1_data_proto,
 		v1.File_coria_v1_sender_proto, v1.File_coria_v1_job_proto,
+		v1.File_coria_v1_profile_proto,
 	} {
 		for i := 0; i < f.Services().Len(); i++ {
 			s := f.Services().Get(i)
@@ -118,8 +128,8 @@ func contractMethods() map[string]protoreflect.MethodDescriptor {
 // here names a method the contract does not have.
 func TestEveryMethod(t *testing.T) {
 	methods := contractMethods()
-	if len(methods) != 61 {
-		t.Errorf("the contract has %d methods; this test was written for 61, so look at what changed", len(methods))
+	if len(methods) != 70 {
+		t.Errorf("the contract has %d methods; this test was written for 70, so look at what changed", len(methods))
 	}
 	var table api.Methods
 	for proc, md := range methods {

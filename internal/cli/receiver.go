@@ -63,12 +63,20 @@ key is listed by one stow receiver of a tenant at most. Each part is bounded by
 is complete and archived, the server makes a send job for it to each, so what
 arrives is passed on without anyone asking. It never delays a reception.
 
+--profile NAME@VERSION de-identifies what arrives by that version of one of the
+tenant's profiles (coria profile list), before anything is archived; a new
+version of the profile runs nowhere until a receiver is changed to it.
+--as-received archives what arrives as it was sent, which the tenant's setting
+receiver.allow-as-received must allow. Try a version on sample files first
+(coria profile try).
+
 The answer says whether the receiver could start: its health is up, or down
 with the reason, such as a port the server could not take.`,
 		Example: `  coria storage add lab1 main --type dir --root fast
   coria receiver add lab1 scanner1 --storage main --port 11112 --aet CORIA \
       --allow-aet PRISMA1 --allow-from 10.20.0.0/24 --enabled
   coria receiver add lab1 forwarded --storage main --port 11114 --aet FWD --allow-aet PRISMA1 --forward-to pacs
+  coria receiver add lab1 research --storage main --port 11115 --aet RESEARCH --allow-aet PRISMA1 --profile research@3
   coria receiver add lab1 open --storage main --port 11113 --aet OPEN --any-caller
   coria receiver add lab1 web --type stow --storage main --allow-key 7QmXc2LpZ4 --enabled`,
 		Args: exactArgs(2),
@@ -211,6 +219,12 @@ func (a *app) receiverDetails(w io.Writer, r *v1.Receiver) error {
 	if len(r.GetForwardTo()) > 0 {
 		pairs = append(pairs, output.Pair{Label: "Forwards to", Value: strings.Join(r.GetForwardTo(), ", ")})
 	}
+	switch {
+	case r.GetProfile() != nil:
+		pairs = append(pairs, output.Pair{Label: "De-identification", Value: "profile " + r.GetProfile().GetName() + "@" + strconv.Itoa(int(r.GetProfile().GetVersion()))})
+	case r.GetAsReceived() != nil:
+		pairs = append(pairs, output.Pair{Label: "De-identification", Value: "none: archived as received"})
+	}
 	pairs = append(pairs,
 		output.Pair{Label: "Created", Value: a.when(r.GetCreateTime())},
 		output.Pair{Label: "Updated", Value: a.when(r.GetUpdateTime())})
@@ -315,11 +329,14 @@ set. A stow receiver's keys are replaced whole by --allow-key, and --no-keys
 closes it. The three naming templates are given together, and --default-naming
 returns to the default rule. --forward-to replaces the list of senders each
 reception is sent to when it is archived, and --forward-to "" stops forwarding.
+--profile NAME@VERSION or --as-received changes what the receiver does to what
+arrives from then on; nothing already archived changes.
 --enabled=false stops a receiver without removing it.`,
 		Example: `  coria receiver set lab1 scanner1 --quiet-period 5m
   coria receiver set lab1 scanner1 --allow-aet PRISMA1 --allow-aet SKYRA2
   coria receiver set lab1 scanner1 --enabled=false
   coria receiver set lab1 scanner1 --forward-to pacs --forward-to archive2
+  coria receiver set lab1 scanner1 --profile research@4
   coria receiver set lab1 web --allow-key 7QmXc2LpZ4 --allow-key 9FvTb8RkW3`,
 		Args: exactArgs(2),
 		RunE: a.run(func(ctx context.Context, cmd *cobra.Command, args []string) error {

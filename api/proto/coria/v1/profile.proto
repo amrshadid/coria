@@ -31,8 +31,12 @@ import "google/protobuf/timestamp.proto";
 // touches a file already archived.
 //
 // A profile is configuration, not patient data: no field of this service
-// ever carries a value read from a file. A rule's constant is text a person
-// wrote, and is kept and answered as written.
+// carries a value read from a file but those of a trial run
+// (TryProfileRequest's files, TrialElement's before and after), which hold
+// the caller's own data: files it sent, or held files it may read. Each is
+// marked debug_redact, and no log line, audit entry or event carries one. A
+// rule's constant is text a person wrote, and is kept and answered as
+// written.
 //
 // Every method but ListProfileBases acts inside one tenant, named by the
 // request's tenant field, so a request into a tenant that is not ready is
@@ -155,6 +159,113 @@ service ProfileService {
   // Audit: one entry in the installation's log.
   // Errors: unauthenticated, invalid.
   rpc ListProfileBases(ListProfileBasesRequest) returns (ListProfileBasesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // TryProfile runs a profile over sample files as a receiver would, and
+  // stores nothing: each file is de-identified by the engine, written in
+  // memory, checked after by the separate read that searches it for every
+  // value the profile removed, and answered element by element with its
+  // value before and after, the action, and the rule (or base) that
+  // decided it and why, with the verdict a receiver would reach: passed,
+  // or held with the quarantine reason and its fixed cause. The profile is
+  // a stored version or an unsaved document, checked as ValidateProfile
+  // checks one (a document with a problem is refused with every problem as
+  // a ProfileProblems detail). The files are given in the request, or
+  // named by quarantine record ids of the tenant, whose held bytes (as the
+  // sender sent them) are read where the server keeps them.
+  //
+  // Nothing is stored and nothing is changed, and nothing of the tenant's
+  // secrets is used: each request runs under keys made for it alone (for
+  // UIDs, dates and hashes) and thrown away after, and reads no lookup
+  // table. So a trial's keyed values (remapped UIDs, hashes, shifted
+  // dates, lookup codes) are never those the archive holds, and cannot be
+  // matched with it; only their form and the verdict carry over. Every
+  // lookup is answered with the code UNASSIGNED, and counted; a lookup
+  // whose missing value a receiver would hold the file for makes the
+  // verdict TRIAL_VERDICT_UNDECIDED. No file is written to a storage and
+  // no record is made. The before values are the caller's own data, and
+  // are answered; no log line, audit entry or event carries one.
+  //
+  // A sent file tried with a receiver named (TrialReception.receiver), and
+  // a held file (with the receiver that held it, while it exists), runs
+  // that receiver's receiving checks too, as the receiver runs them: the
+  // header read within receiver.header-limit, the placing UIDs present,
+  // well formed and not under the standard's root, its SOP classes, its
+  // naming rule and the search of its labels for removed values, and the
+  // check after within its file bound; "passed" then means that receiver
+  // would archive the file. With no receiver the verdict is
+  // de-identification's alone (TrialResult.deidentification_only): the
+  // receiving checks, the receiver's labels and an association's own
+  // checks (its AE titles, a file's size against the receiver's bound, the
+  // UIDs a C-STORE announced) are left out.
+  //
+  // Reading a held file needs what reading its header needs: operator.
+  //
+  // Role: operator on the tenant.
+  // Audit: one entry in the tenant's log, with the profile version tried
+  // (or the unsaved document's checksum) as its object and, in details,
+  // the number of files, how many passed and were held, and the counts
+  // per rule and per reason: the evidence that the version was tried,
+  // never a value.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant
+  // that does not exist, for a caller who may not list every tenant),
+  // invalid (no profile, or both kinds; a document with a problem; no file
+  // and no record, or more than 32 of them together; a file empty or
+  // larger than 3 MiB, or files together larger than 3.5 MiB; a malformed
+  // record id), not found (a profile or version the tenant does not have;
+  // a quarantine record it does not have; a receiver named that it does
+  // not have; a tenant that does not exist, for a caller who may list
+  // every tenant), precondition (a stored version this server cannot run;
+  // a record whose bytes are not kept, or are larger than 64 MiB; held
+  // files together larger than 128 MiB), exhausted (as many trial runs and
+  // explanations as the server runs at once, 2, are running; try again),
+  // unavailable (the tenant's database does not answer, the tenant is not
+  // ready, or a held file cannot be read now).
+  rpc TryProfile(TryProfileRequest) returns (TryProfileResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // ExplainProfile answers, for one file, which rule or base decides each
+  // element and why, without answering any value: for each element its
+  // path, VR and the action, the deciding rule with its origin and reason
+  // (or the default, or the engine's floor), and every other rule whose
+  // selector matches it, each with why it does not decide (a more specific
+  // or a later rule decides, or its conditions do not hold). The file is
+  // processed as TryProfile processes it, in memory, and nothing is
+  // stored, under keys made for the request as TryProfile's.
+  //
+  // Role: operator on the tenant.
+  // Audit: one entry in the tenant's log, with the profile version (or the
+  // unsaved document's checksum) as its object.
+  // Errors: as TryProfile, for one file or one record.
+  rpc ExplainProfile(ExplainProfileRequest) returns (ExplainProfileResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+
+  // DiffProfileVersions answers what changes between two versions: their
+  // bases, their defaults, their rules one by one (a rule is the same rule
+  // in both when it comes from the same origin and has the same name, or,
+  // unnamed, the same selector and conditions), and the effect on the
+  // expanded form: for each selector and set of conditions, the action
+  // that wins between the rules that have exactly that selector, before
+  // and after. The rules of a base present in only one version are not
+  // listed one by one: the base is. Equal checksums mean equal effect on
+  // every file, and then no effect is listed. The effect is judged rule
+  // against rule, not element against element: a rule whose selector is
+  // more specific than another's takes elements from it in both versions
+  // alike, and TryProfile over sample files shows the effect on them.
+  //
+  // Role: operator on the tenant.
+  // Audit: one entry in the tenant's log, with the profile's name as its
+  // object and both versions in details.
+  // Errors: unauthenticated, permission denied (no grant; also a tenant
+  // that does not exist, for a caller who may not list every tenant),
+  // invalid (a malformed name, a negative version), not found (a profile
+  // or version the tenant does not have; a tenant that does not exist, for
+  // a caller who may list every tenant), unavailable (the tenant's
+  // database does not answer, or the tenant is not ready).
+  rpc DiffProfileVersions(DiffProfileVersionsRequest) returns (DiffProfileVersionsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
 }
@@ -1204,4 +1315,517 @@ message ListProfileBasesRequest {}
 message ListProfileBasesResponse {
   // The bases, by name in byte order.
   repeated ProfileBase bases = 1;
+}
+
+// TrialProfile is the profile a trial run, an explanation or a check runs:
+// a stored version, or a document not stored. Exactly one kind is set.
+message TrialProfile {
+  // The kind of profile.
+  oneof kind {
+    // A stored version of one of the tenant's profiles.
+    ProfileVersionName version = 1;
+
+    // A document, checked and expanded as ValidateProfile does and run as
+    // a version of it would be; nothing of it is stored.
+    ProfileDocument document = 2;
+  }
+}
+
+// ProfileVersionName names a stored version of a profile.
+message ProfileVersionName {
+  // The profile's name. Required.
+  string name = 1;
+
+  // The version; zero for the latest. Negative is invalid.
+  int32 version = 2;
+}
+
+// TrialFile is a file a caller sends to be tried.
+message TrialFile {
+  // A name the caller gives the file, answered back with its result so a
+  // caller can tell its files apart, such as the file's path on the
+  // caller's side; at most 1024 bytes of UTF-8. It is the caller's text and
+  // may say anything, so it is redacted wherever the server logs.
+  string name = 1 [debug_redact = true];
+
+  // The file's bytes: a DICOM file (PS3.10), at most 3 MiB.
+  bytes content = 2 [debug_redact = true];
+}
+
+// TrialReception is what the reception of the tried files would say of
+// them, which a profile's conditions on the receiver and the AE titles
+// read. Each field is optional; one not given is absent, as for a file
+// with no such fact. A held file is tried with its own reception's facts,
+// and these are not used for it.
+message TrialReception {
+  // The name of one of the tenant's receivers. Given, the receiver must
+  // exist, and its receiving checks run too (TryProfile); absent, the
+  // verdict is de-identification's alone.
+  string receiver = 1;
+
+  // The sender's AE title (PS3.8 9.3.2), at most 16 characters.
+  string calling_ae_title = 2;
+
+  // The AE title the sender called, at most 16 characters.
+  string called_ae_title = 3;
+}
+
+// TryProfileRequest names a profile and the files to try it on.
+message TryProfileRequest {
+  // The tenant, by name. Required.
+  string tenant = 1;
+
+  // The profile to try. Required.
+  TrialProfile profile = 2;
+
+  // Files sent with the request. With quarantine_records, 1 to 32 in all.
+  repeated TrialFile files = 3;
+
+  // Ids of the tenant's quarantine records whose held files to try. Each
+  // at most 64 bytes.
+  repeated string quarantine_records = 4;
+
+  // The reception the sent files are tried as coming from.
+  TrialReception reception = 5;
+}
+
+// TryProfileResponse is the result of each file, in the order of the
+// request (its files, then its records), and a summary.
+message TryProfileResponse {
+  // The version tried, without its document; absent for a document.
+  ProfileVersion version = 1;
+
+  // The checksum of the expanded form tried.
+  string checksum = 2;
+
+  // Why a receiver could not name the profile as it is, in plain words
+  // (for example, it does not remap the UIDs a file is placed by); empty
+  // when one can.
+  string reception_refusal = 3;
+
+  // Each file's result.
+  repeated TrialResult results = 4;
+
+  // The counts over every file.
+  TrialSummary summary = 5;
+}
+
+// TrialVerdict is what a receiver would do with a file.
+enum TrialVerdict {
+  // Never answered.
+  TRIAL_VERDICT_UNSPECIFIED = 0;
+
+  // The file would be archived, de-identified as the elements say.
+  TRIAL_VERDICT_PASSED = 1;
+
+  // The file would be held, with the reason and cause given.
+  TRIAL_VERDICT_HELD = 2;
+
+  // Whether the file would be held depends on a lookup table the trial
+  // does not read: a lookup rule holds a file whose value has no code
+  // (cause "lookup_table").
+  TRIAL_VERDICT_UNDECIDED = 3;
+}
+
+// TrialResult is what the profile does to one file.
+message TrialResult {
+  // The name the caller gave a sent file; empty for a held file.
+  string name = 1 [debug_redact = true];
+
+  // The quarantine record a held file was read from; empty for a sent
+  // file.
+  string quarantine_record = 2;
+
+  // What a receiver would do with it.
+  TrialVerdict verdict = 3;
+
+  // For a held file, the quarantine reason it would be held with, as
+  // Quarantine's reasons are written: "deid_failed", "residual_value",
+  // "profile_refused", and with a receiver "not_dicom",
+  // "header_too_large", "bad_uid", "sop_class_not_accepted" and
+  // "bad_label".
+  string reason = 4;
+
+  // For a held file, the fixed cause: the engine's (such as "bad_value",
+  // "lookup_missing", "too_large", "no_subject", "uid_not_remapped",
+  // "unreadable", "after_unreadable": the file the check passed could not
+  // be read back to answer its values) or the check's
+  // ("check_unreadable", "check_too_large"), for residual_value the kind
+  // of value found ("name", "identifier", "date", "uid"), for bad_uid and
+  // bad_label the fault ("missing", "empty", "bad_uid", ...), and
+  // "lookup_table" for an undecided verdict. Never a value.
+  string cause = 5;
+
+  // The element the cause names, as a path; empty when none does.
+  string path = 6;
+
+  // The name of the rule that refused the file (a quarantine action), or
+  // whose action could not be applied; empty when none.
+  string rule = 7;
+
+  // Each element, in the order the engine visits them (the top level and
+  // every item, then each element a set rule made); empty when the engine
+  // refused the file before it changed it.
+  repeated TrialElement elements = 8;
+
+  // Elements left out to keep the answer within its bound (2,000 per file
+  // and about 3 MiB of values in all), counted.
+  int32 elements_omitted = 9;
+
+  // The number of values the profile removed or changed that the check
+  // after searched for, and of those it skipped as too short.
+  int32 values_searched = 10;
+
+  // See values_searched.
+  int32 values_skipped = 11;
+
+  // The number of lookups answered UNASSIGNED: a value its table has no
+  // code for, which a receiver would assign the table's next code.
+  int32 lookups_unassigned = 12;
+
+  // The receiver whose receiving checks ran; empty when none did.
+  string receiver = 13;
+
+  // True when no receiver's checks ran: the verdict is
+  // de-identification's alone.
+  bool deidentification_only = 14;
+}
+
+// TrialElement is what happened to one element of a tried file, and why.
+message TrialElement {
+  // Where the element is: its tag as eight hexadecimal digits after the
+  // sequences and item numbers it is inside, such as
+  // "00081115[0]/0020000E".
+  string path = 1;
+
+  // The element's keyword in the data dictionary; empty for a private or
+  // unknown element.
+  string keyword = 2;
+
+  // The VR the engine read it as.
+  string vr = 3;
+
+  // What was done: keep, remove, empty, replace, set, hash, uid, shift,
+  // generalize, lookup, clean, dummy, remove_unless_required, or create
+  // for an element a set rule made.
+  string action = 4;
+
+  // The position of the deciding rule among the expanded form's rules,
+  // from 1; zero when no rule decided (a default, a fixed rule of the
+  // pipeline, or the floor).
+  int32 rule = 5;
+
+  // The deciding rule's name, when it has one.
+  string rule_name = 6;
+
+  // The base the deciding rule came from; empty for the profile's own
+  // rule and for no rule.
+  string origin = 7;
+
+  // The rule's reason, or why the default, the floor or a fixed rule
+  // applied.
+  string reason = 8;
+
+  // Whether the element's value or presence changed.
+  bool changed = 9;
+
+  // The value before, as text, its padding removed; empty for a value
+  // that is not text (a sequence, binary data) and for an element the
+  // received data set does not hold at this path.
+  string before = 10 [debug_redact = true];
+
+  // The value after, read back from the de-identified file as written;
+  // empty when it is not text or the element is not in that file, and for
+  // every element of a file that was held before it was written.
+  string after = 11 [debug_redact = true];
+
+  // Whether the de-identified file holds the element.
+  bool present_after = 12;
+}
+
+// TrialSummary is the counts of a trial run, with no value.
+message TrialSummary {
+  // The files tried.
+  int32 files = 1;
+
+  // Of them, those that would be archived.
+  int32 passed = 2;
+
+  // Of them, those that would be held.
+  int32 held = 3;
+
+  // How many elements each rule decided, over every file, by the rule's
+  // name or "rule N" (its position, from 1), with "default" for elements
+  // no rule decided; by count, most first.
+  repeated TrialCount by_rule = 4;
+
+  // How many files were held for each reason, by
+  // "<reason>/<cause>"; by count, most first.
+  repeated TrialCount by_reason = 5;
+
+  // Of them, those whose verdict depends on a lookup table.
+  int32 undecided = 6;
+}
+
+// TrialCount is one count of a summary.
+message TrialCount {
+  // What is counted.
+  string key = 1;
+
+  // How many.
+  int32 count = 2;
+}
+
+// ExplainProfileRequest names a profile and one file.
+message ExplainProfileRequest {
+  // The tenant, by name. Required.
+  string tenant = 1;
+
+  // The profile. Required.
+  TrialProfile profile = 2;
+
+  // The file, sent; or quarantine_record. Exactly one.
+  TrialFile file = 3;
+
+  // The id of a quarantine record whose held file to explain.
+  string quarantine_record = 4;
+
+  // The reception a sent file is explained as coming from.
+  TrialReception reception = 5;
+}
+
+// ExplainProfileResponse is the decision for each element of the file.
+message ExplainProfileResponse {
+  // The version explained, without its document; absent for a document.
+  ProfileVersion version = 1;
+
+  // The checksum of the expanded form.
+  string checksum = 2;
+
+  // Each element, in the order the engine visits them; empty when the
+  // engine refused the file before it decided every element, and then
+  // refusal says why.
+  repeated ExplainedElement elements = 3;
+
+  // Elements left out past 5,000, counted.
+  int32 elements_omitted = 4;
+
+  // When the engine refused the file: the fixed cause, as
+  // TrialResult.cause. Empty otherwise.
+  string refusal = 5;
+
+  // The element the refusal names; empty when none.
+  string refusal_path = 6;
+}
+
+// ExplainedElement is why one element is treated as it is. It holds no
+// value.
+message ExplainedElement {
+  // Where the element is, as TrialElement.path.
+  string path = 1;
+
+  // The element's keyword; empty for a private or unknown element.
+  string keyword = 2;
+
+  // The VR the engine read it as.
+  string vr = 3;
+
+  // What is done to it, as TrialElement.action.
+  string action = 4;
+
+  // The deciding rule's position among the expanded form's rules, from 1;
+  // zero when no rule decides.
+  int32 rule = 5;
+
+  // The deciding rule's name.
+  string rule_name = 6;
+
+  // The base the deciding rule came from; empty for the profile's own.
+  string origin = 7;
+
+  // Why: the rule's reason, or why the default, the floor or a fixed rule
+  // applies.
+  string reason = 8;
+
+  // How the deciding rule selects the element: "place", "tag",
+  // "private_element", "private_block", "group" or "vr" (from the most
+  // specific); empty when no rule decides.
+  string selected_by = 9;
+
+  // The other rules whose selector matches the element, by precedence:
+  // each does not decide, and says why. At most 16.
+  repeated ExplainedCandidate others = 10;
+
+  // Other rules past 16, counted.
+  int32 others_omitted = 11;
+}
+
+// ExplainedCandidate is a rule whose selector matches an element and that
+// does not decide it.
+message ExplainedCandidate {
+  // The rule's position among the expanded form's rules, from 1.
+  int32 rule = 1;
+
+  // The rule's name.
+  string rule_name = 2;
+
+  // The base it came from; empty for the profile's own.
+  string origin = 3;
+
+  // How it selects the element, as ExplainedElement.selected_by.
+  string selected_by = 4;
+
+  // Why it does not decide: "conditions" (its conditions do not hold for
+  // this file), "less_specific" (a rule of a more specific selector
+  // decides), "earlier" (a later rule of an equally specific selector
+  // decides), or "floor" (the engine's floor overrides every rule here).
+  string why_not = 5;
+}
+
+// DiffProfileVersionsRequest names two versions to compare.
+message DiffProfileVersionsRequest {
+  // The tenant, by name. Required.
+  string tenant = 1;
+
+  // The profile's name. Required.
+  string name = 2;
+
+  // The version compared from; zero for the latest.
+  int32 from_version = 3;
+
+  // The version compared to; zero for the latest.
+  int32 to_version = 4;
+
+  // The profile of to_version, when it is another profile than name;
+  // empty for the same.
+  string to_name = 5;
+}
+
+// DiffProfileVersionsResponse is what changes from one version to the
+// other.
+message DiffProfileVersionsResponse {
+  // The version compared from, without its document.
+  ProfileVersion from = 1;
+
+  // The version compared to, without its document.
+  ProfileVersion to = 2;
+
+  // True when the checksums are equal: every file is treated alike.
+  bool same_effect = 3;
+
+  // The bases of to that from does not have, in to's order.
+  repeated string bases_added = 4;
+
+  // The bases of from that to does not have, in from's order.
+  repeated string bases_removed = 5;
+
+  // What happens to an element no rule decides, in each.
+  UnnamedElements unnamed_from = 6;
+
+  // See unnamed_from.
+  UnnamedElements unnamed_to = 7;
+
+  // The largest date shift in days, in each.
+  int32 date_shift_days_from = 8;
+
+  // See date_shift_days_from.
+  int32 date_shift_days_to = 9;
+
+  // Each rule added, removed or changed, in to's order and then the
+  // removed in from's; at most 1,000.
+  repeated ProfileRuleChange rules = 10;
+
+  // Rules past 1,000, counted.
+  int32 rules_omitted = 11;
+
+  // Each change of effect, in to's order and then those only in from;
+  // at most 1,000.
+  repeated ProfileEffectChange effects = 12;
+
+  // Changes of effect past 1,000, counted.
+  int32 effects_omitted = 13;
+
+  // The pixel rules one version has and the other does not, each
+  // compared whole with its origin, counted (a rule changed counts once in
+  // each).
+  int32 pixel_rules_changed = 14;
+
+  // True when both have the same bases in another order: a later base's
+  // rule wins over an earlier's between equals.
+  bool bases_reordered = 15;
+
+  // True when same_effect is false and none of the lists above, nor the
+  // defaults, shows why: the expanded forms differ in what this
+  // comparison does not itemize (TryProfile over files shows the effect).
+  bool unlisted_change = 16;
+}
+
+// ProfileChange is how a rule differs between two versions.
+enum ProfileChange {
+  // Never answered.
+  PROFILE_CHANGE_UNSPECIFIED = 0;
+
+  // Only in the version compared to.
+  PROFILE_CHANGE_ADDED = 1;
+
+  // Only in the version compared from.
+  PROFILE_CHANGE_REMOVED = 2;
+
+  // In both, with a difference.
+  PROFILE_CHANGE_CHANGED = 3;
+
+  // In both, the same, but in another order among the rules with its
+  // selector, so which of them wins can differ.
+  PROFILE_CHANGE_MOVED = 4;
+}
+
+// ProfileRuleChange is one rule that differs.
+message ProfileRuleChange {
+  // How.
+  ProfileChange change = 1;
+
+  // The base it comes from; empty for the profile's own rule.
+  string origin = 2;
+
+  // Its position among from's expanded rules, from 1; zero when added.
+  int32 from_position = 3;
+
+  // Its position among to's expanded rules, from 1; zero when removed.
+  int32 to_position = 4;
+
+  // The rule in from; absent when added.
+  ProfileRule from = 5;
+
+  // The rule in to; absent when removed.
+  ProfileRule to = 6;
+}
+
+// ProfileEffectChange is a selector, with its conditions, whose winning
+// action differs; or a selector whose rules of different conditions are
+// in another order (order_changed).
+message ProfileEffectChange {
+  // The selector.
+  ProfileSelector selector = 1;
+
+  // The conditions.
+  repeated ProfileCondition when = 2;
+
+  // The action that wins in from; absent when no rule there has this
+  // selector and these conditions.
+  ProfileAction from = 3;
+
+  // The action that wins in to; absent likewise.
+  ProfileAction to = 4;
+
+  // The winning rule's position in from, from 1; zero when absent.
+  int32 from_position = 5;
+
+  // The winning rule's position in to, from 1; zero when absent.
+  int32 to_position = 6;
+
+  // True when the change is of the order among the rules with this
+  // selector and different conditions, not of an action: for a file that
+  // meets more than one rule's conditions, another rule wins. when, from
+  // and to are then empty.
+  bool order_changed = 7;
 }

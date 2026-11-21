@@ -74,3 +74,20 @@ const DownloadMethod = DownloadPattern
 func DownloadFacts(tenant, subject, session, scan, instance string, ranged, window bool) (access.Requirement, access.Request) {
 	return downloadNeed(download{Tenant: tenant, Subject: subject, Session: session, Scan: scan, Instance: instance, Ranged: ranged, Window: window})
 }
+
+// HoldTrialPlaces takes n of the places the services keep for trial runs,
+// as that many trials running would, and returns the function that gives
+// them back.
+func HoldTrialPlaces(h Handlers, n int) func() {
+	for range n {
+		h.c.trials <- struct{}{}
+	}
+	return func() {
+		for range n {
+			<-h.c.trials
+		}
+	}
+}
+
+// SafeTrial is safeTrial: what a trial's error is answered and logged as.
+func SafeTrial(err error) error { return safeTrial(err) }

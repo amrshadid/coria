@@ -9,6 +9,7 @@ import (
 
 	v1 "github.com/amrshadid/coria/gen/coria/v1"
 	"github.com/amrshadid/coria/internal/cli/output"
+	"github.com/amrshadid/coria/internal/deid/profile"
 	"github.com/amrshadid/coria/internal/fault"
 )
 
@@ -43,6 +44,8 @@ type receiverFlags struct {
 	maxOpenTime      string
 	maxFileSize      string
 	forwardTo        []string
+	profile          string
+	asReceived       bool
 }
 
 // add registers the flags on a command. The flags that only make sense when
@@ -77,6 +80,9 @@ func (f *receiverFlags) add(cmd *cobra.Command, forSet bool) {
 	fl.StringVar(&f.maxOpenTime, "max-open-time", "", "the longest a reception stays receiving: a number and s, m or h, from 1m to 24h, not less than the quiet period (default 1h)")
 	fl.StringArrayVar(&f.forwardTo, "forward-to", nil, "the name of a sender of the tenant to send each reception to when it is archived; repeat for more senders, and --forward-to \"\" on set stops forwarding")
 	fl.StringVar(&f.maxFileSize, "max-file-size", "", "the largest file it accepts, a size such as 4GiB, from 1KiB to 256GiB (default 4GiB)")
+	fl.StringVar(&f.profile, "profile", "", "de-identify what it receives by this version of one of the tenant's profiles, written NAME@VERSION, such as research@3")
+	fl.BoolVar(&f.asReceived, "as-received", false, "archive what it receives as received, without de-identification, where the tenant's setting receiver.allow-as-received allows it")
+	cmd.MarkFlagsMutuallyExclusive("profile", "as-received")
 	if forSet {
 		fl.BoolVar(&f.noKeys, "no-keys", false, "stow: take requests from no key; the receiver stays closed until keys are listed again")
 		cmd.MarkFlagsMutuallyExclusive("allow-key", "no-keys")
@@ -269,6 +275,9 @@ func (f *receiverFlags) receiver(cmd *cobra.Command, name string) (*v1.Receiver,
 			return nil, nil, err
 		}
 	}
+	if err := f.deidentification(cmd, r, &paths); err != nil {
+		return nil, nil, err
+	}
 	return r, paths, nil
 }
 
@@ -307,4 +316,29 @@ func (f *receiverFlags) isStow(cmd *cobra.Command, stowFlags bool) (bool, error)
 		return false, fault.New(fault.Invalid, "a stow receiver has no port, AE title, callers, TLS, SOP classes or transfer syntaxes: those flags are a dimse receiver's")
 	}
 	return stow, nil
+}
+
+// deidentification sets the receiver's choice of de-identification from
+// --profile or --as-received, and the mask path of the oneof that holds it.
+// A profile is named by an exact version: a receiver runs the version it
+// names, and a new version runs nowhere until a receiver is changed to it.
+func (f *receiverFlags) deidentification(cmd *cobra.Command, r *v1.Receiver, paths *[]string) error {
+	fl := cmd.Flags()
+	switch {
+	case fl.Changed("profile"):
+		ref, err := profile.ParseRef(f.profile)
+		if err != nil || ref.Version == 0 {
+			return fault.New(fault.Invalid, fmt.Sprintf("--profile %q is not NAME@VERSION, such as research@3: a receiver names the exact version it runs", output.Clean(f.profile)))
+		}
+		r.Deidentification = &v1.Receiver_Profile{Profile: &v1.ProfileVersionRef{Name: ref.Name, Version: ref.Version}}
+	case fl.Changed("as-received"):
+		if !f.asReceived {
+			return fault.New(fault.Invalid, "--as-received=false is not a choice: name a profile version with --profile")
+		}
+		r.Deidentification = &v1.Receiver_AsReceived{AsReceived: &v1.AsReceived{}}
+	default:
+		return nil
+	}
+	*paths = append(*paths, "deidentification")
+	return nil
 }

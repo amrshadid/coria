@@ -31,6 +31,19 @@ var secretFields = []string{
 	"coria.v1.StowSender.credential",
 }
 
+// patientDataFields are the fields through which a file's values cross the
+// API in a trial run of a profile: the caller's own data (a file it sent,
+// or a held file it may read), answered only to it. Each must be marked
+// debug_redact, so the server's redactor removes them before anything is
+// logged, as it removes a secret.
+var patientDataFields = []string{
+	"coria.v1.TrialElement.after",
+	"coria.v1.TrialElement.before",
+	"coria.v1.TrialFile.content",
+	"coria.v1.TrialFile.name",
+	"coria.v1.TrialResult.name",
+}
+
 // textFields lists every field of the contract that carries free text: each
 // string or bytes field, and each map with string or bytes keys or values.
 // A secret can only travel in such a field. A field added to the contract
@@ -401,6 +414,61 @@ var textFields = []string{
 	"coria.v1.ValidateProfileRequest.tenant",
 	"coria.v1.ValidateProfileResponse.checksum",
 
+	// profile.proto, trial runs and explanations: a file a caller sends,
+	// its name, and the values before and after are the caller's own data,
+	// listed in patientDataFields too; the rest is a profile's words and
+	// the server's.
+	"coria.v1.ProfileVersionName.name",
+	"coria.v1.TrialFile.name",
+	"coria.v1.TrialFile.content",
+	"coria.v1.TrialReception.receiver",
+	"coria.v1.TrialReception.calling_ae_title",
+	"coria.v1.TrialReception.called_ae_title",
+	"coria.v1.TryProfileRequest.tenant",
+	"coria.v1.TryProfileRequest.quarantine_records",
+	"coria.v1.TryProfileResponse.checksum",
+	"coria.v1.TryProfileResponse.reception_refusal",
+	"coria.v1.TrialResult.name",
+	"coria.v1.TrialResult.quarantine_record",
+	"coria.v1.TrialResult.reason",
+	"coria.v1.TrialResult.cause",
+	"coria.v1.TrialResult.path",
+	"coria.v1.TrialResult.rule",
+	"coria.v1.TrialResult.receiver",
+	"coria.v1.TrialElement.path",
+	"coria.v1.TrialElement.keyword",
+	"coria.v1.TrialElement.vr",
+	"coria.v1.TrialElement.action",
+	"coria.v1.TrialElement.rule_name",
+	"coria.v1.TrialElement.origin",
+	"coria.v1.TrialElement.reason",
+	"coria.v1.TrialElement.before",
+	"coria.v1.TrialElement.after",
+	"coria.v1.TrialCount.key",
+	"coria.v1.ExplainProfileRequest.tenant",
+	"coria.v1.ExplainProfileRequest.quarantine_record",
+	"coria.v1.ExplainProfileResponse.checksum",
+	"coria.v1.ExplainProfileResponse.refusal",
+	"coria.v1.ExplainProfileResponse.refusal_path",
+	"coria.v1.ExplainedElement.path",
+	"coria.v1.ExplainedElement.keyword",
+	"coria.v1.ExplainedElement.vr",
+	"coria.v1.ExplainedElement.action",
+	"coria.v1.ExplainedElement.rule_name",
+	"coria.v1.ExplainedElement.origin",
+	"coria.v1.ExplainedElement.reason",
+	"coria.v1.ExplainedElement.selected_by",
+	"coria.v1.ExplainedCandidate.rule_name",
+	"coria.v1.ExplainedCandidate.origin",
+	"coria.v1.ExplainedCandidate.selected_by",
+	"coria.v1.ExplainedCandidate.why_not",
+	"coria.v1.DiffProfileVersionsRequest.tenant",
+	"coria.v1.DiffProfileVersionsRequest.name",
+	"coria.v1.DiffProfileVersionsRequest.to_name",
+	"coria.v1.DiffProfileVersionsResponse.bases_added",
+	"coria.v1.DiffProfileVersionsResponse.bases_removed",
+	"coria.v1.ProfileRuleChange.origin",
+
 	// sender.proto: a sender's configuration is what a person writes; the
 	// credential is the one secret, listed in secretFields too.
 	"coria.v1.Sender.name",
@@ -483,7 +551,8 @@ var textFields = []string{
 }
 
 // TestOnlyTheNamedFieldsCarrySecrets guards where secrets may cross the
-// contract: exactly the two named fields are marked debug_redact, and every
+// contract: exactly the named fields (secrets, and a trial run's values) are
+// marked debug_redact, and every
 // field that can carry text is on the reviewed list. A text field added
 // without being listed, a secret field that loses its mark, or another field
 // that gains one fails here rather than in a review.
@@ -511,8 +580,10 @@ func TestOnlyTheNamedFieldsCarrySecrets(t *testing.T) {
 	}
 
 	slices.Sort(redacted)
-	if !slices.Equal(redacted, secretFields) {
-		t.Errorf("fields marked debug_redact = %q, want exactly %q", redacted, secretFields)
+	marked := slices.Concat(secretFields, patientDataFields)
+	slices.Sort(marked)
+	if !slices.Equal(redacted, marked) {
+		t.Errorf("fields marked debug_redact = %q, want exactly %q", redacted, marked)
 	}
 
 	// An entry for a field that no longer exists or no longer carries text

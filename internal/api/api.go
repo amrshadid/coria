@@ -72,6 +72,9 @@ type Config struct {
 	Incoming Incoming
 	// Headers reads a quarantined file's header. Nil reads none (noHeaders).
 	Headers Headers
+	// HeldFiles reads a quarantined file's bytes for a trial run of a
+	// profile. Nil reads none (noHeldFiles).
+	HeldFiles HeldFiles
 	// Live answers what the server holds in memory of a tenant, for a
 	// status. Nil holds nothing (noLive).
 	Live Live
@@ -128,6 +131,8 @@ type Handlers struct {
 	Senders coriav1connect.SenderServiceHandler
 	// Jobs is JobService.
 	Jobs coriav1connect.JobServiceHandler
+	// Profiles is ProfileService.
+	Profiles coriav1connect.ProfileServiceHandler
 
 	// c is what the services share, kept for the test seams
 	// (export_test.go).
@@ -152,7 +157,10 @@ func New(cfg Config) (Handlers, error) {
 		access: cfg.Access, reg: cfg.Registry, master: cfg.Master, newID: cfg.NewID, log: log, settings: known,
 		keys: cfg.Keys, now: cfg.Now, receivers: cfg.Receivers, incoming: cfg.Incoming, headers: cfg.Headers,
 		live: cfg.Live, feeds: cfg.Feeds, stowReceivers: cfg.STOW, senders: cfg.SenderHealths, senderTests: cfg.SenderTests,
-		reads: cfg.Reads,
+		reads: cfg.Reads, heldFiles: cfg.HeldFiles, trials: make(chan struct{}, MaxTrialsAtOnce),
+	}
+	if c.heldFiles == nil {
+		c.heldFiles = noHeldFiles{}
 	}
 	if c.reads == nil {
 		c.reads = &checkedread.Slots{}
@@ -193,6 +201,7 @@ func New(cfg Config) (Handlers, error) {
 		Data:       dataService{c},
 		Senders:    senderService{c},
 		Jobs:       jobService{c},
+		Profiles:   profileService{c},
 		c:          c,
 	}, nil
 }
@@ -213,6 +222,7 @@ func (h Handlers) Register(srv *connect.Server) {
 	coriav1connect.RegisterDataServiceHandler(srv, h.Data)
 	coriav1connect.RegisterSenderServiceHandler(srv, h.Senders)
 	coriav1connect.RegisterJobServiceHandler(srv, h.Jobs)
+	coriav1connect.RegisterProfileServiceHandler(srv, h.Profiles)
 }
 
 // decisionKey is the context key of the Decision. Unexported, so only
@@ -265,6 +275,11 @@ type core struct {
 	incoming Incoming
 	// headers reads a quarantined file's header.
 	headers Headers
+	// heldFiles reads a quarantined file's bytes.
+	heldFiles HeldFiles
+	// trials holds a place for each trial run or explanation running, at
+	// most MaxTrialsAtOnce, since each holds its files in memory.
+	trials chan struct{}
 	// live answers what is held in memory of a tenant.
 	live Live
 	// feeds streams tenants' events.

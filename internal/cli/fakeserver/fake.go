@@ -68,6 +68,7 @@ type Server struct {
 	certPEM   []byte
 	arch      archive
 	read      readArchive
+	prof      profiles
 }
 
 // keyRecord is a key and the secret it was made with.
@@ -226,6 +227,9 @@ func (s *Server) interceptor(next connect.ServerFunc) connect.ServerFunc {
 			return forced
 		}
 		if err := next(ctx, spec, stream); err != nil {
+			if ce, ok := passThrough(err); ok {
+				return ce
+			}
 			return codes.ToConnect(err)
 		}
 		return nil

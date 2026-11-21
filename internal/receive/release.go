@@ -255,3 +255,28 @@ func (p *Pipeline) ReadHeld(ctx context.Context, path string) (*header.Header, e
 	defer func() { _ = f.Close() }()
 	return header.ReadWithin(f, size, p.headerLimit(ctx))
 }
+
+// ReadHeldFile returns the bytes of the held file at path in the incoming
+// area, as the sender sent them, for a trial run of a profile over it. It
+// is admitted as ReadHeld is. A file that is not there is NotFound; one
+// longer than limit bytes is a precondition failure, never read in part.
+func (p *Pipeline) ReadHeldFile(_ context.Context, path string, limit int64) ([]byte, error) {
+	done, err := p.enterDecision()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	f, size, err := p.area.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	if size > limit {
+		return nil, fault.New(fault.Precondition, "the held file is larger than a trial run reads")
+	}
+	b := make([]byte, size)
+	if _, err := io.ReadFull(io.NewSectionReader(f, 0, size), b); err != nil {
+		return nil, fault.Wrap(fault.Unavailable, err, "an incoming file cannot be read")
+	}
+	return b, nil
+}

@@ -45,6 +45,14 @@ const (
 	// ProfileServiceListProfileBasesProcedure is the procedure name of the ProfileService's
 	// ListProfileBases RPC.
 	ProfileServiceListProfileBasesProcedure = "/coria.v1.ProfileService/ListProfileBases"
+	// ProfileServiceTryProfileProcedure is the procedure name of the ProfileService's TryProfile RPC.
+	ProfileServiceTryProfileProcedure = "/coria.v1.ProfileService/TryProfile"
+	// ProfileServiceExplainProfileProcedure is the procedure name of the ProfileService's
+	// ExplainProfile RPC.
+	ProfileServiceExplainProfileProcedure = "/coria.v1.ProfileService/ExplainProfile"
+	// ProfileServiceDiffProfileVersionsProcedure is the procedure name of the ProfileService's
+	// DiffProfileVersions RPC.
+	ProfileServiceDiffProfileVersionsProcedure = "/coria.v1.ProfileService/DiffProfileVersions"
 )
 
 var (
@@ -93,6 +101,30 @@ var (
 			StreamType:       connect.StreamTypeUnary,
 			Schema:           v1.File_coria_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("ListProfileBases"),
 			Procedure:        ProfileServiceListProfileBasesProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	profileServiceTryProfileSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("TryProfile"),
+			Procedure:        ProfileServiceTryProfileProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	profileServiceExplainProfileSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("ExplainProfile"),
+			Procedure:        ProfileServiceExplainProfileProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	profileServiceDiffProfileVersionsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v1.File_coria_v1_profile_proto.Services().ByName("ProfileService").Methods().ByName("DiffProfileVersions"),
+			Procedure:        ProfileServiceDiffProfileVersionsProcedure,
 			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
@@ -202,6 +234,104 @@ type ProfileServiceClient interface {
 	// Audit: one entry in the installation's log.
 	// Errors: unauthenticated, invalid.
 	ListProfileBases(context.Context, *v1.ListProfileBasesRequest) (*v1.ListProfileBasesResponse, error)
+	// TryProfile runs a profile over sample files as a receiver would, and
+	// stores nothing: each file is de-identified by the engine, written in
+	// memory, checked after by the separate read that searches it for every
+	// value the profile removed, and answered element by element with its
+	// value before and after, the action, and the rule (or base) that
+	// decided it and why, with the verdict a receiver would reach: passed,
+	// or held with the quarantine reason and its fixed cause. The profile is
+	// a stored version or an unsaved document, checked as ValidateProfile
+	// checks one (a document with a problem is refused with every problem as
+	// a ProfileProblems detail). The files are given in the request, or
+	// named by quarantine record ids of the tenant, whose held bytes (as the
+	// sender sent them) are read where the server keeps them.
+	//
+	// Nothing is stored and nothing is changed, and nothing of the tenant's
+	// secrets is used: each request runs under keys made for it alone (for
+	// UIDs, dates and hashes) and thrown away after, and reads no lookup
+	// table. So a trial's keyed values (remapped UIDs, hashes, shifted
+	// dates, lookup codes) are never those the archive holds, and cannot be
+	// matched with it; only their form and the verdict carry over. Every
+	// lookup is answered with the code UNASSIGNED, and counted; a lookup
+	// whose missing value a receiver would hold the file for makes the
+	// verdict TRIAL_VERDICT_UNDECIDED. No file is written to a storage and
+	// no record is made. The before values are the caller's own data, and
+	// are answered; no log line, audit entry or event carries one.
+	//
+	// A sent file tried with a receiver named (TrialReception.receiver), and
+	// a held file (with the receiver that held it, while it exists), runs
+	// that receiver's receiving checks too, as the receiver runs them: the
+	// header read within receiver.header-limit, the placing UIDs present,
+	// well formed and not under the standard's root, its SOP classes, its
+	// naming rule and the search of its labels for removed values, and the
+	// check after within its file bound; "passed" then means that receiver
+	// would archive the file. With no receiver the verdict is
+	// de-identification's alone (TrialResult.deidentification_only): the
+	// receiving checks, the receiver's labels and an association's own
+	// checks (its AE titles, a file's size against the receiver's bound, the
+	// UIDs a C-STORE announced) are left out.
+	//
+	// Reading a held file needs what reading its header needs: operator.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the profile version tried
+	// (or the unsaved document's checksum) as its object and, in details,
+	// the number of files, how many passed and were held, and the counts
+	// per rule and per reason: the evidence that the version was tried,
+	// never a value.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant
+	// that does not exist, for a caller who may not list every tenant),
+	// invalid (no profile, or both kinds; a document with a problem; no file
+	// and no record, or more than 32 of them together; a file empty or
+	// larger than 3 MiB, or files together larger than 3.5 MiB; a malformed
+	// record id), not found (a profile or version the tenant does not have;
+	// a quarantine record it does not have; a receiver named that it does
+	// not have; a tenant that does not exist, for a caller who may list
+	// every tenant), precondition (a stored version this server cannot run;
+	// a record whose bytes are not kept, or are larger than 64 MiB; held
+	// files together larger than 128 MiB), exhausted (as many trial runs and
+	// explanations as the server runs at once, 2, are running; try again),
+	// unavailable (the tenant's database does not answer, the tenant is not
+	// ready, or a held file cannot be read now).
+	TryProfile(context.Context, *v1.TryProfileRequest) (*v1.TryProfileResponse, error)
+	// ExplainProfile answers, for one file, which rule or base decides each
+	// element and why, without answering any value: for each element its
+	// path, VR and the action, the deciding rule with its origin and reason
+	// (or the default, or the engine's floor), and every other rule whose
+	// selector matches it, each with why it does not decide (a more specific
+	// or a later rule decides, or its conditions do not hold). The file is
+	// processed as TryProfile processes it, in memory, and nothing is
+	// stored, under keys made for the request as TryProfile's.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the profile version (or the
+	// unsaved document's checksum) as its object.
+	// Errors: as TryProfile, for one file or one record.
+	ExplainProfile(context.Context, *v1.ExplainProfileRequest) (*v1.ExplainProfileResponse, error)
+	// DiffProfileVersions answers what changes between two versions: their
+	// bases, their defaults, their rules one by one (a rule is the same rule
+	// in both when it comes from the same origin and has the same name, or,
+	// unnamed, the same selector and conditions), and the effect on the
+	// expanded form: for each selector and set of conditions, the action
+	// that wins between the rules that have exactly that selector, before
+	// and after. The rules of a base present in only one version are not
+	// listed one by one: the base is. Equal checksums mean equal effect on
+	// every file, and then no effect is listed. The effect is judged rule
+	// against rule, not element against element: a rule whose selector is
+	// more specific than another's takes elements from it in both versions
+	// alike, and TryProfile over sample files shows the effect on them.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the profile's name as its
+	// object and both versions in details.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant
+	// that does not exist, for a caller who may not list every tenant),
+	// invalid (a malformed name, a negative version), not found (a profile
+	// or version the tenant does not have; a tenant that does not exist, for
+	// a caller who may list every tenant), unavailable (the tenant's
+	// database does not answer, or the tenant is not ready).
+	DiffProfileVersions(context.Context, *v1.DiffProfileVersionsRequest) (*v1.DiffProfileVersionsResponse, error)
 }
 
 // NewProfileServiceClient constructs a client for the coria.v1.ProfileService service. Multiple
@@ -314,6 +444,104 @@ type ProfileServiceHandler interface {
 	// Audit: one entry in the installation's log.
 	// Errors: unauthenticated, invalid.
 	ListProfileBases(context.Context, *v1.ListProfileBasesRequest) (*v1.ListProfileBasesResponse, error)
+	// TryProfile runs a profile over sample files as a receiver would, and
+	// stores nothing: each file is de-identified by the engine, written in
+	// memory, checked after by the separate read that searches it for every
+	// value the profile removed, and answered element by element with its
+	// value before and after, the action, and the rule (or base) that
+	// decided it and why, with the verdict a receiver would reach: passed,
+	// or held with the quarantine reason and its fixed cause. The profile is
+	// a stored version or an unsaved document, checked as ValidateProfile
+	// checks one (a document with a problem is refused with every problem as
+	// a ProfileProblems detail). The files are given in the request, or
+	// named by quarantine record ids of the tenant, whose held bytes (as the
+	// sender sent them) are read where the server keeps them.
+	//
+	// Nothing is stored and nothing is changed, and nothing of the tenant's
+	// secrets is used: each request runs under keys made for it alone (for
+	// UIDs, dates and hashes) and thrown away after, and reads no lookup
+	// table. So a trial's keyed values (remapped UIDs, hashes, shifted
+	// dates, lookup codes) are never those the archive holds, and cannot be
+	// matched with it; only their form and the verdict carry over. Every
+	// lookup is answered with the code UNASSIGNED, and counted; a lookup
+	// whose missing value a receiver would hold the file for makes the
+	// verdict TRIAL_VERDICT_UNDECIDED. No file is written to a storage and
+	// no record is made. The before values are the caller's own data, and
+	// are answered; no log line, audit entry or event carries one.
+	//
+	// A sent file tried with a receiver named (TrialReception.receiver), and
+	// a held file (with the receiver that held it, while it exists), runs
+	// that receiver's receiving checks too, as the receiver runs them: the
+	// header read within receiver.header-limit, the placing UIDs present,
+	// well formed and not under the standard's root, its SOP classes, its
+	// naming rule and the search of its labels for removed values, and the
+	// check after within its file bound; "passed" then means that receiver
+	// would archive the file. With no receiver the verdict is
+	// de-identification's alone (TrialResult.deidentification_only): the
+	// receiving checks, the receiver's labels and an association's own
+	// checks (its AE titles, a file's size against the receiver's bound, the
+	// UIDs a C-STORE announced) are left out.
+	//
+	// Reading a held file needs what reading its header needs: operator.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the profile version tried
+	// (or the unsaved document's checksum) as its object and, in details,
+	// the number of files, how many passed and were held, and the counts
+	// per rule and per reason: the evidence that the version was tried,
+	// never a value.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant
+	// that does not exist, for a caller who may not list every tenant),
+	// invalid (no profile, or both kinds; a document with a problem; no file
+	// and no record, or more than 32 of them together; a file empty or
+	// larger than 3 MiB, or files together larger than 3.5 MiB; a malformed
+	// record id), not found (a profile or version the tenant does not have;
+	// a quarantine record it does not have; a receiver named that it does
+	// not have; a tenant that does not exist, for a caller who may list
+	// every tenant), precondition (a stored version this server cannot run;
+	// a record whose bytes are not kept, or are larger than 64 MiB; held
+	// files together larger than 128 MiB), exhausted (as many trial runs and
+	// explanations as the server runs at once, 2, are running; try again),
+	// unavailable (the tenant's database does not answer, the tenant is not
+	// ready, or a held file cannot be read now).
+	TryProfile(context.Context, *v1.TryProfileRequest) (*v1.TryProfileResponse, error)
+	// ExplainProfile answers, for one file, which rule or base decides each
+	// element and why, without answering any value: for each element its
+	// path, VR and the action, the deciding rule with its origin and reason
+	// (or the default, or the engine's floor), and every other rule whose
+	// selector matches it, each with why it does not decide (a more specific
+	// or a later rule decides, or its conditions do not hold). The file is
+	// processed as TryProfile processes it, in memory, and nothing is
+	// stored, under keys made for the request as TryProfile's.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the profile version (or the
+	// unsaved document's checksum) as its object.
+	// Errors: as TryProfile, for one file or one record.
+	ExplainProfile(context.Context, *v1.ExplainProfileRequest) (*v1.ExplainProfileResponse, error)
+	// DiffProfileVersions answers what changes between two versions: their
+	// bases, their defaults, their rules one by one (a rule is the same rule
+	// in both when it comes from the same origin and has the same name, or,
+	// unnamed, the same selector and conditions), and the effect on the
+	// expanded form: for each selector and set of conditions, the action
+	// that wins between the rules that have exactly that selector, before
+	// and after. The rules of a base present in only one version are not
+	// listed one by one: the base is. Equal checksums mean equal effect on
+	// every file, and then no effect is listed. The effect is judged rule
+	// against rule, not element against element: a rule whose selector is
+	// more specific than another's takes elements from it in both versions
+	// alike, and TryProfile over sample files shows the effect on them.
+	//
+	// Role: operator on the tenant.
+	// Audit: one entry in the tenant's log, with the profile's name as its
+	// object and both versions in details.
+	// Errors: unauthenticated, permission denied (no grant; also a tenant
+	// that does not exist, for a caller who may not list every tenant),
+	// invalid (a malformed name, a negative version), not found (a profile
+	// or version the tenant does not have; a tenant that does not exist, for
+	// a caller who may list every tenant), unavailable (the tenant's
+	// database does not answer, or the tenant is not ready).
+	DiffProfileVersions(context.Context, *v1.DiffProfileVersionsRequest) (*v1.DiffProfileVersionsResponse, error)
 }
 
 // RegisterProfileServiceHandler registers svc as the coria.v1.ProfileService implementation on
@@ -327,6 +555,9 @@ func RegisterProfileServiceHandler(server *connect.Server, svc ProfileServiceHan
 		connect.Method{Spec: profileServiceListProfileVersionsSpec(), Handler: adapter.listProfileVersions},
 		connect.Method{Spec: profileServiceValidateProfileSpec(), Handler: adapter.validateProfile},
 		connect.Method{Spec: profileServiceListProfileBasesSpec(), Handler: adapter.listProfileBases},
+		connect.Method{Spec: profileServiceTryProfileSpec(), Handler: adapter.tryProfile},
+		connect.Method{Spec: profileServiceExplainProfileSpec(), Handler: adapter.explainProfile},
+		connect.Method{Spec: profileServiceDiffProfileVersionsSpec(), Handler: adapter.diffProfileVersions},
 	)
 }
 
@@ -355,6 +586,18 @@ func (UnimplementedProfileServiceHandler) ValidateProfile(context.Context, *v1.V
 
 func (UnimplementedProfileServiceHandler) ListProfileBases(context.Context, *v1.ListProfileBasesRequest) (*v1.ListProfileBasesResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.ProfileService.ListProfileBases is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) TryProfile(context.Context, *v1.TryProfileRequest) (*v1.TryProfileResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.ProfileService.TryProfile is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) ExplainProfile(context.Context, *v1.ExplainProfileRequest) (*v1.ExplainProfileResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.ProfileService.ExplainProfile is not implemented")
+}
+
+func (UnimplementedProfileServiceHandler) DiffProfileVersions(context.Context, *v1.DiffProfileVersionsRequest) (*v1.DiffProfileVersionsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "coria.v1.ProfileService.DiffProfileVersions is not implemented")
 }
 
 type profileServiceClient struct {
@@ -404,6 +647,30 @@ func (c *profileServiceClient) ValidateProfile(ctx context.Context, req *v1.Vali
 func (c *profileServiceClient) ListProfileBases(ctx context.Context, req *v1.ListProfileBasesRequest) (*v1.ListProfileBasesResponse, error) {
 	var res v1.ListProfileBasesResponse
 	if err := c.client.CallUnary(ctx, profileServiceListProfileBasesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) TryProfile(ctx context.Context, req *v1.TryProfileRequest) (*v1.TryProfileResponse, error) {
+	var res v1.TryProfileResponse
+	if err := c.client.CallUnary(ctx, profileServiceTryProfileSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) ExplainProfile(ctx context.Context, req *v1.ExplainProfileRequest) (*v1.ExplainProfileResponse, error) {
+	var res v1.ExplainProfileResponse
+	if err := c.client.CallUnary(ctx, profileServiceExplainProfileSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *profileServiceClient) DiffProfileVersions(ctx context.Context, req *v1.DiffProfileVersionsRequest) (*v1.DiffProfileVersionsResponse, error) {
+	var res v1.DiffProfileVersionsResponse
+	if err := c.client.CallUnary(ctx, profileServiceDiffProfileVersionsSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -477,6 +744,42 @@ func (h profileServiceHandler) listProfileBases(ctx context.Context, _ connect.S
 		return err
 	}
 	res, err := h.svc.ListProfileBases(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) tryProfile(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.TryProfileRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.TryProfile(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) explainProfile(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ExplainProfileRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ExplainProfile(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h profileServiceHandler) diffProfileVersions(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.DiffProfileVersionsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.DiffProfileVersions(ctx, &req)
 	if err != nil {
 		return err
 	}

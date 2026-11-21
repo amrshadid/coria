@@ -100,11 +100,19 @@ func (p *Pipeline) catalogLabels(ctx context.Context, study string, groups []ser
 // or when the receiver was removed.
 func (p *Pipeline) ruleFor(ctx context.Context, receiverName string) (*naming.Rule, error) {
 	rcv, err := p.receivers.get(ctx, receiverName)
-	if fault.KindOf(err) == fault.NotFound || (err == nil && rcv.Naming == nil) {
+	if fault.KindOf(err) == fault.NotFound {
 		return naming.Default(), nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	return ruleOf(rcv)
+}
+
+// ruleOf returns a receiver's naming rule, the default when it has none.
+func ruleOf(rcv tenant.Receiver) (*naming.Rule, error) {
+	if rcv.Naming == nil {
+		return naming.Default(), nil
 	}
 	rule, err := naming.Parse(*rcv.Naming)
 	if err != nil {
@@ -144,40 +152,50 @@ func (p *Pipeline) labelsOf(ctx context.Context, rule *naming.Rule, g series) (l
 		if err == nil {
 			return path, nil, nil
 		}
-		var ne *naming.Error
-		if !errors.As(err, &ne) {
-			return label.Path{}, nil, fault.Wrap(fault.Internal, err, "the naming rule failed")
-		}
-		lf := &labelFault{level: ne.Level}
-		switch ne.Fault {
-		case naming.Missing:
-			lf.fault = tenant.FaultMissing
-		case naming.Empty:
-			lf.fault = tenant.FaultEmpty
-		case naming.TooLong:
-			lf.fault = tenant.FaultTooLong
-		case naming.BadCharacter:
-			lf.fault = tenant.FaultBadCharacter
-		case naming.BadUID:
-			lf.fault = tenant.FaultBadUID
-		case naming.NoMatch:
-			lf.fault = tenant.FaultNoMatch
-		case naming.BadLabel:
-			lf.fault = tenant.FaultBadLabel
-		default:
-			// NoHasher and BadHash are the server's mistakes, never a
-			// file's.
-			return label.Path{}, nil, fault.New(fault.Internal, "the naming rule needs the tenant's hasher: "+ne.Fault.String())
-		}
-		if _, perr := naming.ParseAttribute(ne.Attribute); perr == nil {
-			lf.attribute = ne.Attribute
-		}
-		return label.Path{}, lf, nil
+		lf, err := labelFaultOf(err)
+		return label.Path{}, lf, err
 	}
 	if lastErr == nil {
 		lastErr = fault.New(fault.Internal, "a series has no file")
 	}
 	return label.Path{}, nil, fault.Wrap(fault.KindOf(lastErr), lastErr, "no file of the series could be read to name it")
+}
+
+// labelFaultOf returns the fault of a file the naming rule could not name,
+// from the rule's error: a *naming.Error of the file's (a value missing,
+// empty, too long, of a bad character, not a UID, not matching the
+// pattern, not a label), or an error of the server's (no hasher, a hash
+// that is not one), which is returned as such.
+func labelFaultOf(err error) (*labelFault, error) {
+	var ne *naming.Error
+	if !errors.As(err, &ne) {
+		return nil, fault.Wrap(fault.Internal, err, "the naming rule failed")
+	}
+	lf := &labelFault{level: ne.Level}
+	switch ne.Fault {
+	case naming.Missing:
+		lf.fault = tenant.FaultMissing
+	case naming.Empty:
+		lf.fault = tenant.FaultEmpty
+	case naming.TooLong:
+		lf.fault = tenant.FaultTooLong
+	case naming.BadCharacter:
+		lf.fault = tenant.FaultBadCharacter
+	case naming.BadUID:
+		lf.fault = tenant.FaultBadUID
+	case naming.NoMatch:
+		lf.fault = tenant.FaultNoMatch
+	case naming.BadLabel:
+		lf.fault = tenant.FaultBadLabel
+	default:
+		// NoHasher and BadHash are the server's mistakes, never a
+		// file's.
+		return nil, fault.New(fault.Internal, "the naming rule needs the tenant's hasher: "+ne.Fault.String())
+	}
+	if _, perr := naming.ParseAttribute(ne.Attribute); perr == nil {
+		lf.attribute = ne.Attribute
+	}
+	return lf, nil
 }
 
 // readHeader reads the header of a file in the incoming area, within the

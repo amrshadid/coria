@@ -36,6 +36,17 @@ type testParts struct {
 	retried   []string
 	// header, when set, answers Header; otherwise no header can be read.
 	header atomic.Pointer[func(f tenant.QuarantinedFile, limit int) (string, bool, error)]
+	// heldFile, when set, answers HeldFile; otherwise no held file can be
+	// read.
+	heldFile atomic.Pointer[func(f tenant.QuarantinedFile) ([]byte, error)]
+}
+
+// HeldFile answers as heldFile says, or ErrNoHeldFile.
+func (p *testParts) HeldFile(_ context.Context, _ string, f tenant.QuarantinedFile, _ int64) ([]byte, error) {
+	if h := p.heldFile.Load(); h != nil {
+		return (*h)(f)
+	}
+	return nil, api.ErrNoHeldFile
 }
 
 // Release records the record, as "<tenant>/<id>", and releases it through

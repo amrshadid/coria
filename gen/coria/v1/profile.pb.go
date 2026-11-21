@@ -333,6 +333,127 @@ func (ProfileView) EnumDescriptor() ([]byte, []int) {
 	return file_coria_v1_profile_proto_rawDescGZIP(), []int{4}
 }
 
+// TrialVerdict is what a receiver would do with a file.
+type TrialVerdict int32
+
+const (
+	// Never answered.
+	TrialVerdict_TRIAL_VERDICT_UNSPECIFIED TrialVerdict = 0
+	// The file would be archived, de-identified as the elements say.
+	TrialVerdict_TRIAL_VERDICT_PASSED TrialVerdict = 1
+	// The file would be held, with the reason and cause given.
+	TrialVerdict_TRIAL_VERDICT_HELD TrialVerdict = 2
+	// Whether the file would be held depends on a lookup table the trial
+	// does not read: a lookup rule holds a file whose value has no code
+	// (cause "lookup_table").
+	TrialVerdict_TRIAL_VERDICT_UNDECIDED TrialVerdict = 3
+)
+
+// Enum value maps for TrialVerdict.
+var (
+	TrialVerdict_name = map[int32]string{
+		0: "TRIAL_VERDICT_UNSPECIFIED",
+		1: "TRIAL_VERDICT_PASSED",
+		2: "TRIAL_VERDICT_HELD",
+		3: "TRIAL_VERDICT_UNDECIDED",
+	}
+	TrialVerdict_value = map[string]int32{
+		"TRIAL_VERDICT_UNSPECIFIED": 0,
+		"TRIAL_VERDICT_PASSED":      1,
+		"TRIAL_VERDICT_HELD":        2,
+		"TRIAL_VERDICT_UNDECIDED":   3,
+	}
+)
+
+func (x TrialVerdict) Enum() *TrialVerdict {
+	p := new(TrialVerdict)
+	*p = x
+	return p
+}
+
+func (x TrialVerdict) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TrialVerdict) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_profile_proto_enumTypes[5].Descriptor()
+}
+
+func (TrialVerdict) Type() protoreflect.EnumType {
+	return &file_coria_v1_profile_proto_enumTypes[5]
+}
+
+func (x TrialVerdict) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TrialVerdict.Descriptor instead.
+func (TrialVerdict) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{5}
+}
+
+// ProfileChange is how a rule differs between two versions.
+type ProfileChange int32
+
+const (
+	// Never answered.
+	ProfileChange_PROFILE_CHANGE_UNSPECIFIED ProfileChange = 0
+	// Only in the version compared to.
+	ProfileChange_PROFILE_CHANGE_ADDED ProfileChange = 1
+	// Only in the version compared from.
+	ProfileChange_PROFILE_CHANGE_REMOVED ProfileChange = 2
+	// In both, with a difference.
+	ProfileChange_PROFILE_CHANGE_CHANGED ProfileChange = 3
+	// In both, the same, but in another order among the rules with its
+	// selector, so which of them wins can differ.
+	ProfileChange_PROFILE_CHANGE_MOVED ProfileChange = 4
+)
+
+// Enum value maps for ProfileChange.
+var (
+	ProfileChange_name = map[int32]string{
+		0: "PROFILE_CHANGE_UNSPECIFIED",
+		1: "PROFILE_CHANGE_ADDED",
+		2: "PROFILE_CHANGE_REMOVED",
+		3: "PROFILE_CHANGE_CHANGED",
+		4: "PROFILE_CHANGE_MOVED",
+	}
+	ProfileChange_value = map[string]int32{
+		"PROFILE_CHANGE_UNSPECIFIED": 0,
+		"PROFILE_CHANGE_ADDED":       1,
+		"PROFILE_CHANGE_REMOVED":     2,
+		"PROFILE_CHANGE_CHANGED":     3,
+		"PROFILE_CHANGE_MOVED":       4,
+	}
+)
+
+func (x ProfileChange) Enum() *ProfileChange {
+	p := new(ProfileChange)
+	*p = x
+	return p
+}
+
+func (x ProfileChange) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProfileChange) Descriptor() protoreflect.EnumDescriptor {
+	return file_coria_v1_profile_proto_enumTypes[6].Descriptor()
+}
+
+func (ProfileChange) Type() protoreflect.EnumType {
+	return &file_coria_v1_profile_proto_enumTypes[6]
+}
+
+func (x ProfileChange) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProfileChange.Descriptor instead.
+func (ProfileChange) EnumDescriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{6}
+}
+
 // ProfileDocument is a de-identification profile as a person writes it: its
 // bases, its own rules and its defaults. Its JSON is the profile's file
 // form; a field the message does not have is refused, so a misspelled field
@@ -3993,6 +4114,1808 @@ func (x *ListProfileBasesResponse) GetBases() []*ProfileBase {
 	return nil
 }
 
+// TrialProfile is the profile a trial run, an explanation or a check runs:
+// a stored version, or a document not stored. Exactly one kind is set.
+type TrialProfile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The kind of profile.
+	//
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*TrialProfile_Version
+	//	*TrialProfile_Document
+	Kind          isTrialProfile_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrialProfile) Reset() {
+	*x = TrialProfile{}
+	mi := &file_coria_v1_profile_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrialProfile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrialProfile) ProtoMessage() {}
+
+func (x *TrialProfile) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrialProfile.ProtoReflect.Descriptor instead.
+func (*TrialProfile) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *TrialProfile) GetKind() isTrialProfile_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *TrialProfile) GetVersion() *ProfileVersionName {
+	if x != nil {
+		if x, ok := x.Kind.(*TrialProfile_Version); ok {
+			return x.Version
+		}
+	}
+	return nil
+}
+
+func (x *TrialProfile) GetDocument() *ProfileDocument {
+	if x != nil {
+		if x, ok := x.Kind.(*TrialProfile_Document); ok {
+			return x.Document
+		}
+	}
+	return nil
+}
+
+type isTrialProfile_Kind interface {
+	isTrialProfile_Kind()
+}
+
+type TrialProfile_Version struct {
+	// A stored version of one of the tenant's profiles.
+	Version *ProfileVersionName `protobuf:"bytes,1,opt,name=version,proto3,oneof"`
+}
+
+type TrialProfile_Document struct {
+	// A document, checked and expanded as ValidateProfile does and run as
+	// a version of it would be; nothing of it is stored.
+	Document *ProfileDocument `protobuf:"bytes,2,opt,name=document,proto3,oneof"`
+}
+
+func (*TrialProfile_Version) isTrialProfile_Kind() {}
+
+func (*TrialProfile_Document) isTrialProfile_Kind() {}
+
+// ProfileVersionName names a stored version of a profile.
+type ProfileVersionName struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The profile's name. Required.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The version; zero for the latest. Negative is invalid.
+	Version       int32 `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileVersionName) Reset() {
+	*x = ProfileVersionName{}
+	mi := &file_coria_v1_profile_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileVersionName) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileVersionName) ProtoMessage() {}
+
+func (x *ProfileVersionName) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileVersionName.ProtoReflect.Descriptor instead.
+func (*ProfileVersionName) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *ProfileVersionName) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ProfileVersionName) GetVersion() int32 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+// TrialFile is a file a caller sends to be tried.
+type TrialFile struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A name the caller gives the file, answered back with its result so a
+	// caller can tell its files apart, such as the file's path on the
+	// caller's side; at most 1024 bytes of UTF-8. It is the caller's text and
+	// may say anything, so it is redacted wherever the server logs.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The file's bytes: a DICOM file (PS3.10), at most 3 MiB.
+	Content       []byte `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrialFile) Reset() {
+	*x = TrialFile{}
+	mi := &file_coria_v1_profile_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrialFile) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrialFile) ProtoMessage() {}
+
+func (x *TrialFile) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrialFile.ProtoReflect.Descriptor instead.
+func (*TrialFile) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *TrialFile) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *TrialFile) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+// TrialReception is what the reception of the tried files would say of
+// them, which a profile's conditions on the receiver and the AE titles
+// read. Each field is optional; one not given is absent, as for a file
+// with no such fact. A held file is tried with its own reception's facts,
+// and these are not used for it.
+type TrialReception struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The name of one of the tenant's receivers. Given, the receiver must
+	// exist, and its receiving checks run too (TryProfile); absent, the
+	// verdict is de-identification's alone.
+	Receiver string `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
+	// The sender's AE title (PS3.8 9.3.2), at most 16 characters.
+	CallingAeTitle string `protobuf:"bytes,2,opt,name=calling_ae_title,json=callingAeTitle,proto3" json:"calling_ae_title,omitempty"`
+	// The AE title the sender called, at most 16 characters.
+	CalledAeTitle string `protobuf:"bytes,3,opt,name=called_ae_title,json=calledAeTitle,proto3" json:"called_ae_title,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrialReception) Reset() {
+	*x = TrialReception{}
+	mi := &file_coria_v1_profile_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrialReception) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrialReception) ProtoMessage() {}
+
+func (x *TrialReception) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrialReception.ProtoReflect.Descriptor instead.
+func (*TrialReception) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *TrialReception) GetReceiver() string {
+	if x != nil {
+		return x.Receiver
+	}
+	return ""
+}
+
+func (x *TrialReception) GetCallingAeTitle() string {
+	if x != nil {
+		return x.CallingAeTitle
+	}
+	return ""
+}
+
+func (x *TrialReception) GetCalledAeTitle() string {
+	if x != nil {
+		return x.CalledAeTitle
+	}
+	return ""
+}
+
+// TryProfileRequest names a profile and the files to try it on.
+type TryProfileRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant, by name. Required.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The profile to try. Required.
+	Profile *TrialProfile `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	// Files sent with the request. With quarantine_records, 1 to 32 in all.
+	Files []*TrialFile `protobuf:"bytes,3,rep,name=files,proto3" json:"files,omitempty"`
+	// Ids of the tenant's quarantine records whose held files to try. Each
+	// at most 64 bytes.
+	QuarantineRecords []string `protobuf:"bytes,4,rep,name=quarantine_records,json=quarantineRecords,proto3" json:"quarantine_records,omitempty"`
+	// The reception the sent files are tried as coming from.
+	Reception     *TrialReception `protobuf:"bytes,5,opt,name=reception,proto3" json:"reception,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TryProfileRequest) Reset() {
+	*x = TryProfileRequest{}
+	mi := &file_coria_v1_profile_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TryProfileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TryProfileRequest) ProtoMessage() {}
+
+func (x *TryProfileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TryProfileRequest.ProtoReflect.Descriptor instead.
+func (*TryProfileRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *TryProfileRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *TryProfileRequest) GetProfile() *TrialProfile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+func (x *TryProfileRequest) GetFiles() []*TrialFile {
+	if x != nil {
+		return x.Files
+	}
+	return nil
+}
+
+func (x *TryProfileRequest) GetQuarantineRecords() []string {
+	if x != nil {
+		return x.QuarantineRecords
+	}
+	return nil
+}
+
+func (x *TryProfileRequest) GetReception() *TrialReception {
+	if x != nil {
+		return x.Reception
+	}
+	return nil
+}
+
+// TryProfileResponse is the result of each file, in the order of the
+// request (its files, then its records), and a summary.
+type TryProfileResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The version tried, without its document; absent for a document.
+	Version *ProfileVersion `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	// The checksum of the expanded form tried.
+	Checksum string `protobuf:"bytes,2,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	// Why a receiver could not name the profile as it is, in plain words
+	// (for example, it does not remap the UIDs a file is placed by); empty
+	// when one can.
+	ReceptionRefusal string `protobuf:"bytes,3,opt,name=reception_refusal,json=receptionRefusal,proto3" json:"reception_refusal,omitempty"`
+	// Each file's result.
+	Results []*TrialResult `protobuf:"bytes,4,rep,name=results,proto3" json:"results,omitempty"`
+	// The counts over every file.
+	Summary       *TrialSummary `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TryProfileResponse) Reset() {
+	*x = TryProfileResponse{}
+	mi := &file_coria_v1_profile_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TryProfileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TryProfileResponse) ProtoMessage() {}
+
+func (x *TryProfileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TryProfileResponse.ProtoReflect.Descriptor instead.
+func (*TryProfileResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *TryProfileResponse) GetVersion() *ProfileVersion {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *TryProfileResponse) GetChecksum() string {
+	if x != nil {
+		return x.Checksum
+	}
+	return ""
+}
+
+func (x *TryProfileResponse) GetReceptionRefusal() string {
+	if x != nil {
+		return x.ReceptionRefusal
+	}
+	return ""
+}
+
+func (x *TryProfileResponse) GetResults() []*TrialResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *TryProfileResponse) GetSummary() *TrialSummary {
+	if x != nil {
+		return x.Summary
+	}
+	return nil
+}
+
+// TrialResult is what the profile does to one file.
+type TrialResult struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The name the caller gave a sent file; empty for a held file.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The quarantine record a held file was read from; empty for a sent
+	// file.
+	QuarantineRecord string `protobuf:"bytes,2,opt,name=quarantine_record,json=quarantineRecord,proto3" json:"quarantine_record,omitempty"`
+	// What a receiver would do with it.
+	Verdict TrialVerdict `protobuf:"varint,3,opt,name=verdict,proto3,enum=coria.v1.TrialVerdict" json:"verdict,omitempty"`
+	// For a held file, the quarantine reason it would be held with, as
+	// Quarantine's reasons are written: "deid_failed", "residual_value",
+	// "profile_refused", and with a receiver "not_dicom",
+	// "header_too_large", "bad_uid", "sop_class_not_accepted" and
+	// "bad_label".
+	Reason string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	// For a held file, the fixed cause: the engine's (such as "bad_value",
+	// "lookup_missing", "too_large", "no_subject", "uid_not_remapped",
+	// "unreadable", "after_unreadable": the file the check passed could not
+	// be read back to answer its values) or the check's
+	// ("check_unreadable", "check_too_large"), for residual_value the kind
+	// of value found ("name", "identifier", "date", "uid"), for bad_uid and
+	// bad_label the fault ("missing", "empty", "bad_uid", ...), and
+	// "lookup_table" for an undecided verdict. Never a value.
+	Cause string `protobuf:"bytes,5,opt,name=cause,proto3" json:"cause,omitempty"`
+	// The element the cause names, as a path; empty when none does.
+	Path string `protobuf:"bytes,6,opt,name=path,proto3" json:"path,omitempty"`
+	// The name of the rule that refused the file (a quarantine action), or
+	// whose action could not be applied; empty when none.
+	Rule string `protobuf:"bytes,7,opt,name=rule,proto3" json:"rule,omitempty"`
+	// Each element, in the order the engine visits them (the top level and
+	// every item, then each element a set rule made); empty when the engine
+	// refused the file before it changed it.
+	Elements []*TrialElement `protobuf:"bytes,8,rep,name=elements,proto3" json:"elements,omitempty"`
+	// Elements left out to keep the answer within its bound (2,000 per file
+	// and about 3 MiB of values in all), counted.
+	ElementsOmitted int32 `protobuf:"varint,9,opt,name=elements_omitted,json=elementsOmitted,proto3" json:"elements_omitted,omitempty"`
+	// The number of values the profile removed or changed that the check
+	// after searched for, and of those it skipped as too short.
+	ValuesSearched int32 `protobuf:"varint,10,opt,name=values_searched,json=valuesSearched,proto3" json:"values_searched,omitempty"`
+	// See values_searched.
+	ValuesSkipped int32 `protobuf:"varint,11,opt,name=values_skipped,json=valuesSkipped,proto3" json:"values_skipped,omitempty"`
+	// The number of lookups answered UNASSIGNED: a value its table has no
+	// code for, which a receiver would assign the table's next code.
+	LookupsUnassigned int32 `protobuf:"varint,12,opt,name=lookups_unassigned,json=lookupsUnassigned,proto3" json:"lookups_unassigned,omitempty"`
+	// The receiver whose receiving checks ran; empty when none did.
+	Receiver string `protobuf:"bytes,13,opt,name=receiver,proto3" json:"receiver,omitempty"`
+	// True when no receiver's checks ran: the verdict is
+	// de-identification's alone.
+	DeidentificationOnly bool `protobuf:"varint,14,opt,name=deidentification_only,json=deidentificationOnly,proto3" json:"deidentification_only,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *TrialResult) Reset() {
+	*x = TrialResult{}
+	mi := &file_coria_v1_profile_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrialResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrialResult) ProtoMessage() {}
+
+func (x *TrialResult) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrialResult.ProtoReflect.Descriptor instead.
+func (*TrialResult) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *TrialResult) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *TrialResult) GetQuarantineRecord() string {
+	if x != nil {
+		return x.QuarantineRecord
+	}
+	return ""
+}
+
+func (x *TrialResult) GetVerdict() TrialVerdict {
+	if x != nil {
+		return x.Verdict
+	}
+	return TrialVerdict_TRIAL_VERDICT_UNSPECIFIED
+}
+
+func (x *TrialResult) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *TrialResult) GetCause() string {
+	if x != nil {
+		return x.Cause
+	}
+	return ""
+}
+
+func (x *TrialResult) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *TrialResult) GetRule() string {
+	if x != nil {
+		return x.Rule
+	}
+	return ""
+}
+
+func (x *TrialResult) GetElements() []*TrialElement {
+	if x != nil {
+		return x.Elements
+	}
+	return nil
+}
+
+func (x *TrialResult) GetElementsOmitted() int32 {
+	if x != nil {
+		return x.ElementsOmitted
+	}
+	return 0
+}
+
+func (x *TrialResult) GetValuesSearched() int32 {
+	if x != nil {
+		return x.ValuesSearched
+	}
+	return 0
+}
+
+func (x *TrialResult) GetValuesSkipped() int32 {
+	if x != nil {
+		return x.ValuesSkipped
+	}
+	return 0
+}
+
+func (x *TrialResult) GetLookupsUnassigned() int32 {
+	if x != nil {
+		return x.LookupsUnassigned
+	}
+	return 0
+}
+
+func (x *TrialResult) GetReceiver() string {
+	if x != nil {
+		return x.Receiver
+	}
+	return ""
+}
+
+func (x *TrialResult) GetDeidentificationOnly() bool {
+	if x != nil {
+		return x.DeidentificationOnly
+	}
+	return false
+}
+
+// TrialElement is what happened to one element of a tried file, and why.
+type TrialElement struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Where the element is: its tag as eight hexadecimal digits after the
+	// sequences and item numbers it is inside, such as
+	// "00081115[0]/0020000E".
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// The element's keyword in the data dictionary; empty for a private or
+	// unknown element.
+	Keyword string `protobuf:"bytes,2,opt,name=keyword,proto3" json:"keyword,omitempty"`
+	// The VR the engine read it as.
+	Vr string `protobuf:"bytes,3,opt,name=vr,proto3" json:"vr,omitempty"`
+	// What was done: keep, remove, empty, replace, set, hash, uid, shift,
+	// generalize, lookup, clean, dummy, remove_unless_required, or create
+	// for an element a set rule made.
+	Action string `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	// The position of the deciding rule among the expanded form's rules,
+	// from 1; zero when no rule decided (a default, a fixed rule of the
+	// pipeline, or the floor).
+	Rule int32 `protobuf:"varint,5,opt,name=rule,proto3" json:"rule,omitempty"`
+	// The deciding rule's name, when it has one.
+	RuleName string `protobuf:"bytes,6,opt,name=rule_name,json=ruleName,proto3" json:"rule_name,omitempty"`
+	// The base the deciding rule came from; empty for the profile's own
+	// rule and for no rule.
+	Origin string `protobuf:"bytes,7,opt,name=origin,proto3" json:"origin,omitempty"`
+	// The rule's reason, or why the default, the floor or a fixed rule
+	// applied.
+	Reason string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	// Whether the element's value or presence changed.
+	Changed bool `protobuf:"varint,9,opt,name=changed,proto3" json:"changed,omitempty"`
+	// The value before, as text, its padding removed; empty for a value
+	// that is not text (a sequence, binary data) and for an element the
+	// received data set does not hold at this path.
+	Before string `protobuf:"bytes,10,opt,name=before,proto3" json:"before,omitempty"`
+	// The value after, read back from the de-identified file as written;
+	// empty when it is not text or the element is not in that file, and for
+	// every element of a file that was held before it was written.
+	After string `protobuf:"bytes,11,opt,name=after,proto3" json:"after,omitempty"`
+	// Whether the de-identified file holds the element.
+	PresentAfter  bool `protobuf:"varint,12,opt,name=present_after,json=presentAfter,proto3" json:"present_after,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrialElement) Reset() {
+	*x = TrialElement{}
+	mi := &file_coria_v1_profile_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrialElement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrialElement) ProtoMessage() {}
+
+func (x *TrialElement) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrialElement.ProtoReflect.Descriptor instead.
+func (*TrialElement) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *TrialElement) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *TrialElement) GetKeyword() string {
+	if x != nil {
+		return x.Keyword
+	}
+	return ""
+}
+
+func (x *TrialElement) GetVr() string {
+	if x != nil {
+		return x.Vr
+	}
+	return ""
+}
+
+func (x *TrialElement) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *TrialElement) GetRule() int32 {
+	if x != nil {
+		return x.Rule
+	}
+	return 0
+}
+
+func (x *TrialElement) GetRuleName() string {
+	if x != nil {
+		return x.RuleName
+	}
+	return ""
+}
+
+func (x *TrialElement) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *TrialElement) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *TrialElement) GetChanged() bool {
+	if x != nil {
+		return x.Changed
+	}
+	return false
+}
+
+func (x *TrialElement) GetBefore() string {
+	if x != nil {
+		return x.Before
+	}
+	return ""
+}
+
+func (x *TrialElement) GetAfter() string {
+	if x != nil {
+		return x.After
+	}
+	return ""
+}
+
+func (x *TrialElement) GetPresentAfter() bool {
+	if x != nil {
+		return x.PresentAfter
+	}
+	return false
+}
+
+// TrialSummary is the counts of a trial run, with no value.
+type TrialSummary struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The files tried.
+	Files int32 `protobuf:"varint,1,opt,name=files,proto3" json:"files,omitempty"`
+	// Of them, those that would be archived.
+	Passed int32 `protobuf:"varint,2,opt,name=passed,proto3" json:"passed,omitempty"`
+	// Of them, those that would be held.
+	Held int32 `protobuf:"varint,3,opt,name=held,proto3" json:"held,omitempty"`
+	// How many elements each rule decided, over every file, by the rule's
+	// name or "rule N" (its position, from 1), with "default" for elements
+	// no rule decided; by count, most first.
+	ByRule []*TrialCount `protobuf:"bytes,4,rep,name=by_rule,json=byRule,proto3" json:"by_rule,omitempty"`
+	// How many files were held for each reason, by
+	// "<reason>/<cause>"; by count, most first.
+	ByReason []*TrialCount `protobuf:"bytes,5,rep,name=by_reason,json=byReason,proto3" json:"by_reason,omitempty"`
+	// Of them, those whose verdict depends on a lookup table.
+	Undecided     int32 `protobuf:"varint,6,opt,name=undecided,proto3" json:"undecided,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrialSummary) Reset() {
+	*x = TrialSummary{}
+	mi := &file_coria_v1_profile_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrialSummary) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrialSummary) ProtoMessage() {}
+
+func (x *TrialSummary) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrialSummary.ProtoReflect.Descriptor instead.
+func (*TrialSummary) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *TrialSummary) GetFiles() int32 {
+	if x != nil {
+		return x.Files
+	}
+	return 0
+}
+
+func (x *TrialSummary) GetPassed() int32 {
+	if x != nil {
+		return x.Passed
+	}
+	return 0
+}
+
+func (x *TrialSummary) GetHeld() int32 {
+	if x != nil {
+		return x.Held
+	}
+	return 0
+}
+
+func (x *TrialSummary) GetByRule() []*TrialCount {
+	if x != nil {
+		return x.ByRule
+	}
+	return nil
+}
+
+func (x *TrialSummary) GetByReason() []*TrialCount {
+	if x != nil {
+		return x.ByReason
+	}
+	return nil
+}
+
+func (x *TrialSummary) GetUndecided() int32 {
+	if x != nil {
+		return x.Undecided
+	}
+	return 0
+}
+
+// TrialCount is one count of a summary.
+type TrialCount struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What is counted.
+	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// How many.
+	Count         int32 `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrialCount) Reset() {
+	*x = TrialCount{}
+	mi := &file_coria_v1_profile_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrialCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrialCount) ProtoMessage() {}
+
+func (x *TrialCount) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrialCount.ProtoReflect.Descriptor instead.
+func (*TrialCount) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *TrialCount) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *TrialCount) GetCount() int32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+// ExplainProfileRequest names a profile and one file.
+type ExplainProfileRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant, by name. Required.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The profile. Required.
+	Profile *TrialProfile `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	// The file, sent; or quarantine_record. Exactly one.
+	File *TrialFile `protobuf:"bytes,3,opt,name=file,proto3" json:"file,omitempty"`
+	// The id of a quarantine record whose held file to explain.
+	QuarantineRecord string `protobuf:"bytes,4,opt,name=quarantine_record,json=quarantineRecord,proto3" json:"quarantine_record,omitempty"`
+	// The reception a sent file is explained as coming from.
+	Reception     *TrialReception `protobuf:"bytes,5,opt,name=reception,proto3" json:"reception,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainProfileRequest) Reset() {
+	*x = ExplainProfileRequest{}
+	mi := &file_coria_v1_profile_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainProfileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainProfileRequest) ProtoMessage() {}
+
+func (x *ExplainProfileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainProfileRequest.ProtoReflect.Descriptor instead.
+func (*ExplainProfileRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *ExplainProfileRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *ExplainProfileRequest) GetProfile() *TrialProfile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
+func (x *ExplainProfileRequest) GetFile() *TrialFile {
+	if x != nil {
+		return x.File
+	}
+	return nil
+}
+
+func (x *ExplainProfileRequest) GetQuarantineRecord() string {
+	if x != nil {
+		return x.QuarantineRecord
+	}
+	return ""
+}
+
+func (x *ExplainProfileRequest) GetReception() *TrialReception {
+	if x != nil {
+		return x.Reception
+	}
+	return nil
+}
+
+// ExplainProfileResponse is the decision for each element of the file.
+type ExplainProfileResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The version explained, without its document; absent for a document.
+	Version *ProfileVersion `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	// The checksum of the expanded form.
+	Checksum string `protobuf:"bytes,2,opt,name=checksum,proto3" json:"checksum,omitempty"`
+	// Each element, in the order the engine visits them; empty when the
+	// engine refused the file before it decided every element, and then
+	// refusal says why.
+	Elements []*ExplainedElement `protobuf:"bytes,3,rep,name=elements,proto3" json:"elements,omitempty"`
+	// Elements left out past 5,000, counted.
+	ElementsOmitted int32 `protobuf:"varint,4,opt,name=elements_omitted,json=elementsOmitted,proto3" json:"elements_omitted,omitempty"`
+	// When the engine refused the file: the fixed cause, as
+	// TrialResult.cause. Empty otherwise.
+	Refusal string `protobuf:"bytes,5,opt,name=refusal,proto3" json:"refusal,omitempty"`
+	// The element the refusal names; empty when none.
+	RefusalPath   string `protobuf:"bytes,6,opt,name=refusal_path,json=refusalPath,proto3" json:"refusal_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainProfileResponse) Reset() {
+	*x = ExplainProfileResponse{}
+	mi := &file_coria_v1_profile_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainProfileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainProfileResponse) ProtoMessage() {}
+
+func (x *ExplainProfileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainProfileResponse.ProtoReflect.Descriptor instead.
+func (*ExplainProfileResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *ExplainProfileResponse) GetVersion() *ProfileVersion {
+	if x != nil {
+		return x.Version
+	}
+	return nil
+}
+
+func (x *ExplainProfileResponse) GetChecksum() string {
+	if x != nil {
+		return x.Checksum
+	}
+	return ""
+}
+
+func (x *ExplainProfileResponse) GetElements() []*ExplainedElement {
+	if x != nil {
+		return x.Elements
+	}
+	return nil
+}
+
+func (x *ExplainProfileResponse) GetElementsOmitted() int32 {
+	if x != nil {
+		return x.ElementsOmitted
+	}
+	return 0
+}
+
+func (x *ExplainProfileResponse) GetRefusal() string {
+	if x != nil {
+		return x.Refusal
+	}
+	return ""
+}
+
+func (x *ExplainProfileResponse) GetRefusalPath() string {
+	if x != nil {
+		return x.RefusalPath
+	}
+	return ""
+}
+
+// ExplainedElement is why one element is treated as it is. It holds no
+// value.
+type ExplainedElement struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Where the element is, as TrialElement.path.
+	Path string `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	// The element's keyword; empty for a private or unknown element.
+	Keyword string `protobuf:"bytes,2,opt,name=keyword,proto3" json:"keyword,omitempty"`
+	// The VR the engine read it as.
+	Vr string `protobuf:"bytes,3,opt,name=vr,proto3" json:"vr,omitempty"`
+	// What is done to it, as TrialElement.action.
+	Action string `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	// The deciding rule's position among the expanded form's rules, from 1;
+	// zero when no rule decides.
+	Rule int32 `protobuf:"varint,5,opt,name=rule,proto3" json:"rule,omitempty"`
+	// The deciding rule's name.
+	RuleName string `protobuf:"bytes,6,opt,name=rule_name,json=ruleName,proto3" json:"rule_name,omitempty"`
+	// The base the deciding rule came from; empty for the profile's own.
+	Origin string `protobuf:"bytes,7,opt,name=origin,proto3" json:"origin,omitempty"`
+	// Why: the rule's reason, or why the default, the floor or a fixed rule
+	// applies.
+	Reason string `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
+	// How the deciding rule selects the element: "place", "tag",
+	// "private_element", "private_block", "group" or "vr" (from the most
+	// specific); empty when no rule decides.
+	SelectedBy string `protobuf:"bytes,9,opt,name=selected_by,json=selectedBy,proto3" json:"selected_by,omitempty"`
+	// The other rules whose selector matches the element, by precedence:
+	// each does not decide, and says why. At most 16.
+	Others []*ExplainedCandidate `protobuf:"bytes,10,rep,name=others,proto3" json:"others,omitempty"`
+	// Other rules past 16, counted.
+	OthersOmitted int32 `protobuf:"varint,11,opt,name=others_omitted,json=othersOmitted,proto3" json:"others_omitted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainedElement) Reset() {
+	*x = ExplainedElement{}
+	mi := &file_coria_v1_profile_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainedElement) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainedElement) ProtoMessage() {}
+
+func (x *ExplainedElement) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainedElement.ProtoReflect.Descriptor instead.
+func (*ExplainedElement) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *ExplainedElement) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *ExplainedElement) GetKeyword() string {
+	if x != nil {
+		return x.Keyword
+	}
+	return ""
+}
+
+func (x *ExplainedElement) GetVr() string {
+	if x != nil {
+		return x.Vr
+	}
+	return ""
+}
+
+func (x *ExplainedElement) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ExplainedElement) GetRule() int32 {
+	if x != nil {
+		return x.Rule
+	}
+	return 0
+}
+
+func (x *ExplainedElement) GetRuleName() string {
+	if x != nil {
+		return x.RuleName
+	}
+	return ""
+}
+
+func (x *ExplainedElement) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *ExplainedElement) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *ExplainedElement) GetSelectedBy() string {
+	if x != nil {
+		return x.SelectedBy
+	}
+	return ""
+}
+
+func (x *ExplainedElement) GetOthers() []*ExplainedCandidate {
+	if x != nil {
+		return x.Others
+	}
+	return nil
+}
+
+func (x *ExplainedElement) GetOthersOmitted() int32 {
+	if x != nil {
+		return x.OthersOmitted
+	}
+	return 0
+}
+
+// ExplainedCandidate is a rule whose selector matches an element and that
+// does not decide it.
+type ExplainedCandidate struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The rule's position among the expanded form's rules, from 1.
+	Rule int32 `protobuf:"varint,1,opt,name=rule,proto3" json:"rule,omitempty"`
+	// The rule's name.
+	RuleName string `protobuf:"bytes,2,opt,name=rule_name,json=ruleName,proto3" json:"rule_name,omitempty"`
+	// The base it came from; empty for the profile's own.
+	Origin string `protobuf:"bytes,3,opt,name=origin,proto3" json:"origin,omitempty"`
+	// How it selects the element, as ExplainedElement.selected_by.
+	SelectedBy string `protobuf:"bytes,4,opt,name=selected_by,json=selectedBy,proto3" json:"selected_by,omitempty"`
+	// Why it does not decide: "conditions" (its conditions do not hold for
+	// this file), "less_specific" (a rule of a more specific selector
+	// decides), "earlier" (a later rule of an equally specific selector
+	// decides), or "floor" (the engine's floor overrides every rule here).
+	WhyNot        string `protobuf:"bytes,5,opt,name=why_not,json=whyNot,proto3" json:"why_not,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainedCandidate) Reset() {
+	*x = ExplainedCandidate{}
+	mi := &file_coria_v1_profile_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainedCandidate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainedCandidate) ProtoMessage() {}
+
+func (x *ExplainedCandidate) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainedCandidate.ProtoReflect.Descriptor instead.
+func (*ExplainedCandidate) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *ExplainedCandidate) GetRule() int32 {
+	if x != nil {
+		return x.Rule
+	}
+	return 0
+}
+
+func (x *ExplainedCandidate) GetRuleName() string {
+	if x != nil {
+		return x.RuleName
+	}
+	return ""
+}
+
+func (x *ExplainedCandidate) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *ExplainedCandidate) GetSelectedBy() string {
+	if x != nil {
+		return x.SelectedBy
+	}
+	return ""
+}
+
+func (x *ExplainedCandidate) GetWhyNot() string {
+	if x != nil {
+		return x.WhyNot
+	}
+	return ""
+}
+
+// DiffProfileVersionsRequest names two versions to compare.
+type DiffProfileVersionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The tenant, by name. Required.
+	Tenant string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The profile's name. Required.
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// The version compared from; zero for the latest.
+	FromVersion int32 `protobuf:"varint,3,opt,name=from_version,json=fromVersion,proto3" json:"from_version,omitempty"`
+	// The version compared to; zero for the latest.
+	ToVersion int32 `protobuf:"varint,4,opt,name=to_version,json=toVersion,proto3" json:"to_version,omitempty"`
+	// The profile of to_version, when it is another profile than name;
+	// empty for the same.
+	ToName        string `protobuf:"bytes,5,opt,name=to_name,json=toName,proto3" json:"to_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiffProfileVersionsRequest) Reset() {
+	*x = DiffProfileVersionsRequest{}
+	mi := &file_coria_v1_profile_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiffProfileVersionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiffProfileVersionsRequest) ProtoMessage() {}
+
+func (x *DiffProfileVersionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiffProfileVersionsRequest.ProtoReflect.Descriptor instead.
+func (*DiffProfileVersionsRequest) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *DiffProfileVersionsRequest) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *DiffProfileVersionsRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DiffProfileVersionsRequest) GetFromVersion() int32 {
+	if x != nil {
+		return x.FromVersion
+	}
+	return 0
+}
+
+func (x *DiffProfileVersionsRequest) GetToVersion() int32 {
+	if x != nil {
+		return x.ToVersion
+	}
+	return 0
+}
+
+func (x *DiffProfileVersionsRequest) GetToName() string {
+	if x != nil {
+		return x.ToName
+	}
+	return ""
+}
+
+// DiffProfileVersionsResponse is what changes from one version to the
+// other.
+type DiffProfileVersionsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The version compared from, without its document.
+	From *ProfileVersion `protobuf:"bytes,1,opt,name=from,proto3" json:"from,omitempty"`
+	// The version compared to, without its document.
+	To *ProfileVersion `protobuf:"bytes,2,opt,name=to,proto3" json:"to,omitempty"`
+	// True when the checksums are equal: every file is treated alike.
+	SameEffect bool `protobuf:"varint,3,opt,name=same_effect,json=sameEffect,proto3" json:"same_effect,omitempty"`
+	// The bases of to that from does not have, in to's order.
+	BasesAdded []string `protobuf:"bytes,4,rep,name=bases_added,json=basesAdded,proto3" json:"bases_added,omitempty"`
+	// The bases of from that to does not have, in from's order.
+	BasesRemoved []string `protobuf:"bytes,5,rep,name=bases_removed,json=basesRemoved,proto3" json:"bases_removed,omitempty"`
+	// What happens to an element no rule decides, in each.
+	UnnamedFrom UnnamedElements `protobuf:"varint,6,opt,name=unnamed_from,json=unnamedFrom,proto3,enum=coria.v1.UnnamedElements" json:"unnamed_from,omitempty"`
+	// See unnamed_from.
+	UnnamedTo UnnamedElements `protobuf:"varint,7,opt,name=unnamed_to,json=unnamedTo,proto3,enum=coria.v1.UnnamedElements" json:"unnamed_to,omitempty"`
+	// The largest date shift in days, in each.
+	DateShiftDaysFrom int32 `protobuf:"varint,8,opt,name=date_shift_days_from,json=dateShiftDaysFrom,proto3" json:"date_shift_days_from,omitempty"`
+	// See date_shift_days_from.
+	DateShiftDaysTo int32 `protobuf:"varint,9,opt,name=date_shift_days_to,json=dateShiftDaysTo,proto3" json:"date_shift_days_to,omitempty"`
+	// Each rule added, removed or changed, in to's order and then the
+	// removed in from's; at most 1,000.
+	Rules []*ProfileRuleChange `protobuf:"bytes,10,rep,name=rules,proto3" json:"rules,omitempty"`
+	// Rules past 1,000, counted.
+	RulesOmitted int32 `protobuf:"varint,11,opt,name=rules_omitted,json=rulesOmitted,proto3" json:"rules_omitted,omitempty"`
+	// Each change of effect, in to's order and then those only in from;
+	// at most 1,000.
+	Effects []*ProfileEffectChange `protobuf:"bytes,12,rep,name=effects,proto3" json:"effects,omitempty"`
+	// Changes of effect past 1,000, counted.
+	EffectsOmitted int32 `protobuf:"varint,13,opt,name=effects_omitted,json=effectsOmitted,proto3" json:"effects_omitted,omitempty"`
+	// The pixel rules one version has and the other does not, each
+	// compared whole with its origin, counted (a rule changed counts once in
+	// each).
+	PixelRulesChanged int32 `protobuf:"varint,14,opt,name=pixel_rules_changed,json=pixelRulesChanged,proto3" json:"pixel_rules_changed,omitempty"`
+	// True when both have the same bases in another order: a later base's
+	// rule wins over an earlier's between equals.
+	BasesReordered bool `protobuf:"varint,15,opt,name=bases_reordered,json=basesReordered,proto3" json:"bases_reordered,omitempty"`
+	// True when same_effect is false and none of the lists above, nor the
+	// defaults, shows why: the expanded forms differ in what this
+	// comparison does not itemize (TryProfile over files shows the effect).
+	UnlistedChange bool `protobuf:"varint,16,opt,name=unlisted_change,json=unlistedChange,proto3" json:"unlisted_change,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DiffProfileVersionsResponse) Reset() {
+	*x = DiffProfileVersionsResponse{}
+	mi := &file_coria_v1_profile_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiffProfileVersionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiffProfileVersionsResponse) ProtoMessage() {}
+
+func (x *DiffProfileVersionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiffProfileVersionsResponse.ProtoReflect.Descriptor instead.
+func (*DiffProfileVersionsResponse) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *DiffProfileVersionsResponse) GetFrom() *ProfileVersion {
+	if x != nil {
+		return x.From
+	}
+	return nil
+}
+
+func (x *DiffProfileVersionsResponse) GetTo() *ProfileVersion {
+	if x != nil {
+		return x.To
+	}
+	return nil
+}
+
+func (x *DiffProfileVersionsResponse) GetSameEffect() bool {
+	if x != nil {
+		return x.SameEffect
+	}
+	return false
+}
+
+func (x *DiffProfileVersionsResponse) GetBasesAdded() []string {
+	if x != nil {
+		return x.BasesAdded
+	}
+	return nil
+}
+
+func (x *DiffProfileVersionsResponse) GetBasesRemoved() []string {
+	if x != nil {
+		return x.BasesRemoved
+	}
+	return nil
+}
+
+func (x *DiffProfileVersionsResponse) GetUnnamedFrom() UnnamedElements {
+	if x != nil {
+		return x.UnnamedFrom
+	}
+	return UnnamedElements_UNNAMED_ELEMENTS_UNSPECIFIED
+}
+
+func (x *DiffProfileVersionsResponse) GetUnnamedTo() UnnamedElements {
+	if x != nil {
+		return x.UnnamedTo
+	}
+	return UnnamedElements_UNNAMED_ELEMENTS_UNSPECIFIED
+}
+
+func (x *DiffProfileVersionsResponse) GetDateShiftDaysFrom() int32 {
+	if x != nil {
+		return x.DateShiftDaysFrom
+	}
+	return 0
+}
+
+func (x *DiffProfileVersionsResponse) GetDateShiftDaysTo() int32 {
+	if x != nil {
+		return x.DateShiftDaysTo
+	}
+	return 0
+}
+
+func (x *DiffProfileVersionsResponse) GetRules() []*ProfileRuleChange {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
+func (x *DiffProfileVersionsResponse) GetRulesOmitted() int32 {
+	if x != nil {
+		return x.RulesOmitted
+	}
+	return 0
+}
+
+func (x *DiffProfileVersionsResponse) GetEffects() []*ProfileEffectChange {
+	if x != nil {
+		return x.Effects
+	}
+	return nil
+}
+
+func (x *DiffProfileVersionsResponse) GetEffectsOmitted() int32 {
+	if x != nil {
+		return x.EffectsOmitted
+	}
+	return 0
+}
+
+func (x *DiffProfileVersionsResponse) GetPixelRulesChanged() int32 {
+	if x != nil {
+		return x.PixelRulesChanged
+	}
+	return 0
+}
+
+func (x *DiffProfileVersionsResponse) GetBasesReordered() bool {
+	if x != nil {
+		return x.BasesReordered
+	}
+	return false
+}
+
+func (x *DiffProfileVersionsResponse) GetUnlistedChange() bool {
+	if x != nil {
+		return x.UnlistedChange
+	}
+	return false
+}
+
+// ProfileRuleChange is one rule that differs.
+type ProfileRuleChange struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// How.
+	Change ProfileChange `protobuf:"varint,1,opt,name=change,proto3,enum=coria.v1.ProfileChange" json:"change,omitempty"`
+	// The base it comes from; empty for the profile's own rule.
+	Origin string `protobuf:"bytes,2,opt,name=origin,proto3" json:"origin,omitempty"`
+	// Its position among from's expanded rules, from 1; zero when added.
+	FromPosition int32 `protobuf:"varint,3,opt,name=from_position,json=fromPosition,proto3" json:"from_position,omitempty"`
+	// Its position among to's expanded rules, from 1; zero when removed.
+	ToPosition int32 `protobuf:"varint,4,opt,name=to_position,json=toPosition,proto3" json:"to_position,omitempty"`
+	// The rule in from; absent when added.
+	From *ProfileRule `protobuf:"bytes,5,opt,name=from,proto3" json:"from,omitempty"`
+	// The rule in to; absent when removed.
+	To            *ProfileRule `protobuf:"bytes,6,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileRuleChange) Reset() {
+	*x = ProfileRuleChange{}
+	mi := &file_coria_v1_profile_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileRuleChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileRuleChange) ProtoMessage() {}
+
+func (x *ProfileRuleChange) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileRuleChange.ProtoReflect.Descriptor instead.
+func (*ProfileRuleChange) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *ProfileRuleChange) GetChange() ProfileChange {
+	if x != nil {
+		return x.Change
+	}
+	return ProfileChange_PROFILE_CHANGE_UNSPECIFIED
+}
+
+func (x *ProfileRuleChange) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *ProfileRuleChange) GetFromPosition() int32 {
+	if x != nil {
+		return x.FromPosition
+	}
+	return 0
+}
+
+func (x *ProfileRuleChange) GetToPosition() int32 {
+	if x != nil {
+		return x.ToPosition
+	}
+	return 0
+}
+
+func (x *ProfileRuleChange) GetFrom() *ProfileRule {
+	if x != nil {
+		return x.From
+	}
+	return nil
+}
+
+func (x *ProfileRuleChange) GetTo() *ProfileRule {
+	if x != nil {
+		return x.To
+	}
+	return nil
+}
+
+// ProfileEffectChange is a selector, with its conditions, whose winning
+// action differs; or a selector whose rules of different conditions are
+// in another order (order_changed).
+type ProfileEffectChange struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The selector.
+	Selector *ProfileSelector `protobuf:"bytes,1,opt,name=selector,proto3" json:"selector,omitempty"`
+	// The conditions.
+	When []*ProfileCondition `protobuf:"bytes,2,rep,name=when,proto3" json:"when,omitempty"`
+	// The action that wins in from; absent when no rule there has this
+	// selector and these conditions.
+	From *ProfileAction `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
+	// The action that wins in to; absent likewise.
+	To *ProfileAction `protobuf:"bytes,4,opt,name=to,proto3" json:"to,omitempty"`
+	// The winning rule's position in from, from 1; zero when absent.
+	FromPosition int32 `protobuf:"varint,5,opt,name=from_position,json=fromPosition,proto3" json:"from_position,omitempty"`
+	// The winning rule's position in to, from 1; zero when absent.
+	ToPosition int32 `protobuf:"varint,6,opt,name=to_position,json=toPosition,proto3" json:"to_position,omitempty"`
+	// True when the change is of the order among the rules with this
+	// selector and different conditions, not of an action: for a file that
+	// meets more than one rule's conditions, another rule wins. when, from
+	// and to are then empty.
+	OrderChanged  bool `protobuf:"varint,7,opt,name=order_changed,json=orderChanged,proto3" json:"order_changed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileEffectChange) Reset() {
+	*x = ProfileEffectChange{}
+	mi := &file_coria_v1_profile_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileEffectChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileEffectChange) ProtoMessage() {}
+
+func (x *ProfileEffectChange) ProtoReflect() protoreflect.Message {
+	mi := &file_coria_v1_profile_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileEffectChange.ProtoReflect.Descriptor instead.
+func (*ProfileEffectChange) Descriptor() ([]byte, []int) {
+	return file_coria_v1_profile_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *ProfileEffectChange) GetSelector() *ProfileSelector {
+	if x != nil {
+		return x.Selector
+	}
+	return nil
+}
+
+func (x *ProfileEffectChange) GetWhen() []*ProfileCondition {
+	if x != nil {
+		return x.When
+	}
+	return nil
+}
+
+func (x *ProfileEffectChange) GetFrom() *ProfileAction {
+	if x != nil {
+		return x.From
+	}
+	return nil
+}
+
+func (x *ProfileEffectChange) GetTo() *ProfileAction {
+	if x != nil {
+		return x.To
+	}
+	return nil
+}
+
+func (x *ProfileEffectChange) GetFromPosition() int32 {
+	if x != nil {
+		return x.FromPosition
+	}
+	return 0
+}
+
+func (x *ProfileEffectChange) GetToPosition() int32 {
+	if x != nil {
+		return x.ToPosition
+	}
+	return 0
+}
+
+func (x *ProfileEffectChange) GetOrderChanged() bool {
+	if x != nil {
+		return x.OrderChanged
+	}
+	return false
+}
+
 var File_coria_v1_profile_proto protoreflect.FileDescriptor
 
 const file_coria_v1_profile_proto_rawDesc = "" +
@@ -4205,7 +6128,153 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\bwarnings\x18\x04 \x03(\v2\x18.coria.v1.ProfileProblemR\bwarnings\"\x19\n" +
 	"\x17ListProfileBasesRequest\"G\n" +
 	"\x18ListProfileBasesResponse\x12+\n" +
-	"\x05bases\x18\x01 \x03(\v2\x15.coria.v1.ProfileBaseR\x05bases*k\n" +
+	"\x05bases\x18\x01 \x03(\v2\x15.coria.v1.ProfileBaseR\x05bases\"\x89\x01\n" +
+	"\fTrialProfile\x128\n" +
+	"\aversion\x18\x01 \x01(\v2\x1c.coria.v1.ProfileVersionNameH\x00R\aversion\x127\n" +
+	"\bdocument\x18\x02 \x01(\v2\x19.coria.v1.ProfileDocumentH\x00R\bdocumentB\x06\n" +
+	"\x04kind\"B\n" +
+	"\x12ProfileVersionName\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\x05R\aversion\"C\n" +
+	"\tTrialFile\x12\x17\n" +
+	"\x04name\x18\x01 \x01(\tB\x03\x80\x01\x01R\x04name\x12\x1d\n" +
+	"\acontent\x18\x02 \x01(\fB\x03\x80\x01\x01R\acontent\"~\n" +
+	"\x0eTrialReception\x12\x1a\n" +
+	"\breceiver\x18\x01 \x01(\tR\breceiver\x12(\n" +
+	"\x10calling_ae_title\x18\x02 \x01(\tR\x0ecallingAeTitle\x12&\n" +
+	"\x0fcalled_ae_title\x18\x03 \x01(\tR\rcalledAeTitle\"\xef\x01\n" +
+	"\x11TryProfileRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x120\n" +
+	"\aprofile\x18\x02 \x01(\v2\x16.coria.v1.TrialProfileR\aprofile\x12)\n" +
+	"\x05files\x18\x03 \x03(\v2\x13.coria.v1.TrialFileR\x05files\x12-\n" +
+	"\x12quarantine_records\x18\x04 \x03(\tR\x11quarantineRecords\x126\n" +
+	"\treception\x18\x05 \x01(\v2\x18.coria.v1.TrialReceptionR\treception\"\xf4\x01\n" +
+	"\x12TryProfileResponse\x122\n" +
+	"\aversion\x18\x01 \x01(\v2\x18.coria.v1.ProfileVersionR\aversion\x12\x1a\n" +
+	"\bchecksum\x18\x02 \x01(\tR\bchecksum\x12+\n" +
+	"\x11reception_refusal\x18\x03 \x01(\tR\x10receptionRefusal\x12/\n" +
+	"\aresults\x18\x04 \x03(\v2\x15.coria.v1.TrialResultR\aresults\x120\n" +
+	"\asummary\x18\x05 \x01(\v2\x16.coria.v1.TrialSummaryR\asummary\"\x8a\x04\n" +
+	"\vTrialResult\x12\x17\n" +
+	"\x04name\x18\x01 \x01(\tB\x03\x80\x01\x01R\x04name\x12+\n" +
+	"\x11quarantine_record\x18\x02 \x01(\tR\x10quarantineRecord\x120\n" +
+	"\averdict\x18\x03 \x01(\x0e2\x16.coria.v1.TrialVerdictR\averdict\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\x12\x14\n" +
+	"\x05cause\x18\x05 \x01(\tR\x05cause\x12\x12\n" +
+	"\x04path\x18\x06 \x01(\tR\x04path\x12\x12\n" +
+	"\x04rule\x18\a \x01(\tR\x04rule\x122\n" +
+	"\belements\x18\b \x03(\v2\x16.coria.v1.TrialElementR\belements\x12)\n" +
+	"\x10elements_omitted\x18\t \x01(\x05R\x0felementsOmitted\x12'\n" +
+	"\x0fvalues_searched\x18\n" +
+	" \x01(\x05R\x0evaluesSearched\x12%\n" +
+	"\x0evalues_skipped\x18\v \x01(\x05R\rvaluesSkipped\x12-\n" +
+	"\x12lookups_unassigned\x18\f \x01(\x05R\x11lookupsUnassigned\x12\x1a\n" +
+	"\breceiver\x18\r \x01(\tR\breceiver\x123\n" +
+	"\x15deidentification_only\x18\x0e \x01(\bR\x14deidentificationOnly\"\xbc\x02\n" +
+	"\fTrialElement\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\akeyword\x18\x02 \x01(\tR\akeyword\x12\x0e\n" +
+	"\x02vr\x18\x03 \x01(\tR\x02vr\x12\x16\n" +
+	"\x06action\x18\x04 \x01(\tR\x06action\x12\x12\n" +
+	"\x04rule\x18\x05 \x01(\x05R\x04rule\x12\x1b\n" +
+	"\trule_name\x18\x06 \x01(\tR\bruleName\x12\x16\n" +
+	"\x06origin\x18\a \x01(\tR\x06origin\x12\x16\n" +
+	"\x06reason\x18\b \x01(\tR\x06reason\x12\x18\n" +
+	"\achanged\x18\t \x01(\bR\achanged\x12\x1b\n" +
+	"\x06before\x18\n" +
+	" \x01(\tB\x03\x80\x01\x01R\x06before\x12\x19\n" +
+	"\x05after\x18\v \x01(\tB\x03\x80\x01\x01R\x05after\x12#\n" +
+	"\rpresent_after\x18\f \x01(\bR\fpresentAfter\"\xd0\x01\n" +
+	"\fTrialSummary\x12\x14\n" +
+	"\x05files\x18\x01 \x01(\x05R\x05files\x12\x16\n" +
+	"\x06passed\x18\x02 \x01(\x05R\x06passed\x12\x12\n" +
+	"\x04held\x18\x03 \x01(\x05R\x04held\x12-\n" +
+	"\aby_rule\x18\x04 \x03(\v2\x14.coria.v1.TrialCountR\x06byRule\x121\n" +
+	"\tby_reason\x18\x05 \x03(\v2\x14.coria.v1.TrialCountR\bbyReason\x12\x1c\n" +
+	"\tundecided\x18\x06 \x01(\x05R\tundecided\"4\n" +
+	"\n" +
+	"TrialCount\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05count\x18\x02 \x01(\x05R\x05count\"\xef\x01\n" +
+	"\x15ExplainProfileRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x120\n" +
+	"\aprofile\x18\x02 \x01(\v2\x16.coria.v1.TrialProfileR\aprofile\x12'\n" +
+	"\x04file\x18\x03 \x01(\v2\x13.coria.v1.TrialFileR\x04file\x12+\n" +
+	"\x11quarantine_record\x18\x04 \x01(\tR\x10quarantineRecord\x126\n" +
+	"\treception\x18\x05 \x01(\v2\x18.coria.v1.TrialReceptionR\treception\"\x88\x02\n" +
+	"\x16ExplainProfileResponse\x122\n" +
+	"\aversion\x18\x01 \x01(\v2\x18.coria.v1.ProfileVersionR\aversion\x12\x1a\n" +
+	"\bchecksum\x18\x02 \x01(\tR\bchecksum\x126\n" +
+	"\belements\x18\x03 \x03(\v2\x1a.coria.v1.ExplainedElementR\belements\x12)\n" +
+	"\x10elements_omitted\x18\x04 \x01(\x05R\x0felementsOmitted\x12\x18\n" +
+	"\arefusal\x18\x05 \x01(\tR\arefusal\x12!\n" +
+	"\frefusal_path\x18\x06 \x01(\tR\vrefusalPath\"\xc7\x02\n" +
+	"\x10ExplainedElement\x12\x12\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\x12\x18\n" +
+	"\akeyword\x18\x02 \x01(\tR\akeyword\x12\x0e\n" +
+	"\x02vr\x18\x03 \x01(\tR\x02vr\x12\x16\n" +
+	"\x06action\x18\x04 \x01(\tR\x06action\x12\x12\n" +
+	"\x04rule\x18\x05 \x01(\x05R\x04rule\x12\x1b\n" +
+	"\trule_name\x18\x06 \x01(\tR\bruleName\x12\x16\n" +
+	"\x06origin\x18\a \x01(\tR\x06origin\x12\x16\n" +
+	"\x06reason\x18\b \x01(\tR\x06reason\x12\x1f\n" +
+	"\vselected_by\x18\t \x01(\tR\n" +
+	"selectedBy\x124\n" +
+	"\x06others\x18\n" +
+	" \x03(\v2\x1c.coria.v1.ExplainedCandidateR\x06others\x12%\n" +
+	"\x0eothers_omitted\x18\v \x01(\x05R\rothersOmitted\"\x97\x01\n" +
+	"\x12ExplainedCandidate\x12\x12\n" +
+	"\x04rule\x18\x01 \x01(\x05R\x04rule\x12\x1b\n" +
+	"\trule_name\x18\x02 \x01(\tR\bruleName\x12\x16\n" +
+	"\x06origin\x18\x03 \x01(\tR\x06origin\x12\x1f\n" +
+	"\vselected_by\x18\x04 \x01(\tR\n" +
+	"selectedBy\x12\x17\n" +
+	"\awhy_not\x18\x05 \x01(\tR\x06whyNot\"\xa3\x01\n" +
+	"\x1aDiffProfileVersionsRequest\x12\x16\n" +
+	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12!\n" +
+	"\ffrom_version\x18\x03 \x01(\x05R\vfromVersion\x12\x1d\n" +
+	"\n" +
+	"to_version\x18\x04 \x01(\x05R\ttoVersion\x12\x17\n" +
+	"\ato_name\x18\x05 \x01(\tR\x06toName\"\xee\x05\n" +
+	"\x1bDiffProfileVersionsResponse\x12,\n" +
+	"\x04from\x18\x01 \x01(\v2\x18.coria.v1.ProfileVersionR\x04from\x12(\n" +
+	"\x02to\x18\x02 \x01(\v2\x18.coria.v1.ProfileVersionR\x02to\x12\x1f\n" +
+	"\vsame_effect\x18\x03 \x01(\bR\n" +
+	"sameEffect\x12\x1f\n" +
+	"\vbases_added\x18\x04 \x03(\tR\n" +
+	"basesAdded\x12#\n" +
+	"\rbases_removed\x18\x05 \x03(\tR\fbasesRemoved\x12<\n" +
+	"\funnamed_from\x18\x06 \x01(\x0e2\x19.coria.v1.UnnamedElementsR\vunnamedFrom\x128\n" +
+	"\n" +
+	"unnamed_to\x18\a \x01(\x0e2\x19.coria.v1.UnnamedElementsR\tunnamedTo\x12/\n" +
+	"\x14date_shift_days_from\x18\b \x01(\x05R\x11dateShiftDaysFrom\x12+\n" +
+	"\x12date_shift_days_to\x18\t \x01(\x05R\x0fdateShiftDaysTo\x121\n" +
+	"\x05rules\x18\n" +
+	" \x03(\v2\x1b.coria.v1.ProfileRuleChangeR\x05rules\x12#\n" +
+	"\rrules_omitted\x18\v \x01(\x05R\frulesOmitted\x127\n" +
+	"\aeffects\x18\f \x03(\v2\x1d.coria.v1.ProfileEffectChangeR\aeffects\x12'\n" +
+	"\x0feffects_omitted\x18\r \x01(\x05R\x0eeffectsOmitted\x12.\n" +
+	"\x13pixel_rules_changed\x18\x0e \x01(\x05R\x11pixelRulesChanged\x12'\n" +
+	"\x0fbases_reordered\x18\x0f \x01(\bR\x0ebasesReordered\x12'\n" +
+	"\x0funlisted_change\x18\x10 \x01(\bR\x0eunlistedChange\"\xf4\x01\n" +
+	"\x11ProfileRuleChange\x12/\n" +
+	"\x06change\x18\x01 \x01(\x0e2\x17.coria.v1.ProfileChangeR\x06change\x12\x16\n" +
+	"\x06origin\x18\x02 \x01(\tR\x06origin\x12#\n" +
+	"\rfrom_position\x18\x03 \x01(\x05R\ffromPosition\x12\x1f\n" +
+	"\vto_position\x18\x04 \x01(\x05R\n" +
+	"toPosition\x12)\n" +
+	"\x04from\x18\x05 \x01(\v2\x15.coria.v1.ProfileRuleR\x04from\x12%\n" +
+	"\x02to\x18\x06 \x01(\v2\x15.coria.v1.ProfileRuleR\x02to\"\xbd\x02\n" +
+	"\x13ProfileEffectChange\x125\n" +
+	"\bselector\x18\x01 \x01(\v2\x19.coria.v1.ProfileSelectorR\bselector\x12.\n" +
+	"\x04when\x18\x02 \x03(\v2\x1a.coria.v1.ProfileConditionR\x04when\x12+\n" +
+	"\x04from\x18\x03 \x01(\v2\x17.coria.v1.ProfileActionR\x04from\x12'\n" +
+	"\x02to\x18\x04 \x01(\v2\x17.coria.v1.ProfileActionR\x02to\x12#\n" +
+	"\rfrom_position\x18\x05 \x01(\x05R\ffromPosition\x12\x1f\n" +
+	"\vto_position\x18\x06 \x01(\x05R\n" +
+	"toPosition\x12#\n" +
+	"\rorder_changed\x18\a \x01(\bR\forderChanged*k\n" +
 	"\x0fUnnamedElements\x12 \n" +
 	"\x1cUNNAMED_ELEMENTS_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15UNNAMED_ELEMENTS_KEEP\x10\x01\x12\x1b\n" +
@@ -4232,14 +6301,29 @@ const file_coria_v1_profile_proto_rawDesc = "" +
 	"\vProfileView\x12\x1c\n" +
 	"\x18PROFILE_VIEW_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15PROFILE_VIEW_DOCUMENT\x10\x01\x12\x15\n" +
-	"\x11PROFILE_VIEW_FULL\x10\x022\xd9\x04\n" +
+	"\x11PROFILE_VIEW_FULL\x10\x02*|\n" +
+	"\fTrialVerdict\x12\x1d\n" +
+	"\x19TRIAL_VERDICT_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14TRIAL_VERDICT_PASSED\x10\x01\x12\x16\n" +
+	"\x12TRIAL_VERDICT_HELD\x10\x02\x12\x1b\n" +
+	"\x17TRIAL_VERDICT_UNDECIDED\x10\x03*\x9b\x01\n" +
+	"\rProfileChange\x12\x1e\n" +
+	"\x1aPROFILE_CHANGE_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14PROFILE_CHANGE_ADDED\x10\x01\x12\x1a\n" +
+	"\x16PROFILE_CHANGE_REMOVED\x10\x02\x12\x1a\n" +
+	"\x16PROFILE_CHANGE_CHANGED\x10\x03\x12\x18\n" +
+	"\x14PROFILE_CHANGE_MOVED\x10\x042\xea\x06\n" +
 	"\x0eProfileService\x12j\n" +
 	"\x14CreateProfileVersion\x12%.coria.v1.CreateProfileVersionRequest\x1a&.coria.v1.CreateProfileVersionResponse\"\x03\x90\x02\x02\x12a\n" +
 	"\x11GetProfileVersion\x12\".coria.v1.GetProfileVersionRequest\x1a#.coria.v1.GetProfileVersionResponse\"\x03\x90\x02\x01\x12R\n" +
 	"\fListProfiles\x12\x1d.coria.v1.ListProfilesRequest\x1a\x1e.coria.v1.ListProfilesResponse\"\x03\x90\x02\x01\x12g\n" +
 	"\x13ListProfileVersions\x12$.coria.v1.ListProfileVersionsRequest\x1a%.coria.v1.ListProfileVersionsResponse\"\x03\x90\x02\x01\x12[\n" +
 	"\x0fValidateProfile\x12 .coria.v1.ValidateProfileRequest\x1a!.coria.v1.ValidateProfileResponse\"\x03\x90\x02\x01\x12^\n" +
-	"\x10ListProfileBases\x12!.coria.v1.ListProfileBasesRequest\x1a\".coria.v1.ListProfileBasesResponse\"\x03\x90\x02\x01B\x8e\x01\n" +
+	"\x10ListProfileBases\x12!.coria.v1.ListProfileBasesRequest\x1a\".coria.v1.ListProfileBasesResponse\"\x03\x90\x02\x01\x12L\n" +
+	"\n" +
+	"TryProfile\x12\x1b.coria.v1.TryProfileRequest\x1a\x1c.coria.v1.TryProfileResponse\"\x03\x90\x02\x01\x12X\n" +
+	"\x0eExplainProfile\x12\x1f.coria.v1.ExplainProfileRequest\x1a .coria.v1.ExplainProfileResponse\"\x03\x90\x02\x01\x12g\n" +
+	"\x13DiffProfileVersions\x12$.coria.v1.DiffProfileVersionsRequest\x1a%.coria.v1.DiffProfileVersionsResponse\"\x03\x90\x02\x01B\x8e\x01\n" +
 	"\fcom.coria.v1B\fProfileProtoP\x01Z/github.com/amrshadid/coria/gen/coria/v1;coriav1\xa2\x02\x03CXX\xaa\x02\bCoria.V1\xca\x02\bCoria\\V1\xe2\x02\x14Coria\\V1\\GPBMetadata\xea\x02\tCoria::V1b\x06proto3"
 
 var (
@@ -4254,135 +6338,192 @@ func file_coria_v1_profile_proto_rawDescGZIP() []byte {
 	return file_coria_v1_profile_proto_rawDescData
 }
 
-var file_coria_v1_profile_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_coria_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
+var file_coria_v1_profile_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_coria_v1_profile_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
 var file_coria_v1_profile_proto_goTypes = []any{
 	(UnnamedElements)(0),                 // 0: coria.v1.UnnamedElements
 	(ConditionSubject)(0),                // 1: coria.v1.ConditionSubject
 	(LookupMissing)(0),                   // 2: coria.v1.LookupMissing
 	(RequiredFallback)(0),                // 3: coria.v1.RequiredFallback
 	(ProfileView)(0),                     // 4: coria.v1.ProfileView
-	(*ProfileDocument)(nil),              // 5: coria.v1.ProfileDocument
-	(*ProfileRule)(nil),                  // 6: coria.v1.ProfileRule
-	(*ProfileSelector)(nil),              // 7: coria.v1.ProfileSelector
-	(*PrivateElement)(nil),               // 8: coria.v1.PrivateElement
-	(*ContentItemSelector)(nil),          // 9: coria.v1.ContentItemSelector
-	(*ProfileCondition)(nil),             // 10: coria.v1.ProfileCondition
-	(*ProfileAction)(nil),                // 11: coria.v1.ProfileAction
-	(*KeepAction)(nil),                   // 12: coria.v1.KeepAction
-	(*RemoveAction)(nil),                 // 13: coria.v1.RemoveAction
-	(*EmptyAction)(nil),                  // 14: coria.v1.EmptyAction
-	(*ReplaceAction)(nil),                // 15: coria.v1.ReplaceAction
-	(*SetAction)(nil),                    // 16: coria.v1.SetAction
-	(*HashAction)(nil),                   // 17: coria.v1.HashAction
-	(*UidAction)(nil),                    // 18: coria.v1.UidAction
-	(*ShiftAction)(nil),                  // 19: coria.v1.ShiftAction
-	(*GeneralizeAction)(nil),             // 20: coria.v1.GeneralizeAction
-	(*LookupAction)(nil),                 // 21: coria.v1.LookupAction
-	(*CleanAction)(nil),                  // 22: coria.v1.CleanAction
-	(*QuarantineAction)(nil),             // 23: coria.v1.QuarantineAction
-	(*DummyAction)(nil),                  // 24: coria.v1.DummyAction
-	(*RemoveUnlessRequiredAction)(nil),   // 25: coria.v1.RemoveUnlessRequiredAction
-	(*PixelRule)(nil),                    // 26: coria.v1.PixelRule
-	(*RedactPixels)(nil),                 // 27: coria.v1.RedactPixels
-	(*PixelRectangle)(nil),               // 28: coria.v1.PixelRectangle
-	(*DetectText)(nil),                   // 29: coria.v1.DetectText
-	(*AcceptPixels)(nil),                 // 30: coria.v1.AcceptPixels
-	(*ExpandedProfile)(nil),              // 31: coria.v1.ExpandedProfile
-	(*ExpandedRule)(nil),                 // 32: coria.v1.ExpandedRule
-	(*ExpandedPixelRule)(nil),            // 33: coria.v1.ExpandedPixelRule
-	(*ProfileVersion)(nil),               // 34: coria.v1.ProfileVersion
-	(*ProfileSummary)(nil),               // 35: coria.v1.ProfileSummary
-	(*ProfileProblem)(nil),               // 36: coria.v1.ProfileProblem
-	(*ProfileProblems)(nil),              // 37: coria.v1.ProfileProblems
-	(*ProfileBase)(nil),                  // 38: coria.v1.ProfileBase
-	(*CreateProfileVersionRequest)(nil),  // 39: coria.v1.CreateProfileVersionRequest
-	(*CreateProfileVersionResponse)(nil), // 40: coria.v1.CreateProfileVersionResponse
-	(*GetProfileVersionRequest)(nil),     // 41: coria.v1.GetProfileVersionRequest
-	(*GetProfileVersionResponse)(nil),    // 42: coria.v1.GetProfileVersionResponse
-	(*ListProfilesRequest)(nil),          // 43: coria.v1.ListProfilesRequest
-	(*ListProfilesResponse)(nil),         // 44: coria.v1.ListProfilesResponse
-	(*ListProfileVersionsRequest)(nil),   // 45: coria.v1.ListProfileVersionsRequest
-	(*ListProfileVersionsResponse)(nil),  // 46: coria.v1.ListProfileVersionsResponse
-	(*ValidateProfileRequest)(nil),       // 47: coria.v1.ValidateProfileRequest
-	(*ValidateProfileResponse)(nil),      // 48: coria.v1.ValidateProfileResponse
-	(*ListProfileBasesRequest)(nil),      // 49: coria.v1.ListProfileBasesRequest
-	(*ListProfileBasesResponse)(nil),     // 50: coria.v1.ListProfileBasesResponse
-	(*timestamppb.Timestamp)(nil),        // 51: google.protobuf.Timestamp
+	(TrialVerdict)(0),                    // 5: coria.v1.TrialVerdict
+	(ProfileChange)(0),                   // 6: coria.v1.ProfileChange
+	(*ProfileDocument)(nil),              // 7: coria.v1.ProfileDocument
+	(*ProfileRule)(nil),                  // 8: coria.v1.ProfileRule
+	(*ProfileSelector)(nil),              // 9: coria.v1.ProfileSelector
+	(*PrivateElement)(nil),               // 10: coria.v1.PrivateElement
+	(*ContentItemSelector)(nil),          // 11: coria.v1.ContentItemSelector
+	(*ProfileCondition)(nil),             // 12: coria.v1.ProfileCondition
+	(*ProfileAction)(nil),                // 13: coria.v1.ProfileAction
+	(*KeepAction)(nil),                   // 14: coria.v1.KeepAction
+	(*RemoveAction)(nil),                 // 15: coria.v1.RemoveAction
+	(*EmptyAction)(nil),                  // 16: coria.v1.EmptyAction
+	(*ReplaceAction)(nil),                // 17: coria.v1.ReplaceAction
+	(*SetAction)(nil),                    // 18: coria.v1.SetAction
+	(*HashAction)(nil),                   // 19: coria.v1.HashAction
+	(*UidAction)(nil),                    // 20: coria.v1.UidAction
+	(*ShiftAction)(nil),                  // 21: coria.v1.ShiftAction
+	(*GeneralizeAction)(nil),             // 22: coria.v1.GeneralizeAction
+	(*LookupAction)(nil),                 // 23: coria.v1.LookupAction
+	(*CleanAction)(nil),                  // 24: coria.v1.CleanAction
+	(*QuarantineAction)(nil),             // 25: coria.v1.QuarantineAction
+	(*DummyAction)(nil),                  // 26: coria.v1.DummyAction
+	(*RemoveUnlessRequiredAction)(nil),   // 27: coria.v1.RemoveUnlessRequiredAction
+	(*PixelRule)(nil),                    // 28: coria.v1.PixelRule
+	(*RedactPixels)(nil),                 // 29: coria.v1.RedactPixels
+	(*PixelRectangle)(nil),               // 30: coria.v1.PixelRectangle
+	(*DetectText)(nil),                   // 31: coria.v1.DetectText
+	(*AcceptPixels)(nil),                 // 32: coria.v1.AcceptPixels
+	(*ExpandedProfile)(nil),              // 33: coria.v1.ExpandedProfile
+	(*ExpandedRule)(nil),                 // 34: coria.v1.ExpandedRule
+	(*ExpandedPixelRule)(nil),            // 35: coria.v1.ExpandedPixelRule
+	(*ProfileVersion)(nil),               // 36: coria.v1.ProfileVersion
+	(*ProfileSummary)(nil),               // 37: coria.v1.ProfileSummary
+	(*ProfileProblem)(nil),               // 38: coria.v1.ProfileProblem
+	(*ProfileProblems)(nil),              // 39: coria.v1.ProfileProblems
+	(*ProfileBase)(nil),                  // 40: coria.v1.ProfileBase
+	(*CreateProfileVersionRequest)(nil),  // 41: coria.v1.CreateProfileVersionRequest
+	(*CreateProfileVersionResponse)(nil), // 42: coria.v1.CreateProfileVersionResponse
+	(*GetProfileVersionRequest)(nil),     // 43: coria.v1.GetProfileVersionRequest
+	(*GetProfileVersionResponse)(nil),    // 44: coria.v1.GetProfileVersionResponse
+	(*ListProfilesRequest)(nil),          // 45: coria.v1.ListProfilesRequest
+	(*ListProfilesResponse)(nil),         // 46: coria.v1.ListProfilesResponse
+	(*ListProfileVersionsRequest)(nil),   // 47: coria.v1.ListProfileVersionsRequest
+	(*ListProfileVersionsResponse)(nil),  // 48: coria.v1.ListProfileVersionsResponse
+	(*ValidateProfileRequest)(nil),       // 49: coria.v1.ValidateProfileRequest
+	(*ValidateProfileResponse)(nil),      // 50: coria.v1.ValidateProfileResponse
+	(*ListProfileBasesRequest)(nil),      // 51: coria.v1.ListProfileBasesRequest
+	(*ListProfileBasesResponse)(nil),     // 52: coria.v1.ListProfileBasesResponse
+	(*TrialProfile)(nil),                 // 53: coria.v1.TrialProfile
+	(*ProfileVersionName)(nil),           // 54: coria.v1.ProfileVersionName
+	(*TrialFile)(nil),                    // 55: coria.v1.TrialFile
+	(*TrialReception)(nil),               // 56: coria.v1.TrialReception
+	(*TryProfileRequest)(nil),            // 57: coria.v1.TryProfileRequest
+	(*TryProfileResponse)(nil),           // 58: coria.v1.TryProfileResponse
+	(*TrialResult)(nil),                  // 59: coria.v1.TrialResult
+	(*TrialElement)(nil),                 // 60: coria.v1.TrialElement
+	(*TrialSummary)(nil),                 // 61: coria.v1.TrialSummary
+	(*TrialCount)(nil),                   // 62: coria.v1.TrialCount
+	(*ExplainProfileRequest)(nil),        // 63: coria.v1.ExplainProfileRequest
+	(*ExplainProfileResponse)(nil),       // 64: coria.v1.ExplainProfileResponse
+	(*ExplainedElement)(nil),             // 65: coria.v1.ExplainedElement
+	(*ExplainedCandidate)(nil),           // 66: coria.v1.ExplainedCandidate
+	(*DiffProfileVersionsRequest)(nil),   // 67: coria.v1.DiffProfileVersionsRequest
+	(*DiffProfileVersionsResponse)(nil),  // 68: coria.v1.DiffProfileVersionsResponse
+	(*ProfileRuleChange)(nil),            // 69: coria.v1.ProfileRuleChange
+	(*ProfileEffectChange)(nil),          // 70: coria.v1.ProfileEffectChange
+	(*timestamppb.Timestamp)(nil),        // 71: google.protobuf.Timestamp
 }
 var file_coria_v1_profile_proto_depIdxs = []int32{
-	6,  // 0: coria.v1.ProfileDocument.rules:type_name -> coria.v1.ProfileRule
+	8,  // 0: coria.v1.ProfileDocument.rules:type_name -> coria.v1.ProfileRule
 	0,  // 1: coria.v1.ProfileDocument.unnamed:type_name -> coria.v1.UnnamedElements
-	26, // 2: coria.v1.ProfileDocument.pixel_rules:type_name -> coria.v1.PixelRule
-	7,  // 3: coria.v1.ProfileRule.selector:type_name -> coria.v1.ProfileSelector
-	10, // 4: coria.v1.ProfileRule.when:type_name -> coria.v1.ProfileCondition
-	11, // 5: coria.v1.ProfileRule.action:type_name -> coria.v1.ProfileAction
-	8,  // 6: coria.v1.ProfileSelector.private_element:type_name -> coria.v1.PrivateElement
-	9,  // 7: coria.v1.ProfileSelector.content_item:type_name -> coria.v1.ContentItemSelector
+	28, // 2: coria.v1.ProfileDocument.pixel_rules:type_name -> coria.v1.PixelRule
+	9,  // 3: coria.v1.ProfileRule.selector:type_name -> coria.v1.ProfileSelector
+	12, // 4: coria.v1.ProfileRule.when:type_name -> coria.v1.ProfileCondition
+	13, // 5: coria.v1.ProfileRule.action:type_name -> coria.v1.ProfileAction
+	10, // 6: coria.v1.ProfileSelector.private_element:type_name -> coria.v1.PrivateElement
+	11, // 7: coria.v1.ProfileSelector.content_item:type_name -> coria.v1.ContentItemSelector
 	1,  // 8: coria.v1.ProfileCondition.subject:type_name -> coria.v1.ConditionSubject
-	12, // 9: coria.v1.ProfileAction.keep:type_name -> coria.v1.KeepAction
-	13, // 10: coria.v1.ProfileAction.remove:type_name -> coria.v1.RemoveAction
-	14, // 11: coria.v1.ProfileAction.empty:type_name -> coria.v1.EmptyAction
-	15, // 12: coria.v1.ProfileAction.replace:type_name -> coria.v1.ReplaceAction
-	16, // 13: coria.v1.ProfileAction.set:type_name -> coria.v1.SetAction
-	17, // 14: coria.v1.ProfileAction.hash:type_name -> coria.v1.HashAction
-	18, // 15: coria.v1.ProfileAction.uid:type_name -> coria.v1.UidAction
-	19, // 16: coria.v1.ProfileAction.shift:type_name -> coria.v1.ShiftAction
-	20, // 17: coria.v1.ProfileAction.generalize:type_name -> coria.v1.GeneralizeAction
-	21, // 18: coria.v1.ProfileAction.lookup:type_name -> coria.v1.LookupAction
-	22, // 19: coria.v1.ProfileAction.clean:type_name -> coria.v1.CleanAction
-	23, // 20: coria.v1.ProfileAction.quarantine:type_name -> coria.v1.QuarantineAction
-	24, // 21: coria.v1.ProfileAction.dummy:type_name -> coria.v1.DummyAction
-	25, // 22: coria.v1.ProfileAction.remove_unless_required:type_name -> coria.v1.RemoveUnlessRequiredAction
+	14, // 9: coria.v1.ProfileAction.keep:type_name -> coria.v1.KeepAction
+	15, // 10: coria.v1.ProfileAction.remove:type_name -> coria.v1.RemoveAction
+	16, // 11: coria.v1.ProfileAction.empty:type_name -> coria.v1.EmptyAction
+	17, // 12: coria.v1.ProfileAction.replace:type_name -> coria.v1.ReplaceAction
+	18, // 13: coria.v1.ProfileAction.set:type_name -> coria.v1.SetAction
+	19, // 14: coria.v1.ProfileAction.hash:type_name -> coria.v1.HashAction
+	20, // 15: coria.v1.ProfileAction.uid:type_name -> coria.v1.UidAction
+	21, // 16: coria.v1.ProfileAction.shift:type_name -> coria.v1.ShiftAction
+	22, // 17: coria.v1.ProfileAction.generalize:type_name -> coria.v1.GeneralizeAction
+	23, // 18: coria.v1.ProfileAction.lookup:type_name -> coria.v1.LookupAction
+	24, // 19: coria.v1.ProfileAction.clean:type_name -> coria.v1.CleanAction
+	25, // 20: coria.v1.ProfileAction.quarantine:type_name -> coria.v1.QuarantineAction
+	26, // 21: coria.v1.ProfileAction.dummy:type_name -> coria.v1.DummyAction
+	27, // 22: coria.v1.ProfileAction.remove_unless_required:type_name -> coria.v1.RemoveUnlessRequiredAction
 	2,  // 23: coria.v1.LookupAction.on_missing:type_name -> coria.v1.LookupMissing
 	3,  // 24: coria.v1.RemoveUnlessRequiredAction.fallback:type_name -> coria.v1.RequiredFallback
-	10, // 25: coria.v1.PixelRule.when:type_name -> coria.v1.ProfileCondition
-	27, // 26: coria.v1.PixelRule.redact:type_name -> coria.v1.RedactPixels
-	29, // 27: coria.v1.PixelRule.detect:type_name -> coria.v1.DetectText
-	30, // 28: coria.v1.PixelRule.accept:type_name -> coria.v1.AcceptPixels
-	28, // 29: coria.v1.RedactPixels.rectangles:type_name -> coria.v1.PixelRectangle
-	32, // 30: coria.v1.ExpandedProfile.rules:type_name -> coria.v1.ExpandedRule
+	12, // 25: coria.v1.PixelRule.when:type_name -> coria.v1.ProfileCondition
+	29, // 26: coria.v1.PixelRule.redact:type_name -> coria.v1.RedactPixels
+	31, // 27: coria.v1.PixelRule.detect:type_name -> coria.v1.DetectText
+	32, // 28: coria.v1.PixelRule.accept:type_name -> coria.v1.AcceptPixels
+	30, // 29: coria.v1.RedactPixels.rectangles:type_name -> coria.v1.PixelRectangle
+	34, // 30: coria.v1.ExpandedProfile.rules:type_name -> coria.v1.ExpandedRule
 	0,  // 31: coria.v1.ExpandedProfile.unnamed:type_name -> coria.v1.UnnamedElements
-	33, // 32: coria.v1.ExpandedProfile.pixel_rules:type_name -> coria.v1.ExpandedPixelRule
-	6,  // 33: coria.v1.ExpandedRule.rule:type_name -> coria.v1.ProfileRule
-	26, // 34: coria.v1.ExpandedPixelRule.rule:type_name -> coria.v1.PixelRule
-	51, // 35: coria.v1.ProfileVersion.create_time:type_name -> google.protobuf.Timestamp
-	5,  // 36: coria.v1.ProfileVersion.document:type_name -> coria.v1.ProfileDocument
-	31, // 37: coria.v1.ProfileVersion.expanded:type_name -> coria.v1.ExpandedProfile
-	51, // 38: coria.v1.ProfileSummary.latest_create_time:type_name -> google.protobuf.Timestamp
-	36, // 39: coria.v1.ProfileProblems.problems:type_name -> coria.v1.ProfileProblem
-	5,  // 40: coria.v1.ProfileBase.document:type_name -> coria.v1.ProfileDocument
-	5,  // 41: coria.v1.CreateProfileVersionRequest.document:type_name -> coria.v1.ProfileDocument
+	35, // 32: coria.v1.ExpandedProfile.pixel_rules:type_name -> coria.v1.ExpandedPixelRule
+	8,  // 33: coria.v1.ExpandedRule.rule:type_name -> coria.v1.ProfileRule
+	28, // 34: coria.v1.ExpandedPixelRule.rule:type_name -> coria.v1.PixelRule
+	71, // 35: coria.v1.ProfileVersion.create_time:type_name -> google.protobuf.Timestamp
+	7,  // 36: coria.v1.ProfileVersion.document:type_name -> coria.v1.ProfileDocument
+	33, // 37: coria.v1.ProfileVersion.expanded:type_name -> coria.v1.ExpandedProfile
+	71, // 38: coria.v1.ProfileSummary.latest_create_time:type_name -> google.protobuf.Timestamp
+	38, // 39: coria.v1.ProfileProblems.problems:type_name -> coria.v1.ProfileProblem
+	7,  // 40: coria.v1.ProfileBase.document:type_name -> coria.v1.ProfileDocument
+	7,  // 41: coria.v1.CreateProfileVersionRequest.document:type_name -> coria.v1.ProfileDocument
 	4,  // 42: coria.v1.CreateProfileVersionRequest.view:type_name -> coria.v1.ProfileView
-	34, // 43: coria.v1.CreateProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
-	36, // 44: coria.v1.CreateProfileVersionResponse.warnings:type_name -> coria.v1.ProfileProblem
+	36, // 43: coria.v1.CreateProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
+	38, // 44: coria.v1.CreateProfileVersionResponse.warnings:type_name -> coria.v1.ProfileProblem
 	4,  // 45: coria.v1.GetProfileVersionRequest.view:type_name -> coria.v1.ProfileView
-	34, // 46: coria.v1.GetProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
-	35, // 47: coria.v1.ListProfilesResponse.profiles:type_name -> coria.v1.ProfileSummary
-	34, // 48: coria.v1.ListProfileVersionsResponse.versions:type_name -> coria.v1.ProfileVersion
-	5,  // 49: coria.v1.ValidateProfileRequest.document:type_name -> coria.v1.ProfileDocument
+	36, // 46: coria.v1.GetProfileVersionResponse.version:type_name -> coria.v1.ProfileVersion
+	37, // 47: coria.v1.ListProfilesResponse.profiles:type_name -> coria.v1.ProfileSummary
+	36, // 48: coria.v1.ListProfileVersionsResponse.versions:type_name -> coria.v1.ProfileVersion
+	7,  // 49: coria.v1.ValidateProfileRequest.document:type_name -> coria.v1.ProfileDocument
 	4,  // 50: coria.v1.ValidateProfileRequest.view:type_name -> coria.v1.ProfileView
-	36, // 51: coria.v1.ValidateProfileResponse.problems:type_name -> coria.v1.ProfileProblem
-	31, // 52: coria.v1.ValidateProfileResponse.expanded:type_name -> coria.v1.ExpandedProfile
-	36, // 53: coria.v1.ValidateProfileResponse.warnings:type_name -> coria.v1.ProfileProblem
-	38, // 54: coria.v1.ListProfileBasesResponse.bases:type_name -> coria.v1.ProfileBase
-	39, // 55: coria.v1.ProfileService.CreateProfileVersion:input_type -> coria.v1.CreateProfileVersionRequest
-	41, // 56: coria.v1.ProfileService.GetProfileVersion:input_type -> coria.v1.GetProfileVersionRequest
-	43, // 57: coria.v1.ProfileService.ListProfiles:input_type -> coria.v1.ListProfilesRequest
-	45, // 58: coria.v1.ProfileService.ListProfileVersions:input_type -> coria.v1.ListProfileVersionsRequest
-	47, // 59: coria.v1.ProfileService.ValidateProfile:input_type -> coria.v1.ValidateProfileRequest
-	49, // 60: coria.v1.ProfileService.ListProfileBases:input_type -> coria.v1.ListProfileBasesRequest
-	40, // 61: coria.v1.ProfileService.CreateProfileVersion:output_type -> coria.v1.CreateProfileVersionResponse
-	42, // 62: coria.v1.ProfileService.GetProfileVersion:output_type -> coria.v1.GetProfileVersionResponse
-	44, // 63: coria.v1.ProfileService.ListProfiles:output_type -> coria.v1.ListProfilesResponse
-	46, // 64: coria.v1.ProfileService.ListProfileVersions:output_type -> coria.v1.ListProfileVersionsResponse
-	48, // 65: coria.v1.ProfileService.ValidateProfile:output_type -> coria.v1.ValidateProfileResponse
-	50, // 66: coria.v1.ProfileService.ListProfileBases:output_type -> coria.v1.ListProfileBasesResponse
-	61, // [61:67] is the sub-list for method output_type
-	55, // [55:61] is the sub-list for method input_type
-	55, // [55:55] is the sub-list for extension type_name
-	55, // [55:55] is the sub-list for extension extendee
-	0,  // [0:55] is the sub-list for field type_name
+	38, // 51: coria.v1.ValidateProfileResponse.problems:type_name -> coria.v1.ProfileProblem
+	33, // 52: coria.v1.ValidateProfileResponse.expanded:type_name -> coria.v1.ExpandedProfile
+	38, // 53: coria.v1.ValidateProfileResponse.warnings:type_name -> coria.v1.ProfileProblem
+	40, // 54: coria.v1.ListProfileBasesResponse.bases:type_name -> coria.v1.ProfileBase
+	54, // 55: coria.v1.TrialProfile.version:type_name -> coria.v1.ProfileVersionName
+	7,  // 56: coria.v1.TrialProfile.document:type_name -> coria.v1.ProfileDocument
+	53, // 57: coria.v1.TryProfileRequest.profile:type_name -> coria.v1.TrialProfile
+	55, // 58: coria.v1.TryProfileRequest.files:type_name -> coria.v1.TrialFile
+	56, // 59: coria.v1.TryProfileRequest.reception:type_name -> coria.v1.TrialReception
+	36, // 60: coria.v1.TryProfileResponse.version:type_name -> coria.v1.ProfileVersion
+	59, // 61: coria.v1.TryProfileResponse.results:type_name -> coria.v1.TrialResult
+	61, // 62: coria.v1.TryProfileResponse.summary:type_name -> coria.v1.TrialSummary
+	5,  // 63: coria.v1.TrialResult.verdict:type_name -> coria.v1.TrialVerdict
+	60, // 64: coria.v1.TrialResult.elements:type_name -> coria.v1.TrialElement
+	62, // 65: coria.v1.TrialSummary.by_rule:type_name -> coria.v1.TrialCount
+	62, // 66: coria.v1.TrialSummary.by_reason:type_name -> coria.v1.TrialCount
+	53, // 67: coria.v1.ExplainProfileRequest.profile:type_name -> coria.v1.TrialProfile
+	55, // 68: coria.v1.ExplainProfileRequest.file:type_name -> coria.v1.TrialFile
+	56, // 69: coria.v1.ExplainProfileRequest.reception:type_name -> coria.v1.TrialReception
+	36, // 70: coria.v1.ExplainProfileResponse.version:type_name -> coria.v1.ProfileVersion
+	65, // 71: coria.v1.ExplainProfileResponse.elements:type_name -> coria.v1.ExplainedElement
+	66, // 72: coria.v1.ExplainedElement.others:type_name -> coria.v1.ExplainedCandidate
+	36, // 73: coria.v1.DiffProfileVersionsResponse.from:type_name -> coria.v1.ProfileVersion
+	36, // 74: coria.v1.DiffProfileVersionsResponse.to:type_name -> coria.v1.ProfileVersion
+	0,  // 75: coria.v1.DiffProfileVersionsResponse.unnamed_from:type_name -> coria.v1.UnnamedElements
+	0,  // 76: coria.v1.DiffProfileVersionsResponse.unnamed_to:type_name -> coria.v1.UnnamedElements
+	69, // 77: coria.v1.DiffProfileVersionsResponse.rules:type_name -> coria.v1.ProfileRuleChange
+	70, // 78: coria.v1.DiffProfileVersionsResponse.effects:type_name -> coria.v1.ProfileEffectChange
+	6,  // 79: coria.v1.ProfileRuleChange.change:type_name -> coria.v1.ProfileChange
+	8,  // 80: coria.v1.ProfileRuleChange.from:type_name -> coria.v1.ProfileRule
+	8,  // 81: coria.v1.ProfileRuleChange.to:type_name -> coria.v1.ProfileRule
+	9,  // 82: coria.v1.ProfileEffectChange.selector:type_name -> coria.v1.ProfileSelector
+	12, // 83: coria.v1.ProfileEffectChange.when:type_name -> coria.v1.ProfileCondition
+	13, // 84: coria.v1.ProfileEffectChange.from:type_name -> coria.v1.ProfileAction
+	13, // 85: coria.v1.ProfileEffectChange.to:type_name -> coria.v1.ProfileAction
+	41, // 86: coria.v1.ProfileService.CreateProfileVersion:input_type -> coria.v1.CreateProfileVersionRequest
+	43, // 87: coria.v1.ProfileService.GetProfileVersion:input_type -> coria.v1.GetProfileVersionRequest
+	45, // 88: coria.v1.ProfileService.ListProfiles:input_type -> coria.v1.ListProfilesRequest
+	47, // 89: coria.v1.ProfileService.ListProfileVersions:input_type -> coria.v1.ListProfileVersionsRequest
+	49, // 90: coria.v1.ProfileService.ValidateProfile:input_type -> coria.v1.ValidateProfileRequest
+	51, // 91: coria.v1.ProfileService.ListProfileBases:input_type -> coria.v1.ListProfileBasesRequest
+	57, // 92: coria.v1.ProfileService.TryProfile:input_type -> coria.v1.TryProfileRequest
+	63, // 93: coria.v1.ProfileService.ExplainProfile:input_type -> coria.v1.ExplainProfileRequest
+	67, // 94: coria.v1.ProfileService.DiffProfileVersions:input_type -> coria.v1.DiffProfileVersionsRequest
+	42, // 95: coria.v1.ProfileService.CreateProfileVersion:output_type -> coria.v1.CreateProfileVersionResponse
+	44, // 96: coria.v1.ProfileService.GetProfileVersion:output_type -> coria.v1.GetProfileVersionResponse
+	46, // 97: coria.v1.ProfileService.ListProfiles:output_type -> coria.v1.ListProfilesResponse
+	48, // 98: coria.v1.ProfileService.ListProfileVersions:output_type -> coria.v1.ListProfileVersionsResponse
+	50, // 99: coria.v1.ProfileService.ValidateProfile:output_type -> coria.v1.ValidateProfileResponse
+	52, // 100: coria.v1.ProfileService.ListProfileBases:output_type -> coria.v1.ListProfileBasesResponse
+	58, // 101: coria.v1.ProfileService.TryProfile:output_type -> coria.v1.TryProfileResponse
+	64, // 102: coria.v1.ProfileService.ExplainProfile:output_type -> coria.v1.ExplainProfileResponse
+	68, // 103: coria.v1.ProfileService.DiffProfileVersions:output_type -> coria.v1.DiffProfileVersionsResponse
+	95, // [95:104] is the sub-list for method output_type
+	86, // [86:95] is the sub-list for method input_type
+	86, // [86:86] is the sub-list for extension type_name
+	86, // [86:86] is the sub-list for extension extendee
+	0,  // [0:86] is the sub-list for field type_name
 }
 
 func init() { file_coria_v1_profile_proto_init() }
@@ -4435,13 +6576,17 @@ func file_coria_v1_profile_proto_init() {
 		(*PixelRule_Accept)(nil),
 	}
 	file_coria_v1_profile_proto_msgTypes[34].OneofWrappers = []any{}
+	file_coria_v1_profile_proto_msgTypes[46].OneofWrappers = []any{
+		(*TrialProfile_Version)(nil),
+		(*TrialProfile_Document)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_coria_v1_profile_proto_rawDesc), len(file_coria_v1_profile_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   46,
+			NumEnums:      7,
+			NumMessages:   64,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

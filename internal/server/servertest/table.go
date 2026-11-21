@@ -226,6 +226,19 @@ func Contract() Table {
 		coriav1connect.JobServiceRetryJobProcedure:        onTenant(func() *coriav1.RetryJobRequest { return &coriav1.RetryJobRequest{} }, master.RoleOperator),
 		coriav1connect.JobServiceListJobFailuresProcedure: onTenant(func() *coriav1.ListJobFailuresRequest { return &coriav1.ListJobFailuresRequest{} }, master.RoleReader),
 
+		// ProfileService: "admin on the tenant." to make a version,
+		// "operator on the tenant." to read, check, try, explain and
+		// compare; the bases need only an authenticated caller.
+		coriav1connect.ProfileServiceCreateProfileVersionProcedure: onTenant(func() *coriav1.CreateProfileVersionRequest { return &coriav1.CreateProfileVersionRequest{} }, master.RoleAdmin),
+		coriav1connect.ProfileServiceGetProfileVersionProcedure:    onTenant(func() *coriav1.GetProfileVersionRequest { return &coriav1.GetProfileVersionRequest{} }, master.RoleOperator),
+		coriav1connect.ProfileServiceListProfilesProcedure:         onTenant(func() *coriav1.ListProfilesRequest { return &coriav1.ListProfilesRequest{} }, master.RoleOperator),
+		coriav1connect.ProfileServiceListProfileVersionsProcedure:  onTenant(func() *coriav1.ListProfileVersionsRequest { return &coriav1.ListProfileVersionsRequest{} }, master.RoleOperator),
+		coriav1connect.ProfileServiceValidateProfileProcedure:      onTenant(func() *coriav1.ValidateProfileRequest { return &coriav1.ValidateProfileRequest{} }, master.RoleOperator),
+		coriav1connect.ProfileServiceListProfileBasesProcedure:     fixed(access.Authenticated()),
+		coriav1connect.ProfileServiceTryProfileProcedure:           onTenant(func() *coriav1.TryProfileRequest { return &coriav1.TryProfileRequest{} }, master.RoleOperator),
+		coriav1connect.ProfileServiceExplainProfileProcedure:       onTenant(func() *coriav1.ExplainProfileRequest { return &coriav1.ExplainProfileRequest{} }, master.RoleOperator),
+		coriav1connect.ProfileServiceDiffProfileVersionsProcedure:  onTenant(func() *coriav1.DiffProfileVersionsRequest { return &coriav1.DiffProfileVersionsRequest{} }, master.RoleOperator),
+
 		// MonitorService: "reader on the tenant asked for; operator on the
 		// installation for every tenant."
 		coriav1connect.MonitorServiceGetStatusProcedure: byMessage(

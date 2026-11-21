@@ -290,7 +290,28 @@ func (d pipelineDecisions) RemoveRejected(ctx context.Context, tenantName, incom
 // pipeline (api.Headers).
 type heldHeaders struct{ s *supervise.Supervisor }
 
-var _ api.Headers = heldHeaders{}
+var (
+	_ api.Headers   = heldHeaders{}
+	_ api.HeldFiles = heldHeaders{}
+)
+
+// HeldFile reads the bytes of the held file through the tenant's running
+// pipeline, for a trial run of a profile. A file the pipeline cannot give
+// (none runs, the file is gone from the incoming area, it is past the
+// bound) is ErrNoHeldFile.
+func (h heldHeaders) HeldFile(ctx context.Context, tenantName string, f tenant.QuarantinedFile, limit int64) ([]byte, error) {
+	if f.Incoming == "" {
+		return nil, api.ErrNoHeldFile
+	}
+	b, ok, err := h.s.HeldFile(ctx, tenantName, f.Incoming, limit)
+	switch {
+	case !ok, fault.KindOf(err) == fault.NotFound, fault.KindOf(err) == fault.Precondition:
+		return nil, api.ErrNoHeldFile
+	case err != nil:
+		return nil, err
+	}
+	return b, nil
+}
 
 // Header reads the header of the held file within the receiver header limit
 // and writes it as DICOM JSON without bulk data (PS3.18 F.2). The cases the

@@ -41,6 +41,9 @@ type run struct {
 	// what its own text was written in, for the sequences held as UN bytes
 	// inside it.
 	rawSources map[*dataset.Dataset]textSource
+	// locs, when not nil, receives the location of each element a rule
+	// was asked about, by its entry's index, for an explanation (Explain).
+	locs map[int]profile.Location
 }
 
 // opKind is what an op does.
@@ -297,6 +300,9 @@ func (r *run) element(ds *dataset.Dataset, t tag.Tag, elem *dataelem.DataElement
 	c.unItems = unItems
 	if act.Kind == ActKeep && vr == "UN" && creator != "" && !c.floor {
 		r.keepSafePrivate(c, creator, &e)
+	}
+	if r.locs != nil {
+		r.locs[len(r.record.Entries)] = loc
 	}
 	r.record.Entries = append(r.record.Entries, e)
 	return r.act(c, act, dec.VRs)
