@@ -26,6 +26,13 @@ func TestNameForms(t *testing.T) {
 	t.Run("middle name", func(t *testing.T) {
 		mustFind(t, lt(t, "seen by Bo Cy Al today"), KindName, "00204000", needle(engine.NeedleName, "Al^Bo^Cy"))
 	})
+	t.Run("short parts only as words", func(t *testing.T) {
+		for pn, text := range map[string]string{"LE^AN": "SCAN LEFT KNEE", "LI^AL": "DELI ALSO", "NG^AN": "SCAN NG TUBE"} {
+			mustPass(t, lt(t, text), needle(engine.NeedleName, pn))
+		}
+		mustFind(t, lt(t, "seen by An Le today"), KindName, "00204000", needle(engine.NeedleName, "LE^AN"))
+		mustFind(t, lt(t, "LE, AN"), KindName, "00204000", needle(engine.NeedleName, "LE^AN"))
+	})
 	t.Run("component groups", func(t *testing.T) {
 		g := needle(engine.NeedleName, "Yamada^Tarou=山田^太郎=やまだ^たろう")
 		for _, s := range []string{"Tarou Yamada", "山田太郎", "たろう", "患者 山田"} {
@@ -44,16 +51,23 @@ func TestDateForms(t *testing.T) {
 	for _, s := range []string{"20240305", "2024-03-05", "2024/03/05", "2024.03.05", "05/03/2024", "03/05/2024",
 		"05.03.2024", "05-03-2024", "3/5/2024", "5.3.2024", "2024-3-5", "03/05/24", "5/3/24", "5 March 2024",
 		"March 5, 2024", "05-Mar-2024", "5MAR2024", "mar 05 2024", "Mar. 5, 2024", "5th March 2024",
-		"March 5th, 2024", "2024年3月5日", "at 20240305101500.000", "on 2024-03-05T10:15"} {
+		"March 5th, 2024", "2024年3月5日", "at 20240305101500.000", "on 2024-03-05T10:15", "2024年03月05日",
+		"2024년 3월 5일", "2024. 3. 5.", "5 Mar 24", "id 05032024", "03052024", "ID05032024"} {
 		t.Run(s, func(t *testing.T) {
 			mustFind(t, lt(t, s), KindDate, "00204000", n)
 		})
 	}
-	for _, s := range []string{"15 March 2024", "3/15/2024", "13/5/2024", "05/03/2410", "2024-3-51"} {
+	for _, s := range []string{"15 March 2024", "3/15/2024", "13/5/2024", "05/03/2410", "2024-3-51", "105032024", "030520241"} {
 		t.Run("not "+s, func(t *testing.T) {
 			mustPass(t, lt(t, s), n)
 		})
 	}
+	t.Run("unknown month or day", func(t *testing.T) {
+		mustFind(t, lt(t, "on 1957-00-00"), KindDate, "00204000", needle(engine.NeedleDate, "19570000"))
+		mustFind(t, lt(t, "born 1957"), KindDate, "00204000", needle(engine.NeedleDate, "19570000"))
+		mustFind(t, lt(t, "born March 1957"), KindDate, "00204000", needle(engine.NeedleDate, "19570300"))
+		mustFind(t, lt(t, "born 1957, male"), KindDate, "00204000", needle(engine.NeedleDate, "195700"))
+	})
 	t.Run("date and time needle", func(t *testing.T) {
 		mustFind(t, lt(t, "on 2024-03-05"), KindDate, "00204000", needle(engine.NeedleDate, "20240305101500"))
 	})
@@ -74,7 +88,8 @@ func TestDateForms(t *testing.T) {
 // TestUIDAndIdentifierEdges guards that a needle beginning or ending with
 // a digit is not found inside a longer number, such as the remapped UID
 // that replaced it, while it is found standing alone; that a UID is not
-// found as the start or the end of a longer UID; and that a UID the
+// found as the end of a longer UID, but is as its start (a UID made by
+// appending to the original shows the original); and that a UID the
 // standard defines is no needle, listed by the library or not.
 func TestUIDAndIdentifierEdges(t *testing.T) {
 	id := needle(engine.NeedleText, "778812")
@@ -82,7 +97,7 @@ func TestUIDAndIdentifierEdges(t *testing.T) {
 	mustFind(t, writeFile(t, el{0x00204000, "LT", "id 778812."}), KindIdentifier, "00204000", id)
 	uid := needle(engine.NeedleUID, "1.2.3.44")
 	mustPass(t, writeFile(t, el{0x0020000D, "UI", "1.2.3.445"}), uid)
-	mustPass(t, writeFile(t, el{0x0020000D, "UI", "1.2.3.44.5"}), uid)
+	mustFind(t, writeFile(t, el{0x0020000D, "UI", "1.2.3.44.5"}), KindUID, "0020000D", uid)
 	mustPass(t, writeFile(t, el{0x0020000D, "UI", "9.1.2.3.44"}), uid)
 	mustFind(t, writeFile(t, el{0x0020000D, "UI", "1.2.3.44"}), KindUID, "0020000D", uid)
 	mustFind(t, writeFile(t, el{0x00204000, "LT", "see 1.2.3.44."}), KindUID, "00204000", uid)

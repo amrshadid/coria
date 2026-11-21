@@ -205,3 +205,23 @@ func TestChecksQuietly(t *testing.T) {
 		t.Errorf("logged: %s", logged.String())
 	}
 }
+
+// TestJapaneseDescriptionsAreNotNames guards the raw forms of a 7-bit set
+// of two-byte characters (ISO 2022 IR 87), whose bytes are ordinary ASCII
+// letters (林 is "NS", 東 "El"): they are matched only inside a run the
+// file shifted into the set, so English descriptions of a Japanese file
+// are not taken for names, while a name written in the set, in a private
+// binary value, is found.
+func TestJapaneseDescriptionsAreNotNames(t *testing.T) {
+	cs := `\ISO 2022 IR 87`
+	for pn, text := range map[string]string{"林^太郎": "CT CHEST TRANSVERSE", "東^健": "CT ABDOMEN PELVIS", "李^明": "M{ HEAD"} {
+		p := writeFile(t, el{0x00080005, "CS", cs}, el{0x00081030, "LO", text}, el{overlay, "OW", even(" " + text + " ")})
+		if _, err := checkCS(t, p, cs, needle(engine.NeedleName, pn)); err != nil {
+			t.Errorf("%s in %q: %v", pn, text, err)
+		}
+	}
+	jis := mustEncode(t, "患者林", "", "ISO 2022 IR 87")
+	p := writeFile(t, el{0x00090010, "LO", "ACME 1.0"}, el{0x00091003, "OW", append(jis, ' ', ' ')})
+	rep, err := checkCS(t, p, cs, needle(engine.NeedleName, "林^太郎"))
+	findRaw(t, rep, err, "00091003", true)
+}

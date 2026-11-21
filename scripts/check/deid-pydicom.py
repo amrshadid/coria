@@ -25,23 +25,27 @@ sources, so a mistake in one is caught by another:
     private element of an implicit VR file) is read as text, and as a
     person's name when it has a name's form (a "^" between letters).
 
-Each needle is searched for in several written forms: a person's name as
-DOE^JOHN, JOHN DOE, DOE JOHN, DOE, JOHN and DOE,JOHN, JOHN PAUL DOE, and each
-part; a full date as 20240315, 2024-03-15, 2024/03/15, 2024.03.15,
-15/03/2024, 03/15/2024, 15.03.2024 and 15-03-2024, and, matched only where
-they stand alone as a date (no ASCII letter or digit beside them, nor a
-date's separator with a digit beyond it), without leading zeros (3/5/2024,
-2024-3-5), with a two-digit year (15/03/24), with the month's English name,
-its three letters and those with a dot, the day as an ordinal ("15th March
-2024", "Mar. 15, 2024", "15-Mar-2024", "15MAR2024") and as 2024年3月15日. A
-date of only a year, or a year and month (a DT of 4 or 6 digits), only as a
-date of that precision, standing alone: 2024, or 202403, 2024-03, 2024/03,
-2024.03, 03/2024, 3/2024, "March 2024" and 2024年3月; a letter of another
-script beside it does not join it ("1957年" is the year 1957). Letters in
-any case. A needle that is a number is matched only where no digit is next
-to it, so it is not found inside a longer number (a remapped UID is a long
-run of digits); a full date may be followed by digits, as in a date and
-time. These are the forms the engine's clean removes.
+Each needle is searched for in the written forms the engine's clean
+removes (internal/deid/engine/forms.go): a person's name as DOE^JOHN, JOHN
+DOE, DOE JOHN, DOE, JOHN, DOE,JOHN, JOHN PAUL DOE, and each part, every form
+holding a Latin part of one or two letters only as a whole word (LE^AN is
+not in "SCAN LEFT"); a full date as 20240315, 2024-03-15, 2024/03/15,
+2024.03.15, 15/03/2024, 03/15/2024, 15.03.2024 and 15-03-2024; as 15032024
+and 03152024 with no digit beside them; and, only where they stand alone as
+a date (no ASCII letter or digit beside them, nor a date's separator with a
+digit beyond it), without leading zeros (3/5/2024, 2024-3-5), with a
+two-digit year (15/03/24, "15 Mar 24"), with the month's English name, its
+three letters and those with a dot, the day as an ordinal ("15th March
+2024", "Mar. 15, 2024", "15-Mar-2024", "15MAR2024"), in Chinese and
+Japanese (2024年3月15日, 2024年03月15日) and Korean (2024년 3월 15일,
+"2024. 3. 15."). A date of only a year, or a year and month (a DT of 4 or 6
+digits, or a month or day of 00), only at that precision, standing alone:
+2024, 2024年, or 202403, 2024-03, 03/2024, 3/2024, "March 2024", 2024年3月; a
+letter of another script beside it does not join it ("1957年" is the year
+1957). Letters in any case. A needle that is a number is matched only where
+no digit is next to it, so it is not found inside a longer number (a
+remapped UID is a long run of digits); a full date may be followed by
+digits, as in a date and time.
 
 Two searches of each result:
 
@@ -133,24 +137,53 @@ class Needles:
             forms, partial = date_forms(value)
             if not partial:
                 self.add_form(value, value, "date")
-            for f, bounded in forms:
-                self.add_form(f, value, "bounded" if bounded else "date")
+            for f, edge in forms:
+                self.add_form(f, value, edge)
+            return
+        if kind == "name":
+            for f, word in name_forms(value):
+                self.add_form(f, value, "word" if word else "name")
             return
         self.add_form(value, value, kind)
-        if kind == "name":
-            for group in value.split("="):
-                parts = [p.strip() for p in group.split("^") if p.strip()]
-                for p in parts:
-                    self.add_form(p, value, kind)
-                    for w in p.split():
-                        self.add_form(w, value, kind)
-                if len(parts) >= 2:
-                    fam, given = parts[0], parts[1]
-                    for f in (f"{given} {fam}", f"{fam} {given}", f"{fam}, {given}",
-                              f"{fam},{given}", " ".join(parts)):
-                        self.add_form(f, value, kind)
-                if len(parts) >= 3:
-                    self.add_form(f"{parts[1]} {parts[2]} {parts[0]}", value, kind)
+
+
+MIN_PART = 3
+
+
+def short_part(w):
+    """A Latin word of a name shorter than three letters, found inside
+    ordinary words ("LE" in "LEFT"): every form holding one is matched only
+    as a whole word."""
+    return not unspaced(w) and len(w) < MIN_PART
+
+
+def name_forms(value):
+    """The forms of a person's name as (form, whole word only) pairs."""
+    out = []
+
+    def add(text, words):
+        out.append((text, any(short_part(w) for w in words)))
+
+    every = []
+    for group in value.split("="):
+        parts = [p.strip() for p in group.split("^") if p.strip()]
+        words = [w for p in parts for w in p.split()]
+        every += words
+        add(group, words)
+        for p in parts:
+            add(p, p.split())
+            if len(p.split()) > 1:
+                for w in p.split():
+                    add(w, [w])
+        if len(parts) >= 2:
+            fam, given = parts[0], parts[1]
+            for f in (f"{given} {fam}", f"{fam} {given}", f"{fam}, {given}", f"{fam},{given}"):
+                add(f, fam.split() + given.split())
+            add(" ".join(parts), words)
+        if len(parts) >= 3:
+            add(f"{parts[1]} {parts[2]} {parts[0]}", parts[1].split() + parts[2].split() + parts[0].split())
+    add(value, every)
+    return out
 
 
 MONTHS = ["January", "February", "March", "April", "May", "June", "July",
@@ -163,10 +196,29 @@ def ordinal(d):
     return {1: "st", 2: "nd", 3: "rd"}.get(d % 10, "th")
 
 
+def year_forms(y):
+    return [(y, "bounded"), (y + "年", "bounded"), (y + "년", "bounded")]
+
+
+def month_forms(y, mp):
+    mo = int(mp)
+    if not 1 <= mo <= 12:
+        return year_forms(y)
+    mm, name = str(mo), MONTHS[mo - 1]
+    out = [y + mp, f"{y}-{mp}", f"{y}/{mp}", f"{y}.{mp}", f"{mp}/{y}", f"{mp}.{y}", f"{mp}-{y}",
+           f"{y}-{mm}", f"{mm}/{y}", f"{name} {y}", f"{name[:3]} {y}", f"{name[:3]}. {y}",
+           f"{y}年{mm}月", f"{y}年{mp}月", f"{y}년 {mm}월", f"{y}년{mm}월"]
+    return [(f, "bounded") for f in out]
+
+
 def date_forms(v):
-    """The written forms of a DA or DT value, as (form, bounded) pairs, and
-    whether it is a date of only a year or a year and month, whose value is
-    then no form of its own."""
+    """The written forms of a DA or DT value, as (form, edge) pairs (edge:
+    "date" anywhere, a full date a time may follow; "bounded" standing
+    alone as a date; "digits" with no digit beside it), and whether it is a
+    date of only a year or a year and month, whose value is then no form of
+    its own. A month or day of 00, or out of range, is unknown: the forms of
+    the precision the value has are given. These are the engine's forms
+    (internal/deid/engine/forms.go)."""
     m = re.match(r"^(\d{4})(\d{2})?(\d{2})?", v)
     if not m:
         return [], False
@@ -175,34 +227,30 @@ def date_forms(v):
         return [], False
     y = m.group(1)
     if digits == 4:
-        return [(y, True)], True
-    mo = int(m.group(2))
-    if not 1 <= mo <= 12:
-        return [], digits == 6
-    mm, name = str(mo), MONTHS[mo - 1]
+        return year_forms(y), True
     if digits == 6:
-        mp = m.group(2)
-        out = [y + mp, f"{y}-{mp}", f"{y}/{mp}", f"{y}.{mp}", f"{mp}/{y}", f"{mp}.{y}", f"{mp}-{y}",
-               f"{y}-{mm}", f"{mm}/{y}", f"{name} {y}", f"{name[:3]} {y}", f"{name[:3]}. {y}", f"{y}年{mm}月"]
-        return [(f, True) for f in out], True
+        return month_forms(y, m.group(2)), True
     mp, dp = m.group(2), m.group(3)
-    di = int(dp)
-    if not 1 <= di <= 31:
-        return [], False
-    dd, yy = str(di), y[2:]
-    out = [(f, False) for f in (y + mp + dp, f"{y}-{mp}-{dp}", f"{y}/{mp}/{dp}", f"{y}.{mp}.{dp}",
-                                f"{dp}/{mp}/{y}", f"{mp}/{dp}/{y}", f"{dp}.{mp}.{y}", f"{dp}-{mp}-{y}")]
+    out = [(f, "date") for f in (y + mp + dp, f"{y}-{mp}-{dp}", f"{y}/{mp}/{dp}", f"{y}.{mp}.{dp}",
+                                 f"{dp}/{mp}/{y}", f"{mp}/{dp}/{y}", f"{dp}.{mp}.{y}", f"{dp}-{mp}-{y}")]
+    mo, di = int(mp), int(dp)
+    if not 1 <= mo <= 12 or not 1 <= di <= 31:
+        return out + month_forms(y, mp), False
+    out += [(dp + mp + y, "digits"), (mp + dp + y, "digits")]
+    mm, dd, yy, name = str(mo), str(di), y[2:], MONTHS[mo - 1]
     bounded = [f"{y}-{mm}-{dd}", f"{y}/{mm}/{dd}", f"{y}.{mm}.{dd}", f"{dd}/{mm}/{y}", f"{mm}/{dd}/{y}",
                f"{dd}.{mm}.{y}", f"{dd}-{mm}-{y}", f"{dp}/{mp}/{yy}", f"{mp}/{dp}/{yy}", f"{dp}.{mp}.{yy}",
-               f"{dp}-{mp}-{yy}", f"{dd}/{mm}/{yy}", f"{mm}/{dd}/{yy}", f"{dd}.{mm}.{yy}", f"{y}年{mm}月{dd}日"]
+               f"{dp}-{mp}-{yy}", f"{dd}/{mm}/{yy}", f"{mm}/{dd}/{yy}", f"{dd}.{mm}.{yy}",
+               f"{y}年{mm}月{dd}日", f"{y}年{mp}月{dp}日", f"{y}년 {mm}월 {dd}일", f"{y}년{mm}월{dd}일",
+               f"{y}. {mm}. {dd}.", f"{y}. {mp}. {dp}."]
     abbr = name[:3]
     for day in (dp, dd, dd + ordinal(di)):
         for n in (name, abbr, abbr + "."):
             bounded += [f"{day} {n} {y}", f"{n} {day}, {y}", f"{n} {day} {y}"]
+        bounded.append(f"{day} {abbr} {yy}")
     for day in (dp, dd):
         bounded += [f"{day}-{abbr}-{y}", f"{day}{abbr}{y}"]
-    out += [(f, True) for f in bounded]
-    return out, False
+    return out + [(f, "bounded") for f in bounded], False
 
 
 def values_of(elem):
@@ -294,6 +342,14 @@ def pattern(form, kind):
     as_bytes = isinstance(form, bytes)
     text = form.decode("latin-1") if as_bytes else form
     body = re.escape(form)
+    if kind == "word":
+        if as_bytes:
+            return re.compile(rb"(?<![0-9A-Za-z])" + body + rb"(?![0-9A-Za-z])")
+        return re.compile(r"(?<![^\W_])" + body + r"(?![^\W_])")
+    if kind == "digits":
+        if as_bytes:
+            return re.compile(rb"(?<![0-9])" + body + rb"(?![0-9])")
+        return re.compile(r"(?<![0-9])" + body + r"(?![0-9])")
     if kind == "bounded":
         if as_bytes:
             return re.compile(rb"(?<![0-9A-Za-z])(?<![0-9][-/.])" + body + rb"(?![0-9A-Za-z])(?![-/.][0-9])")

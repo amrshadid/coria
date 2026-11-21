@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/amrshadid/go-dicom/charset"
+	"github.com/amrshadid/go-dicom/config"
 
 	"github.com/amrshadid/coria/internal/deid/engine"
 )
@@ -22,11 +23,17 @@ const (
 	// date in a DT value.
 	modeFullDate
 	// modeBounded: matched only standing alone as a date
-	// (engine.WrittenForm.Bounded).
+	// (engine.EdgeDate).
 	modeBounded
-	// modeUID: as plain, and not followed by a dot and a digit nor
-	// preceded by a digit and a dot, which would make it part of a longer
-	// UID.
+	// modeWord: matched only as a whole word (engine.EdgeWord).
+	modeWord
+	// modeDigits: matched only with no digit beside it
+	// (engine.EdgeDigits).
+	modeDigits
+	// modeUID: as plain, and not preceded by a digit and a dot, which
+	// would make it the end of another UID. A dot and digits after it are
+	// a finding: a UID made by appending to the original shows the
+	// original.
 	modeUID
 )
 
@@ -47,10 +54,13 @@ type form struct {
 type formSet struct {
 	forms   []form
 	skipped int
+	// bytes is the bytes of the forms' folded texts together.
+	bytes int
 }
 
 // forms returns the distinct forms of needles, refusing more needles than
-// MaxNeedles or one longer than MaxNeedleBytes.
+// MaxNeedles, one longer than MaxNeedleBytes, or forms of more than
+// MaxFormBytes together.
 func (c *Checker) forms(needles engine.Needles) (formSet, error) {
 	var set formSet
 	if len(needles) > c.opts.MaxNeedles {
@@ -82,6 +92,7 @@ func (c *Checker) forms(needles engine.Needles) (formSet, error) {
 			return
 		}
 		seen[k] = true
+		set.bytes += len(folded)
 		set.forms = append(set.forms, form{text: text, folded: folded, kind: kind, mode: m, unspaced: un})
 	}
 	for _, n := range needles {
@@ -105,7 +116,7 @@ func (c *Checker) forms(needles engine.Needles) (formSet, error) {
 				}
 			case engine.NeedleName:
 				for _, f := range engine.NameForms(v) {
-					add(f, kind, modePlain)
+					add(f.Text, kind, modeOf(f.Edge, modePlain))
 				}
 			case engine.NeedleDate:
 				forms, partial := engine.DateForms(v)
@@ -113,18 +124,31 @@ func (c *Checker) forms(needles engine.Needles) (formSet, error) {
 					add(v, kind, modePlain)
 				}
 				for _, f := range forms {
-					m := modeFullDate
-					if f.Bounded {
-						m = modeBounded
-					}
-					add(f.Text, kind, m)
+					add(f.Text, kind, modeOf(f.Edge, modeFullDate))
 				}
 			default:
 				add(v, kind, modePlain)
 			}
 		}
+		if set.bytes > c.opts.MaxFormBytes {
+			return formSet{}, &Refusal{Cause: CauseTooManyNeedles}
+		}
 	}
 	return set, nil
+}
+
+// modeOf returns the mode of a form's edge; any is the mode of a form
+// taken anywhere.
+func modeOf(e engine.Edge, anyMode mode) mode {
+	switch e {
+	case engine.EdgeDate:
+		return modeBounded
+	case engine.EdgeWord:
+		return modeWord
+	case engine.EdgeDigits:
+		return modeDigits
+	}
+	return anyMode
 }
 
 // foldText returns s with every rune folded (engine.Fold: case, and
@@ -173,43 +197,162 @@ type rawForm struct {
 	// outside the values of standard binary elements, whose numbers can
 	// spell any two or three bytes by chance.
 	short bool
+	// g0 is set for text written in a 7-bit set of two-byte characters
+	// (ISO 2022 IR 87 or IR 159, PS3.5 6.1.2.5.3), whose bytes are
+	// ordinary ASCII letters: 林 is "NS". It is matched only inside a run
+	// the file shifted into such a set by its escape sequence, at an even
+	// distance from it.
+	g0 bool
+}
+
+// encoder writes forms in the received character sets. The library's
+// encoder searches every prefix of a text it cannot write whole, which
+// takes the square of the text's length, so a text is written in a set
+// only once each of its runes is known to be writable there, rune by rune;
+// each rune checked costs one unit of the budget, and ctx is read as it
+// goes.
+type encoder struct {
+	ctx    context.Context
+	source []string
+	budget *int64
+	// can holds, per encoding, whether a rune is writable in it.
+	can map[string]map[rune]bool
+	// library is the seam told of each call to the library's encoder.
+	library func(encodings []string)
+}
+
+// encode calls the library's encoder, always with one encoding.
+func (e *encoder) encode(text, enc string) ([]byte, error) {
+	encs := []string{enc}
+	if e.library != nil {
+		e.library(encs)
+	}
+	return charset.EncodeStringWithContext(e.ctx, text, encs)
+}
+
+// newEncoder returns an encoder of the source encodings. It asks the
+// library to fail on a text it cannot write (config.RAISE): otherwise the
+// library answers such a text with its UTF-8 bytes and no error.
+func newEncoder(ctx context.Context, source []string, budget *int64) *encoder {
+	ctx = config.WithWritingValidationMode(ctx, config.RAISE)
+	return &encoder{ctx: ctx, source: source, budget: budget, can: map[string]map[rune]bool{}}
+}
+
+// writable reports whether r can be written in enc.
+func (e *encoder) writable(r rune, enc string) bool {
+	m := e.can[enc]
+	if m == nil {
+		m = map[rune]bool{}
+		e.can[enc] = m
+	}
+	ok, known := m[r]
+	if !known {
+		_, err := e.encode(string(r), enc)
+		ok = err == nil
+		m[r] = ok
+	}
+	return ok
+}
+
+// encodeRuns writes text in the source encodings: each run of runes that
+// the first encoding writing its first rune writes too, in that encoding
+// alone, the runs joined without the escapes a file writes between them.
+// ok is false when a rune is writable in none. g0 reports a run of
+// characters outside ASCII written as 7-bit bytes.
+func (e *encoder) encodeRuns(text string, only string) (out []byte, g0, ok bool, err error) {
+	encs := e.source
+	if only != "" {
+		encs = []string{only}
+	}
+	var run []rune
+	runEnc := ""
+	flush := func() bool {
+		if len(run) == 0 {
+			return true
+		}
+		b, err := e.encode(string(run), runEnc)
+		if err != nil {
+			return false
+		}
+		b = stripEscapes(b)
+		if !plainASCII([]byte(string(run))) && plainASCII(b) {
+			g0 = true
+		}
+		out = append(out, b...)
+		run = run[:0]
+		return true
+	}
+	for i, r := range text {
+		if i%4096 == 0 {
+			if err := e.ctx.Err(); err != nil {
+				return nil, false, false, err
+			}
+		}
+		*e.budget--
+		enc := ""
+		if runEnc != "" && e.writable(r, runEnc) {
+			enc = runEnc
+		} else {
+			for _, c := range encs {
+				if e.writable(r, c) {
+					enc = c
+					break
+				}
+			}
+		}
+		if enc == "" {
+			return nil, false, false, nil
+		}
+		if enc != runEnc {
+			if !flush() {
+				return nil, false, false, nil
+			}
+			runEnc = enc
+		}
+		run = append(run, r)
+	}
+	if !flush() {
+		return nil, false, false, nil
+	}
+	return out, g0, true, nil
 }
 
 // encodings returns the raw forms of f: its text in upper case, lower case
 // and as written (the raw bytes' ASCII letters are upper-cased, but no
 // other letter: "müller" and "MÜLLER" are two byte strings), each in UTF-8
-// and in the source encodings, the whole list (which writes ISO 2022
-// escapes) and each encoding alone, escape sequences taken out, ASCII
-// letters in upper case. A form under minBytes is kept only when it is
-// unspaced, as short.
-func (f form) encodings(ctx context.Context, source []string, minBytes int) []rawForm {
+// and in the source encodings, across all of them (a run in each) and in
+// each alone, escape sequences taken out, ASCII letters in upper case. A
+// form under minBytes is kept only when it is unspaced, as short.
+func (f form) encodings(e *encoder, minBytes int) ([]rawForm, error) {
 	var out []rawForm
 	seen := map[string]bool{}
-	put := func(b []byte) {
-		b = stripEscapes(b)
+	put := func(b []byte, g0 bool) {
 		if len(b) == 0 || (len(b) < minBytes && !f.unspaced) {
 			return
 		}
 		upperASCII(b)
 		if !seen[string(b)] {
 			seen[string(b)] = true
-			out = append(out, rawForm{bytes: b, short: len(b) < minBytes})
+			out = append(out, rawForm{bytes: b, short: len(b) < minBytes, g0: g0})
 		}
 	}
 	for _, v := range []string{strings.ToUpper(f.text), strings.ToLower(f.text), f.text} {
-		put([]byte(v))
-		if b, err := charset.EncodeStringWithContext(ctx, v, source); err == nil {
-			put(b)
+		put([]byte(v), false)
+		alone := []string{""}
+		if len(e.source) > 1 {
+			alone = append(alone, e.source...)
 		}
-		if len(source) > 1 {
-			for _, e := range source {
-				if b, err := charset.EncodeStringWithContext(ctx, v, []string{e}); err == nil {
-					put(b)
-				}
+		for _, only := range alone {
+			b, g0, ok, err := e.encodeRuns(v, only)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				put(b, g0)
 			}
 		}
 	}
-	return out
+	return out, nil
 }
 
 // stripEscapes removes ISO 2022 escape sequences (ECMA-35 13: ESC,

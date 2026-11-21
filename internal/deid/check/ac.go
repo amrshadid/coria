@@ -1,7 +1,9 @@
 package check
 
 import (
+	"bytes"
 	"context"
+	"slices"
 	"sort"
 )
 
@@ -11,10 +13,23 @@ import (
 // its path that is also a path (fail) and the nearest such suffix that
 // ends a pattern (dict). The work of a pass is the bytes of the text, plus
 // the steps back along fail links, at most as many again, plus one per
-// pattern ending at each position: linear in the text whatever the
-// patterns, but for that last term, which a budget bounds.
+// pattern ending at each position, which the caller's budget bounds.
+//
+// The trie is built level by level from the patterns in sorted order, so
+// the children of a node are contiguous and sorted, and a node is a few
+// numbers in flat slices: about 19 bytes a node, a node a byte of the
+// patterns at most.
 type matcher struct {
-	nodes []acNode
+	// label is the byte on the edge into each node; first and count give
+	// its children, nodes first to first+count-1.
+	label []byte
+	first []int32
+	count []uint16
+	fail  []int32
+	// dict is the nearest node along fail links that ends a pattern, or
+	// -1; pat the pattern that ends at the node, or -1.
+	dict []int32
+	pat  []int32
 	// root is the full transition table of the root, the node most
 	// visited.
 	root [256]int32
@@ -22,87 +37,95 @@ type matcher struct {
 	lens []int
 }
 
-// acNode is a node of the trie.
-type acNode struct {
-	// edges are the node's children, by byte, sorted.
-	edges []acEdge
-	fail  int32
-	// dict is the nearest node along fail links that ends a pattern, or
-	// -1.
-	dict int32
-	// pat is the pattern that ends here, or -1.
-	pat int32
-}
-
-// acEdge is a child of a node.
-type acEdge struct {
-	b    byte
-	next int32
-}
-
-// child returns the child of n by b, or -1.
-func (n *acNode) child(b byte) int32 {
-	i := sort.Search(len(n.edges), func(i int) bool { return n.edges[i].b >= b })
-	if i < len(n.edges) && n.edges[i].b == b {
-		return n.edges[i].next
+// child returns the child of node n by b, or -1.
+func (m *matcher) child(n int32, b byte) int32 {
+	lo, hi := int(m.first[n]), int(m.first[n])+int(m.count[n])
+	i := lo + sort.Search(hi-lo, func(i int) bool { return m.label[lo+i] >= b })
+	if i < hi && m.label[i] == b {
+		return int32(i) //nolint:gosec // G115: nodes are bounded by the forms' bound, far below 2^31.
 	}
 	return -1
 }
 
-// newMatcher builds the automaton of patterns; pattern i is reported as i.
-// Equal patterns are the caller's to merge; an empty one is never reported.
+// newNode appends a node with the label b and returns it.
+func (m *matcher) newNode(b byte) int32 {
+	m.label = append(m.label, b)
+	m.first = append(m.first, 0)
+	m.count = append(m.count, 0)
+	m.fail = append(m.fail, 0)
+	m.dict = append(m.dict, -1)
+	m.pat = append(m.pat, -1)
+	return int32(len(m.label) - 1) //nolint:gosec // G115: nodes are bounded by the forms' bound, far below 2^31.
+}
+
+// newMatcher builds the automaton of patterns, which the caller has made
+// distinct and none empty; pattern i is reported as i.
 func newMatcher(patterns [][]byte) *matcher {
-	m := &matcher{nodes: []acNode{{fail: 0, dict: -1, pat: -1}}, lens: make([]int, len(patterns))}
+	m := &matcher{lens: make([]int, len(patterns))}
+	order := make([]int32, len(patterns))
 	for i, p := range patterns {
 		m.lens[i] = len(p)
-		if len(p) == 0 {
-			continue
-		}
-		cur := int32(0)
-		for _, b := range p {
-			next := m.nodes[cur].child(b)
-			if next < 0 {
-				next = int32(len(m.nodes)) //nolint:gosec // G115: the nodes are at most the bytes of the patterns, bounded far below 2^31.
-				m.nodes = append(m.nodes, acNode{dict: -1, pat: -1})
-				n := &m.nodes[cur]
-				at := sort.Search(len(n.edges), func(i int) bool { return n.edges[i].b >= b })
-				n.edges = append(n.edges, acEdge{})
-				copy(n.edges[at+1:], n.edges[at:])
-				n.edges[at] = acEdge{b: b, next: next}
-			}
-			cur = next
-		}
-		m.nodes[cur].pat = int32(i) //nolint:gosec // G115: the patterns are bounded by the needles' bound.
+		order[i] = int32(i) //nolint:gosec // G115: the patterns are bounded by the forms' bound.
 	}
-	// Breadth first, so a node's fail target is finished before it.
-	queue := make([]int32, 0, len(m.nodes))
-	for _, e := range m.nodes[0].edges {
-		m.root[e.b] = e.next
-		m.nodes[e.next].fail = 0
-		queue = append(queue, e.next)
-	}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for _, e := range m.nodes[cur].edges {
-			f := m.nodes[cur].fail
-			for {
-				if f == 0 {
-					m.nodes[e.next].fail = m.root[e.b]
-					break
-				}
-				if c := m.nodes[f].child(e.b); c >= 0 {
-					m.nodes[e.next].fail = c
-					break
-				}
-				f = m.nodes[f].fail
+	slices.SortFunc(order, func(a, b int32) int { return bytes.Compare(patterns[a], patterns[b]) })
+	m.newNode(0)
+	// Each node of a level holds the range of sorted patterns that begin
+	// with its path; a shorter pattern sorts before the longer ones it
+	// begins, so the one ending at the node comes first in its range.
+	type span struct{ lo, hi int }
+	level, spans := []int32{0}, []span{{0, len(order)}}
+	for depth := 0; len(level) > 0; depth++ {
+		var next []int32
+		var nextSpans []span
+		for k, n := range level {
+			i, hi := spans[k].lo, spans[k].hi
+			for i < hi && len(patterns[order[i]]) == depth {
+				m.pat[n] = order[i]
+				i++
 			}
-			if fn := m.nodes[e.next].fail; m.nodes[fn].pat >= 0 {
-				m.nodes[e.next].dict = fn
+			m.first[n] = int32(len(m.label)) //nolint:gosec // G115: as newNode.
+			for i < hi {
+				b := patterns[order[i]][depth]
+				j := i
+				for j < hi && patterns[order[j]][depth] == b {
+					j++
+				}
+				next = append(next, m.newNode(b))
+				nextSpans = append(nextSpans, span{i, j})
+				i = j
+			}
+			m.count[n] = uint16(len(m.label) - int(m.first[n])) //nolint:gosec // G115: at most 256 children.
+		}
+		level, spans = next, nextSpans
+	}
+	for c := m.first[0]; c < m.first[0]+int32(m.count[0]); c++ {
+		m.root[m.label[c]] = c
+	}
+	// Nodes are numbered breadth first, so a node's fail target, which is
+	// shallower, is finished before it.
+	for n := int32(0); n < int32(len(m.label)); n++ { //nolint:gosec // G115: as newNode.
+		for c := m.first[n]; c < m.first[n]+int32(m.count[n]); c++ {
+			if n == 0 {
+				m.fail[c] = 0
 			} else {
-				m.nodes[e.next].dict = m.nodes[fn].dict
+				f := m.fail[n]
+				for {
+					if g := m.child(f, m.label[c]); g >= 0 {
+						m.fail[c] = g
+						break
+					}
+					if f == 0 {
+						m.fail[c] = 0
+						break
+					}
+					f = m.fail[f]
+				}
 			}
-			queue = append(queue, e.next)
+			if fn := m.fail[c]; m.pat[fn] >= 0 {
+				m.dict[c] = fn
+			} else {
+				m.dict[c] = m.dict[fn]
+			}
 		}
 	}
 	return m
@@ -117,18 +140,17 @@ func (errBudget) Error() string { return "deid check: the search passes its boun
 const ctxEvery = 64 << 10
 
 // scan passes over text once and calls found with each pattern ending at
-// each position: the pattern and the offset one past its end. A found
-// that returns false ends the pass. Every step costs one unit of *budget;
-// past it the pass ends with errBudget. ctx is read every ctxEvery bytes.
-func (m *matcher) scan(ctx context.Context, text []byte, budget *int64, found func(pat, end int) bool) error {
+// each position: the pattern and the offset one past its end. Each pattern
+// reported costs one unit of *budget; past it the pass ends with
+// errBudget and the offset it had read to. The steps of the automaton are
+// not charged: there are at most two a byte. ctx is read every ctxEvery
+// bytes.
+func (m *matcher) scan(ctx context.Context, text []byte, budget *int64, found func(pat, end int)) (int, error) {
 	cur := int32(0)
 	for i, b := range text {
 		if i%ctxEvery == 0 {
 			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if *budget < 0 {
-				return errBudget{}
+				return i, err
 			}
 		}
 		for {
@@ -136,28 +158,24 @@ func (m *matcher) scan(ctx context.Context, text []byte, budget *int64, found fu
 				cur = m.root[b]
 				break
 			}
-			if c := m.nodes[cur].child(b); c >= 0 {
+			if c := m.child(cur, b); c >= 0 {
 				cur = c
 				break
 			}
-			cur = m.nodes[cur].fail
-			*budget--
+			cur = m.fail[cur]
 		}
-		*budget--
 		n := cur
-		if m.nodes[n].pat < 0 {
-			n = m.nodes[n].dict
+		if m.pat[n] < 0 {
+			n = m.dict[n]
 		}
 		for n > 0 {
 			*budget--
-			if !found(int(m.nodes[n].pat), i+1) {
-				return nil
-			}
-			n = m.nodes[n].dict
+			found(int(m.pat[n]), i+1)
+			n = m.dict[n]
 		}
 		if *budget < 0 {
-			return errBudget{}
+			return i + 1, errBudget{}
 		}
 	}
-	return nil
+	return len(text), nil
 }

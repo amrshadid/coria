@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -167,4 +168,80 @@ func TestDenseMatchesPassTheBudget(t *testing.T) {
 	p := writeFile(t, el{0x00204000, "UT", strings.Repeat("A", 200000)})
 	_, err := run(t, p, needles...)
 	wantRefusal(t, err, CauseTooLarge)
+}
+
+// TestLongNeedleOutsideTheSourceIsQuick guards the raw forms of a needle
+// the received character sets cannot write (a rune cut in two, read as
+// U+FFFD), under a list of sets: the library's encoder is only ever asked
+// to write in one set, and only text each of whose runes that set writes,
+// so its search of every prefix of a text a list of sets cannot write,
+// which takes the square of the length (a name of 64 KB took minutes, one
+// of 8 KB as here a second), is never reached; and the runes checked are
+// charged to the budget.
+func TestLongNeedleOutsideTheSourceIsQuick(t *testing.T) {
+	long := strings.Repeat("A", 8<<10) + "\xe7\x8e" + "^B"
+	p := writeFile(t)
+	c := New(Options{})
+	calls, lists := 0, 0
+	var spent int64
+	c.seams.library = func(encs []string) {
+		calls++
+		if len(encs) != 1 {
+			lists++
+		}
+	}
+	c.seams.work = func(n int64) { spent = n }
+	cs := `\ISO 2022 IR 87`
+	if _, err := c.checkPath(t, context.Background(), p, engine.Needles{needle(engine.NeedleName, long)}, &cs); err != nil {
+		t.Fatalf("got %v", err)
+	}
+	if calls == 0 || lists != 0 {
+		t.Errorf("%d calls to the encoder, %d with a list of sets", calls, lists)
+	}
+	if spent < int64(len(long)) {
+		t.Errorf("%d units spent for a needle of %d runes", spent, len(long))
+	}
+}
+
+// TestFormsPastTheirBoundAreRefused guards the bound on the bytes of the
+// forms searched for, which bounds the automata's memory: needles whose
+// forms pass MaxFormBytes are refused, never searched, before the file is
+// read (so an unreadable file is refused for the needles); and forms within
+// the bound as text that pass it with their raw forms are refused too.
+func TestFormsPastTheirBoundAreRefused(t *testing.T) {
+	var needles engine.Needles
+	for i := range 40 {
+		needles = append(needles, needle(engine.NeedleText, fmt.Sprintf("%02d", i)+strings.Repeat("X", 60<<10)))
+	}
+	_, err := checkBytes(t, Options{}, []byte("not a DICOM file"), 16, needles...)
+	wantRefusal(t, err, CauseTooManyNeedles)
+	_, err = run(t, writeFile(t), needles[:20]...)
+	wantRefusal(t, err, CauseTooManyNeedles)
+}
+
+// TestDenseMatchesAreRefusedQuickly guards that the budget of a dense file
+// does not grow with its size: a run of one letter against forms of every
+// length is refused at the same point of its text whether the run is 1 MB
+// or 16 MB long, well before the end of the shorter.
+func TestDenseMatchesAreRefusedQuickly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("writes a 16 MB file")
+	}
+	var needles engine.Needles
+	for i := 4; i < 600; i++ {
+		needles = append(needles, needle(engine.NeedleText, strings.Repeat("A", i)))
+	}
+	refusedAt := func(size int) int {
+		p := writeFile(t, el{0x00204000, "UT", strings.Repeat("A", size)})
+		c := New(Options{MaxValueBytes: 32 << 20})
+		at := -1
+		c.seams.refusedAt = func(n int) { at = n }
+		_, err := c.checkPath(t, context.Background(), p, needles, nil)
+		wantRefusal(t, err, CauseTooLarge)
+		return at
+	}
+	small, large := refusedAt(1<<20), refusedAt(16<<20)
+	if small < 0 || small != large || small > 1<<19 {
+		t.Errorf("refused at %d of 1 MB and %d of 16 MB", small, large)
+	}
 }

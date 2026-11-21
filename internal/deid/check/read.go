@@ -46,6 +46,10 @@ type parsed struct {
 	// VR (a LUT, an overlay, an encapsulated document), in order, where a
 	// short raw form is not taken.
 	binary [][2]int64
+	// shifted are the runs of data written in a 7-bit set of two-byte
+	// characters, each from just after the escape sequence that shifted
+	// into it, in order.
+	shifted [][2]int64
 }
 
 // parse reads data with the codec-free reader and builds what the search
@@ -92,6 +96,7 @@ func (c *Checker) parse(ctx context.Context, data []byte, source []string) (*par
 	// case, in place, so the file is held once.
 	upperASCII(data)
 	p.segs = outside(cut, int64(len(data)))
+	p.shifted = shiftedRuns(data)
 	sort.Slice(p.binary, func(i, j int) bool { return p.binary[i][0] < p.binary[j][0] })
 	return p, nil
 }
@@ -277,6 +282,44 @@ func (p *parsed) pathAt(at int) string {
 		return p.spans[i].path
 	}
 	return "file"
+}
+
+// shiftedRuns returns the runs of data a file wrote in a 7-bit set of
+// two-byte characters (PS3.5 6.1.2.5.3: JIS X 0208 after ESC $ B or ESC $
+// @, JIS X 0212 after ESC $ ( D): from the byte after the escape sequence
+// to the first byte that is not a character of such a set (0x21 to 0x7E),
+// the next escape among them.
+func shiftedRuns(data []byte) [][2]int64 {
+	var out [][2]int64
+	for i := 0; i+2 < len(data); i++ {
+		if data[i] != 0x1B || data[i+1] != '$' {
+			continue
+		}
+		j := i + 2
+		if data[j] == '(' || data[j] == ')' {
+			j++
+		}
+		if j >= len(data) || data[j] < 0x40 || data[j] > 0x7E {
+			continue
+		}
+		start := j + 1
+		end := start
+		for end < len(data) && data[end] >= 0x21 && data[end] <= 0x7E {
+			end++
+		}
+		if end > start {
+			out = append(out, [2]int64{int64(start), int64(end)})
+		}
+		i = end - 1
+	}
+	return out
+}
+
+// inShifted reports whether [off, end) lies in one shifted run, at an even
+// distance from its start, so a match falls on whole two-byte characters.
+func (p *parsed) inShifted(off, end int64) bool {
+	i := sort.Search(len(p.shifted), func(i int) bool { return p.shifted[i][1] > off })
+	return i < len(p.shifted) && p.shifted[i][0] <= off && end <= p.shifted[i][1] && (off-p.shifted[i][0])%2 == 0
 }
 
 // inBinary reports whether offset is in the value of a standard binary

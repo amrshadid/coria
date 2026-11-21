@@ -9,9 +9,13 @@ All notable changes to CORIA are written here. The form is
 ### Changed
 
 - De-identification's clean removes dates in more written forms (no
-  leading zeros, two-digit years, "Mar. 5", ordinals, 2024年3月5日),
-  full-width letters and digits as their ASCII ones, and a year beside a
-  letter of another script; the forms are shared with the check after.
+  leading zeros, two-digit years, "Mar. 5", ordinals, compact 05032024,
+  2024年3月5日, 2024년 3월 5일, "2024. 3. 5."), a date with an unknown month or
+  day (00) by the precision it has, full-width letters and digits as their
+  ASCII ones, and a year beside a letter of another script; a name's form
+  holding a part of one or two letters is removed only as a whole word, so
+  "SCAN LEFT" is left whole for the name LE^AN. The forms are shared with the
+  check after.
 - The rule that an address is a global unicast address (the S3 endpoint
   check) is written once, in `internal/core/publicaddr`, and used by senders
   too.
@@ -147,8 +151,9 @@ All notable changes to CORIA are written here. The form is
   every value the profile removed or replaced, in the written forms clean
   removes; a finding names the element and the kind of value, never the
   value; a file not read whole (a sequence or item cut short), deflated, or
-  past its bounds is refused, never passed. Agrees with pydicom over the
-  public corpus and synthetic files.
+  past its bounds (file, value, needles, bytes of forms, work) is refused,
+  never passed. Agrees with pydicom over the public corpus and synthetic
+  files.
 - A tenant's de-identification profiles and lookup tables are kept in its
   database (both database types, migration 12): each version stored as the
   exact bytes of its document and expanded form with their SHA-256, checked

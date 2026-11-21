@@ -113,6 +113,9 @@ type cleanTerm struct {
 	// part of a longer date (2024 in 2024-03-15, or 2024-03 in
 	// 2024-03-15), so the year of a date is not taken for it.
 	partial bool
+	// digits is set for a run of digits matched only with no digit
+	// beside it.
+	digits bool
 }
 
 // cleanTerms returns the terms clean removes for a file's needles: each
@@ -123,7 +126,7 @@ type cleanTerm struct {
 func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 	seen := map[string]bool{}
 	var out []cleanTerm
-	add := func(v string, part, partial bool) {
+	add := func(v string, part bool, edge Edge) {
 		v = strings.TrimSpace(v)
 		if v == "" {
 			return
@@ -133,9 +136,9 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 		if seen[key] {
 			return
 		}
-		t := cleanTerm{runes: runes, partial: partial}
+		t := cleanTerm{runes: runes, word: edge == EdgeWord, partial: edge == EdgeDate, digits: edge == EdgeDigits}
 		switch {
-		case partial:
+		case t.partial, t.word, t.digits:
 		case Unspaced(v), len(runes) >= minCleanLength:
 		case part:
 			t.word = true
@@ -146,23 +149,22 @@ func cleanTerms(needles []Needle) ([]cleanTerm, bool) {
 		out = append(out, t)
 	}
 	for _, n := range needles {
-		if n.Kind == NeedleDate {
+		switch n.Kind {
+		case NeedleDate:
 			forms, partial := DateForms(n.Value)
 			if !partial {
-				add(n.Value, false, false)
+				add(n.Value, false, EdgeAny)
 			}
 			for _, f := range forms {
-				add(f.Text, false, f.Bounded)
+				add(f.Text, false, f.Edge)
 			}
-			continue
-		}
-		if n.Kind == NeedleName {
+		case NeedleName:
 			for _, f := range NameForms(n.Value) {
-				add(f, true, false)
+				add(f.Text, true, f.Edge)
 			}
-			continue
+		default:
+			add(n.Value, false, EdgeAny)
 		}
-		add(n.Value, false, false)
 	}
 	slices.SortFunc(out, func(a, b cleanTerm) int {
 		if len(a.runes) != len(b.runes) {
@@ -245,6 +247,9 @@ func (c *cleaner) clean(ctx context.Context, s string) (string, error) {
 				if t.partial && (!dateEdge(folded, i-1, -1) || !dateEdge(folded, i+m, 1)) {
 					continue
 				}
+				if t.digits && (digitAt(folded, i-1) || digitAt(folded, i+m)) {
+					continue
+				}
 				for j := i; j < i+m; j++ {
 					cut[j] = true
 				}
@@ -287,6 +292,11 @@ func dateEdge(runes []rune, i, dir int) bool {
 	}
 	j := i + dir
 	return j < 0 || j >= len(runes) || !unicode.IsDigit(runes[j])
+}
+
+// digitAt reports whether position i of a text holds an ASCII digit.
+func digitAt(runes []rune, i int) bool {
+	return i >= 0 && i < len(runes) && '0' <= runes[i] && runes[i] <= '9'
 }
 
 // asciiAlnum reports whether r is an ASCII letter or digit.

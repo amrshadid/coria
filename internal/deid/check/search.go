@@ -7,21 +7,25 @@ import (
 	"unicode/utf8"
 )
 
-// workPerByte bounds the work of a check: each byte of the text and of the
-// raw file may cost this many steps of the automaton, which takes two at
-// most plus one per pattern ending there. Past it, the patterns end on one
-// another so densely (a run of one letter against forms of every length)
-// that the file is refused rather than searched for minutes.
-const workPerByte = 64
-
-// workFixed is the work every check may spend whatever the file's size.
-const workFixed = 1 << 20
+// workBudget bounds the work of a check that does not grow with the file:
+// each form found ending at a position (whether or not its edges then
+// fit) and each rune of a form checked against a character set costs one
+// unit. The automaton's own steps, at most two a byte, are not charged.
+// Normal files spend a few thousand units; a file whose text makes forms
+// end on one another at every byte (a run of one letter against forms of
+// every length) spends the budget within a second or two whatever its
+// size, and is refused as too large rather than searched for minutes.
+const workBudget = 1 << 25
 
 // search finds the forms in p: in one pass over the text, then one pass
-// over each raw range for the forms the text did not hold. It returns the
-// findings, at most one per form.
-func search(ctx, quiet context.Context, p *parsed, forms []form, source []string, minLength int, fs *findings) error {
-	budget := int64(workPerByte)*int64(len(p.hay)+len(p.data)) + workFixed
+// over each raw range for the forms the text did not hold. It adds at most
+// one finding per form to fs.
+func search(ctx, quiet context.Context, p *parsed, set formSet, source []string, opts Options, fs *findings, sm seams) error {
+	forms := set.forms
+	budget := int64(workBudget)
+	if sm.work != nil {
+		defer func() { sm.work(workBudget - budget) }()
+	}
 	done := make([]bool, len(forms))
 
 	// The text: one pattern per distinct folded form.
@@ -39,7 +43,7 @@ func search(ctx, quiet context.Context, p *parsed, forms []form, source []string
 		targets[at] = append(targets[at], i)
 	}
 	m := newMatcher(patterns)
-	err := m.scan(ctx, p.hay, &budget, func(pat, end int) bool {
+	at, err := m.scan(ctx, p.hay, &budget, func(pat, end int) {
 		start := end - m.lens[pat]
 		for _, i := range targets[pat] {
 			if !done[i] && edgesFit(p.hay, start, end, forms[i].mode) {
@@ -47,33 +51,50 @@ func search(ctx, quiet context.Context, p *parsed, forms []form, source []string
 				fs.add(Finding{Path: p.pathAt(start), Kind: forms[i].kind})
 			}
 		}
-		return true
 	})
 	if err != nil {
+		if sm.refusedAt != nil {
+			sm.refusedAt(at)
+		}
 		return budgetRefusal(err)
 	}
+	m = nil
 
-	// The raw bytes: every byte form of every form not found yet.
+	// The raw bytes: every byte form of every form not found yet, the
+	// bytes of all forms within MaxFormBytes.
 	type rawTarget struct {
-		form  int
-		short bool
+		form      int
+		short, g0 bool
 	}
 	rawIndex := map[string]int{}
 	var rawPatterns [][]byte
 	var rawTargets [][]rawTarget
+	total := set.bytes
+	enc := newEncoder(quiet, source, &budget)
+	enc.library = sm.library
 	for i, f := range forms {
 		if done[i] {
 			continue
 		}
-		for _, r := range f.encodings(quiet, source, minLength) {
+		raws, err := f.encodings(enc, opts.MinLength)
+		if err != nil {
+			return err
+		}
+		if budget < 0 {
+			return &Refusal{Cause: CauseTooLarge}
+		}
+		for _, r := range raws {
 			at, ok := rawIndex[string(r.bytes)]
 			if !ok {
+				if total += len(r.bytes); total > opts.MaxFormBytes {
+					return &Refusal{Cause: CauseTooManyNeedles}
+				}
 				at = len(rawPatterns)
 				rawIndex[string(r.bytes)] = at
 				rawPatterns = append(rawPatterns, r.bytes)
 				rawTargets = append(rawTargets, nil)
 			}
-			rawTargets[at] = append(rawTargets[at], rawTarget{form: i, short: r.short})
+			rawTargets[at] = append(rawTargets[at], rawTarget{form: i, short: r.short, g0: r.g0})
 		}
 	}
 	if len(rawPatterns) == 0 {
@@ -82,17 +103,17 @@ func search(ctx, quiet context.Context, p *parsed, forms []form, source []string
 	rm := newMatcher(rawPatterns)
 	for _, seg := range p.segs {
 		text := p.data[seg[0]:seg[1]]
-		err := rm.scan(ctx, text, &budget, func(pat, end int) bool {
+		_, err := rm.scan(ctx, text, &budget, func(pat, end int) {
 			start := end - rm.lens[pat]
 			off := seg[0] + int64(start)
 			for _, t := range rawTargets[pat] {
-				if done[t.form] || (t.short && p.inBinary(off)) || !edgesFit(text, start, end, forms[t.form].mode) {
+				if done[t.form] || (t.short && p.inBinary(off)) || (t.g0 && !p.inShifted(off, seg[0]+int64(end))) ||
+					!edgesFit(text, start, end, forms[t.form].mode) {
 					continue
 				}
 				done[t.form] = true
 				fs.add(Finding{Path: p.locate(off), Kind: forms[t.form].kind, Raw: true})
 			}
-			return true
 		})
 		if err != nil {
 			return budgetRefusal(err)
@@ -119,16 +140,16 @@ func edgesFit(text []byte, start, end int, m mode) bool {
 	switch m {
 	case modeBounded:
 		return dateEdge(text, start, -1) && dateEdge(text, end, 1)
+	case modeWord:
+		return wordEdge(text, start, -1) && wordEdge(text, end, 1)
+	case modeDigits:
+		return (start == 0 || !isDigit(text[start-1])) && (end == len(text) || !isDigit(text[end]))
 	case modeUID:
 		if isDigit(text[start]) && start > 0 && (isDigit(text[start-1]) ||
 			(text[start-1] == '.' && start > 1 && isDigit(text[start-2]))) {
 			return false
 		}
-		if isDigit(text[end-1]) && end < len(text) && (isDigit(text[end]) ||
-			(text[end] == '.' && end+1 < len(text) && isDigit(text[end+1]))) {
-			return false
-		}
-		return true
+		return !isDigit(text[end-1]) || end == len(text) || !isDigit(text[end])
 	}
 	if isDigit(text[start]) && start > 0 && isDigit(text[start-1]) {
 		return false
@@ -139,24 +160,39 @@ func edgesFit(text []byte, start, end int, m mode) bool {
 	return true
 }
 
+// runeAt returns the rune beside position i of text on side dir (-1
+// before it, 1 after it), its size, and whether there is one.
+func runeAt(text []byte, i, dir int) (rune, int, bool) {
+	if dir < 0 {
+		if i == 0 {
+			return 0, 0, false
+		}
+		r, size := utf8.DecodeLastRune(text[:i])
+		return r, size, true
+	}
+	if i >= len(text) {
+		return 0, 0, false
+	}
+	r, size := utf8.DecodeRune(text[i:])
+	return r, size, true
+}
+
+// wordEdge reports whether a word ends at position i of text on side dir:
+// no letter or digit of any script beside it.
+func wordEdge(text []byte, i, dir int) bool {
+	r, _, ok := runeAt(text, i, dir)
+	return !ok || (!unicode.IsLetter(r) && !unicode.IsDigit(r))
+}
+
 // dateEdge reports whether a date stands alone at position i of text on
 // side dir (-1 before it, 1 after it): no ASCII letter or digit there (a
 // letter of another script, as 年 in 1957年, does not join a date), and no
 // date's separator ("-", "/", ".") with a digit beyond it, which would make
 // it part of a longer date.
 func dateEdge(text []byte, i, dir int) bool {
-	var r rune
-	var size int
-	if dir < 0 {
-		if i == 0 {
-			return true
-		}
-		r, size = utf8.DecodeLastRune(text[:i])
-	} else {
-		if i >= len(text) {
-			return true
-		}
-		r, size = utf8.DecodeRune(text[i:])
+	r, size, ok := runeAt(text, i, dir)
+	if !ok {
+		return true
 	}
 	if r < utf8.RuneSelf && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
 		return false

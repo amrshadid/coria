@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/amrshadid/go-dicom/dataset"
 	"github.com/amrshadid/go-dicom/filewriter"
@@ -91,24 +90,28 @@ func TestLongBinaryValueIsSearchedRaw(t *testing.T) {
 }
 
 // TestAdversarialTextStaysLinear guards the search against text built to
-// make it slow: a megabyte of digits, where every position begins a match
-// of a numeric needle whose edges then fail, and many needles, finishes in
-// well under the time a quadratic search would take.
+// make it slow: a megabyte of digits, where every position ends a match of
+// a numeric needle whose edges then fail, and many needles, is searched in
+// one pass that spends one unit of work for each such match and no more.
 func TestAdversarialTextStaysLinear(t *testing.T) {
 	if testing.Short() {
 		t.Skip("writes a megabyte file")
 	}
-	p := writeFile(t, el{0x00204000, "UT", strings.Repeat("1", 1<<20)})
+	const size = 1 << 20
+	p := writeFile(t, el{0x00204000, "UT", strings.Repeat("1", size)})
 	needles := engine.Needles{needle(engine.NeedleText, "11111")}
 	for i := range 200 {
 		needles = append(needles, needle(engine.NeedleText, "ZZZ"+strings.Repeat("Q", i%20)+"Y"))
 	}
-	start := time.Now()
-	if _, err := run(t, p, needles...); err != nil {
+	c := New(Options{})
+	var spent int64
+	c.seams.work = func(n int64) { spent = n }
+	if _, err := c.checkPath(t, context.Background(), p, needles, nil); err != nil {
 		t.Fatalf("got %v", err)
 	}
-	if d := time.Since(start); d > 20*time.Second {
-		t.Errorf("took %v", d)
+	// The text and the raw bytes each end a match at nearly every digit.
+	if spent < size || spent > 3*size {
+		t.Errorf("%d units spent on %d digits", spent, size)
 	}
 }
 

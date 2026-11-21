@@ -12,20 +12,48 @@ import (
 // from this one list, so what one removes and the other looks for cannot
 // drift apart.
 
+// Edge is where a written form is taken for its value: what may stand
+// beside it.
+type Edge int
+
+// The edges of a form.
+const (
+	// EdgeAny: anywhere. (The check after holds a form that begins or ends
+	// with a digit to digit edges there, so an identifier is not found
+	// inside a longer number.)
+	EdgeAny Edge = iota
+	// EdgeDate: a form ambiguous out of context (a year, a year and
+	// month, a two-digit year, a day or month without its leading zero, a
+	// month's name) is taken only where it stands alone as a date: no
+	// ASCII letter or digit beside it, and no date's separator ("-", "/",
+	// ".") with a digit beyond it, so "2024" is not the year of 2024-03-15
+	// and "5 March 2024" is not inside "15 March 2024". A letter of another
+	// script beside it does not count: "1957年" is the year 1957. A run that
+	// reads as the date, such as "5.3.24" in "version 5.3.24", is taken for
+	// it all the same: removing what may be a date is the safe side.
+	EdgeDate
+	// EdgeWord: a name's form that holds a part of one or two letters
+	// ("Li", "Al", "Ng") is taken only as a whole word, with no letter or
+	// digit of any script beside it: "LE AN" is not in "SCAN LEFT".
+	EdgeWord
+	// EdgeDigits: a run of digits (a date written without separators, such
+	// as 05032024) is taken only with no digit beside it.
+	EdgeDigits
+)
+
 // WrittenForm is one way people write a value in free text.
 type WrittenForm struct {
 	// Text is the form.
 	Text string
-	// Bounded is set for a form that is ambiguous out of context (a year,
-	// a year and month, a two-digit year, a day or month without its
-	// leading zero, a month's name): it is taken for the value only where
-	// it stands alone as a date, with no ASCII letter or digit next to it
-	// and no date's separator ("-", "/", ".") with a digit beyond it, so
-	// "2024" is not the year of 2024-03-15 and "5 March 2024" is not inside
-	// "15 March 2024". A letter of another script next to it does not
-	// count: "1957年" is the year 1957.
-	Bounded bool
+	// Edge is where it is taken for the value.
+	Edge Edge
 }
+
+// minPart is the length under which a Latin name part matches inside
+// ordinary words ("LE", "AN"), so it, and every form holding it, is taken
+// only as a whole word. A part of a script written without spaces is a
+// name at any length (Unspaced).
+const minPart = 3
 
 // NameForms returns the forms of a person's name (PS3.5 6.2.1): the value;
 // each component group (split by "="); each component of a group (split by
@@ -33,32 +61,57 @@ type WrittenForm struct {
 // than one ("van der Berg", "山田 太郎"); and the family and given names as
 // people write them: "JOHN DOE", "DOE JOHN", "DOE, JOHN", "DOE,JOHN",
 // "JOHN PAUL DOE" with the middle name, and every component in order with
-// spaces.
-func NameForms(pn string) []string {
-	out := []string{pn}
+// spaces. A form that holds a Latin part shorter than three letters is
+// taken only as a whole word (EdgeWord).
+func NameForms(pn string) []WrittenForm {
+	var out []WrittenForm
+	add := func(text string, parts ...string) {
+		edge := EdgeAny
+		for _, p := range parts {
+			if shortPart(p) {
+				edge = EdgeWord
+			}
+		}
+		out = append(out, WrittenForm{Text: text, Edge: edge})
+	}
+	var all []string
 	for _, group := range strings.Split(pn, "=") {
-		var parts []string
+		var parts, words []string
 		for _, c := range strings.Split(group, "^") {
 			if c = strings.TrimSpace(c); c != "" {
 				parts = append(parts, c)
+				words = append(words, strings.Fields(c)...)
 			}
 		}
-		out = append(out, group)
+		all = append(all, words...)
+		add(group, words...)
 		for _, p := range parts {
-			out = append(out, p)
-			if words := strings.Fields(p); len(words) > 1 {
-				out = append(out, words...)
+			add(p, strings.Fields(p)...)
+			if ws := strings.Fields(p); len(ws) > 1 {
+				for _, w := range ws {
+					add(w, w)
+				}
 			}
 		}
 		if len(parts) >= 2 {
 			fam, given := parts[0], parts[1]
-			out = append(out, given+" "+fam, fam+" "+given, fam+", "+given, fam+","+given, strings.Join(parts, " "))
+			for _, t := range []string{given + " " + fam, fam + " " + given, fam + ", " + given, fam + "," + given} {
+				add(t, append(strings.Fields(fam), strings.Fields(given)...)...)
+			}
+			add(strings.Join(parts, " "), words...)
 			if len(parts) >= 3 {
-				out = append(out, given+" "+parts[2]+" "+fam)
+				add(given+" "+parts[2]+" "+fam, append(append(strings.Fields(given), strings.Fields(parts[2])...), strings.Fields(fam)...)...)
 			}
 		}
 	}
-	return out
+	add(pn, all...)
+	return dedupe(out)
+}
+
+// shortPart reports whether a name's word is a Latin one of fewer than
+// minPart letters.
+func shortPart(w string) bool {
+	return !Unspaced(w) && utf8.RuneCountInString(w) < minPart
 }
 
 // months are the English names of the months, by number from 1.
@@ -66,18 +119,26 @@ var months = [...]string{"January", "February", "March", "April", "May", "June",
 	"August", "September", "October", "November", "December"}
 
 // DateForms returns the forms the date of a DA or DT value (PS3.5 6.2) is
-// written in by people. For a full date, from its first eight digits:
-// 20240305, 2024-03-05, 2024/03/05, 2024.03.05, 05/03/2024, 03/05/2024,
-// 05.03.2024 and 05-03-2024; and bounded: the same without leading zeros
-// (2024-3-5, 3/5/2024, 5.3.2024), with a two-digit year (05/03/24,
-// 3/5/24), with the month's name, its three letters and those with a dot,
-// the day with and without its zero and as an ordinal ("5 March 2024",
-// "March 5th, 2024", "Mar. 5, 2024", "05-Mar-2024", "5MAR2024"), and
-// 2024年3月5日. For a value of only a year, or a year and month, partial
-// is true and the forms are bounded ones of that precision only (2024;
-// 202403, 2024-03, 03/2024, 3/2024, "March 2024", 2024年3月): the value
-// itself is then no form of its own. Nil for a value whose leading digits
-// are not four, six or eight, or whose month or day is not one.
+// written in by people.
+//
+// For a value of eight digits or more, from its first eight: 20240305,
+// 2024-03-05, 2024/03/05, 2024.03.05, 05/03/2024, 03/05/2024, 05.03.2024
+// and 05-03-2024 (taken anywhere); 05032024 and 03052024 with no digit
+// beside them; and standing alone as a date: without leading zeros
+// (2024-3-5, 3/5/2024, 5.3.2024), with a two-digit year (05/03/24, 3/5/24,
+// "5 Mar 24"), with the month's name, its three letters and those with a
+// dot, the day with and without its zero and as an ordinal ("5 March 2024",
+// "March 5th, 2024", "Mar. 5, 2024", "05-Mar-2024", "5MAR2024"), in Chinese
+// and Japanese (2024年3月5日, 2024年03月05日) and Korean (2024년 3월 5일,
+// "2024. 3. 5."). A month of 00, or one past 12, is unknown: the forms of
+// the year are given instead of the named ones; a day of 00, or past 31,
+// likewise gives the forms of the year and month.
+//
+// For a value of only a year, or a year and month, partial is true and the
+// forms are of that precision only, standing alone (2024; 202403, 2024-03,
+// 03/2024, 3/2024, "March 2024", 2024年3月, 2024년 3월): the value itself is
+// then no form of its own. Nil for a value whose leading digits are not
+// four, six or eight.
 func DateForms(v string) (forms []WrittenForm, partial bool) {
 	n := 0
 	for n < len(v) && n < 8 && v[n] >= '0' && v[n] <= '9' {
@@ -85,7 +146,7 @@ func DateForms(v string) (forms []WrittenForm, partial bool) {
 	}
 	switch {
 	case n == 4 && (len(v) == 4 || !isDigitByte(v[4])):
-		return []WrittenForm{{Text: v[:4], Bounded: true}}, true
+		return yearForms(v[:4]), true
 	case n == 6 && (len(v) == 6 || !isDigitByte(v[6])):
 		return monthForms(v[:4], v[4:6]), true
 	case n == 8:
@@ -94,52 +155,64 @@ func DateForms(v string) (forms []WrittenForm, partial bool) {
 	return nil, false
 }
 
-// monthForms returns the bounded forms of a year and month.
+// yearForms returns the forms of a year alone.
+func yearForms(y string) []WrittenForm {
+	return []WrittenForm{{Text: y, Edge: EdgeDate}, {Text: y + "年", Edge: EdgeDate}, {Text: y + "년", Edge: EdgeDate}}
+}
+
+// monthForms returns the forms of a year and month; those of the year when
+// the month is not one.
 func monthForms(y, m string) []WrittenForm {
 	mi, _ := strconv.Atoi(m)
 	if mi < 1 || mi > 12 {
-		return nil
+		return yearForms(y)
 	}
 	mm := strconv.Itoa(mi)
 	var out []WrittenForm
 	for _, t := range []string{y + m, y + "-" + m, y + "/" + m, y + "." + m, m + "/" + y, m + "." + y, m + "-" + y,
 		y + "-" + mm, mm + "/" + y, months[mi-1] + " " + y, months[mi-1][:3] + " " + y, months[mi-1][:3] + ". " + y,
-		y + "年" + mm + "月"} {
-		out = append(out, WrittenForm{Text: t, Bounded: true})
+		y + "年" + mm + "月", y + "年" + m + "月", y + "년 " + mm + "월", y + "년" + mm + "월"} {
+		out = append(out, WrittenForm{Text: t, Edge: EdgeDate})
 	}
 	return dedupe(out)
 }
 
-// dayForms returns the forms of a full date.
+// dayForms returns the forms of a full date: the numeric ones as written
+// whatever the digits, and the others of the year and month, or of the
+// year, when the day, or the month, is not one.
 func dayForms(y, m, d string) []WrittenForm {
-	mi, _ := strconv.Atoi(m)
-	di, _ := strconv.Atoi(d)
-	if mi < 1 || mi > 12 || di < 1 || di > 31 {
-		return nil
-	}
 	out := []WrittenForm{
 		{Text: y + m + d}, {Text: y + "-" + m + "-" + d}, {Text: y + "/" + m + "/" + d}, {Text: y + "." + m + "." + d},
 		{Text: d + "/" + m + "/" + y}, {Text: m + "/" + d + "/" + y}, {Text: d + "." + m + "." + y}, {Text: d + "-" + m + "-" + y},
 	}
+	mi, _ := strconv.Atoi(m)
+	di, _ := strconv.Atoi(d)
+	if mi < 1 || mi > 12 || di < 1 || di > 31 {
+		return dedupe(append(out, monthForms(y, m)...))
+	}
+	out = append(out, WrittenForm{Text: d + m + y, Edge: EdgeDigits}, WrittenForm{Text: m + d + y, Edge: EdgeDigits})
 	mm, dd, yy := strconv.Itoa(mi), strconv.Itoa(di), y[2:]
 	bounded := []string{
 		y + "-" + mm + "-" + dd, y + "/" + mm + "/" + dd, y + "." + mm + "." + dd,
 		dd + "/" + mm + "/" + y, mm + "/" + dd + "/" + y, dd + "." + mm + "." + y, dd + "-" + mm + "-" + y,
 		d + "/" + m + "/" + yy, m + "/" + d + "/" + yy, d + "." + m + "." + yy, d + "-" + m + "-" + yy,
 		dd + "/" + mm + "/" + yy, mm + "/" + dd + "/" + yy, dd + "." + mm + "." + yy,
-		y + "年" + mm + "月" + dd + "日",
+		y + "年" + mm + "月" + dd + "日", y + "年" + m + "月" + d + "日",
+		y + "년 " + mm + "월 " + dd + "일", y + "년" + mm + "월" + dd + "일",
+		y + ". " + mm + ". " + dd + ".", y + ". " + m + ". " + d + ".",
 	}
 	full, abbr := months[mi-1], months[mi-1][:3]
 	for _, day := range []string{d, dd, dd + ordinal(di)} {
 		for _, name := range []string{full, abbr, abbr + "."} {
 			bounded = append(bounded, day+" "+name+" "+y, name+" "+day+", "+y, name+" "+day+" "+y)
 		}
+		bounded = append(bounded, day+" "+abbr+" "+yy)
 	}
 	for _, day := range []string{d, dd} {
 		bounded = append(bounded, day+"-"+abbr+"-"+y, day+abbr+y)
 	}
 	for _, t := range bounded {
-		out = append(out, WrittenForm{Text: t, Bounded: true})
+		out = append(out, WrittenForm{Text: t, Edge: EdgeDate})
 	}
 	return dedupe(out)
 }

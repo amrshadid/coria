@@ -34,6 +34,11 @@ const (
 	DefaultMaxValueBytes = 16 << 20
 	// DefaultMaxFindings is the most findings a report lists.
 	DefaultMaxFindings = 16
+	// DefaultMaxFormBytes is the most bytes of written forms, as text and
+	// in every encoding, one file is searched for: the automata take some
+	// 20 bytes of memory a byte of them, so a few tens of megabytes at
+	// most. Real needles take a few kilobytes.
+	DefaultMaxFormBytes = 2 << 20
 )
 
 // maxDepth is the deepest nesting of sequences read: as deep as the engine
@@ -59,6 +64,9 @@ type Options struct {
 	// MaxFindings is the most findings a report lists; Report.Total counts
 	// them all.
 	MaxFindings int
+	// MaxFormBytes is the most bytes of written forms searched for, as
+	// text and in every encoding together.
+	MaxFormBytes int
 }
 
 // withDefaults returns o with every zero field set to its default.
@@ -83,6 +91,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MaxFindings <= 0 {
 		o.MaxFindings = DefaultMaxFindings
+	}
+	if o.MaxFormBytes <= 0 {
+		o.MaxFormBytes = DefaultMaxFormBytes
 	}
 	return o
 }
@@ -189,8 +200,8 @@ const (
 	// check walks, or forms ending on one another so densely that the
 	// search would pass its budget of work.
 	CauseTooLarge Cause = "check_too_large"
-	// CauseTooManyNeedles: more needles than MaxNeedles, or one longer
-	// than MaxNeedleBytes.
+	// CauseTooManyNeedles: more needles than MaxNeedles, one longer than
+	// MaxNeedleBytes, or written forms of more than MaxFormBytes.
 	CauseTooManyNeedles Cause = "check_too_many_needles"
 	// CauseUnreadable: the reader could not read the file to its end
 	// (truncated, malformed, a sequence or item cut short, sequences
@@ -227,6 +238,13 @@ type Checker struct {
 type seams struct {
 	// afterParse runs once a file is read, before it is searched.
 	afterParse func()
+	// work is told the units of the work budget a search spent.
+	work func(spent int64)
+	// refusedAt is told how far into the text a search had read when its
+	// budget refused the file.
+	refusedAt func(at int)
+	// library is told the encodings of each call to the library's encoder.
+	library func(encodings []string)
 }
 
 // New returns a Checker bounded by opts.
@@ -274,7 +292,7 @@ func (c *Checker) Check(ctx context.Context, src io.ReaderAt, size int64, needle
 		c.seams.afterParse()
 	}
 	fs := newFindings(c.opts.MaxFindings)
-	if err := search(ctx, quiet, f, set.forms, enc, c.opts.MinLength, fs); err != nil {
+	if err := search(ctx, quiet, f, set, enc, c.opts, fs, c.seams); err != nil {
 		return rep, err
 	}
 	rep.Findings, rep.Total = fs.list, fs.total
