@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/amrshadid/coria/internal/core/uid"
 )
@@ -21,11 +22,46 @@ type Reader struct {
 	// version is the version its first line states, 0 for a reader that
 	// starts at an instance's line (NewReaderFrom).
 	version int
+	// scan is the header of a sidecar of version 3.
+	scan *ScanHeader
 }
 
 // Version returns the version of the sidecar, known once Next has read
 // its first line: 0 before, and for a reader started at an instance's line.
 func (r *Reader) Version() int { return r.version }
+
+// Scan returns the scan's header, known once Next has read the first line of
+// a sidecar of version 3; nil before, for older versions, and for a reader
+// started at an instance's line.
+func (r *Reader) Scan() *ScanHeader { return r.scan }
+
+// parseHead reads a sidecar's first line (without its newline): its version
+// and, for version 3, its scan's header.
+func parseHead(h []byte) (int, *ScanHeader, error) {
+	switch s := string(h); {
+	case s == header[:len(header)-1]:
+		return VersionFrames, nil, nil
+	case s == headerV1[:len(headerV1)-1]:
+		return 1, nil, nil
+	case strings.HasPrefix(s, headV3) && strings.HasSuffix(s, tailV3):
+		var sh ScanHeader
+		dec := json.NewDecoder(strings.NewReader(s[len(headV3) : len(s)-len(tailV3)]))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&sh); err != nil || dec.More() {
+			return 0, nil, fmt.Errorf("%w: header", ErrFormat)
+		}
+		if err := sh.Validate(); err != nil {
+			return 0, nil, err
+		}
+		// Written once in one form: the line must be what the writer writes
+		// for these values, so a header has no second spelling.
+		if enc, err := json.Marshal(sh); err != nil || headV3+string(enc)+tailV3 != s {
+			return 0, nil, fmt.Errorf("%w: header", ErrFormat)
+		}
+		return Version, &sh, nil
+	}
+	return 0, nil, fmt.Errorf("%w: header", ErrFormat)
+}
 
 // NewReader returns a reader of the sidecar r holds.
 func NewReader(r io.Reader) *Reader {
@@ -40,13 +76,11 @@ func (r *Reader) Next() (Instance, []byte, error) {
 	}
 	if !r.start {
 		h, err := r.line()
-		switch {
-		case err == nil && string(h) == header[:len(header)-1]:
-			r.version = Version
-		case err == nil && string(h) == headerV1[:len(headerV1)-1]:
-			r.version = 1
-		default:
+		if err != nil {
 			return Instance{}, nil, fmt.Errorf("%w: header", ErrFormat)
+		}
+		if r.version, r.scan, err = parseHead(h); err != nil {
+			return Instance{}, nil, err
 		}
 		r.start = true
 	}
@@ -74,10 +108,10 @@ func (r *Reader) Next() (Instance, []byte, error) {
 	if string(in.Dataset) == "null" {
 		in.Dataset = nil
 	}
-	if err := check(in); err != nil {
+	if err := check(in, r.version); err != nil {
 		return Instance{}, nil, err
 	}
-	if r.version == Version && in.NeedsFrames() {
+	if r.version >= VersionFrames && in.NeedsFrames() {
 		return Instance{}, nil, fmt.Errorf("%w: %w", ErrFormat, ErrIncomplete)
 	}
 	if r.last != "" && in.SOPInstanceUID <= r.last {

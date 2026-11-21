@@ -140,6 +140,7 @@ func TestStartGivesOldSidecarsTheirTables(t *testing.T) {
 		texts := make([]string, len(ins))
 		for i, in := range ins {
 			in.Frames, in.FrameSHA256 = nil, nil
+			in = withoutV3(in)
 			b, err := json.Marshal(in)
 			if err != nil {
 				t.Fatal(err)
@@ -173,5 +174,23 @@ func TestStartGivesOldSidecarsTheirTables(t *testing.T) {
 	if len(got) != len(paths)+1 {
 		t.Errorf("%d frames events, want one for each of %d scans and the end", len(got), len(paths))
 	}
+	// The pass of tables is followed by the rewrite of the sidecars to the
+	// form that holds the catalog's values.
+	e.waitFor("the rewrite to the current version", 10*time.Millisecond, func() bool {
+		for _, path := range paths {
+			if v, _ := sidecarLines(t, e, path); v != sidecar.Version {
+				return false
+			}
+		}
+		return true
+	})
 	checkTables(t, e, paths, sentMap(t, framedFiles...))
+}
+
+// withoutV3 returns a line without the fields only the current version of
+// the sidecar has, as an older version wrote it.
+func withoutV3(in sidecar.Instance) sidecar.Instance {
+	in.Reception, in.HeldAt, in.ReceivedSHA256, in.ProfileSHA256 = "", time.Time{}, "", ""
+	in.ReceivedForm, in.ReceivedSyntax, in.CORIAVersion = "", "", ""
+	return in
 }

@@ -30,7 +30,7 @@ func TestProfileRoundTrips(t *testing.T) {
 	if strings.Count(text, `"profile"`) != 1 || !strings.Contains(text, `"transfer_syntax":"1.2.840.10008.1.2.1","profile":"research@3","pixel_data"`) {
 		t.Errorf("the field is not where the form puts it, or is written for a line without one:\n%s", text)
 	}
-	if VersionOf([]byte(text[:HeadLength])) != Version || Version != 2 {
+	if VersionOf([]byte(text[:HeadLength])) != VersionFrames || VersionFrames != 2 {
 		t.Errorf("the sidecar's version is %d", VersionOf([]byte(text[:HeadLength])))
 	}
 	got := readAll(t, b.Bytes())

@@ -72,6 +72,44 @@
 // merge, so it names where each indexed line is after a rewrite that made
 // lines longer.
 //
+// # Version 3
+//
+// Version 3 holds what a catalog made again from the storage alone needs and
+// only the tenant's database held before. Its first line states the scan:
+//
+//	{"version":3,"scan":{"study_uid":"1.2.3","series_uid":"1.2.3.4","session_receiver":"scanner-a","receiver":"scanner-b","route":{"name":"trial","profile":"research@3"},"values":{"study_date":"20240131","modality":"MR","series_description":"T1 axial","series_number":3},"created":"2026-11-20T08:30:00.123456Z","updated":"2026-11-20T11:30:00.123456Z"},"instances":[
+//
+// the study and series UIDs as the catalog holds them (a line's data set may
+// be omitted, so they cannot be read from one), the receiver whose reception
+// first archived into the session and the one that first archived into the
+// scan (each "" when the catalog holds none), the session's routing when it
+// chose anything, the values the catalog keeps from the files' headers (the
+// session's study date, the scan's modality, series description and series
+// number, each left out when the catalog holds none), and the times of the
+// first and the latest commit into the scan, in UTC to the microsecond. Every
+// value of the header is the catalog's after the commit that wrote it. Each
+// line then also has, after the fields of version 2 and in this order (each
+// but the first two left out when it has no value): "revision" (2 or more,
+// the number its key ends in, ".r2.dcm"; left out for revision 1),
+// "received_sha256" (the checksum of the file as received, only when it
+// differs from "sha256", which is the file as archived: a de-identified
+// instance's, the catalog's keyed one), "profile_sha256" (the checksum of the
+// profile version's expanded text, which names the version in whatever
+// database holds it), "reception" and "held_at" (always there: the
+// reception that confirmed the instance, and when), "received_form" ("dimse"
+// for a data set CORIA wrapped in its own Part 10 header, "part10" for a file
+// taken as sent), "received_syntax" (the Transfer Syntax UID it arrived in)
+// and "coria_version" (the build that wrote the line). A sidecar of
+// version 1 or 2 has none of these and none is accepted in it, so a line has
+// one meaning in each version.
+//
+// A merge into a sidecar of version 3 writes the header its caller made from
+// the catalog, never the old one's, which an attempt that did not commit may
+// have written; one into a sidecar of an older version stays that version, with the
+// lines it adds written without the fields it has no place for, until
+// Upgrade rewrites it from the catalog. Every sidecar the archive step makes
+// is of version 3.
+//
 // Because the form is fixed and sorted, a sidecar is written and merged as a
 // stream, one line at a time: memory follows the longest line, not the scan.
 //

@@ -388,8 +388,8 @@ func (a *archive) sidecarOf(path label.Path) ([]byte, int, []sidecar.Instance) {
 func (a *archive) wantTables(path label.Path, files ...file) {
 	a.t.Helper()
 	_, version, lines := a.sidecarOf(path)
-	if version != sidecar.Version || len(lines) != len(files) {
-		a.t.Fatalf("%s: version %d with %d lines, want %d and %d", path.Scan, version, len(lines), sidecar.Version, len(files))
+	if version != sidecar.VersionFrames || len(lines) != len(files) {
+		a.t.Fatalf("%s: version %d with %d lines, want %d and %d", path.Scan, version, len(lines), sidecar.VersionFrames, len(files))
 	}
 	for i, f := range files {
 		want := [][]sidecar.Range{}

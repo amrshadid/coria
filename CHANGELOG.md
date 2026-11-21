@@ -250,6 +250,23 @@ All notable changes to CORIA are written here. The form is
   import.max-dir-entries. Paths under an import root and inline maps are
   redacted from logs and never appear in events or audit entries. Each new
   method answers UNIMPLEMENTED.
+- Scan metadata sidecars are written in version 3. The first line carries a
+  scan header with the study and series UIDs, the receivers of the session
+  and the scan, the session's routing, the values the catalog keeps (study
+  date, modality, series description, series number) and the created and
+  updated times, every one the catalog's after the commit that wrote it,
+  never one an attempt that did not commit left on the storage. Each line
+  also has its reception, when it was held, the received checksum and
+  transfer syntax, how the file arrived, the profile version's checksum and
+  the build that wrote it. At start, a pass rewrites every version 2
+  sidecar as version 3 from the catalog, and leaves alone, counted and
+  logged, a scan where the two disagree.
+- A later revision of an instance is kept under a key of its own
+  (`<UID>.r<n>.dcm`); correction records (`meta/.corrections/<operation
+  id>.json`, the id a lowercase ULID, naming a delete's level and each
+  scan's labels, series UID and study UID) and the owner record
+  (`meta/.owner.json`) have a fixed, checked JSON form. Nothing writes them
+  yet.
 - `make prove-viewer`: OHIF Viewer and headless Chromium in containers open
   public studies (CT, MR, multi-frame, JPEG baseline, JPEG 2000, RLE)
   through DICOMweb with a reader key, and the harness reports blank

@@ -13,17 +13,33 @@ type Writer struct {
 	last  string
 	count int
 	err   error
-	// version is the version written: Version, or 1 for a merge into a
-	// sidecar of version 1 (Merge).
+	// version is the version written: Version with a scan header,
+	// VersionFrames, or 1 for a merge into a sidecar of version 1 (Merge).
 	version int
+	// scan is the header of a sidecar of version 3.
+	scan ScanHeader
 	// off counts the bytes written; idx holds the index entries so far.
 	off int64
 	idx []IndexEntry
 }
 
-// NewWriter returns a writer of a sidecar to w.
+// NewWriter returns a writer of a sidecar of version VersionFrames to w: the
+// form without the scan's header, for a caller that does not know the
+// catalog's values of the scan. A scan that is archived is written with
+// NewWriterV3.
 func NewWriter(w io.Writer) *Writer {
-	return &Writer{w: bufio.NewWriterSize(w, 64<<10), version: Version}
+	return &Writer{w: bufio.NewWriterSize(w, 64<<10), version: VersionFrames}
+}
+
+// NewWriterV3 returns a writer of a sidecar of version 3 to w, with the scan
+// header h. A header that is not valid is ErrFormat from the first Add, and
+// from Close.
+func NewWriterV3(w io.Writer, h ScanHeader) *Writer {
+	wr := &Writer{w: bufio.NewWriterSize(w, 64<<10), version: Version, scan: h}
+	if err := h.Validate(); err != nil {
+		wr.err = err
+	}
+	return wr
 }
 
 // Add writes one instance's line. Instances must come in increasing order of
@@ -44,7 +60,7 @@ func (w *Writer) Add(in Instance) error {
 	if frameRanges(in.Frames) > MaxFrameRanges {
 		in.Frames, in.FrameSHA256 = [][]Range{}, nil
 	}
-	if err := check(in); err != nil {
+	if err := check(in, w.version); err != nil {
 		return err
 	}
 	if in.NeedsFrames() {
@@ -63,10 +79,18 @@ func (w *Writer) Add(in Instance) error {
 // addLine writes an encoded line.
 func (w *Writer) addLine(sopUID string, line []byte) error {
 	if w.count == 0 {
-		if w.version == 1 {
+		switch w.version {
+		case 1:
 			w.write([]byte(headerV1))
-		} else {
+		case VersionFrames:
 			w.write([]byte(header))
+		default:
+			enc, err := json.Marshal(w.scan)
+			if err != nil {
+				w.err = fmt.Errorf("%w: the scan's header cannot be encoded", ErrFormat)
+				return w.err
+			}
+			w.write([]byte(headV3 + string(enc) + tailV3 + "\n"))
 		}
 	} else {
 		w.write([]byte(",\n"))

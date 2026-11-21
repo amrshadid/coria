@@ -66,6 +66,30 @@
 // modality costs nothing more, so a pass over a catalog filled in reads no
 // file for it.
 //
+// # The rewrite to version 3
+//
+// A second pass, Upgrade, runs after the first in the same goroutine. A
+// sidecar of version 2 has no header of its scan and no reception, time or
+// received checksum in its lines, which only the tenant's database holds;
+// Upgrade lists the scans in label order, reads the first bytes of each
+// sidecar, and for one of version 2 reads the scan, its session, its
+// session's routing and its held instances (in the order of the sidecar's
+// lines, a page at a time) from the catalog, under the scan's lock, and
+// rewrites the sidecar through sidecar.Upgrade as one Put of the whole
+// object. A line and its row must name the same key, size and archived
+// checksum, and the catalog and the sidecar the same instances: a scan where
+// they do not is left as it is, counted and logged, and the pass goes on
+// (a scrub reports it). A sidecar of version 1 waits for the pass of tables.
+// The header holds the catalog's values of the scan and its session (the
+// study date, modality, series description and series number) and its
+// receivers, each empty when the catalog holds none, so a scan whose
+// catalog row has no receiver is rewritten like any other, once.
+// Fields the database does not hold stay empty: how the file arrived and
+// the build that wrote it, and the syntax a de-identified file arrived in.
+// Its state is the sidecars themselves, as the first pass's is, so a pass
+// stopped midway goes on from the first scan not done, and one over scans all
+// done reads the first bytes of each and writes nothing.
+//
 // # What this package must never do
 //
 // It must never hold a whole instance file in memory, never give a frame a

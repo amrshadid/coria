@@ -60,6 +60,9 @@ type deid struct {
 	mu      sync.Mutex
 	keys    *engine.Keys
 	engines map[tenant.ProfileRef]*engine.Engine
+	// sums are the checksums of the expanded texts of the versions in
+	// engines, which name each version whatever database holds it.
+	sums map[tenant.ProfileRef]string
 	// pixelLimit is the pixel bound last read and when (pixelLimit).
 	pixelLimit liveLimit
 }
@@ -130,8 +133,22 @@ func (p *Pipeline) engineFor(ctx context.Context, ref tenant.ProfileRef) (*engin
 		p.deid.engines = map[tenant.ProfileRef]*engine.Engine{}
 	}
 	p.deid.engines[ref] = en
+	if p.deid.sums == nil {
+		p.deid.sums = map[tenant.ProfileRef]string{}
+	}
+	p.deid.sums[ref] = v.Checksum
 	p.deid.mu.Unlock()
 	return en, nil
+}
+
+// profileSum returns the checksum of a profile version's expanded text when
+// the version has run in this process, which it has for any file it
+// de-identified, and "" otherwise: a line then holds no checksum for it
+// rather than one read for the purpose.
+func (p *Pipeline) profileSum(ref tenant.ProfileRef) string {
+	p.deid.mu.Lock()
+	defer p.deid.mu.Unlock()
+	return p.deid.sums[ref]
 }
 
 // lookups reaches the tenant's lookup tables for the engine.

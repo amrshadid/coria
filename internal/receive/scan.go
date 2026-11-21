@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"time"
 
 	"github.com/amrshadid/coria/internal/blob"
 	"github.com/amrshadid/coria/internal/core/label"
@@ -65,7 +66,11 @@ type written struct {
 //  2. Hold the files the claims decided to hold, under the unit's fence. A
 //     record's id is made from the reception and the file, so a run again
 //     writes nothing new.
-//  3. Put each file to be written to its layout key, up to archiveParallel
+//  3. Under the scan's lock (below), read the catalog's scan and session at
+//     the path. When they are another series' scan or another study's
+//     session, every file to be written is held as a label conflict and
+//     nothing is put: the other scan's objects, sidecar and manifest stay
+//     as they are. Otherwise put each file to be written to its layout key, up to archiveParallel
 //     at once, every put ended before step 4 starts. A key already holding
 //     an object (a run again) is replaced whole by the port's rule, with the
 //     same bytes, so the object is what it was.
@@ -86,8 +91,10 @@ type written struct {
 //     from the catalog's list of the scan (ScanInstances: every instance
 //     confirmed, by any reception) with this reception's files added; the
 //     sidecar, which holds headers the catalog does not, from what the
-//     storage holds for the scan, every entry under a UID this reception
-//     claims, or that the manifest does not list, taken out.
+//     storage holds for a scan the catalog holds, every entry under a UID
+//     this reception claims, or that the manifest does not list, taken out,
+//     and with a scan header made from the catalog's scan and session as
+//     the commit leaves them.
 //  6. Commit the scan's catalog rows with the instances that read back equal
 //     (CommitScan, under the fence, at most MaxScanCommit per call).
 //
@@ -108,7 +115,11 @@ type written struct {
 // catalog then holds every instance, a manifest can miss one confirmed by
 // the other process meanwhile, the verify step finds it (scanListed), and
 // the scan's next manifest, made from the catalog, lists it.
-func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Reception, store blob.Store, path label.Path, g series, kept map[string]bool) (scanResult, error) {
+//
+// session is the study's session as the archive step read it before its
+// first scan, nil when the catalog had none.
+func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Reception, store blob.Store, path label.Path, g series, kept map[string]bool,
+	session *tenant.SessionLabels) (scanResult, error) {
 	var res scanResult
 	fence := w.Fence()
 	var toWrite []tenant.ReceivedFile
@@ -204,6 +215,19 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	unlock := p.lockScan(r.Storage, manifestKey)
 	defer unlock()
 
+	// What the catalog holds at the path, read under the lock so no
+	// reception of this process commits the scan meanwhile. Labels that are
+	// another study's session or another series' scan (a naming rule that
+	// gives two series one label) hold the files before any put, so the
+	// other scan's objects, sidecar and manifest are never touched.
+	cat, err := p.catalogAt(ctx, path, g.uid, session)
+	if err != nil {
+		return res, err
+	}
+	if details := cat.clash(r.StudyUID, g.uid); details != nil {
+		return res, p.holdWritten(ctx, w, r, puts, tenant.QuarantineLabelConflict, details)
+	}
+
 	// Each instance has a key of its own, so its put waits on no other's;
 	// one after another, a series of hundreds of slices took that many
 	// storage round trips in a row (two syncs each on a directory, a
@@ -268,9 +292,13 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	for _, mf := range merged.Files {
 		inManifest[mf.SOPInstanceUID] = true
 	}
+	// One reading of the clock for the sidecar's times and for every row the
+	// commits below make, so a line's held_at and the scan's created and
+	// updated times are the catalog's own.
+	at := p.now()
 	p.at("archive.before-sidecar")
 	var values tenant.ScanValues
-	if err := p.putSidecar(ctx, store, metadataKey, puts, func(u string) bool { return !inManifest[u] || ours[u] }, &values); err != nil {
+	if err := p.putSidecar(ctx, store, metadataKey, cat, g.uid, r, at, puts, func(u string) bool { return !inManifest[u] || ours[u] }, &values); err != nil {
 		return res, err
 	}
 	p.at("archive.before-manifest")
@@ -285,7 +313,7 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 		c := tenant.ScanCommit{
 			ReceptionID: r.ID, StudyUID: r.StudyUID, SeriesUID: g.uid,
 			SubjectLabel: path.Subject, SessionLabel: path.Session, ScanLabel: path.Scan,
-			Storage: r.Storage, ManifestSHA256: manifestSum, Values: values, At: p.now(), Fence: &fence,
+			Storage: r.Storage, ManifestSHA256: manifestSum, Values: values, At: at, Fence: &fence,
 		}
 		for _, wr := range part {
 			c.Instances = append(c.Instances, tenant.ConfirmedInstance{
@@ -316,10 +344,10 @@ func (p *Pipeline) archiveScan(ctx context.Context, w tenant.Work, r tenant.Rece
 	return res, nil
 }
 
-// holdWritten holds files whose commit the catalog refused. Their objects on
-// the storage stay, unlisted by the catalog; nothing is deleted from a
-// storage without a recorded reason, and the files keep their incoming
-// copies for a person to decide.
+// holdWritten holds files whose commit the catalog refused, or would refuse
+// for their labels. Objects already put on the storage stay, unlisted by
+// the catalog; nothing is deleted from a storage without a recorded reason,
+// and the files keep their incoming copies for a person to decide.
 func (p *Pipeline) holdWritten(ctx context.Context, w tenant.Work, r tenant.Reception, puts []written, reason tenant.QuarantineReason, details map[string]string) error {
 	records := make([]tenant.QuarantinedFile, len(puts))
 	for i, wr := range puts {
@@ -407,18 +435,34 @@ func (p *Pipeline) lockScan(storage, manifestKey string) func() {
 // it is made, each instance's header and frame table read from its
 // incoming copy only when its line is written. It sets values to what the
 // first of those headers says of the scan and its session (scanValues),
-// which the commit gives the catalog, so no header is read twice.
-func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string, puts []written, drop func(string) bool,
-	values *tenant.ScanValues) error {
-	var old io.ReadCloser
-	rc, err := store.Read(ctx, key, 0, -1)
-	switch {
-	case err == nil:
-		old = rc
-		defer func() { _ = rc.Close() }()
-	case fault.KindOf(err) != fault.NotFound:
-		return storageError(err, "the scan's metadata cannot be read")
+// which the commit gives the catalog, so no header is read twice; that
+// first line is made before the sidecar's header is written, which holds
+// the values the catalog will keep.
+//
+// The header and the lines kept come from what the catalog holds (c): for
+// a scan the catalog does not hold, a sidecar on the storage is one an
+// attempt that never committed wrote, and nothing of it is kept, since
+// every line it holds is one the manifest does not list.
+func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string, c scanCatalog, seriesUID string, r tenant.Reception,
+	at time.Time, puts []written, drop func(string) bool, values *tenant.ScanValues) error {
+	var old io.Reader
+	if c.hasScan {
+		rc, err := store.Read(ctx, key, 0, -1)
+		switch {
+		case err == nil:
+			old = rc
+			defer func() { _ = rc.Close() }()
+		case fault.KindOf(err) != fault.NotFound:
+			return storageError(err, "the scan's metadata cannot be read")
+		}
 	}
+	meta := p.sidecarMetaFor(ctx, r, c, seriesUID, at)
+	first, h, err := p.sidecarLine(ctx, meta, puts[0])
+	if err != nil {
+		return err
+	}
+	*values = scanValues(h)
+	meta.withValues(c, *values)
 	i := 0
 	added := func() (sidecar.Instance, bool, error) {
 		if i == len(puts) {
@@ -426,39 +470,19 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 		}
 		wr := puts[i]
 		i++
-		h, table, sums, err := p.readLine(ctx, wr)
+		if i == 1 {
+			return first, true, nil
+		}
+		in, _, err := p.sidecarLine(ctx, meta, wr)
 		if err != nil {
 			return sidecar.Instance{}, false, err
-		}
-		if i == 1 {
-			*values = scanValues(h)
-		}
-		in := sidecar.Instance{SOPInstanceUID: wr.f.SOPInstanceUID, Key: wr.key, Size: wr.size, SHA256: hex.EncodeToString(wr.sum[:]),
-			TransferSyntax: h.TransferSyntaxUID}
-		if !wr.profile.IsZero() {
-			in.Profile = wr.profile.String()
-		}
-		// A deflated data set's positions count inflated bytes (PS3.5 A.5),
-		// so the sidecar's check would refuse them as outside the file and
-		// the scan could never be made; such a file has no place for its
-		// pixels.
-		if h.HasPixelData && h.TransferSyntaxUID != header.TransferSyntaxDeflated {
-			in.PixelData = &sidecar.PixelData{Offset: h.PixelData.Offset, Length: h.PixelData.Length}
-			in.Frames, in.FrameSHA256 = table, sums
-		}
-		if js, err := h.DICOMJSON(); err == nil {
-			in.Dataset = js
 		}
 		return in, true, nil
 	}
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		var oldReader io.Reader
-		if old != nil {
-			oldReader = old
-		}
-		_, err := sidecar.Merge(pw, oldReader, added, drop)
+		_, err := sidecar.MergeScan(pw, old, meta.scan, added, drop)
 		_ = pw.CloseWithError(err)
 		done <- err
 	}()
@@ -475,6 +499,28 @@ func (p *Pipeline) putSidecar(ctx context.Context, store blob.Store, key string,
 		return storageError(perr, "the scan's metadata cannot be written")
 	}
 	return nil
+}
+
+// sidecarLine returns the sidecar line of the written file wr, read from
+// the bytes it put, and the header read.
+func (p *Pipeline) sidecarLine(ctx context.Context, meta sidecarMeta, wr written) (sidecar.Instance, *header.Header, error) {
+	h, table, sums, err := p.readLine(ctx, wr)
+	if err != nil {
+		return sidecar.Instance{}, nil, err
+	}
+	in := p.lineOf(meta, wr)
+	in.TransferSyntax = h.TransferSyntaxUID
+	// A deflated data set's positions count inflated bytes (PS3.5 A.5), so
+	// the sidecar's check would refuse them as outside the file and the scan
+	// could never be made; such a file has no place for its pixels.
+	if h.HasPixelData && h.TransferSyntaxUID != header.TransferSyntaxDeflated {
+		in.PixelData = &sidecar.PixelData{Offset: h.PixelData.Offset, Length: h.PixelData.Length}
+		in.Frames, in.FrameSHA256 = table, sums
+	}
+	if js, err := h.DICOMJSON(); err == nil {
+		in.Dataset = js
+	}
+	return in, h, nil
 }
 
 // readLine reads what a file's sidecar line holds from the bytes it put

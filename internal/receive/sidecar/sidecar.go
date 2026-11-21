@@ -6,16 +6,25 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/amrshadid/coria/internal/core/layout"
 	"github.com/amrshadid/coria/internal/core/uid"
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
-// Version is the format version this package writes. It reads it and
-// version 1, the form before frame tables, whose lines need not have one
+// Version is the format version this package writes for a scan it knows the
+// catalog's values of: it adds a header of the scan and, to each line, what
+// a catalog made again from the storage needs. It reads it, VersionFrames
+// and version 1, the form before frame tables, whose lines need not have one
 // (see the package documentation).
-const Version = 2
+const Version = 3
+
+// VersionFrames is the form that has frame tables and neither the scan's
+// header nor the catalog's values in its lines. A merge into a sidecar of
+// this version, or a sidecar written without a header, stays in it until the
+// rewrite (Upgrade) that gives it the rest.
+const VersionFrames = 2
 
 // MaxDataset is the longest data set text an instance's line holds; a longer
 // one is omitted (see the package documentation).
@@ -38,12 +47,16 @@ const maxSumText = 64 + 3
 // maxLine is the longest line the reader takes: the longest data set, the
 // longest frame table with a checksum for each of its frames (a frame has
 // at least one range), and the fixed fields around them.
-const maxLine = MaxDataset + MaxFrameRanges*(maxRangeText+maxSumText) + 1024 + layout.MaxKeyLength + 2*uid.MaxLength
+const maxLine = MaxDataset + MaxFrameRanges*(maxRangeText+maxSumText) + 4096 + layout.MaxKeyLength + 2*uid.MaxLength
 
 const (
 	headerV1 = `{"version":1,"instances":[` + "\n"
 	header   = `{"version":2,"instances":[` + "\n"
 	footer   = "]}\n"
+	// headV3 and tailV3 enclose the scan's header in version 3's first
+	// line: headV3 + the header's JSON + tailV3.
+	headV3 = `{"version":3,"scan":`
+	tailV3 = `,"instances":[`
 )
 
 // HeadLength is how many first bytes of a sidecar say its version
@@ -55,11 +68,13 @@ const HeadLength = len(header)
 // package reads. A reader that needs only to know whether a scan's frame
 // tables are all there reads these bytes, not the sidecar.
 func VersionOf(head []byte) int {
-	switch string(head) {
-	case header:
-		return Version
-	case headerV1:
+	switch {
+	case string(head) == header:
+		return VersionFrames
+	case string(head) == headerV1:
 		return 1
+	case len(head) == HeadLength && strings.HasPrefix(string(head), headV3+"{"):
+		return Version
 	}
 	return 0
 }
@@ -129,12 +144,20 @@ func (r *Range) UnmarshalJSON(b []byte) error {
 type Instance struct {
 	// SOPInstanceUID names the instance.
 	SOPInstanceUID string `json:"sop_instance_uid"`
-	// Key is the instance's key on the storage.
+	// Key is the instance's key on the storage: its whole key, ending in
+	// ".r<n>.dcm" for revision n from 2 (layout.RevisionKey).
 	Key string `json:"key"`
+	// Revision is the revision the key holds, 2 or more; left out (0) for
+	// revision 1, so a line names a revision one way only. Version 3 only.
+	Revision int `json:"revision,omitempty"`
 	// Size is the instance file's size in bytes.
 	Size int64 `json:"size"`
-	// SHA256 is the file's checksum in lowercase hex.
+	// SHA256 is the checksum of the file as archived, in lowercase hex.
 	SHA256 string `json:"sha256"`
+	// ReceivedSHA256 is the checksum of the file as received, written only
+	// when it differs from SHA256 (a de-identified instance, whose received
+	// checksum is the catalog's keyed one). Version 3 only.
+	ReceivedSHA256 string `json:"received_sha256,omitempty"`
 	// TransferSyntax is the Transfer Syntax UID of the instance's file,
 	// empty in a line written before the field existed.
 	TransferSyntax string `json:"transfer_syntax,omitempty"`
@@ -143,6 +166,26 @@ type Instance struct {
 	// archived as received, and in a line written before the field
 	// existed.
 	Profile string `json:"profile,omitempty"`
+	// ProfileSHA256 is the checksum of that profile version's expanded
+	// text, which names the version whatever database holds it. Version 3
+	// only, and only with Profile; empty when the writer did not know it.
+	ProfileSHA256 string `json:"profile_sha256,omitempty"`
+	// Reception is the id of the reception that confirmed the instance.
+	// Version 3 only, and always there in it.
+	Reception string `json:"reception,omitempty"`
+	// HeldAt is when that reception confirmed it, in UTC. Version 3 only,
+	// and always there in it.
+	HeldAt time.Time `json:"held_at,omitzero"`
+	// ReceivedForm is how the file arrived: FormDIMSE or FormPart10; empty
+	// when unknown. Version 3 only.
+	ReceivedForm string `json:"received_form,omitempty"`
+	// ReceivedSyntax is the Transfer Syntax UID the file arrived in, which
+	// differs from TransferSyntax when de-identification changed it; empty
+	// when unknown. Version 3 only.
+	ReceivedSyntax string `json:"received_syntax,omitempty"`
+	// CORIAVersion is the version of the build that wrote the line; empty
+	// when unknown. Version 3 only.
+	CORIAVersion string `json:"coria_version,omitempty"`
 	// PixelData is where its pixel data is, nil when it has none or when the
 	// file's data set is deflated, where no offset in the file names it.
 	PixelData *PixelData `json:"pixel_data"`
@@ -284,8 +327,64 @@ func validProfile(s string) bool {
 	return ref.Validate() == nil && ref.String() == s
 }
 
-// check returns nil if in may be written.
-func check(in Instance) error {
+// hasV3 reports whether the line holds a field only version 3 has.
+func (in Instance) hasV3() bool {
+	return in.Revision != 0 || in.ReceivedSHA256 != "" || in.ProfileSHA256 != "" || in.Reception != "" || !in.HeldAt.IsZero() ||
+		in.ReceivedForm != "" || in.ReceivedSyntax != "" || in.CORIAVersion != ""
+}
+
+// withoutV3 returns the line without the fields only version 3 has, for a
+// sidecar of an older version, which has no place for them. The revision is
+// not touched: a line that holds one cannot be written to an older form.
+func (in Instance) withoutV3() Instance {
+	in.ReceivedSHA256, in.ProfileSHA256, in.Reception, in.HeldAt = "", "", "", time.Time{}
+	in.ReceivedForm, in.ReceivedSyntax, in.CORIAVersion = "", "", ""
+	return in
+}
+
+// checkV3 checks the fields only version 3 has, where they are present:
+// version is the sidecar's, 0 for a reader that does not know it.
+func checkV3(in Instance, version int) error {
+	if version > 0 && version < Version {
+		if in.hasV3() {
+			return fmt.Errorf("%w: a field of a later version", ErrFormat)
+		}
+		return nil
+	}
+	if version == Version {
+		if in.Reception == "" || in.HeldAt.IsZero() {
+			return fmt.Errorf("%w: a line of version %d has its reception and held_at", ErrFormat, Version)
+		}
+	}
+	if in.Reception != "" && !validReception(in.Reception) {
+		return fmt.Errorf("%w: reception is not an id", ErrFormat)
+	}
+	if !in.HeldAt.IsZero() && !utcTime(in.HeldAt) {
+		return fmt.Errorf("%w: held_at is a time in UTC", ErrFormat)
+	}
+	if in.ReceivedSHA256 != "" && (!lowerHex(in.ReceivedSHA256, 64) || in.ReceivedSHA256 == in.SHA256) {
+		return fmt.Errorf("%w: received_sha256 is 64 lowercase hex digits and differs from sha256", ErrFormat)
+	}
+	if in.ProfileSHA256 != "" && (in.Profile == "" || !lowerHex(in.ProfileSHA256, 64)) {
+		return fmt.Errorf("%w: profile_sha256 is 64 lowercase hex digits and goes with a profile", ErrFormat)
+	}
+	if in.ReceivedForm != "" && in.ReceivedForm != FormDIMSE && in.ReceivedForm != FormPart10 {
+		return fmt.Errorf("%w: received_form is %s or %s", ErrFormat, FormDIMSE, FormPart10)
+	}
+	if in.ReceivedSyntax != "" {
+		if err := uid.Check(in.ReceivedSyntax); err != nil {
+			return fmt.Errorf("%w: received_syntax: %w", ErrFormat, err)
+		}
+	}
+	if in.CORIAVersion != "" && !validVersionText(in.CORIAVersion) {
+		return fmt.Errorf("%w: coria_version", ErrFormat)
+	}
+	return nil
+}
+
+// check returns nil if in may be written to a sidecar of version, or read
+// from one (0 for a reader that began at a line and does not know it).
+func check(in Instance, version int) error {
 	if err := uid.Check(in.SOPInstanceUID); err != nil {
 		return fmt.Errorf("%w: sop_instance_uid: %w", ErrFormat, err)
 	}
@@ -293,8 +392,14 @@ func check(in Instance) error {
 	if err != nil || k.Kind != layout.Instance || k.SOPInstanceUID != in.SOPInstanceUID {
 		return fmt.Errorf("%w: key is not the instance's key of the layout", ErrFormat)
 	}
+	if in.Revision < 0 || in.Revision == 1 || k.Rev() != max(in.Revision, 1) {
+		return fmt.Errorf("%w: revision is left out for 1 and is the key's otherwise", ErrFormat)
+	}
 	if in.Size < 0 || len(in.SHA256) != 64 {
 		return fmt.Errorf("%w: size or sha256", ErrFormat)
+	}
+	if err := checkV3(in, version); err != nil {
+		return err
 	}
 	if in.TransferSyntax != "" {
 		if err := uid.Check(in.TransferSyntax); err != nil {

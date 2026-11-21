@@ -9,6 +9,14 @@
 //	meta/<subject>/<session>/<scan>/manifest.json            every file of the scan
 //	meta/<subject>/<session>/<scan>/metadata.json            every instance's header
 //
+// An instance replaced by corrected bytes keeps its first revision's key and
+// takes a new key for each later revision, <SOP Instance UID>.r<n>.dcm from
+// n = 2: a key is written once, so a reader that opened the old key finishes
+// on the old bytes. Two records live under meta/ outside the scans' trees,
+// where no label can lead (a label never starts with a dot):
+// meta/.corrections/<operation id>.json, one per correction, and
+// meta/.owner.json, the installation that may write the tenant's objects.
+//
 // The two trees are apart so every manifest of a storage can be found by
 // listing meta/ alone, without paging past the instance files, which
 // outnumber manifests by the number of instances in a scan; and a person

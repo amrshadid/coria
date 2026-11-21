@@ -28,7 +28,9 @@ var errClaimedElsewhere = fault.New(fault.Unavailable, "another reception in fli
 //     the receiver's rule over the same file identify read (the series'
 //     files are held with the label reason when it cannot be made: identify
 //     held them already, and the record's id makes the second hold
-//     nothing); then the scan is archived (archiveScan).
+//     nothing); then the scan is archived (archiveScan), which holds the
+//     series' files as a label conflict, before any put, when the label
+//     is another series' scan in the catalog.
 //     A session the catalog holds on another storage than the
 //     reception's (another reception of the study made it meanwhile)
 //     holds every file as unrouted, session_elsewhere, before any put.
@@ -107,7 +109,7 @@ func (p *Pipeline) archive(ctx context.Context, w tenant.Work) error {
 			}
 			scan = path.Scan
 		}
-		res, err := p.archiveScan(ctx, w, r, store, label.Path{Subject: r.SubjectLabel, Session: r.SessionLabel, Scan: scan}, g, kept)
+		res, err := p.archiveScan(ctx, w, r, store, label.Path{Subject: r.SubjectLabel, Session: r.SessionLabel, Scan: scan}, g, kept, catalog.Session)
 		if err != nil {
 			return err
 		}

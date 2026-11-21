@@ -58,7 +58,7 @@ func (r *runner) scan(ctx context.Context, storage string, path label.Path) erro
 		return nil
 	}
 	switch sidecar.VersionOf(head) {
-	case sidecar.Version:
+	case sidecar.VersionFrames, sidecar.Version:
 		return nil
 	case 1:
 	default:

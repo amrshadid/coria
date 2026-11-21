@@ -26,24 +26,28 @@ const framePassRetry = time.Minute
 // one pass that ends leaves none to do. A pass that stops on a
 // failure is run again after framePassRetry, and the next start runs one
 // again, which finds the scans done by reading one small range of each.
+// When it has ended the sidecars of the form before the scan's header and
+// the catalog's values are rewritten from the catalog (upgradePass), in the
+// same goroutine, so a sidecar has its tables before it is rewritten.
 // It runs while the workers run and ends with them.
 func (p *Pipeline) framePass() {
 	defer p.wg.Done()
 	ctx := p.workCtx
+	p.frameTables(ctx)
+	if ctx.Err() == nil {
+		p.upgradePass(ctx)
+	}
+}
+
+// frameTables runs the pass of frame tables until it ends without a failure
+// or the pipeline stops.
+func (p *Pipeline) frameTables(ctx context.Context) {
 	cfg := frames.Config{
 		Catalog: p.store,
 		OpenStorage: func(ctx context.Context, name string) (blob.Store, error) {
 			return p.cfg.OpenStorage(ctx, name)
 		},
-		Lock: func(storage string, path label.Path) func() {
-			key, err := layout.ManifestKey(path)
-			if err != nil {
-				// A scan the catalog lists has labels that make keys; the
-				// lock is then still a lock of its own, by the labels.
-				key = path.Subject + "/" + path.Session + "/" + path.Scan
-			}
-			return p.lockScan(storage, key)
-		},
+		Lock:        p.passLock,
 		HeaderLimit: p.headerLimit,
 		Busy:        p.busy,
 		Wake:        p.cfg.Wake,
@@ -69,6 +73,62 @@ func (p *Pipeline) framePass() {
 			return
 		}
 		p.log.Warn("the pass of frame tables stopped; it passes again later", "reason", fault.Message(err))
+		select {
+		case <-ctx.Done():
+			return
+		case <-p.cfg.Clock.After(framePassRetry):
+		}
+	}
+}
+
+// passLock takes the lock the archive step holds while it writes the scan's
+// metadata and manifest on a storage, and returns its release.
+func (p *Pipeline) passLock(storage string, path label.Path) func() {
+	key, err := layout.ManifestKey(path)
+	if err != nil {
+		// A scan the catalog lists has labels that make keys; the lock is
+		// then still a lock of its own, by the labels.
+		key = path.Subject + "/" + path.Session + "/" + path.Scan
+	}
+	return p.lockScan(storage, key)
+}
+
+// upgradePass rewrites the sidecars of the form before the scan's header and
+// the catalog's values (version 2) as version 3 from the catalog's rows
+// (frames.Upgrade), once a start: the archive step writes version 3 for every
+// scan it makes after it starts, and for one it merges into a version 3
+// sidecar, so a pass that ends leaves none to do. A scan whose sidecar the
+// catalog does not agree with is left as it is and reported in the log. A
+// pass that stops on a failure is run again after framePassRetry, from the
+// first scan, which finds the scans done by reading the first bytes of
+// each, and the next start runs one again.
+func (p *Pipeline) upgradePass(ctx context.Context) {
+	cfg := frames.UpgradeConfig{
+		Catalog: p.store,
+		OpenStorage: func(ctx context.Context, name string) (blob.Store, error) {
+			return p.cfg.OpenStorage(ctx, name)
+		},
+		Lock:   p.passLock,
+		Busy:   p.busy,
+		Clock:  p.cfg.Clock,
+		Logger: p.log,
+	}
+	for ctx.Err() == nil {
+		rep, err := frames.Upgrade(ctx, cfg)
+		if rep.ScansDone > 0 {
+			p.log.Info("scans archived before the catalog's values were kept in their metadata were rewritten with them",
+				"scans", rep.ScansDone, "instances", rep.InstancesDone, "checked", rep.ScansChecked)
+		}
+		if rep.ScansLeft > 0 || rep.ScansWaiting > 0 {
+			p.log.Warn("some scans' metadata was left as it is", "disagreeing", rep.ScansLeft, "waiting for frame tables", rep.ScansWaiting)
+		}
+		if err == nil {
+			return
+		}
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+			return
+		}
+		p.log.Warn("the rewrite of older metadata stopped; it passes again later", "reason", fault.Message(err))
 		select {
 		case <-ctx.Done():
 			return

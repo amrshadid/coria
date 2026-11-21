@@ -180,3 +180,109 @@ func FuzzParse(f *testing.F) {
 		}
 	})
 }
+
+// TestRevisionKey guards the revision key form: revision 1 keeps the plain
+// key, later revisions add ".r<n>" before the extension, and Parse reads
+// each back to its revision.
+func TestRevisionKey(t *testing.T) {
+	for _, c := range []struct {
+		n    int
+		want string
+		rev  int
+	}{
+		{1, "data/SUB-001/20240131-1.2.3/3-1.2.4/1.2.5.6.dcm", 0},
+		{2, "data/SUB-001/20240131-1.2.3/3-1.2.4/1.2.5.6.r2.dcm", 2},
+		{37, "data/SUB-001/20240131-1.2.3/3-1.2.4/1.2.5.6.r37.dcm", 37},
+		{MaxRevision, "data/SUB-001/20240131-1.2.3/3-1.2.4/1.2.5.6.r1000000.dcm", MaxRevision},
+	} {
+		got, err := RevisionKey(scan, "1.2.5.6", c.n)
+		if err != nil || got != c.want {
+			t.Fatalf("revision %d: got %q %v, want %q", c.n, got, err, c.want)
+		}
+		k, err := Parse(got)
+		if err != nil || k != (Key{Kind: Instance, Path: scan, SOPInstanceUID: "1.2.5.6", Revision: c.rev}) || k.Rev() != max(c.n, 1) {
+			t.Fatalf("%q: parsed as %+v, %v", got, k, err)
+		}
+	}
+	for _, n := range []int{0, -1, MaxRevision + 1} {
+		if s, err := RevisionKey(scan, "1.2.5.6", n); err == nil || !errors.Is(err, ErrKey) {
+			t.Errorf("revision %d: built %q, %v", n, s, err)
+		}
+	}
+	if s, err := (Key{Kind: Manifest, Path: scan, Revision: 2}).String(); err == nil {
+		t.Errorf("a manifest key with a revision was built: %q", s)
+	}
+}
+
+// TestParseRefusesBadRevisions guards that only the form String writes is
+// taken: no ".r1", no leading zero, no sign, no text, no revision past the
+// bound, and a UID that is not valid before the mark.
+func TestParseRefusesBadRevisions(t *testing.T) {
+	const dir = "data/SUB-001/20240131-1.2.3/3-1.2.4/"
+	for _, name := range []string{
+		"1.2.5.6.r1.dcm", "1.2.5.6.r0.dcm", "1.2.5.6.r02.dcm", "1.2.5.6.r+2.dcm", "1.2.5.6.r-2.dcm",
+		"1.2.5.6.r.dcm", "1.2.5.6.rx.dcm", "1.2.5.6.r2x.dcm", "1.2.5.6.r1000001.dcm", "1.2.5.6.r99999999.dcm",
+		"1.2.5.6.r2.r3.dcm", ".r2.dcm", "1.2.5.6r2.dcm", "1.2.5.6." + strings.ToUpper("r2") + ".dcm", "1.2.5.6.r2.dcm.dcm",
+	} {
+		if k, err := Parse(dir + name); err == nil || !errors.Is(err, ErrKey) {
+			t.Errorf("%q parsed as %+v, %v", name, k, err)
+		}
+	}
+	if k, err := Parse("meta/SUB-001/20240131-1.2.3/3-1.2.4/manifest.r2.json"); err == nil {
+		t.Errorf("a manifest revision parsed as %+v", k)
+	}
+}
+
+// TestRevisionKeyLongest guards MaxKeyLength: the longest revision key of
+// the longest parts still parses.
+func TestRevisionKeyLongest(t *testing.T) {
+	long := label.Path{Subject: strings.Repeat("a", label.MaxLength), Session: strings.Repeat("b", label.MaxLength), Scan: strings.Repeat("c", label.MaxLength)}
+	u := "1" + strings.Repeat(".2", 31)
+	got, err := RevisionKey(long, u, MaxRevision)
+	if err != nil || len(got) > MaxKeyLength {
+		t.Fatalf("%d bytes past %d, %v", len(got), MaxKeyLength, err)
+	}
+	if _, err := Parse(got); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCorrectionKey guards the correction record's key and operation id, a
+// lowercase ULID: built and parsed back, and refused for any other length,
+// a letter Crockford's base 32 leaves out, a capital, a first character
+// past "7", and anything a key segment must not hold.
+func TestCorrectionKey(t *testing.T) {
+	const op = "01jd5x7k2m3n4p5q6r7s8t9v0w"
+	got, err := CorrectionKey(op)
+	if err != nil || got != "meta/.corrections/"+op+".json" {
+		t.Fatalf("%q %v", got, err)
+	}
+	if id, err := ParseCorrectionKey(got); err != nil || id != op {
+		t.Fatalf("%q %v", id, err)
+	}
+	for _, id := range []string{"", op[:25], op + "0", strings.ToUpper(op), "01jd5x7k2m3n4p5q6r7s8t9v0i", "01jd5x7k2m3n4p5q6r7s8t9v0l",
+		"01jd5x7k2m3n4p5q6r7s8t9v0o", "01jd5x7k2m3n4p5q6r7s8t9v0u", "81jd5x7k2m3n4p5q6r7s8t9v0w", "01jd5x7k2m3n4p5q6r7s8t9v-w",
+		"01jd5x7k2m3n4p5q6r7s8t9v/w", "01jd5x7k2m3n4p5q6r7s8t9v.w", "01jd5x7k2m3n4p5q6r7s8t9v\x00w", "op-7f3a-0001"} {
+		if s, err := CorrectionKey(id); err == nil || !errors.Is(err, ErrKey) {
+			t.Errorf("%.30q: built %q, %v", id, s, err)
+		}
+	}
+	for _, id := range []string{"00000000000000000000000000", "7zzzzzzzzzzzzzzzzzzzzzzzzz"} {
+		if _, err := CorrectionKey(id); err != nil {
+			t.Errorf("%s: %v", id, err)
+		}
+	}
+	for _, s := range []string{"", "meta/.corrections/.json", "meta/.corrections/" + op + ".JSON", "meta/.corrections/a/" + op + ".json",
+		"meta/.corrections/" + op + ".json.json", "meta/corrections/" + op + ".json", "meta/.owner.json", "data/.corrections/" + op + ".json",
+		"meta/.corrections/" + strings.ToUpper(op) + ".json"} {
+		if id, err := ParseCorrectionKey(s); err == nil {
+			t.Errorf("%q parsed as %q", s, id)
+		}
+	}
+	// Neither record's key is a scan's key.
+	for _, s := range []string{OwnerKey, got} {
+		if k, err := Parse(s); err == nil {
+			t.Errorf("%q parsed as a scan file: %+v", s, k)
+		}
+	}
+}

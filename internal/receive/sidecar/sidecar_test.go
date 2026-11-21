@@ -135,7 +135,7 @@ func TestReaderRefusesOtherForms(t *testing.T) {
 	_ = w.Close()
 	for name, b := range map[string]string{
 		"cut":     good.String()[:good.Len()-4],
-		"version": strings.Replace(good.String(), `"version":2`, `"version":3`, 1),
+		"version": strings.Replace(good.String(), `"version":2`, `"version":4`, 1),
 		"field":   strings.Replace(good.String(), `"size":`, `"other":1,"size":`, 1),
 		"after":   good.String() + "x",
 	} {

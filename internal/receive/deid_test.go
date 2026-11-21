@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	"github.com/amrshadid/coria/internal/core/naming"
 	"github.com/amrshadid/coria/internal/deid/check"
 	"github.com/amrshadid/coria/internal/receive/header"
+	"github.com/amrshadid/coria/internal/receive/sidecar"
 	"github.com/amrshadid/coria/internal/tenant"
 )
 
@@ -166,7 +169,9 @@ func TestDeidentifyingReceiverArchivesNoOriginal(t *testing.T) {
 // TestDeidentificationIsDeterministic guards that a de-identifying
 // receiver writes the same bytes for the same file under the same keys
 // and profile version: two tenants' data directories, the same study sent
-// to each, give byte-identical objects under the same keys.
+// to each, give byte-identical objects under the same keys. A sidecar names
+// the reception that archived each line, an id made at random for each
+// tenant, so sidecars are compared with those ids left out.
 func TestDeidentificationIsDeterministic(t *testing.T) {
 	a := newEnv(t, envOptions{deid: &deidOptions{}})
 	b := newEnv(t, envOptions{deid: &deidOptions{}})
@@ -178,10 +183,42 @@ func TestDeidentificationIsDeterministic(t *testing.T) {
 		t.Fatalf("%d and %d objects", len(oa), len(ob))
 	}
 	for k, v := range oa {
+		if strings.HasPrefix(k, "sidecar:") {
+			v, ob[k] = withoutReceptions(t, v), withoutReceptions(t, ob[k])
+		}
 		if !bytes.Equal(v, ob[k]) {
 			t.Errorf("%s differs between two runs", k)
 		}
 	}
+}
+
+// withoutReceptions returns a sidecar written again with the reception id
+// of each line left out.
+func withoutReceptions(t *testing.T, b []byte) []byte {
+	t.Helper()
+	rd := sidecar.NewReader(bytes.NewReader(b))
+	var out bytes.Buffer
+	var w *sidecar.Writer
+	for {
+		in, _, err := rd.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if w == nil {
+			w = sidecar.NewWriterV3(&out, *rd.Scan())
+		}
+		in.Reception = "r"
+		if err := w.Add(in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return out.Bytes()
 }
 
 // TestDeidentificationHoldsWhatItCannotProcess guards that a file the
