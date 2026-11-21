@@ -127,6 +127,13 @@ All notable changes to CORIA are written here. The form is
 
 ### Fixed
 
+- A series that the naming rule gives a scan label (or a session label)
+  already held by another series (or study) has its files held as a label
+  conflict (`held_by_another_scan`, `held_by_another_session`) before
+  anything is written; the other scan's files, sidecar and manifest are
+  left untouched. Before, the reception failed after its retries, or, into
+  an older sidecar, the other scan's sidecar and manifest lost its
+  instances.
 - A patient whose name is a word of the record of the de-identification
   (the software's name "Coria", or "Basic", "Profile" from a code meaning)
   is no longer held as residual_value: the check after skips De-identification
