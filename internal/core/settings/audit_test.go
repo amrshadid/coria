@@ -26,12 +26,12 @@ func TestParseSealInterval(t *testing.T) {
 }
 
 // TestParseAuditRetention guards audit.retention: "0" keeps everything and
-// reads as 0; otherwise 1d to 36500d both included; nothing else, not "0d"
-// nor an empty value.
+// reads as 0; otherwise 90d to 36500d both included, so a short period
+// cannot erase the recent record; nothing else, not "0d" nor an empty value.
 func TestParseAuditRetention(t *testing.T) {
 	for v, want := range map[string]time.Duration{
-		"0": 0, "1d": 24 * time.Hour, "24h": 24 * time.Hour, "3650d": 3650 * 24 * time.Hour, "36500d": 36500 * 24 * time.Hour,
-		"0d": -1, "": -1, "23h": -1, "36501d": -1, "00": -1, "forever": -1, "-1d": -1,
+		"0": 0, "90d": 90 * 24 * time.Hour, "2160h": 90 * 24 * time.Hour, "3650d": 3650 * 24 * time.Hour, "36500d": 36500 * 24 * time.Hour,
+		"0d": -1, "": -1, "1d": -1, "24h": -1, "89d": -1, "2159h": -1, "36501d": -1, "00": -1, "forever": -1, "-1d": -1,
 	} {
 		got, err := ParseAuditRetention(v)
 		if want < 0 {

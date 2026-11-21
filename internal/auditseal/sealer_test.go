@@ -192,11 +192,14 @@ func (c cancelOnList) List(ctx context.Context) ([]TenantLog, error) {
 	return c.Tenants.List(ctx)
 }
 
+// day is a day, for retention's periods.
+const day = 24 * time.Hour
+
 // TestRetentionPrunesWholeCheckpoints guards retention in a pass: the
-// checkpoints made before now minus audit.retention lose their entries and
-// stay, marked pruned; the log still verifies across them; the pruning's
-// own entry is the server's and is sealed by the next pass; and a
-// retention of 0 prunes nothing.
+// checkpoints made before audit.retention ago lose their entries and stay,
+// marked pruned; the pruning's own entry is the server's and is sealed in
+// the same pass, so the log verifies across the pruned checkpoint at once;
+// and a retention of 0 prunes nothing.
 func TestRetentionPrunesWholeCheckpoints(t *testing.T) {
 	for _, b := range backends(t) {
 		t.Run(b.name, func(t *testing.T) {
@@ -216,18 +219,22 @@ func TestRetentionPrunesWholeCheckpoints(t *testing.T) {
 			if n := len(seqsOf(t, b.master)); n != 12 {
 				t.Fatalf("%d sealed entries with retention 0, want 12", n)
 			}
-			kept := b.sealer(t, signerOf(t, keys, 1), c, 24*time.Hour)
+			// Ninety days and six hours on, with a new entry: the cutoff is six
+			// hours after the first checkpoint, before the second.
+			c.set(t0.Add(90*day + 6*time.Hour))
+			write(t, b.master, 1, 3*time.Hour)
+			kept := b.sealer(t, signerOf(t, keys, 1), c, 90*day)
 			kept.Pass(ctx)
 			cps, err := b.master.AuditCheckpoints(ctx, 1, 10)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(cps) != 3 || !cps[0].Pruned || cps[1].Pruned || cps[2].Pruned {
-				t.Fatalf("checkpoints after pruning: %+v; want 3, the first alone pruned", cps)
+			if len(cps) != 5 || !cps[0].Pruned || cps[1].Pruned || cps[2].Pruned || cps[3].Pruned || cps[4].Pruned {
+				t.Fatalf("checkpoints after pruning: %+v; want 5 (the new entry's, the pruning's), the first alone pruned", cps)
 			}
 			seqs := seqsOf(t, b.master)
-			if len(seqs) != 7 {
-				t.Errorf("%d sealed entries after pruning, want 7", len(seqs))
+			if len(seqs) != 9 {
+				t.Errorf("%d sealed entries after pruning, want 9", len(seqs))
 			}
 			all, _, err := b.master.ListAudit(ctx, master.AuditFilter{}, master.Page{Limit: 100})
 			if err != nil {
@@ -239,20 +246,49 @@ func TestRetentionPrunesWholeCheckpoints(t *testing.T) {
 					prune = &all[i]
 				}
 			}
-			if prune == nil || prune.LocalUser != ServerUser || prune.Details[master.DetailPrunedEntries] != "5" {
-				t.Fatalf("the pruning's entry is %+v, want the server's, with 5 entries", prune)
+			if prune == nil || prune.LocalUser != ServerUser || prune.Details[master.DetailPrunedEntries] != "5" ||
+				prune.Details[master.DetailPrunedFromSeq] != "1" || prune.Details[master.DetailPrunedToSeq] != "5" {
+				t.Fatalf("the pruning's entry is %+v, want the server's, with 5 entries, seq 1 to 5", prune)
 			}
-			if _, sealed := seqs[prune.ID]; sealed {
-				t.Error("the pruning's entry was sealed before the next pass")
+			if _, sealed := seqs[prune.ID]; !sealed {
+				t.Error("the pruning's entry was not sealed in the pass that pruned")
 			}
-			kept.Pass(ctx)
-			if _, sealed := seqsOf(t, b.master)[prune.ID]; !sealed {
-				t.Error("the next pass did not seal the pruning's entry")
-			}
-			if r := b.verify(t, master.MasterAuditLog, pub); r.CheckpointsChecked != 4 {
-				t.Errorf("%d checkpoints checked across the pruned one, want 4", r.CheckpointsChecked)
+			if r := b.verifyAt(t, master.MasterAuditLog, pub, c.now()); r.CheckpointsChecked != 5 {
+				t.Errorf("%d checkpoints checked across the pruned one, want 5", r.CheckpointsChecked)
 			}
 		})
+	}
+}
+
+// TestPruneCutoff guards the cutoff of retention against a clock: a clock
+// stepped forward with no new checkpoint prunes nothing, since the cutoff
+// is counted back from the earlier of now and the log's latest
+// checkpoint's signed time; and a period below the floor of audit.retention
+// is raised to it, so a checkpoint younger than ninety days is never
+// pruned.
+func TestPruneCutoff(t *testing.T) {
+	b := sqliteBackend(t)
+	ctx := context.Background()
+	keys := keyFile(t, 1)
+	c := &clock{t: t0}
+	write(t, b.master, 3, 0)
+	b.sealer(t, signerOf(t, keys, 1), c, 0).Pass(ctx)
+	c.set(t0.Add(200 * day))
+	b.sealer(t, signerOf(t, keys, 1), c, 90*day).Pass(ctx)
+	if cps, _ := b.master.AuditCheckpoints(ctx, 1, 10); len(cps) != 1 || cps[0].Pruned {
+		t.Fatalf("a clock 200 days on with no new checkpoint: %+v; want nothing pruned", cps)
+	}
+
+	short := sqliteBackend(t)
+	c.set(t0)
+	write(t, short.master, 3, 0)
+	b2 := short.sealer(t, signerOf(t, keys, 1), c, day)
+	b2.Pass(ctx)
+	c.set(t0.Add(30 * day))
+	write(t, short.master, 1, time.Hour)
+	b2.Pass(ctx)
+	if cps, _ := short.master.AuditCheckpoints(ctx, 1, 10); len(cps) != 2 || cps[0].Pruned {
+		t.Fatalf("a retention of a day after 30 days: %+v; want nothing pruned under the 90-day floor", cps)
 	}
 }
 
@@ -291,9 +327,11 @@ func TestKeyRotation(t *testing.T) {
 	}
 }
 
-// TestStopSealsWhatIsLeft guards that Stop runs a last pass, so what was
-// written up to the stop is sealed, and that Start's first pass runs at
-// once.
+// TestStopSealsWhatIsLeft guards the stop: Start's first pass runs at once;
+// Stop ends the timer and seals nothing itself, since the server still
+// drains requests and writes the audit entries it held after it; and Last,
+// which the server runs once those are written, seals what was written up
+// to then.
 func TestStopSealsWhatIsLeft(t *testing.T) {
 	b := sqliteBackend(t)
 	ctx := context.Background()
@@ -318,7 +356,15 @@ func TestStopSealsWhatIsLeft(t *testing.T) {
 	if err := s.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
+	// Written after Stop, as during the server's drain and audit flush.
+	write(t, b.master, 2, 2*time.Second)
+	if n, _ := b.master.CountUnsealedAudit(ctx); n != 5 {
+		t.Fatalf("%d entries unsealed after Stop, want the 5 written since the first pass", n)
+	}
+	if err := s.Last(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if n, _ := b.master.CountUnsealedAudit(ctx); n != 0 {
-		t.Errorf("%d entries unsealed after Stop, want 0", n)
+		t.Errorf("%d entries unsealed after Last, want 0", n)
 	}
 }

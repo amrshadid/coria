@@ -17,11 +17,12 @@ import (
 )
 
 // TestServeSealsTheAudit guards that the real server seals its audit logs:
-// a tenant created through the API, then a clean stop, leaves the master's
-// log and the tenant's sealed by the server's last pass, each verifying
-// with the public keys derived from the installation's key file, each
-// holding the other's latest checkpoint as its anchor, and the creation's
-// entry sealed.
+// a tenant created through the API, a read, then a clean stop, leaves the
+// master's log and the tenant's sealed by the server's last pass, which
+// runs after the drain and the audit flush, so nothing is left unsealed;
+// each verifying with the public keys derived from the installation's key
+// file, each holding the other's latest checkpoint as its anchor, and the
+// creation's entry sealed.
 func TestServeSealsTheAudit(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("stopping the real server cleanly needs SIGTERM, which Windows cannot send")
@@ -43,9 +44,16 @@ func TestServeSealsTheAudit(t *testing.T) {
 	// A change in the tenant, so its own log has an entry to seal.
 	status, err = call(hc, "/coria.v1.SettingsService/SetSetting",
 		`{"setting":{"name":"events.retention","scope":{"tenant":"lab"},"value":"30d"}}`, "")
-	hc.CloseIdleConnections()
 	if err != nil || status != http.StatusOK {
 		t.Fatalf("setting the tenant's events.retention: %d %v\n%s", status, err, c.stderr.String())
+	}
+	// A read just before the stop: its entry is held by the audit writer
+	// and written at the stop, after the drain; the last pass runs after
+	// that, so it is sealed too.
+	status, err = call(hc, "/coria.v1.TenantService/ListTenants", `{}`, "")
+	hc.CloseIdleConnections()
+	if err != nil || status != http.StatusOK {
+		t.Fatalf("listing the tenants: %d %v\n%s", status, err, c.stderr.String())
 	}
 	if err := c.cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
@@ -89,7 +97,7 @@ func TestServeSealsTheAudit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Verify(%s): %v", name, err)
 		}
-		if !r.Intact || r.Last == nil || r.EntriesChecked == 0 {
+		if !r.Intact || r.Last == nil || r.EntriesChecked == 0 || r.Unsealed != 0 {
 			t.Fatalf("log %s after serve: %+v", name, r)
 		}
 		latest[name] = *r.Last

@@ -283,7 +283,13 @@ func (b *backend) logs() map[string]master.AuditSeals {
 // logs keep of it, and fails the test unless it is intact.
 func (b *backend) verify(t *testing.T, log string, keys []PublicKey) VerifyResult {
 	t.Helper()
-	r, err := Verify(context.Background(), b.logs()[log], VerifyOptions{Installation: testInstallation, Log: log, Keys: keys, Anchors: b.anchorsOf(t, log)})
+	return b.verifyAt(t, log, keys, time.Time{})
+}
+
+// verifyAt is verify made at the time now (zero for the clock's).
+func (b *backend) verifyAt(t *testing.T, log string, keys []PublicKey, now time.Time) VerifyResult {
+	t.Helper()
+	r, err := b.verifyAll(t, log, keys, now)
 	if err != nil {
 		t.Fatalf("Verify(%s): %v", log, err)
 	}
@@ -291,6 +297,26 @@ func (b *backend) verify(t *testing.T, log string, keys []PublicKey) VerifyResul
 		t.Fatalf("%s: log %s is not intact: %+v", b.name, log, r.Problems)
 	}
 	return r
+}
+
+// verifyAll verifies the whole of one log with keys and the anchors the
+// other logs keep of it, at the time now (zero for the clock's), and
+// returns what it found, intact or not.
+func (b *backend) verifyAll(t *testing.T, log string, keys []PublicKey, now time.Time) (VerifyResult, error) {
+	t.Helper()
+	return Verify(context.Background(), b.logs()[log], VerifyOptions{Installation: testInstallation, Log: log, Keys: keys, Anchors: b.anchorsOf(t, log), Now: now})
+}
+
+// tamper runs statements on one log's database directly, as someone with
+// the database alone (no key file) would: SQLite through its file, Postgres
+// through a connection of its own to the log's schema.
+func (b *backend) tamper(t *testing.T, log string, statements ...string) {
+	t.Helper()
+	if b.name == "sqlite" {
+		tamper(t, b.where[log], statements...)
+		return
+	}
+	testkit.PostgresExec(t, b.where[log], statements...)
 }
 
 // anchorsOf returns the anchors the other logs keep of log.

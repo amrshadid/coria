@@ -19,7 +19,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file coria/v1/audit_seal.proto.
  */
 export const file_coria_v1_audit_seal: GenFile = /*@__PURE__*/
-  fileDesc("Chljb3JpYS92MS9hdWRpdF9zZWFsLnByb3RvEghjb3JpYS52MSKoAgoPQXVkaXRDaGVja3BvaW50Eg4KBnRlbmFudBgBIAEoCRIQCghmcm9tX3NlcRgCIAEoAxIOCgZ0b19zZXEYAyABKAMSDwoHZW50cmllcxgEIAEoAxIMCgRoZWFkGAUgASgMEhcKD3ByZXZpb3VzX2RpZ2VzdBgGIAEoDBIOCgZkaWdlc3QYByABKAwSKAoEdGltZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEwoLa2V5X3ZlcnNpb24YCSABKAUSEQoJc2lnbmF0dXJlGAogASgMEhMKC3NpZ25lZF90ZXh0GAsgASgMEhcKD2luc3RhbGxhdGlvbl9pZBgMIAEoCRILCgNsb2cYDSABKAkSDgoGcHJ1bmVkGA4gASgIInsKDkF1ZGl0UHVibGljS2V5EhMKC2tleV92ZXJzaW9uGAEgASgFEhIKCnB1YmxpY19rZXkYAiABKAwSFgoOcHVibGljX2tleV9wZW0YAyABKAkSDwoHY3VycmVudBgEIAEoCBIXCg9pbnN0YWxsYXRpb25faWQYBSABKAkiYQoSQXVkaXRWZXJpZnlQcm9ibGVtEi4KBGtpbmQYASABKA4yIC5jb3JpYS52MS5BdWRpdFZlcmlmeVByb2JsZW1LaW5kEgsKA3NlcRgCIAEoAxIOCgZkZXRhaWwYAyABKAkivgEKElZlcmlmeUF1ZGl0UmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEhAKCGZyb21fc2VxGAIgASgDEhMKBnRvX3NlcRgFIAEoA0gAiAEBEh0KEGV4cGVjdGVkX21pbl9zZXEYAyABKANIAYgBARIiChpleHBlY3RlZF9jaGVja3BvaW50X2RpZ2VzdBgEIAEoDEIJCgdfdG9fc2VxQhMKEV9leHBlY3RlZF9taW5fc2VxIusBChNWZXJpZnlBdWRpdFJlc3BvbnNlEg4KBmludGFjdBgBIAEoCBIXCg9lbnRyaWVzX2NoZWNrZWQYAiABKAMSGwoTY2hlY2twb2ludHNfY2hlY2tlZBgDIAEoAxIYChB1bnNlYWxlZF9lbnRyaWVzGAQgASgDEhAKCG5leHRfc2VxGAUgASgDEi4KCHByb2JsZW1zGAYgAygLMhwuY29yaWEudjEuQXVkaXRWZXJpZnlQcm9ibGVtEjIKD2xhc3RfY2hlY2twb2ludBgHIAEoCzIZLmNvcmlhLnYxLkF1ZGl0Q2hlY2twb2ludCJkChtMaXN0QXVkaXRDaGVja3BvaW50c1JlcXVlc3QSHgoFc2NvcGUYASABKAsyDy5jb3JpYS52MS5TY29wZRIRCglwYWdlX3NpemUYAiABKAUSEgoKcGFnZV90b2tlbhgDIAEoCSJnChxMaXN0QXVkaXRDaGVja3BvaW50c1Jlc3BvbnNlEi4KC2NoZWNrcG9pbnRzGAEgAygLMhkuY29yaWEudjEuQXVkaXRDaGVja3BvaW50EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJmChJFeHBvcnRBdWRpdFJlcXVlc3QSHgoFc2NvcGUYASABKAsyDy5jb3JpYS52MS5TY29wZRIQCghmcm9tX3NlcRgCIAEoAxITCgZ0b19zZXEYAyABKANIAIgBAUIJCgdfdG9fc2VxIjoKC0F1ZGl0QW5jaG9yEgsKA2xvZxgBIAEoCRIOCgZkaWdlc3QYAiABKAwSDgoGdG9fc2VxGAMgASgDIuIBChFBdWRpdEV4cG9ydEhlYWRlchIXCg9pbnN0YWxsYXRpb25faWQYASABKAkSDgoGdGVuYW50GAIgASgJEi0KC3B1YmxpY19rZXlzGAMgAygLMhguY29yaWEudjEuQXVkaXRQdWJsaWNLZXkSFAoMY2hhaW5fYmVmb3JlGAQgASgMEhgKEGVuY29kaW5nX3ZlcnNpb24YBSABKAUSCwoDbG9nGAYgASgJEiYKB2FuY2hvcnMYByADKAsyFS5jb3JpYS52MS5BdWRpdEFuY2hvchIQCghmcm9tX3NlcRgIIAEoAyJkChBTZWFsZWRBdWRpdEVudHJ5EgsKA3NlcRgBIAEoAxIjCgVlbnRyeRgCIAEoCzIULmNvcmlhLnYxLkF1ZGl0RW50cnkSDwoHZW5jb2RlZBgDIAEoDBINCgVjaGFpbhgEIAEoDCKqAQoTRXhwb3J0QXVkaXRSZXNwb25zZRItCgZoZWFkZXIYASABKAsyGy5jb3JpYS52MS5BdWRpdEV4cG9ydEhlYWRlckgAEisKBWVudHJ5GAIgASgLMhouY29yaWEudjEuU2VhbGVkQXVkaXRFbnRyeUgAEi8KCmNoZWNrcG9pbnQYAyABKAsyGS5jb3JpYS52MS5BdWRpdENoZWNrcG9pbnRIAEIGCgRraW5kIhoKGEdldEF1ZGl0UHVibGljS2V5UmVxdWVzdCJjChlHZXRBdWRpdFB1YmxpY0tleVJlc3BvbnNlEhcKD2luc3RhbGxhdGlvbl9pZBgBIAEoCRItCgtwdWJsaWNfa2V5cxgCIAMoCzIYLmNvcmlhLnYxLkF1ZGl0UHVibGljS2V5IoYBCg9BdWRpdFNlYWxTdGF0dXMSEAoIbGFzdF9zZXEYASABKAMSMgoObGFzdF9zZWFsX3RpbWUYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhMKC2xhc3RfZGlnZXN0GAMgASgMEhgKEHVuc2VhbGVkX2VudHJpZXMYBCABKAMq2gIKFkF1ZGl0VmVyaWZ5UHJvYmxlbUtpbmQSKQolQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9VTlNQRUNJRklFRBAAEioKJkFVRElUX1ZFUklGWV9QUk9CTEVNX0tJTkRfQ0hBSU5fQlJPS0VOEAESKwonQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9FTlRSWV9NSVNTSU5HEAISKwonQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9CQURfU0lHTkFUVVJFEAMSNAowQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9DSEVDS1BPSU5UX09VVF9PRl9MSU5FEAQSLgoqQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9BTkNIT1JfRElTQUdSRUVTEAUSKQolQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9ST0xMRURfQkFDSxAGMoUDChBBdWRpdFNlYWxTZXJ2aWNlEk8KC1ZlcmlmeUF1ZGl0EhwuY29yaWEudjEuVmVyaWZ5QXVkaXRSZXF1ZXN0Gh0uY29yaWEudjEuVmVyaWZ5QXVkaXRSZXNwb25zZSIDkAIBEmoKFExpc3RBdWRpdENoZWNrcG9pbnRzEiUuY29yaWEudjEuTGlzdEF1ZGl0Q2hlY2twb2ludHNSZXF1ZXN0GiYuY29yaWEudjEuTGlzdEF1ZGl0Q2hlY2twb2ludHNSZXNwb25zZSIDkAIBElEKC0V4cG9ydEF1ZGl0EhwuY29yaWEudjEuRXhwb3J0QXVkaXRSZXF1ZXN0Gh0uY29yaWEudjEuRXhwb3J0QXVkaXRSZXNwb25zZSIDkAIBMAESYQoRR2V0QXVkaXRQdWJsaWNLZXkSIi5jb3JpYS52MS5HZXRBdWRpdFB1YmxpY0tleVJlcXVlc3QaIy5jb3JpYS52MS5HZXRBdWRpdFB1YmxpY0tleVJlc3BvbnNlIgOQAgFiBnByb3RvMw", [file_google_protobuf_timestamp, file_coria_v1_audit, file_coria_v1_scope]);
+  fileDesc("Chljb3JpYS92MS9hdWRpdF9zZWFsLnByb3RvEghjb3JpYS52MSKoAgoPQXVkaXRDaGVja3BvaW50Eg4KBnRlbmFudBgBIAEoCRIQCghmcm9tX3NlcRgCIAEoAxIOCgZ0b19zZXEYAyABKAMSDwoHZW50cmllcxgEIAEoAxIMCgRoZWFkGAUgASgMEhcKD3ByZXZpb3VzX2RpZ2VzdBgGIAEoDBIOCgZkaWdlc3QYByABKAwSKAoEdGltZRgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEwoLa2V5X3ZlcnNpb24YCSABKAUSEQoJc2lnbmF0dXJlGAogASgMEhMKC3NpZ25lZF90ZXh0GAsgASgMEhcKD2luc3RhbGxhdGlvbl9pZBgMIAEoCRILCgNsb2cYDSABKAkSDgoGcHJ1bmVkGA4gASgIInsKDkF1ZGl0UHVibGljS2V5EhMKC2tleV92ZXJzaW9uGAEgASgFEhIKCnB1YmxpY19rZXkYAiABKAwSFgoOcHVibGljX2tleV9wZW0YAyABKAkSDwoHY3VycmVudBgEIAEoCBIXCg9pbnN0YWxsYXRpb25faWQYBSABKAkiYQoSQXVkaXRWZXJpZnlQcm9ibGVtEi4KBGtpbmQYASABKA4yIC5jb3JpYS52MS5BdWRpdFZlcmlmeVByb2JsZW1LaW5kEgsKA3NlcRgCIAEoAxIOCgZkZXRhaWwYAyABKAkivgEKElZlcmlmeUF1ZGl0UmVxdWVzdBIeCgVzY29wZRgBIAEoCzIPLmNvcmlhLnYxLlNjb3BlEhAKCGZyb21fc2VxGAIgASgDEhMKBnRvX3NlcRgFIAEoA0gAiAEBEh0KEGV4cGVjdGVkX21pbl9zZXEYAyABKANIAYgBARIiChpleHBlY3RlZF9jaGVja3BvaW50X2RpZ2VzdBgEIAEoDEIJCgdfdG9fc2VxQhMKEV9leHBlY3RlZF9taW5fc2VxIusBChNWZXJpZnlBdWRpdFJlc3BvbnNlEg4KBmludGFjdBgBIAEoCBIXCg9lbnRyaWVzX2NoZWNrZWQYAiABKAMSGwoTY2hlY2twb2ludHNfY2hlY2tlZBgDIAEoAxIYChB1bnNlYWxlZF9lbnRyaWVzGAQgASgDEhAKCG5leHRfc2VxGAUgASgDEi4KCHByb2JsZW1zGAYgAygLMhwuY29yaWEudjEuQXVkaXRWZXJpZnlQcm9ibGVtEjIKD2xhc3RfY2hlY2twb2ludBgHIAEoCzIZLmNvcmlhLnYxLkF1ZGl0Q2hlY2twb2ludCJkChtMaXN0QXVkaXRDaGVja3BvaW50c1JlcXVlc3QSHgoFc2NvcGUYASABKAsyDy5jb3JpYS52MS5TY29wZRIRCglwYWdlX3NpemUYAiABKAUSEgoKcGFnZV90b2tlbhgDIAEoCSJnChxMaXN0QXVkaXRDaGVja3BvaW50c1Jlc3BvbnNlEi4KC2NoZWNrcG9pbnRzGAEgAygLMhkuY29yaWEudjEuQXVkaXRDaGVja3BvaW50EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSJmChJFeHBvcnRBdWRpdFJlcXVlc3QSHgoFc2NvcGUYASABKAsyDy5jb3JpYS52MS5TY29wZRIQCghmcm9tX3NlcRgCIAEoAxITCgZ0b19zZXEYAyABKANIAIgBAUIJCgdfdG9fc2VxIjoKC0F1ZGl0QW5jaG9yEgsKA2xvZxgBIAEoCRIOCgZkaWdlc3QYAiABKAwSDgoGdG9fc2VxGAMgASgDIuIBChFBdWRpdEV4cG9ydEhlYWRlchIXCg9pbnN0YWxsYXRpb25faWQYASABKAkSDgoGdGVuYW50GAIgASgJEi0KC3B1YmxpY19rZXlzGAMgAygLMhguY29yaWEudjEuQXVkaXRQdWJsaWNLZXkSFAoMY2hhaW5fYmVmb3JlGAQgASgMEhgKEGVuY29kaW5nX3ZlcnNpb24YBSABKAUSCwoDbG9nGAYgASgJEiYKB2FuY2hvcnMYByADKAsyFS5jb3JpYS52MS5BdWRpdEFuY2hvchIQCghmcm9tX3NlcRgIIAEoAyJkChBTZWFsZWRBdWRpdEVudHJ5EgsKA3NlcRgBIAEoAxIjCgVlbnRyeRgCIAEoCzIULmNvcmlhLnYxLkF1ZGl0RW50cnkSDwoHZW5jb2RlZBgDIAEoDBINCgVjaGFpbhgEIAEoDCKqAQoTRXhwb3J0QXVkaXRSZXNwb25zZRItCgZoZWFkZXIYASABKAsyGy5jb3JpYS52MS5BdWRpdEV4cG9ydEhlYWRlckgAEisKBWVudHJ5GAIgASgLMhouY29yaWEudjEuU2VhbGVkQXVkaXRFbnRyeUgAEi8KCmNoZWNrcG9pbnQYAyABKAsyGS5jb3JpYS52MS5BdWRpdENoZWNrcG9pbnRIAEIGCgRraW5kIhoKGEdldEF1ZGl0UHVibGljS2V5UmVxdWVzdCJjChlHZXRBdWRpdFB1YmxpY0tleVJlc3BvbnNlEhcKD2luc3RhbGxhdGlvbl9pZBgBIAEoCRItCgtwdWJsaWNfa2V5cxgCIAMoCzIYLmNvcmlhLnYxLkF1ZGl0UHVibGljS2V5IoYBCg9BdWRpdFNlYWxTdGF0dXMSEAoIbGFzdF9zZXEYASABKAMSMgoObGFzdF9zZWFsX3RpbWUYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhMKC2xhc3RfZGlnZXN0GAMgASgMEhgKEHVuc2VhbGVkX2VudHJpZXMYBCABKAMqiQMKFkF1ZGl0VmVyaWZ5UHJvYmxlbUtpbmQSKQolQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9VTlNQRUNJRklFRBAAEioKJkFVRElUX1ZFUklGWV9QUk9CTEVNX0tJTkRfQ0hBSU5fQlJPS0VOEAESKwonQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9FTlRSWV9NSVNTSU5HEAISKwonQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9CQURfU0lHTkFUVVJFEAMSNAowQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9DSEVDS1BPSU5UX09VVF9PRl9MSU5FEAQSLgoqQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9BTkNIT1JfRElTQUdSRUVTEAUSKQolQVVESVRfVkVSSUZZX1BST0JMRU1fS0lORF9ST0xMRURfQkFDSxAGEi0KKUFVRElUX1ZFUklGWV9QUk9CTEVNX0tJTkRfU0VBTElOR19TVEFMTEVEEAcyhQMKEEF1ZGl0U2VhbFNlcnZpY2USTwoLVmVyaWZ5QXVkaXQSHC5jb3JpYS52MS5WZXJpZnlBdWRpdFJlcXVlc3QaHS5jb3JpYS52MS5WZXJpZnlBdWRpdFJlc3BvbnNlIgOQAgESagoUTGlzdEF1ZGl0Q2hlY2twb2ludHMSJS5jb3JpYS52MS5MaXN0QXVkaXRDaGVja3BvaW50c1JlcXVlc3QaJi5jb3JpYS52MS5MaXN0QXVkaXRDaGVja3BvaW50c1Jlc3BvbnNlIgOQAgESUQoLRXhwb3J0QXVkaXQSHC5jb3JpYS52MS5FeHBvcnRBdWRpdFJlcXVlc3QaHS5jb3JpYS52MS5FeHBvcnRBdWRpdFJlc3BvbnNlIgOQAgEwARJhChFHZXRBdWRpdFB1YmxpY0tleRIiLmNvcmlhLnYxLkdldEF1ZGl0UHVibGljS2V5UmVxdWVzdBojLmNvcmlhLnYxLkdldEF1ZGl0UHVibGljS2V5UmVzcG9uc2UiA5ACAWIGcHJvdG8z", [file_google_protobuf_timestamp, file_coria_v1_audit, file_coria_v1_scope]);
 
 /**
  * AuditCheckpoint is a signed record of a log's chain at one point.
@@ -223,7 +223,8 @@ export type AuditVerifyProblem = Message<"coria.v1.AuditVerifyProblem"> & {
 
   /**
    * The seq at which it shows: the first entry whose fold differs, the
-   * missing seq, or the to_seq of the checkpoint concerned.
+   * missing seq, or the to_seq of the checkpoint concerned; 0 for a
+   * problem of the entries not yet sealed, which have no seq.
    *
    * @generated from field: int64 seq = 2;
    */
@@ -278,8 +279,10 @@ export type VerifyAuditRequest = Message<"coria.v1.VerifyAuditRequest"> & {
    * A seq the log is known to have reached, kept outside the installation
    * (from an earlier export or verification). The log's last sealed seq
    * below it is a problem (AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK): the
-   * databases were taken back to an earlier point. Absent for no such
-   * check; at least 1 when given.
+   * databases were taken back to an earlier point. It does not detect a
+   * log taken back and grown again past it since: only
+   * expected_checkpoint_digest does. Absent for no such check; at least 1
+   * when given.
    *
    * @generated from field: optional int64 expected_min_seq = 3;
    */
@@ -786,7 +789,13 @@ export enum AuditVerifyProblemKind {
 
   /**
    * A seq is missing in a range a checkpoint covers and retention has not
-   * pruned.
+   * pruned. A checkpoint marked pruned that retention did not prune is one
+   * too: one that follows a checkpoint not pruned (retention prunes the
+   * oldest first), one younger than 90 days (the shortest audit.retention)
+   * by its signed time, or one in the range of no pruning entry (local
+   * user "server", method "AuditRetention", details pruned_from_seq and
+   * pruned_to_seq) sealed after it, past the pruned checkpoints whose own
+   * pruning entry retention has since pruned in its turn.
    *
    * @generated from enum value: AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING = 2;
    */
@@ -810,22 +819,39 @@ export enum AuditVerifyProblemKind {
   CHECKPOINT_OUT_OF_LINE = 4,
 
   /**
-   * The anchor the other log keeps for this one is not the digest of any
-   * of its checkpoints.
+   * The log's checkpoint at the to_seq of the anchor the other log keeps
+   * for this one is there, but its digest is not the anchor's.
    *
    * @generated from enum value: AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES = 5;
    */
   ANCHOR_DISAGREES = 5,
 
   /**
-   * The log does not reach what was kept outside the installation: its
-   * last sealed seq is below expected_min_seq, or no checkpoint has
-   * expected_checkpoint_digest. The log was taken back to an earlier
-   * point, which the chain and the anchors alone cannot show.
+   * The log was taken back to an earlier point. Either it does not reach
+   * what was kept outside the installation (its last sealed seq is below
+   * expected_min_seq, or no checkpoint has expected_checkpoint_digest),
+   * which the chain and the anchors alone cannot show; or it no longer
+   * holds the checkpoint at the to_seq of the anchor the other log keeps
+   * for it, whether or not it grew again since. A sealing pass moves an
+   * anchor forward only to a checkpoint that descends from the one it
+   * names, so a log taken back and sealed again keeps reporting this
+   * until an operator accepts a restore.
    *
    * @generated from enum value: AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK = 6;
    */
   ROLLED_BACK = 6,
+
+  /**
+   * An entry not yet sealed has waited more than two seal intervals since
+   * it was written and since the log was last sealed: the sealing passes
+   * are not sealing this log (an entry that cannot be encoded, as only a
+   * row put in by hand can be, holds every later one back), and entries
+   * not yet sealed can be removed without a trace. seq is 0; the server's
+   * log names the entry.
+   *
+   * @generated from enum value: AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED = 7;
+   */
+  SEALING_STALLED = 7,
 }
 
 /**
@@ -845,7 +871,8 @@ export const AuditVerifyProblemKindSchema: GenEnum<AuditVerifyProblemKind> = /*@
  * they are written, since entries written at once by many requests commit
  * in no fixed order. Every audit.seal-interval (an installation setting, a
  * period such as "10m", from "1m" to "1d"; built-in default "10m"), and
- * when the server stops, a sealing pass takes each log's entries not yet
+ * when the server stops (after its requests have drained and the audit
+ * entries it held are written), a sealing pass takes each log's entries not yet
  * sealed, orders them by time and then id, gives each the next sequence
  * number (seq, from 1) and folds it into the log's chain: h(n) =
  * SHA-256(h(n-1) || encode(entry n)), with h(0) 32 zero bytes (SHA-256,
@@ -876,8 +903,11 @@ export const AuditVerifyProblemKindSchema: GenEnum<AuditVerifyProblemKind> = /*@
  * The installation's log keeps the latest checkpoint digest of each tenant,
  * and each tenant's log the installation's latest, so a tenant's database
  * rewritten whole, its checkpoints included, disagrees with the
- * installation's; the server's log carries each checkpoint's digest too,
- * for an operator who keeps logs elsewhere.
+ * installation's; an anchor moves forward only to a checkpoint that
+ * descends from the one it names, so a log taken back with its database
+ * alone and sealed again keeps the old anchor and is reported rolled back;
+ * the server's log carries each checkpoint's digest too, for an operator
+ * who keeps logs elsewhere.
  *
  * Logs that moved. A public key is named by the installation that holds
  * its key and the key's version, since a tenant imported from another
@@ -900,13 +930,18 @@ export const AuditVerifyProblemKindSchema: GenEnum<AuditVerifyProblemKind> = /*@
  * installation does, which VerifyAudit checks when given one
  * (VerifyAuditRequest.expected_checkpoint_digest, expected_min_seq).
  * Entries not yet sealed, at most one interval old, can be removed
- * without a trace. A read's or a refusal's entry dropped when the server
+ * without a trace; a log whose entries wait longer is reported
+ * (AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED). A read's or a refusal's entry dropped when the server
  * was overwhelmed stays dropped, and counted (AuditService).
  *
- * Retention. The setting audit.retention (a period such as "3650d", or
- * "0" to keep every entry; built-in default "0") prunes whole sealed
- * checkpoints older than it; every checkpoint stays, so the chain is still
- * checked across what was pruned, and the pruning writes its own entry.
+ * Retention. The setting audit.retention (a period from "90d" to
+ * "36500d", such as "3650d", or "0" to keep every entry; built-in default
+ * "0") prunes whole sealed checkpoints older than it, counted back from
+ * the earlier of the server's clock and the log's latest checkpoint, so a
+ * clock set forward does not prune early; every checkpoint stays, so the
+ * chain is still checked across what was pruned, and the pruning writes
+ * its own entry, sealed in the same pass, which a verification needs to
+ * accept the pruned checkpoints (AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING).
  * Export before a period is set: what is pruned is gone.
  *
  * Ranges. VerifyAudit and ExportAudit take a range of seq, never of time:

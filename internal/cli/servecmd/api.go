@@ -16,6 +16,7 @@ import (
 	"github.com/amrshadid/coria/internal/driver"
 	"github.com/amrshadid/coria/internal/events"
 	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/obs"
 	"github.com/amrshadid/coria/internal/receive/stow"
 	"github.com/amrshadid/coria/internal/registry"
 	"github.com/amrshadid/coria/internal/send"
@@ -206,12 +207,16 @@ func APIServices(d Deps) (Built, error) {
 		LongMethods: []string{coriav1connect.DataServiceReadFilesProcedure, api.DownloadPattern, api.DICOMwebPattern, api.STOWPattern},
 		// Stopped last first: the event keeper, the deid jobs and the
 		// senders (each giving its unit back), then the receivers and
-		// pipelines, then the sealing pass, whose last pass at stop seals
-		// what they wrote, then the feeds.
+		// pipelines, then the sealing pass's timer, then the feeds.
 		Reception: runners{closer{feeds}, sealer, sup, senders, deids, events.NewKeeper(events.KeeperConfig{
 			Tenants: keptFeeds{tenants: registryTenants{master: d.Master, registry: reg}, registry: reg, values: settingvalue.Reader{Master: d.Master}},
 			Logger:  d.Log,
 		})},
+		// The last pass runs once the server has drained its requests and
+		// written the audit entries it held, so it seals those too.
+		AfterDrain: sealer.Last,
+		Counters:   func() []obs.Counter { return sealCounters(sealer.Stats()) },
+		Gauges:     func() []obs.Gauge { return sealGauges(sealer.Stats(), time.Now()) },
 	}, nil
 }
 

@@ -2,9 +2,11 @@ package servecmd
 
 import (
 	"context"
+	"time"
 
 	"github.com/amrshadid/coria/internal/auditseal"
 	"github.com/amrshadid/coria/internal/master"
+	"github.com/amrshadid/coria/internal/obs"
 	"github.com/amrshadid/coria/internal/registry"
 	"github.com/amrshadid/coria/internal/secret"
 	"github.com/amrshadid/coria/internal/server"
@@ -14,7 +16,7 @@ import (
 // newSealer returns the sealing pass of every audit log of the installation
 // (package auditseal), signed with the audit key derived from the key
 // file's newest version, run every audit.seal-interval and once more at
-// stop.
+// stop, after the server's drain (Built.AfterDrain).
 func newSealer(d Deps, reg *registry.Registry) (*auditseal.Sealer, error) {
 	id, err := server.ReadInstallationID(d.DataDir)
 	if err != nil {
@@ -39,6 +41,29 @@ func newSealer(d Deps, reg *registry.Registry) (*auditseal.Sealer, error) {
 		NewID:        server.NewID,
 		Log:          d.Log,
 	})
+}
+
+// sealCounters returns the sealing passes' failures as metrics, one counter
+// a kind: a rolled-back log (an anchor kept because the log no longer
+// descends from it) is tampering or a restore, an unencodable entry is a
+// row put in by hand, and the rest is a database that did not answer.
+func sealCounters(s auditseal.Stats) []obs.Counter {
+	return []obs.Counter{
+		{Name: "coria_audit_seal_failures_rolled_back_total", Help: "Anchors a sealing pass kept because the log they name no longer descends from them.", Value: s.RolledBack},
+		{Name: "coria_audit_seal_failures_unencodable_total", Help: "Sealing passes held back by an unsealed audit entry that cannot be encoded.", Value: s.Unencodable},
+		{Name: "coria_audit_seal_failures_other_total", Help: "Audit logs a sealing pass could not seal, anchor or check for another reason, mostly a database that did not answer.", Value: s.Failed},
+	}
+}
+
+// sealGauges returns the age of the oldest audit entry the last pass left
+// unsealed, 0 for none: past two intervals, the passes are not sealing a
+// log.
+func sealGauges(s auditseal.Stats, now time.Time) []obs.Gauge {
+	age := 0.0
+	if !s.OldestUnsealed.IsZero() {
+		age = max(now.Sub(s.OldestUnsealed).Seconds(), 0)
+	}
+	return []obs.Gauge{{Name: "coria_audit_unsealed_oldest_age_seconds", Help: "Age of the oldest audit entry the last sealing pass left unsealed, 0 for none.", Value: age}}
 }
 
 // sealedTenants is the sealing pass's view of the tenants: their ids and

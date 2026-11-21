@@ -218,6 +218,9 @@ func (s *Server) stop() error {
 		}
 	}
 	closeEach("the access check and its audit writer", s.access.Close)
+	if s.cfg.AfterDrain != nil {
+		closeEach("the last step after the drain", s.cfg.AfterDrain)
+	}
 	if s.cfg.Registry != nil {
 		closeEach("the tenant registry", s.cfg.Registry.Close)
 	}

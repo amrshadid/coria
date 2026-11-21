@@ -3,6 +3,7 @@ package auditseal
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/amrshadid/coria/internal/core/auditchain"
 	"github.com/amrshadid/coria/internal/fault"
@@ -37,12 +38,18 @@ const (
 	// previous digest, log, key version or time going back), or the digest
 	// kept with it is not its signed text's.
 	OutOfLine
-	// AnchorDisagrees: an anchor another log keeps of this one is not the
-	// digest of its checkpoint at that seq.
+	// AnchorDisagrees: the checkpoint at the seq an anchor another log keeps
+	// of this one names is there, but its digest is not the anchor's.
 	AnchorDisagrees
 	// RolledBack: the log does not reach what was kept outside the
-	// installation.
+	// installation, or no longer holds the checkpoint an anchor another log
+	// keeps of it names: it went back past it, and may have grown again.
 	RolledBack
+	// SealingStalled: an entry not yet sealed has waited more than two seal
+	// intervals since it was written and since the log was last sealed:
+	// the passes cannot seal the log (an entry that cannot be encoded holds
+	// it back), and what waits can be removed without a trace.
+	SealingStalled
 )
 
 // Problem is one thing a verification found wrong, where it shows.
@@ -50,8 +57,12 @@ type Problem struct {
 	// Kind is what it is.
 	Kind ProblemKind
 	// Seq is where it shows: the first entry whose fold differs, the
-	// missing seq, or the To of the checkpoint concerned.
+	// missing seq, or the To of the checkpoint concerned; 0 for a problem of
+	// the entries not yet sealed, which have no seq.
 	Seq int64
+	// Time is, for SealingStalled, when the oldest entry not yet sealed was
+	// written: where it is in time, never what it holds. Zero otherwise.
+	Time time.Time
 	// Detail says it in words from a fixed set of phrases; never an entry's
 	// content.
 	Detail string
@@ -77,7 +88,8 @@ type VerifyOptions struct {
 	// MaxEntries bounds the entries recomputed; 0 is MaxVerifyEntries.
 	MaxEntries int64
 	// ExpectedMinSeq, when not 0, is a seq the log is known from outside to
-	// have reached.
+	// have reached. A log taken back and grown again past it passes this
+	// check; only ExpectedDigest finds that.
 	ExpectedMinSeq int64
 	// ExpectedDigest, when not zero, is the digest of a checkpoint known
 	// from outside to be in the log.
@@ -85,6 +97,13 @@ type VerifyOptions struct {
 	// Anchors are the anchors other logs keep of this one: the master's of
 	// a tenant, a tenant's of the master.
 	Anchors []master.AuditAnchor
+	// Now is the time the verification is made at, which the age of a
+	// pruned checkpoint and the wait of an unsealed entry are measured
+	// from; zero is the clock's time.
+	Now time.Time
+	// SealInterval is audit.seal-interval as it is now, which says when an
+	// unsealed entry has waited too long; 0 is DefaultInterval.
+	SealInterval time.Duration
 }
 
 // VerifyResult is what a verification found.
@@ -112,6 +131,8 @@ type verification struct {
 	o    VerifyOptions
 	keys auditchain.PublicKeys
 	r    VerifyResult
+	// retention is what the pruned checkpoints walked need (retention.go).
+	retention retentionCheck
 }
 
 // problem records a problem, up to MaxProblems.
@@ -140,6 +161,12 @@ func Verify(ctx context.Context, st master.AuditSealReads, o VerifyOptions) (Ver
 	if o.MaxEntries == 0 {
 		o.MaxEntries = MaxVerifyEntries
 	}
+	if o.Now.IsZero() {
+		o.Now = time.Now()
+	}
+	if o.SealInterval <= 0 {
+		o.SealInterval = DefaultInterval
+	}
 	v := &verification{ctx: ctx, st: st, o: o, keys: keyMap(o.Keys, o.Installation)}
 	last, ok, err := latest(ctx, st)
 	if err != nil {
@@ -154,11 +181,56 @@ func Verify(ctx context.Context, st master.AuditSealReads, o VerifyOptions) (Ver
 	if err := v.outside(last, ok); err != nil {
 		return VerifyResult{}, err
 	}
+	if err := v.stalled(last, ok); err != nil {
+		return VerifyResult{}, err
+	}
 	if err := v.walk(last, ok); err != nil {
+		return VerifyResult{}, err
+	}
+	if err := v.prunedCovered(last); err != nil {
 		return VerifyResult{}, err
 	}
 	v.r.Intact = len(v.r.Problems) == 0
 	return v.r, nil
+}
+
+// unsealedReader is the read of the entries not yet sealed, which every
+// store has (master.AuditSealWrites) though a verification is given only
+// the reads.
+type unsealedReader interface {
+	UnsealedAudit(ctx context.Context, after master.AuditPosition, limit int) ([]master.AuditEntry, error)
+}
+
+// stalled reports the entries not yet sealed when the oldest of them has
+// waited more than two seal intervals since it was written and since the
+// log's last seal: a pass every interval would have sealed it, so the
+// passes are not sealing this log, and what waits can be removed without a
+// trace. A log sealed pass after pass through a long backlog is not
+// stalled, since its last seal keeps moving. It names the oldest entry's
+// time alone.
+func (v *verification) stalled(last master.AuditCheckpoint, ok bool) error {
+	if v.r.Unsealed == 0 {
+		return nil
+	}
+	u, can := v.st.(unsealedReader)
+	if !can {
+		return nil
+	}
+	es, err := u.UnsealedAudit(v.ctx, master.AuditPosition{}, 1)
+	if err != nil || len(es) == 0 {
+		return err
+	}
+	since := es[0].Time
+	if ok && last.Time.After(since) {
+		since = last.Time
+	}
+	if v.o.Now.Sub(since) > 2*v.o.SealInterval {
+		if len(v.r.Problems) < MaxProblems {
+			v.r.Problems = append(v.r.Problems, Problem{Kind: SealingStalled, Time: es[0].Time.UTC(),
+				Detail: "an entry not yet sealed has waited more than two seal intervals"})
+		}
+	}
+	return nil
 }
 
 // outside checks what the caller knows from outside the log: the values
@@ -181,7 +253,13 @@ func (v *verification) outside(last master.AuditCheckpoint, ok bool) error {
 		if err != nil {
 			return err
 		}
-		if len(cs) == 0 || cs[0].To != a.To || !v.digestIs(cs[0], a.Digest) {
+		switch {
+		case len(cs) == 0 || cs[0].To != a.To:
+			// The anchor is never moved to a checkpoint the log does not
+			// descend to (Descends), so a log that no longer holds it went
+			// back past it, whether or not it grew again since.
+			v.problem(RolledBack, a.To, "the log no longer holds the checkpoint another log keeps of it")
+		case !v.digestIs(cs[0], a.Digest):
 			v.problem(AnchorDisagrees, a.To, "the anchor another log keeps is not the digest of this log's checkpoint")
 		}
 	}
@@ -245,6 +323,7 @@ func (v *verification) walk(last master.AuditCheckpoint, ok bool) error {
 			if state, err = v.checkpoint(c, state); err != nil {
 				return err
 			}
+			v.retention.walkedTo = c.To
 			v.r.CheckpointsChecked++
 			if v.o.To > 0 && c.To >= v.o.To {
 				return nil
@@ -278,6 +357,7 @@ func (v *verification) start(c master.AuditCheckpoint) (auditchain.State, error)
 		return auditchain.State{Seq: uint64(c.From - 1)}, nil //nolint:gosec // G115: From is above 1 here.
 	}
 	p := prev[0]
+	v.retention.unprunedBefore = !p.Pruned
 	pc := chainCheckpoint(p)
 	if pub, ok := v.keys[p.KeyVersion]; !ok || !pc.VerifySignature(pub) {
 		v.problem(BadSignature, p.To, string(auditchain.ProblemSignature))
@@ -313,7 +393,11 @@ func (v *verification) checkpoint(c master.AuditCheckpoint, from auditchain.Stat
 		v.problem(OutOfLine, c.To, string(auditchain.ProblemRange))
 	case c.Pruned:
 		v.pruned(c, cc, from)
+		if len(v.r.Problems) == before {
+			v.prunedByRetention(c)
+		}
 	default:
+		v.retention.unprunedBefore = true
 		var err error
 		if recomputed, complete, err = v.covered(c, cc, from); err != nil {
 			return auditchain.State{}, err
@@ -377,6 +461,7 @@ func (v *verification) covered(c master.AuditCheckpoint, cc auditchain.Checkpoin
 				break
 			}
 			head, _ = auditchain.Next(head, e) // ver.Entry has just encoded e
+			v.retention.note(s)
 			fed = s.Seq
 			v.r.EntriesChecked++
 		}

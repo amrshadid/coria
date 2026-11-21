@@ -127,6 +127,25 @@ All notable changes to CORIA are written here. The form is
 
 ### Fixed
 
+- A log taken back with its database alone (no key) and sealed again no
+  longer moves the anchor the other log keeps of it: the sealing pass moves
+  an anchor only to a checkpoint that descends from the one it holds;
+  otherwise it keeps the anchor, logs an error naming the log and the
+  anchored position, counts it (`coria_audit_seal_failures_rolled_back_total`),
+  and verification reports the log rolled back.
+- A checkpoint marked pruned by hand no longer hides the entries it covers:
+  verification accepts a pruned checkpoint only when it follows only pruned
+  ones, is older than 90 days by its signed time, and lies in the range of a
+  pruning entry made by the server and sealed after it. The pruning's entry
+  is now sealed in the same pass.
+- An unsealed audit entry that cannot be encoded is logged as an error with
+  its id and counted, verification reports sealing stalled when an entry has
+  waited more than two seal intervals, and `/metrics` shows
+  `coria_audit_unsealed_oldest_age_seconds`. The last sealing pass runs after
+  the requests have drained and the audit entries held in memory are
+  written. `audit.retention`, when not 0, is now 90d to 36500d (was 1d), its
+  cutoff counted back from the earlier of the clock and the log's latest
+  checkpoint.
 - A series that the naming rule gives a scan label (or a session label)
   already held by another series (or study) has its files held as a label
   conflict (`held_by_another_scan`, `held_by_another_session`) before

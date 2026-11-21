@@ -3,11 +3,13 @@ package auditseal
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/amrshadid/coria/internal/core/auditchain"
+	"github.com/amrshadid/coria/internal/core/settings"
 	"github.com/amrshadid/coria/internal/fault"
 	"github.com/amrshadid/coria/internal/master"
 )
@@ -29,6 +31,12 @@ const maxRetries = 3
 // ServerUser is the local user of the entries the server writes for itself,
 // on no request: a pruning's entry.
 const ServerUser = "server"
+
+// RetentionMethod is the method of a pruning's entry, which the server
+// writes for itself (ServerUser) in the log it pruned. Verify reads these
+// entries to tell a checkpoint retention pruned from one marked pruned by
+// hand.
+const RetentionMethod = "AuditRetention"
 
 // TenantLog names one tenant's log: by its id, which the chain's signed
 // texts name and a move keeps, and by its name, which the registry opens it
@@ -65,7 +73,9 @@ type Config struct {
 	// fails, is DefaultInterval.
 	Interval func(ctx context.Context) (time.Duration, error)
 	// Retention returns audit.retention as it is now, 0 to keep everything;
-	// nil keeps everything, and one that fails prunes nothing that pass.
+	// nil keeps everything, and one that fails prunes nothing that pass. A
+	// period below settings.MinAuditRetention is raised to it, so nothing
+	// younger than the floor Verify holds pruned checkpoints to is pruned.
 	Retention func(ctx context.Context) (time.Duration, error)
 	// Now is the clock; nil is time.Now.
 	Now func() time.Time
@@ -76,14 +86,16 @@ type Config struct {
 	Log *slog.Logger
 }
 
-// Sealer runs the sealing pass on a timer and at stop. Make it with New.
+// Sealer runs the sealing pass on a timer, and the last pass when the
+// server has drained (Last). Make it with New.
 type Sealer struct {
-	cfg  Config
-	log  *slog.Logger
-	stop context.CancelFunc
-	done sync.WaitGroup
+	cfg   Config
+	log   *slog.Logger
+	stop  context.CancelFunc
+	done  sync.WaitGroup
+	stats stats
 	// mu keeps two passes from running at once in one process: the timer's
-	// and the one Stop runs.
+	// and the last one.
 	mu sync.Mutex
 }
 
@@ -125,13 +137,23 @@ func (s *Sealer) Start(context.Context) error {
 	return nil
 }
 
-// Stop ends the timer, waits for a pass running, then runs one last pass
-// within ctx, so the entries written up to the stop are sealed.
-func (s *Sealer) Stop(ctx context.Context) error {
+// Stop ends the timer and waits for a pass running. It runs no pass of its
+// own: requests still draining and the audit entries the server holds in
+// memory are written after it, so the server calls Last once they are, and
+// before it closes the databases.
+func (s *Sealer) Stop(context.Context) error {
 	if s.stop != nil {
 		s.stop()
 	}
 	s.done.Wait()
+	return nil
+}
+
+// Last runs one last pass within ctx, so the entries written up to the
+// stop, those of the requests drained and the audit writer's last batch
+// included, are sealed. The server calls it after its drain and its audit
+// flush, while the databases are still open.
+func (s *Sealer) Last(ctx context.Context) error {
 	s.Pass(ctx)
 	return nil
 }
@@ -150,12 +172,16 @@ func (s *Sealer) interval(ctx context.Context) time.Duration {
 
 // Pass seals every log once, anchors the master and the tenants to each
 // other, and prunes what retention makes due. Start runs it on a timer and
-// Stop once more; a test calls it directly. A log that fails is logged and
-// left for the next pass.
+// the server once more through Last; a test calls it directly. A log that
+// fails is logged and left for the next pass.
 func (s *Sealer) Pass(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var oldest time.Time
 	masterLast, masterOK := s.seal(ctx, s.cfg.Master, master.MasterAuditLog, "")
+	// The anchors the master keeps, read once a pass: a read per tenant
+	// would read every tenant's anchor for each.
+	held, heldOK := s.heldAnchors(ctx, s.cfg.Master, "")
 	var tenants []TenantLog
 	if s.cfg.Tenants != nil {
 		var err error
@@ -175,18 +201,23 @@ func (s *Sealer) Pass(ctx context.Context) {
 		}
 		last, ok := s.seal(ctx, st, t.ID, t.Name)
 		if masterOK {
-			s.anchor(ctx, st, t.Name, masterLast)
+			if tenantHeld, ok := s.heldAnchors(ctx, st, t.Name); ok {
+				s.anchor(ctx, st, tenantHeld, s.cfg.Master, t.Name, masterLast)
+			}
 		}
-		if ok {
-			s.anchor(ctx, s.cfg.Master, "", last)
+		if ok && heldOK {
+			s.anchor(ctx, s.cfg.Master, held, st, t.Name, last)
 		}
-		s.prune(ctx, st, t.Name, retention)
+		s.prune(ctx, st, t.ID, t.Name, retention)
+		oldest = older(oldest, s.oldestUnsealed(ctx, st))
 	}
-	s.prune(ctx, s.cfg.Master, "", retention)
+	s.prune(ctx, s.cfg.Master, master.MasterAuditLog, "", retention)
+	oldest = older(oldest, s.oldestUnsealed(ctx, s.cfg.Master))
+	s.stats.setOldest(oldest)
 }
 
 // retention returns audit.retention now, or 0 (prune nothing) when it is
-// not set up or cannot be read.
+// not set up or cannot be read; a period below the floor is raised to it.
 func (s *Sealer) retention(ctx context.Context) time.Duration {
 	if s.cfg.Retention == nil {
 		return 0
@@ -195,6 +226,9 @@ func (s *Sealer) retention(ctx context.Context) time.Duration {
 	if err != nil {
 		s.log.Warn("auditseal: audit.retention could not be read; nothing is pruned this pass", "reason", fault.Message(err))
 		return 0
+	}
+	if d > 0 && d < settings.MinAuditRetention {
+		d = settings.MinAuditRetention
 	}
 	return d
 }
@@ -208,24 +242,49 @@ func (s *Sealer) logger(name, tenantName string) *slog.Logger {
 }
 
 // seal seals one log as far as it goes, and returns its latest checkpoint
-// and whether it has one.
+// and whether it has one. An entry that cannot be encoded holds the log
+// back until it is put right, since the entries are sealed in order: it is
+// logged as an error naming the entry, and counted.
 func (s *Sealer) seal(ctx context.Context, st master.AuditSeals, name, tenantName string) (master.AuditCheckpoint, bool) {
 	log := s.logger(name, tenantName)
 	last, ok, err := SealLog(ctx, st, s.cfg.Installation, name, s.cfg.Signer, s.cfg.Now, func(c master.AuditCheckpoint) {
 		log.Info("auditseal: checkpoint made", "from_seq", c.From, "to_seq", c.To,
 			"digest", hex.EncodeToString(c.Digest[:]), "key_version", c.KeyVersion)
 	})
-	if err != nil {
+	var bad *UnencodableError
+	switch {
+	case err == nil:
+	case errors.As(err, &bad):
+		s.stats.unencodable.Add(1)
+		log.Error("auditseal: an unsealed entry cannot be encoded; the log is not sealed past it until it is put right",
+			"entry_id", bad.ID)
+	default:
+		s.stats.failed.Add(1)
 		log.Warn("auditseal: the log could not be sealed; it is tried again next pass", "reason", fault.Message(err))
 	}
 	return last, ok
+}
+
+// UnencodableError is SealLog's failure when an entry not yet sealed cannot
+// be encoded (its text is not valid UTF-8, as only a hand-made row can be):
+// the entries are sealed in order, so the log is sealed no further until
+// that row is put right. It names the entry by its id, never its content.
+type UnencodableError struct {
+	// ID is the entry's id.
+	ID string
+}
+
+// Error implements error.
+func (e *UnencodableError) Error() string {
+	return "auditseal: the unsealed audit entry " + e.ID + " cannot be encoded"
 }
 
 // SealLog seals one log as far as it goes: the entries without a seq, in
 // checkpoints of at most master.MaxAuditSealBatch, at most maxSealsPerLog
 // of them. made is told of each checkpoint kept. It returns the log's
 // latest checkpoint afterward and whether it has one, also when it fails
-// part way, with what it kept.
+// part way, with what it kept. An entry that cannot be encoded is an
+// *UnencodableError.
 func SealLog(ctx context.Context, st master.AuditSeals, installation, name string, signer auditchain.Signer,
 	now func() time.Time, made func(master.AuditCheckpoint)) (master.AuditCheckpoint, bool, error) {
 	last, ok, err := latest(ctx, st)
@@ -253,6 +312,12 @@ func SealLog(ctx context.Context, st master.AuditSeals, installation, name strin
 		}
 		c, _, err := auditchain.Seal(signer, installation, name, from, chained, now().UTC())
 		if err != nil {
+			var ce *auditchain.Error
+			if errors.As(err, &ce) && ce.Problem == auditchain.ProblemEncoding {
+				if i := ce.Seq - from.Seq - 1; i < uint64(len(ids)) {
+					return last, ok, &UnencodableError{ID: ids[i]}
+				}
+			}
 			return last, ok, fault.Wrap(fault.Internal, err, "auditseal: the entries cannot be sealed")
 		}
 		digest, err := c.Digest()
@@ -296,45 +361,67 @@ func latest(ctx context.Context, st master.AuditSealReads) (master.AuditCheckpoi
 	return cs[0], true, nil
 }
 
-// anchor keeps c, the latest checkpoint of another log, in st. An anchor
-// the store refuses as going back means the log c is of went back to an
-// earlier point, which is what anchors are kept to show: it is logged as an
-// error.
-func (s *Sealer) anchor(ctx context.Context, st master.AuditSeals, tenantName string, c master.AuditCheckpoint) {
-	err := st.SetAuditAnchor(ctx, master.AuditAnchor{Log: c.Log, To: c.To, Digest: c.Digest})
-	switch {
-	case err == nil:
-	case fault.KindOf(err) == fault.Conflict:
-		s.logger(c.Log, tenantName).Error("auditseal: a log went back from the checkpoint the other log keeps of it",
-			"anchored_log", c.Log, "to_seq", c.To, "reason", fault.Message(err))
-	default:
-		s.logger(c.Log, tenantName).Warn("auditseal: the anchor could not be kept; it is tried again next pass", "reason", fault.Message(err))
+// oldestUnsealed returns the time of the oldest entry of st not yet sealed,
+// or zero for none or when it cannot be read.
+func (s *Sealer) oldestUnsealed(ctx context.Context, st master.AuditSeals) time.Time {
+	es, err := st.UnsealedAudit(ctx, master.AuditPosition{}, 1)
+	if err != nil || len(es) == 0 {
+		return time.Time{}
 	}
+	return es[0].Time
+}
+
+// older returns the earlier of two times, a zero one counting as none.
+func older(a, b time.Time) time.Time {
+	if a.IsZero() || (!b.IsZero() && b.Before(a)) {
+		return b
+	}
+	return a
 }
 
 // prune removes what retention makes due in one log, a pruning call at a
-// time, until none is due or ctx ends.
-func (s *Sealer) prune(ctx context.Context, st master.AuditSeals, tenantName string, retention time.Duration) {
+// time, until none is due or ctx ends, then seals the log again so the
+// pruning's own entry, which Verify needs to accept the pruned checkpoints,
+// is sealed at once and not a whole interval later.
+//
+// The cutoff is the earlier of now and the log's latest checkpoint's time,
+// minus the retention: a clock stepped forward (by mistake, or by someone
+// who wants entries gone) does not prune what the log's own signed times
+// say is younger than the retention.
+func (s *Sealer) prune(ctx context.Context, st master.AuditSeals, name, tenantName string, retention time.Duration) {
 	if retention <= 0 {
 		return
 	}
 	now := s.cfg.Now().UTC()
-	before := now.Add(-retention)
+	last, ok, err := latest(ctx, st)
+	if err != nil || !ok {
+		return
+	}
+	before := now
+	if last.Time.Before(before) {
+		before = last.Time
+	}
+	before = before.Add(-retention)
+	pruned := false
 	for ctx.Err() == nil {
 		got, err := st.PruneAudit(ctx, before, master.MaxAuditPruneBatch, master.AuditEntry{
-			ID: s.cfg.NewID(), Time: now, LocalUser: ServerUser, RemoteAddress: "local", Method: "AuditRetention",
+			ID: s.cfg.NewID(), Time: now, LocalUser: ServerUser, RemoteAddress: "local", Method: RetentionMethod,
 			TenantName: tenantName, Object: "audit", Outcome: master.OutcomeDone,
 		})
 		if err != nil {
 			s.log.Warn("auditseal: the log could not be pruned; it is tried again next pass", "tenant", tenantName, "reason", fault.Message(err))
-			return
+			break
 		}
 		if got.Checkpoints > 0 {
+			pruned = true
 			s.log.Info("auditseal: entries pruned by audit.retention", "tenant", tenantName,
 				"checkpoints", got.Checkpoints, "entries", got.Entries)
 		}
 		if !got.More {
-			return
+			break
 		}
+	}
+	if pruned {
+		s.seal(ctx, st, name, tenantName)
 	}
 }

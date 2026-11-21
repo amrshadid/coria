@@ -21,6 +21,7 @@ class AuditVerifyProblemKind(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     AUDIT_VERIFY_PROBLEM_KIND_CHECKPOINT_OUT_OF_LINE: _ClassVar[AuditVerifyProblemKind]
     AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES: _ClassVar[AuditVerifyProblemKind]
     AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK: _ClassVar[AuditVerifyProblemKind]
+    AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED: _ClassVar[AuditVerifyProblemKind]
 AUDIT_VERIFY_PROBLEM_KIND_UNSPECIFIED: AuditVerifyProblemKind
 AUDIT_VERIFY_PROBLEM_KIND_CHAIN_BROKEN: AuditVerifyProblemKind
 AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING: AuditVerifyProblemKind
@@ -28,6 +29,7 @@ AUDIT_VERIFY_PROBLEM_KIND_BAD_SIGNATURE: AuditVerifyProblemKind
 AUDIT_VERIFY_PROBLEM_KIND_CHECKPOINT_OUT_OF_LINE: AuditVerifyProblemKind
 AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES: AuditVerifyProblemKind
 AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK: AuditVerifyProblemKind
+AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED: AuditVerifyProblemKind
 
 class AuditCheckpoint(_message.Message):
     __slots__ = ("tenant", "from_seq", "to_seq", "entries", "head", "previous_digest", "digest", "time", "key_version", "signature", "signed_text", "installation_id", "log", "pruned")

@@ -70,8 +70,9 @@ const (
 	StopGrace = 2 * time.Second
 	// DefaultClose is how long Stop gives each of the access package (to
 	// write the audit entries it holds), the registry and the master to
-	// close. The worst case of a whole stop is DefaultDrain + StopGrace +
-	// 3 x DefaultClose = 15 + 2 + 12 = 29 seconds.
+	// close, and Config.AfterDrain to run. The worst case of a whole stop
+	// is DefaultDrain + StopGrace + 4 x DefaultClose = 15 + 2 + 16 = 33
+	// seconds.
 	DefaultClose = 4 * time.Second
 
 	// maxHeaderBytes bounds a request's headers (HTTP/1 and HTTP/2): 64
@@ -149,6 +150,17 @@ type Config struct {
 	TenantsByState func() map[string]int
 	// Master is closed after the registry, at stop; nil for none.
 	Master io.Closer
+	// AfterDrain runs once at stop, within the close deadline, after the
+	// requests have drained and the access check has written the audit
+	// entries it held, and before the registry and the master close: the
+	// audit's last seal, which so seals every entry the server wrote. Nil
+	// for none.
+	AfterDrain func(ctx context.Context) error
+	// Counters and Gauges are values other parts keep, for /metrics, read
+	// at each scrape; nil for none.
+	Counters func() []obs.Counter
+	// Gauges: see Counters.
+	Gauges func() []obs.Gauge
 	// Log receives the server's lines; nil discards them.
 	Log *slog.Logger
 
@@ -312,7 +324,7 @@ func New(cfg Config) (*Server, error) {
 		}
 		s.certs = certs
 	}
-	s.metrics = obs.NewMetrics(obs.Sources{TenantsByState: cfg.TenantsByState, Counters: s.counters})
+	s.metrics = obs.NewMetrics(obs.Sources{TenantsByState: cfg.TenantsByState, Counters: s.counters, Gauges: cfg.Gauges})
 	if err := s.buildRoutes(); err != nil {
 		return nil, err
 	}
@@ -328,7 +340,11 @@ func (s *Server) counters() []obs.Counter {
 	c := func(name, help string, v uint64) obs.Counter {
 		return obs.Counter{Name: "coria_" + name + "_total", Help: help, Value: v}
 	}
-	return []obs.Counter{
+	var more []obs.Counter
+	if s.cfg.Counters != nil {
+		more = s.cfg.Counters()
+	}
+	return append([]obs.Counter{
 		c("audit_entries_written", "Audit entries of refusals and reads that a log took.", a.Written),
 		c("audit_entries_failed", "Audit entries a log refused one by one, or that were not valid.", a.Failed),
 		c("audit_entries_dropped_refusals", "Audit entries of refusals dropped because their queue was full or the server was closing.", a.DroppedRefusals),
@@ -339,7 +355,7 @@ func (s *Server) counters() []obs.Counter {
 		c("key_last_use_marks_written", "Last-use marks of keys the database took.", m.Written),
 		c("key_last_use_marks_dropped", "Last-use marks of keys dropped because their queue was full or the server was closing.", m.Dropped),
 		c("key_last_use_marks_failed", "Last-use marks of keys the database refused or failed.", m.Failed),
-	}
+	}, more...)
 }
 
 // buildRoutes makes the one connect.Server, registers the API's services

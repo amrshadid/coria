@@ -36,7 +36,13 @@ const (
 	// head: an entry it covers was changed, removed or put in between.
 	AuditVerifyProblemKind_AUDIT_VERIFY_PROBLEM_KIND_CHAIN_BROKEN AuditVerifyProblemKind = 1
 	// A seq is missing in a range a checkpoint covers and retention has not
-	// pruned.
+	// pruned. A checkpoint marked pruned that retention did not prune is one
+	// too: one that follows a checkpoint not pruned (retention prunes the
+	// oldest first), one younger than 90 days (the shortest audit.retention)
+	// by its signed time, or one in the range of no pruning entry (local
+	// user "server", method "AuditRetention", details pruned_from_seq and
+	// pruned_to_seq) sealed after it, past the pruned checkpoints whose own
+	// pruning entry retention has since pruned in its turn.
 	AuditVerifyProblemKind_AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING AuditVerifyProblemKind = 2
 	// A checkpoint's signature does not check with the public key of its
 	// installation and key version, or names an installation and version
@@ -45,14 +51,26 @@ const (
 	// A checkpoint's previous_digest is not the digest of the checkpoint
 	// before it, or its range does not follow on from it.
 	AuditVerifyProblemKind_AUDIT_VERIFY_PROBLEM_KIND_CHECKPOINT_OUT_OF_LINE AuditVerifyProblemKind = 4
-	// The anchor the other log keeps for this one is not the digest of any
-	// of its checkpoints.
+	// The log's checkpoint at the to_seq of the anchor the other log keeps
+	// for this one is there, but its digest is not the anchor's.
 	AuditVerifyProblemKind_AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES AuditVerifyProblemKind = 5
-	// The log does not reach what was kept outside the installation: its
-	// last sealed seq is below expected_min_seq, or no checkpoint has
-	// expected_checkpoint_digest. The log was taken back to an earlier
-	// point, which the chain and the anchors alone cannot show.
+	// The log was taken back to an earlier point. Either it does not reach
+	// what was kept outside the installation (its last sealed seq is below
+	// expected_min_seq, or no checkpoint has expected_checkpoint_digest),
+	// which the chain and the anchors alone cannot show; or it no longer
+	// holds the checkpoint at the to_seq of the anchor the other log keeps
+	// for it, whether or not it grew again since. A sealing pass moves an
+	// anchor forward only to a checkpoint that descends from the one it
+	// names, so a log taken back and sealed again keeps reporting this
+	// until an operator accepts a restore.
 	AuditVerifyProblemKind_AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK AuditVerifyProblemKind = 6
+	// An entry not yet sealed has waited more than two seal intervals since
+	// it was written and since the log was last sealed: the sealing passes
+	// are not sealing this log (an entry that cannot be encoded, as only a
+	// row put in by hand can be, holds every later one back), and entries
+	// not yet sealed can be removed without a trace. seq is 0; the server's
+	// log names the entry.
+	AuditVerifyProblemKind_AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED AuditVerifyProblemKind = 7
 )
 
 // Enum value maps for AuditVerifyProblemKind.
@@ -65,6 +83,7 @@ var (
 		4: "AUDIT_VERIFY_PROBLEM_KIND_CHECKPOINT_OUT_OF_LINE",
 		5: "AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES",
 		6: "AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK",
+		7: "AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED",
 	}
 	AuditVerifyProblemKind_value = map[string]int32{
 		"AUDIT_VERIFY_PROBLEM_KIND_UNSPECIFIED":            0,
@@ -74,6 +93,7 @@ var (
 		"AUDIT_VERIFY_PROBLEM_KIND_CHECKPOINT_OUT_OF_LINE": 4,
 		"AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES":       5,
 		"AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK":            6,
+		"AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED":        7,
 	}
 )
 
@@ -381,7 +401,8 @@ type AuditVerifyProblem struct {
 	// What it is.
 	Kind AuditVerifyProblemKind `protobuf:"varint,1,opt,name=kind,proto3,enum=coria.v1.AuditVerifyProblemKind" json:"kind,omitempty"`
 	// The seq at which it shows: the first entry whose fold differs, the
-	// missing seq, or the to_seq of the checkpoint concerned.
+	// missing seq, or the to_seq of the checkpoint concerned; 0 for a
+	// problem of the entries not yet sealed, which have no seq.
 	Seq int64 `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
 	// More about it, in words for a person, from a fixed set of phrases the
 	// server has; at most 256 bytes. Never an entry's content.
@@ -455,8 +476,10 @@ type VerifyAuditRequest struct {
 	// A seq the log is known to have reached, kept outside the installation
 	// (from an earlier export or verification). The log's last sealed seq
 	// below it is a problem (AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK): the
-	// databases were taken back to an earlier point. Absent for no such
-	// check; at least 1 when given.
+	// databases were taken back to an earlier point. It does not detect a
+	// log taken back and grown again past it since: only
+	// expected_checkpoint_digest does. Absent for no such check; at least 1
+	// when given.
 	ExpectedMinSeq *int64 `protobuf:"varint,3,opt,name=expected_min_seq,json=expectedMinSeq,proto3,oneof" json:"expected_min_seq,omitempty"`
 	// The digest of a checkpoint known to be in the log
 	// (AuditCheckpoint.digest), kept outside the installation. No checkpoint
@@ -1451,7 +1474,7 @@ const file_coria_v1_audit_seal_proto_rawDesc = "" +
 	"\x0elast_seal_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\flastSealTime\x12\x1f\n" +
 	"\vlast_digest\x18\x03 \x01(\fR\n" +
 	"lastDigest\x12)\n" +
-	"\x10unsealed_entries\x18\x04 \x01(\x03R\x0funsealedEntries*\xda\x02\n" +
+	"\x10unsealed_entries\x18\x04 \x01(\x03R\x0funsealedEntries*\x89\x03\n" +
 	"\x16AuditVerifyProblemKind\x12)\n" +
 	"%AUDIT_VERIFY_PROBLEM_KIND_UNSPECIFIED\x10\x00\x12*\n" +
 	"&AUDIT_VERIFY_PROBLEM_KIND_CHAIN_BROKEN\x10\x01\x12+\n" +
@@ -1459,7 +1482,8 @@ const file_coria_v1_audit_seal_proto_rawDesc = "" +
 	"'AUDIT_VERIFY_PROBLEM_KIND_BAD_SIGNATURE\x10\x03\x124\n" +
 	"0AUDIT_VERIFY_PROBLEM_KIND_CHECKPOINT_OUT_OF_LINE\x10\x04\x12.\n" +
 	"*AUDIT_VERIFY_PROBLEM_KIND_ANCHOR_DISAGREES\x10\x05\x12)\n" +
-	"%AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK\x10\x062\x85\x03\n" +
+	"%AUDIT_VERIFY_PROBLEM_KIND_ROLLED_BACK\x10\x06\x12-\n" +
+	")AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED\x10\a2\x85\x03\n" +
 	"\x10AuditSealService\x12O\n" +
 	"\vVerifyAudit\x12\x1c.coria.v1.VerifyAuditRequest\x1a\x1d.coria.v1.VerifyAuditResponse\"\x03\x90\x02\x01\x12j\n" +
 	"\x14ListAuditCheckpoints\x12%.coria.v1.ListAuditCheckpointsRequest\x1a&.coria.v1.ListAuditCheckpointsResponse\"\x03\x90\x02\x01\x12Q\n" +

@@ -397,6 +397,52 @@ func TestAuditWrittenAtStop(t *testing.T) {
 	}
 }
 
+// orderRegistry is a tenant registry that records its Close in order.
+type orderRegistry struct{ order *[]string }
+
+func (r orderRegistry) Close(context.Context) error {
+	*r.order = append(*r.order, "registry")
+	return nil
+}
+
+// TestAfterDrainRunsAfterTheAuditFlush guards the step after the drain
+// (the audit's last seal): it runs once, after the access package has
+// written the audit entries it held (with an audit interval of an hour,
+// none is written before Stop, so the hook finds them only if the flush
+// came first), and before the registry and the master close.
+func TestAfterDrainRunsAfterTheAuditFlush(t *testing.T) {
+	const refusals = 20
+	var order []string
+	var dir string
+	seen := -1
+	e := newEnv(t, options{noNetwork: true, auditWait: time.Hour, registry: orderRegistry{order: &order},
+		afterDrain: func(ctx context.Context) error {
+			order = append(order, "after-drain")
+			m, err := sqlite.OpenMaster(ctx, filepath.Join(dir, "master.db"))
+			if err != nil {
+				return err
+			}
+			defer func() { _ = m.Close() }()
+			entries, _, err := m.ListAudit(ctx, master.AuditFilter{Outcome: master.OutcomeRefused}, master.Page{Limit: master.MaxPageLimit})
+			seen = len(entries)
+			return err
+		}})
+	dir = e.dir
+	bad := newClients(e.socketClient(true), "http://local", true, "Bearer "+unknownKey)
+	for range refusals {
+		_, _ = bad.access.WhoAmI(e.ctx, &coriav1.WhoAmIRequest{})
+	}
+	if err := e.srv.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(order, ",") != "after-drain,registry" {
+		t.Fatalf("stop order %v, want the step after the drain once, then the registry", order)
+	}
+	if seen != refusals {
+		t.Fatalf("the step after the drain saw %d refusals' entries, want the %d the audit writer held", seen, refusals)
+	}
+}
+
 // stuckRegistry is a tenant registry whose Close never returns, whatever
 // its context says, until the test releases it.
 type stuckRegistry struct{ release chan struct{} }

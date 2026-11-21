@@ -29,10 +29,13 @@ const (
 	MinSealInterval = time.Minute
 	MaxSealInterval = 24 * time.Hour
 	// MinAuditRetention and MaxAuditRetention bound audit.retention when it
-	// is not "0": a day, longer than any seal interval, so an entry is
-	// always sealed before it can be pruned; and a hundred years, past any
-	// rule of record keeping.
-	MinAuditRetention = 24 * time.Hour
+	// is not "0": ninety days, far longer than any seal interval, so an
+	// entry is always sealed before it can be pruned, and long enough that
+	// a mistyped period cannot erase the recent record (a verification
+	// refuses a pruned checkpoint younger than this, so a pruned flag set by
+	// hand on a recent one shows); and a hundred years, past any rule of
+	// record keeping.
+	MinAuditRetention = 90 * 24 * time.Hour
 	MaxAuditRetention = 36500 * 24 * time.Hour
 )
 
@@ -59,17 +62,17 @@ func ParseSealInterval(v string) (time.Duration, error) {
 }
 
 // ParseAuditRetention reads audit.retention: "0" to keep every entry, which
-// it returns as 0, or a duration (ParseDuration) from 1d to 36500d.
+// it returns as 0, or a duration (ParseDuration) from 90d to 36500d.
 func ParseAuditRetention(v string) (time.Duration, error) {
 	if v == "0" {
 		return 0, nil
 	}
 	d, err := ParseDuration(v)
 	if err != nil {
-		return 0, errors.New("is 0 to keep every entry, or a whole number of days or hours from 1d to 36500d, such as 3650d")
+		return 0, errors.New("is 0 to keep every entry, or a whole number of days or hours from 90d to 36500d, such as 3650d")
 	}
 	if d < MinAuditRetention || d > MaxAuditRetention {
-		return 0, errors.New("is 0 to keep every entry, or at least 1d and at most 36500d")
+		return 0, errors.New("is 0 to keep every entry, or at least 90d and at most 36500d")
 	}
 	return d, nil
 }

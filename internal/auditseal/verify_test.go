@@ -105,9 +105,10 @@ func TestVerifyFindsTampering(t *testing.T) {
 
 // TestVerifyAnchorsAndOutsideValues guards what the chain alone cannot
 // show: a tenant's log cut back to an earlier checkpoint, entries and
-// checkpoints together, verifies on its own but disagrees with the anchor
-// the master keeps of it; and a log cut back is found by a seq or a digest
-// kept outside the installation.
+// checkpoints together, verifies on its own but is rolled back past the
+// anchor the master keeps of it; a checkpoint at the anchor's seq with
+// another digest disagrees with it; and a log cut back is found by a seq
+// or a digest kept outside the installation.
 func TestVerifyAnchorsAndOutsideValues(t *testing.T) {
 	b, pub := sealedSQLite(t)
 	ctx := context.Background()
@@ -122,7 +123,14 @@ func TestVerifyAnchorsAndOutsideValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantProblem(t, "with the master's anchor", r, AnchorDisagrees, 6)
+	wantProblem(t, "with the master's anchor", r, RolledBack, 6)
+	other := b.anchorsOf(t, lab)
+	other[0].To, other[0].Digest = 4, master.AuditDigest{1}
+	r, err = Verify(ctx, b.tenants["lab"], VerifyOptions{Installation: testInstallation, Log: lab, Keys: pub, Anchors: other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantProblem(t, "an anchor of another digest", r, AnchorDisagrees, 4)
 
 	tamper(t, b.where[master.MasterAuditLog], `DELETE FROM audit WHERE seq > 8`, `DELETE FROM audit_checkpoints WHERE to_seq > 8`)
 	wantProblem(t, "a seq kept outside", verifyOne(t, b, pub, VerifyOptions{ExpectedMinSeq: 12}), RolledBack, 12)

@@ -85,6 +85,9 @@ type options struct {
 	// registry is given to the server as its tenant registry, for a test of
 	// what Stop does with it; nil gives none.
 	registry server.Registry
+	// afterDrain is the server's step after the drain and the audit flush
+	// (server.Config.AfterDrain); nil gives none.
+	afterDrain func(context.Context) error
 	// patterns replaces the pattern routes every test server has (the
 	// stand-in download, testPatterns).
 	patterns []server.PatternRoute
@@ -194,7 +197,7 @@ func newEnv(tb testing.TB, o options) *env {
 		DataDir: e.dir, Lock: lock, Access: a, Master: m, Log: log,
 		Register: register, DefaultDeadline: o.deadline, Drain: o.drain,
 		MaxDeadline: o.maxDL, BodyReadTimeout: o.bodyRead, Grace: o.grace, Close: o.closeT,
-		Methods: methods, WithDecision: withDecision, Registry: o.registry,
+		Methods: methods, WithDecision: withDecision, Registry: o.registry, AfterDrain: o.afterDrain,
 		PatternRoutes: o.patterns, LongMethods: o.longMethods, CORSOrigins: o.corsOrigins, AccessRules: o.accessRules,
 	}
 	if cfg.PatternRoutes == nil {

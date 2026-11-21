@@ -71,6 +71,15 @@ type Built struct {
 	// none. It is started once the server listens and stopped before the
 	// server stops, while the tenants' databases are still open.
 	Reception Runner
+	// AfterDrain runs at stop once the server has drained its requests and
+	// written the audit entries it held, before the databases close
+	// (server.Config.AfterDrain): the audit's last seal. Nil for none.
+	AfterDrain func(ctx context.Context) error
+	// Counters and Gauges are more values for /metrics
+	// (server.Config.Counters), or nil.
+	Counters func() []obs.Counter
+	// Gauges: see Counters.
+	Gauges func() []obs.Gauge
 }
 
 // Services builds the API's handlers over an open installation.
@@ -367,6 +376,9 @@ func open(ctx context.Context, opts Options, f serveFlags, dir, keyPath string, 
 		Registry:        built.Registry,
 		TenantsByState:  built.TenantsByState,
 		Master:          m,
+		AfterDrain:      built.AfterDrain,
+		Counters:        built.Counters,
+		Gauges:          built.Gauges,
 		Log:             log,
 		Register:        built.Register,
 		Methods:         built.Methods,
@@ -421,7 +433,8 @@ func serveUntilStopped(srv *server.Server, reception Runner, opts Options, log *
 	}()
 	// The receivers first, finishing the stores in flight, then the
 	// pipelines, while the tenants' databases are open; then the server,
-	// which closes them.
+	// which drains its requests, writes the audit entries it holds, runs
+	// the audit's last seal (Built.AfterDrain) and closes the databases.
 	var rerr error
 	if reception != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), ReceptionStopTimeout)

@@ -29,6 +29,18 @@ type Counter struct {
 	Value uint64
 }
 
+// Gauge is one value read from its owner at the moment of a scrape, which
+// may go down as well as up.
+type Gauge struct {
+	// Name is the metric's name; it comes from a fixed list in the server,
+	// never from a request.
+	Name string
+	// Help says what is measured, as a sentence.
+	Help string
+	// Value is the value.
+	Value float64
+}
+
 // Sources are the values a scrape reads from the parts that own them. A nil
 // function is left out of the text.
 type Sources struct {
@@ -37,6 +49,9 @@ type Sources struct {
 	// Counters returns counters kept by other parts, such as the audit
 	// writer's and the last-use marks' counts.
 	Counters func() []Counter
+	// Gauges returns gauges kept by other parts, such as the age of the
+	// oldest audit entry not yet sealed.
+	Gauges func() []Gauge
 }
 
 // histogram is one method's duration histogram: a count per bucket (not
@@ -124,6 +139,12 @@ func (m *Metrics) WriteText(w io.Writer) error {
 		for _, c := range f() {
 			header(b, c.Name, "counter", c.Help)
 			sample(b, c.Name, nil, strconv.FormatUint(c.Value, 10))
+		}
+	}
+	if f := m.sources.Gauges; f != nil {
+		for _, g := range f() {
+			header(b, g.Name, "gauge", g.Help)
+			sample(b, g.Name, nil, formatFloat(g.Value))
 		}
 	}
 	return b.Flush()

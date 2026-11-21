@@ -1,5 +1,6 @@
 // Package auditseal seals the installation's audit logs and checks them: the
-// sealing pass the server runs every audit.seal-interval and when it stops,
+// sealing pass the server runs every audit.seal-interval and when it stops
+// (after its requests have drained and its audit entries are written),
 // retention by audit.retention, and the verification and export that the
 // API's AuditSealService and the command line call.
 //
@@ -23,16 +24,22 @@
 // Then the cross-anchors: each tenant's log keeps the master's latest
 // checkpoint, and the master keeps each tenant's (SetAuditAnchor), so a
 // tenant's database rewritten whole, its checkpoints included, disagrees
-// with what the master keeps of it, and the other way round. An anchor
-// that would go back is refused by the store, and the pass logs it as an
-// error: a log it anchored went back to an earlier point. Each checkpoint
-// made is also written to the server's log with its digest, for an operator
-// who keeps the server's log elsewhere.
+// with what the master keeps of it, and the other way round. An anchor is
+// moved forward only to a checkpoint that descends from the one it names
+// (Descends): a log taken back past its anchor and sealed again from there,
+// which needs no key, keeps the old anchor, the pass logs an error and
+// counts it, and Verify of that log reports it rolled back. An anchor that
+// would go back is refused by the store too. Each checkpoint made is also
+// written to the server's log with its digest, for an operator who keeps
+// the server's log elsewhere.
 //
 // Then retention, when audit.retention is not "0": whole checkpoints made
-// before now minus the retention lose their entries (PruneAudit); every
-// checkpoint row stays, and each pruning writes its own entry, made by the
-// server (local user "server").
+// before the earlier of now and the log's latest checkpoint, minus the
+// retention (never below settings.MinAuditRetention), lose their entries
+// (PruneAudit); every checkpoint row stays, and each pruning writes its own
+// entry, made by the server (local user "server"), which the pass seals at
+// once, since Verify accepts a pruned checkpoint only in the range of such
+// an entry sealed after it (retention.go).
 //
 // The pass writes no audit entry of its own for a seal: an entry recording
 // each seal would itself wait for the next pass, so a log would never be
@@ -55,9 +62,10 @@
 // checkpoint's range, previous digest, head and signature with the public
 // keys given (which must come from outside the database checked: derived
 // again from the key file, or kept from an earlier export), checks pruned
-// checkpoints' signatures and order, and checks the anchor the other log
-// keeps of this one and the values kept outside the installation that the
-// caller gives. Export writes what an auditor needs to check a range
+// checkpoints' signatures, order, age and the prunings that cover them,
+// checks the anchor the other log keeps of this one and the values kept
+// outside the installation that the caller gives, and reports entries left
+// unsealed past two seal intervals. Export writes what an auditor needs to check a range
 // without the server: a header with the public keys and the chain value
 // before the range, then each entry with its seq, its encoded form and the
 // chain after it, each checkpoint after the last entry it covers.

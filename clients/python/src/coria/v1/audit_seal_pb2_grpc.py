@@ -36,7 +36,8 @@ class AuditSealServiceStub:
     they are written, since entries written at once by many requests commit
     in no fixed order. Every audit.seal-interval (an installation setting, a
     period such as "10m", from "1m" to "1d"; built-in default "10m"), and
-    when the server stops, a sealing pass takes each log's entries not yet
+    when the server stops (after its requests have drained and the audit
+    entries it held are written), a sealing pass takes each log's entries not yet
     sealed, orders them by time and then id, gives each the next sequence
     number (seq, from 1) and folds it into the log's chain: h(n) =
     SHA-256(h(n-1) || encode(entry n)), with h(0) 32 zero bytes (SHA-256,
@@ -67,8 +68,11 @@ class AuditSealServiceStub:
     The installation's log keeps the latest checkpoint digest of each tenant,
     and each tenant's log the installation's latest, so a tenant's database
     rewritten whole, its checkpoints included, disagrees with the
-    installation's; the server's log carries each checkpoint's digest too,
-    for an operator who keeps logs elsewhere.
+    installation's; an anchor moves forward only to a checkpoint that
+    descends from the one it names, so a log taken back with its database
+    alone and sealed again keeps the old anchor and is reported rolled back;
+    the server's log carries each checkpoint's digest too, for an operator
+    who keeps logs elsewhere.
 
     Logs that moved. A public key is named by the installation that holds
     its key and the key's version, since a tenant imported from another
@@ -91,13 +95,18 @@ class AuditSealServiceStub:
     installation does, which VerifyAudit checks when given one
     (VerifyAuditRequest.expected_checkpoint_digest, expected_min_seq).
     Entries not yet sealed, at most one interval old, can be removed
-    without a trace. A read's or a refusal's entry dropped when the server
+    without a trace; a log whose entries wait longer is reported
+    (AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED). A read's or a refusal's entry dropped when the server
     was overwhelmed stays dropped, and counted (AuditService).
 
-    Retention. The setting audit.retention (a period such as "3650d", or
-    "0" to keep every entry; built-in default "0") prunes whole sealed
-    checkpoints older than it; every checkpoint stays, so the chain is still
-    checked across what was pruned, and the pruning writes its own entry.
+    Retention. The setting audit.retention (a period from "90d" to
+    "36500d", such as "3650d", or "0" to keep every entry; built-in default
+    "0") prunes whole sealed checkpoints older than it, counted back from
+    the earlier of the server's clock and the log's latest checkpoint, so a
+    clock set forward does not prune early; every checkpoint stays, so the
+    chain is still checked across what was pruned, and the pruning writes
+    its own entry, sealed in the same pass, which a verification needs to
+    accept the pruned checkpoints (AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING).
     Export before a period is set: what is pruned is gone.
 
     Ranges. VerifyAudit and ExportAudit take a range of seq, never of time:
@@ -146,7 +155,8 @@ class AuditSealServiceServicer:
     they are written, since entries written at once by many requests commit
     in no fixed order. Every audit.seal-interval (an installation setting, a
     period such as "10m", from "1m" to "1d"; built-in default "10m"), and
-    when the server stops, a sealing pass takes each log's entries not yet
+    when the server stops (after its requests have drained and the audit
+    entries it held are written), a sealing pass takes each log's entries not yet
     sealed, orders them by time and then id, gives each the next sequence
     number (seq, from 1) and folds it into the log's chain: h(n) =
     SHA-256(h(n-1) || encode(entry n)), with h(0) 32 zero bytes (SHA-256,
@@ -177,8 +187,11 @@ class AuditSealServiceServicer:
     The installation's log keeps the latest checkpoint digest of each tenant,
     and each tenant's log the installation's latest, so a tenant's database
     rewritten whole, its checkpoints included, disagrees with the
-    installation's; the server's log carries each checkpoint's digest too,
-    for an operator who keeps logs elsewhere.
+    installation's; an anchor moves forward only to a checkpoint that
+    descends from the one it names, so a log taken back with its database
+    alone and sealed again keeps the old anchor and is reported rolled back;
+    the server's log carries each checkpoint's digest too, for an operator
+    who keeps logs elsewhere.
 
     Logs that moved. A public key is named by the installation that holds
     its key and the key's version, since a tenant imported from another
@@ -201,13 +214,18 @@ class AuditSealServiceServicer:
     installation does, which VerifyAudit checks when given one
     (VerifyAuditRequest.expected_checkpoint_digest, expected_min_seq).
     Entries not yet sealed, at most one interval old, can be removed
-    without a trace. A read's or a refusal's entry dropped when the server
+    without a trace; a log whose entries wait longer is reported
+    (AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED). A read's or a refusal's entry dropped when the server
     was overwhelmed stays dropped, and counted (AuditService).
 
-    Retention. The setting audit.retention (a period such as "3650d", or
-    "0" to keep every entry; built-in default "0") prunes whole sealed
-    checkpoints older than it; every checkpoint stays, so the chain is still
-    checked across what was pruned, and the pruning writes its own entry.
+    Retention. The setting audit.retention (a period from "90d" to
+    "36500d", such as "3650d", or "0" to keep every entry; built-in default
+    "0") prunes whole sealed checkpoints older than it, counted back from
+    the earlier of the server's clock and the log's latest checkpoint, so a
+    clock set forward does not prune early; every checkpoint stays, so the
+    chain is still checked across what was pruned, and the pruning writes
+    its own entry, sealed in the same pass, which a verification needs to
+    accept the pruned checkpoints (AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING).
     Export before a period is set: what is pruned is gone.
 
     Ranges. VerifyAudit and ExportAudit take a range of seq, never of time:
@@ -342,7 +360,8 @@ class AuditSealService:
     they are written, since entries written at once by many requests commit
     in no fixed order. Every audit.seal-interval (an installation setting, a
     period such as "10m", from "1m" to "1d"; built-in default "10m"), and
-    when the server stops, a sealing pass takes each log's entries not yet
+    when the server stops (after its requests have drained and the audit
+    entries it held are written), a sealing pass takes each log's entries not yet
     sealed, orders them by time and then id, gives each the next sequence
     number (seq, from 1) and folds it into the log's chain: h(n) =
     SHA-256(h(n-1) || encode(entry n)), with h(0) 32 zero bytes (SHA-256,
@@ -373,8 +392,11 @@ class AuditSealService:
     The installation's log keeps the latest checkpoint digest of each tenant,
     and each tenant's log the installation's latest, so a tenant's database
     rewritten whole, its checkpoints included, disagrees with the
-    installation's; the server's log carries each checkpoint's digest too,
-    for an operator who keeps logs elsewhere.
+    installation's; an anchor moves forward only to a checkpoint that
+    descends from the one it names, so a log taken back with its database
+    alone and sealed again keeps the old anchor and is reported rolled back;
+    the server's log carries each checkpoint's digest too, for an operator
+    who keeps logs elsewhere.
 
     Logs that moved. A public key is named by the installation that holds
     its key and the key's version, since a tenant imported from another
@@ -397,13 +419,18 @@ class AuditSealService:
     installation does, which VerifyAudit checks when given one
     (VerifyAuditRequest.expected_checkpoint_digest, expected_min_seq).
     Entries not yet sealed, at most one interval old, can be removed
-    without a trace. A read's or a refusal's entry dropped when the server
+    without a trace; a log whose entries wait longer is reported
+    (AUDIT_VERIFY_PROBLEM_KIND_SEALING_STALLED). A read's or a refusal's entry dropped when the server
     was overwhelmed stays dropped, and counted (AuditService).
 
-    Retention. The setting audit.retention (a period such as "3650d", or
-    "0" to keep every entry; built-in default "0") prunes whole sealed
-    checkpoints older than it; every checkpoint stays, so the chain is still
-    checked across what was pruned, and the pruning writes its own entry.
+    Retention. The setting audit.retention (a period from "90d" to
+    "36500d", such as "3650d", or "0" to keep every entry; built-in default
+    "0") prunes whole sealed checkpoints older than it, counted back from
+    the earlier of the server's clock and the log's latest checkpoint, so a
+    clock set forward does not prune early; every checkpoint stays, so the
+    chain is still checked across what was pruned, and the pruning writes
+    its own entry, sealed in the same pass, which a verification needs to
+    accept the pruned checkpoints (AUDIT_VERIFY_PROBLEM_KIND_ENTRY_MISSING).
     Export before a period is set: what is pruned is gone.
 
     Ranges. VerifyAudit and ExportAudit take a range of seq, never of time:

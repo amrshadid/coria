@@ -362,7 +362,12 @@ export const SettingSourceSchema: GenEnum<SettingSource> = /*@__PURE__*/
  * storage.s3-endpoints (StorageService), sender.destinations,
  * sender.allow-plain-http, sender.max-associations and
  * sender.tenant-max-associations (SenderService), job.failures-kept
- * (JobService), and events.retention (MonitorService). Those of keeping
+ * (JobService), read.per-caller (built-in default "16", 1 to 1024) and
+ * read.per-server (built-in default "256", 16 to 65536), both
+ * installation-only, the most reads of archived bytes one caller and the
+ * whole server hold open at once (DataService, DownloadService; a change
+ * that makes the first exceed the second is refused as a precondition),
+ * and events.retention (MonitorService). Those of keeping
  * the archive whole, not yet in use by the server: scrub.rate and
  * scrub.interval (ordinary settings, a tenant may override them; JobService,
  * ScrubJob), delete.grace (an ordinary setting, a tenant may override it;
