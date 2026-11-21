@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -282,6 +283,30 @@ func eventMessage(name string, e tenant.Event) *v1.Event {
 	case *tenant.FramesAdded:
 		m.Payload = &v1.Event_FramesAdded{FramesAdded: &v1.FramesAdded{SubjectLabel: p.SubjectLabel, SessionLabel: p.SessionLabel,
 			ScanLabel: p.ScanLabel, Instances: p.Instances, ScansDone: p.ScansDone, InstancesDone: p.InstancesDone, Finished: p.Finished}}
+	case *tenant.JobStepReached:
+		m.Payload = &v1.Event_JobStep{JobStep: &v1.JobStepReached{Job: p.Job,
+			State:         v1.JobState(word("JOB_STATE_", string(p.State), v1.JobState_value)),
+			PreviousState: v1.JobState(word("JOB_STATE_", string(p.PreviousState), v1.JobState_value)),
+			Counts:        eventJobCounts(p.Counts), Sender: p.Sender, Receiver: p.Receiver, Reception: p.Reception, RetryOf: p.RetryOf, Reason: p.Reason}}
+	case *tenant.JobProgressed:
+		m.Payload = &v1.Event_JobProgress{JobProgress: &v1.JobProgressed{Job: p.Job, Counts: eventJobCounts(p.Counts), Sender: p.Sender}}
+	case *tenant.SenderHealthChanged:
+		m.Payload = &v1.Event_SenderHealth{SenderHealth: &v1.SenderHealthChanged{Sender: p.Sender, Health: &v1.SenderHealth{
+			State:      v1.SenderState(word("SENDER_STATE_", string(p.State), v1.SenderState_value)),
+			DownReason: v1.SenderDownReason(word("SENDER_DOWN_REASON_", string(p.DownReason), v1.SenderDownReason_value)),
+			Fault:      v1.SenderFault(word("SENDER_FAULT_", string(p.Fault), v1.SenderFault_value)),
+			Detail:     p.Detail, Since: timestamp(p.Since),
+			FailedConnections: int32(min(p.FailedConnections, math.MaxInt32)), //nolint:gosec // G115: bounded just above.
+			NextTryTime:       timestamp(p.NextTry), LastSuccessTime: timestamp(p.LastSuccess)}}}
 	}
 	return m
+}
+
+// eventJobCounts returns a job's counts as an event carries them, the
+// contract's JobCounts, so an event holds the same figures a job's own
+// answer does.
+func eventJobCounts(c tenant.EventJobCounts) *v1.JobCounts {
+	return &v1.JobCounts{Instances: c.Instances, Bytes: c.Bytes, InstancesSent: c.InstancesSent, BytesSent: c.BytesSent,
+		InstancesWarned: c.InstancesWarned, BytesWarned: c.BytesWarned, InstancesRefused: c.InstancesRefused, BytesRefused: c.BytesRefused,
+		InstancesRemaining: c.InstancesRemaining, BytesRemaining: c.BytesRemaining, Scans: c.Scans, ScansDone: c.ScansDone, Listed: c.Listed}
 }
